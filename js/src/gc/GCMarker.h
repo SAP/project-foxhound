@@ -377,10 +377,12 @@ class alignas(TypicalCacheLineSize) GCMarker {
   bool shouldCheckCompartments() { return strictCompartmentChecking; }
 #endif
 
-  void markCurrentColorInParallel(SliceBudget& budget);
+  bool markCurrentColorInParallel(SliceBudget& budget);
 
   template <uint32_t markingOptions, gc::MarkColor>
   bool markOneColor(SliceBudget& budget);
+  template <gc::MarkColor>
+  bool markOneColorInParallel(SliceBudget& budget);
 
   static void moveWork(GCMarker* dst, GCMarker* src);
 
@@ -527,16 +529,16 @@ class alignas(TypicalCacheLineSize) GCMarker {
   /* The stack of remaining marking work . */
   gc::MarkStack stack;
 
-  /* Whether we successfully added all edges to the implicit edges table. */
-  MainThreadOrGCTaskData<bool> haveAllImplicitEdges;
-
-  /* Track the state of marking. */
-  MainThreadOrGCTaskData<MarkingState> state;
-
   MainThreadOrGCTaskData<gc::ParallelMarker*> parallelMarker_;
 
   Vector<JS::GCCellPtr, 0, SystemAllocPolicy> unmarkGrayStack;
   friend class gc::UnmarkGrayTracer;
+
+  /* Track the state of marking. */
+  MainThreadOrGCTaskData<MarkingState> state;
+
+  /* Whether we successfully added all edges to the implicit edges table. */
+  MainThreadOrGCTaskData<bool> haveAllImplicitEdges;
 
  public:
   /*

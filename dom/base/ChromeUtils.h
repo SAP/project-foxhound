@@ -209,6 +209,11 @@ class ChromeUtils {
                              JS::MutableHandle<JSObject*> aRetval,
                              ErrorResult& aRv);
 
+  static void DefineLazyGetter(const GlobalObject& aGlobal,
+                               JS::Handle<JSObject*> aTarget,
+                               JS::Handle<JS::Value> aName,
+                               JS::Handle<JSObject*> aLambda, ErrorResult& aRv);
+
   static void DefineModuleGetter(const GlobalObject& global,
                                  JS::Handle<JSObject*> target,
                                  const nsAString& id,
@@ -288,6 +293,9 @@ class ChromeUtils {
   static void EnsureJSOracleStarted(GlobalObject&);
 
   static unsigned AliveUtilityProcesses(const GlobalObject&);
+
+  static void GetAllPossibleUtilityActorNames(GlobalObject& aGlobal,
+                                              nsTArray<nsCString>& aNames);
 };
 
 }  // namespace dom

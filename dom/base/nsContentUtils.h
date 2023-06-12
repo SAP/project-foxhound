@@ -246,7 +246,11 @@ struct EventNameMapping {
 
 namespace mozilla {
 enum class PreventDefaultResult : uint8_t { No, ByContent, ByChrome };
+
+namespace dom {
+enum JSONBehavior { UndefinedIsNullStringLiteral, UndefinedIsVoidString };
 }
+}  // namespace mozilla
 
 class nsContentUtils {
   friend class nsAutoScriptBlockerSuppressNodeRemoved;
@@ -259,6 +263,7 @@ class nsContentUtils {
   using EventMessage = mozilla::EventMessage;
   using TimeDuration = mozilla::TimeDuration;
   using Trusted = mozilla::Trusted;
+  using JSONBehavior = mozilla::dom::JSONBehavior;
 
  public:
   static nsresult Init();
@@ -529,6 +534,10 @@ class nsContentUtils {
       mozilla::dom::BrowserParent* aBrowserParent1,
       mozilla::dom::BrowserParent* aBrowserParent2);
 
+  // https://html.spec.whatwg.org/#target-element
+  // https://html.spec.whatwg.org/#find-a-potential-indicated-element
+  static Element* GetTargetElement(Document* aDocument,
+                                   const nsAString& aAnchorName);
   /**
    * Returns true if aNode1 is before aNode2 in the same connected
    * tree.
@@ -1428,14 +1437,6 @@ class nsContentUtils {
    *   * TYPE_INTERNAL_STYLESHEET_PRELOAD
    */
   static bool IsPreloadType(nsContentPolicyType aType);
-
-  /**
-   * Returns true if the pref "security.mixed_content.upgrade_display_content"
-   * is true and the content policy type is any of:
-   *   * TYPE_IMAGE
-   *   * TYPE_MEDIA
-   */
-  static bool IsUpgradableDisplayType(ExtContentPolicyType aType);
 
   /**
    * Quick helper to determine whether there are any mutation listeners
@@ -2872,13 +2873,12 @@ class nsContentUtils {
 
   static void TransferablesToIPCTransferables(
       nsIArray* aTransferables, nsTArray<mozilla::dom::IPCDataTransfer>& aIPC,
-      bool aInSyncMessage, mozilla::dom::ContentChild* aChild,
-      mozilla::dom::ContentParent* aParent);
+      bool aInSyncMessage, mozilla::dom::ContentParent* aParent);
 
   static void TransferableToIPCTransferable(
       nsITransferable* aTransferable,
       mozilla::dom::IPCDataTransfer* aIPCDataTransfer, bool aInSyncMessage,
-      mozilla::dom::ContentChild* aChild, mozilla::dom::ContentParent* aParent);
+      mozilla::dom::ContentParent* aParent);
 
   /*
    * Get the pixel data from the given source surface and return it as a
@@ -3257,13 +3257,20 @@ class nsContentUtils {
 
   /**
    * Serializes a JSON-like JS::Value into a string.
+   * Cases where JSON.stringify would return undefined are handled according to
+   * the |aBehavior| argument:
    *
+   * - If it is |UndefinedIsNullStringLiteral|, the string "null" is returned.
+   * - If it is |UndefinedIsVoidString|, the void string is returned.
+   *
+   * The |UndefinedIsNullStringLiteral| case is likely not desirable, but is
+   * retained for now for historical reasons.
    * Usage:
    *   nsAutoString serializedValue;
-   *   nsContentUtils::StringifyJSON(cx, &value, serializedValue);
+   *   nsContentUtils::StringifyJSON(cx, value, serializedValue, behavior);
    */
-  static bool StringifyJSON(JSContext* aCx, JS::MutableHandle<JS::Value> vp,
-                            nsAString& aOutStr);
+  static bool StringifyJSON(JSContext* aCx, JS::Handle<JS::Value> aValue,
+                            nsAString& aOutStr, JSONBehavior aBehavior);
 
   /**
    * Returns true if the top level ancestor content document of aDocument hasn't

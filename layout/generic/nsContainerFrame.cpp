@@ -1144,24 +1144,41 @@ void nsContainerFrame::ReflowOverflowContainerChildren(
           frame->HasAnyStateBits(NS_FRAME_IS_OVERFLOW_CONTAINER),
           "overflow container frame must have overflow container bit set");
       WritingMode wm = frame->GetWritingMode();
-      nsSize containerSize = aContainerSize.valueOr(
-          aReflowInput.AvailableSize(wm).GetPhysicalSize(wm));
+      nsSize containerSize =
+          aContainerSize ? *aContainerSize
+                         : aReflowInput.AvailableSize(wm).GetPhysicalSize(wm);
       LogicalRect prevRect = prevInFlow->GetLogicalRect(wm, containerSize);
 
       // Initialize reflow params
       LogicalSize availSpace(wm, prevRect.ISize(wm),
                              aReflowInput.AvailableSize(wm).BSize(wm));
       ReflowOutput desiredSize(aReflowInput);
-      ReflowInput frameState(aPresContext, aReflowInput, frame, availSpace);
-      nsReflowStatus frameStatus;
 
-      // Reflow
+      StyleSizeOverrides sizeOverride;
+      if (frame->IsFlexItem()) {
+        // A flex item's size is determined by the flex algorithm, not solely by
+        // its style. Thus, the following overrides are necessary.
+        //
+        // Use the overflow container flex item's prev-in-flow inline-size since
+        // this continuation's inline-size is the same.
+        sizeOverride.mStyleISize.emplace(
+            StyleSize::LengthPercentage(LengthPercentage::FromAppUnits(
+                frame->StylePosition()->mBoxSizing == StyleBoxSizing::Border
+                    ? prevRect.ISize(wm)
+                    : prevInFlow->ContentSize(wm).ISize(wm))));
+
+        // An overflow container's block-size must be 0.
+        sizeOverride.mStyleBSize.emplace(
+            StyleSize::LengthPercentage(LengthPercentage::FromAppUnits(0)));
+      }
+      ReflowInput reflowInput(aPresContext, aReflowInput, frame, availSpace,
+                              Nothing(), {}, sizeOverride);
+
       LogicalPoint pos(wm, prevRect.IStart(wm), 0);
-      ReflowChild(frame, aPresContext, desiredSize, frameState, wm, pos,
+      nsReflowStatus frameStatus;
+      ReflowChild(frame, aPresContext, desiredSize, reflowInput, wm, pos,
                   containerSize, aFlags, frameStatus, &tracker);
-      // XXXfr Do we need to override any shrinkwrap effects here?
-      // e.g. desiredSize.Width() = prevRect.width;
-      FinishReflowChild(frame, aPresContext, desiredSize, &frameState, wm, pos,
+      FinishReflowChild(frame, aPresContext, desiredSize, &reflowInput, wm, pos,
                         containerSize, aFlags);
 
       // Handle continuations
@@ -2212,18 +2229,13 @@ LogicalSize nsContainerFrame::ComputeSizeWithIntrinsicDimensions(
   const bool isGridItem = IsGridItem();
   const bool isFlexItem =
       IsFlexItem() && !parentFrame->HasAnyStateBits(
-                          NS_STATE_FLEX_IS_EMULATING_LEGACY_WEBKIT_BOX |
-                          NS_STATE_FLEX_IS_EMULATING_LEGACY_MOZ_BOX);
-  // This variable only gets set (and used) if isFlexItem is true.  It
+                          NS_STATE_FLEX_IS_EMULATING_LEGACY_WEBKIT_BOX);
+  // This variable only gets meaningfully set if isFlexItem is true.  It
   // indicates which axis (in this frame's own WM) corresponds to its
   // flex container's main axis.
-  LogicalAxis flexMainAxis =
-      eLogicalAxisInline;  // (init to make valgrind happy)
-
-  if (isFlexItem) {
-    flexMainAxis = nsFlexContainerFrame::IsItemInlineAxisMainAxis(this)
-                       ? eLogicalAxisInline
-                       : eLogicalAxisBlock;
+  LogicalAxis flexMainAxis = eLogicalAxisBlock;
+  if (isFlexItem && nsFlexContainerFrame::IsItemInlineAxisMainAxis(this)) {
+    flexMainAxis = eLogicalAxisInline;
   }
 
   // Handle intrinsic sizes and their interaction with

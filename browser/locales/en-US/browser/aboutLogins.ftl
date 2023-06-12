@@ -5,8 +5,9 @@
 
 about-logins-page-title = Logins & Passwords
 
-login-filter =
+about-logins-login-filter =
   .placeholder = Search Logins
+  .key = F
 
 create-new-login-button =
   .title = Create new login
@@ -42,6 +43,14 @@ login-list-count =
   { $count ->
       [one] { $count } login
      *[other] { $count } logins
+  }
+# Variables
+#   $count (number) - Number of filtered logins
+#   $total (number) - Total number of logins
+login-list-filtered-count =
+  { $total ->
+      [one] { $count } of { $total } login
+     *[other] { $count } of { $total } logins
   }
 login-list-sort-label-text = Sort by:
 login-list-name-option = Name (A-Z)
@@ -221,7 +230,6 @@ about-logins-breach-alert-date = This breach occurred on { DATETIME($date, day: 
 # Variables:
 #   $hostname (String) - The hostname of the website associated with the login, e.g. "example.com"
 about-logins-breach-alert-link = Go to { $hostname }
-about-logins-breach-alert-learn-more-link = Learn more
 
 ## Vulnerable Password notification
 

@@ -11,6 +11,7 @@
 
 #include "mozilla/DebugOnly.h"
 #include "mozilla/IntegerRange.h"
+#include "mozilla/MathAlgorithms.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/PodOperations.h"
 #include "mozilla/ScopeExit.h"
@@ -1311,40 +1312,48 @@ bool GCMarker::doMarking(SliceBudget& budget, ShouldReportMarkTime reportTime) {
   return true;
 }
 
-void GCMarker::markCurrentColorInParallel(SliceBudget& budget) {
-  if (markColor() == MarkColor::Black) {
-    markOneColor<MarkingOptions::ParallelMarking, MarkColor::Black>(budget);
-    return;
-  }
-
-  markOneColor<MarkingOptions::ParallelMarking, MarkColor::Gray>(budget);
-}
-
 template <uint32_t opts, MarkColor color>
 bool GCMarker::markOneColor(SliceBudget& budget) {
-  MOZ_ASSERT(hasEntries(color));
-
   AutoSetMarkColor setColor(*this, color);
 
-  do {
-    if constexpr (bool(opts & MarkingOptions::ParallelMarking)) {
-      // TODO: It might be better to only check this occasionally, possibly
-      // combined with the slice budget check. Experiments with giving this its
-      // own counter resulted in worse performance.
-      if (parallelMarker_->hasWaitingTasks() && stack.canDonateWork()) {
-        parallelMarker_->donateWorkFrom(this);
-        MOZ_ASSERT(hasEntries(color));
-      }
+  while (processMarkStackTop<opts>(budget)) {
+    if (!hasEntries(color)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+bool GCMarker::markCurrentColorInParallel(SliceBudget& budget) {
+  if (markColor() == MarkColor::Black) {
+    return markOneColorInParallel<MarkColor::Black>(budget);
+  }
+
+  return markOneColorInParallel<MarkColor::Gray>(budget);
+}
+
+template <MarkColor color>
+bool GCMarker::markOneColorInParallel(SliceBudget& budget) {
+  AutoSetMarkColor setColor(*this, color);
+
+  ParallelMarker::AtomicCount& waitingTaskCount =
+      parallelMarker_->waitingTaskCountRef();
+
+  while (processMarkStackTop<MarkingOptions::ParallelMarking>(budget)) {
+    if (!hasEntries(color)) {
+      return true;
     }
 
-    if (!processMarkStackTop<opts>(budget)) {
-      return false;
+    // TODO: It might be better to only check this occasionally, possibly
+    // combined with the slice budget check. Experiments with giving this its
+    // own counter resulted in worse performance.
+    if (waitingTaskCount && stack.canDonateWork()) {
+      parallelMarker_->donateWorkFrom(this);
     }
+  }
 
-    MOZ_ASSERT_IF(color == MarkColor::Gray, !hasBlackEntries());
-  } while (hasEntries(color));
-
-  return true;
+  return false;
 }
 
 static inline void CheckForCompartmentMismatch(JSObject* obj, JSObject* obj2) {
@@ -1384,6 +1393,9 @@ inline bool GCMarker::processMarkStackTop(SliceBudget& budget) {
    * marking slices, so we must check slots and element ranges read from the
    * stack.
    */
+
+  MOZ_ASSERT(hasEntries(markColor()));
+  MOZ_ASSERT_IF(markColor() == MarkColor::Gray, !hasBlackEntries());
 
   JSObject* obj;             // The object being scanned.
   SlotsOrElementsKind kind;  // The kind of slot range being scanned, if any.
@@ -1777,13 +1789,17 @@ void MarkStack::moveWork(MarkStack& dst, MarkStack& src) {
   // owns |src|, and the thread that owns |dst| is blocked waiting on the
   // ParallelMarkTask::resumed condition variable.
 
+  // Limit the size of moves to stop threads with work spending too much time
+  // donating.
+  static const size_t MaxWordsToMove = 4096;
+
   MOZ_ASSERT(src.markColor() == dst.markColor());
   MOZ_ASSERT(!dst.hasEntries(dst.markColor()));
   MOZ_ASSERT(src.canDonateWork());
 
   size_t base = src.basePositionForCurrentColor();
   size_t totalWords = src.position() - base;
-  size_t wordsToMove = totalWords / 2;
+  size_t wordsToMove = std::min(totalWords / 2, MaxWordsToMove);
 
   size_t targetPos = src.position() - wordsToMove;
   MOZ_ASSERT(src.position() >= base);
@@ -1927,15 +1943,15 @@ inline bool MarkStack::ensureSpace(size_t count) {
 }
 
 MOZ_NEVER_INLINE bool MarkStack::enlarge(size_t count) {
-  size_t newCapacity = capacity() * 2;
+  size_t required = capacity() + count;
+  size_t newCapacity = mozilla::RoundUpPow2(required);
 
 #ifdef JS_GC_ZEAL
   newCapacity = std::min(newCapacity, maxCapacity_.ref());
-#endif
-
-  if (newCapacity < capacity() + count) {
+  if (newCapacity < required) {
     return false;
   }
+#endif
 
   return resize(newCapacity);
 }
@@ -1977,7 +1993,6 @@ size_t MarkStack::sizeOfExcludingThis(
 GCMarker::GCMarker(JSRuntime* rt)
     : tracer_(mozilla::VariantType<MarkingTracer>(), rt, this),
       runtime_(rt),
-      stack(),
       state(NotActive),
       incrementalWeakMapMarkingEnabled(
           TuningDefaults::IncrementalWeakMapMarkingEnabled)

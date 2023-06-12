@@ -5,13 +5,12 @@
 @namespace html "http://www.w3.org/1999/xhtml";
 
 /* Global rules */
-* {
+:root {
   user-select: text;
 }
 
 #preferences-root {
   text-rendering: optimizeLegibility;
-  -moz-box-layout: flex;
 }
 
 @media not print {
@@ -90,8 +89,9 @@ description.indent,
 
 button,
 treecol,
-html|option {
-  /* override the * rule */
+menulist,
+html|select {
+  /* override the root rule */
   user-select: none;
 }
 
@@ -111,6 +111,7 @@ label {
 
 .tip-caption {
   font-size: .9em;
+  color: var(--in-content-deemphasized-text);
 }
 
 menulist::part(label),
@@ -1408,7 +1409,7 @@ richlistitem .text-link:hover {
   content: url("chrome://browser/content/preferences/web-appearance-dark.svg")
 }
 
-.web-appearance-choice img:dir(rtl) {
+.web-appearance-choice img:-moz-locale-dir(rtl) {
   transform: scaleX(-1);
 }
 

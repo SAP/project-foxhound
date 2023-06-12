@@ -24,7 +24,9 @@ var { PlacesSyncUtils } = ChromeUtils.importESModule(
 var { SyncedBookmarksMirror } = ChromeUtils.importESModule(
   "resource://gre/modules/SyncedBookmarksMirror.sys.mjs"
 );
-var { CommonUtils } = ChromeUtils.import("resource://services-common/utils.js");
+var { CommonUtils } = ChromeUtils.importESModule(
+  "resource://services-common/utils.sys.mjs"
+);
 var { FileTestUtils } = ChromeUtils.importESModule(
   "resource://testing-common/FileTestUtils.sys.mjs"
 );
@@ -398,41 +400,8 @@ BookmarkObserver.prototype = {
       }
     }
   },
-  onItemChanged(
-    itemId,
-    property,
-    isAnnoProperty,
-    newValue,
-    lastModified,
-    type,
-    parentId,
-    guid,
-    parentGuid,
-    oldValue,
-    source
-  ) {
-    let params = {
-      itemId,
-      property,
-      isAnnoProperty,
-      newValue,
-      type,
-      parentId,
-      guid,
-      parentGuid,
-      oldValue,
-      source,
-    };
-    if (!this.ignoreDates) {
-      params.lastModified = lastModified;
-    }
-    this.notifications.push({ name: "onItemChanged", params });
-  },
-
-  QueryInterface: ChromeUtils.generateQI(["nsINavBookmarkObserver"]),
 
   check(expectedNotifications) {
-    PlacesUtils.bookmarks.removeObserver(this);
     PlacesUtils.observers.removeListener(
       [
         "bookmark-added",
@@ -457,7 +426,6 @@ BookmarkObserver.prototype = {
 
 function expectBookmarkChangeNotifications(options) {
   let observer = new BookmarkObserver(options);
-  PlacesUtils.bookmarks.addObserver(observer);
   PlacesUtils.observers.addListener(
     [
       "bookmark-added",

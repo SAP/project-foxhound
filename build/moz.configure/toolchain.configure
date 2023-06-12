@@ -244,8 +244,12 @@ add_old_configure_assignment("TOOLCHAIN_PREFIX", first_toolchain_prefix)
 include("compilers-util.configure")
 
 
-def try_preprocess(compiler, language, source, onerror=None):
-    return try_invoke_compiler(compiler, language, source, ["-E"], onerror)
+def try_preprocess(
+    configure_cache, compiler, language, source, onerror=None, wrapper=[]
+):
+    return try_invoke_compiler(
+        configure_cache, compiler, language, source, ["-E"], onerror, wrapper
+    )
 
 
 @imports(_from="mozbuild.configure.constants", _import="CompilerType")
@@ -254,7 +258,7 @@ def try_preprocess(compiler, language, source, onerror=None):
 @imports(_from="mozbuild.configure.constants", _import="OS_preprocessor_checks")
 @imports(_from="textwrap", _import="dedent")
 @imports(_from="__builtin__", _import="Exception")
-def get_compiler_info(compiler, language):
+def get_compiler_info(configure_cache, compiler, language):
     """Returns information about the given `compiler` (command line in the
     form of a list or tuple), in the given `language`.
 
@@ -328,7 +332,7 @@ def get_compiler_info(compiler, language):
     """
     )
 
-    result = try_preprocess(compiler, language, check)
+    result = try_preprocess(configure_cache, compiler, language, check)
 
     if not result:
         raise FatalCheckError("Unknown compiler or compiler not supported.")
@@ -406,8 +410,8 @@ def same_arch_different_bits():
 
 @imports(_from="mozbuild.shellutil", _import="quote")
 @imports(_from="mozbuild.configure.constants", _import="OS_preprocessor_checks")
-def check_compiler(compiler, language, target):
-    info = get_compiler_info(compiler, language)
+def check_compiler(configure_cache, compiler, language, target):
+    info = get_compiler_info(configure_cache, compiler, language)
 
     flags = []
 
@@ -864,7 +868,13 @@ def default_c_compilers(host_or_target, other_c_compiler=None):
         host_or_target, target, toolchain_prefix, *other_c_compiler
     ):
         if host_or_target.kernel == "WINNT":
-            supported = types = ("clang-cl", "clang")
+            if host_or_target.abi:
+                if host_or_target.abi == "msvc":
+                    supported = types = ("clang-cl",)
+                elif host_or_target.abi == "mingw":
+                    supported = types = ("clang",)
+            else:
+                supported = types = ("clang-cl", "clang")
         elif host_or_target.kernel == "Darwin":
             types = ("clang",)
             supported = ("clang", "gcc")
@@ -1182,6 +1192,7 @@ def compiler(
     )
 
     @depends(
+        configure_cache,
         compiler,
         provided_compiler,
         compiler_wrapper,
@@ -1196,6 +1207,7 @@ def compiler(
     @imports(_from="mozbuild.shellutil", _import="quote")
     @imports("os")
     def valid_compiler(
+        configure_cache,
         compiler,
         provided_compiler,
         compiler_wrapper,
@@ -1222,7 +1234,9 @@ def compiler(
             wrapper.extend(provided_compiler.wrapper)
             flags.extend(provided_compiler.flags)
 
-        info = check_compiler(wrapper + [compiler] + flags, language, host_or_target)
+        info = check_compiler(
+            configure_cache, wrapper + [compiler] + flags, language, host_or_target
+        )
 
         if info.type == "clang" and language == "C++" and host_or_target.os == "OSX":
             flags.append("-stdlib=libc++")
@@ -1240,7 +1254,10 @@ def compiler(
             if info.flags:
                 flags += info.flags
                 info = check_compiler(
-                    wrapper + [compiler] + flags, language, host_or_target
+                    configure_cache,
+                    wrapper + [compiler] + flags,
+                    language,
+                    host_or_target,
                 )
         except FatalCheckError:
             pass
@@ -1331,13 +1348,21 @@ def compiler(
                         # to support it, so check we're using a patched version.
                         info.version >= "15.0"
                         and try_preprocess(
-                            wrapper + [compiler] + flags + overlay_flags,
+                            configure_cache,
+                            [compiler] + flags + overlay_flags,
                             language,
                             "",
                             onerror=lambda: False,
+                            wrapper=wrapper,
                         )
                     ):
                         flags.extend(overlay_flags)
+
+        if (info.type, host_or_target.abi) in (
+            ("clang", "msvc"),
+            ("clang-cl", "mingw"),
+        ):
+            raise FatalCheckError("Unknown compiler or compiler not supported.")
 
         # If you want to bump the version check here ensure the version
         # is known for Xcode in get_compiler_info.
@@ -1508,6 +1533,32 @@ host_cxx_compiler = compiler(
     other_compiler=cxx_compiler,
     other_c_compiler=c_compiler,
 )
+
+
+@template
+def windows_abi(host_or_target, c_compiler):
+    @depends(host_or_target)
+    def windows_abi(host_or_target):
+        if host_or_target.os == "WINNT":
+            return host_or_target.abi
+
+    @depends(host_or_target, windows_abi)
+    def need_windows_abi_from_compiler(host_or_target, windows_abi):
+        return host_or_target.os == "WINNT" and windows_abi is None
+
+    @depends(host_or_target, c_compiler, when=need_windows_abi_from_compiler)
+    def windows_abi_from_compiler(host_or_target, c_compiler):
+        if host_or_target.os == "WINNT":
+            if c_compiler.type == "clang-cl":
+                return "msvc"
+            return "mingw"
+
+    return windows_abi | windows_abi_from_compiler
+
+
+target_windows_abi = windows_abi(target, c_compiler)
+host_windows_abi = windows_abi(host, host_c_compiler)
+
 
 # Generic compiler-based conditions.
 building_with_gcc = depends(c_compiler)(lambda info: info.type == "gcc")

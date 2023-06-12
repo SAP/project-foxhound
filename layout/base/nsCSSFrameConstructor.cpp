@@ -201,15 +201,11 @@ static FrameCtorDebugFlags gFlags[] = {
 #  define NUM_DEBUG_FLAGS (sizeof(gFlags) / sizeof(gFlags[0]))
 #endif
 
-#include "nsTreeColFrame.h"
-
 //------------------------------------------------------------------
 
 nsIFrame* NS_NewLeafBoxFrame(PresShell* aPresShell, ComputedStyle* aStyle);
 
 nsIFrame* NS_NewRangeFrame(PresShell* aPresShell, ComputedStyle* aStyle);
-
-nsIFrame* NS_NewImageBoxFrame(PresShell* aPresShell, ComputedStyle* aStyle);
 
 nsIFrame* NS_NewTextBoxFrame(PresShell* aPresShell, ComputedStyle* aStyle);
 
@@ -235,6 +231,7 @@ nsIFrame* NS_NewScrollbarFrame(PresShell* aPresShell, ComputedStyle* aStyle);
 nsIFrame* NS_NewScrollbarButtonFrame(PresShell* aPresShell,
                                      ComputedStyle* aStyle);
 
+nsIFrame* NS_NewXULImageFrame(PresShell*, ComputedStyle*);
 nsIFrame* NS_NewImageFrameForContentProperty(PresShell*, ComputedStyle*);
 nsIFrame* NS_NewImageFrameForGeneratedContentIndex(PresShell*, ComputedStyle*);
 nsIFrame* NS_NewImageFrameForListStyleImage(PresShell*, ComputedStyle*);
@@ -2081,11 +2078,10 @@ nsIFrame* nsCSSFrameConstructor::ConstructTable(nsFrameConstructorState& aState,
 
   // Process children
   nsFrameConstructorSaveState absoluteSaveState;
-  const nsStyleDisplay* display = outerComputedStyle->StyleDisplay();
 
   // Mark the table frame as an absolute container if needed
   newFrame->AddStateBits(NS_FRAME_CAN_HAVE_ABSPOS_CHILDREN);
-  if (display->IsAbsPosContainingBlock(newFrame)) {
+  if (newFrame->IsAbsPosContainingBlock()) {
     aState.PushAbsoluteContainingBlock(newFrame, newFrame, absoluteSaveState);
   }
 
@@ -2118,21 +2114,14 @@ nsIFrame* nsCSSFrameConstructor::ConstructTable(nsFrameConstructorState& aState,
   return newFrame;
 }
 
-static void MakeTablePartAbsoluteContainingBlockIfNeeded(
-    nsFrameConstructorState& aState, const nsStyleDisplay* aDisplay,
-    nsFrameConstructorSaveState& aAbsSaveState, nsContainerFrame* aFrame) {
+static void MakeTablePartAbsoluteContainingBlock(
+    nsFrameConstructorState& aState, nsFrameConstructorSaveState& aAbsSaveState,
+    nsContainerFrame* aFrame) {
   // If we're positioned, then we need to become an absolute containing block
-  // for any absolutely positioned children and register for post-reflow fixup.
-  //
-  // Note that usually if a frame type can be an absolute containing block, we
-  // always set NS_FRAME_CAN_HAVE_ABSPOS_CHILDREN, whether it actually is or
-  // not. However, in this case flag serves the additional purpose of indicating
-  // that the frame was registered with its table frame. This allows us to avoid
-  // the overhead of unregistering the frame in most cases.
-  if (aDisplay->IsAbsPosContainingBlock(aFrame)) {
-    aFrame->AddStateBits(NS_FRAME_CAN_HAVE_ABSPOS_CHILDREN);
+  // for any absolutely positioned children.
+  aFrame->AddStateBits(NS_FRAME_CAN_HAVE_ABSPOS_CHILDREN);
+  if (aFrame->IsAbsPosContainingBlock()) {
     aState.PushAbsoluteContainingBlock(aFrame, aFrame, aAbsSaveState);
-    nsTableFrame::RegisterPositionedTablePart(aFrame);
   }
 }
 
@@ -2163,8 +2152,7 @@ nsIFrame* nsCSSFrameConstructor::ConstructTableRowOrRowGroup(
   InitAndRestoreFrame(aState, content, aParentFrame, newFrame);
 
   nsFrameConstructorSaveState absoluteSaveState;
-  MakeTablePartAbsoluteContainingBlockIfNeeded(aState, aDisplay,
-                                               absoluteSaveState, newFrame);
+  MakeTablePartAbsoluteContainingBlock(aState, absoluteSaveState, newFrame);
 
   nsFrameConstructorSaveState floatSaveState;
   aState.MaybePushFloatContainingBlock(newFrame, floatSaveState);
@@ -2263,8 +2251,7 @@ nsIFrame* nsCSSFrameConstructor::ConstructTableCell(
   InitAndRestoreFrame(aState, content, newFrame, cellInnerFrame);
 
   nsFrameConstructorSaveState absoluteSaveState;
-  MakeTablePartAbsoluteContainingBlockIfNeeded(aState, aDisplay,
-                                               absoluteSaveState, newFrame);
+  MakeTablePartAbsoluteContainingBlock(aState, absoluteSaveState, newFrame);
 
   nsFrameConstructorSaveState floatSaveState;
   aState.MaybePushFloatContainingBlock(cellInnerFrame, floatSaveState);
@@ -2369,6 +2356,7 @@ nsIFrame* nsCSSFrameConstructor::ConstructDocElementFrame(
   if (!aDocElement->HasServoData()) {
     mPresShell->StyleSet()->StyleNewSubtree(aDocElement);
   }
+  aDocElement->UnsetFlags(NODE_DESCENDANTS_NEED_FRAMES | NODE_NEEDS_FRAME);
 
   // Make sure to call UpdateViewportScrollStylesOverride before
   // SetUpDocElementContainingBlock, since it sets up our scrollbar state
@@ -2520,7 +2508,7 @@ nsIFrame* nsCSSFrameConstructor::ConstructDocElementFrame(
     processChildren = true;
 
     contentFrame->AddStateBits(NS_FRAME_CAN_HAVE_ABSPOS_CHILDREN);
-    if (display->IsAbsPosContainingBlock(contentFrame)) {
+    if (contentFrame->IsAbsPosContainingBlock()) {
       state.PushAbsoluteContainingBlock(contentFrame, contentFrame,
                                         absoluteSaveState);
     }
@@ -2557,8 +2545,7 @@ nsIFrame* nsCSSFrameConstructor::ConstructDocElementFrame(
         state, aDocElement,
         state.GetGeometricParent(*display, mDocElementContainingBlock),
         mDocElementContainingBlock, computedStyle, &contentFrame, frameList,
-        display->IsAbsPosContainingBlock(contentFrame) ? contentFrame
-                                                       : nullptr);
+        contentFrame->IsAbsPosContainingBlock() ? contentFrame : nullptr);
   }
 
   MOZ_ASSERT(frameList.FirstChild());
@@ -2730,7 +2717,7 @@ void nsCSSFrameConstructor::SetUpDocElementContainingBlock(
     if (isXUL) {
       return false;
     }
-    if (aDocElement->OwnerDoc()->IsDocumentURISchemeChrome() &&
+    if (aDocElement->OwnerDoc()->ChromeRulesEnabled() &&
         aDocElement->AsElement()->AttrValueIs(
             kNameSpaceID_None, nsGkAtoms::scrolling, nsGkAtoms::_false,
             eCaseMatters)) {
@@ -3307,7 +3294,7 @@ nsIFrame* nsCSSFrameConstructor::ConstructBlockRubyFrame(
 
   nsFrameConstructorSaveState absoluteSaveState;
   blockFrame->AddStateBits(NS_FRAME_CAN_HAVE_ABSPOS_CHILDREN);
-  if (aStyleDisplay->IsAbsPosContainingBlock(newFrame)) {
+  if (newFrame->IsAbsPosContainingBlock()) {
     aState.PushAbsoluteContainingBlock(blockFrame, blockFrame,
                                        absoluteSaveState);
   }
@@ -3840,8 +3827,7 @@ void nsCSSFrameConstructor::ConstructFrameFromItemInternal(
 
       // Now figure out whether newFrame or outerFrame should be the
       // absolute container.
-      auto outerDisplay = outerStyle->StyleDisplay();
-      if (outerDisplay->IsAbsPosContainingBlock(outerFrame)) {
+      if (outerFrame->IsAbsPosContainingBlock()) {
         maybeAbsoluteContainingBlock = outerFrame;
         maybeAbsoluteContainingBlockStyleFrame = outerFrame;
         innerFrame->AddStateBits(NS_FRAME_CAN_HAVE_ABSPOS_CHILDREN);
@@ -4143,9 +4129,8 @@ nsCSSFrameConstructor::FindXULTagData(const Element& aElement,
       NS_NewMenuPopupFrame, FCDATA_IS_POPUP | FCDATA_SKIP_ABSPOS_PUSH);
 
   static constexpr FrameConstructionDataByTag sXULTagData[] = {
-      SIMPLE_XUL_CREATE(image, NS_NewImageBoxFrame),
+      SIMPLE_XUL_CREATE(image, NS_NewXULImageFrame),
       SIMPLE_XUL_CREATE(treechildren, NS_NewTreeBodyFrame),
-      SIMPLE_XUL_CREATE(treecol, NS_NewTreeColFrame),
       SIMPLE_TAG_CHAIN(label,
                        nsCSSFrameConstructor::FindXULLabelOrDescriptionData),
       SIMPLE_TAG_CHAIN(description,
@@ -4583,10 +4568,9 @@ nsIFrame* nsCSSFrameConstructor::ConstructScrollableBlock(
   aState.AddChild(newFrame, aFrameList, content, aParentFrame);
 
   nsFrameList blockList;
-  ConstructBlock(
-      aState, content, newFrame, newFrame, scrolledContentStyle, &scrolledFrame,
-      blockList,
-      aDisplay->IsAbsPosContainingBlock(newFrame) ? newFrame : nullptr);
+  ConstructBlock(aState, content, newFrame, newFrame, scrolledContentStyle,
+                 &scrolledFrame, blockList,
+                 newFrame->IsAbsPosContainingBlock() ? newFrame : nullptr);
 
   MOZ_ASSERT(blockList.OnlyChild() == scrolledFrame,
              "Scrollframe's frameList should be exactly the scrolled frame!");
@@ -4620,11 +4604,10 @@ nsIFrame* nsCSSFrameConstructor::ConstructNonScrollableBlock(
 
   nsContainerFrame* newFrame = NS_NewBlockFrame(mPresShell, computedStyle);
   newFrame->AddStateBits(flags);
-  ConstructBlock(
-      aState, aItem.mContent,
-      aState.GetGeometricParent(*aDisplay, aParentFrame), aParentFrame,
-      computedStyle, &newFrame, aFrameList,
-      aDisplay->IsAbsPosContainingBlock(newFrame) ? newFrame : nullptr);
+  ConstructBlock(aState, aItem.mContent,
+                 aState.GetGeometricParent(*aDisplay, aParentFrame),
+                 aParentFrame, computedStyle, &newFrame, aFrameList,
+                 newFrame->IsAbsPosContainingBlock() ? newFrame : nullptr);
   return newFrame;
 }
 
@@ -6394,9 +6377,12 @@ nsCSSFrameConstructor::GetRangeInsertionPoint(nsIContent* aStartChild,
                                               nsIContent* aEndChild,
                                               InsertionKind aInsertionKind) {
   MOZ_ASSERT(aStartChild);
-  MOZ_ASSERT(aStartChild->GetParent());
 
   nsIContent* parent = aStartChild->GetParent();
+  if (!parent) {
+    IssueSingleInsertNofications(aStartChild, aEndChild, aInsertionKind);
+    return {};
+  }
 
   // If the children of the container may be distributed to different insertion
   // points, insert them separately and bail out, letting ContentInserted handle
@@ -6886,13 +6872,17 @@ void nsCSSFrameConstructor::ContentRangeInserted(nsIContent* aStartChild,
     MOZ_ASSERT(isSingleInsert,
                "root node insertion should be a single insertion");
     Element* docElement = mDocument->GetRootElement();
-
     if (aStartChild != docElement) {
       // Not the root element; just bail out
       return;
     }
 
     MOZ_ASSERT(!mRootElementFrame, "root element frame already created");
+    if (aInsertionKind == InsertionKind::Async) {
+      docElement->SetFlags(NODE_NEEDS_FRAME);
+      LazilyStyleNewChildRange(docElement, nullptr);
+      return;
+    }
 
     // Create frames for the document element and its child elements
     if (ConstructDocElementFrame(docElement)) {
@@ -7895,9 +7885,8 @@ nsIFrame* nsCSSFrameConstructor::CreateContinuingTableFrame(
       headerFooterFrame->Init(headerFooter, newFrame, nullptr);
 
       nsFrameConstructorSaveState absoluteSaveState;
-      MakeTablePartAbsoluteContainingBlockIfNeeded(
-          state, headerFooterComputedStyle->StyleDisplay(), absoluteSaveState,
-          headerFooterFrame);
+      MakeTablePartAbsoluteContainingBlock(state, absoluteSaveState,
+                                           headerFooterFrame);
 
       nsFrameConstructorSaveState floatSaveState;
       state.MaybePushFloatContainingBlock(headerFooterFrame, floatSaveState);
@@ -7970,16 +7959,10 @@ nsIFrame* nsCSSFrameConstructor::CreateContinuingFrame(
   } else if (LayoutFrameType::TableRowGroup == frameType) {
     newFrame = NS_NewTableRowGroupFrame(mPresShell, computedStyle);
     newFrame->Init(content, aParentFrame, aFrame);
-    if (newFrame->HasAnyStateBits(NS_FRAME_CAN_HAVE_ABSPOS_CHILDREN)) {
-      nsTableFrame::RegisterPositionedTablePart(newFrame);
-    }
   } else if (LayoutFrameType::TableRow == frameType) {
     nsTableRowFrame* rowFrame = NS_NewTableRowFrame(mPresShell, computedStyle);
 
     rowFrame->Init(content, aParentFrame, aFrame);
-    if (rowFrame->HasAnyStateBits(NS_FRAME_CAN_HAVE_ABSPOS_CHILDREN)) {
-      nsTableFrame::RegisterPositionedTablePart(rowFrame);
-    }
 
     // Create a continuing frame for each table cell frame
     nsFrameList newChildList;
@@ -8008,9 +7991,6 @@ nsIFrame* nsCSSFrameConstructor::CreateContinuingFrame(
         NS_NewTableCellFrame(mPresShell, computedStyle, tableFrame);
 
     cellFrame->Init(content, aParentFrame, aFrame);
-    if (cellFrame->HasAnyStateBits(NS_FRAME_CAN_HAVE_ABSPOS_CHILDREN)) {
-      nsTableFrame::RegisterPositionedTablePart(cellFrame);
-    }
 
     // Create a continuing area frame
     nsIFrame* blockFrame = aFrame->PrincipalChildList().FirstChild();

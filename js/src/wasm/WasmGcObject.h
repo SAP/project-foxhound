@@ -11,6 +11,7 @@
 #include "mozilla/Maybe.h"
 
 #include "gc/Allocator.h"
+#include "gc/Pretenuring.h"
 #include "vm/ArrayBufferObject.h"
 #include "vm/JSObject.h"
 #include "wasm/WasmInstanceData.h"
@@ -111,30 +112,13 @@ class WasmGcObject : public JSObject {
                                              MutableHandleIdVector properties,
                                              bool enumerableOnly);
 
-  struct MOZ_STACK_CLASS AllocArgs {
-    explicit AllocArgs(JSContext* cx)
-        : shape(cx),
-          clasp(nullptr),
-          allocKind(gc::AllocKind::LIMIT),
-          initialHeap(gc::DefaultHeap) {}
-    AllocArgs(JSContext* cx, wasm::TypeDefInstanceData* typeDefData)
-        : shape(cx, typeDefData->shape),
-          clasp(typeDefData->clasp),
-          allocKind(typeDefData->allocKind),
-          initialHeap(typeDefData->initialHeap) {}
-
-    static inline bool compute(JSContext* cx, const wasm::TypeDef* typeDef,
-                               AllocArgs* args);
-
-    Rooted<Shape*> shape;
-    const JSClass* clasp;
-    gc::AllocKind allocKind;
-    gc::InitialHeap initialHeap;
-  };
-
  protected:
-  static WasmGcObject* create(JSContext* cx, const wasm::TypeDef* typeDef,
-                              const AllocArgs& args);
+  // Create the GcObject (struct/array-specific fields are uninitialised).
+  // The type, shape, class pointer, alloc site and alloc kind are taken
+  // from `typeDefData`; the initial heap must be specified separately.
+  static WasmGcObject* create(JSContext* cx,
+                              wasm::TypeDefInstanceData* typeDefData,
+                              js::gc::InitialHeap initialHeap);
 };
 
 //=========================================================================
@@ -157,17 +141,16 @@ class WasmArrayObject : public WasmGcObject {
   // AllocKind for object creation
   static gc::AllocKind allocKind();
 
-  // Creates a new array typed object initialized to zero for the specified
-  // number of elements.  Reports an error if the number of elements is too
-  // large, or if there is an out of memory.  `typeDef` is the overall array
-  // type, not the element type.
+  // Creates a new array typed object, optionally initialized to zero, for the
+  // specified number of elements.  Reports an error if the number of elements
+  // is too large, or if there is an out of memory error.  The element type,
+  // shape, class pointer, alloc site and alloc kind are taken from
+  // `typeDefData`; the initial heap must be specified separately.
+  template <bool ZeroFields = true>
   static WasmArrayObject* createArray(JSContext* cx,
-                                      const wasm::TypeDef* typeDef,
+                                      wasm::TypeDefInstanceData* typeDefData,
+                                      js::gc::InitialHeap initialHeap,
                                       uint32_t numElements);
-  static WasmArrayObject* createArray(JSContext* cx,
-                                      const wasm::TypeDef* typeDef,
-                                      uint32_t numElements,
-                                      const WasmGcObject::AllocArgs& args);
 
   // JIT accessors
   static constexpr size_t offsetOfNumElements() {
@@ -180,6 +163,7 @@ class WasmArrayObject : public WasmGcObject {
   // Tracing and finalization
   static void obj_trace(JSTracer* trc, JSObject* object);
   static void obj_finalize(JS::GCContext* gcx, JSObject* object);
+  static size_t obj_moved(JSObject* obj, JSObject* old);
 
   void storeVal(const wasm::Val& val, uint32_t itemIndex);
   void fillVal(const wasm::Val& val, uint32_t itemIndex, uint32_t len);
@@ -232,13 +216,14 @@ class WasmStructObject : public WasmGcObject {
   static const JSClass* classForTypeDef(const wasm::TypeDef* typeDef);
   static js::gc::AllocKind allocKindForTypeDef(const wasm::TypeDef* typeDef);
 
-  // Creates a new struct typed object initialized to zero. Reports if there
-  // is an out of memory error.  `typeDef` is the type of the struct.
+  // Creates a new struct typed object, optionally initialized to zero.
+  // Reports if there is an out of memory error.  The structure's type, shape,
+  // class pointer, alloc site and alloc kind are taken from `typeDefData`;
+  // the initial heap must be specified separately.
+  template <bool ZeroFields = true>
   static WasmStructObject* createStruct(JSContext* cx,
-                                        const wasm::TypeDef* typeDef);
-  static WasmStructObject* createStruct(JSContext* cx,
-                                        const wasm::TypeDef* typeDef,
-                                        const WasmGcObject::AllocArgs& args);
+                                        wasm::TypeDefInstanceData* typeDefData,
+                                        js::gc::InitialHeap initialHeap);
 
   // Given the total number of data bytes required (including alignment
   // holes), return the number of inline and outline bytes required.
@@ -270,6 +255,7 @@ class WasmStructObject : public WasmGcObject {
   // Tracing and finalization
   static void obj_trace(JSTracer* trc, JSObject* object);
   static void obj_finalize(JS::GCContext* gcx, JSObject* object);
+  static size_t obj_moved(JSObject* obj, JSObject* old);
 
   void storeVal(const wasm::Val& val, uint32_t fieldIndex);
 };

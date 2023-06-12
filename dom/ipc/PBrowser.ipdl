@@ -32,6 +32,7 @@ include "mozilla/AntiTrackingIPCUtils.h";
 include "mozilla/dom/BindingIPCUtils.h";
 include "mozilla/dom/CSPMessageUtils.h";
 include "mozilla/dom/DocShellMessageUtils.h";
+include "mozilla/dom/FilePickerMessageUtils.h";
 include "mozilla/dom/PermissionMessageUtils.h";
 include "mozilla/dom/ReferrerInfoUtils.h";
 include "mozilla/dom/TabMessageUtils.h";
@@ -108,6 +109,7 @@ using mozilla::AspectRatio from "mozilla/AspectRatio.h";
 using mozilla::NativeKeyBindingsType from "mozilla/NativeKeyBindingsType.h";
 using mozilla::StyleImageRendering from "mozilla/ServoStyleConsts.h";
 [MoveOnly] using class mozilla::ipc::BigBuffer from "mozilla/ipc/BigBuffer.h";
+using nsIFilePicker::Mode from "nsIFilePicker.h";
 
 namespace mozilla {
 namespace dom {
@@ -169,6 +171,10 @@ struct PrintPreviewResultInfo
   // If present, indicates if the page should be printed landscape when true or
   // portrait when false;
   bool? printLandscape;
+  // The at-page specified page width or null when no width is provided.
+  float? pageWidth;
+  // The at-page specified page height or null when no height is provided.
+  float? pageHeight;
 };
 
 /**
@@ -424,7 +430,7 @@ parent:
      */
     async PColorPicker(nsString title, nsString initialColor, nsString[] defaultColors);
 
-    async PFilePicker(nsString aTitle, int16_t aMode);
+    async PFilePicker(nsString aTitle, Mode aMode);
 
     /**
      * Tells the containing widget whether the given input block results in a

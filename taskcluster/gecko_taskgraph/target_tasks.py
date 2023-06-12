@@ -748,12 +748,8 @@ def target_tasks_general_perf_testing(full_task_graph, parameters, graph_config)
             # Select some browsertime tasks as desktop smoke-tests
             if "browsertime" in try_name:
                 if "chrome" in try_name:
-                    if "tp6" in try_name and "macosx1014" in platform:
-                        return False
                     return True
                 if "chromium" in try_name:
-                    if "tp6" in try_name and "macosx1014" in platform:
-                        return False
                     return True
                 if "-live" in try_name:
                     return True
@@ -789,10 +785,16 @@ def target_tasks_general_perf_testing(full_task_graph, parameters, graph_config)
                 return True
             # Select fenix resource usage tests
             if "fenix" in try_name:
+                # Bug 1816421 disable fission perf tests
+                if "-fis" in try_name:
+                    return False
                 if "-power" in try_name:
                     return True
             # Select geckoview resource usage tests
             if "geckoview" in try_name:
+                # Bug 1816421 disable fission perf tests
+                if "-fis" in try_name:
+                    return False
                 # Run cpu+memory, and power tests
                 cpu_n_memory_task = "-cpu" in try_name and "-memory" in try_name
                 power_task = "-power" in try_name

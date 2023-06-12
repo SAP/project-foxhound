@@ -113,6 +113,7 @@ namespace jit {
   _(js::jit::AllocateDependentString)                                 \
   _(js::jit::ArrayPushDensePure)                                      \
   _(js::jit::AssertMapObjectHash)                                     \
+  _(js::jit::AssertPropertyLookup)                                    \
   _(js::jit::AssertSetObjectHash)                                     \
   _(js::jit::AssertValidBigIntPtr)                                    \
   _(js::jit::AssertValidObjectPtr)                                    \
@@ -136,9 +137,9 @@ namespace jit {
   _(js::jit::GetContextSensitiveInterpreterStub)                      \
   _(js::jit::GetIndexFromString)                                      \
   _(js::jit::GetInt32FromStringPure)                                  \
+  _(js::jit::GetNativeDataPropertyByIdPure)                           \
+  _(js::jit::GetNativeDataPropertyByNamePure)                         \
   _(js::jit::GetNativeDataPropertyByValuePure)                        \
-  _(js::jit::GetNativeDataPropertyPure)                               \
-  _(js::jit::GetNativeDataPropertyPureFallback)                       \
   _(js::jit::GlobalHasLiveOnDebuggerStatement)                        \
   _(js::jit::HandleCodeCoverageAtPC)                                  \
   _(js::jit::HandleCodeCoverageAtPrologue)                            \

@@ -127,6 +127,16 @@ class ProviderQuickActions extends UrlbarProvider {
       return;
     }
 
+    // If all actions are inactive, don't show anything.
+    if (
+      results.every(key => {
+        const action = this.#actions.get(key);
+        return action.isActive && !action.isActive();
+      })
+    ) {
+      return;
+    }
+
     // If we are in the Actions searchMode then we want to show all the actions
     // but not when we are in the normal url mode on first focus.
     if (
@@ -249,7 +259,7 @@ class ProviderQuickActions extends UrlbarProvider {
   onEngagement(isPrivate, state, queryContext, details) {
     let result = this.#resultFromLastQuery;
     this.#resultFromLastQuery = null;
-    if (state == "engagement") {
+    if (state == "engagement" && queryContext) {
       // Find the quickaction result that's currently visible in the view.
       // It's probably the result from the last query so check it first, but due
       // to the async nature of how results are added to the view and made

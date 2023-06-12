@@ -9,6 +9,7 @@
 
 #include "mozilla/RestyleManager.h"
 
+#include "mozilla/AnimationUtils.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/AutoRestyleTimelineMarker.h"
 #include "mozilla/AutoTimelineMarker.h"
@@ -826,7 +827,7 @@ static bool RecomputePosition(nsIFrame* aFrame) {
   // the frame, and then get the offsets and size from it. If the frame's size
   // doesn't need to change, we can simply update the frame position. Otherwise
   // we fall back to a reflow.
-  RefPtr<gfxContext> rc =
+  UniquePtr<gfxContext> rc =
       aFrame->PresShell()->CreateReferenceRenderingContext();
 
   // Construct a bogus parent reflow input so that there's a usable reflow input
@@ -837,7 +838,7 @@ static bool RecomputePosition(nsIFrame* aFrame) {
   LogicalSize parentSize = parentFrame->GetLogicalSize();
 
   nsFrameState savedState = parentFrame->GetStateBits();
-  ReflowInput parentReflowInput(aFrame->PresContext(), parentFrame, rc,
+  ReflowInput parentReflowInput(aFrame->PresContext(), parentFrame, rc.get(),
                                 parentSize);
   parentFrame->RemoveStateBits(~nsFrameState(0));
   parentFrame->AddStateBits(savedState);
@@ -852,7 +853,7 @@ static bool RecomputePosition(nsIFrame* aFrame) {
                   parentFrame->IsTableFrame())) {
     const auto cbWM = cbFrame->GetWritingMode();
     LogicalSize cbSize = cbFrame->GetLogicalSize();
-    cbReflowInput.emplace(cbFrame->PresContext(), cbFrame, rc, cbSize);
+    cbReflowInput.emplace(cbFrame->PresContext(), cbFrame, rc.get(), cbSize);
     cbReflowInput->SetComputedLogicalMargin(
         cbWM, cbFrame->GetLogicalUsedMargin(cbWM));
     cbReflowInput->SetComputedLogicalPadding(
@@ -1047,9 +1048,10 @@ static nsIFrame* ContainingBlockForFrame(nsIFrame* aFrame) {
   }
   // Combobox frames are easy as well because they can't have positioned
   // children anyways.
-  // Button frames are also easy because the containing block is the frame
-  // itself.
-  if (aFrame->IsComboboxControlFrame() || aFrame->IsHTMLButtonControlFrame()) {
+  // Button and table cell frames are also easy because the containing block is
+  // the frame itself.
+  if (aFrame->IsComboboxControlFrame() || aFrame->IsHTMLButtonControlFrame() ||
+      aFrame->IsTableCellFrame()) {
     return aFrame;
   }
   return nullptr;
@@ -1838,7 +1840,7 @@ void RestyleManager::ProcessRestyledFrames(nsStyleChangeList& aChangeList) {
 
 /* static */
 uint64_t RestyleManager::GetAnimationGenerationForFrame(nsIFrame* aStyleFrame) {
-  EffectSet* effectSet = EffectSet::GetEffectSetForStyleFrame(aStyleFrame);
+  EffectSet* effectSet = EffectSet::GetForStyleFrame(aStyleFrame);
   return effectSet ? effectSet->GetAnimationGeneration() : 0;
 }
 
@@ -1996,8 +1998,7 @@ void RestyleManager::AnimationsWithDestroyedFrame ::StopAnimationsWithoutFrame(
 
     // All other animations should keep running but not running on the
     // *compositor* at this point.
-    EffectSet* effectSet = EffectSet::GetEffectSet(element, aPseudoType);
-    if (effectSet) {
+    if (EffectSet* effectSet = EffectSet::Get(element, aPseudoType)) {
       for (KeyframeEffect* effect : *effectSet) {
         effect->ResetIsRunningOnCompositor();
       }
@@ -2331,7 +2332,7 @@ void RestyleManager::PostRestyleEventForAnimations(Element* aElement,
                                                    PseudoStyleType aPseudoType,
                                                    RestyleHint aRestyleHint) {
   Element* elementToRestyle =
-      EffectCompositor::GetElementToRestyle(aElement, aPseudoType);
+      AnimationUtils::GetElementForRestyle(aElement, aPseudoType);
 
   if (!elementToRestyle) {
     // FIXME: Bug 1371107: When reframing happens,
@@ -2661,7 +2662,8 @@ static ServoPostTraversalFlags SendA11yNotifications(
   }
 
   bool needsNotify = false;
-  bool isVisible = aNewStyle.StyleVisibility()->IsVisible();
+  const bool isVisible = aNewStyle.StyleVisibility()->IsVisible() &&
+                         !aNewStyle.StyleUI()->IsInert();
   if (aFlags & Flags::SendA11yNotificationsIfShown) {
     if (!isVisible) {
       // Propagate the sending-if-shown flag to descendants.
@@ -2674,7 +2676,8 @@ static ServoPostTraversalFlags SendA11yNotifications(
   } else {
     // If we shouldn't skip in any case, we need to check whether our
     // own visibility has changed.
-    bool wasVisible = aOldStyle.StyleVisibility()->IsVisible();
+    const bool wasVisible = aOldStyle.StyleVisibility()->IsVisible() &&
+                            !aOldStyle.StyleUI()->IsInert();
     needsNotify = wasVisible != isVisible;
   }
 

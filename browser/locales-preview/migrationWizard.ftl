@@ -51,10 +51,45 @@ migration-history-option-label = Browsing history
 migration-form-autofill-option-label = Form autofill data
 migration-import-button-label = Import
 migration-cancel-button-label = Cancel
+migration-done-button-label = Done
 
+migration-wizard-import-browser-no-browsers = { -brand-short-name } couldn’t find any programs that contain bookmark, history or password data.
 migration-wizard-progress-header = Importing Data
 migration-wizard-progress-done-header = Data Imported Successfully
 migration-wizard-progress-icon-in-progress =
   .aria-label = Importing…
 migration-wizard-progress-icon-completed =
   .aria-label = Completed
+
+# Shown in the migration wizard after importing bookmarks from another
+# browser has completed.
+#
+# Variables:
+#  $quantity (Number): the number of successfully imported bookmarks
+migration-wizard-progress-success-bookmarks =
+    { $quantity ->
+        [one] { $quantity } bookmark
+       *[other] { $quantity } bookmarks
+    }
+
+# Shown in the migration wizard after importing passwords from another
+# browser has completed.
+#
+# Variables:
+#  $quantity (Number): the number of successfully imported passwords
+migration-wizard-progress-success-passwords =
+    { $quantity ->
+        [one] { $quantity } password
+       *[other] { $quantity } passwords
+    }
+
+# Shown in the migration wizard after importing history from another
+# browser has completed.
+#
+# Variables:
+#  $quantity (Number): the number of successfully imported history entries
+migration-wizard-progress-success-history =
+    { $quantity ->
+        [one] { $quantity } visit
+       *[other] { $quantity } visits
+    }

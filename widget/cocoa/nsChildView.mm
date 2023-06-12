@@ -1316,21 +1316,23 @@ bool nsChildView::PaintWindow(LayoutDeviceIntRegion aRegion) {
 bool nsChildView::PaintWindowInDrawTarget(gfx::DrawTarget* aDT,
                                           const LayoutDeviceIntRegion& aRegion,
                                           const gfx::IntSize& aSurfaceSize) {
-  RefPtr<gfxContext> targetContext = gfxContext::CreateOrNull(aDT);
-  MOZ_ASSERT(targetContext);
+  if (!aDT || !aDT->IsValid()) {
+    return false;
+  }
+  gfxContext targetContext(aDT);
 
   // Set up the clip region and clear existing contents in the backing surface.
-  targetContext->NewPath();
+  targetContext.NewPath();
   for (auto iter = aRegion.RectIter(); !iter.Done(); iter.Next()) {
     const LayoutDeviceIntRect& r = iter.Get();
-    targetContext->Rectangle(gfxRect(r.x, r.y, r.width, r.height));
+    targetContext.Rectangle(gfxRect(r.x, r.y, r.width, r.height));
     aDT->ClearRect(gfx::Rect(r.ToUnknownRect()));
   }
-  targetContext->Clip();
+  targetContext.Clip();
 
   nsAutoRetainCocoaObject kungFuDeathGrip(mView);
   if (GetWindowRenderer()->GetBackendType() == LayersBackend::LAYERS_NONE) {
-    nsBaseWidget::AutoLayerManagerSetup setupLayerManager(this, targetContext,
+    nsBaseWidget::AutoLayerManagerSetup setupLayerManager(this, &targetContext,
                                                           BufferMode::BUFFER_NONE);
     return PaintWindow(aRegion);
   }
@@ -4458,7 +4460,8 @@ static CFTypeRefPtr<CFURLRef> GetPasteLocation(NSPasteboard* aPasteboard) {
   nsAutoRetainCocoaObject kungFuDeathGrip(self);
 
   // Make sure that the service will accept strings or HTML.
-  if (![types containsObject:[UTIHelper stringFromPboardType:NSPasteboardTypeString]] &&
+  if (![types containsObject:[UTIHelper stringFromPboardType:NSStringPboardType]] &&
+      ![types containsObject:[UTIHelper stringFromPboardType:NSPasteboardTypeString]] &&
       ![types containsObject:[UTIHelper stringFromPboardType:NSPasteboardTypeHTML]]) {
     return NO;
   }

@@ -431,8 +431,24 @@ class nsFrameSelection final {
   /**
    * @brief Removes the Highlight selection identified by `aHighlightName`.
    */
-  void RemoveHighlightSelection(const nsAtom* aHighlightName);
+  MOZ_CAN_RUN_SCRIPT void RemoveHighlightSelection(
+      const nsAtom* aHighlightName);
 
+  /**
+   * @brief Adds a new range to the highlight selection.
+   *
+   * If there is no highlight selection for the given highlight yet, it is
+   * created using |AddHighlightSelection|.
+   */
+  MOZ_CAN_RUN_SCRIPT void AddHighlightSelectionRange(
+      const nsAtom* aHighlightName, const mozilla::dom::Highlight& aHighlight,
+      mozilla::dom::AbstractRange& aRange, mozilla::ErrorResult& aRv);
+
+  /**
+   * @brief Removes a range from a highlight selection.
+   */
+  MOZ_CAN_RUN_SCRIPT void RemoveHighlightSelectionRange(
+      const nsAtom* aHighlightName, mozilla::dom::AbstractRange& aRange);
   /**
    * ScrollSelectionIntoView scrolls a region of the selection,
    * so that it is visible in the scrolled view.
@@ -1139,6 +1155,34 @@ class nsFrameSelection final {
   // or trailing whitespace needs to be removed as well to achieve
   // native behaviour on macOS.
   bool mIsDoubleClickSelection{false};
+};
+
+/**
+ * Selection Batcher class that supports multiple FrameSelections.
+ */
+class MOZ_STACK_CLASS AutoFrameSelectionBatcher {
+ public:
+  explicit AutoFrameSelectionBatcher(const char* aFunctionName,
+                                     size_t aEstimatedSize = 1)
+      : mFunctionName(aFunctionName) {
+    mFrameSelections.SetCapacity(aEstimatedSize);
+  }
+  ~AutoFrameSelectionBatcher() {
+    for (const auto& frameSelection : mFrameSelections) {
+      frameSelection->EndBatchChanges(mFunctionName);
+    }
+  }
+  void AddFrameSelection(nsFrameSelection* aFrameSelection) {
+    if (!aFrameSelection) {
+      return;
+    }
+    aFrameSelection->StartBatchChanges(mFunctionName);
+    mFrameSelections.AppendElement(aFrameSelection);
+  }
+
+ private:
+  const char* mFunctionName;
+  AutoTArray<RefPtr<nsFrameSelection>, 1> mFrameSelections;
 };
 
 #endif /* nsFrameSelection_h___ */

@@ -1,5 +1,6 @@
 import { AboutWelcomeDefaults } from "aboutwelcome/lib/AboutWelcomeDefaults.jsm";
 import { MultiStageProtonScreen } from "content-src/aboutwelcome/components/MultiStageProtonScreen";
+import { AWScreenUtils } from "lib/AWScreenUtils.jsm";
 import React from "react";
 import { mount } from "enzyme";
 
@@ -27,10 +28,10 @@ describe("MultiStageAboutWelcomeProton module", () => {
       assert.ok(wrapper.exists());
     });
 
-    it("should render secondary section for corner positioned screens", () => {
+    it("should render secondary section for split positioned screens", () => {
       const SCREEN_PROPS = {
         content: {
-          position: "corner",
+          position: "split",
           title: "test title",
           hero_text: "test subtitle",
         },
@@ -42,7 +43,7 @@ describe("MultiStageAboutWelcomeProton module", () => {
         wrapper.find(".section-secondary h1").text(),
         "test subtitle"
       );
-      assert.equal(wrapper.find("main").prop("pos"), "corner");
+      assert.equal(wrapper.find("main").prop("pos"), "split");
     });
 
     it("should render secondary section with content background for split positioned screens", () => {
@@ -189,22 +190,71 @@ describe("MultiStageAboutWelcomeProton module", () => {
       assert.ok(wrapper.exists());
       assert.equal(wrapper.find(".additional-cta.cta-link").exists(), true);
     });
+
+    it("should not render a progress bar if there is 1 step", () => {
+      const SCREEN_PROPS = {
+        content: {
+          title: "test title",
+          progress_bar: true,
+        },
+        isSingleScreen: true,
+      };
+      const wrapper = mount(<MultiStageProtonScreen {...SCREEN_PROPS} />);
+      assert.ok(wrapper.exists());
+      assert.equal(wrapper.find(".steps.progress-bar").exists(), false);
+    });
+
+    it("should render a progress bar if there are 2 steps", () => {
+      const SCREEN_PROPS = {
+        content: {
+          title: "test title",
+          progress_bar: true,
+        },
+        totalNumberOfScreens: 2,
+      };
+      const wrapper = mount(<MultiStageProtonScreen {...SCREEN_PROPS} />);
+      assert.ok(wrapper.exists());
+      assert.equal(wrapper.find(".steps.progress-bar").exists(), true);
+    });
   });
 
   describe("AboutWelcomeDefaults for proton", () => {
     const getData = () => AboutWelcomeDefaults.getDefaults();
-    async function prepConfig(config) {
+
+    async function prepConfig(config, evalFalseScreenIds) {
+      let data = await getData();
+
+      if (evalFalseScreenIds?.length) {
+        data.screens.forEach(async screen => {
+          if (evalFalseScreenIds.includes(screen.id)) {
+            screen.targeting = false;
+          }
+        });
+        data.screens = await AWScreenUtils.evaluateTargetingAndRemoveScreens(
+          data.screens
+        );
+      }
+
       return AboutWelcomeDefaults.prepareContentForReact({
-        ...(await getData()),
+        ...data,
         ...config,
       });
     }
     beforeEach(() => {
       sandbox.stub(global.Services.prefs, "getBoolPref").returns(true);
+      sandbox.stub(AWScreenUtils, "evaluateScreenTargeting").returnsArg(0);
+      // This is necessary because there are still screens being removed with
+      // `removeScreens` in `prepareContentForReact()`. Once we've migrated
+      // to using screen targeting instead of manually removing screens,
+      // we can remove this stub.
+      sandbox
+        .stub(global.AWScreenUtils, "removeScreens")
+        .callsFake((screens, callback) =>
+          AWScreenUtils.removeScreens(screens, callback)
+        );
     });
     it("should have 'pin' button by default", async () => {
-      const data = await getData();
-
+      const data = await prepConfig({ needPin: true }, ["AW_EASY_SETUP"]);
       assert.propertyVal(
         data.screens[0].content.primary_button.action,
         "type",
@@ -212,7 +262,13 @@ describe("MultiStageAboutWelcomeProton module", () => {
       );
     });
     it("should have 'pin' button if we need default and pin", async () => {
-      const data = await prepConfig({ needDefault: true, needPin: true });
+      const data = await prepConfig(
+        {
+          needDefault: true,
+          needPin: true,
+        },
+        ["AW_EASY_SETUP"]
+      );
 
       assert.propertyVal(
         data.screens[0].content.primary_button.action,
@@ -221,28 +277,28 @@ describe("MultiStageAboutWelcomeProton module", () => {
       );
       assert.propertyVal(data.screens[0], "id", "AW_PIN_FIREFOX");
       assert.propertyVal(data.screens[1], "id", "AW_SET_DEFAULT");
-      assert.lengthOf(data.screens, getData().screens.length - 1);
+      assert.lengthOf(data.screens, getData().screens.length - 2);
     });
     it("should keep 'pin' and remove 'default' if already default", async () => {
-      const data = await prepConfig({ needPin: true });
+      const data = await prepConfig({ needPin: true }, ["AW_EASY_SETUP"]);
 
       assert.propertyVal(data.screens[0], "id", "AW_PIN_FIREFOX");
       assert.propertyVal(data.screens[1], "id", "AW_IMPORT_SETTINGS");
-      assert.lengthOf(data.screens, getData().screens.length - 2);
+      assert.lengthOf(data.screens, getData().screens.length - 3);
     });
     it("should switch to 'default' if already pinned", async () => {
-      const data = await prepConfig({ needDefault: true });
+      const data = await prepConfig({ needDefault: true }, ["AW_EASY_SETUP"]);
 
       assert.propertyVal(data.screens[0], "id", "AW_ONLY_DEFAULT");
       assert.propertyVal(data.screens[1], "id", "AW_IMPORT_SETTINGS");
-      assert.lengthOf(data.screens, getData().screens.length - 2);
+      assert.lengthOf(data.screens, getData().screens.length - 3);
     });
     it("should switch to 'start' if already pinned and default", async () => {
-      const data = await prepConfig();
+      const data = await prepConfig({}, ["AW_EASY_SETUP"]);
 
       assert.propertyVal(data.screens[0], "id", "AW_GET_STARTED");
       assert.propertyVal(data.screens[1], "id", "AW_IMPORT_SETTINGS");
-      assert.lengthOf(data.screens, getData().screens.length - 2);
+      assert.lengthOf(data.screens, getData().screens.length - 3);
     });
     it("should have a FxA button", async () => {
       const data = await prepConfig();
@@ -410,6 +466,11 @@ describe("MultiStageAboutWelcomeProton module", () => {
       sandbox
         .stub(global.AppConstants, "isPlatformAndVersionAtMost")
         .returns(true);
+      sandbox
+        .stub(global.AWScreenUtils, "removeScreens")
+        .callsFake((screens, screen) =>
+          AWScreenUtils.removeScreens(screens, screen)
+        );
 
       const { screens } = await AboutWelcomeDefaults.prepareContentForReact({
         screens: [
@@ -434,6 +495,11 @@ describe("MultiStageAboutWelcomeProton module", () => {
       sandbox
         .stub(global.AppConstants, "isPlatformAndVersionAtMost")
         .returns(true);
+      sandbox
+        .stub(global.AWScreenUtils, "removeScreens")
+        .callsFake((screens, screen) =>
+          AWScreenUtils.removeScreens(screens, screen)
+        );
 
       const { screens } = await AboutWelcomeDefaults.prepareContentForReact({
         screens: [

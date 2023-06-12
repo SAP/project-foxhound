@@ -22,6 +22,14 @@ XPCOMUtils.defineLazyGetter(lazy, "QuickSuggestTestUtils", () => {
   return module;
 });
 
+XPCOMUtils.defineLazyGetter(this, "MerinoTestUtils", () => {
+  const { MerinoTestUtils: module } = ChromeUtils.importESModule(
+    "resource://testing-common/MerinoTestUtils.sys.mjs"
+  );
+  module.init(this);
+  return module;
+});
+
 XPCOMUtils.defineLazyModuleGetters(lazy, {
   sinon: "resource://testing-common/Sinon.jsm",
 });
@@ -71,8 +79,13 @@ function _assertGleanTelemetry(telemetryName, expectedExtraList) {
   }
 }
 
-async function ensureQuickSuggestInit() {
+async function ensureQuickSuggestInit({
+  merinoSuggestions = undefined,
+  config = undefined,
+} = {}) {
   return lazy.QuickSuggestTestUtils.ensureQuickSuggestInit({
+    config,
+    merinoSuggestions,
     remoteSettingsResults: [
       {
         id: 1,
@@ -129,9 +142,9 @@ async function doDropAndGo(data) {
   await onLoad;
 }
 
-async function doEnter() {
+async function doEnter(modifier = {}) {
   const onLoad = BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser);
-  EventUtils.synthesizeKey("KEY_Enter");
+  EventUtils.synthesizeKey("KEY_Enter", modifier);
   await onLoad;
 }
 
@@ -325,14 +338,7 @@ async function loadRemoteTab(url) {
 
 async function openPopup(input) {
   await UrlbarTestUtils.promisePopupOpen(window, async () => {
-    EventUtils.synthesizeMouseAtCenter(gURLBar.inputField, {});
-    await BrowserTestUtils.waitForCondition(
-      () =>
-        gURLBar.inputField.ownerDocument.activeElement === gURLBar.inputField
-    );
-    for (let i = 0; i < input.length; i++) {
-      EventUtils.synthesizeKey(input.charAt(i));
-    }
+    await UrlbarTestUtils.inputIntoURLBar(window, input);
   });
   await UrlbarTestUtils.promiseSearchComplete(window);
 }

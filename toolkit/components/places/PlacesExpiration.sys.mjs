@@ -531,6 +531,10 @@ nsPlacesExpiration.prototype = {
     }
   },
 
+  // nsINamed
+
+  name: "nsPlacesExpiration",
+
   // nsITimerCallback
 
   notify() {
@@ -909,6 +913,12 @@ nsPlacesExpiration.prototype = {
     if (this._shuttingDown) {
       return undefined;
     }
+
+    if (!this._isIdleObserver) {
+      this._idle.addIdleObserver(this, IDLE_TIMEOUT_SECONDS);
+      this._isIdleObserver = true;
+    }
+
     let interval =
       this.status != STATUS.DIRTY
         ? this.intervalSeconds * EXPIRE_AGGRESSIVITY_MULTIPLIER
@@ -929,8 +939,9 @@ nsPlacesExpiration.prototype = {
   classID: Components.ID("705a423f-2f69-42f3-b9fe-1517e0dee56f"),
 
   QueryInterface: ChromeUtils.generateQI([
+    "nsINamed",
     "nsIObserver",
-    "nsITimerCallback",
     "nsISupportsWeakReference",
+    "nsITimerCallback",
   ]),
 };

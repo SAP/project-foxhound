@@ -120,9 +120,13 @@ const PREF_URLBAR_DEFAULTS = new Map([
   // Whether the urlbar displays a permanent search button.
   ["experimental.searchButton", false],
 
-  // When we send events to extensions, we wait this amount of time in
-  // milliseconds for them to respond before timing out.
+  // When we send events to (privileged) extensions (urlbar API), we wait this
+  // amount of time in milliseconds for them to respond before timing out.
   ["extension.timeout", 400],
+
+  // When we send events to extensions that use the omnibox API, we wait this
+  // amount of time in milliseconds for them to respond before timing out.
+  ["extension.omnibox.timeout", 3000],
 
   // When true, `javascript:` URLs are not included in search results.
   ["filter.javascript", true],
@@ -346,6 +350,9 @@ const PREF_URLBAR_DEFAULTS = new Map([
   // Enable three-dot options button and menu for eligible results.
   ["resultMenu", false],
 
+  // Allow the result menu button to be reached with the Tab key.
+  ["resultMenu.keyboardAccessible", true],
+
   // When using switch to tabs, if set to true this will move the tab into the
   // active window.
   ["switchTabs.adoptIntoActiveWindow", false],
@@ -391,11 +398,15 @@ const PREF_URLBAR_DEFAULTS = new Map([
   // Feature gate pref for weather suggestions in the urlbar.
   ["weather.featureGate", false],
 
-  // If true, weather suggestions will be shown on "zero prefix", which means
-  // when the user focuses the urlbar without typing anything. If false, the
-  // user must type weather-related keywords to show weather suggestions.
-  ["weather.zeroPrefix", true],
+  // Feature gate pref for trending suggestions in the urlbar.
+  ["trending.featureGate", false],
+
+  // Whether to only show trending results when the urlbar is in search
+  // mode or when the user initially opens the urlbar without selecting
+  // an engine.
+  ["trending.requireSearchMode", true],
 ]);
+
 const PREF_OTHER_DEFAULTS = new Map([
   ["browser.fixup.dns_first_for_single_words", false],
   ["browser.search.suggest.enabled", true],
@@ -412,6 +423,9 @@ const NIMBUS_DEFAULTS = {
   experimentType: "",
   isBestMatchExperiment: false,
   quickSuggestRemoteSettingsDataType: "data",
+  recordNavigationalSuggestionTelemetry: false,
+  weatherKeywords: null,
+  weatherKeywordsMinimumLength: 0,
 };
 
 // Maps preferences under browser.urlbar.suggest to behavior names, as defined
@@ -1206,11 +1220,13 @@ class Preferences {
    * Adds a preference observer.  Observers are held weakly.
    *
    * @param {object} observer
-   *        An object that must have a method named `onPrefChanged`, which will
-   *        be called when a urlbar preference changes.  It will be passed the
-   *        pref name.  For prefs in the `browser.urlbar.` branch, the name will
-   *        be relative to the branch.  For other prefs, the name will be the
-   *        full name.
+   *        An object that may optionally implement one or both methods:
+   *         - `onPrefChanged` invoked when one of the preferences listed here
+   *           change. It will be passed the pref name.  For prefs in the
+   *           `browser.urlbar.` branch, the name will be relative to the branch.
+   *           For other prefs, the name will be the full name.
+   *         - `onNimbusChanged` invoked when a Nimbus value changes. It will be
+   *           passed the name of the changed Nimbus variable.
    */
   addObserver(observer) {
     this._observerWeakRefs.push(Cu.getWeakReference(observer));
@@ -1231,16 +1247,7 @@ class Preferences {
     if (!PREF_URLBAR_DEFAULTS.has(pref) && !PREF_OTHER_DEFAULTS.has(pref)) {
       return;
     }
-    for (let i = 0; i < this._observerWeakRefs.length; ) {
-      let observer = this._observerWeakRefs[i].get();
-      if (!observer) {
-        // The observer has been GC'ed, so remove it from our list.
-        this._observerWeakRefs.splice(i, 1);
-      } else {
-        observer.onPrefChanged(pref);
-        ++i;
-      }
-    }
+    this.#notifyObservers("onPrefChanged", pref);
   }
 
   /**
@@ -1278,6 +1285,13 @@ class Preferences {
   _onNimbusUpdate() {
     let oldNimbus = this._clearNimbusCache();
     let newNimbus = this._nimbus;
+
+    // Callback to observers having onNimbusChanged.
+    for (let name in newNimbus) {
+      if (oldNimbus[name] != newNimbus[name]) {
+        this.#notifyObservers("onNimbusChanged", name);
+      }
+    }
 
     // If a change occurred to the Firefox Suggest scenario variable or any
     // variables that correspond to prefs exposed in the UI, we need to update
@@ -1508,6 +1522,25 @@ class Preferences {
       this.get("showSearchTerms.enabled") &&
       !this.get("browser.search.widget.inNavBar")
     );
+  }
+
+  #notifyObservers(method, changed) {
+    for (let i = 0; i < this._observerWeakRefs.length; ) {
+      let observer = this._observerWeakRefs[i].get();
+      if (!observer) {
+        // The observer has been GC'ed, so remove it from our list.
+        this._observerWeakRefs.splice(i, 1);
+        continue;
+      }
+      if (method in observer) {
+        try {
+          observer[method](changed);
+        } catch (ex) {
+          console.error(ex);
+        }
+      }
+      ++i;
+    }
   }
 
   #resultGroups = null;

@@ -57,11 +57,14 @@ class SearchSuggestionEntry {
    * @param {string} [options.tail]
    *   Represents the suggested part of a tail suggestion. For example, Google
    *   might return "toronto" as the tail for the query "what time is it in t".
+   * @param {boolean} [options.trending]
+   *   Whether this is a trending suggestion.
    */
-  constructor(value, { matchPrefix, tail } = {}) {
+  constructor(value, { matchPrefix, tail, trending } = {}) {
     this.#value = value;
     this.#matchPrefix = matchPrefix;
     this.#tail = tail;
+    this.#trending = trending;
   }
 
   get value() {
@@ -74,6 +77,10 @@ class SearchSuggestionEntry {
 
   get tail() {
     return this.#tail;
+  }
+
+  get trending() {
+    return this.#trending;
   }
 
   get tailOffsetIndex() {
@@ -111,6 +118,7 @@ class SearchSuggestionEntry {
   #value;
   #matchPrefix;
   #tail;
+  #trending;
 }
 
 // Maps each engine name to a unique firstPartyDomain, so that requests to
@@ -150,10 +158,15 @@ export class SearchSuggestionController {
    * Determines whether the given engine offers search suggestions.
    *
    * @param {nsISearchEngine} engine - The search engine
+   * @param {boolean} fetchTrending - Whether we should fetch trending suggestions.
    * @returns {boolean} True if the engine offers suggestions and false otherwise.
    */
-  static engineOffersSuggestions(engine) {
-    return engine.supportsResponseType(lazy.SearchUtils.URL_TYPE.SUGGEST_JSON);
+  static engineOffersSuggestions(engine, fetchTrending) {
+    return engine.supportsResponseType(
+      fetchTrending
+        ? lazy.SearchUtils.URL_TYPE.TRENDING_JSON
+        : lazy.SearchUtils.URL_TYPE.SUGGEST_JSON
+    );
   }
 
   /**
@@ -219,6 +232,7 @@ export class SearchSuggestionController {
    *   suggestions to the ones registered under the given engine.
    * @param {boolean} dedupeRemoteAndLocal - whether to remove remote
    *   suggestions that dupe local suggestions
+   * @param {boolean} fetchTrending - Whether we should fetch trending suggestions.
    *
    * @returns {Promise<FetchResult>}
    */
@@ -228,7 +242,8 @@ export class SearchSuggestionController {
     engine,
     userContextId = 0,
     restrictToEngine = false,
-    dedupeRemoteAndLocal = true
+    dedupeRemoteAndLocal = true,
+    fetchTrending = false
   ) {
     // There is no smart filtering from previous results here (as there is when
     // looking through history/form data) because the result set returned by the
@@ -262,6 +277,7 @@ export class SearchSuggestionController {
       dedupeRemoteAndLocal,
       engine,
       engineId: engine?.identifier || "other",
+      fetchTrending,
       privateMode,
       request: null,
       restrictToEngine,
@@ -272,17 +288,17 @@ export class SearchSuggestionController {
     });
 
     // Fetch local results from Form History, if requested.
-    if (this.maxLocalResults) {
+    if (this.maxLocalResults && !fetchTrending) {
       context.awaitingLocalResults = true;
       promises.push(this.#fetchFormHistory(context));
     }
     // Fetch remote results from Search Service, if requested.
     if (
-      searchTerm &&
+      (searchTerm || fetchTrending) &&
       this.suggestionsEnabled &&
       (!privateMode || this.suggestionsInPrivateBrowsingEnabled) &&
       this.maxRemoteResults &&
-      SearchSuggestionController.engineOffersSuggestions(engine)
+      SearchSuggestionController.engineOffersSuggestions(engine, fetchTrending)
     ) {
       promises.push(this.#fetchRemote(context));
     }
@@ -454,7 +470,9 @@ export class SearchSuggestionController {
     let request = (context.request = new XMLHttpRequest());
     let submission = context.engine.getSubmission(
       context.searchString,
-      lazy.SearchUtils.URL_TYPE.SUGGEST_JSON
+      context.searchString
+        ? lazy.SearchUtils.URL_TYPE.SUGGEST_JSON
+        : lazy.SearchUtils.URL_TYPE.TRENDING_JSON
     );
     let method = submission.postData ? "POST" : "GET";
     request.open(method, submission.uri.spec, true);
@@ -575,7 +593,7 @@ export class SearchSuggestionController {
     try {
       if (
         !Array.isArray(serverResults) ||
-        !serverResults[0] ||
+        serverResults[0] == undefined ||
         (context.searchString.localeCompare(serverResults[0], undefined, {
           sensitivity: "base",
         }) &&
@@ -653,7 +671,8 @@ export class SearchSuggestionController {
           results.remote.push(
             this.#newSearchSuggestionEntry(
               fullTextSuggestions[i],
-              richSuggestionData?.[i]
+              richSuggestionData?.[i],
+              context.fetchTrending
             )
           );
         }
@@ -732,18 +751,21 @@ export class SearchSuggestionController {
    * @param {object} richSuggestionData
    *   Rich suggestion data returned by the engine. In Google's case, this is
    *   the corresponding entry at "google:suggestdetail".
+   * @param {boolean} trending
+   *   Whether the suggestion is a trending suggestion.
    * @returns {SearchSuggestionEntry}
    */
-  #newSearchSuggestionEntry(suggestion, richSuggestionData) {
+  #newSearchSuggestionEntry(suggestion, richSuggestionData, trending) {
     if (richSuggestionData) {
       // We have valid rich suggestions.
       return new SearchSuggestionEntry(suggestion, {
         matchPrefix: richSuggestionData?.mp,
         tail: richSuggestionData?.t,
+        trending,
       });
     }
     // Return a regular suggestion.
-    return new SearchSuggestionEntry(suggestion);
+    return new SearchSuggestionEntry(suggestion, { trending });
   }
 }
 

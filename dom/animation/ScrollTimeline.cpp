@@ -49,30 +49,27 @@ ScrollTimeline::ScrollTimeline(Document* aDocument, const Scroller& aScroller,
       mSource(aScroller),
       mAxis(aAxis) {
   MOZ_ASSERT(aDocument);
+  RegisterWithScrollSource();
 }
 
-/* static */
-already_AddRefed<ScrollTimeline> ScrollTimeline::GetOrCreateScrollTimeline(
-    Document* aDocument, const Scroller& aScroller,
-    const StyleScrollAxis& aAxis) {
-  MOZ_ASSERT(aScroller);
-
-  RefPtr<ScrollTimeline> timeline;
-  auto* set =
-      ScrollTimelineSet::GetOrCreateScrollTimelineSet(aScroller.mElement);
-  auto key = ScrollTimelineSet::Key{aScroller.mType, aAxis};
-  auto p = set->LookupForAdd(key);
-  if (!p) {
-    timeline = new ScrollTimeline(aDocument, aScroller, aAxis);
-    set->Add(p, key, timeline);
-  } else {
-    timeline = p->value();
+static Element* FindNearestScroller(const Element* aSubject) {
+  MOZ_ASSERT(aSubject);
+  Element* curr = aSubject->GetFlattenedTreeParentElement();
+  Element* root = aSubject->OwnerDoc()->GetDocumentElement();
+  while (curr && curr != root) {
+    const ComputedStyle* style = Servo_Element_GetMaybeOutOfDateStyle(curr);
+    MOZ_ASSERT(style, "The ancestor should be styled.");
+    if (style->StyleDisplay()->IsScrollableOverflow()) {
+      break;
+    }
+    curr = curr->GetFlattenedTreeParentElement();
   }
-  return timeline.forget();
+  // If there is no scroll container, we use root.
+  return curr ? curr : root;
 }
 
 /* static */
-already_AddRefed<ScrollTimeline> ScrollTimeline::FromAnonymousScroll(
+already_AddRefed<ScrollTimeline> ScrollTimeline::MakeAnonymous(
     Document* aDocument, const NonOwningAnimationTarget& aTarget,
     StyleScrollAxis aAxis, StyleScroller aScroller) {
   MOZ_ASSERT(aTarget);
@@ -81,81 +78,31 @@ already_AddRefed<ScrollTimeline> ScrollTimeline::FromAnonymousScroll(
     case StyleScroller::Root:
       scroller = Scroller::Root(aTarget.mElement->OwnerDoc());
       break;
+
     case StyleScroller::Nearest: {
-      Element* curr = aTarget.mElement->GetFlattenedTreeParentElement();
-      Element* root = aTarget.mElement->OwnerDoc()->GetDocumentElement();
-      while (curr && curr != root) {
-        const ComputedStyle* style = Servo_Element_GetMaybeOutOfDateStyle(curr);
-        MOZ_ASSERT(style, "The ancestor should be styled.");
-        if (style->StyleDisplay()->IsScrollableOverflow()) {
-          break;
-        }
-        curr = curr->GetFlattenedTreeParentElement();
-      }
-      // If there is no scroll container, we use root.
-      scroller = Scroller::Nearest(curr ? curr : root);
-    }
-  }
-  return GetOrCreateScrollTimeline(aDocument, scroller, aAxis);
-}
-
-/* static*/ already_AddRefed<ScrollTimeline> ScrollTimeline::FromNamedScroll(
-    Document* aDocument, const NonOwningAnimationTarget& aTarget,
-    const nsAtom* aName) {
-  MOZ_ASSERT(NS_IsMainThread());
-  MOZ_ASSERT(aTarget);
-
-  // A named scroll progress timeline is referenceable in animation-timeline by:
-  // 1. the declaring element itself
-  // 2. that element’s descendants
-  // 3. that element’s following siblings and their descendants
-  // https://drafts.csswg.org/scroll-animations-1/#timeline-scope
-  Element* result = nullptr;
-  StyleScrollAxis axis = StyleScrollAxis::Block;
-  for (Element* curr = aTarget.mElement; curr;
-       curr = curr->GetParentElement()) {
-    // If multiple elements have declared the same timeline name, the matching
-    // timeline is the one declared on the nearest element in tree order, which
-    // considers siblings closer than parents.
-    // Note: This should be fine for parallel traversal because we update
-    // animations by SequentialTask.
-    for (Element* e = curr; e; e = e->GetPreviousElementSibling()) {
-      const ComputedStyle* style = Servo_Element_GetMaybeOutOfDateStyle(e);
-      // The elements in the shadow dom might not be in the flat tree.
-      if (!style) {
-        continue;
-      }
-
-      const nsStyleUIReset* ui = style->StyleUIReset();
-      // Note: scroll-timeline is a coordinated property list, so we use the
-      // count of the base property, scroll-timeline-name, as the max length.
-      for (uint32_t i = 0; i < ui->mScrollTimelineNameCount; ++i) {
-        const auto& timeline = ui->mScrollTimelines[i];
-        if (timeline.GetName() == aName) {
-          result = e;
-          axis = timeline.GetAxis();
-          break;
-        }
-      }
-
-      if (result) {
-        break;
-      }
-    }
-
-    if (result) {
+      scroller = Scroller::Nearest(FindNearestScroller(aTarget.mElement));
       break;
     }
   }
 
-  // If we cannot find a matched scroll-timeline-name, this animation is not
-  // associated with a timeline.
-  // https://drafts.csswg.org/css-animations-2/#typedef-timeline-name
-  if (!result) {
-    return nullptr;
-  }
-  Scroller scroller = Scroller::Named(result);
-  return GetOrCreateScrollTimeline(aDocument, scroller, axis);
+  // Note: We create new ScrollTimeline for anonymous scroll timeline, i.e.
+  // scroll(). In other words, each anonymous scroll timeline is a different
+  // object per the resolution of this spec issue:
+  // https://github.com/w3c/csswg-drafts/issues/8204
+  //
+  // FIXME: Perhaps it's still possible to reuse scroll(root). Need to revisit
+  // this after we start to work on JS support.
+  return MakeAndAddRef<ScrollTimeline>(aDocument, scroller, aAxis);
+}
+
+/* static*/ already_AddRefed<ScrollTimeline> ScrollTimeline::MakeNamed(
+    Document* aDocument, Element* aReferenceElement,
+    const StyleScrollTimeline& aStyleTimeline) {
+  MOZ_ASSERT(NS_IsMainThread());
+
+  Scroller scroller = Scroller::Named(aReferenceElement);
+  return MakeAndAddRef<ScrollTimeline>(aDocument, std::move(scroller),
+                                       aStyleTimeline.GetAxis());
 }
 
 Nullable<TimeDuration> ScrollTimeline::GetCurrentTimeAsDuration() const {
@@ -172,10 +119,10 @@ Nullable<TimeDuration> ScrollTimeline::GetCurrentTimeAsDuration() const {
 
   const auto orientation = Axis();
 
-  // If this orientation is not ready for scrolling (i.e. the scroll range is
-  // not larger than or equal to one device pixel), we make it 100%.
+  // If there is no scrollable overflow, then the ScrollTimeline is inactive.
+  // https://drafts.csswg.org/scroll-animations-1/#scrolltimeline-interface
   if (!scrollFrame->GetAvailableScrollingDirections().contains(orientation)) {
-    return TimeDuration::FromMilliseconds(PROGRESS_TIMELINE_DURATION_MILLISEC);
+    return nullptr;
   }
 
   const nsPoint& scrollOffset = scrollFrame->GetScrollPosition();
@@ -233,6 +180,30 @@ bool ScrollTimeline::ScrollingDirectionIsAvailable() const {
   return scrollFrame->GetAvailableScrollingDirections().contains(Axis());
 }
 
+void ScrollTimeline::ReplacePropertiesWith(const Element* aReferenceElement,
+                                           const StyleScrollTimeline& aNew) {
+  MOZ_ASSERT(aReferenceElement == mSource.mElement);
+  mAxis = aNew.GetAxis();
+
+  for (auto* anim = mAnimationOrder.getFirst(); anim;
+       anim = static_cast<LinkedListElement<Animation>*>(anim)->getNext()) {
+    MOZ_ASSERT(anim->GetTimeline() == this);
+    // Set this so we just PostUpdate() for this animation.
+    anim->SetTimeline(this);
+  }
+}
+
+void ScrollTimeline::RegisterWithScrollSource() {
+  if (!mSource) {
+    return;
+  }
+
+  if (ScrollTimelineSet* scrollTimelineSet =
+          ScrollTimelineSet::GetOrCreateScrollTimelineSet(mSource.mElement)) {
+    scrollTimelineSet->AddScrollTimeline(this);
+  }
+}
+
 void ScrollTimeline::UnregisterFromScrollSource() {
   if (!mSource) {
     return;
@@ -240,7 +211,7 @@ void ScrollTimeline::UnregisterFromScrollSource() {
 
   if (ScrollTimelineSet* scrollTimelineSet =
           ScrollTimelineSet::GetScrollTimelineSet(mSource.mElement)) {
-    scrollTimelineSet->Remove(ScrollTimelineSet::Key{mSource.mType, mAxis});
+    scrollTimelineSet->RemoveScrollTimeline(this);
     if (scrollTimelineSet->IsEmpty()) {
       ScrollTimelineSet::DestroyScrollTimelineSet(mSource.mElement);
     }

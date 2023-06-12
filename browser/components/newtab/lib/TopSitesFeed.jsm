@@ -53,6 +53,7 @@ ChromeUtils.defineModuleGetter(
 ChromeUtils.defineESModuleGetters(lazy, {
   NewTabUtils: "resource://gre/modules/NewTabUtils.sys.mjs",
   Region: "resource://gre/modules/Region.sys.mjs",
+  RemoteSettings: "resource://services-settings/remote-settings.sys.mjs",
 });
 ChromeUtils.defineModuleGetter(
   lazy,
@@ -63,11 +64,6 @@ ChromeUtils.defineModuleGetter(
   lazy,
   "PageThumbs",
   "resource://gre/modules/PageThumbs.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  lazy,
-  "RemoteSettings",
-  "resource://services-settings/remote-settings.js"
 );
 
 XPCOMUtils.defineLazyGetter(lazy, "log", () => {
@@ -95,7 +91,13 @@ const PINNED_FAVICON_PROPS_TO_MIGRATE = [
 const SECTION_ID = "topsites";
 const ROWS_PREF = "topSitesRows";
 const SHOW_SPONSORED_PREF = "showSponsoredTopSites";
+// The default total number of sponsored top sites to fetch from Contile
+// and Pocket.
 const MAX_NUM_SPONSORED = 2;
+// Nimbus variable for the total number of sponsored top sites including
+// both Contile and Pocket sources.
+// The default will be `MAX_NUM_SPONSORED` if this variable is unspecified.
+const NIMBUS_VARIABLE_MAX_SPONSORED = "topSitesMaxSponsored";
 
 // Search experiment stuff
 const FILTER_DEFAULT_SEARCH_PREF = "improvesearch.noDefaultSearchTile";
@@ -119,6 +121,8 @@ const DEFAULT_SITES_EXPERIMENTS_PREF_BRANCH = "browser.topsites.experiment.";
 const NIMBUS_VARIABLE_CONTILE_ENABLED = "topSitesContileEnabled";
 const CONTILE_ENDPOINT_PREF = "browser.topsites.contile.endpoint";
 const CONTILE_UPDATE_INTERVAL = 15 * 60 * 1000; // 15 minutes
+// The maximum number of sponsored top sites to fetch from Contile.
+const CONTILE_MAX_NUM_SPONSORED = 2;
 const TOP_SITES_BLOCKED_SPONSORS_PREF = "browser.topsites.blockedSponsors";
 
 function getShortURLForCurrentSearch() {
@@ -198,11 +202,11 @@ class ContileIntegration {
       if (body?.tiles && Array.isArray(body.tiles)) {
         let { tiles } = body;
         tiles = this._filterBlockedSponsors(tiles);
-        if (tiles.length > MAX_NUM_SPONSORED) {
+        if (tiles.length > CONTILE_MAX_NUM_SPONSORED) {
           lazy.log.warn(
-            `Contile provided more links than permitted. (${tiles.length} received, limit is ${MAX_NUM_SPONSORED})`
+            `Contile provided more links than permitted. (${tiles.length} received, limit is ${CONTILE_MAX_NUM_SPONSORED})`
           );
-          tiles.length = MAX_NUM_SPONSORED;
+          tiles.length = CONTILE_MAX_NUM_SPONSORED;
         }
         this._sites = tiles;
         return true;
@@ -658,6 +662,76 @@ class TopSitesFeed {
     return false;
   }
 
+  insertDiscoveryStreamSpocs(sponsored) {
+    const { DiscoveryStream } = this.store.getState();
+    if (DiscoveryStream) {
+      const discoveryStreamSpocs =
+        DiscoveryStream.spocs.data["sponsored-topsites"]?.items || [];
+      // Find the first component of a type and remove it from layout
+      const findSponsoredTopsitesPositions = name => {
+        for (const row of DiscoveryStream.layout) {
+          for (const component of row.components) {
+            if (component.placement?.name === name) {
+              return component.spocs.positions;
+            }
+          }
+        }
+        return null;
+      };
+
+      // Get positions from layout for now. This could be improved if we store position data in state.
+      const discoveryStreamSpocPositions = findSponsoredTopsitesPositions(
+        "sponsored-topsites"
+      );
+
+      if (discoveryStreamSpocPositions?.length) {
+        function reformatImageURL(url, width, height) {
+          // Change the image URL to request a size tailored for the parent container width
+          // Also: force JPEG, quality 60, no upscaling, no EXIF data
+          // Uses Thumbor: https://thumbor.readthedocs.io/en/latest/usage.html
+          // For now we wrap this in single quotes because this is being used in a url() css rule, and otherwise would cause a parsing error.
+          return `'https://img-getpocket.cdn.mozilla.net/${width}x${height}/filters:format(jpeg):quality(60):no_upscale():strip_exif()/${encodeURIComponent(
+            url
+          )}'`;
+        }
+
+        // We need to loop through potential spocs and set their positions.
+        // If we run out of spocs or positions, we stop.
+        // First, we need to know which array is shortest. This is our exit condition.
+        const minLength = Math.min(
+          discoveryStreamSpocPositions.length,
+          discoveryStreamSpocs.length
+        );
+        // Loop until we run out of spocs or positions.
+        for (let i = 0; i < minLength; i++) {
+          const positionIndex = discoveryStreamSpocPositions[i].index;
+          const spoc = discoveryStreamSpocs[i];
+          const link = {
+            favicon: reformatImageURL(spoc.raw_image_src, 40, 40),
+            type: "SPOC",
+            label: spoc.title || spoc.sponsor,
+            title: spoc.title || spoc.sponsor,
+            url: spoc.url,
+            flightId: spoc.flight_id,
+            id: spoc.id,
+            guid: spoc.id,
+            shim: spoc.shim,
+            // For now we are assuming position based on intended position.
+            // Actual position can shift based on other content.
+            // We send the intended position in the ping.
+            pos: positionIndex,
+            // Set this so that SPOC topsites won't be shown in the URL bar.
+            // See Bug 1822027. Note that `sponsored_position` is 1-based.
+            sponsored_position: positionIndex + 1,
+            // This is used for topsites deduping.
+            hostname: shortURL({ url: spoc.url }),
+          };
+          sponsored.push(link);
+        }
+      }
+    }
+  }
+
   // eslint-disable-next-line max-statements
   async getLinksWithDefaults(isStartup = false) {
     const prefValues = this.store.getState().Prefs.values;
@@ -759,6 +833,10 @@ class TopSitesFeed {
       }
     }
 
+    this.insertDiscoveryStreamSpocs(sponsored);
+
+    this._maybeCapSponsoredLinks(sponsored);
+
     // Get pinned links augmented with desired properties
     let plainPinned = await this.pinnedCache.request();
 
@@ -844,12 +922,16 @@ class TopSitesFeed {
         return;
       }
       let index = link.sponsored_position - 1;
-      if (index > withPinned.length) {
+      if (index >= withPinned.length) {
+        withPinned[index] = link;
+      } else if (withPinned[index]?.sponsored_position) {
+        // We currently want DiscoveryStream spocs to replace existing spocs.
         withPinned[index] = link;
       } else {
         withPinned.splice(index, 0, link);
       }
     });
+
     // Remove excess items after we inserted sponsored ones.
     withPinned = withPinned.slice(0, numItems);
 
@@ -876,6 +958,22 @@ class TopSitesFeed {
     this._linksWithDefaults = withPinned;
 
     return withPinned;
+  }
+
+  /**
+   * Cap sponsored links if they're more than the specified maximum.
+   *
+   * @param {Array} links An array of sponsored links. Capping will be performed in-place.
+   */
+  _maybeCapSponsoredLinks(links) {
+    // Set maximum sponsored top sites
+    const maxSponsored =
+      lazy.NimbusFeatures.pocketNewtab.getVariable(
+        NIMBUS_VARIABLE_MAX_SPONSORED
+      ) ?? MAX_NUM_SPONSORED;
+    if (links.length > maxSponsored) {
+      links.length = maxSponsored;
+    }
   }
 
   /**
@@ -1204,8 +1302,10 @@ class TopSitesFeed {
     // fixed.
     let adjustedIndex = index;
     for (let i = 0; i < index; i++) {
+      const link = this._linksWithDefaults[i];
       if (
-        this._linksWithDefaults[i]?.sponsored_position &&
+        link &&
+        link.sponsored_position &&
         this._linksWithDefaults[i]?.url !== site.url
       ) {
         adjustedIndex--;
@@ -1397,6 +1497,10 @@ class TopSitesFeed {
         break;
       case at.UPDATE_PINNED_SEARCH_SHORTCUTS:
         this.updatePinnedSearchShortcuts(action.data);
+        break;
+      case at.DISCOVERY_STREAM_SPOCS_UPDATE:
+        // Refresh to update sponsored topsites.
+        this.refresh({ broadcast: true, isStartup: action.meta.isStartup });
         break;
       case at.UNINIT:
         this.uninit();

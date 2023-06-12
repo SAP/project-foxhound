@@ -466,9 +466,8 @@ enum class IntConversionBehavior {
   // will fail if the resulting int32 isn't strictly equal to the input.
   Normal,             // Succeeds on -0: converts to 0.
   NegativeZeroCheck,  // Fails on -0.
-  // These three will convert the input to an int32 with loss of precision.
+  // These two will convert the input to an int32 with loss of precision.
   Truncate,
-  TruncateNoWrap,
   ClampToUint8,
 };
 
@@ -979,6 +978,9 @@ enum ABIFunctionType : uint64_t {
   Args_Int32_GeneralInt64Int64Int64 = detail::MakeABIFunctionType(
       ArgType_Int32,
       {ArgType_General, ArgType_Int64, ArgType_Int64, ArgType_Int64}),
+  Args_Int32_GeneralInt64Int64General = detail::MakeABIFunctionType(
+      ArgType_Int32,
+      {ArgType_General, ArgType_Int64, ArgType_Int64, ArgType_General}),
   Args_Int32_GeneralInt64Int64Int64General = detail::MakeABIFunctionType(
       ArgType_Int32, {ArgType_General, ArgType_Int64, ArgType_Int64,
                       ArgType_Int64, ArgType_General}),

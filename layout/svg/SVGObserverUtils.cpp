@@ -1584,24 +1584,11 @@ SVGPaintServerFrame* SVGObserverUtils::GetAndObservePaintServer(
   MOZ_ASSERT(aPaint == &nsStyleSVG::mFill || aPaint == &nsStyleSVG::mStroke);
   PaintingPropertyDescriptor propDesc =
       (aPaint == &nsStyleSVG::mFill) ? FillProperty() : StrokeProperty();
-  SVGPaintingProperty* property =
-      GetPaintingProperty(paintServerURL, paintedFrame, propDesc);
-  if (!property) {
-    return nullptr;
+  if (auto* property =
+          GetPaintingProperty(paintServerURL, paintedFrame, propDesc)) {
+    return do_QueryFrame(property->GetAndObserveReferencedFrame());
   }
-  nsIFrame* result = property->GetAndObserveReferencedFrame();
-  if (!result) {
-    return nullptr;
-  }
-
-  LayoutFrameType type = result->Type();
-  if (type != LayoutFrameType::SVGLinearGradient &&
-      type != LayoutFrameType::SVGRadialGradient &&
-      type != LayoutFrameType::SVGPattern) {
-    return nullptr;
-  }
-
-  return static_cast<SVGPaintServerFrame*>(result);
+  return nullptr;
 }
 
 void SVGObserverUtils::UpdateEffects(nsIFrame* aFrame) {
@@ -1673,16 +1660,15 @@ void SVGObserverUtils::InvalidateRenderingObservers(nsIFrame* aFrame) {
   NS_ASSERTION(!aFrame->GetPrevContinuation(),
                "aFrame must be first continuation");
 
-  nsIContent* content = aFrame->GetContent();
-  if (!content || !content->IsElement()) {
+  auto* element = Element::FromNodeOrNull(aFrame->GetContent());
+  if (!element) {
     return;
   }
 
   // If the rendering has changed, the bounds may well have changed too:
   aFrame->RemoveProperty(SVGUtils::ObjectBoundingBoxProperty());
 
-  SVGRenderingObserverSet* observers = GetObserverSet(content->AsElement());
-  if (observers) {
+  if (auto* observers = GetObserverSet(element)) {
     observers->InvalidateAll();
     return;
   }
@@ -1691,9 +1677,8 @@ void SVGObserverUtils::InvalidateRenderingObservers(nsIFrame* aFrame) {
   // eSVGContainer so we don't have to check f for null here.
   for (nsIFrame* f = aFrame->GetParent();
        f->IsFrameOfType(nsIFrame::eSVGContainer); f = f->GetParent()) {
-    if (f->GetContent()->IsElement()) {
-      observers = GetObserverSet(f->GetContent()->AsElement());
-      if (observers) {
+    if (auto* element = Element::FromNode(f->GetContent())) {
+      if (auto* observers = GetObserverSet(element)) {
         observers->InvalidateAll();
         return;
       }
@@ -1722,9 +1707,8 @@ void SVGObserverUtils::InvalidateDirectRenderingObservers(
 
 void SVGObserverUtils::InvalidateDirectRenderingObservers(
     nsIFrame* aFrame, uint32_t aFlags /* = 0 */) {
-  nsIContent* content = aFrame->GetContent();
-  if (content && content->IsElement()) {
-    InvalidateDirectRenderingObservers(content->AsElement(), aFlags);
+  if (auto* element = Element::FromNodeOrNull(aFrame->GetContent())) {
+    InvalidateDirectRenderingObservers(element, aFlags);
   }
 }
 

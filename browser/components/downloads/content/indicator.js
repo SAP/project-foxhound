@@ -471,7 +471,11 @@ const DownloadsIndicatorView = {
   },
 
   _maybeScheduleProgressUpdate() {
-    if (!this._progressRaf && document.visibilityState == "visible") {
+    if (
+      this.indicator &&
+      !this._progressRaf &&
+      document.visibilityState == "visible"
+    ) {
       this._progressRaf = requestAnimationFrame(() => {
         // indeterminate downloads (unknown content-length) will show up as aValue = 0
         if (this._percentComplete >= 0) {
@@ -616,16 +620,11 @@ const DownloadsIndicatorView = {
    * is not present in the browser window yet.
    */
   get indicator() {
-    if (this._indicator) {
-      return this._indicator;
+    if (!this._indicator) {
+      this._indicator = document.getElementById("downloads-button");
     }
 
-    let indicator = document.getElementById("downloads-button");
-    if (!indicator || indicator.getAttribute("indicator") != "true") {
-      return null;
-    }
-
-    return (this._indicator = indicator);
+    return this._indicator;
   },
 
   get indicatorAnchor() {

@@ -13,21 +13,18 @@ const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   Log: "resource://gre/modules/Log.sys.mjs",
-});
-
-XPCOMUtils.defineLazyModuleGetters(lazy, {
-  UIState: "resource://services-sync/UIState.jsm",
-  SyncedTabs: "resource://services-sync/SyncedTabs.jsm",
-  Weave: "resource://services-sync/main.js",
+  SyncedTabs: "resource://services-sync/SyncedTabs.sys.mjs",
+  UIState: "resource://services-sync/UIState.sys.mjs",
 });
 
 XPCOMUtils.defineLazyGetter(lazy, "syncUtils", () => {
-  return ChromeUtils.import("resource://services-sync/util.js").Utils;
+  return ChromeUtils.importESModule("resource://services-sync/util.sys.mjs")
+    .Utils;
 });
 
 XPCOMUtils.defineLazyGetter(lazy, "fxAccounts", () => {
-  return ChromeUtils.import(
-    "resource://gre/modules/FxAccounts.jsm"
+  return ChromeUtils.importESModule(
+    "resource://gre/modules/FxAccounts.sys.mjs"
   ).getFxAccountsSingleton();
 });
 
@@ -581,10 +578,12 @@ export const TabsSetupFlowManager = new (class {
   tryToClearError() {
     if (lazy.UIState.isReady() && this.fxaSignedIn) {
       this.startWaitingForTabs();
-      Services.tm.dispatchToMainThread(() => {
-        this.logger.debug("tryToClearError: triggering new tab sync");
-        this.startFullTabsSync();
-      });
+      if (this.isPrimaryPasswordLocked) {
+        lazy.syncUtils.ensureMPUnlocked();
+      }
+      this.logger.debug("tryToClearError: triggering new tab sync");
+      this.syncTabs();
+      Services.tm.dispatchToMainThread(() => {});
     } else {
       this.logger.debug(
         `tryToClearError: unable to sync, isReady: ${lazy.UIState.isReady()}, fxaSignedIn: ${
@@ -596,9 +595,5 @@ export const TabsSetupFlowManager = new (class {
   // For easy overriding in tests
   syncTabs(force = false) {
     return lazy.SyncedTabs.syncTabs(force);
-  }
-
-  startFullTabsSync() {
-    lazy.Weave.Service.sync({ why: "tabs", engines: ["tabs"] });
   }
 })();

@@ -36,29 +36,25 @@ const REASON_GATHER_SUBSESSION_PAYLOAD = "gather-subsession-payload";
 
 const lazy = {};
 
-ChromeUtils.defineModuleGetter(
-  lazy,
-  "jwcrypto",
-  "resource://services-crypto/jwcrypto.jsm"
-);
-
 ChromeUtils.defineESModuleGetters(lazy, {
   ClientID: "resource://gre/modules/ClientID.sys.mjs",
   CoveragePing: "resource://gre/modules/CoveragePing.sys.mjs",
-  TelemetryStorage: "resource://gre/modules/TelemetryStorage.sys.mjs",
-  TelemetryEnvironment: "resource://gre/modules/TelemetryEnvironment.sys.mjs",
+  ProvenanceData: "resource:///modules/ProvenanceData.sys.mjs",
   TelemetryArchive: "resource://gre/modules/TelemetryArchive.sys.mjs",
-  TelemetrySession: "resource://gre/modules/TelemetrySession.sys.mjs",
-  TelemetrySend: "resource://gre/modules/TelemetrySend.sys.mjs",
+  TelemetryEnvironment: "resource://gre/modules/TelemetryEnvironment.sys.mjs",
+  TelemetryEventPing: "resource://gre/modules/EventPing.sys.mjs",
+  TelemetryHealthPing: "resource://gre/modules/HealthPing.sys.mjs",
+  TelemetryModules: "resource://gre/modules/ModulesPing.sys.mjs",
   TelemetryReportingPolicy:
     "resource://gre/modules/TelemetryReportingPolicy.sys.mjs",
-  TelemetryModules: "resource://gre/modules/ModulesPing.sys.mjs",
+  TelemetrySend: "resource://gre/modules/TelemetrySend.sys.mjs",
+  TelemetrySession: "resource://gre/modules/TelemetrySession.sys.mjs",
+  TelemetryStorage: "resource://gre/modules/TelemetryStorage.sys.mjs",
   TelemetryUntrustedModulesPing:
     "resource://gre/modules/UntrustedModulesPing.sys.mjs",
-  UpdatePing: "resource://gre/modules/UpdatePing.sys.mjs",
-  TelemetryHealthPing: "resource://gre/modules/HealthPing.sys.mjs",
-  TelemetryEventPing: "resource://gre/modules/EventPing.sys.mjs",
   UninstallPing: "resource://gre/modules/UninstallPing.sys.mjs",
+  UpdatePing: "resource://gre/modules/UpdatePing.sys.mjs",
+  jwcrypto: "resource://services-crypto/jwcrypto.sys.mjs",
 });
 
 /**
@@ -1220,6 +1216,17 @@ var Impl = {
       NEWPROFILE_PING_DEFAULT_DELAY
     );
 
+    try {
+      // This is asynchronous, but we aren't going to await on it now. Just
+      // kick it off.
+      lazy.ProvenanceData.submitProvenanceTelemetry();
+    } catch (ex) {
+      this._log.warn(
+        "scheduleNewProfilePing - submitProvenanceTelemetry failed",
+        ex
+      );
+    }
+
     this._delayedNewPingTask = new DeferredTask(async () => {
       try {
         await this.sendNewProfilePing();
@@ -1238,6 +1245,15 @@ var Impl = {
     this._log.trace(
       "sendNewProfilePing - shutting down: " + this._shuttingDown
     );
+
+    try {
+      await lazy.ProvenanceData.submitProvenanceTelemetry();
+    } catch (ex) {
+      this._log.warn(
+        "sendNewProfilePing - submitProvenanceTelemetry failed",
+        ex
+      );
+    }
 
     const scalars = Services.telemetry.getSnapshotForScalars(
       "new-profile",

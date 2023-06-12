@@ -6,6 +6,7 @@
 
 #include "Highlight.h"
 #include "HighlightRegistry.h"
+#include "mozilla/StaticAnalysisFunctions.h"
 #include "mozilla/dom/HighlightBinding.h"
 
 #include "mozilla/AlreadyAddRefed.h"
@@ -17,6 +18,7 @@
 #include "PresShell.h"
 #include "Selection.h"
 
+#include "nsFrameSelection.h"
 #include "nsPIDOMWindow.h"
 
 namespace mozilla::dom {
@@ -81,49 +83,45 @@ void Highlight::RemoveFromHighlightRegistry(
 already_AddRefed<Selection> Highlight::CreateHighlightSelection(
     const nsAtom* aHighlightName, nsFrameSelection* aFrameSelection,
     ErrorResult& aRv) const {
+  MOZ_ASSERT(aFrameSelection);
+  MOZ_ASSERT(aFrameSelection->GetPresShell());
   RefPtr<Selection> selection =
       MakeRefPtr<Selection>(SelectionType::eHighlight, aFrameSelection);
   selection->SetHighlightName(aHighlightName);
-
-  for (auto const& range : mRanges) {
-    // this is safe because `Highlight::Add()` ensures all ranges are
-    // dynamic.
-    RefPtr<nsRange> dynamicRange = range->AsDynamicRange();
-    selection->AddRangeAndSelectFramesAndNotifyListeners(*dynamicRange, aRv);
-    if (aRv.Failed()) {
-      return nullptr;
+  AutoFrameSelectionBatcher selectionBatcher(__FUNCTION__);
+  selectionBatcher.AddFrameSelection(aFrameSelection);
+  for (const RefPtr<AbstractRange>& range : mRanges) {
+    if (range->GetComposedDocOfContainers() ==
+        aFrameSelection->GetPresShell()->GetDocument()) {
+      // since this is run in a context guarded by a selection batcher,
+      // no strong reference is needed to keep `range` alive.
+      selection->AddHighlightRangeAndSelectFramesAndNotifyListeners(
+          MOZ_KnownLive(*range), aRv);
     }
   }
   return selection.forget();
 }
 
-void Highlight::NotifyChangesToRegistries(ErrorResult& aRv) {
-  for (RefPtr<HighlightRegistry> highlightRegistry :
-       mHighlightRegistries.Keys()) {
-    MOZ_ASSERT(highlightRegistry);
-    highlightRegistry->HighlightPropertiesChanged(*this, aRv);
-    if (aRv.Failed()) {
-      return;
-    }
-  }
-}
-
 void Highlight::Add(AbstractRange& aRange, ErrorResult& aRv) {
-  if (aRange.IsStaticRange()) {
-    // TODO (jjaschke) Selection needs to be able to deal with StaticRanges
-    // (Bug 1808565)
-    aRv.ThrowUnknownError("Support for StaticRanges is not implemented yet!");
-    return;
-  }
   Highlight_Binding::SetlikeHelpers::Add(this, aRange, aRv);
   if (aRv.Failed()) {
     return;
   }
   if (!mRanges.Contains(&aRange)) {
     mRanges.AppendElement(&aRange);
-    NotifyChangesToRegistries(aRv);
-    if (aRv.Failed()) {
-      return;
+    AutoFrameSelectionBatcher selectionBatcher(__FUNCTION__,
+                                               mHighlightRegistries.Count());
+    for (const RefPtr<HighlightRegistry>& registry :
+         mHighlightRegistries.Keys()) {
+      auto frameSelection = registry->GetFrameSelection();
+      selectionBatcher.AddFrameSelection(frameSelection);
+      // since this is run in a context guarded by a selection batcher,
+      // no strong reference is needed to keep `registry` alive.
+      MOZ_KnownLive(registry)->MaybeAddRangeToHighlightSelection(aRange, *this,
+                                                                 aRv);
+      if (aRv.Failed()) {
+        return;
+      }
     }
   }
 }
@@ -132,15 +130,38 @@ void Highlight::Clear(ErrorResult& aRv) {
   Highlight_Binding::SetlikeHelpers::Clear(this, aRv);
   if (!aRv.Failed()) {
     mRanges.Clear();
-    NotifyChangesToRegistries(aRv);
+    AutoFrameSelectionBatcher selectionBatcher(__FUNCTION__,
+                                               mHighlightRegistries.Count());
+
+    for (const RefPtr<HighlightRegistry>& registry :
+         mHighlightRegistries.Keys()) {
+      auto frameSelection = registry->GetFrameSelection();
+      selectionBatcher.AddFrameSelection(frameSelection);
+      // since this is run in a context guarded by a selection batcher,
+      // no strong reference is needed to keep `registry` alive.
+      MOZ_KnownLive(registry)->RemoveHighlightSelection(*this);
+    }
   }
 }
 
-void Highlight::Delete(AbstractRange& aRange, ErrorResult& aRv) {
+bool Highlight::Delete(AbstractRange& aRange, ErrorResult& aRv) {
   if (Highlight_Binding::SetlikeHelpers::Delete(this, aRange, aRv)) {
     mRanges.RemoveElement(&aRange);
-    NotifyChangesToRegistries(aRv);
+    AutoFrameSelectionBatcher selectionBatcher(__FUNCTION__,
+                                               mHighlightRegistries.Count());
+
+    for (const RefPtr<HighlightRegistry>& registry :
+         mHighlightRegistries.Keys()) {
+      auto frameSelection = registry->GetFrameSelection();
+      selectionBatcher.AddFrameSelection(frameSelection);
+      // since this is run in a context guarded by a selection batcher,
+      // no strong reference is needed to keep `registry` alive.
+      MOZ_KnownLive(registry)->MaybeRemoveRangeFromHighlightSelection(aRange,
+                                                                      *this);
+    }
+    return true;
   }
+  return false;
 }
 
 JSObject* Highlight::WrapObject(JSContext* aCx,

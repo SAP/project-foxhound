@@ -48,8 +48,10 @@ class MuxerUnifiedComplete extends UrlbarMuxer {
    *
    * @param {UrlbarQueryContext} context
    *   The query context.
+   * @param {Array} unsortedResults
+   *   The array of UrlbarResult that is not sorted yet.
    */
-  sort(context) {
+  sort(context, unsortedResults) {
     // This method is called multiple times per keystroke, so it should be as
     // fast and efficient as possible.  We do two passes through the results:
     // one to collect state for the second pass, and then a second to build the
@@ -76,7 +78,7 @@ class MuxerUnifiedComplete extends UrlbarMuxer {
       urlToTabResultType: new Map(),
       addedRemoteTabUrls: new Set(),
       addedSwitchTabUrls: new Set(),
-      canShowPrivateSearch: context.results.length > 1,
+      canShowPrivateSearch: unsortedResults.length > 1,
       canShowTailSuggestions: true,
       // Form history and remote suggestions added so far.  Used for deduping
       // suggestions.  Also includes the heuristic query string if the heuristic
@@ -90,7 +92,7 @@ class MuxerUnifiedComplete extends UrlbarMuxer {
     };
 
     // Do the first pass over all results to build some state.
-    for (let result of context.results) {
+    for (let result of unsortedResults) {
       // Add each result to the appropriate `resultsByGroup` map.
       let group = UrlbarUtils.getResultGroup(result);
       let resultsByGroup =
@@ -641,7 +643,7 @@ class MuxerUnifiedComplete extends UrlbarMuxer {
   // eslint-disable-next-line complexity
   _canAddResult(result, state) {
     // QuickSuggest results are shown unless a weather result is also present
-    // or they are best matches that duplicate the heuristic.
+    // or they are navigational suggestions that duplicate the heuristic.
     if (result.providerName == lazy.UrlbarProviderQuickSuggest.name) {
       if (state.weatherResult) {
         return false;
@@ -650,8 +652,9 @@ class MuxerUnifiedComplete extends UrlbarMuxer {
       let heuristicUrl = state.context.heuristicResult?.payload.url;
       if (
         heuristicUrl &&
-        !lazy.UrlbarPrefs.get("experimental.hideHeuristic") &&
-        result.isBestMatch
+        result.payload.subtype ==
+          lazy.UrlbarProviderQuickSuggest.RESULT_SUBTYPE.NAVIGATIONAL &&
+        !lazy.UrlbarPrefs.get("experimental.hideHeuristic")
       ) {
         let opts = {
           stripHttp: true,
@@ -659,10 +662,10 @@ class MuxerUnifiedComplete extends UrlbarMuxer {
           stripWww: true,
           trimSlash: true,
         };
-        return (
-          UrlbarUtils.stripPrefixAndTrim(heuristicUrl, opts)[0] !=
-          UrlbarUtils.stripPrefixAndTrim(result.payload.url, opts)[0]
-        );
+        result.payload.dupedHeuristic =
+          UrlbarUtils.stripPrefixAndTrim(heuristicUrl, opts)[0] ==
+          UrlbarUtils.stripPrefixAndTrim(result.payload.url, opts)[0];
+        return !result.payload.dupedHeuristic;
       }
       return true;
     }

@@ -594,7 +594,6 @@ class InitializeVirtualDesktopManagerTask : public Task {
 #endif
 
   virtual bool Run() override {
-#ifndef __MINGW32__
     if (!IsWin10OrLater()) {
       return true;
     }
@@ -608,7 +607,6 @@ class InitializeVirtualDesktopManagerTask : public Task {
     }
 
     gVirtualDesktopManager = desktopManager;
-#endif
     return true;
   }
 };
@@ -4210,7 +4208,9 @@ uint32_t nsWindow::GetMaxTouchPoints() const {
   return WinUtils::GetMaxTouchPoints();
 }
 
-void nsWindow::SetWindowClass(const nsAString& xulWinType) {
+void nsWindow::SetWindowClass(const nsAString& xulWinType,
+                              const nsAString& xulWinClass,
+                              const nsAString& xulWinName) {
   mIsEarlyBlankWindow = xulWinType.EqualsLiteral("navigator:blank");
 }
 
@@ -5102,9 +5102,9 @@ bool nsWindow::ProcessMessage(UINT msg, WPARAM& wParam, LPARAM& lParam,
                               LRESULT* aRetValue) {
   // For some events we might change the parameter values, so log
   // before and after we process them.
-  PrintEvent printEvent(mWnd, msg, wParam, lParam, *aRetValue);
+  PrintEvent printEvent(mWnd, msg, wParam, lParam);
   bool result = ProcessMessageInternal(msg, wParam, lParam, aRetValue);
-  printEvent.SetResult(result);
+  printEvent.SetResult(*aRetValue, result);
 
   return result;
 }
@@ -5259,18 +5259,8 @@ bool nsWindow::ProcessMessageInternal(UINT msg, WPARAM& wParam, LPARAM& lParam,
         break;
       }
 
-      nsresult rv;
-      bool didChange = false;
-
       // update the global font list
-      nsCOMPtr<nsIFontEnumerator> fontEnum =
-          do_GetService("@mozilla.org/gfx/fontenumerator;1", &rv);
-      if (NS_SUCCEEDED(rv)) {
-        fontEnum->UpdateFontList(&didChange);
-        if (didChange) {
-          gfxPlatform::ForceGlobalReflow(gfxPlatform::NeedsReframe::Yes);
-        }
-      }  // if (NS_SUCCEEDED(rv))
+      gfxPlatform::GetPlatform()->UpdateFontList();
     } break;
 
     case WM_SETTINGCHANGE: {
@@ -5622,11 +5612,11 @@ bool nsWindow::ProcessMessageInternal(UINT msg, WPARAM& wParam, LPARAM& lParam,
         userMovedMouse = true;
       }
 
-      result =
-          DispatchMouseEvent(eMouseMove, wParam, lParam, false,
-                             MouseButton::ePrimary, MOUSE_INPUT_SOURCE(),
-                             mPointerEvents.GetCachedPointerInfo(msg, wParam));
       if (userMovedMouse) {
+        result = DispatchMouseEvent(
+            eMouseMove, wParam, lParam, false, MouseButton::ePrimary,
+            MOUSE_INPUT_SOURCE(),
+            mPointerEvents.GetCachedPointerInfo(msg, wParam));
         DispatchPendingEvents();
       }
     } break;

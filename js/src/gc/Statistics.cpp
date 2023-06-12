@@ -1007,6 +1007,14 @@ void Statistics::endGC() {
   sendGCTelemetry();
 }
 
+TimeDuration Statistics::sumTotalParallelTime(PhaseKind phaseKind) const {
+  TimeDuration total;
+  for (const SliceData& slice : slices_) {
+    total += slice.totalParallelTimes[phaseKind];
+  }
+  return total;
+}
+
 void Statistics::sendGCTelemetry() {
   JSRuntime* runtime = gc->rt;
   // NOTE: "Compartmental" is term that was deprecated with the
@@ -1093,6 +1101,23 @@ void Statistics::sendGCTelemetry() {
       double effectiveness =
           (double(bytesFreed) / BYTES_PER_MB) / clampedTotal.ToSeconds();
       runtime->metrics().GC_EFFECTIVENESS(uint32_t(effectiveness));
+    }
+  }
+
+  // Parallel marking stats.
+  if (gc->isParallelMarkingEnabled()) {
+    TimeDuration wallTime = SumPhase(PhaseKind::PARALLEL_MARK, phaseTimes);
+    TimeDuration parallelMarkTime =
+        sumTotalParallelTime(PhaseKind::PARALLEL_MARK);
+    if (wallTime && parallelMarkTime) {
+      uint32_t threadCount = gc->markers.length();
+      double speedup = parallelMarkTime / wallTime;
+      double utilization = parallelMarkTime / (wallTime * threadCount);
+      runtime->metrics().GC_PARALLEL_MARK_SPEEDUP(uint32_t(speedup * 100.0));
+      runtime->metrics().GC_PARALLEL_MARK_UTILIZATION(
+          uint32_t(utilization * 100.0));
+      runtime->metrics().GC_PARALLEL_MARK_INTERRUPTIONS(
+          getCount(COUNT_PARALLEL_MARK_INTERRUPTIONS));
     }
   }
 }
@@ -1558,7 +1583,6 @@ void Statistics::maybePrintProfileHeaders() {
   _("Runtime", 14, "0x%12p", runtime)
 
 #define FOR_EACH_GC_PROFILE_SLICE_METADATA(_)         \
-  FOR_EACH_GC_PROFILE_COMMON_METADATA(_)              \
   _("Timestamp", 10, "%10.6f", timestamp.ToSeconds()) \
   _("Reason", 20, "%-20.20s", reason)                 \
   _("States", 6, "%6s", formatGCStates(slice))        \

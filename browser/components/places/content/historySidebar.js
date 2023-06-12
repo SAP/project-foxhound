@@ -34,8 +34,6 @@ var gCumulativeSearches = 0;
 var gCumulativeFilterCount = 0;
 
 function HistorySidebarInit() {
-  Services.telemetry.keyedScalarAdd("sidebar.opened", "history", 1);
-
   let uidensity = window.top.document.documentElement.getAttribute("uidensity");
   if (uidensity) {
     document.documentElement.setAttribute("uidensity", uidensity);
@@ -77,7 +75,7 @@ function GroupBy(groupingType) {
   searchHistory(gSearchBox.value);
 }
 
-function updateHistoryTelemetry(urlsOpened = []) {
+function updateTelemetry(urlsOpened = []) {
   let searchesHistogram = Services.telemetry.getHistogramById(
     "PLACES_SEARCHBAR_CUMULATIVE_SEARCHES"
   );

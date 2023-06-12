@@ -34,6 +34,12 @@ XPCOMUtils.defineLazyModuleGetters(lazy, {
 
 ChromeUtils.defineModuleGetter(
   lazy,
+  "LoginHelper",
+  "resource://gre/modules/LoginHelper.jsm"
+);
+
+ChromeUtils.defineModuleGetter(
+  lazy,
   "PanelMultiView",
   "resource:///modules/PanelMultiView.jsm"
 );
@@ -451,6 +457,14 @@ const CustomizableWidgets = [
       win.MailIntegration.sendLinkForBrowser(win.gBrowser.selectedBrowser);
     },
   },
+  {
+    id: "logins-button",
+    l10nId: "toolbar-button-logins",
+    onCommand(aEvent) {
+      let window = aEvent.view;
+      lazy.LoginHelper.openPasswordManager(window, { entryPoint: "toolbar" });
+    },
+  },
 ];
 
 if (Services.prefs.getBoolPref("identity.fxaccounts.enabled")) {
@@ -494,7 +508,8 @@ if (!lazy.screenshotsDisabled) {
       if (lazy.SCREENSHOT_BROWSER_COMPONENT) {
         Services.obs.notifyObservers(
           aEvent.currentTarget.ownerGlobal,
-          "menuitem-screenshot"
+          "menuitem-screenshot",
+          "toolbar_button"
         );
       } else {
         Services.obs.notifyObservers(

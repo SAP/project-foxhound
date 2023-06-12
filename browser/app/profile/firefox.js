@@ -410,11 +410,6 @@ pref("browser.urlbar.suggest.calculator",           false);
 // Feature gate pref for weather suggestions in the urlbar.
 pref("browser.urlbar.weather.featureGate", false);
 
-// If true, weather suggestions will be shown on "zero prefix", which means when
-// the user focuses the urlbar without typing anything. If false, the user must
-// type weather-related keywords to show weather suggestions.
-pref("browser.urlbar.weather.zeroPrefix", true);
-
 // If `browser.urlbar.weather.featureGate` is true, this controls whether
 // weather suggestions are turned on.
 pref("browser.urlbar.suggest.weather", true);
@@ -473,9 +468,13 @@ pref("browser.urlbar.quicksuggest.impressionCaps.nonSponsoredEnabled", false);
 // caps.
 pref("browser.urlbar.quicksuggest.impressionCaps.sponsoredEnabled", false);
 
+#ifdef EARLY_BETA_OR_EARLIER
 // Whether the usual non-best-match quick suggest results can be blocked. This
 // pref is a fallback for the Nimbus variable `quickSuggestBlockingEnabled`.
+pref("browser.urlbar.quicksuggest.blockingEnabled", true);
+#else
 pref("browser.urlbar.quicksuggest.blockingEnabled", false);
+#endif
 
 // Whether unit conversion is enabled.
 #ifdef NIGHTLY_BUILD
@@ -512,6 +511,8 @@ pref("browser.urlbar.resultMenu", true);
 #else
 pref("browser.urlbar.resultMenu", false);
 #endif
+// Allow the result menu button to be reached with the Tab key.
+pref("browser.urlbar.resultMenu.keyboardAccessible", true);
 
 // If true, we show tail suggestions when available.
 pref("browser.urlbar.richSuggestions.tail", true);
@@ -588,7 +589,11 @@ pref("browser.urlbar.bestMatch.enabled", false);
 
 // Whether best match results can be blocked. This pref is a fallback for the
 // Nimbus variable `bestMatchBlockingEnabled`.
+#ifdef EARLY_BETA_OR_EARLIER
+pref("browser.urlbar.bestMatch.blockingEnabled", true);
+#else
 pref("browser.urlbar.bestMatch.blockingEnabled", false);
+#endif
 
 // Enable site specific search result.
 pref("browser.urlbar.contextualSearch.enabled", false);
@@ -984,6 +989,8 @@ pref("browser.gesture.twist.end", "cmd_gestureRotateEnd");
   pref("browser.gesture.tap", "");
 #endif
 
+pref("browser.history_swipe_animation.disabled", false);
+
 // 0: Nothing happens
 // 1: Scrolling contents
 // 2: Go back or go forward, in your history
@@ -1269,7 +1276,11 @@ pref("browser.bookmarks.editDialog.maxRecentFolders", 7);
 
 // By default the Edit Bookmark dialog is instant-apply. This feature pref will allow to
 // just save on Accept, once the project is complete.
-pref("browser.bookmarks.editDialog.delayedApply.enabled", false);
+#ifdef NIGHTLY_BUILD
+  pref("browser.bookmarks.editDialog.delayedApply.enabled", true);
+#else
+  pref("browser.bookmarks.editDialog.delayedApply.enabled", false);
+#endif
 
 #if defined(XP_WIN) && defined(MOZ_SANDBOX)
   // This controls the strength of the Windows content process sandbox for
@@ -1278,6 +1289,9 @@ pref("browser.bookmarks.editDialog.delayedApply.enabled", false);
   // See - security/sandbox/win/src/sandboxbroker/sandboxBroker.cpp
   // SetSecurityLevelForContentProcess() for what the different settings mean.
   pref("security.sandbox.content.level", 6);
+
+  // Pref controlling if messages relevant to sandbox violations are logged.
+  pref("security.sandbox.logging.enabled", false);
 #endif
 
 #if defined(XP_MACOSX) && defined(MOZ_SANDBOX)
@@ -1304,6 +1318,9 @@ pref("browser.bookmarks.editDialog.delayedApply.enabled", false);
   // this pref overridden) if OOP WebGL is disabled. OOP WebGL is disabled
   // for some tests.
   pref("security.sandbox.content.mac.disconnect-windowserver", true);
+
+  // Pref controlling if messages relevant to sandbox violations are logged.
+  pref("security.sandbox.logging.enabled", false);
 #endif
 
 #if defined(XP_LINUX) && defined(MOZ_SANDBOX)
@@ -1335,18 +1352,11 @@ pref("browser.bookmarks.editDialog.delayedApply.enabled", false);
   pref("security.sandbox.content.level", 1);
 #endif
 
-#if defined(MOZ_SANDBOX)
+#if defined(MOZ_CONTENT_TEMP_DIR)
   // ID (a UUID when set by gecko) that is used to form the name of a
   // sandbox-writable temporary directory to be used by content processes
-  // when a temporary writable file is required in a level 1 sandbox.
+  // when a temporary writable file is required.
   pref("security.sandbox.content.tempDirSuffix", "");
-  pref("security.sandbox.plugin.tempDirSuffix", "");
-
-  // This pref determines if messages relevant to sandbox violations are
-  // logged.
-  #if defined(XP_WIN) || defined(XP_MACOSX)
-    pref("security.sandbox.logging.enabled", false);
-  #endif
 #endif
 
 // This pref governs whether we attempt to work around problems caused by
@@ -1589,7 +1599,7 @@ pref("browser.newtabpage.activity-stream.discoverystream.hybridLayout.enabled", 
 pref("browser.newtabpage.activity-stream.discoverystream.hideCardBackground.enabled", false);
 pref("browser.newtabpage.activity-stream.discoverystream.fourCardLayout.enabled", false);
 pref("browser.newtabpage.activity-stream.discoverystream.newFooterSection.enabled", false);
-pref("browser.newtabpage.activity-stream.discoverystream.saveToPocketCard.enabled", false);
+pref("browser.newtabpage.activity-stream.discoverystream.saveToPocketCard.enabled", true);
 pref("browser.newtabpage.activity-stream.discoverystream.saveToPocketCardRegions", "");
 pref("browser.newtabpage.activity-stream.discoverystream.hideDescriptions.enabled", false);
 pref("browser.newtabpage.activity-stream.discoverystream.hideDescriptionsRegions", "");
@@ -1604,6 +1614,7 @@ pref("browser.newtabpage.activity-stream.discoverystream.essentialReadsHeader.en
 pref("browser.newtabpage.activity-stream.discoverystream.recentSaves.enabled", false);
 pref("browser.newtabpage.activity-stream.discoverystream.editorsPicksHeader.enabled", false);
 pref("browser.newtabpage.activity-stream.discoverystream.spoc-positions", "1,5,7,11,18,20");
+pref("browser.newtabpage.activity-stream.discoverystream.spoc-topsites-positions", "1");
 pref("browser.newtabpage.activity-stream.discoverystream.widget-positions", "");
 
 pref("browser.newtabpage.activity-stream.discoverystream.spocs-endpoint", "");
@@ -1617,7 +1628,7 @@ pref("browser.newtabpage.activity-stream.discoverystream.spocTopsitesAdTypes", "
 pref("browser.newtabpage.activity-stream.discoverystream.spocTopsitesZoneIds", "");
 pref("browser.newtabpage.activity-stream.discoverystream.spocSiteId", "");
 
-pref("browser.newtabpage.activity-stream.discoverystream.sendToPocket.enabled", false);
+pref("browser.newtabpage.activity-stream.discoverystream.sendToPocket.enabled", true);
 
 // List of regions that do not get stories, regardless of locale-list-config.
 pref("browser.newtabpage.activity-stream.discoverystream.region-stories-block", "FR");
@@ -1817,9 +1828,6 @@ pref("media.gmp.trial-create.enabled", true);
 pref("media.gmp-gmpopenh264.visible", true);
 pref("media.gmp-gmpopenh264.enabled", true);
 
-// Block WebAudio from playing automatically.
-pref("media.autoplay.block-webaudio", true);
-
 pref("media.videocontrols.picture-in-picture.enabled", true);
 pref("media.videocontrols.picture-in-picture.audio-toggle.enabled", true);
 pref("media.videocontrols.picture-in-picture.video-toggle.enabled", true);
@@ -1907,6 +1915,12 @@ pref("browser.contentblocking.reject-and-isolate-cookies.preferences.ui.enabled"
 //   Social Tracking Protection:
 //     "stp": social tracking protection enabled
 //     "-stp": social tracking protection disabled
+//   Email Tracking Protection:
+//     "emailTP": email tracking protection enabled
+//     "-emailTP": email tracking protection disabled
+//   Email Tracking Protection in private windows:
+//     "emailTPPrivate": email tracking protection in private windows enabled
+//     "-emailTPPrivate": email tracking protection in private windows disabled
 //   Level 2 Tracking list in normal windows:
 //     "lvl2": Level 2 tracking list enabled
 //     "-lvl2": Level 2 tracking list disabled
@@ -1943,7 +1957,7 @@ pref("browser.contentblocking.reject-and-isolate-cookies.preferences.ui.enabled"
 //     "cookieBehaviorPBM4": cookie behaviour BEHAVIOR_REJECT_TRACKER
 //     "cookieBehaviorPBM5": cookie behaviour BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN
 // One value from each section must be included in the browser.contentblocking.features.strict pref.
-pref("browser.contentblocking.features.strict", "tp,tpPrivate,cookieBehavior5,cookieBehaviorPBM5,cm,fp,stp,lvl2,lvl2PBM,rp,rpTop,ocsp,qps,qpsPBM");
+pref("browser.contentblocking.features.strict", "tp,tpPrivate,cookieBehavior5,cookieBehaviorPBM5,cm,fp,stp,emailTP,emailTPPrivate,lvl2,lvl2PBM,rp,rpTop,ocsp,qps,qpsPBM");
 
 // Hide the "Change Block List" link for trackers/tracking content in the custom
 // Content Blocking/ETP panel. By default, it will not be visible. There is also
@@ -1991,6 +2005,10 @@ pref("browser.promo.focus.enabled", true);
 
 // Default to enabling pin promos to be shown where allowed.
 pref("browser.promo.pin.enabled", true);
+
+// Default to enabling cookie banner reduction promos to be shown where allowed.
+// Set to true for Fx113 (see bug 1808611)
+pref("browser.promo.cookiebanners.enabled", false);
 
 // Comma separated string of mozilla vpn supported platforms.
 pref("browser.contentblocking.report.vpn_platforms", "win,mac,linux");
@@ -2776,8 +2794,12 @@ pref("browser.pdfjs.feature-tour", "{\"screen\":\"\",\"complete\":false}");
   pref("cookiebanners.service.mode.privateBrowsing", 1);
 #endif
 
-// Enables the cookie banner desktop UI.
-pref("cookiebanners.ui.desktop.enabled", false);
+#if defined(EARLY_BETA_OR_EARLIER)
+  // Enables the cookie banner desktop UI.
+  pref("cookiebanners.ui.desktop.enabled", true);
+#else
+  pref("cookiebanners.ui.desktop.enabled", false);
+#endif
 
 // Controls which variant of the cookie banner CFR the user is presented with.
 pref("cookiebanners.ui.desktop.cfrVariant", 0);

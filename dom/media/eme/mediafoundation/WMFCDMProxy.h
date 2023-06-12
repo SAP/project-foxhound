@@ -19,13 +19,14 @@
 
 namespace mozilla {
 
+class WMFCDMProxyCallback;
+
 class WMFCDMProxy : public CDMProxy {
  public:
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(WMFCDMProxy, override)
 
   WMFCDMProxy(dom::MediaKeys* aKeys, const nsAString& aKeySystem,
-              bool aDistinctiveIdentifierRequired,
-              bool aPersistentStateRequired);
+              const dom::MediaKeySystemConfiguration& aConfig);
 
   // CDMProxy interface
   void Init(PromiseId aPromiseId, const nsAString& aOrigin,
@@ -37,19 +38,18 @@ class WMFCDMProxy : public CDMProxy {
                      nsTArray<uint8_t>& aInitData) override;
 
   void LoadSession(PromiseId aPromiseId, dom::MediaKeySessionType aSessionType,
-                   const nsAString& aSessionId) override {}
+                   const nsAString& aSessionId) override;
 
   void SetServerCertificate(PromiseId aPromiseId,
                             nsTArray<uint8_t>& aCert) override {}
 
   void UpdateSession(const nsAString& aSessionId, PromiseId aPromiseId,
-                     nsTArray<uint8_t>& aResponse) override {}
+                     nsTArray<uint8_t>& aResponse) override;
 
-  void CloseSession(const nsAString& aSessionId,
-                    PromiseId aPromiseId) override {}
+  void CloseSession(const nsAString& aSessionId, PromiseId aPromiseId) override;
 
   void RemoveSession(const nsAString& aSessionId,
-                     PromiseId aPromiseId) override {}
+                     PromiseId aPromiseId) override;
 
   void QueryOutputProtectionStatus() override {}
 
@@ -69,10 +69,10 @@ class WMFCDMProxy : public CDMProxy {
 
   void OnSessionMessage(const nsAString& aSessionId,
                         dom::MediaKeyMessageType aMessageType,
-                        const nsTArray<uint8_t>& aMessage) override {}
+                        const nsTArray<uint8_t>& aMessage) override;
 
   void OnExpirationChange(const nsAString& aSessionId,
-                          UnixTime aExpiryTime) override {}
+                          UnixTime aExpiryTime) override;
 
   void OnSessionClosed(const nsAString& aSessionId) override {}
 
@@ -92,7 +92,7 @@ class WMFCDMProxy : public CDMProxy {
   void RejectPromise(PromiseId aId, ErrorResult&& aException,
                      const nsCString& aReason) override;
 
-  void OnKeyStatusesChange(const nsAString& aSessionId) override {}
+  void OnKeyStatusesChange(const nsAString& aSessionId) override;
 
   void GetStatusForPolicy(PromiseId aPromiseId,
                           const nsAString& aMinHdcpVersion) override {}
@@ -104,7 +104,7 @@ class WMFCDMProxy : public CDMProxy {
 #endif
 
  private:
-  virtual ~WMFCDMProxy() = default;
+  virtual ~WMFCDMProxy();
 
   template <typename T>
   void ResolvePromiseWithResult(PromiseId aId, const T& aResult) {}
@@ -116,7 +116,12 @@ class WMFCDMProxy : public CDMProxy {
 
   RefPtr<WMFCDMImpl> mCDM;
 
-  MozPromiseRequestHolder<MFCDMChild::SessionPromise> mCreateSessionRequest;
+  const dom::MediaKeySystemConfiguration mConfig;
+
+  RefPtr<WMFCDMProxyCallback> mProxyCallback;
+
+  // It can only be used on the main thread.
+  bool mIsShutdown = false;
 };
 
 }  // namespace mozilla

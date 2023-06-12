@@ -14,9 +14,11 @@
 #include <type_traits>
 #include "gfxContext.h"
 #include "mozilla/AutoRestore.h"
+#include "mozilla/Baseline.h"
 #include "mozilla/ComputedStyle.h"
 #include "mozilla/CSSAlignUtils.h"
 #include "mozilla/StaticPrefs_layout.h"
+#include "mozilla/dom/Grid.h"
 #include "mozilla/dom/GridBinding.h"
 #include "mozilla/IntegerRange.h"
 #include "mozilla/Maybe.h"
@@ -5816,9 +5818,9 @@ void nsGridContainerFrame::Tracks::InitializeItemBaselines(
       if (state & ItemState::eFirstBaseline) {
         if (grid) {
           if (isOrthogonal == isInlineAxis) {
-            grid->GetBBaseline(BaselineSharingGroup::First, &baseline);
+            baseline = grid->GetBBaseline(BaselineSharingGroup::First);
           } else {
-            grid->GetIBaseline(BaselineSharingGroup::First, &baseline);
+            baseline = grid->GetIBaseline(BaselineSharingGroup::First);
           }
         }
         if (grid || nsLayoutUtils::GetFirstLineBaseline(wm, child, &baseline)) {
@@ -5837,9 +5839,9 @@ void nsGridContainerFrame::Tracks::InitializeItemBaselines(
       } else {
         if (grid) {
           if (isOrthogonal == isInlineAxis) {
-            grid->GetBBaseline(BaselineSharingGroup::Last, &baseline);
+            baseline = grid->GetBBaseline(BaselineSharingGroup::Last);
           } else {
-            grid->GetIBaseline(BaselineSharingGroup::Last, &baseline);
+            baseline = grid->GetIBaseline(BaselineSharingGroup::Last);
           }
         }
         if (grid || nsLayoutUtils::GetLastLineBaseline(wm, child, &baseline)) {
@@ -5980,9 +5982,9 @@ void nsGridContainerFrame::Tracks::InitializeItemBaselinesInMasonryAxis(
       if (state & ItemState::eFirstBaseline) {
         if (grid) {
           if (isOrthogonal == isInlineAxis) {
-            grid->GetBBaseline(BaselineSharingGroup::First, &baseline);
+            baseline = grid->GetBBaseline(BaselineSharingGroup::First);
           } else {
-            grid->GetIBaseline(BaselineSharingGroup::First, &baseline);
+            baseline = grid->GetIBaseline(BaselineSharingGroup::First);
           }
         }
         if (grid || nsLayoutUtils::GetFirstLineBaseline(wm, child, &baseline)) {
@@ -6011,9 +6013,9 @@ void nsGridContainerFrame::Tracks::InitializeItemBaselinesInMasonryAxis(
       } else {
         if (grid) {
           if (isOrthogonal == isInlineAxis) {
-            grid->GetBBaseline(BaselineSharingGroup::Last, &baseline);
+            baseline = grid->GetBBaseline(BaselineSharingGroup::Last);
           } else {
-            grid->GetIBaseline(BaselineSharingGroup::Last, &baseline);
+            baseline = grid->GetIBaseline(BaselineSharingGroup::Last);
           }
         }
         if (grid || nsLayoutUtils::GetLastLineBaseline(wm, child, &baseline)) {
@@ -8919,6 +8921,13 @@ void nsGridContainerFrame::Reflow(nsPresContext* aPresContext,
     // since this bit is only set by accessing a ChromeOnly property, and
     // therefore can't unduly slow down normal web browsing.
 
+    // Clear our GridFragmentInfo property, which might be holding a stale
+    // dom::Grid object built from previously-computed info. This will
+    // ensure that the next call to GetGridFragments will create a new one.
+    if (mozilla::dom::Grid* grid = TakeProperty(GridFragmentInfo())) {
+      grid->ForgetFrame();
+    }
+
     // Now that we know column and row sizes and positions, set
     // the ComputedGridTrackInfo and related properties
 
@@ -9577,11 +9586,14 @@ nscoord nsGridContainerFrame::SynthesizeBaseline(
     start = child->GetLogicalNormalPosition(aCBWM, aCBPhysicalSize).B(aCBWM);
     size = child->BSize(aCBWM);
     if (grid && aGridOrderItem.mIsInEdgeTrack) {
-      isOrthogonal ? grid->GetIBaseline(aGroup, &baseline)
-                   : grid->GetBBaseline(aGroup, &baseline);
+      baseline = isOrthogonal ? grid->GetIBaseline(aGroup)
+                              : grid->GetBBaseline(aGroup);
     } else if (!isOrthogonal && aGridOrderItem.mIsInEdgeTrack) {
-      baseline =
-          child->BaselineBOffset(childWM, aGroup, AlignmentContext::Grid);
+      baseline = child->GetNaturalBaselineBOffset(childWM, aGroup)
+                     .valueOrFrom([aGroup, child, childWM]() {
+                       return Baseline::SynthesizeBOffsetFromBorderBox(
+                           child, childWM, aGroup);
+                     });
     } else {
       baseline = ::SynthesizeBaselineFromBorderBox(aGroup, childWM, size);
     }
@@ -9589,8 +9601,8 @@ nscoord nsGridContainerFrame::SynthesizeBaseline(
     start = child->GetLogicalNormalPosition(aCBWM, aCBPhysicalSize).I(aCBWM);
     size = child->ISize(aCBWM);
     if (grid && aGridOrderItem.mIsInEdgeTrack) {
-      isOrthogonal ? grid->GetBBaseline(aGroup, &baseline)
-                   : grid->GetIBaseline(aGroup, &baseline);
+      baseline = isOrthogonal ? grid->GetBBaseline(aGroup)
+                              : grid->GetIBaseline(aGroup);
     } else if (isOrthogonal && aGridOrderItem.mIsInEdgeTrack &&
                GetBBaseline(aGroup, childWM, child, &baseline)) {
       if (aGroup == BaselineSharingGroup::Last) {

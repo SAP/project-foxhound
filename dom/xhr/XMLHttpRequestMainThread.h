@@ -173,7 +173,7 @@ class RequestHeaders {
   void MergeOrSet(const nsACString& aName, const nsACString& aValue);
   void Clear();
   void ApplyToChannel(nsIHttpChannel* aChannel, bool aStripRequestBodyHeader,
-                      bool aStripAuthHeader) const;
+                      bool aStripAuth) const;
   void GetCORSUnsafeHeaders(nsTArray<nsCString>& aArray) const;
 };
 
@@ -514,7 +514,7 @@ class XMLHttpRequestMainThread final : public XMLHttpRequest,
 
   void MaybeCreateBlobStorage();
 
-  nsresult OnRedirectVerifyCallback(nsresult result);
+  nsresult OnRedirectVerifyCallback(nsresult result, bool stripAuth = false);
 
   nsIEventTarget* GetTimerEventTarget();
 

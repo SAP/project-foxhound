@@ -8,6 +8,11 @@ import { Utils } from "resource://testing-common/dom/quota/test/modules/Utils.sy
 export const UtilsParent = {
   async OnMessageReceived(worker, msg) {
     switch (msg.op) {
+      case "getCachedOriginUsage": {
+        const result = await Utils.getCachedOriginUsage();
+        worker.postMessage(result);
+        break;
+      }
       case "shrinkStorageSize": {
         const result = await Utils.shrinkStorageSize(msg.size);
         worker.postMessage(result);

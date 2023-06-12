@@ -1316,7 +1316,13 @@ impl Compositor for WrCompositor {
         }
     }
 
-    fn bind(&mut self, _device: &mut Device, id: NativeTileId, dirty_rect: DeviceIntRect, valid_rect: DeviceIntRect) -> NativeSurfaceInfo {
+    fn bind(
+        &mut self,
+        _device: &mut Device,
+        id: NativeTileId,
+        dirty_rect: DeviceIntRect,
+        valid_rect: DeviceIntRect,
+    ) -> NativeSurfaceInfo {
         let mut surface_info = NativeSurfaceInfo {
             origin: DeviceIntPoint::zero(),
             fbo_id: 0,
@@ -1530,6 +1536,7 @@ pub extern "C" fn wr_window_new(
     picture_tile_height: i32,
     reject_software_rasterizer: bool,
     low_quality_pinch_zoom: bool,
+    max_shared_surface_size: i32,
 ) -> bool {
     assert!(unsafe { is_in_render_thread() });
 
@@ -1681,6 +1688,7 @@ pub extern "C" fn wr_window_new(
         texture_cache_config,
         reject_software_rasterizer,
         low_quality_pinch_zoom,
+        max_shared_surface_size,
         ..Default::default()
     };
 

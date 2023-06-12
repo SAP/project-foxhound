@@ -590,7 +590,7 @@ toolbar:not(#TabsToolbar) > #personal-bookmarks {
 #urlbar,
 #searchbar {
   /* Setting a width and min-width to let the location & search bars maintain
-     a constant width in case they haven't be resized manually. (bug 965772) */
+     a constant width in case they haven't been resized manually. (bug 965772) */
   width: 1px;
   min-width: 1px;
 }
@@ -1022,8 +1022,6 @@ browser[tabmodalPromptShowing], browser[tabDialogShowing] {
 /* Status panel */
 
 #statuspanel:not([hidden]) {
-  display: block;
-
   max-width: calc(100% - 5px);
   pointer-events: none;
 
@@ -1071,15 +1069,15 @@ browser[tabmodalPromptShowing], browser[tabDialogShowing] {
 /*** Visibility of downloads indicator controls ***/
 
 /* Hide the default icon, show the anchor instead. */
-#downloads-button[indicator] > .toolbarbutton-badge-stack > image.toolbarbutton-icon {
+#downloads-button > .toolbarbutton-badge-stack > image.toolbarbutton-icon {
   display: none;
 }
 
-toolbarpaletteitem[place="palette"] > #downloads-button[indicator] > .toolbarbutton-badge-stack > image.toolbarbutton-icon {
+toolbarpaletteitem[place="palette"] > #downloads-button > .toolbarbutton-badge-stack > image.toolbarbutton-icon {
   display: -moz-box;
 }
 
-toolbarpaletteitem[place="palette"] > #downloads-button[indicator] > .toolbarbutton-badge-stack > #downloads-indicator-anchor {
+toolbarpaletteitem[place="palette"] > #downloads-button > .toolbarbutton-badge-stack > #downloads-indicator-anchor {
   display: none;
 }
 

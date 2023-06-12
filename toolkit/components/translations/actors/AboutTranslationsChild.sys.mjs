@@ -14,6 +14,7 @@ XPCOMUtils.defineLazyGetter(lazy, "console", () => {
 });
 
 /**
+ * @typedef {import("./TranslationsChild.sys.mjs").LanguageIdEngine} LanguageIdEngine
  * @typedef {import("./TranslationsChild.sys.mjs").TranslationsEngine} TranslationsEngine
  */
 
@@ -22,8 +23,23 @@ XPCOMUtils.defineLazyGetter(lazy, "console", () => {
  * are exposed to the un-privileged scope of the about:translations page.
  */
 export class AboutTranslationsChild extends JSWindowActorChild {
+  /** @type {LanguageIdEngine | null} */
+  languageIdEngine = null;
+
   /** @type {TranslationsEngine | null} */
-  engine = null;
+  translationsEngine = null;
+
+  /**
+   * The translations engine uses text translations by default in about:translations,
+   * but it can be changed to translate HTML by setting this pref to true. This is
+   * useful for manually testing HTML translation behavior, but is not useful to surface
+   * as a user-facing feature.
+   *
+   * @type {bool}
+   */
+  #isHtmlTranslation = Services.prefs.getBoolPref(
+    "browser.translations.useHTML"
+  );
 
   handleEvent(event) {
     if (event.type === "DOMDocElementInserted") {
@@ -72,14 +88,15 @@ export class AboutTranslationsChild extends JSWindowActorChild {
       promise.then(resolve, error => {
         // Create an error in the content window, if the content window is still around.
         if (this.contentWindow) {
-          // If the error contains a message or a stack, use those in the content error.
-          const contentError = new this.contentWindow.Error(
-            error?.message ?? "An error occured in the AboutTranslations actor."
-          );
-          if (typeof error?.stack === "string") {
-            contentError.stack = error.stack;
+          let message = "An error occured in the AboutTranslations actor.";
+          if (typeof error?.message === "string") {
+            message = error.message;
           }
-          reject(contentError);
+          if (typeof error?.stack === "string") {
+            message += `\n\nOriginal stack:\n\n${error.stack}\n`;
+          }
+
+          reject(new this.contentWindow.Error(message));
         } else {
           reject();
         }
@@ -99,9 +116,11 @@ export class AboutTranslationsChild extends JSWindowActorChild {
       "AT_logError",
       "AT_getAppLocale",
       "AT_getSupportedLanguages",
+      "AT_createLanguageIdEngine",
       "AT_createTranslationsEngine",
+      "AT_identifyLanguage",
       "AT_translate",
-      "AT_destroyEngine",
+      "AT_destroyTranslationsEngine",
       "AT_getScriptDirection",
     ];
     for (const name of fns) {
@@ -150,48 +169,109 @@ export class AboutTranslationsChild extends JSWindowActorChild {
   }
 
   /**
-   * @param {string} fromLanguage
-   * @param {string} toLanguage
+   * Creates the LanguageIdEngine which attempts to identify in which
+   * human language a string is written.
+   *
+   * Unlike TranslationsEngine, which handles only a single language pair
+   * and must be rebuilt to handle a new language pair, the LanguageIdEngine
+   * is a one-to-many engine that can recognize all of its supported languages.
+   *
+   * Subsequent calls to this function after the engine is initialized will do nothing
+   * instead of rebuilding the engine.
+   *
    * @returns {Promise<void>}
    */
-  AT_createTranslationsEngine(fromLanguage, toLanguage) {
-    if (this.engine) {
-      this.engine.terminate();
-      this.engine = null;
+  AT_createLanguageIdEngine() {
+    if (this.languageIdEngine) {
+      return this.#convertToContentPromise(Promise.resolve());
     }
     return this.#convertToContentPromise(
       this.#getTranslationsChild()
-        .createTranslationsEngine(fromLanguage, toLanguage)
+        .createLanguageIdEngine()
         .then(engine => {
-          this.engine = engine;
+          this.languageIdEngine = engine;
         })
     );
   }
 
   /**
+   * Creates the TranslationsEngine which is responsible for translating
+   * from one language to the other.
+   *
+   * The instantiated TranslationsEngine is unique to its language pair.
+   * In order to translate a different language pair, a new engine must be
+   * created for that pair.
+   *
+   * Subsequent calls to this function will destroy the existing engine and
+   * rebuild a new engine for the new language pair.
+   *
+   * @param {string} fromLanguage
+   * @param {string} toLanguage
+   * @returns {Promise<void>}
+   */
+  AT_createTranslationsEngine(fromLanguage, toLanguage) {
+    if (this.translationsEngine) {
+      this.translationsEngine.terminate();
+      this.translationsEngine = null;
+    }
+    return this.#convertToContentPromise(
+      this.#getTranslationsChild()
+        .createTranslationsEngine(fromLanguage, toLanguage)
+        .then(engine => {
+          this.translationsEngine = engine;
+        })
+    );
+  }
+
+  /**
+   * Attempts to identify the human language in which the message is written.
+   * @see LanguageIdEngine#identifyLanguage for more detailed documentation.
+   *
+   * @param {string} message
+   * @returns {Promise<{ languageLabel: string, confidence: number }>}
+   */
+  AT_identifyLanguage(message) {
+    if (!this.languageIdEngine) {
+      return this.#convertToContentPromise(
+        Promise.reject("The language identification was not created.")
+      );
+    }
+    return this.#convertToContentPromise(
+      this.languageIdEngine
+        .identifyLanguage(message)
+        .then(data => Cu.cloneInto(data, this.contentWindow))
+    );
+  }
+
+  /**
    * @param {string[]} messageBatch
+   * @param {number} innerWindowId
    * @returns {Promise<string[]>}
    */
-  AT_translate(messageBatch) {
-    if (!this.engine) {
+  AT_translate(messageBatch, innerWindowId) {
+    if (!this.translationsEngine) {
       throw new this.contentWindow.Error(
         "The translations engine was not created."
       );
     }
+    const promise = this.#isHtmlTranslation
+      ? this.translationsEngine.translateHTML(messageBatch, innerWindowId)
+      : this.translationsEngine.translateText(messageBatch, innerWindowId);
+
     return this.#convertToContentPromise(
-      this.engine
-        .translate(messageBatch)
-        .then(translations => Cu.cloneInto(translations, this.contentWindow))
+      promise.then(translations =>
+        Cu.cloneInto(translations, this.contentWindow)
+      )
     );
   }
 
   /**
    * This is not strictly necessary, but could free up resources quicker.
    */
-  AT_destroyEngine() {
-    if (this.engine) {
-      this.engine.terminate();
-      this.engine = null;
+  AT_destroyTranslationsEngine() {
+    if (this.translationsEngine) {
+      this.translationsEngine.terminate();
+      this.translationsEngine = null;
     }
   }
 

@@ -52,49 +52,37 @@ PatternFromState::operator mozilla::gfx::Pattern&() {
 
 gfxContext::gfxContext(DrawTarget* aTarget, const Point& aDeviceOffset)
     : mPathIsRect(false), mTransformChanged(false), mDT(aTarget) {
-  if (!aTarget) {
-    gfxCriticalError() << "Don't create a gfxContext without a DrawTarget";
-  }
-
   mStateStack.SetLength(1);
-  CurrentState().drawTarget = mDT;
   CurrentState().deviceOffset = aDeviceOffset;
   mDT->SetTransform(GetDTTransform());
 }
 
+gfxContext::gfxContext(DrawTarget* aTarget, bool aPreserveTransform)
+    : mPathIsRect(false), mTransformChanged(false), mDT(aTarget) {
+  mStateStack.SetLength(1);
+  if (aPreserveTransform) {
+    SetMatrix(aTarget->GetTransform());
+  } else {
+    mDT->SetTransform(GetDTTransform());
+  }
+}
+
 /* static */
-already_AddRefed<gfxContext> gfxContext::CreateOrNull(
-    DrawTarget* aTarget, const mozilla::gfx::Point& aDeviceOffset) {
+UniquePtr<gfxContext> gfxContext::CreateOrNull(DrawTarget* aTarget,
+                                               const Point& aDeviceOffset) {
   if (!aTarget || !aTarget->IsValid()) {
     gfxCriticalNote << "Invalid target in gfxContext::CreateOrNull "
                     << hexa(aTarget);
     return nullptr;
   }
 
-  RefPtr<gfxContext> result = new gfxContext(aTarget, aDeviceOffset);
-  return result.forget();
-}
-
-/* static */
-already_AddRefed<gfxContext> gfxContext::CreatePreservingTransformOrNull(
-    DrawTarget* aTarget) {
-  if (!aTarget || !aTarget->IsValid()) {
-    gfxCriticalNote
-        << "Invalid target in gfxContext::CreatePreservingTransformOrNull "
-        << hexa(aTarget);
-    return nullptr;
-  }
-
-  Matrix transform = aTarget->GetTransform();
-  RefPtr<gfxContext> result = new gfxContext(aTarget);
-  result->SetMatrix(transform);
-  return result.forget();
+  return MakeUnique<gfxContext>(aTarget, aDeviceOffset);
 }
 
 gfxContext::~gfxContext() {
   for (int i = mStateStack.Length() - 1; i >= 0; i--) {
     for (unsigned int c = 0; c < mStateStack[i].pushedClips.Length(); c++) {
-      mStateStack[i].drawTarget->PopClip();
+      mDT->PopClip();
     }
   }
 }
@@ -157,8 +145,6 @@ void gfxContext::Restore() {
   }
 
   mStateStack.RemoveLastElement();
-
-  mDT = CurrentState().drawTarget;
 
   ChangeTransform(CurrentState().transform, false);
 }

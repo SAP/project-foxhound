@@ -1,14 +1,20 @@
 
 # cargo-vet config file
 
-[imports.bytecodealliance]
+[imports.bytecode-alliance]
 url = "https://raw.githubusercontent.com/bytecodealliance/wasmtime/main/supply-chain/audits.toml"
 
 [imports.chromeos]
 url = "https://chromium.googlesource.com/chromiumos/third_party/rust_crates/+/main/cargo-vet/audits.toml?format=TEXT"
 
-[imports.embark]
+[imports.embark-studios]
 url = "https://raw.githubusercontent.com/EmbarkStudios/rust-ecosystem/main/audits.toml"
+
+[imports.isrg]
+url = "https://raw.githubusercontent.com/divviup/libprio-rs/main/supply-chain/audits.toml"
+
+[imports.mozilla]
+url = "https://raw.githubusercontent.com/mozilla/supply-chain/main/audits.toml"
 
 [policy.audioipc-client]
 criteria = []
@@ -57,8 +63,6 @@ notes = "Used for testing."
 
 [policy.gkrust-shared]
 dependency-criteria = { tokio-reactor = [], tokio-threadpool = [] }
-
-[policy.gkrust_shared]
 notes = "The dependencies on tokio-reactor and tokio-threadpools are just a hack to pin the version used by audioipc-{client,server}. Suppress vetting on those for the same reasons behind the policy entries."
 
 [policy.gluesmith]
@@ -89,13 +93,13 @@ notes = "This is a pinned version of the upstream code, presumably to get a fix 
 audit-as-crates-io = true
 notes = "This is a pinned version of the upstream code, presumably to get a fix that hadn't been released yet. We should consider switching to the latest official release."
 
-[policy.mio]
-audit-as-crates-io = true
-notes = "Version 0.6.23 is a local fork of upstream which just twiddles some dependencies."
-
 [policy.mio-named-pipes]
 audit-as-crates-io = true
 notes = "We have a local fork, but this entire subtree is going away shortly anyway with the old audioipc code."
+
+[policy."mio:0.6.23"]
+audit-as-crates-io = true
+notes = "Version 0.6.23 is a local fork of upstream which just twiddles some dependencies."
 
 [policy.mozbuild]
 audit-as-crates-io = false
@@ -264,10 +268,6 @@ criteria = "safe-to-deploy"
 
 [[exemptions.block]]
 version = "0.1.6"
-criteria = "safe-to-deploy"
-
-[[exemptions.block-buffer]]
-version = "0.10.2"
 criteria = "safe-to-deploy"
 
 [[exemptions.byteorder]]
@@ -454,10 +454,6 @@ criteria = "safe-to-deploy"
 version = "0.11.0"
 criteria = "safe-to-deploy"
 
-[[exemptions.either]]
-version = "1.6.1"
-criteria = "safe-to-deploy"
-
 [[exemptions.enumset]]
 version = "1.0.11"
 criteria = "safe-to-deploy"
@@ -492,10 +488,6 @@ criteria = "safe-to-deploy"
 
 [[exemptions.fallible_collections]]
 version = "0.4.4"
-criteria = "safe-to-deploy"
-
-[[exemptions.fastrand]]
-version = "1.7.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.ffi-support]]
@@ -688,10 +680,6 @@ criteria = "safe-to-deploy"
 
 [[exemptions.khronos_api]]
 version = "3.1.0"
-criteria = "safe-to-deploy"
-
-[[exemptions.lazy_static]]
-version = "1.4.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.lazycell]]
@@ -986,10 +974,6 @@ criteria = "safe-to-deploy"
 
 [[exemptions.remove_dir_all]]
 version = "0.5.3"
-criteria = "safe-to-deploy"
-
-[[exemptions.renderdoc-sys]]
-version = "0.7.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.replace_with]]

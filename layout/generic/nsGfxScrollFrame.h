@@ -150,7 +150,7 @@ class ScrollFrameHelper : public nsIReflowCallback {
   void PostScrolledAreaEvent();
   MOZ_CAN_RUN_SCRIPT void FireScrolledAreaEvent();
 
-  bool IsSmoothScrollingEnabled();
+  static bool IsSmoothScrollingEnabled();
 
   /**
    * @note This method might destroy the frame, pres shell and other objects.
@@ -562,6 +562,14 @@ class ScrollFrameHelper : public nsIReflowCallback {
 
   bool IsRootScrollFrameOfDocument() const { return mIsRoot; }
 
+  Maybe<uint32_t> IsFirstScrollableFrameSequenceNumber() const {
+    return mIsFirstScrollableFrameSequenceNumber;
+  }
+
+  void SetIsFirstScrollableFrameSequenceNumber(Maybe<uint32_t> aValue) {
+    mIsFirstScrollableFrameSequenceNumber = aValue;
+  }
+
   bool SmoothScrollVisual(
       const nsPoint& aVisualViewportOffset,
       mozilla::layers::FrameMetrics::ScrollOffsetUpdateType aUpdateType);
@@ -681,6 +689,10 @@ class ScrollFrameHelper : public nsIReflowCallback {
   // process of starting or in progress" you need to check mScrollUpdates,
   // mApzAnimationRequested, and this type.
   APZScrollAnimationType mCurrentAPZScrollAnimationType;
+
+  // The paint sequence number if the scroll frame is the first scrollable frame
+  // encountered.
+  Maybe<uint32_t> mIsFirstScrollableFrameSequenceNumber;
 
   // Representing whether the APZC corresponding to this frame is now in the
   // middle of handling a gesture (e.g. a pan gesture).
@@ -978,16 +990,9 @@ class nsHTMLScrollFrame : public nsContainerFrame,
     return mHelper.ComputeCustomOverflow(aOverflowAreas);
   }
 
-  nscoord GetLogicalBaseline(mozilla::WritingMode aWritingMode) const final;
-
-  bool GetVerticalAlignBaseline(mozilla::WritingMode aWM,
-                                nscoord* aBaseline) const final {
-    NS_ASSERTION(!aWM.IsOrthogonalTo(GetWritingMode()),
-                 "You should only call this on frames with a WM that's "
-                 "parallel to aWM");
-    *aBaseline = GetLogicalBaseline(aWM);
-    return true;
-  }
+  Maybe<nscoord> GetNaturalBaselineBOffset(
+      mozilla::WritingMode aWM,
+      BaselineSharingGroup aBaselineGroup) const override;
 
   // Recomputes the scrollable overflow area we store in the helper to take
   // children that are affected by perpsective set on the outer frame and scroll
@@ -1345,6 +1350,14 @@ class nsHTMLScrollFrame : public nsContainerFrame,
     return mHelper.IsRootScrollFrameOfDocument();
   }
 
+  Maybe<uint32_t> IsFirstScrollableFrameSequenceNumber() const final {
+    return mHelper.IsFirstScrollableFrameSequenceNumber();
+  }
+
+  void SetIsFirstScrollableFrameSequenceNumber(Maybe<uint32_t> aValue) final {
+    return mHelper.SetIsFirstScrollableFrameSequenceNumber(aValue);
+  }
+
   const ScrollAnchorContainer* Anchor() const final { return &mHelper.mAnchor; }
 
   ScrollAnchorContainer* Anchor() final { return &mHelper.mAnchor; }
@@ -1444,12 +1457,6 @@ class nsXULScrollFrame final : public nsBoxFrame,
 
   bool ComputeCustomOverflow(mozilla::OverflowAreas& aOverflowAreas) final {
     return mHelper.ComputeCustomOverflow(aOverflowAreas);
-  }
-
-  bool GetVerticalAlignBaseline(mozilla::WritingMode aWM,
-                                nscoord* aBaseline) const final {
-    *aBaseline = GetLogicalBaseline(aWM);
-    return true;
   }
 
   // Called to set the child frames. We typically have three: the scroll area,
@@ -1835,6 +1842,14 @@ class nsXULScrollFrame final : public nsBoxFrame,
 
   bool IsRootScrollFrameOfDocument() const final {
     return mHelper.IsRootScrollFrameOfDocument();
+  }
+
+  Maybe<uint32_t> IsFirstScrollableFrameSequenceNumber() const final {
+    return mHelper.IsFirstScrollableFrameSequenceNumber();
+  }
+
+  void SetIsFirstScrollableFrameSequenceNumber(Maybe<uint32_t> aValue) final {
+    return mHelper.SetIsFirstScrollableFrameSequenceNumber(aValue);
   }
 
   const ScrollAnchorContainer* Anchor() const final { return &mHelper.mAnchor; }

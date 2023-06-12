@@ -1891,6 +1891,7 @@ bool ScriptSource::initFromOptions(FrontendContext* fc,
   delazificationMode_ = options.eagerDelazificationStrategy();
 
   startLine_ = options.lineno;
+  startColumn_ = options.column;
   introductionType_ = options.introductionType;
   setIntroductionOffset(options.introductionOffset);
   // The parameterListEnd_ is initialized later by setParameterListEnd, before
@@ -2194,8 +2195,6 @@ bool SharedImmutableScriptData::shareScriptData(
 
   SharedImmutableScriptData* data = sisd.get();
 
-  // Calculate the hash before taking the lock. Because the data is reference
-  // counted, it also will be freed after releasing the lock if necessary.
   SharedImmutableScriptData::Hasher::Lookup lookup(data);
 
   Maybe<AutoLockGlobalScriptData> lock;

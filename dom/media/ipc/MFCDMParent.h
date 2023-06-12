@@ -11,6 +11,7 @@
 #include "mozilla/PMFCDMParent.h"
 #include "MFCDMExtra.h"
 #include "MFCDMSession.h"
+#include "MFPMPHostWrapper.h"
 #include "RemoteDecoderManagerParent.h"
 
 namespace mozilla {
@@ -47,6 +48,20 @@ class MFCDMParent final : public PMFCDMParent {
       const MFCDMCreateSessionParamsIPDL& aParams,
       CreateSessionAndGenerateRequestResolver&& aResolver);
 
+  mozilla::ipc::IPCResult RecvLoadSession(
+      const KeySystemConfig::SessionType& aSessionType,
+      const nsString& aSessionId, LoadSessionResolver&& aResolver);
+
+  mozilla::ipc::IPCResult RecvUpdateSession(
+      const nsString& aSessionId, const CopyableTArray<uint8_t>& aResponse,
+      UpdateSessionResolver&& aResolver);
+
+  mozilla::ipc::IPCResult RecvCloseSession(const nsString& aSessionId,
+                                           UpdateSessionResolver&& aResolver);
+
+  mozilla::ipc::IPCResult RecvRemoveSession(const nsString& aSessionId,
+                                            UpdateSessionResolver&& aResolver);
+
   nsISerialEventTarget* ManagerThread() { return mManagerThread; }
   void AssertOnManagerThread() const {
     MOZ_ASSERT(mManagerThread->IsOnCurrentThread());
@@ -70,6 +85,8 @@ class MFCDMParent final : public PMFCDMParent {
 
   void ConnectSessionEvents(MFCDMSession* aSession);
 
+  MFCDMSession* GetSession(const nsString& aSessionId);
+
   nsString mKeySystem;
 
   const RefPtr<RemoteDecoderManagerParent> mManager;
@@ -83,6 +100,7 @@ class MFCDMParent final : public PMFCDMParent {
   RefPtr<MFCDMParent> mIPDLSelfRef;
   Microsoft::WRL::ComPtr<IMFContentDecryptionModuleFactory> mFactory;
   Microsoft::WRL::ComPtr<IMFContentDecryptionModule> mCDM;
+  Microsoft::WRL::ComPtr<MFPMPHostWrapper> mPMPHostWrapper;
 
   std::map<nsString, UniquePtr<MFCDMSession>> mSessions;
 

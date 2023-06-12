@@ -25,9 +25,14 @@ const TEST_PAGE_WITH_WEBVTT = TEST_ROOT + "test-page-with-webvtt.html";
 const WINDOW_TYPE = "Toolkit:PictureInPicture";
 const TOGGLE_POSITION_PREF =
   "media.videocontrols.picture-in-picture.video-toggle.position";
+/* As of Bug 1811312, 80% toggle opacity is for the PiP toggle experiment control. */
+const DEFAULT_TOGGLE_OPACITY = 0.8;
 const HAS_USED_PREF =
   "media.videocontrols.picture-in-picture.video-toggle.has-used";
 const SHARED_DATA_KEY = "PictureInPicture:SiteOverrides";
+// Used for clearing the size and location of the PiP window
+const PLAYER_URI = "chrome://global/content/pictureinpicture/player.xhtml";
+const ACCEPTABLE_DIFFERENCE = 2;
 
 /**
  * We currently ship with a few different variations of the
@@ -70,7 +75,7 @@ const DEFAULT_TOGGLE_STYLES = {
   stages: {
     hoverVideo: {
       opacities: {
-        ".pip-wrapper": 0.8,
+        ".pip-wrapper": DEFAULT_TOGGLE_OPACITY,
       },
       hidden: [".pip-expanded"],
     },
@@ -518,6 +523,58 @@ async function getToggleClientRect(
 }
 
 /**
+ * This function will hover over the middle of the video and then
+ * hover over the toggle.
+ * @param browser The current browser
+ * @param videoID The video element id
+ */
+async function hoverToggle(browser, videoID) {
+  await prepareForToggleClick(browser, videoID);
+
+  // Hover the mouse over the video to reveal the toggle.
+  await BrowserTestUtils.synthesizeMouseAtCenter(
+    `#${videoID}`,
+    {
+      type: "mousemove",
+    },
+    browser
+  );
+  await BrowserTestUtils.synthesizeMouseAtCenter(
+    `#${videoID}`,
+    {
+      type: "mouseover",
+    },
+    browser
+  );
+
+  info("Checking toggle policy");
+  await assertTogglePolicy(browser, videoID, null);
+
+  let toggleClientRect = await getToggleClientRect(browser, videoID);
+
+  info("Hovering the toggle rect now.");
+  let toggleCenterX = toggleClientRect.left + toggleClientRect.width / 2;
+  let toggleCenterY = toggleClientRect.top + toggleClientRect.height / 2;
+
+  await BrowserTestUtils.synthesizeMouseAtPoint(
+    toggleCenterX,
+    toggleCenterY,
+    {
+      type: "mousemove",
+    },
+    browser
+  );
+  await BrowserTestUtils.synthesizeMouseAtPoint(
+    toggleCenterX,
+    toggleCenterY,
+    {
+      type: "mouseover",
+    },
+    browser
+  );
+}
+
+/**
  * Test helper for the Picture-in-Picture toggle. Loads a page, and then
  * tests the provided video elements for the toggle both appearing and
  * opening the Picture-in-Picture window in the expected cases.
@@ -951,4 +1008,25 @@ async function waitForNextCue(browser, videoID, textTrackIndex = 0) {
       ok(video.paused, "Video is paused");
     }
   );
+}
+
+/**
+ * The PiP window saves the positon when closed and sometimes we don't want
+ * this information to persist to other tests. This function will clear the
+ * position so the PiP window will open in the default position.
+ */
+function clearSavedPosition() {
+  let xulStore = Services.xulStore;
+  xulStore.setValue(PLAYER_URI, "picture-in-picture", "left", NaN);
+  xulStore.setValue(PLAYER_URI, "picture-in-picture", "top", NaN);
+  xulStore.setValue(PLAYER_URI, "picture-in-picture", "width", NaN);
+  xulStore.setValue(PLAYER_URI, "picture-in-picture", "height", NaN);
+}
+
+function overrideSavedPosition(left, top, width, height) {
+  let xulStore = Services.xulStore;
+  xulStore.setValue(PLAYER_URI, "picture-in-picture", "left", left);
+  xulStore.setValue(PLAYER_URI, "picture-in-picture", "top", top);
+  xulStore.setValue(PLAYER_URI, "picture-in-picture", "width", width);
+  xulStore.setValue(PLAYER_URI, "picture-in-picture", "height", height);
 }

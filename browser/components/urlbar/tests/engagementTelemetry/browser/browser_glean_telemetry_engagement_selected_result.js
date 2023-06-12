@@ -9,6 +9,14 @@
 // - provider
 // - results
 
+// This test has many subtests and can time out in verify mode.
+requestLongerTimeout(5);
+
+Services.scriptloader.loadSubScript(
+  "chrome://mochitests/content/browser/browser/components/urlbar/tests/ext/browser/head.js",
+  this
+);
+
 add_setup(async function() {
   await setup();
 });
@@ -429,6 +437,115 @@ add_task(async function selected_result_unit() {
   await SpecialPowers.popPrefEnv();
 });
 
+add_task(async function selected_result_site_specific_contextual_search() {
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.urlbar.contextualSearch.enabled", true]],
+  });
+
+  await doTest(async browser => {
+    const extension = await SearchTestUtils.installSearchExtension(
+      {
+        name: "Contextual",
+        search_url: "https://example.com/browser",
+      },
+      { skipUnload: true }
+    );
+    const onLoaded = BrowserTestUtils.browserLoaded(
+      gBrowser.selectedBrowser,
+      false,
+      "https://example.com/"
+    );
+    BrowserTestUtils.loadURIString(
+      gBrowser.selectedBrowser,
+      "https://example.com/"
+    );
+    await onLoaded;
+
+    await openPopup("search");
+    await selectRowByProvider("UrlbarProviderContextualSearch");
+    await doEnter();
+
+    assertEngagementTelemetry([
+      {
+        selected_result: "site_specific_contextual_search",
+        selected_result_subtype: "",
+        provider: "UrlbarProviderContextualSearch",
+        results: "search_engine,site_specific_contextual_search",
+      },
+    ]);
+
+    await extension.unload();
+  });
+
+  await SpecialPowers.popPrefEnv();
+});
+
+add_task(async function selected_result_experimental_addon() {
+  const extension = await loadExtension({
+    background: async () => {
+      browser.experiments.urlbar.addDynamicResultType("testDynamicType");
+      browser.experiments.urlbar.addDynamicViewTemplate("testDynamicType", {
+        children: [
+          {
+            name: "text",
+            tag: "span",
+            attributes: {
+              role: "button",
+            },
+          },
+        ],
+      });
+      browser.urlbar.onBehaviorRequested.addListener(query => {
+        return "active";
+      }, "testProvider");
+      browser.urlbar.onResultsRequested.addListener(query => {
+        return [
+          {
+            type: "dynamic",
+            source: "local",
+            payload: {
+              dynamicType: "testDynamicType",
+            },
+          },
+        ];
+      }, "testProvider");
+      browser.experiments.urlbar.onViewUpdateRequested.addListener(payload => {
+        return {
+          text: {
+            textContent: "This is a dynamic result.",
+          },
+        };
+      }, "testProvider");
+    },
+  });
+
+  await TestUtils.waitForCondition(
+    () =>
+      UrlbarProvidersManager.getProvider("testProvider") &&
+      UrlbarResult.getDynamicResultType("testDynamicType"),
+    "Waiting for provider and dynamic type to be registered"
+  );
+
+  await doTest(async browser => {
+    await openPopup("test");
+    EventUtils.synthesizeKey("KEY_ArrowDown");
+    await UrlbarTestUtils.promisePopupClose(window, () =>
+      EventUtils.synthesizeKey("KEY_Enter")
+    );
+
+    assertEngagementTelemetry([
+      {
+        selected_result: "experimental_addon",
+        selected_result_subtype: "",
+        provider: "testProvider",
+        results: "search_engine,experimental_addon",
+      },
+    ]);
+  });
+
+  await extension.unload();
+});
+
 add_task(async function selected_result_suggest_sponsor() {
   const cleanupQuickSuggest = await ensureQuickSuggestInit();
 
@@ -469,4 +586,157 @@ add_task(async function selected_result_suggest_non_sponsor() {
   });
 
   cleanupQuickSuggest();
+});
+
+add_task(async function selected_result_input_field() {
+  const expected = [
+    {
+      selected_result: "input_field",
+      selected_result_subtype: "",
+      provider: null,
+      results: "",
+    },
+  ];
+
+  await doTest(async browser => {
+    await doDropAndGo("example.com");
+
+    assertEngagementTelemetry(expected);
+  });
+
+  await doTest(async browser => {
+    await doPasteAndGo("example.com");
+
+    assertEngagementTelemetry(expected);
+  });
+});
+
+add_task(async function selected_result_weather() {
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.urlbar.quickactions.enabled", false]],
+  });
+
+  const cleanupQuickSuggest = await ensureQuickSuggestInit();
+  await MerinoTestUtils.initWeather();
+
+  await doTest(async browser => {
+    await openPopup("");
+    await selectRowByProvider("Weather");
+    await doEnter();
+
+    assertEngagementTelemetry([
+      {
+        selected_result: "weather",
+        selected_result_subtype: "",
+        provider: "Weather",
+        results: "weather",
+      },
+    ]);
+  });
+
+  cleanupQuickSuggest();
+  await SpecialPowers.popPrefEnv();
+});
+
+add_task(async function selected_result_navigational() {
+  const cleanupQuickSuggest = await ensureQuickSuggestInit({
+    merinoSuggestions: [
+      {
+        title: "Navigational suggestion",
+        url: "https://example.com/navigational-suggestion",
+        provider: "top_picks",
+        is_sponsored: false,
+        score: 0.25,
+        block_id: 0,
+        is_top_pick: true,
+      },
+    ],
+  });
+
+  await doTest(async browser => {
+    await openPopup("only match the Merino suggestion");
+    await selectRowByProvider("UrlbarProviderQuickSuggest");
+    await doEnter();
+
+    assertEngagementTelemetry([
+      {
+        selected_result: "navigational",
+        selected_result_subtype: "",
+        provider: "UrlbarProviderQuickSuggest",
+        results: "search_engine,navigational",
+      },
+    ]);
+  });
+
+  cleanupQuickSuggest();
+});
+
+add_task(async function selected_result_dynamic_wikipedia() {
+  const cleanupQuickSuggest = await ensureQuickSuggestInit({
+    merinoSuggestions: [
+      {
+        block_id: 1,
+        url: "https://example.com/dynamic-wikipedia",
+        title: "Dynamic Wikipedia suggestion",
+        click_url: "https://example.com/click",
+        impression_url: "https://example.com/impression",
+        advertiser: "dynamic-wikipedia",
+        provider: "wikipedia",
+        iab_category: "5 - Education",
+      },
+    ],
+  });
+
+  await doTest(async browser => {
+    await openPopup("only match the Merino suggestion");
+    await selectRowByProvider("UrlbarProviderQuickSuggest");
+    await doEnter();
+
+    assertEngagementTelemetry([
+      {
+        selected_result: "dynamic_wikipedia",
+        selected_result_subtype: "",
+        provider: "UrlbarProviderQuickSuggest",
+        results: "search_engine,dynamic_wikipedia",
+      },
+    ]);
+  });
+
+  cleanupQuickSuggest();
+});
+
+add_task(async function selected_result_search_shortcut_button() {
+  await doTest(async browser => {
+    const oneOffSearchButtons = UrlbarTestUtils.getOneOffSearchButtons(window);
+    await openPopup("x");
+    Assert.ok(!oneOffSearchButtons.selectedButton);
+
+    // Select oneoff button added for test in setup().
+    for (;;) {
+      EventUtils.synthesizeKey("KEY_ArrowDown");
+      if (!oneOffSearchButtons.selectedButton) {
+        continue;
+      }
+
+      if (
+        oneOffSearchButtons.selectedButton.engine.name.includes(
+          "searchSuggestionEngine.xml"
+        )
+      ) {
+        break;
+      }
+    }
+
+    // Search immediately.
+    await doEnter({ shiftKey: true });
+
+    assertEngagementTelemetry([
+      {
+        selected_result: "search_shortcut_button",
+        selected_result_subtype: "",
+        provider: null,
+        results: "search_engine",
+      },
+    ]);
+  });
 });

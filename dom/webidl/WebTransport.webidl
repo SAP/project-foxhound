@@ -32,6 +32,11 @@ dictionary WebTransportCloseInfo {
   UTF8String reason = "";
 };
 
+/* https://w3c.github.io/webtransport/#uni-stream-options */
+dictionary WebTransportSendStreamOptions {
+  long long? sendOrder = null;
+};
+
 /* https://w3c.github.io/webtransport/#web-transport-stats */
 
 dictionary WebTransportStats {
@@ -73,17 +78,19 @@ interface WebTransport {
   readonly attribute Promise<WebTransportCloseInfo> closed;
   [Throws] undefined close(optional WebTransportCloseInfo closeInfo = {});
 
-  readonly attribute WebTransportDatagramDuplexStream datagrams;
+  [Throws] readonly attribute WebTransportDatagramDuplexStream datagrams;
 
   [NewObject]
-  Promise<WebTransportBidirectionalStream> createBidirectionalStream();
+  Promise<WebTransportBidirectionalStream> createBidirectionalStream(
+     optional WebTransportSendStreamOptions options = {});
   /* a ReadableStream of WebTransportBidirectionalStream objects */
   readonly attribute ReadableStream incomingBidirectionalStreams;
 
 
   /* XXX spec says this should be WebTransportSendStream */
   [NewObject]
-  Promise<WritableStream> createUnidirectionalStream();
+  Promise<WritableStream> createUnidirectionalStream(
+    optional WebTransportSendStreamOptions options = {});
   /* a ReadableStream of WebTransportReceiveStream objects */
   readonly attribute ReadableStream incomingUnidirectionalStreams;
 };

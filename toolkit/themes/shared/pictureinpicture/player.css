@@ -73,6 +73,7 @@ browser {
   width: 100vw;
   margin: 0 calc(-1 * var(--resize-margin)) calc(-1 * var(--resize-margin)) calc(-1 * var(--resize-margin));
   pointer-events: none;
+  -moz-window-dragging: drag;
 }
 
 #controls-bottom {
@@ -570,13 +571,13 @@ input:checked + .slider::before {
 }
 
 @media (height <= 200px) {
-  #scrubber {
+  .scrubber-no-drag {
     display: none;
   }
 }
 
 @media (width <= 300px) {
-  #scrubber,
+  .scrubber-no-drag,
   #seekForward,
   #seekBackward {
     display: none;

@@ -321,13 +321,12 @@ static already_AddRefed<gfxDrawable> CreateSamplingRestrictedDrawable(
     return nullptr;
   }
 
-  RefPtr<gfxContext> tmpCtx = gfxContext::CreateOrNull(target);
-  MOZ_ASSERT(tmpCtx);  // already checked the target above
+  gfxContext tmpCtx(target);
 
   if (aUseOptimalFillOp) {
-    tmpCtx->SetOp(OptimalFillOp());
+    tmpCtx.SetOp(OptimalFillOp());
   }
-  aDrawable->Draw(tmpCtx, needed - needed.TopLeft(), ExtendMode::REPEAT,
+  aDrawable->Draw(&tmpCtx, needed - needed.TopLeft(), ExtendMode::REPEAT,
                   SamplingFilter::LINEAR, 1.0,
                   gfxMatrix::Translation(needed.TopLeft()));
   RefPtr<SourceSurface> surface = target->Snapshot();
@@ -474,16 +473,15 @@ static bool PrescaleAndTileDrawable(gfxDrawable* aDrawable,
     return false;
   }
 
-  RefPtr<gfxContext> tmpCtx = gfxContext::CreateOrNull(scaledDT);
-  MOZ_ASSERT(tmpCtx);  // already checked the target above
+  gfxContext tmpCtx(scaledDT);
 
   scaledDT->SetTransform(scaleMatrix);
   gfxRect gfxImageRect(aImageRect.x, aImageRect.y, aImageRect.width,
                        aImageRect.height);
 
   // Since this is just the scaled image, we don't want to repeat anything yet.
-  aDrawable->Draw(tmpCtx, gfxImageRect, ExtendMode::CLAMP, aSamplingFilter, 1.0,
-                  gfxMatrix());
+  aDrawable->Draw(&tmpCtx, gfxImageRect, ExtendMode::CLAMP, aSamplingFilter,
+                  1.0, gfxMatrix());
 
   RefPtr<SourceSurface> scaledImage = scaledDT->Snapshot();
 
@@ -1720,11 +1718,19 @@ DeviceColor ToDeviceColor(nscolor aColor) {
   return ToDeviceColor(sRGBColor::FromABGR(aColor));
 }
 
-DeviceColor ToDeviceColor(const StyleRGBA& aColor) {
+DeviceColor ToDeviceColor(const StyleAbsoluteColor& aColor) {
+  // TODO(tlouw): aColor might not be in sRGB.
+  MOZ_ASSERT(aColor.color_space == StyleColorSpace::Srgb,
+             "color should be in sRGB");
+
   return ToDeviceColor(aColor.ToColor());
 }
 
-sRGBColor ToSRGBColor(const StyleAnimatedRGBA& aColor) {
+sRGBColor ToSRGBColor(const StyleAbsoluteColor& aColor) {
+  // TODO(tlouw): aColor might not be in sRGB.
+  MOZ_ASSERT(aColor.color_space == StyleColorSpace::Srgb,
+             "color should be in sRGB");
+
   const auto ToComponent = [](float aF) -> float {
     float component = std::min(std::max(0.0f, aF), 1.0f);
     if (MOZ_UNLIKELY(!std::isfinite(component))) {
@@ -1732,12 +1738,8 @@ sRGBColor ToSRGBColor(const StyleAnimatedRGBA& aColor) {
     }
     return component;
   };
-  return {ToComponent(aColor.red), ToComponent(aColor.green),
-          ToComponent(aColor.blue), ToComponent(aColor.alpha)};
-}
-
-DeviceColor ToDeviceColor(const StyleAnimatedRGBA& aColor) {
-  return ToDeviceColor(ToSRGBColor(aColor));
+  return {ToComponent(aColor.components._0), ToComponent(aColor.components._1),
+          ToComponent(aColor.components._2), ToComponent(aColor.alpha)};
 }
 
 }  // namespace gfx

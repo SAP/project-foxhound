@@ -86,7 +86,6 @@ var supported_properties = {
             test_length_unclamped, test_percent_unclamped ],
     "cy": [ test_length_transition, test_percent_transition,
             test_length_unclamped, test_percent_unclamped ],
-    "-moz-image-region": [ test_rect_transition ],
     "background-color": [ test_color_transition,
                           test_currentcolor_transition ],
     "background-position": [ test_background_position_transition,
@@ -408,6 +407,11 @@ if (IsCSSPropertyPrefEnabled("layout.css.motion-path.enabled")) {
   // Note: offset-anchor supports "auto | <position>", and the tests for
   // `auto` are already in wpt, so we don't test it here again.
   supported_properties["offset-anchor"] =
+    [ test_background_position_transition ];
+}
+
+if (IsCSSPropertyPrefEnabled("layout.css.motion-path-offset-position.enabled")) {
+  supported_properties["offset-position"] =
     [ test_background_position_transition ];
 }
 

@@ -26,6 +26,7 @@ export class FeatureCallout {
     this.browser = browser || this.win.docShell.chromeEventHandler;
     this.config = null;
     this.loadingConfig = false;
+    this.message = null;
     this.currentScreen = null;
     this.renderObserver = null;
     this.savedActiveElement = null;
@@ -248,6 +249,16 @@ export class FeatureCallout {
     // This means the message was misconfigured, mistargeted, or the
     // content of the parent page is not as expected.
     if (!parent && !this.currentScreen?.content.callout_position_override) {
+      if (this.message?.template === "feature_callout") {
+        Services.telemetry.recordEvent(
+          "messaging_experiments",
+          "feature_callout",
+          "create_failed",
+          `${this.message.id || "no_message"}-${this.currentScreen
+            ?.parent_selector || "no_current_screen"}`
+        );
+      }
+
       return false;
     }
 
@@ -641,7 +652,6 @@ export class FeatureCallout {
       AWParent.onContentMessage(`AWPage:${name}`, data, this.doc);
     // Expose top level functions expected by the bundle.
     this.win.AWGetFeatureConfig = () => this.config;
-    this.win.AWGetRegion = receive("GET_REGION");
     this.win.AWGetSelectedTheme = receive("GET_SELECTED_THEME");
     // Do not send telemetry if message config sets metrics as 'block'.
     if (this.config?.metrics !== "block") {
@@ -660,7 +670,6 @@ export class FeatureCallout {
   _clearWindowFunctions() {
     const windowFuncs = [
       "AWGetFeatureConfig",
-      "AWGetRegion",
       "AWGetSelectedTheme",
       "AWSendEventTelemetry",
       "AWSendToDeviceEmailsSupported",
@@ -764,6 +773,7 @@ export class FeatureCallout {
       id: "featureCalloutCheck",
       context: { source: this.page },
     });
+    this.message = result.message;
     this.loadingConfig = false;
 
     if (result.message.template !== "feature_callout") {

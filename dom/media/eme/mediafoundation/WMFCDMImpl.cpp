@@ -106,12 +106,14 @@ RefPtr<WMFCDMImpl::InitPromise> WMFCDMImpl::Init(
   MOZ_ASSERT(mCDM);
 
   RefPtr<WMFCDMImpl> self = this;
-  mCDM->Init(aParams.mOrigin,
-             aParams.mPersistentState ? KeySystemConfig::Requirement::Required
-                                      : KeySystemConfig::Requirement::Optional,
-             aParams.mDistinctiveID ? KeySystemConfig::Requirement::Required
-                                    : KeySystemConfig::Requirement::Optional,
-             aParams.mHWSecure)
+  mCDM->Init(aParams.mOrigin, aParams.mInitDataTypes,
+             aParams.mPersistentStateRequired
+                 ? KeySystemConfig::Requirement::Required
+                 : KeySystemConfig::Requirement::Optional,
+             aParams.mDistinctiveIdentifierRequired
+                 ? KeySystemConfig::Requirement::Required
+                 : KeySystemConfig::Requirement::Optional,
+             aParams.mHWSecure, aParams.mProxyCallback)
       ->Then(
           mCDM->ManagerThread(), __func__,
           [self, this](const MFCDMInitIPDL& init) {

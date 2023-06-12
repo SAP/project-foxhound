@@ -97,6 +97,7 @@ bool GlobalObject::skipDeselectedConstructor(JSContext* cx, JSProtoKey key) {
     case JSProto_Null:
     case JSProto_Object:
     case JSProto_Function:
+    case JSProto_BoundFunction:
     case JSProto_Array:
     case JSProto_Boolean:
     case JSProto_JSON:
@@ -227,6 +228,8 @@ bool GlobalObject::resolveConstructor(JSContext* cx,
                                       Handle<GlobalObject*> global,
                                       JSProtoKey key, IfClassIsDisabled mode) {
   MOZ_ASSERT(key != JSProto_Null);
+  MOZ_ASSERT(key != JSProto_BoundFunction,
+             "bound functions don't have their own proto object");
   MOZ_ASSERT(!global->isStandardClassResolved(key));
   MOZ_ASSERT(cx->compartment() == global->compartment());
 
@@ -574,6 +577,9 @@ GlobalObject* GlobalObject::createInternal(JSContext* cx,
   if (!JSObject::setQualifiedVarObj(cx, global)) {
     return nullptr;
   }
+  if (!JSObject::setGenerationCountedGlobal(cx, global)) {
+    return nullptr;
+  }
 
   return global;
 }
@@ -653,7 +659,8 @@ bool GlobalObject::initStandardClasses(JSContext* cx,
 
   for (size_t k = 0; k < JSProto_LIMIT; ++k) {
     JSProtoKey key = static_cast<JSProtoKey>(k);
-    if (key != JSProto_Null && !global->isStandardClassResolved(key)) {
+    if (key != JSProto_Null && key != JSProto_BoundFunction &&
+        !global->isStandardClassResolved(key)) {
       if (!resolveConstructor(cx, global, static_cast<JSProtoKey>(k),
                               IfClassIsDisabled::DoNothing)) {
         return false;
@@ -1010,6 +1017,9 @@ void GlobalObjectData::trace(JSTracer* trc, GlobalObject* global) {
                     "global-function-shape");
   TraceNullableEdge(trc, &extendedFunctionShapeWithDefaultProto,
                     "global-ext-function-shape");
+
+  TraceNullableEdge(trc, &boundFunctionShapeWithDefaultProto,
+                    "global-bound-function-shape");
 
   if (regExpStatics) {
     regExpStatics->trace(trc);

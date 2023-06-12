@@ -93,6 +93,7 @@ const PRECEDENCE_STATIC_RULESETS_BASE = 3;
 // engine to use one Shape for all Rule instances.
 class RuleCondition {
   #compiledUrlFilter;
+  #compiledRegexFilter;
 
   constructor(cond) {
     this.urlFilter = cond.urlFilter;
@@ -123,11 +124,16 @@ class RuleCondition {
     return this.#compiledUrlFilter.matchesRequest(requestDataForUrlFilter);
   }
 
-  getCompiledUrlFilter() {
-    return this.#compiledUrlFilter;
+  // Used for testing regexFilter matches in RuleEvaluator.#matchRuleCondition
+  // and to get redirect URL from regexSubstitution in applyRegexSubstitution.
+  getCompiledRegexFilter() {
+    return this.#compiledRegexFilter;
   }
-  setCompiledUrlFilter(compiledUrlFilter) {
-    this.#compiledUrlFilter = compiledUrlFilter;
+
+  // RuleValidator compiles regexFilter before this Rule class is instantiated.
+  // To avoid unnecessarily compiling it again, the result is assigned here.
+  setCompiledRegexFilter(compiledRegexFilter) {
+    this.#compiledRegexFilter = compiledRegexFilter;
   }
 }
 
@@ -287,6 +293,45 @@ function applyURLTransform(uri, transform) {
     mut.setRef(transform.fragment);
   }
   return mut.finalize();
+}
+
+/**
+ * @param {nsIURI} uri - Usually a http(s) URL.
+ * @param {MatchedRule} matchedRule - The matched rule with a regexFilter
+ *   condition and regexSubstitution action.
+ * @returns {nsIURI} The new URL derived from the regexSubstitution combined
+ *   with capturing group from regexFilter applied to the input uri.
+ * @throws if the resulting URL is an invalid redirect target.
+ */
+function applyRegexSubstitution(uri, matchedRule) {
+  const rule = matchedRule.rule;
+  const extension = matchedRule.ruleManager.extension;
+  const regexSubstitution = rule.action.redirect.regexSubstitution;
+  const compiledRegexFilter = rule.condition.getCompiledRegexFilter();
+  // This method being called implies that regexFilter matched, so |matches| is
+  // always non-null, i.e. an array of string/undefined values.
+  const matches = compiledRegexFilter.exec(uri.spec);
+
+  let redirectUrl = regexSubstitution.replace(/\\(.)/g, (_, char) => {
+    // #checkActionRedirect ensures that every \ is followed by a \ or digit.
+    return char === "\\" ? char : matches[char] ?? "";
+  });
+
+  // Throws if the URL is invalid:
+  let redirectUri;
+  try {
+    redirectUri = Services.io.newURI(redirectUrl);
+  } catch (e) {
+    throw new Error(
+      `Extension ${extension.id} tried to redirect to an invalid URL: ${redirectUrl}`
+    );
+  }
+  if (!extension.checkLoadURI(redirectUri, { dontReportErrors: true })) {
+    throw new Error(
+      `Extension ${extension.id} may not redirect to: ${redirectUrl}`
+    );
+  }
+  return redirectUri;
 }
 
 /**
@@ -525,12 +570,12 @@ class CompiledUrlFilter {
 // See CompiledUrlFilter for documentation of RequestDataForUrlFilter.
 class RequestDataForUrlFilter {
   /**
-   * @param {nsIURI} requestURI - The URL to match against.
+   * @param {string} requestURIspec - The URL to match against.
    * @returns {object} An object to p
    */
-  constructor(requestURI) {
+  constructor(requestURIspec) {
     // "^" is appended, see CompiledUrlFilter's #initializeUrlFilter.
-    this.urlAnyCase = requestURI.spec + "^";
+    this.urlAnyCase = requestURIspec + "^";
     this.urlLowerCase = this.urlAnyCase.toLowerCase();
     // For "||..." (Domain name anchor): where (sub)domains start in the URL.
     this.domainAnchors = this.#getDomainAnchors(this.urlAnyCase);
@@ -556,6 +601,13 @@ class RequestDataForUrlFilter {
     }
     return domainAnchors;
   }
+}
+
+function compileRegexFilter(regexFilter, isUrlFilterCaseSensitive) {
+  // TODO bug 1821033: Restrict supported regex to avoid perf issues. For
+  // discussion on the desired syntax, see
+  // https://github.com/w3c/webextensions/issues/344
+  return new RegExp(regexFilter, isUrlFilterCaseSensitive ? "" : "i");
 }
 
 class ModifyHeadersBase {
@@ -760,10 +812,20 @@ class RuleValidator {
       }
 
       const newRule = new Rule(rule);
+      // #lastCompiledRegexFilter is set if regexFilter is set, and null
+      // otherwise by the above call to #checkCondUrlFilterAndRegexFilter().
+      if (this.#lastCompiledRegexFilter) {
+        newRule.condition.setCompiledRegexFilter(this.#lastCompiledRegexFilter);
+      }
 
       this.rulesMap.set(rule.id, newRule);
     }
   }
+
+  // #checkCondUrlFilterAndRegexFilter() compiles the regexFilter to check its
+  // validity. To avoid having to compile it again when the Rule (RuleCondition)
+  // is constructed, we temporarily cache the result.
+  #lastCompiledRegexFilter;
 
   // Checks: resourceTypes & excludedResourceTypes
   #checkCondResourceTypes(rule) {
@@ -834,16 +896,18 @@ class RuleValidator {
       );
       return false;
     }
-    // TODO bug 1745764 / bug 1745763: after adding support for dynamic/static
-    // rules, validate that we only have a session ruleset here.
     return true;
   }
 
   static #regexNonASCII = /[^\x00-\x7F]/; // eslint-disable-line no-control-regex
+  static #regexDigitOrBackslash = /^[0-9\\]$/;
 
   // Checks: urlFilter & regexFilter
   #checkCondUrlFilterAndRegexFilter(rule) {
     const { urlFilter, regexFilter } = rule.condition;
+
+    this.#lastCompiledRegexFilter = null;
+
     const checkEmptyOrNonASCII = (str, prop) => {
       if (!str) {
         this.#collectInvalidRule(rule, `${prop} should not be an empty string`);
@@ -881,9 +945,18 @@ class RuleValidator {
         // #collectInvalidRule already called by checkEmptyOrNonASCII.
         return false;
       }
-      // TODO bug 1745760: accept when regexFilter is a valid regexp.
-      this.#collectInvalidRule(rule, "regexFilter is not supported yet");
-      return false;
+      try {
+        this.#lastCompiledRegexFilter = compileRegexFilter(
+          regexFilter,
+          rule.condition.isUrlFilterCaseSensitive
+        );
+      } catch (e) {
+        this.#collectInvalidRule(
+          rule,
+          "regexFilter is not a valid regular expression"
+        );
+        return false;
+      }
     }
     return true;
   }
@@ -909,28 +982,38 @@ class RuleValidator {
   }
 
   #checkActionRedirect(rule) {
-    const { extensionPath, url, transform } = rule.action.redirect ?? {};
-    if (!url && extensionPath == null && !transform) {
+    const { url, extensionPath, transform, regexSubstitution } =
+      rule.action.redirect ?? {};
+    const hasExtensionPath = extensionPath != null;
+    const hasRegexSubstitution = regexSubstitution != null;
+    const redirectKeyCount =
+      !!url + !!hasExtensionPath + !!transform + !!hasRegexSubstitution;
+    if (redirectKeyCount !== 1) {
+      if (redirectKeyCount === 0) {
+        this.#collectInvalidRule(
+          rule,
+          "A redirect rule must have a non-empty action.redirect object"
+        );
+        return false;
+      }
+      // Side note: Chrome silently ignores excess keys, and skips validation
+      // for ignored keys, in this order:
+      // - url > extensionPath > transform > regexSubstitution
       this.#collectInvalidRule(
         rule,
-        "A redirect rule must have a non-empty action.redirect object"
+        "redirect.url, redirect.extensionPath, redirect.transform and redirect.regexSubstitution are mutually exclusive"
       );
       return false;
     }
-    if (url && extensionPath != null) {
-      this.#collectInvalidRule(
-        rule,
-        "redirect.extensionPath and redirect.url are mutually exclusive"
-      );
-      return false;
-    }
-    if (extensionPath != null && !extensionPath.startsWith("/")) {
+
+    if (hasExtensionPath && !extensionPath.startsWith("/")) {
       this.#collectInvalidRule(
         rule,
         "redirect.extensionPath should start with a '/'"
       );
       return false;
     }
+
     // If specified, the "url" property is described as "format": "url" in the
     // JSON schema, which ensures that the URL is a canonical form, and that
     // the extension is allowed to trigger a navigation to the URL.
@@ -992,7 +1075,28 @@ class RuleValidator {
       }
     }
 
-    // TODO bug 1745760: With regexFilter support, implement regexSubstitution.
+    if (hasRegexSubstitution) {
+      if (!rule.condition.regexFilter) {
+        this.#collectInvalidRule(
+          rule,
+          "redirect.regexSubstitution requires the regexFilter condition to be specified"
+        );
+        return false;
+      }
+      let i = 0;
+      // i will be index after \. Loop breaks if not found (-1+1=0 = false).
+      while ((i = regexSubstitution.indexOf("\\", i) + 1)) {
+        let c = regexSubstitution[i++]; // may be undefined if \ is at end.
+        if (c === undefined || !RuleValidator.#regexDigitOrBackslash.test(c)) {
+          this.#collectInvalidRule(
+            rule,
+            "redirect.regexSubstitution only allows digit or \\ after \\."
+          );
+          return false;
+        }
+      }
+    }
+
     return true;
   }
 
@@ -1117,20 +1221,35 @@ class RequestDetails {
    * @param {string} options.type - ResourceType (MozContentPolicyType).
    * @param {string} [options.method] - HTTP method
    * @param {integer} [options.tabId]
+   * @param {BrowsingContext} [options.browsingContext] - The BrowsingContext
+   *   associated with the request. Typically the bc for which the subresource
+   *   request is initiated, if any. For document requests, this is the parent
+   *   (i.e. the parent frame for sub_frame, null for main_frame).
    */
-  constructor({ requestURI, initiatorURI, type, method, tabId }) {
+  constructor({
+    requestURI,
+    initiatorURI,
+    type,
+    method,
+    tabId,
+    browsingContext,
+  }) {
     this.requestURI = requestURI;
     this.initiatorURI = initiatorURI;
     this.type = type;
     this.method = method;
     this.tabId = tabId;
+    this.browsingContext = browsingContext;
 
     this.requestDomain = this.#domainFromURI(requestURI);
     this.initiatorDomain = initiatorURI
       ? this.#domainFromURI(initiatorURI)
       : null;
 
-    this.requestDataForUrlFilter = new RequestDataForUrlFilter(requestURI);
+    this.requestURIspec = requestURI.spec;
+    this.requestDataForUrlFilter = new RequestDataForUrlFilter(
+      this.requestURIspec
+    );
   }
 
   static fromChannelWrapper(channel) {
@@ -1145,7 +1264,74 @@ class RequestDetails {
       type: channel.type,
       method: channel.method.toLowerCase(),
       tabId,
+      browsingContext: channel.loadInfo.browsingContext,
     });
+  }
+
+  #ancestorRequestDetails;
+  get ancestorRequestDetails() {
+    if (this.#ancestorRequestDetails) {
+      return this.#ancestorRequestDetails;
+    }
+    this.#ancestorRequestDetails = [];
+    if (!this.browsingContext?.ancestorsAreCurrent) {
+      // this.browsingContext is set for real requests (via fromChannelWrapper).
+      // It may be void for testMatchOutcome and for the ancestor requests
+      // simulated below.
+      //
+      // ancestorsAreCurrent being false is unexpected, but could theoretically
+      // happen if the request is triggered from an unloaded (sub)frame. In that
+      // case we don't want to use potentially incorrect ancestor information.
+      //
+      // In any case, nothing left to do.
+      return this.#ancestorRequestDetails;
+    }
+    // Reconstruct the frame hierarchy of the request's document, in order to
+    // retroactively recompute the relevant matches of allowAllRequests rules.
+    //
+    // The allowAllRequests rule is supposedly applying to all subresource
+    // requests. For non-document requests, this is usually the document if any.
+    // In case of document requests, there is some ambiguity:
+    // - Usually, the initiator is the parent document that created the frame.
+    // - Sometimes, the initiator is a different frame or even another window.
+    //
+    // In RequestDetails.fromChannelWrapper, the actual initiator is used and
+    // reflected in initiatorURI, but here we use the document's parent. This
+    // is done because the chain of initiators is unstable (e.g. an opener can
+    // navigate/unload), whereas frame ancestor chain is constant as long as
+    // the leaf BrowsingContext is current. Moreover, allowAllRequests was
+    // originally designed to operate on frame hierarchies (crbug.com/1038831).
+    //
+    // This implementation of "initiator" for "allowAllRequests" is consistent
+    // with Chrome and Safari.
+    for (let bc = this.browsingContext; bc; bc = bc.parent) {
+      // Note: requestURI may differ from the document's initial requestURI,
+      // e.g. due to same-document navigations.
+      const requestURI = bc.currentURI;
+      if (!requestURI.schemeIs("https") && !requestURI.schemeIs("http")) {
+        // DNR is currently only hooked up to http(s) requests. Ignore other
+        // URLs, e.g. about:, blob:, moz-extension:, data:, etc.
+        continue;
+      }
+      const isTop = !bc.parent;
+      const parentPrin = bc.parentWindowContext?.documentPrincipal;
+      const requestDetails = new RequestDetails({
+        requestURI,
+        // Note: initiatorURI differs from RequestDetails.fromChannelWrapper;
+        // See the above comment for more info.
+        initiatorURI: parentPrin?.isContentPrincipal ? parentPrin.URI : null,
+        type: isTop ? "main_frame" : "sub_frame",
+        method: "get", // TODO 1821303: Detect POST requests.
+        tabId: this.tabId,
+        // In this loop we are already explicitly accounting for ancestors, so
+        // we intentionally omit browsingContext even though we have |bc|. If
+        // we were to set `browsingContext: bc`, the output would be the same,
+        // but be derived from unnecessarily repeated request evaluations.
+        browsingContext: null,
+      });
+      this.#ancestorRequestDetails.unshift(requestDetails);
+    }
+    return this.#ancestorRequestDetails;
   }
 
   canExtensionModify(extension) {
@@ -1177,6 +1363,7 @@ class RequestEvaluator {
     // These values are initialized by findMatchingRules():
     this.matchedRule = null;
     this.matchedModifyHeadersRules = [];
+    this.didCheckAncestors = false;
     this.findMatchingRules();
   }
 
@@ -1209,7 +1396,6 @@ class RequestEvaluator {
 
     let requestEvaluators = [];
     let finalMatch;
-    let finalAllowAllRequestsMatches = [];
     for (let ruleManager of ruleManagers) {
       // Evaluate request with findMatchingRules():
       const requestEvaluator = new RequestEvaluator(request, ruleManager);
@@ -1217,12 +1403,14 @@ class RequestEvaluator {
       // accepted, to collect modifyHeaders/allow/allowAllRequests actions.
       requestEvaluators.push(requestEvaluator);
       let matchedRule = requestEvaluator.matchedRule;
-      if (matchedRule) {
-        if (matchedRule.rule.action.type === "allowAllRequests") {
-          // Even if a different extension wins the final match, an extension
-          // may want to record the "allowAllRequests" action for the future.
-          finalAllowAllRequestsMatches.push(matchedRule);
-        }
+      if (
+        matchedRule &&
+        (!finalMatch || precedence(matchedRule) < precedence(finalMatch))
+      ) {
+        // Before choosing the matched rule as finalMatch, check whether there
+        // is an allowAllRequests rule override among the ancestors.
+        requestEvaluator.findAncestorRuleOverride();
+        matchedRule = requestEvaluator.matchedRule;
         if (!finalMatch || precedence(matchedRule) < precedence(finalMatch)) {
           finalMatch = matchedRule;
           if (finalMatch.rule.action.type === "block") {
@@ -1241,6 +1429,21 @@ class RequestEvaluator {
       .flat(1);
 
     // ... and collect the allowAllRequests actions:
+    // Note: Only needed for testMatchOutcome, getMatchedRules (bug 1745765) and
+    // onRuleMatchedDebug (bug 1745773). Not for regular requests, since regular
+    // requests do not distinguish between no rule vs allow vs allowAllRequests.
+    let finalAllowAllRequestsMatches = [];
+    for (let requestEvaluator of requestEvaluators) {
+      // TODO bug 1745765 / bug 1745773: Uncomment findAncestorRuleOverride()
+      // when getMatchedRules() or onRuleMatchedDebug are implemented.
+      // requestEvaluator.findAncestorRuleOverride();
+      let matchedRule = requestEvaluator.matchedRule;
+      if (matchedRule && matchedRule.rule.action.type === "allowAllRequests") {
+        // Even if a different extension wins the final match, an extension
+        // may want to record the "allowAllRequests" action for the future.
+        finalAllowAllRequestsMatches.push(matchedRule);
+      }
+    }
     if (finalAllowAllRequestsMatches.length) {
       matchedRules = finalAllowAllRequestsMatches.concat(matchedRules);
     }
@@ -1277,11 +1480,82 @@ class RequestEvaluator {
   }
 
   /**
+   * Find an "allowAllRequests" rule among the ancestors that may override the
+   * current matchedRule and/or matchedModifyHeadersRules rules.
+   */
+  findAncestorRuleOverride() {
+    if (this.didCheckAncestors) {
+      return;
+    }
+    this.didCheckAncestors = true;
+
+    if (!this.ruleManager.hasRulesWithAllowAllRequests) {
+      // Optimization: Skip ancestorRequestDetails lookup and/or request
+      // evaluation if there are no allowAllRequests rules.
+      return;
+    }
+
+    // Now we need to check whether any of the ancestor frames had a matching
+    // allowAllRequests rule. matchedRule and/or matchedModifyHeadersRules
+    // results may be ignored if their priority is lower or equal to the
+    // highest-priority allowAllRequests rule among the frame ancestors.
+    //
+    // In theory, every ancestor may potentially yield an allowAllRequests rule,
+    // and should therefore be checked unconditionally. But logically, if there
+    // are no existing matches, then any matching allowAllRequests rules will
+    // not have any effect on the request outcome. As an optimization, we
+    // therefore skip ancestor checks in this case.
+    if (
+      (!this.matchedRule ||
+        this.matchedRule.rule.isAllowOrAllowAllRequestsAction()) &&
+      !this.matchedModifyHeadersRules.length
+    ) {
+      // Optimization: Do not look up ancestors if no rules were matched.
+      //
+      // TODO bug 1745773: onRuleMatchedDebug is supposed to report when a rule
+      // has been matched. To be pedantic, when there is an onRuleMatchedDebug
+      // listener, the parents need to be checked unconditionally, in order to
+      // report potential allowAllRequests matches among ancestors.
+      // TODO bug 1745765: the above may also apply to getMatchedRules().
+      return;
+    }
+
+    for (let request of this.req.ancestorRequestDetails) {
+      // TODO: Optimize by only evaluating allow/allowAllRequests rules, because
+      // the request being seen here implies that the request was not canceled,
+      // i.e. that there were no block/redirect/upgradeScheme rules in any of
+      // the ancestors (across all extensions!).
+      let requestEvaluator = new RequestEvaluator(request, this.ruleManager);
+      let ancestorMatchedRule = requestEvaluator.matchedRule;
+      if (
+        ancestorMatchedRule &&
+        ancestorMatchedRule.rule.action.type === "allowAllRequests" &&
+        (!this.matchedRule ||
+          compareRule(
+            this.matchedRule.rule,
+            ancestorMatchedRule.rule,
+            this.matchedRule.ruleset,
+            ancestorMatchedRule.ruleset
+          ) > 0)
+      ) {
+        // Found an allowAllRequests rule that takes precedence over whatever
+        // the current rule was.
+        this.matchedRule = ancestorMatchedRule;
+      }
+    }
+  }
+
+  /**
    * Retrieves the list of matched modifyHeaders rules that should apply.
    *
    * @returns {MatchedRule[]}
    */
   getMatchingModifyHeadersRules() {
+    if (this.matchedModifyHeadersRules.length) {
+      // Find parent allowAllRequests rules, if any, to make sure that we can
+      // appropriately ignore same-or-lower-priority modifyHeaders rules.
+      this.findAncestorRuleOverride();
+    }
     // The minimum priority is 1. Defaulting to 0 = include all.
     let priorityThreshold = 0;
     if (this.matchedRule?.rule.isAllowOrAllowAllRequestsAction()) {
@@ -1356,7 +1630,9 @@ class RequestEvaluator {
         return false;
       }
     } else if (cond.regexFilter) {
-      // TODO bug 1745760: check cond.regexFilter + isUrlFilterCaseSensitive
+      if (!cond.getCompiledRegexFilter().test(this.req.requestURIspec)) {
+        return false;
+      }
     }
     if (
       cond.excludedRequestDomains &&
@@ -1514,7 +1790,10 @@ const NetworkIntegration = {
     // If there are multiple rules, then it may be a combination of allow,
     // allowAllRequests and/or modifyHeaders.
 
-    // TODO bug 1797403: Apply allowAllRequests actions.
+    // "modifyHeaders" is handled by onBeforeSendHeaders/onHeadersReceived.
+    // "allow" and "allowAllRequests" require no further action now.
+    // "allowAllRequests" is applied to new requests in the future (if any)
+    // through RequestEvaluator's findAncestorRuleOverride().
 
     return false;
   },
@@ -1568,8 +1847,10 @@ const NetworkIntegration = {
     } else if (redirect.transform) {
       redirectUri = applyURLTransform(channel.finalURI, redirect.transform);
     } else if (redirect.regexSubstitution) {
-      // TODO bug 1745760: Implement along with regexFilter support.
-      throw new Error("regexSubstitution not implemented");
+      // Note: may throw if regexSubstitution results in an invalid redirect.
+      // The error propagates up to handleRequest, which will just allow the
+      // request to continue.
+      redirectUri = applyRegexSubstitution(channel.finalURI, matchedRule);
     } else {
       // #checkActionRedirect ensures that the redirect action is non-empty.
     }
@@ -1595,7 +1876,6 @@ class RuleManager {
       "_session",
       PRECEDENCE_SESSION_RULESET
     );
-    // TODO bug 1745764: support registration of (persistent) dynamic rules.
     this.dynamicRules = this.makeRuleset(
       "_dynamic",
       PRECEDENCE_DYNAMIC_RULESET
@@ -1604,6 +1884,7 @@ class RuleManager {
 
     this.hasBlockPermission = extension.hasPermission("declarativeNetRequest");
     this.hasRulesWithTabIds = false;
+    this.hasRulesWithAllowAllRequests = false;
   }
 
   get availableStaticRuleCount() {
@@ -1630,11 +1911,13 @@ class RuleManager {
     this.hasRulesWithTabIds = !!this.sessionRules.rules.find(rule => {
       return rule.condition.tabIds || rule.condition.excludedTabIds;
     });
+    this.#updateAllowAllRequestRules();
     NetworkIntegration.maybeUpdateTabIdChecker();
   }
 
   setDynamicRules(validatedDynamicRules) {
     this.dynamicRules.rules = validatedDynamicRules;
+    this.#updateAllowAllRequestRules();
   }
 
   /**
@@ -1653,6 +1936,7 @@ class RuleManager {
       );
     }
     this.enabledStaticRules = rulesets;
+    this.#updateAllowAllRequestRules();
   }
 
   getSessionRules() {
@@ -1661,6 +1945,14 @@ class RuleManager {
 
   getDynamicRules() {
     return this.dynamicRules.rules;
+  }
+
+  #updateAllowAllRequestRules() {
+    const filterAAR = rule => rule.action.type === "allowAllRequests";
+    this.hasRulesWithAllowAllRequests =
+      this.sessionRules.rules.some(filterAAR) ||
+      this.dynamicRules.rules.some(filterAAR) ||
+      this.enabledStaticRules.some(ruleset => ruleset.rules.some(filterAAR));
   }
 }
 

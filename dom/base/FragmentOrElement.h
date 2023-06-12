@@ -36,9 +36,11 @@ namespace mozilla {
 class DeclarationBlock;
 enum class ContentRelevancyReason;
 using ContentRelevancy = EnumSet<ContentRelevancyReason, uint8_t>;
+class ElementAnimationData;
 namespace dom {
 struct CustomElementData;
 class Element;
+class PopoverData;
 }  // namespace dom
 }  // namespace mozilla
 
@@ -160,7 +162,7 @@ class FragmentOrElement : public nsIContent {
     ~nsExtendedDOMSlots();
 
     void TraverseExtendedSlots(nsCycleCollectionTraversalCallback&) final;
-    void UnlinkExtendedSlots() final;
+    void UnlinkExtendedSlots(nsIContent&) final;
 
     size_t SizeOfExcludingThis(MallocSizeOf aMallocSizeOf) const final;
 
@@ -196,6 +198,16 @@ class FragmentOrElement : public nsIContent {
     UniquePtr<CustomElementData> mCustomElementData;
 
     /**
+     * Web animations data.
+     */
+    UniquePtr<ElementAnimationData> mAnimations;
+
+    /**
+     * PopoverData for the element.
+     */
+    UniquePtr<PopoverData> mPopoverData;
+
+    /**
      * Last remembered size (in CSS pixels) for the element.
      * @see {@link https://drafts.csswg.org/css-sizing-4/#last-remembered}
      */
@@ -221,7 +233,7 @@ class FragmentOrElement : public nsIContent {
     ~nsDOMSlots();
 
     void Traverse(nsCycleCollectionTraversalCallback&) final;
-    void Unlink() final;
+    void Unlink(nsINode&) final;
 
     size_t SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf) const;
 

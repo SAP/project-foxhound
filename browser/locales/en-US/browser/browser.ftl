@@ -78,16 +78,12 @@ urlbar-xr-notification-anchor =
     .tooltiptext = Open virtual reality permission panel
 urlbar-storage-access-anchor =
     .tooltiptext = Open browsing activity permission panel
-urlbar-translate-notification-anchor =
-    .tooltiptext = Translate this page
 urlbar-web-rtc-share-screen-notification-anchor =
     .tooltiptext = Manage sharing your windows or screen with the site
 urlbar-indexed-db-notification-anchor =
     .tooltiptext = Open offline storage message panel
 urlbar-password-notification-anchor =
     .tooltiptext = Open save password message panel
-urlbar-translated-notification-anchor =
-    .tooltiptext = Manage page translation
 urlbar-plugins-notification-anchor =
     .tooltiptext = Manage plug-in use
 urlbar-web-rtc-share-devices-notification-anchor =
@@ -789,6 +785,10 @@ toolbar-overflow-customize-button =
 toolbar-button-email-link =
   .label = Email link
   .tooltiptext = Email a link to this page
+
+toolbar-button-logins =
+  .label = Passwords
+  .tooltiptext = View and manage your saved passwords
 
 # Variables:
 #  $shortcut (String): keyboard shortcut to save a copy of the page

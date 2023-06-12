@@ -35,12 +35,12 @@ let whitelist = [
     isFromDevTools: false,
   },
   {
-    sourceName: /\b(xul|minimal-xul|html|mathml|ua|forms|svg|manageDialog|autocomplete-item-shared|formautofill)\.css$/i,
+    sourceName: /\b(scrollbars|xul|html|mathml|ua|forms|svg|manageDialog|autocomplete-item-shared|formautofill)\.css$/i,
     errorMessage: /Unknown property.*-moz-/i,
     isFromDevTools: false,
   },
   {
-    sourceName: /(minimal-xul|xul)\.css$/i,
+    sourceName: /(scrollbars|xul)\.css$/i,
     errorMessage: /Unknown pseudo-class.*-moz-/i,
     isFromDevTools: false,
   },
@@ -91,7 +91,7 @@ if (!Services.prefs.getBoolPref("layout.css.color-mix.enabled")) {
 if (!Services.prefs.getBoolPref("layout.css.math-depth.enabled")) {
   // mathml.css UA sheet rule for math-depth.
   whitelist.push({
-    sourceName: /\b(minimal-xul|mathml)\.css$/i,
+    sourceName: /\b(scrollbars|mathml)\.css$/i,
     errorMessage: /Unknown property .*\bmath-depth\b/i,
     isFromDevTools: false,
   });
@@ -140,7 +140,6 @@ let propNameWhitelist = [
   // These variables are used in a shorthand, but the CSS parser deletes the values
   // when expanding the shorthands. See https://github.com/w3c/csswg-drafts/issues/2515
   { propName: "--bezier-diagonal-color", isFromDevTools: true },
-  { propName: "--bezier-grid-color", isFromDevTools: true },
 
   // This variable is used from CSS embedded in JS in adjustableTitle.js
   { propName: "--icon-url", isFromDevTools: false },

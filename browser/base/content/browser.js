@@ -60,6 +60,7 @@ ChromeUtils.defineESModuleGetters(this, {
   UrlbarTokenizer: "resource:///modules/UrlbarTokenizer.sys.mjs",
   UrlbarUtils: "resource:///modules/UrlbarUtils.sys.mjs",
   UrlbarValueFormatter: "resource:///modules/UrlbarValueFormatter.sys.mjs",
+  Weave: "resource://services-sync/main.sys.mjs",
   WebsiteFilter: "resource:///modules/policies/WebsiteFilter.sys.mjs",
 });
 
@@ -97,15 +98,14 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   TabCrashHandler: "resource:///modules/ContentCrashHandlers.jsm",
   Translation: "resource:///modules/translation/TranslationParent.jsm",
   UITour: "resource:///modules/UITour.jsm",
-  Weave: "resource://services-sync/main.js",
   WebNavigationFrames: "resource://gre/modules/WebNavigationFrames.jsm",
   webrtcUI: "resource:///modules/webrtcUI.jsm",
   ZoomUI: "resource:///modules/ZoomUI.jsm",
 });
 
 XPCOMUtils.defineLazyGetter(this, "fxAccounts", () => {
-  return ChromeUtils.import(
-    "resource://gre/modules/FxAccounts.jsm"
+  return ChromeUtils.importESModule(
+    "resource://gre/modules/FxAccounts.sys.mjs"
   ).getFxAccountsSingleton();
 });
 
@@ -275,6 +275,11 @@ XPCOMUtils.defineLazyScriptGetter(
   this,
   "gSharedTabWarning",
   "chrome://browser/content/browser-webrtc.js"
+);
+XPCOMUtils.defineLazyScriptGetter(
+  this,
+  "gPageStyleMenu",
+  "chrome://browser/content/browser-pagestyle.js"
 );
 
 // lazy service getters
@@ -570,13 +575,6 @@ XPCOMUtils.defineLazyPreferenceGetter(
     );
   }
 );
-
-customElements.setElementCreationCallback("translation-notification", () => {
-  Services.scriptloader.loadSubScript(
-    "chrome://browser/content/translation-notification.js",
-    window
-  );
-});
 
 customElements.setElementCreationCallback("screenshots-buttons", () => {
   Services.scriptloader.loadSubScript(
@@ -1427,57 +1425,6 @@ var gKeywordURIFixup = {
   },
 };
 
-function serializeInputStream(aStream) {
-  let data = {
-    content: NetUtil.readInputStreamToString(aStream, aStream.available()),
-  };
-
-  if (aStream instanceof Ci.nsIMIMEInputStream) {
-    data.headers = new Map();
-    aStream.visitHeaders((name, value) => {
-      data.headers.set(name, value);
-    });
-  }
-
-  return data;
-}
-
-/**
- * Handles URIs when we want to deal with them in chrome code rather than pass
- * them down to a content browser. This can avoid unnecessary process switching
- * for the browser.
- * @param aBrowser the browser that is attempting to load the URI
- * @param aUri the nsIURI that is being loaded
- * @returns true if the URI is handled, otherwise false
- */
-function handleUriInChrome(aBrowser, aUri) {
-  if (aUri.scheme == "file") {
-    try {
-      let mimeType = Cc["@mozilla.org/mime;1"]
-        .getService(Ci.nsIMIMEService)
-        .getTypeFromURI(aUri);
-      if (mimeType == "application/x-xpinstall") {
-        let systemPrincipal = Services.scriptSecurityManager.getSystemPrincipal();
-        AddonManager.getInstallForURL(aUri.spec, {
-          telemetryInfo: { source: "file-url" },
-        }).then(install => {
-          AddonManager.installAddonFromWebpage(
-            mimeType,
-            aBrowser,
-            systemPrincipal,
-            install
-          );
-        });
-        return true;
-      }
-    } catch (e) {
-      return false;
-    }
-  }
-
-  return false;
-}
-
 /* Creates a null principal using the userContextId
    from the current selected tab or a passed in tab argument */
 function _createNullPrincipalFromTabUserContextId(tab = gBrowser.selectedTab) {
@@ -1488,104 +1435,6 @@ function _createNullPrincipalFromTabUserContextId(tab = gBrowser.selectedTab) {
   return Services.scriptSecurityManager.createNullPrincipal({
     userContextId,
   });
-}
-
-// A shared function used by both remote and non-remote browser XBL bindings to
-// load a URI or redirect it to the correct process.
-function _loadURI(browser, uri, params = {}) {
-  if (!uri) {
-    uri = "about:blank";
-  }
-
-  let {
-    triggeringPrincipal,
-    referrerInfo,
-    postData,
-    userContextId,
-    csp,
-    remoteTypeOverride,
-    hasValidUserGestureActivation,
-    globalHistoryOptions,
-  } = params || {};
-  let loadFlags =
-    params.loadFlags || params.flags || Ci.nsIWebNavigation.LOAD_FLAGS_NONE;
-  hasValidUserGestureActivation ??=
-    document.hasValidTransientUserGestureActivation;
-
-  if (!triggeringPrincipal) {
-    throw new Error("Must load with a triggering Principal");
-  }
-
-  if (userContextId && userContextId != browser.getAttribute("usercontextid")) {
-    throw new Error("Cannot load with mismatched userContextId");
-  }
-
-  // Attempt to perform URI fixup to see if we can handle this URI in chrome.
-  let fixupFlags = Ci.nsIURIFixup.FIXUP_FLAG_NONE;
-  if (loadFlags & Ci.nsIWebNavigation.LOAD_FLAGS_ALLOW_THIRD_PARTY_FIXUP) {
-    fixupFlags |= Ci.nsIURIFixup.FIXUP_FLAG_ALLOW_KEYWORD_LOOKUP;
-  }
-  if (loadFlags & Ci.nsIWebNavigation.LOAD_FLAGS_FIXUP_SCHEME_TYPOS) {
-    fixupFlags |= Ci.nsIURIFixup.FIXUP_FLAG_FIX_SCHEME_TYPOS;
-  }
-  if (PrivateBrowsingUtils.isBrowserPrivate(browser)) {
-    fixupFlags |= Ci.nsIURIFixup.FIXUP_FLAG_PRIVATE_CONTEXT;
-  }
-
-  try {
-    let uriObject = Services.uriFixup.getFixupURIInfo(uri, fixupFlags)
-      .preferredURI;
-    if (uriObject && handleUriInChrome(browser, uriObject)) {
-      // If we've handled the URI in Chrome, then just return here.
-      return;
-    }
-  } catch (e) {
-    // getFixupURIInfo may throw. Gracefully recover and try to load the URI normally.
-  }
-
-  // XXX(nika): Is `browser.isNavigating` necessary anymore?
-  browser.isNavigating = true;
-
-  if (globalHistoryOptions?.triggeringSearchEngine) {
-    browser.setAttribute(
-      "triggeringSearchEngine",
-      globalHistoryOptions.triggeringSearchEngine
-    );
-    browser.setAttribute("triggeringSearchEngineURL", uri);
-  } else {
-    browser.removeAttribute("triggeringSearchEngine");
-    browser.removeAttribute("triggeringSearchEngineURL");
-  }
-
-  if (globalHistoryOptions?.triggeringSponsoredURL) {
-    try {
-      // Browser may access URL after fixing it up, then store the URL into DB.
-      // To match with it, fix the link up explicitly.
-      const triggeringSponsoredURL = Services.uriFixup.getFixupURIInfo(
-        globalHistoryOptions.triggeringSponsoredURL,
-        fixupFlags
-      ).fixedURI.spec;
-      browser.setAttribute("triggeringSponsoredURL", triggeringSponsoredURL);
-      const time =
-        globalHistoryOptions.triggeringSponsoredURLVisitTimeMS || Date.now();
-      browser.setAttribute("triggeringSponsoredURLVisitTimeMS", time);
-    } catch (e) {}
-  }
-
-  let loadURIOptions = {
-    triggeringPrincipal,
-    csp,
-    loadFlags,
-    referrerInfo,
-    postData,
-    hasValidUserGestureActivation,
-    remoteTypeOverride,
-  };
-  try {
-    browser.webNavigation.loadURI(uri, loadURIOptions);
-  } finally {
-    browser.isNavigating = false;
-  }
 }
 
 let _resolveDelayedStartup;
@@ -1737,8 +1586,6 @@ var gBrowserInit = {
     BrowserWindowTracker.track(window);
 
     FirefoxViewHandler.init();
-
-    gCookieBannerHandlingExperiment.init();
 
     gNavToolbox.palette = document.getElementById(
       "BrowserToolbarPalette"
@@ -2596,8 +2443,6 @@ var gBrowserInit = {
 
     FirefoxViewHandler.uninit();
 
-    gCookieBannerHandlingExperiment.uninit();
-
     // Now either cancel delayedStartup, or clean up the services initialized from
     // it.
     if (this._boundDelayedStartup) {
@@ -2964,7 +2809,7 @@ function openLocation(event) {
   }
 
   // If there's an open browser window, redirect the command there.
-  let win = getTopWin();
+  let win = URILoadingHelper.getTargetWindow(window);
   if (win) {
     win.focus();
     win.openLocation();
@@ -3421,7 +3266,10 @@ var BrowserOnClick = {
     // Allow users to override and continue through to the site,
     // but add a notify bar as a reminder, so that they don't lose
     // track after, e.g., tab switching.
-    browsingContext.loadURI(blockedInfo.uri, {
+    // Note that we have to use the passed URI info and can't just
+    // rely on the document URI, because the latter contains
+    // additional query parameters that should be stripped.
+    browsingContext.fixupAndLoadURIString(blockedInfo.uri, {
       triggeringPrincipal,
       flags: Ci.nsIWebNavigation.LOAD_FLAGS_BYPASS_CLASSIFIER,
     });
@@ -3512,7 +3360,7 @@ var BrowserOnClick = {
  * when their own homepage is infected, we can get them somewhere safe.
  */
 function getMeOutOfHere(browsingContext) {
-  browsingContext.top.loadURI(getDefaultHomePage(), {
+  browsingContext.top.fixupAndLoadURIString(getDefaultHomePage(), {
     triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(), // Also needs to load homepage
   });
 }
@@ -3543,12 +3391,13 @@ function BrowserReloadWithFlags(reloadFlags) {
 
   for (let tab of gBrowser.selectedTabs) {
     let browser = tab.linkedBrowser;
-    let url = browser.currentURI.spec;
+    let url = browser.currentURI;
+    let urlSpec = url.spec;
     // We need to cache the content principal here because the browser will be
     // reconstructed when the remoteness changes and the content prinicpal will
     // be cleared after reconstruction.
     let principal = tab.linkedBrowser.contentPrincipal;
-    if (gBrowser.updateBrowserRemotenessByURL(browser, url)) {
+    if (gBrowser.updateBrowserRemotenessByURL(browser, urlSpec)) {
       // If the remoteness has changed, the new browser doesn't have any
       // information of what was loaded before, so we need to load the previous
       // URL again.
@@ -4099,7 +3948,7 @@ const BrowserSearch = {
       window.location.href != AppConstants.BROWSER_CHROME_URL ||
       gURLBar.readOnly
     ) {
-      let win = getTopWin({ skipPopups: true });
+      let win = URILoadingHelper.getTopWin(window, { skipPopups: true });
       if (win) {
         // If there's an open browser window, it should handle this command
         win.focus();
@@ -4882,7 +4731,7 @@ let gShareUtils = {
     if (AppConstants.platform == "win") {
       // We disable the item on Windows, as there's no submenu.
       // On macOS, we handle this inside the menupopup.
-      shareURL.hidden = !BrowserUtils.isShareableURL(browser.currentURI);
+      shareURL.hidden = !BrowserUtils.getShareableURL(browser.currentURI);
     }
   },
 
@@ -4937,9 +4786,12 @@ let gShareUtils = {
     let urlToShare = null;
     let titleToShare = null;
 
-    if (browser && BrowserUtils.isShareableURL(browser.currentURI)) {
-      urlToShare = browser.currentURI;
-      titleToShare = browser.contentTitle;
+    if (browser) {
+      let maybeToShare = BrowserUtils.getShareableURL(browser.currentURI);
+      if (maybeToShare) {
+        urlToShare = maybeToShare;
+        titleToShare = browser.contentTitle;
+      }
     }
     return { urlToShare, titleToShare };
   },
@@ -6402,7 +6254,11 @@ nsBrowserAccess.prototype = {
             // lands.
             loadFlags |= Ci.nsIWebNavigation.LOAD_FLAGS_FIRST_LOAD;
           }
-          gBrowser.loadURI(aURI.spec, {
+          // This should ideally be able to call loadURI with the actual URI.
+          // However, that would bypass some styles of fixup (notably Windows
+          // paths passed as "URI"s), so this needs some further thought. It
+          // should be addressed in bug 1815509.
+          gBrowser.fixupAndLoadURIString(aURI.spec, {
             triggeringPrincipal: aTriggeringPrincipal,
             csp: aCsp,
             loadFlags,
@@ -7489,182 +7345,6 @@ var ToolbarContextMenu = {
   },
 };
 
-var gPageStyleMenu = {
-  // This maps from a <browser> element (or, more specifically, a
-  // browser's permanentKey) to an Object that contains the most recent
-  // information about the browser content's stylesheets. That Object
-  // is populated via the PageStyle:StyleSheets message from the content
-  // process. The Object should have the following structure:
-  //
-  // filteredStyleSheets (Array):
-  //   An Array of objects with a filtered list representing all stylesheets
-  //   that the current page offers. Each object has the following members:
-  //
-  //   title (String):
-  //     The title of the stylesheet
-  //
-  //   disabled (bool):
-  //     Whether or not the stylesheet is currently applied
-  //
-  //   href (String):
-  //     The URL of the stylesheet. Stylesheets loaded via a data URL will
-  //     have this property set to null.
-  //
-  // authorStyleDisabled (bool):
-  //   Whether or not the user currently has "No Style" selected for
-  //   the current page.
-  //
-  // preferredStyleSheetSet (bool):
-  //   Whether or not the user currently has the "Default" style selected
-  //   for the current page.
-  //
-  _pageStyleSheets: new WeakMap(),
-
-  /**
-   * Add/append styleSheets to the _pageStyleSheets weakmap.
-   * @param styleSheets
-   *        The stylesheets to add, including the preferred
-   *        stylesheet set for this document.
-   * @param permanentKey
-   *        The permanent key of the browser that
-   *        these stylesheets come from.
-   */
-  addBrowserStyleSheets(styleSheets, permanentKey) {
-    let sheetData = this._pageStyleSheets.get(permanentKey);
-    if (!sheetData) {
-      this._pageStyleSheets.set(permanentKey, styleSheets);
-      return;
-    }
-    sheetData.filteredStyleSheets.push(...styleSheets.filteredStyleSheets);
-    sheetData.preferredStyleSheetSet =
-      sheetData.preferredStyleSheetSet || styleSheets.preferredStyleSheetSet;
-  },
-
-  clearBrowserStyleSheets(permanentKey) {
-    this._pageStyleSheets.delete(permanentKey);
-  },
-
-  _getStyleSheetInfo(browser) {
-    let data = this._pageStyleSheets.get(browser.permanentKey);
-    if (!data) {
-      return {
-        filteredStyleSheets: [],
-        authorStyleDisabled: false,
-        preferredStyleSheetSet: true,
-      };
-    }
-
-    return data;
-  },
-
-  fillPopup(menuPopup) {
-    let styleSheetInfo = this._getStyleSheetInfo(gBrowser.selectedBrowser);
-    var noStyle = menuPopup.firstElementChild;
-    var persistentOnly = noStyle.nextElementSibling;
-    var sep = persistentOnly.nextElementSibling;
-    while (sep.nextElementSibling) {
-      menuPopup.removeChild(sep.nextElementSibling);
-    }
-
-    let styleSheets = styleSheetInfo.filteredStyleSheets;
-    var currentStyleSheets = {};
-    var styleDisabled = styleSheetInfo.authorStyleDisabled;
-    var haveAltSheets = false;
-    var altStyleSelected = false;
-
-    for (let currentStyleSheet of styleSheets) {
-      if (!currentStyleSheet.disabled) {
-        altStyleSelected = true;
-      }
-
-      haveAltSheets = true;
-
-      let lastWithSameTitle = null;
-      if (currentStyleSheet.title in currentStyleSheets) {
-        lastWithSameTitle = currentStyleSheets[currentStyleSheet.title];
-      }
-
-      if (!lastWithSameTitle) {
-        let menuItem = document.createXULElement("menuitem");
-        menuItem.setAttribute("type", "radio");
-        menuItem.setAttribute("label", currentStyleSheet.title);
-        menuItem.setAttribute("data", currentStyleSheet.title);
-        menuItem.setAttribute(
-          "checked",
-          !currentStyleSheet.disabled && !styleDisabled
-        );
-        menuItem.setAttribute(
-          "oncommand",
-          "gPageStyleMenu.switchStyleSheet(this.getAttribute('data'));"
-        );
-        menuPopup.appendChild(menuItem);
-        currentStyleSheets[currentStyleSheet.title] = menuItem;
-      } else if (currentStyleSheet.disabled) {
-        lastWithSameTitle.removeAttribute("checked");
-      }
-    }
-
-    noStyle.setAttribute("checked", styleDisabled);
-    persistentOnly.setAttribute("checked", !altStyleSelected && !styleDisabled);
-    persistentOnly.hidden = styleSheetInfo.preferredStyleSheetSet
-      ? haveAltSheets
-      : false;
-    sep.hidden = (noStyle.hidden && persistentOnly.hidden) || !haveAltSheets;
-  },
-
-  /**
-   * Send a message to all PageStyleParents by walking the BrowsingContext tree.
-   * @param message
-   *        The string message to send to each PageStyleChild.
-   * @param data
-   *        The data to send to each PageStyleChild within the message.
-   */
-  _sendMessageToAll(message, data) {
-    let contextsToVisit = [gBrowser.selectedBrowser.browsingContext];
-    while (contextsToVisit.length) {
-      let currentContext = contextsToVisit.pop();
-      let global = currentContext.currentWindowGlobal;
-
-      if (!global) {
-        continue;
-      }
-
-      let actor = global.getActor("PageStyle");
-      actor.sendAsyncMessage(message, data);
-
-      contextsToVisit.push(...currentContext.children);
-    }
-  },
-
-  /**
-   * Switch the stylesheet of all documents in the current browser.
-   * @param title The title of the stylesheet to switch to.
-   */
-  switchStyleSheet(title) {
-    let { permanentKey } = gBrowser.selectedBrowser;
-    let sheetData = this._pageStyleSheets.get(permanentKey);
-    if (sheetData && sheetData.filteredStyleSheets) {
-      sheetData.authorStyleDisabled = false;
-      for (let sheet of sheetData.filteredStyleSheets) {
-        sheet.disabled = sheet.title !== title;
-      }
-    }
-    this._sendMessageToAll("PageStyle:Switch", { title });
-  },
-
-  /**
-   * Disable all stylesheets. Called with View > Page Style > No Style.
-   */
-  disableStyle() {
-    let { permanentKey } = gBrowser.selectedBrowser;
-    let sheetData = this._pageStyleSheets.get(permanentKey);
-    if (sheetData) {
-      sheetData.authorStyleDisabled = true;
-    }
-    this._sendMessageToAll("PageStyle:Disable", {});
-  },
-};
-
 // Note that this is also called from non-browser windows on OSX, which do
 // share menu items but not much else. See nonbrowser-mac.js.
 var BrowserOffline = {
@@ -7971,7 +7651,7 @@ var WebAuthnPromptHelper = {
       });
     }
     let mainAction = this.buildCancelAction(mgr, tid);
-    let options = {};
+    let options = { escAction: "buttoncommand" };
     this.show(
       tid,
       "select-sign-result",
@@ -8000,6 +7680,8 @@ var WebAuthnPromptHelper = {
 
   register(mgr, { origin, tid, is_ctap2, device_selected }) {
     let mainAction = this.buildCancelAction(mgr, tid);
+    let options = { escAction: "buttoncommand" };
+    let secondaryActions = [];
     let message;
     if (is_ctap2) {
       if (device_selected) {
@@ -8010,7 +7692,15 @@ var WebAuthnPromptHelper = {
     } else {
       message = "webauthn.registerPrompt2";
     }
-    this.show(tid, "register", message, origin, mainAction);
+    this.show(
+      tid,
+      "register",
+      message,
+      origin,
+      mainAction,
+      secondaryActions,
+      options
+    );
   },
 
   registerDirect(mgr, { origin, tid }) {
@@ -8041,6 +7731,8 @@ var WebAuthnPromptHelper = {
 
   sign(mgr, { origin, tid, is_ctap2, device_selected }) {
     let mainAction = this.buildCancelAction(mgr, tid);
+    let options = { escAction: "buttoncommand" };
+    let secondaryActions = [];
     let message;
     if (is_ctap2) {
       if (device_selected) {
@@ -8051,7 +7743,15 @@ var WebAuthnPromptHelper = {
     } else {
       message = "webauthn.signPrompt2";
     }
-    this.show(tid, "sign", message, origin, mainAction);
+    this.show(
+      tid,
+      "sign",
+      message,
+      origin,
+      mainAction,
+      secondaryActions,
+      options
+    );
   },
 
   show_info(mgr, origin, tid, id, stringId) {
@@ -8423,12 +8123,24 @@ function undoCloseTab(aIndex) {
     blankTabToRemove = gBrowser.selectedTab;
   }
 
+  let closedTabCount = SessionStore.getLastClosedTabCount(window);
+
+  // There's nothing to do here if there are no tabs to re-open for this
+  // window...
+  if (!closedTabCount) {
+    // ... unless there's a previous session that we can restore, in which
+    // case, we use this as a signal to restore that session and merge it into
+    // the current session.
+    if (SessionStore.canRestoreLastSession) {
+      SessionStore.restoreLastSession();
+    }
+    return null;
+  }
+
   let tab = null;
   // aIndex is undefined if the function is called without a specific tab to restore.
   let tabsToRemove =
-    aIndex !== undefined
-      ? [aIndex]
-      : new Array(SessionStore.getLastClosedTabCount(window)).fill(0);
+    aIndex !== undefined ? [aIndex] : new Array(closedTabCount).fill(0);
   let tabsRemoved = false;
   for (let index of tabsToRemove) {
     if (SessionStore.getClosedTabCount(window) > index) {
@@ -8741,7 +8453,7 @@ function switchToTabHavingURI(aURI, aOpenNew, aOpenParams = {}) {
         }
 
         if (ignoreFragment == "whenComparingAndReplace" || replaceQueryString) {
-          browser.loadURI(aURI.spec, {
+          browser.loadURI(aURI, {
             triggeringPrincipal:
               aOpenParams.triggeringPrincipal ||
               _createNullPrincipalFromTabUserContextId(),
@@ -8952,9 +8664,8 @@ var MousePosTracker = {
   },
 
   handleEvent(event) {
-    let fullZoom = window.windowUtils.fullZoom;
-    this._x = event.screenX / fullZoom - window.mozInnerScreenX;
-    this._y = event.screenY / fullZoom - window.mozInnerScreenY;
+    this._x = event.screenX - window.mozInnerScreenX;
+    this._y = event.screenY - window.mozInnerScreenY;
 
     this._listeners.forEach(listener => {
       try {
@@ -10081,8 +9792,8 @@ var FirefoxViewHandler = {
         FirefoxViewNotificationManager.shouldNotificationDotBeShowing()
       );
     }
-    XPCOMUtils.defineLazyModuleGetters(this, {
-      SyncedTabs: "resource://services-sync/SyncedTabs.jsm",
+    ChromeUtils.defineESModuleGetters(this, {
+      SyncedTabs: "resource://services-sync/SyncedTabs.sys.mjs",
     });
     Services.obs.addObserver(this, "firefoxview-notification-dot-update");
   },
@@ -10219,80 +9930,5 @@ var FirefoxViewHandler = {
   },
   _toggleNotificationDot(shouldShow) {
     this.button?.toggleAttribute("attention", shouldShow);
-  },
-};
-
-/*
- * Global singleton that manages Nimbus variable to preferences mapping
- * for the cookie banner handling experiment in 111.
- *
- * This code will be streamlined to ship the winning variation in 113 (see
- * bug 1816980).
- */
-var gCookieBannerHandlingExperiment = {
-  init() {
-    // If the user has been enrolled in a variant, we don't need to do
-    // anything. This can happen, e.g., when the browser restarts after
-    // enrolling the user in the previous session.
-    // The pref value is set to 0 by default; the variant values are
-    // integers 1, 2, or 3.
-    this._isEnrolled =
-      Services.prefs.getIntPref("cookiebanners.ui.desktop.cfrVariant") != 0;
-    if (this._isEnrolled) {
-      return;
-    }
-
-    this._updateEnabledState = this._updateEnabledState.bind(this);
-    NimbusFeatures.cookieBannerHandling.onUpdate(this._updateEnabledState);
-  },
-  uninit() {
-    NimbusFeatures.cookieBannerHandling.off(this._updateEnabledState);
-  },
-  _updateEnabledState() {
-    // The variant should be 1, 2, or 3 if the user is in the experiment.
-    let variant = NimbusFeatures.cookieBannerHandling.getVariable(
-      "desktopCfrVariant"
-    );
-    if (typeof variant != "undefined") {
-      this._enrollUser(variant);
-    }
-  },
-  /*
-   * When a user is enrolled in the cookie banner handling experiment,
-   * configures relevant prefs so that they will see the CBH onboarding
-   * doorhanger when they visit a website with a cookie banner we can handle.
-   *
-   * @param  variant (int, required)
-   *         The integer indicating which variation the user should see.
-   */
-  _enrollUser(variant) {
-    // Set pref to persist which variation the user sees across reloads.
-    Services.prefs.setIntPref("cookiebanners.ui.desktop.cfrVariant", variant);
-
-    // Set prefs to enable the service to detect banners, needed to trigger
-    // the onboarding doorhanger.
-    Services.prefs.setIntPref("cookiebanners.service.mode", 1);
-    Services.prefs.setIntPref("cookiebanners.service.mode.privateBrowsing", 1);
-
-    // Set prefs to show the about:preferences UI, but hide the protections
-    // panel UI.
-    Services.prefs.setBoolPref("cookiebanners.ui.desktop.enabled", true);
-    Services.prefs.setBoolPref("cookiebanners.service.detectOnly", true);
-  },
-  /*
-   * When the user chooses to enable the feature via the onboarding doorhanger,
-   * configures prefs to enable the service and enable the desktop UI, then
-   * reloads the browser, giving the user the visual feedback of cookie banners
-   * disappearing from the current page.
-   */
-  onActivate() {
-    // Set prefs to enable the service to reject banners.
-    Services.prefs.setIntPref("cookiebanners.service.mode", 1);
-    Services.prefs.setIntPref("cookiebanners.service.mode.privateBrowsing", 1);
-
-    // Set prefs to show the protections panel UI.
-    Services.prefs.setBoolPref("cookiebanners.service.detectOnly", false);
-
-    BrowserReload();
   },
 };

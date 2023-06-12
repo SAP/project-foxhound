@@ -3,14 +3,15 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-// These denote which keyboard controls to show for a qualified video element.
+// These denote which keyboard controls to disable for a qualified video element.
 export const KEYBOARD_CONTROLS = {
-  NONE: 0,
+  ALL: 0,
   PLAY_PAUSE: 1 << 0,
   MUTE_UNMUTE: 1 << 1,
   VOLUME: 1 << 2,
   SEEK: 1 << 3,
   CLOSE: 1 << 4,
+  LIVE_SEEK: 1 << 5,
 };
 
 // These are the possible toggle positions along the right side of

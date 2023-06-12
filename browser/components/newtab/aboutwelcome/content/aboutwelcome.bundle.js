@@ -222,7 +222,8 @@ const MultiStageAboutWelcome = props => {
 
 
     setPreviousOrder(index);
-  }, [index]);
+  }, [index]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const [flowParams, setFlowParams] = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(null);
   const {
     metricsFlowUri
@@ -297,14 +298,8 @@ const MultiStageAboutWelcome = props => {
     }
 
     return false;
-  }, []); // Update top sites with default sites by region when region is available
-
-  const [region, setRegion] = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(null);
-  (0,react__WEBPACK_IMPORTED_MODULE_0__.useEffect)(() => {
-    (async () => {
-      setRegion(await window.AWGetRegion());
-    })();
-  }, []); // Save the active multi select state containing array of checkbox ids
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // Save the active multi select state containing array of checkbox ids
   // used in handleAction to update MULTI_ACTION data
 
   const [activeMultiSelect, setActiveMultiSelect] = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(null); // Get the active theme so the rendering code can make it selected
@@ -319,36 +314,6 @@ const MultiStageAboutWelcome = props => {
       setActiveTheme(theme);
     })();
   }, []);
-  const useImportable = props.message_id.includes("IMPORTABLE"); // Track whether we have already sent the importable sites impression telemetry
-
-  const importTelemetrySent = (0,react__WEBPACK_IMPORTED_MODULE_0__.useRef)(false);
-  const [topSites, setTopSites] = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)([]);
-  (0,react__WEBPACK_IMPORTED_MODULE_0__.useEffect)(() => {
-    (async () => {
-      var _window$AWGetDefaultS, _window, _window$AWGetImportab, _window2;
-
-      let DEFAULT_SITES = await ((_window$AWGetDefaultS = (_window = window).AWGetDefaultSites) === null || _window$AWGetDefaultS === void 0 ? void 0 : _window$AWGetDefaultS.call(_window));
-      const importable = JSON.parse((await ((_window$AWGetImportab = (_window2 = window).AWGetImportableSites) === null || _window$AWGetImportab === void 0 ? void 0 : _window$AWGetImportab.call(_window2))) || "[]");
-      const showImportable = useImportable && importable.length >= 5;
-
-      if (!importTelemetrySent.current) {
-        _lib_aboutwelcome_utils__WEBPACK_IMPORTED_MODULE_2__.AboutWelcomeUtils.sendImpressionTelemetry(`${props.message_id}_SITES`, {
-          display: showImportable ? "importable" : "static",
-          importable: importable.length
-        });
-        importTelemetrySent.current = true;
-      }
-
-      setTopSites(showImportable ? {
-        data: importable,
-        showImportable
-      } : {
-        data: DEFAULT_SITES,
-        showImportable
-      });
-    })();
-  }, [useImportable, region]);
-  const centeredScreens = props.screens.filter(s => s.content.position !== "corner");
   const {
     negotiatedLanguage,
     langPackInstallPhase,
@@ -361,26 +326,21 @@ const MultiStageAboutWelcome = props => {
       background: props.backdrop
     } : {}
   }, screens.map((screen, order) => {
-    const isFirstCenteredScreen = (!screen.content.position || screen.content.position === "center") && screen === centeredScreens[0];
-    const isLastCenteredScreen = (!screen.content.position || screen.content.position === "center") && screen === centeredScreens[centeredScreens.length - 1];
-    /* If first screen is corner positioned, don't include it in the count for the steps indicator. This assumes corner positioning will only be used on the first screen. */
-
-    const totalNumberOfScreens = screens[0].content.position === "corner" ? screens.length - 1 : screens.length;
-    /* Don't include a starting corner screen when determining step indicator order */
-
-    const stepOrder = screens[0].content.position === "corner" ? order - 1 : order;
+    const isFirstScreen = screen === screens[0];
+    const isLastScreen = screen === screens[screens.length - 1];
+    const totalNumberOfScreens = screens.length;
+    const isSingleScreen = totalNumberOfScreens === 1;
     return index === order ? /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(WelcomeScreen, {
       key: screen.id + order,
       id: screen.id,
       totalNumberOfScreens: totalNumberOfScreens,
-      isFirstCenteredScreen: isFirstCenteredScreen,
-      isLastCenteredScreen: isLastCenteredScreen,
-      stepOrder: stepOrder,
+      isFirstScreen: isFirstScreen,
+      isLastScreen: isLastScreen,
+      isSingleScreen: isSingleScreen,
       order: order,
       previousOrder: previousOrder,
       content: screen.content,
       navigate: handleTransition,
-      topSites: topSites,
       messageId: `${props.message_id}_${order}_${screen.id}`,
       UTMTerm: props.utm_term,
       flowParams: flowParams,
@@ -461,7 +421,7 @@ class WelcomeScreen extends (react__WEBPACK_IMPORTED_MODULE_0___default().PureCo
 
     if (type === "SHOW_FIREFOX_ACCOUNTS") {
       let params = { ..._asrouter_templates_FirstRun_addUtmParams__WEBPACK_IMPORTED_MODULE_5__.BASE_PARAMS,
-        utm_term: `aboutwelcome-${UTMTerm}-screen`
+        utm_term: `${UTMTerm}-screen`
       };
 
       if (action.addFlowParams && flowParams) {
@@ -475,7 +435,7 @@ class WelcomeScreen extends (react__WEBPACK_IMPORTED_MODULE_0___default().PureCo
       };
     } else if (type === "OPEN_URL") {
       let url = new URL(data.args);
-      (0,_asrouter_templates_FirstRun_addUtmParams__WEBPACK_IMPORTED_MODULE_5__.addUtmParams)(url, `aboutwelcome-${UTMTerm}-screen`);
+      (0,_asrouter_templates_FirstRun_addUtmParams__WEBPACK_IMPORTED_MODULE_5__.addUtmParams)(url, `${UTMTerm}-screen`);
 
       if (action.addFlowParams && flowParams) {
         url.searchParams.append("device_id", flowParams.deviceId);
@@ -571,7 +531,6 @@ class WelcomeScreen extends (react__WEBPACK_IMPORTED_MODULE_0___default().PureCo
       content: this.props.content,
       id: this.props.id,
       order: this.props.order,
-      stepOrder: this.props.stepOrder,
       previousOrder: this.props.previousOrder,
       activeTheme: this.props.activeTheme,
       activeMultiSelect: this.props.activeMultiSelect,
@@ -582,8 +541,9 @@ class WelcomeScreen extends (react__WEBPACK_IMPORTED_MODULE_0___default().PureCo
       langPackInstallPhase: this.props.langPackInstallPhase,
       handleAction: this.handleAction,
       messageId: this.props.messageId,
-      isFirstCenteredScreen: this.props.isFirstCenteredScreen,
-      isLastCenteredScreen: this.props.isLastCenteredScreen,
+      isFirstScreen: this.props.isFirstScreen,
+      isLastScreen: this.props.isLastScreen,
+      isSingleScreen: this.props.isSingleScreen,
       startsWithCorner: this.props.startsWithCorner,
       autoAdvance: this.props.autoAdvance
     });
@@ -755,9 +715,9 @@ const MultiStageProtonScreen = props => {
     setActiveMultiSelect: props.setActiveMultiSelect,
     totalNumberOfScreens: props.totalNumberOfScreens,
     handleAction: props.handleAction,
-    isFirstCenteredScreen: props.isFirstCenteredScreen,
-    isLastCenteredScreen: props.isLastCenteredScreen,
-    stepOrder: props.stepOrder,
+    isFirstScreen: props.isFirstScreen,
+    isLastScreen: props.isLastScreen,
+    isSingleScreen: props.isSingleScreen,
     previousOrder: props.previousOrder,
     autoAdvance: props.autoAdvance,
     isRtamo: props.isRtamo,
@@ -825,10 +785,10 @@ class ProtonScreen extends (react__WEBPACK_IMPORTED_MODULE_0___default().PureCom
     this.mainContentHeader.focus();
   }
 
-  getScreenClassName(isFirstCenteredScreen, isLastCenteredScreen, includeNoodles, isVideoOnboarding) {
+  getScreenClassName(isFirstScreen, isLastScreen, includeNoodles, isVideoOnboarding) {
     const screenClass = `screen-${this.props.order % 2 !== 0 ? 1 : 2}`;
     if (isVideoOnboarding) return "with-video";
-    return `${isFirstCenteredScreen ? `dialog-initial` : ``} ${isLastCenteredScreen ? `dialog-last` : ``} ${includeNoodles ? `with-noodles` : ``} ${screenClass}`;
+    return `${isFirstScreen ? `dialog-initial` : ``} ${isLastScreen ? `dialog-last` : ``} ${includeNoodles ? `with-noodles` : ``} ${screenClass}`;
   }
 
   renderLogo({
@@ -942,7 +902,7 @@ class ProtonScreen extends (react__WEBPACK_IMPORTED_MODULE_0___default().PureCom
       previousStep: previousStep,
       totalNumberOfScreens: total
     }) : /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_MultiStageAboutWelcome__WEBPACK_IMPORTED_MODULE_6__.StepsIndicator, {
-      order: this.props.stepOrder,
+      order: this.props.order,
       totalNumberOfScreens: total
     }));
   }
@@ -983,19 +943,21 @@ class ProtonScreen extends (react__WEBPACK_IMPORTED_MODULE_0___default().PureCom
       content,
       isRtamo,
       isTheme,
-      isFirstCenteredScreen,
-      isLastCenteredScreen
+      isFirstScreen,
+      isLastScreen,
+      isSingleScreen
     } = this.props;
     const includeNoodles = content.has_noodles; // The default screen position is "center"
 
     const isCenterPosition = content.position === "center" || !content.position;
-    const hideStepsIndicator = autoAdvance || (content === null || content === void 0 ? void 0 : content.video_container) || isFirstCenteredScreen && isLastCenteredScreen;
+    const hideStepsIndicator = autoAdvance || (content === null || content === void 0 ? void 0 : content.video_container) || isSingleScreen;
     const textColorClass = content.text_color ? `${content.text_color}-text` : ""; // Assign proton screen style 'screen-1' or 'screen-2' to centered screens
     // by checking if screen order is even or odd.
 
-    const screenClassName = isCenterPosition ? this.getScreenClassName(isFirstCenteredScreen, isLastCenteredScreen, includeNoodles, content === null || content === void 0 ? void 0 : content.video_container) : "";
+    const screenClassName = isCenterPosition ? this.getScreenClassName(isFirstScreen, isLastScreen, includeNoodles, content === null || content === void 0 ? void 0 : content.video_container) : "";
     return /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("main", {
-      className: `screen ${this.props.id || ""} ${screenClassName} ${textColorClass}`,
+      className: `screen ${this.props.id || ""}
+          ${screenClassName} ${textColorClass}`,
       role: "alertdialog",
       pos: content.position || "center",
       tabIndex: "-1",
@@ -1980,14 +1942,14 @@ class ReturnToAMO extends (react__WEBPACK_IMPORTED_MODULE_0___default().PureComp
       content: content,
       isRtamo: true,
       isTheme: type.includes("theme"),
-      id: this.props.messageId,
-      order: this.props.order,
-      totalNumberOfScreens: this.props.totalNumberOfScreens,
+      id: this.props.message_id,
+      order: this.props.order || 0,
+      totalNumberOfScreens: 1,
+      isSingleScreen: true,
       autoAdvance: this.props.auto_advance,
       iconURL: type.includes("theme") ? (_this$props$themeScre = this.props.themeScreenshots[0]) === null || _this$props$themeScre === void 0 ? void 0 : _this$props$themeScre.url : this.props.iconURL,
       addonName: this.props.name,
-      handleAction: this.handleAction,
-      addExtension: this.onClickAddExtension
+      handleAction: this.handleAction
     }));
   }
 
@@ -2173,14 +2135,14 @@ class AboutWelcome extends (react__WEBPACK_IMPORTED_MODULE_0___default().PureCom
 
 function ComputeTelemetryInfo(welcomeContent, experimentId, branchId) {
   let messageId = welcomeContent.template === "return_to_amo" ? `RTAMO_DEFAULT_WELCOME_${welcomeContent.type.toUpperCase()}` : "DEFAULT_ID";
-  let UTMTerm = "default";
+  let UTMTerm = "aboutwelcome-default";
 
   if (welcomeContent.id) {
     messageId = welcomeContent.id.toUpperCase();
   }
 
   if (experimentId && branchId) {
-    UTMTerm = `${experimentId}-${branchId}`.toLowerCase();
+    UTMTerm = `aboutwelcome-${experimentId}-${branchId}`.toLowerCase();
   }
 
   return {

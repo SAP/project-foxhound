@@ -9,13 +9,14 @@ const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   HiddenFrame: "resource://gre/modules/HiddenFrame.sys.mjs",
+  PerTestCoverageUtils:
+    "resource://testing-common/PerTestCoverageUtils.sys.mjs",
   SpecialPowersSandbox: "resource://specialpowers/SpecialPowersSandbox.sys.mjs",
 });
 
 XPCOMUtils.defineLazyModuleGetters(lazy, {
   ExtensionData: "resource://gre/modules/Extension.jsm",
   ExtensionTestCommon: "resource://testing-common/ExtensionTestCommon.jsm",
-  PerTestCoverageUtils: "resource://testing-common/PerTestCoverageUtils.jsm",
   ServiceWorkerCleanUp: "resource://gre/modules/ServiceWorkerCleanUp.jsm",
 });
 
@@ -81,9 +82,12 @@ async function createWindowlessBrowser({ isPrivate = false } = {}) {
   const system = Services.scriptSecurityManager.getSystemPrincipal();
   chromeShell.createAboutBlankContentViewer(system, system);
   windowlessBrowser.browsingContext.useGlobalHistory = false;
-  chromeShell.loadURI("chrome://extensions/content/dummy.xhtml", {
-    triggeringPrincipal: system,
-  });
+  chromeShell.loadURI(
+    Services.io.newURI("chrome://extensions/content/dummy.xhtml"),
+    {
+      triggeringPrincipal: system,
+    }
+  );
 
   await promiseObserved(
     "chrome-document-global-created",

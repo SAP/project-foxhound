@@ -126,18 +126,18 @@ fn eval_scan(_: &Context, _: Option<Scan>) -> bool {
 }
 
 /// https://drafts.csswg.org/mediaqueries-4/#color
-fn eval_color(context: &Context) -> u32 {
+fn eval_color(context: &Context) -> i32 {
     unsafe { bindings::Gecko_MediaFeatures_GetColorDepth(context.device().document()) }
 }
 
 /// https://drafts.csswg.org/mediaqueries-4/#color-index
-fn eval_color_index(_: &Context) -> u32 {
+fn eval_color_index(_: &Context) -> i32 {
     // We should return zero if the device does not use a color lookup table.
     0
 }
 
 /// https://drafts.csswg.org/mediaqueries-4/#monochrome
-fn eval_monochrome(context: &Context) -> u32 {
+fn eval_monochrome(context: &Context) -> i32 {
     // For color devices we should return 0.
     unsafe { bindings::Gecko_MediaFeatures_GetMonochromeBitsPerPixel(context.device().document()) }
 }
@@ -538,8 +538,8 @@ fn eval_moz_platform(_: &Context, query_value: Option<Platform>) -> bool {
     unsafe { bindings::Gecko_MediaFeatures_MatchesPlatform(query_value) }
 }
 
-fn eval_moz_windows_non_native_menus(_: &Context) -> bool {
-    unsafe { bindings::Gecko_MediaFeatures_WindowsNonNativeMenus() }
+fn eval_moz_windows_non_native_menus(context: &Context) -> bool {
+    unsafe { bindings::Gecko_MediaFeatures_WindowsNonNativeMenus(context.device().document()) }
 }
 
 fn eval_moz_overlay_scrollbars(context: &Context) -> bool {
@@ -618,7 +618,7 @@ macro_rules! bool_pref_feature {
 /// to support new types in these entries and (2) ensuring that either
 /// nsPresContext::MediaFeatureValuesChanged is called when the value that
 /// would be returned by the evaluator function could change.
-pub static MEDIA_FEATURES: [QueryFeatureDescription; 64] = [
+pub static MEDIA_FEATURES: [QueryFeatureDescription; 63] = [
     feature!(
         atom!("width"),
         AllowsRanges::Yes,
@@ -916,10 +916,6 @@ pub static MEDIA_FEATURES: [QueryFeatureDescription; 64] = [
     ),
     lnf_int_feature!(atom!("-moz-system-dark-theme"), SystemUsesDarkTheme),
     lnf_int_feature!(atom!("-moz-panel-animations"), PanelAnimations),
-    bool_pref_feature!(
-        atom!("-moz-box-flexbox-emulation"),
-        "layout.css.moz-box-flexbox-emulation.enabled"
-    ),
     // media query for MathML Core's implementation of maction/semantics
     bool_pref_feature!(
         atom!("-moz-mathml-core-maction-and-semantics"),

@@ -78,6 +78,7 @@
 #include "proxy/DOMProxy.h"
 #include "util/StringBuffer.h"
 #include "util/Text.h"
+#include "vm/BoundFunctionObject.h"
 #include "vm/EnvironmentObject.h"
 #include "vm/ErrorObject.h"
 #include "vm/ErrorReporting.h"
@@ -106,6 +107,7 @@
 #include "vm/Interpreter-inl.h"
 #include "vm/IsGivenTypeObject-inl.h"  // js::IsGivenTypeObject
 #include "vm/JSAtom-inl.h"
+#include "vm/JSFunction-inl.h"
 #include "vm/JSScript-inl.h"
 #include "vm/NativeObject-inl.h"
 #include "vm/SavedStacks-inl.h"
@@ -366,12 +368,14 @@ JS_PUBLIC_API bool JS_IsBuiltinFunctionConstructor(JSFunction* fun) {
   return fun->isBuiltinFunctionConstructor();
 }
 
-JS_PUBLIC_API bool JS_IsFunctionBound(JSFunction* fun) {
-  return fun->isBoundFunction();
+JS_PUBLIC_API bool JS_ObjectIsBoundFunction(JSObject* obj) {
+  return obj->is<BoundFunctionObject>();
 }
 
-JS_PUBLIC_API JSObject* JS_GetBoundFunctionTarget(JSFunction* fun) {
-  return fun->isBoundFunction() ? fun->getBoundFunctionTarget() : nullptr;
+JS_PUBLIC_API JSObject* JS_GetBoundFunctionTarget(JSObject* obj) {
+  return obj->is<BoundFunctionObject>()
+             ? obj->as<BoundFunctionObject>().getTarget()
+             : nullptr;
 }
 
 /************************************************************************/
@@ -1099,6 +1103,14 @@ JS_PUBLIC_API bool JS_GetClassPrototype(JSContext* cx, JSProtoKey key,
                                         MutableHandleObject objp) {
   AssertHeapIsIdle();
   CHECK_THREAD(cx);
+
+  // Bound functions don't have their own prototype object: they reuse the
+  // prototype of the target object. This is typically Function.prototype so we
+  // use that here.
+  if (key == JSProto_BoundFunction) {
+    key = JSProto_Function;
+  }
+
   JSObject* proto = GlobalObject::getOrCreatePrototype(cx, key);
   if (!proto) {
     return false;
@@ -3464,6 +3476,26 @@ JS_PUBLIC_API bool JS_Stringify(JSContext* cx, MutableHandleValue vp,
   return callback(sb.rawTwoByteBegin(), sb.length(), data);
 }
 
+JS_PUBLIC_API bool JS::ToJSON(JSContext* cx, HandleValue value,
+                              HandleObject replacer, HandleValue space,
+                              JSONWriteCallback callback, void* data) {
+  AssertHeapIsIdle();
+  CHECK_THREAD(cx);
+  cx->check(replacer, space);
+  StringBuffer sb(cx);
+  if (!sb.ensureTwoByteChars()) {
+    return false;
+  }
+  RootedValue v(cx, value);
+  if (!Stringify(cx, &v, replacer, space, sb, StringifyBehavior::Normal)) {
+    return false;
+  }
+  if (sb.empty()) {
+    return true;
+  }
+  return callback(sb.rawTwoByteBegin(), sb.length(), data);
+}
+
 JS_PUBLIC_API bool JS::ToJSONMaybeSafely(JSContext* cx, JS::HandleObject input,
                                          JSONWriteCallback callback,
                                          void* data) {
@@ -3503,6 +3535,14 @@ JS_PUBLIC_API bool JS_ParseJSON(JSContext* cx, HandleString str,
 }
 
 // TODO: taintfox: check whether we need to propagate taint here
+JS_PUBLIC_API bool JS_ParseJSON(JSContext* cx, const Latin1Char* chars,
+                                uint32_t len, MutableHandleValue vp) {
+  AssertHeapIsIdle();
+  CHECK_THREAD(cx);
+  return ParseJSONWithReviver(cx, mozilla::Range<const Latin1Char>(chars, len),
+                              NullHandleValue, vp, EmptyTaint);
+}
+
 JS_PUBLIC_API bool JS_ParseJSONWithReviver(JSContext* cx, const char16_t* chars,
                                            uint32_t len, HandleValue reviver,
                                            MutableHandleValue vp) {

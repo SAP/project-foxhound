@@ -103,6 +103,11 @@ BASE_LINK = "http://gecko-docs.mozilla.org-l1.s3-website.us-west-2.amazonaws.com
     help="Check that the upper bound on the number of warnings is respected.",
 )
 @CommandArgument("--verbose", action="store_true", help="Run Sphinx in verbose mode")
+@CommandArgument(
+    "--no-autodoc",
+    action="store_true",
+    help="Disable generating Python/JS API documentation",
+)
 def build_docs(
     command_context,
     path=None,
@@ -120,6 +125,7 @@ def build_docs(
     enable_fatal_warnings=False,
     check_num_warnings=False,
     verbose=None,
+    no_autodoc=False,
 ):
     # TODO: Bug 1704891 - move the ESLint setup tools to a shared place.
     import setup_helper
@@ -151,7 +157,15 @@ def build_docs(
     outdir = outdir or os.path.join(command_context.topobjdir, "docs")
     savedir = os.path.join(outdir, fmt)
 
-    path = path or command_context.topsrcdir
+    if path is None:
+        path = command_context.topsrcdir
+        if os.environ.get("MOZ_AUTOMATION") != "1":
+            print(
+                "\nBuilding the full documentation tree."
+                "Did you mean to only build part of the documentation?\n"
+                "For a faster command, consider running:\n"
+                " ./mach doc path/to/docs\n"
+            )
     path = os.path.normpath(os.path.abspath(path))
 
     docdir = _find_doc_dir(path)
@@ -165,6 +179,12 @@ def build_docs(
     if linkcheck:
         # We want to verify if the links are valid or not
         fmt = "linkcheck"
+    if no_autodoc:
+        if check_num_warnings:
+            return die(
+                "'--no-autodoc' flag may not be used with '--check-num-warnings'"
+            )
+        toggle_no_autodoc()
 
     status, warnings = _run_sphinx(docdir, savedir, fmt=fmt, jobs=jobs, verbose=verbose)
     if status != 0:
@@ -334,6 +354,12 @@ def manager():
     return manager
 
 
+def toggle_no_autodoc():
+    import moztreedocs
+
+    moztreedocs._SphinxManager.NO_AUTODOC = True
+
+
 @memoize
 def _read_project_properties():
     import imp
@@ -372,13 +398,14 @@ def _find_doc_dir(path):
         return
 
     valid_doc_dirs = ("doc", "docs")
-    if os.path.basename(path) in valid_doc_dirs:
-        return path
-
     for d in valid_doc_dirs:
         p = os.path.join(path, d)
         if os.path.isdir(p):
-            return p
+            path = p
+
+    for index_file in ["index.rst", "index.md"]:
+        if os.path.exists(os.path.join(path, index_file)):
+            return path
 
 
 def _s3_upload(root, project, unique_id, version=None):

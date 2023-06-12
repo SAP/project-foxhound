@@ -225,11 +225,12 @@ for (const type of [
   "TOP_SITES_CANCEL_EDIT",
   "TOP_SITES_CLOSE_SEARCH_SHORTCUTS_MODAL",
   "TOP_SITES_EDIT",
-  "TOP_SITES_IMPRESSION_STATS",
   "TOP_SITES_INSERT",
   "TOP_SITES_OPEN_SEARCH_SHORTCUTS_MODAL",
+  "TOP_SITES_ORGANIC_IMPRESSION_STATS",
   "TOP_SITES_PIN",
   "TOP_SITES_PREFS_UPDATED",
+  "TOP_SITES_SPONSORED_IMPRESSION_STATS",
   "TOP_SITES_UNPIN",
   "TOP_SITES_UPDATED",
   "TOTAL_BOOKMARKS_REQUEST",
@@ -7277,7 +7278,7 @@ class ImpressionStats_ImpressionStats extends (external_React_default()).PureCom
       if (this.props.source === TOP_SITES_SOURCE) {
         for (const card of cards) {
           this.props.dispatch(actionCreators.OnlyToMain({
-            type: actionTypes.TOP_SITES_IMPRESSION_STATS,
+            type: actionTypes.TOP_SITES_SPONSORED_IMPRESSION_STATS,
             data: {
               type: "impression",
               tile_id: card.id,
@@ -11554,10 +11555,16 @@ const TopSiteImpressionWrapper_INTERSECTION_RATIO = 0.5;
 class TopSiteImpressionWrapper extends (external_React_default()).PureComponent {
   _dispatchImpressionStats() {
     const {
+      actionType,
       tile
     } = this.props;
+
+    if (!actionType) {
+      return;
+    }
+
     this.props.dispatch(actionCreators.OnlyToMain({
-      type: actionTypes.TOP_SITES_IMPRESSION_STATS,
+      type: actionType,
       data: {
         type: "impression",
         ...tile
@@ -11654,6 +11661,7 @@ class TopSiteImpressionWrapper extends (external_React_default()).PureComponent 
 TopSiteImpressionWrapper.defaultProps = {
   IntersectionObserver: __webpack_require__.g.IntersectionObserver,
   document: __webpack_require__.g.document,
+  actionType: null,
   tile: null
 };
 ;// CONCATENATED MODULE: ./content-src/components/TopSites/TopSite.jsx
@@ -11879,14 +11887,12 @@ class TopSiteLink extends (external_React_default()).PureComponent {
       };
     } else if (link.customScreenshotURL) {
       // assume high quality custom screenshot and use rich icon styles and class names
-      // TopSite spoc experiment only
-      const spocImgURL = link.type === SPOC_TYPE ? link.customScreenshotURL : "";
       imageClassName = "top-site-icon rich-icon";
       imageStyle = {
         backgroundColor: link.backgroundColor,
-        backgroundImage: hasScreenshotImage ? `url(${this.state.screenshotImage.url})` : `url('${spocImgURL}')`
+        backgroundImage: hasScreenshotImage ? `url(${this.state.screenshotImage.url})` : ""
       };
-    } else if (tippyTopIcon || faviconSize >= MIN_RICH_FAVICON_SIZE) {
+    } else if (tippyTopIcon || link.type === SPOC_TYPE || faviconSize >= MIN_RICH_FAVICON_SIZE) {
       // styles and class names for top sites with rich icons
       imageClassName = "top-site-icon rich-icon";
       imageStyle = {
@@ -11941,6 +11947,51 @@ class TopSiteLink extends (external_React_default()).PureComponent {
       };
     }
 
+    let impressionStats = null;
+
+    if (link.type === SPOC_TYPE) {
+      // Record impressions for Pocket tiles.
+      impressionStats = /*#__PURE__*/external_React_default().createElement(ImpressionStats_ImpressionStats, {
+        flightId: link.flightId,
+        rows: [{
+          id: link.id,
+          pos: link.pos,
+          shim: link.shim && link.shim.impression,
+          advertiser: title.toLocaleLowerCase()
+        }],
+        dispatch: this.props.dispatch,
+        source: TOP_SITES_SOURCE
+      });
+    } else if (isSponsored(link)) {
+      // Record impressions for non-Pocket sponsored tiles.
+      impressionStats = /*#__PURE__*/external_React_default().createElement(TopSiteImpressionWrapper, {
+        actionType: actionTypes.TOP_SITES_SPONSORED_IMPRESSION_STATS,
+        tile: {
+          position: this.props.index + 1,
+          tile_id: link.sponsored_tile_id || -1,
+          reporting_url: link.sponsored_impression_url,
+          advertiser: title.toLocaleLowerCase(),
+          source: NEWTAB_SOURCE
+        } // For testing.
+        ,
+        IntersectionObserver: this.props.IntersectionObserver,
+        document: this.props.document,
+        dispatch: this.props.dispatch
+      });
+    } else {
+      // Record impressions for organic tiles.
+      impressionStats = /*#__PURE__*/external_React_default().createElement(TopSiteImpressionWrapper, {
+        actionType: actionTypes.TOP_SITES_ORGANIC_IMPRESSION_STATS,
+        tile: {
+          source: NEWTAB_SOURCE
+        } // For testing.
+        ,
+        IntersectionObserver: this.props.IntersectionObserver,
+        document: this.props.document,
+        dispatch: this.props.dispatch
+      });
+    }
+
     return /*#__PURE__*/external_React_default().createElement("li", TopSite_extends({
       className: topSiteOuterClassName,
       onDrop: this.onDragEvent,
@@ -11984,26 +12035,7 @@ class TopSiteLink extends (external_React_default()).PureComponent {
     }), title || /*#__PURE__*/external_React_default().createElement("br", null), /*#__PURE__*/external_React_default().createElement("span", {
       className: "sponsored-label",
       "data-l10n-id": "newtab-topsite-sponsored"
-    })))), children, link.type === SPOC_TYPE ? /*#__PURE__*/external_React_default().createElement(ImpressionStats_ImpressionStats, {
-      flightId: link.flightId,
-      rows: [{
-        id: link.id,
-        pos: link.pos,
-        shim: link.shim && link.shim.impression,
-        advertiser: title.toLocaleLowerCase()
-      }],
-      dispatch: this.props.dispatch,
-      source: TOP_SITES_SOURCE
-    }) : null, link.sponsored_position ? /*#__PURE__*/external_React_default().createElement(TopSiteImpressionWrapper, {
-      tile: {
-        position: this.props.index + 1,
-        tile_id: link.sponsored_tile_id || -1,
-        reporting_url: link.sponsored_impression_url,
-        advertiser: title.toLocaleLowerCase(),
-        source: NEWTAB_SOURCE
-      },
-      dispatch: this.props.dispatch
-    }) : null));
+    })))), children, impressionStats));
   }
 
 }
@@ -12083,10 +12115,10 @@ class TopSite extends (external_React_default()).PureComponent {
             shiftKey
           }
         })
-      })); // Fire off a spoc specific impression.
+      }));
 
       if (this.props.link.type === SPOC_TYPE) {
-        // Record a Pocket click.
+        // Record a Pocket-specific click.
         this.props.dispatch(actionCreators.ImpressionStats({
           source: TOP_SITES_SOURCE,
           click: 0,
@@ -12095,16 +12127,39 @@ class TopSite extends (external_React_default()).PureComponent {
             pos: this.props.link.pos,
             shim: this.props.link.shim && this.props.link.shim.click
           }]
-        })); // Record a click for sponsored topsites.
+        })); // Record a click for a Pocket sponsored tile.
 
         const title = this.props.link.label || this.props.link.hostname;
         this.props.dispatch(actionCreators.OnlyToMain({
-          type: actionTypes.TOP_SITES_IMPRESSION_STATS,
+          type: actionTypes.TOP_SITES_SPONSORED_IMPRESSION_STATS,
           data: {
             type: "click",
             position: this.props.link.pos + 1,
             tile_id: this.props.link.id,
             advertiser: title.toLocaleLowerCase(),
+            source: NEWTAB_SOURCE
+          }
+        }));
+      } else if (isSponsored(this.props.link)) {
+        // Record a click for a non-Pocket sponsored tile.
+        const title = this.props.link.label || this.props.link.hostname;
+        this.props.dispatch(actionCreators.OnlyToMain({
+          type: actionTypes.TOP_SITES_SPONSORED_IMPRESSION_STATS,
+          data: {
+            type: "click",
+            position: this.props.index + 1,
+            tile_id: this.props.link.sponsored_tile_id || -1,
+            reporting_url: this.props.link.sponsored_click_url,
+            advertiser: title.toLocaleLowerCase(),
+            source: NEWTAB_SOURCE
+          }
+        }));
+      } else {
+        // Record a click for an organic tile.
+        this.props.dispatch(actionCreators.OnlyToMain({
+          type: actionTypes.TOP_SITES_ORGANIC_IMPRESSION_STATS,
+          data: {
+            type: "click",
             source: NEWTAB_SOURCE
           }
         }));
@@ -12116,21 +12171,6 @@ class TopSite extends (external_React_default()).PureComponent {
           data: {
             targetURL: this.props.link.url,
             source: "newtab"
-          }
-        }));
-      }
-
-      if (this.props.link.sponsored_position) {
-        const title = this.props.link.label || this.props.link.hostname;
-        this.props.dispatch(actionCreators.OnlyToMain({
-          type: actionTypes.TOP_SITES_IMPRESSION_STATS,
-          data: {
-            type: "click",
-            position: this.props.index + 1,
-            tile_id: this.props.link.sponsored_tile_id || -1,
-            reporting_url: this.props.link.sponsored_click_url,
-            advertiser: title.toLocaleLowerCase(),
-            source: NEWTAB_SOURCE
           }
         }));
       }
@@ -12938,8 +12978,7 @@ class _TopSites extends (external_React_default()).PureComponent {
 
 }
 const TopSites_TopSites = (0,external_ReactRedux_namespaceObject.connect)((state, props) => ({
-  // For SPOC Experiment only, take TopSites from DiscoveryStream TopSites that takes in SPOC Data
-  TopSites: props.TopSitesWithSpoc || state.TopSites,
+  TopSites: state.TopSites,
   Prefs: state.Prefs,
   TopSitesRows: state.Prefs.values.topSitesRows
 }))(_TopSites);
@@ -13678,100 +13717,6 @@ const selectLayoutRender = ({
     layoutRender
   };
 };
-;// CONCATENATED MODULE: ./content-src/components/DiscoveryStreamComponents/TopSites/TopSites.jsx
-/* This Source Code Form is subject to the terms of the Mozilla Public
- * License, v. 2.0. If a copy of the MPL was not distributed with this file,
- * You can obtain one at http://mozilla.org/MPL/2.0/. */
-
-
-
-class TopSites_TopSites_TopSites extends (external_React_default()).PureComponent {
-  // Find a SPOC that doesn't already exist in User's TopSites
-  getFirstAvailableSpoc(topSites, data) {
-    const {
-      spocs
-    } = data;
-
-    if (!spocs || spocs.length === 0) {
-      return null;
-    }
-
-    const userTopSites = new Set(topSites.map(topSite => topSite && topSite.url)); // We "clean urls" with http in TopSiteForm.jsx
-    // Spoc domains are in the format 'sponsorname.com'
-
-    return spocs.find(spoc => !userTopSites.has(spoc.url) && !userTopSites.has(`http://${spoc.domain}`) && !userTopSites.has(`https://${spoc.domain}`) && !userTopSites.has(`http://www.${spoc.domain}`) && !userTopSites.has(`https://www.${spoc.domain}`));
-  }
-
-  reformatImageURL(url, width, height) {
-    // Change the image URL to request a size tailored for the parent container width
-    // Also: force JPEG, quality 60, no upscaling, no EXIF data
-    // Uses Thumbor: https://thumbor.readthedocs.io/en/latest/usage.html
-    return `https://img-getpocket.cdn.mozilla.net/${width}x${height}/filters:format(jpeg):quality(60):no_upscale():strip_exif()/${encodeURIComponent(url)}`;
-  } // For the time being we only support 1 position.
-
-
-  insertSpocContent(TopSites, data, promoPosition) {
-    if (!TopSites.rows || TopSites.rows.length === 0 || !data.spocs || data.spocs.length === 0) {
-      return null;
-    }
-
-    let topSites = [...TopSites.rows];
-    const topSiteSpoc = this.getFirstAvailableSpoc(topSites, data);
-
-    if (!topSiteSpoc) {
-      return null;
-    }
-
-    const link = {
-      customScreenshotURL: this.reformatImageURL(topSiteSpoc.raw_image_src, 40, 40),
-      type: "SPOC",
-      label: topSiteSpoc.title || topSiteSpoc.sponsor,
-      title: topSiteSpoc.title || topSiteSpoc.sponsor,
-      url: topSiteSpoc.url,
-      flightId: topSiteSpoc.flight_id,
-      id: topSiteSpoc.id,
-      guid: topSiteSpoc.id,
-      shim: topSiteSpoc.shim,
-      // For now we are assuming position based on intended position.
-      // Actual position can shift based on other content.
-      // We also hard code left and right to be 0 and 7.
-      // We send the intended position in the ping.
-      pos: promoPosition
-    }; // Remove first contile or regular topsite, then insert new spoc into position.
-
-    const replaceIndex = topSites.findIndex((topSite, index) => index >= promoPosition && (!topSite || topSite.show_sponsored_label || !(topSite.isPinned || topSite.searchTopSite))); // If we found something to replace, first remove it.
-
-    if (replaceIndex !== -1) {
-      topSites.splice(replaceIndex, 1);
-    }
-
-    topSites.splice(promoPosition, 0, link);
-    return { ...TopSites,
-      rows: topSites
-    };
-  }
-
-  render() {
-    const {
-      header = {},
-      data,
-      promoPositions,
-      TopSites
-    } = this.props;
-    const TopSitesWithSpoc = TopSites && data && promoPositions !== null && promoPositions !== void 0 && promoPositions.length ? this.insertSpocContent(TopSites, data, promoPositions[0].index) : null;
-    return /*#__PURE__*/external_React_default().createElement("div", {
-      className: `ds-top-sites ${TopSitesWithSpoc ? "top-sites-spoc" : ""}`
-    }, /*#__PURE__*/external_React_default().createElement(TopSites_TopSites, {
-      isFixed: true,
-      title: header.title,
-      TopSitesWithSpoc: TopSitesWithSpoc
-    }));
-  }
-
-}
-const DiscoveryStreamComponents_TopSites_TopSites_TopSites = (0,external_ReactRedux_namespaceObject.connect)(state => ({
-  TopSites: state.TopSites
-}))(TopSites_TopSites_TopSites);
 ;// CONCATENATED MODULE: ./content-src/components/DiscoveryStreamBase/DiscoveryStreamBase.jsx
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
@@ -13864,24 +13809,19 @@ class _DiscoveryStreamBase extends (external_React_default()).PureComponent {
   }
 
   renderComponent(component, embedWidth) {
-    var _component$spocs, _component$spocs$posi;
+    var _component$header;
 
     switch (component.type) {
       case "Highlights":
         return /*#__PURE__*/external_React_default().createElement(Highlights, null);
 
       case "TopSites":
-        let positions = [];
-
-        if (component !== null && component !== void 0 && (_component$spocs = component.spocs) !== null && _component$spocs !== void 0 && (_component$spocs$posi = _component$spocs.positions) !== null && _component$spocs$posi !== void 0 && _component$spocs$posi.length) {
-          positions = component.spocs.positions;
-        }
-
-        return /*#__PURE__*/external_React_default().createElement(DiscoveryStreamComponents_TopSites_TopSites_TopSites, {
-          header: component.header,
-          data: component.data,
-          promoPositions: positions
-        });
+        return /*#__PURE__*/external_React_default().createElement("div", {
+          className: "ds-top-sites"
+        }, /*#__PURE__*/external_React_default().createElement(TopSites_TopSites, {
+          isFixed: true,
+          title: (_component$header = component.header) === null || _component$header === void 0 ? void 0 : _component$header.title
+        }));
 
       case "TextPromo":
         return /*#__PURE__*/external_React_default().createElement(DSTextPromo, {

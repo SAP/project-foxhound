@@ -52,6 +52,7 @@ constexpr nsLiteralCString kTRRDomains[] = {
     "private.canadianshield.cira.ca"_ns,
     "doh.xfinity.com"_ns,  // Steered clients
     "dns.shaw.ca"_ns, // Steered clients
+    "dooh.cloudflare-dns.com"_ns, // DNS over Oblivious HTTP
     // clang-format on
 };
 // static
@@ -215,6 +216,11 @@ void TRRService::SetDetectedTrrURI(const nsACString& aURI) {
     return;
   }
 
+  if (StaticPrefs::network_trr_use_ohttp()) {
+    LOG(("No autodetection when using OHTTP"));
+    return;
+  }
+
   mURISetByDetection = MaybeSetPrivateURI(aURI);
 }
 
@@ -359,7 +365,8 @@ nsresult TRRService::ReadPrefs(const char* name) {
   }
   if (!name || !strcmp(name, TRR_PREF("uri")) ||
       !strcmp(name, TRR_PREF("default_provider_uri")) ||
-      !strcmp(name, kRolloutURIPref)) {
+      !strcmp(name, kRolloutURIPref) || !strcmp(name, TRR_PREF("ohttp.uri")) ||
+      !strcmp(name, TRR_PREF("use_ohttp"))) {
     OnTRRURIChange();
   }
   if (!name || !strcmp(name, TRR_PREF("credentials"))) {
@@ -653,6 +660,17 @@ void TRRService::RebuildSuffixList(nsTArray<nsCString>&& aSuffixList) {
 void TRRService::ConfirmationContext::SetState(
     enum ConfirmationState aNewState) {
   mState = aNewState;
+
+  if (mState == CONFIRM_FAILED) {
+    NS_DispatchToMainThread(
+        NS_NewRunnableFunction("TRRService::ConfirmationContextRetry", [] {
+          if (nsCOMPtr<nsIObserverService> obs =
+                  mozilla::services::GetObserverService()) {
+            obs->NotifyObservers(nullptr, "trrservice-confirmation-failed",
+                                 nullptr);
+          }
+        }));
+  }
 
   if (XRE_IsParentProcess()) {
     return;

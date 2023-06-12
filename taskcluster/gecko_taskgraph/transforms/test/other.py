@@ -135,9 +135,6 @@ def set_treeherder_machine_platform(config, tasks):
     translation = {
         # Linux64 build platform for asan is specified differently to
         # treeherder.
-        "macosx1014-64/debug": "osx-10-14/debug",
-        "macosx1014-64/opt": "osx-10-14/opt",
-        "macosx1014-64-shippable/opt": "osx-10-14-shippable/opt",
         "macosx1100-64/opt": "osx-1100/opt",
         "macosx1100-64-shippable/opt": "osx-1100-shippable/opt",
         "win64-asan/opt": "windows10-64/asan",
@@ -329,29 +326,29 @@ def setup_browsertime(config, tasks):
                 "linux64-chromedriver-87",
             ],
             "linux.*": [
-                "linux64-chromedriver-108",
                 "linux64-chromedriver-109",
                 "linux64-chromedriver-110",
+                "linux64-chromedriver-111",
             ],
             "macosx.*": [
-                "mac64-chromedriver-108",
                 "mac64-chromedriver-109",
                 "mac64-chromedriver-110",
+                "mac64-chromedriver-111",
             ],
             "windows.*aarch64.*": [
-                "win32-chromedriver-108",
                 "win32-chromedriver-109",
                 "win32-chromedriver-110",
+                "win32-chromedriver-111",
             ],
             "windows.*-32.*": [
-                "win32-chromedriver-108",
                 "win32-chromedriver-109",
                 "win32-chromedriver-110",
+                "win32-chromedriver-111",
             ],
             "windows.*-64.*": [
-                "win32-chromedriver-108",
                 "win32-chromedriver-109",
                 "win32-chromedriver-110",
+                "win32-chromedriver-111",
             ],
         }
 
@@ -638,14 +635,6 @@ def handle_tier(config, tasks):
                 "windows10-64-2004-shippable-qr/opt",
                 "windows10-64-2004-devedition-qr/opt",
                 "windows10-64-2004-asan-qr/opt",
-                "macosx1014-64/opt",
-                "macosx1014-64/debug",
-                "macosx1014-64-shippable/opt",
-                "macosx1014-64-devedition/opt",
-                "macosx1014-64-devedition-qr/opt",
-                "macosx1014-64-qr/opt",
-                "macosx1014-64-shippable-qr/opt",
-                "macosx1014-64-qr/debug",
                 "macosx1015-64/opt",
                 "macosx1015-64/debug",
                 "macosx1015-64-shippable/opt",
@@ -786,7 +775,7 @@ def set_test_setting(config, tasks):
     This transform adds a ``test-setting`` object to the ``extra`` portion of
     all test tasks, of the form:
 
-    .. code-block:: json
+    .. code-block::
 
         {
             "platform": { ... },
@@ -1055,5 +1044,14 @@ def enable_parallel_marking_in_tsan_tests(config, tasks):
                 extra_options.append(
                     "--setpref=javascript.options.mem.gc_parallel_marking=true"
                 )
+
+        yield task
+
+
+@transforms.add
+def apply_windows7_optimization(config, tasks):
+    for task in tasks:
+        if task["test-platform"].startswith("windows7"):
+            task["optimization"] = {"skip-unless-backstop": None}
 
         yield task

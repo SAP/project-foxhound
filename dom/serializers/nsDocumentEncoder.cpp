@@ -17,6 +17,8 @@
 #include "nsCRT.h"
 #include "nsIContentSerializer.h"
 #include "nsIDocumentEncoder.h"
+#include "nsINode.h"
+#include "nsIContentInlines.h"
 #include "nsComponentManagerUtils.h"
 #include "nsIOutputStream.h"
 #include "nsRange.h"
@@ -1651,8 +1653,8 @@ nsHTMLCopyEncoder::SetSelection(Selection* aSelection) {
     ErrorResult result;
     RefPtr<Selection> selection(mEncodingScope.mSelection);
     RefPtr<Document> document(mDocument);
-    selection->AddRangeAndSelectFramesAndNotifyListeners(*myRange, document,
-                                                         result);
+    selection->AddRangeAndSelectFramesAndNotifyListenersInternal(
+        *myRange, document, result);
     rv = result.StealNSResult();
     NS_ENSURE_SUCCESS(rv, rv);
   }

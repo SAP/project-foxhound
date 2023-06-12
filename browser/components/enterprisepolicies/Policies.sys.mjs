@@ -31,6 +31,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
 XPCOMUtils.defineLazyModuleGetters(lazy, {
   AddonManager: "resource://gre/modules/AddonManager.jsm",
   CustomizableUI: "resource:///modules/CustomizableUI.jsm",
+  PdfJsDefaultPreferences: "resource://pdf.js/PdfJsDefaultPreferences.jsm",
 });
 
 const PREF_LOGLEVEL = "browser.policies.loglevel";
@@ -993,6 +994,18 @@ export var Policies = {
           param.Locked
         );
       }
+      if ("EmailTracking" in param) {
+        PoliciesUtils.setDefaultPref(
+          "privacy.trackingprotection.emailtracking.enabled",
+          param.EmailTracking,
+          param.Locked
+        );
+        PoliciesUtils.setDefaultPref(
+          "privacy.trackingprotection.emailtracking.pbmode.enabled",
+          param.EmailTracking,
+          param.Locked
+        );
+      }
       if ("Exceptions" in param) {
         addAllowDenyPermissions("trackingprotection", param.Exceptions);
       }
@@ -1679,7 +1692,7 @@ export var Policies = {
 
   Preferences: {
     onBeforeAddons(manager, param) {
-      const allowedPrefixes = [
+      let allowedPrefixes = [
         "accessibility.",
         "app.update.",
         "browser.",
@@ -1705,6 +1718,9 @@ export var Policies = {
         "ui.",
         "widget.",
       ];
+      if (!AppConstants.MOZ_REQUIRE_SIGNING) {
+        allowedPrefixes.push("xpinstall.signatures.required");
+      }
       const allowedSecurityPrefs = [
         "security.block_fileuri_script_with_wrong_mime",
         "security.default_personal_cert",
@@ -1779,7 +1795,23 @@ export var Policies = {
                 // automatically converting these values to booleans.
                 // Since we allow arbitrary prefs now, we have to do
                 // something different. See bug 1666836.
-                if (
+                // Even uglier, because pdfjs prefs are set async, we need
+                // to get their type from PdfJsDefaultPreferences.
+                if (preference.startsWith("pdfjs.")) {
+                  let preferenceTail = preference.replace("pdfjs.", "");
+                  if (
+                    preferenceTail in lazy.PdfJsDefaultPreferences &&
+                    typeof lazy.PdfJsDefaultPreferences[preferenceTail] ==
+                      "number"
+                  ) {
+                    prefBranch.setIntPref(preference, param[preference].Value);
+                  } else {
+                    prefBranch.setBoolPref(
+                      preference,
+                      !!param[preference].Value
+                    );
+                  }
+                } else if (
                   prefBranch.getPrefType(preference) == prefBranch.PREF_INT ||
                   ![0, 1].includes(param[preference].Value)
                 ) {

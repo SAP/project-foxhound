@@ -286,6 +286,35 @@
 - name: ArrayState
   gen_boilerplate: false
 
+- name: BindFunction
+  gen_boilerplate: false
+
+- name: NewBoundFunction
+  arguments:
+    templateObj: JSObject*
+  result_type: Object
+  alias_set: none
+
+- name: BoundFunctionNumArgs
+  operands:
+    object: Object
+  result_type: Int32
+  movable: true
+  congruent_to: if_operands_equal
+  # A bound function's state is immutable, so there is no
+  # implicit dependency.
+  alias_set: none
+
+- name: GuardBoundFunctionIsConstructor
+  operands:
+    object: Object
+  result_type: Object
+  guard: true
+  movable: true
+  congruent_to: if_operands_equal
+  # The is-constructor flag is immutable for a bound function.
+  alias_set: none
+
 # Setting __proto__ in an object literal.
 - name: MutateProto
   operands:
@@ -308,6 +337,9 @@
     value: Object
 
 - name: Call
+  gen_boilerplate: false
+
+- name: CallClassHook
   gen_boilerplate: false
 
 - name: ApplyArgs
@@ -576,8 +608,15 @@
 - name: ToNumberInt32
   gen_boilerplate: false
 
-- name: ToIntegerInt32
-  gen_boilerplate: false
+- name: BooleanToInt32
+  operands:
+    input: Boolean
+  result_type: Int32
+  movable: true
+  compute_range: custom
+  folds_to: custom
+  congruent_to: if_operands_equal
+  alias_set: none
 
 - name: TruncateToInt32
   gen_boilerplate: false
@@ -1477,6 +1516,16 @@
   congruent_to: if_operands_equal
   alias_set: none
 
+- name: GuardGlobalGeneration
+  arguments:
+   expected: uint32_t
+   generationAddr: const void*
+  result_type: None
+  guard: true
+  movable: true
+  alias_set: custom
+  congruent_to: custom
+
 - name: GuardIsProxy
   operands:
     object: Object
@@ -1909,6 +1958,13 @@
   result_type: Value
   alias_set: custom
 
+- name: StoreSlotByIteratorIndex
+  operands:
+    object: Object
+    iterator: Object
+    value: Value
+  alias_set: custom
+
 # Load the private value expando from a DOM proxy. The target is stored in the
 # proxy object's private slot.
 # This is either an UndefinedValue (no expando), ObjectValue (the expando
@@ -2289,12 +2345,6 @@
     checkValue: Value
   result_type: Value
   guard: true
-
-- name: FinishBoundFunctionInit
-  operands:
-    bound: Object
-    target: Object
-    argCount: Int32
 
 - name: IsPackedArray
   operands:
@@ -2850,6 +2900,9 @@
   gen_boilerplate: false
 
 - name: WasmStoreRef
+  gen_boilerplate: false
+
+- name: WasmPostWriteBarrier
   gen_boilerplate: false
 
 - name: WasmParameter

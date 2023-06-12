@@ -44,7 +44,8 @@ SVGForeignObjectFrame::SVGForeignObjectFrame(ComputedStyle* aStyle,
                                              nsPresContext* aPresContext)
     : nsContainerFrame(aStyle, aPresContext, kClassID), mInReflow(false) {
   AddStateBits(NS_FRAME_REFLOW_ROOT | NS_FRAME_MAY_BE_TRANSFORMED |
-               NS_FRAME_SVG_LAYOUT);
+               NS_FRAME_SVG_LAYOUT | NS_FRAME_FONT_INFLATION_CONTAINER |
+               NS_FRAME_FONT_INFLATION_FLOW_ROOT);
 }
 
 //----------------------------------------------------------------------
@@ -62,9 +63,6 @@ void SVGForeignObjectFrame::Init(nsIContent* aContent,
 
   nsContainerFrame::Init(aContent, aParent, aPrevInFlow);
   AddStateBits(aParent->GetStateBits() & NS_STATE_SVG_CLIPPATH_CHILD);
-  AddStateBits(NS_FRAME_FONT_INFLATION_CONTAINER |
-               NS_FRAME_FONT_INFLATION_FLOW_ROOT);
-  AddStateBits(NS_FRAME_MAY_BE_TRANSFORMED);
 }
 
 nsresult SVGForeignObjectFrame::AttributeChanged(int32_t aNameSpaceID,
@@ -152,28 +150,7 @@ void SVGForeignObjectFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
 
 bool SVGForeignObjectFrame::IsSVGTransformed(
     Matrix* aOwnTransform, Matrix* aFromParentTransform) const {
-  bool foundTransform = false;
-
-  // Check if our parent has children-only transforms:
-  nsIFrame* parent = GetParent();
-  if (parent &&
-      parent->IsFrameOfType(nsIFrame::eSVG | nsIFrame::eSVGContainer)) {
-    foundTransform =
-        static_cast<SVGContainerFrame*>(parent)->HasChildrenOnlyTransform(
-            aFromParentTransform);
-  }
-
-  SVGElement* content = static_cast<SVGElement*>(GetContent());
-  SVGAnimatedTransformList* transformList = content->GetAnimatedTransformList();
-  if ((transformList && transformList->HasTransform()) ||
-      content->GetAnimateMotionTransform()) {
-    if (aOwnTransform) {
-      *aOwnTransform = gfx::ToMatrix(
-          content->PrependLocalTransformsTo(gfxMatrix(), eUserSpaceToParent));
-    }
-    foundTransform = true;
-  }
-  return foundTransform;
+  return SVGUtils::IsSVGTransformed(this, aOwnTransform, aFromParentTransform);
 }
 
 void SVGForeignObjectFrame::PaintSVG(gfxContext& aContext,
@@ -331,7 +308,7 @@ void SVGForeignObjectFrame::ReflowSVG() {
 
   DoReflow();
 
-  if (mState & NS_FRAME_FIRST_REFLOW) {
+  if (HasAnyStateBits(NS_FRAME_FIRST_REFLOW)) {
     // Make sure we have our filter property (if any) before calling
     // FinishAndStoreOverflow (subsequent filter changes are handled off
     // nsChangeHint_UpdateEffects):
@@ -487,13 +464,13 @@ void SVGForeignObjectFrame::DoReflow() {
   }
 
   // initiate a synchronous reflow here and now:
-  RefPtr<gfxContext> renderingContext =
+  UniquePtr<gfxContext> renderingContext =
       presContext->PresShell()->CreateReferenceRenderingContext();
 
   mInReflow = true;
 
   WritingMode wm = kid->GetWritingMode();
-  ReflowInput reflowInput(presContext, kid, renderingContext,
+  ReflowInput reflowInput(presContext, kid, renderingContext.get(),
                           LogicalSize(wm, ISize(wm), NS_UNCONSTRAINEDSIZE));
   ReflowOutput desiredSize(reflowInput);
   nsReflowStatus status;

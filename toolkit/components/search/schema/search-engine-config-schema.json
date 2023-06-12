@@ -32,14 +32,14 @@
     "webExtension": {
       "$ref": "#/definitions/webExtension"
     },
+    "urls": {
+      "$ref": "#/definitions/urls"
+    },
     "params": {
       "$ref": "#/definitions/params"
     },
     "extraParams": {
       "$ref": "#/definitions/extraParams"
-    },
-    "regionParams": {
-      "$ref": "#/definitions/regionParams"
     }
   },
   "definitions": {
@@ -286,35 +286,6 @@
         }
       }
     },
-    "regionParams": {
-      "type": "object",
-      "title": "Region Parameters",
-      "description": "A map of regions to an array of parameter overrides",
-      "patternProperties": {
-        "^([a-z][a-z]|default)$": {
-          "type": "array",
-          "title": "Parameter Overrides",
-          "description": "A array of objects - map of parameter name to the parameter value.",
-          "items": {
-            "type": "object",
-            "properties": {
-              "name": {
-                "type": "string",
-                "title": "Name",
-                "pattern": "^[a-zA-Z0-9.-]{0,100}$",
-                "description": "Name of the parameter to override"
-              },
-              "value": {
-                "type": "string",
-                "title": "Value",
-                "pattern": "^[a-zA-Z0-9_{}:/.-]{0,100}$",
-                "description": "The value to override with"
-              }
-            }
-          }
-        }
-      }
-    },
     "sendAttributionRequest": {
       "type": "boolean",
       "title": "Send Attribution Request",
@@ -341,6 +312,30 @@
           "title": "WebExtension Locale",
           "pattern": "^[a-zA-Z0-9-$_]{0,100}$",
           "description": "Overrides the WebExtension locales and specifies to use a particular one. Ideally this should only be used when really necessary, otherwise considered deprecated."
+        }
+      }
+    },
+    "urls": {
+      "type": "object",
+      "description": "Urls pertaining to this engine",
+      "properties": {
+        "trending": {
+          "type": "object",
+          "description": "Details of the url used to fetch trending suggestions",
+          "properties": {
+            "fullPath": {
+              "type": "string",
+              "title": "fullPath",
+              "format": "uri",
+              "description": "The url used to retrieve trending suggestions"
+            },
+            "query": {
+              "type": "string",
+              "title": "query",
+              "description": "The query parameters to send in a trending suggestions request",
+              "pattern": "^[a-zA-Z0-9.-]{0,100}$"
+            }
+          }
         }
       }
     },
@@ -436,6 +431,9 @@
         "webextension": {
           "$ref": "#/definitions/webExtension"
         },
+        "urls": {
+          "$ref": "#/definitions/urls"
+        },
         "sendAttributionRequest": {
           "$ref": "#/definitions/sendAttributionRequest"
         },
@@ -444,9 +442,6 @@
         },
         "params": {
           "$ref": "#/definitions/params"
-        },
-        "regionParams": {
-          "$ref": "#/definitions/regionParams"
         },
         "extraParams": {
           "$ref": "#/definitions/extraParams"

@@ -201,6 +201,8 @@ function waitForSelectedSource(dbg, sourceOrUrl) {
     getSelectedSourceTextContent,
     getSymbols,
     getBreakableLines,
+    getSourceActorsForSource,
+    getSourceActorBreakableLines,
   } = dbg.selectors;
 
   return waitForState(
@@ -224,7 +226,23 @@ function waitForSelectedSource(dbg, sourceOrUrl) {
         }
       }
 
-      return getSymbols(source) && getBreakableLines(source.id);
+      // Wait for symbols/AST to be parsed
+      if (!getSymbols(source)) {
+        return false;
+      }
+
+      // Finaly wait for breakable lines to be set
+      if (source.isHTML) {
+        // For HTML sources we need to wait for each source actor to be processed.
+        // getBreakableLines will return the aggregation without being able to know
+        // if that's complete, with all the source actors.
+        const sourceActors = getSourceActorsForSource(source.id);
+        const allSourceActorsProcessed = sourceActors.every(
+          sourceActor => !!getSourceActorBreakableLines(sourceActor.id)
+        );
+        return allSourceActorsProcessed;
+      }
+      return getBreakableLines(source.id);
     },
     "selected source"
   );
@@ -838,8 +856,35 @@ function deleteExpression(dbg, input) {
  * @static
  */
 async function reload(dbg, ...sources) {
-  // We aren't waiting for load as the page may not load because of a breakpoint
-  await reloadBrowser({ waitForLoad: false });
+  await reloadBrowser();
+  return waitForSources(dbg, ...sources);
+}
+
+// Only use this method when the page is paused by the debugger
+// during page load and we navigate away without resuming.
+//
+// In this particular scenario, the page will never be "loaded".
+// i.e. emit DOCUMENT_EVENT's dom-complete
+// And consequently, debugger panel won't emit "reloaded" event.
+async function reloadWhenPausedBeforePageLoaded(dbg, ...sources) {
+  // But we can at least listen for the next DOCUMENT_EVENT's dom-loading,
+  // which should be fired even if the page is pause the earliest.
+  const { resourceCommand } = dbg.commands;
+  const {
+    onResource: onTopLevelDomLoading,
+  } = await resourceCommand.waitForNextResource(
+    resourceCommand.TYPES.DOCUMENT_EVENT,
+    {
+      ignoreExistingResources: true,
+      predicate: resource =>
+        resource.targetFront.isTopLevel && resource.name === "dom-loading",
+    }
+  );
+
+  gBrowser.reloadTab(gBrowser.selectedTab);
+
+  info("Wait for DOCUMENT_EVENT dom-loading after reload");
+  await onTopLevelDomLoading;
   return waitForSources(dbg, ...sources);
 }
 
@@ -1570,6 +1615,12 @@ const selectors = {
   projectSearchCollapsed: ".project-text-search .arrow:not(.expanded)",
   projectSearchExpandedResults: ".project-text-search .result",
   projectSearchFileResults: ".project-text-search .file-result",
+  projectSearchModifiersCaseSensitive:
+    ".project-text-search button.case-sensitive-btn",
+  projectSearchModifiersRegexMatch:
+    ".project-text-search button.regex-match-btn",
+  projectSearchModifiersWholeWordMatch:
+    ".project-text-search button.whole-word-btn",
   threadsPaneItems: ".threads-pane .thread",
   threadsPaneItem: i => `.threads-pane .thread:nth-child(${i})`,
   threadsPaneItemPause: i => `${selectors.threadsPaneItem(i)} .pause-badge`,
@@ -2228,7 +2279,8 @@ async function checkEvaluateInTopFrame(dbg, text, expected) {
 async function findConsoleMessage({ toolbox }, query) {
   const [message] = await findConsoleMessages(toolbox, query);
   const value = message.querySelector(".message-body").innerText;
-  const link = message.querySelector(".frame-link-source").innerText;
+  // There are console messages which might not have a link e.g Error messages
+  const link = message.querySelector(".frame-link-source")?.innerText;
   return { value, link };
 }
 
@@ -2375,10 +2427,18 @@ async function doProjectSearch(dbg, searchTerm) {
  * Waits for the search resluts node to render
  *
  * @param {Object} dbg
+ * @param {Number} expectedResults - The expected no of results to wait for
  * @return (Array) List of search result element nodes
  */
-async function waitForSearchResults(dbg) {
+async function waitForSearchResults(dbg, expectedResults) {
   await waitForState(dbg, state => state.projectTextSearch.status === "DONE");
+  if (expectedResults) {
+    await waitUntil(
+      () =>
+        findAllElements(dbg, "projectSearchFileResults").length ==
+        expectedResults
+    );
+  }
   return findAllElements(dbg, "projectSearchFileResults");
 }
 
@@ -2402,86 +2462,6 @@ function closeProjectSearch(dbg) {
  */
 function getExpandedResultsCount(dbg) {
   return findAllElements(dbg, "projectSearchExpandedResults").length;
-}
-
-/**
- * Instantiate a HTTP Server that serves files from a given test folder.
- * The test folder should be made of multiple sub folder named: v1, v2, v3,...
- * We will serve the content from one of these sub folder
- * and switch to the next one, each time `httpServer.switchToNextVersion()`
- * is called.
- *
- * @return Object Test server with two functions:
- *   - urlFor(path)
- *     Returns the absolute url for a given file.
- *   - switchToNextVersion()
- *     Start serving files from the next available sub folder.
- *   - backToFirstVersion()
- *     When running more than one test, helps restart from the first folder.
- */
-function createVersionizedHttpTestServer(testFolderName) {
-  const httpServer = createTestHTTPServer();
-
-  let currentVersion = 1;
-
-  httpServer.registerPrefixHandler("/", async (request, response) => {
-    response.processAsync();
-    response.setStatusLine(request.httpVersion, 200, "OK");
-    if (request.path.endsWith(".js")) {
-      response.setHeader("Content-Type", "application/javascript");
-    } else if (request.path.endsWith(".js.map")) {
-      response.setHeader("Content-Type", "application/json");
-    }
-    if (request.path == "/" || request.path == "/index.html") {
-      response.setHeader("Content-Type", "text/html");
-    }
-    // If a query string is passed, lookup with a matching file, if available
-    // The '?' is replaced by '.'
-    let fetchResponse;
-    if (request.queryString) {
-      const url = `${URL_ROOT}${testFolderName}/v${currentVersion}${request.path}.${request.queryString}`;
-      try {
-        fetchResponse = await fetch(url);
-        // Log this only if the request succeed
-        info(`[test-http-server] serving: ${url}`);
-      } catch (e) {
-        // Ignore any error and proceed without the query string
-        fetchResponse = null;
-      }
-    }
-    if (!fetchResponse) {
-      const url = `${URL_ROOT}${testFolderName}/v${currentVersion}${request.path}`;
-      info(`[test-http-server] serving: ${url}`);
-      fetchResponse = await fetch(url);
-    }
-
-    // Ensure forwarding the response headers generated by the other http server
-    // (this can be especially useful when query .sjs files)
-    for (const [name, value] of fetchResponse.headers.entries()) {
-      response.setHeader(name, value);
-    }
-
-    // Override cache settings so that versionized requests are never cached
-    // and we get brand new content for any request.
-    response.setHeader("Cache-Control", "no-store");
-
-    const text = await fetchResponse.text();
-    response.write(text);
-    response.finish();
-  });
-
-  return {
-    switchToNextVersion() {
-      currentVersion++;
-    },
-    backToFirstVersion() {
-      currentVersion = 1;
-    },
-    urlFor(path) {
-      const port = httpServer.identity.primaryPort;
-      return `http://localhost:${port}/${path}`;
-    },
-  };
 }
 
 // This module is also loaded for Browser Toolbox tests, within the browser toolbox process

@@ -6,6 +6,73 @@ var acorn = require("acorn");
 var sourceMap = require("source-map");
 var SourceNode = sourceMap.SourceNode;
 
+/**
+ * prettyFast is using SourceNode so we can generate a source map.
+ * A SourceNode instance can have multiple children, which may be other SourceNodes or strings.
+ * This means that to generate the source map, we need to traverse all the nodes recursively.
+ * Furthermore, even adding a child SourceNode to a parent can be slower as some checks are
+ * done on the argument (which can be a string, an array or a SourceNode)
+ * These can be slow when we have a lot of mappings to handle (e.g. for big files).
+ *
+ * We are using SourceNode in a much more constrained way:
+ * - we only have a root node
+ * - which only has SourceNode children
+ * - and those children SourceNode only have 1 string child
+ *
+ * So here we can build custom classes based on SourceNode, overriding expensive methods
+ * which are much more straightforward ones given our constraints.
+ */
+class RootSourceNode extends SourceNode {
+  /**
+   * Add a LeafSourceNode to the children list
+   *
+   * @override
+   * @param {LeafSourceNode} leafSourceNode
+   */
+  add(leafSourceNode) {
+    this.children.push(leafSourceNode);
+  }
+
+  /**
+   * Iterate through the node children
+   *
+   * @override
+   * @param {Function} func
+   */
+  walk(func) {
+    for (let i = 0, len = this.children.length; i < len; i++) {
+      const child = this.children[i];
+      func(child.str, child);
+    }
+  }
+
+  /**
+   * @override
+   */
+  walkSourceContents() {
+    // this.sourceContents is never set, so don't do anything (the original method does
+    // iterate over children and sourcesContents, which is wasteful in our case).
+  }
+}
+
+// We don't extend SourceNode as the constructor initializes an array and calls `add`,
+// which we don't need in our case.
+class LeafSourceNode {
+  /**
+   * @param {Integer} line
+   * @param {Integer} column
+   * @param {String} source
+   * @param {String} str
+   */
+  constructor(line, column, source, str) {
+    this.str = str;
+    this.line = line;
+    this.column = column;
+    this.source = source;
+    this.name = null;
+  }
+}
+
 // If any of these tokens are seen before a "[" token, we know that "[" token
 // is the start of an array literal, rather than a property access.
 //
@@ -537,44 +604,45 @@ function prependWhiteSpace(
   }
 }
 
+const escapeCharacters = {
+  // Backslash
+  "\\": "\\\\",
+  // Newlines
+  "\n": "\\n",
+  // Carriage return
+  "\r": "\\r",
+  // Tab
+  "\t": "\\t",
+  // Vertical tab
+  "\v": "\\v",
+  // Form feed
+  "\f": "\\f",
+  // Null character
+  "\0": "\\x00",
+  // Line separator
+  "\u2028": "\\u2028",
+  // Paragraph separator
+  "\u2029": "\\u2029",
+  // Single quotes
+  "'": "\\'",
+};
+
+// eslint-disable-next-line prefer-template
+const regExpString = "(" + Object.values(escapeCharacters).join("|") + ")";
+const escapeCharactersRegExp = new RegExp(regExpString, "g");
+
+function sanitizerReplaceFunc(_, c) {
+  return escapeCharacters[c];
+}
+
 /**
  * Make sure that we output the escaped character combination inside string
  * literals instead of various problematic characters.
  */
-const sanitize = (function() {
-  const escapeCharacters = {
-    // Backslash
-    "\\": "\\\\",
-    // Newlines
-    "\n": "\\n",
-    // Carriage return
-    "\r": "\\r",
-    // Tab
-    "\t": "\\t",
-    // Vertical tab
-    "\v": "\\v",
-    // Form feed
-    "\f": "\\f",
-    // Null character
-    "\0": "\\x00",
-    // Line separator
-    "\u2028": "\\u2028",
-    // Paragraph separator
-    "\u2029": "\\u2029",
-    // Single quotes
-    "'": "\\'",
-  };
+function sanitize(str) {
+  return str.replace(escapeCharactersRegExp, sanitizerReplaceFunc);
+}
 
-  // eslint-disable-next-line prefer-template
-  const regExpString = "(" + Object.values(escapeCharacters).join("|") + ")";
-  const escapeCharactersRegExp = new RegExp(regExpString, "g");
-
-  return function(str) {
-    return str.replace(escapeCharactersRegExp, function(_, c) {
-      return escapeCharacters[c];
-    });
-  };
-})();
 /**
  * Add the given token to the pretty printed results.
  *
@@ -750,8 +818,8 @@ export function prettyFast(input, options) {
   // The level of indents deep we are.
   let indentLevel = 0;
 
-  // We will accumulate the pretty printed code in this SourceNode.
-  const result = new SourceNode();
+  // We will accumulate the pretty printed code in this RootSourceNode.
+  const rootNode = new RootSourceNode();
 
   /**
    * Write a pretty printed string to the result SourceNode.
@@ -790,8 +858,8 @@ export function prettyFast(input, options) {
         for (let i = 0, len = buffer.length; i < len; i++) {
           lineStr += buffer[i];
         }
-        result.add(
-          new SourceNode(bufferLine, bufferColumn, options.url, lineStr)
+        rootNode.add(
+          new LeafSourceNode(bufferLine, bufferColumn, options.url, lineStr)
         );
         buffer.splice(0, buffer.length);
         bufferLine = -1;
@@ -961,7 +1029,7 @@ export function prettyFast(input, options) {
     lastToken.isArrayLiteral = token.isArrayLiteral;
   }
 
-  return result.toStringWithSourceMap({ file: options.url });
+  return rootNode.toStringWithSourceMap({ file: options.url });
 }
 
 /**
@@ -980,7 +1048,6 @@ function getTokens(input, options) {
 
   const res = acorn.tokenizer(input, {
     locations: true,
-    sourceFile: options.url,
     ecmaVersion: options.ecmaVersion || "latest",
     onComment(block, text, start, end, startLoc, endLoc) {
       tokens.push({

@@ -9,6 +9,9 @@ const { FirstStartup } = ChromeUtils.importESModule(
 const { NimbusFeatures } = ChromeUtils.import(
   "resource://nimbus/ExperimentAPI.jsm"
 );
+const { EnrollmentsContext } = ChromeUtils.import(
+  "resource://nimbus/lib/RemoteSettingsExperimentLoader.jsm"
+);
 const { PanelTestProvider } = ChromeUtils.import(
   "resource://activity-stream/lib/PanelTestProvider.jsm"
 );
@@ -36,7 +39,7 @@ add_task(async function test_updateRecipes_activeExperiments() {
   const onRecipe = sandbox.stub(manager, "onRecipe");
   sinon.stub(loader.remoteSettingsClient, "get").resolves([PASS_FILTER_RECIPE]);
   sandbox.stub(manager.store, "ready").resolves();
-  sandbox.stub(manager.store, "getAllActive").returns([recipe]);
+  sandbox.stub(manager.store, "getAllActiveExperiments").returns([recipe]);
 
   await loader.init();
 
@@ -53,7 +56,7 @@ add_task(async function test_updateRecipes_isFirstRun() {
   const onRecipe = sandbox.stub(manager, "onRecipe");
   sinon.stub(loader.remoteSettingsClient, "get").resolves([PASS_FILTER_RECIPE]);
   sandbox.stub(manager.store, "ready").resolves();
-  sandbox.stub(manager.store, "getAllActive").returns([recipe]);
+  sandbox.stub(manager.store, "getAllActiveExperiments").returns([recipe]);
 
   // Pretend to be in the first startup
   FirstStartup._state = FirstStartup.IN_PROGRESS;
@@ -96,7 +99,7 @@ add_task(async function test_updateRecipes_invalidFeatureId() {
   const onRecipe = sandbox.stub(manager, "onRecipe");
   sinon.stub(loader.remoteSettingsClient, "get").resolves([badRecipe]);
   sandbox.stub(manager.store, "ready").resolves();
-  sandbox.stub(manager.store, "getAllActive").returns([]);
+  sandbox.stub(manager.store, "getAllActiveExperiments").returns([]);
 
   await loader.init();
   ok(onRecipe.notCalled, "No recipes");
@@ -140,7 +143,7 @@ add_task(async function test_updateRecipes_invalidFeatureValue() {
   const onRecipe = sandbox.stub(manager, "onRecipe");
   sinon.stub(loader.remoteSettingsClient, "get").resolves([badRecipe]);
   sandbox.stub(manager.store, "ready").resolves();
-  sandbox.stub(manager.store, "getAllActive").returns([]);
+  sandbox.stub(manager.store, "getAllActiveExperiments").returns([]);
 
   await loader.init();
   ok(onRecipe.notCalled, "No recipes");
@@ -158,7 +161,7 @@ add_task(async function test_updateRecipes_invalidRecipe() {
   const onRecipe = sandbox.stub(manager, "onRecipe");
   sinon.stub(loader.remoteSettingsClient, "get").resolves([badRecipe]);
   sandbox.stub(manager.store, "ready").resolves();
-  sandbox.stub(manager.store, "getAllActive").returns([]);
+  sandbox.stub(manager.store, "getAllActiveExperiments").returns([]);
 
   await loader.init();
   ok(onRecipe.notCalled, "No recipes");
@@ -386,7 +389,7 @@ add_task(async function test_updateRecipes_simpleFeatureInvalidAfterUpdate() {
   };
 
   sinon.spy(loader, "updateRecipes");
-  sinon.spy(loader, "_generateVariablesOnlySchema");
+  sinon.spy(EnrollmentsContext.prototype, "_generateVariablesOnlySchema");
   sinon.stub(loader, "setTimer");
   sinon.stub(loader.remoteSettingsClient, "get").resolves([recipe]);
 
@@ -414,12 +417,12 @@ add_task(async function test_updateRecipes_simpleFeatureInvalidAfterUpdate() {
   );
 
   ok(
-    loader._generateVariablesOnlySchema.calledOnce,
+    EnrollmentsContext.prototype._generateVariablesOnlySchema.calledOnce,
     "Should have generated a schema for testFeature"
   );
 
   Assert.deepEqual(
-    loader._generateVariablesOnlySchema.returnValues[0],
+    EnrollmentsContext.prototype._generateVariablesOnlySchema.returnValues[0],
     EXPECTED_SCHEMA,
     "should have generated a schema with three fields"
   );
@@ -450,6 +453,8 @@ add_task(async function test_updateRecipes_simpleFeatureInvalidAfterUpdate() {
     }),
     "should call .onFinalize with an invalid branch"
   );
+
+  EnrollmentsContext.prototype._generateVariablesOnlySchema.restore();
 });
 
 add_task(async function test_updateRecipes_validationTelemetry() {
@@ -525,8 +530,8 @@ add_task(async function test_updateRecipes_validationTelemetry() {
 
     sinon.stub(manager, "onRecipe");
     sinon.stub(manager.store, "ready").resolves();
-    sinon.stub(manager.store, "getAllActive").returns([]);
-    sinon.stub(manager.store, "getAllRollouts").returns([]);
+    sinon.stub(manager.store, "getAllActiveExperiments").returns([]);
+    sinon.stub(manager.store, "getAllActiveRollouts").returns([]);
 
     const telemetrySpy = sinon.spy(manager, "sendValidationFailedTelemetry");
 
@@ -619,8 +624,8 @@ add_task(async function test_updateRecipes_validationDisabled() {
 
     sinon.stub(manager, "onRecipe");
     sinon.stub(manager.store, "ready").resolves();
-    sinon.stub(manager.store, "getAllActive").returns([]);
-    sinon.stub(manager.store, "getAllRollouts").returns([]);
+    sinon.stub(manager.store, "getAllActiveExperiments").returns([]);
+    sinon.stub(manager.store, "getAllActiveRollouts").returns([]);
 
     const finalizeStub = sinon.stub(manager, "onFinalize");
     const telemetrySpy = sinon.spy(manager, "sendValidationFailedTelemetry");
@@ -857,8 +862,8 @@ add_task(async function test_updateRecipes_featureValidationOptOut() {
     sinon.stub(manager, "onRecipe");
     sinon.stub(manager, "onFinalize");
     sinon.stub(manager.store, "ready").resolves();
-    sinon.stub(manager.store, "getAllActive").returns([]);
-    sinon.stub(manager.store, "getAllRollouts").returns([]);
+    sinon.stub(manager.store, "getAllActiveExperiments").returns([]);
+    sinon.stub(manager.store, "getAllActiveRollouts").returns([]);
 
     await loader.init();
     ok(
@@ -909,11 +914,14 @@ add_task(async function test_updateRecipes_invalidFeature_mismatch() {
   sinon.stub(manager, "onRecipe");
   sinon.stub(manager, "onFinalize");
   sinon.stub(manager.store, "ready").resolves();
-  sinon.stub(manager.store, "getAllActive").returns([]);
-  sinon.stub(manager.store, "getAllRollouts").returns([]);
+  sinon.stub(manager.store, "getAllActiveExperiments").returns([]);
+  sinon.stub(manager.store, "getAllActiveRollouts").returns([]);
 
   const telemetrySpy = sinon.stub(manager, "sendValidationFailedTelemetry");
-  const targetingSpy = sinon.spy(loader, "checkTargeting");
+  const targetingSpy = sinon.spy(
+    EnrollmentsContext.prototype,
+    "checkTargeting"
+  );
 
   await loader.init();
   ok(targetingSpy.calledOnce, "Should have checked targeting for recipe");
@@ -926,4 +934,6 @@ add_task(async function test_updateRecipes_invalidFeature_mismatch() {
     telemetrySpy.notCalled,
     "Should not have submitted validation failed telemetry"
   );
+
+  targetingSpy.restore();
 });

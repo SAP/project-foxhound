@@ -582,6 +582,8 @@ nsresult ServiceWorkerPrivate::Initialize() {
   mRemoteWorkerData = RemoteWorkerData(
       NS_ConvertUTF8toUTF16(mInfo->ScriptSpec()), baseScriptURL, baseScriptURL,
       /* name */ VoidString(),
+      /* workerType */ WorkerType::Classic,
+      /* credentials */ RequestCredentials::Omit,
       /* loading principal */ principalInfo, principalInfo,
       partitionedPrincipalInfo,
       /* useRegularPrincipal */ true,
@@ -935,7 +937,7 @@ nsresult ServiceWorkerPrivate::SendFetchEvent(
           mInfo->ScriptSpec(), request, nsString(aClientId),
           nsString(aResultingClientId), isNonSubresourceRequest,
           preloadNavigation, mInfo->TestingInjectCancellation()),
-      Nothing(), Nothing());
+      Nothing(), Nothing(), Nothing());
 
   if (mInfo->State() == ServiceWorkerState::Activating) {
     UniquePtr<PendingFunctionalEvent> pendingEvent =

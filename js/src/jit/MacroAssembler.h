@@ -1587,8 +1587,7 @@ class MacroAssembler : public MacroAssemblerSpecific {
                                            Label* fail)
       DEFINED_ON(arm, arm64, mips_shared, x86, x64, loong64, riscv64, wasm32);
   inline void branchTruncateDoubleToInt32(FloatRegister src, Register dest,
-                                          Label* fail)
-      DEFINED_ON(arm, arm64, mips_shared, x86, x64, loong64, riscv64, wasm32);
+                                          Label* fail) PER_ARCH;
 
   inline void branchDouble(DoubleCondition cond, FloatRegister lhs,
                            FloatRegister rhs, Label* label) PER_SHARED_ARCH;
@@ -1798,6 +1797,9 @@ class MacroAssembler : public MacroAssemblerSpecific {
   inline void branchTestProxyHandlerFamily(Condition cond, Register proxy,
                                            Register scratch,
                                            const void* handlerp, Label* label);
+
+  inline void branchTestObjectIsWasmGcObject(bool isGcObject, Register obj,
+                                             Register scratch, Label* label);
 
   inline void branchTestNeedsIncrementalBarrier(Condition cond, Label* label);
   inline void branchTestNeedsIncrementalBarrierAnyZone(Condition cond,
@@ -5142,30 +5144,41 @@ class MacroAssembler : public MacroAssemblerSpecific {
   void loadAtomOrSymbolAndHash(ValueOperand value, Register outId,
                                Register outHash, Label* cacheMiss);
 
+  void loadAtomHash(Register id, Register hash, Label* done);
+
   void emitExtractValueFromMegamorphicCacheEntry(
       Register obj, Register entry, Register scratch1, Register scratch2,
       ValueOperand output, Label* cacheHit, Label* cacheMiss);
 
-  void emitMegamorphicCacheLookupByValueCommon(ValueOperand id, Register obj,
-                                               Register scratch1,
-                                               Register scratch2,
-                                               Register outEntryPtr,
-                                               Label* cacheMiss);
+  template <typename IdOperandType>
+  void emitMegamorphicCacheLookupByValueCommon(
+      IdOperandType id, Register obj, Register scratch1, Register scratch2,
+      Register outEntryPtr, Label* cacheMiss, Label* cacheMissWithEntry);
 
   void emitMegamorphicCacheLookup(PropertyKey id, Register obj,
                                   Register scratch1, Register scratch2,
-                                  Register scratch3, ValueOperand output,
+                                  Register outEntryPtr, ValueOperand output,
                                   Label* cacheHit);
 
-  void emitMegamorphicCacheLookupByValue(ValueOperand id, Register obj,
+  // NOTE: |id| must either be a ValueOperand or a Register. If it is a
+  // Register, we assume that it is an atom.
+  template <typename IdOperandType>
+  void emitMegamorphicCacheLookupByValue(IdOperandType id, Register obj,
                                          Register scratch1, Register scratch2,
-                                         Register scratch3, ValueOperand output,
-                                         Label* cacheHit);
+                                         Register outEntryPtr,
+                                         ValueOperand output, Label* cacheHit);
 
   void emitMegamorphicCacheLookupExists(ValueOperand id, Register obj,
                                         Register scratch1, Register scratch2,
-                                        Register scratch3, Register output,
+                                        Register outEntryPtr, Register output,
                                         Label* cacheHit, bool hasOwn);
+
+  // Given a PropertyIteratorObject with valid indices, extract the current
+  // PropertyIndex, storing the index in |outIndex| and the kind in |outKind|
+  void extractCurrentIndexAndKindFromIterator(Register iterator,
+                                              Register outIndex,
+                                              Register outKind);
+
 #ifdef JS_CODEGEN_X86
   // See MegamorphicSetElement in LIROps.yaml
   void emitMegamorphicCachedSetSlot(
@@ -5421,16 +5434,6 @@ class MacroAssembler : public MacroAssemblerSpecific {
                             Register output, Label* fail) {
     truncateValueToInt32(value, nullptr, nullptr, nullptr, InvalidReg, temp,
                          output, fail);
-  }
-
-  // Truncates, i.e. removes any fractional parts, but doesn't wrap around to
-  // the int32 range.
-  void truncateNoWrapValueToInt32(ValueOperand value, FloatRegister temp,
-                                  Register output, Label* truncateDoubleSlow,
-                                  Label* fail) {
-    convertValueToInt(value, nullptr, nullptr, truncateDoubleSlow, InvalidReg,
-                      temp, output, fail,
-                      IntConversionBehavior::TruncateNoWrap);
   }
 
   // Convenience functions for clamping values to uint8.

@@ -24,6 +24,8 @@ ChromeUtils.defineESModuleGetters(lazy, {
   UrlbarProviderInterventions:
     "resource:///modules/UrlbarProviderInterventions.sys.mjs",
   UrlbarProvidersManager: "resource:///modules/UrlbarProvidersManager.sys.mjs",
+  UrlbarProviderQuickSuggest:
+    "resource:///modules/UrlbarProviderQuickSuggest.sys.mjs",
   UrlbarProviderSearchTips:
     "resource:///modules/UrlbarProviderSearchTips.sys.mjs",
   UrlbarSearchUtils: "resource:///modules/UrlbarSearchUtils.sys.mjs",
@@ -126,6 +128,7 @@ export var UrlbarUtils = {
     EXTENSION: "chrome://mozapps/skin/extensions/extension.svg",
     HISTORY: "chrome://browser/skin/history.svg",
     SEARCH_GLASS: "chrome://global/skin/icons/search-glass.svg",
+    TRENDING: "chrome://global/skin/icons/trending.svg",
     TIP: "chrome://global/skin/icons/lightbulb.svg",
   },
 
@@ -1204,7 +1207,14 @@ export var UrlbarUtils = {
           return "visiturl";
         }
         if (result.providerName == "UrlbarProviderQuickSuggest") {
-          return "quicksuggest";
+          // In legacy telemetry "quicksuggest" is used as the type for both
+          // sponsored and non-sponsored suggestions.
+          return result.payload.subtype ==
+            lazy.UrlbarProviderQuickSuggest.RESULT_SUBTYPE.SPONSORED ||
+            result.payload.subtype ==
+              lazy.UrlbarProviderQuickSuggest.RESULT_SUBTYPE.NONSPONSORED
+            ? "quicksuggest"
+            : result.payload.subtype;
         }
         return result.source == UrlbarUtils.RESULT_SOURCE.BOOKMARKS
           ? "bookmark"
@@ -1224,8 +1234,7 @@ export var UrlbarUtils = {
         } else if (result.providerName == "quickactions") {
           return "quickaction";
         } else if (result.providerName == "Weather") {
-          // TODO (SNT-441): Return "weather". This value is used in telemetry.
-          return "quicksuggest";
+          return "weather";
         }
         return "dynamic";
     }
@@ -1270,6 +1279,7 @@ export var UrlbarUtils = {
       case UrlbarUtils.RESULT_GROUP.FORM_HISTORY: {
         return "search_history";
       }
+      case UrlbarUtils.RESULT_GROUP.TAIL_SUGGESTION:
       case UrlbarUtils.RESULT_GROUP.REMOTE_SUGGESTION: {
         return "search_suggest";
       }
@@ -1285,8 +1295,7 @@ export var UrlbarUtils = {
         return "general";
       }
       // Group of UrlbarProviderQuickSuggest is GENERAL_PARENT.
-      case UrlbarUtils.RESULT_GROUP.GENERAL_PARENT:
-      case UrlbarUtils.RESULT_GROUP.TAIL_SUGGESTION: {
+      case UrlbarUtils.RESULT_GROUP.GENERAL_PARENT: {
         return "suggest";
       }
       case UrlbarUtils.RESULT_GROUP.ABOUT_PAGES: {
@@ -1304,11 +1313,19 @@ export var UrlbarUtils = {
    * Extracts a type for search engagement telemetry from a result.
    *
    * @param {UrlbarResult} result The result to analyze.
+   * @param {string} selType An optional parameter for the selected type.
    * @returns {string} Type as string.
    */
-  searchEngagementTelemetryType(result) {
+  searchEngagementTelemetryType(result, selType = null) {
     if (!result) {
-      return "unknown";
+      return selType === "oneoff" ? "search_shortcut_button" : "input_field";
+    }
+
+    if (
+      result.providerType === UrlbarUtils.PROVIDER_TYPE.EXTENSION &&
+      result.providerName != "Omnibox"
+    ) {
+      return "experimental_addon";
     }
 
     switch (result.type) {
@@ -1322,6 +1339,10 @@ export var UrlbarUtils = {
             return "tab_to_search";
           case "UnitConversion":
             return "unit";
+          case "UrlbarProviderContextualSearch":
+            return "site_specific_contextual_search";
+          case "Weather":
+            return "weather";
         }
         break;
       case UrlbarUtils.RESULT_TYPE.KEYWORD:
@@ -1382,13 +1403,10 @@ export var UrlbarUtils = {
           return `autofill_${result.autofill.type ?? "unknown"}`;
         }
         if (result.providerName === "UrlbarProviderQuickSuggest") {
-          return result.payload.isSponsored
-            ? "suggest_sponsor"
-            : "suggest_non_sponsor";
+          return result.payload.subtype;
         }
         if (result.providerName === "Weather") {
-          // TODO (SNT-441): Return "weather". This value is used in telemetry.
-          return "suggest_non_sponsor";
+          return "weather";
         }
         if (result.providerName === "UrlbarProviderTopSites") {
           return "top_site";
@@ -1514,6 +1532,9 @@ UrlbarUtils.RESULT_PAYLOAD_SCHEMA = {
       title: {
         type: "string",
       },
+      trending: {
+        type: "boolean",
+      },
       url: {
         type: "string",
       },
@@ -1538,6 +1559,9 @@ UrlbarUtils.RESULT_PAYLOAD_SCHEMA = {
       },
       displayUrl: {
         type: "string",
+      },
+      dupedHeuristic: {
+        type: "boolean",
       },
       fallbackTitle: {
         type: "string",
@@ -1605,6 +1629,9 @@ UrlbarUtils.RESULT_PAYLOAD_SCHEMA = {
       },
       sponsoredTileId: {
         type: "number",
+      },
+      subtype: {
+        type: "string",
       },
       tags: {
         type: "array",
@@ -1978,16 +2005,21 @@ export class UrlbarQueryContext {
    * @param {string} [searchString]
    *   Usually this is just the context's search string, but if you need to
    *   fetch remote results based on a modified version, you can pass it here.
+   * @param {boolean} [allowEmptySearchString]
+   *   Whether to check for the minimum length of the search string.
    * @returns {boolean}
    *   Whether remote results are allowed.
    */
-  allowRemoteResults(searchString = this.searchString) {
+  allowRemoteResults(
+    searchString = this.searchString,
+    allowEmptySearchString = false
+  ) {
     if (this.prohibitRemoteResults) {
       return false;
     }
 
     // We're unlikely to get useful remote results for a single character.
-    if (searchString.length < 2) {
+    if (searchString.length < 2 && !allowEmptySearchString) {
       return false;
     }
 

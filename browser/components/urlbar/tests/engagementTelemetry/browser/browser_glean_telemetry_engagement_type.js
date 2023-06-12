@@ -28,6 +28,15 @@ add_task(async function engagement_type_enter() {
   });
 });
 
+add_task(async function engagement_type_go_button() {
+  await doTest(async browser => {
+    await openPopup("x");
+    EventUtils.synthesizeMouseAtCenter(gURLBar.goButton, {});
+
+    assertEngagementTelemetry([{ engagement_type: "go_button" }]);
+  });
+});
+
 add_task(async function engagement_type_drop_go() {
   await doTest(async browser => {
     await doDropAndGo("example.com");
@@ -45,7 +54,10 @@ add_task(async function engagement_type_paste_go() {
 });
 
 add_task(async function engagement_type_dismiss() {
-  const cleanupQuickSuggest = await ensureQuickSuggestInit();
+  const cleanupQuickSuggest = await ensureQuickSuggestInit({
+    // eslint-disable-next-line mozilla/valid-lazy
+    config: lazy.QuickSuggestTestUtils.BEST_MATCH_CONFIG,
+  });
 
   for (const isBestMatchTest of [true, false]) {
     const prefs = isBestMatchTest
@@ -75,14 +87,7 @@ add_task(async function engagement_type_dismiss() {
         () => originalResultCount != UrlbarTestUtils.getResultCount(window)
       );
 
-      if (UrlbarPrefs.get("resultMenu")) {
-        todo(
-          false,
-          "telemetry for the result menu to be implemented in bug 1790020"
-        );
-      } else {
-        assertEngagementTelemetry([{ engagement_type: "dismiss" }]);
-      }
+      assertEngagementTelemetry([{ engagement_type: "dismiss" }]);
     });
 
     await doTest(async browser => {
@@ -124,14 +129,7 @@ add_task(async function engagement_type_help() {
       const tab = await onTabOpened;
       BrowserTestUtils.removeTab(tab);
 
-      if (UrlbarPrefs.get("resultMenu")) {
-        todo(
-          false,
-          "telemetry for the result menu to be implemented in bug 1790020"
-        );
-      } else {
-        assertEngagementTelemetry([{ engagement_type: "help" }]);
-      }
+      assertEngagementTelemetry([{ engagement_type: "help" }]);
     });
 
     await SpecialPowers.popPrefEnv();

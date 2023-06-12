@@ -18,6 +18,7 @@
 #include "gfxContext.h"
 #include "nsCOMPtr.h"
 #include "mozilla/ComputedStyle.h"
+#include "nsIFrameInlines.h"
 #include "nsFrameList.h"
 #include "nsStyleConsts.h"
 #include "nsIContent.h"
@@ -250,7 +251,16 @@ bool nsTableFrame::PageBreakAfter(nsIFrame* aSourceFrame,
 }
 
 /* static */
-void nsTableFrame::RegisterPositionedTablePart(nsIFrame* aFrame) {
+void nsTableFrame::PositionedTablePartMaybeChanged(nsIFrame* aFrame,
+                                                   ComputedStyle* aOldStyle) {
+  const bool wasPositioned =
+      aOldStyle && aOldStyle->IsAbsPosContainingBlock(aFrame);
+  const bool isPositioned = aFrame->IsAbsPosContainingBlock();
+  MOZ_ASSERT(isPositioned == aFrame->Style()->IsAbsPosContainingBlock(aFrame));
+  if (wasPositioned == isPositioned) {
+    return;
+  }
+
   nsTableFrame* tableFrame = nsTableFrame::GetTableFrame(aFrame);
   MOZ_ASSERT(tableFrame, "Should have a table frame here");
   tableFrame = static_cast<nsTableFrame*>(tableFrame->FirstContinuation());
@@ -265,13 +275,20 @@ void nsTableFrame::RegisterPositionedTablePart(nsIFrame* aFrame) {
     tableFrame->SetProperty(PositionedTablePartArray(), positionedParts);
   }
 
-  // Add this frame to the list.
-  positionedParts->AppendElement(aFrame);
+  if (isPositioned) {
+    // Add this frame to the list.
+    positionedParts->AppendElement(aFrame);
+  } else {
+    positionedParts->RemoveElement(aFrame);
+  }
 }
 
 /* static */
-void nsTableFrame::UnregisterPositionedTablePart(nsIFrame* aFrame,
-                                                 nsIFrame* aDestructRoot) {
+void nsTableFrame::MaybeUnregisterPositionedTablePart(nsIFrame* aFrame,
+                                                      nsIFrame* aDestructRoot) {
+  if (!aFrame->IsAbsPosContainingBlock()) {
+    return;
+  }
   // Retrieve the table frame, and check if we hit aDestructRoot on the way.
   bool didPassThrough;
   nsTableFrame* tableFrame =
@@ -3512,21 +3529,19 @@ nscoord nsTableFrame::GetRowSpacing(int32_t aStartRowIndex,
   return GetRowSpacing() * (aEndRowIndex - aStartRowIndex);
 }
 
-/* virtual */
-nscoord nsTableFrame::GetLogicalBaseline(WritingMode aWM) const {
-  nscoord baseline;
-  if (!GetNaturalBaselineBOffset(aWM, BaselineSharingGroup::First, &baseline)) {
-    baseline = BSize(aWM);
+nscoord nsTableFrame::SynthesizeFallbackBaseline(
+    mozilla::WritingMode aWM, BaselineSharingGroup aBaselineGroup) const {
+  if (aBaselineGroup == BaselineSharingGroup::Last) {
+    return 0;
   }
-  return baseline;
+  return BSize(aWM);
 }
 
 /* virtual */
-bool nsTableFrame::GetNaturalBaselineBOffset(
-    WritingMode aWM, BaselineSharingGroup aBaselineGroup,
-    nscoord* aBaseline) const {
+Maybe<nscoord> nsTableFrame::GetNaturalBaselineBOffset(
+    WritingMode aWM, BaselineSharingGroup aBaselineGroup) const {
   if (StyleDisplay()->IsContainLayout()) {
-    return false;
+    return Nothing{};
   }
 
   RowGroupArray orderedRowGroups;
@@ -3546,8 +3561,7 @@ bool nsTableFrame::GetNaturalBaselineBOffset(
       nsTableRowGroupFrame* rgFrame = orderedRowGroups[rgIndex];
       nsTableRowFrame* row = rgFrame->GetFirstRow();
       if (row) {
-        *aBaseline = TableBaseline(rgFrame, row);
-        return true;
+        return Some(TableBaseline(rgFrame, row));
       }
     }
   } else {
@@ -3555,12 +3569,11 @@ bool nsTableFrame::GetNaturalBaselineBOffset(
       nsTableRowGroupFrame* rgFrame = orderedRowGroups[rgIndex];
       nsTableRowFrame* row = rgFrame->GetLastRow();
       if (row) {
-        *aBaseline = BSize(aWM) - TableBaseline(rgFrame, row);
-        return true;
+        return Some(BSize(aWM) - TableBaseline(rgFrame, row));
       }
     }
   }
-  return false;
+  return Nothing{};
 }
 
 /* ----- global methods ----- */

@@ -16,25 +16,13 @@ const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   BrowserUtils: "resource://gre/modules/BrowserUtils.sys.mjs",
+  AttributionCode: "resource:///modules/AttributionCode.sys.mjs",
 });
 
 XPCOMUtils.defineLazyModuleGetters(lazy, {
   AddonRepository: "resource://gre/modules/addons/AddonRepository.jsm",
-  AttributionCode: "resource:///modules/AttributionCode.jsm",
+  AWScreenUtils: "resource://activity-stream/lib/AWScreenUtils.jsm",
 });
-
-XPCOMUtils.defineLazyPreferenceGetter(
-  lazy,
-  "usesFirefoxSync",
-  "services.sync.username"
-);
-
-XPCOMUtils.defineLazyPreferenceGetter(
-  lazy,
-  "mobileDevices",
-  "services.sync.clients.devices.mobile",
-  0
-);
 
 // Message to be updated based on finalized MR designs
 const MR_ABOUT_WELCOME_DEFAULT = {
@@ -49,7 +37,93 @@ const MR_ABOUT_WELCOME_DEFAULT = {
     "var(--mr-welcome-background-color) var(--mr-welcome-background-gradient)",
   screens: [
     {
+      id: "AW_EASY_SETUP",
+      targeting:
+        "os.windowsBuildNumber >= 15063 && !isDefaultBrowser && !doesAppNeedPin",
+      content: {
+        position: "split",
+        split_narrow_bkg_position: "-60px",
+        image_alt_text: {
+          string_id: "mr2022-onboarding-default-image-alt",
+        },
+        background:
+          "url('chrome://activity-stream/content/data/content/assets/mr-settodefault.svg') var(--mr-secondary-position) no-repeat var(--mr-screen-background-color)",
+        progress_bar: true,
+        logo: {},
+        title: {
+          string_id: "mr2022-onboarding-set-default-title",
+        },
+        subtitle: {
+          string_id: "mr2022-onboarding-set-default-subtitle",
+        },
+        tiles: {
+          type: "multiselect",
+          data: [
+            {
+              id: "checkbox-1",
+              defaultValue: true,
+              label: {
+                string_id:
+                  "mr2022-onboarding-easy-setup-set-default-checkbox-label",
+              },
+              action: {
+                type: "SET_DEFAULT_BROWSER",
+              },
+            },
+            {
+              id: "checkbox-2",
+              defaultValue: true,
+              label: {
+                string_id: "mr2022-onboarding-easy-setup-import-checkbox-label",
+              },
+              action: {
+                type: "SHOW_MIGRATION_WIZARD",
+                data: {},
+              },
+            },
+          ],
+        },
+        primary_button: {
+          label: {
+            string_id: "mr2022-onboarding-easy-setup-primary-button-label",
+          },
+          action: {
+            type: "MULTI_ACTION",
+            collectSelect: true,
+            navigate: true,
+            data: {
+              actions: [],
+            },
+          },
+        },
+        secondary_button: {
+          label: {
+            string_id: "mr2022-onboarding-secondary-skip-button-label",
+          },
+          action: {
+            navigate: true,
+          },
+          has_arrow_icon: true,
+        },
+        secondary_button_top: {
+          label: {
+            string_id: "mr1-onboarding-sign-in-button-label",
+          },
+          action: {
+            data: {
+              entrypoint: "activity-stream-firstrun",
+              where: "tab",
+            },
+            type: "SHOW_FIREFOX_ACCOUNTS",
+            addFlowParams: true,
+          },
+        },
+      },
+    },
+    {
       id: "AW_PIN_FIREFOX",
+      targeting:
+        "!(os.windowsBuildNumber >= 15063 && !isDefaultBrowser && !doesAppNeedPin)",
       content: {
         position: "split",
         split_narrow_bkg_position: "-155px",
@@ -140,6 +214,8 @@ const MR_ABOUT_WELCOME_DEFAULT = {
     },
     {
       id: "AW_SET_DEFAULT",
+      targeting:
+        "!(os.windowsBuildNumber >= 15063 && !isDefaultBrowser && !doesAppNeedPin)",
       content: {
         position: "split",
         split_narrow_bkg_position: "-60px",
@@ -178,6 +254,8 @@ const MR_ABOUT_WELCOME_DEFAULT = {
     },
     {
       id: "AW_IMPORT_SETTINGS",
+      targeting:
+        "!(os.windowsBuildNumber >= 15063 && !isDefaultBrowser && !doesAppNeedPin)",
       content: {
         position: "split",
         split_narrow_bkg_position: "-42px",
@@ -218,6 +296,9 @@ const MR_ABOUT_WELCOME_DEFAULT = {
     },
     {
       id: "AW_MOBILE_DOWNLOAD",
+      // The mobile download screen should only be shown to users who
+      // are either not logged into FxA, or don't have any mobile devices syncing
+      targeting: "!isFxASignedIn || sync.mobileDevices == 0",
       content: {
         position: "split",
         split_narrow_bkg_position: "-160px",
@@ -283,16 +364,7 @@ const MR_ABOUT_WELCOME_DEFAULT = {
         },
         primary_button: {
           label: {
-            string_id: "mr2022-onboarding-gratitude-primary-button-label",
-          },
-          action: {
-            type: "OPEN_FIREFOX_VIEW",
-            navigate: true,
-          },
-        },
-        secondary_button: {
-          label: {
-            string_id: "mr2022-onboarding-gratitude-secondary-button-label",
+            string_id: "mr2-onboarding-start-browsing-button-label",
           },
           action: {
             navigate: true,
@@ -389,15 +461,6 @@ function getLocalizedUA(ua) {
   return null;
 }
 
-// Helper to find screens and remove them where applicable.
-function removeScreens(check, screens) {
-  for (let i = 0; i < screens?.length; i++) {
-    if (check(screens[i])) {
-      screens.splice(i--, 1);
-    }
-  }
-}
-
 // Function to evalute the appropriate string for the welcome screen button label
 function evaluateWelcomeScreenButtonLabel(removeDefault) {
   return removeDefault
@@ -405,13 +468,13 @@ function evaluateWelcomeScreenButtonLabel(removeDefault) {
     : "mr2022-onboarding-set-default-primary-button-label";
 }
 
-function prepareMobileDownload(screens) {
-  let mobileContent = screens?.find(
+function prepareMobileDownload(content) {
+  let mobileContent = content?.screens?.find(
     screen => screen.id === "AW_MOBILE_DOWNLOAD"
   )?.content;
 
   if (!mobileContent) {
-    return;
+    return content;
   }
   if (!lazy.BrowserUtils.sendToDeviceEmailsSupported()) {
     // If send to device emails are not supported for a user's locale,
@@ -428,19 +491,6 @@ function prepareMobileDownload(screens) {
       mobileContent.hero_image.url.indexOf(".svg")
     )}-cn.svg`;
   }
-}
-
-function prepareMRContent(content) {
-  // Expand with logic for finalized MR designs
-  const { screens } = content;
-
-  // Do not show the screen to users who are already using firefox sync
-  // and syncing to a mobile device
-  if (lazy.usesFirefoxSync && lazy.mobileDevices > 0) {
-    removeScreens(screen => screen.id === "AW_MOBILE_DOWNLOAD", screens);
-  } else {
-    prepareMobileDownload(screens);
-  }
 
   return content;
 }
@@ -454,9 +504,8 @@ async function prepareContentForReact(content) {
 
   // Change content for Windows 7 because non-light themes aren't quite right.
   if (AppConstants.isPlatformAndVersionAtMost("win", "6.1")) {
-    removeScreens(
-      screen => ["theme"].includes(screen.content?.tiles?.type),
-      screens
+    await lazy.AWScreenUtils.removeScreens(screens, screen =>
+      ["theme"].includes(screen.content?.tiles?.type)
     );
   }
 
@@ -480,7 +529,7 @@ async function prepareContentForReact(content) {
     if (label?.string_id) {
       label.string_id = browserStr
         ? "mr1-onboarding-import-primary-button-label-attribution"
-        : "mr1-onboarding-import-primary-button-label-no-attribution";
+        : "mr2022-onboarding-import-primary-button-label-no-attribution";
 
       label.args = browserStr ? { previous: browserStr } : {};
     }
@@ -521,7 +570,9 @@ async function prepareContentForReact(content) {
     }
   }
   if (removeDefault) {
-    removeScreens(screen => screen.id?.startsWith("AW_SET_DEFAULT"), screens);
+    await lazy.AWScreenUtils.removeScreens(screens, screen =>
+      screen.id?.startsWith("AW_SET_DEFAULT")
+    );
   }
 
   // Remove Firefox Accounts related UI and prevent related metrics.
@@ -561,10 +612,13 @@ async function prepareContentForReact(content) {
   }
 
   if (shouldRemoveLanguageMismatchScreen) {
-    removeScreens(screen => screen.id === "AW_LANGUAGE_MISMATCH", screens);
+    await lazy.AWScreenUtils.removeScreens(
+      screens,
+      screen => screen.id === "AW_LANGUAGE_MISMATCH"
+    );
   }
 
-  return prepareMRContent(content);
+  return prepareMobileDownload(content);
 }
 
 const AboutWelcomeDefaults = {

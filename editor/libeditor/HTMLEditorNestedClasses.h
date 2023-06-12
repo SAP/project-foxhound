@@ -12,6 +12,7 @@
 #include "HTMLEditHelpers.h"  // for EditorInlineStyleAndValue
 
 #include "mozilla/Attributes.h"
+#include "mozilla/OwningNonNull.h"
 #include "mozilla/Result.h"
 
 namespace mozilla {
@@ -338,6 +339,182 @@ class MOZ_STACK_CLASS HTMLEditor::AutoMoveOneLineHandler final {
   // true if mDestInclusiveAncestorBlock is an ancestor of
   // mSrcInclusiveAncestorBlock.
   bool mMovingToParentBlock = false;
+};
+
+/**
+ * Convert contents around aRanges of Run() to specified list element.  If there
+ * are some different type of list elements, this method converts them to
+ * specified list items too.  Basically, each line will be wrapped in a list
+ * item element.  However, only when <p> element is selected, its child <br>
+ * elements won't be treated as line separators.  Perhaps, this is a bug.
+ */
+class MOZ_STACK_CLASS HTMLEditor::AutoListElementCreator final {
+ public:
+  /**
+   * @param aListElementTagName         The new list element tag name.
+   * @param aListItemElementTagName     The new list item element tag name.
+   * @param aBulletType                 If this is not empty string, it's set
+   *                                    to `type` attribute of new list item
+   *                                    elements.  Otherwise, existing `type`
+   *                                    attributes will be removed.
+   */
+  AutoListElementCreator(const nsStaticAtom& aListElementTagName,
+                         const nsStaticAtom& aListItemElementTagName,
+                         const nsAString& aBulletType)
+      // Needs const_cast hack here because the struct users may want
+      // non-const nsStaticAtom pointer due to bug 1794954
+      : mListTagName(const_cast<nsStaticAtom&>(aListElementTagName)),
+        mListItemTagName(const_cast<nsStaticAtom&>(aListItemElementTagName)),
+        mBulletType(aBulletType) {
+    MOZ_ASSERT(&mListTagName == nsGkAtoms::ul ||
+               &mListTagName == nsGkAtoms::ol ||
+               &mListTagName == nsGkAtoms::dl);
+    MOZ_ASSERT_IF(
+        &mListTagName == nsGkAtoms::ul || &mListTagName == nsGkAtoms::ol,
+        &mListItemTagName == nsGkAtoms::li);
+    MOZ_ASSERT_IF(&mListTagName == nsGkAtoms::dl,
+                  &mListItemTagName == nsGkAtoms::dt ||
+                      &mListItemTagName == nsGkAtoms::dd);
+  }
+
+  /**
+   * @param aHTMLEditor The HTML editor.
+   * @param aRanges     [in/out] The ranges which will be converted to list.
+   *                    The instance must not have saved ranges because it'll
+   *                    be used in this method.
+   *                    If succeeded, this will have selection ranges which
+   *                    should be applied to `Selection`.
+   *                    If failed, this keeps storing original selection
+   *                    ranges.
+   * @param aSelectAllOfCurrentList     Yes if this should treat all of
+   *                                    ancestor list element at selection.
+   * @param aEditingHost                The editing host.
+   */
+  [[nodiscard]] MOZ_CAN_RUN_SCRIPT Result<EditActionResult, nsresult> Run(
+      HTMLEditor& aHTMLEditor, AutoRangeArray& aRanges,
+      HTMLEditor::SelectAllOfCurrentList aSelectAllOfCurrentList,
+      const Element& aEditingHost) const;
+
+ private:
+  using ContentNodeArray = nsTArray<OwningNonNull<nsIContent>>;
+  using AutoContentNodeArray = AutoTArray<OwningNonNull<nsIContent>, 64>;
+
+  /**
+   * If aSelectAllOfCurrentList is "Yes" and aRanges is in a list element,
+   * returns the list element.
+   * Otherwise, extend aRanges to select start and end lines selected by it and
+   * correct all topmost content nodes in the extended ranges with splitting
+   * ancestors at range edges.
+   */
+  [[nodiscard]] MOZ_CAN_RUN_SCRIPT nsresult
+  SplitAtRangeEdgesAndCollectContentNodesToMoveIntoList(
+      HTMLEditor& aHTMLEditor, AutoRangeArray& aRanges,
+      SelectAllOfCurrentList aSelectAllOfCurrentList,
+      const Element& aEditingHost, ContentNodeArray& aOutArrayOfContents) const;
+
+  /**
+   * Return true if aArrayOfContents has only <br> elements or empty inline
+   * container elements.  I.e., it means that aArrayOfContents represents
+   * only empty line(s) if this returns true.
+   */
+  [[nodiscard]] static bool
+  IsEmptyOrContainsOnlyBRElementsOrEmptyInlineElements(
+      const ContentNodeArray& aArrayOfContents);
+
+  /**
+   * Delete all content nodes ina ArrayOfContents, and if we can put new list
+   * element at start of the first range of aRanges, insert new list element
+   * there.
+   *
+   * @return            The empty list item element in new list element.
+   */
+  [[nodiscard]] MOZ_CAN_RUN_SCRIPT Result<RefPtr<Element>, nsresult>
+  ReplaceContentNodesWithEmptyNewList(
+      HTMLEditor& aHTMLEditor, const AutoRangeArray& aRanges,
+      const AutoContentNodeArray& aArrayOfContents,
+      const Element& aEditingHost) const;
+
+  /**
+   * Creat new list elements or use existing list elements and move
+   * aArrayOfContents into list item elements.
+   *
+   * @return            A list or list item element which should have caret.
+   */
+  [[nodiscard]] MOZ_CAN_RUN_SCRIPT Result<RefPtr<Element>, nsresult>
+  WrapContentNodesIntoNewListElements(HTMLEditor& aHTMLEditor,
+                                      AutoRangeArray& aRanges,
+                                      AutoContentNodeArray& aArrayOfContents,
+                                      const Element& aEditingHost) const;
+
+  struct MOZ_STACK_CLASS AutoHandlingState final {
+    // Current list element which is a good container to create new list item
+    // element.
+    RefPtr<Element> mCurrentListElement;
+    // Previously handled list item element.
+    RefPtr<Element> mPreviousListItemElement;
+    // List or list item element which should have caret after handling all
+    // contents.
+    RefPtr<Element> mListOrListItemElementToPutCaret;
+    // Replacing block element.  This is typically already removed from the DOM
+    // tree.
+    RefPtr<Element> mReplacingBlockElement;
+    // Once id attribute of mReplacingBlockElement copied, the id attribute
+    // shouldn't be copied again.
+    bool mMaybeCopiedReplacingBlockElementId = false;
+  };
+
+  /**
+   * Helper methods of WrapContentNodesIntoNewListElements.  They are called for
+   * handling one content node of aArrayOfContents.  It's set to aHandling*.
+   */
+  [[nodiscard]] MOZ_CAN_RUN_SCRIPT nsresult HandleChildContent(
+      HTMLEditor& aHTMLEditor, nsIContent& aHandlingContent,
+      AutoHandlingState& aState, const Element& aEditingHost) const;
+  [[nodiscard]] MOZ_CAN_RUN_SCRIPT nsresult
+  HandleChildListElement(HTMLEditor& aHTMLEditor, Element& aHandlingListElement,
+                         AutoHandlingState& aState) const;
+  [[nodiscard]] MOZ_CAN_RUN_SCRIPT nsresult HandleChildListItemElement(
+      HTMLEditor& aHTMLEditor, Element& aHandlingListItemElement,
+      AutoHandlingState& aState) const;
+  [[nodiscard]] MOZ_CAN_RUN_SCRIPT nsresult
+  HandleChildListItemInDifferentTypeList(HTMLEditor& aHTMLEditor,
+                                         Element& aHandlingListItemElement,
+                                         AutoHandlingState& aState) const;
+  [[nodiscard]] MOZ_CAN_RUN_SCRIPT nsresult HandleChildListItemInSameTypeList(
+      HTMLEditor& aHTMLEditor, Element& aHandlingListItemElement,
+      AutoHandlingState& aState) const;
+  [[nodiscard]] MOZ_CAN_RUN_SCRIPT nsresult HandleChildDivOrParagraphElement(
+      HTMLEditor& aHTMLEditor, Element& aHandlingDivOrParagraphElement,
+      AutoHandlingState& aState, const Element& aEditingHost) const;
+  enum class EmptyListItem { NotCreate, Create };
+  [[nodiscard]] MOZ_CAN_RUN_SCRIPT nsresult CreateAndUpdateCurrentListElement(
+      HTMLEditor& aHTMLEditor, const EditorDOMPoint& aPointToInsert,
+      EmptyListItem aEmptyListItem, AutoHandlingState& aState,
+      const Element& aEditingHost) const;
+  [[nodiscard]] MOZ_CAN_RUN_SCRIPT Result<CreateElementResult, nsresult>
+  AppendListItemElement(HTMLEditor& aHTMLEditor, const Element& aListElement,
+                        AutoHandlingState& aState) const;
+  [[nodiscard]] MOZ_CAN_RUN_SCRIPT static nsresult
+  MaybeCloneAttributesToNewListItem(HTMLEditor& aHTMLEditor,
+                                    Element& aListItemElement,
+                                    AutoHandlingState& aState);
+  [[nodiscard]] MOZ_CAN_RUN_SCRIPT nsresult HandleChildInlineContent(
+      HTMLEditor& aHTMLEditor, nsIContent& aHandlingInlineContent,
+      AutoHandlingState& aState) const;
+  [[nodiscard]] MOZ_CAN_RUN_SCRIPT nsresult WrapContentIntoNewListItemElement(
+      HTMLEditor& aHTMLEditor, nsIContent& aHandlingContent,
+      AutoHandlingState& aState) const;
+
+  /**
+   * If aRanges is collapsed outside aListItemOrListToPutCaret, this collapse
+   * aRanges in aListItemOrListToPutCaret again.
+   */
+  nsresult EnsureCollapsedRangeIsInListItemOrListElement(
+      Element& aListItemOrListToPutCaret, AutoRangeArray& aRanges) const;
+
+  MOZ_KNOWN_LIVE nsStaticAtom& mListTagName;
+  MOZ_KNOWN_LIVE nsStaticAtom& mListItemTagName;
+  const nsAutoString mBulletType;
 };
 
 }  // namespace mozilla

@@ -16,6 +16,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
   PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
   PromiseUtils: "resource://gre/modules/PromiseUtils.sys.mjs",
+  Weave: "resource://services-sync/main.sys.mjs",
 });
 
 XPCOMUtils.defineLazyModuleGetters(lazy, {
@@ -23,7 +24,6 @@ XPCOMUtils.defineLazyModuleGetters(lazy, {
   CustomizableUI: "resource:///modules/CustomizableUI.jsm",
   OpenInTabsUtils: "resource:///modules/OpenInTabsUtils.jsm",
   PluralForm: "resource://gre/modules/PluralForm.jsm",
-  Weave: "resource://services-sync/main.js",
 });
 
 XPCOMUtils.defineLazyGetter(lazy, "bundle", function() {
@@ -276,12 +276,14 @@ class BookmarkState {
    *   Existing (if there are any) keyword for bookmark
    * @param {boolean} [options.isFolder]
    *   If the item is a folder.
-   * @param {Array.<nsIURI>} [options.children]
+   * @param {Array<{ title: string; url: nsIURI; }>} [options.children]
    *   The list of child URIs to bookmark within the folder.
    * @param {boolean} [options.autosave]
    *   If changes to bookmark fields should be saved immediately after calling
    *   its respective "changed" method, rather than waiting for save() to be
    *   called.
+   * @param {number} [options.index]
+   *   The insertion point index of the bookmark.
    */
   constructor({
     info,
@@ -290,6 +292,7 @@ class BookmarkState {
     isFolder = false,
     children = [],
     autosave = false,
+    index,
   }) {
     this._guid = info.itemGuid;
     this._postData = info.postData;
@@ -309,6 +312,7 @@ class BookmarkState {
         .filter(tag => !!tag.length),
       keyword,
       parentGuid: info.parentGuid,
+      index,
     };
 
     // Edited bookmark
@@ -391,6 +395,7 @@ class BookmarkState {
         tags: this._newState.tags,
         title: this._newState.title ?? this._originalState.title,
         url: this._newState.uri ?? this._originalState.uri,
+        index: this._originalState.index,
       }).transact();
       if (this._newState.keyword) {
         await lazy.PlacesTransactions.EditKeyword({
@@ -412,10 +417,8 @@ class BookmarkState {
     this._guid = await lazy.PlacesTransactions.NewFolder({
       parentGuid: this._newState.parentGuid ?? this._originalState.parentGuid,
       title: this._newState.title ?? this._originalState.title,
-      children: this._children.map(item => ({
-        url: item.uri,
-        title: item.title,
-      })),
+      children: this._children,
+      index: this._originalState.index,
     }).transact();
     return this._guid;
   }
@@ -1113,10 +1116,8 @@ export var PlacesUIUtils = {
    * @param {object} view
    *          The current view that contains the node or nodes selected for
    *          opening
-   * @param {Function=} updateTelemetryFn
-   *          Optional function to call if telemetry needs to be updated
    */
-  openMultipleLinksInTabs(nodeOrNodes, event, view, updateTelemetryFn = null) {
+  openMultipleLinksInTabs(nodeOrNodes, event, view) {
     let window = view.ownerWindow;
     let urlsToOpen = [];
 
@@ -1134,8 +1135,8 @@ export var PlacesUIUtils = {
       }
     }
     if (lazy.OpenInTabsUtils.confirmOpenInTabs(urlsToOpen.length, window)) {
-      if (updateTelemetryFn) {
-        updateTelemetryFn(urlsToOpen);
+      if (window.updateTelemetry) {
+        window.updateTelemetry(urlsToOpen);
       }
       this.openTabset(urlsToOpen, event, window);
     }
@@ -1172,7 +1173,7 @@ export var PlacesUIUtils = {
 
   /**
    * Loads the node's URL in the appropriate tab or window.
-   * see also openUILinkIn
+   * see also URILoadingHelper's openWebLinkIn
    *
    * @param {object} aNode
    *        An uri result node.
@@ -1223,6 +1224,9 @@ export var PlacesUIUtils = {
         private: aPrivate,
         userContextId,
       });
+      if (aWindow.updateTelemetry) {
+        aWindow.updateTelemetry([aNode]);
+      }
     }
   },
 
@@ -1457,7 +1461,7 @@ export var PlacesUIUtils = {
     return guidsToSelect;
   },
 
-  onSidebarTreeClick(event, updateTelemetryFn = null) {
+  onSidebarTreeClick(event) {
     // right-clicks are not handled here
     if (event.button == 2) {
       return;
@@ -1496,12 +1500,7 @@ export var PlacesUIUtils = {
       event.originalTarget.localName == "treechildren"
     ) {
       tree.view.selection.select(cell.row);
-      this.openMultipleLinksInTabs(
-        tree.selectedNode,
-        event,
-        tree,
-        updateTelemetryFn
-      );
+      this.openMultipleLinksInTabs(tree.selectedNode, event, tree);
     } else if (
       !mouseInGutter &&
       !isContainer &&
@@ -1511,21 +1510,15 @@ export var PlacesUIUtils = {
       // do this *before* attempting to load the link since openURL uses
       // selection as an indication of which link to load.
       tree.view.selection.select(cell.row);
-      if (updateTelemetryFn) {
-        updateTelemetryFn([tree.selectedNode]);
-      }
       this.openNodeWithEvent(tree.selectedNode, event);
     }
   },
 
-  onSidebarTreeKeyPress(event, updateTelemetryFn = null) {
+  onSidebarTreeKeyPress(event) {
     let node = event.target.selectedNode;
     if (node) {
       if (event.keyCode == event.DOM_VK_RETURN) {
         PlacesUIUtils.openNodeWithEvent(node, event);
-        if (updateTelemetryFn) {
-          updateTelemetryFn([node]);
-        }
       }
     }
   },
@@ -1734,7 +1727,7 @@ export var PlacesUIUtils = {
       event.target.getAttribute("data-usercontextid")
     );
     let triggerNode = this.lastContextMenuTriggerNode;
-    let isManaged = !!triggerNode.closest("#managed-bookmarks");
+    let isManaged = !!triggerNode?.closest("#managed-bookmarks");
     if (isManaged) {
       let window = triggerNode.ownerGlobal;
       window.openTrustedLinkIn(triggerNode.link, "tab", { userContextId });
@@ -1840,21 +1833,17 @@ export var PlacesUIUtils = {
           );
           break;
         case "placesCmd_open:privatewindow":
-          window.openUILinkIn(this.triggerNode.link, "window", {
-            triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
+          window.openTrustedLinkIn(this.triggerNode.link, "window", {
             private: true,
           });
           break;
         case "placesCmd_open:window":
-          window.openUILinkIn(this.triggerNode.link, "window", {
-            triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
+          window.openTrustedLinkIn(this.triggerNode.link, "window", {
             private: false,
           });
           break;
         case "placesCmd_open:tab": {
-          window.openUILinkIn(this.triggerNode.link, "tab", {
-            triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
-          });
+          window.openTrustedLinkIn(this.triggerNode.link, "tab");
         }
       }
     },

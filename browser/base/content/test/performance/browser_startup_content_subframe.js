@@ -39,14 +39,10 @@ const known_scripts = {
 
     // General utilities
     "resource://gre/modules/AppConstants.sys.mjs",
-    "resource://gre/modules/DeferredTask.sys.mjs",
     "resource://gre/modules/XPCOMUtils.sys.mjs",
 
     // Logging related
     "resource://gre/modules/Log.sys.mjs",
-
-    // Browser front-end
-    "resource:///actors/PageStyleChild.jsm",
 
     // Telemetry
     "resource://gre/modules/TelemetryControllerBase.sys.mjs", // bug 1470339

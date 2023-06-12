@@ -159,12 +159,12 @@ class WorkerPrivate final
 
   enum LoadGroupBehavior { InheritLoadGroup, OverrideLoadGroup };
 
-  static nsresult GetLoadInfo(JSContext* aCx, nsPIDOMWindowInner* aWindow,
-                              WorkerPrivate* aParent,
-                              const nsAString& aScriptURL, bool aIsChromeWorker,
-                              LoadGroupBehavior aLoadGroupBehavior,
-                              WorkerKind aWorkerKind,
-                              WorkerLoadInfo* aLoadInfo);
+  static nsresult GetLoadInfo(
+      JSContext* aCx, nsPIDOMWindowInner* aWindow, WorkerPrivate* aParent,
+      const nsAString& aScriptURL, const enum WorkerType& aWorkerType,
+      const RequestCredentials& aCredentials, bool aIsChromeWorker,
+      LoadGroupBehavior aLoadGroupBehavior, WorkerKind aWorkerKind,
+      WorkerLoadInfo* aLoadInfo);
 
   void Traverse(nsCycleCollectionTraversalCallback& aCb);
 
@@ -1159,9 +1159,9 @@ class WorkerPrivate final
 
   friend class WorkerEventTarget;
 
-  bool RegisterShutdownTask(nsITargetShutdownTask* aTask);
+  nsresult RegisterShutdownTask(nsITargetShutdownTask* aTask);
 
-  bool UnregisterShutdownTask(nsITargetShutdownTask* aTask);
+  nsresult UnregisterShutdownTask(nsITargetShutdownTask* aTask);
 
   // Internal logic to dispatch a runnable. This is separate from Dispatch()
   // to allow runnables to be atomically dispatched in bulk.
@@ -1495,8 +1495,7 @@ class WorkerPrivate final
 
   nsTArray<nsCOMPtr<nsITargetShutdownTask>> mShutdownTasks
       MOZ_GUARDED_BY(mMutex);
-  bool mRunShutdownTasksStarted MOZ_GUARDED_BY(mMutex) = false;
-  bool mRunShutdownTasksFinished MOZ_GUARDED_BY(mMutex) = false;
+  bool mShutdownTasksRun MOZ_GUARDED_BY(mMutex) = false;
 };
 
 class AutoSyncLoopHolder {

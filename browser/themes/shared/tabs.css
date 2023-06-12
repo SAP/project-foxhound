@@ -51,6 +51,9 @@
   --tab-loading-fill: #0A84FF;
   --tab-overflow-pinned-tabs-width: 0px;
   padding-inline: var(--tab-overflow-pinned-tabs-width) 0;
+  /* Use a bigger flex value than the searchbar to prevent it from
+   * taking all the toolbar space. */
+  -moz-box-flex: 1000;
 }
 
 #tabbrowser-tabpanels {
@@ -645,6 +648,7 @@ toolbar[brighttext] {
   background: url(chrome://browser/skin/tabbrowser/tab-drag-indicator.svg) no-repeat center;
   position: relative;
   z-index: 2;
+  pointer-events: none;
 }
 
 /* Drag space */

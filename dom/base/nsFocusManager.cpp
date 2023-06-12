@@ -55,6 +55,7 @@
 #include "mozilla/dom/HTMLSlotElement.h"
 #include "mozilla/dom/BrowserBridgeChild.h"
 #include "mozilla/dom/Text.h"
+#include "mozilla/dom/XULPopupElement.h"
 #include "mozilla/dom/WindowGlobalParent.h"
 #include "mozilla/dom/WindowGlobalChild.h"
 #include "mozilla/EventDispatcher.h"
@@ -379,8 +380,7 @@ nsFocusManager::GetActiveBrowsingContext(BrowsingContext** aBrowsingContext) {
 void nsFocusManager::FocusWindow(nsPIDOMWindowOuter* aWindow,
                                  CallerType aCallerType) {
   if (RefPtr<nsFocusManager> fm = sInstance) {
-    fm->SetFocusedWindowWithCallerType(aWindow, aCallerType,
-                                       sInstance->GenerateFocusActionId());
+    fm->SetFocusedWindowWithCallerType(aWindow, aCallerType);
   }
 }
 
@@ -401,19 +401,19 @@ nsFocusManager::GetFocusedContentBrowsingContext(
 }
 
 nsresult nsFocusManager::SetFocusedWindowWithCallerType(
-    mozIDOMWindowProxy* aWindowToFocus, CallerType aCallerType,
-    uint64_t aActionId) {
-  LOGFOCUS(("<<SetFocusedWindow begin actionid: %" PRIu64 ">>", aActionId));
+    mozIDOMWindowProxy* aWindowToFocus, CallerType aCallerType) {
+  LOGFOCUS(("<<SetFocusedWindow begin>>"));
 
   nsCOMPtr<nsPIDOMWindowOuter> windowToFocus =
       nsPIDOMWindowOuter::From(aWindowToFocus);
   NS_ENSURE_TRUE(windowToFocus, NS_ERROR_FAILURE);
 
   nsCOMPtr<Element> frameElement = windowToFocus->GetFrameElementInternal();
+  Maybe<uint64_t> actionIdFromSetFocusInner;
   if (frameElement) {
     // pass false for aFocusChanged so that the caret does not get updated
     // and scrolling does not occur.
-    SetFocusInner(frameElement, 0, false, true, aActionId);
+    actionIdFromSetFocusInner = SetFocusInner(frameElement, 0, false, true);
   } else {
     // this is a top-level window. If the window has a child frame focused,
     // clear the focus. Otherwise, focus should already be in this frame, or
@@ -427,19 +427,21 @@ nsresult nsFocusManager::SetFocusedWindowWithCallerType(
   }
 
   nsCOMPtr<nsPIDOMWindowOuter> rootWindow = windowToFocus->GetPrivateRoot();
+  const uint64_t actionId = actionIdFromSetFocusInner.isSome()
+                                ? actionIdFromSetFocusInner.value()
+                                : sInstance->GenerateFocusActionId();
   if (rootWindow) {
-    RaiseWindow(rootWindow, aCallerType, aActionId);
+    RaiseWindow(rootWindow, aCallerType, actionId);
   }
 
-  LOGFOCUS(("<<SetFocusedWindow end actionid: %" PRIu64 ">>", aActionId));
+  LOGFOCUS(("<<SetFocusedWindow end actionid: %" PRIu64 ">>", actionId));
 
   return NS_OK;
 }
 
 NS_IMETHODIMP nsFocusManager::SetFocusedWindow(
     mozIDOMWindowProxy* aWindowToFocus) {
-  return SetFocusedWindowWithCallerType(aWindowToFocus, CallerType::System,
-                                        GenerateFocusActionId());
+  return SetFocusedWindowWithCallerType(aWindowToFocus, CallerType::System);
 }
 
 NS_IMETHODIMP
@@ -469,7 +471,7 @@ nsFocusManager::SetFocus(Element* aElement, uint32_t aFlags) {
 
   NS_ENSURE_ARG(aElement);
 
-  SetFocusInner(aElement, aFlags, true, true, GenerateFocusActionId());
+  SetFocusInner(aElement, aFlags, true, true);
 
   LOGFOCUS(("<<SetFocus end>>"));
 
@@ -542,7 +544,7 @@ nsFocusManager::MoveFocus(mozIDOMWindowProxy* aWindow, Element* aStartElement,
     // would be a problem because the caret would move to the beginning of the
     // focused link making it impossible to navigate the caret over a link.
     SetFocusInner(MOZ_KnownLive(newFocus->AsElement()), aFlags,
-                  aType != MOVEFOCUS_CARET, true, GenerateFocusActionId());
+                  aType != MOVEFOCUS_CARET, true);
     *aElement = do_AddRef(newFocus->AsElement()).take();
   } else if (aType == MOVEFOCUS_ROOT || aType == MOVEFOCUS_CARET) {
     // no content was found, so clear the focus for these two types.
@@ -568,7 +570,7 @@ nsFocusManager::ClearFocus(mozIDOMWindowProxy* aWindow) {
     RefPtr<BrowsingContext> bc = window->GetBrowsingContext();
     bool isAncestor = (GetFocusedBrowsingContext() != bc);
     uint64_t actionId = GenerateFocusActionId();
-    if (Blur(bc, nullptr, isAncestor, true, actionId)) {
+    if (Blur(bc, nullptr, isAncestor, true, false, actionId)) {
       // if we are clearing the focus on an ancestor of the focused window,
       // the ancestor will become the new focused window, so focus it
       if (isAncestor) {
@@ -830,7 +832,7 @@ void nsFocusManager::WindowLowered(mozIDOMWindowProxy* aWindow,
   }
 
   if (mFocusedWindow) {
-    Blur(nullptr, nullptr, true, true, aActionId);
+    Blur(nullptr, nullptr, true, true, false, aActionId);
   }
 
   mWindowBeingLowered = nullptr;
@@ -1451,14 +1453,35 @@ void LogWarningFullscreenWindowRaise(Element* aElement) {
       windowGlobalParent->GetDocumentURI());
 }
 
-void nsFocusManager::SetFocusInner(Element* aNewContent, int32_t aFlags,
-                                   bool aFocusChanged, bool aAdjustWidget,
-                                   uint64_t aActionId) {
+// Ensure that when an embedded popup with a noautofocus attribute
+// like a date picker is opened and focused, the parent page does not blur
+static bool IsEmeddededInNoautofocusPopup(BrowsingContext& aBc) {
+  auto* embedder = aBc.GetEmbedderElement();
+  if (!embedder) {
+    return false;
+  }
+  nsIFrame* f = embedder->GetPrimaryFrame();
+  if (!f || !f->HasAnyStateBits(NS_FRAME_IN_POPUP)) {
+    return false;
+  }
+
+  nsIFrame* menuPopup =
+      nsLayoutUtils::GetClosestFrameOfType(f, LayoutFrameType::MenuPopup);
+  MOZ_ASSERT(menuPopup, "NS_FRAME_IN_POPUP lied?");
+  return static_cast<nsMenuPopupFrame*>(menuPopup)
+      ->PopupElement()
+      .GetXULBoolAttr(nsGkAtoms::noautofocus);
+}
+
+Maybe<uint64_t> nsFocusManager::SetFocusInner(Element* aNewContent,
+                                              int32_t aFlags,
+                                              bool aFocusChanged,
+                                              bool aAdjustWidget) {
   // if the element is not focusable, just return and leave the focus as is
   RefPtr<Element> elementToFocus =
       FlushAndCheckIfFocusable(aNewContent, aFlags);
   if (!elementToFocus) {
-    return;
+    return Nothing();
   }
 
   const RefPtr<BrowsingContext> focusedBrowsingContext =
@@ -1494,7 +1517,7 @@ void nsFocusManager::SetFocusInner(Element* aNewContent, int32_t aFlags,
   // focused rather than the frame it is in.
   if (!newWindow || (newBrowsingContext == GetFocusedBrowsingContext() &&
                      elementToFocus == mFocusedElement)) {
-    return;
+    return Nothing();
   }
 
   MOZ_ASSERT(newBrowsingContext);
@@ -1511,7 +1534,7 @@ void nsFocusManager::SetFocusInner(Element* aNewContent, int32_t aFlags,
       BrowsingContext* walk = focusedBrowsingContext;
       while (walk) {
         if (walk == bc) {
-          return;
+          return Nothing();
         }
         walk = walk->GetParent();
       }
@@ -1528,13 +1551,13 @@ void nsFocusManager::SetFocusInner(Element* aNewContent, int32_t aFlags,
     bool inUnload;
     docShell->GetIsInUnload(&inUnload);
     if (inUnload) {
-      return;
+      return Nothing();
     }
 
     bool beingDestroyed;
     docShell->IsBeingDestroyed(&beingDestroyed);
     if (beingDestroyed) {
-      return;
+      return Nothing();
     }
 
     BrowsingContext* bc = docShell->GetBrowsingContext();
@@ -1549,7 +1572,7 @@ void nsFocusManager::SetFocusInner(Element* aNewContent, int32_t aFlags,
       do {
         bc = bc->GetParent();
         if (bc && bc->IsDiscarded()) {
-          return;
+          return Nothing();
         }
       } while (bc && !bc->IsInProcess());
       if (bc) {
@@ -1595,12 +1618,12 @@ void nsFocusManager::SetFocusInner(Element* aNewContent, int32_t aFlags,
     }
 
     if (!focusedPrincipal || !newPrincipal) {
-      return;
+      return Nothing();
     }
 
     if (!focusedPrincipal->Subsumes(newPrincipal)) {
       NS_WARNING("Not allowed to focus the new window!");
-      return;
+      return Nothing();
     }
   }
 
@@ -1635,10 +1658,10 @@ void nsFocusManager::SetFocusInner(Element* aNewContent, int32_t aFlags,
 
   // Exit fullscreen if a website focuses another window
   if (StaticPrefs::full_screen_api_exit_on_windowRaise() &&
-      !isElementInActiveWindow && (aFlags & FLAG_RAISE) &&
-      (aFlags & FLAG_NONSYSTEMCALLER)) {
+      !isElementInActiveWindow && (aFlags & FLAG_RAISE)) {
     if (XRE_IsParentProcess()) {
       if (Document* doc = mActiveWindow ? mActiveWindow->GetDoc() : nullptr) {
+        Document::ClearPendingFullscreenRequests(doc);
         if (doc->GetFullscreenElement()) {
           LogWarningFullscreenWindowRaise(mFocusedElement);
           Document::AsyncExitFullscreen(doc);
@@ -1649,9 +1672,11 @@ void nsFocusManager::SetFocusInner(Element* aNewContent, int32_t aFlags,
       if (activeBrowsingContext) {
         nsIDocShell* shell = activeBrowsingContext->GetDocShell();
         if (shell) {
-          Document* doc = shell->GetDocument();
-          if (doc && doc->GetFullscreenElement()) {
-            Document::AsyncExitFullscreen(doc);
+          if (Document* doc = shell->GetDocument()) {
+            Document::ClearPendingFullscreenRequests(doc);
+            if (doc->GetFullscreenElement()) {
+              Document::AsyncExitFullscreen(doc);
+            }
           }
         } else {
           mozilla::dom::ContentChild* contentChild =
@@ -1707,11 +1732,12 @@ void nsFocusManager::SetFocusInner(Element* aNewContent, int32_t aFlags,
   LOGFOCUS((" Flags: %x Current Window: %p New Window: %p Current Element: %p",
             aFlags, mFocusedWindow.get(), newWindow.get(),
             mFocusedElement.get()));
+  const uint64_t actionId = GenerateFocusActionId();
   LOGFOCUS(
       (" In Active Window: %d Moves to different BrowsingContext: %d "
        "SendFocus: %d actionid: %" PRIu64,
        isElementInActiveWindow, focusMovesToDifferentBC, sendFocusEvent,
-       aActionId));
+       actionId));
 
   if (sendFocusEvent) {
     Maybe<BlurredElementInfo> blurredInfo;
@@ -1737,41 +1763,46 @@ void nsFocusManager::SetFocusInner(Element* aNewContent, int32_t aFlags,
               ? GetCommonAncestor(newWindow, focusedBrowsingContext)
               : nullptr;
 
-      bool needToClearFocusedElement = false;
-      if (focusedBrowsingContext->IsChrome()) {
-        // Always reset focused element if focus is currently in chrome window.
-        needToClearFocusedElement = true;
-      } else {
-        // Only reset focused element if focus moves within the same top-level
-        // content window.
-        if (focusedBrowsingContext->Top() == browsingContextToFocus->Top()) {
-          // XXX for the case that we try to focus an
-          // already-focused-remote-frame, we would still send blur and focus
-          // IPC to it, but they will not generate blur or focus event, we don't
-          // want to reset activeElement on the remote frame.
-          needToClearFocusedElement = (focusMovesToDifferentBC ||
-                                       focusedBrowsingContext->IsInProcess());
+      const bool needToClearFocusedElement = [&] {
+        if (focusedBrowsingContext->IsChrome()) {
+          // Always reset focused element if focus is currently in chrome
+          // window, unless we're moving focus to a popup.
+          return !IsEmeddededInNoautofocusPopup(*browsingContextToFocus);
         }
-      }
+        if (focusedBrowsingContext->Top() != browsingContextToFocus->Top()) {
+          // Only reset focused element if focus moves within the same top-level
+          // content window.
+          return false;
+        }
+        // XXX for the case that we try to focus an
+        // already-focused-remote-frame, we would still send blur and focus
+        // IPC to it, but they will not generate blur or focus event, we don't
+        // want to reset activeElement on the remote frame.
+        return focusMovesToDifferentBC || focusedBrowsingContext->IsInProcess();
+      }();
+
+      const bool remainActive =
+          focusMovesToDifferentBC &&
+          IsEmeddededInNoautofocusPopup(*browsingContextToFocus);
 
       // TODO: MOZ_KnownLive is required due to bug 1770680
       if (!Blur(MOZ_KnownLive(needToClearFocusedElement
                                   ? focusedBrowsingContext.get()
                                   : nullptr),
                 commonAncestor, focusMovesToDifferentBC, aAdjustWidget,
-                aActionId, elementToFocus)) {
-        return;
+                remainActive, actionId, elementToFocus)) {
+        return Some(actionId);
       }
     }
 
     Focus(newWindow, elementToFocus, aFlags, focusMovesToDifferentBC,
-          aFocusChanged, false, aAdjustWidget, aActionId, blurredInfo);
+          aFocusChanged, false, aAdjustWidget, actionId, blurredInfo);
   } else {
     // otherwise, for inactive windows and when the caller cannot steal the
     // focus, update the node in the window, and  raise the window if desired.
     if (allowFrameSwitch) {
       AdjustWindowFocus(newBrowsingContext, true, IsWindowVisible(newWindow),
-                        aActionId);
+                        actionId);
     }
 
     // set the focus node and method as needed
@@ -1803,7 +1834,7 @@ void nsFocusManager::SetFocusInner(Element* aNewContent, int32_t aFlags,
           RaiseWindow(outerWindow,
                       aFlags & FLAG_NONSYSTEMCALLER ? CallerType::NonSystem
                                                     : CallerType::System,
-                      aActionId);
+                      actionId);
         } else {
           mozilla::dom::ContentChild* contentChild =
               mozilla::dom::ContentChild::GetSingleton();
@@ -1812,11 +1843,12 @@ void nsFocusManager::SetFocusInner(Element* aNewContent, int32_t aFlags,
                                         aFlags & FLAG_NONSYSTEMCALLER
                                             ? CallerType::NonSystem
                                             : CallerType::System,
-                                        aActionId);
+                                        actionId);
         }
       }
     }
   }
+  return Some(actionId);
 }
 
 static already_AddRefed<BrowsingContext> GetParentIgnoreChromeBoundary(
@@ -2003,7 +2035,7 @@ bool nsFocusManager::AdjustInProcessWindowFocus(
       RefPtr<nsFrameLoader> loader = loaderOwner->GetFrameLoader();
       if (loader && loader->IsRemoteFrame() &&
           GetFocusedBrowsingContext() == bc) {
-        Blur(nullptr, nullptr, true, true, aActionId);
+        Blur(nullptr, nullptr, true, true, false, aActionId);
       }
     }
   }
@@ -2090,27 +2122,6 @@ Element* nsFocusManager::FlushAndCheckIfFocusable(Element* aElement,
     return nullptr;
   }
 
-  // the root content can always be focused,
-  // except in userfocusignored context.
-  if (aElement == doc->GetRootElement()) {
-    return aElement;
-  }
-
-  nsIFrame* frame = aElement->GetPrimaryFrame();
-  if (!frame) {
-    LOGCONTENT("Cannot focus %s as it has no frame", aElement)
-    return nullptr;
-  }
-
-  if (aElement->IsHTMLElement(nsGkAtoms::area)) {
-    // HTML areas do not have their own frame, and the img frame we get from
-    // GetPrimaryFrame() is not relevant as to whether it is focusable or
-    // not, so we have to do all the relevant checks manually for them.
-    return frame->IsVisibleConsideringAncestors() && aElement->IsFocusable()
-               ? aElement
-               : nullptr;
-  }
-
   // If this is an iframe that doesn't have an in-process subdocument, it is
   // either an OOP iframe or an in-process iframe without lazy about:blank
   // creation having taken place. In the OOP case, iframe is always focusable.
@@ -2132,43 +2143,18 @@ Element* nsFocusManager::FlushAndCheckIfFocusable(Element* aElement,
     }
   }
 
-  if (frame->IsFocusable(aFlags & FLAG_BYMOUSE)) {
-    return aElement;
-  }
-
-  if (ShadowRoot* root = aElement->GetShadowRoot()) {
-    if (root->DelegatesFocus()) {
-      // If focus target is a shadow-including inclusive ancestor of the
-      // currently focused area of a top-level browsing context's DOM anchor,
-      // then return the already-focused element.
-      if (nsPIDOMWindowInner* innerWindow =
-              aElement->OwnerDoc()->GetInnerWindow()) {
-        if (Element* focusedElement = innerWindow->GetFocusedElement()) {
-          if (focusedElement->IsShadowIncludingInclusiveDescendantOf(
-                  aElement)) {
-            return focusedElement;
-          }
-        }
-      }
-
-      if (Element* firstFocusable =
-              root->GetFocusDelegate(aFlags & FLAG_BYMOUSE)) {
-        return firstFocusable;
-      }
-    }
-  }
-
-  return nullptr;
+  return GetTheFocusableArea(aElement, aFlags);
 }
 
 bool nsFocusManager::Blur(BrowsingContext* aBrowsingContextToClear,
                           BrowsingContext* aAncestorBrowsingContextToFocus,
                           bool aIsLeavingDocument, bool aAdjustWidget,
-                          uint64_t aActionId, Element* aElementToFocus) {
+                          bool aRemainActive, uint64_t aActionId,
+                          Element* aElementToFocus) {
   if (XRE_IsParentProcess()) {
     return BlurImpl(aBrowsingContextToClear, aAncestorBrowsingContextToFocus,
-                    aIsLeavingDocument, aAdjustWidget, aElementToFocus,
-                    aActionId);
+                    aIsLeavingDocument, aAdjustWidget, aRemainActive,
+                    aElementToFocus, aActionId);
   }
   mozilla::dom::ContentChild* contentChild =
       mozilla::dom::ContentChild::GetSingleton();
@@ -2211,8 +2197,8 @@ bool nsFocusManager::Blur(BrowsingContext* aBrowsingContextToClear,
                                           true);
     }
     return BlurImpl(aBrowsingContextToClear, aAncestorBrowsingContextToFocus,
-                    aIsLeavingDocument, aAdjustWidget, aElementToFocus,
-                    aActionId);
+                    aIsLeavingDocument, aAdjustWidget, aRemainActive,
+                    aElementToFocus, aActionId);
   }
   if (aBrowsingContextToClear && aBrowsingContextToClear->IsInProcess()) {
     nsPIDOMWindowOuter* windowToClear = aBrowsingContextToClear->GetDOMWindow();
@@ -2248,13 +2234,15 @@ void nsFocusManager::BlurFromOtherProcess(
     return;
   }
   BlurImpl(aBrowsingContextToClear, aAncestorBrowsingContextToFocus,
-           aIsLeavingDocument, aAdjustWidget, nullptr, aActionId);
+           aIsLeavingDocument, aAdjustWidget, /* aRemainActive = */ false,
+           nullptr, aActionId);
 }
 
 bool nsFocusManager::BlurImpl(BrowsingContext* aBrowsingContextToClear,
                               BrowsingContext* aAncestorBrowsingContextToFocus,
                               bool aIsLeavingDocument, bool aAdjustWidget,
-                              Element* aElementToFocus, uint64_t aActionId) {
+                              bool aRemainActive, Element* aElementToFocus,
+                              uint64_t aActionId) {
   LOGFOCUS(("<<Blur begin actionid: %" PRIu64 ">>", aActionId));
 
   // hold a reference to the focused content, which may be null
@@ -2354,36 +2342,39 @@ bool nsFocusManager::BlurImpl(BrowsingContext* aBrowsingContextToClear,
       NotifyFocusStateChange(element, aElementToFocus, 0, false, false);
     }
 
-    bool windowBeingLowered = !aBrowsingContextToClear &&
-                              !aAncestorBrowsingContextToFocus &&
-                              aIsLeavingDocument && aAdjustWidget;
-    // if the object being blurred is a remote browser, deactivate remote
-    // content
-    if (BrowserParent* remote = BrowserParent::GetFrom(element)) {
-      MOZ_ASSERT(XRE_IsParentProcess());
-      // Let's deactivate all remote browsers.
-      BrowsingContext* topLevelBrowsingContext = remote->GetBrowsingContext();
-      topLevelBrowsingContext->PreOrderWalk([&](BrowsingContext* aContext) {
-        if (WindowGlobalParent* windowGlobalParent =
-                aContext->Canonical()->GetCurrentWindowGlobal()) {
-          if (RefPtr<BrowserParent> browserParent =
-                  windowGlobalParent->GetBrowserParent()) {
-            browserParent->Deactivate(windowBeingLowered, aActionId);
-            LOGFOCUS(
-                ("%s remote browser deactivated %p, %d, actionid: %" PRIu64,
-                 aContext == topLevelBrowsingContext ? "Top-level"
-                                                     : "OOP iframe",
-                 browserParent.get(), windowBeingLowered, aActionId));
+    if (!aRemainActive) {
+      bool windowBeingLowered = !aBrowsingContextToClear &&
+                                !aAncestorBrowsingContextToFocus &&
+                                aIsLeavingDocument && aAdjustWidget;
+      // If the object being blurred is a remote browser, deactivate remote
+      // content
+      if (BrowserParent* remote = BrowserParent::GetFrom(element)) {
+        MOZ_ASSERT(XRE_IsParentProcess());
+        // Let's deactivate all remote browsers.
+        BrowsingContext* topLevelBrowsingContext = remote->GetBrowsingContext();
+        topLevelBrowsingContext->PreOrderWalk([&](BrowsingContext* aContext) {
+          if (WindowGlobalParent* windowGlobalParent =
+                  aContext->Canonical()->GetCurrentWindowGlobal()) {
+            if (RefPtr<BrowserParent> browserParent =
+                    windowGlobalParent->GetBrowserParent()) {
+              browserParent->Deactivate(windowBeingLowered, aActionId);
+              LOGFOCUS(
+                  ("%s remote browser deactivated %p, %d, actionid: %" PRIu64,
+                   aContext == topLevelBrowsingContext ? "Top-level"
+                                                       : "OOP iframe",
+                   browserParent.get(), windowBeingLowered, aActionId));
+            }
           }
-        }
-      });
-    }
+        });
+      }
 
-    // Same as above but for out-of-process iframes
-    if (BrowserBridgeChild* bbc = BrowserBridgeChild::GetFrom(element)) {
-      bbc->Deactivate(windowBeingLowered, aActionId);
-      LOGFOCUS(("Out-of-process iframe deactivated %p, %d, actionid: %" PRIu64,
-                bbc, windowBeingLowered, aActionId));
+      // Same as above but for out-of-process iframes
+      if (BrowserBridgeChild* bbc = BrowserBridgeChild::GetFrom(element)) {
+        bbc->Deactivate(windowBeingLowered, aActionId);
+        LOGFOCUS(
+            ("Out-of-process iframe deactivated %p, %d, actionid: %" PRIu64,
+             bbc, windowBeingLowered, aActionId));
+      }
     }
   }
 
@@ -3676,7 +3667,8 @@ nsresult nsFocusManager::DetermineElementToMoveFocus(
         if (tookFocus) {
           RefPtr<BrowsingContext> focusedBC = GetFocusedBrowsingContext();
           if (focusedBC && focusedBC->IsInProcess()) {
-            Blur(focusedBC, nullptr, true, true, GenerateFocusActionId());
+            Blur(focusedBC, nullptr, true, true, false,
+                 GenerateFocusActionId());
           } else {
             nsCOMPtr<nsPIDOMWindowOuter> window = docShell->GetWindow();
             window->SetFocusedElement(nullptr);
@@ -5371,6 +5363,69 @@ bool nsFocusManager::CanSkipFocus(nsIContent* aContent) {
   }
 
   return false;
+}
+
+/* static */
+Element* nsFocusManager::GetTheFocusableArea(Element* aTarget,
+                                             uint32_t aFlags) {
+  MOZ_ASSERT(aTarget);
+  nsIFrame* frame = aTarget->GetPrimaryFrame();
+  if (!frame) {
+    return nullptr;
+  }
+
+  // If focus target is the document element of its Document.
+  if (aTarget == aTarget->OwnerDoc()->GetRootElement()) {
+    // the root content can always be focused,
+    // except in userfocusignored context.
+    return aTarget;
+  }
+
+  // If focus target is an area element with one or more shapes that are
+  // focusable areas.
+  if (aTarget->IsHTMLElement(nsGkAtoms::area)) {
+    // HTML areas do not have their own frame, and the img frame we get from
+    // GetPrimaryFrame() is not relevant as to whether it is focusable or
+    // not, so we have to do all the relevant checks manually for them.
+    return frame->IsVisibleConsideringAncestors() && aTarget->IsFocusable()
+               ? aTarget
+               : nullptr;
+  }
+
+  // For these 3 steps mentioned in the spec
+  //   1. If focus target is an element with one or more scrollable regions that
+  //   are focusable areas
+  //   2. If focus target is a navigable
+  //   3. If focus target is a navigable container with a non-null content
+  //   navigable
+  // nsIFrame::IsFocusable will effectively perform the checks for them.
+  if (frame->IsFocusable(aFlags & FLAG_BYMOUSE)) {
+    return aTarget;
+  }
+
+  // If focus target is a shadow host whose shadow root's delegates focus is
+  // true
+  if (ShadowRoot* root = aTarget->GetShadowRoot()) {
+    if (root->DelegatesFocus()) {
+      // If focus target is a shadow-including inclusive ancestor of the
+      // currently focused area of a top-level browsing context's DOM anchor,
+      // then return the already-focused element.
+      if (nsPIDOMWindowInner* innerWindow =
+              aTarget->OwnerDoc()->GetInnerWindow()) {
+        if (Element* focusedElement = innerWindow->GetFocusedElement()) {
+          if (focusedElement->IsShadowIncludingInclusiveDescendantOf(aTarget)) {
+            return focusedElement;
+          }
+        }
+      }
+
+      if (Element* firstFocusable =
+              root->GetFocusDelegate(aFlags & FLAG_BYMOUSE)) {
+        return firstFocusable;
+      }
+    }
+  }
+  return nullptr;
 }
 
 nsresult NS_NewFocusManager(nsIFocusManager** aResult) {

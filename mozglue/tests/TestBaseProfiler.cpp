@@ -4821,9 +4821,6 @@ void TestProfiler() {
   TestProfilerDependencies();
 
   {
-    printf("profiler_init()...\n");
-    AUTO_BASE_PROFILER_INIT;
-
     MOZ_RELEASE_ASSERT(!baseprofiler::profiler_is_active());
     MOZ_RELEASE_ASSERT(!baseprofiler::profiler_thread_is_being_profiled());
     MOZ_RELEASE_ASSERT(!baseprofiler::profiler_thread_is_sleeping());
@@ -5615,7 +5612,8 @@ void TestPredefinedMarkers() {
 
   MOZ_RELEASE_ASSERT(mozilla::baseprofiler::AddMarkerToBuffer(
       buffer, std::string_view("media"), mozilla::baseprofiler::category::OTHER,
-      {}, mozilla::baseprofiler::markers::VideoFallingBehindMarker{}, 123, 456));
+      {}, mozilla::baseprofiler::markers::VideoFallingBehindMarker{}, 123,
+      456));
 
 #  ifdef DEBUG
   buffer.Dump();
@@ -5722,8 +5720,13 @@ int main()
   TestProgressLogger();
   // Note that there are two `TestProfiler{,Markers}` functions above, depending
   // on whether MOZ_GECKO_PROFILER is #defined.
-  TestProfiler();
-  TestProfilerMarkers();
+  {
+    printf("profiler_init()...\n");
+    AUTO_BASE_PROFILER_INIT;
+
+    TestProfiler();
+    TestProfilerMarkers();
+  }
 
   return 0;
 }

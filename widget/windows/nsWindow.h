@@ -97,6 +97,11 @@ IVirtualDesktopManager : public IUnknown {
       __RPC__in HWND topLevelWindow, __RPC__in REFGUID desktopId) = 0;
 };
 
+#ifdef __MINGW32__
+__CRT_UUID_DECL(IVirtualDesktopManager, 0xa5cd92ff, 0x29be, 0x454c, 0x8d, 0x04,
+                0xd8, 0x28, 0x79, 0xfb, 0x3f, 0x1b)
+#endif
+
 /**
  * Native WIN32 window wrapper.
  */
@@ -281,7 +286,8 @@ class nsWindow final : public nsBaseWidget {
   void UpdateThemeGeometries(
       const nsTArray<ThemeGeometry>& aThemeGeometries) override;
   uint32_t GetMaxTouchPoints() const override;
-  void SetWindowClass(const nsAString& xulWinType) override;
+  void SetWindowClass(const nsAString& xulWinType, const nsAString& xulWinClass,
+                      const nsAString& xulWinName) override;
 
   /**
    * Event helpers

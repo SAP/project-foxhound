@@ -344,16 +344,16 @@ for (let entry of ignorableWhitelist) {
 }
 
 if (!isDevtools) {
-  // services/sync/modules/service.js
+  // services/sync/modules/service.sys.mjs
   for (let module of [
-    "addons.js",
-    "bookmarks.js",
-    "forms.js",
-    "history.js",
-    "passwords.js",
-    "prefs.js",
-    "tabs.js",
-    "extension-storage.js",
+    "addons.sys.mjs",
+    "bookmarks.sys.mjs",
+    "forms.sys.mjs",
+    "history.sys.mjs",
+    "passwords.sys.mjs",
+    "prefs.sys.mjs",
+    "tabs.sys.mjs",
+    "extension-storage.sys.mjs",
   ]) {
     whitelist.add("resource://services-sync/engines/" + module);
   }
@@ -365,7 +365,9 @@ if (!isDevtools) {
 }
 
 if (AppConstants.MOZ_CODE_COVERAGE) {
-  whitelist.add("chrome://remote/content/marionette/PerTestCoverageUtils.jsm");
+  whitelist.add(
+    "chrome://remote/content/marionette/PerTestCoverageUtils.sys.mjs"
+  );
 }
 
 const gInterestingCategories = new Set([

@@ -9,14 +9,10 @@
 
 const EXPORTED_SYMBOLS = ["LoginTestUtils"];
 
-const { XPCOMUtils } = ChromeUtils.importESModule(
-  "resource://gre/modules/XPCOMUtils.sys.mjs"
-);
-
 const lazy = {};
 
-XPCOMUtils.defineLazyModuleGetters(lazy, {
-  RemoteSettings: "resource://services-settings/remote-settings.js",
+ChromeUtils.defineESModuleGetters(lazy, {
+  RemoteSettings: "resource://services-settings/remote-settings.sys.mjs",
 });
 
 let { Assert: AssertCls } = ChromeUtils.importESModule(
@@ -88,6 +84,15 @@ const LoginTestUtils = {
     Services.logins.addLogin(login);
     let [savedLogin] = await storageChangedPromised;
     return savedLogin;
+  },
+
+  async modifyLogin(oldLogin, newLogin) {
+    const storageChangedPromise = TestUtils.topicObserved(
+      "passwordmgr-storage-changed",
+      (_, data) => data == "modifyLogin"
+    );
+    Services.logins.modifyLogin(oldLogin, newLogin);
+    await storageChangedPromise;
   },
 
   resetGeneratedPasswordsCache() {

@@ -415,10 +415,13 @@ class AliasSet {
     // The malloc'd block that WasmArrayObject::data_ points at
     WasmArrayDataArea = 1 << 25,
 
-    Last = WasmArrayDataArea,
+    // The generation counter associated with the global object
+    GlobalGenerationCounter = 1 << 26,
+
+    Last = GlobalGenerationCounter,
 
     Any = Last | (Last - 1),
-    NumCategories = 26,
+    NumCategories = 27,
 
     // Indicates load or store.
     Store_ = 1 << 31
@@ -2289,12 +2292,52 @@ class WrappedFunction : public TempObject {
 
 enum class DOMObjectKind : uint8_t { Proxy, Native };
 
-class MCall : public MVariadicInstruction, public CallPolicy::Data {
- private:
+class MCallBase : public MVariadicInstruction, public CallPolicy::Data {
+ protected:
   // The callee, this, and the actual arguments are all operands of MCall.
   static const size_t CalleeOperandIndex = 0;
   static const size_t NumNonArgumentOperands = 1;
 
+  explicit MCallBase(Opcode op) : MVariadicInstruction(op) {}
+
+ public:
+  void initCallee(MDefinition* func) { initOperand(CalleeOperandIndex, func); }
+  MDefinition* getCallee() const { return getOperand(CalleeOperandIndex); }
+
+  void replaceCallee(MInstruction* newfunc) {
+    replaceOperand(CalleeOperandIndex, newfunc);
+  }
+
+  void addArg(size_t argnum, MDefinition* arg);
+
+  MDefinition* getArg(uint32_t index) const {
+    return getOperand(NumNonArgumentOperands + index);
+  }
+
+  // The number of stack arguments is the max between the number of formal
+  // arguments and the number of actual arguments. The number of stack
+  // argument includes the |undefined| padding added in case of underflow.
+  // Includes |this|.
+  uint32_t numStackArgs() const {
+    return numOperands() - NumNonArgumentOperands;
+  }
+  uint32_t paddedNumStackArgs() const {
+    if (JitStackValueAlignment > 1) {
+      return AlignBytes(numStackArgs(), JitStackValueAlignment);
+    }
+    return numStackArgs();
+  }
+
+  static size_t IndexOfThis() { return NumNonArgumentOperands; }
+  static size_t IndexOfArgument(size_t index) {
+    return NumNonArgumentOperands + index + 1;  // +1 to skip |this|.
+  }
+  static size_t IndexOfStackArg(size_t index) {
+    return NumNonArgumentOperands + index;
+  }
+};
+
+class MCall : public MCallBase {
  protected:
   // Monomorphic cache for MCalls with a single JSFunction target.
   WrappedFunction* target_;
@@ -2314,7 +2357,7 @@ class MCall : public MVariadicInstruction, public CallPolicy::Data {
 
   MCall(WrappedFunction* target, uint32_t numActualArgs, bool construct,
         bool ignoresReturnValue)
-      : MVariadicInstruction(classOpcode),
+      : MCallBase(classOpcode),
         target_(target),
         numActualArgs_(numActualArgs),
         construct_(construct),
@@ -2332,8 +2375,6 @@ class MCall : public MVariadicInstruction, public CallPolicy::Data {
                     bool ignoresReturnValue, bool isDOMCall,
                     mozilla::Maybe<DOMObjectKind> objectKind);
 
-  void initCallee(MDefinition* func) { initOperand(CalleeOperandIndex, func); }
-
   bool needsClassCheck() const { return needsClassCheck_; }
   void disableClassCheck() { needsClassCheck_ = false; }
 
@@ -2346,39 +2387,12 @@ class MCall : public MVariadicInstruction, public CallPolicy::Data {
     needsThisCheck_ = true;
   }
 
-  MDefinition* getCallee() const { return getOperand(CalleeOperandIndex); }
-  void replaceCallee(MInstruction* newfunc) {
-    replaceOperand(CalleeOperandIndex, newfunc);
-  }
-
-  void addArg(size_t argnum, MDefinition* arg);
-
-  MDefinition* getArg(uint32_t index) const {
-    return getOperand(NumNonArgumentOperands + index);
-  }
-
-  static size_t IndexOfThis() { return NumNonArgumentOperands; }
-  static size_t IndexOfArgument(size_t index) {
-    return NumNonArgumentOperands + index + 1;  // +1 to skip |this|.
-  }
-  static size_t IndexOfStackArg(size_t index) {
-    return NumNonArgumentOperands + index;
-  }
-
   // For monomorphic callsites.
   WrappedFunction* getSingleTarget() const { return target_; }
 
   bool isConstructing() const { return construct_; }
 
   bool ignoresReturnValue() const { return ignoresReturnValue_; }
-
-  // The number of stack arguments is the max between the number of formal
-  // arguments and the number of actual arguments. The number of stack
-  // argument includes the |undefined| padding added in case of underflow.
-  // Includes |this|.
-  uint32_t numStackArgs() const {
-    return numOperands() - NumNonArgumentOperands;
-  }
 
   // Does not include |this|.
   uint32_t numActualArgs() const { return numActualArgs_; }
@@ -2435,6 +2449,42 @@ class MCallDOMNative : public MCall {
   virtual bool isCallDOMNative() const override { return true; }
 
   virtual void computeMovable() override;
+};
+
+// Used to invoke a JSClass call/construct hook.
+class MCallClassHook : public MCallBase {
+  const JSNative target_;
+  bool constructing_ : 1;
+  bool ignoresReturnValue_ : 1;
+
+  MCallClassHook(JSNative target, bool constructing)
+      : MCallBase(classOpcode),
+        target_(target),
+        constructing_(constructing),
+        ignoresReturnValue_(false) {
+    setResultType(MIRType::Value);
+  }
+
+ public:
+  INSTRUCTION_HEADER(CallClassHook)
+  static MCallClassHook* New(TempAllocator& alloc, JSNative target,
+                             uint32_t argc, bool constructing);
+
+  JSNative target() const { return target_; }
+  bool isConstructing() const { return constructing_; }
+
+  uint32_t numActualArgs() const {
+    uint32_t thisAndNewTarget = 1 + constructing_;
+    MOZ_ASSERT(numStackArgs() >= thisAndNewTarget);
+    return numStackArgs() - thisAndNewTarget;
+  }
+
+  bool maybeCrossRealm() const { return true; }
+
+  bool ignoresReturnValue() const { return ignoresReturnValue_; }
+  void setIgnoresReturnValue() { ignoresReturnValue_ = true; }
+
+  bool possiblyCalls() const override { return true; }
 };
 
 // fun.apply(self, arguments)
@@ -3244,6 +3294,43 @@ class MInlineArgumentsSlice
   bool possiblyCalls() const override { return true; }
 };
 
+// Allocates a new BoundFunctionObject and calls
+// BoundFunctionObject::functionBindImpl. This instruction can have arbitrary
+// side-effects because the GetProperty calls for length/name can call into JS.
+class MBindFunction
+    : public MVariadicInstruction,
+      public MixPolicy<ObjectPolicy<0>, NoFloatPolicyAfter<1>>::Data {
+  CompilerGCPointer<JSObject*> templateObj_;
+
+  explicit MBindFunction(JSObject* templateObj)
+      : MVariadicInstruction(classOpcode), templateObj_(templateObj) {
+    setResultType(MIRType::Object);
+  }
+
+  // The target object is operand 0.
+  static const size_t NumNonArgumentOperands = 1;
+
+ public:
+  INSTRUCTION_HEADER(BindFunction)
+  static MBindFunction* New(TempAllocator& alloc, MDefinition* target,
+                            uint32_t argc, JSObject* templateObj);
+  NAMED_OPERANDS((0, target))
+
+  JSObject* templateObject() const { return templateObj_; }
+
+  MDefinition* getArg(uint32_t idx) const {
+    return getOperand(idx + NumNonArgumentOperands);
+  }
+  void initArg(size_t i, MDefinition* arg) {
+    initOperand(NumNonArgumentOperands + i, arg);
+  }
+  uint32_t numStackArgs() const {
+    return numOperands() - NumNonArgumentOperands;
+  }
+
+  bool possiblyCalls() const override { return true; }
+};
+
 class MToFPInstruction : public MUnaryInstruction, public ToDoublePolicy::Data {
  public:
   // Types of values which can be converted.
@@ -3802,49 +3889,6 @@ class MToNumberInt32 : public MUnaryInstruction, public ToInt32Policy::Data {
 #endif
 
   ALLOW_CLONE(MToNumberInt32)
-};
-
-// Applies ECMA's ToInteger on a primitive (either typed or untyped) and expects
-// the result to be precisely representable as an Int32, otherwise bails.
-//
-// NB: Negative zero doesn't lead to a bailout, but instead will be treated the
-// same as positive zero for this operation.
-//
-// If the input is not primitive at runtime, a bailout occurs. If the input
-// cannot be converted to an int32 without loss (i.e. 2e10 or Infinity) then a
-// bailout occurs.
-class MToIntegerInt32 : public MUnaryInstruction, public ToInt32Policy::Data {
-  explicit MToIntegerInt32(MDefinition* def)
-      : MUnaryInstruction(classOpcode, def) {
-    setResultType(MIRType::Int32);
-    setMovable();
-
-    // Guard unless the conversion is known to be non-effectful & non-throwing.
-    if (!def->definitelyType({MIRType::Undefined, MIRType::Null,
-                              MIRType::Boolean, MIRType::Int32, MIRType::Double,
-                              MIRType::Float32, MIRType::String})) {
-      setGuard();
-    }
-  }
-
- public:
-  INSTRUCTION_HEADER(ToIntegerInt32)
-  TRIVIAL_NEW_WRAPPERS
-
-  MDefinition* foldsTo(TempAllocator& alloc) override;
-
-  bool congruentTo(const MDefinition* ins) const override {
-    return congruentIfOperandsEqual(ins);
-  }
-
-  AliasSet getAliasSet() const override { return AliasSet::None(); }
-  void computeRange(TempAllocator& alloc) override;
-
-#ifdef DEBUG
-  bool isConsistentFloat32Use(MUse* use) const override { return true; }
-#endif
-
-  ALLOW_CLONE(MToIntegerInt32)
 };
 
 // Converts a value or typed input to a truncated int32, for use with bitwise
@@ -7627,9 +7671,6 @@ class MGuardValue : public MUnaryInstruction, public BoxInputsPolicy::Data {
 
   MGuardValue(MDefinition* val, const Value& expected)
       : MUnaryInstruction(classOpcode, val), expected_(expected) {
-    MOZ_ASSERT(expected.isNullOrUndefined() || expected.isMagic() ||
-               expected.isPrivateGCThing());
-
     setGuard();
     setMovable();
     setResultType(MIRType::Value);
@@ -7713,7 +7754,6 @@ class MGuardObjectIdentity : public MBinaryInstruction,
                        bool bailOnEquality)
       : MBinaryInstruction(classOpcode, obj, expected),
         bailOnEquality_(bailOnEquality) {
-    MOZ_ASSERT(expected->isConstant() || expected->isNurseryObject());
     setGuard();
     setMovable();
     setResultType(MIRType::Object);
@@ -10107,6 +10147,9 @@ class MWasmDerivedIndexPointer : public MBinaryInstruction,
   ALLOW_CLONE(MWasmDerivedIndexPointer)
 };
 
+// Whether to perform a pre-write barrier for a wasm store reference.
+enum class WasmPreBarrierKind : uint8_t { None, Normal };
+
 // Stores a reference to an address. This performs a pre-barrier on the address,
 // but not a post-barrier. A post-barrier must be performed separately, if it's
 // required.  The accessed location is `valueBase + valueOffset`.  The latter
@@ -10115,12 +10158,15 @@ class MWasmDerivedIndexPointer : public MBinaryInstruction,
 class MWasmStoreRef : public MAryInstruction<3>, public NoTypePolicy::Data {
   uint32_t offset_;
   AliasSet::Flag aliasSet_;
+  WasmPreBarrierKind preBarrierKind_;
 
   MWasmStoreRef(MDefinition* instance, MDefinition* valueBase,
-                size_t valueOffset, MDefinition* value, AliasSet::Flag aliasSet)
+                size_t valueOffset, MDefinition* value, AliasSet::Flag aliasSet,
+                WasmPreBarrierKind preBarrierKind)
       : MAryInstruction<3>(classOpcode),
         offset_(uint32_t(valueOffset)),
-        aliasSet_(aliasSet) {
+        aliasSet_(aliasSet),
+        preBarrierKind_(preBarrierKind) {
     MOZ_ASSERT(valueOffset <= INT32_MAX);
     MOZ_ASSERT(valueBase->type() == MIRType::Pointer ||
                valueBase->type() == MIRType::StackResults);
@@ -10137,6 +10183,7 @@ class MWasmStoreRef : public MAryInstruction<3>, public NoTypePolicy::Data {
 
   uint32_t offset() const { return offset_; }
   AliasSet getAliasSet() const override { return AliasSet::Store(aliasSet_); }
+  WasmPreBarrierKind preBarrierKind() const { return preBarrierKind_; }
 
 #ifdef JS_JITSPEW
   void getExtras(ExtrasCollector* extras) override {
@@ -10145,6 +10192,31 @@ class MWasmStoreRef : public MAryInstruction<3>, public NoTypePolicy::Data {
     extras->add(buf);
   }
 #endif
+};
+
+// Given a value being written to another object, update the generational store
+// buffer if the value is in the nursery and object is in the tenured heap.
+class MWasmPostWriteBarrier : public MQuaternaryInstruction,
+                              public NoTypePolicy::Data {
+  uint32_t valueOffset_;
+
+  MWasmPostWriteBarrier(MDefinition* instance, MDefinition* object,
+                        MDefinition* valueBase, uint32_t valueOffset,
+                        MDefinition* value)
+      : MQuaternaryInstruction(classOpcode, instance, object, valueBase, value),
+        valueOffset_(valueOffset) {
+    setGuard();
+  }
+
+ public:
+  INSTRUCTION_HEADER(WasmPostWriteBarrier)
+  TRIVIAL_NEW_WRAPPERS
+  NAMED_OPERANDS((0, instance), (1, object), (2, valueBase), (3, value))
+
+  AliasSet getAliasSet() const override { return AliasSet::None(); }
+  uint32_t valueOffset() const { return valueOffset_; }
+
+  ALLOW_CLONE(MWasmPostWriteBarrier)
 };
 
 class MWasmParameter : public MNullaryInstruction {
@@ -11269,12 +11341,18 @@ class MWasmStoreFieldRefKA : public MAryInstruction<4>,
                              public NoTypePolicy::Data {
   uint32_t offset_;
   AliasSet aliases_;
+  MaybeTrapSiteInfo maybeTrap_;
+  WasmPreBarrierKind preBarrierKind_;
 
   MWasmStoreFieldRefKA(MDefinition* instance, MDefinition* ka, MDefinition* obj,
-                       size_t offset, MDefinition* value, AliasSet aliases)
+                       size_t offset, MDefinition* value, AliasSet aliases,
+                       MaybeTrapSiteInfo maybeTrap,
+                       WasmPreBarrierKind preBarrierKind)
       : MAryInstruction<4>(classOpcode),
         offset_(uint32_t(offset)),
-        aliases_(aliases) {
+        aliases_(aliases),
+        maybeTrap_(maybeTrap),
+        preBarrierKind_(preBarrierKind) {
     MOZ_ASSERT(obj->type() == TargetWordMIRType() ||
                obj->type() == MIRType::Pointer ||
                obj->type() == MIRType::RefOrNull);
@@ -11292,6 +11370,9 @@ class MWasmStoreFieldRefKA : public MAryInstruction<4>,
     initOperand(1, ka);
     initOperand(2, obj);
     initOperand(3, value);
+    if (maybeTrap_) {
+      setGuard();
+    }
   }
 
  public:
@@ -11301,6 +11382,8 @@ class MWasmStoreFieldRefKA : public MAryInstruction<4>,
 
   uint32_t offset() const { return offset_; }
   AliasSet getAliasSet() const override { return aliases_; }
+  MaybeTrapSiteInfo maybeTrap() const { return maybeTrap_; }
+  WasmPreBarrierKind preBarrierKind() const { return preBarrierKind_; }
 
 #ifdef JS_JITSPEW
   void getExtras(ExtrasCollector* extras) override {

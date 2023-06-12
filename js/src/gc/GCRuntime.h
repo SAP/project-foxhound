@@ -277,6 +277,7 @@ class GCRuntime {
     MOZ_ASSERT(JS::shadow::Zone::from(zone)->isAtomsZone());
     return zone;
   }
+  Zone* maybeSharedAtomsZone() { return sharedAtomsZone_; }
 
   [[nodiscard]] bool freezeSharedAtomsZone();
   void restoreSharedAtomsZone();
@@ -424,6 +425,7 @@ class GCRuntime {
   bool isWaitingOnBackgroundTask() const;
 
   void lockGC() { lock.lock(); }
+  bool tryLockGC() { return lock.tryLock(); }
   void unlockGC() { lock.unlock(); }
 
 #ifdef DEBUG
@@ -438,16 +440,17 @@ class GCRuntime {
   void disallowIncrementalGC() { incrementalAllowed = false; }
 
   void setIncrementalGCEnabled(bool enabled);
+
   bool isIncrementalGCEnabled() const { return incrementalGCEnabled; }
+  bool isPerZoneGCEnabled() const { return perZoneGCEnabled; }
+  bool isCompactingGCEnabled() const;
+  bool isParallelMarkingEnabled() const { return parallelMarkingEnabled; }
+
   bool isIncrementalGCInProgress() const {
     return state() != State::NotActive && !isVerifyPreBarriersEnabled();
   }
 
-  bool isPerZoneGCEnabled() const { return perZoneGCEnabled; }
-
   bool hasForegroundWork() const;
-
-  bool isCompactingGCEnabled() const;
 
   bool isShrinkingGC() const { return gcOptions() == JS::GCOptions::Shrink; }
 
@@ -600,7 +603,6 @@ class GCRuntime {
 
   // Queue memory memory to be freed on a background thread if possible.
   void queueUnusedLifoBlocksForFree(LifoAlloc* lifo);
-  void queueAllLifoBlocksForFree(LifoAlloc* lifo);
   void queueAllLifoBlocksForFreeAfterMinorGC(LifoAlloc* lifo);
   void queueBuffersForFreeAfterMinorGC(Nursery::BufferSet& buffers);
 
@@ -950,7 +952,7 @@ class GCRuntime {
 
   void maybeRequestGCAfterBackgroundTask(const AutoLockHelperThreadState& lock);
   void cancelRequestedGCAfterBackgroundTask();
-  void finishCollection();
+  void finishCollection(JS::GCReason reason);
   void maybeStopPretenuring();
   void checkGCStateNotInUse();
   IncrementalProgress joinBackgroundMarkTask();

@@ -80,6 +80,7 @@ const EXPECTED_SPONSORED_RESULT = {
   source: UrlbarUtils.RESULT_SOURCE.SEARCH,
   heuristic: false,
   payload: {
+    subtype: UrlbarProviderQuickSuggest.RESULT_SUBTYPE.SPONSORED,
     qsSuggestion: "frab",
     title: "frabbits",
     url: "http://test.com/q=frabbits",
@@ -97,7 +98,7 @@ const EXPECTED_SPONSORED_RESULT = {
         ? "urlbar-result-menu-learn-more-about-firefox-suggest"
         : "firefox-suggest-urlbar-learn-more",
     },
-    isBlockable: false,
+    isBlockable: UrlbarPrefs.get("quickSuggestBlockingEnabled"),
     blockL10n: {
       id: UrlbarPrefs.get("resultMenu")
         ? "urlbar-result-menu-dismiss-firefox-suggest"
@@ -113,6 +114,7 @@ const EXPECTED_NONSPONSORED_RESULT = {
   source: UrlbarUtils.RESULT_SOURCE.SEARCH,
   heuristic: false,
   payload: {
+    subtype: UrlbarProviderQuickSuggest.RESULT_SUBTYPE.NONSPONSORED,
     qsSuggestion: "nonspon",
     title: "Non-Sponsored",
     url: "http://test.com/?q=nonsponsored",
@@ -130,7 +132,7 @@ const EXPECTED_NONSPONSORED_RESULT = {
         ? "urlbar-result-menu-learn-more-about-firefox-suggest"
         : "firefox-suggest-urlbar-learn-more",
     },
-    isBlockable: false,
+    isBlockable: UrlbarPrefs.get("quickSuggestBlockingEnabled"),
     blockL10n: {
       id: UrlbarPrefs.get("resultMenu")
         ? "urlbar-result-menu-dismiss-firefox-suggest"
@@ -146,6 +148,7 @@ const EXPECTED_HTTP_RESULT = {
   source: UrlbarUtils.RESULT_SOURCE.SEARCH,
   heuristic: false,
   payload: {
+    subtype: UrlbarProviderQuickSuggest.RESULT_SUBTYPE.SPONSORED,
     qsSuggestion: HTTP_SEARCH_STRING,
     title: "http suggestion",
     url: "http://" + PREFIX_SUGGESTIONS_STRIPPED_URL,
@@ -163,7 +166,7 @@ const EXPECTED_HTTP_RESULT = {
         ? "urlbar-result-menu-learn-more-about-firefox-suggest"
         : "firefox-suggest-urlbar-learn-more",
     },
-    isBlockable: false,
+    isBlockable: UrlbarPrefs.get("quickSuggestBlockingEnabled"),
     blockL10n: {
       id: UrlbarPrefs.get("resultMenu")
         ? "urlbar-result-menu-dismiss-firefox-suggest"
@@ -179,6 +182,7 @@ const EXPECTED_HTTPS_RESULT = {
   source: UrlbarUtils.RESULT_SOURCE.SEARCH,
   heuristic: false,
   payload: {
+    subtype: UrlbarProviderQuickSuggest.RESULT_SUBTYPE.SPONSORED,
     qsSuggestion: HTTPS_SEARCH_STRING,
     title: "https suggestion",
     url: "https://" + PREFIX_SUGGESTIONS_STRIPPED_URL,
@@ -196,7 +200,7 @@ const EXPECTED_HTTPS_RESULT = {
         ? "urlbar-result-menu-learn-more-about-firefox-suggest"
         : "firefox-suggest-urlbar-learn-more",
     },
-    isBlockable: false,
+    isBlockable: UrlbarPrefs.get("quickSuggestBlockingEnabled"),
     blockL10n: {
       id: UrlbarPrefs.get("resultMenu")
         ? "urlbar-result-menu-dismiss-firefox-suggest"
@@ -875,108 +879,6 @@ add_task(async function setupAndTeardown() {
   );
 });
 
-// Tests setup and teardown of the remote settings client depending on whether
-// keyword-based weather suggestions are enabled.
-add_task(async function setupAndTeardown_weather() {
-  // Disable the suggest prefs so the settings client starts out torn down.
-  UrlbarPrefs.set("suggest.quicksuggest.nonsponsored", false);
-  UrlbarPrefs.set("suggest.quicksuggest.sponsored", false);
-  UrlbarPrefs.set("suggest.weather", false);
-  UrlbarPrefs.set("weather.featureGate", false);
-  UrlbarPrefs.set("weather.zeroPrefix", true);
-  await QuickSuggest.remoteSettings.readyPromise;
-  Assert.ok(
-    !QuickSuggest.remoteSettings._test_rs,
-    "Settings client is null after turning of all features"
-  );
-
-  UrlbarPrefs.set("merino.endpointURL", "");
-  UrlbarPrefs.set("merino.enabled", true);
-  await QuickSuggest.remoteSettings.readyPromise;
-  Assert.ok(
-    !QuickSuggest.remoteSettings._test_rs,
-    "Settings client remains null after setting merino.enabled"
-  );
-
-  UrlbarPrefs.set("suggest.weather", true);
-  await QuickSuggest.remoteSettings.readyPromise;
-  Assert.ok(
-    !QuickSuggest.remoteSettings._test_rs,
-    "Settings client remains null after setting suggest.weather"
-  );
-
-  UrlbarPrefs.set("weather.zeroPrefix", false);
-  await QuickSuggest.remoteSettings.readyPromise;
-  Assert.ok(
-    !QuickSuggest.remoteSettings._test_rs,
-    "Settings client remains null after disabling weather.zeroPrefix"
-  );
-
-  UrlbarPrefs.set("weather.featureGate", true);
-  await QuickSuggest.remoteSettings.readyPromise;
-  Assert.ok(
-    QuickSuggest.remoteSettings._test_rs,
-    "Settings client is non-null after turning on keyword-based weather"
-  );
-
-  UrlbarPrefs.set("weather.zeroPrefix", true);
-  await QuickSuggest.remoteSettings.readyPromise;
-  Assert.ok(
-    !QuickSuggest.remoteSettings._test_rs,
-    "Settings client is null after turning on weather.zeroPrefix"
-  );
-
-  UrlbarPrefs.set("weather.zeroPrefix", false);
-  await QuickSuggest.remoteSettings.readyPromise;
-  Assert.ok(
-    QuickSuggest.remoteSettings._test_rs,
-    "Settings client is non-null after turning off weather.zeroPrefix"
-  );
-
-  UrlbarPrefs.set("suggest.weather", false);
-  await QuickSuggest.remoteSettings.readyPromise;
-  Assert.ok(
-    !QuickSuggest.remoteSettings._test_rs,
-    "Settings client is null after turning off suggest.weather"
-  );
-
-  UrlbarPrefs.set("suggest.weather", true);
-  await QuickSuggest.remoteSettings.readyPromise;
-  Assert.ok(
-    QuickSuggest.remoteSettings._test_rs,
-    "Settings client is non-null after turning on suggest.weather"
-  );
-
-  UrlbarPrefs.set("weather.featureGate", false);
-  await QuickSuggest.remoteSettings.readyPromise;
-  Assert.ok(
-    !QuickSuggest.remoteSettings._test_rs,
-    "Settings client is null after turning off weather.featureGate"
-  );
-
-  UrlbarPrefs.set("weather.featureGate", true);
-  await QuickSuggest.remoteSettings.readyPromise;
-  Assert.ok(
-    QuickSuggest.remoteSettings._test_rs,
-    "Settings client is non-null after turning on weather.featureGate"
-  );
-
-  // Leave the prefs in the same state as when the task started.
-  UrlbarPrefs.clear("suggest.quicksuggest.nonsponsored");
-  UrlbarPrefs.clear("suggest.quicksuggest.sponsored");
-  UrlbarPrefs.clear("suggest.weather");
-  UrlbarPrefs.clear("weather.featureGate");
-  UrlbarPrefs.clear("weather.zeroPrefix");
-  UrlbarPrefs.set("quicksuggest.enabled", true);
-  UrlbarPrefs.set("merino.enabled", false);
-  UrlbarPrefs.clear("merino.endpointURL");
-  await QuickSuggest.remoteSettings.readyPromise;
-  Assert.ok(
-    !QuickSuggest.remoteSettings._test_rs,
-    "Settings client remains null at end of task"
-  );
-});
-
 // Timestamp templates in URLs should be replaced with real timestamps.
 add_task(async function timestamps() {
   UrlbarPrefs.set("suggest.quicksuggest.nonsponsored", true);
@@ -1098,6 +1000,7 @@ add_task(async function dedupeAgainstURL_timestamps() {
     source: UrlbarUtils.RESULT_SOURCE.SEARCH,
     heuristic: false,
     payload: {
+      subtype: UrlbarProviderQuickSuggest.RESULT_SUBTYPE.SPONSORED,
       originalUrl: TIMESTAMP_SUGGESTION_URL,
       qsSuggestion: TIMESTAMP_SEARCH_STRING,
       title: "Timestamp suggestion",
@@ -1113,7 +1016,7 @@ add_task(async function dedupeAgainstURL_timestamps() {
           ? "urlbar-result-menu-learn-more-about-firefox-suggest"
           : "firefox-suggest-urlbar-learn-more",
       },
-      isBlockable: false,
+      isBlockable: UrlbarPrefs.get("quickSuggestBlockingEnabled"),
       blockL10n: {
         id: UrlbarPrefs.get("resultMenu")
           ? "urlbar-result-menu-dismiss-firefox-suggest"

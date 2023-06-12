@@ -700,6 +700,13 @@ export class UrlbarController {
   }
 
   /**
+   * Clear the previous query context cache.
+   */
+  clearLastQueryContextCache() {
+    this._lastQueryContextWrapper = null;
+  }
+
+  /**
    * Notifies listeners of results.
    *
    * @param {string} name Name of the notification.
@@ -734,6 +741,7 @@ class TelemetryEvent {
     this._controller = controller;
     this._category = category;
     this._isPrivate = controller.input.isPrivate;
+    this.#beginObservingPingPrefs();
   }
 
   /**
@@ -836,7 +844,7 @@ class TelemetryEvent {
    *        for "blur".
    * @param {string} [details.selType] type of the selected element, undefined
    *        for "blur". One of "unknown", "autofill", "visiturl", "bookmark",
-   *        "history", "keyword", "searchengine", "searchsuggestion",
+   *        "help", "history", "keyword", "searchengine", "searchsuggestion",
    *        "switchtab", "remotetab", "extension", "oneoff", "dismiss".
    * @param {string} [details.provider] The name of the provider for the selected
    *        result.
@@ -936,8 +944,10 @@ class TelemetryEvent {
         startEventInfo.interactionType == "dropped" ? "drop_go" : "paste_go";
     } else if (event.type == "blur") {
       action = "blur";
+    } else if (MouseEvent.isInstance(event)) {
+      action = event.target.id == "urlbar-go-button" ? "go_button" : "click";
     } else {
-      action = MouseEvent.isInstance(event) ? "click" : "enter";
+      action = "enter";
     }
 
     let method = action == "blur" ? "abandonment" : "engagement";
@@ -970,8 +980,13 @@ class TelemetryEvent {
     );
 
     if (details.selType === "dismiss") {
-      // The conventional telemetry dones't support "dismiss" event.
+      // The conventional telemetry doesn't support "dismiss" event.
       return;
+    }
+
+    if (action == "go_button") {
+      // Fall back since the conventional telemetry dones't support "go_button" action.
+      action = "click";
     }
 
     let endTime = (event && event.timeStamp) || Cu.now();
@@ -1018,10 +1033,13 @@ class TelemetryEvent {
       1
     );
 
-    if (method === "engagement" && queryContext.results?.[0].autofill) {
+    if (
+      method === "engagement" &&
+      queryContext?.view?.visibleResults?.[0]?.autofill
+    ) {
       // Record autofill impressions upon engagement.
       const type = lazy.UrlbarUtils.telemetryTypeFromResult(
-        queryContext.results[0]
+        queryContext.view.visibleResults[0]
       );
       Services.telemetry.scalarAdd(`urlbar.impression.${type}`, 1);
     }
@@ -1075,18 +1093,32 @@ class TelemetryEvent {
       searchMode
     );
     const search_mode = this.#getSearchMode(searchMode);
-    const currentResults = queryContext?.results ?? [];
-    const numResults = currentResults.length;
-    const groups = currentResults
+    const currentResults = queryContext?.view?.visibleResults ?? [];
+    let numResults = currentResults.length;
+    let groups = currentResults
       .map(r => lazy.UrlbarUtils.searchEngagementTelemetryGroup(r))
       .join(",");
-    const results = currentResults
+    let results = currentResults
       .map(r => lazy.UrlbarUtils.searchEngagementTelemetryType(r))
       .join(",");
 
     let eventInfo;
     if (method === "engagement") {
-      const selectedResult = currentResults[selIndex];
+      const selected_result = lazy.UrlbarUtils.searchEngagementTelemetryType(
+        currentResults[selIndex],
+        selType
+      );
+      const selected_result_subtype = lazy.UrlbarUtils.searchEngagementTelemetrySubtype(
+        currentResults[selIndex],
+        selectedElement
+      );
+
+      if (selected_result === "input_field" && !queryContext?.view?.isOpen) {
+        numResults = 0;
+        groups = "";
+        results = "";
+      }
+
       eventInfo = {
         sap,
         interaction,
@@ -1094,13 +1126,8 @@ class TelemetryEvent {
         n_chars: numChars,
         n_words: numWords,
         n_results: numResults,
-        selected_result: lazy.UrlbarUtils.searchEngagementTelemetryType(
-          selectedResult
-        ),
-        selected_result_subtype: lazy.UrlbarUtils.searchEngagementTelemetrySubtype(
-          selectedResult,
-          selectedElement
-        ),
+        selected_result,
+        selected_result_subtype,
         provider,
         engagement_type:
           selType === "help" || selType === "dismiss" ? selType : action,
@@ -1278,29 +1305,33 @@ class TelemetryEvent {
   }
 
   /**
-   * Extracts a telemetry type from an element for event telemetry.
+   * Extracts a telemetry type from a result and the element being interacted
+   * with for event telemetry.
    *
+   * @param {object} result The element to analyze.
    * @param {Element} element The element to analyze.
    * @returns {string} a string type for the telemetry event.
    */
-  typeFromElement(element) {
+  typeFromElement(result, element) {
     if (!element) {
       return "none";
     }
-    let row = element.closest(".urlbarView-row");
-    if (row.result && row.result.providerName != "UrlbarProviderTopSites") {
-      // Element handlers go here.
-      if (element.classList.contains("urlbarView-button-help")) {
-        return row.result.type == lazy.UrlbarUtils.RESULT_TYPE.TIP
-          ? "tiphelp"
-          : "help";
-      }
-      if (element.classList.contains("urlbarView-button-block")) {
-        return "block";
-      }
+    if (
+      element.classList.contains("urlbarView-button-help") ||
+      element.dataset.command == "help"
+    ) {
+      return result?.type == lazy.UrlbarUtils.RESULT_TYPE.TIP
+        ? "tiphelp"
+        : "help";
+    }
+    if (
+      element.classList.contains("urlbarView-button-block") ||
+      element.dataset.command == "dismiss"
+    ) {
+      return "block";
     }
     // Now handle the result.
-    return lazy.UrlbarUtils.telemetryTypeFromResult(row.result);
+    return lazy.UrlbarUtils.telemetryTypeFromResult(result);
   }
 
   /**
@@ -1308,6 +1339,40 @@ class TelemetryEvent {
    */
   reset() {
     this.#previousSearchWordsSet = null;
+  }
+
+  #PING_PREFS = {
+    maxRichResults: Glean.urlbar.prefMaxResults,
+    "suggest.topsites": Glean.urlbar.prefSuggestTopsites,
+  };
+
+  #beginObservingPingPrefs() {
+    this.onPrefChanged("searchEngagementTelemetry.enabled");
+    lazy.UrlbarPrefs.addObserver(this);
+  }
+
+  onPrefChanged(pref) {
+    if (pref === "searchEngagementTelemetry.enabled") {
+      for (const p of Object.keys(this.#PING_PREFS)) {
+        this.onPrefChanged(p);
+      }
+      return;
+    }
+
+    if (!lazy.UrlbarPrefs.get("searchEngagementTelemetryEnabled")) {
+      return;
+    }
+
+    const metric = this.#PING_PREFS[pref];
+    if (metric) {
+      metric.set(lazy.UrlbarPrefs.get(pref));
+    }
+  }
+
+  onNimbusChanged(variable) {
+    if (variable === "searchEngagementTelemetryEnabled") {
+      this.onPrefChanged("searchEngagementTelemetry.enabled");
+    }
   }
 
   #previousSearchWordsSet = null;

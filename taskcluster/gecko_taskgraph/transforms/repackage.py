@@ -239,9 +239,27 @@ PACKAGE_FORMATS = {
             "{architecture}",
             "--templates",
             "browser/installer/linux/debian",
+            "--version",
+            "{version_display}",
+            "--build-number",
+            "{build_number}",
         ],
         "inputs": {
             "input": "target{archive_format}",
+        },
+        "output": "target.deb",
+    },
+    "deb-l10n": {
+        "args": [
+            "deb-l10n",
+            "--version",
+            "{version_display}",
+            "--build-number",
+            "{build_number}",
+        ],
+        "inputs": {
+            "input-xpi-file": "target.langpack.xpi",
+            "input-tar-file": "target{archive_format}",
         },
         "output": "target.deb",
     },
@@ -405,10 +423,11 @@ def make_job_description(config, jobs):
             attributes["repackage_type"] = "repackage-deb"
             description = (
                 "Repackaging the '{build_platform}/{build_type}' "
-                "build into a '.deb' package"
+                "{version} build into a '.deb' package"
             ).format(
                 build_platform=attributes.get("build_platform"),
                 build_type=attributes.get("build_type"),
+                version=config.params["version"],
             )
 
         _fetch_subst_locale = "en-US"
@@ -433,6 +452,7 @@ def make_job_description(config, jobs):
                 "architecture": architecture(build_platform),
                 "version_display": config.params["version"],
                 "mar-channel-id": attributes["mar-channel-id"],
+                "build_number": config.params["build_number"],
             }
             # Allow us to replace `args` as well, but specifying things expanded in mozharness
             # without breaking .format and without allowing unknown through.
@@ -531,12 +551,12 @@ def make_job_description(config, jobs):
             "worker": worker,
             "run": run,
             "fetches": _generate_download_config(
+                config,
                 dep_job,
                 build_platform,
                 signing_task,
                 repackage_signing_task,
                 locale=locale,
-                project=config.params["project"],
                 existing_fetch=job.get("fetches"),
             ),
         }
@@ -551,16 +571,20 @@ def make_job_description(config, jobs):
                     "linux64-mkbom",
                 ]
             )
+
+        if "shipping-phase" in job:
+            task["shipping-phase"] = job["shipping-phase"]
+
         yield task
 
 
 def _generate_download_config(
+    config,
     task,
     build_platform,
     signing_task,
     repackage_signing_task,
     locale=None,
-    project=None,
     existing_fetch=None,
 ):
     locale_path = f"{locale}/" if locale else ""
@@ -575,18 +599,22 @@ def _generate_download_config(
             }
         )
     elif build_platform.startswith("linux") or build_platform.startswith("macosx"):
-        fetch.update(
+        signing_fetch = [
             {
-                signing_task: [
-                    {
-                        "artifact": "{}target{}".format(
-                            locale_path, archive_format(build_platform)
-                        ),
-                        "extract": False,
-                    },
-                ],
-            }
-        )
+                "artifact": "{}target{}".format(
+                    locale_path, archive_format(build_platform)
+                ),
+                "extract": False,
+            },
+        ]
+        if config.kind == "repackage-deb-l10n":
+            signing_fetch.append(
+                {
+                    "artifact": f"{locale_path}target.langpack.xpi",
+                    "extract": False,
+                }
+            )
+        fetch.update({signing_task: signing_fetch})
     elif build_platform.startswith("win"):
         fetch.update(
             {

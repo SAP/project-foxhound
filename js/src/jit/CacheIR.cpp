@@ -36,6 +36,7 @@
 #include "util/DifferentialTesting.h"
 #include "util/Unicode.h"
 #include "vm/ArrayBufferObject.h"
+#include "vm/BoundFunctionObject.h"
 #include "vm/BytecodeUtil.h"
 #include "vm/Compartment.h"
 #include "vm/Iteration.h"
@@ -53,6 +54,7 @@
 #include "vm/BytecodeUtil-inl.h"
 #include "vm/EnvironmentObject-inl.h"
 #include "vm/JSContext-inl.h"
+#include "vm/JSFunction-inl.h"
 #include "vm/JSObject-inl.h"
 #include "vm/JSScript-inl.h"
 #include "vm/NativeObject-inl.h"
@@ -1788,6 +1790,7 @@ void IRGenerator::emitOptimisticClassGuard(ObjOperandId objId, JSObject* obj,
     case GuardClassKind::MappedArguments:
     case GuardClassKind::UnmappedArguments:
     case GuardClassKind::JSFunction:
+    case GuardClassKind::BoundFunction:
     case GuardClassKind::WindowProxy:
       // Arguments, functions, and the global object have
       // less consistent shapes.
@@ -2216,23 +2219,9 @@ AttachDecision GetPropIRGenerator::tryAttachFunction(HandleObject obj,
     if (!fun->hasBytecode()) {
       return AttachDecision::NoAction;
     }
-
-    // Length can be non-int32 for bound functions.
-    if (fun->isBoundFunction()) {
-      constexpr auto lengthSlot = FunctionExtended::BOUND_FUNCTION_LENGTH_SLOT;
-      if (!fun->getExtendedSlot(lengthSlot).isInt32()) {
-        return AttachDecision::NoAction;
-      }
-    }
   } else {
     // name was probably deleted from the function.
     if (fun->hasResolvedName()) {
-      return AttachDecision::NoAction;
-    }
-
-    // Unless the bound function name prefix is present, we need to call into
-    // the VM to compute the full name.
-    if (fun->isBoundFunction() && !fun->hasBoundFunctionNamePrefix()) {
       return AttachDecision::NoAction;
     }
   }
@@ -3056,6 +3045,17 @@ AttachDecision GetNameIRGenerator::tryAttachGlobalNameValue(ObjOperandId objId,
     size_t dynamicSlotOffset =
         holder->dynamicSlotIndex(prop->slot()) * sizeof(Value);
     writer.loadDynamicSlotResult(objId, dynamicSlotOffset);
+  } else if (holder == &globalLexical->global()) {
+    MOZ_ASSERT(globalLexical->global().isGenerationCountedGlobal());
+    writer.guardGlobalGeneration(
+        globalLexical->global().generationCount(),
+        globalLexical->global().addressOfGenerationCount());
+    ObjOperandId holderId = writer.loadObject(holder);
+#ifdef DEBUG
+    writer.assertPropertyLookup(holderId, id.toAtom()->asPropertyName(),
+                                prop->slot());
+#endif
+    EmitLoadSlotResult(writer, holderId, holder, *prop);
   } else {
     // Check the prototype chain from the global to the holder
     // prototype. Ignore the global lexical scope as it doesn't figure
@@ -3069,15 +3069,12 @@ AttachDecision GetNameIRGenerator::tryAttachGlobalNameValue(ObjOperandId objId,
     writer.guardShape(objId, globalLexical->shape());
 
     // Guard on the shape of the GlobalObject.
-    ObjOperandId globalId = writer.loadEnclosingEnvironment(objId);
+    ObjOperandId globalId = writer.loadObject(&globalLexical->global());
     writer.guardShape(globalId, globalLexical->global().shape());
 
-    ObjOperandId holderId = globalId;
-    if (holder != &globalLexical->global()) {
-      // Shape guard holder.
-      holderId = writer.loadObject(holder);
-      writer.guardShape(holderId, holder->shape());
-    }
+    // Shape guard holder.
+    ObjOperandId holderId = writer.loadObject(holder);
+    writer.guardShape(holderId, holder->shape());
 
     EmitLoadSlotResult(writer, holderId, holder, *prop);
   }
@@ -5146,11 +5143,6 @@ AttachDecision InstanceOfIRGenerator::tryAttachStub() {
   }
 
   HandleFunction fun = rhsObj_.as<JSFunction>();
-
-  if (fun->isBoundFunction()) {
-    trackAttached(IRGenerator::NotAttached);
-    return AttachDecision::NoAction;
-  }
 
   // Look up the @@hasInstance property, and check that Function.__proto__ is
   // the property holder, and that no object further down the prototype chain
@@ -9364,39 +9356,6 @@ InlinableNativeIRGenerator::tryAttachGetNextMapSetEntryForIterator(bool isMap) {
   return AttachDecision::Attach;
 }
 
-AttachDecision InlinableNativeIRGenerator::tryAttachFinishBoundFunctionInit() {
-  // Self-hosted code calls this with (boundFunction, targetObj, argCount)
-  // arguments.
-  MOZ_ASSERT(argc_ == 3);
-  MOZ_ASSERT(args_[0].toObject().is<JSFunction>());
-  MOZ_ASSERT(args_[1].isObject());
-  MOZ_ASSERT(args_[2].isInt32());
-
-  // Initialize the input operand.
-  initializeInputOperand();
-
-  // Note: we don't need to call emitNativeCalleeGuard for intrinsics.
-
-  ValOperandId boundId =
-      writer.loadArgumentFixedSlot(ArgumentKind::Arg0, argc_);
-  ObjOperandId objBoundId = writer.guardToObject(boundId);
-
-  ValOperandId targetId =
-      writer.loadArgumentFixedSlot(ArgumentKind::Arg1, argc_);
-  ObjOperandId objTargetId = writer.guardToObject(targetId);
-
-  ValOperandId argCountId =
-      writer.loadArgumentFixedSlot(ArgumentKind::Arg2, argc_);
-  Int32OperandId int32ArgCountId = writer.guardToInt32(argCountId);
-
-  writer.finishBoundFunctionInitResult(objBoundId, objTargetId,
-                                       int32ArgCountId);
-  writer.returnFromIC();
-
-  trackAttached("FinishBoundFunctionInit");
-  return AttachDecision::Attach;
-}
-
 AttachDecision InlinableNativeIRGenerator::tryAttachNewArrayIterator() {
   // Self-hosted code calls this without any arguments
   MOZ_ASSERT(argc_ == 0);
@@ -9761,6 +9720,191 @@ AttachDecision InlinableNativeIRGenerator::tryAttachTypedArrayConstructor() {
   writer.returnFromIC();
 
   trackAttached("TypedArrayConstructor");
+  return AttachDecision::Attach;
+}
+
+AttachDecision InlinableNativeIRGenerator::tryAttachSpecializedFunctionBind(
+    Handle<JSObject*> target, Handle<BoundFunctionObject*> templateObj) {
+  // Try to attach a faster stub that's more specialized than what we emit in
+  // tryAttachFunctionBind. This lets us allocate and initialize a bound
+  // function object in Ion without calling into C++.
+  //
+  // We can do this if:
+  //
+  // * The target's prototype is Function.prototype, because that's the proto we
+  //   use for the template object.
+  // * All bound arguments can be stored inline.
+  // * The `.name`, `.length`, and `IsConstructor` values match `target`.
+  //
+  // We initialize the template object with the bound function's name, length,
+  // and flags. At runtime we then only have to clone the template object and
+  // initialize the slots for the target, the bound `this` and the bound
+  // arguments.
+
+  if (!isFirstStub()) {
+    return AttachDecision::NoAction;
+  }
+  if (!target->is<JSFunction>() && !target->is<BoundFunctionObject>()) {
+    return AttachDecision::NoAction;
+  }
+  if (target->staticPrototype() != &cx_->global()->getFunctionPrototype()) {
+    return AttachDecision::NoAction;
+  }
+  size_t numBoundArgs = argc_ > 0 ? argc_ - 1 : 0;
+  if (numBoundArgs > BoundFunctionObject::MaxInlineBoundArgs) {
+    return AttachDecision::NoAction;
+  }
+
+  const bool targetIsConstructor = target->isConstructor();
+  Rooted<JSAtom*> targetName(cx_);
+  uint32_t targetLength = 0;
+
+  if (target->is<JSFunction>()) {
+    Rooted<JSFunction*> fun(cx_, &target->as<JSFunction>());
+    if (fun->isNativeFun()) {
+      return AttachDecision::NoAction;
+    }
+    if (fun->hasResolvedLength() || fun->hasResolvedName()) {
+      return AttachDecision::NoAction;
+    }
+    uint16_t len;
+    if (!JSFunction::getUnresolvedLength(cx_, fun, &len)) {
+      cx_->clearPendingException();
+      return AttachDecision::NoAction;
+    }
+    targetName = fun->infallibleGetUnresolvedName(cx_);
+    targetLength = len;
+  } else {
+    BoundFunctionObject* bound = &target->as<BoundFunctionObject>();
+    if (!targetIsConstructor) {
+      // Only support constructors for now. This lets us use
+      // GuardBoundFunctionIsConstructor.
+      return AttachDecision::NoAction;
+    }
+    Shape* initialShape =
+        cx_->global()->maybeBoundFunctionShapeWithDefaultProto();
+    if (bound->shape() != initialShape) {
+      return AttachDecision::NoAction;
+    }
+    Value lenVal = bound->getLengthForInitialShape();
+    Value nameVal = bound->getNameForInitialShape();
+    if (!lenVal.isInt32() || lenVal.toInt32() < 0 || !nameVal.isString() ||
+        !nameVal.toString()->isAtom()) {
+      return AttachDecision::NoAction;
+    }
+    targetName = &nameVal.toString()->asAtom();
+    targetLength = uint32_t(lenVal.toInt32());
+  }
+
+  if (!templateObj->initTemplateSlotsForSpecializedBind(
+          cx_, numBoundArgs, targetIsConstructor, targetLength, targetName)) {
+    cx_->recoverFromOutOfMemory();
+    return AttachDecision::NoAction;
+  }
+
+  initializeInputOperand();
+  emitNativeCalleeGuard();
+
+  ValOperandId thisValId =
+      writer.loadArgumentFixedSlot(ArgumentKind::This, argc_);
+  ObjOperandId targetId = writer.guardToObject(thisValId);
+
+  // Ensure the JSClass and proto match, and that the `length` and `name`
+  // properties haven't been redefined.
+  writer.guardShape(targetId, target->shape());
+
+  // Emit guards for the `IsConstructor`, `.length`, and `.name` values.
+  if (target->is<JSFunction>()) {
+    // Guard on:
+    // * The BaseScript (because that's what JSFunction uses for the `length`).
+    //   Because MGuardFunctionScript doesn't support self-hosted functions yet,
+    //   we use GuardSpecificFunction instead in this case.
+    //   See assertion in MGuardFunctionScript::getAliasSet.
+    // * The flags slot (for the CONSTRUCTOR, RESOLVED_NAME, RESOLVED_LENGTH,
+    //   HAS_INFERRED_NAME, and HAS_GUESSED_ATOM flags).
+    // * The atom slot.
+    JSFunction* fun = &target->as<JSFunction>();
+    if (fun->isSelfHostedBuiltin()) {
+      writer.guardSpecificFunction(targetId, fun);
+    } else {
+      writer.guardFunctionScript(targetId, fun->baseScript());
+    }
+    writer.guardFixedSlotValue(
+        targetId, JSFunction::offsetOfFlagsAndArgCount(),
+        fun->getReservedSlot(JSFunction::FlagsAndArgCountSlot));
+    writer.guardFixedSlotValue(targetId, JSFunction::offsetOfAtom(),
+                               fun->getReservedSlot(JSFunction::AtomSlot));
+  } else {
+    BoundFunctionObject* bound = &target->as<BoundFunctionObject>();
+    writer.guardBoundFunctionIsConstructor(targetId);
+    writer.guardFixedSlotValue(targetId,
+                               BoundFunctionObject::offsetOfLengthSlot(),
+                               bound->getLengthForInitialShape());
+    writer.guardFixedSlotValue(targetId,
+                               BoundFunctionObject::offsetOfNameSlot(),
+                               bound->getNameForInitialShape());
+  }
+
+  writer.specializedBindFunctionResult(targetId, argc_, templateObj);
+  writer.returnFromIC();
+
+  trackAttached("SpecializedFunctionBind");
+  return AttachDecision::Attach;
+}
+
+AttachDecision InlinableNativeIRGenerator::tryAttachFunctionBind() {
+  // Ensure |this| (the target) is a function object or a bound function object.
+  // We could support other callables too, but note that we rely on the target
+  // having a static prototype in BoundFunctionObject::functionBindImpl.
+  if (!thisval_.isObject()) {
+    return AttachDecision::NoAction;
+  }
+  Rooted<JSObject*> target(cx_, &thisval_.toObject());
+  if (!target->is<JSFunction>() && !target->is<BoundFunctionObject>()) {
+    return AttachDecision::NoAction;
+  }
+
+  // Only support standard, non-spread calls.
+  if (flags_.getArgFormat() != CallFlags::Standard) {
+    return AttachDecision::NoAction;
+  }
+
+  // Only optimize if the number of arguments is small. This ensures we don't
+  // compile a lot of different stubs (because we bake in argc) and that we
+  // don't get anywhere near ARGS_LENGTH_MAX.
+  static constexpr size_t MaxArguments = 6;
+  if (argc_ > MaxArguments) {
+    return AttachDecision::NoAction;
+  }
+
+  Rooted<BoundFunctionObject*> templateObj(
+      cx_, BoundFunctionObject::createTemplateObject(cx_));
+  if (!templateObj) {
+    cx_->recoverFromOutOfMemory();
+    return AttachDecision::NoAction;
+  }
+
+  TRY_ATTACH(tryAttachSpecializedFunctionBind(target, templateObj));
+
+  initializeInputOperand();
+
+  emitNativeCalleeGuard();
+
+  // Guard |this| is a function object or a bound function object.
+  ValOperandId thisValId =
+      writer.loadArgumentFixedSlot(ArgumentKind::This, argc_);
+  ObjOperandId targetId = writer.guardToObject(thisValId);
+  if (target->is<JSFunction>()) {
+    writer.guardClass(targetId, GuardClassKind::JSFunction);
+  } else {
+    MOZ_ASSERT(target->is<BoundFunctionObject>());
+    writer.guardClass(targetId, GuardClassKind::BoundFunction);
+  }
+
+  writer.bindFunctionResult(targetId, argc_, templateObj);
+  writer.returnFromIC();
+
+  trackAttached("FunctionBind");
   return AttachDecision::Attach;
 }
 
@@ -10191,6 +10335,10 @@ AttachDecision InlinableNativeIRGenerator::tryAttachStub() {
     case InlinableNative::DataViewSetBigUint64:
       return tryAttachDataViewSet(Scalar::BigUint64);
 
+    // Function natives.
+    case InlinableNative::FunctionBind:
+      return tryAttachFunctionBind();
+
     // Intl natives.
     case InlinableNative::IntlGuardToCollator:
     case InlinableNative::IntlGuardToDateTimeFormat:
@@ -10242,8 +10390,6 @@ AttachDecision InlinableNativeIRGenerator::tryAttachStub() {
       return tryAttachSubstringKernel();
     case InlinableNative::IntrinsicIsConstructing:
       return tryAttachIsConstructing();
-    case InlinableNative::IntrinsicFinishBoundFunctionInit:
-      return tryAttachFinishBoundFunctionInit();
     case InlinableNative::IntrinsicNewArrayIterator:
       return tryAttachNewArrayIterator();
     case InlinableNative::IntrinsicNewStringIterator:
@@ -10512,7 +10658,8 @@ AttachDecision InlinableNativeIRGenerator::tryAttachStub() {
 // Remember the shape of the this object for any script being called as a
 // constructor, for later use during Ion compilation.
 ScriptedThisResult CallIRGenerator::getThisShapeForScripted(
-    HandleFunction calleeFunc, MutableHandle<Shape*> result) {
+    HandleFunction calleeFunc, Handle<JSObject*> newTarget,
+    MutableHandle<Shape*> result) {
   // Some constructors allocate their own |this| object.
   if (calleeFunc->constructorNeedsUninitializedThis()) {
     return ScriptedThisResult::UninitializedThis;
@@ -10520,7 +10667,6 @@ ScriptedThisResult CallIRGenerator::getThisShapeForScripted(
 
   // Only attach a stub if the newTarget is a function with a
   // nonconfigurable prototype.
-  RootedObject newTarget(cx_, &newTarget_.toObject());
   if (!newTarget->is<JSFunction>() ||
       !newTarget->as<JSFunction>().hasNonConfigurablePrototypeDataProperty()) {
     return ScriptedThisResult::NoAction;
@@ -10538,65 +10684,32 @@ ScriptedThisResult CallIRGenerator::getThisShapeForScripted(
   return ScriptedThisResult::PlainObjectShape;
 }
 
-AttachDecision CallIRGenerator::tryAttachCallScripted(
-    HandleFunction calleeFunc) {
-  MOZ_ASSERT(calleeFunc->hasJitEntry());
-
-  if (calleeFunc->isWasmWithJitEntry()) {
-    TRY_ATTACH(tryAttachWasmCall(calleeFunc));
+static bool CanOptimizeScriptedCall(JSFunction* callee, bool isConstructing) {
+  if (!callee->hasJitEntry()) {
+    return false;
   }
 
-  bool isSpecialized = mode_ == ICState::Mode::Specialized;
-
-  bool isConstructing = IsConstructPC(pc_);
-  bool isSpread = IsSpreadPC(pc_);
-  bool isSameRealm = isSpecialized && cx_->realm() == calleeFunc->realm();
-  CallFlags flags(isConstructing, isSpread, isSameRealm);
-
   // If callee is not an interpreted constructor, we have to throw.
-  if (isConstructing && !calleeFunc->isConstructor()) {
-    return AttachDecision::NoAction;
+  if (isConstructing && !callee->isConstructor()) {
+    return false;
   }
 
   // Likewise, if the callee is a class constructor, we have to throw.
-  if (!isConstructing && calleeFunc->isClassConstructor()) {
-    return AttachDecision::NoAction;
+  if (!isConstructing && callee->isClassConstructor()) {
+    return false;
   }
 
-  if (isConstructing && !calleeFunc->hasJitScript()) {
-    // If we're constructing, require the callee to have a JitScript. This isn't
-    // required for correctness but avoids allocating a template object below
-    // for constructors that aren't hot. See bug 1419758.
-    return AttachDecision::TemporarilyUnoptimizable;
-  }
+  return true;
+}
 
-  // Verify that spread calls have a reasonable number of arguments.
-  if (isSpread && args_.length() > JIT_ARGS_LENGTH_MAX) {
-    return AttachDecision::NoAction;
-  }
+void CallIRGenerator::emitCallScriptedGuards(ObjOperandId calleeObjId,
+                                             JSFunction* calleeFunc,
+                                             Int32OperandId argcId,
+                                             CallFlags flags, Shape* thisShape,
+                                             bool isBoundFunction) {
+  bool isConstructing = flags.isConstructing();
 
-  Rooted<Shape*> thisShape(cx_);
-  if (isConstructing && isSpecialized) {
-    switch (getThisShapeForScripted(calleeFunc, &thisShape)) {
-      case ScriptedThisResult::PlainObjectShape:
-        break;
-      case ScriptedThisResult::UninitializedThis:
-        flags.setNeedsUninitializedThis();
-        break;
-      case ScriptedThisResult::NoAction:
-        return AttachDecision::NoAction;
-    }
-  }
-
-  // Load argc.
-  Int32OperandId argcId(writer.setInputOperandId(0));
-
-  // Load the callee and ensure it is an object
-  ValOperandId calleeValId =
-      writer.loadArgumentDynamicSlot(ArgumentKind::Callee, argcId, flags);
-  ObjOperandId calleeObjId = writer.guardToObject(calleeValId);
-
-  if (isSpecialized) {
+  if (mode_ == ICState::Mode::Specialized) {
     MOZ_ASSERT_IF(isConstructing, thisShape || flags.needsUninitializedThis());
 
     // Ensure callee matches this stub's callee
@@ -10605,16 +10718,25 @@ AttachDecision CallIRGenerator::tryAttachCallScripted(
       // Emit guards to ensure the newTarget's .prototype property is what we
       // expect. Note that getThisForScripted checked newTarget is a function
       // with a non-configurable .prototype data property.
-      JSFunction* newTarget = &newTarget_.toObject().as<JSFunction>();
+
+      JSFunction* newTarget;
+      ObjOperandId newTargetObjId;
+      if (isBoundFunction) {
+        newTarget = calleeFunc;
+        newTargetObjId = calleeObjId;
+      } else {
+        newTarget = &newTarget_.toObject().as<JSFunction>();
+        ValOperandId newTargetValId = writer.loadArgumentDynamicSlot(
+            ArgumentKind::NewTarget, argcId, flags);
+        newTargetObjId = writer.guardToObject(newTargetValId);
+      }
+
       Maybe<PropertyInfo> prop = newTarget->lookupPure(cx_->names().prototype);
       MOZ_ASSERT(prop.isSome());
       uint32_t slot = prop->slot();
       MOZ_ASSERT(slot >= newTarget->numFixedSlots(),
                  "Stub code relies on this");
 
-      ValOperandId newTargetValId = writer.loadArgumentDynamicSlot(
-          ArgumentKind::NewTarget, argcId, flags);
-      ObjOperandId newTargetObjId = writer.guardToObject(newTargetValId);
       writer.guardShape(newTargetObjId, newTarget->shape());
 
       const Value& value = newTarget->getSlot(slot);
@@ -10646,6 +10768,63 @@ AttachDecision CallIRGenerator::tryAttachCallScripted(
       writer.guardNotClassConstructor(calleeObjId);
     }
   }
+}
+
+AttachDecision CallIRGenerator::tryAttachCallScripted(
+    HandleFunction calleeFunc) {
+  MOZ_ASSERT(calleeFunc->hasJitEntry());
+
+  if (calleeFunc->isWasmWithJitEntry()) {
+    TRY_ATTACH(tryAttachWasmCall(calleeFunc));
+  }
+
+  bool isSpecialized = mode_ == ICState::Mode::Specialized;
+
+  bool isConstructing = IsConstructPC(pc_);
+  bool isSpread = IsSpreadPC(pc_);
+  bool isSameRealm = isSpecialized && cx_->realm() == calleeFunc->realm();
+  CallFlags flags(isConstructing, isSpread, isSameRealm);
+
+  if (!CanOptimizeScriptedCall(calleeFunc, isConstructing)) {
+    return AttachDecision::NoAction;
+  }
+
+  if (isConstructing && !calleeFunc->hasJitScript()) {
+    // If we're constructing, require the callee to have a JitScript. This isn't
+    // required for correctness but avoids allocating a template object below
+    // for constructors that aren't hot. See bug 1419758.
+    return AttachDecision::TemporarilyUnoptimizable;
+  }
+
+  // Verify that spread calls have a reasonable number of arguments.
+  if (isSpread && args_.length() > JIT_ARGS_LENGTH_MAX) {
+    return AttachDecision::NoAction;
+  }
+
+  Rooted<Shape*> thisShape(cx_);
+  if (isConstructing && isSpecialized) {
+    Rooted<JSObject*> newTarget(cx_, &newTarget_.toObject());
+    switch (getThisShapeForScripted(calleeFunc, newTarget, &thisShape)) {
+      case ScriptedThisResult::PlainObjectShape:
+        break;
+      case ScriptedThisResult::UninitializedThis:
+        flags.setNeedsUninitializedThis();
+        break;
+      case ScriptedThisResult::NoAction:
+        return AttachDecision::NoAction;
+    }
+  }
+
+  // Load argc.
+  Int32OperandId argcId(writer.setInputOperandId(0));
+
+  // Load the callee and ensure it is an object
+  ValOperandId calleeValId =
+      writer.loadArgumentDynamicSlot(ArgumentKind::Callee, argcId, flags);
+  ObjOperandId calleeObjId = writer.guardToObject(calleeValId);
+
+  emitCallScriptedGuards(calleeObjId, calleeFunc, argcId, flags, thisShape,
+                         /* isBoundFunction = */ false);
 
   writer.callScriptedFunction(calleeObjId, argcId, flags,
                               ClampFixedArgc(argc_));
@@ -10704,8 +10883,8 @@ AttachDecision CallIRGenerator::tryAttachCallNative(HandleFunction calleeFunc) {
         writer.loadArgumentDynamicSlot(ArgumentKind::This, argcId, flags);
     ObjOperandId thisObjId = writer.guardToObject(thisValId);
 
-    // Guard on the |this| class to make sure it's the right instance.
-    writer.guardAnyClass(thisObjId, thisval_.toObject().getClass());
+    // Guard on the |this| shape to make sure it's the right instance.
+    writer.guardShape(thisObjId, thisval_.toObject().shape());
 
     // Ensure callee matches this stub's callee
     writer.guardSpecificFunction(calleeObjId, calleeFunc);
@@ -10760,8 +10939,14 @@ AttachDecision CallIRGenerator::tryAttachCallHook(HandleObject calleeObj) {
     return AttachDecision::NoAction;
   }
 
-  // Verify that spread calls have a reasonable number of arguments.
-  if (isSpread && args_.length() > JIT_ARGS_LENGTH_MAX) {
+  // Bound functions have a JSClass construct hook but are not always
+  // constructors.
+  if (isConstructing && !calleeObj->isConstructor()) {
+    return AttachDecision::NoAction;
+  }
+
+  // We don't support spread calls in the transpiler yet.
+  if (isSpread) {
     return AttachDecision::NoAction;
   }
 
@@ -10776,11 +10961,113 @@ AttachDecision CallIRGenerator::tryAttachCallHook(HandleObject calleeObj) {
   // Ensure the callee's class matches the one in this stub.
   writer.guardAnyClass(calleeObjId, calleeObj->getClass());
 
+  if (isConstructing && calleeObj->is<BoundFunctionObject>()) {
+    writer.guardBoundFunctionIsConstructor(calleeObjId);
+  }
+
   writer.callClassHook(calleeObjId, argcId, hook, flags, ClampFixedArgc(argc_));
   writer.returnFromIC();
 
   trackAttached("Call native func");
 
+  return AttachDecision::Attach;
+}
+
+AttachDecision CallIRGenerator::tryAttachBoundFunction(
+    Handle<BoundFunctionObject*> calleeObj) {
+  // The target must be a JSFunction with a JitEntry.
+  if (!calleeObj->getTarget()->is<JSFunction>()) {
+    return AttachDecision::NoAction;
+  }
+
+  bool isSpread = IsSpreadPC(pc_);
+  bool isConstructing = IsConstructPC(pc_);
+
+  // Spread calls are not supported yet.
+  if (isSpread) {
+    return AttachDecision::NoAction;
+  }
+
+  Rooted<JSFunction*> target(cx_, &calleeObj->getTarget()->as<JSFunction>());
+  if (!CanOptimizeScriptedCall(target, isConstructing)) {
+    return AttachDecision::NoAction;
+  }
+
+  // Limit the number of bound arguments to prevent us from compiling many
+  // different stubs (we bake in numBoundArgs and it's usually very small).
+  static constexpr size_t MaxBoundArgs = 10;
+  size_t numBoundArgs = calleeObj->numBoundArgs();
+  if (numBoundArgs > MaxBoundArgs) {
+    return AttachDecision::NoAction;
+  }
+
+  // Ensure we don't exceed JIT_ARGS_LENGTH_MAX.
+  if (numBoundArgs + argc_ > JIT_ARGS_LENGTH_MAX) {
+    return AttachDecision::NoAction;
+  }
+
+  CallFlags flags(isConstructing, isSpread);
+
+  if (mode_ == ICState::Mode::Specialized) {
+    if (cx_->realm() == target->realm()) {
+      flags.setIsSameRealm();
+    }
+  }
+
+  Rooted<Shape*> thisShape(cx_);
+  if (isConstructing) {
+    // Only optimize if newTarget == callee. This is the common case and ensures
+    // we can always pass the bound function's target as newTarget.
+    if (newTarget_ != ObjectValue(*calleeObj)) {
+      return AttachDecision::NoAction;
+    }
+
+    if (mode_ == ICState::Mode::Specialized) {
+      Handle<JSFunction*> newTarget = target;
+      switch (getThisShapeForScripted(target, newTarget, &thisShape)) {
+        case ScriptedThisResult::PlainObjectShape:
+          break;
+        case ScriptedThisResult::UninitializedThis:
+          flags.setNeedsUninitializedThis();
+          break;
+        case ScriptedThisResult::NoAction:
+          return AttachDecision::NoAction;
+      }
+    }
+  }
+
+  // Load argc.
+  Int32OperandId argcId(writer.setInputOperandId(0));
+
+  // Load the callee and ensure it's a bound function.
+  ValOperandId calleeValId =
+      writer.loadArgumentFixedSlot(ArgumentKind::Callee, argc_, flags);
+  ObjOperandId calleeObjId = writer.guardToObject(calleeValId);
+  writer.guardClass(calleeObjId, GuardClassKind::BoundFunction);
+
+  // Ensure numBoundArgs matches.
+  Int32OperandId numBoundArgsId = writer.loadBoundFunctionNumArgs(calleeObjId);
+  writer.guardSpecificInt32(numBoundArgsId, numBoundArgs);
+
+  if (isConstructing) {
+    // Guard newTarget == callee. We depend on this in CallBoundScriptedFunction
+    // and in emitCallScriptedGuards by using boundTarget as newTarget.
+    ValOperandId newTargetValId =
+        writer.loadArgumentFixedSlot(ArgumentKind::NewTarget, argc_, flags);
+    ObjOperandId newTargetObjId = writer.guardToObject(newTargetValId);
+    writer.guardObjectIdentity(newTargetObjId, calleeObjId);
+  }
+
+  ObjOperandId targetId = writer.loadBoundFunctionTarget(calleeObjId);
+
+  emitCallScriptedGuards(targetId, target, argcId, flags, thisShape,
+                         /* isBoundFunction = */ true);
+
+  writer.callBoundScriptedFunction(calleeObjId, targetId, argcId, flags,
+                                   numBoundArgs);
+  writer.returnFromIC();
+
+  trackAttached("Call bound scripted");
   return AttachDecision::Attach;
 }
 
@@ -10813,6 +11100,9 @@ AttachDecision CallIRGenerator::tryAttachStub() {
   }
 
   RootedObject calleeObj(cx_, &callee_.toObject());
+  if (calleeObj->is<BoundFunctionObject>()) {
+    TRY_ATTACH(tryAttachBoundFunction(calleeObj.as<BoundFunctionObject>()));
+  }
   if (!calleeObj->is<JSFunction>()) {
     return tryAttachCallHook(calleeObj);
   }

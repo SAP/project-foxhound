@@ -7,17 +7,57 @@
 #include "WMFCDMProxy.h"
 
 #include "mozilla/dom/MediaKeySession.h"
+#include "mozilla/WMFCDMProxyCallback.h"
 #include "WMFCDMImpl.h"
+#include "WMFCDMProxyCallback.h"
 
 namespace mozilla {
 
+#define LOG(msg, ...) \
+  EME_LOG("WMFCDMProxy[%p]@%s: " msg, this, __func__, ##__VA_ARGS__)
+
+#define RETURN_IF_SHUTDOWN()       \
+  do {                             \
+    MOZ_ASSERT(NS_IsMainThread()); \
+    if (mIsShutdown) {             \
+      return;                      \
+    }                              \
+  } while (false)
+
+#define PERFORM_ON_CDM(operation, promiseId, ...)                             \
+  do {                                                                        \
+    mCDM->operation(__VA_ARGS__)                                              \
+        ->Then(                                                               \
+            mMainThread, __func__,                                            \
+            [self = RefPtr{this}, this, promiseId]() {                        \
+              RETURN_IF_SHUTDOWN();                                           \
+              if (mKeys.IsNull()) {                                           \
+                EME_LOG("WMFCDMProxy(this=%p, pid=%" PRIu32                   \
+                        ") : abort the " #operation " due to empty key",      \
+                        this, promiseId);                                     \
+                return;                                                       \
+              }                                                               \
+              ResolvePromise(promiseId);                                      \
+            },                                                                \
+            [self = RefPtr{this}, this, promiseId]() {                        \
+              RETURN_IF_SHUTDOWN();                                           \
+              RejectPromiseWithStateError(                                    \
+                  promiseId, nsLiteralCString("WMFCDMProxy::" #operation ": " \
+                                              "failed to " #operation));      \
+            });                                                               \
+  } while (false)
+
 WMFCDMProxy::WMFCDMProxy(dom::MediaKeys* aKeys, const nsAString& aKeySystem,
-                         bool aDistinctiveIdentifierRequired,
-                         bool aPersistentStateRequired)
-    : CDMProxy(aKeys, aKeySystem, aDistinctiveIdentifierRequired,
-               aPersistentStateRequired) {
+                         const dom::MediaKeySystemConfiguration& aConfig)
+    : CDMProxy(
+          aKeys, aKeySystem,
+          aConfig.mDistinctiveIdentifier == dom::MediaKeysRequirement::Required,
+          aConfig.mPersistentState == dom::MediaKeysRequirement::Required),
+      mConfig(aConfig) {
   MOZ_ASSERT(NS_IsMainThread());
 }
+
+WMFCDMProxy::~WMFCDMProxy() {}
 
 void WMFCDMProxy::Init(PromiseId aPromiseId, const nsAString& aOrigin,
                        const nsAString& aTopLevelOrigin,
@@ -35,9 +75,11 @@ void WMFCDMProxy::Init(PromiseId aPromiseId, const nsAString& aOrigin,
   }
 
   mCDM = MakeRefPtr<WMFCDMImpl>(mKeySystem);
-  WMFCDMImpl::InitParams params{nsString(aOrigin), mPersistentStateRequired,
-                                mDistinctiveIdentifierRequired,
-                                false /* HW secure? */};
+  mProxyCallback = new WMFCDMProxyCallback(this);
+  WMFCDMImpl::InitParams params{
+      nsString(aOrigin),        mConfig.mInitDataTypes,
+      mPersistentStateRequired, mDistinctiveIdentifierRequired,
+      false /* HW secure? */,   mProxyCallback};
   mCDM->Init(params)->Then(
       mMainThread, __func__,
       [self = RefPtr{this}, this, aPromiseId](const bool) {
@@ -53,6 +95,7 @@ void WMFCDMProxy::Init(PromiseId aPromiseId, const nsAString& aOrigin,
 
 void WMFCDMProxy::ResolvePromise(PromiseId aId) {
   auto resolve = [self = RefPtr{this}, this, aId]() {
+    RETURN_IF_SHUTDOWN();
     EME_LOG("WMFCDMProxy::ResolvePromise(this=%p, pid=%" PRIu32 ")", this, aId);
     if (!mKeys.IsNull()) {
       mKeys->ResolvePromise(aId);
@@ -98,6 +141,7 @@ void WMFCDMProxy::RejectPromise(PromiseId aId, ErrorResult&& aException,
 void WMFCDMProxy::RejectPromiseOnMainThread(PromiseId aId,
                                             CopyableErrorResult&& aException,
                                             const nsCString& aReason) {
+  RETURN_IF_SHUTDOWN();
   // Moving into or out of a non-copyable ErrorResult will assert that both
   // ErorResults are from our current thread.  Avoid the assertion by moving
   // into a current-thread CopyableErrorResult first.  Note that this is safe,
@@ -120,39 +164,17 @@ void WMFCDMProxy::CreateSession(uint32_t aCreateSessionToken,
                                 const nsAString& aInitDataType,
                                 nsTArray<uint8_t>& aInitData) {
   MOZ_ASSERT(NS_IsMainThread());
-
-  static auto ConvertSessionType = [](dom::MediaKeySessionType aType) {
-    switch (aType) {
-      case dom::MediaKeySessionType::Temporary:
-        return KeySystemConfig::SessionType::Temporary;
-      case dom::MediaKeySessionType::Persistent_license:
-        return KeySystemConfig::SessionType::PersistentLicense;
-      default:
-        MOZ_ASSERT_UNREACHABLE("Invalid session type");
-        return KeySystemConfig::SessionType::Temporary;
-    }
-  };
-  static auto SessionTypeToStr = [](dom::MediaKeySessionType aType) {
-    switch (aType) {
-      case dom::MediaKeySessionType::Temporary:
-        return "Temporary";
-      case dom::MediaKeySessionType::Persistent_license:
-        return "PersistentLicense";
-      default:
-        MOZ_ASSERT_UNREACHABLE("Invalid session type");
-        return "Invalid";
-    }
-  };
+  RETURN_IF_SHUTDOWN();
+  const auto sessionType = ConvertToKeySystemConfigSessionType(aSessionType);
   EME_LOG("WMFCDMProxy::CreateSession(this=%p, pid=%" PRIu32
           "), sessionType=%s",
-          this, aPromiseId, SessionTypeToStr(aSessionType));
-  mCDM->CreateSession(ConvertSessionType(aSessionType), aInitDataType,
-                      aInitData)
+          this, aPromiseId, SessionTypeToStr(sessionType));
+  mCDM->CreateSession(sessionType, aInitDataType, aInitData)
       ->Then(
           mMainThread, __func__,
           [self = RefPtr{this}, this, aCreateSessionToken,
            aPromiseId](nsString sessionID) {
-            mCreateSessionRequest.Complete();
+            RETURN_IF_SHUTDOWN();
             if (mKeys.IsNull()) {
               EME_LOG("WMFCDMProxy(this=%p, pid=%" PRIu32
                       ") : abort the create session due to "
@@ -167,18 +189,111 @@ void WMFCDMProxy::CreateSession(uint32_t aCreateSessionToken,
             ResolvePromise(aPromiseId);
           },
           [self = RefPtr{this}, this, aPromiseId]() {
-            mCreateSessionRequest.Complete();
+            RETURN_IF_SHUTDOWN();
             RejectPromiseWithStateError(
                 aPromiseId,
                 nsLiteralCString(
                     "WMFCDMProxy::CreateSession: cannot create session"));
-          })
-      ->Track(mCreateSessionRequest);
+          });
+}
+
+void WMFCDMProxy::LoadSession(PromiseId aPromiseId,
+                              dom::MediaKeySessionType aSessionType,
+                              const nsAString& aSessionId) {
+  MOZ_ASSERT(NS_IsMainThread());
+  RETURN_IF_SHUTDOWN();
+  const auto sessionType = ConvertToKeySystemConfigSessionType(aSessionType);
+  EME_LOG("WMFCDMProxy::LoadSession(this=%p, pid=%" PRIu32
+          "), sessionType=%s, sessionId=%s",
+          this, aPromiseId, SessionTypeToStr(sessionType),
+          NS_ConvertUTF16toUTF8(aSessionId).get());
+  PERFORM_ON_CDM(LoadSession, aPromiseId, sessionType, aSessionId);
+}
+
+void WMFCDMProxy::UpdateSession(const nsAString& aSessionId,
+                                PromiseId aPromiseId,
+                                nsTArray<uint8_t>& aResponse) {
+  MOZ_ASSERT(NS_IsMainThread());
+  RETURN_IF_SHUTDOWN();
+  EME_LOG("WMFCDMProxy::UpdateSession(this=%p, pid=%" PRIu32
+          "), sessionId=%s, responseLen=%zu",
+          this, aPromiseId, NS_ConvertUTF16toUTF8(aSessionId).get(),
+          aResponse.Length());
+  PERFORM_ON_CDM(UpdateSession, aPromiseId, aSessionId, aResponse);
+}
+
+void WMFCDMProxy::CloseSession(const nsAString& aSessionId,
+                               PromiseId aPromiseId) {
+  MOZ_ASSERT(NS_IsMainThread());
+  RETURN_IF_SHUTDOWN();
+  EME_LOG("WMFCDMProxy::CloseSession(this=%p, pid=%" PRIu32 "), sessionId=%s",
+          this, aPromiseId, NS_ConvertUTF16toUTF8(aSessionId).get());
+  PERFORM_ON_CDM(CloseSession, aPromiseId, aSessionId);
+}
+
+void WMFCDMProxy::RemoveSession(const nsAString& aSessionId,
+                                PromiseId aPromiseId) {
+  MOZ_ASSERT(NS_IsMainThread());
+  RETURN_IF_SHUTDOWN();
+  EME_LOG("WMFCDMProxy::RemoveSession(this=%p, pid=%" PRIu32 "), sessionId=%s",
+          this, aPromiseId, NS_ConvertUTF16toUTF8(aSessionId).get());
+  PERFORM_ON_CDM(RemoveSession, aPromiseId, aSessionId);
 }
 
 void WMFCDMProxy::Shutdown() {
-  // TODO: reject pending promise.
-  mCreateSessionRequest.DisconnectIfExists();
+  MOZ_ASSERT(NS_IsMainThread());
+  MOZ_ASSERT(!mIsShutdown);
+  if (mProxyCallback) {
+    mProxyCallback->Shutdown();
+    mProxyCallback = nullptr;
+  }
+  mIsShutdown = true;
 }
+
+void WMFCDMProxy::OnSessionMessage(const nsAString& aSessionId,
+                                   dom::MediaKeyMessageType aMessageType,
+                                   const nsTArray<uint8_t>& aMessage) {
+  MOZ_ASSERT(NS_IsMainThread());
+  RETURN_IF_SHUTDOWN();
+  if (mKeys.IsNull()) {
+    return;
+  }
+  if (RefPtr<dom::MediaKeySession> session = mKeys->GetSession(aSessionId)) {
+    LOG("Notify key message for session Id=%s",
+        NS_ConvertUTF16toUTF8(aSessionId).get());
+    session->DispatchKeyMessage(aMessageType, aMessage);
+  }
+}
+
+void WMFCDMProxy::OnKeyStatusesChange(const nsAString& aSessionId) {
+  MOZ_ASSERT(NS_IsMainThread());
+  RETURN_IF_SHUTDOWN();
+  if (mKeys.IsNull()) {
+    return;
+  }
+  if (RefPtr<dom::MediaKeySession> session = mKeys->GetSession(aSessionId)) {
+    LOG("Notify key statuses for session Id=%s",
+        NS_ConvertUTF16toUTF8(aSessionId).get());
+    session->DispatchKeyStatusesChange();
+  }
+}
+
+void WMFCDMProxy::OnExpirationChange(const nsAString& aSessionId,
+                                     UnixTime aExpiryTime) {
+  MOZ_ASSERT(NS_IsMainThread());
+  RETURN_IF_SHUTDOWN();
+  if (mKeys.IsNull()) {
+    return;
+  }
+  if (RefPtr<dom::MediaKeySession> session = mKeys->GetSession(aSessionId)) {
+    LOG("Notify expiration for session Id=%s",
+        NS_ConvertUTF16toUTF8(aSessionId).get());
+    session->SetExpiration(static_cast<double>(aExpiryTime));
+  }
+}
+
+#undef LOG
+#undef RETURN_IF_SHUTDOWN
+#undef PERFORM_ON_CDM
 
 }  // namespace mozilla

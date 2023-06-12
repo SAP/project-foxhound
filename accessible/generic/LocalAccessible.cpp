@@ -371,7 +371,7 @@ uint64_t LocalAccessible::VisibilityState() const {
   // marked invisible.
   // XXX Can we just remove this check? Why do we need to mark empty
   // text invisible?
-  if (frame->IsTextFrame() && !(frame->GetStateBits() & NS_FRAME_OUT_OF_FLOW) &&
+  if (frame->IsTextFrame() && !frame->HasAnyStateBits(NS_FRAME_OUT_OF_FLOW) &&
       frame->GetRect().IsEmpty()) {
     nsIFrame::RenderedText text = frame->GetRenderedText(
         0, UINT32_MAX, nsIFrame::TextOffsetType::OffsetsInContentText,
@@ -408,7 +408,7 @@ uint64_t LocalAccessible::NativeState() const {
 
   nsIFrame* frame = GetFrame();
   if (frame) {
-    if (frame->GetStateBits() & NS_FRAME_OUT_OF_FLOW) state |= states::FLOATING;
+    if (frame->HasAnyStateBits(NS_FRAME_OUT_OF_FLOW)) state |= states::FLOATING;
 
     // XXX we should look at layout for non XUL box frames, but need to decide
     // how that interacts with ARIA.
@@ -3143,7 +3143,7 @@ void LocalAccessible::SendCache(uint64_t aCacheDomain,
   }
   nsTArray<CacheData> data;
   data.AppendElement(CacheData(ID(), fields));
-  ipcDoc->SendCache(aUpdateType, data, false);
+  ipcDoc->SendCache(aUpdateType, data);
 
   if (profiler_thread_is_being_profiled_for_markers()) {
     nsAutoCString updateTypeStr;
@@ -3243,7 +3243,7 @@ already_AddRefed<AccAttributes> LocalAccessible::BundleFieldsForCache(
             nsLayoutUtils::FrameForPointOption::IgnoreCrossDoc}});
 
       nsTHashSet<LocalAccessible*> inViewAccs;
-      nsTArray<uint64_t> viewportCache;
+      nsTArray<uint64_t> viewportCache(frames.Length());
       // Layout considers table rows fully occluded by their containing cells.
       // This means they don't have their own display list items, and they won't
       // show up in the list returned from GetFramesForArea. To prevent table
@@ -3451,56 +3451,44 @@ already_AddRefed<AccAttributes> LocalAccessible::BundleFieldsForCache(
       }
 
       if (frame && frame->IsTextFrame()) {
-        nsTArray<int32_t> charData;
-
         if (nsTextFrame* currTextFrame = do_QueryFrame(frame)) {
-          nsTextFrame* prevTextFrame = currTextFrame;
-          nsRect frameRect = currTextFrame->GetRect();
-          nsIFrame* nearestAccAncestorFrame =
-              LocalParent() ? LocalParent()->GetFrame() : nullptr;
+          nsTArray<int32_t> charData(nsAccUtils::TextLength(this) *
+                                     kNumbersInRect);
+          // Continuation offsets are calculated relative to the primary frame.
+          // However, the acc's bounds are calculated using
+          // GetAllInFlowRectsUnion. For wrapped text which starts part way
+          // through a line, this might mean the top left of the acc is
+          // different to the top left of the primary frame. This also happens
+          // when the primary frame is empty (e.g. a blank line at the start of
+          // pre-formatted text), since the union rect will exclude the origin
+          // in that case. Calculate the offset from the acc's rect to the
+          // primary frame's rect.
+          nsRect accOffset =
+              nsLayoutUtils::GetAllInFlowRectsUnion(frame, frame);
           while (currTextFrame) {
-            nsRect contRect = currTextFrame->GetRect();
-            if (prevTextFrame->GetParent() != currTextFrame->GetParent() &&
-                nearestAccAncestorFrame) {
-              // Continuations can span multiple frame tree subtrees,
-              // particularly when multiline text is nested within both block
-              // and inline elements. In addition to using the position of this
-              // continuation to offset our char rects, we'll need to offset
-              // this continuation from the continuations that occurred before
-              // it. We don't know how many there are or what subtrees they're
-              // in, so we use a transform here. This also ensures our offset is
-              // accurate even if the intervening inline elements are not
-              // present in the a11y tree.
-              contRect = frameRect;
-              nsLayoutUtils::TransformRect(currTextFrame,
-                                           nearestAccAncestorFrame, contRect);
-            }
-            nsTArray<nsRect> charBounds;
+            nsPoint contOffset = currTextFrame->GetOffsetTo(frame);
+            contOffset -= accOffset.TopLeft();
+            int32_t length = currTextFrame->GetContentLength();
+            nsTArray<nsRect> charBounds(length);
             currTextFrame->GetCharacterRectsInRange(
-                currTextFrame->GetContentOffset(),
-                currTextFrame->GetContentEnd(), charBounds);
-            for (const nsRect& charRect : charBounds) {
+                currTextFrame->GetContentOffset(), length, charBounds);
+            for (nsRect& charRect : charBounds) {
               // We expect each char rect to be relative to the text leaf
               // acc this text lives in. Unfortunately, GetCharacterRectsInRange
               // returns rects relative to their continuation. Add the
               // continuation's relative position here to make our final
-              // rect relative to the text leaf acc. Continuation rects include
-              // the padding of their parent text frame, so we compute the
-              // relative offset here instead of using `contRect`'s coordinates
-              // outright.
-              int computedX = charRect.x + (contRect.x - frameRect.x);
-              int computedY = charRect.y + (contRect.y - frameRect.y);
-              charData.AppendElement(computedX);
-              charData.AppendElement(computedY);
+              // rect relative to the text leaf acc.
+              charRect.MoveBy(contOffset);
+              charData.AppendElement(charRect.x);
+              charData.AppendElement(charRect.y);
               charData.AppendElement(charRect.width);
               charData.AppendElement(charRect.height);
             }
-            prevTextFrame = currTextFrame;
             currTextFrame = currTextFrame->GetNextContinuation();
           }
-        }
-        if (charData.Length()) {
-          fields->SetAttribute(nsGkAtoms::characterData, std::move(charData));
+          if (charData.Length()) {
+            fields->SetAttribute(nsGkAtoms::characterData, std::move(charData));
+          }
         }
       }
     }

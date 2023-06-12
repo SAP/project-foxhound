@@ -2,8 +2,8 @@ import copy
 import json
 import os
 
-import asyncio
 import pytest
+import pytest_asyncio
 import webdriver
 
 from urllib.parse import urlunsplit
@@ -17,8 +17,6 @@ from tests.support.http_request import HTTPRequest
 # The webdriver session can outlive a pytest session
 _current_session = None
 
-# The event loop needs to outlive the webdriver session
-_event_loop = None
 
 _custom_session = False
 
@@ -51,16 +49,6 @@ def pytest_generate_tests(metafunc):
         marker = metafunc.definition.get_closest_marker(name="capabilities")
         if marker:
             metafunc.parametrize("capabilities", marker.args, ids=None)
-
-
-@pytest.fixture(scope="session")
-def event_loop():
-    """Change event_loop fixture to global."""
-    global _event_loop
-
-    if _event_loop is None:
-        _event_loop = asyncio.get_event_loop_policy().new_event_loop()
-    return _event_loop
 
 
 @pytest.fixture
@@ -117,7 +105,7 @@ async def reset_current_session_if_necessary(caps):
             _current_session = None
 
 
-@pytest.fixture(scope="function")
+@pytest_asyncio.fixture(scope="function")
 async def session(capabilities, configuration):
     """Create and start a session for a test that does not itself test session creation.
 
@@ -154,7 +142,7 @@ async def session(capabilities, configuration):
     cleanup_session(_current_session)
 
 
-@pytest.fixture(scope="function")
+@pytest_asyncio.fixture(scope="function")
 async def bidi_session(capabilities, configuration):
     """Create and start a bidi session.
 
@@ -250,7 +238,119 @@ def iframe(inline):
     return iframe
 
 
+
 @pytest.fixture
+def get_test_page(iframe, inline):
+    def get_test_page(
+        as_frame=False,
+        frame_doc=None,
+        shadow_doc=None,
+        nested_shadow_dom=False
+    ):
+        if frame_doc is None:
+            frame_doc = """<div id="in-frame"><input type="checkbox"/></div>"""
+
+        if shadow_doc is None:
+            shadow_doc = """<div id="in-shadow-dom"><input type="checkbox"/></div>"""
+
+        definition_inner_shadow_dom = ""
+        if nested_shadow_dom:
+            definition_inner_shadow_dom = f"""
+                customElements.define('inner-custom-element',
+                    class extends HTMLElement {{
+                        constructor() {{
+                            super();
+                            this.attachShadow({{mode: "open"}}).innerHTML = `
+                                {shadow_doc}
+                            `;
+                        }}
+                    }}
+                );
+            """
+            shadow_doc = """
+                <style>
+                    inner-custom-element {
+                        display:block; width:20px; height:20px;
+                    }
+                </style>
+                <div id="in-nested-shadow-dom">
+                    <inner-custom-element></inner-custom-element>
+                </div>
+                """
+
+        page_data = f"""
+            <style>
+                custom-element {{
+                    display:block; width:20px; height:20px;
+                }}
+            </style>
+            <div id="with-children"><p><span></span></p><br/></div>
+            <div id="with-text-node">Lorem</div>
+            <div id="with-comment"><!-- Comment --></div>
+
+            <input id="button" type="button"/>
+            <input id="checkbox" type="checkbox"/>
+            <input id="file" type="file"/>
+            <input id="hidden" type="hidden"/>
+            <input id="text" type="text"/>
+
+            {iframe(frame_doc)}
+
+            <img />
+            <svg></svg>
+
+            <custom-element id="custom-element"></custom-element>
+            <script>
+                var svg = document.querySelector("svg");
+                svg.setAttributeNS("http://www.w3.org/2000/svg", "svg:foo", "bar");
+
+                customElements.define("custom-element",
+                    class extends HTMLElement {{
+                        constructor() {{
+                            super();
+                            this.attachShadow({{mode: "open"}}).innerHTML = `{shadow_doc}`;
+                        }}
+                    }}
+                );
+                {definition_inner_shadow_dom}
+            </script>"""
+
+        if as_frame:
+            return inline(iframe(page_data))
+        else:
+            return inline(page_data)
+
+    return get_test_page
+
+
+@pytest.fixture
+def test_page_with_pdf_js(inline):
+    """Prepare an url to load a PDF document in the browser using pdf.js"""
+    def test_page_with_pdf_js(encoded_pdf_data):
+        return inline("""
+<!doctype html>
+<script src="/_pdf_js/pdf.js"></script>
+<canvas></canvas>
+<script>
+async function getText() {
+  pages = [];
+  let loadingTask = pdfjsLib.getDocument({data: atob("%s")});
+  let pdf = await loadingTask.promise;
+  for (let pageNumber=1; pageNumber<=pdf.numPages; pageNumber++) {
+    let page = await pdf.getPage(pageNumber);
+    textContent = await page.getTextContent()
+    text = textContent.items.map(x => x.str).join("");
+    pages.push(text);
+  }
+  return pages
+}
+</script>
+""" % encoded_pdf_data)
+
+    return test_page_with_pdf_js
+
+
+@pytest_asyncio.fixture
 async def top_context(bidi_session):
     contexts = await bidi_session.browsing_context.get_tree()
     return contexts[0]

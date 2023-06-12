@@ -729,9 +729,6 @@ PresShell::PresShell(Document* aDocument)
     : mDocument(aDocument),
       mViewManager(nullptr),
       mFrameManager(nullptr),
-#ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
-      mAllocatedPointers(MakeUnique<nsTHashSet<void*>>()),
-#endif  // MOZ_DIAGNOSTIC_ASSERT_ENABLED
       mAutoWeakFrames(nullptr),
 #ifdef ACCESSIBILITY
       mDocAccessible(nullptr),
@@ -1853,7 +1850,9 @@ nsresult PresShell::Initialize() {
     NS_ENSURE_STATE(!mHaveShutDown);
   }
 
-  mDocument->TriggerAutoFocus();
+  if (mDocument->HasAutoFocusCandidates()) {
+    mDocument->ScheduleFlushAutoFocusCandidates();
+  }
 
   NS_ASSERTION(rootFrame, "How did that happen?");
 
@@ -1948,6 +1947,13 @@ void PresShell::RefreshZoomConstraintsForScreenSizeChange() {
   if (mZoomConstraintsClient) {
     mZoomConstraintsClient->ScreenSizeChanged();
   }
+}
+
+void PresShell::ForceResizeReflowWithCurrentDimensions() {
+  nscoord currentWidth = 0;
+  nscoord currentHeight = 0;
+  mViewManager->GetWindowDimensions(&currentWidth, &currentHeight);
+  ResizeReflow(currentWidth, currentHeight);
 }
 
 void PresShell::ResizeReflow(nscoord aWidth, nscoord aHeight,
@@ -3044,7 +3050,7 @@ void PresShell::RestyleForAnimation(Element* aElement, RestyleHint aHint) {
   // Now that we no longer have separate non-animation and animation
   // restyles, this method having a distinct identity is less important,
   // but it still seems useful to offer as a "more public" API and as a
-  // chokepoint for these restyles to go through.
+  // checkpoint for these restyles to go through.
   mPresContext->RestyleManager()->PostRestyleEvent(aElement, aHint,
                                                    nsChangeHint(0));
 }
@@ -3077,20 +3083,17 @@ void PresShell::ClearFrameRefs(nsIFrame* aFrame) {
   }
 }
 
-already_AddRefed<gfxContext> PresShell::CreateReferenceRenderingContext() {
-  nsDeviceContext* devCtx = mPresContext->DeviceContext();
-  RefPtr<gfxContext> rc;
+UniquePtr<gfxContext> PresShell::CreateReferenceRenderingContext() {
   if (mPresContext->IsScreen()) {
-    rc = gfxContext::CreateOrNull(
+    return gfxContext::CreateOrNull(
         gfxPlatform::GetPlatform()->ScreenReferenceDrawTarget().get());
-  } else {
-    // We assume the devCtx has positive width and height for this call.
-    // However, width and height, may be outside of the reasonable range
-    // so rc may still be null.
-    rc = devCtx->CreateReferenceRenderingContext();
   }
 
-  return rc ? rc.forget() : nullptr;
+  // We assume the devCtx has positive width and height for this call.
+  // However, width and height, may be outside of the reasonable range
+  // so rc may still be null.
+  nsDeviceContext* devCtx = mPresContext->DeviceContext();
+  return devCtx->CreateReferenceRenderingContext();
 }
 
 // https://html.spec.whatwg.org/#scroll-to-the-fragment-identifier
@@ -3132,52 +3135,8 @@ nsresult PresShell::GoToAnchor(const nsAString& aAnchorName, bool aScroll,
   //
   // https://html.spec.whatwg.org/#target-element
   // https://html.spec.whatwg.org/#find-a-potential-indicated-element
-  RefPtr<Element> target = [&]() -> Element* {
-    // 1. If there is an element in the document tree that has an ID equal to
-    //    fragment, then return the first such element in tree order.
-    if (Element* el = mDocument->GetElementById(aAnchorName)) {
-      return el;
-    }
-
-    // 2. If there is an a element in the document tree that has a name
-    // attribute whose value is equal to fragment, then return the first such
-    // element in tree order.
-    //
-    // FIXME(emilio): Why the different code-paths for HTML and non-HTML docs?
-    if (mDocument->IsHTMLDocument()) {
-      nsCOMPtr<nsINodeList> list = mDocument->GetElementsByName(aAnchorName);
-      // Loop through the named nodes looking for the first anchor
-      uint32_t length = list->Length();
-      for (uint32_t i = 0; i < length; i++) {
-        nsIContent* node = list->Item(i);
-        if (node->IsHTMLElement(nsGkAtoms::a)) {
-          return node->AsElement();
-        }
-      }
-    } else {
-      constexpr auto nameSpace = u"http://www.w3.org/1999/xhtml"_ns;
-      // Get the list of anchor elements
-      nsCOMPtr<nsINodeList> list =
-          mDocument->GetElementsByTagNameNS(nameSpace, u"a"_ns);
-      // Loop through the anchors looking for the first one with the given name.
-      for (uint32_t i = 0; true; i++) {
-        nsIContent* node = list->Item(i);
-        if (!node) {  // End of list
-          break;
-        }
-
-        // Compare the name attribute
-        if (node->IsElement() &&
-            node->AsElement()->AttrValueIs(kNameSpaceID_None, nsGkAtoms::name,
-                                           aAnchorName, eCaseMatters)) {
-          return node->AsElement();
-        }
-      }
-    }
-
-    // 3. Return null.
-    return nullptr;
-  }();
+  RefPtr<Element> target =
+      nsContentUtils::GetTargetElement(mDocument, aAnchorName);
 
   // 1. If there is no indicated part of the document, set the Document's
   //    target element to null.
@@ -3561,10 +3520,17 @@ static void ScrollToShowRect(nsIScrollableFrame* aFrameAsScrollable,
   }
 
   ScrollMode scrollMode = ScrollMode::Instant;
-  bool autoBehaviorIsSmooth = aFrameAsScrollable->IsSmoothScroll();
-  bool smoothScroll =
-      (aScrollFlags & ScrollFlags::ScrollSmooth) ||
-      ((aScrollFlags & ScrollFlags::ScrollSmoothAuto) && autoBehaviorIsSmooth);
+  // Default to an instant scroll, but if the scroll behavior given is "auto"
+  // or "smooth", use that as the specified behavior. If the user has disabled
+  // smooth scrolls, a given mode of "auto" or "smooth" should not result in
+  // a smooth scroll.
+  ScrollBehavior behavior = ScrollBehavior::Instant;
+  if (aScrollFlags & ScrollFlags::ScrollSmooth) {
+    behavior = ScrollBehavior::Smooth;
+  } else if (aScrollFlags & ScrollFlags::ScrollSmoothAuto) {
+    behavior = ScrollBehavior::Auto;
+  }
+  bool smoothScroll = aFrameAsScrollable->IsSmoothScroll(behavior);
   if (smoothScroll) {
     scrollMode = ScrollMode::SmoothMsd;
   }
@@ -5162,8 +5128,7 @@ already_AddRefed<SourceSurface> PresShell::PaintRangePaintInfo(
     return nullptr;
   }
 
-  RefPtr<gfxContext> ctx = gfxContext::CreateOrNull(dt);
-  MOZ_ASSERT(ctx);  // already checked the draw target above
+  gfxContext ctx(dt);
 
   if (aRegion) {
     RefPtr<PathBuilder> builder = dt->CreatePathBuilder(FillRule::FILL_WINDING);
@@ -5182,10 +5147,10 @@ already_AddRefed<SourceSurface> PresShell::PaintRangePaintInfo(
     }
 
     RefPtr<Path> path = builder->Finish();
-    ctx->Clip(path);
+    ctx.Clip(path);
   }
 
-  gfxMatrix initialTM = ctx->CurrentMatrixDouble();
+  gfxMatrix initialTM = ctx.CurrentMatrixDouble();
 
   if (resize) {
     initialTM.PreScale(scale, scale);
@@ -5214,10 +5179,10 @@ already_AddRefed<SourceSurface> PresShell::PaintRangePaintInfo(
     // frame, so account for that translation too:
     gfxPoint rootOffset = nsLayoutUtils::PointToGfxPoint(
         rangeInfo->mRootOffset, pc->AppUnitsPerDevPixel());
-    ctx->SetMatrixDouble(initialTM.PreTranslate(rootOffset));
+    ctx.SetMatrixDouble(initialTM.PreTranslate(rootOffset));
     aArea.MoveBy(-rangeInfo->mRootOffset.x, -rangeInfo->mRootOffset.y);
     nsRegion visible(aArea);
-    rangeInfo->mList.PaintRoot(&rangeInfo->mBuilder, ctx,
+    rangeInfo->mList.PaintRoot(&rangeInfo->mBuilder, &ctx,
                                nsDisplayList::PAINT_DEFAULT, Nothing());
     aArea.MoveBy(rangeInfo->mRootOffset.x, rangeInfo->mRootOffset.y);
   }
@@ -9577,7 +9542,7 @@ bool PresShell::DoReflow(nsIFrame* target, bool aInterruptible,
              "non-root frames");
 
   // CreateReferenceRenderingContext can return nullptr
-  RefPtr<gfxContext> rcx(CreateReferenceRenderingContext());
+  UniquePtr<gfxContext> rcx(CreateReferenceRenderingContext());
 
 #ifdef DEBUG
   mCurrentReflowRoot = target;
@@ -9605,7 +9570,7 @@ bool PresShell::DoReflow(nsIFrame* target, bool aInterruptible,
   // Don't pass size directly to the reflow input, since a
   // constrained height implies page/column breaking.
   LogicalSize reflowSize(wm, size.ISize(wm), NS_UNCONSTRAINEDSIZE);
-  ReflowInput reflowInput(mPresContext, target, rcx, reflowSize,
+  ReflowInput reflowInput(mPresContext, target, rcx.get(), reflowSize,
                           ReflowInput::InitFlag::CallerWillInit);
   reflowInput.mOrthogonalLimit = size.BSize(wm);
 
@@ -11074,15 +11039,8 @@ void PresShell::MaybeRecreateMobileViewportManager(bool aAfterInitialization) {
                             ResolutionChangeOrigin::MainThreadRestore);
 
     if (aAfterInitialization) {
-      // Force a reflow to our correct size by going back to the docShell
-      // and asking it to reassert its size. This is necessary because
-      // everything underneath the docShell, like the ViewManager, has been
-      // altered by the MobileViewportManager in an irreversible way.
-      nsDocShell* docShell =
-          static_cast<nsDocShell*>(GetPresContext()->GetDocShell());
-      int32_t width, height;
-      docShell->GetSize(&width, &height);
-      docShell->SetSize(width, height, false);
+      // Force a reflow to our correct view manager size.
+      ForceResizeReflowWithCurrentDimensions();
     }
   }
 
@@ -11555,11 +11513,11 @@ PresShell::WindowSizeConstraints PresShell::GetWindowSizeConstraints() {
     return {minSize, maxSize};
   }
   if (rootFrame->IsXULBoxFrame()) {
-    RefPtr<gfxContext> rcx(CreateReferenceRenderingContext());
+    UniquePtr<gfxContext> rcx(CreateReferenceRenderingContext());
     if (!rcx) {
       return {minSize, maxSize};
     }
-    nsBoxLayoutState state(mPresContext, rcx);
+    nsBoxLayoutState state(mPresContext, rcx.get());
     minSize = rootFrame->GetXULMinSize(state);
     maxSize = rootFrame->GetXULMaxSize(state);
   } else {

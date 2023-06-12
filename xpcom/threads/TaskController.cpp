@@ -409,7 +409,9 @@ void TaskController::AddTask(already_AddRefed<Task>&& aTask) {
     task->mPriorityModifier = manager->mCurrentPriorityModifier;
   }
 
-  task->mInsertionTime = TimeStamp::Now();
+  if (profiler_is_active_and_unpaused()) {
+    task->mInsertionTime = TimeStamp::Now();
+  }
 
 #ifdef DEBUG
   task->mIsInGraph = true;
@@ -465,7 +467,14 @@ void TaskController::ProcessPendingMTTask(bool aMayWait) {
       break;
     }
 
-    BackgroundHangMonitor().NotifyWait();
+#ifdef MOZ_ENABLE_BACKGROUND_HANG_MONITOR
+    // Unlock before calling into the BackgroundHangMonitor API as it uses
+    // the timer API.
+    {
+      MutexAutoUnlock unlock(mGraphMutex);
+      BackgroundHangMonitor().NotifyWait();
+    }
+#endif
 
     {
       // ProcessNextEvent will also have attempted to wait, however we may have
@@ -475,7 +484,12 @@ void TaskController::ProcessPendingMTTask(bool aMayWait) {
       mMainThreadCV.Wait();
     }
 
-    BackgroundHangMonitor().NotifyActivity();
+#ifdef MOZ_ENABLE_BACKGROUND_HANG_MONITOR
+    {
+      MutexAutoUnlock unlock(mGraphMutex);
+      BackgroundHangMonitor().NotifyActivity();
+    }
+#endif
   }
 
   if (mMayHaveMainThreadTask) {
@@ -834,7 +848,8 @@ bool TaskController::DoExecuteNextTaskOnlyMainThreadInternal(
         TimeStamp now = TimeStamp::Now();
 
         if (mainThread) {
-          if (task->GetPriority() < uint32_t(EventQueuePriority::InputHigh)) {
+          if (task->GetPriority() < uint32_t(EventQueuePriority::InputHigh) ||
+              task->mInsertionTime.IsNull()) {
             mainThread->SetRunningEventDelay(TimeDuration(), now);
           } else {
             mainThread->SetRunningEventDelay(now - task->mInsertionTime, now);

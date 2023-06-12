@@ -10,13 +10,14 @@
 
 namespace mozilla::dom {
 
-void WebTransportChild::Shutdown() {
-  if (!CanSend()) {
+void WebTransportChild::Shutdown(bool aClose) {
+  LOG(("WebTransportChild::Shutdown() for %p (%p)", this, mTransport));
+  mTransport = nullptr;
+  if (!aClose || !CanSend()) {
     return;
   }
 
   Close();
-  mTransport = nullptr;
 }
 
 void WebTransportChild::CloseAll() {
@@ -30,16 +31,34 @@ void WebTransportChild::CloseAll() {
   return IPC_OK();
 }
 
+::mozilla::ipc::IPCResult WebTransportChild::RecvRemoteClosed(
+    const bool& aCleanly, const uint32_t& aCode, const nsACString& aReason) {
+  if (mTransport) {
+    mTransport->RemoteClosed(aCleanly, aCode, aReason);
+  }
+  return IPC_OK();
+}
+
 ::mozilla::ipc::IPCResult WebTransportChild::RecvIncomingBidirectionalStream(
     const RefPtr<DataPipeReceiver>& aIncoming,
     const RefPtr<DataPipeSender>& aOutgoing) {
-  mTransport->NewBidirectionalStream(aIncoming, aOutgoing);
+  if (mTransport) {
+    mTransport->NewBidirectionalStream(aIncoming, aOutgoing);
+  }
   return IPC_OK();
 }
 
 ::mozilla::ipc::IPCResult WebTransportChild::RecvIncomingUnidirectionalStream(
     const RefPtr<DataPipeReceiver>& aStream) {
-  mTransport->NewUnidirectionalStream(aStream);
+  if (mTransport) {
+    mTransport->NewUnidirectionalStream(aStream);
+  }
+  return IPC_OK();
+}
+
+::mozilla::ipc::IPCResult WebTransportChild::RecvIncomingDatagram(
+    nsTArray<uint8_t>&& aData, const TimeStamp& aRecvTimeStamp) {
+  // XXX handle the received datagram
   return IPC_OK();
 }
 

@@ -16,7 +16,7 @@
 using namespace mozilla;
 using mozilla::dom::HTMLInputElement;
 
-//#define FCF_NOISY
+// #define FCF_NOISY
 
 nsCheckboxRadioFrame* NS_NewCheckboxRadioFrame(PresShell* aPresShell,
                                                ComputedStyle* aStyle) {
@@ -85,14 +85,22 @@ LogicalSize nsCheckboxRadioFrame::ComputeAutoSize(
   return size;
 }
 
-nscoord nsCheckboxRadioFrame::GetLogicalBaseline(
-    WritingMode aWritingMode) const {
+Maybe<nscoord> nsCheckboxRadioFrame::GetNaturalBaselineBOffset(
+    WritingMode aWM, BaselineSharingGroup aBaselineGroup) const {
   NS_ASSERTION(!IsSubtreeDirty(), "frame must not be dirty");
+
+  if (aBaselineGroup == BaselineSharingGroup::Last) {
+    return Nothing{};
+  }
+
+  if (StyleDisplay()->IsBlockOutsideStyle()) {
+    return Nothing{};
+  }
 
   // For appearance:none we use a standard CSS baseline, i.e. synthesized from
   // our margin-box.
   if (!StyleDisplay()->HasAppearance()) {
-    return nsAtomicContainerFrame::GetLogicalBaseline(aWritingMode);
+    return Nothing{};
   }
 
   // This is for compatibility with Chrome, Safari and Edge (Dec 2016).
@@ -101,11 +109,9 @@ nscoord nsCheckboxRadioFrame::GetLogicalBaseline(
   // than the margin edge).
   // For "inverted" lines (typically in writing-mode:vertical-lr), use the
   // block-start end instead.
-  return aWritingMode.IsLineInverted()
-             ? GetLogicalUsedBorderAndPadding(aWritingMode).BStart(aWritingMode)
-             : BSize(aWritingMode) -
-                   GetLogicalUsedBorderAndPadding(aWritingMode)
-                       .BEnd(aWritingMode);
+  return Some(aWM.IsLineInverted()
+                  ? GetLogicalUsedBorderAndPadding(aWM).BStart(aWM)
+                  : BSize(aWM) - GetLogicalUsedBorderAndPadding(aWM).BEnd(aWM));
 }
 
 void nsCheckboxRadioFrame::Reflow(nsPresContext* aPresContext,

@@ -15,6 +15,7 @@
 #include "mozilla/ToString.h"
 #include "nsCSSRendering.h"
 #include "nsDisplayList.h"
+#include "nsIFrameInlines.h"
 #include "nsLayoutUtils.h"
 
 using namespace mozilla;
@@ -73,12 +74,15 @@ bool nsDisplayColumnRule::CreateWebRenderCommands(
     const StackingContextHelper& aSc,
     mozilla::layers::RenderRootStateManager* aManager,
     nsDisplayListBuilder* aDisplayListBuilder) {
-  RefPtr<gfxContext> screenRefCtx = gfxContext::CreateOrNull(
-      gfxPlatform::GetPlatform()->ScreenReferenceDrawTarget().get());
+  RefPtr dt = gfxPlatform::GetPlatform()->ScreenReferenceDrawTarget();
+  if (!dt || !dt->IsValid()) {
+    return false;
+  }
+  gfxContext screenRefCtx(dt);
 
   bool dummy;
   static_cast<nsColumnSetFrame*>(mFrame)->CreateBorderRenderers(
-      mBorderRenderers, screenRefCtx, GetBounds(aDisplayListBuilder, &dummy),
+      mBorderRenderers, &screenRefCtx, GetBounds(aDisplayListBuilder, &dummy),
       ToReferenceFrame());
 
   if (mBorderRenderers.IsEmpty()) {
@@ -632,6 +636,11 @@ nsColumnSetFrame::ColumnBalanceData nsColumnSetFrame::ReflowColumns(
             aReflowInput.mParentReflowInput->mFrame->HasAnyStateBits(
                 NS_FRAME_HAS_MULTI_COLUMN_ANCESTOR);
         if (isNestedMulticol) {
+          if (aConfig.mForceAuto) {
+            // If we are forced to fill columns sequentially, force fit the
+            // content whether we are at top of page or not.
+            return true;
+          }
           if (aReflowInput.mFlags.mIsTopOfPage) {
             // If this is the last balancing reflow in a nested multicol, we
             // want to force fit content to avoid infinite loops.
@@ -1285,6 +1294,32 @@ void nsColumnSetFrame::AppendDirectlyOwnedAnonBoxes(
   MOZ_ASSERT(column->Style()->GetPseudoType() == PseudoStyleType::columnContent,
              "What sort of child is this?");
   aResult.AppendElement(OwnedAnonBox(column));
+}
+
+Maybe<nscoord> nsColumnSetFrame::GetNaturalBaselineBOffset(
+    WritingMode aWM, BaselineSharingGroup aBaselineGroup) const {
+  Maybe<nscoord> result;
+  for (const auto* kid : mFrames) {
+    auto kidBaseline = kid->GetNaturalBaselineBOffset(aWM, aBaselineGroup);
+    if (!kidBaseline) {
+      continue;
+    }
+    // The kid frame may not necessarily be aligned with the columnset frame.
+    LogicalRect kidRect{aWM, kid->GetLogicalNormalPosition(aWM, GetSize()),
+                        kid->GetLogicalSize(aWM)};
+    if (aBaselineGroup == BaselineSharingGroup::First) {
+      *kidBaseline += kidRect.BStart(aWM);
+    } else {
+      *kidBaseline += (GetLogicalSize().BSize(aWM) - kidRect.BEnd(aWM));
+    }
+    // Take the smallest of the baselines (i.e. Closest to border-block-start
+    // for `BaselineSharingGroup::First`, border-block-end for
+    // `BaselineSharingGroup::Last`)
+    if (!result || *kidBaseline < *result) {
+      result = kidBaseline;
+    }
+  }
+  return result;
 }
 
 #ifdef DEBUG

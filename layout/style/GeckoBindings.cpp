@@ -63,6 +63,7 @@
 #include "mozilla/ServoBindings.h"
 #include "mozilla/ServoTraversalStatistics.h"
 #include "mozilla/Telemetry.h"
+#include "mozilla/TimelineManager.h"
 #include "mozilla/RWLock.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/ElementInlines.h"
@@ -305,6 +306,16 @@ bool Gecko_AnimationNameMayBeReferencedFromStyle(
   return aPresContext->AnimationManager()->AnimationMayBeReferenced(aName);
 }
 
+float Gecko_GetScrollbarInlineSize(const nsPresContext* aPc) {
+  MOZ_ASSERT(aPc);
+  AutoWriteLock guard(*sServoFFILock);  // We read some look&feel values.
+  auto overlay = aPc->UseOverlayScrollbars() ? nsITheme::Overlay::Yes
+                                             : nsITheme::Overlay::No;
+  LayoutDeviceIntCoord size =
+      aPc->Theme()->GetScrollbarSize(aPc, StyleScrollbarWidth::Auto, overlay);
+  return aPc->DevPixelsToFloatCSSPixels(size);
+}
+
 PseudoStyleType Gecko_GetImplementedPseudo(const Element* aElement) {
   return aElement->GetPseudoElementType();
 }
@@ -329,6 +340,17 @@ uint32_t Gecko_CalcStyleDifference(const ComputedStyle* aOldStyle,
       (equalStructs & kInheritedStructsMask) == kInheritedStructsMask;
 
   return result;
+}
+
+nscoord Gecko_CalcLineHeight(const StyleLineHeight* aLh,
+                             const nsPresContext* aPc, bool aVertical,
+                             const nsStyleFont* aAgainstFont,
+                             const mozilla::dom::Element* aElement) {
+  // Normal line-height depends on font metrics.
+  AutoWriteLock guard(*sServoFFILock);
+  return ReflowInput::CalcLineHeight(*aLh, *aAgainstFont,
+                                     const_cast<nsPresContext*>(aPc), aVertical,
+                                     aElement, NS_UNCONSTRAINEDSIZE, 1.0f);
 }
 
 const ServoElementSnapshot* Gecko_GetElementSnapshot(
@@ -462,26 +484,6 @@ Gecko_GetActiveLinkAttrDeclarationBlock(const Element* aElement) {
   return AsRefRawStrong(sheet->GetServoActiveLinkDecl());
 }
 
-static PseudoStyleType GetPseudoTypeFromElementForAnimation(
-    const Element*& aElementOrPseudo) {
-  if (aElementOrPseudo->IsGeneratedContentContainerForBefore()) {
-    aElementOrPseudo = aElementOrPseudo->GetParent()->AsElement();
-    return PseudoStyleType::before;
-  }
-
-  if (aElementOrPseudo->IsGeneratedContentContainerForAfter()) {
-    aElementOrPseudo = aElementOrPseudo->GetParent()->AsElement();
-    return PseudoStyleType::after;
-  }
-
-  if (aElementOrPseudo->IsGeneratedContentContainerForMarker()) {
-    aElementOrPseudo = aElementOrPseudo->GetParent()->AsElement();
-    return PseudoStyleType::marker;
-  }
-
-  return PseudoStyleType::NotPseudo;
-}
-
 bool Gecko_GetAnimationRule(const Element* aElement,
                             EffectCompositor::CascadeLevel aCascadeLevel,
                             RawServoAnimationValueMap* aAnimationValues) {
@@ -496,14 +498,26 @@ bool Gecko_GetAnimationRule(const Element* aElement,
     return false;
   }
 
-  PseudoStyleType pseudoType = GetPseudoTypeFromElementForAnimation(aElement);
-
+  const auto [element, pseudoType] =
+      AnimationUtils::GetElementPseudoPair(aElement);
   return presContext->EffectCompositor()->GetServoAnimationRule(
-      aElement, pseudoType, aCascadeLevel, aAnimationValues);
+      element, pseudoType, aCascadeLevel, aAnimationValues);
 }
 
 bool Gecko_StyleAnimationsEquals(const nsStyleAutoArray<StyleAnimation>* aA,
                                  const nsStyleAutoArray<StyleAnimation>* aB) {
+  return *aA == *aB;
+}
+
+bool Gecko_StyleScrollTimelinesEquals(
+    const nsStyleAutoArray<StyleScrollTimeline>* aA,
+    const nsStyleAutoArray<StyleScrollTimeline>* aB) {
+  return *aA == *aB;
+}
+
+bool Gecko_StyleViewTimelinesEquals(
+    const nsStyleAutoArray<StyleViewTimeline>* aA,
+    const nsStyleAutoArray<StyleViewTimeline>* aB) {
   return *aA == *aB;
 }
 
@@ -540,11 +554,24 @@ void Gecko_UpdateAnimations(const Element* aElement,
 
   nsAutoAnimationMutationBatch mb(aElement->OwnerDoc());
 
-  PseudoStyleType pseudoType = GetPseudoTypeFromElementForAnimation(aElement);
+  const auto [element, pseudoType] =
+      AnimationUtils::GetElementPseudoPair(aElement);
+
+  // Handle scroll/view timelines first because CSS animations may refer to the
+  // timeline defined by itself.
+  if (aTasks & UpdateAnimationsTasks::ScrollTimelines) {
+    presContext->TimelineManager()->UpdateTimelines(
+        const_cast<Element*>(element), pseudoType, aComputedData,
+        TimelineManager::ProgressTimelineType::Scroll);
+  }
+
+  if (aTasks & UpdateAnimationsTasks::ViewTimelines) {
+    // TODO: Bug 1737920. Add support for view timelines.
+  }
 
   if (aTasks & UpdateAnimationsTasks::CSSAnimations) {
     presContext->AnimationManager()->UpdateAnimations(
-        const_cast<Element*>(aElement), pseudoType, aComputedData);
+        const_cast<Element*>(element), pseudoType, aComputedData);
   }
 
   // aComputedData might be nullptr if the target element is now in a
@@ -560,17 +587,17 @@ void Gecko_UpdateAnimations(const Element* aElement,
   if (aTasks & UpdateAnimationsTasks::CSSTransitions) {
     MOZ_ASSERT(aOldComputedData);
     presContext->TransitionManager()->UpdateTransitions(
-        const_cast<Element*>(aElement), pseudoType, *aOldComputedData,
+        const_cast<Element*>(element), pseudoType, *aOldComputedData,
         *aComputedData);
   }
 
   if (aTasks & UpdateAnimationsTasks::EffectProperties) {
     presContext->EffectCompositor()->UpdateEffectProperties(
-        aComputedData, const_cast<Element*>(aElement), pseudoType);
+        aComputedData, const_cast<Element*>(element), pseudoType);
   }
 
   if (aTasks & UpdateAnimationsTasks::CascadeResults) {
-    EffectSet* effectSet = EffectSet::GetEffectSet(aElement, pseudoType);
+    EffectSet* effectSet = EffectSet::Get(element, pseudoType);
     // CSS animations/transitions might have been destroyed as part of the above
     // steps so before updating cascade results, we check if there are still any
     // animations to update.
@@ -581,70 +608,66 @@ void Gecko_UpdateAnimations(const Element* aElement,
       // it since we avoid mutating state as part of the Servo parallel
       // traversal.
       presContext->EffectCompositor()->UpdateCascadeResults(
-          *effectSet, const_cast<Element*>(aElement), pseudoType);
+          *effectSet, const_cast<Element*>(element), pseudoType);
     }
   }
 
   if (aTasks & UpdateAnimationsTasks::DisplayChangedFromNone) {
     presContext->EffectCompositor()->RequestRestyle(
-        const_cast<Element*>(aElement), pseudoType,
+        const_cast<Element*>(element), pseudoType,
         EffectCompositor::RestyleType::Standard,
         EffectCompositor::CascadeLevel::Animations);
   }
 }
 
 size_t Gecko_GetAnimationEffectCount(const Element* aElementOrPseudo) {
-  PseudoStyleType pseudoType =
-      GetPseudoTypeFromElementForAnimation(aElementOrPseudo);
+  const auto [element, pseudoType] =
+      AnimationUtils::GetElementPseudoPair(aElementOrPseudo);
 
-  EffectSet* effectSet = EffectSet::GetEffectSet(aElementOrPseudo, pseudoType);
+  EffectSet* effectSet = EffectSet::Get(element, pseudoType);
   return effectSet ? effectSet->Count() : 0;
 }
 
 bool Gecko_ElementHasAnimations(const Element* aElement) {
-  PseudoStyleType pseudoType = GetPseudoTypeFromElementForAnimation(aElement);
-
-  return !!EffectSet::GetEffectSet(aElement, pseudoType);
+  const auto [element, pseudoType] =
+      AnimationUtils::GetElementPseudoPair(aElement);
+  return !!EffectSet::Get(element, pseudoType);
 }
 
 bool Gecko_ElementHasCSSAnimations(const Element* aElement) {
-  PseudoStyleType pseudoType = GetPseudoTypeFromElementForAnimation(aElement);
-  nsAnimationManager::CSSAnimationCollection* collection =
-      nsAnimationManager::CSSAnimationCollection ::GetAnimationCollection(
-          aElement, pseudoType);
-
+  const auto [element, pseudoType] =
+      AnimationUtils::GetElementPseudoPair(aElement);
+  auto* collection =
+      nsAnimationManager::CSSAnimationCollection::Get(element, pseudoType);
   return collection && !collection->mAnimations.IsEmpty();
 }
 
 bool Gecko_ElementHasCSSTransitions(const Element* aElement) {
-  PseudoStyleType pseudoType = GetPseudoTypeFromElementForAnimation(aElement);
-  nsTransitionManager::CSSTransitionCollection* collection =
-      nsTransitionManager::CSSTransitionCollection ::GetAnimationCollection(
-          aElement, pseudoType);
-
+  const auto [element, pseudoType] =
+      AnimationUtils::GetElementPseudoPair(aElement);
+  auto* collection =
+      nsTransitionManager::CSSTransitionCollection::Get(element, pseudoType);
   return collection && !collection->mAnimations.IsEmpty();
 }
 
 size_t Gecko_ElementTransitions_Length(const Element* aElement) {
-  PseudoStyleType pseudoType = GetPseudoTypeFromElementForAnimation(aElement);
-  nsTransitionManager::CSSTransitionCollection* collection =
-      nsTransitionManager::CSSTransitionCollection ::GetAnimationCollection(
-          aElement, pseudoType);
-
+  const auto [element, pseudoType] =
+      AnimationUtils::GetElementPseudoPair(aElement);
+  auto* collection =
+      nsTransitionManager::CSSTransitionCollection::Get(element, pseudoType);
   return collection ? collection->mAnimations.Length() : 0;
 }
 
 static CSSTransition* GetCurrentTransitionAt(const Element* aElement,
                                              size_t aIndex) {
-  PseudoStyleType pseudoType = GetPseudoTypeFromElementForAnimation(aElement);
-  nsTransitionManager::CSSTransitionCollection* collection =
-      nsTransitionManager::CSSTransitionCollection ::GetAnimationCollection(
-          aElement, pseudoType);
+  const auto [element, pseudoType] =
+      AnimationUtils::GetElementPseudoPair(aElement);
+  auto* collection =
+      nsTransitionManager::CSSTransitionCollection ::Get(element, pseudoType);
   if (!collection) {
     return nullptr;
   }
-  nsTArray<RefPtr<CSSTransition>>& transitions = collection->mAnimations;
-  return aIndex < transitions.Length() ? transitions[aIndex].get() : nullptr;
+  return collection->mAnimations.SafeElementAt(aIndex);
 }
 
 nsCSSPropertyID Gecko_ElementTransitions_PropertyAt(const Element* aElement,
@@ -1045,12 +1068,12 @@ void Gecko_SetFontPaletteBase(gfx::FontPaletteValueSet::PaletteValues* aValues,
 
 void Gecko_SetFontPaletteOverride(
     gfx::FontPaletteValueSet::PaletteValues* aValues, int32_t aIndex,
-    StyleRGBA aColor) {
+    StyleAbsoluteColor* aColor) {
   if (aIndex < 0) {
     return;
   }
   aValues->mOverrides.AppendElement(gfx::FontPaletteValueSet::OverrideColor{
-      uint32_t(aIndex), gfx::sRGBColor::FromABGR(aColor.ToColor())});
+      uint32_t(aIndex), gfx::sRGBColor::FromABGR(aColor->ToColor())});
 }
 
 void Gecko_CounterStyle_ToPtr(const StyleCounterStyle* aStyle,

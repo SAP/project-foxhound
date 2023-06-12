@@ -4605,6 +4605,9 @@ void HTMLMediaElement::UpdateWakeLock() {
 }
 
 void HTMLMediaElement::CreateAudioWakeLockIfNeeded() {
+  if (AppShutdown::IsInOrBeyond(ShutdownPhase::AppShutdownConfirmed)) {
+    return;
+  }
   if (!mWakeLock) {
     RefPtr<power::PowerManagerService> pmService =
         power::PowerManagerService::GetInstance();
@@ -6319,6 +6322,10 @@ bool HTMLMediaElement::HadCrossOriginRedirects() {
     return mDecoder->HadCrossOriginRedirects();
   }
   return false;
+}
+
+bool HTMLMediaElement::ShouldResistFingerprinting() const {
+  return OwnerDoc()->ShouldResistFingerprinting();
 }
 
 already_AddRefed<nsIPrincipal> HTMLMediaElement::GetCurrentVideoPrincipal() {

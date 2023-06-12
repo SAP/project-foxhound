@@ -37,6 +37,7 @@
 #include "js/Stack.h"                 // JS::NativeStackLimitMin
 #include "util/StringBuffer.h"
 #include "util/Text.h"
+#include "vm/ArrayBufferObject.h"
 #include "vm/BigIntType.h"
 #include "vm/Compartment.h"
 #include "vm/ErrorObject.h"
@@ -50,6 +51,7 @@
 #include "wasm/WasmDebugFrame.h"
 #include "wasm/WasmGcObject.h"
 #include "wasm/WasmJS.h"
+#include "wasm/WasmMemory.h"
 #include "wasm/WasmModule.h"
 #include "wasm/WasmStubs.h"
 #include "wasm/WasmTypeDef.h"
@@ -59,7 +61,6 @@
 #include "gc/StoreBuffer-inl.h"
 #include "vm/ArrayBufferObject-inl.h"
 #include "vm/JSObject-inl.h"
-#include "wasm/WasmGcObject-inl.h"
 
 using namespace js;
 using namespace js::jit;
@@ -488,30 +489,12 @@ static int32_t PerformWake(Instance* instance, PtrT byteOffset, int32_t count) {
   return pages.value();
 }
 
-static inline bool BoundsCheckCopy(uint32_t dstByteOffset,
-                                   uint32_t srcByteOffset, uint32_t len,
-                                   size_t memLen) {
-  uint64_t dstOffsetLimit = uint64_t(dstByteOffset) + uint64_t(len);
-  uint64_t srcOffsetLimit = uint64_t(srcByteOffset) + uint64_t(len);
-
-  return dstOffsetLimit > memLen || srcOffsetLimit > memLen;
-}
-
-static inline bool BoundsCheckCopy(uint64_t dstByteOffset,
-                                   uint64_t srcByteOffset, uint64_t len,
-                                   size_t memLen) {
-  uint64_t dstOffsetLimit = dstByteOffset + len;
-  uint64_t srcOffsetLimit = srcByteOffset + len;
-
-  return dstOffsetLimit < dstByteOffset || dstOffsetLimit > memLen ||
-         srcOffsetLimit < srcByteOffset || srcOffsetLimit > memLen;
-}
-
 template <typename T, typename F, typename I>
 inline int32_t WasmMemoryCopy(JSContext* cx, T memBase, size_t memLen,
                               I dstByteOffset, I srcByteOffset, I len,
                               F memMove) {
-  if (BoundsCheckCopy(dstByteOffset, srcByteOffset, len, memLen)) {
+  if (!MemoryBoundsCheck(dstByteOffset, len, memLen) ||
+      !MemoryBoundsCheck(srcByteOffset, len, memLen)) {
     ReportTrapError(cx, JSMSG_WASM_OUT_OF_BOUNDS);
     return -1;
   }
@@ -583,22 +566,10 @@ inline int32_t MemoryCopyShared(JSContext* cx, I dstByteOffset, I srcByteOffset,
   return MemoryCopyShared(cx, dstByteOffset, srcByteOffset, len, memBase);
 }
 
-static inline bool BoundsCheckFill(uint32_t byteOffset, uint32_t len,
-                                   size_t memLen) {
-  uint64_t offsetLimit = uint64_t(byteOffset) + uint64_t(len);
-  return offsetLimit > memLen;
-}
-
-static inline bool BoundsCheckFill(uint64_t byteOffset, uint64_t len,
-                                   size_t memLen) {
-  uint64_t offsetLimit = byteOffset + len;
-  return offsetLimit < byteOffset || offsetLimit > memLen;
-}
-
 template <typename T, typename F, typename I>
 inline int32_t WasmMemoryFill(JSContext* cx, T memBase, size_t memLen,
                               I byteOffset, uint32_t value, I len, F memSet) {
-  if (BoundsCheckFill(byteOffset, len, memLen)) {
+  if (!MemoryBoundsCheck(byteOffset, len, memLen)) {
     ReportTrapError(cx, JSMSG_WASM_OUT_OF_BOUNDS);
     return -1;
   }
@@ -946,6 +917,59 @@ bool Instance::initElems(uint32_t tableIndex, const ElemSegment& seg,
   return 0;
 }
 
+template <typename I>
+static int32_t MemDiscardNotShared(Instance* instance, I byteOffset, I byteLen,
+                                   uint8_t* memBase) {
+  JSContext* cx = instance->cx();
+
+  if (byteOffset % wasm::PageSize != 0 || byteLen % wasm::PageSize != 0) {
+    ReportTrapError(cx, JSMSG_WASM_UNALIGNED_ACCESS);
+    return -1;
+  }
+
+  WasmArrayRawBuffer* rawBuf = WasmArrayRawBuffer::fromDataPtr(memBase);
+  size_t memLen = rawBuf->byteLength();
+
+  if (!MemoryBoundsCheck(byteOffset, byteLen, memLen)) {
+    ReportTrapError(cx, JSMSG_WASM_OUT_OF_BOUNDS);
+    return -1;
+  }
+
+  rawBuf->discard(byteOffset, byteLen);
+
+  return 0;
+}
+
+/* static */ int32_t Instance::memDiscard_m32(Instance* instance,
+                                              uint32_t byteOffset,
+                                              uint32_t byteLen,
+                                              uint8_t* memBase) {
+  return MemDiscardNotShared(instance, byteOffset, byteLen, memBase);
+}
+
+/* static */ int32_t Instance::memDiscard_m64(Instance* instance,
+                                              uint64_t byteOffset,
+                                              uint64_t byteLen,
+                                              uint8_t* memBase) {
+  return MemDiscardNotShared(instance, byteOffset, byteLen, memBase);
+}
+
+/* static */ int32_t Instance::memDiscardShared_m32(Instance* instance,
+                                                    uint32_t byteOffset,
+                                                    uint32_t len,
+                                                    uint8_t* memBase) {
+  ReportTrapError(instance->cx(), JSMSG_WASM_NOT_IMPLEMENTED);
+  return -1;
+}
+
+/* static */ int32_t Instance::memDiscardShared_m64(Instance* instance,
+                                                    uint64_t byteOffset,
+                                                    uint64_t len,
+                                                    uint8_t* memBase) {
+  ReportTrapError(instance->cx(), JSMSG_WASM_NOT_IMPLEMENTED);
+  return -1;
+}
+
 /* static */ void* Instance::tableGet(Instance* instance, uint32_t index,
                                       uint32_t tableIndex) {
   MOZ_ASSERT(SASigTableGet.failureMode == FailureMode::FailOnInvalidRef);
@@ -1113,20 +1137,11 @@ bool Instance::initElems(uint32_t tableIndex, const ElemSegment& seg,
 //
 // Object support.
 
-/* static */ void Instance::preBarrierFiltering(Instance* instance,
-                                                gc::Cell** location) {
-  MOZ_ASSERT(SASigPreBarrierFiltering.failureMode == FailureMode::Infallible);
-  MOZ_ASSERT(location);
-  gc::PreWriteBarrier(*reinterpret_cast<JSObject**>(location));
-}
-
 /* static */ void Instance::postBarrier(Instance* instance,
                                         gc::Cell** location) {
   MOZ_ASSERT(SASigPostBarrier.failureMode == FailureMode::Infallible);
   MOZ_ASSERT(location);
-  JSContext* cx = instance->cx();
-  cx->runtime()->gc.storeBuffer().putCell(
-      reinterpret_cast<JSObject**>(location));
+  instance->storeBuffer_->putCell(reinterpret_cast<JSObject**>(location));
 }
 
 /* static */ void Instance::postBarrierPrecise(Instance* instance,
@@ -1148,18 +1163,6 @@ bool Instance::initElems(uint32_t tableIndex, const ElemSegment& seg,
   JSObject::postWriteBarrier(location, prev, next);
 }
 
-/* static */ void Instance::postBarrierFiltering(Instance* instance,
-                                                 gc::Cell** location) {
-  MOZ_ASSERT(SASigPostBarrierFiltering.failureMode == FailureMode::Infallible);
-  MOZ_ASSERT(location);
-  if (*location == nullptr || !gc::IsInsideNursery(*location)) {
-    return;
-  }
-  JSContext* cx = instance->cx();
-  cx->runtime()->gc.storeBuffer().putCell(
-      reinterpret_cast<JSObject**>(location));
-}
-
 //////////////////////////////////////////////////////////////////////////////
 //
 // GC and exception handling support.
@@ -1168,20 +1171,41 @@ bool Instance::initElems(uint32_t tableIndex, const ElemSegment& seg,
                                        TypeDefInstanceData* typeDefData) {
   MOZ_ASSERT(SASigStructNew.failureMode == FailureMode::FailOnNullPtr);
   JSContext* cx = instance->cx();
+  // The new struct will be allocated in an initial heap as determined by
+  // pretenuring logic as set up in `Instance::init`.
+  return WasmStructObject::createStruct<true>(
+      cx, typeDefData, typeDefData->allocSite.initialHeap());
+}
 
-  const TypeDef* typeDef = typeDefData->typeDef;
-  WasmGcObject::AllocArgs args(cx, typeDefData);
-  return WasmStructObject::createStruct(cx, typeDef, args);
+/* static */ void* Instance::structNewUninit(Instance* instance,
+                                             TypeDefInstanceData* typeDefData) {
+  MOZ_ASSERT(SASigStructNew.failureMode == FailureMode::FailOnNullPtr);
+  JSContext* cx = instance->cx();
+  // The new struct will be allocated in an initial heap as determined by
+  // pretenuring logic as set up in `Instance::init`.
+  return WasmStructObject::createStruct<false>(
+      cx, typeDefData, typeDefData->allocSite.initialHeap());
 }
 
 /* static */ void* Instance::arrayNew(Instance* instance, uint32_t numElements,
                                       TypeDefInstanceData* typeDefData) {
   MOZ_ASSERT(SASigArrayNew.failureMode == FailureMode::FailOnNullPtr);
   JSContext* cx = instance->cx();
+  // The new array will be allocated in an initial heap as determined by
+  // pretenuring logic as set up in `Instance::init`.
+  return WasmArrayObject::createArray<true>(
+      cx, typeDefData, typeDefData->allocSite.initialHeap(), numElements);
+}
 
-  const TypeDef* typeDef = typeDefData->typeDef;
-  WasmGcObject::AllocArgs args(cx, typeDefData);
-  return WasmArrayObject::createArray(cx, typeDef, numElements, args);
+/* static */ void* Instance::arrayNewUninit(Instance* instance,
+                                            uint32_t numElements,
+                                            TypeDefInstanceData* typeDefData) {
+  MOZ_ASSERT(SASigArrayNew.failureMode == FailureMode::FailOnNullPtr);
+  JSContext* cx = instance->cx();
+  // The new array will be allocated in an initial heap as determined by
+  // pretenuring logic as set up in `Instance::init`.
+  return WasmArrayObject::createArray<false>(
+      cx, typeDefData, typeDefData->allocSite.initialHeap(), numElements);
 }
 
 // Creates an array (WasmArrayObject) containing `numElements` of type
@@ -1214,9 +1238,10 @@ bool Instance::initElems(uint32_t tableIndex, const ElemSegment& seg,
   // are both zero.
 
   const TypeDef* typeDef = typeDefData->typeDef;
-  WasmGcObject::AllocArgs args(cx, typeDefData);
   Rooted<WasmArrayObject*> arrayObj(
-      cx, WasmArrayObject::createArray(cx, typeDef, numElements, args));
+      cx,
+      WasmArrayObject::createArray(
+          cx, typeDefData, typeDefData->allocSite.initialHeap(), numElements));
   if (!arrayObj) {
     // WasmArrayObject::createArray will have reported OOM.
     return nullptr;
@@ -1297,9 +1322,10 @@ bool Instance::initElems(uint32_t tableIndex, const ElemSegment& seg,
   // machine word.
   MOZ_RELEASE_ASSERT(typeDef->arrayType().elementType_.size() == sizeof(void*));
 
-  WasmGcObject::AllocArgs args(cx, typeDefData);
   Rooted<WasmArrayObject*> arrayObj(
-      cx, WasmArrayObject::createArray(cx, typeDef, numElements, args));
+      cx,
+      WasmArrayObject::createArray(
+          cx, typeDefData, typeDefData->allocSite.initialHeap(), numElements));
   if (!arrayObj) {
     // WasmArrayObject::createArray will have reported OOM.
     return nullptr;
@@ -1550,6 +1576,7 @@ Instance::Instance(JSContext* cx, Handle<WasmInstanceObject*> object,
           cx->runtime()->jitRuntime()->getExceptionTail().value),
       preBarrierCode_(
           cx->runtime()->jitRuntime()->preBarrier(MIRType::Object).value),
+      storeBuffer_(&cx->runtime()->gc.storeBuffer()),
       object_(object),
       code_(std::move(code)),
       memory_(memory),
@@ -1695,28 +1722,55 @@ bool Instance::init(JSContext* cx, const JSObjectVector& funcImports,
 
   // Initialize type definitions in the instance data.
   const SharedTypeContext& types = metadata().types;
-  WasmGcObject::AllocArgs allocArgs(cx);
+  Zone* zone = realm()->zone();
   for (uint32_t typeIndex = 0; typeIndex < types->length(); typeIndex++) {
     const TypeDef& typeDef = types->type(typeIndex);
     TypeDefInstanceData* typeDefData = typeDefInstanceData(typeIndex);
+
+    // Set default field values.
+    new (typeDefData) TypeDefInstanceData();
+
     // Store the runtime type for this type index
     typeDefData->typeDef = &typeDef;
 
-    if (typeDef.kind() == TypeDefKind::Func) {
-      // Functions do not use these fields
-      typeDefData->shape = nullptr;
-      typeDefData->clasp = nullptr;
-      typeDefData->allocKind = gc::AllocKind::LIMIT;
-      typeDefData->initialHeap = gc::DefaultHeap;
-    } else {
-      // Compute the parameters that allocation will use
-      if (!WasmGcObject::AllocArgs::compute(cx, &typeDef, &allocArgs)) {
+    if (typeDef.kind() == TypeDefKind::Struct ||
+        typeDef.kind() == TypeDefKind::Array) {
+      // Compute the parameters that allocation will use.  First, the class
+      // and alloc kind for the type definition.
+      const JSClass* clasp;
+      gc::AllocKind allocKind;
+
+      if (typeDef.kind() == TypeDefKind::Struct) {
+        clasp = WasmStructObject::classForTypeDef(&typeDef);
+        allocKind = WasmStructObject::allocKindForTypeDef(&typeDef);
+      } else {
+        clasp = &WasmArrayObject::class_;
+        allocKind = WasmArrayObject::allocKind();
+      }
+
+      // Move the alloc kind to background if possible
+      if (CanChangeToBackgroundAllocKind(allocKind, clasp)) {
+        allocKind = ForegroundToBackgroundAllocKind(allocKind);
+      }
+
+      // Find the shape using the class and recursion group
+      typeDefData->shape =
+          WasmGCShape::getShape(cx, clasp, cx->realm(), TaggedProto(),
+                                &typeDef.recGroup(), ObjectFlags());
+      if (!typeDefData->shape) {
         return false;
       }
-      typeDefData->shape = allocArgs.shape;
-      typeDefData->clasp = allocArgs.clasp;
-      typeDefData->allocKind = allocArgs.allocKind;
-      typeDefData->initialHeap = allocArgs.initialHeap;
+
+      typeDefData->clasp = clasp;
+      typeDefData->allocKind = allocKind;
+
+      // Initialize the allocation site for pre-tenuring.
+      typeDefData->allocSite.initWasm(zone);
+    } else if (typeDef.kind() == TypeDefKind::Func) {
+      // Nothing to do; the default values are OK.
+    } else {
+      MOZ_ASSERT(typeDef.kind() == TypeDefKind::None);
+      MOZ_CRASH();
     }
   }
 
@@ -2336,8 +2390,6 @@ bool Instance::callExport(JSContext* cx, uint32_t funcIndex, CallArgs args,
       return false;
     }
     if (type.isRefRepr()) {
-      // Ensure we don't have a temporarily unsupported Ref type in callExport
-      MOZ_RELEASE_ASSERT(!type.isTypeRef());
       void* ptr = *reinterpret_cast<void**>(rawArgLoc);
       // Store in rooted array until no more GC is possible.
       RootedAnyRef ref(cx, AnyRef::fromCompiledCode(ptr));
@@ -2453,18 +2505,19 @@ bool Instance::constantRefFunc(uint32_t funcIndex,
 WasmStructObject* Instance::constantStructNewDefault(JSContext* cx,
                                                      uint32_t typeIndex) {
   TypeDefInstanceData* typeDefData = typeDefInstanceData(typeIndex);
-  const TypeDef* typeDef = typeDefData->typeDef;
-  WasmGcObject::AllocArgs args(cx, typeDefData);
-  return WasmStructObject::createStruct(cx, typeDef, args);
+  // We assume that constant structs will have a long lifetime and hence
+  // allocate them directly in the tenured heap.
+  return WasmStructObject::createStruct(cx, typeDefData, gc::TenuredHeap);
 }
 
 WasmArrayObject* Instance::constantArrayNewDefault(JSContext* cx,
                                                    uint32_t typeIndex,
                                                    uint32_t numElements) {
   TypeDefInstanceData* typeDefData = typeDefInstanceData(typeIndex);
-  const TypeDef* typeDef = typeDefData->typeDef;
-  WasmGcObject::AllocArgs args(cx, typeDefData);
-  return WasmArrayObject::createArray(cx, typeDef, numElements, args);
+  // We assume that constant arrays will have a long lifetime and hence
+  // allocate them directly in the tenured heap.
+  return WasmArrayObject::createArray(cx, typeDefData, gc::TenuredHeap,
+                                      numElements);
 }
 
 JSAtom* Instance::getFuncDisplayAtom(JSContext* cx, uint32_t funcIndex) const {

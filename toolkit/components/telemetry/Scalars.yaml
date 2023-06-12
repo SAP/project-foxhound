@@ -121,6 +121,185 @@ a11y:
     record_in_processes:
       - 'main'
 
+attribution.provenance:
+  data_exists:
+    bug_numbers:
+      - 1815023
+      - 1570652
+    description: >
+      Will be true if the "zoneIdProvenanceData" file is present in the
+      installation directory and we were able to successfully read it.
+    keyed: false
+    expires: "121"
+    kind: boolean
+    notification_emails:
+      - application-update-telemetry-alerts@mozilla.com
+    release_channel_collection: opt-out
+    products:
+      - 'firefox'
+    record_in_processes:
+      - 'main'
+    record_into_store:
+      - main
+      - new-profile
+
+  file_system:
+    bug_numbers:
+      - 1815023
+      - 1570652
+    description: >
+      The file system that the installer resided on at installation time.
+      Possible values are: "NTFS", "FAT32", "other".
+      In error cases, it can also be "missing", "error" or "readIniError".
+      Only sent if attribution.provenance.zone_id.data_exists is true.
+    keyed: false
+    expires: "121"
+    kind: string
+    notification_emails:
+      - application-update-telemetry-alerts@mozilla.com
+    release_channel_collection: opt-out
+    products:
+      - 'firefox'
+    record_in_processes:
+      - 'main'
+    record_into_store:
+      - main
+      - new-profile
+
+  ads_exists:
+    bug_numbers:
+      - 1815023
+      - 1570652
+    description: >
+      Will always be false if attribution.provenance.zone_id.data_exists is
+      false. Will be true if the provenance data indicates that the
+      :Zone.Identifier Alternate Data Stream existed on the installer.
+    keyed: false
+    expires: "121"
+    kind: boolean
+    notification_emails:
+      - application-update-telemetry-alerts@mozilla.com
+    release_channel_collection: opt-out
+    products:
+      - 'firefox'
+    record_in_processes:
+      - 'main'
+    record_into_store:
+      - main
+      - new-profile
+
+  security_zone:
+    bug_numbers:
+      - 1815023
+      - 1570652
+    description: >
+      The zone identifier in the installer's :Zone.Identifier ADS.
+      Possible values are integers between 0 and 4, inclusive.
+      In error cases, it can also be "unexpected", "missing", "error", or
+      "readIniError".
+      Only sent if attribution.provenance.zone_id.ads_exists is true.
+    keyed: false
+    expires: "121"
+    kind: string
+    notification_emails:
+      - application-update-telemetry-alerts@mozilla.com
+    release_channel_collection: opt-out
+    products:
+      - 'firefox'
+    record_in_processes:
+      - 'main'
+    record_into_store:
+      - main
+      - new-profile
+
+  referrer_url_exists:
+    bug_numbers:
+      - 1815023
+      - 1570652
+    description: >
+      Will be true if the zone identifier ADS contained a referrer URL. Will be
+      false if a referrer URL is specified, but it isn't a valid URL.
+      Only sent if attribution.provenance.zone_id.ads_exists is true.
+    keyed: false
+    expires: "121"
+    kind: boolean
+    notification_emails:
+      - application-update-telemetry-alerts@mozilla.com
+    release_channel_collection: opt-out
+    products:
+      - 'firefox'
+    record_in_processes:
+      - 'main'
+    record_into_store:
+      - main
+      - new-profile
+
+  referrer_url_is_mozilla:
+    bug_numbers:
+      - 1815023
+      - 1570652
+    description: >
+      Will be true if the referrer URL from the zone identifier ADS appeared to
+      be a Mozilla URL.
+      Only sent if attribution.provenance.zone_id.referrer_url_exists is true.
+    keyed: false
+    expires: "121"
+    kind: boolean
+    notification_emails:
+      - application-update-telemetry-alerts@mozilla.com
+    release_channel_collection: opt-out
+    products:
+      - 'firefox'
+    record_in_processes:
+      - 'main'
+    record_into_store:
+      - main
+      - new-profile
+
+  host_url_exists:
+    bug_numbers:
+      - 1815023
+      - 1570652
+    description: >
+      Will be true if the zone identifier ADS contained a host URL. Will be
+      false if a host URL is specified, but it isn't a valid URL.
+      Only sent if attribution.provenance.zone_id.ads_exists is true.
+    keyed: false
+    expires: "121"
+    kind: boolean
+    notification_emails:
+      - application-update-telemetry-alerts@mozilla.com
+    release_channel_collection: opt-out
+    products:
+      - 'firefox'
+    record_in_processes:
+      - 'main'
+    record_into_store:
+      - main
+      - new-profile
+
+  host_url_is_mozilla:
+    bug_numbers:
+      - 1815023
+      - 1570652
+    description: >
+      Will be true if the host URL from the zone identifier ADS appeared to be a
+      Mozilla URL.
+      Only sent if attribution.provenance.zone_id.host_url_exists is true.
+    keyed: false
+    expires: "121"
+    kind: boolean
+    notification_emails:
+      - application-update-telemetry-alerts@mozilla.com
+    release_channel_collection: opt-out
+    products:
+      - 'firefox'
+    record_in_processes:
+      - 'main'
+    record_into_store:
+      - main
+      - new-profile
+
 # The following section contains the browser engagement scalars.
 browser.engagement:
   max_concurrent_tab_count:
@@ -2091,6 +2270,53 @@ sidebar:
     record_in_processes:
       - 'main'
 
+library:
+  link:
+    bug_numbers:
+      - 1815906
+    description: >
+      The number of history or bookmark items opened from the Library window
+    expires: never
+    kind: uint
+    keyed: true
+    notification_emails:
+      - firefox-view-engineers@mozilla.com
+    release_channel_collection: opt-out
+    products:
+      - 'firefox'
+    record_in_processes:
+      - 'main'
+  opened:
+    bug_numbers:
+      - 1815906
+    description: >
+      The number of times the Library window was opened, keyed by 'history' or 'bookmarks'
+    expires: never
+    kind: uint
+    keyed: true
+    notification_emails:
+      - firefox-view-engineers@mozilla.com
+    release_channel_collection: opt-out
+    products:
+      - 'firefox'
+    record_in_processes:
+      - 'main'
+  search:
+    bug_numbers:
+      - 1815906
+    description: >
+      The number of history-specific or bookmark-specific searches made from the Library window
+    expires: never
+    kind: uint
+    keyed: true
+    notification_emails:
+      - firefox-view-engineers@mozilla.com
+    release_channel_collection: opt-out
+    products:
+      - 'firefox'
+    record_in_processes:
+      - 'main'
+
 os.environment:
   is_admin_without_uac:
     bug_numbers:
@@ -2548,9 +2774,10 @@ media:
     bug_numbers:
       - 1733722
       - 1754657
+      - 1811157
     description: >
       Record whether hardware decoding is supported for the specific video codec. The key is the type of video codec, eg. video/vp9.
-    expires: "112"
+    expires: never
     kind: boolean
     keyed: true
     notification_emails:
@@ -2566,9 +2793,10 @@ media:
     bug_numbers:
       - 1741286
       - 1754657
+      - 1811157
     description: >
       Record whether hardware decoding is supported for the specific video codec, this only records video in HD (1280*720) or higher resultion. The key is the type of video codec, eg. video/vp9.
-    expires: "112"
+    expires: never
     kind: boolean
     keyed: true
     notification_emails:
@@ -2604,10 +2832,11 @@ dom.contentprocess:
       - 1730045
       - 1754658
       - 1777404
+      - 1817104
     description: >
       The number of times a process crashed early but we could verify it was not
       because of buildID mismatch between the parent and the content processes.
-    expires: "113"
+    expires: "123"
     kind: uint
     notification_emails:
       - alissy@mozilla.com
@@ -4275,7 +4504,7 @@ notificationbar:
     record_in_processes:
       - 'main'
 
-# The following section contains scalars for Screenshots.
+# The following section contains scalars for the Screenshots extension.
 screenshots:
   download:
     bug_numbers:
@@ -7051,6 +7280,22 @@ urlbar.picked:
       record_in_processes:
         - main
 
+    dynamic_wikipedia:
+      bug_numbers:
+        - 1819797
+      description: >
+        Counts how many times this result type was picked at a given index.
+      expires: never
+      kind: uint
+      keyed: true
+      notification_emails:
+        - fx-search-telemetry@mozilla.com
+      release_channel_collection: opt-out
+      products:
+        - 'firefox'
+      record_in_processes:
+        - main
+
     extension:
       bug_numbers:
         - 1671508
@@ -7102,6 +7347,22 @@ urlbar.picked:
     keyword:
       bug_numbers:
         - 1671508
+      description: >
+        Counts how many times this result type was picked at a given index.
+      expires: never
+      kind: uint
+      keyed: true
+      notification_emails:
+        - fx-search-telemetry@mozilla.com
+      release_channel_collection: opt-out
+      products:
+        - 'firefox'
+      record_in_processes:
+        - main
+
+    navigational:
+      bug_numbers:
+        - 1819797
       description: >
         Counts how many times this result type was picked at a given index.
       expires: never
@@ -7278,6 +7539,22 @@ urlbar.picked:
     visiturl:
       bug_numbers:
         - 1671508
+      description: >
+        Counts how many times this result type was picked at a given index.
+      expires: never
+      kind: uint
+      keyed: true
+      notification_emails:
+        - fx-search-telemetry@mozilla.com
+      release_channel_collection: opt-out
+      products:
+        - 'firefox'
+      record_in_processes:
+        - main
+
+    weather:
+      bug_numbers:
+        - 1815699
       description: >
         Counts how many times this result type was picked at a given index.
       expires: never
@@ -7883,6 +8160,66 @@ contextual.services.quicksuggest:
       - 'firefox'
     record_in_processes:
       - main
+  impression_nav_notmatched:
+    bug_numbers:
+      - 1819797
+    description: >
+      A keyed uint recording how many times a urlbar engagement occurred while a
+      navigational suggestion was absent. The Nimbus variable
+      recordNavigationalSuggestionTelemetry must be true to record this scalar.
+      Its key is the type of heuristic result that was present at the time of
+      the engagement. Key names are the same as the heuristic result type names
+      recorded in Glean telemetry.
+    expires: never
+    kind: uint
+    keyed: true
+    notification_emails:
+      - fx-search-telemetry@mozilla.com
+    release_channel_collection: opt-out
+    products:
+      - firefox
+    record_in_processes:
+      - main
+  impression_nav_shown:
+    bug_numbers:
+      - 1819797
+    description: >
+      A keyed uint recording how many times a urlbar engagement occurred while a
+      navigational suggestion was present. The Nimbus variable
+      recordNavigationalSuggestionTelemetry must be true to record this scalar.
+      Its key is the type of heuristic result that was present at the time of
+      the engagement. Key names are the same as the heuristic result type names
+      recorded in Glean telemetry.
+    expires: never
+    kind: uint
+    keyed: true
+    notification_emails:
+      - fx-search-telemetry@mozilla.com
+    release_channel_collection: opt-out
+    products:
+      - firefox
+    record_in_processes:
+      - main
+  impression_nav_superceded:
+    bug_numbers:
+      - 1819797
+    description: >
+      A keyed uint recording how many times a urlbar engagement occurred when a
+      navigational suggestion was matched but superceded by a heuristic result.
+      The Nimbus variable recordNavigationalSuggestionTelemetry must be true to
+      record this scalar. Its key is the type of heuristic result that was
+      present at the time of the engagement. Key names are the same as the
+      heuristic result type names recorded in Glean telemetry.
+    expires: never
+    kind: uint
+    keyed: true
+    notification_emails:
+      - fx-search-telemetry@mozilla.com
+    release_channel_collection: opt-out
+    products:
+      - firefox
+    record_in_processes:
+      - main
   impression_nonsponsored:
     bug_numbers:
       - 1800993
@@ -7983,6 +8320,85 @@ contextual.services.quicksuggest:
     release_channel_collection: opt-out
     products:
       - 'firefox'
+    record_in_processes:
+      - main
+  click_nav_notmatched:
+    bug_numbers:
+      - 1819797
+    description: >
+      A keyed uint recording how many times a heuristic result was clicked while
+      a navigational suggestion was absent. The Nimbus variable
+      recordNavigationalSuggestionTelemetry must be true to record this
+      scalar. Its key is the type of heuristic result that was clicked. Key
+      names are the same as the heuristic result type names recorded in Glean
+      telemetry.
+    expires: never
+    kind: uint
+    keyed: true
+    notification_emails:
+      - fx-search-telemetry@mozilla.com
+    release_channel_collection: opt-out
+    products:
+      - firefox
+    record_in_processes:
+      - main
+  click_nav_shown_heuristic:
+    bug_numbers:
+      - 1819797
+    description: >
+      A keyed uint recording how many times a heuristic result was clicked while
+      a navigational suggestion was present. The Nimbus variable
+      recordNavigationalSuggestionTelemetry must be true to record this
+      scalar. Its key is the type of heuristic result that was clicked. Key
+      names are the same as the heuristic result type names recorded in Glean
+      telemetry.
+    expires: never
+    kind: uint
+    keyed: true
+    notification_emails:
+      - fx-search-telemetry@mozilla.com
+    release_channel_collection: opt-out
+    products:
+      - firefox
+    record_in_processes:
+      - main
+  click_nav_shown_nav:
+    bug_numbers:
+      - 1819797
+    description: >
+      A keyed uint recording how many times a navigational suggestion was
+      clicked. The Nimbus variable recordNavigationalSuggestionTelemetry must be
+      true to record this scalar. Its key is the type of heuristic result that
+      was present at the time of the engagement. Key names are the same as the
+      heuristic result type names recorded in Glean telemetry.
+    expires: never
+    kind: uint
+    keyed: true
+    notification_emails:
+      - fx-search-telemetry@mozilla.com
+    release_channel_collection: opt-out
+    products:
+      - firefox
+    record_in_processes:
+      - main
+  click_nav_superceded:
+    bug_numbers:
+      - 1819797
+    description: >
+      A keyed uint recording how many times a heuristic result was clicked when
+      a navigational suggestion was matched but superceded by the heuristic.
+      The Nimbus variable recordNavigationalSuggestionTelemetry must be true to
+      record this scalar. Its key is the type of heuristic result that was
+      clicked. Key names are the same as the heuristic result type names
+      recorded in Glean telemetry.
+    expires: never
+    kind: uint
+    keyed: true
+    notification_emails:
+      - fx-search-telemetry@mozilla.com
+    release_channel_collection: opt-out
+    products:
+      - firefox
     record_in_processes:
       - main
   click_nonsponsored:

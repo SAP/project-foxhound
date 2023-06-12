@@ -633,15 +633,9 @@ let interfaceNamesInGlobalScope = [
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "IDBFactory", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
-  { name: "IDBFileHandle", insecureContext: true, disabled: true },
-  // IMPORTANT: Do not change this list without review from a DOM peer!
-  { name: "IDBFileRequest", insecureContext: true, disabled: true },
-  // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "IDBIndex", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "IDBKeyRange", insecureContext: true },
-  // IMPORTANT: Do not change this list without review from a DOM peer!
-  { name: "IDBMutableFile", insecureContext: true, disabled: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "IDBObjectStore", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
@@ -1304,7 +1298,7 @@ let interfaceNamesInGlobalScope = [
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "TreeWalker", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
-  { name: "U2F", insecureContext: false, android: false },
+  { name: "U2F", insecureContext: false, disabled: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "UIEvent", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
@@ -1854,7 +1848,7 @@ let interfaceNamesInGlobalScope = [
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "top", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
-  { name: "u2f", insecureContext: false, android: false },
+  { name: "u2f", insecureContext: false, disabled: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "updateCommands", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!

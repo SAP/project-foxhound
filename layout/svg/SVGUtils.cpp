@@ -210,7 +210,7 @@ void SVGUtils::ScheduleReflowSVG(nsIFrame* aFrame) {
                                         dirtyBit);
 }
 
-bool SVGUtils::NeedsReflowSVG(nsIFrame* aFrame) {
+bool SVGUtils::NeedsReflowSVG(const nsIFrame* aFrame) {
   MOZ_ASSERT(aFrame->IsFrameOfType(nsIFrame::eSVG),
              "SVG uses bits differently!");
 
@@ -361,6 +361,33 @@ gfxMatrix SVGUtils::GetCanvasTM(nsIFrame* aFrame) {
   return static_cast<SVGGeometryFrame*>(aFrame)->GetCanvasTM();
 }
 
+bool SVGUtils::IsSVGTransformed(const nsIFrame* aFrame,
+                                gfx::Matrix* aOwnTransform,
+                                gfx::Matrix* aFromParentTransform) {
+  MOZ_ASSERT(aFrame->HasAllStateBits(NS_FRAME_SVG_LAYOUT |
+                                     NS_FRAME_MAY_BE_TRANSFORMED),
+             "Expecting an SVG frame that can be transformed");
+  bool foundTransform = false;
+
+  // Check if our parent has children-only transforms:
+  if (SVGContainerFrame* parent = do_QueryFrame(aFrame->GetParent())) {
+    foundTransform = parent->HasChildrenOnlyTransform(aFromParentTransform);
+  }
+
+  if (auto* content = SVGElement::FromNode(aFrame->GetContent())) {
+    auto* transformList = content->GetAnimatedTransformList();
+    if ((transformList && transformList->HasTransform()) ||
+        content->GetAnimateMotionTransform()) {
+      if (aOwnTransform) {
+        *aOwnTransform = gfx::ToMatrix(
+            content->PrependLocalTransformsTo(gfxMatrix(), eUserSpaceToParent));
+      }
+      foundTransform = true;
+    }
+  }
+  return foundTransform;
+}
+
 void SVGUtils::NotifyChildrenOfSVGChange(nsIFrame* aFrame, uint32_t aFlags) {
   for (nsIFrame* kid : aFrame->PrincipalChildList()) {
     ISVGDisplayableFrame* SVGFrame = do_QueryFrame(kid);
@@ -381,7 +408,7 @@ void SVGUtils::NotifyChildrenOfSVGChange(nsIFrame* aFrame, uint32_t aFlags) {
 
 // ************************************************************
 
-float SVGUtils::ComputeOpacity(nsIFrame* aFrame, bool aHandleOpacity) {
+float SVGUtils::ComputeOpacity(const nsIFrame* aFrame, bool aHandleOpacity) {
   float opacity = aFrame->StyleEffects()->mOpacity;
 
   if (opacity != 1.0f &&
@@ -392,7 +419,7 @@ float SVGUtils::ComputeOpacity(nsIFrame* aFrame, bool aHandleOpacity) {
   return opacity;
 }
 
-void SVGUtils::DetermineMaskUsage(nsIFrame* aFrame, bool aHandleOpacity,
+void SVGUtils::DetermineMaskUsage(const nsIFrame* aFrame, bool aHandleOpacity,
                                   MaskUsage& aUsage) {
   using ClipPathType = StyleClipPath::Tag;
 
@@ -479,7 +506,7 @@ class MixModeBlender {
 
     mTargetOffset = drawRect.TopLeft();
 
-    return mTargetCtx;
+    return mTargetCtx.get();
   }
 
   void BlendToTarget() {
@@ -535,7 +562,7 @@ class MixModeBlender {
 
   nsIFrame* mFrame;
   gfxContext* mSourceCtx;
-  RefPtr<gfxContext> mTargetCtx;
+  UniquePtr<gfxContext> mTargetCtx;
   IntPoint mTargetOffset;
 };
 
@@ -575,10 +602,9 @@ void SVGUtils::PaintFrameWithEffects(nsIFrame* aFrame, gfxContext& aContext,
     }
     int32_t appUnitsPerDevPx = aFrame->PresContext()->AppUnitsPerDevPixel();
     gfxMatrix tm = aTransform;
-    if (aFrame->IsFrameOfType(nsIFrame::eSVG | nsIFrame::eSVGContainer)) {
+    if (SVGContainerFrame* container = do_QueryFrame(aFrame)) {
       gfx::Matrix childrenOnlyTM;
-      if (static_cast<SVGContainerFrame*>(aFrame)->HasChildrenOnlyTransform(
-              &childrenOnlyTM)) {
+      if (container->HasChildrenOnlyTransform(&childrenOnlyTM)) {
         // Undo the children-only transform:
         if (!childrenOnlyTM.Invert()) {
           return;
@@ -907,8 +933,8 @@ bool SVGUtils::HitTestRect(const gfx::Matrix& aMatrix, float aRX, float aRY,
          p.y <= rect.YMost();
 }
 
-gfxRect SVGUtils::GetClipRectForFrame(nsIFrame* aFrame, float aX, float aY,
-                                      float aWidth, float aHeight) {
+gfxRect SVGUtils::GetClipRectForFrame(const nsIFrame* aFrame, float aX,
+                                      float aY, float aWidth, float aHeight) {
   const nsStyleDisplay* disp = aFrame->StyleDisplay();
   const nsStyleEffects* effects = aFrame->StyleEffects();
 
@@ -1097,7 +1123,7 @@ gfxRect SVGUtils::GetBBox(nsIFrame* aFrame, uint32_t aFlags,
   return bbox;
 }
 
-gfxPoint SVGUtils::FrameSpaceInCSSPxToUserSpaceOffset(nsIFrame* aFrame) {
+gfxPoint SVGUtils::FrameSpaceInCSSPxToUserSpaceOffset(const nsIFrame* aFrame) {
   if (!aFrame->HasAnyStateBits(NS_FRAME_SVG_LAYOUT)) {
     // The user space for non-SVG frames is defined as the bounding box of the
     // frame's border-box rects over all continuations.
@@ -1158,24 +1184,25 @@ gfxRect SVGUtils::GetRelativeRect(uint16_t aUnits,
                          NonSVGFrameUserSpaceMetrics(aFrame));
 }
 
-bool SVGUtils::CanOptimizeOpacity(nsIFrame* aFrame) {
+bool SVGUtils::CanOptimizeOpacity(const nsIFrame* aFrame) {
   if (!aFrame->HasAnyStateBits(NS_FRAME_SVG_LAYOUT)) {
     return false;
   }
-  LayoutFrameType type = aFrame->Type();
-  if (type != LayoutFrameType::SVGImage &&
-      type != LayoutFrameType::SVGGeometry) {
+  auto* content = aFrame->GetContent();
+  if (!content->IsNodeOfType(nsINode::eSHAPE) &&
+      !content->IsSVGElement(nsGkAtoms::image)) {
     return false;
   }
   if (aFrame->StyleEffects()->HasFilters()) {
     return false;
   }
   // XXX The SVG WG is intending to allow fill, stroke and markers on <image>
-  if (type == LayoutFrameType::SVGImage) {
+  if (content->IsSVGElement(nsGkAtoms::image)) {
     return true;
   }
   const nsStyleSVG* style = aFrame->StyleSVG();
-  if (style->HasMarker()) {
+  if (style->HasMarker() &&
+      static_cast<SVGGeometryElement*>(content)->IsMarkable()) {
     return false;
   }
 
@@ -1188,7 +1215,7 @@ bool SVGUtils::CanOptimizeOpacity(nsIFrame* aFrame) {
 }
 
 gfxMatrix SVGUtils::AdjustMatrixForUnits(const gfxMatrix& aMatrix,
-                                         SVGAnimatedEnumeration* aUnits,
+                                         const SVGAnimatedEnumeration* aUnits,
                                          nsIFrame* aFrame, uint32_t aFlags) {
   if (aFrame && aUnits->GetAnimValue() == SVG_UNIT_TYPE_OBJECTBOUNDINGBOX) {
     gfxRect bbox = GetBBox(aFrame, aFlags);
@@ -1210,7 +1237,7 @@ nsIFrame* SVGUtils::GetFirstNonAAncestorFrame(nsIFrame* aStartFrame) {
   return nullptr;
 }
 
-bool SVGUtils::GetNonScalingStrokeTransform(nsIFrame* aFrame,
+bool SVGUtils::GetNonScalingStrokeTransform(const nsIFrame* aFrame,
                                             gfxMatrix* aUserToOuterSVG) {
   if (aFrame->GetContent()->IsText()) {
     aFrame = aFrame->GetParent();
@@ -1230,7 +1257,7 @@ bool SVGUtils::GetNonScalingStrokeTransform(nsIFrame* aFrame,
 
 // The logic here comes from _cairo_stroke_style_max_distance_from_path
 static gfxRect PathExtentsToMaxStrokeExtents(const gfxRect& aPathExtents,
-                                             nsIFrame* aFrame,
+                                             const nsIFrame* aFrame,
                                              double aStyleExpansionFactor,
                                              const gfxMatrix& aMatrix) {
   double style_expansion =
@@ -1254,7 +1281,7 @@ static gfxRect PathExtentsToMaxStrokeExtents(const gfxRect& aPathExtents,
 
 /*static*/
 gfxRect SVGUtils::PathExtentsToMaxStrokeExtents(const gfxRect& aPathExtents,
-                                                nsTextFrame* aFrame,
+                                                const nsTextFrame* aFrame,
                                                 const gfxMatrix& aMatrix) {
   NS_ASSERTION(SVGUtils::IsInSVGTextSubtree(aFrame),
                "expected an nsTextFrame for SVG text");
@@ -1264,7 +1291,7 @@ gfxRect SVGUtils::PathExtentsToMaxStrokeExtents(const gfxRect& aPathExtents,
 
 /*static*/
 gfxRect SVGUtils::PathExtentsToMaxStrokeExtents(const gfxRect& aPathExtents,
-                                                SVGGeometryFrame* aFrame,
+                                                const SVGGeometryFrame* aFrame,
                                                 const gfxMatrix& aMatrix) {
   bool strokeMayHaveCorners =
       !SVGContentUtils::ShapeTypeHasNoCorners(aFrame->GetContent());
@@ -1473,7 +1500,7 @@ void SVGUtils::MakeStrokePatternFor(nsIFrame* aFrame, gfxContext* aContext,
 
 /* static */
 float SVGUtils::GetOpacity(const StyleSVGOpacity& aOpacity,
-                           SVGContextPaint* aContextPaint) {
+                           const SVGContextPaint* aContextPaint) {
   float opacity = 1.0f;
   switch (aOpacity.tag) {
     case StyleSVGOpacity::Tag::Opacity:
@@ -1492,13 +1519,14 @@ float SVGUtils::GetOpacity(const StyleSVGOpacity& aOpacity,
   return opacity;
 }
 
-bool SVGUtils::HasStroke(nsIFrame* aFrame, SVGContextPaint* aContextPaint) {
+bool SVGUtils::HasStroke(const nsIFrame* aFrame,
+                         const SVGContextPaint* aContextPaint) {
   const nsStyleSVG* style = aFrame->StyleSVG();
   return style->HasStroke() && GetStrokeWidth(aFrame, aContextPaint) > 0;
 }
 
-float SVGUtils::GetStrokeWidth(nsIFrame* aFrame,
-                               SVGContextPaint* aContextPaint) {
+float SVGUtils::GetStrokeWidth(const nsIFrame* aFrame,
+                               const SVGContextPaint* aContextPaint) {
   nsIContent* content = aFrame->GetContent();
   if (content->IsText()) {
     content = content->GetParent();
@@ -1532,7 +1560,7 @@ void SVGUtils::SetupStrokeGeometry(nsIFrame* aFrame, gfxContext* aContext,
                     strokeOptions.mDashOffset, devPxPerCSSPx);
 }
 
-uint16_t SVGUtils::GetGeometryHitTestFlags(nsIFrame* aFrame) {
+uint16_t SVGUtils::GetGeometryHitTestFlags(const nsIFrame* aFrame) {
   uint16_t flags = 0;
 
   switch (aFrame->Style()->PointerEvents()) {
@@ -1610,7 +1638,7 @@ void SVGUtils::PaintSVGGlyph(Element* aElement, gfxContext* aContext) {
   svgFrame->PaintSVG(*aContext, m, dummy);
 }
 
-bool SVGUtils::GetSVGGlyphExtents(Element* aElement,
+bool SVGUtils::GetSVGGlyphExtents(const Element* aElement,
                                   const gfxMatrix& aSVGToAppSpace,
                                   gfxRect* aResult) {
   nsIFrame* frame = aElement->GetPrimaryFrame();
@@ -1644,7 +1672,7 @@ nsRect SVGUtils::ToCanvasBounds(const gfxRect& aUserspaceRect,
       presContext->AppUnitsPerDevPixel());
 }
 
-gfxMatrix SVGUtils::GetCSSPxToDevPxMatrix(nsIFrame* aNonSVGFrame) {
+gfxMatrix SVGUtils::GetCSSPxToDevPxMatrix(const nsIFrame* aNonSVGFrame) {
   float devPxPerCSSPx = aNonSVGFrame->PresContext()->CSSToDevPixelScale().scale;
 
   return gfxMatrix(devPxPerCSSPx, 0.0, 0.0, devPxPerCSSPx, 0.0, 0.0);

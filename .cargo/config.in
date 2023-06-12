@@ -15,11 +15,6 @@ git = "https://github.com/FirefoxGraphics/wpf-gpu-raster"
 rev = "a6514854d4518b02f2805719ff6cd74dae7dfde6"
 replace-with = "vendored-sources"
 
-[source."https://github.com/bendk/application-services"]
-git = "https://github.com/bendk/application-services"
-rev = "ecb35df5fc40357c49922f90e86bf4147fa52953"
-replace-with = "vendored-sources"
-
 [source."https://github.com/chris-zen/coremidi.git"]
 git = "https://github.com/chris-zen/coremidi.git"
 rev = "fc68464b5445caf111e41f643a2e69ccce0b4f83"
@@ -32,12 +27,12 @@ replace-with = "vendored-sources"
 
 [source."https://github.com/gfx-rs/naga"]
 git = "https://github.com/gfx-rs/naga"
-rev = "4b796b157cb2b67b0ab166a2238fe4e9473bfd52"
+rev = "9742f1616c3e3dd2cc9a5880616fc886c391bb9f"
 replace-with = "vendored-sources"
 
 [source."https://github.com/gfx-rs/wgpu"]
 git = "https://github.com/gfx-rs/wgpu"
-rev = "41de797c745d317e93b9cf50e7446faff7f65954"
+rev = "73b4257b17cc62ecc8df6d6aa3730bd9c6cba4b9"
 replace-with = "vendored-sources"
 
 [source."https://github.com/glandium/warp"]
@@ -80,6 +75,11 @@ git = "https://github.com/mozilla-spidermonkey/jsparagus"
 rev = "688a6574cf830b4a3adaf9c5d41efc1f7dd4017f"
 replace-with = "vendored-sources"
 
+[source."https://github.com/mozilla/application-services"]
+git = "https://github.com/mozilla/application-services"
+rev = "fe2867dbe82a2aaa85a856648107be94b1534683"
+replace-with = "vendored-sources"
+
 [source."https://github.com/mozilla/audioipc"]
 git = "https://github.com/mozilla/audioipc"
 rev = "fb7a2b12ced3b43e6a268621989c6191d1ed7e39"
@@ -107,7 +107,7 @@ replace-with = "vendored-sources"
 
 [source."https://github.com/mozilla/neqo"]
 git = "https://github.com/mozilla/neqo"
-tag = "v0.6.3"
+tag = "v0.6.4"
 replace-with = "vendored-sources"
 
 [source."https://github.com/mozilla/uniffi-rs.git"]
@@ -122,7 +122,7 @@ replace-with = "vendored-sources"
 
 [source."https://github.com/servo/rust-cssparser"]
 git = "https://github.com/servo/rust-cssparser"
-rev = "d3670a89bae26ba3a8db4758eb7976616113987d"
+rev = "b196a164dcbb317016d4aa6c58c13147e6045ebb"
 replace-with = "vendored-sources"
 
 

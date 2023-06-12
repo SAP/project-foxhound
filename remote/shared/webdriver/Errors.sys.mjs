@@ -26,6 +26,8 @@ const ERRORS = new Set([
   "NoSuchAlertError",
   "NoSuchElementError",
   "NoSuchFrameError",
+  "NoSuchNodeError",
+  "NoSuchScriptError",
   "NoSuchShadowRootError",
   "NoSuchWindowError",
   "ScriptTimeoutError",
@@ -395,6 +397,16 @@ class NoSuchElementError extends WebDriverError {
 }
 
 /**
+ * A command tried to remove an unknown preload script.
+ */
+class NoSuchScriptError extends WebDriverError {
+  constructor(message) {
+    super(message);
+    this.status = "no such script";
+  }
+}
+
+/**
  * A shadow root was not attached to the element.
  */
 class NoSuchShadowRootError extends WebDriverError {
@@ -422,6 +434,17 @@ class NoSuchFrameError extends WebDriverError {
   constructor(message) {
     super(message);
     this.status = "no such frame";
+  }
+}
+
+/**
+ * A node as given by its unique shared id could not be found within the cache
+ * of known nodes.
+ */
+class NoSuchNodeError extends WebDriverError {
+  constructor(message) {
+    super(message);
+    this.status = "no such node";
   }
 }
 
@@ -536,6 +559,8 @@ const STATUSES = new Map([
   ["no such alert", NoSuchAlertError],
   ["no such element", NoSuchElementError],
   ["no such frame", NoSuchFrameError],
+  ["no such node", NoSuchNodeError],
+  ["no such script", NoSuchScriptError],
   ["no such shadow root", NoSuchShadowRootError],
   ["no such window", NoSuchWindowError],
   ["script timeout", ScriptTimeoutError],

@@ -95,7 +95,6 @@ class VideoFrameSurface<LIBAV_VER> {
   // Check if DMABufSurface is used by any gecko rendering process
   // (WebRender or GL compositor) or by DMABUFSurfaceImage/VideoData.
   bool IsUsed() const { return mSurface->IsGlobalRefSet(); }
-  void MarkAsUsed() { mSurface->GlobalRefAdd(); }
 
   // Surface points to dmabuf memmory owned by ffmpeg.
   bool IsFFMPEGSurface() const { return !!mLib; }
@@ -107,6 +106,7 @@ class VideoFrameSurface<LIBAV_VER> {
   const FFmpegLibWrapper* mLib;
   AVBufferRef* mAVHWFrameContext;
   AVBufferRef* mHWAVBuffer;
+  VASurfaceID mFFMPEGSurfaceID;
 };
 
 // VideoFramePool class is thread-safe.
@@ -125,6 +125,7 @@ class VideoFramePool<LIBAV_VER> {
  private:
   RefPtr<VideoFrameSurface<LIBAV_VER>> GetFreeVideoFrameSurface();
   bool ShouldCopySurface();
+  void CheckNewFFMPEGSurface(VASurfaceID aNewSurfaceID);
 
  private:
   // Protect mDMABufSurfaces pool access

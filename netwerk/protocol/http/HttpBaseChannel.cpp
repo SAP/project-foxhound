@@ -3089,6 +3089,19 @@ bool HttpBaseChannel::ShouldBlockOpaqueResponse() const {
     }
   }
 
+  uint32_t httpsOnlyStatus = mLoadInfo->GetHttpsOnlyStatus();
+  if (httpsOnlyStatus & nsILoadInfo::HTTPS_ONLY_BYPASS_ORB) {
+    LOGORB("No block: HTTPS_ONLY_BYPASS_ORB");
+    return false;
+  }
+
+  bool isInDevToolsContext;
+  mLoadInfo->GetIsInDevToolsContext(&isInDevToolsContext);
+  if (isInDevToolsContext) {
+    LOGORB("No block: Request created by devtools");
+    return false;
+  }
+
   return true;
 }
 
@@ -3139,18 +3152,21 @@ HttpBaseChannel::PerformOpaqueResponseSafelistCheckBeforeSniff() {
     case OpaqueResponseBlockedReason::BLOCKED_BLOCKLISTED_NEVER_SNIFFED:
       // Step 3.2
       LOGORB("Blocked: BLOCKED_BLOCKLISTED_NEVER_SNIFFED");
-      LogORBError(mLoadInfo, mURI);
+      LogORBError(
+          u"mimeType is an opaque-blocklisted-never-sniffed MIME type"_ns);
       return OpaqueResponse::Block;
     case OpaqueResponseBlockedReason::BLOCKED_206_AND_BLOCKLISTED:
       // Step 3.3
       LOGORB("Blocked: BLOCKED_206_AND_BLOCKEDLISTED");
-      LogORBError(mLoadInfo, mURI);
+      LogORBError(
+          u"response's status is 206 and mimeType is an opaque-blocklisted MIME type"_ns);
       return OpaqueResponse::Block;
     case OpaqueResponseBlockedReason::
         BLOCKED_NOSNIFF_AND_EITHER_BLOCKLISTED_OR_TEXTPLAIN:
       // Step 3.4
       LOGORB("Blocked: BLOCKED_NOSNIFF_AND_EITHER_BLOCKLISTED_OR_TEXTPLAIN");
-      LogORBError(mLoadInfo, mURI);
+      LogORBError(
+          u"nosniff is true and mimeType is an opaque-blocklisted MIME type or its essence is 'text/plain'"_ns);
       return OpaqueResponse::Block;
     default:
       break;
@@ -3173,7 +3189,7 @@ HttpBaseChannel::PerformOpaqueResponseSafelistCheckBeforeSniff() {
   if (mResponseHead->Status() == 206 &&
       !IsFirstPartialResponse(*mResponseHead)) {
     LOGORB("Blocked: Is not a valid partial response given 0");
-    LogORBError(mLoadInfo, mURI);
+    LogORBError(u"response status is 206 and not first partial response"_ns);
     return OpaqueResponse::Block;
   }
 
@@ -3230,14 +3246,14 @@ OpaqueResponse HttpBaseChannel::PerformOpaqueResponseSafelistCheckAfterSniff(
   mLoadInfo->GetIsMediaRequest(&isMediaRequest);
   if (isMediaRequest) {
     LOGORB("Blocked: media request");
-    LogORBError(mLoadInfo, mURI);
+    LogORBError(u"after sniff: media request"_ns);
     return OpaqueResponse::Block;
   }
 
   // Step 11
   if (aNoSniff) {
     LOGORB("Blocked: nosniff");
-    LogORBError(mLoadInfo, mURI);
+    LogORBError(u"after sniff: nosniff is true"_ns);
     return OpaqueResponse::Block;
   }
 
@@ -3246,7 +3262,7 @@ OpaqueResponse HttpBaseChannel::PerformOpaqueResponseSafelistCheckAfterSniff(
       (mResponseHead->Status() < 200 || mResponseHead->Status() > 299)) {
     LOGORB("Blocked: status code (%d) is not allowed ",
            mResponseHead->Status());
-    LogORBError(mLoadInfo, mURI);
+    LogORBError(u"after sniff: status code is not in allowed range"_ns);
     return OpaqueResponse::Block;
   }
 
@@ -3261,7 +3277,8 @@ OpaqueResponse HttpBaseChannel::PerformOpaqueResponseSafelistCheckAfterSniff(
       StringBeginsWith(aContentType, "video/"_ns) ||
       StringBeginsWith(aContentType, "audio/"_ns)) {
     LOGORB("Blocked: ContentType is image/video/audio");
-    LogORBError(mLoadInfo, mURI);
+    LogORBError(
+        u"after sniff: content-type declares image/video/audio, but sniffing fails"_ns);
     return OpaqueResponse::Block;
   }
 
@@ -3272,15 +3289,32 @@ bool HttpBaseChannel::NeedOpaqueResponseAllowedCheckAfterSniff() const {
   return mORB ? mORB->IsSniffing() : false;
 }
 
-void HttpBaseChannel::BlockOpaqueResponseAfterSniff() {
+void HttpBaseChannel::BlockOpaqueResponseAfterSniff(const nsAString& aReason) {
   MOZ_DIAGNOSTIC_ASSERT(mORB);
-  LogORBError(mLoadInfo, mURI);
+  LogORBError(aReason);
   mORB->BlockResponse(this, NS_ERROR_FAILURE);
 }
 
 void HttpBaseChannel::AllowOpaqueResponseAfterSniff() {
   MOZ_DIAGNOSTIC_ASSERT(mORB);
   mORB->AllowResponse();
+}
+
+void HttpBaseChannel::SetChannelBlockedByOpaqueResponse() {
+  mChannelBlockedByOpaqueResponse = true;
+
+  RefPtr<dom::CanonicalBrowsingContext> browsingContext =
+      dom::CanonicalBrowsingContext::Get(mTopBrowsingContextId);
+  if (!browsingContext) {
+    return;
+  }
+
+  dom::WindowGlobalParent* windowContext =
+      browsingContext->GetTopWindowContext();
+
+  if (windowContext) {
+    windowContext->SetHasBlockedOpaqueResponse();
+  }
 }
 
 NS_IMETHODIMP
@@ -3984,6 +4018,10 @@ bool HttpBaseChannel::ShouldIntercept(nsIURI* aURI) {
   nsCOMPtr<nsINetworkInterceptController> controller;
   GetCallback(controller);
   bool shouldIntercept = false;
+
+  if (!StaticPrefs::dom_serviceWorkers_enabled()) {
+    return false;
+  }
 
   // We should never intercept internal redirects.  The ServiceWorker code
   // can trigger interntal redirects as the result of a FetchEvent.  If
@@ -4919,7 +4957,8 @@ nsresult HttpBaseChannel::SetupReplacementChannel(nsIURI* newURI,
   if (StaticPrefs::network_http_redirect_stripAuthHeader() &&
       NS_SUCCEEDED(
           httpChannel->GetRequestHeader("Authorization"_ns, authHeader))) {
-    if (!IsNewChannelSameOrigin(httpChannel)) {
+    if (NS_ShouldRemoveAuthHeaderOnRedirect(static_cast<nsIChannel*>(this),
+                                            newChannel, redirectFlags)) {
       rv = httpChannel->SetRequestHeader("Authorization"_ns, ""_ns, false);
       MOZ_ASSERT(NS_SUCCEEDED(rv));
     }
@@ -6042,6 +6081,32 @@ HttpBaseChannel::GetIsProxyUsed(bool* aIsProxyUsed) {
   }
   *aIsProxyUsed = LoadIsProxyUsed();
   return NS_OK;
+}
+
+void HttpBaseChannel::LogORBError(const nsAString& aReason) {
+  RefPtr<dom::Document> doc;
+  mLoadInfo->GetLoadingDocument(getter_AddRefs(doc));
+
+  nsAutoCString uri;
+  nsresult rv = nsContentUtils::AnonymizeURI(mURI, uri);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return;
+  }
+
+  uint64_t contentWindowId;
+  GetTopLevelContentWindowId(&contentWindowId);
+  if (contentWindowId) {
+    nsContentUtils::ReportToConsoleByWindowID(
+        u"A resource is blocked by OpaqueResponseBlocking, please check browser console for details."_ns,
+        nsIScriptError::warningFlag, "ORB"_ns, contentWindowId, mURI);
+  }
+
+  AutoTArray<nsString, 2> params;
+  params.AppendElement(NS_ConvertUTF8toUTF16(uri));
+  params.AppendElement(aReason);
+  nsContentUtils::ReportToConsole(nsIScriptError::warningFlag, "ORB"_ns, doc,
+                                  nsContentUtils::eNECKO_PROPERTIES,
+                                  "ResourceBlockedORB", params);
 }
 }  // namespace net
 }  // namespace mozilla

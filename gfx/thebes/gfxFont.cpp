@@ -2070,10 +2070,22 @@ void gfxFont::DrawOneGlyph(uint32_t aGlyphID, const gfx::Point& aPt,
   gfx::Point devPt(ToDeviceUnits(aPt.x, runParams.devPerApp),
                    ToDeviceUnits(aPt.y, runParams.devPerApp));
 
+  auto* textDrawer = runParams.textDrawer;
+  if (textDrawer) {
+    // If the glyph is entirely outside the clip rect, we don't need to draw it
+    // at all. (We check the font extents here rather than the individual glyph
+    // bounds because that's cheaper to look up, and provides a conservative
+    // "worst case" for where this glyph might want to draw.)
+    LayoutDeviceRect extents =
+        LayoutDeviceRect::FromUnknownRect(aBuffer.mFontParams.fontExtents);
+    extents.MoveBy(LayoutDevicePoint::FromUnknownPoint(devPt));
+    if (!extents.Intersects(runParams.clipRect)) {
+      return;
+    }
+  }
+
   if (FC == FontComplexityT::ComplexFont) {
     const FontDrawParams& fontParams(aBuffer.mFontParams);
-
-    auto* textDrawer = runParams.context->GetTextDrawer();
 
     gfxContextMatrixAutoSaveRestore matrixRestore;
 
@@ -2146,7 +2158,7 @@ bool gfxFont::DrawMissingGlyph(const TextRunDrawParams& aRunParams,
   // we don't have to draw the hexbox for them.
   float advance = aDetails->mAdvance;
   if (aRunParams.drawMode != DrawMode::GLYPH_PATH && advance > 0) {
-    auto* textDrawer = aRunParams.context->GetTextDrawer();
+    auto* textDrawer = aRunParams.textDrawer;
     const Matrix* matPtr = nullptr;
     Matrix mat;
     if (textDrawer) {
@@ -2233,8 +2245,25 @@ void gfxFont::DrawEmphasisMarks(const gfxTextRun* aShapedText, gfx::Point* aPt,
   }
 }
 
+nsTArray<mozilla::gfx::sRGBColor>* TextRunDrawParams::GetPaletteFor(
+    const gfxFont* aFont) {
+  auto entry = mPaletteCache.Lookup(aFont);
+  if (!entry) {
+    CacheData newData;
+    newData.mKey = aFont;
+
+    gfxFontEntry* fe = aFont->GetFontEntry();
+    gfxFontEntry::AutoHBFace face = fe->GetHBFace();
+    newData.mPalette = COLRFonts::SetupColorPalette(
+        face, paletteValueSet, fontPalette, fe->FamilyName());
+
+    entry.Set(std::move(newData));
+  }
+  return entry.Data().mPalette.get();
+}
+
 void gfxFont::Draw(const gfxTextRun* aTextRun, uint32_t aStart, uint32_t aEnd,
-                   gfx::Point* aPt, const TextRunDrawParams& aRunParams,
+                   gfx::Point* aPt, TextRunDrawParams& aRunParams,
                    gfx::ShapedTextFlags aOrientation) {
   NS_ASSERTION(aRunParams.drawMode == DrawMode::GLYPH_PATH ||
                    !(int(aRunParams.drawMode) & int(DrawMode::GLYPH_PATH)),
@@ -2255,7 +2284,7 @@ void gfxFont::Draw(const gfxTextRun* aTextRun, uint32_t aStart, uint32_t aEnd,
   if (!fontParams.scaledFont) {
     return;
   }
-  auto* textDrawer = aRunParams.context->GetTextDrawer();
+  auto* textDrawer = aRunParams.textDrawer;
 
   fontParams.obliqueSkew = SkewForSyntheticOblique();
   fontParams.haveSVGGlyphs = GetFontEntry()->TryGetSVGData(this);
@@ -2267,10 +2296,7 @@ void gfxFont::Draw(const gfxTextRun* aTextRun, uint32_t aStart, uint32_t aEnd,
     fontParams.currentColor = aRunParams.context->GetDeviceColor(ctxColor)
                                   ? sRGBColor::FromABGR(ctxColor.ToABGR())
                                   : sRGBColor::OpaqueBlack();
-    gfxFontEntry::AutoHBFace face = GetFontEntry()->GetHBFace();
-    fontParams.palette = COLRFonts::SetupColorPalette(
-        face, aRunParams.paletteValueSet, aRunParams.fontPalette,
-        GetFontEntry()->FamilyName());
+    fontParams.palette = aRunParams.GetPaletteFor(this);
   }
 
   if (textDrawer) {
@@ -2442,6 +2468,24 @@ void gfxFont::Draw(const gfxTextRun* aTextRun, uint32_t aStart, uint32_t aEnd,
     fontParams.extraStrikes = 0;
   }
 
+  // Figure out the maximum extents for the font, accounting for synthetic
+  // oblique and bold.
+  fontParams.fontExtents = GetFontEntry()->GetFontExtents(mFUnitsConvFactor);
+  if (fontParams.obliqueSkew != 0.0f) {
+    gfx::Point p(fontParams.fontExtents.x, fontParams.fontExtents.y);
+    gfx::Matrix skew(1, 0, fontParams.obliqueSkew, 1, 0, 0);
+    fontParams.fontExtents = skew.TransformBounds(fontParams.fontExtents);
+  }
+  if (fontParams.extraStrikes) {
+    if (fontParams.isVerticalFont) {
+      fontParams.fontExtents.height +=
+          float(fontParams.extraStrikes) * fontParams.synBoldOnePixelOffset;
+    } else {
+      fontParams.fontExtents.width +=
+          float(fontParams.extraStrikes) * fontParams.synBoldOnePixelOffset;
+    }
+  }
+
   bool oldSubpixelAA = aRunParams.dt->GetPermitSubpixelAA();
   if (!AllowSubpixelAA()) {
     aRunParams.dt->SetPermitSubpixelAA(false);
@@ -2564,7 +2608,7 @@ bool gfxFont::RenderColorGlyph(DrawTarget* aDrawTarget, gfxContext* aContext,
           GetFontEntry()->GetCOLR(), hbShaper->GetHBFont(), paintGraph,
           aDrawTarget, aTextDrawer, aFontParams.scaledFont,
           aFontParams.drawOptions, aPoint, aFontParams.currentColor,
-          aFontParams.palette.get(), aGlyphId, mFUnitsConvFactor);
+          aFontParams.palette, aGlyphId, mFUnitsConvFactor);
     }
   }
 
@@ -2574,7 +2618,7 @@ bool gfxFont::RenderColorGlyph(DrawTarget* aDrawTarget, gfxContext* aContext,
     bool ok = COLRFonts::PaintGlyphLayers(
         GetFontEntry()->GetCOLR(), face, layers, aDrawTarget, aTextDrawer,
         aFontParams.scaledFont, aFontParams.drawOptions, aPoint,
-        aFontParams.currentColor, aFontParams.palette.get());
+        aFontParams.currentColor, aFontParams.palette);
     return ok;
   }
 

@@ -1,4 +1,6 @@
-const { UIState } = ChromeUtils.import("resource://services-sync/UIState.jsm");
+const { UIState } = ChromeUtils.importESModule(
+  "resource://services-sync/UIState.sys.mjs"
+);
 const { sinon } = ChromeUtils.import("resource://testing-common/Sinon.jsm");
 
 function promiseSyncReady() {
@@ -18,7 +20,11 @@ function setupSendTabMocks({
     status: state,
     syncEnabled: true,
   });
-  sandbox.stub(BrowserUtils, "isShareableURL").returns(isSendableURI);
+  if (isSendableURI) {
+    sandbox.stub(BrowserUtils, "getShareableURL").returnsArg(0);
+  } else {
+    sandbox.stub(BrowserUtils, "getShareableURL").returns(null);
+  }
   sandbox.stub(fxAccounts.device, "refreshDeviceList").resolves(true);
   sandbox.stub(fxAccounts.commands.sendTab, "send").resolves({ failed: [] });
   return sandbox;

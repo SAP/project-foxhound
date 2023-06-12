@@ -562,6 +562,10 @@ struct ReflowInput : public SizeComputationInput {
     // children's block-size (after reflowing them).
     // https://drafts.csswg.org/css-sizing-4/#aspect-ratio-minimum
     bool mIsBSizeSetByAspectRatio : 1;
+
+    // If true, then children of this frame can generate class A breakpoints
+    // for paginated reflow.
+    bool mCanHaveClassABreakpoints : 1;
   };
   Flags mFlags;
 
@@ -725,10 +729,16 @@ struct ReflowInput : public SizeComputationInput {
    *                           or 1.0 if during intrinsic size
    *                           calculation.
    */
-  static nscoord CalcLineHeight(nsIContent* aContent,
-                                const ComputedStyle* aComputedStyle,
+  static nscoord CalcLineHeight(const ComputedStyle&,
                                 nsPresContext* aPresContext,
-                                nscoord aBlockBSize, float aFontSizeInflation);
+                                const nsIContent* aContent, nscoord aBlockBSize,
+                                float aFontSizeInflation);
+
+  static nscoord CalcLineHeight(const StyleLineHeight&,
+                                const nsStyleFont& aRelativeToFont,
+                                nsPresContext* aPresContext, bool aIsVertical,
+                                const nsIContent* aContent, nscoord aBlockBSize,
+                                float aFontSizeInflation);
 
   mozilla::LogicalSize ComputeContainingBlockRectangle(
       nsPresContext* aPresContext, const ReflowInput* aContainingBlockRI) const;

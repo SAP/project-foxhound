@@ -314,6 +314,323 @@ if (true) {
 
 /***/ }),
 
+/***/ 1079:
+/***/ (function(module, exports) {
+
+
+
+/***/ }),
+
+/***/ 1101:
+/***/ (function(module, exports, __webpack_require__) {
+
+/* WEBPACK VAR INJECTION */(function(process) {// .dirname, .basename, and .extname methods are extracted from Node.js v8.11.1,
+// backported and transplited with Babel, with backwards-compat fixes
+
+// Copyright Joyent, Inc. and other Node contributors.
+//
+// Permission is hereby granted, free of charge, to any person obtaining a
+// copy of this software and associated documentation files (the
+// "Software"), to deal in the Software without restriction, including
+// without limitation the rights to use, copy, modify, merge, publish,
+// distribute, sublicense, and/or sell copies of the Software, and to permit
+// persons to whom the Software is furnished to do so, subject to the
+// following conditions:
+//
+// The above copyright notice and this permission notice shall be included
+// in all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+// MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
+// NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+// DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+// OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
+// USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+// resolves . and .. elements in a path array with directory names there
+// must be no slashes, empty elements, or device names (c:\) in the array
+// (so also no leading and trailing slashes - it does not distinguish
+// relative and absolute paths)
+function normalizeArray(parts, allowAboveRoot) {
+  // if the path tries to go above the root, `up` ends up > 0
+  var up = 0;
+  for (var i = parts.length - 1; i >= 0; i--) {
+    var last = parts[i];
+    if (last === '.') {
+      parts.splice(i, 1);
+    } else if (last === '..') {
+      parts.splice(i, 1);
+      up++;
+    } else if (up) {
+      parts.splice(i, 1);
+      up--;
+    }
+  }
+
+  // if the path is allowed to go above the root, restore leading ..s
+  if (allowAboveRoot) {
+    for (; up--; up) {
+      parts.unshift('..');
+    }
+  }
+
+  return parts;
+}
+
+// path.resolve([from ...], to)
+// posix version
+exports.resolve = function() {
+  var resolvedPath = '',
+      resolvedAbsolute = false;
+
+  for (var i = arguments.length - 1; i >= -1 && !resolvedAbsolute; i--) {
+    var path = (i >= 0) ? arguments[i] : process.cwd();
+
+    // Skip empty and invalid entries
+    if (typeof path !== 'string') {
+      throw new TypeError('Arguments to path.resolve must be strings');
+    } else if (!path) {
+      continue;
+    }
+
+    resolvedPath = path + '/' + resolvedPath;
+    resolvedAbsolute = path.charAt(0) === '/';
+  }
+
+  // At this point the path should be resolved to a full absolute path, but
+  // handle relative paths to be safe (might happen when process.cwd() fails)
+
+  // Normalize the path
+  resolvedPath = normalizeArray(filter(resolvedPath.split('/'), function(p) {
+    return !!p;
+  }), !resolvedAbsolute).join('/');
+
+  return ((resolvedAbsolute ? '/' : '') + resolvedPath) || '.';
+};
+
+// path.normalize(path)
+// posix version
+exports.normalize = function(path) {
+  var isAbsolute = exports.isAbsolute(path),
+      trailingSlash = substr(path, -1) === '/';
+
+  // Normalize the path
+  path = normalizeArray(filter(path.split('/'), function(p) {
+    return !!p;
+  }), !isAbsolute).join('/');
+
+  if (!path && !isAbsolute) {
+    path = '.';
+  }
+  if (path && trailingSlash) {
+    path += '/';
+  }
+
+  return (isAbsolute ? '/' : '') + path;
+};
+
+// posix version
+exports.isAbsolute = function(path) {
+  return path.charAt(0) === '/';
+};
+
+// posix version
+exports.join = function() {
+  var paths = Array.prototype.slice.call(arguments, 0);
+  return exports.normalize(filter(paths, function(p, index) {
+    if (typeof p !== 'string') {
+      throw new TypeError('Arguments to path.join must be strings');
+    }
+    return p;
+  }).join('/'));
+};
+
+
+// path.relative(from, to)
+// posix version
+exports.relative = function(from, to) {
+  from = exports.resolve(from).substr(1);
+  to = exports.resolve(to).substr(1);
+
+  function trim(arr) {
+    var start = 0;
+    for (; start < arr.length; start++) {
+      if (arr[start] !== '') break;
+    }
+
+    var end = arr.length - 1;
+    for (; end >= 0; end--) {
+      if (arr[end] !== '') break;
+    }
+
+    if (start > end) return [];
+    return arr.slice(start, end - start + 1);
+  }
+
+  var fromParts = trim(from.split('/'));
+  var toParts = trim(to.split('/'));
+
+  var length = Math.min(fromParts.length, toParts.length);
+  var samePartsLength = length;
+  for (var i = 0; i < length; i++) {
+    if (fromParts[i] !== toParts[i]) {
+      samePartsLength = i;
+      break;
+    }
+  }
+
+  var outputParts = [];
+  for (var i = samePartsLength; i < fromParts.length; i++) {
+    outputParts.push('..');
+  }
+
+  outputParts = outputParts.concat(toParts.slice(samePartsLength));
+
+  return outputParts.join('/');
+};
+
+exports.sep = '/';
+exports.delimiter = ':';
+
+exports.dirname = function (path) {
+  if (typeof path !== 'string') path = path + '';
+  if (path.length === 0) return '.';
+  var code = path.charCodeAt(0);
+  var hasRoot = code === 47 /*/*/;
+  var end = -1;
+  var matchedSlash = true;
+  for (var i = path.length - 1; i >= 1; --i) {
+    code = path.charCodeAt(i);
+    if (code === 47 /*/*/) {
+        if (!matchedSlash) {
+          end = i;
+          break;
+        }
+      } else {
+      // We saw the first non-path separator
+      matchedSlash = false;
+    }
+  }
+
+  if (end === -1) return hasRoot ? '/' : '.';
+  if (hasRoot && end === 1) {
+    // return '//';
+    // Backwards-compat fix:
+    return '/';
+  }
+  return path.slice(0, end);
+};
+
+function basename(path) {
+  if (typeof path !== 'string') path = path + '';
+
+  var start = 0;
+  var end = -1;
+  var matchedSlash = true;
+  var i;
+
+  for (i = path.length - 1; i >= 0; --i) {
+    if (path.charCodeAt(i) === 47 /*/*/) {
+        // If we reached a path separator that was not part of a set of path
+        // separators at the end of the string, stop now
+        if (!matchedSlash) {
+          start = i + 1;
+          break;
+        }
+      } else if (end === -1) {
+      // We saw the first non-path separator, mark this as the end of our
+      // path component
+      matchedSlash = false;
+      end = i + 1;
+    }
+  }
+
+  if (end === -1) return '';
+  return path.slice(start, end);
+}
+
+// Uses a mixed approach for backwards-compatibility, as ext behavior changed
+// in new Node.js versions, so only basename() above is backported here
+exports.basename = function (path, ext) {
+  var f = basename(path);
+  if (ext && f.substr(-1 * ext.length) === ext) {
+    f = f.substr(0, f.length - ext.length);
+  }
+  return f;
+};
+
+exports.extname = function (path) {
+  if (typeof path !== 'string') path = path + '';
+  var startDot = -1;
+  var startPart = 0;
+  var end = -1;
+  var matchedSlash = true;
+  // Track the state of characters (if any) we see before our first dot and
+  // after any path separator we find
+  var preDotState = 0;
+  for (var i = path.length - 1; i >= 0; --i) {
+    var code = path.charCodeAt(i);
+    if (code === 47 /*/*/) {
+        // If we reached a path separator that was not part of a set of path
+        // separators at the end of the string, stop now
+        if (!matchedSlash) {
+          startPart = i + 1;
+          break;
+        }
+        continue;
+      }
+    if (end === -1) {
+      // We saw the first non-path separator, mark this as the end of our
+      // extension
+      matchedSlash = false;
+      end = i + 1;
+    }
+    if (code === 46 /*.*/) {
+        // If this is our first dot, mark it as the start of our extension
+        if (startDot === -1)
+          startDot = i;
+        else if (preDotState !== 1)
+          preDotState = 1;
+    } else if (startDot !== -1) {
+      // We saw a non-dot and non-path separator before our dot, so we should
+      // have a good chance at having a non-empty extension
+      preDotState = -1;
+    }
+  }
+
+  if (startDot === -1 || end === -1 ||
+      // We saw a non-dot character immediately before the dot
+      preDotState === 0 ||
+      // The (right-most) trimmed path component is exactly '..'
+      preDotState === 1 && startDot === end - 1 && startDot === startPart + 1) {
+    return '';
+  }
+  return path.slice(startDot, end);
+};
+
+function filter (xs, f) {
+    if (xs.filter) return xs.filter(f);
+    var res = [];
+    for (var i = 0; i < xs.length; i++) {
+        if (f(xs[i], i, xs)) res.push(xs[i]);
+    }
+    return res;
+}
+
+// String.prototype.substr - negative index don't work in IE8
+var substr = 'ab'.substr(-1) === 'b'
+    ? function (str, start, len) { return str.substr(start, len) }
+    : function (str, start, len) {
+        if (start < 0) start = str.length + start;
+        return str.substr(start, len);
+    }
+;
+
+/* WEBPACK VAR INJECTION */}.call(exports, __webpack_require__(607)))
+
+/***/ }),
+
 /***/ 1103:
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
@@ -331,16 +648,30 @@ Object.defineProperty(__webpack_exports__, "__esModule", { value: true });
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "isIdentifierChar", function() { return isIdentifierChar; });
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "isIdentifierStart", function() { return isIdentifierStart; });
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "isNewLine", function() { return isNewLine; });
-/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "keywordTypes", function() { return keywords$1; });
+/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "keywordTypes", function() { return keywords; });
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "lineBreak", function() { return lineBreak; });
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "lineBreakG", function() { return lineBreakG; });
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "nonASCIIwhitespace", function() { return nonASCIIwhitespace; });
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "parse", function() { return parse; });
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "parseExpressionAt", function() { return parseExpressionAt; });
-/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "tokContexts", function() { return types$1; });
-/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "tokTypes", function() { return types; });
+/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "tokContexts", function() { return types; });
+/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "tokTypes", function() { return types$1; });
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "tokenizer", function() { return tokenizer; });
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "version", function() { return version; });
+// This file was generated. Do not modify manually!
+var astralIdentifierCodes = [509, 0, 227, 0, 150, 4, 294, 9, 1368, 2, 2, 1, 6, 3, 41, 2, 5, 0, 166, 1, 574, 3, 9, 9, 370, 1, 81, 2, 71, 10, 50, 3, 123, 2, 54, 14, 32, 10, 3, 1, 11, 3, 46, 10, 8, 0, 46, 9, 7, 2, 37, 13, 2, 9, 6, 1, 45, 0, 13, 2, 49, 13, 9, 3, 2, 11, 83, 11, 7, 0, 3, 0, 158, 11, 6, 9, 7, 3, 56, 1, 2, 6, 3, 1, 3, 2, 10, 0, 11, 1, 3, 6, 4, 4, 193, 17, 10, 9, 5, 0, 82, 19, 13, 9, 214, 6, 3, 8, 28, 1, 83, 16, 16, 9, 82, 12, 9, 9, 84, 14, 5, 9, 243, 14, 166, 9, 71, 5, 2, 1, 3, 3, 2, 0, 2, 1, 13, 9, 120, 6, 3, 6, 4, 0, 29, 9, 41, 6, 2, 3, 9, 0, 10, 10, 47, 15, 406, 7, 2, 7, 17, 9, 57, 21, 2, 13, 123, 5, 4, 0, 2, 1, 2, 6, 2, 0, 9, 9, 49, 4, 2, 1, 2, 4, 9, 9, 330, 3, 10, 1, 2, 0, 49, 6, 4, 4, 14, 9, 5351, 0, 7, 14, 13835, 9, 87, 9, 39, 4, 60, 6, 26, 9, 1014, 0, 2, 54, 8, 3, 82, 0, 12, 1, 19628, 1, 4706, 45, 3, 22, 543, 4, 4, 5, 9, 7, 3, 6, 31, 3, 149, 2, 1418, 49, 513, 54, 5, 49, 9, 0, 15, 0, 23, 4, 2, 14, 1361, 6, 2, 16, 3, 6, 2, 1, 2, 4, 101, 0, 161, 6, 10, 9, 357, 0, 62, 13, 499, 13, 983, 6, 110, 6, 6, 9, 4759, 9, 787719, 239];
+
+// This file was generated. Do not modify manually!
+var astralIdentifierStartCodes = [0, 11, 2, 25, 2, 18, 2, 1, 2, 14, 3, 13, 35, 122, 70, 52, 268, 28, 4, 48, 48, 31, 14, 29, 6, 37, 11, 29, 3, 35, 5, 7, 2, 4, 43, 157, 19, 35, 5, 35, 5, 39, 9, 51, 13, 10, 2, 14, 2, 6, 2, 1, 2, 10, 2, 14, 2, 6, 2, 1, 68, 310, 10, 21, 11, 7, 25, 5, 2, 41, 2, 8, 70, 5, 3, 0, 2, 43, 2, 1, 4, 0, 3, 22, 11, 22, 10, 30, 66, 18, 2, 1, 11, 21, 11, 25, 71, 55, 7, 1, 65, 0, 16, 3, 2, 2, 2, 28, 43, 28, 4, 28, 36, 7, 2, 27, 28, 53, 11, 21, 11, 18, 14, 17, 111, 72, 56, 50, 14, 50, 14, 35, 349, 41, 7, 1, 79, 28, 11, 0, 9, 21, 43, 17, 47, 20, 28, 22, 13, 52, 58, 1, 3, 0, 14, 44, 33, 24, 27, 35, 30, 0, 3, 0, 9, 34, 4, 0, 13, 47, 15, 3, 22, 0, 2, 0, 36, 17, 2, 24, 20, 1, 64, 6, 2, 0, 2, 3, 2, 14, 2, 9, 8, 46, 39, 7, 3, 1, 3, 21, 2, 6, 2, 1, 2, 4, 4, 0, 19, 0, 13, 4, 159, 52, 19, 3, 21, 2, 31, 47, 21, 1, 2, 0, 185, 46, 42, 3, 37, 47, 21, 0, 60, 42, 14, 0, 72, 26, 38, 6, 186, 43, 117, 63, 32, 7, 3, 0, 3, 7, 2, 1, 2, 23, 16, 0, 2, 0, 95, 7, 3, 38, 17, 0, 2, 0, 29, 0, 11, 39, 8, 0, 22, 0, 12, 45, 20, 0, 19, 72, 264, 8, 2, 36, 18, 0, 50, 29, 113, 6, 2, 1, 2, 37, 22, 0, 26, 5, 2, 1, 2, 31, 15, 0, 328, 18, 16, 0, 2, 12, 2, 33, 125, 0, 80, 921, 103, 110, 18, 195, 2637, 96, 16, 1071, 18, 5, 4026, 582, 8634, 568, 8, 30, 18, 78, 18, 29, 19, 47, 17, 3, 32, 20, 6, 18, 689, 63, 129, 74, 6, 0, 67, 12, 65, 1, 2, 0, 29, 6135, 9, 1237, 43, 8, 8936, 3, 2, 6, 2, 1, 2, 290, 16, 0, 30, 2, 3, 0, 15, 3, 9, 395, 2309, 106, 6, 12, 4, 8, 8, 9, 5991, 84, 2, 70, 2, 1, 3, 0, 3, 1, 3, 3, 2, 11, 2, 0, 2, 6, 2, 64, 2, 3, 3, 7, 2, 6, 2, 27, 2, 3, 2, 4, 2, 0, 4, 6, 2, 339, 3, 24, 2, 24, 2, 30, 2, 24, 2, 30, 2, 24, 2, 30, 2, 24, 2, 30, 2, 24, 2, 7, 1845, 30, 7, 5, 262, 61, 147, 44, 11, 6, 17, 0, 322, 29, 19, 43, 485, 27, 757, 6, 2, 3, 2, 1, 2, 14, 2, 196, 60, 67, 8, 0, 1205, 3, 2, 26, 2, 1, 2, 0, 3, 0, 2, 9, 2, 3, 2, 0, 2, 0, 7, 0, 5, 0, 2, 0, 2, 0, 2, 2, 2, 1, 2, 0, 3, 0, 2, 0, 2, 0, 2, 0, 2, 0, 2, 1, 2, 0, 3, 3, 2, 6, 2, 3, 2, 3, 2, 0, 2, 9, 2, 16, 6, 2, 2, 4, 2, 16, 4421, 42719, 33, 4153, 7, 221, 3, 5761, 15, 7472, 3104, 541, 1507, 4938, 6, 4191];
+
+// This file was generated. Do not modify manually!
+var nonASCIIidentifierChars = "\u200c\u200d\xb7\u0300-\u036f\u0387\u0483-\u0487\u0591-\u05bd\u05bf\u05c1\u05c2\u05c4\u05c5\u05c7\u0610-\u061a\u064b-\u0669\u0670\u06d6-\u06dc\u06df-\u06e4\u06e7\u06e8\u06ea-\u06ed\u06f0-\u06f9\u0711\u0730-\u074a\u07a6-\u07b0\u07c0-\u07c9\u07eb-\u07f3\u07fd\u0816-\u0819\u081b-\u0823\u0825-\u0827\u0829-\u082d\u0859-\u085b\u0898-\u089f\u08ca-\u08e1\u08e3-\u0903\u093a-\u093c\u093e-\u094f\u0951-\u0957\u0962\u0963\u0966-\u096f\u0981-\u0983\u09bc\u09be-\u09c4\u09c7\u09c8\u09cb-\u09cd\u09d7\u09e2\u09e3\u09e6-\u09ef\u09fe\u0a01-\u0a03\u0a3c\u0a3e-\u0a42\u0a47\u0a48\u0a4b-\u0a4d\u0a51\u0a66-\u0a71\u0a75\u0a81-\u0a83\u0abc\u0abe-\u0ac5\u0ac7-\u0ac9\u0acb-\u0acd\u0ae2\u0ae3\u0ae6-\u0aef\u0afa-\u0aff\u0b01-\u0b03\u0b3c\u0b3e-\u0b44\u0b47\u0b48\u0b4b-\u0b4d\u0b55-\u0b57\u0b62\u0b63\u0b66-\u0b6f\u0b82\u0bbe-\u0bc2\u0bc6-\u0bc8\u0bca-\u0bcd\u0bd7\u0be6-\u0bef\u0c00-\u0c04\u0c3c\u0c3e-\u0c44\u0c46-\u0c48\u0c4a-\u0c4d\u0c55\u0c56\u0c62\u0c63\u0c66-\u0c6f\u0c81-\u0c83\u0cbc\u0cbe-\u0cc4\u0cc6-\u0cc8\u0cca-\u0ccd\u0cd5\u0cd6\u0ce2\u0ce3\u0ce6-\u0cef\u0cf3\u0d00-\u0d03\u0d3b\u0d3c\u0d3e-\u0d44\u0d46-\u0d48\u0d4a-\u0d4d\u0d57\u0d62\u0d63\u0d66-\u0d6f\u0d81-\u0d83\u0dca\u0dcf-\u0dd4\u0dd6\u0dd8-\u0ddf\u0de6-\u0def\u0df2\u0df3\u0e31\u0e34-\u0e3a\u0e47-\u0e4e\u0e50-\u0e59\u0eb1\u0eb4-\u0ebc\u0ec8-\u0ece\u0ed0-\u0ed9\u0f18\u0f19\u0f20-\u0f29\u0f35\u0f37\u0f39\u0f3e\u0f3f\u0f71-\u0f84\u0f86\u0f87\u0f8d-\u0f97\u0f99-\u0fbc\u0fc6\u102b-\u103e\u1040-\u1049\u1056-\u1059\u105e-\u1060\u1062-\u1064\u1067-\u106d\u1071-\u1074\u1082-\u108d\u108f-\u109d\u135d-\u135f\u1369-\u1371\u1712-\u1715\u1732-\u1734\u1752\u1753\u1772\u1773\u17b4-\u17d3\u17dd\u17e0-\u17e9\u180b-\u180d\u180f-\u1819\u18a9\u1920-\u192b\u1930-\u193b\u1946-\u194f\u19d0-\u19da\u1a17-\u1a1b\u1a55-\u1a5e\u1a60-\u1a7c\u1a7f-\u1a89\u1a90-\u1a99\u1ab0-\u1abd\u1abf-\u1ace\u1b00-\u1b04\u1b34-\u1b44\u1b50-\u1b59\u1b6b-\u1b73\u1b80-\u1b82\u1ba1-\u1bad\u1bb0-\u1bb9\u1be6-\u1bf3\u1c24-\u1c37\u1c40-\u1c49\u1c50-\u1c59\u1cd0-\u1cd2\u1cd4-\u1ce8\u1ced\u1cf4\u1cf7-\u1cf9\u1dc0-\u1dff\u203f\u2040\u2054\u20d0-\u20dc\u20e1\u20e5-\u20f0\u2cef-\u2cf1\u2d7f\u2de0-\u2dff\u302a-\u302f\u3099\u309a\ua620-\ua629\ua66f\ua674-\ua67d\ua69e\ua69f\ua6f0\ua6f1\ua802\ua806\ua80b\ua823-\ua827\ua82c\ua880\ua881\ua8b4-\ua8c5\ua8d0-\ua8d9\ua8e0-\ua8f1\ua8ff-\ua909\ua926-\ua92d\ua947-\ua953\ua980-\ua983\ua9b3-\ua9c0\ua9d0-\ua9d9\ua9e5\ua9f0-\ua9f9\uaa29-\uaa36\uaa43\uaa4c\uaa4d\uaa50-\uaa59\uaa7b-\uaa7d\uaab0\uaab2-\uaab4\uaab7\uaab8\uaabe\uaabf\uaac1\uaaeb-\uaaef\uaaf5\uaaf6\uabe3-\uabea\uabec\uabed\uabf0-\uabf9\ufb1e\ufe00-\ufe0f\ufe20-\ufe2f\ufe33\ufe34\ufe4d-\ufe4f\uff10-\uff19\uff3f";
+
+// This file was generated. Do not modify manually!
+var nonASCIIidentifierStartChars = "\xaa\xb5\xba\xc0-\xd6\xd8-\xf6\xf8-\u02c1\u02c6-\u02d1\u02e0-\u02e4\u02ec\u02ee\u0370-\u0374\u0376\u0377\u037a-\u037d\u037f\u0386\u0388-\u038a\u038c\u038e-\u03a1\u03a3-\u03f5\u03f7-\u0481\u048a-\u052f\u0531-\u0556\u0559\u0560-\u0588\u05d0-\u05ea\u05ef-\u05f2\u0620-\u064a\u066e\u066f\u0671-\u06d3\u06d5\u06e5\u06e6\u06ee\u06ef\u06fa-\u06fc\u06ff\u0710\u0712-\u072f\u074d-\u07a5\u07b1\u07ca-\u07ea\u07f4\u07f5\u07fa\u0800-\u0815\u081a\u0824\u0828\u0840-\u0858\u0860-\u086a\u0870-\u0887\u0889-\u088e\u08a0-\u08c9\u0904-\u0939\u093d\u0950\u0958-\u0961\u0971-\u0980\u0985-\u098c\u098f\u0990\u0993-\u09a8\u09aa-\u09b0\u09b2\u09b6-\u09b9\u09bd\u09ce\u09dc\u09dd\u09df-\u09e1\u09f0\u09f1\u09fc\u0a05-\u0a0a\u0a0f\u0a10\u0a13-\u0a28\u0a2a-\u0a30\u0a32\u0a33\u0a35\u0a36\u0a38\u0a39\u0a59-\u0a5c\u0a5e\u0a72-\u0a74\u0a85-\u0a8d\u0a8f-\u0a91\u0a93-\u0aa8\u0aaa-\u0ab0\u0ab2\u0ab3\u0ab5-\u0ab9\u0abd\u0ad0\u0ae0\u0ae1\u0af9\u0b05-\u0b0c\u0b0f\u0b10\u0b13-\u0b28\u0b2a-\u0b30\u0b32\u0b33\u0b35-\u0b39\u0b3d\u0b5c\u0b5d\u0b5f-\u0b61\u0b71\u0b83\u0b85-\u0b8a\u0b8e-\u0b90\u0b92-\u0b95\u0b99\u0b9a\u0b9c\u0b9e\u0b9f\u0ba3\u0ba4\u0ba8-\u0baa\u0bae-\u0bb9\u0bd0\u0c05-\u0c0c\u0c0e-\u0c10\u0c12-\u0c28\u0c2a-\u0c39\u0c3d\u0c58-\u0c5a\u0c5d\u0c60\u0c61\u0c80\u0c85-\u0c8c\u0c8e-\u0c90\u0c92-\u0ca8\u0caa-\u0cb3\u0cb5-\u0cb9\u0cbd\u0cdd\u0cde\u0ce0\u0ce1\u0cf1\u0cf2\u0d04-\u0d0c\u0d0e-\u0d10\u0d12-\u0d3a\u0d3d\u0d4e\u0d54-\u0d56\u0d5f-\u0d61\u0d7a-\u0d7f\u0d85-\u0d96\u0d9a-\u0db1\u0db3-\u0dbb\u0dbd\u0dc0-\u0dc6\u0e01-\u0e30\u0e32\u0e33\u0e40-\u0e46\u0e81\u0e82\u0e84\u0e86-\u0e8a\u0e8c-\u0ea3\u0ea5\u0ea7-\u0eb0\u0eb2\u0eb3\u0ebd\u0ec0-\u0ec4\u0ec6\u0edc-\u0edf\u0f00\u0f40-\u0f47\u0f49-\u0f6c\u0f88-\u0f8c\u1000-\u102a\u103f\u1050-\u1055\u105a-\u105d\u1061\u1065\u1066\u106e-\u1070\u1075-\u1081\u108e\u10a0-\u10c5\u10c7\u10cd\u10d0-\u10fa\u10fc-\u1248\u124a-\u124d\u1250-\u1256\u1258\u125a-\u125d\u1260-\u1288\u128a-\u128d\u1290-\u12b0\u12b2-\u12b5\u12b8-\u12be\u12c0\u12c2-\u12c5\u12c8-\u12d6\u12d8-\u1310\u1312-\u1315\u1318-\u135a\u1380-\u138f\u13a0-\u13f5\u13f8-\u13fd\u1401-\u166c\u166f-\u167f\u1681-\u169a\u16a0-\u16ea\u16ee-\u16f8\u1700-\u1711\u171f-\u1731\u1740-\u1751\u1760-\u176c\u176e-\u1770\u1780-\u17b3\u17d7\u17dc\u1820-\u1878\u1880-\u18a8\u18aa\u18b0-\u18f5\u1900-\u191e\u1950-\u196d\u1970-\u1974\u1980-\u19ab\u19b0-\u19c9\u1a00-\u1a16\u1a20-\u1a54\u1aa7\u1b05-\u1b33\u1b45-\u1b4c\u1b83-\u1ba0\u1bae\u1baf\u1bba-\u1be5\u1c00-\u1c23\u1c4d-\u1c4f\u1c5a-\u1c7d\u1c80-\u1c88\u1c90-\u1cba\u1cbd-\u1cbf\u1ce9-\u1cec\u1cee-\u1cf3\u1cf5\u1cf6\u1cfa\u1d00-\u1dbf\u1e00-\u1f15\u1f18-\u1f1d\u1f20-\u1f45\u1f48-\u1f4d\u1f50-\u1f57\u1f59\u1f5b\u1f5d\u1f5f-\u1f7d\u1f80-\u1fb4\u1fb6-\u1fbc\u1fbe\u1fc2-\u1fc4\u1fc6-\u1fcc\u1fd0-\u1fd3\u1fd6-\u1fdb\u1fe0-\u1fec\u1ff2-\u1ff4\u1ff6-\u1ffc\u2071\u207f\u2090-\u209c\u2102\u2107\u210a-\u2113\u2115\u2118-\u211d\u2124\u2126\u2128\u212a-\u2139\u213c-\u213f\u2145-\u2149\u214e\u2160-\u2188\u2c00-\u2ce4\u2ceb-\u2cee\u2cf2\u2cf3\u2d00-\u2d25\u2d27\u2d2d\u2d30-\u2d67\u2d6f\u2d80-\u2d96\u2da0-\u2da6\u2da8-\u2dae\u2db0-\u2db6\u2db8-\u2dbe\u2dc0-\u2dc6\u2dc8-\u2dce\u2dd0-\u2dd6\u2dd8-\u2dde\u3005-\u3007\u3021-\u3029\u3031-\u3035\u3038-\u303c\u3041-\u3096\u309b-\u309f\u30a1-\u30fa\u30fc-\u30ff\u3105-\u312f\u3131-\u318e\u31a0-\u31bf\u31f0-\u31ff\u3400-\u4dbf\u4e00-\ua48c\ua4d0-\ua4fd\ua500-\ua60c\ua610-\ua61f\ua62a\ua62b\ua640-\ua66e\ua67f-\ua69d\ua6a0-\ua6ef\ua717-\ua71f\ua722-\ua788\ua78b-\ua7ca\ua7d0\ua7d1\ua7d3\ua7d5-\ua7d9\ua7f2-\ua801\ua803-\ua805\ua807-\ua80a\ua80c-\ua822\ua840-\ua873\ua882-\ua8b3\ua8f2-\ua8f7\ua8fb\ua8fd\ua8fe\ua90a-\ua925\ua930-\ua946\ua960-\ua97c\ua984-\ua9b2\ua9cf\ua9e0-\ua9e4\ua9e6-\ua9ef\ua9fa-\ua9fe\uaa00-\uaa28\uaa40-\uaa42\uaa44-\uaa4b\uaa60-\uaa76\uaa7a\uaa7e-\uaaaf\uaab1\uaab5\uaab6\uaab9-\uaabd\uaac0\uaac2\uaadb-\uaadd\uaae0-\uaaea\uaaf2-\uaaf4\uab01-\uab06\uab09-\uab0e\uab11-\uab16\uab20-\uab26\uab28-\uab2e\uab30-\uab5a\uab5c-\uab69\uab70-\uabe2\uac00-\ud7a3\ud7b0-\ud7c6\ud7cb-\ud7fb\uf900-\ufa6d\ufa70-\ufad9\ufb00-\ufb06\ufb13-\ufb17\ufb1d\ufb1f-\ufb28\ufb2a-\ufb36\ufb38-\ufb3c\ufb3e\ufb40\ufb41\ufb43\ufb44\ufb46-\ufbb1\ufbd3-\ufd3d\ufd50-\ufd8f\ufd92-\ufdc7\ufdf0-\ufdfb\ufe70-\ufe74\ufe76-\ufefc\uff21-\uff3a\uff41-\uff5a\uff66-\uffbe\uffc2-\uffc7\uffca-\uffcf\uffd2-\uffd7\uffda-\uffdc";
+
+// These are a run-length and offset encoded representation of the
+
 // Reserved word lists for various dialects of the language
 
 var reservedWords = {
@@ -355,7 +686,7 @@ var reservedWords = {
 
 var ecma5AndLessKeywords = "break case catch continue debugger default do else finally for function if return switch throw try var while with null true false instanceof typeof void delete new in this";
 
-var keywords = {
+var keywords$1 = {
   5: ecma5AndLessKeywords,
   "5module": ecma5AndLessKeywords + " export import",
   6: ecma5AndLessKeywords + " const class extends export import super"
@@ -365,30 +696,8 @@ var keywordRelationalOperator = /^in(stanceof)?$/;
 
 // ## Character categories
 
-// Big ugly regular expressions that match characters in the
-// whitespace, identifier, and identifier-start categories. These
-// are only applied when a character is found to actually have a
-// code point above 128.
-// Generated by `bin/generate-identifier-regex.js`.
-var nonASCIIidentifierStartChars = "\xaa\xb5\xba\xc0-\xd6\xd8-\xf6\xf8-\u02c1\u02c6-\u02d1\u02e0-\u02e4\u02ec\u02ee\u0370-\u0374\u0376\u0377\u037a-\u037d\u037f\u0386\u0388-\u038a\u038c\u038e-\u03a1\u03a3-\u03f5\u03f7-\u0481\u048a-\u052f\u0531-\u0556\u0559\u0560-\u0588\u05d0-\u05ea\u05ef-\u05f2\u0620-\u064a\u066e\u066f\u0671-\u06d3\u06d5\u06e5\u06e6\u06ee\u06ef\u06fa-\u06fc\u06ff\u0710\u0712-\u072f\u074d-\u07a5\u07b1\u07ca-\u07ea\u07f4\u07f5\u07fa\u0800-\u0815\u081a\u0824\u0828\u0840-\u0858\u0860-\u086a\u08a0-\u08b4\u08b6-\u08c7\u0904-\u0939\u093d\u0950\u0958-\u0961\u0971-\u0980\u0985-\u098c\u098f\u0990\u0993-\u09a8\u09aa-\u09b0\u09b2\u09b6-\u09b9\u09bd\u09ce\u09dc\u09dd\u09df-\u09e1\u09f0\u09f1\u09fc\u0a05-\u0a0a\u0a0f\u0a10\u0a13-\u0a28\u0a2a-\u0a30\u0a32\u0a33\u0a35\u0a36\u0a38\u0a39\u0a59-\u0a5c\u0a5e\u0a72-\u0a74\u0a85-\u0a8d\u0a8f-\u0a91\u0a93-\u0aa8\u0aaa-\u0ab0\u0ab2\u0ab3\u0ab5-\u0ab9\u0abd\u0ad0\u0ae0\u0ae1\u0af9\u0b05-\u0b0c\u0b0f\u0b10\u0b13-\u0b28\u0b2a-\u0b30\u0b32\u0b33\u0b35-\u0b39\u0b3d\u0b5c\u0b5d\u0b5f-\u0b61\u0b71\u0b83\u0b85-\u0b8a\u0b8e-\u0b90\u0b92-\u0b95\u0b99\u0b9a\u0b9c\u0b9e\u0b9f\u0ba3\u0ba4\u0ba8-\u0baa\u0bae-\u0bb9\u0bd0\u0c05-\u0c0c\u0c0e-\u0c10\u0c12-\u0c28\u0c2a-\u0c39\u0c3d\u0c58-\u0c5a\u0c60\u0c61\u0c80\u0c85-\u0c8c\u0c8e-\u0c90\u0c92-\u0ca8\u0caa-\u0cb3\u0cb5-\u0cb9\u0cbd\u0cde\u0ce0\u0ce1\u0cf1\u0cf2\u0d04-\u0d0c\u0d0e-\u0d10\u0d12-\u0d3a\u0d3d\u0d4e\u0d54-\u0d56\u0d5f-\u0d61\u0d7a-\u0d7f\u0d85-\u0d96\u0d9a-\u0db1\u0db3-\u0dbb\u0dbd\u0dc0-\u0dc6\u0e01-\u0e30\u0e32\u0e33\u0e40-\u0e46\u0e81\u0e82\u0e84\u0e86-\u0e8a\u0e8c-\u0ea3\u0ea5\u0ea7-\u0eb0\u0eb2\u0eb3\u0ebd\u0ec0-\u0ec4\u0ec6\u0edc-\u0edf\u0f00\u0f40-\u0f47\u0f49-\u0f6c\u0f88-\u0f8c\u1000-\u102a\u103f\u1050-\u1055\u105a-\u105d\u1061\u1065\u1066\u106e-\u1070\u1075-\u1081\u108e\u10a0-\u10c5\u10c7\u10cd\u10d0-\u10fa\u10fc-\u1248\u124a-\u124d\u1250-\u1256\u1258\u125a-\u125d\u1260-\u1288\u128a-\u128d\u1290-\u12b0\u12b2-\u12b5\u12b8-\u12be\u12c0\u12c2-\u12c5\u12c8-\u12d6\u12d8-\u1310\u1312-\u1315\u1318-\u135a\u1380-\u138f\u13a0-\u13f5\u13f8-\u13fd\u1401-\u166c\u166f-\u167f\u1681-\u169a\u16a0-\u16ea\u16ee-\u16f8\u1700-\u170c\u170e-\u1711\u1720-\u1731\u1740-\u1751\u1760-\u176c\u176e-\u1770\u1780-\u17b3\u17d7\u17dc\u1820-\u1878\u1880-\u18a8\u18aa\u18b0-\u18f5\u1900-\u191e\u1950-\u196d\u1970-\u1974\u1980-\u19ab\u19b0-\u19c9\u1a00-\u1a16\u1a20-\u1a54\u1aa7\u1b05-\u1b33\u1b45-\u1b4b\u1b83-\u1ba0\u1bae\u1baf\u1bba-\u1be5\u1c00-\u1c23\u1c4d-\u1c4f\u1c5a-\u1c7d\u1c80-\u1c88\u1c90-\u1cba\u1cbd-\u1cbf\u1ce9-\u1cec\u1cee-\u1cf3\u1cf5\u1cf6\u1cfa\u1d00-\u1dbf\u1e00-\u1f15\u1f18-\u1f1d\u1f20-\u1f45\u1f48-\u1f4d\u1f50-\u1f57\u1f59\u1f5b\u1f5d\u1f5f-\u1f7d\u1f80-\u1fb4\u1fb6-\u1fbc\u1fbe\u1fc2-\u1fc4\u1fc6-\u1fcc\u1fd0-\u1fd3\u1fd6-\u1fdb\u1fe0-\u1fec\u1ff2-\u1ff4\u1ff6-\u1ffc\u2071\u207f\u2090-\u209c\u2102\u2107\u210a-\u2113\u2115\u2118-\u211d\u2124\u2126\u2128\u212a-\u2139\u213c-\u213f\u2145-\u2149\u214e\u2160-\u2188\u2c00-\u2c2e\u2c30-\u2c5e\u2c60-\u2ce4\u2ceb-\u2cee\u2cf2\u2cf3\u2d00-\u2d25\u2d27\u2d2d\u2d30-\u2d67\u2d6f\u2d80-\u2d96\u2da0-\u2da6\u2da8-\u2dae\u2db0-\u2db6\u2db8-\u2dbe\u2dc0-\u2dc6\u2dc8-\u2dce\u2dd0-\u2dd6\u2dd8-\u2dde\u3005-\u3007\u3021-\u3029\u3031-\u3035\u3038-\u303c\u3041-\u3096\u309b-\u309f\u30a1-\u30fa\u30fc-\u30ff\u3105-\u312f\u3131-\u318e\u31a0-\u31bf\u31f0-\u31ff\u3400-\u4dbf\u4e00-\u9ffc\ua000-\ua48c\ua4d0-\ua4fd\ua500-\ua60c\ua610-\ua61f\ua62a\ua62b\ua640-\ua66e\ua67f-\ua69d\ua6a0-\ua6ef\ua717-\ua71f\ua722-\ua788\ua78b-\ua7bf\ua7c2-\ua7ca\ua7f5-\ua801\ua803-\ua805\ua807-\ua80a\ua80c-\ua822\ua840-\ua873\ua882-\ua8b3\ua8f2-\ua8f7\ua8fb\ua8fd\ua8fe\ua90a-\ua925\ua930-\ua946\ua960-\ua97c\ua984-\ua9b2\ua9cf\ua9e0-\ua9e4\ua9e6-\ua9ef\ua9fa-\ua9fe\uaa00-\uaa28\uaa40-\uaa42\uaa44-\uaa4b\uaa60-\uaa76\uaa7a\uaa7e-\uaaaf\uaab1\uaab5\uaab6\uaab9-\uaabd\uaac0\uaac2\uaadb-\uaadd\uaae0-\uaaea\uaaf2-\uaaf4\uab01-\uab06\uab09-\uab0e\uab11-\uab16\uab20-\uab26\uab28-\uab2e\uab30-\uab5a\uab5c-\uab69\uab70-\uabe2\uac00-\ud7a3\ud7b0-\ud7c6\ud7cb-\ud7fb\uf900-\ufa6d\ufa70-\ufad9\ufb00-\ufb06\ufb13-\ufb17\ufb1d\ufb1f-\ufb28\ufb2a-\ufb36\ufb38-\ufb3c\ufb3e\ufb40\ufb41\ufb43\ufb44\ufb46-\ufbb1\ufbd3-\ufd3d\ufd50-\ufd8f\ufd92-\ufdc7\ufdf0-\ufdfb\ufe70-\ufe74\ufe76-\ufefc\uff21-\uff3a\uff41-\uff5a\uff66-\uffbe\uffc2-\uffc7\uffca-\uffcf\uffd2-\uffd7\uffda-\uffdc";
-var nonASCIIidentifierChars = "\u200c\u200d\xb7\u0300-\u036f\u0387\u0483-\u0487\u0591-\u05bd\u05bf\u05c1\u05c2\u05c4\u05c5\u05c7\u0610-\u061a\u064b-\u0669\u0670\u06d6-\u06dc\u06df-\u06e4\u06e7\u06e8\u06ea-\u06ed\u06f0-\u06f9\u0711\u0730-\u074a\u07a6-\u07b0\u07c0-\u07c9\u07eb-\u07f3\u07fd\u0816-\u0819\u081b-\u0823\u0825-\u0827\u0829-\u082d\u0859-\u085b\u08d3-\u08e1\u08e3-\u0903\u093a-\u093c\u093e-\u094f\u0951-\u0957\u0962\u0963\u0966-\u096f\u0981-\u0983\u09bc\u09be-\u09c4\u09c7\u09c8\u09cb-\u09cd\u09d7\u09e2\u09e3\u09e6-\u09ef\u09fe\u0a01-\u0a03\u0a3c\u0a3e-\u0a42\u0a47\u0a48\u0a4b-\u0a4d\u0a51\u0a66-\u0a71\u0a75\u0a81-\u0a83\u0abc\u0abe-\u0ac5\u0ac7-\u0ac9\u0acb-\u0acd\u0ae2\u0ae3\u0ae6-\u0aef\u0afa-\u0aff\u0b01-\u0b03\u0b3c\u0b3e-\u0b44\u0b47\u0b48\u0b4b-\u0b4d\u0b55-\u0b57\u0b62\u0b63\u0b66-\u0b6f\u0b82\u0bbe-\u0bc2\u0bc6-\u0bc8\u0bca-\u0bcd\u0bd7\u0be6-\u0bef\u0c00-\u0c04\u0c3e-\u0c44\u0c46-\u0c48\u0c4a-\u0c4d\u0c55\u0c56\u0c62\u0c63\u0c66-\u0c6f\u0c81-\u0c83\u0cbc\u0cbe-\u0cc4\u0cc6-\u0cc8\u0cca-\u0ccd\u0cd5\u0cd6\u0ce2\u0ce3\u0ce6-\u0cef\u0d00-\u0d03\u0d3b\u0d3c\u0d3e-\u0d44\u0d46-\u0d48\u0d4a-\u0d4d\u0d57\u0d62\u0d63\u0d66-\u0d6f\u0d81-\u0d83\u0dca\u0dcf-\u0dd4\u0dd6\u0dd8-\u0ddf\u0de6-\u0def\u0df2\u0df3\u0e31\u0e34-\u0e3a\u0e47-\u0e4e\u0e50-\u0e59\u0eb1\u0eb4-\u0ebc\u0ec8-\u0ecd\u0ed0-\u0ed9\u0f18\u0f19\u0f20-\u0f29\u0f35\u0f37\u0f39\u0f3e\u0f3f\u0f71-\u0f84\u0f86\u0f87\u0f8d-\u0f97\u0f99-\u0fbc\u0fc6\u102b-\u103e\u1040-\u1049\u1056-\u1059\u105e-\u1060\u1062-\u1064\u1067-\u106d\u1071-\u1074\u1082-\u108d\u108f-\u109d\u135d-\u135f\u1369-\u1371\u1712-\u1714\u1732-\u1734\u1752\u1753\u1772\u1773\u17b4-\u17d3\u17dd\u17e0-\u17e9\u180b-\u180d\u1810-\u1819\u18a9\u1920-\u192b\u1930-\u193b\u1946-\u194f\u19d0-\u19da\u1a17-\u1a1b\u1a55-\u1a5e\u1a60-\u1a7c\u1a7f-\u1a89\u1a90-\u1a99\u1ab0-\u1abd\u1abf\u1ac0\u1b00-\u1b04\u1b34-\u1b44\u1b50-\u1b59\u1b6b-\u1b73\u1b80-\u1b82\u1ba1-\u1bad\u1bb0-\u1bb9\u1be6-\u1bf3\u1c24-\u1c37\u1c40-\u1c49\u1c50-\u1c59\u1cd0-\u1cd2\u1cd4-\u1ce8\u1ced\u1cf4\u1cf7-\u1cf9\u1dc0-\u1df9\u1dfb-\u1dff\u203f\u2040\u2054\u20d0-\u20dc\u20e1\u20e5-\u20f0\u2cef-\u2cf1\u2d7f\u2de0-\u2dff\u302a-\u302f\u3099\u309a\ua620-\ua629\ua66f\ua674-\ua67d\ua69e\ua69f\ua6f0\ua6f1\ua802\ua806\ua80b\ua823-\ua827\ua82c\ua880\ua881\ua8b4-\ua8c5\ua8d0-\ua8d9\ua8e0-\ua8f1\ua8ff-\ua909\ua926-\ua92d\ua947-\ua953\ua980-\ua983\ua9b3-\ua9c0\ua9d0-\ua9d9\ua9e5\ua9f0-\ua9f9\uaa29-\uaa36\uaa43\uaa4c\uaa4d\uaa50-\uaa59\uaa7b-\uaa7d\uaab0\uaab2-\uaab4\uaab7\uaab8\uaabe\uaabf\uaac1\uaaeb-\uaaef\uaaf5\uaaf6\uabe3-\uabea\uabec\uabed\uabf0-\uabf9\ufb1e\ufe00-\ufe0f\ufe20-\ufe2f\ufe33\ufe34\ufe4d-\ufe4f\uff10-\uff19\uff3f";
-
 var nonASCIIidentifierStart = new RegExp("[" + nonASCIIidentifierStartChars + "]");
 var nonASCIIidentifier = new RegExp("[" + nonASCIIidentifierStartChars + nonASCIIidentifierChars + "]");
-
-nonASCIIidentifierStartChars = nonASCIIidentifierChars = null;
-
-// These are a run-length and offset encoded representation of the
-// >0xffff code points that are a valid part of identifiers. The
-// offset starts at 0x10000, and each pair of numbers represents an
-// offset to the next range, and then a size of the range. They were
-// generated by bin/generate-identifier-regex.js
-
-// eslint-disable-next-line comma-spacing
-var astralIdentifierStartCodes = [0,11,2,25,2,18,2,1,2,14,3,13,35,122,70,52,268,28,4,48,48,31,14,29,6,37,11,29,3,35,5,7,2,4,43,157,19,35,5,35,5,39,9,51,157,310,10,21,11,7,153,5,3,0,2,43,2,1,4,0,3,22,11,22,10,30,66,18,2,1,11,21,11,25,71,55,7,1,65,0,16,3,2,2,2,28,43,28,4,28,36,7,2,27,28,53,11,21,11,18,14,17,111,72,56,50,14,50,14,35,349,41,7,1,79,28,11,0,9,21,107,20,28,22,13,52,76,44,33,24,27,35,30,0,3,0,9,34,4,0,13,47,15,3,22,0,2,0,36,17,2,24,85,6,2,0,2,3,2,14,2,9,8,46,39,7,3,1,3,21,2,6,2,1,2,4,4,0,19,0,13,4,159,52,19,3,21,2,31,47,21,1,2,0,185,46,42,3,37,47,21,0,60,42,14,0,72,26,230,43,117,63,32,7,3,0,3,7,2,1,2,23,16,0,2,0,95,7,3,38,17,0,2,0,29,0,11,39,8,0,22,0,12,45,20,0,35,56,264,8,2,36,18,0,50,29,113,6,2,1,2,37,22,0,26,5,2,1,2,31,15,0,328,18,190,0,80,921,103,110,18,195,2749,1070,4050,582,8634,568,8,30,114,29,19,47,17,3,32,20,6,18,689,63,129,74,6,0,67,12,65,1,2,0,29,6135,9,1237,43,8,8952,286,50,2,18,3,9,395,2309,106,6,12,4,8,8,9,5991,84,2,70,2,1,3,0,3,1,3,3,2,11,2,0,2,6,2,64,2,3,3,7,2,6,2,27,2,3,2,4,2,0,4,6,2,339,3,24,2,24,2,30,2,24,2,30,2,24,2,30,2,24,2,30,2,24,2,7,2357,44,11,6,17,0,370,43,1301,196,60,67,8,0,1205,3,2,26,2,1,2,0,3,0,2,9,2,3,2,0,2,0,7,0,5,0,2,0,2,0,2,2,2,1,2,0,3,0,2,0,2,0,2,0,2,0,2,1,2,0,3,3,2,6,2,3,2,3,2,0,2,9,2,16,6,2,2,4,2,16,4421,42717,35,4148,12,221,3,5761,15,7472,3104,541,1507,4938];
-
-// eslint-disable-next-line comma-spacing
-var astralIdentifierCodes = [509,0,227,0,150,4,294,9,1368,2,2,1,6,3,41,2,5,0,166,1,574,3,9,9,370,1,154,10,176,2,54,14,32,9,16,3,46,10,54,9,7,2,37,13,2,9,6,1,45,0,13,2,49,13,9,3,2,11,83,11,7,0,161,11,6,9,7,3,56,1,2,6,3,1,3,2,10,0,11,1,3,6,4,4,193,17,10,9,5,0,82,19,13,9,214,6,3,8,28,1,83,16,16,9,82,12,9,9,84,14,5,9,243,14,166,9,71,5,2,1,3,3,2,0,2,1,13,9,120,6,3,6,4,0,29,9,41,6,2,3,9,0,10,10,47,15,406,7,2,7,17,9,57,21,2,13,123,5,4,0,2,1,2,6,2,0,9,9,49,4,2,1,2,4,9,9,330,3,19306,9,135,4,60,6,26,9,1014,0,2,54,8,3,82,0,12,1,19628,1,5319,4,4,5,9,7,3,6,31,3,149,2,1418,49,513,54,5,49,9,0,15,0,23,4,2,14,1361,6,2,16,3,6,2,1,2,4,262,6,10,9,419,13,1495,6,110,6,6,9,4759,9,787719,239];
 
 // This has a complexity linear to the value of the code. The
 // assumption is that looking up astral identifier characters is
@@ -401,6 +710,7 @@ function isInAstralSet(code, set) {
     pos += set[i + 1];
     if (pos >= code) { return true }
   }
+  return false
 }
 
 // Test whether a given character code starts an identifier.
@@ -474,17 +784,17 @@ var beforeExpr = {beforeExpr: true}, startsExpr = {startsExpr: true};
 
 // Map keyword names to token types.
 
-var keywords$1 = {};
+var keywords = {};
 
 // Succinct definitions of keyword token types
 function kw(name, options) {
   if ( options === void 0 ) options = {};
 
   options.keyword = name;
-  return keywords$1[name] = new TokenType(name, options)
+  return keywords[name] = new TokenType(name, options)
 }
 
-var types = {
+var types$1 = {
   num: new TokenType("num", startsExpr),
   regexp: new TokenType("regexp", startsExpr),
   string: new TokenType("string", startsExpr),
@@ -589,8 +899,19 @@ var types = {
 var lineBreak = /\r\n?|\n|\u2028|\u2029/;
 var lineBreakG = new RegExp(lineBreak.source, "g");
 
-function isNewLine(code, ecma2019String) {
-  return code === 10 || code === 13 || (!ecma2019String && (code === 0x2028 || code === 0x2029))
+function isNewLine(code) {
+  return code === 10 || code === 13 || code === 0x2028 || code === 0x2029
+}
+
+function nextLineBreak(code, from, end) {
+  if ( end === void 0 ) end = code.length;
+
+  for (var i = from; i < end; i++) {
+    var next = code.charCodeAt(i);
+    if (isNewLine(next))
+      { return i < end - 1 && next === 13 && code.charCodeAt(i + 1) === 10 ? i + 2 : i + 1 }
+  }
+  return -1
 }
 
 var nonASCIIwhitespace = /[\u1680\u2000-\u200a\u202f\u205f\u3000\ufeff]/;
@@ -601,11 +922,9 @@ var ref = Object.prototype;
 var hasOwnProperty = ref.hasOwnProperty;
 var toString = ref.toString;
 
-// Checks if an object has a property.
-
-function has(obj, propName) {
-  return hasOwnProperty.call(obj, propName)
-}
+var hasOwn = Object.hasOwn || (function (obj, propName) { return (
+  hasOwnProperty.call(obj, propName)
+); });
 
 var isArray = Array.isArray || (function (obj) { return (
   toString.call(obj) === "[object Array]"
@@ -614,6 +933,15 @@ var isArray = Array.isArray || (function (obj) { return (
 function wordsRegexp(words) {
   return new RegExp("^(?:" + words.replace(/ /g, "|") + ")$")
 }
+
+function codePointToString(code) {
+  // UTF-16 Decoding
+  if (code <= 0xFFFF) { return String.fromCharCode(code) }
+  code -= 0x10000;
+  return String.fromCharCode((code >> 10) + 0xD800, (code & 1023) + 0xDC00)
+}
+
+var loneSurrogate = /(?:[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:[^\uD800-\uDBFF]|^)[\uDC00-\uDFFF])/;
 
 // These are used when `options.locations` is on, for the
 // `startLoc` and `endLoc` properties.
@@ -641,14 +969,10 @@ var SourceLocation = function SourceLocation(p, start, end) {
 
 function getLineInfo(input, offset) {
   for (var line = 1, cur = 0;;) {
-    lineBreakG.lastIndex = cur;
-    var match = lineBreakG.exec(input);
-    if (match && match.index < offset) {
-      ++line;
-      cur = match.index + match[0].length;
-    } else {
-      return new Position(line, offset - cur)
-    }
+    var nextBreak = nextLineBreak(input, cur, offset);
+    if (nextBreak < 0) { return new Position(line, offset - cur) }
+    ++line;
+    cur = nextBreak;
   }
 }
 
@@ -658,9 +982,10 @@ function getLineInfo(input, offset) {
 var defaultOptions = {
   // `ecmaVersion` indicates the ECMAScript version to parse. Must be
   // either 3, 5, 6 (or 2015), 7 (2016), 8 (2017), 9 (2018), 10
-  // (2019), 11 (2020), 12 (2021), or `"latest"` (the latest version
-  // the library supports). This influences support for strict mode,
-  // the set of reserved words, and support for new syntax features.
+  // (2019), 11 (2020), 12 (2021), 13 (2022), 14 (2023), or `"latest"`
+  // (the latest version the library supports). This influences
+  // support for strict mode, the set of reserved words, and support
+  // for new syntax features.
   ecmaVersion: null,
   // `sourceType` indicates the mode the code should be parsed in.
   // Can be either `"script"` or `"module"`. This influences global
@@ -687,11 +1012,16 @@ var defaultOptions = {
   // appearing at the top of the program, and an import.meta expression
   // in a script isn't considered an error.
   allowImportExportEverywhere: false,
+  // By default, await identifiers are allowed to appear at the top-level scope only if ecmaVersion >= 2022.
   // When enabled, await identifiers are allowed to appear at the top-level scope,
   // but they are still not allowed in non-async functions.
-  allowAwaitOutsideFunction: false,
-  // When enabled, hashbang directive in the beginning of file
-  // is allowed and treated as a line comment.
+  allowAwaitOutsideFunction: null,
+  // When enabled, super identifiers are not constrained to
+  // appearing in methods and do not raise an error when they appear elsewhere.
+  allowSuperOutsideMethod: null,
+  // When enabled, hashbang directive in the beginning of file is
+  // allowed and treated as a line comment. Enabled by default when
+  // `ecmaVersion` >= 2023.
   allowHashBang: false,
   // When `locations` is on, `loc` properties holding objects with
   // `start` and `end` properties in `{line, column}` form (with
@@ -749,7 +1079,7 @@ function getOptions(opts) {
   var options = {};
 
   for (var opt in defaultOptions)
-    { options[opt] = opts && has(opts, opt) ? opts[opt] : defaultOptions[opt]; }
+    { options[opt] = opts && hasOwn(opts, opt) ? opts[opt] : defaultOptions[opt]; }
 
   if (options.ecmaVersion === "latest") {
     options.ecmaVersion = 1e8;
@@ -765,6 +1095,9 @@ function getOptions(opts) {
 
   if (options.allowReserved == null)
     { options.allowReserved = options.ecmaVersion < 5; }
+
+  if (!opts || opts.allowHashBang == null)
+    { options.allowHashBang = options.ecmaVersion >= 14; }
 
   if (isArray(options.onToken)) {
     var tokens = options.onToken;
@@ -796,13 +1129,14 @@ function pushComment(options, array) {
 var
     SCOPE_TOP = 1,
     SCOPE_FUNCTION = 2,
-    SCOPE_VAR = SCOPE_TOP | SCOPE_FUNCTION,
     SCOPE_ASYNC = 4,
     SCOPE_GENERATOR = 8,
     SCOPE_ARROW = 16,
     SCOPE_SIMPLE_CATCH = 32,
     SCOPE_SUPER = 64,
-    SCOPE_DIRECT_SUPER = 128;
+    SCOPE_DIRECT_SUPER = 128,
+    SCOPE_CLASS_STATIC_BLOCK = 256,
+    SCOPE_VAR = SCOPE_TOP | SCOPE_FUNCTION | SCOPE_CLASS_STATIC_BLOCK;
 
 function functionFlags(async, generator) {
   return SCOPE_FUNCTION | (async ? SCOPE_ASYNC : 0) | (generator ? SCOPE_GENERATOR : 0)
@@ -820,7 +1154,7 @@ var
 var Parser = function Parser(options, input, startPos) {
   this.options = options = getOptions(options);
   this.sourceFile = options.sourceFile;
-  this.keywords = wordsRegexp(keywords[options.ecmaVersion >= 6 ? 6 : options.sourceType === "module" ? "5module" : 5]);
+  this.keywords = wordsRegexp(keywords$1[options.ecmaVersion >= 6 ? 6 : options.sourceType === "module" ? "5module" : 5]);
   var reserved = "";
   if (options.allowReserved !== true) {
     reserved = reservedWords[options.ecmaVersion >= 6 ? 6 : options.ecmaVersion === 5 ? 5 : 3];
@@ -851,7 +1185,7 @@ var Parser = function Parser(options, input, startPos) {
 
   // Properties of the current token:
   // Its type
-  this.type = types.eof;
+  this.type = types$1.eof;
   // For tokens that include more information than their type, the value
   this.value = null;
   // Its start and end offset
@@ -902,7 +1236,7 @@ var Parser = function Parser(options, input, startPos) {
   this.privateNameStack = [];
 };
 
-var prototypeAccessors = { inFunction: { configurable: true },inGenerator: { configurable: true },inAsync: { configurable: true },allowSuper: { configurable: true },allowDirectSuper: { configurable: true },treatFunctionsAsVar: { configurable: true },inNonArrowFunction: { configurable: true } };
+var prototypeAccessors = { inFunction: { configurable: true },inGenerator: { configurable: true },inAsync: { configurable: true },canAwait: { configurable: true },allowSuper: { configurable: true },allowDirectSuper: { configurable: true },treatFunctionsAsVar: { configurable: true },allowNewDotTarget: { configurable: true },inClassStaticBlock: { configurable: true } };
 
 Parser.prototype.parse = function parse () {
   var node = this.options.program || this.startNode();
@@ -911,21 +1245,40 @@ Parser.prototype.parse = function parse () {
 };
 
 prototypeAccessors.inFunction.get = function () { return (this.currentVarScope().flags & SCOPE_FUNCTION) > 0 };
+
 prototypeAccessors.inGenerator.get = function () { return (this.currentVarScope().flags & SCOPE_GENERATOR) > 0 && !this.currentVarScope().inClassFieldInit };
+
 prototypeAccessors.inAsync.get = function () { return (this.currentVarScope().flags & SCOPE_ASYNC) > 0 && !this.currentVarScope().inClassFieldInit };
+
+prototypeAccessors.canAwait.get = function () {
+  for (var i = this.scopeStack.length - 1; i >= 0; i--) {
+    var scope = this.scopeStack[i];
+    if (scope.inClassFieldInit || scope.flags & SCOPE_CLASS_STATIC_BLOCK) { return false }
+    if (scope.flags & SCOPE_FUNCTION) { return (scope.flags & SCOPE_ASYNC) > 0 }
+  }
+  return (this.inModule && this.options.ecmaVersion >= 13) || this.options.allowAwaitOutsideFunction
+};
+
 prototypeAccessors.allowSuper.get = function () {
   var ref = this.currentThisScope();
     var flags = ref.flags;
     var inClassFieldInit = ref.inClassFieldInit;
-  return (flags & SCOPE_SUPER) > 0 || inClassFieldInit
+  return (flags & SCOPE_SUPER) > 0 || inClassFieldInit || this.options.allowSuperOutsideMethod
 };
+
 prototypeAccessors.allowDirectSuper.get = function () { return (this.currentThisScope().flags & SCOPE_DIRECT_SUPER) > 0 };
+
 prototypeAccessors.treatFunctionsAsVar.get = function () { return this.treatFunctionsAsVarInScope(this.currentScope()) };
-prototypeAccessors.inNonArrowFunction.get = function () {
+
+prototypeAccessors.allowNewDotTarget.get = function () {
   var ref = this.currentThisScope();
     var flags = ref.flags;
     var inClassFieldInit = ref.inClassFieldInit;
-  return (flags & SCOPE_FUNCTION) > 0 || inClassFieldInit
+  return (flags & (SCOPE_FUNCTION | SCOPE_CLASS_STATIC_BLOCK)) > 0 || inClassFieldInit
+};
+
+prototypeAccessors.inClassStaticBlock.get = function () {
+  return (this.currentVarScope().flags & SCOPE_CLASS_STATIC_BLOCK) > 0
 };
 
 Parser.extend = function extend () {
@@ -953,12 +1306,13 @@ Parser.tokenizer = function tokenizer (input, options) {
 
 Object.defineProperties( Parser.prototype, prototypeAccessors );
 
-var pp = Parser.prototype;
+var pp$9 = Parser.prototype;
 
 // ## Parser utilities
 
 var literal = /^(?:'((?:\\.|[^'\\])*?)'|"((?:\\.|[^"\\])*?)")/;
-pp.strictDirective = function(start) {
+pp$9.strictDirective = function(start) {
+  if (this.options.ecmaVersion < 5) { return false }
   for (;;) {
     // Try to find string literal.
     skipWhiteSpace.lastIndex = start;
@@ -986,7 +1340,7 @@ pp.strictDirective = function(start) {
 // Predicate that tests whether the next token is of the given
 // type, and if yes, consumes it as a side effect.
 
-pp.eat = function(type) {
+pp$9.eat = function(type) {
   if (this.type === type) {
     this.next();
     return true
@@ -997,13 +1351,13 @@ pp.eat = function(type) {
 
 // Tests whether parsed token is a contextual keyword.
 
-pp.isContextual = function(name) {
-  return this.type === types.name && this.value === name && !this.containsEsc
+pp$9.isContextual = function(name) {
+  return this.type === types$1.name && this.value === name && !this.containsEsc
 };
 
 // Consumes contextual keyword if possible.
 
-pp.eatContextual = function(name) {
+pp$9.eatContextual = function(name) {
   if (!this.isContextual(name)) { return false }
   this.next();
   return true
@@ -1011,19 +1365,19 @@ pp.eatContextual = function(name) {
 
 // Asserts that following token is given contextual keyword.
 
-pp.expectContextual = function(name) {
+pp$9.expectContextual = function(name) {
   if (!this.eatContextual(name)) { this.unexpected(); }
 };
 
 // Test whether a semicolon can be inserted at the current position.
 
-pp.canInsertSemicolon = function() {
-  return this.type === types.eof ||
-    this.type === types.braceR ||
+pp$9.canInsertSemicolon = function() {
+  return this.type === types$1.eof ||
+    this.type === types$1.braceR ||
     lineBreak.test(this.input.slice(this.lastTokEnd, this.start))
 };
 
-pp.insertSemicolon = function() {
+pp$9.insertSemicolon = function() {
   if (this.canInsertSemicolon()) {
     if (this.options.onInsertedSemicolon)
       { this.options.onInsertedSemicolon(this.lastTokEnd, this.lastTokEndLoc); }
@@ -1034,11 +1388,11 @@ pp.insertSemicolon = function() {
 // Consume a semicolon, or, failing that, see if we are allowed to
 // pretend that there is a semicolon at this position.
 
-pp.semicolon = function() {
-  if (!this.eat(types.semi) && !this.insertSemicolon()) { this.unexpected(); }
+pp$9.semicolon = function() {
+  if (!this.eat(types$1.semi) && !this.insertSemicolon()) { this.unexpected(); }
 };
 
-pp.afterTrailingComma = function(tokType, notNext) {
+pp$9.afterTrailingComma = function(tokType, notNext) {
   if (this.type === tokType) {
     if (this.options.onTrailingComma)
       { this.options.onTrailingComma(this.lastTokStart, this.lastTokStartLoc); }
@@ -1051,34 +1405,34 @@ pp.afterTrailingComma = function(tokType, notNext) {
 // Expect a token of a given type. If found, consume it, otherwise,
 // raise an unexpected token error.
 
-pp.expect = function(type) {
+pp$9.expect = function(type) {
   this.eat(type) || this.unexpected();
 };
 
 // Raise an unexpected token error.
 
-pp.unexpected = function(pos) {
+pp$9.unexpected = function(pos) {
   this.raise(pos != null ? pos : this.start, "Unexpected token");
 };
 
-function DestructuringErrors() {
+var DestructuringErrors = function DestructuringErrors() {
   this.shorthandAssign =
   this.trailingComma =
   this.parenthesizedAssign =
   this.parenthesizedBind =
   this.doubleProto =
     -1;
-}
+};
 
-pp.checkPatternErrors = function(refDestructuringErrors, isAssign) {
+pp$9.checkPatternErrors = function(refDestructuringErrors, isAssign) {
   if (!refDestructuringErrors) { return }
   if (refDestructuringErrors.trailingComma > -1)
     { this.raiseRecoverable(refDestructuringErrors.trailingComma, "Comma is not permitted after the rest element"); }
   var parens = isAssign ? refDestructuringErrors.parenthesizedAssign : refDestructuringErrors.parenthesizedBind;
-  if (parens > -1) { this.raiseRecoverable(parens, "Parenthesized pattern"); }
+  if (parens > -1) { this.raiseRecoverable(parens, isAssign ? "Assigning to rvalue" : "Parenthesized pattern"); }
 };
 
-pp.checkExpressionErrors = function(refDestructuringErrors, andThrow) {
+pp$9.checkExpressionErrors = function(refDestructuringErrors, andThrow) {
   if (!refDestructuringErrors) { return false }
   var shorthandAssign = refDestructuringErrors.shorthandAssign;
   var doubleProto = refDestructuringErrors.doubleProto;
@@ -1089,20 +1443,20 @@ pp.checkExpressionErrors = function(refDestructuringErrors, andThrow) {
     { this.raiseRecoverable(doubleProto, "Redefinition of __proto__ property"); }
 };
 
-pp.checkYieldAwaitInDefaultParams = function() {
+pp$9.checkYieldAwaitInDefaultParams = function() {
   if (this.yieldPos && (!this.awaitPos || this.yieldPos < this.awaitPos))
     { this.raise(this.yieldPos, "Yield expression cannot be a default value"); }
   if (this.awaitPos)
     { this.raise(this.awaitPos, "Await expression cannot be a default value"); }
 };
 
-pp.isSimpleAssignTarget = function(expr) {
+pp$9.isSimpleAssignTarget = function(expr) {
   if (expr.type === "ParenthesizedExpression")
     { return this.isSimpleAssignTarget(expr.expression) }
   return expr.type === "Identifier" || expr.type === "MemberExpression"
 };
 
-var pp$1 = Parser.prototype;
+var pp$8 = Parser.prototype;
 
 // ### Statement parsing
 
@@ -1111,10 +1465,10 @@ var pp$1 = Parser.prototype;
 // `program` argument.  If present, the statements will be appended
 // to its body instead of creating a new node.
 
-pp$1.parseTopLevel = function(node) {
+pp$8.parseTopLevel = function(node) {
   var exports = Object.create(null);
   if (!node.body) { node.body = []; }
-  while (this.type !== types.eof) {
+  while (this.type !== types$1.eof) {
     var stmt = this.parseStatement(null, true, exports);
     node.body.push(stmt);
   }
@@ -1133,7 +1487,7 @@ pp$1.parseTopLevel = function(node) {
 
 var loopLabel = {kind: "loop"}, switchLabel = {kind: "switch"};
 
-pp$1.isLet = function(context) {
+pp$8.isLet = function(context) {
   if (this.options.ecmaVersion < 6 || !this.isContextual("let")) { return false }
   skipWhiteSpace.lastIndex = this.pos;
   var skip = skipWhiteSpace.exec(this.input);
@@ -1142,13 +1496,14 @@ pp$1.isLet = function(context) {
   // Statement) is allowed here. If context is not empty then only a Statement
   // is allowed. However, `let [` is an explicit negative lookahead for
   // ExpressionStatement, so special-case it first.
-  if (nextCh === 91) { return true } // '['
+  if (nextCh === 91 || nextCh === 92) { return true } // '[', '/'
   if (context) { return false }
 
-  if (nextCh === 123) { return true } // '{'
+  if (nextCh === 123 || nextCh > 0xd7ff && nextCh < 0xdc00) { return true } // '{', astral
   if (isIdentifierStart(nextCh, true)) {
     var pos = next + 1;
-    while (isIdentifierChar(this.input.charCodeAt(pos), true)) { ++pos; }
+    while (isIdentifierChar(nextCh = this.input.charCodeAt(pos), true)) { ++pos; }
+    if (nextCh === 92 || nextCh > 0xd7ff && nextCh < 0xdc00) { return true }
     var ident = this.input.slice(next, pos);
     if (!keywordRelationalOperator.test(ident)) { return true }
   }
@@ -1158,16 +1513,17 @@ pp$1.isLet = function(context) {
 // check 'async [no LineTerminator here] function'
 // - 'async /*foo*/ function' is OK.
 // - 'async /*\n*/ function' is invalid.
-pp$1.isAsyncFunction = function() {
+pp$8.isAsyncFunction = function() {
   if (this.options.ecmaVersion < 8 || !this.isContextual("async"))
     { return false }
 
   skipWhiteSpace.lastIndex = this.pos;
   var skip = skipWhiteSpace.exec(this.input);
-  var next = this.pos + skip[0].length;
+  var next = this.pos + skip[0].length, after;
   return !lineBreak.test(this.input.slice(this.pos, next)) &&
     this.input.slice(next, next + 8) === "function" &&
-    (next + 8 === this.input.length || !isIdentifierChar(this.input.charAt(next + 8)))
+    (next + 8 === this.input.length ||
+     !(isIdentifierChar(after = this.input.charCodeAt(next + 8)) || after > 0xd7ff && after < 0xdc00))
 };
 
 // Parse a single statement.
@@ -1177,11 +1533,11 @@ pp$1.isAsyncFunction = function() {
 // `if (foo) /blah/.exec(foo)`, where looking at the previous token
 // does not help.
 
-pp$1.parseStatement = function(context, topLevel, exports) {
+pp$8.parseStatement = function(context, topLevel, exports) {
   var starttype = this.type, node = this.startNode(), kind;
 
   if (this.isLet(context)) {
-    starttype = types._var;
+    starttype = types$1._var;
     kind = "let";
   }
 
@@ -1190,35 +1546,35 @@ pp$1.parseStatement = function(context, topLevel, exports) {
   // complexity.
 
   switch (starttype) {
-  case types._break: case types._continue: return this.parseBreakContinueStatement(node, starttype.keyword)
-  case types._debugger: return this.parseDebuggerStatement(node)
-  case types._do: return this.parseDoStatement(node)
-  case types._for: return this.parseForStatement(node)
-  case types._function:
+  case types$1._break: case types$1._continue: return this.parseBreakContinueStatement(node, starttype.keyword)
+  case types$1._debugger: return this.parseDebuggerStatement(node)
+  case types$1._do: return this.parseDoStatement(node)
+  case types$1._for: return this.parseForStatement(node)
+  case types$1._function:
     // Function as sole body of either an if statement or a labeled statement
     // works, but not when it is part of a labeled statement that is the sole
     // body of an if statement.
     if ((context && (this.strict || context !== "if" && context !== "label")) && this.options.ecmaVersion >= 6) { this.unexpected(); }
     return this.parseFunctionStatement(node, false, !context)
-  case types._class:
+  case types$1._class:
     if (context) { this.unexpected(); }
     return this.parseClass(node, true)
-  case types._if: return this.parseIfStatement(node)
-  case types._return: return this.parseReturnStatement(node)
-  case types._switch: return this.parseSwitchStatement(node)
-  case types._throw: return this.parseThrowStatement(node)
-  case types._try: return this.parseTryStatement(node)
-  case types._const: case types._var:
+  case types$1._if: return this.parseIfStatement(node)
+  case types$1._return: return this.parseReturnStatement(node)
+  case types$1._switch: return this.parseSwitchStatement(node)
+  case types$1._throw: return this.parseThrowStatement(node)
+  case types$1._try: return this.parseTryStatement(node)
+  case types$1._const: case types$1._var:
     kind = kind || this.value;
     if (context && kind !== "var") { this.unexpected(); }
     return this.parseVarStatement(node, kind)
-  case types._while: return this.parseWhileStatement(node)
-  case types._with: return this.parseWithStatement(node)
-  case types.braceL: return this.parseBlock(true, node)
-  case types.semi: return this.parseEmptyStatement(node)
-  case types._export:
-  case types._import:
-    if (this.options.ecmaVersion > 10 && starttype === types._import) {
+  case types$1._while: return this.parseWhileStatement(node)
+  case types$1._with: return this.parseWithStatement(node)
+  case types$1.braceL: return this.parseBlock(true, node)
+  case types$1.semi: return this.parseEmptyStatement(node)
+  case types$1._export:
+  case types$1._import:
+    if (this.options.ecmaVersion > 10 && starttype === types$1._import) {
       skipWhiteSpace.lastIndex = this.pos;
       var skip = skipWhiteSpace.exec(this.input);
       var next = this.pos + skip[0].length, nextCh = this.input.charCodeAt(next);
@@ -1232,7 +1588,7 @@ pp$1.parseStatement = function(context, topLevel, exports) {
       if (!this.inModule)
         { this.raise(this.start, "'import' and 'export' may appear only with 'sourceType: module'"); }
     }
-    return starttype === types._import ? this.parseImport(node) : this.parseExport(node, exports)
+    return starttype === types$1._import ? this.parseImport(node) : this.parseExport(node, exports)
 
     // If the statement does not start with a statement keyword or a
     // brace, it's an ExpressionStatement or LabeledStatement. We
@@ -1247,17 +1603,17 @@ pp$1.parseStatement = function(context, topLevel, exports) {
     }
 
     var maybeName = this.value, expr = this.parseExpression();
-    if (starttype === types.name && expr.type === "Identifier" && this.eat(types.colon))
+    if (starttype === types$1.name && expr.type === "Identifier" && this.eat(types$1.colon))
       { return this.parseLabeledStatement(node, maybeName, expr, context) }
     else { return this.parseExpressionStatement(node, expr) }
   }
 };
 
-pp$1.parseBreakContinueStatement = function(node, keyword) {
+pp$8.parseBreakContinueStatement = function(node, keyword) {
   var isBreak = keyword === "break";
   this.next();
-  if (this.eat(types.semi) || this.insertSemicolon()) { node.label = null; }
-  else if (this.type !== types.name) { this.unexpected(); }
+  if (this.eat(types$1.semi) || this.insertSemicolon()) { node.label = null; }
+  else if (this.type !== types$1.name) { this.unexpected(); }
   else {
     node.label = this.parseIdent();
     this.semicolon();
@@ -1277,21 +1633,21 @@ pp$1.parseBreakContinueStatement = function(node, keyword) {
   return this.finishNode(node, isBreak ? "BreakStatement" : "ContinueStatement")
 };
 
-pp$1.parseDebuggerStatement = function(node) {
+pp$8.parseDebuggerStatement = function(node) {
   this.next();
   this.semicolon();
   return this.finishNode(node, "DebuggerStatement")
 };
 
-pp$1.parseDoStatement = function(node) {
+pp$8.parseDoStatement = function(node) {
   this.next();
   this.labels.push(loopLabel);
   node.body = this.parseStatement("do");
   this.labels.pop();
-  this.expect(types._while);
+  this.expect(types$1._while);
   node.test = this.parseParenExpression();
   if (this.options.ecmaVersion >= 6)
-    { this.eat(types.semi); }
+    { this.eat(types$1.semi); }
   else
     { this.semicolon(); }
   return this.finishNode(node, "DoWhileStatement")
@@ -1305,25 +1661,25 @@ pp$1.parseDoStatement = function(node) {
 // part (semicolon immediately after the opening parenthesis), it
 // is a regular `for` loop.
 
-pp$1.parseForStatement = function(node) {
+pp$8.parseForStatement = function(node) {
   this.next();
-  var awaitAt = (this.options.ecmaVersion >= 9 && (this.inAsync || (!this.inFunction && this.options.allowAwaitOutsideFunction)) && this.eatContextual("await")) ? this.lastTokStart : -1;
+  var awaitAt = (this.options.ecmaVersion >= 9 && this.canAwait && this.eatContextual("await")) ? this.lastTokStart : -1;
   this.labels.push(loopLabel);
   this.enterScope(0);
-  this.expect(types.parenL);
-  if (this.type === types.semi) {
+  this.expect(types$1.parenL);
+  if (this.type === types$1.semi) {
     if (awaitAt > -1) { this.unexpected(awaitAt); }
     return this.parseFor(node, null)
   }
   var isLet = this.isLet();
-  if (this.type === types._var || this.type === types._const || isLet) {
+  if (this.type === types$1._var || this.type === types$1._const || isLet) {
     var init$1 = this.startNode(), kind = isLet ? "let" : this.value;
     this.next();
     this.parseVar(init$1, true, kind);
     this.finishNode(init$1, "VariableDeclaration");
-    if ((this.type === types._in || (this.options.ecmaVersion >= 6 && this.isContextual("of"))) && init$1.declarations.length === 1) {
+    if ((this.type === types$1._in || (this.options.ecmaVersion >= 6 && this.isContextual("of"))) && init$1.declarations.length === 1) {
       if (this.options.ecmaVersion >= 9) {
-        if (this.type === types._in) {
+        if (this.type === types$1._in) {
           if (awaitAt > -1) { this.unexpected(awaitAt); }
         } else { node.await = awaitAt > -1; }
       }
@@ -1332,14 +1688,16 @@ pp$1.parseForStatement = function(node) {
     if (awaitAt > -1) { this.unexpected(awaitAt); }
     return this.parseFor(node, init$1)
   }
+  var startsWithLet = this.isContextual("let"), isForOf = false;
   var refDestructuringErrors = new DestructuringErrors;
   var init = this.parseExpression(awaitAt > -1 ? "await" : true, refDestructuringErrors);
-  if (this.type === types._in || (this.options.ecmaVersion >= 6 && this.isContextual("of"))) {
+  if (this.type === types$1._in || (isForOf = this.options.ecmaVersion >= 6 && this.isContextual("of"))) {
     if (this.options.ecmaVersion >= 9) {
-      if (this.type === types._in) {
+      if (this.type === types$1._in) {
         if (awaitAt > -1) { this.unexpected(awaitAt); }
       } else { node.await = awaitAt > -1; }
     }
+    if (startsWithLet && isForOf) { this.raise(init.start, "The left-hand side of a for-of loop may not start with 'let'."); }
     this.toAssignable(init, false, refDestructuringErrors);
     this.checkLValPattern(init);
     return this.parseForIn(node, init)
@@ -1350,21 +1708,21 @@ pp$1.parseForStatement = function(node) {
   return this.parseFor(node, init)
 };
 
-pp$1.parseFunctionStatement = function(node, isAsync, declarationPosition) {
+pp$8.parseFunctionStatement = function(node, isAsync, declarationPosition) {
   this.next();
   return this.parseFunction(node, FUNC_STATEMENT | (declarationPosition ? 0 : FUNC_HANGING_STATEMENT), false, isAsync)
 };
 
-pp$1.parseIfStatement = function(node) {
+pp$8.parseIfStatement = function(node) {
   this.next();
   node.test = this.parseParenExpression();
   // allow function declarations in branches, but only in non-strict mode
   node.consequent = this.parseStatement("if");
-  node.alternate = this.eat(types._else) ? this.parseStatement("if") : null;
+  node.alternate = this.eat(types$1._else) ? this.parseStatement("if") : null;
   return this.finishNode(node, "IfStatement")
 };
 
-pp$1.parseReturnStatement = function(node) {
+pp$8.parseReturnStatement = function(node) {
   if (!this.inFunction && !this.options.allowReturnOutsideFunction)
     { this.raise(this.start, "'return' outside of function"); }
   this.next();
@@ -1373,16 +1731,16 @@ pp$1.parseReturnStatement = function(node) {
   // optional arguments, we eagerly look for a semicolon or the
   // possibility to insert one.
 
-  if (this.eat(types.semi) || this.insertSemicolon()) { node.argument = null; }
+  if (this.eat(types$1.semi) || this.insertSemicolon()) { node.argument = null; }
   else { node.argument = this.parseExpression(); this.semicolon(); }
   return this.finishNode(node, "ReturnStatement")
 };
 
-pp$1.parseSwitchStatement = function(node) {
+pp$8.parseSwitchStatement = function(node) {
   this.next();
   node.discriminant = this.parseParenExpression();
   node.cases = [];
-  this.expect(types.braceL);
+  this.expect(types$1.braceL);
   this.labels.push(switchLabel);
   this.enterScope(0);
 
@@ -1391,9 +1749,9 @@ pp$1.parseSwitchStatement = function(node) {
   // adding statements to.
 
   var cur;
-  for (var sawDefault = false; this.type !== types.braceR;) {
-    if (this.type === types._case || this.type === types._default) {
-      var isCase = this.type === types._case;
+  for (var sawDefault = false; this.type !== types$1.braceR;) {
+    if (this.type === types$1._case || this.type === types$1._default) {
+      var isCase = this.type === types$1._case;
       if (cur) { this.finishNode(cur, "SwitchCase"); }
       node.cases.push(cur = this.startNode());
       cur.consequent = [];
@@ -1405,7 +1763,7 @@ pp$1.parseSwitchStatement = function(node) {
         sawDefault = true;
         cur.test = null;
       }
-      this.expect(types.colon);
+      this.expect(types$1.colon);
     } else {
       if (!cur) { this.unexpected(); }
       cur.consequent.push(this.parseStatement(null));
@@ -1418,7 +1776,7 @@ pp$1.parseSwitchStatement = function(node) {
   return this.finishNode(node, "SwitchStatement")
 };
 
-pp$1.parseThrowStatement = function(node) {
+pp$8.parseThrowStatement = function(node) {
   this.next();
   if (lineBreak.test(this.input.slice(this.lastTokEnd, this.start)))
     { this.raise(this.lastTokEnd, "Illegal newline after throw"); }
@@ -1429,21 +1787,21 @@ pp$1.parseThrowStatement = function(node) {
 
 // Reused empty array added for node fields that are always empty.
 
-var empty = [];
+var empty$1 = [];
 
-pp$1.parseTryStatement = function(node) {
+pp$8.parseTryStatement = function(node) {
   this.next();
   node.block = this.parseBlock();
   node.handler = null;
-  if (this.type === types._catch) {
+  if (this.type === types$1._catch) {
     var clause = this.startNode();
     this.next();
-    if (this.eat(types.parenL)) {
+    if (this.eat(types$1.parenL)) {
       clause.param = this.parseBindingAtom();
       var simple = clause.param.type === "Identifier";
       this.enterScope(simple ? SCOPE_SIMPLE_CATCH : 0);
       this.checkLValPattern(clause.param, simple ? BIND_SIMPLE_CATCH : BIND_LEXICAL);
-      this.expect(types.parenR);
+      this.expect(types$1.parenR);
     } else {
       if (this.options.ecmaVersion < 10) { this.unexpected(); }
       clause.param = null;
@@ -1453,20 +1811,20 @@ pp$1.parseTryStatement = function(node) {
     this.exitScope();
     node.handler = this.finishNode(clause, "CatchClause");
   }
-  node.finalizer = this.eat(types._finally) ? this.parseBlock() : null;
+  node.finalizer = this.eat(types$1._finally) ? this.parseBlock() : null;
   if (!node.handler && !node.finalizer)
     { this.raise(node.start, "Missing catch or finally clause"); }
   return this.finishNode(node, "TryStatement")
 };
 
-pp$1.parseVarStatement = function(node, kind) {
+pp$8.parseVarStatement = function(node, kind) {
   this.next();
   this.parseVar(node, false, kind);
   this.semicolon();
   return this.finishNode(node, "VariableDeclaration")
 };
 
-pp$1.parseWhileStatement = function(node) {
+pp$8.parseWhileStatement = function(node) {
   this.next();
   node.test = this.parseParenExpression();
   this.labels.push(loopLabel);
@@ -1475,7 +1833,7 @@ pp$1.parseWhileStatement = function(node) {
   return this.finishNode(node, "WhileStatement")
 };
 
-pp$1.parseWithStatement = function(node) {
+pp$8.parseWithStatement = function(node) {
   if (this.strict) { this.raise(this.start, "'with' in strict mode"); }
   this.next();
   node.object = this.parseParenExpression();
@@ -1483,12 +1841,12 @@ pp$1.parseWithStatement = function(node) {
   return this.finishNode(node, "WithStatement")
 };
 
-pp$1.parseEmptyStatement = function(node) {
+pp$8.parseEmptyStatement = function(node) {
   this.next();
   return this.finishNode(node, "EmptyStatement")
 };
 
-pp$1.parseLabeledStatement = function(node, maybeName, expr, context) {
+pp$8.parseLabeledStatement = function(node, maybeName, expr, context) {
   for (var i$1 = 0, list = this.labels; i$1 < list.length; i$1 += 1)
     {
     var label = list[i$1];
@@ -1496,7 +1854,7 @@ pp$1.parseLabeledStatement = function(node, maybeName, expr, context) {
     if (label.name === maybeName)
       { this.raise(expr.start, "Label '" + maybeName + "' is already declared");
   } }
-  var kind = this.type.isLoop ? "loop" : this.type === types._switch ? "switch" : null;
+  var kind = this.type.isLoop ? "loop" : this.type === types$1._switch ? "switch" : null;
   for (var i = this.labels.length - 1; i >= 0; i--) {
     var label$1 = this.labels[i];
     if (label$1.statementStart === node.start) {
@@ -1512,7 +1870,7 @@ pp$1.parseLabeledStatement = function(node, maybeName, expr, context) {
   return this.finishNode(node, "LabeledStatement")
 };
 
-pp$1.parseExpressionStatement = function(node, expr) {
+pp$8.parseExpressionStatement = function(node, expr) {
   node.expression = expr;
   this.semicolon();
   return this.finishNode(node, "ExpressionStatement")
@@ -1522,14 +1880,14 @@ pp$1.parseExpressionStatement = function(node, expr) {
 // strict"` declarations when `allowStrict` is true (used for
 // function bodies).
 
-pp$1.parseBlock = function(createNewLexicalScope, node, exitStrict) {
+pp$8.parseBlock = function(createNewLexicalScope, node, exitStrict) {
   if ( createNewLexicalScope === void 0 ) createNewLexicalScope = true;
   if ( node === void 0 ) node = this.startNode();
 
   node.body = [];
-  this.expect(types.braceL);
+  this.expect(types$1.braceL);
   if (createNewLexicalScope) { this.enterScope(0); }
-  while (this.type !== types.braceR) {
+  while (this.type !== types$1.braceR) {
     var stmt = this.parseStatement(null);
     node.body.push(stmt);
   }
@@ -1543,13 +1901,13 @@ pp$1.parseBlock = function(createNewLexicalScope, node, exitStrict) {
 // `parseStatement` will already have parsed the init statement or
 // expression.
 
-pp$1.parseFor = function(node, init) {
+pp$8.parseFor = function(node, init) {
   node.init = init;
-  this.expect(types.semi);
-  node.test = this.type === types.semi ? null : this.parseExpression();
-  this.expect(types.semi);
-  node.update = this.type === types.parenR ? null : this.parseExpression();
-  this.expect(types.parenR);
+  this.expect(types$1.semi);
+  node.test = this.type === types$1.semi ? null : this.parseExpression();
+  this.expect(types$1.semi);
+  node.update = this.type === types$1.parenR ? null : this.parseExpression();
+  this.expect(types$1.parenR);
   node.body = this.parseStatement("for");
   this.exitScope();
   this.labels.pop();
@@ -1559,8 +1917,8 @@ pp$1.parseFor = function(node, init) {
 // Parse a `for`/`in` and `for`/`of` loop, which are almost
 // same from parser's perspective.
 
-pp$1.parseForIn = function(node, init) {
-  var isForIn = this.type === types._in;
+pp$8.parseForIn = function(node, init) {
+  var isForIn = this.type === types$1._in;
   this.next();
 
   if (
@@ -1581,7 +1939,7 @@ pp$1.parseForIn = function(node, init) {
   }
   node.left = init;
   node.right = isForIn ? this.parseExpression() : this.parseMaybeAssign();
-  this.expect(types.parenR);
+  this.expect(types$1.parenR);
   node.body = this.parseStatement("for");
   this.exitScope();
   this.labels.pop();
@@ -1590,28 +1948,28 @@ pp$1.parseForIn = function(node, init) {
 
 // Parse a list of variable declarations.
 
-pp$1.parseVar = function(node, isFor, kind) {
+pp$8.parseVar = function(node, isFor, kind) {
   node.declarations = [];
   node.kind = kind;
   for (;;) {
     var decl = this.startNode();
     this.parseVarId(decl, kind);
-    if (this.eat(types.eq)) {
+    if (this.eat(types$1.eq)) {
       decl.init = this.parseMaybeAssign(isFor);
-    } else if (kind === "const" && !(this.type === types._in || (this.options.ecmaVersion >= 6 && this.isContextual("of")))) {
+    } else if (kind === "const" && !(this.type === types$1._in || (this.options.ecmaVersion >= 6 && this.isContextual("of")))) {
       this.unexpected();
-    } else if (decl.id.type !== "Identifier" && !(isFor && (this.type === types._in || this.isContextual("of")))) {
+    } else if (decl.id.type !== "Identifier" && !(isFor && (this.type === types$1._in || this.isContextual("of")))) {
       this.raise(this.lastTokEnd, "Complex binding patterns require an initialization value");
     } else {
       decl.init = null;
     }
     node.declarations.push(this.finishNode(decl, "VariableDeclarator"));
-    if (!this.eat(types.comma)) { break }
+    if (!this.eat(types$1.comma)) { break }
   }
   return node
 };
 
-pp$1.parseVarId = function(decl, kind) {
+pp$8.parseVarId = function(decl, kind) {
   decl.id = this.parseBindingAtom();
   this.checkLValPattern(decl.id, kind === "var" ? BIND_VAR : BIND_LEXICAL, false);
 };
@@ -1622,18 +1980,18 @@ var FUNC_STATEMENT = 1, FUNC_HANGING_STATEMENT = 2, FUNC_NULLABLE_ID = 4;
 // `statement & FUNC_STATEMENT`).
 
 // Remove `allowExpressionBody` for 7.0.0, as it is only called with false
-pp$1.parseFunction = function(node, statement, allowExpressionBody, isAsync) {
+pp$8.parseFunction = function(node, statement, allowExpressionBody, isAsync, forInit) {
   this.initFunction(node);
   if (this.options.ecmaVersion >= 9 || this.options.ecmaVersion >= 6 && !isAsync) {
-    if (this.type === types.star && (statement & FUNC_HANGING_STATEMENT))
+    if (this.type === types$1.star && (statement & FUNC_HANGING_STATEMENT))
       { this.unexpected(); }
-    node.generator = this.eat(types.star);
+    node.generator = this.eat(types$1.star);
   }
   if (this.options.ecmaVersion >= 8)
     { node.async = !!isAsync; }
 
   if (statement & FUNC_STATEMENT) {
-    node.id = (statement & FUNC_NULLABLE_ID) && this.type !== types.name ? null : this.parseIdent();
+    node.id = (statement & FUNC_NULLABLE_ID) && this.type !== types$1.name ? null : this.parseIdent();
     if (node.id && !(statement & FUNC_HANGING_STATEMENT))
       // If it is a regular function declaration in sloppy mode, then it is
       // subject to Annex B semantics (BIND_FUNCTION). Otherwise, the binding
@@ -1649,10 +2007,10 @@ pp$1.parseFunction = function(node, statement, allowExpressionBody, isAsync) {
   this.enterScope(functionFlags(node.async, node.generator));
 
   if (!(statement & FUNC_STATEMENT))
-    { node.id = this.type === types.name ? this.parseIdent() : null; }
+    { node.id = this.type === types$1.name ? this.parseIdent() : null; }
 
   this.parseFunctionParams(node);
-  this.parseFunctionBody(node, allowExpressionBody, false);
+  this.parseFunctionBody(node, allowExpressionBody, false, forInit);
 
   this.yieldPos = oldYieldPos;
   this.awaitPos = oldAwaitPos;
@@ -1660,16 +2018,16 @@ pp$1.parseFunction = function(node, statement, allowExpressionBody, isAsync) {
   return this.finishNode(node, (statement & FUNC_STATEMENT) ? "FunctionDeclaration" : "FunctionExpression")
 };
 
-pp$1.parseFunctionParams = function(node) {
-  this.expect(types.parenL);
-  node.params = this.parseBindingList(types.parenR, false, this.options.ecmaVersion >= 8);
+pp$8.parseFunctionParams = function(node) {
+  this.expect(types$1.parenL);
+  node.params = this.parseBindingList(types$1.parenR, false, this.options.ecmaVersion >= 8);
   this.checkYieldAwaitInDefaultParams();
 };
 
 // Parse a class declaration or literal (depending on the
 // `isStatement` parameter).
 
-pp$1.parseClass = function(node, isStatement) {
+pp$8.parseClass = function(node, isStatement) {
   this.next();
 
   // ecma-262 14.6 Class Definitions
@@ -1683,15 +2041,15 @@ pp$1.parseClass = function(node, isStatement) {
   var classBody = this.startNode();
   var hadConstructor = false;
   classBody.body = [];
-  this.expect(types.braceL);
-  while (this.type !== types.braceR) {
+  this.expect(types$1.braceL);
+  while (this.type !== types$1.braceR) {
     var element = this.parseClassElement(node.superClass !== null);
     if (element) {
       classBody.body.push(element);
       if (element.type === "MethodDefinition" && element.kind === "constructor") {
         if (hadConstructor) { this.raise(element.start, "Duplicate constructor in the same class"); }
         hadConstructor = true;
-      } else if (element.key.type === "PrivateIdentifier" && isPrivateNameConflicted(privateNameMap, element)) {
+      } else if (element.key && element.key.type === "PrivateIdentifier" && isPrivateNameConflicted(privateNameMap, element)) {
         this.raiseRecoverable(element.key.start, ("Identifier '#" + (element.key.name) + "' has already been declared"));
       }
     }
@@ -1703,8 +2061,8 @@ pp$1.parseClass = function(node, isStatement) {
   return this.finishNode(node, isStatement ? "ClassDeclaration" : "ClassExpression")
 };
 
-pp$1.parseClassElement = function(constructorAllowsSuper) {
-  if (this.eat(types.semi)) { return null }
+pp$8.parseClassElement = function(constructorAllowsSuper) {
+  if (this.eat(types$1.semi)) { return null }
 
   var ecmaVersion = this.options.ecmaVersion;
   var node = this.startNode();
@@ -1712,24 +2070,29 @@ pp$1.parseClassElement = function(constructorAllowsSuper) {
   var isGenerator = false;
   var isAsync = false;
   var kind = "method";
+  var isStatic = false;
 
-  // Parse modifiers
-  node.static = false;
   if (this.eatContextual("static")) {
-    if (this.isClassElementNameStart() || this.type === types.star) {
-      node.static = true;
+    // Parse static init block
+    if (ecmaVersion >= 13 && this.eat(types$1.braceL)) {
+      this.parseClassStaticBlock(node);
+      return node
+    }
+    if (this.isClassElementNameStart() || this.type === types$1.star) {
+      isStatic = true;
     } else {
       keyName = "static";
     }
   }
+  node.static = isStatic;
   if (!keyName && ecmaVersion >= 8 && this.eatContextual("async")) {
-    if ((this.isClassElementNameStart() || this.type === types.star) && !this.canInsertSemicolon()) {
+    if ((this.isClassElementNameStart() || this.type === types$1.star) && !this.canInsertSemicolon()) {
       isAsync = true;
     } else {
       keyName = "async";
     }
   }
-  if (!keyName && (ecmaVersion >= 9 || !isAsync) && this.eat(types.star)) {
+  if (!keyName && (ecmaVersion >= 9 || !isAsync) && this.eat(types$1.star)) {
     isGenerator = true;
   }
   if (!keyName && !isAsync && !isGenerator) {
@@ -1756,7 +2119,7 @@ pp$1.parseClassElement = function(constructorAllowsSuper) {
   }
 
   // Parse element value
-  if (ecmaVersion < 13 || this.type === types.parenL || kind !== "method" || isGenerator || isAsync) {
+  if (ecmaVersion < 13 || this.type === types$1.parenL || kind !== "method" || isGenerator || isAsync) {
     var isConstructor = !node.static && checkKeyName(node, "constructor");
     var allowsDirectSuper = isConstructor && constructorAllowsSuper;
     // Couldn't move this check into the 'parseClassMethod' method for backward compatibility.
@@ -1770,19 +2133,19 @@ pp$1.parseClassElement = function(constructorAllowsSuper) {
   return node
 };
 
-pp$1.isClassElementNameStart = function() {
+pp$8.isClassElementNameStart = function() {
   return (
-    this.type === types.name ||
-    this.type === types.privateId ||
-    this.type === types.num ||
-    this.type === types.string ||
-    this.type === types.bracketL ||
+    this.type === types$1.name ||
+    this.type === types$1.privateId ||
+    this.type === types$1.num ||
+    this.type === types$1.string ||
+    this.type === types$1.bracketL ||
     this.type.keyword
   )
 };
 
-pp$1.parseClassElementName = function(element) {
-  if (this.type === types.privateId) {
+pp$8.parseClassElementName = function(element) {
+  if (this.type === types$1.privateId) {
     if (this.value === "constructor") {
       this.raise(this.start, "Classes can't have an element named '#constructor'");
     }
@@ -1793,7 +2156,7 @@ pp$1.parseClassElementName = function(element) {
   }
 };
 
-pp$1.parseClassMethod = function(method, isGenerator, isAsync, allowsDirectSuper) {
+pp$8.parseClassMethod = function(method, isGenerator, isAsync, allowsDirectSuper) {
   // Check key and flags
   var key = method.key;
   if (method.kind === "constructor") {
@@ -1817,14 +2180,14 @@ pp$1.parseClassMethod = function(method, isGenerator, isAsync, allowsDirectSuper
   return this.finishNode(method, "MethodDefinition")
 };
 
-pp$1.parseClassField = function(field) {
+pp$8.parseClassField = function(field) {
   if (checkKeyName(field, "constructor")) {
     this.raise(field.key.start, "Classes can't have a field named 'constructor'");
   } else if (field.static && checkKeyName(field, "prototype")) {
     this.raise(field.key.start, "Classes can't have a static field named 'prototype'");
   }
 
-  if (this.eat(types.eq)) {
+  if (this.eat(types$1.eq)) {
     // To raise SyntaxError if 'arguments' exists in the initializer.
     var scope = this.currentThisScope();
     var inClassFieldInit = scope.inClassFieldInit;
@@ -1839,8 +2202,25 @@ pp$1.parseClassField = function(field) {
   return this.finishNode(field, "PropertyDefinition")
 };
 
-pp$1.parseClassId = function(node, isStatement) {
-  if (this.type === types.name) {
+pp$8.parseClassStaticBlock = function(node) {
+  node.body = [];
+
+  var oldLabels = this.labels;
+  this.labels = [];
+  this.enterScope(SCOPE_CLASS_STATIC_BLOCK | SCOPE_SUPER);
+  while (this.type !== types$1.braceR) {
+    var stmt = this.parseStatement(null);
+    node.body.push(stmt);
+  }
+  this.next();
+  this.exitScope();
+  this.labels = oldLabels;
+
+  return this.finishNode(node, "StaticBlock")
+};
+
+pp$8.parseClassId = function(node, isStatement) {
+  if (this.type === types$1.name) {
     node.id = this.parseIdent();
     if (isStatement)
       { this.checkLValSimple(node.id, BIND_LEXICAL, false); }
@@ -1851,17 +2231,17 @@ pp$1.parseClassId = function(node, isStatement) {
   }
 };
 
-pp$1.parseClassSuper = function(node) {
-  node.superClass = this.eat(types._extends) ? this.parseExprSubscripts() : null;
+pp$8.parseClassSuper = function(node) {
+  node.superClass = this.eat(types$1._extends) ? this.parseExprSubscripts(null, false) : null;
 };
 
-pp$1.enterClassBody = function() {
+pp$8.enterClassBody = function() {
   var element = {declared: Object.create(null), used: []};
   this.privateNameStack.push(element);
   return element.declared
 };
 
-pp$1.exitClassBody = function() {
+pp$8.exitClassBody = function() {
   var ref = this.privateNameStack.pop();
   var declared = ref.declared;
   var used = ref.used;
@@ -1869,7 +2249,7 @@ pp$1.exitClassBody = function() {
   var parent = len === 0 ? null : this.privateNameStack[len - 1];
   for (var i = 0; i < used.length; ++i) {
     var id = used[i];
-    if (!has(declared, id.name)) {
+    if (!hasOwn(declared, id.name)) {
       if (parent) {
         parent.used.push(id);
       } else {
@@ -1916,33 +2296,33 @@ function checkKeyName(node, name) {
 
 // Parses module export declaration.
 
-pp$1.parseExport = function(node, exports) {
+pp$8.parseExport = function(node, exports) {
   this.next();
   // export * from '...'
-  if (this.eat(types.star)) {
+  if (this.eat(types$1.star)) {
     if (this.options.ecmaVersion >= 11) {
       if (this.eatContextual("as")) {
-        node.exported = this.parseIdent(true);
-        this.checkExport(exports, node.exported.name, this.lastTokStart);
+        node.exported = this.parseModuleExportName();
+        this.checkExport(exports, node.exported, this.lastTokStart);
       } else {
         node.exported = null;
       }
     }
     this.expectContextual("from");
-    if (this.type !== types.string) { this.unexpected(); }
+    if (this.type !== types$1.string) { this.unexpected(); }
     node.source = this.parseExprAtom();
     this.semicolon();
     return this.finishNode(node, "ExportAllDeclaration")
   }
-  if (this.eat(types._default)) { // export default ...
+  if (this.eat(types$1._default)) { // export default ...
     this.checkExport(exports, "default", this.lastTokStart);
     var isAsync;
-    if (this.type === types._function || (isAsync = this.isAsyncFunction())) {
+    if (this.type === types$1._function || (isAsync = this.isAsyncFunction())) {
       var fNode = this.startNode();
       this.next();
       if (isAsync) { this.next(); }
       node.declaration = this.parseFunction(fNode, FUNC_STATEMENT | FUNC_NULLABLE_ID, false, isAsync);
-    } else if (this.type === types._class) {
+    } else if (this.type === types$1._class) {
       var cNode = this.startNode();
       node.declaration = this.parseClass(cNode, "nullableID");
     } else {
@@ -1957,14 +2337,14 @@ pp$1.parseExport = function(node, exports) {
     if (node.declaration.type === "VariableDeclaration")
       { this.checkVariableExport(exports, node.declaration.declarations); }
     else
-      { this.checkExport(exports, node.declaration.id.name, node.declaration.id.start); }
+      { this.checkExport(exports, node.declaration.id, node.declaration.id.start); }
     node.specifiers = [];
     node.source = null;
   } else { // export { x, y as z } [from '...']
     node.declaration = null;
     node.specifiers = this.parseExportSpecifiers(exports);
     if (this.eatContextual("from")) {
-      if (this.type !== types.string) { this.unexpected(); }
+      if (this.type !== types$1.string) { this.unexpected(); }
       node.source = this.parseExprAtom();
     } else {
       for (var i = 0, list = node.specifiers; i < list.length; i += 1) {
@@ -1974,6 +2354,10 @@ pp$1.parseExport = function(node, exports) {
         this.checkUnreserved(spec.local);
         // check if export is defined
         this.checkLocalExport(spec.local);
+
+        if (spec.local.type === "Literal") {
+          this.raise(spec.local.start, "A string literal cannot be used as an exported binding without `from`.");
+        }
       }
 
       node.source = null;
@@ -1983,17 +2367,19 @@ pp$1.parseExport = function(node, exports) {
   return this.finishNode(node, "ExportNamedDeclaration")
 };
 
-pp$1.checkExport = function(exports, name, pos) {
+pp$8.checkExport = function(exports, name, pos) {
   if (!exports) { return }
-  if (has(exports, name))
+  if (typeof name !== "string")
+    { name = name.type === "Identifier" ? name.name : name.value; }
+  if (hasOwn(exports, name))
     { this.raiseRecoverable(pos, "Duplicate export '" + name + "'"); }
   exports[name] = true;
 };
 
-pp$1.checkPatternExport = function(exports, pat) {
+pp$8.checkPatternExport = function(exports, pat) {
   var type = pat.type;
   if (type === "Identifier")
-    { this.checkExport(exports, pat.name, pat.start); }
+    { this.checkExport(exports, pat, pat.start); }
   else if (type === "ObjectPattern")
     { for (var i = 0, list = pat.properties; i < list.length; i += 1)
       {
@@ -2017,7 +2403,7 @@ pp$1.checkPatternExport = function(exports, pat) {
     { this.checkPatternExport(exports, pat.expression); }
 };
 
-pp$1.checkVariableExport = function(exports, decls) {
+pp$8.checkVariableExport = function(exports, decls) {
   if (!exports) { return }
   for (var i = 0, list = decls; i < list.length; i += 1)
     {
@@ -2027,7 +2413,7 @@ pp$1.checkVariableExport = function(exports, decls) {
   }
 };
 
-pp$1.shouldParseExportStatement = function() {
+pp$8.shouldParseExportStatement = function() {
   return this.type.keyword === "var" ||
     this.type.keyword === "const" ||
     this.type.keyword === "class" ||
@@ -2038,20 +2424,24 @@ pp$1.shouldParseExportStatement = function() {
 
 // Parses a comma-separated list of module exports.
 
-pp$1.parseExportSpecifiers = function(exports) {
+pp$8.parseExportSpecifiers = function(exports) {
   var nodes = [], first = true;
   // export { x, y as z } [from '...']
-  this.expect(types.braceL);
-  while (!this.eat(types.braceR)) {
+  this.expect(types$1.braceL);
+  while (!this.eat(types$1.braceR)) {
     if (!first) {
-      this.expect(types.comma);
-      if (this.afterTrailingComma(types.braceR)) { break }
+      this.expect(types$1.comma);
+      if (this.afterTrailingComma(types$1.braceR)) { break }
     } else { first = false; }
 
     var node = this.startNode();
-    node.local = this.parseIdent(true);
-    node.exported = this.eatContextual("as") ? this.parseIdent(true) : node.local;
-    this.checkExport(exports, node.exported.name, node.exported.start);
+    node.local = this.parseModuleExportName();
+    node.exported = this.eatContextual("as") ? this.parseModuleExportName() : node.local;
+    this.checkExport(
+      exports,
+      node.exported,
+      node.exported.start
+    );
     nodes.push(this.finishNode(node, "ExportSpecifier"));
   }
   return nodes
@@ -2059,16 +2449,16 @@ pp$1.parseExportSpecifiers = function(exports) {
 
 // Parses import declaration.
 
-pp$1.parseImport = function(node) {
+pp$8.parseImport = function(node) {
   this.next();
   // import '...'
-  if (this.type === types.string) {
-    node.specifiers = empty;
+  if (this.type === types$1.string) {
+    node.specifiers = empty$1;
     node.source = this.parseExprAtom();
   } else {
     node.specifiers = this.parseImportSpecifiers();
     this.expectContextual("from");
-    node.source = this.type === types.string ? this.parseExprAtom() : this.unexpected();
+    node.source = this.type === types$1.string ? this.parseExprAtom() : this.unexpected();
   }
   this.semicolon();
   return this.finishNode(node, "ImportDeclaration")
@@ -2076,17 +2466,17 @@ pp$1.parseImport = function(node) {
 
 // Parses a comma-separated list of module imports.
 
-pp$1.parseImportSpecifiers = function() {
+pp$8.parseImportSpecifiers = function() {
   var nodes = [], first = true;
-  if (this.type === types.name) {
+  if (this.type === types$1.name) {
     // import defaultObj, { x, y as z } from '...'
     var node = this.startNode();
     node.local = this.parseIdent();
     this.checkLValSimple(node.local, BIND_LEXICAL);
     nodes.push(this.finishNode(node, "ImportDefaultSpecifier"));
-    if (!this.eat(types.comma)) { return nodes }
+    if (!this.eat(types$1.comma)) { return nodes }
   }
-  if (this.type === types.star) {
+  if (this.type === types$1.star) {
     var node$1 = this.startNode();
     this.next();
     this.expectContextual("as");
@@ -2095,15 +2485,15 @@ pp$1.parseImportSpecifiers = function() {
     nodes.push(this.finishNode(node$1, "ImportNamespaceSpecifier"));
     return nodes
   }
-  this.expect(types.braceL);
-  while (!this.eat(types.braceR)) {
+  this.expect(types$1.braceL);
+  while (!this.eat(types$1.braceR)) {
     if (!first) {
-      this.expect(types.comma);
-      if (this.afterTrailingComma(types.braceR)) { break }
+      this.expect(types$1.comma);
+      if (this.afterTrailingComma(types$1.braceR)) { break }
     } else { first = false; }
 
     var node$2 = this.startNode();
-    node$2.imported = this.parseIdent(true);
+    node$2.imported = this.parseModuleExportName();
     if (this.eatContextual("as")) {
       node$2.local = this.parseIdent();
     } else {
@@ -2116,14 +2506,26 @@ pp$1.parseImportSpecifiers = function() {
   return nodes
 };
 
+pp$8.parseModuleExportName = function() {
+  if (this.options.ecmaVersion >= 13 && this.type === types$1.string) {
+    var stringLiteral = this.parseLiteral(this.value);
+    if (loneSurrogate.test(stringLiteral.value)) {
+      this.raise(stringLiteral.start, "An export name cannot include a lone surrogate.");
+    }
+    return stringLiteral
+  }
+  return this.parseIdent(true)
+};
+
 // Set `ExpressionStatement#directive` property for directive prologues.
-pp$1.adaptDirectivePrologue = function(statements) {
+pp$8.adaptDirectivePrologue = function(statements) {
   for (var i = 0; i < statements.length && this.isDirectiveCandidate(statements[i]); ++i) {
     statements[i].directive = statements[i].expression.raw.slice(1, -1);
   }
 };
-pp$1.isDirectiveCandidate = function(statement) {
+pp$8.isDirectiveCandidate = function(statement) {
   return (
+    this.options.ecmaVersion >= 5 &&
     statement.type === "ExpressionStatement" &&
     statement.expression.type === "Literal" &&
     typeof statement.expression.value === "string" &&
@@ -2132,12 +2534,12 @@ pp$1.isDirectiveCandidate = function(statement) {
   )
 };
 
-var pp$2 = Parser.prototype;
+var pp$7 = Parser.prototype;
 
 // Convert existing expression atom to assignable pattern
 // if possible.
 
-pp$2.toAssignable = function(node, isBinding, refDestructuringErrors) {
+pp$7.toAssignable = function(node, isBinding, refDestructuringErrors) {
   if (this.options.ecmaVersion >= 6 && node) {
     switch (node.type) {
     case "Identifier":
@@ -2218,7 +2620,7 @@ pp$2.toAssignable = function(node, isBinding, refDestructuringErrors) {
 
 // Convert list of expression atoms to binding list.
 
-pp$2.toAssignableList = function(exprList, isBinding) {
+pp$7.toAssignableList = function(exprList, isBinding) {
   var end = exprList.length;
   for (var i = 0; i < end; i++) {
     var elt = exprList[i];
@@ -2234,19 +2636,19 @@ pp$2.toAssignableList = function(exprList, isBinding) {
 
 // Parses spread element.
 
-pp$2.parseSpread = function(refDestructuringErrors) {
+pp$7.parseSpread = function(refDestructuringErrors) {
   var node = this.startNode();
   this.next();
   node.argument = this.parseMaybeAssign(false, refDestructuringErrors);
   return this.finishNode(node, "SpreadElement")
 };
 
-pp$2.parseRestBinding = function() {
+pp$7.parseRestBinding = function() {
   var node = this.startNode();
   this.next();
 
   // RestElement inside of a function parameter must be an identifier
-  if (this.options.ecmaVersion === 6 && this.type !== types.name)
+  if (this.options.ecmaVersion === 6 && this.type !== types$1.name)
     { this.unexpected(); }
 
   node.argument = this.parseBindingAtom();
@@ -2256,36 +2658,36 @@ pp$2.parseRestBinding = function() {
 
 // Parses lvalue (assignable) atom.
 
-pp$2.parseBindingAtom = function() {
+pp$7.parseBindingAtom = function() {
   if (this.options.ecmaVersion >= 6) {
     switch (this.type) {
-    case types.bracketL:
+    case types$1.bracketL:
       var node = this.startNode();
       this.next();
-      node.elements = this.parseBindingList(types.bracketR, true, true);
+      node.elements = this.parseBindingList(types$1.bracketR, true, true);
       return this.finishNode(node, "ArrayPattern")
 
-    case types.braceL:
+    case types$1.braceL:
       return this.parseObj(true)
     }
   }
   return this.parseIdent()
 };
 
-pp$2.parseBindingList = function(close, allowEmpty, allowTrailingComma) {
+pp$7.parseBindingList = function(close, allowEmpty, allowTrailingComma) {
   var elts = [], first = true;
   while (!this.eat(close)) {
     if (first) { first = false; }
-    else { this.expect(types.comma); }
-    if (allowEmpty && this.type === types.comma) {
+    else { this.expect(types$1.comma); }
+    if (allowEmpty && this.type === types$1.comma) {
       elts.push(null);
     } else if (allowTrailingComma && this.afterTrailingComma(close)) {
       break
-    } else if (this.type === types.ellipsis) {
+    } else if (this.type === types$1.ellipsis) {
       var rest = this.parseRestBinding();
       this.parseBindingListItem(rest);
       elts.push(rest);
-      if (this.type === types.comma) { this.raise(this.start, "Comma is not permitted after the rest element"); }
+      if (this.type === types$1.comma) { this.raise(this.start, "Comma is not permitted after the rest element"); }
       this.expect(close);
       break
     } else {
@@ -2297,15 +2699,15 @@ pp$2.parseBindingList = function(close, allowEmpty, allowTrailingComma) {
   return elts
 };
 
-pp$2.parseBindingListItem = function(param) {
+pp$7.parseBindingListItem = function(param) {
   return param
 };
 
 // Parses assignment pattern around given atom if possible.
 
-pp$2.parseMaybeDefault = function(startPos, startLoc, left) {
+pp$7.parseMaybeDefault = function(startPos, startLoc, left) {
   left = left || this.parseBindingAtom();
-  if (this.options.ecmaVersion < 6 || !this.eat(types.eq)) { return left }
+  if (this.options.ecmaVersion < 6 || !this.eat(types$1.eq)) { return left }
   var node = this.startNodeAt(startPos, startLoc);
   node.left = left;
   node.right = this.parseMaybeAssign();
@@ -2376,7 +2778,7 @@ pp$2.parseMaybeDefault = function(startPos, startLoc, left) {
 // duplicate argument names. checkClashes is ignored if the provided construct
 // is an assignment (i.e., bindingType is BIND_NONE).
 
-pp$2.checkLValSimple = function(expr, bindingType, checkClashes) {
+pp$7.checkLValSimple = function(expr, bindingType, checkClashes) {
   if ( bindingType === void 0 ) bindingType = BIND_NONE;
 
   var isBind = bindingType !== BIND_NONE;
@@ -2389,7 +2791,7 @@ pp$2.checkLValSimple = function(expr, bindingType, checkClashes) {
       if (bindingType === BIND_LEXICAL && expr.name === "let")
         { this.raiseRecoverable(expr.start, "let is disallowed as a lexically bound name"); }
       if (checkClashes) {
-        if (has(checkClashes, expr.name))
+        if (hasOwn(checkClashes, expr.name))
           { this.raiseRecoverable(expr.start, "Argument name clash"); }
         checkClashes[expr.name] = true;
       }
@@ -2414,7 +2816,7 @@ pp$2.checkLValSimple = function(expr, bindingType, checkClashes) {
   }
 };
 
-pp$2.checkLValPattern = function(expr, bindingType, checkClashes) {
+pp$7.checkLValPattern = function(expr, bindingType, checkClashes) {
   if ( bindingType === void 0 ) bindingType = BIND_NONE;
 
   switch (expr.type) {
@@ -2439,7 +2841,7 @@ pp$2.checkLValPattern = function(expr, bindingType, checkClashes) {
   }
 };
 
-pp$2.checkLValInnerPattern = function(expr, bindingType, checkClashes) {
+pp$7.checkLValInnerPattern = function(expr, bindingType, checkClashes) {
   if ( bindingType === void 0 ) bindingType = BIND_NONE;
 
   switch (expr.type) {
@@ -2461,16 +2863,171 @@ pp$2.checkLValInnerPattern = function(expr, bindingType, checkClashes) {
   }
 };
 
+// The algorithm used to determine whether a regexp can appear at a
+
+var TokContext = function TokContext(token, isExpr, preserveSpace, override, generator) {
+  this.token = token;
+  this.isExpr = !!isExpr;
+  this.preserveSpace = !!preserveSpace;
+  this.override = override;
+  this.generator = !!generator;
+};
+
+var types = {
+  b_stat: new TokContext("{", false),
+  b_expr: new TokContext("{", true),
+  b_tmpl: new TokContext("${", false),
+  p_stat: new TokContext("(", false),
+  p_expr: new TokContext("(", true),
+  q_tmpl: new TokContext("`", true, true, function (p) { return p.tryReadTemplateToken(); }),
+  f_stat: new TokContext("function", false),
+  f_expr: new TokContext("function", true),
+  f_expr_gen: new TokContext("function", true, false, null, true),
+  f_gen: new TokContext("function", false, false, null, true)
+};
+
+var pp$6 = Parser.prototype;
+
+pp$6.initialContext = function() {
+  return [types.b_stat]
+};
+
+pp$6.curContext = function() {
+  return this.context[this.context.length - 1]
+};
+
+pp$6.braceIsBlock = function(prevType) {
+  var parent = this.curContext();
+  if (parent === types.f_expr || parent === types.f_stat)
+    { return true }
+  if (prevType === types$1.colon && (parent === types.b_stat || parent === types.b_expr))
+    { return !parent.isExpr }
+
+  // The check for `tt.name && exprAllowed` detects whether we are
+  // after a `yield` or `of` construct. See the `updateContext` for
+  // `tt.name`.
+  if (prevType === types$1._return || prevType === types$1.name && this.exprAllowed)
+    { return lineBreak.test(this.input.slice(this.lastTokEnd, this.start)) }
+  if (prevType === types$1._else || prevType === types$1.semi || prevType === types$1.eof || prevType === types$1.parenR || prevType === types$1.arrow)
+    { return true }
+  if (prevType === types$1.braceL)
+    { return parent === types.b_stat }
+  if (prevType === types$1._var || prevType === types$1._const || prevType === types$1.name)
+    { return false }
+  return !this.exprAllowed
+};
+
+pp$6.inGeneratorContext = function() {
+  for (var i = this.context.length - 1; i >= 1; i--) {
+    var context = this.context[i];
+    if (context.token === "function")
+      { return context.generator }
+  }
+  return false
+};
+
+pp$6.updateContext = function(prevType) {
+  var update, type = this.type;
+  if (type.keyword && prevType === types$1.dot)
+    { this.exprAllowed = false; }
+  else if (update = type.updateContext)
+    { update.call(this, prevType); }
+  else
+    { this.exprAllowed = type.beforeExpr; }
+};
+
+// Used to handle egde cases when token context could not be inferred correctly during tokenization phase
+
+pp$6.overrideContext = function(tokenCtx) {
+  if (this.curContext() !== tokenCtx) {
+    this.context[this.context.length - 1] = tokenCtx;
+  }
+};
+
+// Token-specific context update code
+
+types$1.parenR.updateContext = types$1.braceR.updateContext = function() {
+  if (this.context.length === 1) {
+    this.exprAllowed = true;
+    return
+  }
+  var out = this.context.pop();
+  if (out === types.b_stat && this.curContext().token === "function") {
+    out = this.context.pop();
+  }
+  this.exprAllowed = !out.isExpr;
+};
+
+types$1.braceL.updateContext = function(prevType) {
+  this.context.push(this.braceIsBlock(prevType) ? types.b_stat : types.b_expr);
+  this.exprAllowed = true;
+};
+
+types$1.dollarBraceL.updateContext = function() {
+  this.context.push(types.b_tmpl);
+  this.exprAllowed = true;
+};
+
+types$1.parenL.updateContext = function(prevType) {
+  var statementParens = prevType === types$1._if || prevType === types$1._for || prevType === types$1._with || prevType === types$1._while;
+  this.context.push(statementParens ? types.p_stat : types.p_expr);
+  this.exprAllowed = true;
+};
+
+types$1.incDec.updateContext = function() {
+  // tokExprAllowed stays unchanged
+};
+
+types$1._function.updateContext = types$1._class.updateContext = function(prevType) {
+  if (prevType.beforeExpr && prevType !== types$1._else &&
+      !(prevType === types$1.semi && this.curContext() !== types.p_stat) &&
+      !(prevType === types$1._return && lineBreak.test(this.input.slice(this.lastTokEnd, this.start))) &&
+      !((prevType === types$1.colon || prevType === types$1.braceL) && this.curContext() === types.b_stat))
+    { this.context.push(types.f_expr); }
+  else
+    { this.context.push(types.f_stat); }
+  this.exprAllowed = false;
+};
+
+types$1.backQuote.updateContext = function() {
+  if (this.curContext() === types.q_tmpl)
+    { this.context.pop(); }
+  else
+    { this.context.push(types.q_tmpl); }
+  this.exprAllowed = false;
+};
+
+types$1.star.updateContext = function(prevType) {
+  if (prevType === types$1._function) {
+    var index = this.context.length - 1;
+    if (this.context[index] === types.f_expr)
+      { this.context[index] = types.f_expr_gen; }
+    else
+      { this.context[index] = types.f_gen; }
+  }
+  this.exprAllowed = true;
+};
+
+types$1.name.updateContext = function(prevType) {
+  var allowed = false;
+  if (this.options.ecmaVersion >= 6 && prevType !== types$1.dot) {
+    if (this.value === "of" && !this.exprAllowed ||
+        this.value === "yield" && this.inGeneratorContext())
+      { allowed = true; }
+  }
+  this.exprAllowed = allowed;
+};
+
 // A recursive descent parser operates by defining functions for all
 
-var pp$3 = Parser.prototype;
+var pp$5 = Parser.prototype;
 
 // Check if property name clashes with already added.
 // Object/class getters and setters are not allowed to clash —
 // either with each other or with an init property — and in
 // strict mode, init properties are also not allowed to be repeated.
 
-pp$3.checkPropClash = function(prop, propHash, refDestructuringErrors) {
+pp$5.checkPropClash = function(prop, propHash, refDestructuringErrors) {
   if (this.options.ecmaVersion >= 9 && prop.type === "SpreadElement")
     { return }
   if (this.options.ecmaVersion >= 6 && (prop.computed || prop.method || prop.shorthand))
@@ -2487,10 +3044,12 @@ pp$3.checkPropClash = function(prop, propHash, refDestructuringErrors) {
     if (name === "__proto__" && kind === "init") {
       if (propHash.proto) {
         if (refDestructuringErrors) {
-          if (refDestructuringErrors.doubleProto < 0)
-            { refDestructuringErrors.doubleProto = key.start; }
-          // Backwards-compat kludge. Can be removed in version 6.0
-        } else { this.raiseRecoverable(key.start, "Redefinition of __proto__ property"); }
+          if (refDestructuringErrors.doubleProto < 0) {
+            refDestructuringErrors.doubleProto = key.start;
+          }
+        } else {
+          this.raiseRecoverable(key.start, "Redefinition of __proto__ property");
+        }
       }
       propHash.proto = true;
     }
@@ -2532,13 +3091,13 @@ pp$3.checkPropClash = function(prop, propHash, refDestructuringErrors) {
 // and object pattern might appear (so it's possible to raise
 // delayed syntax error at correct position).
 
-pp$3.parseExpression = function(forInit, refDestructuringErrors) {
+pp$5.parseExpression = function(forInit, refDestructuringErrors) {
   var startPos = this.start, startLoc = this.startLoc;
   var expr = this.parseMaybeAssign(forInit, refDestructuringErrors);
-  if (this.type === types.comma) {
+  if (this.type === types$1.comma) {
     var node = this.startNodeAt(startPos, startLoc);
     node.expressions = [expr];
-    while (this.eat(types.comma)) { node.expressions.push(this.parseMaybeAssign(forInit, refDestructuringErrors)); }
+    while (this.eat(types$1.comma)) { node.expressions.push(this.parseMaybeAssign(forInit, refDestructuringErrors)); }
     return this.finishNode(node, "SequenceExpression")
   }
   return expr
@@ -2547,7 +3106,7 @@ pp$3.parseExpression = function(forInit, refDestructuringErrors) {
 // Parse an assignment expression. This includes applications of
 // operators like `+=`.
 
-pp$3.parseMaybeAssign = function(forInit, refDestructuringErrors, afterLeftParse) {
+pp$5.parseMaybeAssign = function(forInit, refDestructuringErrors, afterLeftParse) {
   if (this.isContextual("yield")) {
     if (this.inGenerator) { return this.parseYield(forInit) }
     // The tokenizer will assume an expression is allowed after
@@ -2555,10 +3114,11 @@ pp$3.parseMaybeAssign = function(forInit, refDestructuringErrors, afterLeftParse
     else { this.exprAllowed = false; }
   }
 
-  var ownDestructuringErrors = false, oldParenAssign = -1, oldTrailingComma = -1;
+  var ownDestructuringErrors = false, oldParenAssign = -1, oldTrailingComma = -1, oldDoubleProto = -1;
   if (refDestructuringErrors) {
     oldParenAssign = refDestructuringErrors.parenthesizedAssign;
     oldTrailingComma = refDestructuringErrors.trailingComma;
+    oldDoubleProto = refDestructuringErrors.doubleProto;
     refDestructuringErrors.parenthesizedAssign = refDestructuringErrors.trailingComma = -1;
   } else {
     refDestructuringErrors = new DestructuringErrors;
@@ -2566,7 +3126,7 @@ pp$3.parseMaybeAssign = function(forInit, refDestructuringErrors, afterLeftParse
   }
 
   var startPos = this.start, startLoc = this.startLoc;
-  if (this.type === types.parenL || this.type === types.name) {
+  if (this.type === types$1.parenL || this.type === types$1.name) {
     this.potentialArrowAt = this.start;
     this.potentialArrowInForAwait = forInit === "await";
   }
@@ -2575,20 +3135,21 @@ pp$3.parseMaybeAssign = function(forInit, refDestructuringErrors, afterLeftParse
   if (this.type.isAssign) {
     var node = this.startNodeAt(startPos, startLoc);
     node.operator = this.value;
-    if (this.type === types.eq)
+    if (this.type === types$1.eq)
       { left = this.toAssignable(left, false, refDestructuringErrors); }
     if (!ownDestructuringErrors) {
       refDestructuringErrors.parenthesizedAssign = refDestructuringErrors.trailingComma = refDestructuringErrors.doubleProto = -1;
     }
     if (refDestructuringErrors.shorthandAssign >= left.start)
       { refDestructuringErrors.shorthandAssign = -1; } // reset because shorthand default was used correctly
-    if (this.type === types.eq)
+    if (this.type === types$1.eq)
       { this.checkLValPattern(left); }
     else
       { this.checkLValSimple(left); }
     node.left = left;
     this.next();
     node.right = this.parseMaybeAssign(forInit);
+    if (oldDoubleProto > -1) { refDestructuringErrors.doubleProto = oldDoubleProto; }
     return this.finishNode(node, "AssignmentExpression")
   } else {
     if (ownDestructuringErrors) { this.checkExpressionErrors(refDestructuringErrors, true); }
@@ -2600,15 +3161,15 @@ pp$3.parseMaybeAssign = function(forInit, refDestructuringErrors, afterLeftParse
 
 // Parse a ternary conditional (`?:`) operator.
 
-pp$3.parseMaybeConditional = function(forInit, refDestructuringErrors) {
+pp$5.parseMaybeConditional = function(forInit, refDestructuringErrors) {
   var startPos = this.start, startLoc = this.startLoc;
   var expr = this.parseExprOps(forInit, refDestructuringErrors);
   if (this.checkExpressionErrors(refDestructuringErrors)) { return expr }
-  if (this.eat(types.question)) {
+  if (this.eat(types$1.question)) {
     var node = this.startNodeAt(startPos, startLoc);
     node.test = expr;
     node.consequent = this.parseMaybeAssign();
-    this.expect(types.colon);
+    this.expect(types$1.colon);
     node.alternate = this.parseMaybeAssign(forInit);
     return this.finishNode(node, "ConditionalExpression")
   }
@@ -2617,9 +3178,9 @@ pp$3.parseMaybeConditional = function(forInit, refDestructuringErrors) {
 
 // Start the precedence parser.
 
-pp$3.parseExprOps = function(forInit, refDestructuringErrors) {
+pp$5.parseExprOps = function(forInit, refDestructuringErrors) {
   var startPos = this.start, startLoc = this.startLoc;
-  var expr = this.parseMaybeUnary(refDestructuringErrors, false);
+  var expr = this.parseMaybeUnary(refDestructuringErrors, false, false, forInit);
   if (this.checkExpressionErrors(refDestructuringErrors)) { return expr }
   return expr.start === startPos && expr.type === "ArrowFunctionExpression" ? expr : this.parseExprOp(expr, startPos, startLoc, -1, forInit)
 };
@@ -2630,23 +3191,23 @@ pp$3.parseExprOps = function(forInit, refDestructuringErrors) {
 // defer further parser to one of its callers when it encounters an
 // operator that has a lower precedence than the set it is parsing.
 
-pp$3.parseExprOp = function(left, leftStartPos, leftStartLoc, minPrec, forInit) {
+pp$5.parseExprOp = function(left, leftStartPos, leftStartLoc, minPrec, forInit) {
   var prec = this.type.binop;
-  if (prec != null && (!forInit || this.type !== types._in)) {
+  if (prec != null && (!forInit || this.type !== types$1._in)) {
     if (prec > minPrec) {
-      var logical = this.type === types.logicalOR || this.type === types.logicalAND;
-      var coalesce = this.type === types.coalesce;
+      var logical = this.type === types$1.logicalOR || this.type === types$1.logicalAND;
+      var coalesce = this.type === types$1.coalesce;
       if (coalesce) {
         // Handle the precedence of `tt.coalesce` as equal to the range of logical expressions.
         // In other words, `node.right` shouldn't contain logical expressions in order to check the mixed error.
-        prec = types.logicalAND.binop;
+        prec = types$1.logicalAND.binop;
       }
       var op = this.value;
       this.next();
       var startPos = this.start, startLoc = this.startLoc;
-      var right = this.parseExprOp(this.parseMaybeUnary(null, false), startPos, startLoc, prec, forInit);
+      var right = this.parseExprOp(this.parseMaybeUnary(null, false, false, forInit), startPos, startLoc, prec, forInit);
       var node = this.buildBinary(leftStartPos, leftStartLoc, left, right, op, logical || coalesce);
-      if ((logical && this.type === types.coalesce) || (coalesce && (this.type === types.logicalOR || this.type === types.logicalAND))) {
+      if ((logical && this.type === types$1.coalesce) || (coalesce && (this.type === types$1.logicalOR || this.type === types$1.logicalAND))) {
         this.raiseRecoverable(this.start, "Logical expressions and coalesce expressions cannot be mixed. Wrap either by parentheses");
       }
       return this.parseExprOp(node, leftStartPos, leftStartLoc, minPrec, forInit)
@@ -2655,7 +3216,8 @@ pp$3.parseExprOp = function(left, leftStartPos, leftStartLoc, minPrec, forInit) 
   return left
 };
 
-pp$3.buildBinary = function(startPos, startLoc, left, right, op, logical) {
+pp$5.buildBinary = function(startPos, startLoc, left, right, op, logical) {
+  if (right.type === "PrivateIdentifier") { this.raise(right.start, "Private identifier can only be left side of binary expression"); }
   var node = this.startNodeAt(startPos, startLoc);
   node.left = left;
   node.operator = op;
@@ -2665,17 +3227,17 @@ pp$3.buildBinary = function(startPos, startLoc, left, right, op, logical) {
 
 // Parse unary operators, both prefix and postfix.
 
-pp$3.parseMaybeUnary = function(refDestructuringErrors, sawUnary, incDec) {
+pp$5.parseMaybeUnary = function(refDestructuringErrors, sawUnary, incDec, forInit) {
   var startPos = this.start, startLoc = this.startLoc, expr;
-  if (this.isContextual("await") && (this.inAsync || (!this.inFunction && this.options.allowAwaitOutsideFunction))) {
-    expr = this.parseAwait();
+  if (this.isContextual("await") && this.canAwait) {
+    expr = this.parseAwait(forInit);
     sawUnary = true;
   } else if (this.type.prefix) {
-    var node = this.startNode(), update = this.type === types.incDec;
+    var node = this.startNode(), update = this.type === types$1.incDec;
     node.operator = this.value;
     node.prefix = true;
     this.next();
-    node.argument = this.parseMaybeUnary(null, true, update);
+    node.argument = this.parseMaybeUnary(null, true, update, forInit);
     this.checkExpressionErrors(refDestructuringErrors, true);
     if (update) { this.checkLValSimple(node.argument); }
     else if (this.strict && node.operator === "delete" &&
@@ -2685,8 +3247,13 @@ pp$3.parseMaybeUnary = function(refDestructuringErrors, sawUnary, incDec) {
       { this.raiseRecoverable(node.start, "Private fields can not be deleted"); }
     else { sawUnary = true; }
     expr = this.finishNode(node, update ? "UpdateExpression" : "UnaryExpression");
+  } else if (!sawUnary && this.type === types$1.privateId) {
+    if (forInit || this.privateNameStack.length === 0) { this.unexpected(); }
+    expr = this.parsePrivateIdent();
+    // only could be private fields in 'in', such as #x in obj
+    if (this.type !== types$1._in) { this.unexpected(); }
   } else {
-    expr = this.parseExprSubscripts(refDestructuringErrors);
+    expr = this.parseExprSubscripts(refDestructuringErrors, forInit);
     if (this.checkExpressionErrors(refDestructuringErrors)) { return expr }
     while (this.type.postfix && !this.canInsertSemicolon()) {
       var node$1 = this.startNodeAt(startPos, startLoc);
@@ -2699,11 +3266,11 @@ pp$3.parseMaybeUnary = function(refDestructuringErrors, sawUnary, incDec) {
     }
   }
 
-  if (!incDec && this.eat(types.starstar)) {
+  if (!incDec && this.eat(types$1.starstar)) {
     if (sawUnary)
       { this.unexpected(this.lastTokStart); }
     else
-      { return this.buildBinary(startPos, startLoc, expr, this.parseMaybeUnary(null, false), "**", false) }
+      { return this.buildBinary(startPos, startLoc, expr, this.parseMaybeUnary(null, false, false, forInit), "**", false) }
   } else {
     return expr
   }
@@ -2718,12 +3285,12 @@ function isPrivateFieldAccess(node) {
 
 // Parse call, dot, and `[]`-subscript expressions.
 
-pp$3.parseExprSubscripts = function(refDestructuringErrors) {
+pp$5.parseExprSubscripts = function(refDestructuringErrors, forInit) {
   var startPos = this.start, startLoc = this.startLoc;
-  var expr = this.parseExprAtom(refDestructuringErrors);
+  var expr = this.parseExprAtom(refDestructuringErrors, forInit);
   if (expr.type === "ArrowFunctionExpression" && this.input.slice(this.lastTokStart, this.lastTokEnd) !== ")")
     { return expr }
-  var result = this.parseSubscripts(expr, startPos, startLoc);
+  var result = this.parseSubscripts(expr, startPos, startLoc, false, forInit);
   if (refDestructuringErrors && result.type === "MemberExpression") {
     if (refDestructuringErrors.parenthesizedAssign >= result.start) { refDestructuringErrors.parenthesizedAssign = -1; }
     if (refDestructuringErrors.parenthesizedBind >= result.start) { refDestructuringErrors.parenthesizedBind = -1; }
@@ -2732,14 +3299,14 @@ pp$3.parseExprSubscripts = function(refDestructuringErrors) {
   return result
 };
 
-pp$3.parseSubscripts = function(base, startPos, startLoc, noCalls) {
+pp$5.parseSubscripts = function(base, startPos, startLoc, noCalls, forInit) {
   var maybeAsyncArrow = this.options.ecmaVersion >= 8 && base.type === "Identifier" && base.name === "async" &&
       this.lastTokEnd === base.end && !this.canInsertSemicolon() && base.end - base.start === 5 &&
       this.potentialArrowAt === base.start;
   var optionalChained = false;
 
   while (true) {
-    var element = this.parseSubscript(base, startPos, startLoc, noCalls, maybeAsyncArrow, optionalChained);
+    var element = this.parseSubscript(base, startPos, startLoc, noCalls, maybeAsyncArrow, optionalChained, forInit);
 
     if (element.optional) { optionalChained = true; }
     if (element === base || element.type === "ArrowFunctionExpression") {
@@ -2755,19 +3322,19 @@ pp$3.parseSubscripts = function(base, startPos, startLoc, noCalls) {
   }
 };
 
-pp$3.parseSubscript = function(base, startPos, startLoc, noCalls, maybeAsyncArrow, optionalChained) {
+pp$5.parseSubscript = function(base, startPos, startLoc, noCalls, maybeAsyncArrow, optionalChained, forInit) {
   var optionalSupported = this.options.ecmaVersion >= 11;
-  var optional = optionalSupported && this.eat(types.questionDot);
+  var optional = optionalSupported && this.eat(types$1.questionDot);
   if (noCalls && optional) { this.raise(this.lastTokStart, "Optional chaining cannot appear in the callee of new expressions"); }
 
-  var computed = this.eat(types.bracketL);
-  if (computed || (optional && this.type !== types.parenL && this.type !== types.backQuote) || this.eat(types.dot)) {
+  var computed = this.eat(types$1.bracketL);
+  if (computed || (optional && this.type !== types$1.parenL && this.type !== types$1.backQuote) || this.eat(types$1.dot)) {
     var node = this.startNodeAt(startPos, startLoc);
     node.object = base;
     if (computed) {
       node.property = this.parseExpression();
-      this.expect(types.bracketR);
-    } else if (this.type === types.privateId && base.type !== "Super") {
+      this.expect(types$1.bracketR);
+    } else if (this.type === types$1.privateId && base.type !== "Super") {
       node.property = this.parsePrivateIdent();
     } else {
       node.property = this.parseIdent(this.options.allowReserved !== "never");
@@ -2777,13 +3344,13 @@ pp$3.parseSubscript = function(base, startPos, startLoc, noCalls, maybeAsyncArro
       node.optional = optional;
     }
     base = this.finishNode(node, "MemberExpression");
-  } else if (!noCalls && this.eat(types.parenL)) {
+  } else if (!noCalls && this.eat(types$1.parenL)) {
     var refDestructuringErrors = new DestructuringErrors, oldYieldPos = this.yieldPos, oldAwaitPos = this.awaitPos, oldAwaitIdentPos = this.awaitIdentPos;
     this.yieldPos = 0;
     this.awaitPos = 0;
     this.awaitIdentPos = 0;
-    var exprList = this.parseExprList(types.parenR, this.options.ecmaVersion >= 8, false, refDestructuringErrors);
-    if (maybeAsyncArrow && !optional && !this.canInsertSemicolon() && this.eat(types.arrow)) {
+    var exprList = this.parseExprList(types$1.parenR, this.options.ecmaVersion >= 8, false, refDestructuringErrors);
+    if (maybeAsyncArrow && !optional && !this.canInsertSemicolon() && this.eat(types$1.arrow)) {
       this.checkPatternErrors(refDestructuringErrors, false);
       this.checkYieldAwaitInDefaultParams();
       if (this.awaitIdentPos > 0)
@@ -2791,7 +3358,7 @@ pp$3.parseSubscript = function(base, startPos, startLoc, noCalls, maybeAsyncArro
       this.yieldPos = oldYieldPos;
       this.awaitPos = oldAwaitPos;
       this.awaitIdentPos = oldAwaitIdentPos;
-      return this.parseArrowExpression(this.startNodeAt(startPos, startLoc), exprList, true)
+      return this.parseArrowExpression(this.startNodeAt(startPos, startLoc), exprList, true, forInit)
     }
     this.checkExpressionErrors(refDestructuringErrors, true);
     this.yieldPos = oldYieldPos || this.yieldPos;
@@ -2804,7 +3371,7 @@ pp$3.parseSubscript = function(base, startPos, startLoc, noCalls, maybeAsyncArro
       node$1.optional = optional;
     }
     base = this.finishNode(node$1, "CallExpression");
-  } else if (this.type === types.backQuote) {
+  } else if (this.type === types$1.backQuote) {
     if (optional || optionalChained) {
       this.raise(this.start, "Optional chaining cannot appear in the tag of tagged template expressions");
     }
@@ -2821,19 +3388,19 @@ pp$3.parseSubscript = function(base, startPos, startLoc, noCalls, maybeAsyncArro
 // `new`, or an expression wrapped in punctuation like `()`, `[]`,
 // or `{}`.
 
-pp$3.parseExprAtom = function(refDestructuringErrors) {
+pp$5.parseExprAtom = function(refDestructuringErrors, forInit) {
   // If a division operator appears in an expression position, the
   // tokenizer got confused, and we force it to read a regexp instead.
-  if (this.type === types.slash) { this.readRegexp(); }
+  if (this.type === types$1.slash) { this.readRegexp(); }
 
   var node, canBeArrow = this.potentialArrowAt === this.start;
   switch (this.type) {
-  case types._super:
+  case types$1._super:
     if (!this.allowSuper)
       { this.raise(this.start, "'super' keyword outside a method"); }
     node = this.startNode();
     this.next();
-    if (this.type === types.parenL && !this.allowDirectSuper)
+    if (this.type === types$1.parenL && !this.allowDirectSuper)
       { this.raise(node.start, "super() call outside constructor of a subclass"); }
     // The `super` keyword can appear at below:
     // SuperProperty:
@@ -2841,51 +3408,53 @@ pp$3.parseExprAtom = function(refDestructuringErrors) {
     //     super . IdentifierName
     // SuperCall:
     //     super ( Arguments )
-    if (this.type !== types.dot && this.type !== types.bracketL && this.type !== types.parenL)
+    if (this.type !== types$1.dot && this.type !== types$1.bracketL && this.type !== types$1.parenL)
       { this.unexpected(); }
     return this.finishNode(node, "Super")
 
-  case types._this:
+  case types$1._this:
     node = this.startNode();
     this.next();
     return this.finishNode(node, "ThisExpression")
 
-  case types.name:
+  case types$1.name:
     var startPos = this.start, startLoc = this.startLoc, containsEsc = this.containsEsc;
     var id = this.parseIdent(false);
-    if (this.options.ecmaVersion >= 8 && !containsEsc && id.name === "async" && !this.canInsertSemicolon() && this.eat(types._function))
-      { return this.parseFunction(this.startNodeAt(startPos, startLoc), 0, false, true) }
+    if (this.options.ecmaVersion >= 8 && !containsEsc && id.name === "async" && !this.canInsertSemicolon() && this.eat(types$1._function)) {
+      this.overrideContext(types.f_expr);
+      return this.parseFunction(this.startNodeAt(startPos, startLoc), 0, false, true, forInit)
+    }
     if (canBeArrow && !this.canInsertSemicolon()) {
-      if (this.eat(types.arrow))
-        { return this.parseArrowExpression(this.startNodeAt(startPos, startLoc), [id], false) }
-      if (this.options.ecmaVersion >= 8 && id.name === "async" && this.type === types.name && !containsEsc &&
+      if (this.eat(types$1.arrow))
+        { return this.parseArrowExpression(this.startNodeAt(startPos, startLoc), [id], false, forInit) }
+      if (this.options.ecmaVersion >= 8 && id.name === "async" && this.type === types$1.name && !containsEsc &&
           (!this.potentialArrowInForAwait || this.value !== "of" || this.containsEsc)) {
         id = this.parseIdent(false);
-        if (this.canInsertSemicolon() || !this.eat(types.arrow))
+        if (this.canInsertSemicolon() || !this.eat(types$1.arrow))
           { this.unexpected(); }
-        return this.parseArrowExpression(this.startNodeAt(startPos, startLoc), [id], true)
+        return this.parseArrowExpression(this.startNodeAt(startPos, startLoc), [id], true, forInit)
       }
     }
     return id
 
-  case types.regexp:
+  case types$1.regexp:
     var value = this.value;
     node = this.parseLiteral(value.value);
     node.regex = {pattern: value.pattern, flags: value.flags};
     return node
 
-  case types.num: case types.string:
+  case types$1.num: case types$1.string:
     return this.parseLiteral(this.value)
 
-  case types._null: case types._true: case types._false:
+  case types$1._null: case types$1._true: case types$1._false:
     node = this.startNode();
-    node.value = this.type === types._null ? null : this.type === types._true;
+    node.value = this.type === types$1._null ? null : this.type === types$1._true;
     node.raw = this.type.keyword;
     this.next();
     return this.finishNode(node, "Literal")
 
-  case types.parenL:
-    var start = this.start, expr = this.parseParenAndDistinguishExpression(canBeArrow);
+  case types$1.parenL:
+    var start = this.start, expr = this.parseParenAndDistinguishExpression(canBeArrow, forInit);
     if (refDestructuringErrors) {
       if (refDestructuringErrors.parenthesizedAssign < 0 && !this.isSimpleAssignTarget(expr))
         { refDestructuringErrors.parenthesizedAssign = start; }
@@ -2894,30 +3463,31 @@ pp$3.parseExprAtom = function(refDestructuringErrors) {
     }
     return expr
 
-  case types.bracketL:
+  case types$1.bracketL:
     node = this.startNode();
     this.next();
-    node.elements = this.parseExprList(types.bracketR, true, true, refDestructuringErrors);
+    node.elements = this.parseExprList(types$1.bracketR, true, true, refDestructuringErrors);
     return this.finishNode(node, "ArrayExpression")
 
-  case types.braceL:
+  case types$1.braceL:
+    this.overrideContext(types.b_expr);
     return this.parseObj(false, refDestructuringErrors)
 
-  case types._function:
+  case types$1._function:
     node = this.startNode();
     this.next();
     return this.parseFunction(node, 0)
 
-  case types._class:
+  case types$1._class:
     return this.parseClass(this.startNode(), false)
 
-  case types._new:
+  case types$1._new:
     return this.parseNew()
 
-  case types.backQuote:
+  case types$1.backQuote:
     return this.parseTemplate()
 
-  case types._import:
+  case types$1._import:
     if (this.options.ecmaVersion >= 11) {
       return this.parseExprImport()
     } else {
@@ -2929,7 +3499,7 @@ pp$3.parseExprAtom = function(refDestructuringErrors) {
   }
 };
 
-pp$3.parseExprImport = function() {
+pp$5.parseExprImport = function() {
   var node = this.startNode();
 
   // Consume `import` as an identifier for `import.meta`.
@@ -2938,9 +3508,9 @@ pp$3.parseExprImport = function() {
   var meta = this.parseIdent(true);
 
   switch (this.type) {
-  case types.parenL:
+  case types$1.parenL:
     return this.parseDynamicImport(node)
-  case types.dot:
+  case types$1.dot:
     node.meta = meta;
     return this.parseImportMeta(node)
   default:
@@ -2948,16 +3518,16 @@ pp$3.parseExprImport = function() {
   }
 };
 
-pp$3.parseDynamicImport = function(node) {
+pp$5.parseDynamicImport = function(node) {
   this.next(); // skip `(`
 
   // Parse node.source.
   node.source = this.parseMaybeAssign();
 
   // Verify ending.
-  if (!this.eat(types.parenR)) {
+  if (!this.eat(types$1.parenR)) {
     var errorPos = this.start;
-    if (this.eat(types.comma) && this.eat(types.parenR)) {
+    if (this.eat(types$1.comma) && this.eat(types$1.parenR)) {
       this.raiseRecoverable(errorPos, "Trailing comma is not allowed in import()");
     } else {
       this.unexpected(errorPos);
@@ -2967,7 +3537,7 @@ pp$3.parseDynamicImport = function(node) {
   return this.finishNode(node, "ImportExpression")
 };
 
-pp$3.parseImportMeta = function(node) {
+pp$5.parseImportMeta = function(node) {
   this.next(); // skip `.`
 
   var containsEsc = this.containsEsc;
@@ -2983,7 +3553,7 @@ pp$3.parseImportMeta = function(node) {
   return this.finishNode(node, "MetaProperty")
 };
 
-pp$3.parseLiteral = function(value) {
+pp$5.parseLiteral = function(value) {
   var node = this.startNode();
   node.value = value;
   node.raw = this.input.slice(this.start, this.end);
@@ -2992,14 +3562,14 @@ pp$3.parseLiteral = function(value) {
   return this.finishNode(node, "Literal")
 };
 
-pp$3.parseParenExpression = function() {
-  this.expect(types.parenL);
+pp$5.parseParenExpression = function() {
+  this.expect(types$1.parenL);
   var val = this.parseExpression();
-  this.expect(types.parenR);
+  this.expect(types$1.parenR);
   return val
 };
 
-pp$3.parseParenAndDistinguishExpression = function(canBeArrow) {
+pp$5.parseParenAndDistinguishExpression = function(canBeArrow, forInit) {
   var startPos = this.start, startLoc = this.startLoc, val, allowTrailingComma = this.options.ecmaVersion >= 8;
   if (this.options.ecmaVersion >= 6) {
     this.next();
@@ -3010,29 +3580,29 @@ pp$3.parseParenAndDistinguishExpression = function(canBeArrow) {
     this.yieldPos = 0;
     this.awaitPos = 0;
     // Do not save awaitIdentPos to allow checking awaits nested in parameters
-    while (this.type !== types.parenR) {
-      first ? first = false : this.expect(types.comma);
-      if (allowTrailingComma && this.afterTrailingComma(types.parenR, true)) {
+    while (this.type !== types$1.parenR) {
+      first ? first = false : this.expect(types$1.comma);
+      if (allowTrailingComma && this.afterTrailingComma(types$1.parenR, true)) {
         lastIsComma = true;
         break
-      } else if (this.type === types.ellipsis) {
+      } else if (this.type === types$1.ellipsis) {
         spreadStart = this.start;
         exprList.push(this.parseParenItem(this.parseRestBinding()));
-        if (this.type === types.comma) { this.raise(this.start, "Comma is not permitted after the rest element"); }
+        if (this.type === types$1.comma) { this.raise(this.start, "Comma is not permitted after the rest element"); }
         break
       } else {
         exprList.push(this.parseMaybeAssign(false, refDestructuringErrors, this.parseParenItem));
       }
     }
-    var innerEndPos = this.start, innerEndLoc = this.startLoc;
-    this.expect(types.parenR);
+    var innerEndPos = this.lastTokEnd, innerEndLoc = this.lastTokEndLoc;
+    this.expect(types$1.parenR);
 
-    if (canBeArrow && !this.canInsertSemicolon() && this.eat(types.arrow)) {
+    if (canBeArrow && !this.canInsertSemicolon() && this.eat(types$1.arrow)) {
       this.checkPatternErrors(refDestructuringErrors, false);
       this.checkYieldAwaitInDefaultParams();
       this.yieldPos = oldYieldPos;
       this.awaitPos = oldAwaitPos;
-      return this.parseParenArrowList(startPos, startLoc, exprList)
+      return this.parseParenArrowList(startPos, startLoc, exprList, forInit)
     }
 
     if (!exprList.length || lastIsComma) { this.unexpected(this.lastTokStart); }
@@ -3061,12 +3631,12 @@ pp$3.parseParenAndDistinguishExpression = function(canBeArrow) {
   }
 };
 
-pp$3.parseParenItem = function(item) {
+pp$5.parseParenItem = function(item) {
   return item
 };
 
-pp$3.parseParenArrowList = function(startPos, startLoc, exprList) {
-  return this.parseArrowExpression(this.startNodeAt(startPos, startLoc), exprList)
+pp$5.parseParenArrowList = function(startPos, startLoc, exprList, forInit) {
+  return this.parseArrowExpression(this.startNodeAt(startPos, startLoc), exprList, false, forInit)
 };
 
 // New's precedence is slightly tricky. It must allow its argument to
@@ -3075,13 +3645,13 @@ pp$3.parseParenArrowList = function(startPos, startLoc, exprList) {
 // argument to parseSubscripts to prevent it from consuming the
 // argument list.
 
-var empty$1 = [];
+var empty = [];
 
-pp$3.parseNew = function() {
+pp$5.parseNew = function() {
   if (this.containsEsc) { this.raiseRecoverable(this.start, "Escape sequence in keyword new"); }
   var node = this.startNode();
   var meta = this.parseIdent(true);
-  if (this.options.ecmaVersion >= 6 && this.eat(types.dot)) {
+  if (this.options.ecmaVersion >= 6 && this.eat(types$1.dot)) {
     node.meta = meta;
     var containsEsc = this.containsEsc;
     node.property = this.parseIdent(true);
@@ -3089,27 +3659,27 @@ pp$3.parseNew = function() {
       { this.raiseRecoverable(node.property.start, "The only valid meta property for new is 'new.target'"); }
     if (containsEsc)
       { this.raiseRecoverable(node.start, "'new.target' must not contain escaped characters"); }
-    if (!this.inNonArrowFunction)
-      { this.raiseRecoverable(node.start, "'new.target' can only be used in functions"); }
+    if (!this.allowNewDotTarget)
+      { this.raiseRecoverable(node.start, "'new.target' can only be used in functions and class static block"); }
     return this.finishNode(node, "MetaProperty")
   }
-  var startPos = this.start, startLoc = this.startLoc, isImport = this.type === types._import;
-  node.callee = this.parseSubscripts(this.parseExprAtom(), startPos, startLoc, true);
+  var startPos = this.start, startLoc = this.startLoc, isImport = this.type === types$1._import;
+  node.callee = this.parseSubscripts(this.parseExprAtom(), startPos, startLoc, true, false);
   if (isImport && node.callee.type === "ImportExpression") {
     this.raise(startPos, "Cannot use new with import()");
   }
-  if (this.eat(types.parenL)) { node.arguments = this.parseExprList(types.parenR, this.options.ecmaVersion >= 8, false); }
-  else { node.arguments = empty$1; }
+  if (this.eat(types$1.parenL)) { node.arguments = this.parseExprList(types$1.parenR, this.options.ecmaVersion >= 8, false); }
+  else { node.arguments = empty; }
   return this.finishNode(node, "NewExpression")
 };
 
 // Parse template expression.
 
-pp$3.parseTemplateElement = function(ref) {
+pp$5.parseTemplateElement = function(ref) {
   var isTagged = ref.isTagged;
 
   var elem = this.startNode();
-  if (this.type === types.invalidTemplate) {
+  if (this.type === types$1.invalidTemplate) {
     if (!isTagged) {
       this.raiseRecoverable(this.start, "Bad escape sequence in untagged template literal");
     }
@@ -3124,11 +3694,11 @@ pp$3.parseTemplateElement = function(ref) {
     };
   }
   this.next();
-  elem.tail = this.type === types.backQuote;
+  elem.tail = this.type === types$1.backQuote;
   return this.finishNode(elem, "TemplateElement")
 };
 
-pp$3.parseTemplate = function(ref) {
+pp$5.parseTemplate = function(ref) {
   if ( ref === void 0 ) ref = {};
   var isTagged = ref.isTagged; if ( isTagged === void 0 ) isTagged = false;
 
@@ -3138,32 +3708,32 @@ pp$3.parseTemplate = function(ref) {
   var curElt = this.parseTemplateElement({isTagged: isTagged});
   node.quasis = [curElt];
   while (!curElt.tail) {
-    if (this.type === types.eof) { this.raise(this.pos, "Unterminated template literal"); }
-    this.expect(types.dollarBraceL);
+    if (this.type === types$1.eof) { this.raise(this.pos, "Unterminated template literal"); }
+    this.expect(types$1.dollarBraceL);
     node.expressions.push(this.parseExpression());
-    this.expect(types.braceR);
+    this.expect(types$1.braceR);
     node.quasis.push(curElt = this.parseTemplateElement({isTagged: isTagged}));
   }
   this.next();
   return this.finishNode(node, "TemplateLiteral")
 };
 
-pp$3.isAsyncProp = function(prop) {
+pp$5.isAsyncProp = function(prop) {
   return !prop.computed && prop.key.type === "Identifier" && prop.key.name === "async" &&
-    (this.type === types.name || this.type === types.num || this.type === types.string || this.type === types.bracketL || this.type.keyword || (this.options.ecmaVersion >= 9 && this.type === types.star)) &&
+    (this.type === types$1.name || this.type === types$1.num || this.type === types$1.string || this.type === types$1.bracketL || this.type.keyword || (this.options.ecmaVersion >= 9 && this.type === types$1.star)) &&
     !lineBreak.test(this.input.slice(this.lastTokEnd, this.start))
 };
 
 // Parse an object literal or binding pattern.
 
-pp$3.parseObj = function(isPattern, refDestructuringErrors) {
+pp$5.parseObj = function(isPattern, refDestructuringErrors) {
   var node = this.startNode(), first = true, propHash = {};
   node.properties = [];
   this.next();
-  while (!this.eat(types.braceR)) {
+  while (!this.eat(types$1.braceR)) {
     if (!first) {
-      this.expect(types.comma);
-      if (this.options.ecmaVersion >= 5 && this.afterTrailingComma(types.braceR)) { break }
+      this.expect(types$1.comma);
+      if (this.options.ecmaVersion >= 5 && this.afterTrailingComma(types$1.braceR)) { break }
     } else { first = false; }
 
     var prop = this.parseProperty(isPattern, refDestructuringErrors);
@@ -3173,29 +3743,20 @@ pp$3.parseObj = function(isPattern, refDestructuringErrors) {
   return this.finishNode(node, isPattern ? "ObjectPattern" : "ObjectExpression")
 };
 
-pp$3.parseProperty = function(isPattern, refDestructuringErrors) {
+pp$5.parseProperty = function(isPattern, refDestructuringErrors) {
   var prop = this.startNode(), isGenerator, isAsync, startPos, startLoc;
-  if (this.options.ecmaVersion >= 9 && this.eat(types.ellipsis)) {
+  if (this.options.ecmaVersion >= 9 && this.eat(types$1.ellipsis)) {
     if (isPattern) {
       prop.argument = this.parseIdent(false);
-      if (this.type === types.comma) {
+      if (this.type === types$1.comma) {
         this.raise(this.start, "Comma is not permitted after the rest element");
       }
       return this.finishNode(prop, "RestElement")
     }
-    // To disallow parenthesized identifier via `this.toAssignable()`.
-    if (this.type === types.parenL && refDestructuringErrors) {
-      if (refDestructuringErrors.parenthesizedAssign < 0) {
-        refDestructuringErrors.parenthesizedAssign = this.start;
-      }
-      if (refDestructuringErrors.parenthesizedBind < 0) {
-        refDestructuringErrors.parenthesizedBind = this.start;
-      }
-    }
     // Parse argument.
     prop.argument = this.parseMaybeAssign(false, refDestructuringErrors);
     // To disallow trailing comma via `this.toAssignable()`.
-    if (this.type === types.comma && refDestructuringErrors && refDestructuringErrors.trailingComma < 0) {
+    if (this.type === types$1.comma && refDestructuringErrors && refDestructuringErrors.trailingComma < 0) {
       refDestructuringErrors.trailingComma = this.start;
     }
     // Finish
@@ -3209,14 +3770,14 @@ pp$3.parseProperty = function(isPattern, refDestructuringErrors) {
       startLoc = this.startLoc;
     }
     if (!isPattern)
-      { isGenerator = this.eat(types.star); }
+      { isGenerator = this.eat(types$1.star); }
   }
   var containsEsc = this.containsEsc;
   this.parsePropertyName(prop);
   if (!isPattern && !containsEsc && this.options.ecmaVersion >= 8 && !isGenerator && this.isAsyncProp(prop)) {
     isAsync = true;
-    isGenerator = this.options.ecmaVersion >= 9 && this.eat(types.star);
-    this.parsePropertyName(prop, refDestructuringErrors);
+    isGenerator = this.options.ecmaVersion >= 9 && this.eat(types$1.star);
+    this.parsePropertyName(prop);
   } else {
     isAsync = false;
   }
@@ -3224,14 +3785,14 @@ pp$3.parseProperty = function(isPattern, refDestructuringErrors) {
   return this.finishNode(prop, "Property")
 };
 
-pp$3.parsePropertyValue = function(prop, isPattern, isGenerator, isAsync, startPos, startLoc, refDestructuringErrors, containsEsc) {
-  if ((isGenerator || isAsync) && this.type === types.colon)
+pp$5.parsePropertyValue = function(prop, isPattern, isGenerator, isAsync, startPos, startLoc, refDestructuringErrors, containsEsc) {
+  if ((isGenerator || isAsync) && this.type === types$1.colon)
     { this.unexpected(); }
 
-  if (this.eat(types.colon)) {
+  if (this.eat(types$1.colon)) {
     prop.value = isPattern ? this.parseMaybeDefault(this.start, this.startLoc) : this.parseMaybeAssign(false, refDestructuringErrors);
     prop.kind = "init";
-  } else if (this.options.ecmaVersion >= 6 && this.type === types.parenL) {
+  } else if (this.options.ecmaVersion >= 6 && this.type === types$1.parenL) {
     if (isPattern) { this.unexpected(); }
     prop.kind = "init";
     prop.method = true;
@@ -3239,7 +3800,7 @@ pp$3.parsePropertyValue = function(prop, isPattern, isGenerator, isAsync, startP
   } else if (!isPattern && !containsEsc &&
              this.options.ecmaVersion >= 5 && !prop.computed && prop.key.type === "Identifier" &&
              (prop.key.name === "get" || prop.key.name === "set") &&
-             (this.type !== types.comma && this.type !== types.braceR && this.type !== types.eq)) {
+             (this.type !== types$1.comma && this.type !== types$1.braceR && this.type !== types$1.eq)) {
     if (isGenerator || isAsync) { this.unexpected(); }
     prop.kind = prop.key.name;
     this.parsePropertyName(prop);
@@ -3263,7 +3824,7 @@ pp$3.parsePropertyValue = function(prop, isPattern, isGenerator, isAsync, startP
     prop.kind = "init";
     if (isPattern) {
       prop.value = this.parseMaybeDefault(startPos, startLoc, this.copyNode(prop.key));
-    } else if (this.type === types.eq && refDestructuringErrors) {
+    } else if (this.type === types$1.eq && refDestructuringErrors) {
       if (refDestructuringErrors.shorthandAssign < 0)
         { refDestructuringErrors.shorthandAssign = this.start; }
       prop.value = this.parseMaybeDefault(startPos, startLoc, this.copyNode(prop.key));
@@ -3274,23 +3835,23 @@ pp$3.parsePropertyValue = function(prop, isPattern, isGenerator, isAsync, startP
   } else { this.unexpected(); }
 };
 
-pp$3.parsePropertyName = function(prop) {
+pp$5.parsePropertyName = function(prop) {
   if (this.options.ecmaVersion >= 6) {
-    if (this.eat(types.bracketL)) {
+    if (this.eat(types$1.bracketL)) {
       prop.computed = true;
       prop.key = this.parseMaybeAssign();
-      this.expect(types.bracketR);
+      this.expect(types$1.bracketR);
       return prop.key
     } else {
       prop.computed = false;
     }
   }
-  return prop.key = this.type === types.num || this.type === types.string ? this.parseExprAtom() : this.parseIdent(this.options.allowReserved !== "never")
+  return prop.key = this.type === types$1.num || this.type === types$1.string ? this.parseExprAtom() : this.parseIdent(this.options.allowReserved !== "never")
 };
 
 // Initialize empty function node.
 
-pp$3.initFunction = function(node) {
+pp$5.initFunction = function(node) {
   node.id = null;
   if (this.options.ecmaVersion >= 6) { node.generator = node.expression = false; }
   if (this.options.ecmaVersion >= 8) { node.async = false; }
@@ -3298,7 +3859,7 @@ pp$3.initFunction = function(node) {
 
 // Parse object or class method.
 
-pp$3.parseMethod = function(isGenerator, isAsync, allowDirectSuper) {
+pp$5.parseMethod = function(isGenerator, isAsync, allowDirectSuper) {
   var node = this.startNode(), oldYieldPos = this.yieldPos, oldAwaitPos = this.awaitPos, oldAwaitIdentPos = this.awaitIdentPos;
 
   this.initFunction(node);
@@ -3312,10 +3873,10 @@ pp$3.parseMethod = function(isGenerator, isAsync, allowDirectSuper) {
   this.awaitIdentPos = 0;
   this.enterScope(functionFlags(isAsync, node.generator) | SCOPE_SUPER | (allowDirectSuper ? SCOPE_DIRECT_SUPER : 0));
 
-  this.expect(types.parenL);
-  node.params = this.parseBindingList(types.parenR, false, this.options.ecmaVersion >= 8);
+  this.expect(types$1.parenL);
+  node.params = this.parseBindingList(types$1.parenR, false, this.options.ecmaVersion >= 8);
   this.checkYieldAwaitInDefaultParams();
-  this.parseFunctionBody(node, false, true);
+  this.parseFunctionBody(node, false, true, false);
 
   this.yieldPos = oldYieldPos;
   this.awaitPos = oldAwaitPos;
@@ -3325,7 +3886,7 @@ pp$3.parseMethod = function(isGenerator, isAsync, allowDirectSuper) {
 
 // Parse arrow function expression with given parameters.
 
-pp$3.parseArrowExpression = function(node, params, isAsync) {
+pp$5.parseArrowExpression = function(node, params, isAsync, forInit) {
   var oldYieldPos = this.yieldPos, oldAwaitPos = this.awaitPos, oldAwaitIdentPos = this.awaitIdentPos;
 
   this.enterScope(functionFlags(isAsync, false) | SCOPE_ARROW);
@@ -3337,7 +3898,7 @@ pp$3.parseArrowExpression = function(node, params, isAsync) {
   this.awaitIdentPos = 0;
 
   node.params = this.toAssignableList(params, true);
-  this.parseFunctionBody(node, true, false);
+  this.parseFunctionBody(node, true, false, forInit);
 
   this.yieldPos = oldYieldPos;
   this.awaitPos = oldAwaitPos;
@@ -3347,12 +3908,12 @@ pp$3.parseArrowExpression = function(node, params, isAsync) {
 
 // Parse function body and check parameters.
 
-pp$3.parseFunctionBody = function(node, isArrowFunction, isMethod) {
-  var isExpression = isArrowFunction && this.type !== types.braceL;
+pp$5.parseFunctionBody = function(node, isArrowFunction, isMethod, forInit) {
+  var isExpression = isArrowFunction && this.type !== types$1.braceL;
   var oldStrict = this.strict, useStrict = false;
 
   if (isExpression) {
-    node.body = this.parseMaybeAssign();
+    node.body = this.parseMaybeAssign(forInit);
     node.expression = true;
     this.checkParams(node, false);
   } else {
@@ -3384,7 +3945,7 @@ pp$3.parseFunctionBody = function(node, isArrowFunction, isMethod) {
   this.exitScope();
 };
 
-pp$3.isSimpleParamList = function(params) {
+pp$5.isSimpleParamList = function(params) {
   for (var i = 0, list = params; i < list.length; i += 1)
     {
     var param = list[i];
@@ -3397,7 +3958,7 @@ pp$3.isSimpleParamList = function(params) {
 // Checks function params for various disallowed patterns such as using "eval"
 // or "arguments" and duplicate parameters.
 
-pp$3.checkParams = function(node, allowDuplicates) {
+pp$5.checkParams = function(node, allowDuplicates) {
   var nameHash = Object.create(null);
   for (var i = 0, list = node.params; i < list.length; i += 1)
     {
@@ -3413,20 +3974,20 @@ pp$3.checkParams = function(node, allowDuplicates) {
 // nothing in between them to be parsed as `null` (which is needed
 // for array literals).
 
-pp$3.parseExprList = function(close, allowTrailingComma, allowEmpty, refDestructuringErrors) {
+pp$5.parseExprList = function(close, allowTrailingComma, allowEmpty, refDestructuringErrors) {
   var elts = [], first = true;
   while (!this.eat(close)) {
     if (!first) {
-      this.expect(types.comma);
+      this.expect(types$1.comma);
       if (allowTrailingComma && this.afterTrailingComma(close)) { break }
     } else { first = false; }
 
     var elt = (void 0);
-    if (allowEmpty && this.type === types.comma)
+    if (allowEmpty && this.type === types$1.comma)
       { elt = null; }
-    else if (this.type === types.ellipsis) {
+    else if (this.type === types$1.ellipsis) {
       elt = this.parseSpread(refDestructuringErrors);
-      if (refDestructuringErrors && this.type === types.comma && refDestructuringErrors.trailingComma < 0)
+      if (refDestructuringErrors && this.type === types$1.comma && refDestructuringErrors.trailingComma < 0)
         { refDestructuringErrors.trailingComma = this.start; }
     } else {
       elt = this.parseMaybeAssign(false, refDestructuringErrors);
@@ -3436,7 +3997,7 @@ pp$3.parseExprList = function(close, allowTrailingComma, allowEmpty, refDestruct
   return elts
 };
 
-pp$3.checkUnreserved = function(ref) {
+pp$5.checkUnreserved = function(ref) {
   var start = ref.start;
   var end = ref.end;
   var name = ref.name;
@@ -3447,6 +4008,8 @@ pp$3.checkUnreserved = function(ref) {
     { this.raiseRecoverable(start, "Cannot use 'await' as identifier inside an async function"); }
   if (this.currentThisScope().inClassFieldInit && name === "arguments")
     { this.raiseRecoverable(start, "Cannot use 'arguments' in class field initializer"); }
+  if (this.inClassStaticBlock && (name === "arguments" || name === "await"))
+    { this.raise(start, ("Cannot use " + name + " in class static initialization block")); }
   if (this.keywords.test(name))
     { this.raise(start, ("Unexpected keyword '" + name + "'")); }
   if (this.options.ecmaVersion < 6 &&
@@ -3463,9 +4026,9 @@ pp$3.checkUnreserved = function(ref) {
 // when parsing properties), it will also convert keywords into
 // identifiers.
 
-pp$3.parseIdent = function(liberal, isBinding) {
+pp$5.parseIdent = function(liberal) {
   var node = this.startNode();
-  if (this.type === types.name) {
+  if (this.type === types$1.name) {
     node.name = this.value;
   } else if (this.type.keyword) {
     node.name = this.type.keyword;
@@ -3491,9 +4054,9 @@ pp$3.parseIdent = function(liberal, isBinding) {
   return node
 };
 
-pp$3.parsePrivateIdent = function() {
+pp$5.parsePrivateIdent = function() {
   var node = this.startNode();
-  if (this.type === types.privateId) {
+  if (this.type === types$1.privateId) {
     node.name = this.value;
   } else {
     this.unexpected();
@@ -3513,27 +4076,27 @@ pp$3.parsePrivateIdent = function() {
 
 // Parses yield expression inside generator.
 
-pp$3.parseYield = function(forInit) {
+pp$5.parseYield = function(forInit) {
   if (!this.yieldPos) { this.yieldPos = this.start; }
 
   var node = this.startNode();
   this.next();
-  if (this.type === types.semi || this.canInsertSemicolon() || (this.type !== types.star && !this.type.startsExpr)) {
+  if (this.type === types$1.semi || this.canInsertSemicolon() || (this.type !== types$1.star && !this.type.startsExpr)) {
     node.delegate = false;
     node.argument = null;
   } else {
-    node.delegate = this.eat(types.star);
+    node.delegate = this.eat(types$1.star);
     node.argument = this.parseMaybeAssign(forInit);
   }
   return this.finishNode(node, "YieldExpression")
 };
 
-pp$3.parseAwait = function() {
+pp$5.parseAwait = function(forInit) {
   if (!this.awaitPos) { this.awaitPos = this.start; }
 
   var node = this.startNode();
   this.next();
-  node.argument = this.parseMaybeUnary(null, true);
+  node.argument = this.parseMaybeUnary(null, true, false, forInit);
   return this.finishNode(node, "AwaitExpression")
 };
 
@@ -3561,7 +4124,7 @@ pp$4.curPosition = function() {
   }
 };
 
-var pp$5 = Parser.prototype;
+var pp$3 = Parser.prototype;
 
 var Scope = function Scope(flags) {
   this.flags = flags;
@@ -3577,22 +4140,22 @@ var Scope = function Scope(flags) {
 
 // The functions in this module keep track of declared variables in the current scope in order to detect duplicate variable names.
 
-pp$5.enterScope = function(flags) {
+pp$3.enterScope = function(flags) {
   this.scopeStack.push(new Scope(flags));
 };
 
-pp$5.exitScope = function() {
+pp$3.exitScope = function() {
   this.scopeStack.pop();
 };
 
 // The spec says:
 // > At the top level of a function, or script, function declarations are
 // > treated like var declarations rather than like lexical declarations.
-pp$5.treatFunctionsAsVarInScope = function(scope) {
+pp$3.treatFunctionsAsVarInScope = function(scope) {
   return (scope.flags & SCOPE_FUNCTION) || !this.inModule && (scope.flags & SCOPE_TOP)
 };
 
-pp$5.declareName = function(name, bindingType, pos) {
+pp$3.declareName = function(name, bindingType, pos) {
   var redeclared = false;
   if (bindingType === BIND_LEXICAL) {
     var scope = this.currentScope();
@@ -3627,7 +4190,7 @@ pp$5.declareName = function(name, bindingType, pos) {
   if (redeclared) { this.raiseRecoverable(pos, ("Identifier '" + name + "' has already been declared")); }
 };
 
-pp$5.checkLocalExport = function(id) {
+pp$3.checkLocalExport = function(id) {
   // scope.functions must be empty as Module code is always strict.
   if (this.scopeStack[0].lexical.indexOf(id.name) === -1 &&
       this.scopeStack[0].var.indexOf(id.name) === -1) {
@@ -3635,11 +4198,11 @@ pp$5.checkLocalExport = function(id) {
   }
 };
 
-pp$5.currentScope = function() {
+pp$3.currentScope = function() {
   return this.scopeStack[this.scopeStack.length - 1]
 };
 
-pp$5.currentVarScope = function() {
+pp$3.currentVarScope = function() {
   for (var i = this.scopeStack.length - 1;; i--) {
     var scope = this.scopeStack[i];
     if (scope.flags & SCOPE_VAR) { return scope }
@@ -3647,7 +4210,7 @@ pp$5.currentVarScope = function() {
 };
 
 // Could be useful for `this`, `new.target`, `super()`, `super.property`, and `super[property]`.
-pp$5.currentThisScope = function() {
+pp$3.currentThisScope = function() {
   for (var i = this.scopeStack.length - 1;; i--) {
     var scope = this.scopeStack[i];
     if (scope.flags & SCOPE_VAR && !(scope.flags & SCOPE_ARROW)) { return scope }
@@ -3668,13 +4231,13 @@ var Node = function Node(parser, pos, loc) {
 
 // Start an AST node, attaching a start offset.
 
-var pp$6 = Parser.prototype;
+var pp$2 = Parser.prototype;
 
-pp$6.startNode = function() {
+pp$2.startNode = function() {
   return new Node(this, this.start, this.startLoc)
 };
 
-pp$6.startNodeAt = function(pos, loc) {
+pp$2.startNodeAt = function(pos, loc) {
   return new Node(this, pos, loc)
 };
 
@@ -3690,167 +4253,24 @@ function finishNodeAt(node, type, pos, loc) {
   return node
 }
 
-pp$6.finishNode = function(node, type) {
+pp$2.finishNode = function(node, type) {
   return finishNodeAt.call(this, node, type, this.lastTokEnd, this.lastTokEndLoc)
 };
 
 // Finish node at given position
 
-pp$6.finishNodeAt = function(node, type, pos, loc) {
+pp$2.finishNodeAt = function(node, type, pos, loc) {
   return finishNodeAt.call(this, node, type, pos, loc)
 };
 
-pp$6.copyNode = function(node) {
+pp$2.copyNode = function(node) {
   var newNode = new Node(this, node.start, this.startLoc);
   for (var prop in node) { newNode[prop] = node[prop]; }
   return newNode
 };
 
-// The algorithm used to determine whether a regexp can appear at a
-
-var TokContext = function TokContext(token, isExpr, preserveSpace, override, generator) {
-  this.token = token;
-  this.isExpr = !!isExpr;
-  this.preserveSpace = !!preserveSpace;
-  this.override = override;
-  this.generator = !!generator;
-};
-
-var types$1 = {
-  b_stat: new TokContext("{", false),
-  b_expr: new TokContext("{", true),
-  b_tmpl: new TokContext("${", false),
-  p_stat: new TokContext("(", false),
-  p_expr: new TokContext("(", true),
-  q_tmpl: new TokContext("`", true, true, function (p) { return p.tryReadTemplateToken(); }),
-  f_stat: new TokContext("function", false),
-  f_expr: new TokContext("function", true),
-  f_expr_gen: new TokContext("function", true, false, null, true),
-  f_gen: new TokContext("function", false, false, null, true)
-};
-
-var pp$7 = Parser.prototype;
-
-pp$7.initialContext = function() {
-  return [types$1.b_stat]
-};
-
-pp$7.braceIsBlock = function(prevType) {
-  var parent = this.curContext();
-  if (parent === types$1.f_expr || parent === types$1.f_stat)
-    { return true }
-  if (prevType === types.colon && (parent === types$1.b_stat || parent === types$1.b_expr))
-    { return !parent.isExpr }
-
-  // The check for `tt.name && exprAllowed` detects whether we are
-  // after a `yield` or `of` construct. See the `updateContext` for
-  // `tt.name`.
-  if (prevType === types._return || prevType === types.name && this.exprAllowed)
-    { return lineBreak.test(this.input.slice(this.lastTokEnd, this.start)) }
-  if (prevType === types._else || prevType === types.semi || prevType === types.eof || prevType === types.parenR || prevType === types.arrow)
-    { return true }
-  if (prevType === types.braceL)
-    { return parent === types$1.b_stat }
-  if (prevType === types._var || prevType === types._const || prevType === types.name)
-    { return false }
-  return !this.exprAllowed
-};
-
-pp$7.inGeneratorContext = function() {
-  for (var i = this.context.length - 1; i >= 1; i--) {
-    var context = this.context[i];
-    if (context.token === "function")
-      { return context.generator }
-  }
-  return false
-};
-
-pp$7.updateContext = function(prevType) {
-  var update, type = this.type;
-  if (type.keyword && prevType === types.dot)
-    { this.exprAllowed = false; }
-  else if (update = type.updateContext)
-    { update.call(this, prevType); }
-  else
-    { this.exprAllowed = type.beforeExpr; }
-};
-
-// Token-specific context update code
-
-types.parenR.updateContext = types.braceR.updateContext = function() {
-  if (this.context.length === 1) {
-    this.exprAllowed = true;
-    return
-  }
-  var out = this.context.pop();
-  if (out === types$1.b_stat && this.curContext().token === "function") {
-    out = this.context.pop();
-  }
-  this.exprAllowed = !out.isExpr;
-};
-
-types.braceL.updateContext = function(prevType) {
-  this.context.push(this.braceIsBlock(prevType) ? types$1.b_stat : types$1.b_expr);
-  this.exprAllowed = true;
-};
-
-types.dollarBraceL.updateContext = function() {
-  this.context.push(types$1.b_tmpl);
-  this.exprAllowed = true;
-};
-
-types.parenL.updateContext = function(prevType) {
-  var statementParens = prevType === types._if || prevType === types._for || prevType === types._with || prevType === types._while;
-  this.context.push(statementParens ? types$1.p_stat : types$1.p_expr);
-  this.exprAllowed = true;
-};
-
-types.incDec.updateContext = function() {
-  // tokExprAllowed stays unchanged
-};
-
-types._function.updateContext = types._class.updateContext = function(prevType) {
-  if (prevType.beforeExpr && prevType !== types._else &&
-      !(prevType === types.semi && this.curContext() !== types$1.p_stat) &&
-      !(prevType === types._return && lineBreak.test(this.input.slice(this.lastTokEnd, this.start))) &&
-      !((prevType === types.colon || prevType === types.braceL) && this.curContext() === types$1.b_stat))
-    { this.context.push(types$1.f_expr); }
-  else
-    { this.context.push(types$1.f_stat); }
-  this.exprAllowed = false;
-};
-
-types.backQuote.updateContext = function() {
-  if (this.curContext() === types$1.q_tmpl)
-    { this.context.pop(); }
-  else
-    { this.context.push(types$1.q_tmpl); }
-  this.exprAllowed = false;
-};
-
-types.star.updateContext = function(prevType) {
-  if (prevType === types._function) {
-    var index = this.context.length - 1;
-    if (this.context[index] === types$1.f_expr)
-      { this.context[index] = types$1.f_expr_gen; }
-    else
-      { this.context[index] = types$1.f_gen; }
-  }
-  this.exprAllowed = true;
-};
-
-types.name.updateContext = function(prevType) {
-  var allowed = false;
-  if (this.options.ecmaVersion >= 6 && prevType !== types.dot) {
-    if (this.value === "of" && !this.exprAllowed ||
-        this.value === "yield" && this.inGeneratorContext())
-      { allowed = true; }
-  }
-  this.exprAllowed = allowed;
-};
-
-// This file contains Unicode properties extracted from the ECMAScript
-// specification. The lists are extracted like so:
+// This file contains Unicode properties extracted from the ECMAScript specification.
+// The lists are extracted like so:
 // $$('#table-binary-unicode-properties > figure > table > tbody > tr > td:nth-child(1) code').map(el => el.innerText)
 
 // #table-binary-unicode-properties
@@ -3858,26 +4278,36 @@ var ecma9BinaryProperties = "ASCII ASCII_Hex_Digit AHex Alphabetic Alpha Any Ass
 var ecma10BinaryProperties = ecma9BinaryProperties + " Extended_Pictographic";
 var ecma11BinaryProperties = ecma10BinaryProperties;
 var ecma12BinaryProperties = ecma11BinaryProperties + " EBase EComp EMod EPres ExtPict";
+var ecma13BinaryProperties = ecma12BinaryProperties;
+var ecma14BinaryProperties = ecma13BinaryProperties;
+
 var unicodeBinaryProperties = {
   9: ecma9BinaryProperties,
   10: ecma10BinaryProperties,
   11: ecma11BinaryProperties,
-  12: ecma12BinaryProperties
+  12: ecma12BinaryProperties,
+  13: ecma13BinaryProperties,
+  14: ecma14BinaryProperties
 };
 
 // #table-unicode-general-category-values
 var unicodeGeneralCategoryValues = "Cased_Letter LC Close_Punctuation Pe Connector_Punctuation Pc Control Cc cntrl Currency_Symbol Sc Dash_Punctuation Pd Decimal_Number Nd digit Enclosing_Mark Me Final_Punctuation Pf Format Cf Initial_Punctuation Pi Letter L Letter_Number Nl Line_Separator Zl Lowercase_Letter Ll Mark M Combining_Mark Math_Symbol Sm Modifier_Letter Lm Modifier_Symbol Sk Nonspacing_Mark Mn Number N Open_Punctuation Ps Other C Other_Letter Lo Other_Number No Other_Punctuation Po Other_Symbol So Paragraph_Separator Zp Private_Use Co Punctuation P punct Separator Z Space_Separator Zs Spacing_Mark Mc Surrogate Cs Symbol S Titlecase_Letter Lt Unassigned Cn Uppercase_Letter Lu";
 
 // #table-unicode-script-values
-var ecma9ScriptValues = "Adlam Adlm Ahom Ahom Anatolian_Hieroglyphs Hluw Arabic Arab Armenian Armn Avestan Avst Balinese Bali Bamum Bamu Bassa_Vah Bass Batak Batk Bengali Beng Bhaiksuki Bhks Bopomofo Bopo Brahmi Brah Braille Brai Buginese Bugi Buhid Buhd Canadian_Aboriginal Cans Carian Cari Caucasian_Albanian Aghb Chakma Cakm Cham Cham Cherokee Cher Common Zyyy Coptic Copt Qaac Cuneiform Xsux Cypriot Cprt Cyrillic Cyrl Deseret Dsrt Devanagari Deva Duployan Dupl Egyptian_Hieroglyphs Egyp Elbasan Elba Ethiopic Ethi Georgian Geor Glagolitic Glag Gothic Goth Grantha Gran Greek Grek Gujarati Gujr Gurmukhi Guru Han Hani Hangul Hang Hanunoo Hano Hatran Hatr Hebrew Hebr Hiragana Hira Imperial_Aramaic Armi Inherited Zinh Qaai Inscriptional_Pahlavi Phli Inscriptional_Parthian Prti Javanese Java Kaithi Kthi Kannada Knda Katakana Kana Kayah_Li Kali Kharoshthi Khar Khmer Khmr Khojki Khoj Khudawadi Sind Lao Laoo Latin Latn Lepcha Lepc Limbu Limb Linear_A Lina Linear_B Linb Lisu Lisu Lycian Lyci Lydian Lydi Mahajani Mahj Malayalam Mlym Mandaic Mand Manichaean Mani Marchen Marc Masaram_Gondi Gonm Meetei_Mayek Mtei Mende_Kikakui Mend Meroitic_Cursive Merc Meroitic_Hieroglyphs Mero Miao Plrd Modi Modi Mongolian Mong Mro Mroo Multani Mult Myanmar Mymr Nabataean Nbat New_Tai_Lue Talu Newa Newa Nko Nkoo Nushu Nshu Ogham Ogam Ol_Chiki Olck Old_Hungarian Hung Old_Italic Ital Old_North_Arabian Narb Old_Permic Perm Old_Persian Xpeo Old_South_Arabian Sarb Old_Turkic Orkh Oriya Orya Osage Osge Osmanya Osma Pahawh_Hmong Hmng Palmyrene Palm Pau_Cin_Hau Pauc Phags_Pa Phag Phoenician Phnx Psalter_Pahlavi Phlp Rejang Rjng Runic Runr Samaritan Samr Saurashtra Saur Sharada Shrd Shavian Shaw Siddham Sidd SignWriting Sgnw Sinhala Sinh Sora_Sompeng Sora Soyombo Soyo Sundanese Sund Syloti_Nagri Sylo Syriac Syrc Tagalog Tglg Tagbanwa Tagb Tai_Le Tale Tai_Tham Lana Tai_Viet Tavt Takri Takr Tamil Taml Tangut Tang Telugu Telu Thaana Thaa Thai Thai Tibetan Tibt Tifinagh Tfng Tirhuta Tirh Ugaritic Ugar Vai Vaii Warang_Citi Wara Yi Yiii Zanabazar_Square Zanb";
+var ecma9ScriptValues = "Adlam Adlm Ahom Anatolian_Hieroglyphs Hluw Arabic Arab Armenian Armn Avestan Avst Balinese Bali Bamum Bamu Bassa_Vah Bass Batak Batk Bengali Beng Bhaiksuki Bhks Bopomofo Bopo Brahmi Brah Braille Brai Buginese Bugi Buhid Buhd Canadian_Aboriginal Cans Carian Cari Caucasian_Albanian Aghb Chakma Cakm Cham Cham Cherokee Cher Common Zyyy Coptic Copt Qaac Cuneiform Xsux Cypriot Cprt Cyrillic Cyrl Deseret Dsrt Devanagari Deva Duployan Dupl Egyptian_Hieroglyphs Egyp Elbasan Elba Ethiopic Ethi Georgian Geor Glagolitic Glag Gothic Goth Grantha Gran Greek Grek Gujarati Gujr Gurmukhi Guru Han Hani Hangul Hang Hanunoo Hano Hatran Hatr Hebrew Hebr Hiragana Hira Imperial_Aramaic Armi Inherited Zinh Qaai Inscriptional_Pahlavi Phli Inscriptional_Parthian Prti Javanese Java Kaithi Kthi Kannada Knda Katakana Kana Kayah_Li Kali Kharoshthi Khar Khmer Khmr Khojki Khoj Khudawadi Sind Lao Laoo Latin Latn Lepcha Lepc Limbu Limb Linear_A Lina Linear_B Linb Lisu Lisu Lycian Lyci Lydian Lydi Mahajani Mahj Malayalam Mlym Mandaic Mand Manichaean Mani Marchen Marc Masaram_Gondi Gonm Meetei_Mayek Mtei Mende_Kikakui Mend Meroitic_Cursive Merc Meroitic_Hieroglyphs Mero Miao Plrd Modi Mongolian Mong Mro Mroo Multani Mult Myanmar Mymr Nabataean Nbat New_Tai_Lue Talu Newa Newa Nko Nkoo Nushu Nshu Ogham Ogam Ol_Chiki Olck Old_Hungarian Hung Old_Italic Ital Old_North_Arabian Narb Old_Permic Perm Old_Persian Xpeo Old_South_Arabian Sarb Old_Turkic Orkh Oriya Orya Osage Osge Osmanya Osma Pahawh_Hmong Hmng Palmyrene Palm Pau_Cin_Hau Pauc Phags_Pa Phag Phoenician Phnx Psalter_Pahlavi Phlp Rejang Rjng Runic Runr Samaritan Samr Saurashtra Saur Sharada Shrd Shavian Shaw Siddham Sidd SignWriting Sgnw Sinhala Sinh Sora_Sompeng Sora Soyombo Soyo Sundanese Sund Syloti_Nagri Sylo Syriac Syrc Tagalog Tglg Tagbanwa Tagb Tai_Le Tale Tai_Tham Lana Tai_Viet Tavt Takri Takr Tamil Taml Tangut Tang Telugu Telu Thaana Thaa Thai Thai Tibetan Tibt Tifinagh Tfng Tirhuta Tirh Ugaritic Ugar Vai Vaii Warang_Citi Wara Yi Yiii Zanabazar_Square Zanb";
 var ecma10ScriptValues = ecma9ScriptValues + " Dogra Dogr Gunjala_Gondi Gong Hanifi_Rohingya Rohg Makasar Maka Medefaidrin Medf Old_Sogdian Sogo Sogdian Sogd";
 var ecma11ScriptValues = ecma10ScriptValues + " Elymaic Elym Nandinagari Nand Nyiakeng_Puachue_Hmong Hmnp Wancho Wcho";
 var ecma12ScriptValues = ecma11ScriptValues + " Chorasmian Chrs Diak Dives_Akuru Khitan_Small_Script Kits Yezi Yezidi";
+var ecma13ScriptValues = ecma12ScriptValues + " Cypro_Minoan Cpmn Old_Uyghur Ougr Tangsa Tnsa Toto Vithkuqi Vith";
+var ecma14ScriptValues = ecma13ScriptValues + " Kawi Nag_Mundari Nagm";
+
 var unicodeScriptValues = {
   9: ecma9ScriptValues,
   10: ecma10ScriptValues,
   11: ecma11ScriptValues,
-  12: ecma12ScriptValues
+  12: ecma12ScriptValues,
+  13: ecma13ScriptValues,
+  14: ecma14ScriptValues
 };
 
 var data = {};
@@ -3895,17 +4325,19 @@ function buildUnicodeData(ecmaVersion) {
   d.nonBinary.sc = d.nonBinary.Script;
   d.nonBinary.scx = d.nonBinary.Script_Extensions;
 }
-buildUnicodeData(9);
-buildUnicodeData(10);
-buildUnicodeData(11);
-buildUnicodeData(12);
 
-var pp$8 = Parser.prototype;
+for (var i = 0, list = [9, 10, 11, 12, 13, 14]; i < list.length; i += 1) {
+  var ecmaVersion = list[i];
+
+  buildUnicodeData(ecmaVersion);
+}
+
+var pp$1 = Parser.prototype;
 
 var RegExpValidationState = function RegExpValidationState(parser) {
   this.parser = parser;
-  this.validFlags = "gim" + (parser.options.ecmaVersion >= 6 ? "uy" : "") + (parser.options.ecmaVersion >= 9 ? "s" : "");
-  this.unicodeProperties = data[parser.options.ecmaVersion >= 12 ? 12 : parser.options.ecmaVersion];
+  this.validFlags = "gim" + (parser.options.ecmaVersion >= 6 ? "uy" : "") + (parser.options.ecmaVersion >= 9 ? "s" : "") + (parser.options.ecmaVersion >= 13 ? "d" : "");
+  this.unicodeProperties = data[parser.options.ecmaVersion >= 14 ? 14 : parser.options.ecmaVersion];
   this.source = "";
   this.flags = "";
   this.start = 0;
@@ -3996,19 +4428,13 @@ RegExpValidationState.prototype.eat = function eat (ch, forceU) {
   return false
 };
 
-function codePointToString(ch) {
-  if (ch <= 0xFFFF) { return String.fromCharCode(ch) }
-  ch -= 0x10000;
-  return String.fromCharCode((ch >> 10) + 0xD800, (ch & 0x03FF) + 0xDC00)
-}
-
 /**
  * Validate the flags part of a given RegExpLiteral.
  *
  * @param {RegExpValidationState} state The state to validate RegExp.
  * @returns {void}
  */
-pp$8.validateRegExpFlags = function(state) {
+pp$1.validateRegExpFlags = function(state) {
   var validFlags = state.validFlags;
   var flags = state.flags;
 
@@ -4029,7 +4455,7 @@ pp$8.validateRegExpFlags = function(state) {
  * @param {RegExpValidationState} state The state to validate RegExp.
  * @returns {void}
  */
-pp$8.validateRegExpPattern = function(state) {
+pp$1.validateRegExpPattern = function(state) {
   this.regexp_pattern(state);
 
   // The goal symbol for the parse is |Pattern[~U, ~N]|. If the result of
@@ -4044,7 +4470,7 @@ pp$8.validateRegExpPattern = function(state) {
 };
 
 // https://www.ecma-international.org/ecma-262/8.0/#prod-Pattern
-pp$8.regexp_pattern = function(state) {
+pp$1.regexp_pattern = function(state) {
   state.pos = 0;
   state.lastIntValue = 0;
   state.lastStringValue = "";
@@ -4078,7 +4504,7 @@ pp$8.regexp_pattern = function(state) {
 };
 
 // https://www.ecma-international.org/ecma-262/8.0/#prod-Disjunction
-pp$8.regexp_disjunction = function(state) {
+pp$1.regexp_disjunction = function(state) {
   this.regexp_alternative(state);
   while (state.eat(0x7C /* | */)) {
     this.regexp_alternative(state);
@@ -4094,13 +4520,13 @@ pp$8.regexp_disjunction = function(state) {
 };
 
 // https://www.ecma-international.org/ecma-262/8.0/#prod-Alternative
-pp$8.regexp_alternative = function(state) {
+pp$1.regexp_alternative = function(state) {
   while (state.pos < state.source.length && this.regexp_eatTerm(state))
     { }
 };
 
 // https://www.ecma-international.org/ecma-262/8.0/#prod-annexB-Term
-pp$8.regexp_eatTerm = function(state) {
+pp$1.regexp_eatTerm = function(state) {
   if (this.regexp_eatAssertion(state)) {
     // Handle `QuantifiableAssertion Quantifier` alternative.
     // `state.lastAssertionIsQuantifiable` is true if the last eaten Assertion
@@ -4123,7 +4549,7 @@ pp$8.regexp_eatTerm = function(state) {
 };
 
 // https://www.ecma-international.org/ecma-262/8.0/#prod-annexB-Assertion
-pp$8.regexp_eatAssertion = function(state) {
+pp$1.regexp_eatAssertion = function(state) {
   var start = state.pos;
   state.lastAssertionIsQuantifiable = false;
 
@@ -4161,7 +4587,7 @@ pp$8.regexp_eatAssertion = function(state) {
 };
 
 // https://www.ecma-international.org/ecma-262/8.0/#prod-Quantifier
-pp$8.regexp_eatQuantifier = function(state, noError) {
+pp$1.regexp_eatQuantifier = function(state, noError) {
   if ( noError === void 0 ) noError = false;
 
   if (this.regexp_eatQuantifierPrefix(state, noError)) {
@@ -4172,7 +4598,7 @@ pp$8.regexp_eatQuantifier = function(state, noError) {
 };
 
 // https://www.ecma-international.org/ecma-262/8.0/#prod-QuantifierPrefix
-pp$8.regexp_eatQuantifierPrefix = function(state, noError) {
+pp$1.regexp_eatQuantifierPrefix = function(state, noError) {
   return (
     state.eat(0x2A /* * */) ||
     state.eat(0x2B /* + */) ||
@@ -4180,7 +4606,7 @@ pp$8.regexp_eatQuantifierPrefix = function(state, noError) {
     this.regexp_eatBracedQuantifier(state, noError)
   )
 };
-pp$8.regexp_eatBracedQuantifier = function(state, noError) {
+pp$1.regexp_eatBracedQuantifier = function(state, noError) {
   var start = state.pos;
   if (state.eat(0x7B /* { */)) {
     var min = 0, max = -1;
@@ -4206,7 +4632,7 @@ pp$8.regexp_eatBracedQuantifier = function(state, noError) {
 };
 
 // https://www.ecma-international.org/ecma-262/8.0/#prod-Atom
-pp$8.regexp_eatAtom = function(state) {
+pp$1.regexp_eatAtom = function(state) {
   return (
     this.regexp_eatPatternCharacters(state) ||
     state.eat(0x2E /* . */) ||
@@ -4216,7 +4642,7 @@ pp$8.regexp_eatAtom = function(state) {
     this.regexp_eatCapturingGroup(state)
   )
 };
-pp$8.regexp_eatReverseSolidusAtomEscape = function(state) {
+pp$1.regexp_eatReverseSolidusAtomEscape = function(state) {
   var start = state.pos;
   if (state.eat(0x5C /* \ */)) {
     if (this.regexp_eatAtomEscape(state)) {
@@ -4226,7 +4652,7 @@ pp$8.regexp_eatReverseSolidusAtomEscape = function(state) {
   }
   return false
 };
-pp$8.regexp_eatUncapturingGroup = function(state) {
+pp$1.regexp_eatUncapturingGroup = function(state) {
   var start = state.pos;
   if (state.eat(0x28 /* ( */)) {
     if (state.eat(0x3F /* ? */) && state.eat(0x3A /* : */)) {
@@ -4240,7 +4666,7 @@ pp$8.regexp_eatUncapturingGroup = function(state) {
   }
   return false
 };
-pp$8.regexp_eatCapturingGroup = function(state) {
+pp$1.regexp_eatCapturingGroup = function(state) {
   if (state.eat(0x28 /* ( */)) {
     if (this.options.ecmaVersion >= 9) {
       this.regexp_groupSpecifier(state);
@@ -4258,7 +4684,7 @@ pp$8.regexp_eatCapturingGroup = function(state) {
 };
 
 // https://www.ecma-international.org/ecma-262/8.0/#prod-annexB-ExtendedAtom
-pp$8.regexp_eatExtendedAtom = function(state) {
+pp$1.regexp_eatExtendedAtom = function(state) {
   return (
     state.eat(0x2E /* . */) ||
     this.regexp_eatReverseSolidusAtomEscape(state) ||
@@ -4271,7 +4697,7 @@ pp$8.regexp_eatExtendedAtom = function(state) {
 };
 
 // https://www.ecma-international.org/ecma-262/8.0/#prod-annexB-InvalidBracedQuantifier
-pp$8.regexp_eatInvalidBracedQuantifier = function(state) {
+pp$1.regexp_eatInvalidBracedQuantifier = function(state) {
   if (this.regexp_eatBracedQuantifier(state, true)) {
     state.raise("Nothing to repeat");
   }
@@ -4279,7 +4705,7 @@ pp$8.regexp_eatInvalidBracedQuantifier = function(state) {
 };
 
 // https://www.ecma-international.org/ecma-262/8.0/#prod-SyntaxCharacter
-pp$8.regexp_eatSyntaxCharacter = function(state) {
+pp$1.regexp_eatSyntaxCharacter = function(state) {
   var ch = state.current();
   if (isSyntaxCharacter(ch)) {
     state.lastIntValue = ch;
@@ -4301,7 +4727,7 @@ function isSyntaxCharacter(ch) {
 
 // https://www.ecma-international.org/ecma-262/8.0/#prod-PatternCharacter
 // But eat eager.
-pp$8.regexp_eatPatternCharacters = function(state) {
+pp$1.regexp_eatPatternCharacters = function(state) {
   var start = state.pos;
   var ch = 0;
   while ((ch = state.current()) !== -1 && !isSyntaxCharacter(ch)) {
@@ -4311,7 +4737,7 @@ pp$8.regexp_eatPatternCharacters = function(state) {
 };
 
 // https://www.ecma-international.org/ecma-262/8.0/#prod-annexB-ExtendedPatternCharacter
-pp$8.regexp_eatExtendedPatternCharacter = function(state) {
+pp$1.regexp_eatExtendedPatternCharacter = function(state) {
   var ch = state.current();
   if (
     ch !== -1 &&
@@ -4332,7 +4758,7 @@ pp$8.regexp_eatExtendedPatternCharacter = function(state) {
 // GroupSpecifier ::
 //   [empty]
 //   `?` GroupName
-pp$8.regexp_groupSpecifier = function(state) {
+pp$1.regexp_groupSpecifier = function(state) {
   if (state.eat(0x3F /* ? */)) {
     if (this.regexp_eatGroupName(state)) {
       if (state.groupNames.indexOf(state.lastStringValue) !== -1) {
@@ -4348,7 +4774,7 @@ pp$8.regexp_groupSpecifier = function(state) {
 // GroupName ::
 //   `<` RegExpIdentifierName `>`
 // Note: this updates `state.lastStringValue` property with the eaten name.
-pp$8.regexp_eatGroupName = function(state) {
+pp$1.regexp_eatGroupName = function(state) {
   state.lastStringValue = "";
   if (state.eat(0x3C /* < */)) {
     if (this.regexp_eatRegExpIdentifierName(state) && state.eat(0x3E /* > */)) {
@@ -4363,7 +4789,7 @@ pp$8.regexp_eatGroupName = function(state) {
 //   RegExpIdentifierStart
 //   RegExpIdentifierName RegExpIdentifierPart
 // Note: this updates `state.lastStringValue` property with the eaten name.
-pp$8.regexp_eatRegExpIdentifierName = function(state) {
+pp$1.regexp_eatRegExpIdentifierName = function(state) {
   state.lastStringValue = "";
   if (this.regexp_eatRegExpIdentifierStart(state)) {
     state.lastStringValue += codePointToString(state.lastIntValue);
@@ -4380,7 +4806,7 @@ pp$8.regexp_eatRegExpIdentifierName = function(state) {
 //   `$`
 //   `_`
 //   `\` RegExpUnicodeEscapeSequence[+U]
-pp$8.regexp_eatRegExpIdentifierStart = function(state) {
+pp$1.regexp_eatRegExpIdentifierStart = function(state) {
   var start = state.pos;
   var forceU = this.options.ecmaVersion >= 11;
   var ch = state.current(forceU);
@@ -4408,7 +4834,7 @@ function isRegExpIdentifierStart(ch) {
 //   `\` RegExpUnicodeEscapeSequence[+U]
 //   <ZWNJ>
 //   <ZWJ>
-pp$8.regexp_eatRegExpIdentifierPart = function(state) {
+pp$1.regexp_eatRegExpIdentifierPart = function(state) {
   var start = state.pos;
   var forceU = this.options.ecmaVersion >= 11;
   var ch = state.current(forceU);
@@ -4430,7 +4856,7 @@ function isRegExpIdentifierPart(ch) {
 }
 
 // https://www.ecma-international.org/ecma-262/8.0/#prod-annexB-AtomEscape
-pp$8.regexp_eatAtomEscape = function(state) {
+pp$1.regexp_eatAtomEscape = function(state) {
   if (
     this.regexp_eatBackReference(state) ||
     this.regexp_eatCharacterClassEscape(state) ||
@@ -4448,7 +4874,7 @@ pp$8.regexp_eatAtomEscape = function(state) {
   }
   return false
 };
-pp$8.regexp_eatBackReference = function(state) {
+pp$1.regexp_eatBackReference = function(state) {
   var start = state.pos;
   if (this.regexp_eatDecimalEscape(state)) {
     var n = state.lastIntValue;
@@ -4466,7 +4892,7 @@ pp$8.regexp_eatBackReference = function(state) {
   }
   return false
 };
-pp$8.regexp_eatKGroupName = function(state) {
+pp$1.regexp_eatKGroupName = function(state) {
   if (state.eat(0x6B /* k */)) {
     if (this.regexp_eatGroupName(state)) {
       state.backReferenceNames.push(state.lastStringValue);
@@ -4478,7 +4904,7 @@ pp$8.regexp_eatKGroupName = function(state) {
 };
 
 // https://www.ecma-international.org/ecma-262/8.0/#prod-annexB-CharacterEscape
-pp$8.regexp_eatCharacterEscape = function(state) {
+pp$1.regexp_eatCharacterEscape = function(state) {
   return (
     this.regexp_eatControlEscape(state) ||
     this.regexp_eatCControlLetter(state) ||
@@ -4489,7 +4915,7 @@ pp$8.regexp_eatCharacterEscape = function(state) {
     this.regexp_eatIdentityEscape(state)
   )
 };
-pp$8.regexp_eatCControlLetter = function(state) {
+pp$1.regexp_eatCControlLetter = function(state) {
   var start = state.pos;
   if (state.eat(0x63 /* c */)) {
     if (this.regexp_eatControlLetter(state)) {
@@ -4499,7 +4925,7 @@ pp$8.regexp_eatCControlLetter = function(state) {
   }
   return false
 };
-pp$8.regexp_eatZero = function(state) {
+pp$1.regexp_eatZero = function(state) {
   if (state.current() === 0x30 /* 0 */ && !isDecimalDigit(state.lookahead())) {
     state.lastIntValue = 0;
     state.advance();
@@ -4509,7 +4935,7 @@ pp$8.regexp_eatZero = function(state) {
 };
 
 // https://www.ecma-international.org/ecma-262/8.0/#prod-ControlEscape
-pp$8.regexp_eatControlEscape = function(state) {
+pp$1.regexp_eatControlEscape = function(state) {
   var ch = state.current();
   if (ch === 0x74 /* t */) {
     state.lastIntValue = 0x09; /* \t */
@@ -4540,7 +4966,7 @@ pp$8.regexp_eatControlEscape = function(state) {
 };
 
 // https://www.ecma-international.org/ecma-262/8.0/#prod-ControlLetter
-pp$8.regexp_eatControlLetter = function(state) {
+pp$1.regexp_eatControlLetter = function(state) {
   var ch = state.current();
   if (isControlLetter(ch)) {
     state.lastIntValue = ch % 0x20;
@@ -4557,7 +4983,7 @@ function isControlLetter(ch) {
 }
 
 // https://www.ecma-international.org/ecma-262/8.0/#prod-RegExpUnicodeEscapeSequence
-pp$8.regexp_eatRegExpUnicodeEscapeSequence = function(state, forceU) {
+pp$1.regexp_eatRegExpUnicodeEscapeSequence = function(state, forceU) {
   if ( forceU === void 0 ) forceU = false;
 
   var start = state.pos;
@@ -4602,7 +5028,7 @@ function isValidUnicode(ch) {
 }
 
 // https://www.ecma-international.org/ecma-262/8.0/#prod-annexB-IdentityEscape
-pp$8.regexp_eatIdentityEscape = function(state) {
+pp$1.regexp_eatIdentityEscape = function(state) {
   if (state.switchU) {
     if (this.regexp_eatSyntaxCharacter(state)) {
       return true
@@ -4625,7 +5051,7 @@ pp$8.regexp_eatIdentityEscape = function(state) {
 };
 
 // https://www.ecma-international.org/ecma-262/8.0/#prod-DecimalEscape
-pp$8.regexp_eatDecimalEscape = function(state) {
+pp$1.regexp_eatDecimalEscape = function(state) {
   state.lastIntValue = 0;
   var ch = state.current();
   if (ch >= 0x31 /* 1 */ && ch <= 0x39 /* 9 */) {
@@ -4639,7 +5065,7 @@ pp$8.regexp_eatDecimalEscape = function(state) {
 };
 
 // https://www.ecma-international.org/ecma-262/8.0/#prod-CharacterClassEscape
-pp$8.regexp_eatCharacterClassEscape = function(state) {
+pp$1.regexp_eatCharacterClassEscape = function(state) {
   var ch = state.current();
 
   if (isCharacterClassEscape(ch)) {
@@ -4681,7 +5107,7 @@ function isCharacterClassEscape(ch) {
 // UnicodePropertyValueExpression ::
 //   UnicodePropertyName `=` UnicodePropertyValue
 //   LoneUnicodePropertyNameOrValue
-pp$8.regexp_eatUnicodePropertyValueExpression = function(state) {
+pp$1.regexp_eatUnicodePropertyValueExpression = function(state) {
   var start = state.pos;
 
   // UnicodePropertyName `=` UnicodePropertyValue
@@ -4703,20 +5129,20 @@ pp$8.regexp_eatUnicodePropertyValueExpression = function(state) {
   }
   return false
 };
-pp$8.regexp_validateUnicodePropertyNameAndValue = function(state, name, value) {
-  if (!has(state.unicodeProperties.nonBinary, name))
+pp$1.regexp_validateUnicodePropertyNameAndValue = function(state, name, value) {
+  if (!hasOwn(state.unicodeProperties.nonBinary, name))
     { state.raise("Invalid property name"); }
   if (!state.unicodeProperties.nonBinary[name].test(value))
     { state.raise("Invalid property value"); }
 };
-pp$8.regexp_validateUnicodePropertyNameOrValue = function(state, nameOrValue) {
+pp$1.regexp_validateUnicodePropertyNameOrValue = function(state, nameOrValue) {
   if (!state.unicodeProperties.binary.test(nameOrValue))
     { state.raise("Invalid property name"); }
 };
 
 // UnicodePropertyName ::
 //   UnicodePropertyNameCharacters
-pp$8.regexp_eatUnicodePropertyName = function(state) {
+pp$1.regexp_eatUnicodePropertyName = function(state) {
   var ch = 0;
   state.lastStringValue = "";
   while (isUnicodePropertyNameCharacter(ch = state.current())) {
@@ -4731,7 +5157,7 @@ function isUnicodePropertyNameCharacter(ch) {
 
 // UnicodePropertyValue ::
 //   UnicodePropertyValueCharacters
-pp$8.regexp_eatUnicodePropertyValue = function(state) {
+pp$1.regexp_eatUnicodePropertyValue = function(state) {
   var ch = 0;
   state.lastStringValue = "";
   while (isUnicodePropertyValueCharacter(ch = state.current())) {
@@ -4746,12 +5172,12 @@ function isUnicodePropertyValueCharacter(ch) {
 
 // LoneUnicodePropertyNameOrValue ::
 //   UnicodePropertyValueCharacters
-pp$8.regexp_eatLoneUnicodePropertyNameOrValue = function(state) {
+pp$1.regexp_eatLoneUnicodePropertyNameOrValue = function(state) {
   return this.regexp_eatUnicodePropertyValue(state)
 };
 
 // https://www.ecma-international.org/ecma-262/8.0/#prod-CharacterClass
-pp$8.regexp_eatCharacterClass = function(state) {
+pp$1.regexp_eatCharacterClass = function(state) {
   if (state.eat(0x5B /* [ */)) {
     state.eat(0x5E /* ^ */);
     this.regexp_classRanges(state);
@@ -4767,7 +5193,7 @@ pp$8.regexp_eatCharacterClass = function(state) {
 // https://www.ecma-international.org/ecma-262/8.0/#prod-ClassRanges
 // https://www.ecma-international.org/ecma-262/8.0/#prod-NonemptyClassRanges
 // https://www.ecma-international.org/ecma-262/8.0/#prod-NonemptyClassRangesNoDash
-pp$8.regexp_classRanges = function(state) {
+pp$1.regexp_classRanges = function(state) {
   while (this.regexp_eatClassAtom(state)) {
     var left = state.lastIntValue;
     if (state.eat(0x2D /* - */) && this.regexp_eatClassAtom(state)) {
@@ -4784,7 +5210,7 @@ pp$8.regexp_classRanges = function(state) {
 
 // https://www.ecma-international.org/ecma-262/8.0/#prod-ClassAtom
 // https://www.ecma-international.org/ecma-262/8.0/#prod-ClassAtomNoDash
-pp$8.regexp_eatClassAtom = function(state) {
+pp$1.regexp_eatClassAtom = function(state) {
   var start = state.pos;
 
   if (state.eat(0x5C /* \ */)) {
@@ -4813,7 +5239,7 @@ pp$8.regexp_eatClassAtom = function(state) {
 };
 
 // https://www.ecma-international.org/ecma-262/8.0/#prod-annexB-ClassEscape
-pp$8.regexp_eatClassEscape = function(state) {
+pp$1.regexp_eatClassEscape = function(state) {
   var start = state.pos;
 
   if (state.eat(0x62 /* b */)) {
@@ -4840,7 +5266,7 @@ pp$8.regexp_eatClassEscape = function(state) {
 };
 
 // https://www.ecma-international.org/ecma-262/8.0/#prod-annexB-ClassControlLetter
-pp$8.regexp_eatClassControlLetter = function(state) {
+pp$1.regexp_eatClassControlLetter = function(state) {
   var ch = state.current();
   if (isDecimalDigit(ch) || ch === 0x5F /* _ */) {
     state.lastIntValue = ch % 0x20;
@@ -4851,7 +5277,7 @@ pp$8.regexp_eatClassControlLetter = function(state) {
 };
 
 // https://www.ecma-international.org/ecma-262/8.0/#prod-HexEscapeSequence
-pp$8.regexp_eatHexEscapeSequence = function(state) {
+pp$1.regexp_eatHexEscapeSequence = function(state) {
   var start = state.pos;
   if (state.eat(0x78 /* x */)) {
     if (this.regexp_eatFixedHexDigits(state, 2)) {
@@ -4866,7 +5292,7 @@ pp$8.regexp_eatHexEscapeSequence = function(state) {
 };
 
 // https://www.ecma-international.org/ecma-262/8.0/#prod-DecimalDigits
-pp$8.regexp_eatDecimalDigits = function(state) {
+pp$1.regexp_eatDecimalDigits = function(state) {
   var start = state.pos;
   var ch = 0;
   state.lastIntValue = 0;
@@ -4881,7 +5307,7 @@ function isDecimalDigit(ch) {
 }
 
 // https://www.ecma-international.org/ecma-262/8.0/#prod-HexDigits
-pp$8.regexp_eatHexDigits = function(state) {
+pp$1.regexp_eatHexDigits = function(state) {
   var start = state.pos;
   var ch = 0;
   state.lastIntValue = 0;
@@ -4910,7 +5336,7 @@ function hexToInt(ch) {
 
 // https://www.ecma-international.org/ecma-262/8.0/#prod-annexB-LegacyOctalEscapeSequence
 // Allows only 0-377(octal) i.e. 0-255(decimal).
-pp$8.regexp_eatLegacyOctalEscapeSequence = function(state) {
+pp$1.regexp_eatLegacyOctalEscapeSequence = function(state) {
   if (this.regexp_eatOctalDigit(state)) {
     var n1 = state.lastIntValue;
     if (this.regexp_eatOctalDigit(state)) {
@@ -4929,7 +5355,7 @@ pp$8.regexp_eatLegacyOctalEscapeSequence = function(state) {
 };
 
 // https://www.ecma-international.org/ecma-262/8.0/#prod-OctalDigit
-pp$8.regexp_eatOctalDigit = function(state) {
+pp$1.regexp_eatOctalDigit = function(state) {
   var ch = state.current();
   if (isOctalDigit(ch)) {
     state.lastIntValue = ch - 0x30; /* 0 */
@@ -4946,7 +5372,7 @@ function isOctalDigit(ch) {
 // https://www.ecma-international.org/ecma-262/8.0/#prod-Hex4Digits
 // https://www.ecma-international.org/ecma-262/8.0/#prod-HexDigit
 // And HexDigit HexDigit in https://www.ecma-international.org/ecma-262/8.0/#prod-HexEscapeSequence
-pp$8.regexp_eatFixedHexDigits = function(state, length) {
+pp$1.regexp_eatFixedHexDigits = function(state, length) {
   var start = state.pos;
   state.lastIntValue = 0;
   for (var i = 0; i < length; ++i) {
@@ -4978,11 +5404,11 @@ var Token = function Token(p) {
 
 // ## Tokenizer
 
-var pp$9 = Parser.prototype;
+var pp = Parser.prototype;
 
 // Move to the next token
 
-pp$9.next = function(ignoreEscapeSequenceInKeyword) {
+pp.next = function(ignoreEscapeSequenceInKeyword) {
   if (!ignoreEscapeSequenceInKeyword && this.type.keyword && this.containsEsc)
     { this.raiseRecoverable(this.start, "Escape sequence in keyword " + this.type.keyword); }
   if (this.options.onToken)
@@ -4995,21 +5421,21 @@ pp$9.next = function(ignoreEscapeSequenceInKeyword) {
   this.nextToken();
 };
 
-pp$9.getToken = function() {
+pp.getToken = function() {
   this.next();
   return new Token(this)
 };
 
 // If we're in an ES6 environment, make parsers iterable
 if (typeof Symbol !== "undefined")
-  { pp$9[Symbol.iterator] = function() {
-    var this$1 = this;
+  { pp[Symbol.iterator] = function() {
+    var this$1$1 = this;
 
     return {
       next: function () {
-        var token = this$1.getToken();
+        var token = this$1$1.getToken();
         return {
-          done: token.type === types.eof,
+          done: token.type === types$1.eof,
           value: token
         }
       }
@@ -5019,26 +5445,22 @@ if (typeof Symbol !== "undefined")
 // Toggle strict mode. Re-reads the next number or string to please
 // pedantic tests (`"use strict"; 010;` should fail).
 
-pp$9.curContext = function() {
-  return this.context[this.context.length - 1]
-};
-
 // Read a single token, updating the parser object's token-related
 // properties.
 
-pp$9.nextToken = function() {
+pp.nextToken = function() {
   var curContext = this.curContext();
   if (!curContext || !curContext.preserveSpace) { this.skipSpace(); }
 
   this.start = this.pos;
   if (this.options.locations) { this.startLoc = this.curPosition(); }
-  if (this.pos >= this.input.length) { return this.finishToken(types.eof) }
+  if (this.pos >= this.input.length) { return this.finishToken(types$1.eof) }
 
   if (curContext.override) { return curContext.override(this) }
   else { this.readToken(this.fullCharCodeAtPos()); }
 };
 
-pp$9.readToken = function(code) {
+pp.readToken = function(code) {
   // Identifier or keyword. '\uXXXX' sequences are allowed in
   // identifiers, so '\' also dispatches to that.
   if (isIdentifierStart(code, this.options.ecmaVersion >= 6) || code === 92 /* '\' */)
@@ -5047,24 +5469,22 @@ pp$9.readToken = function(code) {
   return this.getTokenFromCode(code)
 };
 
-pp$9.fullCharCodeAtPos = function() {
+pp.fullCharCodeAtPos = function() {
   var code = this.input.charCodeAt(this.pos);
   if (code <= 0xd7ff || code >= 0xdc00) { return code }
   var next = this.input.charCodeAt(this.pos + 1);
   return next <= 0xdbff || next >= 0xe000 ? code : (code << 10) + next - 0x35fdc00
 };
 
-pp$9.skipBlockComment = function() {
+pp.skipBlockComment = function() {
   var startLoc = this.options.onComment && this.curPosition();
   var start = this.pos, end = this.input.indexOf("*/", this.pos += 2);
   if (end === -1) { this.raise(this.pos - 2, "Unterminated comment"); }
   this.pos = end + 2;
   if (this.options.locations) {
-    lineBreakG.lastIndex = start;
-    var match;
-    while ((match = lineBreakG.exec(this.input)) && match.index < this.pos) {
+    for (var nextBreak = (void 0), pos = start; (nextBreak = nextLineBreak(this.input, pos, this.pos)) > -1;) {
       ++this.curLine;
-      this.lineStart = match.index + match[0].length;
+      pos = this.lineStart = nextBreak;
     }
   }
   if (this.options.onComment)
@@ -5072,7 +5492,7 @@ pp$9.skipBlockComment = function() {
                            startLoc, this.curPosition()); }
 };
 
-pp$9.skipLineComment = function(startSkip) {
+pp.skipLineComment = function(startSkip) {
   var start = this.pos;
   var startLoc = this.options.onComment && this.curPosition();
   var ch = this.input.charCodeAt(this.pos += startSkip);
@@ -5087,7 +5507,7 @@ pp$9.skipLineComment = function(startSkip) {
 // Called at the start of the parse and after every token. Skips
 // whitespace and comments, and.
 
-pp$9.skipSpace = function() {
+pp.skipSpace = function() {
   loop: while (this.pos < this.input.length) {
     var ch = this.input.charCodeAt(this.pos);
     switch (ch) {
@@ -5132,7 +5552,7 @@ pp$9.skipSpace = function() {
 // the token, so that the next one's `start` will point at the
 // right position.
 
-pp$9.finishToken = function(type, val) {
+pp.finishToken = function(type, val) {
   this.end = this.pos;
   if (this.options.locations) { this.endLoc = this.curPosition(); }
   var prevType = this.type;
@@ -5151,62 +5571,62 @@ pp$9.finishToken = function(type, val) {
 //
 // All in the name of speed.
 //
-pp$9.readToken_dot = function() {
+pp.readToken_dot = function() {
   var next = this.input.charCodeAt(this.pos + 1);
   if (next >= 48 && next <= 57) { return this.readNumber(true) }
   var next2 = this.input.charCodeAt(this.pos + 2);
   if (this.options.ecmaVersion >= 6 && next === 46 && next2 === 46) { // 46 = dot '.'
     this.pos += 3;
-    return this.finishToken(types.ellipsis)
+    return this.finishToken(types$1.ellipsis)
   } else {
     ++this.pos;
-    return this.finishToken(types.dot)
+    return this.finishToken(types$1.dot)
   }
 };
 
-pp$9.readToken_slash = function() { // '/'
+pp.readToken_slash = function() { // '/'
   var next = this.input.charCodeAt(this.pos + 1);
   if (this.exprAllowed) { ++this.pos; return this.readRegexp() }
-  if (next === 61) { return this.finishOp(types.assign, 2) }
-  return this.finishOp(types.slash, 1)
+  if (next === 61) { return this.finishOp(types$1.assign, 2) }
+  return this.finishOp(types$1.slash, 1)
 };
 
-pp$9.readToken_mult_modulo_exp = function(code) { // '%*'
+pp.readToken_mult_modulo_exp = function(code) { // '%*'
   var next = this.input.charCodeAt(this.pos + 1);
   var size = 1;
-  var tokentype = code === 42 ? types.star : types.modulo;
+  var tokentype = code === 42 ? types$1.star : types$1.modulo;
 
   // exponentiation operator ** and **=
   if (this.options.ecmaVersion >= 7 && code === 42 && next === 42) {
     ++size;
-    tokentype = types.starstar;
+    tokentype = types$1.starstar;
     next = this.input.charCodeAt(this.pos + 2);
   }
 
-  if (next === 61) { return this.finishOp(types.assign, size + 1) }
+  if (next === 61) { return this.finishOp(types$1.assign, size + 1) }
   return this.finishOp(tokentype, size)
 };
 
-pp$9.readToken_pipe_amp = function(code) { // '|&'
+pp.readToken_pipe_amp = function(code) { // '|&'
   var next = this.input.charCodeAt(this.pos + 1);
   if (next === code) {
     if (this.options.ecmaVersion >= 12) {
       var next2 = this.input.charCodeAt(this.pos + 2);
-      if (next2 === 61) { return this.finishOp(types.assign, 3) }
+      if (next2 === 61) { return this.finishOp(types$1.assign, 3) }
     }
-    return this.finishOp(code === 124 ? types.logicalOR : types.logicalAND, 2)
+    return this.finishOp(code === 124 ? types$1.logicalOR : types$1.logicalAND, 2)
   }
-  if (next === 61) { return this.finishOp(types.assign, 2) }
-  return this.finishOp(code === 124 ? types.bitwiseOR : types.bitwiseAND, 1)
+  if (next === 61) { return this.finishOp(types$1.assign, 2) }
+  return this.finishOp(code === 124 ? types$1.bitwiseOR : types$1.bitwiseAND, 1)
 };
 
-pp$9.readToken_caret = function() { // '^'
+pp.readToken_caret = function() { // '^'
   var next = this.input.charCodeAt(this.pos + 1);
-  if (next === 61) { return this.finishOp(types.assign, 2) }
-  return this.finishOp(types.bitwiseXOR, 1)
+  if (next === 61) { return this.finishOp(types$1.assign, 2) }
+  return this.finishOp(types$1.bitwiseXOR, 1)
 };
 
-pp$9.readToken_plus_min = function(code) { // '+-'
+pp.readToken_plus_min = function(code) { // '+-'
   var next = this.input.charCodeAt(this.pos + 1);
   if (next === code) {
     if (next === 45 && !this.inModule && this.input.charCodeAt(this.pos + 2) === 62 &&
@@ -5216,19 +5636,19 @@ pp$9.readToken_plus_min = function(code) { // '+-'
       this.skipSpace();
       return this.nextToken()
     }
-    return this.finishOp(types.incDec, 2)
+    return this.finishOp(types$1.incDec, 2)
   }
-  if (next === 61) { return this.finishOp(types.assign, 2) }
-  return this.finishOp(types.plusMin, 1)
+  if (next === 61) { return this.finishOp(types$1.assign, 2) }
+  return this.finishOp(types$1.plusMin, 1)
 };
 
-pp$9.readToken_lt_gt = function(code) { // '<>'
+pp.readToken_lt_gt = function(code) { // '<>'
   var next = this.input.charCodeAt(this.pos + 1);
   var size = 1;
   if (next === code) {
     size = code === 62 && this.input.charCodeAt(this.pos + 2) === 62 ? 3 : 2;
-    if (this.input.charCodeAt(this.pos + size) === 61) { return this.finishOp(types.assign, size + 1) }
-    return this.finishOp(types.bitShift, size)
+    if (this.input.charCodeAt(this.pos + size) === 61) { return this.finishOp(types$1.assign, size + 1) }
+    return this.finishOp(types$1.bitShift, size)
   }
   if (next === 33 && code === 60 && !this.inModule && this.input.charCodeAt(this.pos + 2) === 45 &&
       this.input.charCodeAt(this.pos + 3) === 45) {
@@ -5238,53 +5658,53 @@ pp$9.readToken_lt_gt = function(code) { // '<>'
     return this.nextToken()
   }
   if (next === 61) { size = 2; }
-  return this.finishOp(types.relational, size)
+  return this.finishOp(types$1.relational, size)
 };
 
-pp$9.readToken_eq_excl = function(code) { // '=!'
+pp.readToken_eq_excl = function(code) { // '=!'
   var next = this.input.charCodeAt(this.pos + 1);
-  if (next === 61) { return this.finishOp(types.equality, this.input.charCodeAt(this.pos + 2) === 61 ? 3 : 2) }
+  if (next === 61) { return this.finishOp(types$1.equality, this.input.charCodeAt(this.pos + 2) === 61 ? 3 : 2) }
   if (code === 61 && next === 62 && this.options.ecmaVersion >= 6) { // '=>'
     this.pos += 2;
-    return this.finishToken(types.arrow)
+    return this.finishToken(types$1.arrow)
   }
-  return this.finishOp(code === 61 ? types.eq : types.prefix, 1)
+  return this.finishOp(code === 61 ? types$1.eq : types$1.prefix, 1)
 };
 
-pp$9.readToken_question = function() { // '?'
+pp.readToken_question = function() { // '?'
   var ecmaVersion = this.options.ecmaVersion;
   if (ecmaVersion >= 11) {
     var next = this.input.charCodeAt(this.pos + 1);
     if (next === 46) {
       var next2 = this.input.charCodeAt(this.pos + 2);
-      if (next2 < 48 || next2 > 57) { return this.finishOp(types.questionDot, 2) }
+      if (next2 < 48 || next2 > 57) { return this.finishOp(types$1.questionDot, 2) }
     }
     if (next === 63) {
       if (ecmaVersion >= 12) {
         var next2$1 = this.input.charCodeAt(this.pos + 2);
-        if (next2$1 === 61) { return this.finishOp(types.assign, 3) }
+        if (next2$1 === 61) { return this.finishOp(types$1.assign, 3) }
       }
-      return this.finishOp(types.coalesce, 2)
+      return this.finishOp(types$1.coalesce, 2)
     }
   }
-  return this.finishOp(types.question, 1)
+  return this.finishOp(types$1.question, 1)
 };
 
-pp$9.readToken_numberSign = function() { // '#'
+pp.readToken_numberSign = function() { // '#'
   var ecmaVersion = this.options.ecmaVersion;
   var code = 35; // '#'
   if (ecmaVersion >= 13) {
     ++this.pos;
     code = this.fullCharCodeAtPos();
     if (isIdentifierStart(code, true) || code === 92 /* '\' */) {
-      return this.finishToken(types.privateId, this.readWord1())
+      return this.finishToken(types$1.privateId, this.readWord1())
     }
   }
 
-  this.raise(this.pos, "Unexpected character '" + codePointToString$1(code) + "'");
+  this.raise(this.pos, "Unexpected character '" + codePointToString(code) + "'");
 };
 
-pp$9.getTokenFromCode = function(code) {
+pp.getTokenFromCode = function(code) {
   switch (code) {
   // The interpretation of a dot depends on whether it is followed
   // by a digit or another two dots.
@@ -5292,20 +5712,20 @@ pp$9.getTokenFromCode = function(code) {
     return this.readToken_dot()
 
   // Punctuation tokens.
-  case 40: ++this.pos; return this.finishToken(types.parenL)
-  case 41: ++this.pos; return this.finishToken(types.parenR)
-  case 59: ++this.pos; return this.finishToken(types.semi)
-  case 44: ++this.pos; return this.finishToken(types.comma)
-  case 91: ++this.pos; return this.finishToken(types.bracketL)
-  case 93: ++this.pos; return this.finishToken(types.bracketR)
-  case 123: ++this.pos; return this.finishToken(types.braceL)
-  case 125: ++this.pos; return this.finishToken(types.braceR)
-  case 58: ++this.pos; return this.finishToken(types.colon)
+  case 40: ++this.pos; return this.finishToken(types$1.parenL)
+  case 41: ++this.pos; return this.finishToken(types$1.parenR)
+  case 59: ++this.pos; return this.finishToken(types$1.semi)
+  case 44: ++this.pos; return this.finishToken(types$1.comma)
+  case 91: ++this.pos; return this.finishToken(types$1.bracketL)
+  case 93: ++this.pos; return this.finishToken(types$1.bracketR)
+  case 123: ++this.pos; return this.finishToken(types$1.braceL)
+  case 125: ++this.pos; return this.finishToken(types$1.braceR)
+  case 58: ++this.pos; return this.finishToken(types$1.colon)
 
   case 96: // '`'
     if (this.options.ecmaVersion < 6) { break }
     ++this.pos;
-    return this.finishToken(types.backQuote)
+    return this.finishToken(types$1.backQuote)
 
   case 48: // '0'
     var next = this.input.charCodeAt(this.pos + 1);
@@ -5328,7 +5748,6 @@ pp$9.getTokenFromCode = function(code) {
   // often referred to. `finishOp` simply skips the amount of
   // characters it is given as second argument, and returns a token
   // of the type given by its first argument.
-
   case 47: // '/'
     return this.readToken_slash()
 
@@ -5354,22 +5773,22 @@ pp$9.getTokenFromCode = function(code) {
     return this.readToken_question()
 
   case 126: // '~'
-    return this.finishOp(types.prefix, 1)
+    return this.finishOp(types$1.prefix, 1)
 
   case 35: // '#'
     return this.readToken_numberSign()
   }
 
-  this.raise(this.pos, "Unexpected character '" + codePointToString$1(code) + "'");
+  this.raise(this.pos, "Unexpected character '" + codePointToString(code) + "'");
 };
 
-pp$9.finishOp = function(type, size) {
+pp.finishOp = function(type, size) {
   var str = this.input.slice(this.pos, this.pos + size);
   this.pos += size;
   return this.finishToken(type, str)
 };
 
-pp$9.readRegexp = function() {
+pp.readRegexp = function() {
   var escaped, inClass, start = this.pos;
   for (;;) {
     if (this.pos >= this.input.length) { this.raise(start, "Unterminated regular expression"); }
@@ -5404,14 +5823,14 @@ pp$9.readRegexp = function() {
     // https://github.com/estree/estree/blob/a27003adf4fd7bfad44de9cef372a2eacd527b1c/es5.md#regexpliteral
   }
 
-  return this.finishToken(types.regexp, {pattern: pattern, flags: flags, value: value})
+  return this.finishToken(types$1.regexp, {pattern: pattern, flags: flags, value: value})
 };
 
 // Read an integer in the given radix. Return null if zero digits
 // were read, the integer value otherwise. When `len` is given, this
 // will return `null` unless the integer has exactly `len` digits.
 
-pp$9.readInt = function(radix, len, maybeLegacyOctalNumericLiteral) {
+pp.readInt = function(radix, len, maybeLegacyOctalNumericLiteral) {
   // `len` is used for character escape sequences. In that case, disallow separators.
   var allowSeparators = this.options.ecmaVersion >= 12 && len === undefined;
 
@@ -5465,7 +5884,7 @@ function stringToBigInt(str) {
   return BigInt(str.replace(/_/g, ""))
 }
 
-pp$9.readRadixNumber = function(radix) {
+pp.readRadixNumber = function(radix) {
   var start = this.pos;
   this.pos += 2; // 0x
   var val = this.readInt(radix);
@@ -5474,12 +5893,12 @@ pp$9.readRadixNumber = function(radix) {
     val = stringToBigInt(this.input.slice(start, this.pos));
     ++this.pos;
   } else if (isIdentifierStart(this.fullCharCodeAtPos())) { this.raise(this.pos, "Identifier directly after number"); }
-  return this.finishToken(types.num, val)
+  return this.finishToken(types$1.num, val)
 };
 
 // Read an integer, octal integer, or floating-point number.
 
-pp$9.readNumber = function(startsWithDot) {
+pp.readNumber = function(startsWithDot) {
   var start = this.pos;
   if (!startsWithDot && this.readInt(10, undefined, true) === null) { this.raise(start, "Invalid number"); }
   var octal = this.pos - start >= 2 && this.input.charCodeAt(start) === 48;
@@ -5489,7 +5908,7 @@ pp$9.readNumber = function(startsWithDot) {
     var val$1 = stringToBigInt(this.input.slice(start, this.pos));
     ++this.pos;
     if (isIdentifierStart(this.fullCharCodeAtPos())) { this.raise(this.pos, "Identifier directly after number"); }
-    return this.finishToken(types.num, val$1)
+    return this.finishToken(types$1.num, val$1)
   }
   if (octal && /[89]/.test(this.input.slice(start, this.pos))) { octal = false; }
   if (next === 46 && !octal) { // '.'
@@ -5505,12 +5924,12 @@ pp$9.readNumber = function(startsWithDot) {
   if (isIdentifierStart(this.fullCharCodeAtPos())) { this.raise(this.pos, "Identifier directly after number"); }
 
   var val = stringToNumber(this.input.slice(start, this.pos), octal);
-  return this.finishToken(types.num, val)
+  return this.finishToken(types$1.num, val)
 };
 
 // Read a string value, interpreting backslash-escapes.
 
-pp$9.readCodePoint = function() {
+pp.readCodePoint = function() {
   var ch = this.input.charCodeAt(this.pos), code;
 
   if (ch === 123) { // '{'
@@ -5525,14 +5944,7 @@ pp$9.readCodePoint = function() {
   return code
 };
 
-function codePointToString$1(code) {
-  // UTF-16 Decoding
-  if (code <= 0xFFFF) { return String.fromCharCode(code) }
-  code -= 0x10000;
-  return String.fromCharCode((code >> 10) + 0xD800, (code & 1023) + 0xDC00)
-}
-
-pp$9.readString = function(quote) {
+pp.readString = function(quote) {
   var out = "", chunkStart = ++this.pos;
   for (;;) {
     if (this.pos >= this.input.length) { this.raise(this.start, "Unterminated string constant"); }
@@ -5542,20 +5954,27 @@ pp$9.readString = function(quote) {
       out += this.input.slice(chunkStart, this.pos);
       out += this.readEscapedChar(false);
       chunkStart = this.pos;
+    } else if (ch === 0x2028 || ch === 0x2029) {
+      if (this.options.ecmaVersion < 10) { this.raise(this.start, "Unterminated string constant"); }
+      ++this.pos;
+      if (this.options.locations) {
+        this.curLine++;
+        this.lineStart = this.pos;
+      }
     } else {
-      if (isNewLine(ch, this.options.ecmaVersion >= 10)) { this.raise(this.start, "Unterminated string constant"); }
+      if (isNewLine(ch)) { this.raise(this.start, "Unterminated string constant"); }
       ++this.pos;
     }
   }
   out += this.input.slice(chunkStart, this.pos++);
-  return this.finishToken(types.string, out)
+  return this.finishToken(types$1.string, out)
 };
 
 // Reads template string tokens.
 
 var INVALID_TEMPLATE_ESCAPE_ERROR = {};
 
-pp$9.tryReadTemplateToken = function() {
+pp.tryReadTemplateToken = function() {
   this.inTemplateElement = true;
   try {
     this.readTmplToken();
@@ -5570,7 +5989,7 @@ pp$9.tryReadTemplateToken = function() {
   this.inTemplateElement = false;
 };
 
-pp$9.invalidStringToken = function(position, message) {
+pp.invalidStringToken = function(position, message) {
   if (this.inTemplateElement && this.options.ecmaVersion >= 9) {
     throw INVALID_TEMPLATE_ESCAPE_ERROR
   } else {
@@ -5578,23 +5997,23 @@ pp$9.invalidStringToken = function(position, message) {
   }
 };
 
-pp$9.readTmplToken = function() {
+pp.readTmplToken = function() {
   var out = "", chunkStart = this.pos;
   for (;;) {
     if (this.pos >= this.input.length) { this.raise(this.start, "Unterminated template"); }
     var ch = this.input.charCodeAt(this.pos);
     if (ch === 96 || ch === 36 && this.input.charCodeAt(this.pos + 1) === 123) { // '`', '${'
-      if (this.pos === this.start && (this.type === types.template || this.type === types.invalidTemplate)) {
+      if (this.pos === this.start && (this.type === types$1.template || this.type === types$1.invalidTemplate)) {
         if (ch === 36) {
           this.pos += 2;
-          return this.finishToken(types.dollarBraceL)
+          return this.finishToken(types$1.dollarBraceL)
         } else {
           ++this.pos;
-          return this.finishToken(types.backQuote)
+          return this.finishToken(types$1.backQuote)
         }
       }
       out += this.input.slice(chunkStart, this.pos);
-      return this.finishToken(types.template, out)
+      return this.finishToken(types$1.template, out)
     }
     if (ch === 92) { // '\'
       out += this.input.slice(chunkStart, this.pos);
@@ -5625,7 +6044,7 @@ pp$9.readTmplToken = function() {
 };
 
 // Reads a template token to search for the end, without validating any escape sequences
-pp$9.readInvalidTemplateToken = function() {
+pp.readInvalidTemplateToken = function() {
   for (; this.pos < this.input.length; this.pos++) {
     switch (this.input[this.pos]) {
     case "\\":
@@ -5636,10 +6055,10 @@ pp$9.readInvalidTemplateToken = function() {
       if (this.input[this.pos + 1] !== "{") {
         break
       }
-    // falls through
 
+    // falls through
     case "`":
-      return this.finishToken(types.invalidTemplate, this.input.slice(this.start, this.pos))
+      return this.finishToken(types$1.invalidTemplate, this.input.slice(this.start, this.pos))
 
     // no default
     }
@@ -5649,14 +6068,14 @@ pp$9.readInvalidTemplateToken = function() {
 
 // Used to read escaped characters
 
-pp$9.readEscapedChar = function(inTemplate) {
+pp.readEscapedChar = function(inTemplate) {
   var ch = this.input.charCodeAt(++this.pos);
   ++this.pos;
   switch (ch) {
   case 110: return "\n" // 'n' -> '\n'
   case 114: return "\r" // 'r' -> '\r'
   case 120: return String.fromCharCode(this.readHexChar(2)) // 'x'
-  case 117: return codePointToString$1(this.readCodePoint()) // 'u'
+  case 117: return codePointToString(this.readCodePoint()) // 'u'
   case 116: return "\t" // 't' -> '\t'
   case 98: return "\b" // 'b' -> '\b'
   case 118: return "\u000b" // 'v' -> '\u000b'
@@ -5680,8 +6099,6 @@ pp$9.readEscapedChar = function(inTemplate) {
         codePos,
         "Invalid escape sequence in template string"
       );
-
-      return null
     }
   default:
     if (ch >= 48 && ch <= 55) {
@@ -5714,7 +6131,7 @@ pp$9.readEscapedChar = function(inTemplate) {
 
 // Used to read character escape sequences ('\x', '\u', '\U').
 
-pp$9.readHexChar = function(len) {
+pp.readHexChar = function(len) {
   var codePos = this.pos;
   var n = this.readInt(16, len);
   if (n === null) { this.invalidStringToken(codePos, "Bad character escape sequence"); }
@@ -5727,7 +6144,7 @@ pp$9.readHexChar = function(len) {
 // Incrementally adds only escaped chars, adding other chunks as-is
 // as a micro-optimization.
 
-pp$9.readWord1 = function() {
+pp.readWord1 = function() {
   this.containsEsc = false;
   var word = "", first = true, chunkStart = this.pos;
   var astral = this.options.ecmaVersion >= 6;
@@ -5745,7 +6162,7 @@ pp$9.readWord1 = function() {
       var esc = this.readCodePoint();
       if (!(first ? isIdentifierStart : isIdentifierChar)(esc, astral))
         { this.invalidStringToken(escStart, "Invalid Unicode escape"); }
-      word += codePointToString$1(esc);
+      word += codePointToString(esc);
       chunkStart = this.pos;
     } else {
       break
@@ -5758,18 +6175,18 @@ pp$9.readWord1 = function() {
 // Read an identifier or keyword token. Will check for reserved
 // words when necessary.
 
-pp$9.readWord = function() {
+pp.readWord = function() {
   var word = this.readWord1();
-  var type = types.name;
+  var type = types$1.name;
   if (this.keywords.test(word)) {
-    type = keywords$1[word];
+    type = keywords[word];
   }
   return this.finishToken(type, word)
 };
 
 // Acorn is a tiny, fast JavaScript parser written in JavaScript.
 
-var version = "8.2.4";
+var version = "8.8.2";
 
 Parser.acorn = {
   Parser: Parser,
@@ -5780,10 +6197,10 @@ Parser.acorn = {
   getLineInfo: getLineInfo,
   Node: Node,
   TokenType: TokenType,
-  tokTypes: types,
-  keywordTypes: keywords$1,
+  tokTypes: types$1,
+  keywordTypes: keywords,
   TokContext: TokContext,
-  tokContexts: types$1,
+  tokContexts: types,
   isIdentifierChar: isIdentifierChar,
   isIdentifierStart: isIdentifierStart,
   Token: Token,
@@ -5842,7 +6259,77 @@ var acorn = __webpack_require__(1103);
 
 var sourceMap = __webpack_require__(632);
 
-var SourceNode = sourceMap.SourceNode; // If any of these tokens are seen before a "[" token, we know that "[" token
+var SourceNode = sourceMap.SourceNode;
+/**
+ * prettyFast is using SourceNode so we can generate a source map.
+ * A SourceNode instance can have multiple children, which may be other SourceNodes or strings.
+ * This means that to generate the source map, we need to traverse all the nodes recursively.
+ * Furthermore, even adding a child SourceNode to a parent can be slower as some checks are
+ * done on the argument (which can be a string, an array or a SourceNode)
+ * These can be slow when we have a lot of mappings to handle (e.g. for big files).
+ *
+ * We are using SourceNode in a much more constrained way:
+ * - we only have a root node
+ * - which only has SourceNode children
+ * - and those children SourceNode only have 1 string child
+ *
+ * So here we can build custom classes based on SourceNode, overriding expensive methods
+ * which are much more straightforward ones given our constraints.
+ */
+
+class RootSourceNode extends SourceNode {
+  /**
+   * Add a LeafSourceNode to the children list
+   *
+   * @override
+   * @param {LeafSourceNode} leafSourceNode
+   */
+  add(leafSourceNode) {
+    this.children.push(leafSourceNode);
+  }
+  /**
+   * Iterate through the node children
+   *
+   * @override
+   * @param {Function} func
+   */
+
+
+  walk(func) {
+    for (let i = 0, len = this.children.length; i < len; i++) {
+      const child = this.children[i];
+      func(child.str, child);
+    }
+  }
+  /**
+   * @override
+   */
+
+
+  walkSourceContents() {// this.sourceContents is never set, so don't do anything (the original method does
+    // iterate over children and sourcesContents, which is wasteful in our case).
+  }
+
+} // We don't extend SourceNode as the constructor initializes an array and calls `add`,
+// which we don't need in our case.
+
+
+class LeafSourceNode {
+  /**
+   * @param {Integer} line
+   * @param {Integer} column
+   * @param {String} source
+   * @param {String} str
+   */
+  constructor(line, column, source, str) {
+    this.str = str;
+    this.line = line;
+    this.column = column;
+    this.source = source;
+    this.name = null;
+  }
+
+} // If any of these tokens are seen before a "[" token, we know that "[" token
 // is the start of an array literal, rather than a property access.
 //
 // The only exception is "}", which would need to be disambiguated by
@@ -5850,6 +6337,7 @@ var SourceNode = sourceMap.SourceNode; // If any of these tokens are seen before
 // curly is going to be an array literal, so we brush the complication under
 // the rug, and handle the ambiguity by always assuming that it will be an
 // array literal.
+
 
 const PRE_ARRAY_LITERAL_TOKENS = new Set(["typeof", "void", "delete", "case", "do", "=", "in", "{", "*", "/", "%", "else", ";", "++", "--", "+", "-", "~", "!", ":", "?", ">>", ">>>", "<<", "||", "&&", "<", ">", "<=", ">=", "instanceof", "&", "^", "|", "==", "!=", "===", "!==", ",", "}"]);
 /**
@@ -6212,44 +6700,45 @@ function prependWhiteSpace(token, lastToken, addedNewline, addedSpace, write, op
     spaceAdded = true;
   }
 }
+
+const escapeCharacters = {
+  // Backslash
+  "\\": "\\\\",
+  // Newlines
+  "\n": "\\n",
+  // Carriage return
+  "\r": "\\r",
+  // Tab
+  "\t": "\\t",
+  // Vertical tab
+  "\v": "\\v",
+  // Form feed
+  "\f": "\\f",
+  // Null character
+  "\0": "\\x00",
+  // Line separator
+  "\u2028": "\\u2028",
+  // Paragraph separator
+  "\u2029": "\\u2029",
+  // Single quotes
+  "'": "\\'"
+}; // eslint-disable-next-line prefer-template
+
+const regExpString = "(" + Object.values(escapeCharacters).join("|") + ")";
+const escapeCharactersRegExp = new RegExp(regExpString, "g");
+
+function sanitizerReplaceFunc(_, c) {
+  return escapeCharacters[c];
+}
 /**
  * Make sure that we output the escaped character combination inside string
  * literals instead of various problematic characters.
  */
 
 
-const sanitize = function () {
-  const escapeCharacters = {
-    // Backslash
-    "\\": "\\\\",
-    // Newlines
-    "\n": "\\n",
-    // Carriage return
-    "\r": "\\r",
-    // Tab
-    "\t": "\\t",
-    // Vertical tab
-    "\v": "\\v",
-    // Form feed
-    "\f": "\\f",
-    // Null character
-    "\0": "\\x00",
-    // Line separator
-    "\u2028": "\\u2028",
-    // Paragraph separator
-    "\u2029": "\\u2029",
-    // Single quotes
-    "'": "\\'"
-  }; // eslint-disable-next-line prefer-template
-
-  const regExpString = "(" + Object.values(escapeCharacters).join("|") + ")";
-  const escapeCharactersRegExp = new RegExp(regExpString, "g");
-  return function (str) {
-    return str.replace(escapeCharactersRegExp, function (_, c) {
-      return escapeCharacters[c];
-    });
-  };
-}();
+function sanitize(str) {
+  return str.replace(escapeCharactersRegExp, sanitizerReplaceFunc);
+}
 /**
  * Add the given token to the pretty printed results.
  *
@@ -6390,9 +6879,9 @@ function addComment(write, indentLevel, options, block, text, line, column, next
 
 function prettyFast(input, options) {
   // The level of indents deep we are.
-  let indentLevel = 0; // We will accumulate the pretty printed code in this SourceNode.
+  let indentLevel = 0; // We will accumulate the pretty printed code in this RootSourceNode.
 
-  const result = new SourceNode();
+  const rootNode = new RootSourceNode();
   /**
    * Write a pretty printed string to the result SourceNode.
    *
@@ -6435,7 +6924,7 @@ function prettyFast(input, options) {
           lineStr += buffer[i];
         }
 
-        result.add(new SourceNode(bufferLine, bufferColumn, options.url, lineStr));
+        rootNode.add(new LeafSourceNode(bufferLine, bufferColumn, options.url, lineStr));
         buffer.splice(0, buffer.length);
         bufferLine = -1;
         bufferColumn = -1;
@@ -6590,7 +7079,7 @@ function prettyFast(input, options) {
     lastToken.isArrayLiteral = token.isArrayLiteral;
   }
 
-  return result.toStringWithSourceMap({
+  return rootNode.toStringWithSourceMap({
     file: options.url
   });
 }
@@ -6611,7 +7100,6 @@ function getTokens(input, options) {
   const tokens = [];
   const res = acorn.tokenizer(input, {
     locations: true,
-    sourceFile: options.url,
     ecmaVersion: options.ecmaVersion || "latest",
 
     onComment(block, text, start, end, startLoc, endLoc) {
@@ -6643,6 +7131,177 @@ function getTokens(input, options) {
 
 /***/ }),
 
+/***/ 1111:
+/***/ (function(module, exports, __webpack_require__) {
+
+/* WEBPACK VAR INJECTION */(function(__dirname) {/* Determine browser vs node environment by testing the default top level context. Solution courtesy of: https://stackoverflow.com/questions/17575790/environment-detection-node-js-or-browser */
+const isBrowserEnvironment = (function() {
+    // eslint-disable-next-line no-undef
+    return (typeof window !== "undefined") && (this === window);
+}).call();
+
+if (isBrowserEnvironment) {
+  // Web version of reading a wasm file into an array buffer.
+
+  let mappingsWasm = null;
+
+  module.exports = function readWasm() {
+    if (typeof mappingsWasm === "string") {
+      return fetch(mappingsWasm)
+        .then(response => response.arrayBuffer());
+    }
+    if (mappingsWasm instanceof ArrayBuffer) {
+      return Promise.resolve(mappingsWasm);
+    }
+    throw new Error("You must provide the string URL or ArrayBuffer contents " +
+                    "of lib/mappings.wasm by calling " +
+                    "SourceMapConsumer.initialize({ 'lib/mappings.wasm': ... }) " +
+                    "before using SourceMapConsumer");
+  };
+
+  module.exports.initialize = input => mappingsWasm = input;
+} else {
+  // Node version of reading a wasm file into an array buffer.
+  const fs = __webpack_require__(1079);
+  const path = __webpack_require__(1101);
+
+  module.exports = function readWasm() {
+    return new Promise((resolve, reject) => {
+      const wasmPath = path.join(__dirname, "mappings.wasm");
+      fs.readFile(wasmPath, null, (error, data) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+
+        resolve(data.buffer);
+      });
+    });
+  };
+
+  module.exports.initialize = _ => {
+    console.debug("SourceMapConsumer.initialize is a no-op when running in node.js");
+  };
+}
+
+/* WEBPACK VAR INJECTION */}.call(exports, "/"))
+
+/***/ }),
+
+/***/ 1119:
+/***/ (function(module, exports, __webpack_require__) {
+
+const readWasm = __webpack_require__(1111);
+
+/**
+ * Provide the JIT with a nice shape / hidden class.
+ */
+function Mapping() {
+  this.generatedLine = 0;
+  this.generatedColumn = 0;
+  this.lastGeneratedColumn = null;
+  this.source = null;
+  this.originalLine = null;
+  this.originalColumn = null;
+  this.name = null;
+}
+
+let cachedWasm = null;
+
+module.exports = function wasm() {
+  if (cachedWasm) {
+    return cachedWasm;
+  }
+
+  const callbackStack = [];
+
+  cachedWasm = readWasm().then(buffer => {
+      return WebAssembly.instantiate(buffer, {
+        env: {
+          mapping_callback(
+            generatedLine,
+            generatedColumn,
+
+            hasLastGeneratedColumn,
+            lastGeneratedColumn,
+
+            hasOriginal,
+            source,
+            originalLine,
+            originalColumn,
+
+            hasName,
+            name
+          ) {
+            const mapping = new Mapping();
+            // JS uses 1-based line numbers, wasm uses 0-based.
+            mapping.generatedLine = generatedLine + 1;
+            mapping.generatedColumn = generatedColumn;
+
+            if (hasLastGeneratedColumn) {
+              // JS uses inclusive last generated column, wasm uses exclusive.
+              mapping.lastGeneratedColumn = lastGeneratedColumn - 1;
+            }
+
+            if (hasOriginal) {
+              mapping.source = source;
+              // JS uses 1-based line numbers, wasm uses 0-based.
+              mapping.originalLine = originalLine + 1;
+              mapping.originalColumn = originalColumn;
+
+              if (hasName) {
+                mapping.name = name;
+              }
+            }
+
+            callbackStack[callbackStack.length - 1](mapping);
+          },
+
+          start_all_generated_locations_for() { console.time("all_generated_locations_for"); },
+          end_all_generated_locations_for() { console.timeEnd("all_generated_locations_for"); },
+
+          start_compute_column_spans() { console.time("compute_column_spans"); },
+          end_compute_column_spans() { console.timeEnd("compute_column_spans"); },
+
+          start_generated_location_for() { console.time("generated_location_for"); },
+          end_generated_location_for() { console.timeEnd("generated_location_for"); },
+
+          start_original_location_for() { console.time("original_location_for"); },
+          end_original_location_for() { console.timeEnd("original_location_for"); },
+
+          start_parse_mappings() { console.time("parse_mappings"); },
+          end_parse_mappings() { console.timeEnd("parse_mappings"); },
+
+          start_sort_by_generated_location() { console.time("sort_by_generated_location"); },
+          end_sort_by_generated_location() { console.timeEnd("sort_by_generated_location"); },
+
+          start_sort_by_original_location() { console.time("sort_by_original_location"); },
+          end_sort_by_original_location() { console.timeEnd("sort_by_original_location"); },
+        }
+      });
+  }).then(Wasm => {
+    return {
+      exports: Wasm.instance.exports,
+      withMappingCallback: (mappingCallback, f) => {
+        callbackStack.push(mappingCallback);
+        try {
+          f();
+        } finally {
+          callbackStack.pop();
+        }
+      }
+    };
+  }).then(null, e => {
+    cachedWasm = null;
+    throw e;
+  });
+
+  return cachedWasm;
+};
+
+
+/***/ }),
+
 /***/ 566:
 /***/ (function(module, exports) {
 
@@ -6668,17 +7327,17 @@ function getArg(aArgs, aName, aDefaultValue) {
     return aArgs[aName];
   } else if (arguments.length === 3) {
     return aDefaultValue;
-  } else {
-    throw new Error('"' + aName + '" is a required argument.');
   }
+    throw new Error('"' + aName + '" is a required argument.');
+
 }
 exports.getArg = getArg;
 
-var urlRegexp = /^(?:([\w+\-.]+):)?\/\/(?:(\w+:\w+)@)?([\w.]*)(?::(\d+))?(\S*)$/;
-var dataUrlRegexp = /^data:.+\,.+$/;
+const urlRegexp = /^(?:([\w+\-.]+):)?\/\/(?:(\w+:\w+)@)?([\w.-]*)(?::(\d+))?(.*)$/;
+const dataUrlRegexp = /^data:.+\,.+$/;
 
 function urlParse(aUrl) {
-  var match = aUrl.match(urlRegexp);
+  const match = aUrl.match(urlRegexp);
   if (!match) {
     return null;
   }
@@ -6693,19 +7352,19 @@ function urlParse(aUrl) {
 exports.urlParse = urlParse;
 
 function urlGenerate(aParsedUrl) {
-  var url = '';
+  let url = "";
   if (aParsedUrl.scheme) {
-    url += aParsedUrl.scheme + ':';
+    url += aParsedUrl.scheme + ":";
   }
-  url += '//';
+  url += "//";
   if (aParsedUrl.auth) {
-    url += aParsedUrl.auth + '@';
+    url += aParsedUrl.auth + "@";
   }
   if (aParsedUrl.host) {
     url += aParsedUrl.host;
   }
   if (aParsedUrl.port) {
-    url += ":" + aParsedUrl.port
+    url += ":" + aParsedUrl.port;
   }
   if (aParsedUrl.path) {
     url += aParsedUrl.path;
@@ -6713,6 +7372,43 @@ function urlGenerate(aParsedUrl) {
   return url;
 }
 exports.urlGenerate = urlGenerate;
+
+const MAX_CACHED_INPUTS = 32;
+
+/**
+ * Takes some function `f(input) -> result` and returns a memoized version of
+ * `f`.
+ *
+ * We keep at most `MAX_CACHED_INPUTS` memoized results of `f` alive. The
+ * memoization is a dumb-simple, linear least-recently-used cache.
+ */
+function lruMemoize(f) {
+  const cache = [];
+
+  return function(input) {
+    for (let i = 0; i < cache.length; i++) {
+      if (cache[i].input === input) {
+        const temp = cache[0];
+        cache[0] = cache[i];
+        cache[i] = temp;
+        return cache[0].result;
+      }
+    }
+
+    const result = f(input);
+
+    cache.unshift({
+      input,
+      result,
+    });
+
+    if (cache.length > MAX_CACHED_INPUTS) {
+      cache.pop();
+    }
+
+    return result;
+  };
+}
 
 /**
  * Normalizes a path, or the path portion of a URL:
@@ -6725,26 +7421,45 @@ exports.urlGenerate = urlGenerate;
  *
  * @param aPath The path or url to normalize.
  */
-function normalize(aPath) {
-  var path = aPath;
-  var url = urlParse(aPath);
+const normalize = lruMemoize(function normalize(aPath) {
+  let path = aPath;
+  const url = urlParse(aPath);
   if (url) {
     if (!url.path) {
       return aPath;
     }
     path = url.path;
   }
-  var isAbsolute = exports.isAbsolute(path);
+  const isAbsolute = exports.isAbsolute(path);
 
-  var parts = path.split(/\/+/);
-  for (var part, up = 0, i = parts.length - 1; i >= 0; i--) {
-    part = parts[i];
-    if (part === '.') {
+  // Split the path into parts between `/` characters. This is much faster than
+  // using `.split(/\/+/g)`.
+  const parts = [];
+  let start = 0;
+  let i = 0;
+  while (true) {
+    start = i;
+    i = path.indexOf("/", start);
+    if (i === -1) {
+      parts.push(path.slice(start));
+      break;
+    } else {
+      parts.push(path.slice(start, i));
+      while (i < path.length && path[i] === "/") {
+        i++;
+      }
+    }
+  }
+
+  let up = 0;
+  for (i = parts.length - 1; i >= 0; i--) {
+    const part = parts[i];
+    if (part === ".") {
       parts.splice(i, 1);
-    } else if (part === '..') {
+    } else if (part === "..") {
       up++;
     } else if (up > 0) {
-      if (part === '') {
+      if (part === "") {
         // The first part is blank if the path is absolute. Trying to go
         // above the root is a no-op. Therefore we can remove all '..' parts
         // directly after the root.
@@ -6756,10 +7471,10 @@ function normalize(aPath) {
       }
     }
   }
-  path = parts.join('/');
+  path = parts.join("/");
 
-  if (path === '') {
-    path = isAbsolute ? '/' : '.';
+  if (path === "") {
+    path = isAbsolute ? "/" : ".";
   }
 
   if (url) {
@@ -6767,7 +7482,7 @@ function normalize(aPath) {
     return urlGenerate(url);
   }
   return path;
-}
+});
 exports.normalize = normalize;
 
 /**
@@ -6793,10 +7508,10 @@ function join(aRoot, aPath) {
   if (aPath === "") {
     aPath = ".";
   }
-  var aPathUrl = urlParse(aPath);
-  var aRootUrl = urlParse(aRoot);
+  const aPathUrl = urlParse(aPath);
+  const aRootUrl = urlParse(aRoot);
   if (aRootUrl) {
-    aRoot = aRootUrl.path || '/';
+    aRoot = aRootUrl.path || "/";
   }
 
   // `join(foo, '//www.example.org')`
@@ -6817,9 +7532,9 @@ function join(aRoot, aPath) {
     return urlGenerate(aRootUrl);
   }
 
-  var joined = aPath.charAt(0) === '/'
+  const joined = aPath.charAt(0) === "/"
     ? aPath
-    : normalize(aRoot.replace(/\/+$/, '') + '/' + aPath);
+    : normalize(aRoot.replace(/\/+$/, "") + "/" + aPath);
 
   if (aRootUrl) {
     aRootUrl.path = joined;
@@ -6829,8 +7544,8 @@ function join(aRoot, aPath) {
 }
 exports.join = join;
 
-exports.isAbsolute = function (aPath) {
-  return aPath.charAt(0) === '/' || !!aPath.match(urlRegexp);
+exports.isAbsolute = function(aPath) {
+  return aPath.charAt(0) === "/" || urlRegexp.test(aPath);
 };
 
 /**
@@ -6844,15 +7559,15 @@ function relative(aRoot, aPath) {
     aRoot = ".";
   }
 
-  aRoot = aRoot.replace(/\/$/, '');
+  aRoot = aRoot.replace(/\/$/, "");
 
   // It is possible for the path to be above the root. In this case, simply
   // checking whether the root is a prefix of the path won't work. Instead, we
   // need to remove components from the root one by one, until either we find
   // a prefix that fits, or we run out of components to remove.
-  var level = 0;
-  while (aPath.indexOf(aRoot + '/') !== 0) {
-    var index = aRoot.lastIndexOf("/");
+  let level = 0;
+  while (aPath.indexOf(aRoot + "/") !== 0) {
+    const index = aRoot.lastIndexOf("/");
     if (index < 0) {
       return aPath;
     }
@@ -6873,12 +7588,12 @@ function relative(aRoot, aPath) {
 }
 exports.relative = relative;
 
-var supportsNullProto = (function () {
-  var obj = Object.create(null);
-  return !('__proto__' in obj);
+const supportsNullProto = (function() {
+  const obj = Object.create(null);
+  return !("__proto__" in obj);
 }());
 
-function identity (s) {
+function identity(s) {
   return s;
 }
 
@@ -6893,7 +7608,7 @@ function identity (s) {
  */
 function toSetString(aStr) {
   if (isProtoString(aStr)) {
-    return '$' + aStr;
+    return "$" + aStr;
   }
 
   return aStr;
@@ -6914,12 +7629,13 @@ function isProtoString(s) {
     return false;
   }
 
-  var length = s.length;
+  const length = s.length;
 
   if (length < 9 /* "__proto__".length */) {
     return false;
   }
 
+  /* eslint-disable no-multi-spaces */
   if (s.charCodeAt(length - 1) !== 95  /* '_' */ ||
       s.charCodeAt(length - 2) !== 95  /* '_' */ ||
       s.charCodeAt(length - 3) !== 111 /* 'o' */ ||
@@ -6931,8 +7647,9 @@ function isProtoString(s) {
       s.charCodeAt(length - 9) !== 95  /* '_' */) {
     return false;
   }
+  /* eslint-enable no-multi-spaces */
 
-  for (var i = length - 10; i >= 0; i--) {
+  for (let i = length - 10; i >= 0; i--) {
     if (s.charCodeAt(i) !== 36 /* '$' */) {
       return false;
     }
@@ -6950,7 +7667,7 @@ function isProtoString(s) {
  * stubbed out mapping.
  */
 function compareByOriginalPositions(mappingA, mappingB, onlyCompareOriginal) {
-  var cmp = mappingA.source - mappingB.source;
+  let cmp = strcmp(mappingA.source, mappingB.source);
   if (cmp !== 0) {
     return cmp;
   }
@@ -6975,7 +7692,7 @@ function compareByOriginalPositions(mappingA, mappingB, onlyCompareOriginal) {
     return cmp;
   }
 
-  return mappingA.name - mappingB.name;
+  return strcmp(mappingA.name, mappingB.name);
 }
 exports.compareByOriginalPositions = compareByOriginalPositions;
 
@@ -6989,7 +7706,7 @@ exports.compareByOriginalPositions = compareByOriginalPositions;
  * mapping with a stubbed out mapping.
  */
 function compareByGeneratedPositionsDeflated(mappingA, mappingB, onlyCompareGenerated) {
-  var cmp = mappingA.generatedLine - mappingB.generatedLine;
+  let cmp = mappingA.generatedLine - mappingB.generatedLine;
   if (cmp !== 0) {
     return cmp;
   }
@@ -6999,7 +7716,7 @@ function compareByGeneratedPositionsDeflated(mappingA, mappingB, onlyCompareGene
     return cmp;
   }
 
-  cmp = mappingA.source - mappingB.source;
+  cmp = strcmp(mappingA.source, mappingB.source);
   if (cmp !== 0) {
     return cmp;
   }
@@ -7014,13 +7731,21 @@ function compareByGeneratedPositionsDeflated(mappingA, mappingB, onlyCompareGene
     return cmp;
   }
 
-  return mappingA.name - mappingB.name;
+  return strcmp(mappingA.name, mappingB.name);
 }
 exports.compareByGeneratedPositionsDeflated = compareByGeneratedPositionsDeflated;
 
 function strcmp(aStr1, aStr2) {
   if (aStr1 === aStr2) {
     return 0;
+  }
+
+  if (aStr1 === null) {
+    return 1; // aStr2 !== null
+  }
+
+  if (aStr2 === null) {
+    return -1; // aStr1 !== null
   }
 
   if (aStr1 > aStr2) {
@@ -7035,7 +7760,7 @@ function strcmp(aStr1, aStr2) {
  * the generated positions are compared.
  */
 function compareByGeneratedPositionsInflated(mappingA, mappingB) {
-  var cmp = mappingA.generatedLine - mappingB.generatedLine;
+  let cmp = mappingA.generatedLine - mappingB.generatedLine;
   if (cmp !== 0) {
     return cmp;
   }
@@ -7064,6 +7789,69 @@ function compareByGeneratedPositionsInflated(mappingA, mappingB) {
 }
 exports.compareByGeneratedPositionsInflated = compareByGeneratedPositionsInflated;
 
+/**
+ * Strip any JSON XSSI avoidance prefix from the string (as documented
+ * in the source maps specification), and then parse the string as
+ * JSON.
+ */
+function parseSourceMapInput(str) {
+  return JSON.parse(str.replace(/^\)]}'[^\n]*\n/, ""));
+}
+exports.parseSourceMapInput = parseSourceMapInput;
+
+/**
+ * Compute the URL of a source given the the source root, the source's
+ * URL, and the source map's URL.
+ */
+function computeSourceURL(sourceRoot, sourceURL, sourceMapURL) {
+  sourceURL = sourceURL || "";
+
+  if (sourceRoot) {
+    // This follows what Chrome does.
+    if (sourceRoot[sourceRoot.length - 1] !== "/" && sourceURL[0] !== "/") {
+      sourceRoot += "/";
+    }
+    // The spec says:
+    //   Line 4: An optional source root, useful for relocating source
+    //   files on a server or removing repeated values in the
+    //   “sources” entry.  This value is prepended to the individual
+    //   entries in the “source” field.
+    sourceURL = sourceRoot + sourceURL;
+  }
+
+  // Historically, SourceMapConsumer did not take the sourceMapURL as
+  // a parameter.  This mode is still somewhat supported, which is why
+  // this code block is conditional.  However, it's preferable to pass
+  // the source map URL to SourceMapConsumer, so that this function
+  // can implement the source URL resolution algorithm as outlined in
+  // the spec.  This block is basically the equivalent of:
+  //    new URL(sourceURL, sourceMapURL).toString()
+  // ... except it avoids using URL, which wasn't available in the
+  // older releases of node still supported by this library.
+  //
+  // The spec says:
+  //   If the sources are not absolute URLs after prepending of the
+  //   “sourceRoot”, the sources are resolved relative to the
+  //   SourceMap (like resolving script src in a html document).
+  if (sourceMapURL) {
+    const parsed = urlParse(sourceMapURL);
+    if (!parsed) {
+      throw new Error("sourceMapURL could not be parsed");
+    }
+    if (parsed.path) {
+      // Strip the last path component, but keep the "/".
+      const index = parsed.path.lastIndexOf("/");
+      if (index >= 0) {
+        parsed.path = parsed.path.substring(0, index + 1);
+      }
+    }
+    sourceURL = join(urlGenerate(parsed), sourceURL);
+  }
+
+  return normalize(sourceURL);
+}
+exports.computeSourceURL = computeSourceURL;
+
 
 /***/ }),
 
@@ -7077,10 +7865,10 @@ exports.compareByGeneratedPositionsInflated = compareByGeneratedPositionsInflate
  * http://opensource.org/licenses/BSD-3-Clause
  */
 
-var base64VLQ = __webpack_require__(582);
-var util = __webpack_require__(566);
-var ArraySet = __webpack_require__(583).ArraySet;
-var MappingList = __webpack_require__(634).MappingList;
+const base64VLQ = __webpack_require__(582);
+const util = __webpack_require__(566);
+const ArraySet = __webpack_require__(583).ArraySet;
+const MappingList = __webpack_require__(634).MappingList;
 
 /**
  * An instance of the SourceMapGenerator represents a source map which is
@@ -7090,35 +7878,33 @@ var MappingList = __webpack_require__(634).MappingList;
  *   - file: The filename of the generated source.
  *   - sourceRoot: A root for all relative URLs in this source map.
  */
-function SourceMapGenerator(aArgs) {
-  if (!aArgs) {
-    aArgs = {};
+class SourceMapGenerator {
+  constructor(aArgs) {
+    if (!aArgs) {
+      aArgs = {};
+    }
+    this._file = util.getArg(aArgs, "file", null);
+    this._sourceRoot = util.getArg(aArgs, "sourceRoot", null);
+    this._skipValidation = util.getArg(aArgs, "skipValidation", false);
+    this._sources = new ArraySet();
+    this._names = new ArraySet();
+    this._mappings = new MappingList();
+    this._sourcesContents = null;
   }
-  this._file = util.getArg(aArgs, 'file', null);
-  this._sourceRoot = util.getArg(aArgs, 'sourceRoot', null);
-  this._skipValidation = util.getArg(aArgs, 'skipValidation', false);
-  this._sources = new ArraySet();
-  this._names = new ArraySet();
-  this._mappings = new MappingList();
-  this._sourcesContents = null;
-}
 
-SourceMapGenerator.prototype._version = 3;
-
-/**
- * Creates a new SourceMapGenerator based on a SourceMapConsumer
- *
- * @param aSourceMapConsumer The SourceMap.
- */
-SourceMapGenerator.fromSourceMap =
-  function SourceMapGenerator_fromSourceMap(aSourceMapConsumer) {
-    var sourceRoot = aSourceMapConsumer.sourceRoot;
-    var generator = new SourceMapGenerator({
+  /**
+   * Creates a new SourceMapGenerator based on a SourceMapConsumer
+   *
+   * @param aSourceMapConsumer The SourceMap.
+   */
+  static fromSourceMap(aSourceMapConsumer) {
+    const sourceRoot = aSourceMapConsumer.sourceRoot;
+    const generator = new SourceMapGenerator({
       file: aSourceMapConsumer.file,
-      sourceRoot: sourceRoot
+      sourceRoot
     });
-    aSourceMapConsumer.eachMapping(function (mapping) {
-      var newMapping = {
+    aSourceMapConsumer.eachMapping(function(mapping) {
+      const newMapping = {
         generated: {
           line: mapping.generatedLine,
           column: mapping.generatedColumn
@@ -7143,31 +7929,39 @@ SourceMapGenerator.fromSourceMap =
 
       generator.addMapping(newMapping);
     });
-    aSourceMapConsumer.sources.forEach(function (sourceFile) {
-      var content = aSourceMapConsumer.sourceContentFor(sourceFile);
+    aSourceMapConsumer.sources.forEach(function(sourceFile) {
+      let sourceRelative = sourceFile;
+      if (sourceRoot !== null) {
+        sourceRelative = util.relative(sourceRoot, sourceFile);
+      }
+
+      if (!generator._sources.has(sourceRelative)) {
+        generator._sources.add(sourceRelative);
+      }
+
+      const content = aSourceMapConsumer.sourceContentFor(sourceFile);
       if (content != null) {
         generator.setSourceContent(sourceFile, content);
       }
     });
     return generator;
-  };
+  }
 
-/**
- * Add a single mapping from original source line and column to the generated
- * source's line and column for this source map being created. The mapping
- * object should have the following properties:
- *
- *   - generated: An object with the generated line and column positions.
- *   - original: An object with the original line and column positions.
- *   - source: The original source file (relative to the sourceRoot).
- *   - name: An optional original token name for this mapping.
- */
-SourceMapGenerator.prototype.addMapping =
-  function SourceMapGenerator_addMapping(aArgs) {
-    var generated = util.getArg(aArgs, 'generated');
-    var original = util.getArg(aArgs, 'original', null);
-    var source = util.getArg(aArgs, 'source', null);
-    var name = util.getArg(aArgs, 'name', null);
+  /**
+   * Add a single mapping from original source line and column to the generated
+   * source's line and column for this source map being created. The mapping
+   * object should have the following properties:
+   *
+   *   - generated: An object with the generated line and column positions.
+   *   - original: An object with the original line and column positions.
+   *   - source: The original source file (relative to the sourceRoot).
+   *   - name: An optional original token name for this mapping.
+   */
+  addMapping(aArgs) {
+    const generated = util.getArg(aArgs, "generated");
+    const original = util.getArg(aArgs, "original", null);
+    let source = util.getArg(aArgs, "source", null);
+    let name = util.getArg(aArgs, "name", null);
 
     if (!this._skipValidation) {
       this._validateMapping(generated, original, source, name);
@@ -7192,17 +7986,16 @@ SourceMapGenerator.prototype.addMapping =
       generatedColumn: generated.column,
       originalLine: original != null && original.line,
       originalColumn: original != null && original.column,
-      source: source,
-      name: name
+      source,
+      name
     });
-  };
+  }
 
-/**
- * Set the source content for a source file.
- */
-SourceMapGenerator.prototype.setSourceContent =
-  function SourceMapGenerator_setSourceContent(aSourceFile, aSourceContent) {
-    var source = aSourceFile;
+  /**
+   * Set the source content for a source file.
+   */
+  setSourceContent(aSourceFile, aSourceContent) {
+    let source = aSourceFile;
     if (this._sourceRoot != null) {
       source = util.relative(this._sourceRoot, source);
     }
@@ -7222,52 +8015,53 @@ SourceMapGenerator.prototype.setSourceContent =
         this._sourcesContents = null;
       }
     }
-  };
+  }
 
-/**
- * Applies the mappings of a sub-source-map for a specific source file to the
- * source map being generated. Each mapping to the supplied source file is
- * rewritten using the supplied source map. Note: The resolution for the
- * resulting mappings is the minimium of this map and the supplied map.
- *
- * @param aSourceMapConsumer The source map to be applied.
- * @param aSourceFile Optional. The filename of the source file.
- *        If omitted, SourceMapConsumer's file property will be used.
- * @param aSourceMapPath Optional. The dirname of the path to the source map
- *        to be applied. If relative, it is relative to the SourceMapConsumer.
- *        This parameter is needed when the two source maps aren't in the same
- *        directory, and the source map to be applied contains relative source
- *        paths. If so, those relative source paths need to be rewritten
- *        relative to the SourceMapGenerator.
- */
-SourceMapGenerator.prototype.applySourceMap =
-  function SourceMapGenerator_applySourceMap(aSourceMapConsumer, aSourceFile, aSourceMapPath) {
-    var sourceFile = aSourceFile;
+  /**
+   * Applies the mappings of a sub-source-map for a specific source file to the
+   * source map being generated. Each mapping to the supplied source file is
+   * rewritten using the supplied source map. Note: The resolution for the
+   * resulting mappings is the minimium of this map and the supplied map.
+   *
+   * @param aSourceMapConsumer The source map to be applied.
+   * @param aSourceFile Optional. The filename of the source file.
+   *        If omitted, SourceMapConsumer's file property will be used.
+   * @param aSourceMapPath Optional. The dirname of the path to the source map
+   *        to be applied. If relative, it is relative to the SourceMapConsumer.
+   *        This parameter is needed when the two source maps aren't in the same
+   *        directory, and the source map to be applied contains relative source
+   *        paths. If so, those relative source paths need to be rewritten
+   *        relative to the SourceMapGenerator.
+   */
+  applySourceMap(aSourceMapConsumer, aSourceFile, aSourceMapPath) {
+    let sourceFile = aSourceFile;
     // If aSourceFile is omitted, we will use the file property of the SourceMap
     if (aSourceFile == null) {
       if (aSourceMapConsumer.file == null) {
         throw new Error(
-          'SourceMapGenerator.prototype.applySourceMap requires either an explicit source file, ' +
+          "SourceMapGenerator.prototype.applySourceMap requires either an explicit source file, " +
           'or the source map\'s "file" property. Both were omitted.'
         );
       }
       sourceFile = aSourceMapConsumer.file;
     }
-    var sourceRoot = this._sourceRoot;
+    const sourceRoot = this._sourceRoot;
     // Make "sourceFile" relative if an absolute Url is passed.
     if (sourceRoot != null) {
       sourceFile = util.relative(sourceRoot, sourceFile);
     }
     // Applying the SourceMap can add and remove items from the sources and
     // the names array.
-    var newSources = new ArraySet();
-    var newNames = new ArraySet();
+    const newSources = this._mappings.toArray().length > 0
+      ? new ArraySet()
+      : this._sources;
+    const newNames = new ArraySet();
 
     // Find mappings for the "sourceFile"
-    this._mappings.unsortedForEach(function (mapping) {
+    this._mappings.unsortedForEach(function(mapping) {
       if (mapping.source === sourceFile && mapping.originalLine != null) {
         // Check if it can be mapped by the source map, then update the mapping.
-        var original = aSourceMapConsumer.originalPositionFor({
+        const original = aSourceMapConsumer.originalPositionFor({
           line: mapping.originalLine,
           column: mapping.originalColumn
         });
@@ -7275,7 +8069,7 @@ SourceMapGenerator.prototype.applySourceMap =
           // Copy mapping
           mapping.source = original.source;
           if (aSourceMapPath != null) {
-            mapping.source = util.join(aSourceMapPath, mapping.source)
+            mapping.source = util.join(aSourceMapPath, mapping.source);
           }
           if (sourceRoot != null) {
             mapping.source = util.relative(sourceRoot, mapping.source);
@@ -7288,12 +8082,12 @@ SourceMapGenerator.prototype.applySourceMap =
         }
       }
 
-      var source = mapping.source;
+      const source = mapping.source;
       if (source != null && !newSources.has(source)) {
         newSources.add(source);
       }
 
-      var name = mapping.name;
+      const name = mapping.name;
       if (name != null && !newNames.has(name)) {
         newNames.add(name);
       }
@@ -7303,107 +8097,99 @@ SourceMapGenerator.prototype.applySourceMap =
     this._names = newNames;
 
     // Copy sourcesContents of applied map.
-    aSourceMapConsumer.sources.forEach(function (sourceFile) {
-      var content = aSourceMapConsumer.sourceContentFor(sourceFile);
+    aSourceMapConsumer.sources.forEach(function(srcFile) {
+      const content = aSourceMapConsumer.sourceContentFor(srcFile);
       if (content != null) {
         if (aSourceMapPath != null) {
-          sourceFile = util.join(aSourceMapPath, sourceFile);
+          srcFile = util.join(aSourceMapPath, srcFile);
         }
         if (sourceRoot != null) {
-          sourceFile = util.relative(sourceRoot, sourceFile);
+          srcFile = util.relative(sourceRoot, srcFile);
         }
-        this.setSourceContent(sourceFile, content);
+        this.setSourceContent(srcFile, content);
       }
     }, this);
-  };
+  }
 
-/**
- * A mapping can have one of the three levels of data:
- *
- *   1. Just the generated position.
- *   2. The Generated position, original position, and original source.
- *   3. Generated and original position, original source, as well as a name
- *      token.
- *
- * To maintain consistency, we validate that any new mapping being added falls
- * in to one of these categories.
- */
-SourceMapGenerator.prototype._validateMapping =
-  function SourceMapGenerator_validateMapping(aGenerated, aOriginal, aSource,
-                                              aName) {
+  /**
+   * A mapping can have one of the three levels of data:
+   *
+   *   1. Just the generated position.
+   *   2. The Generated position, original position, and original source.
+   *   3. Generated and original position, original source, as well as a name
+   *      token.
+   *
+   * To maintain consistency, we validate that any new mapping being added falls
+   * in to one of these categories.
+   */
+  _validateMapping(aGenerated, aOriginal, aSource, aName) {
     // When aOriginal is truthy but has empty values for .line and .column,
     // it is most likely a programmer error. In this case we throw a very
     // specific error message to try to guide them the right way.
     // For example: https://github.com/Polymer/polymer-bundler/pull/519
-    if (aOriginal && typeof aOriginal.line !== 'number' && typeof aOriginal.column !== 'number') {
+    if (aOriginal && typeof aOriginal.line !== "number" && typeof aOriginal.column !== "number") {
         throw new Error(
-            'original.line and original.column are not numbers -- you probably meant to omit ' +
-            'the original mapping entirely and only map the generated position. If so, pass ' +
-            'null for the original mapping instead of an object with empty or null values.'
+            "original.line and original.column are not numbers -- you probably meant to omit " +
+            "the original mapping entirely and only map the generated position. If so, pass " +
+            "null for the original mapping instead of an object with empty or null values."
         );
     }
 
-    if (aGenerated && 'line' in aGenerated && 'column' in aGenerated
+    if (aGenerated && "line" in aGenerated && "column" in aGenerated
         && aGenerated.line > 0 && aGenerated.column >= 0
         && !aOriginal && !aSource && !aName) {
       // Case 1.
-      return;
-    }
-    else if (aGenerated && 'line' in aGenerated && 'column' in aGenerated
-             && aOriginal && 'line' in aOriginal && 'column' in aOriginal
+
+    } else if (aGenerated && "line" in aGenerated && "column" in aGenerated
+             && aOriginal && "line" in aOriginal && "column" in aOriginal
              && aGenerated.line > 0 && aGenerated.column >= 0
              && aOriginal.line > 0 && aOriginal.column >= 0
              && aSource) {
       // Cases 2 and 3.
-      return;
-    }
-    else {
-      throw new Error('Invalid mapping: ' + JSON.stringify({
+
+    } else {
+      throw new Error("Invalid mapping: " + JSON.stringify({
         generated: aGenerated,
         source: aSource,
         original: aOriginal,
         name: aName
       }));
     }
-  };
+  }
 
-/**
- * Serialize the accumulated mappings in to the stream of base 64 VLQs
- * specified by the source map format.
- */
-SourceMapGenerator.prototype._serializeMappings =
-  function SourceMapGenerator_serializeMappings() {
-    var previousGeneratedColumn = 0;
-    var previousGeneratedLine = 1;
-    var previousOriginalColumn = 0;
-    var previousOriginalLine = 0;
-    var previousName = 0;
-    var previousSource = 0;
-    var result = '';
-    var next;
-    var mapping;
-    var nameIdx;
-    var sourceIdx;
+  /**
+   * Serialize the accumulated mappings in to the stream of base 64 VLQs
+   * specified by the source map format.
+   */
+  _serializeMappings() {
+    let previousGeneratedColumn = 0;
+    let previousGeneratedLine = 1;
+    let previousOriginalColumn = 0;
+    let previousOriginalLine = 0;
+    let previousName = 0;
+    let previousSource = 0;
+    let result = "";
+    let next;
+    let mapping;
+    let nameIdx;
+    let sourceIdx;
 
-    var mappings = this._mappings.toArray();
-    for (var i = 0, len = mappings.length; i < len; i++) {
+    const mappings = this._mappings.toArray();
+    for (let i = 0, len = mappings.length; i < len; i++) {
       mapping = mappings[i];
-      next = ''
+      next = "";
 
       if (mapping.generatedLine !== previousGeneratedLine) {
         previousGeneratedColumn = 0;
         while (mapping.generatedLine !== previousGeneratedLine) {
-          next += ';';
+          next += ";";
           previousGeneratedLine++;
         }
-      }
-      else {
-        if (i > 0) {
-          if (!util.compareByGeneratedPositionsInflated(mapping, mappings[i - 1])) {
-            continue;
-          }
-          next += ',';
+      } else if (i > 0) {
+        if (!util.compareByGeneratedPositionsInflated(mapping, mappings[i - 1])) {
+          continue;
         }
+        next += ",";
       }
 
       next += base64VLQ.encode(mapping.generatedColumn
@@ -7435,30 +8221,28 @@ SourceMapGenerator.prototype._serializeMappings =
     }
 
     return result;
-  };
+  }
 
-SourceMapGenerator.prototype._generateSourcesContent =
-  function SourceMapGenerator_generateSourcesContent(aSources, aSourceRoot) {
-    return aSources.map(function (source) {
+  _generateSourcesContent(aSources, aSourceRoot) {
+    return aSources.map(function(source) {
       if (!this._sourcesContents) {
         return null;
       }
       if (aSourceRoot != null) {
         source = util.relative(aSourceRoot, source);
       }
-      var key = util.toSetString(source);
+      const key = util.toSetString(source);
       return Object.prototype.hasOwnProperty.call(this._sourcesContents, key)
         ? this._sourcesContents[key]
         : null;
     }, this);
-  };
+  }
 
-/**
- * Externalize the source map.
- */
-SourceMapGenerator.prototype.toJSON =
-  function SourceMapGenerator_toJSON() {
-    var map = {
+  /**
+   * Externalize the source map.
+   */
+  toJSON() {
+    const map = {
       version: this._version,
       sources: this._sources.toArray(),
       names: this._names.toArray(),
@@ -7475,16 +8259,17 @@ SourceMapGenerator.prototype.toJSON =
     }
 
     return map;
-  };
+  }
 
-/**
- * Render the source map being generated to a string.
- */
-SourceMapGenerator.prototype.toString =
-  function SourceMapGenerator_toString() {
+  /**
+   * Render the source map being generated to a string.
+   */
+  toString() {
     return JSON.stringify(this.toJSON());
-  };
+  }
+}
 
+SourceMapGenerator.prototype._version = 3;
 exports.SourceMapGenerator = SourceMapGenerator;
 
 
@@ -7530,7 +8315,7 @@ exports.SourceMapGenerator = SourceMapGenerator;
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-var base64 = __webpack_require__(633);
+const base64 = __webpack_require__(633);
 
 // A single base 64 digit can contain 6 bits of data. For the base 64 variable
 // length quantities we use in the source map spec, the first bit is the sign,
@@ -7544,16 +8329,16 @@ var base64 = __webpack_require__(633);
 //   V    V
 //   101011
 
-var VLQ_BASE_SHIFT = 5;
+const VLQ_BASE_SHIFT = 5;
 
 // binary: 100000
-var VLQ_BASE = 1 << VLQ_BASE_SHIFT;
+const VLQ_BASE = 1 << VLQ_BASE_SHIFT;
 
 // binary: 011111
-var VLQ_BASE_MASK = VLQ_BASE - 1;
+const VLQ_BASE_MASK = VLQ_BASE - 1;
 
 // binary: 100000
-var VLQ_CONTINUATION_BIT = VLQ_BASE;
+const VLQ_CONTINUATION_BIT = VLQ_BASE;
 
 /**
  * Converts from a two-complement value to a value where the sign bit is
@@ -7573,9 +8358,10 @@ function toVLQSigned(aValue) {
  *   2 (10 binary) becomes 1, 3 (11 binary) becomes -1
  *   4 (100 binary) becomes 2, 5 (101 binary) becomes -2
  */
+// eslint-disable-next-line no-unused-vars
 function fromVLQSigned(aValue) {
-  var isNegative = (aValue & 1) === 1;
-  var shifted = aValue >> 1;
+  const isNegative = (aValue & 1) === 1;
+  const shifted = aValue >> 1;
   return isNegative
     ? -shifted
     : shifted;
@@ -7585,10 +8371,10 @@ function fromVLQSigned(aValue) {
  * Returns the base 64 VLQ encoded value.
  */
 exports.encode = function base64VLQ_encode(aValue) {
-  var encoded = "";
-  var digit;
+  let encoded = "";
+  let digit;
 
-  var vlq = toVLQSigned(aValue);
+  let vlq = toVLQSigned(aValue);
 
   do {
     digit = vlq & VLQ_BASE_MASK;
@@ -7604,41 +8390,11 @@ exports.encode = function base64VLQ_encode(aValue) {
   return encoded;
 };
 
-/**
- * Decodes the next base 64 VLQ value from the given string and returns the
- * value and the rest of the string via the out parameter.
- */
-exports.decode = function base64VLQ_decode(aStr, aIndex, aOutParam) {
-  var strLen = aStr.length;
-  var result = 0;
-  var shift = 0;
-  var continuation, digit;
-
-  do {
-    if (aIndex >= strLen) {
-      throw new Error("Expected more digits in base 64 VLQ value.");
-    }
-
-    digit = base64.decode(aStr.charCodeAt(aIndex++));
-    if (digit === -1) {
-      throw new Error("Invalid base64 digit: " + aStr.charAt(aIndex - 1));
-    }
-
-    continuation = !!(digit & VLQ_CONTINUATION_BIT);
-    digit &= VLQ_BASE_MASK;
-    result = result + (digit << shift);
-    shift += VLQ_BASE_SHIFT;
-  } while (continuation);
-
-  aOutParam.value = fromVLQSigned(result);
-  aOutParam.rest = aIndex;
-};
-
 
 /***/ }),
 
 /***/ 583:
-/***/ (function(module, exports, __webpack_require__) {
+/***/ (function(module, exports) {
 
 /* -*- Mode: js; js-indent-level: 2; -*- */
 /*
@@ -7647,120 +8403,290 @@ exports.decode = function base64VLQ_decode(aStr, aIndex, aOutParam) {
  * http://opensource.org/licenses/BSD-3-Clause
  */
 
-var util = __webpack_require__(566);
-var has = Object.prototype.hasOwnProperty;
-var hasNativeMap = typeof Map !== "undefined";
-
 /**
  * A data structure which is a combination of an array and a set. Adding a new
  * member is O(1), testing for membership is O(1), and finding the index of an
  * element is O(1). Removing elements from the set is not supported. Only
  * strings are supported for membership.
  */
-function ArraySet() {
-  this._array = [];
-  this._set = hasNativeMap ? new Map() : Object.create(null);
-}
-
-/**
- * Static method for creating ArraySet instances from an existing array.
- */
-ArraySet.fromArray = function ArraySet_fromArray(aArray, aAllowDuplicates) {
-  var set = new ArraySet();
-  for (var i = 0, len = aArray.length; i < len; i++) {
-    set.add(aArray[i], aAllowDuplicates);
+class ArraySet {
+  constructor() {
+    this._array = [];
+    this._set = new Map();
   }
-  return set;
-};
 
-/**
- * Return how many unique items are in this ArraySet. If duplicates have been
- * added, than those do not count towards the size.
- *
- * @returns Number
- */
-ArraySet.prototype.size = function ArraySet_size() {
-  return hasNativeMap ? this._set.size : Object.getOwnPropertyNames(this._set).length;
-};
-
-/**
- * Add the given string to this set.
- *
- * @param String aStr
- */
-ArraySet.prototype.add = function ArraySet_add(aStr, aAllowDuplicates) {
-  var sStr = hasNativeMap ? aStr : util.toSetString(aStr);
-  var isDuplicate = hasNativeMap ? this.has(aStr) : has.call(this._set, sStr);
-  var idx = this._array.length;
-  if (!isDuplicate || aAllowDuplicates) {
-    this._array.push(aStr);
+  /**
+   * Static method for creating ArraySet instances from an existing array.
+   */
+  static fromArray(aArray, aAllowDuplicates) {
+    const set = new ArraySet();
+    for (let i = 0, len = aArray.length; i < len; i++) {
+      set.add(aArray[i], aAllowDuplicates);
+    }
+    return set;
   }
-  if (!isDuplicate) {
-    if (hasNativeMap) {
+
+  /**
+   * Return how many unique items are in this ArraySet. If duplicates have been
+   * added, than those do not count towards the size.
+   *
+   * @returns Number
+   */
+  size() {
+    return this._set.size;
+  }
+
+  /**
+   * Add the given string to this set.
+   *
+   * @param String aStr
+   */
+  add(aStr, aAllowDuplicates) {
+    const isDuplicate = this.has(aStr);
+    const idx = this._array.length;
+    if (!isDuplicate || aAllowDuplicates) {
+      this._array.push(aStr);
+    }
+    if (!isDuplicate) {
       this._set.set(aStr, idx);
-    } else {
-      this._set[sStr] = idx;
     }
   }
-};
 
-/**
- * Is the given string a member of this set?
- *
- * @param String aStr
- */
-ArraySet.prototype.has = function ArraySet_has(aStr) {
-  if (hasNativeMap) {
-    return this._set.has(aStr);
-  } else {
-    var sStr = util.toSetString(aStr);
-    return has.call(this._set, sStr);
+  /**
+   * Is the given string a member of this set?
+   *
+   * @param String aStr
+   */
+  has(aStr) {
+      return this._set.has(aStr);
   }
-};
 
-/**
- * What is the index of the given string in the array?
- *
- * @param String aStr
- */
-ArraySet.prototype.indexOf = function ArraySet_indexOf(aStr) {
-  if (hasNativeMap) {
-    var idx = this._set.get(aStr);
+  /**
+   * What is the index of the given string in the array?
+   *
+   * @param String aStr
+   */
+  indexOf(aStr) {
+    const idx = this._set.get(aStr);
     if (idx >= 0) {
         return idx;
     }
-  } else {
-    var sStr = util.toSetString(aStr);
-    if (has.call(this._set, sStr)) {
-      return this._set[sStr];
+    throw new Error('"' + aStr + '" is not in the set.');
+  }
+
+  /**
+   * What is the element at the given index?
+   *
+   * @param Number aIdx
+   */
+  at(aIdx) {
+    if (aIdx >= 0 && aIdx < this._array.length) {
+      return this._array[aIdx];
     }
+    throw new Error("No element indexed by " + aIdx);
   }
 
-  throw new Error('"' + aStr + '" is not in the set.');
-};
-
-/**
- * What is the element at the given index?
- *
- * @param Number aIdx
- */
-ArraySet.prototype.at = function ArraySet_at(aIdx) {
-  if (aIdx >= 0 && aIdx < this._array.length) {
-    return this._array[aIdx];
+  /**
+   * Returns the array representation of this set (which has the proper indices
+   * indicated by indexOf). Note that this is a copy of the internal array used
+   * for storing the members so that no one can mess with internal state.
+   */
+  toArray() {
+    return this._array.slice();
   }
-  throw new Error('No element indexed by ' + aIdx);
-};
-
-/**
- * Returns the array representation of this set (which has the proper indices
- * indicated by indexOf). Note that this is a copy of the internal array used
- * for storing the members so that no one can mess with internal state.
- */
-ArraySet.prototype.toArray = function ArraySet_toArray() {
-  return this._array.slice();
-};
-
+}
 exports.ArraySet = ArraySet;
+
+
+/***/ }),
+
+/***/ 607:
+/***/ (function(module, exports) {
+
+// shim for using process in browser
+var process = module.exports = {};
+
+// cached from whatever global is present so that test runners that stub it
+// don't break things.  But we need to wrap it in a try catch in case it is
+// wrapped in strict mode code which doesn't define any globals.  It's inside a
+// function because try/catches deoptimize in certain engines.
+
+var cachedSetTimeout;
+var cachedClearTimeout;
+
+function defaultSetTimout() {
+    throw new Error('setTimeout has not been defined');
+}
+function defaultClearTimeout () {
+    throw new Error('clearTimeout has not been defined');
+}
+(function () {
+    try {
+        if (typeof setTimeout === 'function') {
+            cachedSetTimeout = setTimeout;
+        } else {
+            cachedSetTimeout = defaultSetTimout;
+        }
+    } catch (e) {
+        cachedSetTimeout = defaultSetTimout;
+    }
+    try {
+        if (typeof clearTimeout === 'function') {
+            cachedClearTimeout = clearTimeout;
+        } else {
+            cachedClearTimeout = defaultClearTimeout;
+        }
+    } catch (e) {
+        cachedClearTimeout = defaultClearTimeout;
+    }
+} ())
+function runTimeout(fun) {
+    if (cachedSetTimeout === setTimeout) {
+        //normal enviroments in sane situations
+        return setTimeout(fun, 0);
+    }
+    // if setTimeout wasn't available but was latter defined
+    if ((cachedSetTimeout === defaultSetTimout || !cachedSetTimeout) && setTimeout) {
+        cachedSetTimeout = setTimeout;
+        return setTimeout(fun, 0);
+    }
+    try {
+        // when when somebody has screwed with setTimeout but no I.E. maddness
+        return cachedSetTimeout(fun, 0);
+    } catch(e){
+        try {
+            // When we are in I.E. but the script has been evaled so I.E. doesn't trust the global object when called normally
+            return cachedSetTimeout.call(null, fun, 0);
+        } catch(e){
+            // same as above but when it's a version of I.E. that must have the global object for 'this', hopfully our context correct otherwise it will throw a global error
+            return cachedSetTimeout.call(this, fun, 0);
+        }
+    }
+
+
+}
+function runClearTimeout(marker) {
+    if (cachedClearTimeout === clearTimeout) {
+        //normal enviroments in sane situations
+        return clearTimeout(marker);
+    }
+    // if clearTimeout wasn't available but was latter defined
+    if ((cachedClearTimeout === defaultClearTimeout || !cachedClearTimeout) && clearTimeout) {
+        cachedClearTimeout = clearTimeout;
+        return clearTimeout(marker);
+    }
+    try {
+        // when when somebody has screwed with setTimeout but no I.E. maddness
+        return cachedClearTimeout(marker);
+    } catch (e){
+        try {
+            // When we are in I.E. but the script has been evaled so I.E. doesn't  trust the global object when called normally
+            return cachedClearTimeout.call(null, marker);
+        } catch (e){
+            // same as above but when it's a version of I.E. that must have the global object for 'this', hopfully our context correct otherwise it will throw a global error.
+            // Some versions of I.E. have different rules for clearTimeout vs setTimeout
+            return cachedClearTimeout.call(this, marker);
+        }
+    }
+
+
+
+}
+var queue = [];
+var draining = false;
+var currentQueue;
+var queueIndex = -1;
+
+function cleanUpNextTick() {
+    if (!draining || !currentQueue) {
+        return;
+    }
+    draining = false;
+    if (currentQueue.length) {
+        queue = currentQueue.concat(queue);
+    } else {
+        queueIndex = -1;
+    }
+    if (queue.length) {
+        drainQueue();
+    }
+}
+
+function drainQueue() {
+    if (draining) {
+        return;
+    }
+    var timeout = runTimeout(cleanUpNextTick);
+    draining = true;
+
+    var len = queue.length;
+    while(len) {
+        currentQueue = queue;
+        queue = [];
+        while (++queueIndex < len) {
+            if (currentQueue) {
+                currentQueue[queueIndex].run();
+            }
+        }
+        queueIndex = -1;
+        len = queue.length;
+    }
+    currentQueue = null;
+    draining = false;
+    runClearTimeout(timeout);
+}
+
+process.nextTick = function (fun) {
+    var args = new Array(arguments.length - 1);
+    if (arguments.length > 1) {
+        for (var i = 1; i < arguments.length; i++) {
+            args[i - 1] = arguments[i];
+        }
+    }
+    queue.push(new Item(fun, args));
+    if (queue.length === 1 && !draining) {
+        runTimeout(drainQueue);
+    }
+};
+
+// v8 likes predictible objects
+function Item(fun, array) {
+    this.fun = fun;
+    this.array = array;
+}
+Item.prototype.run = function () {
+    this.fun.apply(null, this.array);
+};
+process.title = 'browser';
+process.browser = true;
+process.env = {};
+process.argv = [];
+process.version = ''; // empty string to avoid regexp issues
+process.versions = {};
+
+function noop() {}
+
+process.on = noop;
+process.addListener = noop;
+process.once = noop;
+process.off = noop;
+process.removeListener = noop;
+process.removeAllListeners = noop;
+process.emit = noop;
+process.prependListener = noop;
+process.prependOnceListener = noop;
+
+process.listeners = function (name) { return [] }
+
+process.binding = function (name) {
+    throw new Error('process.binding is not supported');
+};
+
+process.cwd = function () { return '/' };
+process.chdir = function (dir) {
+    throw new Error('process.chdir is not supported');
+};
+process.umask = function() { return 0; };
 
 
 /***/ }),
@@ -7790,65 +8716,16 @@ exports.SourceNode = __webpack_require__(638).SourceNode;
  * http://opensource.org/licenses/BSD-3-Clause
  */
 
-var intToCharMap = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'.split('');
+const intToCharMap = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/".split("");
 
 /**
  * Encode an integer in the range of 0 to 63 to a single base 64 digit.
  */
-exports.encode = function (number) {
+exports.encode = function(number) {
   if (0 <= number && number < intToCharMap.length) {
     return intToCharMap[number];
   }
   throw new TypeError("Must be between 0 and 63: " + number);
-};
-
-/**
- * Decode a single base 64 character code digit to an integer. Returns -1 on
- * failure.
- */
-exports.decode = function (charCode) {
-  var bigA = 65;     // 'A'
-  var bigZ = 90;     // 'Z'
-
-  var littleA = 97;  // 'a'
-  var littleZ = 122; // 'z'
-
-  var zero = 48;     // '0'
-  var nine = 57;     // '9'
-
-  var plus = 43;     // '+'
-  var slash = 47;    // '/'
-
-  var littleOffset = 26;
-  var numberOffset = 52;
-
-  // 0 - 25: ABCDEFGHIJKLMNOPQRSTUVWXYZ
-  if (bigA <= charCode && charCode <= bigZ) {
-    return (charCode - bigA);
-  }
-
-  // 26 - 51: abcdefghijklmnopqrstuvwxyz
-  if (littleA <= charCode && charCode <= littleZ) {
-    return (charCode - littleA + littleOffset);
-  }
-
-  // 52 - 61: 0123456789
-  if (zero <= charCode && charCode <= nine) {
-    return (charCode - zero + numberOffset);
-  }
-
-  // 62: +
-  if (charCode == plus) {
-    return 62;
-  }
-
-  // 63: /
-  if (charCode == slash) {
-    return 63;
-  }
-
-  // Invalid base64 digit.
-  return -1;
 };
 
 
@@ -7864,7 +8741,7 @@ exports.decode = function (charCode) {
  * http://opensource.org/licenses/BSD-3-Clause
  */
 
-var util = __webpack_require__(566);
+const util = __webpack_require__(566);
 
 /**
  * Determine whether mappingB is after mappingA with respect to generated
@@ -7872,68 +8749,69 @@ var util = __webpack_require__(566);
  */
 function generatedPositionAfter(mappingA, mappingB) {
   // Optimized for most common case
-  var lineA = mappingA.generatedLine;
-  var lineB = mappingB.generatedLine;
-  var columnA = mappingA.generatedColumn;
-  var columnB = mappingB.generatedColumn;
+  const lineA = mappingA.generatedLine;
+  const lineB = mappingB.generatedLine;
+  const columnA = mappingA.generatedColumn;
+  const columnB = mappingB.generatedColumn;
   return lineB > lineA || lineB == lineA && columnB >= columnA ||
          util.compareByGeneratedPositionsInflated(mappingA, mappingB) <= 0;
 }
 
 /**
  * A data structure to provide a sorted view of accumulated mappings in a
- * performance conscious manner. It trades a neglibable overhead in general
+ * performance conscious manner. It trades a negligible overhead in general
  * case for a large speedup in case of mappings being added in order.
  */
-function MappingList() {
-  this._array = [];
-  this._sorted = true;
-  // Serves as infimum
-  this._last = {generatedLine: -1, generatedColumn: 0};
-}
-
-/**
- * Iterate through internal items. This method takes the same arguments that
- * `Array.prototype.forEach` takes.
- *
- * NOTE: The order of the mappings is NOT guaranteed.
- */
-MappingList.prototype.unsortedForEach =
-  function MappingList_forEach(aCallback, aThisArg) {
-    this._array.forEach(aCallback, aThisArg);
-  };
-
-/**
- * Add the given source mapping.
- *
- * @param Object aMapping
- */
-MappingList.prototype.add = function MappingList_add(aMapping) {
-  if (generatedPositionAfter(this._last, aMapping)) {
-    this._last = aMapping;
-    this._array.push(aMapping);
-  } else {
-    this._sorted = false;
-    this._array.push(aMapping);
-  }
-};
-
-/**
- * Returns the flat, sorted array of mappings. The mappings are sorted by
- * generated position.
- *
- * WARNING: This method returns internal data without copying, for
- * performance. The return value must NOT be mutated, and should be treated as
- * an immutable borrow. If you want to take ownership, you must make your own
- * copy.
- */
-MappingList.prototype.toArray = function MappingList_toArray() {
-  if (!this._sorted) {
-    this._array.sort(util.compareByGeneratedPositionsInflated);
+class MappingList {
+  constructor() {
+    this._array = [];
     this._sorted = true;
+    // Serves as infimum
+    this._last = {generatedLine: -1, generatedColumn: 0};
   }
-  return this._array;
-};
+
+  /**
+   * Iterate through internal items. This method takes the same arguments that
+   * `Array.prototype.forEach` takes.
+   *
+   * NOTE: The order of the mappings is NOT guaranteed.
+   */
+  unsortedForEach(aCallback, aThisArg) {
+    this._array.forEach(aCallback, aThisArg);
+  }
+
+  /**
+   * Add the given source mapping.
+   *
+   * @param Object aMapping
+   */
+  add(aMapping) {
+    if (generatedPositionAfter(this._last, aMapping)) {
+      this._last = aMapping;
+      this._array.push(aMapping);
+    } else {
+      this._sorted = false;
+      this._array.push(aMapping);
+    }
+  }
+
+  /**
+   * Returns the flat, sorted array of mappings. The mappings are sorted by
+   * generated position.
+   *
+   * WARNING: This method returns internal data without copying, for
+   * performance. The return value must NOT be mutated, and should be treated as
+   * an immutable borrow. If you want to take ownership, you must make your own
+   * copy.
+   */
+  toArray() {
+    if (!this._sorted) {
+      this._array.sort(util.compareByGeneratedPositionsInflated);
+      this._sorted = true;
+    }
+    return this._array;
+  }
+}
 
 exports.MappingList = MappingList;
 
@@ -7950,247 +8828,143 @@ exports.MappingList = MappingList;
  * http://opensource.org/licenses/BSD-3-Clause
  */
 
-var util = __webpack_require__(566);
-var binarySearch = __webpack_require__(636);
-var ArraySet = __webpack_require__(583).ArraySet;
-var base64VLQ = __webpack_require__(582);
-var quickSort = __webpack_require__(637).quickSort;
+const util = __webpack_require__(566);
+const binarySearch = __webpack_require__(636);
+const ArraySet = __webpack_require__(583).ArraySet;
+const base64VLQ = __webpack_require__(582); // eslint-disable-line no-unused-vars
+const readWasm = __webpack_require__(1111);
+const wasm = __webpack_require__(1119);
 
-function SourceMapConsumer(aSourceMap) {
-  var sourceMap = aSourceMap;
-  if (typeof aSourceMap === 'string') {
-    sourceMap = JSON.parse(aSourceMap.replace(/^\)\]\}'/, ''));
+const INTERNAL = Symbol("smcInternal");
+
+class SourceMapConsumer {
+  constructor(aSourceMap, aSourceMapURL) {
+    // If the constructor was called by super(), just return Promise<this>.
+    // Yes, this is a hack to retain the pre-existing API of the base-class
+    // constructor also being an async factory function.
+    if (aSourceMap == INTERNAL) {
+      return Promise.resolve(this);
+    }
+
+    return _factory(aSourceMap, aSourceMapURL);
   }
 
-  return sourceMap.sections != null
-    ? new IndexedSourceMapConsumer(sourceMap)
-    : new BasicSourceMapConsumer(sourceMap);
-}
+  static initialize(opts) {
+    readWasm.initialize(opts["lib/mappings.wasm"]);
+  }
 
-SourceMapConsumer.fromSourceMap = function(aSourceMap) {
-  return BasicSourceMapConsumer.fromSourceMap(aSourceMap);
+  static fromSourceMap(aSourceMap, aSourceMapURL) {
+    return _factoryBSM(aSourceMap, aSourceMapURL);
+  }
+
+  /**
+   * Construct a new `SourceMapConsumer` from `rawSourceMap` and `sourceMapUrl`
+   * (see the `SourceMapConsumer` constructor for details. Then, invoke the `async
+   * function f(SourceMapConsumer) -> T` with the newly constructed consumer, wait
+   * for `f` to complete, call `destroy` on the consumer, and return `f`'s return
+   * value.
+   *
+   * You must not use the consumer after `f` completes!
+   *
+   * By using `with`, you do not have to remember to manually call `destroy` on
+   * the consumer, since it will be called automatically once `f` completes.
+   *
+   * ```js
+   * const xSquared = await SourceMapConsumer.with(
+   *   myRawSourceMap,
+   *   null,
+   *   async function (consumer) {
+   *     // Use `consumer` inside here and don't worry about remembering
+   *     // to call `destroy`.
+   *
+   *     const x = await whatever(consumer);
+   *     return x * x;
+   *   }
+   * );
+   *
+   * // You may not use that `consumer` anymore out here; it has
+   * // been destroyed. But you can use `xSquared`.
+   * console.log(xSquared);
+   * ```
+   */
+  static async with(rawSourceMap, sourceMapUrl, f) {
+    const consumer = await new SourceMapConsumer(rawSourceMap, sourceMapUrl);
+    try {
+      return await f(consumer);
+    } finally {
+      consumer.destroy();
+    }
+  }
+
+  /**
+   * Parse the mappings in a string in to a data structure which we can easily
+   * query (the ordered arrays in the `this.__generatedMappings` and
+   * `this.__originalMappings` properties).
+   */
+  _parseMappings(aStr, aSourceRoot) {
+    throw new Error("Subclasses must implement _parseMappings");
+  }
+
+  /**
+   * Iterate over each mapping between an original source/line/column and a
+   * generated line/column in this source map.
+   *
+   * @param Function aCallback
+   *        The function that is called with each mapping.
+   * @param Object aContext
+   *        Optional. If specified, this object will be the value of `this` every
+   *        time that `aCallback` is called.
+   * @param aOrder
+   *        Either `SourceMapConsumer.GENERATED_ORDER` or
+   *        `SourceMapConsumer.ORIGINAL_ORDER`. Specifies whether you want to
+   *        iterate over the mappings sorted by the generated file's line/column
+   *        order or the original's source/line/column order, respectively. Defaults to
+   *        `SourceMapConsumer.GENERATED_ORDER`.
+   */
+  eachMapping(aCallback, aContext, aOrder) {
+    throw new Error("Subclasses must implement eachMapping");
+  }
+
+  /**
+   * Returns all generated line and column information for the original source,
+   * line, and column provided. If no column is provided, returns all mappings
+   * corresponding to a either the line we are searching for or the next
+   * closest line that has any mappings. Otherwise, returns all mappings
+   * corresponding to the given line and either the column we are searching for
+   * or the next closest column that has any offsets.
+   *
+   * The only argument is an object with the following properties:
+   *
+   *   - source: The filename of the original source.
+   *   - line: The line number in the original source.  The line number is 1-based.
+   *   - column: Optional. the column number in the original source.
+   *    The column number is 0-based.
+   *
+   * and an array of objects is returned, each with the following properties:
+   *
+   *   - line: The line number in the generated source, or null.  The
+   *    line number is 1-based.
+   *   - column: The column number in the generated source, or null.
+   *    The column number is 0-based.
+   */
+  allGeneratedPositionsFor(aArgs) {
+    throw new Error("Subclasses must implement allGeneratedPositionsFor");
+  }
+
+  destroy() {
+    throw new Error("Subclasses must implement destroy");
+  }
 }
 
 /**
  * The version of the source mapping spec that we are consuming.
  */
 SourceMapConsumer.prototype._version = 3;
-
-// `__generatedMappings` and `__originalMappings` are arrays that hold the
-// parsed mapping coordinates from the source map's "mappings" attribute. They
-// are lazily instantiated, accessed via the `_generatedMappings` and
-// `_originalMappings` getters respectively, and we only parse the mappings
-// and create these arrays once queried for a source location. We jump through
-// these hoops because there can be many thousands of mappings, and parsing
-// them is expensive, so we only want to do it if we must.
-//
-// Each object in the arrays is of the form:
-//
-//     {
-//       generatedLine: The line number in the generated code,
-//       generatedColumn: The column number in the generated code,
-//       source: The path to the original source file that generated this
-//               chunk of code,
-//       originalLine: The line number in the original source that
-//                     corresponds to this chunk of generated code,
-//       originalColumn: The column number in the original source that
-//                       corresponds to this chunk of generated code,
-//       name: The name of the original symbol which generated this chunk of
-//             code.
-//     }
-//
-// All properties except for `generatedLine` and `generatedColumn` can be
-// `null`.
-//
-// `_generatedMappings` is ordered by the generated positions.
-//
-// `_originalMappings` is ordered by the original positions.
-
-SourceMapConsumer.prototype.__generatedMappings = null;
-Object.defineProperty(SourceMapConsumer.prototype, '_generatedMappings', {
-  get: function () {
-    if (!this.__generatedMappings) {
-      this._parseMappings(this._mappings, this.sourceRoot);
-    }
-
-    return this.__generatedMappings;
-  }
-});
-
-SourceMapConsumer.prototype.__originalMappings = null;
-Object.defineProperty(SourceMapConsumer.prototype, '_originalMappings', {
-  get: function () {
-    if (!this.__originalMappings) {
-      this._parseMappings(this._mappings, this.sourceRoot);
-    }
-
-    return this.__originalMappings;
-  }
-});
-
-SourceMapConsumer.prototype._charIsMappingSeparator =
-  function SourceMapConsumer_charIsMappingSeparator(aStr, index) {
-    var c = aStr.charAt(index);
-    return c === ";" || c === ",";
-  };
-
-/**
- * Parse the mappings in a string in to a data structure which we can easily
- * query (the ordered arrays in the `this.__generatedMappings` and
- * `this.__originalMappings` properties).
- */
-SourceMapConsumer.prototype._parseMappings =
-  function SourceMapConsumer_parseMappings(aStr, aSourceRoot) {
-    throw new Error("Subclasses must implement _parseMappings");
-  };
-
 SourceMapConsumer.GENERATED_ORDER = 1;
 SourceMapConsumer.ORIGINAL_ORDER = 2;
 
 SourceMapConsumer.GREATEST_LOWER_BOUND = 1;
 SourceMapConsumer.LEAST_UPPER_BOUND = 2;
-
-/**
- * Iterate over each mapping between an original source/line/column and a
- * generated line/column in this source map.
- *
- * @param Function aCallback
- *        The function that is called with each mapping.
- * @param Object aContext
- *        Optional. If specified, this object will be the value of `this` every
- *        time that `aCallback` is called.
- * @param aOrder
- *        Either `SourceMapConsumer.GENERATED_ORDER` or
- *        `SourceMapConsumer.ORIGINAL_ORDER`. Specifies whether you want to
- *        iterate over the mappings sorted by the generated file's line/column
- *        order or the original's source/line/column order, respectively. Defaults to
- *        `SourceMapConsumer.GENERATED_ORDER`.
- */
-SourceMapConsumer.prototype.eachMapping =
-  function SourceMapConsumer_eachMapping(aCallback, aContext, aOrder) {
-    var context = aContext || null;
-    var order = aOrder || SourceMapConsumer.GENERATED_ORDER;
-
-    var mappings;
-    switch (order) {
-    case SourceMapConsumer.GENERATED_ORDER:
-      mappings = this._generatedMappings;
-      break;
-    case SourceMapConsumer.ORIGINAL_ORDER:
-      mappings = this._originalMappings;
-      break;
-    default:
-      throw new Error("Unknown order of iteration.");
-    }
-
-    var sourceRoot = this.sourceRoot;
-    mappings.map(function (mapping) {
-      var source = mapping.source === null ? null : this._sources.at(mapping.source);
-      if (source != null && sourceRoot != null) {
-        source = util.join(sourceRoot, source);
-      }
-      return {
-        source: source,
-        generatedLine: mapping.generatedLine,
-        generatedColumn: mapping.generatedColumn,
-        originalLine: mapping.originalLine,
-        originalColumn: mapping.originalColumn,
-        name: mapping.name === null ? null : this._names.at(mapping.name)
-      };
-    }, this).forEach(aCallback, context);
-  };
-
-/**
- * Returns all generated line and column information for the original source,
- * line, and column provided. If no column is provided, returns all mappings
- * corresponding to a either the line we are searching for or the next
- * closest line that has any mappings. Otherwise, returns all mappings
- * corresponding to the given line and either the column we are searching for
- * or the next closest column that has any offsets.
- *
- * The only argument is an object with the following properties:
- *
- *   - source: The filename of the original source.
- *   - line: The line number in the original source.
- *   - column: Optional. the column number in the original source.
- *
- * and an array of objects is returned, each with the following properties:
- *
- *   - line: The line number in the generated source, or null.
- *   - column: The column number in the generated source, or null.
- */
-SourceMapConsumer.prototype.allGeneratedPositionsFor =
-  function SourceMapConsumer_allGeneratedPositionsFor(aArgs) {
-    var line = util.getArg(aArgs, 'line');
-
-    // When there is no exact match, BasicSourceMapConsumer.prototype._findMapping
-    // returns the index of the closest mapping less than the needle. By
-    // setting needle.originalColumn to 0, we thus find the last mapping for
-    // the given line, provided such a mapping exists.
-    var needle = {
-      source: util.getArg(aArgs, 'source'),
-      originalLine: line,
-      originalColumn: util.getArg(aArgs, 'column', 0)
-    };
-
-    if (this.sourceRoot != null) {
-      needle.source = util.relative(this.sourceRoot, needle.source);
-    }
-    if (!this._sources.has(needle.source)) {
-      return [];
-    }
-    needle.source = this._sources.indexOf(needle.source);
-
-    var mappings = [];
-
-    var index = this._findMapping(needle,
-                                  this._originalMappings,
-                                  "originalLine",
-                                  "originalColumn",
-                                  util.compareByOriginalPositions,
-                                  binarySearch.LEAST_UPPER_BOUND);
-    if (index >= 0) {
-      var mapping = this._originalMappings[index];
-
-      if (aArgs.column === undefined) {
-        var originalLine = mapping.originalLine;
-
-        // Iterate until either we run out of mappings, or we run into
-        // a mapping for a different line than the one we found. Since
-        // mappings are sorted, this is guaranteed to find all mappings for
-        // the line we found.
-        while (mapping && mapping.originalLine === originalLine) {
-          mappings.push({
-            line: util.getArg(mapping, 'generatedLine', null),
-            column: util.getArg(mapping, 'generatedColumn', null),
-            lastColumn: util.getArg(mapping, 'lastGeneratedColumn', null)
-          });
-
-          mapping = this._originalMappings[++index];
-        }
-      } else {
-        var originalColumn = mapping.originalColumn;
-
-        // Iterate until either we run out of mappings, or we run into
-        // a mapping for a different line than the one we were searching for.
-        // Since mappings are sorted, this is guaranteed to find all mappings for
-        // the line we are searching for.
-        while (mapping &&
-               mapping.originalLine === line &&
-               mapping.originalColumn == originalColumn) {
-          mappings.push({
-            line: util.getArg(mapping, 'generatedLine', null),
-            column: util.getArg(mapping, 'generatedColumn', null),
-            lastColumn: util.getArg(mapping, 'lastGeneratedColumn', null)
-          });
-
-          mapping = this._originalMappings[++index];
-        }
-      }
-    }
-
-    return mappings;
-  };
 
 exports.SourceMapConsumer = SourceMapConsumer;
 
@@ -8199,13 +8973,13 @@ exports.SourceMapConsumer = SourceMapConsumer;
  * query for information about the original file positions by giving it a file
  * position in the generated source.
  *
- * The only parameter is the raw source map (either as a JSON string, or
+ * The first parameter is the raw source map (either as a JSON string, or
  * already parsed to an object). According to the spec, source maps have the
  * following attributes:
  *
  *   - version: Which version of the source map spec this map is following.
  *   - sources: An array of URLs to the original source files.
- *   - names: An array of identifiers which can be referrenced by individual mappings.
+ *   - names: An array of identifiers which can be referenced by individual mappings.
  *   - sourceRoot: Optional. The URL root from which all sources are relative.
  *   - sourcesContent: Optional. An array of contents of the original source files.
  *   - mappings: A string of base64 VLQs which contain the actual mappings.
@@ -8222,359 +8996,348 @@ exports.SourceMapConsumer = SourceMapConsumer;
  *       mappings: "AA,AB;;ABCDE;"
  *     }
  *
+ * The second parameter, if given, is a string whose value is the URL
+ * at which the source map was found.  This URL is used to compute the
+ * sources array.
+ *
  * [0]: https://docs.google.com/document/d/1U1RGAehQwRypUTovF1KRlpiOFze0b-_2gc6fAH0KY0k/edit?pli=1#
  */
-function BasicSourceMapConsumer(aSourceMap) {
-  var sourceMap = aSourceMap;
-  if (typeof aSourceMap === 'string') {
-    sourceMap = JSON.parse(aSourceMap.replace(/^\)\]\}'/, ''));
-  }
+class BasicSourceMapConsumer extends SourceMapConsumer {
+  constructor(aSourceMap, aSourceMapURL) {
+    return super(INTERNAL).then(that => {
+      let sourceMap = aSourceMap;
+      if (typeof aSourceMap === "string") {
+        sourceMap = util.parseSourceMapInput(aSourceMap);
+      }
 
-  var version = util.getArg(sourceMap, 'version');
-  var sources = util.getArg(sourceMap, 'sources');
-  // Sass 3.3 leaves out the 'names' array, so we deviate from the spec (which
-  // requires the array) to play nice here.
-  var names = util.getArg(sourceMap, 'names', []);
-  var sourceRoot = util.getArg(sourceMap, 'sourceRoot', null);
-  var sourcesContent = util.getArg(sourceMap, 'sourcesContent', null);
-  var mappings = util.getArg(sourceMap, 'mappings');
-  var file = util.getArg(sourceMap, 'file', null);
+      const version = util.getArg(sourceMap, "version");
+      let sources = util.getArg(sourceMap, "sources");
+      // Sass 3.3 leaves out the 'names' array, so we deviate from the spec (which
+      // requires the array) to play nice here.
+      const names = util.getArg(sourceMap, "names", []);
+      let sourceRoot = util.getArg(sourceMap, "sourceRoot", null);
+      const sourcesContent = util.getArg(sourceMap, "sourcesContent", null);
+      const mappings = util.getArg(sourceMap, "mappings");
+      const file = util.getArg(sourceMap, "file", null);
 
-  // Once again, Sass deviates from the spec and supplies the version as a
-  // string rather than a number, so we use loose equality checking here.
-  if (version != this._version) {
-    throw new Error('Unsupported version: ' + version);
-  }
+      // Once again, Sass deviates from the spec and supplies the version as a
+      // string rather than a number, so we use loose equality checking here.
+      if (version != that._version) {
+        throw new Error("Unsupported version: " + version);
+      }
 
-  sources = sources
-    .map(String)
-    // Some source maps produce relative source paths like "./foo.js" instead of
-    // "foo.js".  Normalize these first so that future comparisons will succeed.
-    // See bugzil.la/1090768.
-    .map(util.normalize)
-    // Always ensure that absolute sources are internally stored relative to
-    // the source root, if the source root is absolute. Not doing this would
-    // be particularly problematic when the source root is a prefix of the
-    // source (valid, but why??). See github issue #199 and bugzil.la/1188982.
-    .map(function (source) {
-      return sourceRoot && util.isAbsolute(sourceRoot) && util.isAbsolute(source)
-        ? util.relative(sourceRoot, source)
-        : source;
+      if (sourceRoot) {
+        sourceRoot = util.normalize(sourceRoot);
+      }
+
+      sources = sources
+        .map(String)
+        // Some source maps produce relative source paths like "./foo.js" instead of
+        // "foo.js".  Normalize these first so that future comparisons will succeed.
+        // See bugzil.la/1090768.
+        .map(util.normalize)
+        // Always ensure that absolute sources are internally stored relative to
+        // the source root, if the source root is absolute. Not doing this would
+        // be particularly problematic when the source root is a prefix of the
+        // source (valid, but why??). See github issue #199 and bugzil.la/1188982.
+        .map(function(source) {
+          return sourceRoot && util.isAbsolute(sourceRoot) && util.isAbsolute(source)
+            ? util.relative(sourceRoot, source)
+            : source;
+        });
+
+      // Pass `true` below to allow duplicate names and sources. While source maps
+      // are intended to be compressed and deduplicated, the TypeScript compiler
+      // sometimes generates source maps with duplicates in them. See Github issue
+      // #72 and bugzil.la/889492.
+      that._names = ArraySet.fromArray(names.map(String), true);
+      that._sources = ArraySet.fromArray(sources, true);
+
+      that._absoluteSources = that._sources.toArray().map(function(s) {
+        return util.computeSourceURL(sourceRoot, s, aSourceMapURL);
+      });
+
+      that.sourceRoot = sourceRoot;
+      that.sourcesContent = sourcesContent;
+      that._mappings = mappings;
+      that._sourceMapURL = aSourceMapURL;
+      that.file = file;
+
+      that._computedColumnSpans = false;
+      that._mappingsPtr = 0;
+      that._wasm = null;
+
+      return wasm().then(w => {
+        that._wasm = w;
+        return that;
+      });
     });
-
-  // Pass `true` below to allow duplicate names and sources. While source maps
-  // are intended to be compressed and deduplicated, the TypeScript compiler
-  // sometimes generates source maps with duplicates in them. See Github issue
-  // #72 and bugzil.la/889492.
-  this._names = ArraySet.fromArray(names.map(String), true);
-  this._sources = ArraySet.fromArray(sources, true);
-
-  this.sourceRoot = sourceRoot;
-  this.sourcesContent = sourcesContent;
-  this._mappings = mappings;
-  this.file = file;
-}
-
-BasicSourceMapConsumer.prototype = Object.create(SourceMapConsumer.prototype);
-BasicSourceMapConsumer.prototype.consumer = SourceMapConsumer;
-
-/**
- * Create a BasicSourceMapConsumer from a SourceMapGenerator.
- *
- * @param SourceMapGenerator aSourceMap
- *        The source map that will be consumed.
- * @returns BasicSourceMapConsumer
- */
-BasicSourceMapConsumer.fromSourceMap =
-  function SourceMapConsumer_fromSourceMap(aSourceMap) {
-    var smc = Object.create(BasicSourceMapConsumer.prototype);
-
-    var names = smc._names = ArraySet.fromArray(aSourceMap._names.toArray(), true);
-    var sources = smc._sources = ArraySet.fromArray(aSourceMap._sources.toArray(), true);
-    smc.sourceRoot = aSourceMap._sourceRoot;
-    smc.sourcesContent = aSourceMap._generateSourcesContent(smc._sources.toArray(),
-                                                            smc.sourceRoot);
-    smc.file = aSourceMap._file;
-
-    // Because we are modifying the entries (by converting string sources and
-    // names to indices into the sources and names ArraySets), we have to make
-    // a copy of the entry or else bad things happen. Shared mutable state
-    // strikes again! See github issue #191.
-
-    var generatedMappings = aSourceMap._mappings.toArray().slice();
-    var destGeneratedMappings = smc.__generatedMappings = [];
-    var destOriginalMappings = smc.__originalMappings = [];
-
-    for (var i = 0, length = generatedMappings.length; i < length; i++) {
-      var srcMapping = generatedMappings[i];
-      var destMapping = new Mapping;
-      destMapping.generatedLine = srcMapping.generatedLine;
-      destMapping.generatedColumn = srcMapping.generatedColumn;
-
-      if (srcMapping.source) {
-        destMapping.source = sources.indexOf(srcMapping.source);
-        destMapping.originalLine = srcMapping.originalLine;
-        destMapping.originalColumn = srcMapping.originalColumn;
-
-        if (srcMapping.name) {
-          destMapping.name = names.indexOf(srcMapping.name);
-        }
-
-        destOriginalMappings.push(destMapping);
-      }
-
-      destGeneratedMappings.push(destMapping);
-    }
-
-    quickSort(smc.__originalMappings, util.compareByOriginalPositions);
-
-    return smc;
-  };
-
-/**
- * The version of the source mapping spec that we are consuming.
- */
-BasicSourceMapConsumer.prototype._version = 3;
-
-/**
- * The list of original sources.
- */
-Object.defineProperty(BasicSourceMapConsumer.prototype, 'sources', {
-  get: function () {
-    return this._sources.toArray().map(function (s) {
-      return this.sourceRoot != null ? util.join(this.sourceRoot, s) : s;
-    }, this);
   }
-});
 
-/**
- * Provide the JIT with a nice shape / hidden class.
- */
-function Mapping() {
-  this.generatedLine = 0;
-  this.generatedColumn = 0;
-  this.source = null;
-  this.originalLine = null;
-  this.originalColumn = null;
-  this.name = null;
-}
+  /**
+   * Utility function to find the index of a source.  Returns -1 if not
+   * found.
+   */
+  _findSourceIndex(aSource) {
+    let relativeSource = aSource;
+    if (this.sourceRoot != null) {
+      relativeSource = util.relative(this.sourceRoot, relativeSource);
+    }
 
-/**
- * Parse the mappings in a string in to a data structure which we can easily
- * query (the ordered arrays in the `this.__generatedMappings` and
- * `this.__originalMappings` properties).
- */
-BasicSourceMapConsumer.prototype._parseMappings =
-  function SourceMapConsumer_parseMappings(aStr, aSourceRoot) {
-    var generatedLine = 1;
-    var previousGeneratedColumn = 0;
-    var previousOriginalLine = 0;
-    var previousOriginalColumn = 0;
-    var previousSource = 0;
-    var previousName = 0;
-    var length = aStr.length;
-    var index = 0;
-    var cachedSegments = {};
-    var temp = {};
-    var originalMappings = [];
-    var generatedMappings = [];
-    var mapping, str, segment, end, value;
+    if (this._sources.has(relativeSource)) {
+      return this._sources.indexOf(relativeSource);
+    }
 
-    while (index < length) {
-      if (aStr.charAt(index) === ';') {
-        generatedLine++;
-        index++;
-        previousGeneratedColumn = 0;
-      }
-      else if (aStr.charAt(index) === ',') {
-        index++;
-      }
-      else {
-        mapping = new Mapping();
-        mapping.generatedLine = generatedLine;
-
-        // Because each offset is encoded relative to the previous one,
-        // many segments often have the same encoding. We can exploit this
-        // fact by caching the parsed variable length fields of each segment,
-        // allowing us to avoid a second parse if we encounter the same
-        // segment again.
-        for (end = index; end < length; end++) {
-          if (this._charIsMappingSeparator(aStr, end)) {
-            break;
-          }
-        }
-        str = aStr.slice(index, end);
-
-        segment = cachedSegments[str];
-        if (segment) {
-          index += str.length;
-        } else {
-          segment = [];
-          while (index < end) {
-            base64VLQ.decode(aStr, index, temp);
-            value = temp.value;
-            index = temp.rest;
-            segment.push(value);
-          }
-
-          if (segment.length === 2) {
-            throw new Error('Found a source, but no line and column');
-          }
-
-          if (segment.length === 3) {
-            throw new Error('Found a source and line, but no column');
-          }
-
-          cachedSegments[str] = segment;
-        }
-
-        // Generated column.
-        mapping.generatedColumn = previousGeneratedColumn + segment[0];
-        previousGeneratedColumn = mapping.generatedColumn;
-
-        if (segment.length > 1) {
-          // Original source.
-          mapping.source = previousSource + segment[1];
-          previousSource += segment[1];
-
-          // Original line.
-          mapping.originalLine = previousOriginalLine + segment[2];
-          previousOriginalLine = mapping.originalLine;
-          // Lines are stored 0-based
-          mapping.originalLine += 1;
-
-          // Original column.
-          mapping.originalColumn = previousOriginalColumn + segment[3];
-          previousOriginalColumn = mapping.originalColumn;
-
-          if (segment.length > 4) {
-            // Original name.
-            mapping.name = previousName + segment[4];
-            previousName += segment[4];
-          }
-        }
-
-        generatedMappings.push(mapping);
-        if (typeof mapping.originalLine === 'number') {
-          originalMappings.push(mapping);
-        }
+    // Maybe aSource is an absolute URL as returned by |sources|.  In
+    // this case we can't simply undo the transform.
+    for (let i = 0; i < this._absoluteSources.length; ++i) {
+      if (this._absoluteSources[i] == aSource) {
+        return i;
       }
     }
 
-    quickSort(generatedMappings, util.compareByGeneratedPositionsDeflated);
-    this.__generatedMappings = generatedMappings;
+    return -1;
+  }
 
-    quickSort(originalMappings, util.compareByOriginalPositions);
-    this.__originalMappings = originalMappings;
-  };
+  /**
+   * Create a BasicSourceMapConsumer from a SourceMapGenerator.
+   *
+   * @param SourceMapGenerator aSourceMap
+   *        The source map that will be consumed.
+   * @param String aSourceMapURL
+   *        The URL at which the source map can be found (optional)
+   * @returns BasicSourceMapConsumer
+   */
+  static fromSourceMap(aSourceMap, aSourceMapURL) {
+    return new BasicSourceMapConsumer(aSourceMap.toString());
+  }
 
-/**
- * Find the mapping that best matches the hypothetical "needle" mapping that
- * we are searching for in the given "haystack" of mappings.
- */
-BasicSourceMapConsumer.prototype._findMapping =
-  function SourceMapConsumer_findMapping(aNeedle, aMappings, aLineName,
-                                         aColumnName, aComparator, aBias) {
-    // To return the position we are searching for, we must first find the
-    // mapping for the given position and then return the opposite position it
-    // points to. Because the mappings are sorted, we can use binary search to
-    // find the best mapping.
+  get sources() {
+    return this._absoluteSources.slice();
+  }
 
-    if (aNeedle[aLineName] <= 0) {
-      throw new TypeError('Line must be greater than or equal to 1, got '
-                          + aNeedle[aLineName]);
-    }
-    if (aNeedle[aColumnName] < 0) {
-      throw new TypeError('Column must be greater than or equal to 0, got '
-                          + aNeedle[aColumnName]);
+  _getMappingsPtr() {
+    if (this._mappingsPtr === 0) {
+      this._parseMappings(this._mappings, this.sourceRoot);
     }
 
-    return binarySearch.search(aNeedle, aMappings, aComparator, aBias);
-  };
+    return this._mappingsPtr;
+  }
 
-/**
- * Compute the last column for each generated mapping. The last column is
- * inclusive.
- */
-BasicSourceMapConsumer.prototype.computeColumnSpans =
-  function SourceMapConsumer_computeColumnSpans() {
-    for (var index = 0; index < this._generatedMappings.length; ++index) {
-      var mapping = this._generatedMappings[index];
+  /**
+   * Parse the mappings in a string in to a data structure which we can easily
+   * query (the ordered arrays in the `this.__generatedMappings` and
+   * `this.__originalMappings` properties).
+   */
+  _parseMappings(aStr, aSourceRoot) {
+    const size = aStr.length;
 
-      // Mappings do not contain a field for the last generated columnt. We
-      // can come up with an optimistic estimate, however, by assuming that
-      // mappings are contiguous (i.e. given two consecutive mappings, the
-      // first mapping ends where the second one starts).
-      if (index + 1 < this._generatedMappings.length) {
-        var nextMapping = this._generatedMappings[index + 1];
+    const mappingsBufPtr = this._wasm.exports.allocate_mappings(size);
+    const mappingsBuf = new Uint8Array(this._wasm.exports.memory.buffer, mappingsBufPtr, size);
+    for (let i = 0; i < size; i++) {
+      mappingsBuf[i] = aStr.charCodeAt(i);
+    }
 
-        if (mapping.generatedLine === nextMapping.generatedLine) {
-          mapping.lastGeneratedColumn = nextMapping.generatedColumn - 1;
-          continue;
-        }
+    const mappingsPtr = this._wasm.exports.parse_mappings(mappingsBufPtr);
+
+    if (!mappingsPtr) {
+      const error = this._wasm.exports.get_last_error();
+      let msg = `Error parsing mappings (code ${error}): `;
+
+      // XXX: keep these error codes in sync with `fitzgen/source-map-mappings`.
+      switch (error) {
+        case 1:
+          msg += "the mappings contained a negative line, column, source index, or name index";
+          break;
+        case 2:
+          msg += "the mappings contained a number larger than 2**32";
+          break;
+        case 3:
+          msg += "reached EOF while in the middle of parsing a VLQ";
+          break;
+        case 4:
+          msg += "invalid base 64 character while parsing a VLQ";
+          break;
+        default:
+          msg += "unknown error code";
+          break;
       }
 
-      // The last mapping for each line spans the entire line.
-      mapping.lastGeneratedColumn = Infinity;
+      throw new Error(msg);
     }
-  };
 
-/**
- * Returns the original source, line, and column information for the generated
- * source's line and column positions provided. The only argument is an object
- * with the following properties:
- *
- *   - line: The line number in the generated source.
- *   - column: The column number in the generated source.
- *   - bias: Either 'SourceMapConsumer.GREATEST_LOWER_BOUND' or
- *     'SourceMapConsumer.LEAST_UPPER_BOUND'. Specifies whether to return the
- *     closest element that is smaller than or greater than the one we are
- *     searching for, respectively, if the exact element cannot be found.
- *     Defaults to 'SourceMapConsumer.GREATEST_LOWER_BOUND'.
- *
- * and an object is returned with the following properties:
- *
- *   - source: The original source file, or null.
- *   - line: The line number in the original source, or null.
- *   - column: The column number in the original source, or null.
- *   - name: The original identifier, or null.
- */
-BasicSourceMapConsumer.prototype.originalPositionFor =
-  function SourceMapConsumer_originalPositionFor(aArgs) {
-    var needle = {
-      generatedLine: util.getArg(aArgs, 'line'),
-      generatedColumn: util.getArg(aArgs, 'column')
-    };
+    this._mappingsPtr = mappingsPtr;
+  }
 
-    var index = this._findMapping(
-      needle,
-      this._generatedMappings,
-      "generatedLine",
-      "generatedColumn",
-      util.compareByGeneratedPositionsDeflated,
-      util.getArg(aArgs, 'bias', SourceMapConsumer.GREATEST_LOWER_BOUND)
+  eachMapping(aCallback, aContext, aOrder) {
+    const context = aContext || null;
+    const order = aOrder || SourceMapConsumer.GENERATED_ORDER;
+    const sourceRoot = this.sourceRoot;
+
+    this._wasm.withMappingCallback(
+      mapping => {
+        if (mapping.source !== null) {
+          mapping.source = this._sources.at(mapping.source);
+          mapping.source = util.computeSourceURL(sourceRoot, mapping.source, this._sourceMapURL);
+
+          if (mapping.name !== null) {
+            mapping.name = this._names.at(mapping.name);
+          }
+        }
+
+        aCallback.call(context, mapping);
+      },
+      () => {
+        switch (order) {
+        case SourceMapConsumer.GENERATED_ORDER:
+          this._wasm.exports.by_generated_location(this._getMappingsPtr());
+          break;
+        case SourceMapConsumer.ORIGINAL_ORDER:
+          this._wasm.exports.by_original_location(this._getMappingsPtr());
+          break;
+        default:
+          throw new Error("Unknown order of iteration.");
+        }
+      }
+    );
+  }
+
+  allGeneratedPositionsFor(aArgs) {
+    let source = util.getArg(aArgs, "source");
+    const originalLine = util.getArg(aArgs, "line");
+    const originalColumn = aArgs.column || 0;
+
+    source = this._findSourceIndex(source);
+    if (source < 0) {
+      return [];
+    }
+
+    if (originalLine < 1) {
+      throw new Error("Line numbers must be >= 1");
+    }
+
+    if (originalColumn < 0) {
+      throw new Error("Column numbers must be >= 0");
+    }
+
+    const mappings = [];
+
+    this._wasm.withMappingCallback(
+      m => {
+        let lastColumn = m.lastGeneratedColumn;
+        if (this._computedColumnSpans && lastColumn === null) {
+          lastColumn = Infinity;
+        }
+        mappings.push({
+          line: m.generatedLine,
+          column: m.generatedColumn,
+          lastColumn,
+        });
+      }, () => {
+        this._wasm.exports.all_generated_locations_for(
+          this._getMappingsPtr(),
+          source,
+          originalLine - 1,
+          "column" in aArgs,
+          originalColumn
+        );
+      }
     );
 
-    if (index >= 0) {
-      var mapping = this._generatedMappings[index];
+    return mappings;
+  }
 
+  destroy() {
+    if (this._mappingsPtr !== 0) {
+      this._wasm.exports.free_mappings(this._mappingsPtr);
+      this._mappingsPtr = 0;
+    }
+  }
+
+  /**
+   * Compute the last column for each generated mapping. The last column is
+   * inclusive.
+   */
+  computeColumnSpans() {
+    if (this._computedColumnSpans) {
+      return;
+    }
+
+    this._wasm.exports.compute_column_spans(this._getMappingsPtr());
+    this._computedColumnSpans = true;
+  }
+
+  /**
+   * Returns the original source, line, and column information for the generated
+   * source's line and column positions provided. The only argument is an object
+   * with the following properties:
+   *
+   *   - line: The line number in the generated source.  The line number
+   *     is 1-based.
+   *   - column: The column number in the generated source.  The column
+   *     number is 0-based.
+   *   - bias: Either 'SourceMapConsumer.GREATEST_LOWER_BOUND' or
+   *     'SourceMapConsumer.LEAST_UPPER_BOUND'. Specifies whether to return the
+   *     closest element that is smaller than or greater than the one we are
+   *     searching for, respectively, if the exact element cannot be found.
+   *     Defaults to 'SourceMapConsumer.GREATEST_LOWER_BOUND'.
+   *
+   * and an object is returned with the following properties:
+   *
+   *   - source: The original source file, or null.
+   *   - line: The line number in the original source, or null.  The
+   *     line number is 1-based.
+   *   - column: The column number in the original source, or null.  The
+   *     column number is 0-based.
+   *   - name: The original identifier, or null.
+   */
+  originalPositionFor(aArgs) {
+    const needle = {
+      generatedLine: util.getArg(aArgs, "line"),
+      generatedColumn: util.getArg(aArgs, "column")
+    };
+
+    if (needle.generatedLine < 1) {
+      throw new Error("Line numbers must be >= 1");
+    }
+
+    if (needle.generatedColumn < 0) {
+      throw new Error("Column numbers must be >= 0");
+    }
+
+    let bias = util.getArg(aArgs, "bias", SourceMapConsumer.GREATEST_LOWER_BOUND);
+    if (bias == null) {
+      bias = SourceMapConsumer.GREATEST_LOWER_BOUND;
+    }
+
+    let mapping;
+    this._wasm.withMappingCallback(m => mapping = m, () => {
+      this._wasm.exports.original_location_for(
+        this._getMappingsPtr(),
+        needle.generatedLine - 1,
+        needle.generatedColumn,
+        bias
+      );
+    });
+
+    if (mapping) {
       if (mapping.generatedLine === needle.generatedLine) {
-        var source = util.getArg(mapping, 'source', null);
+        let source = util.getArg(mapping, "source", null);
         if (source !== null) {
           source = this._sources.at(source);
-          if (this.sourceRoot != null) {
-            source = util.join(this.sourceRoot, source);
-          }
+          source = util.computeSourceURL(this.sourceRoot, source, this._sourceMapURL);
         }
-        var name = util.getArg(mapping, 'name', null);
+
+        let name = util.getArg(mapping, "name", null);
         if (name !== null) {
           name = this._names.at(name);
         }
+
         return {
-          source: source,
-          line: util.getArg(mapping, 'originalLine', null),
-          column: util.getArg(mapping, 'originalColumn', null),
-          name: name
+          source,
+          line: util.getArg(mapping, "originalLine", null),
+          column: util.getArg(mapping, "originalColumn", null),
+          name
         };
       }
     }
@@ -8585,56 +9348,56 @@ BasicSourceMapConsumer.prototype.originalPositionFor =
       column: null,
       name: null
     };
-  };
+  }
 
-/**
- * Return true if we have the source content for every source in the source
- * map, false otherwise.
- */
-BasicSourceMapConsumer.prototype.hasContentsOfAllSources =
-  function BasicSourceMapConsumer_hasContentsOfAllSources() {
+  /**
+   * Return true if we have the source content for every source in the source
+   * map, false otherwise.
+   */
+  hasContentsOfAllSources() {
     if (!this.sourcesContent) {
       return false;
     }
     return this.sourcesContent.length >= this._sources.size() &&
-      !this.sourcesContent.some(function (sc) { return sc == null; });
-  };
+      !this.sourcesContent.some(function(sc) { return sc == null; });
+  }
 
-/**
- * Returns the original source content. The only argument is the url of the
- * original source file. Returns null if no original source content is
- * available.
- */
-BasicSourceMapConsumer.prototype.sourceContentFor =
-  function SourceMapConsumer_sourceContentFor(aSource, nullOnMissing) {
+  /**
+   * Returns the original source content. The only argument is the url of the
+   * original source file. Returns null if no original source content is
+   * available.
+   */
+  sourceContentFor(aSource, nullOnMissing) {
     if (!this.sourcesContent) {
       return null;
     }
 
+    const index = this._findSourceIndex(aSource);
+    if (index >= 0) {
+      return this.sourcesContent[index];
+    }
+
+    let relativeSource = aSource;
     if (this.sourceRoot != null) {
-      aSource = util.relative(this.sourceRoot, aSource);
+      relativeSource = util.relative(this.sourceRoot, relativeSource);
     }
 
-    if (this._sources.has(aSource)) {
-      return this.sourcesContent[this._sources.indexOf(aSource)];
-    }
-
-    var url;
+    let url;
     if (this.sourceRoot != null
         && (url = util.urlParse(this.sourceRoot))) {
       // XXX: file:// URIs and absolute paths lead to unexpected behavior for
       // many users. We can help them out when they expect file:// URIs to
       // behave like it would if they were running a local HTTP server. See
       // https://bugzilla.mozilla.org/show_bug.cgi?id=885597.
-      var fileUriAbsPath = aSource.replace(/^file:\/\//, "");
+      const fileUriAbsPath = relativeSource.replace(/^file:\/\//, "");
       if (url.scheme == "file"
           && this._sources.has(fileUriAbsPath)) {
-        return this.sourcesContent[this._sources.indexOf(fileUriAbsPath)]
+        return this.sourcesContent[this._sources.indexOf(fileUriAbsPath)];
       }
 
       if ((!url.path || url.path == "/")
-          && this._sources.has("/" + aSource)) {
-        return this.sourcesContent[this._sources.indexOf("/" + aSource)];
+          && this._sources.has("/" + relativeSource)) {
+        return this.sourcesContent[this._sources.indexOf("/" + relativeSource)];
       }
     }
 
@@ -8645,68 +9408,84 @@ BasicSourceMapConsumer.prototype.sourceContentFor =
     if (nullOnMissing) {
       return null;
     }
-    else {
-      throw new Error('"' + aSource + '" is not in the SourceMap.');
-    }
-  };
 
-/**
- * Returns the generated line and column information for the original source,
- * line, and column positions provided. The only argument is an object with
- * the following properties:
- *
- *   - source: The filename of the original source.
- *   - line: The line number in the original source.
- *   - column: The column number in the original source.
- *   - bias: Either 'SourceMapConsumer.GREATEST_LOWER_BOUND' or
- *     'SourceMapConsumer.LEAST_UPPER_BOUND'. Specifies whether to return the
- *     closest element that is smaller than or greater than the one we are
- *     searching for, respectively, if the exact element cannot be found.
- *     Defaults to 'SourceMapConsumer.GREATEST_LOWER_BOUND'.
- *
- * and an object is returned with the following properties:
- *
- *   - line: The line number in the generated source, or null.
- *   - column: The column number in the generated source, or null.
- */
-BasicSourceMapConsumer.prototype.generatedPositionFor =
-  function SourceMapConsumer_generatedPositionFor(aArgs) {
-    var source = util.getArg(aArgs, 'source');
-    if (this.sourceRoot != null) {
-      source = util.relative(this.sourceRoot, source);
-    }
-    if (!this._sources.has(source)) {
+    throw new Error('"' + relativeSource + '" is not in the SourceMap.');
+  }
+
+  /**
+   * Returns the generated line and column information for the original source,
+   * line, and column positions provided. The only argument is an object with
+   * the following properties:
+   *
+   *   - source: The filename of the original source.
+   *   - line: The line number in the original source.  The line number
+   *     is 1-based.
+   *   - column: The column number in the original source.  The column
+   *     number is 0-based.
+   *   - bias: Either 'SourceMapConsumer.GREATEST_LOWER_BOUND' or
+   *     'SourceMapConsumer.LEAST_UPPER_BOUND'. Specifies whether to return the
+   *     closest element that is smaller than or greater than the one we are
+   *     searching for, respectively, if the exact element cannot be found.
+   *     Defaults to 'SourceMapConsumer.GREATEST_LOWER_BOUND'.
+   *
+   * and an object is returned with the following properties:
+   *
+   *   - line: The line number in the generated source, or null.  The
+   *     line number is 1-based.
+   *   - column: The column number in the generated source, or null.
+   *     The column number is 0-based.
+   */
+  generatedPositionFor(aArgs) {
+    let source = util.getArg(aArgs, "source");
+    source = this._findSourceIndex(source);
+    if (source < 0) {
       return {
         line: null,
         column: null,
         lastColumn: null
       };
     }
-    source = this._sources.indexOf(source);
 
-    var needle = {
-      source: source,
-      originalLine: util.getArg(aArgs, 'line'),
-      originalColumn: util.getArg(aArgs, 'column')
+    const needle = {
+      source,
+      originalLine: util.getArg(aArgs, "line"),
+      originalColumn: util.getArg(aArgs, "column")
     };
 
-    var index = this._findMapping(
-      needle,
-      this._originalMappings,
-      "originalLine",
-      "originalColumn",
-      util.compareByOriginalPositions,
-      util.getArg(aArgs, 'bias', SourceMapConsumer.GREATEST_LOWER_BOUND)
-    );
+    if (needle.originalLine < 1) {
+      throw new Error("Line numbers must be >= 1");
+    }
 
-    if (index >= 0) {
-      var mapping = this._originalMappings[index];
+    if (needle.originalColumn < 0) {
+      throw new Error("Column numbers must be >= 0");
+    }
 
+    let bias = util.getArg(aArgs, "bias", SourceMapConsumer.GREATEST_LOWER_BOUND);
+    if (bias == null) {
+      bias = SourceMapConsumer.GREATEST_LOWER_BOUND;
+    }
+
+    let mapping;
+    this._wasm.withMappingCallback(m => mapping = m, () => {
+      this._wasm.exports.generated_location_for(
+        this._getMappingsPtr(),
+        needle.source,
+        needle.originalLine - 1,
+        needle.originalColumn,
+        bias
+      );
+    });
+
+    if (mapping) {
       if (mapping.source === needle.source) {
+        let lastColumn = mapping.lastGeneratedColumn;
+        if (this._computedColumnSpans && lastColumn === null) {
+          lastColumn = Infinity;
+        }
         return {
-          line: util.getArg(mapping, 'generatedLine', null),
-          column: util.getArg(mapping, 'generatedColumn', null),
-          lastColumn: util.getArg(mapping, 'lastGeneratedColumn', null)
+          line: util.getArg(mapping, "generatedLine", null),
+          column: util.getArg(mapping, "generatedColumn", null),
+          lastColumn,
         };
       }
     }
@@ -8716,8 +9495,10 @@ BasicSourceMapConsumer.prototype.generatedPositionFor =
       column: null,
       lastColumn: null
     };
-  };
+  }
+}
 
+BasicSourceMapConsumer.prototype.consumer = SourceMapConsumer;
 exports.BasicSourceMapConsumer = BasicSourceMapConsumer;
 
 /**
@@ -8726,7 +9507,7 @@ exports.BasicSourceMapConsumer = BasicSourceMapConsumer;
  * that it takes "indexed" source maps (i.e. ones with a "sections" field) as
  * input.
  *
- * The only parameter is a raw source map (either as a JSON string, or already
+ * The first parameter is a raw source map (either as a JSON string, or already
  * parsed to an object). According to the spec for indexed source maps, they
  * have the following attributes:
  *
@@ -8763,114 +9544,197 @@ exports.BasicSourceMapConsumer = BasicSourceMapConsumer;
  *    }],
  *  }
  *
+ * The second parameter, if given, is a string whose value is the URL
+ * at which the source map was found.  This URL is used to compute the
+ * sources array.
+ *
  * [0]: https://docs.google.com/document/d/1U1RGAehQwRypUTovF1KRlpiOFze0b-_2gc6fAH0KY0k/edit#heading=h.535es3xeprgt
  */
-function IndexedSourceMapConsumer(aSourceMap) {
-  var sourceMap = aSourceMap;
-  if (typeof aSourceMap === 'string') {
-    sourceMap = JSON.parse(aSourceMap.replace(/^\)\]\}'/, ''));
+class IndexedSourceMapConsumer extends SourceMapConsumer {
+  constructor(aSourceMap, aSourceMapURL) {
+    return super(INTERNAL).then(that => {
+      let sourceMap = aSourceMap;
+      if (typeof aSourceMap === "string") {
+        sourceMap = util.parseSourceMapInput(aSourceMap);
+      }
+
+      const version = util.getArg(sourceMap, "version");
+      const sections = util.getArg(sourceMap, "sections");
+
+      if (version != that._version) {
+        throw new Error("Unsupported version: " + version);
+      }
+
+      that._sources = new ArraySet();
+      that._names = new ArraySet();
+      that.__generatedMappings = null;
+      that.__originalMappings = null;
+      that.__generatedMappingsUnsorted = null;
+      that.__originalMappingsUnsorted = null;
+
+      let lastOffset = {
+        line: -1,
+        column: 0
+      };
+      return Promise.all(sections.map(s => {
+        if (s.url) {
+          // The url field will require support for asynchronicity.
+          // See https://github.com/mozilla/source-map/issues/16
+          throw new Error("Support for url field in sections not implemented.");
+        }
+        const offset = util.getArg(s, "offset");
+        const offsetLine = util.getArg(offset, "line");
+        const offsetColumn = util.getArg(offset, "column");
+
+        if (offsetLine < lastOffset.line ||
+            (offsetLine === lastOffset.line && offsetColumn < lastOffset.column)) {
+          throw new Error("Section offsets must be ordered and non-overlapping.");
+        }
+        lastOffset = offset;
+
+        const cons = new SourceMapConsumer(util.getArg(s, "map"), aSourceMapURL);
+        return cons.then(consumer => {
+          return {
+            generatedOffset: {
+              // The offset fields are 0-based, but we use 1-based indices when
+              // encoding/decoding from VLQ.
+              generatedLine: offsetLine + 1,
+              generatedColumn: offsetColumn + 1
+            },
+            consumer
+          };
+        });
+      })).then(s => {
+        that._sections = s;
+        return that;
+      });
+    });
   }
 
-  var version = util.getArg(sourceMap, 'version');
-  var sections = util.getArg(sourceMap, 'sections');
+  // `__generatedMappings` and `__originalMappings` are arrays that hold the
+  // parsed mapping coordinates from the source map's "mappings" attribute. They
+  // are lazily instantiated, accessed via the `_generatedMappings` and
+  // `_originalMappings` getters respectively, and we only parse the mappings
+  // and create these arrays once queried for a source location. We jump through
+  // these hoops because there can be many thousands of mappings, and parsing
+  // them is expensive, so we only want to do it if we must.
+  //
+  // Each object in the arrays is of the form:
+  //
+  //     {
+  //       generatedLine: The line number in the generated code,
+  //       generatedColumn: The column number in the generated code,
+  //       source: The path to the original source file that generated this
+  //               chunk of code,
+  //       originalLine: The line number in the original source that
+  //                     corresponds to this chunk of generated code,
+  //       originalColumn: The column number in the original source that
+  //                       corresponds to this chunk of generated code,
+  //       name: The name of the original symbol which generated this chunk of
+  //             code.
+  //     }
+  //
+  // All properties except for `generatedLine` and `generatedColumn` can be
+  // `null`.
+  //
+  // `_generatedMappings` is ordered by the generated positions.
+  //
+  // `_originalMappings` is ordered by the original positions.
+  get _generatedMappings() {
+    if (!this.__generatedMappings) {
+      this._sortGeneratedMappings();
+    }
 
-  if (version != this._version) {
-    throw new Error('Unsupported version: ' + version);
+    return this.__generatedMappings;
   }
 
-  this._sources = new ArraySet();
-  this._names = new ArraySet();
-
-  var lastOffset = {
-    line: -1,
-    column: 0
-  };
-  this._sections = sections.map(function (s) {
-    if (s.url) {
-      // The url field will require support for asynchronicity.
-      // See https://github.com/mozilla/source-map/issues/16
-      throw new Error('Support for url field in sections not implemented.');
+  get _originalMappings() {
+    if (!this.__originalMappings) {
+      this._sortOriginalMappings();
     }
-    var offset = util.getArg(s, 'offset');
-    var offsetLine = util.getArg(offset, 'line');
-    var offsetColumn = util.getArg(offset, 'column');
 
-    if (offsetLine < lastOffset.line ||
-        (offsetLine === lastOffset.line && offsetColumn < lastOffset.column)) {
-      throw new Error('Section offsets must be ordered and non-overlapping.');
+    return this.__originalMappings;
+  }
+
+  get _generatedMappingsUnsorted() {
+    if (!this.__generatedMappingsUnsorted) {
+      this._parseMappings(this._mappings, this.sourceRoot);
     }
-    lastOffset = offset;
 
-    return {
-      generatedOffset: {
-        // The offset fields are 0-based, but we use 1-based indices when
-        // encoding/decoding from VLQ.
-        generatedLine: offsetLine + 1,
-        generatedColumn: offsetColumn + 1
-      },
-      consumer: new SourceMapConsumer(util.getArg(s, 'map'))
+    return this.__generatedMappingsUnsorted;
+  }
+
+  get _originalMappingsUnsorted() {
+    if (!this.__originalMappingsUnsorted) {
+      this._parseMappings(this._mappings, this.sourceRoot);
     }
-  });
-}
 
-IndexedSourceMapConsumer.prototype = Object.create(SourceMapConsumer.prototype);
-IndexedSourceMapConsumer.prototype.constructor = SourceMapConsumer;
+    return this.__originalMappingsUnsorted;
+  }
 
-/**
- * The version of the source mapping spec that we are consuming.
- */
-IndexedSourceMapConsumer.prototype._version = 3;
+  _sortGeneratedMappings() {
+    const mappings = this._generatedMappingsUnsorted;
+    mappings.sort(util.compareByGeneratedPositionsDeflated);
+    this.__generatedMappings = mappings;
+  }
 
-/**
- * The list of original sources.
- */
-Object.defineProperty(IndexedSourceMapConsumer.prototype, 'sources', {
-  get: function () {
-    var sources = [];
-    for (var i = 0; i < this._sections.length; i++) {
-      for (var j = 0; j < this._sections[i].consumer.sources.length; j++) {
+  _sortOriginalMappings() {
+    const mappings = this._originalMappingsUnsorted;
+    mappings.sort(util.compareByOriginalPositions);
+    this.__originalMappings = mappings;
+  }
+
+  /**
+   * The list of original sources.
+   */
+  get sources() {
+    const sources = [];
+    for (let i = 0; i < this._sections.length; i++) {
+      for (let j = 0; j < this._sections[i].consumer.sources.length; j++) {
         sources.push(this._sections[i].consumer.sources[j]);
       }
     }
     return sources;
   }
-});
 
-/**
- * Returns the original source, line, and column information for the generated
- * source's line and column positions provided. The only argument is an object
- * with the following properties:
- *
- *   - line: The line number in the generated source.
- *   - column: The column number in the generated source.
- *
- * and an object is returned with the following properties:
- *
- *   - source: The original source file, or null.
- *   - line: The line number in the original source, or null.
- *   - column: The column number in the original source, or null.
- *   - name: The original identifier, or null.
- */
-IndexedSourceMapConsumer.prototype.originalPositionFor =
-  function IndexedSourceMapConsumer_originalPositionFor(aArgs) {
-    var needle = {
-      generatedLine: util.getArg(aArgs, 'line'),
-      generatedColumn: util.getArg(aArgs, 'column')
+  /**
+   * Returns the original source, line, and column information for the generated
+   * source's line and column positions provided. The only argument is an object
+   * with the following properties:
+   *
+   *   - line: The line number in the generated source.  The line number
+   *     is 1-based.
+   *   - column: The column number in the generated source.  The column
+   *     number is 0-based.
+   *
+   * and an object is returned with the following properties:
+   *
+   *   - source: The original source file, or null.
+   *   - line: The line number in the original source, or null.  The
+   *     line number is 1-based.
+   *   - column: The column number in the original source, or null.  The
+   *     column number is 0-based.
+   *   - name: The original identifier, or null.
+   */
+  originalPositionFor(aArgs) {
+    const needle = {
+      generatedLine: util.getArg(aArgs, "line"),
+      generatedColumn: util.getArg(aArgs, "column")
     };
 
     // Find the section containing the generated position we're trying to map
     // to an original position.
-    var sectionIndex = binarySearch.search(needle, this._sections,
-      function(needle, section) {
-        var cmp = needle.generatedLine - section.generatedOffset.generatedLine;
+    const sectionIndex = binarySearch.search(needle, this._sections,
+      function(aNeedle, section) {
+        const cmp = aNeedle.generatedLine - section.generatedOffset.generatedLine;
         if (cmp) {
           return cmp;
         }
 
-        return (needle.generatedColumn -
+        return (aNeedle.generatedColumn -
                 section.generatedOffset.generatedColumn);
       });
-    var section = this._sections[sectionIndex];
+    const section = this._sections[sectionIndex];
 
     if (!section) {
       return {
@@ -8890,30 +9754,28 @@ IndexedSourceMapConsumer.prototype.originalPositionFor =
          : 0),
       bias: aArgs.bias
     });
-  };
+  }
 
-/**
- * Return true if we have the source content for every source in the source
- * map, false otherwise.
- */
-IndexedSourceMapConsumer.prototype.hasContentsOfAllSources =
-  function IndexedSourceMapConsumer_hasContentsOfAllSources() {
-    return this._sections.every(function (s) {
+  /**
+   * Return true if we have the source content for every source in the source
+   * map, false otherwise.
+   */
+  hasContentsOfAllSources() {
+    return this._sections.every(function(s) {
       return s.consumer.hasContentsOfAllSources();
     });
-  };
+  }
 
-/**
- * Returns the original source content. The only argument is the url of the
- * original source file. Returns null if no original source content is
- * available.
- */
-IndexedSourceMapConsumer.prototype.sourceContentFor =
-  function IndexedSourceMapConsumer_sourceContentFor(aSource, nullOnMissing) {
-    for (var i = 0; i < this._sections.length; i++) {
-      var section = this._sections[i];
+  /**
+   * Returns the original source content. The only argument is the url of the
+   * original source file. Returns null if no original source content is
+   * available.
+   */
+  sourceContentFor(aSource, nullOnMissing) {
+    for (let i = 0; i < this._sections.length; i++) {
+      const section = this._sections[i];
 
-      var content = section.consumer.sourceContentFor(aSource, true);
+      const content = section.consumer.sourceContentFor(aSource, true);
       if (content) {
         return content;
       }
@@ -8921,38 +9783,39 @@ IndexedSourceMapConsumer.prototype.sourceContentFor =
     if (nullOnMissing) {
       return null;
     }
-    else {
-      throw new Error('"' + aSource + '" is not in the SourceMap.');
-    }
-  };
+    throw new Error('"' + aSource + '" is not in the SourceMap.');
+  }
 
-/**
- * Returns the generated line and column information for the original source,
- * line, and column positions provided. The only argument is an object with
- * the following properties:
- *
- *   - source: The filename of the original source.
- *   - line: The line number in the original source.
- *   - column: The column number in the original source.
- *
- * and an object is returned with the following properties:
- *
- *   - line: The line number in the generated source, or null.
- *   - column: The column number in the generated source, or null.
- */
-IndexedSourceMapConsumer.prototype.generatedPositionFor =
-  function IndexedSourceMapConsumer_generatedPositionFor(aArgs) {
-    for (var i = 0; i < this._sections.length; i++) {
-      var section = this._sections[i];
+  /**
+   * Returns the generated line and column information for the original source,
+   * line, and column positions provided. The only argument is an object with
+   * the following properties:
+   *
+   *   - source: The filename of the original source.
+   *   - line: The line number in the original source.  The line number
+   *     is 1-based.
+   *   - column: The column number in the original source.  The column
+   *     number is 0-based.
+   *
+   * and an object is returned with the following properties:
+   *
+   *   - line: The line number in the generated source, or null.  The
+   *     line number is 1-based.
+   *   - column: The column number in the generated source, or null.
+   *     The column number is 0-based.
+   */
+  generatedPositionFor(aArgs) {
+    for (let i = 0; i < this._sections.length; i++) {
+      const section = this._sections[i];
 
       // Only consider this section if the requested source is in the list of
       // sources of the consumer.
-      if (section.consumer.sources.indexOf(util.getArg(aArgs, 'source')) === -1) {
+      if (section.consumer._findSourceIndex(util.getArg(aArgs, "source")) === -1) {
         continue;
       }
-      var generatedPosition = section.consumer.generatedPositionFor(aArgs);
+      const generatedPosition = section.consumer.generatedPositionFor(aArgs);
       if (generatedPosition) {
-        var ret = {
+        const ret = {
           line: generatedPosition.line +
             (section.generatedOffset.generatedLine - 1),
           column: generatedPosition.column +
@@ -8968,40 +9831,45 @@ IndexedSourceMapConsumer.prototype.generatedPositionFor =
       line: null,
       column: null
     };
-  };
+  }
 
-/**
- * Parse the mappings in a string in to a data structure which we can easily
- * query (the ordered arrays in the `this.__generatedMappings` and
- * `this.__originalMappings` properties).
- */
-IndexedSourceMapConsumer.prototype._parseMappings =
-  function IndexedSourceMapConsumer_parseMappings(aStr, aSourceRoot) {
-    this.__generatedMappings = [];
-    this.__originalMappings = [];
-    for (var i = 0; i < this._sections.length; i++) {
-      var section = this._sections[i];
-      var sectionMappings = section.consumer._generatedMappings;
-      for (var j = 0; j < sectionMappings.length; j++) {
-        var mapping = sectionMappings[j];
+  /**
+   * Parse the mappings in a string in to a data structure which we can easily
+   * query (the ordered arrays in the `this.__generatedMappings` and
+   * `this.__originalMappings` properties).
+   */
+  _parseMappings(aStr, aSourceRoot) {
+    const generatedMappings = this.__generatedMappingsUnsorted = [];
+    const originalMappings = this.__originalMappingsUnsorted = [];
+    for (let i = 0; i < this._sections.length; i++) {
+      const section = this._sections[i];
 
-        var source = section.consumer._sources.at(mapping.source);
-        if (section.consumer.sourceRoot !== null) {
-          source = util.join(section.consumer.sourceRoot, source);
-        }
+      const sectionMappings = [];
+      section.consumer.eachMapping(m => sectionMappings.push(m));
+
+      for (let j = 0; j < sectionMappings.length; j++) {
+        const mapping = sectionMappings[j];
+
+        // TODO: test if null is correct here.  The original code used
+        // `source`, which would actually have gotten used as null because
+        // var's get hoisted.
+        // See: https://github.com/mozilla/source-map/issues/333
+        let source = util.computeSourceURL(section.consumer.sourceRoot, null, this._sourceMapURL);
         this._sources.add(source);
         source = this._sources.indexOf(source);
 
-        var name = section.consumer._names.at(mapping.name);
-        this._names.add(name);
-        name = this._names.indexOf(name);
+        let name = null;
+        if (mapping.name) {
+          this._names.add(mapping.name);
+          name = this._names.indexOf(mapping.name);
+        }
 
         // The mappings coming from the consumer for the section have
         // generated positions relative to the start of the section, so we
         // need to offset them to be relative to the start of the concatenated
         // generated file.
-        var adjustedMapping = {
-          source: source,
+        const adjustedMapping = {
+          source,
           generatedLine: mapping.generatedLine +
             (section.generatedOffset.generatedLine - 1),
           generatedColumn: mapping.generatedColumn +
@@ -9010,21 +9878,186 @@ IndexedSourceMapConsumer.prototype._parseMappings =
             : 0),
           originalLine: mapping.originalLine,
           originalColumn: mapping.originalColumn,
-          name: name
+          name
         };
 
-        this.__generatedMappings.push(adjustedMapping);
-        if (typeof adjustedMapping.originalLine === 'number') {
-          this.__originalMappings.push(adjustedMapping);
+        generatedMappings.push(adjustedMapping);
+        if (typeof adjustedMapping.originalLine === "number") {
+          originalMappings.push(adjustedMapping);
+        }
+      }
+    }
+  }
+
+  eachMapping(aCallback, aContext, aOrder) {
+    const context = aContext || null;
+    const order = aOrder || SourceMapConsumer.GENERATED_ORDER;
+
+    let mappings;
+    switch (order) {
+    case SourceMapConsumer.GENERATED_ORDER:
+      mappings = this._generatedMappings;
+      break;
+    case SourceMapConsumer.ORIGINAL_ORDER:
+      mappings = this._originalMappings;
+      break;
+    default:
+      throw new Error("Unknown order of iteration.");
+    }
+
+    const sourceRoot = this.sourceRoot;
+    mappings.map(function(mapping) {
+      let source = null;
+      if (mapping.source !== null) {
+        source = this._sources.at(mapping.source);
+        source = util.computeSourceURL(sourceRoot, source, this._sourceMapURL);
+      }
+      return {
+        source,
+        generatedLine: mapping.generatedLine,
+        generatedColumn: mapping.generatedColumn,
+        originalLine: mapping.originalLine,
+        originalColumn: mapping.originalColumn,
+        name: mapping.name === null ? null : this._names.at(mapping.name)
+      };
+    }, this).forEach(aCallback, context);
+  }
+
+  /**
+   * Find the mapping that best matches the hypothetical "needle" mapping that
+   * we are searching for in the given "haystack" of mappings.
+   */
+  _findMapping(aNeedle, aMappings, aLineName,
+              aColumnName, aComparator, aBias) {
+    // To return the position we are searching for, we must first find the
+    // mapping for the given position and then return the opposite position it
+    // points to. Because the mappings are sorted, we can use binary search to
+    // find the best mapping.
+
+    if (aNeedle[aLineName] <= 0) {
+      throw new TypeError("Line must be greater than or equal to 1, got "
+                          + aNeedle[aLineName]);
+    }
+    if (aNeedle[aColumnName] < 0) {
+      throw new TypeError("Column must be greater than or equal to 0, got "
+                          + aNeedle[aColumnName]);
+    }
+
+    return binarySearch.search(aNeedle, aMappings, aComparator, aBias);
+  }
+
+  allGeneratedPositionsFor(aArgs) {
+    const line = util.getArg(aArgs, "line");
+
+    // When there is no exact match, BasicSourceMapConsumer.prototype._findMapping
+    // returns the index of the closest mapping less than the needle. By
+    // setting needle.originalColumn to 0, we thus find the last mapping for
+    // the given line, provided such a mapping exists.
+    const needle = {
+      source: util.getArg(aArgs, "source"),
+      originalLine: line,
+      originalColumn: util.getArg(aArgs, "column", 0)
+    };
+
+    needle.source = this._findSourceIndex(needle.source);
+    if (needle.source < 0) {
+      return [];
+    }
+
+    if (needle.originalLine < 1) {
+      throw new Error("Line numbers must be >= 1");
+    }
+
+    if (needle.originalColumn < 0) {
+      throw new Error("Column numbers must be >= 0");
+    }
+
+    const mappings = [];
+
+    let index = this._findMapping(needle,
+                                  this._originalMappings,
+                                  "originalLine",
+                                  "originalColumn",
+                                  util.compareByOriginalPositions,
+                                  binarySearch.LEAST_UPPER_BOUND);
+    if (index >= 0) {
+      let mapping = this._originalMappings[index];
+
+      if (aArgs.column === undefined) {
+        const originalLine = mapping.originalLine;
+
+        // Iterate until either we run out of mappings, or we run into
+        // a mapping for a different line than the one we found. Since
+        // mappings are sorted, this is guaranteed to find all mappings for
+        // the line we found.
+        while (mapping && mapping.originalLine === originalLine) {
+          let lastColumn = mapping.lastGeneratedColumn;
+          if (this._computedColumnSpans && lastColumn === null) {
+            lastColumn = Infinity;
+          }
+          mappings.push({
+            line: util.getArg(mapping, "generatedLine", null),
+            column: util.getArg(mapping, "generatedColumn", null),
+            lastColumn,
+          });
+
+          mapping = this._originalMappings[++index];
+        }
+      } else {
+        const originalColumn = mapping.originalColumn;
+
+        // Iterate until either we run out of mappings, or we run into
+        // a mapping for a different line than the one we were searching for.
+        // Since mappings are sorted, this is guaranteed to find all mappings for
+        // the line we are searching for.
+        while (mapping &&
+               mapping.originalLine === line &&
+               mapping.originalColumn == originalColumn) {
+          let lastColumn = mapping.lastGeneratedColumn;
+          if (this._computedColumnSpans && lastColumn === null) {
+            lastColumn = Infinity;
+          }
+          mappings.push({
+            line: util.getArg(mapping, "generatedLine", null),
+            column: util.getArg(mapping, "generatedColumn", null),
+            lastColumn,
+          });
+
+          mapping = this._originalMappings[++index];
         }
       }
     }
 
-    quickSort(this.__generatedMappings, util.compareByGeneratedPositionsDeflated);
-    quickSort(this.__originalMappings, util.compareByOriginalPositions);
-  };
+    return mappings;
+  }
 
+  destroy() {
+    for (let i = 0; i < this._sections.length; i++) {
+      this._sections[i].consumer.destroy();
+    }
+  }
+}
 exports.IndexedSourceMapConsumer = IndexedSourceMapConsumer;
+
+/*
+ * Cheat to get around inter-twingled classes.  `factory()` can be at the end
+ * where it has access to non-hoisted classes, but it gets hoisted itself.
+ */
+function _factory(aSourceMap, aSourceMapURL) {
+  let sourceMap = aSourceMap;
+  if (typeof aSourceMap === "string") {
+    sourceMap = util.parseSourceMapInput(aSourceMap);
+  }
+
+  const consumer = sourceMap.sections != null
+      ? new IndexedSourceMapConsumer(sourceMap, aSourceMapURL)
+      : new BasicSourceMapConsumer(sourceMap, aSourceMapURL);
+  return Promise.resolve(consumer);
+}
+
+function _factoryBSM(aSourceMap, aSourceMapURL) {
+  return BasicSourceMapConsumer.fromSourceMap(aSourceMap, aSourceMapURL);
+}
 
 
 /***/ }),
@@ -9065,13 +10098,12 @@ function recursiveSearch(aLow, aHigh, aNeedle, aHaystack, aCompare, aBias) {
   //
   //   3. We did not find the exact element, and there is no next-closest
   //      element than the one we are searching for, so we return -1.
-  var mid = Math.floor((aHigh - aLow) / 2) + aLow;
-  var cmp = aCompare(aNeedle, aHaystack[mid], true);
+  const mid = Math.floor((aHigh - aLow) / 2) + aLow;
+  const cmp = aCompare(aNeedle, aHaystack[mid], true);
   if (cmp === 0) {
     // Found the element we are looking for.
     return mid;
-  }
-  else if (cmp > 0) {
+  } else if (cmp > 0) {
     // Our needle is greater than aHaystack[mid].
     if (aHigh - mid > 1) {
       // The element is in the upper half.
@@ -9082,24 +10114,21 @@ function recursiveSearch(aLow, aHigh, aNeedle, aHaystack, aCompare, aBias) {
     // we are in termination case (3) or (2) and return the appropriate thing.
     if (aBias == exports.LEAST_UPPER_BOUND) {
       return aHigh < aHaystack.length ? aHigh : -1;
-    } else {
-      return mid;
     }
+    return mid;
   }
-  else {
-    // Our needle is less than aHaystack[mid].
-    if (mid - aLow > 1) {
-      // The element is in the lower half.
-      return recursiveSearch(aLow, mid, aNeedle, aHaystack, aCompare, aBias);
-    }
 
-    // we are in termination case (3) or (2) and return the appropriate thing.
-    if (aBias == exports.LEAST_UPPER_BOUND) {
-      return mid;
-    } else {
-      return aLow < 0 ? -1 : aLow;
-    }
+  // Our needle is less than aHaystack[mid].
+  if (mid - aLow > 1) {
+    // The element is in the lower half.
+    return recursiveSearch(aLow, mid, aNeedle, aHaystack, aCompare, aBias);
   }
+
+  // we are in termination case (3) or (2) and return the appropriate thing.
+  if (aBias == exports.LEAST_UPPER_BOUND) {
+    return mid;
+  }
+  return aLow < 0 ? -1 : aLow;
 }
 
 /**
@@ -9125,7 +10154,7 @@ exports.search = function search(aNeedle, aHaystack, aCompare, aBias) {
     return -1;
   }
 
-  var index = recursiveSearch(-1, aHaystack.length, aNeedle, aHaystack,
+  let index = recursiveSearch(-1, aHaystack.length, aNeedle, aHaystack,
                               aCompare, aBias || exports.GREATEST_LOWER_BOUND);
   if (index < 0) {
     return -1;
@@ -9147,127 +10176,6 @@ exports.search = function search(aNeedle, aHaystack, aCompare, aBias) {
 
 /***/ }),
 
-/***/ 637:
-/***/ (function(module, exports) {
-
-/* -*- Mode: js; js-indent-level: 2; -*- */
-/*
- * Copyright 2011 Mozilla Foundation and contributors
- * Licensed under the New BSD license. See LICENSE or:
- * http://opensource.org/licenses/BSD-3-Clause
- */
-
-// It turns out that some (most?) JavaScript engines don't self-host
-// `Array.prototype.sort`. This makes sense because C++ will likely remain
-// faster than JS when doing raw CPU-intensive sorting. However, when using a
-// custom comparator function, calling back and forth between the VM's C++ and
-// JIT'd JS is rather slow *and* loses JIT type information, resulting in
-// worse generated code for the comparator function than would be optimal. In
-// fact, when sorting with a comparator, these costs outweigh the benefits of
-// sorting in C++. By using our own JS-implemented Quick Sort (below), we get
-// a ~3500ms mean speed-up in `bench/bench.html`.
-
-/**
- * Swap the elements indexed by `x` and `y` in the array `ary`.
- *
- * @param {Array} ary
- *        The array.
- * @param {Number} x
- *        The index of the first item.
- * @param {Number} y
- *        The index of the second item.
- */
-function swap(ary, x, y) {
-  var temp = ary[x];
-  ary[x] = ary[y];
-  ary[y] = temp;
-}
-
-/**
- * Returns a random integer within the range `low .. high` inclusive.
- *
- * @param {Number} low
- *        The lower bound on the range.
- * @param {Number} high
- *        The upper bound on the range.
- */
-function randomIntInRange(low, high) {
-  return Math.round(low + (Math.random() * (high - low)));
-}
-
-/**
- * The Quick Sort algorithm.
- *
- * @param {Array} ary
- *        An array to sort.
- * @param {function} comparator
- *        Function to use to compare two items.
- * @param {Number} p
- *        Start index of the array
- * @param {Number} r
- *        End index of the array
- */
-function doQuickSort(ary, comparator, p, r) {
-  // If our lower bound is less than our upper bound, we (1) partition the
-  // array into two pieces and (2) recurse on each half. If it is not, this is
-  // the empty array and our base case.
-
-  if (p < r) {
-    // (1) Partitioning.
-    //
-    // The partitioning chooses a pivot between `p` and `r` and moves all
-    // elements that are less than or equal to the pivot to the before it, and
-    // all the elements that are greater than it after it. The effect is that
-    // once partition is done, the pivot is in the exact place it will be when
-    // the array is put in sorted order, and it will not need to be moved
-    // again. This runs in O(n) time.
-
-    // Always choose a random pivot so that an input array which is reverse
-    // sorted does not cause O(n^2) running time.
-    var pivotIndex = randomIntInRange(p, r);
-    var i = p - 1;
-
-    swap(ary, pivotIndex, r);
-    var pivot = ary[r];
-
-    // Immediately after `j` is incremented in this loop, the following hold
-    // true:
-    //
-    //   * Every element in `ary[p .. i]` is less than or equal to the pivot.
-    //
-    //   * Every element in `ary[i+1 .. j-1]` is greater than the pivot.
-    for (var j = p; j < r; j++) {
-      if (comparator(ary[j], pivot) <= 0) {
-        i += 1;
-        swap(ary, i, j);
-      }
-    }
-
-    swap(ary, i + 1, j);
-    var q = i + 1;
-
-    // (2) Recurse on each half.
-
-    doQuickSort(ary, comparator, p, q - 1);
-    doQuickSort(ary, comparator, q + 1, r);
-  }
-}
-
-/**
- * Sort the given array in-place with the given comparator function.
- *
- * @param {Array} ary
- *        An array to sort.
- * @param {function} comparator
- *        Function to use to compare two items.
- */
-exports.quickSort = function (ary, comparator) {
-  doQuickSort(ary, comparator, 0, ary.length - 1);
-};
-
-
-/***/ }),
-
 /***/ 638:
 /***/ (function(module, exports, __webpack_require__) {
 
@@ -9278,20 +10186,20 @@ exports.quickSort = function (ary, comparator) {
  * http://opensource.org/licenses/BSD-3-Clause
  */
 
-var SourceMapGenerator = __webpack_require__(581).SourceMapGenerator;
-var util = __webpack_require__(566);
+const SourceMapGenerator = __webpack_require__(581).SourceMapGenerator;
+const util = __webpack_require__(566);
 
 // Matches a Windows-style `\r\n` newline or a `\n` newline used by all other
 // operating systems these days (capturing the result).
-var REGEX_NEWLINE = /(\r?\n)/;
+const REGEX_NEWLINE = /(\r?\n)/;
 
 // Newline character code for charCodeAt() comparisons
-var NEWLINE_CODE = 10;
+const NEWLINE_CODE = 10;
 
 // Private symbol for identifying `SourceNode`s when multiple versions of
 // the source-map library are loaded. This MUST NOT CHANGE across
 // versions!
-var isSourceNode = "$$$isSourceNode$$$";
+const isSourceNode = "$$$isSourceNode$$$";
 
 /**
  * SourceNodes provide a way to abstract over interpolating/concatenating
@@ -9305,41 +10213,41 @@ var isSourceNode = "$$$isSourceNode$$$";
  *        generated JS, or other SourceNodes.
  * @param aName The original identifier.
  */
-function SourceNode(aLine, aColumn, aSource, aChunks, aName) {
-  this.children = [];
-  this.sourceContents = {};
-  this.line = aLine == null ? null : aLine;
-  this.column = aColumn == null ? null : aColumn;
-  this.source = aSource == null ? null : aSource;
-  this.name = aName == null ? null : aName;
-  this[isSourceNode] = true;
-  if (aChunks != null) this.add(aChunks);
-}
+class SourceNode {
+  constructor(aLine, aColumn, aSource, aChunks, aName) {
+    this.children = [];
+    this.sourceContents = {};
+    this.line = aLine == null ? null : aLine;
+    this.column = aColumn == null ? null : aColumn;
+    this.source = aSource == null ? null : aSource;
+    this.name = aName == null ? null : aName;
+    this[isSourceNode] = true;
+    if (aChunks != null) this.add(aChunks);
+  }
 
-/**
- * Creates a SourceNode from generated code and a SourceMapConsumer.
- *
- * @param aGeneratedCode The generated code
- * @param aSourceMapConsumer The SourceMap for the generated code
- * @param aRelativePath Optional. The path that relative sources in the
- *        SourceMapConsumer should be relative to.
- */
-SourceNode.fromStringWithSourceMap =
-  function SourceNode_fromStringWithSourceMap(aGeneratedCode, aSourceMapConsumer, aRelativePath) {
+  /**
+   * Creates a SourceNode from generated code and a SourceMapConsumer.
+   *
+   * @param aGeneratedCode The generated code
+   * @param aSourceMapConsumer The SourceMap for the generated code
+   * @param aRelativePath Optional. The path that relative sources in the
+   *        SourceMapConsumer should be relative to.
+   */
+  static fromStringWithSourceMap(aGeneratedCode, aSourceMapConsumer, aRelativePath) {
     // The SourceNode we want to fill with the generated code
     // and the SourceMap
-    var node = new SourceNode();
+    const node = new SourceNode();
 
     // All even indices of this array are one line of the generated code,
     // while all odd indices are the newlines between two adjacent lines
     // (since `REGEX_NEWLINE` captures its match).
     // Processed fragments are accessed by calling `shiftNextLine`.
-    var remainingLines = aGeneratedCode.split(REGEX_NEWLINE);
-    var remainingLinesIndex = 0;
-    var shiftNextLine = function() {
-      var lineContents = getNextLine();
+    const remainingLines = aGeneratedCode.split(REGEX_NEWLINE);
+    let remainingLinesIndex = 0;
+    const shiftNextLine = function() {
+      const lineContents = getNextLine();
       // The last line of a file might not have a newline.
-      var newLine = getNextLine() || "";
+      const newLine = getNextLine() || "";
       return lineContents + newLine;
 
       function getNextLine() {
@@ -9349,14 +10257,15 @@ SourceNode.fromStringWithSourceMap =
     };
 
     // We need to remember the position of "remainingLines"
-    var lastGeneratedLine = 1, lastGeneratedColumn = 0;
+    let lastGeneratedLine = 1, lastGeneratedColumn = 0;
 
     // The generate SourceNodes we need a code range.
     // To extract it current and last mapping is used.
     // Here we store the last mapping.
-    var lastMapping = null;
+    let lastMapping = null;
+    let nextLine;
 
-    aSourceMapConsumer.eachMapping(function (mapping) {
+    aSourceMapConsumer.eachMapping(function(mapping) {
       if (lastMapping !== null) {
         // We add the code from "lastMapping" to "mapping":
         // First check if there is a new line in between.
@@ -9370,8 +10279,8 @@ SourceNode.fromStringWithSourceMap =
           // There is no new line in between.
           // Associate the code between "lastGeneratedColumn" and
           // "mapping.generatedColumn" with "lastMapping"
-          var nextLine = remainingLines[remainingLinesIndex];
-          var code = nextLine.substr(0, mapping.generatedColumn -
+          nextLine = remainingLines[remainingLinesIndex] || "";
+          const code = nextLine.substr(0, mapping.generatedColumn -
                                         lastGeneratedColumn);
           remainingLines[remainingLinesIndex] = nextLine.substr(mapping.generatedColumn -
                                               lastGeneratedColumn);
@@ -9390,7 +10299,7 @@ SourceNode.fromStringWithSourceMap =
         lastGeneratedLine++;
       }
       if (lastGeneratedColumn < mapping.generatedColumn) {
-        var nextLine = remainingLines[remainingLinesIndex];
+        nextLine = remainingLines[remainingLinesIndex] || "";
         node.add(nextLine.substr(0, mapping.generatedColumn));
         remainingLines[remainingLinesIndex] = nextLine.substr(mapping.generatedColumn);
         lastGeneratedColumn = mapping.generatedColumn;
@@ -9408,8 +10317,8 @@ SourceNode.fromStringWithSourceMap =
     }
 
     // Copy sourcesContent into SourceNode
-    aSourceMapConsumer.sources.forEach(function (sourceFile) {
-      var content = aSourceMapConsumer.sourceContentFor(sourceFile);
+    aSourceMapConsumer.sources.forEach(function(sourceFile) {
+      const content = aSourceMapConsumer.sourceContentFor(sourceFile);
       if (content != null) {
         if (aRelativePath != null) {
           sourceFile = util.join(aRelativePath, sourceFile);
@@ -9424,7 +10333,7 @@ SourceNode.fromStringWithSourceMap =
       if (mapping === null || mapping.source === undefined) {
         node.add(code);
       } else {
-        var source = aRelativePath
+        const source = aRelativePath
           ? util.join(aRelativePath, mapping.source)
           : mapping.source;
         node.add(new SourceNode(mapping.originalLine,
@@ -9434,230 +10343,182 @@ SourceNode.fromStringWithSourceMap =
                                 mapping.name));
       }
     }
-  };
+  }
 
-/**
- * Add a chunk of generated JS to this source node.
- *
- * @param aChunk A string snippet of generated JS code, another instance of
- *        SourceNode, or an array where each member is one of those things.
- */
-SourceNode.prototype.add = function SourceNode_add(aChunk) {
-  if (Array.isArray(aChunk)) {
-    aChunk.forEach(function (chunk) {
-      this.add(chunk);
-    }, this);
-  }
-  else if (aChunk[isSourceNode] || typeof aChunk === "string") {
-    if (aChunk) {
-      this.children.push(aChunk);
+  /**
+   * Add a chunk of generated JS to this source node.
+   *
+   * @param aChunk A string snippet of generated JS code, another instance of
+   *        SourceNode, or an array where each member is one of those things.
+   */
+  add(aChunk) {
+    if (Array.isArray(aChunk)) {
+      aChunk.forEach(function(chunk) {
+        this.add(chunk);
+      }, this);
+    } else if (aChunk[isSourceNode] || typeof aChunk === "string") {
+      if (aChunk) {
+        this.children.push(aChunk);
+      }
+    } else {
+      throw new TypeError(
+        "Expected a SourceNode, string, or an array of SourceNodes and strings. Got " + aChunk
+      );
     }
+    return this;
   }
-  else {
-    throw new TypeError(
-      "Expected a SourceNode, string, or an array of SourceNodes and strings. Got " + aChunk
-    );
-  }
-  return this;
-};
 
-/**
- * Add a chunk of generated JS to the beginning of this source node.
- *
- * @param aChunk A string snippet of generated JS code, another instance of
- *        SourceNode, or an array where each member is one of those things.
- */
-SourceNode.prototype.prepend = function SourceNode_prepend(aChunk) {
-  if (Array.isArray(aChunk)) {
-    for (var i = aChunk.length-1; i >= 0; i--) {
-      this.prepend(aChunk[i]);
+  /**
+   * Add a chunk of generated JS to the beginning of this source node.
+   *
+   * @param aChunk A string snippet of generated JS code, another instance of
+   *        SourceNode, or an array where each member is one of those things.
+   */
+  prepend(aChunk) {
+    if (Array.isArray(aChunk)) {
+      for (let i = aChunk.length - 1; i >= 0; i--) {
+        this.prepend(aChunk[i]);
+      }
+    } else if (aChunk[isSourceNode] || typeof aChunk === "string") {
+      this.children.unshift(aChunk);
+    } else {
+      throw new TypeError(
+        "Expected a SourceNode, string, or an array of SourceNodes and strings. Got " + aChunk
+      );
     }
+    return this;
   }
-  else if (aChunk[isSourceNode] || typeof aChunk === "string") {
-    this.children.unshift(aChunk);
-  }
-  else {
-    throw new TypeError(
-      "Expected a SourceNode, string, or an array of SourceNodes and strings. Got " + aChunk
-    );
-  }
-  return this;
-};
 
-/**
- * Walk over the tree of JS snippets in this node and its children. The
- * walking function is called once for each snippet of JS and is passed that
- * snippet and the its original associated source's line/column location.
- *
- * @param aFn The traversal function.
- */
-SourceNode.prototype.walk = function SourceNode_walk(aFn) {
-  var chunk;
-  for (var i = 0, len = this.children.length; i < len; i++) {
-    chunk = this.children[i];
-    if (chunk[isSourceNode]) {
-      chunk.walk(aFn);
-    }
-    else {
-      if (chunk !== '') {
+  /**
+   * Walk over the tree of JS snippets in this node and its children. The
+   * walking function is called once for each snippet of JS and is passed that
+   * snippet and the its original associated source's line/column location.
+   *
+   * @param aFn The traversal function.
+   */
+  walk(aFn) {
+    let chunk;
+    for (let i = 0, len = this.children.length; i < len; i++) {
+      chunk = this.children[i];
+      if (chunk[isSourceNode]) {
+        chunk.walk(aFn);
+      } else if (chunk !== "") {
         aFn(chunk, { source: this.source,
-                     line: this.line,
-                     column: this.column,
-                     name: this.name });
+                      line: this.line,
+                      column: this.column,
+                      name: this.name });
       }
     }
   }
-};
 
-/**
- * Like `String.prototype.join` except for SourceNodes. Inserts `aStr` between
- * each of `this.children`.
- *
- * @param aSep The separator.
- */
-SourceNode.prototype.join = function SourceNode_join(aSep) {
-  var newChildren;
-  var i;
-  var len = this.children.length;
-  if (len > 0) {
-    newChildren = [];
-    for (i = 0; i < len-1; i++) {
+  /**
+   * Like `String.prototype.join` except for SourceNodes. Inserts `aStr` between
+   * each of `this.children`.
+   *
+   * @param aSep The separator.
+   */
+  join(aSep) {
+    let newChildren;
+    let i;
+    const len = this.children.length;
+    if (len > 0) {
+      newChildren = [];
+      for (i = 0; i < len - 1; i++) {
+        newChildren.push(this.children[i]);
+        newChildren.push(aSep);
+      }
       newChildren.push(this.children[i]);
-      newChildren.push(aSep);
+      this.children = newChildren;
     }
-    newChildren.push(this.children[i]);
-    this.children = newChildren;
+    return this;
   }
-  return this;
-};
 
-/**
- * Call String.prototype.replace on the very right-most source snippet. Useful
- * for trimming whitespace from the end of a source node, etc.
- *
- * @param aPattern The pattern to replace.
- * @param aReplacement The thing to replace the pattern with.
- */
-SourceNode.prototype.replaceRight = function SourceNode_replaceRight(aPattern, aReplacement) {
-  var lastChild = this.children[this.children.length - 1];
-  if (lastChild[isSourceNode]) {
-    lastChild.replaceRight(aPattern, aReplacement);
+  /**
+   * Call String.prototype.replace on the very right-most source snippet. Useful
+   * for trimming whitespace from the end of a source node, etc.
+   *
+   * @param aPattern The pattern to replace.
+   * @param aReplacement The thing to replace the pattern with.
+   */
+  replaceRight(aPattern, aReplacement) {
+    const lastChild = this.children[this.children.length - 1];
+    if (lastChild[isSourceNode]) {
+      lastChild.replaceRight(aPattern, aReplacement);
+    } else if (typeof lastChild === "string") {
+      this.children[this.children.length - 1] = lastChild.replace(aPattern, aReplacement);
+    } else {
+      this.children.push("".replace(aPattern, aReplacement));
+    }
+    return this;
   }
-  else if (typeof lastChild === 'string') {
-    this.children[this.children.length - 1] = lastChild.replace(aPattern, aReplacement);
-  }
-  else {
-    this.children.push(''.replace(aPattern, aReplacement));
-  }
-  return this;
-};
 
-/**
- * Set the source content for a source file. This will be added to the SourceMapGenerator
- * in the sourcesContent field.
- *
- * @param aSourceFile The filename of the source file
- * @param aSourceContent The content of the source file
- */
-SourceNode.prototype.setSourceContent =
-  function SourceNode_setSourceContent(aSourceFile, aSourceContent) {
+  /**
+   * Set the source content for a source file. This will be added to the SourceMapGenerator
+   * in the sourcesContent field.
+   *
+   * @param aSourceFile The filename of the source file
+   * @param aSourceContent The content of the source file
+   */
+  setSourceContent(aSourceFile, aSourceContent) {
     this.sourceContents[util.toSetString(aSourceFile)] = aSourceContent;
-  };
+  }
 
-/**
- * Walk over the tree of SourceNodes. The walking function is called for each
- * source file content and is passed the filename and source content.
- *
- * @param aFn The traversal function.
- */
-SourceNode.prototype.walkSourceContents =
-  function SourceNode_walkSourceContents(aFn) {
-    for (var i = 0, len = this.children.length; i < len; i++) {
+  /**
+   * Walk over the tree of SourceNodes. The walking function is called for each
+   * source file content and is passed the filename and source content.
+   *
+   * @param aFn The traversal function.
+   */
+  walkSourceContents(aFn) {
+    for (let i = 0, len = this.children.length; i < len; i++) {
       if (this.children[i][isSourceNode]) {
         this.children[i].walkSourceContents(aFn);
       }
     }
 
-    var sources = Object.keys(this.sourceContents);
-    for (var i = 0, len = sources.length; i < len; i++) {
+    const sources = Object.keys(this.sourceContents);
+    for (let i = 0, len = sources.length; i < len; i++) {
       aFn(util.fromSetString(sources[i]), this.sourceContents[sources[i]]);
     }
-  };
+  }
 
-/**
- * Return the string representation of this source node. Walks over the tree
- * and concatenates all the various snippets together to one string.
- */
-SourceNode.prototype.toString = function SourceNode_toString() {
-  var str = "";
-  this.walk(function (chunk) {
-    str += chunk;
-  });
-  return str;
-};
+  /**
+   * Return the string representation of this source node. Walks over the tree
+   * and concatenates all the various snippets together to one string.
+   */
+  toString() {
+    let str = "";
+    this.walk(function(chunk) {
+      str += chunk;
+    });
+    return str;
+  }
 
-/**
- * Returns the string representation of this source node along with a source
- * map.
- */
-SourceNode.prototype.toStringWithSourceMap = function SourceNode_toStringWithSourceMap(aArgs) {
-  var generated = {
-    code: "",
-    line: 1,
-    column: 0
-  };
-  var map = new SourceMapGenerator(aArgs);
-  var sourceMappingActive = false;
-  var lastOriginalSource = null;
-  var lastOriginalLine = null;
-  var lastOriginalColumn = null;
-  var lastOriginalName = null;
-  this.walk(function (chunk, original) {
-    generated.code += chunk;
-    if (original.source !== null
-        && original.line !== null
-        && original.column !== null) {
-      if(lastOriginalSource !== original.source
-         || lastOriginalLine !== original.line
-         || lastOriginalColumn !== original.column
-         || lastOriginalName !== original.name) {
-        map.addMapping({
-          source: original.source,
-          original: {
-            line: original.line,
-            column: original.column
-          },
-          generated: {
-            line: generated.line,
-            column: generated.column
-          },
-          name: original.name
-        });
-      }
-      lastOriginalSource = original.source;
-      lastOriginalLine = original.line;
-      lastOriginalColumn = original.column;
-      lastOriginalName = original.name;
-      sourceMappingActive = true;
-    } else if (sourceMappingActive) {
-      map.addMapping({
-        generated: {
-          line: generated.line,
-          column: generated.column
-        }
-      });
-      lastOriginalSource = null;
-      sourceMappingActive = false;
-    }
-    for (var idx = 0, length = chunk.length; idx < length; idx++) {
-      if (chunk.charCodeAt(idx) === NEWLINE_CODE) {
-        generated.line++;
-        generated.column = 0;
-        // Mappings end at eol
-        if (idx + 1 === length) {
-          lastOriginalSource = null;
-          sourceMappingActive = false;
-        } else if (sourceMappingActive) {
+  /**
+   * Returns the string representation of this source node along with a source
+   * map.
+   */
+  toStringWithSourceMap(aArgs) {
+    const generated = {
+      code: "",
+      line: 1,
+      column: 0
+    };
+    const map = new SourceMapGenerator(aArgs);
+    let sourceMappingActive = false;
+    let lastOriginalSource = null;
+    let lastOriginalLine = null;
+    let lastOriginalColumn = null;
+    let lastOriginalName = null;
+    this.walk(function(chunk, original) {
+      generated.code += chunk;
+      if (original.source !== null
+          && original.line !== null
+          && original.column !== null) {
+        if (lastOriginalSource !== original.source
+          || lastOriginalLine !== original.line
+          || lastOriginalColumn !== original.column
+          || lastOriginalName !== original.name) {
           map.addMapping({
             source: original.source,
             original: {
@@ -9671,17 +10532,55 @@ SourceNode.prototype.toStringWithSourceMap = function SourceNode_toStringWithSou
             name: original.name
           });
         }
-      } else {
-        generated.column++;
+        lastOriginalSource = original.source;
+        lastOriginalLine = original.line;
+        lastOriginalColumn = original.column;
+        lastOriginalName = original.name;
+        sourceMappingActive = true;
+      } else if (sourceMappingActive) {
+        map.addMapping({
+          generated: {
+            line: generated.line,
+            column: generated.column
+          }
+        });
+        lastOriginalSource = null;
+        sourceMappingActive = false;
       }
-    }
-  });
-  this.walkSourceContents(function (sourceFile, sourceContent) {
-    map.setSourceContent(sourceFile, sourceContent);
-  });
+      for (let idx = 0, length = chunk.length; idx < length; idx++) {
+        if (chunk.charCodeAt(idx) === NEWLINE_CODE) {
+          generated.line++;
+          generated.column = 0;
+          // Mappings end at eol
+          if (idx + 1 === length) {
+            lastOriginalSource = null;
+            sourceMappingActive = false;
+          } else if (sourceMappingActive) {
+            map.addMapping({
+              source: original.source,
+              original: {
+                line: original.line,
+                column: original.column
+              },
+              generated: {
+                line: generated.line,
+                column: generated.column
+              },
+              name: original.name
+            });
+          }
+        } else {
+          generated.column++;
+        }
+      }
+    });
+    this.walkSourceContents(function(sourceFile, sourceContent) {
+      map.setSourceContent(sourceFile, sourceContent);
+    });
 
-  return { code: generated.code, map: map };
-};
+    return { code: generated.code, map };
+  }
+}
 
 exports.SourceNode = SourceNode;
 

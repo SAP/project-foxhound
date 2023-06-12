@@ -460,6 +460,7 @@ load 688996-1.html
 load 688996-2.html
 load 691210.html
 load 700031.xhtml
+load 709398-1.html
 load 718516.html
 load 723108.html
 load 724235.html
@@ -631,8 +632,8 @@ load flex-nested-abspos-1.html
 pref(dom.meta-viewport.enabled,true) test-pref(font.size.inflation.emPerLine,15) asserts(0-100) load font-inflation-762332.html # bug 762332
 asserts-if(Android||OSX,0-2) load outline-on-frameset.xhtml # bug 762332, bug 1594135
 load summary-position-out-of-flow.html
-load text-overflow-bug666751-1.html
-load text-overflow-bug666751-2.html
+pref(widget.windows.window_occlusion_tracking.enabled,false) load text-overflow-bug666751-1.html # Bug 1819154
+pref(widget.windows.window_occlusion_tracking.enabled,false) load text-overflow-bug666751-2.html # Bug 1819154
 load text-overflow-bug670564.xhtml
 load text-overflow-bug671796.xhtml
 load text-overflow-bug713610.html
@@ -786,7 +787,7 @@ load 1638906.html
 load 1640028.html
 load 1640051.html
 load 1640275.html
-pref(layout.accessiblecaret.enabled,true) asserts(11-13) load 1644819.html # bug 1688115
+pref(layout.accessiblecaret.enabled,true) load 1644819.html
 load 1645549-1.html
 load 1648577.html
 load 1652618.html
@@ -816,3 +817,4 @@ load 1776079.html
 asserts(0-2) load 1791606.html
 load 1799749.html
 pref(layout.css.content-visibility.enabled,true) asserts(1-4) load 1807958.html # asserts from integer overflow & bogus sizes
+load 1816574.html

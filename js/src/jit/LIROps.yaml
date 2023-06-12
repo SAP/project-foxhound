@@ -213,6 +213,19 @@
   call_instruction: true
   mir_op: true
 
+- name: BindFunction
+  result_type: WordSized
+  operands:
+    target: WordSized
+  call_instruction: true
+  num_temps: 2
+  mir_op: true
+
+- name: NewBoundFunction
+  result_type: WordSized
+  num_temps: 1
+  mir_op: true
+
 - name: NewObject
   gen_boilerplate: false
 
@@ -458,6 +471,15 @@
   num_temps: 1
   mir_op: true
 
+- name: BoundFunctionNumArgs
+  result_type: WordSized
+  operands:
+    object: WordSized
+
+- name: GuardBoundFunctionIsConstructor
+  operands:
+    object: WordSized
+
 # If the Value is an Object, return unbox(Value).
 # Otherwise, return the other Object.
 - name: ReturnFromCtor
@@ -506,6 +528,9 @@
   gen_boilerplate: false
 
 - name: CallDOMNative
+  gen_boilerplate: false
+
+- name: CallClassHook
   gen_boilerplate: false
 
 - name: Bail
@@ -1302,28 +1327,6 @@
   operands:
     in: WordSized
   mir_op: ToNumberInt32
-
-# Truncates a double to an int32.
-#   Input: floating-point Register
-#   Output: 32-bit integer
-#   Bailout: if the double when converted to an integer exceeds the int32
-#            bounds. No bailout for NaN or negative zero.
-- name: DoubleToIntegerInt32
-  result_type: WordSized
-  operands:
-    in: WordSized
-  mir_op: ToIntegerInt32
-
-# Truncates a float to an int32.
-#   Input: floating-point Register
-#   Output: 32-bit integer
-#   Bailout: if the double when converted to an integer exceeds the int32
-#            bounds. No bailout for NaN or negative zero.
-- name: Float32ToIntegerInt32
-  result_type: WordSized
-  operands:
-    in: WordSized
-  mir_op: ToIntegerInt32
 
 # Convert a double to a truncated int32.
 #   Input: floating-point Register
@@ -2245,6 +2248,14 @@
 
   num_temps: 2
 
+- name: StoreSlotByIteratorIndex
+  operands:
+    object: WordSized
+    iterator: WordSized
+    value: BoxedValue
+  num_temps: 2
+  mir_op: true
+
 # Patchable jump to stubs generated for a SetProperty cache.
 - name: SetPropertyCache
   operands:
@@ -2536,6 +2547,10 @@
     object: WordSized
   num_temps: 1
 
+- name: GuardGlobalGeneration
+  mir_op: true
+  num_temps: 1
+
 - name: GuardIsProxy
   operands:
     object: WordSized
@@ -2601,7 +2616,7 @@
   result_type: BoxedValue
   operands:
     object: WordSized
-  num_temps: 3
+  num_temps: 4
   call_instruction: true
   mir_op: true
 
@@ -2615,7 +2630,6 @@
   mir_op: true
 
 - name: MegamorphicStoreSlot
-  result_type: BoxedValue
   operands:
     object: WordSized
     rhs: BoxedValue
@@ -2949,6 +2963,20 @@
     value: WordSized
   arguments:
     offset: uint32_t
+    maybeTrap: MaybeTrapSiteInfo
+    preBarrierKind: WasmPreBarrierKind
+  num_temps: 1
+  mir_op: true
+
+# Generational write barrier used when writing an object to another object.
+- name: WasmPostWriteBarrier
+  operands:
+    instance: WordSized
+    object: WordSized
+    valueBase: WordSized
+    value: WordSized
+  arguments:
+    valueOffset: uint32_t
   num_temps: 1
   mir_op: true
 
@@ -3176,13 +3204,6 @@
   operands:
     value: BoxedValue
   call_instruction: true
-
-- name: FinishBoundFunctionInit
-  operands:
-    bound: WordSized
-    target: WordSized
-    argCount: WordSized
-  num_temps: 2
 
 - name: IsPackedArray
   result_type: WordSized

@@ -249,6 +249,7 @@ export var UrlbarTestUtils = {
       activationKey = "KEY_Enter",
     } = {}
   ) {
+    this.Assert?.ok(win.gURLBar.view.isOpen, "view should be open");
     let menuButton = this.getButtonForResultIndex(win, "menu", resultIndex);
     this.Assert?.ok(
       menuButton,
@@ -264,6 +265,7 @@ export var UrlbarTestUtils = {
     }
     if (byMouse) {
       this.EventUtils.synthesizeMouseAtCenter(menuButton, {}, win);
+      this._testScope?.info(`waiting for the menu popup to open via mouse`);
     } else {
       if (this.getSelectedElement(win) != menuButton) {
         this.EventUtils.synthesizeKey("KEY_Tab", {}, win);
@@ -274,10 +276,10 @@ export var UrlbarTestUtils = {
         `selected the menu button at result index ${resultIndex}`
       );
       this.EventUtils.synthesizeKey(activationKey, {}, win);
+      this._testScope?.info(
+        `waiting for ${activationKey} to open the menu popup`
+      );
     }
-    this._testScope?.info(
-      `waiting for ${activationKey} to open the menu popup`
-    );
     await promiseMenuOpen;
     this.Assert?.equal(
       win.gURLBar.view.resultMenu.state,
@@ -358,7 +360,9 @@ export var UrlbarTestUtils = {
     details.source = result.source;
     details.heuristic = result.heuristic;
     details.autofill = !!result.autofill;
-    details.image = element.getElementsByClassName("urlbarView-favicon")[0].src;
+    details.image = element.getElementsByClassName(
+      "urlbarView-favicon"
+    )[0]?.src;
     details.title = result.title;
     details.tags = "tags" in result.payload ? result.payload.tags : [];
     details.isSponsored = result.payload.isSponsored;
@@ -1046,6 +1050,22 @@ export var UrlbarTestUtils = {
     });
 
     return doCleanup;
+  },
+
+  /**
+   * Simulate that user clicks URLBar and inputs text into it.
+   *
+   * @param {object} win
+   *   The browser window containing target gURLBar.
+   * @param {string} text
+   *   The text to be input.
+   */
+  async inputIntoURLBar(win, text) {
+    this.EventUtils.synthesizeMouseAtCenter(win.gURLBar.inputField, {}, win);
+    await lazy.BrowserTestUtils.waitForCondition(
+      () => win.document.activeElement === win.gURLBar.inputField
+    );
+    this.EventUtils.sendString(text, win);
   },
 };
 

@@ -1006,7 +1006,7 @@ class nsDocShell final : public nsDocLoader,
   nsresult Embed(nsIContentViewer* aContentViewer,
                  mozilla::dom::WindowGlobalChild* aWindowActor,
                  bool aIsTransientAboutBlank, bool aPersist,
-                 nsIRequest* aRequest);
+                 nsIRequest* aRequest, nsIURI* aPreviousURI);
   nsPresContext* GetEldestPresContext();
   nsresult CheckLoadingPermissions();
   nsresult LoadHistoryEntry(nsISHEntry* aEntry, uint32_t aLoadType,
@@ -1104,8 +1104,10 @@ class nsDocShell final : public nsDocLoader,
   // case a new session history entry is added to the session history.
   // aExpired is true if the relevant nsIChannel has its cache token expired.
   // aCacheKey is the channel's cache key.
+  // aPreviousURI should be the URI that was previously loaded into the
+  // nsDocshell
   void MoveLoadingToActiveEntry(bool aPersist, bool aExpired,
-                                uint32_t aCacheKey);
+                                uint32_t aCacheKey, nsIURI* aPreviousURI);
 
   void ActivenessMaybeChanged();
 
@@ -1296,6 +1298,8 @@ class nsDocShell final : public nsDocLoader,
   uint32_t mRequestForBlockingFromBFCacheCount = 0;
 
   uint64_t mChannelToDisconnectOnPageHide;
+
+  uint32_t mPendingReloadCount = 0;
 
   // The following two fields cannot be declared as bit fields
   // because of uses with AutoRestore.

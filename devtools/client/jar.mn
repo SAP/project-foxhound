@@ -10,6 +10,7 @@ devtools.jar:
     content/shared/theme-switching.js (shared/theme-switching.js)
     content/shared/widgets/cubic-bezier.css (shared/widgets/cubic-bezier.css)
     content/shared/widgets/filter-widget.css (shared/widgets/filter-widget.css)
+    content/shared/widgets/linear-widget.css (shared/widgets/linear-widget.css)
     content/shared/widgets/spectrum.css (shared/widgets/spectrum.css)
     content/shared/components/SmartTrace.css (shared/components/SmartTrace.css)
     content/shared/components/Tree.css (shared/components/Tree.css)
@@ -26,6 +27,7 @@ devtools.jar:
     content/shared/components/splitter/SplitBox.css (shared/components/splitter/SplitBox.css)
     content/shared/components/List.css (shared/components/List.css)
     content/shared/components/tree/TreeView.css (shared/components/tree/TreeView.css)
+    content/shared/components/SearchModifiers.css (shared/components/SearchModifiers.css)
     content/shared/components/SidebarToggle.css (shared/components/SidebarToggle.css)
     content/shared/components/MdnLink.css (shared/components/MdnLink.css)
     content/shared/components/AppErrorBoundary.css (shared/components/AppErrorBoundary.css)
@@ -97,6 +99,7 @@ devtools.jar:
     skin/images/sort-ascending-arrow.svg (themes/images/sort-ascending-arrow.svg)
     skin/images/sort-descending-arrow.svg (themes/images/sort-descending-arrow.svg)
     skin/images/cubic-bezier-swatch.svg (themes/images/cubic-bezier-swatch.svg)
+    skin/images/linear-easing-swatch.svg (themes/images/linear-easing-swatch.svg)
     skin/fonts.css (themes/fonts.css)
     skin/changes.css (themes/changes.css)
     skin/compatibility.css (themes/compatibility.css)
@@ -331,7 +334,7 @@ devtools.jar:
     content/debugger/src/utils/editor/source-editor.css (debugger/src/utils/editor/source-editor.css)
 
     # Perfomance
-    content/performance-new/index.xhtml (performance-new/index.xhtml)
+    content/performance-new/panel/index.xhtml (performance-new/panel/index.xhtml)
 
     # Memory
     content/memory/index.xhtml (memory/index.xhtml)

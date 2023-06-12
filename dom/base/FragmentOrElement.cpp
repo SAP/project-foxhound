@@ -23,7 +23,9 @@
 #include "mozilla/EffectSet.h"
 #include "mozilla/EventDispatcher.h"
 #include "mozilla/EventListenerManager.h"
+#include "mozilla/ElementAnimationData.h"
 #include "mozilla/HTMLEditor.h"
+#include "mozilla/mozInlineSpellChecker.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/RestyleManager.h"
 #include "mozilla/TextEditor.h"
@@ -229,7 +231,7 @@ nsIContent::IMEState nsIContent::GetDesiredIMEState() {
 
 bool nsIContent::HasIndependentSelection() const {
   nsIFrame* frame = GetPrimaryFrame();
-  return (frame && frame->GetStateBits() & NS_FRAME_INDEPENDENT_SELECTION);
+  return (frame && frame->HasAnyStateBits(NS_FRAME_INDEPENDENT_SELECTION));
 }
 
 dom::Element* nsIContent::GetEditingHost() {
@@ -356,6 +358,13 @@ already_AddRefed<URLExtraData> nsIContent::GetURLDataForStyleAttr(
 
 void nsIContent::ConstructUbiNode(void* storage) {
   JS::ubi::Concrete<nsIContent>::construct(storage, this);
+}
+
+bool nsIContent::InclusiveDescendantMayNeedSpellchecking(HTMLEditor* aEditor) {
+  // Return true if the node may have elements as children, since those or their
+  // descendants may have spellcheck attributes.
+  return HasFlag(NODE_MAY_HAVE_ELEMENT_CHILDREN) ||
+         mozInlineSpellChecker::ShouldSpellCheckNode(aEditor, this);
 }
 
 //----------------------------------------------------------------------
@@ -521,7 +530,7 @@ static_assert(sizeof(nsINode::nsSlots) <= MaxDOMSlotSizeAllowed,
 static_assert(sizeof(FragmentOrElement::nsDOMSlots) <= MaxDOMSlotSizeAllowed,
               "DOM slots cannot be grown without consideration");
 
-void nsIContent::nsExtendedContentSlots::UnlinkExtendedSlots() {
+void nsIContent::nsExtendedContentSlots::UnlinkExtendedSlots(nsIContent&) {
   mContainingShadow = nullptr;
   mAssignedSlot = nullptr;
 }
@@ -581,8 +590,8 @@ void FragmentOrElement::nsDOMSlots::Traverse(
   aCb.NoteXPCOMChild(mPart.get());
 }
 
-void FragmentOrElement::nsDOMSlots::Unlink() {
-  nsIContent::nsContentSlots::Unlink();
+void FragmentOrElement::nsDOMSlots::Unlink(nsINode& aNode) {
+  nsIContent::nsContentSlots::Unlink(aNode);
   mStyle = nullptr;
   if (mAttributeMap) {
     mAttributeMap->DropReference();
@@ -630,20 +639,23 @@ FragmentOrElement::nsExtendedDOMSlots::nsExtendedDOMSlots() = default;
 
 FragmentOrElement::nsExtendedDOMSlots::~nsExtendedDOMSlots() = default;
 
-void FragmentOrElement::nsExtendedDOMSlots::UnlinkExtendedSlots() {
-  nsIContent::nsExtendedContentSlots::UnlinkExtendedSlots();
+void FragmentOrElement::nsExtendedDOMSlots::UnlinkExtendedSlots(
+    nsIContent& aContent) {
+  nsIContent::nsExtendedContentSlots::UnlinkExtendedSlots(aContent);
 
-  // Don't clear mXBLBinding, it'll be done in
-  // BindingManager::RemovedFromDocument from FragmentOrElement::Unlink.
-  //
   // mShadowRoot will similarly be cleared explicitly from
   // FragmentOrElement::Unlink.
   mSMILOverrideStyle = nullptr;
   mControllers = nullptr;
   mLabelsList = nullptr;
+  mPopoverData = nullptr;
   if (mCustomElementData) {
     mCustomElementData->Unlink();
     mCustomElementData = nullptr;
+  }
+  if (mAnimations) {
+    mAnimations = nullptr;
+    aContent.ClearMayHaveAnimations();
   }
 }
 
@@ -665,6 +677,9 @@ void FragmentOrElement::nsExtendedDOMSlots::TraverseExtendedSlots(
 
   if (mCustomElementData) {
     mCustomElementData->Traverse(aCb);
+  }
+  if (mAnimations) {
+    mAnimations->Traverse(aCb);
   }
 }
 
@@ -1324,9 +1339,6 @@ NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(FragmentOrElement)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(FragmentOrElement)
   nsIContent::Unlink(tmp);
 
-  // The XBL binding is removed by RemoveFromBindingManagerRunnable
-  // which is dispatched in UnbindFromTree.
-
   if (tmp->HasProperties()) {
     if (tmp->IsElement()) {
       Element* elem = tmp->AsElement();
@@ -1338,13 +1350,6 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(FragmentOrElement)
           Element::HTMLSVGPropertiesToTraverseAndUnlink();
       for (uint32_t i = 0; props[i]; ++i) {
         tmp->RemoveProperty(props[i]);
-      }
-    }
-
-    if (tmp->MayHaveAnimations()) {
-      nsAtom** effectProps = EffectSet::GetEffectSetPropertyAtoms();
-      for (uint32_t i = 0; effectProps[i]; ++i) {
-        tmp->RemoveProperty(effectProps[i]);
       }
     }
   }
@@ -1805,14 +1810,6 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INTERNAL(FragmentOrElement)
     return NS_SUCCESS_INTERRUPTED_TRAVERSE;
   }
 
-  // Check that whenever we have effect properties, MayHaveAnimations is set.
-#ifdef DEBUG
-  nsAtom** effectProps = EffectSet::GetEffectSetPropertyAtoms();
-  for (uint32_t i = 0; effectProps[i]; ++i) {
-    MOZ_ASSERT_IF(tmp->GetProperty(effectProps[i]), tmp->MayHaveAnimations());
-  }
-#endif
-
   if (tmp->HasProperties()) {
     if (tmp->IsElement()) {
       Element* elem = tmp->AsElement();
@@ -1834,21 +1831,10 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INTERNAL(FragmentOrElement)
         cb.NoteXPCOMChild(property);
       }
     }
-    if (tmp->MayHaveAnimations()) {
-      nsAtom** effectProps = EffectSet::GetEffectSetPropertyAtoms();
-      for (uint32_t i = 0; effectProps[i]; ++i) {
-        EffectSet* effectSet =
-            static_cast<EffectSet*>(tmp->GetProperty(effectProps[i]));
-        if (effectSet) {
-          effectSet->Traverse(cb);
-        }
-      }
-    }
   }
-
-  // Traverse attribute names.
   if (tmp->IsElement()) {
     Element* element = tmp->AsElement();
+    // Traverse attribute names.
     uint32_t i;
     uint32_t attrs = element->GetAttrCount();
     for (i = 0; i < attrs; i++) {

@@ -97,13 +97,13 @@ nsMIMEInfoWin::LaunchWithFile(nsIFile* aFile) {
   }
 
   if (mPreferredAction == useSystemDefault) {
-    if (mDefaultApplication &&
-        StaticPrefs::browser_pdf_launchDefaultEdgeAsApp()) {
+    nsCOMPtr<nsIFile> defaultApp = GetDefaultApplication();
+    if (defaultApp && StaticPrefs::browser_pdf_launchDefaultEdgeAsApp()) {
       // Since Edgium is the default handler for PDF and other kinds of files,
       // if we're using the OS default and it's Edgium prefer its app mode so it
       // operates as a viewer (without browser toolbars). Bug 1632277.
       nsAutoCString defaultAppExecutable;
-      rv = mDefaultApplication->GetNativeLeafName(defaultAppExecutable);
+      rv = defaultApp->GetNativeLeafName(defaultAppExecutable);
       if (NS_SUCCEEDED(rv) &&
           defaultAppExecutable.LowerCaseEqualsLiteral("msedge.exe")) {
         nsAutoString path;
@@ -117,8 +117,8 @@ nsMIMEInfoWin::LaunchWithFile(nsIFile* aFile) {
           appArg.Append(path);
           const wchar_t* argv[] = {appArg.get(), path.get()};
 
-          return ShellExecuteWithIFile(mDefaultApplication,
-                                       mozilla::ArrayLength(argv), argv);
+          return ShellExecuteWithIFile(defaultApp, mozilla::ArrayLength(argv),
+                                       argv);
         }
       }
     }
@@ -247,9 +247,9 @@ static nsresult GetIconURLVariant(nsIFile* aApplication, nsIVariant** _retval) {
 NS_IMETHODIMP
 nsMIMEInfoWin::GetProperty(const nsAString& aName, nsIVariant** _retval) {
   nsresult rv;
-  if (mDefaultApplication &&
-      aName.EqualsLiteral(PROPERTY_DEFAULT_APP_ICON_URL)) {
-    rv = GetIconURLVariant(mDefaultApplication, _retval);
+  nsCOMPtr<nsIFile> defaultApp = GetDefaultApplication();
+  if (defaultApp && aName.EqualsLiteral(PROPERTY_DEFAULT_APP_ICON_URL)) {
+    rv = GetIconURLVariant(defaultApp, _retval);
     NS_ENSURE_SUCCESS(rv, rv);
   } else if (mPreferredApplication &&
              aName.EqualsLiteral(PROPERTY_CUSTOM_APP_ICON_URL)) {
@@ -341,6 +341,16 @@ nsresult nsMIMEInfoWin::LoadUriInternal(nsIURI* aURL) {
   }
 
   return rv;
+}
+
+void nsMIMEInfoWin::UpdateDefaultInfoIfStale() {
+  if (!mIsDefaultAppInfoFresh) {
+    nsCOMPtr<nsIMIMEService> mime = do_GetService("@mozilla.org/mime;1");
+    if (mime) {
+      mime->UpdateDefaultAppInfo(static_cast<nsIMIMEInfo*>(this));
+    }
+    mIsDefaultAppInfoFresh = true;
+  }
 }
 
 // Given a path to a local file, return its nsILocalHandlerApp instance.
@@ -883,12 +893,13 @@ nsMIMEInfoWin::GetPossibleLocalHandlers(nsIArray** _retval) {
 NS_IMETHODIMP
 nsMIMEInfoWin::IsCurrentAppOSDefault(bool* _retval) {
   *_retval = false;
-  if (mDefaultApplication) {
+  nsCOMPtr<nsIFile> defaultApp = GetDefaultApplication();
+  if (defaultApp) {
     // Determine if the default executable is our executable.
     nsCOMPtr<nsIFile> ourBinary;
     XRE_GetBinaryPath(getter_AddRefs(ourBinary));
     bool isSame = false;
-    nsresult rv = mDefaultApplication->Equals(ourBinary, &isSame);
+    nsresult rv = defaultApp->Equals(ourBinary, &isSame);
     if (NS_FAILED(rv)) {
       return rv;
     }

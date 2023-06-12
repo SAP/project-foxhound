@@ -5,66 +5,35 @@ exports[`SearchBar should render 1`] = `
   className="search-bar"
 >
   <SearchInput
+    count={0}
     expanded={false}
+    handleClose={[Function]}
     handleNext={[Function]}
     handlePrev={[Function]}
     hasPrefix={false}
     isLoading={false}
+    modifiers={
+      Object {
+        "get": [MockFunction],
+        "toJS": [Function],
+      }
+    }
     onBlur={[Function]}
     onChange={[Function]}
     onFocus={[Function]}
     onHistoryScroll={[Function]}
     onKeyDown={[Function]}
+    onToggleSearchModifier={[Function]}
     placeholder="Find in file…"
     query=""
     selectedItemId=""
     shouldFocus={false}
-    showClose={false}
+    showClose={true}
     showErrorEmoji={false}
+    showSearchModifiers={true}
     size=""
     summaryMsg=""
   />
-  <div
-    className="search-bottom-bar"
-  >
-    <div
-      className="search-modifiers"
-    >
-      <span
-        className="pipe-divider"
-      />
-      <span
-        className="search-type-name"
-      >
-        Modifiers:
-      </span>
-      <SearchModBtn
-        className="regex-match-btn"
-        modVal="regexMatch"
-        svgName="regex-match"
-        tooltip="Regex"
-      />
-      <SearchModBtn
-        className="case-sensitive-btn"
-        modVal="caseSensitive"
-        svgName="case-match"
-        tooltip="Case sensitive"
-      />
-      <SearchModBtn
-        className="whole-word-btn"
-        modVal="wholeWord"
-        svgName="whole-word-match"
-        tooltip="Whole word"
-      />
-    </div>
-    <span
-      className="pipe-divider"
-    />
-    <CloseButton
-      buttonClass="big"
-      handleClick={[Function]}
-    />
-  </div>
 </div>
 `;
 
@@ -77,65 +46,33 @@ exports[`showErrorEmoji false if no query + no results 1`] = `
   <SearchInput
     count={0}
     expanded={false}
+    handleClose={[Function]}
     handleNext={[Function]}
     handlePrev={[Function]}
     hasPrefix={false}
     isLoading={false}
+    modifiers={
+      Object {
+        "get": [MockFunction],
+        "toJS": [Function],
+      }
+    }
     onBlur={[Function]}
     onChange={[Function]}
     onFocus={[Function]}
     onHistoryScroll={[Function]}
     onKeyDown={[Function]}
+    onToggleSearchModifier={[Function]}
     placeholder="Find in file…"
     query=""
     selectedItemId=""
     shouldFocus={false}
-    showClose={false}
+    showClose={true}
     showErrorEmoji={false}
+    showSearchModifiers={true}
     size=""
     summaryMsg=""
   />
-  <div
-    className="search-bottom-bar"
-  >
-    <div
-      className="search-modifiers"
-    >
-      <span
-        className="pipe-divider"
-      />
-      <span
-        className="search-type-name"
-      >
-        Modifiers:
-      </span>
-      <SearchModBtn
-        className="regex-match-btn"
-        modVal="regexMatch"
-        svgName="regex-match"
-        tooltip="Regex"
-      />
-      <SearchModBtn
-        className="case-sensitive-btn"
-        modVal="caseSensitive"
-        svgName="case-match"
-        tooltip="Case sensitive"
-      />
-      <SearchModBtn
-        className="whole-word-btn"
-        modVal="wholeWord"
-        svgName="whole-word-match"
-        tooltip="Whole word"
-      />
-    </div>
-    <span
-      className="pipe-divider"
-    />
-    <CloseButton
-      buttonClass="big"
-      handleClick={[Function]}
-    />
-  </div>
 </div>
 `;
 
@@ -146,65 +83,33 @@ exports[`showErrorEmoji false if query + results 1`] = `
   <SearchInput
     count={10}
     expanded={false}
+    handleClose={[Function]}
     handleNext={[Function]}
     handlePrev={[Function]}
     hasPrefix={false}
     isLoading={false}
+    modifiers={
+      Object {
+        "get": [MockFunction],
+        "toJS": [Function],
+      }
+    }
     onBlur={[Function]}
     onChange={[Function]}
     onFocus={[Function]}
     onHistoryScroll={[Function]}
     onKeyDown={[Function]}
+    onToggleSearchModifier={[Function]}
     placeholder="Find in file…"
     query="test"
     selectedItemId=""
     shouldFocus={false}
-    showClose={false}
+    showClose={true}
     showErrorEmoji={false}
+    showSearchModifiers={true}
     size=""
     summaryMsg="NaN of 10 results"
   />
-  <div
-    className="search-bottom-bar"
-  >
-    <div
-      className="search-modifiers"
-    >
-      <span
-        className="pipe-divider"
-      />
-      <span
-        className="search-type-name"
-      >
-        Modifiers:
-      </span>
-      <SearchModBtn
-        className="regex-match-btn"
-        modVal="regexMatch"
-        svgName="regex-match"
-        tooltip="Regex"
-      />
-      <SearchModBtn
-        className="case-sensitive-btn"
-        modVal="caseSensitive"
-        svgName="case-match"
-        tooltip="Case sensitive"
-      />
-      <SearchModBtn
-        className="whole-word-btn"
-        modVal="wholeWord"
-        svgName="whole-word-match"
-        tooltip="Whole word"
-      />
-    </div>
-    <span
-      className="pipe-divider"
-    />
-    <CloseButton
-      buttonClass="big"
-      handleClick={[Function]}
-    />
-  </div>
 </div>
 `;
 
@@ -215,64 +120,32 @@ exports[`showErrorEmoji true if query + no results 1`] = `
   <SearchInput
     count={0}
     expanded={false}
+    handleClose={[Function]}
     handleNext={[Function]}
     handlePrev={[Function]}
     hasPrefix={false}
     isLoading={false}
+    modifiers={
+      Object {
+        "get": [MockFunction],
+        "toJS": [Function],
+      }
+    }
     onBlur={[Function]}
     onChange={[Function]}
     onFocus={[Function]}
     onHistoryScroll={[Function]}
     onKeyDown={[Function]}
+    onToggleSearchModifier={[Function]}
     placeholder="Find in file…"
     query="test"
     selectedItemId=""
     shouldFocus={false}
-    showClose={false}
+    showClose={true}
     showErrorEmoji={true}
+    showSearchModifiers={true}
     size=""
     summaryMsg="No results found"
   />
-  <div
-    className="search-bottom-bar"
-  >
-    <div
-      className="search-modifiers"
-    >
-      <span
-        className="pipe-divider"
-      />
-      <span
-        className="search-type-name"
-      >
-        Modifiers:
-      </span>
-      <SearchModBtn
-        className="regex-match-btn"
-        modVal="regexMatch"
-        svgName="regex-match"
-        tooltip="Regex"
-      />
-      <SearchModBtn
-        className="case-sensitive-btn"
-        modVal="caseSensitive"
-        svgName="case-match"
-        tooltip="Case sensitive"
-      />
-      <SearchModBtn
-        className="whole-word-btn"
-        modVal="wholeWord"
-        svgName="whole-word-match"
-        tooltip="Whole word"
-      />
-    </div>
-    <span
-      className="pipe-divider"
-    />
-    <CloseButton
-      buttonClass="big"
-      handleClick={[Function]}
-    />
-  </div>
 </div>
 `;

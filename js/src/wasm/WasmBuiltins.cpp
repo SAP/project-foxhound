@@ -202,6 +202,30 @@ const SymbolicAddressSignature SASigMemFillSharedM64 = {
     _FailOnNegI32,
     5,
     {_PTR, _I64, _I32, _I64, _PTR, _END}};
+const SymbolicAddressSignature SASigMemDiscardM32 = {
+    SymbolicAddress::MemDiscardM32,
+    _VOID,
+    _FailOnNegI32,
+    4,
+    {_PTR, _I32, _I32, _PTR, _END}};
+const SymbolicAddressSignature SASigMemDiscardSharedM32 = {
+    SymbolicAddress::MemDiscardSharedM32,
+    _VOID,
+    _FailOnNegI32,
+    4,
+    {_PTR, _I32, _I32, _PTR, _END}};
+const SymbolicAddressSignature SASigMemDiscardM64 = {
+    SymbolicAddress::MemDiscardM64,
+    _VOID,
+    _FailOnNegI32,
+    4,
+    {_PTR, _I64, _I64, _PTR, _END}};
+const SymbolicAddressSignature SASigMemDiscardSharedM64 = {
+    SymbolicAddress::MemDiscardSharedM64,
+    _VOID,
+    _FailOnNegI32,
+    4,
+    {_PTR, _I64, _I64, _PTR, _END}};
 const SymbolicAddressSignature SASigMemInitM32 = {
     SymbolicAddress::MemInitM32,
     _VOID,
@@ -254,12 +278,6 @@ const SymbolicAddressSignature SASigTableSize = {
     SymbolicAddress::TableSize, _I32, _Infallible, 2, {_PTR, _I32, _END}};
 const SymbolicAddressSignature SASigRefFunc = {
     SymbolicAddress::RefFunc, _RoN, _FailOnInvalidRef, 2, {_PTR, _I32, _END}};
-const SymbolicAddressSignature SASigPreBarrierFiltering = {
-    SymbolicAddress::PreBarrierFiltering,
-    _VOID,
-    _Infallible,
-    2,
-    {_PTR, _PTR, _END}};
 const SymbolicAddressSignature SASigPostBarrier = {
     SymbolicAddress::PostBarrier, _VOID, _Infallible, 2, {_PTR, _PTR, _END}};
 const SymbolicAddressSignature SASigPostBarrierPrecise = {
@@ -274,14 +292,6 @@ const SymbolicAddressSignature SASigPostBarrierPreciseWithOffset = {
     _Infallible,
     4,
     {_PTR, _PTR, _I32, _RoN, _END}};
-const SymbolicAddressSignature SASigPostBarrierFiltering = {
-    SymbolicAddress::PostBarrierFiltering,
-    _VOID,
-    _Infallible,
-    2,
-    {_PTR, _PTR, _END}};
-const SymbolicAddressSignature SASigStructNew = {
-    SymbolicAddress::StructNew, _RoN, _FailOnNullPtr, 2, {_PTR, _PTR, _END}};
 const SymbolicAddressSignature SASigExceptionNew = {
     SymbolicAddress::ExceptionNew, _RoN, _FailOnNullPtr, 2, {_PTR, _RoN, _END}};
 const SymbolicAddressSignature SASigThrowException = {
@@ -290,11 +300,25 @@ const SymbolicAddressSignature SASigThrowException = {
     _FailOnNegI32,
     2,
     {_PTR, _RoN, _END}};
+const SymbolicAddressSignature SASigStructNew = {
+    SymbolicAddress::StructNew, _RoN, _FailOnNullPtr, 2, {_PTR, _PTR, _END}};
+const SymbolicAddressSignature SASigStructNewUninit = {
+    SymbolicAddress::StructNewUninit,
+    _RoN,
+    _FailOnNullPtr,
+    2,
+    {_PTR, _PTR, _END}};
 const SymbolicAddressSignature SASigArrayNew = {SymbolicAddress::ArrayNew,
                                                 _RoN,
                                                 _FailOnNullPtr,
                                                 3,
                                                 {_PTR, _I32, _PTR, _END}};
+const SymbolicAddressSignature SASigArrayNewUninit = {
+    SymbolicAddress::ArrayNewUninit,
+    _RoN,
+    _FailOnNullPtr,
+    3,
+    {_PTR, _I32, _PTR, _END}};
 const SymbolicAddressSignature SASigArrayNewData = {
     SymbolicAddress::ArrayNewData,
     _RoN,
@@ -628,10 +652,11 @@ bool wasm::HandleThrow(JSContext* cx, WasmFrameIter& iter,
              "unwinding clears the trapping state");
 
   // In case of no handler, exit wasm via ret().
-  // FailFP signals to wasm stub to do a failure return.
+  // FailInstanceReg signals to wasm stub to do a failure return.
   rfe->kind = ExceptionResumeKind::Wasm;
-  rfe->framePointer = (uint8_t*)wasm::FailFP;
+  rfe->framePointer = (uint8_t*)iter.unwoundCallerFP();
   rfe->stackPointer = (uint8_t*)iter.unwoundAddressOfReturnAddress();
+  rfe->instance = (Instance*)FailInstanceReg;
   rfe->target = nullptr;
   return false;
 }
@@ -1212,6 +1237,22 @@ void* wasm::AddressOf(SymbolicAddress imm, ABIFunctionType* abiType) {
       *abiType = Args_Int32_GeneralInt64Int32Int64General;
       MOZ_ASSERT(*abiType == ToABIType(SASigMemFillSharedM64));
       return FuncCast(Instance::memFillShared_m64, *abiType);
+    case SymbolicAddress::MemDiscardM32:
+      *abiType = Args_Int32_GeneralInt32Int32General;
+      MOZ_ASSERT(*abiType == ToABIType(SASigMemDiscardM32));
+      return FuncCast(Instance::memDiscard_m32, *abiType);
+    case SymbolicAddress::MemDiscardSharedM32:
+      *abiType = Args_Int32_GeneralInt32Int32General;
+      MOZ_ASSERT(*abiType == ToABIType(SASigMemDiscardSharedM32));
+      return FuncCast(Instance::memDiscardShared_m32, *abiType);
+    case SymbolicAddress::MemDiscardM64:
+      *abiType = Args_Int32_GeneralInt64Int64General;
+      MOZ_ASSERT(*abiType == ToABIType(SASigMemDiscardM64));
+      return FuncCast(Instance::memDiscard_m64, *abiType);
+    case SymbolicAddress::MemDiscardSharedM64:
+      *abiType = Args_Int32_GeneralInt64Int64General;
+      MOZ_ASSERT(*abiType == ToABIType(SASigMemDiscardSharedM64));
+      return FuncCast(Instance::memDiscardShared_m64, *abiType);
     case SymbolicAddress::MemInitM32:
       *abiType = Args_Int32_GeneralInt32Int32Int32Int32;
       MOZ_ASSERT(*abiType == ToABIType(SASigMemInitM32));
@@ -1268,23 +1309,22 @@ void* wasm::AddressOf(SymbolicAddress imm, ABIFunctionType* abiType) {
       *abiType = Args_Int32_GeneralGeneralInt32General;
       MOZ_ASSERT(*abiType == ToABIType(SASigPostBarrierPreciseWithOffset));
       return FuncCast(Instance::postBarrierPreciseWithOffset, *abiType);
-    case SymbolicAddress::PreBarrierFiltering:
-      *abiType = Args_Int32_GeneralGeneral;
-      MOZ_ASSERT(*abiType == ToABIType(SASigPreBarrierFiltering));
-      return FuncCast(Instance::preBarrierFiltering, *abiType);
-    case SymbolicAddress::PostBarrierFiltering:
-      *abiType = Args_Int32_GeneralGeneral;
-      MOZ_ASSERT(*abiType == ToABIType(SASigPostBarrierFiltering));
-      return FuncCast(Instance::postBarrierFiltering, *abiType);
     case SymbolicAddress::StructNew:
       *abiType = Args_General2;
       MOZ_ASSERT(*abiType == ToABIType(SASigStructNew));
       return FuncCast(Instance::structNew, *abiType);
-
+    case SymbolicAddress::StructNewUninit:
+      *abiType = Args_General2;
+      MOZ_ASSERT(*abiType == ToABIType(SASigStructNewUninit));
+      return FuncCast(Instance::structNewUninit, *abiType);
     case SymbolicAddress::ArrayNew:
       *abiType = Args_General_GeneralInt32General;
       MOZ_ASSERT(*abiType == ToABIType(SASigArrayNew));
       return FuncCast(Instance::arrayNew, *abiType);
+    case SymbolicAddress::ArrayNewUninit:
+      *abiType = Args_General_GeneralInt32General;
+      MOZ_ASSERT(*abiType == ToABIType(SASigArrayNewUninit));
+      return FuncCast(Instance::arrayNewUninit, *abiType);
     case SymbolicAddress::ArrayNewData:
       *abiType = Args_General_GeneralInt32Int32GeneralInt32;
       MOZ_ASSERT(*abiType == ToABIType(SASigArrayNewData));
@@ -1456,6 +1496,10 @@ bool wasm::NeedsBuiltinThunk(SymbolicAddress sym) {
     case SymbolicAddress::MemFillSharedM32:
     case SymbolicAddress::MemFillM64:
     case SymbolicAddress::MemFillSharedM64:
+    case SymbolicAddress::MemDiscardM32:
+    case SymbolicAddress::MemDiscardSharedM32:
+    case SymbolicAddress::MemDiscardM64:
+    case SymbolicAddress::MemDiscardSharedM64:
     case SymbolicAddress::MemInitM32:
     case SymbolicAddress::MemInitM64:
     case SymbolicAddress::TableCopy:
@@ -1467,15 +1511,15 @@ bool wasm::NeedsBuiltinThunk(SymbolicAddress sym) {
     case SymbolicAddress::TableSet:
     case SymbolicAddress::TableSize:
     case SymbolicAddress::RefFunc:
-    case SymbolicAddress::PreBarrierFiltering:
     case SymbolicAddress::PostBarrier:
     case SymbolicAddress::PostBarrierPrecise:
     case SymbolicAddress::PostBarrierPreciseWithOffset:
-    case SymbolicAddress::PostBarrierFiltering:
-    case SymbolicAddress::StructNew:
     case SymbolicAddress::ExceptionNew:
     case SymbolicAddress::ThrowException:
+    case SymbolicAddress::StructNew:
+    case SymbolicAddress::StructNewUninit:
     case SymbolicAddress::ArrayNew:
+    case SymbolicAddress::ArrayNewUninit:
     case SymbolicAddress::ArrayNewData:
     case SymbolicAddress::ArrayNewElem:
     case SymbolicAddress::ArrayCopy:

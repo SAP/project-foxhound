@@ -205,14 +205,13 @@ class ProviderWeather extends UrlbarProvider {
       return false;
     }
 
-    if (lazy.UrlbarPrefs.get("weather.zeroPrefix")) {
+    let { keywords } = lazy.QuickSuggest.weather;
+    if (!keywords) {
+      // Show the suggestion only on zero prefix (empty search string).
       return !queryContext.searchString;
     }
 
-    // Trim only the start of the search string because a trailing space can
-    // affect the suggestions.
-    let trimmedSearchString = queryContext.searchString.trimStart();
-    return lazy.QuickSuggest.weather.keywords.has(trimmedSearchString);
+    return keywords.has(queryContext.searchString.trim());
   }
 
   /**
@@ -414,7 +413,7 @@ class ProviderWeather extends UrlbarProvider {
     // Impression and clicked telemetry are both recorded on engagement. We
     // define "impression" to mean a weather result was present in the view when
     // any result was picked.
-    if (state == "engagement") {
+    if (state == "engagement" && queryContext) {
       // Find the weather result that's currently visible in the view. It's
       // probably the result from the last query so check it first, but due to
       // the async nature of how results are added to the view and made visible,
@@ -461,7 +460,7 @@ class ProviderWeather extends UrlbarProvider {
    *   should be one of the following values:
    *
    *   - "": The user didn't pick the row or any part of it
-   *   - "quicksuggest": The user picked the main part of the row
+   *   - "weather": The user picked the main part of the row
    *   - "help": The user picked the help button
    *   - "block": The user picked the block button or used the key shortcut
    *
@@ -496,7 +495,7 @@ class ProviderWeather extends UrlbarProvider {
     // scalars related to clicking the result and other elements in its row
     let clickScalars = [];
     switch (selType) {
-      case "quicksuggest":
+      case "weather":
         clickScalars.push(TELEMETRY_SCALARS.CLICK);
         clickScalars.push(QS_SCALARS.CLICK_NONSPONSORED);
         break;
@@ -524,7 +523,7 @@ class ProviderWeather extends UrlbarProvider {
     Services.telemetry.recordEvent(
       lazy.QuickSuggest.TELEMETRY_EVENT_CATEGORY,
       "engagement",
-      selType == "quicksuggest" ? "click" : selType || "impression_only",
+      selType == "weather" ? "click" : selType || "impression_only",
       "",
       {
         match_type: "firefox-suggest",

@@ -8,6 +8,7 @@
 #define mozilla_dom_AbstractRange_h
 
 #include <cstdint>
+#include <ostream>
 #include "ErrorList.h"
 #include "js/RootingAPI.h"
 #include "mozilla/Assertions.h"
@@ -71,6 +72,10 @@ class AbstractRange : public nsISupports, public nsWrapperCache {
   nsINode* GetStartContainer() const { return mStart.Container(); }
   nsINode* GetEndContainer() const { return mEnd.Container(); }
 
+  Document* GetComposedDocOfContainers() const {
+    return mStart.Container() ? mStart.Container()->GetComposedDoc() : nullptr;
+  }
+
   // FYI: Returns 0 if it's not positioned.
   uint32_t StartOffset() const {
     return static_cast<uint32_t>(
@@ -112,6 +117,21 @@ class AbstractRange : public nsISupports, public nsWrapperCache {
   static bool MaybeCacheToReuse(RangeType& aInstance);
 
   void Init(nsINode* aNode);
+
+  friend std::ostream& operator<<(std::ostream& aStream,
+                                  const AbstractRange& aRange) {
+    if (aRange.Collapsed()) {
+      aStream << "{ mStart=mEnd=" << aRange.mStart;
+    } else {
+      aStream << "{ mStart=" << aRange.mStart << ", mEnd=" << aRange.mEnd;
+    }
+    return aStream << ", mIsGenerated="
+                   << (aRange.mIsGenerated ? "true" : "false")
+                   << ", mCalledByJS="
+                   << (aRange.mIsPositioned ? "true" : "false")
+                   << ", mIsDynamicRange="
+                   << (aRange.mIsDynamicRange ? "true" : "false") << " }";
+  }
 
  private:
   void ClearForReuse();

@@ -182,6 +182,9 @@ var PlacesOrganizer = {
       if (historyNode.childCount > 0) {
         this._places.selectNode(historyNode.getChild(0));
       }
+      Services.telemetry.keyedScalarAdd("library.opened", "history", 1);
+    } else {
+      Services.telemetry.keyedScalarAdd("library.opened", "bookmarks", 1);
     }
 
     // clear the back-stack
@@ -824,6 +827,9 @@ var PlacesSearchBox = {
     return document.getElementById("searchFilter");
   },
 
+  cumulativeHistorySearches: 0,
+  cumulativeBookmarkSearches: 0,
+
   /**
    * Folders to include when searching.
    */
@@ -864,6 +870,8 @@ var PlacesSearchBox = {
     switch (PlacesSearchBox.filterCollection) {
       case "bookmarks":
         currentView.applyFilter(filterString, this.folders);
+        Services.telemetry.keyedScalarAdd("library.search", "bookmarks", 1);
+        this.cumulativeBookmarkSearches++;
         break;
       case "history": {
         let currentOptions = PO.getCurrentOptions();
@@ -883,6 +891,8 @@ var PlacesSearchBox = {
           TelemetryStopwatch.start(HISTORY_LIBRARY_SEARCH_TELEMETRY);
           currentView.applyFilter(filterString, null, true);
           TelemetryStopwatch.finish(HISTORY_LIBRARY_SEARCH_TELEMETRY);
+          Services.telemetry.keyedScalarAdd("library.search", "history", 1);
+          this.cumulativeHistorySearches++;
         }
         break;
       }
@@ -981,6 +991,43 @@ var PlacesSearchBox = {
     this.searchFilter.value = value;
   },
 };
+
+function updateTelemetry(urlsOpened) {
+  let historyLinks = urlsOpened.filter(
+    link => !link.isBookmark && !PlacesUtils.nodeIsBookmark(link)
+  );
+  if (!historyLinks.length) {
+    let searchesHistogram = Services.telemetry.getHistogramById(
+      "PLACES_LIBRARY_CUMULATIVE_BOOKMARK_SEARCHES"
+    );
+    searchesHistogram.add(PlacesSearchBox.cumulativeBookmarkSearches);
+
+    // Clear cumulative search counter
+    PlacesSearchBox.cumulativeBookmarkSearches = 0;
+
+    Services.telemetry.keyedScalarAdd(
+      "library.link",
+      "bookmarks",
+      urlsOpened.length
+    );
+    return;
+  }
+
+  // Record cumulative search count before selecting History link from Library
+  let searchesHistogram = Services.telemetry.getHistogramById(
+    "PLACES_LIBRARY_CUMULATIVE_HISTORY_SEARCHES"
+  );
+  searchesHistogram.add(PlacesSearchBox.cumulativeHistorySearches);
+
+  // Clear cumulative search counter
+  PlacesSearchBox.cumulativeHistorySearches = 0;
+
+  Services.telemetry.keyedScalarAdd(
+    "library.link",
+    "history",
+    historyLinks.length
+  );
+}
 
 /**
  * Functions and data for advanced query builder

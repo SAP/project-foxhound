@@ -31,7 +31,11 @@ using xdg_portal::StartSessionRequest;
 using xdg_portal::TearDownSession;
 using xdg_portal::RequestResponseFromPortalResponse;
 
-ScreenCastPortal::CaptureSourceType ToCaptureSourceType(CaptureType type) {
+}  // namespace
+
+// static
+ScreenCastPortal::CaptureSourceType ScreenCastPortal::ToCaptureSourceType(
+    CaptureType type) {
   switch (type) {
     case CaptureType::kScreen:
       return ScreenCastPortal::CaptureSourceType::kScreen;
@@ -41,22 +45,6 @@ ScreenCastPortal::CaptureSourceType ToCaptureSourceType(CaptureType type) {
       return ScreenCastPortal::CaptureSourceType::kAnyScreenContent;
   }
 }
-
-// TODO(https://crbug.com/1359411): Migrate downstream consumers off of
-// CaptureSourceType and delete this.
-CaptureType ToCaptureType(ScreenCastPortal::CaptureSourceType source_type) {
-  switch (source_type) {
-    case ScreenCastPortal::CaptureSourceType::kScreen:
-      return CaptureType::kScreen;
-    case ScreenCastPortal::CaptureSourceType::kWindow:
-      return CaptureType::kWindow;
-    default:
-      RTC_DCHECK_NOTREACHED();
-      return CaptureType::kScreen;
-  }
-}
-
-}  // namespace
 
 ScreenCastPortal::ScreenCastPortal(CaptureType type, PortalNotifier* notifier)
     : ScreenCastPortal(type,
@@ -77,18 +65,6 @@ ScreenCastPortal::ScreenCastPortal(
       sources_request_response_signal_handler_(
           sources_request_response_signal_handler),
       user_data_(user_data) {}
-
-ScreenCastPortal::ScreenCastPortal(
-    CaptureSourceType source_type,
-    PortalNotifier* notifier,
-    ProxyRequestResponseHandler proxy_request_response_handler,
-    SourcesRequestResponseSignalHandler sources_request_response_signal_handler,
-    gpointer user_data)
-    : ScreenCastPortal(ToCaptureType(source_type),
-                       notifier,
-                       proxy_request_response_handler,
-                       sources_request_response_signal_handler,
-                       user_data) {}
 
 ScreenCastPortal::~ScreenCastPortal() {
   Stop();

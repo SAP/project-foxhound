@@ -18,6 +18,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
   OpenSearchEngine: "resource://gre/modules/OpenSearchEngine.sys.mjs",
   PolicySearchEngine: "resource://gre/modules/PolicySearchEngine.sys.mjs",
   Region: "resource://gre/modules/Region.sys.mjs",
+  RemoteSettings: "resource://services-settings/remote-settings.sys.mjs",
   SearchEngine: "resource://gre/modules/SearchEngine.sys.mjs",
   SearchEngineSelector: "resource://gre/modules/SearchEngineSelector.sys.mjs",
   SearchSettings: "resource://gre/modules/SearchSettings.sys.mjs",
@@ -28,7 +29,6 @@ ChromeUtils.defineESModuleGetters(lazy, {
 
 XPCOMUtils.defineLazyModuleGetters(lazy, {
   AddonManager: "resource://gre/modules/AddonManager.jsm",
-  RemoteSettings: "resource://services-settings/remote-settings.js",
   NimbusFeatures: "resource://nimbus/ExperimentAPI.jsm",
 });
 
@@ -39,12 +39,23 @@ XPCOMUtils.defineLazyGetter(lazy, "logConsole", () => {
   });
 });
 
+XPCOMUtils.defineLazyServiceGetter(
+  lazy,
+  "timerManager",
+  "@mozilla.org/updates/timer-manager;1",
+  "nsIUpdateTimerManager"
+);
+
 const TOPIC_LOCALES_CHANGE = "intl:app-locales-changed";
 const QUIT_APPLICATION_TOPIC = "quit-application";
 
+// The update timer for OpenSearch engines checks in once a day.
+const OPENSEARCH_UPDATE_TIMER_TOPIC = "search-engine-update-timer";
+const OPENSEARCH_UPDATE_TIMER_INTERVAL = 60 * 60 * 24;
+
 // The default engine update interval, in days. This is only used if an engine
 // specifies an updateURL, but not an updateInterval.
-const SEARCH_DEFAULT_UPDATE_INTERVAL = 7;
+const OPENSEARCH_DEFAULT_UPDATE_INTERVAL = 7;
 
 // This is the amount of time we'll be idle for before applying any configuration
 // changes.
@@ -645,6 +656,7 @@ export class SearchService {
         errCode || Cr.NS_ERROR_FAILURE
       );
     }
+    this.#maybeStartOpenSearchUpdateTimer();
     return engine;
   }
 
@@ -899,26 +911,19 @@ export class SearchService {
     );
   }
 
-  // nsITimerCallbactk
-  notify(timer) {
+  /**
+   * This is a nsITimerCallback for the timerManager notification that is
+   * registered for handling updates to search engines. Only OpenSearch engines
+   * have these updates and hence, only those are handled here.
+   */
+  notify() {
     lazy.logConsole.debug("notify: checking for updates");
 
-    if (
-      !Services.prefs.getBoolPref(
-        lazy.SearchUtils.BROWSER_SEARCH_PREF + "update",
-        true
-      )
-    ) {
-      return;
-    }
-
-    // Our timer has expired, but unfortunately, we can't get any data from it.
-    // Therefore, we need to walk our engine-list, looking for expired engines
+    // Walk the engine list, looking for engines whose update time has expired.
     var currentTime = Date.now();
     lazy.logConsole.debug("currentTime:" + currentTime);
-    for (let e of this._engines.values()) {
-      let engine = e.wrappedJSObject;
-      if (!engine._hasUpdates) {
+    for (let engine of this._engines.values()) {
+      if (!(engine instanceof lazy.OpenSearchEngine && engine._hasUpdates)) {
         continue;
       }
 
@@ -1110,6 +1115,13 @@ export class SearchService {
    * @type {boolean}
    */
   #observersAdded = false;
+
+  /**
+   * Keeps track to see if the OpenSearch update timer has been started or not.
+   *
+   * @type {boolean}
+   */
+  #openSearchUpdateTimerStarted = false;
 
   get #sortedEngines() {
     if (!this._cachedSortedEngines) {
@@ -1348,6 +1360,8 @@ export class SearchService {
       this.#checkNimbusPrefs(true);
     });
 
+    this.#maybeStartOpenSearchUpdateTimer();
+
     return this.#initRV;
   }
 
@@ -1432,10 +1446,7 @@ export class SearchService {
     if (this.#loadPathIgnoreList.includes(engine._loadPath)) {
       return true;
     }
-    let url = engine
-      ._getURLOfType("text/html")
-      .getSubmission("dummy", engine)
-      .uri.spec.toLowerCase();
+    let url = engine.searchURLWithNoTerms.spec.toLowerCase();
     if (
       this.#submissionURLIgnoreList.some(code =>
         url.includes(code.toLowerCase())
@@ -2505,9 +2516,7 @@ export class SearchService {
     for (let elem of this._engines) {
       engine = elem[1];
       if (engine instanceof lazy.OpenSearchEngine) {
-        searchURI = engine
-          ._getURLOfType("text/html")
-          .getSubmission("", engine, "searchbar").uri;
+        searchURI = engine.searchURLWithNoTerms;
         updateURI = engine._updateURI;
 
         if (lazy.SearchUtils.isSecureURIForOpenSearch(searchURI)) {
@@ -2984,17 +2993,13 @@ export class SearchService {
 
     if (!sendSubmissionURL) {
       // ... or engines that are the same domain as a default engine.
-      let engineHost = engine._getURLOfType(lazy.SearchUtils.URL_TYPE.SEARCH)
-        .templateHost;
+      let engineHost = engine.getResultDomain();
       for (let innerEngine of this._engines.values()) {
         if (!innerEngine.isAppProvided) {
           continue;
         }
 
-        let innerEngineURL = innerEngine._getURLOfType(
-          lazy.SearchUtils.URL_TYPE.SEARCH
-        );
-        if (innerEngineURL.templateHost == engineHost) {
+        if (innerEngine.getResultDomain() == engineHost) {
           sendSubmissionURL = true;
           break;
         }
@@ -3012,9 +3017,7 @@ export class SearchService {
     }
 
     if (sendSubmissionURL) {
-      let uri = engine
-        ._getURLOfType("text/html")
-        .getSubmission("", engine, "searchbar").uri;
+      let uri = engine.searchURLWithNoTerms;
       uri = uri
         .mutate()
         .setUserPass("") // Avoid reporting a username or password.
@@ -3494,11 +3497,43 @@ export class SearchService {
       newCurrentEngine
     );
   }
+
+  /**
+   * Maybe starts the timer for OpenSearch engine updates. This will be set
+   * only if updates are enabled and there are OpenSearch engines installed
+   * which have updates.
+   */
+  #maybeStartOpenSearchUpdateTimer() {
+    if (
+      this.#openSearchUpdateTimerStarted ||
+      !Services.prefs.getBoolPref(
+        lazy.SearchUtils.BROWSER_SEARCH_PREF + "update",
+        true
+      )
+    ) {
+      return;
+    }
+
+    let engineWithUpdates = [...this._engines.values()].find(
+      engine => engine instanceof lazy.OpenSearchEngine && engine._hasUpdates
+    );
+
+    if (engineWithUpdates) {
+      lazy.logConsole.debug("Engine with updates found, setting update timer");
+      lazy.timerManager.registerTimer(
+        OPENSEARCH_UPDATE_TIMER_TOPIC,
+        this,
+        OPENSEARCH_UPDATE_TIMER_INTERVAL,
+        true
+      );
+      this.#openSearchUpdateTimerStarted = true;
+    }
+  }
 } // end SearchService class
 
 var engineUpdateService = {
   scheduleNextUpdate(engine) {
-    var interval = engine._updateInterval || SEARCH_DEFAULT_UPDATE_INTERVAL;
+    var interval = engine._updateInterval || OPENSEARCH_DEFAULT_UPDATE_INTERVAL;
     var milliseconds = interval * 86400000; // |interval| is in days
     engine.setAttr("updateexpir", Date.now() + milliseconds);
   },

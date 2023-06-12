@@ -2486,6 +2486,33 @@ static bool SetMarkStackLimit(JSContext* cx, unsigned argc, Value* vp) {
 
 #endif /* JS_GC_ZEAL */
 
+static bool SetMallocMaxDirtyPageModifier(JSContext* cx, unsigned argc,
+                                          Value* vp) {
+  CallArgs args = CallArgsFromVp(argc, vp);
+  if (args.length() != 1) {
+    RootedObject callee(cx, &args.callee());
+    ReportUsageErrorASCII(cx, callee, "Wrong number of arguments");
+    return false;
+  }
+
+  constexpr int32_t MinSupportedValue = -5;
+  constexpr int32_t MaxSupportedValue = 16;
+
+  int32_t value;
+  if (!ToInt32(cx, args[0], &value)) {
+    return false;
+  }
+  if (value < MinSupportedValue || value > MaxSupportedValue) {
+    JS_ReportErrorASCII(cx, "Bad argument to setMallocMaxDirtyPageModifier");
+    return false;
+  }
+
+  moz_set_max_dirty_page_modifier(value);
+
+  args.rval().setUndefined();
+  return true;
+}
+
 static bool GCState(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
 
@@ -3017,6 +3044,104 @@ static bool NewObjectWithAddPropertyHook(JSContext* cx, unsigned argc,
   RootedId propId(cx, AtomToId(propName));
   RootedValue val(cx, Int32Value(0));
   if (!JS_DefinePropertyById(cx, obj, propId, val, 0)) {
+    return false;
+  }
+
+  args.rval().setObject(*obj);
+  return true;
+}
+
+static bool NewObjectWithCallHook(JSContext* cx, unsigned argc, Value* vp) {
+  CallArgs args = CallArgsFromVp(argc, vp);
+
+  static auto hookShared = [](JSContext* cx, CallArgs& args) {
+    Rooted<PlainObject*> obj(cx, NewPlainObject(cx));
+    if (!obj) {
+      return false;
+    }
+
+    // Define |this|. We can't expose the MagicValue to JS, so we use
+    // "<is_constructing>" in that case.
+    Rooted<Value> thisv(cx, args.thisv());
+    if (thisv.isMagic(JS_IS_CONSTRUCTING)) {
+      JSString* str = NewStringCopyZ<CanGC>(cx, "<is_constructing>");
+      if (!str) {
+        return false;
+      }
+      thisv.setString(str);
+    }
+    if (!DefineDataProperty(cx, obj, cx->names().this_, thisv,
+                            JSPROP_ENUMERATE)) {
+      return false;
+    }
+
+    // Define |callee|.
+    if (!DefineDataProperty(cx, obj, cx->names().callee, args.calleev(),
+                            JSPROP_ENUMERATE)) {
+      return false;
+    }
+
+    // Define |arguments| array.
+    Rooted<ArrayObject*> arr(
+        cx, NewDenseCopiedArray(cx, args.length(), args.array()));
+    if (!arr) {
+      return false;
+    }
+    Rooted<Value> arrVal(cx, ObjectValue(*arr));
+    if (!DefineDataProperty(cx, obj, cx->names().arguments, arrVal,
+                            JSPROP_ENUMERATE)) {
+      return false;
+    }
+
+    // Define |newTarget| if constructing.
+    if (args.isConstructing()) {
+      const char* propName = "newTarget";
+      Rooted<JSAtom*> name(cx, Atomize(cx, propName, strlen(propName)));
+      if (!name) {
+        return false;
+      }
+      Rooted<PropertyKey> key(cx, NameToId(name->asPropertyName()));
+      if (!DefineDataProperty(cx, obj, key, args.newTarget(),
+                              JSPROP_ENUMERATE)) {
+        return false;
+      }
+    }
+
+    args.rval().setObject(*obj);
+    return true;
+  };
+
+  static auto callHook = [](JSContext* cx, unsigned argc, Value* vp) {
+    CallArgs args = CallArgsFromVp(argc, vp);
+    MOZ_ASSERT(!args.isConstructing());
+    return hookShared(cx, args);
+  };
+  static auto constructHook = [](JSContext* cx, unsigned argc, Value* vp) {
+    CallArgs args = CallArgsFromVp(argc, vp);
+    MOZ_ASSERT(args.isConstructing());
+    return hookShared(cx, args);
+  };
+
+  static const JSClassOps classOps = {
+      nullptr,        // addProperty
+      nullptr,        // delProperty
+      nullptr,        // enumerate
+      nullptr,        // newEnumerate
+      nullptr,        // resolve
+      nullptr,        // mayResolve
+      nullptr,        // finalize
+      callHook,       // call
+      constructHook,  // construct
+      nullptr,        // trace
+  };
+  static const JSClass cls = {
+      "ObjectWithCallHook",
+      0,
+      &classOps,
+  };
+
+  Rooted<JSObject*> obj(cx, JS_NewObject(cx, &cls));
+  if (!obj) {
     return false;
   }
 
@@ -5813,13 +5938,18 @@ static bool FindPath(JSContext* cx, unsigned argc, Value* vp) {
       return false;
     }
 
-    RootedValue wrapped(cx, nodes[i]);
-    if (!cx->compartment()->wrap(cx, &wrapped)) {
-      return false;
-    }
+    // Only define the "node" property if we're not fuzzing, to prevent the
+    // fuzzers from messing with internal objects that we don't want to expose
+    // to arbitrary JS.
+    if (!fuzzingSafe) {
+      RootedValue wrapped(cx, nodes[i]);
+      if (!cx->compartment()->wrap(cx, &wrapped)) {
+        return false;
+      }
 
-    if (!JS_DefineProperty(cx, obj, "node", wrapped, JSPROP_ENUMERATE)) {
-      return false;
+      if (!JS_DefineProperty(cx, obj, "node", wrapped, JSPROP_ENUMERATE)) {
+        return false;
+      }
     }
 
     heaptools::EdgeName edgeName = std::move(edges[i]);
@@ -7660,16 +7790,6 @@ JSScript* js::TestingFunctionArgumentToScript(
     return nullptr;
   }
 
-  // Unwrap bound functions.
-  while (fun->isBoundFunction()) {
-    JSObject* target = fun->getBoundFunctionTarget();
-    if (target && target->is<JSFunction>()) {
-      fun = &target->as<JSFunction>();
-    } else {
-      break;
-    }
-  }
-
   if (!fun->isInterpreted()) {
     JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
                               JSMSG_TESTING_SCRIPTS_ONLY);
@@ -8193,6 +8313,11 @@ static const JSFunctionSpecWithHelp TestingFunctions[] = {
 "  increments the value of the _propertiesAdded data property on the object\n"
 "  when a new property is added."),
 
+    JS_FN_HELP("newObjectWithCallHook", NewObjectWithCallHook, 0, 0,
+"newObjectWithCallHook()",
+"  Returns a new object with call/construct JSClass hooks. These hooks return\n"
+"  a new object that contains the Values supplied by the caller."),
+
     JS_FN_HELP("newObjectWithManyReservedSlots", NewObjectWithManyReservedSlots, 0, 0,
 "newObjectWithManyReservedSlots()",
 "  Returns a new object with many reserved slots. The slots are initialized to int32\n"
@@ -8430,6 +8555,11 @@ gc::ZealModeHelpText),
     JS_FN_HELP("abortgc", AbortGC, 1, 0,
 "abortgc()",
 "  Abort the current incremental GC."),
+
+    JS_FN_HELP("setMallocMaxDirtyPageModifier", SetMallocMaxDirtyPageModifier, 1, 0,
+"setMallocMaxDirtyPageModifier(value)",
+"  Change the maximum size of jemalloc's page cache. The value should be between\n"
+"  -5 and 16 (inclusive). See moz_set_max_dirty_page_modifier.\n"),
 
     JS_FN_HELP("fullcompartmentchecks", FullCompartmentChecks, 1, 0,
 "fullcompartmentchecks(true|false)",
@@ -9245,6 +9375,10 @@ void js::FuzzilliHashObject(JSContext* cx, JSObject* obj) {
 
 void js::FuzzilliHashObjectInl(JSContext* cx, JSObject* obj, uint32_t* out) {
   *out = 0;
+  if (!js::SupportDifferentialTesting()) {
+    return;
+  }
+
   RootedValue v(cx);
   v.setObject(*obj);
 

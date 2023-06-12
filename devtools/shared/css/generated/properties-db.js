@@ -253,12 +253,10 @@ exports.CSS_PROPERTIES = {
       "menuradio",
       "menuseparator",
       "meter",
-      "meterbar",
       "meterchunk",
       "none",
       "number-input",
       "progress-bar",
-      "progressbar",
       "progresschunk",
       "radio",
       "radio-container",
@@ -297,7 +295,6 @@ exports.CSS_PROPERTIES = {
       "tabpanels",
       "textarea",
       "textfield",
-      "textfield-multiline",
       "toolbar",
       "toolbarbutton",
       "toolbarbutton-dropdown",
@@ -777,22 +774,6 @@ exports.CSS_PROPERTIES = {
       "initial",
       "manual",
       "none",
-      "revert",
-      "revert-layer",
-      "unset"
-    ]
-  },
-  "-moz-image-region": {
-    "isInherited": true,
-    "subproperties": [
-      "-moz-image-region"
-    ],
-    "supports": [],
-    "values": [
-      "auto",
-      "inherit",
-      "initial",
-      "rect",
       "revert",
       "revert-layer",
       "unset"
@@ -1524,12 +1505,10 @@ exports.CSS_PROPERTIES = {
       "menuradio",
       "menuseparator",
       "meter",
-      "meterbar",
       "meterchunk",
       "none",
       "number-input",
       "progress-bar",
-      "progressbar",
       "progresschunk",
       "radio",
       "radio-container",
@@ -1568,7 +1547,6 @@ exports.CSS_PROPERTIES = {
       "tabpanels",
       "textarea",
       "textfield",
-      "textfield-multiline",
       "toolbar",
       "toolbarbutton",
       "toolbarbutton-dropdown",
@@ -2992,6 +2970,7 @@ exports.CSS_PROPERTIES = {
       "offset-distance",
       "offset-rotate",
       "offset-anchor",
+      "offset-position",
       "scroll-behavior",
       "scroll-snap-align",
       "scroll-snap-type",
@@ -3128,6 +3107,7 @@ exports.CSS_PROPERTIES = {
       "text-underline-position",
       "text-decoration-skip-ink",
       "hyphenate-character",
+      "forced-color-adjust",
       "cursor",
       "pointer-events",
       "-moz-user-input",
@@ -3141,7 +3121,6 @@ exports.CSS_PROPERTIES = {
       "list-style-type",
       "list-style-image",
       "quotes",
-      "-moz-image-region",
       "margin-top",
       "margin-right",
       "margin-bottom",
@@ -3534,12 +3513,10 @@ exports.CSS_PROPERTIES = {
       "menuradio",
       "menuseparator",
       "meter",
-      "meterbar",
       "meterchunk",
       "none",
       "number-input",
       "progress-bar",
-      "progressbar",
       "progresschunk",
       "radio",
       "radio-container",
@@ -3578,7 +3555,6 @@ exports.CSS_PROPERTIES = {
       "tabpanels",
       "textarea",
       "textfield",
-      "textfield-multiline",
       "toolbar",
       "toolbarbutton",
       "toolbarbutton-dropdown",
@@ -7334,6 +7310,7 @@ exports.CSS_PROPERTIES = {
       "revert",
       "revert-layer",
       "row",
+      "subgrid",
       "unset"
     ]
   },
@@ -7562,6 +7539,7 @@ exports.CSS_PROPERTIES = {
       "repeat",
       "revert",
       "revert-layer",
+      "subgrid",
       "unset"
     ]
   },
@@ -7599,6 +7577,7 @@ exports.CSS_PROPERTIES = {
       "repeat",
       "revert",
       "revert-layer",
+      "subgrid",
       "unset"
     ]
   },
@@ -7621,6 +7600,7 @@ exports.CSS_PROPERTIES = {
       "repeat",
       "revert",
       "revert-layer",
+      "subgrid",
       "unset"
     ]
   },
@@ -9091,7 +9071,8 @@ exports.CSS_PROPERTIES = {
       "offset-path",
       "offset-distance",
       "offset-rotate",
-      "offset-anchor"
+      "offset-anchor",
+      "offset-position"
     ],
     "supports": [],
     "values": [
@@ -9160,6 +9141,26 @@ exports.CSS_PROPERTIES = {
       "ray",
       "revert",
       "revert-layer",
+      "unset"
+    ]
+  },
+  "offset-position": {
+    "isInherited": false,
+    "subproperties": [
+      "offset-position"
+    ],
+    "supports": [],
+    "values": [
+      "auto",
+      "bottom",
+      "center",
+      "inherit",
+      "initial",
+      "left",
+      "revert",
+      "revert-layer",
+      "right",
+      "top",
       "unset"
     ]
   },
@@ -11981,347 +11982,4 @@ exports.PSEUDO_ELEMENTS = [
   "::placeholder",
   "::-moz-color-swatch",
   "::file-selector-button"
-];
-
-/**
- * A list of the preferences keys for whether a CSS property is enabled or not. This is
- * exposed for testing purposes.
- */
-exports.PREFERENCES = [
-  [
-    "container-type",
-    "layout.css.container-queries.enabled"
-  ],
-  [
-    "content-visibility",
-    "layout.css.content-visibility.enabled"
-  ],
-  [
-    "font-optical-sizing",
-    "layout.css.font-variations.enabled"
-  ],
-  [
-    "font-variant-emoji",
-    "layout.css.font-variant-emoji.enabled"
-  ],
-  [
-    "initial-letter",
-    "layout.css.initial-letter.enabled"
-  ],
-  [
-    "masonry-auto-flow",
-    "layout.css.grid-template-masonry-value.enabled"
-  ],
-  [
-    "math-depth",
-    "layout.css.math-depth.enabled"
-  ],
-  [
-    "math-style",
-    "layout.css.math-style.enabled"
-  ],
-  [
-    "-moz-control-character-visibility",
-    "layout.css.moz-control-character-visibility.enabled"
-  ],
-  [
-    "-moz-osx-font-smoothing",
-    "layout.css.osx-font-smoothing.enabled"
-  ],
-  [
-    "offset-rotate",
-    "layout.css.motion-path.enabled"
-  ],
-  [
-    "overflow-anchor",
-    "layout.css.scroll-anchoring.enabled"
-  ],
-  [
-    "page-orientation",
-    "layout.css.page-orientation.enabled"
-  ],
-  [
-    "scrollbar-gutter",
-    "layout.css.scrollbar-gutter.enabled"
-  ],
-  [
-    "overflow-clip-box-block",
-    "layout.css.overflow-clip-box.enabled"
-  ],
-  [
-    "overflow-clip-box-inline",
-    "layout.css.overflow-clip-box.enabled"
-  ],
-  [
-    "overflow-block",
-    "layout.css.overflow-logical.enabled"
-  ],
-  [
-    "overflow-inline",
-    "layout.css.overflow-logical.enabled"
-  ],
-  [
-    "overscroll-behavior-block",
-    "layout.css.overscroll-behavior.enabled"
-  ],
-  [
-    "overscroll-behavior-inline",
-    "layout.css.overscroll-behavior.enabled"
-  ],
-  [
-    "overscroll-behavior-x",
-    "layout.css.overscroll-behavior.enabled"
-  ],
-  [
-    "overscroll-behavior-y",
-    "layout.css.overscroll-behavior.enabled"
-  ],
-  [
-    "accent-color",
-    "layout.css.accent-color.enabled"
-  ],
-  [
-    "align-tracks",
-    "layout.css.grid-template-masonry-value.enabled"
-  ],
-  [
-    "animation-composition",
-    "layout.css.animation-composition.enabled"
-  ],
-  [
-    "animation-timeline",
-    "layout.css.scroll-driven-animations.enabled"
-  ],
-  [
-    "backdrop-filter",
-    "layout.css.backdrop-filter.enabled"
-  ],
-  [
-    "color-scheme",
-    "layout.css.color-scheme.enabled"
-  ],
-  [
-    "container-name",
-    "layout.css.container-queries.enabled"
-  ],
-  [
-    "d",
-    "layout.css.d-property.enabled"
-  ],
-  [
-    "font-palette",
-    "layout.css.font-palette.enabled"
-  ],
-  [
-    "font-variation-settings",
-    "layout.css.font-variations.enabled"
-  ],
-  [
-    "hyphenate-character",
-    "layout.css.hyphenate-character.enabled"
-  ],
-  [
-    "justify-tracks",
-    "layout.css.grid-template-masonry-value.enabled"
-  ],
-  [
-    "-moz-context-properties",
-    "svg.context-properties.content.enabled"
-  ],
-  [
-    "offset-anchor",
-    "layout.css.motion-path.enabled"
-  ],
-  [
-    "offset-path",
-    "layout.css.motion-path.enabled"
-  ],
-  [
-    "page",
-    "layout.css.named-pages.enabled"
-  ],
-  [
-    "rotate",
-    "layout.css.individual-transform.enabled"
-  ],
-  [
-    "scale",
-    "layout.css.individual-transform.enabled"
-  ],
-  [
-    "scroll-timeline-axis",
-    "layout.css.scroll-driven-animations.enabled"
-  ],
-  [
-    "scroll-timeline-name",
-    "layout.css.scroll-driven-animations.enabled"
-  ],
-  [
-    "size",
-    "layout.css.page-size.enabled"
-  ],
-  [
-    "translate",
-    "layout.css.individual-transform.enabled"
-  ],
-  [
-    "view-timeline-axis",
-    "layout.css.scroll-driven-animations.enabled"
-  ],
-  [
-    "view-timeline-inset",
-    "layout.css.scroll-driven-animations.enabled"
-  ],
-  [
-    "view-timeline-name",
-    "layout.css.scroll-driven-animations.enabled"
-  ],
-  [
-    "contain-intrinsic-block-size",
-    "layout.css.contain-intrinsic-size.enabled"
-  ],
-  [
-    "contain-intrinsic-height",
-    "layout.css.contain-intrinsic-size.enabled"
-  ],
-  [
-    "contain-intrinsic-inline-size",
-    "layout.css.contain-intrinsic-size.enabled"
-  ],
-  [
-    "contain-intrinsic-width",
-    "layout.css.contain-intrinsic-size.enabled"
-  ],
-  [
-    "offset-distance",
-    "layout.css.motion-path.enabled"
-  ],
-  [
-    "overflow-clip-box",
-    "layout.css.overflow-clip-box.enabled"
-  ],
-  [
-    "overscroll-behavior",
-    "layout.css.overscroll-behavior.enabled"
-  ],
-  [
-    "container",
-    "layout.css.container-queries.enabled"
-  ],
-  [
-    "offset",
-    "layout.css.motion-path.enabled"
-  ],
-  [
-    "zoom",
-    "layout.css.zoom-transform-hack.enabled"
-  ],
-  [
-    "contain-intrinsic-size",
-    "layout.css.contain-intrinsic-size.enabled"
-  ],
-  [
-    "scroll-timeline",
-    "layout.css.scroll-driven-animations.enabled"
-  ],
-  [
-    "view-timeline",
-    "layout.css.scroll-driven-animations.enabled"
-  ],
-  [
-    "-moz-transform",
-    "layout.css.prefixes.transforms"
-  ],
-  [
-    "-moz-perspective",
-    "layout.css.prefixes.transforms"
-  ],
-  [
-    "-moz-perspective-origin",
-    "layout.css.prefixes.transforms"
-  ],
-  [
-    "-moz-backface-visibility",
-    "layout.css.prefixes.transforms"
-  ],
-  [
-    "-moz-transform-style",
-    "layout.css.prefixes.transforms"
-  ],
-  [
-    "-moz-transform-origin",
-    "layout.css.prefixes.transforms"
-  ],
-  [
-    "-moz-font-feature-settings",
-    "layout.css.prefixes.font-features"
-  ],
-  [
-    "-moz-font-language-override",
-    "layout.css.prefixes.font-features"
-  ],
-  [
-    "-moz-box-sizing",
-    "layout.css.prefixes.box-sizing"
-  ],
-  [
-    "-moz-transition-duration",
-    "layout.css.prefixes.transitions"
-  ],
-  [
-    "-moz-transition-timing-function",
-    "layout.css.prefixes.transitions"
-  ],
-  [
-    "-moz-transition-property",
-    "layout.css.prefixes.transitions"
-  ],
-  [
-    "-moz-transition-delay",
-    "layout.css.prefixes.transitions"
-  ],
-  [
-    "-moz-animation-name",
-    "layout.css.prefixes.animations"
-  ],
-  [
-    "-moz-animation-duration",
-    "layout.css.prefixes.animations"
-  ],
-  [
-    "-moz-animation-timing-function",
-    "layout.css.prefixes.animations"
-  ],
-  [
-    "-moz-animation-iteration-count",
-    "layout.css.prefixes.animations"
-  ],
-  [
-    "-moz-animation-direction",
-    "layout.css.prefixes.animations"
-  ],
-  [
-    "-moz-animation-play-state",
-    "layout.css.prefixes.animations"
-  ],
-  [
-    "-moz-animation-fill-mode",
-    "layout.css.prefixes.animations"
-  ],
-  [
-    "-moz-animation-delay",
-    "layout.css.prefixes.animations"
-  ],
-  [
-    "-moz-border-image",
-    "layout.css.prefixes.border-image"
-  ],
-  [
-    "-moz-transition",
-    "layout.css.prefixes.transitions"
-  ],
-  [
-    "-moz-animation",
-    "layout.css.prefixes.animations"
-  ]
 ];

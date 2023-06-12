@@ -788,6 +788,11 @@ NativeLayerCA::NativeLayerCA(gfx::DeviceColor aColor)
 }
 
 NativeLayerCA::~NativeLayerCA() {
+#ifdef NIGHTLY_BUILD
+  if (mHasEverAttachExternalImage && StaticPrefs::gfx_core_animation_specialize_video_log()) {
+    NSLog(@"VIDEO_LOG: ~NativeLayerCA: %p is being destroyed after hosting video.", this);
+  }
+#endif
   if (mInProgressLockedIOSurface) {
     mInProgressLockedIOSurface->Unlock(false);
     mInProgressLockedIOSurface = nullptr;
@@ -829,6 +834,11 @@ void NativeLayerCA::AttachExternalImage(wr::RenderTextureHost* aExternalImage) {
   bool oldSpecializeVideo = mSpecializeVideo;
   mSpecializeVideo = ShouldSpecializeVideo(lock);
   bool changedSpecializeVideo = (mSpecializeVideo != oldSpecializeVideo);
+#ifdef NIGHTLY_BUILD
+  if (changedSpecializeVideo && StaticPrefs::gfx_core_animation_specialize_video_log()) {
+    NSLog(@"VIDEO_LOG: AttachExternalImage: %p is forcing a video layer rebuild.", this);
+  }
+#endif
 
   bool oldIsDRM = mIsDRM;
   mIsDRM = aExternalImage->IsFromDRMSource();
@@ -866,9 +876,12 @@ bool NativeLayerCA::ShouldSpecializeVideo(const MutexAutoLock& aProofOfLock) {
 
   MOZ_ASSERT(mTextureHost);
 
-  // DRM video must use a specialized video layer.
-  if (mTextureHost->IsFromDRMSource()) {
-    return true;
+  // DRM video is supported in macOS 10.15 and beyond, and such video must use
+  // a specialized video layer.
+  if (@available(macOS 10.15, iOS 13.0, *)) {
+    if (mTextureHost->IsFromDRMSource()) {
+      return true;
+    }
   }
 
   // Beyond this point, we need to know about the format of the video.
@@ -907,14 +920,25 @@ bool NativeLayerCA::ShouldSpecializeVideo(const MutexAutoLock& aProofOfLock) {
 }
 
 void NativeLayerCA::SetRootWindowIsFullscreen(bool aFullscreen) {
+  if (mRootWindowIsFullscreen == aFullscreen) {
+    return;
+  }
+
   MutexAutoLock lock(mMutex);
 
   mRootWindowIsFullscreen = aFullscreen;
 
   bool oldSpecializeVideo = mSpecializeVideo;
   mSpecializeVideo = ShouldSpecializeVideo(lock);
+  bool changedSpecializeVideo = (mSpecializeVideo != oldSpecializeVideo);
 
-  if (mSpecializeVideo != oldSpecializeVideo) {
+  if (changedSpecializeVideo) {
+#ifdef NIGHTLY_BUILD
+    if (StaticPrefs::gfx_core_animation_specialize_video_log()) {
+      NSLog(@"VIDEO_LOG: SetRootWindowIsFullscreen: %p is forcing a video layer rebuild.", this);
+    }
+#endif
+
     ForAllRepresentations([&](Representation& r) { r.mMutatedSpecializeVideo = true; });
   }
 }
@@ -1012,35 +1036,25 @@ Maybe<gfx::IntRect> NativeLayerCA::ClipRect() {
 void NativeLayerCA::DumpLayer(std::ostream& aOutputStream) {
   MutexAutoLock lock(mMutex);
 
-  auto size = gfx::Size(mSize) / mBackingScale;
+  Maybe<CGRect> scaledClipRect =
+      CalculateClipGeometry(mSize, mPosition, mTransform, mDisplayRect, mClipRect, mBackingScale);
 
-  Maybe<IntRect> clipFromDisplayRect;
-  if (!mDisplayRect.IsEqualInterior(IntRect({}, mSize))) {
-    // When the display rect is a subset of the layer, then we want to guarantee that no
-    // pixels outside that rect are sampled, since they might be uninitialized.
-    // Transforming the display rect into a post-transform clip only maintains this if
-    // it's an integer translation, which is all we support for this case currently.
-    MOZ_ASSERT(mTransform.Is2DIntegerTranslation());
-    clipFromDisplayRect =
-        Some(RoundedToInt(mTransform.TransformBounds(IntRectToRect(mDisplayRect + mPosition))));
+  CGRect useClipRect;
+  if (scaledClipRect.isSome()) {
+    useClipRect = *scaledClipRect;
+  } else {
+    useClipRect = CGRectZero;
   }
-
-  auto effectiveClip = IntersectMaybeRects(mClipRect, clipFromDisplayRect);
-  auto globalClipOrigin = effectiveClip ? effectiveClip->TopLeft() : IntPoint();
-  auto clipToLayerOffset = -globalClipOrigin;
-
-  auto wrappingDivPosition = gfx::Point(globalClipOrigin) / mBackingScale;
 
   aOutputStream << "<div style=\"";
   aOutputStream << "position: absolute; ";
-  aOutputStream << "left: " << wrappingDivPosition.x << "px; ";
-  aOutputStream << "top: " << wrappingDivPosition.y << "px; ";
+  aOutputStream << "left: " << useClipRect.origin.x << "px; ";
+  aOutputStream << "top: " << useClipRect.origin.y << "px; ";
+  aOutputStream << "width: " << useClipRect.size.width << "px; ";
+  aOutputStream << "height: " << useClipRect.size.height << "px; ";
 
-  if (effectiveClip) {
-    auto wrappingDivSize = gfx::Size(effectiveClip->Size()) / mBackingScale;
+  if (scaledClipRect.isSome()) {
     aOutputStream << "overflow: hidden; ";
-    aOutputStream << "width: " << wrappingDivSize.width << "px; ";
-    aOutputStream << "height: " << wrappingDivSize.height << "px; ";
   }
 
   if (mColor) {
@@ -1053,21 +1067,25 @@ void NativeLayerCA::DumpLayer(std::ostream& aOutputStream) {
     return;
   }
 
-  Matrix4x4 transform = mTransform;
-  transform.PreTranslate(mPosition.x, mPosition.y, 0);
-  transform.PostTranslate(clipToLayerOffset.x, clipToLayerOffset.y, 0);
-
-  if (mSurfaceIsFlipped) {
-    transform.PreTranslate(0, mSize.height, 0).PreScale(1, -1, 1);
-  }
-
   aOutputStream << "\">";
+
+  auto size = gfx::Size(mSize) / mBackingScale;
+
   aOutputStream << "<img style=\"";
   aOutputStream << "width: " << size.width << "px; ";
   aOutputStream << "height: " << size.height << "px; ";
 
   if (mSamplingFilter == gfx::SamplingFilter::POINT) {
     aOutputStream << "image-rendering: crisp-edges; ";
+  }
+
+  Matrix4x4 transform = mTransform;
+  transform.PreTranslate(mPosition.x, mPosition.y, 0);
+  transform.PostTranslate((-useClipRect.origin.x * mBackingScale),
+                          (-useClipRect.origin.y * mBackingScale), 0);
+
+  if (mSurfaceIsFlipped) {
+    transform.PreTranslate(0, mSize.height, 0).PreScale(1, -1, 1);
   }
 
   if (!transform.IsIdentity()) {
@@ -1193,43 +1211,6 @@ void NativeLayerCA::HandlePartialUpdate(const MutexAutoLock& aProofOfLock,
   MOZ_RELEASE_ASSERT(!mInProgressUpdateRegion);
   MOZ_RELEASE_ASSERT(!mInProgressDisplayRect);
 
-#ifdef NIGHTLY_BUILD
-  // Check if this update will leave the in progress surface with invalid pixels. This is
-  // only possible if the display rect is changing. That is true because definitionally the
-  // front surface has valid pixels for the entire current display rect. Given that, the in
-  // progress surface will copy the valid pixels from the front surface to cover any
-  // invalid regions in the in progress surface. It is only when the display rect changes
-  // that the in progress surface is relying on aUpdateRegion to cover the revealed area,
-  // which might also be partly or completely covered by valid pixels in the front surface.
-  //
-  // To check this, we check that the area exposed by the new display rect is covered by
-  // some combination of the update region and the front surface's valid region. Because
-  // this check is complex, we only do it in Nightly.
-  //
-  // Also, since this condition will hit a later release assert in NotifySurfaceReady, we
-  // choose to crash now.
-
-  if (!mDisplayRect.IsEqualInterior(aDisplayRect)) {
-    gfx::IntRegion exposedRegion(aDisplayRect);
-
-    if (mFrontSurface) {
-      // If there's a front surface, we'll fill in any valid pixels in the exposed region.
-      // We express this by intersecting the exposed region with the invalid region of the
-      // front surface.
-      exposedRegion.AndWith(mFrontSurface->mInvalidRegion);
-    }
-
-    if (!aUpdateRegion.Contains(exposedRegion)) {
-      // Let's crash now instead of later.
-      std::ostringstream reason;
-      reason << "The update region " << aUpdateRegion << " must cover the invalid region "
-             << exposedRegion << ".";
-      gfxCriticalError() << reason.str();
-      MOZ_CRASH();
-    }
-  }
-#endif
-
   mInProgressUpdateRegion = Some(aUpdateRegion);
   mInProgressDisplayRect = Some(aDisplayRect);
 
@@ -1339,21 +1320,6 @@ void NativeLayerCA::NotifySurfaceReady() {
   mFrontSurface = std::move(mInProgressSurface);
   mFrontSurface->mInvalidRegion.SubOut(mInProgressUpdateRegion.extract());
 
-  // Bug 1818540: We have a rounding error in our invalid region calculation
-  // somewhere. It's either in the update region that we receive from WebRender,
-  // or somewhere in this class's invalid region computation. Until we solve
-  // that, we might be left with a one-pixel tall or wide invalid region on the
-  // front surface, which will hit either the assert at the end of this function,
-  // or the assert in HandlePartialUpdate. There is no evidence that we are
-  // actually missing one pixel tall or wide strips from our updates and filling
-  // them with bad pixels. So to solve this problem for now, we check for a
-  // degenerate invalid region and clear it. Fixing Bug 1818540 will remove this
-  // cleanup and the asserts in this function and in HandlePartialUpdate.
-  IntRect frontSurfaceInvalidBounds = mFrontSurface->mInvalidRegion.GetBounds();
-  if (frontSurfaceInvalidBounds.width <= 1 || frontSurfaceInvalidBounds.height <= 1) {
-    mFrontSurface->mInvalidRegion.SetEmpty();
-  }
-
   ForAllRepresentations([&](Representation& r) { r.mMutatedFrontSurface = true; });
 
   MOZ_RELEASE_ASSERT(mInProgressDisplayRect);
@@ -1362,8 +1328,6 @@ void NativeLayerCA::NotifySurfaceReady() {
     ForAllRepresentations([&](Representation& r) { r.mMutatedDisplayRect = true; });
   }
   mInProgressDisplayRect = Nothing();
-  MOZ_RELEASE_ASSERT(mFrontSurface->mInvalidRegion.Intersect(mDisplayRect).IsEmpty(),
-                     "Parts of the display rect are invalid! This shouldn't happen.");
 }
 
 void NativeLayerCA::DiscardBackbuffers() {
@@ -1396,6 +1360,31 @@ NativeLayerCA::UpdateType NativeLayerCA::HasUpdate(WhichRepresentation aRepresen
   return GetRepresentation(aRepresentation).HasUpdate(IsVideoAndLocked(lock));
 }
 
+/* static */
+Maybe<CGRect> NativeLayerCA::CalculateClipGeometry(
+    const gfx::IntSize& aSize, const gfx::IntPoint& aPosition, const gfx::Matrix4x4& aTransform,
+    const gfx::IntRect& aDisplayRect, const Maybe<gfx::IntRect>& aClipRect, float aBackingScale) {
+  Maybe<IntRect> clipFromDisplayRect;
+  if (!aDisplayRect.IsEqualInterior(IntRect({}, aSize))) {
+    // When the display rect is a subset of the layer, then we want to guarantee that no
+    // pixels outside that rect are sampled, since they might be uninitialized.
+    // Transforming the display rect into a post-transform clip only maintains this if
+    // it's an integer translation, which is all we support for this case currently.
+    MOZ_ASSERT(aTransform.Is2DIntegerTranslation());
+    clipFromDisplayRect =
+        Some(RoundedToInt(aTransform.TransformBounds(IntRectToRect(aDisplayRect + aPosition))));
+  }
+
+  Maybe<gfx::IntRect> effectiveClip = IntersectMaybeRects(aClipRect, clipFromDisplayRect);
+  if (!effectiveClip) {
+    return Nothing();
+  }
+
+  return Some(CGRectMake(effectiveClip->X() / aBackingScale, effectiveClip->Y() / aBackingScale,
+                         effectiveClip->Width() / aBackingScale,
+                         effectiveClip->Height() / aBackingScale));
+}
+
 bool NativeLayerCA::ApplyChanges(WhichRepresentation aRepresentation,
                                  NativeLayerCA::UpdateType aUpdate) {
   MutexAutoLock lock(mMutex);
@@ -1408,7 +1397,7 @@ bool NativeLayerCA::ApplyChanges(WhichRepresentation aRepresentation,
   return GetRepresentation(aRepresentation)
       .ApplyChanges(aUpdate, mSize, mIsOpaque, mPosition, mTransform, mDisplayRect, mClipRect,
                     mBackingScale, mSurfaceIsFlipped, mSamplingFilter, mSpecializeVideo, surface,
-                    mColor, mIsDRM);
+                    mColor, mIsDRM, IsVideo());
 }
 
 CALayer* NativeLayerCA::UnderlyingCALayer(WhichRepresentation aRepresentation) {
@@ -1434,18 +1423,22 @@ static NSString* NSStringForOSType(OSType type) {
   NSLog(@"Surface values are %@.\n", surfaceValues);
   CFRelease(surfaceValues);
 
-  CGColorSpaceRef colorSpace = CVImageBufferGetColorSpace(aBuffer);
-  NSLog(@"ColorSpace is %@.\n", colorSpace);
+  if (aBuffer) {
+    CGColorSpaceRef colorSpace = CVImageBufferGetColorSpace(aBuffer);
+    NSLog(@"ColorSpace is %@.\n", colorSpace);
 
-  CFDictionaryRef bufferAttachments =
-      CVBufferGetAttachments(aBuffer, kCVAttachmentMode_ShouldPropagate);
-  NSLog(@"Buffer attachments are %@.\n", bufferAttachments);
+    CFDictionaryRef bufferAttachments =
+        CVBufferGetAttachments(aBuffer, kCVAttachmentMode_ShouldPropagate);
+    NSLog(@"Buffer attachments are %@.\n", bufferAttachments);
+  }
 
-  OSType codec = CMFormatDescriptionGetMediaSubType(aFormat);
-  NSLog(@"Codec is %@.\n", NSStringForOSType(codec));
+  if (aFormat) {
+    OSType codec = CMFormatDescriptionGetMediaSubType(aFormat);
+    NSLog(@"Codec is %@.\n", NSStringForOSType(codec));
 
-  CFDictionaryRef extensions = CMFormatDescriptionGetExtensions(aFormat);
-  NSLog(@"Format extensions are %@.\n", extensions);
+    CFDictionaryRef extensions = CMFormatDescriptionGetExtensions(aFormat);
+    NSLog(@"Format extensions are %@.\n", extensions);
+  }
 }
 
 bool NativeLayerCA::Representation::EnqueueSurface(IOSurfaceRef aSurfaceRef) {
@@ -1528,8 +1521,9 @@ bool NativeLayerCA::Representation::EnqueueSurface(IOSurfaceRef aSurfaceRef) {
       CFTypeRefPtr<CMVideoFormatDescriptionRef>::WrapUnderCreateRule(formatDescription);
 
 #ifdef NIGHTLY_BUILD
-  if (StaticPrefs::gfx_core_animation_specialize_video_log()) {
+  if (mLogNextVideoSurface && StaticPrefs::gfx_core_animation_specialize_video_log()) {
     LogSurface(aSurfaceRef, pixelBuffer, formatDescription);
+    mLogNextVideoSurface = false;
   }
 #endif
 
@@ -1586,7 +1580,8 @@ bool NativeLayerCA::Representation::ApplyChanges(
     const IntPoint& aPosition, const Matrix4x4& aTransform, const IntRect& aDisplayRect,
     const Maybe<IntRect>& aClipRect, float aBackingScale, bool aSurfaceIsFlipped,
     gfx::SamplingFilter aSamplingFilter, bool aSpecializeVideo,
-    CFTypeRefPtr<IOSurfaceRef> aFrontSurface, CFTypeRefPtr<CGColorRef> aColor, bool aIsDRM) {
+    CFTypeRefPtr<IOSurfaceRef> aFrontSurface, CFTypeRefPtr<CGColorRef> aColor, bool aIsDRM,
+    bool aIsVideo) {
   // If we have an OnlyVideo update, handle it and early exit.
   if (aUpdate == UpdateType::OnlyVideo) {
     // If we don't have any updates to do, exit early with success. This is
@@ -1626,6 +1621,11 @@ bool NativeLayerCA::Representation::ApplyChanges(
   if (mWrappingCALayer && mMutatedSpecializeVideo) {
     // Since specialize video changes the way we construct our wrapping and content layers,
     // we have to scrap them if this value has changed.
+#ifdef NIGHTLY_BUILD
+    if (aIsVideo && StaticPrefs::gfx_core_animation_specialize_video_log()) {
+      NSLog(@"VIDEO_LOG: Scrapping existing video layer.");
+    }
+#endif
     [mContentCALayer release];
     mContentCALayer = nil;
     [mOpaquenessTintLayer release];
@@ -1639,9 +1639,9 @@ bool NativeLayerCA::Representation::ApplyChanges(
   if (!mWrappingCALayer) {
     layerNeedsInitialization = true;
     mWrappingCALayer = [[CALayer layer] retain];
-    mWrappingCALayer.position = NSZeroPoint;
-    mWrappingCALayer.bounds = NSZeroRect;
-    mWrappingCALayer.anchorPoint = NSZeroPoint;
+    mWrappingCALayer.position = CGPointZero;
+    mWrappingCALayer.bounds = CGRectZero;
+    mWrappingCALayer.anchorPoint = CGPointZero;
     mWrappingCALayer.contentsGravity = kCAGravityTopLeft;
     mWrappingCALayer.edgeAntialiasingMask = 0;
 
@@ -1650,6 +1650,12 @@ bool NativeLayerCA::Representation::ApplyChanges(
       mWrappingCALayer.backgroundColor = aColor.get();
     } else {
       if (aSpecializeVideo) {
+#ifdef NIGHTLY_BUILD
+        if (aIsVideo && StaticPrefs::gfx_core_animation_specialize_video_log()) {
+          NSLog(@"VIDEO_LOG: Rebuilding video layer with AVSampleBufferDisplayLayer.");
+          mLogNextVideoSurface = true;
+        }
+#endif
         mContentCALayer = [[AVSampleBufferDisplayLayer layer] retain];
         CMTimebaseRef timebase;
 #ifdef CMTIMEBASE_USE_SOURCE_TERMINOLOGY
@@ -1661,10 +1667,16 @@ bool NativeLayerCA::Representation::ApplyChanges(
         [(AVSampleBufferDisplayLayer*)mContentCALayer setControlTimebase:timebase];
         CFRelease(timebase);
       } else {
+#ifdef NIGHTLY_BUILD
+        if (aIsVideo && StaticPrefs::gfx_core_animation_specialize_video_log()) {
+          NSLog(@"VIDEO_LOG: Rebuilding video layer with CALayer.");
+          mLogNextVideoSurface = true;
+        }
+#endif
         mContentCALayer = [[CALayer layer] retain];
       }
-      mContentCALayer.position = NSZeroPoint;
-      mContentCALayer.anchorPoint = NSZeroPoint;
+      mContentCALayer.position = CGPointZero;
+      mContentCALayer.anchorPoint = CGPointZero;
       mContentCALayer.contentsGravity = kCAGravityTopLeft;
       mContentCALayer.contentsScale = 1;
       mContentCALayer.bounds = CGRectMake(0, 0, aSize.width, aSize.height);
@@ -1689,9 +1701,9 @@ bool NativeLayerCA::Representation::ApplyChanges(
   bool shouldTintOpaqueness = StaticPrefs::gfx_core_animation_tint_opaque();
   if (shouldTintOpaqueness && !mOpaquenessTintLayer) {
     mOpaquenessTintLayer = [[CALayer layer] retain];
-    mOpaquenessTintLayer.position = NSZeroPoint;
+    mOpaquenessTintLayer.position = CGPointZero;
     mOpaquenessTintLayer.bounds = mContentCALayer.bounds;
-    mOpaquenessTintLayer.anchorPoint = NSZeroPoint;
+    mOpaquenessTintLayer.anchorPoint = CGPointZero;
     mOpaquenessTintLayer.contentsGravity = kCAGravityTopLeft;
     if (aIsOpaque) {
       mOpaquenessTintLayer.backgroundColor =
@@ -1728,36 +1740,25 @@ bool NativeLayerCA::Representation::ApplyChanges(
 
   if (mMutatedBackingScale || mMutatedPosition || mMutatedDisplayRect || mMutatedClipRect ||
       mMutatedTransform || mMutatedSurfaceIsFlipped || mMutatedSize || layerNeedsInitialization) {
-    Maybe<IntRect> clipFromDisplayRect;
-    if (!aDisplayRect.IsEqualInterior(IntRect({}, aSize))) {
-      // When the display rect is a subset of the layer, then we want to guarantee that no
-      // pixels outside that rect are sampled, since they might be uninitialized.
-      // Transforming the display rect into a post-transform clip only maintains this if
-      // it's an integer translation, which is all we support for this case currently.
-      MOZ_ASSERT(aTransform.Is2DIntegerTranslation());
-      clipFromDisplayRect =
-          Some(RoundedToInt(aTransform.TransformBounds(IntRectToRect(aDisplayRect + aPosition))));
-    }
+    Maybe<CGRect> scaledClipRect =
+        CalculateClipGeometry(aSize, aPosition, aTransform, aDisplayRect, aClipRect, aBackingScale);
 
-    auto effectiveClip = IntersectMaybeRects(aClipRect, clipFromDisplayRect);
-    auto globalClipOrigin = effectiveClip ? effectiveClip->TopLeft() : IntPoint();
-    auto clipToLayerOffset = -globalClipOrigin;
-
-    mWrappingCALayer.position =
-        CGPointMake(globalClipOrigin.x / aBackingScale, globalClipOrigin.y / aBackingScale);
-
-    if (effectiveClip) {
-      mWrappingCALayer.masksToBounds = YES;
-      mWrappingCALayer.bounds = CGRectMake(0, 0, effectiveClip->Width() / aBackingScale,
-                                           effectiveClip->Height() / aBackingScale);
+    CGRect useClipRect;
+    if (scaledClipRect.isSome()) {
+      useClipRect = *scaledClipRect;
     } else {
-      mWrappingCALayer.masksToBounds = NO;
+      useClipRect = CGRectZero;
     }
+
+    mWrappingCALayer.position = useClipRect.origin;
+    mWrappingCALayer.bounds = CGRectMake(0, 0, useClipRect.size.width, useClipRect.size.height);
+    mWrappingCALayer.masksToBounds = scaledClipRect.isSome();
 
     if (mContentCALayer) {
       Matrix4x4 transform = aTransform;
       transform.PreTranslate(aPosition.x, aPosition.y, 0);
-      transform.PostTranslate(clipToLayerOffset.x, clipToLayerOffset.y, 0);
+      transform.PostTranslate((-useClipRect.origin.x * aBackingScale),
+                              (-useClipRect.origin.y * aBackingScale), 0);
 
       if (aSurfaceIsFlipped) {
         transform.PreTranslate(0, aSize.height, 0).PreScale(1, -1, 1);
@@ -1818,6 +1819,12 @@ bool NativeLayerCA::Representation::ApplyChanges(
         return false;
       }
     } else {
+#ifdef NIGHTLY_BUILD
+      if (mLogNextVideoSurface && StaticPrefs::gfx_core_animation_specialize_video_log()) {
+        LogSurface(surface, nullptr, nullptr);
+        mLogNextVideoSurface = false;
+      }
+#endif
       mContentCALayer.contents = (id)surface;
     }
   }

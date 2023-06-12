@@ -635,8 +635,6 @@
     "browser/components/newtab/lib/PrefsFeed.jsm",
   "resource://activity-stream/lib/RecommendationProvider.jsm":
     "browser/components/newtab/lib/RecommendationProvider.jsm",
-  "resource://activity-stream/lib/RemoteImages.jsm":
-    "browser/components/newtab/lib/RemoteImages.jsm",
   "resource://activity-stream/lib/RemoteL10n.jsm":
     "browser/components/newtab/lib/RemoteL10n.jsm",
   "resource://activity-stream/lib/Screenshots.jsm":
@@ -731,16 +729,16 @@
     "devtools/client/jsonview/Converter.jsm",
   "resource://devtools/client/jsonview/Sniffer.jsm":
     "devtools/client/jsonview/Sniffer.jsm",
-  "resource://devtools/client/performance-new/popup/background.jsm.js":
-    "devtools/client/performance-new/popup/background.jsm.js",
+  "resource://devtools/client/performance-new/shared/background.jsm.js":
+    "devtools/client/performance-new/shared/background.jsm.js",
   "resource://devtools/client/performance-new/popup/menu-button.jsm.js":
     "devtools/client/performance-new/popup/menu-button.jsm.js",
-  "resource://devtools/client/performance-new/popup/panel.jsm.js":
-    "devtools/client/performance-new/popup/panel.jsm.js",
-  "resource://devtools/client/performance-new/symbolication.jsm.js":
-    "devtools/client/performance-new/symbolication.jsm.js",
-  "resource://devtools/client/performance-new/typescript-lazy-load.jsm.js":
-    "devtools/client/performance-new/typescript-lazy-load.jsm.js",
+  "resource://devtools/client/performance-new/popup/logic.jsm.js":
+    "devtools/client/performance-new/popup/logic.jsm.js",
+  "resource://devtools/client/performance-new/shared/symbolication.jsm.js":
+    "devtools/client/performance-new/shared/symbolication.jsm.js",
+  "resource://devtools/client/performance-new/shared/typescript-lazy-load.jsm.js":
+    "devtools/client/performance-new/shared/typescript-lazy-load.jsm.js",
   "resource://devtools/client/storage/VariablesView.jsm":
     "devtools/client/storage/VariablesView.jsm",
   "resource://devtools/client/styleeditor/StyleEditorUI.jsm":
@@ -1798,6 +1796,8 @@
     "toolkit/components/pdfjs/content/build/pdf.sandbox.external.js",
   "resource://reftest/AsyncSpellCheckTestHelper.jsm":
     "editor/AsyncSpellCheckTestHelper.jsm",
+  "resource://testing-common/AsyncSpellCheckTestHelper.jsm":
+    "editor/AsyncSpellCheckTestHelper.jsm",
   "resource://reftest/PerTestCoverageUtils.jsm":
     "tools/code-coverage/PerTestCoverageUtils.jsm",
   "resource://reftest/ReftestFissionChild.jsm":
@@ -2023,8 +2023,6 @@
     "browser/components/urlbar/tests/quicksuggest/QuickSuggestTestUtils.jsm",
   "resource://testing-common/RegionTestUtils.jsm":
     "toolkit/modules/tests/xpcshell/RegionTestUtils.jsm",
-  "resource://testing-common/RemoteImagesTestUtils.jsm":
-    "browser/components/newtab/test/RemoteImagesTestUtils.jsm",
   "resource://testing-common/SearchTestUtils.jsm":
     "toolkit/components/search/tests/SearchTestUtils.jsm",
   "resource://testing-common/Sinon.jsm": "testing/modules/Sinon.jsm",

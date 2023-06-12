@@ -115,6 +115,16 @@ SharedLibraryInfo SharedLibraryInfo::GetInfoForSelf() {
       pdbPathStr = NS_ConvertUTF8toUTF16(debugInfo->pdbFileName);
     }
 
+    nsAutoCString codeId;
+    DWORD timestamp;
+    DWORD imageSize;
+    if (headers.GetTimeStamp(timestamp) && headers.GetImageSize(imageSize)) {
+      codeId.AppendPrintf(
+          "%08lX"  // Uppercase 8 digits of hex timestamp with leading zeroes.
+          "%lx",   // Lowercase hex image size
+          timestamp, imageSize);
+    }
+
     nsAutoCString versionStr;
     uint64_t version;
     if (headers.GetVersionInfo(version)) {
@@ -129,7 +139,7 @@ SharedLibraryInfo SharedLibraryInfo::GetInfoForSelf() {
         PromiseFlatString(mozilla::nt::GetLeafName(pdbPathStr));
     SharedLibrary shlib(modStart, modEnd,
                         0,  // DLLs are always mapped at offset 0 on Windows
-                        breakpadId, PromiseFlatString(moduleNameStr),
+                        breakpadId, codeId, PromiseFlatString(moduleNameStr),
                         nsDependentString(aModulePath), pdbNameStr, pdbPathStr,
                         versionStr, "");
     sharedLibraryInfo.AddSharedLibrary(shlib);

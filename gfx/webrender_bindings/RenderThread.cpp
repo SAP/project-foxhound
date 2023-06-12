@@ -24,6 +24,7 @@
 #include "mozilla/layers/WebRenderBridgeParent.h"
 #include "mozilla/layers/SharedSurfacesParent.h"
 #include "mozilla/layers/SurfacePool.h"
+#include "mozilla/layers/SynchronousTask.h"
 #include "mozilla/PerfStats.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/Telemetry.h"
@@ -101,26 +102,48 @@ void RenderThread::Start(uint32_t aNamespace) {
   sRenderThreadEverStarted = true;
 #endif
 
+  // When the CanvasRenderer thread is disabled, WebGL may be handled on this
+  // thread, requiring a bigger stack size. See: CanvasManagerParent::Init
+  //
+  // This is 4M, which is higher than the default 256K.
+  // Increased with bug 1753349 to accommodate the `chromium/5359` branch of
+  // ANGLE, which has large peak stack usage for some pathological shader
+  // compilations.
+  //
+  // Previously increased to 512K to accommodate Mesa in bug 1753340.
+  //
+  // Previously increased to 320K to avoid a stack overflow in the
+  // Intel Vulkan driver initialization in bug 1716120.
+  //
+  // Note: we only override it if it's limited already.
+  uint32_t stackSize = nsIThreadManager::DEFAULT_STACK_SIZE;
+  if (stackSize && !gfx::gfxVars::SupportsThreadsafeGL()) {
+    stackSize = std::max(stackSize, 4096U << 10);
+  }
+
   RefPtr<nsIThread> thread;
   nsresult rv = NS_NewNamedThread(
       "Renderer", getter_AddRefs(thread),
-      NS_NewRunnableFunction("Renderer::BackgroundHanSetup", []() {
-        sBackgroundHangMonitor = new mozilla::BackgroundHangMonitor(
-            "Render",
-            /* Timeout values are powers-of-two to enable us get better
-               data. 128ms is chosen for transient hangs because 8Hz should
-               be the minimally acceptable goal for Render
-               responsiveness (normal goal is 60Hz). */
-            128,
-            /* 2048ms is chosen for permanent hangs because it's longer than
-             * most Render hangs seen in the wild, but is short enough
-             * to not miss getting native hang stacks. */
-            2048);
-        nsCOMPtr<nsIThread> thread = NS_GetCurrentThread();
-        nsThread* nsthread = static_cast<nsThread*>(thread.get());
-        nsthread->SetUseHangMonitor(true);
-        nsthread->SetPriority(nsISupportsPriority::PRIORITY_HIGH);
-      }));
+      NS_NewRunnableFunction(
+          "Renderer::BackgroundHanSetup",
+          []() {
+            sBackgroundHangMonitor = new mozilla::BackgroundHangMonitor(
+                "Render",
+                /* Timeout values are powers-of-two to enable us get better
+                   data. 128ms is chosen for transient hangs because 8Hz should
+                   be the minimally acceptable goal for Render
+                   responsiveness (normal goal is 60Hz). */
+                128,
+                /* 2048ms is chosen for permanent hangs because it's longer than
+                 * most Render hangs seen in the wild, but is short enough
+                 * to not miss getting native hang stacks. */
+                2048);
+            nsCOMPtr<nsIThread> thread = NS_GetCurrentThread();
+            nsThread* nsthread = static_cast<nsThread*>(thread.get());
+            nsthread->SetUseHangMonitor(true);
+            nsthread->SetPriority(nsISupportsPriority::PRIORITY_HIGH);
+          }),
+      {.stackSize = stackSize});
 
   if (NS_FAILED(rv)) {
     return;
@@ -793,6 +816,50 @@ void RenderThread::UnregisterExternalImage(
         &RenderThread::DeferredRenderTextureHostDestroy));
   } else {
     mRenderTextures.erase(it);
+  }
+}
+
+void RenderThread::DestroyExternalImagesSyncWait(
+    const std::vector<wr::ExternalImageId>&& aIds) {
+  if (!IsInRenderThread()) {
+    layers::SynchronousTask task("Destroy external images");
+
+    RefPtr<Runnable> runnable = NS_NewRunnableFunction(
+        "RenderThread::DestroyExternalImagesSyncWait::Runnable",
+        [&task, ids = std::move(aIds)]() {
+          layers::AutoCompleteTask complete(&task);
+          RenderThread::Get()->DestroyExternalImages(std::move(ids));
+        });
+
+    PostRunnable(runnable.forget());
+    task.Wait();
+    return;
+  }
+  DestroyExternalImages(std::move(aIds));
+}
+
+void RenderThread::DestroyExternalImages(
+    const std::vector<wr::ExternalImageId>&& aIds) {
+  MOZ_ASSERT(IsInRenderThread());
+
+  std::vector<RefPtr<RenderTextureHost>> hosts;
+  {
+    MutexAutoLock lock(mRenderTextureMapLock);
+    if (mHasShutdown) {
+      return;
+    }
+
+    for (auto& id : aIds) {
+      auto it = mRenderTextures.find(id);
+      if (it == mRenderTextures.end()) {
+        continue;
+      }
+      hosts.emplace_back(it->second);
+    }
+  }
+
+  for (auto& host : hosts) {
+    host->Destroy();
   }
 }
 

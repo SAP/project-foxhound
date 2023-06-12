@@ -29,7 +29,7 @@ const KNOWN_ERROR_TITLE_IDS = new Set([
   "connectionFailure-title",
   "deniedPortAccess-title",
   "dnsNotFound-title",
-  "dns-not-found-trr-only-title",
+  "dns-not-found-trr-only-title2",
   "fileNotFound-title",
   "fileAccessDenied-title",
   "generic-title",
@@ -388,14 +388,10 @@ function initPage() {
   if (RPMIsFirefox()) {
     if (isTRROnlyFailure) {
       document.body.className = "certerror"; // Shows warning icon
-      pageTitleId = "dns-not-found-trr-only-title";
-      document.l10n.setAttributes(docTitle, pageTitleId, {
-        hostname: HOST_NAME,
-      });
-      bodyTitleId = "dns-not-found-trr-only-title";
-      document.l10n.setAttributes(bodyTitle, bodyTitleId, {
-        hostname: HOST_NAME,
-      });
+      pageTitleId = "dns-not-found-trr-only-title2";
+      document.l10n.setAttributes(docTitle, pageTitleId);
+      bodyTitleId = "dns-not-found-trr-only-title2";
+      document.l10n.setAttributes(bodyTitle, bodyTitleId);
 
       shortDesc.textContent = "";
       let skipReason = RPMGetTRRSkipReason();
@@ -509,15 +505,11 @@ function showNativeFallbackWarning() {
   let bodyTitleId = gErrorCode + "-title";
 
   document.body.className = "certerror"; // Shows warning icon
-  pageTitleId = "dns-not-found-native-fallback-title";
-  document.l10n.setAttributes(docTitle, pageTitleId, {
-    hostname: HOST_NAME,
-  });
+  pageTitleId = "dns-not-found-native-fallback-title2";
+  document.l10n.setAttributes(docTitle, pageTitleId);
 
-  bodyTitleId = "dns-not-found-native-fallback-title";
-  document.l10n.setAttributes(bodyTitle, bodyTitleId, {
-    hostname: HOST_NAME,
-  });
+  bodyTitleId = "dns-not-found-native-fallback-title2";
+  document.l10n.setAttributes(bodyTitle, bodyTitleId);
 
   shortDesc.textContent = "";
   let nativeFallbackIgnoreButton = document.getElementById(
@@ -544,7 +536,7 @@ function showNativeFallbackWarning() {
   if (skipReason.includes("HEURISTIC_TRIPPED")) {
     descriptionTag = "neterror-dns-not-found-native-fallback-heuristic";
   } else if (skipReason == "TRR_NOT_CONFIRMED") {
-    descriptionTag = "neterror-dns-not-found-native-fallback-not-confirmed";
+    descriptionTag = "neterror-dns-not-found-native-fallback-not-confirmed2";
   }
 
   let description = document.getElementById("nativeFallbackDescription");

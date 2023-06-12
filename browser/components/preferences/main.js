@@ -1269,7 +1269,9 @@ var gMainPane = {
     if (AppConstants.HAVE_SHELL_SERVICE) {
       let shellSvc = getShellService();
       let defaultBrowserBox = document.getElementById("defaultBrowserBox");
-      if (!shellSvc) {
+      let isInFlatpak = gGIOService?.isRunningUnderFlatpak;
+      // Flatpak does not support setting nor detection of default browser
+      if (!shellSvc || isInFlatpak) {
         defaultBrowserBox.hidden = true;
         return;
       }
@@ -1727,11 +1729,12 @@ var gMainPane = {
 
     // If we've been opened before, remove the old wizard and insert a
     // new one to put it back into its starting state.
-    migrationWizardDialog.firstElementChild?.remove();
-    let wizard = document.createElement("migration-wizard");
-    wizard.toggleAttribute("dialog-mode", true);
-    migrationWizardDialog.appendChild(wizard);
-
+    if (!migrationWizardDialog.firstElementChild) {
+      let wizard = document.createElement("migration-wizard");
+      wizard.toggleAttribute("dialog-mode", true);
+      migrationWizardDialog.appendChild(wizard);
+    }
+    migrationWizardDialog.firstElementChild.requestState();
     migrationWizardDialog.showModal();
   },
 
@@ -2453,11 +2456,8 @@ var gMainPane = {
       possibleAppMenuItems.push(menuItem);
     }
     // Add gio handlers
-    if (Cc["@mozilla.org/gio-service;1"]) {
-      let gIOSvc = Cc["@mozilla.org/gio-service;1"].getService(
-        Ci.nsIGIOService
-      );
-      var gioApps = gIOSvc.getAppsForURIScheme(handlerInfo.type);
+    if (gGIOService) {
+      var gioApps = gGIOService.getAppsForURIScheme(handlerInfo.type);
       let possibleHandlers = handlerInfo.possibleApplicationHandlers;
       for (let handler of gioApps.enumerate(Ci.nsIHandlerApp)) {
         // OS handler share the same name, it's most likely the same app, skipping...

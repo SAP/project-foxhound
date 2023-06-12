@@ -27,12 +27,8 @@ describe("MultiStageAboutWelcome module", () => {
   beforeEach(async () => {
     globals = new GlobalOverrider();
     globals.set({
-      AWGetDefaultSites: () => Promise.resolve([]),
-      AWGetImportableSites: () => Promise.resolve("{}"),
       AWGetSelectedTheme: () => Promise.resolve("automatic"),
       AWSendEventTelemetry: () => {},
-      AWWaitForRegionChange: () => Promise.resolve(),
-      AWGetRegion: () => Promise.resolve(),
       AWWaitForMigrationClose: () => Promise.resolve(),
       AWSelectTheme: () => Promise.resolve(),
       AWFinish: () => Promise.resolve(),
@@ -50,37 +46,6 @@ describe("MultiStageAboutWelcome module", () => {
       const wrapper = shallow(<MultiStageAboutWelcome {...DEFAULT_PROPS} />);
 
       assert.ok(wrapper.exists());
-    });
-
-    it("should send <MESSAGEID>_SITES impression telemetry ", async () => {
-      const impressionSpy = sandbox.spy(
-        AboutWelcomeUtils,
-        "sendImpressionTelemetry"
-      );
-      globals.set({
-        AWGetImportableSites: () =>
-          Promise.resolve('["site-1","site-2","site-3","site-4","site-5"]'),
-      });
-
-      mount(<MultiStageAboutWelcome {...DEFAULT_PROPS} />);
-      // Delay slightly to make sure we've finished executing any promise
-      await new Promise(resolve => setTimeout(resolve, 0));
-
-      assert.calledTwice(impressionSpy);
-      assert.equal(
-        impressionSpy.firstCall.args[0],
-        `${DEFAULT_PROPS.message_id}_0_${
-          DEFAULT_PROPS.screens[0].id
-        }_${DEFAULT_PROPS.screens
-          .map(({ id }) => id?.split("_")[1]?.[0])
-          .join("")}`
-      );
-      assert.equal(
-        impressionSpy.secondCall.args[0],
-        `${DEFAULT_PROPS.message_id}_SITES`
-      );
-      assert.equal(impressionSpy.secondCall.lastArg.display, "static");
-      assert.equal(impressionSpy.secondCall.lastArg.importable, 5);
     });
 
     it("should pass activeTheme and initialTheme props to WelcomeScreen", async () => {
@@ -101,8 +66,31 @@ describe("MultiStageAboutWelcome module", () => {
     });
 
     it("should handle primary Action", () => {
+      const screens = [
+        {
+          content: {
+            title: "test title",
+            subtitle: "test subtitle",
+            primary_button: {
+              label: "Test button",
+              action: {
+                navigate: true,
+              },
+            },
+          },
+        },
+      ];
+
+      const PRIMARY_ACTION_PROPS = {
+        screens,
+        metricsFlowUri: "http://localhost/",
+        message_id: "DEFAULT_ABOUTWELCOME",
+        utm_term: "default",
+        startScreen: 0,
+      };
+
       const stub = sinon.stub(AboutWelcomeUtils, "sendActionTelemetry");
-      let wrapper = mount(<MultiStageAboutWelcome {...DEFAULT_PROPS} />);
+      let wrapper = mount(<MultiStageAboutWelcome {...PRIMARY_ACTION_PROPS} />);
       wrapper.update();
 
       let welcomeScreenWrapper = wrapper.find(WelcomeScreen);
@@ -220,7 +208,6 @@ describe("MultiStageAboutWelcome module", () => {
         id: screen.id,
         totalNumberOfScreens: 1,
         content: screen.content,
-        topSites: [],
         messageId: `${DEFAULT_PROPS.message_id}_${screen.id}`,
         UTMTerm: DEFAULT_PROPS.utm_term,
         flowParams: null,
@@ -346,7 +333,6 @@ describe("MultiStageAboutWelcome module", () => {
           },
         },
         navigate: null,
-        topSites: [],
         messageId: `${DEFAULT_PROPS.message_id}_"test-theme-screen"`,
         UTMTerm: DEFAULT_PROPS.utm_term,
         flowParams: null,
@@ -456,7 +442,7 @@ describe("MultiStageAboutWelcome module", () => {
               utm_campaign: "firstrun",
               utm_medium: "referral",
               utm_source: "activity-stream",
-              utm_term: "aboutwelcome-you_tee_emm-screen",
+              utm_term: "you_tee_emm-screen",
             },
           },
           type: "SHOW_FIREFOX_ACCOUNTS",

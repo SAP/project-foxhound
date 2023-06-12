@@ -147,7 +147,8 @@ class NewRenderer : public RendererEvent {
             StaticPrefs::gfx_webrender_enable_gpu_markers_AtStartup(),
             panic_on_gl_error, picTileWidth, picTileHeight,
             gfx::gfxVars::WebRenderRequiresHardwareDriver(),
-            StaticPrefs::gfx_webrender_low_quality_pinch_zoom_AtStartup())) {
+            StaticPrefs::gfx_webrender_low_quality_pinch_zoom_AtStartup(),
+            StaticPrefs::gfx_webrender_max_shared_surface_size_AtStartup())) {
       // wr_window_new puts a message into gfxCriticalNote if it returns false
       MOZ_ASSERT(errorMessage);
       mError->AssignASCII(errorMessage);
@@ -1642,7 +1643,7 @@ DisplayListBuilder::FixedPosScrollTargetTracker::GetSideBitsForASR(
   return aAsr == mAsr ? Some(mSideBits) : Nothing();
 }
 
-already_AddRefed<gfxContext> DisplayListBuilder::GetTextContext(
+gfxContext* DisplayListBuilder::GetTextContext(
     wr::IpcResourceUpdateQueue& aResources,
     const layers::StackingContextHelper& aSc,
     layers::RenderRootStateManager* aManager, nsDisplayItem* aItem,
@@ -1650,15 +1651,16 @@ already_AddRefed<gfxContext> DisplayListBuilder::GetTextContext(
   if (!mCachedTextDT) {
     mCachedTextDT = new layout::TextDrawTarget(*this, aResources, aSc, aManager,
                                                aItem, aBounds);
-    mCachedContext = gfxContext::CreateOrNull(mCachedTextDT, aDeviceOffset);
+    if (mCachedTextDT->IsValid()) {
+      mCachedContext = MakeUnique<gfxContext>(mCachedTextDT, aDeviceOffset);
+    }
   } else {
     mCachedTextDT->Reinitialize(aResources, aSc, aManager, aItem, aBounds);
     mCachedContext->SetDeviceOffset(aDeviceOffset);
     mCachedContext->SetMatrix(gfx::Matrix());
   }
 
-  RefPtr<gfxContext> tmp = mCachedContext;
-  return tmp.forget();
+  return mCachedContext.get();
 }
 
 void DisplayListBuilder::PushInheritedClipChain(

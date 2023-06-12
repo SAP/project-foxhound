@@ -177,6 +177,9 @@ add_task(async function() {
       heuristic: false,
       payload: {
         isSponsored,
+        subtype: isSponsored
+          ? UrlbarProviderQuickSuggest.RESULT_SUBTYPE.SPONSORED
+          : UrlbarProviderQuickSuggest.RESULT_SUBTYPE.NONSPONSORED,
         sponsoredBlockId: qsResult.id,
         url: qsResult.url,
         originalUrl: qsResult.url,
@@ -193,7 +196,7 @@ add_task(async function() {
             ? "urlbar-result-menu-learn-more-about-firefox-suggest"
             : "firefox-suggest-urlbar-learn-more",
         },
-        isBlockable: false,
+        isBlockable: UrlbarPrefs.get("quickSuggestBlockingEnabled"),
         blockL10n: {
           id: UrlbarPrefs.get("resultMenu")
             ? "urlbar-result-menu-dismiss-firefox-suggest"

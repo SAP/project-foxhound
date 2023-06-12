@@ -219,7 +219,6 @@ if (
 }
 
 const PREF_DNR_ENABLED = "extensions.dnr.enabled";
-const PREF_DNR_FEEDBACK = "extensions.dnr.feedback";
 
 // Message included in warnings and errors related to privileged permissions and
 // privileged manifest properties. Provides a link to the firefox-source-docs.mozilla.org
@@ -283,14 +282,6 @@ function isDNRPermissionAllowed(perm) {
     return false;
   }
 
-  // APIs tied to declarativeNetRequestFeedback are for debugging purposes and
-  // are only supposed to be available when the (add-on dev) user opts in.
-  if (
-    perm === "declarativeNetRequestFeedback" &&
-    !Services.prefs.getBoolPref(PREF_DNR_FEEDBACK, false)
-  ) {
-    return false;
-  }
   return true;
 }
 
@@ -2685,8 +2676,13 @@ class Extension extends ExtensionData {
     return common == this.baseURL;
   }
 
+  checkLoadURI(uri, options = {}) {
+    return ExtensionCommon.checkLoadURI(uri, this.principal, options);
+  }
+
+  // Note: use checkLoadURI instead of checkLoadURL if you already have a URI.
   checkLoadURL(url, options = {}) {
-    // As an optimization, f the URL starts with the extension's base URL,
+    // As an optimization, if the URL starts with the extension's base URL,
     // don't do any further checks. It's always allowed to load it.
     if (url.startsWith(this.baseURL)) {
       return true;
@@ -2769,6 +2765,10 @@ class Extension extends ExtensionData {
     return this.manifest.background?.scripts;
   }
 
+  get backgroundTypeModule() {
+    return this.manifest.background?.type === "module";
+  }
+
   get backgroundWorkerScript() {
     return this.manifest.background?.service_worker;
   }
@@ -2837,6 +2837,7 @@ class Extension extends ExtensionData {
     return {
       backgroundScripts: this.backgroundScripts,
       backgroundWorkerScript: this.backgroundWorkerScript,
+      backgroundTypeModule: this.backgroundTypeModule,
       childModules: this.modules && this.modules.child,
       dependencies: this.dependencies,
       persistentBackground: this.persistentBackground,

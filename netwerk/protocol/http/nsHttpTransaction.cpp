@@ -713,7 +713,10 @@ nsresult nsHttpTransaction::ReadRequestSegment(nsIInputStream* stream,
 
   nsHttpTransaction* trans = (nsHttpTransaction*)closure;
   nsresult rv = trans->mReader->OnReadSegment(buf, count, countRead);
-  if (NS_FAILED(rv)) return rv;
+  if (NS_FAILED(rv)) {
+    trans->MaybeRefreshSecurityInfo();
+    return rv;
+  }
 
   LOG(("nsHttpTransaction::ReadRequestSegment %p read=%u", trans, *countRead));
 
@@ -738,12 +741,7 @@ nsresult nsHttpTransaction::ReadSegments(nsAHttpSegmentReader* reader,
 
   if (!mConnected && !m0RTTInProgress) {
     mConnected = true;
-    nsCOMPtr<nsITLSSocketControl> tlsSocketControl;
-    mConnection->GetTLSSocketControl(getter_AddRefs(tlsSocketControl));
-    if (tlsSocketControl) {
-      MutexAutoLock lock(mLock);
-      tlsSocketControl->GetSecurityInfo(getter_AddRefs(mSecurityInfo));
-    }
+    MaybeRefreshSecurityInfo();
   }
 
   mDeferredSendProgress = false;
@@ -820,7 +818,10 @@ nsresult nsHttpTransaction::WritePipeSegment(nsIOutputStream* stream,
   // OK, now let the caller fill this segment with data.
   //
   rv = trans->mWriter->OnWriteSegment(buf, count, countWritten);
-  if (NS_FAILED(rv)) return rv;  // caller didn't want to write anything
+  if (NS_FAILED(rv)) {
+    trans->MaybeRefreshSecurityInfo();
+    return rv;  // caller didn't want to write anything
+  }
 
   LOG(("nsHttpTransaction::WritePipeSegment %p written=%u", trans,
        *countWritten));
@@ -1403,13 +1404,7 @@ void nsHttpTransaction::Close(nsresult reason) {
     connReused = mConnection->IsReused();
     isHttp2or3 = mConnection->Version() >= HttpVersion::v2_0;
     if (!mConnected) {
-      // Try to get TLSSocketControl for this transaction.
-      nsCOMPtr<nsITLSSocketControl> tlsSocketControl;
-      mConnection->GetTLSSocketControl(getter_AddRefs(tlsSocketControl));
-      if (tlsSocketControl) {
-        MutexAutoLock lock(mLock);
-        tlsSocketControl->GetSecurityInfo(getter_AddRefs(mSecurityInfo));
-      }
+      MaybeRefreshSecurityInfo();
     }
   }
   mConnected = false;
@@ -2131,6 +2126,32 @@ nsresult nsHttpTransaction::ParseHead(char* buf, uint32_t count,
   return NS_OK;
 }
 
+bool nsHttpTransaction::HandleWebTransportResponse(uint16_t aStatus) {
+  MOZ_ASSERT(mIsForWebTransport);
+  if (!(aStatus >= 200 && aStatus < 300)) {
+    return false;
+  }
+
+  RefPtr<Http3WebTransportSession> wtSession =
+      mConnection->GetWebTransportSession(this);
+  if (!wtSession) {
+    return false;
+  }
+
+  nsCOMPtr<WebTransportSessionEventListener> webTransportListener;
+  {
+    MutexAutoLock lock(mLock);
+    webTransportListener = mWebTransportSessionEventListener;
+    mWebTransportSessionEventListener = nullptr;
+  }
+  if (webTransportListener) {
+    webTransportListener->OnSessionReadyInternal(wtSession);
+    wtSession->SetWebTransportSessionEventListener(webTransportListener);
+  }
+
+  return true;
+}
+
 nsresult nsHttpTransaction::HandleContentStart() {
   LOG(("nsHttpTransaction::HandleContentStart [this=%p]\n", this));
   MOZ_ASSERT(OnSocketThread(), "not on socket thread");
@@ -2190,90 +2211,79 @@ nsresult nsHttpTransaction::HandleContentStart() {
       return NS_OK;
     }
 
-    // check if this is a no-content response
-    switch (mResponseHead->Status()) {
-      case 200: {
-        if (!mIsForWebTransport) {
-          break;
-        }
-        RefPtr<Http3WebTransportSession> wtSession =
-            mConnection->GetWebTransportSession(this);
-        if (wtSession) {
-          nsCOMPtr<WebTransportSessionEventListener> webTransportListener;
-          {
-            MutexAutoLock lock(mLock);
-            webTransportListener = mWebTransportSessionEventListener;
-          }
-          if (webTransportListener) {
-            webTransportListener->OnSessionReadyInternal(wtSession);
-            wtSession->SetWebTransportSessionEventListener(
-                webTransportListener);
-          }
-        }
-        mWebTransportSessionEventListener = nullptr;
-      }
-        // Fall through to WebSocket cases (nsHttpTransaction behaviar is the
-        // same):
-        [[fallthrough]];
-      case 101:
-        mPreserveStream = true;
-        [[fallthrough]];  // to other no content cases:
-      case 204:
-      case 205:
-      case 304:
+    bool responseChecked = false;
+    if (mIsForWebTransport) {
+      responseChecked = HandleWebTransportResponse(mResponseHead->Status());
+      LOG(("HandleWebTransportResponse res=%d", responseChecked));
+      if (responseChecked) {
         mNoContent = true;
-        LOG(("this response should not contain a body.\n"));
-        break;
-      case 408:
-        LOG(("408 Server Timeouts"));
+        mPreserveStream = true;
+      }
+    }
 
-        if (mConnection->Version() >= HttpVersion::v2_0) {
-          mForceRestart = true;
-          return NS_ERROR_NET_RESET;
-        }
+    if (!responseChecked) {
+      // check if this is a no-content response
+      switch (mResponseHead->Status()) {
+        case 101:
+          mPreserveStream = true;
+          [[fallthrough]];  // to other no content cases:
+        case 204:
+        case 205:
+        case 304:
+          mNoContent = true;
+          LOG(("this response should not contain a body.\n"));
+          break;
+        case 408:
+          LOG(("408 Server Timeouts"));
 
-        // If this error could be due to a persistent connection
-        // reuse then we pass an error code of NS_ERROR_NET_RESET
-        // to trigger the transaction 'restart' mechanism.  We
-        // tell it to reset its response headers so that it will
-        // be ready to receive the new response.
-        LOG(("408 Server Timeouts now=%d lastWrite=%d", PR_IntervalNow(),
-             mConnection->LastWriteTime()));
-        if ((PR_IntervalNow() - mConnection->LastWriteTime()) >=
-            PR_MillisecondsToInterval(1000)) {
-          mForceRestart = true;
-          return NS_ERROR_NET_RESET;
-        }
-        break;
-      case 421:
-        LOG(("Misdirected Request.\n"));
-        gHttpHandler->ClearHostMapping(mConnInfo);
-
-        m421Received = true;
-        mCaps |= NS_HTTP_REFRESH_DNS;
-
-        // retry on a new connection - just in case
-        // See bug 1609410, we can't restart the transaction when
-        // NS_HTTP_STICKY_CONNECTION is set. In the case that a connection
-        // already passed NTLM authentication, restarting the transaction will
-        // cause the connection to be closed.
-        if (!mRestartCount && !(mCaps & NS_HTTP_STICKY_CONNECTION)) {
-          mCaps &= ~NS_HTTP_ALLOW_KEEPALIVE;
-          mForceRestart = true;  // force restart has built in loop protection
-          return NS_ERROR_NET_RESET;
-        }
-        break;
-      case 425:
-        LOG(("Too Early."));
-        if ((mEarlyDataDisposition == EARLY_425) && !mDoNotTryEarlyData) {
-          mDoNotTryEarlyData = true;
-          mForceRestart = true;  // force restart has built in loop protection
           if (mConnection->Version() >= HttpVersion::v2_0) {
-            mReuseOnRestart = true;
+            mForceRestart = true;
+            return NS_ERROR_NET_RESET;
           }
-          return NS_ERROR_NET_RESET;
-        }
-        break;
+
+          // If this error could be due to a persistent connection
+          // reuse then we pass an error code of NS_ERROR_NET_RESET
+          // to trigger the transaction 'restart' mechanism.  We
+          // tell it to reset its response headers so that it will
+          // be ready to receive the new response.
+          LOG(("408 Server Timeouts now=%d lastWrite=%d", PR_IntervalNow(),
+               mConnection->LastWriteTime()));
+          if ((PR_IntervalNow() - mConnection->LastWriteTime()) >=
+              PR_MillisecondsToInterval(1000)) {
+            mForceRestart = true;
+            return NS_ERROR_NET_RESET;
+          }
+          break;
+        case 421:
+          LOG(("Misdirected Request.\n"));
+          gHttpHandler->ClearHostMapping(mConnInfo);
+
+          m421Received = true;
+          mCaps |= NS_HTTP_REFRESH_DNS;
+
+          // retry on a new connection - just in case
+          // See bug 1609410, we can't restart the transaction when
+          // NS_HTTP_STICKY_CONNECTION is set. In the case that a connection
+          // already passed NTLM authentication, restarting the transaction will
+          // cause the connection to be closed.
+          if (!mRestartCount && !(mCaps & NS_HTTP_STICKY_CONNECTION)) {
+            mCaps &= ~NS_HTTP_ALLOW_KEEPALIVE;
+            mForceRestart = true;  // force restart has built in loop protection
+            return NS_ERROR_NET_RESET;
+          }
+          break;
+        case 425:
+          LOG(("Too Early."));
+          if ((mEarlyDataDisposition == EARLY_425) && !mDoNotTryEarlyData) {
+            mDoNotTryEarlyData = true;
+            mForceRestart = true;  // force restart has built in loop protection
+            if (mConnection->Version() >= HttpVersion::v2_0) {
+              mReuseOnRestart = true;
+            }
+            return NS_ERROR_NET_RESET;
+          }
+          break;
+      }
     }
 
     // Remember whether HTTP3 is supported
@@ -3003,12 +3013,7 @@ nsresult nsHttpTransaction::Finish0RTT(bool aRestart,
   } else if (!mConnected) {
     // this is code that was skipped in ::ReadSegments while in 0RTT
     mConnected = true;
-    nsCOMPtr<nsITLSSocketControl> tlsSocketControl;
-    mConnection->GetTLSSocketControl(getter_AddRefs(tlsSocketControl));
-    if (tlsSocketControl) {
-      MutexAutoLock lock(mLock);
-      tlsSocketControl->GetSecurityInfo(getter_AddRefs(mSecurityInfo));
-    }
+    MaybeRefreshSecurityInfo();
   }
   return NS_OK;
 }

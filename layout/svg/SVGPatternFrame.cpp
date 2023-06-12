@@ -338,12 +338,11 @@ already_AddRefed<SourceSurface> SVGPatternFrame::PaintPattern(
   }
   dt->ClearRect(Rect(0, 0, surfaceSize.width, surfaceSize.height));
 
-  RefPtr<gfxContext> ctx = gfxContext::CreateOrNull(dt);
-  MOZ_ASSERT(ctx);  // already checked the draw target above
+  gfxContext ctx(dt);
 
   if (aGraphicOpacity != 1.0f) {
-    ctx->Save();
-    ctx->PushGroupForBlendBack(gfxContentType::COLOR_ALPHA, aGraphicOpacity);
+    ctx.Save();
+    ctx.PushGroupForBlendBack(gfxContentType::COLOR_ALPHA, aGraphicOpacity);
   }
 
   // OK, now render -- note that we use "firstKid", which
@@ -369,15 +368,15 @@ already_AddRefed<SourceSurface> SVGPatternFrame::PaintPattern(
         tm = SVGUtils::GetTransformMatrixInUserSpace(kid) * tm;
       }
 
-      SVGUtils::PaintFrameWithEffects(kid, *ctx, tm, aImgParams);
+      SVGUtils::PaintFrameWithEffects(kid, ctx, tm, aImgParams);
     }
   }
 
   patternWithChildren->mSource = nullptr;
 
   if (aGraphicOpacity != 1.0f) {
-    ctx->PopGroupAndBlend();
-    ctx->Restore();
+    ctx.PopGroupAndBlend();
+    ctx.Restore();
   }
 
   // caller now owns the surface
@@ -568,18 +567,11 @@ SVGPatternFrame* SVGPatternFrame::GetReferencedPattern() {
     this->mNoHRefURI = aHref.IsEmpty();
   };
 
-  nsIFrame* tframe = SVGObserverUtils::GetAndObserveTemplate(this, GetHref);
-  if (tframe) {
-    LayoutFrameType frameType = tframe->Type();
-    if (frameType == LayoutFrameType::SVGPattern) {
-      return static_cast<SVGPatternFrame*>(tframe);
-    }
-    // We don't call SVGObserverUtils::RemoveTemplateObserver and set
-    // `mNoHRefURI = false` here since we want to be invalidated if the ID
-    // specified by our href starts resolving to a different/valid element.
-  }
+  // We don't call SVGObserverUtils::RemoveTemplateObserver and set
+  // `mNoHRefURI = false` on failure since we want to be invalidated if the ID
+  // specified by our href starts resolving to a different/valid element.
 
-  return nullptr;
+  return do_QueryFrame(SVGObserverUtils::GetAndObserveTemplate(this, GetHref));
 }
 
 gfxRect SVGPatternFrame::GetPatternRect(uint16_t aPatternUnits,

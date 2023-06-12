@@ -58,6 +58,7 @@
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/SchedulerGroup.h"
+#include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/StaticPrefs_javascript.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/dom/BrowsingContext.h"
@@ -88,6 +89,9 @@
 #include "mozilla/EventStateManager.h"
 #include "mozilla/ProfilerLabels.h"
 #include "mozilla/ProfilerMarkers.h"
+#if defined(MOZ_MEMORY)
+#  include "mozmemory.h"
+#endif
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -1564,6 +1568,13 @@ void nsJSContext::EndCycleCollectionCallback(
                           StaticPrefs::javascript_options_gc_delay()) -
                           std::min(ccNowDuration, kMaxICCDuration));
   }
+#if defined(MOZ_MEMORY)
+  else if (
+      StaticPrefs::
+          dom_memory_foreground_content_processes_have_larger_page_cache()) {
+    jemalloc_free_dirty_pages();
+  }
+#endif
 }
 
 /* static */
@@ -1785,9 +1796,15 @@ static void DOMGCSliceCallback(JSContext* aCx, JS::GCProgress aProgress,
 
       nsJSContext::MaybePokeCC();
 
+#if defined(MOZ_MEMORY)
+      bool freeDirty = false;
+#endif
       if (aDesc.isZone_) {
         sScheduler.PokeFullGC();
       } else {
+#if defined(MOZ_MEMORY)
+        freeDirty = true;
+#endif
         sScheduler.SetNeedsFullGC(false);
         sScheduler.KillFullGCTimer();
       }
@@ -1795,11 +1812,23 @@ static void DOMGCSliceCallback(JSContext* aCx, JS::GCProgress aProgress,
       if (sScheduler.IsCCNeeded(TimeStamp::Now(),
                                 nsCycleCollector_suspectedCount()) !=
           CCReason::NO_REASON) {
+#if defined(MOZ_MEMORY)
+        // We're likely to free the dirty pages after CC.
+        freeDirty = false;
+#endif
         nsCycleCollector_dispatchDeferredDeletion();
       }
 
       Telemetry::Accumulate(Telemetry::GC_IN_PROGRESS_MS,
                             TimeUntilNow(sCurrentGCStartTime).ToMilliseconds());
+
+#if defined(MOZ_MEMORY)
+      if (freeDirty &&
+          StaticPrefs::
+              dom_memory_foreground_content_processes_have_larger_page_cache()) {
+        jemalloc_free_dirty_pages();
+      }
+#endif
       break;
     }
 

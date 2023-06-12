@@ -60,6 +60,7 @@
 #include "mozilla/AutoRestore.h"
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/BenchmarkStorageParent.h"
+#include "mozilla/Casting.h"
 #include "mozilla/ContentBlockingUserInteraction.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/FOGIPC.h"
@@ -1819,7 +1820,8 @@ void MaybeLogBlockShutdownDiagnostics(ContentParent* aSelf, const char* aMsg,
 #if defined(MOZ_DIAGNOSTIC_ASSERT_ENABLED)
   if (aSelf->IsBlockingShutdown()) {
     MOZ_LOG(ContentParent::GetLog(), LogLevel::Info,
-            ("ContentParent: id=%p - %s at %s(%d)", aSelf, aMsg, aFile, aLine));
+            ("ContentParent: id=%p pid=%d - %s at %s(%d)", aSelf, aSelf->Pid(),
+             aMsg, aFile, aLine));
   }
 #else
   Unused << aSelf;
@@ -3381,10 +3383,14 @@ bool ContentParent::IsInitialized() const {
 }
 
 int32_t ContentParent::Pid() const {
-  if (!mSubprocess || !mSubprocess->GetChildProcessHandle()) {
+  if (!mSubprocess) {
     return -1;
   }
-  return base::GetProcId(mSubprocess->GetChildProcessHandle());
+  auto pid = mSubprocess->GetChildProcessId();
+  if (pid == 0) {
+    return -1;
+  }
+  return ReleaseAssertedCast<int32_t>(pid);
 }
 
 mozilla::ipc::IPCResult ContentParent::RecvGetGfxVars(
@@ -3544,7 +3550,7 @@ mozilla::ipc::IPCResult ContentParent::RecvGetClipboard(
   clipboard->GetData(trans, aWhichClipboard);
 
   nsContentUtils::TransferableToIPCTransferable(
-      trans, aDataTransfer, true /* aInSyncMessage */, nullptr, this);
+      trans, aDataTransfer, true /* aInSyncMessage */, this);
   return IPC_OK();
 }
 
@@ -3626,8 +3632,7 @@ mozilla::ipc::IPCResult ContentParent::RecvGetClipboardAsync(
                  GenericPromise::ResolveOrRejectValue&& aValue) {
                IPCDataTransfer ipcDataTransfer;
                nsContentUtils::TransferableToIPCTransferable(
-                   trans, &ipcDataTransfer, false /* aInSyncMessage */, nullptr,
-                   self);
+                   trans, &ipcDataTransfer, false /* aInSyncMessage */, self);
                aResolver(std::move(ipcDataTransfer));
              });
   return IPC_OK();
@@ -3973,6 +3978,30 @@ ContentParent::Observe(nsISupports* aSubject, const char* aTopic,
 
     Preferences::GetPreference(&pref, GeckoProcessType_Content,
                                GetRemoteType());
+
+    // This check is a bit of a hack.  We want to avoid sending excessive
+    // preference updates to subprocesses for performance reasons, but we
+    // currently don't have a great mechanism for doing so. (See Bug 1819714)
+    // We're going to hijack the sanitization mechanism to accomplish our goal
+    // but it imposes the following complications:
+    // 1) It doesn't avoid sending anything to other (non-web-content)
+    //    subprocesses so we're not getting any perf gains there
+    // 2) It confuses the subprocesses w.r.t. sanitization.  The point of
+    //    sending a preference update of a sanitized preference is so that
+    //    content process knows when it's asked to resolve a sanitized
+    //    preference, and it can send telemetry and/or crash.  With this
+    //    change, a sanitized pref that is created during the browser session
+    //    will not be sent to the content process, and therefore the content
+    //    process won't know it should telemetry/crash on access - it'll just
+    //    silently fail to resolve it.  After browser restart, the sanitized
+    //    pref will be populated into the content process via the shared pref
+    //    map and _then_ if it is accessed, the content process will crash.
+    //    We're seeing good telemetry/crash rates right now, so we're okay with
+    //    this limitation.
+    if (pref.isSanitized()) {
+      return NS_OK;
+    }
+
     if (IsInitialized()) {
       MOZ_ASSERT(mQueuedPrefs.IsEmpty());
       if (!SendPreferenceUpdate(pref)) {
@@ -3982,6 +4011,8 @@ ContentParent::Observe(nsISupports* aSubject, const char* aTopic,
       MOZ_ASSERT(!IsDead());
       mQueuedPrefs.AppendElement(pref);
     }
+
+    return NS_OK;
   }
 
   if (!IsAlive()) {
@@ -4107,7 +4138,9 @@ ContentParent::Observe(nsISupports* aSubject, const char* aTopic,
 
     // only broadcast the cookie change to content processes that need it
     const Cookie& cookie = xpcCookie->AsCookie();
-    if (!cs->CookieMatchesContentList(cookie)) {
+
+    // do not send cookie if content process does not have similar cookie
+    if (!cs->ContentProcessHasCookie(cookie)) {
       return NS_OK;
     }
 
@@ -5438,7 +5471,7 @@ void ContentParent::MaybeInvokeDragSession(BrowserParent* aParent) {
           aParent ? aParent->GetLoadContext() : nullptr;
       nsCOMPtr<nsIArray> transferables = transfer->GetTransferables(lc);
       nsContentUtils::TransferablesToIPCTransferables(
-          transferables, dataTransfers, false, nullptr, this);
+          transferables, dataTransfers, false, this);
       uint32_t action;
       session->GetDragAction(&action);
 
@@ -6873,6 +6906,11 @@ mozilla::ipc::IPCResult ContentParent::RecvSetAllowStorageAccessRequestFlag(
   MOZ_ASSERT(aEmbeddedPrincipal);
   MOZ_ASSERT(aEmbeddingOrigin);
 
+  if (!aEmbeddedPrincipal || !aEmbeddingOrigin) {
+    aResolver(false);
+    return IPC_OK();
+  }
+
   // Get the permission manager and build the key.
   RefPtr<PermissionManager> permManager = PermissionManager::GetInstance();
   if (!permManager) {
@@ -7377,10 +7415,7 @@ mozilla::ipc::IPCResult ContentParent::RecvRaiseWindow(
 
   CanonicalBrowsingContext* context = aContext.get_canonical();
 
-  ContentProcessManager* cpm = ContentProcessManager::GetSingleton();
-  if (cpm) {
-    ContentParent* cp =
-        cpm->GetContentProcessById(ContentParentId(context->OwnerProcessId()));
+  if (ContentParent* cp = context->GetContentParent()) {
     Unused << cp->SendRaiseWindow(context, aCallerType, aActionId);
   }
   return IPC_OK();
@@ -8222,17 +8257,23 @@ void ContentParent::DidLaunchSubprocess() {
 
 IPCResult ContentParent::RecvGetSystemIcon(nsIURI* aURI,
                                            GetSystemIconResolver&& aResolver) {
+  using ResolverArgs = Tuple<const nsresult&, mozilla::Maybe<ByteBuf>&&>;
+
+  if (!aURI) {
+    Maybe<ByteBuf> bytebuf = Nothing();
+    aResolver(ResolverArgs(NS_ERROR_NULL_POINTER, std::move(bytebuf)));
+    return IPC_OK();
+  }
+
 #if defined(MOZ_WIDGET_GTK)
   Maybe<ByteBuf> bytebuf = Some(ByteBuf{});
   nsresult rv = nsIconChannel::GetIcon(aURI, bytebuf.ptr());
   if (NS_WARN_IF(NS_FAILED(rv))) {
     bytebuf = Nothing();
   }
-  using ResolverArgs = Tuple<const nsresult&, mozilla::Maybe<ByteBuf>&&>;
   aResolver(ResolverArgs(rv, std::move(bytebuf)));
   return IPC_OK();
 #elif defined(XP_WIN)
-  using ResolverArgs = Tuple<const nsresult&, mozilla::Maybe<ByteBuf>&&>;
   nsIconChannel::GetIconAsync(aURI)->Then(
       GetCurrentSerialEventTarget(), __func__,
       [aResolver](ByteBuf&& aByteBuf) {

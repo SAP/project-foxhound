@@ -26,6 +26,23 @@ let isSameOrigin = function(w) {
 };
 let isXOrigin = !isSameOrigin(window);
 
+// Note: duplicated in browser-test.js . See also bug 1820150.
+function isErrorObj(err) {
+  // It'd be nice if we had either `Error.isError(err)` or `Error.isInstance(err)`
+  // but we don't, so do it ourselves:
+  if (!err) {
+    return false;
+  }
+  try {
+    let glob = SpecialPowers.Cu.getGlobalForObject(err);
+    return err instanceof glob.Error;
+  } catch {
+    // getGlobalForObject can be upset if it doesn't get passed an object.
+    // Just do a standard instanceof check using this global and cross fingers:
+  }
+  return err instanceof Error;
+}
+
 // In normal test runs, the window that has a TestRunner in its parent is
 // the primary window.  In single test runs, if there is no parent and there
 // is no opener then it is the primary window.
@@ -2129,7 +2146,10 @@ var add_task = (function() {
           } catch (ex) {
             try {
               let serializedEx;
-              if (ex instanceof Error) {
+              if (
+                typeof ex == "string" ||
+                (typeof ex == "object" && isErrorObj(ex))
+              ) {
                 serializedEx = `${ex}`;
               } else {
                 serializedEx = JSON.stringify(ex);

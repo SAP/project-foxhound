@@ -9,9 +9,12 @@
 #include "nsTransitionManager.h"
 
 #include "mozilla/AnimationEventDispatcher.h"
+#include "mozilla/AnimationUtils.h"
 #include "mozilla/EffectCompositor.h"
+#include "mozilla/ElementAnimationData.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/ServoStyleSet.h"
+#include "mozilla/TimelineCollection.h"
 #include "mozilla/dom/AnimationEffect.h"
 #include "mozilla/dom/DocumentTimeline.h"
 #include "mozilla/dom/KeyframeEffect.h"
@@ -204,23 +207,60 @@ static void UpdateOldAnimationPropertiesWithNew(
   }
 }
 
+static already_AddRefed<dom::AnimationTimeline> GetNamedProgressTimeline(
+    dom::Document* aDocument, const NonOwningAnimationTarget& aTarget,
+    const nsAtom* aName) {
+  // A named progress timeline is referenceable in animation-timeline by:
+  // 1. the declaring element itself
+  // 2. that element’s descendants
+  // 3. that element’s following siblings and their descendants
+  // https://drafts.csswg.org/scroll-animations-1/#timeline-scope
+  for (Element* curr = AnimationUtils::GetElementForRestyle(
+           aTarget.mElement, aTarget.mPseudoType);
+       curr; curr = curr->GetParentElement()) {
+    // If multiple elements have declared the same timeline name, the matching
+    // timeline is the one declared on the nearest element in tree order, which
+    // considers siblings closer than parents.
+    // Note: This is fine for parallel traversal because we update animations by
+    // SequentialTask.
+    for (Element* e = curr; e; e = e->GetPreviousElementSibling()) {
+      // In case of a name conflict on the same element, scroll progress
+      // timelines take precedence over view progress timelines.
+      const auto [element, pseudoType] =
+          AnimationUtils::GetElementPseudoPair(e);
+      if (auto* collection =
+              TimelineCollection<ScrollTimeline>::Get(element, pseudoType)) {
+        if (RefPtr<ScrollTimeline> timeline = collection->Lookup(aName)) {
+          return timeline.forget();
+        }
+      }
+
+      // TODO: Bug 1737920. Support view-timeline.
+    }
+  }
+
+  // If we cannot find a matched scroll-timeline-name, this animation is not
+  // associated with a timeline.
+  // https://drafts.csswg.org/css-animations-2/#valdef-animation-timeline-custom-ident
+  return nullptr;
+}
+
 static already_AddRefed<dom::AnimationTimeline> GetTimeline(
     const StyleAnimationTimeline& aStyleTimeline, nsPresContext* aPresContext,
     const NonOwningAnimationTarget& aTarget) {
   switch (aStyleTimeline.tag) {
     case StyleAnimationTimeline::Tag::Timeline: {
-      // Check scroll-timeline-name property.
-      nsAtom* name = aStyleTimeline.AsTimeline().AsAtom();
+      // Check scroll-timeline-name property or view-timeline-property.
+      const nsAtom* name = aStyleTimeline.AsTimeline().AsAtom();
       return name != nsGkAtoms::_empty
-                 ? ScrollTimeline::FromNamedScroll(aPresContext->Document(),
-                                                   aTarget, name)
+                 ? GetNamedProgressTimeline(aPresContext->Document(), aTarget,
+                                            name)
                  : nullptr;
     }
     case StyleAnimationTimeline::Tag::Scroll: {
       const auto& scroll = aStyleTimeline.AsScroll();
-      return ScrollTimeline::FromAnonymousScroll(aPresContext->Document(),
-                                                 aTarget, scroll._0, scroll._1);
-      break;
+      return ScrollTimeline::MakeAnonymous(aPresContext->Document(), aTarget,
+                                           scroll._0, scroll._1);
     }
     case StyleAnimationTimeline::Tag::Auto:
       return do_AddRef(aTarget.mElement->OwnerDoc()->Timeline());
@@ -374,9 +414,8 @@ void nsAnimationManager::DoUpdateAnimations(
   // Likewise, when we initially construct frames, we're not in a
   // style change, but also not in an animation restyle.
 
-  CSSAnimationCollection* collection =
-      CSSAnimationCollection::GetAnimationCollection(aTarget.mElement,
-                                                     aTarget.mPseudoType);
+  auto* collection =
+      CSSAnimationCollection::Get(aTarget.mElement, aTarget.mPseudoType);
   if (!collection && aStyle.mAnimationNameCount == 1 &&
       aStyle.mAnimations[0].GetName() == nsGkAtoms::_empty) {
     return;
@@ -398,16 +437,10 @@ void nsAnimationManager::DoUpdateAnimations(
   }
 
   if (!collection) {
-    bool createdCollection = false;
-    collection = CSSAnimationCollection::GetOrCreateAnimationCollection(
-        aTarget.mElement, aTarget.mPseudoType, &createdCollection);
-    if (!collection) {
-      MOZ_ASSERT(!createdCollection, "outparam should agree with return value");
-      NS_WARNING("allocating collection failed");
-      return;
-    }
-
-    if (createdCollection) {
+    collection =
+        &aTarget.mElement->EnsureAnimationData().EnsureAnimationCollection(
+            *aTarget.mElement, aTarget.mPseudoType);
+    if (!collection->isInList()) {
       AddElementCollection(collection);
     }
   }

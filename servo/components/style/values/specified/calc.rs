@@ -59,6 +59,16 @@ pub enum MathFunction {
     Atan,
     /// `atan2()`: https://drafts.csswg.org/css-values-4/#funcdef-atan2
     Atan2,
+    /// `pow()`: https://drafts.csswg.org/css-values-4/#funcdef-pow
+    Pow,
+    /// `sqrt()`: https://drafts.csswg.org/css-values-4/#funcdef-sqrt
+    Sqrt,
+    /// `hypot()`: https://drafts.csswg.org/css-values-4/#funcdef-hypot
+    Hypot,
+    /// `log()`: https://drafts.csswg.org/css-values-4/#funcdef-log
+    Log,
+    /// `exp()`: https://drafts.csswg.org/css-values-4/#funcdef-exp
+    Exp,
 }
 
 /// A leaf node inside a `Calc` expression's AST.
@@ -208,7 +218,7 @@ impl generic::CalcNodeLeaf for Leaf {
                 *a = Angle::from_calc(a.degrees() * scalar);
             },
             Self::Time(ref mut t) => {
-                *t = Time::from_calc(t.seconds() * scalar);
+                *t = Time::from_seconds(t.seconds() * scalar);
             },
             Self::Percentage(ref mut p) => {
                 *p *= scalar;
@@ -297,7 +307,7 @@ impl generic::CalcNodeLeaf for Leaf {
                 *one = specified::Angle::from_calc(one.degrees() + other.degrees());
             },
             (&mut Time(ref mut one), &Time(ref other)) => {
-                *one = specified::Time::from_calc(one.seconds() + other.seconds());
+                *one = specified::Time::from_seconds(one.seconds() + other.seconds());
             },
             (&mut Length(ref mut one), &Length(ref other)) => {
                 *one = one.try_op(other, std::ops::Add::add)?;
@@ -339,7 +349,7 @@ impl generic::CalcNodeLeaf for Leaf {
                 ))));
             },
             (&Time(ref one), &Time(ref other)) => {
-                return Ok(Leaf::Time(specified::Time::from_calc(op(
+                return Ok(Leaf::Time(specified::Time::from_seconds(op(
                     one.seconds(),
                     other.seconds(),
                 ))));
@@ -391,7 +401,7 @@ impl CalcNode {
                     }
                 }
                 if allowed_units.intersects(CalcUnits::TIME) {
-                    if let Ok(t) = Time::parse_dimension(value, unit, /* from_calc = */ true) {
+                    if let Ok(t) = Time::parse_dimension(value, unit) {
                         return Ok(CalcNode::Leaf(Leaf::Time(t)));
                     }
                 }
@@ -516,43 +526,26 @@ impl CalcNode {
                     Ok(Self::MinMax(arguments.into(), op))
                 },
                 MathFunction::Sin | MathFunction::Cos | MathFunction::Tan => {
-                    let argument = Self::parse_argument(context, input, CalcUnits::ANGLE)?;
-                    let radians = match argument.to_number() {
-                        Ok(v) => v,
-                        Err(()) => match argument.to_angle() {
-                            Ok(angle) => angle.radians(),
-                            Err(()) => {
-                                return Err(
-                                    input.new_custom_error(StyleParseErrorKind::UnspecifiedError)
-                                )
-                            },
-                        },
-                    };
+                    let a = Self::parse_angle_argument(context, input)?;
+
                     let number = match function {
-                        MathFunction::Sin => radians.sin(),
-                        MathFunction::Cos => radians.cos(),
-                        MathFunction::Tan => radians.tan(),
+                        MathFunction::Sin => a.sin(),
+                        MathFunction::Cos => a.cos(),
+                        MathFunction::Tan => a.tan(),
                         _ => unsafe {
                             debug_unreachable!("We just checked!");
                         },
                     };
+
                     Ok(Self::Leaf(Leaf::Number(number)))
                 },
                 MathFunction::Asin | MathFunction::Acos | MathFunction::Atan => {
-                    let argument = Self::parse_argument(context, input, CalcUnits::empty())?;
-                    let number = match argument.to_number() {
-                        Ok(v) => v,
-                        Err(()) => {
-                            return Err(
-                                input.new_custom_error(StyleParseErrorKind::UnspecifiedError)
-                            )
-                        },
-                    };
+                    let a = Self::parse_number_argument(context, input)?;
 
                     let radians = match function {
-                        MathFunction::Asin => number.asin(),
-                        MathFunction::Acos => number.acos(),
-                        MathFunction::Atan => number.atan(),
+                        MathFunction::Asin => a.asin(),
+                        MathFunction::Acos => a.acos(),
+                        MathFunction::Atan => a.atan(),
                         _ => unsafe {
                             debug_unreachable!("We just checked!");
                         },
@@ -564,7 +557,8 @@ impl CalcNode {
                     let a = Self::parse_argument(context, input, CalcUnits::ALL)?;
                     input.expect_comma()?;
                     let b = Self::parse_argument(context, input, CalcUnits::ALL)?;
-                    fn resolve_atan2(a: CalcNode, b: CalcNode) -> Result<CSSFloat, ()> {
+
+                    let radians = Self::try_resolve(input, || {
                         if let Ok(a) = a.to_number() {
                             let b = b.to_number()?;
                             return Ok(a.atan2(b));
@@ -575,8 +569,8 @@ impl CalcNode {
                             return Ok(a.atan2(b));
                         }
 
-                        if let Ok(a) = a.to_time() {
-                            let b = b.to_time()?;
+                        if let Ok(a) = a.to_time(None) {
+                            let b = b.to_time(None)?;
                             return Ok(a.seconds().atan2(b.seconds()));
                         }
 
@@ -588,22 +582,78 @@ impl CalcNode {
                         let a = a.into_length_or_percentage(AllowedNumericType::All)?;
                         let b = b.into_length_or_percentage(AllowedNumericType::All)?;
                         let (a, b) = CalcLengthPercentage::same_unit_length_as(&a, &b).ok_or(())?;
-                        return Ok(a.atan2(b));
-                    }
 
-                    let radians = match resolve_atan2(a, b) {
-                        Ok(v) => v,
-                        Err(()) => {
-                            return Err(
-                                input.new_custom_error(StyleParseErrorKind::UnspecifiedError)
-                            )
-                        },
-                    };
+                        Ok(a.atan2(b))
+                    })?;
 
                     Ok(Self::Leaf(Leaf::Angle(Angle::from_radians(radians))))
                 },
+                MathFunction::Pow => {
+                    let a = Self::parse_number_argument(context, input)?;
+                    input.expect_comma()?;
+                    let b = Self::parse_number_argument(context, input)?;
+
+                    let number = a.powf(b);
+
+                    Ok(Self::Leaf(Leaf::Number(number)))
+                },
+                MathFunction::Sqrt => {
+                    let a = Self::parse_number_argument(context, input)?;
+
+                    let number = a.sqrt();
+
+                    Ok(Self::Leaf(Leaf::Number(number)))
+                },
+                MathFunction::Hypot => {
+                    let arguments = input.parse_comma_separated(|input| {
+                        Self::parse_argument(context, input, allowed_units)
+                    })?;
+
+                    Ok(Self::Hypot(arguments.into()))
+                },
+                MathFunction::Log => {
+                    let a = Self::parse_number_argument(context, input)?;
+                    let b = input.try_parse(|input| {
+                        input.expect_comma()?;
+                        Self::parse_number_argument(context, input)
+                    }).ok();
+
+                    let number = match b {
+                        Some(b) => a.log(b),
+                        None => a.ln(),
+                    };
+
+                    Ok(Self::Leaf(Leaf::Number(number)))
+                },
+                MathFunction::Exp => {
+                    let a = Self::parse_number_argument(context, input)?;
+
+                    let number = a.exp();
+
+                    Ok(Self::Leaf(Leaf::Number(number)))
+                },
             }
         })
+    }
+
+    fn parse_angle_argument<'i, 't>(
+        context: &ParserContext,
+        input: &mut Parser<'i, 't>,
+    ) -> Result<CSSFloat, ParseError<'i>> {
+        let argument = Self::parse_argument(context, input, CalcUnits::ANGLE)?;
+        argument
+            .to_number()
+            .or_else(|()| Ok(argument.to_angle()?.radians()))
+            .map_err(|()| input.new_custom_error(StyleParseErrorKind::UnspecifiedError))
+    }
+
+    fn parse_number_argument<'i, 't>(
+        context: &ParserContext,
+        input: &mut Parser<'i, 't>,
+    ) -> Result<CSSFloat, ParseError<'i>> {
+        Self::parse_argument(context, input, CalcUnits::empty())?
+            .to_number()
+            .map_err(|()| input.new_custom_error(StyleParseErrorKind::UnspecifiedError))
     }
 
     fn parse_argument<'i, 't>(
@@ -707,6 +757,17 @@ impl CalcNode {
         Ok(node)
     }
 
+    fn try_resolve<'i, 't, F>(
+        input: &Parser<'i, 't>,
+        closure: F,
+    ) -> Result<CSSFloat, ParseError<'i>>
+    where
+        F: FnOnce() -> Result<CSSFloat, ()>,
+    {
+        closure()
+            .map_err(|()| input.new_custom_error(StyleParseErrorKind::UnspecifiedError))
+    }
+
     /// Tries to simplify this expression into a `<length>` or `<percentage>`
     /// value.
     fn into_length_or_percentage(
@@ -734,12 +795,21 @@ impl CalcNode {
     }
 
     /// Tries to simplify this expression into a `<time>` value.
-    fn to_time(&self) -> Result<Time, ()> {
+    fn to_time(
+        &self,
+        clamping_mode: Option<AllowedNumericType>
+    ) -> Result<Time, ()> {
         let seconds = self.resolve(|leaf| match *leaf {
-            Leaf::Time(ref t) => Ok(t.seconds()),
+            Leaf::Time(ref time) => Ok(time.seconds()),
             _ => Err(()),
         })?;
-        Ok(Time::from_calc(crate::values::normalize(seconds)))
+
+        let result = Time::from_seconds_with_calc_clamping_mode(if nan_inf_enabled() {
+            seconds
+        } else {
+            crate::values::normalize(seconds)
+        }, clamping_mode);
+        Ok(result)
     }
 
     /// Tries to simplify this expression into an `Angle` value.
@@ -748,7 +818,12 @@ impl CalcNode {
             Leaf::Angle(ref angle) => Ok(angle.degrees()),
             _ => Err(()),
         })?;
-        Ok(Angle::from_calc(crate::values::normalize(degrees)))
+        let result = Angle::from_calc(if nan_inf_enabled() {
+            degrees
+        } else {
+            crate::values::normalize(degrees)
+        });
+        Ok(result)
     }
 
     /// Tries to simplify this expression into a `<number>` value.
@@ -789,6 +864,8 @@ impl CalcNode {
             static_prefs::pref!("layout.css.round.enabled")
         } else if matches!(function, Mod | Rem) {
             static_prefs::pref!("layout.css.mod-rem.enabled")
+        } else if matches!(function, Pow | Sqrt | Hypot | Log | Exp) {
+            static_prefs::pref!("layout.css.exp.enabled")
         } else {
             true
         };
@@ -872,10 +949,11 @@ impl CalcNode {
     pub fn parse_time<'i, 't>(
         context: &ParserContext,
         input: &mut Parser<'i, 't>,
+        clamping_mode: AllowedNumericType,
         function: MathFunction,
     ) -> Result<Time, ParseError<'i>> {
         Self::parse(context, input, function, CalcUnits::TIME)?
-            .to_time()
+            .to_time(Some(clamping_mode))
             .map_err(|()| input.new_custom_error(StyleParseErrorKind::UnspecifiedError))
     }
 

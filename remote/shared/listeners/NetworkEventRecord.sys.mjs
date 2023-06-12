@@ -46,17 +46,22 @@ export class NetworkEventRecord {
     // nsIChannel.channelId is different for each and every request.
     this.#requestId = this.#wrappedChannel.id.toString();
 
+    const {
+      cookies,
+      headers,
+    } = lazy.NetworkUtils.fetchRequestHeadersAndCookies(channel);
+
     // See the RequestData type definition for the full list of properties that
     // should be set on this object.
     this.#requestData = {
       bodySize: null,
-      cookies: [],
-      headers: [],
-      headersSize: networkEvent.headersSize,
-      method: networkEvent.method,
+      cookies,
+      headers,
+      headersSize: networkEvent.rawHeaders ? networkEvent.rawHeaders.length : 0,
+      method: channel.requestMethod,
       request: this.#requestId,
       timings: {},
-      url: networkEvent.url,
+      url: channel.URI.spec,
     };
 
     // See the ResponseData type definition for the full list of properties that
@@ -70,48 +75,11 @@ export class NetworkEventRecord {
       },
       // encoded size (headers)
       headersSize: null,
-      url: networkEvent.url,
+      url: channel.URI.spec,
     };
-  }
 
-  /**
-   * Set network request headers.
-   *
-   * Required API for a NetworkObserver event owner.
-   *
-   * It will only be called once per network event record, so
-   * despite the name we will simply store the headers and rawHeaders.
-   *
-   * @param {Array} headers
-   *     The request headers array.
-   * @param {string=} rawHeaders
-   *     The raw headers source.
-   */
-  addRequestHeaders(headers, rawHeaders) {
-    if (typeof headers == "object") {
-      this.#requestData.headers = headers;
-    }
-    this.#requestData.rawHeaders = rawHeaders;
-  }
-
-  /**
-   * Set network request cookies.
-   *
-   * Required API for a NetworkObserver event owner.
-   *
-   * It will only be called once per network event record, so
-   * despite the name we will simply store the cookies.
-   *
-   * @param {Array} cookies
-   *     The request cookies array.
-   */
-  addRequestCookies(cookies) {
-    if (typeof cookies == "object") {
-      this.#requestData.cookies = cookies;
-    }
-
-    // By design, the NetworkObserver will synchronously create a "network event"
-    // then call addRequestHeaders and finally addRequestCookies.
+    // NetworkObserver creates a network event when request headers have been
+    // parsed.
     // According to the BiDi spec, we should emit beforeRequestSent when adding
     // request headers, see https://whatpr.org/fetch/1540.html#http-network-or-cache-fetch
     // step 8.17

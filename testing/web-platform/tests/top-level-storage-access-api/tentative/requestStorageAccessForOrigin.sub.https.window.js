@@ -28,6 +28,8 @@ queryParams.forEach((param) => {
   }
 });
 
+const requestedOrigin = 'https://foo.com';
+
 // TODO(crbug.com/1351540): when/if requestStorageAccessForOrigin is standardized,
 // upstream with the Storage Access API helpers file.
 function RunRequestStorageAccessForOriginInDetachedFrame(site) {
@@ -52,11 +54,26 @@ test(
     '[' + testPrefix +
         '] document.requestStorageAccessForOrigin() should be supported on the document interface');
 
+// Promise tests should all start with the feature in "prompt" state.
+promise_setup(async () => {
+  await test_driver.set_permission(
+    { name: 'top-level-storage-access', requestedOrigin }, 'prompt');
+});
+
+promise_test(
+  t => {
+    return promise_rejects_js(t, TypeError,
+      document.requestStorageAccessForOrigin(),
+      'document.requestStorageAccessForOrigin() call without origin argument');
+  },
+  '[' + testPrefix +
+      '] document.requestStorageAccessForOrigin() should be rejected when called with no argument');
+
 if (topLevelDocument) {
   promise_test(
       t => {
         return promise_rejects_dom(t, 'NotAllowedError',
-          document.requestStorageAccessForOrigin('https://test.com'),
+          document.requestStorageAccessForOrigin(requestedOrigin),
          'document.requestStorageAccessForOrigin() call without user gesture');
       },
       '[' + testPrefix +
@@ -66,7 +83,7 @@ if (topLevelDocument) {
     const description =
         'document.requestStorageAccessForOrigin() call in a detached frame';
     // Can't use promise_rejects_dom here because the exception is from the wrong global.
-    return RunRequestStorageAccessForOriginInDetachedFrame('https://foo.com')
+    return RunRequestStorageAccessForOriginInDetachedFrame(requestedOrigin)
         .then(t.unreached_func('Should have rejected: ' + description))
         .catch((e) => {
           assert_equals(e.name, 'InvalidStateError', description);
@@ -76,18 +93,28 @@ if (topLevelDocument) {
   promise_test(async t => {
     const description =
         'document.requestStorageAccessForOrigin() in a detached DOMParser result';
-    return RunRequestStorageAccessForOriginViaDomParser('https://foo.com')
+    return RunRequestStorageAccessForOriginViaDomParser(requestedOrigin)
         .then(t.unreached_func('Should have rejected: ' + description))
         .catch((e) => {
           assert_equals(e.name, 'InvalidStateError', description);
         });
   }, '[non-fully-active] document.requestStorageAccessForOrigin() should not resolve when run in a detached DOMParser document');
 
+  promise_test(
+    async t => {
+      await test_driver.set_permission(
+        { name: 'top-level-storage-access', requestedOrigin }, 'granted');
+
+      await document.requestStorageAccessForOrigin(requestedOrigin);
+    },
+    '[' + testPrefix +
+    '] document.requestStorageAccessForOrigin() should be resolved without a user gesture with an existing permission');
+
   // Create a test with a single-child same-origin iframe.
   // This will validate that calls to requestStorageAccessForOrigin are rejected
   // in non-top-level contexts.
   RunTestsInIFrame(
-      './resources/requestStorageAccessForOrigin-iframe.html?testCase=same-origin-frame&rootdocument=false');
+      './resources/requestStorageAccessForOrigin-iframe.https.html?testCase=same-origin-frame&rootdocument=false');
 
   promise_test(
       async t => {

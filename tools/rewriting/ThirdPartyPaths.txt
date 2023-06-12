@@ -31,6 +31,7 @@ dom/media/gmp/widevine-adapter/content_decryption_module_proxy.h
 dom/media/platforms/ffmpeg/ffmpeg57/
 dom/media/platforms/ffmpeg/ffmpeg58/
 dom/media/platforms/ffmpeg/ffmpeg59/
+dom/media/platforms/ffmpeg/ffmpeg60/
 dom/media/platforms/ffmpeg/libav53/
 dom/media/platforms/ffmpeg/libav54/
 dom/media/platforms/ffmpeg/libav55/
@@ -173,6 +174,8 @@ toolkit/components/passwordmgr/PasswordRulesParser.jsm
 toolkit/components/protobuf/
 toolkit/components/translation/cld2/
 toolkit/components/translations/bergamot-translator
+toolkit/components/translations/fasttext/fasttext.js
+toolkit/components/translations/fasttext/fasttext_wasm.js
 toolkit/components/url-classifier/chromium/
 toolkit/components/utils/mozjexl.js
 toolkit/components/viaduct/fetch_msg_types.pb.cc

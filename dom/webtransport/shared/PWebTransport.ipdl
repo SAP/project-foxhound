@@ -6,9 +6,19 @@ include PBackgroundSharedTypes;
 
 [RefCounted] using class mozilla::ipc::DataPipeReceiver from "mozilla/ipc/DataPipe.h";
 [RefCounted] using class mozilla::ipc::DataPipeSender from "mozilla/ipc/DataPipe.h";
+using mozilla::TimeStamp from "mozilla/TimeStamp.h";
 
 namespace mozilla {
 namespace dom {
+struct BidirectionalStream {
+  DataPipeReceiver inStream;
+  DataPipeSender outStream;
+};
+
+union BidirectionalStreamResponse {
+  nsresult;
+  BidirectionalStream;
+};
 
 async protocol PWebTransport
 {
@@ -17,11 +27,32 @@ async protocol PWebTransport
    * TODO: documentation
    */
   async Close(uint32_t code, nsCString reason);
+  async CreateUnidirectionalStream(int64_t? sendOrder)
+      returns(DataPipeSender sender);
+  async CreateBidirectionalStream(int64_t? sendOrder)
+      returns(BidirectionalStreamResponse response);
+
+  /**
+  * IPC for sending webtransport datagrams
+  * @param expirationTime time at which the datagram expires
+  * @param data represents the datagram to be transferred
+  */
+  async OutgoingDatagram(uint8_t[] data, TimeStamp expirationTime)
+    returns(nsresult response);
 
  child:
 
   async IncomingUnidirectionalStream(DataPipeReceiver receive);
   async IncomingBidirectionalStream(DataPipeReceiver receive, DataPipeSender send);
+
+  /**
+  * IPC for receiving webtransport datagrams
+  * @param receivedTime is the time at which the parent received the datagram
+  * @param data is the datagram received
+  */
+  async IncomingDatagram(uint8_t[] data, TimeStamp receivedTime);
+
+  async RemoteClosed(bool cleanly, uint32_t code, nsCString reason);
 
   async CloseAll()
       returns(nsresult rv);

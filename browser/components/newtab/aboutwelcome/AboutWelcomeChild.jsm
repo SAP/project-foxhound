@@ -13,10 +13,7 @@ const { XPCOMUtils } = ChromeUtils.importESModule(
 const lazy = {};
 
 XPCOMUtils.defineLazyModuleGetters(lazy, {
-  DEFAULT_SITES: "resource://activity-stream/lib/DefaultSites.jsm",
   ExperimentAPI: "resource://nimbus/ExperimentAPI.jsm",
-  shortURL: "resource://activity-stream/lib/ShortURL.jsm",
-  TippyTopProvider: "resource://activity-stream/lib/TippyTopProvider.jsm",
   AboutWelcomeDefaults:
     "resource://activity-stream/aboutwelcome/lib/AboutWelcomeDefaults.jsm",
   NimbusFeatures: "resource://nimbus/ExperimentAPI.jsm",
@@ -28,69 +25,6 @@ XPCOMUtils.defineLazyGetter(lazy, "log", () => {
   );
   return new Logger("AboutWelcomeChild");
 });
-
-XPCOMUtils.defineLazyGetter(lazy, "tippyTopProvider", () =>
-  (async () => {
-    const provider = new lazy.TippyTopProvider();
-    await provider.init();
-    return provider;
-  })()
-);
-
-const SEARCH_REGION_PREF = "browser.search.region";
-
-XPCOMUtils.defineLazyPreferenceGetter(
-  lazy,
-  "searchRegion",
-  SEARCH_REGION_PREF,
-  ""
-);
-
-/**
- * Lazily get importable sites from parent or reuse cached ones.
- */
-function getImportableSites(child) {
-  return (
-    getImportableSites.cache ??
-    (getImportableSites.cache = (async () => {
-      // Use tippy top to get packaged rich icons
-      const tippyTop = await lazy.tippyTopProvider;
-      // Remove duplicate entries if they would appear the same
-      return `[${[
-        ...new Set(
-          (await child.sendQuery("AWPage:IMPORTABLE_SITES")).map(url => {
-            // Get both rich icon and short name and save for deduping
-            const site = { url };
-            tippyTop.processSite(site, "*");
-            return JSON.stringify({
-              icon: site.tippyTopIcon,
-              label: lazy.shortURL(site),
-            });
-          })
-        ),
-      ]}]`;
-    })())
-  );
-}
-
-async function getDefaultSites(child) {
-  // Get default TopSites by region
-  let sites = lazy.DEFAULT_SITES.get(
-    lazy.DEFAULT_SITES.has(lazy.searchRegion) ? lazy.searchRegion : ""
-  );
-
-  // Use tippy top to get packaged rich icons
-  const tippyTop = await lazy.tippyTopProvider;
-  let defaultSites = sites.split(",").map(link => {
-    let site = { url: link };
-    tippyTop.processSite(site);
-    return {
-      icon: site.tippyTopIcon,
-      title: lazy.shortURL(site),
-    };
-  });
-  return Cu.cloneInto(defaultSites, child.contentWindow);
-}
 
 async function getSelectedTheme(child) {
   let activeThemeId = await child.sendQuery("AWPage:GET_SELECTED_THEME");
@@ -129,24 +63,16 @@ class AboutWelcomeChild extends JSWindowActorChild {
       defineAs: "AWGetFxAMetricsFlowURI",
     });
 
-    Cu.exportFunction(this.AWGetImportableSites.bind(this), window, {
-      defineAs: "AWGetImportableSites",
-    });
-
-    Cu.exportFunction(this.AWGetDefaultSites.bind(this), window, {
-      defineAs: "AWGetDefaultSites",
-    });
-
     Cu.exportFunction(this.AWGetSelectedTheme.bind(this), window, {
       defineAs: "AWGetSelectedTheme",
     });
 
-    Cu.exportFunction(this.AWGetRegion.bind(this), window, {
-      defineAs: "AWGetRegion",
-    });
-
     Cu.exportFunction(this.AWSelectTheme.bind(this), window, {
       defineAs: "AWSelectTheme",
+    });
+
+    Cu.exportFunction(this.AWEvaluateScreenTargeting.bind(this), window, {
+      defineAs: "AWEvaluateScreenTargeting",
     });
 
     Cu.exportFunction(this.AWSendEventTelemetry.bind(this), window, {
@@ -219,6 +145,12 @@ class AboutWelcomeChild extends JSWindowActorChild {
     );
   }
 
+  AWEvaluateScreenTargeting(data) {
+    return this.wrapPromise(
+      this.sendQuery("AWPage:EVALUATE_SCREEN_TARGETING", data)
+    );
+  }
+
   /**
    * Send initial data to page including experiment information
    */
@@ -257,12 +189,19 @@ class AboutWelcomeChild extends JSWindowActorChild {
     // override the default with `null`
     let defaults = lazy.AboutWelcomeDefaults.getDefaults();
 
+    // Removing screens based on their targeting evaluations
+    const filteredScreens = await this.AWEvaluateScreenTargeting(
+      featureConfig.screens ?? defaults.screens
+    );
+
     const content = await lazy.AboutWelcomeDefaults.prepareContentForReact({
       ...attributionData,
       ...experimentMetadata,
       ...defaults,
       ...featureConfig,
-      screens: featureConfig.screens ?? defaults.screens,
+      screens: filteredScreens
+        ? filteredScreens
+        : featureConfig.screens ?? defaults.screens,
       backdrop: featureConfig.backdrop ?? defaults.backdrop,
     });
 
@@ -275,14 +214,6 @@ class AboutWelcomeChild extends JSWindowActorChild {
 
   AWGetFxAMetricsFlowURI() {
     return this.wrapPromise(this.sendQuery("AWPage:FXA_METRICS_FLOW_URI"));
-  }
-
-  AWGetImportableSites() {
-    return this.wrapPromise(getImportableSites(this));
-  }
-
-  AWGetDefaultSites() {
-    return this.wrapPromise(getDefaultSites(this));
   }
 
   AWGetSelectedTheme() {
@@ -313,10 +244,6 @@ class AboutWelcomeChild extends JSWindowActorChild {
 
   AWWaitForMigrationClose() {
     return this.wrapPromise(this.sendQuery("AWPage:WAIT_FOR_MIGRATION_CLOSE"));
-  }
-
-  AWGetRegion() {
-    return this.wrapPromise(this.sendQuery("AWPage:GET_REGION"));
   }
 
   AWFinish() {

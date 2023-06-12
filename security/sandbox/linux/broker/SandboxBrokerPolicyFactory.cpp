@@ -654,6 +654,7 @@ void SandboxBrokerPolicyFactory::InitContentPolicy() {
   AddDynamicPathList(policy, "security.sandbox.content.read_path_whitelist",
                      rdonly);
 
+#if defined(MOZ_CONTENT_TEMP_DIR)
   // Add write permissions on the content process specific temporary dir.
   nsCOMPtr<nsIFile> tmpDir;
   rv = NS_GetSpecialDirectory(NS_APP_CONTENT_PROCESS_TEMP_DIR,
@@ -665,6 +666,7 @@ void SandboxBrokerPolicyFactory::InitContentPolicy() {
       policy->AddDir(rdwrcr, tmpPath.get());
     }
   }
+#endif
 
   // userContent.css and the extensions dir sit in the profile, which is
   // normally blocked.
@@ -818,6 +820,7 @@ SandboxBrokerPolicyFactory::GetRDDPolicy(int aPid) {
 
   AddSharedMemoryPaths(policy.get(), aPid);
 
+  policy->AddPath(rdonly, "/dev/urandom");
   // FIXME (bug 1662321): we should fix nsSystemInfo so that every
   // child process doesn't need to re-read these files to get the info
   // the parent process already has.

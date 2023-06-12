@@ -38,6 +38,9 @@ namespace mozilla {
 namespace dom {
 enum class ScreenColorGamut : uint8_t;
 }  // namespace dom
+namespace hal {
+enum class ScreenOrientation : uint32_t;
+}  // namespace hal
 namespace widget {
 class Screen;
 }  // namespace widget
@@ -70,7 +73,7 @@ class nsDeviceContext final {
    *
    * @return the new rendering context (guaranteed to be non-null)
    */
-  already_AddRefed<gfxContext> CreateRenderingContext();
+  mozilla::UniquePtr<gfxContext> CreateRenderingContext();
 
   /**
    * Create a reference rendering context and initialize it.  Only call this
@@ -78,7 +81,7 @@ class nsDeviceContext final {
    *
    * @return the new rendering context.
    */
-  already_AddRefed<gfxContext> CreateReferenceRenderingContext();
+  mozilla::UniquePtr<gfxContext> CreateReferenceRenderingContext();
 
   /**
    * Gets the number of app units in one device pixel; this number
@@ -131,6 +134,18 @@ class nsDeviceContext final {
    * Return the color gamut of the device.
    */
   mozilla::dom::ScreenColorGamut GetColorGamut();
+
+  /**
+   * Return the orientation type of the device.
+   * If not screen device, return primary screen's value
+   */
+  mozilla::hal::ScreenOrientation GetScreenOrientationType();
+
+  /**
+   * Return the orientation angle of the device.
+   * If not screen device, return primary screen's value
+   */
+  uint16_t GetScreenOrientationAngle();
 
   /**
    * Get the size of the displayable area of the output device
@@ -255,7 +270,7 @@ class nsDeviceContext final {
    * Implementation shared by CreateRenderingContext and
    * CreateReferenceRenderingContext.
    */
-  already_AddRefed<gfxContext> CreateRenderingContextCommon(
+  mozilla::UniquePtr<gfxContext> CreateRenderingContextCommon(
       bool aWantReferenceContext);
 
   void SetDPI();

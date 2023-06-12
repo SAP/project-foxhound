@@ -80,17 +80,41 @@ urlbar:
       results:
         description: >
           Comma separated list of result types in the order they were shown to
-          the user. The possible result types are: `autofill_about`,
-          `autofill_adaptive`, `autofill_origin`, `autofill_url`,
-          `autofill_unknown`, `bookmark`, `history`, `keyword`, `search_engine`,
-          `search_suggest`, `search_history`, `url`, `action`, `tab`,
-          `remote_tab`, `addon`, `tip_onboard`, `tip_persist`, `tip_redirect`,
-          `tip_unknown`, `intervention_clear`, `intervention_refresh`,
-          `intervention_update`, `intervention_unknown`, `tab_to_search`,
-          `top_site`, `calc`, `unit`, `suggest_sponsor` and
-          `suggest_non_sponsor`. If the result type did not fall into any of
-          these, this will be `unknown` and a bug should be filed to investigate
-          it.
+          the user. The `unknown` type should not occur and indicates a bug. The
+          possible types are:
+          `action`,
+          `addon`,
+          `autofill_about`,
+          `autofill_adaptive`,
+          `autofill_origin`,
+          `autofill_unknown`,
+          `autofill_url`,
+          `bookmark`,
+          `calc`,
+          `dynamic_wikipedia`,
+          `history`,
+          `intervention_clear`,
+          `intervention_refresh`,
+          `intervention_unknown`,
+          `intervention_update`,
+          `keyword`,
+          `navigational`,
+          `remote_tab`,
+          `search_engine`,
+          `search_history`,
+          `search_suggest`,
+          `suggest_non_sponsor`,
+          `suggest_sponsor`,
+          `tab`,
+          `tab_to_search`,
+          `tip_onboard`,
+          `tip_persist`,
+          `tip_redirect`,
+          `tip_unknown`,
+          `top_site`,
+          `unit`,
+          `url`,
+          `weather`
         type: string
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1800414
@@ -160,16 +184,45 @@ urlbar:
         type: quantity
       selected_result:
         description: >
-          The type of the result the user selected. The possible result types
-          are: `autofill_about`, `autofill_adaptive`, `autofill_origin`,
-          `autofill_url`, `autofill_unknown`, `bookmark`, `history`, `keyword`,
-          `search_engine`, `search_suggest`, `search_history`, `url`, `action`,
-          `tab`, `remote_tab`, `addon`, `tip_onboard`, `tip_persist`,
-          `tip_redirect`, `tip_unknown`, `intervention_clear`,
-          `intervention_refresh`, `intervention_update`, `intervention_unknown`,
-          `tab_to_search`, `top_site`, `calc`, `unit`, `suggest_sponsor` and
-          `suggest_non_sponsor`. If the result type did not fall into any of
-          these, this will be `unknown`.
+          The type of the result the user selected. The `unknown` type should
+          not occur and indicates a bug. The possible types are:
+          `action`,
+          `addon`,
+          `autofill_about`,
+          `autofill_adaptive`,
+          `autofill_origin`,
+          `autofill_unknown`,
+          `autofill_url`,
+          `bookmark`,
+          `calc`,
+          `dynamic_wikipedia`,
+          `experimental_addon`,
+          `history`,
+          `input_field`,
+          `intervention_clear`,
+          `intervention_refresh`,
+          `intervention_unknown`,
+          `intervention_update`,
+          `keyword`,
+          `navigational`,
+          `remote_tab`,
+          `search_engine`,
+          `search_history`,
+          `search_shortcut_button`,
+          `search_suggest`,
+          `site_specific_contextual_search`,
+          `suggest_non_sponsor`,
+          `suggest_sponsor`,
+          `tab`,
+          `tab_to_search`,
+          `tip_onboard`,
+          `tip_persist`,
+          `tip_redirect`,
+          `tip_unknown`,
+          `top_site`,
+          `unit`,
+          `url`,
+          `weather`
         type: string
       selected_result_subtype:
         description: >
@@ -191,11 +244,17 @@ urlbar:
           `UrlbarProviderQuickSuggest`, `RemoteTabs`, `SearchSuggestions`,
           `UrlbarProviderSearchTips`, `TabToSearch`, `TokenAliasEngines`,
           `UrlbarProviderTopSites`, `UnitConversion` and `UnifiedComplete`.
+          If engagement_type is `drop_go` or `paste_go`, this will be null
+          because no results are shown. And also, if selected_result is
+          `experimental_addon`, it means that the user selected a result
+           from an add-on using the urlbar experimental API. In this case,
+           this will be the provider name specified by the add-on.
         type: string
       engagement_type:
         description: >
           Records how the user selected the result. The possible values are:
-          `click`, `enter`, `drop_go`, `paste_go`, `dismiss`, `help`.
+          `click`, `enter`, `go_button`, `drop_go`, `paste_go`, `dismiss`,
+          `help`.
         type: string
       groups:
         description: >
@@ -206,22 +265,47 @@ urlbar:
           `search_suggest`, `top_pick`, `top_site`, `remote_tab`, `addon`,
           `general`, `suggest`, `about_page` and `suggested_index`. If the group
           did not fall into any of these, this will be `unknown` and a bug
-          should be filed to investigate it.
+          should be filed to investigate it. If engagement_type is `drop_go` or
+          `paste_go`, this will be empty string because no results are shown.
         type: string
       results:
         description: >
           Comma separated list of result types in the order they were shown to
-          the user. The possible result types are: `autofill_about`,
-          `autofill_adaptive`, `autofill_origin`, `autofill_url`,
-          `autofill_unknown`, `bookmark`, `history`, `keyword`, `search_engine`,
-          `search_suggest`, `search_history`, `url`, `action`, `tab`,
-          `remote_tab`, `addon`, `tip_onboard`, `tip_persist`, `tip_redirect`,
-          `tip_unknown`, `intervention_clear`, `intervention_refresh`,
-          `intervention_update`, `intervention_unknown`, `tab_to_search`,
-          `top_site`, `calc`, `unit`, `suggest_sponsor` and
-          `suggest_non_sponsor`. If the result type did not fall into any of
-          these, this will be `unknown` and a bug should be filed to investigate
-          it.
+          the user. The `unknown` type should not occur and indicates a bug. The
+          possible types are:
+          `action`,
+          `addon`,
+          `autofill_about`,
+          `autofill_adaptive`,
+          `autofill_origin`,
+          `autofill_unknown`,
+          `autofill_url`,
+          `bookmark`,
+          `calc`,
+          `dynamic_wikipedia`,
+          `history`,
+          `intervention_clear`,
+          `intervention_refresh`,
+          `intervention_unknown`,
+          `intervention_update`,
+          `keyword`,
+          `navigational`,
+          `remote_tab`,
+          `search_engine`,
+          `search_history`,
+          `search_suggest`,
+          `suggest_non_sponsor`,
+          `suggest_sponsor`,
+          `tab`,
+          `tab_to_search`,
+          `tip_onboard`,
+          `tip_persist`,
+          `tip_redirect`,
+          `tip_unknown`,
+          `top_site`,
+          `unit`,
+          `url`,
+          `weather`
         type: string
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1797265
@@ -306,17 +390,41 @@ urlbar:
       results:
         description: >
           Comma separated list of result types in the order they were shown to
-          the user. The possible result types are: `autofill_about`,
-          `autofill_adaptive`, `autofill_origin`, `autofill_url`,
-          `autofill_unknown`, `bookmark`, `history`, `keyword`, `search_engine`,
-          `search_suggest`, `search_history`, `url`, `action`, `tab`,
-          `remote_tab`, `addon`, `tip_onboard`, `tip_persist`, `tip_redirect`,
-          `tip_unknown`, `intervention_clear`, `intervention_refresh`,
-          `intervention_update`, `intervention_unknown`, `tab_to_search`,
-          `top_site`, `calc`, `unit`, `suggest_sponsor` and
-          `suggest_non_sponsor`. If the result type did not fall into any of
-          these, this will be `unknown` and a bug should be filed to investigate
-          it.
+          the user. The `unknown` type should not occur and indicates a bug. The
+          possible types are:
+          `action`,
+          `addon`,
+          `autofill_about`,
+          `autofill_adaptive`,
+          `autofill_origin`,
+          `autofill_unknown`,
+          `autofill_url`,
+          `bookmark`,
+          `calc`,
+          `dynamic_wikipedia`,
+          `history`,
+          `intervention_clear`,
+          `intervention_refresh`,
+          `intervention_unknown`,
+          `intervention_update`,
+          `keyword`,
+          `navigational`,
+          `remote_tab`,
+          `search_engine`,
+          `search_history`,
+          `search_suggest`,
+          `suggest_non_sponsor`,
+          `suggest_sponsor`,
+          `tab`,
+          `tab_to_search`,
+          `tip_onboard`,
+          `tip_persist`,
+          `tip_redirect`,
+          `tip_unknown`,
+          `top_site`,
+          `unit`,
+          `url`,
+          `weather`
         type: string
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1800579
@@ -329,3 +437,40 @@ urlbar:
     notification_emails:
       - fx-search-telemetry@mozilla.com
     expires: never
+
+  pref_max_results:
+    lifetime: application
+    type: quantity
+    unit: integer
+    description: >
+      Maximum results to show in the Address Bar.
+      Corresponds to the value of the `browser.urlbar.maxRichResults` pref.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1817196
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1817196
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - fx-search-telemetry@mozilla.com
+    expires: never
+    send_in_pings:
+      - events
+
+  pref_suggest_topsites:
+    lifetime: application
+    type: boolean
+    description: >
+      Whether topsite results are enabled in the urlbar.
+      Corresponds to the value of the `browser.urlbar.suggest.topsites` pref.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1817196
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1817196
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - fx-search-telemetry@mozilla.com
+    expires: never
+    send_in_pings:
+      - events

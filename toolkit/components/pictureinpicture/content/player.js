@@ -80,6 +80,25 @@ function setIsMutedState(isMuted) {
   Player.isMuted = isMuted;
 }
 
+/**
+ * Function to resize and reposition the PiP window
+ * @param {Object} rect
+ *   An object containing `left`, `top`, `width`, and `height` for the PiP
+ *   window
+ */
+function resizeToVideo(rect) {
+  Player.resizeToVideo(rect);
+}
+
+/**
+ * Returns an object containing `left`, `top`, `width`, and `height` of the
+ * PiP window before entering fullscreen. Will be null if the PiP window is
+ * not in fullscreen.
+ */
+function getDeferredResize() {
+  return Player.deferredResize;
+}
+
 function enableSubtitlesButton() {
   Player.enableSubtitlesButton();
 }
@@ -144,6 +163,12 @@ let Player = {
    * Gets updated whenever a new hover state is detected.
    */
   isCurrentHover: false,
+
+  /**
+   * Store the size and position of the window before entering fullscreen and
+   * use this to correctly position the window when exiting fullscreen
+   */
+  deferredResize: null,
 
   /**
    * Initializes the player browser, and sets up the initial state.
@@ -380,6 +405,13 @@ let Player = {
           }
         });
 
+        // If we are exiting fullscreen we want to resize the window to the
+        // stored size and position
+        if (this.deferredResize && event.type === "MozDOMFullscreen:Exited") {
+          this.resizeToVideo(this.deferredResize);
+          this.deferredResize = null;
+        }
+
         // Sets the title for fullscreen button when PIP is in Enter Fullscreen mode and Exit Fullscreen mode
         const fullscreenButton = document.getElementById("fullscreen");
         let strId = this.isFullscreen
@@ -427,7 +459,7 @@ let Player = {
       }
 
       case "draggableregionleftmousedown": {
-        document.querySelector("#settings").classList.add("hide");
+        this.toggleSubtitlesSettingsPanel({ forceHide: true });
         break;
       }
     }
@@ -572,15 +604,7 @@ let Player = {
       }
 
       case "closed-caption": {
-        let settingsPanel = document.querySelector("#settings");
-        let settingsPanelVisible = !settingsPanel.classList.contains("hide");
-        if (settingsPanelVisible) {
-          settingsPanel.classList.add("hide");
-          this.controls.removeAttribute("donthide");
-        } else {
-          settingsPanel.classList.remove("hide");
-          this.controls.setAttribute("donthide", true);
-        }
+        this.toggleSubtitlesSettingsPanel();
         // Early return to prevent hiding the panel below
         return;
       }
@@ -592,9 +616,24 @@ let Player = {
     }
     // If the click came from a element that is not inside the subtitles settings panel
     // then we want to hide the panel
-    let settingsPanel = document.querySelector("#settings");
-    if (!settingsPanel.contains(event.target)) {
-      document.querySelector("#settings").classList.add("hide");
+    if (!this.settingsPanel.contains(event.target)) {
+      this.toggleSubtitlesSettingsPanel({ forceHide: true });
+    }
+  },
+
+  /**
+   * Function to toggle the visibility of the subtitles settings panel
+   * @param {Object} options [optional] Object containing options for the function
+   *   - forceHide: true to force hide the subtitles settings panel
+   */
+  toggleSubtitlesSettingsPanel(options) {
+    let settingsPanelVisible = !this.settingsPanel.classList.contains("hide");
+    if (options?.forceHide || settingsPanelVisible) {
+      this.settingsPanel.classList.add("hide");
+      this.controls.removeAttribute("donthide");
+    } else {
+      this.settingsPanel.classList.remove("hide");
+      this.controls.setAttribute("donthide", true);
     }
   },
 
@@ -609,7 +648,25 @@ let Player = {
     if (this.isFullscreen) {
       document.exitFullscreen();
     } else {
+      this.deferredResize = {
+        left: window.screenX,
+        top: window.screenY,
+        width: window.innerWidth,
+        height: window.innerHeight,
+      };
       document.body.requestFullscreen();
+    }
+  },
+
+  resizeToVideo(rect) {
+    if (this.isFullscreen) {
+      // We store the size and position because resizing the PiP window
+      // while fullscreened will cause issues
+      this.deferredResize = rect;
+    } else {
+      let { left, top, width, height } = rect;
+      window.resizeTo(width, height);
+      window.moveTo(left, top);
     }
   },
 
@@ -982,6 +1039,11 @@ let Player = {
   get seekForward() {
     delete this.seekForward;
     return (this.seekForward = document.getElementById("seekForward"));
+  },
+
+  get settingsPanel() {
+    delete this.settingsPanel;
+    return (this.settingsPanel = document.getElementById("settings"));
   },
 
   _isPlaying: false,

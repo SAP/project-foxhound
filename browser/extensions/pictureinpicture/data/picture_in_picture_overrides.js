@@ -12,6 +12,7 @@ let AVAILABLE_PIP_OVERRIDES;
   // See PictureInPictureControls.sys.mjs for these values.
   // eslint-disable-next-line no-unused-vars
   const TOGGLE_POLICIES = browser.pictureInPictureChild.getPolicies();
+  const KEYBOARD_CONTROLS = browser.pictureInPictureChild.getKeyboardControls();
 
   AVAILABLE_PIP_OVERRIDES = {
     // The keys of this object are match patterns for URLs, as documented in
@@ -23,11 +24,11 @@ let AVAILABLE_PIP_OVERRIDES;
     //
     // "https://*.youtube.com/*": {
     //   policy: TOGGLE_POLICIES.THREE_QUARTERS,
-    //   keyboardControls: KEYBOARD_CONTROLS.PLAY_PAUSE | KEYBOARD_CONTROLS.VOLUME,
+    //   disabledKeyboardControls: KEYBOARD_CONTROLS.PLAY_PAUSE | KEYBOARD_CONTROLS.VOLUME,
     // },
     // "https://*.twitch.tv/mikeconley_dot_ca/*": {
     //   policy: TOGGLE_POLICIES.TOP,
-    //   keyboardControls: KEYBOARD_CONTROLS.NONE,
+    //   disabledKeyboardControls: KEYBOARD_CONTROLS.ALL,
     // },
 
     tests: {
@@ -118,6 +119,11 @@ let AVAILABLE_PIP_OVERRIDES;
       "https://*.laracasts.com/*": { policy: TOGGLE_POLICIES.ONE_QUARTER },
     },
 
+    msn: {
+      "https://*.msn.com/*": {
+        visibilityThreshold: 0.7,
+      },
+    },
     mxplayer: {
       "https://*.mxplayer.in/*": {
         videoWrapperScriptPath: "video-wrappers/videojsWrapper.js",
@@ -173,9 +179,21 @@ let AVAILABLE_PIP_OVERRIDES;
     },
 
     twitch: {
-      "https://*.twitch.tv/*": { policy: TOGGLE_POLICIES.ONE_QUARTER },
-      "https://*.twitch.tech/*": { policy: TOGGLE_POLICIES.ONE_QUARTER },
-      "https://*.twitch.a2z.com/*": { policy: TOGGLE_POLICIES.ONE_QUARTER },
+      "https://*.twitch.tv/*": {
+        videoWrapperScriptPath: "video-wrappers/twitch.js",
+        policy: TOGGLE_POLICIES.ONE_QUARTER,
+        disabledKeyboardControls: KEYBOARD_CONTROLS.LIVE_SEEK,
+      },
+      "https://*.twitch.tech/*": {
+        videoWrapperScriptPath: "video-wrappers/twitch.js",
+        policy: TOGGLE_POLICIES.ONE_QUARTER,
+        disabledKeyboardControls: KEYBOARD_CONTROLS.LIVE_SEEK,
+      },
+      "https://*.twitch.a2z.com/*": {
+        videoWrapperScriptPath: "video-wrappers/twitch.js",
+        policy: TOGGLE_POLICIES.ONE_QUARTER,
+        disabledKeyboardControls: KEYBOARD_CONTROLS.LIVE_SEEK,
+      },
     },
 
     udemy: {
@@ -191,6 +209,12 @@ let AVAILABLE_PIP_OVERRIDES;
     wired: {
       "https://*.wired.com/*": {
         videoWrapperScriptPath: "video-wrappers/videojsWrapper.js",
+      },
+    },
+
+    yahoofinance: {
+      "https://*.finance.yahoo.com/*": {
+        videoWrapperScriptPath: "video-wrappers/yahoofinance.js",
       },
     },
 

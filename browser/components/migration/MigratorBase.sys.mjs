@@ -68,6 +68,17 @@ export class MigratorBase {
   }
 
   /**
+   * This method should get overridden to return an icon url of the browser
+   * to be imported from. By default, this will just use the default Favicon
+   * image.
+   *
+   * @type {string}
+   */
+  static get brandImage() {
+    return "chrome://global/skin/icons/defaultFavicon.svg";
+  }
+
+  /**
    * OVERRIDE IF AND ONLY IF the source supports multiple profiles.
    *
    * Returns array of profile objects from which data may be imported. The object
@@ -217,8 +228,12 @@ export class MigratorBase {
    *   True if this migration is occurring during startup.
    * @param {object|string} aProfile
    *   The other browser profile that is being migrated from.
+   * @param {Function|null} aProgressCallback
+   *   An optional callback that will be fired once a resourceType has finished
+   *   migrating. The callback will be passed the numeric representation of the
+   *   resource type.
    */
-  async migrate(aItems, aStartup, aProfile) {
+  async migrate(aItems, aStartup, aProfile, aProgressCallback = () => {}) {
     let resources = await this.#getMaybeCachedResources(aProfile);
     if (!resources.length) {
       throw new Error("migrate called for a non-existent source");
@@ -357,6 +372,9 @@ export class MigratorBase {
                   : "Migration:ItemError",
                 migrationType
               );
+
+              aProgressCallback(migrationType);
+
               resourcesGroupedByItems.delete(migrationType);
 
               if (stopwatchHistogramId) {
@@ -404,7 +422,7 @@ export class MigratorBase {
       // Note: We do not need to do so for the Firefox migrator
       // (=startupOnlyMigrator), as it just copies over the places database
       // from another profile.
-      (async function() {
+      await (async function() {
         // Tell nsBrowserGlue we're importing default bookmarks.
         let browserGlue = Cc["@mozilla.org/browser/browserglue;1"].getService(
           Ci.nsIObserver
@@ -438,11 +456,11 @@ export class MigratorBase {
         });
         browserGlue.observe(null, TOPIC_DID_IMPORT_BOOKMARKS, "");
         await placesInitedPromise;
-        doMigrate();
+        await doMigrate();
       })();
       return;
     }
-    doMigrate();
+    await doMigrate();
   }
 
   /**

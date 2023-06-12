@@ -42,9 +42,7 @@ return /******/ (() => { // webpackBootstrap
 Object.defineProperty(exports, "__esModule", ({
   value: true
 }));
-exports.VerbosityLevel = exports.Util = exports.UnknownErrorException = exports.UnexpectedResponseException = exports.UNSUPPORTED_FEATURES = exports.TextRenderingMode = exports.RenderingIntentFlag = exports.PermissionFlag = exports.PasswordResponses = exports.PasswordException = exports.PageActionEventType = exports.OPS = exports.MissingPDFException = exports.LINE_FACTOR = exports.LINE_DESCENT_FACTOR = exports.InvalidPDFException = exports.ImageKind = exports.IDENTITY_MATRIX = exports.FormatError = exports.FeatureTest = exports.FONT_IDENTITY_MATRIX = exports.DocumentActionEventType = exports.CMapCompressionType = exports.BaseException = exports.BASELINE_FACTOR = exports.AnnotationType = exports.AnnotationStateModelType = exports.AnnotationReviewState = exports.AnnotationReplyType = exports.AnnotationMode = exports.AnnotationMarkedState = exports.AnnotationFlag = exports.AnnotationFieldFlag = exports.AnnotationEditorType = exports.AnnotationEditorPrefix = exports.AnnotationEditorParamsType = exports.AnnotationBorderStyleType = exports.AnnotationActionEventType = exports.AbortException = void 0;
-exports.arrayByteLength = arrayByteLength;
-exports.arraysToBytes = arraysToBytes;
+exports.VerbosityLevel = exports.Util = exports.UnknownErrorException = exports.UnexpectedResponseException = exports.TextRenderingMode = exports.RenderingIntentFlag = exports.PermissionFlag = exports.PasswordResponses = exports.PasswordException = exports.PageActionEventType = exports.OPS = exports.MissingPDFException = exports.LINE_FACTOR = exports.LINE_DESCENT_FACTOR = exports.InvalidPDFException = exports.ImageKind = exports.IDENTITY_MATRIX = exports.FormatError = exports.FeatureTest = exports.FONT_IDENTITY_MATRIX = exports.DocumentActionEventType = exports.CMapCompressionType = exports.BaseException = exports.BASELINE_FACTOR = exports.AnnotationType = exports.AnnotationStateModelType = exports.AnnotationReviewState = exports.AnnotationReplyType = exports.AnnotationMode = exports.AnnotationMarkedState = exports.AnnotationFlag = exports.AnnotationFieldFlag = exports.AnnotationEditorType = exports.AnnotationEditorPrefix = exports.AnnotationEditorParamsType = exports.AnnotationBorderStyleType = exports.AnnotationActionEventType = exports.AbortException = void 0;
 exports.assert = assert;
 exports.bytesToString = bytesToString;
 exports.createPromiseCapability = createPromiseCapability;
@@ -369,8 +367,6 @@ const OPS = {
   constructPath: 91
 };
 exports.OPS = OPS;
-const UNSUPPORTED_FEATURES = null;
-exports.UNSUPPORTED_FEATURES = UNSUPPORTED_FEATURES;
 const PasswordResponses = {
   NEED_PASSWORD: 1,
   INCORRECT_PASSWORD: 2
@@ -537,41 +533,6 @@ function stringToBytes(str) {
     bytes[i] = str.charCodeAt(i) & 0xff;
   }
   return bytes;
-}
-function arrayByteLength(arr) {
-  if (arr.length !== undefined) {
-    return arr.length;
-  }
-  if (arr.byteLength !== undefined) {
-    return arr.byteLength;
-  }
-  unreachable("Invalid argument for arrayByteLength");
-}
-function arraysToBytes(arr) {
-  const length = arr.length;
-  if (length === 1 && arr[0] instanceof Uint8Array) {
-    return arr[0];
-  }
-  let resultLength = 0;
-  for (let i = 0; i < length; i++) {
-    resultLength += arrayByteLength(arr[i]);
-  }
-  let pos = 0;
-  const data = new Uint8Array(resultLength);
-  for (let i = 0; i < length; i++) {
-    let item = arr[i];
-    if (!(item instanceof Uint8Array)) {
-      if (typeof item === "string") {
-        item = stringToBytes(item);
-      } else {
-        item = new Uint8Array(item);
-      }
-    }
-    const itemLength = item.byteLength;
-    data.set(item, pos);
-    pos += itemLength;
-  }
-  return data;
 }
 function string32(value) {
   return String.fromCharCode(value >> 24 & 0xff, value >> 16 & 0xff, value >> 8 & 0xff, value & 0xff);
@@ -922,6 +883,7 @@ function getDocument(src) {
   const maxImageSize = Number.isInteger(src.maxImageSize) && src.maxImageSize > -1 ? src.maxImageSize : -1;
   const isEvalSupported = src.isEvalSupported !== false;
   const isOffscreenCanvasSupported = typeof src.isOffscreenCanvasSupported === "boolean" ? src.isOffscreenCanvasSupported : !_is_node.isNodeJS;
+  const canvasMaxAreaInBytes = Number.isInteger(src.canvasMaxAreaInBytes) ? src.canvasMaxAreaInBytes : -1;
   const disableFontFace = typeof src.disableFontFace === "boolean" ? src.disableFontFace : _is_node.isNodeJS;
   const fontExtraProperties = src.fontExtraProperties === true;
   const enableXfa = src.enableXfa === true;
@@ -933,17 +895,27 @@ function getDocument(src) {
   const length = rangeTransport ? rangeTransport.length : src.length ?? NaN;
   const useSystemFonts = typeof src.useSystemFonts === "boolean" ? src.useSystemFonts : !_is_node.isNodeJS && !disableFontFace;
   const useWorkerFetch = typeof src.useWorkerFetch === "boolean" ? src.useWorkerFetch : true;
+  const canvasFactory = src.canvasFactory || new DefaultCanvasFactory({
+    ownerDocument
+  });
+  const filterFactory = src.filterFactory || new _display_utils.FilterFactory({
+    ownerDocument
+  });
   const styleElement = null;
   (0, _util.setVerbosityLevel)(verbosity);
-  const transportFactory = useWorkerFetch ? null : {
-    cMapReaderFactory: new CMapReaderFactory({
+  const transportFactory = {
+    canvasFactory,
+    filterFactory
+  };
+  if (!useWorkerFetch) {
+    transportFactory.cMapReaderFactory = new CMapReaderFactory({
       baseUrl: cMapUrl,
       isCompressed: cMapPacked
-    }),
-    standardFontDataFactory: new StandardFontDataFactory({
+    });
+    transportFactory.standardFontDataFactory = new StandardFontDataFactory({
       baseUrl: standardFontDataUrl
-    })
-  };
+    });
+  }
   if (!worker) {
     const workerParams = {
       verbosity,
@@ -955,7 +927,7 @@ function getDocument(src) {
   const docId = task.docId;
   const fetchDocParams = {
     docId,
-    apiVersion: '3.4.62',
+    apiVersion: '3.5.35',
     data,
     password,
     disableAutoFetch,
@@ -969,6 +941,7 @@ function getDocument(src) {
       ignoreErrors,
       isEvalSupported,
       isOffscreenCanvasSupported,
+      canvasMaxAreaInBytes,
       fontExtraProperties,
       useSystemFonts,
       cMapUrl: useWorkerFetch ? cMapUrl : null,
@@ -1035,16 +1008,17 @@ function getUrlProp(val) {
 function getDataProp(val) {
   if (val instanceof Uint8Array && val.byteLength === val.buffer.byteLength) {
     return val;
-  } else if (typeof val === "string") {
+  }
+  if (typeof val === "string") {
     return (0, _util.stringToBytes)(val);
-  } else if (typeof val === "object" && !isNaN(val?.length) || (0, _util.isArrayBuffer)(val)) {
+  }
+  if (typeof val === "object" && !isNaN(val?.length) || (0, _util.isArrayBuffer)(val)) {
     return new Uint8Array(val);
   }
   throw new Error("Invalid PDF binary data: either TypedArray, " + "string, or array-like object is expected in the data property.");
 }
 class PDFDocumentLoadingTask {
   static #docId = 0;
-  #onUnsupportedFeature = null;
   constructor() {
     this._capability = (0, _util.createPromiseCapability)();
     this._transport = null;
@@ -1054,10 +1028,6 @@ class PDFDocumentLoadingTask {
     this.onPassword = null;
     this.onProgress = null;
   }
-  get onUnsupportedFeature() {
-    return this.#onUnsupportedFeature;
-  }
-  set onUnsupportedFeature(callback) {}
   get promise() {
     return this._capability.promise;
   }
@@ -1235,16 +1205,14 @@ class PDFDocumentProxy {
 }
 exports.PDFDocumentProxy = PDFDocumentProxy;
 class PDFPageProxy {
-  constructor(pageIndex, pageInfo, transport, ownerDocument, pdfBug = false) {
+  constructor(pageIndex, pageInfo, transport, pdfBug = false) {
     this._pageIndex = pageIndex;
     this._pageInfo = pageInfo;
-    this._ownerDocument = ownerDocument;
     this._transport = transport;
     this._stats = pdfBug ? new _display_utils.StatTimer() : null;
     this._pdfBug = pdfBug;
     this.commonObjs = transport.commonObjs;
     this.objs = new PDFObjects();
-    this._bitmaps = new Set();
     this.cleanupAfterRender = false;
     this.pendingCleanup = false;
     this._intentStates = new Map();
@@ -1324,9 +1292,6 @@ class PDFPageProxy {
       clearTimeout(intentState.streamReaderCancelTimeout);
       intentState.streamReaderCancelTimeout = null;
     }
-    const canvasFactoryInstance = canvasFactory || new DefaultCanvasFactory({
-      ownerDocument: this._ownerDocument
-    });
     const intentPrint = !!(intentArgs.renderingIntent & _util.RenderingIntentFlag.PRINT);
     if (!intentState.displayReadyCapability) {
       intentState.displayReadyCapability = (0, _util.createPromiseCapability)();
@@ -1370,14 +1335,18 @@ class PDFPageProxy {
       annotationCanvasMap,
       operatorList: intentState.operatorList,
       pageIndex: this._pageIndex,
-      canvasFactory: canvasFactoryInstance,
+      canvasFactory: canvasFactory || this._transport.canvasFactory,
+      filterFactory: this._transport.filterFactory,
       useRequestAnimationFrame: !intentPrint,
       pdfBug: this._pdfBug,
       pageColors
     });
     (intentState.renderTasks ||= new Set()).add(internalRenderTask);
     const renderTask = internalRenderTask.task;
-    Promise.all([intentState.displayReadyCapability.promise, optionalContentConfigPromise]).then(([transparency, optionalContentConfig]) => {
+    Promise.all([intentState.displayReadyCapability.promise, optionalContentConfigPromise]).then(([{
+      transparency,
+      isOffscreenCanvasSupported
+    }, optionalContentConfig]) => {
       if (this.pendingCleanup) {
         complete();
         return;
@@ -1385,6 +1354,7 @@ class PDFPageProxy {
       this._stats?.time("Rendering");
       internalRenderTask.initializeGraphics({
         transparency,
+        isOffscreenCanvasSupported,
         optionalContentConfig
       });
       internalRenderTask.operatorListChanged();
@@ -1492,10 +1462,6 @@ class PDFPageProxy {
       }
     }
     this.objs.clear();
-    for (const bitmap of this._bitmaps) {
-      bitmap.close();
-    }
-    this._bitmaps.clear();
     this.pendingCleanup = false;
     return Promise.all(waitOn);
   }
@@ -1520,20 +1486,19 @@ class PDFPageProxy {
     if (resetStats && this._stats) {
       this._stats = new _display_utils.StatTimer();
     }
-    for (const bitmap of this._bitmaps) {
-      bitmap.close();
-    }
-    this._bitmaps.clear();
     this.pendingCleanup = false;
     return true;
   }
-  _startRenderPage(transparency, cacheKey) {
+  _startRenderPage(transparency, isOffscreenCanvasSupported, cacheKey) {
     const intentState = this._intentStates.get(cacheKey);
     if (!intentState) {
       return;
     }
     this._stats?.timeEnd("Page Request");
-    intentState.displayReadyCapability?.resolve(transparency);
+    intentState.displayReadyCapability?.resolve({
+      transparency,
+      isOffscreenCanvasSupported
+    });
   }
   _renderPageChunk(operatorListChunk, intentState) {
     for (let i = 0, ii = operatorListChunk.length; i < ii; i++) {
@@ -1651,7 +1616,7 @@ class PDFPageProxy {
 }
 exports.PDFPageProxy = PDFPageProxy;
 class LoopbackPort {
-  #listeners = [];
+  #listeners = new Set();
   #deferred = Promise.resolve();
   postMessage(obj, transfers) {
     const event = {
@@ -1664,14 +1629,13 @@ class LoopbackPort {
     });
   }
   addEventListener(name, listener) {
-    this.#listeners.push(listener);
+    this.#listeners.add(listener);
   }
   removeEventListener(name, listener) {
-    const i = this.#listeners.indexOf(listener);
-    this.#listeners.splice(i, 1);
+    this.#listeners.delete(listener);
   }
   terminate() {
-    this.#listeners.length = 0;
+    this.#listeners.clear();
   }
 }
 exports.LoopbackPort = LoopbackPort;
@@ -1874,13 +1838,14 @@ class WorkerTransport {
     this.loadingTask = loadingTask;
     this.commonObjs = new PDFObjects();
     this.fontLoader = new _font_loader.FontLoader({
-      onUnsupportedFeature: this._onUnsupportedFeature.bind(this),
       ownerDocument: params.ownerDocument,
       styleElement: params.styleElement
     });
     this._params = params;
-    this.cMapReaderFactory = factory?.cMapReaderFactory;
-    this.standardFontDataFactory = factory?.standardFontDataFactory;
+    this.canvasFactory = factory.canvasFactory;
+    this.filterFactory = factory.filterFactory;
+    this.cMapReaderFactory = factory.cMapReaderFactory;
+    this.standardFontDataFactory = factory.standardFontDataFactory;
     this.destroyed = false;
     this.destroyCapability = null;
     this._passwordCapability = null;
@@ -1967,6 +1932,7 @@ class WorkerTransport {
       this.commonObjs.clear();
       this.fontLoader.clear();
       this.#methodPromises.clear();
+      this.filterFactory.destroy();
       if (this._networkStream) {
         this._networkStream.cancelAllRequests(new _util.AbortException("Worker was terminated."));
       }
@@ -2137,7 +2103,7 @@ class WorkerTransport {
         return;
       }
       const page = this.#pageCache.get(data.pageIndex);
-      page._startRenderPage(data.transparency, data.cacheKey);
+      page._startRenderPage(data.transparency, data.isOffscreenCanvasSupported, data.cacheKey);
     });
     messageHandler.on("commonobj", ([id, type, exportedData]) => {
       if (this.destroyed) {
@@ -2167,7 +2133,6 @@ class WorkerTransport {
             isEvalSupported: params.isEvalSupported,
             disableFontFace: params.disableFontFace,
             ignoreErrors: params.ignoreErrors,
-            onUnsupportedFeature: this._onUnsupportedFeature.bind(this),
             fontRegistry
           });
           this.fontLoader.bind(font).catch(reason => {
@@ -2183,6 +2148,7 @@ class WorkerTransport {
           break;
         case "FontPath":
         case "Image":
+        case "Pattern":
           this.commonObjs.resolve(id, exportedData);
           break;
         default:
@@ -2205,12 +2171,10 @@ class WorkerTransport {
             let length;
             if (imageData.bitmap) {
               const {
-                bitmap,
                 width,
                 height
               } = imageData;
               length = width * height * 4;
-              pageProxy._bitmaps.add(bitmap);
             } else {
               length = imageData.data?.length || 0;
             }
@@ -2254,9 +2218,6 @@ class WorkerTransport {
       return this.standardFontDataFactory.fetch(data);
     });
   }
-  _onUnsupportedFeature({
-    featureId
-  }) {}
   getData() {
     return this.messageHandler.sendWithPromise("GetData", null);
   }
@@ -2288,7 +2249,7 @@ class WorkerTransport {
       if (this.destroyed) {
         throw new Error("Transport destroyed");
       }
-      const page = new PDFPageProxy(pageIndex, pageInfo, this, this._params.ownerDocument, this._params.pdfBug);
+      const page = new PDFPageProxy(pageIndex, pageInfo, this, this._params.pdfBug);
       this.#pageCache.set(pageIndex, page);
       return page;
     });
@@ -2411,6 +2372,7 @@ class WorkerTransport {
       this.fontLoader.clear();
     }
     this.#methodPromises.clear();
+    this.filterFactory.destroy();
   }
   get loadingParams() {
     const {
@@ -2457,6 +2419,12 @@ class PDFObjects {
     obj.capability.resolve();
   }
   clear() {
+    for (const objId in this.#objs) {
+      const {
+        data
+      } = this.#objs[objId];
+      data?.bitmap?.close();
+    }
     this.#objs = Object.create(null);
   }
 }
@@ -2497,6 +2465,7 @@ class InternalRenderTask {
     operatorList,
     pageIndex,
     canvasFactory,
+    filterFactory,
     useRequestAnimationFrame = false,
     pdfBug = false,
     pageColors = null
@@ -2510,6 +2479,7 @@ class InternalRenderTask {
     this.operatorList = operatorList;
     this._pageIndex = pageIndex;
     this.canvasFactory = canvasFactory;
+    this.filterFactory = filterFactory;
     this._pdfBug = pdfBug;
     this.pageColors = pageColors;
     this.running = false;
@@ -2530,6 +2500,7 @@ class InternalRenderTask {
   }
   initializeGraphics({
     transparency = false,
+    isOffscreenCanvasSupported = false,
     optionalContentConfig
   }) {
     if (this.cancelled) {
@@ -2552,7 +2523,7 @@ class InternalRenderTask {
       transform,
       background
     } = this.params;
-    this.gfx = new _canvas.CanvasGraphics(canvasContext, this.commonObjs, this.objs, this.canvasFactory, {
+    this.gfx = new _canvas.CanvasGraphics(canvasContext, this.commonObjs, this.objs, this.canvasFactory, isOffscreenCanvasSupported ? this.filterFactory : null, {
       optionalContentConfig
     }, this.annotationCanvasMap, this.pageColors);
     this.gfx.beginDrawing({
@@ -2624,9 +2595,9 @@ class InternalRenderTask {
     }
   }
 }
-const version = '3.4.62';
+const version = '3.5.35';
 exports.version = version;
-const build = '9cea76483';
+const build = '5d15b0f69';
 exports.build = build;
 
 /***/ }),
@@ -2700,6 +2671,11 @@ class AnnotationStorage {
   }
   getAll() {
     return this.#storage.size > 0 ? (0, _util.objectFromMap)(this.#storage) : null;
+  }
+  setAll(obj) {
+    for (const [key, val] of Object.entries(obj)) {
+      this.setValue(key, val);
+    }
   }
   get size() {
     return this.#storage.size;
@@ -3780,7 +3756,7 @@ exports.AnnotationEditorUIManager = AnnotationEditorUIManager;
 Object.defineProperty(exports, "__esModule", ({
   value: true
 }));
-exports.StatTimer = exports.RenderingCancelledException = exports.PixelsPerInch = exports.PageViewport = exports.PDFDateString = exports.DOMStandardFontDataFactory = exports.DOMSVGFactory = exports.DOMCanvasFactory = exports.DOMCMapReaderFactory = exports.AnnotationPrefix = void 0;
+exports.StatTimer = exports.RenderingCancelledException = exports.PixelsPerInch = exports.PageViewport = exports.PDFDateString = exports.FilterFactory = exports.DOMStandardFontDataFactory = exports.DOMSVGFactory = exports.DOMCanvasFactory = exports.DOMCMapReaderFactory = exports.AnnotationPrefix = void 0;
 exports.deprecated = deprecated;
 exports.getColorValues = getColorValues;
 exports.getCurrentTransform = getCurrentTransform;
@@ -3805,6 +3781,106 @@ class PixelsPerInch {
   static PDF_TO_CSS_UNITS = this.CSS / this.PDF;
 }
 exports.PixelsPerInch = PixelsPerInch;
+class FilterFactory {
+  #_cache;
+  #_defs;
+  #document;
+  #id = 0;
+  constructor({
+    ownerDocument = globalThis.document
+  } = {}) {
+    this.#document = ownerDocument;
+  }
+  get #cache() {
+    return this.#_cache ||= new Map();
+  }
+  get #defs() {
+    if (!this.#_defs) {
+      const svg = this.#document.createElementNS(SVG_NS, "svg");
+      svg.setAttribute("width", 0);
+      svg.setAttribute("height", 0);
+      svg.style.visibility = "hidden";
+      svg.style.contain = "strict";
+      this.#_defs = this.#document.createElementNS(SVG_NS, "defs");
+      svg.append(this.#_defs);
+      this.#document.body.append(svg);
+    }
+    return this.#_defs;
+  }
+  addFilter(maps) {
+    if (!maps) {
+      return "none";
+    }
+    let value = this.#cache.get(maps);
+    if (value) {
+      return value;
+    }
+    let tableR, tableG, tableB, key;
+    if (maps.length === 1) {
+      const mapR = maps[0];
+      const buffer = new Array(256);
+      for (let i = 0; i < 256; i++) {
+        buffer[i] = mapR[i] / 255;
+      }
+      key = tableR = tableG = tableB = buffer.join(",");
+    } else {
+      const [mapR, mapG, mapB] = maps;
+      const bufferR = new Array(256);
+      const bufferG = new Array(256);
+      const bufferB = new Array(256);
+      for (let i = 0; i < 256; i++) {
+        bufferR[i] = mapR[i] / 255;
+        bufferG[i] = mapG[i] / 255;
+        bufferB[i] = mapB[i] / 255;
+      }
+      tableR = bufferR.join(",");
+      tableG = bufferG.join(",");
+      tableB = bufferB.join(",");
+      key = `${tableR}${tableG}${tableB}`;
+    }
+    value = this.#cache.get(key);
+    if (value) {
+      this.#cache.set(maps, value);
+      return value;
+    }
+    const id = `transfer_map_${this.#id++}`;
+    const url = `url(#${id})`;
+    this.#cache.set(maps, url);
+    this.#cache.set(key, url);
+    const filter = this.#document.createElementNS(SVG_NS, "filter", SVG_NS);
+    filter.setAttribute("id", id);
+    filter.setAttribute("color-interpolation-filters", "sRGB");
+    const feComponentTransfer = this.#document.createElementNS(SVG_NS, "feComponentTransfer");
+    filter.append(feComponentTransfer);
+    const type = "discrete";
+    const feFuncR = this.#document.createElementNS(SVG_NS, "feFuncR");
+    feFuncR.setAttribute("type", type);
+    feFuncR.setAttribute("tableValues", tableR);
+    feComponentTransfer.append(feFuncR);
+    const feFuncG = this.#document.createElementNS(SVG_NS, "feFuncG");
+    feFuncG.setAttribute("type", type);
+    feFuncG.setAttribute("tableValues", tableG);
+    feComponentTransfer.append(feFuncG);
+    const feFuncB = this.#document.createElementNS(SVG_NS, "feFuncB");
+    feFuncB.setAttribute("type", type);
+    feFuncB.setAttribute("tableValues", tableB);
+    feComponentTransfer.append(feFuncB);
+    this.#defs.append(filter);
+    return url;
+  }
+  destroy() {
+    if (this.#_defs) {
+      this.#_defs.parentNode.remove();
+      this.#_defs = null;
+    }
+    if (this.#_cache) {
+      this.#_cache.clear();
+      this.#_cache = null;
+    }
+    this.#id = 0;
+  }
+}
+exports.FilterFactory = FilterFactory;
 class DOMCanvasFactory extends _base_factory.BaseCanvasFactory {
   constructor({
     ownerDocument = globalThis.document
@@ -4461,7 +4537,6 @@ var _util = __w_pdfjs_require__(1);
 var _is_node = __w_pdfjs_require__(10);
 class FontLoader {
   constructor({
-    onUnsupportedFeature,
     ownerDocument = globalThis.document,
     styleElement = null
   }) {
@@ -4542,7 +4617,6 @@ class FontFaceObject {
     isEvalSupported = true,
     disableFontFace = false,
     ignoreErrors = false,
-    onUnsupportedFeature,
     fontRegistry = null
   }) {
     this.compiledGlyphs = Object.create(null);
@@ -4653,6 +4727,7 @@ var _util = __w_pdfjs_require__(1);
 var _display_utils = __w_pdfjs_require__(6);
 var _pattern_helper = __w_pdfjs_require__(12);
 var _image_utils = __w_pdfjs_require__(13);
+var _is_node = __w_pdfjs_require__(10);
 const MIN_FONT_SIZE = 16;
 const MAX_FONT_SIZE = 100;
 const MAX_GROUP_SIZE = 4096;
@@ -5228,18 +5303,19 @@ function putBinaryImageMask(ctx, imgData) {
     const thisChunkHeight = i < fullChunks ? FULL_CHUNK_HEIGHT : partialChunkHeight;
     ({
       srcPos
-    } = (0, _image_utils.applyMaskImageData)({
+    } = (0, _image_utils.convertBlackAndWhiteToRGBA)({
       src,
       srcPos,
       dest,
       width,
-      height: thisChunkHeight
+      height: thisChunkHeight,
+      nonBlackColor: 0
     }));
     ctx.putImageData(chunkImgData, 0, i * FULL_CHUNK_HEIGHT);
   }
 }
 function copyCtxState(sourceCtx, destCtx) {
-  const properties = ["strokeStyle", "fillStyle", "fillRule", "globalAlpha", "lineWidth", "lineCap", "lineJoin", "miterLimit", "globalCompositeOperation", "font"];
+  const properties = ["strokeStyle", "fillStyle", "fillRule", "globalAlpha", "lineWidth", "lineCap", "lineJoin", "miterLimit", "globalCompositeOperation", "font", "filter"];
   for (const property of properties) {
     if (sourceCtx[property] !== undefined) {
       destCtx[property] = sourceCtx[property];
@@ -5263,6 +5339,9 @@ function resetCtxToDefault(ctx, foregroundColor) {
   if (ctx.setLineDash !== undefined) {
     ctx.setLineDash([]);
     ctx.lineDashOffset = 0;
+  }
+  if (!_is_node.isNodeJS) {
+    ctx.filter = "none";
   }
 }
 function composeSMaskBackdrop(bytes, r0, g0, b0) {
@@ -5353,7 +5432,7 @@ const LINE_JOIN_STYLES = ["miter", "round", "bevel"];
 const NORMAL_CLIP = {};
 const EO_CLIP = {};
 class CanvasGraphics {
-  constructor(canvasCtx, commonObjs, objs, canvasFactory, {
+  constructor(canvasCtx, commonObjs, objs, canvasFactory, filterFactory, {
     optionalContentConfig,
     markedContentStack = null
   }, annotationCanvasMap, pageColors) {
@@ -5367,6 +5446,7 @@ class CanvasGraphics {
     this.commonObjs = commonObjs;
     this.objs = objs;
     this.canvasFactory = canvasFactory;
+    this.filterFactory = filterFactory;
     this.groupStack = [];
     this.processingType3 = null;
     this.baseTransform = null;
@@ -5536,11 +5616,11 @@ class CanvasGraphics {
       let newWidth = paintWidth,
         newHeight = paintHeight;
       if (widthScale > 2 && paintWidth > 1) {
-        newWidth = Math.ceil(paintWidth / 2);
+        newWidth = paintWidth >= 16384 ? Math.floor(paintWidth / 2) - 1 || 1 : Math.ceil(paintWidth / 2);
         widthScale /= paintWidth / newWidth;
       }
       if (heightScale > 2 && paintHeight > 1) {
-        newHeight = Math.ceil(paintHeight / 2);
+        newHeight = paintHeight >= 16384 ? Math.floor(paintHeight / 2) - 1 || 1 : Math.ceil(paintHeight) / 2;
         heightScale /= paintHeight / newHeight;
       }
       tmpCanvas = this.cachedCanvases.getCanvas(tmpCanvasId, newWidth, newHeight);
@@ -5696,7 +5776,12 @@ class CanvasGraphics {
           this.checkSMaskState();
           break;
         case "TR":
-          this.current.transferMaps = value;
+          if (this.filterFactory) {
+            this.ctx.filter = this.current.transferMaps = this.filterFactory.addFilter(value);
+          } else {
+            this.current.transferMaps = value;
+          }
+          break;
       }
     }
   }
@@ -6320,7 +6405,7 @@ class CanvasGraphics {
       const baseTransform = this.baseTransform || (0, _display_utils.getCurrentTransform)(this.ctx);
       const canvasGraphicsFactory = {
         createCanvasGraphics: ctx => {
-          return new CanvasGraphics(ctx, this.commonObjs, this.objs, this.canvasFactory, {
+          return new CanvasGraphics(ctx, this.commonObjs, this.objs, this.canvasFactory, this.filterFactory, {
             optionalContentConfig: this.optionalContentConfig,
             markedContentStack: this.markedContentStack
           });
@@ -6355,7 +6440,7 @@ class CanvasGraphics {
     if (this.cachedPatterns.has(objId)) {
       pattern = this.cachedPatterns.get(objId);
     } else {
-      pattern = (0, _pattern_helper.getShadingPattern)(this.objs.get(objId));
+      pattern = (0, _pattern_helper.getShadingPattern)(this.getObject(objId));
       this.cachedPatterns.set(objId, pattern);
     }
     if (matrix) {
@@ -6685,6 +6770,22 @@ class CanvasGraphics {
     }
     this.paintInlineImageXObjectGroup(imgData, map);
   }
+  applyTransferMapsToBitmap(imgData) {
+    if (!this.current.transferMaps || this.current.transferMaps === "none") {
+      return imgData.bitmap;
+    }
+    const {
+      bitmap,
+      width,
+      height
+    } = imgData;
+    const tmpCanvas = this.cachedCanvases.getCanvas("inlineImage", width, height);
+    const tmpCtx = tmpCanvas.context;
+    tmpCtx.filter = this.current.transferMaps;
+    tmpCtx.drawImage(bitmap, 0, 0);
+    tmpCtx.filter = "none";
+    return tmpCanvas.canvas;
+  }
   paintInlineImageXObject(imgData) {
     if (!this.contentVisible) {
       return;
@@ -6693,9 +6794,14 @@ class CanvasGraphics {
     const height = imgData.height;
     const ctx = this.ctx;
     this.save();
+    if (!_is_node.isNodeJS) {
+      ctx.filter = "none";
+    }
     ctx.scale(1 / width, -1 / height);
     let imgToPaint;
-    if (typeof HTMLElement === "function" && imgData instanceof HTMLElement || !imgData.data) {
+    if (imgData.bitmap) {
+      imgToPaint = this.applyTransferMapsToBitmap(imgData);
+    } else if (typeof HTMLElement === "function" && imgData instanceof HTMLElement || !imgData.data) {
       imgToPaint = imgData;
     } else {
       const tmpCanvas = this.cachedCanvases.getCanvas("inlineImage", width, height);
@@ -6714,16 +6820,22 @@ class CanvasGraphics {
       return;
     }
     const ctx = this.ctx;
-    const w = imgData.width;
-    const h = imgData.height;
-    const tmpCanvas = this.cachedCanvases.getCanvas("inlineImage", w, h);
-    const tmpCtx = tmpCanvas.context;
-    putBinaryImageData(tmpCtx, imgData, this.current.transferMaps);
+    let imgToPaint;
+    if (imgData.bitmap) {
+      imgToPaint = imgData.bitmap;
+    } else {
+      const w = imgData.width;
+      const h = imgData.height;
+      const tmpCanvas = this.cachedCanvases.getCanvas("inlineImage", w, h);
+      const tmpCtx = tmpCanvas.context;
+      putBinaryImageData(tmpCtx, imgData, this.current.transferMaps);
+      imgToPaint = tmpCanvas.canvas;
+    }
     for (const entry of map) {
       ctx.save();
       ctx.transform(...entry.transform);
       ctx.scale(1, -1);
-      drawImageAtIntegerCoords(ctx, tmpCanvas.canvas, entry.x, entry.y, entry.w, entry.h, 0, -1, 1, 1);
+      drawImageAtIntegerCoords(ctx, imgToPaint, entry.x, entry.y, entry.w, entry.h, 0, -1, 1, 1);
       ctx.restore();
     }
     this.compose();
@@ -7346,23 +7458,35 @@ exports.TilingPattern = TilingPattern;
 Object.defineProperty(exports, "__esModule", ({
   value: true
 }));
-exports.applyMaskImageData = applyMaskImageData;
+exports.convertBlackAndWhiteToRGBA = convertBlackAndWhiteToRGBA;
+exports.convertToRGBA = convertToRGBA;
+exports.grayToRGBA = grayToRGBA;
 var _util = __w_pdfjs_require__(1);
-function applyMaskImageData({
+function convertToRGBA(params) {
+  switch (params.kind) {
+    case _util.ImageKind.GRAYSCALE_1BPP:
+      return convertBlackAndWhiteToRGBA(params);
+    case _util.ImageKind.RGB_24BPP:
+      return convertRGBToRGBA(params);
+  }
+  return null;
+}
+function convertBlackAndWhiteToRGBA({
   src,
   srcPos = 0,
   dest,
-  destPos = 0,
   width,
   height,
+  nonBlackColor = 0xffffffff,
   inverseDecode = false
 }) {
-  const opaque = _util.FeatureTest.isLittleEndian ? 0xff000000 : 0x000000ff;
-  const [zeroMapping, oneMapping] = !inverseDecode ? [opaque, 0] : [0, opaque];
+  const black = _util.FeatureTest.isLittleEndian ? 0xff000000 : 0x000000ff;
+  const [zeroMapping, oneMapping] = inverseDecode ? [nonBlackColor, black] : [black, nonBlackColor];
   const widthInSource = width >> 3;
   const widthRemainder = width & 7;
   const srcLength = src.length;
   dest = new Uint32Array(dest.buffer);
+  let destPos = 0;
   for (let i = 0; i < height; i++) {
     for (const max = srcPos + widthInSource; srcPos < max; srcPos++) {
       const elem = srcPos < srcLength ? src[srcPos] : 255;
@@ -7387,6 +7511,60 @@ function applyMaskImageData({
     srcPos,
     destPos
   };
+}
+function convertRGBToRGBA({
+  src,
+  srcPos = 0,
+  dest,
+  destPos = 0,
+  width,
+  height
+}) {
+  let i = 0;
+  const len32 = src.length >> 2;
+  const src32 = new Uint32Array(src.buffer, srcPos, len32);
+  if (_util.FeatureTest.isLittleEndian) {
+    for (; i < len32 - 2; i += 3, destPos += 4) {
+      const s1 = src32[i];
+      const s2 = src32[i + 1];
+      const s3 = src32[i + 2];
+      dest[destPos] = s1 | 0xff000000;
+      dest[destPos + 1] = s1 >>> 24 | s2 << 8 | 0xff000000;
+      dest[destPos + 2] = s2 >>> 16 | s3 << 16 | 0xff000000;
+      dest[destPos + 3] = s3 >>> 8 | 0xff000000;
+    }
+    for (let j = i * 4, jj = src.length; j < jj; j += 3) {
+      dest[destPos++] = src[j] | src[j + 1] << 8 | src[j + 2] << 16 | 0xff000000;
+    }
+  } else {
+    for (; i < len32 - 2; i += 3, destPos += 4) {
+      const s1 = src32[i];
+      const s2 = src32[i + 1];
+      const s3 = src32[i + 2];
+      dest[destPos] = s1 | 0xff;
+      dest[destPos + 1] = s1 << 24 | s2 >>> 8 | 0xff;
+      dest[destPos + 2] = s2 << 16 | s3 >>> 16 | 0xff;
+      dest[destPos + 3] = s3 << 8 | 0xff;
+    }
+    for (let j = i * 4, jj = src.length; j < jj; j += 3) {
+      dest[destPos++] = src[j] << 24 | src[j + 1] << 16 | src[j + 2] << 8 | 0xff;
+    }
+  }
+  return {
+    srcPos,
+    destPos
+  };
+}
+function grayToRGBA(src, dest) {
+  if (_util.FeatureTest.isLittleEndian) {
+    for (let i = 0, ii = src.length; i < ii; i++) {
+      dest[i] = src[i] * 0x10101 | 0xff000000;
+    }
+  } else {
+    for (let i = 0, ii = src.length; i < ii; i++) {
+      dest[i] = src[i] * 0x1010100 | 0x000000ff;
+    }
+  }
 }
 
 /***/ }),
@@ -8602,6 +8780,7 @@ class TextLayerRenderTask {
     this._container = this._rootContainer = container;
     this._textDivs = textDivs || [];
     this._textContentItemsStr = textContentItemsStr || [];
+    this._isOffscreenCanvasSupported = isOffscreenCanvasSupported;
     this._fontInspectorEnabled = !!globalThis.FontInspector?.enabled;
     this._reader = null;
     this._textDivProperties = textDivProperties || new WeakMap();
@@ -9447,7 +9626,6 @@ var _editor = __w_pdfjs_require__(4);
 var _pdfjsFitCurve = __w_pdfjs_require__(24);
 var _tools = __w_pdfjs_require__(5);
 const RESIZER_SIZE = 16;
-const TIME_TO_WAIT_BEFORE_FIXING_DIMS = 100;
 class InkEditor extends _editor.AnnotationEditor {
   #aspectRatio = 0;
   #baseHeight = 0;
@@ -9837,17 +10015,9 @@ class InkEditor extends _editor.AnnotationEditor {
     this.ctx = this.canvas.getContext("2d");
   }
   #createObserver() {
-    let timeoutId = null;
     this.#observer = new ResizeObserver(entries => {
       const rect = entries[0].contentRect;
       if (rect.width && rect.height) {
-        if (timeoutId !== null) {
-          clearTimeout(timeoutId);
-        }
-        timeoutId = setTimeout(() => {
-          this.fixDims();
-          timeoutId = null;
-        }, TIME_TO_WAIT_BEFORE_FIXING_DIMS);
         this.setDimensions(rect.width, rect.height);
       }
     });
@@ -9915,6 +10085,7 @@ class InkEditor extends _editor.AnnotationEditor {
     this.#setCanvasDims();
     this.#redraw();
     this.canvas.style.visibility = "visible";
+    this.fixDims();
   }
   #setScaleFactor(width, height) {
     const padding = this.#getPadding();
@@ -10551,6 +10722,9 @@ class AnnotationElement {
     } = this;
     const container = document.createElement("section");
     container.setAttribute("data-annotation-id", data.id);
+    if (data.noRotate) {
+      container.classList.add("norotate");
+    }
     const {
       pageWidth,
       pageHeight,
@@ -10754,7 +10928,7 @@ class AnnotationElement {
     }
     if (!trigger) {
       trigger = document.createElement("div");
-      trigger.className = "popupTriggerArea";
+      trigger.classList.add("popupTriggerArea");
       container.append(trigger);
     }
     const popupElement = new PopupElement({
@@ -10773,7 +10947,7 @@ class AnnotationElement {
   }
   _renderQuadrilaterals(className) {
     for (const quadrilateral of this.quadrilaterals) {
-      quadrilateral.className = className;
+      quadrilateral.classList.add(className);
     }
     return this.quadrilaterals;
   }
@@ -10883,7 +11057,7 @@ class LinkAnnotationElement extends AnnotationElement {
         return quadrilateral;
       });
     }
-    this.container.className = "linkAnnotation";
+    this.container.classList.add("linkAnnotation");
     if (isBound) {
       this.container.append(link);
     }
@@ -11063,7 +11237,7 @@ class TextAnnotationElement extends AnnotationElement {
     });
   }
   render() {
-    this.container.className = "textAnnotation";
+    this.container.classList.add("textAnnotation");
     const image = document.createElement("img");
     image.src = this.imageResourcesPath + "annotation-" + this.data.name.toLowerCase() + ".svg";
     image.alt = "[{{type}} Annotation]";
@@ -11185,7 +11359,7 @@ class TextWidgetAnnotationElement extends WidgetAnnotationElement {
   render() {
     const storage = this.annotationStorage;
     const id = this.data.id;
-    this.container.className = "textWidgetAnnotation";
+    this.container.classList.add("textWidgetAnnotation");
     let element = null;
     if (this.renderForms) {
       const storedData = storage.getValue(id, {
@@ -11479,7 +11653,7 @@ class CheckboxWidgetAnnotationElement extends WidgetAnnotationElement {
         value
       });
     }
-    this.container.className = "buttonWidgetAnnotation checkBox";
+    this.container.classList.add("buttonWidgetAnnotation", "checkBox");
     const element = document.createElement("input");
     GetElementsByNameSet.add(element);
     element.setAttribute("data-element-id", id);
@@ -11541,7 +11715,7 @@ class RadioButtonWidgetAnnotationElement extends WidgetAnnotationElement {
     });
   }
   render() {
-    this.container.className = "buttonWidgetAnnotation radioButton";
+    this.container.classList.add("buttonWidgetAnnotation", "radioButton");
     const storage = this.annotationStorage;
     const data = this.data;
     const id = data.id;
@@ -11618,7 +11792,7 @@ class PushButtonWidgetAnnotationElement extends LinkAnnotationElement {
   }
   render() {
     const container = super.render();
-    container.className = "buttonWidgetAnnotation pushButton";
+    container.classList.add("buttonWidgetAnnotation", "pushButton");
     if (this.data.alternativeText) {
       container.title = this.data.alternativeText;
     }
@@ -11639,7 +11813,7 @@ class ChoiceWidgetAnnotationElement extends WidgetAnnotationElement {
     });
   }
   render() {
-    this.container.className = "choiceWidgetAnnotation";
+    this.container.classList.add("choiceWidgetAnnotation");
     const storage = this.annotationStorage;
     const id = this.data.id;
     const storedData = storage.getValue(id, {
@@ -11837,7 +12011,7 @@ class ChoiceWidgetAnnotationElement extends WidgetAnnotationElement {
           }
         });
       });
-      this._setEventListeners(selectElement, [["focus", "Focus"], ["blur", "Blur"], ["mousedown", "Mouse Down"], ["mouseenter", "Mouse Enter"], ["mouseleave", "Mouse Exit"], ["mouseup", "Mouse Up"], ["input", "Action"]], event => event.target.checked);
+      this._setEventListeners(selectElement, [["focus", "Focus"], ["blur", "Blur"], ["mousedown", "Mouse Down"], ["mouseenter", "Mouse Enter"], ["mouseleave", "Mouse Exit"], ["mouseup", "Mouse Up"], ["input", "Action"], ["input", "Validate"]], event => event.target.value);
     } else {
       selectElement.addEventListener("input", function (event) {
         storage.setValue(id, {
@@ -11866,7 +12040,7 @@ class PopupAnnotationElement extends AnnotationElement {
     });
   }
   render() {
-    this.container.className = "popupAnnotation";
+    this.container.classList.add("popupAnnotation");
     const parentElements = this.layer.querySelectorAll(`[data-annotation-id="${this.data.parentId}"]`);
     if (parentElements.length === 0) {
       return this.container;
@@ -11911,11 +12085,11 @@ class PopupElement {
   render() {
     const BACKGROUND_ENLIGHT = 0.7;
     const wrapper = document.createElement("div");
-    wrapper.className = "popupWrapper";
+    wrapper.classList.add("popupWrapper");
     this.hideElement = this.hideWrapper ? wrapper : this.container;
     this.hideElement.hidden = true;
     const popup = document.createElement("div");
-    popup.className = "popup";
+    popup.classList.add("popup");
     const color = this.color;
     if (color) {
       const r = BACKGROUND_ENLIGHT * (255 - color[0]) + color[0];
@@ -11930,7 +12104,7 @@ class PopupElement {
     const dateObject = _display_utils.PDFDateString.toDateObject(this.modificationDate);
     if (dateObject) {
       const modificationDate = document.createElement("span");
-      modificationDate.className = "popupDate";
+      modificationDate.classList.add("popupDate");
       modificationDate.textContent = "{{date}}, {{time}}";
       modificationDate.dataset.l10nId = "annotation_date_string";
       modificationDate.dataset.l10nArgs = JSON.stringify({
@@ -11945,7 +12119,7 @@ class PopupElement {
         intent: "richText",
         div: popup
       });
-      popup.lastChild.className = "richText popupContent";
+      popup.lastChild.classList.add("richText", "popupContent");
     } else {
       const contents = this._formatContents(this.contentsObj);
       popup.append(contents);
@@ -11967,7 +12141,7 @@ class PopupElement {
     dir
   }) {
     const p = document.createElement("p");
-    p.className = "popupContent";
+    p.classList.add("popupContent");
     p.dir = dir;
     const lines = str.split(/(?:\r\n?|\n)/);
     for (let i = 0, ii = lines.length; i < ii; ++i) {
@@ -12015,10 +12189,10 @@ class FreeTextAnnotationElement extends AnnotationElement {
     this.textContent = parameters.data.textContent;
   }
   render() {
-    this.container.className = "freeTextAnnotation";
+    this.container.classList.add("freeTextAnnotation");
     if (this.textContent) {
       const content = document.createElement("div");
-      content.className = "annotationTextContent";
+      content.classList.add("annotationTextContent");
       content.setAttribute("role", "comment");
       for (const line of this.textContent) {
         const lineSpan = document.createElement("span");
@@ -12042,7 +12216,7 @@ class LineAnnotationElement extends AnnotationElement {
     });
   }
   render() {
-    this.container.className = "lineAnnotation";
+    this.container.classList.add("lineAnnotation");
     const data = this.data;
     const {
       width,
@@ -12072,7 +12246,7 @@ class SquareAnnotationElement extends AnnotationElement {
     });
   }
   render() {
-    this.container.className = "squareAnnotation";
+    this.container.classList.add("squareAnnotation");
     const data = this.data;
     const {
       width,
@@ -12103,7 +12277,7 @@ class CircleAnnotationElement extends AnnotationElement {
     });
   }
   render() {
-    this.container.className = "circleAnnotation";
+    this.container.classList.add("circleAnnotation");
     const data = this.data;
     const {
       width,
@@ -12136,7 +12310,7 @@ class PolylineAnnotationElement extends AnnotationElement {
     this.svgElementName = "svg:polyline";
   }
   render() {
-    this.container.className = this.containerClassName;
+    this.container.classList.add(this.containerClassName);
     const data = this.data;
     const {
       width,
@@ -12177,7 +12351,7 @@ class CaretAnnotationElement extends AnnotationElement {
     });
   }
   render() {
-    this.container.className = "caretAnnotation";
+    this.container.classList.add("caretAnnotation");
     if (!this.data.hasPopup) {
       this._createPopup(null, this.data);
     }
@@ -12195,7 +12369,7 @@ class InkAnnotationElement extends AnnotationElement {
     this.svgElementName = "svg:polyline";
   }
   render() {
-    this.container.className = this.containerClassName;
+    this.container.classList.add(this.containerClassName);
     const data = this.data;
     const {
       width,
@@ -12238,7 +12412,7 @@ class HighlightAnnotationElement extends AnnotationElement {
     if (this.quadrilaterals) {
       return this._renderQuadrilaterals("highlightAnnotation");
     }
-    this.container.className = "highlightAnnotation";
+    this.container.classList.add("highlightAnnotation");
     return this.container;
   }
 }
@@ -12258,7 +12432,7 @@ class UnderlineAnnotationElement extends AnnotationElement {
     if (this.quadrilaterals) {
       return this._renderQuadrilaterals("underlineAnnotation");
     }
-    this.container.className = "underlineAnnotation";
+    this.container.classList.add("underlineAnnotation");
     return this.container;
   }
 }
@@ -12278,7 +12452,7 @@ class SquigglyAnnotationElement extends AnnotationElement {
     if (this.quadrilaterals) {
       return this._renderQuadrilaterals("squigglyAnnotation");
     }
-    this.container.className = "squigglyAnnotation";
+    this.container.classList.add("squigglyAnnotation");
     return this.container;
   }
 }
@@ -12298,7 +12472,7 @@ class StrikeOutAnnotationElement extends AnnotationElement {
     if (this.quadrilaterals) {
       return this._renderQuadrilaterals("strikeoutAnnotation");
     }
-    this.container.className = "strikeoutAnnotation";
+    this.container.classList.add("strikeoutAnnotation");
     return this.container;
   }
 }
@@ -12311,7 +12485,7 @@ class StampAnnotationElement extends AnnotationElement {
     });
   }
   render() {
-    this.container.className = "stampAnnotation";
+    this.container.classList.add("stampAnnotation");
     if (!this.data.hasPopup) {
       this._createPopup(null, this.data);
     }
@@ -12336,7 +12510,7 @@ class FileAttachmentAnnotationElement extends AnnotationElement {
     });
   }
   render() {
-    this.container.className = "fileAttachmentAnnotation";
+    this.container.classList.add("fileAttachmentAnnotation");
     let trigger;
     if (this.data.hasAppearance) {
       trigger = document.createElement("div");
@@ -12344,7 +12518,7 @@ class FileAttachmentAnnotationElement extends AnnotationElement {
       trigger = document.createElement("img");
       trigger.src = `${this.imageResourcesPath}annotation-${/paperclip/i.test(this.data.name) ? "paperclip" : "pushpin"}.svg`;
     }
-    trigger.className = "popupTriggerArea";
+    trigger.classList.add("popupTriggerArea");
     trigger.addEventListener("dblclick", this._download.bind(this));
     if (!this.data.hasPopup && (this.data.titleObj?.str || this.data.contentsObj?.str || this.data.richText)) {
       this._createPopup(trigger, this.data);
@@ -12388,6 +12562,9 @@ class AnnotationLayer {
     };
     let zIndex = 0;
     for (const data of annotations) {
+      if (data.noHTML) {
+        continue;
+      }
       if (data.annotationType !== _util.AnnotationType.POPUP) {
         const {
           width,
@@ -12837,6 +13014,12 @@ Object.defineProperty(exports, "FeatureTest", ({
     return _util.FeatureTest;
   }
 }));
+Object.defineProperty(exports, "FilterFactory", ({
+  enumerable: true,
+  get: function () {
+    return _display_utils.FilterFactory;
+  }
+}));
 Object.defineProperty(exports, "GlobalWorkerOptions", ({
   enumerable: true,
   get: function () {
@@ -12907,12 +13090,6 @@ Object.defineProperty(exports, "SVGGraphics", ({
   enumerable: true,
   get: function () {
     return _svg.SVGGraphics;
-  }
-}));
-Object.defineProperty(exports, "UNSUPPORTED_FEATURES", ({
-  enumerable: true,
-  get: function () {
-    return _util.UNSUPPORTED_FEATURES;
   }
 }));
 Object.defineProperty(exports, "UnexpectedResponseException", ({
@@ -13039,8 +13216,8 @@ var _annotation_layer = __w_pdfjs_require__(26);
 var _worker_options = __w_pdfjs_require__(14);
 var _svg = __w_pdfjs_require__(29);
 var _xfa_layer = __w_pdfjs_require__(28);
-const pdfjsVersion = '3.4.62';
-const pdfjsBuild = '9cea76483';
+const pdfjsVersion = '3.5.35';
+const pdfjsBuild = '5d15b0f69';
 })();
 
 /******/ 	return __webpack_exports__;

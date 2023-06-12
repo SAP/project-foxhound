@@ -7,12 +7,36 @@
 :host {
   display: flex;
   flex-direction: column;
+  width: 25.54em;
 }
 
 h3 {
   font-weight: normal;
   margin-block-start: 0;
   min-height: 1em;
+}
+
+div[name="page-loading"] > .buttons > button {
+  color: transparent;
+}
+
+.loading-block {
+  background-color: var(--in-content-button-background);
+  border-radius: 4px;
+  opacity: 0.4;
+  margin-block-start: 16px;
+}
+
+.loading-block.large {
+  height: 36px;
+}
+
+.loading-block.small {
+  height: 16px;
+}
+
+.buttons {
+  margin-block-start: 16px;
 }
 
 fieldset {
@@ -84,6 +108,8 @@ details:not([open]) summary {
 
 .success-text {
   grid-area: status;
+  font-size: 0.81em;
+  color: var(--in-content-deemphasized-text);
 }
 
 .progress-icon {
@@ -94,6 +120,22 @@ details:not([open]) summary {
   margin-inline-end: 8px;
   background-image: url("chrome://browser/skin/migration/success.svg");
   fill: var(--in-content-success-icon-color);
+}
+
+.error-icon {
+  content: url("chrome://global/skin/icons/error.svg");
+  -moz-context-properties: fill;
+  fill: var(--in-content-danger-button-background);
+  margin-inline-end: 8px;
+}
+
+.no-browsers-found-message {
+  display: flex;
+}
+
+.no-browsers-found {
+  display: flex;
+  align-items: start;
 }
 
 /**

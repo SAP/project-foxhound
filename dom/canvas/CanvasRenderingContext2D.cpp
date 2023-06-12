@@ -97,6 +97,7 @@
 #include "mozilla/layers/PersistentBufferProvider.h"
 #include "mozilla/MathAlgorithms.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/RestyleManager.h"
 #include "mozilla/ServoBindings.h"
 #include "mozilla/StaticPrefs_gfx.h"
 #include "mozilla/Telemetry.h"
@@ -838,20 +839,20 @@ void CanvasGradient::AddColorStop(float aOffset, const nsACString& aColorstr,
     return aRv.ThrowIndexSizeError("Offset out of 0-1.0 range");
   }
 
-  PresShell* presShell = mContext ? mContext->GetPresShell() : nullptr;
-  ServoStyleSet* styleSet = presShell ? presShell->StyleSet() : nullptr;
+  if (!mContext) {
+    return aRv.ThrowSyntaxError("No canvas context");
+  }
 
-  nscolor color;
-  bool ok = ServoCSSParser::ComputeColor(styleSet, NS_RGB(0, 0, 0), aColorstr,
-                                         &color);
-  if (!ok) {
+  auto color = mContext->ParseColor(
+      aColorstr, CanvasRenderingContext2D::ResolveCurrentColor::No);
+  if (!color) {
     return aRv.ThrowSyntaxError("Invalid color");
   }
 
   GradientStop newStop;
 
   newStop.offset = aOffset;
-  newStop.color = ToDeviceColor(color);
+  newStop.color = ToDeviceColor(*color);
 
   mRawStops.AppendElement(newStop);
 }
@@ -1082,32 +1083,44 @@ JSObject* CanvasRenderingContext2D::WrapObject(
   return CanvasRenderingContext2D_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-bool CanvasRenderingContext2D::ParseColor(const nsACString& aString,
-                                          nscolor* aColor) {
+CanvasRenderingContext2D::ColorStyleCacheEntry
+CanvasRenderingContext2D::ParseColorSlow(const nsACString& aString) {
+  ColorStyleCacheEntry result{nsCString(aString)};
   Document* document = mCanvasElement ? mCanvasElement->OwnerDoc() : nullptr;
   css::Loader* loader = document ? document->CSSLoader() : nullptr;
 
   PresShell* presShell = GetPresShell();
   ServoStyleSet* set = presShell ? presShell->StyleSet() : nullptr;
-
-  // First, try computing the color without handling currentcolor.
   bool wasCurrentColor = false;
-  if (!ServoCSSParser::ComputeColor(set, NS_RGB(0, 0, 0), aString, aColor,
-                                    &wasCurrentColor, loader)) {
-    return false;
+  nscolor color;
+  if (ServoCSSParser::ComputeColor(set, NS_RGB(0, 0, 0), aString, &color,
+                                   &wasCurrentColor, loader)) {
+    result.mWasCurrentColor = wasCurrentColor;
+    result.mColor.emplace(color);
   }
 
-  if (wasCurrentColor && mCanvasElement) {
-    // Otherwise, get the value of the color property, flushing style
-    // if necessary.
+  return result;
+}
+
+Maybe<nscolor> CanvasRenderingContext2D::ParseColor(
+    const nsACString& aString, ResolveCurrentColor aResolveCurrentColor) {
+  auto entry = mColorStyleCache.Lookup(aString);
+  if (!entry) {
+    entry.Set(ParseColorSlow(aString));
+  }
+
+  const auto& data = entry.Data();
+  if (data.mWasCurrentColor && mCanvasElement &&
+      aResolveCurrentColor == ResolveCurrentColor::Yes) {
+    // If it was currentColor, get the value of the color property, flushing
+    // style if necessary.
     RefPtr<const ComputedStyle> canvasStyle =
         nsComputedDOMStyle::GetComputedStyle(mCanvasElement);
     if (canvasStyle) {
-      *aColor = canvasStyle->StyleText()->mColor.ToColor();
+      return Some(canvasStyle->StyleText()->mColor.ToColor());
     }
-    // Beware that the presShell could be gone here.
   }
-  return true;
+  return data.mColor;
 }
 
 void CanvasRenderingContext2D::ResetBitmap(bool aFreeBuffer) {
@@ -1170,12 +1183,12 @@ void CanvasRenderingContext2D::SetStyleFromString(const nsACString& aStr,
                                                   Style aWhichStyle) {
   MOZ_ASSERT(!aStr.IsVoid());
 
-  nscolor color;
-  if (!ParseColor(aStr, &color)) {
+  Maybe<nscolor> color = ParseColor(aStr);
+  if (!color) {
     return;
   }
 
-  CurrentState().SetColorStyle(aWhichStyle, color);
+  CurrentState().SetColorStyle(aWhichStyle, *color);
 }
 
 void CanvasRenderingContext2D::GetStyleAsUnion(
@@ -2150,7 +2163,9 @@ already_AddRefed<CanvasGradient> CanvasRenderingContext2D::CreateRadialGradient(
 
 already_AddRefed<CanvasGradient> CanvasRenderingContext2D::CreateConicGradient(
     double aAngle, double aCx, double aCy) {
-  return MakeAndAddRef<CanvasConicGradient>(this, aAngle, Point(aCx, aCy));
+  double adjustedStartAngle = aAngle + M_PI / 2.0;
+  return MakeAndAddRef<CanvasConicGradient>(this, adjustedStartAngle,
+                                            Point(aCx, aCy));
 }
 
 already_AddRefed<CanvasPattern> CanvasRenderingContext2D::CreatePattern(
@@ -2322,12 +2337,12 @@ already_AddRefed<CanvasPattern> CanvasRenderingContext2D::CreatePattern(
 // shadows
 //
 void CanvasRenderingContext2D::SetShadowColor(const nsACString& aShadowColor) {
-  nscolor color;
-  if (!ParseColor(aShadowColor, &color)) {
+  Maybe<nscolor> color = ParseColor(aShadowColor);
+  if (!color) {
     return;
   }
 
-  CurrentState().shadowColor = color;
+  CurrentState().shadowColor = *color;
 }
 
 //
@@ -3183,6 +3198,195 @@ void CanvasRenderingContext2D::Rect(double aX, double aY, double aW,
   }
 }
 
+// https://html.spec.whatwg.org/multipage/canvas.html#dom-context-2d-roundrect
+static void RoundRectImpl(
+    PathBuilder* aPathBuilder, const Maybe<Matrix>& aTransform, double aX,
+    double aY, double aW, double aH,
+    const UnrestrictedDoubleOrDOMPointInitOrUnrestrictedDoubleOrDOMPointInitSequence&
+        aRadii,
+    ErrorResult& aError) {
+  // Step 1. If any of x, y, w, or h are infinite or NaN, then return.
+  if (!IsFinite(aX) || !IsFinite(aY) || !IsFinite(aW) || !IsFinite(aH)) {
+    return;
+  }
+
+  nsTArray<OwningUnrestrictedDoubleOrDOMPointInit> radii;
+  // Step 2. If radii is an unrestricted double or DOMPointInit, then set radii
+  // to « radii ».
+  if (aRadii.IsUnrestrictedDouble()) {
+    radii.AppendElement()->SetAsUnrestrictedDouble() =
+        aRadii.GetAsUnrestrictedDouble();
+  } else if (aRadii.IsDOMPointInit()) {
+    radii.AppendElement()->SetAsDOMPointInit() = aRadii.GetAsDOMPointInit();
+  } else {
+    radii = aRadii.GetAsUnrestrictedDoubleOrDOMPointInitSequence();
+    // Step 3. If radii is not a list of size one, two, three, or
+    // four, then throw a RangeError.
+    if (radii.Length() < 1 || radii.Length() > 4) {
+      aError.ThrowRangeError("Can have between 1 and 4 radii");
+      return;
+    }
+  }
+
+  // Step 4. Let normalizedRadii be an empty list.
+  AutoTArray<Size, 4> normalizedRadii;
+
+  // Step 5. For each radius of radii:
+  for (const auto& radius : radii) {
+    // Step 5.1. If radius is a DOMPointInit:
+    if (radius.IsDOMPointInit()) {
+      const DOMPointInit& point = radius.GetAsDOMPointInit();
+      // Step 5.1.1. If radius["x"] or radius["y"] is infinite or NaN, then
+      // return.
+      if (!IsFinite(point.mX) || !IsFinite(point.mY)) {
+        return;
+      }
+
+      // Step 5.1.2. If radius["x"] or radius["y"] is negative, then
+      // throw a RangeError.
+      if (point.mX < 0 || point.mY < 0) {
+        aError.ThrowRangeError("Radius can not be negative");
+        return;
+      }
+
+      // Step 5.1.3. Otherwise, append radius to
+      // normalizedRadii.
+      normalizedRadii.AppendElement(
+          Size(gfx::Float(point.mX), gfx::Float(point.mY)));
+      continue;
+    }
+
+    // Step 5.2. If radius is a unrestricted double:
+    double r = radius.GetAsUnrestrictedDouble();
+    // Step 5.2.1. If radius is infinite or NaN, then return.
+    if (!IsFinite(r)) {
+      return;
+    }
+
+    // Step 5.2.2. If radius is negative, then throw a RangeError.
+    if (r < 0) {
+      aError.ThrowRangeError("Radius can not be negative");
+      return;
+    }
+
+    // Step 5.2.3. Otherwise append «[ "x" → radius, "y" → radius ]» to
+    // normalizedRadii.
+    normalizedRadii.AppendElement(Size(gfx::Float(r), gfx::Float(r)));
+  }
+
+  // Step 6. Let upperLeft, upperRight, lowerRight, and lowerLeft be null.
+  Size upperLeft, upperRight, lowerRight, lowerLeft;
+
+  if (normalizedRadii.Length() == 4) {
+    // Step 7. If normalizedRadii's size is 4, then set upperLeft to
+    // normalizedRadii[0], set upperRight to normalizedRadii[1], set lowerRight
+    // to normalizedRadii[2], and set lowerLeft to normalizedRadii[3].
+    upperLeft = normalizedRadii[0];
+    upperRight = normalizedRadii[1];
+    lowerRight = normalizedRadii[2];
+    lowerLeft = normalizedRadii[3];
+  } else if (normalizedRadii.Length() == 3) {
+    // Step 8. If normalizedRadii's size is 3, then set upperLeft to
+    // normalizedRadii[0], set upperRight and lowerLeft to normalizedRadii[1],
+    // and set lowerRight to normalizedRadii[2].
+    upperLeft = normalizedRadii[0];
+    upperRight = normalizedRadii[1];
+    lowerRight = normalizedRadii[2];
+    lowerLeft = normalizedRadii[1];
+  } else if (normalizedRadii.Length() == 2) {
+    // Step 9. If normalizedRadii's size is 2, then set upperLeft and lowerRight
+    // to normalizedRadii[0] and set upperRight and lowerLeft to
+    // normalizedRadii[1].
+    upperLeft = normalizedRadii[0];
+    upperRight = normalizedRadii[1];
+    lowerRight = normalizedRadii[0];
+    lowerLeft = normalizedRadii[1];
+  } else {
+    // Step 10. If normalizedRadii's size is 1, then set upperLeft, upperRight,
+    // lowerRight, and lowerLeft to normalizedRadii[0].
+    MOZ_ASSERT(normalizedRadii.Length() == 1);
+    upperLeft = normalizedRadii[0];
+    upperRight = normalizedRadii[0];
+    lowerRight = normalizedRadii[0];
+    lowerLeft = normalizedRadii[0];
+  }
+
+  // This is not as specified but copied from Chrome.
+  // XXX Maybe if we implemented Step 12 (the path algorithm) per
+  // spec this wouldn't be needed?
+  Float x(aX), y(aY), w(aW), h(aH);
+  bool clockwise = true;
+  if (w < 0) {
+    // Horizontal flip
+    clockwise = false;
+    x += w;
+    w = -w;
+    std::swap(upperLeft, upperRight);
+    std::swap(lowerLeft, lowerRight);
+  }
+
+  if (h < 0) {
+    // Vertical flip
+    clockwise = !clockwise;
+    y += h;
+    h = -h;
+    std::swap(upperLeft, lowerLeft);
+    std::swap(upperRight, lowerRight);
+  }
+
+  // Step 11. Corner curves must not overlap. Scale all radii to prevent this:
+  // Step 11.1. Let top be upperLeft["x"] + upperRight["x"].
+  Float top = upperLeft.width + upperRight.width;
+  // Step 11.2. Let right be upperRight["y"] + lowerRight["y"].
+  Float right = upperRight.height + lowerRight.height;
+  // Step 11.3. Let bottom be lowerRight["x"] + lowerLeft["x"].
+  Float bottom = lowerRight.width + lowerLeft.width;
+  // Step 11.4. Let left be upperLeft["y"] + lowerLeft["y"].
+  Float left = upperLeft.height + lowerLeft.height;
+  // Step 11.5. Let scale be the minimum value of the ratios w / top, h / right,
+  // w / bottom, h / left.
+  Float scale = std::min({w / top, h / right, w / bottom, h / left});
+  // Step 11.6. If scale is less than 1, then set the x and y members of
+  // upperLeft, upperRight, lowerLeft, and lowerRight to their current values
+  // multiplied by scale.
+  if (scale < 1.0f) {
+    upperLeft = upperLeft * scale;
+    upperRight = upperRight * scale;
+    lowerLeft = lowerLeft * scale;
+    lowerRight = lowerRight * scale;
+  }
+
+  // Step 12. Create a new subpath:
+  // Step 13. Mark the subpath as closed.
+  // Note: Implemented by AppendRoundedRectToPath, which is shared with CSS
+  // borders etc.
+  gfx::Rect rect{x, y, w, h};
+  RectCornerRadii cornerRadii(upperLeft, upperRight, lowerRight, lowerLeft);
+  AppendRoundedRectToPath(aPathBuilder, rect, cornerRadii, clockwise,
+                          aTransform);
+
+  // Step 14. Create a new subpath with the point (x, y) as the only point in
+  // the subpath.
+  // XXX We don't seem to be doing this for ::Rect either?
+}
+
+void CanvasRenderingContext2D::RoundRect(
+    double aX, double aY, double aW, double aH,
+    const UnrestrictedDoubleOrDOMPointInitOrUnrestrictedDoubleOrDOMPointInitSequence&
+        aRadii,
+    ErrorResult& aError) {
+  EnsureWritablePath();
+
+  PathBuilder* builder = mPathBuilder;
+  Maybe<Matrix> transform = Nothing();
+  if (!builder) {
+    builder = mDSPathBuilder;
+    transform = Some(mTarget->GetTransform());
+  }
+
+  RoundRectImpl(builder, transform, aX, aY, aW, aH, aRadii, aError);
+}
+
 void CanvasRenderingContext2D::Ellipse(double aX, double aY, double aRadiusX,
                                        double aRadiusY, double aRotation,
                                        double aStartAngle, double aEndAngle,
@@ -3321,15 +3525,23 @@ bool CanvasRenderingContext2D::SetFontInternal(const nsACString& aFont,
     return SetFontInternalDisconnected(aFont, aError);
   }
 
-  nsCString usedFont;
-  RefPtr<const ComputedStyle> sc =
-      GetFontStyleForServo(mCanvasElement, aFont, presShell, usedFont, aError);
-  if (!sc) {
+  nsPresContext* c = presShell->GetPresContext();
+  FontStyleCacheKey key{aFont, c->RestyleManager()->GetRestyleGeneration()};
+  auto entry = mFontStyleCache.Lookup(key);
+  if (!entry) {
+    FontStyleData newData;
+    newData.mKey = key;
+    newData.mStyle = GetFontStyleForServo(mCanvasElement, aFont, presShell,
+                                          newData.mUsedFont, aError);
+    entry.Set(newData);
+  }
+
+  const auto& data = entry.Data();
+  if (!data.mStyle) {
     return false;
   }
 
-  const nsStyleFont* fontStyle = sc->StyleFont();
-  nsPresContext* c = presShell->GetPresContext();
+  const nsStyleFont* fontStyle = data.mStyle->StyleFont();
 
   // Purposely ignore the font size that respects the user's minimum
   // font preference (fontStyle->mFont.size) in favor of the computed
@@ -3364,7 +3576,7 @@ bool CanvasRenderingContext2D::SetFontInternal(const nsACString& aFont,
   gfxFontGroup* newFontGroup = metrics->GetThebesFontGroup();
   CurrentState().fontGroup = newFontGroup;
   NS_ASSERTION(CurrentState().fontGroup, "Could not get font group");
-  CurrentState().font = usedFont;
+  CurrentState().font = data.mUsedFont;
   CurrentState().fontFont = fontStyle->mFont;
   CurrentState().fontFont.size = fontStyle->mSize;
   CurrentState().fontLanguage = fontStyle->mLanguage;
@@ -3633,10 +3845,13 @@ void CanvasRenderingContext2D::GetFontKerning(nsAString& aFontKerning) {
  * with U+0020 SPACE. The whitespace characters are defined as U+0020 SPACE,
  * U+0009 CHARACTER TABULATION (tab), U+000A LINE FEED (LF), U+000B LINE
  * TABULATION, U+000C FORM FEED (FF), and U+000D CARRIAGE RETURN (CR).
+ * We also replace characters with Bidi type Segment Separator or Block
+ * Separator.
  * @param str The string whose whitespace characters to replace.
  */
 static inline void TextReplaceWhitespaceCharacters(nsAutoString& aStr) {
-  aStr.ReplaceChar(u"\x09\x0A\x0B\x0C\x0D", char16_t(' '));
+  aStr.ReplaceChar(u"\x09\x0A\x0B\x0C\x0D\x1C\x1D\x1E\x1F\x85\x2029",
+                   char16_t(' '));
 }
 
 void CanvasRenderingContext2D::FillText(const nsAString& aText, double aX,
@@ -3798,7 +4013,7 @@ struct MOZ_STACK_CLASS CanvasBidiProcessor final
     return pattern.forget();
   }
 
-  void DrawText(nscoord aXOffset, nscoord aWidth) override {
+  void DrawText(nscoord aXOffset) override {
     gfx::Point point = mPt;
     bool rtl = mTextRun->IsRightToLeft();
     bool verticalRun = mTextRun->IsVertical();
@@ -3854,14 +4069,8 @@ struct MOZ_STACK_CLASS CanvasBidiProcessor final
       return;
     }
 
-    RefPtr<gfxContext> thebes =
-        gfxContext::CreatePreservingTransformOrNull(target);
-    if (!thebes) {
-      // If CreatePreservingTransformOrNull returns null, it will also have
-      // issued a gfxCriticalNote already, so here we'll just bail out.
-      return;
-    }
-    gfxTextRun::DrawParams params(thebes);
+    gfxContext thebes(target, /* aPreserveTransform */ true);
+    gfxTextRun::DrawParams params(&thebes);
 
     params.allowGDI = false;
 
@@ -4099,7 +4308,7 @@ TextMetrics* CanvasRenderingContext2D::DrawOrMeasureText(
       textToDraw.get(), textToDraw.Length(),
       isRTL ? intl::BidiEmbeddingLevel::RTL() : intl::BidiEmbeddingLevel::LTR(),
       presContext, processor, nsBidiPresUtils::MODE_MEASURE, nullptr, 0,
-      &totalWidthCoord, &mBidiEngine);
+      &totalWidthCoord, mBidiEngine);
   if (aError.Failed()) {
     return nullptr;
   }
@@ -4241,7 +4450,7 @@ TextMetrics* CanvasRenderingContext2D::DrawOrMeasureText(
       textToDraw.get(), textToDraw.Length(),
       isRTL ? intl::BidiEmbeddingLevel::RTL() : intl::BidiEmbeddingLevel::LTR(),
       presContext, processor, nsBidiPresUtils::MODE_DRAW, nullptr, 0, nullptr,
-      &mBidiEngine);
+      mBidiEngine);
 
   if (aError.Failed()) {
     return nullptr;
@@ -4998,7 +5207,7 @@ void CanvasRenderingContext2D::DrawDirectlyToCanvas(
              "Need positive source width and height");
 
   AdjustedTarget tempTarget(this, aBounds->IsEmpty() ? nullptr : aBounds);
-  if (!tempTarget) {
+  if (!tempTarget || !tempTarget->IsValid()) {
     return;
   }
 
@@ -5024,17 +5233,13 @@ void CanvasRenderingContext2D::DrawDirectlyToCanvas(
   // the matrix even though this is a temp gfxContext.
   AutoRestoreTransform autoRestoreTransform(mTarget);
 
-  RefPtr<gfxContext> context = gfxContext::CreateOrNull(tempTarget);
-  if (!context) {
-    gfxDevCrash(LogReason::InvalidContext) << "Canvas context problem";
-    return;
-  }
-  context->SetMatrixDouble(
+  gfxContext context(tempTarget);
+  context.SetMatrixDouble(
       contextMatrix
           .PreScale(1.0 / contextScale.xScale, 1.0 / contextScale.yScale)
           .PreTranslate(aDest.x - aSrc.x, aDest.y - aSrc.y));
 
-  context->SetOp(tempTarget.UsedOperation());
+  context.SetOp(tempTarget.UsedOperation());
 
   // FLAG_CLAMP is added for increased performance, since we never tile here.
   uint32_t modifiedFlags = aImage.mDrawingFlags | imgIContainer::FLAG_CLAMP;
@@ -5044,7 +5249,7 @@ void CanvasRenderingContext2D::DrawDirectlyToCanvas(
   SVGImageContext svgContext(Some(sz));
 
   auto result = aImage.mImgContainer->Draw(
-      context, scaledImageSize,
+      &context, scaledImageSize,
       ImageRegion::Create(gfxRect(aSrc.x, aSrc.y, aSrc.width, aSrc.height)),
       aImage.mWhichFrame, SamplingFilter::GOOD, svgContext, modifiedFlags,
       CurrentState().globalAlpha);
@@ -5182,8 +5387,8 @@ void CanvasRenderingContext2D::DrawWindow(nsGlobalWindowInner& aWindow,
     return;
   }
 
-  nscolor backgroundColor;
-  if (!ParseColor(aBgColor, &backgroundColor)) {
+  Maybe<nscolor> backgroundColor = ParseColor(aBgColor);
+  if (!backgroundColor) {
     aError.Throw(NS_ERROR_FAILURE);
     return;
   }
@@ -5222,7 +5427,7 @@ void CanvasRenderingContext2D::DrawWindow(nsGlobalWindowInner& aWindow,
     return;
   }
 
-  RefPtr<gfxContext> thebes;
+  Maybe<gfxContext> thebes;
   RefPtr<DrawTarget> drawDT;
   // Rendering directly is faster and can be done if mTarget supports Azure
   // and does not need alpha blending.
@@ -5240,10 +5445,8 @@ void CanvasRenderingContext2D::DrawWindow(nsGlobalWindowInner& aWindow,
   }
   if (op == CompositionOp::OP_OVER &&
       (!mBufferProvider || !mBufferProvider->IsShared())) {
-    thebes = gfxContext::CreateOrNull(mTarget);
-    MOZ_ASSERT(thebes);  // already checked the draw target above
-                         // (in SupportsAzureContentForDrawTarget)
-    thebes->SetMatrix(matrix);
+    thebes.emplace(mTarget);
+    thebes.ref().SetMatrix(matrix);
   } else {
     IntSize dtSize = IntSize::Ceil(sw, sh);
     if (!Factory::AllowedSurfaceSize(dtSize)) {
@@ -5264,15 +5467,15 @@ void CanvasRenderingContext2D::DrawWindow(nsGlobalWindowInner& aWindow,
       return;
     }
 
-    thebes = gfxContext::CreateOrNull(drawDT);
-    MOZ_ASSERT(thebes);  // alrady checked the draw target above
-    thebes->SetMatrix(Matrix::Scaling(matrix._11, matrix._22));
+    thebes.emplace(drawDT);
+    thebes.ref().SetMatrix(Matrix::Scaling(matrix._11, matrix._22));
   }
+  MOZ_ASSERT(thebes.isSome());
 
   RefPtr<PresShell> presShell = presContext->PresShell();
 
-  Unused << presShell->RenderDocument(r, renderDocFlags, backgroundColor,
-                                      thebes);
+  Unused << presShell->RenderDocument(r, renderDocFlags, *backgroundColor,
+                                      &thebes.ref());
   // If this canvas was contained in the drawn window, the pre-transaction
   // callback may have returned its DT. If so, we must reacquire it here.
   EnsureTarget(discardContent ? &drawRect : nullptr);
@@ -5980,6 +6183,16 @@ void CanvasPath::Rect(double aX, double aY, double aW, double aH) {
   LineTo(aX + aW, aY + aH);
   LineTo(aX, aY + aH);
   ClosePath();
+}
+
+void CanvasPath::RoundRect(
+    double aX, double aY, double aW, double aH,
+    const UnrestrictedDoubleOrDOMPointInitOrUnrestrictedDoubleOrDOMPointInitSequence&
+        aRadii,
+    ErrorResult& aError) {
+  EnsurePathBuilder();
+
+  RoundRectImpl(mPathBuilder, Nothing(), aX, aY, aW, aH, aRadii, aError);
 }
 
 void CanvasPath::Arc(double aX, double aY, double aRadius, double aStartAngle,

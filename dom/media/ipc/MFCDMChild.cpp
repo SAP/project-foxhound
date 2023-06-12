@@ -8,6 +8,7 @@
 #include "mozilla/KeySystemConfig.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/WindowsVersion.h"
+#include "mozilla/WMFCDMProxyCallback.h"
 #include "nsString.h"
 #include "RemoteDecoderManagerChild.h"
 
@@ -24,6 +25,8 @@ MFCDMChild::MFCDMChild(const nsAString& aKeySystem)
       mShutdown(false) {
   mRemotePromise = EnsureRemote();
 }
+
+MFCDMChild::~MFCDMChild() {}
 
 RefPtr<MFCDMChild::RemotePromise> MFCDMChild::EnsureRemote() {
   if (!mManagerThread) {
@@ -74,18 +77,28 @@ void MFCDMChild::Shutdown() {
   MOZ_ASSERT(!mShutdown);
 
   mShutdown = true;
+  mProxyCallback = nullptr;
 
   mRemoteRequest.DisconnectIfExists();
   mInitRequest.DisconnectIfExists();
   mCreateSessionRequest.DisconnectIfExists();
-  mRemotePromiseHolder.RejectIfExists(NS_ERROR_ABORT, __func__);
-  mCapabilitiesPromiseHolder.RejectIfExists(NS_ERROR_ABORT, __func__);
-  mInitPromiseHolder.RejectIfExists(NS_ERROR_ABORT, __func__);
-  mCreateSessionPromiseHolder.RejectIfExists(NS_ERROR_ABORT, __func__);
+  mLoadSessionRequest.DisconnectIfExists();
+  mUpdateSessionRequest.DisconnectIfExists();
+  mCloseSessionRequest.DisconnectIfExists();
 
   if (mState == NS_OK) {
-    mManagerThread->Dispatch(NS_NewRunnableFunction(
-        __func__, [self = RefPtr{this}, this]() { Send__delete__(this); }));
+    mManagerThread->Dispatch(
+        NS_NewRunnableFunction(__func__, [self = RefPtr{this}, this]() {
+          mRemotePromiseHolder.RejectIfExists(NS_ERROR_ABORT, __func__);
+          mCapabilitiesPromiseHolder.RejectIfExists(NS_ERROR_ABORT, __func__);
+          mInitPromiseHolder.RejectIfExists(NS_ERROR_ABORT, __func__);
+          mCreateSessionPromiseHolder.RejectIfExists(NS_ERROR_ABORT, __func__);
+          mLoadSessionPromiseHolder.RejectIfExists(NS_ERROR_ABORT, __func__);
+          mUpdateSessionPromiseHolder.RejectIfExists(NS_ERROR_ABORT, __func__);
+          mCloseSessionPromiseHolder.RejectIfExists(NS_ERROR_ABORT, __func__);
+
+          Send__delete__(this);
+        }));
   }
 }
 
@@ -152,9 +165,10 @@ already_AddRefed<PromiseType> MFCDMChild::InvokeAsync(
 }
 
 RefPtr<MFCDMChild::InitPromise> MFCDMChild::Init(
-    const nsAString& aOrigin,
+    const nsAString& aOrigin, const CopyableTArray<nsString>& aInitDataTypes,
     const KeySystemConfig::Requirement aPersistentState,
-    const KeySystemConfig::Requirement aDistinctiveID, const bool aHWSecure) {
+    const KeySystemConfig::Requirement aDistinctiveID, const bool aHWSecure,
+    WMFCDMProxyCallback* aProxyCallback) {
   MOZ_ASSERT(mManagerThread);
 
   if (mShutdown) {
@@ -166,8 +180,9 @@ RefPtr<MFCDMChild::InitPromise> MFCDMChild::Init(
     return InitPromise::CreateAndReject(mState, __func__);
   }
 
-  MFCDMInitParamsIPDL params{nsString(aOrigin), aPersistentState,
-                             aDistinctiveID, aHWSecure};
+  mProxyCallback = aProxyCallback;
+  MFCDMInitParamsIPDL params{nsString(aOrigin), aInitDataTypes, aDistinctiveID,
+                             aPersistentState, aHWSecure};
   auto doSend = [self = RefPtr{this}, this, params]() {
     SendInit(params)
         ->Then(
@@ -229,21 +244,159 @@ RefPtr<MFCDMChild::SessionPromise> MFCDMChild::CreateSessionAndGenerateRequest(
   return mCreateSessionPromiseHolder.Ensure(__func__);
 }
 
+RefPtr<GenericPromise> MFCDMChild::LoadSession(
+    const KeySystemConfig::SessionType aSessionType,
+    const nsAString& aSessionId) {
+  MOZ_ASSERT(mManagerThread);
+  MOZ_ASSERT(mId > 0, "Should call Init() first and wait for it");
+
+  mManagerThread->Dispatch(
+      NS_NewRunnableFunction(__func__, [self = RefPtr{this}, this, aSessionType,
+                                        sessionId = nsString{aSessionId}] {
+        SendLoadSession(aSessionType, sessionId)
+            ->Then(
+                mManagerThread, __func__,
+                [self,
+                 this](PMFCDMChild::LoadSessionPromise::ResolveOrRejectValue&&
+                           aResult) {
+                  mLoadSessionRequest.Complete();
+                  if (aResult.IsResolve()) {
+                    if (NS_SUCCEEDED(aResult.ResolveValue())) {
+                      mLoadSessionPromiseHolder.ResolveIfExists(true, __func__);
+                    } else {
+                      mLoadSessionPromiseHolder.RejectIfExists(
+                          aResult.ResolveValue(), __func__);
+                    }
+                  } else {
+                    // IPC died
+                    mLoadSessionPromiseHolder.RejectIfExists(NS_ERROR_FAILURE,
+                                                             __func__);
+                  }
+                })
+            ->Track(mLoadSessionRequest);
+      }));
+  return mLoadSessionPromiseHolder.Ensure(__func__);
+}
+
+RefPtr<GenericPromise> MFCDMChild::UpdateSession(const nsAString& aSessionId,
+                                                 nsTArray<uint8_t>& aResponse) {
+  MOZ_ASSERT(mManagerThread);
+  MOZ_ASSERT(mId > 0, "Should call Init() first and wait for it");
+
+  mManagerThread->Dispatch(NS_NewRunnableFunction(
+      __func__, [self = RefPtr{this}, this, sessionId = nsString{aSessionId},
+                 response = std::move(aResponse)] {
+        SendUpdateSession(sessionId, response)
+            ->Then(mManagerThread, __func__,
+                   [self, this](
+                       PMFCDMChild::UpdateSessionPromise::ResolveOrRejectValue&&
+                           aResult) {
+                     mUpdateSessionRequest.Complete();
+                     if (aResult.IsResolve()) {
+                       if (NS_SUCCEEDED(aResult.ResolveValue())) {
+                         mUpdateSessionPromiseHolder.ResolveIfExists(true,
+                                                                     __func__);
+                       } else {
+                         mUpdateSessionPromiseHolder.RejectIfExists(
+                             aResult.ResolveValue(), __func__);
+                       }
+                     } else {
+                       // IPC died
+                       mUpdateSessionPromiseHolder.RejectIfExists(
+                           NS_ERROR_FAILURE, __func__);
+                     }
+                   })
+            ->Track(mUpdateSessionRequest);
+      }));
+  return mUpdateSessionPromiseHolder.Ensure(__func__);
+}
+
+RefPtr<GenericPromise> MFCDMChild::CloseSession(const nsAString& aSessionId) {
+  MOZ_ASSERT(mManagerThread);
+  MOZ_ASSERT(mId > 0, "Should call Init() first and wait for it");
+
+  mManagerThread->Dispatch(NS_NewRunnableFunction(
+      __func__, [self = RefPtr{this}, this, sessionId = nsString{aSessionId}] {
+        SendCloseSession(sessionId)
+            ->Then(mManagerThread, __func__,
+                   [self, this](
+                       PMFCDMChild::CloseSessionPromise::ResolveOrRejectValue&&
+                           aResult) {
+                     mCloseSessionRequest.Complete();
+                     if (aResult.IsResolve()) {
+                       if (NS_SUCCEEDED(aResult.ResolveValue())) {
+                         mCloseSessionPromiseHolder.ResolveIfExists(true,
+                                                                    __func__);
+                       } else {
+                         mCloseSessionPromiseHolder.RejectIfExists(
+                             aResult.ResolveValue(), __func__);
+                       }
+                     } else {
+                       // IPC died
+                       mCloseSessionPromiseHolder.RejectIfExists(
+                           NS_ERROR_FAILURE, __func__);
+                     }
+                   })
+            ->Track(mCloseSessionRequest);
+      }));
+  return mCloseSessionPromiseHolder.Ensure(__func__);
+}
+
+RefPtr<GenericPromise> MFCDMChild::RemoveSession(const nsAString& aSessionId) {
+  MOZ_ASSERT(mManagerThread);
+  MOZ_ASSERT(mId > 0, "Should call Init() first and wait for it");
+
+  mManagerThread->Dispatch(NS_NewRunnableFunction(
+      __func__, [self = RefPtr{this}, this, sessionId = nsString{aSessionId}] {
+        SendRemoveSession(sessionId)
+            ->Then(mManagerThread, __func__,
+                   [self, this](
+                       PMFCDMChild::RemoveSessionPromise::ResolveOrRejectValue&&
+                           aResult) {
+                     mRemoveSessionRequest.Complete();
+                     if (aResult.IsResolve()) {
+                       if (NS_SUCCEEDED(aResult.ResolveValue())) {
+                         mRemoveSessionPromiseHolder.ResolveIfExists(true,
+                                                                     __func__);
+                       } else {
+                         mRemoveSessionPromiseHolder.RejectIfExists(
+                             aResult.ResolveValue(), __func__);
+                       }
+                     } else {
+                       // IPC died
+                       mRemoveSessionPromiseHolder.RejectIfExists(
+                           NS_ERROR_FAILURE, __func__);
+                     }
+                   })
+            ->Track(mRemoveSessionRequest);
+      }));
+  return mRemoveSessionPromiseHolder.Ensure(__func__);
+}
+
 mozilla::ipc::IPCResult MFCDMChild::RecvOnSessionKeyMessage(
     const MFCDMKeyMessage& aMessage) {
-  // TODO : implement this.
+  LOG("RecvOnSessionKeyMessage, sessionId=%s",
+      NS_ConvertUTF16toUTF8(aMessage.sessionId()).get());
+  MOZ_ASSERT(mProxyCallback);
+  mProxyCallback->OnSessionMessage(aMessage);
   return IPC_OK();
 }
 
 mozilla::ipc::IPCResult MFCDMChild::RecvOnSessionKeyStatusesChanged(
     const MFCDMKeyStatusChange& aKeyStatuses) {
-  // TODO : implement this.
+  LOG("RecvOnSessionKeyStatusesChanged, sessionId=%s",
+      NS_ConvertUTF16toUTF8(aKeyStatuses.sessionId()).get());
+  MOZ_ASSERT(mProxyCallback);
+  mProxyCallback->OnSessionKeyStatusesChange(aKeyStatuses);
   return IPC_OK();
 }
 
 mozilla::ipc::IPCResult MFCDMChild::RecvOnSessionKeyExpiration(
     const MFCDMKeyExpiration& aExpiration) {
-  // TODO : implement this.
+  LOG("RecvOnSessionKeyExpiration, sessionId=%s",
+      NS_ConvertUTF16toUTF8(aExpiration.sessionId()).get());
+  MOZ_ASSERT(mProxyCallback);
+  mProxyCallback->OnSessionKeyExpiration(aExpiration);
   return IPC_OK();
 }
 

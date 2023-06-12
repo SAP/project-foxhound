@@ -52,6 +52,10 @@ enum Count {
   // not collecting the atoms zone.
   COUNT_CELLS_MARKED,
 
+  // Number of times work was donated to a requesting thread during parallel
+  // marking.
+  COUNT_PARALLEL_MARK_INTERRUPTIONS,
+
   COUNT_LIMIT
 };
 
@@ -478,6 +482,8 @@ struct Statistics {
 
   void sendGCTelemetry();
   void sendSliceTelemetry(const SliceData& slice);
+
+  TimeDuration sumTotalParallelTime(PhaseKind phaseKind) const;
 
   void recordPhaseBegin(Phase phase);
   void recordPhaseEnd(Phase phase);

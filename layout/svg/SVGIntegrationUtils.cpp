@@ -466,9 +466,7 @@ static bool PaintMaskSurface(const PaintFramesParams& aParams,
   gfxPoint devPixelOffsetToUserSpace = nsLayoutUtils::PointToGfxPoint(
       aOffsetToUserSpace, presContext->AppUnitsPerDevPixel());
 
-  RefPtr<gfxContext> maskContext =
-      gfxContext::CreatePreservingTransformOrNull(aMaskDT);
-  MOZ_ASSERT(maskContext);
+  gfxContext maskContext(aMaskDT, /* aPreserveTransform */ true);
 
   bool isMaskComplete = true;
 
@@ -486,7 +484,7 @@ static bool PaintMaskSurface(const PaintFramesParams& aParams,
     // maskFrame == nullptr means we get an image mask.
     if (maskFrame) {
       SVGMaskFrame::MaskParams params(
-          maskContext->GetDrawTarget(), aParams.frame, cssPxToDevPxMatrix,
+          maskContext.GetDrawTarget(), aParams.frame, cssPxToDevPxMatrix,
           aOpacity, svgReset->mMask.mLayers[i].mMaskMode, aParams.imgParams);
       RefPtr<SourceSurface> svgMask = maskFrame->GetMaskForMaskedFrame(params);
       if (svgMask) {
@@ -498,9 +496,9 @@ static bool PaintMaskSurface(const PaintFramesParams& aParams,
         aMaskDT->SetTransform(tmp);
       }
     } else if (svgReset->mMask.mLayers[i].mImage.IsResolved()) {
-      gfxContextMatrixAutoSaveRestore matRestore(maskContext);
+      gfxContextMatrixAutoSaveRestore matRestore(&maskContext);
 
-      maskContext->Multiply(gfxMatrix::Translation(-devPixelOffsetToUserSpace));
+      maskContext.Multiply(gfxMatrix::Translation(-devPixelOffsetToUserSpace));
       nsCSSRendering::PaintBGParams params =
           nsCSSRendering::PaintBGParams::ForSingleLayer(
               *presContext, aParams.dirtyRect, aParams.borderArea,
@@ -510,7 +508,7 @@ static bool PaintMaskSurface(const PaintFramesParams& aParams,
               i, compositionOp, aOpacity);
 
       aParams.imgParams.result &= nsCSSRendering::PaintStyleImageLayerWithSC(
-          params, *maskContext, aSC, *aParams.frame->StyleBorder());
+          params, maskContext, aSC, *aParams.frame->StyleBorder());
     } else {
       isMaskComplete = false;
     }
@@ -620,12 +618,11 @@ static MaskPaintResult CreateAndPaintMaskSurface(
 }
 
 static bool ValidateSVGFrame(nsIFrame* aFrame) {
-  NS_ASSERTION(!aFrame->HasAnyStateBits(NS_FRAME_SVG_LAYOUT) ||
-                   !aFrame->HasAnyStateBits(NS_FRAME_IS_NONDISPLAY),
-               "Should not use SVGIntegrationUtils on this SVG frame");
+  NS_ASSERTION(
+      !aFrame->HasAllStateBits(NS_FRAME_SVG_LAYOUT | NS_FRAME_IS_NONDISPLAY),
+      "Should not use SVGIntegrationUtils on this SVG frame");
 
-  bool hasSVGLayout = aFrame->HasAnyStateBits(NS_FRAME_SVG_LAYOUT);
-  if (hasSVGLayout) {
+  if (aFrame->HasAnyStateBits(NS_FRAME_SVG_LAYOUT)) {
 #ifdef DEBUG
     ISVGDisplayableFrame* svgFrame = do_QueryFrame(aFrame);
     MOZ_ASSERT(svgFrame && aFrame->GetContent()->IsSVGElement(),

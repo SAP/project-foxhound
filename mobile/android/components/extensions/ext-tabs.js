@@ -142,7 +142,7 @@ this.tabs = class extends ExtensionAPI {
         flags |= Ci.nsIWebNavigation.LOAD_FLAGS_DISALLOW_INHERIT_PRINCIPAL;
       }
 
-      browser.loadURI(url, {
+      browser.fixupAndLoadURIString(url, {
         flags,
         triggeringPrincipal: principal,
       });
@@ -500,11 +500,8 @@ this.tabs = class extends ExtensionAPI {
           await tabListener.awaitTabReady(nativeTab);
 
           const { browser } = nativeTab;
-          const window = browser.ownerGlobal;
-          const zoom = window.windowUtils.fullZoom;
-
           const tab = tabManager.wrapTab(nativeTab);
-          return tab.capture(context, zoom, options);
+          return tab.capture(context, browser.fullZoom, options);
         },
 
         async captureVisibleTab(windowId, options) {
@@ -515,7 +512,7 @@ this.tabs = class extends ExtensionAPI {
 
           const tab = tabManager.wrapTab(window.tab);
           await tabListener.awaitTabReady(tab.nativeTab);
-          const zoom = window.windowUtils.fullZoom;
+          const zoom = window.browsingContext.fullZoom;
 
           return tab.capture(context, zoom, options);
         },

@@ -782,6 +782,16 @@ impl crate::Surface<super::Api> for super::Surface {
             .map_err(crate::DeviceError::from)?;
         unsafe { sc.device.raw.reset_fences(fences) }.map_err(crate::DeviceError::from)?;
 
+        // https://registry.khronos.org/vulkan/specs/1.3-extensions/man/html/VkRenderPassBeginInfo.html#VUID-VkRenderPassBeginInfo-framebuffer-03209
+        let raw_flags = if sc
+            .raw_flags
+            .contains(vk::SwapchainCreateFlagsKHR::MUTABLE_FORMAT)
+        {
+            vk::ImageCreateFlags::MUTABLE_FORMAT | vk::ImageCreateFlags::EXTENDED_USAGE
+        } else {
+            vk::ImageCreateFlags::empty()
+        };
+
         let texture = super::SurfaceTexture {
             index,
             texture: super::Texture {
@@ -789,14 +799,14 @@ impl crate::Surface<super::Api> for super::Surface {
                 drop_guard: None,
                 block: None,
                 usage: sc.config.usage,
-                aspects: crate::FormatAspects::COLOR,
-                format_info: sc.config.format.describe(),
-                raw_flags: vk::ImageCreateFlags::empty(),
+                format: sc.config.format,
+                raw_flags,
                 copy_size: crate::CopyExtent {
                     width: sc.config.extent.width,
                     height: sc.config.extent.height,
                     depth: 1,
                 },
+                view_formats: sc.view_formats.clone(),
             },
         };
         Ok(Some(crate::AcquiredSurfaceTexture {

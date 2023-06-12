@@ -11,6 +11,7 @@
 #include "mozilla/a11y/CacheConstants.h"
 #include "mozilla/a11y/HyperTextAccessibleBase.h"
 #include "mozilla/a11y/Role.h"
+#include "mozilla/WeakPtr.h"
 #include "AccAttributes.h"
 #include "nsIAccessibleText.h"
 #include "nsIAccessibleTypes.h"
@@ -31,7 +32,13 @@ enum class RelationType;
  * process.
  */
 template <class Derived>
+#ifdef XP_WIN
+class RemoteAccessibleBase : public Accessible,
+                             public HyperTextAccessibleBase,
+                             public SupportsWeakPtr {
+#else
 class RemoteAccessibleBase : public Accessible, public HyperTextAccessibleBase {
+#endif
  public:
   virtual ~RemoteAccessibleBase() { MOZ_ASSERT(!mWrapper); }
 
@@ -364,7 +371,7 @@ class RemoteAccessibleBase : public Accessible, public HyperTextAccessibleBase {
 
   uint32_t GetCachedTextLength();
   Maybe<const nsTArray<int32_t>&> GetCachedTextLines();
-  Maybe<nsTArray<nsRect>> GetCachedCharData();
+  nsRect GetCachedCharRect(int32_t aOffset);
   RefPtr<const AccAttributes> GetCachedTextAttributes();
   RefPtr<const AccAttributes> GetCachedARIAAttributes() const;
 
@@ -433,6 +440,7 @@ class RemoteAccessibleBase : public Accessible, public HyperTextAccessibleBase {
   void ApplyCrossDocOffset(nsRect& aBounds) const;
   LayoutDeviceIntRect BoundsWithOffset(Maybe<nsRect> aOffset) const;
   bool IsFixedPos() const;
+  bool ContainsPoint(int32_t aX, int32_t aY);
 
   virtual void ARIAGroupPosition(int32_t* aLevel, int32_t* aSetSize,
                                  int32_t* aPosInSet) const override;

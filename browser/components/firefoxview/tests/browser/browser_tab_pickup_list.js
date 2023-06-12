@@ -1,8 +1,8 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
-XPCOMUtils.defineLazyModuleGetters(globalThis, {
-  SyncedTabs: "resource://services-sync/SyncedTabs.jsm",
+ChromeUtils.defineESModuleGetters(globalThis, {
+  SyncedTabs: "resource://services-sync/SyncedTabs.sys.mjs",
 });
 
 const twoTabs = [
@@ -537,8 +537,6 @@ add_task(async function test_tabs_sync_on_user_page_reload() {
 });
 
 add_task(async function test_keyboard_navigation() {
-  // Setting this pref allows the test to run as expected on MacOS
-  await SpecialPowers.pushPrefEnv({ set: [["accessibility.tabfocus", 7]] });
   TabsSetupFlowManager.resetInternalState();
 
   const sandbox = setupRecentDeviceListMocks();

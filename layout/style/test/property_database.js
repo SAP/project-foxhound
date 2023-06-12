@@ -262,7 +262,6 @@ var validNonUrlImageValues = [
   "image-set(url(foobar.png) 2x)",
   "image-set(url(foobar.png) 1x, url(bar.png) 2x, url(baz.png) 3x)",
   "image-set('foobar.png', 'bar.png' 2x, url(baz.png) 3x)",
-  "image-set(image-set('foobar.png', 'bar.png' 2x) 1x, url(baz.png) 3x)",
   "image-set(url(foobar.png) type('image/png'))",
   "image-set(url(foobar.png) 1x type('image/png'))",
   "image-set(url(foobar.png) type('image/png') 1x)",
@@ -804,6 +803,7 @@ var invalidNonUrlImageValues = [
 
   "image-set(url(foobar.png) 1x, none)",
   "image-set(garbage)",
+  "image-set(image-set('foobar.png', 'bar.png' 2x) 1x, url(baz.png) 3x)", // Nested image-sets should fail to parse
   "image-set(image-set(garbage))",
   "image-set()",
   "image-set(type('image/png') url(foobar.png) 1x)",
@@ -2871,14 +2871,6 @@ var gCSSProperties = {
     initial_values: ["0"],
     other_values: ["1"],
     invalid_values: [],
-  },
-  "-moz-image-region": {
-    domProp: "MozImageRegion",
-    inherited: true,
-    type: CSS_TYPE_LONGHAND,
-    initial_values: ["auto"],
-    other_values: ["rect(3px 20px 15px 4px)", "rect(17px, 21px, 33px, 2px)"],
-    invalid_values: ["rect(17px, 21px, 33, 2px)"],
   },
   "margin-inline": {
     domProp: "marginInline",
@@ -12977,8 +12969,13 @@ if (IsCSSPropertyPrefEnabled("layout.css.content-visibility.enabled")) {
     inherited: false,
     type: CSS_TYPE_LONGHAND,
     initial_values: ["visible"],
-    other_values: ["auto", "invisible"],
-    invalid_values: ["partially-visible", "auto auto", "visible invisible"],
+    other_values: ["auto", "hidden"],
+    invalid_values: [
+      "invisible",
+      "partially-visible",
+      "auto auto",
+      "visible hidden",
+    ],
   };
 }
 
@@ -13416,22 +13413,28 @@ if (IsCSSPropertyPrefEnabled("layout.css.motion-path.enabled")) {
     inherited: false,
     type: CSS_TYPE_LONGHAND,
     initial_values: ["none"],
-    other_values: pathValues.other_values.concat([
+    other_values: [...pathValues.other_values],
+    invalid_values: [...pathValues.invalid_values],
+  };
+
+  if (IsCSSPropertyPrefEnabled("layout.css.motion-path-ray.enabled")) {
+    gCSSProperties["offset-path"]["other_values"].push(
+      "ray(0deg)",
       "ray(45deg closest-side)",
       "ray(0rad farthest-side)",
       "ray(0.5turn closest-corner contain)",
       "ray(200grad farthest-corner)",
       "ray(sides 180deg)",
       "ray(contain farthest-side 180deg)",
-      "ray(calc(180deg - 45deg) farthest-side)",
-    ]),
-    invalid_values: pathValues.invalid_values.concat([
-      "ray(0deg)",
+      "ray(calc(180deg - 45deg) farthest-side)"
+    );
+
+    gCSSProperties["offset-path"]["invalid_values"].push(
       "ray(closest-side)",
       "ray(0deg, closest-side)",
-      "ray(contain 0deg closest-side contain)",
-    ]),
-  };
+      "ray(contain 0deg closest-side contain)"
+    );
+  }
 
   gCSSProperties["offset-distance"] = {
     domProp: "offsetDistance",
@@ -13453,6 +13456,39 @@ if (IsCSSPropertyPrefEnabled("layout.css.motion-path.enabled")) {
 
   gCSSProperties["offset-anchor"] = {
     domProp: "offsetAnchor",
+    inherited: false,
+    type: CSS_TYPE_LONGHAND,
+    initial_values: ["auto"],
+    other_values: [
+      "left bottom",
+      "center center",
+      "calc(20% + 10px) center",
+      "right 30em",
+      "10px 20%",
+      "left -10px top -20%",
+      "right 10% bottom 20em",
+    ],
+    invalid_values: ["none", "10deg", "left 10% top"],
+  };
+}
+
+if (
+  IsCSSPropertyPrefEnabled("layout.css.motion-path-offset-position.enabled")
+) {
+  if (IsCSSPropertyPrefEnabled("layout.css.motion-path.enabled")) {
+    gCSSProperties["offset"]["subproperties"].push("offset-position");
+    gCSSProperties["offset"]["other_values"].push("top right / top left");
+
+    if (IsCSSPropertyPrefEnabled("layout.css.motion-path-ray.enabled")) {
+      gCSSProperties["offset"]["other_values"].push(
+        "top right ray(45deg closest-side)",
+        "50% 50% ray(0rad farthest-side)"
+      );
+    }
+  }
+
+  gCSSProperties["offset-position"] = {
+    domProp: "offsetPosition",
     inherited: false,
     type: CSS_TYPE_LONGHAND,
     initial_values: ["auto"],
@@ -13510,13 +13546,16 @@ if (IsCSSPropertyPrefEnabled("layout.css.step-position-jump.enabled")) {
 
 if (IsCSSPropertyPrefEnabled("layout.css.linear-easing-function.enabled")) {
   let linear_function_other_values = [
-    "linear()",
-    "linear(0.5)",
     "linear(0, 1)",
     "linear(0 0% 50%, 1 50% 100%)",
   ];
 
-  let linear_function_invalid_values = ["linear(0% 0 100%)", "linear(0,)"];
+  let linear_function_invalid_values = [
+    "linear()",
+    "linear(0.5)",
+    "linear(0% 0 100%)",
+    "linear(0,)",
+  ];
   gCSSProperties["animation-timing-function"].other_values.push(
     ...linear_function_other_values
   );
@@ -13532,7 +13571,7 @@ if (IsCSSPropertyPrefEnabled("layout.css.linear-easing-function.enabled")) {
   );
 
   gCSSProperties["animation"].other_values.push(
-    "1s 2s linear() bounce",
+    "1s 2s linear(0, 1) bounce",
     "4s linear(0, 0.5 25% 75%, 1 100% 100%)"
   );
 }
@@ -13626,6 +13665,17 @@ if (IsCSSPropertyPrefEnabled("layout.css.color-scheme.enabled")) {
       "light only",
     ],
     invalid_values: ["only normal", "normal only", "only light only"],
+  };
+}
+
+if (IsCSSPropertyPrefEnabled("layout.css.forced-color-adjust.enabled")) {
+  gCSSProperties["forced-color-adjust"] = {
+    domProp: "forcedColorAdjust",
+    inherited: true,
+    type: CSS_TYPE_LONGHAND,
+    initial_values: ["auto"],
+    other_values: ["none"],
+    invalid_values: [],
   };
 }
 

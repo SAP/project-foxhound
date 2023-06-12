@@ -644,41 +644,15 @@ class SearchAddons extends HTMLElement {
       this.append(this.input);
     }
     this.input.addEventListener("command", this);
-    document.addEventListener("keypress", this);
   }
 
   disconnectedCallback() {
     this.input.removeEventListener("command", this);
-    document.removeEventListener("keypress", this);
-  }
-
-  focus() {
-    this.input.focus();
-  }
-
-  get focusKey() {
-    return this.getAttribute("key");
   }
 
   handleEvent(e) {
     if (e.type === "command") {
       this.searchAddons(this.value);
-    } else if (e.type === "keypress") {
-      if (e.key === "/" && !e.ctrlKey && !e.metaKey && !e.altKey) {
-        this.focus();
-      } else if (e.key == this.focusKey) {
-        if (e.altKey || e.shiftKey) {
-          return;
-        }
-
-        if (Services.appinfo.OS === "Darwin") {
-          if (e.metaKey && !e.ctrlKey) {
-            this.focus();
-          }
-        } else if (e.ctrlKey && !e.metaKey) {
-          this.focus();
-        }
-      }
     }
   }
 
@@ -698,12 +672,7 @@ class SearchAddons extends HTMLElement {
 
     let browser = getBrowserElement();
     let chromewin = browser.ownerGlobal;
-    chromewin.openLinkIn(url, "tab", {
-      fromChrome: true,
-      triggeringPrincipal: Services.scriptSecurityManager.createNullPrincipal(
-        {}
-      ),
-    });
+    chromewin.openWebLinkIn(url, "tab");
 
     AMTelemetry.recordLinkEvent({
       object: "aboutAddons",
@@ -1861,13 +1830,6 @@ class InlineOptionsBrowser extends HTMLElement {
     browser.setAttribute("forcemessagemanager", "true");
     browser.setAttribute("autocompletepopup", "PopupAutoComplete");
 
-    // The outer about:addons document listens for key presses to focus
-    // the search box when / is pressed.  But if we're focused inside an
-    // options page, don't let those keypresses steal focus.
-    browser.addEventListener("keypress", event => {
-      event.stopPropagation();
-    });
-
     let { optionsURL, optionsBrowserStyle } = addon;
     if (addon.isWebExtension) {
       let policy = ExtensionParent.WebExtensionPolicy.getByID(addon.id);
@@ -1962,7 +1924,7 @@ class InlineOptionsBrowser extends HTMLElement {
       mm.sendAsyncMessage("Extension:InitBrowser", browserOptions);
 
       if (browser.isConnectedAndReady) {
-        this.loadURI(optionsURL);
+        this.fixupAndLoadURIString(optionsURL);
       } else {
         // browser custom element does opt-in the delayConnectedCallback
         // behavior (see connectedCallback in the custom element definition
@@ -1972,18 +1934,18 @@ class InlineOptionsBrowser extends HTMLElement {
           promiseEvent("DOMContentLoaded", document),
           this._promiseDisconnected,
         ]).then(() => {
-          this.loadURI(optionsURL);
+          this.fixupAndLoadURIString(optionsURL);
         });
       }
     });
   }
 
-  loadURI(uri) {
+  fixupAndLoadURIString(uriString) {
     if (!this.browser || !this.browser.isConnectedAndReady) {
       throw new Error("Fail to loadURI");
     }
 
-    this.browser.loadURI(uri, {
+    this.browser.fixupAndLoadURIString(uriString, {
       triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
     });
   }
@@ -2714,13 +2676,7 @@ class AddonCard extends HTMLElement {
           break;
         case "contribute":
           this.recordActionEvent("contribute");
-          // prettier-ignore
-          windowRoot.ownerGlobal.openUILinkIn(addon.contributionURL, "tab", {
-            triggeringPrincipal:
-              Services.scriptSecurityManager.createNullPrincipal(
-                {}
-              ),
-          });
+          windowRoot.ownerGlobal.openWebLinkIn(addon.contributionURL, "tab");
           break;
         case "preferences":
           if (getOptionsType(addon) == "tab") {

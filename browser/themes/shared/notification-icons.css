@@ -199,7 +199,7 @@
 }
 
 #identity-credential-notification-icon {
-  list-style-image: url(chrome://browser/skin/fingerprint.svg);
+  list-style-image: url(chrome://browser/skin/login.svg);
 }
 
 #permission-popup-menulist {
@@ -362,28 +362,6 @@
   }
   to {
     opacity: 1;
-  }
-}
-
-/* TRANSLATION */
-
-.translation-icon {
-  list-style-image: url(chrome://browser/skin/translation-16.png);
-  -moz-image-region: rect(0px, 16px, 16px, 0px);
-}
-
-.translation-icon.in-use {
-  -moz-image-region: rect(0px, 32px, 16px, 16px);
-}
-
-@media (-moz-platform: macos) and (min-resolution: 1.1dppx) {
-  .translation-icon {
-    list-style-image: url(chrome://browser/skin/translation-16@2x.png);
-    -moz-image-region: rect(0px, 32px, 32px, 0px);
-  }
-
-  .translation-icon.in-use {
-    -moz-image-region: rect(0px, 64px, 32px, 32px);
   }
 }
 

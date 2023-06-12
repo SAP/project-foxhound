@@ -11,6 +11,7 @@
 #include <algorithm>
 
 #include "gfxContext.h"
+#include "mozilla/Baseline.h"
 #include "mozilla/ComputedStyle.h"
 #include "mozilla/CSSOrderAwareFrameIterator.h"
 #include "mozilla/FloatingPoint.h"
@@ -55,11 +56,6 @@ static bool IsLegacyBox(const nsIFrame* aFlexContainer) {
   return aFlexContainer->HasAnyStateBits(
       NS_STATE_FLEX_IS_EMULATING_LEGACY_MOZ_BOX |
       NS_STATE_FLEX_IS_EMULATING_LEGACY_WEBKIT_BOX);
-}
-
-static bool IsLegacyMozBox(const nsFlexContainerFrame* aFlexContainer) {
-  return aFlexContainer->HasAnyStateBits(
-      NS_STATE_FLEX_IS_EMULATING_LEGACY_MOZ_BOX);
 }
 
 // Returns the OrderState enum we should pass to CSSOrderAwareFrameIterator
@@ -420,13 +416,18 @@ class nsFlexContainerFrame::FlexItem final {
     // If the nsLayoutUtils getter fails, then ask the frame directly:
     auto baselineGroup = aUseFirstBaseline ? BaselineSharingGroup::First
                                            : BaselineSharingGroup::Last;
-    if (mFrame->GetNaturalBaselineBOffset(mWM, baselineGroup, &mAscent)) {
+    if (auto baseline = mFrame->GetNaturalBaselineBOffset(mWM, baselineGroup)) {
+      // Offset for last baseline from `GetNaturalBaselineBOffset` originates
+      // from the frame's block end, so convert it back.
+      mAscent = baselineGroup == BaselineSharingGroup::First
+                    ? *baseline
+                    : mFrame->BSize(mWM) - *baseline;
       return mAscent;
     }
 
     // We couldn't determine a baseline, so we synthesize one from border box:
-    mAscent = mFrame->SynthesizeBaselineBOffsetFromBorderBox(
-        mWM, BaselineSharingGroup::First);
+    mAscent = Baseline::SynthesizeBOffsetFromBorderBox(
+        mFrame, mWM, BaselineSharingGroup::First);
     return mAscent;
   }
 
@@ -2759,18 +2760,6 @@ nsresult nsFlexContainerFrame::GetFrameName(nsAString& aResult) const {
 }
 #endif
 
-nscoord nsFlexContainerFrame::GetLogicalBaseline(
-    mozilla::WritingMode aWM) const {
-  NS_ASSERTION(mBaselineFromLastReflow != NS_INTRINSIC_ISIZE_UNKNOWN,
-               "baseline has not been set");
-
-  if (HasAnyStateBits(NS_STATE_FLEX_SYNTHESIZE_BASELINE)) {
-    // Return a baseline synthesized from our margin-box.
-    return nsContainerFrame::GetLogicalBaseline(aWM);
-  }
-  return mBaselineFromLastReflow;
-}
-
 void nsFlexContainerFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
                                             const nsDisplayListSet& aLists) {
   nsDisplayListCollection tempLists(aBuilder);
@@ -3976,7 +3965,8 @@ void nsFlexContainerFrame::GenerateFlexLines(
                        iter.ItemsAreAlreadyInOrder());
 
   bool prevItemRequestedBreakAfter = false;
-  const bool useMozBoxCollapseBehavior = IsLegacyMozBox(this);
+  const bool useMozBoxCollapseBehavior =
+      StyleVisibility()->UseLegacyCollapseBehavior();
 
   for (; !iter.AtEnd(); iter.Next()) {
     nsIFrame* childFrame = *iter;
@@ -4638,6 +4628,17 @@ void nsFlexContainerFrame::Reflow(nsPresContext* aPresContext,
   }
 }
 
+Maybe<nscoord> nsFlexContainerFrame::GetNaturalBaselineBOffset(
+    WritingMode aWM, BaselineSharingGroup aBaselineGroup) const {
+  if (StyleDisplay()->IsContainLayout() ||
+      HasAnyStateBits(NS_STATE_FLEX_SYNTHESIZE_BASELINE)) {
+    return Nothing{};
+  }
+  return Some(aBaselineGroup == BaselineSharingGroup::First
+                  ? mBaselineFromLastReflow
+                  : mLastBaselineFromLastReflow);
+}
+
 void nsFlexContainerFrame::UnionInFlowChildOverflow(
     OverflowAreas& aOverflowAreas) {
   // The CSS Overflow spec [1] requires that a scrollable container's
@@ -4663,7 +4664,8 @@ void nsFlexContainerFrame::UnionInFlowChildOverflow(
   nsRect itemMarginBoxes;
   // Union of relative-positioned margin boxes for the relpos items only.
   nsRect relPosItemMarginBoxes;
-  const bool useMozBoxCollapseBehavior = IsLegacyMozBox(this);
+  const bool useMozBoxCollapseBehavior =
+      StyleVisibility()->UseLegacyCollapseBehavior();
   for (nsIFrame* f : mFrames) {
     if (useMozBoxCollapseBehavior && f->StyleVisibility()->IsCollapse()) {
       continue;
@@ -5091,7 +5093,8 @@ nsFlexContainerFrame::FlexLayoutResult nsFlexContainerFrame::DoFlexLayout(
   // constructor), we can create struts for any flex items with
   // "visibility: collapse" (and restart flex layout).
   // Make sure to only do this if we had no struts.
-  if (aStruts.IsEmpty() && !IsLegacyMozBox(this) && flr.mHasCollapsedItems) {
+  if (aStruts.IsEmpty() && flr.mHasCollapsedItems &&
+      !StyleVisibility()->UseLegacyCollapseBehavior()) {
     BuildStrutInfoFromCollapsedItems(flr.mLines, aStruts);
     if (!aStruts.IsEmpty()) {
       // Restart flex layout, using our struts.
@@ -5612,7 +5615,8 @@ nscoord nsFlexContainerFrame::IntrinsicISize(gfxContext* aRenderingContext,
                                                     NS_UNCONSTRAINEDSIZE);
   }
 
-  const bool useMozBoxCollapseBehavior = IsLegacyMozBox(this);
+  const bool useMozBoxCollapseBehavior =
+      StyleVisibility()->UseLegacyCollapseBehavior();
 
   // The loop below sets aside space for a gap before each item besides the
   // first. This bool helps us handle that special-case.

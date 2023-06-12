@@ -25,7 +25,8 @@
 #   MOZ_CURRENT_CENTRAL=cad1bd47c273 \
 #   bash dom/media/webrtc/third_party_build/elm_rebase.sh
 #
-# Assumes the top of the fast-forward stack to rebase is tip.
+# Assumes the top of the fast-forward stack to rebase is the current revision,
+# ".".
 
 function show_error_msg()
 {
@@ -63,7 +64,34 @@ set -eEo pipefail
 if [ -f $STATE_DIR/rebase_resume_state ]; then
   source $STATE_DIR/rebase_resume_state
 else
-MOZ_TOP_FF=`hg log -r tip -T"{node|short}"`
+
+if [ "x" == "x$MOZ_TOP_FF" ]; then
+  MOZ_TOP_FF=`hg log -r . -T"{node|short}"`
+
+  ERROR_HELP=$"
+The topmost commit to be rebased is not in the public phase. Should it be
+pushed to elm first? If this is intentional, please rerun the command and pass
+it in explicitly:
+  MOZ_TOP_FF=$MOZ_TOP_FF bash $0
+"
+  if [[ $(hg phase -r .) != *public ]]; then
+    echo "$ERROR_HELP"
+    exit 1
+  fi
+  ERROR_HELP=""
+
+  ERROR_HELP=$"
+The topmost commit to be rebased is public but has descendants. If those
+descendants should not be rebased, please rerun the command and pass the commit
+in explicitly:
+  MOZ_TOP_FF=$MOZ_TOP_FF bash $0
+  "
+  if [ "x" != "x$(hg log -r 'descendants(.) and !.' -T'{node|short}')" ]; then
+    echo "$ERROR_HELP"
+    exit 1
+  fi
+  ERROR_HELP=""
+fi
 
 ERROR_HELP=$"
 An error here is likely because no revision for central is found.
@@ -114,7 +142,7 @@ hg log -T '{rev}:{node|short} {desc|firstline}\n' \
 ed -s $COMMIT_LIST_FILE <<< $'g/- FLOAT -/m$\ng/^~$/d\nw\nq'
 
 MOZ_BOOKMARK=`date "+webrtc-fast-forward-%Y-%m-%d--%H-%M"`
-hg bookmark $MOZ_BOOKMARK
+hg bookmark -r $MOZ_TOP_FF $MOZ_BOOKMARK
 
 hg update $MOZ_NEW_CENTRAL
 
@@ -140,8 +168,11 @@ echo ""
 for commit in $COMMITS; do
   echo "Processing $commit"
   FULL_COMMIT_LINE=`head -1 $COMMIT_LIST_FILE`
-  echo "Removing from list '$FULL_COMMIT_LINE'"
-  ed -s $COMMIT_LIST_FILE <<< $'1d\nw\nq'
+
+  function remove_commit () {
+    echo "Removing from list '$FULL_COMMIT_LINE'"
+    ed -s $COMMIT_LIST_FILE <<< $'1d\nw\nq'
+  }
 
   IS_BUILD_COMMIT=`hg log -T '{desc|firstline}' -r $commit \
                    | grep "file updates" | wc -l | tr -d " " || true`
@@ -149,6 +180,7 @@ for commit in $COMMITS; do
   if [ "x$IS_BUILD_COMMIT" != "x0" ]; then
     echo "Skipping $commit:"
     hg log -T '{desc|firstline}' -r $commit
+    remove_commit
     continue
   fi
 
@@ -163,11 +195,14 @@ for commit in $COMMITS; do
   echo "Import patch for $commit"
   hg import $TMP_DIR/rebase.patch || \
   ( hg log -T '{desc}' -r $commit > $TMP_DIR/rebase_commit_message.txt ; \
+    remove_commit ; \
     echo "Error importing: '$FULL_COMMIT_LINE'" ; \
     echo "Please fix import errors, then:" ; \
     echo "  hg commit -l $TMP_DIR/rebase_commit_message.txt" ; \
     echo "  bash $0" ; \
     exit 1 )
+
+  remove_commit
 
   if [ "x$IS_SKIP_GEN_COMMIT" != "x0" ]; then
     echo "Skipping build generation for $commit"

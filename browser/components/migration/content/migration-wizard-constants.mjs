@@ -11,9 +11,11 @@ export const MigrationWizardConstants = Object.freeze({
    * @type {Object<string, string>}
    */
   PAGES: Object.freeze({
+    LOADING: "loading",
     SELECTION: "selection",
     PROGRESS: "progress",
     SAFARI_PERMISSION: "safari-permission",
+    NO_BROWSERS_FOUND: "no-browsers-found",
   }),
 
   /**

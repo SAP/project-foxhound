@@ -89,8 +89,6 @@
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/BrowserChild.h"
 #include "mozilla/dom/IDBFactoryBinding.h"
-#include "mozilla/dom/IDBMutableFileBinding.h"
-#include "mozilla/dom/IDBMutableFile.h"
 #include "mozilla/dom/IndexedDatabaseManager.h"
 #include "mozilla/dom/PermissionMessageUtils.h"
 #include "mozilla/dom/Text.h"
@@ -2251,20 +2249,6 @@ nsDOMWindowUtils::GetViewId(Element* aElement, nsViewID* aResult) {
   return NS_ERROR_NOT_AVAILABLE;
 }
 
-NS_IMETHODIMP
-nsDOMWindowUtils::GetFullZoom(float* aFullZoom) {
-  *aFullZoom = 1.0f;
-
-  nsPresContext* presContext = GetPresContext();
-  if (!presContext) {
-    return NS_OK;
-  }
-
-  *aFullZoom = presContext->DeviceContext()->GetFullZoom();
-
-  return NS_OK;
-}
-
 NS_IMETHODIMP nsDOMWindowUtils::DispatchDOMEventViaPresShellForTesting(
     nsINode* aTarget, Event* aEvent, bool* aRetVal) {
   NS_ENSURE_STATE(aEvent);
@@ -2689,7 +2673,10 @@ nsDOMWindowUtils::GetCurrentMaxAudioChannels(uint32_t* aChannels) {
 
 NS_IMETHODIMP
 nsDOMWindowUtils::GetCurrentPreferredSampleRate(uint32_t* aRate) {
-  *aRate = CubebUtils::PreferredSampleRate();
+  nsCOMPtr<Document> doc = GetDocument();
+  *aRate = CubebUtils::PreferredSampleRate(
+      doc ? doc->ShouldResistFingerprinting()
+          : nsContentUtils::ShouldResistFingerprinting("Fallback"));
   return NS_OK;
 }
 
@@ -3412,12 +3399,6 @@ nsDOMWindowUtils::GetFileId(JS::Handle<JS::Value> aFile, JSContext* aCx,
   }
 
   JS::Rooted<JSObject*> obj(aCx, aFile.toObjectOrNull());
-
-  IDBMutableFile* mutableFile = nullptr;
-  if (NS_SUCCEEDED(UNWRAP_OBJECT(IDBMutableFile, &obj, mutableFile))) {
-    *_retval = mutableFile->GetFileId();
-    return NS_OK;
-  }
 
   Blob* blob = nullptr;
   if (NS_SUCCEEDED(UNWRAP_OBJECT(Blob, &obj, blob))) {

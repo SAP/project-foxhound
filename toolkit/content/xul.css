@@ -3,12 +3,8 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 /**
- * A minimal set of rules for the XUL elements that may be implicitly created
- * as part of HTML/SVG documents (e.g. scrollbars) can be found over in
- * minimal-xul.css.  Rules for everything else related to XUL can be found in
- * this file.  Make sure you choose the correct style sheet when adding new
- * rules.  (This split of the XUL rules is to minimize memory use and improve
- * performance in HTML/SVG documents.)
+ * Rules for everything related to XUL except scrollbars can be found in this
+ * file.
  *
  * This file should also not contain any app specific styling.  Defaults for
  * widgets of a particular application should be in that application's style
@@ -19,12 +15,29 @@
 @namespace url("http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"); /* set default namespace to XUL */
 @namespace html url("http://www.w3.org/1999/xhtml"); /* namespace for HTML elements */
 
+* {
+  -moz-user-focus: ignore;
+  display: -moz-box;
+  box-sizing: border-box;
+}
+
+/* hide the content and destroy the frame */
+[hidden="true"] {
+  display: none;
+}
+
+/* hide the content, but don't destroy the frames */
+[collapsed="true"] {
+  visibility: collapse;
+}
+
 /* TODO: investigate unifying these two root selectors
  * https://bugzilla.mozilla.org/show_bug.cgi?id=1592344
  */
 *|*:root {
   --animation-easing-function: cubic-bezier(.07, .95, 0, 1);
   -moz-box-flex: 1;
+  -moz-box-collapse: legacy;
 }
 
 :root {
@@ -32,6 +45,7 @@
   -moz-control-character-visibility: visible;
   width: 100%;
   height: 100%;
+  user-select: none;
 }
 
 :root:-moz-locale-dir(rtl) {
@@ -252,12 +266,6 @@ browser,
 editor,
 iframe {
   display: inline;
-}
-
-@media (-moz-box-flexbox-emulation) {
-  *|*:root {
-    -moz-box-layout: flex;
-  }
 }
 
 /* Allow the browser to shrink below its intrinsic size, to match legacy
@@ -506,7 +514,6 @@ treecolpicker {
 
 treechildren {
   display: -moz-box;
-  user-select: none;
   -moz-box-flex: 1;
 }
 
@@ -618,7 +625,6 @@ tooltip[titletip="true"] {
 /********** textbox **********/
 
 search-textbox {
-  user-select: text;
   text-shadow: none;
 }
 
@@ -666,13 +672,15 @@ menulist[popuponly] {
 /********** splitter **********/
 
 .tree-splitter {
-  width: 0;
-  max-width: 0;
+  margin-inline: -4px;
+  width: 8px;
+  max-width: 8px;
+  min-width: 8px;
   appearance: none !important;
-  min-width: 0 !important;
-  min-height: 0 !important;
   border: none !important;
+  background: none !important;
   -moz-box-ordinal-group: 2147483646;
+  z-index: 2147483646;
 }
 
 /******** scrollbar ********/
@@ -718,13 +726,6 @@ wizard {
   contain: inline-size;
   min-width: 40em;
   min-height: 30em;
-}
-
-.wizard-window {
-  /* TODO: This can be removed once
-   * layout.css.moz-box-flexbox-emulation.enabled
-   * is true unconditionally */
-  -moz-box-layout: flex;
 }
 
 wizard > wizardpage {

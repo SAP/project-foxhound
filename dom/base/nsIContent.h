@@ -17,6 +17,7 @@ class nsIFrame;
 
 namespace mozilla {
 class EventChainPreVisitor;
+class HTMLEditor;
 struct URLExtraData;
 namespace dom {
 struct BindContext;
@@ -624,6 +625,12 @@ class nsIContent : public nsINode {
     return rc == 0;
   }
 
+  /**
+   * Use this method with designMode and contentEditable to check if the
+   * node may need spellchecking.
+   */
+  bool InclusiveDescendantMayNeedSpellchecking(mozilla::HTMLEditor* aEditor);
+
  protected:
   /**
    * Lazily allocated extended slots to avoid
@@ -639,7 +646,7 @@ class nsIContent : public nsINode {
     virtual ~nsExtendedContentSlots();
 
     virtual void TraverseExtendedSlots(nsCycleCollectionTraversalCallback&);
-    virtual void UnlinkExtendedSlots();
+    virtual void UnlinkExtendedSlots(nsIContent&);
 
     virtual size_t SizeOfExcludingThis(
         mozilla::MallocSizeOf aMallocSizeOf) const;
@@ -674,10 +681,10 @@ class nsIContent : public nsINode {
       }
     }
 
-    void Unlink() override {
-      nsINode::nsSlots::Unlink();
+    void Unlink(nsINode& aNode) override {
+      nsINode::nsSlots::Unlink(aNode);
       if (mExtendedSlots) {
-        GetExtendedContentSlots()->UnlinkExtendedSlots();
+        GetExtendedContentSlots()->UnlinkExtendedSlots(*aNode.AsContent());
       }
     }
 

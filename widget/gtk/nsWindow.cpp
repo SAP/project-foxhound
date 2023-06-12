@@ -883,29 +883,33 @@ void nsWindow::SetSizeConstraints(const SizeConstraints& aConstraints) {
   ApplySizeConstraints();
 }
 
+bool nsWindow::DrawsToCSDTitlebar() const {
+  return mSizeMode == nsSizeMode_Normal &&
+         mGtkWindowDecoration == GTK_DECORATION_CLIENT && mDrawInTitlebar;
+}
+
 void nsWindow::AddCSDDecorationSize(int* aWidth, int* aHeight) {
-  if (mSizeMode == nsSizeMode_Normal &&
-      mGtkWindowDecoration == GTK_DECORATION_CLIENT && mDrawInTitlebar) {
-    GtkBorder decorationSize = GetCSDDecorationSize(IsPopup());
-    *aWidth += decorationSize.left + decorationSize.right;
-    *aHeight += decorationSize.top + decorationSize.bottom;
+  if (!DrawsToCSDTitlebar()) {
+    return;
   }
+  GtkBorder decorationSize = GetCSDDecorationSize(IsPopup());
+  *aWidth += decorationSize.left + decorationSize.right;
+  *aHeight += decorationSize.top + decorationSize.bottom;
 }
 
 #ifdef MOZ_WAYLAND
 bool nsWindow::GetCSDDecorationOffset(int* aDx, int* aDy) {
-  if (mSizeMode == nsSizeMode_Normal &&
-      mGtkWindowDecoration == GTK_DECORATION_CLIENT && mDrawInTitlebar) {
-    GtkBorder decorationSize = GetCSDDecorationSize(IsPopup());
-    *aDx = decorationSize.left;
-    *aDy = decorationSize.top;
-    return true;
+  if (!DrawsToCSDTitlebar()) {
+    return false;
   }
-  return false;
+  GtkBorder decorationSize = GetCSDDecorationSize(IsPopup());
+  *aDx = decorationSize.left;
+  *aDy = decorationSize.top;
+  return true;
 }
 #endif
 
-void nsWindow::ApplySizeConstraints(void) {
+void nsWindow::ApplySizeConstraints() {
   if (mShell) {
     GdkGeometry geometry;
     geometry.min_width =
@@ -918,7 +922,7 @@ void nsWindow::ApplySizeConstraints(void) {
         DevicePixelsToGdkCoordRoundDown(mSizeConstraints.mMaxSize.height);
 
     uint32_t hints = 0;
-    if (mSizeConstraints.mMinSize != LayoutDeviceIntSize(0, 0)) {
+    if (mSizeConstraints.mMinSize != LayoutDeviceIntSize()) {
       if (GdkIsWaylandDisplay()) {
         gtk_widget_set_size_request(GTK_WIDGET(mContainer), geometry.min_width,
                                     geometry.min_height);
@@ -3714,18 +3718,15 @@ void nsWindow::CreateCompositorVsyncDispatcher() {
     nsBaseWidget::CreateCompositorVsyncDispatcher();
     return;
   }
-
-  if (XRE_IsParentProcess()) {
-    if (!mCompositorVsyncDispatcherLock) {
-      mCompositorVsyncDispatcherLock =
-          MakeUnique<Mutex>("mCompositorVsyncDispatcherLock");
-    }
-    MutexAutoLock lock(*mCompositorVsyncDispatcherLock);
-    if (!mCompositorVsyncDispatcher) {
-      LOG_VSYNC("  create CompositorVsyncDispatcher()");
-      mCompositorVsyncDispatcher =
-          new CompositorVsyncDispatcher(mWaylandVsyncDispatcher);
-    }
+  if (!mCompositorVsyncDispatcherLock) {
+    mCompositorVsyncDispatcherLock =
+        MakeUnique<Mutex>("mCompositorVsyncDispatcherLock");
+  }
+  MutexAutoLock lock(*mCompositorVsyncDispatcherLock);
+  if (!mCompositorVsyncDispatcher) {
+    LOG_VSYNC("  create CompositorVsyncDispatcher()");
+    mCompositorVsyncDispatcher =
+        new CompositorVsyncDispatcher(mWaylandVsyncDispatcher);
   }
 }
 #endif
@@ -3852,7 +3853,7 @@ gboolean nsWindow::OnExposeEvent(cairo_t* cr) {
   if (!dt || !dt->IsValid()) {
     return FALSE;
   }
-  RefPtr<gfxContext> ctx;
+  Maybe<gfxContext> ctx;
   IntRect boundsRect = region.GetBounds().ToUnknownRect();
   IntPoint offset(0, 0);
   if (dt->GetSize() == boundsRect.Size()) {
@@ -3878,12 +3879,11 @@ gboolean nsWindow::OnExposeEvent(cairo_t* cr) {
       return FALSE;
     }
     destDT->SetTransform(Matrix::Translation(-boundsRect.TopLeft()));
-    ctx = gfxContext::CreatePreservingTransformOrNull(destDT);
+    ctx.emplace(destDT, /* aPreserveTransform */ true);
   } else {
     gfxUtils::ClipToRegion(dt, region.ToUnknownRegion());
-    ctx = gfxContext::CreatePreservingTransformOrNull(dt);
+    ctx.emplace(dt, /* aPreserveTransform */ true);
   }
-  MOZ_ASSERT(ctx);  // checked both dt and destDT valid draw target above
 
 #  if 0
     // NOTE: Paint flashing region would be wrong for cairo, since
@@ -3908,7 +3908,8 @@ gboolean nsWindow::OnExposeEvent(cairo_t* cr) {
         // reused SHM image. See bug 1258086.
         dt->ClearRect(Rect(boundsRect));
       }
-      AutoLayerManagerSetup setupLayerManager(this, ctx, layerBuffering);
+      AutoLayerManagerSetup setupLayerManager(
+          this, ctx.isNothing() ? nullptr : &ctx.ref(), layerBuffering);
       painted = listener->PaintWindow(this, region);
 
       // Re-get the listener since the will paint notification might have
@@ -3936,7 +3937,7 @@ gboolean nsWindow::OnExposeEvent(cairo_t* cr) {
     }
   }
 
-  ctx = nullptr;
+  ctx.reset();
   dt->PopClip();
 
 #endif  // MOZ_X11
@@ -4236,6 +4237,7 @@ static bool IsBogusLeaveNotifyEvent(GdkWindow* aWindow,
     const auto& desktopEnv = GetDesktopEnvironmentIdentifier();
     return desktopEnv.EqualsLiteral("fluxbox") ||   // Bug 1805939 comment 0.
            desktopEnv.EqualsLiteral("blackbox") ||  // Bug 1805939 comment 32.
+           desktopEnv.EqualsLiteral("pekwm") ||     // Bug 1822911.
            StringBeginsWith(desktopEnv, "fvwm"_ns);
   }();
 
@@ -4316,15 +4318,19 @@ Maybe<GdkWindowEdge> nsWindow::CheckResizerEdge(
       // we still want the resizers there, even when tiled.
       return true;
     }
-    if (mDrawInTitlebar) {
-      // If we show top resizers on a (non-PIP) tiled window on GNOME, it
-      // doesn't really work, since the window is "stuck" to the top and
-      // bottom, so don't show them in that case.
-      return !mIsTiled;
+    if (!mDrawInTitlebar) {
+      return false;
     }
-    // If we're not a PIP window nor drawing to the titlebar, we don't need to
-    // add resizers.
-    return false;
+    // On KDE, allow for 1 extra pixel at the top of regular windows when
+    // drawing to the titlebar. This matches the native titlebar behavior on
+    // that environment. See bug 1813554.
+    //
+    // Don't do that on GNOME (see bug 1822764). If we wanted to do this on
+    // GNOME we'd need an extra check for mIsTiled, since the window is "stuck"
+    // to the top and bottom.
+    //
+    // Other DEs are untested.
+    return mDrawInTitlebar && IsKdeDesktopEnvironment();
   }();
 
   if (!canResize) {
@@ -4753,7 +4759,7 @@ void nsWindow::OnButtonReleaseEvent(GdkEventButton* aEvent) {
 
   // Open window manager menu on PIP window to allow user
   // to place it on top / all workspaces.
-  if (mIsPIPWindow && aEvent->button == 3) {
+  if (mAlwaysOnTop && aEvent->button == 3) {
     TryToShowNativeWindowMenu(aEvent);
   }
 }
@@ -6089,6 +6095,14 @@ nsresult nsWindow::Create(nsIWidget* aParent, nsNativeWidget aNativeParent,
     gtk_window_set_keep_above(GTK_WINDOW(mShell), TRUE);
   }
 
+  // It is important that this happens before the realize() call below, so that
+  // we don't get bogus CSD margins on Wayland, see bug 1794577.
+  if (IsAlwaysUndecoratedWindow()) {
+    LOG("    Is undecorated Window\n");
+    gtk_window_set_titlebar(GTK_WINDOW(mShell), gtk_fixed_new());
+    gtk_window_set_decorated(GTK_WINDOW(mShell), false);
+  }
+
   // Create a container to hold child windows and child GtkWidgets.
   GtkWidget* container = moz_container_new();
   mContainer = MOZ_CONTAINER(container);
@@ -6148,10 +6162,6 @@ nsresult nsWindow::Create(nsIWidget* aParent, nsNativeWidget aNativeParent,
 
   if (!mAlwaysOnTop) {
     gtk_widget_grab_focus(container);
-  }
-
-  if (mIsWaylandPanelWindow) {
-    gtk_window_set_decorated(GTK_WINDOW(mShell), false);
   }
 
 #ifdef MOZ_WAYLAND
@@ -6281,8 +6291,7 @@ nsresult nsWindow::Create(nsIWidget* aParent, nsNativeWidget aNativeParent,
       mWindowType == WindowType::TopLevel) {
     mWaylandVsyncSource = new WaylandVsyncSource(this);
     mWaylandVsyncDispatcher = new VsyncDispatcher(mWaylandVsyncSource);
-    LOG_VSYNC("  created WaylandVsyncSource)");
-    MOZ_RELEASE_ASSERT(mWaylandVsyncSource);
+    LOG_VSYNC("  created WaylandVsyncSource");
   }
 #endif
 
@@ -6339,15 +6348,23 @@ void nsWindow::RefreshWindowClass(void) {
   }
 
 #ifdef MOZ_X11
-  if (!mGtkWindowAppName.IsEmpty() && GdkIsX11Display()) {
+  if (GdkIsX11Display()) {
     XClassHint* class_hint = XAllocClassHint();
-    if (!class_hint) {
+    if (!class_hint) return;
+
+    const char* res_name =
+        !mGtkWindowAppName.IsEmpty() ? mGtkWindowAppName.get() : gAppData->name;
+
+    const char* res_class = !mGtkWindowAppClass.IsEmpty()
+                                ? mGtkWindowAppClass.get()
+                                : gdk_get_program_class();
+
+    if (!res_name || !res_class) {
+      XFree(class_hint);
       return;
     }
-    const char* res_class = gdk_get_program_class();
-    if (!res_class) return;
 
-    class_hint->res_name = const_cast<char*>(mGtkWindowAppName.get());
+    class_hint->res_name = const_cast<char*>(res_name);
     class_hint->res_class = const_cast<char*>(res_class);
 
     // Can't use gtk_window_set_wmclass() for this; it prints
@@ -6360,32 +6377,54 @@ void nsWindow::RefreshWindowClass(void) {
 #endif /* MOZ_X11 */
 }
 
-void nsWindow::SetWindowClass(const nsAString& xulWinType) {
+void nsWindow::SetWindowClass(const nsAString& xulWinType,
+                              const nsAString& xulWinClass,
+                              const nsAString& xulWinName) {
   if (!mShell) return;
 
-  char* res_name = ToNewCString(xulWinType, mozilla::fallible);
-  if (!res_name) return;
+  // If window type attribute is set, parse it into name and role
+  if (!xulWinType.IsEmpty()) {
+    char* res_name = ToNewCString(xulWinType, mozilla::fallible);
+    const char* role = nullptr;
 
-  const char* role = nullptr;
+    if (res_name) {
+      // Parse res_name into a name and role. Characters other than
+      // [A-Za-z0-9_-] are converted to '_'. Anything after the first
+      // colon is assigned to role; if there's no colon, assign the
+      // whole thing to both role and res_name.
+      for (char* c = res_name; *c; c++) {
+        if (':' == *c) {
+          *c = 0;
+          role = c + 1;
+        } else if (!isascii(*c) ||
+                   (!isalnum(*c) && ('_' != *c) && ('-' != *c))) {
+          *c = '_';
+        }
+      }
+      res_name[0] = (char)toupper(res_name[0]);
+      if (!role) role = res_name;
 
-  // Parse res_name into a name and role. Characters other than
-  // [A-Za-z0-9_-] are converted to '_'. Anything after the first
-  // colon is assigned to role; if there's no colon, assign the
-  // whole thing to both role and res_name.
-  for (char* c = res_name; *c; c++) {
-    if (':' == *c) {
-      *c = 0;
-      role = c + 1;
-    } else if (!isascii(*c) || (!isalnum(*c) && ('_' != *c) && ('-' != *c))) {
-      *c = '_';
+      mGtkWindowAppName = res_name;
+      mGtkWindowRoleName = role;
+      free(res_name);
     }
   }
-  res_name[0] = (char)toupper(res_name[0]);
-  if (!role) role = res_name;
 
-  mGtkWindowAppName = res_name;
-  mGtkWindowRoleName = role;
-  free(res_name);
+  // If window class attribute is set, store it as app class
+  // If this attribute is not set, reset app class to default
+  if (!xulWinClass.IsEmpty()) {
+    CopyUTF16toUTF8(xulWinClass, mGtkWindowAppClass);
+  } else {
+    mGtkWindowAppClass = nullptr;
+  }
+
+  // If window class attribute is set, store it as app name
+  // If both name and type are not set, reset app name to default
+  if (!xulWinName.IsEmpty()) {
+    CopyUTF16toUTF8(xulWinName, mGtkWindowAppName);
+  } else if (xulWinType.IsEmpty()) {
+    mGtkWindowAppClass = nullptr;
+  }
 
   RefreshWindowClass();
 }
@@ -8458,9 +8497,8 @@ static nsresult initialize_prefs(void) {
   if (Preferences::HasUserValue("widget.use-aspect-ratio")) {
     gUseAspectRatio = Preferences::GetBool("widget.use-aspect-ratio", true);
   } else {
-    gUseAspectRatio = IsGnomeDesktopEnvironment();
+    gUseAspectRatio = IsGnomeDesktopEnvironment() || IsKdeDesktopEnvironment();
   }
-
   return NS_OK;
 }
 
@@ -8709,6 +8747,18 @@ nsresult nsWindow::SetNonClientMargins(const LayoutDeviceIntMargin& aMargins) {
   return NS_OK;
 }
 
+bool nsWindow::IsAlwaysUndecoratedWindow() const {
+  if (mIsPIPWindow || mIsWaylandPanelWindow) {
+    return true;
+  }
+  if (mWindowType == WindowType::Dialog &&
+      !(mBorderStyle & BorderStyle::Title) &&
+      !(mBorderStyle & BorderStyle::ResizeH)) {
+    return true;
+  }
+  return false;
+}
+
 void nsWindow::SetDrawsInTitlebar(bool aState) {
   LOG("nsWindow::SetDrawsInTitlebar() State %d mGtkWindowDecoration %d\n",
       aState, (int)mGtkWindowDecoration);
@@ -8719,9 +8769,9 @@ void nsWindow::SetDrawsInTitlebar(bool aState) {
     return;
   }
 
-  if (mIsPIPWindow) {
-    gtk_window_set_decorated(GTK_WINDOW(mShell), !aState);
-    LOG("  set decoration for PIP %d", aState);
+  if (IsAlwaysUndecoratedWindow()) {
+    MOZ_ASSERT(aState, "Unexpected decoration request");
+    MOZ_ASSERT(!gtk_window_get_decorated(GTK_WINDOW(mShell)));
     return;
   }
 
@@ -9586,7 +9636,7 @@ void nsWindow::UpdateMozWindowActive() {
   }
 }
 
-void nsWindow::ForceTitlebarRedraw(void) {
+void nsWindow::ForceTitlebarRedraw() {
   MOZ_ASSERT(mDrawInTitlebar, "We should not redraw invisible titlebar.");
 
   if (!mWidgetListener || !mWidgetListener->GetPresShell()) {
@@ -9651,18 +9701,6 @@ void nsWindow::SetEGLNativeWindowSize(
   }
 }
 #endif
-
-LayoutDeviceIntSize nsWindow::GetMozContainerSize() {
-  LayoutDeviceIntSize size(0, 0);
-  if (mContainer) {
-    GtkAllocation allocation;
-    gtk_widget_get_allocation(GTK_WIDGET(mContainer), &allocation);
-    double scale = FractionalScaleFactor();
-    size.width = round(allocation.width * scale);
-    size.height = round(allocation.height * scale);
-  }
-  return size;
-}
 
 nsWindow* nsWindow::GetWindow(GdkWindow* window) {
   return get_window_for_gdk_window(window);

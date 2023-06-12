@@ -472,7 +472,12 @@ class PlacesViewBase {
   }
 
   nodeURIChanged(aPlacesNode, aURIString) {
-    let elt = this._getDOMNodeForPlacesNode(aPlacesNode);
+    let elt = this._getDOMNodeForPlacesNode(aPlacesNode, true);
+
+    // There's no DOM node, thus there's nothing to be done when the URI changes.
+    if (!elt) {
+      return;
+    }
 
     // Here we need the <menu>.
     if (elt.localName == "menupopup") {
@@ -486,11 +491,11 @@ class PlacesViewBase {
   }
 
   nodeIconChanged(aPlacesNode) {
-    let elt = this._getDOMNodeForPlacesNode(aPlacesNode);
+    let elt = this._getDOMNodeForPlacesNode(aPlacesNode, true);
 
-    // There's no UI representation for the root node, thus there's nothing to
-    // be done when the icon changes.
-    if (elt == this._rootElt) {
+    // There's no UI representation for the root node, or there's no DOM node,
+    // thus there's nothing to be done when the icon changes.
+    if (!elt || elt == this._rootElt) {
       return;
     }
 
@@ -919,6 +924,7 @@ class PlacesToolbar extends PlacesViewBase {
   ];
 
   QueryInterface = ChromeUtils.generateQI([
+    "nsINamed",
     "nsITimerCallback",
     ...PlacesViewBase.interfaces,
   ]);
@@ -1631,6 +1637,10 @@ class PlacesToolbar extends PlacesViewBase {
     let timer = Cc["@mozilla.org/timer;1"].createInstance(Ci.nsITimer);
     timer.initWithCallback(this, aTime, timer.TYPE_ONE_SHOT);
     return timer;
+  }
+
+  get name() {
+    return "PlacesToolbar";
   }
 
   notify(aTimer) {

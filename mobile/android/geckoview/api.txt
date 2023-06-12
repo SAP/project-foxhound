@@ -348,7 +348,6 @@ package org.mozilla.geckoview {
     method @AnyThread @Nullable public String getAttribute(@NonNull String);
     method @AnyThread @NonNull public Map<String,String> getAttributes();
     method @AnyThread @NonNull public Collection<Autofill.Node> getChildren();
-    method @AnyThread @Deprecated @DeprecationSchedule(id="autofill-fission",version=112) @NonNull public Rect getDimensions();
     method @AnyThread @NonNull public String getDomain();
     method @AnyThread public boolean getEnabled();
     method @AnyThread public boolean getFocusable();
@@ -394,8 +393,6 @@ package org.mozilla.geckoview {
     field protected boolean mRepopulatedMenu;
     field @Nullable protected GeckoSession.SelectionActionDelegate.Selection mSelection;
     field @Nullable protected GeckoSession mSession;
-    field @Deprecated @DeprecationSchedule(id="selection-fission",version=112) @NonNull protected final Matrix mTempMatrix;
-    field @Deprecated @DeprecationSchedule(id="selection-fission",version=112) @NonNull protected final RectF mTempRect;
     field protected final boolean mUseFloatingToolbar;
   }
 
@@ -921,6 +918,7 @@ package org.mozilla.geckoview {
     method @AnyThread public void goForward();
     method @AnyThread public void goForward(boolean);
     method @AnyThread public void gotoHistoryIndex(int);
+    method @AnyThread @NonNull public GeckoResult<Boolean> hasCookieBannerRuleForBrowsingContextTree();
     method @UiThread public boolean isOpen();
     method @AnyThread @NonNull public GeckoResult<Boolean> isPdfJs();
     method @AnyThread public void load(@NonNull GeckoSession.Loader);
@@ -963,6 +961,7 @@ package org.mozilla.geckoview {
     field public static final int LOAD_FLAGS_ALLOW_POPUPS = 8;
     field public static final int LOAD_FLAGS_BYPASS_CACHE = 1;
     field public static final int LOAD_FLAGS_BYPASS_CLASSIFIER = 16;
+    field public static final int LOAD_FLAGS_BYPASS_LOAD_URI_DELEGATE = 128;
     field public static final int LOAD_FLAGS_BYPASS_PROXY = 2;
     field public static final int LOAD_FLAGS_EXTERNAL = 4;
     field public static final int LOAD_FLAGS_FORCE_ALLOW_DATA_URI = 32;
@@ -1542,7 +1541,6 @@ package org.mozilla.geckoview {
     method @AnyThread public void selectAll();
     method @AnyThread public void unselect();
     field @NonNull public final Collection<String> availableActions;
-    field @Deprecated @DeprecationSchedule(id="selection-fission",version=112) @Nullable public final RectF clientRect;
     field public final int flags;
     field @Nullable public final RectF screenRect;
     field @NonNull public final String text;

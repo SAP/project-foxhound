@@ -76,6 +76,77 @@ struct EvalCacheHashPolicy {
 using EvalCache =
     GCHashSet<EvalCacheEntry, EvalCacheHashPolicy, SystemAllocPolicy>;
 
+class MegamorphicCacheEntry {
+  // Receiver object's shape.
+  Shape* shape_ = nullptr;
+
+  // The atom or symbol property being accessed.
+  PropertyKey key_;
+
+  // Slot offset and isFixedSlot flag of the data property.
+  TaggedSlotOffset slotOffset_;
+
+  // This entry is valid iff the generation matches the cache's generation.
+  uint16_t generation_ = 0;
+
+  // Number of hops on the proto chain to get to the holder object. If this is
+  // zero, the property exists on the receiver object. It can also be one of
+  // the sentinel values indicating a missing property lookup.
+  uint8_t numHops_ = 0;
+
+  friend class MegamorphicCache;
+
+ public:
+  static constexpr uint8_t MaxHopsForDataProperty = UINT8_MAX - 2;
+  static constexpr uint8_t NumHopsForMissingProperty = UINT8_MAX - 1;
+  static constexpr uint8_t NumHopsForMissingOwnProperty = UINT8_MAX;
+
+  void init(Shape* shape, PropertyKey key, uint16_t generation, uint8_t numHops,
+            TaggedSlotOffset slotOffset) {
+    shape_ = shape;
+    key_ = key;
+    slotOffset_ = slotOffset;
+    generation_ = generation;
+    numHops_ = numHops;
+    MOZ_ASSERT(numHops_ == numHops, "numHops must fit in numHops_");
+  }
+  bool isMissingProperty() const {
+    return numHops_ == NumHopsForMissingProperty;
+  }
+  bool isMissingOwnProperty() const {
+    return numHops_ == NumHopsForMissingOwnProperty;
+  }
+  bool isDataProperty() const { return numHops_ <= MaxHopsForDataProperty; }
+  uint16_t numHops() const {
+    MOZ_ASSERT(isDataProperty());
+    return numHops_;
+  }
+  TaggedSlotOffset slotOffset() const {
+    MOZ_ASSERT(isDataProperty());
+    return slotOffset_;
+  }
+
+  static constexpr size_t offsetOfShape() {
+    return offsetof(MegamorphicCacheEntry, shape_);
+  }
+
+  static constexpr size_t offsetOfKey() {
+    return offsetof(MegamorphicCacheEntry, key_);
+  }
+
+  static constexpr size_t offsetOfGeneration() {
+    return offsetof(MegamorphicCacheEntry, generation_);
+  }
+
+  static constexpr size_t offsetOfSlotOffset() {
+    return offsetof(MegamorphicCacheEntry, slotOffset_);
+  }
+
+  static constexpr size_t offsetOfNumHops() {
+    return offsetof(MegamorphicCacheEntry, numHops_);
+  }
+};
+
 // [SMDOC] Megamorphic Property Lookup Cache (MegamorphicCache)
 //
 // MegamorphicCache is a data structure used to speed up megamorphic property
@@ -107,78 +178,13 @@ using EvalCache =
 // The cache is also invalidated on each major GC.
 class MegamorphicCache {
  public:
+  using Entry = MegamorphicCacheEntry;
+
   static constexpr size_t NumEntries = 1024;
   // log2(alignof(Shape))
   static constexpr uint8_t ShapeHashShift1 = 3;
   // ShapeHashShift1 + log2(NumEntries)
   static constexpr uint8_t ShapeHashShift2 = ShapeHashShift1 + 10;
-
-  class Entry {
-    // Receiver object's shape.
-    Shape* shape_ = nullptr;
-
-    // The atom or symbol property being accessed.
-    PropertyKey key_;
-
-    // This entry is valid iff the generation matches the cache's generation.
-    uint16_t generation_ = 0;
-
-    // Slot number of the data property.
-    static constexpr size_t MaxSlotNumber = UINT16_MAX;
-    uint16_t slot_ = 0;
-
-    // Number of hops on the proto chain to get to the holder object. If this is
-    // zero, the property exists on the receiver object. It can also be one of
-    // the sentinel values indicating a missing property lookup.
-    uint8_t numHops_ = 0;
-
-    friend class MegamorphicCache;
-
-   public:
-    static constexpr uint8_t MaxHopsForDataProperty = UINT8_MAX - 2;
-    static constexpr uint8_t NumHopsForMissingProperty = UINT8_MAX - 1;
-    static constexpr uint8_t NumHopsForMissingOwnProperty = UINT8_MAX;
-
-    void init(Shape* shape, PropertyKey key, uint16_t generation,
-              uint8_t numHops, uint16_t slot) {
-      shape_ = shape;
-      key_ = key;
-      generation_ = generation;
-      slot_ = slot;
-      numHops_ = numHops;
-      MOZ_ASSERT(slot_ == slot, "slot must fit in slot_");
-      MOZ_ASSERT(numHops_ == numHops, "numHops must fit in numHops_");
-    }
-    bool isMissingProperty() const {
-      return numHops_ == NumHopsForMissingProperty;
-    }
-    bool isMissingOwnProperty() const {
-      return numHops_ == NumHopsForMissingOwnProperty;
-    }
-    bool isDataProperty() const { return numHops_ <= MaxHopsForDataProperty; }
-    uint16_t numHops() const {
-      MOZ_ASSERT(isDataProperty());
-      return numHops_;
-    }
-    uint16_t slot() const {
-      MOZ_ASSERT(isDataProperty());
-      return slot_;
-    }
-
-    static constexpr size_t offsetOfShape() { return offsetof(Entry, shape_); }
-
-    static constexpr size_t offsetOfKey() { return offsetof(Entry, key_); }
-
-    static constexpr size_t offsetOfGeneration() {
-      return offsetof(Entry, generation_);
-    }
-
-    static constexpr size_t offsetOfSlot() { return offsetof(Entry, slot_); }
-
-    static constexpr size_t offsetOfNumHops() {
-      return offsetof(Entry, numHops_);
-    }
-  };
 
  private:
   mozilla::Array<Entry, NumEntries> entries_;
@@ -214,20 +220,20 @@ class MegamorphicCache {
   }
   void initEntryForMissingProperty(Entry* entry, Shape* shape,
                                    PropertyKey key) {
-    entry->init(shape, key, generation_, Entry::NumHopsForMissingProperty, 0);
+    entry->init(shape, key, generation_, Entry::NumHopsForMissingProperty,
+                TaggedSlotOffset());
   }
   void initEntryForMissingOwnProperty(Entry* entry, Shape* shape,
                                       PropertyKey key) {
     entry->init(shape, key, generation_, Entry::NumHopsForMissingOwnProperty,
-                0);
+                TaggedSlotOffset());
   }
   void initEntryForDataProperty(Entry* entry, Shape* shape, PropertyKey key,
-                                size_t numHops, uint32_t slot) {
-    if (slot > Entry::MaxSlotNumber ||
-        numHops > Entry::MaxHopsForDataProperty) {
+                                size_t numHops, TaggedSlotOffset slotOffset) {
+    if (numHops > Entry::MaxHopsForDataProperty) {
       return;
     }
-    entry->init(shape, key, generation_, numHops, slot);
+    entry->init(shape, key, generation_, numHops, slotOffset);
   }
 
   static constexpr size_t offsetOfEntries() {
@@ -239,8 +245,56 @@ class MegamorphicCache {
   }
 };
 
+class MegamorphicSetPropCacheEntry {
+  Shape* beforeShape_ = nullptr;
+  Shape* afterShape_ = nullptr;
+
+  // The atom or symbol property being accessed.
+  PropertyKey key_;
+
+  // Slot offset and isFixedSlot flag of the data property.
+  TaggedSlotOffset slotOffset_;
+
+  // This entry is valid iff the generation matches the cache's generation.
+  uint16_t generation_ = 0;
+
+  friend class MegamorphicSetPropCache;
+
+ public:
+  void init(Shape* beforeShape, Shape* afterShape, PropertyKey key,
+            uint16_t generation, TaggedSlotOffset slotOffset) {
+    beforeShape_ = beforeShape;
+    afterShape_ = afterShape;
+    key_ = key;
+    slotOffset_ = slotOffset;
+    generation_ = generation;
+  }
+  TaggedSlotOffset slotOffset() const { return slotOffset_; }
+  Shape* afterShape() const { return afterShape_; }
+
+  static constexpr size_t offsetOfShape() {
+    return offsetof(MegamorphicSetPropCacheEntry, beforeShape_);
+  }
+  static constexpr size_t offsetOfAfterShape() {
+    return offsetof(MegamorphicSetPropCacheEntry, afterShape_);
+  }
+
+  static constexpr size_t offsetOfKey() {
+    return offsetof(MegamorphicSetPropCacheEntry, key_);
+  }
+
+  static constexpr size_t offsetOfGeneration() {
+    return offsetof(MegamorphicSetPropCacheEntry, generation_);
+  }
+
+  static constexpr size_t offsetOfSlotOffset() {
+    return offsetof(MegamorphicSetPropCacheEntry, slotOffset_);
+  }
+};
+
 class MegamorphicSetPropCache {
  public:
+  using Entry = MegamorphicSetPropCacheEntry;
   // We can get more hits if we increase this, but this seems to be around
   // the sweet spot where we are getting most of the hits we would get with
   // an infinitely sized cache
@@ -249,51 +303,6 @@ class MegamorphicSetPropCache {
   static constexpr uint8_t ShapeHashShift1 = 3;
   // ShapeHashShift1 + log2(NumEntries)
   static constexpr uint8_t ShapeHashShift2 = ShapeHashShift1 + 8;
-
-  class Entry {
-    Shape* beforeShape_ = nullptr;
-    Shape* afterShape_ = nullptr;
-
-    // The atom or symbol property being accessed.
-    PropertyKey key_;
-
-    // This entry is valid iff the generation matches the cache's generation.
-    uint16_t generation_ = 0;
-
-    // Slot number of the data property.
-    static constexpr size_t MaxSlotNumber = UINT16_MAX;
-    uint16_t slot_ = 0;
-
-    friend class MegamorphicSetPropCache;
-
-   public:
-    void init(Shape* beforeShape, Shape* afterShape, PropertyKey key,
-              uint16_t generation, uint16_t slot) {
-      beforeShape_ = beforeShape;
-      afterShape_ = afterShape;
-      key_ = key;
-      generation_ = generation;
-      slot_ = slot;
-      MOZ_ASSERT(slot_ == slot, "slot must fit in slot_");
-    }
-    uint16_t slot() const { return slot_; }
-    Shape* afterShape() const { return afterShape_; }
-
-    static constexpr size_t offsetOfShape() {
-      return offsetof(Entry, beforeShape_);
-    }
-    static constexpr size_t offsetOfAfterShape() {
-      return offsetof(Entry, afterShape_);
-    }
-
-    static constexpr size_t offsetOfKey() { return offsetof(Entry, key_); }
-
-    static constexpr size_t offsetOfGeneration() {
-      return offsetof(Entry, generation_);
-    }
-
-    static constexpr size_t offsetOfSlot() { return offsetof(Entry, slot_); }
-  };
 
  private:
   mozilla::Array<Entry, NumEntries> entries_;
@@ -321,12 +330,9 @@ class MegamorphicSetPropCache {
     }
   }
   void set(Shape* beforeShape, Shape* afterShape, PropertyKey key,
-           uint32_t slot) {
-    if (slot > Entry::MaxSlotNumber) {
-      return;
-    }
+           TaggedSlotOffset slotOffset) {
     Entry& entry = getEntry(beforeShape, key);
-    entry.init(beforeShape, afterShape, key, generation_, slot);
+    entry.init(beforeShape, afterShape, key, generation_, slotOffset);
   }
 
 #ifdef DEBUG

@@ -256,17 +256,17 @@ def so_version(value):
 @template
 def library_name_info_template(host_or_target):
     assert host_or_target in {host, target}
-    compiler = {
-        host: host_c_compiler,
-        target: c_compiler,
+    windows_abi = {
+        host: host_windows_abi,
+        target: target_windows_abi,
     }[host_or_target]
 
-    @depends(host_or_target, compiler, so_version)
-    def library_name_info_impl(host_or_target, compiler, so_version):
+    @depends(host_or_target, host_or_target.abi | windows_abi, so_version)
+    def library_name_info_impl(host_or_target, windows_abi, so_version):
         if host_or_target.kernel == "WINNT":
             # There aren't artifacts for mingw builds, so it's OK that the
             # results are inaccurate in that case.
-            if compiler and compiler.type != "clang-cl":
+            if windows_abi and windows_abi != "msvc":
                 return namespace(
                     dll=namespace(prefix="", suffix=".dll"),
                     lib=namespace(prefix="lib", suffix="a"),
@@ -1018,6 +1018,16 @@ include("build/moz.configure/old.configure")
 
 # JS Subconfigure.
 include("js/sub.configure", when=compile_environment & toolkit)
+
+
+@depends(build_environment, configure_cache)
+@imports(_import="json")
+@imports(_from="pathlib", _import="Path")
+def save_cache(build_environment, configure_cache):
+    cache_file = Path(build_environment.topobjdir) / "configure.cache"
+
+    with cache_file.open(mode="w") as fd:
+        json.dump(configure_cache, fd, indent=4)
 
 
 @depends(build_environment, build_project)

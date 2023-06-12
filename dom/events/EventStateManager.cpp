@@ -3188,20 +3188,11 @@ static nsINode* GetCrossDocParentNode(nsINode* aChild) {
 
 static bool NodeAllowsClickThrough(nsINode* aNode) {
   while (aNode) {
-    if (aNode->IsXULElement(nsGkAtoms::browser)) {
+    if (aNode->IsAnyOfXULElements(nsGkAtoms::browser, nsGkAtoms::tree)) {
       return false;
     }
-    if (aNode->IsXULElement()) {
-      mozilla::dom::Element* element = aNode->AsElement();
-      static Element::AttrValuesArray strings[] = {nsGkAtoms::always,
-                                                   nsGkAtoms::never, nullptr};
-      switch (element->FindAttrValueIn(
-          kNameSpaceID_None, nsGkAtoms::clickthrough, strings, eCaseMatters)) {
-        case 0:
-          return true;
-        case 1:
-          return false;
-      }
+    if (aNode->IsAnyOfXULElements(nsGkAtoms::scrollbar, nsGkAtoms::resizer)) {
+      return true;
     }
     aNode = GetCrossDocParentNode(aNode);
   }
@@ -6063,8 +6054,7 @@ nsresult EventStateManager::DoContentCommandEvent(
             nsCOMPtr<nsITransferable> transferable = aEvent->mTransferable;
             IPCDataTransfer ipcDataTransfer;
             nsContentUtils::TransferableToIPCTransferable(
-                transferable, &ipcDataTransfer, false, nullptr,
-                remote->Manager());
+                transferable, &ipcDataTransfer, false, remote->Manager());
             bool isPrivateData = transferable->GetIsPrivateData();
             nsCOMPtr<nsIPrincipal> requestingPrincipal =
                 transferable->GetRequestingPrincipal();

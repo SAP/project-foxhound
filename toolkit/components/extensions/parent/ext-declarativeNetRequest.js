@@ -12,6 +12,22 @@ ChromeUtils.defineESModuleGetters(this, {
 
 var { ExtensionError } = ExtensionUtils;
 
+const PREF_DNR_FEEDBACK = "extensions.dnr.feedback";
+XPCOMUtils.defineLazyPreferenceGetter(
+  this,
+  "dnrFeedbackEnabled",
+  PREF_DNR_FEEDBACK,
+  false
+);
+
+function ensureDNRFeedbackEnabled(apiName) {
+  if (!dnrFeedbackEnabled) {
+    throw new ExtensionError(
+      `${apiName} is only available when the "${PREF_DNR_FEEDBACK}" preference is set to true.`
+    );
+  }
+}
+
 this.declarativeNetRequest = class extends ExtensionAPI {
   onManifestEntry(entryName) {
     if (entryName === "declarative_net_request") {
@@ -86,7 +102,34 @@ this.declarativeNetRequest = class extends ExtensionAPI {
           return ExtensionDNR.getRuleManager(extension).getSessionRules();
         },
 
+        isRegexSupported(regexOptions) {
+          const {
+            regex: regexFilter,
+            isCaseSensitive: isUrlFilterCaseSensitive,
+            // requireCapturing: is ignored, as it does not affect validation.
+          } = regexOptions;
+
+          let ruleValidator = new ExtensionDNR.RuleValidator([]);
+          ruleValidator.addRules([
+            {
+              id: 1,
+              condition: { regexFilter, isUrlFilterCaseSensitive },
+              action: { type: "allow" },
+            },
+          ]);
+          let failures = ruleValidator.getFailures();
+          if (failures.length) {
+            // While the UnsupportedRegexReason enum has more entries than just
+            // "syntaxError" (e.g. also "memoryLimitExceeded"), our validation
+            // is currently very permissive, and therefore the only
+            // distinguishable error is "syntaxError".
+            return { isSupported: false, reason: "syntaxError" };
+          }
+          return { isSupported: true };
+        },
+
         async testMatchOutcome(request, options) {
+          ensureDNRFeedbackEnabled("declarativeNetRequest.testMatchOutcome");
           let { url, initiator, ...req } = request;
           req.requestURI = Services.io.newURI(url);
           if (initiator) {

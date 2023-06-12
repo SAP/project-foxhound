@@ -29,8 +29,10 @@ XPCOMUtils.defineLazyServiceGetter(
   "nsIStyleSheetService"
 );
 
-// Query selector for selectable elements in tip and dynamic results.
+// Query selector for selectable elements in results.
 const SELECTABLE_ELEMENT_SELECTOR = "[role=button], [selectable]";
+const KEYBOARD_SELECTABLE_ELEMENT_SELECTOR =
+  "[role=button]:not([keyboard-inaccessible]), [selectable]";
 
 const ZERO_PREFIX_HISTOGRAM_DWELL_TIME = "FX_URLBAR_ZERO_PREFIX_DWELL_TIME_MS";
 const ZERO_PREFIX_SCALAR_ABANDONMENT = "urlbar.zeroprefix.abandonment";
@@ -38,8 +40,8 @@ const ZERO_PREFIX_SCALAR_ENGAGEMENT = "urlbar.zeroprefix.engagement";
 const ZERO_PREFIX_SCALAR_EXPOSURE = "urlbar.zeroprefix.exposure";
 
 const RESULT_MENU_COMMANDS = {
-  BLOCK: "block",
-  LEARN_MORE: "learn-more",
+  DISMISS: "dismiss",
+  HELP: "help",
 };
 
 const getBoundsWithoutFlushing = element =>
@@ -256,7 +258,9 @@ export class UrlbarView {
    *   The result of the element's row.
    */
   getResultFromElement(element) {
-    return this.#getRowFromElement(element)?.result;
+    return element?.classList.contains("urlbarView-result-menuitem")
+      ? this.#resultMenuResult
+      : this.#getRowFromElement(element)?.result;
   }
 
   /**
@@ -448,6 +452,7 @@ export class UrlbarView {
       this.input.searchMode = null;
     }
 
+    this.resultMenu.hidePopup();
     this.removeAccessibleFocus();
     this.input.inputField.setAttribute("aria-expanded", "false");
     this.#openPanelInstance = null;
@@ -783,7 +788,7 @@ export class UrlbarView {
     this.resultMenu.addEventListener(
       "popuphidden",
       () => {
-        anchor.toggleAttribute("open", false);
+        anchor.removeAttribute("open");
       },
       { once: true }
     );
@@ -935,7 +940,7 @@ export class UrlbarView {
     this.input.inputField.setAttribute("aria-expanded", "true");
 
     this.input.toggleAttribute("suppress-focus-border", true);
-    this.input.setAttribute("open", "true");
+    this.input.toggleAttribute("open", true);
     this.input.startLayoutExtend();
 
     this.window.addEventListener("resize", this);
@@ -1209,6 +1214,41 @@ export class UrlbarView {
     item._elements.set("url", url);
   }
 
+  /**
+   * @param {Element} node
+   *   The element to set attributes on.
+   * @param {object} attributes
+   *   Attribute names to values mapping.  For each name-value pair, an
+   *   attribute is set on the element, except for `null` as a value which
+   *   signals an attribute should be removed, and `undefined` in which case
+   *   the attribute won't be set nor removed. The `id` attribute is reserved
+   *   and cannot be set here.
+   */
+  #setDynamicAttributes(node, attributes) {
+    if (!attributes) {
+      return;
+    }
+    for (let [name, value] of Object.entries(attributes)) {
+      if (name == "id") {
+        // IDs are managed externally to ensure they are unique.
+        console.error(
+          `Not setting id="${value}", as dynamic attributes may not include IDs.`
+        );
+        continue;
+      }
+      if (value === undefined) {
+        continue;
+      }
+      if (value === null) {
+        node.removeAttribute(name);
+      } else if (typeof value == "boolean") {
+        node.toggleAttribute(name, value);
+      } else {
+        node.setAttribute(name, value);
+      }
+    }
+  }
+
   #createRowContentForDynamicType(item, result) {
     let { dynamicType } = result.payload;
     let provider = lazy.UrlbarProvidersManager.getProvider(result.providerName);
@@ -1228,24 +1268,14 @@ export class UrlbarView {
   }
 
   #buildViewForDynamicType(type, parentNode, elementsByName, template) {
+    // Set attributes on parentNode.
+    this.#setDynamicAttributes(parentNode, template.attributes);
     // Add classes to parentNode's classList.
     if (template.classList) {
       parentNode.classList.add(...template.classList);
     }
     if (template.overflowable) {
       parentNode.classList.add("urlbarView-overflowable");
-    }
-    // Set attributes on parentNode.
-    for (let [name, value] of Object.entries(template.attributes || {})) {
-      if (name == "id") {
-        // We do not allow dynamic results to set IDs for their Nodes. IDs are
-        // managed by the view to ensure they are unique.
-        console.error(
-          "Dynamic results are prohibited from setting their own IDs."
-        );
-        continue;
-      }
-      parentNode.setAttribute(name, value);
     }
     if (template.name) {
       parentNode.setAttribute("name", template.name);
@@ -1342,12 +1372,18 @@ export class UrlbarView {
       this.#addRowButton(item, {
         name: "menu",
         l10n: { id: "urlbar-result-menu-button" },
+        attributes: lazy.UrlbarPrefs.get("resultMenu.keyboardAccessible")
+          ? null
+          : {
+              "keyboard-inaccessible": true,
+            },
       });
     }
   }
 
-  #addRowButton(item, { name, l10n, url }) {
+  #addRowButton(item, { name, l10n, url, attributes }) {
     let button = this.#createElement("span");
+    this.#setDynamicAttributes(button, attributes);
     button.id = `${item.id}-button-${name}`;
     button.classList.add("urlbarView-button", "urlbarView-button-" + name);
     button.setAttribute("role", "button");
@@ -1675,6 +1711,9 @@ export class UrlbarView {
         lazy.UrlbarUtils.ICON.HISTORY) ||
       iconUrlOverride ||
       result.payload.icon ||
+      (result.type == lazy.UrlbarUtils.RESULT_TYPE.SEARCH &&
+        result.payload.trending &&
+        lazy.UrlbarUtils.ICON.TRENDING) ||
       ((result.type == lazy.UrlbarUtils.RESULT_TYPE.SEARCH ||
         result.type == lazy.UrlbarUtils.RESULT_TYPE.KEYWORD) &&
         lazy.UrlbarUtils.ICON.SEARCH_GLASS) ||
@@ -1717,23 +1756,11 @@ export class UrlbarView {
     // Update each node in the view by name.
     for (let [nodeName, update] of Object.entries(viewUpdate)) {
       let node = item.querySelector(`#${item.id}-${nodeName}`);
-      for (let [attrName, value] of Object.entries(update.attributes || {})) {
-        if (attrName == "id") {
-          // We do not allow dynamic results to set IDs for their Nodes. IDs are
-          // managed by the view to ensure they are unique.
-          console.error(
-            "Dynamic results are prohibited from setting their own IDs."
-          );
-          continue;
+      this.#setDynamicAttributes(node, update.attributes);
+      if (update.style) {
+        for (let [styleName, value] of Object.entries(update.style)) {
+          node.style[styleName] = value;
         }
-        if (value === null) {
-          node.removeAttribute(attrName);
-        } else {
-          node.setAttribute(attrName, value);
-        }
-      }
-      for (let [styleName, value] of Object.entries(update.style || {})) {
-        node.style[styleName] = value;
       }
       if (update.l10n) {
         if (update.l10n.cacheable) {
@@ -2005,8 +2032,8 @@ export class UrlbarView {
     element,
     { updateInput = true, setAccessibleFocus = true } = {}
   ) {
-    if (element && !element.matches(SELECTABLE_ELEMENT_SELECTOR)) {
-      throw new Error("Element is not selectable");
+    if (element && !element.matches(KEYBOARD_SELECTABLE_ELEMENT_SELECTOR)) {
+      throw new Error("Element is not keyboard-selectable");
     }
 
     if (this.#selectedElement) {
@@ -2054,12 +2081,20 @@ export class UrlbarView {
    *
    * @param {Element} element
    *   An element in the view.
+   * @param {object} [options]
+   *   Options object.
+   * @param {boolean} [options.byMouse]
+   *   If true, include elements that are only selectable by mouse.
    * @returns {Element}
    *   The closest element that can be picked including the element itself, or
    *   null if there is no such element.
    */
-  #getClosestSelectableElement(element) {
-    let closest = element.closest(SELECTABLE_ELEMENT_SELECTOR);
+  #getClosestSelectableElement(element, { byMouse = false } = {}) {
+    let closest = element.closest(
+      byMouse
+        ? SELECTABLE_ELEMENT_SELECTOR
+        : KEYBOARD_SELECTABLE_ELEMENT_SELECTOR
+    );
     if (closest && this.#isElementVisible(closest)) {
       return closest;
     }
@@ -2075,7 +2110,7 @@ export class UrlbarView {
   }
 
   /**
-   * Returns true if the given element is selectable.
+   * Returns true if the given element is keyboard-selectable.
    *
    * @param {Element} element
    *   The element to test.
@@ -2087,7 +2122,7 @@ export class UrlbarView {
   }
 
   /**
-   * Returns the first selectable element in the view.
+   * Returns the first keyboard-selectable element in the view.
    *
    * @returns {Element}
    *   The first selectable element in the view.
@@ -2101,7 +2136,7 @@ export class UrlbarView {
   }
 
   /**
-   * Returns the last selectable element in the view.
+   * Returns the last keyboard-selectable element in the view.
    *
    * @returns {Element}
    *   The last selectable element in the view.
@@ -2115,8 +2150,8 @@ export class UrlbarView {
   }
 
   /**
-   * Returns the next selectable element after the given element.  If the
-   * element is the last selectable element, returns null.
+   * Returns the next keyboard-selectable element after the given element.  If
+   * the element is the last selectable element, returns null.
    *
    * @param {Element} element
    *   An element in the view.
@@ -2131,7 +2166,9 @@ export class UrlbarView {
     }
 
     let next = row.nextElementSibling;
-    let selectables = [...row.querySelectorAll(SELECTABLE_ELEMENT_SELECTOR)];
+    let selectables = [
+      ...row.querySelectorAll(KEYBOARD_SELECTABLE_ELEMENT_SELECTOR),
+    ];
     if (selectables.length) {
       let index = selectables.indexOf(element);
       if (index < selectables.length - 1) {
@@ -2147,8 +2184,8 @@ export class UrlbarView {
   }
 
   /**
-   * Returns the previous selectable element before the given element.  If the
-   * element is the first selectable element, returns null.
+   * Returns the previous keyboard-selectable element before the given element.
+   * If the element is the first selectable element, returns null.
    *
    * @param {Element} element
    *   An element in the view.
@@ -2163,7 +2200,9 @@ export class UrlbarView {
     }
 
     let previous = row.previousElementSibling;
-    let selectables = [...row.querySelectorAll(SELECTABLE_ELEMENT_SELECTOR)];
+    let selectables = [
+      ...row.querySelectorAll(KEYBOARD_SELECTABLE_ELEMENT_SELECTOR),
+    ];
     if (selectables.length) {
       let index = selectables.indexOf(element);
       if (index < 0) {
@@ -2625,20 +2664,20 @@ export class UrlbarView {
       result.source == lazy.UrlbarUtils.RESULT_SOURCE.HISTORY &&
       !result.autofill
     ) {
-      commands.set(RESULT_MENU_COMMANDS.BLOCK, {
+      commands.set(RESULT_MENU_COMMANDS.DISMISS, {
         l10n: { id: "urlbar-result-menu-remove-from-history" },
       });
-      commands.set(RESULT_MENU_COMMANDS.LEARN_MORE, {
+      commands.set(RESULT_MENU_COMMANDS.HELP, {
         l10n: { id: "urlbar-result-menu-learn-more" },
       });
     }
     if (result.payload.isBlockable) {
-      commands.set(RESULT_MENU_COMMANDS.BLOCK, {
+      commands.set(RESULT_MENU_COMMANDS.DISMISS, {
         l10n: result.payload.blockL10n,
       });
     }
     if (result.payload.helpUrl) {
-      commands.set(RESULT_MENU_COMMANDS.LEARN_MORE, {
+      commands.set(RESULT_MENU_COMMANDS.HELP, {
         l10n: result.payload.helpL10n,
       });
     }
@@ -2657,6 +2696,7 @@ export class UrlbarView {
         "menuitem"
       );
       menuitem.dataset.command = command;
+      menuitem.classList.add("urlbarView-result-menuitem");
       this.#setElementL10n(menuitem, data.l10n);
       this.resultMenu.appendChild(menuitem);
     }
@@ -2828,7 +2868,9 @@ export class UrlbarView {
       return;
     }
 
-    let element = this.#getClosestSelectableElement(event.target);
+    let element = this.#getClosestSelectableElement(event.target, {
+      byMouse: true,
+    });
     if (!element) {
       // Ignore clicks on elements that can't be selected/picked.
       return;
@@ -2881,7 +2923,7 @@ export class UrlbarView {
     // ignore it.
     let element =
       event.target.nodeType === event.target.ELEMENT_NODE
-        ? this.#getClosestSelectableElement(event.target)
+        ? this.#getClosestSelectableElement(event.target, { byMouse: true })
         : null;
     if (element) {
       this.input.pickElement(element, event);
@@ -2932,18 +2974,14 @@ export class UrlbarView {
       this.#resultMenuResult = null;
       let menuitem = event.target;
       switch (menuitem.dataset.command) {
-        case RESULT_MENU_COMMANDS.BLOCK:
-          this.controller.handleDeleteEntry(null, result);
-          break;
-        case RESULT_MENU_COMMANDS.LEARN_MORE:
-          this.window.openTrustedLinkIn(
+        case RESULT_MENU_COMMANDS.HELP:
+          menuitem.dataset.url =
             result.payload.helpUrl ||
-              Services.urlFormatter.formatURLPref("app.support.baseURL") +
-                "awesome-bar-result-menu",
-            "tab"
-          );
+            Services.urlFormatter.formatURLPref("app.support.baseURL") +
+              "awesome-bar-result-menu";
           break;
       }
+      this.input.pickResult(result, event, menuitem);
     }
   }
 

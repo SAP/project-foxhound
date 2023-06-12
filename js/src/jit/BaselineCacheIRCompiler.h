@@ -83,8 +83,12 @@ class MOZ_RAII BaselineCacheIRCompiler : public CacheIRCompiler {
                             uint32_t argcFixed, bool isJitCall);
   void pushFunApplyArgsObj(Register argcReg, Register calleeReg,
                            Register scratch, Register scratch2, bool isJitCall);
+  void pushBoundFunctionArguments(Register argcReg, Register calleeReg,
+                                  Register scratch, Register scratch2,
+                                  CallFlags flags, uint32_t numBoundArgs,
+                                  bool isJitCall);
   void createThis(Register argcReg, Register calleeReg, Register scratch,
-                  CallFlags flags);
+                  CallFlags flags, bool isBoundFunction);
   template <typename T>
   void storeThis(const T& newThis, Register argcReg, CallFlags flags);
   void updateReturnValue();
@@ -111,7 +115,11 @@ class MOZ_RAII BaselineCacheIRCompiler : public CacheIRCompiler {
                                     uint32_t nargsAndFlagsOffset,
                                     mozilla::Maybe<uint32_t> icScriptOffset);
 
+  BaselineICPerfSpewer perfSpewer_;
+
  public:
+  BaselineICPerfSpewer& perfSpewer() { return perfSpewer_; }
+
   friend class AutoStubFrame;
 
   BaselineCacheIRCompiler(JSContext* cx, TempAllocator& alloc,

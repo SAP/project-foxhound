@@ -515,8 +515,15 @@ enum class StyleTextOrientation : uint8_t {
 
 // Whether to emulate -moz-box with flex. See nsStyleVisibility
 enum class StyleMozBoxLayout : uint8_t {
-  Legacy,
   Flex,
+  Legacy,
+};
+
+// Whether flexbox visibility: collapse items use legacy -moz-box behavior or
+// not.
+enum class StyleMozBoxCollapse : uint8_t {
+  Flex,
+  Legacy,
 };
 
 // See nsStyleText

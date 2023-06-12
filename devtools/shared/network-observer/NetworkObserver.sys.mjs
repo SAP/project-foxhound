@@ -18,6 +18,8 @@ ChromeUtils.defineESModuleGetters(lazy, {
   ChannelMap: "resource://devtools/shared/network-observer/ChannelMap.sys.mjs",
   NetworkHelper:
     "resource://devtools/shared/network-observer/NetworkHelper.sys.mjs",
+  NetworkOverride:
+    "resource://devtools/shared/network-observer/NetworkOverride.sys.mjs",
   NetworkResponseListener:
     "resource://devtools/shared/network-observer/NetworkResponseListener.sys.mjs",
   NetworkThrottleManager:
@@ -102,6 +104,15 @@ export class NetworkObserver {
    * @type {Map}
    */
   #blockedURLs = new Map();
+
+  /**
+   * Map of URL to local file path in order to redirect URL
+   * to local file overrides.
+   *
+   * This will replace the content of some request with the content of local files.
+   */
+  #overrides = new Map();
+
   /**
    * Used by NetworkHelper.parseSecurityInfo to skip decoding known certificates.
    *
@@ -330,6 +341,26 @@ export class NetworkObserver {
   );
 
   /**
+   * Check if the current channel has its content being overriden
+   * by the content of some local file.
+   */
+  #checkForContentOverride(channel) {
+    const overridePath = this.#overrides.get(channel.URI.spec);
+    if (!overridePath) {
+      return false;
+    }
+
+    dump(" Override " + channel.URI.spec + " to " + overridePath + "\n");
+    try {
+      lazy.NetworkOverride.overrideChannelWithFilePath(channel, overridePath);
+    } catch (e) {
+      dump("Exception while trying to override request content: " + e + "\n");
+    }
+
+    return true;
+  }
+
+  /**
    * Observe notifications for the http-on-examine-response topic, coming from
    * the nsIObserverService.
    *
@@ -369,6 +400,8 @@ export class NetworkObserver {
           ? "blockedOrFailed:" + channel.loadInfo.requestBlockingReason
           : channel.responseStatus
       );
+
+      this.#checkForContentOverride(channel);
 
       // Read response headers and cookies.
       const responseHeaders = [];
@@ -669,7 +702,7 @@ export class NetworkObserver {
     channel,
     {
       timestamp,
-      extraStringData,
+      rawHeaders,
       fromCache,
       fromServiceWorker,
       blockedReason,
@@ -686,42 +719,35 @@ export class NetworkObserver {
       };
     }
 
-    // Check the request URL with ones manually blocked by the user in DevTools.
-    // If it's meant to be blocked, we cancel the request and annotate the event.
     if (blockedReason === undefined && this.#shouldBlockChannel(channel)) {
+      // Check the request URL with ones manually blocked by the user in DevTools.
+      // If it's meant to be blocked, we cancel the request and annotate the event.
       channel.cancel(Cr.NS_BINDING_ABORTED);
       blockedReason = "devtools";
     }
 
-    const event = lazy.NetworkUtils.createNetworkEvent(channel, {
-      timestamp,
-      fromCache,
-      fromServiceWorker,
-      extraStringData,
-      blockedReason,
-      blockingExtension,
-      saveRequestAndResponseBodies: this.#saveRequestAndResponseBodies,
-    });
-
-    httpActivity.isXHR = event.isXHR;
-    httpActivity.private = event.private;
-    httpActivity.fromServiceWorker = fromServiceWorker;
-    httpActivity.owner = this.#onNetworkEvent(event, channel);
+    httpActivity.owner = this.#onNetworkEvent(
+      {
+        timestamp,
+        fromCache,
+        fromServiceWorker,
+        rawHeaders,
+        blockedReason,
+        blockingExtension,
+        discardRequestBody: !this.#saveRequestAndResponseBodies,
+        discardResponseBody: !this.#saveRequestAndResponseBodies,
+      },
+      channel
+    );
 
     // Bug 1489217 - Avoid watching for response content for blocked or in-progress requests
     // as it can't be observed and would throw if we try.
-    const recordRequestContent = !event.blockedReason && !inProgressRequest;
-    if (recordRequestContent) {
-      this.#setupResponseListener(httpActivity, fromCache);
+    if (blockedReason === undefined && !inProgressRequest) {
+      this.#setupResponseListener(httpActivity, {
+        fromCache,
+        fromServiceWorker,
+      });
     }
-
-    const {
-      cookies,
-      headers,
-    } = lazy.NetworkUtils.fetchRequestHeadersAndCookies(channel);
-
-    httpActivity.owner.addRequestHeaders(headers, extraStringData);
-    httpActivity.owner.addRequestCookies(cookies);
 
     return httpActivity;
   }
@@ -735,17 +761,17 @@ export class NetworkObserver {
    * @private
    * @param nsIHttpChannel channel
    * @param number timestamp
-   * @param string extraStringData
+   * @param string rawHeaders
    * @return void
    */
-  #onRequestHeader(channel, timestamp, extraStringData) {
+  #onRequestHeader(channel, timestamp, rawHeaders) {
     if (this.#ignoreChannelFunction(channel)) {
       return;
     }
 
     this.#createNetworkEvent(channel, {
       timestamp,
-      extraStringData,
+      rawHeaders,
     });
   }
 
@@ -794,8 +820,11 @@ export class NetworkObserver {
       const win = lazy.NetworkHelper.getWindowForRequest(channel);
       const charset = win ? win.document.characterSet : null;
 
+      // Most of the data needed from the channel is only available via the
+      // nsIHttpChannelInternal interface.
+      channel.QueryInterface(Ci.nsIHttpChannelInternal);
+
       httpActivity = {
-        id: gSequenceId(),
         // The nsIChannel for which this activity object was created.
         channel,
         // See #onRequestBodySent()
@@ -879,6 +908,14 @@ export class NetworkObserver {
     return this.#blockedURLs.keys();
   }
 
+  override(url, path) {
+    this.#overrides.set(url, path);
+  }
+
+  removeOverride(url) {
+    this.#overrides.delete(url);
+  }
+
   /**
    * Setup the network response listener for the given HTTP activity. The
    * NetworkResponseListener is responsible for storing the response body.
@@ -887,7 +924,7 @@ export class NetworkObserver {
    * @param object httpActivity
    *        The HTTP activity object we are tracking.
    */
-  #setupResponseListener(httpActivity, fromCache) {
+  #setupResponseListener(httpActivity, { fromCache, fromServiceWorker }) {
     const channel = httpActivity.channel;
     channel.QueryInterface(Ci.nsITraceableChannel);
 
@@ -911,7 +948,8 @@ export class NetworkObserver {
     // Add listener for the response body.
     const newListener = new lazy.NetworkResponseListener(
       httpActivity,
-      this.#decodedCertificateCache
+      this.#decodedCertificateCache,
+      fromServiceWorker
     );
 
     // Remember the input stream, so it isn't released by GC.
@@ -1565,9 +1603,3 @@ export class NetworkObserver {
     this.#isDestroyed = true;
   }
 }
-
-function gSequenceId() {
-  return gSequenceId.n++;
-}
-
-gSequenceId.n = 1;

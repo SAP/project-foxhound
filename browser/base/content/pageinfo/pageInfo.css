@@ -2,8 +2,21 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+:root {
+  min-width: 24em;
+  min-height: 24em;
+}
+
 #mainDeck {
   padding: 10px;
+  min-height: 0;
+}
+
+#mediaPreviewBox,
+#imagecontainerbox,
+#thepreviewimage,
+#mainDeck > vbox {
+  min-width: 0;
   min-height: 0;
 }
 
@@ -19,8 +32,6 @@
 
 #thepreviewimage {
   display: block;
-/* This following entry can be removed when Bug 522850 is fixed. */
-  min-width: 1px;
 }
 
 table {

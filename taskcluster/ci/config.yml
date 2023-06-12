@@ -141,6 +141,7 @@ treeherder:
         'X-msix': 'Xpcshell tests on msix packages'
         'L10n': 'Localised Repacks'
         'L10n-Rpk': 'Localized Repackaged Repacks'
+        'deb-L10n': 'Localized Debian Repacks'
         'BM': 'Beetmover'
         'BMR': 'Beetmover repackages'
         'c-Up': 'Balrog submission of complete updates'
@@ -492,6 +493,14 @@ workers:
             implementation: docker-worker
             os: linux
             worker-type: '{alias}'
+        addon:
+            provisioner: scriptworker-k8s
+            implementation: push-addons
+            os: scriptworker
+            worker-type:
+                by-release-level:
+                    production: '{trust-domain}-3-addon'
+                    staging: '{trust-domain}-1-addon'
         balrog:
             provisioner: scriptworker-k8s
             implementation: balrog
@@ -595,11 +604,6 @@ workers:
             implementation: generic-worker
             os: linux
             worker-type: 'gecko-{alias}'
-        t-osx-1014:
-            provisioner: releng-hardware
-            implementation: generic-worker
-            os: macosx
-            worker-type: 'gecko-{alias}'
         t-osx-1015-r8:
             provisioner: releng-hardware
             implementation: generic-worker
@@ -642,6 +646,16 @@ workers:
             os: windows
             worker-type: 'gecko-{alias}'
         win10-64-2004(|-gpu|-ssd|-source|-ssd-gpu):
+            provisioner: 'gecko-t'
+            implementation: generic-worker
+            os: windows
+            worker-type: '{alias}'
+        t-win11-64(|-gpu-s|-source):
+            provisioner: '{trust-domain}-t'
+            implementation: generic-worker
+            os: windows
+            worker-type: '{alias}'
+        win11-64-2009(|-gpu|-ssd|-source|-ssd-gpu):
             provisioner: 'gecko-t'
             implementation: generic-worker
             os: windows

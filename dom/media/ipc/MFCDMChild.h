@@ -11,6 +11,8 @@
 
 namespace mozilla {
 
+class WMFCDMProxyCallback;
+
 /**
  * MFCDMChild is a content process proxy to MFCDMParent and the actual CDM
  * running in utility process.
@@ -31,14 +33,27 @@ class MFCDMChild final : public PMFCDMChild {
 
   using InitPromise = MozPromise<MFCDMInitIPDL, nsresult, true>;
   RefPtr<InitPromise> Init(const nsAString& aOrigin,
+                           const CopyableTArray<nsString>& aInitDataTypes,
                            const KeySystemConfig::Requirement aPersistentState,
                            const KeySystemConfig::Requirement aDistinctiveID,
-                           const bool aHWSecure);
+                           const bool aHWSecure,
+                           WMFCDMProxyCallback* aProxyCallback);
 
   using SessionPromise = MozPromise<nsString, nsresult, true>;
   RefPtr<SessionPromise> CreateSessionAndGenerateRequest(
       const KeySystemConfig::SessionType aSessionType,
       const nsAString& aInitDataType, const nsTArray<uint8_t>& aInitData);
+
+  RefPtr<GenericPromise> LoadSession(
+      const KeySystemConfig::SessionType aSessionType,
+      const nsAString& aSessionId);
+
+  RefPtr<GenericPromise> UpdateSession(const nsAString& aSessionId,
+                                       nsTArray<uint8_t>& aResponse);
+
+  RefPtr<GenericPromise> CloseSession(const nsAString& aSessionId);
+
+  RefPtr<GenericPromise> RemoveSession(const nsAString& aSessionId);
 
   mozilla::ipc::IPCResult RecvOnSessionKeyMessage(
       const MFCDMKeyMessage& aMessage);
@@ -65,7 +80,7 @@ class MFCDMChild final : public PMFCDMChild {
   }
 
  private:
-  ~MFCDMChild() = default;
+  ~MFCDMChild();
 
   using RemotePromise = GenericNonExclusivePromise;
   RefPtr<RemotePromise> EnsureRemote();
@@ -100,6 +115,20 @@ class MFCDMChild final : public PMFCDMChild {
   MozPromiseHolder<SessionPromise> mCreateSessionPromiseHolder;
   MozPromiseRequestHolder<CreateSessionAndGenerateRequestPromise>
       mCreateSessionRequest;
+
+  MozPromiseHolder<GenericPromise> mLoadSessionPromiseHolder;
+  MozPromiseRequestHolder<LoadSessionPromise> mLoadSessionRequest;
+
+  MozPromiseHolder<GenericPromise> mUpdateSessionPromiseHolder;
+  MozPromiseRequestHolder<UpdateSessionPromise> mUpdateSessionRequest;
+
+  MozPromiseHolder<GenericPromise> mCloseSessionPromiseHolder;
+  MozPromiseRequestHolder<CloseSessionPromise> mCloseSessionRequest;
+
+  MozPromiseHolder<GenericPromise> mRemoveSessionPromiseHolder;
+  MozPromiseRequestHolder<RemoveSessionPromise> mRemoveSessionRequest;
+
+  RefPtr<WMFCDMProxyCallback> mProxyCallback;
 };
 
 }  // namespace mozilla

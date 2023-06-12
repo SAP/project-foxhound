@@ -77,7 +77,7 @@ static uint64_t gEarlyHintPreloaderId{0};
 // OngoingEarlyHints
 //=============================================================================
 
-void OngoingEarlyHints::CancelAllOngoingPreloads(const nsACString& aReason) {
+void OngoingEarlyHints::CancelAll(const nsACString& aReason) {
   for (auto& preloader : mPreloaders) {
     preloader->CancelChannel(NS_ERROR_ABORT, aReason, /* aDeleteEntry */ true);
   }
@@ -487,6 +487,11 @@ void EarlyHintPreloader::OnParentReady(nsIParentChannel* aParent,
   MOZ_ASSERT(aParent);
   LOG(("EarlyHintPreloader::OnParentReady [this=%p]\n", this));
 
+  nsCOMPtr<nsIObserverService> obs = services::GetObserverService();
+  if (obs) {
+    obs->NotifyObservers(mChannel, "earlyhints-connectback", nullptr);
+  }
+
   mParent = aParent;
   mChannelId = aChannelId;
 
@@ -514,6 +519,7 @@ void EarlyHintPreloader::SetParentChannel() {
 // https://searchfox.org/mozilla-central/rev/b4150d1c6fae0c51c522df2d2c939cf5ad331d4c/netwerk/ipc/DocumentLoadListener.cpp#1311
 void EarlyHintPreloader::InvokeStreamListenerFunctions() {
   AssertIsOnMainThread();
+  RefPtr<EarlyHintPreloader> self(this);
 
   LOG((
       "EarlyHintPreloader::InvokeStreamListenerFunctions [this=%p parent=%p]\n",

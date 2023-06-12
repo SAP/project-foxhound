@@ -601,8 +601,7 @@ nsChangeHint nsStyleOutline::CalcDifference(
 nsStyleList::nsStyleList(const Document& aDocument)
     : mListStylePosition(StyleListStylePosition::Outside),
       mQuotes(StyleQuotes::Auto()),
-      mListStyleImage(StyleImage::None()),
-      mImageRegion(StyleClipRectOrAuto::Auto()) {
+      mListStyleImage(StyleImage::None()) {
   MOZ_COUNT_CTOR(nsStyleList);
   MOZ_ASSERT(NS_IsMainThread());
 
@@ -615,8 +614,7 @@ nsStyleList::nsStyleList(const nsStyleList& aSource)
     : mListStylePosition(aSource.mListStylePosition),
       mCounterStyle(aSource.mCounterStyle),
       mQuotes(aSource.mQuotes),
-      mListStyleImage(aSource.mListStyleImage),
-      mImageRegion(aSource.mImageRegion) {
+      mListStyleImage(aSource.mListStyleImage) {
   MOZ_COUNT_CTOR(nsStyleList);
 }
 
@@ -655,14 +653,6 @@ nsChangeHint nsStyleList::CalcDifference(
   // regardless of display value, so we still need to check them.
   if (mListStyleImage != aNewData.mListStyleImage) {
     return NS_STYLE_HINT_REFLOW;
-  }
-  if (mImageRegion != aNewData.mImageRegion) {
-    nsRect region = GetImageRegion();
-    nsRect newRegion = aNewData.GetImageRegion();
-    if (region.width != newRegion.width || region.height != newRegion.height) {
-      return NS_STYLE_HINT_REFLOW;
-    }
-    return NS_STYLE_HINT_VISUAL;
   }
   return hint;
 }
@@ -1462,29 +1452,6 @@ bool StyleGradient::IsOpaque() const {
   return GradientItemsAreOpaque(AsConic().items.AsSpan());
 }
 
-// --------------------
-// CachedBorderImageData
-
-void CachedBorderImageData::PurgeCachedImages() {
-  MOZ_ASSERT(!ServoStyleSet::IsInServoTraversal());
-  MOZ_ASSERT(NS_IsMainThread());
-  mSubImages.Clear();
-}
-
-void CachedBorderImageData::PurgeCacheForViewportChange(
-    const Maybe<nsSize>& aSize, const bool aHasIntrinsicRatio) {
-  // If we're redrawing with a different viewport-size than we used for our
-  // cached subimages, then we can't trust that our subimages are valid;
-  // any percent sizes/positions in our SVG doc may be different now. Purge!
-  // (We don't have to purge if the SVG document has an intrinsic ratio,
-  // though, because the actual size of elements in SVG documant's coordinate
-  // axis are fixed in this case.)
-  if (aSize != mCachedSVGViewportSize && !aHasIntrinsicRatio) {
-    PurgeCachedImages();
-    SetCachedSVGViewportSize(aSize);
-  }
-}
-
 static int32_t ConvertToPixelCoord(const StyleNumberOrPercentage& aCoord,
                                    int32_t aPercentScale) {
   double pixelValue;
@@ -2246,6 +2213,7 @@ nsStyleDisplay::nsStyleDisplay(const Document& aDocument)
       mOffsetDistance(LengthPercentage::Zero()),
       mOffsetRotate{true, StyleAngle{0.0}},
       mOffsetAnchor(StylePositionOrAuto::Auto()),
+      mOffsetPosition(StylePositionOrAuto::Auto()),
       mTransformOrigin{LengthPercentage::FromPercentage(0.5),
                        LengthPercentage::FromPercentage(0.5),
                        {0.}},
@@ -2303,6 +2271,7 @@ nsStyleDisplay::nsStyleDisplay(const nsStyleDisplay& aSource)
       mOffsetDistance(aSource.mOffsetDistance),
       mOffsetRotate(aSource.mOffsetRotate),
       mOffsetAnchor(aSource.mOffsetAnchor),
+      mOffsetPosition(aSource.mOffsetPosition),
       mTransformOrigin(aSource.mTransformOrigin),
       mChildPerspective(aSource.mChildPerspective),
       mPerspectiveOrigin(aSource.mPerspectiveOrigin),
@@ -2352,14 +2321,23 @@ static inline nsChangeHint CompareTransformValues(
 
 static inline nsChangeHint CompareMotionValues(
     const nsStyleDisplay& aDisplay, const nsStyleDisplay& aNewDisplay) {
-  if (aDisplay.mOffsetPath == aNewDisplay.mOffsetPath) {
+  if (aDisplay.mOffsetPath == aNewDisplay.mOffsetPath &&
+      aDisplay.mOffsetPosition == aNewDisplay.mOffsetPosition) {
     if (aDisplay.mOffsetDistance == aNewDisplay.mOffsetDistance &&
         aDisplay.mOffsetRotate == aNewDisplay.mOffsetRotate &&
         aDisplay.mOffsetAnchor == aNewDisplay.mOffsetAnchor) {
       return nsChangeHint(0);
     }
 
-    if (aDisplay.mOffsetPath.IsNone()) {
+    // No motion path transform is applied.
+    if (!aDisplay.IsStackingContext()) {
+      return nsChangeHint_NeutralChange;
+    }
+
+    // offset-distance and offset-rotate affect offset-path only.
+    if (aDisplay.mOffsetPath.IsNone() &&
+        aDisplay.mOffsetAnchor == aNewDisplay.mOffsetAnchor) {
+      // Only offset-distance and/or offset-rotate is changed.
       return nsChangeHint_NeutralChange;
     }
   }
@@ -2369,7 +2347,7 @@ static inline nsChangeHint CompareMotionValues(
   // Set the same hints as what we use for transform because motion path is
   // a kind of transform and will be combined with other transforms.
   nsChangeHint result = nsChangeHint_UpdateTransformLayer;
-  if (!aDisplay.mOffsetPath.IsNone() && !aNewDisplay.mOffsetPath.IsNone()) {
+  if (aDisplay.IsStackingContext() && aNewDisplay.IsStackingContext()) {
     result |= nsChangeHint_UpdatePostTransformOverflow;
   } else {
     result |= nsChangeHint_UpdateOverflow;
@@ -2714,7 +2692,8 @@ nsStyleVisibility::nsStyleVisibility(const Document& aDocument)
       mImageRendering(StyleImageRendering::Auto),
       mWritingMode(StyleWritingModeProperty::HorizontalTb),
       mTextOrientation(StyleTextOrientation::Mixed),
-      mMozBoxLayout(StyleMozBoxLayout::Legacy),
+      mMozBoxLayout(StyleMozBoxLayout::Flex),
+      mMozBoxCollapse(StyleMozBoxCollapse::Flex),
       mPrintColorAdjust(StylePrintColorAdjust::Economy),
       mImageOrientation(StyleImageOrientation::FromImage) {
   MOZ_COUNT_CTOR(nsStyleVisibility);
@@ -2727,6 +2706,7 @@ nsStyleVisibility::nsStyleVisibility(const nsStyleVisibility& aSource)
       mWritingMode(aSource.mWritingMode),
       mTextOrientation(aSource.mTextOrientation),
       mMozBoxLayout(aSource.mMozBoxLayout),
+      mMozBoxCollapse(aSource.mMozBoxCollapse),
       mPrintColorAdjust(aSource.mPrintColorAdjust),
       mImageOrientation(aSource.mImageOrientation) {
   MOZ_COUNT_CTOR(nsStyleVisibility);
@@ -2754,14 +2734,15 @@ nsChangeHint nsStyleVisibility::CalcDifference(
         aNewData.mVisible == StyleVisibility::Visible) {
       hint |= nsChangeHint_VisibilityChange;
     }
-    if (StyleVisibility::Collapse == mVisible ||
-        StyleVisibility::Collapse == aNewData.mVisible) {
+    if (mVisible == StyleVisibility::Collapse ||
+        aNewData.mVisible == StyleVisibility::Collapse) {
       hint |= NS_STYLE_HINT_REFLOW;
     } else {
       hint |= NS_STYLE_HINT_VISUAL;
     }
   }
-  if (mTextOrientation != aNewData.mTextOrientation) {
+  if (mTextOrientation != aNewData.mTextOrientation ||
+      mMozBoxCollapse != aNewData.mMozBoxCollapse) {
     hint |= NS_STYLE_HINT_REFLOW;
   }
   if (mImageRendering != aNewData.mImageRendering) {
@@ -2929,14 +2910,16 @@ nsChangeHint nsStyleTextReset::CalcDifference(
 // nsStyleText
 //
 
-static StyleRGBA DefaultColor(const Document& aDocument) {
-  return StyleRGBA::FromColor(PreferenceSheet::PrefsFor(aDocument)
-                                  .ColorsFor(aDocument.DefaultColorScheme())
-                                  .mDefault);
+static StyleAbsoluteColor DefaultColor(const Document& aDocument) {
+  return StyleAbsoluteColor::FromColor(
+      PreferenceSheet::PrefsFor(aDocument)
+          .ColorsFor(aDocument.DefaultColorScheme())
+          .mDefault);
 }
 
 nsStyleText::nsStyleText(const Document& aDocument)
     : mColor(DefaultColor(aDocument)),
+      mForcedColorAdjust(StyleForcedColorAdjust::Auto),
       mTextTransform(StyleTextTransform::None()),
       mTextAlign(StyleTextAlign::Start),
       mTextAlignLast(StyleTextAlignLast::Auto),
@@ -2975,6 +2958,7 @@ nsStyleText::nsStyleText(const Document& aDocument)
 
 nsStyleText::nsStyleText(const nsStyleText& aSource)
     : mColor(aSource.mColor),
+      mForcedColorAdjust(aSource.mForcedColorAdjust),
       mTextTransform(aSource.mTextTransform),
       mTextAlign(aSource.mTextAlign),
       mTextAlignLast(aSource.mTextAlignLast),
@@ -3086,7 +3070,8 @@ nsChangeHint nsStyleText::CalcDifference(const nsStyleText& aNewData) const {
     return hint;
   }
 
-  if (mTextEmphasisPosition != aNewData.mTextEmphasisPosition) {
+  if (mTextEmphasisPosition != aNewData.mTextEmphasisPosition ||
+      mForcedColorAdjust != aNewData.mForcedColorAdjust) {
     return nsChangeHint_NeutralChange;
   }
 
@@ -3580,6 +3565,12 @@ void StyleCalcNode::ScaleLengthsBy(float aScale) {
       }
       break;
     }
+    case Tag::Hypot: {
+      for (const auto& child : AsHypot().AsSpan()) {
+        ScaleNode(child);
+      }
+      break;
+    }
   }
 }
 
@@ -3707,6 +3698,27 @@ ResultT StyleCalcNode::ResolveInternal(ResultT aPercentageBasis,
         result += child.ResolveInternal(aPercentageBasis, aConverter);
       }
       return result;
+    }
+    case Tag::Hypot: {
+      //  Doing math in CSS pixels to avoid exceeding integer range of app units
+      CSSCoord result = 0;
+      for (const auto& child : AsHypot().AsSpan()) {
+        CSSCoord value;
+        if constexpr (std::is_same_v<ResultT, CSSCoord>) {
+          value = child.ResolveInternal(aPercentageBasis, aConverter);
+        } else {
+          value = CSSPixel::FromAppUnits(
+              child.ResolveInternal(aPercentageBasis, aConverter));
+        }
+        result += std::pow(value, 2);
+      }
+      result = std::sqrt(result);
+
+      if constexpr (std::is_same_v<ResultT, CSSCoord>) {
+        return result;
+      } else {
+        return CSSPixel::ToAppUnits(result);
+      }
     }
   }
 

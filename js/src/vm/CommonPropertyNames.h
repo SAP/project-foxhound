@@ -62,6 +62,7 @@
   MACRO_(await, await, "await")                                                \
   MACRO_(bigint64, bigint64, "bigint64")                                       \
   MACRO_(biguint64, biguint64, "biguint64")                                    \
+  MACRO_(bound, bound, "bound")                                                \
   MACRO_(boundWithSpace, boundWithSpace, "bound ")                             \
   MACRO_(break, break_, "break")                                               \
   MACRO_(breakdown, breakdown, "breakdown")                                    \
@@ -170,6 +171,7 @@
   MACRO_(extends, extends, "extends")                                          \
   MACRO_(false, false_, "false")                                               \
   MACRO_(few, few, "few")                                                      \
+  IF_DECORATORS(MACRO_(field, field, "field"))                                 \
   MACRO_(fieldOffsets, fieldOffsets, "fieldOffsets")                           \
   MACRO_(fieldTypes, fieldTypes, "fieldTypes")                                 \
   MACRO_(fileName, fileName, "fileName")                                       \

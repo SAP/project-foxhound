@@ -841,9 +841,12 @@ LogicalSides nsInlineFrame::GetLogicalSkipSides() const {
   return skip;
 }
 
-nscoord nsInlineFrame::GetLogicalBaseline(
-    mozilla::WritingMode aWritingMode) const {
-  return mBaseline;
+Maybe<nscoord> nsInlineFrame::GetNaturalBaselineBOffset(
+    WritingMode aWM, BaselineSharingGroup aBaselineGroup) const {
+  if (aBaselineGroup == BaselineSharingGroup::Last) {
+    return Nothing{};
+  }
+  return Some(mBaseline);
 }
 
 #ifdef ACCESSIBILITY

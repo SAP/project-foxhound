@@ -232,14 +232,8 @@ already_AddRefed<SourceSurface> SVGClipPathFrame::GetClipMask(
     return nullptr;
   }
 
-  RefPtr<gfxContext> maskContext =
-      gfxContext::CreatePreservingTransformOrNull(maskDT);
-  if (!maskContext) {
-    gfxCriticalError() << "SVGClipPath context problem " << gfx::hexa(maskDT);
-    return nullptr;
-  }
-
-  PaintClipMask(*maskContext, aClippedFrame, aMatrix, aExtraMask);
+  gfxContext maskContext(maskDT, /* aPreserveTransform */ true);
+  PaintClipMask(maskContext, aClippedFrame, aMatrix, aExtraMask);
 
   RefPtr<SourceSurface> surface = maskDT->Snapshot();
   return surface.forget();
@@ -394,15 +388,15 @@ nsresult SVGClipPathFrame::AttributeChanged(int32_t aNameSpaceID,
                                              aModType);
 }
 
+#ifdef DEBUG
 void SVGClipPathFrame::Init(nsIContent* aContent, nsContainerFrame* aParent,
                             nsIFrame* aPrevInFlow) {
   NS_ASSERTION(aContent->IsSVGElement(nsGkAtoms::clipPath),
                "Content is not an SVG clipPath!");
 
-  AddStateBits(NS_STATE_SVG_CLIPPATH_CHILD);
-  AddStateBits(NS_FRAME_MAY_BE_TRANSFORMED);
   SVGContainerFrame::Init(aContent, aParent, aPrevInFlow);
 }
+#endif
 
 gfxMatrix SVGClipPathFrame::GetCanvasTM() { return mMatrixForChildren; }
 

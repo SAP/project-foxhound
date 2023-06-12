@@ -1754,7 +1754,9 @@ class nsLayoutUtils {
    * Otherwise returns false.
    */
   struct LinePosition {
-    nscoord mBStart, mBaseline, mBEnd;
+    nscoord mBStart{nscoord_MAX};
+    nscoord mBaseline{nscoord_MAX};
+    nscoord mBEnd{nscoord_MAX};
 
     LinePosition operator+(nscoord aOffset) const {
       LinePosition result;
@@ -1951,17 +1953,12 @@ class nsLayoutUtils {
    *                            variety.
    *   @param aAnchor           If non-null, a point which we will ensure
    *                            is pixel-aligned in the output.
-   *   @param aSourceArea       If non-null, this area is extracted from
-   *                            the image and drawn in aDest. It's
-   *                            in appunits. For best results it should
-   *                            be aligned with image pixels.
    */
   static ImgDrawResult DrawSingleImage(
       gfxContext& aContext, nsPresContext* aPresContext, imgIContainer* aImage,
       SamplingFilter aSamplingFilter, const nsRect& aDest, const nsRect& aDirty,
       const mozilla::SVGImageContext& aSVGContext, uint32_t aImageFlags,
-      const nsPoint* aAnchorPoint = nullptr,
-      const nsRect* aSourceArea = nullptr);
+      const nsPoint* aAnchorPoint = nullptr);
 
   /**
    * Given an imgIContainer, this method attempts to obtain an intrinsic
@@ -2633,9 +2630,19 @@ class nsLayoutUtils {
       const nsPresContext* aPresContext, LayoutDeviceIntSize& aOutSize,
       SubtractDynamicToolbar = SubtractDynamicToolbar::Yes);
 
+  /**
+   * Whether to include the dynamic toolbar area automatically (depending
+   * whether the root container is scrollable or not) or forcibly in below
+   * UpdateCompositionBoundsForRCDRSF and CalculateCompositionSizeForFrame
+   * functions.
+   */
+  enum class IncludeDynamicToolbar { Auto, Force };
+
  private:
   static bool UpdateCompositionBoundsForRCDRSF(
-      mozilla::ParentLayerRect& aCompBounds, const nsPresContext* aPresContext);
+      mozilla::ParentLayerRect& aCompBounds, const nsPresContext* aPresContext,
+      IncludeDynamicToolbar aIncludeDynamicToolbar =
+          IncludeDynamicToolbar::Auto);
 
  public:
   /**
@@ -2649,7 +2656,9 @@ class nsLayoutUtils {
    */
   static nsSize CalculateCompositionSizeForFrame(
       nsIFrame* aFrame, bool aSubtractScrollbars = true,
-      const nsSize* aOverrideScrollPortSize = nullptr);
+      const nsSize* aOverrideScrollPortSize = nullptr,
+      IncludeDynamicToolbar aIncludeDynamicToolbar =
+          IncludeDynamicToolbar::Auto);
 
   /**
    * Calculate a size suitable for bounding the size of the composition bounds

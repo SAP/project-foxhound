@@ -29,7 +29,7 @@
  *   the server to match the merged tree.
  *
  * - `BookmarkObserverRecorder` records all changes made to Places during the
- *   merge, then dispatches `nsINavBookmarkObserver` notifications. Places uses
+ *   merge, then dispatches `PlacesObservers` notifications. Places uses
  *   these notifications to update the UI and internal caches. We can't dispatch
  *   during the merge because observers won't see the changes until the merge
  *   transaction commits and the database is consistent again.
@@ -52,13 +52,10 @@ import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
+  Async: "resource://services-common/async.sys.mjs",
   Log: "resource://gre/modules/Log.sys.mjs",
   PlacesSyncUtils: "resource://gre/modules/PlacesSyncUtils.sys.mjs",
   PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
-});
-
-XPCOMUtils.defineLazyModuleGetters(lazy, {
-  Async: "resource://services-common/async.js",
 });
 
 XPCOMUtils.defineLazyGetter(lazy, "MirrorLog", () =>

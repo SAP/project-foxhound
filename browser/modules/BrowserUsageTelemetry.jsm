@@ -24,6 +24,7 @@ const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   ClientID: "resource://gre/modules/ClientID.sys.mjs",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
+  ProvenanceData: "resource:///modules/ProvenanceData.sys.mjs",
   SearchSERPTelemetry: "resource:///modules/SearchSERPTelemetry.sys.mjs",
   clearInterval: "resource://gre/modules/Timer.sys.mjs",
   clearTimeout: "resource://gre/modules/Timer.sys.mjs",
@@ -697,9 +698,13 @@ let BrowserUsageTelemetry = {
 
     // A couple of special cases in the tabs.
     for (let cls of ["bookmark-item", "tab-icon-sound", "tab-close-button"]) {
-      if (node.classList.contains(cls)) {
-        return cls;
+      if (!node.classList.contains(cls)) {
+        continue;
       }
+      if (cls == "bookmark-item" && node.parentElement.id.includes("history")) {
+        return "history-item";
+      }
+      return cls;
     }
 
     // One of these will at least let us know what the widget is for.
@@ -1250,6 +1255,16 @@ let BrowserUsageTelemetry = {
       return;
     }
 
+    let provenanceExtra = {};
+    try {
+      provenanceExtra = await lazy.ProvenanceData.submitProvenanceTelemetry();
+    } catch (ex) {
+      console.warn(
+        "reportInstallationTelemetry - submitProvenanceTelemetry failed",
+        ex
+      );
+    }
+
     const TIMESTAMP_PREF = "app.installation.timestamp";
     const lastInstallTime = Services.prefs.getStringPref(TIMESTAMP_PREF, null);
     const wpm = Cc["@mozilla.org/windows-package-manager;1"].createInstance(
@@ -1378,6 +1393,13 @@ let BrowserUsageTelemetry = {
       installer_type,
       null,
       extra
+    );
+    Services.telemetry.recordEvent(
+      "installation",
+      "first_seen_prov_ext",
+      installer_type,
+      null,
+      provenanceExtra
     );
   },
 

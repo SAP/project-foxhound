@@ -50,6 +50,7 @@ AutoRangeArray::AutoRangeArray(const AutoRangeArray& aOther)
     RefPtr<nsRange> clonedRange = range->CloneRange();
     mRanges.AppendElement(std::move(clonedRange));
   }
+  mAnchorFocusRange = aOther.mAnchorFocusRange;
 }
 
 template <typename PointType>
@@ -59,7 +60,8 @@ AutoRangeArray::AutoRangeArray(const EditorDOMRangeBase<PointType>& aRange) {
   if (NS_WARN_IF(!range) || NS_WARN_IF(!range->IsPositioned())) {
     return;
   }
-  mRanges.AppendElement(std::move(range));
+  mRanges.AppendElement(*range);
+  mAnchorFocusRange = std::move(range);
 }
 
 template <typename PT, typename CT>
@@ -69,7 +71,8 @@ AutoRangeArray::AutoRangeArray(const EditorDOMPointBase<PT, CT>& aPoint) {
   if (NS_WARN_IF(!range) || NS_WARN_IF(!range->IsPositioned())) {
     return;
   }
-  mRanges.AppendElement(std::move(range));
+  mRanges.AppendElement(*range);
+  mAnchorFocusRange = std::move(range);
 }
 
 AutoRangeArray::~AutoRangeArray() {
@@ -127,6 +130,27 @@ void AutoRangeArray::EnsureOnlyEditableRanges(const Element& aEditingHost) {
     const OwningNonNull<nsRange>& range = mRanges[i - 1];
     if (!AutoRangeArray::IsEditableRange(range, aEditingHost)) {
       mRanges.RemoveElementAt(i - 1);
+      continue;
+    }
+    // Special handling for `inert` attribute. If anchor node is inert, the
+    // range should be treated as not editable.
+    nsIContent* anchorContent =
+        mDirection == eDirNext
+            ? nsIContent::FromNode(range->GetStartContainer())
+            : nsIContent::FromNode(range->GetEndContainer());
+    if (anchorContent && HTMLEditUtils::ContentIsInert(*anchorContent)) {
+      mRanges.RemoveElementAt(i - 1);
+      continue;
+    }
+    // Additionally, if focus node is inert, the range should be collapsed to
+    // anchor node.
+    nsIContent* focusContent =
+        mDirection == eDirNext
+            ? nsIContent::FromNode(range->GetEndContainer())
+            : nsIContent::FromNode(range->GetStartContainer());
+    if (focusContent && focusContent != anchorContent &&
+        HTMLEditUtils::ContentIsInert(*focusContent)) {
+      range->Collapse(mDirection == eDirNext);
     }
   }
   mAnchorFocusRange = mRanges.IsEmpty() ? nullptr : mRanges.LastElement().get();
@@ -206,12 +230,17 @@ AutoRangeArray::ExtendAnchorFocusRangeFor(
     return Err(NS_ERROR_FAILURE);
   }
 
-  // At this point, the anchor-focus ranges must match for bidi information.
-  // See `EditorBase::AutoCaretBidiLevelManager`.
-  MOZ_ASSERT(aEditorBase.SelectionRef().GetAnchorFocusRange()->StartRef() ==
-             mAnchorFocusRange->StartRef());
-  MOZ_ASSERT(aEditorBase.SelectionRef().GetAnchorFocusRange()->EndRef() ==
-             mAnchorFocusRange->EndRef());
+  // By a preceding call of EnsureOnlyEditableRanges(), anchor/focus range may
+  // have been changed.  In that case, we cannot use nsFrameSelection anymore.
+  // FIXME: We should make `nsFrameSelection::CreateRangeExtendedToSomewhere`
+  //        work without `Selection` instance.
+  if (MOZ_UNLIKELY(
+          aEditorBase.SelectionRef().GetAnchorFocusRange()->StartRef() !=
+              mAnchorFocusRange->StartRef() ||
+          aEditorBase.SelectionRef().GetAnchorFocusRange()->EndRef() !=
+              mAnchorFocusRange->EndRef())) {
+    return aDirectionAndAmount;
+  }
 
   RefPtr<nsFrameSelection> frameSelection =
       aEditorBase.SelectionRef().GetFrameSelection();
@@ -403,7 +432,7 @@ AutoRangeArray::ShrinkRangesIfStartFromOrEndAfterAtomicContent(
 
   bool changed = false;
   for (auto& range : mRanges) {
-    MOZ_ASSERT(!range->IsInSelection(),
+    MOZ_ASSERT(!range->IsInAnySelection(),
                "Changing range in selection may cause running script");
     Result<bool, nsresult> result =
         WSRunScanner::ShrinkRangeIfStartsFromOrEndsAfterAtomicContent(
@@ -817,6 +846,13 @@ void AutoRangeArray::ExtendRangesToWrapLinesToHandleBlockLevelEditAction(
         mRanges.RemoveElementAt(i);
       }
     }
+    if (!mAnchorFocusRange || !mAnchorFocusRange->IsPositioned()) {
+      if (mRanges.IsEmpty()) {
+        mAnchorFocusRange = nullptr;
+      } else {
+        mAnchorFocusRange = mRanges.LastElement();
+      }
+    }
   }
 }
 
@@ -913,7 +949,7 @@ AutoRangeArray::SplitTextAtEndBoundariesAndInlineAncestorsAtBothBoundaries(
 
       // Correct the range.
       // The new end parent becomes the parent node of the text.
-      MOZ_ASSERT(!range->IsInSelection());
+      MOZ_ASSERT(!range->IsInAnySelection());
       range->SetEnd(unwrappedSplitAtEndResult.AtNextContent<EditorRawDOMPoint>()
                         .ToRawRangeBoundary(),
                     ignoredError);
@@ -925,17 +961,22 @@ AutoRangeArray::SplitTextAtEndBoundariesAndInlineAncestorsAtBothBoundaries(
 
   // FYI: The following code is originated in
   // https://searchfox.org/mozilla-central/rev/c8e15e17bc6fd28f558c395c948a6251b38774ff/editor/libeditor/HTMLEditSubActionHandler.cpp#7023
-  nsTArray<OwningNonNull<RangeItem>> rangeItemArray;
+  AutoTArray<OwningNonNull<RangeItem>, 8> rangeItemArray;
   rangeItemArray.AppendElements(mRanges.Length());
 
   // First register ranges for special editor gravity
-  for (OwningNonNull<RangeItem>& rangeItem : rangeItemArray) {
-    rangeItem = new RangeItem();
-    rangeItem->StoreRange(*mRanges[0]);
-    aHTMLEditor.RangeUpdaterRef().RegisterRangeItem(*rangeItem);
-    // TODO: We should keep the array, and just update the ranges.
-    mRanges.RemoveElementAt(0);
+  Maybe<size_t> anchorFocusRangeIndex;
+  for (size_t index : IntegerRange(rangeItemArray.Length())) {
+    rangeItemArray[index] = new RangeItem();
+    rangeItemArray[index]->StoreRange(*mRanges[index]);
+    aHTMLEditor.RangeUpdaterRef().RegisterRangeItem(*rangeItemArray[index]);
+    if (mRanges[index] == mAnchorFocusRange) {
+      anchorFocusRangeIndex = Some(index);
+    }
   }
+  // TODO: We should keep the array, and just update the ranges.
+  mRanges.Clear();
+  mAnchorFocusRange = nullptr;
   // Now bust up inlines.
   nsresult rv = NS_OK;
   for (OwningNonNull<RangeItem>& item : Reversed(rangeItemArray)) {
@@ -954,12 +995,18 @@ AutoRangeArray::SplitTextAtEndBoundariesAndInlineAncestorsAtBothBoundaries(
     }
   }
   // Then unregister the ranges
-  for (OwningNonNull<RangeItem>& item : rangeItemArray) {
-    aHTMLEditor.RangeUpdaterRef().DropRangeItem(item);
-    RefPtr<nsRange> range = item->GetRange();
-    if (range) {
+  for (size_t index : IntegerRange(rangeItemArray.Length())) {
+    aHTMLEditor.RangeUpdaterRef().DropRangeItem(rangeItemArray[index]);
+    RefPtr<nsRange> range = rangeItemArray[index]->GetRange();
+    if (range && range->IsPositioned()) {
+      if (anchorFocusRangeIndex.isSome() && index == *anchorFocusRangeIndex) {
+        mAnchorFocusRange = range;
+      }
       mRanges.AppendElement(std::move(range));
     }
+  }
+  if (!mAnchorFocusRange && !mRanges.IsEmpty()) {
+    mAnchorFocusRange = mRanges.LastElement();
   }
 
   // XXX Why do we ignore the other errors here??

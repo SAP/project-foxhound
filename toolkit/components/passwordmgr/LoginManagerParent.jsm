@@ -8,6 +8,10 @@ const { XPCOMUtils } = ChromeUtils.importESModule(
   "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 
+const { FirefoxRelayTelemetry } = ChromeUtils.importESModule(
+  "resource://gre/modules/FirefoxRelayTelemetry.mjs"
+);
+
 const LoginInfo = new Components.Constructor(
   "@mozilla.org/login-manager/loginInfo;1",
   Ci.nsILoginInfo,
@@ -108,6 +112,30 @@ let gGeneratedPasswordObserver = {
         gGeneratedPasswordsByPrincipalOrigin.delete(principalOrigin);
       }
       return;
+    }
+
+    // We cache generated passwords in gGeneratedPasswordsByPrincipalOrigin.
+    // When generated password used on the page,
+    // we store a login with generated password and without username.
+    // When user updates that autosaved login with username,
+    // we must clear cached generated password.
+    // This will generate a new password next time user needs it.
+    if (topic == "passwordmgr-storage-changed" && data == "modifyLogin") {
+      const originalLogin = subject.GetElementAt(0);
+      const updatedLogin = subject.GetElementAt(1);
+
+      if (originalLogin && !originalLogin.username && updatedLogin?.username) {
+        const generatedPassword = gGeneratedPasswordsByPrincipalOrigin.get(
+          originalLogin.origin
+        );
+
+        if (
+          originalLogin.password == generatedPassword.value &&
+          updatedLogin.password == generatedPassword.value
+        ) {
+          gGeneratedPasswordsByPrincipalOrigin.delete(originalLogin.origin);
+        }
+      }
     }
 
     if (
@@ -351,10 +379,20 @@ class LoginManagerParent extends JSWindowActorParent {
       }
 
       case "PasswordManager:offerRelayIntegration": {
+        FirefoxRelayTelemetry.recordRelayOfferedEvent(
+          "clicked",
+          data.telemetry.flowId,
+          data.telemetry.scenarioName,
+          data.telemetry.isRelayUser
+        );
         return this.#offerRelayIntegration(context.origin);
       }
 
       case "PasswordManager:generateRelayUsername": {
+        FirefoxRelayTelemetry.recordRelayUsernameFilledEvent(
+          "clicked",
+          data.telemetry.flowId
+        );
         return this.#generateRelayUsername(context.origin);
       }
     }
@@ -778,6 +816,7 @@ class LoginManagerParent extends JSWindowActorParent {
     // Convert the array of nsILoginInfo to vanilla JS objects since nsILoginInfo
     // doesn't support structured cloning.
     let jsLogins = lazy.LoginHelper.loginsToVanillaObjects(matchingLogins);
+
     return {
       generatedPassword,
       importable: await getImportableLogins(formOrigin),

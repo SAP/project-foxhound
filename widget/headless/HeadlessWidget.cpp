@@ -69,6 +69,7 @@ HeadlessWidget::HeadlessWidget()
     : mEnabled(true),
       mVisible(false),
       mDestroyed(false),
+      mAlwaysOnTop(false),
       mTopLevel(nullptr),
       mCompositorWidget(nullptr),
       mSizeMode(nsSizeMode_Normal),
@@ -125,6 +126,8 @@ nsresult HeadlessWidget::Create(nsIWidget* aParent,
   mBounds = aRect;
   mRestoreBounds = aRect;
 
+  mAlwaysOnTop = aInitData && aInitData->mAlwaysOnTop;
+
   if (aParent) {
     mTopLevel = aParent->GetTopLevelWidget();
   } else {
@@ -156,7 +159,8 @@ void HeadlessWidget::GetCompositorWidgetInitData(
 nsIWidget* HeadlessWidget::GetTopLevelWidget() { return mTopLevel; }
 
 void HeadlessWidget::RaiseWindow() {
-  MOZ_ASSERT(mTopLevel == this || mWindowType == WindowType::Dialog ||
+  MOZ_ASSERT(mWindowType == WindowType::TopLevel ||
+                 mWindowType == WindowType::Dialog ||
                  mWindowType == WindowType::Sheet,
              "Raising a non-toplevel window.");
 
@@ -195,8 +199,11 @@ void HeadlessWidget::Show(bool aState) {
   LOG(("HeadlessWidget::Show [%p] state %d\n", (void*)this, aState));
 
   // Top-level window and dialogs are activated/raised when shown.
-  if (aState && (mTopLevel == this || mWindowType == WindowType::Dialog ||
-                 mWindowType == WindowType::Sheet)) {
+  // NB: alwaysontop windows are generally used for peripheral indicators,
+  //     so we don't focus them by default.
+  if (aState && !mAlwaysOnTop &&
+      (mWindowType == WindowType::TopLevel ||
+       mWindowType == WindowType::Dialog || mWindowType == WindowType::Sheet)) {
     RaiseWindow();
   }
 

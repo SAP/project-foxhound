@@ -32,6 +32,13 @@ async function ensureUtilsChild() {
 }
 
 const Utils = {
+  async getCachedOriginUsage() {
+    await ensureUtilsChild();
+
+    const result = await UtilsChild.getCachedOriginUsage();
+    return result;
+  },
+
   async shrinkStorageSize(size) {
     await ensureUtilsChild();
 

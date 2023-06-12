@@ -330,6 +330,65 @@ double RemoteAccessibleBase<Derived>::Step() const {
 }
 
 template <class Derived>
+bool RemoteAccessibleBase<Derived>::ContainsPoint(int32_t aX, int32_t aY) {
+  if (!Bounds().Contains(aX, aY)) {
+    return false;
+  }
+  if (!IsTextLeaf()) {
+    return true;
+  }
+  // This is a text leaf. The text might wrap across lines, which means our
+  // rect might cover a wider area than the actual text. For example, if the
+  // text begins in the middle of the first line and wraps on to the second,
+  // the rect will cover the start of the first line and the end of the second.
+  auto lines = GetCachedTextLines();
+  if (!lines) {
+    // This means the text is empty or occupies a single line (but does not
+    // begin the line). In that case, the Bounds check above is sufficient,
+    // since there's only one rect.
+    return true;
+  }
+  uint32_t length = lines->Length();
+  MOZ_ASSERT(length > 0,
+             "Line starts shouldn't be in cache if there aren't any");
+  if (length == 0 || (length == 1 && (*lines)[0] == 0)) {
+    // This means the text begins and occupies a single line. Again, the Bounds
+    // check above is sufficient.
+    return true;
+  }
+  // Walk the lines of the text. Even if this text doesn't start at the
+  // beginning of a line (i.e. lines[0] > 0), we always want to consider its
+  // first line.
+  int32_t lineStart = 0;
+  for (uint32_t index = 0; index <= length; ++index) {
+    int32_t lineEnd;
+    if (index < length) {
+      int32_t nextLineStart = (*lines)[index];
+      if (nextLineStart == 0) {
+        // This Accessible starts at the beginning of a line. Here, we always
+        // treat 0 as the first line start anyway.
+        MOZ_ASSERT(index == 0);
+        continue;
+      }
+      lineEnd = nextLineStart - 1;
+    } else {
+      // This is the last line.
+      lineEnd = static_cast<int32_t>(nsAccUtils::TextLength(this)) - 1;
+    }
+    MOZ_ASSERT(lineEnd >= lineStart);
+    nsRect lineRect = GetCachedCharRect(lineStart);
+    if (lineEnd > lineStart) {
+      lineRect.UnionRect(lineRect, GetCachedCharRect(lineEnd));
+    }
+    if (BoundsWithOffset(Some(lineRect)).Contains(aX, aY)) {
+      return true;
+    }
+    lineStart = lineEnd + 1;
+  }
+  return false;
+}
+
+template <class Derived>
 Accessible* RemoteAccessibleBase<Derived>::ChildAtPoint(
     int32_t aX, int32_t aY, LocalAccessible::EWhichChildAtPoint aWhichChild) {
   if (IsOuterDoc() && aWhichChild == EWhichChildAtPoint::DirectChild) {
@@ -399,7 +458,7 @@ Accessible* RemoteAccessibleBase<Derived>::ChildAtPoint(
           break;
         }
 
-        if (acc->Bounds().Contains(aX, aY)) {
+        if (acc->ContainsPoint(aX, aY)) {
           // Because our rects are in hittesting order, the
           // first match we encounter is guaranteed to be the
           // deepest match.
@@ -1064,25 +1123,27 @@ RemoteAccessibleBase<Derived>::GetCachedTextLines() {
 }
 
 template <class Derived>
-Maybe<nsTArray<nsRect>> RemoteAccessibleBase<Derived>::GetCachedCharData() {
+nsRect RemoteAccessibleBase<Derived>::GetCachedCharRect(int32_t aOffset) {
   MOZ_ASSERT(IsText());
   if (!mCachedFields) {
-    return Nothing();
+    return nsRect();
   }
 
   if (Maybe<const nsTArray<int32_t>&> maybeCharData =
           mCachedFields->GetAttribute<nsTArray<int32_t>>(
               nsGkAtoms::characterData)) {
     const nsTArray<int32_t>& charData = *maybeCharData;
-    nsTArray<nsRect> rects;
-    for (int i = 0; i < static_cast<int32_t>(charData.Length()); i += 4) {
-      nsRect r(charData[i], charData[i + 1], charData[i + 2], charData[i + 3]);
-      rects.AppendElement(r);
+    const int32_t index = aOffset * kNumbersInRect;
+    if (index < static_cast<int32_t>(charData.Length())) {
+      return nsRect(charData[index], charData[index + 1], charData[index + 2],
+                    charData[index + 3]);
     }
-    return Some(std::move(rects));
+    // It is valid for a client to call this with an offset 1 after the last
+    // character because of the insertion point at the end of text boxes.
+    MOZ_ASSERT(index == static_cast<int32_t>(charData.Length()));
   }
 
-  return Nothing();
+  return nsRect();
 }
 
 template <class Derived>

@@ -634,15 +634,16 @@ class alignas(uint32_t) ImmutableScriptData final : public TrailingArray {
 //       entries. This allows for fast finalization by decrementing the
 //       ref-count directly without doing a hash-table lookup.
 class SharedImmutableScriptData {
+  static constexpr uint32_t IsExternalFlag = 0x80000000;
+  static constexpr uint32_t RefCountBits = 0x7FFFFFFF;
+
   // This class is reference counted as follows: each pointer from a JSScript
   // counts as one reference plus there may be one reference from the shared
   // script data table.
-  mozilla::Atomic<uint32_t, mozilla::SequentiallyConsistent> refCount_ = {};
+  mozilla::Atomic<uint32_t, mozilla::SequentiallyConsistent>
+      refCountAndExternalFlags_ = {};
 
- public:
-  bool isExternal = false;
-
- private:
+  mozilla::HashNumber hash_;
   ImmutableScriptData* isd_ = nullptr;
 
   // End of fields.
@@ -656,11 +657,20 @@ class SharedImmutableScriptData {
   ~SharedImmutableScriptData() { reset(); }
 
  private:
+  bool isExternal() const { return refCountAndExternalFlags_ & IsExternalFlag; }
+  void setIsExternal() { refCountAndExternalFlags_ |= IsExternalFlag; }
+  void unsetIsExternal() { refCountAndExternalFlags_ &= RefCountBits; }
+
   void reset() {
-    if (isd_ && !isExternal) {
+    if (isd_ && !isExternal()) {
       js_delete(isd_);
     }
     isd_ = nullptr;
+  }
+
+  mozilla::HashNumber calculateHash() const {
+    mozilla::Span<const uint8_t> immutableData = isd_->immutableData();
+    return mozilla::HashBytes(immutableData.data(), immutableData.size());
   }
 
  public:
@@ -668,11 +678,18 @@ class SharedImmutableScriptData {
   // ImmutableScriptData.
   struct Hasher;
 
-  uint32_t refCount() const { return refCount_; }
-  void AddRef() { refCount_++; }
+  uint32_t refCount() const { return refCountAndExternalFlags_ & RefCountBits; }
+  void AddRef() { refCountAndExternalFlags_++; }
+
+ private:
+  uint32_t decrementRef() {
+    MOZ_ASSERT(refCount() != 0);
+    return --refCountAndExternalFlags_ & RefCountBits;
+  }
+
+ public:
   void Release() {
-    MOZ_ASSERT(refCount_ != 0);
-    uint32_t remain = --refCount_;
+    uint32_t remain = decrementRef();
     if (remain == 0) {
       reset();
       js_free(this);
@@ -691,7 +708,7 @@ class SharedImmutableScriptData {
       FrontendContext* fc, js::UniquePtr<ImmutableScriptData>&& isd);
 
   size_t sizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf) {
-    size_t isdSize = isExternal ? 0 : mallocSizeOf(isd_);
+    size_t isdSize = isExternal() ? 0 : mallocSizeOf(isd_);
     return mallocSizeOf(this) + isdSize;
   }
 
@@ -707,17 +724,41 @@ class SharedImmutableScriptData {
   uint32_t nfixed() const { return isd_->nfixed; }
 
   ImmutableScriptData* get() { return isd_; }
+  mozilla::HashNumber hash() const { return hash_; }
 
   void setOwn(js::UniquePtr<ImmutableScriptData>&& isd) {
     MOZ_ASSERT(!isd_);
     isd_ = isd.release();
-    isExternal = false;
+    unsetIsExternal();
+
+    hash_ = calculateHash();
+  }
+
+  void setOwn(js::UniquePtr<ImmutableScriptData>&& isd,
+              mozilla::HashNumber hash) {
+    MOZ_ASSERT(!isd_);
+    isd_ = isd.release();
+    unsetIsExternal();
+
+    MOZ_ASSERT(hash == calculateHash());
+    hash_ = hash;
   }
 
   void setExternal(ImmutableScriptData* isd) {
     MOZ_ASSERT(!isd_);
     isd_ = isd;
-    isExternal = true;
+    setIsExternal();
+
+    hash_ = calculateHash();
+  }
+
+  void setExternal(ImmutableScriptData* isd, mozilla::HashNumber hash) {
+    MOZ_ASSERT(!isd_);
+    isd_ = isd;
+    setIsExternal();
+
+    MOZ_ASSERT(hash == calculateHash());
+    hash_ = hash;
   }
 };
 
@@ -726,10 +767,7 @@ class SharedImmutableScriptData {
 struct SharedImmutableScriptData::Hasher {
   using Lookup = RefPtr<SharedImmutableScriptData>;
 
-  static mozilla::HashNumber hash(const Lookup& l) {
-    mozilla::Span<const uint8_t> immutableData = l->isd_->immutableData();
-    return mozilla::HashBytes(immutableData.data(), immutableData.size());
-  }
+  static mozilla::HashNumber hash(const Lookup& l) { return l->hash(); }
 
   static bool match(SharedImmutableScriptData* entry, const Lookup& lookup) {
     return (entry->isd_->immutableData() == lookup->isd_->immutableData());

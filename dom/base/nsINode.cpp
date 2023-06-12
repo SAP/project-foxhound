@@ -143,7 +143,15 @@ void nsINode::operator delete(void* aPtr) { free_impl(aPtr); }
 bool nsINode::IsInclusiveDescendantOf(const nsINode* aNode) const {
   MOZ_ASSERT(aNode, "The node is nullptr.");
 
-  for (nsINode* node : InclusiveAncestors(*this)) {
+  if (aNode == this) {
+    return true;
+  }
+
+  if (!aNode->HasFlag(NODE_MAY_HAVE_ELEMENT_CHILDREN)) {
+    return GetParentNode() == aNode;
+  }
+
+  for (nsINode* node : Ancestors(*this)) {
     if (node == aNode) {
       return true;
     }
@@ -199,7 +207,7 @@ void nsINode::nsSlots::Traverse(nsCycleCollectionTraversalCallback& cb) {
   cb.NoteXPCOMChild(mChildNodes);
 }
 
-void nsINode::nsSlots::Unlink() {
+void nsINode::nsSlots::Unlink(nsINode&) {
   if (mChildNodes) {
     mChildNodes->InvalidateCacheIfAvailable();
     ImplCycleCollectionUnlink(mChildNodes);
@@ -304,7 +312,7 @@ class IsItemInRangeComparator {
     MOZ_ASSERT(aStartOffset <= aEndOffset);
   }
 
-  int operator()(const nsRange* const aRange) const {
+  int operator()(const AbstractRange* const aRange) const {
     int32_t cmp = nsContentUtils::ComparePoints_Deprecated(
         &mNode, mEndOffset, aRange->GetStartContainer(), aRange->StartOffset(),
         nullptr, mCache);
@@ -338,7 +346,6 @@ bool nsINode::IsSelected(const uint32_t aStartOffset,
 
   // Collect the selection objects for potential ranges.
   nsTHashSet<Selection*> ancestorSelections;
-  Selection* prevSelection = nullptr;
   for (; n; n = GetClosestCommonInclusiveAncestorForRangeInSelection(
                 n->GetParentNode())) {
     const LinkedList<nsRange>* ranges =
@@ -347,14 +354,12 @@ bool nsINode::IsSelected(const uint32_t aStartOffset,
       continue;
     }
     for (const nsRange* range : *ranges) {
-      MOZ_ASSERT(range->IsInSelection(),
-                 "Why is this range registeed with a node?");
+      MOZ_ASSERT(range->IsInAnySelection(),
+                 "Why is this range registered with a node?");
       // Looks like that IsInSelection() assert fails sometimes...
-      if (range->IsInSelection()) {
-        Selection* selection = range->GetSelection();
-        if (prevSelection != selection) {
-          prevSelection = selection;
-          ancestorSelections.Insert(selection);
+      if (range->IsInAnySelection()) {
+        for (const auto* selectionWrapper : range->GetSelections()) {
+          ancestorSelections.Insert(selectionWrapper->Get());
         }
       }
     }
@@ -371,25 +376,25 @@ bool nsINode::IsSelected(const uint32_t aStartOffset,
     while (high != low) {
       size_t middle = low + (high - low) / 2;
 
-      const nsRange* const range = selection->GetRangeAt(middle);
+      const AbstractRange* const range = selection->GetAbstractRangeAt(middle);
       int result = comparator(range);
       if (result == 0) {
         if (!range->Collapsed()) {
           return true;
         }
 
-        const nsRange* middlePlus1;
-        const nsRange* middleMinus1;
+        const AbstractRange* middlePlus1;
+        const AbstractRange* middleMinus1;
         // if node end > start of middle+1, result = 1
         if (middle + 1 < high &&
-            (middlePlus1 = selection->GetRangeAt(middle + 1)) &&
+            (middlePlus1 = selection->GetAbstractRangeAt(middle + 1)) &&
             nsContentUtils::ComparePoints_Deprecated(
                 this, aEndOffset, middlePlus1->GetStartContainer(),
                 middlePlus1->StartOffset(), nullptr, &cache) > 0) {
           result = 1;
           // if node start < end of middle - 1, result = -1
         } else if (middle >= 1 &&
-                   (middleMinus1 = selection->GetRangeAt(middle - 1)) &&
+                   (middleMinus1 = selection->GetAbstractRangeAt(middle - 1)) &&
                    nsContentUtils::ComparePoints_Deprecated(
                        this, aStartOffset, middleMinus1->GetEndContainer(),
                        middleMinus1->EndOffset(), nullptr, &cache) < 0) {
@@ -434,8 +439,6 @@ Element* nsINode::GetAnonymousRootElementOfTextEditor(
     return nullptr;
   }
 
-  MOZ_ASSERT(!textEditor->IsHTMLEditor(),
-             "If it were an HTML editor, needs to use GetRootElement()");
   Element* rootElement = textEditor->GetRoot();
   if (aTextEditor) {
     textEditor.forget(aTextEditor);
@@ -556,10 +559,16 @@ nsIContent* nsINode::GetSelectionRootContent(PresShell* aPresShell) {
     return nullptr;
   }
 
-  if (AsContent()->HasIndependentSelection()) {
-    // This node should be a descendant of input/textarea editor.
-    Element* anonymousDivElement = GetAnonymousRootElementOfTextEditor();
-    if (anonymousDivElement) {
+  if (AsContent()->HasIndependentSelection() || IsInNativeAnonymousSubtree()) {
+    // This node should be an inclusive descendant of input/textarea editor.
+    // In that case, the anonymous <div> for TextEditor should be always the
+    // selection root.
+    // FIXME: If Selection for the document is collapsed in <input> or
+    // <textarea>, returning anonymous <div> may make the callers confused.
+    // Perhaps, we should do this only when this is in the native anonymous
+    // subtree unless the callers explicitly want to retrieve the anonymous
+    // <div> from a text control element.
+    if (Element* anonymousDivElement = GetAnonymousRootElementOfTextEditor()) {
       return anonymousDivElement;
     }
   }
@@ -1488,9 +1497,8 @@ bool nsINode::Traverse(nsINode* tmp, nsCycleCollectionTraversalCallback& cb) {
 void nsINode::Unlink(nsINode* tmp) {
   tmp->ReleaseWrapper(tmp);
 
-  nsSlots* slots = tmp->GetExistingSlots();
-  if (slots) {
-    slots->Unlink();
+  if (nsSlots* slots = tmp->GetExistingSlots()) {
+    slots->Unlink(*tmp);
   }
 
   if (tmp->NodeType() != DOCUMENT_NODE &&
@@ -2975,12 +2983,11 @@ const RawServoSelectorList* nsINode::ParseSelectorList(
     // want to cache the "This is not a valid selector" result.
     //
     // NOTE(emilio): Off-hand, getting a CallerType here might seem like a
-    // better idea than using IsDocumentURISchemeChrome(), but that would mean
+    // better idea than using ChromeRulesEnabled(), but that would mean
     // that we'd need to key the selector cache by that.
-    // IsDocumentURISchemeChrome() gives us the same semantics as any inline
+    // ChromeRulesEnabled() gives us the same semantics as any inline
     // style associated to a document, which seems reasonable.
-    return Servo_SelectorList_Parse(&aSelectorString,
-                                    doc->IsDocumentURISchemeChrome())
+    return Servo_SelectorList_Parse(&aSelectorString, doc->ChromeRulesEnabled())
         .Consume();
   });
 

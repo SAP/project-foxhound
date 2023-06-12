@@ -9,7 +9,7 @@
 #include "mozilla/URLExtraData.h"
 
 #include "mozilla/NullPrincipal.h"
-#include "nsProxyRelease.h"
+#include "nsAboutProtocolUtils.h"
 #include "ReferrerInfo.h"
 
 namespace mozilla {
@@ -30,17 +30,39 @@ void URLExtraData::Init() {
   sDummyChrome->mChromeRulesEnabled = true;
 }
 
+static bool IsPrivilegedAboutURIForCSS(nsIURI* aURI) {
+#ifdef MOZ_THUNDERBIRD
+  if (!aURI->SchemeIs("about")) {
+    return false;
+  }
+  // TODO: we might want to do something a bit less special-casey, perhaps using
+  // nsIAboutModule::GetChromeURI or so? But nsIAboutModule can involve calling
+  // into JS so this is probably fine for now, if it doesn't get too unwieldy.
+  nsAutoCString name;
+  if (NS_WARN_IF(NS_FAILED(NS_GetAboutModuleName(aURI, name)))) {
+    return false;
+  }
+  return name.EqualsLiteral("3pane") || name.EqualsLiteral("addressbook");
+#else
+  return false;
+#endif
+}
+
+bool URLExtraData::ChromeRulesEnabled(nsIURI* aURI) {
+  if (!aURI) {
+    return false;
+  }
+  return aURI->SchemeIs("chrome") || aURI->SchemeIs("resource") ||
+         IsPrivilegedAboutURIForCSS(aURI);
+}
+
 /* static */
 void URLExtraData::Shutdown() {
   sDummy = nullptr;
   sDummyChrome = nullptr;
 }
 
-URLExtraData::~URLExtraData() {
-  if (!NS_IsMainThread()) {
-    NS_ReleaseOnMainThread("URLExtraData::mPrincipal", mPrincipal.forget());
-  }
-}
+URLExtraData::~URLExtraData() = default;
 
 StaticRefPtr<URLExtraData>
     URLExtraData::sShared[size_t(UserAgentStyleSheetID::Count)];

@@ -57,9 +57,22 @@ class gfxContext final {
   typedef mozilla::gfx::RectCornerRadii RectCornerRadii;
   typedef mozilla::gfx::Size Size;
 
-  NS_INLINE_DECL_REFCOUNTING(gfxContext)
-
  public:
+  /**
+   * Initialize this context from a DrawTarget, which must be non-null.
+   * Strips any transform from aTarget, unless aPreserveTransform is true.
+   * aTarget will be flushed in the gfxContext's destructor.
+   */
+  MOZ_NONNULL(2)
+  explicit gfxContext(
+      mozilla::gfx::DrawTarget* aTarget,
+      const mozilla::gfx::Point& aDeviceOffset = mozilla::gfx::Point());
+
+  MOZ_NONNULL(2)
+  gfxContext(mozilla::gfx::DrawTarget* aTarget, bool aPreserveTransform);
+
+  ~gfxContext();
+
   /**
    * Initialize this context from a DrawTarget.
    * Strips any transform from aTarget.
@@ -67,19 +80,9 @@ class gfxContext final {
    * If aTarget is null or invalid, nullptr is returned.  The caller
    * is responsible for handling this scenario as appropriate.
    */
-  static already_AddRefed<gfxContext> CreateOrNull(
+  static mozilla::UniquePtr<gfxContext> CreateOrNull(
       mozilla::gfx::DrawTarget* aTarget,
       const mozilla::gfx::Point& aDeviceOffset = mozilla::gfx::Point());
-
-  /**
-   * Create a new gfxContext wrapping aTarget and preserving aTarget's
-   * transform. Note that the transform is moved from aTarget to the resulting
-   * gfxContext, aTarget will no longer have its transform.
-   * If aTarget is null or invalid, nullptr is returned.  The caller
-   * is responsible for handling this scenario as appropriate.
-   */
-  static already_AddRefed<gfxContext> CreatePreservingTransformOrNull(
-      mozilla::gfx::DrawTarget* aTarget);
 
   mozilla::gfx::DrawTarget* GetDrawTarget() { return mDT; }
 
@@ -438,18 +441,6 @@ class gfxContext final {
 #endif
 
  private:
-  /**
-   * Initialize this context from a DrawTarget.
-   * Strips any transform from aTarget.
-   * aTarget will be flushed in the gfxContext's destructor.  Use the static
-   * ContextForDrawTargetNoTransform() when you want this behavior, as that
-   * version deals with null DrawTarget better.
-   */
-  explicit gfxContext(
-      mozilla::gfx::DrawTarget* aTarget,
-      const mozilla::gfx::Point& aDeviceOffset = mozilla::gfx::Point());
-  ~gfxContext();
-
   friend class PatternFromState;
   friend class GlyphBufferAzure;
 
@@ -486,7 +477,6 @@ class gfxContext final {
     CopyableTArray<PushedClip> pushedClips;
     CopyableTArray<Float> dashPattern;
     StrokeOptions strokeOptions;
-    RefPtr<DrawTarget> drawTarget;
     mozilla::gfx::AntialiasMode aaMode;
     bool patternTransformChanged;
     Matrix patternTransform;
@@ -523,7 +513,7 @@ class gfxContext final {
     return mStateStack[mStateStack.Length() - 1];
   }
 
-  RefPtr<DrawTarget> mDT;
+  RefPtr<DrawTarget> const mDT;
   float mCrossProcessPaintScale = 1.0f;
 };
 
@@ -544,7 +534,7 @@ class gfxContextAutoSaveRestore {
   ~gfxContextAutoSaveRestore() { Restore(); }
 
   void SetContext(gfxContext* aContext) {
-    NS_ASSERTION(!mContext, "Not going to call Restore() on some context!!!");
+    MOZ_ASSERT(!mContext, "no context?");
     mContext = aContext;
     mContext->Save();
   }

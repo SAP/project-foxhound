@@ -1718,6 +1718,20 @@ const JSJitInfo* MCallDOMNative::getJitInfo() const {
   return getSingleTarget()->jitInfo();
 }
 
+MCallClassHook* MCallClassHook::New(TempAllocator& alloc, JSNative target,
+                                    uint32_t argc, bool constructing) {
+  auto* ins = new (alloc) MCallClassHook(target, constructing);
+
+  // Add callee + |this| + (if constructing) newTarget.
+  uint32_t numOperands = 2 + argc + constructing;
+
+  if (!ins->init(alloc, numOperands)) {
+    return nullptr;
+  }
+
+  return ins;
+}
+
 MDefinition* MStringLength::foldsTo(TempAllocator& alloc) {
   if (string()->isConstant()) {
     JSString* str = string()->toConstant()->toString();
@@ -2261,7 +2275,7 @@ bool MPhi::typeIncludes(MDefinition* def) {
   return this->mightBeType(def->type());
 }
 
-void MCall::addArg(size_t argnum, MDefinition* arg) {
+void MCallBase::addArg(size_t argnum, MDefinition* arg) {
   // The operand vector is initialized in reverse order by WarpBuilder.
   // It cannot be checked for consistency until all arguments are added.
   // FixedList doesn't initialize its elements, so do an unchecked init.
@@ -3720,40 +3734,12 @@ MDefinition* MToNumberInt32::foldsTo(TempAllocator& alloc) {
   return this;
 }
 
-MDefinition* MToIntegerInt32::foldsTo(TempAllocator& alloc) {
+MDefinition* MBooleanToInt32::foldsTo(TempAllocator& alloc) {
   MDefinition* input = getOperand(0);
+  MOZ_ASSERT(input->type() == MIRType::Boolean);
 
-  // Fold this operation if the input operand is constant.
   if (input->isConstant()) {
-    switch (input->type()) {
-      case MIRType::Undefined:
-      case MIRType::Null:
-        return MConstant::New(alloc, Int32Value(0));
-      case MIRType::Boolean:
-        return MConstant::New(alloc,
-                              Int32Value(input->toConstant()->toBoolean()));
-      case MIRType::Int32:
-        return MConstant::New(alloc,
-                              Int32Value(input->toConstant()->toInt32()));
-      case MIRType::Float32:
-      case MIRType::Double: {
-        double result = JS::ToInteger(input->toConstant()->numberToDouble());
-        int32_t ival;
-        // Only the value within the range of Int32 can be substituted as
-        // constant.
-        if (mozilla::NumberEqualsInt32(result, &ival)) {
-          return MConstant::New(alloc, Int32Value(ival));
-        }
-        break;
-      }
-      default:
-        break;
-    }
-  }
-
-  // See the comment in |MToNumberInt32::foldsTo|.
-  if (input->type() == MIRType::Int32 && !IsUint32Type(input)) {
-    return input;
+    return MConstant::New(alloc, Int32Value(input->toConstant()->toBoolean()));
   }
 
   return this;
@@ -6374,6 +6360,16 @@ AliasSet MGuardMultipleShapes::getAliasSet() const {
   return AliasSet::Load(AliasSet::ObjectFields);
 }
 
+AliasSet MGuardGlobalGeneration::getAliasSet() const {
+  return AliasSet::Load(AliasSet::GlobalGenerationCounter);
+}
+
+bool MGuardGlobalGeneration::congruentTo(const MDefinition* ins) const {
+  return ins->isGuardGlobalGeneration() &&
+         ins->toGuardGlobalGeneration()->expected() == expected() &&
+         ins->toGuardGlobalGeneration()->generationAddr() == generationAddr();
+}
+
 MDefinition* MGuardIsNotProxy::foldsTo(TempAllocator& alloc) {
   KnownClass known = GetObjectKnownClass(object());
   if (known == KnownClass::None) {
@@ -6857,6 +6853,11 @@ AliasSet MLoadSlotByIteratorIndex::getAliasSet() const {
                         AliasSet::DynamicSlot | AliasSet::Element);
 }
 
+AliasSet MStoreSlotByIteratorIndex::getAliasSet() const {
+  return AliasSet::Store(AliasSet::ObjectFields | AliasSet::FixedSlot |
+                         AliasSet::DynamicSlot | AliasSet::Element);
+}
+
 MDefinition* MGuardInt32IsNonNegative::foldsTo(TempAllocator& alloc) {
   MOZ_ASSERT(index()->type() == MIRType::Int32);
 
@@ -6969,6 +6970,16 @@ MIonToWasmCall* MIonToWasmCall::New(TempAllocator& alloc,
   if (!ins->init(alloc, funcType.args().length())) {
     return nullptr;
   }
+  return ins;
+}
+
+MBindFunction* MBindFunction::New(TempAllocator& alloc, MDefinition* target,
+                                  uint32_t argc, JSObject* templateObj) {
+  auto* ins = new (alloc) MBindFunction(templateObj);
+  if (!ins->init(alloc, NumNonArgumentOperands + argc)) {
+    return nullptr;
+  }
+  ins->initOperand(0, target);
   return ins;
 }
 

@@ -15,6 +15,9 @@
 #include "RemoteDecodeUtils.h"       // For GetCurrentSandboxingKind()
 #include "SpecialSystemDirectory.h"  // For temp dir
 
+using Microsoft::WRL::ComPtr;
+using Microsoft::WRL::MakeAndInitialize;
+
 namespace mozilla {
 
 // See
@@ -100,12 +103,12 @@ void MFCDMParent::Destroy() {
 }
 
 HRESULT MFCDMParent::LoadFactory() {
-  Microsoft::WRL::ComPtr<IMFMediaEngineClassFactory4> clsFactory;
+  ComPtr<IMFMediaEngineClassFactory4> clsFactory;
   MFCDM_RETURN_IF_FAILED(CoCreateInstance(CLSID_MFMediaEngineClassFactory,
                                           nullptr, CLSCTX_INPROC_SERVER,
                                           IID_PPV_ARGS(&clsFactory)));
 
-  Microsoft::WRL::ComPtr<IMFContentDecryptionModuleFactory> cdmFactory;
+  ComPtr<IMFContentDecryptionModuleFactory> cdmFactory;
   MFCDM_RETURN_IF_FAILED(clsFactory->CreateContentDecryptionModuleFactory(
       mKeySystem.get(), IID_PPV_ARGS(&cdmFactory)));
 
@@ -118,7 +121,7 @@ HRESULT MFCDMParent::LoadFactory() {
 // Windows.Media.Protection.ProtectionCapabilities.IsTypeSupported(). See
 // https://learn.microsoft.com/en-us/uwp/api/windows.media.protection.protectioncapabilities.istypesupported?view=winrt-19041
 static bool FactorySupports(
-    Microsoft::WRL::ComPtr<IMFContentDecryptionModuleFactory>& aFactory,
+    ComPtr<IMFContentDecryptionModuleFactory>& aFactory,
     const nsString& aKeySystem,
     const KeySystemConfig::EMECodecString& aVideoCodec,
     const KeySystemConfig::EMECodecString& aAudioCodec =
@@ -282,27 +285,53 @@ static MF_MEDIAKEYS_REQUIREMENT ToMFRequirement(
   }
 };
 
-static HRESULT BuildCDMAccessConfig(
-    const MFCDMInitParamsIPDL& aParams,
-    Microsoft::WRL::ComPtr<IPropertyStore>& aConfig) {
-  Microsoft::WRL::ComPtr<IPropertyStore>
-      mksc;  // EME MediaKeySystemConfiguration
+static inline LPCWSTR InitDataTypeToString(const nsAString& aInitDataType) {
+  // The strings are defined in https://www.w3.org/TR/eme-initdata-registry/
+  if (aInitDataType.EqualsLiteral("webm")) {
+    return L"webm";
+  } else if (aInitDataType.EqualsLiteral("cenc")) {
+    return L"cenc";
+  } else if (aInitDataType.EqualsLiteral("keyids")) {
+    return L"keyids";
+  } else {
+    return L"unknown";
+  }
+}
+
+static HRESULT BuildCDMAccessConfig(const MFCDMInitParamsIPDL& aParams,
+                                    ComPtr<IPropertyStore>& aConfig) {
+  ComPtr<IPropertyStore> mksc;  // EME MediaKeySystemConfiguration
   MFCDM_RETURN_IF_FAILED(PSCreateMemoryPropertyStore(IID_PPV_ARGS(&mksc)));
+
+  // If we don't set `MF_EME_INITDATATYPES` then we won't be able to create
+  // CDM module on Windows 10, which is not documented officially.
+  BSTR* initDataTypeArray =
+      (BSTR*)CoTaskMemAlloc(sizeof(BSTR) * aParams.initDataTypes().Length());
+  for (size_t i = 0; i < aParams.initDataTypes().Length(); i++) {
+    initDataTypeArray[i] =
+        SysAllocString(InitDataTypeToString(aParams.initDataTypes()[i]));
+  }
+  AutoPropVar initDataTypes;
+  PROPVARIANT* var = initDataTypes.Receive();
+  var->vt = VT_VECTOR | VT_BSTR;
+  var->cabstr.cElems = static_cast<ULONG>(aParams.initDataTypes().Length());
+  var->cabstr.pElems = initDataTypeArray;
+  MFCDM_RETURN_IF_FAILED(
+      mksc->SetValue(MF_EME_INITDATATYPES, initDataTypes.get()));
 
   // Empty 'audioCapabilities'.
   AutoPropVar audioCapabilities;
-  PROPVARIANT* var = audioCapabilities.Receive();
+  var = audioCapabilities.Receive();
   var->vt = VT_VARIANT | VT_VECTOR;
   var->capropvar.cElems = 0;
   MFCDM_RETURN_IF_FAILED(
       mksc->SetValue(MF_EME_AUDIOCAPABILITIES, audioCapabilities.get()));
 
   // 'videoCapabilites'.
-  Microsoft::WRL::ComPtr<IPropertyStore>
-      mksmc;  // EME MediaKeySystemMediaCapability
+  ComPtr<IPropertyStore> mksmc;  // EME MediaKeySystemMediaCapability
   MFCDM_RETURN_IF_FAILED(PSCreateMemoryPropertyStore(IID_PPV_ARGS(&mksmc)));
-  AutoPropVar robustness;
   if (aParams.hwSecure()) {
+    AutoPropVar robustness;
     var = robustness.Receive();
     var->vt = VT_BSTR;
     var->bstrVal = SysAllocString(L"HW_SECURE_ALL");
@@ -341,11 +370,11 @@ static HRESULT BuildCDMAccessConfig(
   return S_OK;
 }
 
-static HRESULT BuildCDMProperties(
-    const nsString& aOrigin, Microsoft::WRL::ComPtr<IPropertyStore>& aProps) {
+static HRESULT BuildCDMProperties(const nsString& aOrigin,
+                                  ComPtr<IPropertyStore>& aProps) {
   MOZ_ASSERT(!aOrigin.IsEmpty());
 
-  Microsoft::WRL::ComPtr<IPropertyStore> props;
+  ComPtr<IPropertyStore> props;
   MFCDM_RETURN_IF_FAILED(PSCreateMemoryPropertyStore(IID_PPV_ARGS(&props)));
 
   AutoPropVar origin;
@@ -405,30 +434,46 @@ mozilla::ipc::IPCResult MFCDMParent::RecvInit(
       NS_ConvertUTF16toUTF8(aParams.origin()).get(),
       RequirementToStr(aParams.distinctiveID()),
       RequirementToStr(aParams.persistentState()), aParams.hwSecure());
+  MOZ_ASSERT(mFactory->IsTypeSupported(mKeySystem.get(), nullptr));
 
   // Get access object to CDM.
-  Microsoft::WRL::ComPtr<IPropertyStore> accessConfig;
+  ComPtr<IPropertyStore> accessConfig;
   MFCDM_REJECT_IF_FAILED(BuildCDMAccessConfig(aParams, accessConfig),
                          NS_ERROR_FAILURE);
 
   AutoTArray<IPropertyStore*, 1> configs = {accessConfig.Get()};
-  Microsoft::WRL::ComPtr<IMFContentDecryptionModuleAccess> cdmAccess;
+  ComPtr<IMFContentDecryptionModuleAccess> cdmAccess;
   MFCDM_REJECT_IF_FAILED(
       mFactory->CreateContentDecryptionModuleAccess(
           mKeySystem.get(), configs.Elements(), configs.Length(), &cdmAccess),
       NS_ERROR_FAILURE);
   // Get CDM.
-  Microsoft::WRL::ComPtr<IPropertyStore> cdmProps;
+  ComPtr<IPropertyStore> cdmProps;
   MFCDM_REJECT_IF_FAILED(BuildCDMProperties(aParams.origin(), cdmProps),
                          NS_ERROR_FAILURE);
-  Microsoft::WRL::ComPtr<IMFContentDecryptionModule> cdm;
+  ComPtr<IMFContentDecryptionModule> cdm;
   MFCDM_REJECT_IF_FAILED(
       cdmAccess->CreateContentDecryptionModule(cdmProps.Get(), &cdm),
       NS_ERROR_FAILURE);
 
   mCDM.Swap(cdm);
-  aResolver(MFCDMInitIPDL{mId});
   MFCDM_PARENT_LOG("Created a CDM!");
+
+  // TODO : for Widevine CDM, would we still need to do following steps?
+  ComPtr<IMFPMPHost> pmpHost;
+  ComPtr<IMFGetService> cdmService;
+  MFCDM_REJECT_IF_FAILED(mCDM.As(&cdmService), NS_ERROR_FAILURE);
+  MFCDM_REJECT_IF_FAILED(
+      cdmService->GetService(MF_CONTENTDECRYPTIONMODULE_SERVICE,
+                             IID_PPV_ARGS(&pmpHost)),
+      NS_ERROR_FAILURE);
+  MFCDM_REJECT_IF_FAILED(
+      SUCCEEDED(MakeAndInitialize<MFPMPHostWrapper>(&mPMPHostWrapper, pmpHost)),
+      NS_ERROR_FAILURE);
+  MFCDM_REJECT_IF_FAILED(mCDM->SetPMPHostApp(mPMPHostWrapper.Get()),
+                         NS_ERROR_FAILURE);
+  MFCDM_PARENT_LOG("Set PMPHostWrapper on CDM!");
+  aResolver(MFCDMInitIPDL{mId});
   return IPC_OK();
 }
 
@@ -455,14 +500,14 @@ mozilla::ipc::IPCResult MFCDMParent::RecvCreateSessionAndGenerateRequest(
       MFCDMSession::Create(aParams.sessionType(), mCDM.Get(), mManagerThread)};
   if (!session) {
     MFCDM_PARENT_LOG("Failed to create CDM session");
-    aResolver(NS_ERROR_FAILURE);
+    aResolver(NS_ERROR_DOM_MEDIA_CDM_NO_SESSION_ERR);
     return IPC_OK();
   }
 
   MFCDM_REJECT_IF_FAILED(session->GenerateRequest(aParams.initDataType(),
                                                   aParams.initData().Elements(),
                                                   aParams.initData().Length()),
-                         NS_ERROR_FAILURE);
+                         NS_ERROR_DOM_MEDIA_CDM_SESSION_OPERATION_ERR);
   ConnectSessionEvents(session.get());
 
   // TODO : now we assume all session ID is available after session is created,
@@ -476,11 +521,83 @@ mozilla::ipc::IPCResult MFCDMParent::RecvCreateSessionAndGenerateRequest(
   return IPC_OK();
 }
 
+mozilla::ipc::IPCResult MFCDMParent::RecvLoadSession(
+    const KeySystemConfig::SessionType& aSessionType,
+    const nsString& aSessionId, LoadSessionResolver&& aResolver) {
+  MOZ_ASSERT(mCDM, "RecvInit() must be called and waited on before this call");
+
+  nsresult rv = NS_OK;
+  auto* session = GetSession(aSessionId);
+  if (!session) {
+    aResolver(NS_ERROR_DOM_MEDIA_CDM_NO_SESSION_ERR);
+    return IPC_OK();
+  }
+  MFCDM_REJECT_IF_FAILED(session->Load(aSessionId),
+                         NS_ERROR_DOM_MEDIA_CDM_SESSION_OPERATION_ERR);
+  aResolver(rv);
+  return IPC_OK();
+}
+
+mozilla::ipc::IPCResult MFCDMParent::RecvUpdateSession(
+    const nsString& aSessionId, const CopyableTArray<uint8_t>& aResponse,
+    UpdateSessionResolver&& aResolver) {
+  MOZ_ASSERT(mCDM, "RecvInit() must be called and waited on before this call");
+  nsresult rv = NS_OK;
+  auto* session = GetSession(aSessionId);
+  if (!session) {
+    aResolver(NS_ERROR_DOM_MEDIA_CDM_NO_SESSION_ERR);
+    return IPC_OK();
+  }
+  MFCDM_REJECT_IF_FAILED(session->Update(aResponse),
+                         NS_ERROR_DOM_MEDIA_CDM_SESSION_OPERATION_ERR);
+  aResolver(rv);
+  return IPC_OK();
+}
+
+mozilla::ipc::IPCResult MFCDMParent::RecvCloseSession(
+    const nsString& aSessionId, UpdateSessionResolver&& aResolver) {
+  MOZ_ASSERT(mCDM, "RecvInit() must be called and waited on before this call");
+  nsresult rv = NS_OK;
+  auto* session = GetSession(aSessionId);
+  if (!session) {
+    aResolver(NS_ERROR_DOM_MEDIA_CDM_NO_SESSION_ERR);
+    return IPC_OK();
+  }
+  MFCDM_REJECT_IF_FAILED(session->Close(),
+                         NS_ERROR_DOM_MEDIA_CDM_SESSION_OPERATION_ERR);
+  aResolver(rv);
+  return IPC_OK();
+}
+
+mozilla::ipc::IPCResult MFCDMParent::RecvRemoveSession(
+    const nsString& aSessionId, UpdateSessionResolver&& aResolver) {
+  MOZ_ASSERT(mCDM, "RecvInit() must be called and waited on before this call");
+  nsresult rv = NS_OK;
+  auto* session = GetSession(aSessionId);
+  if (!session) {
+    aResolver(NS_ERROR_DOM_MEDIA_CDM_NO_SESSION_ERR);
+    return IPC_OK();
+  }
+  MFCDM_REJECT_IF_FAILED(session->Remove(),
+                         NS_ERROR_DOM_MEDIA_CDM_SESSION_OPERATION_ERR);
+  aResolver(rv);
+  return IPC_OK();
+}
+
 void MFCDMParent::ConnectSessionEvents(MFCDMSession* aSession) {
   // TODO : clear session's event source when the session gets removed.
   mKeyMessageEvents.Forward(aSession->KeyMessageEvent());
   mKeyChangeEvents.Forward(aSession->KeyChangeEvent());
   mExpirationEvents.Forward(aSession->ExpirationEvent());
+}
+
+MFCDMSession* MFCDMParent::GetSession(const nsString& aSessionId) {
+  AssertOnManagerThread();
+  auto iter = mSessions.find(aSessionId);
+  if (iter == mSessions.end()) {
+    return nullptr;
+  }
+  return iter->second.get();
 }
 
 #undef MFCDM_REJECT_IF_FAILED

@@ -1697,7 +1697,8 @@ class FunctionCompiler {
         // Store the new value
         auto* store =
             MWasmStoreRef::New(alloc(), instancePointer_, valueAddr,
-                               /*valueOffset=*/0, v, AliasSet::WasmGlobalCell);
+                               /*valueOffset=*/0, v, AliasSet::WasmGlobalCell,
+                               WasmPreBarrierKind::Normal);
         curBlock_->add(store);
 
         // Call the post-write barrier
@@ -1726,7 +1727,8 @@ class FunctionCompiler {
       // Store the new value
       auto* store =
           MWasmStoreRef::New(alloc(), instancePointer_, valueAddr,
-                             /*valueOffset=*/0, v, AliasSet::WasmGlobalVar);
+                             /*valueOffset=*/0, v, AliasSet::WasmGlobalVar,
+                             WasmPreBarrierKind::Normal);
       curBlock_->add(store);
 
       // Call the post-write barrier
@@ -1804,9 +1806,9 @@ class FunctionCompiler {
     curBlock_->add(loc);
 
     // Store the new value
-    auto* store =
-        MWasmStoreRef::New(alloc(), instancePointer_, loc, /*valueOffset=*/0,
-                           value, AliasSet::WasmTableElement);
+    auto* store = MWasmStoreRef::New(
+        alloc(), instancePointer_, loc, /*valueOffset=*/0, value,
+        AliasSet::WasmTableElement, WasmPreBarrierKind::Normal);
     curBlock_->add(store);
 
     // Perform the post barrier
@@ -1821,6 +1823,9 @@ class FunctionCompiler {
         MWasmInterruptCheck::New(alloc(), instancePointer_, bytecodeOffset()));
   }
 
+  // Perform a post-write barrier to update the generational store buffer. This
+  // version will remove a previous store buffer entry if it is no longer
+  // needed.
   [[nodiscard]] bool postBarrierPrecise(uint32_t lineOrBytecode,
                                         MDefinition* valueAddr,
                                         MDefinition* value) {
@@ -1828,6 +1833,9 @@ class FunctionCompiler {
                              value);
   }
 
+  // Perform a post-write barrier to update the generational store buffer. This
+  // version will remove a previous store buffer entry if it is no longer
+  // needed.
   [[nodiscard]] bool postBarrierPreciseWithOffset(uint32_t lineOrBytecode,
                                                   MDefinition* valueBase,
                                                   uint32_t valueOffset,
@@ -1838,6 +1846,23 @@ class FunctionCompiler {
     }
     return emitInstanceCall3(lineOrBytecode, SASigPostBarrierPreciseWithOffset,
                              valueBase, valueOffsetDef, value);
+  }
+
+  // Perform a post-write barrier to update the generational store buffer. This
+  // version is the most efficient and only requires the address to store the
+  // value and the new value. It does not remove a previous store buffer entry
+  // if it is no longer needed, you must use a precise post-write barrier for
+  // that.
+  [[nodiscard]] bool postBarrier(uint32_t lineOrBytecode, MDefinition* object,
+                                 MDefinition* valueBase, uint32_t valueOffset,
+                                 MDefinition* newValue) {
+    auto* barrier = MWasmPostWriteBarrier::New(
+        alloc(), instancePointer_, object, valueBase, valueOffset, newValue);
+    if (!barrier) {
+      return false;
+    }
+    curBlock_->add(barrier);
+    return true;
   }
 
   /***************************************************************** Calls */
@@ -2303,7 +2328,8 @@ class FunctionCompiler {
           if (result.type().isRefRepr()) {
             auto* store = MWasmStoreRef::New(
                 alloc(), instancePointer_, stackResultPointer_,
-                result.stackOffset(), values[i], AliasSet::WasmStackResult);
+                result.stackOffset(), values[i], AliasSet::WasmStackResult,
+                WasmPreBarrierKind::None);
             curBlock_->add(store);
           } else {
             auto* store = MWasmStoreStackResult::New(
@@ -2833,7 +2859,7 @@ class FunctionCompiler {
     curBlock_->add(exceptionAddr);
     auto* setException = MWasmStoreRef::New(
         alloc(), instancePointer_, exceptionAddr, /*valueOffset=*/0, exception,
-        AliasSet::WasmPendingException);
+        AliasSet::WasmPendingException, WasmPreBarrierKind::Normal);
     curBlock_->add(setException);
     if (!postBarrierPrecise(/*lineOrBytecode=*/0, exceptionAddr, exception)) {
       return false;
@@ -2845,7 +2871,7 @@ class FunctionCompiler {
     curBlock_->add(exceptionTagAddr);
     auto* setExceptionTag = MWasmStoreRef::New(
         alloc(), instancePointer_, exceptionTagAddr, /*valueOffset=*/0, tag,
-        AliasSet::WasmPendingException);
+        AliasSet::WasmPendingException, WasmPreBarrierKind::Normal);
     curBlock_->add(setExceptionTag);
     return postBarrierPrecise(/*lineOrBytecode=*/0, exceptionTagAddr, tag);
   }
@@ -3277,27 +3303,17 @@ class FunctionCompiler {
         continue;
       }
 
-      // Load the previous value
-      auto* prevValue = MWasmLoadFieldKA::New(
-          alloc(), exception, data, offset, type.toMIRType(), MWideningOp::None,
-          AliasSet::Load(AliasSet::Any));
-      if (!prevValue) {
-        return false;
-      }
-      curBlock_->add(prevValue);
-
       // Store the new value
       auto* store = MWasmStoreFieldRefKA::New(
           alloc(), instancePointer_, exception, data, offset, argValues[i],
-          AliasSet::Store(AliasSet::Any));
+          AliasSet::Store(AliasSet::Any), Nothing(), WasmPreBarrierKind::None);
       if (!store) {
         return false;
       }
       curBlock_->add(store);
 
       // Call the post-write barrier
-      if (!postBarrierPreciseWithOffset(bytecodeOffset, data, offset,
-                                        prevValue)) {
+      if (!postBarrier(bytecodeOffset, exception, data, offset, argValues[i])) {
         return false;
       }
     }
@@ -3547,7 +3563,7 @@ class FunctionCompiler {
   [[nodiscard]] bool writeGcValueAtBasePlusOffset(
       uint32_t lineOrBytecode, FieldType fieldType, MDefinition* keepAlive,
       AliasSet::Flag aliasBitset, MDefinition* value, MDefinition* base,
-      uint32_t offset, bool needsTrapInfo) {
+      uint32_t offset, bool needsTrapInfo, WasmPreBarrierKind preBarrierKind) {
     MOZ_ASSERT(aliasBitset != 0);
     MOZ_ASSERT(keepAlive->type() == MIRType::RefOrNull);
     MOZ_ASSERT(fieldType.widenToValType().toMIRType() == value->type());
@@ -3578,27 +3594,18 @@ class FunctionCompiler {
     MOZ_ASSERT(narrowingOp == MNarrowingOp::None);
     MOZ_ASSERT(fieldType.widenToValType() == fieldType.valType());
 
-    auto* prevValue = MWasmLoadFieldKA::New(
-        alloc(), keepAlive, base, offset, fieldType.valType().toMIRType(),
-        MWideningOp::None, AliasSet::Load(aliasBitset),
-        mozilla::Some(getTrapSiteInfo()));
-    if (!prevValue) {
-      return false;
-    }
-    curBlock_->add(prevValue);
-
     // Store the new value
-    auto* store =
-        MWasmStoreFieldRefKA::New(alloc(), instancePointer_, keepAlive, base,
-                                  offset, value, AliasSet::Store(aliasBitset));
+    auto* store = MWasmStoreFieldRefKA::New(
+        alloc(), instancePointer_, keepAlive, base, offset, value,
+        AliasSet::Store(aliasBitset), mozilla::Some(getTrapSiteInfo()),
+        preBarrierKind);
     if (!store) {
       return false;
     }
     curBlock_->add(store);
 
     // Call the post-write barrier
-    return postBarrierPreciseWithOffset(lineOrBytecode, base, offset,
-                                        prevValue);
+    return postBarrier(lineOrBytecode, keepAlive, base, offset, value);
   }
 
   // Generate a write of `value` at address `base + index * scale`, where
@@ -3609,7 +3616,7 @@ class FunctionCompiler {
   [[nodiscard]] bool writeGcValueAtBasePlusScaledIndex(
       uint32_t lineOrBytecode, FieldType fieldType, MDefinition* keepAlive,
       AliasSet::Flag aliasBitset, MDefinition* value, MDefinition* base,
-      uint32_t scale, MDefinition* index) {
+      uint32_t scale, MDefinition* index, WasmPreBarrierKind preBarrierKind) {
     MOZ_ASSERT(aliasBitset != 0);
     MOZ_ASSERT(keepAlive->type() == MIRType::RefOrNull);
     MOZ_ASSERT(fieldType.widenToValType().toMIRType() == value->type());
@@ -3628,10 +3635,10 @@ class FunctionCompiler {
       return false;
     }
 
-    return writeGcValueAtBasePlusOffset(lineOrBytecode, fieldType, keepAlive,
-                                        aliasBitset, value, finalAddr,
-                                        /*offset=*/0,
-                                        /*needsTrapInfo=*/false);
+    return writeGcValueAtBasePlusOffset(
+        lineOrBytecode, fieldType, keepAlive, aliasBitset, value, finalAddr,
+        /*offset=*/0,
+        /*needsTrapInfo=*/false, preBarrierKind);
   }
 
   // Generate a read from address `base + offset`, where `offset` is known at
@@ -3732,10 +3739,10 @@ class FunctionCompiler {
   // Helper function for EmitStruct{New,Set}: given a MIR pointer to a
   // WasmStructObject, a MIR pointer to a value, and a field descriptor,
   // generate MIR to write the value to the relevant field in the object.
-  [[nodiscard]] bool writeValueToStructField(uint32_t lineOrBytecode,
-                                             const StructField& field,
-                                             MDefinition* structObject,
-                                             MDefinition* value) {
+  [[nodiscard]] bool writeValueToStructField(
+      uint32_t lineOrBytecode, const StructField& field,
+      MDefinition* structObject, MDefinition* value,
+      WasmPreBarrierKind preBarrierKind) {
     FieldType fieldType = field.type;
     uint32_t fieldOffset = field.offset;
 
@@ -3777,7 +3784,7 @@ class FunctionCompiler {
 
     return writeGcValueAtBasePlusOffset(lineOrBytecode, fieldType, structObject,
                                         fieldAliasSet, value, base, areaOffset,
-                                        needsTrapInfo);
+                                        needsTrapInfo, preBarrierKind);
   }
 
   // Helper function for EmitStructGet: given a MIR pointer to a
@@ -3977,6 +3984,26 @@ class FunctionCompiler {
     return arrayObject;
   }
 
+  [[nodiscard]] MDefinition* createUninitializedArrayObject(
+      uint32_t lineOrBytecode, uint32_t typeIndex, MDefinition* numElements) {
+    // Get the type definition for the array as a whole.
+    MDefinition* typeDefData = loadTypeDefInstanceData(typeIndex);
+    if (!typeDefData) {
+      return nullptr;
+    }
+
+    // Create call: arrayObject = Instance::arrayNewUninit(numElements,
+    // typeDefData) If the requested size exceeds MaxArrayPayloadBytes, the MIR
+    // generated by this call will trap.
+    MDefinition* arrayObject;
+    if (!emitInstanceCall2(lineOrBytecode, SASigArrayNewUninit, numElements,
+                           typeDefData, &arrayObject)) {
+      return nullptr;
+    }
+
+    return arrayObject;
+  }
+
   // This emits MIR to perform several actions common to array loads and
   // stores.  Given `arrayObject`, that points to a WasmArrayObject, and an
   // index value `index`, it:
@@ -4023,8 +4050,8 @@ class FunctionCompiler {
     const ArrayType& arrayType = (*moduleEnv_.types)[typeIndex].arrayType();
 
     // Create the array object, default-initialized.
-    MDefinition* arrayObject = createDefaultInitializedArrayObject(
-        lineOrBytecode, typeIndex, numElements);
+    MDefinition* arrayObject =
+        createUninitializedArrayObject(lineOrBytecode, typeIndex, numElements);
     if (!arrayObject) {
       return nullptr;
     }
@@ -4127,10 +4154,10 @@ class FunctionCompiler {
     // Because we have the exact address to hand, use
     // `writeGcValueAtBasePlusOffset` rather than
     // `writeGcValueAtBasePlusScaledIndex` to do the store.
-    if (!writeGcValueAtBasePlusOffset(lineOrBytecode, fillValueFieldType,
-                                      arrayObject, AliasSet::WasmArrayDataArea,
-                                      fillValue, ptrPhi, /*offset=*/0,
-                                      /*needsTrapInfo=*/false)) {
+    if (!writeGcValueAtBasePlusOffset(
+            lineOrBytecode, fillValueFieldType, arrayObject,
+            AliasSet::WasmArrayDataArea, fillValue, ptrPhi, /*offset=*/0,
+            /*needsTrapInfo=*/false, WasmPreBarrierKind::None)) {
       return nullptr;
     }
 
@@ -6095,6 +6122,29 @@ static bool EmitTableFill(FunctionCompiler& f) {
                              tableIndexArg);
 }
 
+#if ENABLE_WASM_MEMORY_CONTROL
+static bool EmitMemDiscard(FunctionCompiler& f) {
+  MDefinition *start, *len;
+  if (!f.iter().readMemDiscard(&start, &len)) {
+    return false;
+  }
+
+  if (f.inDeadCode()) {
+    return true;
+  }
+
+  uint32_t bytecodeOffset = f.readBytecodeOffset();
+
+  MDefinition* memoryBase = f.memoryBase();
+
+  const SymbolicAddressSignature& callee =
+      (f.moduleEnv().usesSharedMemory()
+           ? (f.isMem32() ? SASigMemDiscardSharedM32 : SASigMemDiscardSharedM64)
+           : (f.isMem32() ? SASigMemDiscardM32 : SASigMemDiscardM64));
+  return f.emitInstanceCall3(bytecodeOffset, callee, start, len, memoryBase);
+}
+#endif
+
 static bool EmitTableGet(FunctionCompiler& f) {
   uint32_t tableIndex;
   MDefinition* index;
@@ -6539,9 +6589,9 @@ static bool EmitStructNew(FunctionCompiler& f) {
     return false;
   }
 
-  // Create call: structObject = Instance::structNew(typeDefData)
+  // Create call: structObject = Instance::structNewUninit(typeDefData)
   MDefinition* structObject;
-  if (!f.emitInstanceCall1(lineOrBytecode, SASigStructNew, typeDefData,
+  if (!f.emitInstanceCall1(lineOrBytecode, SASigStructNewUninit, typeDefData,
                            &structObject)) {
     return false;
   }
@@ -6554,7 +6604,8 @@ static bool EmitStructNew(FunctionCompiler& f) {
     }
     const StructField& field = structType.fields_[fieldIndex];
     if (!f.writeValueToStructField(lineOrBytecode, field, structObject,
-                                   args[fieldIndex])) {
+                                   args[fieldIndex],
+                                   WasmPreBarrierKind::None)) {
       return false;
     }
   }
@@ -6613,7 +6664,8 @@ static bool EmitStructSet(FunctionCompiler& f) {
   // And fill in the field.
   const StructType& structType = (*f.moduleEnv().types)[typeIndex].structType();
   const StructField& field = structType.fields_[fieldIndex];
-  return f.writeValueToStructField(lineOrBytecode, field, structObject, value);
+  return f.writeValueToStructField(lineOrBytecode, field, structObject, value,
+                                   WasmPreBarrierKind::Normal);
 }
 
 static bool EmitStructGet(FunctionCompiler& f, FieldWideningOp wideningOp) {
@@ -6752,7 +6804,7 @@ static bool EmitArrayNewFixed(FunctionCompiler& f) {
     if (!f.writeGcValueAtBasePlusOffset(
             lineOrBytecode, elemFieldType, arrayObject,
             AliasSet::WasmArrayDataArea, values[numElements - 1 - i], base,
-            i * elemSize, false)) {
+            i * elemSize, false, WasmPreBarrierKind::None)) {
       return false;
     }
   }
@@ -6878,7 +6930,7 @@ static bool EmitArraySet(FunctionCompiler& f) {
 
   return f.writeGcValueAtBasePlusScaledIndex(
       lineOrBytecode, elemFieldType, arrayObject, AliasSet::WasmArrayDataArea,
-      value, base, elemSize, index);
+      value, base, elemSize, index, WasmPreBarrierKind::Normal);
 }
 
 static bool EmitArrayGet(FunctionCompiler& f, FieldWideningOp wideningOp) {
@@ -8087,6 +8139,14 @@ static bool EmitBodyExprs(FunctionCompiler& f) {
             CHECK(EmitMemOrTableInit(f, /*isMem=*/false));
           case uint32_t(MiscOp::TableFill):
             CHECK(EmitTableFill(f));
+#if ENABLE_WASM_MEMORY_CONTROL
+          case uint32_t(MiscOp::MemoryDiscard): {
+            if (!f.moduleEnv().memoryControlEnabled()) {
+              return f.iter().unrecognizedOpcode(&op);
+            }
+            CHECK(EmitMemDiscard(f));
+          }
+#endif
           case uint32_t(MiscOp::TableGrow):
             CHECK(EmitTableGrow(f));
           case uint32_t(MiscOp::TableSize):

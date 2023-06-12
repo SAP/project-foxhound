@@ -187,22 +187,13 @@ bool nsNativeThemeGTK::GetGtkWidgetAndState(StyleAppearance aAppearance,
     aState->isDefault = IsDefaultButton(aFrame);
     aState->canDefault = FALSE;  // XXX fix me
 
-    if (aAppearance == StyleAppearance::FocusOutline) {
-      aState->disabled = FALSE;
-      aState->active = FALSE;
-      aState->inHover = FALSE;
-      aState->isDefault = FALSE;
-      aState->canDefault = FALSE;
-
-      aState->focused = TRUE;
-      aState->depressed = TRUE;  // see moz_gtk_entry_paint()
-    } else if (aAppearance == StyleAppearance::Button ||
-               aAppearance == StyleAppearance::Toolbarbutton ||
-               aAppearance == StyleAppearance::Dualbutton ||
-               aAppearance == StyleAppearance::ToolbarbuttonDropdown ||
-               aAppearance == StyleAppearance::Menulist ||
-               aAppearance == StyleAppearance::MenulistButton ||
-               aAppearance == StyleAppearance::MozMenulistArrowButton) {
+    if (aAppearance == StyleAppearance::Button ||
+        aAppearance == StyleAppearance::Toolbarbutton ||
+        aAppearance == StyleAppearance::Dualbutton ||
+        aAppearance == StyleAppearance::ToolbarbuttonDropdown ||
+        aAppearance == StyleAppearance::Menulist ||
+        aAppearance == StyleAppearance::MenulistButton ||
+        aAppearance == StyleAppearance::MozMenulistArrowButton) {
       aState->active &= aState->inHover;
     } else if (aAppearance == StyleAppearance::Treetwisty ||
                aAppearance == StyleAppearance::Treetwistyopen) {
@@ -301,9 +292,6 @@ bool nsNativeThemeGTK::GetGtkWidgetAndState(StyleAppearance aAppearance,
     case StyleAppearance::Dualbutton:
       if (aWidgetFlags) *aWidgetFlags = GTK_RELIEF_NONE;
       aGtkWidgetType = MOZ_GTK_TOOLBAR_BUTTON;
-      break;
-    case StyleAppearance::FocusOutline:
-      aGtkWidgetType = MOZ_GTK_ENTRY;
       break;
     case StyleAppearance::Checkbox:
     case StyleAppearance::Radio:
@@ -808,10 +796,6 @@ CSSIntMargin nsNativeThemeGTK::GetExtraSizeForWidget(
       }
       return {};
     }
-    case StyleAppearance::FocusOutline: {
-      moz_gtk_get_focus_outline_size(&extra.left, &extra.top);
-      break;
-    }
     default:
       return {};
   }
@@ -1142,16 +1126,40 @@ bool nsNativeThemeGTK::GetWidgetOverflow(nsDeviceContext* aContext,
 auto nsNativeThemeGTK::IsWidgetNonNative(nsIFrame* aFrame,
                                          StyleAppearance aAppearance)
     -> NonNative {
-  if (IsWidgetScrollbarPart(aAppearance)) {
+  if (IsWidgetScrollbarPart(aAppearance) ||
+      aAppearance == StyleAppearance::FocusOutline) {
     return NonNative::Always;
   }
-  // We can't draw light widgets if the current GTK theme is dark or vice versa.
-  if (Theme::ThemeSupportsWidget(aFrame->PresContext(), aFrame, aAppearance) &&
-      LookAndFeel::ColorSchemeForFrame(aFrame) !=
-          LookAndFeel::ColorSchemeForChrome()) {
-    return NonNative::BecauseColorMismatch;
+
+  // If the current GTK theme color scheme matches our color-scheme, then we
+  // can draw a native widget.
+  if (LookAndFeel::ColorSchemeForFrame(aFrame) ==
+      LookAndFeel::ColorSchemeForChrome()) {
+    return NonNative::No;
   }
-  return NonNative::No;
+
+  // As an special-case, for tooltips, we check if the tooltip color is the
+  // same between the light and dark themes. If so we can get away with drawing
+  // the native widget, see bug 1817396.
+  if (aAppearance == StyleAppearance::Tooltip) {
+    auto darkColor =
+        LookAndFeel::Color(StyleSystemColor::Infotext, ColorScheme::Dark,
+                           LookAndFeel::UseStandins::No);
+    auto lightColor =
+        LookAndFeel::Color(StyleSystemColor::Infotext, ColorScheme::Light,
+                           LookAndFeel::UseStandins::No);
+    if (darkColor == lightColor) {
+      return NonNative::No;
+    }
+  }
+
+  // If the non-native theme doesn't support the widget then oh well...
+  if (NS_WARN_IF(!Theme::ThemeSupportsWidget(aFrame->PresContext(), aFrame,
+                                             aAppearance))) {
+    return NonNative::No;
+  }
+
+  return NonNative::BecauseColorMismatch;
 }
 
 LayoutDeviceIntSize nsNativeThemeGTK::GetMinimumWidgetSize(
@@ -1482,8 +1490,6 @@ nsNativeThemeGTK::ThemeSupportsWidget(nsPresContext* aPresContext,
               IsFrameContentNodeInNamespace(aFrame, kNameSpaceID_XUL)) &&
              !IsWidgetStyled(aPresContext, aFrame, aAppearance);
 
-    case StyleAppearance::FocusOutline:
-      return true;
     default:
       break;
   }

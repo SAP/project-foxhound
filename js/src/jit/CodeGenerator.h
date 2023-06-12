@@ -75,10 +75,10 @@ class OutOfLineRegExpInstanceOptimizable;
 class OutOfLineNaNToZero;
 class OutOfLineResumableWasmTrap;
 class OutOfLineAbortingWasmTrap;
-class OutOfLineZeroIfNaN;
 class OutOfLineGuardNumberToIntPtrIndex;
 class OutOfLineBoxNonStrictThis;
 class OutOfLineArrayPush;
+class OutOfLineWasmCallPostWriteBarrier;
 
 class CodeGenerator final : public CodeGeneratorSpecific {
   [[nodiscard]] bool generateBody();
@@ -100,6 +100,9 @@ class CodeGenerator final : public CodeGeneratorSpecific {
   template <typename Fn, Fn fn, class ArgSeq, class StoreOutputTo>
   inline OutOfLineCode* oolCallVM(LInstruction* ins, const ArgSeq& args,
                                   const StoreOutputTo& out);
+
+  template <typename LCallIns>
+  void emitCallNative(LCallIns* call, JSNative native);
 
  public:
   CodeGenerator(MIRGenerator* gen, LIRGraph* graph,
@@ -150,7 +153,6 @@ class CodeGenerator final : public CodeGeneratorSpecific {
   void visitOutOfLineIsConstructor(OutOfLineIsConstructor* ool);
 
   void visitOutOfLineNaNToZero(OutOfLineNaNToZero* ool);
-  void visitOutOfLineZeroIfNaN(OutOfLineZeroIfNaN* ool);
 
   void visitOutOfLineResumableWasmTrap(OutOfLineResumableWasmTrap* ool);
   void visitOutOfLineAbortingWasmTrap(OutOfLineAbortingWasmTrap* ool);
@@ -175,10 +177,14 @@ class CodeGenerator final : public CodeGeneratorSpecific {
 
   void visitOutOfLineArrayPush(OutOfLineArrayPush* ool);
 
+  void visitOutOfLineWasmCallPostWriteBarrier(
+      OutOfLineWasmCallPostWriteBarrier* ool);
+
  private:
   void emitPostWriteBarrier(const LAllocation* obj);
   void emitPostWriteBarrier(Register objreg);
   void emitPostWriteBarrierS(Address address, Register prev, Register next);
+  void emitPostWriteBarrierElement(Register objreg, Register index);
 
   template <class LPostBarrierType, MIRType nurseryType>
   void visitPostWriteBarrierCommon(LPostBarrierType* lir, OutOfLineCode* ool);

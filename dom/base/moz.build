@@ -252,6 +252,7 @@ EXPORTS.mozilla.dom += [
     "PlacesVisitRemoved.h",
     "PlacesVisitTitle.h",
     "PlacesWeakCallbackWrapper.h",
+    "PopoverData.h",
     "PopupBlocker.h",
     "Pose.h",
     "PostMessageEvent.h",
@@ -565,6 +566,7 @@ LOCAL_INCLUDES += [
     "/dom/xml",
     "/dom/xslt/xpath",
     "/dom/xul",
+    "/extensions/spellcheck/src",
     "/gfx/2d",
     "/image",
     "/js/xpconnect/loader",
@@ -580,6 +582,7 @@ LOCAL_INCLUDES += [
     "/netwerk/url-classifier",
     "/parser/htmlparser",
     "/security/manager/ssl",
+    "/third_party/xsimd/include",
     "/widget",
     "/xpcom/ds",
 ]

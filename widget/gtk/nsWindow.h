@@ -191,7 +191,8 @@ class nsWindow final : public nsBaseWidget {
   void* GetNativeData(uint32_t aDataType) override;
   nsresult SetTitle(const nsAString& aTitle) override;
   void SetIcon(const nsAString& aIconSpec) override;
-  void SetWindowClass(const nsAString& xulWinType) override;
+  void SetWindowClass(const nsAString& xulWinType, const nsAString& xulWinClass,
+                      const nsAString& xulWinName) override;
   LayoutDeviceIntPoint WidgetToScreenOffset() override;
   void CaptureRollupEvents(bool aDoCapture) override;
   [[nodiscard]] nsresult GetAttention(int32_t aCycleCount) override;
@@ -274,7 +275,6 @@ class nsWindow final : public nsBaseWidget {
   static guint32 sLastButtonPressTime;
 
   MozContainer* GetMozContainer() { return mContainer; }
-  LayoutDeviceIntSize GetMozContainerSize();
   GdkWindow* GetGdkWindow() const { return mGdkWindow; };
   GdkWindow* GetToplevelGdkWindow() const;
   GtkWidget* GetGtkWidget() const { return mShell; }
@@ -529,11 +529,13 @@ class nsWindow final : public nsBaseWidget {
 
   GtkTextDirection GetTextDirection();
 
+  bool DrawsToCSDTitlebar() const;
   void AddCSDDecorationSize(int* aWidth, int* aHeight);
 
   void CreateAndPutGdkScrollEvent(mozilla::LayoutDeviceIntPoint aPoint,
                                   double aDeltaX, double aDeltaY);
 
+  nsCString mGtkWindowAppClass;
   nsCString mGtkWindowAppName;
   nsCString mGtkWindowRoleName;
   void RefreshWindowClass();
@@ -802,6 +804,8 @@ class nsWindow final : public nsBaseWidget {
   void ConfigureGdkWindow();
   void ReleaseGdkWindow();
   void ConfigureCompositor();
+
+  bool IsAlwaysUndecoratedWindow() const;
 
   // nsBaseWidget
   WindowRenderer* GetWindowRenderer() override;

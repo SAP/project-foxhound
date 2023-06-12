@@ -20,20 +20,16 @@ const { AddonManager, AddonManagerPrivate } = ChromeUtils.import(
 
 const lazy = {};
 
-ChromeUtils.defineModuleGetter(
-  lazy,
-  "AttributionCode",
-  "resource:///modules/AttributionCode.jsm"
-);
 ChromeUtils.defineESModuleGetters(lazy, {
+  AttributionCode: "resource:///modules/AttributionCode.sys.mjs",
   ProfileAge: "resource://gre/modules/ProfileAge.sys.mjs",
   WindowsRegistry: "resource://gre/modules/WindowsRegistry.sys.mjs",
 });
 import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 
 XPCOMUtils.defineLazyGetter(lazy, "fxAccounts", () => {
-  return ChromeUtils.import(
-    "resource://gre/modules/FxAccounts.jsm"
+  return ChromeUtils.importESModule(
+    "resource://gre/modules/FxAccounts.sys.mjs"
   ).getFxAccountsSingleton();
 });
 ChromeUtils.defineModuleGetter(
@@ -277,15 +273,6 @@ const DEFAULT_ENVIRONMENT_PREFS = new Map([
   ["dom.ipc.plugins.enabled", { what: RECORD_PREF_VALUE }],
   ["dom.ipc.processCount", { what: RECORD_PREF_VALUE }],
   ["dom.max_script_run_time", { what: RECORD_PREF_VALUE }],
-  ["editor.css.default_length_unit", { what: RECORD_PREF_VALUE }],
-  [
-    "editor.hr_element.allow_to_delete_from_following_line",
-    { what: RECORD_PREF_VALUE },
-  ],
-  ["editor.initialize_element_before_connect", { what: RECORD_PREF_VALUE }],
-  ["editor.positioning.offset", { what: RECORD_PREF_VALUE }],
-  ["editor.resizing.preserve_ratio", { what: RECORD_PREF_VALUE }],
-  ["editor.use_div_for_default_newlines", { what: RECORD_PREF_VALUE }],
   ["editor.truncate_user_pastes", { what: RECORD_PREF_VALUE }],
   ["extensions.InstallTrigger.enabled", { what: RECORD_PREF_VALUE }],
   ["extensions.InstallTriggerImpl.enabled", { what: RECORD_PREF_VALUE }],
@@ -1680,7 +1667,7 @@ EnvironmentCache.prototype = {
     try {
       await lazy.AttributionCode.getAttrDataAsync();
     } catch (e) {
-      // The AttributionCode.jsm module might not be always available
+      // The AttributionCode.sys.mjs module might not be always available
       // (e.g. tests). Gracefully handle this.
       return;
     }
@@ -1695,7 +1682,7 @@ EnvironmentCache.prototype = {
     try {
       data = lazy.AttributionCode.getCachedAttributionData();
     } catch (e) {
-      // The AttributionCode.jsm module might not be always available
+      // The AttributionCode.sys.mjs module might not be always available
       // (e.g. tests). Gracefully handle this.
     }
 

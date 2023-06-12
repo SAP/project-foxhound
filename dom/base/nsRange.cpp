@@ -35,10 +35,12 @@
 #include "mozilla/dom/RangeBinding.h"
 #include "mozilla/dom/Selection.h"
 #include "mozilla/dom/Text.h"
+#include "mozilla/Logging.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/RangeUtils.h"
 #include "mozilla/Telemetry.h"
+#include "mozilla/ToString.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/Likely.h"
 #include "nsCSSFrameConstructor.h"
@@ -47,8 +49,39 @@
 #include "nsComputedDOMStyle.h"
 #include "mozilla/dom/InspectorFontFace.h"
 
+namespace mozilla {
+extern LazyLogModule sSelectionAPILog;
+extern void LogStackForSelectionAPI();
+
+template <typename SPT, typename SRT, typename EPT, typename ERT>
+static void LogSelectionAPI(const dom::Selection* aSelection,
+                            const char* aFuncName, const char* aArgName1,
+                            const RangeBoundaryBase<SPT, SRT>& aBoundary1,
+                            const char* aArgName2,
+                            const RangeBoundaryBase<EPT, ERT>& aBoundary2,
+                            const char* aArgName3, bool aBoolArg) {
+  if (aBoundary1 == aBoundary2) {
+    MOZ_LOG(sSelectionAPILog, LogLevel::Info,
+            ("%p nsRange::%s(%s=%s=%s, %s=%s)", aSelection, aFuncName,
+             aArgName1, aArgName2, ToString(aBoundary1).c_str(), aArgName3,
+             aBoolArg ? "true" : "false"));
+  } else {
+    MOZ_LOG(
+        sSelectionAPILog, LogLevel::Info,
+        ("%p nsRange::%s(%s=%s, %s=%s, %s=%s)", aSelection, aFuncName,
+         aArgName1, ToString(aBoundary1).c_str(), aArgName2,
+         ToString(aBoundary2).c_str(), aArgName3, aBoolArg ? "true" : "false"));
+  }
+}
+}  // namespace mozilla
+
 using namespace mozilla;
 using namespace mozilla::dom;
+
+SelectionListWrapper::SelectionListWrapper(Selection* aSelection)
+    : mSelection(aSelection) {}
+NS_IMPL_CYCLE_COLLECTION(SelectionListWrapper)
+Selection* SelectionListWrapper::Get() const { return mSelection; }
 
 template already_AddRefed<nsRange> nsRange::Create(
     const RangeBoundary& aStartBoundary, const RangeBoundary& aEndBoundary,
@@ -129,7 +162,7 @@ static void InvalidateAllFrames(nsINode* aNode) {
 nsTArray<RefPtr<nsRange>>* nsRange::sCachedRanges = nullptr;
 
 nsRange::~nsRange() {
-  NS_ASSERTION(!IsInSelection(), "deleting nsRange that is in use");
+  NS_ASSERTION(!IsInAnySelection(), "deleting nsRange that is in use");
 
   // we want the side effects (releases and list removals)
   DoSetRange(RawRangeBoundary(), RawRangeBoundary(), nullptr);
@@ -141,7 +174,8 @@ nsRange::nsRange(nsINode* aNode)
       mNextStartRef(nullptr),
       mNextEndRef(nullptr) {
   // printf("Size of nsRange: %zu\n", sizeof(nsRange));
-  static_assert(sizeof(nsRange) <= 208,
+
+  static_assert(sizeof(nsRange) <= 216,
                 "nsRange size shouldn't be increased as far as possible");
 }
 
@@ -188,6 +222,7 @@ NS_INTERFACE_MAP_END_INHERITING(AbstractRange)
 NS_IMPL_CYCLE_COLLECTION_CLASS(nsRange)
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(nsRange, AbstractRange)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mSelections);
   // We _could_ just rely on Reset() to
   // UnregisterClosestCommonInclusiveAncestor(), but it wouldn't know we're
   // calling it from Unlink and so would do more work than it really needs to.
@@ -204,6 +239,7 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(nsRange, AbstractRange)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mRoot)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mSelections)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN_INHERITED(nsRange, AbstractRange)
@@ -259,7 +295,8 @@ static void UnmarkDescendants(nsINode* aNode) {
 void nsRange::RegisterClosestCommonInclusiveAncestor(nsINode* aNode) {
   MOZ_ASSERT(aNode, "bad arg");
 
-  MOZ_DIAGNOSTIC_ASSERT(IsInSelection(), "registering range not in selection");
+  MOZ_DIAGNOSTIC_ASSERT(IsInAnySelection(),
+                        "registering range not in selection");
 
   mRegisteredClosestCommonInclusiveAncestor = aNode;
 
@@ -437,7 +474,7 @@ void nsRange::CharacterDataChanged(nsIContent* aContent,
       }
 
       bool isCommonAncestor =
-          IsInSelection() && mStart.Container() == mEnd.Container();
+          IsInAnySelection() && mStart.Container() == mEnd.Container();
       if (isCommonAncestor) {
         UnregisterClosestCommonInclusiveAncestor(mStart.Container(), false);
         RegisterClosestCommonInclusiveAncestor(newStart.Container());
@@ -489,7 +526,7 @@ void nsRange::CharacterDataChanged(nsIContent* aContent,
       newEnd = {aInfo.mDetails->mNextSibling, newEndOffset};
 
       bool isCommonAncestor =
-          IsInSelection() && mStart.Container() == mEnd.Container();
+          IsInAnySelection() && mStart.Container() == mEnd.Container();
       if (isCommonAncestor && !newStart.Container()) {
         // The split occurs inside the range.
         UnregisterClosestCommonInclusiveAncestor(mStart.Container(), false);
@@ -557,7 +594,7 @@ void nsRange::ContentAppended(nsIContent* aFirstNewContent) {
 
   nsINode* container = aFirstNewContent->GetParentNode();
   MOZ_ASSERT(container);
-  if (container->IsMaybeSelected() && IsInSelection()) {
+  if (container->IsMaybeSelected() && IsInAnySelection()) {
     nsINode* child = aFirstNewContent;
     while (child) {
       if (!child
@@ -646,13 +683,16 @@ void nsRange::ContentRemoved(nsIContent* aChild, nsIContent* aPreviousSibling) {
   nsINode* container = aChild->GetParentNode();
   MOZ_ASSERT(container);
 
+  nsINode* startContainer = mStart.Container();
+  nsINode* endContainer = mEnd.Container();
+
   RawRangeBoundary newStart;
   RawRangeBoundary newEnd;
   Maybe<bool> gravitateStart;
   bool gravitateEnd;
 
   // Adjust position if a sibling was removed...
-  if (container == mStart.Container()) {
+  if (container == startContainer) {
     // We're only interested if our boundary reference was removed, otherwise
     // we can just invalidate the offset.
     if (aChild == mStart.Ref()) {
@@ -662,14 +702,14 @@ void nsRange::ContentRemoved(nsIContent* aChild, nsIContent* aPreviousSibling) {
       newStart.InvalidateOffset();
     }
   } else {
-    gravitateStart = Some(mStart.Container()->IsInclusiveDescendantOf(aChild));
+    gravitateStart = Some(startContainer->IsInclusiveDescendantOf(aChild));
     if (gravitateStart.value()) {
       newStart = {container, aPreviousSibling};
     }
   }
 
   // Do same thing for end boundry.
-  if (container == mEnd.Container()) {
+  if (container == endContainer) {
     if (aChild == mEnd.Ref()) {
       newEnd = {container, aPreviousSibling};
     } else {
@@ -677,19 +717,21 @@ void nsRange::ContentRemoved(nsIContent* aChild, nsIContent* aPreviousSibling) {
       newEnd.InvalidateOffset();
     }
   } else {
-    if (mStart.Container() == mEnd.Container() && gravitateStart.isSome()) {
+    if (startContainer == endContainer && gravitateStart.isSome()) {
       gravitateEnd = gravitateStart.value();
     } else {
-      gravitateEnd = mEnd.Container()->IsInclusiveDescendantOf(aChild);
+      gravitateEnd = endContainer->IsInclusiveDescendantOf(aChild);
     }
     if (gravitateEnd) {
       newEnd = {container, aPreviousSibling};
     }
   }
 
-  if (newStart.IsSet() || newEnd.IsSet()) {
-    DoSetRange(newStart.IsSet() ? newStart : mStart.AsRaw(),
-               newEnd.IsSet() ? newEnd : mEnd.AsRaw(), mRoot);
+  bool newStartIsSet = newStart.IsSet();
+  bool newEndIsSet = newEnd.IsSet();
+  if (newStartIsSet || newEndIsSet) {
+    DoSetRange(newStartIsSet ? newStart : mStart.AsRaw(),
+               newEndIsSet ? newEnd : mEnd.AsRaw(), mRoot);
   } else {
     nsRange::AssertIfMismatchRootAndRangeBoundaries(mStart, mEnd, mRoot);
   }
@@ -835,18 +877,60 @@ bool nsRange::IntersectsNode(nsINode& aNode, ErrorResult& aRv) {
   return false;
 }
 
+/**
+ * @brief Helper class that creates a local copy of `nsRange::mSelections`.
+ *
+ * This class uses the RAII principle to create a local copy of
+ * `nsRange::mSelections`, which is safely iterable while modifications may
+ * occur on the original.
+ * When going out of scope, the local copy is being deleted.
+ */
+class MOZ_RAII SelectionListLocalCopy final {
+ public:
+  explicit SelectionListLocalCopy(
+      mozilla::LinkedList<RefPtr<SelectionListWrapper>>& aSelectionList) {
+    for (const auto* elem : aSelectionList) {
+      mSelectionList.insertBack(new SelectionListWrapper(elem->Get()));
+    }
+  }
+
+  mozilla::LinkedList<RefPtr<SelectionListWrapper>>& Get() {
+    return mSelectionList;
+  }
+
+  ~SelectionListLocalCopy() { mSelectionList.clear(); }
+
+ private:
+  mozilla::LinkedList<RefPtr<SelectionListWrapper>> mSelectionList;
+};
+
 void nsRange::NotifySelectionListenersAfterRangeSet() {
-  if (mSelection) {
+  if (!mSelections.isEmpty()) {
     // Our internal code should not move focus with using this instance while
     // it's calling Selection::NotifySelectionListeners() which may move focus
     // or calls selection listeners.  So, let's set mCalledByJS to false here
     // since non-*JS() methods don't set it to false.
     AutoCalledByJSRestore calledByJSRestorer(*this);
     mCalledByJS = false;
-    // Be aware, this range may be modified or stop being a range for selection
-    // after this call.  Additionally, the selection instance may have gone.
-    RefPtr<Selection> selection = mSelection.get();
-    selection->NotifySelectionListeners(calledByJSRestorer.SavedValue());
+
+    // Notify all Selections. This may modify the range,
+    // remove it from the selection, or the selection itself may have gone after
+    // the call. Also, new selections may be added.
+    // To ensure that listeners are notified for all *current* selections,
+    // create a copy of the list of selections and use that for iterating. This
+    // way selections can be added or removed safely during iteration.
+    // To save allocation cost, the copy is only created if there is more than
+    // one Selection present  (which will barely ever be the case).
+    if (IsPartOfOneSelectionOnly()) {
+      RefPtr<Selection> selection = mSelections.getFirst()->Get();
+      selection->NotifySelectionListeners(calledByJSRestorer.SavedValue());
+    } else {
+      SelectionListLocalCopy copiedSelections{mSelections};
+      for (const auto* selectionWrapper : copiedSelections.Get()) {
+        RefPtr<Selection> selection = selectionWrapper->Get();
+        selection->NotifySelectionListeners(calledByJSRestorer.SavedValue());
+      }
+    }
   }
 }
 
@@ -924,7 +1008,7 @@ void nsRange::DoSetRange(const RangeBoundaryBase<SPT, SRT>& aStartBoundary,
   bool checkCommonAncestor =
       (mStart.Container() != aStartBoundary.Container() ||
        mEnd.Container() != aEndBoundary.Container()) &&
-      IsInSelection() && !aNotInsertedYet;
+      IsInAnySelection() && !aNotInsertedYet;
 
   // GetClosestCommonInclusiveAncestor is unreliable while we're unlinking
   // (could return null if our start/end have already been unlinked), so make
@@ -943,7 +1027,7 @@ void nsRange::DoSetRange(const RangeBoundaryBase<SPT, SRT>& aStartBoundary,
         RegisterClosestCommonInclusiveAncestor(newCommonAncestor);
       } else {
         MOZ_DIAGNOSTIC_ASSERT(!mIsPositioned, "unexpected disconnected nodes");
-        mSelection = nullptr;
+        mSelections.clear();
         MOZ_DIAGNOSTIC_ASSERT(
             !mRegisteredClosestCommonInclusiveAncestor,
             "How can we have a registered common ancestor when we "
@@ -957,48 +1041,67 @@ void nsRange::DoSetRange(const RangeBoundaryBase<SPT, SRT>& aStartBoundary,
 
   // This needs to be the last thing this function does, other than notifying
   // selection listeners. See comment in ParentChainChanged.
-  mRoot = aRootNode;
+  if (mRoot != aRootNode) {
+    mRoot = aRootNode;
+  }
 
   // Notify any selection listeners. This has to occur last because otherwise
   // the world could be observed by a selection listener while the range was in
   // an invalid state. So we run it off of a script runner to ensure it runs
   // after the mutation observers have finished running.
-  if (mSelection) {
+  if (!mSelections.isEmpty()) {
+    if (MOZ_LOG_TEST(sSelectionAPILog, LogLevel::Info)) {
+      for (const RefPtr<SelectionListWrapper>& wrapper : mSelections) {
+        if (wrapper && wrapper->Get() &&
+            wrapper->Get()->Type() == SelectionType::eNormal) {
+          LogSelectionAPI(wrapper->Get(), __FUNCTION__, "aStartBoundary",
+                          aStartBoundary, "aEndBoundary", aEndBoundary,
+                          "aNotInsertedYet", aNotInsertedYet);
+          LogStackForSelectionAPI();
+        }
+      }
+    }
     nsContentUtils::AddScriptRunner(
         NewRunnableMethod("NotifySelectionListenersAfterRangeSet", this,
                           &nsRange::NotifySelectionListenersAfterRangeSet));
   }
 }
 
-void nsRange::RegisterSelection(Selection& aSelection) {
-  // A range can belong to at most one Selection instance.
-  MOZ_ASSERT(!mSelection);
-
-  if (mSelection == &aSelection) {
-    return;
+bool nsRange::IsInSelection(const Selection& aSelection) const {
+  for (const auto* selectionWrapper : mSelections) {
+    if (selectionWrapper->Get() == &aSelection) {
+      return true;
+    }
   }
-
-  // Extra step in case our parent failed to ensure the above precondition.
-  if (mSelection) {
-    const RefPtr<nsRange> range{this};
-    const RefPtr<Selection> selection{mSelection};
-    selection->RemoveRangeAndUnselectFramesAndNotifyListeners(*range,
-                                                              IgnoreErrors());
-  }
-
-  mSelection = &aSelection;
-
-  nsINode* commonAncestor = GetClosestCommonInclusiveAncestor();
-  MOZ_ASSERT(commonAncestor, "unexpected disconnected nodes");
-  RegisterClosestCommonInclusiveAncestor(commonAncestor);
+  return false;
 }
 
-Selection* nsRange::GetSelection() const { return mSelection; }
+void nsRange::RegisterSelection(Selection& aSelection) {
+  if (IsInSelection(aSelection)) {
+    return;
+  }
+  bool isFirstSelection = mSelections.isEmpty();
+  mSelections.insertBack(new SelectionListWrapper(&aSelection));
+  if (isFirstSelection && !mRegisteredClosestCommonInclusiveAncestor) {
+    nsINode* commonAncestor = GetClosestCommonInclusiveAncestor();
+    MOZ_ASSERT(commonAncestor, "unexpected disconnected nodes");
+    RegisterClosestCommonInclusiveAncestor(commonAncestor);
+  }
+}
 
-void nsRange::UnregisterSelection() {
-  mSelection = nullptr;
+const mozilla::LinkedList<RefPtr<mozilla::SelectionListWrapper>>&
+nsRange::GetSelections() const {
+  return mSelections;
+}
 
-  if (mRegisteredClosestCommonInclusiveAncestor) {
+void nsRange::UnregisterSelection(Selection& aSelection) {
+  for (auto* selectionWrapper : mSelections) {
+    if (selectionWrapper->Get() == &aSelection) {
+      selectionWrapper->remove();
+      break;
+    }
+  }
+  if (mSelections.isEmpty() && mRegisteredClosestCommonInclusiveAncestor) {
     UnregisterClosestCommonInclusiveAncestor(
         mRegisteredClosestCommonInclusiveAncestor, false);
     MOZ_DIAGNOSTIC_ASSERT(
@@ -2941,7 +3044,7 @@ nsresult nsRange::GetUsedFontFaces(nsLayoutUtils::UsedFontFaceList& aResult,
 }
 
 nsINode* nsRange::GetRegisteredClosestCommonInclusiveAncestor() {
-  MOZ_ASSERT(IsInSelection(),
+  MOZ_ASSERT(IsInAnySelection(),
              "GetRegisteredClosestCommonInclusiveAncestor only valid for range "
              "in selection");
   MOZ_ASSERT(mRegisteredClosestCommonInclusiveAncestor);
@@ -2963,7 +3066,7 @@ nsRange::AutoInvalidateSelection::~AutoInvalidateSelection() {
   // with selections, ranges, etc.  But if it still is, we should check whether
   // we have a different common ancestor now, and if so invalidate its subtree
   // so it paints the selection it's in now.
-  if (mRange->IsInSelection()) {
+  if (mRange->IsInAnySelection()) {
     nsINode* commonAncestor =
         mRange->GetRegisteredClosestCommonInclusiveAncestor();
     // XXXbz can commonAncestor really be null here?  I wouldn't think so!  If

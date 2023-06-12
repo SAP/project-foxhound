@@ -21,11 +21,13 @@ ChromeUtils.defineESModuleGetters(lazy, {
 
   DAPTelemetrySender: "resource://gre/modules/DAPTelemetrySender.sys.mjs",
   DeferredTask: "resource://gre/modules/DeferredTask.sys.mjs",
+  DoHController: "resource:///modules/DoHController.sys.mjs",
 
   DownloadsViewableInternally:
     "resource:///modules/DownloadsViewableInternally.sys.mjs",
 
   E10SUtils: "resource://gre/modules/E10SUtils.sys.mjs",
+  FxAccounts: "resource://gre/modules/FxAccounts.sys.mjs",
   Integration: "resource://gre/modules/Integration.sys.mjs",
   Interactions: "resource:///modules/Interactions.sys.mjs",
   Log: "resource://gre/modules/Log.sys.mjs",
@@ -39,13 +41,23 @@ ChromeUtils.defineESModuleGetters(lazy, {
   PlacesUIUtils: "resource:///modules/PlacesUIUtils.sys.mjs",
   PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
+  ProvenanceData: "resource:///modules/ProvenanceData.sys.mjs",
+  PublicSuffixList:
+    "resource://gre/modules/netwerk-dns/PublicSuffixList.sys.mjs",
   QuickSuggest: "resource:///modules/QuickSuggest.sys.mjs",
+
+  RemoteSecuritySettings:
+    "resource://gre/modules/psm/RemoteSecuritySettings.sys.mjs",
+
+  RemoteSettings: "resource://services-settings/remote-settings.sys.mjs",
   ScreenshotsUtils: "resource:///modules/ScreenshotsUtils.sys.mjs",
   SearchSERPTelemetry: "resource:///modules/SearchSERPTelemetry.sys.mjs",
   SessionStartup: "resource:///modules/sessionstore/SessionStartup.sys.mjs",
   SessionStore: "resource:///modules/sessionstore/SessionStore.sys.mjs",
   ShortcutUtils: "resource://gre/modules/ShortcutUtils.sys.mjs",
+  TRRRacer: "resource:///modules/TRRPerformance.sys.mjs",
   TelemetryUtils: "resource://gre/modules/TelemetryUtils.sys.mjs",
+  UIState: "resource://services-sync/UIState.sys.mjs",
   UrlbarPrefs: "resource:///modules/UrlbarPrefs.sys.mjs",
   WebChannel: "resource://gre/modules/WebChannel.sys.mjs",
   WindowsRegistry: "resource://gre/modules/WindowsRegistry.sys.mjs",
@@ -68,11 +80,9 @@ XPCOMUtils.defineLazyModuleGetters(lazy, {
   BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.jsm",
   Corroborate: "resource://gre/modules/Corroborate.jsm",
   Discovery: "resource:///modules/Discovery.jsm",
-  DoHController: "resource:///modules/DoHController.jsm",
   ExperimentAPI: "resource://nimbus/ExperimentAPI.jsm",
   ExtensionsUI: "resource:///modules/ExtensionsUI.jsm",
   FeatureGate: "resource://featuregates/FeatureGate.jsm",
-  FxAccounts: "resource://gre/modules/FxAccounts.jsm",
   HomePage: "resource:///modules/HomePage.jsm",
   NetUtil: "resource://gre/modules/NetUtil.jsm",
   NimbusFeatures: "resource://nimbus/ExperimentAPI.jsm",
@@ -86,12 +96,6 @@ XPCOMUtils.defineLazyModuleGetters(lazy, {
   PdfJs: "resource://pdf.js/PdfJs.jsm",
   PluralForm: "resource://gre/modules/PluralForm.jsm",
   ProcessHangMonitor: "resource:///modules/ProcessHangMonitor.jsm",
-  PublicSuffixList: "resource://gre/modules/netwerk-dns/PublicSuffixList.jsm",
-  RemoteSettings: "resource://services-settings/remote-settings.js",
-
-  RemoteSecuritySettings:
-    "resource://gre/modules/psm/RemoteSecuritySettings.jsm",
-
   RFPHelper: "resource://gre/modules/RFPHelper.jsm",
   SafeBrowsing: "resource://gre/modules/SafeBrowsing.jsm",
   Sanitizer: "resource:///modules/Sanitizer.jsm",
@@ -103,8 +107,6 @@ XPCOMUtils.defineLazyModuleGetters(lazy, {
 
   TabCrashHandler: "resource:///modules/ContentCrashHandlers.jsm",
   TabUnloader: "resource:///modules/TabUnloader.jsm",
-  TRRRacer: "resource:///modules/TRRPerformance.jsm",
-  UIState: "resource://services-sync/UIState.jsm",
 });
 
 if (AppConstants.MOZ_UPDATER) {
@@ -616,7 +618,7 @@ let JSWINDOWACTORS = {
     child: {
       esModuleURI: "resource:///actors/MigrationWizardChild.sys.mjs",
       events: {
-        "MigrationWizard:Init": { wantUntrusted: true },
+        "MigrationWizard:RequestState": { wantUntrusted: true },
         "MigrationWizard:BeginMigration": { wantsUntrusted: true },
       },
     },
@@ -646,13 +648,10 @@ let JSWINDOWACTORS = {
     child: {
       moduleURI: "resource:///actors/PageStyleChild.jsm",
       events: {
-        pageshow: {},
+        pageshow: { createActor: false },
       },
     },
 
-    // Only matching web pages, as opposed to internal about:, chrome: or
-    // resource: pages. See https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/Match_patterns
-    matches: ["*://*/*", "file:///*"],
     messageManagerGroups: ["browsers"],
     allFrames: true,
   },
@@ -2683,17 +2682,6 @@ BrowserGlue.prototype = {
         },
       },
 
-      {
-        name: "urlQueryStrippingListService.init",
-        task: () => {
-          // Init the url query stripping list.
-          let urlQueryStrippingListService = Cc[
-            "@mozilla.org/query-stripping-list-service;1"
-          ].getService(Ci.nsIURLQueryStrippingListService);
-          urlQueryStrippingListService.init();
-        },
-      },
-
       // Run TRR performance measurements for DoH.
       {
         name: "doh-rollout.trrRacer.run",
@@ -2729,6 +2717,15 @@ BrowserGlue.prototype = {
         name: "initializeFOG",
         task: () => {
           Services.fog.initializeFOG();
+
+          // Grabbing the configuration here in case the registration of the
+          // callback below doesn't trigger invoking the callback if we are
+          // already enrolled. See Bug 1818738 for more info.
+          Services.fog.setMetricsFeatureConfig(
+            JSON.stringify(
+              lazy.NimbusFeatures.glean.getVariable("metricsDisabled")
+            )
+          );
 
           // Register Glean to listen for experiment updates releated to the
           // "glean" feature defined in the t/c/nimbus/FeatureManifest.yaml
@@ -2873,6 +2870,14 @@ BrowserGlue.prototype = {
         name: "start-orb-javascript-oracle",
         task: () => {
           ChromeUtils.ensureJSOracleStarted();
+        },
+      },
+
+      {
+        name: "report-attribution-provenance-telemetry",
+        condition: lazy.TelemetryUtils.isTelemetryEnabled,
+        task: async () => {
+          await lazy.ProvenanceData.submitProvenanceTelemetry();
         },
       },
 
@@ -4919,6 +4924,8 @@ var ContentBlockingCategoriesPrefs = {
         "privacy.trackingprotection.socialtracking.enabled": null,
         "privacy.trackingprotection.fingerprinting.enabled": null,
         "privacy.trackingprotection.cryptomining.enabled": null,
+        "privacy.trackingprotection.emailtracking.enabled": null,
+        "privacy.trackingprotection.emailtracking.pbmode.enabled": null,
         "privacy.annotate_channels.strict_list.enabled": null,
         "privacy.annotate_channels.strict_list.pbmode.enabled": null,
         "network.http.referer.disallowCrossSiteRelaxingDefault": null,
@@ -4935,6 +4942,8 @@ var ContentBlockingCategoriesPrefs = {
         "privacy.trackingprotection.socialtracking.enabled": null,
         "privacy.trackingprotection.fingerprinting.enabled": null,
         "privacy.trackingprotection.cryptomining.enabled": null,
+        "privacy.trackingprotection.emailtracking.enabled": null,
+        "privacy.trackingprotection.emailtracking.pbmode.enabled": null,
         "privacy.annotate_channels.strict_list.enabled": null,
         "privacy.annotate_channels.strict_list.pbmode.enabled": null,
         "network.http.referer.disallowCrossSiteRelaxingDefault": null,
@@ -4998,6 +5007,26 @@ var ContentBlockingCategoriesPrefs = {
         case "-stp":
           this.CATEGORY_PREFS[type][
             "privacy.trackingprotection.socialtracking.enabled"
+          ] = false;
+          break;
+        case "emailTP":
+          this.CATEGORY_PREFS[type][
+            "privacy.trackingprotection.emailtracking.enabled"
+          ] = true;
+          break;
+        case "-emailTP":
+          this.CATEGORY_PREFS[type][
+            "privacy.trackingprotection.emailtracking.enabled"
+          ] = false;
+          break;
+        case "emailTPPrivate":
+          this.CATEGORY_PREFS[type][
+            "privacy.trackingprotection.emailtracking.pbmode.enabled"
+          ] = true;
+          break;
+        case "-emailTPPrivate":
+          this.CATEGORY_PREFS[type][
+            "privacy.trackingprotection.emailtracking.pbmode.enabled"
           ] = false;
           break;
         case "lvl2":

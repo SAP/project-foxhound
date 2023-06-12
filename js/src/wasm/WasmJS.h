@@ -373,6 +373,8 @@ class WasmMemoryObject : public NativeObject {
   static bool type(JSContext* cx, unsigned argc, Value* vp);
   static bool growImpl(JSContext* cx, const CallArgs& args);
   static bool grow(JSContext* cx, unsigned argc, Value* vp);
+  static bool discardImpl(JSContext* cx, const CallArgs& args);
+  static bool discard(JSContext* cx, unsigned argc, Value* vp);
   static uint64_t growShared(Handle<WasmMemoryObject*> memory, uint64_t delta);
 
   using InstanceSet = JS::WeakCache<GCHashSet<
@@ -388,6 +390,7 @@ class WasmMemoryObject : public NativeObject {
   static const JSClass& protoClass_;
   static const JSPropertySpec properties[];
   static const JSFunctionSpec methods[];
+  static const JSFunctionSpec memoryControlMethods[];
   static const JSFunctionSpec static_methods[];
   static bool construct(JSContext*, unsigned, Value*);
 
@@ -430,6 +433,8 @@ class WasmMemoryObject : public NativeObject {
   bool addMovingGrowObserver(JSContext* cx, WasmInstanceObject* instance);
   static uint64_t grow(Handle<WasmMemoryObject*> memory, uint64_t delta,
                        JSContext* cx);
+  static bool discard(Handle<WasmMemoryObject*> memory, uint64_t byteOffset,
+                      uint64_t len, JSContext* cx);
 };
 
 // The class of WebAssembly.Table. A WasmTableObject holds a refcount on a

@@ -579,10 +579,11 @@ void gfxTextRun::Draw(const Range aRange, const gfx::Point aPt,
   bool skipDrawing =
       !mDontSkipDrawing && (mFontGroup ? mFontGroup->ShouldSkipDrawing()
                                        : mReleasedFontGroupSkippedDrawing);
+  auto* textDrawer = aParams.context->GetTextDrawer();
   if (aParams.drawMode & DrawMode::GLYPH_FILL) {
     DeviceColor currentColor;
     if (aParams.context->GetDeviceColor(currentColor) && currentColor.a == 0 &&
-        !aParams.context->GetTextDrawer()) {
+        !textDrawer) {
       skipDrawing = true;
     }
   }
@@ -610,7 +611,7 @@ void gfxTextRun::Draw(const Range aRange, const gfx::Point aPt,
   bool mayNeedBuffering =
       aParams.drawMode & DrawMode::GLYPH_FILL &&
       aParams.context->HasNonOpaqueNonTransparentColor(currentColor) &&
-      !aParams.context->GetTextDrawer();
+      !textDrawer;
 
   // If we need to double-buffer, we'll need to measure the text first to
   // get the bounds of the area of interest. Ideally we'd do that just for
@@ -641,6 +642,10 @@ void gfxTextRun::Draw(const Range aRange, const gfx::Point aPt,
   params.paintSVGGlyphs =
       !aParams.callbacks || aParams.callbacks->mShouldPaintSVGGlyphs;
   params.dt = aParams.context->GetDrawTarget();
+  params.textDrawer = textDrawer;
+  if (textDrawer) {
+    params.clipRect = textDrawer->GeckoClipRect();
+  }
   params.allowGDI = aParams.allowGDI;
 
   GlyphRunIterator iter(this, aRange);
@@ -662,9 +667,8 @@ void gfxTextRun::Draw(const Range aRange, const gfx::Point aPt,
         // drawTarget's current clip, the skia backend fails to clip properly.
         // This means we may use a larger buffer than actually needed, but is
         // otherwise harmless.
-        metrics =
-            MeasureText(aRange, gfxFont::LOOSE_INK_EXTENTS,
-                        aParams.context->GetDrawTarget(), aParams.provider);
+        metrics = MeasureText(aRange, gfxFont::LOOSE_INK_EXTENTS, params.dt,
+                              aParams.provider);
         if (IsRightToLeft()) {
           metrics.mBoundingBox.MoveBy(
               gfxPoint(aPt.x - metrics.mAdvanceWidth, aPt.y));
@@ -2516,8 +2520,9 @@ gfxFloat gfxFontGroup::GetHyphenWidth(
   return mHyphenWidth;
 }
 
+template <typename T>
 already_AddRefed<gfxTextRun> gfxFontGroup::MakeTextRun(
-    const uint8_t* aString, uint32_t aLength, const Parameters* aParams,
+    const T* aString, uint32_t aLength, const Parameters* aParams,
     gfx::ShapedTextFlags aFlags, nsTextFrameUtils::Flags aFlags2,
     gfxMissingFontRecorder* aMFR) {
   if (aLength == 0) {
@@ -2527,7 +2532,9 @@ already_AddRefed<gfxTextRun> gfxFontGroup::MakeTextRun(
     return MakeSpaceTextRun(aParams, aFlags, aFlags2);
   }
 
-  aFlags |= ShapedTextFlags::TEXT_IS_8BIT;
+  if (sizeof(T) == 1) {
+    aFlags |= ShapedTextFlags::TEXT_IS_8BIT;
+  }
 
   if (MOZ_UNLIKELY(GetStyle()->AdjustedSizeMustBeZero())) {
     // Short-circuit for size-0 fonts, as Windows and ATSUI can't handle
@@ -2549,32 +2556,15 @@ already_AddRefed<gfxTextRun> gfxFontGroup::MakeTextRun(
   return textRun.forget();
 }
 
-already_AddRefed<gfxTextRun> gfxFontGroup::MakeTextRun(
+// MakeTextRun instantiations (needed by Linux64 base-toolchain build).
+template already_AddRefed<gfxTextRun> gfxFontGroup::MakeTextRun(
+    const uint8_t* aString, uint32_t aLength, const Parameters* aParams,
+    gfx::ShapedTextFlags aFlags, nsTextFrameUtils::Flags aFlags2,
+    gfxMissingFontRecorder* aMFR);
+template already_AddRefed<gfxTextRun> gfxFontGroup::MakeTextRun(
     const char16_t* aString, uint32_t aLength, const Parameters* aParams,
     gfx::ShapedTextFlags aFlags, nsTextFrameUtils::Flags aFlags2,
-    gfxMissingFontRecorder* aMFR) {
-  if (aLength == 0) {
-    return MakeEmptyTextRun(aParams, aFlags, aFlags2);
-  }
-  if (aLength == 1 && aString[0] == ' ') {
-    return MakeSpaceTextRun(aParams, aFlags, aFlags2);
-  }
-  if (MOZ_UNLIKELY(GetStyle()->AdjustedSizeMustBeZero())) {
-    return MakeBlankTextRun(aString, aLength, aParams, aFlags, aFlags2);
-  }
-
-  RefPtr<gfxTextRun> textRun =
-      gfxTextRun::Create(aParams, aLength, this, aFlags, aFlags2);
-  if (!textRun) {
-    return nullptr;
-  }
-
-  InitTextRun(aParams->mDrawTarget, textRun.get(), aString, aLength, aMFR);
-
-  textRun->FetchGlyphExtents(aParams->mDrawTarget);
-
-  return textRun.forget();
-}
+    gfxMissingFontRecorder* aMFR);
 
 template <typename T>
 void gfxFontGroup::InitTextRun(DrawTarget* aDrawTarget, gfxTextRun* aTextRun,
@@ -2974,7 +2964,7 @@ gfxTextRun* gfxFontGroup::GetEllipsisTextRun(
   Parameters params = {refDT,   nullptr, nullptr,
                        nullptr, 0,       aAppUnitsPerDevPixel};
   mCachedEllipsisTextRun =
-      MakeTextRun(ellipsis.get(), ellipsis.Length(), &params, aFlags,
+      MakeTextRun(ellipsis.BeginReading(), ellipsis.Length(), &params, aFlags,
                   nsTextFrameUtils::Flags(), nullptr);
   if (!mCachedEllipsisTextRun) {
     return nullptr;

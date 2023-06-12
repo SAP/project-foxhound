@@ -397,6 +397,11 @@ class CrashInfo(object):
                 if retcode == 0:
                     signature = self._generate_signature(json_output)
 
+                    # Strip parameters from signature
+                    pmatch = re.search(r"(.*)\(.*\)", signature)
+                    if pmatch:
+                        signature = pmatch.group(1)
+
         else:
             if not self.stackwalk_binary:
                 errors.append(
@@ -445,7 +450,8 @@ class CrashInfo(object):
             json_file = open(json_path, "r")
             crash_json = json.load(json_file)
             json_file.close()
-            frames = crash_json.get("crashing_thread").get("frames")
+            crashing_thread = crash_json.get("crashing_thread") or {}
+            frames = crashing_thread.get("frames") or []
 
             flattened_frames = []
             for frame in frames:
@@ -458,6 +464,9 @@ class CrashInfo(object):
                 )
 
             for func in flattened_frames:
+                if not func:
+                    continue
+
                 signature = "@ %s" % func
 
                 if not (

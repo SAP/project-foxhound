@@ -9,6 +9,7 @@
 
 #include "mozilla/Atomics.h"
 #include "mozilla/DoublyLinkedList.h"
+#include "mozilla/TimeStamp.h"
 
 #include "gc/GCMarker.h"
 #include "js/HeapAPI.h"
@@ -40,6 +41,8 @@ class MOZ_STACK_CLASS ParallelMarker {
 
   bool mark(SliceBudget& sliceBudget);
 
+  using AtomicCount = mozilla::Atomic<uint32_t, mozilla::Relaxed>;
+  AtomicCount& waitingTaskCountRef() { return waitingTaskCount; }
   bool hasWaitingTasks() { return waitingTaskCount != 0; }
   void donateWorkFrom(GCMarker* src);
 
@@ -68,7 +71,7 @@ class MOZ_STACK_CLASS ParallelMarker {
 
   using ParallelMarkTaskList = mozilla::DoublyLinkedList<ParallelMarkTask>;
   GCLockData<ParallelMarkTaskList> waitingTasks;
-  mozilla::Atomic<uint32_t, mozilla::Relaxed> waitingTaskCount;
+  AtomicCount waitingTaskCount;
 
   GCLockData<size_t> activeTasks;
   GCLockData<ConditionVariable> activeTasksAvailable;
@@ -86,14 +89,18 @@ class alignas(TypicalCacheLineSize) ParallelMarkTask
   ~ParallelMarkTask();
 
   void run(AutoLockHelperThreadState& lock) override;
+
+  void recordDuration() override;
+
+ private:
   void markOrRequestWork(AutoLockGC& lock);
   bool tryMarking(AutoLockGC& lock);
   bool requestWork(AutoLockGC& lock);
 
   void waitUntilResumed(AutoLockGC& lock);
+  void resume();
   void resume(const AutoLockGC& lock);
 
- private:
   bool hasWork() const;
 
   // The following fields are only accessed by the marker thread:
@@ -104,6 +111,10 @@ class alignas(TypicalCacheLineSize) ParallelMarkTask
   ConditionVariable resumed;
 
   GCLockData<bool> isWaiting;
+
+  // Length of time this task spent blocked waiting for work.
+  MainThreadOrGCTaskData<mozilla::TimeDuration> markTime;
+  MainThreadOrGCTaskData<mozilla::TimeDuration> waitTime;
 };
 
 }  // namespace gc

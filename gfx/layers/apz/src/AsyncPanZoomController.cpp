@@ -892,14 +892,12 @@ PointerEventsConsumableFlags AsyncPanZoomController::ArePointerEventsConsumable(
   bool pannableX = aBlock->GetOverscrollHandoffChain()->CanScrollInDirection(
       this, ScrollDirection::eHorizontal);
   bool touchActionAllowsX = aBlock->TouchActionAllowsPanningX();
-  bool pannableY =
-
-      (aBlock->GetOverscrollHandoffChain()->CanScrollInDirection(
-           this, ScrollDirection::eVertical) ||
-       // In the case of the root APZC with any dynamic toolbar, it
-       // shoule be pannable if there is room moving the dynamic
-       // toolbar.
-       (IsRootContent() && CanVerticalScrollWithDynamicToolbar()));
+  bool pannableY = (aBlock->GetOverscrollHandoffChain()->CanScrollInDirection(
+                        this, ScrollDirection::eVertical) ||
+                    // In the case of the root APZC with any dynamic toolbar, it
+                    // shoule be pannable if there is room moving the dynamic
+                    // toolbar.
+                    (IsRootContent() && CanVerticalScrollWithDynamicToolbar()));
   bool touchActionAllowsY = aBlock->TouchActionAllowsPanningY();
 
   bool pannable;
@@ -2886,7 +2884,8 @@ nsEventStatus AsyncPanZoomController::OnPanEnd(const PanGestureInput& aEvent) {
   // This can happen if the OS sends a second pan-end event after
   // the first one has already started an overscroll animation.
   // This has been observed on some Wayland versions.
-  if (mState == OVERSCROLL_ANIMATION || mState == NOTHING) {
+  PanZoomState currentState = GetState();
+  if (currentState == OVERSCROLL_ANIMATION || currentState == NOTHING) {
     return nsEventStatus_eIgnore;
   }
 
@@ -2919,7 +2918,8 @@ nsEventStatus AsyncPanZoomController::OnPanEnd(const PanGestureInput& aEvent) {
   // triggers an overscroll animation. When we're finished with the overscroll
   // animation, the state will be reset and a TransformEnd will be sent to the
   // main thread.
-  if (mState != OVERSCROLL_ANIMATION) {
+  currentState = GetState();
+  if (currentState != OVERSCROLL_ANIMATION) {
     // Do not send a state change notification to the content controller here.
     // Instead queue a delayed task to dispatch the notification if no
     // momentum pan or scroll snap follows the pan-end.
@@ -2931,7 +2931,7 @@ nsEventStatus AsyncPanZoomController::OnPanEnd(const PanGestureInput& aEvent) {
               "layers::AsyncPanZoomController::"
               "DoDelayedTransformEndNotification",
               this, &AsyncPanZoomController::DoDelayedTransformEndNotification,
-              mState),
+              currentState),
           StaticPrefs::apz_scrollend_event_content_delay_ms());
       SetStateNoContentControllerDispatch(NOTHING);
     } else {
@@ -4767,12 +4767,15 @@ ParentLayerPoint AsyncPanZoomController::GetCurrentAsyncScrollOffset(
   return GetEffectiveScrollOffset(aMode, lock) * GetEffectiveZoom(aMode, lock);
 }
 
-CSSPoint AsyncPanZoomController::GetCurrentAsyncScrollOffsetInCssPixels(
+CSSRect AsyncPanZoomController::GetCurrentAsyncVisualViewport(
     AsyncTransformConsumer aMode) const {
   RecursiveMutexAutoLock lock(mRecursiveMutex);
   AutoApplyAsyncTestAttributes testAttributeApplier(this, lock);
 
-  return GetEffectiveScrollOffset(aMode, lock);
+  return CSSRect(
+      GetEffectiveScrollOffset(aMode, lock),
+      FrameMetrics::CalculateCompositedSizeInCssPixels(
+          Metrics().GetCompositionBounds(), GetEffectiveZoom(aMode, lock)));
 }
 
 AsyncTransform AsyncPanZoomController::GetCurrentAsyncTransform(
@@ -6152,6 +6155,11 @@ void AsyncPanZoomController::SetState(PanZoomState aNewState) {
   DispatchStateChangeNotification(oldState, aNewState);
 }
 
+auto AsyncPanZoomController::GetState() const -> PanZoomState {
+  RecursiveMutexAutoLock lock(mRecursiveMutex);
+  return mState;
+}
+
 void AsyncPanZoomController::DispatchStateChangeNotification(
     PanZoomState aOldState, PanZoomState aNewState) {
   {  // scope the lock
@@ -6616,6 +6624,19 @@ std::ostream& operator<<(std::ostream& aOut,
       aOut << "UNKNOWN_STATE";
       break;
   }
+  return aOut;
+}
+
+bool operator==(const PointerEventsConsumableFlags& aLhs,
+                const PointerEventsConsumableFlags& aRhs) {
+  return (aLhs.mHasRoom == aRhs.mHasRoom) &&
+         (aLhs.mAllowedByTouchAction == aRhs.mAllowedByTouchAction);
+}
+
+std::ostream& operator<<(std::ostream& aOut,
+                         const PointerEventsConsumableFlags& aFlags) {
+  aOut << std::boolalpha << "{ hasRoom: " << aFlags.mHasRoom
+       << ", allowedByTouchAction: " << aFlags.mAllowedByTouchAction << "}";
   return aOut;
 }
 

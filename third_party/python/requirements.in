@@ -4,6 +4,7 @@ appdirs==1.4.4
 attrs==19.2.0
 blessed==1.19.1
 cbor2==4.0.1
+certifi==2022.12.7
 colorama==0.4.5
 compare-locales==8.2.1
 cookies==2.2.1
@@ -16,7 +17,7 @@ fluent.syntax==0.18.1
 glean_parser==7.0.0
 # Pin importlib-metadata to a version compatible with poetry
 importlib-metadata==1.7.0
-jsmin==2.1.0
+jsmin==3.0.0
 json-e==2.7.0
 looseversion==1.0.1
 mozilla-repo-urls==0.1.1
