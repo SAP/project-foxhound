@@ -2274,4 +2274,15 @@ void HTMLFormElement::MaybeFireFormRemoved() {
   asyncDispatcher->RunDOMEventWhenSafe();
 }
 
+nsresult HTMLFormElement::CheckTaintSinkSetAttr(int32_t aNamespaceID, nsAtom* aName,
+                                                  const nsAString& aValue) {
+  if (aNamespaceID == kNameSpaceID_None && aName == nsGkAtoms::action) {
+    nsAutoString id;
+    this->GetId(id);
+    ReportTaintSink(aValue, "form.action", id);
+  } 
+
+  return nsGenericHTMLElement::CheckTaintSinkSetAttr(aNamespaceID, aName, aValue);
+}
+
 }  // namespace mozilla::dom

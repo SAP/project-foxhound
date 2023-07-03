@@ -138,6 +138,9 @@ class HTMLScriptElement final : public nsGenericHTMLElement,
   [[nodiscard]] static bool Supports(const GlobalObject& aGlobal,
                                      const nsAString& aType);
 
+  virtual void SetTextContentInternal(const nsAString& aTextContent,
+                                      nsIPrincipal* aSubjectPrincipal,
+                                      mozilla::ErrorResult& aError) override;
  protected:
   virtual ~HTMLScriptElement();
 
