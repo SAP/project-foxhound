@@ -424,6 +424,9 @@ class HTMLFormElement final : public nsGenericHTMLElement,
 
   nsresult DoReset();
 
+  virtual nsresult CheckTaintSinkSetAttr(int32_t aNamespaceID, nsAtom* aName,
+                                         const nsAString& aValue) override;
+
   // Async callback to handle removal of our default submit
   void HandleDefaultSubmitRemoval();
 

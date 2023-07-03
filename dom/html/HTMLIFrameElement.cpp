@@ -161,6 +161,10 @@ nsresult HTMLIFrameElement::CheckTaintSinkSetAttr(int32_t aNamespaceID, nsAtom* 
     nsAutoString id;
     this->GetId(id);
     ReportTaintSink(aValue, "iframe.src", id);
+  } else if (aNamespaceID == kNameSpaceID_None && aName == nsGkAtoms::srcdoc) {
+    nsAutoString id;
+    this->GetId(id);
+    ReportTaintSink(aValue, "iframe.srcdoc", id);
   }
 
   return nsGenericHTMLElement::CheckTaintSinkSetAttr(aNamespaceID, aName, aValue);

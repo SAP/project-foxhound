@@ -281,4 +281,12 @@ bool HTMLScriptElement::Supports(const GlobalObject& aGlobal,
           aType.EqualsLiteral("importmap"));
 }
 
+void HTMLScriptElement::SetTextContentInternal(const nsAString& aTextContent,
+                                              nsIPrincipal* aScriptedPrincipal,
+                                              ErrorResult& aError) {
+  nsAutoString id;
+  this->GetId(id);
+  ReportTaintSink(aTextContent, "script.textContent", id);
+  aError = nsContentUtils::SetNodeTextContent(this, aTextContent, true);
+}
 }  // namespace mozilla::dom

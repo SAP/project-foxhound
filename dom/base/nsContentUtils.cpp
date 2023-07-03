@@ -5264,6 +5264,7 @@ already_AddRefed<DocumentFragment> nsContentUtils::CreateContextualFragment(
     aRv.Throw(NS_ERROR_INVALID_ARG);
     return nullptr;
   }
+  ReportTaintSink(aFragment, "Range.createContextualFragment(fragment)");
 
   // If we don't have a document here, we can't get the right security context
   // for compiling event handlers... so just bail out.
