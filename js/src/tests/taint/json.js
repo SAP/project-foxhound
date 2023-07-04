@@ -19,7 +19,7 @@ function JSONTaintTest() {
     var hello = parsedStr.name;
     assertEq(hello, "hello");
     assertFullTainted(hello);
-    assertLastTaintOperationEquals(parsedStr, 'JSON.parse');
+    assertLastTaintOperationEquals(hello, 'JSON.parse');
 }
 
 runTaintTest(JSONTaintTest);
