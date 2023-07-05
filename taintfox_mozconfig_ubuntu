@@ -1,5 +1,5 @@
-# limit number of parallel jobs
-mk_add_options MOZ_PARALLEL_BUILD=4
+# limit number of parallel jobs - do not do this by default, but might be needed for build systems with limited resources
+# mk_add_options MOZ_PARALLEL_BUILD=4
 
 # Use ccache, make sure the path is correct
 #ac_add_options --with-ccache=/usr/bin/ccache

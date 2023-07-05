@@ -31,11 +31,17 @@ jobs:
 
       # Bootstrap
       - name: Bootstrap Build Environment
-        run: ./mach bootstrap --application-choice=browser
+        run: |
+          ./mach bootstrap --application-choice=browser
+          /home/runner/.cargo/bin/rustup install 1.65.0
+          /home/runner/.cargo/bin/rustup default 1.65.0
+          /home/runner/.cargo/bin/rustup override 1.65.0
 
       # Configure
       - name: Copy configuration
-        run: cp taintfox_mozconfig_ubuntu .mozconfig
+        run: |
+          cp taintfox_mozconfig_ubuntu .mozconfig
+          echo "mk_add_options MOZ_PARALLEL_BUILD=2" >> .mozconfig
 
       # Build
       - name: Build
