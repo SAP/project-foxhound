@@ -41,7 +41,7 @@ jobs:
       - name: Copy configuration
         run: |
           cp taintfox_mozconfig_ubuntu .mozconfig
-          echo "mk_add_options MOZ_PARALLEL_BUILD=2" >> .mozconfig
+          echo "mk_add_options MOZ_PARALLEL_BUILD=1" >> .mozconfig
 
       # Build
       - name: Build
