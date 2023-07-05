@@ -35,7 +35,7 @@ jobs:
           ./mach bootstrap --application-choice=browser
           /home/runner/.cargo/bin/rustup install 1.65.0
           /home/runner/.cargo/bin/rustup default 1.65.0
-          /home/runner/.cargo/bin/rustup override 1.65.0
+          /home/runner/.cargo/bin/rustup override set 1.65.0
 
       # Configure
       - name: Copy configuration
