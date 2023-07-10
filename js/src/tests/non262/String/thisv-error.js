@@ -10,7 +10,10 @@ function testName(thisv) {
     "trimLeft",
     "trimRight",
     // Returns empty string
-    "constructor"
+    "constructor",
+    // Taintfox
+    "taint",
+    "untaint"
   ]
 
   var keys = Object.getOwnPropertyNames(String.prototype);
