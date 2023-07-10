@@ -30,6 +30,24 @@ assert._isSameValue = function (a, b) {
   return a !== a && b !== b;
 };
 
+// Taintfox: To test behavior where we change the semantics due to introducing additional side effects
+assert.startsWith = function (actual, expected, message) {
+  
+  if(actual.startsWith(expected)) {
+      return;
+  }
+
+  if (message === undefined) {
+    message = '';
+  } else {
+    message += ' ';
+  }
+
+  message += 'Expected «' + assert._toString(actual) + '».startsWith(«' + assert._toString(expected) + '») to be true';
+
+  throw new Test262Error(message);
+}
+
 assert.sameValue = function (actual, expected, message) {
   try {
     if (assert._isSameValue(actual, expected)) {

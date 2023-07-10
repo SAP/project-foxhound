@@ -20,12 +20,14 @@ var calls = 0;
 var replaceValue = {
   toString: function() {
     calls += 1;
+    console.log("in toString()");
     return "b";
   },
 };
 
 var newString = "".replace("a", replaceValue);
 assert.sameValue(newString, "");
-assert.sameValue(calls, 1);
+// Taintfox: We change the semantics by calling toString/valueOf internally, so changed expected calls to 2
+assert.sameValue(calls, 2);
 
 reportCompare(0, 0);
