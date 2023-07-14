@@ -37,7 +37,7 @@ def parse_line(line):
 # Execute Jstests
 
 if run_tests:
-    result = subprocess.run(["../../../mach", "jstests", "--tinderbox"], capture_output=True)
+    result = subprocess.run(["./mach", "jstests", "--tinderbox"], capture_output=True)
 
     data = result.stdout.decode("utf-8")
 
@@ -49,6 +49,6 @@ else:
 
 tests = parse_report(data)
 
-with open("output.xml", "w") as f:
+with open("jstest_output.xml", "w") as f:
     TestSuite.to_file(f, [tests])
 
