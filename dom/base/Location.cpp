@@ -490,6 +490,9 @@ void Location::SetProtocol(const nsAString& aProtocol,
     return;
   }
 
+  // TaintFox: location.protocol sink.
+  ReportTaintSink(aProtocol, "location.protocol");
+
   nsAString::const_iterator start, end;
   aProtocol.BeginReading(start);
   aProtocol.EndReading(end);
@@ -526,9 +529,6 @@ void Location::SetProtocol(const nsAString& aProtocol,
     // No-op, per spec.
     return;
   }
-
-  // TaintFox: location.protocol sink.
-  ReportTaintSink(aProtocol, "location.protocol");
 
   SetURI(uri, aSubjectPrincipal, aRv);
 }
