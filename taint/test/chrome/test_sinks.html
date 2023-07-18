@@ -1,0 +1,56 @@
+<!DOCTYPE HTML>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>Test HTML Taint Sinks</title>
+    <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
+    <link rel="stylesheet" href="chrome://mochikit/content/tests/SimpleTest/test.css"/>
+    <script>
+
+      let string_content = "hello";
+      let sink_names = [
+	  "document.write",
+	  "document.writeln",
+	  "innerHTML",
+	  "outerHTML",
+	  "insertAdjacentHTML"
+      ];
+
+      let i = 0;
+      
+      SimpleTest.waitForExplicitFinish();
+      addEventListener("__taintreport", (report) => {
+          is(report.detail.str, string_content, "Check sink string content");
+
+          let flow = report.detail.str.taint[0].flow;
+          is(flow[flow.length - 2].operation, sink_names[i]);
+
+	  i += 1;
+	  if (i >= sink_names.length) {
+              SimpleTest.finish();
+	  }
+      }, false);
+
+      let taint_string = String.tainted(string_content);
+
+      document.write(taint_string);
+      document.writeln(taint_string);
+
+      const d1 = document.createElement("div");
+      d1.innerHTML = taint_string;
+
+      let p = document.createElement("p");
+      document.body.appendChild(p);
+      p.outerHTML = taint_string;
+
+      p.insertAdjacentHTML("beforeend", taint_string);
+
+      
+    </script>
+  </head>
+  <body>
+    <p id="display"></p>
+    <div id="content" style="display: none"></div>
+    <p id="test"></p>
+  </body>
+</html>
