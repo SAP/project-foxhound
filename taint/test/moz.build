@@ -8,13 +8,13 @@
 #    "unit/xpcshell.ini",
 #]
 
-#MOCHITEST_MANIFESTS += [
-#    "mochitest/mochitest.ini",
-#]
-
-MOCHITEST_CHROME_MANIFESTS += [
-    "chrome/chrome.ini",
+MOCHITEST_MANIFESTS += [
+    "mochitest/mochitest.ini",
 ]
+
+#MOCHITEST_CHROME_MANIFESTS += [
+#    "chrome/chrome.ini",
+#]
 
 #BROWSER_CHROME_MANIFESTS += [
 #    "browser/browser.ini",

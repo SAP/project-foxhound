@@ -2,9 +2,9 @@
 <html>
   <head>
     <meta charset="utf-8">
-    <title>Check Manual Source</title>
-    <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"></script>
-    <link rel="stylesheet" href="chrome://mochikit/content/tests/SimpleTest/test.css"/>
+    <title>Check Form Sources</title>
+    <script src="/tests/SimpleTest/SimpleTest.js"></script>
+    <link rel="stylesheet" href="/tests/SimpleTest/test.css"/>
     <script>
 
       function check_tainted(str) {
@@ -19,8 +19,8 @@
           check_untainted("hello");
       });
 
-      add_task(async function test_tainted() {
-          check_tainted(String.tainted("hello"));
+      add_task(async function test_form_tainted() {
+          check_tainted(document.getElementById("fname").value);
       });
 
     </script>
@@ -29,5 +29,11 @@
     <p id="display"></p>
     <div id="content" style="display: none"></div>
     <pre id="test"></pre>
+    <form>
+      <label for="fname">First name:</label><br>
+      <input type="text" id="fname" name="fname" value="John"><br>
+      <label for="lname">Last name:</label><br>
+      <input type="text" id="lname" name="lname" value="Doe">
+    </form>
   </body>
 </html>
