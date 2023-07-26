@@ -40,10 +40,10 @@ jobs:
       # Configure
       - name: Copy configuration
         run: |
-          cp taintfox_mozconfig_ubuntu .mozconfig
           echo "mk_add_options MOZ_PARALLEL_BUILD=1" >> .mozconfig
-	  echo "ac_add_options --disable-sandbox" >> .mozconfig
-	  echo "ac_add_options --disable-updater" >> .mozconfig
+          echo "ac_add_options --disable-sandbox" >> .mozconfig
+          echo "ac_add_options --disable-updater" >> .mozconfig
+          ./mach configure
 
       # Build
       - name: Build
