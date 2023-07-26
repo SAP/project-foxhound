@@ -40,8 +40,9 @@ jobs:
       # Configure
       - name: Copy configuration
         run: |
-          echo "mk_add_options MOZ_PARALLEL_BUILD=1" >> .mozconfig
+          echo "mk_add_options MOZ_PARALLEL_BUILD=1" > .mozconfig
           echo "ac_add_options --disable-sandbox" >> .mozconfig
+          echo "ac_add_options --enable-bootstrap" >> .mozconfig
           echo "ac_add_options --disable-updater" >> .mozconfig
           ./mach configure
 
