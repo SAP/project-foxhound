@@ -25,7 +25,7 @@
       SimpleTest.waitForExplicitFinish();
       addEventListener("__taintreport", (report) => {
           let flow = report.detail.str.taint[0].flow;
-          is(flow[flow.length - 2].operation, sink_names[i], "Check sink name");
+          is(flow[1].operation, sink_names[i], "Check sink name");
 
 	  i += 1;
 	  if (i >= sink_names.length) {

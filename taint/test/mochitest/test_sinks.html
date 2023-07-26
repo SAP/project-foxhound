@@ -23,7 +23,7 @@
           is(report.detail.str, string_content, "Check sink string content");
 
           let flow = report.detail.str.taint[0].flow;
-          is(flow[flow.length - 2].operation, sink_names[i]);
+          is(flow[2].operation, sink_names[i]);
 
 	  i += 1;
 	  if (i >= sink_names.length) {

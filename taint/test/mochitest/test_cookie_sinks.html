@@ -2,22 +2,21 @@
 <html>
   <head>
     <meta charset="utf-8">
-    <title>Test LocalStorage Sinks</title>
+    <title>Test Cookie Sinks</title>
     <script src="/tests/SimpleTest/SimpleTest.js"></script>
     <link rel="stylesheet" href="/tests/SimpleTest/test.css"/>
     <script>
 
       let string_content = "hello";
       let sink_names = [
-	  "localStorage.setItem",
-	  "localStorage.setItem(key)"
+	  "document.cookie",
       ];
 
       let i = 0;
       
       SimpleTest.waitForExplicitFinish();
       addEventListener("__taintreport", (report) => {
-          is(report.detail.str, string_content, "Check sink string content");
+          is(report.detail.str, "tainted=hello", "Check sink string content");
 
           let flow = report.detail.str.taint[0].flow;
           is(flow[2].operation, sink_names[i]);
@@ -30,8 +29,7 @@
 
       function startTest() {
 	  let taint_string = String.tainted(string_content);
-	  localStorage.setItem("tainted", taint_string);
-	  localStorage.setItem(taint_string, "tainted");
+	  document.cookie = "tainted=" + taint_string;
       }
       
     </script>
