@@ -2199,10 +2199,9 @@ bool gfxFont::DrawMissingGlyph(const TextRunDrawParams& aRunParams,
       aRunParams.context->SetMatrix(mat);
     }
 
-    gfxFontMissingGlyphs::DrawMissingGlyph(aDetails->mGlyphID, glyphRect,
-                                           *aRunParams.dt,
-                                           PatternFromState(aRunParams.context),
-                                           1.0 / aRunParams.devPerApp, matPtr);
+    gfxFontMissingGlyphs::DrawMissingGlyph(
+        aDetails->mGlyphID, glyphRect, *aRunParams.dt,
+        PatternFromState(aRunParams.context), matPtr);
   }
   return true;
 }
@@ -2470,7 +2469,15 @@ void gfxFont::Draw(const gfxTextRun* aTextRun, uint32_t aStart, uint32_t aEnd,
 
   // Figure out the maximum extents for the font, accounting for synthetic
   // oblique and bold.
-  fontParams.fontExtents = GetFontEntry()->GetFontExtents(mFUnitsConvFactor);
+  if (mFUnitsConvFactor > 0.0) {
+    fontParams.fontExtents = GetFontEntry()->GetFontExtents(mFUnitsConvFactor);
+  } else {
+    // Was it not an sfnt? Maybe on Linux... use arbitrary huge extents, so we
+    // don't inadvertently clip stuff. A bit less efficient than true extents,
+    // but this should be extremely rare.
+    auto size = GetAdjustedSize();
+    fontParams.fontExtents = Rect(-2 * size, -2 * size, 5 * size, 5 * size);
+  }
   if (fontParams.obliqueSkew != 0.0f) {
     gfx::Point p(fontParams.fontExtents.x, fontParams.fontExtents.y);
     gfx::Matrix skew(1, 0, fontParams.obliqueSkew, 1, 0, 0);
@@ -4485,7 +4492,7 @@ gfxFontStyle::gfxFontStyle(FontSlantStyle aStyle, FontWeight aWeight,
       allowSyntheticStyle(aAllowStyleSynthesis),
       allowSyntheticSmallCaps(aAllowSmallCapsSynthesis),
       noFallbackVariantFeatures(true) {
-  MOZ_ASSERT(!mozilla::IsNaN(size));
+  MOZ_ASSERT(!std::isnan(size));
 
   switch (aSizeAdjust.tag) {
     case FontSizeAdjust::Tag::None:
@@ -4507,7 +4514,7 @@ gfxFontStyle::gfxFontStyle(FontSlantStyle aStyle, FontWeight aWeight,
       sizeAdjust = aSizeAdjust.AsIcHeight();
       break;
   }
-  MOZ_ASSERT(!mozilla::IsNaN(sizeAdjust));
+  MOZ_ASSERT(!std::isnan(sizeAdjust));
 
   sizeAdjustBasis = uint8_t(aSizeAdjust.tag);
   // sizeAdjustBasis is currently a small bitfield, so let's assert that the

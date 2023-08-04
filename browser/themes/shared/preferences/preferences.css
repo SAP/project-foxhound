@@ -30,8 +30,8 @@
 
 #preferences-body {
   vertical-align: top; /* See bug 1606130 */
-  display: -moz-box;
-  -moz-box-orient: vertical;
+  display: flex;
+  flex-direction: column;
 
   --main-pane-width: 664px;
 }
@@ -174,7 +174,7 @@ checkbox {
 }
 
 .ac-site-icon {
-  display: -moz-box;
+  display: flex;
 }
 
 /* Subcategory title */
@@ -192,7 +192,8 @@ checkbox {
 /* Category List */
 
 #categories {
-  overflow: visible !important; /* Cancel scrollbar and do not clip overflow content when window size goes very small */
+  overflow: visible;
+  min-height: auto;
   padding: 1px; /* Adding padding around richlistitem in order to make entire keyboard focusing outline visible */
 }
 
@@ -243,6 +244,18 @@ checkbox {
 #isDefaultLabel,
 #isNotDefaultLabel {
   font-weight: 600;
+}
+
+@supports not -moz-bool-pref("browser.migrate.preferences-entrypoint.enabled") {
+  #dataMigrationGroup {
+    display: none;
+  }
+}
+
+#dataMigration {
+  /* This should really be using baseline, but that doesn't work properly with
+   * the <description> and XUL <button> markup. */
+  align-items: center;
 }
 
 #browserContainersExtensionContent {
@@ -309,7 +322,7 @@ checkbox {
 }
 
 #saveWhere {
-  -moz-box-align: center;
+  align-items: center;
 }
 
 #saveTo {
@@ -317,7 +330,7 @@ checkbox {
 }
 
 #downloadFolder {
-  -moz-box-flex: 1;
+  flex: 1;
   margin-block: 4px;
   margin-inline-start: 0;
   padding-inline-start: 30px;
@@ -346,7 +359,7 @@ checkbox {
 }
 
 #updateDeck > hbox > label {
-  -moz-box-flex: 1;
+  flex: 1;
 }
 
 .manualLink {
@@ -369,11 +382,6 @@ checkbox {
 
 #handlersView > richlistitem {
   min-height: 30px;
-}
-
-#handlersViewHeader > treecol,
-#handlersView > richlistitem > hbox {
-  width: 50%;
 }
 
 #handlersView .actionsMenu {
@@ -469,6 +477,11 @@ richlistitem[selected] .actionsMenu:focus-visible {
 
 .addon-with-favicon .menu-iconic-icon {
   margin-inline-start: 0;
+}
+
+a[is="moz-support-link"] {
+  display: inline-block;
+  white-space: initial;
 }
 
 /* Search Pane */
@@ -579,6 +592,10 @@ richlistitem[selected] .actionsMenu:focus-visible {
   visibility: hidden;
 }
 
+html|dialog {
+  padding: 24px;
+}
+
 html|dialog::backdrop,
 .dialogOverlay[topmost="true"] {
   background-color: rgba(0,0,0,0.5);
@@ -597,7 +614,7 @@ html|dialog,
   color: var(--in-content-page-color);
   /* `transparent` will use the dialogText color in high-contrast themes and
      when page colors are disabled */
-  display: -moz-box;
+  display: flex;
   margin: 0;
   padding: 0;
   overflow-x: auto;
@@ -657,7 +674,7 @@ html|dialog,
 
 .dialogFrame {
   margin: 10px;
-  -moz-box-flex: 1;
+  flex: 1;
   /* Default dialog dimensions */
   min-width: 66ch;
 }
@@ -676,7 +693,7 @@ html|dialog,
 }
 
 #defaultFont {
-  width: 25ch;
+  flex: 1 25ch;
 }
 
 #defaultFontType,
@@ -723,7 +740,7 @@ html|dialog,
 }
 
 #fxaSyncComputerName {
-  -moz-box-flex: 1;
+  flex: 1;
   margin-block: 4px;
   margin-inline-start: 0;
 }
@@ -801,6 +818,10 @@ html|dialog,
   display: block;
 }
 
+.sync-choose-dialog-description {
+  margin-block-end: 10px;
+}
+
 .sync-engines-list > div,
 .sync-engines-list + hbox {
   margin-top: 0;
@@ -830,16 +851,18 @@ dialog > .sync-engines-list + hbox {
 }
 
 .sync-engines-list .checkbox-label-box {
-  -moz-box-align: center;
+  align-items: center;
 }
 
 .sync-engines-list {
   column-count: 2;
   column-fill: balance;
+  margin-block-end: 10px;
 }
 
 .sync-engines-list > div:not([hidden]) {
   display: flex;
+  break-inside: avoid;
 }
 
 .sync-engine-bookmarks .checkbox-icon,
@@ -929,19 +952,15 @@ dialog > .sync-engines-list + hbox {
   }
 }
 
-.face-sad {
-  content: url("chrome://browser/skin/preferences/face-sad.svg");
-  width: 20px;
-  height: 20px;
-  margin-block: 5px;
+.face-sad::before {
+  content: "\01F641";
+  font-size: 1.3em;
   margin-inline-end: 8px;
 }
 
-.face-smile {
-  content: url("chrome://browser/skin/preferences/face-smile.svg");
-  width: 20px;
-  height: 20px;
-  margin-block: 5px;
+.face-smile::before {
+  content: "\01F600";
+  font-size: 1.3em;
   margin-inline-end: 8px;
 }
 
@@ -1001,7 +1020,7 @@ dialog > .sync-engines-list + hbox {
 }
 
 .sticky-inner-container {
-  -moz-box-flex: 1;
+  flex: 1;
   max-width: var(--main-pane-width);
 }
 
@@ -1028,6 +1047,7 @@ dialog > .sync-engines-list + hbox {
   border-top-color: #d7b600;
   top: 100%;
   inset-inline-start: calc(50% - 7px);
+  forced-color-adjust: none;
 }
 
 .search-tooltip::after {
@@ -1037,6 +1057,17 @@ dialog > .sync-engines-list + hbox {
   border-top-color: #ffe900;
   top: 100%;
   inset-inline-start: calc(50% - 6px);
+  forced-color-adjust: none;
+}
+
+@media (forced-colors: active) {
+  .search-tooltip::before {
+    border-top-color: CanvasText;
+  }
+
+  .search-tooltip::after {
+    border-top-color: Canvas;
+  }
 }
 
 .search-tooltip-parent {
@@ -1056,7 +1087,7 @@ dialog > .sync-engines-list + hbox {
 }
 
 menulist[indicator=true] > menupopup menuitem:not([image]) > .menu-iconic-left {
-  display: -moz-box;
+  display: flex;
   min-width: auto; /* Override the min-width defined in menu.css */
   margin-inline-end: 6px;
 }
@@ -1193,11 +1224,11 @@ richlistitem .text-link:hover {
 
 .featureGateCheckbox {
   font-size: 1.14em;
-  -moz-box-align: center;
+  align-items: center;
 }
 
 .featureGateCheckbox > .checkbox-label-box {
-  -moz-box-align: center;
+  align-items: center;
 }
 
 .featureGateDescription {

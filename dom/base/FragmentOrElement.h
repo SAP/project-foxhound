@@ -20,6 +20,7 @@
 #include "nsCycleCollectionParticipant.h"  // NS_DECL_CYCLE_*
 #include "nsIContent.h"                    // base class
 #include "nsIHTMLCollection.h"
+#include "nsIWeakReferenceUtils.h"
 
 class ContentUnbinder;
 class nsContentList;
@@ -96,14 +97,13 @@ class FragmentOrElement : public nsIContent {
                                       mozilla::ErrorResult& aError) override;
 
   // nsIContent interface methods
-  virtual already_AddRefed<nsINodeList> GetChildren(uint32_t aFilter) override;
-  virtual const nsTextFragment* GetText() override;
-  virtual uint32_t TextLength() const override;
-  virtual bool TextIsOnlyWhitespace() override;
-  virtual bool ThreadSafeTextIsOnlyWhitespace() const override;
+  const nsTextFragment* GetText() override;
+  uint32_t TextLength() const override;
+  bool TextIsOnlyWhitespace() override;
+  bool ThreadSafeTextIsOnlyWhitespace() const override;
 
-  virtual void DestroyContent() override;
-  virtual void SaveSubtreeState() override;
+  void DestroyContent() override;
+  void SaveSubtreeState() override;
 
   nsIHTMLCollection* Children();
   uint32_t ChildElementCount() {
@@ -225,6 +225,10 @@ class FragmentOrElement : public nsIContent {
      * the purposes of `content-visibility: auto.
      */
     Maybe<bool> mVisibleForContentVisibility;
+
+    // Explicitly set attr-elements, see
+    // https://html.spec.whatwg.org/multipage/common-dom-interfaces.html#explicitly-set-attr-element
+    nsTHashMap<nsRefPtrHashKey<nsAtom>, nsWeakPtr> mExplicitlySetAttrElements;
   };
 
   class nsDOMSlots : public nsIContent::nsContentSlots {

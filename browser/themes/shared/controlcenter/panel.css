@@ -144,8 +144,7 @@
    * used to center it even if the header includes a info button. See .panel-header-with-info-button */
   max-width: calc(var(--popup-width)
                   - var(--arrowpanel-menuitem-margin-inline) * 2
-                  - var(--arrowpanel-header-info-icon-full-width) * 2
-                  - var(--arrowpanel-header-info-icon-margin-inline-end) * 2);
+                  - var(--arrowpanel-header-info-icon-full-width) * 2);
 }
 
 #identity-popup .panel-header > .subviewbutton-back + h1 > span {
@@ -332,8 +331,8 @@
 }
 
 #protections-popup-trackersView-list.empty {
-  -moz-box-align: center;
-  -moz-box-pack: center;
+  align-items: center;
+  justify-content: center;
 }
 
 .protections-popup-empty-label {
@@ -506,10 +505,10 @@
 
 .permission-popup-permission-remove-button {
   appearance: none;
+  min-width: auto;
   margin: 0;
   margin-inline-start: 2px;
   border-width: 0;
-  min-width: 0;
   padding: 2px;
   padding-inline-end: 6px;
   background-color: var(--button-bgcolor);
@@ -530,11 +529,11 @@
   display: none;
 }
 
-.permission-popup-permission-remove-button:not(:-moz-focusring):hover {
+.permission-popup-permission-remove-button:not(:focus-visible):hover {
   background-color: var(--button-hover-bgcolor);
 }
 
-.permission-popup-permission-remove-button:not(:-moz-focusring):hover:active {
+.permission-popup-permission-remove-button:not(:focus-visible):hover:active {
   background-color: var(--button-active-bgcolor)
 }
 
@@ -545,11 +544,6 @@
 
 #protections-popup-cookie-banner-section[hasException] .protections-popup-cookie-banner-switch-on-header,
 #protections-popup-cookie-banner-section:not([hasException]) .protections-popup-cookie-banner-switch-off-header {
-  display: none;
-}
-
-#protections-popup-cookie-banner-section[uiDisabled],
-#protections-popup-cookie-banner-section-separator[uiDisabled]{
   display: none;
 }
 
@@ -565,15 +559,11 @@
 
 .protections-popup-tp-switch-label-box,
 .protections-popup-tp-switch-box {
-  min-height: 40px;
-  -moz-box-pack: center;
+  justify-content: center;
 }
 
-/* This is needed in order to show a correct height if the 'Site not working?'
-   link is not displaying. */
-.protections-popup-switch-section[short] > .protections-popup-tp-switch-label-box,
-.protections-popup-switch-section[short] > .protections-popup-tp-switch-box {
-  min-height: 30px;
+.protections-popup-switch-section-header {
+  min-height: 40px;
 }
 
 .protections-popup-switch-header {
@@ -731,11 +721,6 @@
   stroke: #ffbd4f;
 }
 
-#protections-popup-tp-switch-breakage-link,
-#protections-popup-tp-switch-breakage-fixed-link {
-  text-decoration: underline;
-}
-
 .permission-popup-section {
   padding-bottom: 12px;
 }
@@ -745,7 +730,7 @@
 }
 
 .protections-popup-section-header,
-.protections-popup-switch-section,
+.protections-popup-switch-section-header,
 #protections-popup-siteNotWorkingView-header {
   padding: var(--arrowpanel-menuitem-padding);
   margin: var(--arrowpanel-menuitem-margin);
@@ -831,38 +816,22 @@
   margin-top: auto;
 }
 
+
 /* Cookie banner state toggles for the popup menu item */
 
-/* Cookie banner not supported for site */
-#protections-popup-cookie-banner-section:not([enabled]) description#protections-popup-cookie-banner-disabled,
-#protections-popup-cookie-banner-section:not([enabled]) description#protections-popup-cookie-banner-enabled {
+#protections-popup-cookie-banner-section:not([data-state="detected"]) description#protections-popup-cookie-banner-detected,
+#protections-popup-cookie-banner-section:not([data-state="undetected"]) description#protections-popup-cookie-banner-undetected,
+#protections-popup-cookie-banner-section:not([data-state="site-disabled"]) description#protections-popup-cookie-banner-site-disabled {
   display: none;
 }
 
-/* Cookie banner enabled for site */
-#protections-popup-cookie-banner-section[enabled]:not([hasException]) description#protections-popup-cookie-banner-disabled,
-#protections-popup-cookie-banner-section[enabled]:not([hasException]) description#protections-popup-cookie-banner-undetected {
-  display: none;
-}
-
-/* Cookie banner disabled for site by user */
-#protections-popup-cookie-banner-section[enabled][hasException] description#protections-popup-cookie-banner-enabled,
-#protections-popup-cookie-banner-section[enabled][hasException] description#protections-popup-cookie-banner-undetected {
-  display: none;
-}
-
-/* Cookie banner state toggles for the subview */
-
-/* Cookie banner enabled for site, so hide enable controls */
-#protections-popup-cookieBannerView:not([hasException]) #protections-popup-cookieBannerView-enable-button,
-#protections-popup-cookieBannerView:not([hasException]) description#cookieBannerView-enable-site,
-#protections-popup-cookieBannerView:not([hasException]) description#cookieBannerView-enable-site-description {
-  display: none;
-}
-
-/* Cookie banner disabled for site by user, so hide disable controls */
-#protections-popup-cookieBannerView[hasException] #protections-popup-cookieBannerView-disable-button,
-#protections-popup-cookieBannerView[hasException] description#cookieBannerView-disable-site,
-#protections-popup-cookieBannerView[hasException] description#cookieBannerView-disable-site-warning {
+/* Cookie banner state toggles for the subview: if the state is detected, show
+ * the disable controls; if the state is site-disabled, show the enable controls. */
+#protections-popup-cookieBannerView:not([data-state="detected"]) #protections-popup-cookieBannerView-disable-button,
+#protections-popup-cookieBannerView:not([data-state="detected"]) description#cookieBannerView-disable-site,
+#protections-popup-cookieBannerView:not([data-state="detected"]) description#cookieBannerView-disable-site-warning,
+#protections-popup-cookieBannerView:not([data-state="site-disabled"]) #protections-popup-cookieBannerView-enable-button,
+#protections-popup-cookieBannerView:not([data-state="site-disabled"]) description#cookieBannerView-enable-site,
+#protections-popup-cookieBannerView:not([data-state="site-disabled"]) description#cookieBannerView-enable-site-description {
   display: none;
 }

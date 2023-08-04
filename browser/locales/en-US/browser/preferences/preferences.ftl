@@ -149,6 +149,12 @@ startup-restore-warn-on-quit =
 disable-extension =
     .label = Disable Extension
 
+preferences-data-migration-header = Import Browser Data
+preferences-data-migration-description = Import bookmarks, passwords, history, and autofill data into { -brand-short-name }.
+preferences-data-migration-button =
+    .label = Import Data
+    .accesskey = m
+
 tabs-group-header = Tabs
 
 ctrl-tab-recently-used-order =
@@ -893,7 +899,7 @@ prefs-sync-now =
 
 ## The list of things currently syncing.
 
-sync-currently-syncing-heading = You are currently syncing these items:
+sync-syncing-across-devices-heading = You are syncing these items across all your connected devices:
 
 sync-currently-syncing-bookmarks = Bookmarks
 sync-currently-syncing-history = History
@@ -917,6 +923,8 @@ sync-choose-what-to-sync-dialog3 =
     .buttonaccesskeyaccept = S
     .buttonlabelextra2 = Disconnect…
     .buttonaccesskeyextra2 = D
+
+sync-choose-dialog-subtitle = Changes to the list of items to sync will be reflected across all your connected devices.
 
 sync-engine-bookmarks =
     .label = Bookmarks
@@ -1311,6 +1319,12 @@ permissions-camera-settings =
 
 permissions-microphone = Microphone
 permissions-microphone-settings =
+    .label = Settings…
+    .accesskey = t
+
+# Short form for "the act of choosing sound output devices and redirecting audio to the chosen devices".
+permissions-speaker = Speaker Selection
+permissions-speaker-settings =
     .label = Settings…
     .accesskey = t
 

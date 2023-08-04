@@ -3106,7 +3106,7 @@ void nsFocusManager::MoveCaretToFocus(PresShell* aPresShell,
         newRange->SelectNodeContents(*aContent, IgnoreErrors());
 
         if (!aContent->GetFirstChild() ||
-            aContent->IsNodeOfType(nsINode::eHTML_FORM_CONTROL)) {
+            aContent->IsHTMLFormControlElement()) {
           // If current focus node is a leaf, set range to before the
           // node by using the parent as a container.
           // This prevents it from appearing as selected.
@@ -3236,10 +3236,8 @@ nsresult nsFocusManager::GetSelectionLocation(Document* aDocument,
         nsAutoString nodeValue;
         startContent->GetAsText()->AppendTextTo(nodeValue);
 
-        bool isFormControl =
-            startContent->IsNodeOfType(nsINode::eHTML_FORM_CONTROL);
-
-        if (nodeValue.Length() == startOffset && !isFormControl &&
+        if (nodeValue.Length() == startOffset &&
+            !startContent->IsHTMLFormControlElement() &&
             startContent != aDocument->GetRootElement()) {
           // Yes, indeed we were at the end of the last node
           nsCOMPtr<nsIFrameEnumerator> frameTraversal;
@@ -5327,7 +5325,7 @@ void nsFocusManager::MarkUncollectableForCCGeneration(uint32_t aGeneration) {
 }
 
 bool nsFocusManager::CanSkipFocus(nsIContent* aContent) {
-  if (!aContent || nsContentUtils::IsChromeDoc(aContent->OwnerDoc())) {
+  if (!aContent) {
     return false;
   }
 

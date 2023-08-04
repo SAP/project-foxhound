@@ -135,7 +135,7 @@ JS::ubi::Node::Size JS::ubi::Concrete<JSString>::size(
 
 const char16_t JS::ubi::Concrete<JSString>::concreteTypeName[] = u"JSString";
 
-mozilla::Maybe<mozilla::Tuple<size_t, size_t> > JSString::encodeUTF8Partial(
+mozilla::Maybe<std::tuple<size_t, size_t> > JSString::encodeUTF8Partial(
     const JS::AutoRequireNoGC& nogc, mozilla::Span<char> buffer) const {
   mozilla::Vector<const JSString*, 16, SystemAllocPolicy> stack;
   const JSString* current = this;
@@ -157,7 +157,7 @@ mozilla::Maybe<mozilla::Tuple<size_t, size_t> > JSString::encodeUTF8Partial(
     if (MOZ_LIKELY(linear.hasLatin1Chars())) {
       if (MOZ_UNLIKELY(pendingLeadSurrogate)) {
         if (buffer.Length() < 3) {
-          return mozilla::Some(mozilla::MakeTuple(totalRead, totalWritten));
+          return mozilla::Some(std::make_tuple(totalRead, totalWritten));
         }
         buffer[0] = '\xEF';
         buffer[1] = '\xBF';
@@ -171,13 +171,13 @@ mozilla::Maybe<mozilla::Tuple<size_t, size_t> > JSString::encodeUTF8Partial(
           mozilla::Span(linear.latin1Chars(nogc), linear.length()));
       size_t read;
       size_t written;
-      mozilla::Tie(read, written) =
+      std::tie(read, written) =
           mozilla::ConvertLatin1toUtf8Partial(src, buffer);
       buffer = buffer.From(written);
       totalRead += read;
       totalWritten += written;
       if (read < src.Length()) {
-        return mozilla::Some(mozilla::MakeTuple(totalRead, totalWritten));
+        return mozilla::Some(std::make_tuple(totalRead, totalWritten));
       }
     } else {
       auto src = mozilla::Span(linear.twoByteChars(nogc), linear.length());
@@ -189,7 +189,7 @@ mozilla::Maybe<mozilla::Tuple<size_t, size_t> > JSString::encodeUTF8Partial(
         if (unicode::IsTrailSurrogate(first)) {
           // Got a surrogate pair
           if (buffer.Length() < 4) {
-            return mozilla::Some(mozilla::MakeTuple(totalRead, totalWritten));
+            return mozilla::Some(std::make_tuple(totalRead, totalWritten));
           }
           uint32_t astral = unicode::UTF16Decode(pendingLeadSurrogate, first);
           buffer[0] = char(0b1111'0000 | (astral >> 18));
@@ -203,7 +203,7 @@ mozilla::Maybe<mozilla::Tuple<size_t, size_t> > JSString::encodeUTF8Partial(
         } else {
           // unpaired surrogate
           if (buffer.Length() < 3) {
-            return mozilla::Some(mozilla::MakeTuple(totalRead, totalWritten));
+            return mozilla::Some(std::make_tuple(totalRead, totalWritten));
           }
           buffer[0] = '\xEF';
           buffer[1] = '\xBF';
@@ -224,13 +224,13 @@ mozilla::Maybe<mozilla::Tuple<size_t, size_t> > JSString::encodeUTF8Partial(
         }
         size_t read;
         size_t written;
-        mozilla::Tie(read, written) =
+        std::tie(read, written) =
             mozilla::ConvertUtf16toUtf8Partial(src, buffer);
         buffer = buffer.From(written);
         totalRead += read;
         totalWritten += written;
         if (read < src.Length()) {
-          return mozilla::Some(mozilla::MakeTuple(totalRead, totalWritten));
+          return mozilla::Some(std::make_tuple(totalRead, totalWritten));
         }
       }
     }
@@ -241,7 +241,7 @@ mozilla::Maybe<mozilla::Tuple<size_t, size_t> > JSString::encodeUTF8Partial(
   }
   if (MOZ_UNLIKELY(pendingLeadSurrogate)) {
     if (buffer.Length() < 3) {
-      return mozilla::Some(mozilla::MakeTuple(totalRead, totalWritten));
+      return mozilla::Some(std::make_tuple(totalRead, totalWritten));
     }
     buffer[0] = '\xEF';
     buffer[1] = '\xBF';
@@ -250,7 +250,7 @@ mozilla::Maybe<mozilla::Tuple<size_t, size_t> > JSString::encodeUTF8Partial(
     totalRead += 1;
     totalWritten += 3;
   }
-  return mozilla::Some(mozilla::MakeTuple(totalRead, totalWritten));
+  return mozilla::Some(std::make_tuple(totalRead, totalWritten));
 }
 
 #if defined(DEBUG) || defined(JS_JITSPEW) || defined(JS_CACHEIR_SPEW)
@@ -421,6 +421,19 @@ bool JSString::equals(const char* s) {
   return StringEqualsAscii(linear, s);
 }
 #endif /* defined(DEBUG) || defined(JS_JITSPEW) || defined(JS_CACHEIR_SPEW) */
+
+JSExtensibleString& JSLinearString::makeExtensible(size_t capacity) {
+  MOZ_ASSERT(!isDependent());
+  MOZ_ASSERT(!isInline());
+  MOZ_ASSERT(!isAtom());
+  MOZ_ASSERT(!isExternal());
+  MOZ_ASSERT(capacity >= length());
+  js::RemoveCellMemory(this, allocSize(), js::MemoryUse::StringContents);
+  setLengthAndFlags(length(), flags() | EXTENSIBLE_FLAGS);
+  d.s.u3.capacity = capacity;
+  js::AddCellMemory(this, allocSize(), js::MemoryUse::StringContents);
+  return asExtensible();
+}
 
 template <typename CharT>
 static MOZ_ALWAYS_INLINE bool AllocChars(JSString* str, size_t length,
@@ -791,7 +804,7 @@ first_visit_node : {
     str = &left.asRope();
     goto first_visit_node;
   }
-  if (!(reuseLeftmostBuffer && &left == leftmostChild)) {
+  if (!(reuseLeftmostBuffer && pos == wholeChars)) {
     CopyChars(pos, left.asLinear());
   }
   pos += left.length();

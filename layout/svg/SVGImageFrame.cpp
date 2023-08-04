@@ -9,7 +9,6 @@
 // Keep in (case-insensitive) order:
 #include "gfxContext.h"
 #include "gfxPlatform.h"
-#include "mozilla/gfx/2D.h"
 #include "mozilla/ComputedStyleInlines.h"
 #include "mozilla/image/WebRenderImageProvider.h"
 #include "mozilla/layers/RenderRootStateManager.h"
@@ -31,7 +30,6 @@
 #include "mozilla/dom/MutationEventBinding.h"
 #include "mozilla/dom/SVGImageElement.h"
 #include "nsIReflowCallback.h"
-#include "mozilla/Unused.h"
 
 using namespace mozilla::dom;
 using namespace mozilla::gfx;
@@ -144,7 +142,7 @@ void SVGImageFrame::DestroyFrom(nsIFrame* aDestructRoot,
 
 /* virtual */
 void SVGImageFrame::DidSetComputedStyle(ComputedStyle* aOldStyle) {
-  SVGGeometryFrame::DidSetComputedStyle(aOldStyle);
+  nsIFrame::DidSetComputedStyle(aOldStyle);
 
   if (!mImageContainer || !aOldStyle) {
     return;
@@ -218,7 +216,7 @@ void SVGImageFrame::OnVisibilityChange(
     imageLoader->OnVisibilityChange(aNewVisibility, aNonvisibleAction);
   }
 
-  SVGGeometryFrame::OnVisibilityChange(aNewVisibility, aNonvisibleAction);
+  nsIFrame::OnVisibilityChange(aNewVisibility, aNonvisibleAction);
 }
 
 gfx::Matrix SVGImageFrame::GetRasterImageTransform(int32_t aNativeWidth,
@@ -309,7 +307,8 @@ bool SVGImageFrame::TransformContextForPainting(gfxContext* aGfxContext,
 }
 
 //----------------------------------------------------------------------
-// ISVGDisplayableFrame methods:
+// ISVGDisplayableFrame methods
+
 void SVGImageFrame::PaintSVG(gfxContext& aContext, const gfxMatrix& aTransform,
                              imgDrawingParams& aImgParams,
                              const nsIntRect* aDirtyRect) {
@@ -436,6 +435,27 @@ void SVGImageFrame::PaintSVG(gfxContext& aContext, const gfxMatrix& aTransform,
     }
     // gfxContextAutoSaveRestore goes out of scope & cleans up our gfxContext
   }
+}
+
+void SVGImageFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
+                                     const nsDisplayListSet& aLists) {
+  if (!static_cast<const SVGElement*>(GetContent())->HasValidDimensions()) {
+    return;
+  }
+
+  if (aBuilder->IsForPainting()) {
+    if (!IsVisibleForPainting()) {
+      return;
+    }
+    if (StyleEffects()->mOpacity == 0.0f) {
+      return;
+    }
+    aBuilder->BuildCompositorHitTestInfoIfNeeded(this,
+                                                 aLists.BorderBackground());
+  }
+
+  DisplayOutline(aBuilder, aLists);
+  aLists.Content()->AppendNewToTop<DisplaySVGGeometry>(aBuilder, this);
 }
 
 bool SVGImageFrame::CreateWebRenderCommands(
@@ -712,12 +732,6 @@ nsIFrame* SVGImageFrame::GetFrameForPoint(const gfxPoint& aPoint) {
   return this;
 }
 
-//----------------------------------------------------------------------
-// SVGGeometryFrame methods:
-
-// Lie about our fill/stroke so that covered region and hit detection work
-// properly
-
 void SVGImageFrame::ReflowSVG() {
   NS_ASSERTION(SVGUtils::OuterSVGIsCallingReflowSVG(this),
                "This call is probably a wasteful mistake");
@@ -822,6 +836,29 @@ uint16_t SVGImageFrame::GetHitTestFlags() {
   }
 
   return flags;
+}
+
+void SVGImageFrame::NotifySVGChanged(uint32_t aFlags) {
+  MOZ_ASSERT(aFlags & (TRANSFORM_CHANGED | COORD_CONTEXT_CHANGED),
+             "Invalidation logic may need adjusting");
+}
+
+SVGBBox SVGImageFrame::GetBBoxContribution(const Matrix& aToBBoxUserspace,
+                                           uint32_t aFlags) {
+  if (aToBBoxUserspace.IsSingular()) {
+    // XXX ReportToConsole
+    return {};
+  }
+
+  if ((aFlags & SVGUtils::eForGetClientRects) &&
+      aToBBoxUserspace.PreservesAxisAlignedRectangles()) {
+    Rect rect = NSRectToRect(mRect, AppUnitsPerCSSPixel());
+    return aToBBoxUserspace.TransformBounds(rect);
+  }
+
+  auto* element = static_cast<SVGImageElement*>(GetContent());
+
+  return element->GeometryBounds(aToBBoxUserspace);
 }
 
 //----------------------------------------------------------------------

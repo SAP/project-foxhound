@@ -4123,9 +4123,9 @@ static bool SearchElementDense(JSContext* cx, HandleValue val, Iter iterator,
     double dval = val.toNumber();
     // For |includes|, two NaN values are considered equal, so we use a
     // different implementation for NaN.
-    if (Kind == SearchKind::Includes && mozilla::IsNaN(dval)) {
+    if (Kind == SearchKind::Includes && std::isnan(dval)) {
       auto cmp = [](JSContext*, const Value& element, bool* equal) {
-        *equal = (element.isDouble() && mozilla::IsNaN(element.toDouble()));
+        *equal = (element.isDouble() && std::isnan(element.toDouble()));
         return true;
       };
       return iterator(cx, cmp, rval);
@@ -5177,19 +5177,25 @@ bool js::ArraySpeciesLookup::tryOptimizeArray(JSContext* cx,
     return false;
   }
 
-  // Ensure |array| doesn't define any own properties besides its
-  // non-deletable "length" property. This serves as a quick check to make
-  // sure |array| doesn't define an own "constructor" property which may
-  // shadow Array.prototype.constructor.
-  ShapePropertyIter<NoGC> iter(array->shape());
-  MOZ_ASSERT(!iter.done(), "Array must have at least one property");
-  DebugOnly<PropertyKey> key = iter->key();
-  iter++;
-  if (!iter.done()) {
+  // Ensure the array does not define an own "constructor" property which may
+  // shadow `Array.prototype.constructor`.
+
+  // Most arrays don't define any additional own properties beside their
+  // "length" property. If "length" is the last property, it must be the only
+  // property, because it's non-configurable.
+  MOZ_ASSERT(array->shape()->propMapLength() > 0);
+  PropertyKey lengthKey = NameToId(cx->names().length);
+  if (MOZ_LIKELY(array->getLastProperty().key() == lengthKey)) {
+    MOZ_ASSERT(array->shape()->propMapLength() == 1, "Expected one property");
+    return true;
+  }
+
+  // Fail if the array has an own "constructor" property.
+  uint32_t index;
+  if (array->shape()->lookup(cx, NameToId(cx->names().constructor), &index)) {
     return false;
   }
 
-  MOZ_ASSERT(key.inspect().isAtom(cx->names().length));
   return true;
 }
 

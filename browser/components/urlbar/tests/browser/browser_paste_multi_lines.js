@@ -55,6 +55,14 @@ const TEST_DATA = [
     },
   },
   {
+    input: "http://exam\nple.com/foo       bar/",
+    expected: {
+      urlbar: "http://example.com/foo       bar/",
+      autocomplete: "http://example.com/foo       bar/",
+      type: UrlbarUtils.RESULT_TYPE.URL,
+    },
+  },
+  {
     input: "javasc\nript:\nalert(1)",
     expected: {
       urlbar: "alert(1)",
@@ -81,8 +89,24 @@ const TEST_DATA = [
   {
     input: "data:text/html,<iframe\n src='example\n.com'>\n</iframe>",
     expected: {
-      urlbar: "data:text/html,<iframe src='example.com'></iframe>",
-      autocomplete: "data:text/html,<iframe src='example.com'></iframe>",
+      urlbar: "data:text/html,<iframe  src='example .com'> </iframe>",
+      autocomplete: "data:text/html,<iframe  src='example .com'> </iframe>",
+      type: UrlbarUtils.RESULT_TYPE.URL,
+    },
+  },
+  {
+    input: "data:,123\n4 5\n6",
+    expected: {
+      urlbar: "data:,123 4 5 6",
+      autocomplete: "data:,123 4 5 6",
+      type: UrlbarUtils.RESULT_TYPE.URL,
+    },
+  },
+  {
+    input: "data:text/html;base64,123\n4 5\n6",
+    expected: {
+      urlbar: "data:text/html;base64,1234 56",
+      autocomplete: "data:text/html;base64,123456",
       type: UrlbarUtils.RESULT_TYPE.URL,
     },
   },
@@ -124,6 +148,14 @@ const TEST_DATA = [
       urlbar: "127.0.0.1",
       autocomplete: "http://127.0.0.1/",
       type: UrlbarUtils.RESULT_TYPE.URL,
+    },
+  },
+  {
+    input: "\r\n\r\n\r\n\r\n\r\n",
+    expected: {
+      urlbar: "",
+      autocomplete: "",
+      type: UrlbarUtils.RESULT_TYPE.SEARCH,
     },
   },
 ];
@@ -186,6 +218,14 @@ async function assertResult(expected) {
     "Title of autocomplete is correct"
   );
   Assert.equal(result.type, expected.type, "Type of autocomplete is correct");
+
+  if (gURLBar.value) {
+    Assert.equal(gURLBar.getAttribute("usertyping"), "true");
+    Assert.ok(BrowserTestUtils.is_visible(gURLBar.goButton));
+  } else {
+    Assert.ok(!gURLBar.hasAttribute("usertyping"));
+    Assert.ok(BrowserTestUtils.is_hidden(gURLBar.goButton));
+  }
 }
 
 async function paste(input) {

@@ -27,7 +27,6 @@ NS_IMPL_ADDREF_INHERITED(SVGAnimationElement, SVGAnimationElementBase)
 NS_IMPL_RELEASE_INHERITED(SVGAnimationElement, SVGAnimationElementBase)
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(SVGAnimationElement)
-  NS_INTERFACE_MAP_ENTRY_CONCRETE(SVGAnimationElement)
   NS_INTERFACE_MAP_ENTRY(mozilla::dom::SVGTests)
 NS_INTERFACE_MAP_END_INHERITING(SVGAnimationElementBase)
 
@@ -357,10 +356,8 @@ void SVGAnimationElement::UpdateHrefTarget(const nsAString& aHrefStr) {
   nsCOMPtr<nsIURI> targetURI;
   nsContentUtils::NewURIWithDocumentCharset(getter_AddRefs(targetURI), aHrefStr,
                                             OwnerDoc(), baseURI);
-  nsCOMPtr<nsIReferrerInfo> referrerInfo =
-      ReferrerInfo::CreateForSVGResources(OwnerDoc());
-
-  mHrefTarget.ResetToURIFragmentID(this, targetURI, referrerInfo);
+  mHrefTarget.ResetToURIFragmentID(
+      this, targetURI, OwnerDoc()->ReferrerInfoForInternalCSSAndSVGResources());
   AnimationTargetChanged();
 }
 

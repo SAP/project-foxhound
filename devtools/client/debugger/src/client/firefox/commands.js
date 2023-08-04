@@ -100,6 +100,51 @@ function forEachThread(iteratee) {
   return Promise.all(promises);
 }
 
+/**
+ * Start JavaScript tracing for all targets.
+ *
+ * @param {String} logMethod
+ *        Where to log the traces. Can be stdout or console.
+ */
+async function startTracing(logMethod) {
+  // Ignore the request if the server doesn't support this feature yet
+  // @backward-compat { version 112 } Fx 112 started implementing JS tracing.
+  // The trait can be removed once this version is released.
+  if (!commands.client.mainRoot.traits.supportsJavascriptTracing) {
+    return;
+  }
+  const targets = commands.targetCommand.getAllTargets(
+    commands.targetCommand.ALL_TYPES
+  );
+  await Promise.all(
+    targets.map(async targetFront => {
+      const tracerFront = await targetFront.getFront("tracer");
+      return tracerFront.startTracing(logMethod);
+    })
+  );
+}
+
+/**
+ * Stop JavaScript tracing for all targets.
+ */
+async function stopTracing() {
+  // Ignore the request if the server doesn't support this feature yet
+  // @backward-compat { version 112 } Fx 112 started implementing JS tracing.
+  // The trait can be removed once this version is released.
+  if (!commands.client.mainRoot.traits.supportsJavascriptTracing) {
+    return;
+  }
+  const targets = commands.targetCommand.getAllTargets(
+    commands.targetCommand.ALL_TYPES
+  );
+  await Promise.all(
+    targets.map(async targetFront => {
+      const tracerFront = await targetFront.getFront("tracer");
+      return tracerFront.stopTracing();
+    })
+  );
+}
+
 function resume(thread, frameId) {
   return lookupThreadFront(thread).resume();
 }
@@ -421,6 +466,23 @@ function fetchAncestorFramePositions(index) {
   currentThreadFront().fetchAncestorFramePositions(index);
 }
 
+async function setOverride(url, path) {
+  const hasWatcherSupport = commands.targetCommand.hasTargetWatcherSupport();
+  if (hasWatcherSupport) {
+    const networkFront = await commands.targetCommand.watcherFront.getNetworkParentActor();
+    return networkFront.override(url, path);
+  }
+  return null;
+}
+
+async function removeOverride(url) {
+  const hasWatcherSupport = commands.targetCommand.hasTargetWatcherSupport();
+  if (hasWatcherSupport) {
+    const networkFront = await commands.targetCommand.watcherFront.getNetworkParentActor();
+    networkFront.removeOverride(url);
+  }
+}
+
 const clientCommands = {
   autocomplete,
   blackBox,
@@ -428,6 +490,8 @@ const clientCommands = {
   loadObjectProperties,
   releaseActor,
   pauseGrip,
+  startTracing,
+  stopTracing,
   resume,
   stepIn,
   stepOut,
@@ -459,6 +523,8 @@ const clientCommands = {
   getFrontByID,
   fetchAncestorFramePositions,
   toggleJavaScriptEnabled,
+  setOverride,
+  removeOverride,
 };
 
 export { setupCommands, clientCommands };

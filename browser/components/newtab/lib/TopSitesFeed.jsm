@@ -52,6 +52,7 @@ ChromeUtils.defineModuleGetter(
 );
 ChromeUtils.defineESModuleGetters(lazy, {
   NewTabUtils: "resource://gre/modules/NewTabUtils.sys.mjs",
+  NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
   Region: "resource://gre/modules/Region.sys.mjs",
   RemoteSettings: "resource://services-settings/remote-settings.sys.mjs",
 });
@@ -67,14 +68,10 @@ ChromeUtils.defineModuleGetter(
 );
 
 XPCOMUtils.defineLazyGetter(lazy, "log", () => {
-  const { Logger } = ChromeUtils.import(
-    "resource://messaging-system/lib/Logger.jsm"
+  const { Logger } = ChromeUtils.importESModule(
+    "resource://messaging-system/lib/Logger.sys.mjs"
   );
   return new Logger("TopSitesFeed");
-});
-
-XPCOMUtils.defineLazyModuleGetters(lazy, {
-  NimbusFeatures: "resource://nimbus/ExperimentAPI.jsm",
 });
 
 const DEFAULT_SITES_PREF = "default.sites";
@@ -98,6 +95,10 @@ const MAX_NUM_SPONSORED = 2;
 // both Contile and Pocket sources.
 // The default will be `MAX_NUM_SPONSORED` if this variable is unspecified.
 const NIMBUS_VARIABLE_MAX_SPONSORED = "topSitesMaxSponsored";
+// Nimbus variable to allow more than two sponsored tiles from Contile to be
+//considered for Top Sites.
+const NIMBUS_VARIABLE_ADDITIONAL_TILES =
+  "topSitesUseAdditionalTilesFromContile";
 
 // Search experiment stuff
 const FILTER_DEFAULT_SEARCH_PREF = "improvesearch.noDefaultSearchTile";
@@ -201,11 +202,16 @@ class ContileIntegration {
       const body = await response.json();
       if (body?.tiles && Array.isArray(body.tiles)) {
         let { tiles } = body;
+        if (
+          !lazy.NimbusFeatures.newtab.getVariable(
+            NIMBUS_VARIABLE_ADDITIONAL_TILES
+          )
+        ) {
+          tiles.length = CONTILE_MAX_NUM_SPONSORED;
+        }
         tiles = this._filterBlockedSponsors(tiles);
         if (tiles.length > CONTILE_MAX_NUM_SPONSORED) {
-          lazy.log.warn(
-            `Contile provided more links than permitted. (${tiles.length} received, limit is ${CONTILE_MAX_NUM_SPONSORED})`
-          );
+          lazy.log.info("Remove unused links from Contile");
           tiles.length = CONTILE_MAX_NUM_SPONSORED;
         }
         this._sites = tiles;
@@ -283,7 +289,7 @@ class TopSitesFeed {
     Services.prefs.removeObserver(REMOTE_SETTING_DEFAULTS_PREF, this);
     Services.prefs.removeObserver(DEFAULT_SITES_OVERRIDE_PREF, this);
     Services.prefs.removeObserver(DEFAULT_SITES_EXPERIMENTS_PREF_BRANCH, this);
-    lazy.NimbusFeatures.newtab.off(this._nimbusChangeListener);
+    lazy.NimbusFeatures.newtab.offUpdate(this._nimbusChangeListener);
   }
 
   observe(subj, topic, data) {
@@ -707,7 +713,7 @@ class TopSitesFeed {
           const positionIndex = discoveryStreamSpocPositions[i].index;
           const spoc = discoveryStreamSpocs[i];
           const link = {
-            favicon: reformatImageURL(spoc.raw_image_src, 40, 40),
+            favicon: reformatImageURL(spoc.raw_image_src, 96, 96),
             type: "SPOC",
             label: spoc.title || spoc.sponsor,
             title: spoc.title || spoc.sponsor,

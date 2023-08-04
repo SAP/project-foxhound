@@ -68,8 +68,9 @@ HRESULT MFMediaEngineAudioStream::CreateMediaType(const TrackInfo& aInfo,
         MF_MT_USER_DATA, mAACUserData.Elements(), mAACUserData.Length()));
   }
   LOGV("Created audio type, subtype=%s, channel=%" PRIu32 ", rate=%" PRIu32
-       ", bitDepth=%" PRIu64,
-       GUIDToStr(subType), info.mChannels, info.mRate, bitDepth);
+       ", bitDepth=%" PRIu64 ", encrypted=%d",
+       GUIDToStr(subType), info.mChannels, info.mRate, bitDepth,
+       mAudioInfo.mCrypto.IsEncrypted());
 
   *aMediaType = mediaType.Detach();
   return S_OK;
@@ -95,6 +96,22 @@ already_AddRefed<MediaData> MFMediaEngineAudioStream::OutputDataInternal() {
       new AudioData(input->mOffset, input->mTime, AlignedAudioBuffer{},
                     mAudioInfo.mChannels, mAudioInfo.mRate);
   return output.forget();
+}
+
+nsCString MFMediaEngineAudioStream::GetCodecName() const {
+  WMFStreamType type = GetStreamTypeFromMimeType(mAudioInfo.mMimeType);
+  switch (type) {
+    case WMFStreamType::MP3:
+      return "mp3"_ns;
+    case WMFStreamType::AAC:
+      return "aac"_ns;
+    case WMFStreamType::OPUS:
+      return "opus"_ns;
+    case WMFStreamType::VORBIS:
+      return "vorbis"_ns;
+    default:
+      return "unknown"_ns;
+  }
 }
 
 bool MFMediaEngineAudioStream::IsEncrypted() const {

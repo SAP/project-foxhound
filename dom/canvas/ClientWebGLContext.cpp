@@ -1170,8 +1170,10 @@ RefPtr<gfx::DataSourceSurface> ClientWebGLContext::BackBufferSnapshot() {
   return surf;
 }
 
-UniquePtr<uint8_t[]> ClientWebGLContext::GetImageBuffer(int32_t* out_format) {
+UniquePtr<uint8_t[]> ClientWebGLContext::GetImageBuffer(
+    int32_t* out_format, gfx::IntSize* out_imageSize) {
   *out_format = 0;
+  *out_imageSize = {};
 
   // Use GetSurfaceSnapshot() to make sure that appropriate y-flip gets applied
   gfxAlphaType any;
@@ -1181,6 +1183,7 @@ UniquePtr<uint8_t[]> ClientWebGLContext::GetImageBuffer(int32_t* out_format) {
   RefPtr<gfx::DataSourceSurface> dataSurface = snapshot->GetDataSurface();
 
   const auto& premultAlpha = mNotLost->info.options.premultipliedAlpha;
+  *out_imageSize = dataSurface->GetSize();
   return gfxUtils::GetImageBuffer(dataSurface, premultAlpha, out_format);
 }
 
@@ -1995,6 +1998,11 @@ void ClientWebGLContext::GetParameter(JSContext* cx, GLenum pname,
       return;
     case dom::WebGLRenderingContext_Binding::UNPACK_COLORSPACE_CONVERSION_WEBGL:
       retval.set(JS::NumberValue(state.mPixelUnpackState.colorspaceConversion));
+      return;
+
+    case dom::WEBGL_provoking_vertex_Binding::PROVOKING_VERTEX_WEBGL:
+      if (!IsExtensionEnabled(WebGLExtensionID::WEBGL_provoking_vertex)) break;
+      retval.set(JS::NumberValue(UnderlyingValue(state.mProvokingVertex)));
       return;
 
     // -
@@ -3350,11 +3358,11 @@ void ClientWebGLContext::RawBufferData(GLenum target, const uint8_t* srcBytes,
 void ClientWebGLContext::RawBufferSubData(GLenum target,
                                           WebGLsizeiptr dstByteOffset,
                                           const uint8_t* srcBytes,
-                                          size_t srcLen) {
+                                          size_t srcLen, bool unsynchronized) {
   const FuncScope funcScope(*this, "bufferSubData");
 
   Run<RPROC(BufferSubData)>(target, dstByteOffset,
-                            RawBuffer<>({srcBytes, srcLen}));
+                            RawBuffer<>({srcBytes, srcLen}), unsynchronized);
 }
 
 void ClientWebGLContext::BufferSubData(GLenum target,
@@ -3363,7 +3371,8 @@ void ClientWebGLContext::BufferSubData(GLenum target,
   const FuncScope funcScope(*this, "bufferSubData");
   src.ComputeState();
   const auto range = Range<const uint8_t>{src.Data(), src.Length()};
-  Run<RPROC(BufferSubData)>(target, dstByteOffset, RawBuffer<>(range));
+  Run<RPROC(BufferSubData)>(target, dstByteOffset, RawBuffer<>(range),
+                            /* unsynchronized */ false);
 }
 
 void ClientWebGLContext::BufferSubData(GLenum target,
@@ -3379,7 +3388,8 @@ void ClientWebGLContext::BufferSubData(GLenum target,
     return;
   }
   const auto range = Range<const uint8_t>{bytes, byteLen};
-  Run<RPROC(BufferSubData)>(target, dstByteOffset, RawBuffer<>(range));
+  Run<RPROC(BufferSubData)>(target, dstByteOffset, RawBuffer<>(range),
+                            /* unsynchronized */ false);
 }
 
 void ClientWebGLContext::CopyBufferSubData(GLenum readTarget,
@@ -5374,11 +5384,16 @@ GLenum ClientWebGLContext::ClientWaitSync(WebGLSyncJS& sync,
   const bool canBeAvailable =
       (sync.mCanBeAvailable || StaticPrefs::webgl_allow_immediate_queries());
   if (!canBeAvailable) {
-    if (!sync.mHasWarnedNotAvailable) {
-      EnqueueWarning(
-          "ClientWaitSync must return TIMEOUT_EXPIRED until control has"
-          " returned to the user agent's main loop. (only warns once)");
-      sync.mHasWarnedNotAvailable = true;
+    constexpr uint8_t WARN_AT = 100;
+    if (sync.mNumQueriesBeforeFirstFrameBoundary <= WARN_AT) {
+      sync.mNumQueriesBeforeFirstFrameBoundary += 1;
+      if (sync.mNumQueriesBeforeFirstFrameBoundary == WARN_AT) {
+        EnqueueWarning(
+            "ClientWaitSync must return TIMEOUT_EXPIRED until control has"
+            " returned to the user agent's main loop, but was polled %hhu "
+            "times. Are you spin-locking? (only warns once)",
+            sync.mNumQueriesBeforeFirstFrameBoundary);
+      }
     }
     return LOCAL_GL_TIMEOUT_EXPIRED;
   }
@@ -5659,6 +5674,18 @@ void ClientWebGLContext::GetSupportedProfilesASTC(
   if (limits.astcHdr) {
     retarr.AppendElement(u"hdr"_ns);
   }
+}
+
+void ClientWebGLContext::ProvokingVertex(const GLenum rawMode) const {
+  const FuncScope funcScope(*this, "provokingVertex");
+  if (IsContextLost()) return;
+
+  const auto mode = webgl::AsEnumCase<webgl::ProvokingVertex>(rawMode);
+  if (!mode) return;
+
+  Run<RPROC(ProvokingVertex)>(*mode);
+
+  funcScope.mKeepNotLostOrNull->state.mProvokingVertex = *mode;
 }
 
 // -

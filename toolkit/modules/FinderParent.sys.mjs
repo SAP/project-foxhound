@@ -14,6 +14,7 @@ const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   GetClipboardSearchString: "resource://gre/modules/Finder.sys.mjs",
+  RFPHelper: "resource://gre/modules/RFPHelper.sys.mjs",
   Rect: "resource://gre/modules/Geometry.sys.mjs",
 });
 
@@ -579,9 +580,7 @@ FinderParent.prototype = {
 
     if (lazy.isLetterboxingEnabled) {
       let window = this._browser.ownerGlobal;
-      if (window.RFPHelper) {
-        window.RFPHelper.contentSizeUpdated(window);
-      }
+      lazy.RFPHelper.contentSizeUpdated(window);
     }
   },
 
@@ -590,9 +589,7 @@ FinderParent.prototype = {
 
     if (lazy.isLetterboxingEnabled) {
       let window = this._browser.ownerGlobal;
-      if (window.RFPHelper) {
-        window.RFPHelper.contentSizeUpdated(window);
-      }
+      lazy.RFPHelper.contentSizeUpdated(window);
     }
   },
 

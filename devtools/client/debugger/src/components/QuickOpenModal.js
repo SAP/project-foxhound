@@ -7,6 +7,7 @@ import PropTypes from "prop-types";
 import { connect } from "../utils/connect";
 import fuzzyAldrin from "fuzzaldrin-plus";
 import { basename } from "../utils/path";
+import { createLocation } from "../utils/location";
 
 const { throttle } = require("devtools/shared/throttle");
 
@@ -27,6 +28,7 @@ import {
 } from "../selectors";
 import { memoizeLast } from "../utils/memoizeLast";
 import { scrollList } from "../utils/result-list";
+import { searchKeys } from "../constants";
 import {
   formatSymbols,
   parseLineColumn,
@@ -260,7 +262,7 @@ export class QuickOpenModal extends Component {
 
     if (this.isGotoSourceQuery()) {
       const location = parseLineColumn(this.props.query);
-      this.gotoLocation({ ...location, sourceId: item.id });
+      this.gotoLocation({ ...location, source: item.source });
       return;
     }
 
@@ -272,7 +274,7 @@ export class QuickOpenModal extends Component {
       return;
     }
 
-    this.gotoLocation({ sourceId: item.id, line: 0 });
+    this.gotoLocation({ source: item.source, line: 0 });
   };
 
   onSelectResultItem = item => {
@@ -285,12 +287,11 @@ export class QuickOpenModal extends Component {
       return;
     }
 
-    highlightLineRange({
-      ...(item.location != null
+    highlightLineRange(
+      item.location != null
         ? { start: item.location.start.line, end: item.location.end.line }
-        : {}),
-      sourceId: selectedSource.id,
-    });
+        : {}
+    );
   };
 
   traverseResults = e => {
@@ -311,13 +312,14 @@ export class QuickOpenModal extends Component {
     const { cx, selectSpecificLocation, selectedSource } = this.props;
 
     if (location != null) {
-      const selectedSourceId = selectedSource ? selectedSource.id : "";
-      const sourceId = location.sourceId ? location.sourceId : selectedSourceId;
-      selectSpecificLocation(cx, {
-        sourceId,
-        line: location.line,
-        column: location.column,
-      });
+      selectSpecificLocation(
+        cx,
+        createLocation({
+          source: location.source || selectedSource,
+          line: location.line,
+          column: location.column,
+        })
+      );
       this.closeModal();
     }
   };
@@ -463,6 +465,8 @@ export class QuickOpenModal extends Component {
           handleClose={this.closeModal}
           expanded={expanded}
           showClose={false}
+          searchKey={searchKeys.QUICKOPEN_SEARCH}
+          showExcludePatterns={false}
           showSearchModifiers={false}
           selectedItemId={
             expanded && items[selectedIndex] ? items[selectedIndex].id : ""

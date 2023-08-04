@@ -121,16 +121,16 @@ export class ExecutionContext {
   /**
    * Evaluate a Javascript expression.
    *
-   * @param {String} expression
+   * @param {string} expression
    *   The JS expression to evaluate against the JS context.
-   * @param {boolean} options.awaitPromise
+   * @param {boolean} awaitPromise
    *     Whether execution should `await` for resulting value
    *     and return once awaited promise is resolved.
    * @param {boolean} returnByValue
    *     Whether the result is expected to be a JSON object
    *     that should be sent by value.
    *
-   * @return {Object} A multi-form object depending if the execution
+   * @returns {object} A multi-form object depending if the execution
    *   succeed or failed. If the expression failed to evaluate,
    *   it will return an object with an `exceptionDetails` attribute
    *   matching the `ExceptionDetails` CDP type. Otherwise it will
@@ -378,7 +378,7 @@ export class ExecutionContext {
    *
    * @param {Debugger.Object} debuggerObj
    *  The object to serialize
-   * @return {RemoteObject}
+   * @returns {RemoteObject}
    *  The serialized description of the given object
    */
   _toRemoteObject(debuggerObj) {
@@ -476,7 +476,7 @@ export class ExecutionContext {
    *
    * @param {Debugger.Object} debuggerObj
    *  The object to serialize
-   * @return {RemoteObject}
+   * @returns {RemoteObject}
    *  The serialized description of the given object
    */
   _toRemoteObjectByValue(debuggerObj) {
@@ -518,10 +518,10 @@ export class ExecutionContext {
   /**
    * Convert a given `Debugger.Object` to an object.
    *
-   * @param {Debugger.Object} obj
+   * @param {Debugger.Object} debuggerObj
    *  The object to convert
    *
-   * @return {Object}
+   * @returns {object}
    *  The converted object
    */
   _serialize(debuggerObj) {

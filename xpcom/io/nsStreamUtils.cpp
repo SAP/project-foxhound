@@ -533,7 +533,9 @@ class nsStreamCopierIB final : public nsAStreamCopier {
     uint32_t n;
     *aSourceCondition =
         mSource->ReadSegments(ConsumeInputBuffer, &state, mChunkSize, &n);
-    *aSinkCondition = state.mSinkCondition;
+    *aSinkCondition = NS_SUCCEEDED(state.mSinkCondition) && n == 0
+                          ? mSink->StreamStatus()
+                          : state.mSinkCondition;
     return n;
   }
 
@@ -575,7 +577,9 @@ class nsStreamCopierOB final : public nsAStreamCopier {
     uint32_t n;
     *aSinkCondition =
         mSink->WriteSegments(FillOutputBuffer, &state, mChunkSize, &n);
-    *aSourceCondition = state.mSourceCondition;
+    *aSourceCondition = NS_SUCCEEDED(state.mSourceCondition) && n == 0
+                            ? mSource->StreamStatus()
+                            : state.mSourceCondition;
     return n;
   }
 

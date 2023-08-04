@@ -23,7 +23,6 @@
 #include "mozilla/SVGContentUtils.h"
 #include "mozilla/SVGObserverUtils.h"
 #include "mozilla/SVGUtils.h"
-#include "nsDisplayList.h"
 #include "nsGkAtoms.h"
 #include "nsLayoutUtils.h"
 #include "SVGAnimatedTransformList.h"
@@ -53,40 +52,6 @@ NS_QUERYFRAME_HEAD(SVGGeometryFrame)
   NS_QUERYFRAME_ENTRY(ISVGDisplayableFrame)
   NS_QUERYFRAME_ENTRY(SVGGeometryFrame)
 NS_QUERYFRAME_TAIL_INHERITING(nsIFrame)
-
-void DisplaySVGGeometry::HitTest(nsDisplayListBuilder* aBuilder,
-                                 const nsRect& aRect, HitTestState* aState,
-                                 nsTArray<nsIFrame*>* aOutFrames) {
-  SVGGeometryFrame* frame = static_cast<SVGGeometryFrame*>(mFrame);
-  nsPoint pointRelativeToReferenceFrame = aRect.Center();
-  // ToReferenceFrame() includes frame->GetPosition(), our user space position.
-  nsPoint userSpacePtInAppUnits = pointRelativeToReferenceFrame -
-                                  (ToReferenceFrame() - frame->GetPosition());
-  gfxPoint userSpacePt =
-      gfxPoint(userSpacePtInAppUnits.x, userSpacePtInAppUnits.y) /
-      AppUnitsPerCSSPixel();
-  if (frame->GetFrameForPoint(userSpacePt)) {
-    aOutFrames->AppendElement(frame);
-  }
-}
-
-void DisplaySVGGeometry::Paint(nsDisplayListBuilder* aBuilder,
-                               gfxContext* aCtx) {
-  uint32_t appUnitsPerDevPixel = mFrame->PresContext()->AppUnitsPerDevPixel();
-
-  // ToReferenceFrame includes our mRect offset, but painting takes
-  // account of that too. To avoid double counting, we subtract that
-  // here.
-  nsPoint offset = ToReferenceFrame() - mFrame->GetPosition();
-
-  gfxPoint devPixelOffset =
-      nsLayoutUtils::PointToGfxPoint(offset, appUnitsPerDevPixel);
-
-  gfxMatrix tm = SVGUtils::GetCSSPxToDevPxMatrix(mFrame) *
-                 gfxMatrix::Translation(devPixelOffset);
-  imgDrawingParams imgParams(aBuilder->GetImageDecodeFlags());
-  static_cast<SVGGeometryFrame*>(mFrame)->PaintSVG(*aCtx, tm, imgParams);
-}
 
 //----------------------------------------------------------------------
 // nsIFrame methods
@@ -171,9 +136,8 @@ void SVGGeometryFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
       return;
     }
     const auto* styleSVG = StyleSVG();
-    if (Type() != LayoutFrameType::SVGImage && styleSVG->mFill.kind.IsNone() &&
-        styleSVG->mStroke.kind.IsNone() && styleSVG->mMarkerEnd.IsNone() &&
-        styleSVG->mMarkerMid.IsNone() && styleSVG->mMarkerStart.IsNone()) {
+    if (styleSVG->mFill.kind.IsNone() && styleSVG->mStroke.kind.IsNone() &&
+        !styleSVG->HasMarker()) {
       return;
     }
 
@@ -237,7 +201,7 @@ nsIFrame* SVGGeometryFrame::GetFrameForPoint(const gfxPoint& aPoint) {
     hitTestFlags = SVG_HIT_TEST_FILL;
     fillRule = SVGUtils::ToFillRule(StyleSVG()->mClipRule);
   } else {
-    hitTestFlags = GetHitTestFlags();
+    hitTestFlags = SVGUtils::GetGeometryHitTestFlags(this);
     if (!hitTestFlags) {
       return nullptr;
     }
@@ -309,8 +273,9 @@ void SVGGeometryFrame::ReflowSVG() {
   // for hit testing, which means that for certain values of 'pointer-events'
   // it needs to include the geometry of the fill or stroke even when the fill/
   // stroke don't actually render (e.g. when stroke="none" or
-  // stroke-opacity="0"). GetHitTestFlags() accounts for 'pointer-events'.
-  uint16_t hitTestFlags = GetHitTestFlags();
+  // stroke-opacity="0"). GetGeometryHitTestFlags() accounts for
+  // 'pointer-events'.
+  uint16_t hitTestFlags = SVGUtils::GetGeometryHitTestFlags(this);
   if ((hitTestFlags & SVG_HIT_TEST_FILL)) {
     flags |= SVGUtils::eBBoxIncludeFillGeometry;
   }
@@ -535,7 +500,7 @@ SVGBBox SVGGeometryFrame::GetBBoxContribution(const Matrix& aToBBoxUserspace,
   }
 
   // Account for markers:
-  if ((aFlags & SVGUtils::eBBoxIncludeMarkers) != 0 && element->IsMarkable()) {
+  if ((aFlags & SVGUtils::eBBoxIncludeMarkers) && element->IsMarkable()) {
     SVGMarkerFrame* markerFrames[SVGMark::eTypeCount];
     if (SVGObserverUtils::GetAndObserveMarkers(this, &markerFrames)) {
       nsTArray<SVGMark> marks;
@@ -727,8 +692,7 @@ bool SVGGeometryFrame::IsInvisible() const {
     }
   }
 
-  if (style->mMarkerStart.IsUrl() || style->mMarkerMid.IsUrl() ||
-      style->mMarkerEnd.IsUrl()) {
+  if (style->HasMarker()) {
     return false;
   }
 
@@ -778,9 +742,7 @@ bool SVGGeometryFrame::CreateWebRenderCommands(
     return false;
   }
 
-  SVGMarkerFrame* markerFrames[SVGMark::eTypeCount];
-  if (element->IsMarkable() &&
-      SVGObserverUtils::GetAndObserveMarkers(this, &markerFrames)) {
+  if (style->HasMarker() && element->IsMarkable()) {
     // Markers aren't suppported yet.
     return false;
   }
@@ -869,7 +831,4 @@ float SVGGeometryFrame::GetStrokeWidthForMarkers() {
   return strokeWidth;
 }
 
-uint16_t SVGGeometryFrame::GetHitTestFlags() {
-  return SVGUtils::GetGeometryHitTestFlags(this);
-}
 }  // namespace mozilla

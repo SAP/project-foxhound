@@ -10,15 +10,15 @@ const {
   _ExperimentFeature: ExperimentFeature,
 
   ExperimentAPI,
-} = ChromeUtils.import("resource://nimbus/ExperimentAPI.jsm");
-const { ExperimentTestUtils } = ChromeUtils.import(
-  "resource://testing-common/NimbusTestUtils.jsm"
+} = ChromeUtils.importESModule("resource://nimbus/ExperimentAPI.sys.mjs");
+const { ExperimentTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/NimbusTestUtils.sys.mjs"
 );
-const { ExperimentManager } = ChromeUtils.import(
-  "resource://nimbus/lib/ExperimentManager.jsm"
+const { ExperimentManager } = ChromeUtils.importESModule(
+  "resource://nimbus/lib/ExperimentManager.sys.mjs"
 );
-const { RemoteSettingsExperimentLoader } = ChromeUtils.import(
-  "resource://nimbus/lib/RemoteSettingsExperimentLoader.jsm"
+const { RemoteSettingsExperimentLoader } = ChromeUtils.importESModule(
+  "resource://nimbus/lib/RemoteSettingsExperimentLoader.sys.mjs"
 );
 
 const FOO_FAKE_FEATURE_MANIFEST = {
@@ -345,6 +345,19 @@ add_task(async function test_finalizeRemoteConfigs_cleanup() {
   featureFoo.onUpdate(stubFoo);
   featureBar.onUpdate(stubBar);
   let cleanupPromise = new Promise(resolve => featureBar.onUpdate(resolve));
+
+  // stubFoo and stubBar will be called because the store is ready. We are not interested in these calls.
+  // Reset call history and check calls stats after cleanup.
+  Assert.ok(
+    stubFoo.called,
+    "feature foo update triggered becuase store is ready"
+  );
+  Assert.ok(
+    stubBar.called,
+    "feature bar update triggered because store is ready"
+  );
+  stubFoo.resetHistory();
+  stubBar.resetHistory();
 
   Services.prefs.setStringPref(
     `${SYNC_DEFAULTS_PREF_BRANCH}foo`,

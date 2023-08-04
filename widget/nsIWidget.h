@@ -9,6 +9,7 @@
 
 #include <cmath>
 #include <cstdint>
+#include "imgIContainer.h"
 #include "ErrorList.h"
 #include "Units.h"
 #include "mozilla/AlreadyAddRefed.h"
@@ -46,7 +47,6 @@
 // forward declarations
 class nsIBidiKeyboard;
 class nsIRollupListener;
-class imgIContainer;
 class nsIContent;
 class ViewWrapper;
 class nsIRunnable;
@@ -119,7 +119,6 @@ typedef void* nsNativeWidget;
 #define NS_NATIVE_GRAPHIC 1
 #define NS_NATIVE_TMP_WINDOW 2
 #define NS_NATIVE_WIDGET 3
-#define NS_NATIVE_DISPLAY 4
 #define NS_NATIVE_REGION 5
 #define NS_NATIVE_OFFSETX 6
 #define NS_NATIVE_OFFSETY 7
@@ -687,6 +686,14 @@ class nsIWidget : public nsISupports {
    *
    */
   virtual bool IsVisible() const = 0;
+
+  /**
+   * Returns whether the window has allocated resources so
+   * we can paint into it.
+   * Recently it's used on Linux/Gtk where we should not paint
+   * to invisible window.
+   */
+  virtual bool IsMapped() const { return true; }
 
   /**
    * Perform platform-dependent sanity check on a potential window position.
@@ -1986,11 +1993,6 @@ class nsIWidget : public nsISupports {
    * return the compositor which is doing that on our behalf.
    */
   virtual CompositorBridgeChild* GetRemoteRenderer() { return nullptr; }
-
-  /**
-   * If there is a remote renderer, pause or resume it.
-   */
-  virtual void PauseOrResumeCompositor(bool aPause);
 
   /**
    * Clear WebRender resources

@@ -2897,6 +2897,20 @@ bool AppWindow::RequestWindowClose(nsIWidget* aWidget) {
 }
 
 void AppWindow::SizeModeChanged(nsSizeMode aSizeMode) {
+  const bool wasWidgetInFullscreen = mIsWidgetInFullscreen;
+  // Fullscreen and minimized states are usually compatible, and the widget
+  // typically returns to fullscreen after restoration. By not updating the
+  // widget's fullscreen state while it is minimized, we can avoid unnecessary
+  // fullscreen exits, such as those encountered in bug 1823284.
+  if (aSizeMode != nsSizeMode_Minimized) {
+    mIsWidgetInFullscreen = aSizeMode == nsSizeMode_Fullscreen;
+  }
+
+  const bool fullscreenChanged = wasWidgetInFullscreen != mIsWidgetInFullscreen;
+  if (fullscreenChanged) {
+    FullscreenWillChange(mIsWidgetInFullscreen);
+  }
+
   // An alwaysRaised (or higher) window will hide any newly opened normal
   // browser windows, so here we just drop a raised window to the normal
   // zlevel if it's maximized. We make no provision for automatically
@@ -2940,6 +2954,10 @@ void AppWindow::SizeModeChanged(nsSizeMode aSizeMode) {
     presShell->GetPresContext()->SizeModeChanged(aSizeMode);
   }
 
+  if (fullscreenChanged) {
+    FullscreenChanged(mIsWidgetInFullscreen);
+  }
+
   // Note the current implementation of SetSizeMode just stores
   // the new state; it doesn't actually resize. So here we store
   // the state and pass the event on to the OS. The day is coming
@@ -2963,7 +2981,23 @@ void AppWindow::FullscreenWillChange(bool aInFullscreen) {
     }
   }
   MOZ_ASSERT(mFullscreenChangeState == FullscreenChangeState::NotChanging);
-  mFullscreenChangeState = FullscreenChangeState::WillChange;
+
+  int32_t winWidth = 0;
+  int32_t winHeight = 0;
+  GetSize(&winWidth, &winHeight);
+
+  int32_t screenWidth = 0;
+  int32_t screenHeight = 0;
+  GetAvailScreenSize(&screenWidth, &screenHeight);
+
+  // Check if the window is already at the expected dimensions. If it is, set
+  // the fullscreen change state to WidgetResized to avoid waiting for a resize
+  // event. On macOS, a fullscreen window could be slightly higher than
+  // available screen size because of the OS menu bar isn't yet hidden.
+  mFullscreenChangeState =
+      (aInFullscreen == (winWidth == screenWidth && winHeight >= screenHeight))
+          ? FullscreenChangeState::WidgetResized
+          : FullscreenChangeState::WillChange;
 }
 
 void AppWindow::FullscreenChanged(bool aInFullscreen) {
@@ -3436,17 +3470,6 @@ void AppWindow::WidgetListenerDelegate::SizeModeChanged(nsSizeMode aSizeMode) {
 void AppWindow::WidgetListenerDelegate::UIResolutionChanged() {
   RefPtr<AppWindow> holder = mAppWindow;
   holder->UIResolutionChanged();
-}
-
-void AppWindow::WidgetListenerDelegate::FullscreenWillChange(
-    bool aInFullscreen) {
-  RefPtr<AppWindow> holder = mAppWindow;
-  holder->FullscreenWillChange(aInFullscreen);
-}
-
-void AppWindow::WidgetListenerDelegate::FullscreenChanged(bool aInFullscreen) {
-  RefPtr<AppWindow> holder = mAppWindow;
-  holder->FullscreenChanged(aInFullscreen);
 }
 
 void AppWindow::WidgetListenerDelegate::MacFullscreenMenubarOverlapChanged(

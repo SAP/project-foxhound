@@ -16,6 +16,8 @@
 
 namespace mozilla {
 
+class MFCDMProxy;
+
 /**
  * MFCDMParent is a wrapper class for the Media Foundation CDM in the utility
  * process.
@@ -33,7 +35,7 @@ class MFCDMParent final : public PMFCDMParent {
               nsISerialEventTarget* aManagerThread);
 
   static MFCDMParent* GetCDMById(uint64_t aId) {
-    MOZ_ASSERT(!sRegisteredCDMs.Contains(aId));
+    MOZ_ASSERT(sRegisteredCDMs.Contains(aId));
     return sRegisteredCDMs.Get(aId);
   }
   uint64_t Id() const { return mId; }
@@ -67,6 +69,8 @@ class MFCDMParent final : public PMFCDMParent {
     MOZ_ASSERT(mManagerThread->IsOnCurrentThread());
   }
 
+  already_AddRefed<MFCDMProxy> GetMFCDMProxy();
+
   void Destroy();
 
  private:
@@ -74,14 +78,8 @@ class MFCDMParent final : public PMFCDMParent {
 
   HRESULT LoadFactory();
 
-  void Register() {
-    MOZ_ASSERT(!sRegisteredCDMs.Contains(this->mId));
-    sRegisteredCDMs.InsertOrUpdate(this->mId, this);
-  }
-  void Unregister() {
-    MOZ_ASSERT(sRegisteredCDMs.Contains(this->mId));
-    sRegisteredCDMs.Remove(this->mId);
-  }
+  void Register();
+  void Unregister();
 
   void ConnectSessionEvents(MFCDMSession* aSession);
 

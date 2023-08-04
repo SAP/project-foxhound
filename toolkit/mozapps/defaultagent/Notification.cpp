@@ -50,6 +50,12 @@ static bool GetInitialNotificationShown() {
       .valueOr(false);
 }
 
+static bool ResetInitialNotificationShown() {
+  return RegistryDeleteValue(IsPrefixed::Unprefixed,
+                             L"InitialNotificationShown")
+      .isOk();
+}
+
 static bool SetFollowupNotificationShown(bool wasShown) {
   return !RegistrySetValueBool(IsPrefixed::Unprefixed,
                                L"FollowupNotificationShown", wasShown)
@@ -129,23 +135,6 @@ struct Strings {
   }
 };
 
-// Gets a string out of the specified INI file.
-// Returns true on success, false on failure
-static bool GetString(const wchar_t* iniPath, const char* section,
-                      const char* key,
-                      mozilla::UniquePtr<wchar_t[]>& toastString) {
-  IniReader reader(iniPath, section);
-  reader.AddKey(key, &toastString);
-  int result = reader.Read();
-  if (result != OK) {
-    LOG_ERROR_MESSAGE(
-        L"Unable to retrieve INI string: section=%S, key=%S, result=%d",
-        section, key, result);
-    return false;
-  }
-  return true;
-}
-
 // Gets all strings out of the relevant INI files.
 // Returns true on success, false on failure
 static bool GetStrings(Strings& strings) {
@@ -195,9 +184,9 @@ static bool GetStrings(Strings& strings) {
                localizedIniFormat, installPath.get());
 
   IniReader localizedReader(localizedIniPath.get());
-  localizedReader.AddKey("DefaultBrowserNotificationTitle",
+  localizedReader.AddKey("DefaultBrowserNotificationHeaderText",
                          &strings.localizedToast.text1);
-  localizedReader.AddKey("DefaultBrowserNotificationText",
+  localizedReader.AddKey("DefaultBrowserNotificationBodyText",
                          &strings.localizedToast.text2);
   localizedReader.AddKey("DefaultBrowserNotificationYesButtonText",
                          &strings.localizedToast.action1);
@@ -332,10 +321,10 @@ class ToastHandler : public WinToastLib::IWinToastHandler {
     activitiesPerformed.shown = NotificationShown::Shown;
     activitiesPerformed.action = NotificationAction::ToastClicked;
 
-    // An activation without clicking a specific button does not clearly
-    // signal that the default should be changed, so just show the settings
-    // dialog instead of SetDefaultBrowserFromNotification().
-    LaunchModernSettingsDialogDefaultApps();
+    // Notification strings are written to indicate the default browser is
+    // restored to Firefox when the notification body is clicked to prevent
+    // ambiguity when buttons aren't pressed.
+    SetDefaultBrowserFromNotification(mAumiStr.c_str());
 
     FinishHandler(activitiesPerformed);
   }
@@ -543,31 +532,13 @@ static NotificationActivities ShowNotification(
   return activitiesPerformed;
 }
 
-// This function checks that the Firefox build is using English. This is checked
-// because of the peculiar way we are localizing toast notifications where we
-// use a completely different set of strings in English.
-bool FirefoxInstallIsEnglish() {
-  mozilla::UniquePtr<wchar_t[]> installPath;
-  bool success = GetInstallDirectory(installPath);
-  if (!success) {
-    LOG_ERROR_MESSAGE(L"Failed to get install directory when getting strings");
-    return false;
-  }
-  const wchar_t* iniFormat = L"%s\\locale.ini";
-  int bufferSize = _scwprintf(iniFormat, installPath.get());
-  ++bufferSize;  // Extra character for terminating null
-  mozilla::UniquePtr<wchar_t[]> iniPath =
-      mozilla::MakeUnique<wchar_t[]>(bufferSize);
-  _snwprintf_s(iniPath.get(), bufferSize, _TRUNCATE, iniFormat,
-               installPath.get());
-
-  mozilla::UniquePtr<wchar_t[]> firefoxLocale;
-  if (!GetString(iniPath.get(), "locale", "locale", firefoxLocale)) {
-    return false;
-  }
-
-  return _wcsnicmp(firefoxLocale.get(), L"en-", 3) == 0;
-}
+// Previously this function checked that the Firefox build was using English.
+// This was checked because of the peculiar way we were localizing toast
+// notifications where we used a completely different set of strings in English.
+//
+// We've since unified the notification flows but need to clean up unused code
+// and config files - Bug 1826375.
+bool FirefoxInstallIsEnglish() { return false; }
 
 // If a notification is shown, this function will block until the notification
 // is activated or dismissed.
@@ -584,6 +555,12 @@ NotificationActivities MaybeShowNotification(
     // Notifications aren't shown in versions prior to Windows 10 because the
     // notification API we want isn't available.
     return activitiesPerformed;
+  }
+
+  // Reset notification state machine, user setting default browser to Firefox
+  // is a strong signal that they intend to have it as the default browser.
+  if (browserInfo.currentDefaultBrowser == Browser::Firefox) {
+    ResetInitialNotificationShown();
   }
 
   bool initialNotificationShown = GetInitialNotificationShown();

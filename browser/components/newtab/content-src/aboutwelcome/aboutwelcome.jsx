@@ -70,7 +70,7 @@ class AboutWelcome extends React.PureComponent {
     return (
       <MultiStageAboutWelcome
         message_id={props.messageId}
-        screens={props.screens}
+        defaultScreens={props.screens}
         updateHistory={!props.disableHistoryUpdates}
         metricsFlowUri={this.state.metricsFlowUri}
         utm_term={props.UTMTerm}
@@ -132,7 +132,7 @@ async function mount() {
       UTMTerm={UTMTerm}
       {...aboutWelcomeProps}
     />,
-    document.getElementById("root")
+    document.getElementById("multi-stage-message-root")
   );
 }
 

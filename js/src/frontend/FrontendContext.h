@@ -15,6 +15,7 @@
 
 #include "js/AllocPolicy.h"     // SystemAllocPolicy, AllocFunction
 #include "js/ErrorReport.h"     // JSErrorCallback, JSErrorFormatString
+#include "js/Modules.h"         // JS::ImportAssertionVector
 #include "js/Vector.h"          // Vector
 #include "vm/ErrorReporting.h"  // CompileError
 #include "vm/MallocProvider.h"  // MallocProvider
@@ -70,6 +71,8 @@ class FrontendContext {
 
   js::SharedScriptDataTableHolder* scriptDataTableHolder_;
 
+  JS::ImportAssertionVector supportedImportAssertions_;
+
  protected:
   // (optional) Current JSContext to support main-thread-specific
   // handling for error reporting, GC, and memory allocation.
@@ -82,7 +85,8 @@ class FrontendContext {
       : alloc_(this),
         nameCollectionPool_(nullptr),
         ownNameCollectionPool_(false),
-        scriptDataTableHolder_(&js::globalSharedScriptDataTableHolder) {}
+        scriptDataTableHolder_(&js::globalSharedScriptDataTableHolder),
+        supportedImportAssertions_() {}
   ~FrontendContext();
 
   bool allocateOwnedPool();
@@ -115,6 +119,12 @@ class FrontendContext {
   //   * Main-thread-specific operation, such as operating on JSAtom
   //   * Optional operation, such as providing better error message
   JSContext* maybeCurrentJSContext() { return maybeCx_; }
+
+  const JS::ImportAssertionVector& getSupportedImportAssertions() const {
+    return supportedImportAssertions_;
+  }
+  bool setSupportedImportAssertions(
+      const JS::ImportAssertionVector& supportedImportAssertions);
 
   enum class Warning { Suppress, Report };
 
@@ -225,6 +235,14 @@ class ManualReportFrontendContext : public FrontendContext {
     convertToRuntimeError(cx_);
   }
 };
+
+// Create function for FrontendContext, which is manually allocated and
+// exclusively owned.
+extern FrontendContext* NewFrontendContext();
+
+// Destroy function for FrontendContext, which was allocated with
+// NewFrontendContext.
+extern void DestroyFrontendContext(FrontendContext* fc);
 
 }  // namespace js
 

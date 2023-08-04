@@ -24,12 +24,12 @@ EXTRA_COMPONENTS += [
 ]
 
 EXTRA_JS_MODULES += [
-    "ContentBlockingAllowList.jsm",
-    "PartitioningExceptionListService.jsm",
-    "PurgeTrackerService.jsm",
-    "TrackingDBService.jsm",
-    "URLDecorationAnnotationsService.jsm",
-    "URLQueryStrippingListService.jsm",
+    "ContentBlockingAllowList.sys.mjs",
+    "PartitioningExceptionListService.sys.mjs",
+    "PurgeTrackerService.sys.mjs",
+    "TrackingDBService.sys.mjs",
+    "URLDecorationAnnotationsService.sys.mjs",
+    "URLQueryStrippingListService.sys.mjs",
 ]
 
 XPCOM_MANIFESTS += [
@@ -93,7 +93,5 @@ if CONFIG["MOZ_BUILD_APP"] != "mobile/android":
 XPCSHELL_TESTS_MANIFESTS += ["test/xpcshell/xpcshell.ini"]
 
 TEST_DIRS += ["test/gtest"]
-
-REQUIRES_UNIFIED_BUILD = True
 
 SPHINX_TREES["anti-tracking"] = "docs"

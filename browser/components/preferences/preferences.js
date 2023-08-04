@@ -83,7 +83,9 @@ ChromeUtils.defineESModuleGetters(this, {
   BrowserUtils: "resource://gre/modules/BrowserUtils.sys.mjs",
   ContextualIdentityService:
     "resource://gre/modules/ContextualIdentityService.sys.mjs",
+  FeatureGate: "resource://featuregates/FeatureGate.sys.mjs",
   FileUtils: "resource://gre/modules/FileUtils.sys.mjs",
+  NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
   OSKeyStore: "resource://gre/modules/OSKeyStore.sys.mjs",
   PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
   QuickSuggest: "resource:///modules/QuickSuggest.sys.mjs",
@@ -97,17 +99,14 @@ ChromeUtils.defineESModuleGetters(this, {
 });
 
 XPCOMUtils.defineLazyModuleGetters(this, {
-  AMTelemetry: "resource://gre/modules/AddonManager.jsm",
   DownloadUtils: "resource://gre/modules/DownloadUtils.jsm",
   ExtensionPreferencesManager:
     "resource://gre/modules/ExtensionPreferencesManager.jsm",
   ExtensionSettingsStore: "resource://gre/modules/ExtensionSettingsStore.jsm",
-  FeatureGate: "resource://featuregates/FeatureGate.jsm",
   FirefoxRelay: "resource://gre/modules/FirefoxRelay.jsm",
   HomePage: "resource:///modules/HomePage.jsm",
   LangPackMatcher: "resource://gre/modules/LangPackMatcher.jsm",
   LoginHelper: "resource://gre/modules/LoginHelper.jsm",
-  NimbusFeatures: "resource://nimbus/ExperimentAPI.jsm",
   SelectionChangedMenulist: "resource:///modules/SelectionChangedMenulist.jsm",
   SiteDataManager: "resource:///modules/SiteDataManager.jsm",
   TransientPrefs: "resource:///modules/TransientPrefs.jsm",
@@ -283,10 +282,6 @@ function init_all() {
       }
       let mainWindow = window.browsingContext.topChromeWindow;
       mainWindow.BrowserOpenAddonsMgr();
-      AMTelemetry.recordLinkEvent({
-        object: "aboutPreferences",
-        value: "about:addons",
-      });
     });
 
     document.dispatchEvent(

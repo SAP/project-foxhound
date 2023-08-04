@@ -54,13 +54,13 @@ ObliviousHttpChannel::SetTopLevelContentWindowId(uint64_t aWindowId) {
 }
 
 NS_IMETHODIMP
-ObliviousHttpChannel::GetTopBrowsingContextId(uint64_t* aWindowId) {
-  return mInnerChannel->GetTopBrowsingContextId(aWindowId);
+ObliviousHttpChannel::GetBrowserId(uint64_t* aWindowId) {
+  return mInnerChannel->GetBrowserId(aWindowId);
 }
 
 NS_IMETHODIMP
-ObliviousHttpChannel::SetTopBrowsingContextId(uint64_t aId) {
-  return mInnerChannel->SetTopBrowsingContextId(aId);
+ObliviousHttpChannel::SetBrowserId(uint64_t aId) {
+  return mInnerChannel->SetBrowserId(aId);
 }
 
 NS_IMETHODIMP
@@ -834,6 +834,26 @@ NS_IMETHODIMP ObliviousHttpChannel::CloneUploadStream(
     int64_t* aContentLength, nsIInputStream** _retval) {
   LOG(("ObliviousHttpChannel::CloneUploadStream NOT IMPLEMENTED [this=%p]",
        this));
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP ObliviousHttpChannel::SetClassicScriptHintCharset(
+    const nsAString& aClassicScriptHintCharset) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP ObliviousHttpChannel::GetClassicScriptHintCharset(
+    nsAString& aClassicScriptHintCharset) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP ObliviousHttpChannel::SetDocumentCharacterSet(
+    const nsAString& aDocumentCharacterSet) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP ObliviousHttpChannel::GetDocumentCharacterSet(
+    nsAString& aDocumenharacterSet) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 

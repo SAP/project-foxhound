@@ -39,6 +39,7 @@
 #include "mozilla/TimelineConsumers.h"
 #include "mozilla/EventTimelineMarker.h"
 #include "mozilla/TimeStamp.h"
+#include "mozilla/dom/ChromeUtils.h"
 
 #include "EventListenerService.h"
 #include "nsCOMPtr.h"
@@ -116,6 +117,7 @@ EventListenerManagerBase::EventListenerManagerBase()
       mMayHaveInputOrCompositionEventListener(false),
       mMayHaveSelectionChangeEventListener(false),
       mMayHaveFormSelectEventListener(false),
+      mMayHaveTransitionEventListener(false),
       mClearingListeners(false),
       mIsMainThreadELM(NS_IsMainThread()),
       mHasNonPrivilegedClickListeners(false),
@@ -461,6 +463,16 @@ void EventListenerManager::AddEventListenerInternal(
           if (Document* doc = window->GetExtantDoc()) {
             doc->SetUseCounter(eUseCounter_custom_onmozmousepixelscroll);
           }
+        }
+        break;
+      case eTransitionStart:
+      case eTransitionRun:
+      case eTransitionEnd:
+      case eTransitionCancel:
+      case eWebkitTransitionEnd:
+        mMayHaveTransitionEventListener = true;
+        if (nsPIDOMWindowInner* window = GetInnerWindowForTarget()) {
+          window->SetHasTransitionEventListeners();
         }
         break;
       default:
@@ -1302,7 +1314,10 @@ nsresult EventListenerManager::HandleEventSubType(Listener* aListener,
   }
 
   if (NS_SUCCEEDED(result)) {
-    EventCallbackDebuggerNotificationGuard dbgGuard(aCurrentTarget, aDOMEvent);
+    Maybe<EventCallbackDebuggerNotificationGuard> dbgGuard;
+    if (dom::ChromeUtils::IsDevToolsOpened()) {
+      dbgGuard.emplace(aCurrentTarget, aDOMEvent);
+    }
     nsAutoMicroTask mt;
 
     // Event::currentTarget is set in EventDispatcher.

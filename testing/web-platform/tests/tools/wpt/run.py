@@ -110,7 +110,7 @@ otherwise install OpenSSL and ensure that it's on your $PATH.""")
 def check_environ(product):
     if product not in ("android_weblayer", "android_webview", "chrome",
                        "chrome_android", "chrome_ios", "content_shell",
-                       "firefox", "firefox_android", "servo"):
+                       "firefox", "firefox_android", "servo", "wktr"):
         config_builder = serve.build_config(os.path.join(wpt_root, "config.json"))
         # Override the ports to avoid looking for free ports
         config_builder.ssl = {"type": "none"}
@@ -273,6 +273,7 @@ Consider installing certutil via your OS package manager or directly.""")
         # Allow WebRTC tests to call getUserMedia.
         kwargs["extra_prefs"].append("media.navigator.streams.fake=true")
 
+        kwargs["enable_webtransport_h3"] = True
 
 class FirefoxAndroid(BrowserSetup):
     name = "firefox_android"
@@ -329,6 +330,7 @@ class FirefoxAndroid(BrowserSetup):
                 raise WptrunError("app %s not installed on device %s" %
                                   (app, device_serial))
 
+        kwargs["enable_webtransport_h3"] = True
 
 class Chrome(BrowserSetup):
     name = "chrome"
@@ -686,6 +688,17 @@ class WebKit(BrowserSetup):
         pass
 
 
+class WebKitTestRunner(BrowserSetup):
+    name = "wktr"
+    browser_cls = browser.WebKitTestRunner
+
+    def install(self, channel=None):
+        raise NotImplementedError
+
+    def setup_kwargs(self, kwargs):
+        pass
+
+
 class WebKitGTKMiniBrowser(BrowserSetup):
     name = "webkitgtk_minibrowser"
     browser_cls = browser.WebKitGTKMiniBrowser
@@ -755,6 +768,7 @@ product_setup = {
     "sauce": Sauce,
     "opera": Opera,
     "webkit": WebKit,
+    "wktr": WebKitTestRunner,
     "webkitgtk_minibrowser": WebKitGTKMiniBrowser,
     "epiphany": Epiphany,
 }

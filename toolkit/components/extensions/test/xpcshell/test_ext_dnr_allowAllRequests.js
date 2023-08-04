@@ -526,6 +526,9 @@ add_task(async function allowAllRequests_initiatorDomains_dnrWithHostAccess() {
     {
       id: 1,
       condition: {
+        // This test shows that it does not matter whether initiatorDomains is
+        // in host_permissions; it only matters if the frame's URL is matched
+        // by host_permissions.
         initiatorDomains: ["example.net"], // Not in host_permissions.
         resourceTypes: ["sub_frame"],
       },
@@ -539,26 +542,45 @@ add_task(async function allowAllRequests_initiatorDomains_dnrWithHostAccess() {
   ];
 
   const extension = await loadExtensionWithDNRRules(rules, {
-    host_permissions: ["*://example.com/*", "*://example.org/*"],
+    host_permissions: ["*://example.org/*"],
     permissions: ["declarativeNetRequestWithHostAccess"],
   });
 
+  const testCanFetch = async () => {
+    // example.org is in host_permissions above so "xmlhttprequest" rule is
+    // always expected to match this, unless "allowAllRequests" applied.
+    // If "allowAllRequests" applies, then expectedResult: "fetchAllowed".
+    // If "allowAllRequests" did not apply, then expectedError: FETCH_BLOCKED.
+    return (await fetch("http://example.org/allowed")).text();
+  };
+
   await testLoadInFrame({
-    description: "sub_frame loaded by initiator not in host_permissions",
+    description:
+      "frame URL in host_permissions despite initiator not in host_permissions",
     domains: ["example.com", "example.net", "example.org"],
-    jsForFrame: async () => {
-      try {
-        await (await fetch("http://example.com/allowed")).text();
-        return true; // Result if the allowAllRequests rule applied.
-      } catch (e) {
-        return false; // Result if the allowAllRequests rule did not apply.
-      }
-    },
+    jsForFrame: testCanFetch,
     // The "xmlhttprequest" block rule applies because the request URL
-    // (example.com) and initiator (example.org) are part of host_permissions.
-    // The "allowAllRequests" rule does not apply, because "example.net" is not
-    // part of host_permissions.
-    expectedResult: false,
+    // (example.org) and initiator (example.org) are part of host_permissions.
+    //
+    // The "allowAllRequests" rule applies and overrides the block because the
+    // "example.org" frame has "example.net" as initiator (as specified in the
+    // initiatorDomains DNR rule). Despite the lack of host_permissions for
+    // "example.net", the DNR rule is matched because navigation requests do
+    // not require host permissions.
+    expectedResult: "fetchAllowed",
+  });
+
+  await testLoadInFrame({
+    description: "frame URL and initiator not in host_permissions",
+    domains: ["example.net", "example.com", "example.org"],
+    jsForFrame: testCanFetch,
+    // The "xmlhttprequest" block rule applies because the request URL
+    // (example.org) and initiator (example.org) are part of host_permissions.
+    //
+    // The "allowAllRequests" rule does not apply because it would only apply
+    // to the "example.com" frame (that frame has "example.net" as initiator),
+    // but the DNR extension does not have host permissions for example.com.
+    expectedError: FETCH_BLOCKED,
   });
 
   await extension.unload();
@@ -1051,6 +1073,159 @@ add_task(
     );
 
     await contentPage.close();
+    await extension.unload();
+  }
+);
+
+add_task(
+  {
+    // Usually, back/forward navigation to a POST form requires the user to
+    // confirm the form resubmission. Set pref to approve without prompting.
+    pref_set: [["dom.confirm_repost.testing.always_accept", true]],
+  },
+  async function allowAllRequests_navigate_with_http_method_POST() {
+    const rules = [
+      {
+        id: 1,
+        condition: {
+          requestMethods: ["post"],
+          resourceTypes: ["main_frame", "sub_frame"],
+        },
+        action: { type: "allowAllRequests" },
+      },
+      {
+        id: 2,
+        condition: { resourceTypes: ["xmlhttprequest"] },
+        action: { type: "block" },
+      },
+    ];
+
+    if (!Services.appinfo.sessionHistoryInParent) {
+      // POST detection relies on SHIP being enabled. This is true by default,
+      // but there are some test configurations with SHIP disabled. When SHIP
+      // is disabled, all methods are interpreted as GET instead of POST.
+      // Rewrite the rule to specifically match the POST requests that are
+      // misinterpreted as GET, to verify that the request evaluation by DNR is
+      // functional (opposed to throwing errors).
+      rules[0].condition.requestMethods = ["get"];
+      rules[0].condition.urlFilter = "do_post|";
+      info(`WARNING: SHIP is disabled. POST will be misinterpreted as GET`);
+    }
+
+    const extension = await loadExtensionWithDNRRules(rules);
+
+    const contentPage = await ExtensionTestUtils.loadContentPage(
+      "http://example.com/?do_get"
+    );
+    async function checkCanFetch(url) {
+      return contentPage.spawn(url, async url => {
+        try {
+          return await (await content.fetch(url)).text();
+        } catch (e) {
+          return e.toString();
+        }
+      });
+    }
+
+    // Check fetch() with regular GET navigation in main_frame.
+    Assert.equal(
+      await checkCanFetch("http://example.net/never_reached"),
+      FETCH_BLOCKED,
+      "main_frame: non-POST not matched by requestMethods:['post']"
+    );
+
+    // Check fetch() after POST navigation in main_frame.
+    await contentPage.spawn(null, () => {
+      let form = content.document.createElement("form");
+      form.action = "/?do_post";
+      form.method = "POST";
+      content.document.body.append(form);
+      form.submit();
+    });
+    await TestUtils.waitForCondition(
+      () => contentPage.browsingContext.currentURI.pathQueryRef === "/?do_post",
+      "Waiting for navigation with POST to complete"
+    );
+    Assert.equal(
+      await checkCanFetch("http://example.net/allowed"),
+      "fetchAllowed",
+      "main_frame: requestMethods:['post'] applies to POST"
+    );
+
+    // Navigate back to the beginning and verify that allowAllRequests does not
+    // match any more.
+    await contentPage.spawn(null, () => {
+      content.history.back();
+    });
+    await TestUtils.waitForCondition(
+      () => contentPage.browsingContext.currentURI.pathQueryRef === "/?do_get",
+      "Waiting for (back) navigation to initial GET page to complete"
+    );
+    Assert.equal(
+      await checkCanFetch("http://example.net/never_reached"),
+      FETCH_BLOCKED,
+      "main_frame: back to non-POST not matched by requestMethods:['post']"
+    );
+
+    // Now navigate forwards to verify that the POST method is still seen.
+    await contentPage.spawn(null, () => {
+      content.history.forward();
+    });
+    await TestUtils.waitForCondition(
+      () => contentPage.browsingContext.currentURI.pathQueryRef === "/?do_post",
+      "Waiting for (forward) navigation to POST page to complete"
+    );
+
+    Assert.equal(
+      await checkCanFetch("http://example.net/allowed"),
+      "fetchAllowed",
+      "main_frame: requestMethods:['post'] detects POST after history.forward()"
+    );
+
+    // Now check that adding a new history entry drops the POST method.
+    await contentPage.spawn(null, () => {
+      content.history.pushState(null, null, "/?hist_p");
+    });
+    await TestUtils.waitForCondition(
+      () => contentPage.browsingContext.currentURI.pathQueryRef === "/?hist_p",
+      "Waiting for history.pushState to have changed the URL"
+    );
+    Assert.equal(
+      await checkCanFetch("http://example.net/never_reached"),
+      FETCH_BLOCKED,
+      "history.pushState drops POST, not matched by requestMethods:['post']"
+    );
+
+    await contentPage.close();
+
+    // Finally, check that POST detection also works for child frames.
+    await testLoadInFrame({
+      description: "sub_frame: non-POST not matched by requestMethods:['post']",
+      domains: ["example.com", "example.com"],
+      jsForFrame: async () => {
+        return (await fetch("http://example.com/allowed")).text();
+      },
+      expectedError: FETCH_BLOCKED,
+    });
+
+    await testLoadInFrame({
+      description: "sub_frame: requestMethods:['post'] applies to POST",
+      domains: ["example.com", "example.com"],
+      jsForFrame: async () => {
+        if (!location.href.endsWith("?do_post")) {
+          dump("Triggering navigation with POST\n");
+          let form = document.createElement("form");
+          form.action = location.href + "?do_post";
+          form.method = "POST";
+          document.body.append(form);
+          form.submit();
+          return "delay_postMessage";
+        }
+        dump("Navigation with POST completed; testing fetch()...\n");
+        return (await fetch("http://example.com/allowed")).text();
+      },
+      expectedResult: "fetchAllowed",
+    });
     await extension.unload();
   }
 );

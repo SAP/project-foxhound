@@ -77,9 +77,6 @@
 
 .ruleview-reveal-panel label {
   user-select: none;
-  flex-grow: 1;
-  width: 30%;
-  min-width: 100px;
   display: flex;
   align-items: center;
 }
@@ -87,6 +84,16 @@
 #pseudo-class-panel,
 #ruleview-class-panel .classes {
   padding: 0 3px;
+}
+
+/* Pseudo Class toggle panel */
+
+#pseudo-class-panel {
+  grid-template-columns: repeat(auto-fit, minmax(100px, max-content));
+}
+
+#pseudo-class-panel:not([hidden]) {
+  display: grid;
 }
 
 /* Class toggle panel */
@@ -107,6 +114,7 @@
 #ruleview-class-panel .classes label {
   flex: 0 0;
   max-width: 50%;
+  min-width: 100px;
 }
 
 #ruleview-class-panel .classes label span {
@@ -775,7 +783,7 @@ ul.ruleview-rule-ancestor-data {
   fill: var(--theme-icon-checked-color);
   /* Since the icon is quite thin, it can be hard to differentiate it
      from its regular state. Adding some background helps make it pop a bit */
-  background-color: var(--toolbarbutton-hover-background);
+  background-color: var(--dimmed-highlighter-box-content-color);
 }
 
 #ruleview-add-rule-button::before {

@@ -38,7 +38,6 @@
 #include "nsError.h"
 #include "nsDisplayList.h"
 #include "nsIBaseWindow.h"
-#include "nsBoxLayoutState.h"
 #include "nsCSSFrameConstructor.h"
 #include "nsBlockFrame.h"
 #include "nsPlaceholderFrame.h"

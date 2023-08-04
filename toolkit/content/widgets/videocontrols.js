@@ -937,7 +937,20 @@ this.VideoControlsImplWidget = class {
             this.reflowTriggeringCallValidator.isReflowTriggeringPropsAllowed = true;
             this.updateReflowedDimensions();
             this.reflowTriggeringCallValidator.isReflowTriggeringPropsAllowed = false;
+
+            let scrubberWasHidden = this.scrubberStack.hidden;
             this.adjustControlSize();
+            if (scrubberWasHidden && !this.scrubberStack.hidden) {
+              // requestAnimationFrame + setTimeout of 0ms is a best effort way to avoid
+              // triggering reflows, but cannot fully guarantee a reflow will not happen.
+              this.window.requestAnimationFrame(() =>
+                this.window.setTimeout(() => {
+                  this.reflowTriggeringCallValidator.isReflowTriggeringPropsAllowed = true;
+                  this.updateReflowedDimensions();
+                  this.reflowTriggeringCallValidator.isReflowTriggeringPropsAllowed = false;
+                }, 0)
+              );
+            }
             this.updatePictureInPictureToggleDisplay();
             break;
           case "fullscreenchange":
@@ -1181,6 +1194,7 @@ this.VideoControlsImplWidget = class {
 
         this.seekToPosition(time);
         this.showPosition(time, duration);
+        this.updateScrubberProgress();
 
         this.scrubber.isDragging = true;
         this.pauseVideoDuringDragging();
@@ -1234,15 +1248,28 @@ this.VideoControlsImplWidget = class {
         }
         this.log("durationMs is " + durationMs + "ms.\n");
 
-        // Update the scrubber only if it will move by at least 1 pixel
+        let scrubberProgress = Math.abs(
+          currentTimeMs / durationMs - this.scrubber.value / this.scrubber.max
+        );
+        let devPxProgress =
+          scrubberProgress *
+          this.reflowedDimensions.scrubberWidth *
+          this.window.devicePixelRatio;
+        // Hack: if we haven't updated the scrubber width to be non-0, but
+        // the scrubber stack is visible, assume there is progress.
+        // This should be rectified by the next time we do layout (see handling
+        // of resizevideocontrols events in handleEvent).
         if (
-          Math.abs(
-            currentTimeMs / durationMs - this.scrubber.value / this.scrubber.max
-          ) *
-            this.reflowedDimensions.scrubberWidth *
-            this.window.devicePixelRatio >
-          0.5
+          !this.reflowedDimensions.scrubberWidth &&
+          !this.scrubberStack.hidden
         ) {
+          devPxProgress = 1;
+        }
+        // Update the scrubber only if it will move by at least 1 pixel
+        // Note that this.scrubber.max can be "" if unitialized,
+        // and either or both of currentTimeMs or durationMs can be 0, leading
+        // to NaN or Infinity values for devPxProgress.
+        if (!this.scrubber.max || isNaN(devPxProgress) || devPxProgress > 0.5) {
           this.scrubber.max = durationMs;
           this.scrubber.value = currentTimeMs;
           this.updateScrubberProgress();
@@ -2876,7 +2903,7 @@ this.VideoControlsImplWidget = class {
                     <progress id="progressBar" class="progressBar" value="0" max="100" aria-hidden="true"></progress>
                   </div>
                 </div>
-                <input type="range" id="scrubber" class="scrubber" tabindex="-1" data-l10n-attrs="aria-valuetext"/>
+                <input type="range" id="scrubber" class="scrubber" tabindex="-1" data-l10n-attrs="aria-valuetext" value="0"/>
               </div>
               <bdi id="positionLabel" class="positionLabel" role="presentation"></bdi>
               <bdi id="durationLabel" class="durationLabel" role="presentation"></bdi>

@@ -3,8 +3,9 @@
 const { AboutWelcomeParent } = ChromeUtils.import(
   "resource:///actors/AboutWelcomeParent.jsm"
 );
-const { AboutWelcomeDefaults } = ChromeUtils.import(
-  "resource://activity-stream/aboutwelcome/lib/AboutWelcomeDefaults.jsm"
+
+const { AboutWelcomeTelemetry } = ChromeUtils.import(
+  "resource://activity-stream/aboutwelcome/lib/AboutWelcomeTelemetry.jsm"
 );
 const { AWScreenUtils } = ChromeUtils.import(
   "resource://activity-stream/lib/AWScreenUtils.jsm"
@@ -51,10 +52,6 @@ add_task(async function test_aboutwelcome_mr_template_telemetry() {
   const messageStub = sandbox.spy(aboutWelcomeActor, "onContentMessage");
   await clickVisibleButton(browser, ".action-buttons button.secondary");
 
-  registerCleanupFunction(() => {
-    sandbox.restore();
-  });
-
   const { callCount } = messageStub;
   ok(callCount >= 1, `${callCount} Stub was called`);
   let clickCall;
@@ -76,6 +73,65 @@ add_task(async function test_aboutwelcome_mr_template_telemetry() {
 });
 
 /**
+ * Telemetry Impression with Pin as First Screen
+ */
+add_task(async function test_aboutwelcome_pin_screen_impression() {
+  await pushPrefs(["browser.shell.checkDefaultBrowser", true]);
+
+  const sandbox = initSandbox();
+  sandbox
+    .stub(AWScreenUtils, "evaluateScreenTargeting")
+    .resolves(true)
+    .withArgs(
+      "os.windowsBuildNumber >= 15063 && !isDefaultBrowser && !doesAppNeedPin"
+    )
+    .resolves(false);
+
+  let impressionSpy = sandbox.spy(
+    AboutWelcomeTelemetry.prototype,
+    "sendTelemetry"
+  );
+
+  let { browser, cleanup } = await openMRAboutWelcome();
+  // Wait for screen elements to render before checking impression pings
+  await test_screen_content(
+    browser,
+    "Onboarding screen elements rendered",
+    // Expected selectors:
+    [
+      `main.screen[pos="split"]`,
+      "div.secondary-cta.top",
+      "button[value='secondary_button_top']",
+    ]
+  );
+
+  const { callCount } = impressionSpy;
+  ok(callCount >= 1, `${callCount} impressionSpy was called`);
+  let impressionCall;
+  for (let i = 0; i < callCount; i++) {
+    const call = impressionSpy.getCall(i);
+    info(`Call #${i}:  ${JSON.stringify(call.args[0])}`);
+    if (
+      call.calledWithMatch({ event: "IMPRESSION" }) &&
+      !call.calledWithMatch({ message_id: "MR_WELCOME_DEFAULT" })
+    ) {
+      info(`Screen Impression Call #${i}:  ${JSON.stringify(call.args[0])}`);
+      impressionCall = call;
+    }
+  }
+
+  Assert.ok(
+    impressionCall.args[0].message_id.startsWith(
+      "MR_WELCOME_DEFAULT_0_AW_PIN_FIREFOX_P"
+    ),
+    "Impression telemetry includes correct message id"
+  );
+  await cleanup();
+  sandbox.restore();
+  await popPrefs();
+});
+
+/**
  * Test MR template content - Browser is not Pinned and not set as default
  */
 add_task(async function test_aboutwelcome_mr_template_content() {
@@ -83,13 +139,13 @@ add_task(async function test_aboutwelcome_mr_template_content() {
 
   const sandbox = initSandbox();
 
-  const data = await AboutWelcomeDefaults.getDefaults();
-  const defaultMRArray = data.screens.filter(
-    screen => screen.id !== "AW_EASY_SETUP"
-  );
   sandbox
-    .stub(AWScreenUtils, "evaluateTargetingAndRemoveScreens")
-    .resolves(defaultMRArray);
+    .stub(AWScreenUtils, "evaluateScreenTargeting")
+    .resolves(true)
+    .withArgs(
+      "os.windowsBuildNumber >= 15063 && !isDefaultBrowser && !doesAppNeedPin"
+    )
+    .resolves(false);
 
   let { cleanup, browser } = await openMRAboutWelcome();
 
@@ -138,13 +194,13 @@ add_task(async function test_aboutwelcome_mr_template_content_pin() {
 
   const sandbox = initSandbox({ isDefault: true });
 
-  const data = await AboutWelcomeDefaults.getDefaults();
-  const defaultMRArray = data.screens.filter(
-    screen => screen.id !== "AW_EASY_SETUP"
-  );
   sandbox
-    .stub(AWScreenUtils, "evaluateTargetingAndRemoveScreens")
-    .resolves(defaultMRArray);
+    .stub(AWScreenUtils, "evaluateScreenTargeting")
+    .resolves(true)
+    .withArgs(
+      "os.windowsBuildNumber >= 15063 && !isDefaultBrowser && !doesAppNeedPin"
+    )
+    .resolves(false);
 
   let { browser, cleanup } = await openMRAboutWelcome();
 
@@ -180,16 +236,15 @@ add_task(async function test_aboutwelcome_mr_template_only_default() {
   await pushPrefs(["browser.shell.checkDefaultBrowser", true]);
 
   const sandbox = initSandbox({ pin: false });
-  const data = await AboutWelcomeDefaults.getDefaults();
-  const defaultMRArray = data.screens.filter(
-    screen => screen.id !== "AW_EASY_SETUP"
-  );
   sandbox
-    .stub(AWScreenUtils, "evaluateTargetingAndRemoveScreens")
-    .resolves(defaultMRArray);
+    .stub(AWScreenUtils, "evaluateScreenTargeting")
+    .resolves(true)
+    .withArgs(
+      "os.windowsBuildNumber >= 15063 && !isDefaultBrowser && !doesAppNeedPin"
+    )
+    .resolves(false);
 
   let { browser, cleanup } = await openMRAboutWelcome();
-
   //should render set default
   await test_screen_content(
     browser,
@@ -212,13 +267,13 @@ add_task(async function test_aboutwelcome_mr_template_get_started() {
 
   const sandbox = initSandbox({ pin: false, isDefault: true });
 
-  const data = await AboutWelcomeDefaults.getDefaults();
-  const defaultMRArray = data.screens.filter(
-    screen => screen.id !== "AW_EASY_SETUP"
-  );
   sandbox
-    .stub(AWScreenUtils, "evaluateTargetingAndRemoveScreens")
-    .resolves(defaultMRArray);
+    .stub(AWScreenUtils, "evaluateScreenTargeting")
+    .resolves(true)
+    .withArgs(
+      "os.windowsBuildNumber >= 15063 && !isDefaultBrowser && !doesAppNeedPin"
+    )
+    .resolves(false);
 
   let { browser, cleanup } = await openMRAboutWelcome();
 

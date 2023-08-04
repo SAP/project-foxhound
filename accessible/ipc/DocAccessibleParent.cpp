@@ -32,6 +32,7 @@
 #endif
 
 #if defined(ANDROID)
+#  include "mozilla/a11y/SessionAccessibility.h"
 #  define ACQUIRE_ANDROID_LOCK \
     MonitorAutoLock mal(nsAccessibilityService::GetAndroidMonitor());
 #else
@@ -816,7 +817,7 @@ mozilla::ipc::IPCResult DocAccessibleParent::RecvRoleChangedEvent(
 }
 
 mozilla::ipc::IPCResult DocAccessibleParent::RecvBindChildDoc(
-    PDocAccessibleParent* aChildDoc, const uint64_t& aID) {
+    NotNull<PDocAccessibleParent*> aChildDoc, const uint64_t& aID) {
   ACQUIRE_ANDROID_LOCK
   // One document should never directly be the child of another.
   // We should always have at least an outer doc accessible in between.
@@ -829,7 +830,7 @@ mozilla::ipc::IPCResult DocAccessibleParent::RecvBindChildDoc(
 
   MOZ_ASSERT(CheckDocTree());
 
-  auto childDoc = static_cast<DocAccessibleParent*>(aChildDoc);
+  auto childDoc = static_cast<DocAccessibleParent*>(aChildDoc.get());
   childDoc->Unbind();
   ipc::IPCResult result = AddChildDoc(childDoc, aID, false);
   MOZ_ASSERT(result);
@@ -905,11 +906,13 @@ ipc::IPCResult DocAccessibleParent::AddChildDoc(DocAccessibleParent* aChildDoc,
     if (bridge) {
 #if defined(XP_WIN)
       if (!StaticPrefs::accessibility_cache_enabled_AtStartup()) {
+        RefPtr<DocAccessibleParent> thisDoc = this;
+        RefPtr<DocAccessibleParent> childDoc = aChildDoc;
         // Send a COM proxy for the embedded document to the embedder process
         // hosting the iframe. This will be returned as the child of the
         // embedder OuterDocAccessible.
         RefPtr<IDispatch> docAcc;
-        aChildDoc->GetCOMInterface((void**)getter_AddRefs(docAcc));
+        childDoc->GetCOMInterface((void**)getter_AddRefs(docAcc));
         MOZ_ASSERT(docAcc);
         if (docAcc) {
           RefPtr<IDispatch> docWrapped(
@@ -919,30 +922,39 @@ ipc::IPCResult DocAccessibleParent::AddChildDoc(DocAccessibleParent* aChildDoc,
           IDispatchHolder docHolder(std::move(docPtr));
           if (bridge->SendSetEmbeddedDocAccessibleCOMProxy(docHolder)) {
 #  if defined(MOZ_SANDBOX)
-            aChildDoc->mDocProxyStream = docHolder.GetPreservedStream();
+            childDoc->mDocProxyStream = docHolder.GetPreservedStream();
 #  endif  // defined(MOZ_SANDBOX)
           }
         }
         if (!outerDoc) {
           return IPC_FAIL(this, "OuterDoc removed while adding child doc");
         }
+        if (childDoc->IsShutdown()) {
+          return IPC_FAIL(this, "Child doc removed while adding it");
+        }
         // Send a COM proxy for the embedder OuterDocAccessible to the embedded
         // document process. This will be returned as the parent of the
         // embedded document.
-        aChildDoc->SendParentCOMProxy(outerDoc);
+        childDoc->SendParentCOMProxy(outerDoc);
+        if (childDoc->IsShutdown()) {
+          return IPC_FAIL(this, "Child doc removed while adding it");
+        }
         if (nsWinUtils::IsWindowEmulationStarted()) {
           // The embedded document should use the same emulated window handle as
           // its embedder. It will return the embedder document (not a window
           // accessible) as the parent accessible, so we pass a null accessible
           // when sending the window to the embedded document.
-          Unused << aChildDoc->SendEmulatedWindow(
+          Unused << childDoc->SendEmulatedWindow(
               reinterpret_cast<uintptr_t>(mEmulatedWindowHandle), nullptr);
+        }
+        if (thisDoc->IsShutdown()) {
+          return IPC_FAIL(this, "Parent doc removed while adding child doc");
         }
         // Send a COM proxy for the top level document to the embedded document
         // process. This will be returned when the client calls QueryService
         // with SID_IAccessibleContentDocument on an accessible in the embedded
         // document.
-        DocAccessibleParent* topDoc = this;
+        DocAccessibleParent* topDoc = thisDoc;
         while (DocAccessibleParent* parentDoc = topDoc->ParentDoc()) {
           topDoc = parentDoc;
         }
@@ -956,7 +968,7 @@ ipc::IPCResult DocAccessibleParent::AddChildDoc(DocAccessibleParent* aChildDoc,
           IAccessibleHolder::COMPtrType topDocPtr(
               mscom::ToProxyUniquePtr(std::move(topDocWrapped)));
           IAccessibleHolder topDocHolder(std::move(topDocPtr));
-          if (aChildDoc->SendTopLevelDocCOMProxy(topDocHolder)) {
+          if (childDoc->SendTopLevelDocCOMProxy(topDocHolder)) {
 #  if defined(MOZ_SANDBOX)
             aChildDoc->mTopLevelDocProxyStream =
                 topDocHolder.GetPreservedStream();
@@ -965,6 +977,9 @@ ipc::IPCResult DocAccessibleParent::AddChildDoc(DocAccessibleParent* aChildDoc,
         }
         if (!outerDoc) {
           return IPC_FAIL(this, "OuterDoc removed while adding child doc");
+        }
+        if (childDoc->IsShutdown()) {
+          return IPC_FAIL(this, "Child doc removed while adding it");
         }
       }
       if (nsWinUtils::IsWindowEmulationStarted()) {
@@ -1275,7 +1290,7 @@ mozilla::ipc::IPCResult DocAccessibleParent::RecvBatch(
   nsTArray<RemoteAccessible*> proxies(aData.Length());
   for (size_t i = 0; i < aData.Length(); i++) {
     DocAccessibleParent* doc = static_cast<DocAccessibleParent*>(
-        aData.ElementAt(i).Document().get_PDocAccessibleParent());
+        aData.ElementAt(i).Document().get_PDocAccessible().AsParent().get());
     MOZ_ASSERT(doc);
 
     if (doc->IsShutdown()) {

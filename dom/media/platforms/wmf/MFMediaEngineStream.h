@@ -39,6 +39,8 @@ class MFMediaEngineStream
 
   virtual nsCString GetDescriptionName() const = 0;
 
+  virtual nsCString GetCodecName() const = 0;
+
   HRESULT RuntimeClassInitialize(uint64_t aStreamId, const TrackInfo& aInfo,
                                  MFMediaSource* aParentSource);
 
@@ -188,8 +190,10 @@ class MFMediaEngineStream
  * are not thread-safe and would only be called on the IPC decoder manager
  * thread.
  */
-class MFMediaEngineStreamWrapper : public MediaDataDecoder {
+class MFMediaEngineStreamWrapper final : public MediaDataDecoder {
  public:
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(MFMediaEngineStreamWrapper, final);
+
   MFMediaEngineStreamWrapper(MFMediaEngineStream* aStream,
                              TaskQueue* aTaskQueue,
                              const CreateDecoderParams& aParams)
@@ -206,9 +210,12 @@ class MFMediaEngineStreamWrapper : public MediaDataDecoder {
   RefPtr<FlushPromise> Flush() override;
   RefPtr<ShutdownPromise> Shutdown() override;
   nsCString GetDescriptionName() const override;
+  nsCString GetCodecName() const override;
   ConversionRequired NeedsConversion() const override;
 
  private:
+  ~MFMediaEngineStreamWrapper() = default;
+
   Microsoft::WRL::ComPtr<MFMediaEngineStream> mStream;
   RefPtr<TaskQueue> mTaskQueue;
 };

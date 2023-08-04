@@ -3178,7 +3178,7 @@ void HTMLMediaElement::Seek(double aTime, SeekTarget::Type aSeekType,
   // synchronous errors are returned using aRv, not promise rejections.
 
   // aTime should be non-NaN.
-  MOZ_ASSERT(!mozilla::IsNaN(aTime));
+  MOZ_ASSERT(!std::isnan(aTime));
 
   // Seeking step1, Set the media element's show poster flag to false.
   // https://html.spec.whatwg.org/multipage/media.html#dom-media-seek
@@ -4664,7 +4664,7 @@ void HTMLMediaElement::GetEventTargetParent(EventChainPreVisitor& aVisitor) {
         return;
       }
       HTMLInputElement* el = nullptr;
-      if (node->IsInNativeAnonymousSubtree() || node->IsInUAWidget()) {
+      if (node->ChromeOnlyAccess()) {
         if (node->IsHTMLElement(nsGkAtoms::input)) {
           // The node is a <input type="range">
           el = static_cast<HTMLInputElement*>(node);
@@ -6354,7 +6354,7 @@ void HTMLMediaElement::NotifyDecoderPrincipalChanged() {
 }
 
 void HTMLMediaElement::Invalidate(bool aImageSizeChanged,
-                                  Maybe<nsIntSize>& aNewIntrinsicSize,
+                                  const Maybe<nsIntSize>& aNewIntrinsicSize,
                                   bool aForceInvalidate) {
   nsIFrame* frame = GetPrimaryFrame();
   if (aNewIntrinsicSize) {

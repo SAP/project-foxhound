@@ -535,6 +535,7 @@ class RTCPeerConnection {
     this.makeGetterSetterEH("ondatachannel");
     this.makeGetterSetterEH("oniceconnectionstatechange");
     this.makeGetterSetterEH("onicegatheringstatechange");
+    this.makeGetterSetterEH("onconnectionstatechange");
     this.makeGetterSetterEH("onidentityresult");
     this.makeGetterSetterEH("onpeeridentity");
     this.makeGetterSetterEH("onidpassertionerror");
@@ -1384,7 +1385,7 @@ class RTCPeerConnection {
 
     if (transceiver) {
       transceiver.sender.setTrack(track);
-      transceiver.sender.setStreams(streams);
+      transceiver.sender.setStreamsImpl(...streams);
       if (transceiver.direction == "recvonly") {
         transceiver.setDirectionInternal("sendrecv");
       } else if (transceiver.direction == "inactive") {
@@ -1596,6 +1597,9 @@ class RTCPeerConnection {
   get iceConnectionState() {
     return this._iceConnectionState;
   }
+  get connectionState() {
+    return this._pc.connectionState;
+  }
 
   get signalingState() {
     // checking for our local pc closed indication
@@ -1649,6 +1653,10 @@ class RTCPeerConnection {
     }
 
     return this._auto(onSucc, onErr, () => this._pc.getStats(selector));
+  }
+
+  get sctp() {
+    return this._pc.sctp;
   }
 
   createDataChannel(
@@ -1911,6 +1919,11 @@ class PeerConnectionObserver {
 
       case "IceGatheringState":
         this._dompc.handleIceGatheringStateChange();
+        break;
+
+      case "ConnectionState":
+        _globalPCList.notifyLifecycleObservers(this, "connectionstatechange");
+        this.dispatchEvent(new this._win.Event("connectionstatechange"));
         break;
 
       default:

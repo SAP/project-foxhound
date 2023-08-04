@@ -70,6 +70,8 @@ bool CurrentThreadIsIonCompiling();
 
 namespace jit {
 
+class CallInfo;
+
 #ifdef JS_JITSPEW
 // Helper for debug printing.  Avoids creating a MIR.h <--> MIRGraph.h cycle.
 // Implementation of this needs to see inside `MBasicBlock`; that is possible
@@ -826,13 +828,6 @@ class MDefinition : public MNode {
   // instruction which are recovered on bailouts.
   void replaceAllLiveUsesWith(MDefinition* dom);
 
-  // Mark this instruction as having replaced all uses of ins, as during GVN,
-  // returning false if the replacement should not be performed. For use when
-  // GVN eliminates instructions which are not equivalent to one another.
-  [[nodiscard]] virtual bool updateForReplacement(MDefinition* ins) {
-    return true;
-  }
-
   void setVirtualRegister(uint32_t vreg) {
     virtualRegister_ = vreg;
     setLoweredUnchecked();
@@ -1372,19 +1367,6 @@ class MConstant : public MNullaryInstruction {
   bool congruentTo(const MDefinition* ins) const override;
 
   AliasSet getAliasSet() const override { return AliasSet::None(); }
-
-  [[nodiscard]] bool updateForReplacement(MDefinition* def) override {
-    MConstant* c = def->toConstant();
-    // During constant folding, we don't want to replace a float32
-    // value by a double value.
-    if (type() == MIRType::Float32) {
-      return c->type() == MIRType::Float32;
-    }
-    if (type() == MIRType::Double) {
-      return c->type() != MIRType::Float32;
-    }
-    return true;
-  }
 
   void computeRange(TempAllocator& alloc) override;
   bool canTruncate() const override;
@@ -3212,6 +3194,8 @@ class MGetInlinedArgument
   INSTRUCTION_HEADER(GetInlinedArgument)
   static MGetInlinedArgument* New(TempAllocator& alloc, MDefinition* index,
                                   MCreateInlinedArgumentsObject* args);
+  static MGetInlinedArgument* New(TempAllocator& alloc, MDefinition* index,
+                                  const CallInfo& callInfo);
   NAMED_OPERANDS((0, index))
 
   MDefinition* getArg(uint32_t idx) const {
@@ -5196,8 +5180,6 @@ class MMul : public MBinaryArithInstruction {
     canBeNegativeZero_ = negativeZero;
   }
 
-  [[nodiscard]] bool updateForReplacement(MDefinition* ins) override;
-
   bool fallible() const { return canBeNegativeZero_ || canOverflow(); }
 
   bool isFloat32Commutative() const override { return true; }
@@ -6149,7 +6131,10 @@ class MPhi final : public MDefinition,
   MDefinition* foldsTernary(TempAllocator& alloc);
 
   bool congruentTo(const MDefinition* ins) const override;
-  bool updateForReplacement(MDefinition* def) override;
+
+  // Mark this phi-node as having replaced all uses of |other|, as during GVN.
+  // For use when GVN eliminates phis which are not equivalent to one another.
+  void updateForReplacement(MPhi* other);
 
   bool isIterator() const { return isIterator_; }
   void setIterator() { isIterator_ = true; }
@@ -9225,9 +9210,10 @@ class MConstantProto : public MUnaryInstruction,
   // but instead just keep a pointer to it. This means we need to ensure it's
   // not discarded before we try to access it. If this is discarded, we
   // basically just become an MConstant for the object's proto, which is fine.
-  MDefinition* receiverObject_;
+  const MDefinition* receiverObject_;
 
-  explicit MConstantProto(MDefinition* protoObject, MDefinition* receiverObject)
+  explicit MConstantProto(MDefinition* protoObject,
+                          const MDefinition* receiverObject)
       : MUnaryInstruction(classOpcode, protoObject),
         receiverObject_(receiverObject) {
     MOZ_ASSERT(protoObject->isConstant());
@@ -9259,7 +9245,7 @@ class MConstantProto : public MUnaryInstruction,
     if (receiverObject_->isDiscarded()) {
       return nullptr;
     }
-    return receiverObject_->skipObjectGuards();
+    return receiverObject_;
   }
 };
 
@@ -11394,16 +11380,17 @@ class MWasmStoreFieldRefKA : public MAryInstruction<4>,
 #endif
 };
 
-// Tests if the WasmGcObject, `object`, is a subtype of `superTypeDef`. The
-// actual super type definition must be known at compile time, so that the
+// Tests if the WasmGcObject, `object`, is a subtype of `superSuperTypeVector`.
+// The actual super type definition must be known at compile time, so that the
 // subtyping depth of super type depth can be used.
 class MWasmGcObjectIsSubtypeOf : public MBinaryInstruction,
                                  public NoTypePolicy::Data {
   uint32_t subTypingDepth_;
   bool succeedOnNull_;
-  MWasmGcObjectIsSubtypeOf(MDefinition* object, MDefinition* superTypeDef,
+  MWasmGcObjectIsSubtypeOf(MDefinition* object,
+                           MDefinition* superSuperTypeVector,
                            uint32_t subTypingDepth, bool succeedOnNull)
-      : MBinaryInstruction(classOpcode, object, superTypeDef),
+      : MBinaryInstruction(classOpcode, object, superSuperTypeVector),
         subTypingDepth_(subTypingDepth),
         succeedOnNull_(succeedOnNull) {
     setResultType(MIRType::Int32);
@@ -11413,7 +11400,7 @@ class MWasmGcObjectIsSubtypeOf : public MBinaryInstruction,
  public:
   INSTRUCTION_HEADER(WasmGcObjectIsSubtypeOf)
   TRIVIAL_NEW_WRAPPERS
-  NAMED_OPERANDS((0, object), (1, superTypeDef))
+  NAMED_OPERANDS((0, object), (1, superSuperTypeVector))
 
   uint32_t subTypingDepth() const { return subTypingDepth_; }
   bool succeedOnNull() const { return succeedOnNull_; }
@@ -11422,7 +11409,7 @@ class MWasmGcObjectIsSubtypeOf : public MBinaryInstruction,
     return congruentIfOperandsEqual(ins) &&
            ins->toWasmGcObjectIsSubtypeOf()->subTypingDepth() ==
                subTypingDepth() &&
-           succeedOnNull_ == ins->toWasmGcObjectIsSubtypeOf()->succeedOnNull();
+           succeedOnNull() == ins->toWasmGcObjectIsSubtypeOf()->succeedOnNull();
   }
 
   HashNumber valueHash() const override {

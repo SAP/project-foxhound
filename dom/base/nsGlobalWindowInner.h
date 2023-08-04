@@ -247,9 +247,10 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
   }
 
   // nsIGlobalObject
-  bool ShouldResistFingerprinting() const final;
+  bool ShouldResistFingerprinting(
+      RFPTarget aTarget = RFPTarget::Unknown) const final;
   mozilla::OriginTrials Trials() const final;
-  mozilla::dom::FontFaceSet* Fonts() final;
+  mozilla::dom::FontFaceSet* GetFonts() final;
 
   JSObject* GetGlobalJSObject() final { return GetWrapper(); }
   JSObject* GetGlobalJSObjectPreserveColor() const final {

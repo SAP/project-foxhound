@@ -4,12 +4,14 @@
 "use strict";
 
 // Globals
-const { sinon } = ChromeUtils.import("resource://testing-common/Sinon.jsm");
+const { sinon } = ChromeUtils.importESModule(
+  "resource://testing-common/Sinon.sys.mjs"
+);
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  ExperimentManager: "resource://nimbus/lib/ExperimentManager.jsm",
-  ExperimentTestUtils: "resource://testing-common/NimbusTestUtils.jsm",
-  ExperimentFakes: "resource://testing-common/NimbusTestUtils.jsm",
+ChromeUtils.defineESModuleGetters(this, {
+  ExperimentManager: "resource://nimbus/lib/ExperimentManager.sys.mjs",
+  ExperimentTestUtils: "resource://testing-common/NimbusTestUtils.sys.mjs",
+  ExperimentFakes: "resource://testing-common/NimbusTestUtils.sys.mjs",
 });
 
 add_setup(function() {

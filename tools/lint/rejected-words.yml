@@ -59,7 +59,7 @@ avoid-blacklist-and-whitelist:
         - browser/components/resistfingerprinting/test/mochitest/test_bug1354633_media_error.html
         - browser/components/safebrowsing/content/test/browser_whitelisted.js
         - browser/components/sessionstore/test/browser_crashedTabs.js
-        - browser/components/uitour/UITourChild.jsm
+        - browser/components/uitour/UITourChild.sys.mjs
         - browser/components/urlbar/tests/browser/browser_searchSingleWordNotification.js
         - browser/components/urlbar/tests/browser/browser_UrlbarInput_trimURLs.js
         - browser/components/urlbar/tests/unit/test_providerHeuristicFallback.js
@@ -106,7 +106,6 @@ avoid-blacklist-and-whitelist:
         - dom/html/MediaError.cpp
         - dom/indexedDB/ActorsParent.cpp
         - dom/ipc/ContentParent.cpp
-        - dom/ipc/fuzztest/content_parent_ipc_libfuzz.cpp
         - dom/ipc/URLClassifierParent.cpp
         - dom/media/autoplay/AutoplayPolicy.cpp
         - dom/media/gmp/GMPChild.cpp
@@ -127,7 +126,6 @@ avoid-blacklist-and-whitelist:
         - dom/tests/mochitest/whatwg/test_postMessage_origin.xhtml
         - gfx/gl/GLContextProviderWGL.cpp
         - gfx/gl/GLUploadHelpers.cpp
-        - gfx/layers/ipc/fuzztest/compositor_manager_parent_ipc_libfuzz.cpp
         - gfx/tests/mochitest/test_font_whitelist.html
         - gfx/thebes/gfxFT2FontList.cpp
         - gfx/thebes/gfxPlatformFontList.cpp
@@ -237,10 +235,10 @@ avoid-blacklist-and-whitelist:
         - testing/raptor/raptor/control_server.py
         - testing/talos/talos/tests/devtools/addon/content/pages/custom/debugger/static/js/main.js
         - testing/web-platform/tests/tools/manifest/tests/test_manifest.py
-        - toolkit/actors/RemotePageChild.jsm
+        - toolkit/actors/RemotePageChild.sys.mjs
         - toolkit/actors/WebChannelChild.sys.mjs
         - toolkit/components/antitracking/test/browser/browser_socialtracking_save_image.js
-        - toolkit/components/remotepagemanager/RemotePageManagerParent.jsm
+        - toolkit/components/remotepagemanager/RemotePageManagerParent.sys.mjs
         - toolkit/components/reputationservice/ApplicationReputation.cpp
         - toolkit/components/reputationservice/chromium/chrome/common/safe_browsing/csd.pb.h
         - toolkit/components/reputationservice/LoginReputation.cpp
@@ -307,10 +305,6 @@ avoid-blacklist-and-whitelist:
         - toolkit/mozapps/extensions/test/xpinstall/browser_localfile4.js
         - toolkit/mozapps/extensions/test/xpinstall/browser_localfile4_postDownload.js
         - toolkit/mozapps/extensions/test/xpinstall/head.js
-        - tools/fuzzing/faulty/Faulty.cpp
-        - tools/fuzzing/faulty/Faulty.h
-        - tools/fuzzing/ipc/ProtocolFuzzer.cpp
-        - tools/fuzzing/ipc/ProtocolFuzzer.h
         - tools/fuzzing/messagemanager/MessageManagerFuzzer.cpp
         - tools/fuzzing/messagemanager/MessageManagerFuzzer.h
         - tools/lint/eslint/eslint-plugin-mozilla/lib/rules/no-define-cc-etc.js

@@ -71,7 +71,8 @@ class nsAVIFDecoder final : public Decoder {
       Variant<Mp4parseStatus, NonDecoderResult, Dav1dResult, AOMResult>;
   Mp4parseStatus CreateParser();
   DecodeResult CreateDecoder();
-  DecodeResult Decode(SourceBufferIterator& aIterator, IResumable* aOnResume);
+  DecodeResult DoDecodeInternal(SourceBufferIterator& aIterator,
+                                IResumable* aOnResume);
 
   static bool IsDecodeSuccess(const DecodeResult& aResult);
 
@@ -118,7 +119,8 @@ struct AVIFImage {
 class AVIFParser {
  public:
   static Mp4parseStatus Create(const Mp4parseIo* aIo, ByteStream* aBuffer,
-                               UniquePtr<AVIFParser>& aParserOut);
+                               UniquePtr<AVIFParser>& aParserOut,
+                               bool aAllowSequences, bool aAnimateAVIFMajor);
 
   ~AVIFParser();
 
@@ -131,7 +133,8 @@ class AVIFParser {
  private:
   explicit AVIFParser(const Mp4parseIo* aIo);
 
-  Mp4parseStatus Init(ByteStream* aBuffer);
+  Mp4parseStatus Init(ByteStream* aBuffer, bool aAllowSequences,
+                      bool aAnimateAVIFMajor);
 
   struct FreeAvifParser {
     void operator()(Mp4parseAvifParser* aPtr) { mp4parse_avif_free(aPtr); }

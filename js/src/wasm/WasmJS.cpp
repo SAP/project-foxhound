@@ -54,6 +54,7 @@
 #include "vm/JSFunction.h"
 #include "vm/PlainObject.h"    // js::PlainObject
 #include "vm/PromiseObject.h"  // js::PromiseObject
+#include "vm/SharedArrayObject.h"
 #include "vm/StringType.h"
 #include "vm/Warnings.h"       // js::WarnNumberASCII
 #include "vm/WellKnownAtom.h"  // js_*_str
@@ -750,7 +751,7 @@ static bool EnforceRange(JSContext* cx, HandleValue v, const char* kind,
   }
 
   // Step 6.1.
-  if (!mozilla::IsFinite(x)) {
+  if (!std::isfinite(x)) {
     JS_ReportErrorNumberUTF8(cx, GetErrorMessage, nullptr,
                              JSMSG_WASM_BAD_ENFORCE_RANGE, kind, noun);
     return false;
@@ -1011,6 +1012,9 @@ static JSString* UTF8CharsToString(JSContext* cx, const char* chars) {
 [[nodiscard]] static JSObject* ValTypesToArray(JSContext* cx,
                                                const ValTypeVector& valTypes) {
   Rooted<ArrayObject*> arrayObj(cx, NewDenseEmptyArray(cx));
+  if (!arrayObj) {
+    return nullptr;
+  }
   for (ValType valType : valTypes) {
     RootedString type(cx,
                       UTF8CharsToString(cx, ToString(valType, nullptr).get()));
@@ -2724,9 +2728,7 @@ bool WasmMemoryObject::discardImpl(JSContext* cx, const CallArgs& args) {
     return false;
   }
 
-  if (!discard(memory, byteOffset, byteLen, cx)) {
-    return false;
-  }
+  discard(memory, byteOffset, byteLen, cx);
 
   args.rval().setUndefined();
   return true;
@@ -2963,21 +2965,17 @@ uint64_t WasmMemoryObject::grow(Handle<WasmMemoryObject*> memory,
 }
 
 /* static */
-bool WasmMemoryObject::discard(Handle<WasmMemoryObject*> memory,
+void WasmMemoryObject::discard(Handle<WasmMemoryObject*> memory,
                                uint64_t byteOffset, uint64_t byteLen,
                                JSContext* cx) {
-  // TODO: Discard should never actually fail. Once we have implemented this for
-  // shared memories, change the return type of this function back to void and
-  // clean up the usage site.
   if (memory->isShared()) {
-    JS_ReportErrorNumberUTF8(cx, GetErrorMessage, nullptr,
-                             JSMSG_WASM_NOT_IMPLEMENTED);
-    return false;
+    RootedSharedArrayBufferObject buf(
+        cx, &memory->buffer().as<SharedArrayBufferObject>());
+    SharedArrayBufferObject::wasmDiscard(buf, byteOffset, byteLen);
+  } else {
+    RootedArrayBufferObject buf(cx, &memory->buffer().as<ArrayBufferObject>());
+    ArrayBufferObject::wasmDiscard(buf, byteOffset, byteLen);
   }
-
-  RootedArrayBufferObject buf(cx, &memory->buffer().as<ArrayBufferObject>());
-  ArrayBufferObject::wasmDiscard(buf, byteOffset, byteLen);
-  return true;
 }
 
 bool js::wasm::IsSharedWasmMemoryObject(JSObject* obj) {
@@ -3049,8 +3047,16 @@ void WasmTableObject::trace(JSTracer* trc, JSObject* obj) {
 //
 // [1]
 // https://webassembly.github.io/reference-types/js-api/index.html#defaultvalue
-static Value TableDefaultValue(wasm::RefType tableType) {
+static Value RefTypeDefautValue(wasm::RefType tableType) {
   return tableType.isExtern() ? UndefinedValue() : NullValue();
+}
+
+static bool CheckRefTypeValue(JSContext* cx, wasm::RefType type,
+                              HandleValue value) {
+  RootedFunction fun(cx);
+  RootedAnyRef any(cx, AnyRef::null());
+
+  return CheckRefType(cx, type, value, &fun, &any);
 }
 
 /* static */
@@ -3067,8 +3073,9 @@ WasmTableObject* WasmTableObject::create(JSContext* cx, uint32_t initialLength,
 
   MOZ_ASSERT(obj->isNewborn());
 
-  TableDesc td(tableType, initialLength, maximumLength, /*isAsmJS*/ false,
-               /*isImportedOrExported=*/true);
+  TableDesc td(tableType, initialLength, maximumLength, Nothing(),
+               /*isAsmJS*/ false,
+               /*isImported=*/true, /*isExported=*/true);
 
   SharedTable table = Table::create(cx, td, obj);
   if (!table) {
@@ -3114,18 +3121,8 @@ bool WasmTableObject::construct(JSContext* cx, unsigned argc, Value* vp) {
     return false;
   }
 
-  RootedString elementStr(cx, ToString(cx, elementVal));
-  if (!elementStr) {
-    return false;
-  }
-
-  Rooted<JSLinearString*> elementLinearStr(cx, elementStr->ensureLinear(cx));
-  if (!elementLinearStr) {
-    return false;
-  }
-
   RefType tableType;
-  if (!ToRefType(cx, elementLinearStr, &tableType)) {
+  if (!ToRefType(cx, elementVal, &tableType)) {
     return false;
   }
 
@@ -3168,7 +3165,10 @@ bool WasmTableObject::construct(JSContext* cx, unsigned argc, Value* vp) {
 
   // Initialize the table to a default value
   RootedValue initValue(
-      cx, args.length() < 2 ? TableDefaultValue(tableType) : args[1]);
+      cx, args.length() < 2 ? RefTypeDefautValue(tableType) : args[1]);
+  if (!CheckRefTypeValue(cx, tableType, initValue)) {
+    return false;
+  }
 
   // Skip initializing the table if the fill value is null, as that is the
   // default value.
@@ -3179,7 +3179,10 @@ bool WasmTableObject::construct(JSContext* cx, unsigned argc, Value* vp) {
 #ifdef DEBUG
   // Assert that null is the default value of a new table.
   if (initValue.isNull()) {
-    table->assertRangeNull(0, initialLength);
+    table->table().assertRangeNull(0, initialLength);
+  }
+  if (!tableType.isNullable()) {
+    table->table().assertRangeNotNull(0, initialLength);
   }
 #endif
 
@@ -3284,7 +3287,7 @@ bool WasmTableObject::setImpl(JSContext* cx, const CallArgs& args) {
   }
 
   RootedValue fillValue(
-      cx, args.length() < 2 ? TableDefaultValue(table.elemType()) : args[1]);
+      cx, args.length() < 2 ? RefTypeDefautValue(table.elemType()) : args[1]);
   if (!tableObj->fillRange(cx, index, 1, fillValue)) {
     return false;
   }
@@ -3314,6 +3317,12 @@ bool WasmTableObject::growImpl(JSContext* cx, const CallArgs& args) {
     return false;
   }
 
+  RootedValue fillValue(
+      cx, args.length() < 2 ? RefTypeDefautValue(table.elemType()) : args[1]);
+  if (!CheckRefTypeValue(cx, table.elemType(), fillValue)) {
+    return false;
+  }
+
   uint32_t oldLength = table.grow(delta);
 
   if (oldLength == uint32_t(-1)) {
@@ -3321,10 +3330,6 @@ bool WasmTableObject::growImpl(JSContext* cx, const CallArgs& args) {
                              "table");
     return false;
   }
-
-  // Fill the grown range of the table
-  RootedValue fillValue(
-      cx, args.length() < 2 ? TableDefaultValue(table.elemType()) : args[1]);
 
   // Skip filling the grown range of the table if the fill value is null, as
   // that is the default value.
@@ -3335,7 +3340,10 @@ bool WasmTableObject::growImpl(JSContext* cx, const CallArgs& args) {
 #ifdef DEBUG
   // Assert that null is the default value of the grown range.
   if (fillValue.isNull()) {
-    tableObj->assertRangeNull(oldLength, delta);
+    table.assertRangeNull(oldLength, delta);
+  }
+  if (!table.elemType().isNullable()) {
+    table.assertRangeNotNull(oldLength, delta);
   }
 #endif
 
@@ -3387,25 +3395,6 @@ bool WasmTableObject::fillRange(JSContext* cx, uint32_t index, uint32_t length,
   }
   return true;
 }
-
-#ifdef DEBUG
-void WasmTableObject::assertRangeNull(uint32_t index, uint32_t length) const {
-  Table& tab = table();
-  switch (tab.repr()) {
-    case TableRepr::Func:
-      for (uint32_t i = index; i < index + length; i++) {
-        MOZ_ASSERT(tab.getFuncRef(i).instance == nullptr);
-        MOZ_ASSERT(tab.getFuncRef(i).code == nullptr);
-      }
-      break;
-    case TableRepr::Ref:
-      for (uint32_t i = index; i < index + length; i++) {
-        MOZ_ASSERT(tab.getAnyRef(i).isNull());
-      }
-      break;
-  }
-}
-#endif
 
 // ============================================================================
 // WebAssembly.global class and methods
@@ -3542,10 +3531,17 @@ bool WasmGlobalObject::construct(JSContext* cx, unsigned argc, Value* vp) {
   RootedVal globalVal(cx, globalType);
 
   // Override with non-undefined value, if provided.
-  RootedValue valueVal(cx, args.get(1));
-  if (!valueVal.isUndefined() ||
-      (args.length() >= 2 && globalType.isRefType())) {
+  RootedValue valueVal(cx);
+  if (globalType.isRefType()) {
+    valueVal.set(args.length() < 2 ? RefTypeDefautValue(globalType.refType())
+                                   : args[1]);
     if (!Val::fromJSValue(cx, globalType, valueVal, &globalVal)) {
+      return false;
+    }
+  } else {
+    valueVal.set(args.get(1));
+    if (!valueVal.isUndefined() &&
+        !Val::fromJSValue(cx, globalType, valueVal, &globalVal)) {
       return false;
     }
   }

@@ -36,6 +36,7 @@ XPCOMUtils.defineLazyServiceGetter(
 /**
  * Executes a XUL command on the top window. Called by the callbacks in each
  * TouchBarInput.
+ *
  * @param {string} commandName
  *        A XUL command.
  */
@@ -52,6 +53,7 @@ function execCommand(commandName) {
 /**
  * Static helper function to convert a hexadecimal string to its integer
  * value. Used to convert colours to a format accepted by Apple's NSColor code.
+ *
  * @param {string} hexString
  *        A hexadecimal string, optionally beginning with '#'.
  */
@@ -83,19 +85,28 @@ var gBuiltInInputs = {
     title: "back",
     image: "chrome://browser/skin/back.svg",
     type: kInputTypes.BUTTON,
-    callback: () => execCommand("Browser:Back"),
+    callback: () => {
+      lazy.touchBarHelper.unfocusUrlbar();
+      execCommand("Browser:Back");
+    },
   },
   Forward: {
     title: "forward",
     image: "chrome://browser/skin/forward.svg",
     type: kInputTypes.BUTTON,
-    callback: () => execCommand("Browser:Forward"),
+    callback: () => {
+      lazy.touchBarHelper.unfocusUrlbar();
+      execCommand("Browser:Forward");
+    },
   },
   Reload: {
     title: "reload",
     image: "chrome://global/skin/icons/reload.svg",
     type: kInputTypes.BUTTON,
-    callback: () => execCommand("Browser:Reload"),
+    callback: () => {
+      lazy.touchBarHelper.unfocusUrlbar();
+      execCommand("Browser:Reload");
+    },
   },
   Home: {
     title: "home",
@@ -151,7 +162,7 @@ var gBuiltInInputs = {
     title: "open-location",
     image: "chrome://global/skin/icons/search-glass.svg",
     type: kInputTypes.MAIN_BUTTON,
-    callback: () => execCommand("Browser:OpenLocation"),
+    callback: () => lazy.touchBarHelper.toggleFocusUrlbar(),
   },
   // This is a special-case `type: kInputTypes.SCRUBBER` element.
   // Scrubbers are not yet generally implemented.
@@ -314,6 +325,21 @@ class TouchBarHelper {
     return TouchBarHelper.window.gURLBar.focused;
   }
 
+  toggleFocusUrlbar() {
+    if (this.isUrlbarFocused) {
+      this.unfocusUrlbar();
+    } else {
+      execCommand("Browser:OpenLocation");
+    }
+  }
+
+  unfocusUrlbar() {
+    if (!this.isUrlbarFocused) {
+      return;
+    }
+    TouchBarHelper.window.gURLBar.blur();
+  }
+
   static get baseWindow() {
     return TouchBarHelper.window
       ? TouchBarHelper.window.docShell.treeOwner.QueryInterface(
@@ -364,6 +390,7 @@ class TouchBarHelper {
 
   /**
    * Fetches a specific Touch Bar Input by name and updates it on the Touch Bar.
+   *
    * @param {...*} inputNames
    *        A key/keys to a value/values in the gBuiltInInputs object in this file.
    */
@@ -392,6 +419,7 @@ class TouchBarHelper {
   /**
    * Inserts a restriction token into the Urlbar ahead of the current typed
    * search term.
+   *
    * @param {string} restrictionToken
    *        The restriction token to be inserted into the Urlbar. Preferably
    *        sourced from UrlbarTokenizer.RESTRICT.
@@ -509,6 +537,7 @@ helperProto._l10n = new Localization(["browser/touchbar/touchbar.ftl"]);
 
 /**
  * A representation of a Touch Bar input.
+ *
  *     @param {object} input
  *            An object representing a Touch Bar Input.
  *            Contains listed properties.
@@ -617,6 +646,7 @@ class TouchBarInput {
 
   /**
    * Apply Fluent l10n to child inputs.
+   *
    * @param {Array} children
    *   An array of initialized TouchBarInputs.
    */

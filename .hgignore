@@ -171,6 +171,7 @@ _OPT\.OBJ/
 ^servo/ports/geckolib/target/
 ^dom/base/rust/target/
 ^servo/components/style/target/
+^dom/webgpu/tests/cts/vendor/target/
 
 # Ignore mozharness execution files
 ^testing/mozharness/.tox/
@@ -224,6 +225,9 @@ _OPT\.OBJ/
 
 # Unit test
 \.pytest_cache/
+
+# Ruff
+\.ruff_cache/
 
 # Ignore files created when running a reftest.
 ^lextab.py$

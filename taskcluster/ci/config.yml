@@ -57,6 +57,7 @@ treeherder:
         'M-headless-nofis': 'Headless Mochitests without fission enabled.'
         'M-headless-spi-nw': 'Headless Mochitests with fission and socketprocess networking.'
         'M-headless-spi-nw-nofis': 'Headless Mochitests with fission and socketprocess networking without fission enabled.'
+        'M-http3': 'Mochitests with Http/3 server'
         'M-aab': 'Mochitests with AAB test_runner.'
         'M-aab-nofis': 'Mochitests with AAB test_runner without fission enabled.'
         'M-1proc': 'Mochitests without e10s or fission'
@@ -144,6 +145,7 @@ treeherder:
         'deb-L10n': 'Localized Debian Repacks'
         'BM': 'Beetmover'
         'BMR': 'Beetmover repackages'
+        'BM-apt': 'Beetmover .deb packages'
         'c-Up': 'Balrog submission of complete updates'
         'css': 'Checksum signing for source'
         'rs': 'Repackage signing'
@@ -198,12 +200,14 @@ treeherder:
         'doc': 'Documentation'
         'GhS': 'GitHub Synchronization'
         'perftest': 'Performance tests'
+        'perftest-detect': 'Performance regression detection tooling'
         'perftest-chrome': 'Performance tests using Chrone'
         'perftest-http3': 'Performance tests with HTTP/3'
         'l10n': 'Localization checks'
         'fxrec': 'Desktop startup recorder (fxrecord)'
         'wc': 'webcompat'
         'Boot': 'Bootstrap'
+        'Attr-L10n': 'Build Attribution'
 
 index:
     products:
@@ -711,17 +715,20 @@ expiration-policy:
     by-project:
         try:
             default: 1 month
+            shortest: 7 days
             short: 14 days
             medium: 1 month
             long: 1 month
         autoland:
             default: 1 year
+            shortest: 14 days
             short: 3 months
             medium: 1 year
             # To avoid keeping shippable builds for over a year
             long: 1 year
         default:
             default: 3 months
+            shortest: 7 days
             short: 1 month
             medium: 1 year
             long: 1 year

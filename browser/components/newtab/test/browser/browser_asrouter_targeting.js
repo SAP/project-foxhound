@@ -5,26 +5,60 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   ASRouterTargeting: "resource://activity-stream/lib/ASRouterTargeting.jsm",
   BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.jsm",
   CFRMessageProvider: "resource://activity-stream/lib/CFRMessageProvider.jsm",
-  ExperimentAPI: "resource://nimbus/ExperimentAPI.jsm",
-  ExperimentFakes: "resource://testing-common/NimbusTestUtils.jsm",
   HomePage: "resource:///modules/HomePage.jsm",
-  NimbusFeatures: "resource://nimbus/ExperimentAPI.jsm",
   QueryCache: "resource://activity-stream/lib/ASRouterTargeting.jsm",
   ShellService: "resource:///modules/ShellService.jsm",
-  TargetingContext: "resource://messaging-system/targeting/Targeting.jsm",
 });
 ChromeUtils.defineESModuleGetters(this, {
   AppConstants: "resource://gre/modules/AppConstants.sys.mjs",
   AttributionCode: "resource:///modules/AttributionCode.sys.mjs",
   BuiltInThemes: "resource:///modules/BuiltInThemes.sys.mjs",
+  ExperimentAPI: "resource://nimbus/ExperimentAPI.sys.mjs",
+  ExperimentFakes: "resource://testing-common/NimbusTestUtils.sys.mjs",
   FxAccounts: "resource://gre/modules/FxAccounts.sys.mjs",
   NewTabUtils: "resource://gre/modules/NewTabUtils.sys.mjs",
+  NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
   PlacesTestUtils: "resource://testing-common/PlacesTestUtils.sys.mjs",
   ProfileAge: "resource://gre/modules/ProfileAge.sys.mjs",
   Region: "resource://gre/modules/Region.sys.mjs",
+  TargetingContext: "resource://messaging-system/targeting/Targeting.sys.mjs",
   TelemetryEnvironment: "resource://gre/modules/TelemetryEnvironment.sys.mjs",
   TelemetrySession: "resource://gre/modules/TelemetrySession.sys.mjs",
 });
+
+function sendFormAutofillMessage(name, data) {
+  let actor = gBrowser.selectedBrowser.browsingContext.currentWindowGlobal.getActor(
+    "FormAutofill"
+  );
+  return actor.receiveMessage({ name, data });
+}
+
+async function removeAutofillRecords() {
+  let addresses = await sendFormAutofillMessage("FormAutofill:GetRecords", {
+    collectionName: "addresses",
+  });
+  if (addresses.length) {
+    let observePromise = TestUtils.topicObserved(
+      "formautofill-storage-changed"
+    );
+    await sendFormAutofillMessage("FormAutofill:RemoveAddresses", {
+      guids: addresses.map(address => address.guid),
+    });
+    await observePromise;
+  }
+  let creditCards = await sendFormAutofillMessage("FormAutofill:GetRecords", {
+    collectionName: "creditCards",
+  });
+  if (creditCards.length) {
+    let observePromise = TestUtils.topicObserved(
+      "formautofill-storage-changed"
+    );
+    await sendFormAutofillMessage("FormAutofill:RemoveCreditCards", {
+      guids: creditCards.map(cc => cc.guid),
+    });
+    await observePromise;
+  }
+}
 
 // ASRouterTargeting.findMatchingMessage
 add_task(async function find_matching_message() {
@@ -1328,4 +1362,161 @@ add_task(async function test_fxViewButtonAreaType_removed() {
     "Should return null if button has been removed"
   );
   CustomizableUI.reset();
+});
+
+add_task(async function test_creditCardsSaved() {
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["extensions.formautofill.creditCards.supported", "on"],
+      ["extensions.formautofill.creditCards.enabled", true],
+    ],
+  });
+
+  is(
+    await ASRouterTargeting.Environment.creditCardsSaved,
+    0,
+    "Should return 0 when no credit cards are saved"
+  );
+
+  let creditcard = {
+    "cc-name": "Test User",
+    "cc-number": "5038146897157463",
+    "cc-exp-month": "11",
+    "cc-exp-year": "20",
+  };
+
+  // Intermittently fails on macOS, likely related to Bug 1714221. So, mock the
+  // autofill actor.
+  if (AppConstants.platform === "macosx") {
+    const sandbox = sinon.createSandbox();
+    registerCleanupFunction(async () => sandbox.restore());
+    let stub = sandbox
+      .stub(
+        gBrowser.selectedBrowser.browsingContext.currentWindowGlobal.getActor(
+          "FormAutofill"
+        ),
+        "receiveMessage"
+      )
+      .withArgs(
+        sandbox.match({
+          name: "FormAutofill:GetRecords",
+          data: { collectionName: "creditCards" },
+        })
+      )
+      .resolves([creditcard])
+      .callThrough();
+
+    is(
+      await ASRouterTargeting.Environment.creditCardsSaved,
+      1,
+      "Should return 1 when 1 credit card is saved"
+    );
+    ok(
+      stub.calledWithMatch({ name: "FormAutofill:GetRecords" }),
+      "Targeting called FormAutofill:GetRecords"
+    );
+
+    sandbox.restore();
+  } else {
+    let observePromise = TestUtils.topicObserved(
+      "formautofill-storage-changed"
+    );
+    await sendFormAutofillMessage("FormAutofill:SaveCreditCard", {
+      creditcard,
+    });
+    await observePromise;
+
+    is(
+      await ASRouterTargeting.Environment.creditCardsSaved,
+      1,
+      "Should return 1 when 1 credit card is saved"
+    );
+    await removeAutofillRecords();
+  }
+
+  await SpecialPowers.popPrefEnv();
+});
+
+add_task(async function test_addressesSaved() {
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["extensions.formautofill.addresses.supported", "on"],
+      ["extensions.formautofill.addresses.enabled", true],
+    ],
+  });
+
+  is(
+    await ASRouterTargeting.Environment.addressesSaved,
+    0,
+    "Should return 0 when no addresses are saved"
+  );
+
+  let observePromise = TestUtils.topicObserved("formautofill-storage-changed");
+  await sendFormAutofillMessage("FormAutofill:SaveAddress", {
+    address: {
+      "given-name": "John",
+      "additional-name": "R.",
+      "family-name": "Smith",
+      organization: "World Wide Web Consortium",
+      "street-address": "32 Vassar Street\nMIT Room 32-G524",
+      "address-level2": "Cambridge",
+      "address-level1": "MA",
+      "postal-code": "02139",
+      country: "US",
+      tel: "+16172535702",
+      email: "timbl@w3.org",
+    },
+  });
+  await observePromise;
+
+  is(
+    await ASRouterTargeting.Environment.addressesSaved,
+    1,
+    "Should return 1 when 1 address is saved"
+  );
+
+  await removeAutofillRecords();
+  await SpecialPowers.popPrefEnv();
+});
+
+add_task(async function test_migrationInteractions() {
+  await pushPrefs(
+    ["browser.migrate.interactions.bookmarks", false],
+    ["browser.migrate.interactions.history", false],
+    ["browser.migrate.interactions.passwords", false]
+  );
+
+  ok(!(await ASRouterTargeting.Environment.hasMigratedBookmarks));
+  ok(!(await ASRouterTargeting.Environment.hasMigratedHistory));
+  ok(!(await ASRouterTargeting.Environment.hasMigratedPasswords));
+
+  await pushPrefs(
+    ["browser.migrate.interactions.bookmarks", true],
+    ["browser.migrate.interactions.history", false],
+    ["browser.migrate.interactions.passwords", false]
+  );
+
+  ok(await ASRouterTargeting.Environment.hasMigratedBookmarks);
+  ok(!(await ASRouterTargeting.Environment.hasMigratedHistory));
+  ok(!(await ASRouterTargeting.Environment.hasMigratedPasswords));
+
+  await pushPrefs(
+    ["browser.migrate.interactions.bookmarks", true],
+    ["browser.migrate.interactions.history", true],
+    ["browser.migrate.interactions.passwords", false]
+  );
+
+  ok(await ASRouterTargeting.Environment.hasMigratedBookmarks);
+  ok(await ASRouterTargeting.Environment.hasMigratedHistory);
+  ok(!(await ASRouterTargeting.Environment.hasMigratedPasswords));
+
+  await pushPrefs(
+    ["browser.migrate.interactions.bookmarks", true],
+    ["browser.migrate.interactions.history", true],
+    ["browser.migrate.interactions.passwords", true]
+  );
+
+  ok(await ASRouterTargeting.Environment.hasMigratedBookmarks);
+  ok(await ASRouterTargeting.Environment.hasMigratedHistory);
+  ok(await ASRouterTargeting.Environment.hasMigratedPasswords);
 });

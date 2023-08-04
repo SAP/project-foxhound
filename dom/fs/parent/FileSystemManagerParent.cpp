@@ -216,7 +216,8 @@ mozilla::ipc::IPCResult FileSystemManagerParent::RecvGetWritable(
   }
 
   auto writableFileStreamParent =
-      MakeRefPtr<FileSystemWritableFileStreamParent>(this, aRequest.entryId());
+      MakeNotNull<RefPtr<FileSystemWritableFileStreamParent>>(
+          this, aRequest.entryId());
 
   QM_TRY_UNWRAP(
       nsCOMPtr<nsIRandomAccessStream> stream,
@@ -242,8 +243,8 @@ mozilla::ipc::IPCResult FileSystemManagerParent::RecvGetWritable(
     return IPC_OK();
   }
 
-  aResolver(FileSystemWritableFileStreamProperties(
-      std::move(streamParams), writableFileStreamParent, nullptr));
+  aResolver(FileSystemWritableFileStreamProperties(std::move(streamParams),
+                                                   writableFileStreamParent));
 
   return IPC_OK();
 }
@@ -278,7 +279,10 @@ IPCResult FileSystemManagerParent::RecvGetFile(
     }
   }
 
-  RefPtr<BlobImpl> blob = MakeRefPtr<FileBlobImpl>(fileObject);
+  // TODO: Currently, there is no way to assign type and it is empty.
+  // See bug 1826780.
+  RefPtr<BlobImpl> blob =
+      MakeRefPtr<FileBlobImpl>(fileObject, path.LastElement(), type);
 
   IPCBlob ipcBlob;
   QM_TRY(MOZ_TO_RESULT(IPCBlobUtils::Serialize(blob, ipcBlob)), IPC_OK(),

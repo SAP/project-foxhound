@@ -2029,8 +2029,7 @@ void nsCSSRendering::GetImageLayerClip(
     /* out */ ImageLayerClipState* aClipState) {
   StyleGeometryBox layerClip = ComputeBoxValue(aForFrame, aLayer.mClip);
   if (IsSVGStyleGeometryBox(layerClip)) {
-    MOZ_ASSERT(aForFrame->IsFrameOfType(nsIFrame::eSVG) &&
-               !aForFrame->IsSVGOuterSVGFrame());
+    MOZ_ASSERT(aForFrame->HasAnyStateBits(NS_FRAME_SVG_LAYOUT));
 
     // The coordinate space of clipArea is svg user space.
     nsRect clipArea = nsLayoutUtils::ComputeGeometryBox(aForFrame, layerClip);
@@ -2069,8 +2068,7 @@ void nsCSSRendering::GetImageLayerClip(
     return;
   }
 
-  MOZ_ASSERT(!aForFrame->IsFrameOfType(nsIFrame::eSVG) ||
-             aForFrame->IsSVGOuterSVGFrame());
+  MOZ_ASSERT(!aForFrame->HasAnyStateBits(NS_FRAME_SVG_LAYOUT));
 
   // Compute the outermost boundary of the area that might be painted.
   // Same coordinate space as aBorderArea.
@@ -2671,8 +2669,7 @@ nsRect nsCSSRendering::ComputeImageLayerPositioningArea(
   StyleGeometryBox layerOrigin = ComputeBoxValue(aForFrame, aLayer.mOrigin);
 
   if (IsSVGStyleGeometryBox(layerOrigin)) {
-    MOZ_ASSERT(aForFrame->IsFrameOfType(nsIFrame::eSVG) &&
-               !aForFrame->IsSVGOuterSVGFrame());
+    MOZ_ASSERT(aForFrame->HasAnyStateBits(NS_FRAME_SVG_LAYOUT));
     *aAttachedToFrame = aForFrame;
 
     positionArea = nsLayoutUtils::ComputeGeometryBox(aForFrame, layerOrigin);
@@ -2688,8 +2685,7 @@ nsRect nsCSSRendering::ComputeImageLayerPositioningArea(
     return nsRect(toStrokeBoxOffset, positionArea.Size());
   }
 
-  MOZ_ASSERT(!aForFrame->IsFrameOfType(nsIFrame::eSVG) ||
-             aForFrame->IsSVGOuterSVGFrame());
+  MOZ_ASSERT(!aForFrame->HasAnyStateBits(NS_FRAME_SVG_LAYOUT));
 
   LayoutFrameType frameType = aForFrame->Type();
   nsIFrame* geometryFrame = aForFrame;
@@ -4058,15 +4054,15 @@ void nsCSSRendering::PaintDecorationLine(
   // (For runs we do process, CreateTextBlob will update the position.)
   auto currentGlyphRunAdvance = [&]() {
     return textRun->GetAdvanceWidth(
-               gfxTextRun::Range(iter.GetStringStart(), iter.GetStringEnd()),
+               gfxTextRun::Range(iter.StringStart(), iter.StringEnd()),
                aParams.provider) /
            appUnitsPerDevPixel;
   };
 
-  while (iter.NextRun()) {
-    if (iter.GetGlyphRun()->mOrientation ==
+  for (; !iter.AtEnd(); iter.NextRun()) {
+    if (iter.GlyphRun()->mOrientation ==
             mozilla::gfx::ShapedTextFlags::TEXT_ORIENT_VERTICAL_UPRIGHT ||
-        (iter.GetGlyphRun()->mIsCJK &&
+        (iter.GlyphRun()->mIsCJK &&
          skipInk == mozilla::StyleTextDecorationSkipInk::Auto)) {
       // We don't support upright text in vertical modes currently
       // (see https://bugzilla.mozilla.org/show_bug.cgi?id=1572294),
@@ -4080,7 +4076,7 @@ void nsCSSRendering::PaintDecorationLine(
       continue;
     }
 
-    gfxFont* font = iter.GetGlyphRun()->mFont;
+    gfxFont* font = iter.GlyphRun()->mFont;
     // Don't try to apply skip-ink to 'sbix' fonts like Apple Color Emoji,
     // because old macOS (10.9) may crash trying to retrieve glyph paths
     // that don't exist.
@@ -4100,7 +4096,7 @@ void nsCSSRendering::PaintDecorationLine(
     // textPos.fX with the advance of the glyphs.
     sk_sp<const SkTextBlob> textBlob =
         CreateTextBlob(textRun, characterGlyphs, skiafont, spacing.Elements(),
-                       iter.GetStringStart(), iter.GetStringEnd(),
+                       iter.StringStart(), iter.StringEnd(),
                        (float)appUnitsPerDevPixel, textPos, spacingOffset);
 
     if (!textBlob) {

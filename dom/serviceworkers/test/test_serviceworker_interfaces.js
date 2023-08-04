@@ -143,6 +143,8 @@ let interfaceNamesInGlobalScope = [
   // IMPORTANT: Do not change this list without review from a DOM peer!
   "CloseEvent",
   // IMPORTANT: Do not change this list without review from a DOM peer!
+  "CompressionStream",
+  // IMPORTANT: Do not change this list without review from a DOM peer!
   "CountQueuingStrategy",
   // IMPORTANT: Do not change this list without review from a DOM peer!
   "Crypto",
@@ -150,6 +152,8 @@ let interfaceNamesInGlobalScope = [
   "CryptoKey",
   // IMPORTANT: Do not change this list without review from a DOM peer!
   "CustomEvent",
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  "DecompressionStream",
   // IMPORTANT: Do not change this list without review from a DOM peer!
   "Directory",
   // IMPORTANT: Do not change this list without review from a DOM peer!
@@ -348,6 +352,24 @@ let interfaceNamesInGlobalScope = [
   "URLSearchParams",
   // IMPORTANT: Do not change this list without review from a DOM peer!
   "WebSocket",
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "WebTransport", nightly: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  {
+    name: "WebTransportBidirectionalStream",
+    nightly: true,
+  },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  {
+    name: "WebTransportDatagramDuplexStream",
+    nightly: true,
+  },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "WebTransportError", nightly: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "WebTransportReceiveStream", nightly: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "WebTransportSendStream", nightly: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   "WebGL2RenderingContext",
   // IMPORTANT: Do not change this list without review from a DOM peer!

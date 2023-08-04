@@ -251,6 +251,19 @@ class WebPlatformTest(TestingMixin, MercurialScript, CodeCoverageMixin, AndroidM
 
         self.register_virtualenv_module(requirements=[requirements], two_pass=True)
 
+        webtransport_requirements = os.path.join(
+            dirs["abs_test_install_dir"],
+            "web-platform",
+            "tests",
+            "tools",
+            "webtransport",
+            "requirements.txt",
+        )
+
+        self.register_virtualenv_module(
+            requirements=[webtransport_requirements], two_pass=True
+        )
+
     def _query_geckodriver(self):
         path = None
         c = self.config
@@ -292,7 +305,6 @@ class WebPlatformTest(TestingMixin, MercurialScript, CodeCoverageMixin, AndroidM
 
         cmd += [
             "--log-raw=-",
-            "--log-raw=%s" % raw_log_file,
             "--log-wptreport=%s"
             % os.path.join(dirs["abs_blob_upload_dir"], "wptreport.json"),
             "--log-errorsummary=%s" % error_summary_file,

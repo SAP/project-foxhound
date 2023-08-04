@@ -6377,12 +6377,12 @@ RegPtr BaseCompiler::loadTypeDefInstanceData(uint32_t typeIndex) {
   return rp;
 }
 
-RegPtr BaseCompiler::loadTypeDef(uint32_t typeIndex) {
+RegPtr BaseCompiler::loadSuperTypeVector(uint32_t typeIndex) {
   RegPtr rp = needPtr();
 #  ifndef RABALDR_PIN_INSTANCE
   fr.loadInstancePtr(InstanceReg);
 #  endif
-  masm.loadWasmGlobalPtr(moduleEnv_.offsetOfTypeDef(typeIndex), rp);
+  masm.loadWasmGlobalPtr(moduleEnv_.offsetOfSuperTypeVector(typeIndex), rp);
   return rp;
 }
 
@@ -6407,7 +6407,7 @@ void BaseCompiler::branchGcObjectType(RegRef object, uint32_t typeIndex,
                                       Label* label, bool succeedOnNull,
                                       bool onSuccess) {
   const TypeDef& castTypeDef = (*moduleEnv_.types)[typeIndex];
-  RegPtr superTypeDef = loadTypeDef(typeIndex);
+  RegPtr superSuperTypeVector = loadSuperTypeVector(typeIndex);
   RegPtr scratch1 = needPtr();
   RegI32 scratch2;
   if (castTypeDef.subTypingDepth() >= MinSuperTypeVectorLength) {
@@ -6420,17 +6420,18 @@ void BaseCompiler::branchGcObjectType(RegRef object, uint32_t typeIndex,
   Label* nullLabel = succeedOnNull ? successLabel : failLabel;
   masm.branchTestPtr(Assembler::Zero, object, object, nullLabel);
   masm.branchTestObjectIsWasmGcObject(false, object, scratch1, failLabel);
-  masm.loadPtr(Address(object, WasmGcObject::offsetOfTypeDef()), scratch1);
-  masm.branchWasmTypeDefIsSubtype(scratch1, superTypeDef, scratch2,
-                                  castTypeDef.subTypingDepth(), label,
-                                  onSuccess);
+  masm.loadPtr(Address(object, WasmGcObject::offsetOfSuperTypeVector()),
+               scratch1);
+  masm.branchWasmSuperTypeVectorIsSubtype(
+      scratch1, superSuperTypeVector, scratch2, castTypeDef.subTypingDepth(),
+      label, onSuccess);
   masm.bind(&fallthrough);
 
   if (castTypeDef.subTypingDepth() >= MinSuperTypeVectorLength) {
     freeI32(scratch2);
   }
   freePtr(scratch1);
-  freePtr(superTypeDef);
+  freePtr(superSuperTypeVector);
 }
 
 RegPtr BaseCompiler::emitGcArrayGetData(RegRef rp) {
@@ -8414,22 +8415,22 @@ static void RelaxedMaxF64x2(MacroAssembler& masm, RegV128 rs, RegV128 rsd) {
 
 static void RelaxedConvertF32x4ToI32x4(MacroAssembler& masm, RegV128 rs,
                                        RegV128 rd) {
-  masm.truncSatFloat32x4ToInt32x4Relaxed(rs, rd);
+  masm.truncFloat32x4ToInt32x4Relaxed(rs, rd);
 }
 
 static void RelaxedConvertF32x4ToUI32x4(MacroAssembler& masm, RegV128 rs,
                                         RegV128 rd) {
-  masm.unsignedTruncSatFloat32x4ToInt32x4Relaxed(rs, rd);
+  masm.unsignedTruncFloat32x4ToInt32x4Relaxed(rs, rd);
 }
 
 static void RelaxedConvertF64x2ToI32x4(MacroAssembler& masm, RegV128 rs,
                                        RegV128 rd) {
-  masm.truncSatFloat64x2ToInt32x4Relaxed(rs, rd);
+  masm.truncFloat64x2ToInt32x4Relaxed(rs, rd);
 }
 
 static void RelaxedConvertF64x2ToUI32x4(MacroAssembler& masm, RegV128 rs,
                                         RegV128 rd) {
-  masm.unsignedTruncSatFloat64x2ToInt32x4Relaxed(rs, rd);
+  masm.unsignedTruncFloat64x2ToInt32x4Relaxed(rs, rd);
 }
 
 static void RelaxedQ15MulrS(MacroAssembler& masm, RegV128 rs, RegV128 rsd) {
@@ -8451,18 +8452,6 @@ void BaseCompiler::emitDotI8x16I7x16AddS() {
 #    else
   masm.dotInt8x16Int7x16ThenAdd(rs0, rs1, rsd);
 #    endif
-  freeV128(rs1);
-  freeV128(rs0);
-  pushV128(rsd);
-}
-
-void BaseCompiler::emitDotBF16x8AddF32x4() {
-  RegV128 rsd = popV128();
-  RegV128 rs0, rs1;
-  pop2xV128(&rs0, &rs1);
-  RegV128 temp = needV128();
-  masm.dotBFloat16x8ThenAdd(rs0, rs1, rsd, temp);
-  freeV128(temp);
   freeV128(rs1);
   freeV128(rs0);
   pushV128(rsd);
@@ -10158,22 +10147,22 @@ bool BaseCompiler::emitBody() {
               return iter_.unrecognizedOpcode(&op);
             }
             CHECK_NEXT(dispatchVectorBinary(RelaxedMaxF64x2));
-          case uint32_t(SimdOp::I32x4RelaxedTruncSSatF32x4):
+          case uint32_t(SimdOp::I32x4RelaxedTruncF32x4S):
             if (!moduleEnv_.v128RelaxedEnabled()) {
               return iter_.unrecognizedOpcode(&op);
             }
             CHECK_NEXT(dispatchVectorUnary(RelaxedConvertF32x4ToI32x4));
-          case uint32_t(SimdOp::I32x4RelaxedTruncUSatF32x4):
+          case uint32_t(SimdOp::I32x4RelaxedTruncF32x4U):
             if (!moduleEnv_.v128RelaxedEnabled()) {
               return iter_.unrecognizedOpcode(&op);
             }
             CHECK_NEXT(dispatchVectorUnary(RelaxedConvertF32x4ToUI32x4));
-          case uint32_t(SimdOp::I32x4RelaxedTruncSatF64x2SZero):
+          case uint32_t(SimdOp::I32x4RelaxedTruncF64x2SZero):
             if (!moduleEnv_.v128RelaxedEnabled()) {
               return iter_.unrecognizedOpcode(&op);
             }
             CHECK_NEXT(dispatchVectorUnary(RelaxedConvertF64x2ToI32x4));
-          case uint32_t(SimdOp::I32x4RelaxedTruncSatF64x2UZero):
+          case uint32_t(SimdOp::I32x4RelaxedTruncF64x2UZero):
             if (!moduleEnv_.v128RelaxedEnabled()) {
               return iter_.unrecognizedOpcode(&op);
             }
@@ -10198,11 +10187,6 @@ bool BaseCompiler::emitBody() {
               return iter_.unrecognizedOpcode(&op);
             }
             CHECK_NEXT(dispatchTernary0(emitDotI8x16I7x16AddS, ValType::V128));
-          case uint32_t(SimdOp::F32x4RelaxedDotBF16x8AddF32x4):
-            if (!moduleEnv_.v128RelaxedEnabled()) {
-              return iter_.unrecognizedOpcode(&op);
-            }
-            CHECK_NEXT(dispatchTernary0(emitDotBF16x8AddF32x4, ValType::V128));
 #  endif
           default:
             break;

@@ -41,6 +41,7 @@ function renderMultistage(ready) {
     window.close();
   };
   window.AWWaitForMigrationClose = receive("WAIT_FOR_MIGRATION_CLOSE");
+  window.AWEvaluateScreenTargeting = receive("EVALUATE_SCREEN_TARGETING");
 
   // Update styling to be compatible with about:welcome.
   addStylesheet(
@@ -48,7 +49,7 @@ function renderMultistage(ready) {
   );
 
   document.body.classList.add("onboardingContainer");
-  document.body.id = "root";
+  document.body.id = "multi-stage-message-root";
   // This value is reported as the "page" in telemetry
   document.body.dataset.page = "spotlight";
 

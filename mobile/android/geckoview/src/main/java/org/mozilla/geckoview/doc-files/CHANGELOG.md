@@ -13,6 +13,28 @@ exclude: true
 
 ⚠️  breaking change and deprecation notices
 
+## v113
+- Add `DisplayMdoe` annotation to [`displayMode`][113.1], [`getDisplayMode`][113.2] and [`setDisplayMode`][113.3].
+  ([bug 1820567]({{bugzilla}}1820567))
+- Add `UserAgentMode` annotation to [`userAgentMode`][113.4], [`getUserAgentMode`][113.5] and [`setUserAgentMode`][113.6].
+  ([bug 1820567]({{bugzilla}}1820567))
+- Add `ViewportMode` annotation to [`viewportMode`][113.7], [`getViewportMode`][113.8] and [`setViewportMode`][113.9].
+  ([bug 1820567]({{bugzilla}}1820567))
+- Add [`WebExtensionController.AddonManagerDelegate`][113.10] ([bug 1822763]({{bugzilla}}1822763))
+- Add [`SessionPdfFileSaver.createResponse`][113.11] to response of saving PDF.
+
+[113.1]: {{javadoc_uri}}/GeckoSessionSettings.Builder.html#displayMode(int)
+[113.2]: {{javadoc_uri}}/GeckoSessionSettings.html#getDisplayMode()
+[113.3]: {{javadoc_uri}}/GeckoSessionSettings.html#setDisplayMode(int)
+[113.4]: {{javadoc_uri}}/GeckoSessionSettings.Builder.html#userAgentMode(int)
+[113.5]: {{javadoc_uri}}/GeckoSessionSettings.html#getUserAgentMode()
+[113.6]: {{javadoc_uri}}/GeckoSessionSettings.html#setUserAgentMode(int)
+[113.7]: {{javadoc_uri}}/GeckoSessionSettings.Builder.html#userViewportMode(int)
+[113.8]: {{javadoc_uri}}/GeckoSessionSettings.html#getViewportMode()
+[113.9]: {{javadoc_uri}}/GeckoSessionSettings.html#setViewportMode(int)
+[113.10]: {{javadoc_uri}}/WebExtensionController.AddonManagerDelegate.html
+[113.11]: {{javadoc_uri}}/SessionPdfFileSaver.html#createResponse(byte[], String, String)
+
 ## v112
 - Added `GeckoSession.LOAD_FLAGS_BYPASS_LOAD_URI_DELEGATE`, see ([bug 1809269]({{bugzilla}}1809269)).
 - Added [`GeckoSession.hasCookieBannerRuleForBrowsingContextTree`][112.1] to expose Gecko API nsICookieBannerService::hasRuleForBrowsingContextTree see ([bug 1806740]({{bugzilla}}1806740))
@@ -1326,4 +1348,4 @@ to allow adding gecko profiler markers.
 [65.24]: {{javadoc_uri}}/CrashReporter.html#sendCrashReport(android.content.Context,android.os.Bundle,java.lang.String)
 [65.25]: {{javadoc_uri}}/GeckoResult.html
 
-[api-version]: 689b18906b126893e80298e5fa4281563f251bae
+[api-version]: 77d927b3f50ff54fb952a1f4b406631bac49b23d

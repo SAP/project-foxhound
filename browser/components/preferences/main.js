@@ -8,8 +8,9 @@
 /* import-globals-from /browser/base/content/aboutDialog-appUpdater.js */
 /* global MozXULElement */
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  BackgroundUpdate: "resource://gre/modules/BackgroundUpdate.jsm",
+ChromeUtils.defineESModuleGetters(this, {
+  BackgroundUpdate: "resource://gre/modules/BackgroundUpdate.sys.mjs",
+  MigrationUtils: "resource:///modules/MigrationUtils.sys.mjs",
 });
 
 // Constants & Enumeration Values
@@ -332,6 +333,17 @@ var gMainPane = {
       )
     ) {
       document.getElementById("pictureInPictureBox").hidden = false;
+      setEventListener("pictureInPictureToggleEnabled", "command", function(
+        event
+      ) {
+        if (!event.target.checked) {
+          Services.telemetry.recordEvent(
+            "pictureinpicture.settings",
+            "disable",
+            "settings"
+          );
+        }
+      });
     }
 
     if (AppConstants.platform == "win") {
@@ -472,6 +484,21 @@ var gMainPane = {
       "command",
       gMainPane.showContainerSettings
     );
+    setEventListener(
+      "data-migration",
+      "command",
+      gMainPane.onMigrationButtonCommand
+    );
+
+    document
+      .getElementById("migrationWizardDialog")
+      .addEventListener("MigrationWizard:Close", function(e) {
+        e.currentTarget.close();
+      });
+
+    if (Services.policies && !Services.policies.isAllowed("profileImport")) {
+      document.getElementById("dataMigrationGroup").remove();
+    }
 
     // For media control toggle button, we support it on Windows 8.1+ (NT6.3),
     // MacOs 10.4+ (darwin8.0, but we already don't support that) and
@@ -787,9 +814,16 @@ var gMainPane = {
   },
 
   handleSubcategory(subcategory) {
+    if (Services.policies && !Services.policies.isAllowed("profileImport")) {
+      return false;
+    }
     if (subcategory == "migrate") {
       this.showMigrationWizardDialog();
       return true;
+    }
+
+    if (subcategory == "migrate-autoclose") {
+      this.showMigrationWizardDialog({ closeTabWhenDone: true });
     }
 
     return false;
@@ -1056,7 +1090,7 @@ var gMainPane = {
     for (let i = 0; i < messages.length; i++) {
       let messageContainer = document.createXULElement("hbox");
       messageContainer.classList.add("message-bar-content");
-      messageContainer.setAttribute("flex", "1");
+      messageContainer.style.flex = "1 50%";
       messageContainer.setAttribute("align", "center");
 
       let description = document.createXULElement("description");
@@ -1713,10 +1747,30 @@ var gMainPane = {
     })().catch(console.error);
   },
 
+  onMigrationButtonCommand(command) {
+    // When browser.migrate.content-modal.enabled is enabled by default,
+    // the event handler can just call showMigrationWizardDialog directly,
+    // but for now, we delegate to MigrationUtils to open the native modal
+    // in case that's the dialog we're still using.
+    //
+    // Enabling the pref by default will be part of bug 1822156.
+    const browser = window.docShell.chromeEventHandler;
+    const browserWindow = browser.ownerGlobal;
+
+    // showMigrationWizard blocks on some platforms. We'll dispatch the request
+    // to open to a runnable on the main thread so that we don't have to block
+    // this function call.
+    Services.tm.dispatchToMainThread(() => {
+      MigrationUtils.showMigrationWizard(browserWindow, {
+        entrypoint: MigrationUtils.MIGRATION_ENTRYPOINTS.PREFERENCES,
+      });
+    });
+  },
+
   /**
    * Displays the migration wizard dialog in an HTML dialog.
    */
-  async showMigrationWizardDialog() {
+  async showMigrationWizardDialog({ closeTabWhenDone = false } = {}) {
     let migrationWizardDialog = document.getElementById(
       "migrationWizardDialog"
     );
@@ -1732,9 +1786,33 @@ var gMainPane = {
     if (!migrationWizardDialog.firstElementChild) {
       let wizard = document.createElement("migration-wizard");
       wizard.toggleAttribute("dialog-mode", true);
+
+      let panelList = document.createElement("panel-list");
+      let panel = document.createXULElement("panel");
+      panel.appendChild(panelList);
+      wizard.appendChild(panel);
+
       migrationWizardDialog.appendChild(wizard);
     }
     migrationWizardDialog.firstElementChild.requestState();
+
+    migrationWizardDialog.addEventListener(
+      "close",
+      () => {
+        // Let others know that the wizard is closed -- potentially because of a
+        // user action within the dialog that dispatches "MigrationWizard:Close"
+        // but this also covers cases like hitting Escape.
+        Services.obs.notifyObservers(
+          migrationWizardDialog,
+          "MigrationWizard:Closed"
+        );
+        if (closeTabWhenDone) {
+          window.close();
+        }
+      },
+      { once: true }
+    );
+
     migrationWizardDialog.showModal();
   },
 
@@ -2147,7 +2225,7 @@ var gMainPane = {
     if (enabledHandlers) {
       for (let ext of enabledHandlers.split(",")) {
         internalHandlers.push(
-          new ViewableInternallyHandlerInfoWrapper(ext.trim())
+          new ViewableInternallyHandlerInfoWrapper(null, ext.trim())
         );
       }
     }
@@ -2169,7 +2247,11 @@ var gMainPane = {
       if (type in this._handledTypes) {
         handlerInfoWrapper = this._handledTypes[type];
       } else {
-        handlerInfoWrapper = new HandlerInfoWrapper(type, wrappedHandlerInfo);
+        if (DownloadIntegration.shouldViewDownloadInternally(type)) {
+          handlerInfoWrapper = new ViewableInternallyHandlerInfoWrapper(type);
+        } else {
+          handlerInfoWrapper = new HandlerInfoWrapper(type, wrappedHandlerInfo);
+        }
         this._handledTypes[type] = handlerInfoWrapper;
       }
     }
@@ -3644,10 +3726,6 @@ class PDFHandlerInfoWrapper extends InternalHandlerInfoWrapper {
 }
 
 class ViewableInternallyHandlerInfoWrapper extends InternalHandlerInfoWrapper {
-  constructor(extension) {
-    super(null, extension);
-  }
-
   get enabled() {
     return DownloadIntegration.shouldViewDownloadInternally(this.type);
   }
@@ -3696,12 +3774,6 @@ const AppearanceChooser = {
       });
 
     this.warning = document.getElementById("web-appearance-override-warning");
-
-    document
-      .getElementById("migrationWizardDialog")
-      .addEventListener("MigrationWizard:Close", function(e) {
-        e.currentTarget.close();
-      });
 
     FORCED_COLORS_QUERY.addEventListener("change", this);
     Services.prefs.addObserver(PREF_USE_SYSTEM_COLORS, this);

@@ -79,7 +79,6 @@ function isBlankPageURL(aURL) {
   return (
     aURL == "about:blank" ||
     aURL == "about:home" ||
-    aURL == "about:welcome" ||
     aURL == BROWSER_NEW_TAB_URL ||
     aURL == "chrome://browser/content/blanktab.html"
   );
@@ -412,7 +411,7 @@ function openAboutDialog() {
   if (AppConstants.platform == "win") {
     features += "centerscreen,dependent";
   } else if (AppConstants.platform == "macosx") {
-    features += "resizable=no,minimizable=no";
+    features += "centerscreen,resizable=no,minimizable=no";
   } else {
     features += "centerscreen,dependent,dialog=no";
   }

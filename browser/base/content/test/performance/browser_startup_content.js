@@ -32,11 +32,10 @@ const known_scripts = {
 
     // Browser front-end
     "resource:///actors/AboutReaderChild.sys.mjs",
-    "resource:///actors/BrowserTabChild.sys.mjs",
-    "resource:///actors/LinkHandlerChild.jsm",
-    "resource:///actors/SearchSERPTelemetryChild.jsm",
-    "resource://gre/actors/ContentMetaChild.jsm",
-    "resource://gre/modules/Readerable.jsm",
+    "resource:///actors/LinkHandlerChild.sys.mjs",
+    "resource:///actors/SearchSERPTelemetryChild.sys.mjs",
+    "resource://gre/actors/ContentMetaChild.sys.mjs",
+    "resource://gre/modules/Readerable.sys.mjs",
 
     // Telemetry
     "resource://gre/modules/TelemetryControllerBase.sys.mjs", // bug 1470339
@@ -82,7 +81,7 @@ const intermittently_loaded_scripts = {
     "resource://webcompat/AboutCompat.jsm",
 
     // Cookie banner handling.
-    "resource://gre/actors/CookieBannerChild.jsm",
+    "resource://gre/actors/CookieBannerChild.sys.mjs",
     "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
 
     // Test related

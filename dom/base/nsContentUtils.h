@@ -53,6 +53,7 @@
 #include "nsLiteralString.h"
 #include "nsMargin.h"
 #include "nsPIDOMWindow.h"
+#include "nsRFPService.h"
 #include "nsStringFwd.h"
 #include "nsTArray.h"
 #include "nsTLiteralString.h"
@@ -264,6 +265,7 @@ class nsContentUtils {
   using TimeDuration = mozilla::TimeDuration;
   using Trusted = mozilla::Trusted;
   using JSONBehavior = mozilla::dom::JSONBehavior;
+  using RFPTarget = mozilla::RFPTarget;
 
  public:
   static nsresult Init();
@@ -354,16 +356,22 @@ class nsContentUtils {
 
   // Check whether we should avoid leaking distinguishing information to JS/CSS.
   // This function can be called both in the main thread and worker threads.
-  static bool ShouldResistFingerprinting();
-  static bool ShouldResistFingerprinting(nsIGlobalObject* aGlobalObject);
+  static bool ShouldResistFingerprinting(
+      RFPTarget aTarget = RFPTarget::Unknown);
+  static bool ShouldResistFingerprinting(
+      nsIGlobalObject* aGlobalObject, RFPTarget aTarget = RFPTarget::Unknown);
   // Similar to the function above, but always allows CallerType::System
   // callers.
-  static bool ShouldResistFingerprinting(mozilla::dom::CallerType aCallerType,
-                                         nsIGlobalObject* aGlobalObject);
-  static bool ShouldResistFingerprinting(nsIDocShell* aDocShell);
+  static bool ShouldResistFingerprinting(
+      mozilla::dom::CallerType aCallerType, nsIGlobalObject* aGlobalObject,
+      RFPTarget aTarget = RFPTarget::Unknown);
+  static bool ShouldResistFingerprinting(
+      nsIDocShell* aDocShell, RFPTarget aTarget = RFPTarget::Unknown);
   // These functions are the new, nuanced functions
-  static bool ShouldResistFingerprinting(nsIChannel* aChannel);
-  static bool ShouldResistFingerprinting(nsILoadInfo* aPrincipal);
+  static bool ShouldResistFingerprinting(
+      nsIChannel* aChannel, RFPTarget aTarget = RFPTarget::Unknown);
+  static bool ShouldResistFingerprinting(
+      nsILoadInfo* aLoadInfo, RFPTarget aTarget = RFPTarget::Unknown);
   // These functions are labeled as dangerous because they will do the wrong
   // thing in _most_ cases. They should only be used if you don't have a fully
   // constructed LoadInfo or Document.
@@ -373,9 +381,10 @@ class nsContentUtils {
   // (see below for more on justification strings.)
   static bool ShouldResistFingerprinting_dangerous(
       nsIURI* aURI, const mozilla::OriginAttributes& aOriginAttributes,
-      const char* aJustification);
-  static bool ShouldResistFingerprinting_dangerous(nsIPrincipal* aPrincipal,
-                                                   const char* aJustification);
+      const char* aJustification, RFPTarget aTarget = RFPTarget::Unknown);
+  static bool ShouldResistFingerprinting_dangerous(
+      nsIPrincipal* aPrincipal, const char* aJustification,
+      RFPTarget aTarget = RFPTarget::Unknown);
 
   /**
    * Implement a RFP function that only checks the pref, and does not take
@@ -387,7 +396,8 @@ class nsContentUtils {
    * require a legacy function. (Additionally, we sometimes use the coarse
    * check first, to avoid running additional code to support a nuanced check.)
    */
-  static bool ShouldResistFingerprinting(const char* aJustification);
+  static bool ShouldResistFingerprinting(
+      const char* aJustification, RFPTarget aTarget = RFPTarget::Unknown);
 
   // A helper function to calculate the rounded window size for fingerprinting
   // resistance. The rounded size is based on the chrome UI size and available
@@ -3605,28 +3615,28 @@ class TreeOrderComparator {
  * series is not finite.
  */
 #define NS_ENSURE_FINITE(f, rv) \
-  if (!mozilla::IsFinite(f)) {  \
+  if (!std::isfinite(f)) {      \
     return (rv);                \
   }
 
-#define NS_ENSURE_FINITE2(f1, f2, rv)    \
-  if (!mozilla::IsFinite((f1) + (f2))) { \
-    return (rv);                         \
+#define NS_ENSURE_FINITE2(f1, f2, rv) \
+  if (!std::isfinite((f1) + (f2))) {  \
+    return (rv);                      \
   }
 
-#define NS_ENSURE_FINITE4(f1, f2, f3, f4, rv)          \
-  if (!mozilla::IsFinite((f1) + (f2) + (f3) + (f4))) { \
-    return (rv);                                       \
+#define NS_ENSURE_FINITE4(f1, f2, f3, f4, rv)      \
+  if (!std::isfinite((f1) + (f2) + (f3) + (f4))) { \
+    return (rv);                                   \
   }
 
-#define NS_ENSURE_FINITE5(f1, f2, f3, f4, f5, rv)             \
-  if (!mozilla::IsFinite((f1) + (f2) + (f3) + (f4) + (f5))) { \
-    return (rv);                                              \
+#define NS_ENSURE_FINITE5(f1, f2, f3, f4, f5, rv)         \
+  if (!std::isfinite((f1) + (f2) + (f3) + (f4) + (f5))) { \
+    return (rv);                                          \
   }
 
-#define NS_ENSURE_FINITE6(f1, f2, f3, f4, f5, f6, rv)                \
-  if (!mozilla::IsFinite((f1) + (f2) + (f3) + (f4) + (f5) + (f6))) { \
-    return (rv);                                                     \
+#define NS_ENSURE_FINITE6(f1, f2, f3, f4, f5, f6, rv)            \
+  if (!std::isfinite((f1) + (f2) + (f3) + (f4) + (f5) + (f6))) { \
+    return (rv);                                                 \
   }
 
 // Deletes a linked list iteratively to avoid blowing up the stack (bug 460444).

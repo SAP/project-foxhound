@@ -20,7 +20,7 @@ namespace a11y {
 CachedTextMarker::CachedTextMarker(Accessible* aAcc, int32_t aOffset) {
   HyperTextAccessibleBase* ht = aAcc->AsHyperTextBase();
   if (ht && aOffset != nsIAccessibleText::TEXT_OFFSET_END_OF_TEXT &&
-      aOffset < static_cast<int32_t>(ht->CharacterCount())) {
+      aOffset <= static_cast<int32_t>(ht->CharacterCount())) {
     mPoint = aAcc->AsHyperTextBase()->ToTextLeafPoint(aOffset);
   } else {
     mPoint = TextLeafPoint(aAcc, aOffset);
@@ -170,6 +170,19 @@ CachedTextMarkerRange CachedTextMarker::RightWordRange() const {
 
   return CachedTextMarkerRange(start < end ? start : end,
                                start < end ? end : start);
+}
+
+CachedTextMarkerRange CachedTextMarker::LineRange() const {
+  TextLeafPoint start = mPoint.FindBoundary(
+      nsIAccessibleText::BOUNDARY_LINE_START, eDirPrevious,
+      TextLeafPoint::BoundaryFlags::eStopInEditable |
+          TextLeafPoint::BoundaryFlags::eIgnoreListItemMarker |
+          TextLeafPoint::BoundaryFlags::eIncludeOrigin);
+  TextLeafPoint end =
+      start.FindBoundary(nsIAccessibleText::BOUNDARY_LINE_END, eDirNext,
+                         TextLeafPoint::BoundaryFlags::eStopInEditable);
+
+  return CachedTextMarkerRange(start, end);
 }
 
 CachedTextMarkerRange CachedTextMarker::LeftLineRange() const {

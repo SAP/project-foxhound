@@ -16,12 +16,12 @@ ChromeUtils.defineESModuleGetters(lazy, {
   BrowserUtils: "resource://gre/modules/BrowserUtils.sys.mjs",
   BuiltInThemes: "resource:///modules/BuiltInThemes.sys.mjs",
   FxAccounts: "resource://gre/modules/FxAccounts.sys.mjs",
+  SpecialMessageActions:
+    "resource://messaging-system/lib/SpecialMessageActions.sys.mjs",
 });
 
 XPCOMUtils.defineLazyModuleGetters(lazy, {
   AddonManager: "resource://gre/modules/AddonManager.jsm",
-  SpecialMessageActions:
-    "resource://messaging-system/lib/SpecialMessageActions.jsm",
   AboutWelcomeTelemetry:
     "resource://activity-stream/aboutwelcome/lib/AboutWelcomeTelemetry.jsm",
   AboutWelcomeDefaults:
@@ -32,8 +32,8 @@ XPCOMUtils.defineLazyModuleGetters(lazy, {
 });
 
 XPCOMUtils.defineLazyGetter(lazy, "log", () => {
-  const { Logger } = ChromeUtils.import(
-    "resource://messaging-system/lib/Logger.jsm"
+  const { Logger } = ChromeUtils.importESModule(
+    "resource://messaging-system/lib/Logger.sys.mjs"
   );
   return new Logger("AboutWelcomeParent");
 });
@@ -212,18 +212,19 @@ class AboutWelcomeParent extends JSWindowActorParent {
           !AboutWelcomeParent.isDefaultBrowser()
         );
       case "AWPage:WAIT_FOR_MIGRATION_CLOSE":
-        return new Promise(resolve =>
-          Services.ww.registerNotification(function observer(subject, topic) {
-            if (
-              topic === "domwindowclosed" &&
-              subject.document.documentURI ===
-                "chrome://browser/content/migration/migration.xhtml"
-            ) {
-              Services.ww.unregisterNotification(observer);
-              resolve();
-            }
-          })
-        );
+        // Support multiples types of migration: 1) content modal 2) old
+        // migration modal 3) standalone content modal
+        return new Promise(resolve => {
+          const topics = [
+            "MigrationWizard:Closed",
+            "MigrationWizard:Destroyed",
+          ];
+          const observer = () => {
+            topics.forEach(t => Services.obs.removeObserver(observer, t));
+            resolve();
+          };
+          topics.forEach(t => Services.obs.addObserver(observer, t));
+        });
       case "AWPage:GET_APP_AND_SYSTEM_LOCALE_INFO":
         return lazy.LangPackMatcher.getAppAndSystemLocaleInfo();
       case "AWPage:EVALUATE_SCREEN_TARGETING":

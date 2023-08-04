@@ -4,9 +4,12 @@
 
 /* eslint-env mozilla/browser-window */
 
-XPCOMUtils.defineLazyModuleGetters(this, {
+ChromeUtils.defineESModuleGetters(this, {
   ContentBlockingAllowList:
-    "resource://gre/modules/ContentBlockingAllowList.jsm",
+    "resource://gre/modules/ContentBlockingAllowList.sys.mjs",
+});
+
+XPCOMUtils.defineLazyModuleGetters(this, {
   ToolbarPanelHub: "resource://activity-stream/lib/ToolbarPanelHub.jsm",
 });
 
@@ -235,8 +238,8 @@ class ProtectionCategory {
     }
 
     // Create an item to hold the origin label and shim allow indicator. Using
-    // an html element here, so we can use CSS flex rather than -moz-box, which
-    // handles the label overflow in combination with the icon correctly.
+    // an html element here, so we can use CSS flex, which handles the label
+    // overflow in combination with the icon correctly.
     let listItem = document.createElementNS(
       "http://www.w3.org/1999/xhtml",
       "div"
@@ -1118,9 +1121,29 @@ let cookieBannerHandling = new (class {
     );
     XPCOMUtils.defineLazyPreferenceGetter(
       this,
-      "_uiDisabled",
+      "_uiEnabled",
       "cookiebanners.ui.desktop.enabled",
       false
+    );
+    XPCOMUtils.defineLazyGetter(this, "_cookieBannerSection", () =>
+      document.getElementById("protections-popup-cookie-banner-section")
+    );
+    XPCOMUtils.defineLazyGetter(this, "_cookieBannerSectionSeparator", () =>
+      document.getElementById(
+        "protections-popup-cookie-banner-section-separator"
+      )
+    );
+    XPCOMUtils.defineLazyGetter(this, "_cookieBannerSwitch", () =>
+      document.getElementById("protections-popup-cookie-banner-switch")
+    );
+    XPCOMUtils.defineLazyGetter(this, "_cookieBannerSubview", () =>
+      document.getElementById("protections-popup-cookieBannerView")
+    );
+    XPCOMUtils.defineLazyGetter(this, "_cookieBannerEnableSite", () =>
+      document.getElementById("cookieBannerView-enable-site")
+    );
+    XPCOMUtils.defineLazyGetter(this, "_cookieBannerDisableSite", () =>
+      document.getElementById("cookieBannerView-disable-site")
     );
   }
 
@@ -1181,137 +1204,82 @@ let cookieBannerHandling = new (class {
     return gBrowser.contentPrincipal.baseDomain;
   }
 
-  // Element getters
-
-  #cookieBannerSectionEl;
-  get #cookieBannerSection() {
-    if (this.#cookieBannerSectionEl) {
-      return this.#cookieBannerSectionEl;
-    }
-    return (this.#cookieBannerSectionEl = document.getElementById(
-      "protections-popup-cookie-banner-section"
-    ));
-  }
-
-  #cookieBannerSectionSeparatorEl;
-  get #cookieBannerSectionSeparator() {
-    if (this.#cookieBannerSectionSeparatorEl) {
-      return this.#cookieBannerSectionSeparatorEl;
-    }
-    return (this.#cookieBannerSectionSeparatorEl = document.getElementById(
-      "protections-popup-cookie-banner-section-separator"
-    ));
-  }
-
-  #cookieBannerSwitchEl;
-  get #cookieBannerSwitch() {
-    if (this.#cookieBannerSwitchEl) {
-      return this.#cookieBannerSwitchEl;
-    }
-    return (this.#cookieBannerSwitchEl = document.getElementById(
-      "protections-popup-cookie-banner-switch"
-    ));
-  }
-
-  #cookieBannerSubviewEl;
-  get #cookieBannerSubview() {
-    if (this.#cookieBannerSubviewEl) {
-      return this.#cookieBannerSubviewEl;
-    }
-    return (this.#cookieBannerSubviewEl = document.getElementById(
-      "protections-popup-cookieBannerView"
-    ));
-  }
-
-  /*
-   * Initialize or update the cookie banner handling section state. To be called
-   * initially or whenever the panel opens for a new site.
+  /**
+   * Helper method used by both updateSection and updateSubView to map internal
+   * state to UI attribute state. We have to separately set the subview's state
+   * because the subview is not a descendant of the menu item in the DOM, and
+   * we rely on CSS to toggle UI visibility based on attribute state.
    *
+   * @returns A string value to be set as a UI attribute value.
    */
+  get #uiState() {
+    if (this.#hasException) {
+      return "site-disabled";
+    } else if (this.isSiteSupported) {
+      return "detected";
+    }
+    return "undetected";
+  }
+
   updateSection() {
     let showSection = this.#shouldShowSection();
+    let state = this.#uiState;
 
     for (let el of [
-      this.#cookieBannerSection,
-      this.#cookieBannerSectionSeparator,
+      this._cookieBannerSection,
+      this._cookieBannerSectionSeparator,
     ]) {
-      el.toggleAttribute("uiDisabled", !showSection);
+      el.hidden = !showSection;
     }
 
-    // Reflect ternary CBH state in two boolean DOM attributes.
-    this.#cookieBannerSection.toggleAttribute(
-      "hasException",
-      this.#hasException
-    );
-    this.#cookieBannerSection.toggleAttribute("enabled", this.isSiteSupported);
+    this._cookieBannerSection.dataset.state = state;
 
     // On unsupported sites, disable button styling and click behavior.
     // Note: to be replaced with a "please support site" subview in bug 1801971.
-    this.#cookieBannerSection.toggleAttribute(
-      "disabled",
-      !this.isSiteSupported
-    );
-    if (this.isSiteSupported) {
-      this.#cookieBannerSection.removeAttribute("disabled");
-      this.#cookieBannerSwitch.classList.add("subviewbutton-nav");
-      this.#cookieBannerSwitch.removeAttribute("disabled");
+    if (state == "undetected") {
+      this._cookieBannerSection.setAttribute("disabled", true);
+      this._cookieBannerSwitch.classList.remove("subviewbutton-nav");
+      this._cookieBannerSwitch.setAttribute("disabled", true);
     } else {
-      this.#cookieBannerSection.setAttribute("disabled", true);
-      this.#cookieBannerSwitch.classList.remove("subviewbutton-nav");
-      this.#cookieBannerSwitch.setAttribute("disabled", true);
+      this._cookieBannerSection.removeAttribute("disabled");
+      this._cookieBannerSwitch.classList.add("subviewbutton-nav");
+      this._cookieBannerSwitch.removeAttribute("disabled");
     }
   }
 
   #shouldShowSection() {
-    // UI is globally disabled by pref.
-    if (!this._uiDisabled) {
-      return false;
-    }
-    // Don't show UI for detect-only mode.
-    if (this._serviceDetectOnly) {
+    // Don't show UI if globally disabled by pref, or if the cookie service
+    // is in detect-only mode.
+    if (!this._uiEnabled || this._serviceDetectOnly) {
       return false;
     }
 
-    let mode;
-
+    // Show the section if the feature is not in disabled mode, being sure to
+    // check the different prefs for regular and private windows.
     if (this.#isPrivateBrowsing) {
-      mode = this._serviceModePrefPrivateBrowsing;
-    } else {
-      mode = this._serviceModePref;
+      return (
+        this._serviceModePrefPrivateBrowsing !=
+        Ci.nsICookieBannerService.MODE_DISABLED
+      );
     }
-
-    // Only show the section if the feature is enabled for the normal or PBM
-    // window.
-    return mode != Ci.nsICookieBannerService.MODE_DISABLED;
+    return this._serviceModePref != Ci.nsICookieBannerService.MODE_DISABLED;
   }
 
   /*
    * Updates the cookie banner handling subview just before it's shown.
-   *
-   * Note that this subview can only be shown if we have cookie banner rules
-   * for a given site, so in this function, we assume the site is supported,
-   * and only check if the user has manually created an exception for the
-   * current base domain.
    */
   updateSubView() {
-    this.#cookieBannerSubview.toggleAttribute(
-      "hasException",
-      this.#hasException
-    );
+    this._cookieBannerSubview.dataset.state = this.#uiState;
 
-    let siteDescription = this.#cookieBannerSubview.querySelectorAll(
-      "description#cookieBannerView-disable-site, description#cookieBannerView-enable-site"
-    );
-    let host = this.#currentBaseDomain;
-    siteDescription.forEach(d =>
-      d.setAttribute("data-l10n-args", JSON.stringify({ host }))
-    );
+    let baseDomain = JSON.stringify({ host: this.#currentBaseDomain });
+    this._cookieBannerEnableSite.setAttribute("data-l10n-args", baseDomain);
+    this._cookieBannerDisableSite.setAttribute("data-l10n-args", baseDomain);
   }
 
   async #disableCookieBannerHandling() {
     // We can't clear data during a private browsing session until bug 1818783
-    // is fixed. In the meantime, don't clear regular mode data from the cookie
-    // banner controls in a private window.
+    // is fixed. In the meantime, don't allow the cookie banner controls in a
+    // private window to clear data for regular browsing mode.
     if (!this.#isPrivateBrowsing) {
       await SiteDataManager.remove(this.#currentBaseDomain);
     }
@@ -1330,7 +1298,7 @@ let cookieBannerHandling = new (class {
   }
 
   async onCookieBannerToggleCommand() {
-    let hasException = this.#cookieBannerSection.toggleAttribute(
+    let hasException = this._cookieBannerSection.toggleAttribute(
       "hasException"
     );
     if (hasException) {
@@ -1422,12 +1390,6 @@ var gProtectionsHandler = {
     delete this._protectionsPopupTPSwitchBreakageFixedLink;
     return (this._protectionsPopupTPSwitchBreakageFixedLink = document.getElementById(
       "protections-popup-tp-switch-breakage-fixed-link"
-    ));
-  },
-  get _protectionsPopupTPSwitchSection() {
-    delete this._protectionsPopupTPSwitchSection;
-    return (this._protectionsPopupTPSwitchSection = document.getElementById(
-      "protections-popup-tp-switch-section"
     ));
   },
   get _protectionsPopupTPSwitch() {
@@ -1542,6 +1504,13 @@ var gProtectionsHandler = {
     ));
   },
 
+  get _siteNotWorkingIssueListFonts() {
+    delete this._siteNotWorkingIssueListFonts;
+    return (this._siteNotWorkingIssueListFonts = document.getElementById(
+      "protections-panel-site-not-working-view-issue-list-fonts"
+    ));
+  },
+
   strings: {
     get activeTooltipText() {
       delete this.activeTooltipText;
@@ -1586,6 +1555,13 @@ var gProtectionsHandler = {
   },
 
   init() {
+    XPCOMUtils.defineLazyPreferenceGetter(
+      this,
+      "_fontVisibilityTrackingProtection",
+      "layout.css.font-visibility.trackingprotection",
+      3000
+    );
+
     XPCOMUtils.defineLazyPreferenceGetter(
       this,
       "_protectionsPopupToastTimeout",
@@ -2124,17 +2100,6 @@ var gProtectionsHandler = {
     // Toggle the breakage link according to the current enable state.
     this.toggleBreakageLink();
 
-    // Display a short TP switch section depending on the enable state. We need
-    // to use a separate attribute here since the 'hasException' attribute will
-    // be toggled as well as the TP switch, we cannot rely on that to decide the
-    // height of TP switch section, or it will change when toggling the switch,
-    // which is not desirable for us. So, we need to use a different attribute
-    // here.
-    this._protectionsPopupTPSwitchSection.toggleAttribute(
-      "short",
-      !currentlyEnabled
-    );
-
     // Give the button an accessible label for screen readers.
     if (currentlyEnabled) {
       this._protectionsPopupTPSwitch.setAttribute(
@@ -2479,6 +2444,13 @@ var gProtectionsHandler = {
   },
 
   showSiteNotWorkingView() {
+    // Only show the Fonts item if we are restricting font visibility
+    if (this._fontVisibilityTrackingProtection >= 3) {
+      this._siteNotWorkingIssueListFonts.setAttribute("hidden", "true");
+    } else {
+      this._siteNotWorkingIssueListFonts.removeAttribute("hidden");
+    }
+
     this._protectionsPopupMultiView.showSubView(
       "protections-popup-siteNotWorkingView"
     );

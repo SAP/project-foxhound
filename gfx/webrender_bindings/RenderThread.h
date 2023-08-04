@@ -21,7 +21,9 @@
 #include "mozilla/UniquePtr.h"
 #include "mozilla/webrender/WebRenderTypes.h"
 #include "mozilla/layers/CompositionRecorder.h"
+#include "mozilla/layers/RemoteTextureMap.h"
 #include "mozilla/layers/SynchronousTask.h"
+#include "mozilla/UniquePtr.h"
 #include "mozilla/VsyncDispatcher.h"
 
 #include <list>
@@ -164,14 +166,6 @@ class RenderThread final {
   /// Can only be called from the render thread.
   RendererOGL* GetRenderer(wr::WindowId aWindowId);
 
-  // RenderNotifier implementation
-
-  /// Automatically forwarded to the render thread. Will trigger a render for
-  /// the current pending frame once one call per document in that pending
-  /// frame has been received.
-  void HandleFrameOneDoc(wr::WindowId aWindowId, bool aRender,
-                         bool aTrackedFrame);
-
   /// Automatically forwarded to the render thread.
   void SetClearColor(wr::WindowId aWindowId, wr::ColorF aColor);
 
@@ -182,8 +176,11 @@ class RenderThread final {
   void PipelineSizeChanged(wr::WindowId aWindowId, uint64_t aPipelineId,
                            float aWidth, float aHeight);
 
-  /// Automatically forwarded to the render thread.
-  void RunEvent(wr::WindowId aWindowId, UniquePtr<RendererEvent> aEvent);
+  /// Post RendererEvent to the render thread.
+  void PostEvent(wr::WindowId aWindowId, UniquePtr<RendererEvent> aEvent);
+
+  /// Can only be called from the render thread.
+  void SetFramePublishId(wr::WindowId aWindowId, FramePublishId aPublishId);
 
   /// Can only be called from the render thread.
   void UpdateAndRender(wr::WindowId aWindowId, const VsyncId& aStartId,
@@ -238,6 +235,17 @@ class RenderThread final {
   /// Can be called from any thread.
   void DecPendingFrameBuildCount(wr::WindowId aWindowId);
   void DecPendingFrameCount(wr::WindowId aWindowId);
+
+  void PushPendingRemoteTexture(
+      wr::WindowId aWindowId,
+      UniquePtr<layers::RemoteTextureInfoList>&& aPendingRemoteTextures);
+
+  // RenderNotifier implementation
+  void WrNotifierEvent_WakeUp(WrWindowId aWindowId, bool aCompositeNeeded);
+  void WrNotifierEvent_NewFrameReady(WrWindowId aWindowId,
+                                     bool aCompositeNeeded,
+                                     FramePublishId aPublishId);
+  void WrNotifierEvent_ExternalEvent(WrWindowId aWindowId, size_t aRawEvent);
 
   /// Can be called from any thread.
   WebRenderThreadPool& ThreadPool() { return mThreadPool; }
@@ -295,10 +303,7 @@ class RenderThread final {
                                const TimeStamp& aRecordingStart,
                                wr::PipelineId aRootPipelineId);
 
-  void WriteCollectedFramesForWindow(wr::WindowId aWindowId);
-
-  Maybe<layers::CollectedFrames> GetCollectedFramesForWindow(
-      wr::WindowId aWindowId);
+  Maybe<layers::FrameRecording> EndRecordingForWindow(wr::WindowId aWindowId);
 
   static void MaybeEnableGLDebugMessage(gl::GLContext* aGLContext);
 
@@ -308,15 +313,111 @@ class RenderThread final {
     NotifyForUse,
     NotifyNotUsed,
   };
+  class WrNotifierEvent {
+   public:
+    enum class Tag {
+      WakeUp,
+      NewFrameReady,
+      ExternalEvent,
+      PendingRemoteTextures,
+    };
+    const Tag mTag;
+
+   private:
+    WrNotifierEvent(const Tag aTag, const bool aCompositeNeeded)
+        : mTag(aTag), mCompositeNeeded(aCompositeNeeded) {
+      MOZ_ASSERT(mTag == Tag::WakeUp);
+    }
+    WrNotifierEvent(const Tag aTag, bool aCompositeNeeded,
+                    FramePublishId aPublishId)
+        : mTag(aTag),
+          mCompositeNeeded(aCompositeNeeded),
+          mPublishId(aPublishId) {
+      MOZ_ASSERT(mTag == Tag::NewFrameReady);
+    }
+    WrNotifierEvent(const Tag aTag, UniquePtr<RendererEvent>&& aRendererEvent)
+        : mTag(aTag), mRendererEvent(std::move(aRendererEvent)) {
+      MOZ_ASSERT(mTag == Tag::ExternalEvent);
+    }
+    WrNotifierEvent(
+        const Tag aTag,
+        UniquePtr<layers::RemoteTextureInfoList>&& aPendingRemoteTextures)
+        : mTag(aTag),
+          mPendingRemoteTextures(std::move(aPendingRemoteTextures)) {
+      MOZ_ASSERT(mTag == Tag::PendingRemoteTextures);
+    }
+
+    const bool mCompositeNeeded = false;
+    const FramePublishId mPublishId = FramePublishId::INVALID;
+    UniquePtr<RendererEvent> mRendererEvent;
+    UniquePtr<layers::RemoteTextureInfoList> mPendingRemoteTextures;
+
+   public:
+    static WrNotifierEvent WakeUp(const bool aCompositeNeeded) {
+      return WrNotifierEvent(Tag::WakeUp, aCompositeNeeded);
+    }
+
+    static WrNotifierEvent NewFrameReady(const bool aCompositeNeeded,
+                                         const FramePublishId aPublishId) {
+      return WrNotifierEvent(Tag::NewFrameReady, aCompositeNeeded, aPublishId);
+    }
+
+    static WrNotifierEvent ExternalEvent(
+        UniquePtr<RendererEvent>&& aRendererEvent) {
+      return WrNotifierEvent(Tag::ExternalEvent, std::move(aRendererEvent));
+    }
+
+    static WrNotifierEvent PendingRemoteTextures(
+        UniquePtr<layers::RemoteTextureInfoList>&& aPendingRemoteTextures) {
+      return WrNotifierEvent(Tag::PendingRemoteTextures,
+                             std::move(aPendingRemoteTextures));
+    }
+
+    bool CompositeNeeded() {
+      if (mTag == Tag::WakeUp || mTag == Tag::NewFrameReady) {
+        return mCompositeNeeded;
+      }
+      MOZ_ASSERT_UNREACHABLE("unexpected to be called");
+      return false;
+    }
+    FramePublishId PublishId() {
+      if (mTag == Tag::NewFrameReady) {
+        return mPublishId;
+      }
+      MOZ_ASSERT_UNREACHABLE("unexpected to be called");
+      return FramePublishId::INVALID;
+    }
+    UniquePtr<RendererEvent> ExternalEvent() {
+      if (mTag == Tag::ExternalEvent) {
+        MOZ_ASSERT(mRendererEvent);
+        return std::move(mRendererEvent);
+      }
+      MOZ_ASSERT_UNREACHABLE("unexpected to be called");
+      return nullptr;
+    }
+
+    layers::RemoteTextureInfoList* RemoteTextureInfoList() {
+      if (mTag == Tag::PendingRemoteTextures) {
+        MOZ_ASSERT(mPendingRemoteTextures);
+        return mPendingRemoteTextures.get();
+      }
+      MOZ_ASSERT_UNREACHABLE("unexpected to be called");
+      return nullptr;
+    }
+  };
 
   explicit RenderThread(RefPtr<nsIThread> aThread);
 
   void HandleFrameOneDocInner(wr::WindowId aWindowId, bool aRender,
-                              bool aTrackedFrame);
+                              bool aTrackedFrame,
+                              Maybe<FramePublishId> aPublishId);
 
   void DeferredRenderTextureHostDestroy();
   void ShutDownTask();
   void InitDeviceTask();
+  void HandleFrameOneDoc(wr::WindowId aWindowId, bool aRender,
+                         bool aTrackedFrame, Maybe<FramePublishId> aPublishId);
+  void RunEvent(wr::WindowId aWindowId, UniquePtr<RendererEvent> aEvent);
   void PostRunnable(already_AddRefed<nsIRunnable> aRunnable);
 
   void DoAccumulateMemoryReport(MemoryReport,
@@ -328,6 +429,21 @@ class RenderThread final {
   void CreateSingletonGL(nsACString& aError);
 
   void DestroyExternalImages(const std::vector<wr::ExternalImageId>&& aIds);
+
+  struct WindowInfo;
+
+  void PostWrNotifierEvents(WrWindowId aWindowId);
+  void PostWrNotifierEvents(WrWindowId aWindowId, WindowInfo* aInfo);
+  void HandleWrNotifierEvents(WrWindowId aWindowId);
+  void WrNotifierEvent_HandleWakeUp(wr::WindowId aWindowId,
+                                    bool aCompositeNeeded);
+  void WrNotifierEvent_HandleNewFrameReady(wr::WindowId aWindowId,
+                                           bool aCompositeNeeded,
+                                           FramePublishId aPublishId);
+  void WrNotifierEvent_HandleExternalEvent(
+      wr::WindowId aWindowId, UniquePtr<RendererEvent> aRendererEvent);
+  bool CheckIsRemoteTextureReady(WrWindowId aWindowId,
+                                 layers::RemoteTextureInfoList* aList);
 
   ~RenderThread();
 
@@ -360,9 +476,15 @@ class RenderThread final {
     std::queue<PendingFrameInfo> mPendingFrames;
     uint8_t mPendingFrameBuild = 0;
     bool mIsDestroyed = false;
+    RefPtr<nsIRunnable> mWrNotifierEventsRunnable;
+    std::queue<WrNotifierEvent> mPendingWrNotifierEvents;
+    bool mIsWaitingRemoteTextureReady = false;
   };
 
-  DataMutex<std::unordered_map<uint64_t, WindowInfo*>> mWindowInfos;
+  DataMutex<std::unordered_map<uint64_t, UniquePtr<WindowInfo>>> mWindowInfos;
+
+  std::unordered_map<uint64_t, UniquePtr<std::queue<WrNotifierEvent>>>
+      mWrNotifierEventsQueues;
 
   struct ExternalImageIdHashFn {
     std::size_t operator()(const wr::ExternalImageId& aId) const {

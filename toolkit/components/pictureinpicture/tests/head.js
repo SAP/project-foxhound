@@ -22,6 +22,8 @@ const TEST_PAGE_WITH_SOUND = TEST_ROOT + "test-page-with-sound.html";
 const TEST_PAGE_WITH_NAN_VIDEO_DURATION =
   TEST_ROOT + "test-page-with-nan-video-duration.html";
 const TEST_PAGE_WITH_WEBVTT = TEST_ROOT + "test-page-with-webvtt.html";
+const TEST_PAGE_MULTIPLE_CONTEXTS =
+  TEST_ROOT + "test-page-multiple-contexts.html";
 const WINDOW_TYPE = "Toolkit:PictureInPicture";
 const TOGGLE_POSITION_PREF =
   "media.videocontrols.picture-in-picture.video-toggle.position";
@@ -186,16 +188,16 @@ async function assertShowingMessage(browser, videoID, expected) {
  * good indicator for answering if this video is currently open in PiP.
  *
  * @param {Browser} browser
- *   The content browser that the video lives in
+ *   The content browser or browsing contect that the video lives in
  * @param {string} videoId
  *   The id associated with the video
  *
  * @returns {bool}
  *   Whether the video is currently being cloned (And is most likely open in PiP)
  */
-function assertVideoIsBeingCloned(browser, videoId) {
-  return SpecialPowers.spawn(browser, [videoId], async videoID => {
-    let video = content.document.getElementById(videoID);
+function assertVideoIsBeingCloned(browser, selector) {
+  return SpecialPowers.spawn(browser, [selector], async slctr => {
+    let video = content.document.querySelector(slctr);
     await ContentTaskUtils.waitForCondition(() => {
       return video.isCloningElementVisually;
     }, "Video is being cloned visually.");
@@ -206,7 +208,7 @@ function assertVideoIsBeingCloned(browser, videoId) {
  * Ensures that each of the videos loaded inside of a document in a
  * <browser> have reached the HAVE_ENOUGH_DATA readyState.
  *
- * @param {Element} browser The <xul:browser> hosting the <video>(s)
+ * @param {Element} browser The <xul:browser> hosting the <video>(s) or the browsing context
  *
  * @return Promise
  * @resolves When each <video> is in the HAVE_ENOUGH_DATA readyState.
@@ -219,6 +221,7 @@ async function ensureVideosReady(browser) {
   await SpecialPowers.spawn(browser, [], async () => {
     let videos = this.content.document.querySelectorAll("video");
     for (let video of videos) {
+      video.currentTime = 0;
       if (video.readyState < content.HTMLMediaElement.HAVE_ENOUGH_DATA) {
         info(`Waiting for 'canplaythrough' for '${video.id}'`);
         await ContentTaskUtils.waitForEvent(video, "canplaythrough");
@@ -772,7 +775,7 @@ async function testToggleHelper(
     let win = await domWindowOpened;
     ok(win, "A Picture-in-Picture window opened.");
 
-    await assertVideoIsBeingCloned(browser, videoID);
+    await assertVideoIsBeingCloned(browser, "#" + videoID);
 
     await BrowserTestUtils.closeWindow(win);
 
@@ -1029,4 +1032,69 @@ function overrideSavedPosition(left, top, width, height) {
   xulStore.setValue(PLAYER_URI, "picture-in-picture", "top", top);
   xulStore.setValue(PLAYER_URI, "picture-in-picture", "width", width);
   xulStore.setValue(PLAYER_URI, "picture-in-picture", "height", height);
+}
+
+/**
+ * Function used to filter events when waiting for the correct number
+ * telemetry events.
+ * @param {String} expected The expected string or undefined
+ * @param {String} actual The actual string
+ * @returns true if the expected is undefined or if expected matches actual
+ */
+function matches(expected, actual) {
+  if (expected === undefined) {
+    return true;
+  }
+  return expected === actual;
+}
+
+/**
+ * Function that waits for the expected number of events aftering filtering.
+ * @param {Object} filter An object containing optional filters
+ *  {
+ *    category: (optional) The category of the event. Ex. "pictureinpicture"
+ *    method: (optional) The method of the event. Ex. "create"
+ *    object: (optional) The object of the event. Ex. "player"
+ *  }
+ * @param {Number} length The number of events to wait for
+ * @param {String} process Should be "content" or "parent" depending on the event
+ */
+async function waitForTelemeryEvents(filter, length, process) {
+  let {
+    category: filterCategory,
+    method: filterMethod,
+    object: filterObject,
+  } = filter;
+
+  let events = [];
+  await TestUtils.waitForCondition(
+    () => {
+      events = Services.telemetry.snapshotEvents(
+        Ci.nsITelemetry.DATASET_PRERELEASE_CHANNELS,
+        false
+      )[process];
+      if (!events) {
+        return false;
+      }
+
+      let filtered = events
+        .map(([, /* timestamp */ category, method, object, value, extra]) => {
+          // We don't care about the `timestamp` value.
+          // Tests that examine that value should use `snapshotEvents` directly.
+          return [category, method, object, value, extra];
+        })
+        .filter(([category, method, object]) => {
+          return (
+            matches(filterCategory, category) &&
+            matches(filterMethod, method) &&
+            matches(filterObject, object)
+          );
+        });
+      info(JSON.stringify(filtered, null, 2));
+      return filtered && filtered.length >= length;
+    },
+    "Waiting for one create pictureinpicture telemetry event.",
+    200,
+    100
+  );
 }

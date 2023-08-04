@@ -28,13 +28,15 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */   "AboutWelcomeUtils": () => (/* binding */ AboutWelcomeUtils),
 /* harmony export */   "DEFAULT_RTAMO_CONTENT": () => (/* binding */ DEFAULT_RTAMO_CONTENT)
 /* harmony export */ });
+var _document$querySelect;
+
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 // If the container has a "page" data attribute, then this is
 // a Spotlight modal or Feature Callout. Otherwise, this is
 // about:welcome and we should return the current page.
-const page = document.querySelector("#root.onboardingContainer[data-page]") ? document.querySelector("#root[data-page]").dataset.page : document.location.href;
+const page = ((_document$querySelect = document.querySelector("#multi-stage-message-root.onboardingContainer[data-page]")) === null || _document$querySelect === void 0 ? void 0 : _document$querySelect.dataset.page) || document.location.href;
 const AboutWelcomeUtils = {
   handleUserAction(action) {
     window.AWSendToParent("SPECIAL_ACTION", action);
@@ -197,11 +199,29 @@ __webpack_require__.r(__webpack_exports__);
 const TRANSITION_OUT_TIME = 1000;
 const MultiStageAboutWelcome = props => {
   let {
-    screens
+    defaultScreens
   } = props;
+  const didFilter = (0,react__WEBPACK_IMPORTED_MODULE_0__.useRef)(false);
+  const [screens, setScreens] = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(defaultScreens);
   const [index, setScreenIndex] = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(props.startScreen);
   const [previousOrder, setPreviousOrder] = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(props.startScreen - 1);
   (0,react__WEBPACK_IMPORTED_MODULE_0__.useEffect)(() => {
+    (async () => {
+      // Evaluate targeting and update screens on load of about:welcome
+      let filteredScreens = await window.AWEvaluateScreenTargeting(defaultScreens);
+
+      if (filteredScreens) {
+        setScreens(filteredScreens);
+        didFilter.current = true;
+      }
+    })();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  (0,react__WEBPACK_IMPORTED_MODULE_0__.useEffect)(() => {
+    if (!didFilter.current) {
+      return;
+    }
+
     const screenInitials = screens.map(({
       id
     }) => {
@@ -214,8 +234,11 @@ const MultiStageAboutWelcome = props => {
       if (index === order) {
         _lib_aboutwelcome_utils__WEBPACK_IMPORTED_MODULE_2__.AboutWelcomeUtils.sendImpressionTelemetry(`${props.message_id}_${order}_${screen.id}_${screenInitials}`);
       }
-    }); // Remember that a new screen has loaded for browser navigation
+    });
+  }, [index, screens]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  (0,react__WEBPACK_IMPORTED_MODULE_0__.useEffect)(() => {
+    // Remember that a new screen has loaded for browser navigation
     if (props.updateHistory && index > window.history.state) {
       window.history.pushState(index, "");
     } // Remember the previous screen index so we can animate the transition
@@ -319,7 +342,9 @@ const MultiStageAboutWelcome = props => {
     langPackInstallPhase,
     languageFilteredScreens
   } = (0,_LanguageSwitcher__WEBPACK_IMPORTED_MODULE_4__.useLanguageSwitcher)(props.appAndSystemLocaleInfo, screens, index, setScreenIndex);
-  screens = languageFilteredScreens;
+  (0,react__WEBPACK_IMPORTED_MODULE_0__.useEffect)(() => {
+    setScreens(languageFilteredScreens);
+  }, [languageFilteredScreens]);
   return /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement((react__WEBPACK_IMPORTED_MODULE_0___default().Fragment), null, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
     className: `outer-wrapper onboardingContainer proton transition-${transition}`,
     style: props.backdrop ? {
@@ -352,7 +377,9 @@ const MultiStageAboutWelcome = props => {
       setActiveMultiSelect: setActiveMultiSelect,
       autoAdvance: screen.auto_advance,
       negotiatedLanguage: negotiatedLanguage,
-      langPackInstallPhase: langPackInstallPhase
+      langPackInstallPhase: langPackInstallPhase,
+      defaultScreens: defaultScreens,
+      setScreens: setScreens
     }) : null;
   })));
 };
@@ -494,11 +521,15 @@ class WelcomeScreen extends (react__WEBPACK_IMPORTED_MODULE_0___default().PureCo
     if (["OPEN_URL", "SHOW_FIREFOX_ACCOUNTS"].includes(action.type)) {
       this.handleOpenURL(action, props.flowParams, props.UTMTerm);
     } else if (action.type) {
-      var _action$data;
-
       _lib_aboutwelcome_utils__WEBPACK_IMPORTED_MODULE_2__.AboutWelcomeUtils.handleUserAction(action); // Wait until migration closes to complete the action
 
-      if (action.type === "SHOW_MIGRATION_WIZARD" || action.type === "MULTI_ACTION" && action !== null && action !== void 0 && (_action$data = action.data) !== null && _action$data !== void 0 && _action$data.actions.find(subAction => subAction.type === "SHOW_MIGRATION_WIZARD")) {
+      const hasMigrate = a => {
+        var _a$data, _a$data$actions;
+
+        return a.type === "SHOW_MIGRATION_WIZARD" || a.type === "MULTI_ACTION" && ((_a$data = a.data) === null || _a$data === void 0 ? void 0 : (_a$data$actions = _a$data.actions) === null || _a$data$actions === void 0 ? void 0 : _a$data$actions.some(hasMigrate));
+      };
+
+      if (hasMigrate(action)) {
         await window.AWWaitForMigrationClose();
         _lib_aboutwelcome_utils__WEBPACK_IMPORTED_MODULE_2__.AboutWelcomeUtils.sendActionTelemetry(props.messageId, "migrate_close");
       }
@@ -515,6 +546,11 @@ class WelcomeScreen extends (react__WEBPACK_IMPORTED_MODULE_0___default().PureCo
 
     if (action.persistActiveTheme) {
       this.props.setInitialTheme(this.props.activeTheme);
+    } // Set screens based on dynamic targeting evaluations
+
+
+    if (action.isDynamic) {
+      props.setScreens(await window.AWEvaluateScreenTargeting(props.defaultScreens));
     }
 
     if (action.navigate) {
@@ -730,7 +766,7 @@ const MultiStageProtonScreen = props => {
   });
 };
 const ProtonScreenActionButtons = props => {
-  var _content$checkbox, _content$primary_butt, _content$primary_butt2;
+  var _content$checkbox, _content$additional_b, _content$primary_butt, _content$primary_butt2;
 
   const {
     content,
@@ -744,7 +780,8 @@ const ProtonScreenActionButtons = props => {
   }
 
   return /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
-    className: `action-buttons ${content.additional_button ? "additional-cta-container" : ""}`
+    className: `action-buttons ${content.additional_button ? "additional-cta-container" : ""}`,
+    flow: (_content$additional_b = content.additional_button) === null || _content$additional_b === void 0 ? void 0 : _content$additional_b.flow
   }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_MSLocalized__WEBPACK_IMPORTED_MODULE_1__.Localized, {
     text: (_content$primary_butt = content.primary_button) === null || _content$primary_butt === void 0 ? void 0 : _content$primary_butt.label
   }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("button", {
@@ -966,7 +1003,8 @@ class ProtonScreen extends (react__WEBPACK_IMPORTED_MODULE_0___default().PureCom
         this.mainContentHeader = input;
       }
     }, isCenterPosition ? null : this.renderSecondarySection(content), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
-      className: "section-main"
+      className: "section-main",
+      role: "document"
     }, content.secondary_button_top ? /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_MultiStageAboutWelcome__WEBPACK_IMPORTED_MODULE_6__.SecondaryCTA, {
       content: content,
       handleAction: this.props.handleAction,
@@ -2119,7 +2157,7 @@ class AboutWelcome extends (react__WEBPACK_IMPORTED_MODULE_0___default().PureCom
 
     return /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_components_MultiStageAboutWelcome__WEBPACK_IMPORTED_MODULE_3__.MultiStageAboutWelcome, {
       message_id: props.messageId,
-      screens: props.screens,
+      defaultScreens: props.screens,
       updateHistory: !props.disableHistoryUpdates,
       metricsFlowUri: this.state.metricsFlowUri,
       utm_term: props.UTMTerm,
@@ -2178,7 +2216,7 @@ async function mount() {
   react_dom__WEBPACK_IMPORTED_MODULE_1___default().render( /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(AboutWelcome, _extends({
     messageId: messageId,
     UTMTerm: UTMTerm
-  }, aboutWelcomeProps)), document.getElementById("root"));
+  }, aboutWelcomeProps)), document.getElementById("multi-stage-message-root"));
 }
 
 performance.mark("mount");

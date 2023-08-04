@@ -918,23 +918,47 @@ bool Instance::initElems(uint32_t tableIndex, const ElemSegment& seg,
 }
 
 template <typename I>
-static int32_t MemDiscardNotShared(Instance* instance, I byteOffset, I byteLen,
-                                   uint8_t* memBase) {
+static bool WasmDiscardCheck(Instance* instance, I byteOffset, I byteLen,
+                             size_t memLen, bool shared) {
   JSContext* cx = instance->cx();
 
   if (byteOffset % wasm::PageSize != 0 || byteLen % wasm::PageSize != 0) {
     ReportTrapError(cx, JSMSG_WASM_UNALIGNED_ACCESS);
-    return -1;
+    return false;
   }
-
-  WasmArrayRawBuffer* rawBuf = WasmArrayRawBuffer::fromDataPtr(memBase);
-  size_t memLen = rawBuf->byteLength();
 
   if (!MemoryBoundsCheck(byteOffset, byteLen, memLen)) {
     ReportTrapError(cx, JSMSG_WASM_OUT_OF_BOUNDS);
-    return -1;
+    return false;
   }
 
+  return true;
+}
+
+template <typename I>
+static int32_t MemDiscardNotShared(Instance* instance, I byteOffset, I byteLen,
+                                   uint8_t* memBase) {
+  WasmArrayRawBuffer* rawBuf = WasmArrayRawBuffer::fromDataPtr(memBase);
+  size_t memLen = rawBuf->byteLength();
+
+  if (!WasmDiscardCheck(instance, byteOffset, byteLen, memLen, false)) {
+    return -1;
+  }
+  rawBuf->discard(byteOffset, byteLen);
+
+  return 0;
+}
+
+template <typename I>
+static int32_t MemDiscardShared(Instance* instance, I byteOffset, I byteLen,
+                                uint8_t* memBase) {
+  WasmSharedArrayRawBuffer* rawBuf =
+      WasmSharedArrayRawBuffer::fromDataPtr(memBase);
+  size_t memLen = rawBuf->volatileByteLength();
+
+  if (!WasmDiscardCheck(instance, byteOffset, byteLen, memLen, true)) {
+    return -1;
+  }
   rawBuf->discard(byteOffset, byteLen);
 
   return 0;
@@ -956,18 +980,16 @@ static int32_t MemDiscardNotShared(Instance* instance, I byteOffset, I byteLen,
 
 /* static */ int32_t Instance::memDiscardShared_m32(Instance* instance,
                                                     uint32_t byteOffset,
-                                                    uint32_t len,
+                                                    uint32_t byteLen,
                                                     uint8_t* memBase) {
-  ReportTrapError(instance->cx(), JSMSG_WASM_NOT_IMPLEMENTED);
-  return -1;
+  return MemDiscardShared(instance, byteOffset, byteLen, memBase);
 }
 
 /* static */ int32_t Instance::memDiscardShared_m64(Instance* instance,
                                                     uint64_t byteOffset,
-                                                    uint64_t len,
+                                                    uint64_t byteLen,
                                                     uint8_t* memBase) {
-  ReportTrapError(instance->cx(), JSMSG_WASM_NOT_IMPLEMENTED);
-  return -1;
+  return MemDiscardShared(instance, byteOffset, byteLen, memBase);
 }
 
 /* static */ void* Instance::tableGet(Instance* instance, uint32_t index,
@@ -1007,18 +1029,14 @@ static int32_t MemDiscardNotShared(Instance* instance, I byteOffset, I byteLen,
   uint32_t oldSize = table.grow(delta);
 
   if (oldSize != uint32_t(-1) && initValue != nullptr) {
-    switch (table.repr()) {
-      case TableRepr::Ref:
-        table.fillAnyRef(oldSize, delta, ref);
-        break;
-      case TableRepr::Func:
-        MOZ_RELEASE_ASSERT(!table.isAsmJS());
-        table.fillFuncRef(oldSize, delta, FuncRef::fromAnyRefUnchecked(ref),
-                          cx);
-        break;
-    }
+    table.fillUninitialized(oldSize, delta, ref, cx);
   }
 
+#ifdef DEBUG
+  if (!table.elemType().isNullable()) {
+    table.assertRangeNotNull(oldSize, delta);
+  }
+#endif  // DEBUG
   return oldSize;
 }
 
@@ -1512,22 +1530,6 @@ static int32_t MemDiscardNotShared(Instance* instance, I byteOffset, I byteLen,
   return -1;
 }
 
-/* static */ int32_t Instance::refTest(Instance* instance, void* refPtr,
-                                       const wasm::TypeDef* typeDef) {
-  MOZ_ASSERT(SASigRefTest.failureMode == FailureMode::Infallible);
-
-  if (!refPtr) {
-    return 0;
-  }
-
-  JSContext* cx = instance->cx();
-
-  ASSERT_ANYREF_IS_JSOBJECT;
-  Rooted<WasmGcObject*> ref(
-      cx, (WasmGcObject*)AnyRef::fromCompiledCode(refPtr).asJSObject());
-  return int32_t(ref->isRuntimeSubtype(typeDef));
-}
-
 /* static */ int32_t Instance::intrI8VecMul(Instance* instance, uint32_t dest,
                                             uint32_t src1, uint32_t src2,
                                             uint32_t len, uint8_t* memBase) {
@@ -1685,7 +1687,28 @@ bool Instance::init(JSContext* cx, const JSObjectVector& funcImports,
     TableInstanceData& table = tableInstanceData(td);
     table.length = tables_[i]->length();
     table.elements = tables_[i]->instanceElements();
+    // Non-imported tables, with init_expr, has to be initialized with
+    // the evaluated value.
+    if (!td.isImported && td.initExpr) {
+      Rooted<WasmInstanceObject*> instanceObj(cx, object());
+      RootedVal val(cx);
+      if (!td.initExpr->evaluate(cx, instanceObj, &val)) {
+        return false;
+      }
+      RootedAnyRef ref(cx, val.get().ref());
+      tables_[i]->fillUninitialized(0, tables_[i]->length(), ref, cx);
+    }
   }
+
+#ifdef DEBUG
+  // All (linked) tables with non-nullable types must be initialized.
+  for (size_t i = 0; i < tables_.length(); i++) {
+    const TableDesc& td = metadata().tables[i];
+    if (!td.elemType.isNullable()) {
+      tables_[i]->assertRangeNotNull(0, tables_[i]->length());
+    }
+  }
+#endif  // DEBUG
 
   // Initialize tags in the instance data
   for (size_t i = 0; i < metadata().tags.length(); i++) {
@@ -1732,6 +1755,7 @@ bool Instance::init(JSContext* cx, const JSObjectVector& funcImports,
 
     // Store the runtime type for this type index
     typeDefData->typeDef = &typeDef;
+    typeDefData->superTypeVector = typeDef.superTypeVector();
 
     if (typeDef.kind() == TypeDefKind::Struct ||
         typeDef.kind() == TypeDefKind::Array) {

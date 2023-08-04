@@ -508,22 +508,18 @@ static dom::Selection* GetDOMSelection(const nsIContent* aStartContent,
                        : nullptr;
 }
 
-/**
- * Translate given TextLeafPoint into a DOM point that is kosher
- * for text selection.
- */
-MOZ_CAN_RUN_SCRIPT static std::pair<nsIContent*, int32_t> DOMPointForSelection(
-    const TextLeafPoint& aPoint) {
-  if (!aPoint || !aPoint.mAcc->IsLocal()) {
+std::pair<nsIContent*, int32_t> TextLeafPoint::ToDOMPoint(
+    bool aIncludeGenerated) const {
+  if (!(*this) || !mAcc->IsLocal()) {
     MOZ_ASSERT_UNREACHABLE("Invalid point");
     return {nullptr, 0};
   }
 
-  nsIContent* content = aPoint.mAcc->AsLocal()->GetContent();
+  nsIContent* content = mAcc->AsLocal()->GetContent();
   nsIFrame* frame = content ? content->GetPrimaryFrame() : nullptr;
   MOZ_ASSERT(frame);
 
-  if (frame && frame->IsGeneratedContentFrame()) {
+  if (!aIncludeGenerated && frame && frame->IsGeneratedContentFrame()) {
     // List markers accessibles represent the generated content element,
     // before/after text accessibles represent the child text nodes.
     auto generatedElement = content->IsGeneratedContentContainerForMarker()
@@ -549,34 +545,38 @@ MOZ_CAN_RUN_SCRIPT static std::pair<nsIContent*, int32_t> DOMPointForSelection(
     }
   }
 
-  if (!aPoint.mAcc->IsTextLeaf() && !aPoint.mAcc->IsHTMLBr() &&
-      !aPoint.mAcc->HasChildren()) {
+  if (!mAcc->IsTextLeaf() && !mAcc->IsHTMLBr() && !mAcc->HasChildren()) {
     // If this is not a text leaf it can be an empty editable container,
     // whitespace, or an empty doc. In any case, the offset inside should be 0.
-    MOZ_ASSERT(aPoint.mOffset == 0);
+    MOZ_ASSERT(mOffset == 0);
 
     if (RefPtr<TextControlElement> textControlElement =
             TextControlElement::FromNodeOrNull(content)) {
       // This is an empty input, use the shadow root's element.
       if (RefPtr<TextEditor> textEditor = textControlElement->GetTextEditor()) {
         if (textEditor->IsEmpty()) {
-          MOZ_ASSERT(aPoint.mOffset == 0);
+          MOZ_ASSERT(mOffset == 0);
           return {textEditor->GetRoot(), 0};
         }
       }
     }
 
-    MOZ_ASSERT(aPoint.mAcc->IsDoc() || content->HasFlag(NODE_IS_EDITABLE));
     return {content, 0};
   }
 
-  return {content,
-          RenderedToContentOffset(aPoint.mAcc->AsLocal(), aPoint.mOffset)};
+  return {content, RenderedToContentOffset(mAcc->AsLocal(), mOffset)};
 }
 
 /*** TextLeafPoint ***/
 
 TextLeafPoint::TextLeafPoint(Accessible* aAcc, int32_t aOffset) {
+  if (!aAcc) {
+    // Construct an invalid point.
+    mAcc = nullptr;
+    mOffset = 0;
+    return;
+  }
+
   // Even though an OuterDoc contains a document, we treat it as a leaf because
   // we don't want to move into another document.
   if (aOffset != nsIAccessibleText::TEXT_OFFSET_CARET && !aAcc->IsOuterDoc() &&
@@ -1484,7 +1484,7 @@ LayoutDeviceIntRect TextLeafPoint::ComputeBoundsFromFrame() const {
   // Get the right frame continuation -- not really a child, but a sibling of
   // the primary frame passed in
   nsresult rv = frame->GetChildFrameContainingOffset(
-      contentOffset, false, &contentOffsetInFrame, &frame);
+      contentOffset, true, &contentOffsetInFrame, &frame);
   NS_ENSURE_SUCCESS(rv, LayoutDeviceIntRect());
 
   // Start with this frame's screen rect, which we will shrink based on
@@ -1716,8 +1716,14 @@ LayoutDeviceIntRect TextLeafPoint::CharBounds() {
     }
 
     if (mOffset >= 0 &&
-        static_cast<uint32_t>(mOffset) > nsAccUtils::TextLength(local)) {
-      NS_ERROR("Wrong in offset");
+        static_cast<uint32_t>(mOffset) >= nsAccUtils::TextLength(local)) {
+      // It's valid for a caller to query the length because the caret might be
+      // at the end of editable text. In that case, we should just silently
+      // return. However, we assert that the offset isn't greater than the
+      // length.
+      NS_ASSERTION(
+          static_cast<uint32_t>(mOffset) <= nsAccUtils::TextLength(local),
+          "Wrong in offset");
       return LayoutDeviceIntRect();
     }
 
@@ -1777,7 +1783,9 @@ LayoutDeviceIntRect TextLeafRange::Bounds() const {
         nsIAccessibleText::BOUNDARY_LINE_START, eDirNext);
     TextLeafPoint lastPointInLine = lineStartPoint.FindBoundary(
         nsIAccessibleText::BOUNDARY_CHAR, eDirPrevious);
-    if (mEnd <= lastPointInLine) {
+    // If currPoint is the end of the document, lineStartPoint will be equal
+    // to currPoint and we would be in an endless loop.
+    if (lineStartPoint == currPoint || mEnd <= lastPointInLine) {
       lastPointInLine = mEnd;
       locatedFinalLine = true;
     }
@@ -1811,9 +1819,9 @@ bool TextLeafRange::SetSelection(int32_t aSelectionNum) const {
 
   bool reversed = mEnd < mStart;
   auto [startContent, startContentOffset] =
-      DOMPointForSelection(!reversed ? mStart : mEnd);
+      !reversed ? mStart.ToDOMPoint(false) : mEnd.ToDOMPoint(false);
   auto [endContent, endContentOffset] =
-      DOMPointForSelection(!reversed ? mEnd : mStart);
+      !reversed ? mEnd.ToDOMPoint(false) : mStart.ToDOMPoint(false);
 
   if (!startContent || !endContent) {
     return false;
@@ -1855,6 +1863,42 @@ bool TextLeafRange::SetSelection(int32_t aSelectionNum) const {
   }
 
   return false;
+}
+
+void TextLeafRange::ScrollIntoView(uint32_t aScrollType) const {
+  if (!mStart || !mEnd || mStart.mAcc->IsLocal() != mEnd.mAcc->IsLocal()) {
+    return;
+  }
+
+  if (mStart.mAcc->IsRemote()) {
+    DocAccessibleParent* doc = mStart.mAcc->AsRemote()->Document();
+    if (doc != mEnd.mAcc->AsRemote()->Document()) {
+      // Can't scroll range that spans docs.
+      return;
+    }
+
+    Unused << doc->SendScrollTextLeafRangeIntoView(
+        mStart.mAcc->ID(), mStart.mOffset, mEnd.mAcc->ID(), mEnd.mOffset,
+        aScrollType);
+    return;
+  }
+
+  auto [startContent, startContentOffset] = mStart.ToDOMPoint();
+  auto [endContent, endContentOffset] = mEnd.ToDOMPoint();
+
+  if (!startContent || !endContent) {
+    return;
+  }
+
+  ErrorResult er;
+  RefPtr<nsRange> domRange = nsRange::Create(startContent, startContentOffset,
+                                             endContent, endContentOffset, er);
+  if (er.Failed()) {
+    return;
+  }
+
+  nsCoreUtils::ScrollSubstringTo(mStart.mAcc->AsLocal()->GetFrame(), domRange,
+                                 aScrollType);
 }
 
 TextLeafRange::Iterator TextLeafRange::Iterator::BeginIterator(

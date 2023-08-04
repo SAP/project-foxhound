@@ -34,6 +34,7 @@
 #include "nsLayoutUtils.h"
 #include "nsFrameSelection.h"
 #include "nsStyleStructInlines.h"
+#include "mozilla/DisplaySVGItem.h"
 #include "mozilla/Likely.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/SVGObserverUtils.h"
@@ -48,7 +49,6 @@
 #include "mozilla/dom/Text.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/gfx/PatternHelpers.h"
-#include "nsDisplayList.h"
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -547,10 +547,8 @@ struct TextRenderedRun {
     eIncludeFill = 1,
     // Includes the stroke geometry of the text in the returned rectangle.
     eIncludeStroke = 2,
-    // Includes any text shadow in the returned rectangle.
-    eIncludeTextShadow = 4,
     // Don't include any horizontal glyph overflow in the returned rectangle.
-    eNoHorizontalOverflow = 8
+    eNoHorizontalOverflow = 4
   };
 
   /**
@@ -863,12 +861,6 @@ SVGBBox TextRenderedRun::GetRunUserSpaceRect(nsPresContext* aContext,
     // Swap line-relative textMetrics dimensions to physical coordinates.
     std::swap(fillInAppUnits.x, fillInAppUnits.y);
     std::swap(fillInAppUnits.width, fillInAppUnits.height);
-  }
-
-  // Account for text-shadow.
-  if (aFlags & eIncludeTextShadow) {
-    fillInAppUnits =
-        nsLayoutUtils::GetTextShadowRectsUnion(fillInAppUnits, mFrame);
   }
 
   // Convert the app units rectangle to user units.
@@ -2032,12 +2024,19 @@ class MOZ_STACK_CLASS CharIterator {
    * Returns whether the current character is the start of a cluster and
    * ligature group.
    */
-  bool IsClusterAndLigatureGroupStart() const;
+  bool IsClusterAndLigatureGroupStart() const {
+    return mTextRun->IsLigatureGroupStart(
+               mSkipCharsIterator.GetSkippedOffset()) &&
+           mTextRun->IsClusterStart(mSkipCharsIterator.GetSkippedOffset());
+  }
 
   /**
    * Returns the glyph run for the current character.
    */
-  const gfxTextRun::GlyphRun& GlyphRun() const;
+  const gfxTextRun::GlyphRun& GlyphRun() const {
+    return *mTextRun->FindFirstGlyphRunContaining(
+        mSkipCharsIterator.GetSkippedOffset());
+  }
 
   /**
    * Returns whether the current character is trimmed away when painting,
@@ -2278,21 +2277,6 @@ bool CharIterator::AdvanceToSubtree() {
     }
   }
   return true;
-}
-
-bool CharIterator::IsClusterAndLigatureGroupStart() const {
-  return mTextRun->IsLigatureGroupStart(
-             mSkipCharsIterator.GetSkippedOffset()) &&
-         mTextRun->IsClusterStart(mSkipCharsIterator.GetSkippedOffset());
-}
-
-const gfxTextRun::GlyphRun& CharIterator::GlyphRun() const {
-  uint32_t numRuns;
-  const gfxTextRun::GlyphRun* glyphRuns = mTextRun->GetGlyphRuns(&numRuns);
-  uint32_t runIndex = mTextRun->FindFirstGlyphRunContaining(
-      mSkipCharsIterator.GetSkippedOffset());
-  MOZ_ASSERT(runIndex < numRuns);
-  return glyphRuns[runIndex];
 }
 
 bool CharIterator::IsOriginalCharTrimmed() const {
@@ -2682,72 +2666,28 @@ void SVGTextDrawPathCallbacks::StrokeGeometry() {
 // ----------------------------------------------------------------------------
 // Display list item
 
-class DisplaySVGText final : public nsPaintedDisplayItem {
+class DisplaySVGText final : public DisplaySVGItem {
  public:
   DisplaySVGText(nsDisplayListBuilder* aBuilder, SVGTextFrame* aFrame)
-      : nsPaintedDisplayItem(aBuilder, aFrame) {
+      : DisplaySVGItem(aBuilder, aFrame) {
     MOZ_COUNT_CTOR(DisplaySVGText);
-    MOZ_ASSERT(aFrame, "Must have a frame!");
   }
-#ifdef NS_BUILD_REFCNT_LOGGING
+
   MOZ_COUNTED_DTOR_OVERRIDE(DisplaySVGText)
-#endif
 
   NS_DISPLAY_DECL_NAME("DisplaySVGText", TYPE_SVG_TEXT)
 
-  virtual void HitTest(nsDisplayListBuilder* aBuilder, const nsRect& aRect,
-                       HitTestState* aState,
-                       nsTArray<nsIFrame*>* aOutFrames) override;
-  void Paint(nsDisplayListBuilder* aBuilder, gfxContext* aCtx) override;
   nsDisplayItemGeometry* AllocateGeometry(
       nsDisplayListBuilder* aBuilder) override {
     return new nsDisplayItemGenericGeometry(this, aBuilder);
   }
 
-  virtual nsRect GetComponentAlphaBounds(
+  nsRect GetComponentAlphaBounds(
       nsDisplayListBuilder* aBuilder) const override {
     bool snap;
     return GetBounds(aBuilder, &snap);
   }
 };
-
-void DisplaySVGText::HitTest(nsDisplayListBuilder* aBuilder,
-                             const nsRect& aRect, HitTestState* aState,
-                             nsTArray<nsIFrame*>* aOutFrames) {
-  SVGTextFrame* frame = static_cast<SVGTextFrame*>(mFrame);
-  nsPoint pointRelativeToReferenceFrame = aRect.Center();
-  // ToReferenceFrame() includes frame->GetPosition(), our user space position.
-  nsPoint userSpacePtInAppUnits = pointRelativeToReferenceFrame -
-                                  (ToReferenceFrame() - frame->GetPosition());
-
-  gfxPoint userSpacePt =
-      gfxPoint(userSpacePtInAppUnits.x, userSpacePtInAppUnits.y) /
-      AppUnitsPerCSSPixel();
-
-  nsIFrame* target = frame->GetFrameForPoint(userSpacePt);
-  if (target) {
-    aOutFrames->AppendElement(target);
-  }
-}
-
-void DisplaySVGText::Paint(nsDisplayListBuilder* aBuilder, gfxContext* aCtx) {
-  uint32_t appUnitsPerDevPixel = mFrame->PresContext()->AppUnitsPerDevPixel();
-
-  // ToReferenceFrame includes our mRect offset, but painting takes
-  // account of that too. To avoid double counting, we subtract that
-  // here.
-  nsPoint offset = ToReferenceFrame() - mFrame->GetPosition();
-
-  gfxPoint devPixelOffset =
-      nsLayoutUtils::PointToGfxPoint(offset, appUnitsPerDevPixel);
-
-  gfxMatrix tm = SVGUtils::GetCSSPxToDevPxMatrix(mFrame) *
-                 gfxMatrix::Translation(devPixelOffset);
-
-  gfxContext* ctx = aCtx;
-  imgDrawingParams imgParams(aBuilder->GetImageDecodeFlags());
-  static_cast<SVGTextFrame*>(mFrame)->PaintSVG(*ctx, tm, imgParams);
-}
 
 // ---------------------------------------------------------------------
 // nsQueryFrame methods
@@ -2879,7 +2819,7 @@ void SVGTextFrame::ScheduleReflowSVGNonDisplayText(IntrinsicDirty aReason) {
         // reflowed soon anyway.  No need to call FrameNeedsReflow again, then.
         return;
       }
-      if (!f->IsFrameOfType(eSVG) || f->IsSVGOuterSVGFrame()) {
+      if (!f->HasAnyStateBits(NS_FRAME_SVG_LAYOUT)) {
         break;
       }
       f->AddStateBits(NS_FRAME_HAS_DIRTY_CHILDREN);
@@ -3318,15 +3258,9 @@ void SVGTextFrame::ReflowSVG() {
     uint32_t runFlags = 0;
     if (!run.mFrame->StyleSVG()->mFill.kind.IsNone()) {
       runFlags |= TextRenderedRun::eIncludeFill;
-      if (run.mFrame->StyleText()->HasTextShadow()) {
-        runFlags |= TextRenderedRun::eIncludeTextShadow;
-      }
     }
     if (SVGUtils::HasStroke(run.mFrame)) {
       runFlags |= TextRenderedRun::eIncludeStroke;
-      if (run.mFrame->StyleText()->HasTextShadow()) {
-        runFlags |= TextRenderedRun::eIncludeTextShadow;
-      }
     }
     // Our "visual" overflow rect needs to be valid for building display lists
     // for hit testing, which means that for certain values of 'pointer-events'
@@ -3375,11 +3309,6 @@ void SVGTextFrame::ReflowSVG() {
   nsRect overflow = nsRect(nsPoint(0, 0), mRect.Size());
   OverflowAreas overflowAreas(overflow, overflow);
   FinishAndStoreOverflow(overflowAreas, mRect.Size());
-
-  // XXX SVGContainerFrame::ReflowSVG only looks at its ISVGDisplayableFrame
-  // children, and calls ConsiderChildOverflow on them.  Does it matter
-  // that ConsiderChildOverflow won't be called on our children?
-  SVGDisplayContainerFrame::ReflowSVG();
 }
 
 /**
@@ -4607,7 +4536,7 @@ gfxFloat SVGTextFrame::GetStartOffset(nsIFrame* aTextPathFrame) {
       &tp->mLengthAttributes[SVGTextPathElement::STARTOFFSET];
 
   if (length->IsPercentage()) {
-    if (!IsFinite(GetOffsetScale(aTextPathFrame))) {
+    if (!std::isfinite(GetOffsetScale(aTextPathFrame))) {
       // Either pathLength="0" for this path or the path has 0 length.
       return 0.0;
     }

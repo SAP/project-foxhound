@@ -216,7 +216,13 @@ static bool MustBeGenericAccessible(nsIContent* aContent,
 static bool MustBeAccessible(nsIContent* aContent, DocAccessible* aDocument) {
   nsIFrame* frame = aContent->GetPrimaryFrame();
   MOZ_ASSERT(frame);
-  if (frame->IsFocusable()) {
+  // This document might be invisible when it first loads. Therefore, we must
+  // check focusability irrespective of visibility here. Otherwise, we might not
+  // create Accessibles for some focusable elements; e.g. a span with only a
+  // tabindex. Elements that are invisible within this document are excluded
+  // earlier in CreateAccessible.
+  if (frame->IsFocusable(/* aWithMouse */ false,
+                         /* aCheckVisibility */ false)) {
     return true;
   }
 
@@ -265,7 +271,8 @@ bool nsAccessibilityService::ShouldCreateImgAccessible(
 /**
  * Return true if the SVG element should be accessible
  */
-static bool MustSVGElementBeAccessible(nsIContent* aContent) {
+static bool MustSVGElementBeAccessible(nsIContent* aContent,
+                                       DocAccessible* aDocument) {
   // https://w3c.github.io/svg-aam/#include_elements
   for (nsIContent* childElm = aContent->GetFirstChild(); childElm;
        childElm = childElm->GetNextSibling()) {
@@ -273,7 +280,7 @@ static bool MustSVGElementBeAccessible(nsIContent* aContent) {
       return true;
     }
   }
-  return false;
+  return MustBeAccessible(aContent, aDocument);
 }
 
 /**
@@ -1311,8 +1318,7 @@ LocalAccessible* nsAccessibilityService::CreateAccessible(
         content->GetParent() == aContext->GetContent()) {
       LayoutFrameType frameType = frame->Type();
       // FIXME(emilio): Why only these frame types?
-      if (frameType == LayoutFrameType::Box ||
-          frameType == LayoutFrameType::FlexContainer ||
+      if (frameType == LayoutFrameType::FlexContainer ||
           frameType == LayoutFrameType::Scroll) {
         newAcc = new XULTabpanelAccessible(content, document);
       }
@@ -1321,26 +1327,26 @@ LocalAccessible* nsAccessibilityService::CreateAccessible(
 
   if (!newAcc) {
     if (content->IsSVGElement()) {
-      if (content->IsNodeOfType(nsINode::eSHAPE) ||
+      if (content->IsSVGGeometryElement() ||
           content->IsSVGElement(nsGkAtoms::image)) {
         // Shape elements: rect, circle, ellipse, line, path, polygon,
         // and polyline. 'use' and 'text' graphic elements require
         // special support.
-        if (MustSVGElementBeAccessible(content)) {
+        if (MustSVGElementBeAccessible(content, document)) {
           newAcc = new EnumRoleAccessible<roles::GRAPHIC>(content, document);
         }
       } else if (content->IsSVGElement(nsGkAtoms::text)) {
         newAcc = new HyperTextAccessibleWrap(content->AsElement(), document);
       } else if (content->IsSVGElement(nsGkAtoms::svg)) {
-        // An <svg> element could contain <foreignobject>, which contains HTML
+        // An <svg> element could contain <foreignObject>, which contains HTML
         // but does not normally create its own Accessible. This means that the
         // <svg> Accessible could have TextLeafAccessible children, so it must
         // be a HyperTextAccessible.
         newAcc =
             new EnumRoleHyperTextAccessible<roles::DIAGRAM>(content, document);
       } else if (content->IsSVGElement(nsGkAtoms::g) &&
-                 MustSVGElementBeAccessible(content)) {
-        // <g> can also contain <foreignobject>.
+                 MustSVGElementBeAccessible(content, document)) {
+        // <g> can also contain <foreignObject>.
         newAcc =
             new EnumRoleHyperTextAccessible<roles::GROUPING>(content, document);
       }

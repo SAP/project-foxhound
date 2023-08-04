@@ -1715,6 +1715,63 @@ already_AddRefed<nsIHTMLCollection> Element::GetElementsByClassName(
   return nsContentUtils::GetElementsByClassName(this, aClassNames);
 }
 
+Element* Element::GetAttrAssociatedElement(nsAtom* aAttr) const {
+  const nsExtendedDOMSlots* slots = GetExistingExtendedDOMSlots();
+  if (slots) {
+    nsWeakPtr weakAttrEl = slots->mExplicitlySetAttrElements.Get(aAttr);
+    if (nsCOMPtr<Element> attrEl = do_QueryReferent(weakAttrEl)) {
+      // If reflectedTarget's explicitly set attr-element |attrEl| is
+      // a descendant of any of element's shadow-including ancestors, then
+      // return |atrEl|.
+      nsINode* root = SubtreeRoot();
+      nsINode* attrSubtreeRoot = attrEl->SubtreeRoot();
+      do {
+        if (root == attrSubtreeRoot) {
+          return attrEl;
+        }
+        auto* shadow = ShadowRoot::FromNode(root);
+        if (!shadow || !shadow->GetHost()) {
+          break;
+        }
+        root = shadow->GetHost()->SubtreeRoot();
+      } while (true);
+      return nullptr;
+    }
+  }
+
+  nsAutoString value;
+  if (!GetAttr(aAttr, value)) {
+    return nullptr;
+  }
+
+  if (auto* docOrShadowRoot = GetContainingDocumentOrShadowRoot()) {
+    return docOrShadowRoot->GetElementById(value);
+  }
+
+  nsINode* root = SubtreeRoot();
+  for (auto* node = root; node; node = node->GetNextNode(root)) {
+    if (node->HasID() && node->AsContent()->GetID()->Equals(value)) {
+      return node->AsElement();
+    }
+  }
+  return nullptr;
+}
+
+void Element::ExplicitlySetAttrElement(nsAtom* aAttr, Element* aElement) {
+  if (aElement) {
+    nsExtendedDOMSlots* slots = ExtendedDOMSlots();
+    slots->mExplicitlySetAttrElements.InsertOrUpdate(
+        aAttr, do_GetWeakReference(aElement));
+    SetAttr(aAttr, EmptyString(), IgnoreErrors());
+    return;
+  }
+
+  if (auto* slots = GetExistingExtendedDOMSlots()) {
+    slots->mExplicitlySetAttrElements.Remove(aAttr);
+    UnsetAttr(aAttr, IgnoreErrors());
+  }
+}
+
 void Element::GetElementsWithGrid(nsTArray<RefPtr<Element>>& aElements) {
   nsINode* cur = this;
   while (cur) {
@@ -1765,11 +1822,10 @@ nsresult Element::BindToTree(BindContext& aContext, nsINode& aParent) {
   if (aParent.IsInNativeAnonymousSubtree()) {
     SetFlags(NODE_IS_IN_NATIVE_ANONYMOUS_SUBTREE);
   }
-  if (aParent.HasFlag(NODE_HAS_BEEN_IN_UA_WIDGET)) {
-    SetFlags(NODE_HAS_BEEN_IN_UA_WIDGET);
-  }
   if (IsRootOfNativeAnonymousSubtree()) {
     aParent.SetMayHaveAnonymousChildren();
+  } else if (aParent.HasFlag(NODE_HAS_BEEN_IN_UA_WIDGET)) {
+    SetFlags(NODE_HAS_BEEN_IN_UA_WIDGET);
   }
   if (aParent.HasFlag(ELEMENT_IS_DATALIST_OR_HAS_DATALIST_ANCESTOR)) {
     SetFlags(ELEMENT_IS_DATALIST_OR_HAS_DATALIST_ANCESTOR);
@@ -2202,8 +2258,6 @@ bool Element::ShouldBlur(nsIContent* aContent) {
   }
   return false;
 }
-
-bool Element::IsNodeOfType(uint32_t aFlags) const { return false; }
 
 /* static */
 nsresult Element::DispatchEvent(nsPresContext* aPresContext,
@@ -4260,6 +4314,16 @@ void Element::ClearServoData(Document* aDoc) {
   if (aDoc->GetServoRestyleRoot() == this) {
     aDoc->ClearServoRestyleRoot();
   }
+}
+
+bool Element::IsAutoPopover() const {
+  const auto* htmlElement = nsGenericHTMLElement::FromNode(this);
+  return htmlElement && htmlElement->GetPopoverState() == PopoverState::Auto;
+}
+
+bool Element::IsPopoverOpen() const {
+  const auto* htmlElement = nsGenericHTMLElement::FromNode(this);
+  return htmlElement && htmlElement->PopoverOpen();
 }
 
 ElementAnimationData& Element::CreateAnimationData() {

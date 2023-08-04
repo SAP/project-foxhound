@@ -304,7 +304,7 @@ static const size_t kPageSize =
 //
 // These page kinds are interleaved; each allocation page has a guard page on
 // either side.
-static const size_t kNumAllocPages = 64;
+static const size_t kNumAllocPages = kPageSize == 4096 ? 4096 : 1024;
 static const size_t kNumAllPages = kNumAllocPages * 2 + 1;
 
 // The total size of the allocation pages and guard pages.
@@ -327,7 +327,7 @@ static const Time kMaxTime = ~(Time(0));
 // The average delay before doing any page allocations at the start of a
 // process. Note that roughly 1 million allocations occur in the main process
 // while starting the browser. The delay range is 1..kAvgFirstAllocDelay*2.
-static const Delay kAvgFirstAllocDelay = 512 * 1024;
+static const Delay kAvgFirstAllocDelay = 64 * 1024;
 
 // The average delay until the next attempted page allocation, once we get past
 // the first delay. The delay range is 1..kAvgAllocDelay*2.
@@ -656,6 +656,12 @@ class GMut {
                                 (kPageSize - 1));
     }
 
+    // The internal fragmentation for this allocation.
+    size_t FragmentationBytes() const {
+      MOZ_ASSERT(kPageSize >= UsableSize());
+      return mState == AllocPageState::InUse ? kPageSize - UsableSize() : 0;
+    }
+
     // The allocation stack.
     // - NeverAllocated: Nothing.
     // - InUse | Freed: Some.
@@ -719,6 +725,15 @@ class GMut {
     return page.UsableSize();
   }
 
+  // The total fragmentation in PHC
+  size_t FragmentationBytes() const {
+    size_t sum = 0;
+    for (const auto& page : mAllocPages) {
+      sum += page.FragmentationBytes();
+    }
+    return sum;
+  }
+
   void SetPageInUse(GMutLock aLock, uintptr_t aIndex,
                     const Maybe<arena_id_t>& aArenaId, uint8_t* aBaseAddr,
                     const StackTrace& aAllocStack) {
@@ -735,6 +750,10 @@ class GMut {
     mNumPageAllocs++;
     MOZ_RELEASE_ASSERT(mNumPageAllocs <= kNumAllocPages);
   }
+
+#if PHC_LOGGING
+  Time GetFreeTime(uintptr_t aIndex) const { return mFreeTime[aIndex]; }
+#endif
 
   void ResizePageInUse(GMutLock aLock, uintptr_t aIndex,
                        const Maybe<arena_id_t>& aArenaId, uint8_t* aNewBaseAddr,
@@ -777,7 +796,11 @@ class GMut {
     // page.mAllocStack is left unchanged, for reporting on UAF.
 
     page.mFreeStack = Some(aFreeStack);
-    page.mReuseTime = GAtomic::Now() + aReuseDelay;
+    Time now = GAtomic::Now();
+#if PHC_LOGGING
+    mFreeTime[aIndex] = now;
+#endif
+    page.mReuseTime = now + aReuseDelay;
 
     MOZ_RELEASE_ASSERT(mNumPageAllocs > 0);
     mNumPageAllocs--;
@@ -957,6 +980,9 @@ class GMut {
   non_crypto::XorShift128PlusRNG mRNG;
 
   AllocPageInfo mAllocPages[kNumAllocPages];
+#if PHC_LOGGING
+  Time mFreeTime[kNumAllocPages];
+#endif
 
   // How many page allocs are currently in use (the max is kNumAllocPages).
   size_t mNumPageAllocs;
@@ -1055,6 +1081,9 @@ static void* MaybePageAlloc(const Maybe<arena_id_t>& aArenaId, size_t aReqSize,
       continue;
     }
 
+#if PHC_LOGGING
+    Time lifetime = 0;
+#endif
     pagePtr = gConst->AllocPagePtr(i);
     MOZ_ASSERT(pagePtr);
     bool ok =
@@ -1075,6 +1104,11 @@ static void* MaybePageAlloc(const Maybe<arena_id_t>& aArenaId, size_t aReqSize,
             (reinterpret_cast<uintptr_t>(ptr) & ~(aAlignment - 1)));
       }
 
+#if PHC_LOGGING
+      Time then = gMut->GetFreeTime(i);
+      lifetime = then != 0 ? now - then : 0;
+#endif
+
       gMut->SetPageInUse(lock, i, aArenaId, ptr, allocStack);
 
       if (aZero) {
@@ -1088,11 +1122,11 @@ static void* MaybePageAlloc(const Maybe<arena_id_t>& aArenaId, size_t aReqSize,
 
     gMut->IncPageAllocHits(lock);
     LOG("PageAlloc(%zu, %zu) -> %p[%zu]/%p (%zu) (z%zu), sAllocDelay <- %zu, "
-        "fullness %zu/%zu, hits %zu/%zu (%zu%%)\n",
+        "fullness %zu/%zu, hits %zu/%zu (%zu%%), lifetime %zu\n",
         aReqSize, aAlignment, pagePtr, i, ptr, usableSize, size_t(aZero),
         size_t(newAllocDelay), gMut->NumPageAllocs(lock), kNumAllocPages,
         gMut->PageAllocHits(lock), gMut->PageAllocAttempts(lock),
-        gMut->PageAllocHitRate(lock));
+        gMut->PageAllocHitRate(lock), lifetime);
     break;
   }
 
@@ -1389,6 +1423,11 @@ static size_t replace_malloc_usable_size(usable_ptr_t aPtr) {
   return gMut->PageUsableSize(lock, index);
 }
 
+static size_t metadata_size() {
+  return sMallocTable.malloc_usable_size(gConst) +
+         sMallocTable.malloc_usable_size(gMut);
+}
+
 void replace_jemalloc_stats(jemalloc_stats_t* aStats,
                             jemalloc_bin_stats_t* aBinStats) {
   sMallocTable.jemalloc_stats_internal(aStats, aBinStats);
@@ -1410,17 +1449,20 @@ void replace_jemalloc_stats(jemalloc_stats_t* aStats,
   }
   aStats->allocated += allocated;
 
-  // Waste is the gap between `allocated` and `mapped`.
-  size_t waste = mapped - allocated;
-  aStats->waste += waste;
+  // guards is the gap between `allocated` and `mapped`. In some ways this
+  // almost fits into aStats->wasted since it feels like wasted memory. However
+  // wasted should only include committed memory and these guard pages are
+  // uncommitted. Therefore we don't include it anywhere.
+  // size_t guards = mapped - allocated;
 
   // aStats.page_cache and aStats.bin_unused are left unchanged because PHC
   // doesn't have anything corresponding to those.
 
-  // gConst and gMut are normal heap allocations, so they're measured by
+  // The metadata is stored in normal heap allocations, so they're measured by
   // mozjemalloc as `allocated`. Move them into `bookkeeping`.
-  size_t bookkeeping = sMallocTable.malloc_usable_size(gConst) +
-                       sMallocTable.malloc_usable_size(gMut);
+  // They're also reported under explicit/heap-overhead/phc/fragmentation in
+  // about:memory.
+  size_t bookkeeping = metadata_size();
   aStats->allocated -= bookkeeping;
   aStats->bookkeeping += bookkeeping;
 }
@@ -1551,6 +1593,17 @@ class PHCBridge : public ReplaceMallocBridge {
     bool enabled = !GTls::IsDisabledOnCurrentThread();
     LOG("IsPHCEnabledOnCurrentThread: %zu\n", size_t(enabled));
     return enabled;
+  }
+
+  virtual void PHCMemoryUsage(
+      mozilla::phc::MemoryUsage& aMemoryUsage) override {
+    aMemoryUsage.mMetadataBytes = metadata_size();
+    if (gMut) {
+      MutexAutoLock lock(GMut::sMutex);
+      aMemoryUsage.mFragmentationBytes = gMut->FragmentationBytes();
+    } else {
+      aMemoryUsage.mFragmentationBytes = 0;
+    }
   }
 };
 

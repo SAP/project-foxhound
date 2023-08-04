@@ -3337,20 +3337,20 @@ class MacroAssembler : public MacroAssemblerSpecific {
                                                  FloatRegister temp)
       DEFINED_ON(x86_shared, arm64);
 
-  inline void truncSatFloat32x4ToInt32x4Relaxed(FloatRegister src,
-                                                FloatRegister dest)
+  inline void truncFloat32x4ToInt32x4Relaxed(FloatRegister src,
+                                             FloatRegister dest)
       DEFINED_ON(x86_shared, arm64);
 
-  inline void unsignedTruncSatFloat32x4ToInt32x4Relaxed(FloatRegister src,
-                                                        FloatRegister dest)
+  inline void unsignedTruncFloat32x4ToInt32x4Relaxed(FloatRegister src,
+                                                     FloatRegister dest)
       DEFINED_ON(x86_shared, arm64);
 
-  inline void truncSatFloat64x2ToInt32x4Relaxed(FloatRegister src,
-                                                FloatRegister dest)
+  inline void truncFloat64x2ToInt32x4Relaxed(FloatRegister src,
+                                             FloatRegister dest)
       DEFINED_ON(x86_shared, arm64);
 
-  inline void unsignedTruncSatFloat64x2ToInt32x4Relaxed(FloatRegister src,
-                                                        FloatRegister dest)
+  inline void unsignedTruncFloat64x2ToInt32x4Relaxed(FloatRegister src,
+                                                     FloatRegister dest)
       DEFINED_ON(x86_shared, arm64);
 
   // Floating point narrowing
@@ -3488,10 +3488,6 @@ class MacroAssembler : public MacroAssemblerSpecific {
   inline void dotInt8x16Int7x16ThenAdd(FloatRegister lhs, FloatRegister rhs,
                                        FloatRegister dest, FloatRegister temp)
       DEFINED_ON(arm64);
-
-  inline void dotBFloat16x8ThenAdd(FloatRegister lhs, FloatRegister rhs,
-                                   FloatRegister dest, FloatRegister temp)
-      DEFINED_ON(x86_shared, arm64);
 
   // Floating point rounding
 
@@ -3838,18 +3834,21 @@ class MacroAssembler : public MacroAssemblerSpecific {
                                            wasm::SymbolicAddress builtin,
                                            wasm::FailureMode failureMode);
 
-  // Perform a subtype check that `subTypeDef` is a subtype of `superTypeDef`
-  // branching to label depending on `onSuccess`. This method is a
-  // specialization of the general `wasm::TypeDef::isSubTypeOf` method for the
-  // case where the `superTypeDef` is statically known, which is the case for
-  // all wasm instructions.
+  // Perform a subtype check that `subSuperTypeVector` is a subtype of
+  // `superSuperTypeVector`, branching to `label` depending on `onSuccess`.
+  // This method is a specialization of the general
+  // `wasm::TypeDef::isSubTypeOf` method for the case where the
+  // `superSuperTypeVector` is statically known, which is the case for all
+  // wasm instructions.
   //
   // `scratch` is required iff the `subTypeDepth` is >=
-  // wasm::MinSuperTypeVectorLength. `subTypeDef` is clobbered by this method.
-  // `superTypeDef` is preserved.
-  void branchWasmTypeDefIsSubtype(Register subTypeDef, Register superTypeDef,
-                                  Register scratch, uint32_t subTypeDepth,
-                                  Label* label, bool onSuccess);
+  // wasm::MinSuperTypeVectorLength. `subSuperTypeVector` is clobbered by this
+  // method.  `superSuperTypeVector` is preserved.
+  void branchWasmSuperTypeVectorIsSubtype(Register subSuperTypeVector,
+                                          Register superSuperTypeVector,
+                                          Register scratch,
+                                          uint32_t superTypeDepth, Label* label,
+                                          bool onSuccess);
 
   // Compute ptr += (indexTemp32 << shift) where shift can be any value < 32.
   // May destroy indexTemp32.  The value of indexTemp32 must be positive, and it

@@ -661,6 +661,16 @@ reader-view-enter-button =
 reader-view-close-button =
     .aria-label = Close Reader View
 
+## Picture-in-Picture urlbar button
+## Variables:
+##   $shortcut (String) - Keyboard shortcut to execute the command.
+
+picture-in-picture-urlbar-button-open =
+ .tooltiptext = Open Picture-in-Picture ({ $shortcut })
+
+picture-in-picture-urlbar-button-close =
+ .tooltiptext = Close Picture-in-Picture ({ $shortcut })
+
 ## Full Screen and Pointer Lock UI
 
 # Please ensure that the domain stays in the `<span data-l10n-name="domain">` markup.
@@ -971,3 +981,7 @@ firefox-relay-offer-how-we-integrate = By continuing, you’ll be able to genera
 #  $sitename (String): name of the site where user enters their Relay mask
 #  $useremail (String): user email that will receive messages
 firefox-relay-offer-what-relay-does = We’ll forward all emails from <strong>{ $sitename }</strong> to <strong>{ $useremail }</strong>.
+
+## Popup Notification
+
+popup-notification-xpinstall-prompt-learn-more = Learn more about installing add-ons safely

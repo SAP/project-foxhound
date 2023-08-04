@@ -20,6 +20,7 @@ gecko_metrics = [
     "dom/media/webrtc/metrics.yaml",
     "dom/metrics.yaml",
     "gfx/metrics.yaml",
+    "mobile/android/actors/metrics.yaml",
     "netwerk/metrics.yaml",
     "netwerk/protocol/http/metrics.yaml",
     "toolkit/components/cookiebanners/metrics.yaml",
@@ -45,6 +46,7 @@ firefox_desktop_metrics = [
     "toolkit/components/telemetry/metrics.yaml",
     "toolkit/modules/metrics.yaml",
     "toolkit/xre/metrics.yaml",
+    "widget/cocoa/metrics.yaml",
 ]
 
 # Metrics that are sent by the Firefox Desktop Background Update Task
@@ -59,6 +61,7 @@ background_update_metrics = [
 background_tasks_metrics = [
     "toolkit/components/backgroundtasks/metrics.yaml",
     "toolkit/components/crashes/metrics.yaml",
+    "browser/components/metrics.yaml",
 ]
 
 # Test metrics

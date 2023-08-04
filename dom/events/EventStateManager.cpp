@@ -1157,7 +1157,7 @@ bool EventStateManager::LookForAccessKeyAndExecute(
     start = mAccessKeys.IndexOf(focusedElement);
     if (start == -1 && focusedElement->IsInNativeAnonymousSubtree()) {
       start = mAccessKeys.IndexOf(Element::FromNodeOrNull(
-          focusedElement->GetClosestNativeAnonymousSubtreeRootParent()));
+          focusedElement->GetClosestNativeAnonymousSubtreeRootParentOrHost()));
     }
   }
   RefPtr<Element> element;
@@ -1935,7 +1935,7 @@ void EventStateManager::BeginTrackingRemoteDragGesture(
   mGestureDownInTextControl =
       aContent && aContent->IsInNativeAnonymousSubtree() &&
       TextControlElement::FromNodeOrNull(
-          aContent->GetClosestNativeAnonymousSubtreeRootParent());
+          aContent->GetClosestNativeAnonymousSubtreeRootParentOrHost());
   mGestureDownDragStartData = aDragStartData;
 }
 
@@ -2745,7 +2745,7 @@ nsIFrame* EventStateManager::ComputeScrollTargetAndMayAdjustWheelEvent(
     // out of the frame, or when more than "mousewheel.transaction.timeout"
     // milliseconds have passed after the last operation, even if the mouse
     // hasn't moved.
-    nsIFrame* lastScrollFrame = WheelTransaction::GetTargetFrame();
+    nsIFrame* lastScrollFrame = WheelTransaction::GetScrollTargetFrame();
     if (lastScrollFrame) {
       nsIScrollableFrame* scrollableFrame =
           lastScrollFrame->GetScrollTargetFrame();
@@ -2927,7 +2927,9 @@ void EventStateManager::DoScrollText(nsIScrollableFrame* aScrollableFrame,
   MOZ_ASSERT(scrollFrame);
 
   AutoWeakFrame scrollFrameWeak(scrollFrame);
-  if (!WheelTransaction::WillHandleDefaultAction(aEvent, scrollFrameWeak)) {
+  AutoWeakFrame eventFrameWeak(mCurrentTarget);
+  if (!WheelTransaction::WillHandleDefaultAction(aEvent, scrollFrameWeak,
+                                                 eventFrameWeak)) {
     return;
   }
 
@@ -3117,8 +3119,7 @@ void EventStateManager::DecideGestureEvent(WidgetGestureNotifyEvent* aEvent,
     }
 
     // Special check for trees
-    nsTreeBodyFrame* treeFrame = do_QueryFrame(current);
-    if (treeFrame) {
+    if (nsTreeBodyFrame* treeFrame = do_QueryFrame(current)) {
       if (treeFrame->GetHorizontalOverflow()) {
         panDirection = WidgetGestureNotifyEvent::ePanHorizontal;
       }
@@ -3129,39 +3130,19 @@ void EventStateManager::DecideGestureEvent(WidgetGestureNotifyEvent* aEvent,
     }
 
     if (nsIScrollableFrame* scrollableFrame = do_QueryFrame(current)) {
-      if (current->IsFrameOfType(nsIFrame::eXULBox)) {
+      layers::ScrollDirections scrollbarVisibility =
+          scrollableFrame->GetScrollbarVisibility();
+
+      // Check if we have visible scrollbars
+      if (scrollbarVisibility.contains(layers::ScrollDirection::eVertical)) {
+        panDirection = WidgetGestureNotifyEvent::ePanVertical;
         displayPanFeedback = true;
+        break;
+      }
 
-        nsRect scrollRange = scrollableFrame->GetScrollRange();
-        bool canScrollHorizontally = scrollRange.width > 0;
-
-        // Vertical panning has priority over horizontal panning, so
-        // when vertical movement is possible we can just finish the loop.
-        if (scrollRange.height > 0) {
-          panDirection = WidgetGestureNotifyEvent::ePanVertical;
-          break;
-        }
-
-        if (canScrollHorizontally) {
-          panDirection = WidgetGestureNotifyEvent::ePanHorizontal;
-          displayPanFeedback = false;
-        }
-      } else {  // Not a XUL box
-        layers::ScrollDirections scrollbarVisibility =
-            scrollableFrame->GetScrollbarVisibility();
-
-        // Check if we have visible scrollbars
-        if (scrollbarVisibility.contains(layers::ScrollDirection::eVertical)) {
-          panDirection = WidgetGestureNotifyEvent::ePanVertical;
-          displayPanFeedback = true;
-          break;
-        }
-
-        if (scrollbarVisibility.contains(
-                layers::ScrollDirection::eHorizontal)) {
-          panDirection = WidgetGestureNotifyEvent::ePanHorizontal;
-          displayPanFeedback = true;
-        }
+      if (scrollbarVisibility.contains(layers::ScrollDirection::eHorizontal)) {
+        panDirection = WidgetGestureNotifyEvent::ePanHorizontal;
+        displayPanFeedback = true;
       }
     }  // scrollableFrame
   }    // ancestor chain
@@ -3718,6 +3699,15 @@ nsresult EventStateManager::PostHandleEvent(nsPresContext* aPresContext,
         case WheelPrefs::ACTION_NONE:
         default:
           bool allDeltaOverflown = false;
+          if (StaticPrefs::dom_event_wheel_event_groups_enabled() &&
+              (wheelEvent->mDeltaX != 0.0 || wheelEvent->mDeltaY != 0.0)) {
+            if (frameToScroll) {
+              WheelTransaction::WillHandleDefaultAction(
+                  wheelEvent, frameToScroll, mCurrentTarget);
+            } else {
+              WheelTransaction::EndTransaction();
+            }
+          }
           if (wheelEvent->mFlags.mHandledByAPZ) {
             if (wheelEvent->mCanTriggerSwipe) {
               // For events that can trigger swipes, APZ needs to know whether
@@ -5859,6 +5849,7 @@ void EventStateManager::ContentRemoved(Document* aDocument,
       IMEStateManager::OnRemoveContent(*presContext,
                                        MOZ_KnownLive(*aContent->AsElement()));
     }
+    WheelTransaction::OnRemoveElement(aContent);
   }
 
   // inform the focus manager that the content is being removed. If this
@@ -5897,7 +5888,8 @@ void EventStateManager::TextControlRootWillBeRemoved(
   // caused by reframing aTextControlElement which may not be intended by the
   // user.
   if (&aTextControlElement ==
-      mGestureDownFrameOwner->GetClosestNativeAnonymousSubtreeRootParent()) {
+      mGestureDownFrameOwner
+          ->GetClosestNativeAnonymousSubtreeRootParentOrHost()) {
     mGestureDownFrameOwner = &aTextControlElement;
   }
 }

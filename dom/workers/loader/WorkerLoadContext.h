@@ -27,6 +27,7 @@ class WorkerPrivate;
 namespace workerinternals::loader {
 class CacheCreator;
 class ScriptLoaderRunnable;
+class WorkerScriptLoader;
 }  // namespace workerinternals::loader
 
 /*
@@ -89,13 +90,15 @@ class WorkerLoadContext : public JS::loader::LoadContextBase {
     // only
     // be a Module script.
     StaticImport,
+    DynamicImport,
     // We have an attached debugger, and these should be treated specially and
     // not like a main script (regardless of their type). This is not part of
     // the specification.
     DebuggerScript
   };
 
-  explicit WorkerLoadContext(Kind aKind, const Maybe<ClientInfo>& aClientInfo);
+  WorkerLoadContext(Kind aKind, const Maybe<ClientInfo>& aClientInfo,
+                    workerinternals::loader::WorkerScriptLoader* aScriptLoader);
 
   // Used to detect if the `is top-level` bit is set on a given module.
   bool IsTopLevel() {
@@ -120,6 +123,7 @@ class WorkerLoadContext : public JS::loader::LoadContextBase {
   Kind mKind;
   Maybe<ClientInfo> mClientInfo;
   nsCOMPtr<nsIChannel> mChannel;
+  RefPtr<workerinternals::loader::WorkerScriptLoader> mScriptLoader;
 
   /* These fields are only used by service workers */
   /* TODO: Split out a ServiceWorkerLoadContext */

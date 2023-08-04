@@ -15,13 +15,10 @@ const { XPCOMUtils } = ChromeUtils.importESModule(
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
+  NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
   Subprocess: "resource://gre/modules/Subprocess.sys.mjs",
   WindowsRegistry: "resource://gre/modules/WindowsRegistry.sys.mjs",
   setTimeout: "resource://gre/modules/Timer.sys.mjs",
-});
-
-XPCOMUtils.defineLazyModuleGetters(lazy, {
-  NimbusFeatures: "resource://nimbus/ExperimentAPI.jsm",
 });
 
 XPCOMUtils.defineLazyServiceGetter(
@@ -38,7 +35,7 @@ XPCOMUtils.defineLazyGetter(lazy, "log", () => {
   let consoleOptions = {
     // tip: set maxLogLevel to "debug" and use log.debug() to create detailed
     // messages during development. See LOG_LEVELS in Console.sys.mjs for details.
-    maxLogLevel: "debug",
+    maxLogLevel: "error",
     maxLogLevelPref: "browser.shell.loglevel",
     prefix: "ShellService",
   };
@@ -315,6 +312,7 @@ let ShellServiceInternal = {
       });
       telemetryResult = "ErrOther";
       this._handleWDBAResult(exeProcess);
+      telemetryResult = "Success";
     } catch (ex) {
       if (ex instanceof WDBAError) {
         telemetryResult = ex.telemetryResult;
@@ -352,6 +350,7 @@ let ShellServiceInternal = {
       });
       telemetryResult = "ErrOther";
       this._handleWDBAResult(exeProcess);
+      telemetryResult = "Success";
     } catch (ex) {
       if (ex instanceof WDBAError) {
         telemetryResult = ex.telemetryResult;
@@ -436,7 +435,7 @@ let ShellServiceInternal = {
    * Determine if we're the default handler for the given file extension (like
    * ".pdf") or protocol (like "https").  Windows-only for now.
    *
-   * @returns true if we are the default handler, false otherwise.
+   * @returns {boolean} true if we are the default handler, false otherwise.
    */
   isDefaultHandlerFor(aFileExtensionOrProtocol) {
     if (AppConstants.platform == "win") {

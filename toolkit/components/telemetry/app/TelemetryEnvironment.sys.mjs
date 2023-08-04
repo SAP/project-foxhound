@@ -24,6 +24,8 @@ ChromeUtils.defineESModuleGetters(lazy, {
   AttributionCode: "resource:///modules/AttributionCode.sys.mjs",
   ProfileAge: "resource://gre/modules/ProfileAge.sys.mjs",
   WindowsRegistry: "resource://gre/modules/WindowsRegistry.sys.mjs",
+  WindowsVersionInfo:
+    "resource://gre/modules/components-utils/WindowsVersionInfo.sys.mjs",
 });
 import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 
@@ -32,11 +34,6 @@ XPCOMUtils.defineLazyGetter(lazy, "fxAccounts", () => {
     "resource://gre/modules/FxAccounts.sys.mjs"
   ).getFxAccountsSingleton();
 });
-ChromeUtils.defineModuleGetter(
-  lazy,
-  "WindowsVersionInfo",
-  "resource://gre/modules/components-utils/WindowsVersionInfo.jsm"
-);
 
 // The maximum length of a string (e.g. description) in the addons section.
 const MAX_ADDON_STRING_LENGTH = 100;
@@ -229,6 +226,9 @@ const DEFAULT_ENVIRONMENT_PREFS = new Map([
   ["browser.cache.offline.enable", { what: RECORD_PREF_VALUE }],
   ["browser.formfill.enable", { what: RECORD_PREF_VALUE }],
   ["browser.fixup.alternate.enabled", { what: RECORD_DEFAULTPREF_VALUE }],
+  ["browser.migrate.interactions.bookmarks", { what: RECORD_PREF_VALUE }],
+  ["browser.migrate.interactions.history", { what: RECORD_PREF_VALUE }],
+  ["browser.migrate.interactions.passwords", { what: RECORD_PREF_VALUE }],
   ["browser.newtabpage.enabled", { what: RECORD_PREF_VALUE }],
   ["browser.shell.checkDefaultBrowser", { what: RECORD_PREF_VALUE }],
   ["browser.search.region", { what: RECORD_PREF_VALUE }],
@@ -319,12 +319,22 @@ const DEFAULT_ENVIRONMENT_PREFS = new Map([
   ["layout.css.devPixelsPerPx", { what: RECORD_PREF_VALUE }],
   ["media.gmp-gmpopenh264.enabled", { what: RECORD_PREF_VALUE }],
   ["media.gmp-gmpopenh264.lastInstallFailed", { what: RECORD_PREF_VALUE }],
+  ["media.gmp-gmpopenh264.lastInstallFailReason", { what: RECORD_PREF_VALUE }],
   ["media.gmp-gmpopenh264.lastInstallStart", { what: RECORD_PREF_VALUE }],
   ["media.gmp-gmpopenh264.lastDownload", { what: RECORD_PREF_VALUE }],
   ["media.gmp-gmpopenh264.lastDownloadFailed", { what: RECORD_PREF_VALUE }],
   ["media.gmp-gmpopenh264.lastDownloadFailReason", { what: RECORD_PREF_VALUE }],
   ["media.gmp-gmpopenh264.lastUpdate", { what: RECORD_PREF_VALUE }],
   ["media.gmp-gmpopenh264.visible", { what: RECORD_PREF_VALUE }],
+  ["media.gmp-widevinecdm.enabled", { what: RECORD_PREF_VALUE }],
+  ["media.gmp-widevinecdm.lastInstallFailed", { what: RECORD_PREF_VALUE }],
+  ["media.gmp-widevinecdm.lastInstallFailReason", { what: RECORD_PREF_VALUE }],
+  ["media.gmp-widevinecdm.lastInstallStart", { what: RECORD_PREF_VALUE }],
+  ["media.gmp-widevinecdm.lastDownload", { what: RECORD_PREF_VALUE }],
+  ["media.gmp-widevinecdm.lastDownloadFailed", { what: RECORD_PREF_VALUE }],
+  ["media.gmp-widevinecdm.lastDownloadFailReason", { what: RECORD_PREF_VALUE }],
+  ["media.gmp-widevinecdm.lastUpdate", { what: RECORD_PREF_VALUE }],
+  ["media.gmp-widevinecdm.visible", { what: RECORD_PREF_VALUE }],
   ["media.gmp-manager.lastCheck", { what: RECORD_PREF_VALUE }],
   ["media.gmp-manager.lastEmptyCheck", { what: RECORD_PREF_VALUE }],
   ["network.http.windows-sso.enabled", { what: RECORD_PREF_VALUE }],

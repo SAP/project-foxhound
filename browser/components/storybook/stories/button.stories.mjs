@@ -6,9 +6,25 @@ import { classMap, html } from "lit.all.mjs";
 
 export default {
   title: "Design System/Atoms/Button",
+  component: "button",
+  parameters: {
+    fluent: `
+button-regular = Regular
+button-primary = Primary
+button-disabled = Disabled
+button-danger = Danger
+    `,
+  },
 };
 
-const Template = ({ disabled, primary, text, ghostButton, icon }) =>
+const Template = ({
+  disabled,
+  primary,
+  l10nId,
+  ghostButton,
+  icon,
+  dangerButton,
+}) =>
   html`
     <style>
       .icon-button {
@@ -21,34 +37,41 @@ const Template = ({ disabled, primary, text, ghostButton, icon }) =>
         primary,
         "ghost-button": ghostButton,
         "icon-button": icon,
+        "danger-button": dangerButton,
       })}
-    >
-      ${text}
-    </button>
+      data-l10n-id=${l10nId}
+    ></button>
   `;
 
 export const RegularButton = Template.bind({});
 RegularButton.args = {
-  text: "Regular",
+  l10nId: "button-regular",
   primary: false,
   disabled: false,
 };
 export const PrimaryButton = Template.bind({});
 PrimaryButton.args = {
-  text: "Primary",
+  l10nId: "button-primary",
   primary: true,
   disabled: false,
 };
 export const DisabledButton = Template.bind({});
 DisabledButton.args = {
-  text: "Disabled",
+  l10nId: "button-disabled",
   primary: false,
   disabled: true,
 };
 
+export const DangerButton = Template.bind({});
+DangerButton.args = {
+  l10nId: "button-danger",
+  primary: true,
+  disabled: false,
+  dangerButton: true,
+};
+
 export const GhostIconButton = Template.bind({});
 GhostIconButton.args = {
-  text: "",
   icon: "chrome://browser/skin/login.svg",
   disabled: false,
   ghostButton: true,

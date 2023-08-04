@@ -3,10 +3,13 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "MFCDMSession.h"
+
+#include <limits>
 #include <vcruntime.h>
 #include <winerror.h>
 
 #include "MFMediaEngineUtils.h"
+#include "GMPUtils.h"  // ToHexString
 #include "mozilla/EMEUtils.h"
 #include "mozilla/dom/MediaKeyMessageEventBinding.h"
 #include "mozilla/dom/MediaKeyStatusMapBinding.h"
@@ -103,7 +106,10 @@ MFCDMSession* MFCDMSession::Create(KeySystemConfig::SessionType aSessionType,
 MFCDMSession::MFCDMSession(IMFContentDecryptionModuleSession* aSession,
                            SessionCallbacks* aCallback,
                            nsISerialEventTarget* aManagerThread)
-    : mSession(aSession), mManagerThread(aManagerThread) {
+    : mSession(aSession),
+      mManagerThread(aManagerThread),
+      mExpiredTimeMilliSecondsSinceEpoch(
+          std::numeric_limits<double>::quiet_NaN()) {
   MOZ_ASSERT(aSession);
   MOZ_ASSERT(aCallback);
   MOZ_ASSERT(aManagerThread);
@@ -197,7 +203,7 @@ void MFCDMSession::OnSessionKeysChange() {
 
   static auto ByteArrayFromGUID = [](REFGUID aGuid,
                                      nsTArray<uint8_t>& aByteArrayOut) {
-    aByteArrayOut.SetCapacity(sizeof(GUID));
+    aByteArrayOut.SetLength(sizeof(GUID));
     // GUID is little endian. The byte array in network order is big endian.
     GUID* reversedGuid = reinterpret_cast<GUID*>(aByteArrayOut.Elements());
     *reversedGuid = aGuid;
@@ -242,6 +248,11 @@ void MFCDMSession::OnSessionKeysChange() {
     }
     CopyableTArray<uint8_t> keyId;
     ByteArrayFromGUID(reinterpret_cast<REFGUID>(keyStatus.pbKeyId), keyId);
+
+    nsAutoCString keyIdString(ToHexString(keyId));
+    LOG("Append keyid-sz=%u, keyid=%s, status=%s", keyStatus.cbKeyId,
+        keyIdString.get(),
+        ToMediaKeyStatusStr(ToMediaKeyStatus(keyStatus.eMediaKeyStatus)));
     keyInfos.AppendElement(MFCDMKeyInformation{
         std::move(keyId), ToMediaKeyStatus(keyStatus.eMediaKeyStatus)});
   }
@@ -267,7 +278,9 @@ HRESULT MFCDMSession::UpdateExpirationIfNeeded() {
   double newExpiredEpochTimeMs = 0.0;
   RETURN_IF_FAILED(mSession->GetExpiration(&newExpiredEpochTimeMs));
 
-  if (newExpiredEpochTimeMs == mExpiredTimeMilliSecondsSinceEpoch) {
+  if (newExpiredEpochTimeMs == mExpiredTimeMilliSecondsSinceEpoch ||
+      (std::isnan(newExpiredEpochTimeMs) &&
+       std::isnan(mExpiredTimeMilliSecondsSinceEpoch))) {
     return S_OK;
   }
 

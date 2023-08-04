@@ -7,13 +7,23 @@
 :host {
   display: flex;
   flex-direction: column;
-  width: 25.54em;
+  width: 22.34em;
 }
 
-h3 {
+h1 {
+  font-size: 1.30em;
   font-weight: normal;
-  margin-block-start: 0;
+  margin-block: 0 16px;
   min-height: 1em;
+}
+
+ol {
+  padding-inline-start: 24px;
+  margin-block: 16px 0;
+}
+
+li:not(:last-child) {
+  margin-block-end: 16px;
 }
 
 div[name="page-loading"] > .buttons > button {
@@ -39,6 +49,11 @@ div[name="page-loading"] > .buttons > button {
   margin-block-start: 16px;
 }
 
+.deemphasized-text {
+  font-size: 0.84em;
+  color: var(--in-content-deemphasized-text);
+}
+
 fieldset {
   border: 0;
 }
@@ -53,12 +68,72 @@ button {
   margin-block-end: 0;
 }
 
+#wizard-deck > div {
+  display: flex;
+  flex-direction: column;
+}
+
+#browser-profile-selector {
+  display: flex;
+  border: 0;
+  padding: 8px;
+  margin: 0;
+  font-weight: unset;
+}
+
+.migrator-icon {
+  content: url(chrome://global/skin/icons/defaultFavicon.svg);
+  height: 32px;
+  width: 32px;
+  -moz-context-properties: fill;
+  fill: currentColor;
+}
+
+.migrator-icon,
+.migrator-description,
+.dropdown-icon {
+  pointer-events: none;
+}
+
+.dropdown-icon {
+  content: url("chrome://global/skin/icons/arrow-down.svg");
+  -moz-context-properties: fill;
+  fill: var(--in-content-icon-color);
+  height: 16px;
+  width: 16px;
+  align-self: center;
+}
+
+.migrator-description {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  justify-content: center;
+  align-items: start;
+  margin-inline-start: 11px;
+}
+
+.profile-name:empty {
+  display: none;
+}
+
+/**
+ * Until we address bug 1823489, it's not that easy to apply styles on
+ * the panel-list. We work around this by setting the CSS variable for
+ * the border instead.
+ */
+slot::slotted(panel-list),
+slot::slotted(panel) {
+  --in-content-box-border-color: transparent;
+}
+
 div[name="page-selection"]:not([show-import-all]) #select-all,
+div[name="page-selection"][show-import-all][single-item] #select-all,
 div[name="page-selection"]:not([show-import-all]) summary {
   display: none;
 }
 
-div[name="page-selection"][show-import-all] label:not(#select-all)  {
+div[name="page-selection"][show-import-all]:not([single-item]) label:not(#select-all)  {
   margin-inline-start: 24px;
 }
 
@@ -66,23 +141,40 @@ div[name="page-selection"][show-import-all] #select-all  {
   display: flex;
 }
 
-details[open] .dropdown-icon {
-  background-image: url("chrome://browser/skin/zoom-out.svg");
+div[name="page-selection"][show-import-all] .resource-selection-preamble {
+  display: none;
 }
 
-.dropdown-icon {
+.resource-selection-preamble {
+  margin-block-start: 16px;
+}
+
+details[open] .expand-collapse-icon {
+  content: url("chrome://browser/skin/zoom-out.svg");
+}
+
+.expand-collapse-icon {
   display: inline-block;
   width: 16px;
   height: 16px;
-  background-image: url("chrome://global/skin/icons/plus.svg");
+  content: url("chrome://global/skin/icons/plus.svg");
   grid-area: b;
   -moz-context-properties: fill;
   fill: currentColor;
   justify-self: end;
+  margin-inline-end: 8px;
 }
 
 details:not([open]) summary {
   margin-block-end: 16px;
+}
+
+#resource-type-list {
+  padding: 0;
+}
+
+#resource-type-list > label {
+  margin-block-start: 16px;
 }
 
 :host(:not([dialog-mode])) .cancel-close {
@@ -91,7 +183,7 @@ details:not([open]) summary {
 
 .resource-progress {
   display: grid;
-  gap: 8px;
+  gap: 16px;
 }
 
 .resource-progress-group {
@@ -108,18 +200,16 @@ details:not([open]) summary {
 
 .success-text {
   grid-area: status;
-  font-size: 0.81em;
-  color: var(--in-content-deemphasized-text);
 }
 
 .progress-icon {
   display: inline-block;
   width: 16px;
   height: 16px;
+  content: url("chrome://browser/skin/migration/success.svg");
   -moz-context-properties: fill;
-  margin-inline-end: 8px;
-  background-image: url("chrome://browser/skin/migration/success.svg");
   fill: var(--in-content-success-icon-color);
+  margin-inline-end: 8px;
 }
 
 .error-icon {
@@ -129,13 +219,42 @@ details:not([open]) summary {
   margin-inline-end: 8px;
 }
 
+.page-portrait-icon {
+  width: 16px;
+  height: 16px;
+  content: url("chrome://global/skin/icons/page-portrait.svg");
+  -moz-context-properties: fill;
+  fill: currentColor;
+  vertical-align: middle;
+}
+
+.safari-icon-3dots {
+  width: 16px;
+  height: 16px;
+  vertical-align: middle;
+  content: url("chrome://browser/skin/migration/safari-icon-3dots.svg");
+  -moz-context-properties: fill, stroke;
+  fill: currentColor;
+  stroke: color-mix(in srgb, currentColor 10%, transparent 90%);
+}
+
 .no-browsers-found-message {
   display: flex;
 }
 
-.no-browsers-found {
+.error-message {
   display: flex;
   align-items: start;
+}
+
+.no-resources-found {
+  font-size: 0.84em;
+  margin-block-start: 16px;
+}
+
+div[name="page-selection"]:not([no-resources]) .no-resources-found,
+div[name="page-selection"][no-resources] .hide-on-error {
+  display: none;
 }
 
 /**
@@ -149,22 +268,28 @@ details:not([open]) summary {
   align-items: center;
 }
 
+div[name="page-selection"][show-import-all] .resource-selection-details {
+  padding-inline-start: 8px;
+}
+
 .resource-selection-details > summary {
   list-style: none;
   display: grid;
   grid-template-areas: "a b"
                        "c b";
+  margin-block: 16px 0;
 }
 
 @media (prefers-reduced-motion: reduce) {
   .progress-icon:not(.completed) {
-    background-image: url("chrome://browser/skin/tabbrowser/hourglass.svg");
+    content: url("chrome://browser/skin/tabbrowser/hourglass.svg");
     fill: var(--in-content-deemphasized-text);
   }
 }
 
 @media (prefers-reduced-motion: no-preference) {
   .progress-icon:not(.completed) {
+    content: "";
     background-image: conic-gradient(rgba(255, 255, 255, 0.31) 0%, rgba(255, 189, 79, 0.57) 38%, rgba(255, 74, 162, 0.79) 70%, rgb(144, 89, 255) 100%);
     mask: url("chrome://browser/skin/migration/progress-mask.svg");
     mask-composite: exclude;

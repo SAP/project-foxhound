@@ -421,12 +421,6 @@ class SVGUtils final {
                                  const gfxRect& aBBox,
                                  const dom::UserSpaceMetrics& aMetrics);
 
-  /**
-   * Find the first frame, starting with aStartFrame and going up its
-   * parent chain, that is not an svgAFrame.
-   */
-  static nsIFrame* GetFirstNonAAncestorFrame(nsIFrame* aStartFrame);
-
   static bool OuterSVGIsCallingReflowSVG(nsIFrame* aFrame);
   static bool AnyOuterSVGIsCallingReflowSVG(nsIFrame* aFrame);
 
@@ -593,11 +587,6 @@ class SVGUtils final {
    * its usual dev pixels to SVG user units/CSS px to keep the SVG code happy.
    */
   static gfxMatrix GetCSSPxToDevPxMatrix(const nsIFrame* aNonSVGFrame);
-
-  static bool IsInSVGTextSubtree(const nsIFrame* aFrame) {
-    // Returns true if the frame is an SVGTextFrame or one of its descendants.
-    return aFrame->HasAnyStateBits(NS_FRAME_IS_SVG_TEXT);
-  }
 
   /**
    * It is a replacement of

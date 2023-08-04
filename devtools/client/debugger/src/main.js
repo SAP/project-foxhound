@@ -18,6 +18,9 @@ import {
 
 import { initialBreakpointsState } from "./reducers/breakpoints";
 import { initialSourcesState } from "./reducers/sources";
+import { initialUIState } from "./reducers/ui";
+import { initialSourceBlackBoxState } from "./reducers/source-blackbox";
+
 const { sanitizeBreakpoints } = require("devtools/client/shared/thread-utils");
 
 async function syncBreakpoints() {
@@ -54,7 +57,7 @@ function setPauseOnExceptions() {
   );
 }
 
-async function loadInitialState() {
+async function loadInitialState(commands, toolbox) {
   const pendingBreakpoints = sanitizeBreakpoints(
     await asyncStore.pendingBreakpoints
   );
@@ -63,7 +66,16 @@ async function loadInitialState() {
   const blackboxedRanges = await asyncStore.blackboxedRanges;
   const eventListenerBreakpoints = await asyncStore.eventListenerBreakpoints;
   const breakpoints = initialBreakpointsState(xhrBreakpoints);
-  const sources = initialSourcesState({ blackboxedRanges });
+  const sourceBlackBox = initialSourceBlackBoxState({ blackboxedRanges });
+  const sources = initialSourcesState({
+    // @backward-compat { version 112 } Checks if the server supports override
+    // Remove once fully supported
+    isOverridesSupported: toolbox.target.getTrait("isOverridesSupported"),
+  });
+  const ui = initialUIState({
+    supportsJavascriptTracing:
+      commands.client.mainRoot.traits.supportsJavascriptTracing,
+  });
 
   return {
     pendingBreakpoints,
@@ -71,6 +83,8 @@ async function loadInitialState() {
     breakpoints,
     eventListenerBreakpoints,
     sources,
+    sourceBlackBox,
+    ui,
   };
 }
 
@@ -83,7 +97,7 @@ export async function bootstrap({
 }) {
   verifyPrefSchema();
 
-  const initialState = await loadInitialState();
+  const initialState = await loadInitialState(commands, panel.toolbox);
   const workers = bootstrapWorkers(panelWorkers);
 
   const { store, actions, selectors } = bootstrapStore(

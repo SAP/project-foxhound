@@ -531,14 +531,12 @@ uint32_t HyperTextAccessible::FindOffset(uint32_t aOffset,
   childFrame->GetChildFrameContainingOffset(
       innerContentOffset, true, &unusedOffsetInFrame, &frameAtOffset);
 
-  const bool kIsJumpLinesOk = true;       // okay to jump lines
-  const bool kIsScrollViewAStop = false;  // do not stop at scroll views
-  const bool kIsKeyboardSelect = true;    // is keyboard selection
-  const bool kIsVisualBidi = false;       // use visual order for bidi text
-  nsPeekOffsetStruct pos(
-      aAmount, aDirection, innerContentOffset, nsPoint(0, 0), kIsJumpLinesOk,
-      kIsScrollViewAStop, kIsKeyboardSelect, kIsVisualBidi, false,
-      nsPeekOffsetStruct::ForceEditableRegion::No, aWordMovementType, false);
+  PeekOffsetStruct pos(
+      aAmount, aDirection, innerContentOffset, nsPoint(0, 0),
+      {PeekOffsetOption::JumpLines, PeekOffsetOption::IsKeyboardSelect,
+       PeekOffsetOption::PreserveSpaces,
+       PeekOffsetOption::AllowContentInDifferentNativeAnonymousSubtreeRoot},
+      aWordMovementType);
   nsresult rv = frameAtOffset->PeekOffset(&pos);
 
   // PeekOffset fails on last/first lines of the text in certain cases.
@@ -1490,6 +1488,14 @@ int32_t HyperTextAccessible::OffsetAtPoint(int32_t aX, int32_t aY,
 LayoutDeviceIntRect HyperTextAccessible::TextBounds(int32_t aStartOffset,
                                                     int32_t aEndOffset,
                                                     uint32_t aCoordType) {
+  if (StaticPrefs::accessibility_cache_enabled_AtStartup()) {
+    // This isn't strictly related to caching, but this new text implementation
+    // is being developed to make caching feasible. We put it behind this pref
+    // to make it easy to test while it's still under development.
+    return HyperTextAccessibleBase::TextBounds(aStartOffset, aEndOffset,
+                                               aCoordType);
+  }
+
   index_t startOffset = ConvertMagicOffset(aStartOffset);
   index_t endOffset = ConvertMagicOffset(aEndOffset);
   if (!startOffset.IsValid() || !endOffset.IsValid() ||
@@ -1555,6 +1561,22 @@ LayoutDeviceIntRect HyperTextAccessible::TextBounds(int32_t aStartOffset,
   nsAccUtils::ConvertScreenCoordsTo(&boundsX, &boundsY, aCoordType, this);
   bounds.MoveTo(boundsX, boundsY);
   return bounds;
+}
+
+LayoutDeviceIntRect HyperTextAccessible::CharBounds(int32_t aOffset,
+                                                    uint32_t aCoordType) {
+  if (StaticPrefs::accessibility_cache_enabled_AtStartup()) {
+    // This isn't strictly related to caching, but this new text implementation
+    // is being developed to make caching feasible. We put it behind this pref
+    // to make it easy to test while it's still under development.
+    return HyperTextAccessibleBase::CharBounds(aOffset, aCoordType);
+  }
+
+  index_t startOffset = ConvertMagicOffset(aOffset);
+  int32_t endOffset = startOffset == CharacterCount()
+                          ? static_cast<int32_t>(startOffset)
+                          : static_cast<int32_t>(startOffset) + 1;
+  return TextBounds(static_cast<int32_t>(startOffset), endOffset, aCoordType);
 }
 
 already_AddRefed<EditorBase> HyperTextAccessible::GetEditor() const {
@@ -1919,13 +1941,6 @@ bool HyperTextAccessible::RemoveFromSelection(int32_t aSelectionNum) {
   domSel->RemoveRangeAndUnselectFramesAndNotifyListeners(*range,
                                                          IgnoreErrors());
   return true;
-}
-
-void HyperTextAccessible::ScrollSubstringTo(int32_t aStartOffset,
-                                            int32_t aEndOffset,
-                                            uint32_t aScrollType) {
-  TextRange range(this, this, aStartOffset, this, aEndOffset);
-  range.ScrollIntoView(aScrollType);
 }
 
 void HyperTextAccessible::ScrollSubstringToPoint(int32_t aStartOffset,

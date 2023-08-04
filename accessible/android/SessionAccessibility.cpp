@@ -273,9 +273,12 @@ RefPtr<SessionAccessibility> SessionAccessibility::GetInstanceFor(
       return GetInstanceFor(doc->GetPresShell());
     }
   } else {
+    DocAccessibleParent* remoteDoc = aAccessible->AsRemote()->Document();
+    if (remoteDoc->mSessionAccessibility) {
+      return remoteDoc->mSessionAccessibility;
+    }
     dom::CanonicalBrowsingContext* cbc =
-        static_cast<dom::BrowserParent*>(
-            aAccessible->AsRemote()->Document()->Manager())
+        static_cast<dom::BrowserParent*>(remoteDoc->Manager())
             ->GetBrowsingContext()
             ->Top();
     dom::BrowserParent* bp = cbc->GetBrowserParent();
@@ -286,7 +289,10 @@ RefPtr<SessionAccessibility> SessionAccessibility::GetInstanceFor(
     if (auto element = bp->GetOwnerElement()) {
       if (auto doc = element->OwnerDoc()) {
         if (nsPresContext* presContext = doc->GetPresContext()) {
-          return GetInstanceFor(presContext->PresShell());
+          RefPtr<SessionAccessibility> sessionAcc =
+              GetInstanceFor(presContext->PresShell());
+          remoteDoc->mSessionAccessibility = sessionAcc;
+          return sessionAcc;
         }
       } else {
         MOZ_ASSERT_UNREACHABLE(
@@ -779,13 +785,13 @@ mozilla::java::GeckoBundle::LocalRef SessionAccessibility::ToBundle(
                       java::sdk::Integer::ValueOf(0));  // integer
     }
 
-    if (!IsNaN(aCurVal)) {
+    if (!std::isnan(aCurVal)) {
       GECKOBUNDLE_PUT(rangeInfo, "current", java::sdk::Double::New(aCurVal));
     }
-    if (!IsNaN(aMinVal)) {
+    if (!std::isnan(aMinVal)) {
       GECKOBUNDLE_PUT(rangeInfo, "min", java::sdk::Double::New(aMinVal));
     }
-    if (!IsNaN(aMaxVal)) {
+    if (!std::isnan(aMaxVal)) {
       GECKOBUNDLE_PUT(rangeInfo, "max", java::sdk::Double::New(aMaxVal));
     }
 
@@ -807,7 +813,7 @@ mozilla::java::GeckoBundle::LocalRef SessionAccessibility::ToBundle(
     if (rowIndex) {
       GECKOBUNDLE_START(collectionItemInfo);
       GECKOBUNDLE_PUT(collectionItemInfo, "rowIndex",
-                      java::sdk::Integer::ValueOf(*rowIndex));
+                      java::sdk::Integer::ValueOf(*rowIndex - 1));
       GECKOBUNDLE_PUT(collectionItemInfo, "columnIndex",
                       java::sdk::Integer::ValueOf(0));
       GECKOBUNDLE_PUT(collectionItemInfo, "rowSpan",
@@ -979,8 +985,8 @@ void SessionAccessibility::PopulateNodeInfo(
     Maybe<int32_t> rowIndex =
         attributes->GetAttribute<int32_t>(nsGkAtoms::posinset);
     if (rowIndex) {
-      mSessionAccessibility->PopulateNodeCollectionItemInfo(aNodeInfo,
-                                                            *rowIndex, 1, 0, 1);
+      mSessionAccessibility->PopulateNodeCollectionItemInfo(
+          aNodeInfo, *rowIndex - 1, 1, 0, 1);
     }
 
     Maybe<int32_t> rowCount =
@@ -1080,6 +1086,7 @@ void SessionAccessibility::UnregisterAccessible(Accessible* aAccessible) {
   }
 
   RefPtr<SessionAccessibility> sessionAcc = GetInstanceFor(aAccessible);
+  MOZ_ASSERT(sessionAcc, "Need SessionAccessibility to unregister Accessible!");
   if (sessionAcc) {
     Accessible* registeredAcc =
         sessionAcc->mIDToAccessibleMap.Get(virtualViewID);

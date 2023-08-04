@@ -4,6 +4,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "SimpleXULLeafFrame.h"
 #include "mozilla/AsyncEventDispatcher.h"
 #include "mozilla/ContentEvents.h"
 #include "mozilla/DebugOnly.h"
@@ -38,6 +39,8 @@
 #include "nsIContent.h"
 #include "mozilla/ComputedStyle.h"
 #include "mozilla/dom/Document.h"
+#include "mozilla/dom/ReferrerInfo.h"
+#include "mozilla/intl/Segmenter.h"
 #include "nsCSSRendering.h"
 #include "nsString.h"
 #include "nsContainerFrame.h"
@@ -46,9 +49,6 @@
 #include "nsVariant.h"
 #include "nsWidgetsCID.h"
 #include "nsIFrameInlines.h"
-#include "nsBoxFrame.h"
-#include "nsBoxLayoutState.h"
-#include "nsTextBoxFrame.h"
 #include "nsTreeContentView.h"
 #include "nsTreeUtils.h"
 #include "nsStyleConsts.h"
@@ -80,6 +80,129 @@ using namespace mozilla::gfx;
 using namespace mozilla::image;
 using namespace mozilla::layout;
 
+enum CroppingStyle { CropNone, CropLeft, CropRight, CropCenter, CropAuto };
+
+// FIXME: Maybe unify with MiddleCroppingBlockFrame?
+static void CropStringForWidth(nsAString& aText, gfxContext& aRenderingContext,
+                               nsFontMetrics& aFontMetrics, nscoord aWidth,
+                               CroppingStyle aCropType) {
+  DrawTarget* drawTarget = aRenderingContext.GetDrawTarget();
+
+  // See if the width is even smaller than the ellipsis
+  // If so, clear the text completely.
+  const nsDependentString& kEllipsis = nsContentUtils::GetLocalizedEllipsis();
+  aFontMetrics.SetTextRunRTL(false);
+  nscoord ellipsisWidth =
+      nsLayoutUtils::AppUnitWidthOfString(kEllipsis, aFontMetrics, drawTarget);
+
+  if (ellipsisWidth > aWidth) {
+    aText.Truncate(0);
+    return;
+  }
+  if (ellipsisWidth == aWidth) {
+    aText.Assign(kEllipsis);
+    return;
+  }
+
+  // We will be drawing an ellipsis, thank you very much.
+  // Subtract out the required width of the ellipsis.
+  // This is the total remaining width we have to play with.
+  aWidth -= ellipsisWidth;
+
+  using mozilla::intl::GraphemeClusterBreakIteratorUtf16;
+  using mozilla::intl::GraphemeClusterBreakReverseIteratorUtf16;
+
+  // Now we crop. This is quite basic: it will not be really accurate in the
+  // presence of complex scripts with contextual shaping, etc., as it measures
+  // each grapheme cluster in isolation, not in its proper context.
+  switch (aCropType) {
+    case CropAuto:
+    case CropNone:
+    case CropRight: {
+      const Span text(aText);
+      GraphemeClusterBreakIteratorUtf16 iter(text);
+      uint32_t pos = 0;
+      nscoord totalWidth = 0;
+
+      while (Maybe<uint32_t> nextPos = iter.Next()) {
+        const nscoord charWidth = nsLayoutUtils::AppUnitWidthOfString(
+            text.FromTo(pos, *nextPos), aFontMetrics, drawTarget);
+        if (totalWidth + charWidth > aWidth) {
+          break;
+        }
+        pos = *nextPos;
+        totalWidth += charWidth;
+      }
+
+      if (pos < aText.Length()) {
+        aText.Replace(pos, aText.Length() - pos, kEllipsis);
+      }
+    } break;
+
+    case CropLeft: {
+      const Span text(aText);
+      GraphemeClusterBreakReverseIteratorUtf16 iter(text);
+      uint32_t pos = text.Length();
+      nscoord totalWidth = 0;
+
+      // nextPos is decreasing since we use a reverse iterator.
+      while (Maybe<uint32_t> nextPos = iter.Next()) {
+        const nscoord charWidth = nsLayoutUtils::AppUnitWidthOfString(
+            text.FromTo(*nextPos, pos), aFontMetrics, drawTarget);
+        if (totalWidth + charWidth > aWidth) {
+          break;
+        }
+
+        pos = *nextPos;
+        totalWidth += charWidth;
+      }
+
+      if (pos > 0) {
+        aText.Replace(0, pos, kEllipsis);
+      }
+    } break;
+
+    case CropCenter: {
+      const Span text(aText);
+      nscoord totalWidth = 0;
+      GraphemeClusterBreakIteratorUtf16 leftIter(text);
+      GraphemeClusterBreakReverseIteratorUtf16 rightIter(text);
+      uint32_t leftPos = 0;
+      uint32_t rightPos = text.Length();
+
+      while (leftPos < rightPos) {
+        Maybe<uint32_t> nextPos = leftIter.Next();
+        nscoord charWidth = nsLayoutUtils::AppUnitWidthOfString(
+            text.FromTo(leftPos, *nextPos), aFontMetrics, drawTarget);
+        if (totalWidth + charWidth > aWidth) {
+          break;
+        }
+
+        leftPos = *nextPos;
+        totalWidth += charWidth;
+
+        if (leftPos >= rightPos) {
+          break;
+        }
+
+        nextPos = rightIter.Next();
+        charWidth = nsLayoutUtils::AppUnitWidthOfString(
+            text.FromTo(*nextPos, rightPos), aFontMetrics, drawTarget);
+        if (totalWidth + charWidth > aWidth) {
+          break;
+        }
+
+        rightPos = *nextPos;
+        totalWidth += charWidth;
+      }
+
+      if (leftPos < rightPos) {
+        aText.Replace(leftPos, rightPos - leftPos, kEllipsis);
+      }
+    } break;
+  }
+}
+
 // Function that cancels all the image requests in our cache.
 void nsTreeBodyFrame::CancelImageRequests() {
   for (nsTreeImageCacheEntry entry : mImageCache.Values()) {
@@ -106,12 +229,12 @@ NS_IMPL_FRAMEARENA_HELPERS(nsTreeBodyFrame)
 NS_QUERYFRAME_HEAD(nsTreeBodyFrame)
   NS_QUERYFRAME_ENTRY(nsIScrollbarMediator)
   NS_QUERYFRAME_ENTRY(nsTreeBodyFrame)
-NS_QUERYFRAME_TAIL_INHERITING(nsLeafBoxFrame)
+NS_QUERYFRAME_TAIL_INHERITING(SimpleXULLeafFrame)
 
 // Constructor
 nsTreeBodyFrame::nsTreeBodyFrame(ComputedStyle* aStyle,
                                  nsPresContext* aPresContext)
-    : nsLeafBoxFrame(aStyle, aPresContext, kClassID),
+    : SimpleXULLeafFrame(aStyle, aPresContext, kClassID),
       mImageCache(),
       mTopRowIndex(0),
       mPageLength(0),
@@ -121,7 +244,6 @@ nsTreeBodyFrame::nsTreeBodyFrame(ComputedStyle* aStyle,
       mAdjustWidth(0),
       mRowHeight(0),
       mIndentation(0),
-      mStringWidth(-1),
       mUpdateBatchNest(0),
       mRowCount(0),
       mMouseOverRow(-1),
@@ -154,86 +276,26 @@ static void AdjustForBorderPadding(ComputedStyle* aStyle, nsRect& aRect) {
 
 void nsTreeBodyFrame::Init(nsIContent* aContent, nsContainerFrame* aParent,
                            nsIFrame* aPrevInFlow) {
-  nsLeafBoxFrame::Init(aContent, aParent, aPrevInFlow);
+  SimpleXULLeafFrame::Init(aContent, aParent, aPrevInFlow);
 
   mIndentation = GetIndentation();
   mRowHeight = GetRowHeight();
 
   // Call GetBaseElement so that mTree is assigned.
-  GetBaseElement();
+  RefPtr<XULTreeElement> tree(GetBaseElement());
+  if (MOZ_LIKELY(tree)) {
+    nsAutoString rows;
+    if (tree->GetAttr(nsGkAtoms::rows, rows)) {
+      nsresult err;
+      mPageLength = rows.ToInteger(&err);
+      mHasFixedRowCount = true;
+    }
+  }
 
-  if (LookAndFeel::GetInt(LookAndFeel::IntID::UseOverlayScrollbars) != 0) {
+  if (PresContext()->UseOverlayScrollbars()) {
     mScrollbarActivity =
         new ScrollbarActivity(static_cast<nsIScrollbarMediator*>(this));
   }
-}
-
-nsSize nsTreeBodyFrame::GetXULMinSize(nsBoxLayoutState& aBoxLayoutState) {
-  EnsureView();
-
-  RefPtr<XULTreeElement> tree(GetBaseElement());
-
-  nsSize min(0, 0);
-  int32_t desiredRows;
-  if (MOZ_UNLIKELY(!tree)) {
-    desiredRows = 0;
-  } else {
-    nsAutoString rows;
-    tree->GetAttr(kNameSpaceID_None, nsGkAtoms::rows, rows);
-    if (!rows.IsEmpty()) {
-      nsresult err;
-      desiredRows = rows.ToInteger(&err);
-      mPageLength = desiredRows;
-    } else {
-      desiredRows = 0;
-    }
-  }
-
-  min.height = mRowHeight * desiredRows;
-
-  AddXULBorderAndPadding(min);
-  bool widthSet, heightSet;
-  nsIFrame::AddXULMinSize(this, min, widthSet, heightSet);
-
-  return min;
-}
-
-nscoord nsTreeBodyFrame::CalcMaxRowWidth() {
-  if (mStringWidth != -1) return mStringWidth;
-
-  if (!mView) {
-    return 0;
-  }
-
-  ComputedStyle* rowContext =
-      GetPseudoComputedStyle(nsCSSAnonBoxes::mozTreeRow());
-  nsMargin rowMargin(0, 0, 0, 0);
-  GetBorderPadding(rowContext, rowMargin);
-
-  nscoord rowWidth;
-  nsTreeColumn* col;
-
-  UniquePtr<gfxContext> rc = PresShell()->CreateReferenceRenderingContext();
-
-  for (int32_t row = 0; row < mRowCount; ++row) {
-    rowWidth = 0;
-
-    for (col = mColumns->GetFirstColumn(); col; col = col->GetNext()) {
-      nscoord desiredWidth, currentWidth;
-      nsresult rv =
-          GetCellWidth(row, col, rc.get(), desiredWidth, currentWidth);
-      if (NS_FAILED(rv)) {
-        MOZ_ASSERT_UNREACHABLE("invalid column");
-        continue;
-      }
-      rowWidth += desiredWidth;
-    }
-
-    if (rowWidth > mStringWidth) mStringWidth = rowWidth;
-  }
-
-  mStringWidth += rowMargin.left + rowMargin.right;
-  return mStringWidth;
 }
 
 void nsTreeBodyFrame::DestroyFrom(nsIFrame* aDestructRoot,
@@ -265,7 +327,7 @@ void nsTreeBodyFrame::DestroyFrom(nsIFrame* aDestructRoot,
     view->SetTree(nullptr);
   }
 
-  nsLeafBoxFrame::DestroyFrom(aDestructRoot, aPostDestroyData);
+  SimpleXULLeafFrame::DestroyFrom(aDestructRoot, aPostDestroyData);
 }
 
 void nsTreeBodyFrame::EnsureView() {
@@ -318,14 +380,16 @@ void nsTreeBodyFrame::ManageReflowCallback(const nsRect& aRect,
   }
 }
 
-void nsTreeBodyFrame::SetXULBounds(nsBoxLayoutState& aBoxLayoutState,
-                                   const nsRect& aRect,
-                                   bool aRemoveOverflowArea) {
-  nscoord horzWidth = CalcHorzWidth(GetScrollParts());
-  ManageReflowCallback(aRect, horzWidth);
-  mHorzWidth = horzWidth;
+nscoord nsTreeBodyFrame::GetIntrinsicBSize() {
+  return mHasFixedRowCount ? mRowHeight * mPageLength : 0;
+}
 
-  nsLeafBoxFrame::SetXULBounds(aBoxLayoutState, aRect, aRemoveOverflowArea);
+void nsTreeBodyFrame::DidReflow(nsPresContext* aPresContext,
+                                const ReflowInput* aReflowInput) {
+  nscoord horzWidth = CalcHorzWidth(GetScrollParts());
+  ManageReflowCallback(GetRect(), horzWidth);
+  mHorzWidth = horzWidth;
+  SimpleXULLeafFrame::DidReflow(aPresContext, aReflowInput);
 }
 
 bool nsTreeBodyFrame::ReflowFinished() {
@@ -643,9 +707,8 @@ static void FindScrollParts(nsIFrame* aCurrFrame,
     }
   }
 
-  nsScrollbarFrame* sf = do_QueryFrame(aCurrFrame);
-  if (sf) {
-    if (!aCurrFrame->IsXULHorizontal()) {
+  if (nsScrollbarFrame* sf = do_QueryFrame(aCurrFrame)) {
+    if (!sf->IsHorizontal()) {
       if (!aResult->mVScrollbar) {
         aResult->mVScrollbar = sf;
       }
@@ -670,20 +733,17 @@ static void FindScrollParts(nsIFrame* aCurrFrame,
 nsTreeBodyFrame::ScrollParts nsTreeBodyFrame::GetScrollParts() {
   ScrollParts result = {nullptr, nullptr, nullptr, nullptr, nullptr, nullptr};
   XULTreeElement* tree = GetBaseElement();
-  nsIFrame* treeFrame = tree ? tree->GetPrimaryFrame() : nullptr;
-  if (treeFrame) {
+  if (nsIFrame* treeFrame = tree ? tree->GetPrimaryFrame() : nullptr) {
     // The way we do this, searching through the entire frame subtree, is pretty
     // dumb! We should know where these frames are.
     FindScrollParts(treeFrame, &result);
     if (result.mHScrollbar) {
       result.mHScrollbar->SetScrollbarMediatorContent(GetContent());
-      nsIFrame* f = do_QueryFrame(result.mHScrollbar);
-      result.mHScrollbarContent = f->GetContent()->AsElement();
+      result.mHScrollbarContent = result.mHScrollbar->GetContent()->AsElement();
     }
     if (result.mVScrollbar) {
       result.mVScrollbar->SetScrollbarMediatorContent(GetContent());
-      nsIFrame* f = do_QueryFrame(result.mVScrollbar);
-      result.mVScrollbarContent = f->GetContent()->AsElement();
+      result.mVScrollbarContent = result.mVScrollbar->GetContent()->AsElement();
     }
   }
   return result;
@@ -1198,15 +1258,14 @@ void nsTreeBodyFrame::AdjustForCellText(nsAutoString& aText, int32_t aRowIndex,
     }
   }
 
-  using CroppingStyle = nsTextBoxFrame::CroppingStyle;
   CroppingStyle cropType = CroppingStyle::CropRight;
   if (aColumn->GetCropStyle() == 1) {
     cropType = CroppingStyle::CropCenter;
   } else if (aColumn->GetCropStyle() == 2) {
     cropType = CroppingStyle::CropLeft;
   }
-  nsTextBoxFrame::CropStringForWidth(aText, aRenderingContext, aFontMetrics,
-                                     maxWidth, cropType);
+  CropStringForWidth(aText, aRenderingContext, aFontMetrics, maxWidth,
+                     cropType);
 
   nscoord width = nsLayoutUtils::AppUnitWidthOfStringBidi(
       aText, this, aFontMetrics, aRenderingContext);
@@ -2171,7 +2230,7 @@ Maybe<nsIFrame::Cursor> nsTreeBodyFrame::GetCursor(const nsPoint& aPoint) {
           Cursor{kind, AllowCustomCursorImage::Yes, std::move(childContext)});
     }
   }
-  return nsLeafBoxFrame::GetCursor(aPoint);
+  return SimpleXULLeafFrame::GetCursor(aPoint);
 }
 
 static uint32_t GetDropEffect(WidgetGUIEvent* aEvent) {
@@ -2432,8 +2491,7 @@ class nsDisplayTreeBody final : public nsPaintedDisplayItem {
                                                     aInvalidRegion);
   }
 
-  virtual void Paint(nsDisplayListBuilder* aBuilder,
-                     gfxContext* aCtx) override {
+  void Paint(nsDisplayListBuilder* aBuilder, gfxContext* aCtx) override {
     MOZ_ASSERT(aBuilder);
     Unused << static_cast<nsTreeBodyFrame*>(mFrame)->PaintTreeBody(
         *aCtx, GetPaintRect(aBuilder, aCtx), ToReferenceFrame(), aBuilder);
@@ -2441,7 +2499,7 @@ class nsDisplayTreeBody final : public nsPaintedDisplayItem {
 
   NS_DISPLAY_DECL_NAME("XULTreeBody", TYPE_XUL_TREE_BODY)
 
-  virtual nsRect GetComponentAlphaBounds(
+  nsRect GetComponentAlphaBounds(
       nsDisplayListBuilder* aBuilder) const override {
     bool snap;
     return GetBounds(aBuilder, &snap);
@@ -2470,16 +2528,13 @@ void nsTreeBodyFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
   if (!IsVisibleForPainting()) return;  // We're invisible.  Don't paint.
 
   // Handles painting our background, border, and outline.
-  nsLeafBoxFrame::BuildDisplayList(aBuilder, aLists);
+  SimpleXULLeafFrame::BuildDisplayList(aBuilder, aLists);
 
   // Bail out now if there's no view or we can't run script because the
   // document is a zombie
   if (!mView || !GetContent()->GetComposedDoc()->GetWindow()) return;
 
   nsDisplayItem* item = MakeDisplayItem<nsDisplayTreeBody>(aBuilder, this);
-  if (!item) {
-    return;
-  }
   aLists.Content()->AppendToTop(item);
 
 #ifdef XP_MACOSX
@@ -2543,14 +2598,15 @@ ImgDrawResult nsTreeBodyFrame::PaintTreeBody(gfxContext& aRenderingContext,
   aRenderingContext.Clip(NSRectToSnappedRect(
       mInnerBox + aPt, PresContext()->AppUnitsPerDevPixel(), *drawTarget));
   int32_t oldPageCount = mPageLength;
-  if (!mHasFixedRowCount)
+  if (!mHasFixedRowCount) {
     mPageLength =
         (mRowHeight > 0) ? (mInnerBox.height / mRowHeight) : mRowCount;
+  }
 
   if (oldPageCount != mPageLength ||
       mHorzWidth != CalcHorzWidth(GetScrollParts())) {
     // Schedule a ResizeReflow that will update our info properly.
-    PresShell()->FrameNeedsReflow(this, IntrinsicDirty::None,
+    PresShell()->FrameNeedsReflow(this, IntrinsicDirty::FrameAndAncestors,
                                   NS_FRAME_IS_DIRTY);
   }
 #ifdef DEBUG
@@ -3648,7 +3704,9 @@ nsresult nsTreeBodyFrame::EnsureRowIsVisible(int32_t aRow) {
 
 nsresult nsTreeBodyFrame::EnsureRowIsVisibleInternal(const ScrollParts& aParts,
                                                      int32_t aRow) {
-  if (!mView || !mPageLength) return NS_OK;
+  if (!mView || !mPageLength) {
+    return NS_OK;
+  }
 
   if (mTopRowIndex <= aRow && mTopRowIndex + mPageLength > aRow) return NS_OK;
 
@@ -3819,7 +3877,7 @@ void nsTreeBodyFrame::RepeatButtonScroll(nsScrollbarFrame* aScrollbar) {
   } else if (increment > 0) {
     direction = 1;
   }
-  bool isHorizontal = aScrollbar->IsXULHorizontal();
+  bool isHorizontal = aScrollbar->IsHorizontal();
 
   AutoWeakFrame weakFrame(this);
   if (isHorizontal) {
@@ -3914,7 +3972,7 @@ void nsTreeBodyFrame::RemoveImageCacheEntry(int32_t aRowIndex,
 
 /* virtual */
 void nsTreeBodyFrame::DidSetComputedStyle(ComputedStyle* aOldComputedStyle) {
-  nsLeafBoxFrame::DidSetComputedStyle(aOldComputedStyle);
+  SimpleXULLeafFrame::DidSetComputedStyle(aOldComputedStyle);
 
   // Clear the style cache; the pointers are no longer even valid
   mStyleCache.Clear();
@@ -3923,7 +3981,6 @@ void nsTreeBodyFrame::DidSetComputedStyle(ComputedStyle* aOldComputedStyle) {
   // dpi changes
   mIndentation = GetIndentation();
   mRowHeight = GetRowHeight();
-  mStringWidth = -1;
 }
 
 bool nsTreeBodyFrame::OffsetForHorzScroll(nsRect& rect, bool clip) {

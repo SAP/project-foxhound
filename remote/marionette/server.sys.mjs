@@ -58,7 +58,7 @@ export class TCPListener {
    *
    * Determines the application to initialise the driver with.
    *
-   * @return {GeckoDriver}
+   * @returns {GeckoDriver}
    *     A driver instance.
    */
   driverFactory() {
@@ -290,6 +290,8 @@ export class TCPConnection {
    *     A command's implementation may throw at any time.
    */
   async despatch(cmd, resp) {
+    const startTime = Cu.now();
+
     let fn = this.driver.commands[cmd.name];
     if (typeof fn == "undefined") {
       throw new lazy.error.UnknownCommandError(cmd.name);
@@ -309,6 +311,7 @@ export class TCPConnection {
     const commandsNoValueResponse = [
       "Marionette:Quit",
       "WebDriver:FindElements",
+      "WebDriver:FindElementsFromShadowRoot",
       "WebDriver:CloseChromeWindow",
       "WebDriver:CloseWindow",
       "WebDriver:FullscreenWindow",
@@ -334,6 +337,14 @@ export class TCPConnection {
         resp.body.value = rv;
       }
     }
+
+    if (Services.profiler?.IsActive()) {
+      ChromeUtils.addProfilerMarker(
+        "Marionette: Command",
+        { startTime, category: "Remote-Protocol" },
+        `${cmd.name} (${cmd.id})`
+      );
+    }
   }
 
   /**
@@ -342,7 +353,7 @@ export class TCPConnection {
    * @param {number} msgID
    *     Message ID to respond to.  If it is not a number, -1 is used.
    *
-   * @return {Response}
+   * @returns {Response}
    *     Response to the message with `msgID`.
    */
   createResponse(msgID) {
@@ -422,7 +433,7 @@ export class TCPConnection {
    * Send the given payload over the debugger transport socket to the
    * connected client.
    *
-   * @param {Object.<string, ?>} payload
+   * @param {Object<string, ?>} payload
    *     The payload to ship.
    */
   sendRaw(payload) {

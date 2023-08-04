@@ -26,7 +26,6 @@
 #include "mozilla/dom/ContentPlaybackController.h"
 #include "mozilla/dom/SessionStorageManager.h"
 #include "mozilla/ipc/ProtocolUtils.h"
-#include "mozilla/layers/CompositorBridgeChild.h"
 #ifdef NS_PRINTING
 #  include "mozilla/layout/RemotePrintJobParent.h"
 #endif
@@ -312,6 +311,8 @@ void CanonicalBrowsingContext::ReplacedBy(
   // SetWithoutSyncing can be used if context hasn't been attached.
   Transaction txn;
   txn.SetBrowserId(GetBrowserId());
+  txn.SetIsAppTab(GetIsAppTab());
+  txn.SetHasSiblings(GetHasSiblings());
   txn.SetHistoryID(GetHistoryID());
   txn.SetExplicitActive(GetExplicitActive());
   txn.SetEmbedderColorSchemes(GetEmbedderColorSchemes());
@@ -794,7 +795,7 @@ RefPtr<PrintPromise> CanonicalBrowsingContext::Print(
 
   layout::RemotePrintJobParent* remotePrintJob =
       new layout::RemotePrintJobParent(printSettings);
-  printData.remotePrintJobParent() =
+  printData.remotePrintJob() =
       browserParent->Manager()->SendPRemotePrintJobConstructor(remotePrintJob);
 
   if (listener) {
@@ -1018,7 +1019,7 @@ already_AddRefed<nsDocShellLoadState> CanonicalBrowsingContext::CreateLoadInfo(
 
 void CanonicalBrowsingContext::NotifyOnHistoryReload(
     bool aForceReload, bool& aCanReload,
-    Maybe<RefPtr<nsDocShellLoadState>>& aLoadState,
+    Maybe<NotNull<RefPtr<nsDocShellLoadState>>>& aLoadState,
     Maybe<bool>& aReloadActiveEntry) {
   MOZ_DIAGNOSTIC_ASSERT(!aLoadState);
 
@@ -1032,7 +1033,7 @@ void CanonicalBrowsingContext::NotifyOnHistoryReload(
   }
 
   if (mActiveEntry) {
-    aLoadState.emplace(CreateLoadInfo(mActiveEntry));
+    aLoadState.emplace(WrapMovingNotNull(RefPtr{CreateLoadInfo(mActiveEntry)}));
     aReloadActiveEntry.emplace(true);
     if (aForceReload) {
       shistory->RemoveFrameEntries(mActiveEntry);
@@ -1040,7 +1041,8 @@ void CanonicalBrowsingContext::NotifyOnHistoryReload(
   } else if (!mLoadingEntries.IsEmpty()) {
     const LoadingSessionHistoryEntry& loadingEntry =
         mLoadingEntries.LastElement();
-    aLoadState.emplace(CreateLoadInfo(loadingEntry.mEntry));
+    aLoadState.emplace(
+        WrapMovingNotNull(RefPtr{CreateLoadInfo(loadingEntry.mEntry)}));
     aReloadActiveEntry.emplace(false);
     if (aForceReload) {
       SessionHistoryEntry::LoadingEntry* entry =
@@ -1332,27 +1334,26 @@ void CanonicalBrowsingContext::RecomputeAppWindowVisibility() {
   MOZ_RELEASE_ASSERT(IsChrome());
   MOZ_RELEASE_ASSERT(IsTop());
 
-  const bool wasAlreadyActive = IsActive();
-
-  nsCOMPtr<nsIWidget> widget;
-  if (auto* docShell = GetDocShell()) {
+  const bool isActive = [&] {
+    if (ForceAppWindowActive()) {
+      return true;
+    }
+    auto* docShell = GetDocShell();
+    if (NS_WARN_IF(!docShell)) {
+      return false;
+    }
+    nsCOMPtr<nsIWidget> widget;
     nsDocShell::Cast(docShell)->GetMainWidget(getter_AddRefs(widget));
-  }
-
-  Unused << NS_WARN_IF(!widget);
-  const bool isNowActive =
-      ForceAppWindowActive() || (widget && !widget->IsFullyOccluded() &&
-                                 widget->SizeMode() != nsSizeMode_Minimized);
-
-  if (isNowActive == wasAlreadyActive) {
-    return;
-  }
-
-  SetIsActive(isNowActive, IgnoreErrors());
-  if (widget) {
-    // Pause if we are not active, resume if we are active.
-    widget->PauseOrResumeCompositor(!isNowActive);
-  }
+    if (NS_WARN_IF(!widget)) {
+      return false;
+    }
+    if (widget->IsFullyOccluded() ||
+        widget->SizeMode() == nsSizeMode_Minimized) {
+      return false;
+    }
+    return true;
+  }();
+  SetIsActive(isActive, IgnoreErrors());
 }
 
 void CanonicalBrowsingContext::AdjustPrivateBrowsingCount(
@@ -2370,13 +2371,13 @@ void CanonicalBrowsingContext::SynchronizeLayoutHistoryState() {
       cp->SendGetLayoutHistoryState(this)->Then(
           GetCurrentSerialEventTarget(), __func__,
           [activeEntry = mActiveEntry](
-              const Tuple<RefPtr<nsILayoutHistoryState>, Maybe<Wireframe>>&
+              const std::tuple<RefPtr<nsILayoutHistoryState>, Maybe<Wireframe>>&
                   aResult) {
-            if (mozilla::Get<0>(aResult)) {
-              activeEntry->SetLayoutHistoryState(mozilla::Get<0>(aResult));
+            if (std::get<0>(aResult)) {
+              activeEntry->SetLayoutHistoryState(std::get<0>(aResult));
             }
-            if (mozilla::Get<1>(aResult)) {
-              activeEntry->SetWireframe(mozilla::Get<1>(aResult));
+            if (std::get<1>(aResult)) {
+              activeEntry->SetWireframe(std::get<1>(aResult));
             }
           },
           []() {});
@@ -2484,7 +2485,8 @@ void CanonicalBrowsingContext::RequestRestoreTabContent(
 
     if (data->CanRestoreInto(aWindow->GetDocumentURI())) {
       if (!aWindow->IsInProcess()) {
-        aWindow->SendRestoreTabContent(data, onTabRestoreComplete,
+        aWindow->SendRestoreTabContent(WrapNotNull(data.get()),
+                                       onTabRestoreComplete,
                                        onTabRestoreComplete);
         return;
       }

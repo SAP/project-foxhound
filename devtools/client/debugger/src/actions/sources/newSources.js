@@ -21,6 +21,7 @@ import { togglePrettyPrint } from "./prettyPrint";
 import { selectLocation, setBreakableLines } from "../sources";
 
 import { getRawSourceURL, isPrettyURL } from "../../utils/source";
+import { createLocation } from "../../utils/location";
 import {
   getBlackBoxRanges,
   getSource,
@@ -139,12 +140,17 @@ function checkSelectedSource(cx, sourceId) {
       }
 
       await dispatch(
-        selectLocation(cx, {
-          sourceId: source.id,
-          line:
-            typeof pendingLocation.line === "number" ? pendingLocation.line : 0,
-          column: pendingLocation.column,
-        })
+        selectLocation(
+          cx,
+          createLocation({
+            source,
+            line:
+              typeof pendingLocation.line === "number"
+                ? pendingLocation.line
+                : 0,
+            column: pendingLocation.column,
+          })
+        )
       );
     }
   };

@@ -27,22 +27,4 @@ SVGGElement::SVGGElement(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
 
 NS_IMPL_ELEMENT_CLONE_WITH_INIT(SVGGElement)
 
-//----------------------------------------------------------------------
-// nsIContent methods
-
-NS_IMETHODIMP_(bool)
-SVGGElement::IsAttributeMapped(const nsAtom* name) const {
-  static const MappedAttributeEntry* const map[] = {sFEFloodMap,
-                                                    sFiltersMap,
-                                                    sFontSpecificationMap,
-                                                    sGradientStopMap,
-                                                    sLightingEffectsMap,
-                                                    sMarkersMap,
-                                                    sTextContentElementsMap,
-                                                    sViewportsMap};
-
-  return FindAttributeDependence(name, map) ||
-         SVGGraphicsElement::IsAttributeMapped(name);
-}
-
 }  // namespace mozilla::dom

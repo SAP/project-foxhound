@@ -111,7 +111,8 @@ NS_IMPL_ISUPPORTS_INHERITED(nsCocoaWindow, Inherited, nsPIWidgetCocoa)
 // widget - whether or not the sheet is showing. |[mWindow isSheet]| will return
 // true *only when the sheet is actually showing*. Choose your test wisely.
 
-static void RollUpPopups() {
+static void RollUpPopups(
+    nsIRollupListener::AllowAnimations aAllowAnimations = nsIRollupListener::AllowAnimations::Yes) {
   nsIRollupListener* rollupListener = nsBaseWidget::GetActiveRollupListener();
   NS_ENSURE_TRUE_VOID(rollupListener);
 
@@ -120,8 +121,12 @@ static void RollUpPopups() {
   }
 
   nsCOMPtr<nsIWidget> rollupWidget = rollupListener->GetRollupWidget();
-  if (!rollupWidget) return;
-  rollupListener->Rollup({0, nsIRollupListener::FlushViews::Yes});
+  if (!rollupWidget) {
+    return;
+  }
+  nsIRollupListener::RollupOptions options{0, nsIRollupListener::FlushViews::Yes, nullptr,
+                                           aAllowAnimations};
+  rollupListener->Rollup(options);
 }
 
 nsCocoaWindow::nsCocoaWindow()
@@ -666,7 +671,6 @@ void* nsCocoaWindow::GetNativeData(uint32_t aDataType) {
     // to emulate how windows works, we always have to return a NSView
     // for NS_NATIVE_WIDGET
     case NS_NATIVE_WIDGET:
-    case NS_NATIVE_DISPLAY:
       retVal = [mWindow contentView];
       break;
 
@@ -970,7 +974,9 @@ void nsCocoaWindow::Show(bool bState) {
     }
   } else {
     // roll up any popups if a top-level window is going away
-    if (mWindowType == WindowType::TopLevel || mWindowType == WindowType::Dialog) RollUpPopups();
+    if (mWindowType == WindowType::TopLevel || mWindowType == WindowType::Dialog) {
+      RollUpPopups();
+    }
 
     // now get rid of the window/sheet
     if (mWindowType == WindowType::Sheet) {
@@ -1628,17 +1634,9 @@ void nsCocoaWindow::CocoaWindowWillEnterFullscreen(bool aFullscreen) {
   // happens.
   mUpdateFullscreenOnResize =
       Some(aFullscreen ? TransitionType::Fullscreen : TransitionType::Windowed);
-
-  if (mWidgetListener) {
-    mWidgetListener->FullscreenWillChange(aFullscreen);
-  }
 }
 
 void nsCocoaWindow::CocoaWindowDidFailFullscreen(bool aAttemptedFullscreen) {
-  if (mWidgetListener) {
-    mWidgetListener->FullscreenWillChange(!aAttemptedFullscreen);
-  }
-
   // If we already updated our fullscreen state due to a resize, we need to update it again.
   if (mUpdateFullscreenOnResize.isNothing()) {
     UpdateFullscreenState(!aAttemptedFullscreen, true);
@@ -1662,10 +1660,6 @@ void nsCocoaWindow::UpdateFullscreenState(bool aFullScreen, bool aNativeMode) {
   }
 
   DispatchSizeModeEvent();
-
-  if (mWidgetListener) {
-    mWidgetListener->FullscreenChanged(aFullScreen);
-  }
 
   // Notify the mainChildView with our new fullscreen state.
   nsChildView* mainChildView = static_cast<nsChildView*>([[mWindow mainChildView] widget]);
@@ -1767,10 +1761,6 @@ void nsCocoaWindow::ProcessTransitions() {
 
       case TransitionType::EmulatedFullscreen: {
         if (!mInFullScreenMode) {
-          // This can be done synchronously.
-          if (mWidgetListener) {
-            mWidgetListener->FullscreenWillChange(true);
-          }
           NSDisableScreenUpdates();
           mSuppressSizeModeEvents = true;
           // The order here matters. When we exit full screen mode, we need to show the
@@ -1792,10 +1782,6 @@ void nsCocoaWindow::ProcessTransitions() {
             [mWindow toggleFullScreen:nil];
             continue;
           } else {
-            // This can be done synchronously.
-            if (mWidgetListener) {
-              mWidgetListener->FullscreenWillChange(false);
-            }
             NSDisableScreenUpdates();
             mSuppressSizeModeEvents = true;
             // The order here matters. When we exit full screen mode, we need to show the
@@ -1894,6 +1880,18 @@ void nsCocoaWindow::FinishCurrentTransitionIfMatching(const TransitionType& aTra
     NS_DispatchToCurrentThread(NewRunnableMethod("FinishCurrentTransition", this,
                                                  &nsCocoaWindow::FinishCurrentTransition));
   }
+}
+
+bool nsCocoaWindow::HandleUpdateFullscreenOnResize() {
+  if (mUpdateFullscreenOnResize.isNothing()) {
+    return false;
+  }
+
+  bool toFullscreen = (*mUpdateFullscreenOnResize == TransitionType::Fullscreen);
+  mUpdateFullscreenOnResize.reset();
+  UpdateFullscreenState(toFullscreen, true);
+
+  return true;
 }
 
 // Coordinates are desktop pixels
@@ -2261,6 +2259,14 @@ void nsCocoaWindow::DispatchSizeModeEvent() {
   if (mWidgetListener) {
     mWidgetListener->SizeModeChanged(newMode);
   }
+
+  if (StaticPrefs::widget_pause_compositor_when_minimized()) {
+    if (newMode == nsSizeMode_Minimized) {
+      PauseCompositor();
+    } else {
+      ResumeCompositor();
+    }
+  }
 }
 
 void nsCocoaWindow::DispatchOcclusionEvent() {
@@ -2296,6 +2302,30 @@ void nsCocoaWindow::ReportSizeEvent() {
   }
 
   NS_OBJC_END_TRY_IGNORE_BLOCK;
+}
+
+void nsCocoaWindow::PauseCompositor() {
+  nsIWidget* mainChildView = static_cast<nsIWidget*>([[mWindow mainChildView] widget]);
+  if (!mainChildView) {
+    return;
+  }
+  CompositorBridgeChild* remoteRenderer = mainChildView->GetRemoteRenderer();
+  if (!remoteRenderer) {
+    return;
+  }
+  remoteRenderer->SendPause();
+}
+
+void nsCocoaWindow::ResumeCompositor() {
+  nsIWidget* mainChildView = static_cast<nsIWidget*>([[mWindow mainChildView] widget]);
+  if (!mainChildView) {
+    return;
+  }
+  CompositorBridgeChild* remoteRenderer = mainChildView->GetRemoteRenderer();
+  if (!remoteRenderer) {
+    return;
+  }
+  remoteRenderer->SendResume();
 }
 
 void nsCocoaWindow::SetMenuBar(RefPtr<nsMenuBarX>&& aMenuBar) {
@@ -2717,12 +2747,6 @@ bool nsCocoaWindow::GetEditCommands(NativeKeyBindingsType aType, const WidgetKey
   return true;
 }
 
-void nsCocoaWindow::PauseOrResumeCompositor(bool aPause) {
-  if (auto* mainChildView = static_cast<nsIWidget*>([[mWindow mainChildView] widget])) {
-    mainChildView->PauseOrResumeCompositor(aPause);
-  }
-}
-
 bool nsCocoaWindow::AsyncPanZoomEnabled() const {
   if (mPopupContentView) {
     return mPopupContentView->AsyncPanZoomEnabled();
@@ -2849,14 +2873,7 @@ void nsCocoaWindow::CocoaWindowDidResize() {
   // ensures that our bounds are correct when GetScreenBounds is called.
   UpdateBounds();
 
-  if (mUpdateFullscreenOnResize.isSome()) {
-    // Act as if the native fullscreen transition is complete, doing everything other
-    // than actually clearing the transition state, which will happen when one of the
-    // appropriate windowDid delegate methods is called.
-    bool toFullscreen = (*mUpdateFullscreenOnResize == TransitionType::Fullscreen);
-    mUpdateFullscreenOnResize.reset();
-
-    UpdateFullscreenState(toFullscreen, true);
+  if (HandleUpdateFullscreenOnResize()) {
     ReportSizeEvent();
     return;
   }
@@ -2943,6 +2960,7 @@ void nsCocoaWindow::CocoaWindowDidResize() {
     return;
   }
 
+  mGeckoWindow->HandleUpdateFullscreenOnResize();
   mGeckoWindow->FinishCurrentTransitionIfMatching(nsCocoaWindow::TransitionType::Fullscreen);
 }
 
@@ -2957,6 +2975,8 @@ void nsCocoaWindow::CocoaWindowDidResize() {
   if (!mGeckoWindow) {
     return;
   }
+
+  mGeckoWindow->HandleUpdateFullscreenOnResize();
   mGeckoWindow->FinishCurrentTransitionIfMatching(nsCocoaWindow::TransitionType::Windowed);
 }
 
@@ -3037,7 +3057,8 @@ void nsCocoaWindow::CocoaWindowDidResize() {
 - (void)windowDidResignKey:(NSNotification*)aNotification {
   NS_OBJC_BEGIN_TRY_IGNORE_BLOCK;
 
-  RollUpPopups();
+  RollUpPopups(nsIRollupListener::AllowAnimations::No);
+
   ChildViewMouseTracker::ReEvaluateMouseEnterState();
 
   // If a sheet just resigned key then we should paint the menu bar

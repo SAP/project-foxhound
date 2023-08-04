@@ -5,8 +5,8 @@
 const TEST_URL =
   "http://www.example.com/browser/toolkit/components/remotepagemanager/tests/browser/testremotepagemanager.html";
 
-var { RemotePages, RemotePageManager } = ChromeUtils.import(
-  "resource://gre/modules/remotepagemanager/RemotePageManagerParent.jsm"
+var { RemotePages, RemotePageManager } = ChromeUtils.importESModule(
+  "resource://gre/modules/remotepagemanager/RemotePageManagerParent.sys.mjs"
 );
 
 function failOnMessage(message) {
@@ -66,6 +66,21 @@ function swapDocShells(browser1, browser2) {
   browser1.permanentKey = browser2.permanentKey;
   browser2.permanentKey = tmp;
 }
+
+add_setup(async function() {
+  ChromeUtils.registerWindowActor("LegacyRPM", {
+    child: {
+      esModuleURI: getRootDirectory(gTestPath) + "LegacyRPMChild.sys.mjs",
+      events: {
+        DOMDocElementInserted: {},
+      },
+    },
+
+    messageManagerGroups: ["browsers"],
+  });
+
+  registerCleanupFunction(() => ChromeUtils.unregisterWindowActor("LegacyRPM"));
+});
 
 add_task(async function sharedData_aka_initialProcessData() {
   const includesTest = () =>

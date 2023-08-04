@@ -29,6 +29,7 @@ export default class MozSupportLink extends HTMLAnchorElement {
    */
   #register() {
     if (!window.IS_STORYBOOK) {
+      // eslint-disable-next-line no-shadow
       let { XPCOMUtils } = window.XPCOMUtils
         ? window
         : ChromeUtils.importESModule(
@@ -49,14 +50,32 @@ export default class MozSupportLink extends HTMLAnchorElement {
     this.#register();
     this.#setHref();
     this.setAttribute("target", "_blank");
+    this.addEventListener("click", this);
     if (!this.getAttribute("data-l10n-id")) {
       document.l10n.setAttributes(this, "moz-support-link-text");
       document.l10n.translateFragment(this);
     }
   }
 
-  attributeChangedCallback(name, oldVal, newVal) {
-    if (name === "support-page" || name === "utm-content") {
+  disconnectedCallback() {
+    this.removeEventListener("click", this);
+  }
+
+  handleEvent(e) {
+    if (e.type == "click") {
+      if (window.openTrustedLinkIn) {
+        let where = whereToOpenLink(e, false, true);
+        if (where == "current") {
+          where = "tab";
+        }
+        e.preventDefault();
+        openTrustedLinkIn(this.href, where);
+      }
+    }
+  }
+
+  attributeChangedCallback(attrName, oldVal, newVal) {
+    if (attrName === "support-page" || attrName === "utm-content") {
       this.#setHref();
     }
   }

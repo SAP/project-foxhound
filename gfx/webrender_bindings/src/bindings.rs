@@ -527,7 +527,7 @@ unsafe impl Send for CppNotifier {}
 
 extern "C" {
     fn wr_notifier_wake_up(window_id: WrWindowId, composite_needed: bool);
-    fn wr_notifier_new_frame_ready(window_id: WrWindowId, composite_needed: bool);
+    fn wr_notifier_new_frame_ready(window_id: WrWindowId, composite_needed: bool, publish_id: FramePublishId);
     fn wr_notifier_external_event(window_id: WrWindowId, raw_event: usize);
     fn wr_schedule_render(window_id: WrWindowId, reasons: RenderReasons);
     // NOTE: This moves away from pipeline_info.
@@ -549,9 +549,9 @@ impl RenderNotifier for CppNotifier {
         }
     }
 
-    fn new_frame_ready(&self, _: DocumentId, _scrolled: bool, composite_needed: bool) {
+    fn new_frame_ready(&self, _: DocumentId, _scrolled: bool, composite_needed: bool, publish_id: FramePublishId) {
         unsafe {
-            wr_notifier_new_frame_ready(self.window_id, composite_needed);
+            wr_notifier_new_frame_ready(self.window_id, composite_needed, publish_id);
         }
     }
 
@@ -600,6 +600,11 @@ pub extern "C" fn wr_renderer_set_external_image_handler(
 #[no_mangle]
 pub extern "C" fn wr_renderer_update(renderer: &mut Renderer) {
     renderer.update();
+}
+
+#[no_mangle]
+pub extern "C" fn wr_renderer_set_target_frame_publish_id(renderer: &mut Renderer, publish_id: FramePublishId) {
+    renderer.set_target_frame_publish_id(publish_id);
 }
 
 #[no_mangle]
@@ -1890,16 +1895,12 @@ pub extern "C" fn wr_transaction_remove_pipeline(txn: &mut Transaction, pipeline
 pub extern "C" fn wr_transaction_set_display_list(
     txn: &mut Transaction,
     epoch: WrEpoch,
-    background: ColorF,
-    viewport_size: LayoutSize,
     pipeline_id: WrPipelineId,
     dl_descriptor: BuiltDisplayListDescriptor,
     dl_items_data: &mut WrVecU8,
     dl_cache_data: &mut WrVecU8,
     dl_spatial_tree_data: &mut WrVecU8,
 ) {
-    let color = if background.a == 0.0 { None } else { Some(background) };
-
     let payload = DisplayListPayload {
         items_data: dl_items_data.flush_into_vec(),
         cache_data: dl_cache_data.flush_into_vec(),
@@ -1908,7 +1909,7 @@ pub extern "C" fn wr_transaction_set_display_list(
 
     let dl = BuiltDisplayList::from_data(payload, dl_descriptor);
 
-    txn.set_display_list(epoch, color, viewport_size, (pipeline_id, dl));
+    txn.set_display_list(epoch, (pipeline_id, dl));
 }
 
 #[no_mangle]
@@ -2195,7 +2196,7 @@ pub unsafe extern "C" fn wr_transaction_clear_display_list(
     let mut frame_builder = WebRenderFrameBuilder::new(pipeline_id);
     frame_builder.dl_builder.begin();
 
-    txn.set_display_list(epoch, None, LayoutSize::new(0.0, 0.0), frame_builder.dl_builder.end());
+    txn.set_display_list(epoch, frame_builder.dl_builder.end());
 }
 
 #[no_mangle]
@@ -3404,7 +3405,6 @@ pub struct WrBorderImage {
     height: i32,
     fill: bool,
     slice: DeviceIntSideOffsets,
-    outset: LayoutSideOffsets,
     repeat_horizontal: RepeatMode,
     repeat_vertical: RepeatMode,
 }
@@ -3425,7 +3425,6 @@ pub extern "C" fn wr_dp_push_border_image(
         height: params.height,
         slice: params.slice,
         fill: params.fill,
-        outset: params.outset,
         repeat_horizontal: params.repeat_horizontal,
         repeat_vertical: params.repeat_vertical,
     });
@@ -3461,7 +3460,6 @@ pub extern "C" fn wr_dp_push_border_gradient(
     stops: *const GradientStop,
     stops_count: usize,
     extend_mode: ExtendMode,
-    outset: LayoutSideOffsets,
 ) {
     debug_assert!(unsafe { is_in_main_thread() });
 
@@ -3479,7 +3477,6 @@ pub extern "C" fn wr_dp_push_border_gradient(
         height,
         slice,
         fill,
-        outset,
         repeat_horizontal: RepeatMode::Stretch,
         repeat_vertical: RepeatMode::Stretch,
     });
@@ -3513,7 +3510,6 @@ pub extern "C" fn wr_dp_push_border_radial_gradient(
     stops: *const GradientStop,
     stops_count: usize,
     extend_mode: ExtendMode,
-    outset: LayoutSideOffsets,
 ) {
     debug_assert!(unsafe { is_in_main_thread() });
 
@@ -3538,7 +3534,6 @@ pub extern "C" fn wr_dp_push_border_radial_gradient(
         height: rect.height() as i32,
         slice,
         fill,
-        outset,
         repeat_horizontal: RepeatMode::Stretch,
         repeat_vertical: RepeatMode::Stretch,
     });
@@ -3572,7 +3567,6 @@ pub extern "C" fn wr_dp_push_border_conic_gradient(
     stops: *const GradientStop,
     stops_count: usize,
     extend_mode: ExtendMode,
-    outset: LayoutSideOffsets,
 ) {
     debug_assert!(unsafe { is_in_main_thread() });
 
@@ -3597,7 +3591,6 @@ pub extern "C" fn wr_dp_push_border_conic_gradient(
         height: rect.height() as i32,
         slice,
         fill,
-        outset,
         repeat_horizontal: RepeatMode::Stretch,
         repeat_vertical: RepeatMode::Stretch,
     });

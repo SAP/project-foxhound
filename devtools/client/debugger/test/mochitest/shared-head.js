@@ -41,6 +41,9 @@ const asyncStorage = require("devtools/shared/async-storage");
 const {
   getSelectedLocation,
 } = require("devtools/client/debugger/src/utils/selected-location");
+const {
+  createLocation,
+} = require("devtools/client/debugger/src/utils/location");
 
 const {
   resetSchemaVersion,
@@ -264,17 +267,20 @@ function getVisibleSelectedFrameColumn(dbg) {
  */
 function assertLineIsBreakable(dbg, file, line, shouldBeBreakable) {
   const lineInfo = getCM(dbg).lineInfo(line - 1);
+  const lineText = `${line}| ${lineInfo.text.substring(0, 50)}${
+    lineInfo.text.length > 50 ? "…" : ""
+  } — in ${file}`;
   // When a line is not breakable, the "empty-line" class is added
   // and the line is greyed out
   if (shouldBeBreakable) {
     ok(
       !lineInfo.wrapClass?.includes("empty-line"),
-      `${file}:${line} should be breakable`
+      `${lineText} should be breakable`
     );
   } else {
     ok(
       lineInfo?.wrapClass?.includes("empty-line"),
-      `${file}:${line} should NOT be breakable`
+      `${lineText} should NOT be breakable`
     );
   }
 }
@@ -705,10 +711,11 @@ function findSourceContent(dbg, url, opts) {
   if (!source) {
     return null;
   }
-  const content = dbg.selectors.getSettledSourceTextContent({
-    sourceId: source.id,
-    sourceActorId: null,
-  });
+  const content = dbg.selectors.getSettledSourceTextContent(
+    createLocation({
+      source,
+    })
+  );
 
   if (!content) {
     return null;
@@ -732,10 +739,11 @@ function waitForLoadedSource(dbg, url) {
       const source = findSource(dbg, url, { silent: true });
       return (
         source &&
-        dbg.selectors.getSettledSourceTextContent({
-          sourceId: source.id,
-          sourceActorId: null,
-        })
+        dbg.selectors.getSettledSourceTextContent(
+          createLocation({
+            source,
+          })
+        )
       );
     },
     "loaded source"
@@ -748,6 +756,53 @@ function getContext(dbg) {
 
 function getThreadContext(dbg) {
   return dbg.selectors.getThreadContext();
+}
+
+/*
+ * Selects the source node for a specific source
+ * from the source tree.
+ *
+ * @param {Object} dbg
+ * @param {String} filename - The filename for the specific source
+ * @param {Number} sourcePosition - The source node postion in the tree
+ * @param {String} message - The info message to display
+ */
+async function selectSourceFromSourceTree(
+  dbg,
+  fileName,
+  sourcePosition,
+  message
+) {
+  info(message);
+  await clickElement(dbg, "sourceNode", sourcePosition);
+  await waitForSelectedSource(dbg, fileName);
+  await waitFor(
+    () => getCM(dbg).getValue() !== `Loading…`,
+    "Wait for source to completely load"
+  );
+}
+
+/*
+ * Trigger a context menu in the debugger source tree
+ *
+ * @param {Object} dbg
+ * @param {Obejct} sourceTreeNode - The node in the source tree which the context menu
+ *                                  item needs to be triggered on.
+ * @param {String} contextMenuItem - The id for the context menu item to be selected
+ */
+async function triggerSourceTreeContextMenu(
+  dbg,
+  sourceTreeNode,
+  contextMenuItem
+) {
+  const onContextMenu = waitForContextMenu(dbg);
+  rightClickEl(dbg, sourceTreeNode);
+  const menupopup = await onContextMenu;
+  const onHidden = new Promise(resolve => {
+    menupopup.addEventListener("popuphidden", resolve, { once: true });
+  });
+  selectContextMenuItem(dbg, contextMenuItem);
+  await onHidden;
 }
 
 /**
@@ -766,10 +821,10 @@ async function selectSource(dbg, url, line, column) {
 
   await dbg.actions.selectLocation(
     getContext(dbg),
-    { sourceId: source.id, line, column },
+    createLocation({ source, line, column }),
     { keepContext: false }
   );
-  return waitForSelectedSource(dbg, url);
+  return waitForSelectedSource(dbg, source);
 }
 
 async function closeTab(dbg, url) {
@@ -961,12 +1016,11 @@ function getBreakpointForLocation(dbg, location) {
  */
 async function addBreakpoint(dbg, source, line, column, options) {
   source = findSource(dbg, source);
-  const sourceId = source.id;
   const bpCount = dbg.selectors.getBreakpointCount();
   const onBreakpoint = waitForDispatch(dbg.store, "SET_BREAKPOINT");
   await dbg.actions.addBreakpoint(
     getContext(dbg),
-    { sourceId, line, column },
+    createLocation({ source, line, column }),
     options
   );
   await onBreakpoint;
@@ -991,7 +1045,12 @@ async function addBreakpointViaGutter(dbg, line) {
 function disableBreakpoint(dbg, source, line, column) {
   column =
     column || getFirstBreakpointColumn(dbg, { line, sourceId: source.id });
-  const location = { sourceId: source.id, sourceUrl: source.url, line, column };
+  const location = createLocation({
+    source,
+    sourceUrl: source.url,
+    line,
+    column,
+  });
   const bp = getBreakpointForLocation(dbg, location);
   return dbg.actions.disableBreakpoint(getContext(dbg), bp);
 }
@@ -1008,8 +1067,11 @@ function findColumnBreakpoint(dbg, url, line, column) {
     source.id,
     line
   );
+
   return lineBreakpoints.find(bp => {
-    return bp.generatedLocation.column === column;
+    return source.isOriginal
+      ? bp.location.column === column
+      : bp.generatedLocation.column === column;
   });
 }
 
@@ -1029,7 +1091,7 @@ async function loadAndAddBreakpoint(dbg, filename, line, column) {
   await addBreakpoint(dbg, source, line, column);
 
   is(getBreakpointCount(), 1, "One breakpoint exists");
-  if (!getBreakpoint({ sourceId: source.id, line, column })) {
+  if (!getBreakpoint(createLocation({ source, line, column }))) {
     const breakpoints = getBreakpointsMap();
     const id = Object.keys(breakpoints).pop();
     const loc = breakpoints[id].location;
@@ -1163,14 +1225,7 @@ async function expandSourceTree(dbg) {
 }
 
 async function expandAllSourceNodes(dbg, treeNode) {
-  const onContextMenu = waitForContextMenu(dbg);
-  rightClickEl(dbg, treeNode);
-  const menupopup = await onContextMenu;
-  const onHidden = new Promise(resolve => {
-    menupopup.addEventListener("popuphidden", resolve, { once: true });
-  });
-  selectContextMenuItem(dbg, "#node-menu-expand-all");
-  await onHidden;
+  return triggerSourceTreeContextMenu(dbg, treeNode, "#node-menu-expand-all");
 }
 
 /**
@@ -1309,6 +1364,7 @@ const keyMappings = {
     code: "VK_F11",
     modifiers: { shiftKey: true },
   },
+  Backspace: { code: "VK_BACK_SPACE" },
 };
 
 /**
@@ -1576,8 +1632,7 @@ const selectors = {
   stepOver: ".stepOver.active",
   stepOut: ".stepOut.active",
   stepIn: ".stepIn.active",
-  replayPrevious: ".replay-previous.active",
-  replayNext: ".replay-next.active",
+  trace: ".debugger-trace-menu-button",
   prettyPrintButton: ".source-footer .prettyPrint",
   sourceMapLink: ".source-footer .mapped-source",
   sourcesFooter: ".sources-panel .source-footer",
@@ -1612,6 +1667,7 @@ const selectors = {
   logPointInSecPane: ".breakpoint.is-log",
   searchField: ".search-field",
   blackbox: ".action.black-box",
+  projectSearchSearchInput: ".project-text-search .search-field input",
   projectSearchCollapsed: ".project-text-search .arrow:not(.expanded)",
   projectSearchExpandedResults: ".project-text-search .result",
   projectSearchFileResults: ".project-text-search .file-result",
@@ -1638,6 +1694,7 @@ const selectors = {
   previewPopupObjectObject: ".preview-popup .objectBox-object",
   sourceTreeRootNode: ".sources-panel .node .window",
   sourceTreeFolderNode: ".sources-panel .node .folder",
+  excludePatternsInput: ".project-text-search .exclude-patterns-field input",
 };
 
 function getSelector(elementName, ...args) {
@@ -1740,6 +1797,18 @@ function rightClickEl(dbg, el) {
   const doc = dbg.win.document;
   el.scrollIntoView();
   EventUtils.synthesizeMouseAtCenter(el, { type: "contextmenu" }, dbg.win);
+}
+
+async function clearElement(dbg, elementName) {
+  await clickElement(dbg, elementName);
+  await pressKey(dbg, "End");
+  const selector = getSelector(elementName);
+  const el = findElementWithSelector(dbg, getSelector(elementName));
+  let len = el.value.length;
+  while (len) {
+    pressKey(dbg, "Backspace");
+    len--;
+  }
 }
 
 async function clickGutter(dbg, line) {
@@ -2418,6 +2487,7 @@ function openProjectSearch(dbg) {
  * @return {Array} List of search results element nodes
  */
 async function doProjectSearch(dbg, searchTerm) {
+  await clearElement(dbg, "projectSearchSearchInput");
   type(dbg, searchTerm);
   pressKey(dbg, "Enter");
   return waitForSearchResults(dbg);
@@ -2440,18 +2510,6 @@ async function waitForSearchResults(dbg, expectedResults) {
     );
   }
   return findAllElements(dbg, "projectSearchFileResults");
-}
-
-/**
- * Closes the project search panel
- *
- * @param {Object} dbg
- * @return {Boolean} When the panel closes
- */
-function closeProjectSearch(dbg) {
-  info("Closing the project search panel");
-  synthesizeKeyShortcut("CmdOrCtrl+Shift+F");
-  return waitForState(dbg, state => !dbg.selectors.getActiveSearch());
 }
 
 /**

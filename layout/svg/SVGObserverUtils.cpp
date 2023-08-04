@@ -10,6 +10,7 @@
 // Keep others in (case-insensitive) order:
 #include "mozilla/css/ImageLoader.h"
 #include "mozilla/dom/CanvasRenderingContext2D.h"
+#include "mozilla/dom/ReferrerInfo.h"
 #include "mozilla/dom/SVGGeometryElement.h"
 #include "mozilla/dom/SVGTextPathElement.h"
 #include "mozilla/dom/SVGUseElement.h"
@@ -493,9 +494,9 @@ void SVGTextPathObserver::OnRenderingChange() {
     return;
   }
 
-  MOZ_ASSERT(frame->IsFrameOfType(nsIFrame::eSVG) ||
-                 SVGUtils::IsInSVGTextSubtree(frame),
-             "SVG frame expected");
+  MOZ_ASSERT(
+      frame->IsFrameOfType(nsIFrame::eSVG) || frame->IsInSVGTextSubtree(),
+      "SVG frame expected");
 
   MOZ_ASSERT(frame->GetContent()->IsSVGElement(nsGkAtoms::textPath),
              "expected frame for a <textPath> element");
@@ -1439,8 +1440,8 @@ SVGGeometryElement* SVGObserverUtils::GetAndObserveTextPathsPath(
 
     // There's no clear refererer policy spec about non-CSS SVG resource
     // references Bug 1415044 to investigate which referrer we should use
-    nsCOMPtr<nsIReferrerInfo> referrerInfo =
-        ReferrerInfo::CreateForSVGResources(content->OwnerDoc());
+    nsIReferrerInfo* referrerInfo =
+        content->OwnerDoc()->ReferrerInfoForInternalCSSAndSVGResources();
     RefPtr<URLAndReferrerInfo> target =
         ResolveURLUsingLocalRef(aTextPathFrame, href, referrerInfo);
 
@@ -1451,10 +1452,8 @@ SVGGeometryElement* SVGObserverUtils::GetAndObserveTextPathsPath(
     }
   }
 
-  Element* element = property->GetAndObserveReferencedElement();
-  return (element && element->IsNodeOfType(nsINode::eSHAPE))
-             ? static_cast<SVGGeometryElement*>(element)
-             : nullptr;
+  return SVGGeometryElement::FromNodeOrNull(
+      property->GetAndObserveReferencedElement());
 }
 
 void SVGObserverUtils::InitiateResourceDocLoads(nsIFrame* aFrame) {
@@ -1494,8 +1493,8 @@ nsIFrame* SVGObserverUtils::GetAndObserveTemplate(
 
     // There's no clear refererer policy spec about non-CSS SVG resource
     // references.  Bug 1415044 to investigate which referrer we should use.
-    nsCOMPtr<nsIReferrerInfo> referrerInfo =
-        ReferrerInfo::CreateForSVGResources(content->OwnerDoc());
+    nsIReferrerInfo* referrerInfo =
+        content->OwnerDoc()->ReferrerInfoForInternalCSSAndSVGResources();
     RefPtr<URLAndReferrerInfo> target =
         new URLAndReferrerInfo(targetURI, referrerInfo);
 
@@ -1527,8 +1526,10 @@ Element* SVGObserverUtils::GetAndObserveBackgroundImage(nsIFrame* aFrame,
       getter_AddRefs(targetURI), elementId,
       aFrame->GetContent()->GetUncomposedDoc(),
       aFrame->GetContent()->GetBaseURI());
-  nsCOMPtr<nsIReferrerInfo> referrerInfo =
-      ReferrerInfo::CreateForSVGResources(aFrame->GetContent()->OwnerDoc());
+  nsIReferrerInfo* referrerInfo =
+      aFrame->GetContent()
+          ->OwnerDoc()
+          ->ReferrerInfoForInternalCSSAndSVGResources();
   RefPtr<URLAndReferrerInfo> url =
       new URLAndReferrerInfo(targetURI, referrerInfo);
 

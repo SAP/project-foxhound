@@ -81,6 +81,7 @@ export const ProtonScreenActionButtons = props => {
       className={`action-buttons ${
         content.additional_button ? "additional-cta-container" : ""
       }`}
+      flow={content.additional_button?.flow}
     >
       <Localized text={content.primary_button?.label}>
         <button
@@ -382,7 +383,7 @@ export class ProtonScreen extends React.PureComponent {
         }}
       >
         {isCenterPosition ? null : this.renderSecondarySection(content)}
-        <div className="section-main">
+        <div className="section-main" role="document">
           {content.secondary_button_top ? (
             <SecondaryCTA
               content={content}

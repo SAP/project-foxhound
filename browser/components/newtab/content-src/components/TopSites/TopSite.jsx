@@ -22,6 +22,8 @@ import { ScreenshotUtils } from "content-src/lib/screenshot-utils";
 import { TOP_SITES_MAX_SITES_PER_ROW } from "common/Reducers.sys.mjs";
 import { ContextMenuButton } from "content-src/components/ContextMenu/ContextMenuButton";
 import { TopSiteImpressionWrapper } from "./TopSiteImpressionWrapper";
+import { connect } from "react-redux";
+
 const SPOC_TYPE = "SPOC";
 const NEWTAB_SOURCE = "newtab";
 
@@ -304,7 +306,7 @@ export class TopSiteLink extends React.PureComponent {
         <TopSiteImpressionWrapper
           actionType={at.TOP_SITES_SPONSORED_IMPRESSION_STATS}
           tile={{
-            position: this.props.index + 1,
+            position: this.props.index,
             tile_id: link.sponsored_tile_id || -1,
             reporting_url: link.sponsored_impression_url,
             advertiser: title.toLocaleLowerCase(),
@@ -322,6 +324,7 @@ export class TopSiteLink extends React.PureComponent {
         <TopSiteImpressionWrapper
           actionType={at.TOP_SITES_ORGANIC_IMPRESSION_STATS}
           tile={{
+            position: this.props.index,
             source: NEWTAB_SOURCE,
           }}
           // For testing.
@@ -489,7 +492,7 @@ export class TopSite extends React.PureComponent {
             type: at.TOP_SITES_SPONSORED_IMPRESSION_STATS,
             data: {
               type: "click",
-              position: this.props.link.pos + 1,
+              position: this.props.link.pos,
               tile_id: this.props.link.id,
               advertiser: title.toLocaleLowerCase(),
               source: NEWTAB_SOURCE,
@@ -504,7 +507,7 @@ export class TopSite extends React.PureComponent {
             type: at.TOP_SITES_SPONSORED_IMPRESSION_STATS,
             data: {
               type: "click",
-              position: this.props.index + 1,
+              position: this.props.index,
               tile_id: this.props.link.sponsored_tile_id || -1,
               reporting_url: this.props.link.sponsored_click_url,
               advertiser: title.toLocaleLowerCase(),
@@ -519,6 +522,7 @@ export class TopSite extends React.PureComponent {
             type: at.TOP_SITES_ORGANIC_IMPRESSION_STATS,
             data: {
               type: "click",
+              position: this.props.index,
               source: NEWTAB_SOURCE,
             },
           })
@@ -638,7 +642,7 @@ export class TopSitePlaceholder extends React.PureComponent {
   }
 }
 
-export class TopSiteList extends React.PureComponent {
+export class _TopSiteList extends React.PureComponent {
   static get DEFAULT_STATE() {
     return {
       activeIndex: null,
@@ -651,7 +655,7 @@ export class TopSiteList extends React.PureComponent {
 
   constructor(props) {
     super(props);
-    this.state = TopSiteList.DEFAULT_STATE;
+    this.state = _TopSiteList.DEFAULT_STATE;
     this.onDragEvent = this.onDragEvent.bind(this);
     this.onActivate = this.onActivate.bind(this);
   }
@@ -670,7 +674,7 @@ export class TopSiteList extends React.PureComponent {
             this.state.draggedSite.url)
       ) {
         // We got the new order from the redux store via props. We can clear state now.
-        this.setState(TopSiteList.DEFAULT_STATE);
+        this.setState(_TopSiteList.DEFAULT_STATE);
       }
     }
   }
@@ -700,7 +704,7 @@ export class TopSiteList extends React.PureComponent {
       case "dragend":
         if (!this.dropped) {
           // If there was no drop event, reset the state to the default.
-          this.setState(TopSiteList.DEFAULT_STATE);
+          this.setState(_TopSiteList.DEFAULT_STATE);
         }
         break;
       case "dragenter":
@@ -829,6 +833,7 @@ export class TopSiteList extends React.PureComponent {
         Object.assign({}, topSites[i], {
           iconType: this.props.topSiteIconType(topSites[i]),
         });
+
       const slotProps = {
         key: link ? link.url : holeIndex++,
         index: i,
@@ -836,10 +841,14 @@ export class TopSiteList extends React.PureComponent {
       if (i >= maxNarrowVisibleIndex) {
         slotProps.className = "hide-for-narrow";
       }
-      topSitesUI.push(
-        !link ? (
-          <TopSitePlaceholder {...slotProps} {...commonProps} />
-        ) : (
+
+      let topSiteLink;
+      // Use a placeholder if the link is empty or it's rendering a sponsored
+      // tile for the about:home startup cache.
+      if (!link || (props.App.isForStartupCache && isSponsored(link))) {
+        topSiteLink = <TopSitePlaceholder {...slotProps} {...commonProps} />;
+      } else {
+        topSiteLink = (
           <TopSite
             link={link}
             activeIndex={this.state.activeIndex}
@@ -848,8 +857,10 @@ export class TopSiteList extends React.PureComponent {
             {...commonProps}
             colors={props.colors}
           />
-        )
-      );
+        );
+      }
+
+      topSitesUI.push(topSiteLink);
     }
     return (
       <ul
@@ -862,3 +873,7 @@ export class TopSiteList extends React.PureComponent {
     );
   }
 }
+
+export const TopSiteList = connect(state => ({
+  App: state.App,
+}))(_TopSiteList);

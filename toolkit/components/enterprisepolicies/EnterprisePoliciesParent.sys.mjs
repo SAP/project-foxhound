@@ -9,15 +9,12 @@ import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
+  JsonSchemaValidator:
+    "resource://gre/modules/components-utils/JsonSchemaValidator.sys.mjs",
   Policies: "resource:///modules/policies/Policies.sys.mjs",
   WindowsGPOParser: "resource://gre/modules/policies/WindowsGPOParser.sys.mjs",
   macOSPoliciesParser:
     "resource://gre/modules/policies/macOSPoliciesParser.sys.mjs",
-});
-
-XPCOMUtils.defineLazyModuleGetters(lazy, {
-  JsonSchemaValidator:
-    "resource://gre/modules/components-utils/JsonSchemaValidator.jsm",
 });
 
 // This is the file that will be searched for in the
@@ -117,23 +114,39 @@ EnterprisePoliciesManager.prototype = {
 
     if (provider.failed) {
       this.status = Ci.nsIEnterprisePolicies.FAILED;
+      this._reportEnterpriseTelemetry();
       return;
     }
 
     if (!provider.hasPolicies) {
       this.status = Ci.nsIEnterprisePolicies.INACTIVE;
+      this._reportEnterpriseTelemetry();
       return;
     }
 
     this.status = Ci.nsIEnterprisePolicies.ACTIVE;
     this._parsedPolicies = {};
-    Services.telemetry.scalarSet(
-      "policies.count",
-      Object.keys(provider.policies).length
-    );
+    this._reportEnterpriseTelemetry(provider.policies);
     this._activatePolicies(provider.policies);
 
     Services.prefs.setBoolPref(PREF_POLICIES_APPLIED, true);
+  },
+
+  _reportEnterpriseTelemetry(policies = {}) {
+    let policiesLength = Object.keys(policies).length;
+
+    Services.telemetry.scalarSet("policies.count", policiesLength);
+
+    let isEnterprise =
+      // As we migrate folks to ESR for other reasons (deprecating an OS),
+      // we need to add checks here for distribution IDs.
+      AppConstants.IS_ESR ||
+      // If there are multiple policies then its enterprise.
+      policiesLength > 1 ||
+      // If ImportEnterpriseRoots isn't the only policy then it's enterprise.
+      (policiesLength && !policies.Certificates?.ImportEnterpriseRoots);
+
+    Services.telemetry.scalarSet("policies.is_enterprise", isEnterprise);
   },
 
   _chooseProvider() {

@@ -468,13 +468,9 @@ pref("browser.urlbar.quicksuggest.impressionCaps.nonSponsoredEnabled", false);
 // caps.
 pref("browser.urlbar.quicksuggest.impressionCaps.sponsoredEnabled", false);
 
-#ifdef EARLY_BETA_OR_EARLIER
 // Whether the usual non-best-match quick suggest results can be blocked. This
 // pref is a fallback for the Nimbus variable `quickSuggestBlockingEnabled`.
 pref("browser.urlbar.quicksuggest.blockingEnabled", true);
-#else
-pref("browser.urlbar.quicksuggest.blockingEnabled", false);
-#endif
 
 // Whether unit conversion is enabled.
 #ifdef NIGHTLY_BUILD
@@ -506,11 +502,7 @@ pref("browser.urlbar.switchTabs.adoptIntoActiveWindow", false);
 pref("browser.urlbar.openintab", false);
 
 // Enable three-dot options button and menu for eligible results.
-#ifdef EARLY_BETA_OR_EARLIER
 pref("browser.urlbar.resultMenu", true);
-#else
-pref("browser.urlbar.resultMenu", false);
-#endif
 // Allow the result menu button to be reached with the Tab key.
 pref("browser.urlbar.resultMenu.keyboardAccessible", true);
 
@@ -589,11 +581,7 @@ pref("browser.urlbar.bestMatch.enabled", false);
 
 // Whether best match results can be blocked. This pref is a fallback for the
 // Nimbus variable `bestMatchBlockingEnabled`.
-#ifdef EARLY_BETA_OR_EARLIER
 pref("browser.urlbar.bestMatch.blockingEnabled", true);
-#else
-pref("browser.urlbar.bestMatch.blockingEnabled", false);
-#endif
 
 // Enable site specific search result.
 pref("browser.urlbar.contextualSearch.enabled", false);
@@ -1223,12 +1211,6 @@ pref("places.forgetThisSite.clearByBaseDomain", true);
 // Whether to warm up network connections for places: menus and places: toolbar.
 pref("browser.places.speculativeConnect.enabled", true);
 
-// Controls behavior of the "Add Exception" dialog launched from SSL error pages
-// 0 - don't pre-populate anything
-// 1 - pre-populate site URL, but don't fetch certificate
-// 2 - pre-populate site URL and pre-fetch certificate
-pref("browser.ssl_override_behavior", 2);
-
 // if true, use full page zoom instead of text zoom
 pref("browser.zoom.full", true);
 
@@ -1274,13 +1256,8 @@ pref("browser.bookmarks.editDialog.firstEditField", "namePicker");
 // The number of recently selected folders in the edit bookmarks dialog.
 pref("browser.bookmarks.editDialog.maxRecentFolders", 7);
 
-// By default the Edit Bookmark dialog is instant-apply. This feature pref will allow to
-// just save on Accept, once the project is complete.
-#ifdef NIGHTLY_BUILD
-  pref("browser.bookmarks.editDialog.delayedApply.enabled", true);
-#else
-  pref("browser.bookmarks.editDialog.delayedApply.enabled", false);
-#endif
+// Whether the Edit Bookmark dialog is delayed-apply.
+pref("browser.bookmarks.editDialog.delayedApply.enabled", true);
 
 #if defined(XP_WIN) && defined(MOZ_SANDBOX)
   // This controls the strength of the Windows content process sandbox for
@@ -1678,7 +1655,6 @@ pref("trailhead.firstrun.newtab.triplets", "");
 pref("browser.aboutwelcome.enabled", true);
 // Used to set multistage welcome UX
 pref("browser.aboutwelcome.screens", "");
-pref("browser.aboutwelcome.skipFocus", true);
 // Used to enable window modal onboarding
 pref("browser.aboutwelcome.showModal", false);
 
@@ -1833,6 +1809,11 @@ pref("media.videocontrols.picture-in-picture.audio-toggle.enabled", true);
 pref("media.videocontrols.picture-in-picture.video-toggle.enabled", true);
 pref("media.videocontrols.picture-in-picture.video-toggle.visibility-threshold", "1.0");
 pref("media.videocontrols.picture-in-picture.keyboard-controls.enabled", true);
+#ifdef NIGHTLY_BUILD
+  pref("media.videocontrols.picture-in-picture.urlbar-button.enabled", true);
+#else
+  pref("media.videocontrols.picture-in-picture.urlbar-button.enabled", false);
+#endif
 
 // Preferences for the older translation service backed by external services. This is
 // planned to be replaced with an integration of the Firefox Translations service.
@@ -2167,9 +2148,8 @@ pref("browser.migrate.brave.enabled", true);
 pref("browser.migrate.canary.enabled", true);
 
 pref("browser.migrate.chrome.enabled", true);
-// See comments in bug 1340115 on how we got to these numbers.
+// See comments in bug 1340115 on how we got to this number.
 pref("browser.migrate.chrome.history.limit", 2000);
-pref("browser.migrate.chrome.history.maxAgeInDays", 180);
 
 pref("browser.migrate.chrome-beta.enabled", true);
 pref("browser.migrate.chrome-dev.enabled", true);
@@ -2185,12 +2165,34 @@ pref("browser.migrate.opera-gx.enabled", true);
 pref("browser.migrate.safari.enabled", true);
 pref("browser.migrate.vivaldi.enabled", true);
 
+#ifdef NIGHTLY_BUILD
+pref("browser.migrate.content-modal.enabled", true);
+#else
 pref("browser.migrate.content-modal.enabled", false);
+#endif
+
 pref("browser.migrate.content-modal.import-all.enabled", false);
+// Values can be: "default", "autoclose", "standalone".
+pref("browser.migrate.content-modal.about-welcome-behavior", "default");
+
+// The maximum age of history entries we'll import, in days.
+pref("browser.migrate.history.maxAgeInDays", 180);
+
+// These following prefs are set to true if the user has at some
+// point in the past migrated one of these resource types from
+// another browser. We also attempt to transfer these preferences
+// across profile resets.
+pref("browser.migrate.interactions.bookmarks", false);
+pref("browser.migrate.interactions.history", false);
+pref("browser.migrate.interactions.passwords", false);
+pref("browser.migrate.preferences-entrypoint.enabled", true);
 
 pref("extensions.pocket.api", "api.getpocket.com");
+pref("extensions.pocket.bffApi", "firefox-api-proxy.cdn.mozilla.net");
+pref("extensions.pocket.bffRecentSaves", true);
 pref("extensions.pocket.enabled", true);
 pref("extensions.pocket.oAuthConsumerKey", "40249-e88c401e1b1f2242d9e441c4");
+pref("extensions.pocket.oAuthConsumerKeyBff", "94110-6d5ff7a89d72c869766af0e0");
 pref("extensions.pocket.site", "getpocket.com");
 pref("extensions.pocket.onSaveRecs", true);
 pref("extensions.pocket.onSaveRecs.locales", "en-US,en-GB,en-CA");
@@ -2453,6 +2455,10 @@ pref("devtools.gridinspector.showGridLineNumbers", false);
 pref("devtools.gridinspector.showInfiniteLines", false);
 // Max number of grid highlighters that can be displayed
 pref("devtools.gridinspector.maxHighlighters", 3);
+
+// Whether or not simplified highlighters should be used when
+// prefers-reduced-motion is enabled.
+pref("devtools.inspector.simple-highlighters-reduced-motion", false);
 
 // Whether or not the box model panel is opened in the layout view
 pref("devtools.layout.boxmodel.opened", true);
@@ -2825,4 +2831,9 @@ pref("cookiebanners.ui.desktop.cfrVariant", 0);
   pref("browser.swipe.navigation-icon-end-position", 60);
   pref("browser.swipe.navigation-icon-min-radius", 12);
   pref("browser.swipe.navigation-icon-max-radius", 20);
+#endif
+
+// Trigger FOG's Artifact Build support on artifact builds.
+#ifdef MOZ_ARTIFACT_BUILDS
+  pref("telemetry.fog.artifact_build", true);
 #endif

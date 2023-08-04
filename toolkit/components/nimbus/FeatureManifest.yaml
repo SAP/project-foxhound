@@ -287,12 +287,6 @@ aboutwelcome:
       type: json
       fallbackPref: browser.aboutwelcome.screens
       description: Content to show in the onboarding flow
-    skipFocus:
-      type: boolean
-      fallbackPref: browser.aboutwelcome.skipFocus
-      description: >-
-        Should the urlbar should be focused when users first land on
-        about:welcome?
     languageMismatchEnabled:
       type: boolean
       fallbackPref: intl.multilingual.aboutWelcome.languageMismatchEnabled
@@ -364,6 +358,9 @@ newtab:
       type: boolean
       fallbackPref: browser.topsites.contile.enabled
       description: Enable the Contile integration for Sponsored Top Sites
+    topSitesUseAdditionalTilesFromContile:
+      type: boolean
+      description: Allow Contile to use additonal sponsored top sites
 
 pocketNewtab:
   description: The Pocket section in newtab
@@ -575,6 +572,18 @@ saveToPocket:
       type: boolean
       fallbackPref: extensions.pocket.refresh.hideRecentSaves.enabled
       description: Hides the recently saved section in the home panel.
+    bffRecentSaves:
+      type: boolean
+      fallbackPref: "extensions.pocket.bffRecentSaves"
+      description: Use the new BFF Proxy Service instead of the legacy Pocket Service for Recent Saves
+    bffApi:
+      type: string
+      fallbackPref: "extensions.pocket.bffApi"
+      description: BFF Proxy Service domain
+    oAuthConsumerKeyBff:
+      type: string
+      fallbackPref: "extensions.pocket.oAuthConsumerKeyBff"
+      description: BFF Proxy Service OAuth Consumer Key
 
 password-autocomplete:
   description: A special autocomplete UI for password fields.
@@ -848,6 +857,9 @@ pictureinpicture:
     oldToggle:
       type: boolean
       description: Whether to show the control style (true) or variant style (false) for the first time PiP toggle
+    displayDuration:
+      type: int
+      description: Duration of PiP first time toggle display in days before switching to PiP icon toggle
 
 glean:
   description: "The Glean data collection SDK within Firefox Desktop"
@@ -1145,6 +1157,7 @@ migrationWizard:
   description: Prefs to control the Migration Wizard UI.
   owner: mconley@mozilla.com
   hasExposure: false
+  isEarlyStartup: true
   variables:
     useNewWizard:
       description: True if the "Variant 2" of the Migration Wizard browser / profile selection UI should be used.
@@ -1154,6 +1167,32 @@ migrationWizard:
       description: True if the "Variant 2" of the Migration Wizard browser / profile selection UI should be used. This is only meaningful in the new Migration Wizard.
       type: boolean
       setPref: browser.migrate.content-modal.import-all.enabled
+    showPreferencesEntrypoint:
+      description: True if an entrypoint to the migration wizard should be visible in about:preferences.
+      type: boolean
+      setPref: browser.migrate.preferences-entrypoint.enabled
+    aboutWelcomeBehavior:
+      description: >-
+        When migration is kicked off from about:welcome, there are
+        a few different behaviors that we want to test, controlled
+        by a preference that is instrumented for Nimbus. The pref
+        has the following possible states:
+
+        "autoclose":
+          The user will be directed to the migration wizard in
+          about:preferences, but once the wizard is dismissed,
+          the tab will close.
+
+        "standalone":
+          The migration wizard will open in a new top-level content
+          window.
+
+        "default" / other
+          The user will be directed to the migration wizard in
+          about:preferences. The tab will not close once the
+          user closes the wizard.
+      type: string
+      setPref: browser.migrate.content-modal.about-welcome-behavior
 
 mixedContentUpgrading:
   description: Prefs to control whether we upgrade mixed passive content (images, audio, video) from http to https

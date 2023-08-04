@@ -7,6 +7,8 @@ import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 
 const lazy = {};
 
+// Ignore unused lazy property for PluginManager.
+// eslint-disable-next-line mozilla/valid-lazy
 ChromeUtils.defineESModuleGetters(lazy, {
   ActorManagerParent: "resource://gre/modules/ActorManagerParent.sys.mjs",
   AppMenuNotifications: "resource://gre/modules/AppMenuNotifications.sys.mjs",
@@ -19,6 +21,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
   ContextualIdentityService:
     "resource://gre/modules/ContextualIdentityService.sys.mjs",
 
+  Corroborate: "resource://gre/modules/Corroborate.sys.mjs",
   DAPTelemetrySender: "resource://gre/modules/DAPTelemetrySender.sys.mjs",
   DeferredTask: "resource://gre/modules/DeferredTask.sys.mjs",
   DoHController: "resource:///modules/DoHController.sys.mjs",
@@ -27,24 +30,29 @@ ChromeUtils.defineESModuleGetters(lazy, {
     "resource:///modules/DownloadsViewableInternally.sys.mjs",
 
   E10SUtils: "resource://gre/modules/E10SUtils.sys.mjs",
+  FeatureGate: "resource://featuregates/FeatureGate.sys.mjs",
   FxAccounts: "resource://gre/modules/FxAccounts.sys.mjs",
   Integration: "resource://gre/modules/Integration.sys.mjs",
   Interactions: "resource:///modules/Interactions.sys.mjs",
   Log: "resource://gre/modules/Log.sys.mjs",
   LoginBreaches: "resource:///modules/LoginBreaches.sys.mjs",
   NewTabUtils: "resource://gre/modules/NewTabUtils.sys.mjs",
+  NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
   OsEnvironment: "resource://gre/modules/OsEnvironment.sys.mjs",
   PageDataService: "resource:///modules/pagedata/PageDataService.sys.mjs",
+  PdfJs: "resource://pdf.js/PdfJs.sys.mjs",
   PermissionUI: "resource:///modules/PermissionUI.sys.mjs",
   PlacesBackups: "resource://gre/modules/PlacesBackups.sys.mjs",
   PlacesDBUtils: "resource://gre/modules/PlacesDBUtils.sys.mjs",
   PlacesUIUtils: "resource:///modules/PlacesUIUtils.sys.mjs",
   PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
+  PluginManager: "resource:///actors/PluginParent.sys.mjs",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
   ProvenanceData: "resource:///modules/ProvenanceData.sys.mjs",
   PublicSuffixList:
     "resource://gre/modules/netwerk-dns/PublicSuffixList.sys.mjs",
   QuickSuggest: "resource:///modules/QuickSuggest.sys.mjs",
+  RFPHelper: "resource://gre/modules/RFPHelper.sys.mjs",
 
   RemoteSecuritySettings:
     "resource://gre/modules/psm/RemoteSecuritySettings.sys.mjs",
@@ -55,6 +63,8 @@ ChromeUtils.defineESModuleGetters(lazy, {
   SessionStartup: "resource:///modules/sessionstore/SessionStartup.sys.mjs",
   SessionStore: "resource:///modules/sessionstore/SessionStore.sys.mjs",
   ShortcutUtils: "resource://gre/modules/ShortcutUtils.sys.mjs",
+  SpecialMessageActions:
+    "resource://messaging-system/lib/SpecialMessageActions.sys.mjs",
   TRRRacer: "resource:///modules/TRRPerformance.sys.mjs",
   TelemetryUtils: "resource://gre/modules/TelemetryUtils.sys.mjs",
   UIState: "resource://services-sync/UIState.sys.mjs",
@@ -78,14 +88,10 @@ XPCOMUtils.defineLazyModuleGetters(lazy, {
   BrowserUsageTelemetry: "resource:///modules/BrowserUsageTelemetry.jsm",
   BrowserUIUtils: "resource:///modules/BrowserUIUtils.jsm",
   BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.jsm",
-  Corroborate: "resource://gre/modules/Corroborate.jsm",
   Discovery: "resource:///modules/Discovery.jsm",
-  ExperimentAPI: "resource://nimbus/ExperimentAPI.jsm",
   ExtensionsUI: "resource:///modules/ExtensionsUI.jsm",
-  FeatureGate: "resource://featuregates/FeatureGate.jsm",
   HomePage: "resource:///modules/HomePage.jsm",
   NetUtil: "resource://gre/modules/NetUtil.jsm",
-  NimbusFeatures: "resource://nimbus/ExperimentAPI.jsm",
   Normandy: "resource://normandy/Normandy.jsm",
 
   OnboardingMessageProvider:
@@ -93,39 +99,28 @@ XPCOMUtils.defineLazyModuleGetters(lazy, {
 
   PageActions: "resource:///modules/PageActions.jsm",
   PageThumbs: "resource://gre/modules/PageThumbs.jsm",
-  PdfJs: "resource://pdf.js/PdfJs.jsm",
   PluralForm: "resource://gre/modules/PluralForm.jsm",
   ProcessHangMonitor: "resource:///modules/ProcessHangMonitor.jsm",
-  RFPHelper: "resource://gre/modules/RFPHelper.jsm",
   SafeBrowsing: "resource://gre/modules/SafeBrowsing.jsm",
   Sanitizer: "resource:///modules/Sanitizer.jsm",
   SaveToPocket: "chrome://pocket/content/SaveToPocket.jsm",
   ShellService: "resource:///modules/ShellService.jsm",
-
-  SpecialMessageActions:
-    "resource://messaging-system/lib/SpecialMessageActions.jsm",
-
   TabCrashHandler: "resource:///modules/ContentCrashHandlers.jsm",
   TabUnloader: "resource:///modules/TabUnloader.jsm",
 });
 
 if (AppConstants.MOZ_UPDATER) {
-  XPCOMUtils.defineLazyModuleGetters(lazy, {
-    UpdateListener: "resource://gre/modules/UpdateListener.jsm",
+  ChromeUtils.defineESModuleGetters(lazy, {
+    UpdateListener: "resource://gre/modules/UpdateListener.sys.mjs",
   });
 }
 if (AppConstants.MOZ_UPDATE_AGENT) {
-  XPCOMUtils.defineLazyModuleGetters(lazy, {
-    BackgroundUpdate: "resource://gre/modules/BackgroundUpdate.jsm",
+  ChromeUtils.defineESModuleGetters(lazy, {
+    BackgroundUpdate: "resource://gre/modules/BackgroundUpdate.sys.mjs",
   });
 }
 
 // PluginManager is used in the listeners object below.
-// eslint-disable-next-line mozilla/valid-lazy
-XPCOMUtils.defineLazyModuleGetters(lazy, {
-  PluginManager: "resource:///actors/PluginParent.jsm",
-});
-
 XPCOMUtils.defineLazyServiceGetters(lazy, {
   BrowserHandler: ["@mozilla.org/browser/clh;1", "nsIBrowserHandler"],
   PushService: ["@mozilla.org/push/Service;1", "nsIPushService"],
@@ -418,16 +413,8 @@ let JSWINDOWACTORS = {
   },
 
   BrowserTab: {
-    parent: {
-      esModuleURI: "resource:///actors/BrowserTabParent.sys.mjs",
-    },
     child: {
       esModuleURI: "resource:///actors/BrowserTabChild.sys.mjs",
-
-      events: {
-        DOMDocElementInserted: {},
-        MozAfterPaint: {},
-      },
     },
 
     messageManagerGroups: ["browsers"],
@@ -571,7 +558,7 @@ let JSWINDOWACTORS = {
 
   LightweightTheme: {
     child: {
-      moduleURI: "resource:///actors/LightweightThemeChild.jsm",
+      esModuleURI: "resource:///actors/LightweightThemeChild.sys.mjs",
       events: {
         pageshow: { mozSystemGroup: true },
         DOMContentLoaded: {},
@@ -592,10 +579,10 @@ let JSWINDOWACTORS = {
 
   LinkHandler: {
     parent: {
-      moduleURI: "resource:///actors/LinkHandlerParent.jsm",
+      esModuleURI: "resource:///actors/LinkHandlerParent.sys.mjs",
     },
     child: {
-      moduleURI: "resource:///actors/LinkHandlerChild.jsm",
+      esModuleURI: "resource:///actors/LinkHandlerChild.sys.mjs",
       events: {
         DOMHeadElementParsed: {},
         DOMLinkAdded: {},
@@ -619,7 +606,8 @@ let JSWINDOWACTORS = {
       esModuleURI: "resource:///actors/MigrationWizardChild.sys.mjs",
       events: {
         "MigrationWizard:RequestState": { wantUntrusted: true },
-        "MigrationWizard:BeginMigration": { wantsUntrusted: true },
+        "MigrationWizard:BeginMigration": { wantUntrusted: true },
+        "MigrationWizard:RequestSafariPermissions": { wantUntrusted: true },
       },
     },
 
@@ -643,10 +631,10 @@ let JSWINDOWACTORS = {
 
   PageStyle: {
     parent: {
-      moduleURI: "resource:///actors/PageStyleParent.jsm",
+      esModuleURI: "resource:///actors/PageStyleParent.sys.mjs",
     },
     child: {
-      moduleURI: "resource:///actors/PageStyleChild.jsm",
+      esModuleURI: "resource:///actors/PageStyleChild.sys.mjs",
       events: {
         pageshow: { createActor: false },
       },
@@ -658,10 +646,10 @@ let JSWINDOWACTORS = {
 
   Pdfjs: {
     parent: {
-      moduleURI: "resource://pdf.js/PdfjsParent.jsm",
+      esModuleURI: "resource://pdf.js/PdfjsParent.sys.mjs",
     },
     child: {
-      moduleURI: "resource://pdf.js/PdfjsChild.jsm",
+      esModuleURI: "resource://pdf.js/PdfjsChild.sys.mjs",
     },
     allFrames: true,
   },
@@ -669,10 +657,10 @@ let JSWINDOWACTORS = {
   // GMP crash reporting
   Plugin: {
     parent: {
-      moduleURI: "resource:///actors/PluginParent.jsm",
+      esModuleURI: "resource:///actors/PluginParent.sys.mjs",
     },
     child: {
-      moduleURI: "resource:///actors/PluginChild.jsm",
+      esModuleURI: "resource:///actors/PluginChild.sys.mjs",
       events: {
         PluginCrashed: { capture: true },
       },
@@ -683,10 +671,10 @@ let JSWINDOWACTORS = {
 
   PointerLock: {
     parent: {
-      moduleURI: "resource:///actors/PointerLockParent.jsm",
+      esModuleURI: "resource:///actors/PointerLockParent.sys.mjs",
     },
     child: {
-      moduleURI: "resource:///actors/PointerLockChild.jsm",
+      esModuleURI: "resource:///actors/PointerLockChild.sys.mjs",
       events: {
         "MozDOMPointerLock:Entered": {},
         "MozDOMPointerLock:Exited": {},
@@ -699,7 +687,7 @@ let JSWINDOWACTORS = {
 
   Prompt: {
     parent: {
-      moduleURI: "resource:///actors/PromptParent.jsm",
+      esModuleURI: "resource:///actors/PromptParent.sys.mjs",
     },
     includeChrome: true,
     allFrames: true,
@@ -729,10 +717,10 @@ let JSWINDOWACTORS = {
 
   SearchSERPTelemetry: {
     parent: {
-      moduleURI: "resource:///actors/SearchSERPTelemetryParent.jsm",
+      esModuleURI: "resource:///actors/SearchSERPTelemetryParent.sys.mjs",
     },
     child: {
-      moduleURI: "resource:///actors/SearchSERPTelemetryChild.jsm",
+      esModuleURI: "resource:///actors/SearchSERPTelemetryChild.sys.mjs",
       events: {
         DOMContentLoaded: {},
         pageshow: { mozSystemGroup: true },
@@ -782,7 +770,7 @@ let JSWINDOWACTORS = {
 
   SwitchDocumentDirection: {
     child: {
-      moduleURI: "resource:///actors/SwitchDocumentDirectionChild.jsm",
+      esModuleURI: "resource:///actors/SwitchDocumentDirectionChild.sys.mjs",
     },
 
     allFrames: true,
@@ -806,10 +794,10 @@ let JSWINDOWACTORS = {
 
   UITour: {
     parent: {
-      moduleURI: "resource:///modules/UITourParent.jsm",
+      esModuleURI: "resource:///modules/UITourParent.sys.mjs",
     },
     child: {
-      moduleURI: "resource:///modules/UITourChild.jsm",
+      esModuleURI: "resource:///modules/UITourChild.sys.mjs",
       events: {
         mozUITour: { wantUntrusted: true },
       },
@@ -900,6 +888,11 @@ const STARTUP_CRASHES_END_DELAY_MS = 30 * 1000;
  * browser-lastwindow-close-* topics.
  */
 const OBSERVE_LASTWINDOW_CLOSE_TOPICS = AppConstants.platform != "macosx";
+
+export let BrowserInitState = {};
+BrowserInitState.startupIdleTaskPromise = new Promise(resolve => {
+  BrowserInitState._resolveStartupIdleTask = resolve;
+});
 
 export function BrowserGlue() {
   XPCOMUtils.defineLazyServiceGetter(
@@ -2729,7 +2722,7 @@ BrowserGlue.prototype = {
 
           // Register Glean to listen for experiment updates releated to the
           // "glean" feature defined in the t/c/nimbus/FeatureManifest.yaml
-          lazy.ExperimentAPI.on("update", { featureId: "glean" }, () => {
+          lazy.NimbusFeatures.glean.onUpdate(() => {
             let cfg = lazy.NimbusFeatures.glean.getVariable("metricsDisabled");
             Services.fog.setMetricsFeatureConfig(JSON.stringify(cfg));
           });
@@ -2891,6 +2884,7 @@ BrowserGlue.prototype = {
               null,
               "browser-startup-idle-tasks-finished"
             );
+            BrowserInitState._resolveStartupIdleTask();
           });
         },
       },
@@ -4884,13 +4878,7 @@ BrowserGlue.prototype = {
           Services.telemetry.recordEvent(
             "pictureinpicture.settings",
             "enable",
-            "player"
-          );
-        } else {
-          Services.telemetry.recordEvent(
-            "pictureinpicture.settings",
-            "disable",
-            "player"
+            "settings"
           );
         }
       }

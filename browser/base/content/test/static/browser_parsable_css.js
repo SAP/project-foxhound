@@ -65,12 +65,6 @@ let whitelist = [
     errorMessage: /Unknown property ‘text-size-adjust’\. {2}Declaration dropped\./i,
     isFromDevTools: false,
   },
-  // PDF.js uses a property that is currently only supported in chrome.
-  {
-    sourceName: /web\/viewer\.css$/i,
-    errorMessage: /Unknown property ‘forced-color-adjust’\. {2}Declaration dropped\./i,
-    isFromDevTools: false,
-  },
   {
     sourceName: /overlay\.css$/i,
     errorMessage: /Unknown pseudo-class.*moz-native-anonymous/i,
@@ -118,6 +112,15 @@ if (!Services.prefs.getBoolPref("layout.css.forced-colors.enabled")) {
   whitelist.push({
     sourceName: /pdf\.js\/web\/viewer\.css$/,
     errorMessage: /Expected media feature name but found ‘forced-colors’*/i,
+    isFromDevTools: false,
+  });
+}
+
+if (!Services.prefs.getBoolPref("layout.css.forced-color-adjust.enabled")) {
+  // PDF.js uses a property that is currently not enabled.
+  whitelist.push({
+    sourceName: /web\/viewer\.css$/i,
+    errorMessage: /Unknown property ‘forced-color-adjust’\. {2}Declaration dropped\./i,
     isFromDevTools: false,
   });
 }
@@ -299,12 +302,16 @@ function neverMatches(mediaList) {
     android: ["(-moz-platform: android)"],
   };
   for (let platform in perPlatformMediaQueryMap) {
-    if (platform === AppConstants.platform) {
-      continue;
-    }
-    if (perPlatformMediaQueryMap[platform].includes(mediaList.mediaText)) {
-      // This query only matches on another platform that isn't ours.
-      return true;
+    const inThisPlatform = platform === AppConstants.platform;
+    for (const media of perPlatformMediaQueryMap[platform]) {
+      if (inThisPlatform && mediaList.mediaText == "not " + media) {
+        // This query can't match on this platform.
+        return true;
+      }
+      if (!inThisPlatform && mediaList.mediaText == media) {
+        // This query only matches on another platform that isn't ours.
+        return true;
+      }
     }
   }
   return false;

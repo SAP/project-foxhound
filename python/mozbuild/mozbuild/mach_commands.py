@@ -32,9 +32,12 @@ from mach.decorators import (
 from voluptuous import All, Boolean, Required, Schema
 
 import mozbuild.settings  # noqa need @SettingsProvider hook to execute
-from mozbuild.base import BinaryNotFoundException, BuildEnvironmentNotFoundException
+from mozbuild.base import (
+    BinaryNotFoundException,
+    BuildEnvironmentNotFoundException,
+    MozbuildObject,
+)
 from mozbuild.base import MachCommandConditions as conditions
-from mozbuild.base import MozbuildObject
 from mozbuild.util import MOZBUILD_METRICS_PATH
 
 here = os.path.abspath(os.path.dirname(__file__))
@@ -124,6 +127,9 @@ def _cargo_config_yaml_schema():
             # Whether `make` should stop immediately in case
             # of error returned by the command. Default: False
             "continue_on_error": Boolean,
+            # Whether this command requires pre_export and export build
+            # targets to have run. Defaults to bool(cargo_build_flags).
+            "requires_export": Boolean,
             # Build flags to use.  If this variable is not
             # defined here, the build flags are generated automatically and are
             # the same as for `cargo build`. See available substitutions at the
@@ -232,11 +238,14 @@ def cargo(
     cargo_extra_flags = yaml_config.get("cargo_extra_flags")
     if cargo_extra_flags is not None:
         cargo_extra_flags = " ".join(cargo_extra_flags)
+    requires_export = yaml_config.get("requires_export", bool(cargo_build_flags))
 
-    if cargo_build_flags:
-        try:
-            command_context.config_environment
-        except BuildEnvironmentNotFoundException:
+    ret = 0
+    if requires_export:
+        # This directory is created during export. If it's not there,
+        # export hasn't run already.
+        deps = Path(command_context.topobjdir) / ".deps"
+        if not deps.exists():
             build = command_context._spawn(BuildDriver)
             ret = build.build(
                 command_context.metrics,
@@ -245,8 +254,17 @@ def cargo(
                 verbose=verbose,
                 mach_context=command_context._mach_context,
             )
-            if ret != 0:
-                return ret
+    else:
+        try:
+            command_context.config_environment
+        except BuildEnvironmentNotFoundException:
+            build = command_context._spawn(BuildDriver)
+            ret = build.configure(
+                command_context.metrics,
+                buildstatus_messages=False,
+            )
+    if ret != 0:
+        return ret
 
     # XXX duplication with `mach vendor rust`
     crates_and_roots = {

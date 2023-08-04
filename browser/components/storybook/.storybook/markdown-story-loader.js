@@ -17,6 +17,8 @@
 
 const path = require("path");
 
+const projectRoot = path.resolve(__dirname, "../../../../");
+
 /**
  * Takes a file path and returns a string to use as the story title, capitalized
  * and split into multiple words. The file name gets transformed into the story
@@ -48,23 +50,54 @@ function toPascalCase(str) {
 }
 
 /**
+ * Enables rendering code in our markdown docs by parsing the source for
+ * annotated code blocks and replacing them with Storybook's Canvas component.
+ * @param {string} source - Stringified markdown source code.
+ * @returns {string} Source with code blocks replaced by Canvas components.
+ */
+function parseStoriesFromMarkdown(source) {
+  let storiesRegex = /```(?:js|html) story\n(?<code>[\s\S]*?)```/g;
+  // $code comes from the <code> capture group in the regex above. It consists
+  // of any code in between backticks and gets run when used in a Canvas component.
+  return source.replace(
+    storiesRegex,
+    "<Canvas withSource='none'><with-common-styles>$<code></with-common-styles></Canvas>"
+  );
+}
+
+/**
  * The WebpackLoader export. Takes markdown as its source and returns a docs
- * only MDX story. For now we're filing all docs only stories under "Docs", but
- * that likely won't be desireable long term.
+ * only MDX story. Falls back to filing stories under "Docs" for everything
+ * outside of `toolkit/content/widgets`.
  *
  * @param {string} source - The markdown source to rewrite to MDX.
  */
 module.exports = function markdownStoryLoader(source) {
+  // Currently we sort docs only stories under "Docs" by default.
+  let storyPath = "Docs";
+
   // `this.resourcePath` is the path of the file being processed.
-  let storyTitle = getDocsStoryTitle(this.resourcePath);
+  let relativePath = path
+    .relative(projectRoot, this.resourcePath)
+    .replaceAll(path.sep, "/");
+
+  if (relativePath.includes("toolkit/content/widgets")) {
+    let storyNameRegex = /(?<=\/widgets\/)(?<name>.*?)(?=\/)/g;
+    let componentName = storyNameRegex.exec(relativePath)?.groups?.name;
+    if (componentName) {
+      storyPath = `Design System/Experiments/${toPascalCase(componentName)}`;
+    }
+  }
+
+  let storyTitle = getDocsStoryTitle(relativePath);
 
   // Unfortunately the indentation/spacing here seems to be important for the
   // MDX parser to know what to do in the next step of the Webpack process.
   let mdxSource = `
-import { Meta, Description } from "@storybook/addon-docs";
+import { Meta, Description, Canvas } from "@storybook/addon-docs";
 
 <Meta 
-  title="Docs/${storyTitle}" 
+  title="${storyPath}/${storyTitle}" 
   parameters={{
     previewTabs: {
       canvas: { hidden: true },
@@ -73,7 +106,7 @@ import { Meta, Description } from "@storybook/addon-docs";
   }}
 />
 
-${source}`;
+${parseStoriesFromMarkdown(source)}`;
 
   return mdxSource;
 };

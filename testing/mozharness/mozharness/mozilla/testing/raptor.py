@@ -9,11 +9,14 @@ import copy
 import glob
 import multiprocessing
 import os
+import pathlib
 import re
 import subprocess
 import sys
 import tempfile
 from shutil import copyfile, rmtree
+
+from six import string_types
 
 import mozharness
 from mozharness.base.errors import PythonErrorList
@@ -33,7 +36,6 @@ from mozharness.mozilla.testing.codecoverage import (
 )
 from mozharness.mozilla.testing.errors import HarnessErrorList, TinderBoxPrintRe
 from mozharness.mozilla.testing.testbase import TestingMixin, testing_config_options
-from six import string_types
 
 scripts_path = os.path.abspath(os.path.dirname(os.path.dirname(mozharness.__file__)))
 external_tools_path = os.path.join(scripts_path, "external_tools")
@@ -796,7 +798,10 @@ class Raptor(
             )
             return
         self.info("Fetching and installing Google Chrome for Android")
+        self.device.shell_output("cmd package install-existing com.android.chrome")
+        self.info("Google Chrome for Android successfully installed")
 
+    def download_chrome_android(self):
         # Fetch the APK
         tmpdir = tempfile.mkdtemp()
         self.tooltool_fetch(
@@ -809,8 +814,6 @@ class Raptor(
             ),
             output_dir=tmpdir,
         )
-
-        # Find the downloaded APK
         files = os.listdir(tmpdir)
         if len(files) > 1:
             raise Exception(
@@ -825,8 +828,6 @@ class Raptor(
         # Re-enable verification and delete the temporary directory
         self.device.shell_output("settings put global verifier_verify_adb_installs 1")
         rmtree(tmpdir)
-
-        self.info("Google Chrome for Android successfully installed")
 
     def install_chromium_distribution(self):
         """Install Google Chromium distribution in production"""
@@ -1234,7 +1235,17 @@ class Raptor(
         if not self.config.get("noinstall", False):
             if self.app in self.firefox_android_browsers:
                 self.device.uninstall_app(self.binary_path)
-                self.install_android_app(self.installer_path)
+
+                # Check if the user supplied their own APK, and install
+                # that instead
+                installer_path = pathlib.Path(
+                    self.raptor_path, "raptor", "user_upload.apk"
+                )
+                if not installer_path.exists():
+                    installer_path = self.installer_path
+
+                self.info(f"Installing APK from: {installer_path}")
+                self.install_android_app(str(installer_path))
             else:
                 super(Raptor, self).install()
 
@@ -1306,10 +1317,6 @@ class Raptor(
             mozlog_opts.append(
                 "--log-errorsummary=%s"
                 % os.path.join(env["MOZ_UPLOAD_DIR"], fname_pattern % "errorsummary")
-            )
-            mozlog_opts.append(
-                "--log-raw=%s"
-                % os.path.join(env["MOZ_UPLOAD_DIR"], fname_pattern % "raw")
             )
 
         def launch_in_debug_mode(cmdline):

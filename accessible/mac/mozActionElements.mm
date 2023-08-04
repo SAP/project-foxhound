@@ -218,8 +218,7 @@ using namespace mozilla::a11y;
   double min = mGeckoAccessible->MinValue();
   double max = mGeckoAccessible->MaxValue();
 
-  if ((mozilla::IsNaN(min) || value >= min) &&
-      (mozilla::IsNaN(max) || value <= max)) {
+  if ((std::isnan(min) || value >= min) && (std::isnan(max) || value <= max)) {
     if (LocalAccessible* acc = mGeckoAccessible->AsLocal()) {
       acc->SetCurValue(value);
     } else {
@@ -227,6 +226,14 @@ using namespace mozilla::a11y;
       proxy->SetCurValue(value);
     }
   }
+}
+
+@end
+
+@implementation mozDatePickerAccessible
+
+- (NSString*)moxTitle {
+  return utils::LocalizedString(u"dateField"_ns);
 }
 
 @end

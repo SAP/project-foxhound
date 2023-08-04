@@ -453,7 +453,6 @@ var gXPInstallObserver = {
   // IDs of addon install related notifications
   NOTIFICATION_IDS: [
     "addon-install-blocked",
-    "addon-install-complete",
     "addon-install-confirmation",
     "addon-install-failed",
     "addon-install-origin-blocked",
@@ -501,7 +500,7 @@ var gXPInstallObserver = {
     Services.console.logMessage(consoleMsg);
   },
 
-  observe(aSubject, aTopic, aData) {
+  async observe(aSubject, aTopic, aData) {
     var brandBundle = document.getElementById("bundle_brand");
     var installInfo = aSubject.wrappedJSObject;
     var browser = installInfo.browser;
@@ -623,6 +622,7 @@ var gXPInstallObserver = {
         break;
       }
       case "addon-install-blocked": {
+        await window.ensureCustomElements("moz-support-link");
         // Dismiss the progress notification.  Note that this is bad if
         // there are multiple simultaneous installs happening, see
         // bug 1329884 for a longer explanation.
@@ -643,8 +643,12 @@ var gXPInstallObserver = {
         let hasHost = !!options.displayURI;
 
         if (isSitePermissionAddon) {
+          // At present, WebMIDI is the only consumer of the site permission
+          // add-on infrastructure, and so we can hard-code a midi string here.
+          // If and when we use it for other things, we'll need to plumb that
+          // information through. See bug 1826747.
           messageString = gNavigatorBundle.getString(
-            "sitePermissionInstallFirstPrompt.header"
+            "sitePermissionInstallFirstPrompt.midi.header"
           );
         } else if (hasHost) {
           messageString = gNavigatorBundle.getFormattedString(
@@ -675,7 +679,7 @@ var gXPInstallObserver = {
 
           if (isSitePermissionAddon) {
             message.textContent = gNavigatorBundle.getString(
-              "sitePermissionInstallFirstPrompt.message"
+              "sitePermissionInstallFirstPrompt.midi.message"
             );
           } else if (hasHost) {
             let text = gNavigatorBundle.getString(
@@ -695,13 +699,7 @@ var gXPInstallObserver = {
             ? "site-permission-addons"
             : "unlisted-extensions-risks";
           let learnMore = doc.getElementById("addon-install-blocked-info");
-          learnMore.textContent = gNavigatorBundle.getString(
-            "xpinstallPromptMessage.learnMore"
-          );
-          learnMore.setAttribute(
-            "href",
-            Services.urlFormatter.formatURLPref("app.support.baseURL") + article
-          );
+          learnMore.setAttribute("support-page", article);
         };
 
         let secHistogram = Services.telemetry.getHistogramById("SECURITY_UI");
@@ -789,6 +787,7 @@ var gXPInstallObserver = {
           // from product about how to approach this for extensions.
           declineActions.push(neverAllowAndReportAction);
         }
+
         let popup = PopupNotifications.show(
           browser,
           notificationID,
@@ -992,36 +991,6 @@ var gXPInstallObserver = {
         showNotification();
         break;
       }
-      case "addon-install-complete": {
-        let secondaryActions = null;
-        let numAddons = installInfo.installs.length;
-
-        if (numAddons == 1) {
-          messageString = gNavigatorBundle.getFormattedString(
-            "addonInstalled",
-            [installInfo.installs[0].name]
-          );
-        } else {
-          messageString = gNavigatorBundle.getString("addonsGenericInstalled");
-          messageString = PluralForm.get(numAddons, messageString);
-          messageString = messageString.replace("#1", numAddons);
-        }
-        action = null;
-
-        options.removeOnDismissal = true;
-        options.persistent = false;
-
-        PopupNotifications.show(
-          browser,
-          notificationID,
-          messageString,
-          gUnifiedExtensions.getPopupAnchorID(browser, window),
-          action,
-          secondaryActions,
-          options
-        );
-        break;
-      }
     }
   },
   _removeProgressNotification(aBrowser) {
@@ -1190,13 +1159,6 @@ var BrowserAddonUI = {
 
     let { remove, report } = await this.promptRemoveExtension(addon);
 
-    AMTelemetry.recordActionEvent({
-      object: eventObject,
-      action: "uninstall",
-      value: remove ? "accepted" : "cancelled",
-      extra: { addonId },
-    });
-
     if (remove) {
       // Leave the extension in pending uninstall if we are also reporting the
       // add-on.
@@ -1215,11 +1177,6 @@ var BrowserAddonUI = {
     }
 
     BrowserOpenAddonsMgr("addons://detail/" + encodeURIComponent(addon.id));
-    AMTelemetry.recordActionEvent({
-      object: eventObject,
-      action: "manage",
-      extra: { addonId: addon.id },
-    });
   },
 };
 
@@ -1509,6 +1466,7 @@ var gUnifiedExtensions = {
       } else {
         panel.hidden = false;
         PanelMultiView.openPopup(panel, this._button, {
+          position: "bottomright topright",
           triggerEvent: aEvent,
         });
       }

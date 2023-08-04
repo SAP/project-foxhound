@@ -8,9 +8,7 @@ const { AddonManager } = ChromeUtils.import(
 import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
 import { E10SUtils } from "resource://gre/modules/E10SUtils.sys.mjs";
 
-const { FeatureGate } = ChromeUtils.import(
-  "resource://featuregates/FeatureGate.jsm"
-);
+import { FeatureGate } from "resource://featuregates/FeatureGate.sys.mjs";
 
 const lazy = {};
 
@@ -773,7 +771,19 @@ var dataProviders = {
         adapterOpts
       )})`;
 
-      const adapter = await navigator.gpu.requestAdapter(adapterOpts);
+      let adapter;
+      try {
+        adapter = await navigator.gpu.requestAdapter(adapterOpts);
+      } catch (e) {
+        // If WebGPU isn't supported or is blocked somehow, include
+        // that in the report. Anything else is an error which should
+        // have consequences (test failures, etc).
+        if (DOMException.isInstance(e) && e.name == "NotSupportedError") {
+          return { [requestAdapterkey]: { not_supported: e.message } };
+        }
+        throw e;
+      }
+
       if (!adapter) {
         ret[requestAdapterkey] = null;
         return ret;
@@ -963,8 +973,8 @@ var dataProviders = {
     const {
       PreferenceRollouts: NormandyPreferenceRollouts,
     } = ChromeUtils.import("resource://normandy/lib/PreferenceRollouts.jsm");
-    const { ExperimentManager } = ChromeUtils.import(
-      "resource://nimbus/lib/ExperimentManager.jsm"
+    const { ExperimentManager } = ChromeUtils.importESModule(
+      "resource://nimbus/lib/ExperimentManager.sys.mjs"
     );
 
     // Get Normandy data in parallel, and sort each group by slug.
@@ -1007,8 +1017,8 @@ var dataProviders = {
 
 if (AppConstants.MOZ_CRASHREPORTER) {
   dataProviders.crashes = function crashes(done) {
-    const { CrashReports } = ChromeUtils.import(
-      "resource://gre/modules/CrashReports.jsm"
+    const { CrashReports } = ChromeUtils.importESModule(
+      "resource://gre/modules/CrashReports.sys.mjs"
     );
     let reports = CrashReports.getReports();
     let now = new Date();

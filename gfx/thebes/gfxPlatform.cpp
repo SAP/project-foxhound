@@ -287,8 +287,8 @@ void CrashStatsLogForwarder::UpdateCrashReport() {
   }
 
   for (auto& it : mBuffer) {
-    message << logAnnotation << Get<0>(it) << "]" << Get<1>(it)
-            << " (t=" << Get<2>(it) << ") ";
+    message << logAnnotation << std::get<0>(it) << "]" << std::get<1>(it)
+            << " (t=" << std::get<2>(it) << ") ";
   }
 
   nsCString reportString(message.str().c_str());
@@ -2037,15 +2037,10 @@ DeviceColor gfxPlatform::TransformPixel(const sRGBColor& in,
   return DeviceColor(in.r, in.g, in.b, in.a);
 }
 
-nsTArray<uint8_t> gfxPlatform::GetPlatformCMSOutputProfileData() {
-  return GetPrefCMSOutputProfileData();
-}
-
 nsTArray<uint8_t> gfxPlatform::GetPrefCMSOutputProfileData() {
-  nsAutoCString fname;
-  Preferences::GetCString("gfx.color_management.display_profile", fname);
-
-  if (fname.IsEmpty()) {
+  const auto mirror = StaticPrefs::gfx_color_management_display_profile();
+  const auto fname = *mirror;
+  if (fname == "") {
     return nsTArray<uint8_t>();
   }
 

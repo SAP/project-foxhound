@@ -8,6 +8,7 @@ import PropTypes from "prop-types";
 import { toEditorPosition, getTokenEnd, hasDocument } from "../../utils/editor";
 
 import { getIndentation } from "../../utils/indentation";
+import { createLocation } from "../../utils/location";
 
 export default class Exception extends PureComponent {
   exceptionLine;
@@ -17,7 +18,7 @@ export default class Exception extends PureComponent {
     return {
       exception: PropTypes.object.isRequired,
       doc: PropTypes.object.isRequired,
-      selectedSourceId: PropTypes.string.isRequired,
+      selectedSource: PropTypes.string.isRequired,
     };
   }
 
@@ -51,18 +52,18 @@ export default class Exception extends PureComponent {
   }
 
   addEditorExceptionLine() {
-    const { exception, doc, selectedSourceId } = this.props;
+    const { exception, doc, selectedSource } = this.props;
     const { columnNumber, lineNumber } = exception;
 
-    if (!hasDocument(selectedSourceId)) {
+    if (!hasDocument(selectedSource.id)) {
       return;
     }
 
-    const location = {
+    const location = createLocation({
       column: columnNumber - 1,
       line: lineNumber,
-      sourceId: selectedSourceId,
-    };
+      source: selectedSource,
+    });
 
     const { line, column } = toEditorPosition(location);
     const lineText = doc.getLine(line);
@@ -72,11 +73,11 @@ export default class Exception extends PureComponent {
 
   clearEditorExceptionLine() {
     if (this.markText) {
-      const { selectedSourceId } = this.props;
+      const { selectedSource } = this.props;
 
       this.markText.clear();
 
-      if (hasDocument(selectedSourceId)) {
+      if (hasDocument(selectedSource.id)) {
         this.props.doc.removeLineClass(
           this.exceptionLine,
           "wrap",

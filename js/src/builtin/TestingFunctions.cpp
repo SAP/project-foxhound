@@ -24,7 +24,6 @@
 #include "mozilla/Sprintf.h"
 #include "mozilla/TextUtils.h"
 #include "mozilla/ThreadLocal.h"
-#include "mozilla/Tuple.h"
 
 #include <algorithm>
 #include <cfloat>
@@ -79,7 +78,8 @@
 #include "js/CompilationAndEvaluation.h"
 #include "js/CompileOptions.h"
 #include "js/Date.h"
-#include "js/experimental/CodeCoverage.h"      // js::GetCodeCoverageSummary
+#include "js/experimental/CodeCoverage.h"  // js::GetCodeCoverageSummary
+#include "js/experimental/CompileScript.h"  // JS::ParseGlobalScript, JS::PrepareForInstantiate
 #include "js/experimental/JSStencil.h"         // JS::Stencil
 #include "js/experimental/PCCountProfiling.h"  // JS::{Start,Stop}PCCountProfiling, JS::PurgePCCounts, JS::GetPCCountScript{Count,Summary,Contents}
 #include "js/experimental/TypedData.h"         // JS_GetObjectAsUint8Array
@@ -110,6 +110,7 @@
 #include "util/Text.h"
 #include "vm/BooleanObject.h"
 #include "vm/DateObject.h"
+#include "vm/DateTime.h"
 #include "vm/ErrorObject.h"
 #include "vm/GlobalObject.h"
 #include "vm/HelperThreads.h"
@@ -153,8 +154,6 @@ using mozilla::AssertedCast;
 using mozilla::AsWritableChars;
 using mozilla::Maybe;
 using mozilla::Span;
-using mozilla::Tie;
-using mozilla::Tuple;
 
 using JS::AutoStableStringChars;
 using JS::CompileOptions;
@@ -2816,7 +2815,7 @@ static bool SaveStack(JSContext* cx, unsigned argc, Value* vp) {
     if (!ToNumber(cx, args[0], &maxDouble)) {
       return false;
     }
-    if (mozilla::IsNaN(maxDouble) || maxDouble < 0 || maxDouble > UINT32_MAX) {
+    if (std::isnan(maxDouble) || maxDouble < 0 || maxDouble > UINT32_MAX) {
       ReportValueError(cx, JSMSG_UNEXPECTED_TYPE, JSDVG_SEARCH_STACK, args[0],
                        nullptr, "not a valid maximum frame count");
       return false;
@@ -3272,28 +3271,53 @@ static bool NewString(JSContext* cx, unsigned argc, Value* vp) {
   bool wantTwoByte = false;
   bool forceExternal = false;
   bool maybeExternal = false;
+  uint32_t capacity = 0;
 
   if (args.get(1).isObject()) {
     RootedObject options(cx, &args[1].toObject());
     RootedValue v(cx);
     bool requestTenured = false;
-    struct Setting {
+    struct BoolSetting {
       const char* name;
       bool* value;
     };
     for (auto [name, setting] :
-         {Setting{"tenured", &requestTenured}, Setting{"twoByte", &wantTwoByte},
-          Setting{"external", &forceExternal},
-          Setting{"maybeExternal", &maybeExternal}}) {
+         {BoolSetting{"tenured", &requestTenured},
+          BoolSetting{"twoByte", &wantTwoByte},
+          BoolSetting{"external", &forceExternal},
+          BoolSetting{"maybeExternal", &maybeExternal}}) {
       if (!JS_GetProperty(cx, options, name, &v)) {
         return false;
       }
       *setting = ToBoolean(v);  // false if not given (or otherwise undefined)
     }
+    struct Uint32Setting {
+      const char* name;
+      uint32_t* value;
+    };
+    for (auto [name, setting] : {Uint32Setting{"capacity", &capacity}}) {
+      if (!JS_GetProperty(cx, options, name, &v)) {
+        return false;
+      }
+      int32_t i32;
+      if (!ToInt32(cx, v, &i32)) {
+        return false;
+      }
+      if (i32 < 0) {
+        JS_ReportErrorASCII(cx, "nonnegative value required");
+        return false;
+      }
+      *setting = static_cast<uint32_t>(i32);
+    }
 
     heap = requestTenured ? gc::TenuredHeap : gc::DefaultHeap;
     if (forceExternal || maybeExternal) {
       wantTwoByte = true;
+      if (capacity != 0) {
+        JS_ReportErrorASCII(cx,
+                            "strings cannot be both external and extensible");
+        return false;
+      }
     }
   }
 
@@ -3333,7 +3357,37 @@ static bool NewString(JSContext* cx, unsigned argc, Value* vp) {
         return false;
       }
     }
-    if (wantTwoByte) {
+    if (capacity) {
+      if (capacity < len) {
+        capacity = len;
+      }
+      if (len == 0) {
+        JS_ReportErrorASCII(cx, "Cannot set capacity of empty string");
+        return false;
+      }
+      if (stable.isLatin1()) {
+        auto news = cx->make_pod_arena_array<JS::Latin1Char>(
+            js::StringBufferArena, capacity);
+        if (!news) {
+          return false;
+        }
+        mozilla::PodCopy(news.get(), stable.latin1Chars(), len);
+        dest = JSLinearString::newValidLength<CanGC>(cx, std::move(news), len,
+                                                     heap);
+      } else {
+        auto news =
+            cx->make_pod_arena_array<char16_t>(js::StringBufferArena, capacity);
+        if (!news) {
+          return false;
+        }
+        mozilla::PodCopy(news.get(), stable.twoByteChars(), len);
+        dest = JSLinearString::newValidLength<CanGC>(cx, std::move(news), len,
+                                                     heap);
+      }
+      if (dest) {
+        dest->asLinear().makeExtensible(capacity);
+      }
+    } else if (wantTwoByte) {
       dest = NewStringCopyNDontDeflate<CanGC>(cx, stable.twoByteChars(), len,
                                               heap);
     } else if (stable.isLatin1()) {
@@ -3386,7 +3440,13 @@ static bool NewRope(JSContext* cx, unsigned argc, Value* vp) {
     return false;
   }
 
-  Rooted<JSRope*> str(cx, JSRope::new_<CanGC>(cx, left, right, length, heap));
+  // Disallow creating ropes where one side is empty.
+  if (left->empty() || right->empty()) {
+    JS_ReportErrorASCII(cx, "rope child mustn't be the empty string");
+    return false;
+  }
+
+  auto* str = JSRope::new_<CanGC>(cx, left, right, length, heap);
   if (!str) {
     return false;
   }
@@ -5682,8 +5742,15 @@ static bool GetBacktrace(JSContext* cx, unsigned argc, Value* vp) {
     return false;
   }
 
-  JS::ConstUTF8CharsZ utf8chars(buf.get(), strlen(buf.get()));
-  JSString* str = NewStringCopyUTF8Z(cx, utf8chars);
+  size_t len;
+  UniqueTwoByteChars ucbuf(JS::LossyUTF8CharsToNewTwoByteCharsZ(
+                               cx, JS::UTF8Chars(buf.get(), strlen(buf.get())),
+                               &len, js::MallocArena)
+                               .get());
+  if (!ucbuf) {
+    return false;
+  }
+  JSString* str = JS_NewUCStringCopyN(cx, ucbuf.get(), len);
   if (!str) {
     return false;
   }
@@ -6416,10 +6483,33 @@ static bool ParseCompileOptionsForModule(JSContext* cx,
   return true;
 }
 
+static bool ParseCompileOptionsForInstantiate(JSContext* cx,
+                                              JS::CompileOptions& options,
+                                              JS::Handle<JSObject*> opts,
+                                              bool& prepareForInstantiate) {
+  JS::Rooted<JS::Value> v(cx);
+
+  if (!JS_GetProperty(cx, opts, "prepareForInstantiate", &v)) {
+    return false;
+  }
+  if (!v.isUndefined()) {
+    prepareForInstantiate = JS::ToBoolean(v);
+  } else {
+    prepareForInstantiate = false;
+  }
+
+  return true;
+}
+
 static bool CompileToStencil(JSContext* cx, uint32_t argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
 
   if (!args.requireAtLeast(cx, "compileToStencil", 1)) {
+    return false;
+  }
+  if (!args[0].isString()) {
+    const char* typeName = InformalValueTypeName(args[0]);
+    JS_ReportErrorASCII(cx, "expected string to parse, got %s", typeName);
     return false;
   }
 
@@ -6443,6 +6533,7 @@ static bool CompileToStencil(JSContext* cx, uint32_t argc, Value* vp) {
   RootedString sourceMapURL(cx);
   UniqueChars fileNameBytes;
   bool isModule = false;
+  bool prepareForInstantiate = false;
   if (args.length() == 2) {
     if (!args[1].isObject()) {
       JS_ReportErrorASCII(
@@ -6458,24 +6549,40 @@ static bool CompileToStencil(JSContext* cx, uint32_t argc, Value* vp) {
     if (!ParseCompileOptionsForModule(cx, options, opts, isModule)) {
       return false;
     }
+    if (!ParseCompileOptionsForInstantiate(cx, options, opts,
+                                           prepareForInstantiate)) {
+      return false;
+    }
     if (!js::ParseSourceOptions(cx, opts, &displayURL, &sourceMapURL)) {
       return false;
     }
   }
 
+  AutoReportFrontendContext fc(cx);
   RefPtr<JS::Stencil> stencil;
+  JS::CompilationStorage compileStorage;
   if (isModule) {
-    stencil = JS::CompileModuleScriptToStencil(cx, options, srcBuf);
+    stencil = JS::CompileModuleScriptToStencil(
+        &fc, options, cx->stackLimitForCurrentPrincipal(), srcBuf,
+        compileStorage);
   } else {
-    stencil = JS::CompileGlobalScriptToStencil(cx, options, srcBuf);
+    stencil = JS::CompileGlobalScriptToStencil(
+        &fc, options, cx->stackLimitForCurrentPrincipal(), srcBuf,
+        compileStorage);
   }
   if (!stencil) {
     return false;
   }
 
-  AutoReportFrontendContext fc(cx);
   if (!SetSourceOptions(cx, &fc, stencil->source, displayURL, sourceMapURL)) {
     return false;
+  }
+
+  JS::InstantiationStorage storage;
+  if (prepareForInstantiate) {
+    if (!JS::PrepareForInstantiate(&fc, compileStorage, *stencil, storage)) {
+      return false;
+    }
   }
 
   Rooted<js::StencilObject*> stencilObj(
@@ -6616,8 +6723,8 @@ static bool CompileToStencilXDR(JSContext* cx, uint32_t argc, Value* vp) {
   UniquePtr<frontend::ExtensibleCompilationStencil> stencil;
   if (isModule) {
     stencil = frontend::ParseModuleToExtensibleStencil(
-        cx, &fc, cx->stackLimitForCurrentPrincipal(), input.get(), &scopeCache,
-        srcBuf);
+        cx, &fc, cx->stackLimitForCurrentPrincipal(), cx->tempLifoAlloc(),
+        input.get(), &scopeCache, srcBuf);
   } else {
     stencil = frontend::CompileGlobalScriptToExtensibleStencil(
         cx, &fc, cx->stackLimitForCurrentPrincipal(), input.get(), &scopeCache,
@@ -7750,15 +7857,15 @@ static bool EncodeAsUtf8InBuffer(JSContext* cx, unsigned argc, Value* vp) {
     return false;
   }
 
-  Maybe<Tuple<size_t, size_t>> amounts = JS_EncodeStringToUTF8BufferPartial(
-      cx, args[0].toString(), AsWritableChars(Span(data, length)));
+  Maybe<std::tuple<size_t, size_t>> amounts =
+      JS_EncodeStringToUTF8BufferPartial(cx, args[0].toString(),
+                                         AsWritableChars(Span(data, length)));
   if (!amounts) {
     ReportOutOfMemory(cx);
     return false;
   }
 
-  size_t unitsRead, bytesWritten;
-  Tie(unitsRead, bytesWritten) = *amounts;
+  auto [unitsRead, bytesWritten] = *amounts;
 
   array->initDenseElement(0, Int32Value(AssertedCast<int32_t>(unitsRead)));
   array->initDenseElement(1, Int32Value(AssertedCast<int32_t>(bytesWritten)));
@@ -7962,7 +8069,8 @@ static bool GetICUOptions(JSContext* cx, unsigned argc, Value* vp) {
 
   intl::FormatBuffer<char16_t, intl::INITIAL_CHAR_BUFFER_SIZE> buf(cx);
 
-  if (auto ok = mozilla::intl::TimeZone::GetDefaultTimeZone(buf); ok.isErr()) {
+  if (auto ok = DateTimeInfo::timeZoneId(DateTimeInfo::ShouldRFP::No, buf);
+      ok.isErr()) {
     intl::ReportInternalError(cx, ok.unwrapErr());
     return false;
   }
@@ -8185,7 +8293,7 @@ static bool FdLibM_Pow(JSContext* cx, unsigned argc, Value* vp) {
 
   // Because C99 and ECMA specify different behavior for pow(), we need to wrap
   // the fdlibm call to make it ECMA compliant.
-  if (!mozilla::IsFinite(y) && (x == 1.0 || x == -1.0)) {
+  if (!std::isfinite(y) && (x == 1.0 || x == -1.0)) {
     args.rval().setNaN();
   } else {
     args.rval().setDouble(fdlibm::pow(x, y));

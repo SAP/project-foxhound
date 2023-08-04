@@ -37,8 +37,6 @@ class MacroAssembler;
 struct Address;
 struct Register;
 
-enum class TailCallVMFunctionId;
-
 enum class ICAttachResult { Attached, DuplicateStub, TooLarge, OOM };
 
 bool TryFoldingStubs(JSContext* cx, ICFallbackStub* fallback, JSScript* script,
@@ -54,11 +52,16 @@ ICAttachResult AttachBaselineCacheIRStub(JSContext* cx,
 // BaselineCacheIRCompiler compiles CacheIR to BaselineIC native code.
 class MOZ_RAII BaselineCacheIRCompiler : public CacheIRCompiler {
   bool makesGCCalls_;
+  Register baselineFrameReg_ = FramePointer;
 
-  void tailCallVMInternal(MacroAssembler& masm, TailCallVMFunctionId id);
-
-  template <typename Fn, Fn fn>
-  void tailCallVM(MacroAssembler& masm);
+  // This register points to the baseline frame of the caller. It should only
+  // be used before we enter a stub frame. This is normally the frame pointer
+  // register, but with --enable-ic-frame-pointers we have to allocate a
+  // separate register.
+  inline Register baselineFrameReg() {
+    MOZ_ASSERT(!enteredStubFrame_);
+    return baselineFrameReg_;
+  }
 
   [[nodiscard]] bool emitStoreSlotShared(bool isFixed, ObjOperandId objId,
                                          uint32_t offsetOffset,

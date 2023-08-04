@@ -36,14 +36,10 @@ print.defaults = {
 print.addDefaultSettings = function(settings) {
   const {
     background = false,
-    // TODO: Bug 1791819. Remove when marionette supports orientation argument.
-    landscape = false,
     margin = {},
     orientation = "portrait",
     page = {},
     pageRanges = [],
-    // TODO: Bug 1783086. Remove when marionette supports background argument.
-    printBackground = false,
     scale = 1.0,
     shrinkToFit = true,
   } = settings;
@@ -77,14 +73,10 @@ print.addDefaultSettings = function(settings) {
 
   return {
     background,
-    // TODO: Bug 1791819. Remove when marionette supports orientation argument.
-    landscape,
     margin,
     orientation,
     page,
     pageRanges,
-    // TODO: Bug 1783086. Remove when marionette supports background argument.
-    printBackground,
     scale,
     shrinkToFit,
   };
@@ -150,7 +142,7 @@ print.getPrintSettings = function(settings) {
  *     Page ranges to print, e.g., ['1-5', '8', '11-13'].
  *     Defaults to the empty string, which means print all pages.
  *
- * @return {Array.<number>}
+ * @returns {Array.<number>}
  *     Even-length array containing page range limits
  */
 function parseRanges(ranges) {

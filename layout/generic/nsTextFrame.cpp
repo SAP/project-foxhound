@@ -21,7 +21,6 @@
 #include "mozilla/StaticPrefs_layout.h"
 #include "mozilla/StaticPresData.h"
 #include "mozilla/SVGTextFrame.h"
-#include "mozilla/SVGUtils.h"
 #include "mozilla/TextEditor.h"
 #include "mozilla/TextEvents.h"
 #include "mozilla/BinarySearch.h"
@@ -197,6 +196,8 @@ NS_DECLARE_FRAME_PROPERTY_WITHOUT_DTOR(OffsetToFrameProperty, nsTextFrame)
 NS_DECLARE_FRAME_PROPERTY_RELEASABLE(UninflatedTextRunProperty, gfxTextRun)
 
 NS_DECLARE_FRAME_PROPERTY_SMALL_VALUE(FontSizeInflationProperty, float)
+
+NS_DECLARE_FRAME_PROPERTY_SMALL_VALUE(HangableWhitespaceProperty, nscoord)
 
 struct nsTextFrame::PaintTextSelectionParams : nsTextFrame::PaintTextParams {
   Point textBaselinePt;
@@ -608,8 +609,7 @@ static void InvalidateFrameDueToGlyphsChanged(nsIFrame* aFrame) {
     // to reflow the SVGTextFrame. (This is similar to reflowing the
     // SVGTextFrame in response to style changes, in
     // SVGTextFrame::DidSetComputedStyle.)
-    if (SVGUtils::IsInSVGTextSubtree(f) &&
-        f->HasAnyStateBits(NS_FRAME_IS_NONDISPLAY)) {
+    if (f->IsInSVGTextSubtree() && f->HasAnyStateBits(NS_FRAME_IS_NONDISPLAY)) {
       auto* svgTextFrame = static_cast<SVGTextFrame*>(
           nsLayoutUtils::GetClosestFrameOfType(f, LayoutFrameType::SVGText));
       svgTextFrame->ScheduleReflowSVGNonDisplayText(IntrinsicDirty::None);
@@ -1405,7 +1405,7 @@ static void BuildTextRuns(DrawTarget* aDrawTarget, nsTextFrame* aForFrame,
   }
 
   nsPresContext* presContext = aLineContainer->PresContext();
-  bool doLineBreaking = !SVGUtils::IsInSVGTextSubtree(aForFrame);
+  bool doLineBreaking = !aForFrame->IsInSVGTextSubtree();
   BuildTextRunsScanner scanner(presContext, aDrawTarget, aLineContainer,
                                aWhichTextRun, doLineBreaking);
 
@@ -1748,7 +1748,7 @@ static gfxFloat GetMinTabAdvanceAppUnits(const gfxTextRun* aTextRun) {
 }
 
 static float GetSVGFontSizeScaleFactor(nsIFrame* aFrame) {
-  if (!SVGUtils::IsInSVGTextSubtree(aFrame)) {
+  if (!aFrame->IsInSVGTextSubtree()) {
     return 1.0f;
   }
   auto* container =
@@ -1758,7 +1758,7 @@ static float GetSVGFontSizeScaleFactor(nsIFrame* aFrame) {
 }
 
 static nscoord LetterSpacing(nsIFrame* aFrame, const nsStyleText& aStyleText) {
-  if (SVGUtils::IsInSVGTextSubtree(aFrame)) {
+  if (aFrame->IsInSVGTextSubtree()) {
     // SVG text can have a scaling factor applied so that very small or very
     // large font-sizes don't suffer from poor glyph placement due to app unit
     // rounding. The used letter-spacing value must be scaled by the same
@@ -1774,7 +1774,7 @@ static nscoord LetterSpacing(nsIFrame* aFrame, const nsStyleText& aStyleText) {
 // This function converts non-coord values (e.g. percentages) to nscoord.
 static nscoord WordSpacing(nsIFrame* aFrame, const gfxTextRun* aTextRun,
                            const nsStyleText& aStyleText) {
-  if (SVGUtils::IsInSVGTextSubtree(aFrame)) {
+  if (aFrame->IsInSVGTextSubtree()) {
     // SVG text can have a scaling factor applied so that very small or very
     // large font-sizes don't suffer from poor glyph placement due to app unit
     // rounding. The used word-spacing value must be scaled by the same
@@ -1913,7 +1913,7 @@ bool BuildTextRunsScanner::ContinueTextRunAcrossFrames(nsTextFrame* aFrame1,
     // as there are too many things SVG might be doing (like applying per-
     // element positioning) that wouldn't make sense with shaping across
     // the boundary.
-    if (SVGUtils::IsInSVGTextSubtree(ancestor)) {
+    if (ancestor->IsInSVGTextSubtree()) {
       return false;
     }
 
@@ -2200,7 +2200,7 @@ already_AddRefed<gfxTextRun> BuildTextRunsScanner::BuildTextRunForFrames(
 
   uint32_t nextBreakIndex = 0;
   nsTextFrame* nextBreakBeforeFrame = GetNextBreakBeforeFrame(&nextBreakIndex);
-  bool isSVG = SVGUtils::IsInSVGTextSubtree(mLineContainer);
+  bool isSVG = mLineContainer->IsInSVGTextSubtree();
   bool enabledJustification =
       (mLineContainer->StyleText()->mTextAlign == StyleTextAlign::Justify ||
        mLineContainer->StyleText()->mTextAlignLast ==
@@ -4235,7 +4235,7 @@ void nsTextFrame::InvalidateFrame(uint32_t aDisplayItemKey,
                                   bool aRebuildDisplayItems) {
   InvalidateSelectionState();
 
-  if (SVGUtils::IsInSVGTextSubtree(this)) {
+  if (IsInSVGTextSubtree()) {
     nsIFrame* svgTextFrame = nsLayoutUtils::GetClosestFrameOfType(
         GetParent(), LayoutFrameType::SVGText);
     svgTextFrame->InvalidateFrame();
@@ -4249,7 +4249,7 @@ void nsTextFrame::InvalidateFrameWithRect(const nsRect& aRect,
                                           bool aRebuildDisplayItems) {
   InvalidateSelectionState();
 
-  if (SVGUtils::IsInSVGTextSubtree(this)) {
+  if (IsInSVGTextSubtree()) {
     nsIFrame* svgTextFrame = nsLayoutUtils::GetClosestFrameOfType(
         GetParent(), LayoutFrameType::SVGText);
     svgTextFrame->InvalidateFrame();
@@ -4488,7 +4488,7 @@ void nsTextFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
       NS_GET_A(st->mWebkitTextStrokeColor.CalcColor(this)) == 0;
   if ((HasAnyStateBits(TEXT_NO_RENDERED_GLYPHS) ||
        (isTextTransparent && !StyleText()->HasTextShadow())) &&
-      aBuilder->IsForPainting() && !SVGUtils::IsInSVGTextSubtree(this)) {
+      aBuilder->IsForPainting() && !IsInSVGTextSubtree()) {
     if (!IsSelected()) {
       TextDecorations textDecs;
       GetTextDecorations(PresContext(), eResolvedColors, textDecs);
@@ -4680,7 +4680,7 @@ void nsTextFrame::GetTextDecorations(
       nscolor color;
       if (useOverride) {
         color = overrideColor;
-      } else if (SVGUtils::IsInSVGTextSubtree(this)) {
+      } else if (IsInSVGTextSubtree()) {
         // XXX We might want to do something with text-decoration-color when
         //     painting SVG text, but it's not clear what we should do.  We
         //     at least need SVG text decorations to paint with 'fill' if
@@ -4760,7 +4760,7 @@ void nsTextFrame::GetTextDecorations(
 
 static float GetInflationForTextDecorations(nsIFrame* aFrame,
                                             nscoord aInflationMinFontSize) {
-  if (SVGUtils::IsInSVGTextSubtree(aFrame)) {
+  if (aFrame->IsInSVGTextSubtree()) {
     auto* container =
         nsLayoutUtils::GetClosestFrameOfType(aFrame, LayoutFrameType::SVGText);
     MOZ_ASSERT(container);
@@ -6192,7 +6192,7 @@ nscolor nsTextFrame::GetCaretColorAt(int32_t aOffset) {
   }
 
   bool isSolidTextColor = true;
-  if (SVGUtils::IsInSVGTextSubtree(this)) {
+  if (IsInSVGTextSubtree()) {
     const nsStyleSVG* style = StyleSVG();
     if (!style->mFill.kind.IsNone() && !style->mFill.kind.IsColor()) {
       isSolidTextColor = false;
@@ -6383,7 +6383,7 @@ void nsTextFrame::PaintText(const PaintTextParams& aParams,
                             const bool aIsSelected,
                             float aOpacity /* = 1.0f */) {
 #ifdef DEBUG
-  if (SVGUtils::IsInSVGTextSubtree(this)) {
+  if (IsInSVGTextSubtree()) {
     auto* container =
         nsLayoutUtils::GetClosestFrameOfType(this, LayoutFrameType::SVGText);
     MOZ_ASSERT(container);
@@ -8150,6 +8150,25 @@ void nsTextFrame::SetFontSizeInflation(float aInflation) {
   SetProperty(FontSizeInflationProperty(), aInflation);
 }
 
+void nsTextFrame::SetHangableISize(nscoord aISize) {
+  MOZ_ASSERT(aISize >= 0, "unexpected negative hangable advance");
+  if (aISize <= 0) {
+    if (mHasHangableWS) {
+      RemoveProperty(HangableWhitespaceProperty());
+    }
+    mHasHangableWS = false;
+    return;
+  }
+  SetProperty(HangableWhitespaceProperty(), aISize);
+  mHasHangableWS = true;
+}
+
+nscoord nsTextFrame::GetHangableISize() const {
+  MOZ_ASSERT(mHasHangableWS == HasProperty(HangableWhitespaceProperty()),
+             "flag/property mismatch!");
+  return mHasHangableWS ? GetProperty(HangableWhitespaceProperty()) : 0;
+}
+
 /* virtual */
 void nsTextFrame::MarkIntrinsicISizesDirty() {
   ClearTextRuns();
@@ -9107,8 +9126,6 @@ void nsTextFrame::ReflowText(nsLineLayout& aLineLayout, nscoord aAvailableWidth,
 
   uint32_t transformedOffset = provider.GetStart().GetSkippedOffset();
 
-  // The metrics for the text go in here
-  gfxTextRun::Metrics textMetrics;
   gfxFont::BoundingBoxType boundingBoxType = gfxFont::LOOSE_INK_EXTENTS;
   if (IsFloatingFirstLetterChild() || IsInitialLetterChild()) {
     if (nsFirstLetterFrame* firstLetter = do_QueryFrame(GetParent())) {
@@ -9145,9 +9162,10 @@ void nsTextFrame::ReflowText(nsLineLayout& aLineLayout, nscoord aAvailableWidth,
     iter.SetOriginalOffset(offset + limitLength);
     transformedLength = iter.GetSkippedOffset() - transformedOffset;
   }
+  gfxTextRun::Metrics textMetrics;
   uint32_t transformedLastBreak = 0;
-  bool usedHyphenation;
-  gfxFloat trimmedWidth = 0;
+  bool usedHyphenation = false;
+  gfxFloat trimmableWidth = 0;
   gfxFloat availWidth = aAvailableWidth;
   if (Style()->IsTextCombined()) {
     // If text-combine-upright is 'all', we would compress whatever long
@@ -9156,7 +9174,6 @@ void nsTextFrame::ReflowText(nsLineLayout& aLineLayout, nscoord aAvailableWidth,
   }
   bool canTrimTrailingWhitespace = !textStyle->WhiteSpaceIsSignificant() ||
                                    HasAnyStateBits(TEXT_IS_IN_TOKEN_MATHML);
-
   bool isBreakSpaces = textStyle->mWhiteSpace == StyleWhiteSpace::BreakSpaces;
   // allow whitespace to overflow the container
   bool whitespaceCanHang = textStyle->WhiteSpaceCanHangOrVisuallyCollapse();
@@ -9170,11 +9187,14 @@ void nsTextFrame::ReflowText(nsLineLayout& aLineLayout, nscoord aAvailableWidth,
   }
   uint32_t transformedCharsFit = mTextRun->BreakAndMeasureText(
       transformedOffset, transformedLength, HasAnyStateBits(TEXT_START_OF_LINE),
-      availWidth, &provider, suppressBreak,
-      canTrimTrailingWhitespace ? &trimmedWidth : nullptr, whitespaceCanHang,
-      &textMetrics, boundingBoxType, aDrawTarget, &usedHyphenation,
-      &transformedLastBreak, textStyle->WordCanWrap(this), isBreakSpaces,
-      &breakPriority);
+      availWidth, provider, suppressBreak, boundingBoxType, aDrawTarget,
+      textStyle->WordCanWrap(this), isBreakSpaces,
+      // The following are output parameters:
+      canTrimTrailingWhitespace || whitespaceCanHang ? &trimmableWidth
+                                                     : nullptr,
+      textMetrics, usedHyphenation, transformedLastBreak,
+      // In/out
+      breakPriority);
   if (!length && !textMetrics.mAscent && !textMetrics.mDescent) {
     // If we're measuring a zero-length piece of text, update
     // the height manually.
@@ -9231,32 +9251,35 @@ void nsTextFrame::ReflowText(nsLineLayout& aLineLayout, nscoord aAvailableWidth,
     AddStateBits(TEXT_NO_RENDERED_GLYPHS);
   }
 
-  gfxFloat trimmableWidth = 0;
   bool brokeText = forceBreak >= 0 || transformedCharsFit < transformedLength;
-  if (canTrimTrailingWhitespace) {
-    // Optimization: if we trimmed trailing whitespace, and we can be sure
-    // this frame will be at the end of the line, then leave it trimmed off.
-    // Otherwise we have to undo the trimming, in case we're not at the end of
-    // the line. (If we actually do end up at the end of the line, we'll have
-    // to trim it off again in TrimTrailingWhiteSpace, and we'd like to avoid
-    // having to re-do it.)
-    if (brokeText || HasAnyStateBits(TEXT_IS_IN_TOKEN_MATHML)) {
-      // We're definitely going to break so our trailing whitespace should
-      // definitely be trimmed. Record that we've already done it.
-      AddStateBits(TEXT_TRIMMED_TRAILING_WHITESPACE);
-    } else if (!HasAnyStateBits(TEXT_IS_IN_TOKEN_MATHML)) {
-      // We might not be at the end of the line. (Note that even if this frame
-      // ends in breakable whitespace, it might not be at the end of the line
-      // because it might be followed by breakable, but preformatted,
-      // whitespace.) Undo the trimming.
-      textMetrics.mAdvanceWidth += trimmedWidth;
-      trimmableWidth = trimmedWidth;
-      if (mTextRun->IsRightToLeft()) {
-        // Space comes before text, so the bounding box is moved to the
-        // right by trimmdWidth
-        textMetrics.mBoundingBox.MoveBy(gfxPoint(trimmedWidth, 0));
+  if (trimmableWidth > 0.0) {
+    if (canTrimTrailingWhitespace) {
+      // Optimization: if we we can be sure this frame will be at end of line,
+      // then trim the whitespace now.
+      if (brokeText || HasAnyStateBits(TEXT_IS_IN_TOKEN_MATHML)) {
+        // We're definitely going to break so our trailing whitespace should
+        // definitely be trimmed. Record that we've already done it.
+        AddStateBits(TEXT_TRIMMED_TRAILING_WHITESPACE);
+        textMetrics.mAdvanceWidth -= trimmableWidth;
+        trimmableWidth = 0.0;
       }
+      SetHangableISize(0);
+    } else if (whitespaceCanHang) {
+      // Figure out how much whitespace will hang if at end-of-line.
+      gfxFloat hang =
+          std::min(std::max(0.0, textMetrics.mAdvanceWidth - availWidth),
+                   trimmableWidth);
+      SetHangableISize(NSToCoordRound(trimmableWidth - hang));
+      textMetrics.mAdvanceWidth -= hang;
+      trimmableWidth = 0.0;
+    } else {
+      MOZ_ASSERT_UNREACHABLE("How did trimmableWidth get set?!");
+      SetHangableISize(0);
+      trimmableWidth = 0.0;
     }
+  } else {
+    // Remove any stale frame property.
+    SetHangableISize(0);
   }
 
   if (!brokeText && lastBreak >= 0) {
@@ -9292,14 +9315,21 @@ void nsTextFrame::ReflowText(nsLineLayout& aLineLayout, nscoord aAvailableWidth,
   finalSize.ISize(wm) =
       NSToCoordCeilClamped(std::max(gfxFloat(0.0), textMetrics.mAdvanceWidth));
 
+  nscoord fontBaseline;
+  // Note(dshin): Baseline should tecnhically be halfway through the em box for
+  // a central baseline. It is simply half of the text run block size so that it
+  // can be easily calculated in `GetNaturalBaselineBOffset`.
   if (transformedCharsFit == 0 && !usedHyphenation) {
     aMetrics.SetBlockStartAscent(0);
     finalSize.BSize(wm) = 0;
+    fontBaseline = 0;
   } else if (boundingBoxType != gfxFont::LOOSE_INK_EXTENTS) {
+    fontBaseline = NSToCoordCeil(textMetrics.mAscent);
+    const auto size = fontBaseline + NSToCoordCeil(textMetrics.mDescent);
     // Use actual text metrics for floating first letter frame.
-    aMetrics.SetBlockStartAscent(NSToCoordCeil(textMetrics.mAscent));
-    finalSize.BSize(wm) =
-        aMetrics.BlockStartAscent() + NSToCoordCeil(textMetrics.mDescent);
+    aMetrics.SetBlockStartAscent(wm.IsAlphabeticalBaseline() ? fontBaseline
+                                                             : size / 2);
+    finalSize.BSize(wm) = size;
   } else {
     // Otherwise, ascent should contain the overline drawable area.
     // And also descent should contain the underline drawable area.
@@ -9309,27 +9339,31 @@ void nsTextFrame::ReflowText(nsLineLayout& aLineLayout, nscoord aAvailableWidth,
         wm.IsLineInverted() ? fm->MaxDescent() : fm->MaxAscent();
     nscoord fontDescent =
         wm.IsLineInverted() ? fm->MaxAscent() : fm->MaxDescent();
-    aMetrics.SetBlockStartAscent(
-        std::max(NSToCoordCeil(textMetrics.mAscent), fontAscent));
-    nscoord descent =
+    fontBaseline = std::max(NSToCoordCeil(textMetrics.mAscent), fontAscent);
+    const auto size =
+        fontBaseline +
         std::max(NSToCoordCeil(textMetrics.mDescent), fontDescent);
-    finalSize.BSize(wm) = aMetrics.BlockStartAscent() + descent;
+    aMetrics.SetBlockStartAscent(wm.IsAlphabeticalBaseline() ? fontBaseline
+                                                             : size / 2);
+    finalSize.BSize(wm) = size;
   }
   if (Style()->IsTextCombined()) {
     nsFontMetrics* fm = provider.GetFontMetrics();
-    gfxFloat width = finalSize.ISize(wm);
-    gfxFloat em = fm->EmHeight();
+    nscoord width = finalSize.ISize(wm);
+    nscoord em = fm->EmHeight();
     // Compress the characters in horizontal axis if necessary.
     if (width <= em) {
       RemoveProperty(TextCombineScaleFactorProperty());
     } else {
-      SetProperty(TextCombineScaleFactorProperty(), em / width);
+      SetProperty(TextCombineScaleFactorProperty(),
+                  static_cast<float>(em) / static_cast<float>(width));
       finalSize.ISize(wm) = em;
     }
     // Make the characters be in an 1em square.
     if (finalSize.BSize(wm) != em) {
-      aMetrics.SetBlockStartAscent(aMetrics.BlockStartAscent() +
-                                   (em - finalSize.BSize(wm)) / 2);
+      fontBaseline =
+          aMetrics.BlockStartAscent() + (em - finalSize.BSize(wm)) / 2;
+      aMetrics.SetBlockStartAscent(fontBaseline);
       finalSize.BSize(wm) = em;
     }
   }
@@ -9343,7 +9377,7 @@ void nsTextFrame::ReflowText(nsLineLayout& aLineLayout, nscoord aAvailableWidth,
           0,
       "Negative descent???");
 
-  mAscent = aMetrics.BlockStartAscent();
+  mAscent = fontBaseline;
 
   // Handle text that runs outside its normal bounds.
   nsRect boundingBox = RoundOut(textMetrics.mBoundingBox);
@@ -9467,7 +9501,7 @@ void nsTextFrame::ReflowText(nsLineLayout& aLineLayout, nscoord aAvailableWidth,
        lineContainer->StyleText()->mTextAlignLast ==
            StyleTextAlignLast::Justify ||
        shouldSuppressLineBreak) &&
-      !SVGUtils::IsInSVGTextSubtree(lineContainer)) {
+      !lineContainer->IsInSVGTextSubtree()) {
     AddStateBits(TEXT_JUSTIFICATION_ENABLED);
     Range range(uint32_t(offset), uint32_t(offset + charsFit));
     aLineLayout.SetJustificationInfo(provider.ComputeJustification(range));
@@ -10033,6 +10067,10 @@ Maybe<nscoord> nsTextFrame::GetNaturalBaselineBOffset(
   }
 
   if (!aWM.IsOrthogonalTo(GetWritingMode())) {
+    if (aWM.IsCentralBaseline()) {
+      return Some(GetLogicalUsedBorderAndPadding(aWM).BStart(aWM) +
+                  ContentSize(aWM).BSize(aWM) / 2);
+    }
     return Some(mAscent);
   }
 

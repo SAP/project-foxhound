@@ -157,7 +157,7 @@ already_AddRefed<nsContentList> NS_GetContentList(nsINode* aRootNode,
   NODE_FLAG_BIT(NODE_TYPE_SPECIFIC_BITS_OFFSET + (n_))
 
 // Element-specific flags
-enum {
+enum : uint32_t {
   // Whether this node has dirty descendants for Servo's style system.
   ELEMENT_HAS_DIRTY_DESCENDANTS_FOR_SERVO = ELEMENT_FLAG_BIT(0),
   // Whether this node has dirty descendants for animation-only restyle for
@@ -582,6 +582,9 @@ class Element : public FragmentOrElement {
     }
     return CreatePopoverData();
   }
+
+  bool IsAutoPopover() const;
+  bool IsPopoverOpen() const;
 
   ElementAnimationData* GetAnimationData() const {
     if (!MayHaveAnimations()) {
@@ -1073,8 +1076,6 @@ class Element : public FragmentOrElement {
    */
   uint32_t GetAttrCount() const { return mAttrs.AttrCount(); }
 
-  virtual bool IsNodeOfType(uint32_t aFlags) const override;
-
   /**
    * Get the class list of this element (this corresponds to the value of the
    * class attribute).  This may be null if there are no classes, but that's not
@@ -1257,6 +1258,18 @@ class Element : public FragmentOrElement {
       ErrorResult& aError);
   already_AddRefed<nsIHTMLCollection> GetElementsByClassName(
       const nsAString& aClassNames);
+
+  /**
+   * Returns attribute associated element for the given attribute name, see
+   * https://html.spec.whatwg.org/multipage/common-dom-interfaces.html#attr-associated-element
+   */
+  Element* GetAttrAssociatedElement(nsAtom* aAttr) const;
+
+  /**
+   * Sets an attribute element for the given attribute.
+   * https://html.spec.whatwg.org/multipage/common-dom-interfaces.html#explicitly-set-attr-element
+   */
+  void ExplicitlySetAttrElement(nsAtom* aAttr, Element* aElement);
 
   PseudoStyleType GetPseudoElementType() const {
     nsresult rv = NS_OK;

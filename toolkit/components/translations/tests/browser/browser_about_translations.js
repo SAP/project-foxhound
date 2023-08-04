@@ -9,6 +9,7 @@
  */
 add_task(async function test_about_translations_enabled() {
   await openAboutTranslations({
+    languagePairs: [],
     runInPage: async ({ selectors }) => {
       const { document, window } = content;
 
@@ -53,7 +54,7 @@ add_task(async function test_about_translations_enabled() {
 add_task(async function test_about_translations_disabled() {
   await openAboutTranslations({
     disabled: true,
-
+    languagePairs: [],
     runInPage: async ({ selectors }) => {
       const { document, window } = content;
 
@@ -89,15 +90,11 @@ add_task(async function test_about_translations_dropdowns() {
       { fromLang: "is", toLang: "en" },
     ],
     runInPage: async ({ selectors }) => {
-      const { document, window } = content;
+      const { document } = content;
 
       await ContentTaskUtils.waitForCondition(() => {
-        const element = document.querySelector(
-          selectors.translationResultBlank
-        );
-        const { visibility } = window.getComputedStyle(element);
-        return visibility === "visible";
-      }, `Waiting for placeholder text to be visible."`);
+        return document.body.hasAttribute("ready");
+      }, "Waiting for the document to be ready.");
 
       /**
        * Some languages can be marked as hidden in the dropbdown. This function
@@ -205,12 +202,8 @@ add_task(async function test_about_translations_translations() {
       Cu.waiveXrays(window).DEBOUNCE_DELAY = 5; // Make the timer run faster for tests.
 
       await ContentTaskUtils.waitForCondition(() => {
-        const element = document.querySelector(
-          selectors.translationResultBlank
-        );
-        const { visibility } = window.getComputedStyle(element);
-        return visibility === "visible";
-      }, `Waiting for placeholder text to be visible."`);
+        return document.body.hasAttribute("ready");
+      }, "Waiting for the document to be ready.");
 
       /** @type {HTMLSelectElement} */
       const fromSelect = document.querySelector(selectors.fromLanguageSelect);
@@ -295,12 +288,8 @@ add_task(async function test_about_translations_language_directions() {
       Cu.waiveXrays(window).DEBOUNCE_DELAY = 5; // Make the timer run faster for tests.
 
       await ContentTaskUtils.waitForCondition(() => {
-        const element = document.querySelector(
-          selectors.translationResultBlank
-        );
-        const { visibility } = window.getComputedStyle(element);
-        return visibility === "visible";
-      }, `Waiting for placeholder text to be visible."`);
+        return document.body.hasAttribute("ready");
+      }, "Waiting for the document to be ready.");
 
       /** @type {HTMLSelectElement} */
       const fromSelect = document.querySelector(selectors.fromLanguageSelect);
@@ -371,12 +360,8 @@ add_task(async function test_about_translations_debounce() {
       Cu.waiveXrays(window).DEBOUNCE_DELAY = 5;
 
       await ContentTaskUtils.waitForCondition(() => {
-        const element = document.querySelector(
-          selectors.translationResultBlank
-        );
-        const { visibility } = window.getComputedStyle(element);
-        return visibility === "visible";
-      }, `Waiting for placeholder text to be visible."`);
+        return document.body.hasAttribute("ready");
+      }, "Waiting for the document to be ready.");
 
       /** @type {HTMLSelectElement} */
       const fromSelect = document.querySelector(selectors.fromLanguageSelect);
@@ -455,12 +440,8 @@ add_task(async function test_about_translations_html() {
       Cu.waiveXrays(window).DEBOUNCE_DELAY = 5; // Make the timer run faster for tests.
 
       await ContentTaskUtils.waitForCondition(() => {
-        const element = document.querySelector(
-          selectors.translationResultBlank
-        );
-        const { visibility } = window.getComputedStyle(element);
-        return visibility === "visible";
-      }, `Waiting for placeholder text to be visible."`);
+        return document.body.hasAttribute("ready");
+      }, "Waiting for the document to be ready.");
 
       /** @type {HTMLSelectElement} */
       const fromSelect = document.querySelector(selectors.fromLanguageSelect);
@@ -519,12 +500,8 @@ add_task(async function test_about_translations_language_identification() {
       Cu.waiveXrays(window).DEBOUNCE_DELAY = 5; // Make the timer run faster for tests.
 
       await ContentTaskUtils.waitForCondition(() => {
-        const element = document.querySelector(
-          selectors.translationResultBlank
-        );
-        const { visibility } = window.getComputedStyle(element);
-        return visibility === "visible";
-      }, `Waiting for placeholder text to be visible."`);
+        return document.body.hasAttribute("ready");
+      }, "Waiting for the document to be ready.");
 
       /** @type {HTMLSelectElement} */
       const fromSelect = document.querySelector(selectors.fromLanguageSelect);
@@ -596,6 +573,51 @@ add_task(async function test_about_translations_language_identification() {
           detectFinalText.length > detectStartText.length,
         `fromSelect starting display text (${detectStartText}) should be a substring of the final text (${detectFinalText})`
       );
+    },
+  });
+});
+
+/**
+ * Test that the page is properly disabled when the engine isn't supported.
+ */
+add_task(async function test_about_translations_() {
+  await openAboutTranslations({
+    prefs: [["browser.translations.simulateUnsupportedEngine", true]],
+    runInPage: async ({ selectors }) => {
+      const { document, window } = content;
+
+      info('Checking for the "no support" message.');
+      await ContentTaskUtils.waitForCondition(
+        () => document.querySelector(selectors.noSupportMessage),
+        'Waiting for the "no support" message.'
+      );
+
+      /** @type {HTMLSelectElement} */
+      const fromSelect = document.querySelector(selectors.fromLanguageSelect);
+      /** @type {HTMLSelectElement} */
+      const toSelect = document.querySelector(selectors.toLanguageSelect);
+      /** @type {HTMLTextAreaElement} */
+      const translationTextarea = document.querySelector(
+        selectors.translationTextarea
+      );
+
+      ok(fromSelect.disabled, "The from select is disabled");
+      ok(toSelect.disabled, "The to select is disabled");
+      ok(translationTextarea.disabled, "The textarea is disabled");
+
+      function checkElementIsVisible(expectVisible, name) {
+        const expected = expectVisible ? "visible" : "hidden";
+        const element = document.querySelector(selectors[name]);
+        ok(Boolean(element), `Element ${name} was found.`);
+        const { visibility } = window.getComputedStyle(element);
+        is(
+          visibility,
+          expected,
+          `Element ${name} was not ${expected} but should be.`
+        );
+      }
+
+      checkElementIsVisible(true, "translationInfo");
     },
   });
 });

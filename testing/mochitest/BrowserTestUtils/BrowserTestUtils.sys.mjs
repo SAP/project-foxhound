@@ -1852,12 +1852,22 @@ export var BrowserTestUtils = {
    *    function, allowing us to clean up after you if necessary.
    * @param {Window} win
    *    The window where the tabs need to be overflowed.
-   * @param {boolean} overflowAtStart
-   *    Determines whether the new tabs are added at the beginning of the
-   *    URL bar or at the end of it.
+   * @param {object} params [optional]
+   *        Parameters object for BrowserTestUtils.overflowTabs.
+   *        overflowAtStart: bool
+   *          Determines whether the new tabs are added at the beginning of the
+   *          URL bar or at the end of it.
+   *        overflowTabFactor: 3 | 1.1
+   *          Factor that helps in determining the tab count for overflow.
    */
-  async overflowTabs(registerCleanupFunction, win, overflowAtStart = true) {
-    let index = overflowAtStart ? 0 : undefined;
+  async overflowTabs(registerCleanupFunction, win, params = {}) {
+    if (!params.hasOwnProperty("overflowAtStart")) {
+      params.overflowAtStart = true;
+    }
+    if (!params.hasOwnProperty("overflowTabFactor")) {
+      params.overflowTabFactor = 1.1;
+    }
+    let index = params.overflowAtStart ? 0 : undefined;
     let { gBrowser } = win;
     let arrowScrollbox = gBrowser.tabContainer.arrowScrollbox;
     const originalSmoothScroll = arrowScrollbox.smoothScroll;
@@ -1871,7 +1881,7 @@ export var BrowserTestUtils = {
       win.getComputedStyle(gBrowser.selectedTab).minWidth
     );
     let tabCountForOverflow = Math.ceil(
-      (width(arrowScrollbox) / tabMinWidth) * 1.1
+      (width(arrowScrollbox) / tabMinWidth) * params.overflowTabFactor
     );
     while (gBrowser.tabs.length < tabCountForOverflow) {
       BrowserTestUtils.addTab(gBrowser, "about:blank", {
@@ -2709,12 +2719,68 @@ export var BrowserTestUtils = {
       return val;
     });
   },
+
+  /**
+   * A helper function for this test that returns a Promise that resolves
+   * once either the legacy or new migration wizard appears.
+   *
+   * @param {DOMWindow} window
+   *   The top-level window that the about:preferences tab is likely to open
+   *   in if the new migration wizard is enabled.
+   * @returns {Promise<Element>}
+   *   Resolves to the dialog window in the legacy case, and the
+   *   about:preferences tab otherwise.
+   */
+  async waitForMigrationWizard(window) {
+    if (!this._usingNewMigrationWizard) {
+      return this.waitForCondition(() => {
+        let win = Services.wm.getMostRecentWindow("Browser:MigrationWizard");
+        if (win?.document?.readyState == "complete") {
+          return win;
+        }
+        return false;
+      }, "Wait for migration wizard to open");
+    }
+
+    let wizardReady = this.waitForEvent(window, "MigrationWizard:Ready");
+    let wizardTab = await this.waitForNewTab(window.gBrowser, url => {
+      return url.startsWith("about:preferences");
+    });
+    await wizardReady;
+
+    return wizardTab;
+  },
+
+  /**
+   * Closes the migration wizard.
+   *
+   * @param {Element} wizardWindowOrTab
+   *   The XUL dialog window for the migration wizard in the legacy case, and
+   *   the about:preferences tab otherwise. In general, it's probably best to
+   *   just pass whatever BrowserTestUtils.waitForMigrationWizard resolved to
+   *   into this in order to handle both the old and new migration wizard.
+   * @returns {Promise<undefined>}
+   */
+  closeMigrationWizard(wizardWindowOrTab) {
+    if (!this._usingNewMigrationWizard) {
+      return BrowserTestUtils.closeWindow(wizardWindowOrTab);
+    }
+
+    return BrowserTestUtils.removeTab(wizardWindowOrTab);
+  },
 };
 
 XPCOMUtils.defineLazyPreferenceGetter(
   BrowserTestUtils,
   "_httpsFirstEnabled",
   "dom.security.https_first",
+  false
+);
+
+XPCOMUtils.defineLazyPreferenceGetter(
+  BrowserTestUtils,
+  "_usingNewMigrationWizard",
+  "browser.migrate.content-modal.enabled",
   false
 );
 

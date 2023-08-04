@@ -93,6 +93,9 @@ vcpkg = { path = "build/rust/vcpkg" }
 # Helper crate for integration in the gecko build system.
 mozbuild = { path = "build/rust/mozbuild" }
 
+# Patch bitflags 2.0 to 1.0 while not too many crates use 2.0 features
+bitflags = { path = "build/rust/bitflags" }
+
 # Patch cfg-if 0.1 to 1.0
 cfg-if = { path = "build/rust/cfg-if" }
 
@@ -101,12 +104,6 @@ darling = { path = "build/rust/darling" }
 
 # Patch redox_users to an empty crate
 redox_users = { path = "build/rust/redox_users" }
-
-# Patch memmap2 0.2 to 0.3
-memmap2 = { path = "build/rust/memmap2" }
-
-# Patch getrandom 0.7 to 0.8
-rand = { path = "build/rust/rand" }
 
 # Patch env_logger 0.9 to 0.10
 env_logger = { path = "build/rust/env_logger" }
@@ -121,16 +118,16 @@ tinyvec = { path = "build/rust/tinyvec" }
 # Patch wasi 0.10 to 0.11
 wasi = { path = "build/rust/wasi" }
 
-# Patch bindgen 0.59 to 0.63
+# Patch bindgen 0.63 to 0.64
 bindgen = { path = "build/rust/bindgen" }
 
-# Patch memoffset 0.6 to 0.7
+# Patch memoffset 0.6 to 0.8
 memoffset = { path = "build/rust/memoffset" }
 
-# Patch nom 6 to 7
-nom = { path = "build/rust/nom" }
+# Patch ntapi 0.3 to 0.4
+ntapi = { path = "build/rust/ntapi" }
 
-# Patch nix 0.24 to 0.25
+# Patch nix 0.24 to 0.26
 nix = { path = "build/rust/nix" }
 
 # Patch hermit-abi 0.1 to 0.2
@@ -163,19 +160,18 @@ firefox-on-glean = { path = "toolkit/components/glean/api" }
 libudev-sys = { path = "dom/webauthn/libudev-sys" }
 packed_simd = { package = "packed_simd_2", git = "https://github.com/hsivonen/packed_simd", rev="412f9a0aa556611de021bde89dee8fefe6e0fbbd" }
 midir = { git = "https://github.com/mozilla/midir.git", rev = "519e651241e867af3391db08f9ae6400bc023e18" }
-minidump-writer = { git = "https://github.com/rust-minidump/minidump-writer.git", rev = "7d76616d27b9dc87fe3a94639b8b4f947d52a6aa" }
 # warp 0.3.3 + https://github.com/seanmonstar/warp/pull/1007
 warp = { git = "https://github.com/glandium/warp", rev = "4af45fae95bc98b0eba1ef0db17e1dac471bb23d" }
 
-cssparser = { git = "https://github.com/servo/rust-cssparser", rev = "b196a164dcbb317016d4aa6c58c13147e6045ebb" }
+cssparser = { git = "https://github.com/servo/rust-cssparser", rev = "45bc47e2bcb846f1efb5aea156be5fe7d18624bf" }
 
 # application-services overrides to make updating them all simpler.
-interrupt-support = { git = "https://github.com/mozilla/application-services", rev = "fe2867dbe82a2aaa85a856648107be94b1534683" }
-sql-support = { git = "https://github.com/mozilla/application-services", rev = "fe2867dbe82a2aaa85a856648107be94b1534683" }
-sync15 = { git = "https://github.com/mozilla/application-services", rev = "fe2867dbe82a2aaa85a856648107be94b1534683" }
-tabs = { git = "https://github.com/mozilla/application-services", rev = "fe2867dbe82a2aaa85a856648107be94b1534683" }
-viaduct = { git = "https://github.com/mozilla/application-services", rev = "fe2867dbe82a2aaa85a856648107be94b1534683" }
-webext-storage = { git = "https://github.com/mozilla/application-services", rev = "fe2867dbe82a2aaa85a856648107be94b1534683" }
+interrupt-support = { git = "https://github.com/mozilla/application-services", rev = "86c84c217036c12283d19368867323a66bf35883" }
+sql-support = { git = "https://github.com/mozilla/application-services", rev = "86c84c217036c12283d19368867323a66bf35883" }
+sync15 = { git = "https://github.com/mozilla/application-services", rev = "86c84c217036c12283d19368867323a66bf35883" }
+tabs = { git = "https://github.com/mozilla/application-services", rev = "86c84c217036c12283d19368867323a66bf35883" }
+viaduct = { git = "https://github.com/mozilla/application-services", rev = "86c84c217036c12283d19368867323a66bf35883" }
+webext-storage = { git = "https://github.com/mozilla/application-services", rev = "86c84c217036c12283d19368867323a66bf35883" }
 
 # Patch mio 0.6 to use winapi 0.3 and miow 0.3, getting rid of winapi 0.2.
 # There is not going to be new version of mio 0.6, mio now being >= 0.7.11.

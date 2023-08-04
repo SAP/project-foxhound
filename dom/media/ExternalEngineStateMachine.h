@@ -90,6 +90,10 @@ class ExternalEngineStateMachine final
 
   const char* GetStateStr() const;
 
+  RefPtr<SetCDMPromise> SetCDMProxy(CDMProxy* aProxy) override;
+
+  bool IsExternalStateMachine() const override { return true; }
+
  private:
   ~ExternalEngineStateMachine() = default;
 
@@ -284,6 +288,10 @@ class ExternalEngineStateMachine final
   bool mHasEnoughVideo = false;
   bool mSentPlaybackEndedEvent = false;
   bool mHasReceivedFirstDecodedVideoFrame = false;
+
+  // Only used if setting CDM happens before the engine finishes initialization.
+  MozPromiseHolder<SetCDMPromise> mSetCDMProxyPromise;
+  MozPromiseRequestHolder<SetCDMPromise> mSetCDMProxyRequest;
 };
 
 class ExternalPlaybackEngine {
@@ -310,6 +318,7 @@ class ExternalPlaybackEngine {
   virtual media::TimeUnit GetCurrentPosition() = 0;
   virtual void NotifyEndOfStream(TrackInfo::TrackType aType) = 0;
   virtual void SetMediaInfo(const MediaInfo& aInfo) = 0;
+  virtual bool SetCDMProxy(CDMProxy* aProxy) = 0;
 
   ExternalEngineStateMachine* const MOZ_NON_OWNING_REF mOwner;
 };

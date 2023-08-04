@@ -7,6 +7,7 @@ const {
   assertFirefoxViewTabSelected,
   openFirefoxViewTab,
   closeFirefoxViewTab,
+  isFirefoxViewTabSelectedInWindow,
 } = ChromeUtils.importESModule(
   "resource://testing-common/FirefoxViewTestUtils.sys.mjs"
 );
@@ -19,7 +20,9 @@ const { ASRouter } = ChromeUtils.import(
 const { UIState } = ChromeUtils.importESModule(
   "resource://services-sync/UIState.sys.mjs"
 );
-const { sinon } = ChromeUtils.import("resource://testing-common/Sinon.jsm");
+const { sinon } = ChromeUtils.importESModule(
+  "resource://testing-common/Sinon.sys.mjs"
+);
 const { FeatureCalloutMessages } = ChromeUtils.import(
   "resource://activity-stream/lib/FeatureCalloutMessages.jsm"
 );
@@ -42,7 +45,7 @@ const RECENTLY_CLOSED_STATE_PREF =
 const TAB_PICKUP_STATE_PREF =
   "browser.tabs.firefox-view.ui-state.tab-pickup.open";
 
-const calloutId = "root";
+const calloutId = "multi-stage-message-root";
 const calloutSelector = `#${calloutId}.featureCallout`;
 const primaryButtonSelector = `#${calloutId} .primary`;
 
@@ -426,12 +429,16 @@ const getCalloutMessageById = id => {
  * Create a sinon sandbox with `sendTriggerMessage` stubbed
  * to return a specified test message for featureCalloutCheck.
  *
- * @param {object} Test message
+ * @param {object} testMessage
+ * @param {string} [source="about:firefoxview"]
  */
-const createSandboxWithCalloutTriggerStub = testMessage => {
+const createSandboxWithCalloutTriggerStub = (
+  testMessage,
+  source = "about:firefoxview"
+) => {
   const firefoxViewMatch = sinon.match({
     id: "featureCalloutCheck",
-    context: { source: "about:firefoxview" },
+    context: { source },
   });
   const sandbox = sinon.createSandbox();
   const sendTriggerStub = sandbox.stub(ASRouter, "sendTriggerMessage");
@@ -527,3 +534,18 @@ function cleanup_tab_pickup() {
   Services.prefs.clearUserPref("services.sync.lastTabFetch");
   Services.prefs.clearUserPref(TAB_PICKUP_STATE_PREF);
 }
+
+function isFirefoxViewTabSelected(win = window) {
+  return isFirefoxViewTabSelectedInWindow(win);
+}
+
+registerCleanupFunction(() => {
+  is(
+    typeof SyncedTabs._internal?._createRecentTabsList,
+    "function",
+    "in firefoxview/head.js, SyncedTabs._internal._createRecentTabsList is a function"
+  );
+  // ensure all the stubs are restored, regardless of any exceptions
+  // that might have prevented it
+  gSandbox?.restore();
+});

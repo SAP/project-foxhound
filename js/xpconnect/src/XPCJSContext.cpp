@@ -783,6 +783,7 @@ static mozilla::Atomic<bool> sArrayGroupingEnabled(false);
 #ifdef ENABLE_CHANGE_ARRAY_BY_COPY
 static mozilla::Atomic<bool> sChangeArrayByCopyEnabled(false);
 #endif
+static mozilla::Atomic<bool> sArrayFromAsyncEnabled(false);
 #ifdef ENABLE_NEW_SET_METHODS
 static mozilla::Atomic<bool> sEnableNewSetMethods(false);
 #endif
@@ -815,6 +816,7 @@ void xpc::SetPrefableRealmOptions(JS::RealmOptions& options) {
 #ifdef ENABLE_CHANGE_ARRAY_BY_COPY
       .setChangeArrayByCopyEnabled(sChangeArrayByCopyEnabled)
 #endif
+      .setArrayFromAsyncEnabled(sArrayFromAsyncEnabled)
 #ifdef ENABLE_NEW_SET_METHODS
       .setNewSetMethodsEnabled(sEnableNewSetMethods)
 #endif
@@ -1004,7 +1006,8 @@ static void ReloadPrefsCallback(const char* pref, void* aXpccx) {
   sChangeArrayByCopyEnabled = Preferences::GetBool(
       JS_OPTIONS_DOT_STR "experimental.enable_change_array_by_copy");
 #endif
-
+  sArrayFromAsyncEnabled = Preferences::GetBool(
+      JS_OPTIONS_DOT_STR "experimental.enable_array_from_async");
 #ifdef ENABLE_NEW_SET_METHODS
   sEnableNewSetMethods =
       Preferences::GetBool(JS_OPTIONS_DOT_STR "experimental.new_set_methods");
@@ -1030,8 +1033,7 @@ static void ReloadPrefsCallback(const char* pref, void* aXpccx) {
           JS_OPTIONS_DOT_STR "dump_stack_on_debuggee_would_run"));
 
   JS::SetUseFdlibmForSinCosTan(
-      Preferences::GetBool(JS_OPTIONS_DOT_STR "use_fdlibm_for_sin_cos_tan") ||
-      Preferences::GetBool("privacy.resistFingerprinting"));
+      Preferences::GetBool(JS_OPTIONS_DOT_STR "use_fdlibm_for_sin_cos_tan"));
 
   nsCOMPtr<nsIXULRuntime> xr = do_GetService("@mozilla.org/xre/runtime;1");
   if (xr) {

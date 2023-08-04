@@ -61,13 +61,11 @@ browsertime-tp6:
                         - --browsertime-no-ffwindowrecorder
                         - --conditioned-profile=settled
                         - --extra-profiler-run
-                        - --extra-summary-methods=mean
                         - --extra-summary-methods=geomean
                     default:
                         - --chimera
                         - --conditioned-profile=settled
                         - --extra-profiler-run
-                        - --extra-summary-methods=mean
                         - --extra-summary-methods=geomean
         run-on-projects:
             by-subtest:
@@ -171,13 +169,11 @@ browsertime-tp6-essential:
                         - --conditioned-profile=settled
                         - --collect-perfstats
                         - --extra-profiler-run
-                        - --extra-summary-methods=mean
                         - --extra-summary-methods=geomean
                     default:
                         - --chimera
                         - --conditioned-profile=settled
                         - --extra-profiler-run
-                        - --extra-summary-methods=mean
                         - --extra-summary-methods=geomean
         raptor:
             apps: [firefox, chrome, chromium]
@@ -321,7 +317,8 @@ browsertime-benchmark:
                     firefox:
                         by-test-platform:
                             windows.*-32.*: []
-                            .*64.*shippable-qr/.*: [trunk, mozilla-release]
+                            (linux|macosx1015).*64.*shippable-qr/.*: [trunk]
+                            windows.*64.*shippable-qr/.*: [trunk, mozilla-release]
                             default: []
                     default: []
             unity-webgl:
@@ -329,7 +326,8 @@ browsertime-benchmark:
                     firefox:
                         by-test-platform:
                             windows.*-32.*: []
-                            .*64.*shippable-qr/.*: [trunk, mozilla-release]
+                            (linux|macosx1015).*64.*shippable-qr/.*: [trunk]
+                            windows.*64.*shippable-qr/.*: [trunk, mozilla-release]
                             default: []
                     default: []
             default:
@@ -337,7 +335,8 @@ browsertime-benchmark:
                     firefox:
                         by-test-platform:
                             windows.*-32.*: []
-                            .*64.*shippable-qr/.*: [trunk, mozilla-beta, mozilla-release]
+                            (linux|macosx1015).*64.*shippable-qr/.*: [trunk]
+                            windows.*64.*shippable-qr/.*: [trunk, mozilla-beta, mozilla-release]
                             default: []
                     default: []
     max-run-time:
@@ -352,9 +351,6 @@ browsertime-benchmark:
             motionmark-htmlsuite: 1500
             unity-webgl: 1500
             default: 900
-    mozharness:
-        extra-options:
-            - --extra-profiler-run
 
 browsertime-benchmark-wasm:
     description: Raptor (browsertime) WASM benchmarks
@@ -387,9 +383,6 @@ browsertime-benchmark-wasm:
             wasm-godot: 1500
             wasm-godot-baseline: 1500
             default: 900
-    mozharness:
-        extra-options:
-            - --extra-profiler-run
 
 browsertime-youtube-playback:
     description: Browsertime YouTube Playback on Firefox
@@ -422,6 +415,30 @@ browsertime-youtube-playback:
             youtube-playback-hfr: 3600
             youtube-playback-widevine.*: 3600
             default: 2700
+
+browsertime-youtube-playback-power:
+    description: Browsertime YouTube Playback on Firefox with power usage tracking
+    raptor:
+        apps: [firefox]
+        subtests:
+            by-app:
+                firefox:
+
+                    - [youtube-playback-h264-1080p30, ytp-h264-1080p30]
+                    - [youtube-playback-h264-1080p60, ytp-h264-1080p60]
+                    - [youtube-playback-h264-full-1080p30, ytp-h264-full-1080p30]
+                    - [youtube-playback-h264-full-1080p60, ytp-h264-full-1080p60]
+                    - [youtube-playback-v9-1080p30, ytp-v9-1080p30]
+                    - [youtube-playback-v9-1080p60, ytp-v9-1080p60]
+                    - [youtube-playback-v9-full-1080p30, ytp-v9-full-1080p30]
+                    - [youtube-playback-v9-full-1080p60, ytp-v9-full-1080p60]
+    treeherder-symbol: Btime()
+    run-on-projects:
+        by-test-platform:
+            macosx.*shippable-qr.*: [mozilla-central]
+            default: []
+    tier: 2
+    max-run-time: 2700
 
 browsertime-tp6-live:
     <<: *tp6-defaults
@@ -464,6 +481,33 @@ browsertime-tp6-live:
                     - twitter
                     - wikipedia
                     # - yahoo-mail (Bug 1802922)
+                    - youtube
+                chrome:
+                    - amazon
+                    - [bing-search, bing]
+                    - ebay
+                    - [facebook, fb]
+                    - fandom
+                    - [google-docs, gdocs]
+                    - [google-mail, gmail]
+                    - [google-search, gsearch]
+                    - [google-slides, gslides]
+                    - imdb
+                    # - imgur (see bugs 1825337 & 1817420)
+                    # - instagram (see bug 1736999)
+                    - linkedin
+                    - microsoft
+                    - netflix
+                    # - office (site loads blank page if not signed in)
+                    - outlook
+                    - paypal
+                    - pinterest
+                    - reddit
+                    - tumblr
+                    - twitch
+                    - twitter
+                    - wikipedia
+                    - yahoo-mail
                     - youtube
                 default:
                     - amazon
@@ -610,3 +654,23 @@ browsertime-regression-tests:
                 default: []
     tier: 2
     treeherder-symbol: Btime(regressor)
+
+browsertime-upload:
+    raptor:
+        apps: [firefox, chrome, chromium, safari]
+        subtests: [upload]
+    description: Raptor (browsertime) file upload performance test
+    max-run-time: 2700
+    run-on-projects:
+        by-app:
+            firefox:
+                by-test-platform:
+                    windows.*-32.*: []
+                    .*64.*shippable-qr/.*: [autoland, mozilla-central]
+                    default: []
+            default: []
+    tier: 3
+    treeherder-symbol: Btime(upload)
+    fetches:
+        fetch:
+            - upload-speed-test-file

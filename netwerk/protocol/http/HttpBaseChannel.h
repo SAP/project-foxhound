@@ -237,8 +237,8 @@ class HttpBaseChannel : public nsHashPropertyBag,
   NS_IMETHOD SetChannelId(uint64_t aChannelId) override;
   NS_IMETHOD GetTopLevelContentWindowId(uint64_t* aContentWindowId) override;
   NS_IMETHOD SetTopLevelContentWindowId(uint64_t aContentWindowId) override;
-  NS_IMETHOD GetTopBrowsingContextId(uint64_t* aId) override;
-  NS_IMETHOD SetTopBrowsingContextId(uint64_t aId) override;
+  NS_IMETHOD GetBrowserId(uint64_t* aId) override;
+  NS_IMETHOD SetBrowserId(uint64_t aId) override;
   NS_IMETHOD GetIsProxyUsed(bool* aIsProxyUsed) override;
 
   using nsIClassifiedChannel::IsThirdPartyTrackingResource;
@@ -351,6 +351,15 @@ class HttpBaseChannel : public nsHashPropertyBag,
 
   NS_IMETHOD SetEarlyHintPreloaderId(uint64_t aEarlyHintPreloaderId) override;
   NS_IMETHOD GetEarlyHintPreloaderId(uint64_t* aEarlyHintPreloaderId) override;
+
+  NS_IMETHOD SetClassicScriptHintCharset(
+      const nsAString& aClassicScriptHintCharset) override;
+  NS_IMETHOD GetClassicScriptHintCharset(
+      nsAString& aClassicScriptHintCharset) override;
+
+  NS_IMETHOD SetDocumentCharacterSet(
+      const nsAString& aDocumentCharacterSet) override;
+  NS_IMETHOD GetDocumentCharacterSet(nsAString& aDocumentCharacterSet) override;
 
   virtual void SetConnectionInfo(
       mozilla::net::nsHttpConnectionInfo* aCI) override;
@@ -774,7 +783,7 @@ class HttpBaseChannel : public nsHashPropertyBag,
   // ID of the top-level document's inner window this channel is being
   // originated from.
   uint64_t mContentWindowId;
-  uint64_t mTopBrowsingContextId;
+  uint64_t mBrowserId;
   int64_t mAltDataLength;
   uint64_t mChannelId;
   uint64_t mReqContentLength;
@@ -813,6 +822,9 @@ class HttpBaseChannel : public nsHashPropertyBag,
   // EarlyHintRegistrar id to connect back to the preload. Set on preload
   // channels started from the above list
   uint64_t mEarlyHintPreloaderId = 0;
+
+  nsString mClassicScriptHintCharset;
+  nsString mDocumentCharacterSet;
 
   // clang-format off
   MOZ_ATOMIC_BITFIELDS(mAtomicBitfields1, 32, (
@@ -1017,7 +1029,7 @@ class HttpBaseChannel : public nsHashPropertyBag,
   void AddAsNonTailRequest();
   void RemoveAsNonTailRequest();
 
-  void EnsureTopBrowsingContextId();
+  void EnsureBrowserId();
 };
 
 NS_DEFINE_STATIC_IID_ACCESSOR(HttpBaseChannel, HTTP_BASE_CHANNEL_IID)

@@ -401,6 +401,19 @@ nsBufferedInputStream::Available(uint64_t* result) {
 }
 
 NS_IMETHODIMP
+nsBufferedInputStream::StreamStatus() {
+  if (!mStream) {
+    return NS_OK;
+  }
+
+  if (mFillPoint - mCursor) {
+    return NS_OK;
+  }
+
+  return Source()->StreamStatus();
+}
+
+NS_IMETHODIMP
 nsBufferedInputStream::Read(char* buf, uint32_t count, uint32_t* result) {
   if (mBufferDisabled) {
     if (!mStream) {
@@ -855,6 +868,10 @@ nsBufferedOutputStream::Init(nsIOutputStream* stream, uint32_t bufferSize) {
 
 NS_IMETHODIMP
 nsBufferedOutputStream::Close() {
+  if (!mStream) {
+    return NS_OK;
+  }
+
   nsresult rv1, rv2 = NS_OK;
 
   rv1 = Flush();
@@ -889,6 +906,11 @@ nsBufferedOutputStream::Close() {
     return rv2;
   }
   return NS_OK;
+}
+
+NS_IMETHODIMP
+nsBufferedOutputStream::StreamStatus() {
+  return mStream ? Sink()->StreamStatus() : NS_BASE_STREAM_CLOSED;
 }
 
 NS_IMETHODIMP

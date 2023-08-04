@@ -971,14 +971,12 @@ static nsresult GetCreateWindowParams(nsIOpenWindowInfo* aOpenWindowInfo,
 }
 
 nsresult ContentChild::ProvideWindowCommon(
-    BrowserChild* aTabOpener, nsIOpenWindowInfo* aOpenWindowInfo,
+    NotNull<BrowserChild*> aTabOpener, nsIOpenWindowInfo* aOpenWindowInfo,
     uint32_t aChromeFlags, bool aCalledFromJS, nsIURI* aURI,
     const nsAString& aName, const nsACString& aFeatures, bool aForceNoOpener,
     bool aForceNoReferrer, bool aIsPopupRequested,
     nsDocShellLoadState* aLoadState, bool* aWindowIsNew,
     BrowsingContext** aReturn) {
-  MOZ_DIAGNOSTIC_ASSERT(aTabOpener, "We must have a tab opener");
-
   *aReturn = nullptr;
 
   nsAutoCString features(aFeatures);
@@ -1097,9 +1095,9 @@ nsresult ContentChild::ProvideWindowCommon(
     return NS_ERROR_ABORT;
   }
 
-  auto newChild = MakeRefPtr<BrowserChild>(this, tabId, *aTabOpener,
-                                           browsingContext, aChromeFlags,
-                                           /* aIsTopLevel */ true);
+  auto newChild = MakeNotNull<RefPtr<BrowserChild>>(
+      this, tabId, *aTabOpener, browsingContext, aChromeFlags,
+      /* aIsTopLevel */ true);
 
   if (IsShuttingDown()) {
     return NS_ERROR_ABORT;
@@ -1119,8 +1117,7 @@ nsresult ContentChild::ProvideWindowCommon(
   }
 
   // Tell the parent process to set up its PBrowserParent.
-  PopupIPCTabContext ipcContext;
-  ipcContext.openerChild() = aTabOpener;
+  PopupIPCTabContext ipcContext(aTabOpener, 0);
   if (NS_WARN_IF(!SendConstructPopupBrowser(
           std::move(parentEp), std::move(windowParentEp), tabId, ipcContext,
           windowInit, aChromeFlags))) {
@@ -1136,9 +1133,11 @@ nsresult ContentChild::ProvideWindowCommon(
 
   // Now that |newChild| has had its IPC link established, call |Init| to set it
   // up.
+  // XXX: This MOZ_KnownLive is only necessary because the static analysis can't
+  // tell that NotNull<RefPtr<BrowserChild>> is a strong pointer.
   RefPtr<nsPIDOMWindowOuter> parentWindow =
       parent ? parent->GetDOMWindow() : nullptr;
-  if (NS_FAILED(newChild->Init(parentWindow, windowChild))) {
+  if (NS_FAILED(MOZ_KnownLive(newChild)->Init(parentWindow, windowChild))) {
     return NS_ERROR_ABORT;
   }
 
@@ -1154,7 +1153,6 @@ nsresult ContentChild::ProvideWindowCommon(
     nsTArray<FrameScriptInfo> frameScripts(std::move(info.frameScripts()));
     uint32_t maxTouchPoints = info.maxTouchPoints();
     DimensionInfo dimensionInfo = std::move(info.dimensions());
-    bool hasSiblings = info.hasSiblings();
 
     // Once this function exits, we should try to exit the nested event loop.
     ready = true;
@@ -1187,7 +1185,6 @@ nsresult ContentChild::ProvideWindowCommon(
                             newChild->WebWidget()->GetDefaultScale().scale);
 
     newChild->SetMaxTouchPoints(maxTouchPoints);
-    newChild->SetHasSiblings(hasSiblings);
 
     if (aForceNoOpener || !parent) {
       MOZ_DIAGNOSTIC_ASSERT(!browsingContext->HadOriginalOpener());
@@ -2296,8 +2293,8 @@ mozilla::ipc::IPCResult ContentChild::RecvCollectPerfStatsJSON(
 mozilla::ipc::IPCResult ContentChild::RecvCollectScrollingMetrics(
     CollectScrollingMetricsResolver&& aResolver) {
   auto metrics = ScrollingMetrics::CollectLocalScrollingMetrics();
-  using ResolverArgs = Tuple<const uint32_t&, const uint32_t&>;
-  aResolver(ResolverArgs(Get<0>(metrics), Get<1>(metrics)));
+  using ResolverArgs = std::tuple<const uint32_t&, const uint32_t&>;
+  aResolver(ResolverArgs(std::get<0>(metrics), std::get<1>(metrics)));
   return IPC_OK();
 }
 
@@ -3077,7 +3074,7 @@ void ContentChild::ShutdownInternal() {
         CrashReporter::Annotation::ProfilerChildShutdownPhase,
         isProfiling ? "Profiling - GrabShutdownProfileAndShutdown"_ns
                     : "Not profiling - GrabShutdownProfileAndShutdown"_ns);
-    nsCString shutdownProfile =
+    ProfileAndAdditionalInformation shutdownProfileAndAdditionalInformation =
         mProfilerController->GrabShutdownProfileAndShutdown();
     CrashReporter::AnnotateCrashReport(
         CrashReporter::Annotation::ProfilerChildShutdownPhase,
@@ -3088,16 +3085,17 @@ void ContentChild::ShutdownInternal() {
         CrashReporter::Annotation::ProfilerChildShutdownPhase,
         isProfiling ? "Profiling - SendShutdownProfile (sending)"_ns
                     : "Not profiling - SendShutdownProfile (sending)"_ns);
-    if (const size_t len = shutdownProfile.Length();
+    if (const size_t len = shutdownProfileAndAdditionalInformation.SizeOf();
         len >= size_t(IPC::Channel::kMaximumMessageSize)) {
-      shutdownProfile = nsPrintfCString(
+      shutdownProfileAndAdditionalInformation.mProfile = nsPrintfCString(
           "*Profile from pid %u bigger (%zu) than IPC max (%zu)",
           unsigned(profiler_current_process_id().ToNumber()), len,
           size_t(IPC::Channel::kMaximumMessageSize));
     }
     // Send the shutdown profile to the parent process through our own
     // message channel, which we know will survive for long enough.
-    bool sent = SendShutdownProfile(shutdownProfile);
+    bool sent =
+        SendShutdownProfile(shutdownProfileAndAdditionalInformation.mProfile);
     CrashReporter::AnnotateCrashReport(
         CrashReporter::Annotation::ProfilerChildShutdownPhase,
         sent ? (isProfiling ? "Profiling - SendShutdownProfile (sent)"_ns
@@ -3146,7 +3144,7 @@ mozilla::ipc::IPCResult ContentChild::RecvUpdateWindow(
 
 PContentPermissionRequestChild*
 ContentChild::AllocPContentPermissionRequestChild(
-    const nsTArray<PermissionRequest>& aRequests, nsIPrincipal* aPrincipal,
+    Span<const PermissionRequest> aRequests, nsIPrincipal* aPrincipal,
     nsIPrincipal* aTopLevelPrincipal, const bool& aIsHandlingUserInput,
     const bool& aMaybeUnsafePermissionDelegate, const TabId& aTabId) {
   MOZ_CRASH("unused");
@@ -3424,7 +3422,7 @@ bool ContentChild::DeallocPURLClassifierChild(PURLClassifierChild* aActor) {
 }
 
 PURLClassifierLocalChild* ContentChild::AllocPURLClassifierLocalChild(
-    nsIURI* aUri, const nsTArray<IPCURLClassifierFeature>& aFeatures) {
+    nsIURI* aUri, Span<const IPCURLClassifierFeature> aFeatures) {
   return new URLClassifierLocalChild();
 }
 
@@ -3674,9 +3672,9 @@ mozilla::ipc::IPCResult ContentChild::RecvCrossProcessRedirect(
   RefPtr<ChildProcessChannelListener> processListener =
       ChildProcessChannelListener::GetSingleton();
   // The listener will call completeRedirectSetup or asyncOpen on the channel.
-  processListener->OnChannelReady(
-      loadState, aArgs.loadIdentifier(), std::move(aEndpoints),
-      aArgs.timing().refOr(nullptr), std::move(resolve));
+  processListener->OnChannelReady(loadState, aArgs.loadIdentifier(),
+                                  std::move(aEndpoints), aArgs.timing(),
+                                  std::move(resolve));
   scopeExit.release();
 
   // scopeExit will call CrossProcessRedirectFinished(rv) here
@@ -4469,8 +4467,9 @@ mozilla::ipc::IPCResult ContentChild::RecvGetLayoutHistoryState(
     docShell->GetLayoutHistoryState(getter_AddRefs(state));
     wireframe = static_cast<nsDocShell*>(docShell)->GetWireframe();
   }
-  aResolver(Tuple<nsILayoutHistoryState*, const mozilla::Maybe<Wireframe>&>(
-      state, wireframe));
+  aResolver(
+      std::tuple<nsILayoutHistoryState*, const mozilla::Maybe<Wireframe>&>(
+          state, wireframe));
 
   return IPC_OK();
 }

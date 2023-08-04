@@ -1,16 +1,16 @@
 "use strict";
 
-const { ExperimentFakes } = ChromeUtils.import(
-  "resource://testing-common/NimbusTestUtils.jsm"
+const { ExperimentFakes } = ChromeUtils.importESModule(
+  "resource://testing-common/NimbusTestUtils.sys.mjs"
 );
-const { ExperimentManager } = ChromeUtils.import(
-  "resource://nimbus/lib/ExperimentManager.jsm"
+const { ExperimentManager } = ChromeUtils.importESModule(
+  "resource://nimbus/lib/ExperimentManager.sys.mjs"
 );
 const {
   RemoteSettingsExperimentLoader,
   EnrollmentsContext,
-} = ChromeUtils.import(
-  "resource://nimbus/lib/RemoteSettingsExperimentLoader.jsm"
+} = ChromeUtils.importESModule(
+  "resource://nimbus/lib/RemoteSettingsExperimentLoader.sys.mjs"
 );
 const { TestUtils } = ChromeUtils.importESModule(
   "resource://testing-common/TestUtils.sys.mjs"
@@ -161,11 +161,14 @@ add_task(async function test_updateRecipes_someMismatch() {
   );
   ok(loader.manager.onFinalize.calledOnce, "Should call onFinalize.");
   ok(
-    loader.manager.onFinalize.calledWith("rs-loader", {
+    onFinalizeCalled(loader.manager.onFinalize, "rs-loader", {
       recipeMismatches: [FAIL_FILTER_RECIPE.slug],
       invalidRecipes: [],
       invalidBranches: new Map(),
       invalidFeatures: new Map(),
+      missingL10nIds: new Map(),
+      missingLocale: [],
+      locale: Services.locale.appLocaleAsBCP47,
       validationEnabled: true,
     }),
     "should call .onFinalize with the recipes that failed targeting"

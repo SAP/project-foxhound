@@ -112,9 +112,7 @@ class TransactionBuilder final {
 
   void RemovePipeline(PipelineId aPipelineId);
 
-  void SetDisplayList(const gfx::DeviceColor& aBgColor, Epoch aEpoch,
-                      const wr::LayoutSize& aViewportSize,
-                      wr::WrPipelineId pipeline_id,
+  void SetDisplayList(Epoch aEpoch, wr::WrPipelineId pipeline_id,
                       wr::BuiltDisplayListDescriptor dl_descriptor,
                       wr::Vec<uint8_t>& dl_items_data,
                       wr::Vec<uint8_t>& dl_cache_data,
@@ -297,25 +295,10 @@ class WebRenderAPI final {
   void BeginRecording(const TimeStamp& aRecordingStart,
                       wr::PipelineId aRootPipelineId);
 
-  typedef MozPromise<bool, nsresult, true> WriteCollectedFramesPromise;
-  typedef MozPromise<layers::CollectedFrames, nsresult, true>
-      GetCollectedFramesPromise;
+  typedef MozPromise<layers::FrameRecording, nsresult, true>
+      EndRecordingPromise;
 
-  /**
-   * Write the frames collected since the call to BeginRecording() to disk.
-   *
-   * If there is not currently a recorder, this is a no-op.
-   */
-  RefPtr<WriteCollectedFramesPromise> WriteCollectedFrames();
-
-  /**
-   * Return the frames collected since the call to BeginRecording() encoded
-   * as data URIs.
-   *
-   * If there is not currently a recorder, this is a no-op and the promise will
-   * be rejected.
-   */
-  RefPtr<GetCollectedFramesPromise> GetCollectedFrames();
+  RefPtr<EndRecordingPromise> EndRecording();
 
  protected:
   WebRenderAPI(wr::DocumentHandle* aHandle, wr::WindowId aId,
@@ -600,22 +583,19 @@ class DisplayListBuilder final {
                           const wr::LayoutPoint& aStartPoint,
                           const wr::LayoutPoint& aEndPoint,
                           const nsTArray<wr::GradientStop>& aStops,
-                          wr::ExtendMode aExtendMode,
-                          const wr::LayoutSideOffsets& aOutset);
+                          wr::ExtendMode aExtendMode);
 
   void PushBorderRadialGradient(
       const wr::LayoutRect& aBounds, const wr::LayoutRect& aClip,
       bool aIsBackfaceVisible, const wr::LayoutSideOffsets& aWidths, bool aFill,
       const wr::LayoutPoint& aCenter, const wr::LayoutSize& aRadius,
-      const nsTArray<wr::GradientStop>& aStops, wr::ExtendMode aExtendMode,
-      const wr::LayoutSideOffsets& aOutset);
+      const nsTArray<wr::GradientStop>& aStops, wr::ExtendMode aExtendMode);
 
   void PushBorderConicGradient(
       const wr::LayoutRect& aBounds, const wr::LayoutRect& aClip,
       bool aIsBackfaceVisible, const wr::LayoutSideOffsets& aWidths, bool aFill,
       const wr::LayoutPoint& aCenter, const float aAngle,
-      const nsTArray<wr::GradientStop>& aStops, wr::ExtendMode aExtendMode,
-      const wr::LayoutSideOffsets& aOutset);
+      const nsTArray<wr::GradientStop>& aStops, wr::ExtendMode aExtendMode);
 
   void PushText(const wr::LayoutRect& aBounds, const wr::LayoutRect& aClip,
                 bool aIsBackfaceVisible, const wr::ColorF& aColor,

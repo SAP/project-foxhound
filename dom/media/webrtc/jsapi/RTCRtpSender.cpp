@@ -191,8 +191,8 @@ nsTArray<RefPtr<dom::RTCStatsPromise>> RTCRtpSender::GetStatsInternal(
         }));
   }
 
-  promises.AppendElement(
-      InvokeAsync(mPipeline->mCallThread, __func__, [pipeline = mPipeline] {
+  promises.AppendElement(InvokeAsync(
+      mPipeline->mCallThread, __func__, [pipeline = mPipeline, trackName] {
         auto report = MakeUnique<dom::RTCStatsCollection>();
         auto asAudio = pipeline->mConduit->AsAudioSessionConduit();
         auto asVideo = pipeline->mConduit->AsVideoSessionConduit();
@@ -347,11 +347,22 @@ nsTArray<RefPtr<dom::RTCStatsPromise>> RTCRtpSender::GetStatsInternal(
               streamStats = Some(kv->second);
             }
 
-            if (!streamStats ||
-                streamStats->rtp_stats.first_packet_time_ms == -1) {
+            if (!streamStats) {
               // By spec: "The lifetime of all RTP monitored objects starts
               // when the RTP stream is first used: When the first RTP packet
               // is sent or received on the SSRC it represents"
+              return;
+            }
+
+            aConduit->GetAssociatedLocalRtxSSRC(ssrc).apply(
+                [&](const auto rtxSsrc) {
+                  auto kv = videoStats->substreams.find(rtxSsrc);
+                  if (kv != videoStats->substreams.end()) {
+                    streamStats->rtp_stats.Add(kv->second.rtp_stats);
+                  }
+                });
+
+            if (streamStats->rtp_stats.first_packet_time_ms == -1) {
               return;
             }
 
@@ -429,6 +440,26 @@ nsTArray<RefPtr<dom::RTCStatsPromise>> RTCRtpSender::GetStatsInternal(
             }
           });
         }
+
+        auto constructCommonMediaSourceStats =
+            [&](RTCMediaSourceStats& aStats) {
+              nsString id = u"mediasource_"_ns + idstr + trackName;
+              aStats.mTimestamp.Construct(
+                  pipeline->GetTimestampMaker().GetNow());
+              aStats.mId.Construct(id);
+              aStats.mType.Construct(RTCStatsType::Media_source);
+              aStats.mTrackIdentifier = trackName;
+              aStats.mKind = kind;
+            };
+
+        // TODO(bug 1804678): Use RTCAudioSourceStats/RTCVideoSourceStats
+        RTCMediaSourceStats mediaSourceStats;
+        constructCommonMediaSourceStats(mediaSourceStats);
+        if (!report->mMediaSourceStats.AppendElement(
+                std::move(mediaSourceStats), fallible)) {
+          mozalloc_handle_oom(0);
+        }
+
         return RTCStatsPromise::CreateAndResolve(std::move(report), __func__);
       }));
 
@@ -439,6 +470,11 @@ nsTArray<RefPtr<dom::RTCStatsPromise>> RTCRtpSender::GetStatsInternal(
   }
 
   return promises;
+}
+
+void RTCRtpSender::GetCapabilities(const GlobalObject&, const nsAString& aKind,
+                                   Nullable<dom::RTCRtpCapabilities>& aResult) {
+  PeerConnectionImpl::GetCapabilities(aKind, aResult, sdp::Direction::kSend);
 }
 
 void RTCRtpSender::WarnAboutBadSetParameters(const nsCString& aError) {
@@ -532,6 +568,7 @@ already_AddRefed<Promise> RTCRtpSender::SetParameters(
   // If any of the following conditions are met,
   // return a promise rejected with a newly created InvalidModificationError:
 
+  bool compatModeAllowedRidChange = false;
   // encodings.length is different from N.
   if (paramsCopy.mEncodings.Length() != oldParams->mEncodings.Length()) {
     nsCString error("Cannot change the number of encodings with setParameters");
@@ -544,6 +581,7 @@ already_AddRefed<Promise> RTCRtpSender::SetParameters(
       p->MaybeRejectWithInvalidModificationError(error);
       return p.forget();
     }
+    compatModeAllowedRidChange = true;
     if (!mHaveWarnedBecauseEncodingCountChange) {
       mHaveWarnedBecauseEncodingCountChange = true;
       mozilla::glean::rtcrtpsender_setparameters::warn_length_changed
@@ -557,21 +595,13 @@ already_AddRefed<Promise> RTCRtpSender::SetParameters(
       const auto& newEncoding = paramsCopy.mEncodings[i];
       if (oldEncoding.mRid != newEncoding.mRid) {
         nsCString error("Cannot change rid, or reorder encodings");
-        if (!mAllowOldSetParameters) {
-          if (!mHaveFailedBecauseRidChange) {
-            mHaveFailedBecauseRidChange = true;
-            mozilla::glean::rtcrtpsender_setparameters::fail_rid_changed
-                .AddToNumerator(1);
-          }
-          p->MaybeRejectWithInvalidModificationError(error);
-          return p.forget();
-        }
-        if (!mHaveWarnedBecauseRidChange) {
-          mHaveWarnedBecauseRidChange = true;
-          mozilla::glean::rtcrtpsender_setparameters::warn_rid_changed
+        if (!mHaveFailedBecauseRidChange) {
+          mHaveFailedBecauseRidChange = true;
+          mozilla::glean::rtcrtpsender_setparameters::fail_rid_changed
               .AddToNumerator(1);
         }
-        WarnAboutBadSetParameters(error);
+        p->MaybeRejectWithInvalidModificationError(error);
+        return p.forget();
       }
     }
   }
@@ -693,7 +723,7 @@ already_AddRefed<Promise> RTCRtpSender::SetParameters(
   uint32_t serialNumber = ++mNumSetParametersCalls;
   MaybeUpdateConduit();
 
-  if (mAllowOldSetParameters) {
+  if (compatModeAllowedRidChange) {
     SetJsepRids(paramsCopy);
   }
 
@@ -1003,10 +1033,28 @@ Sequence<RTCRtpEncodingParameters> RTCRtpSender::GetMatchingEncodings(
 }
 
 void RTCRtpSender::SetStreams(
+    const Sequence<OwningNonNull<DOMMediaStream>>& aStreams, ErrorResult& aRv) {
+  if (mPc->IsClosed()) {
+    aRv.ThrowInvalidStateError(
+        "Cannot call setStreams if the peer connection is closed");
+    return;
+  }
+
+  SetStreamsImpl(aStreams);
+  mPc->UpdateNegotiationNeeded();
+}
+
+void RTCRtpSender::SetStreamsImpl(
     const Sequence<OwningNonNull<DOMMediaStream>>& aStreams) {
   mStreams.Clear();
+  std::set<nsString> ids;
   for (const auto& stream : aStreams) {
-    mStreams.AppendElement(stream);
+    nsString id;
+    stream->GetId(id);
+    if (!ids.count(id)) {
+      ids.insert(id);
+      mStreams.AppendElement(stream);
+    }
   }
 }
 

@@ -12,16 +12,19 @@ const { XPCOMUtils } = ChromeUtils.importESModule(
 
 const lazy = {};
 
+ChromeUtils.defineESModuleGetters(lazy, {
+  ExperimentAPI: "resource://nimbus/ExperimentAPI.sys.mjs",
+  NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
+});
+
 XPCOMUtils.defineLazyModuleGetters(lazy, {
-  ExperimentAPI: "resource://nimbus/ExperimentAPI.jsm",
   AboutWelcomeDefaults:
     "resource://activity-stream/aboutwelcome/lib/AboutWelcomeDefaults.jsm",
-  NimbusFeatures: "resource://nimbus/ExperimentAPI.jsm",
 });
 
 XPCOMUtils.defineLazyGetter(lazy, "log", () => {
-  const { Logger } = ChromeUtils.import(
-    "resource://messaging-system/lib/Logger.jsm"
+  const { Logger } = ChromeUtils.importESModule(
+    "resource://messaging-system/lib/Logger.sys.mjs"
   );
   return new Logger("AboutWelcomeChild");
 });
@@ -146,8 +149,9 @@ class AboutWelcomeChild extends JSWindowActorChild {
   }
 
   AWEvaluateScreenTargeting(data) {
-    return this.wrapPromise(
-      this.sendQuery("AWPage:EVALUATE_SCREEN_TARGETING", data)
+    return this.sendQueryAndCloneForContent(
+      "AWPage:EVALUATE_SCREEN_TARGETING",
+      data
     );
   }
 
@@ -189,19 +193,12 @@ class AboutWelcomeChild extends JSWindowActorChild {
     // override the default with `null`
     let defaults = lazy.AboutWelcomeDefaults.getDefaults();
 
-    // Removing screens based on their targeting evaluations
-    const filteredScreens = await this.AWEvaluateScreenTargeting(
-      featureConfig.screens ?? defaults.screens
-    );
-
     const content = await lazy.AboutWelcomeDefaults.prepareContentForReact({
       ...attributionData,
       ...experimentMetadata,
       ...defaults,
       ...featureConfig,
-      screens: filteredScreens
-        ? filteredScreens
-        : featureConfig.screens ?? defaults.screens,
+      screens: featureConfig.screens ?? defaults.screens,
       backdrop: featureConfig.backdrop ?? defaults.backdrop,
     });
 

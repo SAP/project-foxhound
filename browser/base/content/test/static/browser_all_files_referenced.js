@@ -290,6 +290,15 @@ var whitelist = [
 
   // References to esm generated from jsm programmatically
   { file: "resource://gre/modules/LangPackMatcher.sys.mjs" },
+
+  // Referenced by screenshots extension
+  { file: "chrome://browser/content/screenshots/cancel.svg" },
+  { file: "chrome://browser/content/screenshots/copy.svg" },
+  { file: "chrome://browser/content/screenshots/download.svg" },
+  { file: "chrome://browser/content/screenshots/download-white.svg" },
+
+  // Bug 1824826 - Implement a view of history in Firefox View
+  { file: "resource://gre/modules/PlacesQuery.sys.mjs" },
 ];
 
 if (AppConstants.NIGHTLY_BUILD && AppConstants.platform != "win") {

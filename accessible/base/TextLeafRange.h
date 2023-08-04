@@ -195,6 +195,12 @@ class TextLeafPoint final {
            FindParagraphSameAcc(eDirPrevious, true, aIgnoreListItemMarker);
   }
 
+  /**
+   * Translate given TextLeafPoint into a DOM point.
+   */
+  MOZ_CAN_RUN_SCRIPT std::pair<nsIContent*, int32_t> ToDOMPoint(
+      bool aIncludeGenerated = true) const;
+
  private:
   bool IsEmptyLastLine() const;
 
@@ -290,6 +296,8 @@ class TextLeafRange final {
    * range is created.
    */
   MOZ_CAN_RUN_SCRIPT bool SetSelection(int32_t aSelectionNum) const;
+
+  MOZ_CAN_RUN_SCRIPT void ScrollIntoView(uint32_t aScrollType) const;
 
  private:
   TextLeafPoint mStart;

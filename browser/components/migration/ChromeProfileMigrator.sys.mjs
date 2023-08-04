@@ -32,11 +32,12 @@ XPCOMUtils.defineLazyModuleGetters(lazy, {
  * understands.
  *
  * @param {object[]} items Chrome Bookmark items to be inserted on this parent
+ * @param {set} bookmarkURLAccumulator Accumulate all imported bookmark urls to be used for importing favicons
  * @param {Function} errorAccumulator function that gets called with any errors
  *   thrown so we don't drop them on the floor.
  * @returns {object[]}
  */
-function convertBookmarks(items, errorAccumulator) {
+function convertBookmarks(items, bookmarkURLAccumulator, errorAccumulator) {
   let itemsToInsert = [];
   for (let item of items) {
     try {
@@ -52,12 +53,17 @@ function convertBookmarks(items, errorAccumulator) {
           continue;
         }
         itemsToInsert.push({ url: item.url, title: item.name });
+        bookmarkURLAccumulator.add({ url: item.url });
       } else if (item.type == "folder") {
         let folderItem = {
           type: lazy.PlacesUtils.bookmarks.TYPE_FOLDER,
           title: item.name,
         };
-        folderItem.children = convertBookmarks(item.children, errorAccumulator);
+        folderItem.children = convertBookmarks(
+          item.children,
+          bookmarkURLAccumulator,
+          errorAccumulator
+        );
         itemsToInsert.push(folderItem);
       }
     } catch (ex) {
@@ -135,6 +141,9 @@ export class ChromeProfileMigrator extends MigratorBase {
 
   async getLastUsedDate() {
     let sourceProfiles = await this.getSourceProfiles();
+    if (!sourceProfiles) {
+      return new Date(0);
+    }
     let chromeUserDataPath = await this._getChromeUserDataPathIfExists();
     if (!chromeUserDataPath) {
       return new Date(0);
@@ -145,7 +154,7 @@ export class ChromeProfileMigrator extends MigratorBase {
         async leafName => {
           let path = PathUtils.join(basePath, leafName);
           let info = await IOUtils.stat(path).catch(() => null);
-          return info ? info.lastModificationDate : 0;
+          return info ? info.lastModified : 0;
         }
       );
       let dates = await Promise.all(fileDatePromises);
@@ -224,6 +233,18 @@ export class ChromeProfileMigrator extends MigratorBase {
       _keychainAccountName,
       _keychainMockPassphrase = null,
     } = this;
+
+    let countQuery = `SELECT COUNT(*) FROM logins WHERE blacklisted_by_user = 0`;
+
+    let countRows = await MigrationUtils.getRowsFromDBWithoutLocks(
+      loginPath,
+      "Chrome passwords",
+      countQuery
+    );
+
+    if (!countRows[0].getResultByName("COUNT(*)")) {
+      return null;
+    }
 
     return {
       type: MigrationUtils.resourceTypes.PASSWORDS,
@@ -361,6 +382,7 @@ export class ChromeProfileMigrator extends MigratorBase {
 
 async function GetBookmarksResource(aProfileFolder, aBrowserKey) {
   let bookmarksPath = PathUtils.join(aProfileFolder, "Bookmarks");
+  let faviconsPath = PathUtils.join(aProfileFolder, "Favicons");
 
   if (aBrowserKey === "chromium-360se") {
     let localState = {};
@@ -383,7 +405,16 @@ async function GetBookmarksResource(aProfileFolder, aBrowserKey) {
   if (!(await IOUtils.exists(bookmarksPath))) {
     return null;
   }
+  // check to read JSON bookmarks structure and see if any bookmarks exist else return null
+  // Parse Chrome bookmark file that is JSON format
+  let bookmarkJSON = await IOUtils.readJSON(bookmarksPath);
+  let other = bookmarkJSON.roots.other.children.length;
+  let bookmarkBar = bookmarkJSON.roots.bookmark_bar.children.length;
+  let synced = bookmarkJSON.roots.synced.children.length;
 
+  if (!other && !bookmarkBar && !synced) {
+    return null;
+  }
   return {
     type: MigrationUtils.resourceTypes.BOOKMARKS,
 
@@ -393,9 +424,39 @@ async function GetBookmarksResource(aProfileFolder, aBrowserKey) {
         let errorGatherer = function() {
           gotErrors = true;
         };
-        // Parse Chrome bookmark file that is JSON format
-        let bookmarkJSON = await IOUtils.readJSON(bookmarksPath);
+
+        let faviconRows = [];
+        try {
+          faviconRows = await MigrationUtils.getRowsFromDBWithoutLocks(
+            faviconsPath,
+            "Chrome Bookmark Favicons",
+            `select fav.id, fav.url, map.page_url, bit.image_data FROM favicons as fav 
+              INNER JOIN favicon_bitmaps bit ON (fav.id = bit.icon_id) 
+              INNER JOIN icon_mapping map ON (map.icon_id = bit.icon_id)`
+          );
+        } catch (ex) {
+          console.error(ex);
+        }
+        // Create Hashmap for favicons
+        let faviconMap = new Map();
+        for (let faviconRow of faviconRows) {
+          // First, try to normalize the URI:
+          try {
+            let uri = lazy.NetUtil.newURI(
+              faviconRow.getResultByName("page_url")
+            );
+            faviconMap.set(uri.spec, {
+              faviconData: faviconRow.getResultByName("image_data"),
+              uri,
+            });
+          } catch (e) {
+            // Couldn't parse the URI, so just skip it.
+            continue;
+          }
+        }
+
         let roots = bookmarkJSON.roots;
+        let bookmarkURLAccumulator = new Set();
 
         // Importing bookmark bar items
         if (roots.bookmark_bar.children && roots.bookmark_bar.children.length) {
@@ -403,6 +464,7 @@ async function GetBookmarksResource(aProfileFolder, aBrowserKey) {
           let parentGuid = lazy.PlacesUtils.bookmarks.toolbarGuid;
           let bookmarks = convertBookmarks(
             roots.bookmark_bar.children,
+            bookmarkURLAccumulator,
             errorGatherer
           );
           await MigrationUtils.insertManyBookmarksWrapper(
@@ -415,12 +477,49 @@ async function GetBookmarksResource(aProfileFolder, aBrowserKey) {
         if (roots.other.children && roots.other.children.length) {
           // Other Bookmarks
           let parentGuid = lazy.PlacesUtils.bookmarks.unfiledGuid;
-          let bookmarks = convertBookmarks(roots.other.children, errorGatherer);
+          let bookmarks = convertBookmarks(
+            roots.other.children,
+            bookmarkURLAccumulator,
+            errorGatherer
+          );
           await MigrationUtils.insertManyBookmarksWrapper(
             bookmarks,
             parentGuid
           );
         }
+
+        // Importing synced Bookmarks items
+        if (roots.synced.children && roots.synced.children.length) {
+          // Synced  Bookmarks
+          let parentGuid = lazy.PlacesUtils.bookmarks.unfiledGuid;
+          let bookmarks = convertBookmarks(
+            roots.synced.children,
+            bookmarkURLAccumulator,
+            errorGatherer
+          );
+          await MigrationUtils.insertManyBookmarksWrapper(
+            bookmarks,
+            parentGuid
+          );
+        }
+
+        // Find all favicons with associated bookmarks
+        let favicons = [];
+        for (let bookmark of bookmarkURLAccumulator) {
+          try {
+            let uri = lazy.NetUtil.newURI(bookmark.url);
+            let favicon = faviconMap.get(uri.spec);
+            if (favicon) {
+              favicons.push(favicon);
+            }
+          } catch (e) {
+            // Couldn't parse the bookmark URI, so just skip
+            continue;
+          }
+        }
+
+        // Import Bookmark Favicons
+        MigrationUtils.insertManyFavicons(favicons);
         if (gotErrors) {
           throw new Error("The migration included errors.");
         }
@@ -437,27 +536,32 @@ async function GetHistoryResource(aProfileFolder) {
   if (!(await IOUtils.exists(historyPath))) {
     return null;
   }
+  let countQuery = "SELECT COUNT(*) FROM urls WHERE hidden = 0";
 
+  let countRows = await MigrationUtils.getRowsFromDBWithoutLocks(
+    historyPath,
+    "Chrome history",
+    countQuery
+  );
+  if (!countRows[0].getResultByName("COUNT(*)")) {
+    return null;
+  }
   return {
     type: MigrationUtils.resourceTypes.HISTORY,
 
     migrate(aCallback) {
       (async function() {
-        const MAX_AGE_IN_DAYS = Services.prefs.getIntPref(
-          "browser.migrate.chrome.history.maxAgeInDays"
-        );
         const LIMIT = Services.prefs.getIntPref(
           "browser.migrate.chrome.history.limit"
         );
 
         let query =
           "SELECT url, title, last_visit_time, typed_count FROM urls WHERE hidden = 0";
-        if (MAX_AGE_IN_DAYS) {
-          let maxAge = lazy.ChromeMigrationUtils.dateToChromeTime(
-            Date.now() - MAX_AGE_IN_DAYS * 24 * 60 * 60 * 1000
-          );
-          query += " AND last_visit_time > " + maxAge;
-        }
+        let maxAge = lazy.ChromeMigrationUtils.dateToChromeTime(
+          Date.now() - MigrationUtils.HISTORY_MAX_AGE_IN_MILLISECONDS
+        );
+        query += " AND last_visit_time > " + maxAge;
+
         if (LIMIT) {
           query += " ORDER BY last_visit_time DESC LIMIT " + LIMIT;
         }
@@ -606,6 +710,10 @@ export class BraveProfileMigrator extends ChromeProfileMigrator {
 
   static get displayNameL10nID() {
     return "migration-wizard-migrator-display-name-brave";
+  }
+
+  static get brandImage() {
+    return "chrome://browser/content/migration/brands/brave.png";
   }
 
   _chromeUserDataPathSuffix = "Brave";

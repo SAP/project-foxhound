@@ -433,7 +433,7 @@ class WasmMemoryObject : public NativeObject {
   bool addMovingGrowObserver(JSContext* cx, WasmInstanceObject* instance);
   static uint64_t grow(Handle<WasmMemoryObject*> memory, uint64_t delta,
                        JSContext* cx);
-  static bool discard(Handle<WasmMemoryObject*> memory, uint64_t byteOffset,
+  static void discard(Handle<WasmMemoryObject*> memory, uint64_t byteOffset,
                       uint64_t len, JSContext* cx);
 };
 
@@ -481,9 +481,6 @@ class WasmTableObject : public NativeObject {
   // the range is within bounds. Returns false if the coercion failed.
   bool fillRange(JSContext* cx, uint32_t index, uint32_t length,
                  HandleValue value) const;
-#ifdef DEBUG
-  void assertRangeNull(uint32_t index, uint32_t length) const;
-#endif
 };
 
 // The class of WebAssembly.Tag. This class is used to track exception tag

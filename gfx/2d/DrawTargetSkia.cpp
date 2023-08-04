@@ -29,6 +29,7 @@
 #include "PathSkia.h"
 #include "Swizzle.h"
 #include <algorithm>
+#include <cmath>
 
 #ifdef MOZ_WIDGET_COCOA
 #  include "BorrowedContext.h"
@@ -523,8 +524,8 @@ static void SetPaintPattern(SkPaint& aPaint, const Pattern& aPattern,
       GradientStopsSkia* stops =
           static_cast<GradientStopsSkia*>(pat.mStops.get());
       if (!stops || stops->mCount < 2 || !pat.mCenter1.IsFinite() ||
-          !IsFinite(pat.mRadius1) || !pat.mCenter2.IsFinite() ||
-          !IsFinite(pat.mRadius2) ||
+          !std::isfinite(pat.mRadius1) || !pat.mCenter2.IsFinite() ||
+          !std::isfinite(pat.mRadius2) ||
           (pat.mCenter1 == pat.mCenter2 && pat.mRadius1 == pat.mRadius2)) {
         aPaint.setColor(SK_ColorTRANSPARENT);
       } else {
@@ -558,7 +559,7 @@ static void SetPaintPattern(SkPaint& aPaint, const Pattern& aPattern,
       GradientStopsSkia* stops =
           static_cast<GradientStopsSkia*>(pat.mStops.get());
       if (!stops || stops->mCount < 2 || !pat.mCenter.IsFinite() ||
-          !IsFinite(pat.mAngle)) {
+          !std::isfinite(pat.mAngle)) {
         aPaint.setColor(SK_ColorTRANSPARENT);
       } else {
         SkMatrix mat;
@@ -1851,7 +1852,7 @@ void* DrawTargetSkia::GetNativeSurface(NativeSurfaceType aType) {
 
 already_AddRefed<PathBuilder> DrawTargetSkia::CreatePathBuilder(
     FillRule aFillRule) const {
-  return MakeAndAddRef<PathBuilderSkia>(aFillRule);
+  return PathBuilderSkia::Create(aFillRule);
 }
 
 void DrawTargetSkia::ClearRect(const Rect& aRect) {

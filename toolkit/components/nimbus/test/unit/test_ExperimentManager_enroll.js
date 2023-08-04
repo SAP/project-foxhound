@@ -3,16 +3,16 @@
 const { NormandyTestUtils } = ChromeUtils.import(
   "resource://testing-common/NormandyTestUtils.jsm"
 );
-const { Sampling } = ChromeUtils.import(
-  "resource://gre/modules/components-utils/Sampling.jsm"
+const { Sampling } = ChromeUtils.importESModule(
+  "resource://gre/modules/components-utils/Sampling.sys.mjs"
 );
 const { ClientEnvironment } = ChromeUtils.import(
   "resource://normandy/lib/ClientEnvironment.jsm"
 );
 const { cleanupStorePrefCache } = ExperimentFakes;
 
-const { ExperimentStore } = ChromeUtils.import(
-  "resource://nimbus/lib/ExperimentStore.jsm"
+const { ExperimentStore } = ChromeUtils.importESModule(
+  "resource://nimbus/lib/ExperimentStore.sys.mjs"
 );
 const { TelemetryEnvironment } = ChromeUtils.importESModule(
   "resource://gre/modules/TelemetryEnvironment.sys.mjs"

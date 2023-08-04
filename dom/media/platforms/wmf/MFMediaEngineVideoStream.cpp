@@ -175,11 +175,11 @@ HRESULT MFMediaEngineVideoStream::CreateMediaType(const TrackInfo& aInfo,
 
   LOGV(
       "Created video type, subtype=%s, image=[%ux%u], display=[%ux%u], "
-      "rotation=%s, tranFuns=%s, primaries=%s",
+      "rotation=%s, tranFuns=%s, primaries=%s, encrypted=%d",
       GUIDToStr(subType), imageWidth, imageHeight, displayWidth, displayHeight,
       MFVideoRotationFormatToStr(rotation),
       MFVideoTransferFunctionToStr(transFunc),
-      MFVideoPrimariesToStr(videoPrimaries));
+      MFVideoPrimariesToStr(videoPrimaries), mIsEncrypted);
   *aMediaType = mediaType.Detach();
   return S_OK;
 }
@@ -327,6 +327,21 @@ bool MFMediaEngineVideoStream::IsEnded() const {
 }
 
 bool MFMediaEngineVideoStream::IsEncrypted() const { return mIsEncrypted; }
+
+nsCString MFMediaEngineVideoStream::GetCodecName() const {
+  switch (mStreamType) {
+    case WMFStreamType::H264:
+      return "h264"_ns;
+    case WMFStreamType::VP8:
+      return "vp8"_ns;
+    case WMFStreamType::VP9:
+      return "vp9"_ns;
+    case WMFStreamType::AV1:
+      return "av1"_ns;
+    default:
+      return "unknown"_ns;
+  };
+}
 
 #undef LOGV
 

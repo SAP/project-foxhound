@@ -44,6 +44,7 @@ DIRS += [
     "/third_party/libwebrtc/api/crypto/frame_encryptor_interface_gn",
     "/third_party/libwebrtc/api/crypto/options_gn",
     "/third_party/libwebrtc/api/fec_controller_api_gn",
+    "/third_party/libwebrtc/api/field_trials_registry_gn",
     "/third_party/libwebrtc/api/field_trials_view_gn",
     "/third_party/libwebrtc/api/frame_transformer_interface_gn",
     "/third_party/libwebrtc/api/function_view_gn",
@@ -137,6 +138,8 @@ DIRS += [
     "/third_party/libwebrtc/common_video/common_video_gn",
     "/third_party/libwebrtc/common_video/frame_counts_gn",
     "/third_party/libwebrtc/common_video/generic_frame_descriptor/generic_frame_descriptor_gn",
+    "/third_party/libwebrtc/experiments/registered_field_trials_gn",
+    "/third_party/libwebrtc/experiments/registered_field_trials_header_gn",
     "/third_party/libwebrtc/logging/rtc_event_audio_gn",
     "/third_party/libwebrtc/logging/rtc_event_bwe_gn",
     "/third_party/libwebrtc/logging/rtc_event_field_gn",
@@ -192,7 +195,6 @@ DIRS += [
     "/third_party/libwebrtc/modules/audio_processing/aec_dump_interface_gn",
     "/third_party/libwebrtc/modules/audio_processing/aecm/aecm_core_gn",
     "/third_party/libwebrtc/modules/audio_processing/agc/agc_gn",
-    "/third_party/libwebrtc/modules/audio_processing/agc/analog_gain_stats_reporter_gn",
     "/third_party/libwebrtc/modules/audio_processing/agc/gain_control_interface_gn",
     "/third_party/libwebrtc/modules/audio_processing/agc/legacy_agc_gn",
     "/third_party/libwebrtc/modules/audio_processing/agc/level_estimation_gn",
@@ -204,6 +206,8 @@ DIRS += [
     "/third_party/libwebrtc/modules/audio_processing/agc2/fixed_digital_gn",
     "/third_party/libwebrtc/modules/audio_processing/agc2/gain_applier_gn",
     "/third_party/libwebrtc/modules/audio_processing/agc2/gain_map_gn",
+    "/third_party/libwebrtc/modules/audio_processing/agc2/input_volume_controller_gn",
+    "/third_party/libwebrtc/modules/audio_processing/agc2/input_volume_stats_reporter_gn",
     "/third_party/libwebrtc/modules/audio_processing/agc2/noise_level_estimator_gn",
     "/third_party/libwebrtc/modules/audio_processing/agc2/rnn_vad/rnn_vad_auto_correlation_gn",
     "/third_party/libwebrtc/modules/audio_processing/agc2/rnn_vad/rnn_vad_common_gn",
@@ -216,6 +220,7 @@ DIRS += [
     "/third_party/libwebrtc/modules/audio_processing/agc2/rnn_vad/rnn_vad_spectral_features_gn",
     "/third_party/libwebrtc/modules/audio_processing/agc2/rnn_vad/rnn_vad_symmetric_matrix_buffer_gn",
     "/third_party/libwebrtc/modules/audio_processing/agc2/rnn_vad/vector_math_gn",
+    "/third_party/libwebrtc/modules/audio_processing/agc2/speech_level_estimator_gn",
     "/third_party/libwebrtc/modules/audio_processing/agc2/vad_wrapper_gn",
     "/third_party/libwebrtc/modules/audio_processing/api_gn",
     "/third_party/libwebrtc/modules/audio_processing/apm_logging_gn",
@@ -574,7 +579,11 @@ if CONFIG["CPU_ARCH"] == "aarch64" and CONFIG["OS_TARGET"] == "Linux":
         "/third_party/libwebrtc/modules/audio_coding/isac_c_gn",
         "/third_party/libwebrtc/modules/audio_coding/isac_gn",
         "/third_party/libwebrtc/modules/desktop_capture/desktop_capture_gn",
-        "/third_party/libwebrtc/modules/desktop_capture/primitives_gn"
+        "/third_party/libwebrtc/modules/desktop_capture/primitives_gn",
+        "/third_party/libwebrtc/third_party/drm/drm_gn",
+        "/third_party/libwebrtc/third_party/gbm/gbm_gn",
+        "/third_party/libwebrtc/third_party/libepoxy/libepoxy_gn",
+        "/third_party/libwebrtc/third_party/pipewire/pipewire_gn"
     ]
 
 if CONFIG["CPU_ARCH"] == "arm" and CONFIG["OS_TARGET"] == "Linux":
@@ -591,7 +600,11 @@ if CONFIG["CPU_ARCH"] == "arm" and CONFIG["OS_TARGET"] == "Linux":
         "/third_party/libwebrtc/modules/audio_coding/isac_neon_gn",
         "/third_party/libwebrtc/modules/desktop_capture/desktop_capture_gn",
         "/third_party/libwebrtc/modules/desktop_capture/primitives_gn",
-        "/third_party/libwebrtc/rtc_base/system/asm_defines_gn"
+        "/third_party/libwebrtc/rtc_base/system/asm_defines_gn",
+        "/third_party/libwebrtc/third_party/drm/drm_gn",
+        "/third_party/libwebrtc/third_party/gbm/gbm_gn",
+        "/third_party/libwebrtc/third_party/libepoxy/libepoxy_gn",
+        "/third_party/libwebrtc/third_party/pipewire/pipewire_gn"
     ]
 
 if CONFIG["CPU_ARCH"] == "ppc64" and CONFIG["OS_TARGET"] == "Linux":
@@ -616,7 +629,11 @@ if CONFIG["CPU_ARCH"] == "x86" and CONFIG["OS_TARGET"] == "Linux":
         "/third_party/libwebrtc/modules/audio_processing/agc2/rnn_vad/vector_math_avx2_gn",
         "/third_party/libwebrtc/modules/desktop_capture/desktop_capture_differ_sse2_gn",
         "/third_party/libwebrtc/modules/desktop_capture/desktop_capture_gn",
-        "/third_party/libwebrtc/modules/desktop_capture/primitives_gn"
+        "/third_party/libwebrtc/modules/desktop_capture/primitives_gn",
+        "/third_party/libwebrtc/third_party/drm/drm_gn",
+        "/third_party/libwebrtc/third_party/gbm/gbm_gn",
+        "/third_party/libwebrtc/third_party/libepoxy/libepoxy_gn",
+        "/third_party/libwebrtc/third_party/pipewire/pipewire_gn"
     ]
 
 if CONFIG["CPU_ARCH"] == "x86_64" and CONFIG["OS_TARGET"] == "Linux":
@@ -632,7 +649,11 @@ if CONFIG["CPU_ARCH"] == "x86_64" and CONFIG["OS_TARGET"] == "Linux":
         "/third_party/libwebrtc/modules/audio_processing/agc2/rnn_vad/vector_math_avx2_gn",
         "/third_party/libwebrtc/modules/desktop_capture/desktop_capture_differ_sse2_gn",
         "/third_party/libwebrtc/modules/desktop_capture/desktop_capture_gn",
-        "/third_party/libwebrtc/modules/desktop_capture/primitives_gn"
+        "/third_party/libwebrtc/modules/desktop_capture/primitives_gn",
+        "/third_party/libwebrtc/third_party/drm/drm_gn",
+        "/third_party/libwebrtc/third_party/gbm/gbm_gn",
+        "/third_party/libwebrtc/third_party/libepoxy/libepoxy_gn",
+        "/third_party/libwebrtc/third_party/pipewire/pipewire_gn"
     ]
 
 if CONFIG["CPU_ARCH"] == "aarch64" and CONFIG["OS_TARGET"] == "OpenBSD":

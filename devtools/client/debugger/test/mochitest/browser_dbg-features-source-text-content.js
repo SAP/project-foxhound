@@ -489,7 +489,7 @@ add_task(async function testFailingHtmlSource() {
   const source = findSource(dbg, "200-then-connection-reset.html");
   await dbg.actions.selectLocation(
     getContext(dbg),
-    { sourceId: source.id },
+    createLocation({ source }),
     { keepContext: false }
   );
 
@@ -565,18 +565,3 @@ add_task(async function testLoadingHtmlSource() {
   // whereas we only see the inline source text content.
   is(getCM(dbg).getValue(), `console.log("slow-loading-page:first-load");`);
 });
-
-async function selectSourceFromSourceTree(
-  dbg,
-  fileName,
-  sourcePosition,
-  message
-) {
-  info(message);
-  await clickElement(dbg, "sourceNode", sourcePosition);
-  await waitForSelectedSource(dbg, fileName);
-  await waitFor(
-    () => getCM(dbg).getValue() !== `Loading…`,
-    "Wait for source to completely load"
-  );
-}

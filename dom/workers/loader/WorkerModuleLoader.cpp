@@ -7,7 +7,9 @@
 #include "js/experimental/JSStencil.h"  // JS::Stencil, JS::CompileModuleScriptToStencil, JS::InstantiateModuleStencil
 #include "js/loader/ModuleLoadRequest.h"
 #include "mozilla/dom/WorkerLoadContext.h"
+#include "mozilla/dom/WorkerPrivate.h"
 #include "mozilla/dom/workerinternals/ScriptLoader.h"
+#include "mozilla/dom/WorkerScope.h"
 #include "WorkerModuleLoader.h"
 
 #include "nsISupportsImpl.h"
@@ -32,6 +34,11 @@ WorkerModuleLoader::WorkerModuleLoader(WorkerScriptLoader* aScriptLoader,
                                        nsISerialEventTarget* aEventTarget)
     : ModuleLoaderBase(aScriptLoader, aGlobalObject, aEventTarget) {}
 
+nsIURI* WorkerModuleLoader::GetBaseURI() const {
+  WorkerPrivate* workerPrivate = GetCurrentThreadWorkerPrivate();
+  return workerPrivate->GetBaseURI();
+}
+
 already_AddRefed<ModuleLoadRequest> WorkerModuleLoader::CreateStaticImport(
     nsIURI* aURI, ModuleLoadRequest* aParent) {
   // We are intentionally deviating from the specification here and using the
@@ -43,7 +50,8 @@ already_AddRefed<ModuleLoadRequest> WorkerModuleLoader::CreateStaticImport(
   Maybe<ClientInfo> clientInfo = GetGlobalObject()->GetClientInfo();
 
   RefPtr<WorkerLoadContext> loadContext =
-      new WorkerLoadContext(WorkerLoadContext::Kind::StaticImport, clientInfo);
+      new WorkerLoadContext(WorkerLoadContext::Kind::StaticImport, clientInfo,
+                            aParent->GetWorkerLoadContext()->mScriptLoader);
   RefPtr<ModuleLoadRequest> request = new ModuleLoadRequest(
       aURI, aParent->mFetchOptions, SRIMetadata(), aParent->mURI, loadContext,
       false, /* is top level */
@@ -54,12 +62,70 @@ already_AddRefed<ModuleLoadRequest> WorkerModuleLoader::CreateStaticImport(
   return request.forget();
 }
 
+bool WorkerModuleLoader::CreateDynamicImportLoader() {
+  WorkerPrivate* workerPrivate = GetCurrentThreadWorkerPrivate();
+  workerPrivate->AssertIsOnWorkerThread();
+
+  IgnoredErrorResult rv;
+  RefPtr<WorkerScriptLoader> loader = new loader::WorkerScriptLoader(
+      workerPrivate, nullptr, nullptr,
+      GetCurrentScriptLoader()->GetWorkerScriptType(), rv);
+  if (NS_WARN_IF(rv.Failed())) {
+    return false;
+  }
+
+  SetScriptLoader(loader);
+  SetEventTarget(GetCurrentSerialEventTarget());
+  return true;
+}
+
 already_AddRefed<ModuleLoadRequest> WorkerModuleLoader::CreateDynamicImport(
     JSContext* aCx, nsIURI* aURI, LoadedScript* aMaybeActiveScript,
     JS::Handle<JS::Value> aReferencingPrivate, JS::Handle<JSString*> aSpecifier,
     JS::Handle<JSObject*> aPromise) {
-  // TODO: Implement for Dedicated workers. Not supported for Service Workers.
-  return nullptr;
+  WorkerPrivate* workerPrivate = GetCurrentThreadWorkerPrivate();
+
+  if (!CreateDynamicImportLoader()) {
+    return nullptr;
+  }
+
+  // Not supported for Service Workers.
+  if (workerPrivate->IsServiceWorker()) {
+    return nullptr;
+  }
+  MOZ_ASSERT(aSpecifier);
+  MOZ_ASSERT(aPromise);
+
+  RefPtr<ScriptFetchOptions> options;
+  nsIURI* baseURL = nullptr;
+  if (aMaybeActiveScript) {
+    options = aMaybeActiveScript->GetFetchOptions();
+    baseURL = aMaybeActiveScript->BaseURL();
+  } else {
+    ReferrerPolicy referrerPolicy = workerPrivate->GetReferrerPolicy();
+    options =
+        new ScriptFetchOptions(CORSMode::CORS_NONE, referrerPolicy, nullptr);
+    baseURL = GetBaseURI();
+  }
+
+  Maybe<ClientInfo> clientInfo = GetGlobalObject()->GetClientInfo();
+
+  RefPtr<WorkerLoadContext> context =
+      new WorkerLoadContext(WorkerLoadContext::Kind::DynamicImport, clientInfo,
+                            GetCurrentScriptLoader());
+
+  RefPtr<ModuleLoadRequest> request = new ModuleLoadRequest(
+      aURI, options, SRIMetadata(), baseURL, context, true,
+      /* is top level */ true, /* is dynamic import */
+      this, ModuleLoadRequest::NewVisitedSetForTopLevelImport(aURI), nullptr);
+
+  request->mDynamicReferencingPrivate = aReferencingPrivate;
+  request->mDynamicSpecifier = aSpecifier;
+  request->mDynamicPromise = aPromise;
+
+  HoldJSObjects(request.get());
+
+  return request.forget();
 }
 
 bool WorkerModuleLoader::CanStartLoad(ModuleLoadRequest* aRequest,
@@ -68,7 +134,7 @@ bool WorkerModuleLoader::CanStartLoad(ModuleLoadRequest* aRequest,
 }
 
 nsresult WorkerModuleLoader::StartFetch(ModuleLoadRequest* aRequest) {
-  if (!GetScriptLoader()->DispatchLoadScript(aRequest)) {
+  if (!GetScriptLoaderFor(aRequest)->DispatchLoadScript(aRequest)) {
     return NS_ERROR_FAILURE;
   }
   return NS_OK;
@@ -102,8 +168,13 @@ nsresult WorkerModuleLoader::CompileFetchedModule(
   return NS_OK;
 }
 
-WorkerScriptLoader* WorkerModuleLoader::GetScriptLoader() {
+WorkerScriptLoader* WorkerModuleLoader::GetCurrentScriptLoader() {
   return static_cast<WorkerScriptLoader*>(mLoader.get());
+}
+
+WorkerScriptLoader* WorkerModuleLoader::GetScriptLoaderFor(
+    ModuleLoadRequest* aRequest) {
+  return aRequest->GetWorkerLoadContext()->mScriptLoader;
 }
 
 void WorkerModuleLoader::OnModuleLoadComplete(ModuleLoadRequest* aRequest) {
@@ -112,9 +183,23 @@ void WorkerModuleLoader::OnModuleLoadComplete(ModuleLoadRequest* aRequest) {
     if (NS_WARN_IF(!jsapi.Init(GetGlobalObject()))) {
       return;
     }
-    GetScriptLoader()->MaybeMoveToLoadedList(aRequest);
-    GetScriptLoader()->ProcessPendingRequests(jsapi.cx());
+    RefPtr<WorkerScriptLoader> requestScriptLoader =
+        GetScriptLoaderFor(aRequest);
+    if (aRequest->IsDynamicImport()) {
+      aRequest->ProcessDynamicImport();
+      requestScriptLoader->TryShutdown();
+    } else {
+      requestScriptLoader->MaybeMoveToLoadedList(aRequest);
+      requestScriptLoader->ProcessPendingRequests(jsapi.cx());
+    }
   }
+}
+
+bool WorkerModuleLoader::IsModuleEvaluationAborted(
+    ModuleLoadRequest* aRequest) {
+  WorkerPrivate* workerPrivate = GetCurrentThreadWorkerPrivate();
+  return !workerPrivate || !workerPrivate->GlobalScope() ||
+         workerPrivate->GlobalScope()->IsDying();
 }
 
 }  // namespace mozilla::dom::workerinternals::loader

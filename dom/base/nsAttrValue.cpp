@@ -15,6 +15,7 @@
 #include "mozilla/DebugOnly.h"
 #include "mozilla/HashFunctions.h"
 
+#include "mozilla/URLExtraData.h"
 #include "nsAttrValue.h"
 #include "nsAttrValueInlines.h"
 #include "nsAtom.h"
@@ -39,17 +40,27 @@
 
 using namespace mozilla;
 
+constexpr uint32_t kMiscContainerCacheSize = 128;
+static void* gMiscContainerCache[kMiscContainerCacheSize];
+static uint32_t gMiscContainerCount = 0;
+
 /* static */
 MiscContainer* nsAttrValue::AllocMiscContainer() {
   MOZ_ASSERT(NS_IsMainThread());
-  MiscContainer* cont = nullptr;
-  std::swap(cont, sMiscContainerCache);
 
-  if (cont) {
-    return new (cont) MiscContainer;
+  static_assert(sizeof(gMiscContainerCache) <= 1024);
+  static_assert(sizeof(MiscContainer) <= 32);
+
+  // Allocate MiscContainer objects in batches to improve performance.
+  if (gMiscContainerCount == 0) {
+    for (; gMiscContainerCount < kMiscContainerCacheSize;
+         ++gMiscContainerCount) {
+      gMiscContainerCache[gMiscContainerCount] =
+          moz_xmalloc(sizeof(MiscContainer));
+    }
   }
 
-  return new MiscContainer;
+  return new (gMiscContainerCache[--gMiscContainerCount]) MiscContainer();
 }
 
 /* static */
@@ -59,12 +70,14 @@ void nsAttrValue::DeallocMiscContainer(MiscContainer* aCont) {
     return;
   }
 
-  if (!sMiscContainerCache) {
-    aCont->~MiscContainer();
-    sMiscContainerCache = aCont;
-  } else {
-    delete aCont;
+  aCont->~MiscContainer();
+
+  if (gMiscContainerCount < kMiscContainerCacheSize) {
+    gMiscContainerCache[gMiscContainerCount++] = aCont;
+    return;
   }
+
+  free(aCont);
 }
 
 bool MiscContainer::GetString(nsAString& aString) const {
@@ -136,7 +149,6 @@ void MiscContainer::Evict() {
 }
 
 nsTArray<const nsAttrValue::EnumTable*>* nsAttrValue::sEnumTableArray = nullptr;
-MiscContainer* nsAttrValue::sMiscContainerCache = nullptr;
 
 nsAttrValue::nsAttrValue() : mBits(0) {}
 
@@ -171,11 +183,11 @@ void nsAttrValue::Shutdown() {
   MOZ_ASSERT(NS_IsMainThread());
   delete sEnumTableArray;
   sEnumTableArray = nullptr;
-  // The MiscContainer pointed to by sMiscContainerCache has already
-  // be destructed so `delete sMiscContainerCache` is
-  // dangerous. Invoke `operator delete` to free the memory.
-  ::operator delete(sMiscContainerCache);
-  sMiscContainerCache = nullptr;
+
+  for (uint32_t i = 0; i < gMiscContainerCount; ++i) {
+    free(gMiscContainerCache[i]);
+  }
+  gMiscContainerCount = 0;
 }
 
 void nsAttrValue::Reset() {
@@ -1730,16 +1742,14 @@ bool nsAttrValue::ParseIntMarginValue(const nsAString& aString) {
 bool nsAttrValue::ParseStyleAttribute(const nsAString& aString,
                                       nsIPrincipal* aMaybeScriptedPrincipal,
                                       nsStyledElement* aElement) {
-  dom::Document* ownerDoc = aElement->OwnerDoc();
-  nsHTMLCSSStyleSheet* sheet = ownerDoc->GetInlineStyleSheet();
-  nsIURI* baseURI = aElement->GetBaseURIForStyleAttr();
-  nsIURI* docURI = ownerDoc->GetDocumentURI();
-
-  NS_ASSERTION(aElement->NodePrincipal() == ownerDoc->NodePrincipal(),
+  dom::Document* doc = aElement->OwnerDoc();
+  nsHTMLCSSStyleSheet* sheet = doc->GetInlineStyleSheet();
+  NS_ASSERTION(aElement->NodePrincipal() == doc->NodePrincipal(),
                "This is unexpected");
 
   nsIPrincipal* principal = aMaybeScriptedPrincipal ? aMaybeScriptedPrincipal
                                                     : aElement->NodePrincipal();
+  RefPtr<URLExtraData> data = aElement->GetURLDataForStyleAttr(principal);
 
   // If the (immutable) document URI does not match the element's base URI
   // (the common case is that they do match) do not cache the rule.  This is
@@ -1748,8 +1758,9 @@ bool nsAttrValue::ParseStyleAttribute(const nsAString& aString,
   // Similarly, if the triggering principal does not match the node principal,
   // do not cache the rule, since the principal will be encoded in any parsed
   // URLs in the rule.
-  const bool cachingAllowed =
-      sheet && baseURI == docURI && principal == aElement->NodePrincipal();
+  const bool cachingAllowed = sheet &&
+                              doc->GetDocumentURI() == data->BaseURI() &&
+                              principal == aElement->NodePrincipal();
   if (cachingAllowed) {
     MiscContainer* cont = sheet->LookupStyleAttr(aString);
     if (cont) {
@@ -1760,12 +1771,9 @@ bool nsAttrValue::ParseStyleAttribute(const nsAString& aString,
     }
   }
 
-  nsCOMPtr<nsIReferrerInfo> referrerInfo =
-      dom::ReferrerInfo::CreateForInternalCSSResources(ownerDoc);
-  auto data = MakeRefPtr<URLExtraData>(baseURI, referrerInfo, principal);
-  RefPtr<DeclarationBlock> decl = DeclarationBlock::FromCssText(
-      aString, data, ownerDoc->GetCompatibilityMode(), ownerDoc->CSSLoader(),
-      StyleCssRuleType::Style);
+  RefPtr<DeclarationBlock> decl =
+      DeclarationBlock::FromCssText(aString, data, doc->GetCompatibilityMode(),
+                                    doc->CSSLoader(), StyleCssRuleType::Style);
   if (!decl) {
     return false;
   }

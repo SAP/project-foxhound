@@ -237,13 +237,11 @@ void TransactionBuilder::RemovePipeline(PipelineId aPipelineId) {
 }
 
 void TransactionBuilder::SetDisplayList(
-    const gfx::DeviceColor& aBgColor, Epoch aEpoch,
-    const wr::LayoutSize& aViewportSize, wr::WrPipelineId pipeline_id,
+    Epoch aEpoch, wr::WrPipelineId pipeline_id,
     wr::BuiltDisplayListDescriptor dl_descriptor,
     wr::Vec<uint8_t>& dl_items_data, wr::Vec<uint8_t>& dl_cache_data,
     wr::Vec<uint8_t>& dl_spatial_tree) {
-  wr_transaction_set_display_list(mTxn, aEpoch, ToColorF(aBgColor),
-                                  aViewportSize, pipeline_id, dl_descriptor,
+  wr_transaction_set_display_list(mTxn, aEpoch, pipeline_id, dl_descriptor,
                                   &dl_items_data.inner, &dl_cache_data.inner,
                                   &dl_spatial_tree.inner);
 }
@@ -348,7 +346,7 @@ already_AddRefed<WebRenderAPI> WebRenderAPI::Create(
       &docHandle, aBridge, &backend, &compositor, &maxTextureSize, &useANGLE,
       &useDComp, &useTripleBuffering, &supportsExternalBufferTextures,
       std::move(aWidget), &task, aSize, aWindowKind, &syncHandle, &aError);
-  RenderThread::Get()->RunEvent(aWindowId, std::move(event));
+  RenderThread::Get()->PostEvent(aWindowId, std::move(event));
 
   task.Wait();
 
@@ -700,66 +698,33 @@ void WebRenderAPI::BeginRecording(const TimeStamp& aRecordingStart,
   RunOnRenderThread(std::move(event));
 }
 
-RefPtr<WebRenderAPI::WriteCollectedFramesPromise>
-WebRenderAPI::WriteCollectedFrames() {
-  class WriteCollectedFramesEvent final : public RendererEvent {
+RefPtr<WebRenderAPI::EndRecordingPromise> WebRenderAPI::EndRecording() {
+  class EndRecordingEvent final : public RendererEvent {
    public:
-    explicit WriteCollectedFramesEvent() {
-      MOZ_COUNT_CTOR(WriteCollectedFramesEvent);
-    }
+    explicit EndRecordingEvent() { MOZ_COUNT_CTOR(EndRecordingEvent); }
 
-    MOZ_COUNTED_DTOR(WriteCollectedFramesEvent)
+    MOZ_COUNTED_DTOR(EndRecordingEvent);
 
     void Run(RenderThread& aRenderThread, WindowId aWindowId) override {
-      aRenderThread.WriteCollectedFramesForWindow(aWindowId);
-      mPromise.Resolve(true, __func__);
-    }
+      Maybe<layers::FrameRecording> recording =
+          aRenderThread.EndRecordingForWindow(aWindowId);
 
-    RefPtr<WebRenderAPI::WriteCollectedFramesPromise> GetPromise() {
-      return mPromise.Ensure(__func__);
-    }
-
-   private:
-    MozPromiseHolder<WebRenderAPI::WriteCollectedFramesPromise> mPromise;
-  };
-
-  auto event = MakeUnique<WriteCollectedFramesEvent>();
-  auto promise = event->GetPromise();
-
-  RunOnRenderThread(std::move(event));
-  return promise;
-}
-
-RefPtr<WebRenderAPI::GetCollectedFramesPromise>
-WebRenderAPI::GetCollectedFrames() {
-  class GetCollectedFramesEvent final : public RendererEvent {
-   public:
-    explicit GetCollectedFramesEvent() {
-      MOZ_COUNT_CTOR(GetCollectedFramesEvent);
-    }
-
-    MOZ_COUNTED_DTOR(GetCollectedFramesEvent);
-
-    void Run(RenderThread& aRenderThread, WindowId aWindowId) override {
-      Maybe<layers::CollectedFrames> frames =
-          aRenderThread.GetCollectedFramesForWindow(aWindowId);
-
-      if (frames) {
-        mPromise.Resolve(std::move(*frames), __func__);
+      if (recording) {
+        mPromise.Resolve(recording.extract(), __func__);
       } else {
         mPromise.Reject(NS_ERROR_UNEXPECTED, __func__);
       }
     }
 
-    RefPtr<WebRenderAPI::GetCollectedFramesPromise> GetPromise() {
+    RefPtr<WebRenderAPI::EndRecordingPromise> GetPromise() {
       return mPromise.Ensure(__func__);
     }
 
    private:
-    MozPromiseHolder<WebRenderAPI::GetCollectedFramesPromise> mPromise;
+    MozPromiseHolder<WebRenderAPI::EndRecordingPromise> mPromise;
   };
 
-  auto event = MakeUnique<GetCollectedFramesEvent>();
+  auto event = MakeUnique<EndRecordingEvent>();
   auto promise = event->GetPromise();
 
   RunOnRenderThread(std::move(event));
@@ -1425,36 +1390,33 @@ void DisplayListBuilder::PushBorderGradient(
     const int32_t aWidth, const int32_t aHeight, bool aFill,
     const wr::DeviceIntSideOffsets& aSlice, const wr::LayoutPoint& aStartPoint,
     const wr::LayoutPoint& aEndPoint, const nsTArray<wr::GradientStop>& aStops,
-    wr::ExtendMode aExtendMode, const wr::LayoutSideOffsets& aOutset) {
-  wr_dp_push_border_gradient(mWrState, aBounds, MergeClipLeaf(aClip),
-                             aIsBackfaceVisible, &mCurrentSpaceAndClipChain,
-                             aWidths, aWidth, aHeight, aFill, aSlice,
-                             aStartPoint, aEndPoint, aStops.Elements(),
-                             aStops.Length(), aExtendMode, aOutset);
+    wr::ExtendMode aExtendMode) {
+  wr_dp_push_border_gradient(
+      mWrState, aBounds, MergeClipLeaf(aClip), aIsBackfaceVisible,
+      &mCurrentSpaceAndClipChain, aWidths, aWidth, aHeight, aFill, aSlice,
+      aStartPoint, aEndPoint, aStops.Elements(), aStops.Length(), aExtendMode);
 }
 
 void DisplayListBuilder::PushBorderRadialGradient(
     const wr::LayoutRect& aBounds, const wr::LayoutRect& aClip,
     bool aIsBackfaceVisible, const wr::LayoutSideOffsets& aWidths, bool aFill,
     const wr::LayoutPoint& aCenter, const wr::LayoutSize& aRadius,
-    const nsTArray<wr::GradientStop>& aStops, wr::ExtendMode aExtendMode,
-    const wr::LayoutSideOffsets& aOutset) {
+    const nsTArray<wr::GradientStop>& aStops, wr::ExtendMode aExtendMode) {
   wr_dp_push_border_radial_gradient(
       mWrState, aBounds, MergeClipLeaf(aClip), aIsBackfaceVisible,
       &mCurrentSpaceAndClipChain, aWidths, aFill, aCenter, aRadius,
-      aStops.Elements(), aStops.Length(), aExtendMode, aOutset);
+      aStops.Elements(), aStops.Length(), aExtendMode);
 }
 
 void DisplayListBuilder::PushBorderConicGradient(
     const wr::LayoutRect& aBounds, const wr::LayoutRect& aClip,
     bool aIsBackfaceVisible, const wr::LayoutSideOffsets& aWidths, bool aFill,
     const wr::LayoutPoint& aCenter, const float aAngle,
-    const nsTArray<wr::GradientStop>& aStops, wr::ExtendMode aExtendMode,
-    const wr::LayoutSideOffsets& aOutset) {
+    const nsTArray<wr::GradientStop>& aStops, wr::ExtendMode aExtendMode) {
   wr_dp_push_border_conic_gradient(
       mWrState, aBounds, MergeClipLeaf(aClip), aIsBackfaceVisible,
       &mCurrentSpaceAndClipChain, aWidths, aFill, aCenter, aAngle,
-      aStops.Elements(), aStops.Length(), aExtendMode, aOutset);
+      aStops.Elements(), aStops.Length(), aExtendMode);
 }
 
 void DisplayListBuilder::PushText(const wr::LayoutRect& aBounds,

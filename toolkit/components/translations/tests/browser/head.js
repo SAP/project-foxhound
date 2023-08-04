@@ -3,9 +3,9 @@
 
 "use strict";
 
-const { TranslationsParent } = ChromeUtils.importESModule(
-  "resource://gre/actors/TranslationsParent.sys.mjs"
-);
+// Avoid about:blank's non-standard behavior.
+const BLANK_PAGE =
+  "data:text/html;charset=utf-8,<!DOCTYPE html><title>Blank</title>Blank page";
 
 /**
  * The mochitest runs in the parent process. This function opens up a new tab,
@@ -69,25 +69,25 @@ async function openAboutTranslations({
     translationTextarea: "textarea#translation-from",
     translationResult: "#translation-to",
     translationResultBlank: "#translation-to-blank",
+    translationInfo: "#translation-info",
+    noSupportMessage: "[data-l10n-id='about-translations-no-support']",
   };
 
-  // Start the tab at about:blank.
+  // Start the tab at a blank page.
   let tab = await BrowserTestUtils.openNewForegroundTab(
     gBrowser,
-    "about:blank",
+    BLANK_PAGE,
     true // waitForLoad
   );
 
-  // Before loading about:translations, handle any mocking of the actor.
   if (languagePairs) {
+    // Before loading about:translations, handle the mocking of the actor.
     TranslationsParent.mockLanguagePairs(languagePairs);
   }
-  if (detectedLanguageLabel && detectedLanguageConfidence) {
-    TranslationsParent.mockLanguageIdentification(
-      detectedLanguageLabel,
-      detectedLanguageConfidence
-    );
-  }
+  TranslationsParent.mockLanguageIdentification(
+    detectedLanguageLabel ?? "en",
+    detectedLanguageConfidence ?? "0.5"
+  );
 
   // Now load the about:translations page, since the actor could be mocked.
   BrowserTestUtils.loadURIString(tab.linkedBrowser, "about:translations");
@@ -256,25 +256,40 @@ async function reorderingTranslator(message) {
   return [translatedDoc.body.innerHTML];
 }
 
-async function loadTestPage({ runInPage, languagePairs, page }) {
+async function loadTestPage({
+  runInPage,
+  languagePairs,
+  detectedLanguageConfidence,
+  detectedLanguageLabel,
+  page,
+  prefs,
+}) {
   await SpecialPowers.pushPrefEnv({
     set: [
       // Enabled by default.
       ["browser.translations.enable", true],
       ["browser.translations.logLevel", "All"],
+      ...(prefs ?? []),
     ],
   });
 
-  // Start the tab at about:blank.
+  // Start the tab at a blank page.
   const tab = await BrowserTestUtils.openNewForegroundTab(
     gBrowser,
-    "about:blank",
+    BLANK_PAGE,
     true // waitForLoad
   );
 
   // Before loading the page, handle any mocking of the actor.
   if (languagePairs) {
     TranslationsParent.mockLanguagePairs(languagePairs);
+  }
+
+  if (detectedLanguageLabel && detectedLanguageConfidence) {
+    TranslationsParent.mockLanguageIdentification(
+      detectedLanguageLabel,
+      detectedLanguageConfidence
+    );
   }
 
   BrowserTestUtils.loadURIString(tab.linkedBrowser, page);
@@ -289,6 +304,11 @@ async function loadTestPage({ runInPage, languagePairs, page }) {
   if (languagePairs) {
     TranslationsParent.mockLanguagePairs(null);
   }
+
+  if (detectedLanguageLabel && detectedLanguageConfidence) {
+    TranslationsParent.mockLanguageIdentification(null, null);
+  }
+
   BrowserTestUtils.removeTab(tab);
   await SpecialPowers.popPrefEnv();
 }

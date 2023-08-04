@@ -5,6 +5,8 @@
 // Imported for side-effects.
 import { html } from "lit.all.mjs";
 // eslint-disable-next-line import/no-unassigned-import
+import "toolkit-widgets/panel-list.js";
+// eslint-disable-next-line import/no-unassigned-import
 import "browser/components/migration/content/migration-wizard.mjs";
 import { MigrationWizardConstants } from "chrome://browser/content/migration/migration-wizard-constants.mjs";
 
@@ -14,6 +16,7 @@ import "toolkit-widgets/named-deck.js";
 
 export default {
   title: "Design System/Components/Migration Wizard",
+  component: "migration-wizard",
 };
 
 const FAKE_BROWSER_LIST = [
@@ -22,17 +25,26 @@ const FAKE_BROWSER_LIST = [
     displayName: "Chrome",
     resourceTypes: ["HISTORY", "FORMDATA", "PASSWORDS", "BOOKMARKS"],
     profile: { id: "Default", name: "Default" },
+    brandImage: "chrome://browser/content/migration/brands/chrome.png",
   },
   {
     key: "chrome",
     displayName: "Chrome",
     resourceTypes: ["HISTORY", "FORMDATA", "PASSWORDS", "BOOKMARKS"],
     profile: { id: "person-2", name: "Person 2" },
+    brandImage: "chrome://browser/content/migration/brands/chrome.png",
   },
   {
     key: "ie",
     displayName: "Microsoft Internet Explorer",
     resourceTypes: ["HISTORY", "BOOKMARKS"],
+    profile: null,
+    brandImage: "chrome://browser/content/migration/brands/ie.png",
+  },
+  {
+    key: "edge",
+    displayName: "Microsoft Edge Legacy",
+    resourceTypes: ["HISTORY", "FORMDATA", "PASSWORDS", "BOOKMARKS"],
     profile: null,
   },
   {
@@ -40,35 +52,53 @@ const FAKE_BROWSER_LIST = [
     displayName: "Microsoft Edge",
     resourceTypes: ["HISTORY", "FORMDATA", "PASSWORDS", "BOOKMARKS"],
     profile: { id: "Default", name: "Default" },
+    brandImage: "chrome://browser/content/migration/brands/edge.png",
   },
   {
     key: "brave",
     displayName: "Brave",
     resourceTypes: ["HISTORY", "FORMDATA", "PASSWORDS", "BOOKMARKS"],
     profile: { id: "Default", name: "Default" },
+    brandImage: "chrome://browser/content/migration/brands/brave.png",
+  },
+  {
+    key: "internal-testing",
+    displayName: "Internal Testing Migrator",
+    resourceTypes: ["HISTORY", "PASSWORDS", "BOOKMARKS"],
+    profile: null,
   },
   {
     key: "safari",
     displayName: "Safari",
     resourceTypes: ["HISTORY", "PASSWORDS", "BOOKMARKS"],
     profile: null,
+    brandImage: "chrome://browser/content/migration/brands/safari.png",
   },
   {
     key: "opera",
     displayName: "Opera",
     resourceTypes: ["HISTORY", "FORMDATA", "PASSWORDS", "BOOKMARKS"],
     profile: { id: "Default", name: "Default" },
+    brandImage: "chrome://browser/content/migration/brands/opera.png",
   },
   {
     key: "opera-gx",
     displayName: "Opera GX",
     resourceTypes: ["HISTORY", "FORMDATA", "PASSWORDS", "BOOKMARKS"],
     profile: { id: "Default", name: "Default" },
+    brandImage: "chrome://browser/content/migration/brands/operagx.png",
   },
   {
     key: "vivaldi",
     displayName: "Vivaldi",
-    resourceTypes: ["HISTORY", "FORMDATA", "PASSWORDS", "BOOKMARKS"],
+    resourceTypes: ["HISTORY"],
+    profile: { id: "Default", name: "Default" },
+    brandImage: "chrome://browser/content/migration/brands/vivaldi.png",
+  },
+  {
+    key: "no-resources-browser",
+    displayName: "Browser with no resources",
+    resourceTypes: [],
     profile: { id: "Default", name: "Default" },
   },
 ];
@@ -84,7 +114,7 @@ const Template = ({ state, dialogMode }) => html`
 
   <div class="card card-no-hover" style="width: fit-content">
     <migration-wizard ?dialog-mode=${dialogMode} .state=${state}>
-      <!-- <panel-list></panel-list> -->
+      <panel-list></panel-list>
     </migration-wizard>
   </div>
 `;
@@ -122,6 +152,7 @@ Progress.args = {
   dialogMode: true,
   state: {
     page: MigrationWizardConstants.PAGES.PROGRESS,
+    key: "chrome",
     progress: {
       [MigrationWizardConstants.DISPLAYED_RESOURCE_TYPES.BOOKMARKS]: {
         inProgress: true,
@@ -144,6 +175,7 @@ PartialProgress.args = {
   dialogMode: true,
   state: {
     page: MigrationWizardConstants.PAGES.PROGRESS,
+    key: "chrome",
     progress: {
       [MigrationWizardConstants.DISPLAYED_RESOURCE_TYPES.BOOKMARKS]: {
         inProgress: true,
@@ -168,6 +200,7 @@ Success.args = {
   dialogMode: true,
   state: {
     page: MigrationWizardConstants.PAGES.PROGRESS,
+    key: "chrome",
     progress: {
       [MigrationWizardConstants.DISPLAYED_RESOURCE_TYPES.BOOKMARKS]: {
         inProgress: false,
@@ -194,6 +227,14 @@ SafariPermissions.args = {
   dialogMode: true,
   state: {
     page: MigrationWizardConstants.PAGES.SAFARI_PERMISSION,
+  },
+};
+
+export const SafariPasswordPermissions = Template.bind({});
+SafariPasswordPermissions.args = {
+  dialogMode: true,
+  state: {
+    page: MigrationWizardConstants.PAGES.SAFARI_PASSWORD_PERMISSION,
   },
 };
 

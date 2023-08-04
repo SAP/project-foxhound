@@ -3672,7 +3672,6 @@ class XREMain {
 #endif
 
   bool mStartOffline = false;
-  bool mShuttingDown = false;
 #if defined(MOZ_HAS_REMOTE)
   bool mDisableRemoteClient = false;
   bool mDisableRemoteServer = false;
@@ -5415,10 +5414,7 @@ nsresult XREMain::XRE_mainRun() {
     CrashReporter::AnnotateCrashReport(
         CrashReporter::Annotation::useragent_locale, userAgentLocale);
 
-    mShuttingDown =
-        AppShutdown::IsInOrBeyond(ShutdownPhase::AppShutdownConfirmed);
-
-    if (!mShuttingDown) {
+    if (!AppShutdown::IsInOrBeyond(ShutdownPhase::AppShutdownConfirmed)) {
       /* Special-case services that need early access to the command
           line. */
       nsCOMPtr<nsIObserverService> obsService =
@@ -5452,7 +5448,7 @@ nsresult XREMain::XRE_mainRun() {
     SaveToEnv("XRE_BINARY_PATH=");
     SaveToEnv("XRE_RESTARTED_BY_PROFILE_MANAGER=");
 
-    if (!mShuttingDown) {
+    if (!AppShutdown::IsInOrBeyond(ShutdownPhase::AppShutdownConfirmed)) {
 #ifdef XP_MACOSX
       bool lazyHiddenWindow = false;
 #else
@@ -5553,19 +5549,15 @@ nsresult XREMain::XRE_mainRun() {
       CrashReporter::AnnotateCrashReport(
           CrashReporter::Annotation::StartupCrash, false);
 
-      mShuttingDown =
-          AppShutdown::IsInOrBeyond(ShutdownPhase::AppShutdownConfirmed);
+      AppShutdown::IsInOrBeyond(ShutdownPhase::AppShutdownConfirmed);
     }
 
-    if (!mShuttingDown) {
+    if (!AppShutdown::IsInOrBeyond(ShutdownPhase::AppShutdownConfirmed)) {
       rv = cmdLine->Run();
       NS_ENSURE_SUCCESS_LOG(rv, NS_ERROR_FAILURE);
-
-      mShuttingDown =
-          AppShutdown::IsInOrBeyond(ShutdownPhase::AppShutdownConfirmed);
     }
 
-    if (!mShuttingDown) {
+    if (!AppShutdown::IsInOrBeyond(ShutdownPhase::AppShutdownConfirmed)) {
 #if defined(MOZ_HAS_REMOTE)
       // if we have X remote support, start listening for requests on the
       // proxy window.

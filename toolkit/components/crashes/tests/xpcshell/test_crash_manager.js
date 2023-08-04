@@ -3,14 +3,14 @@
 
 "use strict";
 
-const { CrashManager } = ChromeUtils.import(
-  "resource://gre/modules/CrashManager.jsm"
+const { CrashManager } = ChromeUtils.importESModule(
+  "resource://gre/modules/CrashManager.sys.mjs"
 );
 const { TelemetryArchiveTesting } = ChromeUtils.importESModule(
   "resource://testing-common/TelemetryArchiveTesting.sys.mjs"
 );
-const { configureLogging, getManager, sleep } = ChromeUtils.import(
-  "resource://testing-common/CrashManagerTest.jsm"
+const { configureLogging, getManager, sleep } = ChromeUtils.importESModule(
+  "resource://testing-common/CrashManagerTest.sys.mjs"
 );
 const { TelemetryEnvironment } = ChromeUtils.importESModule(
   "resource://gre/modules/TelemetryEnvironment.sys.mjs"
@@ -1032,4 +1032,38 @@ add_task(async function test_telemetryHistogram() {
     keys.sort(),
     "Some crash types do not match"
   );
+});
+
+// Test that a ping with `CrashPingUUID` in the metadata (as set by the
+// external crash reporter) is sent with Glean but not with Telemetry (because
+// the crash reporter already sends it using Telemetry).
+add_task(async function test_crash_reporter_ping_with_uuid() {
+  let m = await getManager();
+
+  let id = await m.createDummyDump();
+
+  // Realistically this case will only happen through
+  // `_handleEventFilePayload`, however the `_sendCrashPing` method will check
+  // for it regardless of where it is called.
+  let metadata = { CrashPingUUID: "bff6bde4-f96c-4859-8c56-6b3f40878c26" };
+
+  // Glean hooks
+  let glean_submitted = false;
+  GleanPings.crash.testBeforeNextSubmit(_ => {
+    glean_submitted = true;
+  });
+
+  await m.addCrash(
+    m.processTypes[Ci.nsIXULRuntime.PROCESS_TYPE_CONTENT],
+    m.CRASH_TYPE_CRASH,
+    id,
+    DUMMY_DATE,
+    metadata
+  );
+
+  // Ping promise is only set if the Telemetry ping is submitted.
+  let telemetry_submitted = !!m._pingPromise;
+
+  Assert.ok(glean_submitted);
+  Assert.ok(!telemetry_submitted);
 });

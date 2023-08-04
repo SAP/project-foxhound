@@ -44,6 +44,10 @@ Address CacheRegisterAllocator::addressOf(MacroAssembler& masm,
                                           BaselineFrameSlot slot) const {
   uint32_t offset =
       stackPushed_ + ICStackValueOffset + slot.slot() * sizeof(JS::Value);
+  if (JitOptions.enableICFramePointers) {
+    // The frame pointer is also on the stack.
+    offset += sizeof(uintptr_t);
+  }
   return Address(masm.getStackPointer(), offset);
 }
 BaseValueIndex CacheRegisterAllocator::addressOf(MacroAssembler& masm,
@@ -51,6 +55,10 @@ BaseValueIndex CacheRegisterAllocator::addressOf(MacroAssembler& masm,
                                                  BaselineFrameSlot slot) const {
   uint32_t offset =
       stackPushed_ + ICStackValueOffset + slot.slot() * sizeof(JS::Value);
+  if (JitOptions.enableICFramePointers) {
+    // The frame pointer is also on the stack.
+    offset += sizeof(uintptr_t);
+  }
   return BaseValueIndex(masm.getStackPointer(), argcReg, offset);
 }
 
@@ -76,6 +84,11 @@ void AutoStubFrame::enter(MacroAssembler& masm, Register scratch,
                           CallCanGC canGC) {
   MOZ_ASSERT(compiler.allocator.stackPushed() == 0);
 
+  if (JitOptions.enableICFramePointers) {
+    // If we have already pushed the frame pointer, pop it
+    // before creating the stub frame.
+    masm.pop(FramePointer);
+  }
   EmitBaselineEnterStubFrame(masm, scratch);
 
 #ifdef DEBUG
@@ -97,6 +110,11 @@ void AutoStubFrame::leave(MacroAssembler& masm) {
 #endif
 
   EmitBaselineLeaveStubFrame(masm);
+  if (JitOptions.enableICFramePointers) {
+    // We will pop the frame pointer when we return,
+    // so we have to push it again now.
+    masm.push(FramePointer);
+  }
 }
 
 #ifdef DEBUG
@@ -118,35 +136,42 @@ void BaselineCacheIRCompiler::callVM(MacroAssembler& masm) {
   callVMInternal(masm, id);
 }
 
-template <typename Fn, Fn fn>
-void BaselineCacheIRCompiler::tailCallVM(MacroAssembler& masm) {
-  TailCallVMFunctionId id = TailCallVMFunctionToId<Fn, fn>::id;
-  tailCallVMInternal(masm, id);
-}
-
-void BaselineCacheIRCompiler::tailCallVMInternal(MacroAssembler& masm,
-                                                 TailCallVMFunctionId id) {
-  MOZ_ASSERT(!enteredStubFrame_);
-
-  TrampolinePtr code = cx_->runtime()->jitRuntime()->getVMWrapper(id);
-  const VMFunctionData& fun = GetVMFunction(id);
-  MOZ_ASSERT(fun.expectTailCall == TailCall);
-  size_t argSize = fun.explicitStackSlots() * sizeof(void*);
-
-  EmitBaselineTailCallVM(code, masm, argSize);
-}
-
 JitCode* BaselineCacheIRCompiler::compile() {
   AutoCreatedBy acb(masm, "BaselineCacheIRCompiler::compile");
 
 #ifndef JS_USE_LINK_REGISTER
-  // The first value contains the return addres,
-  // which we pull into ICTailCallReg for tail calls.
   masm.adjustFrame(sizeof(intptr_t));
 #endif
 #ifdef JS_CODEGEN_ARM
   masm.setSecondScratchReg(BaselineSecondScratchReg);
 #endif
+  if (JitOptions.enableICFramePointers) {
+    /* [SMDOC] Baseline IC Frame Pointers
+     *
+     *  In general, ICs don't have frame pointers until just before
+     *  doing a VM call, at which point we retroactively create a stub
+     *  frame. However, for the sake of external profilers, we
+     *  optionally support full-IC frame pointers in baseline ICs, with
+     *  the following approach:
+     *    1. We push a frame pointer when we enter an IC.
+     *    2. We pop the frame pointer when we return from an IC, or
+     *       when we jump to the next IC.
+     *    3. Entering a stub frame for a VM call already pushes a
+     *       frame pointer, so we pop our existing frame pointer
+     *       just before entering a stub frame and push it again
+     *       just after leaving a stub frame.
+     *  Some ops take advantage of the fact that the frame pointer is
+     *  not updated until we enter a stub frame to read values from
+     *  the caller's frame. To support this, we allocate a separate
+     *  baselineFrame register when IC frame pointers are enabled.
+     */
+    masm.push(FramePointer);
+    masm.moveStackPtrTo(FramePointer);
+
+    MOZ_ASSERT(baselineFrameReg() != FramePointer);
+    masm.loadPtr(Address(FramePointer, 0), baselineFrameReg());
+  }
+
   // Count stub entries: We count entries rather than successes as it much
   // easier to ensure ICStubReg is valid at entry than at exit.
   Address enteredCount(ICStubReg, ICCacheIRStub::offsetOfEnteredCount());
@@ -177,6 +202,9 @@ JitCode* BaselineCacheIRCompiler::compile() {
   for (size_t i = 0; i < failurePaths.length(); i++) {
     if (!emitFailurePath(i)) {
       return nullptr;
+    }
+    if (JitOptions.enableICFramePointers) {
+      masm.pop(FramePointer);
     }
     EmitStubGuardFailure(masm);
   }
@@ -635,7 +663,7 @@ bool BaselineCacheIRCompiler::emitFrameIsConstructingResult() {
   Register outputScratch = output.valueReg().scratchReg();
 
   // Load the CalleeToken.
-  Address tokenAddr(FramePointer, JitFrameLayout::offsetOfCalleeToken());
+  Address tokenAddr(baselineFrameReg(), JitFrameLayout::offsetOfCalleeToken());
   masm.loadPtr(tokenAddr, outputScratch);
 
   // The low bit indicates whether this call is constructing, just clear the
@@ -1734,7 +1762,7 @@ bool BaselineCacheIRCompiler::emitProxySetByValue(ObjOperandId objId,
   // We need a scratch register but we don't have any registers available on
   // x86, so temporarily store |obj| in the frame's scratch slot.
   int scratchOffset = BaselineFrame::reverseOffsetOfScratchValue();
-  masm.storePtr(obj, Address(FramePointer, scratchOffset));
+  masm.storePtr(obj, Address(baselineFrameReg(), scratchOffset));
 
   AutoStubFrame stubFrame(*this);
   stubFrame.enter(masm, obj);
@@ -1796,7 +1824,7 @@ bool BaselineCacheIRCompiler::emitMegamorphicSetElement(ObjOperandId objId,
   // We need a scratch register but we don't have any registers available on
   // x86, so temporarily store |obj| in the frame's scratch slot.
   int scratchOffset = BaselineFrame::reverseOffsetOfScratchValue();
-  masm.storePtr(obj, Address(FramePointer, scratchOffset));
+  masm.storePtr(obj, Address(baselineFrameReg_, scratchOffset));
 
   AutoStubFrame stubFrame(*this);
   stubFrame.enter(masm, obj);
@@ -1823,6 +1851,9 @@ bool BaselineCacheIRCompiler::emitMegamorphicSetElement(ObjOperandId objId,
 bool BaselineCacheIRCompiler::emitReturnFromIC() {
   JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   allocator.discardStack(masm);
+  if (JitOptions.enableICFramePointers) {
+    masm.pop(FramePointer);
+  }
   EmitReturnFromIC(masm);
   return true;
 }
@@ -2012,6 +2043,10 @@ bool BaselineCacheIRCompiler::init(CacheKind kind) {
 
   // Baseline doesn't allocate float registers so none of them are live.
   liveFloatRegs_ = LiveFloatRegisterSet(FloatRegisterSet());
+
+  if (JitOptions.enableICFramePointers) {
+    baselineFrameReg_ = available.takeAny();
+  }
 
   allocator.initAvailableRegs(available);
   return true;
@@ -2420,9 +2455,17 @@ ICAttachResult js::jit::AttachBaselineCacheIRStub(
     // stub so that we can still transpile, and reset the bailout
     // counter if we have already been transpiled.
     stub->resetEnteredCount();
-    JSScript* owningScript = icScript->isInlined()
-                                 ? icScript->inliningRoot()->owningScript()
-                                 : outerScript;
+    JSScript* owningScript = nullptr;
+    if (outerScript == cx->lastStubFoldingBailoutChild_.ref()) {
+      MOZ_ASSERT(cx->lastStubFoldingBailoutParent_);
+      owningScript = cx->lastStubFoldingBailoutParent_;
+    } else {
+      owningScript = icScript->isInlined()
+                         ? icScript->inliningRoot()->owningScript()
+                         : outerScript;
+    }
+    cx->lastStubFoldingBailoutChild_ = nullptr;
+    cx->lastStubFoldingBailoutParent_ = nullptr;
     if (stub->usedByTranspiler() && owningScript->hasIonScript()) {
       owningScript->ionScript()->resetNumFixableBailouts();
     }
@@ -2449,6 +2492,7 @@ ICAttachResult js::jit::AttachBaselineCacheIRStub(
     case TrialInliningState::Candidate:
       stub->setTrialInliningState(writer.trialInliningState());
       break;
+    case TrialInliningState::MonomorphicInlined:
     case TrialInliningState::Inlined:
       stub->setTrialInliningState(TrialInliningState::Failure);
       break;
@@ -2473,19 +2517,20 @@ bool BaselineCacheIRCompiler::emitCallStringObjectConcatResult(
   ValueOperand lhs = allocator.useValueRegister(masm, lhsId);
   ValueOperand rhs = allocator.useValueRegister(masm, rhsId);
 
+  AutoScratchRegister scratch(allocator, masm);
+
   allocator.discardStack(masm);
 
-  // For the expression decompiler
-  EmitRestoreTailCallReg(masm);
-  masm.pushValue(lhs);
-  masm.pushValue(rhs);
+  AutoStubFrame stubFrame(*this);
+  stubFrame.enter(masm, scratch);
 
   masm.pushValue(rhs);
   masm.pushValue(lhs);
 
   using Fn = bool (*)(JSContext*, HandleValue, HandleValue, MutableHandleValue);
-  tailCallVM<Fn, DoConcatStringObject>(masm);
+  callVM<Fn, DoConcatStringObject>(masm);
 
+  stubFrame.leave(masm);
   return true;
 }
 
@@ -2582,6 +2627,8 @@ void BaselineCacheIRCompiler::pushArguments(Register argcReg,
 void BaselineCacheIRCompiler::pushStandardArguments(
     Register argcReg, Register scratch, Register scratch2, uint32_t argcFixed,
     bool isJitCall, bool isConstructing) {
+  MOZ_ASSERT(enteredStubFrame_);
+
   // The arguments to the call IC are pushed on the stack left-to-right.
   // Our calling conventions want them right-to-left in the callee, so
   // we duplicate them on the stack in reverse order.
@@ -2649,6 +2696,8 @@ void BaselineCacheIRCompiler::pushArrayArguments(Register argcReg,
                                                  Register scratch2,
                                                  bool isJitCall,
                                                  bool isConstructing) {
+  MOZ_ASSERT(enteredStubFrame_);
+
   // Pull the array off the stack before aligning.
   Register startReg = scratch;
   size_t arrayOffset =
@@ -2781,6 +2830,8 @@ void BaselineCacheIRCompiler::pushFunApplyArgsObj(Register argcReg,
                                                   Register scratch,
                                                   Register scratch2,
                                                   bool isJitCall) {
+  MOZ_ASSERT(enteredStubFrame_);
+
   // Load the arguments object off the stack before aligning.
   Register argsReg = scratch;
   masm.unboxObject(Address(FramePointer, BaselineStubFrameLayout::Size()),
@@ -3245,7 +3296,6 @@ bool BaselineCacheIRCompiler::emitCallScriptedFunction(ObjOperandId calleeId,
   allocator.discardStack(masm);
 
   // Push a stub frame so that we can perform a non-tail call.
-  // Note that this leaves the return address in TailCallReg.
   AutoStubFrame stubFrame(*this);
   stubFrame.enter(masm, scratch);
 
@@ -3336,7 +3386,6 @@ bool BaselineCacheIRCompiler::emitCallInlinedFunction(ObjOperandId calleeId,
   allocator.discardStack(masm);
 
   // Push a stub frame so that we can perform a non-tail call.
-  // Note that this leaves the return address in TailCallReg.
   AutoStubFrame stubFrame(*this);
   stubFrame.enter(masm, scratch);
 
@@ -3424,7 +3473,6 @@ bool BaselineCacheIRCompiler::emitCallBoundScriptedFunction(
   allocator.discardStack(masm);
 
   // Push a stub frame so that we can perform a non-tail call.
-  // Note that this leaves the return address in TailCallReg.
   AutoStubFrame stubFrame(*this);
   stubFrame.enter(masm, scratch);
 

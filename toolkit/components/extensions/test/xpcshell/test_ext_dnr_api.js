@@ -83,13 +83,6 @@ async function testAvailability({
 }
 
 add_setup(async () => {
-  // TODO bug 1782685: Remove this check.
-  Assert.equal(
-    Services.prefs.getBoolPref("extensions.dnr.enabled", false),
-    false,
-    "DNR is disabled by default"
-  );
-  Services.prefs.setBoolPref("extensions.dnr.enabled", true);
   Services.prefs.setBoolPref("extensions.manifestV3.enabled", true);
 
   // test_optional_declarativeNetRequestFeedback calls permission.request().
@@ -100,12 +93,11 @@ add_setup(async () => {
   );
 });
 
-// Verifies that DNR is disabled by default (until true in bug 1782685).
 add_task(
   {
     pref_set: [["extensions.dnr.enabled", false]],
   },
-  async function dnr_disabled_by_default() {
+  async function extensions_dnr_enabled_pref_disabled_dnr_feature() {
     let { messages } = await promiseConsoleOutput(async () => {
       await testAvailability({
         allowDNRFeedback: PREF_DNR_FEEDBACK_DEFAULT_VALUE,
@@ -171,42 +163,21 @@ add_task(async function dnr_feedback_apis_disabled_by_default() {
   });
 });
 
-// TODO bug 1782685: Remove "min_manifest_version":3 from DNR permissions.
-add_task(async function dnr_restricted_to_mv3() {
-  let { messages } = await promiseConsoleOutput(async () => {
-    // Manifest version-restricted permissions result in schema-generated
-    // warnings. Don't fail when the "unrecognized" permission appear, to allow
-    // us to check for warning log messages below.
-    ExtensionTestUtils.failOnSchemaWarnings(false);
-    await testAvailability({
-      allowDNRFeedback: true,
-      testExpectations: {
-        declarativeNetRequest_available: false,
-      },
-      manifest: {
-        manifest_version: 2,
-        permissions: [
-          "declarativeNetRequest",
-          "declarativeNetRequestFeedback",
-          "declarativeNetRequestWithHostAccess",
-        ],
-      },
-    });
-    ExtensionTestUtils.failOnSchemaWarnings(true);
-  });
-
-  AddonTestUtils.checkMessages(messages, {
-    expected: [
-      {
-        message: /Warning processing permissions: Error processing permissions.0: Value "declarativeNetRequest"/,
-      },
-      {
-        message: /Warning processing permissions: Error processing permissions.1: Value "declarativeNetRequestFeedback"/,
-      },
-      {
-        message: /Warning processing permissions: Error processing permissions.2: Value "declarativeNetRequestWithHostAccess"/,
-      },
-    ],
+add_task(async function dnr_available_in_mv2() {
+  await testAvailability({
+    allowDNRFeedback: true,
+    testExpectations: {
+      declarativeNetRequest_available: true,
+      testMatchOutcome_available: true,
+    },
+    manifest: {
+      manifest_version: 2,
+      permissions: [
+        "declarativeNetRequest",
+        "declarativeNetRequestFeedback",
+        "declarativeNetRequestWithHostAccess",
+      ],
+    },
   });
 });
 

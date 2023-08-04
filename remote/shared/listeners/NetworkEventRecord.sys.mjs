@@ -19,6 +19,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
  */
 export class NetworkEventRecord {
   #channel;
+  #fromCache;
   #networkListener;
   #redirectCount;
   #requestData;
@@ -28,7 +29,7 @@ export class NetworkEventRecord {
 
   /**
    *
-   * @param {Object} networkEvent
+   * @param {object} networkEvent
    *     The initial network event information (see createNetworkEvent() in
    *     NetworkUtils.sys.mjs).
    * @param {nsIChannel} channel
@@ -38,6 +39,8 @@ export class NetworkEventRecord {
    */
   constructor(networkEvent, channel, networkListener) {
     this.#channel = channel;
+    this.#fromCache = networkEvent.fromCache;
+
     this.#wrappedChannel = ChannelWrapper.get(channel);
 
     this.#networkListener = networkListener;
@@ -92,7 +95,7 @@ export class NetworkEventRecord {
    *
    * Required API for a NetworkObserver event owner.
    *
-   * @param {Object} postData
+   * @param {object} postData
    *     The request POST data.
    */
   addRequestPostData(postData) {
@@ -105,54 +108,32 @@ export class NetworkEventRecord {
    *
    * Required API for a NetworkObserver event owner.
    *
-   * @param {Object} response
-   *     The response information.
-   * @param {string} rawHeaders
-   *     The raw headers source.
+   *
+   * @param {object} options
+   * @param {nsIChannel} options.channel
+   *     The channel.
+   * @param {boolean} options.fromCache
+   * @param {string} options.rawHeaders
    */
-  addResponseStart(response, rawHeaders) {
+  addResponseStart(options) {
+    const { channel, fromCache, rawHeaders = "" } = options;
+    const { headers } = lazy.NetworkUtils.fetchResponseHeadersAndCookies(
+      channel
+    );
+
+    const headersSize = rawHeaders.length;
     this.#responseData = {
       ...this.#responseData,
-      bodySize: response.bodySize,
-      bytesReceived: response.transferredSize,
-      fromCache: response.fromCache,
-      // Note: at this point we only have access to the headers size. Parsed
-      // headers will be added in addResponseHeaders.
-      headersSize: response.headersSize,
-      protocol: response.protocol,
-      status: parseInt(response.status),
-      statusText: response.statusText,
+      bodySize: 0,
+      bytesReceived: headersSize,
+      fromCache: this.#fromCache || !!fromCache,
+      headers,
+      headersSize,
+      mimeType: this.#getMimeType(),
+      protocol: lazy.NetworkUtils.getProtocol(channel),
+      status: channel.responseStatus,
+      statusText: channel.responseStatusText,
     };
-  }
-
-  /**
-   * Add connection security information.
-   *
-   * Required API for a NetworkObserver event owner.
-   *
-   * Not used for RemoteAgent.
-   *
-   * @param {Object} info
-   *     The object containing security information.
-   * @param {boolean} isRacing
-   *     True if the corresponding channel raced the cache and network requests.
-   */
-  addSecurityInfo(info, isRacing) {}
-
-  /**
-   * Add network response headers.
-   *
-   * Required API for a NetworkObserver event owner.
-   *
-   * @param {Array} headers
-   *     The response headers array.
-   */
-  addResponseHeaders(headers) {
-    this.#responseData.headers = headers;
-
-    // The mimetype info should also be available on the wrapped channel after
-    // headers have been parsed.
-    this.#responseData.mimeType = this.#getMimeType();
 
     // This should be triggered when all headers have been received, matching
     // the WebDriverBiDi response started trigger in `4.6. HTTP-network fetch`
@@ -162,16 +143,18 @@ export class NetworkEventRecord {
   }
 
   /**
-   * Add network response cookies.
+   * Add connection security information.
    *
    * Required API for a NetworkObserver event owner.
    *
    * Not used for RemoteAgent.
    *
-   * @param {Array} cookies
-   *     The response cookies array.
+   * @param {object} info
+   *     The object containing security information.
+   * @param {boolean} isRacing
+   *     True if the corresponding channel raced the cache and network requests.
    */
-  addResponseCookies(cookies) {}
+  addSecurityInfo(info, isRacing) {}
 
   /**
    * Add network event timings.
@@ -182,9 +165,9 @@ export class NetworkEventRecord {
    *
    * @param {number} total
    *     The total time for the request.
-   * @param {Object} timings
+   * @param {object} timings
    *     The har-like timings.
-   * @param {Object} offsets
+   * @param {object} offsets
    *     The har-like timings, but as offset from the request start.
    * @param {Array} serverTimings
    *     The server timings.
@@ -198,7 +181,7 @@ export class NetworkEventRecord {
    *
    * Not used for RemoteAgent.
    *
-   * @param {Object} options
+   * @param {object} options
    *     An object which contains a single responseCache property.
    */
   addResponseCache(options) {}
@@ -208,9 +191,9 @@ export class NetworkEventRecord {
    *
    * Required API for a NetworkObserver event owner.
    *
-   * @param {Object} response
+   * @param {object} response
    *     An object which represents the response content.
-   * @param {Object} responseInfo
+   * @param {object} responseInfo
    *     Additional meta data about the response.
    */
   addResponseContent(response, responseInfo) {

@@ -23,6 +23,10 @@
 #  include "mozilla/SandboxBrokerPolicyFactory.h"
 #endif
 
+#if defined(XP_WIN)
+#  include "mozilla/WinDllServices.h"
+#endif  // defined(XP_WIN)
+
 #include "ProfilerParent.h"
 #include "mozilla/PProfilerChild.h"
 
@@ -39,7 +43,9 @@ UtilityProcessHost::UtilityProcessHost(SandboxingKind aSandbox,
                                        RefPtr<Listener> aListener)
     : GeckoChildProcessHost(GeckoProcessType_Utility),
       mListener(std::move(aListener)),
-      mLiveToken(new media::Refcountable<bool>(true)) {
+      mLiveToken(new media::Refcountable<bool>(true)),
+      mLaunchPromise(
+          MakeRefPtr<GenericNonExclusivePromise::Private>(__func__)) {
   MOZ_COUNT_CTOR(UtilityProcessHost);
   LOGD("[%p] UtilityProcessHost::UtilityProcessHost sandboxingKind=%" PRIu64,
        this, aSandbox);
@@ -128,10 +134,10 @@ bool UtilityProcessHost::Launch(StringVector aExtraOpts) {
 RefPtr<GenericNonExclusivePromise> UtilityProcessHost::LaunchPromise() {
   MOZ_ASSERT(NS_IsMainThread());
 
-  if (mLaunchPromise) {
+  if (mLaunchPromiseLaunched) {
     return mLaunchPromise;
   }
-  mLaunchPromise = MakeRefPtr<GenericNonExclusivePromise::Private>(__func__);
+
   WhenProcessHandleReady()->Then(
       GetCurrentSerialEventTarget(), __func__,
       [this, liveToken = mLiveToken](
@@ -153,6 +159,8 @@ RefPtr<GenericNonExclusivePromise> UtilityProcessHost::LaunchPromise() {
         // Utility process. The promise will be resolved once the channel has
         // connected (or failed to) later.
       });
+
+  mLaunchPromiseLaunched = true;
   return mLaunchPromise;
 }
 
@@ -233,7 +241,14 @@ void UtilityProcessHost::InitAfterConnect(bool aSucceeded) {
   }
 #endif  // XP_LINUX && MOZ_SANDBOX
 
-  Unused << GetActor()->SendInit(brokerFd, Telemetry::CanRecordReleaseData());
+  bool isReadyForBackgroundProcessing = false;
+#if defined(XP_WIN)
+  RefPtr<DllServices> dllSvc(DllServices::Get());
+  isReadyForBackgroundProcessing = dllSvc->IsReadyForBackgroundProcessing();
+#endif
+
+  Unused << GetActor()->SendInit(brokerFd, Telemetry::CanRecordReleaseData(),
+                                 isReadyForBackgroundProcessing);
 
   Unused << GetActor()->SendInitProfiler(
       ProfilerParent::CreateForProcess(GetActor()->OtherPid()));

@@ -116,7 +116,7 @@ export function showSource(cx, sourceId) {
 
     dispatch(setPrimaryPaneTab("sources"));
 
-    dispatch(selectSource(cx, source.id));
+    dispatch(selectSource(cx, source));
   };
 }
 
@@ -225,11 +225,24 @@ export function setOrientation(orientation) {
   return { type: "SET_ORIENTATION", orientation };
 }
 
+export function setSearchOptions(searchKey, searchOptions) {
+  return { type: "SET_SEARCH_OPTIONS", searchKey, searchOptions };
+}
+
 export function copyToClipboard(location) {
   return ({ dispatch, getState }) => {
     const content = getSourceContent(getState(), location);
     if (content && isFulfilled(content) && content.value.type === "text") {
       copyToTheClipboard(content.value.value);
     }
+  };
+}
+
+export function setJavascriptTracingLogMethod(value) {
+  return ({ dispatch, getState }) => {
+    dispatch({
+      type: "SET_JAVASCRIPT_TRACING_LOG_METHOD",
+      value,
+    });
   };
 }

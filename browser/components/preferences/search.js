@@ -148,7 +148,7 @@ var gSearchPane = {
     updateCheckboxEnabled();
 
     window.addEventListener("unload", () => {
-      NimbusFeatures.urlbar.off(onNimbus);
+      NimbusFeatures.urlbar.offUpdate(onNimbus);
     });
   },
 
@@ -310,7 +310,7 @@ var gSearchPane = {
           // away from.
           if (engineList.inputField.hidden && engineList.view) {
             let selection = engineList.view.selection;
-            if (selection.count > 0) {
+            if (selection?.count > 0) {
               selection.toggleSelect(selection.currentIndex);
             }
             engineList.blur();

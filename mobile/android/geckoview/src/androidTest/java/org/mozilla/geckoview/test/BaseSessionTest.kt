@@ -60,6 +60,8 @@ open class BaseSessionTest(noErrorCollector: Boolean = false) {
         const val NEW_SESSION_CHILD_HTML_PATH = "/assets/www/newSession_child.html"
         const val NEW_SESSION_HTML_PATH = "/assets/www/newSession.html"
         const val POPUP_HTML_PATH = "/assets/www/popup.html"
+        const val PRINT_CONTENT_CHANGE = "/assets/www/print_content_change.html"
+        const val PRINT_IFRAME = "/assets/www/print_iframe.html"
         const val PROMPT_HTML_PATH = "/assets/www/prompts.html"
         const val SAVE_STATE_PATH = "/assets/www/saveState.html"
         const val TEST_GIF_PATH = "/assets/www/images/test.gif"
@@ -258,6 +260,12 @@ open class BaseSessionTest(noErrorCollector: Boolean = false) {
 
     fun GeckoSession.setResolutionAndScaleTo(resolution: Float) =
         sessionRule.setResolutionAndScaleTo(this, resolution)
+
+    fun GeckoSession.triggerCookieBannerDetected() =
+        sessionRule.triggerCookieBannerDetected(this)
+
+    fun GeckoSession.triggerCookieBannerHandled() =
+        sessionRule.triggerCookieBannerHandled(this)
 
     var GeckoSession.active: Boolean
         get() = sessionRule.getActive(this)

@@ -46,6 +46,16 @@ build-notarization-poller
 
 We switched to a 3-part mac notarization workflow in bug 1562412. This is the second task, which polls Apple for notarization status. Because this is run in a separate, special notarization poller pool, we free up the mac notarization pool for actual signing work.
 
+build-mac-signing
+-----------------
+
+Mac signing without notarization
+
+build-mac-notarization
+----------------------
+
+Mac notarization on signinscript (linux) using rcodesign
+
 artifact-build
 --------------
 
@@ -235,6 +245,10 @@ Beetmover-source publishes release source. This is part of release promotion.
 beetmover-geckoview
 -------------------
 Beetmover-geckoview publishes the Android library called "geckoview".
+
+beetmover-apt
+-------------------
+Beetmover-apt publishes Linux .deb packages from the Mozilla archive to our APT repositories.
 
 condprof
 --------
@@ -746,3 +760,11 @@ monitors this task to watch for regressions in Firefox startup performance.
 are-we-esmified-yet
 ---------------------
 Collects data about the transition to ECMAScript Modules from JSMs.
+
+attribution
+-----------
+Injects attribution information into en-US installers.
+
+attribution-l10n
+----------------
+Injects attribution information into localized installers.

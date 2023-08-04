@@ -31,9 +31,11 @@ Please note that some targeting attributes require stricter controls on the tele
 * [topFrecentSites](#topfrecentsites)
 * [totalBookmarksCount](#totalbookmarkscount)
 * [usesFirefoxSync](#usesfirefoxsync)
-* [isFxAEnabled](#isFxAEnabled)
-* [isFxASignedIn](#isFxASignedIn)
-* [xpinstallEnabled](#xpinstallEnabled)
+* [isFxAEnabled](#isfxaenabled)
+* [isFxASignedIn](#isfxasignedin)
+* [creditCardsSaved](#creditcardssaved)
+* [addressesSaved](#addressessaved)
+* [xpinstallEnabled](#xpinstallenabled)
 * [hasPinnedTabs](#haspinnedtabs)
 * [hasAccessedFxAPanel](#hasaccessedfxapanel)
 * [isWhatsNewPanelEnabled](#iswhatsnewpanelenabled)
@@ -57,12 +59,15 @@ Please note that some targeting attributes require stricter controls on the tele
 * [doesAppNeedPrivatePin](#doesappneedprivatepin)
 * [isBackgroundTaskMode](#isbackgroundtaskmode)
 * [backgroundTaskName](#backgroundtaskname)
-* [userPrefersReducedMotion](#userPrefersReducedMotion)
-* [colorwaysActive](#colorwaysActive)
-* [userEnabledActiveColorway](#userEnabledActiveColorway)
-* [inMr2022Holdback](#inMr2022Holdback)
-* [distributionId](#distributionId)
-* [fxViewButtonAreaType](#fxViewButtonAreaType)
+* [userPrefersReducedMotion](#userprefersreducedmotion)
+* [colorwaysActive](#colorwaysactive)
+* [userEnabledActiveColorway](#userenabledactivecolorway)
+* [inMr2022Holdback](#inmr2022holdback)
+* [distributionId](#distributionid)
+* [fxViewButtonAreaType](#fxviewbuttonareatype)
+* [hasMigratedBookmarks](#hasmigratedbookmarks)
+* [hasMigratedHistory](#hasmigratedhistory)
+* [hasMigratedPasswords](#hasmigratedpasswords)
 
 ## Detailed usage
 
@@ -527,6 +532,36 @@ Is the user signed in to a Firefox Account?
 declare const isFxASignedIn: Promise<boolean>
 ```
 
+### `creditCardsSaved`
+
+The number of credit cards the user has saved for Forms and Autofill.
+
+#### Examples
+```java
+creditCardsSaved > 1
+```
+
+#### Definition
+
+```ts
+declare const creditCardsSaved: Promise<number>
+```
+
+### `addressesSaved`
+
+The number of addresses the user has saved for Forms and Autofill.
+
+#### Examples
+```java
+addressesSaved > 1
+```
+
+#### Definition
+
+```ts
+declare const addressesSaved: Promise<number>
+```
+
 ### `xpinstallEnabled`
 
 Pref used by system administrators to disallow add-ons from installed altogether.
@@ -921,3 +956,15 @@ is no distribution associated with the build.
 ### `fxViewButtonAreaType`
 
 A string of the name of the container where the Firefox View button is shown, null if the button has been removed.
+
+### `hasMigratedBookmarks`
+
+A boolean. `true` if the user ever used the Migration Wizard to migrate bookmarks.
+
+### `hasMigratedHistory`
+
+A boolean. `true` if the user ever used the Migration Wizard to migrate history.
+
+### `hasMigratedPasswords`
+
+A boolean. `true` if the user ever used the Migration Wizard to migrate passwords.

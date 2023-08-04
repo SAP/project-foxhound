@@ -24,8 +24,10 @@ const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   AttributionCode: "resource:///modules/AttributionCode.sys.mjs",
   BuiltInThemes: "resource:///modules/BuiltInThemes.sys.mjs",
+  NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
   ProfileAge: "resource://gre/modules/ProfileAge.sys.mjs",
   Region: "resource://gre/modules/Region.sys.mjs",
+  TargetingContext: "resource://messaging-system/targeting/Targeting.sys.mjs",
   TelemetryEnvironment: "resource://gre/modules/TelemetryEnvironment.sys.mjs",
   TelemetrySession: "resource://gre/modules/TelemetrySession.sys.mjs",
 });
@@ -34,11 +36,9 @@ XPCOMUtils.defineLazyModuleGetters(lazy, {
   ASRouterPreferences: "resource://activity-stream/lib/ASRouterPreferences.jsm",
   AddonManager: "resource://gre/modules/AddonManager.jsm",
   ClientEnvironment: "resource://normandy/lib/ClientEnvironment.jsm",
-  TargetingContext: "resource://messaging-system/targeting/Targeting.jsm",
   HomePage: "resource:///modules/HomePage.jsm",
   AboutNewTab: "resource:///modules/AboutNewTab.jsm",
   BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.jsm",
-  NimbusFeatures: "resource://nimbus/ExperimentAPI.jsm",
 });
 
 ChromeUtils.defineModuleGetter(
@@ -117,6 +117,24 @@ XPCOMUtils.defineLazyPreferenceGetter(
   lazy,
   "snippetsUserPref",
   "browser.newtabpage.activity-stream.feeds.snippets",
+  false
+);
+XPCOMUtils.defineLazyPreferenceGetter(
+  lazy,
+  "hasMigratedBookmarks",
+  "browser.migrate.interactions.bookmarks",
+  false
+);
+XPCOMUtils.defineLazyPreferenceGetter(
+  lazy,
+  "hasMigratedHistory",
+  "browser.migrate.interactions.history",
+  false
+);
+XPCOMUtils.defineLazyPreferenceGetter(
+  lazy,
+  "hasMigratedPasswords",
+  "browser.migrate.interactions.passwords",
   false
 );
 
@@ -431,6 +449,39 @@ function parseAboutPageURL(url) {
   }
 
   return ret;
+}
+
+/**
+ * Get the number of records in autofill storage, e.g. credit cards/addresses.
+ *
+ * @param  {Object} [data]
+ * @param  {string} [data.collectionName]
+ *         The name used to specify which collection to retrieve records.
+ * @param  {string} [data.searchString]
+ *         The typed string for filtering out the matched records.
+ * @param  {string} [data.info]
+ *         The input autocomplete property's information.
+ * @returns {Promise<number>} The number of matched records.
+ * @see FormAutofillParent._getRecords
+ */
+async function getAutofillRecords(data) {
+  let actor;
+  try {
+    const win = Services.wm.getMostRecentBrowserWindow();
+    actor = win.gBrowser.selectedBrowser.browsingContext.currentWindowGlobal.getActor(
+      "FormAutofill"
+    );
+  } catch (error) {
+    // If the actor is not available, we can't get the records. We could import
+    // the records directly from FormAutofillStorage to avoid the messiness of
+    // JSActors, but that would import a lot of code for a targeting attribute.
+    return 0;
+  }
+  let records = await actor?.receiveMessage({
+    name: "FormAutofill:GetRecords",
+    data,
+  });
+  return records?.length ?? 0;
 }
 
 const TargetingGetters = {
@@ -848,6 +899,38 @@ const TargetingGetters = {
   get defaultPDFHandler() {
     return QueryCache.getters.defaultPDFHandler.get();
   },
+
+  get creditCardsSaved() {
+    return getAutofillRecords({ collectionName: "creditCards" });
+  },
+
+  get addressesSaved() {
+    return getAutofillRecords({ collectionName: "addresses" });
+  },
+
+  /**
+   * Has the user ever used the Migration Wizard to migrate bookmarks?
+   * @return {boolean} `true` if bookmark migration has occurred.
+   */
+  get hasMigratedBookmarks() {
+    return lazy.hasMigratedBookmarks;
+  },
+
+  /**
+   * Has the user ever used the Migration Wizard to migrate history?
+   * @return {boolean} `true` if history migration has occurred.
+   */
+  get hasMigratedHistory() {
+    return lazy.hasMigratedHistory;
+  },
+
+  /**
+   * Has the user ever used the Migration Wizard to migrate passwords?
+   * @return {boolean} `true` if password migration has occurred.
+   */
+  get hasMigratedPasswords() {
+    return lazy.hasMigratedPasswords;
+  },
 };
 
 const ASRouterTargeting = {
@@ -864,42 +947,46 @@ const ASRouterTargeting = {
    * integer.
    */
   async getEnvironmentSnapshot(target = ASRouterTargeting.Environment) {
-    async function resolveRecursive(object) {
-      // One promise for each named property. Label promises with property name.
-      const promises = Object.keys(object).map(async key => {
-        // Each promise needs to check if we're shutting down when it is evaluated.
-        if (Services.startup.shuttingDown) {
-          throw new Error(
-            "shutting down, so not querying targeting environment"
-          );
+    async function resolve(object) {
+      if (typeof object === "object" && object !== null) {
+        if (Array.isArray(object)) {
+          return Promise.all(object.map(async item => resolve(await item)));
         }
 
-        let value = await object[key];
-
-        if (
-          typeof value === "object" &&
-          value !== null &&
-          !(value instanceof Date)
-        ) {
-          value = await resolveRecursive(value);
+        if (object instanceof Date) {
+          return object;
         }
 
-        return [key, value];
-      });
+        // One promise for each named property. Label promises with property name.
+        const promises = Object.keys(object).map(async key => {
+          // Each promise needs to check if we're shutting down when it is evaluated.
+          if (Services.startup.shuttingDown) {
+            throw new Error(
+              "shutting down, so not querying targeting environment"
+            );
+          }
 
-      const resolved = {};
-      for (const result of await Promise.allSettled(promises)) {
-        // Ignore properties that are rejected.
-        if (result.status === "fulfilled") {
-          const [key, value] = result.value;
-          resolved[key] = value;
+          const value = await resolve(await object[key]);
+
+          return [key, value];
+        });
+
+        const resolved = {};
+        for (const result of await Promise.allSettled(promises)) {
+          // Ignore properties that are rejected.
+          if (result.status === "fulfilled") {
+            const [key, value] = result.value;
+            resolved[key] = value;
+          }
         }
+
+        return resolved;
       }
 
-      return resolved;
+      return object;
     }
 
-    const environment = await resolveRecursive(target);
+    const environment = await resolve(target);
 
     // Should we need to migrate in the future.
     const snapshot = { environment, version: 1 };

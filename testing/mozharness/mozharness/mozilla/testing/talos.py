@@ -19,8 +19,9 @@ import shutil
 import subprocess
 import sys
 
-import mozharness
 import six
+
+import mozharness
 from mozharness.base.config import parse_config_file
 from mozharness.base.errors import PythonErrorList
 from mozharness.base.log import CRITICAL, DEBUG, ERROR, INFO, WARNING, OutputParser
@@ -845,10 +846,6 @@ class Talos(
             mozlog_opts.append(
                 "--log-errorsummary=%s"
                 % os.path.join(env["MOZ_UPLOAD_DIR"], fname_pattern % "errorsummary")
-            )
-            mozlog_opts.append(
-                "--log-raw=%s"
-                % os.path.join(env["MOZ_UPLOAD_DIR"], fname_pattern % "raw")
             )
 
         def launch_in_debug_mode(cmdline):

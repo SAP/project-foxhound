@@ -5,10 +5,15 @@
 import copy
 import enum
 import itertools
+import json
 import os
+import pathlib
 import re
+import shutil
+import subprocess
 import sys
 from contextlib import redirect_stdout
+from datetime import datetime, timedelta
 
 from mozbuild.base import MozbuildObject
 from mozversioncontrol import get_repository_object
@@ -25,6 +30,7 @@ from .compare import CompareParser
 
 here = os.path.abspath(os.path.dirname(__file__))
 build = MozbuildObject.from_environment(cwd=here)
+cache_file = pathlib.Path(build.statedir, "try_perf_revision_cache.json")
 
 PERFHERDER_BASE_URL = (
     "https://treeherder.mozilla.org/perfherder/"
@@ -39,12 +45,31 @@ REVISION_MATCHER = re.compile(r"remote:.*/try/rev/([\w]*)[ \t]*$")
 # Name of the base category with no variants applied to it
 BASE_CATEGORY_NAME = "base"
 
+# Add environment variable for firefox-android integration.
+# This will let us find the APK to upload automatically. However,
+# the following option will need to be supplied:
+#       --browsertime-upload-apk firefox-android
+# OR    --mozperftest-upload-apk firefox-android
+MOZ_FIREFOX_ANDROID_APK_OUTPUT = os.getenv("MOZ_FIREFOX_ANDROID_APK_OUTPUT", None)
+
 
 class InvalidCategoryException(Exception):
     """Thrown when a category is found to be invalid.
 
     See the `PerfParser.run_category_checks()` method for more info.
     """
+
+    pass
+
+
+class APKNotFound(Exception):
+    """Raised when a user-supplied path to an APK is invalid."""
+
+    pass
+
+
+class InvalidRegressionDetectorQuery(Exception):
+    """Thrown when the detector query produces anything other than 1 task."""
 
     pass
 
@@ -342,6 +367,15 @@ class PerfParser(CompareParser):
             },
             "tasks": [],
         },
+        "Speedometer 3": {
+            "query": {
+                Suites.RAPTOR.value: ["'browsertime 'speedometer3"],
+            },
+            "variant-restrictions": {Suites.RAPTOR.value: [Variants.NO_FISSION.value]},
+            "suites": [Suites.RAPTOR.value],
+            "app-restrictions": {},
+            "tasks": [],
+        },
         "Responsiveness": {
             "query": {
                 Suites.RAPTOR.value: ["'browsertime 'responsive"],
@@ -481,6 +515,51 @@ class PerfParser(CompareParser):
             },
         ],
         [
+            ["-q", "--query"],
+            {
+                "type": str,
+                "default": None,
+                "help": "Query to run in either the perf-category selector, "
+                "or the fuzzy selector if --show-all is provided.",
+            },
+        ],
+        [
+            ["--browsertime-upload-apk"],
+            {
+                "type": str,
+                "default": None,
+                "help": "Path to an APK to upload. Note that this "
+                "will replace the APK installed in all Android Performance "
+                "tests. If the Activity, Binary Path, or Intents required "
+                "change at all relative to the existing GeckoView, and Fenix "
+                "tasks, then you will need to make fixes in the associated "
+                "taskcluster files (e.g. taskcluster/ci/test/browsertime-mobile.yml). "
+                "Alternatively, set MOZ_FIREFOX_ANDROID_APK_OUTPUT to a path to "
+                "an APK, and then run the command with --browsertime-upload-apk "
+                "firefox-android. This option will only copy the APK for browsertime, see "
+                "--mozperftest-upload-apk to upload APKs for startup tests.",
+            },
+        ],
+        [
+            ["--mozperftest-upload-apk"],
+            {
+                "type": str,
+                "default": None,
+                "help": "See --browsertime-upload-apk. This option does the same "
+                "thing except it's for mozperftest tests such as the startup ones. "
+                "Note that those tests only exist through --show-all, as they "
+                "aren't contained in any existing categories. ",
+            },
+        ],
+        [
+            ["--detect-changes"],
+            {
+                "action": "store_true",
+                "default": False,
+                "help": "Adds a task that detects performance changes using MWU.",
+            },
+        ],
+        [
             ["--variants"],
             {
                 "nargs": "*",
@@ -543,13 +622,13 @@ class PerfParser(CompareParser):
         queries.append(query_str)
         return set(tasks)
 
-    def get_perf_tasks(base_cmd, all_tg_tasks, perf_categories):
+    def get_perf_tasks(base_cmd, all_tg_tasks, perf_categories, query=None):
         # Convert the categories to tasks
         selected_tasks = set()
         queries = []
 
         selected_categories = PerfParser.get_tasks(
-            base_cmd, queries, None, perf_categories
+            base_cmd, queries, query, perf_categories
         )
 
         for category, category_info in perf_categories.items():
@@ -1130,6 +1209,67 @@ class PerfParser(CompareParser):
 
         return categories
 
+    def check_cached_revision(base_commit=None):
+        """
+        If the base_commit parameter does not exist, remove expired cache data.
+        Cache data format:
+        {
+                base_commit[str]: {
+                        "base_revision_treeherder": "2b04563b5",
+                        "date": "2023-03-12"
+                }
+        }
+
+        :param base_commit: The base commit to search
+        :return: The base_revision_treeherder if found, else None
+        """
+        today = datetime.now()
+        expired_date = (today - timedelta(weeks=2)).strftime("%Y-%m-%d")
+        today = today.strftime("%Y-%m-%d")
+
+        if not cache_file.is_file():
+            return
+
+        with cache_file.open("r") as f:
+            cache_data = json.load(f)
+        # Remove expired cache data
+        if base_commit is None:
+            for cached_base_commit in list(cache_data):
+                if cache_data[cached_base_commit]["date"] < expired_date:
+                    cache_data.pop(cached_base_commit)
+            with cache_file.open("w") as f:
+                json.dump(cache_data, f, indent=4)
+
+        cached_base_commit = cache_data.get(base_commit, None)
+        if cached_base_commit:
+            return cached_base_commit["base_revision_treeherder"]
+
+    def save_revision_treeherder(base_commit, base_revision_treeherder):
+        """
+        Save the base revision of treeherder to the cache.
+        See "check_cached_revision" for more information about the data structure.
+
+        :param base_commit: The base commit to save
+        :param base_revision_treeherder: The base revision of treeherder to save
+        :return: None
+        """
+        today = datetime.now().strftime("%Y-%m-%d")
+        new_revision = {
+            "base_revision_treeherder": base_revision_treeherder,
+            "date": today,
+        }
+        cache_data = {}
+
+        if cache_file.is_file():
+            with cache_file.open("r") as f:
+                cache_data = json.load(f)
+                cache_data[base_commit] = new_revision
+        else:
+            cache_data[base_commit] = new_revision
+
+        with cache_file.open(mode="w") as f:
+            json.dump(cache_data, f, indent=4)
+
     def perf_push_to_try(
         selected_tasks, selected_categories, queries, try_config, dry_run, single_run
     ):
@@ -1160,23 +1300,12 @@ class PerfParser(CompareParser):
             # a processor that we can use to catch the revision
             # while providing real-time output
             log_processor = LogProcessor()
-            with redirect_stdout(log_processor):
-                push_to_try(
-                    "perf",
-                    "{msg}".format(msg=msg),
-                    # XXX Figure out if changing `fuzzy` to `perf` will break something
-                    try_task_config=generate_try_task_config(
-                        "fuzzy", selected_tasks, try_config
-                    ),
-                    stage_changes=False,
-                    dry_run=dry_run,
-                    closed_tree=False,
-                    allow_log_capture=True,
-                )
 
-            new_revision_treeherder = log_processor.revision
-
-            if not (dry_run or single_run):
+            # Push the base revision first. This lets the new revision appear
+            # first in the Treeherder view, and it also lets us enhance the new
+            # revision with information about the base run.
+            base_revision_treeherder = PerfParser.check_cached_revision(compare_commit)
+            if not (dry_run or single_run or base_revision_treeherder):
                 vcs.update(compare_commit)
                 updated = True
 
@@ -1197,11 +1326,51 @@ class PerfParser(CompareParser):
                     )
 
                 base_revision_treeherder = log_processor.revision
+                PerfParser.save_revision_treeherder(
+                    compare_commit, base_revision_treeherder
+                )
+
+                # Reset updated since we no longer need to worry
+                # about failing while we're on a base commit
+                updated = False
+                try_config.setdefault("env", {})[
+                    "PERF_BASE_REVISION"
+                ] = base_revision_treeherder
+                vcs.update(current_revision_ref)
+
+            with redirect_stdout(log_processor):
+                push_to_try(
+                    "perf",
+                    "{msg}".format(msg=msg),
+                    # XXX Figure out if changing `fuzzy` to `perf` will break something
+                    try_task_config=generate_try_task_config(
+                        "fuzzy", selected_tasks, try_config
+                    ),
+                    stage_changes=False,
+                    dry_run=dry_run,
+                    closed_tree=False,
+                    allow_log_capture=True,
+                )
+
+            new_revision_treeherder = log_processor.revision
+
         finally:
             if updated:
                 vcs.update(current_revision_ref)
 
         return base_revision_treeherder, new_revision_treeherder
+
+    def inject_change_detector(base_cmd, all_tasks, selected_tasks):
+        query = "'perftest 'mwu 'detect"
+        mwu_task = PerfParser.get_tasks(base_cmd, [], query, all_tasks)
+
+        if len(mwu_task) > 1 or len(mwu_task) == 0:
+            raise InvalidRegressionDetectorQuery(
+                f"Expected 1 task from change detector "
+                f"query, but found {len(mwu_task)}"
+            )
+
+        selected_tasks |= set(mwu_task)
 
     def run(
         update=False,
@@ -1210,6 +1379,8 @@ class PerfParser(CompareParser):
         try_config=None,
         dry_run=False,
         single_run=False,
+        query=None,
+        detect_changes=False,
         **kwargs,
     ):
         # Setup fzf
@@ -1234,18 +1405,23 @@ class PerfParser(CompareParser):
             # Expand the categories first
             categories = PerfParser.get_categories(**kwargs)
             selected_tasks, selected_categories, queries = PerfParser.get_perf_tasks(
-                base_cmd, all_tasks, categories
+                base_cmd, all_tasks, categories, query=query
             )
         else:
-            selected_tasks = PerfParser.get_tasks(base_cmd, queries, None, all_tasks)
+            selected_tasks = PerfParser.get_tasks(base_cmd, queries, query, all_tasks)
 
         if len(selected_tasks) == 0:
             print("No tasks selected")
             return None
 
+        if detect_changes:
+            PerfParser.inject_change_detector(base_cmd, all_tasks, selected_tasks)
+
+        if try_config is None:
+            try_config = {}
         if kwargs.get("extra_args", []):
             args = " ".join(kwargs["extra_args"])
-            try_config["env"] = {"PERF_FLAGS": args}
+            try_config.setdefault("env", {})["PERF_FLAGS"] = args
 
         return PerfParser.perf_push_to_try(
             selected_tasks,
@@ -1290,11 +1466,91 @@ class PerfParser(CompareParser):
 
         return True
 
+    def setup_apk_upload(framework, apk_upload_path):
+        """Setup the APK for uploading to test on try.
+
+        There are two ways of performing the upload:
+            (1) Passing a path to an APK with:
+                --browsertime-upload-apk <PATH/FILE.APK>
+                --mozperftest-upload-apk <PATH/FILE.APK>
+            (2) Setting MOZ_FIREFOX_ANDROID_APK_OUTPUT to a path that will
+                always point to an APK (<PATH/FILE.APK>) that we can upload.
+
+        The file is always copied to testing/raptor/raptor/user_upload.apk to
+        integrate with minimal changes for simpler cases when using raptor-browsertime.
+
+        For mozperftest, the APK is always uploaded here for the same reasons:
+        python/mozperftest/mozperftest/user_upload.apk
+        """
+        frameworks_to_locations = {
+            "browsertime": pathlib.Path(
+                build.topsrcdir, "testing", "raptor", "raptor", "user_upload.apk"
+            ),
+            "mozperftest": pathlib.Path(
+                build.topsrcdir,
+                "python",
+                "mozperftest",
+                "mozperftest",
+                "user_upload.apk",
+            ),
+        }
+
+        print("Setting up custom APK upload")
+        if apk_upload_path in ("firefox-android"):
+            apk_upload_path = MOZ_FIREFOX_ANDROID_APK_OUTPUT
+            if apk_upload_path is None:
+                raise APKNotFound(
+                    "MOZ_FIREFOX_ANDROID_APK_OUTPUT is not defined. It should "
+                    "point to an APK to upload."
+                )
+            apk_upload_path = pathlib.Path(apk_upload_path)
+            if not apk_upload_path.exists() or apk_upload_path.is_dir():
+                raise APKNotFound(
+                    "MOZ_FIREFOX_ANDROID_APK_OUTPUT needs to point to an APK."
+                )
+        else:
+            apk_upload_path = pathlib.Path(apk_upload_path)
+            if not apk_upload_path.exists():
+                raise APKNotFound(f"Path does not exist: {str(apk_upload_path)}")
+
+        print("\nCopying file in-tree for upload...")
+        shutil.copyfile(
+            str(apk_upload_path),
+            frameworks_to_locations[framework],
+        )
+
+        hg_cmd = ["hg", "add", str(frameworks_to_locations[framework])]
+        print(
+            f"\nRunning the following hg command (RAM warnings are expected):\n"
+            f" {hg_cmd}"
+        )
+        subprocess.check_output(hg_cmd)
+        print(
+            "\nAPK is setup for uploading. Please commit the changes, "
+            "and re-run this command. \nEnsure you supply the --android, "
+            "and select the correct tasks (fenix, geckoview) or use "
+            "--show-all for mozperftest task selection.\n"
+        )
+
 
 def run(**kwargs):
+    if (
+        kwargs.get("browsertime_upload_apk") is not None
+        or kwargs.get("mozperftest_upload_apk") is not None
+    ):
+        framework = "browsertime"
+        upload_apk = kwargs.get("browsertime_upload_apk")
+        if upload_apk is None:
+            framework = "mozperftest"
+            upload_apk = kwargs.get("mozperftest_upload_apk")
+
+        PerfParser.setup_apk_upload(framework, upload_apk)
+        return
+
     # Make sure the categories are following
     # the rules we've setup
     PerfParser.run_category_checks()
+    PerfParser.check_cached_revision()
 
     revisions = PerfParser.run(
         profile=kwargs.get("try_config", {}).get("gecko-profile", False),

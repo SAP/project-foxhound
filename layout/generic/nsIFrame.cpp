@@ -80,6 +80,7 @@
 #include "nsFrameSelection.h"
 #include "nsGkAtoms.h"
 #include "nsGridContainerFrame.h"
+#include "nsGfxScrollFrame.h"
 #include "nsCSSAnonBoxes.h"
 #include "nsCanvasFrame.h"
 
@@ -100,7 +101,6 @@
 #include "imgIRequest.h"
 #include "nsError.h"
 #include "nsContainerFrame.h"
-#include "nsBoxLayoutState.h"
 #include "nsBlockFrame.h"
 #include "nsDisplayList.h"
 #include "nsChangeHint.h"
@@ -191,21 +191,6 @@ std::ostream& operator<<(std::ostream& aStream, const nsDirection& aDirection) {
   return aStream << (aDirection == eDirNext ? "eDirNext" : "eDirPrevious");
 }
 
-// Struct containing cached metrics for box-wrapped frames.
-struct nsBoxLayoutMetrics {
-  nsSize mPrefSize;
-  nsSize mMinSize;
-  nsSize mMaxSize;
-
-  nsSize mBlockMinSize;
-  nsSize mBlockPrefSize;
-  nscoord mBlockAscent;
-
-  nscoord mAscent;
-
-  nsSize mLastSize;
-};
-
 struct nsContentAndOffset {
   nsIContent* mContent = nullptr;
   int32_t mOffset = 0;
@@ -218,21 +203,6 @@ struct nsContentAndOffset {
 
 #include "nsILineIterator.h"
 #include "prenv.h"
-
-NS_DECLARE_FRAME_PROPERTY_DELETABLE(BoxMetricsProperty, nsBoxLayoutMetrics)
-
-static void InitBoxMetrics(nsIFrame* aFrame, bool aClear) {
-  if (aClear) {
-    aFrame->RemoveProperty(BoxMetricsProperty());
-  }
-
-  nsBoxLayoutMetrics* metrics = new nsBoxLayoutMetrics();
-  aFrame->SetProperty(BoxMetricsProperty(), metrics);
-
-  aFrame->nsIFrame::MarkIntrinsicISizesDirty();
-  metrics->mBlockAscent = 0;
-  metrics->mLastSize.SizeTo(0, 0);
-}
 
 // Utility function to set a nsRect-valued property table entry on aFrame,
 // reusing the existing storage if the property happens to be already set.
@@ -248,11 +218,6 @@ static void SetOrUpdateRectValuedProperty(
   } else {
     *rectStorage = aNewValue;
   }
-}
-
-static bool IsXULBoxWrapped(const nsIFrame* aFrame) {
-  return aFrame->GetParent() && aFrame->GetParent()->IsXULBoxFrame() &&
-         !aFrame->IsXULBoxFrame();
 }
 
 /* static */
@@ -569,8 +534,7 @@ static bool IsFontSizeInflationContainer(nsIFrame* aFrame,
         // Form controls shouldn't become inflation containers.
         (content->IsAnyOfHTMLElements(
             nsGkAtoms::option, nsGkAtoms::optgroup, nsGkAtoms::select,
-            nsGkAtoms::input, nsGkAtoms::button, nsGkAtoms::textarea)))) &&
-      !(aFrame->IsXULBoxFrame() && aFrame->GetParent()->IsXULBoxFrame());
+            nsGkAtoms::input, nsGkAtoms::button, nsGkAtoms::textarea))));
   NS_ASSERTION(!aFrame->IsFrameOfType(nsIFrame::eLineParticipant) || isInline ||
                    // br frames and mathml frames report being line
                    // participants even when their position or display is
@@ -582,7 +546,7 @@ static bool IsFontSizeInflationContainer(nsIFrame* aFrame,
 }
 
 static void MaybeScheduleReflowSVGNonDisplayText(nsIFrame* aFrame) {
-  if (!SVGUtils::IsInSVGTextSubtree(aFrame)) {
+  if (!aFrame->IsInSVGTextSubtree()) {
     return;
   }
 
@@ -775,8 +739,6 @@ void nsIFrame::Init(nsIContent* aContent, nsContainerFrame* aParent,
   }
 
   DidSetComputedStyle(nullptr);
-
-  if (::IsXULBoxWrapped(this)) ::InitBoxMetrics(this, false);
 
   // For a newly created frame, we need to update this frame's visibility state.
   // Usually we update the state when the frame is restyled and has a
@@ -1611,7 +1573,7 @@ void nsIFrame::CreateView() {
 nsMargin nsIFrame::GetUsedMargin() const {
   nsMargin margin(0, 0, 0, 0);
   if (((mState & NS_FRAME_FIRST_REFLOW) && !(mState & NS_FRAME_IN_REFLOW)) ||
-      SVGUtils::IsInSVGTextSubtree(this))
+      IsInSVGTextSubtree())
     return margin;
 
   nsMargin* m = GetProperty(UsedMarginProperty());
@@ -1632,7 +1594,7 @@ nsMargin nsIFrame::GetUsedMargin() const {
 nsMargin nsIFrame::GetUsedBorder() const {
   nsMargin border(0, 0, 0, 0);
   if (((mState & NS_FRAME_FIRST_REFLOW) && !(mState & NS_FRAME_IN_REFLOW)) ||
-      SVGUtils::IsInSVGTextSubtree(this))
+      IsInSVGTextSubtree())
     return border;
 
   // Theme methods don't use const-ness.
@@ -1661,7 +1623,7 @@ nsMargin nsIFrame::GetUsedBorder() const {
 nsMargin nsIFrame::GetUsedPadding() const {
   nsMargin padding(0, 0, 0, 0);
   if (((mState & NS_FRAME_FIRST_REFLOW) && !(mState & NS_FRAME_IN_REFLOW)) ||
-      SVGUtils::IsInSVGTextSubtree(this))
+      IsInSVGTextSubtree())
     return padding;
 
   // Theme methods don't use const-ness.
@@ -2115,6 +2077,9 @@ nscoord nsIFrame::SynthesizeFallbackBaseline(
     WritingMode aWM, BaselineSharingGroup aBaselineGroup) const {
   const auto margin = GetLogicalUsedMargin(aWM);
   NS_ASSERTION(!IsSubtreeDirty(), "frame must not be dirty");
+  if (aWM.IsCentralBaseline()) {
+    return (BSize(aWM) + GetLogicalUsedMargin(aWM).BEnd(aWM)) / 2;
+  }
   // Baseline for inverted line content is the top (block-start) margin edge,
   // as the frame is in effect "flipped" for alignment purposes.
   if (aWM.IsLineInverted()) {
@@ -2427,7 +2392,7 @@ int16_t nsIFrame::DetermineDisplaySelection() {
 static Element* FindElementAncestorForMozSelection(nsIContent* aContent) {
   NS_ENSURE_TRUE(aContent, nullptr);
   while (aContent && aContent->IsInNativeAnonymousSubtree()) {
-    aContent = aContent->GetClosestNativeAnonymousSubtreeRootParent();
+    aContent = aContent->GetClosestNativeAnonymousSubtreeRootParentOrHost();
   }
   NS_ASSERTION(aContent, "aContent isn't in non-anonymous tree?");
   return aContent ? aContent->GetAsElementOrParentElement() : nullptr;
@@ -2489,8 +2454,7 @@ bool nsIFrame::CanBeDynamicReflowRoot() const {
   if (IsFrameOfType(nsIFrame::eLineParticipant) ||
       nsStyleDisplay::IsRubyDisplayType(display.mDisplay) ||
       display.DisplayOutside() == StyleDisplayOutside::InternalTable ||
-      display.DisplayInside() == StyleDisplayInside::Table ||
-      (GetParent() && GetParent()->IsXULBoxFrame())) {
+      display.DisplayInside() == StyleDisplayInside::Table) {
     // We have a display type where 'width' and 'height' don't actually set the
     // width or height (i.e., the size depends on content).
     MOZ_ASSERT(!HasAnyStateBits(NS_FRAME_DYNAMIC_REFLOW_ROOT),
@@ -4246,7 +4210,6 @@ void nsIFrame::BuildDisplayListForChild(nsDisplayListBuilder* aBuilder,
   }
 
   const nsStyleDisplay* ourDisp = StyleDisplay();
-  // REVIEW: Taken from nsBoxFrame::Paint
   // Don't paint our children if the theme object is a leaf.
   if (IsThemed(ourDisp) && !PresContext()->Theme()->WidgetIsContainer(
                                ourDisp->EffectiveAppearance())) {
@@ -5028,13 +4991,16 @@ nsresult nsIFrame::PeekBackwardAndForward(nsSelectionAmount aAmountBack,
   int32_t baseOffset = aStartPos;
   nsresult rv;
 
+  PeekOffsetOptions peekOffsetOptions{PeekOffsetOption::ScrollViewStop};
+  if (aJumpLines) {
+    peekOffsetOptions += PeekOffsetOption::JumpLines;
+  }
+
   if (aAmountBack == eSelectWord) {
     // To avoid selecting the previous word when at start of word,
     // first move one character forward.
-    nsPeekOffsetStruct pos(eSelectCharacter, eDirNext, aStartPos, nsPoint(0, 0),
-                           aJumpLines,
-                           true,  // limit on scrolled views
-                           false, false, false);
+    PeekOffsetStruct pos(eSelectCharacter, eDirNext, aStartPos, nsPoint(0, 0),
+                         peekOffsetOptions);
     rv = PeekOffset(&pos);
     if (NS_SUCCEEDED(rv)) {
       baseFrame = pos.mResultFrame;
@@ -5043,10 +5009,8 @@ nsresult nsIFrame::PeekBackwardAndForward(nsSelectionAmount aAmountBack,
   }
 
   // Search backward for a boundary.
-  nsPeekOffsetStruct startpos(aAmountBack, eDirPrevious, baseOffset,
-                              nsPoint(0, 0), aJumpLines,
-                              true,  // limit on scrolled views
-                              false, false, false);
+  PeekOffsetStruct startpos(aAmountBack, eDirPrevious, baseOffset,
+                            nsPoint(0, 0), peekOffsetOptions);
   rv = baseFrame->PeekOffset(&startpos);
   if (NS_FAILED(rv)) {
     return rv;
@@ -5062,10 +5026,8 @@ nsresult nsIFrame::PeekBackwardAndForward(nsSelectionAmount aAmountBack,
     baseOffset = aStartPos;
   }
 
-  nsPeekOffsetStruct endpos(aAmountForward, eDirNext, baseOffset, nsPoint(0, 0),
-                            aJumpLines,
-                            true,  // limit on scrolled views
-                            false, false, false);
+  PeekOffsetStruct endpos(aAmountForward, eDirNext, baseOffset, nsPoint(0, 0),
+                          peekOffsetOptions);
   rv = baseFrame->PeekOffset(&endpos);
   if (NS_FAILED(rv)) {
     return rv;
@@ -5678,7 +5640,7 @@ static FrameTarget GetSelectionClosestFrame(nsIFrame* aFrame,
       kid->FindCloserFrameForSelection(aPoint, &closest);
     }
     if (closest.mFrame) {
-      if (SVGUtils::IsInSVGTextSubtree(closest.mFrame))
+      if (closest.mFrame->IsInSVGTextSubtree())
         return FrameTarget{closest.mFrame, false, false};
       return GetSelectionClosestFrameForChild(closest.mFrame, aPoint, aFlags);
     }
@@ -5795,7 +5757,7 @@ nsIFrame::ContentOffsets nsIFrame::GetContentOffsetsFromPoint(
 
   nsPoint pt;
   if (closest.frame != this) {
-    if (SVGUtils::IsInSVGTextSubtree(closest.frame)) {
+    if (closest.frame->IsInSVGTextSubtree()) {
       pt = nsLayoutUtils::TransformAncestorPointToFrame(
           RelativeTo{closest.frame}, aPoint, RelativeTo{this});
     } else {
@@ -5889,19 +5851,6 @@ Maybe<nsIFrame::Cursor> nsIFrame::GetCursor(const nsPoint&) {
 
 /* virtual */
 void nsIFrame::MarkIntrinsicISizesDirty() {
-  // This version is meant only for what used to be box-to-block adaptors.
-  // It should not be called by other derived classes.
-  if (::IsXULBoxWrapped(this)) {
-    nsBoxLayoutMetrics* metrics = BoxMetrics();
-
-    XULSizeNeedsRecalc(metrics->mPrefSize);
-    XULSizeNeedsRecalc(metrics->mMinSize);
-    XULSizeNeedsRecalc(metrics->mMaxSize);
-    XULSizeNeedsRecalc(metrics->mBlockPrefSize);
-    XULSizeNeedsRecalc(metrics->mBlockMinSize);
-    XULCoordNeedsRecalc(metrics->mAscent);
-  }
-
   // If we're a flex item, clear our flex-item-specific cached measurements
   // (which likely depended on our now-stale intrinsic isize).
   if (IsFlexItem()) {
@@ -5936,8 +5885,7 @@ void nsIFrame::MarkSubtreeDirty() {
   }
   while (!stack.IsEmpty()) {
     nsIFrame* f = stack.PopLastElement();
-    if (f->HasAnyStateBits(NS_FRAME_IS_DIRTY) || f->IsTableColGroupFrame() ||
-        f->IsXULBoxFrame()) {
+    if (f->HasAnyStateBits(NS_FRAME_IS_DIRTY) || f->IsTableColGroupFrame()) {
       continue;
     }
 
@@ -6350,8 +6298,7 @@ nsIFrame::SizeComputationResult nsIFrame::ComputeSize(
   }
   const bool isFlexItem =
       IsFlexItem() && !parentFrame->HasAnyStateBits(
-                          NS_STATE_FLEX_IS_EMULATING_LEGACY_WEBKIT_BOX |
-                          NS_STATE_FLEX_IS_EMULATING_LEGACY_MOZ_BOX);
+                          NS_STATE_FLEX_IS_EMULATING_LEGACY_WEBKIT_BOX);
   // This variable only gets set (and used) if isFlexItem is true.  It
   // indicates which axis (in this frame's own WM) corresponds to its
   // flex container's main axis.
@@ -7944,14 +7891,10 @@ bool nsIFrame::UpdateOverflow() {
   UnionChildOverflow(overflowAreas);
 
   if (FinishAndStoreOverflow(overflowAreas, GetSize())) {
-    nsView* view = GetView();
-    if (view) {
-      ReflowChildFlags flags = GetXULLayoutFlags();
-      if (!(flags & ReflowChildFlags::NoSizeView)) {
-        // Make sure the frame's view is properly sized.
-        nsViewManager* vm = view->GetViewManager();
-        vm->ResizeView(view, overflowAreas.InkOverflow(), true);
-      }
+    if (nsView* view = GetView()) {
+      // Make sure the frame's view is properly sized.
+      nsViewManager* vm = view->GetViewManager();
+      vm->ResizeView(view, overflowAreas.InkOverflow(), true);
     }
 
     return true;
@@ -7970,10 +7913,16 @@ bool nsIFrame::ComputeCustomOverflow(OverflowAreas& aOverflowAreas) {
   return true;
 }
 
+bool nsIFrame::DoesClipChildrenInBothAxes() const {
+  nsIScrollableFrame* sf = do_QueryFrame(this);
+  const nsStyleDisplay* display = StyleDisplay();
+  return sf || (display->mOverflowX == StyleOverflow::Clip &&
+                display->mOverflowY == StyleOverflow::Clip);
+}
+
 /* virtual */
 void nsIFrame::UnionChildOverflow(OverflowAreas& aOverflowAreas) {
-  if (!DoesClipChildrenInBothAxes() &&
-      !(IsXULCollapsed() && (IsXULBoxFrame() || ::IsXULBoxWrapped(this)))) {
+  if (!DoesClipChildrenInBothAxes()) {
     nsLayoutUtils::UnionChildOverflow(this, aOverflowAreas);
   }
 }
@@ -8543,7 +8492,7 @@ nsresult nsIFrame::GetChildFrameContainingOffset(int32_t inContentOffset,
 // aOutSideLimit != 0 means ignore aLineStart, instead work from
 // the end (if > 0) or beginning (if < 0).
 //
-static nsresult GetNextPrevLineFromBlockFrame(nsPeekOffsetStruct* aPos,
+static nsresult GetNextPrevLineFromBlockFrame(PeekOffsetStruct* aPos,
                                               nsIFrame* aBlockFrame,
                                               int32_t aLineStart,
                                               int8_t aOutSideLimit) {
@@ -8643,12 +8592,12 @@ static nsresult GetNextPrevLineFromBlockFrame(nsPeekOffsetStruct* aPos,
       result = NS_ERROR_FAILURE;
 
       nsCOMPtr<nsIFrameEnumerator> frameTraversal;
-      result = NS_NewFrameTraversal(getter_AddRefs(frameTraversal), pc,
-                                    resultFrame, ePostOrder,
-                                    false,  // aVisual
-                                    aPos->mScrollViewStop,
-                                    false,  // aFollowOOFs
-                                    false   // aSkipPopupChecks
+      result = NS_NewFrameTraversal(
+          getter_AddRefs(frameTraversal), pc, resultFrame, ePostOrder,
+          false,  // aVisual
+          aPos->mOptions.contains(PeekOffsetOption::ScrollViewStop),
+          false,  // aFollowOOFs
+          false   // aSkipPopupChecks
       );
       if (NS_FAILED(result)) {
         return result;
@@ -8662,7 +8611,8 @@ static nsresult GetNextPrevLineFromBlockFrame(nsPeekOffsetStruct* aPos,
         if (!aFrame->IsSelectable(nullptr)) {
           return false;
         }
-        if (aPos->mForceEditableRegion && !aOffsets.content->IsEditable()) {
+        if (aPos->mOptions.contains(PeekOffsetOption::ForceEditableRegion) &&
+            !aOffsets.content->IsEditable()) {
           return false;
         }
         return true;
@@ -8718,12 +8668,12 @@ static nsresult GetNextPrevLineFromBlockFrame(nsPeekOffsetStruct* aPos,
       if (!found) {
         resultFrame = storeOldResultFrame;
 
-        result = NS_NewFrameTraversal(getter_AddRefs(frameTraversal), pc,
-                                      resultFrame, eLeaf,
-                                      false,  // aVisual
-                                      aPos->mScrollViewStop,
-                                      false,  // aFollowOOFs
-                                      false   // aSkipPopupChecks
+        result = NS_NewFrameTraversal(
+            getter_AddRefs(frameTraversal), pc, resultFrame, eLeaf,
+            false,  // aVisual
+            aPos->mOptions.contains(PeekOffsetOption::ScrollViewStop),
+            false,  // aFollowOOFs
+            false   // aSkipPopupChecks
         );
       }
       while (!found) {
@@ -8855,7 +8805,7 @@ static nsContentAndOffset FindLineBreakingFrame(nsIFrame* aFrame,
   return result;
 }
 
-nsresult nsIFrame::PeekOffsetForParagraph(nsPeekOffsetStruct* aPos) {
+nsresult nsIFrame::PeekOffsetForParagraph(PeekOffsetStruct* aPos) {
   nsIFrame* frame = this;
   nsContentAndOffset blockFrameOrBR;
   blockFrameOrBR.mContent = nullptr;
@@ -8921,7 +8871,7 @@ static bool IsMovingInFrameDirection(const nsIFrame* frame,
 // non-whitespace (in the direction we're moving in)". It is true when moving
 // forward and looking for a beginning of a word, or when moving backwards and
 // looking for an end of a word.
-static bool ShouldWordSelectionEatSpace(const nsPeekOffsetStruct& aPos) {
+static bool ShouldWordSelectionEatSpace(const PeekOffsetStruct& aPos) {
   if (aPos.mWordMovementType != eDefaultBehavior) {
     // aPos->mWordMovementType possible values:
     //       eEndWord: eat the space if we're moving backwards
@@ -8940,7 +8890,7 @@ static bool ShouldWordSelectionEatSpace(const nsPeekOffsetStruct& aPos) {
 
 enum class OffsetIsAtLineEdge : bool { No, Yes };
 
-static void SetPeekResultFromFrame(nsPeekOffsetStruct& aPos, nsIFrame* aFrame,
+static void SetPeekResultFromFrame(PeekOffsetStruct& aPos, nsIFrame* aFrame,
                                    int32_t aOffset,
                                    OffsetIsAtLineEdge aAtLineEdge) {
   FrameContentRange range = GetRangeForFrame(aFrame);
@@ -8955,8 +8905,7 @@ static void SetPeekResultFromFrame(nsPeekOffsetStruct& aPos, nsIFrame* aFrame,
   }
 }
 
-void nsIFrame::SelectablePeekReport::TransferTo(
-    nsPeekOffsetStruct& aPos) const {
+void nsIFrame::SelectablePeekReport::TransferTo(PeekOffsetStruct& aPos) const {
   return SetPeekResultFromFrame(aPos, mFrame, mOffset, OffsetIsAtLineEdge::No);
 }
 
@@ -8966,15 +8915,16 @@ nsIFrame::SelectablePeekReport::SelectablePeekReport(
   // Return an empty report
 }
 
-nsresult nsIFrame::PeekOffsetForCharacter(nsPeekOffsetStruct* aPos,
+nsresult nsIFrame::PeekOffsetForCharacter(PeekOffsetStruct* aPos,
                                           int32_t aOffset) {
   SelectablePeekReport current{this, aOffset};
 
   nsIFrame::FrameSearchResult peekSearchState = CONTINUE;
 
   while (peekSearchState != FOUND) {
-    bool movingInFrameDirection = IsMovingInFrameDirection(
-        current.mFrame, aPos->mDirection, aPos->mVisual);
+    const bool movingInFrameDirection = IsMovingInFrameDirection(
+        current.mFrame, aPos->mDirection,
+        aPos->mOptions.contains(PeekOffsetOption::Visual));
 
     if (current.mJumpedLine) {
       // If we jumped lines, it's as if we found a character, but we still need
@@ -9005,7 +8955,8 @@ nsresult nsIFrame::PeekOffsetForCharacter(nsPeekOffsetStruct* aPos,
     // the offset to be at the frame edge. Note that if we are extending the
     // selection, this doesn't matter.
     if (peekSearchState == FOUND && current.mMovedOverNonSelectableText &&
-        (!aPos->mExtend || current.mHasSelectableFrame)) {
+        (!aPos->mOptions.contains(PeekOffsetOption::Extend) ||
+         current.mHasSelectableFrame)) {
       auto [start, end] = current.mFrame->GetOffsets();
       current.mOffset = aPos->mDirection == eDirNext ? 0 : end - start;
     }
@@ -9025,8 +8976,7 @@ nsresult nsIFrame::PeekOffsetForCharacter(nsPeekOffsetStruct* aPos,
   return NS_OK;
 }
 
-nsresult nsIFrame::PeekOffsetForWord(nsPeekOffsetStruct* aPos,
-                                     int32_t aOffset) {
+nsresult nsIFrame::PeekOffsetForWord(PeekOffsetStruct* aPos, int32_t aOffset) {
   SelectablePeekReport current{this, aOffset};
   bool shouldStopAtHardBreak =
       aPos->mWordMovementType == eDefaultBehavior &&
@@ -9036,11 +8986,14 @@ nsresult nsIFrame::PeekOffsetForWord(nsPeekOffsetStruct* aPos,
   PeekWordState state;
   while (true) {
     bool movingInFrameDirection = IsMovingInFrameDirection(
-        current.mFrame, aPos->mDirection, aPos->mVisual);
+        current.mFrame, aPos->mDirection,
+        aPos->mOptions.contains(PeekOffsetOption::Visual));
 
     FrameSearchResult searchResult = current.mFrame->PeekOffsetWord(
-        movingInFrameDirection, wordSelectEatSpace, aPos->mIsKeyboardSelect,
-        &current.mOffset, &state, aPos->mTrimSpaces);
+        movingInFrameDirection, wordSelectEatSpace,
+        aPos->mOptions.contains(PeekOffsetOption::IsKeyboardSelect),
+        &current.mOffset, &state,
+        !aPos->mOptions.contains(PeekOffsetOption::PreserveSpaces));
     if (searchResult == FOUND) {
       break;
     }
@@ -9131,7 +9084,7 @@ static nsIFrame* GetFirstSelectableDescendantWithLineIterator(
   return nullptr;
 }
 
-nsresult nsIFrame::PeekOffsetForLine(nsPeekOffsetStruct* aPos) {
+nsresult nsIFrame::PeekOffsetForLine(PeekOffsetStruct* aPos) {
   nsIFrame* blockFrame = this;
   nsresult result = NS_ERROR_FAILURE;
 
@@ -9139,8 +9092,8 @@ nsresult nsIFrame::PeekOffsetForLine(nsPeekOffsetStruct* aPos) {
   // moving to a next block when no more blocks are available in a subtree
   AutoAssertNoDomMutations guard;
   while (NS_FAILED(result)) {
-    auto [newBlock, lineFrame] =
-        blockFrame->GetContainingBlockForLine(aPos->mScrollViewStop);
+    auto [newBlock, lineFrame] = blockFrame->GetContainingBlockForLine(
+        aPos->mOptions.contains(PeekOffsetOption::ScrollViewStop));
     if (!newBlock) {
       return NS_ERROR_FAILURE;
     }
@@ -9197,7 +9150,8 @@ nsresult nsIFrame::PeekOffsetForLine(nsPeekOffsetStruct* aPos) {
 
       if (shouldDrillIntoChildren) {
         nsIFrame* child = GetFirstSelectableDescendantWithLineIterator(
-            aPos->mResultFrame, aPos->mForceEditableRegion);
+            aPos->mResultFrame,
+            aPos->mOptions.contains(PeekOffsetOption::ForceEditableRegion));
         if (child) {
           aPos->mResultFrame = child;
         }
@@ -9228,13 +9182,13 @@ nsresult nsIFrame::PeekOffsetForLine(nsPeekOffsetStruct* aPos) {
   return result;
 }
 
-nsresult nsIFrame::PeekOffsetForLineEdge(nsPeekOffsetStruct* aPos) {
+nsresult nsIFrame::PeekOffsetForLineEdge(PeekOffsetStruct* aPos) {
   // Adjusted so that the caret can't get confused when content changes
   nsIFrame* frame = AdjustFrameForSelectionStyles(this);
   Element* editingHost = frame->GetContent()->GetEditingHost();
 
-  auto [blockFrame, lineFrame] =
-      frame->GetContainingBlockForLine(aPos->mScrollViewStop);
+  auto [blockFrame, lineFrame] = frame->GetContainingBlockForLine(
+      aPos->mOptions.contains(PeekOffsetOption::ScrollViewStop));
   if (!blockFrame) {
     return NS_ERROR_FAILURE;
   }
@@ -9248,7 +9202,8 @@ nsresult nsIFrame::PeekOffsetForLineEdge(nsPeekOffsetStruct* aPos) {
   nsIFrame* baseFrame = nullptr;
   bool endOfLine = eSelectEndLine == aPos->mAmount;
 
-  if (aPos->mVisual && PresContext()->BidiEnabled()) {
+  if (aPos->mOptions.contains(PeekOffsetOption::Visual) &&
+      PresContext()->BidiEnabled()) {
     nsIFrame* firstFrame;
     bool isReordered;
     nsIFrame* lastFrame;
@@ -9308,7 +9263,7 @@ nsresult nsIFrame::PeekOffsetForLineEdge(nsPeekOffsetStruct* aPos) {
   return NS_OK;
 }
 
-nsresult nsIFrame::PeekOffset(nsPeekOffsetStruct* aPos) {
+nsresult nsIFrame::PeekOffset(PeekOffsetStruct* aPos) {
   MOZ_ASSERT(aPos);
 
   if (NS_WARN_IF(HasAnyStateBits(NS_FRAME_IS_DIRTY))) {
@@ -9521,27 +9476,29 @@ Result<bool, nsresult> nsIFrame::IsLogicallyAtLineEdge(
 }
 
 nsIFrame::SelectablePeekReport nsIFrame::GetFrameFromDirection(
-    nsDirection aDirection, bool aVisual, bool aJumpLines, bool aScrollViewStop,
-    bool aForceEditableRegion) {
+    nsDirection aDirection, const PeekOffsetOptions& aOptions) {
   SelectablePeekReport result;
 
   nsPresContext* presContext = PresContext();
-  bool needsVisualTraversal = aVisual && presContext->BidiEnabled();
+  const bool needsVisualTraversal =
+      aOptions.contains(PeekOffsetOption::Visual) && presContext->BidiEnabled();
   nsCOMPtr<nsIFrameEnumerator> frameTraversal;
-  MOZ_TRY(NS_NewFrameTraversal(getter_AddRefs(frameTraversal), presContext,
-                               this, eLeaf, needsVisualTraversal,
-                               aScrollViewStop,
-                               true,  // aFollowOOFs
-                               false  // aSkipPopupChecks
-                               ));
+  MOZ_TRY(NS_NewFrameTraversal(
+      getter_AddRefs(frameTraversal), presContext, this, eLeaf,
+      needsVisualTraversal, aOptions.contains(PeekOffsetOption::ScrollViewStop),
+      true,  // aFollowOOFs
+      false  // aSkipPopupChecks
+      ));
 
   // Find the prev/next selectable frame
   bool selectable = false;
   nsIFrame* traversedFrame = this;
   AutoAssertNoDomMutations guard;
+  const nsIContent* const nativeAnonymousSubtreeContent =
+      GetClosestNativeAnonymousSubtreeRoot();
   while (!selectable) {
-    auto [blockFrame, lineFrame] =
-        traversedFrame->GetContainingBlockForLine(aScrollViewStop);
+    auto [blockFrame, lineFrame] = traversedFrame->GetContainingBlockForLine(
+        aOptions.contains(PeekOffsetOption::ScrollViewStop));
     if (!blockFrame) {
       return result;
     }
@@ -9560,7 +9517,7 @@ nsIFrame::SelectablePeekReport nsIFrame::GetFrameFromDirection(
             : traversedFrame->IsLogicallyAtLineEdge(it, thisLine, aDirection));
     if (atLineEdge) {
       result.mJumpedLine = true;
-      if (!aJumpLines) {
+      if (!aOptions.contains(PeekOffsetOption::JumpLines)) {
         return result;  // we are done. cannot jump lines
       }
       int32_t lineToCheckWrap =
@@ -9576,12 +9533,24 @@ nsIFrame::SelectablePeekReport nsIFrame::GetFrameFromDirection(
       return result;
     }
 
-    auto IsSelectable = [aForceEditableRegion](const nsIFrame* aFrame) {
-      if (!aFrame->IsSelectable(nullptr)) {
-        return false;
-      }
-      return !aForceEditableRegion || aFrame->GetContent()->IsEditable();
-    };
+    auto IsSelectable =
+        [aOptions, nativeAnonymousSubtreeContent](const nsIFrame* aFrame) {
+          if (!aFrame->IsSelectable(nullptr)) {
+            return false;
+          }
+          // If the new frame is in a native anonymous subtree, we should treat
+          // it as not selectable unless the frame and found frame are in same
+          // subtree.
+          if (!aOptions.contains(
+                  PeekOffsetOption::
+                      AllowContentInDifferentNativeAnonymousSubtreeRoot) &&
+              aFrame->GetClosestNativeAnonymousSubtreeRoot() !=
+                  nativeAnonymousSubtreeContent) {
+            return false;
+          }
+          return !aOptions.contains(PeekOffsetOption::ForceEditableRegion) ||
+                 aFrame->GetContent()->IsEditable();
+        };
 
     // Skip br frames, but only if we can select something before hitting the
     // end of the line or a non-selectable region.
@@ -9612,7 +9581,8 @@ nsIFrame::SelectablePeekReport nsIFrame::GetFrameFromDirection(
 
   result.mOffset = (aDirection == eDirNext) ? 0 : -1;
 
-  if (aVisual && nsBidiPresUtils::IsReversedDirectionFrame(traversedFrame)) {
+  if (aOptions.contains(PeekOffsetOption::Visual) &&
+      nsBidiPresUtils::IsReversedDirectionFrame(traversedFrame)) {
     // The new frame is reverse-direction, go to the other end
     result.mOffset = -1 - result.mOffset;
   }
@@ -9621,9 +9591,8 @@ nsIFrame::SelectablePeekReport nsIFrame::GetFrameFromDirection(
 }
 
 nsIFrame::SelectablePeekReport nsIFrame::GetFrameFromDirection(
-    const nsPeekOffsetStruct& aPos) {
-  return GetFrameFromDirection(aPos.mDirection, aPos.mVisual, aPos.mJumpLines,
-                               aPos.mScrollViewStop, aPos.mForceEditableRegion);
+    const PeekOffsetStruct& aPos) {
+  return GetFrameFromDirection(aPos.mDirection, aPos.mOptions);
 }
 
 nsView* nsIFrame::GetClosestView(nsPoint* aOffset) const {
@@ -10067,19 +10036,6 @@ bool nsIFrame::FinishAndStoreOverflow(OverflowAreas& aOverflowAreas,
   if (overflowClipAxes != PhysicalAxes::None) {
     aOverflowAreas.ApplyClipping(bounds, overflowClipAxes,
                                  OverflowClipMargin(overflowClipAxes));
-  }
-
-  // Note that StyleOverflow::Clip doesn't clip the frame
-  // background, so we add theme background overflow here so it's not clipped.
-  if (!::IsXULBoxWrapped(this) && IsThemed(disp)) {
-    nsRect r(bounds);
-    nsPresContext* presContext = PresContext();
-    if (presContext->Theme()->GetWidgetOverflow(
-            presContext->DeviceContext(), this, disp->EffectiveAppearance(),
-            &r)) {
-      nsRect& vo = aOverflowAreas.InkOverflow();
-      vo = vo.UnionEdges(r);
-    }
   }
 
   ComputeAndIncludeOutlineArea(this, aOverflowAreas, aNewSize);
@@ -10669,7 +10625,7 @@ static StyleVerticalAlignKeyword ConvertSVGDominantBaselineToVerticalAlign(
 }
 
 Maybe<StyleVerticalAlignKeyword> nsIFrame::VerticalAlignEnum() const {
-  if (SVGUtils::IsInSVGTextSubtree(this)) {
+  if (IsInSVGTextSubtree()) {
     StyleDominantBaseline dominantBaseline = StyleSVG()->mDominantBaseline;
     return Some(ConvertSVGDominantBaselineToVerticalAlign(dominantBaseline));
   }
@@ -10680,500 +10636,6 @@ Maybe<StyleVerticalAlignKeyword> nsIFrame::VerticalAlignEnum() const {
   }
 
   return Nothing();
-}
-
-NS_IMETHODIMP
-nsIFrame::RefreshSizeCache(nsBoxLayoutState& aState) {
-  // XXXbz this comment needs some rewriting to make sense in the
-  // post-reflow-branch world.
-
-  // Ok we need to compute our minimum, preferred, and maximum sizes.
-  // 1) Maximum size. This is easy. Its infinite unless it is overloaded by CSS.
-  // 2) Preferred size. This is a little harder. This is the size the
-  //    block would be if it were laid out on an infinite canvas. So we can
-  //    get this by reflowing the block with and INTRINSIC width and height. We
-  //    can also do a nice optimization for incremental reflow. If the reflow is
-  //    incremental then we can pass a flag to have the block compute the
-  //    preferred width for us! Preferred height can just be the minimum height;
-  // 3) Minimum size. This is a toughy. We can pass the block a flag asking for
-  //    the max element size. That would give us the width. Unfortunately you
-  //    can only ask for a maxElementSize during an incremental reflow. So on
-  //    other reflows we will just have to use 0. The min height on the other
-  //    hand is fairly easy we need to get the largest line height. This can be
-  //    done with the line iterator.
-
-  // if we do have a rendering context
-  gfxContext* rendContext = aState.GetRenderingContext();
-  if (rendContext) {
-    nsPresContext* presContext = aState.PresContext();
-
-    // If we don't have any HTML constraints and it's a resize, then nothing in
-    // the block could have changed, so no refresh is necessary.
-    nsBoxLayoutMetrics* metrics = BoxMetrics();
-    if (!XULNeedsRecalc(metrics->mBlockPrefSize)) {
-      return NS_OK;
-    }
-
-    // the rect we plan to size to.
-    nsRect rect = GetRect();
-
-    nsMargin bp(0, 0, 0, 0);
-    GetXULBorderAndPadding(bp);
-
-    {
-      // If we're a container for font size inflation, then shrink
-      // wrapping inside of us should not apply font size inflation.
-      AutoMaybeDisableFontInflation an(this);
-
-      metrics->mBlockPrefSize.width =
-          GetPrefISize(rendContext) + bp.LeftRight();
-      metrics->mBlockMinSize.width = GetMinISize(rendContext) + bp.LeftRight();
-    }
-
-    // do the nasty.
-    const WritingMode wm = aState.OuterReflowInput()
-                               ? aState.OuterReflowInput()->GetWritingMode()
-                               : GetWritingMode();
-    ReflowOutput desiredSize(wm);
-    BoxReflow(aState, presContext, desiredSize, rendContext, rect.x, rect.y,
-              metrics->mBlockPrefSize.width, NS_UNCONSTRAINEDSIZE);
-
-    metrics->mBlockMinSize.height = 0;
-    // ok we need the max ascent of the items on the line. So to do this
-    // ask the block for its line iterator. Get the max ascent.
-    AutoAssertNoDomMutations guard;
-    if (IsBlockFrameOrSubclass()) {
-      nsILineIterator* lines = GetLineIterator();
-      MOZ_ASSERT(lines);
-      metrics->mBlockMinSize.height = 0;
-      int32_t lineCount = lines->GetNumLines();
-      for (int32_t i = 0; i < lineCount; ++i) {
-        auto line = lines->GetLine(i).unwrap();
-
-        if (line.mLineBounds.height > metrics->mBlockMinSize.height) {
-          metrics->mBlockMinSize.height = line.mLineBounds.height;
-        }
-      }
-    } else {
-      metrics->mBlockMinSize.height = desiredSize.Height();
-    }
-
-    metrics->mBlockPrefSize.height = metrics->mBlockMinSize.height;
-
-    if (desiredSize.BlockStartAscent() == ReflowOutput::ASK_FOR_BASELINE) {
-      if (!nsLayoutUtils::GetFirstLineBaseline(wm, this,
-                                               &metrics->mBlockAscent))
-        metrics->mBlockAscent = GetLogicalBaseline(wm);
-    } else {
-      metrics->mBlockAscent = desiredSize.BlockStartAscent();
-    }
-
-#ifdef DEBUG_adaptor
-    printf("min=(%d,%d), pref=(%d,%d), ascent=%d\n",
-           metrics->mBlockMinSize.width, metrics->mBlockMinSize.height,
-           metrics->mBlockPrefSize.width, metrics->mBlockPrefSize.height,
-           metrics->mBlockAscent);
-#endif
-  }
-
-  return NS_OK;
-}
-
-nsSize nsIFrame::GetXULPrefSize(nsBoxLayoutState& aState) {
-  nsSize size(0, 0);
-  DISPLAY_PREF_SIZE(this, size);
-  // If the size is cached, and there are no HTML constraints that we might
-  // be depending on, then we just return the cached size.
-  nsBoxLayoutMetrics* metrics = BoxMetrics();
-  if (!XULNeedsRecalc(metrics->mPrefSize)) {
-    size = metrics->mPrefSize;
-    return size;
-  }
-
-  if (IsXULCollapsed()) return size;
-
-  // get our size in CSS.
-  bool widthSet, heightSet;
-  bool completelyRedefined =
-      nsIFrame::AddXULPrefSize(this, size, widthSet, heightSet);
-
-  // Refresh our caches with new sizes.
-  if (!completelyRedefined) {
-    RefreshSizeCache(aState);
-    nsSize blockSize = metrics->mBlockPrefSize;
-
-    // notice we don't need to add our borders or padding
-    // in. That's because the block did it for us.
-    if (!widthSet) size.width = blockSize.width;
-    if (!heightSet) size.height = blockSize.height;
-  }
-
-  metrics->mPrefSize = size;
-  return size;
-}
-
-nsSize nsIFrame::GetXULMinSize(nsBoxLayoutState& aState) {
-  nsSize size(0, 0);
-  DISPLAY_MIN_SIZE(this, size);
-  // Don't use the cache if we have HTMLReflowInput constraints --- they might
-  // have changed
-  nsBoxLayoutMetrics* metrics = BoxMetrics();
-  if (!XULNeedsRecalc(metrics->mMinSize)) {
-    size = metrics->mMinSize;
-    return size;
-  }
-
-  if (IsXULCollapsed()) return size;
-
-  // get our size in CSS.
-  bool widthSet, heightSet;
-  bool completelyRedefined =
-      nsIFrame::AddXULMinSize(this, size, widthSet, heightSet);
-
-  // Refresh our caches with new sizes.
-  if (!completelyRedefined) {
-    RefreshSizeCache(aState);
-    nsSize blockSize = metrics->mBlockMinSize;
-
-    if (!widthSet) size.width = blockSize.width;
-    if (!heightSet) size.height = blockSize.height;
-  }
-
-  metrics->mMinSize = size;
-  return size;
-}
-
-nsSize nsIFrame::GetXULMaxSize(nsBoxLayoutState& aState) {
-  nsSize size(NS_UNCONSTRAINEDSIZE, NS_UNCONSTRAINEDSIZE);
-  DISPLAY_MAX_SIZE(this, size);
-  // Don't use the cache if we have HTMLReflowInput constraints --- they might
-  // have changed
-  nsBoxLayoutMetrics* metrics = BoxMetrics();
-  if (!XULNeedsRecalc(metrics->mMaxSize)) {
-    size = metrics->mMaxSize;
-    return size;
-  }
-
-  if (IsXULCollapsed()) return size;
-
-  size = nsIFrame::GetUncachedXULMaxSize(aState);
-  metrics->mMaxSize = size;
-
-  return size;
-}
-
-int32_t nsIFrame::GetXULFlex() const {
-  return clamped(int32_t(StyleXUL()->mBoxFlex), 0, nscoord_MAX - 1);
-}
-
-nscoord nsIFrame::GetXULBoxAscent(nsBoxLayoutState& aState) {
-  nsBoxLayoutMetrics* metrics = BoxMetrics();
-  if (!XULNeedsRecalc(metrics->mAscent)) {
-    return metrics->mAscent;
-  }
-
-  if (IsXULCollapsed()) {
-    metrics->mAscent = 0;
-  } else {
-    // Refresh our caches with new sizes.
-    RefreshSizeCache(aState);
-    metrics->mAscent = metrics->mBlockAscent;
-  }
-
-  return metrics->mAscent;
-}
-
-nsresult nsIFrame::DoXULLayout(nsBoxLayoutState& aState) {
-  nsRect ourRect(mRect);
-
-  gfxContext* rendContext = aState.GetRenderingContext();
-  nsPresContext* presContext = aState.PresContext();
-  WritingMode ourWM = GetWritingMode();
-  const WritingMode outerWM = aState.OuterReflowInput()
-                                  ? aState.OuterReflowInput()->GetWritingMode()
-                                  : ourWM;
-  ReflowOutput desiredSize(outerWM);
-  LogicalSize ourSize = GetLogicalSize(outerWM);
-
-  if (rendContext) {
-    BoxReflow(aState, presContext, desiredSize, rendContext, ourRect.x,
-              ourRect.y, ourRect.width, ourRect.height);
-
-    if (IsXULCollapsed()) {
-      SetSize(nsSize(0, 0));
-    } else {
-      // if our child needs to be bigger. This might happend with
-      // wrapping text. There is no way to predict its height until we
-      // reflow it. Now that we know the height reshuffle upward.
-      if (desiredSize.ISize(outerWM) > ourSize.ISize(outerWM) ||
-          desiredSize.BSize(outerWM) > ourSize.BSize(outerWM)) {
-#ifdef DEBUG_GROW
-        XULDumpBox(stdout);
-        printf(" GREW from (%d,%d) -> (%d,%d)\n", ourSize.ISize(outerWM),
-               ourSize.BSize(outerWM), desiredSize.ISize(outerWM),
-               desiredSize.BSize(outerWM));
-#endif
-
-        if (desiredSize.ISize(outerWM) > ourSize.ISize(outerWM)) {
-          ourSize.ISize(outerWM) = desiredSize.ISize(outerWM);
-        }
-
-        if (desiredSize.BSize(outerWM) > ourSize.BSize(outerWM)) {
-          ourSize.BSize(outerWM) = desiredSize.BSize(outerWM);
-        }
-      }
-
-      // ensure our size is what we think is should be. Someone could have
-      // reset the frame to be smaller or something dumb like that.
-      SetSize(ourSize.ConvertTo(ourWM, outerWM));
-    }
-  }
-
-  // Should we do this if IsXULCollapsed() is true?
-  LogicalSize size(GetLogicalSize(outerWM));
-  desiredSize.ISize(outerWM) = size.ISize(outerWM);
-  desiredSize.BSize(outerWM) = size.BSize(outerWM);
-  desiredSize.UnionOverflowAreasWithDesiredBounds();
-
-  if (HasAbsolutelyPositionedChildren()) {
-    // Set up a |reflowInput| to pass into ReflowAbsoluteFrames
-    ReflowInput reflowInput(aState.PresContext(), this,
-                            aState.GetRenderingContext(),
-                            LogicalSize(ourWM, ISize(), NS_UNCONSTRAINEDSIZE),
-                            ReflowInput::InitFlag::DummyParentReflowInput);
-
-    AddStateBits(NS_FRAME_IN_REFLOW);
-    // Set up a |reflowStatus| to pass into ReflowAbsoluteFrames
-    // (just a dummy value; hopefully that's OK)
-    nsReflowStatus reflowStatus;
-    ReflowAbsoluteFrames(aState.PresContext(), desiredSize, reflowInput,
-                         reflowStatus);
-    RemoveStateBits(NS_FRAME_IN_REFLOW);
-  }
-
-  nsSize oldSize(ourRect.Size());
-  FinishAndStoreOverflow(desiredSize.mOverflowAreas,
-                         size.GetPhysicalSize(outerWM), &oldSize);
-
-  SyncXULLayout(aState);
-
-  return NS_OK;
-}
-
-void nsIFrame::BoxReflow(nsBoxLayoutState& aState, nsPresContext* aPresContext,
-                         ReflowOutput& aDesiredSize,
-                         gfxContext* aRenderingContext, nscoord aX, nscoord aY,
-                         nscoord aWidth, nscoord aHeight, bool aMoveFrame) {
-  DO_GLOBAL_REFLOW_COUNT("nsBoxToBlockAdaptor");
-
-  nsBoxLayoutMetrics* metrics = BoxMetrics();
-  if (MOZ_UNLIKELY(!metrics)) {
-    // Can't proceed without BoxMetrics. This should only happen if something
-    // is seriously broken, e.g. if we try to do XUL layout on a non-XUL frame.
-    // (If this is a content process, we'll abort even in release builds,
-    // because XUL layout mixup is extra surprising in content, and aborts are
-    // less catastrophic in content vs. in chrome.)
-    MOZ_RELEASE_ASSERT(!XRE_IsContentProcess(),
-                       "Starting XUL BoxReflow w/o BoxMetrics (in content)?");
-    MOZ_ASSERT_UNREACHABLE("Starting XUL BoxReflow w/o BoxMetrics?");
-    return;
-  }
-
-  nsReflowStatus status;
-
-  bool needsReflow = IsSubtreeDirty();
-
-  // if we don't need a reflow then
-  // lets see if we are already that size. Yes? then don't even reflow. We are
-  // done.
-  if (!needsReflow) {
-    if (aWidth != NS_UNCONSTRAINEDSIZE && aHeight != NS_UNCONSTRAINEDSIZE) {
-      // if the new calculated size has a 0 width or a 0 height
-      if ((metrics->mLastSize.width == 0 || metrics->mLastSize.height == 0) &&
-          (aWidth == 0 || aHeight == 0)) {
-        needsReflow = false;
-        aDesiredSize.Width() = aWidth;
-        aDesiredSize.Height() = aHeight;
-        SetSize(aDesiredSize.Size(GetWritingMode()));
-      } else {
-        aDesiredSize.Width() = metrics->mLastSize.width;
-        aDesiredSize.Height() = metrics->mLastSize.height;
-
-        // remove the margin. The rect of our child does not include it but our
-        // calculated size does. don't reflow if we are already the right size
-        if (metrics->mLastSize.width == aWidth &&
-            metrics->mLastSize.height == aHeight)
-          needsReflow = false;
-        else
-          needsReflow = true;
-      }
-    } else {
-      // if the width or height are intrinsic alway reflow because
-      // we don't know what it should be.
-      needsReflow = true;
-    }
-  }
-
-  // ok now reflow the child into the spacers calculated space
-  if (needsReflow) {
-    aDesiredSize.ClearSize();
-
-    // create a reflow input to tell our child to flow at the given size.
-
-    // Construct a bogus parent reflow input so that there's a usable reflow
-    // input for the containing block.
-    nsMargin margin(0, 0, 0, 0);
-    GetXULMargin(margin);
-
-    nsSize parentSize(aWidth, aHeight);
-    if (parentSize.height != NS_UNCONSTRAINEDSIZE)
-      parentSize.height += margin.TopBottom();
-    if (parentSize.width != NS_UNCONSTRAINEDSIZE)
-      parentSize.width += margin.LeftRight();
-
-    nsIFrame* parentFrame = GetParent();
-    WritingMode parentWM = parentFrame->GetWritingMode();
-    ReflowInput parentReflowInput(
-        aPresContext, parentFrame, aRenderingContext,
-        LogicalSize(parentWM, parentSize),
-        ReflowInput::InitFlag::DummyParentReflowInput);
-
-    // This may not do very much useful, but it's probably worth trying.
-    if (parentSize.width != NS_UNCONSTRAINEDSIZE)
-      parentReflowInput.SetComputedWidth(std::max(parentSize.width, 0));
-    if (parentSize.height != NS_UNCONSTRAINEDSIZE)
-      parentReflowInput.SetComputedHeight(std::max(parentSize.height, 0));
-    parentReflowInput.SetComputedLogicalMargin(parentWM,
-                                               LogicalMargin(parentWM));
-    // XXX use box methods
-    nsMargin padding;
-    parentFrame->GetXULPadding(padding);
-    parentReflowInput.SetComputedLogicalPadding(
-        parentWM, LogicalMargin(parentWM, padding));
-    nsMargin border;
-    parentFrame->GetXULBorder(border);
-    parentReflowInput.SetComputedLogicalBorderPadding(
-        parentWM, LogicalMargin(parentWM, border + padding));
-
-    // Construct the parent chain manually since constructing it normally
-    // messes up dimensions.
-    const ReflowInput* outerReflowInput = aState.OuterReflowInput();
-    NS_ASSERTION(!outerReflowInput || outerReflowInput->mFrame != this,
-                 "in and out of XUL on a single frame?");
-    const ReflowInput* parentRI;
-    if (outerReflowInput && outerReflowInput->mFrame == parentFrame) {
-      // We're a frame (such as a text control frame) that jumps into
-      // box reflow and then straight out of it on the child frame.
-      // This means we actually have a real parent reflow input.
-      // nsLayoutUtils::InflationMinFontSizeFor used to need this to be
-      // linked up correctly for text control frames, so do so here).
-      parentRI = outerReflowInput;
-    } else {
-      parentRI = &parentReflowInput;
-    }
-
-    // XXX Is it OK that this reflow input has only one ancestor?
-    // (It used to have a bogus parent, skipping all the boxes).
-    WritingMode wm = GetWritingMode();
-    LogicalSize logicalSize(wm, nsSize(aWidth, aHeight));
-    logicalSize.BSize(wm) = NS_UNCONSTRAINEDSIZE;
-    ReflowInput reflowInput(aPresContext, *parentRI, this, logicalSize,
-                            Nothing(),
-                            ReflowInput::InitFlag::DummyParentReflowInput);
-
-    // XXX_jwir3: This is somewhat fishy. If this is actually changing the value
-    //            here (which it might be), then we should make sure that it's
-    //            correct the first time around, rather than changing it later.
-    reflowInput.mCBReflowInput = parentRI;
-
-    reflowInput.mReflowDepth = aState.GetReflowDepth();
-
-    // mComputedWidth and mComputedHeight are content-box, not
-    // border-box
-    if (aWidth != NS_UNCONSTRAINEDSIZE) {
-      nscoord computedWidth =
-          aWidth - reflowInput.ComputedPhysicalBorderPadding().LeftRight();
-      computedWidth = std::max(computedWidth, 0);
-      reflowInput.SetComputedWidth(computedWidth);
-    }
-
-    // Most child frames of box frames (e.g. subdocument or scroll frames)
-    // need to be constrained to the provided size and overflow as necessary.
-    // The one exception are block frames, because we need to know their
-    // natural height excluding any overflow area which may be caused by
-    // various CSS effects such as shadow or outline.
-    if (!IsBlockFrameOrSubclass()) {
-      if (aHeight != NS_UNCONSTRAINEDSIZE) {
-        nscoord computedHeight =
-            aHeight - reflowInput.ComputedPhysicalBorderPadding().TopBottom();
-        computedHeight = std::max(computedHeight, 0);
-        reflowInput.SetComputedHeight(computedHeight);
-      } else {
-        reflowInput.SetComputedHeight(
-            ComputeSize(
-                aRenderingContext, wm, logicalSize, logicalSize.ISize(wm),
-                reflowInput.ComputedLogicalMargin(wm).Size(wm),
-                reflowInput.ComputedLogicalBorderPadding(wm).Size(wm), {}, {})
-                .mLogicalSize.Height(wm));
-      }
-    }
-
-    // Box layout calls SetRect before XULLayout, whereas non-box layout
-    // calls SetRect after Reflow.
-    // XXX Perhaps we should be doing this by twiddling the rect back to
-    // mLastSize before calling Reflow and then switching it back, but
-    // However, mLastSize can also be the size passed to BoxReflow by
-    // RefreshSizeCache, so that doesn't really make sense.
-    if (metrics->mLastSize.width != aWidth) {
-      reflowInput.SetHResize(true);
-
-      // When font size inflation is enabled, a horizontal resize
-      // requires a full reflow.  See ReflowInput::InitResizeFlags
-      // for more details.
-      if (nsLayoutUtils::FontSizeInflationEnabled(aPresContext)) {
-        this->MarkSubtreeDirty();
-      }
-    }
-    if (metrics->mLastSize.height != aHeight) {
-      reflowInput.SetVResize(true);
-    }
-
-    // place the child and reflow
-
-    Reflow(aPresContext, aDesiredSize, reflowInput, status);
-
-    NS_ASSERTION(status.IsComplete(), "bad status");
-
-    ReflowChildFlags layoutFlags = aState.LayoutFlags();
-    nsContainerFrame::FinishReflowChild(
-        this, aPresContext, aDesiredSize, &reflowInput, aX, aY,
-        layoutFlags | ReflowChildFlags::NoMoveFrame);
-
-    // Save the ascent.  (bug 103925)
-    if (IsXULCollapsed()) {
-      metrics->mAscent = 0;
-    } else {
-      if (aDesiredSize.BlockStartAscent() == ReflowOutput::ASK_FOR_BASELINE) {
-        if (!nsLayoutUtils::GetFirstLineBaseline(wm, this, &metrics->mAscent))
-          metrics->mAscent = GetLogicalBaseline(wm);
-      } else
-        metrics->mAscent = aDesiredSize.BlockStartAscent();
-    }
-
-  } else {
-    aDesiredSize.SetBlockStartAscent(metrics->mBlockAscent);
-  }
-
-  metrics->mLastSize.width = aDesiredSize.Width();
-  metrics->mLastSize.height = aDesiredSize.Height();
-}
-
-nsBoxLayoutMetrics* nsIFrame::BoxMetrics() const {
-  nsBoxLayoutMetrics* metrics = GetProperty(BoxMetricsProperty());
-  NS_ASSERTION(
-      metrics,
-      "A box layout method was called but InitBoxMetrics was never called");
-  return metrics;
 }
 
 void nsIFrame::UpdateStyleOfChildAnonBox(nsIFrame* aChildFrame,
@@ -11328,14 +10790,6 @@ void nsIFrame::SetParent(nsContainerFrame* aParent) {
   // Note that the current mParent may already be destroyed at this point.
   mParent = aParent;
   MOZ_DIAGNOSTIC_ASSERT(!mParent || PresShell() == mParent->PresShell());
-  if (::IsXULBoxWrapped(this)) {
-    ::InitBoxMetrics(this, true);
-  } else {
-    // We could call Properties().Delete(BoxMetricsProperty()); here but
-    // that's kind of slow and re-parenting in such a way that we were
-    // IsXULBoxWrapped() before but not now should be very rare, so we'll just
-    // keep this unused frame property until this frame dies instead.
-  }
 
   if (HasAnyStateBits(NS_FRAME_HAS_VIEW | NS_FRAME_HAS_CHILD_WITH_VIEW)) {
     for (nsIFrame* f = aParent;
@@ -11498,7 +10952,7 @@ bool nsIFrame::IsScrolledOutOfView() const {
   return IsFrameScrolledOutOfView(this, rect, this);
 }
 
-gfx::Matrix nsIFrame::ComputeWidgetTransform() {
+gfx::Matrix nsIFrame::ComputeWidgetTransform() const {
   const nsStyleUIReset* uiReset = StyleUIReset();
   if (uiReset->mMozWindowTransform.IsNone()) {
     return gfx::Matrix();
@@ -12456,7 +11910,6 @@ void DR_State::InitFrameTypeTable() {
   AddFrameTypeInfo(LayoutFrameType::TextInput, "textCtl", "textInput");
   AddFrameTypeInfo(LayoutFrameType::Text, "text", "text");
   AddFrameTypeInfo(LayoutFrameType::Viewport, "VP", "viewport");
-  AddFrameTypeInfo(LayoutFrameType::Box, "Box", "Box");
   AddFrameTypeInfo(LayoutFrameType::Slider, "Slider", "Slider");
   AddFrameTypeInfo(LayoutFrameType::None, "unknown", "unknown");
 }

@@ -17,6 +17,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
   PartnerLinkAttribution: "resource:///modules/PartnerLinkAttribution.sys.mjs",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
   PromiseUtils: "resource://gre/modules/PromiseUtils.sys.mjs",
+  ReaderMode: "resource://gre/modules/ReaderMode.sys.mjs",
   SearchUIUtils: "resource:///modules/SearchUIUtils.sys.mjs",
   SearchUtils: "resource://gre/modules/SearchUtils.sys.mjs",
   UrlbarController: "resource:///modules/UrlbarController.sys.mjs",
@@ -34,7 +35,6 @@ ChromeUtils.defineESModuleGetters(lazy, {
 XPCOMUtils.defineLazyModuleGetters(lazy, {
   BrowserUIUtils: "resource:///modules/BrowserUIUtils.jsm",
   ObjectUtils: "resource://gre/modules/ObjectUtils.jsm",
-  ReaderMode: "resource://gre/modules/ReaderMode.jsm",
 });
 
 XPCOMUtils.defineLazyServiceGetter(
@@ -329,12 +329,17 @@ export class UrlbarInput {
    * @param {boolean} [dontShowSearchTerms]
    *        True if userTypedValue should not be overidden by search terms
    *        and false otherwise.
+   * @param {boolean} [isSameDocument]
+   *        True if the caller of setURI loaded a new document and false
+   *        otherwise (e.g. the location change was from an anchor scroll
+   *        or a pushState event).
    */
   setURI(
     uri = null,
     dueToTabSwitch = false,
     dueToSessionRestore = false,
-    dontShowSearchTerms = false
+    dontShowSearchTerms = false,
+    isSameDocument = false
   ) {
     if (!this.window.gBrowser.userTypedValue) {
       this.window.gBrowser.selectedBrowser.searchTerms = "";
@@ -351,22 +356,36 @@ export class UrlbarInput {
     let value = this.window.gBrowser.userTypedValue;
     let valid = false;
 
-    // If `value` is null or if it's an empty string and we're switching tabs,
-    // set value to either search terms or the browser's current URI. For the latter,
-    // when a user makes the input empty, switches tabs, and switches back, we want
-    // the URI to become visible again so the user knows what URI they're viewing.
+    // If `value` is null or if it's an empty string and we're switching tabs
+    // or the userTypedValue equals the search terms, set value to either
+    // search terms or the browser's current URI. When a user empties the input,
+    // switches tabs, and switches back, we want the URI to become visible again
+    // so the user knows what URI they're viewing.
     // An exception to this is made in case of an auth request from a different
     // base domain. To avoid auth prompt spoofing we already display the url of
     // the cross domain resource, although the page is not loaded yet.
     // This url will be set/unset by PromptParent. See bug 791594 for reference.
-    if (value === null || (!value && dueToTabSwitch)) {
+    if (
+      value === null ||
+      (!value && dueToTabSwitch) ||
+      (value && value === this.window.gBrowser.selectedBrowser.searchTerms)
+    ) {
       if (this.window.gBrowser.selectedBrowser.searchTerms) {
         value = this.window.gBrowser.selectedBrowser.searchTerms;
         valid = !dueToSessionRestore;
+        if (!isSameDocument) {
+          Services.telemetry.scalarAdd(
+            "urlbar.persistedsearchterms.view_count",
+            1
+          );
+        }
       } else {
         uri =
           this.window.gBrowser.selectedBrowser.currentAuthPromptURI ||
           uri ||
+          (this.window.gBrowser.selectedBrowser.browsingContext.sessionHistory
+            ?.count === 0 &&
+            this.window.gBrowser.selectedBrowser._initialURI) ||
           this.window.gBrowser.currentURI;
         // Strip off usernames and passwords for the location bar
         try {
@@ -761,6 +780,23 @@ export class UrlbarInput {
     this.setURI(null, true, false, dontShowSearchTerms);
     if (this.value && this.focused) {
       this.select();
+    }
+  }
+
+  maybeHandleRevertFromPopup(anchorElement) {
+    if (
+      anchorElement?.closest("#urlbar") &&
+      this.window.gBrowser.selectedBrowser.searchTerms
+    ) {
+      // The Persist Search Tip can be open while a PopupNotification is queued
+      // to appear, so ensure that the tip is closed.
+      this.view.close();
+
+      this.handleRevert(true);
+      Services.telemetry.scalarAdd(
+        "urlbar.persistedsearchterms.revert_by_popup_count",
+        1
+      );
     }
   }
 
@@ -3442,23 +3478,31 @@ export class UrlbarInput {
     }
     let oldEnd = oldValue.substring(this.selectionEnd);
 
-    let isURLAssumed = true;
+    let fixedURI, keywordAsSent;
     try {
-      const { keywordAsSent } = Services.uriFixup.getFixupURIInfo(
+      ({ fixedURI, keywordAsSent } = Services.uriFixup.getFixupURIInfo(
         originalPasteData,
         Ci.nsIURIFixup.FIXUP_FLAG_FIX_SCHEME_TYPOS |
           Ci.nsIURIFixup.FIXUP_FLAG_ALLOW_KEYWORD_LOOKUP
-      );
-      isURLAssumed = !keywordAsSent;
+      ));
     } catch (e) {}
 
-    // In some cases, the data pasted will contain newline codes. In order to
-    // achive the behavior expected by user, remove newline codes when URL is
-    // assumed. When keywords are assumed, replace all whitespace characters
-    // including newline with a space.
-    let pasteData = isURLAssumed
-      ? originalPasteData.replace(/[\r\n]/g, "")
-      : originalPasteData.replace(/\s/g, " ");
+    let pasteData;
+    if (keywordAsSent) {
+      // For only keywords, replace any white spaces including line break with
+      // white space.
+      pasteData = originalPasteData.replace(/\s/g, " ");
+    } else if (
+      fixedURI?.scheme === "data" &&
+      !fixedURI.spec.match(/^data:.+;base64,/)
+    ) {
+      // For data url without base64, replace line break with white space.
+      pasteData = originalPasteData.replace(/[\r\n]/g, " ");
+    } else {
+      // For normal url or data url having basic64, or if fixup failed, just
+      // remove line breaks.
+      pasteData = originalPasteData.replace(/[\r\n]/g, "");
+    }
 
     pasteData = lazy.UrlbarUtils.stripUnsafeProtocolOnPaste(pasteData);
 
@@ -3470,6 +3514,12 @@ export class UrlbarInput {
 
       this.inputField.value = oldStart + pasteData + oldEnd;
       this._untrimmedValue = this.inputField.value;
+
+      if (this._untrimmedValue) {
+        this.setAttribute("usertyping", "true");
+      } else {
+        this.removeAttribute("usertyping");
+      }
 
       // Fix up cursor/selection:
       let newCursorPos = oldStart.length + pasteData.length;

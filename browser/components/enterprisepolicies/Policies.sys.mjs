@@ -24,6 +24,7 @@ XPCOMUtils.defineLazyServiceGetters(lazy, {
 ChromeUtils.defineESModuleGetters(lazy, {
   BookmarksPolicies: "resource:///modules/policies/BookmarksPolicies.sys.mjs",
   FileUtils: "resource://gre/modules/FileUtils.sys.mjs",
+  PdfJsDefaultPreferences: "resource://pdf.js/PdfJsDefaultPreferences.sys.mjs",
   ProxyPolicies: "resource:///modules/policies/ProxyPolicies.sys.mjs",
   WebsiteFilter: "resource:///modules/policies/WebsiteFilter.sys.mjs",
 });
@@ -31,7 +32,6 @@ ChromeUtils.defineESModuleGetters(lazy, {
 XPCOMUtils.defineLazyModuleGetters(lazy, {
   AddonManager: "resource://gre/modules/AddonManager.jsm",
   CustomizableUI: "resource:///modules/CustomizableUI.jsm",
-  PdfJsDefaultPreferences: "resource://pdf.js/PdfJsDefaultPreferences.jsm",
 });
 
 const PREF_LOGLEVEL = "browser.policies.loglevel";
@@ -481,6 +481,10 @@ export var Policies = {
         })();
       }
     },
+  },
+
+  Containers: {
+    // Queried directly by ContextualIdentityService.sys.mjs
   },
 
   Cookies: {
@@ -1728,6 +1732,9 @@ export var Policies = {
         "security.insecure_connection_text.pbmode.enabled",
         "security.mixed_content.block_active_content",
         "security.osclientcerts.autoload",
+        "security.OCSP.enabled",
+        "security.OCSP.require",
+        "security.ssl.enable_ocsp_stapling",
         "security.ssl.errorReporting.enabled",
         "security.tls.enable_0rtt_data",
         "security.tls.hello_downgrade_check",

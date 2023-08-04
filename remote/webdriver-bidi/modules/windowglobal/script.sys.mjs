@@ -18,14 +18,14 @@ ChromeUtils.defineESModuleGetters(lazy, {
 
 /**
  * @typedef {string} EvaluationStatus
- **/
+ */
 
 /**
  * Enum of possible evaluation states.
  *
  * @readonly
  * @enum {EvaluationStatus}
- **/
+ */
 const EvaluationStatus = {
   Normal: "normal",
   Throw: "throw",
@@ -288,24 +288,24 @@ class ScriptModule extends Module {
   /**
    * Call a function in the current window global.
    *
-   * @param {Object} options
-   * @param {boolean} awaitPromise
+   * @param {object} options
+   * @param {boolean} options.awaitPromise
    *     Determines if the command should wait for the return value of the
    *     expression to resolve, if this return value is a Promise.
-   * @param {Array<RemoteValue>=} commandArguments
+   * @param {Array<RemoteValue>=} options.commandArguments
    *     The arguments to pass to the function call.
-   * @param {string} functionDeclaration
+   * @param {string} options.functionDeclaration
    *     The body of the function to call.
-   * @param {string=} realmId
+   * @param {string=} options.realmId
    *     The id of the realm.
-   * @param {OwnershipModel} resultOwnership
+   * @param {OwnershipModel} options.resultOwnership
    *     The ownership model to use for the results of this evaluation.
-   * @param {string=} sandbox
+   * @param {string=} options.sandbox
    *     The name of the sandbox.
-   * @param {RemoteValue=} thisParameter
+   * @param {RemoteValue=} options.thisParameter
    *     The value of the this keyword for the function call.
    *
-   * @return {Object}
+   * @returns {object}
    *     - evaluationStatus {EvaluationStatus} One of "normal", "throw".
    *     - exceptionDetails {ExceptionDetails=} the details of the exception if
    *     the evaluation status was "throw".
@@ -353,12 +353,12 @@ class ScriptModule extends Module {
    * Delete the provided handles from the realm corresponding to the provided
    * sandbox name.
    *
-   * @param {Object=} options
-   * @param {Array<string>} handles
+   * @param {object=} options
+   * @param {Array<string>} options.handles
    *     Array of handle ids to disown.
-   * @param {string=} realmId
+   * @param {string=} options.realmId
    *     The id of the realm.
-   * @param {string=} sandbox
+   * @param {string=} options.sandbox
    *     The name of the sandbox.
    */
   disownHandles(options) {
@@ -372,20 +372,20 @@ class ScriptModule extends Module {
   /**
    * Evaluate a provided expression in the current window global.
    *
-   * @param {Object} options
-   * @param {boolean} awaitPromise
+   * @param {object} options
+   * @param {boolean} options.awaitPromise
    *     Determines if the command should wait for the return value of the
    *     expression to resolve, if this return value is a Promise.
-   * @param {string} expression
+   * @param {string} options.expression
    *     The expression to evaluate.
-   * @param {string=} realmId
+   * @param {string=} options.realmId
    *     The id of the realm.
-   * @param {OwnershipModel} resultOwnership
+   * @param {OwnershipModel} options.resultOwnership
    *     The ownership model to use for the results of this evaluation.
-   * @param {string=} sandbox
+   * @param {string=} options.sandbox
    *     The name of the sandbox.
    *
-   * @return {Object}
+   * @returns {object}
    *     - evaluationStatus {EvaluationStatus} One of "normal", "throw".
    *     - exceptionDetails {ExceptionDetails=} the details of the exception if
    *     the evaluation status was "throw".
@@ -414,7 +414,7 @@ class ScriptModule extends Module {
   /**
    * Get realms for the current window global.
    *
-   * @return {Array<Object>}
+   * @returns {Array<object>}
    *     - context {BrowsingContext} The browsing context, associated with the realm.
    *     - id {string} The realm unique identifier.
    *     - origin {string} The serialization of an origin.

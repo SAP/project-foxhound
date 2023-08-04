@@ -344,16 +344,15 @@ already_AddRefed<URLExtraData> nsIContent::GetURLDataForStyleAttr(
       return do_AddRef(data);
     }
   }
+  auto* doc = OwnerDoc();
   if (aSubjectPrincipal && aSubjectPrincipal != NodePrincipal()) {
-    // TODO: Cache this?
     nsCOMPtr<nsIReferrerInfo> referrerInfo =
-        ReferrerInfo::CreateForInternalCSSResources(OwnerDoc());
-    return MakeAndAddRef<URLExtraData>(OwnerDoc()->GetDocBaseURI(),
-                                       referrerInfo, aSubjectPrincipal);
+        doc->ReferrerInfoForInternalCSSAndSVGResources();
+    // TODO: Cache this?
+    return MakeAndAddRef<URLExtraData>(doc->GetDocBaseURI(), referrerInfo,
+                                       aSubjectPrincipal);
   }
-  // This also ignores the case that SVG inside XBL binding.
-  // But it is probably fine.
-  return do_AddRef(OwnerDoc()->DefaultStyleAttrURLData());
+  return do_AddRef(doc->DefaultStyleAttrURLData());
 }
 
 void nsIContent::ConstructUbiNode(void* storage) {
@@ -657,6 +656,7 @@ void FragmentOrElement::nsExtendedDOMSlots::UnlinkExtendedSlots(
     mAnimations = nullptr;
     aContent.ClearMayHaveAnimations();
   }
+  mExplicitlySetAttrElements.Clear();
 }
 
 void FragmentOrElement::nsExtendedDOMSlots::TraverseExtendedSlots(
@@ -728,16 +728,6 @@ FragmentOrElement::~FragmentOrElement() {
   if (GetParent()) {
     NS_RELEASE(mParent);
   }
-}
-
-already_AddRefed<nsINodeList> FragmentOrElement::GetChildren(uint32_t aFilter) {
-  RefPtr<nsSimpleContentList> list = new nsSimpleContentList(this);
-  AllChildrenIterator iter(this, aFilter);
-  while (nsIContent* kid = iter.GetNextChild()) {
-    list->AppendElement(kid);
-  }
-
-  return list.forget();
 }
 
 static nsINode* FindChromeAccessOnlySubtreeOwner(nsINode* aNode) {
@@ -879,7 +869,7 @@ void nsIContent::GetEventTargetParent(EventChainPreVisitor& aVisitor) {
     nsCOMPtr<nsIContent> content(
         nsIContent::FromEventTargetOrNull(aVisitor.mEvent->mTarget));
     if (content &&
-        content->GetClosestNativeAnonymousSubtreeRootParent() == parent) {
+        content->GetClosestNativeAnonymousSubtreeRootParentOrHost() == parent) {
       aVisitor.mEventTargetAtParent = parent;
     }
   }
@@ -1045,7 +1035,8 @@ bool nsIContent::IsFocusable(int32_t* aTabIndex, bool aWithMouse) {
   return false;
 }
 
-Element* nsIContent::GetFocusDelegate(bool aWithMouse) const {
+Element* nsIContent::GetFocusDelegate(bool aWithMouse,
+                                      bool aAutofocusOnly) const {
   const nsIContent* whereToLook = this;
   if (ShadowRoot* root = GetShadowRoot()) {
     if (!root->DelegatesFocus()) {
@@ -1071,6 +1062,9 @@ Element* nsIContent::GetFocusDelegate(bool aWithMouse) const {
 
     const bool autofocus = el->GetBoolAttr(nsGkAtoms::autofocus);
 
+    if (aAutofocusOnly && !autofocus) {
+      continue;
+    }
     if (autofocus) {
       if (IsFocusable(el)) {
         // Found an autofocus candidate.

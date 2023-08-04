@@ -29,6 +29,10 @@ class xpcAccessibleGeneric;
 class DocAccessiblePlatformExtParent;
 #endif
 
+#ifdef ANDROID
+class SessionAccessibility;
+#endif
+
 /*
  * These objects live in the main process and comunicate with and represent
  * an accessible document in a content process.
@@ -173,7 +177,7 @@ class DocAccessibleParent : public RemoteAccessible,
       const a11y::role& aRole, const uint8_t& aRoleMapEntryIndex) final;
 
   virtual mozilla::ipc::IPCResult RecvBindChildDoc(
-      PDocAccessibleParent* aChildDoc, const uint64_t& aID) override;
+      NotNull<PDocAccessibleParent*> aChildDoc, const uint64_t& aID) override;
 
   void Unbind() {
     if (DocAccessibleParent* parent = ParentDoc()) {
@@ -353,6 +357,10 @@ class DocAccessibleParent : public RemoteAccessible,
   static DocAccessibleParent* GetFrom(dom::BrowsingContext* aBrowsingContext);
 
   size_t SizeOfExcludingThis(MallocSizeOf aMallocSizeOf) override;
+
+#ifdef ANDROID
+  RefPtr<SessionAccessibility> mSessionAccessibility;
+#endif
 
  private:
   ~DocAccessibleParent();

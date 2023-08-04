@@ -4344,9 +4344,9 @@ nsresult EditorBase::HandleDropEvent(DragEvent* aDropEvent) {
       // If the source node is in native anonymous tree, it must be in
       // <input> or <textarea> element.  If so, its TextEditor can remove it.
       if (sourceNode->IsInNativeAnonymousSubtree()) {
-        if (RefPtr<TextControlElement> textControlElement =
-                TextControlElement::FromNodeOrNull(
-                    sourceNode->GetClosestNativeAnonymousSubtreeRootParent())) {
+        if (RefPtr textControlElement = TextControlElement::FromNodeOrNull(
+                sourceNode
+                    ->GetClosestNativeAnonymousSubtreeRootParentOrHost())) {
           editorToDeleteSelection = textControlElement->GetTextEditor();
         }
       }
@@ -4545,6 +4545,15 @@ nsresult EditorBase::DeleteSelectionByDragAsAction(bool aDispatchInputEvent) {
                                   __FUNCTION__);
   }
 
+  // We may need to update the source node to dispatch "dragend" below.
+  // Chrome restricts the new target under the <body> here.  Therefore, we
+  // should follow it here.
+  // https://source.chromium.org/chromium/chromium/src/+/main:third_party/blink/renderer/core/editing/editing_utilities.cc;l=254;drc=da35f4ed6398ae287d5adc828b9546eec95f668a
+  const RefPtr<Element> editingHost =
+      IsHTMLEditor() ? AsHTMLEditor()->ComputeEditingHost(
+                           HTMLEditor::LimitInBodyElement::Yes)
+                     : nullptr;
+
   rv = DeleteSelectionAsSubAction(nsIEditor::eNone, IsTextEditor()
                                                         ? nsIEditor::eNoStrip
                                                         : nsIEditor::eStrip);
@@ -4559,6 +4568,22 @@ nsresult EditorBase::DeleteSelectionByDragAsAction(bool aDispatchInputEvent) {
 
   if (treatAsOneTransaction.isNothing()) {
     DispatchInputEvent();
+  }
+
+  if (NS_WARN_IF(Destroyed())) {
+    return NS_ERROR_EDITOR_DESTROYED;
+  }
+
+  // If we success everything here, we may need to retarget "dragend" event
+  // target for compatibility with the other browsers.  They do this only when
+  // their builtin editor delete the source node from the document.  Then,
+  // they retarget the source node to the editing host.
+  // https://source.chromium.org/chromium/chromium/src/+/main:third_party/blink/renderer/core/page/drag_controller.cc;l=724;drc=d9ba13b8cd8ac0faed7afc3d1f7e4b67ebac2a0b
+  if (editingHost) {
+    if (nsCOMPtr<nsIDragService> dragService =
+            do_GetService("@mozilla.org/widget/dragservice;1")) {
+      dragService->MaybeEditorDeletedSourceNode(editingHost);
+    }
   }
   return NS_WARN_IF(Destroyed()) ? NS_ERROR_EDITOR_DESTROYED : NS_OK;
 }
@@ -5271,7 +5296,7 @@ Element* EditorBase::GetExposedRoot() const {
     return rootElement;
   }
   return Element::FromNodeOrNull(
-      rootElement->GetClosestNativeAnonymousSubtreeRootParent());
+      rootElement->GetClosestNativeAnonymousSubtreeRootParentOrHost());
 }
 
 nsresult EditorBase::DetermineCurrentDirection() {

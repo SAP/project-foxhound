@@ -112,9 +112,7 @@
                 </hbox>
               </vbox>
               <vbox id="etpStandardTCPBox" class="content-blocking-warning info-box-container">
-                <hbox>
-                  <label class="content-blocking-warning-title" data-l10n-id="content-blocking-etp-standard-tcp-title"/>
-                </hbox>
+                <label class="content-blocking-warning-title" data-l10n-id="content-blocking-etp-standard-tcp-title"/>
                 <description>
                   <html:span class="tail-with-learn-more" data-l10n-id="content-blocking-etp-standard-tcp-rollout-description"></html:span>
                   <html:a is="moz-support-link"
@@ -416,7 +414,7 @@
     <hbox>
       <description>
         <html:span id="cookieBannerReductionExplanation" class="tail-with-learn-more" data-l10n-id="cookie-banner-handling-description" ></html:span>
-        <label id="cookieBannerHandlingLearnMore" class="learnMore" is="text-link" data-l10n-id="cookie-banner-learn-more"></label>
+        <html:a is="moz-support-link" id="cookieBannerHandlingLearnMore" class="learnMore"  data-l10n-id="cookie-banner-learn-more" support-page="cookie-banner-reduction"/>
       </description>
     </hbox>
     <hbox>
@@ -835,6 +833,25 @@
       </hbox>
     </hbox>
 
+    <hbox id="speakerSettingsRow" align="center" role="group" aria-labelledby="speakerPermissionsLabel">
+      <description flex="1">
+        <image class="speaker-icon permission-icon" />
+        <label id="speakerPermissionsLabel" data-l10n-id="permissions-speaker"/>
+      </description>
+      <hbox pack="end">
+        <button id="speakerSettingsButton"
+                is="highlightable-button"
+                class="accessory-button"
+                data-l10n-id="permissions-speaker-settings"
+                search-l10n-ids="
+                  permissions-remove.label,
+                  permissions-remove-all.label,
+                  permissions-site-speaker-window.title,
+                  permissions-site-speaker-desc,
+                " />
+      </hbox>
+    </hbox>
+
     <hbox id="notificationSettingsRow" align="center" role="group" aria-labelledby="notificationPermissionsLabel">
       <description flex="1">
         <image class="desktop-notification-icon permission-icon" />
@@ -910,7 +927,7 @@
     </hbox>
   </vbox>
 
-  <separator flex="1"/>
+  <separator />
 
   <hbox data-subcategory="permissions-block-popups">
     <checkbox id="popupPolicy" preference="dom.disable_open_during_load"
@@ -975,9 +992,10 @@
       <hbox align="center" flex="1">
         <html:span id="telemetryDisabledDescription" class="tail-with-learn-more"
                    data-l10n-id="collection-health-report-telemetry-disabled"/>
-        <label id="telemetryDataDeletionLearnMore"
-               class="learnMore text-link" is="text-link"
-               data-l10n-id="collection-health-report-telemetry-disabled-link"/>
+        <html:a is="moz-support-link"
+                id="telemetryDataDeletionLearnMore"
+                class="learnMore text-link"
+                data-l10n-id="collection-health-report-telemetry-disabled-link"/>
       </hbox>
     </hbox>
   </description>

@@ -37,12 +37,12 @@ XPCOMUtils.defineLazyGetter(lazy, "PasswordRulesManager", () => {
 ChromeUtils.defineESModuleGetters(lazy, {
   ChromeMigrationUtils: "resource:///modules/ChromeMigrationUtils.sys.mjs",
   MigrationUtils: "resource:///modules/MigrationUtils.sys.mjs",
+  NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
 });
 
 XPCOMUtils.defineLazyModuleGetters(lazy, {
   FirefoxRelay: "resource://gre/modules/FirefoxRelay.jsm",
-  NimbusFeatures: "resource://nimbus/ExperimentAPI.jsm",
   LoginHelper: "resource://gre/modules/LoginHelper.jsm",
   PasswordGenerator: "resource://gre/modules/PasswordGenerator.jsm",
 });
@@ -718,6 +718,7 @@ class LoginManagerParent extends JSWindowActorParent {
       hasBeenTypePassword,
       isProbablyANewPasswordField,
       scenarioName,
+      inputMaxLength,
     }
   ) {
     // Note: previousResult is a regular object, not an
@@ -800,7 +801,7 @@ class LoginManagerParent extends JSWindowActorParent {
     ) {
       // We either generate a new password here, or grab the previously generated password
       // if we're still on the same domain when we generated the password
-      generatedPassword = await this.getGeneratedPassword();
+      generatedPassword = await this.getGeneratedPassword({ inputMaxLength });
       const potentialConflictingLogins = await Services.logins.searchLoginsAsync(
         {
           origin: formOrigin,
@@ -852,7 +853,7 @@ class LoginManagerParent extends JSWindowActorParent {
     return this.browsingContext;
   }
 
-  async getGeneratedPassword() {
+  async getGeneratedPassword({ inputMaxLength } = {}) {
     if (
       !lazy.LoginHelper.enabled ||
       !lazy.LoginHelper.generationAvailable ||
@@ -890,10 +891,13 @@ class LoginManagerParent extends JSWindowActorParent {
     };
     if (lazy.LoginHelper.improvedPasswordRulesEnabled) {
       generatedPW.value = await lazy.PasswordRulesManager.generatePassword(
-        browsingContext.currentWindowGlobal.documentURI
+        browsingContext.currentWindowGlobal.documentURI,
+        { inputMaxLength }
       );
     } else {
-      generatedPW.value = lazy.PasswordGenerator.generatePassword({});
+      generatedPW.value = lazy.PasswordGenerator.generatePassword({
+        inputMaxLength,
+      });
     }
 
     // Add these observers when a password is assigned.

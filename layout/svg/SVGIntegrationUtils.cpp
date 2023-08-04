@@ -307,8 +307,6 @@ gfxRect SVGIntegrationUtils::GetSVGBBoxForNonSVGFrame(
   // CSS box model rules.
   NS_ASSERTION(!aNonSVGFrame->HasAnyStateBits(NS_FRAME_SVG_LAYOUT),
                "Frames with SVG layout should not get here");
-  MOZ_ASSERT(!aNonSVGFrame->IsFrameOfType(nsIFrame::eSVG) ||
-             aNonSVGFrame->IsSVGOuterSVGFrame());
 
   nsIFrame* firstFrame =
       nsLayoutUtils::FirstContinuationOrIBSplitSibling(aNonSVGFrame);
@@ -1209,7 +1207,11 @@ already_AddRefed<gfxDrawable> SVGIntegrationUtils::DrawableFromPaintServer(
     gfxRect overrideBounds(0, 0, aPaintServerSize.width,
                            aPaintServerSize.height);
     overrideBounds.Scale(1.0 / aFrame->PresContext()->AppUnitsPerDevPixel());
-    imgDrawingParams imgParams(aFlags);
+    uint32_t imgFlags = imgIContainer::FLAG_ASYNC_NOTIFY;
+    if (aFlags & SVGIntegrationUtils::FLAG_SYNC_DECODE_IMAGES) {
+      imgFlags |= imgIContainer::FLAG_SYNC_DECODE;
+    }
+    imgDrawingParams imgParams(imgFlags);
     RefPtr<gfxPattern> pattern = server->GetPaintServerPattern(
         aTarget, aDrawTarget, aContextMatrix, &nsStyleSVG::mFill, 1.0,
         imgParams, &overrideBounds);

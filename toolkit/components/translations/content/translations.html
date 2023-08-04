@@ -8,16 +8,13 @@
     <meta charset="utf-8">
     <meta http-equiv="Content-Security-Policy" content="default-src chrome:; object-src 'none'">
     <meta name="color-scheme" content="light dark">
-
+    <meta name="viewport" content="width=device-width" />
     <title data-l10n-id="about-translations-title"></title>
-
-    <link rel="stylesheet" href="chrome://global/skin/global.css" type="text/css"/>
-    <link rel="stylesheet" href="chrome://global/skin/in-content/common.css" type="text/css"/>
+    <link rel="stylesheet" href="chrome://global/skin/global.css">
+    <link rel="stylesheet" href="chrome://global/skin/in-content/common.css">
     <link rel="stylesheet" href="chrome://global/content/translations/translations.css">
-
-    <link rel="localization" href="browser/branding/brandings.ftl"/>
-    <link rel="localization" href="locales-preview/translations.ftl"/>
-
+    <link rel="localization" href="toolkit/branding/brandings.ftl"/>
+    <link rel="localization" href="locales-preview/aboutTranslations.ftl"/>
     <script type="module" src="chrome://global/content/translations/translations.mjs"></script>
   </head>
   <body>
@@ -54,8 +51,12 @@
         <div class="about-translations-input-end">
           <div
             class="about-translations-input-results about-translations-input-results-blank"
-            data-l10n-id="about-translations-results-placeholder"
             id="translation-to-blank">
+            <div class="about-translations-info" id="translation-info">
+              <div class="about-translations-info-icon"></div>
+              <div class="about-translations-info-message" id="translation-info-message"></div>
+            </div>
+            <div data-l10n-id="about-translations-results-placeholder"></div>
           </div>
           <div
             class="about-translations-input-results"

@@ -11,7 +11,7 @@ use api::{BoxShadowClipMode, BorderStyle, ClipMode};
 use api::units::*;
 use euclid::Scale;
 use smallvec::SmallVec;
-use crate::command_buffer::{PrimitiveCommand, QuadFlags};
+use crate::command_buffer::{PrimitiveCommand, QuadFlags, CommandBufferIndex};
 use crate::image_tiling::{self, Repetition};
 use crate::border::{get_max_scale_for_border, build_border_instances};
 use crate::clip::{ClipStore};
@@ -27,10 +27,11 @@ use crate::prim_store::line_dec::MAX_LINE_DECORATION_RESOLUTION;
 use crate::prim_store::*;
 use crate::prim_store::gradient::GradientGpuBlockBuilder;
 use crate::render_backend::DataStores;
-use crate::render_task_graph::RenderTaskId;
+use crate::render_task_graph::{RenderTaskId};
 use crate::render_task_cache::RenderTaskCacheKeyKind;
 use crate::render_task_cache::{RenderTaskCacheKey, to_cache_size, RenderTaskParent};
 use crate::render_task::{RenderTaskKind, RenderTask};
+use crate::renderer::{GpuBufferBuilder, GpuBufferAddress};
 use crate::segment::{EdgeAaSegmentMask, SegmentBuilder};
 use crate::util::{clamp_to_scale_factor, pack_as_float};
 use crate::visibility::{compute_conservative_visible_rect, PrimitiveVisibility, VisibilityState};
@@ -54,6 +55,8 @@ pub fn prepare_primitives(
     prim_instances: &mut Vec<PrimitiveInstance>,
 ) {
     profile_scope!("prepare_primitives");
+    let mut cmd_buffer_targets = Vec::new();
+
     for cluster in &mut prim_list.clusters {
         if !cluster.flags.contains(ClusterFlags::IS_VISIBLE) {
             continue;
@@ -65,7 +68,10 @@ pub fn prepare_primitives(
         );
 
         for prim_instance_index in cluster.prim_range() {
-            if frame_state.surface_builder.is_prim_visible_and_in_dirty_region(&prim_instances[prim_instance_index].vis) {
+            if frame_state.surface_builder.get_cmd_buffer_targets_for_prim(
+                &prim_instances[prim_instance_index].vis,
+                &mut cmd_buffer_targets,
+            ) {
                 let plane_split_anchor = PlaneSplitAnchor::new(
                     cluster.spatial_node_index,
                     PrimitiveInstanceIndex(prim_instance_index as u32),
@@ -84,21 +90,11 @@ pub fn prepare_primitives(
                     scratch,
                     tile_caches,
                     prim_instances,
+                    &cmd_buffer_targets,
                 );
 
-                if !scratch.prim_cmds.is_empty() {
-                    for prim_cmd in scratch.prim_cmds.drain(..) {
-                        frame_state.surface_builder.push_prim(
-                            &prim_cmd,
-                            cluster.spatial_node_index,
-                            &prim_instances[prim_instance_index].vis,
-                            frame_state.cmd_buffers,
-                        );
-                    }
-
-                    frame_state.num_visible_primitives += 1;
-                    continue;
-                }
+                frame_state.num_visible_primitives += 1;
+                continue;
             }
 
             // TODO(gw): Technically no need to clear visibility here, since from this point it
@@ -107,6 +103,28 @@ pub fn prepare_primitives(
             prim_instances[prim_instance_index].clear_visibility();
         }
     }
+}
+
+fn can_use_clip_chain_for_quad_path(
+    clip_chain: &ClipChainInstance,
+    prim_spatial_node_index: SpatialNodeIndex,
+    raster_spatial_node_index: SpatialNodeIndex,
+    _clip_store: &ClipStore,
+    _data_stores: &DataStores,
+    spatial_tree: &SpatialTree,
+) -> bool {
+    let map_prim_to_surface = spatial_tree.get_relative_transform(
+        prim_spatial_node_index,
+        raster_spatial_node_index,
+    );
+    if !map_prim_to_surface.is_2d_axis_aligned() {
+        return false;
+    }
+    if map_prim_to_surface.is_perspective() {
+        return false;
+    }
+
+    !clip_chain.needs_mask
 }
 
 fn prepare_prim_for_render(
@@ -122,9 +140,9 @@ fn prepare_prim_for_render(
     scratch: &mut PrimitiveScratchBuffer,
     tile_caches: &mut FastHashMap<SliceId, Box<TileCacheInstance>>,
     prim_instances: &mut Vec<PrimitiveInstance>,
+    targets: &[CommandBufferIndex],
 ) {
     profile_scope!("prepare_prim_for_render");
-    debug_assert!(scratch.prim_cmds.is_empty());
 
     // If we have dependencies, we need to prepare them first, in order
     // to know the actual rect of this primitive.
@@ -190,11 +208,14 @@ fn prepare_prim_for_render(
         // and mask generation.
         let should_update_clip_task = match prim_instance.kind {
             PrimitiveInstanceKind::Rectangle { ref mut use_legacy_path, .. } => {
-                if prim_instance.vis.clip_chain.needs_mask {
-                    *use_legacy_path = true;
-                } else {
-                    *use_legacy_path = false;
-                }
+                *use_legacy_path = !can_use_clip_chain_for_quad_path(
+                    &prim_instance.vis.clip_chain,
+                    cluster.spatial_node_index,
+                    pic_context.raster_spatial_node_index,
+                    frame_state.clip_store,
+                    data_stores,
+                    frame_context.spatial_tree,
+                );
 
                 *use_legacy_path
             }
@@ -237,6 +258,7 @@ fn prepare_prim_for_render(
         frame_state,
         data_stores,
         scratch,
+        targets,
     )
 }
 
@@ -254,6 +276,7 @@ fn prepare_interned_prim_for_render(
     frame_state: &mut FrameBuildingState,
     data_stores: &mut DataStores,
     scratch: &mut PrimitiveScratchBuffer,
+    targets: &[CommandBufferIndex],
 ) {
     let prim_spatial_node_index = cluster.spatial_node_index;
     let device_pixel_scale = frame_state.surfaces[pic_context.surface_index.0].device_pixel_scale;
@@ -579,7 +602,7 @@ fn prepare_interned_prim_for_render(
                     }
                 };
 
-                let color = color.premultiplied();
+                let premul_color = color.premultiplied();
 
                 let map_prim_to_surface = frame_context.spatial_tree.get_relative_transform(
                     prim_spatial_node_index,
@@ -602,33 +625,35 @@ fn prepare_interned_prim_for_render(
                     EdgeAaSegmentMask::all()
                 };
 
-                // TODO(gw): Perhaps rather than writing untyped data here (we at least do validate
-                //           the written block count) to gpu-buffer, we could add a trait for
-                //           writing typed data?
-                let mut writer = frame_state.frame_gpu_data.write_blocks(4);
-                writer.push_one(prim_data.common.prim_rect);
-                writer.push_one(prim_instance.vis.clip_chain.local_clip_rect);
-                // TODO(gw): For now, we always write an empty UV rect here. In future, we'll
-                //           make use of this for drawing quads that have a pre-applied clip mask
-                writer.push_one([0.0; 4]);
-                writer.push_one(color);
-                let prim_address = writer.finish();
-
                 let transform_id = frame_state.transforms.get_id(
                     prim_spatial_node_index,
                     pic_context.raster_spatial_node_index,
                     frame_context.spatial_tree,
                 );
 
-                scratch.prim_cmds.push(
-                    PrimitiveCommand::quad(
+                // TODO(gw): Perhaps rather than writing untyped data here (we at least do validate
+                //           the written block count) to gpu-buffer, we could add a trait for
+                //           writing typed data?
+                let main_prim_address = write_prim_blocks(
+                    frame_state.frame_gpu_data,
+                    prim_data.common.prim_rect,
+                    prim_instance.vis.clip_chain.local_clip_rect,
+                    premul_color,
+                );
+
+                frame_state.push_prim(
+                    &PrimitiveCommand::quad(
                         prim_instance_index,
-                        prim_address,
+                        main_prim_address,
                         transform_id,
                         quad_flags,
                         aa_flags,
-                    )
+                    ),
+                    prim_spatial_node_index,
+                    targets,
                 );
+
+                return;
             }
         }
         PrimitiveInstanceKind::YuvImage { data_handle, segment_instance_index, .. } => {
@@ -740,7 +765,12 @@ fn prepare_interned_prim_for_render(
 
             // TODO(gw): Consider whether it's worth doing segment building
             //           for gradient primitives.
-            scratch.prim_cmds.push(PrimitiveCommand::instance(prim_instance_index, stops_address));
+            frame_state.push_prim(
+                &PrimitiveCommand::instance(prim_instance_index, stops_address),
+                prim_spatial_node_index,
+                targets,
+            );
+            return;
         }
         PrimitiveInstanceKind::CachedLinearGradient { data_handle, ref mut visible_tiles_range, .. } => {
             profile_scope!("CachedLinearGradient");
@@ -914,8 +944,18 @@ fn prepare_interned_prim_for_render(
         }
     }
 
-    if scratch.prim_cmds.is_empty() {
-        scratch.prim_cmds.push(PrimitiveCommand::simple(prim_instance_index));
+    match prim_instance.vis.state {
+        VisibilityState::Unset => {
+            panic!("bug: invalid vis state");
+        }
+        VisibilityState::Visible { .. } => {
+            frame_state.push_prim(
+                &PrimitiveCommand::simple(prim_instance_index),
+                prim_spatial_node_index,
+                targets,
+            );
+        }
+        VisibilityState::PassThrough | VisibilityState::Culled => {}
     }
 }
 
@@ -1575,3 +1615,17 @@ fn adjust_mask_scale_for_max_size(device_rect: DeviceRect, device_pixel_scale: D
     }
 }
 
+fn write_prim_blocks(
+    builder: &mut GpuBufferBuilder,
+    prim_rect: LayoutRect,
+    clip_rect: LayoutRect,
+    color: PremultipliedColorF,
+) -> GpuBufferAddress {
+    let mut writer = builder.write_blocks(3);
+
+    writer.push_one(prim_rect);
+    writer.push_one(clip_rect);
+    writer.push_one(color);
+
+    writer.finish()
+}

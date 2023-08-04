@@ -27,14 +27,14 @@ function getUUID() {
 
 /**
  * @typedef {string} ScriptEvaluateResultType
- **/
+ */
 
 /**
  * Enum of possible evaluation result types.
  *
  * @readonly
  * @enum {ScriptEvaluateResultType}
- **/
+ */
 const ScriptEvaluateResultType = {
   Exception: "exception",
   Success: "success",
@@ -80,12 +80,12 @@ class ScriptModule extends Module {
    * Adds a preload script, which runs on creation of a new Window,
    * before any author-defined script have run.
    *
-   * @param {Object=} options
-   * @param {Array<Channel>=} arguments [unsupported]
+   * @param {object=} options
+   * @param {Array<Channel>=} options.arguments [unsupported]
    *     The arguments to pass to the function call.
-   * @param {string} functionDeclaration
+   * @param {string} options.functionDeclaration
    *     The expression to evaluate.
-   * @param {string=} sandbox
+   * @param {string=} options.sandbox
    *     The name of the sandbox. If the value is null or empty
    *     string, the default realm will be used.
    *
@@ -132,7 +132,7 @@ class ScriptModule extends Module {
 
     this.#preloadScriptMap.set(script, preloadScript);
 
-    await this.messageHandler.addSessionData({
+    await this.messageHandler.addSessionDataItem({
       category: "preload-script",
       moduleName: "script",
       values: [
@@ -213,21 +213,21 @@ class ScriptModule extends Module {
    * Calls a provided function with given arguments and scope in the provided
    * target, which is either a realm or a browsing context.
    *
-   * @param {Object=} options
-   * @param {Array<RemoteValue>=} arguments
+   * @param {object=} options
+   * @param {Array<RemoteValue>=} options.arguments
    *     The arguments to pass to the function call.
-   * @param {boolean} awaitPromise
+   * @param {boolean} options.awaitPromise
    *     Determines if the command should wait for the return value of the
    *     expression to resolve, if this return value is a Promise.
-   * @param {string} functionDeclaration
+   * @param {string} options.functionDeclaration
    *     The expression to evaluate.
-   * @param {OwnershipModel=} resultOwnership
+   * @param {OwnershipModel=} options.resultOwnership
    *     The ownership model to use for the results of this evaluation. Defaults
    *     to `OwnershipModel.None`.
-   * @param {Object} target
+   * @param {object} options.target
    *     The target for the evaluation, which either matches the definition for
    *     a RealmTarget or for ContextTarget.
-   * @param {RemoteValue=} this
+   * @param {RemoteValue=} options.this
    *     The value of the this keyword for the function call.
    *
    * @returns {ScriptEvaluateResult}
@@ -294,10 +294,10 @@ class ScriptModule extends Module {
    * guarantee the handled object will be garbage collected, as there can be
    * other handles or strong ECMAScript references.
    *
-   * @param {Object=} options
-   * @param {Array<string>} handles
+   * @param {object=} options
+   * @param {Array<string>} options.handles
    *     Array of handle ids to disown.
-   * @param {Object} target
+   * @param {object} options.target
    *     The target owning the handles, which either matches the definition for
    *     a RealmTarget or for ContextTarget.
    */
@@ -336,16 +336,16 @@ class ScriptModule extends Module {
    * Evaluate a provided expression in the provided target, which is either a
    * realm or a browsing context.
    *
-   * @param {Object=} options
-   * @param {boolean} awaitPromise
+   * @param {object=} options
+   * @param {boolean} options.awaitPromise
    *     Determines if the command should wait for the return value of the
    *     expression to resolve, if this return value is a Promise.
-   * @param {string} expression
+   * @param {string} options.expression
    *     The expression to evaluate.
-   * @param {OwnershipModel=} resultOwnership
+   * @param {OwnershipModel=} options.resultOwnership
    *     The ownership model to use for the results of this evaluation. Defaults
    *     to `OwnershipModel.None`.
-   * @param {Object} target
+   * @param {object} options.target
    *     The target for the evaluation, which either matches the definition for
    *     a RealmTarget or for ContextTarget.
    *
@@ -421,11 +421,13 @@ class ScriptModule extends Module {
    *     The window realm type.
    */
 
+  /* eslint-disable jsdoc/valid-types */
   /**
    * An object that holds information about a window realm.
    *
    * @typedef {BaseRealmInfo & WindowRealmInfoProperties} WindowRealmInfo
    */
+  /* eslint-enable jsdoc/valid-types */
 
   /**
    * An object that holds information about a realm.
@@ -447,12 +449,12 @@ class ScriptModule extends Module {
    * of a specific type, or to the realms associated with
    * a specified browsing context.
    *
-   * @param {Object=} options
-   * @param {string=} context
+   * @param {object=} options
+   * @param {string=} options.context
    *     The id of the browsing context to filter
    *     only realms associated with it. If not provided, return realms
    *     associated with all browsing contexts.
-   * @param {RealmType=} type
+   * @param {RealmType=} options.type
    *     Type of realm to filter.
    *     If not provided, return realms of all types.
    *
@@ -501,8 +503,8 @@ class ScriptModule extends Module {
   /**
    * Removes a preload script.
    *
-   * @param {Object=} options
-   * @param {string} script
+   * @param {object=} options
+   * @param {string} options.script
    *     The unique id associated with a preload script.
    *
    * @throws {InvalidArgumentError}
@@ -526,7 +528,7 @@ class ScriptModule extends Module {
 
     const preloadScript = this.#preloadScriptMap.get(script);
 
-    await this.messageHandler.removeSessionData({
+    await this.messageHandler.removeSessionDataItem({
       category: "preload-script",
       moduleName: "script",
       values: [

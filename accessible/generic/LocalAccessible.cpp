@@ -40,6 +40,7 @@
 #include "HTMLSelectAccessible.h"
 #include "ImageAccessible.h"
 
+#include "nsComputedDOMStyle.h"
 #include "nsIDOMXULButtonElement.h"
 #include "nsIDOMXULSelectCntrlEl.h"
 #include "nsIDOMXULSelectCntrlItemEl.h"
@@ -407,22 +408,8 @@ uint64_t LocalAccessible::NativeState() const {
   state |= VisibilityState();
 
   nsIFrame* frame = GetFrame();
-  if (frame) {
-    if (frame->HasAnyStateBits(NS_FRAME_OUT_OF_FLOW)) state |= states::FLOATING;
-
-    // XXX we should look at layout for non XUL box frames, but need to decide
-    // how that interacts with ARIA.
-    if (HasOwnContent() && mContent->IsXULElement() && frame->IsXULBoxFrame()) {
-      const nsStyleXUL* xulStyle = frame->StyleXUL();
-      if (xulStyle && frame->IsXULBoxFrame()) {
-        // In XUL all boxes are either vertical or horizontal
-        if (xulStyle->mBoxOrient == StyleBoxOrient::Vertical) {
-          state |= states::VERTICAL;
-        } else {
-          state |= states::HORIZONTAL;
-        }
-      }
-    }
+  if (frame && frame->HasAnyStateBits(NS_FRAME_OUT_OF_FLOW)) {
+    state |= states::FLOATING;
   }
 
   // Check if a XUL element has the popup attribute (an attached popup menu).
@@ -1189,25 +1176,28 @@ already_AddRefed<AccAttributes> LocalAccessible::NativeAttributes() {
   // 1. There is no frame (e.g. the accessible is unattached from the tree).
   // 2. This is an image map area. CSS is irrelevant here. Furthermore, we won't
   // be able to get the computed style if the map is unslotted in a shadow host.
-  if (!mContent->GetPrimaryFrame() ||
-      mContent->IsHTMLElement(nsGkAtoms::area)) {
+  nsIFrame* f = mContent->GetPrimaryFrame();
+  if (!f || mContent->IsHTMLElement(nsGkAtoms::area)) {
     return attributes.forget();
   }
 
-  // CSS style based object attributes.
-  nsAutoString value;
-  StyleInfo styleInfo(mContent->AsElement());
+  const ComputedStyle& style = *f->Style();
+  auto Atomize = [&](nsCSSPropertyID aId) -> RefPtr<nsAtom> {
+    nsAutoCString value;
+    style.GetComputedPropertyValue(aId, value);
+    return NS_Atomize(value);
+  };
 
   // Expose 'display' attribute.
-  RefPtr<nsAtom> displayValue = styleInfo.Display();
-  attributes->SetAttribute(nsGkAtoms::display, displayValue);
+  attributes->SetAttribute(nsGkAtoms::display, Atomize(eCSSProperty_display));
 
   // Expose 'text-align' attribute.
-  RefPtr<nsAtom> textAlignValue = styleInfo.TextAlign();
-  attributes->SetAttribute(nsGkAtoms::textAlign, textAlignValue);
+  attributes->SetAttribute(nsGkAtoms::textAlign,
+                           Atomize(eCSSProperty_text_align));
 
   // Expose 'text-indent' attribute.
-  mozilla::LengthPercentage textIndent = styleInfo.TextIndent();
+  // XXX how does whatever reads this whether this was a percentage or a length?
+  const LengthPercentage& textIndent = f->StyleText()->mTextIndent;
   if (textIndent.ConvertsToLength()) {
     attributes->SetAttribute(nsGkAtoms::textIndent,
                              textIndent.ToLengthInCSSPixels());
@@ -1215,17 +1205,29 @@ already_AddRefed<AccAttributes> LocalAccessible::NativeAttributes() {
     attributes->SetAttribute(nsGkAtoms::textIndent, textIndent.ToPercentage());
   }
 
+  auto GetMargin = [&](mozilla::Side aSide) -> CSSCoord {
+    // This is here only to guarantee that we do the same as getComputedStyle
+    // does, so that we don't hit precision errors in tests.
+    auto& margin = f->StyleMargin()->mMargin.Get(aSide);
+    if (margin.ConvertsToLength()) {
+      return margin.AsLengthPercentage().ToLengthInCSSPixels();
+    }
+
+    nscoord coordVal = f->GetUsedMargin().Side(aSide);
+    return CSSPixel::FromAppUnits(coordVal);
+  };
+
   // Expose 'margin-left' attribute.
-  attributes->SetAttribute(nsGkAtoms::marginLeft, styleInfo.MarginLeft());
+  attributes->SetAttribute(nsGkAtoms::marginLeft, GetMargin(eSideLeft));
 
   // Expose 'margin-right' attribute.
-  attributes->SetAttribute(nsGkAtoms::marginRight, styleInfo.MarginRight());
+  attributes->SetAttribute(nsGkAtoms::marginRight, GetMargin(eSideRight));
 
   // Expose 'margin-top' attribute.
-  attributes->SetAttribute(nsGkAtoms::marginTop, styleInfo.MarginTop());
+  attributes->SetAttribute(nsGkAtoms::marginTop, GetMargin(eSideTop));
 
   // Expose 'margin-bottom' attribute.
-  attributes->SetAttribute(nsGkAtoms::marginBottom, styleInfo.MarginBottom());
+  attributes->SetAttribute(nsGkAtoms::marginBottom, GetMargin(eSideBottom));
 
   // Expose data-at-shortcutkeys attribute for web applications and virtual
   // cursors. Currently mostly used by JAWS.
@@ -1657,7 +1659,7 @@ void LocalAccessible::Value(nsString& aValue) const {
                                  nsGkAtoms::aria_valuetext, aValue)) {
       if (!NativeHasNumericValue()) {
         double checkValue = CurValue();
-        if (!IsNaN(checkValue)) {
+        if (!std::isnan(checkValue)) {
           aValue.AppendFloat(checkValue);
         }
       }
@@ -1699,7 +1701,7 @@ void LocalAccessible::Value(nsString& aValue) const {
 
 double LocalAccessible::MaxValue() const {
   double checkValue = AttrNumericValue(nsGkAtoms::aria_valuemax);
-  if (IsNaN(checkValue) && !NativeHasNumericValue()) {
+  if (std::isnan(checkValue) && !NativeHasNumericValue()) {
     // aria-valuemax isn't present and this element doesn't natively provide a
     // maximum value. Use the ARIA default.
     const nsRoleMapEntry* roleMap = ARIARoleMap();
@@ -1713,7 +1715,7 @@ double LocalAccessible::MaxValue() const {
 
 double LocalAccessible::MinValue() const {
   double checkValue = AttrNumericValue(nsGkAtoms::aria_valuemin);
-  if (IsNaN(checkValue) && !NativeHasNumericValue()) {
+  if (std::isnan(checkValue) && !NativeHasNumericValue()) {
     // aria-valuemin isn't present and this element doesn't natively provide a
     // minimum value. Use the ARIA default.
     const nsRoleMapEntry* roleMap = ARIARoleMap();
@@ -1731,7 +1733,7 @@ double LocalAccessible::Step() const {
 
 double LocalAccessible::CurValue() const {
   double checkValue = AttrNumericValue(nsGkAtoms::aria_valuenow);
-  if (IsNaN(checkValue) && !NativeHasNumericValue()) {
+  if (std::isnan(checkValue) && !NativeHasNumericValue()) {
     // aria-valuenow isn't present and this element doesn't natively provide a
     // current value. Use the ARIA default.
     const nsRoleMapEntry* roleMap = ARIARoleMap();
@@ -1753,10 +1755,10 @@ bool LocalAccessible::SetCurValue(double aValue) {
   if (State() & kValueCannotChange) return false;
 
   double checkValue = MinValue();
-  if (!IsNaN(checkValue) && aValue < checkValue) return false;
+  if (!std::isnan(checkValue) && aValue < checkValue) return false;
 
   checkValue = MaxValue();
-  if (!IsNaN(checkValue) && aValue > checkValue) return false;
+  if (!std::isnan(checkValue) && aValue > checkValue) return false;
 
   nsAutoString strValue;
   strValue.AppendFloat(aValue);
@@ -3906,17 +3908,23 @@ nsAtom* LocalAccessible::TagName() const {
 }
 
 already_AddRefed<nsAtom> LocalAccessible::DisplayStyle() const {
-  if (dom::Element* elm = Elm()) {
-    if (elm->IsHTMLElement(nsGkAtoms::area)) {
-      // This is an image map area. CSS is irrelevant here. Furthermore, we
-      // won't be able to get the computed style if the map is unslotted in a
-      // shadow host.
-      return nullptr;
-    }
-    StyleInfo info(elm);
-    return info.Display();
+  dom::Element* elm = Elm();
+  if (!elm) {
+    return nullptr;
   }
-  return nullptr;
+  if (elm->IsHTMLElement(nsGkAtoms::area)) {
+    // This is an image map area. CSS is irrelevant here.
+    return nullptr;
+  }
+  RefPtr<const ComputedStyle> style =
+      nsComputedDOMStyle::GetComputedStyleNoFlush(elm);
+  if (!style) {
+    // The element is not styled, maybe not in the flat tree?
+    return nullptr;
+  }
+  nsAutoCString value;
+  style->GetComputedPropertyValue(eCSSProperty_display, value);
+  return NS_Atomize(value);
 }
 
 float LocalAccessible::Opacity() const {

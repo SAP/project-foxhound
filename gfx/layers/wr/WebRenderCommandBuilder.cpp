@@ -1129,6 +1129,42 @@ static ItemActivity HasActiveChildren(
   return activity;
 }
 
+static ItemActivity AssessBounds(const StackingContextHelper& aSc,
+                                 nsDisplayListBuilder* aDisplayListBuilder,
+                                 nsDisplayItem* aItem,
+                                 bool aHasActivePrecedingSibling) {
+  // Arbitrary threshold up for adjustments. What we want to avoid here
+  // is alternating between active and non active items and create a lot
+  // of overlapping blobs, so we only make images active if they are
+  // costly enough that it's worth the risk of having more layers. As we
+  // move more blob items into wr display items it will become less of a
+  // concern.
+  constexpr float largeish = 512;
+
+  bool snap = false;
+  nsRect bounds = aItem->GetBounds(aDisplayListBuilder, &snap);
+
+  float appUnitsPerDevPixel =
+      static_cast<float>(aItem->Frame()->PresContext()->AppUnitsPerDevPixel());
+
+  float width =
+      static_cast<float>(bounds.width) * aSc.GetInheritedScale().xScale;
+  float height =
+      static_cast<float>(bounds.height) * aSc.GetInheritedScale().yScale;
+
+  // Webrender doesn't handle primitives smaller than a pixel well, so
+  // avoid making them active.
+  if (width >= appUnitsPerDevPixel && height >= appUnitsPerDevPixel) {
+    if (aHasActivePrecedingSibling || width > largeish || height > largeish) {
+      return ItemActivity::Should;
+    }
+
+    return ItemActivity::Could;
+  }
+
+  return ItemActivity::No;
+}
+
 // This function decides whether we want to treat this item as "active", which
 // means that it's a container item which we will turn into a WebRender
 // StackingContext, or whether we treat it as "inactive" and include it inside
@@ -1182,26 +1218,8 @@ static ItemActivity IsItemProbablyActive(
       if (StaticPrefs::gfx_webrender_svg_images() && aUniformlyScaled &&
           svgItem->ShouldBeActive(aBuilder, aResources, aSc, aManager,
                                   aDisplayListBuilder)) {
-        bool snap = false;
-        auto bounds = aItem->GetBounds(aDisplayListBuilder, &snap);
-
-        // Arbitrary threshold up for adjustments. What we want to avoid here
-        // is alternating between active and non active items and create a lot
-        // of overlapping blobs, so we only make images active if they are
-        // costly enough that it's worth the risk of having more layers. As we
-        // move more blob items into wr dislplay items it will become less of a
-        // concern.
-        const int32_t largeish = 512;
-
-        float width = bounds.width * aSc.GetInheritedScale().xScale;
-        float height = bounds.height * aSc.GetInheritedScale().yScale;
-
-        if (aHasActivePrecedingSibling || width > largeish ||
-            height > largeish) {
-          return ItemActivity::Should;
-        }
-
-        return ItemActivity::Could;
+        return AssessBounds(aSc, aDisplayListBuilder, aItem,
+                            aHasActivePrecedingSibling);
       }
 
       return ItemActivity::No;

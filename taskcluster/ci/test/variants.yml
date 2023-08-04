@@ -241,8 +241,8 @@ devtools-no-eft:
 
 wmf-media-engine:
     description: "{description} with Windows Media Foundation media engine enabled"
-    component: "Core::Audio/Video:Playback"
-    expiration: "2023-04-10"
+    component: "Core::Audio/Video: Playback"
+    expiration: "2023-10-10"
     when:
         $eval: '"windows1" in task["test-platform"]'
     suffix: "wmfme"
@@ -271,8 +271,18 @@ msix:
     expiration: "never"
     suffix: "msix"
     when:
-        $eval: '"windows1" in task["test-platform"] && "-64" in task["test-platform"] && "opt" in task["test-platform"] && !("asan" in task["test-platform"]) && !("ccov" in task["test-platform"])'
+        $eval: '"windows1" in task["test-platform"] && "-64" in task["test-platform"] && ("opt" in task["test-platform"] || "debug" in task["test-platform"]) && !("asan" in task["test-platform"]) && !("ccov" in task["test-platform"])'
     merge:
         mozharness:
             extra-options:
                 - "--installer-path installer.msix"
+
+http3:
+    description: "{description} with http3 server"
+    component: "Testing::General"
+    expiration: "2023-09-01"
+    suffix: "http3"
+    merge:
+        mozharness:
+            extra-options:
+                - "--use-http3-server"

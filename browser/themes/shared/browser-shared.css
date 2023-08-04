@@ -156,20 +156,19 @@
 
 /* Set link color with proper contrast for WebExt themes */
 
-toolbar .text-link:-moz-lwtheme,
-panel .text-link:-moz-lwtheme {
+:is(toolbar, panel) :is(a, .text-link):-moz-lwtheme {
   color: #0060df;
 }
 
-toolbar[brighttext] .text-link:-moz-lwtheme,
-:root[lwt-popup-brighttext] panel .text-link {
+toolbar[brighttext] :is(a, .text-link):-moz-lwtheme,
+:root[lwt-popup-brighttext] panel :is(a, .text-link) {
   color: var(--lwt-brighttext-url-color);
 }
 
-toolbar .text-link:-moz-lwtheme:not(:hover),
-panel .text-link:-moz-lwtheme:not(:hover) {
+:is(toolbar, panel) :is(a, .text-link):-moz-lwtheme:not(:hover) {
   text-decoration: none;
 }
+
 
 /* Toolbar / content area border */
 
@@ -265,9 +264,10 @@ menupopup::part(drop-indicator-container) {
    * probably simplify this substantially, by making the indicator position:
    * absolute or so (which was never properly supported in XUL). The container
    * should become completely unnecessary then. */
-  -moz-box-flex: 1;
   min-width: 0;
   min-height: 0;
+  max-width: 100%;
+  max-height: 100%;
 }
 
 menupopup::part(drop-indicator-bar) {
@@ -339,7 +339,7 @@ menupopup::part(drop-indicator) {
 /* New Private Browsing Indicator */
 
 #private-browsing-indicator-with-label {
-  -moz-box-align: center;
+  align-items: center;
   margin-inline: 7px;
 }
 
@@ -541,6 +541,12 @@ menupopup::part(drop-indicator) {
   margin-inline-end: 12px;
 }
 
+#contextual-feature-recommendation-notification .cfr-doorhanger-medium-icon {
+  width: 50px;
+  height: 50px;
+  margin-inline-end: 12px;
+}
+
 #contextual-feature-recommendation-notification .popup-notification-body-container {
   width: 100%;
   padding-bottom: 2px;
@@ -564,6 +570,23 @@ menupopup::part(drop-indicator) {
   display: none;
 }
 
+#contextual-feature-recommendation-notification[data-notification-category="addon_recommendation"] .popup-notification-description > b {
+  font-weight: 300;
+  padding-inline-start: 5px;
+}
+
+#contextual-feature-recommendation-notification[data-notification-category="addon_recommendation"] #cfr-notification-footer-learn-more-link {
+  margin-inline-start: 5px;
+}
+
+#contextual-feature-recommendation-notification[data-notification-category="addon_recommendation"] #cfr-notification-header-image {
+  display: none;
+}
+
+#contextual-feature-recommendation-notification[data-notification-category="addon_recommendation"] #cfr-notification-header-label {
+  margin-block-end: 9px;
+}
+
 /*
  * `icon_and_message` CFR doorhanger with: icon, title and subtitle.
  * No panel header is shown
@@ -580,7 +603,6 @@ menupopup::part(drop-indicator) {
 #contextual-feature-recommendation-notification[data-notification-category="icon_and_message"] popupnotificationcontent {
   display: block; /* This forces the subtitle content to wrap */
 }
-
 
 #cfr-notification-feature-steps {
   display: flex;

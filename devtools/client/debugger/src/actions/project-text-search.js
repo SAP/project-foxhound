@@ -13,15 +13,17 @@ import {
   getSourceList,
   getSettledSourceTextContent,
   isSourceBlackBoxed,
+  getSearchOptions,
 } from "../selectors";
 import { createLocation } from "../utils/location";
+import { matchesGlobPatterns } from "../utils/source";
 import { loadSourceText } from "./sources/loadSourceText";
 import {
   getProjectSearchOperation,
   getProjectSearchStatus,
-  getTextSearchModifiers,
 } from "../selectors/project-text-search";
 import { statusType } from "../reducers/project-text-search";
+import { searchKeys } from "../constants";
 
 export function addSearchQuery(cx, query) {
   return { type: "ADD_QUERY", cx, query };
@@ -31,11 +33,12 @@ export function addOngoingSearch(cx, ongoingSearch) {
   return { type: "ADD_ONGOING_SEARCH", cx, ongoingSearch };
 }
 
-export function addSearchResult(cx, sourceId, filepath, matches) {
+export function addSearchResult(cx, location, matches) {
   return {
     type: "ADD_SEARCH_RESULT",
     cx,
-    result: { sourceId, filepath, matches },
+    location,
+    matches,
   };
 }
 
@@ -70,10 +73,6 @@ export function stopOngoingSearch(cx) {
   };
 }
 
-export function toggleProjectSearchModifier(cx, modifier) {
-  return { type: "TOGGLE_PROJECT_SEARCH_MODIFIER", cx, modifier };
-}
-
 export function searchSources(cx, query) {
   let cancelled = false;
 
@@ -83,8 +82,14 @@ export function searchSources(cx, query) {
     await dispatch(clearSearchResults(cx));
     await dispatch(addSearchQuery(cx, query));
     dispatch(updateSearchStatus(cx, statusType.fetching));
+    const searchOptions = getSearchOptions(
+      getState(),
+      searchKeys.PROJECT_SEARCH
+    );
     const validSources = getSourceList(getState()).filter(
-      source => !isSourceBlackBoxed(getState(), source)
+      source =>
+        !isSourceBlackBoxed(getState(), source) &&
+        !matchesGlobPatterns(source, searchOptions.excludePatterns)
     );
     // Sort original entries first so that search results are more useful.
     // Deprioritize third-party scripts, so their results show last.
@@ -143,25 +148,24 @@ export function searchSource(cx, source, sourceActor, query) {
     }
     const state = getState();
     const location = createLocation({
-      sourceId: source.id,
-      sourceActorId: sourceActor ? sourceActor.actor : null,
+      source,
+      sourceActor,
     });
 
-    const modifiers = getTextSearchModifiers(state);
+    const options = getSearchOptions(state, searchKeys.PROJECT_SEARCH);
     const content = getSettledSourceTextContent(state, location);
     let matches = [];
 
     if (content && isFulfilled(content) && content.value.type === "text") {
       matches = await searchWorker.findSourceMatches(
-        source.id,
         content.value,
         query,
-        modifiers
+        options
       );
     }
     if (!matches.length) {
       return;
     }
-    dispatch(addSearchResult(cx, source.id, source.url, matches));
+    dispatch(addSearchResult(cx, location, matches));
   };
 }

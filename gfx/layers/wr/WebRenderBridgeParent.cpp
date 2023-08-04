@@ -576,7 +576,7 @@ bool WebRenderBridgeParent::UpdateResources(
       case OpUpdateResource::TOpPushExternalImageForTexture: {
         const auto& op = cmd.get_OpPushExternalImageForTexture();
         CompositableTextureHostRef texture;
-        texture = TextureHost::AsTextureHost(op.textureParent());
+        texture = TextureHost::AsTextureHost(op.texture().AsParent());
         // gfxCriticalNote is called on error
         if (!PushExternalImageForTexture(op.externalImageId(), op.key(),
                                          texture, op.isUpdate(), aUpdates)) {
@@ -964,14 +964,9 @@ void WebRenderBridgeParent::BeginRecording(const TimeStamp& aRecordingStart) {
   mApi->BeginRecording(aRecordingStart, mPipelineId);
 }
 
-RefPtr<wr::WebRenderAPI::WriteCollectedFramesPromise>
-WebRenderBridgeParent::WriteCollectedFrames() {
-  return mApi->WriteCollectedFrames();
-}
-
-RefPtr<wr::WebRenderAPI::GetCollectedFramesPromise>
-WebRenderBridgeParent::GetCollectedFrames() {
-  return mApi->GetCollectedFrames();
+RefPtr<wr::WebRenderAPI::EndRecordingPromise>
+WebRenderBridgeParent::EndRecording() {
+  return mApi->EndRecording();
 }
 
 void WebRenderBridgeParent::AddPendingScrollPayload(
@@ -1114,10 +1109,8 @@ bool WebRenderBridgeParent::SetDisplayList(
         LayoutDeviceIntRect(LayoutDeviceIntPoint(), widgetSize);
     aTxn.SetDocumentView(rect);
   }
-  gfx::DeviceColor clearColor(0.f, 0.f, 0.f, 0.f);
-  aTxn.SetDisplayList(clearColor, aWrEpoch,
-                      wr::ToLayoutSize(RoundedToInt(aRect).Size()), mPipelineId,
-                      aDLDesc, dlItems, dlCache, dlSpatialTreeData);
+  aTxn.SetDisplayList(aWrEpoch, mPipelineId, aDLDesc, dlItems, dlCache,
+                      dlSpatialTreeData);
 
   if (aObserveLayersUpdate) {
     aTxn.Notify(
@@ -1696,7 +1689,7 @@ void WebRenderBridgeParent::MaybeCaptureScreenPixels() {
 #endif
 
 mozilla::ipc::IPCResult WebRenderBridgeParent::RecvGetSnapshot(
-    PTextureParent* aTexture, bool* aNeedsYFlip) {
+    NotNull<PTextureParent*> aTexture, bool* aNeedsYFlip) {
   *aNeedsYFlip = false;
   CompositorBridgeParent* cbp = GetRootCompositorBridgeParent();
   if (mDestroyed || !cbp || cbp->IsPaused()) {
@@ -2280,6 +2273,29 @@ TimeDuration WebRenderBridgeParent::GetVsyncInterval() const {
   return TimeDuration();
 }
 
+class SchedulePendingRemoteTextures : public wr::NotificationHandler {
+ public:
+  SchedulePendingRemoteTextures(
+      wr::WindowId aWindowId,
+      UniquePtr<RemoteTextureInfoList>&& aPendingRemoteTextures)
+      : mWindowId(aWindowId),
+        mPendingRemoteTextures(std::move(aPendingRemoteTextures)) {}
+
+  virtual void Notify(wr::Checkpoint aCheckpoint) override {
+    if (aCheckpoint == wr::Checkpoint::FrameBuilt) {
+      wr::RenderThread::Get()->PushPendingRemoteTexture(
+          mWindowId, std::move(mPendingRemoteTextures));
+
+    } else {
+      MOZ_ASSERT(aCheckpoint == wr::Checkpoint::TransactionDropped);
+    }
+  }
+
+ protected:
+  wr::WindowId mWindowId;
+  UniquePtr<RemoteTextureInfoList> mPendingRemoteTextures;
+};
+
 void WebRenderBridgeParent::MaybeGenerateFrame(VsyncId aId,
                                                bool aForceGenerateFrame,
                                                wr::RenderReasons aReasons) {
@@ -2352,6 +2368,14 @@ void WebRenderBridgeParent::MaybeGenerateFrame(VsyncId aId,
 
   SetOMTASampleTime();
   SetAPZSampleTime();
+
+  auto pendingTextures = mAsyncImageManager->GetPendingRemoteTextures();
+  if (pendingTextures) {
+    MOZ_ASSERT(!pendingTextures->mList.empty());
+    fastTxn.Notify(wr::Checkpoint::FrameBuilt,
+                   MakeUnique<SchedulePendingRemoteTextures>(
+                       mApi->GetId(), std::move(pendingTextures)));
+  }
 
 #if defined(ENABLE_FRAME_LATENCY_LOG)
   auto startTime = TimeStamp::Now();

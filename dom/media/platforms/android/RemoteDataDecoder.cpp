@@ -66,7 +66,7 @@ class RenderOrReleaseOutput {
   java::Sample::GlobalRef mSample;
 };
 
-class RemoteVideoDecoder : public RemoteDataDecoder {
+class RemoteVideoDecoder final : public RemoteDataDecoder {
  public:
   // Render the output to the surface when the frame is sent
   // to compositor, or release it if not presented.
@@ -210,11 +210,12 @@ class RemoteVideoDecoder : public RemoteDataDecoder {
         mJavaDecoder->IsAdaptivePlaybackSupported();
     mIsHardwareAccelerated = mJavaDecoder->IsHardwareAccelerated();
 
-    // On Mediatek 6735 devices we have observed that the transform obtained
-    // from SurfaceTexture.getTransformMatrix() is incorrect for surfaces
-    // produced by a MediaCodec. We therefore override the transform to be a
-    // simple y-flip to ensure it is rendered correctly.
-    if (java::sdk::Build::HARDWARE()->ToString().EqualsASCII("mt6735")) {
+    // On some devices we have observed that the transform obtained from
+    // SurfaceTexture.getTransformMatrix() is incorrect for surfaces produced by
+    // a MediaCodec. We therefore override the transform to be a simple y-flip
+    // to ensure it is rendered correctly.
+    const auto hardware = java::sdk::Build::HARDWARE()->ToString();
+    if (hardware.EqualsASCII("mt6735") || hardware.EqualsASCII("kirin980")) {
       mTransformOverride = Some(
           gfx::Matrix4x4::Scaling(1.0, -1.0, 1.0).PostTranslate(0.0, 1.0, 0.0));
     }
@@ -242,6 +243,20 @@ class RemoteVideoDecoder : public RemoteDataDecoder {
     mLatestOutputTime.reset();
     mPerformanceRecorder.Record(std::numeric_limits<int64_t>::max());
     return RemoteDataDecoder::Flush();
+  }
+
+  nsCString GetCodecName() const override {
+    if (mMediaInfoFlag & MediaInfoFlag::VIDEO_H264) {
+      return "h264"_ns;
+    } else if (mMediaInfoFlag & MediaInfoFlag::VIDEO_VP8) {
+      return "vp8"_ns;
+    } else if (mMediaInfoFlag & MediaInfoFlag::VIDEO_VP9) {
+      return "vp9"_ns;
+    } else if (mMediaInfoFlag & MediaInfoFlag::VIDEO_AV1) {
+      return "av1"_ns;
+    } else {
+      return "unknown"_ns;
+    }
   }
 
   RefPtr<MediaDataDecoder::DecodePromise> Decode(
@@ -552,7 +567,7 @@ class RemoteVideoDecoder : public RemoteDataDecoder {
   PerformanceRecorderMulti<DecodeStage> mPerformanceRecorder;
 };
 
-class RemoteAudioDecoder : public RemoteDataDecoder {
+class RemoteAudioDecoder final : public RemoteDataDecoder {
  public:
   RemoteAudioDecoder(const AudioInfo& aConfig,
                      java::sdk::MediaFormat::Param aFormat,
@@ -607,6 +622,13 @@ class RemoteAudioDecoder : public RemoteDataDecoder {
     }
 
     return InitPromise::CreateAndResolve(TrackInfo::kAudioTrack, __func__);
+  }
+
+  nsCString GetCodecName() const override {
+    if (mMimeType.EqualsLiteral("audio/mp4a-latm")) {
+      return "aac"_ns;
+    }
+    return "unknown"_ns;
   }
 
   RefPtr<FlushPromise> Flush() override {

@@ -45,6 +45,8 @@ ChromeUtils.defineModuleGetter(
 );
 ChromeUtils.defineESModuleGetters(lazy, {
   ClientID: "resource://gre/modules/ClientID.sys.mjs",
+  ExperimentAPI: "resource://nimbus/ExperimentAPI.sys.mjs",
+  NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
   TelemetryEnvironment: "resource://gre/modules/TelemetryEnvironment.sys.mjs",
   TelemetrySession: "resource://gre/modules/TelemetrySession.sys.mjs",
@@ -60,11 +62,6 @@ ChromeUtils.defineModuleGetter(
   "ExtensionSettingsStore",
   "resource://gre/modules/ExtensionSettingsStore.jsm"
 );
-
-XPCOMUtils.defineLazyModuleGetters(lazy, {
-  ExperimentAPI: "resource://nimbus/ExperimentAPI.jsm",
-  NimbusFeatures: "resource://nimbus/ExperimentAPI.jsm",
-});
 
 const ACTIVITY_STREAM_ID = "activity-stream";
 const DOMWINDOW_OPENED_TOPIC = "domwindowopened";
@@ -862,6 +859,9 @@ class TelemetryFeed {
   handleTopSitesSponsoredImpressionStats(action) {
     const { data } = action;
     const { type, position, source } = data;
+    // Legacy telemetry (scalars and PingCentre payloads) expects 1-based tile
+    // positions.
+    const legacyTelemetryPosition = position + 1;
     let pingType;
 
     const session = this.sessions.get(au.getPortIdOfSender(action));
@@ -869,26 +869,28 @@ class TelemetryFeed {
       pingType = "topsites-impression";
       Services.telemetry.keyedScalarAdd(
         `${SCALAR_CATEGORY_TOPSITES}.impression`,
-        `${source}_${position}`,
+        `${source}_${legacyTelemetryPosition}`,
         1
       );
       if (session) {
         Glean.topsites.impression.record({
           newtab_visit_id: session.session_id,
           is_sponsored: true,
+          position,
         });
       }
     } else if (type === "click") {
       pingType = "topsites-click";
       Services.telemetry.keyedScalarAdd(
         `${SCALAR_CATEGORY_TOPSITES}.click`,
-        `${source}_${position}`,
+        `${source}_${legacyTelemetryPosition}`,
         1
       );
       if (session) {
         Glean.topsites.click.record({
           newtab_visit_id: session.session_id,
           is_sponsored: true,
+          position,
         });
       }
     } else {
@@ -896,7 +898,11 @@ class TelemetryFeed {
       return;
     }
 
-    let payload = { ...data, context_id: lazy.contextId };
+    let payload = {
+      ...data,
+      position: legacyTelemetryPosition,
+      context_id: lazy.contextId,
+    };
     delete payload.type;
     this.sendStructuredIngestionEvent(
       payload,
@@ -917,6 +923,7 @@ class TelemetryFeed {
         Glean.topsites.impression.record({
           newtab_visit_id: session.session_id,
           is_sponsored: false,
+          position: action.data.position,
         });
         break;
 
@@ -924,6 +931,7 @@ class TelemetryFeed {
         Glean.topsites.click.record({
           newtab_visit_id: session.session_id,
           is_sponsored: false,
+          position: action.data.position,
         });
         break;
 
@@ -1282,32 +1290,63 @@ class TelemetryFeed {
         newtab_visit_id: session.session_id,
         source,
       });
-      // Temporary event used for validation of Glean Server Knobs
-      // functionality. This event is disabled by default.
-      // See Bug 1811561 for more information.
-      Glean.serverKnobs.validation.record();
     }
   }
 
   _beginObservingNewtabPingPrefs() {
-    const BRANCH = "browser.newtabpage.activity-stream.";
+    const TOP_SITES_BLOCKED_SPONSORS_PREF = "browser.topsites.blockedSponsors";
+    const ACTIVITY_STREAM_PREF_BRANCH = "browser.newtabpage.activity-stream.";
     const NEWTAB_PING_PREFS = {
       showSearch: Glean.newtabSearch.enabled,
       "feeds.topsites": Glean.topsites.enabled,
       showSponsoredTopSites: Glean.topsites.sponsoredEnabled,
       "feeds.section.topstories": Glean.pocket.enabled,
       showSponsored: Glean.pocket.sponsoredStoriesEnabled,
+      topSitesRows: Glean.topsites.rows,
     };
-    const setNewtabPrefMetrics = () => {
-      for (const [pref, metric] of Object.entries(NEWTAB_PING_PREFS)) {
-        metric.set(Services.prefs.getBoolPref(BRANCH + pref));
+    const setNewtabPrefMetrics = fullPrefName => {
+      const pref = fullPrefName.slice(ACTIVITY_STREAM_PREF_BRANCH.length);
+      if (!Object.hasOwn(NEWTAB_PING_PREFS, pref)) {
+        return;
+      }
+      const metric = NEWTAB_PING_PREFS[pref];
+      switch (Services.prefs.getPrefType(fullPrefName)) {
+        case Services.prefs.PREF_BOOL:
+          metric.set(Services.prefs.getBoolPref(fullPrefName));
+          break;
+
+        case Services.prefs.PREF_INT:
+          metric.set(Services.prefs.getIntPref(fullPrefName));
+          break;
       }
     };
+    Services.prefs.addObserver(
+      ACTIVITY_STREAM_PREF_BRANCH,
+      (subject, topic, data) => setNewtabPrefMetrics(data)
+    );
     for (const pref of Object.keys(NEWTAB_PING_PREFS)) {
-      Services.prefs.addObserver(BRANCH + pref, setNewtabPrefMetrics);
+      const fullPrefName = ACTIVITY_STREAM_PREF_BRANCH + pref;
+      setNewtabPrefMetrics(fullPrefName);
     }
-    setNewtabPrefMetrics();
     Glean.pocket.isSignedIn.set(lazy.pktApi.isUserLoggedIn());
+
+    const setBlockedSponsorsMetrics = () => {
+      let blocklist;
+      try {
+        blocklist = JSON.parse(
+          Services.prefs.getStringPref(TOP_SITES_BLOCKED_SPONSORS_PREF, "[]")
+        );
+      } catch (e) {}
+      if (blocklist) {
+        Glean.newtab.blockedSponsors.set(blocklist);
+      }
+    };
+
+    Services.prefs.addObserver(
+      TOP_SITES_BLOCKED_SPONSORS_PREF,
+      setBlockedSponsorsMetrics
+    );
+    setBlockedSponsorsMetrics();
   }
 
   uninit() {

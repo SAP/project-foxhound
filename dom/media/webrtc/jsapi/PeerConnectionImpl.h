@@ -32,6 +32,7 @@
 #include "jsapi/PacketDumper.h"
 #include "mozilla/dom/RTCPeerConnectionBinding.h"  // mozPacketDumpType, maybe move?
 #include "mozilla/dom/PeerConnectionImplBinding.h"  // ChainedOperation
+#include "mozilla/dom/RTCRtpCapabilitiesBinding.h"
 #include "mozilla/dom/RTCRtpTransceiverBinding.h"
 #include "mozilla/dom/RTCConfigurationBinding.h"
 #include "PrincipalChangeObserver.h"
@@ -39,7 +40,6 @@
 
 #include "mozilla/TimeStamp.h"
 #include "mozilla/net/DataChannel.h"
-#include "mozilla/TupleCycleCollection.h"
 #include "VideoUtils.h"
 #include "VideoSegment.h"
 #include "mozilla/dom/RTCStatsReportBinding.h"
@@ -180,6 +180,12 @@ class PeerConnectionImpl final
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(PeerConnectionImpl)
 
+  struct RtpExtensionHeader {
+    JsepMediaType mMediaType;
+    SdpDirectionAttribute::Direction direction;
+    std::string extensionname;
+  };
+
   JSObject* WrapObject(JSContext* aCx,
                        JS::Handle<JSObject*> aGivenProto) override;
   nsPIDOMWindowInner* GetParentObject() const;
@@ -192,6 +198,14 @@ class PeerConnectionImpl final
       // PeerConnectionImpl only inherits from mozilla::DataChannelConnection
       // inside libxul.
       override;
+
+  void NotifyDataChannelOpen(DataChannel*) override;
+
+  void NotifyDataChannelClosed(DataChannel*) override;
+
+  void NotifySctpConnected() override;
+
+  void NotifySctpClosed() override;
 
   const RefPtr<MediaTransportHandler> GetTransportHandler() const;
 
@@ -368,6 +382,14 @@ class PeerConnectionImpl final
     return mIceGatheringState;
   }
 
+  NS_IMETHODIMP ConnectionState(mozilla::dom::RTCPeerConnectionState* aState);
+
+  mozilla::dom::RTCPeerConnectionState ConnectionState() {
+    mozilla::dom::RTCPeerConnectionState state;
+    ConnectionState(&state);
+    return state;
+  }
+
   NS_IMETHODIMP Close();
 
   void Close(ErrorResult& rv) { rv = Close(); }
@@ -380,6 +402,8 @@ class PeerConnectionImpl final
                                const RTCConfiguration& aConfiguration) {
     rv = SetConfiguration(aConfiguration);
   }
+
+  dom::RTCSctpTransport* GetSctp() const;
 
   void RestartIce();
   void RestartIceNoRenegotiationNeeded();
@@ -469,6 +493,11 @@ class PeerConnectionImpl final
   // called when DTLS connects; we only need this once
   nsresult OnAlpnNegotiated(bool aPrivacyRequested);
 
+  void OnDtlsStateChange(const std::string& aTransportId,
+                         TransportLayer::State aState);
+  void UpdateConnectionState();
+  dom::RTCPeerConnectionState GetNewConnectionState() const;
+
   // initialize telemetry for when calls start
   void StartCallTelem();
 
@@ -529,6 +558,25 @@ class PeerConnectionImpl final
   void DisableLongTermStats() { mDisableLongTermStats = true; }
 
   bool LongTermStatsIsDisabled() const { return mDisableLongTermStats; }
+
+  static void GetDefaultVideoCodecs(
+      std::vector<UniquePtr<JsepCodecDescription>>& aSupportedCodecs,
+      bool aUseRtx);
+
+  static void GetDefaultAudioCodecs(
+      std::vector<UniquePtr<JsepCodecDescription>>& aSupportedCodecs);
+
+  static void GetDefaultRtpExtensions(
+      std::vector<RtpExtensionHeader>& aRtpExtensions);
+
+  static void GetCapabilities(const nsAString& aKind,
+                              dom::Nullable<dom::RTCRtpCapabilities>& aResult,
+                              sdp::Direction aDirection);
+  static void SetupPreferredCodecs(
+      std::vector<UniquePtr<JsepCodecDescription>>& aPreferredCodecs);
+
+  static void SetupPreferredRtpExtensions(
+      std::vector<RtpExtensionHeader>& aPreferredheaders);
 
  private:
   virtual ~PeerConnectionImpl();
@@ -599,6 +647,8 @@ class PeerConnectionImpl final
   mozilla::dom::RTCIceConnectionState mIceConnectionState;
   mozilla::dom::RTCIceGatheringState mIceGatheringState;
 
+  mozilla::dom::RTCPeerConnectionState mConnectionState;
+
   RefPtr<PeerConnectionObserver> mPCObserver;
 
   nsCOMPtr<nsPIDOMWindowInner> mWindow;
@@ -644,6 +694,8 @@ class PeerConnectionImpl final
 
   // DataConnection that's used to get all the DataChannels
   RefPtr<mozilla::DataChannelConnection> mDataConnection;
+  unsigned int mDataChannelsOpened = 0;
+  unsigned int mDataChannelsClosed = 0;
 
   bool mForceIceTcp;
   RefPtr<MediaTransportHandler> mTransportHandler;
@@ -804,6 +856,7 @@ class PeerConnectionImpl final
   nsTArray<RefPtr<dom::RTCRtpTransceiver>> mTransceivers;
   std::map<std::string, RefPtr<dom::RTCDtlsTransport>>
       mTransportIdToRTCDtlsTransport;
+  RefPtr<dom::RTCSctpTransport> mSctpTransport;
 
   // Used whenever we need to dispatch a runnable to STS to tweak something
   // on our ICE ctx, but are not ready to do so at the moment (eg; we are
@@ -869,6 +922,8 @@ class PeerConnectionImpl final
     void OnCandidateFound_s(const std::string& aTransportId,
                             const CandidateInfo& aCandidateInfo);
     void AlpnNegotiated_s(const std::string& aAlpn, bool aPrivacyRequested);
+    void ConnectionStateChange_s(const std::string& aTransportId,
+                                 TransportLayer::State aState);
 
    private:
     const std::string mHandle;

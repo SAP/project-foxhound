@@ -7,6 +7,7 @@ import { FluentBundle, FluentResource } from "@fluent/bundle";
 import { addons } from "@storybook/addons";
 import { PSEUDO_STRATEGY_TRANSFORMS } from "./l10n-pseudo.mjs";
 import {
+  FLUENT_SET_STRINGS,
   UPDATE_STRATEGY_EVENT,
   STRATEGY_DEFAULT,
   PSEUDO_STRATEGIES,
@@ -26,6 +27,15 @@ let storybookBundle = new FluentBundle("en-US", {
 // Listen for update events from addon-pseudo-localization.
 const channel = addons.getChannel();
 channel.on(UPDATE_STRATEGY_EVENT, updatePseudoStrategy);
+channel.on(FLUENT_SET_STRINGS, ftlContents => {
+  let resource = new FluentResource(ftlContents);
+  for (let message of resource.body) {
+    let existingMessage = storybookBundle.getMessage(message.id);
+    existingMessage.value = message.value;
+    existingMessage.attributes = message.attributes;
+  }
+  document.l10n.translateRoots();
+});
 
 /**
  * Updates "currentStrategy" when the selected pseudo localization strategy
@@ -51,13 +61,13 @@ function* generateBundles() {
   yield* [storybookBundle];
 }
 
-export async function insertFTLIfNeeded(name) {
-  if (loadedResources.has(name)) {
+export async function insertFTLIfNeeded(fileName) {
+  if (loadedResources.has(fileName)) {
     return;
   }
 
   // This should be browser, locales-preview or toolkit.
-  let [root, ...rest] = name.split("/");
+  let [root, ...rest] = fileName.split("/");
   let ftlContents;
 
   // TODO(mstriemer): These seem like they could be combined but I don't want
@@ -66,14 +76,14 @@ export async function insertFTLIfNeeded(name) {
     // eslint-disable-next-line no-unsanitized/method
     let imported = await import(
       /* webpackInclude: /.*[\/\\].*\.ftl$/ */
-      `toolkit/locales/en-US/${name}`
+      `toolkit/locales/en-US/${fileName}`
     );
     ftlContents = imported.default;
   } else if (root == "browser") {
     // eslint-disable-next-line no-unsanitized/method
     let imported = await import(
       /* webpackInclude: /.*[\/\\].*\.ftl$/ */
-      `browser/locales/en-US/${name}`
+      `browser/locales/en-US/${fileName}`
     );
     ftlContents = imported.default;
   } else if (root == "locales-preview") {
@@ -92,14 +102,21 @@ export async function insertFTLIfNeeded(name) {
     ftlContents = imported.default;
   }
 
-  if (loadedResources.has(name)) {
+  if (loadedResources.has(fileName)) {
     // Seems possible we've attempted to load this twice before the first call
     // resolves, so once the first load is complete we can abandon the others.
     return;
   }
 
+  provideFluent(ftlContents, fileName);
+}
+
+export function provideFluent(ftlContents, fileName) {
   let ftlResource = new FluentResource(ftlContents);
   storybookBundle.addResource(ftlResource);
-  loadedResources.set(name, ftlResource);
+  if (fileName) {
+    loadedResources.set(fileName, ftlResource);
+  }
   document.l10n.translateRoots();
+  return ftlResource;
 }

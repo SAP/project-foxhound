@@ -98,6 +98,7 @@ include = [
   "PrefersColorScheme",
   "PrefersContrast",
   "DynamicRange",
+  "Scripting",
   "FillRule",
   "FontDisplay",
   "FontFaceSourceListComponent",
@@ -574,6 +575,11 @@ renaming_overrides_prefixing = true
   static inline StyleAbsoluteColor White();
 
   static inline StyleAbsoluteColor FromColor(nscolor);
+
+  /**
+   * Convert this color into the given color space.
+   */
+  StyleAbsoluteColor ToColorSpace(StyleColorSpace aColorSpace) const;
 
   /**
    * Convert this color to an nscolor. The color will be converted to sRGB first

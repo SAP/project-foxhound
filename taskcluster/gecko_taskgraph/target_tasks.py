@@ -770,8 +770,11 @@ def target_tasks_general_perf_testing(full_task_graph, parameters, graph_config)
         # Android selection
         elif accept_raptor_android_build(platform):
             # Bug 1780817 - a51 and p2/p5 are failing to install chrome
-            if "chrome-m" in try_name and (
-                "-a51" in platform or "-p2" in platform or "-p5" in platform
+            # Temporarily enabling the a51 tests for essential and speedometer tests
+            if (
+                "chrome-m" in try_name
+                and ("-a51" in platform or "-p2" in platform or "-p5" in platform)
+                and not ("speedometer" in try_name or "essential" in try_name)
             ):
                 return False
             # Ignore all fennec tests here, we run those weekly
@@ -831,6 +834,25 @@ def make_desktop_nightly_filter(platforms):
         )
 
     return filter
+
+
+@_target_task("sp-perftests")
+def target_tasks_speedometer_tests(full_task_graph, parameters, graph_config):
+    def filter(task):
+        platform = task.attributes.get("test_platform")
+        attributes = task.attributes
+        if attributes.get("unittest_suite") != "raptor":
+            return False
+        if "windows10-32" not in platform:
+            try_name = attributes.get("raptor_try_name")
+            if (
+                "browsertime" in try_name
+                and "speedometer" in try_name
+                and "chrome" in try_name
+            ):
+                return True
+
+    return [l for l, t in full_task_graph.tasks.items() if filter(t)]
 
 
 @_target_task("nightly_linux")

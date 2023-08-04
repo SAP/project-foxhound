@@ -8,7 +8,11 @@
  */
 
 const { getUnicodeUrl } = require("devtools/client/shared/unicode-url");
+const {
+  micromatch,
+} = require("devtools/client/shared/vendor/micromatch/micromatch.js");
 
+import { getRelativePath } from "../utils/sources-tree/utils";
 import { endTruncateStr } from "./utils";
 import { truncateMiddleText } from "../utils/text";
 import { parse as parseURL } from "../utils/url";
@@ -65,20 +69,18 @@ export function shouldBlackbox(source) {
  *
  * @param {Object}  frame
  *                  The current frame
- * @param {Object}  source
- *                  The source related to the frame
  * @param {Object}  blackboxedRanges
  *                  The currently blackboxedRanges for all the sources.
  * @param {Boolean} isFrameBlackBoxed
  *                  If the frame is within the blackboxed range
  *                  or not.
  */
-export function isFrameBlackBoxed(frame, source, blackboxedRanges) {
+export function isFrameBlackBoxed(frame, blackboxedRanges) {
   return (
-    source &&
-    !!blackboxedRanges[source.url] &&
-    (!blackboxedRanges[source.url].length ||
-      !!findBlackBoxRange(source, blackboxedRanges, {
+    frame.source &&
+    !!blackboxedRanges[frame.source.url] &&
+    (!blackboxedRanges[frame.source.url].length ||
+      !!findBlackBoxRange(frame.source, blackboxedRanges, {
         start: frame.location.line,
         end: frame.location.line,
       }))
@@ -475,4 +477,34 @@ export function getSourceQueryString(source) {
 
 export function isUrlExtension(url) {
   return url.includes("moz-extension:") || url.includes("chrome-extension");
+}
+
+/**
+* Checks that source url matches one of the glob patterns
+*
+* @param {Object} source
+* @param {String} excludePatterns
+                  String of comma-seperated glob patterns
+* @return {return} Boolean value specifies if the string matches any
+                 of the patterns.
+*/
+export function matchesGlobPatterns(source, excludePatterns) {
+  if (!excludePatterns) {
+    return false;
+  }
+  const patterns = excludePatterns
+    .split(",")
+    .map(pattern => pattern.trim())
+    .filter(pattern => pattern !== "");
+
+  if (!patterns.length) {
+    return false;
+  }
+
+  return micromatch.contains(
+    // Makes sure we format the url or id exactly the way its displayed in the search ui,
+    // as user wil usually create glob patterns based on what is seen in the ui.
+    source.url ? getRelativePath(source.url) : getFormattedSourceId(source.id),
+    patterns
+  );
 }

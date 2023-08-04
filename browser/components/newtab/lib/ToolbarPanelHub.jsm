@@ -11,12 +11,12 @@ const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   Preferences: "resource://gre/modules/Preferences.sys.mjs",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
+  SpecialMessageActions:
+    "resource://messaging-system/lib/SpecialMessageActions.sys.mjs",
 });
 
 XPCOMUtils.defineLazyModuleGetters(lazy, {
   EveryWindow: "resource:///modules/EveryWindow.jsm",
-  SpecialMessageActions:
-    "resource://messaging-system/lib/SpecialMessageActions.jsm",
   RemoteL10n: "resource://activity-stream/lib/RemoteL10n.jsm",
 });
 ChromeUtils.defineModuleGetter(
@@ -119,7 +119,7 @@ class _ToolbarPanelHub {
 
   maybeInsertFTL(win) {
     win.MozXULElement.insertFTLIfNeeded("browser/newtab/asrouter.ftl");
-    win.MozXULElement.insertFTLIfNeeded("browser/branding/brandings.ftl");
+    win.MozXULElement.insertFTLIfNeeded("toolkit/branding/brandings.ftl");
     win.MozXULElement.insertFTLIfNeeded("browser/branding/sync-brand.ftl");
   }
 

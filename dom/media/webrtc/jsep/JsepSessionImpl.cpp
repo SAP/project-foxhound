@@ -112,9 +112,6 @@ nsresult JsepSessionImpl::Init() {
   nsresult rv = SetupIds();
   NS_ENSURE_SUCCESS(rv, rv);
 
-  SetupDefaultCodecs();
-  SetupDefaultRtpExtensions();
-
   mEncodeTrackId =
       Preferences::GetBool("media.peerconnection.sdp.encode_track_id", true);
 
@@ -844,6 +841,7 @@ JsepSession::Result JsepSessionImpl::SetLocalDescription(
 
     const auto& msection = parsed->GetMediaSection(i);
     transceiver->Associate(msection.GetAttributeList().GetMid());
+    transceiver->mRecvTrack.RecvTrackSetLocal(msection);
 
     if (mSdpHelper.MsectionIsDisabled(msection)) {
       transceiver->mTransport.Close();
@@ -2154,75 +2152,12 @@ nsresult JsepSessionImpl::SetupIds() {
   return NS_OK;
 }
 
-void JsepSessionImpl::SetupDefaultCodecs() {
-  // Supported audio codecs.
-  mSupportedCodecs.emplace_back(JsepAudioCodecDescription::CreateDefaultOpus());
-  mSupportedCodecs.emplace_back(JsepAudioCodecDescription::CreateDefaultG722());
-  mSupportedCodecs.emplace_back(JsepAudioCodecDescription::CreateDefaultPCMU());
-  mSupportedCodecs.emplace_back(JsepAudioCodecDescription::CreateDefaultPCMA());
-  mSupportedCodecs.emplace_back(
-      JsepAudioCodecDescription::CreateDefaultTelephoneEvent());
+void JsepSessionImpl::SetDefaultCodecs(
+    const std::vector<UniquePtr<JsepCodecDescription>>& aPreferredCodecs) {
+  mSupportedCodecs.clear();
 
-  bool useRtx =
-      mRtxIsAllowed &&
-      Preferences::GetBool("media.peerconnection.video.use_rtx", false);
-  // Supported video codecs.
-  // Note: order here implies priority for building offers!
-  mSupportedCodecs.emplace_back(
-      JsepVideoCodecDescription::CreateDefaultVP8(useRtx));
-  mSupportedCodecs.emplace_back(
-      JsepVideoCodecDescription::CreateDefaultVP9(useRtx));
-  mSupportedCodecs.emplace_back(
-      JsepVideoCodecDescription::CreateDefaultH264_1(useRtx));
-  mSupportedCodecs.emplace_back(
-      JsepVideoCodecDescription::CreateDefaultH264_0(useRtx));
-  mSupportedCodecs.emplace_back(
-      JsepVideoCodecDescription::CreateDefaultUlpFec());
-
-  mSupportedCodecs.emplace_back(
-      JsepApplicationCodecDescription::CreateDefault());
-
-  auto red = JsepVideoCodecDescription::CreateDefaultRed();
-  // Update the redundant encodings for the RED codec with the supported
-  // codecs.  Note: only uses the video codecs.
-  red->UpdateRedundantEncodings(mSupportedCodecs);
-  mSupportedCodecs.push_back(std::move(red));
-
-  // Filter out codecs using pref (case sensitive), useful for testing.
-  nsCString filteredCodecsPref;
-  if (NS_OK ==
-      Preferences::GetCString("media.peerconnection.default_codecs.blocklist",
-                              filteredCodecsPref)) {
-    for (const auto& codecName : filteredCodecsPref.Split(',')) {
-      nsCString blocked(codecName.BeginReading(), codecName.Length());
-      blocked.StripWhitespace();
-      // Remove blocked codecs
-      mSupportedCodecs.erase(
-          std::remove_if(mSupportedCodecs.begin(), mSupportedCodecs.end(),
-                         [&](const UniquePtr<JsepCodecDescription>& codec) {
-                           return blocked.EqualsASCII(codec->mName.c_str());
-                         }),
-          mSupportedCodecs.end());
-    }
-  }
-}
-
-void JsepSessionImpl::SetupDefaultRtpExtensions() {
-  AddAudioRtpExtension(webrtc::RtpExtension::kAudioLevelUri,
-                       SdpDirectionAttribute::Direction::kSendrecv);
-  AddAudioRtpExtension(webrtc::RtpExtension::kCsrcAudioLevelsUri,
-                       SdpDirectionAttribute::Direction::kRecvonly);
-  AddAudioVideoRtpExtension(webrtc::RtpExtension::kMidUri,
-                            SdpDirectionAttribute::Direction::kSendrecv);
-  AddVideoRtpExtension(webrtc::RtpExtension::kAbsSendTimeUri,
-                       SdpDirectionAttribute::Direction::kSendrecv);
-  AddVideoRtpExtension(webrtc::RtpExtension::kTimestampOffsetUri,
-                       SdpDirectionAttribute::Direction::kSendrecv);
-  AddVideoRtpExtension(webrtc::RtpExtension::kPlayoutDelayUri,
-                       SdpDirectionAttribute::Direction::kRecvonly);
-  if (Preferences::GetBool("media.navigator.video.use_transport_cc", false)) {
-    AddVideoRtpExtension(webrtc::RtpExtension::kTransportSequenceNumberUri,
-                         SdpDirectionAttribute::Direction::kSendrecv);
+  for (const auto& codec : aPreferredCodecs) {
+    mSupportedCodecs.emplace_back(codec->Clone());
   }
 }
 
@@ -2515,12 +2450,42 @@ bool JsepSessionImpl::CheckNegotiationNeeded() const {
     const SdpMediaSection& remote =
         mCurrentRemoteDescription->GetMediaSection(level);
 
-    if (!local.GetAttributeList().HasAttribute(SdpAttribute::kMsidAttribute) &&
-        (transceiver->mJsDirection & sdp::kSend)) {
-      MOZ_MTLOG(ML_DEBUG, "[" << mName
-                              << "]: Negotiation needed because of "
-                                 "lack of a=msid, and transceiver is sending.");
-      return true;
+    if (transceiver->mJsDirection & sdp::kSend) {
+      std::vector<std::string> sdpMsids;
+      if (local.GetAttributeList().HasAttribute(SdpAttribute::kMsidAttribute)) {
+        for (const auto& msidAttr : local.GetAttributeList().GetMsid().mMsids) {
+          if (msidAttr.identifier != "-") {
+            sdpMsids.push_back(msidAttr.identifier);
+          }
+        }
+      }
+      std::sort(sdpMsids.begin(), sdpMsids.end());
+
+      std::vector<std::string> jsepMsids;
+      for (const auto& jsepMsid : transceiver->mSendTrack.GetStreamIds()) {
+        jsepMsids.push_back(jsepMsid);
+      }
+      std::sort(jsepMsids.begin(), jsepMsids.end());
+
+      if (!std::equal(sdpMsids.begin(), sdpMsids.end(), jsepMsids.begin(),
+                      jsepMsids.end())) {
+        MOZ_MTLOG(ML_DEBUG,
+                  "[" << mName
+                      << "]: Negotiation needed because transceiver "
+                         "is sending, and the local SDP has different "
+                         "msids than the send track");
+        MOZ_MTLOG(ML_DEBUG, "[" << mName << "]: SDP msids = [");
+        for (const auto& msid : sdpMsids) {
+          MOZ_MTLOG(ML_DEBUG, msid << ", ");
+        }
+        MOZ_MTLOG(ML_DEBUG, "]");
+        MOZ_MTLOG(ML_DEBUG, "[" << mName << "]: JSEP msids = [");
+        for (const auto& msid : jsepMsids) {
+          MOZ_MTLOG(ML_DEBUG, msid << ", ");
+        }
+        MOZ_MTLOG(ML_DEBUG, "]");
+        return true;
+      }
     }
 
     if (mIsCurrentOfferer.isSome() && *mIsCurrentOfferer) {

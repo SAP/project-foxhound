@@ -159,6 +159,10 @@ nsFileStreamBase::GetFileDescriptor(PRFileDesc** _retval) {
 }
 
 nsresult nsFileStreamBase::Close() {
+  if (mState == eClosed) {
+    return NS_OK;
+  }
+
   CleanUpOpen();
 
   nsresult rv = NS_OK;
@@ -232,6 +236,34 @@ nsresult nsFileStreamBase::Flush(void) {
     return NS_ErrorAccordingToNSPR();
   }
   return NS_OK;
+}
+
+nsresult nsFileStreamBase::StreamStatus() {
+  switch (mState) {
+    case eUnitialized:
+      MOZ_CRASH("This should not happen.");
+      return NS_ERROR_FAILURE;
+
+    case eDeferredOpen:
+      return NS_OK;
+
+    case eOpened:
+      MOZ_ASSERT(mFD);
+      if (NS_WARN_IF(!mFD)) {
+        return NS_ERROR_FAILURE;
+      }
+      return NS_OK;
+
+    case eClosed:
+      MOZ_ASSERT(!mFD);
+      return NS_BASE_STREAM_CLOSED;
+
+    case eError:
+      return mErrorValue;
+  }
+
+  MOZ_CRASH("Invalid mState value.");
+  return NS_ERROR_FAILURE;
 }
 
 nsresult nsFileStreamBase::Write(const char* buf, uint32_t count,
@@ -448,6 +480,11 @@ nsFileInputStream::Init(nsIFile* aFile, int32_t aIOFlags, int32_t aPerm,
 
 NS_IMETHODIMP
 nsFileInputStream::Close() {
+  // If this stream has already been closed, do nothing.
+  if (mState == eClosed) {
+    return NS_OK;
+  }
+
   // Get the cache position at the time the file was close. This allows
   // NS_SEEK_CUR on a closed file that has been opened with
   // REOPEN_ON_REWIND.
@@ -456,7 +493,7 @@ nsFileInputStream::Close() {
     nsFileStreamBase::Tell(&mCachedPosition);
   }
 
-  // null out mLineBuffer in case Close() is called again after failing
+  // explicitly clear mLineBuffer in case this stream is reopened
   mLineBuffer = nullptr;
   return nsFileStreamBase::Close();
 }
@@ -538,6 +575,9 @@ NS_IMETHODIMP
 nsFileInputStream::Available(uint64_t* aResult) {
   return nsFileStreamBase::Available(aResult);
 }
+
+NS_IMETHODIMP
+nsFileInputStream::StreamStatus() { return nsFileStreamBase::StreamStatus(); }
 
 void nsFileInputStream::SerializedComplexity(uint32_t aMaxSize,
                                              uint32_t* aSizeUsed,

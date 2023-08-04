@@ -181,6 +181,7 @@ static const char sIntPrefs[][45] = {
     "ui.GtkCSDReversedPlacement",
     "ui.systemUsesDarkTheme",
     "ui.prefersReducedMotion",
+    "ui.prefersReducedTransparency",
     "ui.primaryPointerCapabilities",
     "ui.allPointerCapabilities",
     "ui.systemScrollbarSize",
@@ -531,6 +532,7 @@ static constexpr struct {
     {"browser.theme.content-theme"_ns},
     {"mathml.legacy_maction_and_semantics_implementations.disabled"_ns},
     {"mathml.ms_lquote_rquote_attributes.disabled"_ns},
+    {"dom.element.popover.enabled"_ns},
 };
 
 // Read values from the user's preferences.

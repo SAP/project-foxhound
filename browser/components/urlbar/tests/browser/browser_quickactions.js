@@ -11,11 +11,12 @@ requestLongerTimeout(3);
 
 ChromeUtils.defineESModuleGetters(this, {
   AppConstants: "resource://gre/modules/AppConstants.sys.mjs",
+  UpdateService: "resource://gre/modules/UpdateService.sys.mjs",
+
   UrlbarProviderQuickActions:
     "resource:///modules/UrlbarProviderQuickActions.sys.mjs",
 });
 XPCOMUtils.defineLazyModuleGetters(this, {
-  UpdateService: "resource://gre/modules/UpdateService.jsm",
   BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.jsm",
 });
 
@@ -303,7 +304,9 @@ add_task(async function test_screenshot() {
   EventUtils.synthesizeKey("KEY_Enter", {}, window);
   await TestUtils.waitForCondition(
     isScreenshotInitialized,
-    "Screenshot component is active"
+    "Screenshot component is active",
+    200,
+    100
   );
 
   info("Press Escape to exit screenshot mode");

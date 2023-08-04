@@ -9,15 +9,15 @@ user-login = "martinthomson"
 user-name = "Martin Thomson"
 
 [[publisher.glean]]
-version = "52.3.0"
-when = "2023-02-23"
+version = "52.4.2"
+when = "2023-03-15"
 user-id = 48
 user-login = "badboy"
 user-name = "Jan-Erik Rediger"
 
 [[publisher.glean-core]]
-version = "52.3.0"
-when = "2023-02-23"
+version = "52.4.2"
+when = "2023-03-15"
 user-id = 48
 user-login = "badboy"
 user-name = "Jan-Erik Rediger"
@@ -74,6 +74,12 @@ criteria = "safe-to-deploy"
 version = "3.11.1"
 notes = "I am the author of this crate."
 
+[[audits.bytecode-alliance.audits.cargo-platform]]
+who = "Pat Hickey <phickey@fastly.com>"
+criteria = "safe-to-deploy"
+version = "0.1.2"
+notes = "no build, no ambient capabilities, no unsafe"
+
 [[audits.bytecode-alliance.audits.cc]]
 who = "Alex Crichton <alex@alexcrichton.com>"
 criteria = "safe-to-deploy"
@@ -103,6 +109,17 @@ criteria = "safe-to-deploy"
 version = "1.1.0"
 notes = "I am the author of this crate."
 
+[[audits.bytecode-alliance.audits.foreign-types]]
+who = "Pat Hickey <phickey@fastly.com>"
+criteria = "safe-to-deploy"
+version = "0.3.2"
+notes = "This crate defined a macro-rules which creates wrappers working with FFI types. The implementation of this crate appears to be safe, but each use of this macro would need to be vetted for correctness as well."
+
+[[audits.bytecode-alliance.audits.foreign-types-shared]]
+who = "Pat Hickey <phickey@fastly.com>"
+criteria = "safe-to-deploy"
+version = "0.1.1"
+
 [[audits.bytecode-alliance.audits.form_urlencoded]]
 who = "Alex Crichton <alex@alexcrichton.com>"
 criteria = "safe-to-deploy"
@@ -125,10 +142,33 @@ criteria = "safe-to-deploy"
 version = "2.2.1"
 notes = "I am the author of this crate."
 
+[[audits.bytecode-alliance.audits.idna]]
+who = "Alex Crichton <alex@alexcrichton.com>"
+criteria = "safe-to-deploy"
+version = "0.3.0"
+notes = """
+This is a crate without unsafe code or usage of the standard library. The large
+size of this crate comes from the large generated unicode tables file. This
+crate is broadly used throughout the ecosystem and does not contain anything
+suspicious.
+"""
+
 [[audits.bytecode-alliance.audits.leb128]]
 who = "Nick Fitzgerald <fitzgen@gmail.com>"
 criteria = "safe-to-deploy"
 version = "0.2.5"
+notes = "I am the author of this crate."
+
+[[audits.bytecode-alliance.audits.memoffset]]
+who = "Alex Crichton <alex@alexcrichton.com>"
+criteria = "safe-to-deploy"
+delta = "0.7.1 -> 0.8.0"
+notes = "This was a small update to the crate which has to do with Rust language features and compiler versions, no substantial changes."
+
+[[audits.bytecode-alliance.audits.peeking_take_while]]
+who = "Nick Fitzgerald <fitzgen@gmail.com>"
+criteria = "safe-to-deploy"
+version = "1.0.0"
 notes = "I am the author of this crate."
 
 [[audits.bytecode-alliance.audits.percent-encoding]]
@@ -141,11 +181,28 @@ a few `unsafe` blocks related to utf-8 validation which are locally verifiable
 as correct and otherwise this crate is good to go.
 """
 
+[[audits.bytecode-alliance.audits.pin-utils]]
+who = "Pat Hickey <phickey@fastly.com>"
+criteria = "safe-to-deploy"
+version = "0.1.0"
+
+[[audits.bytecode-alliance.audits.pkg-config]]
+who = "Pat Hickey <phickey@fastly.com>"
+criteria = "safe-to-deploy"
+version = "0.3.25"
+notes = "This crate shells out to the pkg-config executable, but it appears to sanitize inputs reasonably."
+
 [[audits.bytecode-alliance.audits.rustc-demangle]]
 who = "Alex Crichton <alex@alexcrichton.com>"
 criteria = "safe-to-deploy"
 version = "0.1.21"
 notes = "I am the author of this crate."
+
+[[audits.bytecode-alliance.audits.slab]]
+who = "Pat Hickey <phickey@fastly.com>"
+criteria = "safe-to-deploy"
+version = "0.4.6"
+notes = "provides a datastructure implemented using std's Vec. all uses of unsafe are just delegating to the underlying unsafe Vec methods."
 
 [[audits.bytecode-alliance.audits.unicase]]
 who = "Alex Crichton <alex@alexcrichton.com>"
@@ -180,154 +237,26 @@ and nothing suspicious.
 [[audits.bytecode-alliance.audits.wasm-encoder]]
 who = "Alex Crichton <alex@alexcrichton.com>"
 criteria = "safe-to-deploy"
-version = "0.23.0"
+version = "0.25.0"
 notes = "The Bytecode Alliance is the author of this crate."
 
 [[audits.bytecode-alliance.audits.wasm-smith]]
 who = "Alex Crichton <alex@alexcrichton.com>"
 criteria = "safe-to-run"
-version = "0.12.2"
+version = "0.12.5"
 notes = "The Bytecode Alliance is the author of this crate."
 
 [[audits.bytecode-alliance.audits.wasmparser]]
 who = "Alex Crichton <alex@alexcrichton.com>"
 criteria = "safe-to-deploy"
-version = "0.100.0"
+version = "0.102.0"
 notes = "The Bytecode Alliance is the author of this crate."
 
 [[audits.bytecode-alliance.audits.wast]]
 who = "Alex Crichton <alex@alexcrichton.com>"
 criteria = "safe-to-deploy"
-version = "53.0.0"
+version = "55.0.0"
 notes = "The Bytecode Alliance is the author of this crate."
-
-[audits.chromeos.criteria.crypto-safe]
-description = """
-All crypto algorithms in this crate have been reviewed by a relevant expert.
-
-**Note**: If a crate does not implement crypto, use `does-not-implement-crypto`,
-which implies `crypto-safe`, but does not require expert review in order to
-audit for."""
-
-[audits.chromeos.criteria.does-not-implement-crypto]
-description = """
-Inspection reveals that the crate in question does not attempt to implement any
-cryptographic algorithms on its own.
-
-Note that certification of this does not require an expert on all forms of
-cryptography: it's expected for crates we import to be \"good enough\" citizens,
-so they'll at least be forthcoming if they try to implement something
-cryptographic. When in doubt, please ask an expert."""
-implies = "crypto-safe"
-
-[audits.chromeos.criteria.rule-of-two-safe-to-deploy]
-description = """
-This is a stronger requirement than the built-in safe-to-deploy criteria,
-motivated by Chromium's rule-of-two related requirements:
-https://chromium.googlesource.com/chromium/src/+/master/docs/security/rule-of-2.md#unsafe-code-in-safe-languages
-
-This crate will not introduce a serious security vulnerability to production
-software exposed to untrusted input.
-
-Auditors are not required to perform a full logic review of the entire crate.
-Rather, they must review enough to fully reason about the behavior of all unsafe
-blocks and usage of powerful imports. For any reasonable usage of the crate in
-real-world software, an attacker must not be able to manipulate the runtime
-behavior of these sections in an exploitable or surprising way.
-
-Ideally, ambient capabilities (e.g. filesystem access) are hardened against
-manipulation and consistent with the advertised behavior of the crate. However,
-some discretion is permitted. In such cases, the nature of the discretion should
-be recorded in the `notes` field of the audit record.
-
-Any unsafe code in this crate must, in general, be kept well-contained, and
-documentation must exist to describe how Rust's invariants are being upheld
-despite the unsafe block(s). Nontrivial uses of unsafe must be reviewed by an
-expert in Rust's unsafety guarantees/non-guarantees.
-
-For crates which generate deployed code (e.g. build dependencies or procedural
-macros), reasonable usage of the crate should output code which meets the above
-criteria."""
-implies = "safe-to-deploy"
-
-[[audits.chromeos.audits.fastrand]]
-who = "George Burgess IV <gbiv@google.com>"
-criteria = ["does-not-implement-crypto", "rule-of-two-safe-to-deploy"]
-version = "1.9.0"
-notes = """
-`does-not-implement-crypto` is certified because this crate explicitly says
-that the RNG here is not cryptographically secure.
-"""
-
-[[audits.chromeos.audits.h2]]
-who = "ChromeOS"
-criteria = "safe-to-run"
-version = "0.3.14"
-
-[[audits.chromeos.audits.http]]
-who = "ChromeOS"
-criteria = "safe-to-run"
-version = "0.2.8"
-
-[[audits.chromeos.audits.http-body]]
-who = "ChromeOS"
-criteria = "safe-to-run"
-version = "0.4.5"
-
-[[audits.chromeos.audits.httpdate]]
-who = "ChromeOS"
-criteria = "safe-to-run"
-version = "1.0.2"
-
-[[audits.chromeos.audits.hyper]]
-who = "ChromeOS"
-criteria = "safe-to-run"
-version = "0.14.20"
-
-[[audits.chromeos.audits.pin-project]]
-who = "ChromeOS"
-criteria = "safe-to-run"
-version = "1.0.12"
-
-[[audits.chromeos.audits.pin-project-internal]]
-who = "ChromeOS"
-criteria = "safe-to-run"
-version = "1.0.12"
-
-[[audits.chromeos.audits.serde_urlencoded]]
-who = "ChromeOS"
-criteria = "safe-to-run"
-version = "0.7.1"
-
-[[audits.chromeos.audits.tower-service]]
-who = "ChromeOS"
-criteria = "safe-to-run"
-version = "0.3.2"
-
-[[audits.chromeos.audits.tracing]]
-who = "ChromeOS"
-criteria = "safe-to-run"
-version = "0.1.35"
-
-[[audits.chromeos.audits.tracing-attributes]]
-who = "ChromeOS"
-criteria = "safe-to-run"
-version = "0.1.22"
-
-[[audits.chromeos.audits.tracing-core]]
-who = "ChromeOS"
-criteria = "safe-to-run"
-version = "0.1.29"
-
-[[audits.chromeos.audits.try-lock]]
-who = "ChromeOS"
-criteria = "safe-to-run"
-version = "0.2.3"
-
-[[audits.chromeos.audits.want]]
-who = "ChromeOS"
-criteria = "safe-to-run"
-version = "0.3.0"
 
 [[audits.embark-studios.audits.anyhow]]
 who = "Johan Andersson <opensource@embark-studios.com>"
@@ -349,6 +278,120 @@ version = "0.6.0"
 who = "Johan Andersson <opensource@embark-studios.com>"
 criteria = "safe-to-run"
 version = "0.6.0"
+
+[[audits.google.audits.ash]]
+who = "David Koloski <dkoloski@google.com>"
+criteria = "safe-to-deploy"
+version = "0.37.0+1.3.209"
+notes = "Reviewed on https://fxrev.dev/694269"
+aggregated-from = "https://fuchsia.googlesource.com/fuchsia/+/refs/heads/main/third_party/rust_crates/supply-chain/audits.toml?format=TEXT"
+
+[[audits.google.audits.fastrand]]
+who = "George Burgess IV <gbiv@google.com>"
+criteria = "safe-to-deploy"
+version = "1.9.0"
+notes = """
+`does-not-implement-crypto` is certified because this crate explicitly says
+that the RNG here is not cryptographically secure.
+"""
+aggregated-from = "https://chromium.googlesource.com/chromiumos/third_party/rust_crates/+/refs/heads/main/cargo-vet/audits.toml?format=TEXT"
+
+[[audits.google.audits.h2]]
+who = "ChromeOS"
+criteria = "safe-to-run"
+version = "0.3.14"
+aggregated-from = "https://chromium.googlesource.com/chromiumos/third_party/rust_crates/+/refs/heads/main/cargo-vet/audits.toml?format=TEXT"
+
+[[audits.google.audits.http]]
+who = "ChromeOS"
+criteria = "safe-to-run"
+version = "0.2.8"
+aggregated-from = "https://chromium.googlesource.com/chromiumos/third_party/rust_crates/+/refs/heads/main/cargo-vet/audits.toml?format=TEXT"
+
+[[audits.google.audits.http-body]]
+who = "ChromeOS"
+criteria = "safe-to-run"
+version = "0.4.5"
+aggregated-from = "https://chromium.googlesource.com/chromiumos/third_party/rust_crates/+/refs/heads/main/cargo-vet/audits.toml?format=TEXT"
+
+[[audits.google.audits.httpdate]]
+who = "ChromeOS"
+criteria = "safe-to-run"
+version = "1.0.2"
+aggregated-from = "https://chromium.googlesource.com/chromiumos/third_party/rust_crates/+/refs/heads/main/cargo-vet/audits.toml?format=TEXT"
+
+[[audits.google.audits.hyper]]
+who = "ChromeOS"
+criteria = "safe-to-run"
+version = "0.14.20"
+aggregated-from = "https://chromium.googlesource.com/chromiumos/third_party/rust_crates/+/refs/heads/main/cargo-vet/audits.toml?format=TEXT"
+
+[[audits.google.audits.pin-project]]
+who = "ChromeOS"
+criteria = "safe-to-run"
+version = "1.0.12"
+aggregated-from = "https://chromium.googlesource.com/chromiumos/third_party/rust_crates/+/refs/heads/main/cargo-vet/audits.toml?format=TEXT"
+
+[[audits.google.audits.pin-project-internal]]
+who = "ChromeOS"
+criteria = "safe-to-run"
+version = "1.0.12"
+aggregated-from = "https://chromium.googlesource.com/chromiumos/third_party/rust_crates/+/refs/heads/main/cargo-vet/audits.toml?format=TEXT"
+
+[[audits.google.audits.serde_urlencoded]]
+who = "ChromeOS"
+criteria = "safe-to-run"
+version = "0.7.1"
+aggregated-from = "https://chromium.googlesource.com/chromiumos/third_party/rust_crates/+/refs/heads/main/cargo-vet/audits.toml?format=TEXT"
+
+[[audits.google.audits.tokio-stream]]
+who = "David Koloski <dkoloski@google.com>"
+criteria = "safe-to-deploy"
+version = "0.1.11"
+notes = "Reviewed on https://fxrev.dev/804724"
+aggregated-from = "https://fuchsia.googlesource.com/fuchsia/+/refs/heads/main/third_party/rust_crates/supply-chain/audits.toml?format=TEXT"
+
+[[audits.google.audits.tower-service]]
+who = "ChromeOS"
+criteria = "safe-to-run"
+version = "0.3.2"
+aggregated-from = "https://chromium.googlesource.com/chromiumos/third_party/rust_crates/+/refs/heads/main/cargo-vet/audits.toml?format=TEXT"
+
+[[audits.google.audits.tracing]]
+who = "ChromeOS"
+criteria = "safe-to-run"
+version = "0.1.35"
+aggregated-from = "https://chromium.googlesource.com/chromiumos/third_party/rust_crates/+/refs/heads/main/cargo-vet/audits.toml?format=TEXT"
+
+[[audits.google.audits.tracing-attributes]]
+who = "ChromeOS"
+criteria = "safe-to-run"
+version = "0.1.22"
+aggregated-from = "https://chromium.googlesource.com/chromiumos/third_party/rust_crates/+/refs/heads/main/cargo-vet/audits.toml?format=TEXT"
+
+[[audits.google.audits.tracing-core]]
+who = "ChromeOS"
+criteria = "safe-to-run"
+version = "0.1.29"
+aggregated-from = "https://chromium.googlesource.com/chromiumos/third_party/rust_crates/+/refs/heads/main/cargo-vet/audits.toml?format=TEXT"
+
+[[audits.google.audits.try-lock]]
+who = "ChromeOS"
+criteria = "safe-to-run"
+version = "0.2.3"
+aggregated-from = "https://chromium.googlesource.com/chromiumos/third_party/rust_crates/+/refs/heads/main/cargo-vet/audits.toml?format=TEXT"
+
+[[audits.google.audits.version_check]]
+who = "George Burgess IV <gbiv@google.com>"
+criteria = "safe-to-deploy"
+version = "0.9.4"
+aggregated-from = "https://chromium.googlesource.com/chromiumos/third_party/rust_crates/+/refs/heads/main/cargo-vet/audits.toml?format=TEXT"
+
+[[audits.google.audits.want]]
+who = "ChromeOS"
+criteria = "safe-to-run"
+version = "0.3.0"
+aggregated-from = "https://chromium.googlesource.com/chromiumos/third_party/rust_crates/+/refs/heads/main/cargo-vet/audits.toml?format=TEXT"
 
 [[audits.isrg.audits.block-buffer]]
 who = "David Cook <dcook@divviup.org>"

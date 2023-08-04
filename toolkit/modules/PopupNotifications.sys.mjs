@@ -212,6 +212,10 @@ Notification.prototype = {
  *            If this function returns true, then all notifications are
  *            suppressed for this window. This state is checked on construction
  *            and when the "anchorVisibilityChange" method is called.
+ *          getVisibleAnchorElement(anchorElement):
+ *            A function which takes an anchor element as input and should return
+ *            either the anchor if it's visible, a fallback anchor element, or if
+ *            no fallback exists, a null element.
  *        }
  */
 export function PopupNotifications(tabbrowser, panel, iconBox, options = {}) {
@@ -227,6 +231,8 @@ export function PopupNotifications(tabbrowser, panel, iconBox, options = {}) {
 
   this._shouldSuppress = options.shouldSuppress || (() => false);
   this._suppress = this._shouldSuppress();
+
+  this._getVisibleAnchorElement = options.getVisibleAnchorElement;
 
   this.window = tabbrowser.ownerGlobal;
   this.panel = panel;
@@ -1214,50 +1220,34 @@ PopupNotifications.prototype = {
     if (!notificationsToShow.length) {
       return;
     }
-    // Bug 1812232: Interim fix to avoid the Urlbar showing persisted
-    // terms as a Popup is trying to show. This isn't the best solution
-    // since it couples PopupNotifications with browser components, so it
-    // should be refactored (Bug 1815769) via dependency injection.
-    if (this.window.gURLBar && this.tabbrowser.selectedBrowser.searchTerms) {
-      this.window.gURLBar.handleRevert(true);
-    }
 
     let notificationIds = notificationsToShow.map(n => n.id);
 
     this._refreshPanel(notificationsToShow);
 
-    function isNullOrHidden(elem) {
-      if (!elem) {
-        return true;
-      }
-
-      let anchorRect = elem.getBoundingClientRect();
-      return anchorRect.width == 0 && anchorRect.height == 0;
+    // The element the PopupNotification should anchor to might not be visible.
+    // Check its visibility using a callback that returns the same anchor
+    // element if its visible, or a fallback option that is visible.
+    // If no fallbacks are visible, it should return null.
+    if (this._getVisibleAnchorElement) {
+      anchorElement = this._getVisibleAnchorElement(anchorElement);
     }
-
-    // If the anchor element is hidden or null, fall back to the identity icon.
-    if (isNullOrHidden(anchorElement)) {
-      anchorElement = this.window.document.getElementById("identity-icon");
-
-      if (isNullOrHidden(anchorElement)) {
-        anchorElement = this.window.document.getElementById(
-          "urlbar-search-button"
-        );
-      }
-
-      // If the identity and search icons are not available in this window, use
-      // the tab as the anchor. We only ever show notifications for the current
-      // browser, so we can just use the current tab.
-      if (isNullOrHidden(anchorElement)) {
-        anchorElement = this.tabbrowser.selectedTab;
-
+    // In case _getVisibleAnchorElement provided a non-visible element.
+    if (!anchorElement?.checkVisibility()) {
+      // We only ever show notifications for the current browser,
+      // so we can just use the current tab.
+      anchorElement = this.tabbrowser.selectedTab;
+      if (!anchorElement?.checkVisibility()) {
         // If we're in an entirely chromeless environment, set the anchorElement
         // to null and let openPopup show the notification at (0,0) later.
-        if (isNullOrHidden(anchorElement)) {
-          anchorElement = null;
-        }
+        anchorElement = null;
       }
     }
+
+    // Remember the time the notification was shown for the security delay.
+    notificationsToShow.forEach(
+      n => (n.timeShown ??= this.window.performance.now())
+    );
 
     if (this.isPanelOpen && this._currentAnchorElement == anchorElement) {
       notificationsToShow.forEach(function(n) {
@@ -1298,8 +1288,6 @@ PopupNotifications.prototype = {
         // Notifications that were opened a second time or that were originally
         // shown with "options.dismissed" will be recorded in a separate bucket.
         n._recordTelemetryStat(TELEMETRY_STAT_OFFERED);
-        // Remember the time the notification was shown for the security delay.
-        n.timeShown = this.window.performance.now();
       }, this);
 
       let target = this.panel;
@@ -1847,6 +1835,17 @@ PopupNotifications.prototype = {
     }
 
     let notification = notificationEl.notification;
+
+    // Receiving a button event means the notification should have been shown.
+    // Make sure that timeShown is always set to ensure we don't break the
+    // security delay calculation below.
+    if (!notification.timeShown) {
+      console.warn(
+        "_onButtonEvent: notification.timeShown is unset. Setting to now.",
+        notification
+      );
+      notification.timeShown = this.window.performance.now();
+    }
 
     if (type == "dropmarkerpopupshown") {
       notification._recordTelemetryStat(TELEMETRY_STAT_OPEN_SUBMENU);

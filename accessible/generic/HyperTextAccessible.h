@@ -181,14 +181,7 @@ class HyperTextAccessible : public AccessibleWrap,
       uint32_t aCoordType =
           nsIAccessibleCoordinateType::COORDTYPE_SCREEN_RELATIVE) override;
 
-  LayoutDeviceIntRect CharBounds(int32_t aOffset,
-                                 uint32_t aCoordType) override {
-    index_t startOffset = ConvertMagicOffset(aOffset);
-    int32_t endOffset = startOffset == CharacterCount()
-                            ? static_cast<int32_t>(startOffset)
-                            : startOffset + 1;
-    return TextBounds(startOffset, endOffset, aCoordType);
-  }
+  LayoutDeviceIntRect CharBounds(int32_t aOffset, uint32_t aCoordType) override;
 
   /**
    * Get/set caret offset, if no caret then -1.
@@ -223,12 +216,6 @@ class HyperTextAccessible : public AccessibleWrap,
 
   MOZ_CAN_RUN_SCRIPT_BOUNDARY virtual bool RemoveFromSelection(
       int32_t aSelectionNum) override;
-
-  /**
-   * Scroll the given text range into view.
-   */
-  void ScrollSubstringTo(int32_t aStartOffset, int32_t aEndOffset,
-                         uint32_t aScrollType);
 
   /**
    * Scroll the given text range to the given point.

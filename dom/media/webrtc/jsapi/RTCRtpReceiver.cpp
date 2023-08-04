@@ -3,6 +3,8 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "RTCRtpReceiver.h"
+#include "PeerConnectionImpl.h"
+#include "mozilla/dom/RTCRtpCapabilitiesBinding.h"
 #include "transport/logging.h"
 #include "mozilla/dom/MediaStreamTrack.h"
 #include "mozilla/dom/Promise.h"
@@ -132,15 +134,7 @@ RTCRtpReceiver::RTCRtpReceiver(
         GetMainThreadSerialEventTarget(), this, &RTCRtpReceiver::OnRtcpTimeout);
   }
 
-  // Unmute event handling. The unmute event is fired after receiving RTP
-  // packets and therefore async, and handled through these event and watch
-  // handlers. The mute event is fired synchronously during negotiation, see
-  // SetTrackMuteFromRemoteSdp().
-  mUnmuteListener = mPipeline->UnmuteEvent().Connect(
-      GetMainThreadSerialEventTarget(), this, &RTCRtpReceiver::OnUnmute);
   mWatchManager.Watch(mReceiveTrackMute,
-                      &RTCRtpReceiver::UpdateReceiveTrackMute);
-  mWatchManager.Watch(mBlockUnmuteEvents,
                       &RTCRtpReceiver::UpdateReceiveTrackMute);
 }
 
@@ -158,6 +152,12 @@ RTCDtlsTransport* RTCRtpReceiver::GetTransport() const {
     return nullptr;
   }
   return mTransceiver->GetDtlsTransport();
+}
+
+void RTCRtpReceiver::GetCapabilities(
+    const GlobalObject&, const nsAString& aKind,
+    Nullable<dom::RTCRtpCapabilities>& aResult) {
+  PeerConnectionImpl::GetCapabilities(aKind, aResult, sdp::Direction::kRecv);
 }
 
 already_AddRefed<Promise> RTCRtpReceiver::GetStats(ErrorResult& aError) {
@@ -768,9 +768,21 @@ bool RTCRtpReceiver::HasTrack(const dom::MediaStreamTrack* aTrack) const {
 }
 
 void RTCRtpReceiver::SyncFromJsep(const JsepTransceiver& aJsepTransceiver) {
-  // If a SRD has unset the receive bit, block unmute events so RTP passing
-  // through MediaPipeline does not unmute the receive track.
-  mBlockUnmuteEvents = !aJsepTransceiver.mRecvTrack.GetRemoteSetSendBit();
+  if (!mPipeline) {
+    return;
+  }
+
+  // Spec says we set [[Receptive]] to true on sLD(sendrecv/recvonly), and to
+  // false on sRD(recvonly/inactive), sLD(sendonly/inactive), or when stop()
+  // is called.
+  bool wasReceptive = mReceptive;
+  mReceptive = aJsepTransceiver.mRecvTrack.GetReceptive();
+  if (!wasReceptive && mReceptive) {
+    mUnmuteListener = mPipeline->mConduit->RtpPacketEvent().Connect(
+        GetMainThreadSerialEventTarget(), this, &RTCRtpReceiver::OnRtpPacket);
+  } else if (wasReceptive && !mReceptive) {
+    mUnmuteListener.DisconnectIfExists();
+  }
 }
 
 void RTCRtpReceiver::SyncToJsep(JsepTransceiver& aJsepTransceiver) const {}
@@ -843,7 +855,7 @@ void RTCRtpReceiver::OnRtcpBye() { mReceiveTrackMute = true; }
 void RTCRtpReceiver::OnRtcpTimeout() { mReceiveTrackMute = true; }
 
 void RTCRtpReceiver::SetTrackMuteFromRemoteSdp() {
-  MOZ_ASSERT(mBlockUnmuteEvents,
+  MOZ_ASSERT(!mReceptive,
              "PeerConnectionImpl should have blocked unmute events prior to "
              "firing mute");
   mReceiveTrackMute = true;
@@ -853,17 +865,20 @@ void RTCRtpReceiver::SetTrackMuteFromRemoteSdp() {
   MOZ_ASSERT(mTrack->Muted(), "Muted state was indeed set synchronously");
 }
 
-void RTCRtpReceiver::OnUnmute() { mReceiveTrackMute = false; }
+void RTCRtpReceiver::OnRtpPacket() {
+  MOZ_ASSERT(mReceptive, "We should not be registered unless this is set!");
+  // We should be registered since we're currently getting a callback.
+  mUnmuteListener.Disconnect();
+  if (mReceptive) {
+    mReceiveTrackMute = false;
+  }
+}
 
 void RTCRtpReceiver::UpdateReceiveTrackMute() {
   if (!mTrack) {
     return;
   }
   if (!mTrackSource) {
-    return;
-  }
-  if (mBlockUnmuteEvents && !mReceiveTrackMute) {
-    // Unmuting is blocked.
     return;
   }
   // This sets the muted state for mTrack and all its clones.

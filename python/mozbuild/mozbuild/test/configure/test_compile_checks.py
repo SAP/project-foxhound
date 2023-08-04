@@ -8,11 +8,11 @@ import unittest
 
 import mozpack.path as mozpath
 from buildconfig import topsrcdir
-from common import ConfigureTestSandbox
 from mozunit import main
 from six import StringIO
 from test_toolchain_helpers import FakeCompiler
 
+from common import ConfigureTestSandbox
 from mozbuild.util import exec_
 
 
@@ -54,10 +54,6 @@ class BaseCompileChecks(unittest.TestCase):
             """\
             @depends(when=True)
             def extra_toolchain_flags():
-                return []
-
-            @depends(when=True)
-            def stlport_cppflags():
                 return []
 
             @depends(when=True)

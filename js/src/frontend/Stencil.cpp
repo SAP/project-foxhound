@@ -7,6 +7,7 @@
 #include "frontend/Stencil.h"
 
 #include "mozilla/AlreadyAddRefed.h"        // already_AddRefed
+#include "mozilla/Assertions.h"             // MOZ_RELEASE_ASSERT
 #include "mozilla/Maybe.h"                  // mozilla::Maybe
 #include "mozilla/OperatorNewExtensions.h"  // mozilla::KnownNotNull
 #include "mozilla/PodOperations.h"          // mozilla::PodCopy
@@ -4003,6 +4004,9 @@ void js::DumpImmutableScriptFlags(js::JSONPrinter& json,
         case ImmutableScriptFlagsEnum::FunctionHasNewTargetBinding:
           json.value("FunctionHasNewTargetBinding");
           break;
+        case ImmutableScriptFlagsEnum::UsesArgumentsIntrinsics:
+          json.value("UsesArgumentsIntrinsics");
+          break;
         default:
           json.value("Unknown(%x)", i);
           break;
@@ -4450,9 +4454,13 @@ void CompilationInput::dumpFields(js::JSONPrinter& json) const {
     json.endObject();
   }
 
-  json.beginObjectProperty("enclosingScope");
-  DumpInputScopeFields(json, enclosingScope);
-  json.endObject();
+  if (enclosingScope.isNull()) {
+    json.nullProperty("enclosingScope");
+  } else {
+    json.beginObjectProperty("enclosingScope");
+    DumpInputScopeFields(json, enclosingScope);
+    json.endObject();
+  }
 
   // TODO: Support printing the atomCache and the source fields.
 }
@@ -4580,6 +4588,7 @@ void ExtensibleCompilationStencil::dumpAtom(TaggedParserAtomIndex index) {
 
 JSString* CompilationAtomCache::getExistingStringAt(
     ParserAtomIndex index) const {
+  MOZ_RELEASE_ASSERT(atoms_.length() >= index);
   return atoms_[index];
 }
 
@@ -5241,8 +5250,8 @@ static already_AddRefed<JS::Stencil> CompileModuleScriptToStencilImpl(
   NoScopeBindingCache scopeCache;
   Rooted<CompilationInput> input(cx, CompilationInput(options));
   RefPtr<JS::Stencil> stencil = js::frontend::ParseModuleToStencil(
-      cx, &fc, cx->stackLimitForCurrentPrincipal(), input.get(), &scopeCache,
-      srcBuf);
+      cx, &fc, cx->stackLimitForCurrentPrincipal(), cx->tempLifoAlloc(),
+      input.get(), &scopeCache, srcBuf);
   if (!stencil) {
     return nullptr;
   }

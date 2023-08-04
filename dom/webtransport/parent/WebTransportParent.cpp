@@ -9,6 +9,7 @@
 #include "mozilla/StaticPrefs_network.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/Unused.h"
+#include "mozilla/dom/ClientInfo.h"
 #include "mozilla/dom/WebTransportBinding.h"
 #include "mozilla/dom/WebTransportLog.h"
 #include "mozilla/ipc/BackgroundParent.h"
@@ -32,11 +33,13 @@ WebTransportParent::~WebTransportParent() {
 }
 
 void WebTransportParent::Create(
-    const nsAString& aURL, nsIPrincipal* aPrincipal, const bool& aDedicated,
+    const nsAString& aURL, nsIPrincipal* aPrincipal,
+    const mozilla::Maybe<IPCClientInfo>& aClientInfo, const bool& aDedicated,
     const bool& aRequireUnreliable, const uint32_t& aCongestionControl,
     // Sequence<WebTransportHash>* aServerCertHashes,
     Endpoint<PWebTransportParent>&& aParentEndpoint,
-    std::function<void(Tuple<const nsresult&, const uint8_t&>)>&& aResolver) {
+    std::function<void(std::tuple<const nsresult&, const uint8_t&>)>&&
+        aResolver) {
   LOG(("Created WebTransportParent %p %s %s %s congestion=%s", this,
        NS_ConvertUTF16toUTF8(aURL).get(),
        aDedicated ? "Dedicated" : "AllowPooling",
@@ -87,10 +90,11 @@ void WebTransportParent::Create(
       "WebTransport AsyncConnect",
       [self = RefPtr{this}, uri = std::move(uri),
        principal = RefPtr{aPrincipal},
-       flags = nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_SEC_CONTEXT_IS_NULL] {
+       flags = nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_SEC_CONTEXT_IS_NULL,
+       clientInfo = aClientInfo] {
         LOG(("WebTransport %p AsyncConnect", self.get()));
-        if (NS_FAILED(self->mWebTransport->AsyncConnect(uri, principal, flags,
-                                                        self))) {
+        if (NS_FAILED(self->mWebTransport->AsyncConnectWithClient(
+                uri, principal, flags, self, clientInfo))) {
           LOG(("AsyncConnect failure; we should get OnSessionClosed"));
         }
       });
@@ -557,12 +561,20 @@ WebTransportParent::OnIncomingBidirectionalStreamAvailable(
 
   Unused << aExpirationTime;
 
+  MOZ_ASSERT(!mOutgoingDatagramResolver);
   mOutgoingDatagramResolver = std::move(aResolver);
   // XXX we need to forward the timestamps to the necko stack
   // timestamp should be checked in the necko for expiry
   // See Bug 1818300
   // currently this calls OnOutgoingDatagramOutCome synchronously
-  Unused << mWebTransport->SendDatagram(aData, 0);
+  // Neqo won't call us back if the id == 0!
+  // We don't use the ID for anything currently; rework of the stack
+  // to implement proper HighWatermark buffering will require
+  // changes here anyways.
+  static uint64_t sDatagramId = 1;
+  LOG_VERBOSE(("Sending datagram %" PRIu64 ", length %zu", sDatagramId,
+               aData.Length()));
+  Unused << mWebTransport->SendDatagram(aData, sDatagramId++);
 
   return IPC_OK();
 }
@@ -572,7 +584,7 @@ NS_IMETHODIMP WebTransportParent::OnDatagramReceived(
   // We must be on the Socket Thread
   MOZ_ASSERT(mSocketThread->IsOnCurrentThread());
 
-  LOG(("WebTransportParent received datagram"));
+  LOG(("WebTransportParent received datagram length = %zu", aData.Length()));
 
   TimeStamp ts = TimeStamp::Now();
   Unused << SendIncomingDatagram(aData, ts);
@@ -593,16 +605,19 @@ WebTransportParent::OnOutgoingDatagramOutCome(
   MOZ_ASSERT(mSocketThread->IsOnCurrentThread());
   // XXX - do we need better error mappings for failures?
   nsresult result = NS_ERROR_FAILURE;
+  Unused << result;
   Unused << aId;
 
   if (aOutCome == WebTransportSessionEventListener::DatagramOutcome::SENT) {
     result = NS_OK;
+    LOG(("Sent datagram id= %" PRIu64, aId));
+  } else {
+    LOG(("Didn't send datagram id= %" PRIu64, aId));
   }
 
+  // This assumes the stack is calling us back synchronously!
   MOZ_ASSERT(mOutgoingDatagramResolver);
   mOutgoingDatagramResolver(result);
-
-  // reset the resolver to allow sending remaining datagrams
   mOutgoingDatagramResolver = nullptr;
 
   return NS_OK;

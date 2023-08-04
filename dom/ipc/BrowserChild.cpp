@@ -309,7 +309,6 @@ BrowserChild::BrowserChild(ContentChild* aManager, const TabId& aTabId,
       mHasValidInnerSize(false),
       mDestroyed(false),
       mIsTopLevel(aIsTopLevel),
-      mHasSiblings(false),
       mIsTransparent(false),
       mIPCOpen(false),
       mDidSetRealShowInfo(false),
@@ -715,8 +714,8 @@ BrowserChild::ProvideWindow(nsIOpenWindowInfo* aOpenWindowInfo,
   // code back to our caller.
   ContentChild* cc = ContentChild::GetSingleton();
   return cc->ProvideWindowCommon(
-      this, aOpenWindowInfo, aChromeFlags, aCalledFromJS, aURI, aName,
-      aFeatures, aForceNoOpener, aForceNoReferrer, aIsPopupRequested,
+      WrapNotNull(this), aOpenWindowInfo, aChromeFlags, aCalledFromJS, aURI,
+      aName, aFeatures, aForceNoOpener, aForceNoReferrer, aIsPopupRequested,
       aLoadState, aWindowIsNew, aReturn);
 }
 
@@ -1017,7 +1016,8 @@ nsresult BrowserChild::UpdateRemotePrintSettings(
       // everything.
       ([&]() MOZ_CAN_RUN_SCRIPT_BOUNDARY {
         RefPtr<RemotePrintJobChild> printJob =
-            static_cast<RemotePrintJobChild*>(aPrintData.remotePrintJobChild());
+            static_cast<RemotePrintJobChild*>(
+                aPrintData.remotePrintJob().AsChild());
         cv->SetPrintSettingsForSubdocument(printSettings, printJob);
       }());
     } else if (RefPtr<BrowserBridgeChild> remoteChild =
@@ -2412,8 +2412,8 @@ mozilla::ipc::IPCResult BrowserChild::RecvPrint(
   printSettingsSvc->DeserializeToPrintSettings(aPrintData, printSettings);
   {
     IgnoredErrorResult rv;
-    RefPtr printJob =
-        static_cast<RemotePrintJobChild*>(aPrintData.remotePrintJobChild());
+    RefPtr printJob = static_cast<RemotePrintJobChild*>(
+        aPrintData.remotePrintJob().AsChild());
     outerWindow->Print(printSettings, printJob,
                        /* aListener = */ nullptr,
                        /* aWindowToCloneInto = */ nullptr,
@@ -3392,16 +3392,6 @@ nsresult BrowserChild::CanCancelContentJS(
     entry = nextEntry;
   }
 
-  return NS_OK;
-}
-
-nsresult BrowserChild::GetHasSiblings(bool* aHasSiblings) {
-  *aHasSiblings = mHasSiblings;
-  return NS_OK;
-}
-
-nsresult BrowserChild::SetHasSiblings(bool aHasSiblings) {
-  mHasSiblings = aHasSiblings;
   return NS_OK;
 }
 

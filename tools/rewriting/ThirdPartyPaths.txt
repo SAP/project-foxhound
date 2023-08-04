@@ -12,6 +12,7 @@ devtools/client/shared/sourceeditor/codemirror/
 devtools/client/shared/sourceeditor/test/cm_mode_ruby.js
 devtools/client/shared/sourceeditor/test/codemirror/
 devtools/client/shared/vendor/
+devtools/client/inspector/markup/test/helper_diff.js
 devtools/shared/acorn/
 devtools/shared/heapsnapshot/CoreDump.pb.cc
 devtools/shared/heapsnapshot/CoreDump.pb.h
@@ -52,6 +53,7 @@ dom/tests/mochitest/dom-level2-html/
 dom/u2f/tests/pkijs/
 dom/webauthn/cbor-cpp/
 dom/webauthn/tests/pkijs/
+dom/webgpu/tests/cts/checkout/
 editor/libeditor/tests/browserscope/lib/richtext/
 editor/libeditor/tests/browserscope/lib/richtext2/
 extensions/spellcheck/hunspell/src/
@@ -161,8 +163,9 @@ testing/talos/talos/tests/kraken/
 testing/talos/talos/tests/v8_7/
 testing/web-platform/tests/resources/webidl2/
 testing/web-platform/tests/tools/third_party/
+testing/web-platform/mozilla/tests/webgpu/
 testing/xpcshell/dns-packet/
-testing/xpcshell/node-ip/
+testing/xpcshell/node_ip/
 testing/xpcshell/node-http2/
 testing/xpcshell/node-ws/
 testing/xpcshell/odoh-wasm/

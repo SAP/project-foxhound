@@ -206,7 +206,7 @@ nsresult nsHttpTransaction::Init(
     nsIInputStream* requestBody, uint64_t requestContentLength,
     bool requestBodyHasHeaders, nsIEventTarget* target,
     nsIInterfaceRequestor* callbacks, nsITransportEventSink* eventsink,
-    uint64_t topBrowsingContextId, HttpTrafficCategory trafficCategory,
+    uint64_t browserId, HttpTrafficCategory trafficCategory,
     nsIRequestContext* requestContext, ClassOfService classOfService,
     uint32_t initialRwin, bool responseTimeoutEnabled, uint64_t channelId,
     TransactionObserverFunc&& transactionObserver,
@@ -224,7 +224,7 @@ nsresult nsHttpTransaction::Init(
   mChannelId = channelId;
   mTransactionObserver = std::move(transactionObserver);
   mOnPushCallback = std::move(aOnPushCallback);
-  mTopBrowsingContextId = topBrowsingContextId;
+  mBrowserId = browserId;
 
   mTrafficCategory = trafficCategory;
 
@@ -360,13 +360,15 @@ nsresult nsHttpTransaction::Init(
     mPushedStream = trans->TakePushedStreamById(aPushedStreamId);
   }
 
-  if (gHttpHandler->UseHTTPSRRAsAltSvcEnabled() &&
-      !(mCaps & NS_HTTP_DISALLOW_HTTPS_RR)) {
+  bool forceUseHTTPSRR = StaticPrefs::network_dns_force_use_https_rr();
+  if ((gHttpHandler->UseHTTPSRRAsAltSvcEnabled() &&
+       !(mCaps & NS_HTTP_DISALLOW_HTTPS_RR)) ||
+      forceUseHTTPSRR) {
     nsCOMPtr<nsIEventTarget> target;
     Unused << gHttpHandler->GetSocketThreadTarget(getter_AddRefs(target));
     if (target) {
       if (StaticPrefs::network_dns_force_waiting_https_rr() ||
-          StaticPrefs::network_dns_echconfig_enabled()) {
+          StaticPrefs::network_dns_echconfig_enabled() || forceUseHTTPSRR) {
         mCaps |= NS_HTTP_FORCE_WAIT_HTTP_RR;
       }
 
@@ -582,6 +584,8 @@ void nsHttpTransaction::OnTransportStatus(nsITransport* transport,
       mConnection->GetSelfAddr(&mSelfAddr);
       mConnection->GetPeerAddr(&mPeerAddr);
       mResolvedByTRR = mConnection->ResolvedByTRR();
+      mEffectiveTRRMode = mConnection->EffectiveTRRMode();
+      mTRRSkipReason = mConnection->TRRSkipReason();
       mEchConfigUsed = mConnection->GetEchConfigUsed();
     }
   }
@@ -917,8 +921,7 @@ nsresult nsHttpTransaction::WriteSegments(nsAHttpSegmentWriter* writer,
   }
 
   if (mThrottlingReadAllowance == 0) {  // depleted
-    if (gHttpHandler->ConnMgr()->CurrentTopBrowsingContextId() !=
-        mTopBrowsingContextId) {
+    if (gHttpHandler->ConnMgr()->CurrentBrowserId() != mBrowserId) {
       nsHttp::NotifyActiveTabLoadOptimization();
     }
 
@@ -2965,13 +2968,16 @@ nsHttpTransaction::OnOutputStreamReady(nsIAsyncOutputStream* out) {
   return NS_OK;
 }
 
-void nsHttpTransaction::GetNetworkAddresses(NetAddr& self, NetAddr& peer,
-                                            bool& aResolvedByTRR,
-                                            bool& aEchConfigUsed) {
+void nsHttpTransaction::GetNetworkAddresses(
+    NetAddr& self, NetAddr& peer, bool& aResolvedByTRR,
+    nsIRequest::TRRMode& aEffectiveTRRMode, TRRSkippedReason& aSkipReason,
+    bool& aEchConfigUsed) {
   MutexAutoLock lock(mLock);
   self = mSelfAddr;
   peer = mPeerAddr;
   aResolvedByTRR = mResolvedByTRR;
+  aEffectiveTRRMode = mEffectiveTRRMode;
+  aSkipReason = mTRRSkipReason;
   aEchConfigUsed = mEchConfigUsed;
 }
 

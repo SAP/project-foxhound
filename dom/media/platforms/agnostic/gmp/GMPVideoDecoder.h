@@ -15,6 +15,7 @@
 #  include "PerformanceRecorder.h"
 #  include "PlatformDecoderModule.h"
 #  include "mozIGeckoMediaPluginService.h"
+#  include "nsHashtablesFwd.h"
 
 namespace mozilla {
 
@@ -34,6 +35,8 @@ class GMPVideoDecoder : public MediaDataDecoder,
                         public GMPVideoDecoderCallbackProxy,
                         public DecoderDoctorLifeLogger<GMPVideoDecoder> {
  public:
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(GMPVideoDecoder, final);
+
   explicit GMPVideoDecoder(const GMPVideoDecoderParams& aParams);
 
   RefPtr<InitPromise> Init() override;
@@ -44,6 +47,7 @@ class GMPVideoDecoder : public MediaDataDecoder,
   nsCString GetDescriptionName() const override {
     return "gmp video decoder"_ns;
   }
+  nsCString GetCodecName() const override;
   ConversionRequired NeedsConversion() const override {
     return mConvertToAnnexB ? ConversionRequired::kNeedAnnexB
                             : ConversionRequired::kNeedAVCC;
@@ -67,6 +71,8 @@ class GMPVideoDecoder : public MediaDataDecoder,
   virtual const VideoInfo& GetConfig() const;
 
  private:
+  ~GMPVideoDecoder() = default;
+
   class GMPInitDoneCallback : public GetGMPVideoDecoderCallback {
    public:
     explicit GMPInitDoneCallback(GMPVideoDecoder* aDecoder)
@@ -90,6 +96,7 @@ class GMPVideoDecoder : public MediaDataDecoder,
   RefPtr<GMPCrashHelper> mCrashHelper;
 
   int64_t mLastStreamOffset = 0;
+  nsTHashMap<nsUint64HashKey, int64_t> mStreamOffsets;
   RefPtr<layers::ImageContainer> mImageContainer;
   RefPtr<layers::KnowsCompositor> mKnowsCompositor;
   PerformanceRecorderMulti<DecodeStage> mPerformanceRecorder;

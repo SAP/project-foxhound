@@ -150,6 +150,7 @@ def build_docs(
     import webbrowser
 
     from livereload import Server
+
     from moztreedocs.package import create_tarball
 
     unique_id = "%s/%s" % (project(), str(uuid.uuid1()))
@@ -161,7 +162,7 @@ def build_docs(
         path = command_context.topsrcdir
         if os.environ.get("MOZ_AUTOMATION") != "1":
             print(
-                "\nBuilding the full documentation tree."
+                "\nBuilding the full documentation tree.\n"
                 "Did you mean to only build part of the documentation?\n"
                 "For a faster command, consider running:\n"
                 " ./mach doc path/to/docs\n"

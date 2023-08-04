@@ -6,10 +6,16 @@
 
 #include "PerformanceRecorder.h"
 #ifdef MOZ_WMF_MEDIA_ENGINE
-#  include "mozilla/MFMediaEngineChild.h"
 #  include "MFMediaEngineDecoderModule.h"
+#  include "mozilla/MFMediaEngineChild.h"
+#  include "mozilla/StaticPrefs_media.h"
 #endif
+#include "mozilla/Atomics.h"
+#include "mozilla/ClearOnShutdown.h"
 #include "mozilla/ProfilerLabels.h"
+#include "mozilla/UniquePtr.h"
+#include "mozilla/StaticMutex.h"
+#include "nsThreadUtils.h"
 
 namespace mozilla {
 
@@ -54,6 +60,79 @@ const char* ExternalEngineEventToStr(ExternalEngineEvent aEvent) {
   }
 #undef EVENT_TO_STR
 }
+
+/**
+ * This class monitors the amount of crash happened for a remote engine
+ * process. It the amount of crash of the remote process exceeds the defined
+ * threshold, then `ShouldRecoverProcess()` will return false to indicate that
+ * we should not keep spawning that remote process because it's too easy to
+ * crash.
+ *
+ * In addition, we also have another mechanism in the media format reader
+ * (MFR) to detect crash amount of remote processes, but that would only
+ * happen during the decoding process. The main reason to choose using this
+ * simple monitor, instead of the mechanism in the MFR is because that
+ * mechanism can't detect every crash happening in the remote process, such as
+ * crash happening during initializing the remote engine, or setting the CDM
+ * pipepline, which can happen prior to decoding.
+ */
+class ProcessCrashMonitor final {
+ public:
+  static void NotifyCrash() {
+    StaticMutexAutoLock lock(sMutex);
+    auto* monitor = ProcessCrashMonitor::EnsureInstance();
+    if (!monitor) {
+      return;
+    }
+    monitor->mCrashNums++;
+  }
+  static bool ShouldRecoverProcess() {
+    StaticMutexAutoLock lock(sMutex);
+    auto* monitor = ProcessCrashMonitor::EnsureInstance();
+    if (!monitor) {
+      return false;
+    }
+    return monitor->mCrashNums <= monitor->mMaxCrashes;
+  }
+
+ private:
+  ProcessCrashMonitor() : mCrashNums(0) {
+#ifdef MOZ_WMF_MEDIA_ENGINE
+    mMaxCrashes = StaticPrefs::media_wmf_media_engine_max_crashes();
+#else
+    mMaxCrashes = 0;
+#endif
+  };
+  ProcessCrashMonitor(const ProcessCrashMonitor&) = delete;
+  ProcessCrashMonitor& operator=(const ProcessCrashMonitor&) = delete;
+
+  static ProcessCrashMonitor* EnsureInstance() {
+    if (sIsShutdown) {
+      return nullptr;
+    }
+    if (!sCrashMonitor) {
+      sCrashMonitor.reset(new ProcessCrashMonitor());
+      GetMainThreadSerialEventTarget()->Dispatch(
+          NS_NewRunnableFunction("ProcessCrashMonitor::EnsureInstance", [&] {
+            RunOnShutdown(
+                [&] {
+                  StaticMutexAutoLock lock(sMutex);
+                  sCrashMonitor.reset();
+                  sIsShutdown = true;
+                },
+                ShutdownPhase::XPCOMShutdown);
+          }));
+    }
+    return sCrashMonitor.get();
+  }
+
+  static inline StaticMutex sMutex;
+  static inline UniquePtr<ProcessCrashMonitor> sCrashMonitor;
+  static inline Atomic<bool> sIsShutdown{false};
+
+  uint32_t mCrashNums;
+  uint32_t mMaxCrashes;
+};
 
 /* static */
 const char* ExternalEngineStateMachine::StateToStr(State aNextState) {
@@ -448,6 +527,9 @@ RefPtr<ShutdownPromise> ExternalEngineStateMachine::Shutdown() {
 
   mMetadataManager.Disconnect();
 
+  mSetCDMProxyPromise.RejectIfExists(NS_ERROR_DOM_MEDIA_ABORT_ERR, __func__);
+  mSetCDMProxyRequest.DisconnectIfExists();
+
   mEngine->Shutdown();
 
   auto* state = mState.AsShutdownEngine();
@@ -492,8 +574,9 @@ void ExternalEngineStateMachine::BufferedRangeUpdated() {
 // Note: the variadic only supports passing member variables.
 #define PERFORM_WHEN_ALLOW(Func, ...)                                         \
   do {                                                                        \
-    /* Initialzation is not done yet, posepone the operation */               \
-    if (mState.IsInitEngine() && mState.AsInitEngine()->mInitPromise) {       \
+    /* Initialzation is not done yet, postpone the operation */               \
+    if ((mState.IsInitEngine() || mState.IsRecoverEngine()) &&                \
+        mState.AsInitEngine()->mInitPromise) {                                \
       LOG("%s is called before init", __func__);                              \
       mState.AsInitEngine()->mInitPromise->Then(                              \
           OwnerThread(), __func__,                                            \
@@ -997,6 +1080,14 @@ void ExternalEngineStateMachine::RecoverFromCDMProcessCrashIfNeeded() {
   if (mState.IsRecoverEngine()) {
     return;
   }
+  ProcessCrashMonitor::NotifyCrash();
+  if (!ProcessCrashMonitor::ShouldRecoverProcess()) {
+    LOG("CDM process has crashed too many times, abort recovery");
+    DecodeError(
+        MediaResult(NS_ERROR_DOM_MEDIA_EXTERNAL_ENGINE_NOT_SUPPORTED_ERR));
+    return;
+  }
+
   LOG("CDM process crashed, recover the engine again (last time=%" PRId64 ")",
       mCurrentPosition.Ref().ToMicroseconds());
   ChangeStateTo(State::RecoverEngine);
@@ -1026,6 +1117,45 @@ void ExternalEngineStateMachine::UpdateSecondaryVideoContainer() {
   AssertOnTaskQueue();
   LOG("UpdateSecondaryVideoContainer=%p", mSecondaryVideoContainer.Ref().get());
   mOnSecondaryVideoContainerInstalled.Notify(mSecondaryVideoContainer.Ref());
+}
+
+RefPtr<SetCDMPromise> ExternalEngineStateMachine::SetCDMProxy(
+    CDMProxy* aProxy) {
+  if (mState.IsShutdownEngine()) {
+    return SetCDMPromise::CreateAndReject(NS_ERROR_FAILURE, __func__);
+  }
+
+  if (mState.IsInitEngine() && mState.AsInitEngine()->mInitPromise) {
+    LOG("SetCDMProxy is called before init");
+    mState.AsInitEngine()->mInitPromise->Then(
+        OwnerThread(), __func__,
+        [self = RefPtr{this}, proxy = RefPtr{aProxy},
+         this](const GenericNonExclusivePromise::ResolveOrRejectValue& aVal) {
+          SetCDMProxy(proxy)
+              ->Then(OwnerThread(), __func__,
+                     [self = RefPtr{this},
+                      this](const SetCDMPromise::ResolveOrRejectValue& aVal) {
+                       mSetCDMProxyRequest.Complete();
+                       if (aVal.IsResolve()) {
+                         mSetCDMProxyPromise.Resolve(true, __func__);
+                       } else {
+                         mSetCDMProxyPromise.Reject(NS_ERROR_DOM_MEDIA_CDM_ERR,
+                                                    __func__);
+                       }
+                     })
+              ->Track(mSetCDMProxyRequest);
+        });
+    return mSetCDMProxyPromise.Ensure(__func__);
+  }
+
+  // TODO : set CDM proxy again if we recreate the media engine after crash.
+  LOG("SetCDMProxy=%p", aProxy);
+  MOZ_DIAGNOSTIC_ASSERT(mEngine);
+  if (!mEngine->SetCDMProxy(aProxy)) {
+    LOG("Failed to set CDM proxy on the engine");
+    return SetCDMPromise::CreateAndReject(NS_ERROR_DOM_MEDIA_CDM_ERR, __func__);
+  }
+  return MediaDecoderStateMachineBase::SetCDMProxy(aProxy);
 }
 
 #undef FMT

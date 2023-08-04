@@ -9,9 +9,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
   AppInfo: "chrome://remote/content/shared/AppInfo.sys.mjs",
 });
 
-const { RemotePageChild } = ChromeUtils.import(
-  "resource://gre/actors/RemotePageChild.jsm"
-);
+import { RemotePageChild } from "resource://gre/actors/RemotePageChild.sys.mjs";
 
 export class NetErrorChild extends RemotePageChild {
   actorCreated() {
@@ -33,6 +31,7 @@ export class NetErrorChild extends RemotePageChild {
       "RPMGetTRRSkipReason",
       "RPMGetTRRDomain",
       "RPMIsSiteSpecificTRRError",
+      "RPMSetTRRDisabledLoadFlags",
     ];
     this.exportFunctions(exportableFunctions);
   }
@@ -229,5 +228,10 @@ export class NetErrorChild extends RemotePageChild {
         return true;
     }
     return false;
+  }
+
+  RPMSetTRRDisabledLoadFlags() {
+    this.contentWindow.docShell.defaultLoadFlags |=
+      Ci.nsIRequest.LOAD_TRR_DISABLED_MODE;
   }
 }

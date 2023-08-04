@@ -6,19 +6,21 @@
 
 "use strict";
 
-const { BackgroundUpdate } = ChromeUtils.import(
-  "resource://gre/modules/BackgroundUpdate.jsm"
+const { BackgroundUpdate } = ChromeUtils.importESModule(
+  "resource://gre/modules/BackgroundUpdate.sys.mjs"
 );
 let reasons = () => BackgroundUpdate._reasonsToNotUpdateInstallation();
 let REASON = BackgroundUpdate.REASON;
 const { EnterprisePolicyTesting } = ChromeUtils.importESModule(
   "resource://testing-common/EnterprisePolicyTesting.sys.mjs"
 );
-const { UpdateService } = ChromeUtils.import(
-  "resource://gre/modules/UpdateService.jsm"
+const { UpdateService } = ChromeUtils.importESModule(
+  "resource://gre/modules/UpdateService.sys.mjs"
 );
 
-const { sinon } = ChromeUtils.import("resource://testing-common/Sinon.jsm");
+const { sinon } = ChromeUtils.importESModule(
+  "resource://testing-common/Sinon.sys.mjs"
+);
 
 // We can't reasonably check NO_MOZ_BACKGROUNDTASKS, nor NO_OMNIJAR.
 

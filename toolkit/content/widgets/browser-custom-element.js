@@ -21,12 +21,9 @@
     BrowserUtils: "resource://gre/modules/BrowserUtils.sys.mjs",
     Finder: "resource://gre/modules/Finder.sys.mjs",
     FinderParent: "resource://gre/modules/FinderParent.sys.mjs",
-  });
-
-  XPCOMUtils.defineLazyModuleGetters(lazy, {
-    PopupBlocker: "resource://gre/actors/PopupBlockingParent.jsm",
-    RemoteWebNavigation: "resource://gre/modules/RemoteWebNavigation.jsm",
-    SelectParentHelper: "resource://gre/actors/SelectParent.jsm",
+    PopupBlocker: "resource://gre/actors/PopupBlockingParent.sys.mjs",
+    SelectParentHelper: "resource://gre/actors/SelectParent.sys.mjs",
+    RemoteWebNavigation: "resource://gre/modules/RemoteWebNavigation.sys.mjs",
   });
 
   XPCOMUtils.defineLazyGetter(lazy, "blankURI", () =>
@@ -996,6 +993,21 @@
         !this.isNavigating &&
         this.urlbarChangeTracker._startedLoadSinceLastUserTyping
       );
+    }
+
+    constrainPopup(popup) {
+      if (this.getAttribute("constrainpopups") != "false") {
+        let constraintRect = this.getBoundingClientRect();
+        constraintRect = new DOMRect(
+          constraintRect.left + window.mozInnerScreenX,
+          constraintRect.top + window.mozInnerScreenY,
+          constraintRect.width,
+          constraintRect.height
+        );
+        popup.setConstraintRect(constraintRect);
+      } else {
+        popup.setConstraintRect(new DOMRect(0, 0, 0, 0));
+      }
     }
 
     construct() {

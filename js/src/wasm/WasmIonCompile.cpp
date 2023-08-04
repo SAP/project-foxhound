@@ -848,29 +848,10 @@ class FunctionCompiler {
       return true;
     }
 
-    MBasicBlock* joinBlock = nullptr;
-    if (!newBlock(curBlock_, &joinBlock)) {
-      return false;
-    }
+    auto* ins = MWasmTrapIfNull::New(
+        alloc(), value, wasm::Trap::NullPointerDereference, bytecodeOffset());
 
-    MBasicBlock* trapBlock = nullptr;
-    if (!newBlock(curBlock_, &trapBlock)) {
-      return false;
-    }
-    auto* ins = MWasmTrap::New(alloc(), wasm::Trap::NullPointerDereference,
-                               bytecodeOffset());
-    trapBlock->end(ins);
-
-    MDefinition* check = compareIsNull(value, JSOp::Ne);
-    if (!check) {
-      return false;
-    }
-    MTest* test = MTest::New(alloc(), check, joinBlock, trapBlock);
-    if (!test) {
-      return false;
-    }
-    curBlock_->end(test);
-    curBlock_ = joinBlock;
+    curBlock_->add(ins);
     return true;
   }
 
@@ -3709,13 +3690,14 @@ class FunctionCompiler {
 
   /************************************************ WasmGC: type helpers ***/
 
-  // Returns an MDefinition holding the type definition for `typeIndex`.
-  [[nodiscard]] MDefinition* loadTypeDef(uint32_t typeIndex) {
-    uint32_t typeDefOffset = moduleEnv().offsetOfTypeDef(typeIndex);
+  // Returns an MDefinition holding the supertype vector for `typeIndex`.
+  [[nodiscard]] MDefinition* loadSuperTypeVector(uint32_t typeIndex) {
+    uint32_t superTypeVectorOffset =
+        moduleEnv().offsetOfSuperTypeVector(typeIndex);
 
-    auto* load =
-        MWasmLoadGlobalVar::New(alloc(), MIRType::Pointer, typeDefOffset,
-                                /*isConst=*/true, instancePointer_);
+    auto* load = MWasmLoadGlobalVar::New(alloc(), MIRType::Pointer,
+                                         superTypeVectorOffset,
+                                         /*isConst=*/true, instancePointer_);
     if (!load) {
       return nullptr;
     }
@@ -4226,9 +4208,9 @@ class FunctionCompiler {
   [[nodiscard]] MDefinition* isGcObjectSubtypeOf(MDefinition* object,
                                                  uint32_t castTypeIndex,
                                                  bool succeedOnNull) {
-    auto* superTypeDef = loadTypeDef(castTypeIndex);
+    auto* superSuperTypeVector = loadSuperTypeVector(castTypeIndex);
     auto* isSubTypeOf = MWasmGcObjectIsSubtypeOf::New(
-        alloc(), object, superTypeDef,
+        alloc(), object, superSuperTypeVector,
         moduleEnv_.types->type(castTypeIndex).subTypingDepth(), succeedOnNull);
     curBlock_->add(isSubTypeOf);
     return isSubTypeOf;
@@ -8061,8 +8043,7 @@ static bool EmitBodyExprs(FunctionCompiler& f) {
           case uint32_t(SimdOp::I16x8RelaxedLaneSelect):
           case uint32_t(SimdOp::I32x4RelaxedLaneSelect):
           case uint32_t(SimdOp::I64x2RelaxedLaneSelect):
-          case uint32_t(SimdOp::I32x4DotI8x16I7x16AddS):
-          case uint32_t(SimdOp::F32x4RelaxedDotBF16x8AddF32x4): {
+          case uint32_t(SimdOp::I32x4DotI8x16I7x16AddS): {
             if (!f.moduleEnv().v128RelaxedEnabled()) {
               return f.iter().unrecognizedOpcode(&op);
             }
@@ -8078,10 +8059,10 @@ static bool EmitBodyExprs(FunctionCompiler& f) {
             }
             CHECK(EmitBinarySimd128(f, /* commutative= */ true, SimdOp(op.b1)));
           }
-          case uint32_t(SimdOp::I32x4RelaxedTruncSSatF32x4):
-          case uint32_t(SimdOp::I32x4RelaxedTruncUSatF32x4):
-          case uint32_t(SimdOp::I32x4RelaxedTruncSatF64x2SZero):
-          case uint32_t(SimdOp::I32x4RelaxedTruncSatF64x2UZero): {
+          case uint32_t(SimdOp::I32x4RelaxedTruncF32x4S):
+          case uint32_t(SimdOp::I32x4RelaxedTruncF32x4U):
+          case uint32_t(SimdOp::I32x4RelaxedTruncF64x2SZero):
+          case uint32_t(SimdOp::I32x4RelaxedTruncF64x2UZero): {
             if (!f.moduleEnv().v128RelaxedEnabled()) {
               return f.iter().unrecognizedOpcode(&op);
             }

@@ -13,6 +13,7 @@
 #include "mozilla/dom/DocumentFragment.h"
 #include "ChildIterator.h"
 #include "nsContentUtils.h"
+#include "nsINode.h"
 #include "nsWindowSizes.h"
 #include "mozilla/dom/DirectionalityUtils.h"
 #include "mozilla/dom/Element.h"
@@ -61,7 +62,6 @@ ShadowRoot::ShadowRoot(Element* aElement, ShadowRootMode aMode,
       mMode(aMode),
       mDelegatesFocus(aDelegatesFocus),
       mSlotAssignment(aSlotAssignment),
-      mIsUAWidget(false),
       mIsDetailsShadowTree(aElement->IsHTMLElement(nsGkAtoms::details)),
       mIsAvailableToElementInternals(false) {
   SetHost(aElement);
@@ -72,6 +72,17 @@ ShadowRoot::ShadowRoot(Element* aElement, ShadowRootMode aMode,
   ClearSubtreeRootPointer();
 
   SetFlags(NODE_IS_IN_SHADOW_TREE);
+  if (Host()->IsInNativeAnonymousSubtree()) {
+    // NOTE(emilio): We could consider just propagating the
+    // IN_NATIVE_ANONYMOUS_SUBTREE flag (not making this an anonymous root), but
+    // that breaks the invariant that if two nodes have the same
+    // NativeAnonymousSubtreeRoot() they are in the same DOM tree, which we rely
+    // on a couple places and would need extra fixes.
+    //
+    // We don't hit this case for now anyways, bug 1824886 would start hitting
+    // it.
+    SetIsNativeAnonymousRoot();
+  }
   Bind();
 
   ExtendedDOMSlots()->mContainingShadow = this;
@@ -119,6 +130,10 @@ void ShadowRoot::NodeInfoChanged(Document* aOldDoc) {
 }
 
 void ShadowRoot::CloneInternalDataFrom(ShadowRoot* aOther) {
+  if (aOther->IsRootOfNativeAnonymousSubtree()) {
+    SetIsNativeAnonymousRoot();
+  }
+
   if (aOther->IsUAWidget()) {
     SetIsUAWidget();
   }
@@ -749,9 +764,9 @@ Element* ShadowRoot::GetActiveElement() {
 nsINode* ShadowRoot::ImportNodeAndAppendChildAt(nsINode& aParentNode,
                                                 nsINode& aNode, bool aDeep,
                                                 mozilla::ErrorResult& rv) {
-  MOZ_ASSERT(mIsUAWidget);
+  MOZ_ASSERT(IsUAWidget());
 
-  if (!aParentNode.IsInUAWidget()) {
+  if (aParentNode.SubtreeRoot() != this) {
     rv.Throw(NS_ERROR_INVALID_ARG);
     return nullptr;
   }
@@ -767,9 +782,9 @@ nsINode* ShadowRoot::ImportNodeAndAppendChildAt(nsINode& aParentNode,
 nsINode* ShadowRoot::CreateElementAndAppendChildAt(nsINode& aParentNode,
                                                    const nsAString& aTagName,
                                                    mozilla::ErrorResult& rv) {
-  MOZ_ASSERT(mIsUAWidget);
+  MOZ_ASSERT(IsUAWidget());
 
-  if (!aParentNode.IsInUAWidget()) {
+  if (aParentNode.SubtreeRoot() != this) {
     rv.Throw(NS_ERROR_INVALID_ARG);
     return nullptr;
   }

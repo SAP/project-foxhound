@@ -220,6 +220,7 @@
 #include "jit/ExecutableAllocator.h"
 #include "jit/JitCode.h"
 #include "jit/JitRealm.h"
+#include "jit/JitRuntime.h"
 #include "jit/ProcessExecutableMemory.h"
 #include "js/HeapAPI.h"  // JS::GCCellPtr
 #include "js/SliceBudget.h"
@@ -2229,11 +2230,11 @@ void GCRuntime::sweepZones(JS::GCContext* gcx, bool destroyingRuntime) {
 
     if (zone->wasGCStarted()) {
       MOZ_ASSERT(!zone->isQueuedForBackgroundSweep());
+      AutoSetThreadIsSweeping threadIsSweeping(zone);
       const bool zoneIsDead =
           zone->arenas.arenaListsAreEmpty() && !zone->hasMarkedRealms();
       MOZ_ASSERT_IF(destroyingRuntime, zoneIsDead);
       if (zoneIsDead) {
-        AutoSetThreadIsSweeping threadIsSweeping(zone);
         zone->arenas.checkEmptyFreeLists();
         zone->sweepCompartments(gcx, false, destroyingRuntime);
         MOZ_ASSERT(zone->compartments().empty());
@@ -4920,6 +4921,9 @@ void GCRuntime::checkHashTablesAfterMovingGC() {
    * that have been moved.
    */
   rt->geckoProfiler().checkStringsMapAfterMovingGC();
+  if (rt->hasJitRuntime() && rt->jitRuntime()->hasInterpreterEntryMap()) {
+    rt->jitRuntime()->getInterpreterEntryMap()->checkScriptsAfterMovingGC();
+  }
   for (ZonesIter zone(this, SkipAtoms); !zone.done(); zone.next()) {
     zone->checkUniqueIdTableAfterMovingGC();
     zone->shapeZone().checkTablesAfterMovingGC();

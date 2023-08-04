@@ -9,10 +9,12 @@
 const { Troubleshoot } = ChromeUtils.importESModule(
   "resource://gre/modules/Troubleshoot.sys.mjs"
 );
-const { sinon } = ChromeUtils.import("resource://testing-common/Sinon.jsm");
+const { sinon } = ChromeUtils.importESModule(
+  "resource://testing-common/Sinon.sys.mjs"
+);
 
-const { FeatureGate } = ChromeUtils.import(
-  "resource://featuregates/FeatureGate.jsm"
+const { FeatureGate } = ChromeUtils.importESModule(
+  "resource://featuregates/FeatureGate.sys.mjs"
 );
 const { PreferenceExperiments } = ChromeUtils.import(
   "resource://normandy/lib/PreferenceExperiments.jsm"

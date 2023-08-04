@@ -12,6 +12,7 @@
 #include "nsTHashSet.h"
 #include "nsIObserver.h"
 #include "nsIWebProgressListener.h"
+#include "nsWeakReference.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/StaticPtr.h"
 
@@ -56,7 +57,7 @@ class nsCookieBannerService final : public nsIObserver,
   // or cookie rule under its browsing context tree. We use the browsing context
   // id as the key. And the value is a tuple with two booleans that indicate
   // the existence of click rule and cookie rule respectively.
-  nsTHashMap<uint64_t, Tuple<bool, bool>> mReloadTelemetryData;
+  nsTHashMap<uint64_t, std::tuple<bool, bool>> mReloadTelemetryData;
 
   // Pref change callback which initializes and shuts down the service. This is
   // also called on startup.

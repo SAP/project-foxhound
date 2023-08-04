@@ -806,7 +806,14 @@ class NPZCSupport final
       if (!win) {
         return;
       }
-      nsWindow* gkWindow = win->GetNsWindow();
+      RefPtr<nsWindow> gkWindow = win->GetNsWindow();
+      if (!gkWindow) {
+        return;
+      }
+      MutexAutoLock lock(gkWindow->GetDestroyMutex());
+      if (gkWindow->Destroyed()) {
+        return;
+      }
       jni::NativeWeakPtr<NPZCSupport> weakPtrToThis =
           gkWindow->GetNPZCSupportWeakPtr();
       mObserver = Observer::Create(std::move(weakPtrToThis));
@@ -1800,19 +1807,19 @@ GeckoViewSupport::GetContentCanonicalBrowsingContext() {
   return bc->Canonical();
 }
 
-void GeckoViewSupport::PrintToPdf(
-    const java::GeckoSession::Window::LocalRef& inst,
-    jni::Object::Param aResult) {
-  auto stream = java::GeckoInputStream::New(nullptr);
-  auto geckoResult = java::GeckoResult::Ref::From(aResult);
+void GeckoViewSupport::CreatePdf(
+    jni::LocalRef<mozilla::java::GeckoResult> aGeckoResult,
+    RefPtr<dom::CanonicalBrowsingContext> aCbc) {
+  MOZ_ASSERT(NS_IsMainThread());
   const auto pdfErrorMsg = "Could not save this page as PDF.";
+  auto stream = java::GeckoInputStream::New(nullptr);
   RefPtr<GeckoViewOutputStream> streamListener =
       new GeckoViewOutputStream(stream);
 
   nsCOMPtr<nsIPrintSettingsService> printSettingsService =
       do_GetService("@mozilla.org/gfx/printsettings-service;1");
   if (!printSettingsService) {
-    geckoResult->CompleteExceptionally(
+    aGeckoResult->CompleteExceptionally(
         GeckoPrintException::New(
             GeckoPrintException::ERROR_PRINT_SETTINGS_SERVICE_NOT_AVAILABLE)
             .Cast<jni::Throwable>());
@@ -1824,11 +1831,12 @@ void GeckoViewSupport::PrintToPdf(
   nsresult rv = printSettingsService->CreateNewPrintSettings(
       getter_AddRefs(printSettings));
   if (NS_WARN_IF(NS_FAILED(rv))) {
-    geckoResult->CompleteExceptionally(
+    aGeckoResult->CompleteExceptionally(
         GeckoPrintException::New(
             GeckoPrintException::ERROR_UNABLE_TO_CREATE_PRINT_SETTINGS)
             .Cast<jni::Throwable>());
     GVS_LOG("Could not create print settings.");
+    return;
   }
 
   printSettings->SetPrinterName(u"Mozilla Save to PDF"_ns);
@@ -1838,6 +1846,27 @@ void GeckoViewSupport::PrintToPdf(
   printSettings->SetOutputStream(streamListener);
   printSettings->SetPrintSilent(true);
 
+  RefPtr<CanonicalBrowsingContext::PrintPromise> print =
+      aCbc->Print(printSettings);
+
+  aGeckoResult->Complete(stream);
+  print->Then(
+      mozilla::GetCurrentSerialEventTarget(), __func__,
+      [result = java::GeckoResult::GlobalRef(aGeckoResult), stream,
+       pdfErrorMsg](
+          const CanonicalBrowsingContext::PrintPromise::ResolveOrRejectValue&
+              aValue) {
+        if (aValue.IsReject()) {
+          GVS_LOG("Could not print. %s", pdfErrorMsg);
+          stream->SendError();
+        }
+      });
+}
+
+void GeckoViewSupport::PrintToPdf(
+    const java::GeckoSession::Window::LocalRef& inst,
+    jni::Object::Param aResult) {
+  auto geckoResult = java::GeckoResult::Ref::From(aResult);
   RefPtr<CanonicalBrowsingContext> cbc = GetContentCanonicalBrowsingContext();
   if (!cbc) {
     geckoResult->CompleteExceptionally(
@@ -1848,21 +1877,25 @@ void GeckoViewSupport::PrintToPdf(
     GVS_LOG("Could not retrieve content canonical browsing context.");
     return;
   }
+  CreatePdf(geckoResult, cbc);
+}
 
-  RefPtr<CanonicalBrowsingContext::PrintPromise> print =
-      cbc->Print(printSettings);
+void GeckoViewSupport::PrintToPdf(
+    const java::GeckoSession::Window::LocalRef& inst,
+    jni::Object::Param aResult, int64_t aBcId) {
+  auto geckoResult = java::GeckoResult::Ref::From(aResult);
 
-  geckoResult->Complete(stream);
-  print->Then(
-      mozilla::GetCurrentSerialEventTarget(), __func__,
-      [result = java::GeckoResult::GlobalRef(geckoResult), stream, pdfErrorMsg](
-          const CanonicalBrowsingContext::PrintPromise::ResolveOrRejectValue&
-              aValue) {
-        if (aValue.IsReject()) {
-          GVS_LOG("Could not print. %s", pdfErrorMsg);
-          stream->SendError();
-        }
-      });
+  RefPtr<CanonicalBrowsingContext> cbc = CanonicalBrowsingContext::Get(aBcId);
+  if (!cbc) {
+    geckoResult->CompleteExceptionally(
+        GeckoPrintException::New(
+            GeckoPrintException::
+                ERROR_UNABLE_TO_RETRIEVE_CANONICAL_BROWSING_CONTEXT)
+            .Cast<jni::Throwable>());
+    GVS_LOG("Could not retrieve content canonical browsing context by ID.");
+    return;
+  }
+  CreatePdf(geckoResult, cbc);
 }
 }  // namespace widget
 }  // namespace mozilla
@@ -1940,7 +1973,8 @@ nsWindow::nsWindow()
       mDynamicToolbarMaxHeight(0),
       mSizeMode(nsSizeMode_Normal),
       mIsFullScreen(false),
-      mCompositorWidgetDelegate(nullptr) {}
+      mCompositorWidgetDelegate(nullptr),
+      mDestroyMutex("nsWindow::mDestroyMutex") {}
 
 nsWindow::~nsWindow() {
   gTopLevelWindows.RemoveElement(this);
@@ -2009,6 +2043,8 @@ nsresult nsWindow::Create(nsIWidget* aParent, nsNativeWidget aNativeParent,
 }
 
 void nsWindow::Destroy() {
+  MutexAutoLock lock(mDestroyMutex);
+
   nsBaseWidget::mOnDestroyCalled = true;
 
   // Disassociate our native object from GeckoView.
@@ -2390,19 +2426,14 @@ nsresult nsWindow::MakeFullScreen(bool aFullScreen) {
     return NS_ERROR_NOT_AVAILABLE;
   }
 
-  nsIWidgetListener* listener = GetWidgetListener();
-  if (listener) {
-    listener->FullscreenWillChange(aFullScreen);
-  }
-
   mIsFullScreen = aFullScreen;
   mAndroidView->mEventDispatcher->Dispatch(
       aFullScreen ? u"GeckoView:FullScreenEnter" : u"GeckoView:FullScreenExit");
 
+  nsIWidgetListener* listener = GetWidgetListener();
   if (listener) {
     mSizeMode = mIsFullScreen ? nsSizeMode_Fullscreen : nsSizeMode_Normal;
     listener->SizeModeChanged(mSizeMode);
-    listener->FullscreenChanged(mIsFullScreen);
   }
   return NS_OK;
 }
@@ -2553,9 +2584,6 @@ void nsWindow::UpdateOverscrollOffset(const float aX, const float aY) {
 void* nsWindow::GetNativeData(uint32_t aDataType) {
   switch (aDataType) {
     // used by GLContextProviderEGL, nullptr is EGL_DEFAULT_DISPLAY
-    case NS_NATIVE_DISPLAY:
-      return nullptr;
-
     case NS_NATIVE_WIDGET:
       return (void*)this;
 

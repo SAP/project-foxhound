@@ -71,25 +71,25 @@ element.Strategy = {
  * See the {@link element.Strategy} enum for a full list of supported
  * search strategies that can be passed to <var>strategy</var>.
  *
- * @param {Object.<string, WindowProxy>} container
+ * @param {Object<string, WindowProxy>} container
  *     Window object.
  * @param {string} strategy
  *     Search strategy whereby to locate the element(s).
  * @param {string} selector
  *     Selector search pattern.  The selector must be compatible with
  *     the chosen search <var>strategy</var>.
- * @param {Object=} options
- * @param {boolean=} all
+ * @param {object=} options
+ * @param {boolean=} options.all
  *     If true, a multi-element search selector is used and a sequence of
  *     elements will be returned, otherwise a single element. Defaults to false.
- * @param {Element=} startNode
+ * @param {Element=} options.startNode
  *     Element to use as the root of the search.
- * @param {number=} timeout
+ * @param {number=} options.timeout
  *     Duration to wait before timing out the search.  If <code>all</code>
  *     is false, a {@link NoSuchElementError} is thrown if unable to
  *     find the element within the timeout duration.
  *
- * @return {Promise.<(Element|Array.<Element>)>}
+ * @returns {Promise.<(Element|Array.<Element>)>}
  *     Single element or a sequence of elements.
  *
  * @throws InvalidSelectorError
@@ -149,7 +149,13 @@ function find_(
   searchFn,
   { startNode = null, all = false } = {}
 ) {
-  let rootNode = container.frame.document;
+  let rootNode;
+
+  if (element.isShadowRoot(startNode)) {
+    rootNode = startNode.ownerDocument;
+  } else {
+    rootNode = container.frame.document;
+  }
 
   if (!startNode) {
     startNode = rootNode;
@@ -183,7 +189,7 @@ function find_(
  * @param {string} expression
  *     XPath search expression.
  *
- * @return {Node}
+ * @returns {Node}
  *     First element matching <var>expression</var>.
  */
 element.findByXPath = function(document, startNode, expression) {
@@ -207,7 +213,7 @@ element.findByXPath = function(document, startNode, expression) {
  * @param {string} expression
  *     XPath search expression.
  *
- * @return {Iterable.<Node>}
+ * @returns {Iterable.<Node>}
  *     Iterator over nodes matching <var>expression</var>.
  */
 element.findByXPathAll = function*(document, startNode, expression) {
@@ -234,7 +240,7 @@ element.findByXPathAll = function*(document, startNode, expression) {
  * @param {string} linkText
  *     Link text to search for.
  *
- * @return {Iterable.<HTMLAnchorElement>}
+ * @returns {Iterable.<HTMLAnchorElement>}
  *     Sequence of link elements which text is <var>s</var>.
  */
 element.findByLinkText = function(startNode, linkText) {
@@ -253,7 +259,7 @@ element.findByLinkText = function(startNode, linkText) {
  * @param {string} linkText
  *     Link text to search for.
  *
- * @return {Iterable.<HTMLAnchorElement>}
+ * @returns {Iterable.<HTMLAnchorElement>}
  *     Iterator of link elements which text containins
  *     <var>linkText</var>.
  */
@@ -273,11 +279,13 @@ element.findByPartialLinkText = function(startNode, linkText) {
  *     Function that determines if given link should be included in
  *     return value or filtered away.
  *
- * @return {Iterable.<HTMLAnchorElement>}
+ * @returns {Iterable.<HTMLAnchorElement>}
  *     Iterator of link elements matching <var>predicate</var>.
  */
 function* filterLinks(startNode, predicate) {
-  for (let link of startNode.getElementsByTagName("a")) {
+  const links = getLinks(startNode);
+
+  for (const link of links) {
     if (predicate(link)) {
       yield link;
     }
@@ -296,7 +304,7 @@ function* filterLinks(startNode, predicate) {
  * @param {Element=} startNode
  *     Optional Element from which to start searching.
  *
- * @return {Element}
+ * @returns {Element}
  *     Found element.
  *
  * @throws {InvalidSelectorError}
@@ -331,21 +339,25 @@ function findElement(strategy, selector, document, startNode = undefined) {
     case element.Strategy.XPath:
       return element.findByXPath(document, startNode, selector);
 
-    case element.Strategy.LinkText:
-      for (let link of startNode.getElementsByTagName("a")) {
+    case element.Strategy.LinkText: {
+      const links = getLinks(startNode);
+      for (const link of links) {
         if (lazy.atom.getElementText(link).trim() === selector) {
           return link;
         }
       }
       return undefined;
+    }
 
-    case element.Strategy.PartialLinkText:
-      for (let link of startNode.getElementsByTagName("a")) {
+    case element.Strategy.PartialLinkText: {
+      const links = getLinks(startNode);
+      for (const link of links) {
         if (lazy.atom.getElementText(link).includes(selector)) {
           return link;
         }
       }
       return undefined;
+    }
 
     case element.Strategy.Selector:
       try {
@@ -372,7 +384,7 @@ function findElement(strategy, selector, document, startNode = undefined) {
  * @param {Element=} startNode
  *     Optional Element from which to start searching.
  *
- * @return {Array.<Element>}
+ * @returns {Array.<Element>}
  *     Found elements.
  *
  * @throws {InvalidSelectorError}
@@ -423,6 +435,14 @@ function findElements(strategy, selector, document, startNode = undefined) {
   }
 }
 
+function getLinks(startNode) {
+  // DocumentFragment doesn't have `getElementsByTagName` so using `querySelectorAll`.
+  if (element.isShadowRoot(startNode)) {
+    return startNode.querySelectorAll("a");
+  }
+  return startNode.getElementsByTagName("a");
+}
+
 /**
  * Finds the closest parent node of <var>startNode</var> matching a CSS
  * <var>selector</var> expression.
@@ -433,7 +453,7 @@ function findElements(strategy, selector, document, startNode = undefined) {
  * @param {string} selector
  *     CSS selector expression.
  *
- * @return {Node=}
+ * @returns {Node=}
  *     First match to <var>selector</var>, or null if no match was found.
  */
 element.findClosest = function(startNode, selector) {
@@ -546,16 +566,17 @@ element.getKnownShadowRoot = function(browsingContext, nodeId, nodeCache) {
 /**
  * Determines if <var>obj<var> is an HTML or JS collection.
  *
- * @param {Object} seq
+ * @param {object} seq
  *     Type to determine.
  *
- * @return {boolean}
+ * @returns {boolean}
  *     True if <var>seq</va> is a collection.
  */
 element.isCollection = function(seq) {
   switch (Object.prototype.toString.call(seq)) {
     case "[object Arguments]":
     case "[object Array]":
+    case "[object DOMTokenList]":
     case "[object FileList]":
     case "[object HTMLAllCollection]":
     case "[object HTMLCollection]":
@@ -578,7 +599,7 @@ element.isCollection = function(seq) {
  * @param {ShadowRoot} shadowRoot
  *     ShadowRoot to check for detached state.
  *
- * @return {boolean}
+ * @returns {boolean}
  *     True if <var>shadowRoot</var> is detached, false otherwise.
  */
 element.isDetached = function(shadowRoot) {
@@ -629,7 +650,7 @@ element.isNodeReferenceKnown = function(browsingContext, nodeId, nodeCache) {
  * @param {Element} el
  *     Element to check for staleness.
  *
- * @return {boolean}
+ * @returns {boolean}
  *     True if <var>el</var> is stale, false otherwise.
  */
 element.isStale = function(el) {
@@ -652,7 +673,7 @@ element.isStale = function(el) {
  * @param {Element} el
  *     Element to test if selected.
  *
- * @return {boolean}
+ * @returns {boolean}
  *     True if element is selected, false otherwise.
  */
 element.isSelected = function(el) {
@@ -685,7 +706,7 @@ element.isSelected = function(el) {
  * @param {Element} el
  *     Element to test is read only.
  *
- * @return {boolean}
+ * @returns {boolean}
  *     True if element is read only.
  */
 element.isReadOnly = function(el) {
@@ -704,7 +725,7 @@ element.isReadOnly = function(el) {
  * @param {Element} el
  *     Element to test for disabledness.
  *
- * @return {boolean}
+ * @returns {boolean}
  *     True if element, or its container group, is disabled.
  */
 element.isDisabled = function(el) {
@@ -744,7 +765,7 @@ element.isDisabled = function(el) {
  * @param {Element} el
  *     Element to test.
  *
- * @return {boolean}
+ * @returns {boolean}
  *     True if editable, false otherwise.
  */
 element.isMutableFormControl = function(el) {
@@ -794,7 +815,7 @@ element.isMutableFormControl = function(el) {
  * @param {Element} el
  *     Element to determine if is an editing host.
  *
- * @return {boolean}
+ * @returns {boolean}
  *     True if editing host, false otherwise.
  */
 element.isEditingHost = function(el) {
@@ -822,10 +843,10 @@ element.isEditingHost = function(el) {
  * <li>It belongs to a document in design mode.
  * </ul>
  *
- * @param {Element}
+ * @param {Element} el
  *     Element to test if editable.
  *
- * @return {boolean}
+ * @returns {boolean}
  *     True if editable, false otherwise.
  */
 element.isEditable = function(el) {
@@ -854,7 +875,7 @@ element.isEditable = function(el) {
  *     Vertical offset relative to target's top-left corner.  Defaults to
  *     the centre of the target's bounding box.
  *
- * @return {Object.<string, number>}
+ * @returns {Object<string, number>}
  *     X- and Y coordinates.
  *
  * @throws TypeError
@@ -892,7 +913,7 @@ element.coordinates = function(node, xOffset = undefined, yOffset = undefined) {
  *     Vertical offset relative to target.  Defaults to the centre of
  *     the target's bounding box.
  *
- * @return {boolean}
+ * @returns {boolean}
  *     True if if <var>el</var> is in viewport, false otherwise.
  */
 element.inViewport = function(el, x = undefined, y = undefined) {
@@ -928,7 +949,7 @@ element.inViewport = function(el, x = undefined, y = undefined) {
  * @param {Element} el
  *     Element to get the container of.
  *
- * @return {Element}
+ * @returns {Element}
  *     Container element of <var>el</var>.
  */
 element.getContainer = function(el) {
@@ -959,7 +980,7 @@ element.getContainer = function(el) {
  * @param {Element} el
  *     Element to check if is in view.
  *
- * @return {boolean}
+ * @returns {boolean}
  *     True if <var>el</var> is inside the viewport, or false otherwise.
  */
 element.isInView = function(el) {
@@ -986,7 +1007,7 @@ element.isInView = function(el) {
  *
  * The generated uuid will not contain the curly braces.
  *
- * @return {string}
+ * @returns {string}
  *     UUID.
  */
 element.generateUUID = function() {
@@ -1009,7 +1030,7 @@ element.generateUUID = function() {
  *     Vertical offset relative to target.  Defaults to the centre of
  *     the target's bounding box.
  *
- * @return {boolean}
+ * @returns {boolean}
  *     True if visible, false otherwise.
  */
 element.isVisible = function(el, x = undefined, y = undefined) {
@@ -1045,7 +1066,7 @@ element.isVisible = function(el, x = undefined, y = undefined) {
  * @param {DOMElement} el
  *     Element determine if is pointer-interactable.
  *
- * @return {boolean}
+ * @returns {boolean}
  *     True if element is obscured, false otherwise.
  */
 element.isObscured = function(el) {
@@ -1078,7 +1099,7 @@ element.isObscured = function(el) {
  * @param {WindowProxy} win
  *     Current window global.
  *
- * @return {Map.<string, number>}
+ * @returns {Map.<string, number>}
  *     X and Y coordinates that denotes the in-view centre point of
  *     `rect`.
  */
@@ -1114,7 +1135,7 @@ element.getInViewCentrePoint = function(rect, win) {
  * @param {DOMElement} el
  *     Element to determine if is pointer-interactable.
  *
- * @return {Array.<DOMElement>}
+ * @returns {Array.<DOMElement>}
  *     Sequence of elements in paint order.
  */
 element.getPointerInteractablePaintTree = function(el) {
@@ -1159,11 +1180,11 @@ element.scrollIntoView = function(el) {
 /**
  * Ascertains whether <var>obj</var> is a DOM-, SVG-, or XUL element.
  *
- * @param {Object} obj
+ * @param {object} obj
  *     Object thought to be an <code>Element</code> or
  *     <code>XULElement</code>.
  *
- * @return {boolean}
+ * @returns {boolean}
  *     True if <var>obj</var> is an element, false otherwise.
  */
 element.isElement = function(obj) {
@@ -1206,10 +1227,10 @@ element.isShadowRoot = function(node) {
 /**
  * Ascertains whether <var>obj</var> is a DOM element.
  *
- * @param {Object} obj
+ * @param {object} obj
  *     Object to check.
  *
- * @return {boolean}
+ * @returns {boolean}
  *     True if <var>obj</var> is a DOM element, false otherwise.
  */
 element.isDOMElement = function(obj) {
@@ -1219,10 +1240,10 @@ element.isDOMElement = function(obj) {
 /**
  * Ascertains whether <var>obj</var> is a XUL element.
  *
- * @param {Object} obj
+ * @param {object} obj
  *     Object to check.
  *
- * @return {boolean}
+ * @returns {boolean}
  *     True if <var>obj</var> is a XULElement, false otherwise.
  */
 element.isXULElement = function(obj) {
@@ -1235,7 +1256,7 @@ element.isXULElement = function(obj) {
  * @param {Node} node
  *     Node to check.
  *
- * @return {boolean}
+ * @returns {boolean}
  *     True if <var>node</var> is in a privileged document,
  *     false otherwise.
  */
@@ -1246,10 +1267,10 @@ element.isInPrivilegedDocument = function(node) {
 /**
  * Ascertains whether <var>obj</var> is a <code>WindowProxy</code>.
  *
- * @param {Object} obj
+ * @param {object} obj
  *     Object to check.
  *
- * @return {boolean}
+ * @returns {boolean}
  *     True if <var>obj</var> is a DOM window.
  */
 element.isDOMWindow = function(obj) {
@@ -1303,7 +1324,7 @@ const boolEls = {
  * @param {string} attr
  *     Attribute to test is a boolean attribute.
  *
- * @return {boolean}
+ * @returns {boolean}
  *     True if the attribute is boolean, false otherwise.
  */
 element.isBooleanAttribute = function(el, attr) {
@@ -1348,7 +1369,7 @@ export class WebReference {
    * @param {WebReference} other
    *     Web element to compare with this.
    *
-   * @return {boolean}
+   * @returns {boolean}
    *     True if this and <var>other</var> are the same.  False
    *     otherwise.
    */
@@ -1370,7 +1391,7 @@ export class WebReference {
    *     Optional unique identifier of the WebReference if already known.
    *     If not defined a new unique identifier will be created.
    *
-   * @return {WebReference)}
+   * @returns {WebReference}
    *     Web reference for <var>node</var>.
    *
    * @throws {InvalidArgumentError}
@@ -1405,12 +1426,12 @@ export class WebReference {
    * Unmarshals a JSON Object to one of {@link ShadowRoot}, {@link WebElement},
    * {@link WebFrame}, or {@link WebWindow}.
    *
-   * @param {Object.<string, string>} json
+   * @param {Object<string, string>} json
    *     Web reference, which is supposed to be a JSON Object
    *     where the key is one of the {@link WebReference} concrete
    *     classes' UUID identifiers.
    *
-   * @return {WebReference}
+   * @returns {WebReference}
    *     Web reference for the JSON object.
    *
    * @throws {InvalidArgumentError}
@@ -1445,34 +1466,12 @@ export class WebReference {
   }
 
   /**
-   * Constructs a {@link WebElement} from a string <var>uuid</var>.
-   *
-   * This whole function is a workaround for the fact that clients
-   * to Marionette occasionally pass <code>{id: <uuid>}</code> JSON
-   * Objects instead of web element representations.
-   *
-   * @param {string} uuid
-   *     UUID to be associated with the web reference.
-   *
-   * @return {WebElement}
-   *     The web element reference.
-   *
-   * @throws {InvalidArgumentError}
-   *     If <var>uuid</var> is not a string.
-   */
-  static fromUUID(uuid) {
-    lazy.assert.string(uuid);
-
-    return new WebElement(uuid);
-  }
-
-  /**
    * Checks if <var>obj<var> is a {@link WebReference} reference.
    *
-   * @param {Object.<string, string>} obj
+   * @param {Object<string, string>} obj
    *     Object that represents a {@link WebReference}.
    *
-   * @return {boolean}
+   * @returns {boolean}
    *     True if <var>obj</var> is a {@link WebReference}, false otherwise.
    */
   static isReference(obj) {
@@ -1513,6 +1512,26 @@ export class WebElement extends WebReference {
     let uuid = json[Identifier];
     return new WebElement(uuid);
   }
+
+  /**
+   * Constructs a {@link WebElement} from a string <var>uuid</var>.
+   *
+   * This whole function is a workaround for the fact that clients
+   * to Marionette occasionally pass <code>{id: <uuid>}</code> JSON
+   * Objects instead of web element representations.
+   *
+   * @param {string} uuid
+   *     UUID to be associated with the web reference.
+   *
+   * @returns {WebElement}
+   *     The web element reference.
+   *
+   * @throws {InvalidArgumentError}
+   *     If <var>uuid</var> is not a string.
+   */
+  static fromUUID(uuid) {
+    return new WebElement(uuid);
+  }
 }
 
 WebElement.Identifier = "element-6066-11e4-a52e-4f735466cecf";
@@ -1536,6 +1555,28 @@ export class ShadowRoot extends WebReference {
     }
 
     let uuid = json[Identifier];
+    return new ShadowRoot(uuid);
+  }
+
+  /**
+   * Constructs a {@link ShadowRoot} from a string <var>uuid</var>.
+   *
+   * This whole function is a workaround for the fact that clients
+   * to Marionette occasionally pass <code>{id: <uuid>}</code> JSON
+   * Objects instead of shadow root representations.
+   *
+   * @param {string} uuid
+   *     UUID to be associated with the web reference.
+   *
+   * @returns {ShadowRoot}
+   *     The shadow root reference.
+   *
+   * @throws {InvalidArgumentError}
+   *     If <var>uuid</var> is not a string.
+   */
+  static fromUUID(uuid) {
+    lazy.assert.string(uuid);
+
     return new ShadowRoot(uuid);
   }
 }

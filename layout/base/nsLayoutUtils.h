@@ -1560,7 +1560,7 @@ class nsLayoutUtils {
    */
   static nscoord ComputeCBDependentValue(nscoord aPercentBasis,
                                          const LengthPercentage& aCoord) {
-    NS_WARNING_ASSERTION(
+    NS_ASSERTION(
         aPercentBasis != NS_UNCONSTRAINEDSIZE,
         "have unconstrained width or height; this should only result from very "
         "large sizes, not attempts at intrinsic size calculation");
@@ -2825,7 +2825,6 @@ class nsLayoutUtils {
   static nsMargin ScrollbarAreaToExcludeFromCompositionBoundsFor(
       const nsIFrame* aScrollFrame);
 
-  static bool ShouldUseNoScriptSheet(mozilla::dom::Document*);
   static bool ShouldUseNoFramesSheet(mozilla::dom::Document*);
 
   /**
@@ -2998,7 +2997,7 @@ class nsLayoutUtils {
    * Get the computed style from which the scrollbar style should be
    * used for the given scrollbar part frame.
    */
-  static ComputedStyle* StyleForScrollbar(nsIFrame* aScrollbarPart);
+  static ComputedStyle* StyleForScrollbar(const nsIFrame* aScrollbarPart);
 
   /**
    * Returns true if |aFrame| is scrolled out of view by a scrollable element in

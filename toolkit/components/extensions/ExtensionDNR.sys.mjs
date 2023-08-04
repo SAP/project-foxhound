@@ -69,6 +69,8 @@ const gRuleManagers = [];
  *  - allow / allowAllRequests
  */
 
+import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
+
 const lazy = {};
 
 ChromeUtils.defineModuleGetter(
@@ -81,6 +83,18 @@ ChromeUtils.defineESModuleGetters(lazy, {
   ExtensionDNRLimits: "resource://gre/modules/ExtensionDNRLimits.sys.mjs",
   ExtensionDNRStore: "resource://gre/modules/ExtensionDNRStore.sys.mjs",
 });
+
+const { ExtensionUtils } = ChromeUtils.import(
+  "resource://gre/modules/ExtensionUtils.jsm"
+);
+const { ExtensionError } = ExtensionUtils;
+
+XPCOMUtils.defineLazyPreferenceGetter(
+  lazy,
+  "gMatchRequestsFromOtherExtensions",
+  "extensions.dnr.match_requests_from_other_extensions",
+  false
+);
 
 // As documented above:
 // Ruleset precedence: session > dynamic > static (order from manifest.json).
@@ -774,6 +788,27 @@ class RuleValidator {
     this.isSessionRuleset = isSessionRuleset;
   }
 
+  /**
+   * Static method used to deserialize Rule class instances from a plain
+   * js object rule as serialized implicitly by aomStartup.encodeBlob
+   * when we store the rules into the startup cache file.
+   *
+   * @param {object} rule
+   * @returns {Rule}
+   */
+  static deserializeRule(rule) {
+    const newRule = new Rule(rule);
+    if (newRule.condition.regexFilter) {
+      newRule.condition.setCompiledRegexFilter(
+        compileRegexFilter(
+          newRule.condition.regexFilter,
+          newRule.condition.isUrlFilterCaseSensitive
+        )
+      );
+    }
+    return newRule;
+  }
+
   removeRuleIds(ruleIds) {
     for (const ruleId of ruleIds) {
       this.rulesMap.delete(ruleId);
@@ -1160,6 +1195,48 @@ class RuleValidator {
   }
 }
 
+class RuleQuotaCounter {
+  constructor(isStaticRulesets) {
+    this.isStaticRulesets = isStaticRulesets;
+    this.ruleLimitName = isStaticRulesets
+      ? "GUARANTEED_MINIMUM_STATIC_RULES"
+      : "MAX_NUMBER_OF_DYNAMIC_AND_SESSION_RULES";
+    this.ruleLimitRemaining = lazy.ExtensionDNRLimits[this.ruleLimitName];
+    this.regexRemaining = lazy.ExtensionDNRLimits.MAX_NUMBER_OF_REGEX_RULES;
+  }
+
+  tryAddRules(rulesetId, rules) {
+    if (rules.length > this.ruleLimitRemaining) {
+      this.#throwQuotaError(rulesetId, "rules", this.ruleLimitName);
+    }
+    let regexCount = 0;
+    for (let rule of rules) {
+      if (rule.condition.regexFilter && ++regexCount > this.regexRemaining) {
+        this.#throwQuotaError(
+          rulesetId,
+          "regexFilter rules",
+          "MAX_NUMBER_OF_REGEX_RULES"
+        );
+      }
+    }
+
+    // Update counters only when there are no quota errors.
+    this.ruleLimitRemaining -= rules.length;
+    this.regexRemaining -= regexCount;
+  }
+
+  #throwQuotaError(rulesetId, what, limitName) {
+    if (this.isStaticRulesets) {
+      throw new ExtensionError(
+        `Number of ${what} across all enabled static rulesets exceeds ${limitName} if ruleset "${rulesetId}" were to be enabled.`
+      );
+    }
+    throw new ExtensionError(
+      `Number of ${what} in ruleset "${rulesetId}" exceeds ${limitName}.`
+    );
+  }
+}
+
 /**
  * Compares two rules to determine the relative order of precedence.
  * Rules are only comparable if they are from the same extension!
@@ -1217,7 +1294,8 @@ class RequestDetails {
   /**
    * @param {object} options
    * @param {nsIURI} options.requestURI - URL of the requested resource.
-   * @param {nsIURI} [options.initiatorURI] - URL of triggering principal (non-null).
+   * @param {nsIURI} [options.initiatorURI] - URL of triggering principal,
+   *   provided that it is a content principal. Otherwise null.
    * @param {string} options.type - ResourceType (MozContentPolicyType).
    * @param {string} [options.method] - HTTP method
    * @param {integer} [options.tabId]
@@ -1321,7 +1399,7 @@ class RequestDetails {
         // See the above comment for more info.
         initiatorURI: parentPrin?.isContentPrincipal ? parentPrin.URI : null,
         type: isTop ? "main_frame" : "sub_frame",
-        method: "get", // TODO 1821303: Detect POST requests.
+        method: bc.activeSessionHistoryEntry?.hasPostData ? "post" : "get",
         tabId: this.tabId,
         // In this loop we are already explicitly accounting for ancestors, so
         // we intentionally omit browsingContext even though we have |bc|. If
@@ -1336,17 +1414,39 @@ class RequestDetails {
 
   canExtensionModify(extension) {
     const policy = extension.policy;
-    return (
-      (!this.initiatorURI || policy.canAccessURI(this.initiatorURI)) &&
-      policy.canAccessURI(this.requestURI)
-    );
+    if (!policy.canAccessURI(this.requestURI)) {
+      return false;
+    }
+    if (
+      this.initiatorURI &&
+      this.type !== "main_frame" &&
+      this.type !== "sub_frame" &&
+      !policy.canAccessURI(this.initiatorURI)
+    ) {
+      // Host permissions for the initiator is required except for navigation
+      // requests: https://bugzilla.mozilla.org/show_bug.cgi?id=1825824#c2
+      return false;
+    }
+    return true;
   }
 
   #domainFromURI(uri) {
-    let hostname = uri.host;
-    // nsIURI omits brackets from IPv6 addresses. But the canonical form of an
-    // IPv6 address is with brackets, so add them.
-    return hostname.includes(":") ? `[${hostname}]` : hostname;
+    try {
+      let hostname = uri.host;
+      // nsIURI omits brackets from IPv6 addresses. But the canonical form of an
+      // IPv6 address is with brackets, so add them.
+      return hostname.includes(":") ? `[${hostname}]` : hostname;
+    } catch (e) {
+      // uri.host throws for some schemes (e.g. about:). In practice we won't
+      // encounter this for network (via NetworkIntegration.startDNREvaluation)
+      // because isRestrictedPrincipalURI filters the initiatorURI. Furthermore,
+      // because only http(s) requests are observed, requestURI is http(s).
+      //
+      // declarativeNetRequest.testMatchOutcome can pass arbitrary URIs and thus
+      // trigger the error in nsIURI::GetHost.
+      Cu.reportError(e);
+      return null;
+    }
   }
 }
 
@@ -1730,7 +1830,70 @@ class RequestEvaluator {
   }
 }
 
+/**
+ * Checks whether a request from a document with the given URI is allowed to
+ * be modified by an unprivileged extension (e.g. an extension without host
+ * permissions but the "declarativeNetRequest" permission).
+ * The output is comparable to WebExtensionPolicy::CanAccessURI for an extension
+ * with the `<all_urls>` permission, for consistency with the webRequest API.
+ *
+ * @param {nsIURI} [uri] The URI of a request's loadingPrincipal. May be void
+ *   if missing (e.g. top-level requests) or not a content principal.
+ * @returns {boolean} Whether there is any extension that is allowed to see
+ *   requests from a document with the given URI. Callers are expected to:
+ *   - check system requests (and treat as true).
+ *   - check WebExtensionPolicy.isRestrictedURI (and treat as true).
+ */
+function isRestrictedPrincipalURI(uri) {
+  if (!uri) {
+    // No URI, could be:
+    // - System principal (caller should have checked and disallowed access).
+    // - Expanded principal, typically content script in documents. If an
+    //   extension content script managed to run there, that implies that an
+    //   extension was able to access it.
+    // - Null principal (e.g. sandboxed document, about:blank, data:).
+    return false;
+  }
+
+  // An unprivileged extension with maximal host permissions has allowedOrigins
+  // set to [`<all_urls>`, `moz-extension://extensions-own-uuid-here`].
+  // `<all_urls>` matches PermittedSchemes from MatchPattern.cpp:
+  // https://searchfox.org/mozilla-central/rev/55d5c4b9dffe5e59eb6b019c1a930ec9ada47e10/toolkit/components/extensions/MatchPattern.cpp#209-211
+  // i.e. "http", "https", "ws", "wss", "file", "ftp", "data".
+  // - It is not possible to have a loadingPrincipal for: ws, wss, ftp.
+  // - data:-URIs always have an opaque origin, i.e. the principal is not a
+  //   content principal, thus void here.
+  // - The remaining schemes from `<all_urls>` are: http, https, file, data,
+  //   and checked below.
+  //
+  // Privileged addons can also access resource: and about:, but we do not need
+  // to support these now.
+
+  // http(s) are common, and allowed, except for some restricted domains. The
+  // caller is expected to check WebExtensionPolicy.isRestrictedURI.
+  if (uri.schemeIs("http") || uri.schemeIs("https")) {
+    return false; // Very common.
+  }
+
+  // moz-extension: is not restricted because an extension always has permission
+  // to its own moz-extension:-origin. The caller is expected to verify that an
+  // extension can only access its own URI.
+  if (uri.schemeIs("moz-extension")) {
+    return false;
+  }
+
+  // Requests from local files are intentionally allowed (bug 1621935).
+  if (uri.schemeIs("file")) {
+    return false;
+  }
+
+  // Anything else (e.g. resource:, about:newtab, etc.) is not allowed.
+  return true;
+}
+
 const NetworkIntegration = {
+  maxEvaluatedRulesCount: 0,
+
   register() {
     // We register via WebRequest.jsm to ensure predictable ordering of DNR and
     // WebRequest behavior.
@@ -1745,7 +1908,9 @@ const NetworkIntegration = {
 
   startDNREvaluation(channel) {
     let ruleManagers = gRuleManagers;
-    if (!channel.canModify) {
+    // TODO bug 1827422: Merge isRestrictedPrincipalURI with canModify.
+    if (!channel.canModify || isRestrictedPrincipalURI(channel.documentURI)) {
+      // Ignore system requests or requests to restricted domains.
       ruleManagers = [];
     }
     if (channel.loadInfo.originAttributes.privateBrowsingId > 0) {
@@ -1753,10 +1918,35 @@ const NetworkIntegration = {
         rm => rm.extension.privateBrowsingAllowed
       );
     }
+    if (ruleManagers.length && !lazy.gMatchRequestsFromOtherExtensions) {
+      const policy = channel.loadInfo.loadingPrincipal?.addonPolicy;
+      if (policy) {
+        ruleManagers = ruleManagers.filter(
+          rm => rm.extension.policy === policy
+        );
+      }
+    }
     let matchedRules;
     if (ruleManagers.length) {
-      const request = RequestDetails.fromChannelWrapper(channel);
-      matchedRules = RequestEvaluator.evaluateRequest(request, ruleManagers);
+      const evaluateRulesTimerId = Glean.extensionsApisDnr.evaluateRulesTime.start();
+      try {
+        const request = RequestDetails.fromChannelWrapper(channel);
+        matchedRules = RequestEvaluator.evaluateRequest(request, ruleManagers);
+      } finally {
+        if (evaluateRulesTimerId !== undefined) {
+          Glean.extensionsApisDnr.evaluateRulesTime.stopAndAccumulate(
+            evaluateRulesTimerId
+          );
+        }
+      }
+      const evaluateRulesCount = ruleManagers.reduce(
+        (sum, ruleManager) => sum + ruleManager.getRulesCount(),
+        0
+      );
+      if (evaluateRulesCount > this.maxEvaluatedRulesCount) {
+        Glean.extensionsApisDnr.evaluateRulesCountMax.set(evaluateRulesCount);
+        this.maxEvaluatedRulesCount = evaluateRulesCount;
+      }
     }
     // Cache for later. In case of redirects, _dnrMatchedRules may exist for
     // the pre-redirect HTTP channel, and is overwritten here again.
@@ -1835,6 +2025,7 @@ const NetworkIntegration = {
     // - url > extensionPath > transform > regexSubstitution
     const redirect = matchedRule.rule.action.redirect;
     const extension = matchedRule.ruleManager.extension;
+    const preRedirectUri = channel.finalURI;
     let redirectUri;
     if (redirect.url) {
       // redirect.url already validated by checkActionRedirect.
@@ -1845,14 +2036,22 @@ const NetworkIntegration = {
         .setPathQueryRef(redirect.extensionPath)
         .finalize();
     } else if (redirect.transform) {
-      redirectUri = applyURLTransform(channel.finalURI, redirect.transform);
+      redirectUri = applyURLTransform(preRedirectUri, redirect.transform);
     } else if (redirect.regexSubstitution) {
       // Note: may throw if regexSubstitution results in an invalid redirect.
       // The error propagates up to handleRequest, which will just allow the
       // request to continue.
-      redirectUri = applyRegexSubstitution(channel.finalURI, matchedRule);
+      redirectUri = applyRegexSubstitution(preRedirectUri, matchedRule);
     } else {
       // #checkActionRedirect ensures that the redirect action is non-empty.
+    }
+
+    if (preRedirectUri.equals(redirectUri)) {
+      // URL did not change. Sometimes it is a bug in the extension, but there
+      // are also cases where the result is unavoidable. E.g. redirect.transform
+      // with queryTransform.removeParams that does not remove anything.
+      // TODO: consider logging to help with debugging.
+      return;
     }
 
     channel.redirectTo(redirectUri);
@@ -1885,6 +2084,7 @@ class RuleManager {
     this.hasBlockPermission = extension.hasPermission("declarativeNetRequest");
     this.hasRulesWithTabIds = false;
     this.hasRulesWithAllowAllRequests = false;
+    this.totalRulesCount = 0;
   }
 
   get availableStaticRuleCount() {
@@ -1907,7 +2107,10 @@ class RuleManager {
   }
 
   setSessionRules(validatedSessionRules) {
+    let oldRulesCount = this.sessionRules.rules.length;
+    let newRulesCount = validatedSessionRules.length;
     this.sessionRules.rules = validatedSessionRules;
+    this.totalRulesCount += newRulesCount - oldRulesCount;
     this.hasRulesWithTabIds = !!this.sessionRules.rules.find(rule => {
       return rule.condition.tabIds || rule.condition.excludedTabIds;
     });
@@ -1916,7 +2119,10 @@ class RuleManager {
   }
 
   setDynamicRules(validatedDynamicRules) {
+    let oldRulesCount = this.dynamicRules.rules.length;
+    let newRulesCount = validatedDynamicRules.length;
     this.dynamicRules.rules = validatedDynamicRules;
+    this.totalRulesCount += newRulesCount - oldRulesCount;
     this.#updateAllowAllRequestRules();
   }
 
@@ -1935,7 +2141,12 @@ class RuleManager {
         this.makeRuleset(id, idx + PRECEDENCE_STATIC_RULESETS_BASE, rules)
       );
     }
+    const countRules = rulesets =>
+      rulesets.reduce((sum, ruleset) => sum + ruleset.rules.length, 0);
+    const oldRulesCount = countRules(this.enabledStaticRules);
+    const newRulesCount = countRules(rulesets);
     this.enabledStaticRules = rulesets;
+    this.totalRulesCount += newRulesCount - oldRulesCount;
     this.#updateAllowAllRequestRules();
   }
 
@@ -1945,6 +2156,10 @@ class RuleManager {
 
   getDynamicRules() {
     return this.dynamicRules.rules;
+  }
+
+  getRulesCount() {
+    return this.totalRulesCount;
   }
 
   #updateAllowAllRequestRules() {
@@ -1993,7 +2208,7 @@ function clearRuleManager(extension) {
 
 /**
  * Finds all matching rules for a request, optionally restricted to one
- * extension.
+ * extension. Used by declarativeNetRequest.testMatchOutcome.
  *
  * @param {object|RequestDetails} request
  * @param {Extension} [extension]
@@ -2001,9 +2216,33 @@ function clearRuleManager(extension) {
  */
 function getMatchedRulesForRequest(request, extension) {
   let requestDetails = new RequestDetails(request);
+  const { requestURI, initiatorURI } = requestDetails;
   let ruleManagers = gRuleManagers;
   if (extension) {
     ruleManagers = ruleManagers.filter(rm => rm.extension === extension);
+  }
+  if (
+    // NetworkIntegration.startDNREvaluation does not check requestURI, but we
+    // do that here to filter URIs that are obviously disallowed. In practice,
+    // anything other than http(s) is bogus and unsupported in DNR.
+    isRestrictedPrincipalURI(requestURI) ||
+    // Equivalent to NetworkIntegration.startDNREvaluation's channel.canModify
+    // check, which excludes system requests and restricted domains.
+    WebExtensionPolicy.isRestrictedURI(requestURI) ||
+    (initiatorURI && WebExtensionPolicy.isRestrictedURI(initiatorURI)) ||
+    isRestrictedPrincipalURI(initiatorURI)
+  ) {
+    ruleManagers = [];
+  }
+  // While this simulated request is not really from another extension, apply
+  // the same access control checks from NetworkIntegration.startDNREvaluation
+  // for consistency.
+  if (
+    !lazy.gMatchRequestsFromOtherExtensions &&
+    initiatorURI?.schemeIs("moz-extension")
+  ) {
+    const extUuid = initiatorURI.host;
+    ruleManagers = ruleManagers.filter(rm => rm.extension.uuid === extUuid);
   }
   return RequestEvaluator.evaluateRequest(requestDetails, ruleManagers);
 }
@@ -2063,6 +2302,7 @@ async function initExtension(extension) {
         `Aborted ExtensionDNR.initExtension call, extension "${extension.id}" is not active anymore`
       );
     }
+    extension.once("shutdown", () => clearRuleManager(extension));
     await lazy.ExtensionDNRStore.initExtension(extension);
   }
 }
@@ -2164,6 +2404,7 @@ async function updateDynamicRules(extension, updateRuleOptions) {
 // exports used by the DNR API implementation.
 export const ExtensionDNR = {
   RuleValidator,
+  RuleQuotaCounter,
   clearRuleManager,
   ensureInitialized,
   getMatchedRulesForRequest,

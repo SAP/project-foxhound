@@ -53,6 +53,12 @@ let AVAILABLE_PIP_OVERRIDES;
       },
     },
 
+    aol: {
+      "https://*.aol.com/*": {
+        videoWrapperScriptPath: "video-wrappers/yahoo.js",
+      },
+    },
+
     bbc: {
       "https://*.bbc.com/*": {
         videoWrapperScriptPath: "video-wrappers/bbc.js",
@@ -67,6 +73,11 @@ let AVAILABLE_PIP_OVERRIDES;
         videoWrapperScriptPath: "video-wrappers/videojsWrapper.js",
       },
     },
+    cbc: {
+      "https://*.cbc.ca/*": {
+        videoWrapperScriptPath: "video-wrappers/cbc.js",
+      },
+    },
 
     dailymotion: {
       "https://*.dailymotion.com/*": {
@@ -77,6 +88,12 @@ let AVAILABLE_PIP_OVERRIDES;
     disneyplus: {
       "https://*.disneyplus.com/*": {
         videoWrapperScriptPath: "video-wrappers/disneyplus.js",
+      },
+    },
+
+    edx: {
+      "https://*.edx.org/*": {
+        videoWrapperScriptPath: "video-wrappers/edx.js",
       },
     },
 
@@ -166,6 +183,16 @@ let AVAILABLE_PIP_OVERRIDES;
       },
     },
 
+    radiocanada: {
+      "https://*.ici.radio-canada.ca/*": {
+        videoWrapperScriptPath: "video-wrappers/radiocanada.js",
+      },
+    },
+
+    reddit: {
+      "https://*.reddit.com/*": { policy: TOGGLE_POLICIES.ONE_QUARTER },
+    },
+
     sonyliv: {
       "https://*.sonyliv.com/*": {
         videoWrapperScriptPath: "video-wrappers/videojsWrapper.js",
@@ -214,7 +241,7 @@ let AVAILABLE_PIP_OVERRIDES;
 
     yahoofinance: {
       "https://*.finance.yahoo.com/*": {
-        videoWrapperScriptPath: "video-wrappers/yahoofinance.js",
+        videoWrapperScriptPath: "video-wrappers/yahoo.js",
       },
     },
 

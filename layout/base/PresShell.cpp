@@ -49,7 +49,6 @@
 #include "mozilla/Unused.h"
 #include "mozilla/ViewportUtils.h"
 #include "mozilla/gfx/Types.h"
-#include "nsBoxLayoutState.h"
 #include <algorithm>
 
 #ifdef XP_WIN
@@ -3236,8 +3235,7 @@ nsresult PresShell::GoToAnchor(const nsAString& aAnchorName, bool aScroll,
     }
 
     // If the target is an animation element, activate the animation
-    if (nsCOMPtr<SVGAnimationElement> animationElement =
-            do_QueryInterface(target)) {
+    if (auto* animationElement = SVGAnimationElement::FromNode(target.get())) {
       animationElement->ActivateByHyperlink();
     }
 
@@ -5977,7 +5975,7 @@ void PresShell::MarkFramesInSubtreeApproximatelyVisible(
       // We can properly set the base rect for root scroll frames on top level
       // and root content documents. Otherwise the base rect we compute might
       // be way too big without the limiting that
-      // ScrollFrameHelper::DecideScrollableLayer does, so we just ignore the
+      // nsHTMLScrollFrame::DecideScrollableLayer does, so we just ignore the
       // displayport in that case.
       nsPresContext* pc = aFrame->PresContext();
       if (scrollFrame->IsRootScrollFrameOfDocument() &&
@@ -7102,6 +7100,11 @@ nsresult PresShell::EventHandler::HandleEventUsingCoordinates(
       NS_WARN_IF(!eventTargetData.mFrame)) {
     return NS_OK;
   }
+
+  // Wheel events only apply to elements. If this is a wheel event, attempt to
+  // update the event target from the current wheel transaction before we
+  // compute the element from the target frame.
+  eventTargetData.UpdateWheelEventTarget(aGUIEvent);
 
   if (!eventTargetData.ComputeElementFromFrame(aGUIEvent)) {
     return NS_OK;
@@ -9524,8 +9527,8 @@ bool PresShell::DoReflow(nsIFrame* target, bool aInterruptible,
     innerWindowID = Some(window->WindowID());
   }
   AutoProfilerTracing tracingLayoutFlush(
-      "Paint", "Reflow", geckoprofiler::category::LAYOUT,
-      std::move(mReflowCause), innerWindowID);
+      "Paint", aInterruptible ? "Reflow (interruptible)" : "Reflow (sync)",
+      geckoprofiler::category::LAYOUT, std::move(mReflowCause), innerWindowID);
   mReflowCause = nullptr;
 
   FlushPendingScrollAnchorSelections();
@@ -11512,28 +11515,18 @@ PresShell::WindowSizeConstraints PresShell::GetWindowSizeConstraints() {
   if (!rootFrame || !mPresContext) {
     return {minSize, maxSize};
   }
-  if (rootFrame->IsXULBoxFrame()) {
-    UniquePtr<gfxContext> rcx(CreateReferenceRenderingContext());
-    if (!rcx) {
-      return {minSize, maxSize};
-    }
-    nsBoxLayoutState state(mPresContext, rcx.get());
-    minSize = rootFrame->GetXULMinSize(state);
-    maxSize = rootFrame->GetXULMaxSize(state);
-  } else {
-    const auto* pos = rootFrame->StylePosition();
-    if (pos->mMinWidth.ConvertsToLength()) {
-      minSize.width = pos->mMinWidth.ToLength();
-    }
-    if (pos->mMinHeight.ConvertsToLength()) {
-      minSize.height = pos->mMinHeight.ToLength();
-    }
-    if (pos->mMaxWidth.ConvertsToLength()) {
-      maxSize.width = pos->mMaxWidth.ToLength();
-    }
-    if (pos->mMaxHeight.ConvertsToLength()) {
-      maxSize.height = pos->mMaxHeight.ToLength();
-    }
+  const auto* pos = rootFrame->StylePosition();
+  if (pos->mMinWidth.ConvertsToLength()) {
+    minSize.width = pos->mMinWidth.ToLength();
+  }
+  if (pos->mMinHeight.ConvertsToLength()) {
+    minSize.height = pos->mMinHeight.ToLength();
+  }
+  if (pos->mMaxWidth.ConvertsToLength()) {
+    maxSize.width = pos->mMaxWidth.ToLength();
+  }
+  if (pos->mMaxHeight.ConvertsToLength()) {
+    maxSize.height = pos->mMaxHeight.ToLength();
   }
   return {minSize, maxSize};
 }
@@ -11815,6 +11808,34 @@ bool PresShell::EventHandler::EventTargetData::ComputeElementFromFrame(
 
   // If we found an element, target it.  Otherwise, target *nothing*.
   return !!mContent;
+}
+
+void PresShell::EventHandler::EventTargetData::UpdateWheelEventTarget(
+    WidgetGUIEvent* aGUIEvent) {
+  MOZ_ASSERT(aGUIEvent);
+
+  if (aGUIEvent->mMessage != eWheel) {
+    return;
+  }
+
+  // If dom.event.wheel-event-groups.enabled is not set or the stored
+  // event target is removed, we will not get a event target frame from the
+  // wheel transaction here.
+  nsIFrame* groupFrame = WheelTransaction::GetEventTargetFrame();
+  if (!groupFrame) {
+    return;
+  }
+
+  // If the browsing context is no longer the same as the context of the
+  // current wheel transaction, do not override the event target.
+  if (!groupFrame->PresContext() || !groupFrame->PresShell() ||
+      groupFrame->PresContext() != GetPresContext()) {
+    return;
+  }
+
+  // If dom.event.wheel-event-groups.enabled is set and whe have a stored
+  // event target from the wheel transaction, override the event target.
+  SetFrameAndComputePresShellAndContent(groupFrame, aGUIEvent);
 }
 
 void PresShell::EventHandler::EventTargetData::UpdateTouchEventTarget(

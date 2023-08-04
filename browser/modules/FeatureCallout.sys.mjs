@@ -2,26 +2,42 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/*eslint-env browser*/
-
 import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 
+const lazy = {};
+XPCOMUtils.defineLazyModuleGetters(lazy, {
+  AboutWelcomeParent: "resource:///actors/AboutWelcomeParent.jsm",
+  ASRouter: "resource://activity-stream/lib/ASRouter.jsm",
+  PageEventManager: "resource://activity-stream/lib/PageEventManager.jsm",
+});
+
 const TRANSITION_MS = 500;
-const CONTAINER_ID = "root";
+const CONTAINER_ID = "multi-stage-message-root";
+const BUNDLE_SRC =
+  "resource://activity-stream/aboutwelcome/aboutwelcome.bundle.js";
 
 /**
- * Feature Callout fetches messages relevant to a given source and displays them in
- * the parent page pointing to the element they describe.
- * @param {Window} Window in which messages will be rendered
- * @param {String} Name of the pref used to track progress through a given feature tour
- * @param {String} Optional string to pass as the page when checking for messages to show,
- * in the case of the browser chrome the string "chrome" is used.
- * @param {Browser} browser
-
+ * Feature Callout fetches messages relevant to a given source and displays them
+ * in the parent page pointing to the element they describe.
  */
 export class FeatureCallout {
-  constructor({ win, prefName, page, browser }) {
-    this.win = win || window;
+  /**
+   * @typedef {Object} FeatureCalloutOptions
+   * @property {Window} win window in which messages will be rendered
+   * @property {String} prefName name of the pref used to track progress through
+   *   a given feature tour, e.g. "browser.pdfjs.feature-tour"
+   * @property {String} [page] string to pass as the page when requesting
+   *   messages from ASRouter and sending telemetry. for browser chrome, the
+   *   string "chrome" is used
+   * @property {MozBrowser} [browser] <browser> element responsible for the
+   *   feature callout. for content pages, this is the browser element that the
+   *   callout is being shown in. for chrome, this is the active browser
+   * @property {FeatureCalloutTheme} [theme] @see FeatureCallout.themePresets
+   */
+
+  /** @param {FeatureCalloutOptions} options */
+  constructor({ win, prefName, page, browser, theme = {} } = {}) {
+    this.win = win;
     this.doc = win.document;
     this.browser = browser || this.win.docShell.chromeEventHandler;
     this.config = null;
@@ -34,6 +50,7 @@ export class FeatureCallout {
     this._positionListenersRegistered = false;
     this.AWSetup = false;
     this.page = page;
+    this._initTheme(theme);
 
     XPCOMUtils.defineLazyPreferenceGetter(
       this,
@@ -41,7 +58,13 @@ export class FeatureCallout {
       prefName,
       '{"screen":"","complete":true}',
       this._handlePrefChange.bind(this),
-      val => JSON.parse(val)
+      val => {
+        try {
+          return JSON.parse(val);
+        } catch (error) {
+          return null;
+        }
+      }
     );
 
     XPCOMUtils.defineLazyPreferenceGetter(
@@ -59,23 +82,25 @@ export class FeatureCallout {
     );
     this.featureTourProgress; // Load initial value of progress pref
 
-    XPCOMUtils.defineLazyModuleGetters(this, {
-      AboutWelcomeParent: "resource:///actors/AboutWelcomeParent.jsm",
-      ASRouter: "resource://activity-stream/lib/ASRouter.jsm",
-      PageEventManager: "resource://activity-stream/lib/PageEventManager.jsm",
-    });
-
-    XPCOMUtils.defineLazyGetter(this, "pageEventManager", () => {
-      this.win.pageEventManager = new this.PageEventManager(this.doc);
-      return this.win.pageEventManager;
-    });
-
-    // When the window is focused, ensure tour is synced with tours in
-    // any other instances of the parent page. This does not apply when
-    // the Callout is shown in the browser chrome.
+    // When the window is focused, ensure tour is synced with tours in any other
+    // instances of the parent page. This does not apply when the Callout is
+    // shown in the browser chrome.
     if (this.page !== "chrome") {
       this.win.addEventListener("visibilitychange", this);
     }
+  }
+
+  /**
+   * Get the page event manager and instantiate it if necessary. Only used by
+   * _attachPageEventListeners, since we don't want to do this unnecessary work
+   * if a message with page event listeners hasn't loaded. Other consumers
+   * should use `this._pageEventManager?.property` instead.
+   */
+  get _loadPageEventManager() {
+    if (!this._pageEventManager) {
+      this._pageEventManager = new lazy.PageEventManager(this.doc);
+    }
+    return this._pageEventManager;
   }
 
   _addPositionListeners() {
@@ -130,14 +155,14 @@ export class FeatureCallout {
       this.currentScreen = null;
     } else if (prefVal.screen !== this.currentScreen?.id) {
       this.ready = false;
-      const container = this.doc.getElementById(CONTAINER_ID);
-      container?.classList.add("hidden");
-      this.win.pageEventManager?.clear();
+      this._container?.classList.add("hidden");
+      this._pageEventManager?.clear();
       // wait for fade out transition
       this.win.setTimeout(async () => {
         await this._loadConfig();
-        container?.remove();
+        this._container?.remove();
         this._removePositionListeners();
+        this.doc.querySelector(`[src="${BUNDLE_SRC}"]`)?.remove();
         await this._renderCallout();
       }, TRANSITION_MS);
     }
@@ -146,16 +171,16 @@ export class FeatureCallout {
   handleEvent(event) {
     switch (event.type) {
       case "focus": {
-        let container = this.doc.getElementById(CONTAINER_ID);
-        if (!container) {
+        if (!this._container) {
           return;
         }
         // If focus has fired on the feature callout window itself, or on something
         // contained in that window, ignore it, as we can't possibly place the focus
         // on it after the callout is closd.
         if (
-          event.target.id === CONTAINER_ID ||
-          (Node.isInstance(event.target) && container.contains(event.target))
+          event.target === this._container ||
+          (Node.isInstance(event.target) &&
+            this._container.contains(event.target))
         ) {
           return;
         }
@@ -170,8 +195,7 @@ export class FeatureCallout {
         if (event.key !== "Escape") {
           return;
         }
-        let container = this.doc.getElementById(CONTAINER_ID);
-        if (!container) {
+        if (!this._container) {
           return;
         }
         let focusedElement =
@@ -183,7 +207,7 @@ export class FeatureCallout {
           !focusedElement ||
           focusedElement === this.doc.body ||
           focusedElement === this.browser ||
-          container.contains(focusedElement)
+          this._container.contains(focusedElement)
         ) {
           this.win.AWSendEventTelemetry?.({
             event: "DISMISS",
@@ -237,7 +261,7 @@ export class FeatureCallout {
       "browser/newtab/onboarding.ftl",
       "browser/spotlight.ftl",
       "branding/brand.ftl",
-      "browser/branding/brandings.ftl",
+      "toolkit/branding/brandings.ftl",
       "browser/newtab/asrouter.ftl",
       "browser/featureCallout.ftl",
     ]);
@@ -248,7 +272,7 @@ export class FeatureCallout {
     // Don't render the callout if the parent element is not present.
     // This means the message was misconfigured, mistargeted, or the
     // content of the parent page is not as expected.
-    if (!parent && !this.currentScreen?.content.callout_position_override) {
+    if (!parent && !this.currentScreen?.content?.callout_position_override) {
       if (this.message?.template === "feature_callout") {
         Services.telemetry.recordEvent(
           "messaging_experiments",
@@ -262,30 +286,33 @@ export class FeatureCallout {
       return false;
     }
 
-    let container = this.doc.createElement("div");
-    container.classList.add(
-      "onboardingContainer",
-      "featureCallout",
-      "callout-arrow",
-      "hidden"
-    );
-    container.id = CONTAINER_ID;
-    // This value is reported as the "page" in about:welcome telemetry
-    container.dataset.page = this.page;
-    container.setAttribute(
-      "aria-describedby",
-      `#${CONTAINER_ID} .welcome-text`
-    );
-    container.tabIndex = 0;
-    this.doc.body.prepend(container);
-    return container;
+    if (!this._container?.parentElement) {
+      this._container = this.doc.createElement("div");
+      this._container.classList.add(
+        "onboardingContainer",
+        "featureCallout",
+        "callout-arrow",
+        "hidden"
+      );
+      this._container.id = CONTAINER_ID;
+      // This value is reported as the "page" in about:welcome telemetry
+      this._container.dataset.page = this.page;
+      this._container.setAttribute(
+        "aria-describedby",
+        `#${CONTAINER_ID} .welcome-text`
+      );
+      this._container.tabIndex = 0;
+      this._applyTheme();
+      this.doc.body.prepend(this._container);
+    }
+    return this._container;
   }
 
   /**
    * Set callout's position relative to parent element
    */
   _positionCallout() {
-    const container = this.doc.getElementById(CONTAINER_ID);
+    const container = this._container;
     const parentEl = this.doc.querySelector(
       this.currentScreen?.parent_selector
     );
@@ -595,7 +622,7 @@ export class FeatureCallout {
     /**
      * Horizontally align a top/bottom-positioned callout according to the
      * passed position.
-     * @param {string} [position = "start"] <"start"|"end"|"center">
+     * @param {String} [position = "start"] <"start"|"end"|"center">
      */
     const alignHorizontally = position => {
       switch (position) {
@@ -640,17 +667,17 @@ export class FeatureCallout {
     container.classList.remove("hidden");
   }
 
+  /** Expose top level functions expected by the aboutwelcome bundle. */
   _setupWindowFunctions() {
     if (this.AWSetup) {
       return;
     }
-    const AWParent = new this.AboutWelcomeParent();
+    const AWParent = new lazy.AboutWelcomeParent();
     this.win.addEventListener("unload", () => {
       AWParent.didDestroy();
     });
     const receive = name => data =>
       AWParent.onContentMessage(`AWPage:${name}`, data, this.doc);
-    // Expose top level functions expected by the bundle.
     this.win.AWGetFeatureConfig = () => this.config;
     this.win.AWGetSelectedTheme = receive("GET_SELECTED_THEME");
     // Do not send telemetry if message config sets metrics as 'block'.
@@ -664,9 +691,11 @@ export class FeatureCallout {
     this.win.AWFinish = () => {
       this.endTour();
     };
+    this.win.AWEvaluateScreenTargeting = receive("EVALUATE_SCREEN_TARGETING");
     this.AWSetup = true;
   }
 
+  /** Clean up the functions defined above. */
   _clearWindowFunctions() {
     const windowFuncs = [
       "AWGetFeatureConfig",
@@ -687,7 +716,7 @@ export class FeatureCallout {
       passive: true,
     });
     this.win.removeEventListener("keypress", this, { capture: true });
-    this.win.pageEventManager?.clear();
+    this._pageEventManager?.clear();
 
     // We're deleting featureTourProgress here to ensure that the
     // reference is freed for garbage collection. This prevents errors
@@ -696,13 +725,14 @@ export class FeatureCallout {
     delete this.featureTourProgress;
     this.ready = false;
     // wait for fade out transition
-    let container = this.doc.getElementById(CONTAINER_ID);
-    container?.classList.add("hidden");
+    this._container?.classList.add("hidden");
     this._clearWindowFunctions();
     this.win.setTimeout(
       () => {
-        container?.remove();
+        this._container?.remove();
         this.renderObserver?.disconnect();
+        this._removePositionListeners();
+        this.doc.querySelector(`[src="${BUNDLE_SRC}"]`)?.remove();
         // Put the focus back to the last place the user focused outside of the
         // featureCallout windows.
         if (this.savedActiveElement) {
@@ -751,9 +781,9 @@ export class FeatureCallout {
       await getDomReady();
     }
     // Load the bundle to render the content as configured.
+    this.doc.querySelector(`[src="${BUNDLE_SRC}"]`)?.remove();
     let bundleScript = this.doc.createElement("script");
-    bundleScript.src =
-      "resource://activity-stream/aboutwelcome/aboutwelcome.bundle.js";
+    bundleScript.src = BUNDLE_SRC;
     this.doc.head.appendChild(bundleScript);
   }
 
@@ -761,13 +791,21 @@ export class FeatureCallout {
     this.renderObserver?.observe(container, { childList: true });
   }
 
+  /**
+   * Request a message from ASRouter, targeting the `browser` and `page` values
+   * passed to the constructor. The message content is stored in this.config,
+   * which is returned by AWGetFeatureConfig. The aboutwelcome bundle will use
+   * that function to get the content. It will only be called when the bundle
+   * loads, so the bundle must be reloaded for a new message to be rendered.
+   * @returns {Promise<boolean>} true if a message is loaded, false if not.
+   */
   async _loadConfig() {
     if (this.loadingConfig) {
       return false;
     }
     this.loadingConfig = true;
-    await this.ASRouter.waitForInitialized;
-    let result = await this.ASRouter.sendTriggerMessage({
+    await lazy.ASRouter.waitForInitialized;
+    let result = await lazy.ASRouter.sendTriggerMessage({
       browser: this.browser,
       // triggerId and triggerContext
       id: "featureCalloutCheck",
@@ -792,7 +830,7 @@ export class FeatureCallout {
 
     // Only add an impression if we actually have a message to impress
     if (Object.keys(result.message).length) {
-      this.ASRouter.addImpression(result.message);
+      lazy.ASRouter.addImpression(result.message);
     }
 
     this.currentScreen = newScreen;
@@ -834,7 +872,7 @@ export class FeatureCallout {
    */
   _attachPageEventListeners(listeners) {
     listeners?.forEach(({ params, action }) =>
-      this.pageEventManager[params.options?.once ? "once" : "on"](
+      this._loadPageEventManager[params.options?.once ? "once" : "on"](
         params,
         event => {
           this._handlePageEventAction(action, event);
@@ -920,7 +958,7 @@ export class FeatureCallout {
 
     this.renderObserver = new this.win.MutationObserver(() => {
       // Check if the Feature Callout screen has loaded for the first time
-      if (!this.ready && this.doc.querySelector(`#${CONTAINER_ID} .screen`)) {
+      if (!this.ready && this._container.querySelector(".screen")) {
         // Once the screen element is added to the DOM, wait for the
         // animation frame after next to ensure that _positionCallout
         // has access to the rendered screen with the correct height
@@ -932,8 +970,8 @@ export class FeatureCallout {
             );
             this.win.addEventListener("keypress", this, { capture: true });
             this._positionCallout();
-            let container = this.doc.getElementById(CONTAINER_ID);
-            container.focus();
+            let button = this._container.querySelector(".primary");
+            button.focus();
             this.win.addEventListener("focus", this, {
               capture: true, // get the event before retargeting
               passive: true,
@@ -943,10 +981,9 @@ export class FeatureCallout {
       }
     });
 
-    this.win.pageEventManager?.clear();
+    this._pageEventManager?.clear();
     this.ready = false;
-    const container = this.doc.getElementById(CONTAINER_ID);
-    container?.remove();
+    this._container?.remove();
 
     // If user has disabled CFR, don't show any callouts. But make sure we load
     // the necessary stylesheets first, since re-enabling CFR should allow
@@ -962,4 +999,215 @@ export class FeatureCallout {
     this._setupWindowFunctions();
     await this._renderCallout();
   }
+
+  /**
+   * @typedef {Object} FeatureCalloutTheme An object with a set of custom color
+   *   schemes and/or a preset key. If both are provided, the preset will be
+   *   applied first, then the custom themes will override the preset values.
+   * @property {String} [preset] Key of {@link FeatureCallout.themePresets}
+   * @property {ColorScheme} [light] Custom light scheme
+   * @property {ColorScheme} [dark] Custom dark scheme
+   * @property {ColorScheme} [hcm] Custom high contrast scheme
+   * @property {ColorScheme} [all] Custom scheme that will be applied in all
+   *   cases, but overridden by the other schemes if they are present. This is
+   *   useful if the values are already controlled by the browser theme.
+   * @property {Boolean} [simulateContent] Set to true if the feature callout
+   *   exists in the browser chrome but is meant to be displayed over the
+   *   content area to appear as if it is part of the page. This will cause the
+   *   styles to use a media query targeting the content instead of the chrome,
+   *   so that if the browser theme doesn't match the content color scheme, the
+   *   callout will correctly follow the content scheme. This is currently used
+   *   for the feature callouts displayed over the PDF.js viewer.
+   */
+
+  /**
+   * @typedef {Object} ColorScheme An object with key-value pairs, with keys
+   *   from {@link FeatureCallout.themePropNames}, mapped to CSS color values
+   */
+
+  /**
+   * Combine the preset and custom themes into a single object and store it.
+   * @param {FeatureCalloutTheme} theme
+   */
+  _initTheme(theme) {
+    /** @type {FeatureCalloutTheme} */
+    this.theme = Object.assign(
+      {},
+      FeatureCallout.themePresets[theme.preset],
+      theme
+    );
+  }
+
+  /**
+   * Apply all the theme colors to the feature callout's root element as CSS
+   * custom properties in inline styles. These custom properties are consumed by
+   * _feature-callout-theme.scss, which is bundled with the other styles that
+   * are loaded by {@link FeatureCallout.prototype._addCalloutLinkElements}.
+   */
+  _applyTheme() {
+    if (this._container) {
+      // This tells the stylesheets to use -moz-content-prefers-color-scheme
+      // instead of prefers-color-scheme, in order to follow the content color
+      // scheme instead of the chrome color scheme, in case of a mismatch when
+      // the feature callout exists in the chrome but is meant to look like it's
+      // part of the content of a page in a browser tab (like PDF.js).
+      this._container.classList.toggle(
+        "simulateContent",
+        this.page === "chrome" && this.theme.simulateContent
+      );
+      for (const type of ["light", "dark", "hcm"]) {
+        const scheme = this.theme[type];
+        for (const name of FeatureCallout.themePropNames) {
+          this._setThemeVariable(
+            `--fc-${name}-${type}`,
+            scheme?.[name] || this.theme.all[name]
+          );
+        }
+      }
+    }
+  }
+
+  /**
+   * Set or remove a CSS custom property on the feature callout container
+   * @param {String} name Name of the CSS custom property
+   * @param {String|void} [value] Value of the property, or omit to remove it
+   */
+  _setThemeVariable(name, value) {
+    if (value) {
+      this._container.style.setProperty(name, value);
+    } else {
+      this._container.style.removeProperty(name);
+    }
+  }
+
+  /** A list of all the theme properties that can be set */
+  static themePropNames = [
+    "background",
+    "color",
+    "border",
+    "accent-color",
+    "button-background",
+    "button-color",
+    "button-border",
+    "button-background-hover",
+    "button-color-hover",
+    "button-border-hover",
+    "button-background-active",
+    "button-color-active",
+    "button-border-active",
+  ];
+
+  /** @type {Object<String, FeatureCalloutTheme>} */
+  static themePresets = {
+    // For themed system pages like New Tab and Firefox View. Themed content
+    // colors inherit from the user's theme through contentTheme.js.
+    "themed-content": {
+      all: {
+        background: "var(--newtab-background-color-secondary)",
+        color: "var(--newtab-text-primary-color, var(--in-content-page-color))",
+        border:
+          "color-mix(in srgb, var(--newtab-background-color-secondary) 80%, #000)",
+        "accent-color": "var(--in-content-primary-button-background)",
+        "button-background": "color-mix(in srgb, transparent 93%, #000)",
+        "button-color":
+          "var(--newtab-text-primary-color, var(--in-content-page-color))",
+        "button-border": "transparent",
+        "button-background-hover": "color-mix(in srgb, transparent 88%, #000)",
+        "button-color-hover":
+          "var(--newtab-text-primary-color, var(--in-content-page-color))",
+        "button-border-hover": "transparent",
+        "button-background-active": "color-mix(in srgb, transparent 80%, #000)",
+        "button-color-active":
+          "var(--newtab-text-primary-color, var(--in-content-page-color))",
+        "button-border-active": "transparent",
+      },
+      dark: {
+        border:
+          "color-mix(in srgb, var(--newtab-background-color-secondary) 80%, #FFF)",
+        "button-background": "color-mix(in srgb, transparent 80%, #000)",
+        "button-background-hover": "color-mix(in srgb, transparent 65%, #000)",
+        "button-background-active": "color-mix(in srgb, transparent 55%, #000)",
+      },
+      hcm: {
+        background: "-moz-dialog",
+        color: "-moz-dialogtext",
+        border: "-moz-dialogtext",
+        "accent-color": "LinkText",
+        "button-background": "ButtonFace",
+        "button-color": "ButtonText",
+        "button-border": "ButtonText",
+        "button-background-hover": "ButtonText",
+        "button-color-hover": "ButtonFace",
+        "button-border-hover": "ButtonText",
+        "button-background-active": "ButtonText",
+        "button-color-active": "ButtonFace",
+        "button-border-active": "ButtonText",
+      },
+    },
+    // PDF.js colors are from toolkit/components/pdfjs/content/web/viewer.css
+    pdfjs: {
+      all: {
+        background: "#FFF",
+        color: "rgb(12, 12, 13)",
+        border: "#CFCFD8",
+        "accent-color": "#0A84FF",
+        "button-background": "rgb(215, 215, 219)",
+        "button-color": "rgb(12, 12, 13)",
+        "button-border": "transparent",
+        "button-background-hover": "rgb(221, 222, 223)",
+        "button-color-hover": "rgb(12, 12, 13)",
+        "button-border-hover": "transparent",
+        "button-background-active": "rgb(221, 222, 223)",
+        "button-color-active": "rgb(12, 12, 13)",
+        "button-border-active": "transparent",
+      },
+      dark: {
+        background: "#1C1B22",
+        color: "#F9F9FA",
+        border: "#3A3944",
+        "button-background": "rgb(74, 74, 79)",
+        "button-color": "#F9F9FA",
+        "button-background-hover": "rgb(102, 102, 103)",
+        "button-color-hover": "#F9F9FA",
+        "button-background-active": "rgb(102, 102, 103)",
+        "button-color-active": "#F9F9FA",
+      },
+      hcm: {
+        background: "-moz-dialog",
+        color: "-moz-dialogtext",
+        border: "CanvasText",
+        "accent-color": "Highlight",
+        "button-background": "ButtonFace",
+        "button-color": "ButtonText",
+        "button-border": "ButtonText",
+        "button-background-hover": "Highlight",
+        "button-color-hover": "CanvasText",
+        "button-border-hover": "Highlight",
+        "button-background-active": "Highlight",
+        "button-color-active": "CanvasText",
+        "button-border-active": "Highlight",
+      },
+    },
+    // These colors are intended to inherit the user's theme properties from the
+    // main chrome window, for callouts to be anchored to chrome elements.
+    // Specific schemes aren't necessary since the theme and frontend
+    // stylesheets handle these variables' values.
+    chrome: {
+      all: {
+        background: "var(--arrowpanel-background)",
+        color: "var(--arrowpanel-color)",
+        border: "var(--arrowpanel-border-color)",
+        "accent-color": "var(--focus-outline-color)",
+        "button-background": "var(--button-bgcolor)",
+        "button-color": "var(--arrowpanel-color)",
+        "button-border": "transparent",
+        "button-background-hover": "var(--button-hover-bgcolor)",
+        "button-color-hover": "var(--arrowpanel-color)",
+        "button-border-hover": "transparent",
+        "button-background-active": "var(--button-active-bgcolor)",
+        "button-color-active": "var(--arrowpanel-color)",
+        "button-border-active": "transparent",
+      },
+    },
+  };
 }

@@ -835,7 +835,7 @@ void TestProportionValue() {
   }
 
   // Invalid construction, conversion to double NaN.
-  MOZ_RELEASE_ASSERT(mozilla::IsNaN(ProportionValue::MakeInvalid().ToDouble()));
+  MOZ_RELEASE_ASSERT(std::isnan(ProportionValue::MakeInvalid().ToDouble()));
 
   using namespace mozilla::literals::ProportionValue_literals;
 
@@ -4352,9 +4352,9 @@ void TestBlocksRingBufferSerialization() {
   });
 
   rb.Clear();
-  rb.PutObjects(MakeTuple('0',
-                          WrapProfileBufferLiteralCStringPointer(THE_ANSWER),
-                          42, std::string(" but pi="), 3.14));
+  rb.PutObjects(
+      std::make_tuple('0', WrapProfileBufferLiteralCStringPointer(THE_ANSWER),
+                      42, std::string(" but pi="), 3.14));
   rb.ReadEach([&](ProfileBufferEntryReader& aER) {
     MOZ_RELEASE_ASSERT(aER.ReadObject<char>() == '0');
     MOZ_RELEASE_ASSERT(aER.ReadObject<const char*>() == theAnswer);

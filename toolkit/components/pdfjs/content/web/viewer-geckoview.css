@@ -28,10 +28,7 @@
 .textLayer {
   position: absolute;
   text-align: initial;
-  left: 0;
-  top: 0;
-  right: 0;
-  bottom: 0;
+  inset: 0;
   overflow: hidden;
   opacity: 0.25;
   line-height: 1;
@@ -96,10 +93,7 @@
 .textLayer .endOfContent {
   display: block;
   position: absolute;
-  left: 0;
-  top: 100%;
-  right: 0;
-  bottom: 0;
+  inset: 100% 0 0;
   z-index: -1;
   cursor: default;
   user-select: none;
@@ -829,6 +823,10 @@
   cursor: var(--editorInk-editing-cursor);
 }
 
+.annotationEditorLayer :is(.freeTextEditor, .inkEditor)[draggable="true"] {
+  cursor: move;
+}
+
 .annotationEditorLayer .selectedEditor {
   outline: var(--focus-outline);
   resize: none;
@@ -986,8 +984,7 @@
 .pdfViewer.scrollHorizontal,
 .pdfViewer.scrollWrapped,
 .spread {
-  margin-left: 3.5px;
-  margin-right: 3.5px;
+  margin-inline: 3.5px;
   text-align: center;
 }
 
@@ -998,8 +995,7 @@
 
 .pdfViewer.scrollHorizontal .spread,
 .pdfViewer.scrollWrapped .spread {
-  margin-left: 0;
-  margin-right: 0;
+  margin-inline: 0;
 }
 
 .spread .page,
@@ -1015,8 +1011,7 @@
 .spread .page,
 .pdfViewer.scrollHorizontal .page,
 .pdfViewer.scrollWrapped .page {
-  margin-left: var(--spreadHorizontalWrapped-margin-LR);
-  margin-right: var(--spreadHorizontalWrapped-margin-LR);
+  margin-inline: var(--spreadHorizontalWrapped-margin-LR);
 }
 
 .pdfViewer .page canvas {
@@ -1085,7 +1080,7 @@
   --dir-factor: 1;
   --scale-select-width: 140px;
 
-  --toolbar-icon-opacity: 0.7;
+  --toolbar-icon-opacity: 1;
   --doorhanger-icon-opacity: 0.9;
 
   --main-color: rgba(12, 12, 13, 1);
@@ -1095,6 +1090,12 @@
   --dialog-button-border: none;
   --dialog-button-bg-color: rgba(12, 12, 13, 0.1);
   --dialog-button-hover-bg-color: rgba(12, 12, 13, 0.3);
+
+  --toolbar-bg-color: #f9f9fb;
+  --toolbar-divider-color: #e0e0e6;
+  --toolbar-fg-color: #15141a;
+
+  --toolbarButton-download-icon: url(images/gv-toolbarButton-download.svg);
 }
 
 :root:dir(rtl) {
@@ -1109,6 +1110,10 @@
     --scrollbar-bg-color: rgba(35, 35, 39, 1);
     --dialog-button-bg-color: rgba(92, 92, 97, 1);
     --dialog-button-hover-bg-color: rgba(115, 115, 115, 1);
+
+    --toolbar-bg-color: #2b2a33;
+    --toolbar-divider-color: #5b5b66;
+    --toolbar-fg-color: #fbfbfe;
   }
 }
 
@@ -1150,25 +1155,15 @@ body {
 
 #mainContainer {
   position: absolute;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  left: 0;
+  inset: 0;
   min-width: 350px;
 }
 
 #viewerContainer {
   overflow: auto;
   position: absolute;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  left: 0;
+  inset: 41px 0 0;
   outline: none;
-}
-#viewerContainer {
-  transition-duration: var(--sidebar-transition-duration);
-  transition-timing-function: var(--sidebar-transition-timing-function);
 }
 
 .dialogButton {
@@ -1223,6 +1218,67 @@ body {
 
 .toolbarField:focus {
   border-color: #0a84ff;
+}
+
+#floatingToolbar {
+  display: flex;
+  align-items: center;
+  position: absolute;
+  width: 100%;
+  height: 40px;
+  top: 0;
+  left: 0;
+  box-sizing: content-box;
+  border-block-end: solid 1px var(--toolbar-divider-color);
+  background-color: var(--toolbar-bg-color);
+}
+
+#floatingToolbar.show {
+  z-index: 100000;
+  opacity: 1;
+}
+
+#floatingToolbar:not(show) {
+  z-index: -1;
+  opacity: 0;
+}
+
+.toolbarButton {
+  display: flex;
+  align-items: center;
+  border-style: none;
+  user-select: none;
+  box-sizing: border-box;
+  background-color: transparent;
+  width: auto;
+  height: auto;
+  outline: none;
+  position: relative;
+}
+
+.toolbarButton > span {
+  color: var(--toolbar-fg-color);
+  width: auto;
+  height: auto;
+  overflow: hidden;
+}
+
+.toolbarButton[disabled],
+.dialogButton[disabled] {
+  opacity: 0.5;
+}
+
+.toolbarButton::before {
+  width: 24px;
+  height: 24px;
+  content: "";
+  background-color: var(--toolbar-fg-color);
+  mask-size: cover;
+  margin-inline: 12px 8px;
+}
+
+#download::before {
+  mask-image: var(--toolbarButton-download-icon);
 }
 
 .dialogButton {

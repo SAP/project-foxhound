@@ -18,6 +18,29 @@
  */
 const lazy = {};
 
+/**
+ * The threshold that the language-identification confidence
+ * value must be greater than in order to provide the detected language
+ * tag for translations.
+ *
+ * This value should ideally be one that does not allow false positives
+ * while also not being too restrictive.
+ *
+ * At this time, this value is not driven by statistical data or analysis.
+ */
+const DOC_LANGUAGE_DETECTION_THRESHOLD = 0.65;
+
+/**
+ * The length of the substring to pull from the document's text for language
+ * identification.
+ *
+ * This value should ideally be one that is large enough to yield a confident
+ * identification result without being too large or expensive to extract.
+ *
+ * At this time, this value is not driven by statistical data or analysis.
+ */
+const DOC_TEXT_TO_IDENTIFY_LENGTH = 1024;
+
 import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 
 ChromeUtils.defineESModuleGetters(lazy, {
@@ -34,6 +57,12 @@ XPCOMUtils.defineLazyGetter(lazy, "console", () => {
   });
 });
 
+XPCOMUtils.defineLazyPreferenceGetter(
+  lazy,
+  "autoTranslatePagePref",
+  "browser.translations.autoTranslate"
+);
+
 export class LanguageIdEngine {
   /** @type {Worker} */
   #languageIdWorker;
@@ -45,10 +74,10 @@ export class LanguageIdEngine {
    * Construct and initialize the language-id worker.
    *
    * @param {Object} data
-   * @property {string} data.type - The message type, expects "initialize".
-   * @property {ArrayBuffer} data.wasmBuffer - The buffer containing the wasm binary.
-   * @property {ArrayBuffer} data.modelBuffer - The buffer containing the language-id model binary.
-   * @property {boolean} data.isLoggingEnabled
+   * @param {string} data.type - The message type, expects "initialize".
+   * @param {ArrayBuffer} [data.wasmBuffer] - The buffer containing the wasm binary.
+   * @param {ArrayBuffer} [data.modelBuffer] - The buffer containing the language-id model binary.
+   * @param {boolean} data.isLoggingEnabled
    */
   constructor(data) {
     this.#languageIdWorker = new Worker(
@@ -59,7 +88,7 @@ export class LanguageIdEngine {
       const onMessage = ({ data }) => {
         if (data.type === "initialization-success") {
           resolve();
-        } else if (data.type === "initialization-failure") {
+        } else if (data.type === "initialization-error") {
           reject(data.error);
         }
         this.#languageIdWorker.removeEventListener("message", onMessage);
@@ -67,7 +96,14 @@ export class LanguageIdEngine {
       this.#languageIdWorker.addEventListener("message", onMessage);
     });
 
-    this.#languageIdWorker.postMessage(data);
+    const transferables = [];
+    if (data.wasmBuffer && data.modelBuffer) {
+      // Make sure the ArrayBuffers are transferred, not cloned.
+      // https://developer.mozilla.org/en-US/docs/Web/API/Web_Workers_API/Transferable_objects
+      transferables.push(data.wasmBuffer, data.modelBuffer);
+    }
+
+    this.#languageIdWorker.postMessage(data, transferables);
   }
 
   /**
@@ -227,7 +263,8 @@ export class TranslationsEngine {
    *
    * @param {string} fromLanguage
    * @param {string} toLanguage
-   * @param {TranslationsEnginePayload} enginePayload
+   * @param {TranslationsEnginePayload} [enginePayload] - If there is no engine payload
+   *   then the engine will be mocked. This allows this class to be used in tests.
    * @param {number} innerWindowId - This only used for creating profiler markers in
    *   the initial creation of the engine.
    */
@@ -246,7 +283,7 @@ export class TranslationsEngine {
         lazy.console.log("Received initialization message", data);
         if (data.type === "initialization-success") {
           resolve();
-        } else if (data.type === "initialization-failure") {
+        } else if (data.type === "initialization-error") {
           reject(data.error);
         }
         this.#translationsWorker.removeEventListener("message", onMessage);
@@ -254,16 +291,30 @@ export class TranslationsEngine {
       this.#translationsWorker.addEventListener("message", onMessage);
     });
 
-    this.#translationsWorker.postMessage({
-      type: "initialize",
-      fromLanguage,
-      toLanguage,
-      enginePayload,
-      innerWindowId,
-      messageId: this.#messageId++,
-      isLoggingEnabled:
-        Services.prefs.getCharPref("browser.translations.logLevel") === "All",
-    });
+    // Make sure the ArrayBuffers are transferred, not cloned.
+    // https://developer.mozilla.org/en-US/docs/Web/API/Web_Workers_API/Transferable_objects
+    const transferables = [];
+    if (enginePayload) {
+      transferables.push(enginePayload.bergamotWasmArrayBuffer);
+      for (const files of enginePayload.languageModelFiles) {
+        for (const { buffer } of Object.values(files)) {
+          transferables.push(buffer);
+        }
+      }
+    }
+
+    this.#translationsWorker.postMessage(
+      {
+        type: "initialize",
+        fromLanguage,
+        toLanguage,
+        enginePayload,
+        innerWindowId,
+        messageId: this.#messageId++,
+        logLevel: Services.prefs.getCharPref("browser.translations.logLevel"),
+      },
+      transferables
+    );
   }
 
   /**
@@ -377,22 +428,22 @@ export class TranslationsChild extends JSWindowActorChild {
       "TranslationsChild constructor"
     );
   }
+
   /**
-   * The data for the Bergamot translation engine is downloaded from Remote Settings
-   * and cached to disk. It is retained here in child process in case the translation
-   * language switches.
-   *
-   * At the time of this writing ~5mb.
-   *
-   * @type {ArrayBuffer | null}
+   * @override https://firefox-source-docs.mozilla.org/dom/ipc/jsactors.html#actorcreated
    */
-  #bergamotWasmArrayBuffer = null;
+  actorCreated() {
+    this.#isTranslationsEngineMocked = this.sendQuery(
+      "Translations:GetIsTranslationsEngineMocked"
+    );
+  }
 
   /**
    * The translations engine could be mocked for tests, since the wasm and the language
    * models must be downloaded from Remote Settings.
+   * @type {undefined | Promise<boolean>}
    */
-  #isTranslationsEngineMocked = false;
+  #isTranslationsEngineMocked;
 
   /**
    * The getter for the TranslationsEngine, managed by the EngineCache.
@@ -419,22 +470,23 @@ export class TranslationsChild extends JSWindowActorChild {
   translatedDoc = null;
 
   /**
+   * The matched language tags for the page. Used to find a default language pair for
+   * translations.
+   *
+   * @type {null | { appLangTag: string, docLangTag: string }}
+   * */
+  #langTags = null;
+
+  /**
    * @returns {Promise<ArrayBuffer>}
    */
   async #getBergamotWasmArrayBuffer() {
-    if (this.#isTranslationsEngineMocked) {
+    if (await this.#isTranslationsEngineMocked) {
       throw new Error(
         "The engine is mocked, the Bergamot wasm is not available."
       );
     }
-    let arrayBuffer = this.#bergamotWasmArrayBuffer;
-    if (!arrayBuffer) {
-      arrayBuffer = await this.sendQuery(
-        "Translations:GetBergamotWasmArrayBuffer"
-      );
-      this.#bergamotWasmArrayBuffer = arrayBuffer;
-    }
-    return arrayBuffer;
+    return this.sendQuery("Translations:GetBergamotWasmArrayBuffer");
   }
 
   /**
@@ -461,7 +513,7 @@ export class TranslationsChild extends JSWindowActorChild {
    * @returns {Promise<LanguageTranslationModelFiles[]>}
    */
   async #getLanguageTranslationModelFiles(fromLanguage, toLanguage) {
-    if (this.#isTranslationsEngineMocked) {
+    if (await this.#isTranslationsEngineMocked) {
       throw new Error(
         "The engine is mocked, there are no language model files available."
       );
@@ -473,6 +525,21 @@ export class TranslationsChild extends JSWindowActorChild {
   }
 
   /**
+   * Retrieve a substring of text from the document body to be
+   * analyzed by the LanguageIdEngine to determine the page's language.
+   *
+   * @returns {string}
+   */
+  #getTextToIdentify() {
+    let encoder = Cu.createDocumentEncoder("text/plain");
+    encoder.init(this.document, "text/plain", encoder.SkipInvisibleContent);
+    return encoder
+      .encodeToStringWithMaxLength(DOC_TEXT_TO_IDENTIFY_LENGTH)
+      .replaceAll("\r", "")
+      .replaceAll("\n", " ");
+  }
+
+  /**
    * @param {{ type: string }} event
    */
   handleEvent(event) {
@@ -481,30 +548,73 @@ export class TranslationsChild extends JSWindowActorChild {
       null,
       "Event: " + event.type
     );
-    if (event.type === "DOMContentLoaded") {
-      this.innerWindowId = this.contentWindow.windowGlobalChild.innerWindowId;
-      this.maybeTranslateDocument();
+    switch (event.type) {
+      case "DOMContentLoaded":
+        this.innerWindowId = this.contentWindow.windowGlobalChild.innerWindowId;
+        this.maybeOfferTranslation();
+        break;
+      case "pagehide":
+        lazy.console.log(
+          "pagehide",
+          this.contentWindow.location,
+          this.#langTags
+        );
+        this.reportLangTagsToParent(null);
+        break;
     }
   }
 
-  async maybeTranslateDocument() {
+  /**
+   * This is used to conditionally add the translations button.
+   * @param {null | { appLangTag: string, docLangTag: string }} langTags
+   */
+  reportLangTagsToParent(langTags) {
+    this.sendAsyncMessage("Translations:ReportLangTags", {
+      langTags,
+    });
+  }
+
+  /**
+   * Determine if the page should be translated by checking the App's languages and
+   * comparing it to the reported language of the page. If we can translate the page,
+   * then return the language pair.
+   *
+   * @returns {Promise<null | { appLangTag: string, docLangTag: string }>}
+   */
+  async getLangTagsForTranslation(translationsStart = this.docShell.now()) {
     const { href } = this.contentWindow.location;
     if (
       !href.startsWith("http://") &&
       !href.startsWith("https://") &&
       !href.startsWith("file:///")
     ) {
-      return;
+      return null;
     }
 
-    const translationsStart = this.docShell.now();
     let appLangTag = new Intl.Locale(Services.locale.appLocaleAsBCP47).language;
     let docLangTag;
 
+    // First try to get the langTag from the document's markup.
     try {
       const docLocale = new Intl.Locale(this.document.documentElement.lang);
       docLangTag = docLocale.language;
     } catch (error) {}
+
+    // If the document's markup had no specified langTag, attempt
+    // to identify the page's language using the LanguageIdEngine.
+    if (!docLangTag) {
+      let languageIdEngine = await this.createLanguageIdEngine();
+      let {
+        languageLabel,
+        confidence,
+      } = await languageIdEngine.identifyLanguage(this.#getTextToIdentify());
+      lazy.console.log(
+        `${languageLabel}(${confidence.toFixed(2)}) Detected Page Language`
+      );
+      if (confidence >= DOC_LANGUAGE_DETECTION_THRESHOLD) {
+        docLangTag = languageLabel;
+      }
+    }
 
     if (!docLangTag) {
       const message = "No valid language detected.";
@@ -514,8 +624,14 @@ export class TranslationsChild extends JSWindowActorChild {
         message
       );
       lazy.console.log(message, this.contentWindow.location.href);
-      return;
+      return null;
     }
+
+    ChromeUtils.addProfilerMarker(
+      "TranslationsChild",
+      { innerWindowId: this.innerWindowId, startTime: translationsStart },
+      "Time to determine langTags"
+    );
 
     if (appLangTag === docLangTag) {
       const message =
@@ -526,7 +642,7 @@ export class TranslationsChild extends JSWindowActorChild {
         message
       );
       lazy.console.log(message, this.contentWindow.location.href);
-      return;
+      return null;
     }
 
     // There is no reason to look at supported languages if the engine is already in
@@ -535,7 +651,7 @@ export class TranslationsChild extends JSWindowActorChild {
       // TODO - This is wrong for non-bidirectional translation pairs.
       const supportedLanguages = await this.getSupportedLanguages();
       if (this.#isDestroyed) {
-        return;
+        return null;
       }
       if (
         !supportedLanguages.some(({ langTag }) => langTag === appLangTag) ||
@@ -548,10 +664,65 @@ export class TranslationsChild extends JSWindowActorChild {
           message
         );
         lazy.console.log(message, supportedLanguages);
-        return;
+        return null;
       }
     }
+    return { appLangTag, docLangTag };
+  }
 
+  /**
+   * Deduce the language tags on the page, and either:
+   *  1. Show an offer to translate.
+   *  2. Auto-translate.
+   *  3. Do nothing.
+   */
+  async maybeOfferTranslation() {
+    const translationsStart = this.docShell.now();
+
+    const isSupported = await this.isTranslationsEngineSupported;
+    if (!isSupported) {
+      return;
+    }
+
+    const langTags = await this.getLangTagsForTranslation(translationsStart);
+
+    this.#langTags = langTags;
+    this.reportLangTagsToParent(langTags);
+
+    if (langTags && lazy.autoTranslatePagePref) {
+      this.translatePage(langTags, translationsStart);
+    }
+  }
+
+  /**
+   * Lazily initialize this value. It doesn't change after being set.
+   *
+   * @type {Promise<boolean>}
+   */
+  get isTranslationsEngineSupported() {
+    // Delete the getter and set the real value directly onto the TranslationsChild's
+    // prototype. This value never changes while a browser is open.
+    delete TranslationsChild.isTranslationsEngineSupported;
+    return (TranslationsChild.isTranslationsEngineSupported = this.sendQuery(
+      "Translations:GetIsTranslationsEngineSupported"
+    ));
+  }
+
+  /**
+   * Load the translation engine and translate the page.
+   *
+   * @param {{docLangTag: string, appLangTag: string}} langTags
+   * @param {number} [translationsStart]
+   * @returns {Promise<void>}
+   */
+  async translatePage(
+    { docLangTag, appLangTag },
+    translationsStart = this.docShell.now()
+  ) {
+    if (this.translatedDoc) {
+      lazy.console.warn("This page was already translated.");
+      return;
+    }
     try {
       const engineLoadStart = this.docShell.now();
 
@@ -639,8 +810,14 @@ export class TranslationsChild extends JSWindowActorChild {
    */
   receiveMessage(message) {
     switch (message.name) {
-      case "Translations:IsMocked":
-        this.#isTranslationsEngineMocked = message.data;
+      case "Translations:TranslatePage":
+        if (!this.#langTags) {
+          lazy.console.warn(
+            "Attempting to translate a page, but no language tags were present."
+          );
+          break;
+        }
+        this.translatePage(this.#langTags);
         break;
       default:
         lazy.console.warn("Unknown message.");
@@ -699,7 +876,10 @@ export class TranslationsChild extends JSWindowActorChild {
    * @returns {null | TranslationsEnginePayload}
    */
   async #getTranslationsEnginePayload(fromLanguage, toLanguage) {
-    if (this.#isTranslationsEngineMocked) {
+    if (!this.#isTranslationsEngineMocked) {
+      throw new Error("Expected #isTranslationsEngineMocked to be a promise.");
+    }
+    if (await this.#isTranslationsEngineMocked) {
       return null;
     }
     const [bergamotWasmArrayBuffer, languageModelFiles] = await Promise.all([

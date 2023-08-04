@@ -6,6 +6,7 @@
 
 #include "mozilla/dom/SVGElement.h"
 
+#include "mozilla/AlreadyAddRefed.h"
 #include "mozilla/dom/MutationEventBinding.h"
 #include "mozilla/dom/MutationObservers.h"
 #include "mozilla/dom/CSSRuleBinding.h"
@@ -331,7 +332,6 @@ nsresult SVGElement::AfterSetAttr(int32_t aNamespaceID, nsAtom* aName,
   // XXX For some reason incremental mapping doesn't work, so for now
   // just delete the style rule and lazily reconstruct it as needed).
   if (aNamespaceID == kNameSpaceID_None && IsAttributeMapped(aName)) {
-    mContentDeclarationBlock = nullptr;
     OwnerDoc()->ScheduleSVGForPresAttrEvaluation(this);
   }
 
@@ -699,12 +699,6 @@ void SVGElement::UnsetAttrInternal(int32_t aNamespaceID, nsAtom* aName,
   // Maybe consolidate?
 
   if (aNamespaceID == kNameSpaceID_None) {
-    // If this is an svg presentation attribute, remove declaration block to
-    // force an update
-    if (IsAttributeMapped(aName)) {
-      mContentDeclarationBlock = nullptr;
-    }
-
     if (IsEventAttributeName(aName)) {
       EventListenerManager* manager = GetExistingListenerManager();
       if (manager) {
@@ -943,108 +937,78 @@ SVGElement::IsAttributeMapped(const nsAtom* name) const {
   if (name == nsGkAtoms::lang) {
     return true;
   }
-  return SVGElementBase::IsAttributeMapped(name);
+
+  if (IsSVGAnimationElement()) {
+    return SVGElementBase::IsAttributeMapped(name);
+  }
+
+  static const MappedAttributeEntry attributes[] = {
+      // Properties that we don't support are commented out.
+      // { nsGkAtoms::alignment_baseline },
+      // { nsGkAtoms::baseline_shift },
+      {nsGkAtoms::clip},
+      {nsGkAtoms::clip_path},
+      {nsGkAtoms::clip_rule},
+      {nsGkAtoms::color},
+      {nsGkAtoms::colorInterpolation},
+      {nsGkAtoms::colorInterpolationFilters},
+      {nsGkAtoms::cursor},
+      {nsGkAtoms::direction},
+      {nsGkAtoms::display},
+      {nsGkAtoms::dominant_baseline},
+      {nsGkAtoms::fill},
+      {nsGkAtoms::fill_opacity},
+      {nsGkAtoms::fill_rule},
+      {nsGkAtoms::filter},
+      {nsGkAtoms::flood_color},
+      {nsGkAtoms::flood_opacity},
+      {nsGkAtoms::font_family},
+      {nsGkAtoms::font_size},
+      {nsGkAtoms::font_size_adjust},
+      {nsGkAtoms::font_stretch},
+      {nsGkAtoms::font_style},
+      {nsGkAtoms::font_variant},
+      {nsGkAtoms::fontWeight},
+      {nsGkAtoms::image_rendering},
+      {nsGkAtoms::letter_spacing},
+      {nsGkAtoms::lighting_color},
+      {nsGkAtoms::marker_end},
+      {nsGkAtoms::marker_mid},
+      {nsGkAtoms::marker_start},
+      {nsGkAtoms::mask},
+      {nsGkAtoms::mask_type},
+      {nsGkAtoms::opacity},
+      {nsGkAtoms::overflow},
+      {nsGkAtoms::paint_order},
+      {nsGkAtoms::pointer_events},
+      {nsGkAtoms::shape_rendering},
+      {nsGkAtoms::stop_color},
+      {nsGkAtoms::stop_opacity},
+      {nsGkAtoms::stroke},
+      {nsGkAtoms::stroke_dasharray},
+      {nsGkAtoms::stroke_dashoffset},
+      {nsGkAtoms::stroke_linecap},
+      {nsGkAtoms::stroke_linejoin},
+      {nsGkAtoms::stroke_miterlimit},
+      {nsGkAtoms::stroke_opacity},
+      {nsGkAtoms::stroke_width},
+      {nsGkAtoms::text_anchor},
+      {nsGkAtoms::text_decoration},
+      {nsGkAtoms::text_rendering},
+      {nsGkAtoms::transform_origin},
+      {nsGkAtoms::unicode_bidi},
+      {nsGkAtoms::vector_effect},
+      {nsGkAtoms::visibility},
+      {nsGkAtoms::white_space},
+      {nsGkAtoms::word_spacing},
+      {nsGkAtoms::writing_mode},
+      {nullptr}};
+
+  static const MappedAttributeEntry* const map[] = {attributes};
+
+  return FindAttributeDependence(name, map) ||
+         SVGElementBase::IsAttributeMapped(name);
 }
-
-// PresentationAttributes-FillStroke
-/* static */
-const Element::MappedAttributeEntry SVGElement::sFillStrokeMap[] = {
-    {nsGkAtoms::fill},
-    {nsGkAtoms::fill_opacity},
-    {nsGkAtoms::fill_rule},
-    {nsGkAtoms::paint_order},
-    {nsGkAtoms::stroke},
-    {nsGkAtoms::stroke_dasharray},
-    {nsGkAtoms::stroke_dashoffset},
-    {nsGkAtoms::stroke_linecap},
-    {nsGkAtoms::stroke_linejoin},
-    {nsGkAtoms::stroke_miterlimit},
-    {nsGkAtoms::stroke_opacity},
-    {nsGkAtoms::stroke_width},
-    {nsGkAtoms::vector_effect},
-    {nullptr}};
-
-// PresentationAttributes-Graphics
-/* static */
-const Element::MappedAttributeEntry SVGElement::sGraphicsMap[] = {
-    {nsGkAtoms::clip_path},
-    {nsGkAtoms::clip_rule},
-    {nsGkAtoms::colorInterpolation},
-    {nsGkAtoms::cursor},
-    {nsGkAtoms::display},
-    {nsGkAtoms::filter},
-    {nsGkAtoms::image_rendering},
-    {nsGkAtoms::mask},
-    {nsGkAtoms::opacity},
-    {nsGkAtoms::pointer_events},
-    {nsGkAtoms::shape_rendering},
-    {nsGkAtoms::text_rendering},
-    {nsGkAtoms::transform_origin},
-    {nsGkAtoms::visibility},
-    {nullptr}};
-
-// PresentationAttributes-TextContentElements
-/* static */
-const Element::MappedAttributeEntry SVGElement::sTextContentElementsMap[] = {
-    // Properties that we don't support are commented out.
-    // { nsGkAtoms::alignment_baseline },
-    // { nsGkAtoms::baseline_shift },
-    {nsGkAtoms::direction},       {nsGkAtoms::dominant_baseline},
-    {nsGkAtoms::letter_spacing},  {nsGkAtoms::text_anchor},
-    {nsGkAtoms::text_decoration}, {nsGkAtoms::unicode_bidi},
-    {nsGkAtoms::white_space},     {nsGkAtoms::word_spacing},
-    {nsGkAtoms::writing_mode},    {nullptr}};
-
-// PresentationAttributes-FontSpecification
-/* static */
-const Element::MappedAttributeEntry SVGElement::sFontSpecificationMap[] = {
-    {nsGkAtoms::font_family},      {nsGkAtoms::font_size},
-    {nsGkAtoms::font_size_adjust}, {nsGkAtoms::font_stretch},
-    {nsGkAtoms::font_style},       {nsGkAtoms::font_variant},
-    {nsGkAtoms::fontWeight},       {nullptr}};
-
-// PresentationAttributes-GradientStop
-/* static */
-const Element::MappedAttributeEntry SVGElement::sGradientStopMap[] = {
-    {nsGkAtoms::stop_color}, {nsGkAtoms::stop_opacity}, {nullptr}};
-
-// PresentationAttributes-Viewports
-/* static */
-const Element::MappedAttributeEntry SVGElement::sViewportsMap[] = {
-    {nsGkAtoms::overflow}, {nsGkAtoms::clip}, {nullptr}};
-
-// PresentationAttributes-Makers
-/* static */
-const Element::MappedAttributeEntry SVGElement::sMarkersMap[] = {
-    {nsGkAtoms::marker_end},
-    {nsGkAtoms::marker_mid},
-    {nsGkAtoms::marker_start},
-    {nullptr}};
-
-// PresentationAttributes-Color
-/* static */
-const Element::MappedAttributeEntry SVGElement::sColorMap[] = {
-    {nsGkAtoms::color}, {nullptr}};
-
-// PresentationAttributes-Filters
-/* static */
-const Element::MappedAttributeEntry SVGElement::sFiltersMap[] = {
-    {nsGkAtoms::colorInterpolationFilters}, {nullptr}};
-
-// PresentationAttributes-feFlood
-/* static */
-const Element::MappedAttributeEntry SVGElement::sFEFloodMap[] = {
-    {nsGkAtoms::flood_color}, {nsGkAtoms::flood_opacity}, {nullptr}};
-
-// PresentationAttributes-LightingEffects
-/* static */
-const Element::MappedAttributeEntry SVGElement::sLightingEffectsMap[] = {
-    {nsGkAtoms::lighting_color}, {nullptr}};
-
-// PresentationAttributes-mask
-/* static */
-const Element::MappedAttributeEntry SVGElement::sMaskMap[] = {
-    {nsGkAtoms::mask_type}, {nullptr}};
 
 //----------------------------------------------------------------------
 // Element methods
@@ -1145,7 +1109,14 @@ namespace {
 
 class MOZ_STACK_CLASS MappedAttrParser {
  public:
-  explicit MappedAttrParser(SVGElement& aElement) : mElement(aElement) {}
+  explicit MappedAttrParser(SVGElement& aElement,
+                            already_AddRefed<DeclarationBlock> aDecl)
+      : mElement(aElement), mDecl(aDecl) {
+    if (mDecl) {
+      mDecl->AssertMutable();
+      Servo_DeclarationBlock_Clear(mDecl->Raw());
+    }
+  }
   ~MappedAttrParser() {
     MOZ_ASSERT(!mDecl,
                "If mDecl was initialized, it should have been returned via "
@@ -1176,30 +1147,27 @@ class MOZ_STACK_CLASS MappedAttrParser {
 
   URLExtraData& EnsureExtraData() {
     if (!mExtraData) {
-      nsCOMPtr<nsIReferrerInfo> referrerInfo =
-          ReferrerInfo::CreateForSVGResources(mElement.OwnerDoc());
-      mExtraData = MakeRefPtr<URLExtraData>(mElement.GetBaseURI(), referrerInfo,
-                                            mElement.NodePrincipal());
+      mExtraData = mElement.GetURLDataForStyleAttr();
     }
     return *mExtraData;
   }
 
  private:
+  // For reporting use counters
+  SVGElement& mElement;
+
   // Declaration for storing parsed values (lazily initialized).
   RefPtr<DeclarationBlock> mDecl;
 
   // URL data for parsing stuff. Also lazy.
   RefPtr<URLExtraData> mExtraData;
-
-  // For reporting use counters
-  SVGElement& mElement;
 };
 
 void MappedAttrParser::ParseMappedAttrValue(nsAtom* aMappedAttrName,
                                             const nsAString& aMappedAttrValue) {
   // Get the nsCSSPropertyID ID for our mapped attribute.
   nsCSSPropertyID propertyID =
-      nsCSSProps::LookupProperty(nsAtomCString(aMappedAttrName));
+      nsCSSProps::LookupProperty(nsAutoAtomCString(aMappedAttrName));
   if (propertyID != eCSSProperty_UNKNOWN) {
     bool changed = false;  // outparam for ParseProperty.
     NS_ConvertUTF16toUTF8 value(aMappedAttrValue);
@@ -1234,7 +1202,8 @@ void MappedAttrParser::ParseMappedAttrValue(nsAtom* aMappedAttrName,
 
 void MappedAttrParser::TellStyleAlreadyParsedResult(
     nsAtom const* aAtom, SVGAnimatedLength const& aLength) {
-  nsCSSPropertyID propertyID = nsCSSProps::LookupProperty(nsAtomCString(aAtom));
+  nsCSSPropertyID propertyID =
+      nsCSSProps::LookupProperty(nsAutoAtomCString(aAtom));
   SVGElement::UpdateDeclarationBlockFromLength(EnsureDeclarationBlock(),
                                                propertyID, aLength,
                                                SVGElement::ValToUse::Base);
@@ -1252,10 +1221,7 @@ void MappedAttrParser::TellStyleAlreadyParsedResult(
 // Implementation Helpers:
 
 void SVGElement::UpdateContentDeclarationBlock() {
-  MOZ_ASSERT(!mContentDeclarationBlock,
-             "we already have a content declaration block");
-
-  MappedAttrParser mappedAttrParser(*this);
+  MappedAttrParser mappedAttrParser(*this, mContentDeclarationBlock.forget());
 
   bool lengthAffectsStyle =
       SVGGeometryProperty::ElementMapsLengthsToStyle(this);
@@ -1267,14 +1233,7 @@ void SVGElement::UpdateContentDeclarationBlock() {
       continue;
     }
 
-    // FIXME(emilio): This check is dead, since IsAtom() implies that
-    // NamespaceID() == None.
-    if (attrName->NamespaceID() != kNameSpaceID_None &&
-        !attrName->Equals(nsGkAtoms::lang, kNameSpaceID_XML)) {
-      continue;
-    }
-
-    if (attrName->Equals(nsGkAtoms::lang, kNameSpaceID_None) &&
+    if (attrName->Atom() == nsGkAtoms::lang &&
         HasAttr(kNameSpaceID_XML, nsGkAtoms::lang)) {
       // xml:lang has precedence, and will get set via Gecko_GetXMLLangValue().
       continue;
@@ -1787,7 +1746,7 @@ void SVGElement::DidAnimatePathSegList() {
   ClearAnyCachedPath();
 
   // Notify style we have to update the d property because of SMIL animation.
-  if (StaticPrefs::layout_css_d_property_enabled() && name == nsGkAtoms::d) {
+  if (name == nsGkAtoms::d) {
     SMILOverrideStyle()->SetSMILValue(nsCSSPropertyID::eCSSProperty_d,
                                       *GetAnimPathSegList());
     return;

@@ -75,7 +75,6 @@ load 368568.html
 load 368752.html
 load 368860-1.html
 load 368863-1.html
-load 369038-1.xhtml
 load 369150-1.html
 load 369150-2.html
 load 369227-1.xhtml
@@ -281,7 +280,6 @@ load 437565-3.xhtml
 load 438259-1.html
 load 438266-1.html
 skip load 438509-1.html # bug 511234
-load chrome://reftest/content/crashtests/layout/generic/crashtests/442860-1.xhtml
 load 443528-1.html
 load 444230-1.html
 load 444484-1.html
@@ -818,3 +816,5 @@ asserts(0-2) load 1791606.html
 load 1799749.html
 pref(layout.css.content-visibility.enabled,true) asserts(1-4) load 1807958.html # asserts from integer overflow & bogus sizes
 load 1816574.html
+load 1821603.html
+load 1825434.html

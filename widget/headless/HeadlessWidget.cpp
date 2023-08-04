@@ -17,6 +17,7 @@
 #include "mozilla/WritingModes.h"
 #include "mozilla/widget/HeadlessWidgetTypes.h"
 #include "mozilla/widget/PlatformWidgetTypes.h"
+#include "mozilla/widget/Screen.h"
 #include "nsIScreen.h"
 #include "HeadlessKeyBindings.h"
 
@@ -389,7 +390,6 @@ nsresult HeadlessWidget::MakeFullScreen(bool aFullScreen) {
   // resize events.
   if (mWidgetListener) {
     mWidgetListener->SizeModeChanged(mSizeMode);
-    mWidgetListener->FullscreenChanged(aFullScreen);
   }
 
   // Real widget backends don't seem to follow a common approach for

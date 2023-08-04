@@ -1218,10 +1218,10 @@ struct PaintSweepGradient : public PaintPatternBase {
     if (solidColor) {
       return solidColor;
     }
+    // ConicGradientPattern works counterclockwise. If the gradient is defined
+    // clockwise (with aStart greater than aEnd), we'll reverse the color line
+    // and swap the start and end angles.
     bool reverse = aEnd < aStart;
-    if (reverse) {
-      std::swap(aStart, aEnd);
-    }
     float firstStop, lastStop;
     RefPtr stops =
         aColorLine->MakeGradientStops(aState, &firstStop, &lastStop, reverse);
@@ -1238,6 +1238,9 @@ struct PaintSweepGradient : public PaintPatternBase {
         aStart = aStart + sweep * firstStop;
         aEnd = aStart + sweep * (lastStop - firstStop);
       }
+    }
+    if (reverse) {
+      std::swap(aStart, aEnd);
     }
     return MakeUnique<ConicGradientPattern>(aCenter, M_PI / 2.0, aStart / 2.0,
                                             aEnd / 2.0, std::move(stops),
@@ -1646,8 +1649,8 @@ struct PaintVarRotateAroundCenter : public PaintRotateAroundCenter {
 static inline Matrix SkewMatrix(float aSkewX, float aSkewY) {
   float xy = tanf(aSkewX * float(M_PI));
   float yx = tanf(aSkewY * float(M_PI));
-  return IsNaN(xy) || IsNaN(yx) ? Matrix()
-                                : Matrix(1.0, -yx, xy, 1.0, 0.0, 0.0);
+  return std::isnan(xy) || std::isnan(yx) ? Matrix()
+                                          : Matrix(1.0, -yx, xy, 1.0, 0.0, 0.0);
 }
 
 struct PaintSkew : public PaintTransformBase {

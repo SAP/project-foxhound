@@ -410,7 +410,7 @@ def same_arch_different_bits():
 
 @imports(_from="mozbuild.shellutil", _import="quote")
 @imports(_from="mozbuild.configure.constants", _import="OS_preprocessor_checks")
-def check_compiler(configure_cache, compiler, language, target):
+def check_compiler(configure_cache, compiler, language, target, android_version):
     info = get_compiler_info(configure_cache, compiler, language)
 
     flags = []
@@ -445,6 +445,13 @@ def check_compiler(configure_cache, compiler, language, target):
     # Check compiler target
     # --------------------------------------------------------------------
     has_target = False
+    if target.os == "Android" and android_version:
+        # This makes clang define __ANDROID_API__ and use versioned library
+        # directories from the NDK.
+        toolchain = "%s%d" % (target.toolchain, android_version)
+    else:
+        toolchain = target.toolchain
+
     if info.type == "clang":
         # Add the target explicitly when the target is aarch64 macosx, because
         # the Xcode clang target is named differently, and we need to work around
@@ -463,7 +470,7 @@ def check_compiler(configure_cache, compiler, language, target):
             or not info.endianness
             or info.endianness != target.endianness
         ):
-            flags.append("--target=%s" % target.toolchain)
+            flags.append("--target=%s" % toolchain)
             has_target = True
 
         # Add target flag when there is an OS mismatch (e.g. building for Android on
@@ -472,7 +479,7 @@ def check_compiler(configure_cache, compiler, language, target):
         elif target.os in OS_preprocessor_checks and (
             not info.os or info.os != target.os
         ):
-            flags.append("--target=%s" % target.toolchain)
+            flags.append("--target=%s" % toolchain)
             has_target = True
 
     if not has_target and (not info.cpu or info.cpu != target.cpu):
@@ -482,9 +489,9 @@ def check_compiler(configure_cache, compiler, language, target):
         elif (info.cpu, target.cpu) in same_arch:
             flags.append("-m64")
         elif info.type == "clang-cl" and target.cpu == "aarch64":
-            flags.append("--target=%s" % target.toolchain)
+            flags.append("--target=%s" % toolchain)
         elif info.type == "clang":
-            flags.append("--target=%s" % target.toolchain)
+            flags.append("--target=%s" % toolchain)
 
     return namespace(
         type=info.type,
@@ -1199,6 +1206,7 @@ def compiler(
         host_or_target,
         sysroot,
         macos_target,
+        android_version,
         multiarch_dir,
         winsysroot,
         host,
@@ -1214,6 +1222,7 @@ def compiler(
         host_or_target,
         sysroot,
         macos_target,
+        android_version,
         multiarch_dir,
         winsysroot,
         host,
@@ -1235,7 +1244,11 @@ def compiler(
             flags.extend(provided_compiler.flags)
 
         info = check_compiler(
-            configure_cache, wrapper + [compiler] + flags, language, host_or_target
+            configure_cache,
+            wrapper + [compiler] + flags,
+            language,
+            host_or_target,
+            android_version,
         )
 
         if info.type == "clang" and language == "C++" and host_or_target.os == "OSX":
@@ -1258,6 +1271,7 @@ def compiler(
                     wrapper + [compiler] + flags,
                     language,
                     host_or_target,
+                    android_version,
                 )
         except FatalCheckError:
             pass
@@ -1383,13 +1397,16 @@ def compiler(
                     % (host_or_target.alias, info.version)
                 )
 
+        if host_or_target.os == "Android":
+            # Need at least clang 13 for compiler-rt/libunwind being the default.
+            if info.type == "clang" and info.version < "13.0":
+                raise FatalCheckError(
+                    "Only clang/llvm 13.0 or newer is supported for %s (found version %s)."
+                    % (host_or_target.alias, info.version)
+                )
+
         if info.flags:
             raise FatalCheckError("Unknown compiler or compiler not supported.")
-
-        # Recent clang defaults to compiler-rt, but we want libgcc for compat
-        # with the older NDKs we use.
-        if host_or_target.os == "Android":
-            flags.append("--rtlib=libgcc")
 
         return namespace(
             wrapper=wrapper,
@@ -1815,7 +1832,8 @@ def linker_ldflags_tmpl(host_or_target):
             target,
             target_sysroot,
             target_multiarch_dir,
-            android_platform,
+            android_sysroot,
+            android_version,
             c_compiler,
             developer_options,
         )
@@ -1825,6 +1843,7 @@ def linker_ldflags_tmpl(host_or_target):
             host,
             host_sysroot,
             host_multiarch_dir,
+            dependable(None),
             dependable(None),
             host_c_compiler,
             developer_options,
@@ -1837,7 +1856,8 @@ def linker_ldflags_tmpl(host_or_target):
         target,
         sysroot,
         multiarch_dir,
-        android_platform,
+        android_sysroot,
+        android_version,
         c_compiler,
         developer_options,
     ):
@@ -1863,11 +1883,17 @@ def linker_ldflags_tmpl(host_or_target):
                         sysroot.path, multiarch_dir, sysroot.stdcxx_version
                     )
                 )
-        if android_platform:
-            flags.append("-L{}/usr/lib".format(android_platform))
-            flags.append("-Wl,--rpath-link={}/usr/lib".format(android_platform))
-            flags.append("--sysroot")
-            flags.append(android_platform)
+        if android_sysroot:
+            # BFD/gold linkers need a manual --rpath-link for indirect
+            # dependencies.
+            flags += [
+                "-Wl,--rpath-link={}/usr/lib/{}".format(
+                    android_sysroot, target.toolchain
+                ),
+                "-Wl,--rpath-link={}/usr/lib/{}/{}".format(
+                    android_sysroot, target.toolchain, android_version
+                ),
+            ]
         if (
             developer_options
             and linker
@@ -3148,3 +3174,4 @@ set_config("SSE2_FLAGS", ["-msse2"])
 set_config("SSSE3_FLAGS", ["-mssse3"])
 set_config("SSE4_2_FLAGS", ["-msse4.2"])
 set_config("FMA_FLAGS", ["-mfma"])
+set_config("AVX2_FLAGS", ["-mavx2"])

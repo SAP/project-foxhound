@@ -180,11 +180,10 @@ static DashState GetStrokeDashData(
     if (dashArrayLength <= 0) {
       return eContinuousStroke;
     }
-    if (aElement->IsNodeOfType(nsINode::eSHAPE)) {
+    if (auto* shapeElement = SVGGeometryElement::FromNode(aElement)) {
       pathScale =
-          static_cast<SVGGeometryElement*>(aElement)->GetPathLengthScale(
-              SVGGeometryElement::eForStroking);
-      if (pathScale <= 0 || !IsFinite(pathScale)) {
+          shapeElement->GetPathLengthScale(SVGGeometryElement::eForStroking);
+      if (pathScale <= 0 || !std::isfinite(pathScale)) {
         return eContinuousStroke;
       }
     }
@@ -721,7 +720,7 @@ bool SVGContentUtils::ParseNumber(RangedPtr<const char16_t>& aIter,
     return false;
   }
   floatType floatValue = floatType(value);
-  if (!IsFinite(floatValue)) {
+  if (!std::isfinite(floatValue)) {
     return false;
   }
   aValue = floatValue;

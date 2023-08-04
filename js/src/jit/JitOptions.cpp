@@ -120,11 +120,23 @@ DefaultJitOptions::DefaultJitOptions() {
   // Toggles whether redundant shape guard elimination is globally disabled.
   SET_DEFAULT(disableRedundantShapeGuards, false);
 
+  // Toggles whether redundant GC barrier elimination is globally disabled.
+  SET_DEFAULT(disableRedundantGCBarriers, false);
+
   // Toggles whether we verify that we don't recompile with the same CacheIR.
   SET_DEFAULT(disableBailoutLoopCheck, false);
 
   // Whether the Baseline Interpreter is enabled.
   SET_DEFAULT(baselineInterpreter, true);
+
+  // Emit baseline interpreter and interpreter entry frames to distinguish which
+  // JSScript is being interpreted by external profilers.
+  // Enabled by default under --enable-perf, otherwise disabled.
+#if defined(JS_ION_PERF)
+  SET_DEFAULT(emitInterpreterEntryTrampoline, true);
+#else
+  SET_DEFAULT(emitInterpreterEntryTrampoline, false);
+#endif
 
   // Whether the Baseline JIT is enabled.
   SET_DEFAULT(baselineJit, true);
@@ -310,6 +322,7 @@ DefaultJitOptions::DefaultJitOptions() {
   SET_DEFAULT(enableWatchtowerMegamorphic, true);
 
   SET_DEFAULT(onlyInlineSelfHosted, false);
+  SET_DEFAULT(enableICFramePointers, false);
 
   SET_DEFAULT(enableWasmJitExit, true);
   SET_DEFAULT(enableWasmJitEntry, true);

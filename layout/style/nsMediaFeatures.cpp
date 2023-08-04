@@ -283,6 +283,14 @@ bool Gecko_MediaFeatures_PrefersReducedMotion(const Document* aDocument) {
   return LookAndFeel::GetInt(LookAndFeel::IntID::PrefersReducedMotion, 0) == 1;
 }
 
+bool Gecko_MediaFeatures_PrefersReducedTransparency(const Document* aDocument) {
+  if (aDocument->ShouldResistFingerprinting()) {
+    return false;
+  }
+  return LookAndFeel::GetInt(LookAndFeel::IntID::PrefersReducedTransparency,
+                             0) == 1;
+}
+
 StylePrefersColorScheme Gecko_MediaFeatures_PrefersColorScheme(
     const Document* aDocument, bool aUseContent) {
   auto scheme = aUseContent ? LookAndFeel::PreferredColorSchemeForContent()
@@ -315,6 +323,16 @@ StylePrefersContrast Gecko_MediaFeatures_PrefersContrast(
     return StylePrefersContrast::More;
   }
   return StylePrefersContrast::Custom;
+}
+
+StyleScripting Gecko_MediaFeatures_Scripting(const Document* aDocument) {
+  const auto* doc = aDocument;
+  if (aDocument->IsStaticDocument()) {
+    doc = aDocument->GetOriginalDocument();
+  }
+
+  return doc->IsScriptEnabled() ? StyleScripting::Enabled
+                                : StyleScripting::None;
 }
 
 StyleDynamicRange Gecko_MediaFeatures_DynamicRange(const Document* aDocument) {

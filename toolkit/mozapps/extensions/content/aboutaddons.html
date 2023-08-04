@@ -202,13 +202,6 @@
       </div>
     </template>
 
-    <template name="colorways-card-container">
-      <div id="colorways-expiry-date-container">
-        <span id="colorways-expiry-date"><span></span></span>
-      </div>
-        <button id="colorways-button" class="primary" action="open-colorways"></button>
-    </template>
-
     <template name="addon-name-container-in-disco-card">
       <div class="disco-card-head">
         <h3 class="disco-addon-name"></h3>
@@ -262,15 +255,15 @@
             <div class="addon-detail-actions">
               <button class="button-link" data-l10n-id="addon-detail-update-check-label" action="update-check" hidden></button>
               <label class="radio-container-with-text">
-                <input type="radio" name="autoupdate" value="1" data-telemetry-value="default">
+                <input type="radio" name="autoupdate" value="1">
                 <span data-l10n-id="addon-detail-updates-radio-default"></span>
               </label>
               <label class="radio-container-with-text">
-                <input type="radio" name="autoupdate" value="2" data-telemetry-value="enabled">
+                <input type="radio" name="autoupdate" value="2">
                 <span data-l10n-id="addon-detail-updates-radio-on"></span>
               </label>
               <label class="radio-container-with-text">
-                <input type="radio" name="autoupdate" value="0" data-telemetry-value="">
+                <input type="radio" name="autoupdate" value="0">
                 <span data-l10n-id="addon-detail-updates-radio-off"></span>
               </label>
             </div>
@@ -279,33 +272,33 @@
             <label data-l10n-id="detail-private-browsing-label"></label>
             <div class="addon-detail-actions">
               <label class="radio-container-with-text">
-                <input type="radio" name="private-browsing" value="1" data-telemetry-value="on">
+                <input type="radio" name="private-browsing" value="1">
                 <span data-l10n-id="addon-detail-private-browsing-allow"></span>
               </label>
               <label class="radio-container-with-text">
-                <input type="radio" name="private-browsing" value="0" data-telemetry-value="off">
+                <input type="radio" name="private-browsing" value="0">
                 <span data-l10n-id="addon-detail-private-browsing-disallow"></span>
               </label>
             </div>
           </div>
           <div class="addon-detail-row addon-detail-help-row" data-l10n-id="addon-detail-private-browsing-help" hidden>
-            <a is="support-link" support-page="extensions-pb" data-l10n-name="learn-more"></a>
+            <a is="moz-support-link" support-page="extensions-pb" data-l10n-name="learn-more"></a>
           </div>
           <div class="addon-detail-row addon-detail-row-has-help addon-detail-row-private-browsing-disallowed" hidden>
             <label data-l10n-id="detail-private-disallowed-label"></label>
           </div>
           <div class="addon-detail-row addon-detail-help-row" data-l10n-id="detail-private-disallowed-description2" hidden>
-            <a is="support-link" data-l10n-name="learn-more" support-page="extensions-pb"></a>
+            <a is="moz-support-link" data-l10n-name="learn-more" support-page="extensions-pb"></a>
           </div>
           <div class="addon-detail-row addon-detail-row-has-help addon-detail-row-private-browsing-required" hidden>
             <label class="learn-more-label-link" data-l10n-id="detail-private-required-label"></label>
           </div>
           <div class="addon-detail-row addon-detail-help-row" data-l10n-id="detail-private-required-description2" hidden>
-            <a is="support-link" data-l10n-name="learn-more" support-page="extensions-pb"></a>
+            <a is="moz-support-link" data-l10n-name="learn-more" support-page="extensions-pb"></a>
           </div>
           <div class="addon-detail-row addon-detail-row-author">
             <label data-l10n-id="addon-detail-author-label"></label>
-            <a target="_blank" data-telemetry-name="author"></a>
+            <a target="_blank"></a>
           </div>
           <div class="addon-detail-row addon-detail-row-version">
             <label data-l10n-id="addon-detail-version-label"></label>
@@ -316,13 +309,13 @@
           <div class="addon-detail-row addon-detail-row-homepage">
             <label data-l10n-id="addon-detail-homepage-label"></label>
             <!-- URLs should always be displayed as LTR. -->
-            <a target="_blank" data-telemetry-name="homepage" dir="ltr"></a>
+            <a target="_blank" dir="ltr"></a>
           </div>
           <div class="addon-detail-row addon-detail-row-rating">
             <label data-l10n-id="addon-detail-rating-label"></label>
             <div class="addon-detail-rating">
               <five-star-rating></five-star-rating>
-              <a target="_blank" data-telemetry-name="rating"></a>
+              <a target="_blank"></a>
             </div>
           </div>
         </section>

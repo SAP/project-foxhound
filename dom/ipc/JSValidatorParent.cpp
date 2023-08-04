@@ -9,6 +9,8 @@
 #include "mozilla/dom/JSValidatorUtils.h"
 #include "mozilla/dom/JSOracleParent.h"
 #include "mozilla/RefPtr.h"
+#include "nsCOMPtr.h"
+#include "HttpBaseChannel.h"
 
 namespace mozilla::dom {
 /* static */
@@ -34,9 +36,7 @@ void JSValidatorParent::IsOpaqueResponseAllowed(
               const IsOpaqueResponseAllowedPromise::ResolveOrRejectValue&
                   aResult) {
             if (aResult.IsResolve()) {
-              Maybe<Shmem> data;
-              ValidatorResult result;
-              Tie(data, result) = aResult.ResolveValue();
+              auto [data, result] = aResult.ResolveValue();
               aCallback(std::move(data), result);
             } else {
               // For cases like the Utility Process crashes, the promise will be
@@ -70,14 +70,29 @@ void JSValidatorParent::OnDataAvailable(const nsACString& aData) {
       });
 }
 
-void JSValidatorParent::OnStopRequest(nsresult aResult) {
+void JSValidatorParent::OnStopRequest(nsresult aResult, nsIRequest& aRequest) {
   JSOracleParent::WithJSOracle(
-      [self = RefPtr{this}, aResult](const auto* aParent) {
+      [self = RefPtr{this}, aResult,
+       request = nsCOMPtr{&aRequest}](const auto* aParent) {
         if (!aParent) {
           return;
         }
-        if (self->CanSend()) {
-          Unused << self->SendOnStopRequest(aResult);
+        if (self->CanSend() && request) {
+          nsCOMPtr<net::HttpBaseChannel> httpBaseChannel =
+              do_QueryInterface(request);
+          MOZ_ASSERT(httpBaseChannel);
+
+          nsAutoCString contentCharset;
+          Unused << httpBaseChannel->GetContentCharset(contentCharset);
+
+          nsAutoString hintCharset;
+          Unused << httpBaseChannel->GetClassicScriptHintCharset(hintCharset);
+
+          nsAutoString documentCharset;
+          Unused << httpBaseChannel->GetDocumentCharacterSet(documentCharset);
+
+          Unused << self->SendOnStopRequest(aResult, contentCharset,
+                                            hintCharset, documentCharset);
         }
       });
 }

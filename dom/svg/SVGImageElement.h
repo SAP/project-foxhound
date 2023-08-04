@@ -54,11 +54,10 @@ class SVGImageElement final : public SVGImageElementBase,
   nsresult AfterSetAttr(int32_t aNamespaceID, nsAtom* aName,
                         const nsAttrValue* aValue, const nsAttrValue* aOldValue,
                         nsIPrincipal* aSubjectPrincipal, bool aNotify) override;
-  bool IsNodeOfType(uint32_t aFlags) const override {
-    // <image> is not really a SVGGeometryElement, we should
-    // ignore eSHAPE flag accepted by SVGGeometryElement.
-    return SVGGraphicsElement::IsNodeOfType(aFlags);
-  }
+  // <image> is not really an SVGGeometryElement, we should not treat it as
+  // such. Ideally we'd not derive SVGImageElement from SVGGeometryElement at
+  // all.
+  bool IsSVGGeometryElement() const final { return false; }
 
   nsresult BindToTree(BindContext&, nsINode& aParent) override;
   void UnbindFromTree(bool aNullParent) override;
@@ -73,7 +72,10 @@ class SVGImageElement final : public SVGImageElementBase,
   bool GetGeometryBounds(
       Rect* aBounds, const StrokeOptions& aStrokeOptions,
       const Matrix& aToBoundsSpace,
-      const Matrix* aToNonScalingStrokeSpace = nullptr) override;
+      const Matrix* aToNonScalingStrokeSpace = nullptr) override {
+    *aBounds = GeometryBounds(aToBoundsSpace);
+    return true;
+  }
   already_AddRefed<Path> BuildPath(PathBuilder* aBuilder) override;
 
   // SVGSVGElement methods:
@@ -99,6 +101,8 @@ class SVGImageElement final : public SVGImageElementBase,
   already_AddRefed<Promise> Decode(ErrorResult& aRv);
 
   static nsCSSPropertyID GetCSSPropertyIdForAttrEnum(uint8_t aAttrEnum);
+
+  gfx::Rect GeometryBounds(const gfx::Matrix& aToBoundsSpace);
 
  protected:
   nsresult LoadSVGImage(bool aForce, bool aNotify);

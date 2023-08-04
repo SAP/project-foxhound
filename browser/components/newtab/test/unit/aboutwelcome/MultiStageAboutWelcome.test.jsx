@@ -17,7 +17,7 @@ describe("MultiStageAboutWelcome module", () => {
   let sandbox;
 
   const DEFAULT_PROPS = {
-    screens: AboutWelcomeDefaults.getDefaults().screens,
+    defaultScreens: AboutWelcomeDefaults.getDefaults().screens,
     metricsFlowUri: "http://localhost/",
     message_id: "DEFAULT_ABOUTWELCOME",
     utm_term: "default",
@@ -82,7 +82,7 @@ describe("MultiStageAboutWelcome module", () => {
       ];
 
       const PRIMARY_ACTION_PROPS = {
-        screens,
+        defaultScreens: screens,
         metricsFlowUri: "http://localhost/",
         message_id: "DEFAULT_ABOUTWELCOME",
         utm_term: "default",
@@ -123,7 +123,7 @@ describe("MultiStageAboutWelcome module", () => {
         },
       ];
       const AUTO_ADVANCE_PROPS = {
-        screens,
+        defaultScreens: screens,
         metricsFlowUri: "http://localhost/",
         message_id: "DEFAULT_ABOUTWELCOME",
         utm_term: "default",
@@ -171,7 +171,7 @@ describe("MultiStageAboutWelcome module", () => {
         },
       ];
       const EASY_SETUP_PROPS = {
-        screens,
+        defaultScreens: screens,
         message_id: "DEFAULT_ABOUTWELCOME",
         startScreen: 0,
       };
@@ -459,6 +459,10 @@ describe("MultiStageAboutWelcome module", () => {
         });
       });
       it("should handle SHOW_MIGRATION_WIZARD INSIDE MULTI_ACTION", () => {
+        const migrationCloseStub = sandbox.stub(
+          global,
+          "AWWaitForMigrationClose"
+        );
         const MULTI_ACTION_SCREEN_PROPS = {
           content: {
             title: "test title",
@@ -508,6 +512,84 @@ describe("MultiStageAboutWelcome module", () => {
             ],
           },
         });
+        assert.calledOnce(migrationCloseStub);
+      });
+
+      it("should handle SHOW_MIGRATION_WIZARD INSIDE NESTED MULTI_ACTION", () => {
+        const migrationCloseStub = sandbox.stub(
+          global,
+          "AWWaitForMigrationClose"
+        );
+        const MULTI_ACTION_SCREEN_PROPS = {
+          content: {
+            title: "test title",
+            subtitle: "test subtitle",
+            primary_button: {
+              action: {
+                type: "MULTI_ACTION",
+                navigate: true,
+                data: {
+                  actions: [
+                    {
+                      type: "PIN_FIREFOX_TO_TASKBAR",
+                    },
+                    {
+                      type: "SET_DEFAULT_BROWSER",
+                    },
+                    {
+                      type: "MULTI_ACTION",
+                      data: {
+                        actions: [
+                          {
+                            type: "SET_PREF",
+                          },
+                          {
+                            type: "SHOW_MIGRATION_WIZARD",
+                            data: {},
+                          },
+                        ],
+                      },
+                    },
+                  ],
+                },
+              },
+              label: "test button",
+            },
+          },
+          navigate: sandbox.stub(),
+        };
+        const wrapper = mount(<WelcomeScreen {...MULTI_ACTION_SCREEN_PROPS} />);
+
+        wrapper.find(".primary").simulate("click");
+        assert.calledWith(AboutWelcomeUtils.handleUserAction, {
+          type: "MULTI_ACTION",
+          navigate: true,
+          data: {
+            actions: [
+              {
+                type: "PIN_FIREFOX_TO_TASKBAR",
+              },
+              {
+                type: "SET_DEFAULT_BROWSER",
+              },
+              {
+                type: "MULTI_ACTION",
+                data: {
+                  actions: [
+                    {
+                      type: "SET_PREF",
+                    },
+                    {
+                      type: "SHOW_MIGRATION_WIZARD",
+                      data: {},
+                    },
+                  ],
+                },
+              },
+            ],
+          },
+        });
+        assert.calledOnce(migrationCloseStub);
       });
     });
   });

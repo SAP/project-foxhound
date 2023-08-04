@@ -22,7 +22,7 @@
 # shared with other top level windows in macWindow.inc.xhtml.
 #include browser-menubar.inc
       </toolbaritem>
-      <spacer flex="1" skipintoolbarset="true" style="-moz-box-ordinal-group: 1000;"/>
+      <spacer flex="1" skipintoolbarset="true" style="order: 1000;"/>
 #include titlebar-items.inc.xhtml
     </toolbar>
 
@@ -365,6 +365,22 @@
                 <image id="reader-mode-button-icon"
                        class="urlbar-icon"/>
               </hbox>
+              <hbox id="picture-in-picture-button"
+                    class="urlbar-page-action"
+                    role="button"
+                    hidden="true"
+                    onclick="PictureInPicture.toggleUrlbar(event)">
+                <image id="picture-in-picture-button-icon"
+                       class="urlbar-icon"/>
+              </hbox>
+              <hbox id="translations-button"
+                    class="urlbar-page-action"
+                    role="button"
+                    data-l10n-id="urlbar-translations-button"
+                    hidden="true"
+                    onclick="TranslationsParent.urlBarButtonClick(event);">
+                <image class="urlbar-icon"/>
+              </hbox>
               <toolbarbutton id="urlbar-zoom-button"
                      onclick="FullZoom.reset(); FullZoom.resetScalingZoom();"
                      tooltip="dynamic-shortcut-tooltip"
@@ -438,6 +454,16 @@
                       <image id="fxa-avatar-image"/>
                      </vbox>
       </toolbarbutton>
+
+      <toolbarbutton id="unified-extensions-button"
+                     class="toolbarbutton-1"
+                     delegatesanchor="true"
+                     data-l10n-id="unified-extensions-button"
+                     hidden="true"
+                     onkeypress="gUnifiedExtensions.togglePanel(event)"
+                     onmousedown="gUnifiedExtensions.togglePanel(event)"
+                     overflows="false"
+                     removable="false"/>
     </hbox>
 
     <toolbarbutton id="nav-bar-overflow-button"
@@ -449,16 +475,6 @@
         <image class="toolbarbutton-animatable-image"/>
       </box>
     </toolbarbutton>
-
-    <toolbarbutton id="unified-extensions-button"
-                   class="toolbarbutton-1"
-                   delegatesanchor="true"
-                   data-l10n-id="unified-extensions-button"
-                   hidden="true"
-                   onkeypress="gUnifiedExtensions.togglePanel(event)"
-                   onmousedown="gUnifiedExtensions.togglePanel(event)"
-                   overflows="false"
-                   removable="false"/>
 
     <toolbaritem id="PanelUI-button"
                  removable="false">

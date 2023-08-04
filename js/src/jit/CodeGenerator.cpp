@@ -20,7 +20,6 @@
 #include "mozilla/Latin1.h"
 #include "mozilla/MathAlgorithms.h"
 #include "mozilla/ScopeExit.h"
-#include "mozilla/Tuple.h"
 
 #include <limits>
 #include <type_traits>
@@ -399,14 +398,14 @@ void CodeGenerator::callVM(LInstruction* ins) {
 
 template <typename... ArgTypes>
 class ArgSeq {
-  mozilla::Tuple<std::remove_reference_t<ArgTypes>...> args_;
+  std::tuple<std::remove_reference_t<ArgTypes>...> args_;
 
   template <std::size_t... ISeq>
   inline void generate(CodeGenerator* codegen,
                        std::index_sequence<ISeq...>) const {
     // Arguments are pushed in reverse order, from last argument to first
     // argument.
-    (codegen->pushArg(mozilla::Get<sizeof...(ISeq) - 1 - ISeq>(args_)), ...);
+    (codegen->pushArg(std::get<sizeof...(ISeq) - 1 - ISeq>(args_)), ...);
   }
 
  public:
@@ -7610,7 +7609,17 @@ void CodeGenerator::emitGetInlinedArgument(GetInlinedArgument* lir,
                                            Register index,
                                            ValueOperand output) {
   uint32_t numActuals = lir->mir()->numActuals();
-  MOZ_ASSERT(numActuals > 0 && numActuals <= ArgumentsObject::MaxInlinedArgs);
+  MOZ_ASSERT(numActuals <= ArgumentsObject::MaxInlinedArgs);
+
+  // The index has already been bounds-checked, so the code we
+  // generate here should be unreachable. We can end up in this
+  // situation in self-hosted code using GetArgument(), or in a
+  // monomorphically inlined function if we've inlined some CacheIR
+  // that was created for a different caller.
+  if (numActuals == 0) {
+    masm.assumeUnreachable("LGetInlinedArgument: invalid index");
+    return;
+  }
 
   // Check the first n-1 possible indices.
   Label done;
@@ -13059,12 +13068,36 @@ void CodeGenerator::visitGetFrameArgument(LGetFrameArgument* lir) {
   const LAllocation* index = lir->index();
   size_t argvOffset = JitFrameLayout::offsetOfActualArgs();
 
+  // This instruction is used to access actual arguments and formal arguments.
+  // The number of Values on the stack is |max(numFormals, numActuals)|, so we
+  // assert |index < numFormals || index < numActuals| in debug builds.
+  DebugOnly<size_t> numFormals = gen->outerInfo().script()->function()->nargs();
+
   if (index->isConstant()) {
     int32_t i = index->toConstant()->toInt32();
+#ifdef DEBUG
+    if (uint32_t(i) >= numFormals) {
+      Label ok;
+      Register argc = result.scratchReg();
+      masm.loadNumActualArgs(FramePointer, argc);
+      masm.branch32(Assembler::Above, argc, Imm32(i), &ok);
+      masm.assumeUnreachable("Invalid argument index");
+      masm.bind(&ok);
+    }
+#endif
     Address argPtr(FramePointer, sizeof(Value) * i + argvOffset);
     masm.loadValue(argPtr, result);
   } else {
     Register i = ToRegister(index);
+#ifdef DEBUG
+    Label ok;
+    Register argc = result.scratchReg();
+    masm.branch32(Assembler::Below, i, Imm32(numFormals), &ok);
+    masm.loadNumActualArgs(FramePointer, argc);
+    masm.branch32(Assembler::Above, argc, i, &ok);
+    masm.assumeUnreachable("Invalid argument index");
+    masm.bind(&ok);
+#endif
     BaseValueIndex argPtr(FramePointer, i, argvOffset);
     masm.loadValue(argPtr, result);
   }
@@ -16673,12 +16706,23 @@ void CodeGenerator::visitWasmTrap(LWasmTrap* lir) {
   masm.wasmTrap(mir->trap(), mir->bytecodeOffset());
 }
 
+void CodeGenerator::visitWasmTrapIfNull(LWasmTrapIfNull* lir) {
+  MOZ_ASSERT(gen->compilingWasm());
+  const MWasmTrapIfNull* mir = lir->mir();
+  Label nonNull;
+  Register input = ToRegister(lir->object());
+
+  masm.branchTestPtr(Assembler::NonZero, input, input, &nonNull);
+  masm.wasmTrap(mir->trap(), mir->bytecodeOffset());
+  masm.bind(&nonNull);
+}
+
 void CodeGenerator::visitWasmGcObjectIsSubtypeOf(
     LWasmGcObjectIsSubtypeOf* ins) {
   MOZ_ASSERT(gen->compilingWasm());
   const MWasmGcObjectIsSubtypeOf* mir = ins->mir();
   Register object = ToRegister(ins->object());
-  Register superTypeDef = ToRegister(ins->superTypeDef());
+  Register superSuperTypeVector = ToRegister(ins->superSuperTypeVector());
   Register scratch1 = ToRegister(ins->temp0());
   Register scratch2 = ins->temp1()->isBogusTemp() ? Register::Invalid()
                                                   : ToRegister(ins->temp1());
@@ -16689,9 +16733,11 @@ void CodeGenerator::visitWasmGcObjectIsSubtypeOf(
   masm.branchTestPtr(Assembler::Zero, object, object,
                      mir->succeedOnNull() ? &success : &failed);
   masm.branchTestObjectIsWasmGcObject(false, object, scratch1, &failed);
-  masm.loadPtr(Address(object, WasmGcObject::offsetOfTypeDef()), scratch1);
-  masm.branchWasmTypeDefIsSubtype(scratch1, superTypeDef, scratch2,
-                                  mir->subTypingDepth(), &success, true);
+  masm.loadPtr(Address(object, WasmGcObject::offsetOfSuperTypeVector()),
+               scratch1);
+  masm.branchWasmSuperTypeVectorIsSubtype(scratch1, superSuperTypeVector,
+                                          scratch2, mir->subTypingDepth(),
+                                          &success, true);
   masm.bind(&failed);
   masm.xor32(result, result);
   masm.jump(&join);
@@ -16704,7 +16750,7 @@ void CodeGenerator::visitWasmGcObjectIsSubtypeOfAndBranch(
     LWasmGcObjectIsSubtypeOfAndBranch* ins) {
   MOZ_ASSERT(gen->compilingWasm());
   Register object = ToRegister(ins->object());
-  Register superTypeDef = ToRegister(ins->superTypeDef());
+  Register superSuperTypeVector = ToRegister(ins->superSuperTypeVector());
   Register scratch1 = ToRegister(ins->temp0());
   Register scratch2 = ins->temp1()->isBogusTemp() ? Register::Invalid()
                                                   : ToRegister(ins->temp1());
@@ -16713,9 +16759,11 @@ void CodeGenerator::visitWasmGcObjectIsSubtypeOfAndBranch(
   Label* onNull = ins->succeedOnNull() ? onSuccess : onFail;
   masm.branchTestPtr(Assembler::Zero, object, object, onNull);
   masm.branchTestObjectIsWasmGcObject(false, object, scratch1, onFail);
-  masm.loadPtr(Address(object, WasmGcObject::offsetOfTypeDef()), scratch1);
-  masm.branchWasmTypeDefIsSubtype(scratch1, superTypeDef, scratch2,
-                                  ins->subTypingDepth(), onSuccess, true);
+  masm.loadPtr(Address(object, WasmGcObject::offsetOfSuperTypeVector()),
+               scratch1);
+  masm.branchWasmSuperTypeVectorIsSubtype(scratch1, superSuperTypeVector,
+                                          scratch2, ins->subTypingDepth(),
+                                          onSuccess, true);
   masm.jump(onFail);
 }
 

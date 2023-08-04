@@ -21,7 +21,6 @@
 #include "mozilla/PresShell.h"
 #include "mozilla/StaticPrefs_browser.h"
 #include "mozilla/StaticPrefs_layout.h"
-#include "mozilla/SVGUtils.h"
 #include "mozilla/ToString.h"
 #include "mozilla/UniquePtr.h"
 
@@ -577,7 +576,7 @@ nsresult nsBlockFrame::GetFrameName(nsAString& aResult) const {
 
 void nsBlockFrame::InvalidateFrame(uint32_t aDisplayItemKey,
                                    bool aRebuildDisplayItems) {
-  if (SVGUtils::IsInSVGTextSubtree(this)) {
+  if (IsInSVGTextSubtree()) {
     NS_ASSERTION(GetParent()->IsSVGTextFrame(),
                  "unexpected block frame in SVG text");
     GetParent()->InvalidateFrame();
@@ -589,7 +588,7 @@ void nsBlockFrame::InvalidateFrame(uint32_t aDisplayItemKey,
 void nsBlockFrame::InvalidateFrameWithRect(const nsRect& aRect,
                                            uint32_t aDisplayItemKey,
                                            bool aRebuildDisplayItems) {
-  if (SVGUtils::IsInSVGTextSubtree(this)) {
+  if (IsInSVGTextSubtree()) {
     NS_ASSERTION(GetParent()->IsSVGTextFrame(),
                  "unexpected block frame in SVG text");
     GetParent()->InvalidateFrame();
@@ -2359,8 +2358,7 @@ static inline bool IsAlignedLeft(StyleTextAlign aAlignment,
                                  StyleDirection aDirection,
                                  StyleUnicodeBidi aUnicodeBidi,
                                  nsIFrame* aFrame) {
-  return SVGUtils::IsInSVGTextSubtree(aFrame) ||
-         StyleTextAlign::Left == aAlignment ||
+  return aFrame->IsInSVGTextSubtree() || StyleTextAlign::Left == aAlignment ||
          (((StyleTextAlign::Start == aAlignment &&
             StyleDirection::Ltr == aDirection) ||
            (StyleTextAlign::End == aAlignment &&
@@ -2849,13 +2847,16 @@ void nsBlockFrame::ReflowDirtyLines(BlockReflowState& aState) {
     if (canBreakForPageNames && (!aState.mReflowInput.mFlags.mIsTopOfPage ||
                                  !aState.IsAdjacentWithBStart())) {
       const nsIFrame* const frame = line->mFirstChild;
-      if (const nsIFrame* const prevFrame = frame->GetPrevSibling()) {
-        if (!frame->IsPlaceholderFrame() && !prevFrame->IsPlaceholderFrame()) {
-          nextPageName = frame->GetStartPageValue();
-          if (nextPageName != prevFrame->GetEndPageValue()) {
-            shouldBreakForPageName = true;
-            line->MarkDirty();
-          }
+      if (!frame->IsPlaceholderFrame()) {
+        nextPageName = frame->GetStartPageValue();
+        // Walk back to the last frame that isn't a placeholder.
+        const nsIFrame* prevFrame = frame->GetPrevSibling();
+        while (prevFrame && prevFrame->IsPlaceholderFrame()) {
+          prevFrame = prevFrame->GetPrevSibling();
+        }
+        if (prevFrame && prevFrame->GetEndPageValue() != nextPageName) {
+          shouldBreakForPageName = true;
+          line->MarkDirty();
         }
       }
     }
@@ -5022,7 +5023,6 @@ bool nsBlockFrame::IsLastLine(BlockReflowState& aState, LineIterator aLine) {
     // The next line is empty, try the next one
   }
 
-  // XXX Not sure about this part
   // Try our next-in-flows lines to answer the question
   nsBlockFrame* nextInFlow = (nsBlockFrame*)GetNextInFlow();
   while (nullptr != nextInFlow) {
@@ -5170,7 +5170,7 @@ bool nsBlockFrame::PlaceLine(BlockReflowState& aState,
    * In other words, isLastLine really means isLastLineAndWeCare.
    */
   const bool isLastLine =
-      !SVGUtils::IsInSVGTextSubtree(this) &&
+      !IsInSVGTextSubtree() &&
       styleText->TextAlignForLastLine() != styleText->mTextAlign &&
       (aLineLayout.GetLineEndsInBR() || IsLastLine(aState, aLine));
 
@@ -5762,7 +5762,7 @@ void nsBlockFrame::AppendFrames(ChildListID aListID, nsFrameList&& aFrameList) {
   printf("\n");
 #endif
 
-  if (SVGUtils::IsInSVGTextSubtree(this)) {
+  if (IsInSVGTextSubtree()) {
     MOZ_ASSERT(GetParent()->IsSVGTextFrame(),
                "unexpected block frame in SVG text");
     // Workaround for bug 1399425 in case this bit has been removed from the
@@ -6962,7 +6962,7 @@ void nsBlockFrame::RecoverFloatsFor(nsIFrame* aFrame,
     // accordingly so that we consider relatively positioned frames
     // at their original position.
 
-    LogicalRect rect(aWM, block->GetNormalRect(), aContainerSize);
+    const LogicalRect rect = block->GetLogicalNormalRect(aWM, aContainerSize);
     nscoord lineLeft = rect.LineLeft(aWM, aContainerSize);
     nscoord blockStart = rect.BStart(aWM);
     aFloatManager.Translate(lineLeft, blockStart);
@@ -7168,8 +7168,10 @@ void nsBlockFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
   // hold:
   //    (A) the backplate feature is preffed on
   //    (B) we are not honoring the document colors
+  //    (C) the force color adjust property is set to auto
   if (StaticPrefs::browser_display_permit_backplate() &&
-      PresContext()->ForcingColors() && !IsComboboxControlFrame()) {
+      PresContext()->ForcingColors() && !IsComboboxControlFrame() &&
+      StyleText()->mForcedColorAdjust != StyleForcedColorAdjust::None) {
     backplateColor.emplace(GetBackplateColor(this));
   }
 

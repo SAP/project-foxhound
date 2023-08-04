@@ -1639,7 +1639,7 @@ HttpChannelChild::ConnectParent(uint32_t registrarId) {
   if (browserChild) {
     MOZ_ASSERT(browserChild->WebNavigation());
     if (BrowsingContext* bc = browserChild->GetBrowsingContext()) {
-      mTopBrowsingContextId = bc->Top()->Id();
+      mBrowserId = bc->BrowserId();
     }
   }
 
@@ -2168,7 +2168,7 @@ nsresult HttpChannelChild::ContinueAsyncOpen() {
       }
     }
     if (BrowsingContext* bc = browserChild->GetBrowsingContext()) {
-      mTopBrowsingContextId = bc->Top()->Id();
+      mBrowserId = bc->BrowserId();
     }
   }
   SetTopLevelContentWindowId(contentWindowId);
@@ -2243,11 +2243,11 @@ nsresult HttpChannelChild::ContinueAsyncOpen() {
   openArgs.integrityMetadata() = mIntegrityMetadata;
 
   openArgs.contentWindowId() = contentWindowId;
-  openArgs.topBrowsingContextId() = mTopBrowsingContextId;
+  openArgs.browserId() = mBrowserId;
 
   LOG(("HttpChannelChild::ContinueAsyncOpen this=%p gid=%" PRIu64
-       " top bid=%" PRIx64,
-       this, mChannelId, mTopBrowsingContextId));
+       " browser id=%" PRIx64,
+       this, mChannelId, mBrowserId));
 
   if (browserChild && !browserChild->IPCOpen()) {
     return NS_ERROR_FAILURE;
@@ -2269,6 +2269,17 @@ nsresult HttpChannelChild::ContinueAsyncOpen() {
 
   openArgs.navigationStartTimeStamp() = navigationStartTimeStamp;
   openArgs.earlyHintPreloaderId() = mEarlyHintPreloaderId;
+
+  openArgs.classicScriptHintCharset() = mClassicScriptHintCharset;
+
+  RefPtr<Document> doc;
+  mLoadInfo->GetLoadingDocument(getter_AddRefs(doc));
+
+  if (doc) {
+    nsAutoString documentCharacterSet;
+    doc->GetCharacterSet(documentCharacterSet);
+    openArgs.documentCharacterSet() = documentCharacterSet;
+  }
 
   // This must happen before the constructor message is sent. Otherwise messages
   // from the parent could arrive quickly and be delivered to the wrong event
@@ -2549,7 +2560,7 @@ HttpChannelChild::OpenAlternativeOutputStream(const nsACString& aType,
   stream->AddIPDLReference();
 
   if (!gNeckoChild->SendPAltDataOutputStreamConstructor(
-          stream, nsCString(aType), aPredictedSize, this)) {
+          stream, nsCString(aType), aPredictedSize, WrapNotNull(this))) {
     return NS_ERROR_FAILURE;
   }
 
@@ -3147,6 +3158,11 @@ void HttpChannelChild::MaybeConnectToSocketProcess() {
 
 NS_IMETHODIMP
 HttpChannelChild::SetEarlyHintObserver(nsIEarlyHintObserver* aObserver) {
+  return NS_OK;
+}
+
+NS_IMETHODIMP HttpChannelChild::SetWebTransportSessionEventListener(
+    WebTransportSessionEventListener* aListener) {
   return NS_OK;
 }
 

@@ -12,6 +12,7 @@ const modules = {
 ChromeUtils.defineESModuleGetters(modules.root, {
   browsingContext:
     "chrome://remote/content/webdriver-bidi/modules/root/browsingContext.sys.mjs",
+  input: "chrome://remote/content/webdriver-bidi/modules/root/input.sys.mjs",
   log: "chrome://remote/content/webdriver-bidi/modules/root/log.sys.mjs",
   network:
     "chrome://remote/content/webdriver-bidi/modules/root/network.sys.mjs",
@@ -32,6 +33,8 @@ ChromeUtils.defineESModuleGetters(modules["windowglobal-in-root"], {
 ChromeUtils.defineESModuleGetters(modules.windowglobal, {
   browsingContext:
     "chrome://remote/content/webdriver-bidi/modules/windowglobal/browsingContext.sys.mjs",
+  input:
+    "chrome://remote/content/webdriver-bidi/modules/windowglobal/input.sys.mjs",
   log:
     "chrome://remote/content/webdriver-bidi/modules/windowglobal/log.sys.mjs",
   script:
@@ -42,16 +45,16 @@ ChromeUtils.defineESModuleGetters(modules.windowglobal, {
  * Retrieve the WebDriver BiDi module class matching the provided module name
  * and folder.
  *
- * @param {String} moduleName
+ * @param {string} moduleName
  *     The name of the module to get the class for.
- * @param {String} moduleFolder
+ * @param {string} moduleFolder
  *     A valid folder name for modules.
- * @return {Class=}
+ * @returns {Class=}
  *     The class corresponding to the module name and folder, null if no match
  *     was found.
  * @throws {Error}
  *     If the provided module folder is unexpected.
- **/
+ */
 export const getModuleClass = function(moduleName, moduleFolder) {
   if (!modules[moduleFolder]) {
     throw new Error(

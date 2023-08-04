@@ -10,7 +10,9 @@ const { BuiltInThemes } = ChromeUtils.importESModule(
   "resource:///modules/BuiltInThemes.sys.mjs"
 );
 
-const { sinon } = ChromeUtils.import("resource://testing-common/Sinon.jsm");
+const { sinon } = ChromeUtils.importESModule(
+  "resource://testing-common/Sinon.sys.mjs"
+);
 
 AddonTestUtils.initMochitest(this);
 
@@ -172,12 +174,6 @@ add_task(async function test_update_expired_colorways_builtins() {
 
   info("Open about:addons theme list view");
   let win = await loadInitialView("theme");
-
-  Assert.equal(
-    win.COLORWAY_CLOSET_ENABLED,
-    false,
-    "Expect colorway closet section to be disabled"
-  );
 
   assertAddonCardFound(win, {
     addonId: EXPIRED_COLORWAY_THEME_ID1,

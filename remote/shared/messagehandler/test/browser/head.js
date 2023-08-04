@@ -29,7 +29,7 @@ function createRootMessageHandler(sessionId) {
  *
  * @param {Browser} browser
  *     The browser element where the URL should be loaded.
- * @param {String} url
+ * @param {string} url
  *     The URL to load in the new tab
  */
 async function loadURL(browser, url) {
@@ -42,7 +42,7 @@ async function loadURL(browser, url) {
  * Create a new foreground tab loading the provided url.
  * Returns a promise which will resolve when the page is loaded.
  *
- * @param {String} url
+ * @param {string} url
  *     The URL to load in the new tab
  */
 async function addTab(url) {
@@ -57,7 +57,7 @@ async function addTab(url) {
  * Create inline markup for a simple iframe that can be used with
  * document-builder.sjs. The iframe will be served under the provided domain.
  *
- * @param {String} domain
+ * @param {string} domain
  *     A domain (eg "example.com"), compatible with build/pgo/server-locations.txt
  */
 function createFrame(domain) {
@@ -73,11 +73,11 @@ function createFrameForUri(uri) {
 /**
  * Create a XUL browser element in the provided XUL tab, with the provided type.
  *
- * @param {xul:tab} tab
+ * @param {XULTab} tab
  *     The XUL tab in which the browser element should be inserted.
- * @param {String} type
+ * @param {string} type
  *     The type attribute of the browser element, "chrome" or "content".
- * @return {xul:browser}
+ * @returns {XULBrowser}
  *     The created browser element.
  */
 function createParentBrowserElement(tab, type) {
@@ -129,7 +129,7 @@ const hasPromiseResolved = async function(promise) {
 /**
  * Install a sidebar extension.
  *
- * @return {Object}
+ * @returns {object}
  *     Return value with two properties:
  *     - extension: test wrapper as returned by SpecialPowers.loadExtension.
  *       Make sure to explicitly call extension.unload() before the end of the test.

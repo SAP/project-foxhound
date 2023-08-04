@@ -171,6 +171,13 @@ let Player = {
   deferredResize: null,
 
   /**
+   * Stores the previous events for seek forward/backward to correctly
+   * record the sequence if 3 clicks happen within a 1 second interval
+   */
+  backwardSequence: [],
+  forwardSequence: [],
+
+  /**
    * Initializes the player browser, and sets up the initial state.
    *
    * @param {Number} id
@@ -235,6 +242,9 @@ let Player = {
     });
     this.scrubber.addEventListener("change", event => {
       this.handleScrubbingDone(event);
+    });
+    this.scrubber.addEventListener("pointerdown", event => {
+      this.recordEvent("seek", {});
     });
 
     for (let radio of document.querySelectorAll(
@@ -590,11 +600,35 @@ let Player = {
 
       case "seekBackward": {
         this.actor.sendAsyncMessage("PictureInPicture:SeekBackward");
+        this.recordEvent("backward", {});
+
+        let secondPreviousEvent = this.backwardSequence.at(-2);
+        if (
+          secondPreviousEvent &&
+          event.timeStamp - secondPreviousEvent < 2000
+        ) {
+          this.recordEvent("backward_sequence", {});
+          this.backwardSequence = [];
+        } else {
+          this.backwardSequence.push(event.timeStamp);
+        }
         break;
       }
 
       case "seekForward": {
         this.actor.sendAsyncMessage("PictureInPicture:SeekForward");
+        this.recordEvent("forward", {});
+
+        let secondPreviousEvent = this.forwardSequence.at(-2);
+        if (
+          secondPreviousEvent &&
+          event.timeStamp - secondPreviousEvent < 2000
+        ) {
+          this.recordEvent("forward_sequence", {});
+          this.forwardSequence = [];
+        } else {
+          this.forwardSequence.push(event.timeStamp);
+        }
         break;
       }
 
@@ -611,6 +645,9 @@ let Player = {
 
       case "fullscreen": {
         this.fullscreenModeToggle();
+        this.recordEvent("fullscreen", {
+          enter: (!this.isFullscreen).toString(),
+        });
         break;
       }
     }
@@ -631,9 +668,29 @@ let Player = {
     if (options?.forceHide || settingsPanelVisible) {
       this.settingsPanel.classList.add("hide");
       this.controls.removeAttribute("donthide");
+
+      if (
+        this.controls.getAttribute("keying") ||
+        this.isCurrentHover ||
+        this.controls.getAttribute("showing")
+      ) {
+        return;
+      }
+
+      this.actor.sendAsyncMessage("PictureInPicture:HideVideoControls", {
+        isFullscreen: this.isFullscreen,
+        isVideoControlsShowing: false,
+        playerBottomControlsDOMRect: null,
+      });
     } else {
       this.settingsPanel.classList.remove("hide");
       this.controls.setAttribute("donthide", true);
+      this.actor.sendAsyncMessage("PictureInPicture:ShowVideoControls", {
+        isFullscreen: this.isFullscreen,
+        isVideoControlsShowing: true,
+        playerBottomControlsDOMRect: this.controlsBottom.getBoundingClientRect(),
+        isScrubberShowing: !this.scrubber.hidden,
+      });
     }
   },
 
@@ -641,7 +698,7 @@ let Player = {
     this.actor.sendAsyncMessage("PictureInPicture:Pause", {
       reason: "pip-closed",
     });
-    this.closePipWindow({ reason: "close-button" });
+    this.closePipWindow({ reason: "closeButton" });
   },
 
   fullscreenModeToggle() {
@@ -940,11 +997,12 @@ let Player = {
   },
 
   onMouseLeave() {
-    if (!this.isFullscreen && !this.controls.getAttribute("donthide")) {
+    if (!this.isFullscreen) {
       this.isCurrentHover = false;
       if (
         !this.controls.getAttribute("showing") &&
-        !this.controls.getAttribute("keying")
+        !this.controls.getAttribute("keying") &&
+        !this.controls.getAttribute("donthide")
       ) {
         this.actor.sendAsyncMessage("PictureInPicture:HideVideoControls", {
           isFullscreen: this.isFullscreen,
@@ -997,6 +1055,7 @@ let Player = {
    *  Event context data object
    */
   onResize(event) {
+    this.toggleSubtitlesSettingsPanel({ forceHide: true });
     this.resizeDebouncer.disarm();
     this.resizeDebouncer.arm();
   },
@@ -1149,14 +1208,15 @@ let Player = {
       });
     }
 
-    if (!revealIndefinitely && !this.controls.getAttribute("donthide")) {
+    if (!revealIndefinitely) {
       this.showingTimeout = setTimeout(() => {
         this.controls.removeAttribute("showing");
 
         if (
           !this.isFullscreen &&
           !this.isCurrentHover &&
-          !this.controls.getAttribute("keying")
+          !this.controls.getAttribute("keying") &&
+          !this.controls.getAttribute("donthide")
         ) {
           this.actor.sendAsyncMessage("PictureInPicture:HideVideoControls", {
             isFullscreen: false,

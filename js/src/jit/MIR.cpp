@@ -27,6 +27,7 @@
 #include "jit/MIRGraph.h"
 #include "jit/RangeAnalysis.h"
 #include "jit/VMFunctions.h"
+#include "jit/WarpBuilderShared.h"
 #include "js/Conversions.h"
 #include "js/experimental/JitInfo.h"  // JSJitInfo, JSTypedMethodJitInfo
 #include "js/ScalarType.h"            // js::Scalar::Type
@@ -48,7 +49,6 @@ using JS::ToInt32;
 using mozilla::CheckedInt;
 using mozilla::DebugOnly;
 using mozilla::IsFloat32Representable;
-using mozilla::IsNaN;
 using mozilla::IsPowerOfTwo;
 using mozilla::Maybe;
 using mozilla::NumbersAreIdentical;
@@ -975,7 +975,7 @@ MConstant* MConstant::New(TempAllocator::Fallible alloc, const Value& v) {
 }
 
 MConstant* MConstant::NewFloat32(TempAllocator& alloc, double d) {
-  MOZ_ASSERT(IsNaN(d) || d == double(float(d)));
+  MOZ_ASSERT(std::isnan(d) || d == double(float(d)));
   return new (alloc) MConstant(float(d));
 }
 
@@ -1169,10 +1169,13 @@ HashNumber MConstant::valueHash() const {
   return ConstantValueHash(type(), payload_.asBits);
 }
 
-// We will in theory get some extra collisions here, but dealing with those
-// should be cheaper than doing the skipObjectGuards for the receiver object.
 HashNumber MConstantProto::valueHash() const {
-  return protoObject()->valueHash();
+  HashNumber hash = protoObject()->valueHash();
+  const MDefinition* receiverObject = getReceiverObject();
+  if (receiverObject) {
+    hash = addU32ToHash(hash, receiverObject->id());
+  }
+  return hash;
 }
 
 bool MConstant::congruentTo(const MDefinition* ins) const {
@@ -1328,10 +1331,10 @@ bool MConstant::valueToBoolean(bool* res) const {
       *res = toInt64() != 0;
       return true;
     case MIRType::Double:
-      *res = !mozilla::IsNaN(toDouble()) && toDouble() != 0.0;
+      *res = !std::isnan(toDouble()) && toDouble() != 0.0;
       return true;
     case MIRType::Float32:
-      *res = !mozilla::IsNaN(toFloat32()) && toFloat32() != 0.0f;
+      *res = !std::isnan(toFloat32()) && toFloat32() != 0.0f;
       return true;
     case MIRType::Null:
     case MIRType::Undefined:
@@ -2199,14 +2202,13 @@ bool MPhi::congruentTo(const MDefinition* ins) const {
   return congruentIfOperandsEqual(ins);
 }
 
-bool MPhi::updateForReplacement(MDefinition* def) {
+void MPhi::updateForReplacement(MPhi* other) {
   // This function is called to fix the current Phi flags using it as a
-  // replacement of the other Phi instruction |def|.
+  // replacement of the other Phi instruction |other|.
   //
   // When dealing with usage analysis, any Use will replace all other values,
   // such as Unused and Unknown. Unless both are Unused, the merge would be
   // Unknown.
-  MPhi* other = def->toPhi();
   if (usageAnalysis_ == PhiUsage::Used ||
       other->usageAnalysis_ == PhiUsage::Used) {
     usageAnalysis_ = PhiUsage::Used;
@@ -2221,7 +2223,6 @@ bool MPhi::updateForReplacement(MDefinition* def) {
                usageAnalysis_ == PhiUsage::Unknown);
     MOZ_ASSERT(usageAnalysis_ == other->usageAnalysis_);
   }
-  return true;
 }
 
 /* static */
@@ -3234,17 +3235,6 @@ void MMul::analyzeEdgeCasesBackward() {
   }
 }
 
-bool MMul::updateForReplacement(MDefinition* ins_) {
-  MMul* ins = ins_->toMul();
-  bool negativeZero = canBeNegativeZero() || ins->canBeNegativeZero();
-  setCanBeNegativeZero(negativeZero);
-  // Remove the imul annotation when merging imul and normal multiplication.
-  if (mode_ == Integer && ins->mode() != Integer) {
-    mode_ = Normal;
-  }
-  return true;
-}
-
 bool MMul::canOverflow() const {
   if (isTruncated()) {
     return false;
@@ -3785,7 +3775,7 @@ MDefinition* MWasmTruncateToInt32::foldsTo(TempAllocator& alloc) {
 
   if (input->type() == MIRType::Double && input->isConstant()) {
     double d = input->toConstant()->toDouble();
-    if (IsNaN(d)) {
+    if (std::isnan(d)) {
       return this;
     }
 
@@ -3800,7 +3790,7 @@ MDefinition* MWasmTruncateToInt32::foldsTo(TempAllocator& alloc) {
 
   if (input->type() == MIRType::Float32 && input->isConstant()) {
     double f = double(input->toConstant()->toFloat32());
-    if (IsNaN(f)) {
+    if (std::isnan(f)) {
       return this;
     }
 
@@ -4269,7 +4259,7 @@ bool MCompare::evaluateConstantOperands(TempAllocator& alloc, bool* result) {
     }
 
     // Optimize comparison against NaN.
-    if (mozilla::IsNaN(cte)) {
+    if (std::isnan(cte)) {
       switch (jsop_) {
         case JSOp::Lt:
         case JSOp::Le:
@@ -7028,6 +7018,26 @@ MGetInlinedArgument* MGetInlinedArgument::New(
   ins->initOperand(0, index);
   for (uint32_t i = 0; i < argc; i++) {
     ins->initOperand(i + NumNonArgumentOperands, args->getArg(i));
+  }
+
+  return ins;
+}
+
+MGetInlinedArgument* MGetInlinedArgument::New(TempAllocator& alloc,
+                                              MDefinition* index,
+                                              const CallInfo& callInfo) {
+  MGetInlinedArgument* ins = new (alloc) MGetInlinedArgument();
+
+  uint32_t argc = callInfo.argc();
+  MOZ_ASSERT(argc <= ArgumentsObject::MaxInlinedArgs);
+
+  if (!ins->init(alloc, argc + NumNonArgumentOperands)) {
+    return nullptr;
+  }
+
+  ins->initOperand(0, index);
+  for (uint32_t i = 0; i < argc; i++) {
+    ins->initOperand(i + NumNonArgumentOperands, callInfo.getArg(i));
   }
 
   return ins;

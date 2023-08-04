@@ -133,8 +133,6 @@ inline uintptr_t GetCurrentStackPosition() {
   return reinterpret_cast<uintptr_t>(__builtin_frame_address(0));
 }
 
-using Isolate = internal::Isolate;
-
 namespace base {
 
 // Latin1/UTF-16 constants
@@ -1107,11 +1105,6 @@ class Isolate {
 
   Counters* counters() { return &counters_; }
 
-  enum UseCounterFeature {
-    kRegExpUnicodeSetIncompatibilitiesWithUnicodeMode,
-  };
-  void CountUsage(UseCounterFeature counter) {}
-
   //********** Factory code **********//
   inline Factory* factory() { return this; }
 
@@ -1211,7 +1204,7 @@ class StackLimitCheck {
   // Use this to check for stack-overflow when entering runtime from JS code.
   bool JsHasOverflowed() {
     js::AutoCheckRecursionLimit recursion(cx_);
-    return !recursion.checkConservativeDontReport(cx_);
+    return !recursion.checkDontReport(cx_);
   }
 
  private:

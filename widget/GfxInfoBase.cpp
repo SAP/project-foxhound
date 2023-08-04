@@ -36,6 +36,8 @@
 #include "mozilla/widget/ScreenManager.h"
 #include "mozilla/widget/Screen.h"
 
+#include "jsapi.h"
+
 #include "gfxPlatform.h"
 #include "gfxConfig.h"
 #include "DriverCrashGuard.h"
@@ -1448,9 +1450,9 @@ NS_IMETHODIMP GfxInfoBase::GetFailures(nsTArray<int32_t>& indices,
   LoggingRecord loggedStrings = logForwarder->LoggingRecordCopy();
   LoggingRecord::const_iterator it;
   for (it = loggedStrings.begin(); it != loggedStrings.end(); ++it) {
-    failures.AppendElement(
-        nsDependentCSubstring(Get<1>(*it).c_str(), Get<1>(*it).size()));
-    indices.AppendElement(Get<0>(*it));
+    failures.AppendElement(nsDependentCSubstring(std::get<1>(*it).c_str(),
+                                                 std::get<1>(*it).size()));
+    indices.AppendElement(std::get<0>(*it));
   }
 
   return NS_OK;

@@ -158,6 +158,11 @@ class WorkerScriptLoader : public JS::loader::ScriptLoaderInterface,
   bool mExecutionAborted = false;
   bool mMutedErrorFlag = false;
 
+  // Count of loading module requests. mLoadingRequests doesn't keep track of
+  // child module requests.
+  // This member should be accessed on worker thread.
+  uint32_t mLoadingModuleRequestCount;
+
   // Worker cancellation related Mutex
   //
   // Modified on the worker thread.
@@ -202,6 +207,10 @@ class WorkerScriptLoader : public JS::loader::ScriptLoaderInterface,
 
   bool DispatchLoadScripts();
 
+  void TryShutdown();
+
+  WorkerScriptType GetWorkerScriptType() { return mWorkerScriptType; }
+
  protected:
   nsIURI* GetBaseURI() const override;
 
@@ -242,9 +251,9 @@ class WorkerScriptLoader : public JS::loader::ScriptLoaderInterface,
 
   void InitModuleLoader();
 
-  void TryShutdown();
-
   nsTArray<RefPtr<ThreadSafeRequestHandle>> GetLoadingList();
+
+  bool IsDynamicImport(ScriptLoadRequest* aRequest);
 
   nsContentPolicyType GetContentPolicyType(ScriptLoadRequest* aRequest);
 
@@ -265,6 +274,10 @@ class WorkerScriptLoader : public JS::loader::ScriptLoaderInterface,
   }
 
   void LogExceptionToConsole(JSContext* aCx, WorkerPrivate* aWorkerPrivate);
+
+  bool AllModuleRequestsLoaded() const;
+  void IncreaseLoadingModuleRequestCount();
+  void DecreaseLoadingModuleRequestCount();
 };
 
 /* ScriptLoaderRunnable

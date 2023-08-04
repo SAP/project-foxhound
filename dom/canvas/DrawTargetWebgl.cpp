@@ -515,6 +515,14 @@ void DrawTargetWebgl::SharedContext::SetBlendState(
         mWebgl->Disable(LOCAL_GL_BLEND);
       }
       break;
+    case CompositionOp::OP_CLEAR:
+      // Assume the source is an alpha mask for clearing. Be careful to blend in
+      // the correct alpha if the target is opaque.
+      mWebgl->BlendFuncSeparate(
+          LOCAL_GL_ZERO, LOCAL_GL_ONE_MINUS_SRC_ALPHA,
+          IsOpaque(mCurrentTarget->GetFormat()) ? LOCAL_GL_ONE : LOCAL_GL_ZERO,
+          LOCAL_GL_ONE_MINUS_SRC_ALPHA);
+      break;
     default:
       mWebgl->Disable(LOCAL_GL_BLEND);
       break;
@@ -537,6 +545,18 @@ bool DrawTargetWebgl::SharedContext::SetTarget(DrawTargetWebgl* aDT) {
     }
   }
   return true;
+}
+
+// Replace the current clip rect with a new potentially-AA'd clip rect.
+void DrawTargetWebgl::SharedContext::SetClipRect(const Rect& aClipRect) {
+  // Only invalidate the clip rect if it actually changes.
+  if (!mClipAARect.IsEqualEdges(aClipRect)) {
+    mClipAARect = aClipRect;
+    // Store the integer-aligned bounds.
+    mClipRect = RoundedOut(aClipRect);
+    // Notify the shader uniform it needs to update.
+    mDirtyClip = true;
+  }
 }
 
 bool DrawTargetWebgl::SharedContext::SetClipMask(
@@ -637,6 +657,7 @@ bool DrawTargetWebgl::GenerateComplexClipMask() {
     // If we can't get bounds, then just use the entire viewport.
     mClipBounds = GetRect();
   }
+  mClipAARect = Rect(mClipBounds);
   // If initializing the clip mask, then allocate the entire texture to ensure
   // all pixels get filled with an empty mask regardless. Otherwise, restrict
   // uploading to only the clip region.
@@ -695,18 +716,34 @@ bool DrawTargetWebgl::SetSimpleClipRect() {
   // Determine whether the clipping rectangle is simple enough to accelerate.
   // Check if there is a device space clip rectangle available from the Skia
   // target.
-  Maybe<IntRect> clip = mSkia->GetDeviceClipRect(false);
-  if (!clip) {
-    return false;
+  if (Maybe<IntRect> clip = mSkia->GetDeviceClipRect(false)) {
+    // If the clip is empty, leave the final integer clip rectangle empty to
+    // trivially discard the draw request.
+    // If the clip rect is larger than the viewport, just set it to the
+    // viewport.
+    if (!clip->IsEmpty() && clip->Contains(GetRect())) {
+      clip = Some(GetRect());
+    }
+    mSharedContext->SetClipRect(*clip);
+    mSharedContext->SetNoClipMask();
+    return true;
   }
-  // If the clip is empty, leave the final integer clip rectangle empty to
-  // trivially discard the draw request.
-  // If the clip rect is larger than the viewport, just set it to the
-  // viewport.
-  if (!clip->IsEmpty() && clip->Contains(GetRect())) {
-    clip = Some(GetRect());
+
+  // There was no pixel-aligned clip rect available, so check the clip stack to
+  // see if there is an AA'd axis-aligned rectangle clip.
+  Rect rect(GetRect());
+  for (auto& clipStack : mClipStack) {
+    // If clip is a path or it has a non-axis-aligned transform, then it is
+    // complex.
+    if (clipStack.mPath ||
+        !clipStack.mTransform.PreservesAxisAlignedRectangles()) {
+      return false;
+    }
+    // Transform the rect and intersect it with the current clip.
+    rect =
+        clipStack.mTransform.TransformBounds(clipStack.mRect).Intersect(rect);
   }
-  mSharedContext->SetClipRect(*clip);
+  mSharedContext->SetClipRect(rect);
   mSharedContext->SetNoClipMask();
   return true;
 }
@@ -904,11 +941,11 @@ already_AddRefed<TextureHandle> DrawTargetWebgl::SharedContext::CopySnapshot(
 inline DrawTargetWebgl::AutoRestoreContext::AutoRestoreContext(
     DrawTargetWebgl* aTarget)
     : mTarget(aTarget),
-      mClipRect(aTarget->mSharedContext->mClipRect),
+      mClipAARect(aTarget->mSharedContext->mClipAARect),
       mLastClipMask(aTarget->mSharedContext->mLastClipMask) {}
 
 inline DrawTargetWebgl::AutoRestoreContext::~AutoRestoreContext() {
-  mTarget->mSharedContext->SetClipRect(mClipRect);
+  mTarget->mSharedContext->SetClipRect(mClipAARect);
   if (mLastClipMask) {
     mTarget->mSharedContext->SetClipMask(mLastClipMask);
   }
@@ -1155,7 +1192,7 @@ bool DrawTargetWebgl::SharedContext::CreateShaders() {
         "uniform vec2 u_transform[3];\n"
         "uniform vec2 u_viewport;\n"
         "uniform float u_aa;\n"
-        "varying vec2 v_cliptc;\n"
+        "varying vec4 v_cliptc;\n"
         "varying vec4 v_dist;\n"
         "varying float v_alpha;\n"
         "void main() {\n"
@@ -1169,7 +1206,7 @@ bool DrawTargetWebgl::SharedContext::CreateShaders() {
         "                 u_transform[1] * extrude.y +\n"
         "                 u_transform[2];\n"
         "   gl_Position = vec4(vertex * 2.0 / u_viewport - 1.0, 0.0, 1.0);\n"
-        "   v_cliptc = vertex / u_viewport;\n"
+        "   v_cliptc = vec4(vertex / u_viewport, vertex);\n"
         "   v_dist = vec4(extrude, 1.0 - extrude) * scale.xyxy + 1.5 - u_aa;\n"
         "   v_alpha = a_vertex.z;\n"
         "}\n"_ns;
@@ -1177,12 +1214,16 @@ bool DrawTargetWebgl::SharedContext::CreateShaders() {
         u"precision mediump float;\n"
         "uniform vec4 u_color;\n"
         "uniform sampler2D u_clipmask;\n"
-        "varying vec2 v_cliptc;\n"
+        "uniform vec4 u_clipbounds;\n"
+        "varying vec4 v_cliptc;\n"
         "varying vec4 v_dist;\n"
         "varying float v_alpha;\n"
         "void main() {\n"
-        "   float clip = texture2D(u_clipmask, v_cliptc).r;\n"
-        "   vec2 dist = min(v_dist.xy, v_dist.zw);\n"
+        "   float clip = texture2D(u_clipmask, v_cliptc.xy).r;\n"
+        "   vec4 clipdist = vec4(v_cliptc.zw - u_clipbounds.xy,\n"
+        "                        u_clipbounds.zw - v_cliptc.zw);\n"
+        "   vec4 dist = min(v_dist, clipdist);\n"
+        "   dist.xy = min(dist.xy, dist.zw);\n"
         "   float aa = v_alpha * clamp(min(dist.x, dist.y), 0.0, 1.0);\n"
         "   gl_FragColor = clip * aa * u_color;\n"
         "}\n"_ns;
@@ -1215,8 +1256,11 @@ bool DrawTargetWebgl::SharedContext::CreateShaders() {
         mWebgl->GetUniformLocation(*mSolidProgram, u"u_color"_ns);
     mSolidProgramClipMask =
         mWebgl->GetUniformLocation(*mSolidProgram, u"u_clipmask"_ns);
+    mSolidProgramClipBounds =
+        mWebgl->GetUniformLocation(*mSolidProgram, u"u_clipbounds"_ns);
     if (!mSolidProgramViewport || !mSolidProgramAA || !mSolidProgramTransform ||
-        !mSolidProgramColor || !mSolidProgramClipMask) {
+        !mSolidProgramColor || !mSolidProgramClipMask ||
+        !mSolidProgramClipBounds) {
       return false;
     }
     mWebgl->UseProgram(mSolidProgram);
@@ -1232,7 +1276,7 @@ bool DrawTargetWebgl::SharedContext::CreateShaders() {
         "uniform float u_aa;\n"
         "uniform vec2 u_transform[3];\n"
         "uniform vec2 u_texmatrix[3];\n"
-        "varying vec2 v_cliptc;\n"
+        "varying vec4 v_cliptc;\n"
         "varying vec2 v_texcoord;\n"
         "varying vec4 v_dist;\n"
         "varying float v_alpha;\n"
@@ -1247,7 +1291,7 @@ bool DrawTargetWebgl::SharedContext::CreateShaders() {
         "                 u_transform[1] * extrude.y +\n"
         "                 u_transform[2];\n"
         "   gl_Position = vec4(vertex * 2.0 / u_viewport - 1.0, 0.0, 1.0);\n"
-        "   v_cliptc = vertex / u_viewport;\n"
+        "   v_cliptc = vec4(vertex / u_viewport, vertex);\n"
         "   v_texcoord = u_texmatrix[0] * extrude.x +\n"
         "                u_texmatrix[1] * extrude.y +\n"
         "                u_texmatrix[2];\n"
@@ -1261,15 +1305,19 @@ bool DrawTargetWebgl::SharedContext::CreateShaders() {
         "uniform float u_swizzle;\n"
         "uniform sampler2D u_sampler;\n"
         "uniform sampler2D u_clipmask;\n"
-        "varying vec2 v_cliptc;\n"
+        "uniform vec4 u_clipbounds;\n"
+        "varying vec4 v_cliptc;\n"
         "varying vec2 v_texcoord;\n"
         "varying vec4 v_dist;\n"
         "varying float v_alpha;\n"
         "void main() {\n"
         "   vec2 tc = clamp(v_texcoord, u_texbounds.xy, u_texbounds.zw);\n"
         "   vec4 image = texture2D(u_sampler, tc);\n"
-        "   float clip = texture2D(u_clipmask, v_cliptc).r;\n"
-        "   vec2 dist = min(v_dist.xy, v_dist.zw);\n"
+        "   float clip = texture2D(u_clipmask, v_cliptc.xy).r;\n"
+        "   vec4 clipdist = vec4(v_cliptc.zw - u_clipbounds.xy,\n"
+        "                        u_clipbounds.zw - v_cliptc.zw);\n"
+        "   vec4 dist = min(v_dist, clipdist);\n"
+        "   dist.xy = min(dist.xy, dist.zw);\n"
         "   float aa = v_alpha * clamp(min(dist.x, dist.y), 0.0, 1.0);\n"
         "   gl_FragColor = clip * aa * u_color *\n"
         "                  mix(image, image.rrrr, u_swizzle);\n"
@@ -1311,10 +1359,12 @@ bool DrawTargetWebgl::SharedContext::CreateShaders() {
         mWebgl->GetUniformLocation(*mImageProgram, u"u_sampler"_ns);
     mImageProgramClipMask =
         mWebgl->GetUniformLocation(*mImageProgram, u"u_clipmask"_ns);
+    mImageProgramClipBounds =
+        mWebgl->GetUniformLocation(*mImageProgram, u"u_clipbounds"_ns);
     if (!mImageProgramViewport || !mImageProgramAA || !mImageProgramTransform ||
         !mImageProgramTexMatrix || !mImageProgramTexBounds ||
         !mImageProgramSwizzle || !mImageProgramColor || !mImageProgramSampler ||
-        !mImageProgramClipMask) {
+        !mImageProgramClipMask || !mImageProgramClipBounds) {
       return false;
     }
     mWebgl->UseProgram(mImageProgram);
@@ -1339,19 +1389,15 @@ void DrawTargetWebgl::ClearRect(const Rect& aRect) {
     return;
   }
 
-  // OP_SOURCE may not be bounded by a mask, so we ensure that a clip is pushed
-  // here to avoid a group being pushed for it.
-  PushClipRect(aRect);
   DrawRect(aRect, GetClearPattern(),
-           DrawOptions(1.0f, CompositionOp::OP_SOURCE));
-  PopClip();
+           DrawOptions(1.0f, CompositionOp::OP_CLEAR));
 
   // If the clear rectangle encompasses the entire viewport and is not clipped,
   // then mark the target as entirely clear.
   if (mTransform.PreservesAxisAlignedRectangles() &&
       mTransform.TransformBounds(aRect).Contains(Rect(GetRect())) &&
       mSharedContext->IsCurrentTarget(this) && !mSharedContext->HasClipMask() &&
-      mSharedContext->mClipRect.Contains(GetRect())) {
+      mSharedContext->mClipAARect.Contains(Rect(GetRect()))) {
     mIsClear = true;
   }
 }
@@ -1419,6 +1465,7 @@ void DrawTargetWebgl::CopySurface(SourceSurface* aSurface,
     return;
   }
 
+  IntRect samplingRect;
   if (!mSharedContext->IsCompatibleSurface(aSurface)) {
     // If this data surface completely overwrites the framebuffer, then just
     // copy it to the Skia target.
@@ -1429,20 +1476,18 @@ void DrawTargetWebgl::CopySurface(SourceSurface* aSurface,
       return;
     }
 
-    // If this is a data surface with a matching format, try to upload the data
-    // directly to the backing texture of the framebuffer.
-    if (aSurface->GetFormat() == mFormat && PrepareContext(false) &&
-        MarkChanged()) {
-      if (RefPtr<DataSourceSurface> data = aSurface->GetDataSurface()) {
-        mSharedContext->UploadSurface(data, mFormat, srcRect,
-                                      destRect.TopLeft(), false, false, mTex);
-      }
-      return;
+    // CopySurface usually only samples a surface once, so don't cache the
+    // entire surface as it is unlikely to be reused. Limit it to the used
+    // source rectangle instead.
+    IntRect surfaceRect = aSurface->GetRect();
+    if (!srcRect.IsEqualEdges(surfaceRect)) {
+      samplingRect = srcRect.SafeIntersect(surfaceRect);
     }
   }
 
   Matrix matrix = Matrix::Translation(destRect.TopLeft() - srcRect.TopLeft());
-  SurfacePattern pattern(aSurface, ExtendMode::CLAMP, matrix);
+  SurfacePattern pattern(aSurface, ExtendMode::CLAMP, matrix,
+                         SamplingFilter::POINT, samplingRect);
   DrawRect(Rect(destRect), pattern, DrawOptions(1.0f, CompositionOp::OP_SOURCE),
            Nothing(), nullptr, false, false);
 }
@@ -1513,6 +1558,7 @@ static inline bool SupportsDrawOptions(const DrawOptions& aOptions) {
     case CompositionOp::OP_ADD:
     case CompositionOp::OP_ATOP:
     case CompositionOp::OP_SOURCE:
+    case CompositionOp::OP_CLEAR:
       return true;
     default:
       return false;
@@ -1853,7 +1899,7 @@ bool DrawTargetWebgl::SharedContext::DrawRectAccel(
   if (aOptions.mCompositionOp == CompositionOp::OP_SOURCE && aTransformed &&
       aClipped &&
       (HasClipMask() || !currentTransform.PreservesAxisAlignedRectangles() ||
-       !currentTransform.TransformBounds(aRect).Contains(Rect(mClipRect)) ||
+       !currentTransform.TransformBounds(aRect).Contains(Rect(mClipAARect)) ||
        (aPattern.GetType() == PatternType::SURFACE &&
         !IsAlignedRect(aTransformed, currentTransform, aRect)))) {
     // Clear outside the mask region for masks that are not bounded by clip.
@@ -1867,6 +1913,14 @@ bool DrawTargetWebgl::SharedContext::DrawRectAccel(
                          aMaskColor, aHandle, aTransformed, aClipped,
                          aAccelOnly, aForceUpdate, aStrokeOptions,
                          aVertexRange);
+  }
+  if (aOptions.mCompositionOp == CompositionOp::OP_CLEAR &&
+      aPattern.GetType() == PatternType::SURFACE && !aMaskColor) {
+    // If the surface being drawn with clear is not a mask, then its contents
+    // needs to be ignored. Just use a color pattern instead.
+    return DrawRectAccel(aRect, ColorPattern(DeviceColor(1, 1, 1, 1)), aOptions,
+                         Nothing(), aHandle, aTransformed, aClipped, aAccelOnly,
+                         aForceUpdate, aStrokeOptions, aVertexRange);
   }
 
   // Set up the scissor test to reflect the clipping rectangle, if supplied.
@@ -1891,8 +1945,10 @@ bool DrawTargetWebgl::SharedContext::DrawRectAccel(
           static_cast<const ColorPattern&>(aPattern).mColor, aOptions.mAlpha);
       if (((color.a == 1.0f &&
             aOptions.mCompositionOp == CompositionOp::OP_OVER) ||
-           aOptions.mCompositionOp == CompositionOp::OP_SOURCE) &&
-          !aStrokeOptions && !aVertexRange && !HasClipMask()) {
+           aOptions.mCompositionOp == CompositionOp::OP_SOURCE ||
+           aOptions.mCompositionOp == CompositionOp::OP_CLEAR) &&
+          !aStrokeOptions && !aVertexRange && !HasClipMask() &&
+          mClipAARect.IsEqualEdges(Rect(mClipRect))) {
         // Certain color patterns can be mapped to scissored clears. The
         // composition op must effectively overwrite the destination, and the
         // transform must map to an axis-aligned integer rectangle.
@@ -1905,6 +1961,9 @@ bool DrawTargetWebgl::SharedContext::DrawRectAccel(
             mWebgl->Scissor(scissorRect.x, scissorRect.y, scissorRect.width,
                             scissorRect.height);
           }
+          if (aOptions.mCompositionOp == CompositionOp::OP_CLEAR) {
+            color = PremultiplyColor(mCurrentTarget->GetClearPattern().mColor);
+          }
           mWebgl->ClearColor(color.b, color.g, color.r, color.a);
           mWebgl->Clear(LOCAL_GL_COLOR_BUFFER_BIT);
           success = true;
@@ -1913,11 +1972,13 @@ bool DrawTargetWebgl::SharedContext::DrawRectAccel(
       }
       // Map the composition op to a WebGL blend mode, if possible.
       Maybe<DeviceColor> blendColor;
-      if (aOptions.mCompositionOp == CompositionOp::OP_SOURCE) {
+      if (aOptions.mCompositionOp == CompositionOp::OP_SOURCE ||
+          aOptions.mCompositionOp == CompositionOp::OP_CLEAR) {
         // The source operator can support clipping and AA by emulating it with
         // the over op. Supply the color with blend state, and set the shader
         // color to white, to avoid needing dual-source blending.
         blendColor = Some(color);
+        // Both source and clear operators should output a mask from the shader.
         color = DeviceColor(1, 1, 1, 1);
       }
       SetBlendState(aOptions.mCompositionOp, blendColor);
@@ -1926,9 +1987,10 @@ bool DrawTargetWebgl::SharedContext::DrawRectAccel(
       if (mLastProgram != mSolidProgram) {
         mWebgl->UseProgram(mSolidProgram);
         mLastProgram = mSolidProgram;
-        // Ensure viewport and AA state is current.
+        // Ensure uniform state is current.
         mDirtyViewport = true;
         mDirtyAA = true;
+        mDirtyClip = true;
       }
       if (mDirtyViewport) {
         float viewportData[2] = {float(mViewportSize.width),
@@ -1944,6 +2006,16 @@ bool DrawTargetWebgl::SharedContext::DrawRectAccel(
         mWebgl->UniformData(LOCAL_GL_FLOAT, mSolidProgramAA, false,
                             {(const uint8_t*)&aaData, sizeof(aaData)});
         mDirtyAA = aaData == 0.0f;
+      }
+      if (mDirtyClip) {
+        // Offset the clip AA bounds by 0.5 to ensure AA falls to 0 at pixel
+        // boundary.
+        float clipData[4] = {mClipAARect.x - 0.5f, mClipAARect.y - 0.5f,
+                             mClipAARect.XMost() + 0.5f,
+                             mClipAARect.YMost() + 0.5f};
+        mWebgl->UniformData(LOCAL_GL_FLOAT_VEC4, mSolidProgramClipBounds, false,
+                            {(const uint8_t*)clipData, sizeof(clipData)});
+        mDirtyClip = false;
       }
       float colorData[4] = {color.b, color.g, color.r, color.a};
       Matrix xform(aRect.width, 0.0f, 0.0f, aRect.height, aRect.x, aRect.y);
@@ -2137,9 +2209,10 @@ bool DrawTargetWebgl::SharedContext::DrawRectAccel(
       if (mLastProgram != mImageProgram) {
         mWebgl->UseProgram(mImageProgram);
         mLastProgram = mImageProgram;
-        // Ensure viewport and AA state is current.
+        // Ensure uniform state is current.
         mDirtyViewport = true;
         mDirtyAA = true;
+        mDirtyClip = true;
       }
       if (mDirtyViewport) {
         float viewportData[2] = {float(mViewportSize.width),
@@ -2161,11 +2234,24 @@ bool DrawTargetWebgl::SharedContext::DrawRectAccel(
                             {(const uint8_t*)&aaData, sizeof(aaData)});
         mDirtyAA = aaData == 0.0f;
       }
+      if (mDirtyClip) {
+        // Offset the clip AA bounds by 0.5 to ensure AA falls to 0 at pixel
+        // boundary.
+        float clipData[4] = {mClipAARect.x - 0.5f, mClipAARect.y - 0.5f,
+                             mClipAARect.XMost() + 0.5f,
+                             mClipAARect.YMost() + 0.5f};
+        mWebgl->UniformData(LOCAL_GL_FLOAT_VEC4, mImageProgramClipBounds, false,
+                            {(const uint8_t*)clipData, sizeof(clipData)});
+        mDirtyClip = false;
+      }
       DeviceColor color =
-          PremultiplyColor(aMaskColor && format != SurfaceFormat::A8
-                               ? DeviceColor::Mask(1.0f, aMaskColor->a)
-                               : aMaskColor.valueOr(DeviceColor(1, 1, 1, 1)),
-                           aOptions.mAlpha);
+          mLastCompositionOp == CompositionOp::OP_CLEAR
+              ? DeviceColor(1, 1, 1, 1)
+              : PremultiplyColor(
+                    aMaskColor && format != SurfaceFormat::A8
+                        ? DeviceColor::Mask(1.0f, aMaskColor->a)
+                        : aMaskColor.valueOr(DeviceColor(1, 1, 1, 1)),
+                    aOptions.mAlpha);
       float colorData[4] = {color.b, color.g, color.r, color.a};
       float swizzleData =
           aMaskColor && format == SurfaceFormat::A8 ? 1.0f : 0.0f;
@@ -2709,8 +2795,8 @@ static Maybe<AAStroke::VertexBuffer> GenerateStrokeVertexBuffer(
                                  ToAAStrokeLineCap(aStrokeOptions->mLineCap),
                                  ToAAStrokeLineJoin(aStrokeOptions->mLineJoin),
                                  aStrokeOptions->mMiterLimit};
-  if (style.width <= 0.0f || !IsFinite(style.width) ||
-      style.miter_limit <= 0.0f || !IsFinite(style.miter_limit)) {
+  if (style.width <= 0.0f || !std::isfinite(style.width) ||
+      style.miter_limit <= 0.0f || !std::isfinite(style.miter_limit)) {
     return Nothing();
   }
   AAStroke::Stroker* s = AAStroke::aa_stroke_new(
@@ -2889,9 +2975,11 @@ bool DrawTargetWebgl::SharedContext::DrawPathAccel(
   // mask to render the path, as opposed to baking the pattern into the cached
   // path texture.
   Maybe<DeviceColor> color =
-      aPattern.GetType() == PatternType::COLOR
-          ? Some(static_cast<const ColorPattern&>(aPattern).mColor)
-          : Nothing();
+      aOptions.mCompositionOp == CompositionOp::OP_CLEAR
+          ? Some(DeviceColor(1, 1, 1, 1))
+          : (aPattern.GetType() == PatternType::COLOR
+                 ? Some(static_cast<const ColorPattern&>(aPattern).mColor)
+                 : Nothing());
   // Look for an existing path cache entry, if possible, or otherwise create
   // one. If the draw request is not cacheable, then don't create an entry.
   RefPtr<PathCacheEntry> entry;
@@ -2920,7 +3008,7 @@ bool DrawTargetWebgl::SharedContext::DrawPathAccel(
   // If there is a shadow, it needs to draw with the shadow color rather than
   // the path color.
   Maybe<DeviceColor> shadowColor = color;
-  if (aShadow) {
+  if (aShadow && aOptions.mCompositionOp != CompositionOp::OP_CLEAR) {
     shadowColor = Some(aShadow->mColor);
     if (color) {
       shadowColor->a *= color->a;
@@ -3048,8 +3136,12 @@ bool DrawTargetWebgl::SharedContext::DrawPathAccel(
           entry->SetVertexRange(vertexRange);
         }
         // printf_stderr("      ... offset %d\n", mPathVertexOffset);
+        // Normal glBufferSubData interleaved with draw calls causes performance
+        // issues on Mali, so use our special unsynchronized version. This is
+        // safe as we never update regions referenced by pending draw calls.
         mWebgl->RawBufferSubData(LOCAL_GL_ARRAY_BUFFER, mPathVertexOffset,
-                                 vbData, vertexBytes);
+                                 vbData, vertexBytes,
+                                 /* unsynchronized */ true);
         mPathVertexOffset += vertexBytes;
         if (wgrVB) {
           WGR::wgr_vertex_buffer_release(wgrVB.ref());
@@ -3721,7 +3813,8 @@ bool DrawTargetWebgl::SharedContext::DrawGlyphsAccel(
   // masks, we need to know that the rasterized result actually represents a
   // subpixel mask rather than try to interpret it as a normal RGBA result such
   // as for color emoji.
-  bool useBitmaps = !aStrokeOptions && aFont->MayUseBitmaps();
+  bool useBitmaps = !aStrokeOptions && aFont->MayUseBitmaps() &&
+                    aOptions.mCompositionOp != CompositionOp::OP_CLEAR;
 
   // Look for an existing glyph cache on the font. If not there, create it.
   GlyphCache* cache =
@@ -3732,7 +3825,9 @@ bool DrawTargetWebgl::SharedContext::DrawGlyphsAccel(
     mGlyphCaches.insertFront(cache);
   }
   // Hash the incoming text run and looking for a matching entry.
-  DeviceColor color = static_cast<const ColorPattern&>(aPattern).mColor;
+  DeviceColor color = aOptions.mCompositionOp == CompositionOp::OP_CLEAR
+                          ? DeviceColor(1, 1, 1, 1)
+                          : static_cast<const ColorPattern&>(aPattern).mColor;
 #ifdef XP_MACOSX
   // On macOS, depending on whether the text is classified as light-on-dark or
   // dark-on-light, we may end up with different amounts of dilation applied, so

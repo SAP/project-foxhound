@@ -992,9 +992,13 @@ inline const StyleImage& StyleImage::FinalImage() const {
   if (!IsImageSet()) {
     return *this;
   }
-  auto& set = AsImageSet();
-  auto& selectedItem = set->items.AsSpan()[set->selected_index];
-  return selectedItem.image.FinalImage();
+  auto& set = *AsImageSet();
+  auto items = set.items.AsSpan();
+  if (MOZ_LIKELY(set.selected_index < items.Length())) {
+    return items[set.selected_index].image.FinalImage();
+  }
+  static auto sNone = StyleImage::None();
+  return sNone;
 }
 
 template <>
@@ -1120,8 +1124,8 @@ inline LengthPercentageOrAuto LengthPercentageOrAuto::Zero() {
 
 template <>
 inline StyleViewTimelineInset::StyleGenericViewTimelineInset()
-    : start(LengthPercentageOrAuto::Zero()),
-      end(LengthPercentageOrAuto::Zero()) {}
+    : start(LengthPercentageOrAuto::Auto()),
+      end(LengthPercentageOrAuto::Auto()) {}
 
 }  // namespace mozilla
 

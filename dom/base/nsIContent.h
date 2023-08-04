@@ -137,12 +137,6 @@ class nsIContent : public nsINode {
   };
 
   /**
-   * Return the flattened tree children of the node, depending on the filter, as
-   * well as native anonymous children.
-   */
-  virtual already_AddRefed<nsINodeList> GetChildren(uint32_t aFilter) = 0;
-
-  /**
    * Makes this content anonymous
    * @see nsIAnonymousContentCreator
    */
@@ -298,7 +292,8 @@ class nsIContent : public nsINode {
   virtual bool IsFocusableInternal(int32_t* aTabIndex, bool aWithMouse);
 
   // https://html.spec.whatwg.org/multipage/interaction.html#focus-delegate
-  mozilla::dom::Element* GetFocusDelegate(bool aWithMouse) const;
+  mozilla::dom::Element* GetFocusDelegate(bool aWithMouse,
+                                          bool aAutofocusOnly = false) const;
 
   /*
    * Get desired IME state for the content.

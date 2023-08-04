@@ -34,6 +34,7 @@
   MACRO_(apply, apply, "apply")                                                \
   MACRO_(approximatelySign, approximatelySign, "approximatelySign")            \
   MACRO_(arguments, arguments, "arguments")                                    \
+  MACRO_(ArgumentsLength, ArgumentsLength, "ArgumentsLength")                  \
   MACRO_(ArrayBufferSpecies, ArrayBufferSpecies, "$ArrayBufferSpecies")        \
   MACRO_(ArrayIterator, ArrayIterator, "Array Iterator")                       \
   MACRO_(ArrayIteratorNext, ArrayIteratorNext, "ArrayIteratorNext")            \
@@ -211,7 +212,9 @@
   MACRO_(GeneratorReturn, GeneratorReturn, "GeneratorReturn")                  \
   MACRO_(GeneratorThrow, GeneratorThrow, "GeneratorThrow")                     \
   MACRO_(get, get, "get")                                                      \
+  IF_DECORATORS(MACRO_(getter, getter, "getter"))                              \
   MACRO_(GetAggregateError, GetAggregateError, "GetAggregateError")            \
+  MACRO_(GetArgument, GetArgument, "GetArgument")                              \
   MACRO_(getBigInt64, getBigInt64, "getBigInt64")                              \
   MACRO_(getBigUint64, getBigUint64, "getBigUint64")                           \
   MACRO_(GetBuiltinConstructor, GetBuiltinConstructor,                         \
@@ -446,6 +449,7 @@
   MACRO_(selfHosted, selfHosted, "self-hosted")                                \
   MACRO_(sensitivity, sensitivity, "sensitivity")                              \
   MACRO_(set, set, "set")                                                      \
+  IF_DECORATORS(MACRO_(setter, setter, "setter"))                              \
   MACRO_(setBigInt64, setBigInt64, "setBigInt64")                              \
   MACRO_(setBigUint64, setBigUint64, "setBigUint64")                           \
   MACRO_(SetCanonicalName, SetCanonicalName, "SetCanonicalName")               \

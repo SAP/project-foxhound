@@ -203,7 +203,7 @@ function getChannelPriority(channel) {
 
 /**
  * Get the channel HTTP version as an uppercase string starting with "HTTP/"
- * (eg "HTTP/2.0").
+ * (eg "HTTP/2").
  *
  * @param {nsIChannel} channel
  * @returns {string}
@@ -214,9 +214,58 @@ function getHttpVersion(channel) {
   const httpVersionMin = {};
 
   channel.QueryInterface(Ci.nsIHttpChannelInternal);
-  channel.getRequestVersion(httpVersionMaj, httpVersionMin);
+  channel.getResponseVersion(httpVersionMaj, httpVersionMin);
+
+  // The official name HTTP version 2.0 and 3.0 are HTTP/2 and HTTP/3, omit the
+  // trailing `.0`.
+  if (httpVersionMin.value == 0) {
+    return "HTTP/" + httpVersionMaj.value;
+  }
 
   return "HTTP/" + httpVersionMaj.value + "." + httpVersionMin.value;
+}
+
+const UNKNOWN_PROTOCOL_STRINGS = ["", "unknown"];
+const HTTP_PROTOCOL_STRINGS = ["http", "https"];
+/**
+ * Get the protocol for the provided httpActivity. Either the ALPN negotiated
+ * protocol or as a fallback a protocol computed from the scheme and the
+ * response status.
+ *
+ * TODO: The `protocol` is similar to another response property called
+ * `httpVersion`. `httpVersion` is uppercase and purely computed from the
+ * response status, whereas `protocol` uses nsIHttpChannel.protocolVersion by
+ * default and otherwise falls back on `httpVersion`. Ideally we should merge
+ * the two properties.
+ *
+ * @param {Object} httpActivity
+ *     The httpActivity object for which we need to get the protocol.
+ *
+ * @returns {string}
+ *     The protocol as a string.
+ */
+function getProtocol(channel) {
+  let protocol = "";
+  try {
+    const httpChannel = channel.QueryInterface(Ci.nsIHttpChannel);
+    // protocolVersion corresponds to ALPN negotiated protocol.
+    protocol = httpChannel.protocolVersion;
+  } catch (e) {
+    // Ignore errors reading protocolVersion.
+  }
+
+  if (UNKNOWN_PROTOCOL_STRINGS.includes(protocol)) {
+    protocol = channel.URI.scheme;
+    const httpVersion = getHttpVersion(channel);
+    if (
+      typeof httpVersion == "string" &&
+      HTTP_PROTOCOL_STRINGS.includes(protocol)
+    ) {
+      protocol = httpVersion.toLowerCase();
+    }
+  }
+
+  return protocol;
 }
 
 /**
@@ -241,6 +290,47 @@ function getReferrerPolicy(channel) {
 function isChannelPrivate(channel) {
   channel.QueryInterface(Ci.nsIPrivateBrowsingChannel);
   return channel.isChannelPrivate;
+}
+
+/**
+ * Check if the channel data is loaded from the cache or not.
+ *
+ * @param {nsIChannel} channel
+ *     The channel for which we need to check the cache status.
+ *
+ * @returns {boolean}
+ *     True if the channel data is loaded from the cache, false otherwise.
+ */
+function isFromCache(channel) {
+  if (channel instanceof Ci.nsICacheInfoChannel) {
+    return channel.isFromCache();
+  }
+
+  return false;
+}
+
+const REDIRECT_STATES = [
+  301, // HTTP Moved Permanently
+  302, // HTTP Found
+  303, // HTTP See Other
+  307, // HTTP Temporary Redirect
+];
+/**
+ * Check if the channel's status corresponds to a known redirect status.
+ *
+ * @param {nsIChannel} channel
+ *     The channel for which we need to check the redirect status.
+ *
+ * @returns {boolean}
+ *     True if the channel data is a redirect, false otherwise.
+ */
+function isRedirectedChannel(channel) {
+  try {
+    return REDIRECT_STATES.includes(channel.responseStatus);
+  } catch (e) {
+    // Throws NS_ERROR_NOT_AVAILABLE if the request was not sent yet.
+  }
+  return false;
 }
 
 /**
@@ -297,10 +387,7 @@ function getWebSocketChannel(channel) {
 }
 
 /**
- * For a given channel, with its associated http activity object,
- * fetch the request's headers and cookies.
- * This data is passed to the owner, i.e. the NetworkEventActor,
- * so that the frontend can later fetch it via getRequestHeaders/getRequestCookies.
+ * For a given channel, fetch the request's headers and cookies.
  *
  * @param {nsIChannel} channel
  * @return {Object}
@@ -330,6 +417,38 @@ function fetchRequestHeadersAndCookies(channel) {
   }
 
   return { cookies, headers };
+}
+
+/**
+ * For a given channel, fetch the response's headers and cookies.
+ *
+ * @param {nsIChannel} channel
+ * @return {Object}
+ *     An object with two properties:
+ *     @property {Array<Object>} cookies
+ *         Array of { name, value } objects.
+ *     @property {Array<Object>} headers
+ *         Array of { name, value } objects.
+ */
+function fetchResponseHeadersAndCookies(channel) {
+  // Read response headers and cookies.
+  const headers = [];
+  const setCookieHeaders = [];
+
+  const SET_COOKIE_REGEXP = /set-cookie/i;
+  channel.visitOriginalResponseHeaders({
+    visitHeader(name, value) {
+      if (SET_COOKIE_REGEXP.test(name)) {
+        setCookieHeaders.push(value);
+      }
+      headers.push({ name, value });
+    },
+  });
+
+  return {
+    cookies: lazy.NetworkHelper.parseSetCookieHeaders(setCookieHeaders),
+    headers,
+  };
 }
 
 /**
@@ -529,17 +648,21 @@ function getBlockedReason(channel) {
 export const NetworkUtils = {
   causeTypeToString,
   fetchRequestHeadersAndCookies,
+  fetchResponseHeadersAndCookies,
   getCauseDetails,
   getChannelBrowsingContextID,
   getChannelInnerWindowId,
   getChannelPriority,
   getHttpVersion,
+  getProtocol,
   getReferrerPolicy,
   getWebSocketChannel,
   isChannelFromSystemPrincipal,
   isChannelPrivate,
+  isFromCache,
   isNavigationRequest,
   isPreloadRequest,
+  isRedirectedChannel,
   isThirdPartyTrackingResource,
   matchRequest,
   stringToCauseType,

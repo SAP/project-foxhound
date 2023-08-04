@@ -38,6 +38,7 @@
 #include "mozilla/SpinEventLoopUntil.h"
 #include "mozilla/StaticMutex.h"
 #include "mozilla/StaticPrefsAll.h"
+#include "mozilla/StaticPtr.h"
 #include "mozilla/SyncRunnable.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/TelemetryEventEnums.h"
@@ -463,7 +464,7 @@ static float ParsePrefFloat(const nsCString& aString, nsresult* aError) {
   // Defensively avoid potential breakage caused by returning NaN into
   // unsuspecting code. AFAIK this should never happen as PR_strtod cannot
   // return NaN as currently configured.
-  if (mozilla::IsNaN(result)) {
+  if (std::isnan(result)) {
     MOZ_ASSERT_UNREACHABLE("PR_strtod shouldn't return NaN");
     *aError = NS_ERROR_ILLEGAL_VALUE;
     return 0.f;
@@ -1468,7 +1469,7 @@ struct CompareStr {
   }
 };
 typedef std::map<const char*, AntiFootgunCallback, CompareStr> AntiFootgunMap;
-static AntiFootgunMap* gOnceStaticPrefsAntiFootgun;
+static StaticAutoPtr<AntiFootgunMap> gOnceStaticPrefsAntiFootgun;
 #endif
 
 // The callback list contains all the priority callbacks followed by the
@@ -1482,7 +1483,7 @@ static CallbackNode* gLastPriorityNode = nullptr;
 
 #ifdef ACCESS_COUNTS
 using AccessCountsHashTable = nsTHashMap<nsCStringHashKey, uint32_t>;
-static AccessCountsHashTable* gAccessCounts = nullptr;
+static StaticAutoPtr<AccessCountsHashTable> gAccessCounts;
 
 static void AddAccessCount(const nsACString& aPrefName) {
   // FIXME: Servo reads preferences from background threads in unsafe ways (bug
@@ -3553,7 +3554,7 @@ class AddPreferencesMemoryReporterRunnable : public Runnable {
 }  // namespace
 
 // A list of changed prefs sent from the parent via shared memory.
-static nsTArray<dom::Pref>* gChangedDomPrefs;
+static StaticAutoPtr<nsTArray<dom::Pref>> gChangedDomPrefs;
 
 static const char kTelemetryPref[] = "toolkit.telemetry.enabled";
 static const char kChannelPref[] = "app.update.channel";
@@ -3686,7 +3687,6 @@ already_AddRefed<Preferences> Preferences::GetInstanceForService() {
     for (unsigned int i = 0; i < gChangedDomPrefs->Length(); i++) {
       Preferences::SetPreference(gChangedDomPrefs->ElementAt(i));
     }
-    delete gChangedDomPrefs;
     gChangedDomPrefs = nullptr;
 
 #ifndef MOZ_WIDGET_ANDROID
@@ -3793,12 +3793,11 @@ Preferences::~Preferences() {
   HashTable() = nullptr;
 
 #ifdef DEBUG
-  delete gOnceStaticPrefsAntiFootgun;
   gOnceStaticPrefsAntiFootgun = nullptr;
 #endif
 
 #ifdef ACCESS_COUNTS
-  delete gAccessCounts;
+  gAccessCounts = nullptr;
 #endif
 
   gSharedMap = nullptr;
@@ -6125,7 +6124,6 @@ static const PrefListEntry sDynamicPrefOverrideList[]{
     PREF_LIST_ENTRY("intl.date_time.pattern_override."),
     PREF_LIST_ENTRY("intl.hyphenation-alias."),
     PREF_LIST_ENTRY("logging.config.LOG_FILE"),
-    PREF_LIST_ENTRY("marionette.log.level"),
     PREF_LIST_ENTRY("media.audio_loopback_dev"),
     PREF_LIST_ENTRY("media.decoder-doctor."),
     PREF_LIST_ENTRY("media.cubeb.output_device"),
@@ -6145,6 +6143,7 @@ static const PrefListEntry sDynamicPrefOverrideList[]{
     PREF_LIST_ENTRY("print.printer_"),
     PREF_LIST_ENTRY("print_printer"),
     PREF_LIST_ENTRY("places.interactions.customBlocklist"),
+    PREF_LIST_ENTRY("remote.log.level"),
     PREF_LIST_ENTRY(
         "services.settings.preview_enabled"),  // This is really a boolean
                                                // dynamic pref, but one Nightly

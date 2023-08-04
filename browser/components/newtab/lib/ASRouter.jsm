@@ -14,7 +14,12 @@ const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   Downloader: "resource://services-settings/Attachments.sys.mjs",
+  ExperimentAPI: "resource://nimbus/ExperimentAPI.sys.mjs",
   MacAttribution: "resource:///modules/MacAttribution.sys.mjs",
+  NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
+  SpecialMessageActions:
+    "resource://messaging-system/lib/SpecialMessageActions.sys.mjs",
+  TargetingContext: "resource://messaging-system/targeting/Targeting.sys.mjs",
 });
 
 XPCOMUtils.defineLazyModuleGetters(lazy, {
@@ -35,12 +40,7 @@ XPCOMUtils.defineLazyModuleGetters(lazy, {
     "resource://activity-stream/lib/ASRouterTriggerListeners.jsm",
   KintoHttpClient: "resource://services-common/kinto-http-client.js",
   RemoteL10n: "resource://activity-stream/lib/RemoteL10n.jsm",
-  ExperimentAPI: "resource://nimbus/ExperimentAPI.jsm",
   setTimeout: "resource://gre/modules/Timer.jsm",
-  NimbusFeatures: "resource://nimbus/ExperimentAPI.jsm",
-  SpecialMessageActions:
-    "resource://messaging-system/lib/SpecialMessageActions.jsm",
-  TargetingContext: "resource://messaging-system/targeting/Targeting.jsm",
   Utils: "resource://services-settings/Utils.jsm",
 });
 XPCOMUtils.defineLazyServiceGetters(lazy, {
@@ -1146,21 +1146,27 @@ class _ASRouter {
   async getTargetingParameters(environment, localContext) {
     // Resolve objects that may contain promises.
     async function resolve(object) {
-      const target = {};
-
-      for (const param of Object.keys(object)) {
-        target[param] = await object[param];
-
-        if (
-          typeof target[param] === "object" &&
-          target[param] !== null &&
-          !(target[param] instanceof Date)
-        ) {
-          target[param] = await resolve(target[param]);
+      if (typeof object === "object" && object !== null) {
+        if (Array.isArray(object)) {
+          return Promise.all(object.map(async item => resolve(await item)));
         }
+
+        if (object instanceof Date) {
+          return object;
+        }
+
+        const target = {};
+        const promises = Object.entries(object).map(async ([key, value]) => [
+          key,
+          await resolve(await value),
+        ]);
+        for (const [key, value] of await Promise.all(promises)) {
+          target[key] = value;
+        }
+        return target;
       }
 
-      return target;
+      return object;
     }
 
     const targetingParameters = {

@@ -12,6 +12,7 @@ const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   BookmarkHTMLUtils: "resource://gre/modules/BookmarkHTMLUtils.sys.mjs",
+  FirefoxProfileMigrator: "resource:///modules/FirefoxProfileMigrator.sys.mjs",
   MigrationUtils: "resource:///modules/MigrationUtils.sys.mjs",
   PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
   PromiseUtils: "resource://gre/modules/PromiseUtils.sys.mjs",
@@ -197,6 +198,40 @@ export class MigratorBase {
   }
 
   /**
+   * Subclasses should implement this if special checks need to be made to determine
+   * if certain permissions need to be requested before data can be imported.
+   * The returned Promise resolves to true if the required permissions have
+   * been granted and a migration could proceed.
+   *
+   * @returns {Promise<boolean>}
+   */
+  async hasPermissions() {
+    return Promise.resolve(true);
+  }
+
+  /**
+   * Subclasses should implement this if special permissions need to be
+   * requested from the user or the operating system in order to perform
+   * a migration with this MigratorBase. This will be called only if
+   * hasPermissions resolves to false.
+   *
+   * The returned Promise will resolve to true if permissions were successfully
+   * obtained, and false otherwise. Implementors should ensure that if a call
+   * to getPermissions resolves to true, that the MigratorBase will be able to
+   * get read access to all of the resources it needs to do a migration.
+   *
+   * @param {DOMWindow} win
+   *   The top-level DOM window hosting the UI that is requesting the permission.
+   *   This can be used to, for example, anchor a file picker window to the
+   *   same window that is hosting the migration UI.
+   * @returns {Promise<boolean>}
+   */
+  // eslint-disable-next-line no-unused-vars
+  async getPermissions(win) {
+    return Promise.resolve(true);
+  }
+
+  /**
    * This method returns a number that is the bitwise OR of all resource
    * types that are available in aProfile. See MigrationUtils.resourceTypes
    * for each resource type.
@@ -325,6 +360,37 @@ export class MigratorBase {
       }
     };
 
+    let collectMigrationTelemetry = resourceType => {
+      // We don't want to collect this if the migration is occurring due to a
+      // profile refresh.
+      if (this.constructor.key == lazy.FirefoxProfileMigrator.key) {
+        return;
+      }
+
+      let prefKey = null;
+      switch (resourceType) {
+        case lazy.MigrationUtils.resourceTypes.BOOKMARKS: {
+          prefKey = "browser.migrate.interactions.bookmarks";
+          break;
+        }
+        case lazy.MigrationUtils.resourceTypes.HISTORY: {
+          prefKey = "browser.migrate.interactions.history";
+          break;
+        }
+        case lazy.MigrationUtils.resourceTypes.PASSWORDS: {
+          prefKey = "browser.migrate.interactions.passwords";
+          break;
+        }
+        default: {
+          return;
+        }
+      }
+
+      if (prefKey) {
+        Services.prefs.setBoolPref(prefKey, true);
+      }
+    };
+
     // Called either directly or through the bookmarks import callback.
     let doMigrate = async function() {
       let resourcesGroupedByItems = new Map();
@@ -372,6 +438,7 @@ export class MigratorBase {
                   : "Migration:ItemError",
                 migrationType
               );
+              collectMigrationTelemetry(migrationType);
 
               aProgressCallback(migrationType);
 
@@ -391,6 +458,7 @@ export class MigratorBase {
 
               if (resourcesGroupedByItems.size == 0) {
                 collectQuantityTelemetry();
+
                 notify("Migration:Ended");
               }
             }

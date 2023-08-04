@@ -3,7 +3,6 @@
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
 import { createSelector } from "reselect";
-import { shallowEqual } from "../utils/shallow-equal";
 
 import {
   getPrettySourceURL,
@@ -27,11 +26,11 @@ import {
 import { getSourceTextContent } from "./sources-content";
 
 export function hasSource(state, id) {
-  return state.sources.sources.has(id);
+  return state.sources.mutableSources.has(id);
 }
 
 export function getSource(state, id) {
-  return state.sources.sources.get(id);
+  return state.sources.mutableSources.get(id);
 }
 
 export function getSourceFromId(state, id) {
@@ -40,10 +39,6 @@ export function getSourceFromId(state, id) {
     console.warn(`source ${id} does not exist`);
   }
   return source;
-}
-
-export function getLocationSource(state, location) {
-  return getSource(state, location.sourceId);
 }
 
 export function getSourceByActorId(state, actorId) {
@@ -113,26 +108,18 @@ export function getPrettySource(state, id) {
   return getOriginalSourceByURL(state, getPrettySourceURL(source.url));
 }
 
-// This is only used externaly by tabs and breakpointSources selectors
-export function getSourcesMap(state) {
-  return state.sources.sources;
-}
-
 function getUrls(state) {
   return state.sources.urls;
 }
 
-export const getSourceList = createSelector(
-  getSourcesMap,
-  sourcesMap => {
-    return [...sourcesMap.values()];
-  },
-  { equalityCheck: shallowEqual, resultEqualityCheck: shallowEqual }
-);
+// This is only used by Project Search and tests.
+export function getSourceList(state) {
+  return [...state.sources.mutableSources.values()];
+}
 
-// This is only used by tests
+// This is only used by tests and create.js
 export function getSourceCount(state) {
-  return getSourcesMap(state).size;
+  return state.sources.mutableSources.size;
 }
 
 export function getSelectedLocation(state) {
@@ -141,13 +128,12 @@ export function getSelectedLocation(state) {
 
 export const getSelectedSource = createSelector(
   getSelectedLocation,
-  getSourcesMap,
-  (selectedLocation, sourcesMap) => {
+  selectedLocation => {
     if (!selectedLocation) {
       return undefined;
     }
 
-    return sourcesMap.get(selectedLocation.sourceId);
+    return selectedLocation.source;
   }
 );
 
@@ -234,7 +220,10 @@ export function canPrettyPrintSource(state, location) {
   const content = getSourceTextContent(state, location);
   const sourceContent = content && isFulfilled(content) ? content.value : null;
 
-  if (!sourceContent || !isJavaScript(source, sourceContent)) {
+  if (
+    !sourceContent ||
+    (!isJavaScript(source, sourceContent) && !source.isHTML)
+  ) {
     return false;
   }
 
@@ -242,7 +231,7 @@ export function canPrettyPrintSource(state, location) {
 }
 
 export function getPrettyPrintMessage(state, location) {
-  const source = getSource(state, location.sourceId);
+  const source = location.source;
   if (!source) {
     return L10N.getStr("sourceTabs.prettyPrint");
   }
@@ -266,7 +255,7 @@ export function getPrettyPrintMessage(state, location) {
     return L10N.getStr("sourceFooter.prettyPrint.noContentMessage");
   }
 
-  if (!isJavaScript(source, sourceContent)) {
+  if (!isJavaScript(source, sourceContent) && !source.isHTML) {
     return L10N.getStr("sourceFooter.prettyPrint.isNotJavascriptMessage");
   }
 
@@ -333,3 +322,16 @@ export const getSelectedBreakableLines = createSelector(
   },
   breakableLines => new Set(breakableLines || [])
 );
+
+export function isSourceOverridden(state, source) {
+  if (!source || !source.url) {
+    return false;
+  }
+  return state.sources.mutableOverrideSources.has(source.url);
+}
+
+// @backward-compat { version 114 } Checks if the server supports override
+// Remove this selector completely.
+export function getOverridesSupport(state) {
+  return state.sources.isOverridesSupported;
+}

@@ -988,18 +988,6 @@ void nsBaseWidget::CreateCompositor() {
   CreateCompositor(rect.Width(), rect.Height());
 }
 
-void nsIWidget::PauseOrResumeCompositor(bool aPause) {
-  auto* renderer = GetRemoteRenderer();
-  if (!renderer) {
-    return;
-  }
-  if (aPause) {
-    renderer->SendPause();
-  } else {
-    renderer->SendResume();
-  }
-}
-
 already_AddRefed<GeckoContentController>
 nsBaseWidget::CreateRootContentController() {
   RefPtr<GeckoContentController> controller =
@@ -2317,7 +2305,8 @@ WidgetWheelEvent nsBaseWidget::MayStartSwipeForAPZ(
         // the swipe now.
         TrackScrollEventAsSwipe(aPanInput, swipeInfo.allowedDirections,
                                 aApzResult.mInputBlockId);
-      } else {
+      } else if (!aApzResult.GetHandledResult() ||
+                 !aApzResult.GetHandledResult()->IsHandledByRoot()) {
         // We don't know whether this event can start a swipe, so we need
         // to queue up events and wait for a call to ReportSwipeStarted.
         // APZ might already have started scrolling in response to the

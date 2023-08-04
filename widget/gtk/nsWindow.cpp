@@ -809,6 +809,12 @@ void nsWindow::SetModal(bool aModal) {
 // nsIWidget method, which means IsShown.
 bool nsWindow::IsVisible() const { return mIsShown; }
 
+bool nsWindow::IsMapped() const {
+  // TODO: Enable for X11 when Mozilla testsuite is moved to new
+  // testing environment from Ubuntu 18.04 which is broken.
+  return GdkIsWaylandDisplay() ? mIsMapped : true;
+}
+
 void nsWindow::RegisterTouchWindow() {
   mHandleTouchEvent = true;
   mTouches.Clear();
@@ -2400,13 +2406,15 @@ nsWindow::WaylandPopupGetPositionFromLayout() {
 
   const bool isTopContextMenu = mPopupContextMenu && !mPopupAnchored;
   const bool isRTL = IsPopupDirectionRTL();
-  int8_t popupAlign(popupFrame->GetPopupAlignment());
-  int8_t anchorAlign(popupFrame->GetPopupAnchor());
-  if (isTopContextMenu) {
-    anchorAlign = POPUPALIGNMENT_BOTTOMRIGHT;
-    popupAlign = POPUPALIGNMENT_TOPLEFT;
+  const bool anchored = popupFrame->IsAnchored();
+  int8_t popupAlign = POPUPALIGNMENT_TOPLEFT;
+  int8_t anchorAlign = POPUPALIGNMENT_BOTTOMRIGHT;
+  if (anchored) {
+    // See nsMenuPopupFrame::AdjustPositionForAnchorAlign.
+    popupAlign = popupFrame->GetPopupAlignment();
+    anchorAlign = popupFrame->GetPopupAnchor();
   }
-  if (isRTL) {
+  if (isRTL && (anchored || isTopContextMenu)) {
     popupAlign = -popupAlign;
     anchorAlign = -anchorAlign;
   }
@@ -3377,17 +3385,6 @@ void* nsWindow::GetNativeData(uint32_t aDataType) {
       return mGdkWindow;
     }
 
-    case NS_NATIVE_DISPLAY: {
-#ifdef MOZ_X11
-      GdkDisplay* gdkDisplay = gdk_display_get_default();
-      if (GdkIsX11Display(gdkDisplay)) {
-        return GDK_DISPLAY_XDISPLAY(gdkDisplay);
-      }
-#endif /* MOZ_X11 */
-      // Don't bother to return native display on Wayland as it's for
-      // X11 only NPAPI plugins.
-      return nullptr;
-    }
     case NS_NATIVE_SHELLWIDGET:
       return GetToplevelWidget();
 
@@ -3732,10 +3729,15 @@ void nsWindow::CreateCompositorVsyncDispatcher() {
 #endif
 
 gboolean nsWindow::OnExposeEvent(cairo_t* cr) {
-  // Send any pending resize events so that layout can update.
-  // May run event loop.
-  MaybeDispatchResized();
+  // This might destroy us.
+  NotifyOcclusionState(OcclusionState::VISIBLE);
+  if (mIsDestroyed) {
+    return FALSE;
+  }
 
+  // Send any pending resize events so that layout can update.
+  // May run event loop and destroy us.
+  MaybeDispatchResized();
   if (mIsDestroyed) {
     return FALSE;
   }
@@ -4237,6 +4239,7 @@ static bool IsBogusLeaveNotifyEvent(GdkWindow* aWindow,
     const auto& desktopEnv = GetDesktopEnvironmentIdentifier();
     return desktopEnv.EqualsLiteral("fluxbox") ||   // Bug 1805939 comment 0.
            desktopEnv.EqualsLiteral("blackbox") ||  // Bug 1805939 comment 32.
+           desktopEnv.EqualsLiteral("lg3d") ||      // Bug 1820405.
            desktopEnv.EqualsLiteral("pekwm") ||     // Bug 1822911.
            StringBeginsWith(desktopEnv, "fvwm"_ns);
   }();
@@ -5231,15 +5234,7 @@ void nsWindow::OnWindowStateEvent(GtkWidget* aWidget,
   LOG("\tTiled: %d\n", int(mIsTiled));
 
   if (mWidgetListener && mSizeMode != oldSizeMode) {
-    if (mSizeMode == nsSizeMode_Fullscreen ||
-        oldSizeMode == nsSizeMode_Fullscreen) {
-      bool isFullscreen = mSizeMode == nsSizeMode_Fullscreen;
-      mWidgetListener->FullscreenWillChange(isFullscreen);
-      mWidgetListener->SizeModeChanged(mSizeMode);
-      mWidgetListener->FullscreenChanged(isFullscreen);
-    } else {
-      mWidgetListener->SizeModeChanged(mSizeMode);
-    }
+    mWidgetListener->SizeModeChanged(mSizeMode);
   }
 
   if (mDrawInTitlebar && mTransparencyBitmapForTitlebar) {
@@ -5978,8 +5973,10 @@ nsresult nsWindow::Create(nsIWidget* aParent, nsNativeWidget aNativeParent,
         size.height);
     gtk_window_resize(GTK_WINDOW(mShell), size.width, size.height);
   }
-
-  if (mWindowType == WindowType::Dialog) {
+  if (mIsPIPWindow) {
+    LOG("    Is PIP Window\n");
+    gtk_window_set_type_hint(GTK_WINDOW(mShell), GDK_WINDOW_TYPE_HINT_UTILITY);
+  } else if (mWindowType == WindowType::Dialog) {
     mGtkWindowRoleName = "Dialog";
 
     SetDefaultIcon();
@@ -6078,12 +6075,6 @@ nsresult nsWindow::Create(nsIWidget* aParent, nsNativeWidget aNativeParent,
     SetDefaultIcon();
 
     LOG("nsWindow::Create() Toplevel\n");
-
-    if (mIsPIPWindow) {
-      LOG("    Is PIP Window\n");
-      gtk_window_set_type_hint(GTK_WINDOW(mShell),
-                               GDK_WINDOW_TYPE_HINT_UTILITY);
-    }
 
     // each toplevel window gets its own window group
     GtkWindowGroup* group = gtk_window_group_new();
@@ -8752,6 +8743,8 @@ bool nsWindow::IsAlwaysUndecoratedWindow() const {
     return true;
   }
   if (mWindowType == WindowType::Dialog &&
+      mBorderStyle != BorderStyle::Default &&
+      mBorderStyle != BorderStyle::All &&
       !(mBorderStyle & BorderStyle::Title) &&
       !(mBorderStyle & BorderStyle::ResizeH)) {
     return true;

@@ -43,15 +43,10 @@ interface CanvasRenderingContext2D {
   // associated with a canvas.
   readonly attribute HTMLCanvasElement? canvas;
 
-  // Use `CanvasRenderingContext2D.font` instead (bug 1294362).
-  [Deprecated="MozTextStyle",
-   Pref="dom.mozTextStyle.enabled",
-   SetterThrows]
-  attribute UTF8String mozTextStyle;
-
   // image smoothing mode -- if disabled, images won't be smoothed
   // if scaled.
   [Deprecated="PrefixedImageSmoothingEnabled",
+   Pref="dom.mozImageSmoothingEnabled.enabled",
    BinaryName="imageSmoothingEnabled"]
   attribute boolean mozImageSmoothingEnabled;
 
@@ -144,6 +139,7 @@ interface mixin CanvasState {
   // state
   undefined save(); // push state on state stack
   undefined restore(); // pop state stack and restore state
+  undefined reset(); // reset the rendering context to its default state
 };
 
 interface mixin CanvasTransform {

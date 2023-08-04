@@ -17,15 +17,15 @@ XPCOMUtils.defineLazyGetter(lazy, "logger", () =>
 );
 
 /**
- * @typedef {Object} OwnershipModel
- **/
+ * @typedef {object} OwnershipModel
+ */
 
 /**
  * Enum of ownership models supported by the serialization.
  *
  * @readonly
  * @enum {OwnershipModel}
- **/
+ */
 export const OwnershipModel = {
   None: "none",
   Root: "root",
@@ -55,7 +55,7 @@ const TYPED_ARRAY_CLASSES = [
 /**
  * Build the serialized RemoteValue.
  *
- * @return {Object}
+ * @returns {object}
  *     An object with a mandatory `type` property, and optional `handle`,
  *     depending on the OwnershipModel, used for the serialization and
  *     on the value's type.
@@ -114,11 +114,11 @@ function checkDateTimeString(dateString) {
  *     The Realm in which the value is deserialized.
  * @param {Array} serializedValueList
  *     List of serialized values.
- * @param {Object} options
+ * @param {object} options
  * @param {NodeCache} options.nodeCache
  *     The cache containing DOM node references.
  *
- * @return {Array} List of deserialized values.
+ * @returns {Array} List of deserialized values.
  *
  * @throws {InvalidArgumentError}
  *     If <var>serializedValueList</var> is not an array.
@@ -147,11 +147,11 @@ function deserializeValueList(realm, serializedValueList, options = {}) {
  *     The Realm in which the value is deserialized.
  * @param {Array} serializedKeyValueList
  *     List of serialized key-value.
- * @param {Object} options
+ * @param {object} options
  * @param {NodeCache} options.nodeCache
  *     The cache containing DOM node references.
  *
- * @return {Array} List of deserialized key-value.
+ * @returns {Array} List of deserialized key-value.
  *
  * @throws {InvalidArgumentError}
  *     If <var>serializedKeyValueList</var> is not an array or
@@ -195,11 +195,11 @@ function deserializeKeyValueList(realm, serializedKeyValueList, options = {}) {
  *     Shared unique reference of the Node.
  * @param {Realm} realm
  *     The Realm in which the value is deserialized.
- * @param {Object} options
+ * @param {object} options
  * @param {NodeCache} options.nodeCache
  *     The cache containing DOM node references.
  *
- * @return {Node} The deserialized DOM node.
+ * @returns {Node} The deserialized DOM node.
  */
 function deserializeSharedReference(sharedRef, realm, options = {}) {
   const { nodeCache } = options;
@@ -246,13 +246,13 @@ function deserializeSharedReference(sharedRef, realm, options = {}) {
  *
  * @param {Realm} realm
  *     The Realm in which the value is deserialized.
- * @param {Object} serializedValue
+ * @param {object} serializedValue
  *     Value of any type to be deserialized.
- * @param {Object} options
+ * @param {object} options
  * @param {NodeCache} options.nodeCache
  *     The cache containing DOM node references.
  *
- * @return {Object} Deserialized representation of the value.
+ * @returns {object} Deserialized representation of the value.
  */
 export function deserialize(realm, serializedValue, options = {}) {
   const { handle, sharedId, type, value } = serializedValue;
@@ -276,7 +276,7 @@ export function deserialize(realm, serializedValue, options = {}) {
 
     const object = realm.getObjectForHandle(handle);
     if (!object) {
-      throw new lazy.error.InvalidArgumentError(
+      throw new lazy.error.NoSuchHandleError(
         `Unable to find an object reference for "handle" ${handle}`
       );
     }
@@ -397,10 +397,10 @@ export function deserialize(realm, serializedValue, options = {}) {
  *     The Realm from which comes the value being serialized.
  * @param {OwnershipModel} ownershipType
  *     The ownership model to use for this serialization.
- * @param {Object} object
+ * @param {object} object
  *     The object being serialized.
  *
- * @return {string} The unique handle id for the object. Will be null if the
+ * @returns {string} The unique handle id for the object. Will be null if the
  *     Ownership type is "none".
  */
 function getHandleForObject(realm, ownershipType, object) {
@@ -421,7 +421,7 @@ function getHandleForObject(realm, ownershipType, object) {
  *    Node to create the unique reference for.
  * @param {Realm} realm
  *     The Realm in which the value is serialized.
- * @param {Object} options
+ * @param {object} options
  * @param {NodeCache} options.nodeCache
  *     The cache containing DOM node references.
  *
@@ -445,6 +445,24 @@ function getSharedIdForNode(node, realm, options = {}) {
 }
 
 /**
+ * Determines if <var>node</var> is shadow root.
+ *
+ * @param {Node} node
+ *    Node to check.
+ *
+ * @returns {boolean}
+ *    True if <var>node</var> is shadow root, false otherwise.
+ */
+function isShadowRoot(node) {
+  const DOCUMENT_FRAGMENT_NODE = 11;
+  return (
+    node &&
+    node.nodeType === DOCUMENT_FRAGMENT_NODE &&
+    node.containingShadowRoot == node
+  );
+}
+
+/**
  * Helper to serialize an Array-like object.
  *
  * @see https://w3c.github.io/webdriver-bidi/#serialize-an-array-like
@@ -455,7 +473,7 @@ function getSharedIdForNode(node, realm, options = {}) {
  *     The unique id of the <var>value</var>.
  * @param {boolean} knownObject
  *     Indicates if the <var>value</var> has already been serialized.
- * @param {Object} value
+ * @param {object} value
  *     The Array-like object to serialize.
  * @param {number|null} maxDepth
  *     Depth of a serialization.
@@ -465,11 +483,11 @@ function getSharedIdForNode(node, realm, options = {}) {
  *     Map of internal ids.
  * @param {Realm} realm
  *     The Realm from which comes the value being serialized.
- * @param {Object} options
+ * @param {object} options
  * @param {NodeCache} options.nodeCache
  *     The cache containing DOM node references.
  *
- * @return {Object} Object for serialized values.
+ * @returns {object} Object for serialized values.
  */
 function serializeArrayLike(
   production,
@@ -514,11 +532,11 @@ function serializeArrayLike(
  *     Map of internal ids.
  * @param {Realm} realm
  *     The Realm from which comes the value being serialized.
- * @param {Object} options
+ * @param {object} options
  * @param {NodeCache} options.nodeCache
  *     The cache containing DOM node references.
  *
- * @return {Array} List of serialized values.
+ * @returns {Array} List of serialized values.
  */
 function serializeList(
   iterable,
@@ -562,11 +580,11 @@ function serializeList(
  *     Map of internal ids.
  * @param {Realm} realm
  *     The Realm from which comes the value being serialized.
- * @param {Object} options
+ * @param {object} options
  * @param {NodeCache} options.nodeCache
  *     The cache containing DOM node references.
  *
- * @return {Array} List of serialized values.
+ * @returns {Array} List of serialized values.
  */
 function serializeMapping(
   iterable,
@@ -619,11 +637,11 @@ function serializeMapping(
  *     Map of internal ids.
  * @param {Realm} realm
  *     The Realm from which comes the value being serialized.
- * @param {Object} options
+ * @param {object} options
  * @param {NodeCache} options.nodeCache
  *     The cache containing DOM node references.
  *
- * @return {Object} Serialized value.
+ * @returns {object} Serialized value.
  */
 function serializeNode(
   node,
@@ -651,7 +669,8 @@ function serializeNode(
 
   serialized.childNodeCount = node.childNodes.length;
 
-  if (maxDepth !== 0) {
+  // Bug 1824953: Add support for shadow root children serialization.
+  if (maxDepth !== 0 && !isShadowRoot(node)) {
     const children = [];
     const childDepth = maxDepth !== null ? maxDepth - 1 : null;
     for (const child of node.childNodes) {
@@ -676,7 +695,22 @@ function serializeNode(
       return map;
     }, {});
 
-    // TODO: Bug 1802137 - Add support for shadowRoot
+    const shadowRoot = Cu.unwaiveXrays(node).openOrClosedShadowRoot;
+    serialized.shadowRoot = null;
+    if (shadowRoot !== null) {
+      serialized.shadowRoot = serialize(
+        shadowRoot,
+        maxDepth,
+        ownershipType,
+        serializationInternalMap,
+        realm,
+        options
+      );
+    }
+  }
+
+  if (isShadowRoot(node)) {
+    serialized.mode = node.mode;
   }
 
   return serialized;
@@ -687,7 +721,7 @@ function serializeNode(
  *
  * @see https://w3c.github.io/webdriver-bidi/#serialize-as-a-remote-value
  *
- * @param {Object} value
+ * @param {object} value
  *     Value of any type to be serialized.
  * @param {number|null} maxDepth
  *     Depth of a serialization.
@@ -697,11 +731,11 @@ function serializeNode(
  *     Map of internal ids.
  * @param {Realm} realm
  *     The Realm from which comes the value being serialized.
- * @param {Object} options
+ * @param {object} options
  * @param {NodeCache} options.nodeCache
  *     The cache containing DOM node references.
  *
- * @return {Object} Serialized representation of the value.
+ * @returns {object} Serialized representation of the value.
  */
 export function serialize(
   value,
@@ -866,9 +900,9 @@ export function serialize(
  *
  * @param {Map} serializationInternalMap
  *     Map of objects to remote values.
- * @param {Object} remoteValue
+ * @param {object} remoteValue
  *     A serialized RemoteValue for the provided object.
- * @param {Object} object
+ * @param {object} object
  *     Object of any type to be serialized.
  */
 function setInternalIdsIfNeeded(serializationInternalMap, remoteValue, object) {
@@ -896,10 +930,10 @@ function setInternalIdsIfNeeded(serializationInternalMap, remoteValue, object) {
 /**
  * Safely stringify a value.
  *
- * @param {Object} value
+ * @param {object} obj
  *     Value of any type to be stringified.
  *
- * @return {string} String representation of the value.
+ * @returns {string} String representation of the value.
  */
 export function stringify(obj) {
   let text;

@@ -54,7 +54,6 @@ using namespace jit;
 using namespace wasm;
 
 using mozilla::HashGeneric;
-using mozilla::IsNaN;
 using mozilla::MakeEnumeratedRange;
 
 static const unsigned BUILTIN_THUNK_LIFO_SIZE = 64 * 1024;
@@ -337,8 +336,6 @@ const SymbolicAddressSignature SASigArrayCopy = {
     _FailOnNegI32,
     7,
     {_PTR, _RoN, _I32, _RoN, _I32, _I32, _I32, _END}};
-const SymbolicAddressSignature SASigRefTest = {
-    SymbolicAddress::RefTest, _I32, _Infallible, 3, {_PTR, _RoN, _PTR, _END}};
 
 #define DECL_SAS_FOR_INTRINSIC(op, export, sa_name, abitype, entry, idx) \
   const SymbolicAddressSignature SASig##sa_name = {                      \
@@ -934,7 +931,8 @@ static int64_t UModI64(uint32_t x_hi, uint32_t x_lo, uint32_t y_hi,
 static int64_t TruncateDoubleToInt64(double input) {
   // Note: INT64_MAX is not representable in double. It is actually
   // INT64_MAX + 1.  Therefore also sending the failure value.
-  if (input >= double(INT64_MAX) || input < double(INT64_MIN) || IsNaN(input)) {
+  if (input >= double(INT64_MAX) || input < double(INT64_MIN) ||
+      std::isnan(input)) {
     return int64_t(0x8000000000000000);
   }
   return int64_t(input);
@@ -943,7 +941,7 @@ static int64_t TruncateDoubleToInt64(double input) {
 static uint64_t TruncateDoubleToUint64(double input) {
   // Note: UINT64_MAX is not representable in double. It is actually
   // UINT64_MAX + 1.  Therefore also sending the failure value.
-  if (input >= double(UINT64_MAX) || input <= -1.0 || IsNaN(input)) {
+  if (input >= double(UINT64_MAX) || input <= -1.0 || std::isnan(input)) {
     return int64_t(0x8000000000000000);
   }
   return uint64_t(input);
@@ -955,7 +953,7 @@ static int64_t SaturatingTruncateDoubleToInt64(double input) {
     return int64_t(input);
   }
   // Handle NaN.
-  if (IsNaN(input)) {
+  if (std::isnan(input)) {
     return 0;
   }
   // Handle positive overflow.
@@ -1338,11 +1336,6 @@ void* wasm::AddressOf(SymbolicAddress imm, ABIFunctionType* abiType) {
       MOZ_ASSERT(*abiType == ToABIType(SASigArrayCopy));
       return FuncCast(Instance::arrayCopy, *abiType);
 
-    case SymbolicAddress::RefTest:
-      *abiType = Args_Int32_GeneralGeneralGeneral;
-      MOZ_ASSERT(*abiType == ToABIType(SASigRefTest));
-      return FuncCast(Instance::refTest, *abiType);
-
     case SymbolicAddress::ExceptionNew:
       *abiType = Args_General2;
       MOZ_ASSERT(*abiType == ToABIType(SASigExceptionNew));
@@ -1523,7 +1516,6 @@ bool wasm::NeedsBuiltinThunk(SymbolicAddress sym) {
     case SymbolicAddress::ArrayNewData:
     case SymbolicAddress::ArrayNewElem:
     case SymbolicAddress::ArrayCopy:
-    case SymbolicAddress::RefTest:
 #define OP(op, export, sa_name, abitype, entry, idx) \
   case SymbolicAddress::sa_name:
       FOR_EACH_INTRINSIC(OP)
@@ -1548,6 +1540,9 @@ bool wasm::NeedsBuiltinThunk(SymbolicAddress sym) {
 //
 // Each JS builtin can have several overloads. These must all be enumerated in
 // PopulateTypedNatives() so they can be included in the process-wide thunk set.
+// Additionally to the traditional overloading based on types, every builtin
+// can also have a version implemented by fdlibm or the native math library.
+// This is useful for fingerprinting resistance.
 
 #define FOR_EACH_SIN_COS_TAN_NATIVE(_) \
   _(math_sin, MathSin)                 \
@@ -1579,12 +1574,12 @@ bool wasm::NeedsBuiltinThunk(SymbolicAddress sym) {
   _(ecmaHypot, MathHypot)         \
   _(ecmaPow, MathPow)
 
-#define DEFINE_SIN_COS_TAN_FLOAT_WRAPPER(func, _)  \
-  static float func##_impl_f32(float x) {          \
-    if (math_use_fdlibm_for_sin_cos_tan()) {       \
-      return float(func##_fdlibm_impl(double(x))); \
-    }                                              \
-    return float(func##_native_impl(double(x)));   \
+#define DEFINE_SIN_COS_TAN_FLOAT_WRAPPER(func, _) \
+  static float func##_native_impl_f32(float x) {  \
+    return float(func##_native_impl(double(x)));  \
+  }                                               \
+  static float func##_fdlibm_impl_f32(float x) {  \
+    return float(func##_fdlibm_impl(double(x)));  \
   }
 
 #define DEFINE_UNARY_FLOAT_WRAPPER(func, _) \
@@ -1607,16 +1602,20 @@ FOR_EACH_BINARY_NATIVE(DEFINE_BINARY_FLOAT_WRAPPER)
 struct TypedNative {
   InlinableNative native;
   ABIFunctionType abiType;
+  enum class FdlibmImpl : uint8_t { No, Yes } fdlibm;
 
-  TypedNative(InlinableNative native, ABIFunctionType abiType)
-      : native(native), abiType(abiType) {}
+  TypedNative(InlinableNative native, ABIFunctionType abiType,
+              FdlibmImpl fdlibm)
+      : native(native), abiType(abiType), fdlibm(fdlibm) {}
 
   using Lookup = TypedNative;
   static HashNumber hash(const Lookup& l) {
-    return HashGeneric(uint32_t(l.native), uint32_t(l.abiType));
+    return HashGeneric(uint32_t(l.native), uint32_t(l.abiType),
+                       uint32_t(l.fdlibm));
   }
   static bool match(const TypedNative& lhs, const Lookup& rhs) {
-    return lhs.native == rhs.native && lhs.abiType == rhs.abiType;
+    return lhs.native == rhs.native && lhs.abiType == rhs.abiType &&
+           lhs.fdlibm == rhs.fdlibm;
   }
 };
 
@@ -1624,26 +1623,25 @@ using TypedNativeToFuncPtrMap =
     HashMap<TypedNative, void*, TypedNative, SystemAllocPolicy>;
 
 static bool PopulateTypedNatives(TypedNativeToFuncPtrMap* typedNatives) {
-#define ADD_OVERLOAD(funcName, native, abiType)                            \
-  if (!typedNatives->putNew(TypedNative(InlinableNative::native, abiType), \
-                            FuncCast(funcName, abiType)))                  \
+#define ADD_OVERLOAD(funcName, native, abiType, fdlibm)                   \
+  if (!typedNatives->putNew(TypedNative(InlinableNative::native, abiType, \
+                                        TypedNative::FdlibmImpl::fdlibm), \
+                            FuncCast(funcName, abiType)))                 \
     return false;
 
-#define ADD_SIN_COS_TAN_OVERLOADS(funcName, native)                  \
-  if (math_use_fdlibm_for_sin_cos_tan()) {                           \
-    ADD_OVERLOAD(funcName##_fdlibm_impl, native, Args_Double_Double) \
-  } else {                                                           \
-    ADD_OVERLOAD(funcName##_native_impl, native, Args_Double_Double) \
-  }                                                                  \
-  ADD_OVERLOAD(funcName##_impl_f32, native, Args_Float32_Float32)
+#define ADD_SIN_COS_TAN_OVERLOADS(funcName, native)                          \
+  ADD_OVERLOAD(funcName##_native_impl, native, Args_Double_Double, No)       \
+  ADD_OVERLOAD(funcName##_fdlibm_impl, native, Args_Double_Double, Yes)      \
+  ADD_OVERLOAD(funcName##_native_impl_f32, native, Args_Float32_Float32, No) \
+  ADD_OVERLOAD(funcName##_fdlibm_impl_f32, native, Args_Float32_Float32, Yes)
 
-#define ADD_UNARY_OVERLOADS(funcName, native)               \
-  ADD_OVERLOAD(funcName##_impl, native, Args_Double_Double) \
-  ADD_OVERLOAD(funcName##_impl_f32, native, Args_Float32_Float32)
+#define ADD_UNARY_OVERLOADS(funcName, native)                   \
+  ADD_OVERLOAD(funcName##_impl, native, Args_Double_Double, No) \
+  ADD_OVERLOAD(funcName##_impl_f32, native, Args_Float32_Float32, No)
 
-#define ADD_BINARY_OVERLOADS(funcName, native)             \
-  ADD_OVERLOAD(funcName, native, Args_Double_DoubleDouble) \
-  ADD_OVERLOAD(funcName##_f32, native, Args_Float32_Float32Float32)
+#define ADD_BINARY_OVERLOADS(funcName, native)                 \
+  ADD_OVERLOAD(funcName, native, Args_Double_DoubleDouble, No) \
+  ADD_OVERLOAD(funcName##_f32, native, Args_Float32_Float32Float32, No)
 
   FOR_EACH_SIN_COS_TAN_NATIVE(ADD_SIN_COS_TAN_OVERLOADS)
   FOR_EACH_UNARY_NATIVE(ADD_UNARY_OVERLOADS)
@@ -1918,9 +1916,24 @@ void* wasm::MaybeGetBuiltinThunk(JSFunction* f, const FuncType& funcType) {
     return nullptr;
   }
 
-  TypedNative typedNative(f->jitInfo()->inlinableNative, *abiType);
-
   const BuiltinThunks& thunks = *builtinThunks;
+
+  // If this function should resist fingerprinting first try to lookup
+  // the fdlibm version. If that version doesn't exist we still fallback to
+  // the normal native.
+  if (math_use_fdlibm_for_sin_cos_tan() ||
+      f->realm()->behaviors().shouldResistFingerprinting()) {
+    TypedNative typedNative(f->jitInfo()->inlinableNative, *abiType,
+                            TypedNative::FdlibmImpl::Yes);
+    auto p =
+        thunks.typedNativeToCodeRange.readonlyThreadsafeLookup(typedNative);
+    if (p) {
+      return thunks.codeBase + thunks.codeRanges[p->value()].begin();
+    }
+  }
+
+  TypedNative typedNative(f->jitInfo()->inlinableNative, *abiType,
+                          TypedNative::FdlibmImpl::No);
   auto p = thunks.typedNativeToCodeRange.readonlyThreadsafeLookup(typedNative);
   if (!p) {
     return nullptr;

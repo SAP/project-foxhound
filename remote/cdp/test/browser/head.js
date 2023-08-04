@@ -199,23 +199,21 @@ function getTargets(CDP) {
   });
 }
 
-// Wait for all Target.targetCreated events. One for each tab, plus the one
-// for the main process target.
-async function getDiscoveredTargets(Target) {
-  return new Promise(resolve => {
-    const targets = [];
+// Wait for all Target.targetCreated events. One for each tab.
+async function getDiscoveredTargets(Target, options = {}) {
+  const { discover = true, filter } = options;
 
-    const unsubscribe = Target.targetCreated(target => {
-      targets.push(target);
-
-      if (targets.length >= gBrowser.tabs.length + 1) {
-        unsubscribe();
-        resolve(targets);
-      }
-    });
-
-    Target.setDiscoverTargets({ discover: true });
+  const targets = [];
+  const unsubscribe = Target.targetCreated(target => {
+    targets.push(target.targetInfo);
   });
+
+  await Target.setDiscoverTargets({
+    discover,
+    filter,
+  }).finally(() => unsubscribe());
+
+  return targets;
 }
 
 async function openTab(Target, options = {}) {
@@ -368,7 +366,7 @@ function getContentProperty(prop) {
 /**
  * Retrieve all frames for the current tab as flattened list.
  *
- * @return {Map<number, Frame>}
+ * @returns {Map<number, Frame>}
  *     Flattened list of frames as Map
  */
 async function getFlattenedFrameTree(client) {
@@ -408,13 +406,13 @@ function fail(message) {
  *
  * @param {string} contents
  *     Contents of the file.
- * @param {Object} options
+ * @param {object} options
  * @param {string=} options.path
  *     Path of the file. Defaults to the temporary directory.
  * @param {boolean=} options.remove
  *     If true, automatically remove the file after the test. Defaults to true.
  *
- * @return {Promise<Stream>}
+ * @returns {Promise<Stream>}
  */
 async function createFileStream(contents, options = {}) {
   let { path = null, remove = true } = options;
@@ -439,7 +437,7 @@ async function createFileStream(contents, options = {}) {
 async function throwScriptError(options = {}) {
   const { inContent = true } = options;
 
-  const addScriptErrorInternal = ({ options }) => {
+  const addScriptErrorInternal = options => {
     const {
       flag = Ci.nsIScriptError.errorFlag,
       innerWindowId = content.windowGlobalChild.innerWindowId,
@@ -462,14 +460,14 @@ async function throwScriptError(options = {}) {
   };
 
   if (inContent) {
-    ContentTask.spawn(
+    SpecialPowers.spawn(
       gBrowser.selectedBrowser,
-      { options },
+      [options],
       addScriptErrorInternal
     );
   } else {
     options.innerWindowId = window.windowGlobalChild.innerWindowId;
-    addScriptErrorInternal({ options });
+    addScriptErrorInternal(options);
   }
 }
 
@@ -507,7 +505,7 @@ class RecordEvents {
    * The recording stops once we accumulate more than the expected
    * total of all configured events.
    *
-   * @param {Object} options
+   * @param {object} options
    * @param {CDPEvent} options.event
    *     https://github.com/cyrus-and/chrome-remote-interface#clientdomaineventcallback
    * @param {string} options.eventName
@@ -547,7 +545,7 @@ class RecordEvents {
    * to the timeline, along with an associated payload, if provided.
    *
    * @param {string} step
-   * @return {Function} callback
+   * @returns {Function} callback
    */
   addPromise(step) {
     let callback;
@@ -574,7 +572,7 @@ class RecordEvents {
    * @param {number=} timeout
    *     Timeout in milliseconds. Defaults to 1000.
    *
-   * @return {Array<{ eventName, payload, index }>} Recorded events
+   * @returns {Array<{ eventName, payload, index }>} Recorded events
    */
   async record(timeout = TIMEOUT_EVENTS) {
     await Promise.race([Promise.all(this.promises), timeoutPromise(timeout)]);
@@ -589,7 +587,7 @@ class RecordEvents {
    *
    * @param {Function} predicate
    *
-   * @return {Array<{ eventName, payload, index }>}
+   * @returns {Array<{ eventName, payload, index }>}
    *     The list of events matching the filter.
    */
   filter(predicate) {
@@ -601,7 +599,7 @@ class RecordEvents {
    *
    * @param {string} eventName
    *
-   * @return {{ eventName, payload, index }} The event, if any.
+   * @returns {{ eventName, payload, index }} The event, if any.
    */
   findEvent(eventName) {
     const event = this.events.find(el => el.eventName == eventName);
@@ -616,7 +614,7 @@ class RecordEvents {
    *
    * @param {string} eventName
    *
-   * @return {Array<{ eventName, payload, index }>}
+   * @returns {Array<{ eventName, payload, index }>}
    *     The events, if any.
    */
   findEvents(eventName) {
@@ -628,7 +626,7 @@ class RecordEvents {
    *
    * @param {string} eventName
    *
-   * @return {number} The event index, -1 if not found.
+   * @returns {number} The event index, -1 if not found.
    */
   indexOf(eventName) {
     const event = this.events.find(el => el.eventName == eventName);

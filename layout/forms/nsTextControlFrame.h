@@ -100,9 +100,6 @@ class nsTextControlFrame : public nsContainerFrame,
                              : aFrame->BSize(aWM) - aFirstBaseline);
   }
 
-  nsSize GetXULMinSize(nsBoxLayoutState&) override;
-  bool IsXULCollapsed() override;
-
 #ifdef ACCESSIBILITY
   mozilla::a11y::AccType AccessibleType() override;
 #endif
@@ -187,7 +184,7 @@ class nsTextControlFrame : public nsContainerFrame,
    */
   bool TextEquals(const nsAString& aText) const;
 
-  nsresult PeekOffset(nsPeekOffsetStruct* aPos) override;
+  nsresult PeekOffset(mozilla::PeekOffsetStruct* aPos) override;
 
   NS_DECL_QUERYFRAME
 

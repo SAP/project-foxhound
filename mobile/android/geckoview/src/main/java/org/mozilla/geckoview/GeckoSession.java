@@ -31,6 +31,7 @@ import android.view.PointerIcon;
 import android.view.Surface;
 import android.view.View;
 import android.view.ViewStructure;
+import android.view.WindowManager;
 import android.view.inputmethod.CursorAnchorInfo;
 import android.view.inputmethod.ExtractedText;
 import android.view.inputmethod.ExtractedTextRequest;
@@ -509,6 +510,7 @@ public class GeckoSession {
             "GeckoView:PreviewImage",
             "GeckoView:CookieBannerEvent:Detected",
             "GeckoView:CookieBannerEvent:Handled",
+            "GeckoView:SavePdf"
           }) {
         @Override
         public void handleMessage(
@@ -569,6 +571,16 @@ public class GeckoSession {
             delegate.onCookieBannerDetected(GeckoSession.this);
           } else if ("GeckoView:CookieBannerEvent:Handled".equals(event)) {
             delegate.onCookieBannerHandled(GeckoSession.this);
+          } else if ("GeckoView:SavePdf".equals(event)) {
+            final WebResponse response =
+                SessionPdfFileSaver.createResponse(
+                    message.getByteArray("bytes"),
+                    message.getString("filename"),
+                    message.getString("originalUrl"));
+            if (response == null) {
+              return;
+            }
+            delegate.onExternalResponse(GeckoSession.this, response);
           }
         }
       };
@@ -734,8 +746,20 @@ public class GeckoSession {
             final EventCallback callback) {
 
           if ("GeckoView:DotPrintRequest".equals(event)) {
-            // Event and JS Module will be implemented in Bug 1659818 for window.print() support
-            Log.w(LOGTAG, "Event GeckoView:DotPrintRequest is not implemented.");
+            final Long cbcId = message.getLong("canonicalBrowsingContextId");
+            final GeckoResult<InputStream> pdfResult = saveAsPdfByBrowsingContext(cbcId);
+            pdfResult
+                .accept(
+                    pdfStream -> {
+                      delegate.onPrint(pdfStream);
+                      mEventDispatcher.dispatch("GeckoView:DotPrintFinish", null);
+                    })
+                .exceptionally(
+                    e -> {
+                      mEventDispatcher.dispatch("GeckoView:DotPrintFinish", null);
+                      Log.e(LOGTAG, "Could not complete DotPrintRequest.", e);
+                      return null;
+                    });
           }
         }
       };
@@ -1242,6 +1266,9 @@ public class GeckoSession {
 
     @WrapForJNI(dispatchTo = "proxy")
     public native void printToPdf(GeckoResult<InputStream> geckoResult);
+
+    @WrapForJNI(dispatchTo = "proxy")
+    private native void printToPdf(GeckoResult<InputStream> geckoResult, long browserContextId);
 
     @WrapForJNI(calledFrom = "gecko")
     private synchronized void onReady(final @Nullable NativeQueue queue) {
@@ -3559,13 +3586,13 @@ public class GeckoSession {
 
   public interface SelectionActionDelegate {
     /** The selection is collapsed at a single position. */
-    final int FLAG_IS_COLLAPSED = 1;
+    final int FLAG_IS_COLLAPSED = 1 << 0;
     /**
      * The selection is inside editable content such as an input element or contentEditable node.
      */
-    final int FLAG_IS_EDITABLE = 2;
+    final int FLAG_IS_EDITABLE = 1 << 1;
     /** The selection is inside a password field. */
-    final int FLAG_IS_PASSWORD = 4;
+    final int FLAG_IS_PASSWORD = 1 << 2;
 
     /** Hide selection actions and cause {@link #onHideAction} to be called. */
     final String ACTION_HIDE = "org.mozilla.geckoview.HIDE";
@@ -5588,6 +5615,30 @@ public class GeckoSession {
   }
 
   /**
+   * Get a matrix for transforming from screen coordinates to Android's current window coordinates.
+   *
+   * @param matrix Matrix to be replaced by the transformation matrix.
+   * @see
+   *     https://developer.android.com/guide/topics/large-screens/multi-window-support#window_metrics
+   */
+  @UiThread
+  /* package */ void getScreenToWindowManagerOffsetMatrix(@NonNull final Matrix matrix) {
+    ThreadUtils.assertOnUiThread();
+
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+      final WindowManager wm =
+          (WindowManager)
+              GeckoAppShell.getApplicationContext().getSystemService(Context.WINDOW_SERVICE);
+      final Rect currentWindowRect = wm.getCurrentWindowMetrics().getBounds();
+      matrix.postTranslate(-currentWindowRect.left, -currentWindowRect.top);
+      return;
+    }
+
+    // TODO(m_kato): Bug 1678531
+    // How to get window coordinate on Android 7-10 that supports split window?
+  }
+
+  /**
    * Get the bounds of the client area in client coordinates. The returned top-left coordinates are
    * always (0, 0). Use the matrix from {@link #getClientToSurfaceMatrix(Matrix)} or {@link
    * #getClientToScreenMatrix(Matrix)} to map these bounds to surface or screen coordinates,
@@ -6755,6 +6806,19 @@ public class GeckoSession {
    */
   @AnyThread
   public @NonNull GeckoResult<InputStream> saveAsPdf() {
+    return saveAsPdfByBrowsingContext(null);
+  }
+
+  /**
+   * Saves a PDF of the specified browsing context. Use null if the browsing context is unknown or
+   * to print the main page.
+   *
+   * @param browsingContextId the browsing context id of the item to print
+   * @return A GeckoResult with an InputStream containing the PDF.
+   */
+  @AnyThread
+  private @NonNull GeckoResult<InputStream> saveAsPdfByBrowsingContext(
+      final @Nullable Long browsingContextId) {
     final GeckoResult<InputStream> geckoResult = new GeckoResult<>();
     final GeckoSession self = this;
     this.isPdfJs()
@@ -6763,7 +6827,11 @@ public class GeckoSession {
               @Override
               public GeckoResult<Void> onValue(final Boolean isPdfJs) {
                 if (!isPdfJs) {
-                  self.mWindow.printToPdf(geckoResult);
+                  if (browsingContextId == null) {
+                    self.mWindow.printToPdf(geckoResult);
+                  } else {
+                    self.mWindow.printToPdf(geckoResult, browsingContextId);
+                  }
                 } else {
                   geckoResult.completeFrom(
                       self.getPdfFileSaver()

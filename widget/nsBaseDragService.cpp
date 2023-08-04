@@ -49,6 +49,7 @@
 #include "nsIMutableArray.h"
 #include "gfxContext.h"
 #include "gfxPlatform.h"
+#include "nscore.h"
 #include <algorithm>
 
 using namespace mozilla;
@@ -321,7 +322,7 @@ nsBaseDragService::InvokeDragSession(
   mIsDraggingTextInTextControl =
       mSourceNode->IsInNativeAnonymousSubtree() &&
       TextControlElement::FromNodeOrNull(
-          mSourceNode->GetClosestNativeAnonymousSubtreeRootParent());
+          mSourceNode->GetClosestNativeAnonymousSubtreeRootParentOrHost());
   mContentPolicyType = aContentPolicyType;
   mEndDragPoint = LayoutDeviceIntPoint(0, 0);
 
@@ -853,7 +854,7 @@ nsresult nsBaseDragService::DrawDrag(nsINode* aDOMNode,
 
     nsIFrame* frame = content->GetPrimaryFrame();
     if (frame && frame->IsMenuPopupFrame()) {
-      mDragPopup = content;
+      mDragPopup = content->AsElement();
     }
   }
 
@@ -1018,4 +1019,17 @@ bool nsBaseDragService::RemoveAllChildProcesses() {
   }
   mChildProcesses.Clear();
   return true;
+}
+
+NS_IMETHODIMP
+nsBaseDragService::MaybeEditorDeletedSourceNode(Element* aEditingHost) {
+  // If builtin editor of Blink and WebKit deletes the source node,they retarget
+  // the source node to the editing host.
+  // https://source.chromium.org/chromium/chromium/src/+/main:third_party/blink/renderer/core/page/drag_controller.cc;l=724;drc=d9ba13b8cd8ac0faed7afc3d1f7e4b67ebac2a0b
+  // That allows editor apps listens to "dragend" event in editing host or its
+  // ancestors.  Therefore, we should follow them for compatibility.
+  if (mSourceNode && !mSourceNode->IsInComposedDoc()) {
+    mSourceNode = aEditingHost;
+  }
+  return NS_OK;
 }

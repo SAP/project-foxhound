@@ -720,13 +720,16 @@ CoderResult CodeCustomSection(Coder<mode>& coder,
 
 template <CoderMode mode>
 CoderResult CodeTableDesc(Coder<mode>& coder, CoderArg<mode, TableDesc> item) {
-  WASM_VERIFY_SERIALIZATION_FOR_SIZE(wasm::TableDesc, 32);
+  WASM_VERIFY_SERIALIZATION_FOR_SIZE(wasm::TableDesc, 120);
   MOZ_TRY(CodeRefType(coder, &item->elemType));
-  MOZ_TRY(CodePod(coder, &item->isImportedOrExported));
+  MOZ_TRY(CodePod(coder, &item->isImported));
+  MOZ_TRY(CodePod(coder, &item->isExported));
   MOZ_TRY(CodePod(coder, &item->isAsmJS));
   MOZ_TRY(CodePod(coder, &item->globalDataOffset));
   MOZ_TRY(CodePod(coder, &item->initialLength));
   MOZ_TRY(CodePod(coder, &item->maximumLength));
+  MOZ_TRY(
+      (CodeMaybe<mode, InitExpr, &CodeInitExpr<mode>>(coder, &item->initExpr)));
   return Ok();
 }
 
@@ -857,7 +860,7 @@ CoderResult CodeSymbolicLinkArray(
 template <CoderMode mode>
 CoderResult CodeLinkData(Coder<mode>& coder,
                          CoderArg<mode, wasm::LinkData> item) {
-  WASM_VERIFY_SERIALIZATION_FOR_SIZE(wasm::LinkData, 7464);
+  WASM_VERIFY_SERIALIZATION_FOR_SIZE(wasm::LinkData, 7392);
   if constexpr (mode == MODE_ENCODE) {
     MOZ_ASSERT(item->tier == Tier::Serialized);
   }

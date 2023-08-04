@@ -16,7 +16,8 @@
 #include "mozilla/HashTable.h"      // mozilla::HashSet
 #include "mozilla/Maybe.h"          // mozilla::{Maybe,Nothing,Some}
 #include "mozilla/PodOperations.h"  // mozilla::PodCopy
-#include "mozilla/Variant.h"        // mozilla::AsVariant
+#include "mozilla/Saturate.h"
+#include "mozilla/Variant.h"  // mozilla::AsVariant
 
 #include <algorithm>
 #include <iterator>
@@ -2458,11 +2459,19 @@ BytecodeEmitter::createImmutableScriptData() {
   bool isFunction = sc->isFunctionBox();
   uint16_t funLength = isFunction ? sc->asFunctionBox()->length() : 0;
 
+  mozilla::SaturateUint8 propertyCountEstimate = propertyAdditionEstimate;
+
+  // Add fields to the property count estimate.
+  if (isFunction && sc->asFunctionBox()->useMemberInitializers()) {
+    propertyCountEstimate +=
+        sc->asFunctionBox()->memberInitializers().numMemberInitializers;
+  }
+
   return ImmutableScriptData::new_(
       fc, mainOffset(), maxFixedSlots, nslots, bodyScopeIndex,
       bytecodeSection().numICEntries(), isFunction, funLength,
-      bytecodeSection().code(), bytecodeSection().notes(),
-      bytecodeSection().resumeOffsetList().span(),
+      propertyCountEstimate.value(), bytecodeSection().code(),
+      bytecodeSection().notes(), bytecodeSection().resumeOffsetList().span(),
       bytecodeSection().scopeNoteList().span(),
       bytecodeSection().tryNoteList().span());
 }
@@ -4071,6 +4080,20 @@ bool BytecodeEmitter::emitAssignmentOrInit(ParseNodeKind kind, ParseNode* lhs,
   JSOp compoundOp = CompoundAssignmentParseNodeKindToJSOp(kind);
   bool isCompound = compoundOp != JSOp::Nop;
   bool isInit = kind == ParseNodeKind::InitExpr;
+
+  // We estimate the number of properties this could create
+  // if used as constructor merely by counting this.foo = assignment
+  // or init expressions;
+  //
+  // This currently doesn't handle this[x] = foo;
+  if (isInit || kind == ParseNodeKind::AssignExpr) {
+    if (lhs->isKind(ParseNodeKind::DotExpr)) {
+      if (lhs->as<PropertyAccess>().expression().isKind(
+              ParseNodeKind::ThisExpr)) {
+        propertyAdditionEstimate++;
+      }
+    }
+  }
 
   MOZ_ASSERT_IF(isInit, lhs->isKind(ParseNodeKind::DotExpr) ||
                             lhs->isKind(ParseNodeKind::ElemExpr) ||
@@ -7460,6 +7483,30 @@ bool BytecodeEmitter::emitSelfHostedGetBuiltinSymbol(CallNode* callNode) {
   return emit2(JSOp::Symbol, uint8_t(code));
 }
 
+bool BytecodeEmitter::emitSelfHostedArgumentsLength(CallNode* callNode) {
+  MOZ_ASSERT(!sc->asFunctionBox()->needsArgsObj());
+  sc->asFunctionBox()->setUsesArgumentsIntrinsics();
+
+  MOZ_ASSERT(callNode->right()->as<ListNode>().count() == 0);
+
+  return emit1(JSOp::ArgumentsLength);
+}
+
+bool BytecodeEmitter::emitSelfHostedGetArgument(CallNode* callNode) {
+  MOZ_ASSERT(!sc->asFunctionBox()->needsArgsObj());
+  sc->asFunctionBox()->setUsesArgumentsIntrinsics();
+
+  ListNode* argsList = &callNode->right()->as<ListNode>();
+  MOZ_ASSERT(argsList->count() == 1);
+
+  ParseNode* argNode = argsList->head();
+  if (!emitTree(argNode)) {
+    return false;
+  }
+
+  return emit1(JSOp::GetActualArg);
+}
+
 #ifdef DEBUG
 void BytecodeEmitter::assertSelfHostedExpectedTopLevel(ParseNode* node) {
   // The function argument is expected to be a simple binding/function name.
@@ -8020,6 +8067,12 @@ bool BytecodeEmitter::emitCallOrNew(CallNode* callNode, ValueUsage valueUsage) {
     }
     if (calleeName == TaggedParserAtomIndex::WellKnown::GetBuiltinSymbol()) {
       return emitSelfHostedGetBuiltinSymbol(callNode);
+    }
+    if (calleeName == TaggedParserAtomIndex::WellKnown::ArgumentsLength()) {
+      return emitSelfHostedArgumentsLength(callNode);
+    }
+    if (calleeName == TaggedParserAtomIndex::WellKnown::GetArgument()) {
+      return emitSelfHostedGetArgument(callNode);
     }
     if (calleeName ==
         TaggedParserAtomIndex::WellKnown::SetIsInlinableLargeFunction()) {
@@ -8964,12 +9017,24 @@ bool BytecodeEmitter::emitPropertyList(ListNode* obj, PropertyEmitter& pe,
       if (prop->is<ClassMethod>()) {
         ClassMethod& method = prop->as<ClassMethod>();
         if (method.decorators() && !method.decorators()->empty()) {
-          DecoratorEmitter de(this);
+          DecoratorEmitter::Kind kind;
+          switch (method.accessorType()) {
+            case AccessorType::Getter:
+              kind = DecoratorEmitter::Getter;
+              break;
+            case AccessorType::Setter:
+              kind = DecoratorEmitter::Setter;
+              break;
+            case AccessorType::None:
+              kind = DecoratorEmitter::Method;
+              break;
+          }
+
           // The decorators are applied to the current value on the stack,
           // possibly replacing it.
+          DecoratorEmitter de(this);
           if (!de.emitApplyDecoratorsToElementDefinition(
-                  DecoratorEmitter::Method, key, method.decorators(),
-                  method.isStatic())) {
+                  kind, key, method.decorators(), method.isStatic())) {
             //        [stack] CTOR? OBJ CTOR? KEY? VAL
             return false;
           }
@@ -10762,6 +10827,9 @@ bool BytecodeEmitter::emitInitializeFunctionSpecialNames() {
 
   // Do nothing if the function doesn't have an arguments binding.
   if (funbox->needsArgsObj()) {
+    // Self-hosted code should use the more efficient ArgumentsLength and
+    // GetArgument intrinsics instead of `arguments`.
+    MOZ_ASSERT(emitterMode != BytecodeEmitter::SelfHosting);
     if (!emitInitializeFunctionSpecialName(
             this, TaggedParserAtomIndex::WellKnown::arguments(),
             JSOp::Arguments)) {

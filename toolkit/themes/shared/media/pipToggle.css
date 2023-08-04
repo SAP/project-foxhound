@@ -58,6 +58,28 @@
   display: none;
 }
 
+.pip-wrapper[policy="top"] {
+  top: 0%;
+  translate: var(--pip-toggle-translate-x);
+}
+
+.pip-wrapper[policy="one-quarter"] {
+  top: 25%;
+}
+
+.pip-wrapper[policy="middle"] {
+  top: 50%;
+}
+
+.pip-wrapper[policy="three-quarters"] {
+  top: 75%;
+}
+
+.pip-wrapper[policy="bottom"] {
+  top: 100%;
+  translate: var(--pip-toggle-translate-x) -100%;
+}
+
 .pip-wrapper[medium-video] > .pip-expanded > .pip-icon-label > .pip-label {
   font-size: 13px;
 }
@@ -107,6 +129,10 @@
 .pip-wrapper:not([small-video], [has-used]) > .pip-expanded {
   opacity: 1;
   scale: 1;
+  pointer-events: none;
+}
+
+.pip-wrapper:not([small-video], [has-used]).hovering > .pip-expanded {
   pointer-events: auto;
 }
 
@@ -247,7 +273,6 @@
   /* Remove bottom border but keep text centred with padding. */
   border-bottom: none;
   padding-bottom: var(--pip-highlight-width);
-  pointer-events: none;
 }
 
 .pip-wrapper:not([small-video], [has-used], .experiment).hovering > .pip-expanded {

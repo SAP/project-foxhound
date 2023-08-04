@@ -31,8 +31,7 @@ inDeepTreeWalker::inDeepTreeWalker()
     : mShowAnonymousContent(false),
       mShowSubDocuments(false),
       mShowDocumentsAsNodes(false),
-      mCurrentIndex(-1),
-      mWhatToShow(mozilla::dom::NodeFilter_Binding::SHOW_ALL) {}
+      mCurrentIndex(-1) {}
 
 inDeepTreeWalker::~inDeepTreeWalker() = default;
 
@@ -78,14 +77,13 @@ inDeepTreeWalker::SetShowDocumentsAsNodes(bool aShowDocumentsAsNodes) {
 }
 
 NS_IMETHODIMP
-inDeepTreeWalker::Init(nsINode* aRoot, uint32_t aWhatToShow) {
+inDeepTreeWalker::Init(nsINode* aRoot) {
   if (!aRoot) {
     return NS_ERROR_INVALID_ARG;
   }
 
   mRoot = aRoot;
   mCurrentNode = aRoot;
-  mWhatToShow = aWhatToShow;
 
   return NS_OK;
 }
@@ -96,12 +94,6 @@ NS_IMETHODIMP
 inDeepTreeWalker::GetRoot(nsINode** aRoot) {
   *aRoot = mRoot;
   NS_IF_ADDREF(*aRoot);
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-inDeepTreeWalker::GetWhatToShow(uint32_t* aWhatToShow) {
-  *aWhatToShow = mWhatToShow;
   return NS_OK;
 }
 
@@ -141,26 +133,12 @@ static already_AddRefed<nsINodeList> GetChildren(nsINode* aParent,
                                                  bool aShowAnonymousContent,
                                                  bool aShowSubDocuments) {
   MOZ_ASSERT(aParent);
-
-  nsCOMPtr<nsINodeList> ret;
   if (aShowSubDocuments) {
-    mozilla::dom::Document* domdoc = inLayoutUtils::GetSubDocumentFor(aParent);
-    if (domdoc) {
-      aParent = domdoc;
+    if (auto* doc = inLayoutUtils::GetSubDocumentFor(aParent)) {
+      aParent = doc;
     }
   }
-
-  nsCOMPtr<nsIContent> parentAsContent = do_QueryInterface(aParent);
-  if (parentAsContent && aShowAnonymousContent) {
-    ret = parentAsContent->GetChildren(nsIContent::eAllChildren);
-  } else {
-    // If it's not a content, then it's a document (or an attribute but we can
-    // ignore that case here). If aShowAnonymousContent is false we also want to
-    // fall back to ChildNodes so we can skip any native anon content that
-    // GetChildren would return.
-    ret = aParent->ChildNodes();
-  }
-  return ret.forget();
+  return InspectorUtils::GetChildrenForNode(*aParent, aShowAnonymousContent);
 }
 
 NS_IMETHODIMP
@@ -174,7 +152,7 @@ inDeepTreeWalker::SetCurrentNode(nsINode* aCurrentNode) {
   // If Document nodes are skipped by the walk, we should not allow
   // one to set one as the current node either.
   if (!mShowDocumentsAsNodes) {
-    if (aCurrentNode->NodeType() == nsINode::DOCUMENT_NODE) {
+    if (aCurrentNode->IsDocument()) {
       return NS_ERROR_FAILURE;
     }
   }
@@ -200,9 +178,8 @@ nsresult inDeepTreeWalker::SetCurrentNode(nsINode* aCurrentNode,
   // from the iframe accidentally here, so let's just skip this
   // part for document nodes, they should never have siblings.
   if (!mSiblings) {
-    if (aCurrentNode->NodeType() != nsINode::DOCUMENT_NODE) {
-      nsCOMPtr<nsINode> parent = GetParent();
-      if (parent) {
+    if (!aCurrentNode->IsDocument()) {
+      if (nsCOMPtr<nsINode> parent = GetParent()) {
         mSiblings =
             GetChildren(parent, mShowAnonymousContent, mShowSubDocuments);
       }

@@ -1668,8 +1668,8 @@ struct BaseCompiler final {
 
   // Load a pointer to the TypeDefInstanceData for a given type index
   RegPtr loadTypeDefInstanceData(uint32_t typeIndex);
-  // Load a pointer to the TypeDef for a given type index
-  RegPtr loadTypeDef(uint32_t typeIndex);
+  // Load a pointer to the SuperTypeVector for a given type index
+  RegPtr loadSuperTypeVector(uint32_t typeIndex);
 
   // Branch to the label if the WasmGcObject `object` is/is not a subtype of
   // `typeIndex`.
@@ -1704,7 +1704,6 @@ struct BaseCompiler final {
   void emitVectorAndNot();
 #  ifdef ENABLE_WASM_RELAXED_SIMD
   void emitDotI8x16I7x16AddS();
-  void emitDotBF16x8AddF32x4();
 #  endif
 
   void loadSplat(MemoryAccessDesc* access);

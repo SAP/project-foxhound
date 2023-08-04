@@ -12,6 +12,7 @@ import { createEditor } from "./create-editor";
 import { findNext, findPrev } from "./source-search";
 
 import { isWasm, lineToWasmOffset, wasmOffsetToLine } from "../wasm";
+import { createLocation } from "../location";
 
 let editor;
 
@@ -194,13 +195,12 @@ export function getSourceLocationFromMouseEvent({ codeMirror }, source, e) {
     left: e.clientX,
     top: e.clientY,
   });
-  const sourceId = source.id;
 
-  return {
-    sourceId,
-    line: fromEditorLine(sourceId, line, isWasm(sourceId)),
-    column: isWasm(sourceId) ? 0 : ch + 1,
-  };
+  return createLocation({
+    source,
+    line: fromEditorLine(source.id, line, isWasm(source.id)),
+    column: isWasm(source.id) ? 0 : ch + 1,
+  });
 }
 
 export function forEachLine(codeMirror, iter) {

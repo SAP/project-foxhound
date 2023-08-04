@@ -476,6 +476,22 @@ void MediaFormatReader::DecoderFactory::DoInitDecoder(Data& aData) {
               DecoderBenchmark::CheckVersion(
                   ownerData.GetCurrentInfo()->mMimeType);
             }
+            if (aTrack == TrackInfo::kAudioTrack) {
+              nsCString processName = ownerData.mDecoder->GetProcessName();
+              nsCString audioProcessPerCodecName(
+                  processName + ","_ns + ownerData.mDecoder->GetCodecName());
+              if (processName != "utility"_ns) {
+                if (!StaticPrefs::media_rdd_process_enabled()) {
+                  audioProcessPerCodecName += ",rdd-disabled"_ns;
+                }
+                if (!StaticPrefs::media_utility_process_enabled()) {
+                  audioProcessPerCodecName += ",utility-disabled"_ns;
+                }
+              }
+              Telemetry::ScalarAdd(
+                  Telemetry::ScalarID::MEDIA_AUDIO_PROCESS_PER_CODEC_NAME,
+                  NS_ConvertUTF8toUTF16(audioProcessPerCodecName), 1);
+            }
           },
           [this, &aData, &ownerData](const MediaResult& aError) {
             AUTO_PROFILER_LABEL("DecoderFactory::DoInitDecoder:Rejected",
@@ -1739,6 +1755,9 @@ void MediaFormatReader::NotifyNewOutput(
       decoder.mNumSamplesOutput++;
       decoder.mNumOfConsecutiveDecodingError = 0;
       decoder.mNumOfConsecutiveRDDOrGPUCrashes = 0;
+      if (aTrack == TrackInfo::kAudioTrack) {
+        decoder.mNumOfConsecutiveUtilityCrashes = 0;
+      }
     }
   LOG("Done processing new %s samples", TrackTypeToStr(aTrack));
 
@@ -2429,14 +2448,15 @@ void MediaFormatReader::Update(TrackType aTrack) {
     bool needsNewDecoder =
         decoder.mError.ref() == NS_ERROR_DOM_MEDIA_NEED_NEW_DECODER ||
         firstFrameDecodingFailedWithHardware;
-    // Limit number of RDD process restarts after crash
-    // Restart Utility without any limit after crash
+    // Limit number of process restarts after crash
     if ((decoder.mError.ref() ==
              NS_ERROR_DOM_MEDIA_REMOTE_DECODER_CRASHED_RDD_OR_GPU_ERR &&
          decoder.mNumOfConsecutiveRDDOrGPUCrashes++ <
              decoder.mMaxConsecutiveRDDOrGPUCrashes) ||
         (decoder.mError.ref() ==
-         NS_ERROR_DOM_MEDIA_REMOTE_DECODER_CRASHED_UTILITY_ERR)) {
+             NS_ERROR_DOM_MEDIA_REMOTE_DECODER_CRASHED_UTILITY_ERR &&
+         decoder.mNumOfConsecutiveUtilityCrashes++ <
+             decoder.mMaxConsecutiveUtilityCrashes)) {
       needsNewDecoder = true;
     }
     // For MF CDM crash, it needs to be handled differently. We need to shutdown

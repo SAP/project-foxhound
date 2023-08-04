@@ -86,7 +86,7 @@ document.addEventListener(
   e => {
     window._initialized = PrintEventHandler.init().catch(e => console.error(e));
     ourBrowser.setAttribute("flex", "0");
-    ourBrowser.setAttribute("selectmenuconstrained", "false");
+    ourBrowser.setAttribute("constrainpopups", "false");
     ourBrowser.classList.add("printSettingsBrowser");
     ourBrowser.closest(".dialogBox")?.classList.add("printDialogBox");
   },
@@ -1647,12 +1647,7 @@ class PrintUIForm extends PrintUIControlMixin(HTMLFormElement) {
     this.addEventListener("revalidate", this);
 
     this._printerDestination = this.querySelector("#destination");
-
     this.printButton = this.querySelector("#print-button");
-    if (AppConstants.platform != "win") {
-      // Move the Print button to the end if this isn't Windows.
-      this.printButton.parentElement.append(this.printButton);
-    }
   }
 
   removeNonPdfSettings() {
@@ -1814,8 +1809,8 @@ customElements.define("setting-select", PrintSettingSelect, {
 class PrintSettingNumber extends PrintUIControlMixin(HTMLInputElement) {
   initialize() {
     super.initialize();
-    this.addEventListener("keypress", e => this.handleKeypress(e));
-    this.addEventListener("paste", e => this.handlePaste(e));
+    this.addEventListener("beforeinput", e => this.preventWhitespaceEntry(e));
+    this.addEventListener("paste", e => this.pasteWithoutWhitespace(e));
   }
 
   connectedCallback() {
@@ -1830,36 +1825,25 @@ class PrintSettingNumber extends PrintUIControlMixin(HTMLInputElement) {
     }
   }
 
-  handleKeypress(e) {
-    let char = String.fromCharCode(e.charCode);
-    let acceptedChar = e.target.step.includes(".")
-      ? char.match(/^[0-9.]$/)
-      : char.match(/^[0-9]$/);
-    if (!acceptedChar && !char.match("\x00") && !e.ctrlKey && !e.metaKey) {
+  preventWhitespaceEntry(e) {
+    if (e.data && !e.data.trim().length) {
       e.preventDefault();
     }
   }
 
-  handlePaste(e) {
+  pasteWithoutWhitespace(e) {
+    // Prevent original value from being pasted
+    e.preventDefault();
+
+    // Manually update input's value with sanitized clipboard data
     let paste = (e.clipboardData || window.clipboardData)
       .getData("text")
       .trim();
-    let acceptedChars = e.target.step.includes(".")
-      ? paste.match(/^[0-9.]*$/)
-      : paste.match(/^[0-9]*$/);
-    if (!acceptedChars) {
-      e.preventDefault();
-    }
+    this.value = paste;
   }
 
   handleEvent(e) {
     switch (e.type) {
-      case "paste":
-        this.handlePaste();
-        break;
-      case "keypress":
-        this.handleKeypress();
-        break;
       case "input":
         if (this.settingName && this.checkValidity()) {
           this.dispatchSettingsChange({

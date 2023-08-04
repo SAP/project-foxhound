@@ -349,9 +349,14 @@ already_AddRefed<PerformanceMark> Performance::Mark(
     if (GetOwner()) {
       innerWindowId = Some(GetOwner()->WindowID());
     }
+    TimeStamp startTimeStamp =
+        CreationTimeStamp() +
+        TimeDuration::FromMilliseconds(performanceMark->UnclampedStartTime());
     profiler_add_marker("UserTiming", geckoprofiler::category::DOM,
-                        MarkerInnerWindowId(innerWindowId), UserTimingMarker{},
-                        aName, /* aIsMeasure */ false, Nothing{}, Nothing{});
+                        MarkerOptions(MarkerTiming::InstantAt(startTimeStamp),
+                                      MarkerInnerWindowId(innerWindowId)),
+                        UserTimingMarker{}, aName, /* aIsMeasure */ false,
+                        Nothing{}, Nothing{});
   }
 
   return performanceMark.forget();
@@ -397,7 +402,7 @@ bool Performance::IsPerformanceTimingAttribute(const nsAString& aName) const {
 }
 
 DOMHighResTimeStamp Performance::ConvertMarkToTimestampWithString(
-    const nsAString& aName, ErrorResult& aRv) {
+    const nsAString& aName, ErrorResult& aRv, bool aReturnUnclamped) {
   if (IsPerformanceTimingAttribute(aName)) {
     return ConvertNameToTimestamp(aName, aRv);
   }
@@ -409,6 +414,9 @@ DOMHighResTimeStamp Performance::ConvertMarkToTimestampWithString(
   typeParam = &str;
   GetEntriesByName(aName, typeParam, arr);
   if (!arr.IsEmpty()) {
+    if (aReturnUnclamped) {
+      return arr.LastElement()->UnclampedStartTime();
+    }
     return arr.LastElement()->StartTime();
   }
 
@@ -444,10 +452,11 @@ DOMHighResTimeStamp Performance::ConvertMarkToTimestampWithDOMHighResTimeStamp(
 
 DOMHighResTimeStamp Performance::ConvertMarkToTimestamp(
     const ResolveTimestampAttribute aAttribute,
-    const OwningStringOrDouble& aMarkNameOrTimestamp, ErrorResult& aRv) {
+    const OwningStringOrDouble& aMarkNameOrTimestamp, ErrorResult& aRv,
+    bool aReturnUnclamped) {
   if (aMarkNameOrTimestamp.IsString()) {
     return ConvertMarkToTimestampWithString(aMarkNameOrTimestamp.GetAsString(),
-                                            aRv);
+                                            aRv, aReturnUnclamped);
   }
 
   return ConvertMarkToTimestampWithDOMHighResTimeStamp(
@@ -489,17 +498,21 @@ DOMHighResTimeStamp Performance::ConvertNameToTimestamp(const nsAString& aName,
 
 DOMHighResTimeStamp Performance::ResolveEndTimeForMeasure(
     const Optional<nsAString>& aEndMark,
-    const Maybe<const PerformanceMeasureOptions&>& aOptions, ErrorResult& aRv) {
+    const Maybe<const PerformanceMeasureOptions&>& aOptions, ErrorResult& aRv,
+    bool aReturnUnclamped) {
   DOMHighResTimeStamp endTime;
   if (aEndMark.WasPassed()) {
-    endTime = ConvertMarkToTimestampWithString(aEndMark.Value(), aRv);
+    endTime = ConvertMarkToTimestampWithString(aEndMark.Value(), aRv,
+                                               aReturnUnclamped);
   } else if (aOptions && aOptions->mEnd.WasPassed()) {
-    endTime = ConvertMarkToTimestamp(ResolveTimestampAttribute::End,
-                                     aOptions->mEnd.Value(), aRv);
+    endTime =
+        ConvertMarkToTimestamp(ResolveTimestampAttribute::End,
+                               aOptions->mEnd.Value(), aRv, aReturnUnclamped);
   } else if (aOptions && aOptions->mStart.WasPassed() &&
              aOptions->mDuration.WasPassed()) {
-    const DOMHighResTimeStamp start = ConvertMarkToTimestamp(
-        ResolveTimestampAttribute::Start, aOptions->mStart.Value(), aRv);
+    const DOMHighResTimeStamp start =
+        ConvertMarkToTimestamp(ResolveTimestampAttribute::Start,
+                               aOptions->mStart.Value(), aRv, aReturnUnclamped);
     if (aRv.Failed()) {
       return 0;
     }
@@ -522,11 +535,13 @@ DOMHighResTimeStamp Performance::ResolveEndTimeForMeasure(
 
 DOMHighResTimeStamp Performance::ResolveStartTimeForMeasure(
     const Maybe<const nsAString&>& aStartMark,
-    const Maybe<const PerformanceMeasureOptions&>& aOptions, ErrorResult& aRv) {
+    const Maybe<const PerformanceMeasureOptions&>& aOptions, ErrorResult& aRv,
+    bool aReturnUnclamped) {
   DOMHighResTimeStamp startTime;
   if (aOptions && aOptions->mStart.WasPassed()) {
-    startTime = ConvertMarkToTimestamp(ResolveTimestampAttribute::Start,
-                                       aOptions->mStart.Value(), aRv);
+    startTime =
+        ConvertMarkToTimestamp(ResolveTimestampAttribute::Start,
+                               aOptions->mStart.Value(), aRv, aReturnUnclamped);
   } else if (aOptions && aOptions->mDuration.WasPassed() &&
              aOptions->mEnd.WasPassed()) {
     const DOMHighResTimeStamp duration =
@@ -537,15 +552,17 @@ DOMHighResTimeStamp Performance::ResolveStartTimeForMeasure(
       return 0;
     }
 
-    const DOMHighResTimeStamp end = ConvertMarkToTimestamp(
-        ResolveTimestampAttribute::End, aOptions->mEnd.Value(), aRv);
+    const DOMHighResTimeStamp end =
+        ConvertMarkToTimestamp(ResolveTimestampAttribute::End,
+                               aOptions->mEnd.Value(), aRv, aReturnUnclamped);
     if (aRv.Failed()) {
       return 0;
     }
 
     startTime = end - duration;
   } else if (aStartMark) {
-    startTime = ConvertMarkToTimestampWithString(*aStartMark, aRv);
+    startTime =
+        ConvertMarkToTimestampWithString(*aStartMark, aRv, aReturnUnclamped);
   } else {
     startTime = 0;
   }
@@ -595,8 +612,8 @@ already_AddRefed<PerformanceMeasure> Performance::Measure(
     }
   }
 
-  const DOMHighResTimeStamp endTime =
-      ResolveEndTimeForMeasure(aEndMark, options, aRv);
+  const DOMHighResTimeStamp endTime = ResolveEndTimeForMeasure(
+      aEndMark, options, aRv, /* aReturnUnclamped */ false);
   if (NS_WARN_IF(aRv.Failed())) {
     return nullptr;
   }
@@ -606,8 +623,8 @@ already_AddRefed<PerformanceMeasure> Performance::Measure(
   if (aStartOrMeasureOptions.IsString()) {
     startMark.emplace(aStartOrMeasureOptions.GetAsString());
   }
-  const DOMHighResTimeStamp startTime =
-      ResolveStartTimeForMeasure(startMark, options, aRv);
+  const DOMHighResTimeStamp startTime = ResolveStartTimeForMeasure(
+      startMark, options, aRv, /* aReturnUnclamped */ false);
   if (NS_WARN_IF(aRv.Failed())) {
     return nullptr;
   }
@@ -630,10 +647,16 @@ already_AddRefed<PerformanceMeasure> Performance::Measure(
   InsertUserEntry(performanceMeasure);
 
   if (profiler_thread_is_being_profiled_for_markers()) {
+    const DOMHighResTimeStamp unclampedStartTime = ResolveStartTimeForMeasure(
+        startMark, options, aRv, /* aReturnUnclamped */ true);
+    const DOMHighResTimeStamp unclampedEndTime =
+        ResolveEndTimeForMeasure(aEndMark, options, aRv, /* aReturnUnclamped */
+                                 true);
     TimeStamp startTimeStamp =
-        CreationTimeStamp() + TimeDuration::FromMilliseconds(startTime);
+        CreationTimeStamp() +
+        TimeDuration::FromMilliseconds(unclampedStartTime);
     TimeStamp endTimeStamp =
-        CreationTimeStamp() + TimeDuration::FromMilliseconds(endTime);
+        CreationTimeStamp() + TimeDuration::FromMilliseconds(unclampedEndTime);
 
     Maybe<nsString> endMark;
     if (aEndMark.WasPassed()) {

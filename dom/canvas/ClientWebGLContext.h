@@ -175,6 +175,8 @@ class ContextGenerationInfo final {
 
   Maybe<uvec2> mDrawingBufferSize;
 
+  webgl::ProvokingVertex mProvokingVertex = webgl::ProvokingVertex::LastVertex;
+
   ObjectId NextId() { return mLastId += 1; }
 };
 
@@ -493,7 +495,7 @@ class WebGLSyncJS final : public nsWrapperCache,
   friend class webgl::AvailabilityRunnable;
 
   bool mCanBeAvailable = false;
-  bool mHasWarnedNotAvailable = false;
+  uint8_t mNumQueriesBeforeFirstFrameBoundary = 0;
   bool mSignaled = false;
 
  public:
@@ -970,7 +972,8 @@ class ClientWebGLContext final : public nsICanvasRenderingContextInternal,
 
   void ResetBitmap() override;
 
-  UniquePtr<uint8_t[]> GetImageBuffer(int32_t* out_format) override;
+  UniquePtr<uint8_t[]> GetImageBuffer(int32_t* out_format,
+                                      gfx::IntSize* out_imageSize) override;
   NS_IMETHOD GetInputStream(const char* mimeType,
                             const nsAString& encoderOptions,
                             nsIInputStream** out_stream) override;
@@ -1435,7 +1438,8 @@ class ClientWebGLContext final : public nsICanvasRenderingContextInternal,
   void RawBufferData(GLenum target, const uint8_t* srcBytes, size_t srcLen,
                      GLenum usage);
   void RawBufferSubData(GLenum target, WebGLsizeiptr dstByteOffset,
-                        const uint8_t* srcBytes, size_t srcLen);
+                        const uint8_t* srcBytes, size_t srcLen,
+                        bool unsynchronized = false);
 
   void BufferSubData(GLenum target, WebGLsizeiptr dstByteOffset,
                      const dom::ArrayBufferView& src, GLuint srcElemOffset = 0,
@@ -2185,6 +2189,8 @@ class ClientWebGLContext final : public nsICanvasRenderingContextInternal,
                             ErrorResult& rv) {
     GetParameter(cx, pname, retval, rv, true);
   }
+
+  void ProvokingVertex(GLenum rawMode) const;
 
   // -------------------------------------------------------------------------
   // Client-side methods.  Calls in the Host are forwarded to the client.

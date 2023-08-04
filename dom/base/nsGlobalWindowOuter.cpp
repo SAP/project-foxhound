@@ -1667,13 +1667,15 @@ bool nsGlobalWindowOuter::IsBlackForCC(bool aTracingNeeded) {
 // nsGlobalWindowOuter::nsIScriptGlobalObject
 //*****************************************************************************
 
-bool nsGlobalWindowOuter::ShouldResistFingerprinting() const {
+bool nsGlobalWindowOuter::ShouldResistFingerprinting(
+    RFPTarget aTarget /* = RFPTarget::Unknown */) const {
   if (mDoc) {
-    return mDoc->ShouldResistFingerprinting();
+    return mDoc->ShouldResistFingerprinting(aTarget);
   }
   return nsContentUtils::ShouldResistFingerprinting(
       "If we do not have a document then we do not have any context"
-      "to make an informed RFP choice, so we fall back to the global pref");
+      "to make an informed RFP choice, so we fall back to the global pref",
+      aTarget);
 }
 
 OriginTrials nsGlobalWindowOuter::Trials() const {
@@ -1681,7 +1683,7 @@ OriginTrials nsGlobalWindowOuter::Trials() const {
                       : OriginTrials();
 }
 
-FontFaceSet* nsGlobalWindowOuter::Fonts() {
+FontFaceSet* nsGlobalWindowOuter::GetFonts() {
   if (mDoc) {
     return mDoc->Fonts();
   }
@@ -3972,9 +3974,11 @@ Nullable<WindowProxyHolder> nsGlobalWindowOuter::GetTopOuter() {
 already_AddRefed<BrowsingContext> nsGlobalWindowOuter::GetChildWindow(
     const nsAString& aName) {
   NS_ENSURE_TRUE(mBrowsingContext, nullptr);
+  NS_ENSURE_TRUE(mInnerWindow, nullptr);
+  NS_ENSURE_TRUE(mInnerWindow->GetWindowGlobalChild(), nullptr);
 
-  return do_AddRef(
-      mBrowsingContext->FindChildWithName(aName, *mBrowsingContext));
+  return do_AddRef(mBrowsingContext->FindChildWithName(
+      aName, *mInnerWindow->GetWindowGlobalChild()));
 }
 
 bool nsGlobalWindowOuter::DispatchCustomEvent(
@@ -4042,7 +4046,10 @@ bool nsGlobalWindowOuter::WindowExists(const nsAString& aName,
            aName.LowerCaseEqualsLiteral("_parent");
   }
 
-  return !!mBrowsingContext->FindWithName(aName, aLookForCallerOnJSStack);
+  if (WindowGlobalChild* wgc = mInnerWindow->GetWindowGlobalChild()) {
+    return wgc->FindBrowsingContextWithName(aName, aLookForCallerOnJSStack);
+  }
+  return false;
 }
 
 already_AddRefed<nsIWidget> nsGlobalWindowOuter::GetMainWidget() {
@@ -4763,23 +4770,8 @@ bool nsGlobalWindowOuter::CanMoveResizeWindows(CallerType aCallerType) {
     }
 
     // Ignore the request if we have more than one tab in the window.
-    if (XRE_IsContentProcess()) {
-      nsCOMPtr<nsIDocShell> docShell = GetDocShell();
-      if (docShell) {
-        nsCOMPtr<nsIBrowserChild> child = docShell->GetBrowserChild();
-        bool hasSiblings = true;
-        if (child && NS_SUCCEEDED(child->GetHasSiblings(&hasSiblings)) &&
-            hasSiblings) {
-          return false;
-        }
-      }
-    } else {
-      nsCOMPtr<nsIDocShellTreeOwner> treeOwner = GetTreeOwner();
-      uint32_t itemCount = 0;
-      if (treeOwner && NS_SUCCEEDED(treeOwner->GetTabCount(&itemCount)) &&
-          itemCount > 1) {
-        return false;
-      }
+    if (mBrowsingContext->Top()->HasSiblings()) {
+      return false;
     }
   }
 
@@ -7382,7 +7374,7 @@ void nsGlobalWindowOuter::InitWasOffline() { mWasOffline = NS_IsOffline(); }
 
 #if defined(_WINDOWS_) && !defined(MOZ_WRAPPED_WINDOWS_H)
 #  pragma message( \
-      "wrapper failure reason: " MOZ_WINDOWS_WRAPPER_DISABLED_REASON)
+          "wrapper failure reason: " MOZ_WINDOWS_WRAPPER_DISABLED_REASON)
 #  error "Never include unwrapped windows.h in this file!"
 #endif
 

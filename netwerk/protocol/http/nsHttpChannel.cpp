@@ -95,6 +95,7 @@
 #include "nsString.h"
 #include "CacheObserver.h"
 #include "mozilla/dom/PerformanceStorage.h"
+#include "mozilla/dom/ReferrerInfo.h"
 #include "mozilla/Telemetry.h"
 #include "AlternateServices.h"
 #include "NetworkMarker.h"
@@ -430,6 +431,22 @@ nsresult nsHttpChannel::PrepareToConnect() {
   AddCookiesToRequest();
 
 #ifdef XP_WIN
+
+  auto prefEnabledForCurrentContainer = [&]() {
+    uint32_t containerId = mLoadInfo->GetOriginAttributes().mUserContextId;
+    // Make sure that the default container ID is 0
+    static_assert(nsIScriptSecurityManager::DEFAULT_USER_CONTEXT_ID == 0);
+    nsPrintfCString prefName("network.http.windows-sso.container-enabled.%u",
+                             containerId);
+
+    bool enabled = false;
+    Preferences::GetBool(prefName.get(), &enabled);
+
+    LOG(("Pref for %s is %d\n", prefName.get(), enabled));
+
+    return enabled;
+  };
+
   // If Windows 10 SSO is enabled, we potentially add auth information to
   // secure top level loads (DOCUMENTs) and iframes (SUBDOCUMENTs) that
   // aren't anonymous or private browsing.
@@ -437,8 +454,9 @@ nsresult nsHttpChannel::PrepareToConnect() {
       mURI->SchemeIs("https") && !(mLoadFlags & LOAD_ANONYMOUS) &&
       !mPrivateBrowsing) {
     ExtContentPolicyType type = mLoadInfo->GetExternalContentPolicyType();
-    if (type == ExtContentPolicy::TYPE_DOCUMENT ||
-        type == ExtContentPolicy::TYPE_SUBDOCUMENT) {
+    if ((type == ExtContentPolicy::TYPE_DOCUMENT ||
+         type == ExtContentPolicy::TYPE_SUBDOCUMENT) &&
+        prefEnabledForCurrentContainer()) {
       AddWindowsSSO(this);
     }
   }
@@ -1021,6 +1039,7 @@ void nsHttpChannel::ReleaseListeners() {
   mChannelClassifier = nullptr;
   mWarningReporter = nullptr;
   mEarlyHintObserver = nullptr;
+  mWebTransportSessionEventListener = nullptr;
 
   for (StreamFilterRequest& request : mStreamFilterRequests) {
     request.mPromise->Reject(false, __func__);
@@ -1364,7 +1383,7 @@ nsresult nsHttpChannel::SetupTransaction() {
     mCaps &= ~NS_HTTP_ALLOW_KEEPALIVE;
   }
 
-  if (mIsForWebTransport) {
+  if (mWebTransportSessionEventListener) {
     mCaps |= NS_HTTP_STICKY_CONNECTION;
   }
 
@@ -1389,7 +1408,7 @@ nsresult nsHttpChannel::SetupTransaction() {
     };
   }
 
-  EnsureTopBrowsingContextId();
+  EnsureBrowserId();
   EnsureRequestContext();
 
   HttpTrafficCategory category = CreateTrafficCategory();
@@ -1401,11 +1420,11 @@ nsresult nsHttpChannel::SetupTransaction() {
                                     aResult.closeReason());
     };
   }
-  mTransaction->SetIsForWebTransport(mIsForWebTransport);
+  mTransaction->SetIsForWebTransport(!!mWebTransportSessionEventListener);
   rv = mTransaction->Init(
       mCaps, mConnectionInfo, &mRequestHead, mUploadStream, mReqContentLength,
       LoadUploadStreamHasHeaders(), GetCurrentSerialEventTarget(), callbacks,
-      this, mTopBrowsingContextId, category, mRequestContext, mClassOfService,
+      this, mBrowserId, category, mRequestContext, mClassOfService,
       mInitialRwin, LoadResponseTimeoutEnabled(), mChannelId,
       std::move(observer), std::move(pushCallback), mTransWithPushedStream,
       mPushedStreamId);
@@ -1984,7 +2003,7 @@ void nsHttpChannel::ProcessAltService() {
     return;
   }
 
-  if (mIsForWebTransport) {
+  if (mWebTransportSessionEventListener) {
     return;
   }
 
@@ -5146,6 +5165,9 @@ nsresult nsHttpChannel::SetupReplacementChannel(nsIURI* newURI,
     mEarlyHintObserver = nullptr;
   }
 
+  // We don't support redirection for WebTransport for now.
+  mWebTransportSessionEventListener = nullptr;
+
   nsCOMPtr<nsIHttpChannel> httpChannel = do_QueryInterface(newChannel);
   if (!httpChannel) return NS_OK;  // no other options to set
 
@@ -5554,6 +5576,7 @@ nsHttpChannel::Cancel(nsresult status) {
                 !AllowedErrorForHTTPSRRFallback(status));
 
   mEarlyHintObserver = nullptr;
+  mWebTransportSessionEventListener = nullptr;
 
   if (mCanceled) {
     LOG(("  ignoring; already canceled\n"));
@@ -5662,6 +5685,7 @@ nsresult nsHttpChannel::CancelInternal(nsresult status) {
   }
 
   mEarlyHintObserver = nullptr;
+  mWebTransportSessionEventListener = nullptr;
   mCanceled = true;
   mStatus = NS_FAILED(status) ? status : NS_ERROR_ABORT;
 
@@ -5739,6 +5763,7 @@ void nsHttpChannel::CancelNetworkRequest(nsresult aStatus) {
   if (mTransactionPump) mTransactionPump->Cancel(aStatus);
 
   mEarlyHintObserver = nullptr;
+  mWebTransportSessionEventListener = nullptr;
 }
 
 NS_IMETHODIMP
@@ -5899,9 +5924,6 @@ nsHttpChannel::AsyncOpen(nsIStreamListener* aListener) {
     ReleaseListeners();
     return rv;
   }
-
-  nsCOMPtr<WebTransportSessionEventListener> wt = do_QueryInterface(listener);
-  mIsForWebTransport = !!wt;
 
   MOZ_ASSERT(
       mLoadInfo->GetSecurityMode() == 0 ||
@@ -6222,7 +6244,7 @@ nsresult nsHttpChannel::BeginConnect() {
                                  originAttributes, host, port, true);
   } else {
 #endif
-    if (mIsForWebTransport) {
+    if (mWebTransportSessionEventListener) {
       connInfo =
           new nsHttpConnectionInfo(host, port, "h3"_ns, mUsername, proxyInfo,
                                    originAttributes, isHttps, true, true);
@@ -6243,7 +6265,7 @@ nsresult nsHttpChannel::BeginConnect() {
 
   RefPtr<AltSvcMapping> mapping;
   if (!mConnectionInfo && LoadAllowAltSvc() &&  // per channel
-      !mIsForWebTransport && (http2Allowed || http3Allowed) &&
+      !mWebTransportSessionEventListener && (http2Allowed || http3Allowed) &&
       !(mLoadFlags & LOAD_FRESH_CONNECTION) &&
       AltSvcMapping::AcceptableProxy(proxyInfo) &&
       (scheme.EqualsLiteral("http") || scheme.EqualsLiteral("https")) &&
@@ -6470,8 +6492,7 @@ nsresult nsHttpChannel::MaybeStartDNSPrefetch() {
     mDNSPrefetch =
         new nsDNSPrefetch(mURI, originAttributes, nsIRequest::GetTRRMode(),
                           this, LoadTimingEnabled());
-    nsIDNSService::DNSFlags dnsFlags =
-        nsIDNSService::RESOLVE_WANT_RECORD_ON_ERROR;
+    nsIDNSService::DNSFlags dnsFlags = nsIDNSService::RESOLVE_DEFAULT_FLAGS;
     if (mCaps & NS_HTTP_REFRESH_DNS) {
       dnsFlags |= nsIDNSService::RESOLVE_BYPASS_CACHE;
     }
@@ -7127,6 +7148,12 @@ nsHttpChannel::OnStartRequest(nsIRequest* request) {
 
     StoreLoadedBySocketProcess(mTransaction->AsHttpTransactionParent() !=
                                nullptr);
+
+    bool isTrr;
+    bool echConfigUsed;
+    mTransaction->GetNetworkAddresses(mSelfAddr, mPeerAddr, isTrr,
+                                      mEffectiveTRRMode, mTRRSkipReason,
+                                      echConfigUsed);
   }
 
   // don't enter this block if we're reading from the cache...
@@ -7275,8 +7302,9 @@ static void ReportHTTPSRRTelemetry(
                                                 getter_AddRefs(svcbRecord)))) {
     MOZ_ASSERT(svcbRecord);
 
-    Maybe<Tuple<nsCString, SupportedAlpnRank>> alpn = svcbRecord->GetAlpn();
-    bool isHttp3 = alpn ? IsHttp3(Get<1>(*alpn)) : false;
+    Maybe<std::tuple<nsCString, SupportedAlpnRank>> alpn =
+        svcbRecord->GetAlpn();
+    bool isHttp3 = alpn ? IsHttp3(std::get<1>(*alpn)) : false;
     Telemetry::Accumulate(Telemetry::HTTPS_RR_WITH_HTTP3_PRESENTED, isHttp3);
   }
 }
@@ -8181,6 +8209,7 @@ nsHttpChannel::OnTransportStatus(nsITransport* trans, nsresult status,
     bool echConfigUsed = false;
     if (mTransaction) {
       mTransaction->GetNetworkAddresses(mSelfAddr, mPeerAddr, isTrr,
+                                        mEffectiveTRRMode, mTRRSkipReason,
                                         echConfigUsed);
     } else {
       nsCOMPtr<nsISocketTransport> socketTransport = do_QueryInterface(trans);
@@ -8188,9 +8217,11 @@ nsHttpChannel::OnTransportStatus(nsITransport* trans, nsresult status,
         socketTransport->GetSelfAddr(&mSelfAddr);
         socketTransport->GetPeerAddr(&mPeerAddr);
         socketTransport->ResolvedByTRR(&isTrr);
+        socketTransport->GetEffectiveTRRMode(&mEffectiveTRRMode);
         socketTransport->GetEchConfigUsed(&echConfigUsed);
       }
     }
+
     StoreResolvedByTRR(isTrr);
     StoreEchConfigUsed(echConfigUsed);
   }
@@ -8711,11 +8742,6 @@ NS_IMETHODIMP
 nsHttpChannel::OnLookupComplete(nsICancelable* request, nsIDNSRecord* rec,
                                 nsresult status) {
   MOZ_ASSERT(NS_IsMainThread(), "Expecting DNS callback on main thread.");
-
-  if (nsCOMPtr<nsIDNSAddrRecord> r = do_QueryInterface(rec)) {
-    r->GetEffectiveTRRMode(&mEffectiveTRRMode);
-    r->GetTrrSkipReason(&mTRRSkipReason);
-  }
 
   LOG(
       ("nsHttpChannel::OnLookupComplete [this=%p] prefetch complete%s: "
@@ -10069,10 +10095,17 @@ nsHttpChannel::EarlyHint(const nsACString& aLinkHeader,
   return NS_OK;
 }
 
-WebTransportSessionEventListener*
+NS_IMETHODIMP nsHttpChannel::SetWebTransportSessionEventListener(
+    WebTransportSessionEventListener* aListener) {
+  mWebTransportSessionEventListener = aListener;
+  return NS_OK;
+}
+
+already_AddRefed<WebTransportSessionEventListener>
 nsHttpChannel::GetWebTransportSessionEventListener() {
-  nsCOMPtr<WebTransportSessionEventListener> wt = do_QueryInterface(mListener);
-  return wt;
+  RefPtr<WebTransportSessionEventListener> wt =
+      mWebTransportSessionEventListener;
+  return wt.forget();
 }
 
 }  // namespace net

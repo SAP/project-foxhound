@@ -21,6 +21,13 @@
 #include <string>
 #include <vector>
 
+namespace IPC {
+class MessageReader;
+class MessageWriter;
+template <typename T>
+struct ParamTraits;
+}  // namespace IPC
+
 class SharedLibrary {
  public:
   SharedLibrary(uintptr_t aStart, uintptr_t aEnd, uintptr_t aOffset,
@@ -39,37 +46,6 @@ class SharedLibrary {
         mDebugPath(aDebugPath),
         mVersion(aVersion),
         mArch(aArch) {}
-
-  SharedLibrary(const SharedLibrary& aEntry)
-      : mStart(aEntry.mStart),
-        mEnd(aEntry.mEnd),
-        mOffset(aEntry.mOffset),
-        mBreakpadId(aEntry.mBreakpadId),
-        mCodeId(aEntry.mCodeId),
-        mModuleName(aEntry.mModuleName),
-        mModulePath(aEntry.mModulePath),
-        mDebugName(aEntry.mDebugName),
-        mDebugPath(aEntry.mDebugPath),
-        mVersion(aEntry.mVersion),
-        mArch(aEntry.mArch) {}
-
-  SharedLibrary& operator=(const SharedLibrary& aEntry) {
-    // Gracefully handle self assignment
-    if (this == &aEntry) return *this;
-
-    mStart = aEntry.mStart;
-    mEnd = aEntry.mEnd;
-    mOffset = aEntry.mOffset;
-    mBreakpadId = aEntry.mBreakpadId;
-    mCodeId = aEntry.mCodeId;
-    mModuleName = aEntry.mModuleName;
-    mModulePath = aEntry.mModulePath;
-    mDebugName = aEntry.mDebugName;
-    mDebugPath = aEntry.mDebugPath;
-    mVersion = aEntry.mVersion;
-    mArch = aEntry.mArch;
-    return *this;
-  }
 
   bool operator==(const SharedLibrary& other) const {
     return (mStart == other.mStart) && (mEnd == other.mEnd) &&
@@ -99,10 +75,16 @@ class SharedLibrary {
   const nsString& GetDebugPath() const { return mDebugPath; }
   const nsCString& GetVersion() const { return mVersion; }
   const std::string& GetArch() const { return mArch; }
+  size_t SizeOf() const {
+    return sizeof *this + mBreakpadId.Length() + mCodeId.Length() +
+           mModuleName.Length() * 2 + mModulePath.Length() * 2 +
+           mDebugName.Length() * 2 + mDebugPath.Length() * 2 +
+           mVersion.Length() + mArch.size();
+  }
 
- private:
   SharedLibrary() : mStart{0}, mEnd{0}, mOffset{0} {}
 
+ private:
   uintptr_t mStart;
   uintptr_t mEnd;
   uintptr_t mOffset;
@@ -124,6 +106,8 @@ class SharedLibrary {
   nsString mDebugPath;
   nsCString mVersion;
   std::string mArch;
+
+  friend struct IPC::ParamTraits<SharedLibrary>;
 };
 
 static bool CompareAddresses(const SharedLibrary& first,
@@ -134,11 +118,18 @@ static bool CompareAddresses(const SharedLibrary& first,
 class SharedLibraryInfo {
  public:
   static SharedLibraryInfo GetInfoForSelf();
+#ifdef XP_WIN
+  static SharedLibraryInfo GetInfoFromPath(const wchar_t* aPath);
+#endif
+
   static void Initialize();
 
-  SharedLibraryInfo() {}
-
   void AddSharedLibrary(SharedLibrary entry) { mEntries.push_back(entry); }
+
+  void AddAllSharedLibraries(const SharedLibraryInfo& sharedLibraryInfo) {
+    mEntries.insert(mEntries.end(), sharedLibraryInfo.mEntries.begin(),
+                    sharedLibraryInfo.mEntries.end());
+  }
 
   const SharedLibrary& GetEntry(size_t i) const { return mEntries[i]; }
 
@@ -161,10 +152,62 @@ class SharedLibraryInfo {
     std::sort(mEntries.begin(), mEntries.end(), CompareAddresses);
   }
 
+  // Remove duplicate entries from the vector.
+  //
+  // We purposefully don't use the operator== implementation of SharedLibrary
+  // because it compares all the fields including mStart, mEnd and mOffset which
+  // are not the same across different processes.
+  void DeduplicateEntries() {
+    static auto cmpSort = [](const SharedLibrary& a, const SharedLibrary& b) {
+      return std::tie(a.GetModuleName(), a.GetBreakpadId()) <
+             std::tie(b.GetModuleName(), b.GetBreakpadId());
+    };
+    static auto cmpEqual = [](const SharedLibrary& a, const SharedLibrary& b) {
+      return std::tie(a.GetModuleName(), a.GetBreakpadId()) ==
+             std::tie(b.GetModuleName(), b.GetBreakpadId());
+    };
+    // std::unique requires the vector to be sorted first. It can only remove
+    // consecutive duplicate elements.
+    std::sort(mEntries.begin(), mEntries.end(), cmpSort);
+    // Remove the duplicates since it's sorted now.
+    mEntries.erase(std::unique(mEntries.begin(), mEntries.end(), cmpEqual),
+                   mEntries.end());
+  }
+
   void Clear() { mEntries.clear(); }
+
+  size_t SizeOf() const {
+    size_t size = 0;
+
+    for (const auto& item : mEntries) {
+      size += item.SizeOf();
+    }
+
+    return size;
+  }
 
  private:
   std::vector<SharedLibrary> mEntries;
+
+  friend struct IPC::ParamTraits<SharedLibraryInfo>;
 };
+
+namespace IPC {
+template <>
+struct ParamTraits<SharedLibrary> {
+  typedef SharedLibrary paramType;
+
+  static void Write(MessageWriter* aWriter, const paramType& aParam);
+  static bool Read(MessageReader* aReader, paramType* aResult);
+};
+
+template <>
+struct ParamTraits<SharedLibraryInfo> {
+  typedef SharedLibraryInfo paramType;
+
+  static void Write(MessageWriter* aWriter, const paramType& aParam);
+  static bool Read(MessageReader* aReader, paramType* aResult);
+};
+}  // namespace IPC
 
 #endif

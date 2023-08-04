@@ -34,12 +34,30 @@ XPCOMUtils.defineLazyGetter(lazy, "console", () => {
   });
 });
 
+XPCOMUtils.defineLazyPreferenceGetter(
+  lazy,
+  "translationsEnabledPref",
+  "browser.translations.enable"
+);
+
+XPCOMUtils.defineLazyPreferenceGetter(
+  lazy,
+  "simulateUnsupportedEnginePref",
+  "browser.translations.simulateUnsupportedEngine"
+);
+
+// Do the slow/safe thing of always verifying the signature when the data is
+// loaded from the file system. This restriction could be eased in the future if it
+// proves to be a performance problem, and the security risk is acceptable.
+const VERIFY_SIGNATURES_FROM_FS = true;
+
 /**
  * @typedef {import("../translations").TranslationModelRecord} TranslationModelRecord
  * @typedef {import("../translations").RemoteSettingsClient} RemoteSettingsClient
  * @typedef {import("../translations").LanguageIdEngineMockedPayload} LanguageIdEngineMockedPayload
  * @typedef {import("../translations").LanguageTranslationModelFiles} LanguageTranslationModelFiles
  * @typedef {import("../translations").WasmRecord} WasmRecord
+ * @typedef {import("../translations").LangTags} LangTags
  */
 
 /**
@@ -70,6 +88,18 @@ export class TranslationsParent extends JSWindowActorParent {
   /** @type {RemoteSettingsClient | null} */
   #translationsWasmRemoteClient = null;
 
+  /** @type {LangTags | null} */
+  #langTags = null;
+
+  /**
+   * Have translations been turned on for the page? This means a `TranslationsDocument`
+   * will have been created for the page, and it will determine how to actively translate
+   * the document.
+   *
+   * @type {boolean}
+   */
+  #translationsActive = false;
+
   /**
    * The translation engine can be mocked for testing.
    *
@@ -93,10 +123,55 @@ export class TranslationsParent extends JSWindowActorParent {
    */
   static #mockedLanguageIdConfidence = null;
 
-  actorCreated() {
-    if (TranslationsParent.#mockedLanguagePairs) {
-      this.sendAsyncMessage("Translations:IsMocked", true);
+  /**
+   * @type {null | Promise<boolean>}
+   */
+  static #isTranslationsEngineSupported = null;
+
+  /**
+   * Detect if Wasm SIMD is supported, and cache the value. It's better to check
+   * for support before downloading large binary blobs to a user who can't even
+   * use the feature. This function also respects mocks and simulating unsupported
+   * engines.
+   *
+   * @type {Promise<boolean>}
+   */
+  static getIsTranslationsEngineSupported() {
+    if (lazy.simulateUnsupportedEnginePref) {
+      // Use the non-lazy console.log so that the user is always informed as to why
+      // the translations engine is not working.
+      console.log(
+        "Translations: The translations engine is disabled through the pref " +
+          '"browser.translations.simulateUnsupportedEngine".'
+      );
+
+      // The user is manually testing unsupported engines.
+      return Promise.resolve(false);
     }
+
+    if (TranslationsParent.#mockedLanguagePairs) {
+      // A mocked translations engine is always supported.
+      return Promise.resolve(true);
+    }
+
+    if (TranslationsParent.#isTranslationsEngineSupported === null) {
+      TranslationsParent.#isTranslationsEngineSupported = detectSimdSupport();
+
+      TranslationsParent.#isTranslationsEngineSupported.then(
+        isSupported => () => {
+          // Use the non-lazy console.log so that the user is always informed as to why
+          // the translations engine is not working.
+          if (!isSupported) {
+            console.log(
+              "Translations: The translations engine is not supported on your device as " +
+                "it does not support Wasm SIMD operations."
+            );
+          }
+        }
+      );
+    }
+
+    return TranslationsParent.#isTranslationsEngineSupported;
   }
 
   async receiveMessage({ name, data }) {
@@ -112,6 +187,12 @@ export class TranslationsParent extends JSWindowActorParent {
       }
       case "Translations:GetLanguageIdEngineMockedPayload": {
         return this.#getLanguageIdEngineMockedPayload();
+      }
+      case "Translations:GetIsTranslationsEngineMocked": {
+        return Boolean(TranslationsParent.#mockedLanguagePairs);
+      }
+      case "Translations:GetIsTranslationsEngineSupported": {
+        return TranslationsParent.getIsTranslationsEngineSupported();
       }
       case "Translations:GetLanguageTranslationModelFiles": {
         const { fromLanguage, toLanguage } = data;
@@ -138,6 +219,12 @@ export class TranslationsParent extends JSWindowActorParent {
       case "Translations:GetSupportedLanguages": {
         return this.#getSupportedLanguages();
       }
+      case "Translations:ReportLangTags": {
+        const { langTags } = data;
+        this.#langTags = langTags;
+        this.updateUrlBarButton();
+        return undefined;
+      }
     }
     return undefined;
   }
@@ -156,9 +243,7 @@ export class TranslationsParent extends JSWindowActorParent {
     const modelRecords = await client.get({
       // Pull the records from the network so that we never get an empty list.
       syncIfEmpty: true,
-      // TODO (Bug 1813779) - We should consider the verification process. For now do the
-      // slow/safe thing of always verifying the signature.
-      verifySignature: true,
+      verifySignature: VERIFY_SIGNATURES_FROM_FS,
     });
 
     if (modelRecords.length === 0) {
@@ -219,9 +304,7 @@ export class TranslationsParent extends JSWindowActorParent {
     const wasmRecords = await client.get({
       // Pull the records from the network so that we never get an empty list.
       syncIfEmpty: true,
-      // TODO (Bug 1813779) - We should consider the verification process. For now do the
-      // slow/safe thing of always verifying the signature.
-      verifySignature: true,
+      verifySignature: VERIFY_SIGNATURES_FROM_FS,
       // Only get the fasttext-wasm record.
       filters: { name: "fasttext-wasm" },
     });
@@ -374,9 +457,7 @@ export class TranslationsParent extends JSWindowActorParent {
     const translationModelRecords = await client.get({
       // Pull the records from the network so that we never get an empty list.
       syncIfEmpty: true,
-      // TODO (Bug 1813779) - We should consider the verification process. For now do the
-      // slow/safe thing of always verifying the signature.
-      verifySignature: true,
+      verifySignature: VERIFY_SIGNATURES_FROM_FS,
     });
 
     for (const record of translationModelRecords) {
@@ -450,9 +531,7 @@ export class TranslationsParent extends JSWindowActorParent {
     const wasmRecords = await client.get({
       // Pull the records from the network so that we never get an empty list.
       syncIfEmpty: true,
-      // TODO (Bug 1813779) - We should consider the verification process. For now do the
-      // slow/safe thing of always verifying the signature.
-      verifySignature: true,
+      verifySignature: VERIFY_SIGNATURES_FROM_FS,
       // Only get the bergamot-translator record.
       filters: { name: "bergamot-translator" },
     });
@@ -637,6 +716,74 @@ export class TranslationsParent extends JSWindowActorParent {
       lazy.console.log("Removing detected-language confidence mock");
     }
   }
+
+  static urlBarButtonClick(event) {
+    let win = event.target.ownerGlobal;
+    if (win.gBrowser) {
+      let browser = win.gBrowser.selectedBrowser;
+      let windowGlobal = browser.browsingContext.currentWindowGlobal;
+
+      /** @type {TranslationsParent} */
+      let actor = windowGlobal.getActor("Translations");
+
+      if (actor) {
+        actor.toggleTranslation();
+      }
+    }
+  }
+
+  /**
+   * Either send a message to the child to translate, or revert a translation by
+   * refreshing the page.
+   */
+  toggleTranslation() {
+    if (!this.#langTags) {
+      return;
+    }
+    if (this.#translationsActive) {
+      const browser = this.browsingContext.embedderElement;
+      browser.reload();
+    } else {
+      this.sendAsyncMessage("Translations:TranslatePage");
+    }
+    this.#translationsActive = !this.#translationsActive;
+    this.updateUrlBarButton();
+  }
+
+  static updateButtonFromLocationChange(browser) {
+    if (!lazy.translationsEnabledPref) {
+      // The pref isn't enabled, so don't attempt to get the actor.
+      return;
+    }
+    let windowGlobal = browser.browsingContext.currentWindowGlobal;
+    let actor = windowGlobal.getActor("Translations");
+    actor.updateUrlBarButton(browser);
+  }
+
+  /**
+   * Set the state of the translations button in the URL bar.
+   */
+  updateUrlBarButton(browser = this.browsingContext.embedderElement) {
+    if (!browser) {
+      return;
+    }
+
+    let doc = browser.ownerGlobal.document;
+    let button = doc.getElementById("translations-button");
+    if (!button) {
+      return;
+    }
+
+    if (this.#langTags) {
+      button.hidden = false;
+      if (this.#translationsActive) {
+        button.setAttribute("translationsactive", true);
+      }
+    } else {
+      button.removeAttribute("translationsactive");
+      button.hidden = true;
+    }
+  }
 }
 
 /**
@@ -660,4 +807,25 @@ function bypassSignatureVerificationIfDev(client) {
     );
     client.verifySignature = false;
   }
+}
+
+/**
+ * WebAssembly modules must be instantiated from a Worker, since it's considered
+ * unsafe eval.
+ */
+function detectSimdSupport() {
+  return new Promise(resolve => {
+    lazy.console.log("Loading wasm simd detector worker.");
+
+    const worker = new Worker(
+      "chrome://global/content/translations/simd-detect-worker.js"
+    );
+
+    // This should pretty much immediately resolve, so it does not need Firefox shutdown
+    // detection.
+    worker.addEventListener("message", ({ data }) => {
+      resolve(data.isSimdSupported);
+      worker.terminate();
+    });
+  });
 }

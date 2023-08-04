@@ -630,10 +630,14 @@ void Gecko_MediaFeatures_GetDeviceSize(const mozilla::dom::Document*,
 
 float Gecko_MediaFeatures_GetResolution(const mozilla::dom::Document*);
 bool Gecko_MediaFeatures_PrefersReducedMotion(const mozilla::dom::Document*);
+bool Gecko_MediaFeatures_PrefersReducedTransparency(
+    const mozilla::dom::Document*);
 mozilla::StylePrefersContrast Gecko_MediaFeatures_PrefersContrast(
     const mozilla::dom::Document*);
 mozilla::StylePrefersColorScheme Gecko_MediaFeatures_PrefersColorScheme(
     const mozilla::dom::Document*, bool aUseContent);
+mozilla::StyleScripting Gecko_MediaFeatures_Scripting(
+    const mozilla::dom::Document*);
 
 mozilla::StyleDynamicRange Gecko_MediaFeatures_DynamicRange(
     const mozilla::dom::Document*);

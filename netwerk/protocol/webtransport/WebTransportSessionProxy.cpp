@@ -10,6 +10,7 @@
 #include "WebTransportStreamProxy.h"
 #include "nsIAsyncVerifyRedirectCallback.h"
 #include "nsIHttpChannel.h"
+#include "nsIHttpChannelInternal.h"
 #include "nsIRequest.h"
 #include "nsNetUtil.h"
 #include "nsProxyRelease.h"
@@ -61,6 +62,14 @@ WebTransportSessionProxy::~WebTransportSessionProxy() {
 nsresult WebTransportSessionProxy::AsyncConnect(
     nsIURI* aURI, nsIPrincipal* aPrincipal, uint32_t aSecurityFlags,
     WebTransportSessionEventListener* aListener) {
+  return AsyncConnectWithClient(aURI, aPrincipal, aSecurityFlags, aListener,
+                                Maybe<dom::ClientInfo>());
+}
+
+nsresult WebTransportSessionProxy::AsyncConnectWithClient(
+    nsIURI* aURI, nsIPrincipal* aPrincipal, uint32_t aSecurityFlags,
+    WebTransportSessionEventListener* aListener,
+    const Maybe<dom::ClientInfo>& aClientInfo) {
   MOZ_ASSERT(NS_IsMainThread());
 
   LOG(("WebTransportSessionProxy::AsyncConnect"));
@@ -80,12 +89,24 @@ nsresult WebTransportSessionProxy::AsyncConnect(
   nsLoadFlags loadFlags = nsIRequest::LOAD_NORMAL |
                           nsIRequest::LOAD_BYPASS_CACHE |
                           nsIRequest::INHIBIT_CACHING;
-  nsresult rv = NS_NewChannel(getter_AddRefs(mChannel), aURI, aPrincipal, flags,
-                              nsContentPolicyType::TYPE_OTHER,
-                              /* aCookieJarSettings */ nullptr,
-                              /* aPerformanceStorage */ nullptr,
-                              /* aLoadGroup */ nullptr,
-                              /* aCallbacks */ this, loadFlags);
+  nsresult rv = NS_ERROR_FAILURE;
+
+  if (aClientInfo.isSome()) {
+    rv = NS_NewChannel(getter_AddRefs(mChannel), aURI, aPrincipal,
+                       aClientInfo.ref(), Maybe<dom::ServiceWorkerDescriptor>(),
+                       flags, nsContentPolicyType::TYPE_WEB_TRANSPORT,
+                       /* aCookieJarSettings */ nullptr,
+                       /* aPerformanceStorage */ nullptr,
+                       /* aLoadGroup */ nullptr,
+                       /* aCallbacks */ this, loadFlags);
+  } else {
+    rv = NS_NewChannel(getter_AddRefs(mChannel), aURI, aPrincipal, flags,
+                       nsContentPolicyType::TYPE_WEB_TRANSPORT,
+                       /* aCookieJarSettings */ nullptr,
+                       /* aPerformanceStorage */ nullptr,
+                       /* aLoadGroup */ nullptr,
+                       /* aCallbacks */ this, loadFlags);
+  }
 
   NS_ENSURE_SUCCESS(rv, rv);
 
@@ -123,6 +144,14 @@ nsresult WebTransportSessionProxy::AsyncConnect(
   if (NS_FAILED(rv)) {
     return rv;
   }
+
+  nsCOMPtr<nsIHttpChannelInternal> internalChannel =
+      do_QueryInterface(mChannel);
+  if (!internalChannel) {
+    mChannel = nullptr;
+    return NS_ERROR_ABORT;
+  }
+  Unused << internalChannel->SetWebTransportSessionEventListener(this);
 
   rv = mChannel->AsyncOpen(this);
   if (NS_SUCCEEDED(rv)) {
@@ -753,12 +782,11 @@ WebTransportSessionProxy::OnIncomingStreamAvailableInternal(
          this, mState, mListener.get()));
     if (mState == WebTransportSessionProxyState::ACTIVE) {
       listener = mListener;
-    } else {
-      MOZ_ASSERT(false, "mState is not ACTIVE");
     }
   }
 
   if (!listener) {
+    // Session can be already closed.
     return NS_OK;
   }
 
@@ -955,6 +983,15 @@ void WebTransportSessionProxy::NotifyDatagramReceived(
     MutexAutoLock lock(mMutex);
     MOZ_ASSERT(mTarget->IsOnCurrentThread());
 
+    if (!mStopRequestCalled) {
+      CopyableTArray<uint8_t> copied(aData);
+      mPendingEvents.AppendElement(
+          [self = RefPtr{this}, data = std::move(copied)]() mutable {
+            self->NotifyDatagramReceived(std::move(data));
+          });
+      return;
+    }
+
     if (mState != WebTransportSessionProxyState::ACTIVE || !mListener) {
       return;
     }
@@ -993,6 +1030,13 @@ void WebTransportSessionProxy::OnMaxDatagramSizeInternal(uint64_t aSize) {
   {
     MutexAutoLock lock(mMutex);
     MOZ_ASSERT(mTarget->IsOnCurrentThread());
+
+    if (!mStopRequestCalled) {
+      mPendingEvents.AppendElement([self = RefPtr{this}, size(aSize)]() {
+        self->OnMaxDatagramSizeInternal(size);
+      });
+      return;
+    }
 
     if (mState != WebTransportSessionProxyState::ACTIVE || !mListener) {
       return;

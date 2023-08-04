@@ -1380,6 +1380,29 @@ if (/* mozGradientsEnabled */ true) {
   );
 }
 
+const pathValues = {
+  other_values: [
+    "path('')",
+    "path(' ')",
+    "path('M 10 10 20 20 H 90 V 90 Z')",
+    "path('M10 10 20,20H90V90Z')",
+    "path('M 10 10 C 20 20, 40 20, 50 10')",
+    "path('M 10 80 C 40 10, 65 10, 95 80 S 1.5e2 150, 180 80')",
+    "path('M 10 80 Q 95 10 180 80')",
+    "path('M 10 80 Q 52.5 10, 95 80 T 180 80')",
+    "path('M 80 80 A 45 45, 0, 0, 0, 1.25e2 1.25e2 L 125 80 Z')",
+    "path('M100-200h20z')",
+    "path('M10,10L20.6.5z')",
+  ],
+  invalid_values: [
+    "path()",
+    "path(a)",
+    "path('M 10 Z')",
+    "path('M 10-10 20')",
+    "path('M 10 10 C 20 20 40 20')",
+  ],
+};
+
 var gCSSProperties = {
   animation: {
     domProp: "animation",
@@ -2855,6 +2878,14 @@ var gCSSProperties = {
       "calc(0px)",
     ],
     invalid_values: ["20", "-1px", "50%"],
+  },
+  d: {
+    domProp: "d",
+    inherited: false,
+    type: CSS_TYPE_LONGHAND,
+    initial_values: ["none"],
+    other_values: pathValues.other_values,
+    invalid_values: pathValues.invalid_values,
   },
   "-moz-float-edge": {
     domProp: "MozFloatEdge",
@@ -5285,7 +5316,7 @@ var gCSSProperties = {
       "counters(foo, '.', symbols('*'))",
       "counters(foo, '.', symbols(numeric '0' '1'))",
       "image-set(url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAIAAAD8GO2jAAAAKElEQVR42u3NQQ0AAAgEoNP+nTWFDzcoQE1udQQCgUAgEAgEAsGTYAGjxAE/G/Q2tQAAAABJRU5ErkJggg==))",
-    ],
+    ].concat(validNonUrlImageValues),
     invalid_values: [
       "counter(foo, none)",
       "counters(bar, '.', none)",
@@ -5300,7 +5331,7 @@ var gCSSProperties = {
       "-moz-alt-content 'foo'",
       "'foo' -moz-alt-content",
       "counter(one, two, three) 'foo'",
-    ],
+    ].concat(invalidNonUrlImageValues),
   },
   "counter-increment": {
     domProp: "counterIncrement",
@@ -13340,29 +13371,6 @@ gCSSProperties["scrollbar-width"] = {
   invalid_values: ["1px"],
 };
 
-const pathValues = {
-  other_values: [
-    "path('')",
-    "path(' ')",
-    "path('M 10 10 20 20 H 90 V 90 Z')",
-    "path('M10 10 20,20H90V90Z')",
-    "path('M 10 10 C 20 20, 40 20, 50 10')",
-    "path('M 10 80 C 40 10, 65 10, 95 80 S 1.5e2 150, 180 80')",
-    "path('M 10 80 Q 95 10 180 80')",
-    "path('M 10 80 Q 52.5 10, 95 80 T 180 80')",
-    "path('M 80 80 A 45 45, 0, 0, 0, 1.25e2 1.25e2 L 125 80 Z')",
-    "path('M100-200h20z')",
-    "path('M10,10L20.6.5z')",
-  ],
-  invalid_values: [
-    "path()",
-    "path(a)",
-    "path('M 10 Z')",
-    "path('M 10-10 20')",
-    "path('M 10 10 C 20 20 40 20')",
-  ],
-};
-
 if (IsCSSPropertyPrefEnabled("layout.css.motion-path.enabled")) {
   gCSSProperties["offset"] = {
     domProp: "offset",
@@ -13502,17 +13510,6 @@ if (
       "right 10% bottom 20em",
     ],
     invalid_values: ["none", "10deg", "left 10% top"],
-  };
-}
-
-if (IsCSSPropertyPrefEnabled("layout.css.d-property.enabled")) {
-  gCSSProperties["d"] = {
-    domProp: "d",
-    inherited: false,
-    type: CSS_TYPE_LONGHAND,
-    initial_values: ["none"],
-    other_values: pathValues.other_values,
-    invalid_values: pathValues.invalid_values,
   };
 }
 
@@ -13849,8 +13846,8 @@ if (IsCSSPropertyPrefEnabled("layout.css.scroll-driven-animations.enabled")) {
     domProp: "viewTimelineInset",
     inherited: false,
     type: CSS_TYPE_LONGHAND,
-    initial_values: ["0px"],
-    other_values: ["auto", "1%", "1px 1%", "auto auto", "calc(0px) auto"],
+    initial_values: ["auto"],
+    other_values: ["0px", "1%", "1px 1%", "0px 0%", "calc(0px) auto"],
     invalid_values: ["none", "rgb(1, 2, 3)", "foo bar", "1px 2px 3px"],
   };
 
