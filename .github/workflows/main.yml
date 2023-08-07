@@ -25,7 +25,9 @@ jobs:
     steps:
 
       - name: Update
-        run: sudo apt-get update
+        run: |
+          sudo apt-get update
+          pip install junit-xml
 
       - name: Checkout release branch
         uses: actions/checkout@v3
