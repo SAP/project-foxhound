@@ -27,30 +27,44 @@ jobs:
       - name: Update
         run: sudo apt-get update
 
-      - name: Checkout
+      - name: Checkout release branch
         uses: actions/checkout@v3
         with:
           ref: firefox-release
+          path: release
 
       # Bootstrap
-      - name: Bootstrap Build Environment
+      - name: Bootstrap Build Tools
         run: |
+          cd release
           ./mach --no-interactive bootstrap --application-choice=js
-          git checkout main
 
+      - name: Checkout release branch
+        uses: actions/checkout@v3
+        with:
+            path: build
+    
       # Configure
       - name: Copy configuration
-        run: cp taintfox_mozconfig_spidermonkey .mozconfig
+        run: |
+          cd build
+          cp taintfox_mozconfig_spidermonkey .mozconfig
 
       # Build
       - name: Build
-        run: ./mach build
+        run: |
+          cd build
+          ./mach build
 
       # Test
       - name: Test
-        run: obj-spider-release/dist/bin/js js/src/Y.js
+        run:  |
+          cd build
+          obj-spider-release/dist/bin/js js/src/Y.js
 
       - name: Taint Tests
-        run: python3 js/src/tests/parse_output.py
+        run:  |
+          cd build
+          python3 js/src/tests/parse_output.py
 
 
