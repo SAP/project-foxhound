@@ -69,4 +69,11 @@ jobs:
           cd build
           python3 js/src/tests/parse_output.py
 
-
+      - name: Report
+        uses: dorny/test-reporter@v1
+        if: always()
+        with:
+          name: JavaScript Tests
+          path: jstest_output.xml
+          reporter: java-junit
+          fail-on-error: true
