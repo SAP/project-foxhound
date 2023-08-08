@@ -15,6 +15,7 @@ on:
 
 # A workflow run is made up of one or more jobs that can run sequentially or in parallel
 jobs:
+
   # This workflow contains a single job called "build"
   build:
     # The type of runner that the job will run on
@@ -23,80 +24,54 @@ jobs:
     # Steps represent a sequence of tasks that will be executed as part of the job
     steps:
 
-      - name: Checkout
-        uses: actions/checkout@v2
-
       - name: Update
-        run: sudo apt-get update
+        run: |
+          sudo apt-get update
+          pip install junit-xml
+
+      - name: Checkout release branch
+        uses: actions/checkout@v3
+        with:
+          ref: firefox-release
+          path: release
 
       # Bootstrap
-      - name: Bootstrap Build Environment
+      - name: Bootstrap Build Tools
         run: |
-          ./mach bootstrap --application-choice=browser
-          /home/runner/.cargo/bin/rustup install 1.65.0
-          /home/runner/.cargo/bin/rustup default 1.65.0
-          /home/runner/.cargo/bin/rustup override set 1.65.0
+          cd release
+          ./mach --no-interactive bootstrap --application-choice=js
 
+      - name: Checkout release branch
+        uses: actions/checkout@v3
+        with:
+            path: build
+    
       # Configure
       - name: Copy configuration
         run: |
-          cp taintfox_mozconfig_ubuntu .mozconfig
-          echo "mk_add_options MOZ_PARALLEL_BUILD=1" >> .mozconfig
+          cd build
+          cp taintfox_mozconfig_spidermonkey .mozconfig
 
       # Build
       - name: Build
-        run: ./mach build
-
-      # Package
-      - name: Package
-        run: ./mach package
-
-  # This workflow contains a single job called "build"
-  build_js:
-    # The type of runner that the job will run on
-    runs-on: ubuntu-latest
-
-    # Steps represent a sequence of tasks that will be executed as part of the job
-    steps:
-
-      - name: Checkout
-        uses: actions/checkout@v2
-
-      - name: Update
-        run: sudo apt-get update
-
-      # Bootstrap
-      - name: Bootstrap Build Environment
-        run: ./mach bootstrap --application-choice=browser
-
-      # Configure
-      - name: Copy configuration
-        run: cp taintfox_mozconfig_spidermonkey .mozconfig
-      # Build
-      - name: Build
-        run: ./mach build
+        run: |
+          cd build
+          ./mach build
 
       # Test
       - name: Test
-        run: obj-spider-release/dist/bin/js js/src/Y.js
+        run:  |
+          cd build
+          obj-spider-release/dist/bin/js js/src/Y.js
 
       - name: Taint Tests
-        run: js/src/tests/jstests.py obj-spider-release/dist/bin/js taint/
+        run:  |
+          cd build
+          python3 js/src/tests/parse_output.py
 
-  # This workflow contains a single job called "build"
-  build_docker:
-    if: ${{ false }}  # disable for now the job is killed
-    # The type of runner that the job will run on
-    runs-on: ubuntu-latest
-
-    # Steps represent a sequence of tasks that will be executed as part of the job
-    steps:
-
-      - name: Checkout
-        uses: actions/checkout@v2
-
-      # Bootstrap
-      - name: Builder Docker
-        working-directory: ./dockerfiles
-        run: docker build -t foxhound .
-
+      - name: Upload Report
+        uses: actions/upload-artifact@v2  # upload test results
+        if: success() || failure()        # run this step even if previous step failed
+        with:
+          name: test-results
+          path: build/jstest_output.xml
