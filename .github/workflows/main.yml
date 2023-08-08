@@ -76,4 +76,5 @@ jobs:
           name: JavaScript Tests
           path: jstest_output.xml
           reporter: java-junit
+          working-directory: build
           fail-on-error: true
