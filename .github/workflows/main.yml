@@ -69,12 +69,9 @@ jobs:
           cd build
           python3 js/src/tests/parse_output.py
 
-      - name: Report
-        uses: dorny/test-reporter@v1
-        if: always()
+      - name: Upload Report
+      - uses: actions/upload-artifact@v2  # upload test results
+        if: success() || failure()        # run this step even if previous step failed
         with:
-          name: JavaScript Tests
+          name: test-results
           path: jstest_output.xml
-          reporter: java-junit
-          working-directory: build
-          fail-on-error: true
