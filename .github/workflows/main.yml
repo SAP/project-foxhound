@@ -74,4 +74,4 @@ jobs:
         if: success() || failure()        # run this step even if previous step failed
         with:
           name: test-results
-          path: jstest_output.xml
+          path: build/jstest_output.xml
