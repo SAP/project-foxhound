@@ -31,6 +31,8 @@ def parse_line(line):
         test_case.add_failure_info(output=failure_message)
         failure_message = ""
 
+    if test_status == "TEST-KNOWN-FAIL":
+        test_case.add_skipped_info()
     return test_case
 
 
