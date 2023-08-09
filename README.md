@@ -85,3 +85,19 @@ The test suite can be run as follows, assuming a release build is available:
 cd js/src
 ./tests/jstests.py ../../obj-tf-release/dist/bin/js taint/
 ```
+
+## Citations
+
+If you would like to use project Foxhound in your own research, please cite our EuroS&P paper where we describe the browser:
+
+```bibtex
+@inproceedings{KleBarBen+22,
+  author = {David Klein and Thomas Barber and Souphiane Bensalim and Ben Stock and Martin Johns},
+  title = {Hand Sanitizers in the Wild: A Large-scale Study of Custom JavaScript Sanitizer Functions},
+  booktitle = {Proc. of the IEEE European Symposium on Security and Privacy},
+  year = {2022},
+  month = jun,
+}
+```
+
+If you think your work would also be useful for the wider research community, feel free to open a Pull Request with your changes!
