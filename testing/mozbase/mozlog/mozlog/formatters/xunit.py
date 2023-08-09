@@ -4,6 +4,7 @@
 
 from xml.etree import ElementTree
 
+import re
 import six
 
 from . import base
@@ -109,6 +110,8 @@ class XUnitFormatter(base.BaseFormatter):
             }
         )
         xml_string = ElementTree.tostring(self.root, encoding="utf8")
+        # Need to remove control characters as they confuse minidom
+        xml_string = re.sub(r'[\x00-\x1F]+', '', xml_string.decode())
         # pretty printing can not be done from xml.etree
         from xml.dom import minidom
 
