@@ -575,12 +575,6 @@ bool js::InternalCallOrConstruct(JSContext* cx, const CallArgs& args,
   if (!fun->isSelfHostedOrIntrinsic() && fun->isInterpreted())
       MarkTaintedFunctionArguments(cx, fun, args);
 
-  if (construct != CONSTRUCT && fun->isClassConstructor()) {
-    JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
-                              JSMSG_CANT_CALL_CLASS_CONSTRUCTOR);
-    return false;
-  }
-
   if (fun->isNativeFun()) {
     MOZ_ASSERT_IF(construct, !fun->isConstructor());
     JSNative native = fun->native();
