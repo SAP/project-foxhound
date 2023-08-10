@@ -1,0 +1,37 @@
+<!DOCTYPE HTML>
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta charset="utf-8">
+    <title>Check XMLHttpRequest Respones Source</title>
+    <script src="/tests/SimpleTest/SimpleTest.js"></script>
+    <link rel="stylesheet" href="/tests/SimpleTest/test.css"/>
+    <script "text/javascript">	
+
+        function check_tainted(str) {
+            SimpleTest.ok(str.taint.length > 0, "Check tainted");
+        }
+
+        function check_untainted(str) {
+            SimpleTest.ok(str.taint.length == 0, "Check untainted");
+        }
+
+        function startTest() {
+            let request = new XMLHttpRequest();
+            request.onreadystatechange = () => {
+                if (request.readyState === 4) {
+                    check_tainted(request.response);
+                    SimpleTest.finish();
+                }
+            };
+            request.open("GET", "/tests/SimpleTest/test.css", true);
+            request.send("");
+        }
+
+        SimpleTest.waitForExplicitFinish();
+          
+    </script>
+  </head>
+
+  <body onload="startTest();">
+
+</html>
