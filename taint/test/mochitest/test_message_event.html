@@ -1,0 +1,39 @@
+<!DOCTYPE HTML>
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta charset="utf-8">
+    <title>Check Message Event</title>
+    <script src="/tests/SimpleTest/SimpleTest.js"></script>
+    <link rel="stylesheet" href="/tests/SimpleTest/test.css"/>
+    <script "text/javascript">
+
+      function check_tainted(str) {
+          ok(str.taint.length > 0, "Check tainted");
+      }
+
+      function check_untainted(str) {
+          ok(str.taint.length == 0, "Check untainted");
+      }
+
+      SimpleTest.waitForExplicitFinish();
+      window.addEventListener(
+          "message",
+          (event) => {
+            if(event.data === "tainted") {
+                check_tainted(event.data);
+                is(event.data.taint[0].flow[0].operation, "MessageEvent");
+                SimpleTest.finish();
+            }
+          },
+          false,
+      )
+
+      function startTest() {
+        window.postMessage("tainted");
+      }
+    </script>
+  </head>
+
+  <body onload="startTest()"/>
+
+</html>
