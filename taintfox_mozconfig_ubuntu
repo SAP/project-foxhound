@@ -36,7 +36,6 @@ export MOZ_PACKAGE_JSSHELL=1
 ac_add_options --with-app-name=foxhound
 mk_add_options MOZ_APP_NAME=foxhound
 mk_add_options MOZ_OBJDIR=@TOPSRCDIR@/obj-tf-release
-ac_add_options --enable-bootstrap
 ac_add_options --disable-tests
 ac_add_options --disable-sandbox
 ac_add_options --without-wasm-sandboxed-libraries
