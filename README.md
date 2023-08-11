@@ -10,7 +10,7 @@ If an insecure data flow is discovered by the browser, it will output a warning 
 To get more information about the discovered data flow, you can add an event listener like this:
 ```JavaScript
 function handleTaintReport(report) {
-  console.log(report.detail);                                                                                                                        }
+  console.log(report.detail);
 }
 
 window.addEventListener("__taintreport", handleTaintReport);
@@ -22,14 +22,42 @@ More information on the sources and sinks which are instrumented as part of the 
 ## Building
 The "Foxhound" browser can be built mostly by following instructions on how to build [Firefox](https://firefox-source-docs.mozilla.org/setup/), for either [Linux](https://firefox-source-docs.mozilla.org/setup/linux_build.html) or [Windows](https://firefox-source-docs.mozilla.org/setup/windows_build.html). In theory [Mac](https://firefox-source-docs.mozilla.org/setup/macos_build.html) builds are also possible, but this has not been tested!
 
+### Bootstrapping
+First, you need to install the toolchains (compilers etc.) required to build project "Foxhound". Luckily, these are provided by Mozilla, so there is no need to install them by hand.
+If you are feeling lucky, just install the toolchains via the bootstrap command:
+
+```
+./mach  --no-interactive bootstrap --application-choice=browser
+```
+
+Unfortunately, the toolchains are only available for certain versions of Firefox, computed via a hash over various files in the source tree.
+The above command might fail with a message about toolschains not being found. If this is the case, try checking out the release branch first:
+
+```
+git checkout firefox-release
+./mach  --no-interactive bootstrap --application-choice=browser
+```
+
+There are also sometimes issues that the rust compiler version downloaded by bootstrap is too new and causes compiler errors or crashes.
+If you need to downgrade rust, try this:
+
+```
+${HOME}/.cargo/bin/rustup install 1.66
+${HOME}/.cargo/bin/rustup default 1.66
+${HOME}/.cargo/bin/rustup override set 1.66
+```
+
+To install version ```1.66``` of the rust compiler. You need to start a new shell for the changes to take effect.
+
+## Compiling
+
+
 Choose the appropriate mozconfig by copying "taintfox_mozconfig\_[mac|win|ubuntu]" to ".mozconfig".
 ```bash
 cp taintfox_mozconfig .mozconfig
-./mach build
 ```
 
-After installing setting up the build environment, the default build settings should now work fine:
-
+And start the build like this:
 ```bash
 ./mach build
 ```
@@ -39,7 +67,7 @@ If you need an windows installer follow up with
 ```
 The installer can then be found under "obj-tf-release\dist\install\sea\".
 
-If you need a OSX DMG package follow up with
+If you need an ubuntu zip package follow up with
 ```bash
 ./mach package
 ```
