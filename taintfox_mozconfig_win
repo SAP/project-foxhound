@@ -21,7 +21,7 @@ ac_add_options --target=x86_64-pc-mingw32
 ac_add_options --host=x86_64-pc-mingw32
 WIN32_REDIST_DIR="C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise\VC\Redist\MSVC\14.20.27508\x64\Microsoft.VC141.CRT"
 
-# diasble updater
+# disable updater
 ac_add_options --disable-updater
 
 #
