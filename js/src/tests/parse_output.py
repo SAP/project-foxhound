@@ -1,4 +1,5 @@
 import subprocess
+import sys
 from junit_xml import TestSuite, TestCase
 
 run_tests = True
@@ -54,3 +55,4 @@ tests = parse_report(data)
 with open("jstest_output.xml", "w") as f:
     TestSuite.to_file(f, [tests])
 
+sys.exit(result.returncode)
