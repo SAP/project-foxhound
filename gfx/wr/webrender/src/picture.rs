@@ -1567,11 +1567,10 @@ pub struct NativeSurface {
 pub struct ExternalNativeSurfaceKey {
     /// The YUV/RGB image keys that are used to draw this surface.
     pub image_keys: [ImageKey; 3],
-    /// The current device size of the surface.
-    pub size: DeviceIntSize,
-    /// True if this is an 'external' compositor surface created via
-    /// Compositor::create_external_surface.
-    pub is_external_surface: bool,
+    /// If this is not an 'external' compositor surface created via
+    /// Compositor::create_external_surface, this is set to the
+    /// current device size of the surface.
+    pub size: Option<DeviceIntSize>,
 }
 
 /// Information about a native compositor surface cached between frames.
@@ -2655,6 +2654,27 @@ impl TileCacheInstance {
         let local_to_surface = ScaleOffset::identity();
         let surface_to_device = normalized_prim_to_device;
 
+        // If this primitive is an external image, and supports being used
+        // directly by a native compositor, then lookup the external image id
+        // so we can pass that through.
+        let mut external_image_id = if flags.contains(PrimitiveFlags::SUPPORTS_EXTERNAL_COMPOSITOR_SURFACE)
+            && image_rendering == ImageRendering::Auto {
+            resource_cache.get_image_properties(api_keys[0])
+                .and_then(|properties| properties.external_image)
+                .and_then(|image| Some(image.id))
+        } else {
+            None
+        };
+
+
+        if let CompositorKind::Native { capabilities, .. } = composite_state.compositor_kind {
+            if external_image_id.is_some() &&
+               !capabilities.supports_external_compositor_surface_negative_scaling &&
+               (surface_to_device.scale.x < 0.0 || surface_to_device.scale.y < 0.0) {
+                external_image_id = None;
+            }
+        }
+
         let compositor_transform_index = composite_state.register_transform(
             local_to_surface,
             surface_to_device,
@@ -2673,18 +2693,6 @@ impl TileCacheInstance {
            return false;
         }
 
-        // If this primitive is an external image, and supports being used
-        // directly by a native compositor, then lookup the external image id
-        // so we can pass that through.
-        let external_image_id = if flags.contains(PrimitiveFlags::SUPPORTS_EXTERNAL_COMPOSITOR_SURFACE)
-            && image_rendering == ImageRendering::Auto {
-            resource_cache.get_image_properties(api_keys[0])
-                .and_then(|properties| properties.external_image)
-                .and_then(|image| Some(image.id))
-        } else {
-            None
-        };
-
         // When using native compositing, we need to find an existing native surface
         // handle to use, or allocate a new one. For existing native surfaces, we can
         // also determine whether this needs to be updated, depending on whether the
@@ -2698,8 +2706,7 @@ impl TileCacheInstance {
 
                 let key = ExternalNativeSurfaceKey {
                     image_keys: *api_keys,
-                    size: native_surface_size,
-                    is_external_surface: external_image_id.is_some(),
+                    size: if external_image_id.is_some() { None } else { Some(native_surface_size) },
                 };
 
                 let native_surface = self.external_native_surface_cache

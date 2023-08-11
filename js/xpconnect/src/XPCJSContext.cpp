@@ -84,6 +84,7 @@
 #endif
 
 using namespace mozilla;
+using namespace mozilla::dom;
 using namespace xpc;
 using namespace JS;
 
@@ -894,6 +895,7 @@ static void LoadStartupJSPrefs(XPCJSContext* xpccx) {
         cx, JSJITCOMPILER_JIT_TRUSTEDPRINCIPALS_ENABLE, false);
     JS_SetGlobalJitCompilerOption(cx, JSJITCOMPILER_NATIVE_REGEXP_ENABLE,
                                   false);
+    JS_SetGlobalJitCompilerOption(cx, JSJITCOMPILER_JIT_HINTS_ENABLE, false);
     sSelfHostedUseSharedMemory = false;
   } else {
     JS_SetGlobalJitCompilerOption(
@@ -908,6 +910,13 @@ static void LoadStartupJSPrefs(XPCJSContext* xpccx) {
     JS_SetGlobalJitCompilerOption(
         cx, JSJITCOMPILER_NATIVE_REGEXP_ENABLE,
         StaticPrefs::javascript_options_native_regexp_DoNotUseDirectly());
+    // Only enable the jit hints cache for the content process to avoid
+    // any possible jank or delays on the parent process.
+    JS_SetGlobalJitCompilerOption(
+        cx, JSJITCOMPILER_JIT_HINTS_ENABLE,
+        XRE_IsContentProcess()
+            ? StaticPrefs::javascript_options_jithints_DoNotUseDirectly()
+            : false);
     sSelfHostedUseSharedMemory = StaticPrefs::
         javascript_options_self_hosted_use_shared_memory_DoNotUseDirectly();
   }

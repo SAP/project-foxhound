@@ -699,7 +699,10 @@ void wasm::GenerateFunctionPrologue(MacroAssembler& masm,
     switch (callIndirectId.kind()) {
       case CallIndirectIdKind::Global: {
         Register scratch = WasmTableCallScratchReg0;
-        masm.loadWasmGlobalPtr(callIndirectId.globalDataOffset(), scratch);
+        masm.loadPtr(
+            Address(InstanceReg, Instance::offsetInData(
+                                     callIndirectId.instanceDataOffset())),
+            scratch);
         masm.branchPtr(Assembler::Condition::Equal, WasmTableCallSigReg,
                        scratch, &functionBody);
         masm.wasmTrap(Trap::IndirectCallBadSig, BytecodeOffset(0));
@@ -1555,12 +1558,18 @@ static const char* ThunkedNativeToDescription(SymbolicAddress func) {
       return "call to native newCell<BigInt, NoGC> (in wasm)";
     case SymbolicAddress::ModD:
       return "call to asm.js native f64 % (mod)";
-    case SymbolicAddress::SinD:
+    case SymbolicAddress::SinNativeD:
       return "call to asm.js native f64 Math.sin";
-    case SymbolicAddress::CosD:
+    case SymbolicAddress::SinFdlibmD:
+      return "call to asm.js fdlibm f64 Math.sin";
+    case SymbolicAddress::CosNativeD:
       return "call to asm.js native f64 Math.cos";
-    case SymbolicAddress::TanD:
+    case SymbolicAddress::CosFdlibmD:
+      return "call to asm.js fdlibm f64 Math.cos";
+    case SymbolicAddress::TanNativeD:
       return "call to asm.js native f64 Math.tan";
+    case SymbolicAddress::TanFdlibmD:
+      return "call to asm.js fdlibm f64 Math.tan";
     case SymbolicAddress::ASinD:
       return "call to asm.js native f64 Math.asin";
     case SymbolicAddress::ACosD:

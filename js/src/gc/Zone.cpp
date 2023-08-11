@@ -159,11 +159,11 @@ JS::Zone::Zone(JSRuntime* rt, Kind kind)
       arenas(this),
       data(nullptr),
       tenuredBigInts(0),
-      nurseryAllocatedStrings(0),
       markedStrings(0),
       finalizedStrings(0),
-      allocNurseryStrings(true),
-      allocNurseryBigInts(true),
+      allocNurseryObjects_(true),
+      allocNurseryStrings_(true),
+      allocNurseryBigInts_(true),
       suppressAllocationMetadataBuilder(false),
       pretenuring(this),
       compartments_(),
@@ -185,6 +185,7 @@ JS::Zone::Zone(JSRuntime* rt, Kind kind)
   MOZ_ASSERT_IF(isAtomsZone(), rt->gc.zones().empty());
 
   updateGCStartThresholds(rt->gc);
+  updateNurseryAllocFlags(rt->gc.nursery());
 }
 
 Zone::~Zone() {
@@ -385,11 +386,14 @@ void Zone::checkStringWrappersAfterMovingGC() {
 #endif
 
 void Zone::discardJitCode(JS::GCContext* gcx, const DiscardOptions& options) {
-  if (!jitZone()) {
-    return;
+  if (!isPreservingCode()) {
+    forceDiscardJitCode(gcx, options);
   }
+}
 
-  if (isPreservingCode()) {
+void Zone::forceDiscardJitCode(JS::GCContext* gcx,
+                               const DiscardOptions& options) {
+  if (!jitZone()) {
     return;
   }
 

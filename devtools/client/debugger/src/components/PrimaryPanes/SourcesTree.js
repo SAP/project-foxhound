@@ -5,7 +5,6 @@
 // Dependencies
 import React, { Component } from "react";
 import PropTypes from "prop-types";
-import classnames from "classnames";
 import { connect } from "../../utils/connect";
 
 // Selectors
@@ -14,6 +13,7 @@ import {
   getMainThreadHost,
   getExpandedState,
   getProjectDirectoryRoot,
+  getProjectDirectoryRootName,
   getSourcesTreeSources,
   getFocusedSourceItem,
   getContext,
@@ -26,11 +26,14 @@ import actions from "../../actions";
 
 // Components
 import SourcesTreeItem from "./SourcesTreeItem";
+import AccessibleImage from "../shared/AccessibleImage";
 import ManagedTree from "../shared/ManagedTree";
 
 // Utils
 import { getRawSourceURL } from "../../utils/source";
 import { createLocation } from "../../utils/location";
+
+const classnames = require("devtools/client/shared/classnames.js");
 
 function shouldAutoExpand(item, mainThreadHost) {
   // There is only one case where we want to force auto expand,
@@ -115,6 +118,8 @@ class SourcesTree extends Component {
       setExpandedState: PropTypes.func.isRequired,
       blackBoxRanges: PropTypes.object.isRequired,
       rootItems: PropTypes.object.isRequired,
+      clearProjectDirectoryRoot: PropTypes.func.isRequired,
+      projectRootName: PropTypes.string.isRequired,
     };
   }
 
@@ -293,12 +298,30 @@ class SourcesTree extends Component {
     };
   };
 
+  renderProjectRootHeader() {
+    const { cx, projectRootName } = this.props;
+
+    if (!projectRootName) {
+      return null;
+    }
+
+    return (
+      <div key="root" className="sources-clear-root-container">
+        <button
+          className="sources-clear-root"
+          onClick={() => this.props.clearProjectDirectoryRoot(cx)}
+          title={L10N.getStr("removeDirectoryRoot.label")}
+        >
+          <AccessibleImage className="home" />
+          <AccessibleImage className="breadcrumb" />
+          <span className="sources-clear-root-label">{projectRootName}</span>
+        </button>
+      </div>
+    );
+  }
+
   renderItem = (item, depth, focused, _, expanded, { setExpanded }) => {
     const { mainThreadHost, projectRoot } = this.props;
-    const isSourceBlackBoxed = item.source
-      ? this.props.blackBoxRanges[item.source.url]
-      : null;
-
     return (
       <SourcesTreeItem
         item={item}
@@ -308,7 +331,6 @@ class SourcesTree extends Component {
         expanded={expanded}
         focusItem={this.onFocus}
         selectSourceItem={this.selectSourceItem}
-        isSourceBlackBoxed={isSourceBlackBoxed}
         projectRoot={projectRoot}
         setExpanded={setExpanded}
         getBlackBoxSourcesGroups={this.getBlackBoxSourcesGroups}
@@ -361,14 +383,23 @@ class SourcesTree extends Component {
   }
 
   render() {
-    return this.renderPane(
-      this.isEmpty() ? (
-        this.renderEmptyElement(L10N.getStr("noSourcesText"))
-      ) : (
-        <div key="tree" className="sources-list">
-          {this.renderTree()}
-        </div>
-      )
+    const { projectRoot } = this.props;
+    return (
+      <div
+        key="pane"
+        className={classnames("sources-list", {
+          "sources-list-custom-root": !!projectRoot,
+        })}
+      >
+        {this.isEmpty() ? (
+          this.renderEmptyElement(L10N.getStr("noSourcesText"))
+        ) : (
+          <>
+            {this.renderProjectRootHeader()}
+            {this.renderTree()}
+          </>
+        )}
+      </div>
     );
   }
 }
@@ -406,6 +437,7 @@ const mapStateToProps = state => {
     projectRoot: getProjectDirectoryRoot(state),
     rootItems,
     blackBoxRanges: getBlackBoxRanges(state),
+    projectRootName: getProjectDirectoryRootName(state),
   };
 };
 
@@ -413,4 +445,5 @@ export default connect(mapStateToProps, {
   selectSource: actions.selectSource,
   setExpandedState: actions.setExpandedState,
   focusItem: actions.focusItem,
+  clearProjectDirectoryRoot: actions.clearProjectDirectoryRoot,
 })(SourcesTree);

@@ -166,11 +166,11 @@ class HTMLAreaElement final : public nsGenericHTMLElement,
   virtual nsresult CheckTaintSinkSetAttr(int32_t aNamespaceID, nsAtom* aName,
                                          const nsAString& aValue) override;
 
-  virtual nsresult AfterSetAttr(int32_t aNamespaceID, nsAtom* aName,
-                                const nsAttrValue* aValue,
-                                const nsAttrValue* aOldValue,
-                                nsIPrincipal* aSubjectPrincipal,
-                                bool aNotify) override;
+  virtual void AfterSetAttr(int32_t aNamespaceID, nsAtom* aName,
+                            const nsAttrValue* aValue,
+                            const nsAttrValue* aOldValue,
+                            nsIPrincipal* aSubjectPrincipal,
+                            bool aNotify) override;
 
   RefPtr<nsDOMTokenList> mRelList;
 };

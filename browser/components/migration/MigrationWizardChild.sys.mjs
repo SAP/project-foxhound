@@ -40,9 +40,18 @@ export class MigrationWizardChild extends JSWindowActorChild {
         });
 
         let migrators = await this.sendQuery("GetAvailableMigrators");
-        if (!migrators.length) {
+        let hasBrowserMigrators = migrators.some(migrator => {
+          return (
+            migrator.type == MigrationWizardConstants.MIGRATOR_TYPES.BROWSER
+          );
+        });
+        let hasFileMigrators = migrators.some(migrator => {
+          return migrator.type == MigrationWizardConstants.MIGRATOR_TYPES.FILE;
+        });
+        if (!hasBrowserMigrators && !event.detail?.allowOnlyFileMigrators) {
           this.setComponentState({
             page: MigrationWizardConstants.PAGES.NO_BROWSERS_FOUND,
+            hasFileMigrators,
           });
           this.#sendTelemetryEvent("no_browsers_found");
         } else {
@@ -66,7 +75,9 @@ export class MigrationWizardChild extends JSWindowActorChild {
 
         let hasPermissions = await this.sendQuery("CheckPermissions", {
           key: event.detail.key,
+          type: event.detail.type,
         });
+
         if (!hasPermissions) {
           if (event.detail.key == "safari") {
             this.#sendTelemetryEvent("safari_perms");
@@ -234,12 +245,23 @@ export class MigrationWizardChild extends JSWindowActorChild {
    *   The message received from the MigrationWizardParent.
    */
   receiveMessage(message) {
-    if (message.name == "UpdateProgress") {
-      this.setComponentState({
-        page: MigrationWizardConstants.PAGES.PROGRESS,
-        progress: message.data.progress,
-        key: message.data.key,
-      });
+    switch (message.name) {
+      case "UpdateProgress": {
+        this.setComponentState({
+          page: MigrationWizardConstants.PAGES.PROGRESS,
+          progress: message.data.progress,
+          key: message.data.key,
+        });
+        break;
+      }
+      case "UpdateFileImportProgress": {
+        this.setComponentState({
+          page: MigrationWizardConstants.PAGES.FILE_IMPORT_PROGRESS,
+          progress: message.data.progress,
+          title: message.data.title,
+        });
+        break;
+      }
     }
   }
 

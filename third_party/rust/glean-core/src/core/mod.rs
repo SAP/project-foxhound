@@ -12,7 +12,7 @@ use crate::event_database::EventDatabase;
 use crate::internal_metrics::{AdditionalMetrics, CoreMetrics, DatabaseMetrics};
 use crate::internal_pings::InternalPings;
 use crate::metrics::{
-    self, ExperimentMetric, Metric, MetricType, MetricsDisabledConfig, PingType, RecordedExperiment,
+    self, ExperimentMetric, Metric, MetricType, MetricsEnabledConfig, PingType, RecordedExperiment,
 };
 use crate::ping::PingMaker;
 use crate::storage::{StorageManager, INTERNAL_STORAGE};
@@ -112,6 +112,7 @@ where
 ///     app_build: "".into(),
 ///     use_core_mps: false,
 ///     trim_data_to_registered_pings: false,
+///     log_level: None,
 /// };
 /// let mut glean = Glean::new(cfg).unwrap();
 /// let ping = PingType::new("sample", true, false, vec![]);
@@ -153,7 +154,7 @@ pub struct Glean {
     pub(crate) app_build: String,
     pub(crate) schedule_metrics_pings: bool,
     pub(crate) remote_settings_epoch: AtomicU8,
-    pub(crate) remote_settings_metrics_config: Arc<Mutex<MetricsDisabledConfig>>,
+    pub(crate) remote_settings_metrics_config: Arc<Mutex<MetricsEnabledConfig>>,
 }
 
 impl Glean {
@@ -207,7 +208,7 @@ impl Glean {
             // Subprocess doesn't use "metrics" pings so has no need for a scheduler.
             schedule_metrics_pings: false,
             remote_settings_epoch: AtomicU8::new(0),
-            remote_settings_metrics_config: Arc::new(Mutex::new(MetricsDisabledConfig::new())),
+            remote_settings_metrics_config: Arc::new(Mutex::new(MetricsEnabledConfig::new())),
         };
 
         // Ensuring these pings are registered.
@@ -293,6 +294,7 @@ impl Glean {
             app_build: "Unknown".into(),
             use_core_mps: false,
             trim_data_to_registered_pings: false,
+            log_level: None,
         };
 
         let mut glean = Self::new(cfg).unwrap();
@@ -527,6 +529,7 @@ impl Glean {
     }
 
     /// Gets a handle to the database.
+    #[track_caller] // If this fails we're interested in the caller.
     pub fn storage(&self) -> &Database {
         self.data_store.as_ref().expect("No database found")
     }
@@ -702,14 +705,14 @@ impl Glean {
         metric.test_get_value(self)
     }
 
-    /// Set configuration for metrics' disabled property, typically from a remote_settings experiment
-    /// or rollout
+    /// Set configuration to override the default metric enabled/disabled state, typically from a
+    /// remote_settings experiment or rollout
     ///
     /// # Arguments
     ///
-    /// * `json` - The stringified JSON representation of a `MetricsDisabledConfig` object
-    pub fn set_metrics_disabled_config(&self, cfg: MetricsDisabledConfig) {
-        // Set the current MetricsDisabledConfig, keeping the lock until the epoch is
+    /// * `json` - The stringified JSON representation of a `MetricsEnabledConfig` object
+    pub fn set_metrics_enabled_config(&self, cfg: MetricsEnabledConfig) {
+        // Set the current MetricsEnabledConfig, keeping the lock until the epoch is
         // updated to prevent against reading a "new" config but an "old" epoch
         let mut lock = self.remote_settings_metrics_config.lock().unwrap();
         *lock = cfg;

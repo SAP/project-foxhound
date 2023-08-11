@@ -118,12 +118,16 @@ void RemoteAccessible::Relations(
 }
 
 bool RemoteAccessible::IsSearchbox() const {
+  if (StaticPrefs::accessibility_cache_enabled_AtStartup()) {
+    return RemoteAccessibleBase<RemoteAccessible>::IsSearchbox();
+  }
+
   bool retVal = false;
   Unused << mDoc->SendIsSearchbox(mID, &retVal);
   return retVal;
 }
 
-nsAtom* RemoteAccessible::LandmarkRole() const {
+nsStaticAtom* RemoteAccessible::LandmarkRole() const {
   if (StaticPrefs::accessibility_cache_enabled_AtStartup()) {
     return RemoteAccessibleBase<RemoteAccessible>::LandmarkRole();
   }
@@ -155,12 +159,21 @@ void RemoteAccessible::Announce(const nsString& aAnnouncement,
 }
 
 int32_t RemoteAccessible::CaretLineNumber() {
+  if (StaticPrefs::accessibility_cache_enabled_AtStartup()) {
+    MOZ_ASSERT(IsHyperText(), "is not hypertext?");
+    return RemoteAccessibleBase<RemoteAccessible>::CaretLineNumber();
+  }
+
   int32_t line = -1;
-  Unused << mDoc->SendCaretOffset(mID, &line);
+  Unused << mDoc->SendCaretLineNumber(mID, &line);
   return line;
 }
 
 int32_t RemoteAccessible::CaretOffset() const {
+  if (StaticPrefs::accessibility_cache_enabled_AtStartup()) {
+    return RemoteAccessibleBase<RemoteAccessible>::CaretOffset();
+  }
+
   int32_t offset = 0;
   Unused << mDoc->SendCaretOffset(mID, &offset);
   return offset;
@@ -241,6 +254,11 @@ void RemoteAccessible::TextBeforeOffset(int32_t aOffset,
 }
 
 char16_t RemoteAccessible::CharAt(int32_t aOffset) {
+  if (StaticPrefs::accessibility_cache_enabled_AtStartup()) {
+    MOZ_ASSERT(IsHyperText(), "is not hypertext?");
+    return RemoteAccessibleBase<RemoteAccessible>::CharAt(aOffset);
+  }
+
   uint16_t retval = 0;
   Unused << mDoc->SendCharAt(mID, aOffset, &retval);
   return static_cast<char16_t>(retval);
@@ -423,41 +441,10 @@ uint32_t RemoteAccessible::EndOffset() {
   return retVal;
 }
 
-bool RemoteAccessible::IsLinkValid() {
-  bool retVal = false;
-  Unused << mDoc->SendIsLinkValid(mID, &retVal);
-  return retVal;
-}
-
-uint32_t RemoteAccessible::AnchorCount(bool* aOk) {
-  uint32_t retVal = 0;
-  Unused << mDoc->SendAnchorCount(mID, &retVal, aOk);
-  return retVal;
-}
-
-void RemoteAccessible::AnchorURIAt(uint32_t aIndex, nsCString& aURI,
-                                   bool* aOk) {
-  Unused << mDoc->SendAnchorURIAt(mID, aIndex, &aURI, aOk);
-}
-
-RemoteAccessible* RemoteAccessible::AnchorAt(uint32_t aIndex) {
-  uint64_t id = 0;
-  bool ok = false;
-  Unused << mDoc->SendAnchorAt(mID, aIndex, &id, &ok);
-  return ok ? mDoc->GetAccessible(id) : nullptr;
-}
-
 uint32_t RemoteAccessible::LinkCount() {
   uint32_t retVal = 0;
   Unused << mDoc->SendLinkCount(mID, &retVal);
   return retVal;
-}
-
-RemoteAccessible* RemoteAccessible::LinkAt(const uint32_t& aIndex) {
-  uint64_t linkID = 0;
-  bool ok = false;
-  Unused << mDoc->SendLinkAt(mID, aIndex, &linkID, &ok);
-  return ok ? mDoc->GetAccessible(linkID) : nullptr;
 }
 
 int32_t RemoteAccessible::LinkIndexAtOffset(uint32_t aOffset) {
@@ -854,12 +841,6 @@ double RemoteAccessible::CurValue() const {
   double val = UnspecifiedNaN<double>();
   Unused << mDoc->SendCurValue(mID, &val);
   return val;
-}
-
-bool RemoteAccessible::SetCurValue(double aValue) {
-  bool success = false;
-  Unused << mDoc->SendSetCurValue(mID, aValue, &success);
-  return success;
 }
 
 double RemoteAccessible::MinValue() const {

@@ -2617,10 +2617,17 @@ void nsFocusManager::Focus(
 
   // check to ensure that the element is still focusable, and that nothing
   // else was focused during the events above.
-  RefPtr elementToFocus = FlushAndCheckIfFocusable(aElement, aFlags);
-  if (elementToFocus &&
-      GetFocusedBrowsingContext() == aWindow->GetBrowsingContext() &&
-      mFocusedElement == nullptr) {
+  // Note that the focusing element may have already been moved to another
+  // document/window.  In that case, we should stop setting focus to it
+  // because setting focus to the new window would cause redirecting focus
+  // again and again.
+  RefPtr elementToFocus =
+      aElement && aElement->IsInComposedDoc() &&
+              aElement->GetComposedDoc() == aWindow->GetExtantDoc()
+          ? FlushAndCheckIfFocusable(aElement, aFlags)
+          : nullptr;
+  if (elementToFocus && !mFocusedElement &&
+      GetFocusedBrowsingContext() == aWindow->GetBrowsingContext()) {
     mFocusedElement = elementToFocus;
 
     nsIContent* focusedNode = aWindow->GetFocusedElement();
@@ -2669,7 +2676,11 @@ void nsFocusManager::Focus(
                              relatedTargetElement);
       }
     } else {
-      IMEStateManager::OnChangeFocus(presContext, nullptr,
+      // We should notify IMEStateManager of actual focused element even if it
+      // won't get focus event because the other IMEStateManager users do not
+      // want to depend on this check, but IMEStateManager wants to verify
+      // passed focused element for avoidng to overrride nested calls.
+      IMEStateManager::OnChangeFocus(presContext, elementToFocus,
                                      GetFocusMoveActionCause(aFlags));
       if (!aWindowRaised) {
         aWindow->UpdateCommands(u"focus"_ns, nullptr, 0);
@@ -2680,7 +2691,7 @@ void nsFocusManager::Focus(
       }
     }
   } else {
-    if (!mFocusedElement) {
+    if (!mFocusedElement && mFocusedWindow == aWindow) {
       // When there is no focused element, IMEStateManager needs to adjust IME
       // enabled state with the document.
       RefPtr<nsPresContext> presContext = presShell->GetPresContext();

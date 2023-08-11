@@ -7,6 +7,7 @@
 :host {
   display: flex;
   flex-direction: column;
+  text-align: start;
   width: 22.34em;
 }
 
@@ -24,6 +25,10 @@ ol {
 
 li:not(:last-child) {
   margin-block-end: 16px;
+}
+
+input[type="checkbox"] {
+  margin-block: 0;
 }
 
 div[name="page-loading"] > .buttons > button {
@@ -51,7 +56,12 @@ div[name="page-loading"] > .buttons > button {
 
 .deemphasized-text {
   font-size: 0.84em;
-  color: var(--in-content-deemphasized-text);
+}
+
+@media not (prefers-contrast) {
+  .deemphasized-text {
+    color: var(--in-content-deemphasized-text);
+  }
 }
 
 fieldset {
@@ -64,10 +74,6 @@ label:not([hidden]) {
   width: fit-content;
 }
 
-button {
-  margin-block-end: 0;
-}
-
 #wizard-deck > div {
   display: flex;
   flex-direction: column;
@@ -75,7 +81,7 @@ button {
 
 #browser-profile-selector {
   display: flex;
-  border: 0;
+  align-items: center;
   padding: 8px;
   margin: 0;
   font-weight: unset;
@@ -98,10 +104,9 @@ button {
 .dropdown-icon {
   content: url("chrome://global/skin/icons/arrow-down.svg");
   -moz-context-properties: fill;
-  fill: var(--in-content-icon-color);
+  fill: currentColor;
   height: 16px;
   width: 16px;
-  align-self: center;
 }
 
 .migrator-description {
@@ -113,8 +118,13 @@ button {
   margin-inline-start: 11px;
 }
 
-.profile-name:empty {
+#profile-name:empty {
   display: none;
+}
+
+#profile-name {
+  font-size: 0.73em;
+  text-transform: uppercase;
 }
 
 /**
@@ -141,6 +151,10 @@ div[name="page-selection"][show-import-all] #select-all  {
   display: flex;
 }
 
+div[name="page-selection"][migrator-type="browser"] > .buttons > #import-from-file,
+div[name="page-selection"][migrator-type="file"] > .buttons > #import,
+div[name="page-selection"][migrator-type="file"] > .resource-selection-details,
+div[name="page-selection"][migrator-type="file"] > .resource-selection-preamble,
 div[name="page-selection"][show-import-all] .resource-selection-preamble {
   display: none;
 }
@@ -169,6 +183,10 @@ details:not([open]) summary {
   margin-block-end: 16px;
 }
 
+summary {
+  cursor: pointer;
+}
+
 #resource-type-list {
   padding: 0;
 }
@@ -177,7 +195,9 @@ details:not([open]) summary {
   margin-block-start: 16px;
 }
 
-:host(:not([dialog-mode])) .cancel-close {
+:host(:not([dialog-mode])) .cancel-close,
+:host(:not([dialog-mode])) .done-button,
+:host([dialog-mode]) .continue-button {
   display: none;
 }
 
@@ -192,6 +212,7 @@ details:not([open]) summary {
   grid-template-areas: "icon type"
                        "icon status";
   align-items: center;
+  justify-items: start;
 }
 
 .resource-progress-group[hidden] {

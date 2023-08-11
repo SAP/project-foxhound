@@ -98,6 +98,16 @@ job (usually chunked).
 
 For mac notarization, we download the signed bits that have been notarized by Apple, and we staple the notarization to the app and pkg.
 
+shippable-l10n-mac-signing
+--------------------------
+
+Mac signing without notarization
+
+shippable-l10n-mac-notarization
+-------------------------------
+
+Mac notarization on signinscript (linux) using rcodesign
+
 shippable-l10n-notarization-part-1
 ----------------------------------
 

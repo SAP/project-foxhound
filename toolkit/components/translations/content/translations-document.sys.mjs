@@ -140,7 +140,7 @@ const GENERIC_TAGS = new Set(["A", "SPAN"]);
  */
 export class TranslationsDocument {
   /**
-   * The two-letter BCP 47 language tag that is used on the page.
+   * The BCP 47 language tag that is used on the page.
    *
    * @type {string} */
   documentLanguage;
@@ -205,7 +205,7 @@ export class TranslationsDocument {
    * manage the life cycle of the translations engines.
    *
    * @param {Document} document
-   * @param {string} documentLanguage - The two letter BCP 47 language tag.
+   * @param {string} documentLanguage - The BCP 47 language tag.
    * @param {number} innerWindowId - This is used for better profiler marker reporting.
    * @param {TranslationFunction} translateHTML
    * @param {TranslationFunction} translateText
@@ -226,7 +226,8 @@ export class TranslationsDocument {
     this.documentLanguage = documentLanguage;
     if (documentLanguage.length !== 2) {
       throw new Error(
-        "Expected the language to be a valid 2 letter BCP 47 language tag."
+        "Expected the language to be a valid 2 letter BCP 47 language tag: " +
+          documentLanguage
       );
     }
 
@@ -707,7 +708,7 @@ export class TranslationsDocument {
           // in the addon which set the innerHTML directly. We can't set the innerHTML
           // here, but perhaps there is another way to get back some of the performance.
           const translationsDocument = this.domParser.parseFromString(
-            `<div>${translatedHTML}</div>`,
+            `<!DOCTYPE html><div>${translatedHTML}</div>`,
             "text/html"
           );
           updateElement(translationsDocument, node);

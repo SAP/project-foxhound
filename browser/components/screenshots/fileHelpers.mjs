@@ -13,6 +13,7 @@ const { AppConstants } = ChromeUtils.import(
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
+  DownloadLastDir: "resource://gre/modules/DownloadLastDir.sys.mjs",
   FileUtils: "resource://gre/modules/FileUtils.sys.mjs",
   ScreenshotsUtils: "resource:///modules/ScreenshotsUtils.sys.mjs",
 });
@@ -20,7 +21,6 @@ ChromeUtils.defineESModuleGetters(lazy, {
 XPCOMUtils.defineLazyModuleGetters(lazy, {
   Downloads: "resource://gre/modules/Downloads.jsm",
   DownloadPaths: "resource://gre/modules/DownloadPaths.jsm",
-  DownloadLastDir: "resource://gre/modules/DownloadLastDir.jsm",
 });
 
 /**
@@ -231,11 +231,7 @@ function promiseTargetFile(aFpP, win) {
 
     // We must prompt for the file name explicitly.
     // If we must prompt because we were asked to...
-    let file = await new Promise(resolve => {
-      downloadLastDir.getFileAsync(null, function getFileAsyncCB(aFile) {
-        resolve(aFile);
-      });
-    });
+    let file = await downloadLastDir.getFileAsync(null);
     if (file && (await IOUtils.exists(file.path))) {
       dir = file;
       dirExists = true;

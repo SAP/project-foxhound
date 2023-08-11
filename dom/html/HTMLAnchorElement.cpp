@@ -200,24 +200,20 @@ nsresult HTMLAnchorElement::CheckTaintSinkSetAttr(int32_t aNamespaceID, nsAtom* 
   return nsGenericHTMLElement::CheckTaintSinkSetAttr(aNamespaceID, aName, aValue);
 }
 
-nsresult HTMLAnchorElement::BeforeSetAttr(int32_t aNamespaceID, nsAtom* aName,
-                                          const nsAttrValueOrString* aValue,
-                                          bool aNotify) {
-  if (aNamespaceID == kNameSpaceID_None) {
-    if (aName == nsGkAtoms::href) {
-      CancelDNSPrefetch(*this);
-    }
+void HTMLAnchorElement::BeforeSetAttr(int32_t aNamespaceID, nsAtom* aName,
+                                      const nsAttrValue* aValue, bool aNotify) {
+  if (aNamespaceID == kNameSpaceID_None && aName == nsGkAtoms::href) {
+    CancelDNSPrefetch(*this);
   }
-
   return nsGenericHTMLElement::BeforeSetAttr(aNamespaceID, aName, aValue,
                                              aNotify);
 }
 
-nsresult HTMLAnchorElement::AfterSetAttr(int32_t aNamespaceID, nsAtom* aName,
-                                         const nsAttrValue* aValue,
-                                         const nsAttrValue* aOldValue,
-                                         nsIPrincipal* aSubjectPrincipal,
-                                         bool aNotify) {
+void HTMLAnchorElement::AfterSetAttr(int32_t aNamespaceID, nsAtom* aName,
+                                     const nsAttrValue* aValue,
+                                     const nsAttrValue* aOldValue,
+                                     nsIPrincipal* aSubjectPrincipal,
+                                     bool aNotify) {
   if (aNamespaceID == kNameSpaceID_None) {
     if (aName == nsGkAtoms::href) {
       Link::ResetLinkState(aNotify, !!aValue);

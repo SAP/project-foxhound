@@ -372,6 +372,7 @@ pref("media.videocontrols.keyboard-tab-to-all-controls", true);
   pref("media.peerconnection.ice.obfuscate_host_addresses.blocklist", "");
   pref("media.peerconnection.ice.proxy_only_if_behind_proxy", false);
   pref("media.peerconnection.ice.proxy_only", false);
+  pref("media.peerconnection.ice.proxy_only_if_pbmode", false);
   pref("media.peerconnection.turn.disable", false);
 
   // 770 = DTLS 1.0, 771 = DTLS 1.2, 772 = DTLS 1.3
@@ -928,9 +929,9 @@ pref("privacy.popups.disable_from_plugins", 3);
 // domains exempted from RFP.
 pref("privacy.resistFingerprinting.exemptedDomains", "*.example.invalid");
 
-// If privacy.resistFingerprintingLite is enabled, this pref can be used to add
+// If privacy.fingerprintingProtection is enabled, this pref can be used to add
 // or remove features from its effects
-pref("privacy.resistFingerprintingLite.overrides", "");
+pref("privacy.fingerprintingProtection.overrides", "");
 
 // Fix cookie blocking breakage by providing ephemeral Paritioned LocalStorage
 // for a list of hosts when detected as trackers.
@@ -1964,6 +1965,14 @@ pref("extensions.manifestV3.enabled", true);
 #endif
 // Install origins restriction.
 pref("extensions.install_origins.enabled", false);
+
+// browser_style deprecation - bug 1827910.
+// TODO bug 1830711: set to false (after bug 1830710).
+// TODO bug 1830712: remove pref.
+pref("extensions.browser_style_mv3.supported", true);
+// TODO bug 1830710: set to false.
+// TODO bug 1830712: remove pref.
+pref("extensions.browser_style_mv3.same_as_mv2", true);
 
 // Middle-mouse handling
 pref("middlemouse.paste", false);
@@ -3209,8 +3218,13 @@ pref("signon.masterPasswordReprompt.timeout_ms", 900000); // 15 Minutes
 pref("signon.showAutoCompleteFooter",             false);
 pref("signon.firefoxRelay.base_url", "https://relay.firefox.com/api/v1/");
 pref("signon.firefoxRelay.learn_more_url", "https://support.mozilla.org/1/firefox/%VERSION%/%OS%/%LOCALE%/firefox-relay-integration");
+pref("signon.firefoxRelay.manage_url", "https://relay.firefox.com");
 pref("signon.signupDetection.confidenceThreshold",     "0.75");
-pref("signon.signupDetection.enabled",                 false);
+#ifdef NIGHTLY_BUILD
+  pref("signon.signupDetection.enabled", true);
+#else
+  pref("signon.signupDetection.enabled", false);
+#endif
 
 // Satchel (Form Manager) prefs
 pref("browser.formfill.debug",            false);
@@ -3484,9 +3498,6 @@ pref("network.connectivity-service.DNSv6.domain", "example.org");
 pref("network.connectivity-service.IPv4.url", "http://detectportal.firefox.com/success.txt?ipv4");
 pref("network.connectivity-service.IPv6.url", "http://detectportal.firefox.com/success.txt?ipv6");
 
-// DNS Trusted Recursive Resolver
-// 0 - default off, 1 - reserved/off, 2 - TRR first, 3 - TRR only, 4 - reserved/off, 5 off by choice
-pref("network.trr.mode", 0);
 pref("network.trr.uri", "");
 // credentials to pass to DOH end-point
 pref("network.trr.credentials", "");
@@ -3497,6 +3508,8 @@ pref("network.trr.confirmationNS", "example.com");
 // Comma separated list of domains that we should not use TRR for
 pref("network.trr.excluded-domains", "");
 pref("network.trr.builtin-excluded-domains", "localhost,local");
+// Whether the checkbox to display a fallback warning error page is visible in about:preferences#privacy
+pref("network.trr_ui.show_fallback_warning_option", false);
 
 pref("captivedetect.canonicalURL", "http://detectportal.firefox.com/canonical.html");
 pref("captivedetect.canonicalContent", "<meta http-equiv=\"refresh\" content=\"0;url=https://support.mozilla.org/kb/captive-portal\"/>");
@@ -4173,8 +4186,6 @@ pref("extensions.formautofill.creditCards.heuristics.fathom.highConfidenceThresh
 pref("extensions.formautofill.creditCards.heuristics.fathom.testConfidence", "0");
 
 pref("extensions.formautofill.firstTimeUse", true);
-pref("extensions.formautofill.heuristics.enabled", true);
-pref("extensions.formautofill.section.enabled", true);
 pref("extensions.formautofill.loglevel", "Warn");
 
 pref("toolkit.osKeyStore.loglevel", "Warn");

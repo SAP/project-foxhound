@@ -6,7 +6,6 @@ import React, { Component } from "react";
 import PropTypes from "prop-types";
 
 import { connect } from "../../utils/connect";
-import classnames from "classnames";
 import { features, prefs } from "../../utils/prefs";
 import {
   getIsWaitingOnBreak,
@@ -16,7 +15,6 @@ import {
   getThreadContext,
   getIsCurrentThreadPaused,
   getIsThreadCurrentlyTracing,
-  getSupportsJavascriptTracing,
   getJavascriptTracingLogMethod,
 } from "../../selectors";
 import { formatKeyShortcut } from "../../utils/text";
@@ -26,6 +24,7 @@ import AccessibleImage from "../shared/AccessibleImage";
 import "./CommandBar.css";
 import { showMenu } from "../../context-menu/menu";
 
+const classnames = require("devtools/client/shared/classnames.js");
 const MenuButton = require("devtools/client/shared/components/menu/MenuButton");
 const MenuItem = require("devtools/client/shared/components/menu/MenuItem");
 const MenuList = require("devtools/client/shared/components/menu/MenuList");
@@ -95,6 +94,7 @@ class CommandBar extends Component {
       cx: PropTypes.object.isRequired,
       horizontal: PropTypes.bool.isRequired,
       isPaused: PropTypes.bool.isRequired,
+      isTracingEnabled: PropTypes.bool.isRequired,
       isWaitingOnBreak: PropTypes.bool.isRequired,
       javascriptEnabled: PropTypes.bool.isRequired,
       trace: PropTypes.func.isRequired,
@@ -191,7 +191,7 @@ class CommandBar extends Component {
   }
 
   renderTraceButton() {
-    if (!features.javascriptTracing || !this.props.supportsJavascriptTracing) {
+    if (!features.javascriptTracing) {
       return null;
     }
     // Display a button which:
@@ -386,7 +386,6 @@ const mapStateToProps = state => ({
   javascriptEnabled: state.ui.javascriptEnabled,
   isPaused: getIsCurrentThreadPaused(state),
   isTracingEnabled: getIsThreadCurrentlyTracing(state, getCurrentThread(state)),
-  supportsJavascriptTracing: getSupportsJavascriptTracing(state),
   logMethod: getJavascriptTracingLogMethod(state),
 });
 

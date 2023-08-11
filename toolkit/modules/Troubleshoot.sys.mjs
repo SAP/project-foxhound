@@ -6,7 +6,6 @@ const { AddonManager } = ChromeUtils.import(
   "resource://gre/modules/AddonManager.jsm"
 );
 import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
-import { E10SUtils } from "resource://gre/modules/E10SUtils.sys.mjs";
 
 import { FeatureGate } from "resource://featuregates/FeatureGate.sys.mjs";
 
@@ -393,13 +392,16 @@ var dataProviders = {
     );
   },
 
-  processes: function processes(done) {
+  processes: async function processes(done) {
     let remoteTypes = {};
-
-    for (let i = 0; i < Services.ppmm.childCount; i++) {
+    const processInfo = await ChromeUtils.requestProcInfo();
+    for (let i = 0; i < processInfo.children.length; i++) {
       let remoteType;
       try {
-        remoteType = Services.ppmm.getChildAt(i).remoteType;
+        remoteType = processInfo.children[i].type;
+        // Workaround for bug 1790070, since requestProcInfo refers to the preallocated content
+        // process as "preallocated", and the localization string mapping expects "prealloc".
+        remoteType = remoteType === "preallocated" ? "prealloc" : remoteType;
       } catch (e) {}
 
       // The parent process is also managed by the ppmm (because
@@ -407,8 +409,6 @@ var dataProviders = {
       if (!remoteType) {
         continue;
       }
-
-      remoteType = E10SUtils.remoteTypePrefix(remoteType);
 
       if (remoteTypes[remoteType]) {
         remoteTypes[remoteType]++;
@@ -966,13 +966,17 @@ var dataProviders = {
 
     const {
       PreferenceExperiments: NormandyPreferenceStudies,
-    } = ChromeUtils.import("resource://normandy/lib/PreferenceExperiments.jsm");
-    const { AddonStudies: NormandyAddonStudies } = ChromeUtils.import(
-      "resource://normandy/lib/AddonStudies.jsm"
+    } = ChromeUtils.importESModule(
+      "resource://normandy/lib/PreferenceExperiments.sys.mjs"
+    );
+    const { AddonStudies: NormandyAddonStudies } = ChromeUtils.importESModule(
+      "resource://normandy/lib/AddonStudies.sys.mjs"
     );
     const {
       PreferenceRollouts: NormandyPreferenceRollouts,
-    } = ChromeUtils.import("resource://normandy/lib/PreferenceRollouts.jsm");
+    } = ChromeUtils.importESModule(
+      "resource://normandy/lib/PreferenceRollouts.sys.mjs"
+    );
     const { ExperimentManager } = ChromeUtils.importESModule(
       "resource://nimbus/lib/ExperimentManager.sys.mjs"
     );

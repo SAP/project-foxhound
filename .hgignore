@@ -33,6 +33,7 @@ compile_commands\.json
 
 # User files that may appear at the root
 ^\.clang-tidy
+^\.clangd
 ^\.mozconfig
 ^mozconfig*
 ^\.moz-fast-forward
@@ -290,3 +291,6 @@ gfx/wr/target/
 ^extensions/spellcheck/locales/en-US/hunspell/dictionary-sources/scowl
 ^extensions/spellcheck/locales/en-US/hunspell/dictionary-sources/support_files/
 ^extensions/spellcheck/locales/en-US/hunspell/dictionary-sources/*en_US-mozilla*
+
+# Ignore automatically generated mots documentation
+^docs/mots/index.rst

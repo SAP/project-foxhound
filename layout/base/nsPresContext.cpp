@@ -284,7 +284,7 @@ nsPresContext::nsPresContext(dom::Document* aDocument, nsPresContextType aType)
       mHasWarnedAboutTooLargeDashedOrDottedRadius(false),
       mQuirkSheetAdded(false),
       mHadNonBlankPaint(false),
-      mHadContentfulPaint(false),
+      mHadFirstContentfulPaint(false),
       mHadNonTickContentfulPaint(false),
       mHadContentfulPaintComposite(false),
 #ifdef DEBUG
@@ -333,6 +333,7 @@ static const char* gExactCallbackPrefs[] = {
     "intl.accept_languages",
     "layout.css.devPixelsPerPx",
     "layout.css.dpi",
+    "layout.css.text-transform.uppercase-eszett.enabled",
     "privacy.trackingprotection.enabled",
     "ui.use_standins_for_native_colors",
     nullptr,
@@ -611,6 +612,11 @@ void nsPresContext::PreferenceChanged(const char* aPrefName) {
     if (StyleSet()->UsesFontMetrics()) {
       restyleHint |= RestyleHint::RecascadeSubtree();
     }
+  }
+
+  if (prefName.EqualsLiteral(
+          "layout.css.text-transform.uppercase-eszett.enabled")) {
+    changeHint |= NS_STYLE_HINT_REFLOW;
   }
 
   // We will end up calling InvalidatePreferenceSheets one from each pres
@@ -2720,7 +2726,7 @@ void nsPresContext::NotifyNonBlankPaint() {
 }
 
 void nsPresContext::NotifyContentfulPaint() {
-  if (mHadContentfulPaint) {
+  if (mHadFirstContentfulPaint) {
     return;
   }
   nsRootPresContext* rootPresContext = GetRootPresContext();
@@ -2742,7 +2748,7 @@ void nsPresContext::NotifyContentfulPaint() {
     }
     return;
   }
-  mHadContentfulPaint = true;
+  mHadFirstContentfulPaint = true;
   mFirstContentfulPaintTransactionId =
       Some(rootPresContext->mRefreshDriver->LastTransactionId().Next());
   if (nsPIDOMWindowInner* innerWindow = mDocument->GetInnerWindow()) {
@@ -2782,7 +2788,7 @@ void nsPresContext::NotifyContentfulPaint() {
 
 void nsPresContext::NotifyPaintStatusReset() {
   mHadNonBlankPaint = false;
-  mHadContentfulPaint = false;
+  mHadFirstContentfulPaint = false;
 #if defined(MOZ_WIDGET_ANDROID)
   (new AsyncEventDispatcher(mDocument, u"MozPaintStatusReset"_ns,
                             CanBubble::eYes, ChromeOnlyDispatch::eYes))

@@ -285,6 +285,9 @@
   top: -11px;
   inset-inline-start: 12px;
 }
+.onboardingContainer.featureCallout.hidden-arrow::before, .onboardingContainer.featureCallout.hidden-arrow::after {
+  display: none;
+}
 .onboardingContainer.featureCallout:focus-visible .screen[pos=callout] .section-main .main-content {
   outline: 2px solid var(--fc-accent-color);
   border-color: transparent;
@@ -390,6 +393,8 @@ html {
   justify-content: center;
   width: 504px;
   flex-shrink: 0;
+}
+.onboardingContainer .section-main:not(.embedded-migration) {
   position: relative;
 }
 .onboardingContainer .main-content {
@@ -506,6 +511,7 @@ html {
 .onboardingContainer .screen[pos=center].with-video .main-content .secondary-cta .arrow-icon {
   -moz-context-properties: fill;
   fill: currentColor;
+  text-decoration: none;
 }
 .onboardingContainer .screen[pos=center].with-video .main-content .secondary-cta .arrow-icon::after {
   content: "";
@@ -523,10 +529,10 @@ html {
   font-size: 0.72em;
   font-weight: 600;
   padding: 8px 16px;
+  text-decoration: none;
   color: var(--in-content-button-text-color);
 }
 .onboardingContainer .screen[pos=center].with-video .main-content .secondary-cta .secondary:hover {
-  text-decoration: none;
   background-color: var(--in-content-button-background-hover) !important;
   color: var(--in-content-button-text-color-hover);
 }
@@ -618,15 +624,20 @@ html {
   margin: 8px 0;
 }
 .onboardingContainer .screen[pos=split] .section-main .main-content .action-buttons .additional-cta.cta-link {
+  text-decoration: underline;
+  cursor: pointer;
   color: var(--in-content-link-color);
   background: none;
   padding: 0;
   font-weight: normal;
-  text-decoration: underline;
-  cursor: pointer;
 }
 .onboardingContainer .screen[pos=split] .section-main .main-content .action-buttons .additional-cta.cta-link:hover {
+  text-decoration: none;
   color: var(--in-content-link-color-hover);
+}
+.onboardingContainer .screen[pos=split] .section-main .main-content .action-buttons .additional-cta.cta-link:active {
+  text-decoration: none;
+  color: var(--in-content-link-color-active);
 }
 .onboardingContainer .screen[pos=split] .section-main .main-content .action-buttons .additional-cta.secondary:hover {
   background-color: var(--in-content-button-background-hover);
@@ -647,15 +658,16 @@ html {
   font-size: 0.72em;
   font-weight: 600;
   padding: 8px 16px;
+  text-decoration: none;
 }
 .onboardingContainer .screen[pos=split] .section-main .main-content .action-buttons .secondary-cta .secondary:hover {
-  text-decoration: none;
   background-color: var(--in-content-button-background-hover) !important;
   color: var(--in-content-button-text-color-hover);
 }
 .onboardingContainer .screen[pos=split] .section-main .main-content .action-buttons .secondary-cta .arrow-icon {
   -moz-context-properties: fill;
   fill: currentColor;
+  text-decoration: none;
 }
 .onboardingContainer .screen[pos=split] .section-main .main-content .action-buttons .secondary-cta .arrow-icon::after {
   content: "";
@@ -678,6 +690,9 @@ html {
   margin-block: 10px 35px;
   text-align: initial;
   align-items: initial;
+}
+.onboardingContainer .screen[pos=split] .section-main .main-content .welcome-text:empty {
+  margin: 0;
 }
 .onboardingContainer .screen[pos=split] .section-main .main-content .welcome-text h1 {
   font-size: 24px;
@@ -935,6 +950,19 @@ html {
   .onboardingContainer .rtamo-icon {
     text-align: center;
   }
+}
+.onboardingContainer .text-link {
+  text-decoration: underline;
+  cursor: pointer;
+  color: var(--in-content-link-color);
+}
+.onboardingContainer .text-link:hover {
+  text-decoration: none;
+  color: var(--in-content-link-color-hover);
+}
+.onboardingContainer .text-link:active {
+  text-decoration: none;
+  color: var(--in-content-link-color-active);
 }
 .onboardingContainer .welcome-text {
   display: flex;
@@ -1201,11 +1229,20 @@ html {
   height: 113px;
 }
 .onboardingContainer .mobile-downloads .email-link {
+  text-decoration: underline;
+  cursor: pointer;
+  color: var(--in-content-link-color);
   font-size: 16px;
   font-weight: 400;
-  text-decoration: underline;
-  color: var(--in-content-link-color);
   background: none;
+}
+.onboardingContainer .mobile-downloads .email-link:hover {
+  text-decoration: none;
+  color: var(--in-content-link-color-hover);
+}
+.onboardingContainer .mobile-downloads .email-link:active {
+  text-decoration: none;
+  color: var(--in-content-link-color-active);
 }
 .onboardingContainer .mobile-downloads .email-link:hover {
   background: none;
@@ -1468,7 +1505,8 @@ html {
 .onboardingContainer .dialog-initial .multi-select-container {
   transition-delay: 0.8s;
 }
-.onboardingContainer .dialog-initial .tiles-theme-section {
+.onboardingContainer .dialog-initial .tiles-theme-section,
+.onboardingContainer .dialog-initial migration-wizard {
   transition-delay: 0.9s;
 }
 .onboardingContainer .dialog-initial .primary,
@@ -1540,7 +1578,8 @@ html {
 .onboardingContainer.transition-in .screen .checkbox-container,
 .onboardingContainer.transition-in .screen .secondary,
 .onboardingContainer.transition-in .screen .secondary-cta:not(.top),
-.onboardingContainer.transition-in .screen .cta-link {
+.onboardingContainer.transition-in .screen .cta-link,
+.onboardingContainer.transition-in .screen migration-wizard {
   opacity: 0;
   translate: 0 calc(-1 * var(--translate));
 }
@@ -1563,7 +1602,8 @@ html {
   transition-delay: 0.1s;
 }
 .onboardingContainer.transition-out .screen:not(.dialog-last) .tiles-theme-section,
-.onboardingContainer.transition-out .screen:not(.dialog-last) .colorway-text {
+.onboardingContainer.transition-out .screen:not(.dialog-last) .colorway-text,
+.onboardingContainer.transition-out .screen:not(.dialog-last) migration-wizard {
   opacity: 0;
   translate: 0 var(--translate);
   transition-delay: 0.2s;
@@ -1589,4 +1629,15 @@ html {
   opacity: 0;
   translate: 0 calc(2 * var(--translate));
   transition-delay: 0.4s;
+}
+.onboardingContainer migration-wizard {
+  width: unset;
+  transition: var(--transition);
+}
+.onboardingContainer migration-wizard::part(buttons) {
+  margin-top: 32px;
+  justify-content: flex-start;
+}
+.onboardingContainer migration-wizard::part(deck) {
+  font-size: 0.83em;
 }

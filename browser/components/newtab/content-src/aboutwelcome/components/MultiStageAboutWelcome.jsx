@@ -14,10 +14,12 @@ import {
 
 // Amount of milliseconds for all transitions to complete (including delays).
 const TRANSITION_OUT_TIME = 1000;
+const LANGUAGE_MISMATCH_SCREEN_ID = "AW_LANGUAGE_MISMATCH";
 
 export const MultiStageAboutWelcome = props => {
   let { defaultScreens } = props;
   const didFilter = useRef(false);
+  const [didMount, setDidMount] = useState(false);
   const [screens, setScreens] = useState(defaultScreens);
 
   const [index, setScreenIndex] = useState(props.startScreen);
@@ -25,43 +27,62 @@ export const MultiStageAboutWelcome = props => {
 
   useEffect(() => {
     (async () => {
-      // Evaluate targeting and update screens on load of about:welcome
-      let filteredScreens = await window.AWEvaluateScreenTargeting(
-        defaultScreens
-      );
-      if (filteredScreens) {
-        setScreens(filteredScreens);
-        didFilter.current = true;
+      // If we want to load index from history state, we don't want to send impression yet
+      if (!didMount) {
+        return;
       }
-    })();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => {
-    if (!didFilter.current) {
-      return;
-    }
-    const screenInitials = screens
-      .map(({ id }) => id?.split("_")[1]?.[0])
-      .join("");
-    // Send impression ping when respective screen first renders
-    screens.forEach((screen, order) => {
-      if (index === order) {
-        AboutWelcomeUtils.sendImpressionTelemetry(
-          `${props.message_id}_${order}_${screen.id}_${screenInitials}`
+      // On about:welcome first load, screensVisited should be empty
+      let screensVisited = didFilter.current ? screens.slice(0, index) : [];
+      let upcomingScreens = defaultScreens
+        .filter(s => !screensVisited.find(v => v.id === s.id))
+        // Filter out Language Mismatch screen from upcoming
+        // screens if screens set from useLanguageSwitcher hook
+        // has filtered language screen
+        .filter(
+          upcomingScreen =>
+            !(
+              !screens.find(s => s.id === LANGUAGE_MISMATCH_SCREEN_ID) &&
+              upcomingScreen.id === LANGUAGE_MISMATCH_SCREEN_ID
+            )
         );
+
+      let filteredScreens = screensVisited.concat(
+        (await window.AWEvaluateScreenTargeting(upcomingScreens)) ??
+          upcomingScreens
+      );
+
+      // Use existing screen for the filtered screen to carry over any modification
+      // e.g. if AW_LANGUAGE_MISMATCH exists, use it from existing screens
+      setScreens(
+        filteredScreens.map(
+          filtered => screens.find(s => s.id === filtered.id) ?? filtered
+        )
+      );
+
+      didFilter.current = true;
+
+      const screenInitials = filteredScreens
+        .map(({ id }) => id?.split("_")[1]?.[0])
+        .join("");
+      // Send impression ping when respective screen first renders
+      filteredScreens.forEach((screen, order) => {
+        if (index === order) {
+          AboutWelcomeUtils.sendImpressionTelemetry(
+            `${props.message_id}_${order}_${screen.id}_${screenInitials}`
+          );
+          window.AWAddScreenImpression?.(screen);
+        }
+      });
+
+      // Remember that a new screen has loaded for browser navigation
+      if (props.updateHistory && index > window.history.state) {
+        window.history.pushState(index, "");
       }
-    });
-  }, [index, screens]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => {
-    // Remember that a new screen has loaded for browser navigation
-    if (props.updateHistory && index > window.history.state) {
-      window.history.pushState(index, "");
-    }
-
-    // Remember the previous screen index so we can animate the transition
-    setPreviousOrder(index);
-  }, [index]); // eslint-disable-line react-hooks/exhaustive-deps
+      // Remember the previous screen index so we can animate the transition
+      setPreviousOrder(index);
+    })();
+  }, [index, didMount]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const [flowParams, setFlowParams] = useState(null);
   const { metricsFlowUri } = props;
@@ -109,6 +130,11 @@ export const MultiStageAboutWelcome = props => {
   };
 
   useEffect(() => {
+    // When about:welcome loads (on refresh or pressing back button
+    // from about:home), ensure history state usEffect runs before
+    // useEffect hook that send impression telemetry
+    setDidMount(true);
+
     if (props.updateHistory) {
       // Switch to the screen tracked in state (null for initial state)
       // or last screen index if a user navigates by pressing back
@@ -208,8 +234,6 @@ export const MultiStageAboutWelcome = props => {
               autoAdvance={screen.auto_advance}
               negotiatedLanguage={negotiatedLanguage}
               langPackInstallPhase={langPackInstallPhase}
-              defaultScreens={defaultScreens}
-              setScreens={setScreens}
             />
           ) : null;
         })}
@@ -307,13 +331,14 @@ export class WelcomeScreen extends React.PureComponent {
       }
       data = { ...data, args: url.toString() };
     }
-    AboutWelcomeUtils.handleUserAction({ type, data });
+    return AboutWelcomeUtils.handleUserAction({ type, data });
   }
 
   async handleAction(event) {
     let { props } = this;
     const value =
       event.currentTarget.value ?? event.currentTarget.getAttribute("value");
+    const source = event.source || value;
     let targetContent =
       props.content[value] ||
       props.content.tiles ||
@@ -323,13 +348,13 @@ export class WelcomeScreen extends React.PureComponent {
       return;
     }
     // Send telemetry before waiting on actions
-    AboutWelcomeUtils.sendActionTelemetry(props.messageId, value, event.name);
+    AboutWelcomeUtils.sendActionTelemetry(props.messageId, source, event.name);
 
     // Send additional telemetry if a messaging surface like feature callout is
     // dismissed via the dismiss button. Other causes of dismissal will be
     // handled separately by the messaging surface's own code.
     if (value === "dismiss_button" && !event.name) {
-      AboutWelcomeUtils.sendDismissTelemetry(props.messageId, value);
+      AboutWelcomeUtils.sendDismissTelemetry(props.messageId, source);
     }
 
     let { action } = targetContent;
@@ -337,10 +362,21 @@ export class WelcomeScreen extends React.PureComponent {
     if (action.collectSelect) {
       // Populate MULTI_ACTION data actions property with selected checkbox actions from tiles data
       action.data = {
-        actions: this.props.activeMultiSelect.map(
-          id => props.content?.tiles?.data.find(ckbx => ckbx.id === id)?.action
-        ),
+        actions: [],
       };
+
+      for (const checkbox of props.content?.tiles?.data ?? []) {
+        let checkboxAction;
+        if (this.props.activeMultiSelect.includes(checkbox.id)) {
+          checkboxAction = checkbox.checkedAction ?? checkbox.action;
+        } else {
+          checkboxAction = checkbox.uncheckedAction;
+        }
+
+        if (checkboxAction) {
+          action.data.actions.push(checkboxAction);
+        }
+      }
 
       // Send telemetry with selected checkbox ids
       AboutWelcomeUtils.sendActionTelemetry(
@@ -350,10 +386,22 @@ export class WelcomeScreen extends React.PureComponent {
       );
     }
 
+    let actionResult;
     if (["OPEN_URL", "SHOW_FIREFOX_ACCOUNTS"].includes(action.type)) {
-      this.handleOpenURL(action, props.flowParams, props.UTMTerm);
+      actionResult = await this.handleOpenURL(
+        action,
+        props.flowParams,
+        props.UTMTerm
+      );
     } else if (action.type) {
-      AboutWelcomeUtils.handleUserAction(action);
+      actionResult = await AboutWelcomeUtils.handleUserAction(action);
+      if (action.type === "FXA_SIGNIN_FLOW") {
+        AboutWelcomeUtils.sendActionTelemetry(
+          props.messageId,
+          actionResult ? "sign_in" : "sign_in_cancel",
+          "FXA_SIGNIN_FLOW"
+        );
+      }
       // Wait until migration closes to complete the action
       const hasMigrate = a =>
         a.type === "SHOW_MIGRATION_WIZARD" ||
@@ -381,18 +429,17 @@ export class WelcomeScreen extends React.PureComponent {
       this.props.setInitialTheme(this.props.activeTheme);
     }
 
-    // Set screens based on dynamic targeting evaluations
-    if (action.isDynamic) {
-      props.setScreens(
-        await window.AWEvaluateScreenTargeting(props.defaultScreens)
-      );
-    }
+    // `navigate` and `dismiss` can be true/false/undefined, or they can be a
+    // string "actionResult" in which case we should use the actionResult
+    // (boolean resolved by handleUserAction)
+    const shouldDoBehavior = behavior =>
+      behavior === "actionResult" ? actionResult : behavior;
 
-    if (action.navigate) {
+    if (shouldDoBehavior(action.navigate)) {
       props.navigate();
     }
 
-    if (action.dismiss) {
+    if (shouldDoBehavior(action.dismiss)) {
       window.AWFinish();
     }
   }

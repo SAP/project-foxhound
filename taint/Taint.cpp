@@ -842,6 +842,11 @@ StringTaint& StringTaint::append(TaintRange range)
 {
     MOZ_ASSERT_IF(ranges_, ranges_->back().end() <= range.begin());
 
+    // If the appending taint range has an empty flow, don't add it
+    if (!range.flow().isEmpty()) {
+        return *this;
+    }
+
     if (!ranges_) {
         MOZ_COUNT_CTOR(StringTaint);
         ranges_ = new std::vector<TaintRange>;

@@ -52,7 +52,6 @@ struct TypeDefInstanceData {
         superTypeVector(nullptr),
         shape(nullptr),
         clasp(nullptr),
-        allocSite(nullptr),
         allocKind(gc::AllocKind::LIMIT) {}
 
   // The canonicalized pointer to this type definition. This is kept alive by
@@ -108,6 +107,12 @@ struct TableInstanceData {
   // For tables of anyref this is null.
   // For tables of functions, this is a pointer to the array of code pointers.
   void* elements;
+};
+
+// TagInstanceData describes the instance state associated with a tag.
+
+struct TagInstanceData {
+  GCPtr<WasmTagObject*> object;
 };
 
 // Table element for TableRepr::Func which carries both the code pointer and

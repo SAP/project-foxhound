@@ -6,15 +6,12 @@
 const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   ExperimentAPI: "resource://nimbus/ExperimentAPI.sys.mjs",
+  NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
   NewTabUtils: "resource://gre/modules/NewTabUtils.sys.mjs",
+  pktApi: "chrome://pocket/content/pktApi.sys.mjs",
   Region: "resource://gre/modules/Region.sys.mjs",
   RemoteSettings: "resource://services-settings/remote-settings.sys.mjs",
 });
-ChromeUtils.defineModuleGetter(
-  lazy,
-  "pktApi",
-  "chrome://pocket/content/pktApi.jsm"
-);
 const { setTimeout, clearTimeout } = ChromeUtils.importESModule(
   "resource://gre/modules/Timer.sys.mjs"
 );
@@ -37,6 +34,8 @@ const MIN_PERSONALIZATION_UPDATE_TIME = 12 * 60 * 60 * 1000; // 12 hours
 const MAX_LIFETIME_CAP = 500; // Guard against misconfiguration on the server
 const FETCH_TIMEOUT = 45 * 1000;
 const SPOCS_URL = "https://spocs.getpocket.com/spocs";
+const FEED_URL =
+  "https://getpocket.cdn.mozilla.net/v3/firefox/global-recs?version=3&consumer_key=$apiKey&locale_lang=$locale&region=$region&count=30";
 const PREF_CONFIG = "discoverystream.config";
 const PREF_ENDPOINTS = "discoverystream.endpoints";
 const PREF_IMPRESSION_ID = "browser.newtabpage.activity-stream.impressionId";
@@ -140,6 +139,28 @@ class DiscoveryStreamFeed {
 
   get region() {
     return lazy.Region.home;
+  }
+
+  get isBff() {
+    if (this._isBff === undefined) {
+      const pocketConfig =
+        this.store.getState().Prefs.values?.pocketConfig || {};
+
+      const preffedLocaleListString = pocketConfig.localeListConfig || "";
+      const preffedLocales = preffedLocaleListString
+        .split(",")
+        .map(s => s.trim());
+      const localeEnabled = this.locale && preffedLocales.includes(this.locale);
+
+      const preffedRegionBffConfigString = pocketConfig.regionBffConfig || "";
+      const preffedRegionBffConfig = preffedRegionBffConfigString
+        .split(",")
+        .map(s => s.trim());
+      const regionBff = preffedRegionBffConfig.includes(this.region);
+      this._isBff = !localeEnabled && regionBff;
+    }
+
+    return this._isBff;
   }
 
   get showSpocs() {
@@ -412,6 +433,7 @@ class DiscoveryStreamFeed {
         throw new Error(`Unexpected status (${response.status})`);
       }
       clearTimeout(timeoutId);
+
       return response.json();
     } catch (error) {
       console.error(`Failed to fetch ${endpoint}: ${error.message}`);
@@ -646,6 +668,8 @@ class DiscoveryStreamFeed {
 
       const pocketConfig =
         this.store.getState().Prefs.values?.pocketConfig || {};
+      const onboardingExperience =
+        this.isBff && pocketConfig.onboardingExperience;
 
       let items = isBasicLayout ? 3 : 21;
       if (pocketConfig.fourCardLayout || pocketConfig.hybridLayout) {
@@ -688,10 +712,19 @@ class DiscoveryStreamFeed {
         spocsUrl = newUrl.href;
       }
 
+      let feedUrl = FEED_URL;
+
+      if (this.isBff) {
+        feedUrl = `https://${lazy.NimbusFeatures.saveToPocket.getVariable(
+          "bffApi"
+        )}/desktop/v1/recommendations?locale=$locale&region=$region&count=30`;
+      }
+
       // Set a hardcoded layout if one is needed.
       // Changing values in this layout in memory object is unnecessary.
       layoutResp = getHardcodedLayout({
         spocsUrl,
+        feedUrl,
         items,
         sponsoredCollectionsEnabled,
         spocPlacementData,
@@ -718,6 +751,7 @@ class DiscoveryStreamFeed {
           this.locale.startsWith("en-") && pocketConfig.essentialReadsHeader,
         editorsPicksHeader:
           this.locale.startsWith("en-") && pocketConfig.editorsPicksHeader,
+        onboardingExperience,
       });
     }
 
@@ -1426,20 +1460,45 @@ class DiscoveryStreamFeed {
 
     let feed = feeds ? feeds[feedUrl] : null;
     if (this.isExpired({ cachedData, key: "feed", url: feedUrl, isStartup })) {
-      const feedResponse = await this.fetchFromEndpoint(feedUrl);
+      let options = {};
+      if (this.isBff) {
+        const headers = new Headers();
+        const oAuthConsumerKey = lazy.NimbusFeatures.saveToPocket.getVariable(
+          "oAuthConsumerKeyBff"
+        );
+        headers.append("consumer_key", oAuthConsumerKey);
+        options = {
+          method: "GET",
+          headers,
+        };
+      }
+
+      const feedResponse = await this.fetchFromEndpoint(feedUrl, options);
       if (feedResponse) {
+        const { settings = {} } = feedResponse;
+        let { recommendations } = feedResponse;
+        if (this.isBff) {
+          recommendations = feedResponse.data.map(item => ({
+            id: item.tileId,
+            url: item.url,
+            title: item.title,
+            excerpt: item.excerpt,
+            publisher: item.publisher,
+            raw_image_src: item.imageUrl,
+          }));
+        }
         const { data: scoredItems } = await this.scoreItems(
-          feedResponse.recommendations,
+          recommendations,
           "feed"
         );
-        const { recsExpireTime } = feedResponse.settings;
-        const recommendations = this.rotate(scoredItems, recsExpireTime);
+        const { recsExpireTime } = settings;
+        const rotatedItems = this.rotate(scoredItems, recsExpireTime);
         this.componentFeedFetched = true;
         feed = {
           lastUpdated: Date.now(),
           data: {
-            settings: feedResponse.settings,
-            recommendations,
+            settings,
+            recommendations: rotatedItems,
             status: "success",
           },
         };
@@ -1702,6 +1761,9 @@ class DiscoveryStreamFeed {
   async resetAllCache() {
     await this.resetContentCache();
     await this.cache.set("personalization", {});
+    // Reset in-memory caches.
+    this._isBff = undefined;
+    this._spocsCacheUpdateTime = undefined;
   }
 
   resetDataPrefs() {
@@ -1740,7 +1802,7 @@ class DiscoveryStreamFeed {
   }
 
   // This is a request to change the config from somewhere.
-  // Can be from a spefic pref related to Discovery Stream,
+  // Can be from a specific pref related to Discovery Stream,
   // or can be a generic request from an external feed that
   // something changed.
   configReset() {
@@ -2142,6 +2204,7 @@ class DiscoveryStreamFeed {
 
    NOTE: There is some branching logic in the template.
      `spocsUrl` Changing the url for spocs is used for adding a siteId query param.
+     `feedUrl` Where to fetch stories from.
      `items` How many items to include in the primary card grid.
      `spocPositions` Changes the position of spoc cards.
      `spocTopsitesPositions` Changes the position of spoc topsites.
@@ -2155,9 +2218,11 @@ class DiscoveryStreamFeed {
      `compactGrid` Reduce the number of pixels between the Pocket cards.
      `essentialReadsHeader` Updates the Pocket section header and title to say "Today’s Essential Reads", moves the "Recommended by Pocket" header to the right side.
      `editorsPicksHeader` Updates the Pocket section header and title to say "Editor’s Picks", if used with essentialReadsHeader, creates a second section 2 rows down for editorsPicks.
+     `onboardingExperience` Show new users some UI explaining Pocket above the Pocket section.
 */
 getHardcodedLayout = ({
   spocsUrl = SPOCS_URL,
+  feedUrl = FEED_URL,
   items = 21,
   spocPositions = [1, 5, 7, 11, 18, 20],
   spocTopsitesPositions = [1],
@@ -2173,6 +2238,7 @@ getHardcodedLayout = ({
   compactGrid = false,
   essentialReadsHeader = false,
   editorsPicksHeader = false,
+  onboardingExperience = false,
 }) => ({
   lastUpdate: Date.now(),
   spocs: {
@@ -2270,6 +2336,7 @@ getHardcodedLayout = ({
             compactGrid,
             essentialReadsHeader,
             editorsPicksHeader,
+            onboardingExperience,
           },
           widgets: {
             positions: widgetPositions.map(position => {
@@ -2288,8 +2355,7 @@ getHardcodedLayout = ({
           },
           feed: {
             embed_reference: null,
-            url:
-              "https://getpocket.cdn.mozilla.net/v3/firefox/global-recs?version=3&consumer_key=$apiKey&locale_lang=$locale&region=$region&count=30",
+            url: feedUrl,
           },
           spocs: {
             probability: 1,

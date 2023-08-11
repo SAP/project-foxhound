@@ -17,6 +17,7 @@
 #include "jit/IonOptimizationLevels.h"
 #include "jit/JitSpewer.h"
 #include "jit/LIR.h"
+#include "jit/MacroAssembler.h"
 #include "jit/MIR.h"
 #include "jit/MIRGraph.h"
 #include "jit/SharedICRegisters.h"
@@ -1066,19 +1067,20 @@ void LIRGenerator::visitTest(MTest* test) {
     return;
   }
 
-  if (opd->isWasmGcObjectIsSubtypeOf() && opd->isEmittedAtUses()) {
-    MWasmGcObjectIsSubtypeOf* isSubTypeOf = opd->toWasmGcObjectIsSubtypeOf();
+  if (opd->isWasmGcObjectIsSubtypeOfConcrete() && opd->isEmittedAtUses()) {
+    MWasmGcObjectIsSubtypeOfConcrete* isSubTypeOf =
+        opd->toWasmGcObjectIsSubtypeOfConcrete();
     LAllocation object = useRegister(isSubTypeOf->object());
     LAllocation superSuperTypeVector =
         useRegister(isSubTypeOf->superSuperTypeVector());
-    uint32_t subTypingDepth = isSubTypeOf->subTypingDepth();
+    uint32_t subTypingDepth = isSubTypeOf->type().typeDef()->subTypingDepth();
     LDefinition subTypeDepth = temp();
     LDefinition scratch = subTypingDepth >= wasm::MinSuperTypeVectorLength
                               ? temp()
                               : LDefinition();
     add(new (alloc()) LWasmGcObjectIsSubtypeOfAndBranch(
             ifTrue, ifFalse, object, superSuperTypeVector, subTypingDepth,
-            isSubTypeOf->succeedOnNull(), subTypeDepth, scratch),
+            isSubTypeOf->type().isNullable(), subTypeDepth, scratch),
         test);
     return;
   }
@@ -5448,8 +5450,9 @@ void LIRGenerator::visitWasmAlignmentCheck(MWasmAlignmentCheck* ins) {
   }
 }
 
-void LIRGenerator::visitWasmLoadGlobalVar(MWasmLoadGlobalVar* ins) {
-  size_t offs = wasm::Instance::offsetOfGlobalArea() + ins->globalDataOffset();
+void LIRGenerator::visitWasmLoadInstanceDataField(
+    MWasmLoadInstanceDataField* ins) {
+  size_t offs = wasm::Instance::offsetInData(ins->instanceDataOffset());
   if (ins->type() == MIRType::Int64) {
 #ifdef JS_PUNBOX64
     LAllocation instance = useRegisterAtStart(ins->instance());
@@ -5495,9 +5498,10 @@ void LIRGenerator::visitWasmLoadTableElement(MWasmLoadTableElement* ins) {
   define(new (alloc()) LWasmLoadTableElement(elements, index), ins);
 }
 
-void LIRGenerator::visitWasmStoreGlobalVar(MWasmStoreGlobalVar* ins) {
+void LIRGenerator::visitWasmStoreInstanceDataField(
+    MWasmStoreInstanceDataField* ins) {
   MDefinition* value = ins->value();
-  size_t offs = wasm::Instance::offsetOfGlobalArea() + ins->globalDataOffset();
+  size_t offs = wasm::Instance::offsetInData(ins->instanceDataOffset());
   if (value->type() == MIRType::Int64) {
 #ifdef JS_PUNBOX64
     LAllocation instance = useRegisterAtStart(ins->instance());
@@ -5582,11 +5586,9 @@ void LIRGenerator::visitWasmStoreRef(MWasmStoreRef* ins) {
 }
 
 void LIRGenerator::visitWasmPostWriteBarrier(MWasmPostWriteBarrier* ins) {
-  LDefinition tmp =
-      needTempForPostBarrier() ? temp() : LDefinition::BogusTemp();
   LWasmPostWriteBarrier* lir = new (alloc()) LWasmPostWriteBarrier(
       useFixed(ins->instance(), InstanceReg), useRegister(ins->object()),
-      useRegister(ins->valueBase()), useRegister(ins->value()), tmp,
+      useRegister(ins->valueBase()), useRegister(ins->value()), temp(),
       ins->valueOffset());
   add(lir, ins);
   assignWasmSafepoint(lir);
@@ -6741,7 +6743,7 @@ bool LIRGenerator::visitInstruction(MInstruction* ins) {
   return !errored();
 }
 
-void LIRGenerator::definePhis() {
+bool LIRGenerator::definePhis() {
   size_t lirIndex = 0;
   MBasicBlock* block = current->mir();
   for (MPhiIterator phi(block->phisBegin()); phi != block->phisEnd(); phi++) {
@@ -6756,6 +6758,7 @@ void LIRGenerator::definePhis() {
       lirIndex += 1;
     }
   }
+  return !errored();
 }
 
 void LIRGenerator::updateResumeState(MInstruction* ins) {
@@ -6785,7 +6788,9 @@ bool LIRGenerator::visitBlock(MBasicBlock* block) {
   current = block->lir();
   updateResumeState(block);
 
-  definePhis();
+  if (!definePhis()) {
+    return false;
+  }
 
   MOZ_ASSERT_IF(block->unreachable(), !mir()->optimizationInfo().gvnEnabled());
   for (MInstructionIterator iter = block->begin(); *iter != block->lastIns();
@@ -7040,20 +7045,46 @@ void LIRGenerator::visitWasmStoreFieldRefKA(MWasmStoreFieldRefKA* ins) {
   add(new (alloc()) LKeepAliveObject(useKeepalive(ins->ka())), ins);
 }
 
-void LIRGenerator::visitWasmGcObjectIsSubtypeOf(MWasmGcObjectIsSubtypeOf* ins) {
+void LIRGenerator::visitWasmGcObjectIsSubtypeOfAbstract(
+    MWasmGcObjectIsSubtypeOfAbstract* ins) {
+  // See comment on MacroAssembler::branchWasmGcObjectIsRefType.
+  // We know we do not need scratch2 and superSuperTypeVector because we know
+  // this is not a concrete type.
+  MOZ_ASSERT(!MacroAssembler::needScratch2ForBranchWasmGcRefType(ins->type()));
+  MOZ_ASSERT(!MacroAssembler::needSuperSuperTypeVectorForBranchWasmGcRefType(
+      ins->type()));
+
+  LAllocation object = useRegister(ins->object());
+  LDefinition scratch1 =
+      MacroAssembler::needScratch1ForBranchWasmGcRefType(ins->type())
+          ? temp()
+          : LDefinition();
+  define(new (alloc()) LWasmGcObjectIsSubtypeOfAbstract(object, scratch1), ins);
+}
+
+void LIRGenerator::visitWasmGcObjectIsSubtypeOfConcrete(
+    MWasmGcObjectIsSubtypeOfConcrete* ins) {
   if (CanEmitAtUseForSingleTest(ins)) {
     emitAtUses(ins);
     return;
   }
 
+  // See comment on MacroAssembler::branchWasmGcObjectIsRefType.
+  // We know we need scratch1 and superSuperTypeVector because we know this is a
+  // concrete type.
+  MOZ_ASSERT(MacroAssembler::needScratch1ForBranchWasmGcRefType(ins->type()));
+  MOZ_ASSERT(MacroAssembler::needSuperSuperTypeVectorForBranchWasmGcRefType(
+      ins->type()));
+
   LAllocation object = useRegister(ins->object());
+  LDefinition scratch1 = temp();
+  LDefinition scratch2 =
+      MacroAssembler::needScratch2ForBranchWasmGcRefType(ins->type())
+          ? temp()
+          : LDefinition();
   LAllocation superSuperTypeVector = useRegister(ins->superSuperTypeVector());
-  uint32_t subTypingDepth = ins->subTypingDepth();
-  LDefinition subTypeDepth = temp();
-  LDefinition scratch =
-      subTypingDepth >= wasm::MinSuperTypeVectorLength ? temp() : LDefinition();
-  define(new (alloc()) LWasmGcObjectIsSubtypeOf(object, superSuperTypeVector,
-                                                subTypeDepth, scratch),
+  define(new (alloc()) LWasmGcObjectIsSubtypeOfConcrete(
+             object, superSuperTypeVector, scratch1, scratch2),
          ins);
 }
 

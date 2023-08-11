@@ -168,12 +168,12 @@ tests.push({
 
   async check() {
     // Check that the obsolete annotation has been removed.
-    await PlacesUtils.withConnectionWrapper("check", async db => {
-      db.executeCached(
-        "SELECT id FROM moz_anno_attributes WHERE name = :anno",
-        { anno: this._obsoleteWeaveAttribute }
-      );
-    });
+    Assert.strictEqual(
+      await PlacesTestUtils.getDatabaseValue("moz_anno_attributes", "id", {
+        name: this._obsoleteWeaveAttribute,
+      }),
+      undefined
+    );
   },
 });
 
@@ -219,22 +219,23 @@ tests.push({
 
   async check() {
     // Check that used attributes are still there
-    let db = await PlacesUtils.promiseDBConnection();
-    let rows = await db.executeCached(
-      "SELECT id FROM moz_anno_attributes WHERE name = :anno",
+    let value = await PlacesTestUtils.getDatabaseValue(
+      "moz_anno_attributes",
+      "id",
       {
-        anno: this._usedPageAttribute,
+        name: this._usedPageAttribute,
       }
     );
-    Assert.equal(rows.length, 1);
+    Assert.notStrictEqual(value, undefined);
     // Check that unused attribute has been removed
-    rows = await db.executeCached(
-      "SELECT id FROM moz_anno_attributes WHERE name = :anno",
+    value = await PlacesTestUtils.getDatabaseValue(
+      "moz_anno_attributes",
+      "id",
       {
-        anno: this._unusedAttribute,
+        name: this._unusedAttribute,
       }
     );
-    Assert.equal(rows.length, 0);
+    Assert.strictEqual(value, undefined);
   },
 });
 
@@ -291,10 +292,10 @@ tests.push({
     );
     Assert.equal(rows.length, 1);
     // Check that annotation with bogus attribute has been removed
-    rows = await db.executeCached(
-      "SELECT id FROM moz_annos WHERE anno_attribute_id = 1337"
-    );
-    Assert.equal(rows.length, 0);
+    let value = await PlacesTestUtils.getDatabaseValue("moz_annos", "id", {
+      anno_attribute_id: 1337,
+    });
+    Assert.strictEqual(value, undefined);
   },
 });
 
@@ -348,10 +349,10 @@ tests.push({
     );
     Assert.equal(rows.length, 1);
     // Check that an annotation to a nonexistent page has been removed
-    rows = await db.executeCached(
-      "SELECT id FROM moz_annos WHERE place_id = 1337"
-    );
-    Assert.equal(rows.length, 0);
+    let value = await PlacesTestUtils.getDatabaseValue("moz_annos", "id", {
+      place_id: 1337,
+    });
+    Assert.strictEqual(value, undefined);
   },
 });
 
@@ -400,42 +401,42 @@ tests.push({
       PlacesUtils.bookmarks.TYPE_FOLDER
     );
 
-    let db = await PlacesUtils.promiseDBConnection();
-    let rows = await db.executeCached(
-      `SELECT syncChangeCounter FROM moz_bookmarks WHERE guid = :guid`,
-      { guid: PlacesUtils.bookmarks.menuGuid }
+    let value = await PlacesTestUtils.getDatabaseValue(
+      "moz_bookmarks",
+      "syncChangeCounter",
+      {
+        guid: PlacesUtils.bookmarks.menuGuid,
+      }
     );
-    Assert.equal(rows.length, 1);
-    this._menuChangeCounter = rows[0].getResultByIndex(0);
+    Assert.equal(value, 0);
+    this._menuChangeCounter = value;
   },
 
   async check() {
-    let db = await PlacesUtils.promiseDBConnection();
     // Check that valid bookmark is still there
-    let rows = await db.executeCached(
-      "SELECT id FROM moz_bookmarks WHERE id = :item_id",
-      { item_id: this._validItemId }
-    );
-    Assert.equal(rows.length, 1);
+    let value = await PlacesTestUtils.getDatabaseValue("moz_bookmarks", "id", {
+      id: this._validItemId,
+    });
+    Assert.notStrictEqual(value, undefined);
     // Check that invalid bookmarks have been removed
     for (let id of [
       this._invalidItemId,
       this._invalidSyncedItemId,
       this._invalidWrongTypeItemId,
     ]) {
-      rows = await db.executeCached(
-        "SELECT id FROM moz_bookmarks WHERE id = :item_id",
-        { item_id: id }
-      );
-      Assert.equal(rows.length, 0);
+      value = await PlacesTestUtils.getDatabaseValue("moz_bookmarks", "id", {
+        id,
+      });
+      Assert.strictEqual(value, undefined);
     }
 
-    rows = await db.executeCached(
-      `SELECT syncChangeCounter FROM moz_bookmarks WHERE guid = :guid`,
+    value = await PlacesTestUtils.getDatabaseValue(
+      "moz_bookmarks",
+      "syncChangeCounter",
       { guid: PlacesUtils.bookmarks.menuGuid }
     );
-    Assert.equal(rows.length, 1);
-    Assert.equal(rows[0].getResultByIndex(0), this._menuChangeCounter + 1);
+    Assert.equal(value, 1);
+    Assert.equal(value, this._menuChangeCounter + 1);
 
     let tombstones = await PlacesTestUtils.fetchSyncTombstones();
     Assert.deepEqual(
@@ -488,24 +489,24 @@ tests.push({
   },
 
   async check() {
-    let db = await PlacesUtils.promiseDBConnection();
     // Check that valid bookmark is still there
-    let rows = await db.executeCached(
-      `SELECT id FROM moz_bookmarks WHERE type = :type AND parent = :parent`,
-      { type: PlacesUtils.bookmarks.TYPE_BOOKMARK, parent: this._tagId }
-    );
-    Assert.equal(rows.length, 1);
+    let value = await PlacesTestUtils.getDatabaseValue("moz_bookmarks", "id", {
+      type: PlacesUtils.bookmarks.TYPE_BOOKMARK,
+      parent: this._tagId,
+    });
+    Assert.notStrictEqual(value, undefined);
     // Check that separator is no more there
-    rows = await db.executeCached(
-      `SELECT id FROM moz_bookmarks WHERE type = :type AND parent = :parent`,
-      { type: PlacesUtils.bookmarks.TYPE_SEPARATOR, parent: this._tagId }
-    );
+    value = await PlacesTestUtils.getDatabaseValue("moz_bookmarks", "id", {
+      type: PlacesUtils.bookmarks.TYPE_SEPARATOR,
+      parent: this._tagId,
+    });
+    Assert.equal(value, undefined);
     // Check that folder is no more there
-    rows = await db.executeCached(
-      `SELECT id FROM moz_bookmarks WHERE type = :type AND parent = :parent`,
-      { type: PlacesUtils.bookmarks.TYPE_FOLDER, parent: this._tagId }
-    );
-    Assert.equal(rows.length, 0);
+    value = await PlacesTestUtils.getDatabaseValue("moz_bookmarks", "id", {
+      type: PlacesUtils.bookmarks.TYPE_FOLDER,
+      parent: this._tagId,
+    });
+    Assert.equal(value, undefined);
   },
 });
 
@@ -547,20 +548,16 @@ tests.push({
   async check() {
     let db = await PlacesUtils.promiseDBConnection();
     // Check that valid bookmark is still there
+    let value = await PlacesTestUtils.getDatabaseValue("moz_bookmarks", "id", {
+      id: this._bookmarkId,
+      type: PlacesUtils.bookmarks.TYPE_BOOKMARK,
+      parent: this._tagId,
+    });
+    Assert.notStrictEqual(value, undefined);
     let rows = await db.executeCached(
-      `SELECT id FROM moz_bookmarks
-       WHERE id = :id AND type = :type AND parent = :parent`,
-      {
-        id: this._bookmarkId,
-        type: PlacesUtils.bookmarks.TYPE_BOOKMARK,
-        parent: this._tagId,
-      }
-    );
-    Assert.equal(rows.length, 1);
-    rows = await db.executeCached(
       `SELECT b.id FROM moz_bookmarks b
-       JOIN moz_bookmarks p ON p.id = b.parent
-       WHERE b.id = :id AND b.type = :type AND p.guid = :parent`,
+      JOIN moz_bookmarks p ON p.id = b.parent
+      WHERE b.id = :id AND b.type = :type AND p.guid = :parent`,
       {
         id: this._tagId,
         type: PlacesUtils.bookmarks.TYPE_FOLDER,
@@ -570,8 +567,8 @@ tests.push({
     Assert.equal(rows.length, 1);
     rows = await db.executeCached(
       `SELECT b.id FROM moz_bookmarks b
-       JOIN moz_bookmarks p ON p.id = b.parent
-       WHERE b.id = :id AND b.type = :type AND p.guid = :parent`,
+      JOIN moz_bookmarks p ON p.id = b.parent
+      WHERE b.id = :id AND b.type = :type AND p.guid = :parent`,
       {
         id: this._emptyTagId,
         type: PlacesUtils.bookmarks.TYPE_FOLDER,
@@ -1111,11 +1108,11 @@ tests.push({
           rows.forEach(r => {
             aResultArray.push(r.getResultByName("id"));
           });
-          await PlacesTestUtils.dumpTable(db, "moz_bookmarks", [
-            "id",
-            "parent",
-            "position",
-          ]);
+          await PlacesTestUtils.dumpTable({
+            db,
+            table: "moz_bookmarks",
+            columns: ["id", "parent", "position"],
+          });
         });
       });
     }
@@ -1155,11 +1152,11 @@ tests.push({
         let position = row.getResultByName("position");
         if (aResultArray.indexOf(id) != position) {
           info("Expected order: " + aResultArray);
-          await PlacesTestUtils.dumpTable(db, "moz_bookmarks", [
-            "id",
-            "parent",
-            "position",
-          ]);
+          await PlacesTestUtils.dumpTable({
+            db,
+            table: "moz_bookmarks",
+            columns: ["id", "parent", "position"],
+          });
           do_throw(`Unexpected bookmarks order for ${aParent}.`);
         }
       }
@@ -1263,34 +1260,28 @@ tests.push({
   },
 
   async check() {
-    let db = await PlacesUtils.promiseDBConnection();
     // Check that valid bookmark is still there
-    let rows = await db.executeCached(
-      "SELECT title FROM moz_bookmarks WHERE id = :id",
+    let value = await PlacesTestUtils.getDatabaseValue(
+      "moz_bookmarks",
+      "title",
       { id: this._untitledTagId }
     );
-    Assert.equal(rows.length, 1);
-    Assert.equal(rows[0].getResultByName("title"), "(notitle)");
-    rows = await db.executeCached(
-      "SELECT title FROM moz_bookmarks WHERE id = :id",
-      { id: this._untitledFolderId }
-    );
-    Assert.equal(rows.length, 1);
-    Assert.equal(rows[0].getResultByName("title"), "");
-    rows = await db.executeCached(
-      "SELECT title FROM moz_bookmarks WHERE id = :id",
-      { id: this._titledTagId }
-    );
-    Assert.equal(rows.length, 1);
-    Assert.equal(rows[0].getResultByName("title"), "titledTag");
-    rows = await db.executeCached(
-      "SELECT title FROM moz_bookmarks WHERE id = :id",
-      { id: this._titledFolderId }
-    );
-    Assert.equal(rows.length, 1);
-    Assert.equal(rows[0].getResultByName("title"), "titledFolder");
+    Assert.equal(value, "(notitle)");
+    value = await PlacesTestUtils.getDatabaseValue("moz_bookmarks", "title", {
+      id: this._untitledFolderId,
+    });
+    Assert.equal(value, "");
+    value = await PlacesTestUtils.getDatabaseValue("moz_bookmarks", "title", {
+      id: this._titledTagId,
+    });
+    Assert.equal(value, "titledTag");
+    value = await PlacesTestUtils.getDatabaseValue("moz_bookmarks", "title", {
+      id: this._titledFolderId,
+    });
+    Assert.equal(value, "titledFolder");
 
-    rows = await db.executeCached(
+    let db = await PlacesUtils.promiseDBConnection();
+    let rows = await db.executeCached(
       `SELECT syncChangeCounter FROM moz_bookmarks
        WHERE id IN (:taggedInMenu, :taggedInToolbar)`,
       {
@@ -1351,31 +1342,26 @@ tests.push({
   },
 
   async check() {
-    let db = await PlacesUtils.promiseDBConnection();
     // Check that used icon is still there
-    let rows = await db.executeCached(
-      "SELECT id FROM moz_icons WHERE id = :favicon_id",
-      { favicon_id: 1 }
-    );
-    Assert.equal(rows.length, 1);
+    let value = await PlacesTestUtils.getDatabaseValue("moz_icons", "id", {
+      id: 1,
+    });
+    Assert.notStrictEqual(value, undefined);
     // Check that unused icon has been removed
-    rows = await db.executeCached(
-      "SELECT id FROM moz_icons WHERE id = :favicon_id",
-      { favicon_id: 2 }
-    );
-    Assert.equal(rows.length, 0);
+    value = await PlacesTestUtils.getDatabaseValue("moz_icons", "id", {
+      id: 2,
+    });
+    Assert.strictEqual(value, undefined);
     // Check that unused icon has been removed
-    rows = await db.executeCached(
-      "SELECT id FROM moz_icons WHERE id = :favicon_id",
-      { favicon_id: 3 }
-    );
-    Assert.equal(rows.length, 0);
+    value = await PlacesTestUtils.getDatabaseValue("moz_icons", "id", {
+      id: 3,
+    });
+    Assert.strictEqual(value, undefined);
     // Check that the orphan page is gone.
-    rows = await db.executeCached(
-      "SELECT id FROM moz_pages_w_icons WHERE id = :page_id",
-      { page_id: 99 }
-    );
-    Assert.equal(rows.length, 0);
+    value = await PlacesTestUtils.getDatabaseValue("moz_pages_w_icons", "id", {
+      id: 99,
+    });
+    Assert.strictEqual(value, undefined);
   },
 });
 
@@ -1403,18 +1389,19 @@ tests.push({
 
   async check() {
     // Check that valid visit is still there
-    let db = await PlacesUtils.promiseDBConnection();
-    let rows = await db.executeCached(
-      "SELECT id FROM moz_historyvisits WHERE place_id = :place_id",
-      { place_id: this._placeId }
+    let value = await PlacesTestUtils.getDatabaseValue(
+      "moz_historyvisits",
+      "id",
+      {
+        place_id: this._placeId,
+      }
     );
-    Assert.equal(rows.length, 1);
+    Assert.notStrictEqual(value, undefined);
     // Check that invalid visit has been removed
-    rows = await db.executeCached(
-      "SELECT id FROM moz_historyvisits WHERE place_id = :place_id",
-      { place_id: this._invalidPlaceId }
-    );
-    Assert.equal(rows.length, 0);
+    value = await PlacesTestUtils.getDatabaseValue("moz_historyvisits", "id", {
+      place_id: this._invalidPlaceId,
+    });
+    Assert.strictEqual(value, undefined);
   },
 });
 
@@ -1446,19 +1433,20 @@ tests.push({
   },
 
   async check() {
-    let db = await PlacesUtils.promiseDBConnection();
     // Check that inputhistory on valid place is still there
-    let rows = await db.executeCached(
-      "SELECT place_id FROM moz_inputhistory WHERE place_id = :place_id",
+    let value = await PlacesTestUtils.getDatabaseValue(
+      "moz_inputhistory",
+      "place_id",
       { place_id: this._placeId }
     );
-    Assert.equal(rows.length, 1);
+    Assert.notStrictEqual(value, undefined);
     // Check that inputhistory on invalid place has gone
-    rows = await db.executeCached(
-      "SELECT place_id FROM moz_inputhistory WHERE place_id = :place_id",
+    value = await PlacesTestUtils.getDatabaseValue(
+      "moz_inputhistory",
+      "place_id",
       { place_id: this._invalidPlaceId }
     );
-    Assert.equal(rows.length, 0);
+    Assert.strictEqual(value, undefined);
   },
 });
 
@@ -1492,19 +1480,16 @@ tests.push({
   },
 
   async check() {
-    let db = await PlacesUtils.promiseDBConnection();
     // Check that "used" keyword is still there
-    let rows = await db.executeCached(
-      "SELECT id FROM moz_keywords WHERE keyword = :keyword",
-      { keyword: "used" }
-    );
-    Assert.equal(rows.length, 1);
+    let value = await PlacesTestUtils.getDatabaseValue("moz_keywords", "id", {
+      keyword: "used",
+    });
+    Assert.notStrictEqual(value, undefined);
     // Check that "unused" keyword has gone
-    rows = await db.executeCached(
-      "SELECT id FROM moz_keywords WHERE keyword = :keyword",
-      { keyword: "unused" }
-    );
-    Assert.equal(rows.length, 0);
+    value = await PlacesTestUtils.getDatabaseValue("moz_keywords", "id", {
+      keyword: "unused",
+    });
+    Assert.strictEqual(value, undefined);
   },
 });
 
@@ -2089,21 +2074,21 @@ tests.push({
       url: "http://l4.moz.org/",
       keyword: "kw",
     });
-    Assert.equal(await this._getForeignCount(), 2);
-  },
-
-  async _getForeignCount() {
-    let db = await PlacesUtils.promiseDBConnection();
-    let rows = await db.execute(
-      `SELECT foreign_count FROM moz_places
-                                 WHERE guid = :guid`,
-      { guid: this._pageGuid }
+    Assert.equal(
+      await PlacesTestUtils.getDatabaseValue("moz_places", "foreign_count", {
+        guid: this._pageGuid,
+      }),
+      2
     );
-    return rows[0].getResultByName("foreign_count");
   },
 
   async check() {
-    Assert.equal(await this._getForeignCount(), 2);
+    Assert.equal(
+      await PlacesTestUtils.getDatabaseValue("moz_places", "foreign_count", {
+        guid: this._pageGuid,
+      }),
+      2
+    );
   },
 });
 
@@ -2120,27 +2105,32 @@ tests.push({
         visits: [{ date: new Date() }],
       })
     ).guid;
-    Assert.ok((await this._getHash()) > 0);
+    Assert.greater(
+      await PlacesTestUtils.getDatabaseValue("moz_places", "url_hash", {
+        guid: this._pageGuid,
+      }),
+      0
+    );
     await PlacesUtils.withConnectionWrapper("change url hash", async function(
       db
     ) {
       await db.execute(`UPDATE moz_places SET url_hash = 0`);
     });
-    Assert.equal(await this._getHash(), 0);
-  },
-
-  async _getHash() {
-    let db = await PlacesUtils.promiseDBConnection();
-    let rows = await db.execute(
-      `SELECT url_hash FROM moz_places
-                                 WHERE guid = :guid`,
-      { guid: this._pageGuid }
+    Assert.equal(
+      await PlacesTestUtils.getDatabaseValue("moz_places", "url_hash", {
+        guid: this._pageGuid,
+      }),
+      0
     );
-    return rows[0].getResultByName("url_hash");
   },
 
   async check() {
-    Assert.ok((await this._getHash()) > 0);
+    Assert.greater(
+      await PlacesTestUtils.getDatabaseValue("moz_places", "url_hash", {
+        guid: this._pageGuid,
+      }),
+      0
+    );
   },
 });
 
@@ -2591,7 +2581,14 @@ tests.push({
     ];
     await PlacesTestUtils.addVisits(urls.map(u => ({ uri: u })));
 
-    this._frecencies = urls.map(u => frecencyForUrl(u));
+    this._frecencies = [];
+    for (let url of urls) {
+      this._frecencies.push(
+        await PlacesTestUtils.getDatabaseValue("moz_places", "frecency", {
+          url,
+        })
+      );
+    }
 
     let stats = await this._promiseStats();
     Assert.equal(stats.count, this._frecencies.length, "Sanity check");
@@ -2778,7 +2775,7 @@ add_task(async function test_preventive_maintenance() {
   }
 
   // Sanity check: all roots should be intact
-  Assert.deepEqual(
+  Assert.strictEqual(
     (await PlacesUtils.bookmarks.fetch(PlacesUtils.bookmarks.rootGuid))
       .parentGuid,
     undefined

@@ -11,7 +11,6 @@
 #include "mozilla/StateMirroring.h"
 #include "mozilla/Maybe.h"
 #include "js/RootingAPI.h"
-#include "libwebrtcglue/MediaConduitInterface.h"
 #include "libwebrtcglue/RtpRtcpConfig.h"
 #include "nsTArray.h"
 #include "mozilla/dom/RTCStatsReportBinding.h"
@@ -139,7 +138,6 @@ class RTCRtpSender : public nsISupports,
 
   std::string GetMid() const;
   JsepTransceiver& GetJsepTransceiver();
-  void SetJsepRids(const RTCRtpSendParameters& aParameters);
   static void ApplyJsEncodingToConduitEncoding(
       const RTCRtpEncodingParameters& aJsEncoding,
       VideoCodecConfig::Encoding* aConduitEncoding);
@@ -158,6 +156,7 @@ class RTCRtpSender : public nsISupports,
   nsCOMPtr<nsPIDOMWindowInner> mWindow;
   RefPtr<PeerConnectionImpl> mPc;
   RefPtr<dom::MediaStreamTrack> mSenderTrack;
+  bool mAddTrackCalled = false;
   RTCRtpSendParameters mParameters;
   Maybe<RTCRtpSendParameters> mPendingParameters;
   uint32_t mNumSetParametersCalls = 0;
@@ -166,6 +165,8 @@ class RTCRtpSender : public nsISupports,
   // from before.
   Maybe<RTCRtpEncodingParameters> mUnicastEncoding;
   bool mSimulcastEnvelopeSet = false;
+  bool mSimulcastEnvelopeSetByJSEP = false;
+  bool mPendingRidChangeFromCompatMode = false;
   Maybe<RTCRtpSendParameters> mLastReturnedParameters;
   RefPtr<MediaPipelineTransmit> mPipeline;
   RefPtr<MediaTransportHandler> mTransportHandler;

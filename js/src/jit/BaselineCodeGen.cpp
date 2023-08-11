@@ -42,6 +42,7 @@
 
 #include "debugger/DebugAPI-inl.h"
 #include "jit/BaselineFrameInfo-inl.h"
+#include "jit/JitHints-inl.h"
 #include "jit/JitScript-inl.h"
 #include "jit/MacroAssembler-inl.h"
 #include "jit/SharedICHelpers-inl.h"
@@ -218,6 +219,12 @@ MethodStatus BaselineCompiler::compile() {
     if (!script->initScriptCounts(cx)) {
       return Method_Error;
     }
+  }
+
+  if (!JitOptions.disableJitHints &&
+      cx->runtime()->jitRuntime()->hasJitHintsMap()) {
+    JitHintsMap* jitHints = cx->runtime()->jitRuntime()->getJitHintsMap();
+    jitHints->setEagerBaselineHint(script);
   }
 
   // Suppress GC during compilation.
@@ -530,7 +537,7 @@ bool BaselineCodeGen<Handler>::emitOutOfLinePostBarrierSlot() {
 #endif
   masm.pushValue(R0);
 
-  using Fn = void (*)(JSRuntime * rt, js::gc::Cell * cell);
+  using Fn = void (*)(JSRuntime* rt, js::gc::Cell* cell);
   masm.setupUnalignedABICall(scratch);
   masm.movePtr(ImmPtr(cx->runtime()), scratch);
   masm.passABIArg(scratch);
@@ -804,7 +811,7 @@ bool BaselineCodeGen<Handler>::emitStackCheck() {
 }
 
 static void EmitCallFrameIsDebuggeeCheck(MacroAssembler& masm) {
-  using Fn = void (*)(BaselineFrame * frame);
+  using Fn = void (*)(BaselineFrame* frame);
   masm.setupUnalignedABICall(R0.scratchReg());
   masm.loadBaselineFramePtr(FramePointer, R0.scratchReg());
   masm.passABIArg(R0.scratchReg());
@@ -3594,7 +3601,7 @@ bool BaselineCodeGen<Handler>::emitGetAliasedDebugVar(ValueOperand dest) {
   pushArg(env);
 
   using Fn =
-      bool (*)(JSContext*, JSObject * env, jsbytecode*, MutableHandleValue);
+      bool (*)(JSContext*, JSObject* env, jsbytecode*, MutableHandleValue);
   return callVM<Fn, LoadAliasedDebugVar>();
 }
 
@@ -6630,6 +6637,7 @@ bool BaselineInterpreterGenerator::emitInterpreterLoop() {
 #define EMIT_OP(OP, ...)                          \
   {                                               \
     AutoCreatedBy acb(masm, "op=" #OP);           \
+    perfSpewer_.recordOffset(masm, JSOp::OP);     \
     masm.bind(&opLabels[uint8_t(JSOp::OP)]);      \
     handler.setCurrentOp(JSOp::OP);               \
     if (!this->emit_##OP()) {                     \
@@ -6710,7 +6718,7 @@ void BaselineInterpreterGenerator::emitOutOfLineCodeCoverageInstrumentation() {
 
   saveInterpreterPCReg();
 
-  using Fn1 = void (*)(BaselineFrame * frame);
+  using Fn1 = void (*)(BaselineFrame* frame);
   masm.setupUnalignedABICall(R0.scratchReg());
   masm.loadBaselineFramePtr(FramePointer, R0.scratchReg());
   masm.passABIArg(R0.scratchReg());
@@ -6726,7 +6734,7 @@ void BaselineInterpreterGenerator::emitOutOfLineCodeCoverageInstrumentation() {
 
   saveInterpreterPCReg();
 
-  using Fn2 = void (*)(BaselineFrame * frame, jsbytecode * pc);
+  using Fn2 = void (*)(BaselineFrame* frame, jsbytecode* pc);
   masm.setupUnalignedABICall(R0.scratchReg());
   masm.loadBaselineFramePtr(FramePointer, R0.scratchReg());
   masm.passABIArg(R0.scratchReg());
@@ -6741,22 +6749,27 @@ void BaselineInterpreterGenerator::emitOutOfLineCodeCoverageInstrumentation() {
 bool BaselineInterpreterGenerator::generate(BaselineInterpreter& interpreter) {
   AutoCreatedBy acb(masm, "BaselineInterpreterGenerator::generate");
 
+  perfSpewer_.recordOffset(masm, "Prologue");
   if (!emitPrologue()) {
     return false;
   }
 
+  perfSpewer_.recordOffset(masm, "InterpreterLoop");
   if (!emitInterpreterLoop()) {
     return false;
   }
 
+  perfSpewer_.recordOffset(masm, "Epilogue");
   if (!emitEpilogue()) {
     return false;
   }
 
+  perfSpewer_.recordOffset(masm, "OOLPostBarrierSlot");
   if (!emitOutOfLinePostBarrierSlot()) {
     return false;
   }
 
+  perfSpewer_.recordOffset(masm, "OOLCodeCoverageInstrumentation");
   emitOutOfLineCodeCoverageInstrumentation();
 
   {
@@ -6797,7 +6810,7 @@ bool BaselineInterpreterGenerator::generate(BaselineInterpreter& interpreter) {
                                            tableLoc);
     }
 
-    CollectPerfSpewerJitCodeProfile(code, "BaselineInterpreter");
+    perfSpewer_.saveProfile(code);
 
 #ifdef MOZ_VTUNE
     vtune::MarkStub(code, "BaselineInterpreter");

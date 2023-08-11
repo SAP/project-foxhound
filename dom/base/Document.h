@@ -316,6 +316,7 @@ enum BFCacheStatus {
   RESTORING = 1 << 14,                   // Status 14
   BEFOREUNLOAD_LISTENER = 1 << 15,       // Status 15
   ACTIVE_LOCK = 1 << 16,                 // Status 16
+  ACTIVE_WEBTRANSPORT = 1 << 17,         // Status 17
 };
 
 }  // namespace dom
@@ -1343,7 +1344,7 @@ class Document : public nsINode,
 
   already_AddRefed<AnonymousContent> InsertAnonymousContent(
       Element& aElement, bool aForce, ErrorResult& aError);
-  void RemoveAnonymousContent(AnonymousContent& aContent, ErrorResult& aError);
+  void RemoveAnonymousContent(AnonymousContent& aContent);
   /**
    * If aNode is a descendant of anonymous content inserted by
    * InsertAnonymousContent, this method returns the root element of the
@@ -1469,7 +1470,7 @@ class Document : public nsINode,
    * changed to true, -1 if it was changed to false.
    */
   void ChangeContentEditableCount(Element*, int32_t aChange);
-  void DeferredContentEditableCountChange(Element*);
+  MOZ_CAN_RUN_SCRIPT void DeferredContentEditableCountChange(Element*);
 
   enum class EditingState : int8_t {
     eTearingDown = -2,
@@ -1889,6 +1890,8 @@ class Document : public nsINode,
    * Returns all elements in the top layer in the insertion order.
    */
   nsTArray<Element*> GetTopLayer() const;
+
+  bool TopLayerContains(Element&) const;
 
   // Do the "fullscreen element ready check" from the fullscreen spec.
   // It returns true if the given element is allowed to go into fullscreen.
@@ -3405,7 +3408,16 @@ class Document : public nsINode,
   // they could want the IncludeChromeOnly::Yes version.
   nsIContent* GetUnretargetedFocusedContent(
       IncludeChromeOnly = IncludeChromeOnly::No) const;
+  /**
+   * Return true if this document or a subdocument has focus.
+   */
   bool HasFocus(ErrorResult& rv) const;
+
+  /**
+   * Return true if this document itself has focus.
+   */
+  bool ThisDocumentHasFocus() const;
+
   void GetDesignMode(nsAString& aDesignMode);
   void SetDesignMode(const nsAString& aDesignMode,
                      nsIPrincipal& aSubjectPrincipal, mozilla::ErrorResult& rv);
@@ -3467,7 +3479,7 @@ class Document : public nsINode,
   // See https://html.spec.whatwg.org/multipage/popover.html#auto-popover-list
   nsTArray<Element*> AutoPopoverList() const;
 
-  // Teturn document's auto popover list's last element.
+  // Return document's auto popover list's last element.
   // See
   // https://html.spec.whatwg.org/multipage/popover.html#topmost-auto-popover
   Element* GetTopmostAutoPopover() const;
@@ -3475,6 +3487,9 @@ class Document : public nsINode,
   // Adds/removes an element to/from the auto popover list.
   void AddToAutoPopoverList(Element&);
   void RemoveFromAutoPopoverList(Element&);
+
+  void AddPopoverToTopLayer(Element&);
+  void RemovePopoverFromTopLayer(Element&);
 
   Element* GetTopLayerTop();
   // Return the fullscreen element in the top layer
@@ -3592,11 +3607,11 @@ class Document : public nsINode,
     return mStyleSheetChangeEventsEnabled;
   }
 
-  void SetShadowRootAttachedEventEnabled(bool aValue) {
-    mShadowRootAttachedEventEnabled = aValue;
+  void SetDevToolsAnonymousAndShadowEventsEnabled(bool aValue) {
+    mDevToolsAnonymousAndShadowEventsEnabled = aValue;
   }
-  bool ShadowRootAttachedEventEnabled() const {
-    return mShadowRootAttachedEventEnabled;
+  bool DevToolsAnonymousAndShadowEventsEnabled() const {
+    return mDevToolsAnonymousAndShadowEventsEnabled;
   }
 
   already_AddRefed<Promise> BlockParsing(Promise& aPromise,
@@ -3874,6 +3889,8 @@ class Document : public nsINode,
   bool ShouldNotifyFormOrPasswordRemoved() const {
     return mShouldNotifyFormOrPasswordRemoved;
   }
+
+  HTMLEditor* GetHTMLEditor() const;
 
   /**
    * Localization
@@ -4728,8 +4745,9 @@ class Document : public nsINode,
   // Whether style sheet change events will be dispatched for this document
   bool mStyleSheetChangeEventsEnabled : 1;
 
-  // Whether shadowrootattached events will be dispatched for this document.
-  bool mShadowRootAttachedEventEnabled : 1;
+  // Whether shadowrootattached/anonymousnodecreated/anonymousnoderemoved events
+  // will be dispatched for this document.
+  bool mDevToolsAnonymousAndShadowEventsEnabled : 1;
 
   // Whether the document was created by a srcdoc iframe.
   bool mIsSrcdocDocument : 1;
@@ -5516,6 +5534,10 @@ class MOZ_RAII IgnoreOpensDuringUnload final {
   Document* mDoc;
 };
 
+bool IsInFocusedTab(Document* aDoc);
+
+// This covers all cases covered by IsInFocusedTab, but also ensures that
+// focused tab is "active" meaning not occluded.
 bool IsInActiveTab(Document* aDoc);
 
 }  // namespace mozilla::dom

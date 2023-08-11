@@ -509,8 +509,8 @@ class nsDocShell final : public nsDocLoader,
   already_AddRefed<nsIInputStream> GetPostDataFromCurrentEntry() const;
   mozilla::Maybe<uint32_t> GetCacheKeyFromCurrentEntry() const;
 
-  // Loading and/or active entries are only set when pref
-  // fission.sessionHistoryInParent is on.
+  // Loading and/or active entries are only set when session history
+  // in the parent is on.
   bool FillLoadStateFromCurrentEntry(nsDocShellLoadState& aLoadState);
 
   static bool ShouldAddToSessionHistory(nsIURI* aURI, nsIChannel* aChannel);
@@ -1057,11 +1057,15 @@ class nsDocShell final : public nsDocLoader,
     bool mCurrentURIHasRef = false;
     bool mNewURIHasRef = false;
     bool mSameExceptHashes = false;
+    bool mSecureUpgradeURI = false;
     bool mHistoryNavBetweenSameDoc = false;
   };
 
   // Check to see if we're loading a prior history entry or doing a fragment
   // navigation in the same document.
+  // NOTE: In case we are doing a fragment navigation, and HTTPS-Only/ -First
+  // mode is enabled and upgraded the underlying document, we update the URI of
+  // aLoadState from HTTP to HTTPS (if neccessary).
   bool IsSameDocumentNavigation(nsDocShellLoadState* aLoadState,
                                 SameDocumentNavigationState& aState);
 

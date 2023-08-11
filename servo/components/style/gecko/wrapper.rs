@@ -1560,21 +1560,20 @@ impl<'le> TElement for GeckoElement<'le> {
     }
 
     fn match_element_lang(&self, override_lang: Option<Option<AttrValue>>, value: &Lang) -> bool {
-        // Gecko supports :lang() from CSS Selectors 3, which only accepts a
-        // single language tag, and which performs simple dash-prefix matching
-        // on it.
+        // Gecko supports :lang() from CSS Selectors 4, which accepts a list
+        // of language tags, and does BCP47-style range matching.
         let override_lang_ptr = match override_lang {
             Some(Some(ref atom)) => atom.as_ptr(),
             _ => ptr::null_mut(),
         };
-        unsafe {
+        value.0.iter().any(|lang| unsafe {
             Gecko_MatchLang(
                 self.0,
                 override_lang_ptr,
                 override_lang.is_some(),
-                value.as_slice().as_ptr(),
+                lang.as_slice().as_ptr(),
             )
-        }
+        })
     }
 
     fn is_html_document_body_element(&self) -> bool {
@@ -1597,10 +1596,9 @@ impl<'le> TElement for GeckoElement<'le> {
         V: Push<ApplicableDeclarationBlock>,
     {
         use crate::properties::longhands::_x_lang::SpecifiedValue as SpecifiedLang;
-        use crate::properties::longhands::_x_text_zoom::SpecifiedValue as SpecifiedZoom;
         use crate::properties::longhands::color::SpecifiedValue as SpecifiedColor;
         use crate::stylesheets::layer_rule::LayerOrder;
-        use crate::values::specified::color::Color;
+        use crate::values::specified::{color::Color, font::XTextScale};
         lazy_static! {
             static ref TABLE_COLOR_RULE: ApplicableDeclarationBlock = {
                 let global_style_data = &*GLOBAL_STYLE_DATA;
@@ -1628,10 +1626,10 @@ impl<'le> TElement for GeckoElement<'le> {
                     LayerOrder::root(),
                 )
             };
-            static ref SVG_TEXT_DISABLE_ZOOM_RULE: ApplicableDeclarationBlock = {
+            static ref SVG_TEXT_DISABLE_SCALE_RULE: ApplicableDeclarationBlock = {
                 let global_style_data = &*GLOBAL_STYLE_DATA;
                 let pdb = PropertyDeclarationBlock::with_one(
-                    PropertyDeclaration::XTextZoom(SpecifiedZoom(false)),
+                    PropertyDeclaration::XTextScale(XTextScale::None),
                     Importance::Normal,
                 );
                 let arc = Arc::new_leaked(global_style_data.shared_lock.wrap(pdb));
@@ -1654,7 +1652,7 @@ impl<'le> TElement for GeckoElement<'le> {
         }
         if ns == structs::kNameSpaceID_SVG as i32 {
             if self.local_name().as_ptr() == atom!("text").as_ptr() {
-                hints.push(SVG_TEXT_DISABLE_ZOOM_RULE.clone());
+                hints.push(SVG_TEXT_DISABLE_SCALE_RULE.clone());
             }
         }
         let declarations =
@@ -2002,11 +2000,10 @@ impl<'le> ::selectors::Element for GeckoElement<'le> {
             NonTSPseudoClass::Enabled |
             NonTSPseudoClass::Disabled |
             NonTSPseudoClass::Checked |
-            NonTSPseudoClass::Closed |
             NonTSPseudoClass::Fullscreen |
             NonTSPseudoClass::Indeterminate |
             NonTSPseudoClass::MozInert |
-            NonTSPseudoClass::Open |
+            NonTSPseudoClass::PopoverOpen |
             NonTSPseudoClass::PlaceholderShown |
             NonTSPseudoClass::Target |
             NonTSPseudoClass::Valid |

@@ -12,14 +12,19 @@
 #include "nsIURL.h"
 #include "nsIWebTransportStream.h"
 #include "mozilla/Assertions.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/DOMExceptionBinding.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/PWebTransport.h"
 #include "mozilla/dom/ReadableStream.h"
 #include "mozilla/dom/ReadableStreamDefaultController.h"
+#include "mozilla/dom/RemoteWorkerChild.h"
 #include "mozilla/dom/WebTransportDatagramDuplexStream.h"
 #include "mozilla/dom/WebTransportError.h"
 #include "mozilla/dom/WebTransportLog.h"
+#include "mozilla/dom/WindowGlobalChild.h"
+#include "mozilla/dom/WorkerPrivate.h"
+#include "mozilla/dom/WorkerRunnable.h"
 #include "mozilla/dom/WritableStream.h"
 #include "mozilla/ipc/BackgroundChild.h"
 #include "mozilla/ipc/Endpoint.h"
@@ -36,14 +41,22 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(WebTransport)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mIncomingBidirectionalStreams)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mIncomingUnidirectionalAlgorithm)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mIncomingBidirectionalAlgorithm)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mSendStreams)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mReceiveStreams)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mDatagrams)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mReady)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mClosed)
+  for (const auto& hashEntry : tmp->mSendStreams.Values()) {
+    NS_CYCLE_COLLECTION_NOTE_EDGE_NAME(cb, "mSendStreams entry item");
+    cb.NoteXPCOMChild(hashEntry);
+  }
+  for (const auto& hashEntry : tmp->mReceiveStreams.Values()) {
+    NS_CYCLE_COLLECTION_NOTE_EDGE_NAME(cb, "mReceiveStreams entry item");
+    cb.NoteXPCOMChild(hashEntry);
+  }
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(WebTransport)
+  tmp->mSendStreams.Clear();
+  tmp->mReceiveStreams.Clear();
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mGlobal)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mUnidirectionalStreams)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mBidirectionalStreams)
@@ -51,8 +64,6 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(WebTransport)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mIncomingBidirectionalStreams)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mIncomingUnidirectionalAlgorithm)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mIncomingBidirectionalAlgorithm)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK(mSendStreams)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK(mReceiveStreams)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mDatagrams)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mReady)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mClosed)
@@ -93,7 +104,7 @@ WebTransport::~WebTransport() {
 
 // From parent
 void WebTransport::NewBidirectionalStream(
-    const RefPtr<DataPipeReceiver>& aIncoming,
+    uint64_t aStreamId, const RefPtr<DataPipeReceiver>& aIncoming,
     const RefPtr<DataPipeSender>& aOutgoing) {
   LOG_VERBOSE(("NewBidirectionalStream()"));
   // Create a Bidirectional stream and push it into the
@@ -102,7 +113,9 @@ void WebTransport::NewBidirectionalStream(
 
   UniquePtr<BidirectionalPair> streams(
       new BidirectionalPair(aIncoming, aOutgoing));
-  mBidirectionalStreams.AppendElement(std::move(streams));
+  auto tuple = std::tuple<uint64_t, UniquePtr<BidirectionalPair>>(
+      aStreamId, std::move(streams));
+  mBidirectionalStreams.AppendElement(std::move(tuple));
   // We need to delete them all!
 
   // Notify something to wake up readers of IncomingReceiveStreams
@@ -117,13 +130,15 @@ void WebTransport::NewBidirectionalStream(
 }
 
 void WebTransport::NewUnidirectionalStream(
-    const RefPtr<mozilla::ipc::DataPipeReceiver>& aStream) {
+    uint64_t aStreamId, const RefPtr<mozilla::ipc::DataPipeReceiver>& aStream) {
   LOG_VERBOSE(("NewUnidirectionalStream()"));
   // Create a Unidirectional stream and push it into the
   // IncomingUnidirectionalStreams stream. Must be added to the ReceiveStreams
   // array
 
-  mUnidirectionalStreams.AppendElement(aStream);
+  mUnidirectionalStreams.AppendElement(
+      std::tuple<uint64_t, RefPtr<mozilla::ipc::DataPipeReceiver>>(aStreamId,
+                                                                   aStream));
   // Notify something to wake up readers of IncomingReceiveStreams
   // The callback is always set/used from the same thread (MainThread or a
   // Worker thread).
@@ -164,6 +179,9 @@ already_AddRefed<WebTransport> WebTransport::Constructor(
   if (aError.Failed()) {
     return nullptr;
   }
+
+  // Don't let this document go into BFCache
+  result->NotifyToWindow(true);
 
   // Step 25 Return transport
   return result.forget();
@@ -325,6 +343,7 @@ void WebTransport::Init(const GlobalObject& aGlobal, const nsAString& aURL,
        NS_ConvertUTF16toUTF8(aURL).get()));
 
   // https://w3c.github.io/webtransport/#webtransport-constructor Spec 5.2
+  mChild = child;
   backgroundChild
       ->SendCreateWebTransportParent(aURL, principal, ipcClientInfo, dedicated,
                                      requireUnreliable,
@@ -332,9 +351,9 @@ void WebTransport::Init(const GlobalObject& aGlobal, const nsAString& aURL,
                                      // XXX serverCertHashes,
                                      std::move(parentEndpoint))
       ->Then(GetCurrentSerialEventTarget(), __func__,
-             [self = RefPtr{this},
-              child](PBackgroundChild::CreateWebTransportParentPromise::
-                         ResolveOrRejectValue&& aResult) {
+             [self = RefPtr{this}](
+                 PBackgroundChild::CreateWebTransportParentPromise::
+                     ResolveOrRejectValue&& aResult) {
                // aResult is a std::tuple<nsresult, uint8_t>
                // TODO: is there a better/more-spec-compliant error in the
                // reject case? Which begs the question, why would we get a
@@ -345,21 +364,20 @@ void WebTransport::Init(const GlobalObject& aGlobal, const nsAString& aURL,
                LOG(("isreject: %d nsresult 0x%x", aResult.IsReject(),
                     (uint32_t)rv));
                if (NS_FAILED(rv)) {
-                 self->RejectWaitingConnection(rv, child);
+                 self->RejectWaitingConnection(rv);
                } else {
                  // This will process anything waiting for the connection to
                  // complete;
 
                  self->ResolveWaitingConnection(
                      static_cast<WebTransportReliabilityMode>(
-                         std::get<1>(aResult.ResolveValue())),
-                     child);
+                         std::get<1>(aResult.ResolveValue())));
                }
              });
 }
 
 void WebTransport::ResolveWaitingConnection(
-    WebTransportReliabilityMode aReliability, WebTransportChild* aChild) {
+    WebTransportReliabilityMode aReliability) {
   LOG(("Resolved Connection %p, reliability = %u", this,
        (unsigned)aReliability));
   // https://w3c.github.io/webtransport/#webtransport-constructor
@@ -372,8 +390,6 @@ void WebTransport::ResolveWaitingConnection(
     return;
   }
 
-  mChild = aChild;
-  mDatagrams->SetChild(aChild);
   // Step 17.2: Set transport.[[State]] to "connected".
   mState = WebTransportState::CONNECTED;
   // Step 17.3: Set transport.[[Session]] to session.
@@ -382,10 +398,12 @@ void WebTransport::ResolveWaitingConnection(
 
   // Step 17.5: Resolve transport.[[Ready]] with undefined.
   mReady->MaybeResolveWithUndefined();
+
+  // We can now release any queued datagrams
+  mDatagrams->SetChild(mChild);
 }
 
-void WebTransport::RejectWaitingConnection(nsresult aRv,
-                                           WebTransportChild* aChild) {
+void WebTransport::RejectWaitingConnection(nsresult aRv) {
   LOG(("Rejected connection %p %x", this, (uint32_t)aRv));
   // https://w3c.github.io/webtransport/#initialize-webtransport-over-http
 
@@ -400,7 +418,8 @@ void WebTransport::RejectWaitingConnection(nsresult aRv,
   // these steps.
   if (mState == WebTransportState::CLOSED ||
       mState == WebTransportState::FAILED) {
-    aChild->Shutdown(true);
+    mChild->Shutdown(true);
+    mChild = nullptr;
     // Cleanup should have been called, which means Ready has been
     // rejected and pulls resolved
     return;
@@ -413,8 +432,8 @@ void WebTransport::RejectWaitingConnection(nsresult aRv,
   // Step 14.3: Cleanup transport with error.
   Cleanup(error, nullptr, IgnoreErrors());
 
-  // We never set mChild, but we need to prepare it to die
-  aChild->Shutdown(true);
+  mChild->Shutdown(true);
+  mChild = nullptr;
 }
 
 bool WebTransport::ParseURL(const nsAString& aURL) const {
@@ -486,6 +505,56 @@ void WebTransport::RemoteClosed(bool aCleanly, const uint32_t& aCode,
   Cleanup(error, &closeinfo, errorresult);
 }
 
+template <typename Stream>
+void WebTransport::PropagateError(Stream* aStream, WebTransportError* aError) {
+  ErrorResult rv;
+  AutoJSAPI jsapi;
+  if (!jsapi.Init(mGlobal)) {
+    rv.ThrowUnknownError("Internal error");
+    return;
+  }
+  JSContext* cx = jsapi.cx();
+  JS::Rooted<JS::Value> errorValue(cx);
+  bool ok = ToJSValue(cx, aError, &errorValue);
+  if (!ok) {
+    rv.ThrowUnknownError("Internal error");
+    return;
+  }
+
+  aStream->ErrorNative(cx, errorValue, IgnoreErrors());
+}
+
+void WebTransport::OnStreamResetOrStopSending(
+    uint64_t aStreamId, const StreamResetOrStopSendingError& aError) {
+  LOG(("WebTransport::OnStreamResetOrStopSending %p id=%" PRIx64, this,
+       aStreamId));
+  if (aError.type() == StreamResetOrStopSendingError::TStopSendingError) {
+    RefPtr<WebTransportSendStream> stream = mSendStreams.Get(aStreamId);
+    if (!stream) {
+      return;
+    }
+    uint8_t errorCode = net::GetWebTransportErrorFromNSResult(
+        aError.get_StopSendingError().error());
+    RefPtr<WebTransportError> error = new WebTransportError(
+        "WebTransportStream StopSending"_ns, WebTransportErrorSource::Stream,
+        Nullable<uint8_t>(errorCode));
+    PropagateError(stream.get(), error);
+  } else if (aError.type() == StreamResetOrStopSendingError::TResetError) {
+    RefPtr<WebTransportReceiveStream> stream = mReceiveStreams.Get(aStreamId);
+    LOG(("WebTransport::OnStreamResetOrStopSending reset %p stream=%p", this,
+         stream.get()));
+    if (!stream) {
+      return;
+    }
+    uint8_t errorCode =
+        net::GetWebTransportErrorFromNSResult(aError.get_ResetError().error());
+    RefPtr<WebTransportError> error = new WebTransportError(
+        "WebTransportStream Reset"_ns, WebTransportErrorSource::Stream,
+        Nullable<uint8_t>(errorCode));
+    PropagateError(stream.get(), error);
+  }
+}
+
 void WebTransport::Close(const WebTransportCloseInfo& aOptions,
                          ErrorResult& aRv) {
   LOG(("Close() called"));
@@ -506,7 +575,8 @@ void WebTransport::Close(const WebTransportCloseInfo& aOptions,
     // Step 3.2: Cleanup transport with error.
     Cleanup(error, nullptr, aRv);
     // Step 3.3: Abort these steps.
-    MOZ_ASSERT(!mChild);
+    mChild->Shutdown(true);
+    mChild = nullptr;
     return;
   }
   LOG(("Sending Close"));
@@ -564,8 +634,8 @@ already_AddRefed<Promise> WebTransport::CreateBidirectionalStream(
   // Step 2: If transport.[[State]] is "closed" or "failed", return a new
   // rejected promise with an InvalidStateError.
   if (mState == WebTransportState::CLOSED ||
-      mState == WebTransportState::FAILED) {
-    aRv.ThrowInvalidStateError("WebTransport close or failed");
+      mState == WebTransportState::FAILED || !mChild) {
+    aRv.ThrowInvalidStateError("WebTransport closed or failed");
     return nullptr;
   }
 
@@ -586,18 +656,28 @@ already_AddRefed<Promise> WebTransport::CreateBidirectionalStream(
       [self = RefPtr{this}, promise](
           BidirectionalStreamResponse&& aPipes) MOZ_CAN_RUN_SCRIPT_BOUNDARY {
         LOG(("CreateBidirectionalStream response"));
+        if (BidirectionalStreamResponse::Tnsresult == aPipes.type()) {
+          promise->MaybeReject(aPipes.get_nsresult());
+          return;
+        }
         // Step 5.2.1: If transport.[[State]] is "closed" or "failed",
         // reject p with an InvalidStateError and abort these steps.
+        if (BidirectionalStreamResponse::Tnsresult == aPipes.type()) {
+          promise->MaybeReject(aPipes.get_nsresult());
+          return;
+        }
         if (self->mState == WebTransportState::CLOSED ||
             self->mState == WebTransportState::FAILED) {
           promise->MaybeRejectWithInvalidStateError(
               "Transport close/errored before CreateBidirectional finished");
           return;
         }
+        uint64_t id = aPipes.get_BidirectionalStream().streamId();
+        LOG(("Create WebTransportBidirectionalStream id=%" PRIx64, id));
         ErrorResult error;
         RefPtr<WebTransportBidirectionalStream> newStream =
             WebTransportBidirectionalStream::Create(
-                self, self->mGlobal,
+                self, self->mGlobal, id,
                 aPipes.get_BidirectionalStream().inStream(),
                 aPipes.get_BidirectionalStream().outStream(), error);
         LOG(("Returning a bidirectionalStream"));
@@ -624,8 +704,8 @@ already_AddRefed<Promise> WebTransport::CreateUnidirectionalStream(
   // Step 2: If transport.[[State]] is "closed" or "failed", return a new
   // rejected promise with an InvalidStateError.
   if (mState == WebTransportState::CLOSED ||
-      mState == WebTransportState::FAILED) {
-    aRv.ThrowInvalidStateError("WebTransport close or failed");
+      mState == WebTransportState::FAILED || !mChild) {
+    aRv.ThrowInvalidStateError("WebTransport closed or failed");
     return nullptr;
   }
 
@@ -644,10 +724,13 @@ already_AddRefed<Promise> WebTransport::CreateUnidirectionalStream(
   // Ask the parent to create the stream and send us the DataPipeSender
   mChild->SendCreateUnidirectionalStream(
       sendOrder,
-      [self = RefPtr{this},
-       promise](RefPtr<::mozilla::ipc::DataPipeSender>&& aPipe)
+      [self = RefPtr{this}, promise](UnidirectionalStreamResponse&& aResponse)
           MOZ_CAN_RUN_SCRIPT_BOUNDARY {
             LOG(("CreateUnidirectionalStream response"));
+            if (UnidirectionalStreamResponse::Tnsresult == aResponse.type()) {
+              promise->MaybeReject(aResponse.get_nsresult());
+              return;
+            }
             // Step 5.1: Let internalStream be the result of creating an
             // outgoing unidirectional stream with transport.[[Session]].
             // Step 5.2: Queue a network task with transport to run the
@@ -655,7 +738,9 @@ already_AddRefed<Promise> WebTransport::CreateUnidirectionalStream(
             // Step 5.2.1 If transport.[[State]] is "closed" or "failed",
             // reject p with an InvalidStateError and abort these steps.
             if (self->mState == WebTransportState::CLOSED ||
-                self->mState == WebTransportState::FAILED) {
+                self->mState == WebTransportState::FAILED ||
+                aResponse.type() !=
+                    UnidirectionalStreamResponse::TUnidirectionalStream) {
               promise->MaybeRejectWithInvalidStateError(
                   "Transport close/errored during CreateUnidirectional");
               return;
@@ -665,16 +750,17 @@ already_AddRefed<Promise> WebTransport::CreateUnidirectionalStream(
             // WebTransportSendStream with internalStream, transport, and
             // sendOrder.
             ErrorResult error;
+            uint64_t id = aResponse.get_UnidirectionalStream().streamId();
+            LOG(("Create WebTransportSendStream id=%" PRIx64, id));
             RefPtr<WebTransportSendStream> writableStream =
-                WebTransportSendStream::Create(self, self->mGlobal, aPipe,
-                                               error);
+                WebTransportSendStream::Create(
+                    self, self->mGlobal, id,
+                    aResponse.get_UnidirectionalStream().outStream(), error);
             if (!writableStream) {
               promise->MaybeReject(std::move(error));
               return;
             }
             LOG(("Returning a writableStream"));
-            // https://w3c.github.io/webtransport/#send-stream-procedures step 7
-            self->mSendStreams.AppendElement(writableStream);
             // Step 5.2.3: Resolve p with stream.
             promise->MaybeResolve(writableStream);
           },
@@ -709,9 +795,9 @@ void WebTransport::Cleanup(WebTransportError* aError,
   // Step 7: Set transport.[[SendStreams]] to an empty set.
   // Step 8: Set transport.[[ReceiveStreams]] to an empty set.
   LOG(("Cleanup started"));
-  nsTArray<RefPtr<WebTransportSendStream>> sendStreams;
+  nsTHashMap<uint64_t, RefPtr<WebTransportSendStream>> sendStreams;
   sendStreams.SwapElements(mSendStreams);
-  nsTArray<RefPtr<WebTransportReceiveStream>> receiveStreams;
+  nsTHashMap<uint64_t, RefPtr<WebTransportReceiveStream>> receiveStreams;
   receiveStreams.SwapElements(mReceiveStreams);
 
   // Step 9: If closeInfo is given, then set transport.[[State]] to "closed".
@@ -732,13 +818,13 @@ void WebTransport::Cleanup(WebTransportError* aError,
     return;
   }
 
-  for (const auto& stream : sendStreams) {
+  for (const auto& stream : sendStreams.Values()) {
     // This MOZ_KnownLive is redundant, see bug 1620312
     MOZ_KnownLive(stream)->ErrorNative(cx, errorValue, IgnoreErrors());
   }
   // Step 11: For each receiveStream in receiveStreams, error receiveStream with
   // error.
-  for (const auto& stream : receiveStreams) {
+  for (const auto& stream : receiveStreams.Values()) {
     stream->ErrorNative(cx, errorValue, IgnoreErrors());
   }
   // Step 12:
@@ -770,6 +856,75 @@ void WebTransport::Cleanup(WebTransportError* aError,
   // Let go of the algorithms
   mIncomingBidirectionalAlgorithm = nullptr;
   mIncomingUnidirectionalAlgorithm = nullptr;
+
+  // We no longer block BFCache
+  NotifyToWindow(false);
 }
+
+void WebTransport::NotifyBFCacheOnMainThread(nsPIDOMWindowInner* aInner,
+                                             bool aCreated) {
+  AssertIsOnMainThread();
+  if (!aInner) {
+    return;
+  }
+  if (aCreated) {
+    aInner->RemoveFromBFCacheSync();
+  }
+
+  uint32_t count = aInner->UpdateWebTransportCount(aCreated);
+  // It's okay for WindowGlobalChild to not exist, as it should mean it already
+  // is destroyed and can't enter bfcache anyway.
+  if (WindowGlobalChild* child = aInner->GetWindowGlobalChild()) {
+    if (aCreated && count == 1) {
+      // The first WebTransport is active.
+      child->BlockBFCacheFor(BFCacheStatus::ACTIVE_WEBTRANSPORT);
+    } else if (count == 0) {
+      child->UnblockBFCacheFor(BFCacheStatus::ACTIVE_WEBTRANSPORT);
+    }
+  }
+}
+
+class BFCacheNotifyWTRunnable final : public WorkerProxyToMainThreadRunnable {
+ public:
+  explicit BFCacheNotifyWTRunnable(bool aCreated) : mCreated(aCreated) {}
+
+  void RunOnMainThread(WorkerPrivate* aWorkerPrivate) override {
+    MOZ_ASSERT(aWorkerPrivate);
+    AssertIsOnMainThread();
+    if (aWorkerPrivate->IsDedicatedWorker()) {
+      WebTransport::NotifyBFCacheOnMainThread(
+          aWorkerPrivate->GetAncestorWindow(), mCreated);
+      return;
+    }
+    if (aWorkerPrivate->IsSharedWorker()) {
+      aWorkerPrivate->GetRemoteWorkerController()->NotifyWebTransport(mCreated);
+      return;
+    }
+    MOZ_ASSERT_UNREACHABLE("Unexpected worker type");
+  }
+
+  void RunBackOnWorkerThreadForCleanup(WorkerPrivate* aWorkerPrivate) override {
+    MOZ_ASSERT(aWorkerPrivate);
+    aWorkerPrivate->AssertIsOnWorkerThread();
+  }
+
+ private:
+  bool mCreated;
+};
+
+void WebTransport::NotifyToWindow(bool aCreated) const {
+  if (NS_IsMainThread()) {
+    NotifyBFCacheOnMainThread(GetParentObject()->AsInnerWindow(), aCreated);
+    return;
+  }
+
+  WorkerPrivate* wp = GetCurrentThreadWorkerPrivate();
+  if (wp->IsDedicatedWorker() || wp->IsSharedWorker()) {
+    RefPtr<BFCacheNotifyWTRunnable> runnable =
+        new BFCacheNotifyWTRunnable(aCreated);
+
+    runnable->Dispatch(wp);
+  }
+};
 
 }  // namespace mozilla::dom

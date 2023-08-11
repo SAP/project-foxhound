@@ -170,11 +170,11 @@ nsresult HTMLIFrameElement::CheckTaintSinkSetAttr(int32_t aNamespaceID, nsAtom* 
   return nsGenericHTMLElement::CheckTaintSinkSetAttr(aNamespaceID, aName, aValue);
 }
 
-nsresult HTMLIFrameElement::AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
-                                         const nsAttrValue* aValue,
-                                         const nsAttrValue* aOldValue,
-                                         nsIPrincipal* aMaybeScriptedPrincipal,
-                                         bool aNotify) {
+void HTMLIFrameElement::AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
+                                     const nsAttrValue* aValue,
+                                     const nsAttrValue* aOldValue,
+                                     nsIPrincipal* aMaybeScriptedPrincipal,
+                                     bool aNotify) {
   AfterMaybeChangeAttr(aNameSpaceID, aName, aNotify);
 
   if (aNameSpaceID == kNameSpaceID_None) {
@@ -198,7 +198,7 @@ nsresult HTMLIFrameElement::AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
       aNameSpaceID, aName, aValue, aOldValue, aMaybeScriptedPrincipal, aNotify);
 }
 
-nsresult HTMLIFrameElement::OnAttrSetButNotChanged(
+void HTMLIFrameElement::OnAttrSetButNotChanged(
     int32_t aNamespaceID, nsAtom* aName, const nsAttrValueOrString& aValue,
     bool aNotify) {
   AfterMaybeChangeAttr(aNamespaceID, aName, aNotify);

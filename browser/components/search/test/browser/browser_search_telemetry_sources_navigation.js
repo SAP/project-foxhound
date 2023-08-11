@@ -23,18 +23,24 @@ const { SearchTestUtils } = ChromeUtils.importESModule(
 const TEST_PROVIDER_INFO = [
   {
     telemetryId: "example",
-    searchPageRegexp: /^https:\/\/example.com\/browser\/browser\/components\/search\/test\/browser\/searchTelemetry(?:Ad)?.html/,
+    searchPageRegexp: /^https:\/\/example.org\/browser\/browser\/components\/search\/test\/browser\/searchTelemetry(?:Ad)?.html/,
     queryParamName: "s",
     codeParamName: "abc",
     taggedCodes: ["ff"],
     followOnParamNames: ["a"],
     extraAdServersRegexps: [/^https:\/\/example\.com\/ad2?/],
+    components: [
+      {
+        type: SearchSERPTelemetryUtils.COMPONENTS.AD_LINK,
+        default: true,
+      },
+    ],
   },
 ];
 
 function getPageUrl(useAdPage = false) {
   let page = useAdPage ? "searchTelemetryAd.html" : "searchTelemetry.html";
-  return `https://example.com/browser/browser/components/search/test/browser/${page}`;
+  return `https://example.org/browser/browser/components/search/test/browser/${page}`;
 }
 
 /**
@@ -155,6 +161,8 @@ add_task(async function test_search() {
         tagged: "true",
         partner_code: "ff",
         source: "urlbar",
+        shopping_tab_displayed: "false",
+        is_shopping_page: "false",
       },
     },
   ]);
@@ -185,6 +193,8 @@ add_task(async function test_reload() {
         tagged: "true",
         partner_code: "ff",
         source: "urlbar",
+        shopping_tab_displayed: "false",
+        is_shopping_page: "false",
       },
     },
     {
@@ -193,9 +203,12 @@ add_task(async function test_reload() {
         tagged: "true",
         partner_code: "ff",
         source: "reload",
+        shopping_tab_displayed: "false",
+        is_shopping_page: "false",
       },
     },
   ]);
+  await promiseAdImpressionReceived();
 
   let pageLoadPromise = BrowserTestUtils.waitForLocationChange(gBrowser);
   await SpecialPowers.spawn(tab.linkedBrowser, [], () => {
@@ -223,6 +236,8 @@ add_task(async function test_reload() {
         tagged: "true",
         partner_code: "ff",
         source: "urlbar",
+        shopping_tab_displayed: "false",
+        is_shopping_page: "false",
       },
     },
     {
@@ -231,10 +246,13 @@ add_task(async function test_reload() {
         tagged: "true",
         partner_code: "ff",
         source: "reload",
+        shopping_tab_displayed: "false",
+        is_shopping_page: "false",
       },
       engagements: [
         {
           action: SearchSERPTelemetryUtils.ACTIONS.CLICKED,
+          target: SearchSERPTelemetryUtils.COMPONENTS.AD_LINK,
         },
       ],
     },
@@ -268,9 +286,12 @@ add_task(async function test_fresh_search() {
         tagged: "true",
         partner_code: "ff",
         source: "urlbar",
+        shopping_tab_displayed: "false",
+        is_shopping_page: "false",
       },
     },
   ]);
+  await promiseAdImpressionReceived(1);
 });
 
 add_task(async function test_click_ad() {
@@ -298,10 +319,13 @@ add_task(async function test_click_ad() {
         tagged: "true",
         partner_code: "ff",
         source: "urlbar",
+        shopping_tab_displayed: "false",
+        is_shopping_page: "false",
       },
       engagements: [
         {
           action: SearchSERPTelemetryUtils.ACTIONS.CLICKED,
+          target: SearchSERPTelemetryUtils.COMPONENTS.AD_LINK,
         },
       ],
     },
@@ -334,10 +358,13 @@ add_task(async function test_go_back() {
         tagged: "true",
         partner_code: "ff",
         source: "urlbar",
+        shopping_tab_displayed: "false",
+        is_shopping_page: "false",
       },
       engagements: [
         {
           action: SearchSERPTelemetryUtils.ACTIONS.CLICKED,
+          target: SearchSERPTelemetryUtils.COMPONENTS.AD_LINK,
         },
       ],
     },
@@ -347,9 +374,12 @@ add_task(async function test_go_back() {
         tagged: "true",
         partner_code: "ff",
         source: "tabhistory",
+        shopping_tab_displayed: "false",
+        is_shopping_page: "false",
       },
     },
   ]);
+  await promiseAdImpressionReceived(2);
 
   let pageLoadPromise = BrowserTestUtils.waitForLocationChange(gBrowser);
   await SpecialPowers.spawn(tab.linkedBrowser, [], () => {
@@ -378,10 +408,13 @@ add_task(async function test_go_back() {
         tagged: "true",
         partner_code: "ff",
         source: "urlbar",
+        shopping_tab_displayed: "false",
+        is_shopping_page: "false",
       },
       engagements: [
         {
           action: SearchSERPTelemetryUtils.ACTIONS.CLICKED,
+          target: SearchSERPTelemetryUtils.COMPONENTS.AD_LINK,
         },
       ],
     },
@@ -391,10 +424,13 @@ add_task(async function test_go_back() {
         tagged: "true",
         partner_code: "ff",
         source: "tabhistory",
+        shopping_tab_displayed: "false",
+        is_shopping_page: "false",
       },
       engagements: [
         {
           action: SearchSERPTelemetryUtils.ACTIONS.CLICKED,
+          target: SearchSERPTelemetryUtils.COMPONENTS.AD_LINK,
         },
       ],
     },
@@ -431,9 +467,12 @@ add_task(async function test_fresh_search_with_urlbar_persisted() {
         tagged: "true",
         partner_code: "ff",
         source: "urlbar",
+        shopping_tab_displayed: "false",
+        is_shopping_page: "false",
       },
     },
   ]);
+  await promiseAdImpressionReceived(1);
 
   // Do another search from the context of the default SERP.
   await loadSearchPage();
@@ -457,6 +496,8 @@ add_task(async function test_fresh_search_with_urlbar_persisted() {
         tagged: "true",
         partner_code: "ff",
         source: "urlbar",
+        shopping_tab_displayed: "false",
+        is_shopping_page: "false",
       },
     },
     {
@@ -465,9 +506,12 @@ add_task(async function test_fresh_search_with_urlbar_persisted() {
         tagged: "true",
         partner_code: "ff",
         source: "urlbar_persisted",
+        shopping_tab_displayed: "false",
+        is_shopping_page: "false",
       },
     },
   ]);
+  await promiseAdImpressionReceived(2);
 
   // Click on an ad.
   let pageLoadPromise = BrowserTestUtils.waitForLocationChange(gBrowser);
@@ -496,6 +540,8 @@ add_task(async function test_fresh_search_with_urlbar_persisted() {
         tagged: "true",
         partner_code: "ff",
         source: "urlbar",
+        shopping_tab_displayed: "false",
+        is_shopping_page: "false",
       },
     },
     {
@@ -504,10 +550,13 @@ add_task(async function test_fresh_search_with_urlbar_persisted() {
         tagged: "true",
         partner_code: "ff",
         source: "urlbar_persisted",
+        shopping_tab_displayed: "false",
+        is_shopping_page: "false",
       },
       engagements: [
         {
           action: SearchSERPTelemetryUtils.ACTIONS.CLICKED,
+          target: SearchSERPTelemetryUtils.COMPONENTS.AD_LINK,
         },
       ],
     },

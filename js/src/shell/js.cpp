@@ -5224,8 +5224,7 @@ static bool InstantiateModuleStencilXDR(JSContext* cx, uint32_t argc,
   /* Deserialize the stencil from XDR. */
   JS::TranscodeRange xdrRange(xdrObj->buffer(), xdrObj->bufferLength());
   bool succeeded = false;
-  if (!stencil.deserializeStencils(cx, &fc, input.get(), xdrRange,
-                                   &succeeded)) {
+  if (!stencil.deserializeStencils(&fc, input.get(), xdrRange, &succeeded)) {
     return false;
   }
   if (!succeeded) {
@@ -8823,6 +8822,33 @@ static bool GetWasmSmithModule(JSContext* cx, unsigned argc, Value* vp) {
 
 #endif
 
+static bool IsValidJSON(JSContext* cx, unsigned argc, Value* vp) {
+  CallArgs args = CallArgsFromVp(argc, vp);
+  RootedObject callee(cx, &args.callee());
+
+  if (!args.get(0).isString()) {
+    ReportUsageErrorASCII(cx, callee, "First argument must be a String");
+    return false;
+  }
+
+  JS::Rooted<JSLinearString*> input(cx, args[0].toString()->ensureLinear(cx));
+  if (!input) {
+    return false;
+  }
+
+  bool result;
+  if (input->hasLatin1Chars()) {
+    JS::AutoCheckCannotGC nogc;
+    result = JS::IsValidJSON(input->latin1Chars(nogc), input->length());
+  } else {
+    JS::AutoCheckCannotGC nogc;
+    result = JS::IsValidJSON(input->twoByteChars(nogc), input->length());
+  }
+
+  args.rval().setBoolean(result);
+  return true;
+}
+
 // clang-format off
 static const JSFunctionSpecWithHelp shell_functions[] = {
     JS_FN_HELP("options", Options, 0, 0,
@@ -9481,6 +9507,10 @@ static const JSFunctionSpecWithHelp shell_functions[] = {
 "getWasmSmithModule(arrayBuffer)",
 "  Call wasm-smith to generate a random wasm module from the provided data."),
 #endif
+
+    JS_FN_HELP("isValidJSON", IsValidJSON, 1, 0,
+"isValidJSON(source)",
+" Returns true if the given source is valid JSON."),
 
     JS_FN_HELP("taint", Taint, 1, 0,
 "taint(str)",
@@ -11602,6 +11632,8 @@ bool InitOptionParser(OptionParser& op) {
       !op.addBoolOption('\0', "blinterp",
                         "Enable Baseline Interpreter (default)") ||
       !op.addBoolOption('\0', "no-blinterp", "Disable Baseline Interpreter") ||
+      !op.addBoolOption('\0', "disable-jithints",
+                        "Disable caching eager baseline compilation hints.") ||
       !op.addBoolOption(
           '\0', "emit-interpreter-entry",
           "Emit Interpreter entry trampolines (default under --enable-perf)") ||
@@ -12394,6 +12426,10 @@ bool SetContextJITOptions(JSContext* cx, const OptionParser& op) {
 
   if (op.getBoolOption("no-blinterp")) {
     jit::JitOptions.baselineInterpreter = false;
+  }
+
+  if (op.getBoolOption("disable-jithints")) {
+    jit::JitOptions.disableJitHints = true;
   }
 
   if (op.getBoolOption("emit-interpreter-entry")) {

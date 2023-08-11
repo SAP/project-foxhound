@@ -28,6 +28,10 @@ namespace mozilla {
 class TimeStamp;
 }  // namespace mozilla
 
+// Enable this to compute lots of interesting statistics and print them out when
+// PrintStatistics() is called.
+#define TIMER_THREAD_STATISTICS 0
+
 class TimerThread final : public mozilla::Runnable, public nsIObserver {
  public:
   typedef mozilla::Monitor Monitor;
@@ -60,6 +64,7 @@ class TimerThread final : public mozilla::Runnable, public nsIObserver {
   bool IsOnTimerThread() const { return mThread->IsOnCurrentThread(); }
 
   uint32_t AllowedEarlyFiringMicroseconds();
+  nsresult GetTimers(nsTArray<RefPtr<nsITimer>>& aRetVal);
 
  private:
   ~TimerThread();
@@ -93,7 +98,9 @@ class TimerThread final : public mozilla::Runnable, public nsIObserver {
   class Entry final {
    public:
     explicit Entry(nsTimerImpl& aTimerImpl)
-        : mTimeout(aTimerImpl.mTimeout), mTimerImpl(&aTimerImpl) {
+        : mTimeout(aTimerImpl.mTimeout),
+          mDelay(aTimerImpl.mDelay),
+          mTimerImpl(&aTimerImpl) {
       aTimerImpl.SetIsInTimerThread(true);
     }
 
@@ -137,9 +144,15 @@ class TimerThread final : public mozilla::Runnable, public nsIObserver {
     }
 
     const TimeStamp& Timeout() const { return mTimeout; }
+    const TimeDuration& Delay() const { return mDelay; }
 
    private:
+    // These values are simply cached from the timer. Keeping them here is good
+    // for cache usage and allows us to avoid worrying about locking conflicts
+    // with the timer.
     TimeStamp mTimeout;
+    TimeDuration mDelay;
+
     RefPtr<nsTimerImpl> mTimerImpl;
   };
 
@@ -147,6 +160,24 @@ class TimerThread final : public mozilla::Runnable, public nsIObserver {
   // specified timeout should be inserted in order to maintain "sorted" order.
   size_t ComputeTimerInsertionIndex(const TimeStamp& timeout) const
       MOZ_REQUIRES(mMonitor);
+
+  // Computes and returns when we should next try to wake up in order to handle
+  // the triggering of the timers in mTimers. Currently this is very simple and
+  // we always just plan to wake up for the next timer in the list. In the
+  // future this will be more sophisticated.
+  TimeStamp ComputeWakeupTimeFromTimers() const MOZ_REQUIRES(mMonitor);
+
+  // Computes how late a timer can acceptably fire.
+  // timerDuration is the duration of the timer whose delay we are calculating.
+  // Longer timers can tolerate longer firing delays.
+  // minDelay is an amount by which any timer can be delayed.
+  // This function will never return a value smaller than minDelay (unless this
+  // conflicts with maxDelay). maxDelay is the upper limit on the amount by
+  // which we will ever delay any timer. Takes precedence over minDelay if there
+  // is a conflict. (Zero will effectively disable timer coalescing.)
+  TimeDuration ComputeAcceptableFiringDelay(TimeDuration timerDuration,
+                                            TimeDuration minDelay,
+                                            TimeDuration maxDelay) const;
 
 #ifdef DEBUG
   // Checks mTimers to see if any entries are out of order or any cached
@@ -157,12 +188,56 @@ class TimerThread final : public mozilla::Runnable, public nsIObserver {
 
   // mTimers is maintained in a "pseudo-sorted" order wrt the timeouts.
   // Specifcally, mTimers is sorted according to the timeouts *if you ignore the
-  // cancelled entries* (those whose mTimerImpl is nullptr). Notably this means
+  // canceled entries* (those whose mTimerImpl is nullptr). Notably this means
   // that you cannot use a binary search on this list.
   nsTArray<Entry> mTimers MOZ_GUARDED_BY(mMonitor);
+
   // Set only at the start of the thread's Run():
   uint32_t mAllowedEarlyFiringMicroseconds MOZ_GUARDED_BY(mMonitor);
+
   ProfilerThreadId mProfilerThreadId MOZ_GUARDED_BY(mMonitor);
+
+  // Time at which we were intending to wake up the last time that we slept.
+  // Is "null" if we have never slept or if our last sleep was "forever".
+  TimeStamp mIntendedWakeupTime;
+
+#if TIMER_THREAD_STATISTICS
+  static constexpr size_t sTimersFiredPerWakeupBucketCount = 16;
+  static inline constexpr std::array<size_t, sTimersFiredPerWakeupBucketCount>
+      sTimersFiredPerWakeupThresholds = {
+          0, 1, 2, 3, 4, 5, 6, 7, 8, 12, 20, 30, 40, 50, 70, (size_t)(-1)};
+
+  mutable AutoTArray<size_t, sTimersFiredPerWakeupBucketCount>
+      mTimersFiredPerWakeup MOZ_GUARDED_BY(mMonitor) = {0, 0, 0, 0, 0, 0, 0, 0,
+                                                        0, 0, 0, 0, 0, 0, 0, 0};
+  mutable AutoTArray<size_t, sTimersFiredPerWakeupBucketCount>
+      mTimersFiredPerUnnotifiedWakeup MOZ_GUARDED_BY(mMonitor) = {
+          0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+  mutable AutoTArray<size_t, sTimersFiredPerWakeupBucketCount>
+      mTimersFiredPerNotifiedWakeup MOZ_GUARDED_BY(mMonitor) = {
+          0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+
+  mutable size_t mTotalTimersAdded MOZ_GUARDED_BY(mMonitor) = 0;
+  mutable size_t mTotalTimersRemoved MOZ_GUARDED_BY(mMonitor) = 0;
+  mutable size_t mTotalTimersFiredNotified MOZ_GUARDED_BY(mMonitor) = 0;
+  mutable size_t mTotalTimersFiredUnnotified MOZ_GUARDED_BY(mMonitor) = 0;
+
+  mutable size_t mTotalWakeupCount MOZ_GUARDED_BY(mMonitor) = 0;
+  mutable size_t mTotalUnnotifiedWakeupCount MOZ_GUARDED_BY(mMonitor) = 0;
+  mutable size_t mTotalNotifiedWakeupCount MOZ_GUARDED_BY(mMonitor) = 0;
+
+  mutable double mTotalActualTimerFiringDelayNotified MOZ_GUARDED_BY(mMonitor) =
+      0.0;
+  mutable double mTotalActualTimerFiringDelayUnnotified
+      MOZ_GUARDED_BY(mMonitor) = 0.0;
+
+  mutable TimeStamp mFirstTimerAdded MOZ_GUARDED_BY(mMonitor);
+
+  mutable size_t mEarlyWakeups MOZ_GUARDED_BY(mMonitor) = 0;
+  mutable double mTotalEarlyWakeupTime MOZ_GUARDED_BY(mMonitor) = 0.0;
+
+  void PrintStatistics() const;
+#endif
 };
 
 #endif /* TimerThread_h___ */

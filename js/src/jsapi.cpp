@@ -2309,6 +2309,7 @@ void JS::TransitiveCompileOptions::copyPODTransitiveOptions(
 
   mutedErrors_ = rhs.mutedErrors_;
   forceStrictMode_ = rhs.forceStrictMode_;
+  shouldResistFingerprinting_ = rhs.shouldResistFingerprinting_;
   sourcePragmas_ = rhs.sourcePragmas_;
   skipFilenameValidation_ = rhs.skipFilenameValidation_;
   hideScriptFromDebugger_ = rhs.hideScriptFromDebugger_;
@@ -2326,7 +2327,6 @@ void JS::TransitiveCompileOptions::copyPODTransitiveOptions(
 
   topLevelAwait = rhs.topLevelAwait;
   importAssertions = rhs.importAssertions;
-  useFdlibmForSinCosTan = rhs.useFdlibmForSinCosTan;
 
   borrowBuffer = rhs.borrowBuffer;
   usePinnedBytecode = rhs.usePinnedBytecode;
@@ -2420,8 +2420,6 @@ JS::CompileOptions::CompileOptions(JSContext* cx) : ReadOnlyCompileOptions() {
 
   importAssertions = cx->options().importAssertions();
 
-  useFdlibmForSinCosTan = math_use_fdlibm_for_sin_cos_tan();
-
   sourcePragmas_ = cx->options().sourcePragmas();
 
   // Certain modes of operation force strict-mode in general.
@@ -2434,8 +2432,10 @@ JS::CompileOptions::CompileOptions(JSContext* cx) : ReadOnlyCompileOptions() {
 
   // Note: If we parse outside of a specific realm, we do not inherit any realm
   // behaviours. These can still be set manually on the options though.
-  if (cx->realm()) {
-    discardSource = cx->realm()->behaviors().discardSource();
+  if (Realm* realm = cx->realm()) {
+    shouldResistFingerprinting_ =
+        realm->behaviors().shouldResistFingerprinting();
+    discardSource = realm->behaviors().discardSource();
   }
 }
 
@@ -4223,6 +4223,9 @@ JS_PUBLIC_API void JS_SetGlobalJitCompilerOption(JSContext* cx,
       break;
     case JSJITCOMPILER_NATIVE_REGEXP_ENABLE:
       jit::JitOptions.nativeRegExp = !!value;
+      break;
+    case JSJITCOMPILER_JIT_HINTS_ENABLE:
+      jit::JitOptions.disableJitHints = !value;
       break;
     case JSJITCOMPILER_OFFTHREAD_COMPILATION_ENABLE:
       if (value == 1) {

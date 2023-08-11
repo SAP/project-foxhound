@@ -85,6 +85,7 @@
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/StaticPrefs_fission.h"
 #include "mozilla/StaticPrefs_media.h"
+#include "mozilla/StaticPrefs_network.h"
 #include "mozilla/StaticPrefs_widget.h"
 #include "mozilla/StorageAccessAPIHelper.h"
 #include "mozilla/StyleSheet.h"
@@ -133,7 +134,6 @@
 #include "mozilla/dom/SessionStorageManager.h"
 #include "mozilla/dom/StorageIPC.h"
 #include "mozilla/dom/URLClassifierParent.h"
-#include "mozilla/dom/WakeLock.h"
 #include "mozilla/dom/WindowGlobalParent.h"
 #include "mozilla/dom/ipc/SharedMap.h"
 #include "mozilla/dom/ipc/StructuredCloneData.h"
@@ -1126,7 +1126,8 @@ ContentParent::GetNewOrUsedBrowserProcessAsync(const nsACString& aRemoteType,
       aRemoteType, aGroup, aPriority, aPreferUsed);
   if (!contentParent) {
     // In case of launch error, stop here.
-    return LaunchPromise::CreateAndReject(LaunchError(), __func__);
+    return LaunchPromise::CreateAndReject(NS_ERROR_ILLEGAL_DURING_SHUTDOWN,
+                                          __func__);
   }
   return contentParent->WaitForLaunchAsync(aPriority);
 }
@@ -1162,7 +1163,7 @@ RefPtr<ContentParent::LaunchPromise> ContentParent::WaitForLaunchAsync(
   // other `WaitForLaunchAsync` callbacks.
   return mSubprocess->WhenProcessHandleReady()->Then(
       GetCurrentSerialEventTarget(), __func__,
-      [self = RefPtr{this}, aPriority] {
+      [self = RefPtr{this}, aPriority]() {
         if (self->LaunchSubprocessResolve(/* aIsSync = */ false, aPriority)) {
           MOZ_LOG(ContentParent::GetLog(), LogLevel::Debug,
                   ("WaitForLaunchAsync: async, now launched"));
@@ -1171,13 +1172,13 @@ RefPtr<ContentParent::LaunchPromise> ContentParent::WaitForLaunchAsync(
         }
 
         self->LaunchSubprocessReject();
-        return LaunchPromise::CreateAndReject(LaunchError(), __func__);
+        return LaunchPromise::CreateAndReject(NS_ERROR_INVALID_ARG, __func__);
       },
-      [self = RefPtr{this}] {
+      [self = RefPtr{this}]() {
         MOZ_LOG(ContentParent::GetLog(), LogLevel::Debug,
                 ("WaitForLaunchAsync: async, rejected"));
         self->LaunchSubprocessReject();
-        return LaunchPromise::CreateAndReject(LaunchError(), __func__);
+        return LaunchPromise::CreateAndReject(NS_ERROR_FAILURE, __func__);
       });
 }
 
@@ -2090,8 +2091,6 @@ void ContentParent::ProcessingError(Result aCode, const char* aReason) {
 }
 
 void ContentParent::ActorDestroy(ActorDestroyReason why) {
-  MOZ_RELEASE_ASSERT(mSelfRef);
-
   if (mForceKillTimer) {
     mForceKillTimer->Cancel();
     mForceKillTimer = nullptr;
@@ -2260,8 +2259,6 @@ void ContentParent::ActorDestroy(ActorDestroyReason why) {
 
   mPendingLoadStates.Clear();
 }
-
-void ContentParent::ActorDealloc() { mSelfRef = nullptr; }
 
 bool ContentParent::TryToRecycleE10SOnly() {
   // Only try to recycle "web" content processes, as other remote types are
@@ -2701,8 +2698,6 @@ bool ContentParent::BeginSubprocessLaunch(ProcessPriority aPriority) {
   }
 #endif
 
-  // See also ActorDealloc.
-  mSelfRef = this;
   mLaunchYieldTS = TimeStamp::Now();
   return mSubprocess->AsyncLaunch(std::move(extraArgs));
 }
@@ -2848,7 +2843,8 @@ RefPtr<ContentParent::LaunchPromise> ContentParent::LaunchSubprocessAsync(
   if (!BeginSubprocessLaunch(aInitialPriority)) {
     // Launch aborted because of shutdown. Bailout.
     LaunchSubprocessReject();
-    return LaunchPromise::CreateAndReject(LaunchError(), __func__);
+    return LaunchPromise::CreateAndReject(NS_ERROR_ILLEGAL_DURING_SHUTDOWN,
+                                          __func__);
   }
 
   // Otherwise, wait until the process is ready.
@@ -2866,13 +2862,12 @@ RefPtr<ContentParent::LaunchPromise> ContentParent::LaunchSubprocessAsync(
           return LaunchPromise::CreateAndResolve(self, __func__);
         }
         self->LaunchSubprocessReject();
-        return LaunchPromise::CreateAndReject(LaunchError(), __func__);
+        return LaunchPromise::CreateAndReject(NS_ERROR_FAILURE, __func__);
       });
 }
 
 ContentParent::ContentParent(const nsACString& aRemoteType, int32_t aJSPluginID)
-    : mSelfRef(nullptr),
-      mSubprocess(nullptr),
+    : mSubprocess(nullptr),
       mLaunchTS(TimeStamp::Now()),
       mLaunchYieldTS(mLaunchTS),
       mActivateTS(mLaunchTS),
@@ -3159,6 +3154,8 @@ bool ContentParent::InitInternal(ProcessPriority aInitialPriority) {
   nsIDNSService::ResolverMode mode;
   dns->GetCurrentTrrMode(&mode);
   xpcomInit.trrMode() = mode;
+  xpcomInit.trrModeFromPref() =
+      static_cast<nsIDNSService::ResolverMode>(StaticPrefs::network_trr_mode());
 
   Unused << SendSetXPCOMProcessAttributes(
       xpcomInit, initialData, lnf, fontList, std::move(sharedUASheetHandle),
@@ -3235,6 +3232,7 @@ bool ContentParent::InitInternal(ProcessPriority aInitialPriority) {
                                  &vrBridge, &videoManager, &namespaces)) {
     // This can fail if we've already started shutting down the compositor
     // thread. See Bug 1562763 comment 8.
+    MOZ_ASSERT(AppShutdown::IsInOrBeyond(ShutdownPhase::AppShutdown));
     return false;
   }
 
@@ -3410,10 +3408,11 @@ void ContentParent::OnCompositorUnexpectedShutdown() {
   Endpoint<PRemoteDecoderManagerChild> videoManager;
   AutoTArray<uint32_t, 3> namespaces;
 
-  DebugOnly<bool> opened =
-      gpm->CreateContentBridges(OtherPid(), &compositor, &imageBridge,
-                                &vrBridge, &videoManager, &namespaces);
-  MOZ_ASSERT(opened);
+  if (!gpm->CreateContentBridges(OtherPid(), &compositor, &imageBridge,
+                                 &vrBridge, &videoManager, &namespaces)) {
+    MOZ_ASSERT(AppShutdown::IsInOrBeyond(ShutdownPhase::AppShutdown));
+    return;
+  }
 
   Unused << SendReinitRendering(std::move(compositor), std::move(imageBridge),
                                 std::move(vrBridge), std::move(videoManager),
@@ -3469,6 +3468,7 @@ void ContentParent::OnVarChanged(const GfxVarUpdate& aVar) {
 mozilla::ipc::IPCResult ContentParent::RecvSetClipboard(
     const IPCDataTransfer& aDataTransfer, const bool& aIsPrivateData,
     nsIPrincipal* aRequestingPrincipal,
+    mozilla::Maybe<CookieJarSettingsArgs> aCookieJarSettingsArgs,
     const nsContentPolicyType& aContentPolicyType,
     nsIReferrerInfo* aReferrerInfo, const int32_t& aWhichClipboard) {
   // aRequestingPrincipal is allowed to be nullptr here.
@@ -3487,6 +3487,13 @@ mozilla::ipc::IPCResult ContentParent::RecvSetClipboard(
   NS_ENSURE_SUCCESS(rv, IPC_OK());
   trans->Init(nullptr);
   trans->SetReferrerInfo(aReferrerInfo);
+
+  if (aCookieJarSettingsArgs.isSome()) {
+    nsCOMPtr<nsICookieJarSettings> cookieJarSettings;
+    net::CookieJarSettings::Deserialize(aCookieJarSettingsArgs.ref(),
+                                        getter_AddRefs(cookieJarSettings));
+    trans->SetCookieJarSettings(cookieJarSettings);
+  }
 
   rv = nsContentUtils::IPCTransferableToTransferable(
       aDataTransfer, aIsPrivateData, aRequestingPrincipal, aContentPolicyType,
@@ -3766,7 +3773,7 @@ class RequestContentJSInterruptRunnable final : public Runnable {
   // executed. So the runnable needs not to care about keeping it alive,
   // as it is surely dispatched earlier than the
   // HangMonitorParent::ShutdownOnThread.
-  PProcessHangMonitorParent* mHangMonitorActor;
+  RefPtr<PProcessHangMonitorParent> mHangMonitorActor;
 };
 
 void ContentParent::SignalImpendingShutdownToContentJS() {
@@ -4156,7 +4163,8 @@ ContentParent::Observe(nsISupports* aSubject, const char* aTopic,
     nsCOMPtr<nsIDNSService> dns = do_GetService(NS_DNSSERVICE_CONTRACTID);
     nsIDNSService::ResolverMode mode;
     dns->GetCurrentTrrMode(&mode);
-    Unused << SendSetTRRMode(mode);
+    Unused << SendSetTRRMode(mode, static_cast<nsIDNSService::ResolverMode>(
+                                       StaticPrefs::network_trr_mode()));
   }
 
   return NS_OK;

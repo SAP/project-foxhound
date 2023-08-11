@@ -12,6 +12,9 @@
   --controls-bottom-upper-height: 30px;
   --scrubber-vertical-margin: 7px;
   --resize-margin: 5px;
+
+  background-color: var(--player-bg-color);
+  overflow: hidden;
 }
 
 button::-moz-focus-inner {
@@ -20,8 +23,6 @@ button::-moz-focus-inner {
 
 body {
   margin: 0;
-  background-color: var(--player-bg-color);
-  overflow: hidden;
 }
 
 body:fullscreen {
@@ -162,6 +163,14 @@ body:not(:fullscreen) #controls:hover .control-button:disabled {
   pointer-events: none;
 }
 
+/* Since #controls is set to LTR, button tooltips would normally appear
+ * as LTR also for RTL locales. To fix this, set the .control-item's ::after
+ * to RTL based on the root directionality.
+ * Because of that, don't set logical properties for the next set of rules. */
+:root:dir(rtl) .control-item::after {
+  direction: rtl;
+}
+
 /* Set the tooltip position for different playback controls */
 
 .tooltip-under-controls:focus-visible::after,
@@ -173,7 +182,7 @@ body:not(:fullscreen) #controls:hover .control-button:disabled {
 #close:hover::after,
 #unpip[mac="true"]:focus-visible::after,
 #unpip[mac="true"]:hover::after {
-  float: inline-end;
+  float: right;
   transform: translateX(1em);
 }
 
@@ -181,7 +190,7 @@ body:not(:fullscreen) #controls:hover .control-button:disabled {
 #unpip:hover::after,
 #close[mac="true"]:focus-visible::after,
 #close[mac="true"]:hover::after {
-  float: inline-start;
+  float: left;
   transform: translateX(-1em);
 }
 
@@ -192,19 +201,19 @@ body:not(:fullscreen) #controls:hover .control-button:disabled {
 
 .inline-end-tooltip:focus-visible::after,
 .inline-end-tooltip:hover::after {
-  float: inline-end;
-  inset-inline-end: -1em;
+  float: right;
+  right: -1em;
 }
 
 .inline-start-tooltip:focus-visible::after,
 .inline-start-tooltip:hover::after {
-  float: inline-start;
-  inset-inline-start: -1em;
+  float: left;
+  left: -1em;
 }
 
 .center-tooltip:focus-visible::after,
 .center-tooltip:hover::after {
-  inset-inline-end: 0.8em;
+  right: 0.8em;
   translate: calc(-50% + var(--player-control-item-half-width));
 }
 
@@ -364,6 +373,11 @@ body:not(:fullscreen) #fullscreen {
   direction: rtl;
 }
 
+.a11y-only {
+  visibility: hidden;
+  position: absolute;
+}
+
 .hide {
   display: none;
 }
@@ -378,11 +392,13 @@ body:not(:fullscreen) #fullscreen {
 }
 
 .box label:not(.switch) {
-  display: flex;
-  align-items: center;
   color: white;
-  padding: 8px;
   font-family: sans-serif;
+}
+
+#subtitles-toggle-label {
+  width: fit-content;
+  padding: 8px;
 }
 
 .panel {
@@ -390,6 +406,19 @@ body:not(:fullscreen) #fullscreen {
   bottom: 40px;
   user-select: none;
   right: 24px;
+}
+
+.panel-fieldset {
+  border: none;
+  margin-top: 8px;
+  padding-inline-start: 0;
+}
+
+.panel-legend {
+  font-family: sans-serif;
+  color: white;
+  margin-top: 8px;
+  padding-inline-start: 0;
 }
 
 .arrow {
@@ -401,22 +430,29 @@ body:not(:fullscreen) #fullscreen {
   position: relative;
 }
 
-.font-size-selection {
-  padding: 8px;
-}
-
 .grey-line {
   width: 100%;
   height: 1px;
   background: #8F8F9D;
 }
 
-.font-size-selection > label {
+.font-size-selection {
+  margin-inline-start: 8px;
+  padding-inline-start: 8px;
+}
+
+.font-size-selection-radio {
+  display: flex;
   width: fit-content;
+  cursor: pointer;
+  padding-block: 8px;
+}
+
+.font-size-selection-radio label {
   cursor: pointer;
 }
 
-.font-size-selection > label > input[type="radio"] {
+.font-size-selection-radio > input[type="radio"] {
   appearance: none;
   width: 16px;
   height: 16px;
@@ -426,7 +462,7 @@ body:not(:fullscreen) #fullscreen {
   margin-inline-end: 6px;
 }
 
-.font-size-selection > label > input[type="radio"]:checked {
+.font-size-selection-radio > input[type="radio"]:checked {
   border: 4px solid #00ddff;
 }
 

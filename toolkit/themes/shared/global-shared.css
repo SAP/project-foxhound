@@ -30,8 +30,8 @@
   --arrowpanel-dimmed: color-mix(in srgb, currentColor 17%, transparent);
   --arrowpanel-dimmed-further: color-mix(in srgb, currentColor 30%, transparent);
 
-  --panel-description-color: color-mix(in srgb, currentColor 60%, transparent);;
-  --panel-disabled-color: color-mix(in srgb, currentColor 40%, transparent);;
+  --panel-description-color: color-mix(in srgb, currentColor 60%, transparent);
+  --panel-disabled-color: color-mix(in srgb, currentColor 40%, transparent);
 
   --popup-notification-body-width: calc(31em - calc(2 * var(--arrowpanel-padding)));
 
@@ -151,15 +151,11 @@ xul|label[disabled="true"] {
 a {
   color: -moz-nativehyperlinktext;
   cursor: pointer;
-}
-
-:is(a, .text-link):hover {
   text-decoration: underline;
 }
 
 :is(a, .text-link):-moz-lwtheme {
   color: inherit;
-  text-decoration: underline;
 }
 
 :is(a, .text-link):focus-visible {
@@ -247,7 +243,7 @@ button.text-link .button-text {
 @media (-moz-platform: windows) {
   /* Swap the primary and secondary action, because Windows
    * platform conventions put the primary action on the left. */
-  .panel-footer > button[default] {
+  .panel-footer:not(moz-button-group) > button[default] {
     order: -1;
   }
 }

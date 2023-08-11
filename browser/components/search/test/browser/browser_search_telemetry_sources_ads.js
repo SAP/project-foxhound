@@ -14,40 +14,59 @@ const {
   "resource:///modules/SearchSERPTelemetry.sys.mjs"
 );
 
+// Note: example.org is used for the SERP page, and example.com is used to serve
+// the ads. This is done to simulate different domains like the real servers.
 const TEST_PROVIDER_INFO = [
   {
     telemetryId: "example",
-    searchPageRegexp: /^http:\/\/mochi.test:.+\/browser\/browser\/components\/search\/test\/browser\/searchTelemetry(?:Ad)?.html/,
+    searchPageRegexp: /^https:\/\/example.org\/browser\/browser\/components\/search\/test\/browser\/searchTelemetry(?:Ad)?.html/,
     queryParamName: "s",
     codeParamName: "abc",
     taggedCodes: ["ff"],
     followOnParamNames: ["a"],
     extraAdServersRegexps: [/^https:\/\/example\.com\/ad2?/],
+    components: [
+      {
+        type: SearchSERPTelemetryUtils.COMPONENTS.AD_LINK,
+        default: true,
+      },
+    ],
   },
   {
     telemetryId: "example-data-attributes",
-    searchPageRegexp: /^http:\/\/mochi.test:.+\/browser\/browser\/components\/search\/test\/browser\/searchTelemetryAd_dataAttributes(?:_none|_href)?.html/,
+    searchPageRegexp: /^https:\/\/example.org\/browser\/browser\/components\/search\/test\/browser\/searchTelemetryAd_dataAttributes(?:_none|_href)?.html/,
     queryParamName: "s",
     codeParamName: "abc",
     taggedCodes: ["ff"],
     adServerAttributes: ["xyz"],
     extraAdServersRegexps: [/^https:\/\/example\.com\/ad/],
+    components: [
+      {
+        type: SearchSERPTelemetryUtils.COMPONENTS.AD_LINK,
+        default: true,
+      },
+    ],
   },
   {
     telemetryId: "slow-page-load",
-    searchPageRegexp: /^http:\/\/mochi.test:.+\/browser\/browser\/components\/search\/test\/browser\/slow_loading_page_with_ads(_on_load_event)?.html/,
+    searchPageRegexp: /^https:\/\/example.org\/browser\/browser\/components\/search\/test\/browser\/slow_loading_page_with_ads(_on_load_event)?.html/,
     queryParamName: "s",
     codeParamName: "abc",
     taggedCodes: ["ff"],
     followOnParamNames: ["a"],
     extraAdServersRegexps: [/^https:\/\/example\.com\/ad2?/],
+    components: [
+      {
+        type: SearchSERPTelemetryUtils.COMPONENTS.AD_LINK,
+        default: true,
+      },
+    ],
   },
 ];
 
-function getPageUrl(useExample = false, useAdPage = false) {
-  let server = useExample ? "example.com" : "mochi.test:8888";
+function getPageUrl(useAdPage = false) {
   let page = useAdPage ? "searchTelemetryAd.html" : "searchTelemetry.html";
-  return `http://${server}/browser/browser/components/search/test/browser/${page}`;
+  return `https://example.org/browser/browser/components/search/test/browser/${page}`;
 }
 
 function getSERPUrl(page, organic = false) {
@@ -112,6 +131,8 @@ add_task(async function test_simple_search_page_visit() {
         tagged: "true",
         partner_code: "ff",
         source: "unknown",
+        is_shopping_page: "false",
+        shopping_tab_displayed: "false",
       },
     },
   ]);
@@ -149,6 +170,8 @@ add_task(async function test_simple_search_page_visit_telemetry() {
         tagged: "true",
         partner_code: "ff",
         source: "unknown",
+        is_shopping_page: "false",
+        shopping_tab_displayed: "false",
       },
     },
   ]);
@@ -179,6 +202,8 @@ add_task(async function test_follow_on_visit() {
         tagged: "true",
         partner_code: "ff",
         source: "unknown",
+        is_shopping_page: "false",
+        shopping_tab_displayed: "false",
       },
     },
     {
@@ -187,6 +212,8 @@ add_task(async function test_follow_on_visit() {
         tagged: "true",
         partner_code: "ff",
         source: "unknown",
+        is_shopping_page: "false",
+        shopping_tab_displayed: "false",
       },
     },
   ]);
@@ -197,7 +224,7 @@ add_task(async function test_track_ad() {
 
   let tab = await BrowserTestUtils.openNewForegroundTab(
     gBrowser,
-    getSERPUrl(getPageUrl(false, true))
+    getSERPUrl(getPageUrl(true))
   );
 
   await assertSearchSourcesTelemetry(
@@ -215,6 +242,8 @@ add_task(async function test_track_ad() {
         tagged: "true",
         partner_code: "ff",
         source: "unknown",
+        is_shopping_page: "false",
+        shopping_tab_displayed: "false",
       },
     },
   ]);
@@ -228,7 +257,7 @@ add_task(async function test_track_ad_on_data_attributes() {
   let url =
     getRootDirectory(gTestPath).replace(
       "chrome://mochitests/content",
-      "http://mochi.test:8888"
+      "https://example.org"
     ) + "searchTelemetryAd_dataAttributes.html";
 
   let tab = await BrowserTestUtils.openNewForegroundTab(
@@ -255,6 +284,8 @@ add_task(async function test_track_ad_on_data_attributes() {
         tagged: "true",
         partner_code: "ff",
         source: "unknown",
+        is_shopping_page: "false",
+        shopping_tab_displayed: "false",
       },
     },
   ]);
@@ -268,7 +299,7 @@ add_task(async function test_track_ad_on_data_attributes_and_hrefs() {
   let url =
     getRootDirectory(gTestPath).replace(
       "chrome://mochitests/content",
-      "http://mochi.test:8888"
+      "https://example.org"
     ) + "searchTelemetryAd_dataAttributes_href.html";
 
   let tab = await BrowserTestUtils.openNewForegroundTab(
@@ -295,6 +326,8 @@ add_task(async function test_track_ad_on_data_attributes_and_hrefs() {
         tagged: "true",
         partner_code: "ff",
         source: "unknown",
+        is_shopping_page: "false",
+        shopping_tab_displayed: "false",
       },
     },
   ]);
@@ -308,7 +341,7 @@ add_task(async function test_track_no_ad_on_data_attributes_and_hrefs() {
   let url =
     getRootDirectory(gTestPath).replace(
       "chrome://mochitests/content",
-      "http://mochi.test:8888"
+      "https://example.org"
     ) + "searchTelemetryAd_dataAttributes_none.html";
 
   let tab = await BrowserTestUtils.openNewForegroundTab(
@@ -332,6 +365,8 @@ add_task(async function test_track_no_ad_on_data_attributes_and_hrefs() {
         tagged: "true",
         partner_code: "ff",
         source: "unknown",
+        is_shopping_page: "false",
+        shopping_tab_displayed: "false",
       },
     },
   ]);
@@ -345,7 +380,7 @@ add_task(async function test_track_ad_on_DOMContentLoaded() {
   let url =
     getRootDirectory(gTestPath).replace(
       "chrome://mochitests/content",
-      "http://mochi.test:8888"
+      "https://example.org"
     ) + "slow_loading_page_with_ads.html";
 
   let observeAdPreviouslyRecorded = TestUtils.consoleMessageObserved(msg => {
@@ -381,6 +416,8 @@ add_task(async function test_track_ad_on_DOMContentLoaded() {
         tagged: "true",
         partner_code: "ff",
         source: "unknown",
+        is_shopping_page: "false",
+        shopping_tab_displayed: "false",
       },
     },
   ]);
@@ -394,7 +431,7 @@ add_task(async function test_track_ad_on_load_event() {
   let url =
     getRootDirectory(gTestPath).replace(
       "chrome://mochitests/content",
-      "http://mochi.test:8888"
+      "https://example.org"
     ) + "slow_loading_page_with_ads_on_load_event.html";
 
   let tab = await BrowserTestUtils.openNewForegroundTab(
@@ -417,6 +454,8 @@ add_task(async function test_track_ad_on_load_event() {
         tagged: "true",
         partner_code: "ff",
         source: "unknown",
+        is_shopping_page: "false",
+        shopping_tab_displayed: "false",
       },
     },
   ]);
@@ -429,7 +468,7 @@ add_task(async function test_track_ad_organic() {
 
   let tab = await BrowserTestUtils.openNewForegroundTab(
     gBrowser,
-    getSERPUrl(getPageUrl(false, true), true)
+    getSERPUrl(getPageUrl(true), true)
   );
 
   await assertSearchSourcesTelemetry(
@@ -447,6 +486,8 @@ add_task(async function test_track_ad_organic() {
         tagged: "false",
         partner_code: "",
         source: "unknown",
+        is_shopping_page: "false",
+        shopping_tab_displayed: "false",
       },
     },
   ]);
@@ -459,7 +500,7 @@ add_task(async function test_track_ad_new_window() {
 
   let win = await BrowserTestUtils.openNewBrowserWindow();
 
-  let url = getSERPUrl(getPageUrl(false, true));
+  let url = getSERPUrl(getPageUrl(true));
   BrowserTestUtils.loadURIString(win.gBrowser.selectedBrowser, url);
   await BrowserTestUtils.browserLoaded(
     win.gBrowser.selectedBrowser,
@@ -482,6 +523,8 @@ add_task(async function test_track_ad_new_window() {
         tagged: "true",
         partner_code: "ff",
         source: "unknown",
+        is_shopping_page: "false",
+        shopping_tab_displayed: "false",
       },
     },
   ]);
@@ -498,13 +541,13 @@ add_task(async function test_track_ad_pages_without_ads() {
   tabs.push(
     await BrowserTestUtils.openNewForegroundTab(
       gBrowser,
-      getSERPUrl(getPageUrl(false, false))
+      getSERPUrl(getPageUrl(false))
     )
   );
   tabs.push(
     await BrowserTestUtils.openNewForegroundTab(
       gBrowser,
-      getSERPUrl(getPageUrl(false, true))
+      getSERPUrl(getPageUrl(true))
     )
   );
 
@@ -523,6 +566,8 @@ add_task(async function test_track_ad_pages_without_ads() {
         tagged: "true",
         partner_code: "ff",
         source: "unknown",
+        is_shopping_page: "false",
+        shopping_tab_displayed: "false",
       },
     },
     {
@@ -531,6 +576,8 @@ add_task(async function test_track_ad_pages_without_ads() {
         tagged: "true",
         partner_code: "ff",
         source: "unknown",
+        is_shopping_page: "false",
+        shopping_tab_displayed: "false",
       },
     },
   ]);
@@ -553,7 +600,7 @@ async function track_ad_click(testOrganic) {
 
   let tab = await BrowserTestUtils.openNewForegroundTab(
     gBrowser,
-    getSERPUrl(getPageUrl(false, true), testOrganic)
+    getSERPUrl(getPageUrl(true), testOrganic)
   );
 
   await assertSearchSourcesTelemetry(
@@ -573,9 +620,12 @@ async function track_ad_click(testOrganic) {
         tagged,
         partner_code: partnerCode,
         source: "unknown",
+        is_shopping_page: "false",
+        shopping_tab_displayed: "false",
       },
     },
   ]);
+  await promiseAdImpressionReceived(1);
 
   let pageLoadPromise = BrowserTestUtils.waitForLocationChange(gBrowser);
   await SpecialPowers.spawn(tab.linkedBrowser, [], () => {
@@ -600,10 +650,13 @@ async function track_ad_click(testOrganic) {
         tagged,
         partner_code: partnerCode,
         source: "unknown",
+        is_shopping_page: "false",
+        shopping_tab_displayed: "false",
       },
       engagements: [
         {
           action: SearchSERPTelemetryUtils.ACTIONS.CLICKED,
+          target: SearchSERPTelemetryUtils.COMPONENTS.AD_LINK,
         },
       ],
     },
@@ -634,10 +687,13 @@ async function track_ad_click(testOrganic) {
         tagged,
         partner_code: partnerCode,
         source: "unknown",
+        is_shopping_page: "false",
+        shopping_tab_displayed: "false",
       },
       engagements: [
         {
           action: SearchSERPTelemetryUtils.ACTIONS.CLICKED,
+          target: SearchSERPTelemetryUtils.COMPONENTS.AD_LINK,
         },
       ],
     },
@@ -647,9 +703,12 @@ async function track_ad_click(testOrganic) {
         tagged,
         partner_code: partnerCode,
         source: "tabhistory",
+        is_shopping_page: "false",
+        shopping_tab_displayed: "false",
       },
     },
   ]);
+  await promiseAdImpressionReceived(2);
 
   pageLoadPromise = BrowserTestUtils.waitForLocationChange(gBrowser);
   await SpecialPowers.spawn(tab.linkedBrowser, [], () => {
@@ -677,10 +736,13 @@ async function track_ad_click(testOrganic) {
         tagged,
         partner_code: partnerCode,
         source: "unknown",
+        is_shopping_page: "false",
+        shopping_tab_displayed: "false",
       },
       engagements: [
         {
           action: SearchSERPTelemetryUtils.ACTIONS.CLICKED,
+          target: SearchSERPTelemetryUtils.COMPONENTS.AD_LINK,
         },
       ],
     },
@@ -690,10 +752,13 @@ async function track_ad_click(testOrganic) {
         tagged,
         partner_code: partnerCode,
         source: "tabhistory",
+        is_shopping_page: "false",
+        shopping_tab_displayed: "false",
       },
       engagements: [
         {
           action: SearchSERPTelemetryUtils.ACTIONS.CLICKED,
+          target: SearchSERPTelemetryUtils.COMPONENTS.AD_LINK,
         },
       ],
     },
@@ -712,7 +777,7 @@ add_task(async function test_track_ad_click_organic() {
 
 add_task(async function test_track_ad_click_with_location_change_other_tab() {
   resetTelemetry();
-  const url = getSERPUrl(getPageUrl(false, true));
+  const url = getSERPUrl(getPageUrl(true));
   let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, url);
 
   await assertSearchSourcesTelemetry(
@@ -730,9 +795,12 @@ add_task(async function test_track_ad_click_with_location_change_other_tab() {
         tagged: "true",
         partner_code: "ff",
         source: "unknown",
+        is_shopping_page: "false",
+        shopping_tab_displayed: "false",
       },
     },
   ]);
+  await promiseAdImpressionReceived();
 
   const newTab = await BrowserTestUtils.openNewForegroundTab(
     gBrowser,
@@ -763,10 +831,13 @@ add_task(async function test_track_ad_click_with_location_change_other_tab() {
         tagged: "true",
         partner_code: "ff",
         source: "unknown",
+        is_shopping_page: "false",
+        shopping_tab_displayed: "false",
       },
       engagements: [
         {
           action: SearchSERPTelemetryUtils.ACTIONS.CLICKED,
+          target: SearchSERPTelemetryUtils.COMPONENTS.AD_LINK,
         },
       ],
     },

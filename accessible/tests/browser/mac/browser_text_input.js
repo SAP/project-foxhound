@@ -178,6 +178,10 @@ function testSelectionEventLeftChar(event, expectedChar) {
 }
 
 function testSelectionEventLine(event, expectedLine) {
+  if (!expectedLine && !isCacheEnabled) {
+    todo(false, "Blank lines are broken with cache disabled");
+    return;
+  }
   const selStart = event.macIface.getParameterizedAttributeValue(
     "AXStartTextMarkerForTextMarkerRange",
     event.data.AXSelectedTextMarkerRange
@@ -548,11 +552,16 @@ addAccessibleTask(
   `
 <textarea id="hard">ab
 cd
-ef</textarea>
-<div id="wrapped" contenteditable style="width: 1ch;">a b c</div>
+ef
+
+gh
+</textarea>
+<div role="textbox" id="wrapped" contenteditable style="width: 1ch;">a b c</div>
   `,
   async function(browser, docAcc) {
+    let hard = getNativeInterface(docAcc, "hard");
     await focusIntoInput(docAcc, "hard");
+    is(hard.getAttributeValue("AXInsertionPointLineNumber"), 0);
     let event = await synthKeyAndTestSelectionChanged(
       "KEY_ArrowDown",
       null,
@@ -565,6 +574,7 @@ ef</textarea>
       }
     );
     testSelectionEventLine(event, "cd");
+    is(hard.getAttributeValue("AXInsertionPointLineNumber"), 1);
     event = await synthKeyAndTestSelectionChanged(
       "KEY_ArrowDown",
       null,
@@ -577,8 +587,50 @@ ef</textarea>
       }
     );
     testSelectionEventLine(event, "ef");
+    is(hard.getAttributeValue("AXInsertionPointLineNumber"), 2);
+    event = await synthKeyAndTestSelectionChanged(
+      "KEY_ArrowDown",
+      null,
+      "hard",
+      "",
+      {
+        AXTextStateChangeType: AXTextStateChangeTypeSelectionMove,
+        AXTextSelectionDirection: AXTextSelectionDirectionNext,
+        AXTextSelectionGranularity: AXTextSelectionGranularityLine,
+      }
+    );
+    testSelectionEventLine(event, "");
+    is(hard.getAttributeValue("AXInsertionPointLineNumber"), 3);
+    event = await synthKeyAndTestSelectionChanged(
+      "KEY_ArrowDown",
+      null,
+      "hard",
+      "",
+      {
+        AXTextStateChangeType: AXTextStateChangeTypeSelectionMove,
+        AXTextSelectionDirection: AXTextSelectionDirectionNext,
+        AXTextSelectionGranularity: AXTextSelectionGranularityLine,
+      }
+    );
+    testSelectionEventLine(event, "gh");
+    is(hard.getAttributeValue("AXInsertionPointLineNumber"), 4);
+    event = await synthKeyAndTestSelectionChanged(
+      "KEY_ArrowDown",
+      null,
+      "hard",
+      "",
+      {
+        AXTextStateChangeType: AXTextStateChangeTypeSelectionMove,
+        AXTextSelectionDirection: AXTextSelectionDirectionNext,
+        AXTextSelectionGranularity: AXTextSelectionGranularityLine,
+      }
+    );
+    testSelectionEventLine(event, "");
+    is(hard.getAttributeValue("AXInsertionPointLineNumber"), 5);
 
+    let wrapped = getNativeInterface(docAcc, "wrapped");
     await focusIntoInput(docAcc, "wrapped");
+    is(wrapped.getAttributeValue("AXInsertionPointLineNumber"), 0);
     event = await synthKeyAndTestSelectionChanged(
       "KEY_ArrowDown",
       null,
@@ -591,6 +643,7 @@ ef</textarea>
       }
     );
     testSelectionEventLine(event, "b ");
+    is(wrapped.getAttributeValue("AXInsertionPointLineNumber"), 1);
     event = await synthKeyAndTestSelectionChanged(
       "KEY_ArrowDown",
       null,
@@ -603,6 +656,7 @@ ef</textarea>
       }
     );
     testSelectionEventLine(event, "c");
+    is(wrapped.getAttributeValue("AXInsertionPointLineNumber"), 2);
   },
   { chrome: true, topLevel: true }
 );

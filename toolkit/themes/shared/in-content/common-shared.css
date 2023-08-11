@@ -10,7 +10,7 @@
   --in-content-page-color: rgb(21, 20, 26);
   --in-content-page-background: #fff;
   --in-content-text-color: var(--in-content-page-color);
-  --in-content-deemphasized-text: rgb(91, 91, 102);
+  --in-content-deemphasized-text: color-mix(in srgb, currentColor 69%, transparent);
   --in-content-box-background: #fff;
   --in-content-box-background-odd: rgba(12, 12, 13, 0.05); /* grey 90 a05 */
   --in-content-box-border-color: color-mix(in srgb, currentColor 41%, transparent);
@@ -31,13 +31,13 @@
   --in-content-link-color-hover: var(--in-content-primary-button-background-hover);
   --in-content-link-color-active: var(--in-content-primary-button-background-active);
   --in-content-link-color-visited: var(--in-content-link-color);
-   /* button background states are also used for checkboxes and radiobuttons */
   --in-content-button-text-color: var(--in-content-text-color);
   --in-content-button-text-color-hover: var(--in-content-text-color);
   --in-content-button-text-color-active: var(--in-content-button-text-color-hover);
-  --in-content-button-background: rgba(207,207,216,.33);
-  --in-content-button-background-hover: rgba(207,207,216,.66);
-  --in-content-button-background-active: rgb(207,207,216);
+   /* button background states are also used for checkboxes and radiobuttons */
+  --in-content-button-background: color-mix(in srgb, currentColor 7%, transparent);
+  --in-content-button-background-hover: color-mix(in srgb, currentColor 14%, transparent);
+  --in-content-button-background-active: color-mix(in srgb, currentColor 21%, transparent);
   --in-content-button-border-color: transparent;
   --in-content-button-border-color-hover: transparent;
   --in-content-button-border-color-active: var(--in-content-button-border-color-hover);
@@ -133,7 +133,7 @@
      * in-content privileged pages and plain-text documents). */
     --in-content-page-background: rgb(28,27,34);
     --in-content-page-color: rgb(251,251,254);
-    --in-content-deemphasized-text: rgb(191,191,201);
+    --in-content-deemphasized-text: color-mix(in srgb, currentColor 75%, transparent);
 
     --in-content-box-background: rgb(35, 34, 43);
     --in-content-box-background-odd: rgba(249,249,250,0.05);
@@ -146,9 +146,6 @@
     --in-content-error-text-color: #FF9AA2;
     --in-content-success-icon-color: #54FFBD;
 
-    --in-content-button-background: rgb(43,42,51);
-    --in-content-button-background-hover: rgb(82,82,94);
-    --in-content-button-background-active: rgb(91,91,102);
     --in-content-icon-color: rgb(251,251,254);
 
     --in-content-primary-button-text-color: rgb(43,42,51);
@@ -693,14 +690,12 @@ xul|search-textbox[disabled="true"] {
 html|a,
 .text-link {
   color: var(--in-content-link-color);
-  text-decoration: none;
 }
 
 html|a:hover,
 .text-link:hover,
 button.text-link:is(:not([disabled="true"]), :enabled):hover {
   color: var(--in-content-link-color-hover);
-  text-decoration: underline;
 }
 
 html|a:visited {

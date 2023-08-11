@@ -18,7 +18,7 @@ const fluentStrings = [
 ];
 
 export default {
-  title: "Design System/Experiments/MozSupportLink",
+  title: "Support Link",
   component: "moz-support-link",
   argTypes: {
     "data-l10n-id": {
@@ -26,6 +26,9 @@ export default {
       control: { type: "select" },
     },
     onClick: { action: "clicked" },
+  },
+  parameters: {
+    status: "stable",
   },
 };
 

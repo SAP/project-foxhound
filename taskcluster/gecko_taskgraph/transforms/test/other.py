@@ -327,36 +327,34 @@ def setup_browsertime(config, tasks):
                 "linux64-chromedriver-110",
                 "linux64-chromedriver-111",
                 "linux64-chromedriver-112",
+                "linux64-chromedriver-113",
             ],
             "linux.*": [
-                "linux64-chromedriver-109",
-                "linux64-chromedriver-110",
                 "linux64-chromedriver-111",
                 "linux64-chromedriver-112",
+                "linux64-chromedriver-113",
             ],
             "macosx.*": [
                 "mac64-chromedriver-109",
                 "mac64-chromedriver-110",
                 "mac64-chromedriver-111",
                 "mac64-chromedriver-112",
+                "mac64-chromedriver-113",
             ],
             "windows.*aarch64.*": [
-                "win32-chromedriver-109",
-                "win32-chromedriver-110",
                 "win32-chromedriver-111",
                 "win32-chromedriver-112",
+                "win32-chromedriver-113",
             ],
             "windows.*-32.*": [
-                "win32-chromedriver-109",
-                "win32-chromedriver-110",
                 "win32-chromedriver-111",
                 "win32-chromedriver-112",
+                "win32-chromedriver-113",
             ],
             "windows.*-64.*": [
-                "win32-chromedriver-109",
-                "win32-chromedriver-110",
                 "win32-chromedriver-111",
                 "win32-chromedriver-112",
+                "win32-chromedriver-113",
             ],
         }
 
@@ -378,7 +376,7 @@ def setup_browsertime(config, tasks):
             # Only add the chromedriver fetches when chrome is running
             for platform in cd_fetches:
                 fs["by-test-platform"][platform].extend(cd_fetches[platform])
-        if "--app=chromium" in extra_options:
+        if "--app=chromium" in extra_options or "--app=custom-car" in extra_options:
             for platform in chromium_fetches:
                 fs["by-test-platform"][platform].extend(chromium_fetches[platform])
 
@@ -643,6 +641,14 @@ def handle_tier(config, tasks):
                 "windows10-64-2004-shippable-qr/opt",
                 "windows10-64-2004-devedition-qr/opt",
                 "windows10-64-2004-asan-qr/opt",
+                "windows11-32-2009-qr/debug",
+                "windows11-32-2009-qr/opt",
+                "windows11-32-2009-shippable-qr/opt",
+                "windows11-64-2009-qr/opt",
+                "windows11-64-2009-qr/debug",
+                "windows11-64-2009-shippable-qr/opt",
+                "windows11-64-2009-devedition-qr/opt",
+                "windows11-64-2009-asan-qr/opt",
                 "macosx1015-64/opt",
                 "macosx1015-64/debug",
                 "macosx1015-64-shippable/opt",
@@ -751,6 +757,7 @@ test_setting_description_schema = Schema(
                 "domstreams",
                 "lite",
                 "mingwclang",
+                "nightlyasrelease",
                 "shippable",
                 "tsan",
             ): bool,

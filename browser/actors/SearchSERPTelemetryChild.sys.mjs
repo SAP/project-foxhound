@@ -72,12 +72,19 @@ class SearchProviders {
             return component;
           });
         }
+        p.adServerAttributes = p.adServerAttributes ?? [];
+        if (p.shoppingTab?.regexp) {
+          p.shoppingTab.regexp = new RegExp(p.shoppingTab.regexp);
+        }
         return {
           ...p,
           searchPageRegexp: new RegExp(p.searchPageRegexp),
           extraAdServersRegexps: p.extraAdServersRegexps.map(
             r => new RegExp(r)
           ),
+          nonAdsLinkRegexps: p.nonAdsLinkRegexps?.length
+            ? p.nonAdsLinkRegexps.map(r => new RegExp(r))
+            : [],
         };
       });
 
@@ -152,6 +159,17 @@ class SearchAdImpression {
   #topDownComponents = [];
 
   /**
+   * Top level URL being viewed.
+   *
+   * @type {URL | null}
+   */
+  #pageUrl = null;
+
+  set pageUrl(url) {
+    this.#pageUrl = url;
+  }
+
+  /**
    * A reference the providerInfo for this SERP.
    *
    * @type {object}
@@ -170,8 +188,9 @@ class SearchAdImpression {
     this.#topDownComponents = [];
 
     for (let component of this.#providerInfo.components) {
-      if (component.included?.default) {
+      if (component.default) {
         this.#defaultComponent = component;
+        continue;
       }
       if (component.nonAd && component.included?.regexps) {
         this.#nonAdRegexps = this.#nonAdRegexps.concat(
@@ -185,12 +204,43 @@ class SearchAdImpression {
   }
 
   /**
-   * How far from the top the page has been scrolled.
+   * The callback that should fire when an element is interacted with.
+   *
+   * @type {function}
    */
-  #scrollFromTop = 0;
+  #eventCallback = null;
 
-  set scrollFromTop(distance) {
-    this.#scrollFromTop = distance;
+  set eventCallback(callback) {
+    this.#eventCallback = callback;
+  }
+
+  /**
+   * Check if the page has a shopping tab.
+   *
+   * @param {Document} document
+   * @return {boolean}
+   *   Whether the page has a shopping tab. Defaults to false.
+   */
+  hasShoppingTab(document) {
+    if (!this.#providerInfo?.shoppingTab) {
+      return false;
+    }
+
+    let selector = this.#providerInfo.shoppingTab.selector;
+    let regexp = this.#providerInfo.shoppingTab.regexp;
+
+    let elements = document.querySelectorAll(selector);
+    for (let element of elements) {
+      let href = element.getAttribute("href");
+      if (href && regexp.test(href)) {
+        this.#recordElementData(element, {
+          type: "shopping_tab",
+          count: 1,
+        });
+        return true;
+      }
+    }
+    return false;
   }
 
   /**
@@ -222,14 +272,54 @@ class SearchAdImpression {
     this.#categorizeDocument(document);
 
     let componentToVisibilityMap = new Map();
-    // Count the number of visible and hidden ads within each cached
-    // element and save the results according to the component they
-    // belonged to.
+    let hrefToComponentMap = new Map();
+    // Iterate over the results:
+    // - If it's searchbox add event listeners.
+    // - If it is a non_ads_link, map its href to component type.
+    // - For others, map its component type and check visibility.
     for (let [element, data] of this.#elementToAdDataMap.entries()) {
+      if (data.type == "incontent_searchbox") {
+        // If searchbox has child elements, observe those, otherwise
+        // fallback to its parent element.
+        this.#addEventListenerToElements(
+          data.childElements.length ? data.childElements : [element],
+          data.type,
+          false
+        );
+        continue;
+      }
+      if (data.childElements.length) {
+        for (let child of data.childElements) {
+          let href = this.#extractHref(child);
+          if (href) {
+            hrefToComponentMap.set(href, data.type);
+          }
+        }
+      } else {
+        let href = this.#extractHref(element);
+        if (href) {
+          hrefToComponentMap.set(href, data.type);
+        }
+      }
+
+      // If the component is a non_ads_link, skip visibility checks.
+      if (data.type == "non_ads_link") {
+        continue;
+      }
+
+      // If proxy children were found, check the visibility of all of them
+      // otherwise just check the visiblity of the first child.
+      let childElements;
+      if (data.proxyChildElements.length) {
+        childElements = data.proxyChildElements;
+      } else if (data.childElements.length) {
+        childElements = [data.childElements[0]];
+      }
+
       let count = this.#countVisibleAndHiddenAds(
         element,
         data.adsLoaded,
-        data.childElements
+        childElements
       );
       if (componentToVisibilityMap.has(data.type)) {
         let componentInfo = componentToVisibilityMap.get(data.type);
@@ -248,7 +338,49 @@ class SearchAdImpression {
     // Release the DOM elements from the Map.
     this.#elementToAdDataMap.clear();
 
-    return componentToVisibilityMap;
+    return { componentToVisibilityMap, hrefToComponentMap };
+  }
+
+  /**
+   * Given an element, find the href that is most likely to make the request if
+   * the element is clicked. The initial value of the anchor is an href if the
+   * attribute exists, otherwise it is a blank string. Then, if the element
+   * contains a specific data attribute known to contain hrefs, it will be
+   * used instead.
+   *
+   * @param {Element} element
+   *  The element to inspect.
+   * @returns {string}
+   *   The href of the element.
+   */
+  #extractHref(element) {
+    let href = element.getAttribute("href") ?? "";
+    for (let name of this.#providerInfo.adServerAttributes) {
+      if (
+        element.dataset[name] &&
+        this.#providerInfo.extraAdServersRegexps.some(regexp =>
+          regexp.test(element.dataset[name])
+        )
+      ) {
+        href = element.dataset[name];
+        break;
+      }
+    }
+    // Some hrefs might be using relative URLs.
+    if (href?.startsWith("/")) {
+      href = this.#pageUrl.origin + href;
+    }
+    // Some reserved characters are converted into percent-encoded strings by
+    // the time they are observed in the network.
+    // e.g. /path'?q=Mozilla's -> /path'?q=Mozilla%27s
+    if (href) {
+      try {
+        href = Services.io.newURI(href)?.spec;
+      } catch {
+        return "";
+      }
+    }
+    return href;
   }
 
   /**
@@ -275,10 +407,20 @@ class SearchAdImpression {
           this.#recordElementData(result.element, {
             type: result.type,
             count: result.count,
-            countChildren: result.countChildren,
+            proxyChildElements: result.proxyChildElements,
             childElements: result.childElements,
           });
         }
+        if (result.relatedElements?.length) {
+          this.#addEventListenerToElements(result.relatedElements, result.type);
+        }
+        // If an anchor doesn't match any component, and it doesn't have a non
+        // ads link regexp, cache the anchor so the parent process can observe
+        // them.
+      } else if (!this.#providerInfo.nonAdsLinkRegexps.length) {
+        this.#recordElementData(anchor, {
+          type: "non_ads_link",
+        });
       }
     }
   }
@@ -307,14 +449,19 @@ class SearchAdImpression {
       );
       if (parents.length) {
         for (let parent of parents) {
+          if (component.included.related?.selector) {
+            this.#addEventListenerToElements(
+              parent.querySelectorAll(component.included.related.selector),
+              component.type
+            );
+          }
           if (component.included.children) {
             for (let child of component.included.children) {
               let childElements = parent.querySelectorAll(child.selector);
-              if (childElements) {
+              if (childElements.length) {
                 this.#recordElementData(parent, {
                   type: component.type,
-                  count: 1,
-                  childElements,
+                  childElements: Array.from(childElements),
                 });
                 break;
               }
@@ -322,7 +469,6 @@ class SearchAdImpression {
           } else {
             this.#recordElementData(parent, {
               type: component.type,
-              count: 1,
             });
           }
         }
@@ -341,10 +487,9 @@ class SearchAdImpression {
     if (!anchor.href) {
       return false;
     }
-    let adServerAttributes = this.#providerInfo.adServerAttributes ?? [];
     let regexps = this.#providerInfo.extraAdServersRegexps;
     // Anchors can contain ad links in a data-attribute.
-    for (let name of adServerAttributes) {
+    for (let name of this.#providerInfo.adServerAttributes) {
       if (
         anchor.dataset[name] &&
         regexps.some(regexp => regexp.test(anchor.dataset[name]))
@@ -422,7 +567,7 @@ class SearchAdImpression {
 
       // The default component doesn't need to be checked,
       // as it will be the fallback option.
-      if (component.included.default) {
+      if (component.default) {
         continue;
       }
 
@@ -451,7 +596,6 @@ class SearchAdImpression {
         return {
           element: anchor,
           type: component.type,
-          count: 1,
         };
       }
 
@@ -462,10 +606,21 @@ class SearchAdImpression {
         continue;
       }
 
-      // If we've already inspected the parent, return null because
-      // we don't want to increment number of ads seen.
+      // If we've already inspected the parent, add the child element to the
+      // list of anchors. Don't increment the ads loaded count, as we only care
+      // about grouping the anchor with the correct parent.
       if (this.#elementToAdDataMap.has(parent)) {
-        return null;
+        return {
+          element: parent,
+          childElements: [anchor],
+        };
+      }
+
+      let relatedElements = [];
+      if (component.included.related?.selector) {
+        relatedElements = parent.querySelectorAll(
+          component.included.related.selector
+        );
       }
 
       // If the component has no defined children, return the parent element.
@@ -474,22 +629,23 @@ class SearchAdImpression {
         for (let child of component.included.children) {
           // If counting by child, get all of them at once.
           if (child.countChildren) {
-            let childElements = parent.querySelectorAll(child.selector);
-            if (childElements.length) {
+            let proxyChildElements = parent.querySelectorAll(child.selector);
+            if (proxyChildElements.length) {
               return {
                 element: parent,
                 type: child.type ?? component.type,
-                count: childElements.length,
-                countChildren: child.countChildren,
-                childElements,
+                proxyChildElements: Array.from(proxyChildElements),
+                count: proxyChildElements.length,
+                childElements: [anchor],
+                relatedElements,
               };
             }
           } else if (parent.querySelector(child.selector)) {
             return {
               element: parent,
               type: child.type ?? component.type,
-              count: 1,
               childElements: [anchor],
+              relatedElements,
             };
           }
         }
@@ -499,14 +655,14 @@ class SearchAdImpression {
       return {
         element: parent,
         type: component.type,
-        count: 1,
+        childElements: [anchor],
+        relatedElements,
       };
     }
     // If no component was found, use default values.
     return {
       element: anchor,
       type: this.#defaultComponent.type,
-      count: 1,
     };
   }
 
@@ -527,7 +683,7 @@ class SearchAdImpression {
    *  Element to be inspected
    * @param {number} adsLoaded
    *  Number of ads initially determined to be loaded for this element.
-   * @param {NodeListOf<Element>} childElements
+   * @param {Array<Element>} childElements
    *  List of children belonging to element.
    * @returns {object}
    *  Contains adsVisible which is the number of ads shown for the element
@@ -596,7 +752,8 @@ class SearchAdImpression {
   /**
    * Caches ad data for a DOM element. The key of the map is by Element rather
    * than Component for fast lookup on whether an Element has been already been
-   * categorized as a component.
+   * categorized as a component. Subsequent calls to this passing the same
+   * element will update the list of child elements.
    *
    * @param {Element} element
    *  The element considered to be the root for the component.
@@ -611,52 +768,94 @@ class SearchAdImpression {
    *  The number of ads found for a component. The number represents either
    *  the number of elements that match an ad expression or the number of DOM
    *  elements containing an ad link.
-   * @param {boolean | null} params.countChildren
-   *  Whether all the children were counted for the element.
-   * @param {Array<Element> | null} params.childElements
+   * @param {Array<Element>} params.proxyChildElements
+   *  An array of DOM elements that should be inspected for visibility instead
+   *  of the actual child elements, possibly because they are grouped.
+   * @param {Array<Element>} params.childElements
    *  An array of DOM elements to inspect.
    */
   #recordElementData(
     element,
-    { type, count = 0, countChildren = false, childElements = null } = {}
+    { type, count = 1, proxyChildElements = [], childElements = [] } = {}
   ) {
     if (this.#elementToAdDataMap.has(element)) {
       let recordedValues = this.#elementToAdDataMap.get(element);
-      recordedValues.adsLoaded = recordedValues.adsLoaded + count;
-      if (childElements) {
+      if (childElements.length) {
         recordedValues.childElements = recordedValues.childElements.concat(
           childElements
         );
-      }
-      if (type) {
-        recordedValues.type = type;
       }
     } else {
       this.#elementToAdDataMap.set(element, {
         type,
         adsLoaded: count,
-        countChildren,
+        proxyChildElements,
         childElements,
       });
     }
   }
 
   /**
-   * Given a DOM element, return whether or not this element was counted
-   * by specific child elements rather than the number of anchor links.
+   * Adds a click listener to a specific element.
    *
-   * @param {Element} domElement
-   *  The element to lookup.
-   * @returns {boolean}
-   *  Returns true if child elements were counted, false otherwise.
+   * @param {Array<Element>} elements
+   *  DOM elements to add event listeners to.
+   * @param {string} type
+   *  The component type of the element.
+   * @param {boolean} isRelated
+   *  Whether the elements input are related to components or are actual
+   *  components.
    */
-  #childElementsCounted(domElement) {
-    return !!this.#elementToAdDataMap.get(domElement)?.countChildren;
+  #addEventListenerToElements(elements, type, isRelated = true) {
+    if (!elements?.length) {
+      return;
+    }
+    let clickAction = "clicked";
+    let keydownEnterAction = "clicked";
+
+    switch (type) {
+      case "incontent_searchbox":
+        keydownEnterAction = "submitted";
+        if (isRelated) {
+          // The related element to incontent_search are autosuggested elements
+          // which when clicked should cause different action than if the
+          // searchbox is clicked.
+          clickAction = "submitted";
+        }
+        break;
+      case "ad_carousel":
+      case "refined_search_buttons":
+        if (isRelated) {
+          clickAction = "expanded";
+        }
+        break;
+    }
+    for (let element of elements) {
+      let clickCallback = () => {
+        this.#eventCallback(type, clickAction);
+      };
+      element.addEventListener("click", clickCallback);
+
+      let keydownCallback = event => {
+        if (event.key == "Enter") {
+          this.#eventCallback(type, keydownEnterAction);
+        }
+      };
+      element.addEventListener("keydown", keydownCallback);
+
+      searchAdImpressionListeners.set(element, {
+        clicked: clickCallback,
+        keydown: keydownCallback,
+      });
+      searchAdImpressionElements.add(element);
+    }
   }
 }
 
 const searchProviders = new SearchProviders();
 const searchAdImpression = new SearchAdImpression();
+const searchAdImpressionListeners = new WeakMap();
+const searchAdImpressionElements = new WeakSet();
 
 /**
  * SearchTelemetryChild monitors for pages that are partner searches, and
@@ -702,14 +901,13 @@ export class SearchSERPTelemetryChild extends JSWindowActorChild {
     }
 
     let regexps = providerInfo.extraAdServersRegexps;
-    let adServerAttributes = providerInfo.adServerAttributes ?? [];
     let anchors = doc.getElementsByTagName("a");
     let hasAds = false;
     for (let anchor of anchors) {
       if (!anchor.href) {
         continue;
       }
-      for (let name of adServerAttributes) {
+      for (let name of providerInfo.adServerAttributes) {
         hasAds = regexps.some(regexp => regexp.test(anchor.dataset[name]));
         if (hasAds) {
           break;
@@ -728,28 +926,61 @@ export class SearchSERPTelemetryChild extends JSWindowActorChild {
         hasAds,
         url,
       });
-
-      if (
-        lazy.serpEventsEnabled &&
-        providerInfo?.components &&
-        (eventType == "load" || eventType == "pageshow")
-      ) {
-        searchAdImpression.providerInfo = providerInfo;
-        searchAdImpression.scrollFromTop = this.contentWindow.scrollY;
-        searchAdImpression.innerWindowHeight = this.contentWindow.innerHeight;
-        let start = Cu.now();
-        let adImpressions = searchAdImpression.categorize(anchors, doc);
-        ChromeUtils.addProfilerMarker(
-          "SearchSERPTelemetryChild._checkForAdLink",
-          start,
-          "Checked anchors for visibility"
-        );
-        this.sendAsyncMessage("SearchTelemetry:AdImpressions", {
-          adImpressions,
-          url,
-        });
-      }
     }
+
+    if (
+      lazy.serpEventsEnabled &&
+      providerInfo?.components &&
+      (eventType == "load" || eventType == "pageshow")
+    ) {
+      searchAdImpression.pageUrl = new URL(url);
+      searchAdImpression.providerInfo = providerInfo;
+      searchAdImpression.innerWindowHeight = this.contentWindow.innerHeight;
+      searchAdImpression.eventCallback = (type, action) => {
+        this.sendAsyncMessage("SearchTelemetry:Action", {
+          type,
+          url: this.document.documentURI,
+          action,
+        });
+      };
+      let start = Cu.now();
+      let {
+        componentToVisibilityMap,
+        hrefToComponentMap,
+      } = searchAdImpression.categorize(anchors, doc);
+      ChromeUtils.addProfilerMarker(
+        "SearchSERPTelemetryChild._checkForAdLink",
+        start,
+        "Checked anchors for visibility"
+      );
+      this.sendAsyncMessage("SearchTelemetry:AdImpressions", {
+        adImpressions: componentToVisibilityMap,
+        hrefToComponentMap,
+        url,
+      });
+    }
+  }
+
+  /**
+   * Checks for the presence of certain components on the page that are
+   * required for recording the page impression.
+   */
+  #checkForPageImpressionComponents() {
+    let url = this.document.documentURI;
+    let providerInfo = this._getProviderInfoForUrl(url);
+    searchAdImpression.providerInfo = providerInfo;
+
+    let start = Cu.now();
+    let hasShoppingTab = searchAdImpression.hasShoppingTab(this.document);
+    ChromeUtils.addProfilerMarker(
+      "SearchSERPTelemetryChild.#recordImpression",
+      start,
+      "Checked for shopping tab"
+    );
+    this.sendAsyncMessage("SearchTelemetry:PageImpression", {
+      url,
+      hasShoppingTab,
+    });
   }
 
   /**
@@ -758,19 +989,9 @@ export class SearchSERPTelemetryChild extends JSWindowActorChild {
    * @param {object} event The event details.
    */
   handleEvent(event) {
-    const cancelCheck = () => {
-      if (this._waitForContentTimeout) {
-        lazy.clearTimeout(this._waitForContentTimeout);
-      }
-    };
-
-    const check = eventType => {
-      cancelCheck();
-      this._waitForContentTimeout = lazy.setTimeout(() => {
-        this._checkForAdLink(eventType);
-      }, ADLINK_CHECK_TIMEOUT_MS);
-    };
-
+    if (!this._getProviderInfoForUrl(this.document.documentURI)) {
+      return;
+    }
     switch (event.type) {
       case "pageshow": {
         // If a page is loaded from the bfcache, we won't get a "DOMContentLoaded"
@@ -778,12 +999,18 @@ export class SearchSERPTelemetryChild extends JSWindowActorChild {
         // so that we remain consistent with the *.in-content:sap* count for the
         // SEARCH_COUNTS histogram.
         if (event.persisted) {
-          check(event.type);
+          this.#check(event.type);
+          if (lazy.serpEventsEnabled) {
+            this.#checkForPageImpressionComponents();
+          }
         }
         break;
       }
       case "DOMContentLoaded": {
-        check(event.type);
+        if (lazy.serpEventsEnabled) {
+          this.#checkForPageImpressionComponents();
+        }
+        this.#check(event.type);
         break;
       }
       case "load": {
@@ -792,13 +1019,48 @@ export class SearchSERPTelemetryChild extends JSWindowActorChild {
         // We still check at DOMContentLoaded because if the page hasn't
         // finished loading and the user navigates away, we still want to know
         // if there were ads on the page or not at that time.
-        check(event.type);
+        this.#check(event.type);
         break;
       }
-      case "unload": {
-        cancelCheck();
+      case "pagehide": {
+        this.#cancelCheck();
+        if (lazy.serpEventsEnabled) {
+          this.#clearListeners();
+        }
         break;
       }
     }
+  }
+
+  #clearListeners() {
+    let start = Cu.now();
+    for (let element of ChromeUtils.nondeterministicGetWeakSetKeys(
+      searchAdImpressionElements
+    )) {
+      let listeners = searchAdImpressionListeners.get(element);
+      if (listeners) {
+        element.removeEventListener("clicked", listeners.clicked);
+        element.removeEventListener("keydown", listeners.keydown);
+      }
+      searchAdImpressionListeners.delete(element);
+    }
+    ChromeUtils.addProfilerMarker(
+      "SearchSERPTelemetryChild.#clearListeners",
+      start,
+      "Removed event listeners."
+    );
+  }
+
+  #cancelCheck() {
+    if (this._waitForContentTimeout) {
+      lazy.clearTimeout(this._waitForContentTimeout);
+    }
+  }
+
+  #check(eventType) {
+    this.#cancelCheck();
+    this._waitForContentTimeout = lazy.setTimeout(() => {
+      this._checkForAdLink(eventType);
+    }, ADLINK_CHECK_TIMEOUT_MS);
   }
 }

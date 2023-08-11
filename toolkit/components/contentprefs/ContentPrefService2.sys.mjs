@@ -952,6 +952,7 @@ ContentPrefService2.prototype = {
    * @return          If groupStr is a valid URL string, returns the domain of
    *                  that URL.  If groupStr is some other nonempty string,
    *                  returns groupStr itself.  Otherwise returns null.
+   *                  The return value is truncated at GROUP_NAME_MAX_LENGTH.
    */
   _parseGroup: function CPS2__parseGroup(groupStr) {
     if (!groupStr) {
@@ -959,10 +960,12 @@ ContentPrefService2.prototype = {
     }
     try {
       var groupURI = Services.io.newURI(groupStr);
-    } catch (err) {
-      return groupStr;
-    }
-    return HostnameGrouper_group(groupURI);
+      groupStr = HostnameGrouper_group(groupURI);
+    } catch (err) {}
+    return groupStr.substring(
+      0,
+      Ci.nsIContentPrefService2.GROUP_NAME_MAX_LENGTH - 1
+    );
   },
 
   _schedule: function CPS2__schedule(fn) {
@@ -1115,7 +1118,7 @@ ContentPrefService2.prototype = {
 
   // Database Creation & Access
 
-  _dbVersion: 4,
+  _dbVersion: 5,
 
   _dbSchema: {
     tables: {
@@ -1190,7 +1193,11 @@ ContentPrefService2.prototype = {
       return this._getConnection(++aAttemptNum);
     };
     try {
-      conn = await lazy.Sqlite.openConnection({ path });
+      conn = await lazy.Sqlite.openConnection({
+        path,
+        incrementalVacuum: true,
+        vacuumOnIdle: true,
+      });
       try {
         lazy.Sqlite.shutdown.addBlocker(
           "Closing ContentPrefService2 connection.",
@@ -1349,6 +1356,40 @@ ContentPrefService2.prototype = {
     for (let name in this._dbSchema.indices) {
       await this._createIndex(aConn, name);
     }
+  },
+
+  async _dbMigrate4To5(conn) {
+    // This is a data migration for browser.download.lastDir. While it may not
+    // affect all consumers, it's simpler and safer to do it here than elsewhere.
+    await conn.execute(`
+      DELETE FROM prefs
+      WHERE id IN (
+        SELECT p.id FROM prefs p
+        JOIN groups g ON g.id = p.groupID
+        JOIN settings s ON s.id = p.settingID
+        WHERE s.name = 'browser.download.lastDir'
+          AND (
+          (g.name BETWEEN 'data:' AND 'data:' || X'FFFF') OR
+          (g.name BETWEEN 'file:' AND 'file:' || X'FFFF')
+        )
+      )
+    `);
+    await conn.execute(`
+      DELETE FROM groups WHERE NOT EXISTS (
+        SELECT 1 FROM prefs WHERE groupId = groups.id
+      )
+    `);
+    // Trim group names longer than MAX_GROUP_LENGTH.
+    await conn.execute(
+      `
+      UPDATE groups
+      SET name = substr(name, 0, :maxlen)
+      WHERE LENGTH(name) > :maxlen
+      `,
+      {
+        maxlen: Ci.nsIContentPrefService2.GROUP_NAME_MAX_LENGTH,
+      }
+    );
   },
 };
 

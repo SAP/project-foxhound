@@ -178,8 +178,8 @@ pref("app.update.langpack.enabled", true);
   // By default, check for updates when the browser is not running every 7 hours.
   pref("app.update.background.interval", 25200);
   // By default, snapshot Firefox Messaging System targeting for use by the
-  // background update task every 30 minutes.
-  pref("app.update.background.messaging.targeting.snapshot.intervalSec", 1800);
+  // background update task every 60 minutes.
+  pref("app.update.background.messaging.targeting.snapshot.intervalSec", 3600);
 #endif
 
 #ifdef XP_MACOSX
@@ -410,6 +410,15 @@ pref("browser.urlbar.suggest.calculator",           false);
 // Feature gate pref for weather suggestions in the urlbar.
 pref("browser.urlbar.weather.featureGate", false);
 
+// When false, the weather suggestion will not be fetched when a VPN is
+// detected. When true, it will be fetched anyway.
+pref("browser.urlbar.weather.ignoreVPN", false);
+
+// The minimum prefix length of a weather keyword the user must type to trigger
+// the suggestion. 0 means the min length should be taken from Nimbus or remote
+// settings.
+pref("browser.urlbar.weather.minKeywordLength", 0);
+
 // If `browser.urlbar.weather.featureGate` is true, this controls whether
 // weather suggestions are turned on.
 pref("browser.urlbar.suggest.weather", true);
@@ -537,9 +546,6 @@ pref("browser.urlbar.shortcuts.tabs", true);
 pref("browser.urlbar.shortcuts.history", true);
 
 pref("browser.urlbar.eventTelemetry.enabled", false);
-
-// Whether search engagement telemetry should be recorded.
-pref("browser.urlbar.searchEngagementTelemetry.enabled", false);
 
 // When we send events to Urlbar extensions, we wait this amount of time in
 // milliseconds for them to respond before timing out.
@@ -1204,6 +1210,9 @@ pref("places.frecency.defaultVisitBonus", 0);
 pref("places.frecency.unvisitedBookmarkBonus", 140);
 pref("places.frecency.unvisitedTypedBonus", 200);
 
+// Enables alternative frecency calculation for origins.
+pref("places.frecency.origins.alternative.featureGate", false);
+
 // Clear data by base domain (including partitioned storage) when the user
 // selects "Forget About This Site".
 pref("places.forgetThisSite.clearByBaseDomain", true);
@@ -1608,7 +1617,7 @@ pref("browser.newtabpage.activity-stream.discoverystream.spocSiteId", "");
 pref("browser.newtabpage.activity-stream.discoverystream.sendToPocket.enabled", true);
 
 // List of regions that do not get stories, regardless of locale-list-config.
-pref("browser.newtabpage.activity-stream.discoverystream.region-stories-block", "FR");
+pref("browser.newtabpage.activity-stream.discoverystream.region-stories-block", "");
 // List of locales that get stories, regardless of region-stories-config.
 #ifdef NIGHTLY_BUILD
   pref("browser.newtabpage.activity-stream.discoverystream.locale-list-config", "en-US,en-CA,en-GB");
@@ -1616,10 +1625,11 @@ pref("browser.newtabpage.activity-stream.discoverystream.region-stories-block", 
   pref("browser.newtabpage.activity-stream.discoverystream.locale-list-config", "");
 #endif
 // List of regions that get stories by default.
-pref("browser.newtabpage.activity-stream.discoverystream.region-stories-config", "US,DE,CA,GB,IE,CH,AT,BE,IN");
-
+pref("browser.newtabpage.activity-stream.discoverystream.region-stories-config", "US,DE,CA,GB,IE,CH,AT,BE,IN,FR,IT,ES");
+// List of regions that support the new recommendations BFF, also requires region-stories-config
+pref("browser.newtabpage.activity-stream.discoverystream.region-bff-config", "FR,IT,ES");
 // List of regions that get spocs by default.
-pref("browser.newtabpage.activity-stream.discoverystream.region-spocs-config", "US,CA,DE,GB");
+pref("browser.newtabpage.activity-stream.discoverystream.region-spocs-config", "US,CA,DE,GB,FR,IT,ES");
 // List of regions that don't get the 7 row layout.
 pref("browser.newtabpage.activity-stream.discoverystream.region-basic-config", "");
 
@@ -1632,6 +1642,10 @@ pref("browser.newtabpage.activity-stream.discoverystream.personalization.modelKe
 pref("browser.newtabpage.activity-stream.discoverystream.recs.personalized", false);
 // System pref to allow Pocket sponsored content personalization to be turned on/off.
 pref("browser.newtabpage.activity-stream.discoverystream.spocs.personalized", true);
+
+// Flip this once the user has dismissed the Pocket onboarding experience,
+pref("browser.newtabpage.activity-stream.discoverystream.onboardingExperience.dismissed", false);
+pref("browser.newtabpage.activity-stream.discoverystream.onboardingExperience.enabled", false);
 
 // User pref to show stories on newtab (feeds.system.topstories has to be set to true as well)
 pref("browser.newtabpage.activity-stream.feeds.section.topstories", true);
@@ -1809,11 +1823,7 @@ pref("media.videocontrols.picture-in-picture.audio-toggle.enabled", true);
 pref("media.videocontrols.picture-in-picture.video-toggle.enabled", true);
 pref("media.videocontrols.picture-in-picture.video-toggle.visibility-threshold", "1.0");
 pref("media.videocontrols.picture-in-picture.keyboard-controls.enabled", true);
-#ifdef NIGHTLY_BUILD
-  pref("media.videocontrols.picture-in-picture.urlbar-button.enabled", true);
-#else
-  pref("media.videocontrols.picture-in-picture.urlbar-button.enabled", false);
-#endif
+pref("media.videocontrols.picture-in-picture.urlbar-button.enabled", true);
 
 // Preferences for the older translation service backed by external services. This is
 // planned to be replaced with an integration of the Firefox Translations service.
@@ -2099,7 +2109,7 @@ pref("browser.tabs.crashReporting.includeURL", false);
 // nightly and developer edition.
 pref("extensions.experiments.enabled", false);
 
-#if defined(XP_LINUX) || defined(XP_WIN)
+#if defined(XP_LINUX) || defined(XP_WIN) || defined(XP_MACOSX)
   // Allows us to adjust the priority of child processes at the OS level
   pref("dom.ipc.processPriorityManager.enabled", true);
 #endif
@@ -2186,6 +2196,8 @@ pref("browser.migrate.interactions.bookmarks", false);
 pref("browser.migrate.interactions.history", false);
 pref("browser.migrate.interactions.passwords", false);
 pref("browser.migrate.preferences-entrypoint.enabled", true);
+
+pref("browser.device-migration.help-menu.hidden", false);
 
 pref("extensions.pocket.api", "api.getpocket.com");
 pref("extensions.pocket.bffApi", "firefox-api-proxy.cdn.mozilla.net");

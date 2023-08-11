@@ -359,9 +359,9 @@ inline WasmGcObject* WasmGcObject::create(
 
   debugCheckNewObject(typeDefData->shape, typeDefData->allocKind, initialHeap);
 
-  WasmGcObject* obj = cx->newCell<WasmGcObject>(
-      typeDefData->allocKind, /* nDynamicSlots = */ 0, initialHeap,
-      typeDefData->clasp, &typeDefData->allocSite);
+  WasmGcObject* obj =
+      cx->newCell<WasmGcObject>(typeDefData->allocKind, initialHeap,
+                                typeDefData->clasp, &typeDefData->allocSite);
   if (!obj) {
     return nullptr;
   }
@@ -558,6 +558,7 @@ WasmArrayObject* WasmArrayObject::createArray(
       // the tenured heap.
       if (!nursery.registerTrailer(outlineData, outlineBytes.value())) {
         nursery.mallocedBlockCache().free(outlineData);
+        ReportOutOfMemory(cx);
         return nullptr;
       }
     }
@@ -750,6 +751,7 @@ WasmStructObject* WasmStructObject::createStruct(
       // See corresponding comment in WasmArrayObject::createArray.
       if (!nursery.registerTrailer(outlineData, outlineBytes)) {
         nursery.mallocedBlockCache().free(outlineData);
+        ReportOutOfMemory(cx);
         return nullptr;
       }
     }

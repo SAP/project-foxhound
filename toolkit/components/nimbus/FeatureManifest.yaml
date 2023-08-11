@@ -83,6 +83,10 @@ search:
       type: string
       setPref: browser.search.param.google_channel_row
       description: A string pref set by Nimbus tests for Rest of World search cohort
+    serpEventTelemetryEnabled:
+      type: boolean
+      setPref: browser.search.serpEventTelemetry.enabled
+      description: Whether the Glean SERP event telemetry is enabled.
 
 urlbar:
   description: The Address Bar
@@ -147,6 +151,16 @@ urlbar:
       type: int
       fallbackPref: browser.urlbar.merino.timeoutMs
       description: Timeout for Merino fetches (ms)
+    exposureResults:
+      type: string
+      setPref: browser.urlbar.exposureResults
+      description: >-
+        Comma-separated list of result type combinations, that are used to determine if an exposure event should be fired.
+    showExposureResults:
+      type: boolean
+      setPref: browser.urlbar.showExposureResults
+      description: >-
+        Boolean used to determine if the results defined in `exposureResults` should be shown in search results. Should be false for Control branch of an experiment.
     quickSuggestAllowPositionInSuggestions:
       type: boolean
       fallbackPref: browser.urlbar.quicksuggest.allowPositionInSuggestions
@@ -218,14 +232,6 @@ urlbar:
     recordNavigationalSuggestionTelemetry:
       type: boolean
       description: Whether to record navigational suggestion telemetry. Defaults to false.
-    resultMenu:
-      type: boolean
-      setPref: browser.urlbar.resultMenu
-      description: Enable the per-result three-dot menu with options such as Dismiss and Learn More.
-    searchEngagementTelemetryEnabled:
-      type: boolean
-      fallbackPref: browser.urlbar.searchEngagementTelemetry.enabled
-      description: Whether search engagement telemetry should be enabled.
     showSearchTermsFeatureGate:
       type: boolean
       fallbackPref: browser.urlbar.showSearchTerms.featureGate
@@ -236,33 +242,65 @@ urlbar:
       description: >-
         Feature gate that controls whether all aspects of the weather suggestion
         feature are exposed to the user. See also `weatherKeywords` and
-        `weatherKeywordsMinimumLength`. In summary: To make the weather
-        suggestion triggered on keywords, set `weatherFeatureGate` to true,
-        `weatherKeywords` to an array of full keyword strings, and
-        `weatherKeywordsMinimumLength` to a non-zero integer. To make the
-        suggestion triggered on zero prefix, set `weatherFeatureGate` to true
-        and leave out both `weatherKeywords` and `weatherKeywordsMinimumLength`.
-        To turn off the weather suggestion feature, leave out all
+        `weatherKeywordsMinimumLength`. In summary: To enable the weather
+        suggestion, set `weatherFeatureGate` to true, `weatherKeywords` to an
+        array of full keyword strings, and `weatherKeywordsMinimumLength` to a
+        non-zero integer. To disable the weather suggestion, leave out all
         weather-related variables.
     weatherKeywords:
       type: json
       description: >-
         An array of full keyword strings that will trigger the weather
         suggestion when the user types them in the address bar. If absent or
-        null, the weather suggestion will be triggered on zero prefix. See also
+        null, Firefox will fall back to the weather keywords defined in remote
+        settings. If neither Nimbus nor remote settings defines any keywords,
+        the weather suggestion will be disabled. See also
         `weatherKeywordsMinimumLength`.
     weatherKeywordsMinimumLength:
       type: int
       description: >-
         If defined and non-zero, the weather suggestion will be triggered by
         typing any prefix of a full weather keyword when the prefix is at least
-        `weatherKeywordsMinimumLength` characters long. If this value is larger
-        than the length of a particular keyword, the user can still trigger the
-        suggestion by typing the keyword but they must type the full
-        keyword. So, to require the user to type only full keywords to trigger
-        the suggestion, set this to a value larger than the length of all
-        keywords. If this variable is absent or zero, the suggestion will be
-        triggered on zero prefix. See also `weatherKeywords`.
+        `weatherKeywordsMinimumLength` characters long. If this variable is
+        absent or zero, Firefox will fall back to the minimum length defined in
+        remote settings. If neither Nimbus nor remote settings defines a minimum
+        length, only full keywords will trigger the suggestion. See also
+        `weatherKeywords`.
+    weatherKeywordsMinimumLengthCap:
+      type: int
+      description: >-
+        If defined and non-zero, the user will not be able to increment the
+        minimum keyword length beyond this value. e.g., if this value is 6, the
+        current minimum length is 5, and the user clicks "Show less frequently",
+        then the minimum length will be incremented to 6, the "Show less
+        frequently" command will be hidden, and the user can continue to trigger
+        the weather suggestion by typing 6 characters, but they will not be able
+        to increment the minimum length any further. If this variable is absent
+        or zero, Firefox will fall back to the cap defined in remote settings.
+        If neither Nimbus nor remote settings defines a cap, no cap will be
+        used, and the user will be able to increment the minimum length without
+        any limit.
+
+frecency:
+  description: "The address bar ranking algorithm"
+  owner: search-and-suggest-program@mozilla.com
+  hasExposure: false
+  isEarlyStartup: true
+  variables:
+    originsAlternativeEnable:
+      description: >-
+        Use an alternative ranking algorithm for autofilling origins, that is
+        mainly domains of Web pages. When the user types the beginning of an
+        origin, we autofill the whole origin. Whether autofill happens depends
+        on the ranking algorithm. Bookmarks are always autofilled anyway.
+      type: boolean
+      setPref: "places.frecency.origins.alternative.featureGate"
+    originsDaysCutOff:
+      description: >-
+        The alternative ranking algorithm only considers pages visited in the
+        last N days, where N is controlled by this variable.
+      type: int
+      setPref: "places.frecency.origins.alternative.daysCutOff"
 
 aboutwelcome:
   description: "The about:welcome page"
@@ -473,6 +511,12 @@ pocketNewtab:
         browser.newtabpage.activity-stream.discoverystream.descLines
       description: >-
         Changes the maximum number of lines a description can be for Pocket cards on newtab.
+    onboardingExperience:
+      type: boolean
+      fallbackPref: >-
+        browser.newtabpage.activity-stream.discoverystream.onboardingExperience.enabled
+      description: >-
+        Enables an onboarding experience for Pocket section on newtab.
     essentialReadsHeader:
       type: boolean
       fallbackPref: >-
@@ -538,21 +582,30 @@ pocketNewtab:
       type: string
       setPref: "browser.newtabpage.activity-stream.discoverystream.spocs-endpoint"
     regionStoriesConfig:
-      description: A comma-separated list of locales to get stories for.
+      description: A comma-separated list of region to get stories for.
       type: string
-      setPref: "browser.newtabpage.activity-stream.discoverystream.region-stories-config"
+      fallbackPref: >-
+        browser.newtabpage.activity-stream.discoverystream.region-stories-config
+    regionBffConfig:
+      type: string
+      fallbackPref: >-
+        browser.newtabpage.activity-stream.discoverystream.region-bff-config
+      description: A comma-separated list of regions to get stories from the recommendations BFF. Also requires region-stories-config.
     regionStoriesBlock:
       description: A comma-separated list of regions that do not get stories, regardless of locale-list-config.
       type: string
-      setPref: "browser.newtabpage.activity-stream.discoverystream.region-stories-block"
+      fallbackPref: >-
+        browser.newtabpage.activity-stream.discoverystream.region-stories-block
     localeListConfig:
       description: A comma-separated list of locales that get stories, regardless of region-stories-config.
       type: string
-      setPref: "browser.newtabpage.activity-stream.discoverystream.locale-list-config"
+      fallbackPref: >-
+        browser.newtabpage.activity-stream.discoverystream.locale-list-config
     regionSpocsConfig:
       description: A comma-separated list of regions that get spocs by default.
       type: string
-      setPref: "browser.newtabpage.activity-stream.discoverystream.region-spocs-config"
+      fallbackPref: >-
+        browser.newtabpage.activity-stream.discoverystream.region-spocs-config
     topSitesMaxSponsored:
       # Defined under `pocketNewtab` as it needs to be used along with other variables
       type: int
@@ -781,13 +834,94 @@ fxms-message-5:
     path: "browser/components/newtab/content-src/asrouter/schemas/MessagingExperiment.schema.json"
   variables: {}
 
-# next planned use: buffer, just in case we need to roll out something we're
-# we're not expecting
+# next potential planned use: 114+ possible holdback/rollout pair (Device Migration):
+# https://mozilla-hub.atlassian.net/browse/FXE-271
 #
 # More info about the fx-message-* feature id prototype is available at:
 # https://docs.google.com/document/d/1KdtaNycZL5j240nXofbibm9yKh7qVvu1-uZFLdmYM7Y/
 fxms-message-6:
   description: "Firefox Messaging System message 6"
+  owner: omc@mozilla.com
+  hasExposure: true
+  exposureDescription: >-
+    "Exposure is sent if the message is about to be shown after trigger and targeting conditions on the message matched."
+  isEarlyStartup: false
+  schema:
+    uri: "resource://activity-stream/schemas/MessagingExperiment.schema.json"
+    path: "browser/components/newtab/content-src/asrouter/schemas/MessagingExperiment.schema.json"
+  variables: {}
+
+# next planned use: buffer, for the unexpected
+#
+# More info about the fx-message-* feature id prototype is available at:
+# https://docs.google.com/document/d/1KdtaNycZL5j240nXofbibm9yKh7qVvu1-uZFLdmYM7Y/
+fxms-message-7:
+  description: "Firefox Messaging System message 7"
+  owner: omc@mozilla.com
+  hasExposure: true
+  exposureDescription: >-
+    "Exposure is sent if the message is about to be shown after trigger and targeting conditions on the message matched."
+  isEarlyStartup: false
+  schema:
+    uri: "resource://activity-stream/schemas/MessagingExperiment.schema.json"
+    path: "browser/components/newtab/content-src/asrouter/schemas/MessagingExperiment.schema.json"
+  variables: {}
+
+
+# next planned use: buffer, for the unexpected
+#
+# More info about the fx-message-* feature id prototype is available at:
+# https://docs.google.com/document/d/1KdtaNycZL5j240nXofbibm9yKh7qVvu1-uZFLdmYM7Y/
+fxms-message-8:
+  description: "Firefox Messaging System message 8"
+  owner: omc@mozilla.com
+  hasExposure: true
+  exposureDescription: >-
+    "Exposure is sent if the message is about to be shown after trigger and targeting conditions on the message matched."
+  isEarlyStartup: false
+  schema:
+    uri: "resource://activity-stream/schemas/MessagingExperiment.schema.json"
+    path: "browser/components/newtab/content-src/asrouter/schemas/MessagingExperiment.schema.json"
+  variables: {}
+
+# next planned use: buffer, for the unexpected
+#
+# More info about the fx-message-* feature id prototype is available at:
+# https://docs.google.com/document/d/1KdtaNycZL5j240nXofbibm9yKh7qVvu1-uZFLdmYM7Y/
+fxms-message-9:
+  description: "Firefox Messaging System message 9"
+  owner: omc@mozilla.com
+  hasExposure: true
+  exposureDescription: >-
+    "Exposure is sent if the message is about to be shown after trigger and targeting conditions on the message matched."
+  isEarlyStartup: false
+  schema:
+    uri: "resource://activity-stream/schemas/MessagingExperiment.schema.json"
+    path: "browser/components/newtab/content-src/asrouter/schemas/MessagingExperiment.schema.json"
+  variables: {}
+
+# next planned use: buffer, for the unexpected
+#
+# More info about the fx-message-* feature id prototype is available at:
+# https://docs.google.com/document/d/1KdtaNycZL5j240nXofbibm9yKh7qVvu1-uZFLdmYM7Y/
+fxms-message-10:
+  description: "Firefox Messaging System message 10"
+  owner: omc@mozilla.com
+  hasExposure: true
+  exposureDescription: >-
+    "Exposure is sent if the message is about to be shown after trigger and targeting conditions on the message matched."
+  isEarlyStartup: false
+  schema:
+    uri: "resource://activity-stream/schemas/MessagingExperiment.schema.json"
+    path: "browser/components/newtab/content-src/asrouter/schemas/MessagingExperiment.schema.json"
+  variables: {}
+
+# next planned use: buffer, for the unexpected
+#
+# More info about the fx-message-* feature id prototype is available at:
+# https://docs.google.com/document/d/1KdtaNycZL5j240nXofbibm9yKh7qVvu1-uZFLdmYM7Y/
+fxms-message-11:
+  description: "Firefox Messaging System message 11"
   owner: omc@mozilla.com
   hasExposure: true
   exposureDescription: >-
@@ -824,21 +958,6 @@ backgroundTaskMessage:
     path: "browser/components/newtab/content-src/asrouter/schemas/BackgroundTaskMessagingExperiment.schema.json"
   variables: {}
 
-syncAfterTabChange:
-  description: "Schedule a sync after any tab change"
-  owner: sync-team@mozilla.com
-  hasExposure: false
-  isEarlyStartup: false
-  variables:
-    syncDelayAfterTabChange:
-      type: int
-      fallbackPref: "services.sync.syncedTabs.syncDelayAfterTabChange"
-      description: >-
-        "How long to wait (in milliseconds) to schedule a sync after tab change"
-    syncDelayAfterTabChangeOverride:
-      type: boolean
-      description: Whether to override the pref in case we need to lengthen or diable the increased sync
-
 pictureinpicture:
   description: Message for first time Picture-in-Picture users
   owner: nbaumgardner@mozilla.com
@@ -873,7 +992,7 @@ glean:
       type: "boolean"
       fallbackPref: "browser.newtabpage.ping.enabled"
       description: "Whether to submit the 'newtab' ping"
-    metricsDisabled:
+    gleanMetricConfiguration:
       type: json
       description: >-
         "A map of metric base-identifiers to booleans representing the state of the 'disabled' flag for that metric"
@@ -1017,6 +1136,14 @@ dohPrefs:
       description: Same as trrUri, but set by the DoHController module.
       type: string
       setPref: "doh-rollout.uri"
+    enableFallbackWarningPage:
+      description: Whether DoH fallback warning page will be displayed when DoH doesn't work in TRR first mode.
+      type: boolean
+      setPref: "network.trr.display_fallback_warning"
+    showFallbackCheckbox:
+      description: Whether the checkbox to enable the fallback warning page is displayed in the settings UI.
+      type: boolean
+      setPref: "network.trr_ui.show_fallback_warning_option"
 
 dooh:
   description: "DNS over Oblivious HTTP"
@@ -1039,6 +1166,20 @@ dooh:
       description: The URL of the Oblivious DNS over HTTPS target resource
       type: string
       setPref: "network.trr.ohttp.uri"
+
+networking:
+  description: "Firefox Networking (Necko)"
+  owner: vgosu@mozilla.com
+  hasExposure: false
+  variables:
+    ehPreloadEnabled:
+      description: Whether Early Hints preload is enabled
+      type: boolean
+      setPref: "network.early-hints.enabled"
+    ehPreconnectEnabled:
+      description: Whether Early Hints preconnect is enabled
+      type: boolean
+      setPref: "network.early-hints.preconnect.enabled"
 
 pingsender:
   description: "In-product usage of the pingsender telemetry reporter."
@@ -1160,7 +1301,7 @@ migrationWizard:
   isEarlyStartup: true
   variables:
     useNewWizard:
-      description: True if the "Variant 2" of the Migration Wizard browser / profile selection UI should be used.
+      description: True if the new migration wizard should be used.
       type: boolean
       setPref: browser.migrate.content-modal.enabled
     showImportAll:
@@ -1183,6 +1324,9 @@ migrationWizard:
           about:preferences, but once the wizard is dismissed,
           the tab will close.
 
+        "embedded":
+          The migration wizard is embedded in about:welcome.
+
         "standalone":
           The migration wizard will open in a new top-level content
           window.
@@ -1203,3 +1347,98 @@ mixedContentUpgrading:
       description: True if the mixed content upgrading pref is enabled
       type: boolean
       setPref: security.mixed_content.upgrade_display_content
+
+jsParallelParsing:
+  description: Pref to toggle JS parallel parsing.
+  owner: dpalmeiro@mozilla.com, nbp@mozilla.com
+  isEarlyStartup: true
+  hasExposure: false
+  variables:
+    enabled:
+      description: True to enable parallel parsing.
+      type: boolean
+      setPref: "javascript.options.parallel_parsing"
+
+gcParallelMarking:
+  description: Pref to toggle parallel marking in the GC.
+  owner: dpalmeiro@mozilla.com, jonco@mozilla.com
+  isEarlyStartup: true
+  hasExposure: false
+  variables:
+    enabled:
+      description: True to enable parallel marking.
+      type: boolean
+      setPref: "javascript.options.mem.gc_parallel_marking"
+
+jitThresholds:
+  description: Prefs that control jit tier thresholds.
+  owner: dpalmeiro@mozilla.com, jdemooij@mozilla.com
+  isEarlyStartup: true
+  hasExposure: false
+  variables:
+    blinterp_threshold:
+      description: Set the threshold to enable blinterp compilation.
+      type: int
+      setPref: "javascript.options.blinterp.threshold"
+    baseline_threshold:
+      description: Set the threshold to enable baseline compilation.
+      type: int
+      setPref: "javascript.options.baselinejit.threshold"
+    ion_threshold:
+      description: Set the threshold to enable ion compilation.
+      type: int
+      setPref: "javascript.options.ion.threshold"
+    ion_bailout_threshold:
+      description: Set the ion frequent bailout threshold.
+      type: int
+      setPref: "javascript.options.ion.frequent_bailout_threshold"
+    ion_offthread_compilation:
+      description: True to enable offthread ion compilations.
+      type: boolean
+      setPref: "javascript.options.ion.offthread_compilation"
+    inlining_max_length:
+      description: Set the max bytecode length considered for inlining.
+      type: int
+      setPref: "javascript.options.inlining_bytecode_max_length"
+
+jitHintsCache:
+  description: Pref to toggle the JIT hints cache.
+  owner: dpalmeiro@mozilla.com
+  isEarlyStartup: true
+  hasExposure: false
+  variables:
+    enabled:
+      description: True to enable the hints cache.
+      type: boolean
+      setPref: "javascript.options.jithints"
+    
+raceCacheWithNetwork:
+  description: Prefs to toggle the race cache with network.
+  owner: dpalmeiro@mozilla.com, acreskey@mozilla.com
+  hasExposure: false
+  variables:
+    enabled:
+      description: True to enable the rcwn feature.
+      type: boolean
+      setPref: "network.http.rcwn.enabled"
+
+httpSpeculativeParallelLimit:
+  description: Prefs to control the http speculative parallel limit.
+  owner: dpalmeiro@mozilla.com, acreskey@mozilla.com
+  hasExposure: false
+  variables:
+    speculative_parallel_limit:
+      description: Maximum number of parallel speculative connections.
+      type: int
+      setPref: "network.http.speculative-parallel-limit"
+
+deviceMigration:
+  description: Prefs to control aspects of the new device migration experiment
+  owner: hjones@mozilla.com
+  hasExposure: false
+  isEarlyStartup: true
+  variables:
+    helpMenuHidden:
+      description: True if new help menu item should be hidden
+      type: boolean
+      fallbackPref: browser.device-migration.help-menu.hidden

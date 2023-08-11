@@ -356,6 +356,7 @@ class MutableScriptFlags : public EnumFlags<MutableScriptFlagsEnum> {
   _(MutableFlags, baselineDisabled, BaselineDisabled)                   \
   _(MutableFlags, ionDisabled, IonDisabled)                             \
   _(MutableFlags, uninlineable, Uninlineable)                           \
+  _(MutableFlags, noEagerBaselineHint, NoEagerBaselineHint)             \
   _(MutableFlags, failedLexicalCheck, FailedLexicalCheck)               \
   _(MutableFlags, hadSpeculativePhiBailout, HadSpeculativePhiBailout)
 
@@ -532,7 +533,7 @@ class alignas(uint32_t) ImmutableScriptData final : public TrailingArray {
       FrontendContext* fc, uint32_t codeLength, uint32_t noteLength,
       uint32_t numResumeOffsets, uint32_t numScopeNotes, uint32_t numTryNotes);
 
-  static js::UniquePtr<ImmutableScriptData> new_(JSContext* cx,
+  static js::UniquePtr<ImmutableScriptData> new_(FrontendContext* fc,
                                                  uint32_t totalSize);
 
   // Validate internal offsets of the data structure seems reasonable. This is

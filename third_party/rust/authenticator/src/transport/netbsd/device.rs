@@ -4,11 +4,12 @@
 
 extern crate libc;
 use crate::consts::{CID_BROADCAST, MAX_HID_RPT_SIZE};
+use crate::ctap2::commands::get_info::AuthenticatorInfo;
 use crate::transport::hid::HIDDevice;
 use crate::transport::platform::fd::Fd;
 use crate::transport::platform::monitor::WrappedOpenDevice;
 use crate::transport::platform::uhid;
-use crate::transport::{AuthenticatorInfo, FidoDevice, HIDError, SharedSecret};
+use crate::transport::{FidoDevice, HIDError, SharedSecret};
 use crate::u2ftypes::{U2FDevice, U2FDeviceInfo};
 use crate::util::io_err;
 use std::ffi::OsString;
@@ -223,21 +224,6 @@ impl HIDDevice for Device {
 
     fn set_authenticator_info(&mut self, authenticator_info: AuthenticatorInfo) {
         self.authenticator_info = Some(authenticator_info);
-    }
-
-    /// This is used for cancellation of blocking read()-requests.
-    /// With this, we can clone the Device, pass it to another thread and call "cancel()" on that.
-    fn clone_device_as_write_only(&self) -> Result<Self, HIDError> {
-        // Try to open the device.
-        let fd = Fd::open(&self.path, libc::O_WRONLY)?;
-        Ok(Self {
-            path: self.path.clone(),
-            fd,
-            cid: self.cid,
-            dev_info: self.dev_info.clone(),
-            secret: self.secret.clone(),
-            authenticator_info: self.authenticator_info.clone(),
-        })
     }
 }
 

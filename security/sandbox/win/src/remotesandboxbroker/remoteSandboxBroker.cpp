@@ -6,13 +6,14 @@
 
 #include "remoteSandboxBroker.h"
 
+#include "RemoteSandboxBrokerParent.h"
 #include "mozilla/SpinEventLoopUntil.h"
 #include "nsIThread.h"
 
 namespace mozilla {
 
 RemoteSandboxBroker::RemoteSandboxBroker(uint32_t aLaunchArch)
-    : mLaunchArch(aLaunchArch) {}
+    : mLaunchArch(aLaunchArch), mParent(new RemoteSandboxBrokerParent) {}
 
 RemoteSandboxBroker::~RemoteSandboxBroker() {
   MOZ_ASSERT(
@@ -33,12 +34,12 @@ void RemoteSandboxBroker::Shutdown() {
   mIPCLaunchThread->Dispatch(
       NS_NewRunnableFunction("Remote Sandbox Launch", [self, this]() {
         // Note: `self` here should be the last reference to this instance.
-        mParent.Shutdown();
+        mParent->Shutdown();
         mIPCLaunchThread = nullptr;
       }));
 }
 
-bool RemoteSandboxBroker::LaunchApp(
+Result<Ok, mozilla::ipc::LaunchError> RemoteSandboxBroker::LaunchApp(
     const wchar_t* aPath, const wchar_t* aArguments,
     base::EnvironmentMap& aEnvironment, GeckoProcessType aProcessType,
     const bool aEnableLogging, const IMAGE_THUNK_DATA*, void** aProcessHandle) {
@@ -87,7 +88,7 @@ bool RemoteSandboxBroker::LaunchApp(
   // TaskQueue) to resolve our promise as it will be blocked until we return
   // from this function.
   nsCOMPtr<nsISerialEventTarget> target = NS_GetCurrentThread();
-  mParent.Launch(mLaunchArch, mParameters.shareHandles(), target)
+  mParent->Launch(mLaunchArch, mParameters.shareHandles(), target)
       ->Then(target, __func__, std::move(resolve), std::move(reject));
 
   // Spin the event loop while the sandbox launcher process launches.
@@ -95,25 +96,25 @@ bool RemoteSandboxBroker::LaunchApp(
                      [&]() { return res != Pending; });
 
   if (res == Failed) {
-    return false;
+    return Err(mozilla::ipc::LaunchError("RSB::LaunchApp"));
   }
 
   uint64_t handle = 0;
   bool ok = false;
-  bool rv = mParent.SendLaunchApp(std::move(mParameters), &ok, &handle) && ok;
+  bool rv = mParent->SendLaunchApp(std::move(mParameters), &ok, &handle) && ok;
   mParameters.shareHandles().Clear();
   if (!rv) {
-    mParent.Shutdown();
-    return false;
+    mParent->Shutdown();
+    return Err(mozilla::ipc::LaunchError("RSB::SendLaunchApp"));
   }
 
   // Duplicate the handle of the child process that the launcher launched from
   // the launcher process's space into this process' space.
   HANDLE ourChildHandle = 0;
-  bool dh = mParent.DuplicateFromLauncher((HANDLE)handle, &ourChildHandle);
+  bool dh = mParent->DuplicateFromLauncher((HANDLE)handle, &ourChildHandle);
   if (!dh) {
-    mParent.Shutdown();
-    return false;
+    mParent->Shutdown();
+    return Err(mozilla::ipc::LaunchError("RSB::DuplicateFromLauncher"));
   }
 
   *aProcessHandle = (void**)(ourChildHandle);
@@ -121,7 +122,7 @@ bool RemoteSandboxBroker::LaunchApp(
   base::ProcessHandle process = *aProcessHandle;
   SandboxBroker::AddTargetPeer(process);
 
-  return true;
+  return Ok();
 }
 
 bool RemoteSandboxBroker::SetSecurityLevelForGMPlugin(SandboxLevel aLevel,

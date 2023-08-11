@@ -880,9 +880,19 @@ class NPZCSupport final
 
     if (result.GetStatus() == nsEventStatus_eConsumeNoDefault) {
       if (aReturnResult) {
-        aReturnResult->Complete(java::PanZoomController::InputResultDetail::New(
-            INPUT_RESULT_IGNORED, java::PanZoomController::SCROLLABLE_FLAG_NONE,
-            java::PanZoomController::OVERSCROLL_FLAG_NONE));
+        if (result.GetHandledResult() != Nothing()) {
+          aReturnResult->Complete(
+              ConvertAPZHandledResult(result.GetHandledResult().value()));
+        } else {
+          MOZ_ASSERT_UNREACHABLE(
+              "nsEventStatus_eConsumeNoDefault should involve a valid "
+              "APZHandledResult");
+          aReturnResult->Complete(
+              java::PanZoomController::InputResultDetail::New(
+                  INPUT_RESULT_IGNORED,
+                  java::PanZoomController::SCROLLABLE_FLAG_NONE,
+                  java::PanZoomController::OVERSCROLL_FLAG_NONE));
+        }
       }
       return;
     }
@@ -1858,7 +1868,7 @@ void GeckoViewSupport::CreatePdf(
               aValue) {
         if (aValue.IsReject()) {
           GVS_LOG("Could not print. %s", pdfErrorMsg);
-          stream->SendError();
+          stream->WriteError();
         }
       });
 }

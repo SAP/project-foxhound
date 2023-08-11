@@ -110,12 +110,13 @@ void RemoveFileSystemDataManager(const Origin& aOrigin) {
 }
 
 Result<ResultConnection, QMResult> GetStorageConnection(
-    const Origin& aOrigin, const int64_t aDirectoryLockId) {
+    const quota::OriginMetadata& aOriginMetadata,
+    const int64_t aDirectoryLockId) {
   MOZ_ASSERT(aDirectoryLockId >= 0);
 
   // Ensure that storage is initialized and file system folder exists!
   QM_TRY_INSPECT(const auto& dbFileUrl,
-                 GetDatabaseFileURL(aOrigin, aDirectoryLockId));
+                 GetDatabaseFileURL(aOriginMetadata, aDirectoryLockId));
 
   QM_TRY_INSPECT(
       const auto& storageService,
@@ -139,7 +140,7 @@ Result<ResultConnection, QMResult> GetStorageConnection(
 Result<EntryId, QMResult> GetRootHandle(const Origin& origin) {
   MOZ_ASSERT(!origin.IsEmpty());
 
-  return FileSystemHashSource::GenerateHash(origin, kRootName);
+  return FileSystemHashSource::GenerateHash(origin, kRootString);
 }
 
 Result<EntryId, QMResult> GetEntryHandle(
@@ -213,9 +214,8 @@ FileSystemDataManager::GetOrCreateFileSystemDataManager(
         Registered<FileSystemDataManager>(std::move(dataManager)), __func__);
   }
 
-  QM_TRY_UNWRAP(RefPtr<quota::QuotaManager> quotaManager,
-                quota::QuotaManager::GetOrCreate(),
-                CreatePromise::CreateAndReject(NS_ERROR_FAILURE, __func__));
+  RefPtr<quota::QuotaManager> quotaManager = quota::QuotaManager::Get();
+  MOZ_ASSERT(quotaManager);
 
   QM_TRY_UNWRAP(auto streamTransportService,
                 MOZ_TO_RESULT_GET_TYPED(nsCOMPtr<nsIEventTarget>,
@@ -360,7 +360,7 @@ RefPtr<BoolPromise> FileSystemDataManager::OnClose() {
 }
 
 bool FileSystemDataManager::IsLocked(const EntryId& aEntryId) const {
-  return mExclusiveLocks.Contains(aEntryId);
+  return mExclusiveLocks.Contains(aEntryId) || mSharedLocks.Contains(aEntryId);
 }
 
 nsresult FileSystemDataManager::LockExclusive(const EntryId& aEntryId) {
@@ -393,11 +393,36 @@ void FileSystemDataManager::UnlockExclusive(const EntryId& aEntryId) {
 }
 
 nsresult FileSystemDataManager::LockShared(const EntryId& aEntryId) {
-  return LockExclusive(aEntryId);
+  if (mExclusiveLocks.Contains(aEntryId)) {
+    return NS_ERROR_DOM_NO_MODIFICATION_ALLOWED_ERR;
+  }
+
+  auto& count = mSharedLocks.LookupOrInsert(aEntryId);
+  if (!(1u + CheckedUint32(count)).isValid()) {  // don't make the count invalid
+    return NS_ERROR_UNEXPECTED;
+  }
+
+  ++count;
+  LOG_VERBOSE(("SharedLock %u", count));
+
+  return NS_OK;
 }
 
 void FileSystemDataManager::UnlockShared(const EntryId& aEntryId) {
-  UnlockExclusive(aEntryId);
+  MOZ_ASSERT(!mExclusiveLocks.Contains(aEntryId));
+  MOZ_ASSERT(mSharedLocks.Contains(aEntryId));
+
+  auto entry = mSharedLocks.Lookup(aEntryId);
+  MOZ_ASSERT(entry);
+
+  MOZ_ASSERT(entry.Data() > 0);
+  --entry.Data();
+
+  LOG_VERBOSE(("SharedUnlock %u", *entry));
+
+  if (0u == entry.Data()) {
+    entry.Remove();
+  }
 }
 
 bool FileSystemDataManager::IsInactive() const {
@@ -461,7 +486,7 @@ RefPtr<BoolPromise> FileSystemDataManager::BeginOpen() {
 
                QM_TRY_UNWRAP(
                    auto connection,
-                   fs::data::GetStorageConnection(self->mOriginMetadata.mOrigin,
+                   fs::data::GetStorageConnection(self->mOriginMetadata,
                                                   self->mDirectoryLock->Id()),
                    CreateAndRejectBoolPromiseFromQMResult);
 
@@ -474,7 +499,7 @@ RefPtr<BoolPromise> FileSystemDataManager::BeginOpen() {
                  QM_TRY_UNWRAP(
                      FileSystemFileManager fmRes,
                      FileSystemFileManager::CreateFileSystemFileManager(
-                         self->mOriginMetadata.mOrigin),
+                         self->mOriginMetadata),
                      CreateAndRejectBoolPromiseFromQMResult);
 
                  QM_TRY_UNWRAP(

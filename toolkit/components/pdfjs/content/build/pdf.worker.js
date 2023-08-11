@@ -47,11 +47,11 @@ var _util = __w_pdfjs_require__(2);
 var _core_utils = __w_pdfjs_require__(3);
 var _primitives = __w_pdfjs_require__(4);
 var _pdf_manager = __w_pdfjs_require__(6);
-var _cleanup_helper = __w_pdfjs_require__(70);
-var _writer = __w_pdfjs_require__(64);
-var _is_node = __w_pdfjs_require__(101);
-var _message_handler = __w_pdfjs_require__(102);
-var _worker_stream = __w_pdfjs_require__(103);
+var _cleanup_helper = __w_pdfjs_require__(71);
+var _writer = __w_pdfjs_require__(65);
+var _is_node = __w_pdfjs_require__(102);
+var _message_handler = __w_pdfjs_require__(103);
+var _worker_stream = __w_pdfjs_require__(104);
 class WorkerTask {
   constructor(name) {
     this.name = name;
@@ -101,7 +101,7 @@ class WorkerMessageHandler {
       docId,
       apiVersion
     } = docParams;
-    const workerVersion = '3.6.13';
+    const workerVersion = '3.6.126';
     if (apiVersion !== workerVersion) {
       throw new Error(`The API version "${apiVersion}" does not match ` + `the Worker version "${workerVersion}".`);
     }
@@ -544,7 +544,8 @@ class WorkerMessageHandler {
     handler.on("GetTextContent", function (data, sink) {
       const {
         pageIndex,
-        includeMarkedContent
+        includeMarkedContent,
+        disableNormalization
       } = data;
       pdfManager.getPage(pageIndex).then(function (page) {
         const task = new WorkerTask("GetTextContent: page " + pageIndex);
@@ -554,7 +555,8 @@ class WorkerMessageHandler {
           handler,
           task,
           sink,
-          includeMarkedContent
+          includeMarkedContent,
+          disableNormalization
         }).then(function () {
           finishWorkerTask(task);
           if (start) {
@@ -643,6 +645,7 @@ exports.getVerbosityLevel = getVerbosityLevel;
 exports.info = info;
 exports.isArrayBuffer = isArrayBuffer;
 exports.isArrayEqual = isArrayEqual;
+exports.normalizeUnicode = normalizeUnicode;
 exports.objectFromMap = objectFromMap;
 exports.objectSize = objectSize;
 exports.setVerbosityLevel = setVerbosityLevel;
@@ -1413,6 +1416,17 @@ function createPromiseCapability() {
   });
   return capability;
 }
+let NormalizeRegex = null;
+let NormalizationMap = null;
+function normalizeUnicode(str) {
+  if (!NormalizeRegex) {
+    NormalizeRegex = /([\u00a0\u00b5\u037e\u0eb3\u2000-\u200a\u202f\u2126\ufb00-\ufb04\ufb06\ufb20-\ufb36\ufb38-\ufb3c\ufb3e\ufb40-\ufb41\ufb43-\ufb44\ufb46-\ufba1\ufba4-\ufba9\ufbae-\ufbb1\ufbd3-\ufbdc\ufbde-\ufbe7\ufbea-\ufbf8\ufbfc-\ufbfd\ufc00-\ufc5d\ufc64-\ufcf1\ufcf5-\ufd3d\ufd88\ufdf4\ufdfa-\ufdfb\ufe71\ufe77\ufe79\ufe7b\ufe7d]+)|(\ufb05+)/gu;
+    NormalizationMap = new Map([["ﬅ", "ſt"]]);
+  }
+  return str.replaceAll(NormalizeRegex, (_, p1, p2) => {
+    return p1 ? p1.normalize("NFKC") : NormalizationMap.get(p2);
+  });
+}
 
 /***/ }),
 /* 3 */
@@ -1884,37 +1898,31 @@ const CIRCULAR_REF = Symbol("CIRCULAR_REF");
 exports.CIRCULAR_REF = CIRCULAR_REF;
 const EOF = Symbol("EOF");
 exports.EOF = EOF;
-const Name = function NameClosure() {
-  let nameCache = Object.create(null);
-  class Name {
-    constructor(name) {
-      this.name = name;
-    }
-    static get(name) {
-      return nameCache[name] || (nameCache[name] = new Name(name));
-    }
-    static _clearCache() {
-      nameCache = Object.create(null);
-    }
+let CmdCache = Object.create(null);
+let NameCache = Object.create(null);
+let RefCache = Object.create(null);
+function clearPrimitiveCaches() {
+  CmdCache = Object.create(null);
+  NameCache = Object.create(null);
+  RefCache = Object.create(null);
+}
+class Name {
+  constructor(name) {
+    this.name = name;
   }
-  return Name;
-}();
+  static get(name) {
+    return NameCache[name] || (NameCache[name] = new Name(name));
+  }
+}
 exports.Name = Name;
-const Cmd = function CmdClosure() {
-  let cmdCache = Object.create(null);
-  class Cmd {
-    constructor(cmd) {
-      this.cmd = cmd;
-    }
-    static get(cmd) {
-      return cmdCache[cmd] || (cmdCache[cmd] = new Cmd(cmd));
-    }
-    static _clearCache() {
-      cmdCache = Object.create(null);
-    }
+class Cmd {
+  constructor(cmd) {
+    this.cmd = cmd;
   }
-  return Cmd;
-}();
+  static get(cmd) {
+    return CmdCache[cmd] || (CmdCache[cmd] = new Cmd(cmd));
+  }
+}
 exports.Cmd = Cmd;
 const nonSerializable = function nonSerializableClosure() {
   return nonSerializable;
@@ -2051,29 +2059,22 @@ class Dict {
   }
 }
 exports.Dict = Dict;
-const Ref = function RefClosure() {
-  let refCache = Object.create(null);
-  class Ref {
-    constructor(num, gen) {
-      this.num = num;
-      this.gen = gen;
-    }
-    toString() {
-      if (this.gen === 0) {
-        return `${this.num}R`;
-      }
-      return `${this.num}R${this.gen}`;
-    }
-    static get(num, gen) {
-      const key = gen === 0 ? `${num}R` : `${num}R${gen}`;
-      return refCache[key] || (refCache[key] = new Ref(num, gen));
-    }
-    static _clearCache() {
-      refCache = Object.create(null);
-    }
+class Ref {
+  constructor(num, gen) {
+    this.num = num;
+    this.gen = gen;
   }
-  return Ref;
-}();
+  toString() {
+    if (this.gen === 0) {
+      return `${this.num}R`;
+    }
+    return `${this.num}R${this.gen}`;
+  }
+  static get(num, gen) {
+    const key = gen === 0 ? `${num}R` : `${num}R${gen}`;
+    return RefCache[key] || (RefCache[key] = new Ref(num, gen));
+  }
+}
 exports.Ref = Ref;
 class RefSet {
   constructor(parent = null) {
@@ -2134,11 +2135,6 @@ function isDict(v, type) {
 }
 function isRefsEqual(v1, v2) {
   return v1.num === v2.num && v1.gen === v2.gen;
-}
-function clearPrimitiveCaches() {
-  Cmd._clearCache();
-  Name._clearCache();
-  Ref._clearCache();
 }
 
 /***/ }),
@@ -2919,22 +2915,22 @@ var _annotation = __w_pdfjs_require__(10);
 var _util = __w_pdfjs_require__(2);
 var _core_utils = __w_pdfjs_require__(3);
 var _primitives = __w_pdfjs_require__(4);
-var _xfa_fonts = __w_pdfjs_require__(50);
+var _xfa_fonts = __w_pdfjs_require__(51);
 var _base_stream = __w_pdfjs_require__(5);
-var _crypto = __w_pdfjs_require__(66);
-var _catalog = __w_pdfjs_require__(68);
-var _cleanup_helper = __w_pdfjs_require__(70);
-var _dataset_reader = __w_pdfjs_require__(99);
-var _parser = __w_pdfjs_require__(15);
+var _crypto = __w_pdfjs_require__(67);
+var _catalog = __w_pdfjs_require__(69);
+var _cleanup_helper = __w_pdfjs_require__(71);
+var _dataset_reader = __w_pdfjs_require__(100);
+var _parser = __w_pdfjs_require__(16);
 var _stream = __w_pdfjs_require__(8);
-var _object_loader = __w_pdfjs_require__(74);
-var _operator_list = __w_pdfjs_require__(62);
+var _object_loader = __w_pdfjs_require__(75);
+var _operator_list = __w_pdfjs_require__(63);
 var _evaluator = __w_pdfjs_require__(13);
-var _decode_stream = __w_pdfjs_require__(17);
-var _struct_tree = __w_pdfjs_require__(73);
-var _writer = __w_pdfjs_require__(64);
-var _factory = __w_pdfjs_require__(75);
-var _xref = __w_pdfjs_require__(100);
+var _decode_stream = __w_pdfjs_require__(18);
+var _struct_tree = __w_pdfjs_require__(74);
+var _writer = __w_pdfjs_require__(65);
+var _factory = __w_pdfjs_require__(76);
+var _xref = __w_pdfjs_require__(101);
 const DEFAULT_USER_UNIT = 1.0;
 const LETTER_SIZE_MEDIABOX = [0, 0, 612, 792];
 class Page {
@@ -3258,6 +3254,7 @@ class Page {
     handler,
     task,
     includeMarkedContent,
+    disableNormalization,
     sink
   }) {
     const contentStreamPromise = this.getContentStream();
@@ -3280,6 +3277,7 @@ class Page {
         task,
         resources: this.resources,
         includeMarkedContent,
+        disableNormalization,
         sink,
         viewBox: this.view
       });
@@ -4184,16 +4182,16 @@ var _util = __w_pdfjs_require__(2);
 var _core_utils = __w_pdfjs_require__(3);
 var _default_appearance = __w_pdfjs_require__(11);
 var _primitives = __w_pdfjs_require__(4);
-var _writer = __w_pdfjs_require__(64);
+var _writer = __w_pdfjs_require__(65);
 var _base_stream = __w_pdfjs_require__(5);
-var _bidi = __w_pdfjs_require__(59);
-var _catalog = __w_pdfjs_require__(68);
+var _bidi = __w_pdfjs_require__(60);
+var _catalog = __w_pdfjs_require__(69);
 var _colorspace = __w_pdfjs_require__(12);
-var _file_spec = __w_pdfjs_require__(71);
-var _object_loader = __w_pdfjs_require__(74);
-var _operator_list = __w_pdfjs_require__(62);
+var _file_spec = __w_pdfjs_require__(72);
+var _object_loader = __w_pdfjs_require__(75);
+var _operator_list = __w_pdfjs_require__(63);
 var _stream = __w_pdfjs_require__(8);
-var _factory = __w_pdfjs_require__(75);
+var _factory = __w_pdfjs_require__(76);
 class AnnotationFactory {
   static create(xref, ref, pdfManager, idFactory, collectFields) {
     return Promise.all([pdfManager.ensureCatalog("acroForm"), pdfManager.ensureCatalog("baseUrl"), pdfManager.ensureCatalog("attachments"), pdfManager.ensureDoc("xfaDatasets"), collectFields ? this._getPageIndex(xref, ref, pdfManager) : -1]).then(([acroForm, baseUrl, attachments, xfaDatasets, pageIndex]) => pdfManager.ensure(this, "_create", [xref, ref, pdfManager, idFactory, acroForm, attachments, xfaDatasets, collectFields, pageIndex]));
@@ -8271,29 +8269,29 @@ exports.PartialEvaluator = exports.EvaluatorPreprocessor = void 0;
 var _util = __w_pdfjs_require__(2);
 var _cmap = __w_pdfjs_require__(14);
 var _primitives = __w_pdfjs_require__(4);
-var _fonts = __w_pdfjs_require__(33);
-var _encodings = __w_pdfjs_require__(36);
-var _standard_fonts = __w_pdfjs_require__(40);
-var _pattern = __w_pdfjs_require__(49);
-var _xfa_fonts = __w_pdfjs_require__(50);
-var _to_unicode_map = __w_pdfjs_require__(41);
-var _function = __w_pdfjs_require__(56);
-var _parser = __w_pdfjs_require__(15);
-var _image_utils = __w_pdfjs_require__(58);
+var _fonts = __w_pdfjs_require__(34);
+var _encodings = __w_pdfjs_require__(37);
+var _standard_fonts = __w_pdfjs_require__(41);
+var _pattern = __w_pdfjs_require__(50);
+var _xfa_fonts = __w_pdfjs_require__(51);
+var _to_unicode_map = __w_pdfjs_require__(42);
+var _function = __w_pdfjs_require__(57);
+var _parser = __w_pdfjs_require__(16);
+var _image_utils = __w_pdfjs_require__(59);
 var _stream = __w_pdfjs_require__(8);
 var _base_stream = __w_pdfjs_require__(5);
-var _bidi = __w_pdfjs_require__(59);
+var _bidi = __w_pdfjs_require__(60);
 var _colorspace = __w_pdfjs_require__(12);
-var _decode_stream = __w_pdfjs_require__(17);
-var _fonts_utils = __w_pdfjs_require__(37);
-var _glyphlist = __w_pdfjs_require__(38);
+var _decode_stream = __w_pdfjs_require__(18);
+var _fonts_utils = __w_pdfjs_require__(38);
+var _glyphlist = __w_pdfjs_require__(39);
 var _core_utils = __w_pdfjs_require__(3);
-var _metrics = __w_pdfjs_require__(44);
-var _unicode = __w_pdfjs_require__(39);
-var _image_resizer = __w_pdfjs_require__(60);
-var _murmurhash = __w_pdfjs_require__(61);
-var _operator_list = __w_pdfjs_require__(62);
-var _image = __w_pdfjs_require__(63);
+var _metrics = __w_pdfjs_require__(45);
+var _unicode = __w_pdfjs_require__(40);
+var _image_resizer = __w_pdfjs_require__(61);
+var _murmurhash = __w_pdfjs_require__(62);
+var _operator_list = __w_pdfjs_require__(63);
+var _image = __w_pdfjs_require__(64);
 const DefaultPartialEvaluatorOptions = Object.freeze({
   maxImageSize: -1,
   disableFontFace: false,
@@ -8419,6 +8417,7 @@ class PartialEvaluator {
     this.globalImageCache = globalImageCache;
     this.options = options || DefaultPartialEvaluatorOptions;
     this.parsingType3Font = false;
+    this._regionalImageCache = new _image_utils.RegionalImageCache();
     this._fetchBuiltInCMapBound = this.fetchBuiltInCMap.bind(this);
     _image_resizer.ImageResizer.setMaxArea(this.options.canvasMaxAreaInBytes);
   }
@@ -8712,11 +8711,15 @@ class PartialEvaluator {
         args = [imgData];
         operatorList.addImageOps(_util.OPS.paintImageMaskXObject, args, optionalContent);
         if (cacheKey) {
-          localImageCache.set(cacheKey, imageRef, {
+          const cacheData = {
             fn: _util.OPS.paintImageMaskXObject,
             args,
             optionalContent
-          });
+          };
+          localImageCache.set(cacheKey, imageRef, cacheData);
+          if (imageRef) {
+            this._regionalImageCache.set(null, imageRef, cacheData);
+          }
         }
         return;
       }
@@ -8732,11 +8735,15 @@ class PartialEvaluator {
       if (imgData.isSingleOpaquePixel) {
         operatorList.addImageOps(_util.OPS.paintSolidColorImageMask, [], optionalContent);
         if (cacheKey) {
-          localImageCache.set(cacheKey, imageRef, {
+          const cacheData = {
             fn: _util.OPS.paintSolidColorImageMask,
             args: [],
             optionalContent
-          });
+          };
+          localImageCache.set(cacheKey, imageRef, cacheData);
+          if (imageRef) {
+            this._regionalImageCache.set(null, imageRef, cacheData);
+          }
         }
         return;
       }
@@ -8752,11 +8759,15 @@ class PartialEvaluator {
       }];
       operatorList.addImageOps(_util.OPS.paintImageMaskXObject, args, optionalContent);
       if (cacheKey) {
-        localImageCache.set(cacheKey, imageRef, {
+        const cacheData = {
           fn: _util.OPS.paintImageMaskXObject,
           args,
           optionalContent
-        });
+        };
+        localImageCache.set(cacheKey, imageRef, cacheData);
+        if (imageRef) {
+          this._regionalImageCache.set(null, imageRef, cacheData);
+        }
       }
       return;
     }
@@ -8814,12 +8825,14 @@ class PartialEvaluator {
     });
     operatorList.addImageOps(_util.OPS.paintImageXObject, args, optionalContent);
     if (cacheKey) {
-      localImageCache.set(cacheKey, imageRef, {
+      const cacheData = {
         fn: _util.OPS.paintImageXObject,
         args,
         optionalContent
-      });
+      };
+      localImageCache.set(cacheKey, imageRef, cacheData);
       if (imageRef) {
+        this._regionalImageCache.set(null, imageRef, cacheData);
         (0, _util.assert)(!isInline, "Cannot cache an inline image globally.");
         this.globalImageCache.addPageIndex(imageRef, this.pageIndex);
         if (cacheGlobally) {
@@ -9470,7 +9483,7 @@ class PartialEvaluator {
               }
               let xobj = xobjs.getRaw(name);
               if (xobj instanceof _primitives.Ref) {
-                const localImage = localImageCache.getByRef(xobj);
+                const localImage = localImageCache.getByRef(xobj) || self._regionalImageCache.getByRef(xobj);
                 if (localImage) {
                   operatorList.addImageOps(localImage.fn, localImage.args, localImage.optionalContent);
                   incrementCachedImageMaskCount(localImage);
@@ -9844,7 +9857,8 @@ class PartialEvaluator {
     sink,
     seenStyles = new Set(),
     viewBox,
-    markedContentData = null
+    markedContentData = null,
+    disableNormalization = false
   }) {
     resources = resources || _primitives.Dict.empty;
     stateManager = stateManager || new StateManager(new TextState());
@@ -9885,6 +9899,9 @@ class PartialEvaluator {
       twoLastCharsPos = nextPos;
       return ret;
     }
+    function shouldAddWhitepsace() {
+      return twoLastChars[twoLastCharsPos] !== " " && twoLastChars[(twoLastCharsPos + 1) % 2] === " ";
+    }
     function resetLastChars() {
       twoLastChars[0] = twoLastChars[1] = " ";
       twoLastCharsPos = 0;
@@ -9903,6 +9920,22 @@ class PartialEvaluator {
     const emptyGStateCache = new _image_utils.LocalGStateCache();
     const preprocessor = new EvaluatorPreprocessor(stream, xref, stateManager);
     let textState;
+    function pushWhitespace({
+      width = 0,
+      height = 0,
+      transform = textContentItem.prevTransform,
+      fontName = textContentItem.fontName
+    }) {
+      textContent.items.push({
+        str: " ",
+        dir: "ltr",
+        width,
+        height,
+        transform,
+        fontName,
+        hasEOL: false
+      });
+    }
     function getCurrentTextTransform() {
       const font = textState.font;
       const tsm = [textState.fontSize * textState.textHScale, 0, 0, textState.fontSize, 0, textState.textRise];
@@ -9977,7 +10010,10 @@ class PartialEvaluator {
       textContentItem.textAdvanceScale = scaleFactor;
     }
     function runBidiTransform(textChunk) {
-      const text = textChunk.str.join("");
+      let text = textChunk.str.join("");
+      if (!disableNormalization) {
+        text = (0, _util.normalizeUnicode)(text);
+      }
       const bidiResult = (0, _bidi.bidi)(text, -1, textChunk.vertical);
       return {
         str: bidiResult.str,
@@ -10007,13 +10043,15 @@ class PartialEvaluator {
       const scale = Math.hypot(matrix[0], matrix[1]);
       return [(matrix[0] * x + matrix[1] * y) / scale, (matrix[2] * x + matrix[3] * y) / scale];
     }
-    function compareWithLastPosition() {
+    function compareWithLastPosition(glyphWidth) {
       const currentTransform = getCurrentTextTransform();
       let posX = currentTransform[4];
       let posY = currentTransform[5];
-      const shiftedX = posX - viewBox[0];
-      const shiftedY = posY - viewBox[1];
-      if (shiftedX < 0 || shiftedX > viewBox[2] || shiftedY < 0 || shiftedY > viewBox[3]) {
+      if (textState.font && textState.font.vertical) {
+        if (posX < viewBox[0] || posX > viewBox[2] || posY + glyphWidth < viewBox[1] || posY > viewBox[3]) {
+          return false;
+        }
+      } else if (posX + glyphWidth < viewBox[0] || posX > viewBox[2] || posY < viewBox[1] || posY > viewBox[3]) {
         return false;
       }
       if (!textState.font || !textContentItem.prevTransform) {
@@ -10069,18 +10107,20 @@ class PartialEvaluator {
           resetLastChars();
         }
         if (advanceY <= textOrientation * textContentItem.trackingSpaceMin) {
-          textContentItem.height += advanceY;
+          if (shouldAddWhitepsace()) {
+            resetLastChars();
+            flushTextContentItem();
+            pushWhitespace({
+              height: Math.abs(advanceY)
+            });
+          } else {
+            textContentItem.height += advanceY;
+          }
         } else if (!addFakeSpaces(advanceY, textContentItem.prevTransform, textOrientation)) {
           if (textContentItem.str.length === 0) {
             resetLastChars();
-            textContent.items.push({
-              str: " ",
-              dir: "ltr",
-              width: 0,
-              height: Math.abs(advanceY),
-              transform: textContentItem.prevTransform,
-              fontName: textContentItem.fontName,
-              hasEOL: false
+            pushWhitespace({
+              height: Math.abs(advanceY)
             });
           } else {
             textContentItem.height += advanceY;
@@ -10111,18 +10151,20 @@ class PartialEvaluator {
         resetLastChars();
       }
       if (advanceX <= textOrientation * textContentItem.trackingSpaceMin) {
-        textContentItem.width += advanceX;
+        if (shouldAddWhitepsace()) {
+          resetLastChars();
+          flushTextContentItem();
+          pushWhitespace({
+            width: Math.abs(advanceX)
+          });
+        } else {
+          textContentItem.width += advanceX;
+        }
       } else if (!addFakeSpaces(advanceX, textContentItem.prevTransform, textOrientation)) {
         if (textContentItem.str.length === 0) {
           resetLastChars();
-          textContent.items.push({
-            str: " ",
-            dir: "ltr",
-            width: Math.abs(advanceX),
-            height: 0,
-            transform: textContentItem.prevTransform,
-            fontName: textContentItem.fontName,
-            hasEOL: false
+          pushWhitespace({
+            width: Math.abs(advanceX)
           });
         } else {
           textContentItem.width += advanceX;
@@ -10176,7 +10218,12 @@ class PartialEvaluator {
           saveLastChar(" ");
           continue;
         }
-        if (!category.isZeroWidthDiacritic && !compareWithLastPosition()) {
+        if (!category.isZeroWidthDiacritic && !compareWithLastPosition(scaledDim)) {
+          if (!font.vertical) {
+            textState.translateTextMatrix(scaledDim * textState.textHScale, 0);
+          } else {
+            textState.translateTextMatrix(0, scaledDim);
+          }
           continue;
         }
         const textChunk = ensureTextContentItem();
@@ -10195,7 +10242,7 @@ class PartialEvaluator {
         if (scaledDim) {
           textChunk.prevTransform = getCurrentTextTransform();
         }
-        const glyphUnicode = glyph.normalizedUnicode;
+        const glyphUnicode = glyph.unicode;
         if (saveLastChar(glyphUnicode)) {
           textChunk.str.push(" ");
         }
@@ -10242,14 +10289,11 @@ class PartialEvaluator {
       }
       flushTextContentItem();
       resetLastChars();
-      textContent.items.push({
-        str: " ",
-        dir: "ltr",
+      pushWhitespace({
         width: Math.abs(width),
         height: Math.abs(height),
         transform: transf || getCurrentTextTransform(),
-        fontName,
-        hasEOL: false
+        fontName
       });
       return true;
     }
@@ -10487,7 +10531,8 @@ class PartialEvaluator {
                 sink: sinkWrapper,
                 seenStyles,
                 viewBox,
-                markedContentData
+                markedContentData,
+                disableNormalization
               }).then(function () {
                 if (!sinkWrapper.enqueueInvoked) {
                   emptyXObjectCache.set(name, xobj.dict.objId, true);
@@ -12088,7 +12133,8 @@ exports.IdentityCMap = exports.CMapFactory = exports.CMap = void 0;
 var _util = __w_pdfjs_require__(2);
 var _primitives = __w_pdfjs_require__(4);
 var _base_stream = __w_pdfjs_require__(5);
-var _parser = __w_pdfjs_require__(15);
+var _binary_cmap = __w_pdfjs_require__(15);
+var _parser = __w_pdfjs_require__(16);
 var _core_utils = __w_pdfjs_require__(3);
 var _stream = __w_pdfjs_require__(8);
 const BUILT_IN_CMAPS = ["Adobe-GB1-UCS2", "Adobe-CNS1-UCS2", "Adobe-Japan1-UCS2", "Adobe-Korea1-UCS2", "78-EUC-H", "78-EUC-V", "78-H", "78-RKSJ-H", "78-RKSJ-V", "78-V", "78ms-RKSJ-H", "78ms-RKSJ-V", "83pv-RKSJ-H", "90ms-RKSJ-H", "90ms-RKSJ-V", "90msp-RKSJ-H", "90msp-RKSJ-V", "90pv-RKSJ-H", "90pv-RKSJ-V", "Add-H", "Add-RKSJ-H", "Add-RKSJ-V", "Add-V", "Adobe-CNS1-0", "Adobe-CNS1-1", "Adobe-CNS1-2", "Adobe-CNS1-3", "Adobe-CNS1-4", "Adobe-CNS1-5", "Adobe-CNS1-6", "Adobe-GB1-0", "Adobe-GB1-1", "Adobe-GB1-2", "Adobe-GB1-3", "Adobe-GB1-4", "Adobe-GB1-5", "Adobe-Japan1-0", "Adobe-Japan1-1", "Adobe-Japan1-2", "Adobe-Japan1-3", "Adobe-Japan1-4", "Adobe-Japan1-5", "Adobe-Japan1-6", "Adobe-Korea1-0", "Adobe-Korea1-1", "Adobe-Korea1-2", "B5-H", "B5-V", "B5pc-H", "B5pc-V", "CNS-EUC-H", "CNS-EUC-V", "CNS1-H", "CNS1-V", "CNS2-H", "CNS2-V", "ETHK-B5-H", "ETHK-B5-V", "ETen-B5-H", "ETen-B5-V", "ETenms-B5-H", "ETenms-B5-V", "EUC-H", "EUC-V", "Ext-H", "Ext-RKSJ-H", "Ext-RKSJ-V", "Ext-V", "GB-EUC-H", "GB-EUC-V", "GB-H", "GB-V", "GBK-EUC-H", "GBK-EUC-V", "GBK2K-H", "GBK2K-V", "GBKp-EUC-H", "GBKp-EUC-V", "GBT-EUC-H", "GBT-EUC-V", "GBT-H", "GBT-V", "GBTpc-EUC-H", "GBTpc-EUC-V", "GBpc-EUC-H", "GBpc-EUC-V", "H", "HKdla-B5-H", "HKdla-B5-V", "HKdlb-B5-H", "HKdlb-B5-V", "HKgccs-B5-H", "HKgccs-B5-V", "HKm314-B5-H", "HKm314-B5-V", "HKm471-B5-H", "HKm471-B5-V", "HKscs-B5-H", "HKscs-B5-V", "Hankaku", "Hiragana", "KSC-EUC-H", "KSC-EUC-V", "KSC-H", "KSC-Johab-H", "KSC-Johab-V", "KSC-V", "KSCms-UHC-H", "KSCms-UHC-HW-H", "KSCms-UHC-HW-V", "KSCms-UHC-V", "KSCpc-EUC-H", "KSCpc-EUC-V", "Katakana", "NWP-H", "NWP-V", "RKSJ-H", "RKSJ-V", "Roman", "UniCNS-UCS2-H", "UniCNS-UCS2-V", "UniCNS-UTF16-H", "UniCNS-UTF16-V", "UniCNS-UTF32-H", "UniCNS-UTF32-V", "UniCNS-UTF8-H", "UniCNS-UTF8-V", "UniGB-UCS2-H", "UniGB-UCS2-V", "UniGB-UTF16-H", "UniGB-UTF16-V", "UniGB-UTF32-H", "UniGB-UTF32-V", "UniGB-UTF8-H", "UniGB-UTF8-V", "UniJIS-UCS2-H", "UniJIS-UCS2-HW-H", "UniJIS-UCS2-HW-V", "UniJIS-UCS2-V", "UniJIS-UTF16-H", "UniJIS-UTF16-V", "UniJIS-UTF32-H", "UniJIS-UTF32-V", "UniJIS-UTF8-H", "UniJIS-UTF8-V", "UniJIS2004-UTF16-H", "UniJIS2004-UTF16-V", "UniJIS2004-UTF32-H", "UniJIS2004-UTF32-V", "UniJIS2004-UTF8-H", "UniJIS2004-UTF8-V", "UniJISPro-UCS2-HW-V", "UniJISPro-UCS2-V", "UniJISPro-UTF8-V", "UniJISX0213-UTF32-H", "UniJISX0213-UTF32-V", "UniJISX02132004-UTF32-H", "UniJISX02132004-UTF32-V", "UniKS-UCS2-H", "UniKS-UCS2-V", "UniKS-UTF16-H", "UniKS-UTF16-V", "UniKS-UTF32-H", "UniKS-UTF32-V", "UniKS-UTF8-H", "UniKS-UTF8-V", "V", "WP-Symbol"];
@@ -12279,519 +12325,261 @@ class IdentityCMap extends CMap {
   }
 }
 exports.IdentityCMap = IdentityCMap;
-const BinaryCMapReader = function BinaryCMapReaderClosure() {
-  function hexToInt(a, size) {
-    let n = 0;
-    for (let i = 0; i <= size; i++) {
-      n = n << 8 | a[i];
-    }
-    return n >>> 0;
+function strToInt(str) {
+  let a = 0;
+  for (let i = 0; i < str.length; i++) {
+    a = a << 8 | str.charCodeAt(i);
   }
-  function hexToStr(a, size) {
-    if (size === 1) {
-      return String.fromCharCode(a[0], a[1]);
-    }
-    if (size === 3) {
-      return String.fromCharCode(a[0], a[1], a[2], a[3]);
-    }
-    return String.fromCharCode.apply(null, a.subarray(0, size + 1));
+  return a >>> 0;
+}
+function expectString(obj) {
+  if (typeof obj !== "string") {
+    throw new _util.FormatError("Malformed CMap: expected string.");
   }
-  function addHex(a, b, size) {
-    let c = 0;
-    for (let i = size; i >= 0; i--) {
-      c += a[i] + b[i];
-      a[i] = c & 255;
-      c >>= 8;
-    }
+}
+function expectInt(obj) {
+  if (!Number.isInteger(obj)) {
+    throw new _util.FormatError("Malformed CMap: expected int.");
   }
-  function incHex(a, size) {
-    let c = 1;
-    for (let i = size; i >= 0 && c > 0; i--) {
-      c += a[i];
-      a[i] = c & 255;
-      c >>= 8;
+}
+function parseBfChar(cMap, lexer) {
+  while (true) {
+    let obj = lexer.getObj();
+    if (obj === _primitives.EOF) {
+      break;
     }
+    if ((0, _primitives.isCmd)(obj, "endbfchar")) {
+      return;
+    }
+    expectString(obj);
+    const src = strToInt(obj);
+    obj = lexer.getObj();
+    expectString(obj);
+    const dst = obj;
+    cMap.mapOne(src, dst);
   }
-  const MAX_NUM_SIZE = 16;
-  const MAX_ENCODED_NUM_SIZE = 19;
-  class BinaryCMapStream {
-    constructor(data) {
-      this.buffer = data;
-      this.pos = 0;
-      this.end = data.length;
-      this.tmpBuf = new Uint8Array(MAX_ENCODED_NUM_SIZE);
+}
+function parseBfRange(cMap, lexer) {
+  while (true) {
+    let obj = lexer.getObj();
+    if (obj === _primitives.EOF) {
+      break;
     }
-    readByte() {
-      if (this.pos >= this.end) {
-        return -1;
-      }
-      return this.buffer[this.pos++];
+    if ((0, _primitives.isCmd)(obj, "endbfrange")) {
+      return;
     }
-    readNumber() {
-      let n = 0;
-      let last;
-      do {
-        const b = this.readByte();
-        if (b < 0) {
-          throw new _util.FormatError("unexpected EOF in bcmap");
-        }
-        last = !(b & 0x80);
-        n = n << 7 | b & 0x7f;
-      } while (!last);
-      return n;
-    }
-    readSigned() {
-      const n = this.readNumber();
-      return n & 1 ? ~(n >>> 1) : n >>> 1;
-    }
-    readHex(num, size) {
-      num.set(this.buffer.subarray(this.pos, this.pos + size + 1));
-      this.pos += size + 1;
-    }
-    readHexNumber(num, size) {
-      let last;
-      const stack = this.tmpBuf;
-      let sp = 0;
-      do {
-        const b = this.readByte();
-        if (b < 0) {
-          throw new _util.FormatError("unexpected EOF in bcmap");
-        }
-        last = !(b & 0x80);
-        stack[sp++] = b & 0x7f;
-      } while (!last);
-      let i = size,
-        buffer = 0,
-        bufferSize = 0;
-      while (i >= 0) {
-        while (bufferSize < 8 && stack.length > 0) {
-          buffer |= stack[--sp] << bufferSize;
-          bufferSize += 7;
-        }
-        num[i] = buffer & 255;
-        i--;
-        buffer >>= 8;
-        bufferSize -= 8;
-      }
-    }
-    readHexSigned(num, size) {
-      this.readHexNumber(num, size);
-      const sign = num[size] & 1 ? 255 : 0;
-      let c = 0;
-      for (let i = 0; i <= size; i++) {
-        c = (c & 1) << 8 | num[i];
-        num[i] = c >> 1 ^ sign;
-      }
-    }
-    readString() {
-      const len = this.readNumber();
-      let s = "";
-      for (let i = 0; i < len; i++) {
-        s += String.fromCharCode(this.readNumber());
-      }
-      return s;
-    }
-  }
-  class BinaryCMapReader {
-    async process(data, cMap, extend) {
-      const stream = new BinaryCMapStream(data);
-      const header = stream.readByte();
-      cMap.vertical = !!(header & 1);
-      let useCMap = null;
-      const start = new Uint8Array(MAX_NUM_SIZE);
-      const end = new Uint8Array(MAX_NUM_SIZE);
-      const char = new Uint8Array(MAX_NUM_SIZE);
-      const charCode = new Uint8Array(MAX_NUM_SIZE);
-      const tmp = new Uint8Array(MAX_NUM_SIZE);
-      let code;
-      let b;
-      while ((b = stream.readByte()) >= 0) {
-        const type = b >> 5;
-        if (type === 7) {
-          switch (b & 0x1f) {
-            case 0:
-              stream.readString();
-              break;
-            case 1:
-              useCMap = stream.readString();
-              break;
-          }
-          continue;
-        }
-        const sequence = !!(b & 0x10);
-        const dataSize = b & 15;
-        if (dataSize + 1 > MAX_NUM_SIZE) {
-          throw new Error("BinaryCMapReader.process: Invalid dataSize.");
-        }
-        const ucs2DataSize = 1;
-        const subitemsCount = stream.readNumber();
-        switch (type) {
-          case 0:
-            stream.readHex(start, dataSize);
-            stream.readHexNumber(end, dataSize);
-            addHex(end, start, dataSize);
-            cMap.addCodespaceRange(dataSize + 1, hexToInt(start, dataSize), hexToInt(end, dataSize));
-            for (let i = 1; i < subitemsCount; i++) {
-              incHex(end, dataSize);
-              stream.readHexNumber(start, dataSize);
-              addHex(start, end, dataSize);
-              stream.readHexNumber(end, dataSize);
-              addHex(end, start, dataSize);
-              cMap.addCodespaceRange(dataSize + 1, hexToInt(start, dataSize), hexToInt(end, dataSize));
-            }
-            break;
-          case 1:
-            stream.readHex(start, dataSize);
-            stream.readHexNumber(end, dataSize);
-            addHex(end, start, dataSize);
-            stream.readNumber();
-            for (let i = 1; i < subitemsCount; i++) {
-              incHex(end, dataSize);
-              stream.readHexNumber(start, dataSize);
-              addHex(start, end, dataSize);
-              stream.readHexNumber(end, dataSize);
-              addHex(end, start, dataSize);
-              stream.readNumber();
-            }
-            break;
-          case 2:
-            stream.readHex(char, dataSize);
-            code = stream.readNumber();
-            cMap.mapOne(hexToInt(char, dataSize), code);
-            for (let i = 1; i < subitemsCount; i++) {
-              incHex(char, dataSize);
-              if (!sequence) {
-                stream.readHexNumber(tmp, dataSize);
-                addHex(char, tmp, dataSize);
-              }
-              code = stream.readSigned() + (code + 1);
-              cMap.mapOne(hexToInt(char, dataSize), code);
-            }
-            break;
-          case 3:
-            stream.readHex(start, dataSize);
-            stream.readHexNumber(end, dataSize);
-            addHex(end, start, dataSize);
-            code = stream.readNumber();
-            cMap.mapCidRange(hexToInt(start, dataSize), hexToInt(end, dataSize), code);
-            for (let i = 1; i < subitemsCount; i++) {
-              incHex(end, dataSize);
-              if (!sequence) {
-                stream.readHexNumber(start, dataSize);
-                addHex(start, end, dataSize);
-              } else {
-                start.set(end);
-              }
-              stream.readHexNumber(end, dataSize);
-              addHex(end, start, dataSize);
-              code = stream.readNumber();
-              cMap.mapCidRange(hexToInt(start, dataSize), hexToInt(end, dataSize), code);
-            }
-            break;
-          case 4:
-            stream.readHex(char, ucs2DataSize);
-            stream.readHex(charCode, dataSize);
-            cMap.mapOne(hexToInt(char, ucs2DataSize), hexToStr(charCode, dataSize));
-            for (let i = 1; i < subitemsCount; i++) {
-              incHex(char, ucs2DataSize);
-              if (!sequence) {
-                stream.readHexNumber(tmp, ucs2DataSize);
-                addHex(char, tmp, ucs2DataSize);
-              }
-              incHex(charCode, dataSize);
-              stream.readHexSigned(tmp, dataSize);
-              addHex(charCode, tmp, dataSize);
-              cMap.mapOne(hexToInt(char, ucs2DataSize), hexToStr(charCode, dataSize));
-            }
-            break;
-          case 5:
-            stream.readHex(start, ucs2DataSize);
-            stream.readHexNumber(end, ucs2DataSize);
-            addHex(end, start, ucs2DataSize);
-            stream.readHex(charCode, dataSize);
-            cMap.mapBfRange(hexToInt(start, ucs2DataSize), hexToInt(end, ucs2DataSize), hexToStr(charCode, dataSize));
-            for (let i = 1; i < subitemsCount; i++) {
-              incHex(end, ucs2DataSize);
-              if (!sequence) {
-                stream.readHexNumber(start, ucs2DataSize);
-                addHex(start, end, ucs2DataSize);
-              } else {
-                start.set(end);
-              }
-              stream.readHexNumber(end, ucs2DataSize);
-              addHex(end, start, ucs2DataSize);
-              stream.readHex(charCode, dataSize);
-              cMap.mapBfRange(hexToInt(start, ucs2DataSize), hexToInt(end, ucs2DataSize), hexToStr(charCode, dataSize));
-            }
-            break;
-          default:
-            throw new Error(`BinaryCMapReader.process - unknown type: ${type}`);
-        }
-      }
-      if (useCMap) {
-        return extend(useCMap);
-      }
-      return cMap;
-    }
-  }
-  return BinaryCMapReader;
-}();
-const CMapFactory = function CMapFactoryClosure() {
-  function strToInt(str) {
-    let a = 0;
-    for (let i = 0; i < str.length; i++) {
-      a = a << 8 | str.charCodeAt(i);
-    }
-    return a >>> 0;
-  }
-  function expectString(obj) {
-    if (typeof obj !== "string") {
-      throw new _util.FormatError("Malformed CMap: expected string.");
-    }
-  }
-  function expectInt(obj) {
-    if (!Number.isInteger(obj)) {
-      throw new _util.FormatError("Malformed CMap: expected int.");
-    }
-  }
-  function parseBfChar(cMap, lexer) {
-    while (true) {
-      let obj = lexer.getObj();
-      if (obj === _primitives.EOF) {
-        break;
-      }
-      if ((0, _primitives.isCmd)(obj, "endbfchar")) {
-        return;
-      }
-      expectString(obj);
-      const src = strToInt(obj);
+    expectString(obj);
+    const low = strToInt(obj);
+    obj = lexer.getObj();
+    expectString(obj);
+    const high = strToInt(obj);
+    obj = lexer.getObj();
+    if (Number.isInteger(obj) || typeof obj === "string") {
+      const dstLow = Number.isInteger(obj) ? String.fromCharCode(obj) : obj;
+      cMap.mapBfRange(low, high, dstLow);
+    } else if ((0, _primitives.isCmd)(obj, "[")) {
       obj = lexer.getObj();
-      expectString(obj);
-      const dst = obj;
-      cMap.mapOne(src, dst);
-    }
-  }
-  function parseBfRange(cMap, lexer) {
-    while (true) {
-      let obj = lexer.getObj();
-      if (obj === _primitives.EOF) {
-        break;
-      }
-      if ((0, _primitives.isCmd)(obj, "endbfrange")) {
-        return;
-      }
-      expectString(obj);
-      const low = strToInt(obj);
-      obj = lexer.getObj();
-      expectString(obj);
-      const high = strToInt(obj);
-      obj = lexer.getObj();
-      if (Number.isInteger(obj) || typeof obj === "string") {
-        const dstLow = Number.isInteger(obj) ? String.fromCharCode(obj) : obj;
-        cMap.mapBfRange(low, high, dstLow);
-      } else if ((0, _primitives.isCmd)(obj, "[")) {
+      const array = [];
+      while (!(0, _primitives.isCmd)(obj, "]") && obj !== _primitives.EOF) {
+        array.push(obj);
         obj = lexer.getObj();
-        const array = [];
-        while (!(0, _primitives.isCmd)(obj, "]") && obj !== _primitives.EOF) {
-          array.push(obj);
-          obj = lexer.getObj();
-        }
-        cMap.mapBfRangeToArray(low, high, array);
-      } else {
-        break;
       }
+      cMap.mapBfRangeToArray(low, high, array);
+    } else {
+      break;
     }
-    throw new _util.FormatError("Invalid bf range.");
   }
-  function parseCidChar(cMap, lexer) {
-    while (true) {
-      let obj = lexer.getObj();
+  throw new _util.FormatError("Invalid bf range.");
+}
+function parseCidChar(cMap, lexer) {
+  while (true) {
+    let obj = lexer.getObj();
+    if (obj === _primitives.EOF) {
+      break;
+    }
+    if ((0, _primitives.isCmd)(obj, "endcidchar")) {
+      return;
+    }
+    expectString(obj);
+    const src = strToInt(obj);
+    obj = lexer.getObj();
+    expectInt(obj);
+    const dst = obj;
+    cMap.mapOne(src, dst);
+  }
+}
+function parseCidRange(cMap, lexer) {
+  while (true) {
+    let obj = lexer.getObj();
+    if (obj === _primitives.EOF) {
+      break;
+    }
+    if ((0, _primitives.isCmd)(obj, "endcidrange")) {
+      return;
+    }
+    expectString(obj);
+    const low = strToInt(obj);
+    obj = lexer.getObj();
+    expectString(obj);
+    const high = strToInt(obj);
+    obj = lexer.getObj();
+    expectInt(obj);
+    const dstLow = obj;
+    cMap.mapCidRange(low, high, dstLow);
+  }
+}
+function parseCodespaceRange(cMap, lexer) {
+  while (true) {
+    let obj = lexer.getObj();
+    if (obj === _primitives.EOF) {
+      break;
+    }
+    if ((0, _primitives.isCmd)(obj, "endcodespacerange")) {
+      return;
+    }
+    if (typeof obj !== "string") {
+      break;
+    }
+    const low = strToInt(obj);
+    obj = lexer.getObj();
+    if (typeof obj !== "string") {
+      break;
+    }
+    const high = strToInt(obj);
+    cMap.addCodespaceRange(obj.length, low, high);
+  }
+  throw new _util.FormatError("Invalid codespace range.");
+}
+function parseWMode(cMap, lexer) {
+  const obj = lexer.getObj();
+  if (Number.isInteger(obj)) {
+    cMap.vertical = !!obj;
+  }
+}
+function parseCMapName(cMap, lexer) {
+  const obj = lexer.getObj();
+  if (obj instanceof _primitives.Name) {
+    cMap.name = obj.name;
+  }
+}
+async function parseCMap(cMap, lexer, fetchBuiltInCMap, useCMap) {
+  let previous, embeddedUseCMap;
+  objLoop: while (true) {
+    try {
+      const obj = lexer.getObj();
       if (obj === _primitives.EOF) {
         break;
-      }
-      if ((0, _primitives.isCmd)(obj, "endcidchar")) {
-        return;
-      }
-      expectString(obj);
-      const src = strToInt(obj);
-      obj = lexer.getObj();
-      expectInt(obj);
-      const dst = obj;
-      cMap.mapOne(src, dst);
-    }
-  }
-  function parseCidRange(cMap, lexer) {
-    while (true) {
-      let obj = lexer.getObj();
-      if (obj === _primitives.EOF) {
-        break;
-      }
-      if ((0, _primitives.isCmd)(obj, "endcidrange")) {
-        return;
-      }
-      expectString(obj);
-      const low = strToInt(obj);
-      obj = lexer.getObj();
-      expectString(obj);
-      const high = strToInt(obj);
-      obj = lexer.getObj();
-      expectInt(obj);
-      const dstLow = obj;
-      cMap.mapCidRange(low, high, dstLow);
-    }
-  }
-  function parseCodespaceRange(cMap, lexer) {
-    while (true) {
-      let obj = lexer.getObj();
-      if (obj === _primitives.EOF) {
-        break;
-      }
-      if ((0, _primitives.isCmd)(obj, "endcodespacerange")) {
-        return;
-      }
-      if (typeof obj !== "string") {
-        break;
-      }
-      const low = strToInt(obj);
-      obj = lexer.getObj();
-      if (typeof obj !== "string") {
-        break;
-      }
-      const high = strToInt(obj);
-      cMap.addCodespaceRange(obj.length, low, high);
-    }
-    throw new _util.FormatError("Invalid codespace range.");
-  }
-  function parseWMode(cMap, lexer) {
-    const obj = lexer.getObj();
-    if (Number.isInteger(obj)) {
-      cMap.vertical = !!obj;
-    }
-  }
-  function parseCMapName(cMap, lexer) {
-    const obj = lexer.getObj();
-    if (obj instanceof _primitives.Name) {
-      cMap.name = obj.name;
-    }
-  }
-  async function parseCMap(cMap, lexer, fetchBuiltInCMap, useCMap) {
-    let previous, embeddedUseCMap;
-    objLoop: while (true) {
-      try {
-        const obj = lexer.getObj();
-        if (obj === _primitives.EOF) {
-          break;
-        } else if (obj instanceof _primitives.Name) {
-          if (obj.name === "WMode") {
-            parseWMode(cMap, lexer);
-          } else if (obj.name === "CMapName") {
-            parseCMapName(cMap, lexer);
-          }
-          previous = obj;
-        } else if (obj instanceof _primitives.Cmd) {
-          switch (obj.cmd) {
-            case "endcmap":
-              break objLoop;
-            case "usecmap":
-              if (previous instanceof _primitives.Name) {
-                embeddedUseCMap = previous.name;
-              }
-              break;
-            case "begincodespacerange":
-              parseCodespaceRange(cMap, lexer);
-              break;
-            case "beginbfchar":
-              parseBfChar(cMap, lexer);
-              break;
-            case "begincidchar":
-              parseCidChar(cMap, lexer);
-              break;
-            case "beginbfrange":
-              parseBfRange(cMap, lexer);
-              break;
-            case "begincidrange":
-              parseCidRange(cMap, lexer);
-              break;
-          }
+      } else if (obj instanceof _primitives.Name) {
+        if (obj.name === "WMode") {
+          parseWMode(cMap, lexer);
+        } else if (obj.name === "CMapName") {
+          parseCMapName(cMap, lexer);
         }
-      } catch (ex) {
-        if (ex instanceof _core_utils.MissingDataException) {
-          throw ex;
+        previous = obj;
+      } else if (obj instanceof _primitives.Cmd) {
+        switch (obj.cmd) {
+          case "endcmap":
+            break objLoop;
+          case "usecmap":
+            if (previous instanceof _primitives.Name) {
+              embeddedUseCMap = previous.name;
+            }
+            break;
+          case "begincodespacerange":
+            parseCodespaceRange(cMap, lexer);
+            break;
+          case "beginbfchar":
+            parseBfChar(cMap, lexer);
+            break;
+          case "begincidchar":
+            parseCidChar(cMap, lexer);
+            break;
+          case "beginbfrange":
+            parseBfRange(cMap, lexer);
+            break;
+          case "begincidrange":
+            parseCidRange(cMap, lexer);
+            break;
         }
-        (0, _util.warn)("Invalid cMap data: " + ex);
-        continue;
       }
+    } catch (ex) {
+      if (ex instanceof _core_utils.MissingDataException) {
+        throw ex;
+      }
+      (0, _util.warn)("Invalid cMap data: " + ex);
+      continue;
     }
-    if (!useCMap && embeddedUseCMap) {
-      useCMap = embeddedUseCMap;
+  }
+  if (!useCMap && embeddedUseCMap) {
+    useCMap = embeddedUseCMap;
+  }
+  if (useCMap) {
+    return extendCMap(cMap, fetchBuiltInCMap, useCMap);
+  }
+  return cMap;
+}
+async function extendCMap(cMap, fetchBuiltInCMap, useCMap) {
+  cMap.useCMap = await createBuiltInCMap(useCMap, fetchBuiltInCMap);
+  if (cMap.numCodespaceRanges === 0) {
+    const useCodespaceRanges = cMap.useCMap.codespaceRanges;
+    for (let i = 0; i < useCodespaceRanges.length; i++) {
+      cMap.codespaceRanges[i] = useCodespaceRanges[i].slice();
     }
-    if (useCMap) {
+    cMap.numCodespaceRanges = cMap.useCMap.numCodespaceRanges;
+  }
+  cMap.useCMap.forEach(function (key, value) {
+    if (!cMap.contains(key)) {
+      cMap.mapOne(key, cMap.useCMap.lookup(key));
+    }
+  });
+  return cMap;
+}
+async function createBuiltInCMap(name, fetchBuiltInCMap) {
+  if (name === "Identity-H") {
+    return new IdentityCMap(false, 2);
+  } else if (name === "Identity-V") {
+    return new IdentityCMap(true, 2);
+  }
+  if (!BUILT_IN_CMAPS.includes(name)) {
+    throw new Error("Unknown CMap name: " + name);
+  }
+  if (!fetchBuiltInCMap) {
+    throw new Error("Built-in CMap parameters are not provided.");
+  }
+  const {
+    cMapData,
+    compressionType
+  } = await fetchBuiltInCMap(name);
+  const cMap = new CMap(true);
+  if (compressionType === _util.CMapCompressionType.BINARY) {
+    return new _binary_cmap.BinaryCMapReader().process(cMapData, cMap, useCMap => {
       return extendCMap(cMap, fetchBuiltInCMap, useCMap);
-    }
-    return cMap;
-  }
-  async function extendCMap(cMap, fetchBuiltInCMap, useCMap) {
-    cMap.useCMap = await createBuiltInCMap(useCMap, fetchBuiltInCMap);
-    if (cMap.numCodespaceRanges === 0) {
-      const useCodespaceRanges = cMap.useCMap.codespaceRanges;
-      for (let i = 0; i < useCodespaceRanges.length; i++) {
-        cMap.codespaceRanges[i] = useCodespaceRanges[i].slice();
-      }
-      cMap.numCodespaceRanges = cMap.useCMap.numCodespaceRanges;
-    }
-    cMap.useCMap.forEach(function (key, value) {
-      if (!cMap.contains(key)) {
-        cMap.mapOne(key, cMap.useCMap.lookup(key));
-      }
     });
-    return cMap;
   }
-  async function createBuiltInCMap(name, fetchBuiltInCMap) {
-    if (name === "Identity-H") {
-      return new IdentityCMap(false, 2);
-    } else if (name === "Identity-V") {
-      return new IdentityCMap(true, 2);
-    }
-    if (!BUILT_IN_CMAPS.includes(name)) {
-      throw new Error("Unknown CMap name: " + name);
-    }
-    if (!fetchBuiltInCMap) {
-      throw new Error("Built-in CMap parameters are not provided.");
-    }
-    const {
-      cMapData,
-      compressionType
-    } = await fetchBuiltInCMap(name);
-    const cMap = new CMap(true);
-    if (compressionType === _util.CMapCompressionType.BINARY) {
-      return new BinaryCMapReader().process(cMapData, cMap, useCMap => {
-        return extendCMap(cMap, fetchBuiltInCMap, useCMap);
-      });
-    }
-    if (compressionType === _util.CMapCompressionType.NONE) {
-      const lexer = new _parser.Lexer(new _stream.Stream(cMapData));
-      return parseCMap(cMap, lexer, fetchBuiltInCMap, null);
-    }
-    throw new Error(`Invalid CMap "compressionType" value: ${compressionType}`);
+  if (compressionType === _util.CMapCompressionType.NONE) {
+    const lexer = new _parser.Lexer(new _stream.Stream(cMapData));
+    return parseCMap(cMap, lexer, fetchBuiltInCMap, null);
   }
-  return {
-    async create(params) {
-      const encoding = params.encoding;
-      const fetchBuiltInCMap = params.fetchBuiltInCMap;
-      const useCMap = params.useCMap;
-      if (encoding instanceof _primitives.Name) {
-        return createBuiltInCMap(encoding.name, fetchBuiltInCMap);
-      } else if (encoding instanceof _base_stream.BaseStream) {
-        const parsedCMap = await parseCMap(new CMap(), new _parser.Lexer(encoding), fetchBuiltInCMap, useCMap);
-        if (parsedCMap.isIdentityCMap) {
-          return createBuiltInCMap(parsedCMap.name, fetchBuiltInCMap);
-        }
-        return parsedCMap;
+  throw new Error(`Invalid CMap "compressionType" value: ${compressionType}`);
+}
+class CMapFactory {
+  static async create({
+    encoding,
+    fetchBuiltInCMap,
+    useCMap
+  }) {
+    if (encoding instanceof _primitives.Name) {
+      return createBuiltInCMap(encoding.name, fetchBuiltInCMap);
+    } else if (encoding instanceof _base_stream.BaseStream) {
+      const parsedCMap = await parseCMap(new CMap(), new _parser.Lexer(encoding), fetchBuiltInCMap, useCMap);
+      if (parsedCMap.isIdentityCMap) {
+        return createBuiltInCMap(parsedCMap.name, fetchBuiltInCMap);
       }
-      throw new Error("Encoding required.");
+      return parsedCMap;
     }
-  };
-}();
+    throw new Error("Encoding required.");
+  }
+}
 exports.CMapFactory = CMapFactory;
 
 /***/ }),
@@ -12803,21 +12591,288 @@ exports.CMapFactory = CMapFactory;
 Object.defineProperty(exports, "__esModule", ({
   value: true
 }));
+exports.BinaryCMapReader = void 0;
+var _util = __w_pdfjs_require__(2);
+function hexToInt(a, size) {
+  let n = 0;
+  for (let i = 0; i <= size; i++) {
+    n = n << 8 | a[i];
+  }
+  return n >>> 0;
+}
+function hexToStr(a, size) {
+  if (size === 1) {
+    return String.fromCharCode(a[0], a[1]);
+  }
+  if (size === 3) {
+    return String.fromCharCode(a[0], a[1], a[2], a[3]);
+  }
+  return String.fromCharCode(...a.subarray(0, size + 1));
+}
+function addHex(a, b, size) {
+  let c = 0;
+  for (let i = size; i >= 0; i--) {
+    c += a[i] + b[i];
+    a[i] = c & 255;
+    c >>= 8;
+  }
+}
+function incHex(a, size) {
+  let c = 1;
+  for (let i = size; i >= 0 && c > 0; i--) {
+    c += a[i];
+    a[i] = c & 255;
+    c >>= 8;
+  }
+}
+const MAX_NUM_SIZE = 16;
+const MAX_ENCODED_NUM_SIZE = 19;
+class BinaryCMapStream {
+  constructor(data) {
+    this.buffer = data;
+    this.pos = 0;
+    this.end = data.length;
+    this.tmpBuf = new Uint8Array(MAX_ENCODED_NUM_SIZE);
+  }
+  readByte() {
+    if (this.pos >= this.end) {
+      return -1;
+    }
+    return this.buffer[this.pos++];
+  }
+  readNumber() {
+    let n = 0;
+    let last;
+    do {
+      const b = this.readByte();
+      if (b < 0) {
+        throw new _util.FormatError("unexpected EOF in bcmap");
+      }
+      last = !(b & 0x80);
+      n = n << 7 | b & 0x7f;
+    } while (!last);
+    return n;
+  }
+  readSigned() {
+    const n = this.readNumber();
+    return n & 1 ? ~(n >>> 1) : n >>> 1;
+  }
+  readHex(num, size) {
+    num.set(this.buffer.subarray(this.pos, this.pos + size + 1));
+    this.pos += size + 1;
+  }
+  readHexNumber(num, size) {
+    let last;
+    const stack = this.tmpBuf;
+    let sp = 0;
+    do {
+      const b = this.readByte();
+      if (b < 0) {
+        throw new _util.FormatError("unexpected EOF in bcmap");
+      }
+      last = !(b & 0x80);
+      stack[sp++] = b & 0x7f;
+    } while (!last);
+    let i = size,
+      buffer = 0,
+      bufferSize = 0;
+    while (i >= 0) {
+      while (bufferSize < 8 && stack.length > 0) {
+        buffer |= stack[--sp] << bufferSize;
+        bufferSize += 7;
+      }
+      num[i] = buffer & 255;
+      i--;
+      buffer >>= 8;
+      bufferSize -= 8;
+    }
+  }
+  readHexSigned(num, size) {
+    this.readHexNumber(num, size);
+    const sign = num[size] & 1 ? 255 : 0;
+    let c = 0;
+    for (let i = 0; i <= size; i++) {
+      c = (c & 1) << 8 | num[i];
+      num[i] = c >> 1 ^ sign;
+    }
+  }
+  readString() {
+    const len = this.readNumber(),
+      buf = new Array(len);
+    for (let i = 0; i < len; i++) {
+      buf[i] = this.readNumber();
+    }
+    return String.fromCharCode(...buf);
+  }
+}
+class BinaryCMapReader {
+  async process(data, cMap, extend) {
+    const stream = new BinaryCMapStream(data);
+    const header = stream.readByte();
+    cMap.vertical = !!(header & 1);
+    let useCMap = null;
+    const start = new Uint8Array(MAX_NUM_SIZE);
+    const end = new Uint8Array(MAX_NUM_SIZE);
+    const char = new Uint8Array(MAX_NUM_SIZE);
+    const charCode = new Uint8Array(MAX_NUM_SIZE);
+    const tmp = new Uint8Array(MAX_NUM_SIZE);
+    let code;
+    let b;
+    while ((b = stream.readByte()) >= 0) {
+      const type = b >> 5;
+      if (type === 7) {
+        switch (b & 0x1f) {
+          case 0:
+            stream.readString();
+            break;
+          case 1:
+            useCMap = stream.readString();
+            break;
+        }
+        continue;
+      }
+      const sequence = !!(b & 0x10);
+      const dataSize = b & 15;
+      if (dataSize + 1 > MAX_NUM_SIZE) {
+        throw new Error("BinaryCMapReader.process: Invalid dataSize.");
+      }
+      const ucs2DataSize = 1;
+      const subitemsCount = stream.readNumber();
+      switch (type) {
+        case 0:
+          stream.readHex(start, dataSize);
+          stream.readHexNumber(end, dataSize);
+          addHex(end, start, dataSize);
+          cMap.addCodespaceRange(dataSize + 1, hexToInt(start, dataSize), hexToInt(end, dataSize));
+          for (let i = 1; i < subitemsCount; i++) {
+            incHex(end, dataSize);
+            stream.readHexNumber(start, dataSize);
+            addHex(start, end, dataSize);
+            stream.readHexNumber(end, dataSize);
+            addHex(end, start, dataSize);
+            cMap.addCodespaceRange(dataSize + 1, hexToInt(start, dataSize), hexToInt(end, dataSize));
+          }
+          break;
+        case 1:
+          stream.readHex(start, dataSize);
+          stream.readHexNumber(end, dataSize);
+          addHex(end, start, dataSize);
+          stream.readNumber();
+          for (let i = 1; i < subitemsCount; i++) {
+            incHex(end, dataSize);
+            stream.readHexNumber(start, dataSize);
+            addHex(start, end, dataSize);
+            stream.readHexNumber(end, dataSize);
+            addHex(end, start, dataSize);
+            stream.readNumber();
+          }
+          break;
+        case 2:
+          stream.readHex(char, dataSize);
+          code = stream.readNumber();
+          cMap.mapOne(hexToInt(char, dataSize), code);
+          for (let i = 1; i < subitemsCount; i++) {
+            incHex(char, dataSize);
+            if (!sequence) {
+              stream.readHexNumber(tmp, dataSize);
+              addHex(char, tmp, dataSize);
+            }
+            code = stream.readSigned() + (code + 1);
+            cMap.mapOne(hexToInt(char, dataSize), code);
+          }
+          break;
+        case 3:
+          stream.readHex(start, dataSize);
+          stream.readHexNumber(end, dataSize);
+          addHex(end, start, dataSize);
+          code = stream.readNumber();
+          cMap.mapCidRange(hexToInt(start, dataSize), hexToInt(end, dataSize), code);
+          for (let i = 1; i < subitemsCount; i++) {
+            incHex(end, dataSize);
+            if (!sequence) {
+              stream.readHexNumber(start, dataSize);
+              addHex(start, end, dataSize);
+            } else {
+              start.set(end);
+            }
+            stream.readHexNumber(end, dataSize);
+            addHex(end, start, dataSize);
+            code = stream.readNumber();
+            cMap.mapCidRange(hexToInt(start, dataSize), hexToInt(end, dataSize), code);
+          }
+          break;
+        case 4:
+          stream.readHex(char, ucs2DataSize);
+          stream.readHex(charCode, dataSize);
+          cMap.mapOne(hexToInt(char, ucs2DataSize), hexToStr(charCode, dataSize));
+          for (let i = 1; i < subitemsCount; i++) {
+            incHex(char, ucs2DataSize);
+            if (!sequence) {
+              stream.readHexNumber(tmp, ucs2DataSize);
+              addHex(char, tmp, ucs2DataSize);
+            }
+            incHex(charCode, dataSize);
+            stream.readHexSigned(tmp, dataSize);
+            addHex(charCode, tmp, dataSize);
+            cMap.mapOne(hexToInt(char, ucs2DataSize), hexToStr(charCode, dataSize));
+          }
+          break;
+        case 5:
+          stream.readHex(start, ucs2DataSize);
+          stream.readHexNumber(end, ucs2DataSize);
+          addHex(end, start, ucs2DataSize);
+          stream.readHex(charCode, dataSize);
+          cMap.mapBfRange(hexToInt(start, ucs2DataSize), hexToInt(end, ucs2DataSize), hexToStr(charCode, dataSize));
+          for (let i = 1; i < subitemsCount; i++) {
+            incHex(end, ucs2DataSize);
+            if (!sequence) {
+              stream.readHexNumber(start, ucs2DataSize);
+              addHex(start, end, ucs2DataSize);
+            } else {
+              start.set(end);
+            }
+            stream.readHexNumber(end, ucs2DataSize);
+            addHex(end, start, ucs2DataSize);
+            stream.readHex(charCode, dataSize);
+            cMap.mapBfRange(hexToInt(start, ucs2DataSize), hexToInt(end, ucs2DataSize), hexToStr(charCode, dataSize));
+          }
+          break;
+        default:
+          throw new Error(`BinaryCMapReader.process - unknown type: ${type}`);
+      }
+    }
+    if (useCMap) {
+      return extend(useCMap);
+    }
+    return cMap;
+  }
+}
+exports.BinaryCMapReader = BinaryCMapReader;
+
+/***/ }),
+/* 16 */
+/***/ ((__unused_webpack_module, exports, __w_pdfjs_require__) => {
+
+
+
+Object.defineProperty(exports, "__esModule", ({
+  value: true
+}));
 exports.Parser = exports.Linearization = exports.Lexer = void 0;
 var _util = __w_pdfjs_require__(2);
 var _primitives = __w_pdfjs_require__(4);
 var _core_utils = __w_pdfjs_require__(3);
-var _ascii_85_stream = __w_pdfjs_require__(16);
-var _ascii_hex_stream = __w_pdfjs_require__(18);
-var _ccitt_stream = __w_pdfjs_require__(19);
-var _flate_stream = __w_pdfjs_require__(21);
-var _jbig2_stream = __w_pdfjs_require__(22);
-var _jpeg_stream = __w_pdfjs_require__(25);
-var _jpx_stream = __w_pdfjs_require__(28);
-var _lzw_stream = __w_pdfjs_require__(30);
+var _ascii_85_stream = __w_pdfjs_require__(17);
+var _ascii_hex_stream = __w_pdfjs_require__(19);
+var _ccitt_stream = __w_pdfjs_require__(20);
+var _flate_stream = __w_pdfjs_require__(22);
+var _jbig2_stream = __w_pdfjs_require__(23);
+var _jpeg_stream = __w_pdfjs_require__(26);
+var _jpx_stream = __w_pdfjs_require__(29);
+var _lzw_stream = __w_pdfjs_require__(31);
 var _stream = __w_pdfjs_require__(8);
-var _predictor_stream = __w_pdfjs_require__(31);
-var _run_length_stream = __w_pdfjs_require__(32);
+var _predictor_stream = __w_pdfjs_require__(32);
+var _run_length_stream = __w_pdfjs_require__(33);
 const MAX_LENGTH_TO_CACHE = 1000;
 function getInlineImageCacheKey(bytes) {
   const strBuf = [],
@@ -13869,7 +13924,7 @@ class Linearization {
 exports.Linearization = Linearization;
 
 /***/ }),
-/* 16 */
+/* 17 */
 /***/ ((__unused_webpack_module, exports, __w_pdfjs_require__) => {
 
 
@@ -13878,7 +13933,7 @@ Object.defineProperty(exports, "__esModule", ({
   value: true
 }));
 exports.Ascii85Stream = void 0;
-var _decode_stream = __w_pdfjs_require__(17);
+var _decode_stream = __w_pdfjs_require__(18);
 var _core_utils = __w_pdfjs_require__(3);
 class Ascii85Stream extends _decode_stream.DecodeStream {
   constructor(str, maybeLength) {
@@ -13946,7 +14001,7 @@ class Ascii85Stream extends _decode_stream.DecodeStream {
 exports.Ascii85Stream = Ascii85Stream;
 
 /***/ }),
-/* 17 */
+/* 18 */
 /***/ ((__unused_webpack_module, exports, __w_pdfjs_require__) => {
 
 
@@ -14092,7 +14147,7 @@ class StreamsSequenceStream extends DecodeStream {
 exports.StreamsSequenceStream = StreamsSequenceStream;
 
 /***/ }),
-/* 18 */
+/* 19 */
 /***/ ((__unused_webpack_module, exports, __w_pdfjs_require__) => {
 
 
@@ -14101,7 +14156,7 @@ Object.defineProperty(exports, "__esModule", ({
   value: true
 }));
 exports.AsciiHexStream = void 0;
-var _decode_stream = __w_pdfjs_require__(17);
+var _decode_stream = __w_pdfjs_require__(18);
 class AsciiHexStream extends _decode_stream.DecodeStream {
   constructor(str, maybeLength) {
     if (maybeLength) {
@@ -14153,7 +14208,7 @@ class AsciiHexStream extends _decode_stream.DecodeStream {
 exports.AsciiHexStream = AsciiHexStream;
 
 /***/ }),
-/* 19 */
+/* 20 */
 /***/ ((__unused_webpack_module, exports, __w_pdfjs_require__) => {
 
 
@@ -14162,8 +14217,8 @@ Object.defineProperty(exports, "__esModule", ({
   value: true
 }));
 exports.CCITTFaxStream = void 0;
-var _ccitt = __w_pdfjs_require__(20);
-var _decode_stream = __w_pdfjs_require__(17);
+var _ccitt = __w_pdfjs_require__(21);
+var _decode_stream = __w_pdfjs_require__(18);
 var _primitives = __w_pdfjs_require__(4);
 class CCITTFaxStream extends _decode_stream.DecodeStream {
   constructor(str, maybeLength, params) {
@@ -14203,7 +14258,7 @@ class CCITTFaxStream extends _decode_stream.DecodeStream {
 exports.CCITTFaxStream = CCITTFaxStream;
 
 /***/ }),
-/* 20 */
+/* 21 */
 /***/ ((__unused_webpack_module, exports, __w_pdfjs_require__) => {
 
 
@@ -14735,7 +14790,7 @@ class CCITTFaxDecoder {
 exports.CCITTFaxDecoder = CCITTFaxDecoder;
 
 /***/ }),
-/* 21 */
+/* 22 */
 /***/ ((__unused_webpack_module, exports, __w_pdfjs_require__) => {
 
 
@@ -14744,7 +14799,7 @@ Object.defineProperty(exports, "__esModule", ({
   value: true
 }));
 exports.FlateStream = void 0;
-var _decode_stream = __w_pdfjs_require__(17);
+var _decode_stream = __w_pdfjs_require__(18);
 var _util = __w_pdfjs_require__(2);
 const codeLenCodeMap = new Int32Array([16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15]);
 const lengthDecode = new Int32Array([0x00003, 0x00004, 0x00005, 0x00006, 0x00007, 0x00008, 0x00009, 0x0000a, 0x1000b, 0x1000d, 0x1000f, 0x10011, 0x20013, 0x20017, 0x2001b, 0x2001f, 0x30023, 0x3002b, 0x30033, 0x3003b, 0x40043, 0x40053, 0x40063, 0x40073, 0x50083, 0x500a3, 0x500c3, 0x500e3, 0x00102, 0x00102, 0x00102]);
@@ -14983,7 +15038,7 @@ class FlateStream extends _decode_stream.DecodeStream {
 exports.FlateStream = FlateStream;
 
 /***/ }),
-/* 22 */
+/* 23 */
 /***/ ((__unused_webpack_module, exports, __w_pdfjs_require__) => {
 
 
@@ -14993,9 +15048,9 @@ Object.defineProperty(exports, "__esModule", ({
 }));
 exports.Jbig2Stream = void 0;
 var _base_stream = __w_pdfjs_require__(5);
-var _decode_stream = __w_pdfjs_require__(17);
+var _decode_stream = __w_pdfjs_require__(18);
 var _primitives = __w_pdfjs_require__(4);
-var _jbig = __w_pdfjs_require__(23);
+var _jbig = __w_pdfjs_require__(24);
 var _util = __w_pdfjs_require__(2);
 class Jbig2Stream extends _decode_stream.DecodeStream {
   constructor(stream, maybeLength, params) {
@@ -15044,7 +15099,7 @@ class Jbig2Stream extends _decode_stream.DecodeStream {
 exports.Jbig2Stream = Jbig2Stream;
 
 /***/ }),
-/* 23 */
+/* 24 */
 /***/ ((__unused_webpack_module, exports, __w_pdfjs_require__) => {
 
 
@@ -15055,8 +15110,8 @@ Object.defineProperty(exports, "__esModule", ({
 exports.Jbig2Image = void 0;
 var _util = __w_pdfjs_require__(2);
 var _core_utils = __w_pdfjs_require__(3);
-var _arithmetic_decoder = __w_pdfjs_require__(24);
-var _ccitt = __w_pdfjs_require__(20);
+var _arithmetic_decoder = __w_pdfjs_require__(25);
+var _ccitt = __w_pdfjs_require__(21);
 class Jbig2Error extends _util.BaseException {
   constructor(msg) {
     super(`JBIG2 error: ${msg}`, "Jbig2Error");
@@ -16795,7 +16850,7 @@ class Jbig2Image {
 exports.Jbig2Image = Jbig2Image;
 
 /***/ }),
-/* 24 */
+/* 25 */
 /***/ ((__unused_webpack_module, exports) => {
 
 
@@ -17131,7 +17186,7 @@ class ArithmeticDecoder {
 exports.ArithmeticDecoder = ArithmeticDecoder;
 
 /***/ }),
-/* 25 */
+/* 26 */
 /***/ ((__unused_webpack_module, exports, __w_pdfjs_require__) => {
 
 
@@ -17140,9 +17195,9 @@ Object.defineProperty(exports, "__esModule", ({
   value: true
 }));
 exports.JpegStream = void 0;
-var _decode_stream = __w_pdfjs_require__(17);
+var _decode_stream = __w_pdfjs_require__(18);
 var _primitives = __w_pdfjs_require__(4);
-var _jpg = __w_pdfjs_require__(26);
+var _jpg = __w_pdfjs_require__(27);
 var _util = __w_pdfjs_require__(2);
 class JpegStream extends _decode_stream.DecodeStream {
   constructor(stream, maybeLength, params) {
@@ -17212,7 +17267,7 @@ class JpegStream extends _decode_stream.DecodeStream {
 exports.JpegStream = JpegStream;
 
 /***/ }),
-/* 26 */
+/* 27 */
 /***/ ((__unused_webpack_module, exports, __w_pdfjs_require__) => {
 
 
@@ -17222,7 +17277,7 @@ Object.defineProperty(exports, "__esModule", ({
 }));
 exports.JpegImage = void 0;
 var _util = __w_pdfjs_require__(2);
-var _image_utils = __w_pdfjs_require__(27);
+var _image_utils = __w_pdfjs_require__(28);
 var _core_utils = __w_pdfjs_require__(3);
 class JpegError extends _util.BaseException {
   constructor(msg) {
@@ -18296,7 +18351,7 @@ class JpegImage {
 exports.JpegImage = JpegImage;
 
 /***/ }),
-/* 27 */
+/* 28 */
 /***/ ((__unused_webpack_module, exports, __w_pdfjs_require__) => {
 
 
@@ -18414,7 +18469,7 @@ function grayToRGBA(src, dest) {
 }
 
 /***/ }),
-/* 28 */
+/* 29 */
 /***/ ((__unused_webpack_module, exports, __w_pdfjs_require__) => {
 
 
@@ -18423,8 +18478,8 @@ Object.defineProperty(exports, "__esModule", ({
   value: true
 }));
 exports.JpxStream = void 0;
-var _decode_stream = __w_pdfjs_require__(17);
-var _jpx = __w_pdfjs_require__(29);
+var _decode_stream = __w_pdfjs_require__(18);
+var _jpx = __w_pdfjs_require__(30);
 var _util = __w_pdfjs_require__(2);
 class JpxStream extends _decode_stream.DecodeStream {
   constructor(stream, maybeLength, params) {
@@ -18479,7 +18534,7 @@ class JpxStream extends _decode_stream.DecodeStream {
 exports.JpxStream = JpxStream;
 
 /***/ }),
-/* 29 */
+/* 30 */
 /***/ ((__unused_webpack_module, exports, __w_pdfjs_require__) => {
 
 
@@ -18490,7 +18545,7 @@ Object.defineProperty(exports, "__esModule", ({
 exports.JpxImage = void 0;
 var _util = __w_pdfjs_require__(2);
 var _core_utils = __w_pdfjs_require__(3);
-var _arithmetic_decoder = __w_pdfjs_require__(24);
+var _arithmetic_decoder = __w_pdfjs_require__(25);
 class JpxError extends _util.BaseException {
   constructor(msg) {
     super(`JPX error: ${msg}`, "JpxError");
@@ -20407,7 +20462,7 @@ class ReversibleTransform extends Transform {
 }
 
 /***/ }),
-/* 30 */
+/* 31 */
 /***/ ((__unused_webpack_module, exports, __w_pdfjs_require__) => {
 
 
@@ -20416,7 +20471,7 @@ Object.defineProperty(exports, "__esModule", ({
   value: true
 }));
 exports.LZWStream = void 0;
-var _decode_stream = __w_pdfjs_require__(17);
+var _decode_stream = __w_pdfjs_require__(18);
 class LZWStream extends _decode_stream.DecodeStream {
   constructor(str, maybeLength, earlyChange) {
     super(maybeLength);
@@ -20534,7 +20589,7 @@ class LZWStream extends _decode_stream.DecodeStream {
 exports.LZWStream = LZWStream;
 
 /***/ }),
-/* 31 */
+/* 32 */
 /***/ ((__unused_webpack_module, exports, __w_pdfjs_require__) => {
 
 
@@ -20543,7 +20598,7 @@ Object.defineProperty(exports, "__esModule", ({
   value: true
 }));
 exports.PredictorStream = void 0;
-var _decode_stream = __w_pdfjs_require__(17);
+var _decode_stream = __w_pdfjs_require__(18);
 var _primitives = __w_pdfjs_require__(4);
 var _util = __w_pdfjs_require__(2);
 class PredictorStream extends _decode_stream.DecodeStream {
@@ -20735,7 +20790,7 @@ class PredictorStream extends _decode_stream.DecodeStream {
 exports.PredictorStream = PredictorStream;
 
 /***/ }),
-/* 32 */
+/* 33 */
 /***/ ((__unused_webpack_module, exports, __w_pdfjs_require__) => {
 
 
@@ -20744,7 +20799,7 @@ Object.defineProperty(exports, "__esModule", ({
   value: true
 }));
 exports.RunLengthStream = void 0;
-var _decode_stream = __w_pdfjs_require__(17);
+var _decode_stream = __w_pdfjs_require__(18);
 class RunLengthStream extends _decode_stream.DecodeStream {
   constructor(str, maybeLength) {
     super(maybeLength);
@@ -20782,7 +20837,7 @@ class RunLengthStream extends _decode_stream.DecodeStream {
 exports.RunLengthStream = RunLengthStream;
 
 /***/ }),
-/* 33 */
+/* 34 */
 /***/ ((__unused_webpack_module, exports, __w_pdfjs_require__) => {
 
 
@@ -20792,22 +20847,22 @@ Object.defineProperty(exports, "__esModule", ({
 }));
 exports.Font = exports.ErrorFont = void 0;
 var _util = __w_pdfjs_require__(2);
-var _cff_parser = __w_pdfjs_require__(34);
-var _fonts_utils = __w_pdfjs_require__(37);
-var _unicode = __w_pdfjs_require__(39);
-var _glyphlist = __w_pdfjs_require__(38);
-var _encodings = __w_pdfjs_require__(36);
-var _standard_fonts = __w_pdfjs_require__(40);
-var _to_unicode_map = __w_pdfjs_require__(41);
-var _cff_font = __w_pdfjs_require__(42);
-var _font_renderer = __w_pdfjs_require__(43);
-var _metrics = __w_pdfjs_require__(44);
-var _glyf = __w_pdfjs_require__(45);
+var _cff_parser = __w_pdfjs_require__(35);
+var _fonts_utils = __w_pdfjs_require__(38);
+var _unicode = __w_pdfjs_require__(40);
+var _glyphlist = __w_pdfjs_require__(39);
+var _encodings = __w_pdfjs_require__(37);
+var _standard_fonts = __w_pdfjs_require__(41);
+var _to_unicode_map = __w_pdfjs_require__(42);
+var _cff_font = __w_pdfjs_require__(43);
+var _font_renderer = __w_pdfjs_require__(44);
+var _metrics = __w_pdfjs_require__(45);
+var _glyf = __w_pdfjs_require__(46);
 var _cmap = __w_pdfjs_require__(14);
-var _opentype_file_builder = __w_pdfjs_require__(46);
+var _opentype_file_builder = __w_pdfjs_require__(47);
 var _core_utils = __w_pdfjs_require__(3);
 var _stream = __w_pdfjs_require__(8);
-var _type1_font = __w_pdfjs_require__(47);
+var _type1_font = __w_pdfjs_require__(48);
 const PRIVATE_USE_AREAS = [[0xe000, 0xf8ff], [0x100000, 0x10fffd]];
 const PDF_GLYPH_SPACE_UNITS = 1000;
 const EXPORT_DATA_PROPERTIES = ["ascent", "bbox", "black", "bold", "charProcOperatorList", "composite", "cssFontInfo", "data", "defaultVMetrics", "defaultWidth", "descent", "fallbackName", "fontMatrix", "isInvalidPDFjsFont", "isType3Font", "italic", "loadedName", "mimetype", "missingFile", "name", "remeasure", "subtype", "type", "vertical"];
@@ -20934,12 +20989,6 @@ class Glyph {
   }
   get category() {
     return (0, _util.shadow)(this, "category", (0, _unicode.getCharUnicodeCategory)(this.unicode), true);
-  }
-  get normalizedUnicode() {
-    return (0, _util.shadow)(this, "normalizedUnicode", (0, _unicode.reverseIfRtl)(Glyph._NormalizedUnicodes[this.unicode] || this.unicode), true);
-  }
-  static get _NormalizedUnicodes() {
-    return (0, _util.shadow)(this, "_NormalizedUnicodes", (0, _unicode.getNormalizedUnicodes)());
   }
 }
 function int16(b0, b1) {
@@ -21086,6 +21135,7 @@ function adjustMapping(charCodeToGlyphId, hasGlyph, newGlyphZeroId, toUnicode) {
   const privateUseOffetStart = PRIVATE_USE_AREAS[privateUseAreaIndex][0];
   let nextAvailableFontCharCode = privateUseOffetStart;
   let privateUseOffetEnd = PRIVATE_USE_AREAS[privateUseAreaIndex][1];
+  const isInPrivateArea = code => PRIVATE_USE_AREAS[0][0] <= code && code <= PRIVATE_USE_AREAS[0][1] || PRIVATE_USE_AREAS[1][0] <= code && code <= PRIVATE_USE_AREAS[1][1];
   for (let originalCharCode in charCodeToGlyphId) {
     originalCharCode |= 0;
     let glyphId = charCodeToGlyphId[originalCharCode];
@@ -21109,7 +21159,7 @@ function adjustMapping(charCodeToGlyphId, hasGlyph, newGlyphZeroId, toUnicode) {
     if (typeof unicode === "string") {
       unicode = unicode.codePointAt(0);
     }
-    if (unicode && unicode < privateUseOffetStart && !usedGlyphIds.has(glyphId)) {
+    if (unicode && !isInPrivateArea(unicode) && !usedGlyphIds.has(glyphId)) {
       toUnicodeExtraMap.set(unicode, glyphId);
       usedGlyphIds.add(glyphId);
     }
@@ -21291,6 +21341,7 @@ function createOS2Table(properties, charstrings, override) {
   let ulUnicodeRange4 = 0;
   let firstCharIndex = null;
   let lastCharIndex = 0;
+  let position = -1;
   if (charstrings) {
     for (let code in charstrings) {
       code |= 0;
@@ -21300,7 +21351,7 @@ function createOS2Table(properties, charstrings, override) {
       if (lastCharIndex < code) {
         lastCharIndex = code;
       }
-      const position = (0, _unicode.getUnicodeRangeFor)(code);
+      position = (0, _unicode.getUnicodeRangeFor)(code, position);
       if (position < 32) {
         ulUnicodeRange1 |= 1 << position;
       } else if (position < 64) {
@@ -23206,7 +23257,7 @@ class ErrorFont {
 exports.ErrorFont = ErrorFont;
 
 /***/ }),
-/* 34 */
+/* 35 */
 /***/ ((__unused_webpack_module, exports, __w_pdfjs_require__) => {
 
 
@@ -23216,8 +23267,8 @@ Object.defineProperty(exports, "__esModule", ({
 }));
 exports.CFFTopDict = exports.CFFStrings = exports.CFFStandardStrings = exports.CFFPrivateDict = exports.CFFParser = exports.CFFIndex = exports.CFFHeader = exports.CFFFDSelect = exports.CFFCompiler = exports.CFFCharset = exports.CFF = void 0;
 var _util = __w_pdfjs_require__(2);
-var _charsets = __w_pdfjs_require__(35);
-var _encodings = __w_pdfjs_require__(36);
+var _charsets = __w_pdfjs_require__(36);
+var _encodings = __w_pdfjs_require__(37);
 const MAX_SUBR_NESTING = 10;
 const CFFStandardStrings = [".notdef", "space", "exclam", "quotedbl", "numbersign", "dollar", "percent", "ampersand", "quoteright", "parenleft", "parenright", "asterisk", "plus", "comma", "hyphen", "period", "slash", "zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "colon", "semicolon", "less", "equal", "greater", "question", "at", "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z", "bracketleft", "backslash", "bracketright", "asciicircum", "underscore", "quoteleft", "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n", "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z", "braceleft", "bar", "braceright", "asciitilde", "exclamdown", "cent", "sterling", "fraction", "yen", "florin", "section", "currency", "quotesingle", "quotedblleft", "guillemotleft", "guilsinglleft", "guilsinglright", "fi", "fl", "endash", "dagger", "daggerdbl", "periodcentered", "paragraph", "bullet", "quotesinglbase", "quotedblbase", "quotedblright", "guillemotright", "ellipsis", "perthousand", "questiondown", "grave", "acute", "circumflex", "tilde", "macron", "breve", "dotaccent", "dieresis", "ring", "cedilla", "hungarumlaut", "ogonek", "caron", "emdash", "AE", "ordfeminine", "Lslash", "Oslash", "OE", "ordmasculine", "ae", "dotlessi", "lslash", "oslash", "oe", "germandbls", "onesuperior", "logicalnot", "mu", "trademark", "Eth", "onehalf", "plusminus", "Thorn", "onequarter", "divide", "brokenbar", "degree", "thorn", "threequarters", "twosuperior", "registered", "minus", "eth", "multiply", "threesuperior", "copyright", "Aacute", "Acircumflex", "Adieresis", "Agrave", "Aring", "Atilde", "Ccedilla", "Eacute", "Ecircumflex", "Edieresis", "Egrave", "Iacute", "Icircumflex", "Idieresis", "Igrave", "Ntilde", "Oacute", "Ocircumflex", "Odieresis", "Ograve", "Otilde", "Scaron", "Uacute", "Ucircumflex", "Udieresis", "Ugrave", "Yacute", "Ydieresis", "Zcaron", "aacute", "acircumflex", "adieresis", "agrave", "aring", "atilde", "ccedilla", "eacute", "ecircumflex", "edieresis", "egrave", "iacute", "icircumflex", "idieresis", "igrave", "ntilde", "oacute", "ocircumflex", "odieresis", "ograve", "otilde", "scaron", "uacute", "ucircumflex", "udieresis", "ugrave", "yacute", "ydieresis", "zcaron", "exclamsmall", "Hungarumlautsmall", "dollaroldstyle", "dollarsuperior", "ampersandsmall", "Acutesmall", "parenleftsuperior", "parenrightsuperior", "twodotenleader", "onedotenleader", "zerooldstyle", "oneoldstyle", "twooldstyle", "threeoldstyle", "fouroldstyle", "fiveoldstyle", "sixoldstyle", "sevenoldstyle", "eightoldstyle", "nineoldstyle", "commasuperior", "threequartersemdash", "periodsuperior", "questionsmall", "asuperior", "bsuperior", "centsuperior", "dsuperior", "esuperior", "isuperior", "lsuperior", "msuperior", "nsuperior", "osuperior", "rsuperior", "ssuperior", "tsuperior", "ff", "ffi", "ffl", "parenleftinferior", "parenrightinferior", "Circumflexsmall", "hyphensuperior", "Gravesmall", "Asmall", "Bsmall", "Csmall", "Dsmall", "Esmall", "Fsmall", "Gsmall", "Hsmall", "Ismall", "Jsmall", "Ksmall", "Lsmall", "Msmall", "Nsmall", "Osmall", "Psmall", "Qsmall", "Rsmall", "Ssmall", "Tsmall", "Usmall", "Vsmall", "Wsmall", "Xsmall", "Ysmall", "Zsmall", "colonmonetary", "onefitted", "rupiah", "Tildesmall", "exclamdownsmall", "centoldstyle", "Lslashsmall", "Scaronsmall", "Zcaronsmall", "Dieresissmall", "Brevesmall", "Caronsmall", "Dotaccentsmall", "Macronsmall", "figuredash", "hypheninferior", "Ogoneksmall", "Ringsmall", "Cedillasmall", "questiondownsmall", "oneeighth", "threeeighths", "fiveeighths", "seveneighths", "onethird", "twothirds", "zerosuperior", "foursuperior", "fivesuperior", "sixsuperior", "sevensuperior", "eightsuperior", "ninesuperior", "zeroinferior", "oneinferior", "twoinferior", "threeinferior", "fourinferior", "fiveinferior", "sixinferior", "seveninferior", "eightinferior", "nineinferior", "centinferior", "dollarinferior", "periodinferior", "commainferior", "Agravesmall", "Aacutesmall", "Acircumflexsmall", "Atildesmall", "Adieresissmall", "Aringsmall", "AEsmall", "Ccedillasmall", "Egravesmall", "Eacutesmall", "Ecircumflexsmall", "Edieresissmall", "Igravesmall", "Iacutesmall", "Icircumflexsmall", "Idieresissmall", "Ethsmall", "Ntildesmall", "Ogravesmall", "Oacutesmall", "Ocircumflexsmall", "Otildesmall", "Odieresissmall", "OEsmall", "Oslashsmall", "Ugravesmall", "Uacutesmall", "Ucircumflexsmall", "Udieresissmall", "Yacutesmall", "Thornsmall", "Ydieresissmall", "001.000", "001.001", "001.002", "001.003", "Black", "Bold", "Book", "Light", "Medium", "Regular", "Roman", "Semibold"];
 exports.CFFStandardStrings = CFFStandardStrings;
@@ -24321,7 +24372,11 @@ class CFFCompiler {
       data: [],
       length: 0,
       add(data) {
-        this.data = this.data.concat(data);
+        if (data.length <= 65536) {
+          this.data.push(...data);
+        } else {
+          this.data = this.data.concat(data);
+        }
         this.length = this.data.length;
       }
     };
@@ -24560,10 +24615,6 @@ class CFFCompiler {
     }
     return this.compileIndex(stringIndex);
   }
-  compileGlobalSubrIndex() {
-    const globalSubrIndex = this.cff.globalSubrIndex;
-    this.out.writeByteArray(this.compileIndex(globalSubrIndex));
-  }
   compileCharStrings(charStrings) {
     const charStringsIndex = new CFFIndex();
     for (let i = 0; i < charStrings.count; i++) {
@@ -24642,11 +24693,7 @@ class CFFCompiler {
     return this.compileTypedArray(out);
   }
   compileTypedArray(data) {
-    const out = [];
-    for (let i = 0, ii = data.length; i < ii; ++i) {
-      out[i] = data[i];
-    }
-    return out;
+    return Array.from(data);
   }
   compileIndex(index, trackers = []) {
     const objects = index.objects;
@@ -24698,7 +24745,7 @@ class CFFCompiler {
 exports.CFFCompiler = CFFCompiler;
 
 /***/ }),
-/* 35 */
+/* 36 */
 /***/ ((__unused_webpack_module, exports) => {
 
 
@@ -24715,7 +24762,7 @@ const ExpertSubsetCharset = [".notdef", "space", "dollaroldstyle", "dollarsuperi
 exports.ExpertSubsetCharset = ExpertSubsetCharset;
 
 /***/ }),
-/* 36 */
+/* 37 */
 /***/ ((__unused_webpack_module, exports) => {
 
 
@@ -24760,7 +24807,7 @@ function getEncoding(encodingName) {
 }
 
 /***/ }),
-/* 37 */
+/* 38 */
 /***/ ((__unused_webpack_module, exports, __w_pdfjs_require__) => {
 
 
@@ -24772,9 +24819,9 @@ exports.SEAC_ANALYSIS_ENABLED = exports.MacStandardGlyphOrdering = exports.FontF
 exports.normalizeFontName = normalizeFontName;
 exports.recoverGlyphName = recoverGlyphName;
 exports.type1FontGlyphMapping = type1FontGlyphMapping;
-var _encodings = __w_pdfjs_require__(36);
-var _glyphlist = __w_pdfjs_require__(38);
-var _unicode = __w_pdfjs_require__(39);
+var _encodings = __w_pdfjs_require__(37);
+var _glyphlist = __w_pdfjs_require__(39);
+var _unicode = __w_pdfjs_require__(40);
 var _util = __w_pdfjs_require__(2);
 const SEAC_ANALYSIS_ENABLED = true;
 exports.SEAC_ANALYSIS_ENABLED = SEAC_ANALYSIS_ENABLED;
@@ -24875,7 +24922,7 @@ function normalizeFontName(name) {
 }
 
 /***/ }),
-/* 38 */
+/* 39 */
 /***/ ((__unused_webpack_module, exports, __w_pdfjs_require__) => {
 
 
@@ -24895,7 +24942,7 @@ const getDingbatsGlyphsUnicode = (0, _core_utils.getArrayLookupTableFactory)(fun
 exports.getDingbatsGlyphsUnicode = getDingbatsGlyphsUnicode;
 
 /***/ }),
-/* 39 */
+/* 40 */
 /***/ ((__unused_webpack_module, exports, __w_pdfjs_require__) => {
 
 
@@ -24905,11 +24952,9 @@ Object.defineProperty(exports, "__esModule", ({
 }));
 exports.clearUnicodeCaches = clearUnicodeCaches;
 exports.getCharUnicodeCategory = getCharUnicodeCategory;
-exports.getNormalizedUnicodes = void 0;
 exports.getUnicodeForGlyph = getUnicodeForGlyph;
 exports.getUnicodeRangeFor = getUnicodeRangeFor;
 exports.mapSpecialUnicodeValues = mapSpecialUnicodeValues;
-exports.reverseIfRtl = reverseIfRtl;
 var _core_utils = __w_pdfjs_require__(3);
 const getSpecialPUASymbols = (0, _core_utils.getLookupTableFactory)(function (t) {
   t[63721] = 0x00a9;
@@ -24974,410 +25019,25 @@ function getUnicodeForGlyph(name, glyphsUnicodeMap) {
   }
   return -1;
 }
-const UnicodeRanges = [{
-  begin: 0x0000,
-  end: 0x007f
-}, {
-  begin: 0x0080,
-  end: 0x00ff
-}, {
-  begin: 0x0100,
-  end: 0x017f
-}, {
-  begin: 0x0180,
-  end: 0x024f
-}, {
-  begin: 0x0250,
-  end: 0x02af
-}, {
-  begin: 0x02b0,
-  end: 0x02ff
-}, {
-  begin: 0x0300,
-  end: 0x036f
-}, {
-  begin: 0x0370,
-  end: 0x03ff
-}, {
-  begin: 0x2c80,
-  end: 0x2cff
-}, {
-  begin: 0x0400,
-  end: 0x04ff
-}, {
-  begin: 0x0530,
-  end: 0x058f
-}, {
-  begin: 0x0590,
-  end: 0x05ff
-}, {
-  begin: 0xa500,
-  end: 0xa63f
-}, {
-  begin: 0x0600,
-  end: 0x06ff
-}, {
-  begin: 0x07c0,
-  end: 0x07ff
-}, {
-  begin: 0x0900,
-  end: 0x097f
-}, {
-  begin: 0x0980,
-  end: 0x09ff
-}, {
-  begin: 0x0a00,
-  end: 0x0a7f
-}, {
-  begin: 0x0a80,
-  end: 0x0aff
-}, {
-  begin: 0x0b00,
-  end: 0x0b7f
-}, {
-  begin: 0x0b80,
-  end: 0x0bff
-}, {
-  begin: 0x0c00,
-  end: 0x0c7f
-}, {
-  begin: 0x0c80,
-  end: 0x0cff
-}, {
-  begin: 0x0d00,
-  end: 0x0d7f
-}, {
-  begin: 0x0e00,
-  end: 0x0e7f
-}, {
-  begin: 0x0e80,
-  end: 0x0eff
-}, {
-  begin: 0x10a0,
-  end: 0x10ff
-}, {
-  begin: 0x1b00,
-  end: 0x1b7f
-}, {
-  begin: 0x1100,
-  end: 0x11ff
-}, {
-  begin: 0x1e00,
-  end: 0x1eff
-}, {
-  begin: 0x1f00,
-  end: 0x1fff
-}, {
-  begin: 0x2000,
-  end: 0x206f
-}, {
-  begin: 0x2070,
-  end: 0x209f
-}, {
-  begin: 0x20a0,
-  end: 0x20cf
-}, {
-  begin: 0x20d0,
-  end: 0x20ff
-}, {
-  begin: 0x2100,
-  end: 0x214f
-}, {
-  begin: 0x2150,
-  end: 0x218f
-}, {
-  begin: 0x2190,
-  end: 0x21ff
-}, {
-  begin: 0x2200,
-  end: 0x22ff
-}, {
-  begin: 0x2300,
-  end: 0x23ff
-}, {
-  begin: 0x2400,
-  end: 0x243f
-}, {
-  begin: 0x2440,
-  end: 0x245f
-}, {
-  begin: 0x2460,
-  end: 0x24ff
-}, {
-  begin: 0x2500,
-  end: 0x257f
-}, {
-  begin: 0x2580,
-  end: 0x259f
-}, {
-  begin: 0x25a0,
-  end: 0x25ff
-}, {
-  begin: 0x2600,
-  end: 0x26ff
-}, {
-  begin: 0x2700,
-  end: 0x27bf
-}, {
-  begin: 0x3000,
-  end: 0x303f
-}, {
-  begin: 0x3040,
-  end: 0x309f
-}, {
-  begin: 0x30a0,
-  end: 0x30ff
-}, {
-  begin: 0x3100,
-  end: 0x312f
-}, {
-  begin: 0x3130,
-  end: 0x318f
-}, {
-  begin: 0xa840,
-  end: 0xa87f
-}, {
-  begin: 0x3200,
-  end: 0x32ff
-}, {
-  begin: 0x3300,
-  end: 0x33ff
-}, {
-  begin: 0xac00,
-  end: 0xd7af
-}, {
-  begin: 0xd800,
-  end: 0xdfff
-}, {
-  begin: 0x10900,
-  end: 0x1091f
-}, {
-  begin: 0x4e00,
-  end: 0x9fff
-}, {
-  begin: 0xe000,
-  end: 0xf8ff
-}, {
-  begin: 0x31c0,
-  end: 0x31ef
-}, {
-  begin: 0xfb00,
-  end: 0xfb4f
-}, {
-  begin: 0xfb50,
-  end: 0xfdff
-}, {
-  begin: 0xfe20,
-  end: 0xfe2f
-}, {
-  begin: 0xfe10,
-  end: 0xfe1f
-}, {
-  begin: 0xfe50,
-  end: 0xfe6f
-}, {
-  begin: 0xfe70,
-  end: 0xfeff
-}, {
-  begin: 0xff00,
-  end: 0xffef
-}, {
-  begin: 0xfff0,
-  end: 0xffff
-}, {
-  begin: 0x0f00,
-  end: 0x0fff
-}, {
-  begin: 0x0700,
-  end: 0x074f
-}, {
-  begin: 0x0780,
-  end: 0x07bf
-}, {
-  begin: 0x0d80,
-  end: 0x0dff
-}, {
-  begin: 0x1000,
-  end: 0x109f
-}, {
-  begin: 0x1200,
-  end: 0x137f
-}, {
-  begin: 0x13a0,
-  end: 0x13ff
-}, {
-  begin: 0x1400,
-  end: 0x167f
-}, {
-  begin: 0x1680,
-  end: 0x169f
-}, {
-  begin: 0x16a0,
-  end: 0x16ff
-}, {
-  begin: 0x1780,
-  end: 0x17ff
-}, {
-  begin: 0x1800,
-  end: 0x18af
-}, {
-  begin: 0x2800,
-  end: 0x28ff
-}, {
-  begin: 0xa000,
-  end: 0xa48f
-}, {
-  begin: 0x1700,
-  end: 0x171f
-}, {
-  begin: 0x10300,
-  end: 0x1032f
-}, {
-  begin: 0x10330,
-  end: 0x1034f
-}, {
-  begin: 0x10400,
-  end: 0x1044f
-}, {
-  begin: 0x1d000,
-  end: 0x1d0ff
-}, {
-  begin: 0x1d400,
-  end: 0x1d7ff
-}, {
-  begin: 0xff000,
-  end: 0xffffd
-}, {
-  begin: 0xfe00,
-  end: 0xfe0f
-}, {
-  begin: 0xe0000,
-  end: 0xe007f
-}, {
-  begin: 0x1900,
-  end: 0x194f
-}, {
-  begin: 0x1950,
-  end: 0x197f
-}, {
-  begin: 0x1980,
-  end: 0x19df
-}, {
-  begin: 0x1a00,
-  end: 0x1a1f
-}, {
-  begin: 0x2c00,
-  end: 0x2c5f
-}, {
-  begin: 0x2d30,
-  end: 0x2d7f
-}, {
-  begin: 0x4dc0,
-  end: 0x4dff
-}, {
-  begin: 0xa800,
-  end: 0xa82f
-}, {
-  begin: 0x10000,
-  end: 0x1007f
-}, {
-  begin: 0x10140,
-  end: 0x1018f
-}, {
-  begin: 0x10380,
-  end: 0x1039f
-}, {
-  begin: 0x103a0,
-  end: 0x103df
-}, {
-  begin: 0x10450,
-  end: 0x1047f
-}, {
-  begin: 0x10480,
-  end: 0x104af
-}, {
-  begin: 0x10800,
-  end: 0x1083f
-}, {
-  begin: 0x10a00,
-  end: 0x10a5f
-}, {
-  begin: 0x1d300,
-  end: 0x1d35f
-}, {
-  begin: 0x12000,
-  end: 0x123ff
-}, {
-  begin: 0x1d360,
-  end: 0x1d37f
-}, {
-  begin: 0x1b80,
-  end: 0x1bbf
-}, {
-  begin: 0x1c00,
-  end: 0x1c4f
-}, {
-  begin: 0x1c50,
-  end: 0x1c7f
-}, {
-  begin: 0xa880,
-  end: 0xa8df
-}, {
-  begin: 0xa900,
-  end: 0xa92f
-}, {
-  begin: 0xa930,
-  end: 0xa95f
-}, {
-  begin: 0xaa00,
-  end: 0xaa5f
-}, {
-  begin: 0x10190,
-  end: 0x101cf
-}, {
-  begin: 0x101d0,
-  end: 0x101ff
-}, {
-  begin: 0x102a0,
-  end: 0x102df
-}, {
-  begin: 0x1f030,
-  end: 0x1f09f
-}];
-function getUnicodeRangeFor(value) {
+const UnicodeRanges = [[0x0000, 0x007f], [0x0080, 0x00ff], [0x0100, 0x017f], [0x0180, 0x024f], [0x0250, 0x02af, 0x1d00, 0x1d7f, 0x1d80, 0x1dbf], [0x02b0, 0x02ff, 0xa700, 0xa71f], [0x0300, 0x036f, 0x1dc0, 0x1dff], [0x0370, 0x03ff], [0x2c80, 0x2cff], [0x0400, 0x04ff, 0x0500, 0x052f, 0x2de0, 0x2dff, 0xa640, 0xa69f], [0x0530, 0x058f], [0x0590, 0x05ff], [0xa500, 0xa63f], [0x0600, 0x06ff, 0x0750, 0x077f], [0x07c0, 0x07ff], [0x0900, 0x097f], [0x0980, 0x09ff], [0x0a00, 0x0a7f], [0x0a80, 0x0aff], [0x0b00, 0x0b7f], [0x0b80, 0x0bff], [0x0c00, 0x0c7f], [0x0c80, 0x0cff], [0x0d00, 0x0d7f], [0x0e00, 0x0e7f], [0x0e80, 0x0eff], [0x10a0, 0x10ff, 0x2d00, 0x2d2f], [0x1b00, 0x1b7f], [0x1100, 0x11ff], [0x1e00, 0x1eff, 0x2c60, 0x2c7f, 0xa720, 0xa7ff], [0x1f00, 0x1fff], [0x2000, 0x206f, 0x2e00, 0x2e7f], [0x2070, 0x209f], [0x20a0, 0x20cf], [0x20d0, 0x20ff], [0x2100, 0x214f], [0x2150, 0x218f], [0x2190, 0x21ff, 0x27f0, 0x27ff, 0x2900, 0x297f, 0x2b00, 0x2bff], [0x2200, 0x22ff, 0x2a00, 0x2aff, 0x27c0, 0x27ef, 0x2980, 0x29ff], [0x2300, 0x23ff], [0x2400, 0x243f], [0x2440, 0x245f], [0x2460, 0x24ff], [0x2500, 0x257f], [0x2580, 0x259f], [0x25a0, 0x25ff], [0x2600, 0x26ff], [0x2700, 0x27bf], [0x3000, 0x303f], [0x3040, 0x309f], [0x30a0, 0x30ff, 0x31f0, 0x31ff], [0x3100, 0x312f, 0x31a0, 0x31bf], [0x3130, 0x318f], [0xa840, 0xa87f], [0x3200, 0x32ff], [0x3300, 0x33ff], [0xac00, 0xd7af], [0xd800, 0xdfff], [0x10900, 0x1091f], [0x4e00, 0x9fff, 0x2e80, 0x2eff, 0x2f00, 0x2fdf, 0x2ff0, 0x2fff, 0x3400, 0x4dbf, 0x20000, 0x2a6df, 0x3190, 0x319f], [0xe000, 0xf8ff], [0x31c0, 0x31ef, 0xf900, 0xfaff, 0x2f800, 0x2fa1f], [0xfb00, 0xfb4f], [0xfb50, 0xfdff], [0xfe20, 0xfe2f], [0xfe10, 0xfe1f], [0xfe50, 0xfe6f], [0xfe70, 0xfeff], [0xff00, 0xffef], [0xfff0, 0xffff], [0x0f00, 0x0fff], [0x0700, 0x074f], [0x0780, 0x07bf], [0x0d80, 0x0dff], [0x1000, 0x109f], [0x1200, 0x137f, 0x1380, 0x139f, 0x2d80, 0x2ddf], [0x13a0, 0x13ff], [0x1400, 0x167f], [0x1680, 0x169f], [0x16a0, 0x16ff], [0x1780, 0x17ff], [0x1800, 0x18af], [0x2800, 0x28ff], [0xa000, 0xa48f], [0x1700, 0x171f, 0x1720, 0x173f, 0x1740, 0x175f, 0x1760, 0x177f], [0x10300, 0x1032f], [0x10330, 0x1034f], [0x10400, 0x1044f], [0x1d000, 0x1d0ff, 0x1d100, 0x1d1ff, 0x1d200, 0x1d24f], [0x1d400, 0x1d7ff], [0xff000, 0xffffd], [0xfe00, 0xfe0f, 0xe0100, 0xe01ef], [0xe0000, 0xe007f], [0x1900, 0x194f], [0x1950, 0x197f], [0x1980, 0x19df], [0x1a00, 0x1a1f], [0x2c00, 0x2c5f], [0x2d30, 0x2d7f], [0x4dc0, 0x4dff], [0xa800, 0xa82f], [0x10000, 0x1007f, 0x10080, 0x100ff, 0x10100, 0x1013f], [0x10140, 0x1018f], [0x10380, 0x1039f], [0x103a0, 0x103df], [0x10450, 0x1047f], [0x10480, 0x104af], [0x10800, 0x1083f], [0x10a00, 0x10a5f], [0x1d300, 0x1d35f], [0x12000, 0x123ff, 0x12400, 0x1247f], [0x1d360, 0x1d37f], [0x1b80, 0x1bbf], [0x1c00, 0x1c4f], [0x1c50, 0x1c7f], [0xa880, 0xa8df], [0xa900, 0xa92f], [0xa930, 0xa95f], [0xaa00, 0xaa5f], [0x10190, 0x101cf], [0x101d0, 0x101ff], [0x102a0, 0x102df, 0x10280, 0x1029f, 0x10920, 0x1093f], [0x1f030, 0x1f09f, 0x1f000, 0x1f02f]];
+function getUnicodeRangeFor(value, lastPosition = -1) {
+  if (lastPosition !== -1) {
+    const range = UnicodeRanges[lastPosition];
+    for (let i = 0, ii = range.length; i < ii; i += 2) {
+      if (value >= range[i] && value <= range[i + 1]) {
+        return lastPosition;
+      }
+    }
+  }
   for (let i = 0, ii = UnicodeRanges.length; i < ii; i++) {
     const range = UnicodeRanges[i];
-    if (value >= range.begin && value < range.end) {
-      return i;
+    for (let j = 0, jj = range.length; j < jj; j += 2) {
+      if (value >= range[j] && value <= range[j + 1]) {
+        return i;
+      }
     }
   }
   return -1;
-}
-function isRTLRangeFor(value) {
-  let range = UnicodeRanges[13];
-  if (value >= range.begin && value < range.end) {
-    return true;
-  }
-  range = UnicodeRanges[11];
-  if (value >= range.begin && value < range.end) {
-    return true;
-  }
-  return false;
-}
-const getNormalizedUnicodes = (0, _core_utils.getArrayLookupTableFactory)(function () {
-  return ["\u00A8", "\u0020\u0308", "\u00AF", "\u0020\u0304", "\u00B4", "\u0020\u0301", "\u00B5", "\u03BC", "\u00B8", "\u0020\u0327", "\u0132", "\u0049\u004A", "\u0133", "\u0069\u006A", "\u013F", "\u004C\u00B7", "\u0140", "\u006C\u00B7", "\u0149", "\u02BC\u006E", "\u017F", "\u0073", "\u01C4", "\u0044\u017D", "\u01C5", "\u0044\u017E", "\u01C6", "\u0064\u017E", "\u01C7", "\u004C\u004A", "\u01C8", "\u004C\u006A", "\u01C9", "\u006C\u006A", "\u01CA", "\u004E\u004A", "\u01CB", "\u004E\u006A", "\u01CC", "\u006E\u006A", "\u01F1", "\u0044\u005A", "\u01F2", "\u0044\u007A", "\u01F3", "\u0064\u007A", "\u02D8", "\u0020\u0306", "\u02D9", "\u0020\u0307", "\u02DA", "\u0020\u030A", "\u02DB", "\u0020\u0328", "\u02DC", "\u0020\u0303", "\u02DD", "\u0020\u030B", "\u037A", "\u0020\u0345", "\u0384", "\u0020\u0301", "\u03D0", "\u03B2", "\u03D1", "\u03B8", "\u03D2", "\u03A5", "\u03D5", "\u03C6", "\u03D6", "\u03C0", "\u03F0", "\u03BA", "\u03F1", "\u03C1", "\u03F2", "\u03C2", "\u03F4", "\u0398", "\u03F5", "\u03B5", "\u03F9", "\u03A3", "\u0587", "\u0565\u0582", "\u0675", "\u0627\u0674", "\u0676", "\u0648\u0674", "\u0677", "\u06C7\u0674", "\u0678", "\u064A\u0674", "\u0E33", "\u0E4D\u0E32", "\u0EB3", "\u0ECD\u0EB2", "\u0EDC", "\u0EAB\u0E99", "\u0EDD", "\u0EAB\u0EA1", "\u0F77", "\u0FB2\u0F81", "\u0F79", "\u0FB3\u0F81", "\u1E9A", "\u0061\u02BE", "\u1FBD", "\u0020\u0313", "\u1FBF", "\u0020\u0313", "\u1FC0", "\u0020\u0342", "\u1FFE", "\u0020\u0314", "\u2002", "\u0020", "\u2003", "\u0020", "\u2004", "\u0020", "\u2005", "\u0020", "\u2006", "\u0020", "\u2008", "\u0020", "\u2009", "\u0020", "\u200A", "\u0020", "\u2017", "\u0020\u0333", "\u2024", "\u002E", "\u2025", "\u002E\u002E", "\u2026", "\u002E\u002E\u002E", "\u2033", "\u2032\u2032", "\u2034", "\u2032\u2032\u2032", "\u2036", "\u2035\u2035", "\u2037", "\u2035\u2035\u2035", "\u203C", "\u0021\u0021", "\u203E", "\u0020\u0305", "\u2047", "\u003F\u003F", "\u2048", "\u003F\u0021", "\u2049", "\u0021\u003F", "\u2057", "\u2032\u2032\u2032\u2032", "\u205F", "\u0020", "\u20A8", "\u0052\u0073", "\u2100", "\u0061\u002F\u0063", "\u2101", "\u0061\u002F\u0073", "\u2103", "\u00B0\u0043", "\u2105", "\u0063\u002F\u006F", "\u2106", "\u0063\u002F\u0075", "\u2107", "\u0190", "\u2109", "\u00B0\u0046", "\u2116", "\u004E\u006F", "\u2121", "\u0054\u0045\u004C", "\u2135", "\u05D0", "\u2136", "\u05D1", "\u2137", "\u05D2", "\u2138", "\u05D3", "\u213B", "\u0046\u0041\u0058", "\u2160", "\u0049", "\u2161", "\u0049\u0049", "\u2162", "\u0049\u0049\u0049", "\u2163", "\u0049\u0056", "\u2164", "\u0056", "\u2165", "\u0056\u0049", "\u2166", "\u0056\u0049\u0049", "\u2167", "\u0056\u0049\u0049\u0049", "\u2168", "\u0049\u0058", "\u2169", "\u0058", "\u216A", "\u0058\u0049", "\u216B", "\u0058\u0049\u0049", "\u216C", "\u004C", "\u216D", "\u0043", "\u216E", "\u0044", "\u216F", "\u004D", "\u2170", "\u0069", "\u2171", "\u0069\u0069", "\u2172", "\u0069\u0069\u0069", "\u2173", "\u0069\u0076", "\u2174", "\u0076", "\u2175", "\u0076\u0069", "\u2176", "\u0076\u0069\u0069", "\u2177", "\u0076\u0069\u0069\u0069", "\u2178", "\u0069\u0078", "\u2179", "\u0078", "\u217A", "\u0078\u0069", "\u217B", "\u0078\u0069\u0069", "\u217C", "\u006C", "\u217D", "\u0063", "\u217E", "\u0064", "\u217F", "\u006D", "\u222C", "\u222B\u222B", "\u222D", "\u222B\u222B\u222B", "\u222F", "\u222E\u222E", "\u2230", "\u222E\u222E\u222E", "\u2474", "\u0028\u0031\u0029", "\u2475", "\u0028\u0032\u0029", "\u2476", "\u0028\u0033\u0029", "\u2477", "\u0028\u0034\u0029", "\u2478", "\u0028\u0035\u0029", "\u2479", "\u0028\u0036\u0029", "\u247A", "\u0028\u0037\u0029", "\u247B", "\u0028\u0038\u0029", "\u247C", "\u0028\u0039\u0029", "\u247D", "\u0028\u0031\u0030\u0029", "\u247E", "\u0028\u0031\u0031\u0029", "\u247F", "\u0028\u0031\u0032\u0029", "\u2480", "\u0028\u0031\u0033\u0029", "\u2481", "\u0028\u0031\u0034\u0029", "\u2482", "\u0028\u0031\u0035\u0029", "\u2483", "\u0028\u0031\u0036\u0029", "\u2484", "\u0028\u0031\u0037\u0029", "\u2485", "\u0028\u0031\u0038\u0029", "\u2486", "\u0028\u0031\u0039\u0029", "\u2487", "\u0028\u0032\u0030\u0029", "\u2488", "\u0031\u002E", "\u2489", "\u0032\u002E", "\u248A", "\u0033\u002E", "\u248B", "\u0034\u002E", "\u248C", "\u0035\u002E", "\u248D", "\u0036\u002E", "\u248E", "\u0037\u002E", "\u248F", "\u0038\u002E", "\u2490", "\u0039\u002E", "\u2491", "\u0031\u0030\u002E", "\u2492", "\u0031\u0031\u002E", "\u2493", "\u0031\u0032\u002E", "\u2494", "\u0031\u0033\u002E", "\u2495", "\u0031\u0034\u002E", "\u2496", "\u0031\u0035\u002E", "\u2497", "\u0031\u0036\u002E", "\u2498", "\u0031\u0037\u002E", "\u2499", "\u0031\u0038\u002E", "\u249A", "\u0031\u0039\u002E", "\u249B", "\u0032\u0030\u002E", "\u249C", "\u0028\u0061\u0029", "\u249D", "\u0028\u0062\u0029", "\u249E", "\u0028\u0063\u0029", "\u249F", "\u0028\u0064\u0029", "\u24A0", "\u0028\u0065\u0029", "\u24A1", "\u0028\u0066\u0029", "\u24A2", "\u0028\u0067\u0029", "\u24A3", "\u0028\u0068\u0029", "\u24A4", "\u0028\u0069\u0029", "\u24A5", "\u0028\u006A\u0029", "\u24A6", "\u0028\u006B\u0029", "\u24A7", "\u0028\u006C\u0029", "\u24A8", "\u0028\u006D\u0029", "\u24A9", "\u0028\u006E\u0029", "\u24AA", "\u0028\u006F\u0029", "\u24AB", "\u0028\u0070\u0029", "\u24AC", "\u0028\u0071\u0029", "\u24AD", "\u0028\u0072\u0029", "\u24AE", "\u0028\u0073\u0029", "\u24AF", "\u0028\u0074\u0029", "\u24B0", "\u0028\u0075\u0029", "\u24B1", "\u0028\u0076\u0029", "\u24B2", "\u0028\u0077\u0029", "\u24B3", "\u0028\u0078\u0029", "\u24B4", "\u0028\u0079\u0029", "\u24B5", "\u0028\u007A\u0029", "\u2A0C", "\u222B\u222B\u222B\u222B", "\u2A74", "\u003A\u003A\u003D", "\u2A75", "\u003D\u003D", "\u2A76", "\u003D\u003D\u003D", "\u2E9F", "\u6BCD", "\u2EF3", "\u9F9F", "\u2F00", "\u4E00", "\u2F01", "\u4E28", "\u2F02", "\u4E36", "\u2F03", "\u4E3F", "\u2F04", "\u4E59", "\u2F05", "\u4E85", "\u2F06", "\u4E8C", "\u2F07", "\u4EA0", "\u2F08", "\u4EBA", "\u2F09", "\u513F", "\u2F0A", "\u5165", "\u2F0B", "\u516B", "\u2F0C", "\u5182", "\u2F0D", "\u5196", "\u2F0E", "\u51AB", "\u2F0F", "\u51E0", "\u2F10", "\u51F5", "\u2F11", "\u5200", "\u2F12", "\u529B", "\u2F13", "\u52F9", "\u2F14", "\u5315", "\u2F15", "\u531A", "\u2F16", "\u5338", "\u2F17", "\u5341", "\u2F18", "\u535C", "\u2F19", "\u5369", "\u2F1A", "\u5382", "\u2F1B", "\u53B6", "\u2F1C", "\u53C8", "\u2F1D", "\u53E3", "\u2F1E", "\u56D7", "\u2F1F", "\u571F", "\u2F20", "\u58EB", "\u2F21", "\u5902", "\u2F22", "\u590A", "\u2F23", "\u5915", "\u2F24", "\u5927", "\u2F25", "\u5973", "\u2F26", "\u5B50", "\u2F27", "\u5B80", "\u2F28", "\u5BF8", "\u2F29", "\u5C0F", "\u2F2A", "\u5C22", "\u2F2B", "\u5C38", "\u2F2C", "\u5C6E", "\u2F2D", "\u5C71", "\u2F2E", "\u5DDB", "\u2F2F", "\u5DE5", "\u2F30", "\u5DF1", "\u2F31", "\u5DFE", "\u2F32", "\u5E72", "\u2F33", "\u5E7A", "\u2F34", "\u5E7F", "\u2F35", "\u5EF4", "\u2F36", "\u5EFE", "\u2F37", "\u5F0B", "\u2F38", "\u5F13", "\u2F39", "\u5F50", "\u2F3A", "\u5F61", "\u2F3B", "\u5F73", "\u2F3C", "\u5FC3", "\u2F3D", "\u6208", "\u2F3E", "\u6236", "\u2F3F", "\u624B", "\u2F40", "\u652F", "\u2F41", "\u6534", "\u2F42", "\u6587", "\u2F43", "\u6597", "\u2F44", "\u65A4", "\u2F45", "\u65B9", "\u2F46", "\u65E0", "\u2F47", "\u65E5", "\u2F48", "\u66F0", "\u2F49", "\u6708", "\u2F4A", "\u6728", "\u2F4B", "\u6B20", "\u2F4C", "\u6B62", "\u2F4D", "\u6B79", "\u2F4E", "\u6BB3", "\u2F4F", "\u6BCB", "\u2F50", "\u6BD4", "\u2F51", "\u6BDB", "\u2F52", "\u6C0F", "\u2F53", "\u6C14", "\u2F54", "\u6C34", "\u2F55", "\u706B", "\u2F56", "\u722A", "\u2F57", "\u7236", "\u2F58", "\u723B", "\u2F59", "\u723F", "\u2F5A", "\u7247", "\u2F5B", "\u7259", "\u2F5C", "\u725B", "\u2F5D", "\u72AC", "\u2F5E", "\u7384", "\u2F5F", "\u7389", "\u2F60", "\u74DC", "\u2F61", "\u74E6", "\u2F62", "\u7518", "\u2F63", "\u751F", "\u2F64", "\u7528", "\u2F65", "\u7530", "\u2F66", "\u758B", "\u2F67", "\u7592", "\u2F68", "\u7676", "\u2F69", "\u767D", "\u2F6A", "\u76AE", "\u2F6B", "\u76BF", "\u2F6C", "\u76EE", "\u2F6D", "\u77DB", "\u2F6E", "\u77E2", "\u2F6F", "\u77F3", "\u2F70", "\u793A", "\u2F71", "\u79B8", "\u2F72", "\u79BE", "\u2F73", "\u7A74", "\u2F74", "\u7ACB", "\u2F75", "\u7AF9", "\u2F76", "\u7C73", "\u2F77", "\u7CF8", "\u2F78", "\u7F36", "\u2F79", "\u7F51", "\u2F7A", "\u7F8A", "\u2F7B", "\u7FBD", "\u2F7C", "\u8001", "\u2F7D", "\u800C", "\u2F7E", "\u8012", "\u2F7F", "\u8033", "\u2F80", "\u807F", "\u2F81", "\u8089", "\u2F82", "\u81E3", "\u2F83", "\u81EA", "\u2F84", "\u81F3", "\u2F85", "\u81FC", "\u2F86", "\u820C", "\u2F87", "\u821B", "\u2F88", "\u821F", "\u2F89", "\u826E", "\u2F8A", "\u8272", "\u2F8B", "\u8278", "\u2F8C", "\u864D", "\u2F8D", "\u866B", "\u2F8E", "\u8840", "\u2F8F", "\u884C", "\u2F90", "\u8863", "\u2F91", "\u897E", "\u2F92", "\u898B", "\u2F93", "\u89D2", "\u2F94", "\u8A00", "\u2F95", "\u8C37", "\u2F96", "\u8C46", "\u2F97", "\u8C55", "\u2F98", "\u8C78", "\u2F99", "\u8C9D", "\u2F9A", "\u8D64", "\u2F9B", "\u8D70", "\u2F9C", "\u8DB3", "\u2F9D", "\u8EAB", "\u2F9E", "\u8ECA", "\u2F9F", "\u8F9B", "\u2FA0", "\u8FB0", "\u2FA1", "\u8FB5", "\u2FA2", "\u9091", "\u2FA3", "\u9149", "\u2FA4", "\u91C6", "\u2FA5", "\u91CC", "\u2FA6", "\u91D1", "\u2FA7", "\u9577", "\u2FA8", "\u9580", "\u2FA9", "\u961C", "\u2FAA", "\u96B6", "\u2FAB", "\u96B9", "\u2FAC", "\u96E8", "\u2FAD", "\u9751", "\u2FAE", "\u975E", "\u2FAF", "\u9762", "\u2FB0", "\u9769", "\u2FB1", "\u97CB", "\u2FB2", "\u97ED", "\u2FB3", "\u97F3", "\u2FB4", "\u9801", "\u2FB5", "\u98A8", "\u2FB6", "\u98DB", "\u2FB7", "\u98DF", "\u2FB8", "\u9996", "\u2FB9", "\u9999", "\u2FBA", "\u99AC", "\u2FBB", "\u9AA8", "\u2FBC", "\u9AD8", "\u2FBD", "\u9ADF", "\u2FBE", "\u9B25", "\u2FBF", "\u9B2F", "\u2FC0", "\u9B32", "\u2FC1", "\u9B3C", "\u2FC2", "\u9B5A", "\u2FC3", "\u9CE5", "\u2FC4", "\u9E75", "\u2FC5", "\u9E7F", "\u2FC6", "\u9EA5", "\u2FC7", "\u9EBB", "\u2FC8", "\u9EC3", "\u2FC9", "\u9ECD", "\u2FCA", "\u9ED1", "\u2FCB", "\u9EF9", "\u2FCC", "\u9EFD", "\u2FCD", "\u9F0E", "\u2FCE", "\u9F13", "\u2FCF", "\u9F20", "\u2FD0", "\u9F3B", "\u2FD1", "\u9F4A", "\u2FD2", "\u9F52", "\u2FD3", "\u9F8D", "\u2FD4", "\u9F9C", "\u2FD5", "\u9FA0", "\u3036", "\u3012", "\u3038", "\u5341", "\u3039", "\u5344", "\u303A", "\u5345", "\u309B", "\u0020\u3099", "\u309C", "\u0020\u309A", "\u3131", "\u1100", "\u3132", "\u1101", "\u3133", "\u11AA", "\u3134", "\u1102", "\u3135", "\u11AC", "\u3136", "\u11AD", "\u3137", "\u1103", "\u3138", "\u1104", "\u3139", "\u1105", "\u313A", "\u11B0", "\u313B", "\u11B1", "\u313C", "\u11B2", "\u313D", "\u11B3", "\u313E", "\u11B4", "\u313F", "\u11B5", "\u3140", "\u111A", "\u3141", "\u1106", "\u3142", "\u1107", "\u3143", "\u1108", "\u3144", "\u1121", "\u3145", "\u1109", "\u3146", "\u110A", "\u3147", "\u110B", "\u3148", "\u110C", "\u3149", "\u110D", "\u314A", "\u110E", "\u314B", "\u110F", "\u314C", "\u1110", "\u314D", "\u1111", "\u314E", "\u1112", "\u314F", "\u1161", "\u3150", "\u1162", "\u3151", "\u1163", "\u3152", "\u1164", "\u3153", "\u1165", "\u3154", "\u1166", "\u3155", "\u1167", "\u3156", "\u1168", "\u3157", "\u1169", "\u3158", "\u116A", "\u3159", "\u116B", "\u315A", "\u116C", "\u315B", "\u116D", "\u315C", "\u116E", "\u315D", "\u116F", "\u315E", "\u1170", "\u315F", "\u1171", "\u3160", "\u1172", "\u3161", "\u1173", "\u3162", "\u1174", "\u3163", "\u1175", "\u3164", "\u1160", "\u3165", "\u1114", "\u3166", "\u1115", "\u3167", "\u11C7", "\u3168", "\u11C8", "\u3169", "\u11CC", "\u316A", "\u11CE", "\u316B", "\u11D3", "\u316C", "\u11D7", "\u316D", "\u11D9", "\u316E", "\u111C", "\u316F", "\u11DD", "\u3170", "\u11DF", "\u3171", "\u111D", "\u3172", "\u111E", "\u3173", "\u1120", "\u3174", "\u1122", "\u3175", "\u1123", "\u3176", "\u1127", "\u3177", "\u1129", "\u3178", "\u112B", "\u3179", "\u112C", "\u317A", "\u112D", "\u317B", "\u112E", "\u317C", "\u112F", "\u317D", "\u1132", "\u317E", "\u1136", "\u317F", "\u1140", "\u3180", "\u1147", "\u3181", "\u114C", "\u3182", "\u11F1", "\u3183", "\u11F2", "\u3184", "\u1157", "\u3185", "\u1158", "\u3186", "\u1159", "\u3187", "\u1184", "\u3188", "\u1185", "\u3189", "\u1188", "\u318A", "\u1191", "\u318B", "\u1192", "\u318C", "\u1194", "\u318D", "\u119E", "\u318E", "\u11A1", "\u3200", "\u0028\u1100\u0029", "\u3201", "\u0028\u1102\u0029", "\u3202", "\u0028\u1103\u0029", "\u3203", "\u0028\u1105\u0029", "\u3204", "\u0028\u1106\u0029", "\u3205", "\u0028\u1107\u0029", "\u3206", "\u0028\u1109\u0029", "\u3207", "\u0028\u110B\u0029", "\u3208", "\u0028\u110C\u0029", "\u3209", "\u0028\u110E\u0029", "\u320A", "\u0028\u110F\u0029", "\u320B", "\u0028\u1110\u0029", "\u320C", "\u0028\u1111\u0029", "\u320D", "\u0028\u1112\u0029", "\u320E", "\u0028\u1100\u1161\u0029", "\u320F", "\u0028\u1102\u1161\u0029", "\u3210", "\u0028\u1103\u1161\u0029", "\u3211", "\u0028\u1105\u1161\u0029", "\u3212", "\u0028\u1106\u1161\u0029", "\u3213", "\u0028\u1107\u1161\u0029", "\u3214", "\u0028\u1109\u1161\u0029", "\u3215", "\u0028\u110B\u1161\u0029", "\u3216", "\u0028\u110C\u1161\u0029", "\u3217", "\u0028\u110E\u1161\u0029", "\u3218", "\u0028\u110F\u1161\u0029", "\u3219", "\u0028\u1110\u1161\u0029", "\u321A", "\u0028\u1111\u1161\u0029", "\u321B", "\u0028\u1112\u1161\u0029", "\u321C", "\u0028\u110C\u116E\u0029", "\u321D", "\u0028\u110B\u1169\u110C\u1165\u11AB\u0029", "\u321E", "\u0028\u110B\u1169\u1112\u116E\u0029", "\u3220", "\u0028\u4E00\u0029", "\u3221", "\u0028\u4E8C\u0029", "\u3222", "\u0028\u4E09\u0029", "\u3223", "\u0028\u56DB\u0029", "\u3224", "\u0028\u4E94\u0029", "\u3225", "\u0028\u516D\u0029", "\u3226", "\u0028\u4E03\u0029", "\u3227", "\u0028\u516B\u0029", "\u3228", "\u0028\u4E5D\u0029", "\u3229", "\u0028\u5341\u0029", "\u322A", "\u0028\u6708\u0029", "\u322B", "\u0028\u706B\u0029", "\u322C", "\u0028\u6C34\u0029", "\u322D", "\u0028\u6728\u0029", "\u322E", "\u0028\u91D1\u0029", "\u322F", "\u0028\u571F\u0029", "\u3230", "\u0028\u65E5\u0029", "\u3231", "\u0028\u682A\u0029", "\u3232", "\u0028\u6709\u0029", "\u3233", "\u0028\u793E\u0029", "\u3234", "\u0028\u540D\u0029", "\u3235", "\u0028\u7279\u0029", "\u3236", "\u0028\u8CA1\u0029", "\u3237", "\u0028\u795D\u0029", "\u3238", "\u0028\u52B4\u0029", "\u3239", "\u0028\u4EE3\u0029", "\u323A", "\u0028\u547C\u0029", "\u323B", "\u0028\u5B66\u0029", "\u323C", "\u0028\u76E3\u0029", "\u323D", "\u0028\u4F01\u0029", "\u323E", "\u0028\u8CC7\u0029", "\u323F", "\u0028\u5354\u0029", "\u3240", "\u0028\u796D\u0029", "\u3241", "\u0028\u4F11\u0029", "\u3242", "\u0028\u81EA\u0029", "\u3243", "\u0028\u81F3\u0029", "\u32C0", "\u0031\u6708", "\u32C1", "\u0032\u6708", "\u32C2", "\u0033\u6708", "\u32C3", "\u0034\u6708", "\u32C4", "\u0035\u6708", "\u32C5", "\u0036\u6708", "\u32C6", "\u0037\u6708", "\u32C7", "\u0038\u6708", "\u32C8", "\u0039\u6708", "\u32C9", "\u0031\u0030\u6708", "\u32CA", "\u0031\u0031\u6708", "\u32CB", "\u0031\u0032\u6708", "\u3358", "\u0030\u70B9", "\u3359", "\u0031\u70B9", "\u335A", "\u0032\u70B9", "\u335B", "\u0033\u70B9", "\u335C", "\u0034\u70B9", "\u335D", "\u0035\u70B9", "\u335E", "\u0036\u70B9", "\u335F", "\u0037\u70B9", "\u3360", "\u0038\u70B9", "\u3361", "\u0039\u70B9", "\u3362", "\u0031\u0030\u70B9", "\u3363", "\u0031\u0031\u70B9", "\u3364", "\u0031\u0032\u70B9", "\u3365", "\u0031\u0033\u70B9", "\u3366", "\u0031\u0034\u70B9", "\u3367", "\u0031\u0035\u70B9", "\u3368", "\u0031\u0036\u70B9", "\u3369", "\u0031\u0037\u70B9", "\u336A", "\u0031\u0038\u70B9", "\u336B", "\u0031\u0039\u70B9", "\u336C", "\u0032\u0030\u70B9", "\u336D", "\u0032\u0031\u70B9", "\u336E", "\u0032\u0032\u70B9", "\u336F", "\u0032\u0033\u70B9", "\u3370", "\u0032\u0034\u70B9", "\u33E0", "\u0031\u65E5", "\u33E1", "\u0032\u65E5", "\u33E2", "\u0033\u65E5", "\u33E3", "\u0034\u65E5", "\u33E4", "\u0035\u65E5", "\u33E5", "\u0036\u65E5", "\u33E6", "\u0037\u65E5", "\u33E7", "\u0038\u65E5", "\u33E8", "\u0039\u65E5", "\u33E9", "\u0031\u0030\u65E5", "\u33EA", "\u0031\u0031\u65E5", "\u33EB", "\u0031\u0032\u65E5", "\u33EC", "\u0031\u0033\u65E5", "\u33ED", "\u0031\u0034\u65E5", "\u33EE", "\u0031\u0035\u65E5", "\u33EF", "\u0031\u0036\u65E5", "\u33F0", "\u0031\u0037\u65E5", "\u33F1", "\u0031\u0038\u65E5", "\u33F2", "\u0031\u0039\u65E5", "\u33F3", "\u0032\u0030\u65E5", "\u33F4", "\u0032\u0031\u65E5", "\u33F5", "\u0032\u0032\u65E5", "\u33F6", "\u0032\u0033\u65E5", "\u33F7", "\u0032\u0034\u65E5", "\u33F8", "\u0032\u0035\u65E5", "\u33F9", "\u0032\u0036\u65E5", "\u33FA", "\u0032\u0037\u65E5", "\u33FB", "\u0032\u0038\u65E5", "\u33FC", "\u0032\u0039\u65E5", "\u33FD", "\u0033\u0030\u65E5", "\u33FE", "\u0033\u0031\u65E5", "\uFB00", "\u0066\u0066", "\uFB01", "\u0066\u0069", "\uFB02", "\u0066\u006C", "\uFB03", "\u0066\u0066\u0069", "\uFB04", "\u0066\u0066\u006C", "\uFB05", "\u017F\u0074", "\uFB06", "\u0073\u0074", "\uFB13", "\u0574\u0576", "\uFB14", "\u0574\u0565", "\uFB15", "\u0574\u056B", "\uFB16", "\u057E\u0576", "\uFB17", "\u0574\u056D", "\uFB4F", "\u05D0\u05DC", "\uFB50", "\u0671", "\uFB51", "\u0671", "\uFB52", "\u067B", "\uFB53", "\u067B", "\uFB54", "\u067B", "\uFB55", "\u067B", "\uFB56", "\u067E", "\uFB57", "\u067E", "\uFB58", "\u067E", "\uFB59", "\u067E", "\uFB5A", "\u0680", "\uFB5B", "\u0680", "\uFB5C", "\u0680", "\uFB5D", "\u0680", "\uFB5E", "\u067A", "\uFB5F", "\u067A", "\uFB60", "\u067A", "\uFB61", "\u067A", "\uFB62", "\u067F", "\uFB63", "\u067F", "\uFB64", "\u067F", "\uFB65", "\u067F", "\uFB66", "\u0679", "\uFB67", "\u0679", "\uFB68", "\u0679", "\uFB69", "\u0679", "\uFB6A", "\u06A4", "\uFB6B", "\u06A4", "\uFB6C", "\u06A4", "\uFB6D", "\u06A4", "\uFB6E", "\u06A6", "\uFB6F", "\u06A6", "\uFB70", "\u06A6", "\uFB71", "\u06A6", "\uFB72", "\u0684", "\uFB73", "\u0684", "\uFB74", "\u0684", "\uFB75", "\u0684", "\uFB76", "\u0683", "\uFB77", "\u0683", "\uFB78", "\u0683", "\uFB79", "\u0683", "\uFB7A", "\u0686", "\uFB7B", "\u0686", "\uFB7C", "\u0686", "\uFB7D", "\u0686", "\uFB7E", "\u0687", "\uFB7F", "\u0687", "\uFB80", "\u0687", "\uFB81", "\u0687", "\uFB82", "\u068D", "\uFB83", "\u068D", "\uFB84", "\u068C", "\uFB85", "\u068C", "\uFB86", "\u068E", "\uFB87", "\u068E", "\uFB88", "\u0688", "\uFB89", "\u0688", "\uFB8A", "\u0698", "\uFB8B", "\u0698", "\uFB8C", "\u0691", "\uFB8D", "\u0691", "\uFB8E", "\u06A9", "\uFB8F", "\u06A9", "\uFB90", "\u06A9", "\uFB91", "\u06A9", "\uFB92", "\u06AF", "\uFB93", "\u06AF", "\uFB94", "\u06AF", "\uFB95", "\u06AF", "\uFB96", "\u06B3", "\uFB97", "\u06B3", "\uFB98", "\u06B3", "\uFB99", "\u06B3", "\uFB9A", "\u06B1", "\uFB9B", "\u06B1", "\uFB9C", "\u06B1", "\uFB9D", "\u06B1", "\uFB9E", "\u06BA", "\uFB9F", "\u06BA", "\uFBA0", "\u06BB", "\uFBA1", "\u06BB", "\uFBA2", "\u06BB", "\uFBA3", "\u06BB", "\uFBA4", "\u06C0", "\uFBA5", "\u06C0", "\uFBA6", "\u06C1", "\uFBA7", "\u06C1", "\uFBA8", "\u06C1", "\uFBA9", "\u06C1", "\uFBAA", "\u06BE", "\uFBAB", "\u06BE", "\uFBAC", "\u06BE", "\uFBAD", "\u06BE", "\uFBAE", "\u06D2", "\uFBAF", "\u06D2", "\uFBB0", "\u06D3", "\uFBB1", "\u06D3", "\uFBD3", "\u06AD", "\uFBD4", "\u06AD", "\uFBD5", "\u06AD", "\uFBD6", "\u06AD", "\uFBD7", "\u06C7", "\uFBD8", "\u06C7", "\uFBD9", "\u06C6", "\uFBDA", "\u06C6", "\uFBDB", "\u06C8", "\uFBDC", "\u06C8", "\uFBDD", "\u0677", "\uFBDE", "\u06CB", "\uFBDF", "\u06CB", "\uFBE0", "\u06C5", "\uFBE1", "\u06C5", "\uFBE2", "\u06C9", "\uFBE3", "\u06C9", "\uFBE4", "\u06D0", "\uFBE5", "\u06D0", "\uFBE6", "\u06D0", "\uFBE7", "\u06D0", "\uFBE8", "\u0649", "\uFBE9", "\u0649", "\uFBEA", "\u0626\u0627", "\uFBEB", "\u0626\u0627", "\uFBEC", "\u0626\u06D5", "\uFBED", "\u0626\u06D5", "\uFBEE", "\u0626\u0648", "\uFBEF", "\u0626\u0648", "\uFBF0", "\u0626\u06C7", "\uFBF1", "\u0626\u06C7", "\uFBF2", "\u0626\u06C6", "\uFBF3", "\u0626\u06C6", "\uFBF4", "\u0626\u06C8", "\uFBF5", "\u0626\u06C8", "\uFBF6", "\u0626\u06D0", "\uFBF7", "\u0626\u06D0", "\uFBF8", "\u0626\u06D0", "\uFBF9", "\u0626\u0649", "\uFBFA", "\u0626\u0649", "\uFBFB", "\u0626\u0649", "\uFBFC", "\u06CC", "\uFBFD", "\u06CC", "\uFBFE", "\u06CC", "\uFBFF", "\u06CC", "\uFC00", "\u0626\u062C", "\uFC01", "\u0626\u062D", "\uFC02", "\u0626\u0645", "\uFC03", "\u0626\u0649", "\uFC04", "\u0626\u064A", "\uFC05", "\u0628\u062C", "\uFC06", "\u0628\u062D", "\uFC07", "\u0628\u062E", "\uFC08", "\u0628\u0645", "\uFC09", "\u0628\u0649", "\uFC0A", "\u0628\u064A", "\uFC0B", "\u062A\u062C", "\uFC0C", "\u062A\u062D", "\uFC0D", "\u062A\u062E", "\uFC0E", "\u062A\u0645", "\uFC0F", "\u062A\u0649", "\uFC10", "\u062A\u064A", "\uFC11", "\u062B\u062C", "\uFC12", "\u062B\u0645", "\uFC13", "\u062B\u0649", "\uFC14", "\u062B\u064A", "\uFC15", "\u062C\u062D", "\uFC16", "\u062C\u0645", "\uFC17", "\u062D\u062C", "\uFC18", "\u062D\u0645", "\uFC19", "\u062E\u062C", "\uFC1A", "\u062E\u062D", "\uFC1B", "\u062E\u0645", "\uFC1C", "\u0633\u062C", "\uFC1D", "\u0633\u062D", "\uFC1E", "\u0633\u062E", "\uFC1F", "\u0633\u0645", "\uFC20", "\u0635\u062D", "\uFC21", "\u0635\u0645", "\uFC22", "\u0636\u062C", "\uFC23", "\u0636\u062D", "\uFC24", "\u0636\u062E", "\uFC25", "\u0636\u0645", "\uFC26", "\u0637\u062D", "\uFC27", "\u0637\u0645", "\uFC28", "\u0638\u0645", "\uFC29", "\u0639\u062C", "\uFC2A", "\u0639\u0645", "\uFC2B", "\u063A\u062C", "\uFC2C", "\u063A\u0645", "\uFC2D", "\u0641\u062C", "\uFC2E", "\u0641\u062D", "\uFC2F", "\u0641\u062E", "\uFC30", "\u0641\u0645", "\uFC31", "\u0641\u0649", "\uFC32", "\u0641\u064A", "\uFC33", "\u0642\u062D", "\uFC34", "\u0642\u0645", "\uFC35", "\u0642\u0649", "\uFC36", "\u0642\u064A", "\uFC37", "\u0643\u0627", "\uFC38", "\u0643\u062C", "\uFC39", "\u0643\u062D", "\uFC3A", "\u0643\u062E", "\uFC3B", "\u0643\u0644", "\uFC3C", "\u0643\u0645", "\uFC3D", "\u0643\u0649", "\uFC3E", "\u0643\u064A", "\uFC3F", "\u0644\u062C", "\uFC40", "\u0644\u062D", "\uFC41", "\u0644\u062E", "\uFC42", "\u0644\u0645", "\uFC43", "\u0644\u0649", "\uFC44", "\u0644\u064A", "\uFC45", "\u0645\u062C", "\uFC46", "\u0645\u062D", "\uFC47", "\u0645\u062E", "\uFC48", "\u0645\u0645", "\uFC49", "\u0645\u0649", "\uFC4A", "\u0645\u064A", "\uFC4B", "\u0646\u062C", "\uFC4C", "\u0646\u062D", "\uFC4D", "\u0646\u062E", "\uFC4E", "\u0646\u0645", "\uFC4F", "\u0646\u0649", "\uFC50", "\u0646\u064A", "\uFC51", "\u0647\u062C", "\uFC52", "\u0647\u0645", "\uFC53", "\u0647\u0649", "\uFC54", "\u0647\u064A", "\uFC55", "\u064A\u062C", "\uFC56", "\u064A\u062D", "\uFC57", "\u064A\u062E", "\uFC58", "\u064A\u0645", "\uFC59", "\u064A\u0649", "\uFC5A", "\u064A\u064A", "\uFC5B", "\u0630\u0670", "\uFC5C", "\u0631\u0670", "\uFC5D", "\u0649\u0670", "\uFC5E", "\u0020\u064C\u0651", "\uFC5F", "\u0020\u064D\u0651", "\uFC60", "\u0020\u064E\u0651", "\uFC61", "\u0020\u064F\u0651", "\uFC62", "\u0020\u0650\u0651", "\uFC63", "\u0020\u0651\u0670", "\uFC64", "\u0626\u0631", "\uFC65", "\u0626\u0632", "\uFC66", "\u0626\u0645", "\uFC67", "\u0626\u0646", "\uFC68", "\u0626\u0649", "\uFC69", "\u0626\u064A", "\uFC6A", "\u0628\u0631", "\uFC6B", "\u0628\u0632", "\uFC6C", "\u0628\u0645", "\uFC6D", "\u0628\u0646", "\uFC6E", "\u0628\u0649", "\uFC6F", "\u0628\u064A", "\uFC70", "\u062A\u0631", "\uFC71", "\u062A\u0632", "\uFC72", "\u062A\u0645", "\uFC73", "\u062A\u0646", "\uFC74", "\u062A\u0649", "\uFC75", "\u062A\u064A", "\uFC76", "\u062B\u0631", "\uFC77", "\u062B\u0632", "\uFC78", "\u062B\u0645", "\uFC79", "\u062B\u0646", "\uFC7A", "\u062B\u0649", "\uFC7B", "\u062B\u064A", "\uFC7C", "\u0641\u0649", "\uFC7D", "\u0641\u064A", "\uFC7E", "\u0642\u0649", "\uFC7F", "\u0642\u064A", "\uFC80", "\u0643\u0627", "\uFC81", "\u0643\u0644", "\uFC82", "\u0643\u0645", "\uFC83", "\u0643\u0649", "\uFC84", "\u0643\u064A", "\uFC85", "\u0644\u0645", "\uFC86", "\u0644\u0649", "\uFC87", "\u0644\u064A", "\uFC88", "\u0645\u0627", "\uFC89", "\u0645\u0645", "\uFC8A", "\u0646\u0631", "\uFC8B", "\u0646\u0632", "\uFC8C", "\u0646\u0645", "\uFC8D", "\u0646\u0646", "\uFC8E", "\u0646\u0649", "\uFC8F", "\u0646\u064A", "\uFC90", "\u0649\u0670", "\uFC91", "\u064A\u0631", "\uFC92", "\u064A\u0632", "\uFC93", "\u064A\u0645", "\uFC94", "\u064A\u0646", "\uFC95", "\u064A\u0649", "\uFC96", "\u064A\u064A", "\uFC97", "\u0626\u062C", "\uFC98", "\u0626\u062D", "\uFC99", "\u0626\u062E", "\uFC9A", "\u0626\u0645", "\uFC9B", "\u0626\u0647", "\uFC9C", "\u0628\u062C", "\uFC9D", "\u0628\u062D", "\uFC9E", "\u0628\u062E", "\uFC9F", "\u0628\u0645", "\uFCA0", "\u0628\u0647", "\uFCA1", "\u062A\u062C", "\uFCA2", "\u062A\u062D", "\uFCA3", "\u062A\u062E", "\uFCA4", "\u062A\u0645", "\uFCA5", "\u062A\u0647", "\uFCA6", "\u062B\u0645", "\uFCA7", "\u062C\u062D", "\uFCA8", "\u062C\u0645", "\uFCA9", "\u062D\u062C", "\uFCAA", "\u062D\u0645", "\uFCAB", "\u062E\u062C", "\uFCAC", "\u062E\u0645", "\uFCAD", "\u0633\u062C", "\uFCAE", "\u0633\u062D", "\uFCAF", "\u0633\u062E", "\uFCB0", "\u0633\u0645", "\uFCB1", "\u0635\u062D", "\uFCB2", "\u0635\u062E", "\uFCB3", "\u0635\u0645", "\uFCB4", "\u0636\u062C", "\uFCB5", "\u0636\u062D", "\uFCB6", "\u0636\u062E", "\uFCB7", "\u0636\u0645", "\uFCB8", "\u0637\u062D", "\uFCB9", "\u0638\u0645", "\uFCBA", "\u0639\u062C", "\uFCBB", "\u0639\u0645", "\uFCBC", "\u063A\u062C", "\uFCBD", "\u063A\u0645", "\uFCBE", "\u0641\u062C", "\uFCBF", "\u0641\u062D", "\uFCC0", "\u0641\u062E", "\uFCC1", "\u0641\u0645", "\uFCC2", "\u0642\u062D", "\uFCC3", "\u0642\u0645", "\uFCC4", "\u0643\u062C", "\uFCC5", "\u0643\u062D", "\uFCC6", "\u0643\u062E", "\uFCC7", "\u0643\u0644", "\uFCC8", "\u0643\u0645", "\uFCC9", "\u0644\u062C", "\uFCCA", "\u0644\u062D", "\uFCCB", "\u0644\u062E", "\uFCCC", "\u0644\u0645", "\uFCCD", "\u0644\u0647", "\uFCCE", "\u0645\u062C", "\uFCCF", "\u0645\u062D", "\uFCD0", "\u0645\u062E", "\uFCD1", "\u0645\u0645", "\uFCD2", "\u0646\u062C", "\uFCD3", "\u0646\u062D", "\uFCD4", "\u0646\u062E", "\uFCD5", "\u0646\u0645", "\uFCD6", "\u0646\u0647", "\uFCD7", "\u0647\u062C", "\uFCD8", "\u0647\u0645", "\uFCD9", "\u0647\u0670", "\uFCDA", "\u064A\u062C", "\uFCDB", "\u064A\u062D", "\uFCDC", "\u064A\u062E", "\uFCDD", "\u064A\u0645", "\uFCDE", "\u064A\u0647", "\uFCDF", "\u0626\u0645", "\uFCE0", "\u0626\u0647", "\uFCE1", "\u0628\u0645", "\uFCE2", "\u0628\u0647", "\uFCE3", "\u062A\u0645", "\uFCE4", "\u062A\u0647", "\uFCE5", "\u062B\u0645", "\uFCE6", "\u062B\u0647", "\uFCE7", "\u0633\u0645", "\uFCE8", "\u0633\u0647", "\uFCE9", "\u0634\u0645", "\uFCEA", "\u0634\u0647", "\uFCEB", "\u0643\u0644", "\uFCEC", "\u0643\u0645", "\uFCED", "\u0644\u0645", "\uFCEE", "\u0646\u0645", "\uFCEF", "\u0646\u0647", "\uFCF0", "\u064A\u0645", "\uFCF1", "\u064A\u0647", "\uFCF2", "\u0640\u064E\u0651", "\uFCF3", "\u0640\u064F\u0651", "\uFCF4", "\u0640\u0650\u0651", "\uFCF5", "\u0637\u0649", "\uFCF6", "\u0637\u064A", "\uFCF7", "\u0639\u0649", "\uFCF8", "\u0639\u064A", "\uFCF9", "\u063A\u0649", "\uFCFA", "\u063A\u064A", "\uFCFB", "\u0633\u0649", "\uFCFC", "\u0633\u064A", "\uFCFD", "\u0634\u0649", "\uFCFE", "\u0634\u064A", "\uFCFF", "\u062D\u0649", "\uFD00", "\u062D\u064A", "\uFD01", "\u062C\u0649", "\uFD02", "\u062C\u064A", "\uFD03", "\u062E\u0649", "\uFD04", "\u062E\u064A", "\uFD05", "\u0635\u0649", "\uFD06", "\u0635\u064A", "\uFD07", "\u0636\u0649", "\uFD08", "\u0636\u064A", "\uFD09", "\u0634\u062C", "\uFD0A", "\u0634\u062D", "\uFD0B", "\u0634\u062E", "\uFD0C", "\u0634\u0645", "\uFD0D", "\u0634\u0631", "\uFD0E", "\u0633\u0631", "\uFD0F", "\u0635\u0631", "\uFD10", "\u0636\u0631", "\uFD11", "\u0637\u0649", "\uFD12", "\u0637\u064A", "\uFD13", "\u0639\u0649", "\uFD14", "\u0639\u064A", "\uFD15", "\u063A\u0649", "\uFD16", "\u063A\u064A", "\uFD17", "\u0633\u0649", "\uFD18", "\u0633\u064A", "\uFD19", "\u0634\u0649", "\uFD1A", "\u0634\u064A", "\uFD1B", "\u062D\u0649", "\uFD1C", "\u062D\u064A", "\uFD1D", "\u062C\u0649", "\uFD1E", "\u062C\u064A", "\uFD1F", "\u062E\u0649", "\uFD20", "\u062E\u064A", "\uFD21", "\u0635\u0649", "\uFD22", "\u0635\u064A", "\uFD23", "\u0636\u0649", "\uFD24", "\u0636\u064A", "\uFD25", "\u0634\u062C", "\uFD26", "\u0634\u062D", "\uFD27", "\u0634\u062E", "\uFD28", "\u0634\u0645", "\uFD29", "\u0634\u0631", "\uFD2A", "\u0633\u0631", "\uFD2B", "\u0635\u0631", "\uFD2C", "\u0636\u0631", "\uFD2D", "\u0634\u062C", "\uFD2E", "\u0634\u062D", "\uFD2F", "\u0634\u062E", "\uFD30", "\u0634\u0645", "\uFD31", "\u0633\u0647", "\uFD32", "\u0634\u0647", "\uFD33", "\u0637\u0645", "\uFD34", "\u0633\u062C", "\uFD35", "\u0633\u062D", "\uFD36", "\u0633\u062E", "\uFD37", "\u0634\u062C", "\uFD38", "\u0634\u062D", "\uFD39", "\u0634\u062E", "\uFD3A", "\u0637\u0645", "\uFD3B", "\u0638\u0645", "\uFD3C", "\u0627\u064B", "\uFD3D", "\u0627\u064B", "\uFD50", "\u062A\u062C\u0645", "\uFD51", "\u062A\u062D\u062C", "\uFD52", "\u062A\u062D\u062C", "\uFD53", "\u062A\u062D\u0645", "\uFD54", "\u062A\u062E\u0645", "\uFD55", "\u062A\u0645\u062C", "\uFD56", "\u062A\u0645\u062D", "\uFD57", "\u062A\u0645\u062E", "\uFD58", "\u062C\u0645\u062D", "\uFD59", "\u062C\u0645\u062D", "\uFD5A", "\u062D\u0645\u064A", "\uFD5B", "\u062D\u0645\u0649", "\uFD5C", "\u0633\u062D\u062C", "\uFD5D", "\u0633\u062C\u062D", "\uFD5E", "\u0633\u062C\u0649", "\uFD5F", "\u0633\u0645\u062D", "\uFD60", "\u0633\u0645\u062D", "\uFD61", "\u0633\u0645\u062C", "\uFD62", "\u0633\u0645\u0645", "\uFD63", "\u0633\u0645\u0645", "\uFD64", "\u0635\u062D\u062D", "\uFD65", "\u0635\u062D\u062D", "\uFD66", "\u0635\u0645\u0645", "\uFD67", "\u0634\u062D\u0645", "\uFD68", "\u0634\u062D\u0645", "\uFD69", "\u0634\u062C\u064A", "\uFD6A", "\u0634\u0645\u062E", "\uFD6B", "\u0634\u0645\u062E", "\uFD6C", "\u0634\u0645\u0645", "\uFD6D", "\u0634\u0645\u0645", "\uFD6E", "\u0636\u062D\u0649", "\uFD6F", "\u0636\u062E\u0645", "\uFD70", "\u0636\u062E\u0645", "\uFD71", "\u0637\u0645\u062D", "\uFD72", "\u0637\u0645\u062D", "\uFD73", "\u0637\u0645\u0645", "\uFD74", "\u0637\u0645\u064A", "\uFD75", "\u0639\u062C\u0645", "\uFD76", "\u0639\u0645\u0645", "\uFD77", "\u0639\u0645\u0645", "\uFD78", "\u0639\u0645\u0649", "\uFD79", "\u063A\u0645\u0645", "\uFD7A", "\u063A\u0645\u064A", "\uFD7B", "\u063A\u0645\u0649", "\uFD7C", "\u0641\u062E\u0645", "\uFD7D", "\u0641\u062E\u0645", "\uFD7E", "\u0642\u0645\u062D", "\uFD7F", "\u0642\u0645\u0645", "\uFD80", "\u0644\u062D\u0645", "\uFD81", "\u0644\u062D\u064A", "\uFD82", "\u0644\u062D\u0649", "\uFD83", "\u0644\u062C\u062C", "\uFD84", "\u0644\u062C\u062C", "\uFD85", "\u0644\u062E\u0645", "\uFD86", "\u0644\u062E\u0645", "\uFD87", "\u0644\u0645\u062D", "\uFD88", "\u0644\u0645\u062D", "\uFD89", "\u0645\u062D\u062C", "\uFD8A", "\u0645\u062D\u0645", "\uFD8B", "\u0645\u062D\u064A", "\uFD8C", "\u0645\u062C\u062D", "\uFD8D", "\u0645\u062C\u0645", "\uFD8E", "\u0645\u062E\u062C", "\uFD8F", "\u0645\u062E\u0645", "\uFD92", "\u0645\u062C\u062E", "\uFD93", "\u0647\u0645\u062C", "\uFD94", "\u0647\u0645\u0645", "\uFD95", "\u0646\u062D\u0645", "\uFD96", "\u0646\u062D\u0649", "\uFD97", "\u0646\u062C\u0645", "\uFD98", "\u0646\u062C\u0645", "\uFD99", "\u0646\u062C\u0649", "\uFD9A", "\u0646\u0645\u064A", "\uFD9B", "\u0646\u0645\u0649", "\uFD9C", "\u064A\u0645\u0645", "\uFD9D", "\u064A\u0645\u0645", "\uFD9E", "\u0628\u062E\u064A", "\uFD9F", "\u062A\u062C\u064A", "\uFDA0", "\u062A\u062C\u0649", "\uFDA1", "\u062A\u062E\u064A", "\uFDA2", "\u062A\u062E\u0649", "\uFDA3", "\u062A\u0645\u064A", "\uFDA4", "\u062A\u0645\u0649", "\uFDA5", "\u062C\u0645\u064A", "\uFDA6", "\u062C\u062D\u0649", "\uFDA7", "\u062C\u0645\u0649", "\uFDA8", "\u0633\u062E\u0649", "\uFDA9", "\u0635\u062D\u064A", "\uFDAA", "\u0634\u062D\u064A", "\uFDAB", "\u0636\u062D\u064A", "\uFDAC", "\u0644\u062C\u064A", "\uFDAD", "\u0644\u0645\u064A", "\uFDAE", "\u064A\u062D\u064A", "\uFDAF", "\u064A\u062C\u064A", "\uFDB0", "\u064A\u0645\u064A", "\uFDB1", "\u0645\u0645\u064A", "\uFDB2", "\u0642\u0645\u064A", "\uFDB3", "\u0646\u062D\u064A", "\uFDB4", "\u0642\u0645\u062D", "\uFDB5", "\u0644\u062D\u0645", "\uFDB6", "\u0639\u0645\u064A", "\uFDB7", "\u0643\u0645\u064A", "\uFDB8", "\u0646\u062C\u062D", "\uFDB9", "\u0645\u062E\u064A", "\uFDBA", "\u0644\u062C\u0645", "\uFDBB", "\u0643\u0645\u0645", "\uFDBC", "\u0644\u062C\u0645", "\uFDBD", "\u0646\u062C\u062D", "\uFDBE", "\u062C\u062D\u064A", "\uFDBF", "\u062D\u062C\u064A", "\uFDC0", "\u0645\u062C\u064A", "\uFDC1", "\u0641\u0645\u064A", "\uFDC2", "\u0628\u062D\u064A", "\uFDC3", "\u0643\u0645\u0645", "\uFDC4", "\u0639\u062C\u0645", "\uFDC5", "\u0635\u0645\u0645", "\uFDC6", "\u0633\u062E\u064A", "\uFDC7", "\u0646\u062C\u064A", "\uFE49", "\u203E", "\uFE4A", "\u203E", "\uFE4B", "\u203E", "\uFE4C", "\u203E", "\uFE4D", "\u005F", "\uFE4E", "\u005F", "\uFE4F", "\u005F", "\uFE80", "\u0621", "\uFE81", "\u0622", "\uFE82", "\u0622", "\uFE83", "\u0623", "\uFE84", "\u0623", "\uFE85", "\u0624", "\uFE86", "\u0624", "\uFE87", "\u0625", "\uFE88", "\u0625", "\uFE89", "\u0626", "\uFE8A", "\u0626", "\uFE8B", "\u0626", "\uFE8C", "\u0626", "\uFE8D", "\u0627", "\uFE8E", "\u0627", "\uFE8F", "\u0628", "\uFE90", "\u0628", "\uFE91", "\u0628", "\uFE92", "\u0628", "\uFE93", "\u0629", "\uFE94", "\u0629", "\uFE95", "\u062A", "\uFE96", "\u062A", "\uFE97", "\u062A", "\uFE98", "\u062A", "\uFE99", "\u062B", "\uFE9A", "\u062B", "\uFE9B", "\u062B", "\uFE9C", "\u062B", "\uFE9D", "\u062C", "\uFE9E", "\u062C", "\uFE9F", "\u062C", "\uFEA0", "\u062C", "\uFEA1", "\u062D", "\uFEA2", "\u062D", "\uFEA3", "\u062D", "\uFEA4", "\u062D", "\uFEA5", "\u062E", "\uFEA6", "\u062E", "\uFEA7", "\u062E", "\uFEA8", "\u062E", "\uFEA9", "\u062F", "\uFEAA", "\u062F", "\uFEAB", "\u0630", "\uFEAC", "\u0630", "\uFEAD", "\u0631", "\uFEAE", "\u0631", "\uFEAF", "\u0632", "\uFEB0", "\u0632", "\uFEB1", "\u0633", "\uFEB2", "\u0633", "\uFEB3", "\u0633", "\uFEB4", "\u0633", "\uFEB5", "\u0634", "\uFEB6", "\u0634", "\uFEB7", "\u0634", "\uFEB8", "\u0634", "\uFEB9", "\u0635", "\uFEBA", "\u0635", "\uFEBB", "\u0635", "\uFEBC", "\u0635", "\uFEBD", "\u0636", "\uFEBE", "\u0636", "\uFEBF", "\u0636", "\uFEC0", "\u0636", "\uFEC1", "\u0637", "\uFEC2", "\u0637", "\uFEC3", "\u0637", "\uFEC4", "\u0637", "\uFEC5", "\u0638", "\uFEC6", "\u0638", "\uFEC7", "\u0638", "\uFEC8", "\u0638", "\uFEC9", "\u0639", "\uFECA", "\u0639", "\uFECB", "\u0639", "\uFECC", "\u0639", "\uFECD", "\u063A", "\uFECE", "\u063A", "\uFECF", "\u063A", "\uFED0", "\u063A", "\uFED1", "\u0641", "\uFED2", "\u0641", "\uFED3", "\u0641", "\uFED4", "\u0641", "\uFED5", "\u0642", "\uFED6", "\u0642", "\uFED7", "\u0642", "\uFED8", "\u0642", "\uFED9", "\u0643", "\uFEDA", "\u0643", "\uFEDB", "\u0643", "\uFEDC", "\u0643", "\uFEDD", "\u0644", "\uFEDE", "\u0644", "\uFEDF", "\u0644", "\uFEE0", "\u0644", "\uFEE1", "\u0645", "\uFEE2", "\u0645", "\uFEE3", "\u0645", "\uFEE4", "\u0645", "\uFEE5", "\u0646", "\uFEE6", "\u0646", "\uFEE7", "\u0646", "\uFEE8", "\u0646", "\uFEE9", "\u0647", "\uFEEA", "\u0647", "\uFEEB", "\u0647", "\uFEEC", "\u0647", "\uFEED", "\u0648", "\uFEEE", "\u0648", "\uFEEF", "\u0649", "\uFEF0", "\u0649", "\uFEF1", "\u064A", "\uFEF2", "\u064A", "\uFEF3", "\u064A", "\uFEF4", "\u064A", "\uFEF5", "\u0644\u0622", "\uFEF6", "\u0644\u0622", "\uFEF7", "\u0644\u0623", "\uFEF8", "\u0644\u0623", "\uFEF9", "\u0644\u0625", "\uFEFA", "\u0644\u0625", "\uFEFB", "\u0644\u0627", "\uFEFC", "\u0644\u0627"];
-});
-exports.getNormalizedUnicodes = getNormalizedUnicodes;
-function reverseIfRtl(chars) {
-  const charsLength = chars.length;
-  if (charsLength <= 1 || !isRTLRangeFor(chars.charCodeAt(0))) {
-    return chars;
-  }
-  const buf = [];
-  for (let ii = charsLength - 1; ii >= 0; ii--) {
-    buf.push(chars[ii]);
-  }
-  return buf.join("");
 }
 const SpecialCharRegExp = new RegExp("^(\\s)|(\\p{Mn})|(\\p{Cf})$", "u");
 const CategoryCache = new Map();
@@ -25400,7 +25060,7 @@ function clearUnicodeCaches() {
 }
 
 /***/ }),
-/* 40 */
+/* 41 */
 /***/ ((__unused_webpack_module, exports, __w_pdfjs_require__) => {
 
 
@@ -25412,7 +25072,7 @@ exports.getSerifFonts = exports.getNonStdFontMap = exports.getGlyphMapForStandar
 exports.getStandardFontName = getStandardFontName;
 exports.getSymbolsFonts = exports.getSupplementalGlyphMapForCalibri = exports.getSupplementalGlyphMapForArialBlack = exports.getStdFontMap = void 0;
 var _core_utils = __w_pdfjs_require__(3);
-var _fonts_utils = __w_pdfjs_require__(37);
+var _fonts_utils = __w_pdfjs_require__(38);
 const getStdFontMap = (0, _core_utils.getLookupTableFactory)(function (t) {
   t["Times-Roman"] = "Times-Roman";
   t.Helvetica = "Helvetica";
@@ -26261,7 +25921,7 @@ function getStandardFontName(name) {
 }
 
 /***/ }),
-/* 41 */
+/* 42 */
 /***/ ((__unused_webpack_module, exports, __w_pdfjs_require__) => {
 
 
@@ -26340,7 +26000,7 @@ class IdentityToUnicodeMap {
 exports.IdentityToUnicodeMap = IdentityToUnicodeMap;
 
 /***/ }),
-/* 42 */
+/* 43 */
 /***/ ((__unused_webpack_module, exports, __w_pdfjs_require__) => {
 
 
@@ -26349,8 +26009,8 @@ Object.defineProperty(exports, "__esModule", ({
   value: true
 }));
 exports.CFFFont = void 0;
-var _cff_parser = __w_pdfjs_require__(34);
-var _fonts_utils = __w_pdfjs_require__(37);
+var _cff_parser = __w_pdfjs_require__(35);
+var _fonts_utils = __w_pdfjs_require__(38);
 var _util = __w_pdfjs_require__(2);
 class CFFFont {
   constructor(file, properties) {
@@ -26452,7 +26112,7 @@ class CFFFont {
 exports.CFFFont = CFFFont;
 
 /***/ }),
-/* 43 */
+/* 44 */
 /***/ ((__unused_webpack_module, exports, __w_pdfjs_require__) => {
 
 
@@ -26462,9 +26122,9 @@ Object.defineProperty(exports, "__esModule", ({
 }));
 exports.FontRendererFactory = void 0;
 var _util = __w_pdfjs_require__(2);
-var _cff_parser = __w_pdfjs_require__(34);
-var _glyphlist = __w_pdfjs_require__(38);
-var _encodings = __w_pdfjs_require__(36);
+var _cff_parser = __w_pdfjs_require__(35);
+var _glyphlist = __w_pdfjs_require__(39);
+var _encodings = __w_pdfjs_require__(37);
 var _stream = __w_pdfjs_require__(8);
 function getUint32(data, offset) {
   return (data[offset] << 24 | data[offset + 1] << 16 | data[offset + 2] << 8 | data[offset + 3]) >>> 0;
@@ -27269,7 +26929,7 @@ class FontRendererFactory {
 exports.FontRendererFactory = FontRendererFactory;
 
 /***/ }),
-/* 44 */
+/* 45 */
 /***/ ((__unused_webpack_module, exports, __w_pdfjs_require__) => {
 
 
@@ -30307,7 +29967,7 @@ const getFontBasicMetrics = (0, _core_utils.getLookupTableFactory)(function (t) 
 exports.getFontBasicMetrics = getFontBasicMetrics;
 
 /***/ }),
-/* 45 */
+/* 46 */
 /***/ ((__unused_webpack_module, exports) => {
 
 
@@ -30852,7 +30512,7 @@ class CompositeGlyph {
 }
 
 /***/ }),
-/* 46 */
+/* 47 */
 /***/ ((__unused_webpack_module, exports, __w_pdfjs_require__) => {
 
 
@@ -30968,7 +30628,7 @@ class OpenTypeFileBuilder {
 exports.OpenTypeFileBuilder = OpenTypeFileBuilder;
 
 /***/ }),
-/* 47 */
+/* 48 */
 /***/ ((__unused_webpack_module, exports, __w_pdfjs_require__) => {
 
 
@@ -30977,12 +30637,12 @@ Object.defineProperty(exports, "__esModule", ({
   value: true
 }));
 exports.Type1Font = void 0;
-var _cff_parser = __w_pdfjs_require__(34);
+var _cff_parser = __w_pdfjs_require__(35);
 var _util = __w_pdfjs_require__(2);
-var _fonts_utils = __w_pdfjs_require__(37);
+var _fonts_utils = __w_pdfjs_require__(38);
 var _core_utils = __w_pdfjs_require__(3);
 var _stream = __w_pdfjs_require__(8);
-var _type1_parser = __w_pdfjs_require__(48);
+var _type1_parser = __w_pdfjs_require__(49);
 function findBlock(streamBytes, signature, startIndex) {
   const streamBytesLength = streamBytes.length;
   const signatureLength = signature.length;
@@ -31254,7 +30914,7 @@ class Type1Font {
 exports.Type1Font = Type1Font;
 
 /***/ }),
-/* 48 */
+/* 49 */
 /***/ ((__unused_webpack_module, exports, __w_pdfjs_require__) => {
 
 
@@ -31263,7 +30923,7 @@ Object.defineProperty(exports, "__esModule", ({
   value: true
 }));
 exports.Type1Parser = void 0;
-var _encodings = __w_pdfjs_require__(36);
+var _encodings = __w_pdfjs_require__(37);
 var _core_utils = __w_pdfjs_require__(3);
 var _stream = __w_pdfjs_require__(8);
 var _util = __w_pdfjs_require__(2);
@@ -31829,7 +31489,7 @@ class Type1Parser {
 exports.Type1Parser = Type1Parser;
 
 /***/ }),
-/* 49 */
+/* 50 */
 /***/ ((__unused_webpack_module, exports, __w_pdfjs_require__) => {
 
 
@@ -32613,7 +32273,7 @@ function getTilingPatternIR(operatorList, dict, color) {
 }
 
 /***/ }),
-/* 50 */
+/* 51 */
 /***/ ((__unused_webpack_module, exports, __w_pdfjs_require__) => {
 
 
@@ -32623,14 +32283,14 @@ Object.defineProperty(exports, "__esModule", ({
 }));
 exports.getXfaFontDict = getXfaFontDict;
 exports.getXfaFontName = getXfaFontName;
-var _calibri_factors = __w_pdfjs_require__(51);
+var _calibri_factors = __w_pdfjs_require__(52);
 var _primitives = __w_pdfjs_require__(4);
-var _helvetica_factors = __w_pdfjs_require__(52);
-var _liberationsans_widths = __w_pdfjs_require__(53);
-var _myriadpro_factors = __w_pdfjs_require__(54);
-var _segoeui_factors = __w_pdfjs_require__(55);
+var _helvetica_factors = __w_pdfjs_require__(53);
+var _liberationsans_widths = __w_pdfjs_require__(54);
+var _myriadpro_factors = __w_pdfjs_require__(55);
+var _segoeui_factors = __w_pdfjs_require__(56);
 var _core_utils = __w_pdfjs_require__(3);
-var _fonts_utils = __w_pdfjs_require__(37);
+var _fonts_utils = __w_pdfjs_require__(38);
 const getXFAFontMap = (0, _core_utils.getLookupTableFactory)(function (t) {
   t["MyriadPro-Regular"] = t["PdfJS-Fallback-Regular"] = {
     name: "LiberationSans-Regular",
@@ -32826,7 +32486,7 @@ function getXfaFontDict(name) {
 }
 
 /***/ }),
-/* 51 */
+/* 52 */
 /***/ ((__unused_webpack_module, exports) => {
 
 
@@ -32865,7 +32525,7 @@ const CalibriRegularMetrics = {
 exports.CalibriRegularMetrics = CalibriRegularMetrics;
 
 /***/ }),
-/* 52 */
+/* 53 */
 /***/ ((__unused_webpack_module, exports) => {
 
 
@@ -32904,7 +32564,7 @@ const HelveticaRegularMetrics = {
 exports.HelveticaRegularMetrics = HelveticaRegularMetrics;
 
 /***/ }),
-/* 53 */
+/* 54 */
 /***/ ((__unused_webpack_module, exports) => {
 
 
@@ -32931,7 +32591,7 @@ const LiberationSansRegularMapping = [-1, -1, -1, 32, 33, 34, 35, 36, 37, 38, 39
 exports.LiberationSansRegularMapping = LiberationSansRegularMapping;
 
 /***/ }),
-/* 54 */
+/* 55 */
 /***/ ((__unused_webpack_module, exports) => {
 
 
@@ -32970,7 +32630,7 @@ const MyriadProRegularMetrics = {
 exports.MyriadProRegularMetrics = MyriadProRegularMetrics;
 
 /***/ }),
-/* 55 */
+/* 56 */
 /***/ ((__unused_webpack_module, exports) => {
 
 
@@ -33009,7 +32669,7 @@ const SegoeuiRegularMetrics = {
 exports.SegoeuiRegularMetrics = SegoeuiRegularMetrics;
 
 /***/ }),
-/* 56 */
+/* 57 */
 /***/ ((__unused_webpack_module, exports, __w_pdfjs_require__) => {
 
 
@@ -33021,9 +32681,9 @@ exports.PostScriptEvaluator = exports.PostScriptCompiler = exports.PDFFunctionFa
 exports.isPDFFunction = isPDFFunction;
 var _primitives = __w_pdfjs_require__(4);
 var _util = __w_pdfjs_require__(2);
-var _ps_parser = __w_pdfjs_require__(57);
+var _ps_parser = __w_pdfjs_require__(58);
 var _base_stream = __w_pdfjs_require__(5);
-var _image_utils = __w_pdfjs_require__(58);
+var _image_utils = __w_pdfjs_require__(59);
 class PDFFunctionFactory {
   constructor({
     xref,
@@ -34064,7 +33724,7 @@ class PostScriptCompiler {
 exports.PostScriptCompiler = PostScriptCompiler;
 
 /***/ }),
-/* 57 */
+/* 58 */
 /***/ ((__unused_webpack_module, exports, __w_pdfjs_require__) => {
 
 
@@ -34268,7 +33928,7 @@ class PostScriptLexer {
 exports.PostScriptLexer = PostScriptLexer;
 
 /***/ }),
-/* 58 */
+/* 59 */
 /***/ ((__unused_webpack_module, exports, __w_pdfjs_require__) => {
 
 
@@ -34276,7 +33936,7 @@ exports.PostScriptLexer = PostScriptLexer;
 Object.defineProperty(exports, "__esModule", ({
   value: true
 }));
-exports.LocalTilingPatternCache = exports.LocalImageCache = exports.LocalGStateCache = exports.LocalFunctionCache = exports.LocalColorSpaceCache = exports.GlobalImageCache = void 0;
+exports.RegionalImageCache = exports.LocalTilingPatternCache = exports.LocalImageCache = exports.LocalGStateCache = exports.LocalFunctionCache = exports.LocalColorSpaceCache = exports.GlobalImageCache = void 0;
 var _util = __w_pdfjs_require__(2);
 var _primitives = __w_pdfjs_require__(4);
 class BaseLocalCache {
@@ -34404,6 +34064,23 @@ class LocalTilingPatternCache extends BaseLocalCache {
   }
 }
 exports.LocalTilingPatternCache = LocalTilingPatternCache;
+class RegionalImageCache extends BaseLocalCache {
+  constructor(options) {
+    super({
+      onlyRefs: true
+    });
+  }
+  set(name = null, ref, data) {
+    if (!ref) {
+      throw new Error('RegionalImageCache.set - expected "ref" argument.');
+    }
+    if (this._imageCache.has(ref)) {
+      return;
+    }
+    this._imageCache.put(ref, data);
+  }
+}
+exports.RegionalImageCache = RegionalImageCache;
 class GlobalImageCache {
   static get NUM_PAGES_THRESHOLD() {
     return (0, _util.shadow)(this, "NUM_PAGES_THRESHOLD", 2);
@@ -34501,7 +34178,7 @@ class GlobalImageCache {
 exports.GlobalImageCache = GlobalImageCache;
 
 /***/ }),
-/* 59 */
+/* 60 */
 /***/ ((__unused_webpack_module, exports, __w_pdfjs_require__) => {
 
 
@@ -34577,7 +34254,7 @@ function bidi(str, startLevel = -1, vertical = false) {
       if (!charType) {
         (0, _util.warn)("Bidi: invalid Unicode character " + charCode.toString(16));
       }
-    } else if (0x0700 <= charCode && charCode <= 0x08ac) {
+    } else if (0x0700 <= charCode && charCode <= 0x08ac || 0xfb50 <= charCode && charCode <= 0xfdff || 0xfe70 <= charCode && charCode <= 0xfeff) {
       charType = "AL";
     }
     if (charType === "R" || charType === "AL" || charType === "AN") {
@@ -34748,7 +34425,7 @@ function bidi(str, startLevel = -1, vertical = false) {
 }
 
 /***/ }),
-/* 60 */
+/* 61 */
 /***/ ((__unused_webpack_module, exports, __w_pdfjs_require__) => {
 
 
@@ -35002,7 +34679,7 @@ exports.ImageResizer = ImageResizer;
 ImageResizer._goodSquareLength = MIN_IMAGE_DIM;
 
 /***/ }),
-/* 61 */
+/* 62 */
 /***/ ((__unused_webpack_module, exports, __w_pdfjs_require__) => {
 
 
@@ -35106,7 +34783,7 @@ class MurmurHash3_64 {
 exports.MurmurHash3_64 = MurmurHash3_64;
 
 /***/ }),
-/* 62 */
+/* 63 */
 /***/ ((__unused_webpack_module, exports, __w_pdfjs_require__) => {
 
 
@@ -35648,7 +35325,7 @@ class OperatorList {
 exports.OperatorList = OperatorList;
 
 /***/ }),
-/* 63 */
+/* 64 */
 /***/ ((__unused_webpack_module, exports, __w_pdfjs_require__) => {
 
 
@@ -35658,13 +35335,13 @@ Object.defineProperty(exports, "__esModule", ({
 }));
 exports.PDFImage = void 0;
 var _util = __w_pdfjs_require__(2);
-var _image_utils = __w_pdfjs_require__(27);
+var _image_utils = __w_pdfjs_require__(28);
 var _base_stream = __w_pdfjs_require__(5);
 var _colorspace = __w_pdfjs_require__(12);
-var _decode_stream = __w_pdfjs_require__(17);
-var _image_resizer = __w_pdfjs_require__(60);
-var _jpeg_stream = __w_pdfjs_require__(25);
-var _jpx = __w_pdfjs_require__(29);
+var _decode_stream = __w_pdfjs_require__(18);
+var _image_resizer = __w_pdfjs_require__(61);
+var _jpeg_stream = __w_pdfjs_require__(26);
+var _jpx = __w_pdfjs_require__(30);
 var _primitives = __w_pdfjs_require__(4);
 function decodeAndClamp(value, addend, coefficient, max) {
   value = addend + value * coefficient;
@@ -36396,7 +36073,7 @@ class PDFImage {
 exports.PDFImage = PDFImage;
 
 /***/ }),
-/* 64 */
+/* 65 */
 /***/ ((__unused_webpack_module, exports, __w_pdfjs_require__) => {
 
 
@@ -36410,9 +36087,9 @@ exports.writeObject = writeObject;
 var _util = __w_pdfjs_require__(2);
 var _primitives = __w_pdfjs_require__(4);
 var _core_utils = __w_pdfjs_require__(3);
-var _xml_parser = __w_pdfjs_require__(65);
+var _xml_parser = __w_pdfjs_require__(66);
 var _base_stream = __w_pdfjs_require__(5);
-var _crypto = __w_pdfjs_require__(66);
+var _crypto = __w_pdfjs_require__(67);
 function writeObject(ref, obj, buffer, transform) {
   buffer.push(`${ref.num} ${ref.gen} obj\n`);
   if (obj instanceof _primitives.Dict) {
@@ -36712,7 +36389,7 @@ function incrementalUpdate({
 }
 
 /***/ }),
-/* 65 */
+/* 66 */
 /***/ ((__unused_webpack_module, exports, __w_pdfjs_require__) => {
 
 
@@ -37140,7 +36817,7 @@ class SimpleXMLParser extends XMLParserBase {
 exports.SimpleXMLParser = SimpleXMLParser;
 
 /***/ }),
-/* 66 */
+/* 67 */
 /***/ ((__unused_webpack_module, exports, __w_pdfjs_require__) => {
 
 
@@ -37153,7 +36830,7 @@ exports.calculateSHA384 = calculateSHA384;
 exports.calculateSHA512 = void 0;
 var _util = __w_pdfjs_require__(2);
 var _primitives = __w_pdfjs_require__(4);
-var _decrypt_stream = __w_pdfjs_require__(67);
+var _decrypt_stream = __w_pdfjs_require__(68);
 class ARCFourCipher {
   constructor(key) {
     this.a = 0;
@@ -38047,8 +37724,8 @@ class PDF17 {
   }
 }
 exports.PDF17 = PDF17;
-const PDF20 = function PDF20Closure() {
-  function calculatePDF20Hash(password, input, userBytes) {
+class PDF20 {
+  _hash(password, input, userBytes) {
     let k = calculateSHA256(input, 0, input.length).subarray(0, 32);
     let e = [0];
     let i = 0;
@@ -38079,45 +37756,39 @@ const PDF20 = function PDF20Closure() {
     }
     return k.subarray(0, 32);
   }
-  class PDF20 {
-    hash(password, concatBytes, userBytes) {
-      return calculatePDF20Hash(password, concatBytes, userBytes);
-    }
-    checkOwnerPassword(password, ownerValidationSalt, userBytes, ownerPassword) {
-      const hashData = new Uint8Array(password.length + 56);
-      hashData.set(password, 0);
-      hashData.set(ownerValidationSalt, password.length);
-      hashData.set(userBytes, password.length + ownerValidationSalt.length);
-      const result = calculatePDF20Hash(password, hashData, userBytes);
-      return (0, _util.isArrayEqual)(result, ownerPassword);
-    }
-    checkUserPassword(password, userValidationSalt, userPassword) {
-      const hashData = new Uint8Array(password.length + 8);
-      hashData.set(password, 0);
-      hashData.set(userValidationSalt, password.length);
-      const result = calculatePDF20Hash(password, hashData, []);
-      return (0, _util.isArrayEqual)(result, userPassword);
-    }
-    getOwnerKey(password, ownerKeySalt, userBytes, ownerEncryption) {
-      const hashData = new Uint8Array(password.length + 56);
-      hashData.set(password, 0);
-      hashData.set(ownerKeySalt, password.length);
-      hashData.set(userBytes, password.length + ownerKeySalt.length);
-      const key = calculatePDF20Hash(password, hashData, userBytes);
-      const cipher = new AES256Cipher(key);
-      return cipher.decryptBlock(ownerEncryption, false, new Uint8Array(16));
-    }
-    getUserKey(password, userKeySalt, userEncryption) {
-      const hashData = new Uint8Array(password.length + 8);
-      hashData.set(password, 0);
-      hashData.set(userKeySalt, password.length);
-      const key = calculatePDF20Hash(password, hashData, []);
-      const cipher = new AES256Cipher(key);
-      return cipher.decryptBlock(userEncryption, false, new Uint8Array(16));
-    }
+  checkOwnerPassword(password, ownerValidationSalt, userBytes, ownerPassword) {
+    const hashData = new Uint8Array(password.length + 56);
+    hashData.set(password, 0);
+    hashData.set(ownerValidationSalt, password.length);
+    hashData.set(userBytes, password.length + ownerValidationSalt.length);
+    const result = this._hash(password, hashData, userBytes);
+    return (0, _util.isArrayEqual)(result, ownerPassword);
   }
-  return PDF20;
-}();
+  checkUserPassword(password, userValidationSalt, userPassword) {
+    const hashData = new Uint8Array(password.length + 8);
+    hashData.set(password, 0);
+    hashData.set(userValidationSalt, password.length);
+    const result = this._hash(password, hashData, []);
+    return (0, _util.isArrayEqual)(result, userPassword);
+  }
+  getOwnerKey(password, ownerKeySalt, userBytes, ownerEncryption) {
+    const hashData = new Uint8Array(password.length + 56);
+    hashData.set(password, 0);
+    hashData.set(ownerKeySalt, password.length);
+    hashData.set(userBytes, password.length + ownerKeySalt.length);
+    const key = this._hash(password, hashData, userBytes);
+    const cipher = new AES256Cipher(key);
+    return cipher.decryptBlock(ownerEncryption, false, new Uint8Array(16));
+  }
+  getUserKey(password, userKeySalt, userEncryption) {
+    const hashData = new Uint8Array(password.length + 8);
+    hashData.set(password, 0);
+    hashData.set(userKeySalt, password.length);
+    const key = this._hash(password, hashData, []);
+    const cipher = new AES256Cipher(key);
+    return cipher.decryptBlock(userEncryption, false, new Uint8Array(16));
+  }
+}
 exports.PDF20 = PDF20;
 class CipherTransform {
   constructor(stringCipherConstructor, streamCipherConstructor) {
@@ -38380,8 +38051,10 @@ const CipherTransformFactory = function CipherTransformFactoryClosure() {
       if (!Number.isInteger(keyLength) || keyLength < 40 || keyLength % 8 !== 0) {
         throw new _util.FormatError("invalid key length");
       }
-      const ownerPassword = (0, _util.stringToBytes)(dict.get("O")).subarray(0, 32);
-      const userPassword = (0, _util.stringToBytes)(dict.get("U")).subarray(0, 32);
+      const ownerBytes = (0, _util.stringToBytes)(dict.get("O")),
+        userBytes = (0, _util.stringToBytes)(dict.get("U"));
+      const ownerPassword = ownerBytes.subarray(0, 32);
+      const userPassword = userBytes.subarray(0, 32);
       const flags = dict.get("P");
       const revision = dict.get("R");
       const encryptMetadata = (algorithm === 4 || algorithm === 5) && dict.get("EncryptMetadata") !== false;
@@ -38393,7 +38066,7 @@ const CipherTransformFactory = function CipherTransformFactoryClosure() {
           try {
             password = (0, _util.utf8StringToString)(password);
           } catch (ex) {
-            (0, _util.warn)("CipherTransformFactory: " + "Unable to convert UTF8 encoded password.");
+            (0, _util.warn)("CipherTransformFactory: Unable to convert UTF8 encoded password.");
           }
         }
         passwordBytes = (0, _util.stringToBytes)(password);
@@ -38402,11 +38075,11 @@ const CipherTransformFactory = function CipherTransformFactoryClosure() {
       if (algorithm !== 5) {
         encryptionKey = prepareKeyData(fileIdBytes, passwordBytes, ownerPassword, userPassword, flags, revision, keyLength, encryptMetadata);
       } else {
-        const ownerValidationSalt = (0, _util.stringToBytes)(dict.get("O")).subarray(32, 40);
-        const ownerKeySalt = (0, _util.stringToBytes)(dict.get("O")).subarray(40, 48);
-        const uBytes = (0, _util.stringToBytes)(dict.get("U")).subarray(0, 48);
-        const userValidationSalt = (0, _util.stringToBytes)(dict.get("U")).subarray(32, 40);
-        const userKeySalt = (0, _util.stringToBytes)(dict.get("U")).subarray(40, 48);
+        const ownerValidationSalt = ownerBytes.subarray(32, 40);
+        const ownerKeySalt = ownerBytes.subarray(40, 48);
+        const uBytes = userBytes.subarray(0, 48);
+        const userValidationSalt = userBytes.subarray(32, 40);
+        const userKeySalt = userBytes.subarray(40, 48);
         const ownerEncryption = (0, _util.stringToBytes)(dict.get("OE"));
         const userEncryption = (0, _util.stringToBytes)(dict.get("UE"));
         const perms = (0, _util.stringToBytes)(dict.get("Perms"));
@@ -38449,7 +38122,7 @@ const CipherTransformFactory = function CipherTransformFactoryClosure() {
 exports.CipherTransformFactory = CipherTransformFactory;
 
 /***/ }),
-/* 67 */
+/* 68 */
 /***/ ((__unused_webpack_module, exports, __w_pdfjs_require__) => {
 
 
@@ -38458,7 +38131,7 @@ Object.defineProperty(exports, "__esModule", ({
   value: true
 }));
 exports.DecryptStream = void 0;
-var _decode_stream = __w_pdfjs_require__(17);
+var _decode_stream = __w_pdfjs_require__(18);
 const chunkSize = 512;
 class DecryptStream extends _decode_stream.DecodeStream {
   constructor(str, maybeLength, decrypt) {
@@ -38495,7 +38168,7 @@ class DecryptStream extends _decode_stream.DecodeStream {
 exports.DecryptStream = DecryptStream;
 
 /***/ }),
-/* 68 */
+/* 69 */
 /***/ ((__unused_webpack_module, exports, __w_pdfjs_require__) => {
 
 
@@ -38507,14 +38180,14 @@ exports.Catalog = void 0;
 var _core_utils = __w_pdfjs_require__(3);
 var _util = __w_pdfjs_require__(2);
 var _primitives = __w_pdfjs_require__(4);
-var _name_number_tree = __w_pdfjs_require__(69);
+var _name_number_tree = __w_pdfjs_require__(70);
 var _base_stream = __w_pdfjs_require__(5);
-var _cleanup_helper = __w_pdfjs_require__(70);
+var _cleanup_helper = __w_pdfjs_require__(71);
 var _colorspace = __w_pdfjs_require__(12);
-var _file_spec = __w_pdfjs_require__(71);
-var _image_utils = __w_pdfjs_require__(58);
-var _metadata_parser = __w_pdfjs_require__(72);
-var _struct_tree = __w_pdfjs_require__(73);
+var _file_spec = __w_pdfjs_require__(72);
+var _image_utils = __w_pdfjs_require__(59);
+var _metadata_parser = __w_pdfjs_require__(73);
+var _struct_tree = __w_pdfjs_require__(74);
 function fetchDestination(dest) {
   if (dest instanceof _primitives.Dict) {
     dest = dest.get("D");
@@ -39833,7 +39506,7 @@ class Catalog {
 exports.Catalog = Catalog;
 
 /***/ }),
-/* 69 */
+/* 70 */
 /***/ ((__unused_webpack_module, exports, __w_pdfjs_require__) => {
 
 
@@ -39961,7 +39634,7 @@ class NumberTree extends NameOrNumberTree {
 exports.NumberTree = NumberTree;
 
 /***/ }),
-/* 70 */
+/* 71 */
 /***/ ((__unused_webpack_module, exports, __w_pdfjs_require__) => {
 
 
@@ -39971,14 +39644,14 @@ Object.defineProperty(exports, "__esModule", ({
 }));
 exports.clearGlobalCaches = clearGlobalCaches;
 var _primitives = __w_pdfjs_require__(4);
-var _unicode = __w_pdfjs_require__(39);
+var _unicode = __w_pdfjs_require__(40);
 function clearGlobalCaches() {
   (0, _primitives.clearPrimitiveCaches)();
   (0, _unicode.clearUnicodeCaches)();
 }
 
 /***/ }),
-/* 71 */
+/* 72 */
 /***/ ((__unused_webpack_module, exports, __w_pdfjs_require__) => {
 
 
@@ -40061,7 +39734,7 @@ class FileSpec {
 exports.FileSpec = FileSpec;
 
 /***/ }),
-/* 72 */
+/* 73 */
 /***/ ((__unused_webpack_module, exports, __w_pdfjs_require__) => {
 
 
@@ -40070,7 +39743,7 @@ Object.defineProperty(exports, "__esModule", ({
   value: true
 }));
 exports.MetadataParser = void 0;
-var _xml_parser = __w_pdfjs_require__(65);
+var _xml_parser = __w_pdfjs_require__(66);
 class MetadataParser {
   constructor(data) {
     data = this._repair(data);
@@ -40169,7 +39842,7 @@ class MetadataParser {
 exports.MetadataParser = MetadataParser;
 
 /***/ }),
-/* 73 */
+/* 74 */
 /***/ ((__unused_webpack_module, exports, __w_pdfjs_require__) => {
 
 
@@ -40180,7 +39853,7 @@ Object.defineProperty(exports, "__esModule", ({
 exports.StructTreeRoot = exports.StructTreePage = void 0;
 var _primitives = __w_pdfjs_require__(4);
 var _util = __w_pdfjs_require__(2);
-var _name_number_tree = __w_pdfjs_require__(69);
+var _name_number_tree = __w_pdfjs_require__(70);
 const MAX_DEPTH = 40;
 const StructElementType = {
   PAGE_CONTENT: "PAGE_CONTENT",
@@ -40457,7 +40130,7 @@ class StructTreePage {
 exports.StructTreePage = StructTreePage;
 
 /***/ }),
-/* 74 */
+/* 75 */
 /***/ ((__unused_webpack_module, exports, __w_pdfjs_require__) => {
 
 
@@ -40577,7 +40250,7 @@ class ObjectLoader {
 exports.ObjectLoader = ObjectLoader;
 
 /***/ }),
-/* 75 */
+/* 76 */
 /***/ ((__unused_webpack_module, exports, __w_pdfjs_require__) => {
 
 
@@ -40586,14 +40259,14 @@ Object.defineProperty(exports, "__esModule", ({
   value: true
 }));
 exports.XFAFactory = void 0;
-var _xfa_object = __w_pdfjs_require__(76);
-var _bind = __w_pdfjs_require__(80);
-var _data = __w_pdfjs_require__(86);
-var _fonts = __w_pdfjs_require__(84);
-var _utils = __w_pdfjs_require__(77);
+var _xfa_object = __w_pdfjs_require__(77);
+var _bind = __w_pdfjs_require__(81);
+var _data = __w_pdfjs_require__(87);
+var _fonts = __w_pdfjs_require__(85);
+var _utils = __w_pdfjs_require__(78);
 var _util = __w_pdfjs_require__(2);
-var _parser = __w_pdfjs_require__(87);
-var _xhtml = __w_pdfjs_require__(97);
+var _parser = __w_pdfjs_require__(88);
+var _xhtml = __w_pdfjs_require__(98);
 class XFAFactory {
   constructor(data) {
     try {
@@ -40728,7 +40401,7 @@ class XFAFactory {
 exports.XFAFactory = XFAFactory;
 
 /***/ }),
-/* 76 */
+/* 77 */
 /***/ ((__unused_webpack_module, exports, __w_pdfjs_require__) => {
 
 
@@ -40737,11 +40410,11 @@ Object.defineProperty(exports, "__esModule", ({
   value: true
 }));
 exports.XmlObject = exports.XFAObjectArray = exports.XFAObject = exports.XFAAttribute = exports.StringObject = exports.OptionObject = exports.Option10 = exports.Option01 = exports.IntegerObject = exports.ContentObject = exports.$uid = exports.$toStyle = exports.$toString = exports.$toPages = exports.$toHTML = exports.$text = exports.$tabIndex = exports.$setValue = exports.$setSetAttributes = exports.$setId = exports.$searchNode = exports.$root = exports.$resolvePrototypes = exports.$removeChild = exports.$pushPara = exports.$pushGlyphs = exports.$popPara = exports.$onText = exports.$onChildCheck = exports.$onChild = exports.$nsAttributes = exports.$nodeName = exports.$namespaceId = exports.$isUsable = exports.$isTransparent = exports.$isThereMoreWidth = exports.$isSplittable = exports.$isNsAgnostic = exports.$isDescendent = exports.$isDataValue = exports.$isCDATAXml = exports.$isBindable = exports.$insertAt = exports.$indexOf = exports.$ids = exports.$hasSettableValue = exports.$globalData = exports.$getTemplateRoot = exports.$getSubformParent = exports.$getRealChildrenByNameIt = exports.$getParent = exports.$getNextPage = exports.$getExtra = exports.$getDataValue = exports.$getContainedChildren = exports.$getChildrenByNameIt = exports.$getChildrenByName = exports.$getChildrenByClass = exports.$getChildren = exports.$getAvailableSpace = exports.$getAttributes = exports.$getAttributeIt = exports.$flushHTML = exports.$finalize = exports.$extra = exports.$dump = exports.$data = exports.$content = exports.$consumed = exports.$clone = exports.$cleanup = exports.$cleanPage = exports.$clean = exports.$childrenToHTML = exports.$appendChild = exports.$addHTML = exports.$acceptWhitespace = void 0;
-var _utils = __w_pdfjs_require__(77);
+var _utils = __w_pdfjs_require__(78);
 var _util = __w_pdfjs_require__(2);
 var _core_utils = __w_pdfjs_require__(3);
-var _namespaces = __w_pdfjs_require__(78);
-var _som = __w_pdfjs_require__(79);
+var _namespaces = __w_pdfjs_require__(79);
+var _som = __w_pdfjs_require__(80);
 const $acceptWhitespace = Symbol();
 exports.$acceptWhitespace = $acceptWhitespace;
 const $addHTML = Symbol();
@@ -41664,7 +41337,7 @@ class Option10 extends IntegerObject {
 exports.Option10 = Option10;
 
 /***/ }),
-/* 77 */
+/* 78 */
 /***/ ((__unused_webpack_module, exports, __w_pdfjs_require__) => {
 
 
@@ -41883,7 +41556,7 @@ class HTMLResult {
 exports.HTMLResult = HTMLResult;
 
 /***/ }),
-/* 78 */
+/* 79 */
 /***/ ((__unused_webpack_module, exports) => {
 
 
@@ -41959,7 +41632,7 @@ const NamespaceIds = {
 exports.NamespaceIds = NamespaceIds;
 
 /***/ }),
-/* 79 */
+/* 80 */
 /***/ ((__unused_webpack_module, exports, __w_pdfjs_require__) => {
 
 
@@ -41969,8 +41642,8 @@ Object.defineProperty(exports, "__esModule", ({
 }));
 exports.createDataNode = createDataNode;
 exports.searchNode = searchNode;
-var _xfa_object = __w_pdfjs_require__(76);
-var _namespaces = __w_pdfjs_require__(78);
+var _xfa_object = __w_pdfjs_require__(77);
+var _namespaces = __w_pdfjs_require__(79);
 var _util = __w_pdfjs_require__(2);
 const namePattern = /^[^.[]+/;
 const indexPattern = /^[^\]]+/;
@@ -42231,7 +41904,7 @@ function createDataNode(root, container, expr) {
 }
 
 /***/ }),
-/* 80 */
+/* 81 */
 /***/ ((__unused_webpack_module, exports, __w_pdfjs_require__) => {
 
 
@@ -42240,10 +41913,10 @@ Object.defineProperty(exports, "__esModule", ({
   value: true
 }));
 exports.Binder = void 0;
-var _xfa_object = __w_pdfjs_require__(76);
-var _template = __w_pdfjs_require__(81);
-var _som = __w_pdfjs_require__(79);
-var _namespaces = __w_pdfjs_require__(78);
+var _xfa_object = __w_pdfjs_require__(77);
+var _template = __w_pdfjs_require__(82);
+var _som = __w_pdfjs_require__(80);
+var _namespaces = __w_pdfjs_require__(79);
 var _util = __w_pdfjs_require__(2);
 const NS_DATASETS = _namespaces.NamespaceIds.datasets.id;
 function createText(content) {
@@ -42665,7 +42338,7 @@ class Binder {
 exports.Binder = Binder;
 
 /***/ }),
-/* 81 */
+/* 82 */
 /***/ ((__unused_webpack_module, exports, __w_pdfjs_require__) => {
 
 
@@ -42674,15 +42347,15 @@ Object.defineProperty(exports, "__esModule", ({
   value: true
 }));
 exports.Value = exports.Text = exports.TemplateNamespace = exports.Template = exports.SetProperty = exports.Items = exports.Field = exports.BindItems = void 0;
-var _xfa_object = __w_pdfjs_require__(76);
-var _namespaces = __w_pdfjs_require__(78);
-var _layout = __w_pdfjs_require__(82);
-var _html_utils = __w_pdfjs_require__(83);
-var _utils = __w_pdfjs_require__(77);
+var _xfa_object = __w_pdfjs_require__(77);
+var _namespaces = __w_pdfjs_require__(79);
+var _layout = __w_pdfjs_require__(83);
+var _html_utils = __w_pdfjs_require__(84);
+var _utils = __w_pdfjs_require__(78);
 var _util = __w_pdfjs_require__(2);
-var _fonts = __w_pdfjs_require__(84);
+var _fonts = __w_pdfjs_require__(85);
 var _core_utils = __w_pdfjs_require__(3);
-var _som = __w_pdfjs_require__(79);
+var _som = __w_pdfjs_require__(80);
 const TEMPLATE_NS_ID = _namespaces.NamespaceIds.template.id;
 const SVG_NS = "http://www.w3.org/2000/svg";
 const MAX_ATTEMPTS_FOR_LRTB_LAYOUT = 2;
@@ -47564,7 +47237,7 @@ class TemplateNamespace {
 exports.TemplateNamespace = TemplateNamespace;
 
 /***/ }),
-/* 82 */
+/* 83 */
 /***/ ((__unused_webpack_module, exports, __w_pdfjs_require__) => {
 
 
@@ -47576,8 +47249,8 @@ exports.addHTML = addHTML;
 exports.checkDimensions = checkDimensions;
 exports.flushHTML = flushHTML;
 exports.getAvailableSpace = getAvailableSpace;
-var _xfa_object = __w_pdfjs_require__(76);
-var _html_utils = __w_pdfjs_require__(83);
+var _xfa_object = __w_pdfjs_require__(77);
+var _html_utils = __w_pdfjs_require__(84);
 function createLine(node, children) {
   return {
     name: "div",
@@ -47844,7 +47517,7 @@ function checkDimensions(node, space) {
 }
 
 /***/ }),
-/* 83 */
+/* 84 */
 /***/ ((__unused_webpack_module, exports, __w_pdfjs_require__) => {
 
 
@@ -47866,11 +47539,11 @@ exports.setFontFamily = setFontFamily;
 exports.setMinMaxDimensions = setMinMaxDimensions;
 exports.setPara = setPara;
 exports.toStyle = toStyle;
-var _xfa_object = __w_pdfjs_require__(76);
+var _xfa_object = __w_pdfjs_require__(77);
 var _util = __w_pdfjs_require__(2);
-var _utils = __w_pdfjs_require__(77);
-var _fonts = __w_pdfjs_require__(84);
-var _text = __w_pdfjs_require__(85);
+var _utils = __w_pdfjs_require__(78);
+var _fonts = __w_pdfjs_require__(85);
+var _text = __w_pdfjs_require__(86);
 function measureToString(m) {
   if (typeof m === "string") {
     return "0px";
@@ -48389,7 +48062,7 @@ function fixURL(str) {
 }
 
 /***/ }),
-/* 84 */
+/* 85 */
 /***/ ((__unused_webpack_module, exports, __w_pdfjs_require__) => {
 
 
@@ -48400,8 +48073,8 @@ Object.defineProperty(exports, "__esModule", ({
 exports.FontFinder = void 0;
 exports.getMetrics = getMetrics;
 exports.selectFont = selectFont;
-var _xfa_object = __w_pdfjs_require__(76);
-var _utils = __w_pdfjs_require__(77);
+var _xfa_object = __w_pdfjs_require__(77);
+var _utils = __w_pdfjs_require__(78);
 var _util = __w_pdfjs_require__(2);
 class FontFinder {
   constructor(pdfFonts) {
@@ -48554,7 +48227,7 @@ function getMetrics(xfaFont, real = false) {
 }
 
 /***/ }),
-/* 85 */
+/* 86 */
 /***/ ((__unused_webpack_module, exports, __w_pdfjs_require__) => {
 
 
@@ -48563,7 +48236,7 @@ Object.defineProperty(exports, "__esModule", ({
   value: true
 }));
 exports.TextMeasure = void 0;
-var _fonts = __w_pdfjs_require__(84);
+var _fonts = __w_pdfjs_require__(85);
 const WIDTH_FACTOR = 1.02;
 class FontInfo {
   constructor(xfaFont, margin, lineHeight, fontFinder) {
@@ -48774,7 +48447,7 @@ class TextMeasure {
 exports.TextMeasure = TextMeasure;
 
 /***/ }),
-/* 86 */
+/* 87 */
 /***/ ((__unused_webpack_module, exports, __w_pdfjs_require__) => {
 
 
@@ -48783,7 +48456,7 @@ Object.defineProperty(exports, "__esModule", ({
   value: true
 }));
 exports.DataHandler = void 0;
-var _xfa_object = __w_pdfjs_require__(76);
+var _xfa_object = __w_pdfjs_require__(77);
 class DataHandler {
   constructor(root, data) {
     this.data = data;
@@ -48833,7 +48506,7 @@ class DataHandler {
 exports.DataHandler = DataHandler;
 
 /***/ }),
-/* 87 */
+/* 88 */
 /***/ ((__unused_webpack_module, exports, __w_pdfjs_require__) => {
 
 
@@ -48842,9 +48515,9 @@ Object.defineProperty(exports, "__esModule", ({
   value: true
 }));
 exports.XFAParser = void 0;
-var _xfa_object = __w_pdfjs_require__(76);
-var _xml_parser = __w_pdfjs_require__(65);
-var _builder = __w_pdfjs_require__(88);
+var _xfa_object = __w_pdfjs_require__(77);
+var _xml_parser = __w_pdfjs_require__(66);
+var _builder = __w_pdfjs_require__(89);
 var _util = __w_pdfjs_require__(2);
 class XFAParser extends _xml_parser.XMLParserBase {
   constructor(rootNameSpace = null, richText = false) {
@@ -48978,7 +48651,7 @@ class XFAParser extends _xml_parser.XMLParserBase {
 exports.XFAParser = XFAParser;
 
 /***/ }),
-/* 88 */
+/* 89 */
 /***/ ((__unused_webpack_module, exports, __w_pdfjs_require__) => {
 
 
@@ -48987,11 +48660,11 @@ Object.defineProperty(exports, "__esModule", ({
   value: true
 }));
 exports.Builder = void 0;
-var _namespaces = __w_pdfjs_require__(78);
-var _xfa_object = __w_pdfjs_require__(76);
-var _setup = __w_pdfjs_require__(89);
-var _template = __w_pdfjs_require__(81);
-var _unknown = __w_pdfjs_require__(98);
+var _namespaces = __w_pdfjs_require__(79);
+var _xfa_object = __w_pdfjs_require__(77);
+var _setup = __w_pdfjs_require__(90);
+var _template = __w_pdfjs_require__(82);
+var _unknown = __w_pdfjs_require__(99);
 var _util = __w_pdfjs_require__(2);
 class Root extends _xfa_object.XFAObject {
   constructor(ids) {
@@ -49155,7 +48828,7 @@ class Builder {
 exports.Builder = Builder;
 
 /***/ }),
-/* 89 */
+/* 90 */
 /***/ ((__unused_webpack_module, exports, __w_pdfjs_require__) => {
 
 
@@ -49164,15 +48837,15 @@ Object.defineProperty(exports, "__esModule", ({
   value: true
 }));
 exports.NamespaceSetUp = void 0;
-var _config = __w_pdfjs_require__(90);
-var _connection_set = __w_pdfjs_require__(91);
-var _datasets = __w_pdfjs_require__(92);
-var _locale_set = __w_pdfjs_require__(93);
-var _signature = __w_pdfjs_require__(94);
-var _stylesheet = __w_pdfjs_require__(95);
-var _template = __w_pdfjs_require__(81);
-var _xdp = __w_pdfjs_require__(96);
-var _xhtml = __w_pdfjs_require__(97);
+var _config = __w_pdfjs_require__(91);
+var _connection_set = __w_pdfjs_require__(92);
+var _datasets = __w_pdfjs_require__(93);
+var _locale_set = __w_pdfjs_require__(94);
+var _signature = __w_pdfjs_require__(95);
+var _stylesheet = __w_pdfjs_require__(96);
+var _template = __w_pdfjs_require__(82);
+var _xdp = __w_pdfjs_require__(97);
+var _xhtml = __w_pdfjs_require__(98);
 const NamespaceSetUp = {
   config: _config.ConfigNamespace,
   connection: _connection_set.ConnectionSetNamespace,
@@ -49187,7 +48860,7 @@ const NamespaceSetUp = {
 exports.NamespaceSetUp = NamespaceSetUp;
 
 /***/ }),
-/* 90 */
+/* 91 */
 /***/ ((__unused_webpack_module, exports, __w_pdfjs_require__) => {
 
 
@@ -49196,9 +48869,9 @@ Object.defineProperty(exports, "__esModule", ({
   value: true
 }));
 exports.ConfigNamespace = void 0;
-var _namespaces = __w_pdfjs_require__(78);
-var _xfa_object = __w_pdfjs_require__(76);
-var _utils = __w_pdfjs_require__(77);
+var _namespaces = __w_pdfjs_require__(79);
+var _xfa_object = __w_pdfjs_require__(77);
+var _utils = __w_pdfjs_require__(78);
 var _util = __w_pdfjs_require__(2);
 const CONFIG_NS_ID = _namespaces.NamespaceIds.config.id;
 class Acrobat extends _xfa_object.XFAObject {
@@ -50623,7 +50296,7 @@ class ConfigNamespace {
 exports.ConfigNamespace = ConfigNamespace;
 
 /***/ }),
-/* 91 */
+/* 92 */
 /***/ ((__unused_webpack_module, exports, __w_pdfjs_require__) => {
 
 
@@ -50632,8 +50305,8 @@ Object.defineProperty(exports, "__esModule", ({
   value: true
 }));
 exports.ConnectionSetNamespace = void 0;
-var _namespaces = __w_pdfjs_require__(78);
-var _xfa_object = __w_pdfjs_require__(76);
+var _namespaces = __w_pdfjs_require__(79);
+var _xfa_object = __w_pdfjs_require__(77);
 const CONNECTION_SET_NS_ID = _namespaces.NamespaceIds.connectionSet.id;
 class ConnectionSet extends _xfa_object.XFAObject {
   constructor(attributes) {
@@ -50794,7 +50467,7 @@ class ConnectionSetNamespace {
 exports.ConnectionSetNamespace = ConnectionSetNamespace;
 
 /***/ }),
-/* 92 */
+/* 93 */
 /***/ ((__unused_webpack_module, exports, __w_pdfjs_require__) => {
 
 
@@ -50803,8 +50476,8 @@ Object.defineProperty(exports, "__esModule", ({
   value: true
 }));
 exports.DatasetsNamespace = void 0;
-var _xfa_object = __w_pdfjs_require__(76);
-var _namespaces = __w_pdfjs_require__(78);
+var _xfa_object = __w_pdfjs_require__(77);
+var _namespaces = __w_pdfjs_require__(79);
 const DATASETS_NS_ID = _namespaces.NamespaceIds.datasets.id;
 class Data extends _xfa_object.XmlObject {
   constructor(attributes) {
@@ -50845,7 +50518,7 @@ class DatasetsNamespace {
 exports.DatasetsNamespace = DatasetsNamespace;
 
 /***/ }),
-/* 93 */
+/* 94 */
 /***/ ((__unused_webpack_module, exports, __w_pdfjs_require__) => {
 
 
@@ -50854,9 +50527,9 @@ Object.defineProperty(exports, "__esModule", ({
   value: true
 }));
 exports.LocaleSetNamespace = void 0;
-var _namespaces = __w_pdfjs_require__(78);
-var _xfa_object = __w_pdfjs_require__(76);
-var _utils = __w_pdfjs_require__(77);
+var _namespaces = __w_pdfjs_require__(79);
+var _xfa_object = __w_pdfjs_require__(77);
+var _utils = __w_pdfjs_require__(78);
 const LOCALE_SET_NS_ID = _namespaces.NamespaceIds.localeSet.id;
 class CalendarSymbols extends _xfa_object.XFAObject {
   constructor(attributes) {
@@ -51103,7 +50776,7 @@ class LocaleSetNamespace {
 exports.LocaleSetNamespace = LocaleSetNamespace;
 
 /***/ }),
-/* 94 */
+/* 95 */
 /***/ ((__unused_webpack_module, exports, __w_pdfjs_require__) => {
 
 
@@ -51112,8 +50785,8 @@ Object.defineProperty(exports, "__esModule", ({
   value: true
 }));
 exports.SignatureNamespace = void 0;
-var _namespaces = __w_pdfjs_require__(78);
-var _xfa_object = __w_pdfjs_require__(76);
+var _namespaces = __w_pdfjs_require__(79);
+var _xfa_object = __w_pdfjs_require__(77);
 const SIGNATURE_NS_ID = _namespaces.NamespaceIds.signature.id;
 class Signature extends _xfa_object.XFAObject {
   constructor(attributes) {
@@ -51134,7 +50807,7 @@ class SignatureNamespace {
 exports.SignatureNamespace = SignatureNamespace;
 
 /***/ }),
-/* 95 */
+/* 96 */
 /***/ ((__unused_webpack_module, exports, __w_pdfjs_require__) => {
 
 
@@ -51143,8 +50816,8 @@ Object.defineProperty(exports, "__esModule", ({
   value: true
 }));
 exports.StylesheetNamespace = void 0;
-var _namespaces = __w_pdfjs_require__(78);
-var _xfa_object = __w_pdfjs_require__(76);
+var _namespaces = __w_pdfjs_require__(79);
+var _xfa_object = __w_pdfjs_require__(77);
 const STYLESHEET_NS_ID = _namespaces.NamespaceIds.stylesheet.id;
 class Stylesheet extends _xfa_object.XFAObject {
   constructor(attributes) {
@@ -51165,7 +50838,7 @@ class StylesheetNamespace {
 exports.StylesheetNamespace = StylesheetNamespace;
 
 /***/ }),
-/* 96 */
+/* 97 */
 /***/ ((__unused_webpack_module, exports, __w_pdfjs_require__) => {
 
 
@@ -51174,8 +50847,8 @@ Object.defineProperty(exports, "__esModule", ({
   value: true
 }));
 exports.XdpNamespace = void 0;
-var _namespaces = __w_pdfjs_require__(78);
-var _xfa_object = __w_pdfjs_require__(76);
+var _namespaces = __w_pdfjs_require__(79);
+var _xfa_object = __w_pdfjs_require__(77);
 const XDP_NS_ID = _namespaces.NamespaceIds.xdp.id;
 class Xdp extends _xfa_object.XFAObject {
   constructor(attributes) {
@@ -51208,7 +50881,7 @@ class XdpNamespace {
 exports.XdpNamespace = XdpNamespace;
 
 /***/ }),
-/* 97 */
+/* 98 */
 /***/ ((__unused_webpack_module, exports, __w_pdfjs_require__) => {
 
 
@@ -51217,10 +50890,10 @@ Object.defineProperty(exports, "__esModule", ({
   value: true
 }));
 exports.XhtmlNamespace = void 0;
-var _xfa_object = __w_pdfjs_require__(76);
-var _namespaces = __w_pdfjs_require__(78);
-var _html_utils = __w_pdfjs_require__(83);
-var _utils = __w_pdfjs_require__(77);
+var _xfa_object = __w_pdfjs_require__(77);
+var _namespaces = __w_pdfjs_require__(79);
+var _html_utils = __w_pdfjs_require__(84);
+var _utils = __w_pdfjs_require__(78);
 const XHTML_NS_ID = _namespaces.NamespaceIds.xhtml.id;
 const $richText = Symbol();
 const VALID_STYLES = new Set(["color", "font", "font-family", "font-size", "font-stretch", "font-style", "font-weight", "margin", "margin-bottom", "margin-left", "margin-right", "margin-top", "letter-spacing", "line-height", "orphans", "page-break-after", "page-break-before", "page-break-inside", "tab-interval", "tab-stop", "text-align", "text-decoration", "text-indent", "vertical-align", "widows", "kerning-mode", "xfa-font-horizontal-scale", "xfa-font-vertical-scale", "xfa-spacerun", "xfa-tab-stops"]);
@@ -51624,7 +51297,7 @@ class XhtmlNamespace {
 exports.XhtmlNamespace = XhtmlNamespace;
 
 /***/ }),
-/* 98 */
+/* 99 */
 /***/ ((__unused_webpack_module, exports, __w_pdfjs_require__) => {
 
 
@@ -51633,8 +51306,8 @@ Object.defineProperty(exports, "__esModule", ({
   value: true
 }));
 exports.UnknownNamespace = void 0;
-var _namespaces = __w_pdfjs_require__(78);
-var _xfa_object = __w_pdfjs_require__(76);
+var _namespaces = __w_pdfjs_require__(79);
+var _xfa_object = __w_pdfjs_require__(77);
 class UnknownNamespace {
   constructor(nsId) {
     this.namespaceId = nsId;
@@ -51646,7 +51319,7 @@ class UnknownNamespace {
 exports.UnknownNamespace = UnknownNamespace;
 
 /***/ }),
-/* 99 */
+/* 100 */
 /***/ ((__unused_webpack_module, exports, __w_pdfjs_require__) => {
 
 
@@ -51657,7 +51330,7 @@ Object.defineProperty(exports, "__esModule", ({
 exports.DatasetReader = void 0;
 var _util = __w_pdfjs_require__(2);
 var _core_utils = __w_pdfjs_require__(3);
-var _xml_parser = __w_pdfjs_require__(65);
+var _xml_parser = __w_pdfjs_require__(66);
 function decodeString(str) {
   try {
     return (0, _util.stringToUTF8String)(str);
@@ -51713,7 +51386,7 @@ class DatasetReader {
 exports.DatasetReader = DatasetReader;
 
 /***/ }),
-/* 100 */
+/* 101 */
 /***/ ((__unused_webpack_module, exports, __w_pdfjs_require__) => {
 
 
@@ -51724,10 +51397,10 @@ Object.defineProperty(exports, "__esModule", ({
 exports.XRef = void 0;
 var _util = __w_pdfjs_require__(2);
 var _primitives = __w_pdfjs_require__(4);
-var _parser = __w_pdfjs_require__(15);
+var _parser = __w_pdfjs_require__(16);
 var _core_utils = __w_pdfjs_require__(3);
 var _base_stream = __w_pdfjs_require__(5);
-var _crypto = __w_pdfjs_require__(66);
+var _crypto = __w_pdfjs_require__(67);
 class XRef {
   constructor(stream, pdfManager) {
     this.stream = stream;
@@ -52441,7 +52114,7 @@ class XRef {
 exports.XRef = XRef;
 
 /***/ }),
-/* 101 */
+/* 102 */
 /***/ ((__unused_webpack_module, exports) => {
 
 
@@ -52454,7 +52127,7 @@ const isNodeJS = false;
 exports.isNodeJS = isNodeJS;
 
 /***/ }),
-/* 102 */
+/* 103 */
 /***/ ((__unused_webpack_module, exports, __w_pdfjs_require__) => {
 
 
@@ -52867,7 +52540,7 @@ class MessageHandler {
 exports.MessageHandler = MessageHandler;
 
 /***/ }),
-/* 103 */
+/* 104 */
 /***/ ((__unused_webpack_module, exports, __w_pdfjs_require__) => {
 
 
@@ -53029,8 +52702,8 @@ Object.defineProperty(exports, "WorkerMessageHandler", ({
   }
 }));
 var _worker = __w_pdfjs_require__(1);
-const pdfjsVersion = '3.6.13';
-const pdfjsBuild = 'df5fb71ca';
+const pdfjsVersion = '3.6.126';
+const pdfjsBuild = '3f89a99a5';
 })();
 
 /******/ 	return __webpack_exports__;

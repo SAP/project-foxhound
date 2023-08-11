@@ -12,6 +12,7 @@
 #include "mozilla/dom/SVGAnimatedString.h"
 #include "mozilla/dom/SVGGeometryElement.h"
 #include "mozilla/dom/SVGAnimatedPreserveAspectRatio.h"
+#include "mozilla/gfx/2D.h"
 
 nsresult NS_NewSVGImageElement(
     nsIContent** aResult, already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
@@ -22,7 +23,7 @@ class SVGImageFrame;
 namespace dom {
 class DOMSVGAnimatedPreserveAspectRatio;
 
-using SVGImageElementBase = SVGGeometryElement;
+using SVGImageElementBase = SVGGraphicsElement;
 
 class SVGImageElement final : public SVGImageElementBase,
                               public nsImageLoadingContent {
@@ -46,18 +47,17 @@ class SVGImageElement final : public SVGImageElementBase,
   // EventTarget
   void AsyncEventRunning(AsyncEventDispatcher* aEvent) override;
 
+  // nsImageLoadingContent interface
+  CORSMode GetCORSMode() override;
+
   // nsIContent interface
   bool ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
                       const nsAString& aValue,
                       nsIPrincipal* aMaybeScriptedPrincipal,
                       nsAttrValue& aResult) override;
-  nsresult AfterSetAttr(int32_t aNamespaceID, nsAtom* aName,
-                        const nsAttrValue* aValue, const nsAttrValue* aOldValue,
-                        nsIPrincipal* aSubjectPrincipal, bool aNotify) override;
-  // <image> is not really an SVGGeometryElement, we should not treat it as
-  // such. Ideally we'd not derive SVGImageElement from SVGGeometryElement at
-  // all.
-  bool IsSVGGeometryElement() const final { return false; }
+  void AfterSetAttr(int32_t aNamespaceID, nsAtom* aName,
+                    const nsAttrValue* aValue, const nsAttrValue* aOldValue,
+                    nsIPrincipal* aSubjectPrincipal, bool aNotify) override;
 
   nsresult BindToTree(BindContext&, nsINode& aParent) override;
   void UnbindFromTree(bool aNullParent) override;
@@ -67,16 +67,6 @@ class SVGImageElement final : public SVGImageElementBase,
   void DestroyContent() override;
 
   NS_IMETHOD_(bool) IsAttributeMapped(const nsAtom* name) const override;
-
-  // SVGGeometryElement methods:
-  bool GetGeometryBounds(
-      Rect* aBounds, const StrokeOptions& aStrokeOptions,
-      const Matrix& aToBoundsSpace,
-      const Matrix* aToNonScalingStrokeSpace = nullptr) override {
-    *aBounds = GeometryBounds(aToBoundsSpace);
-    return true;
-  }
-  already_AddRefed<Path> BuildPath(PathBuilder* aBuilder) override;
 
   // SVGSVGElement methods:
   bool HasValidDimensions() const override;
@@ -92,6 +82,15 @@ class SVGImageElement final : public SVGImageElementBase,
   already_AddRefed<DOMSVGAnimatedLength> Height();
   already_AddRefed<DOMSVGAnimatedPreserveAspectRatio> PreserveAspectRatio();
   already_AddRefed<DOMSVGAnimatedString> Href();
+  void GetCrossOrigin(nsAString& aCrossOrigin) {
+    // Null for both missing and invalid defaults is ok, since we
+    // always parse to an enum value, so we don't need an invalid
+    // default, and we _want_ the missing default to be null.
+    GetEnumAttr(nsGkAtoms::crossorigin, nullptr, aCrossOrigin);
+  }
+  void SetCrossOrigin(const nsAString& aCrossOrigin, ErrorResult& aError) {
+    SetOrRemoveNullableStringAttr(nsGkAtoms::crossorigin, aCrossOrigin, aError);
+  }
 
   void SetDecoding(const nsAString& aDecoding, ErrorResult& aError) {
     SetAttr(nsGkAtoms::decoding, aDecoding, aError);

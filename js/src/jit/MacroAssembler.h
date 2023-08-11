@@ -3788,8 +3788,6 @@ class MacroAssembler : public MacroAssemblerSpecific {
                                     Label* rejoin)
       DEFINED_ON(arm, arm64, x86_shared, mips_shared, loong64, riscv64, wasm32);
 
-  void loadWasmGlobalPtr(uint32_t globalDataOffset, Register dest);
-
   // This function takes care of loading the callee's instance and pinned regs
   // but it is the caller's responsibility to save/restore instance or pinned
   // regs.
@@ -3833,6 +3831,26 @@ class MacroAssembler : public MacroAssemblerSpecific {
                                            const ABIArg& instanceArg,
                                            wasm::SymbolicAddress builtin,
                                            wasm::FailureMode failureMode);
+
+  // Perform a subtype check that `object` is a subtype of `type`, branching to
+  // `label` depending on `onSuccess`.
+  //
+  // `scratch1` is required iff the destination type is eq or lower and not
+  // none. `superSuperTypeVector` is required iff the destination type is a
+  // concrete type. `scratch2` is required iff the destination type is a
+  // concrete type and its `subTypingDepth` is >=
+  // wasm::MinSuperTypeVectorLength.
+  //
+  // `object` and `superSuperTypeVector` are preserved. Scratch registers are
+  // clobbered.
+  void branchWasmGcObjectIsRefType(Register object, const wasm::RefType& type,
+                                   Label* label, bool onSuccess,
+                                   Register superSuperTypeVector,
+                                   Register scratch1, Register scratch2);
+  static bool needScratch1ForBranchWasmGcRefType(const wasm::RefType& type);
+  static bool needScratch2ForBranchWasmGcRefType(const wasm::RefType& type);
+  static bool needSuperSuperTypeVectorForBranchWasmGcRefType(
+      const wasm::RefType& type);
 
   // Perform a subtype check that `subSuperTypeVector` is a subtype of
   // `superSuperTypeVector`, branching to `label` depending on `onSuccess`.

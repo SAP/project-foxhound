@@ -313,11 +313,10 @@ nsresult SVGElement::BindToTree(BindContext& aContext, nsINode& aParent) {
   return NS_OK;
 }
 
-nsresult SVGElement::AfterSetAttr(int32_t aNamespaceID, nsAtom* aName,
-                                  const nsAttrValue* aValue,
-                                  const nsAttrValue* aOldValue,
-                                  nsIPrincipal* aSubjectPrincipal,
-                                  bool aNotify) {
+void SVGElement::AfterSetAttr(int32_t aNamespaceID, nsAtom* aName,
+                              const nsAttrValue* aValue,
+                              const nsAttrValue* aOldValue,
+                              nsIPrincipal* aSubjectPrincipal, bool aNotify) {
   // We don't currently use nsMappedAttributes within SVG. If this changes, we
   // need to be very careful because some nsAttrValues used by SVG point to
   // member data of SVG elements and if an nsAttrValue outlives the SVG element
@@ -901,9 +900,8 @@ void SVGElement::UnsetAttrInternal(int32_t aNamespaceID, nsAtom* aName,
   }
 }
 
-nsresult SVGElement::BeforeSetAttr(int32_t aNamespaceID, nsAtom* aName,
-                                   const nsAttrValueOrString* aValue,
-                                   bool aNotify) {
+void SVGElement::BeforeSetAttr(int32_t aNamespaceID, nsAtom* aName,
+                               const nsAttrValue* aValue, bool aNotify) {
   if (!aValue) {
     UnsetAttrInternal(aNamespaceID, aName, aNotify);
   }
@@ -1364,15 +1362,8 @@ nsAttrValue SVGElement::WillChangeValue(
   // allocating, e.g. an extra SVGAnimatedLength, and isn't necessary at the
   // moment since no SVG elements overload BeforeSetAttr. For now we just pass
   // the current value.
-  nsAttrValueOrString attrStringOrValue(attrValue ? *attrValue
-                                                  : emptyOrOldAttrValue);
-  DebugOnly<nsresult> rv = BeforeSetAttr(
-      kNameSpaceID_None, aName, &attrStringOrValue, kNotifyDocumentObservers);
-  // SVG elements aren't expected to overload BeforeSetAttr in such a way that
-  // it may fail. So long as this is the case we don't need to check and pass on
-  // the return value which simplifies the calling code significantly.
-  MOZ_ASSERT(NS_SUCCEEDED(rv), "Unexpected failure from BeforeSetAttr");
-
+  const nsAttrValue* value = attrValue ? attrValue : &emptyOrOldAttrValue;
+  BeforeSetAttr(kNameSpaceID_None, aName, value, kNotifyDocumentObservers);
   return emptyOrOldAttrValue;
 }
 

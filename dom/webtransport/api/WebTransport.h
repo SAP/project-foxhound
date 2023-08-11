@@ -10,7 +10,9 @@
 #include "nsCOMPtr.h"
 #include "nsTArray.h"
 #include "nsISupports.h"
+#include "nsTHashMap.h"
 #include "nsWrapperCache.h"
+#include "nsPIDOMWindow.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/WebTransportBinding.h"
 #include "mozilla/dom/WebTransportChild.h"
@@ -53,15 +55,18 @@ class WebTransport final : public nsISupports, public nsWrapperCache {
 
   enum class WebTransportState { CONNECTING, CONNECTED, CLOSED, FAILED };
 
+  static void NotifyBFCacheOnMainThread(nsPIDOMWindowInner* aInner,
+                                        bool aCreated);
+  void NotifyToWindow(bool aCreated) const;
+
   // this calls CreateReadableStream(), which in this case doesn't actually run
   // script.   See also bug 1810942
   MOZ_CAN_RUN_SCRIPT_BOUNDARY void Init(const GlobalObject& aGlobal,
                                         const nsAString& aUrl,
                                         const WebTransportOptions& aOptions,
                                         ErrorResult& aError);
-  void ResolveWaitingConnection(WebTransportReliabilityMode aReliability,
-                                WebTransportChild* aChild);
-  void RejectWaitingConnection(nsresult aRv, WebTransportChild* aChild);
+  void ResolveWaitingConnection(WebTransportReliabilityMode aReliability);
+  void RejectWaitingConnection(nsresult aRv);
   bool ParseURL(const nsAString& aURL) const;
   // this calls CloseNative(), which doesn't actually run script.   See bug
   // 1810942
@@ -71,10 +76,12 @@ class WebTransport final : public nsISupports, public nsWrapperCache {
 
   // From Parent
   void NewBidirectionalStream(
+      uint64_t aStreamId,
       const RefPtr<mozilla::ipc::DataPipeReceiver>& aIncoming,
       const RefPtr<mozilla::ipc::DataPipeSender>& aOutgoing);
 
   void NewUnidirectionalStream(
+      uint64_t aStreamId,
       const RefPtr<mozilla::ipc::DataPipeReceiver>& aStream);
 
   void NewDatagramReceived(nsTArray<uint8_t>&& aData,
@@ -82,6 +89,9 @@ class WebTransport final : public nsISupports, public nsWrapperCache {
 
   void RemoteClosed(bool aCleanly, const uint32_t& aCode,
                     const nsACString& aReason);
+
+  void OnStreamResetOrStopSending(uint64_t aStreamId,
+                                  const StreamResetOrStopSendingError& aError);
   // WebIDL Boilerplate
   nsIGlobalObject* GetParentObject() const;
 
@@ -117,6 +127,10 @@ class WebTransport final : public nsISupports, public nsWrapperCache {
  private:
   ~WebTransport();
 
+  template <typename Stream>
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY void PropagateError(Stream* aStream,
+                                                  WebTransportError* aError);
+
   nsCOMPtr<nsIGlobalObject> mGlobal;
   // We are the owner of WebTransportChild.  We must call Shutdown() on it
   // before we're destroyed.
@@ -132,10 +146,8 @@ class WebTransport final : public nsISupports, public nsWrapperCache {
   // Order is visible due to
   // https://w3c.github.io/webtransport/#webtransport-procedures step 10: "For
   // each sendStream in sendStreams, error sendStream with error."
-  // XXX Use nsTArray.h for now, but switch to OrderHashSet/Table for release to
-  // improve remove performance (if needed)
-  nsTArray<RefPtr<WebTransportSendStream>> mSendStreams;
-  nsTArray<RefPtr<WebTransportReceiveStream>> mReceiveStreams;
+  nsTHashMap<uint64_t, RefPtr<WebTransportSendStream>> mSendStreams;
+  nsTHashMap<uint64_t, RefPtr<WebTransportReceiveStream>> mReceiveStreams;
 
   WebTransportState mState;
   RefPtr<Promise> mReady;
@@ -147,8 +159,10 @@ class WebTransport final : public nsISupports, public nsWrapperCache {
   // Incoming streams get queued here.  Use a TArray though it's working as
   // a FIFO - rarely will there be more than one entry in these arrays, so
   // the overhead of mozilla::Queue is unneeded
-  nsTArray<RefPtr<mozilla::ipc::DataPipeReceiver>> mUnidirectionalStreams;
-  nsTArray<UniquePtr<BidirectionalPair>> mBidirectionalStreams;
+  nsTArray<std::tuple<uint64_t, RefPtr<mozilla::ipc::DataPipeReceiver>>>
+      mUnidirectionalStreams;
+  nsTArray<std::tuple<uint64_t, UniquePtr<BidirectionalPair>>>
+      mBidirectionalStreams;
 
   // These are created in the constructor
   RefPtr<ReadableStream> mIncomingUnidirectionalStreams;

@@ -13,16 +13,12 @@ trap 'show_error_msg $LINENO' ERR
 source dom/media/webrtc/third_party_build/use_config_env.sh
 
 echo "MOZ_LIBWEBRTC_SRC: $MOZ_LIBWEBRTC_SRC"
-echo "MOZ_PRIOR_LIBWEBRTC_BRANCH: $MOZ_PRIOR_LIBWEBRTC_BRANCH"
 
 # After this point:
 # * eE: All commands should succeed.
 # * u: All variables should be defined before use.
 # * o pipefail: All stages of all pipes should succeed.
 set -eEuo pipefail
-
-# wipe no-op commit tracking files for new run
-rm -f $STATE_DIR/*.no-op-cherry-pick-msg
 
 CURRENT_DIR=`pwd`
 cd $MOZ_LIBWEBRTC_SRC
@@ -31,7 +27,7 @@ MANUAL_INTERVENTION_COMMIT_FILE="$TMP_DIR/manual_commits.txt"
 rm -f $MANUAL_INTERVENTION_COMMIT_FILE
 
 # Find the common commit between our previous work branch and trunk
-CURRENT_RELEASE_BASE=`git merge-base $MOZ_PRIOR_LIBWEBRTC_BRANCH master`
+CURRENT_RELEASE_BASE=`git merge-base branch-heads/$MOZ_PRIOR_UPSTREAM_BRANCH_HEAD_NUM master`
 
 # Write no-op files for the cherry-picked release branch commits.  For more
 # details on what this is doing, see make_upstream_revert_noop.sh.
@@ -89,7 +85,6 @@ for commit in $NEW_COMMITS; do
 
   CHERRY_PICK_COMMIT=`git show $commit | grep "cherry picked from commit" | tr -d "()" | awk '{ print $5; }'`
   SHORT_SHA=`git show --name-only $CHERRY_PICK_COMMIT --format='%h' | head -1`
-  echo "    commit $commit cherry-picks $SHORT_SHA"
 
   # The trick here is that we only want to include no-op processing for the
   # commits that appear both here _and_ in the previous release's cherry-pick
@@ -97,13 +92,14 @@ for commit in $NEW_COMMITS; do
   # cherry picked in the previous release branch and then create another
   # file for the new release branch commit that will ultimately be a no-op.
   if [[ "$SHORT_SHA" =~ ^($KNOWN_NO_OP_COMMITS)$ ]]; then
+    echo "    commit $commit cherry-picks $SHORT_SHA"
     cp $STATE_DIR/$SHORT_SHA.no-op-cherry-pick-msg $STATE_DIR/$commit.no-op-cherry-pick-msg
   fi
 
 done
 
 if [ ! -f $MANUAL_INTERVENTION_COMMIT_FILE ]; then
-  echo "we have no commits needing manual intervention"
+  echo "No commits require manual intervention"
   exit
 fi
 

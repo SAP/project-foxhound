@@ -43,8 +43,9 @@ class FileSystemDatabaseManagerVersion001 : public FileSystemDatabaseManager {
       const EntryId& aRootEntry);
 
   /* Static to allow use by quota client without instantiation */
-  static nsresult RescanTrackedUsages(const FileSystemConnection& aConnection,
-                                      const Origin& aOrigin);
+  static nsresult RescanTrackedUsages(
+      const FileSystemConnection& aConnection,
+      const quota::OriginMetadata& aOriginMetadata);
 
   /* Static to allow use by quota client without instantiation */
   static Result<Usage, QMResult> GetFileUsage(
@@ -56,9 +57,10 @@ class FileSystemDatabaseManagerVersion001 : public FileSystemDatabaseManager {
       const FileSystemChildMetadata& aHandle, bool aCreate) override;
 
   virtual Result<EntryId, QMResult> GetOrCreateFile(
-      const FileSystemChildMetadata& aHandle, bool aCreate) override;
+      const FileSystemChildMetadata& aHandle, const ContentType& aType,
+      bool aCreate) override;
 
-  virtual nsresult GetFile(const EntryId& aEntryId, nsString& aType,
+  virtual nsresult GetFile(const EntryId& aEntryId, ContentType& aType,
                            TimeStamp& lastModifiedMilliSeconds, Path& aPath,
                            nsCOMPtr<nsIFile>& aFile) const override;
 
@@ -98,6 +100,23 @@ class FileSystemDatabaseManagerVersion001 : public FileSystemDatabaseManager {
 
   nsresult UpdateCachedQuotaUsage(const EntryId& aEntryId, Usage aOldUsage,
                                   Usage aNewUsage);
+
+  nsresult ClearDestinationIfNotLocked(
+      const FileSystemConnection& aConnection,
+      const FileSystemDataManager* const aDataManager,
+      const FileSystemEntryMetadata& aHandle,
+      const FileSystemChildMetadata& aNewDesignation);
+
+  nsresult PrepareMoveEntry(const FileSystemConnection& aConnection,
+                            const FileSystemDataManager* const aDataManager,
+                            const FileSystemEntryMetadata& aHandle,
+                            const FileSystemChildMetadata& aNewDesignation,
+                            bool aIsFile);
+
+  nsresult PrepareRenameEntry(const FileSystemConnection& aConnection,
+                              const FileSystemDataManager* const aDataManager,
+                              const FileSystemEntryMetadata& aHandle,
+                              const Name& aNewName, bool aIsFile);
 
   // This is a raw pointer since we're owned by the FileSystemDataManager.
   FileSystemDataManager* MOZ_NON_OWNING_REF mDataManager;

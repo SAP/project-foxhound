@@ -151,7 +151,7 @@ index 45c8fd38bf5f6..3c384256147a0 100644
 +++ b/compiler-rt/test/msan/dtls_test.c
 @@ -12,10 +12,6 @@
     // Reports use-of-uninitialized-value, not analyzed
-    XFAIL: netbsd
+    XFAIL: target={{.*netbsd.*}}
  
 -   // This is known to be broken with glibc-2.27+
 -   // https://bugs.llvm.org/show_bug.cgi?id=37804

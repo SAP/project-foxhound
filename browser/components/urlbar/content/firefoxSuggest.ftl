@@ -34,6 +34,12 @@ urlbar-result-menu-learn-more-about-firefox-suggest =
     .label = Learn more about { -firefox-suggest-brand-name }
     .accesskey = L
 
+# A message shown in a result when the user gives feedback on it.
+firefox-suggest-feedback-acknowledgment = Thanks for your feedback
+
+# A message that replaces a result when the user dismisses it.
+firefox-suggest-dismissal-acknowledgment = Thanks for your feedback. You won’t see this again.
+
 ## These strings are used for weather suggestions in the urlbar.
 
 # This string is displayed above the current temperature
@@ -67,6 +73,17 @@ firefox-suggest-weather-high-low = High: { $high }°{ $unit } · Low: { $low }°
 # Variables:
 #   $provider (String) - The name of the weather provider
 firefox-suggest-weather-sponsored = { $provider } · Sponsored
+
+firefox-suggest-weather-command-inaccurate-location =
+  .label = Report inaccurate location
+firefox-suggest-weather-command-show-less-frequently =
+  .label = Show less frequently
+firefox-suggest-weather-command-dont-show-this =
+  .label = Don’t show this
+firefox-suggest-weather-command-not-relevant =
+  .label = Not relevant
+firefox-suggest-weather-command-not-interested =
+  .label = Not interested
 
 ## These strings are used in the preferences UI (about:preferences). Their names
 ## follow the naming conventions of other strings used in the preferences UI.

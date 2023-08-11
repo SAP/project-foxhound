@@ -24,8 +24,6 @@
 #include "nsWindowsDllInterceptor.h"
 #include "nsWindowsHelpers.h"
 
-#include "mozilla/MozProcessMitigationDynamicCodePolicy.h"
-
 NTSTATUS NTAPI NtFlushBuffersFile(HANDLE, PIO_STATUS_BLOCK);
 NTSTATUS NTAPI NtReadFile(HANDLE, HANDLE, PIO_APC_ROUTINE, PVOID,
                           PIO_STATUS_BLOCK, PVOID, ULONG, PLARGE_INTEGER,
@@ -64,6 +62,10 @@ BOOL WINAPI
 SetProcessMitigationPolicy(PROCESS_MITIGATION_POLICY aMitigationPolicy,
                            PVOID aBuffer, SIZE_T aBufferLen);
 #endif  // (_WIN32_WINNT < 0x0602)
+
+#define RtlGenRandom SystemFunction036
+extern "C" BOOLEAN NTAPI RtlGenRandom(PVOID aRandomBuffer,
+                                      ULONG aRandomBufferLength);
 
 using namespace mozilla;
 
@@ -601,9 +603,11 @@ struct Predicates<void(__fastcall*)(Args...)> {
 //
 // Note: When |func| returns void, you must supply |Ignore| and |nullptr| as the
 // |pred| and |comp| arguments, respectively.
-#define TEST_HOOK(dll, func, pred, comp) \
-  TestHook<decltype(&func)>(dll, #func,  \
+#define TEST_HOOK_HELPER(dll, func, pred, comp) \
+  TestHook<decltype(&func)>(dll, #func,         \
                             &Predicates<decltype(&func)>::pred<comp>)
+
+#define TEST_HOOK(dll, func, pred, comp) TEST_HOOK_HELPER(dll, func, pred, comp)
 
 // We need to special-case functions that return INVALID_HANDLE_VALUE
 // (ie, CreateFile). Our template machinery for comparing values doesn't work
@@ -964,6 +968,32 @@ struct DetouredCallChunk {
 // associate it with unwind information.
 decltype(&DetouredCallCode) gDetouredCall =
     []() -> decltype(&DetouredCallCode) {
+  // We first adjust the detoured call jumper from:
+  //   ff 25 00 00 00 00    jmp qword ptr [rip + 0]
+  // to:
+  //   ff 25 XX XX XX XX    jmp qword ptr [rip + offset gDetouredCall]
+  uint8_t bytes[6]{0xff, 0x25, 0, 0, 0, 0};
+  if (0 != memcmp(bytes, reinterpret_cast<void*>(DetouredCallJumper),
+                  sizeof bytes)) {
+    return nullptr;
+  }
+
+  DWORD oldProtect{};
+  if (!VirtualProtect(reinterpret_cast<void*>(DetouredCallJumper), sizeof bytes,
+                      PAGE_READWRITE, &oldProtect)) {
+    return nullptr;
+  }
+
+  *reinterpret_cast<uint32_t*>(&bytes[2]) = static_cast<uint32_t>(
+      reinterpret_cast<uintptr_t>(&gDetouredCall) -
+      (reinterpret_cast<uintptr_t>(DetouredCallJumper) + sizeof bytes));
+  memcpy(reinterpret_cast<void*>(DetouredCallJumper), bytes, sizeof bytes);
+
+  if (!VirtualProtect(reinterpret_cast<void*>(DetouredCallJumper), sizeof bytes,
+                      oldProtect, &oldProtect)) {
+    return nullptr;
+  }
+
   auto detouredCallChunk = reinterpret_cast<DetouredCallChunk*>(
       VirtualAlloc(nullptr, sizeof(DetouredCallChunk), MEM_RESERVE | MEM_COMMIT,
                    PAGE_READWRITE));
@@ -984,7 +1014,6 @@ decltype(&DetouredCallCode) gDetouredCall =
          reinterpret_cast<void*>(DetouredCallCode),
          sizeof(detouredCallChunk->code));
 
-  DWORD oldProtect = 0;
   if (!VirtualProtect(reinterpret_cast<void*>(detouredCallChunk),
                       sizeof(DetouredCallChunk), PAGE_EXECUTE_READ,
                       &oldProtect)) {
@@ -1182,7 +1211,7 @@ bool TestDynamicCodePolicy() {
     return true;
   }
 
-  MOZ_PROCESS_MITIGATION_DYNAMIC_CODE_POLICY policy = {};
+  PROCESS_MITIGATION_DYNAMIC_CODE_POLICY policy = {};
   policy.ProhibitDynamicCode = true;
 
   mozilla::DynamicallyLinkedFunctionPtr<decltype(&SetProcessMitigationPolicy)>
@@ -1385,6 +1414,7 @@ extern "C" int wmain(int argc, wchar_t* argv[]) {
       TEST_HOOK("user32.dll", SetCursorPos, NotEquals, FALSE) &&
       TEST_HOOK("bcrypt.dll", BCryptGenRandom, Equals,
                 static_cast<NTSTATUS>(STATUS_INVALID_HANDLE)) &&
+      TEST_HOOK("advapi32.dll", RtlGenRandom, Equals, TRUE) &&
 #if !defined(_M_ARM64)
       TEST_HOOK("imm32.dll", ImmGetContext, Equals, nullptr) &&
 #endif  // !defined(_M_ARM64)

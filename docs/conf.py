@@ -73,6 +73,7 @@ js_source_path = [
     "../toolkit/components/prompts/src",
     "../toolkit/components/pictureinpicture",
     "../toolkit/components/pictureinpicture/content",
+    "../toolkit/components/search",
 ]
 root_for_relative_js_paths = ".."
 jsdoc_config_path = "jsdoc.json"
@@ -100,7 +101,7 @@ html_logo = os.path.join(
 )
 html_favicon = os.path.join(topsrcdir, "browser/branding/nightly/firefox.ico")
 
-exclude_patterns = ["_build", "_staging", "_venv"]
+exclude_patterns = ["_build", "_staging", "_venv", "**security/nss/legacy/**"]
 pygments_style = "sphinx"
 # generate label “slugs” for header anchors so that
 # we can reference them from markdown links.

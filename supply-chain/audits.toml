@@ -1,18 +1,165 @@
 
 # cargo-vet audits file
 
+[[wildcard-audits.audio_thread_priority]]
+who = "Paul Adenot <paul@paul.cx>"
+criteria = "safe-to-deploy"
+user-id = 1258 # Paul Adenot (padenot)
+start = "2019-05-09"
+end = "2024-04-24"
+notes = """
+I've written most of this crate, the rest has been either written and in any
+case has been reviewed by Mozilla developers.
+"""
+
+[[wildcard-audits.authenticator]]
+who = "John M. Schanck <jschanck@mozilla.com>"
+criteria = "safe-to-deploy"
+user-id = 175410 # John Schanck (jschanck)
+start = "2022-11-15"
+end = "2024-04-26"
+notes = "Maintained by the CryptoEng team at Mozilla."
+
 [[wildcard-audits.bhttp]]
 who = "Martin Thomson <mt@lowentropy.net>"
 criteria = "safe-to-deploy"
-user-id = 128763
+user-id = 128763 # Martin Thomson (martinthomson)
 start = "2022-08-04"
 end = "2024-03-09"
 notes = "Though the code is safe to run and deploy, the code for processing HTTP/1.1 messages (the `read-http` feature, specifically) is not suited for deployment in real applications, either clients or servers.  Some features necessary for live deployment are not implemented, such as the proper handling of some types of response (e.g., a response to a HEAD request).  Software that processes HTTP/1.1 messages requires a large number of compatibility tweaks if it is to be deployed interoperably.  This feature only exists to support basic validation tools and is unlikely to be widely compatible."
 
+[[wildcard-audits.cexpr]]
+who = "Emilio Cobos Álvarez <emilio@crisal.io>"
+criteria = "safe-to-deploy"
+user-id = 3788 # Emilio Cobos Álvarez (emilio)
+start = "2021-06-21"
+end = "2024-04-21"
+notes = "No unsafe code, rather straight-forward parser."
+
+[[wildcard-audits.cocoa]]
+who = "Bobby Holley <bobbyholley@gmail.com>"
+criteria = "safe-to-deploy"
+user-id = 2396 # Josh Matthews (jdm)
+start = "2019-07-23"
+end = "2023-05-04"
+notes = "I've reviewed every source contribution that was neither authored nor reviewed by Mozilla."
+
+[[wildcard-audits.cocoa]]
+who = "Bobby Holley <bobbyholley@gmail.com>"
+criteria = "safe-to-deploy"
+user-id = 5946 # Jeff Muizelaar (jrmuizel)
+start = "2022-11-01"
+end = "2023-05-04"
+notes = "I've reviewed every source contribution that was neither authored nor reviewed by Mozilla."
+
+[[wildcard-audits.cocoa-foundation]]
+who = "Bobby Holley <bobbyholley@gmail.com>"
+criteria = "safe-to-deploy"
+user-id = 5946 # Jeff Muizelaar (jrmuizel)
+start = "2023-03-16"
+end = "2023-05-04"
+notes = "I've reviewed every source contribution that was neither authored nor reviewed by Mozilla."
+
+[[wildcard-audits.cocoa-foundation]]
+who = "Bobby Holley <bobbyholley@gmail.com>"
+criteria = "safe-to-deploy"
+user-id = 2396 # Josh Matthews (jdm)
+start = "2020-07-20"
+end = "2023-05-04"
+notes = "I've reviewed every source contribution that was neither authored nor reviewed by Mozilla."
+
+[[wildcard-audits.core-foundation]]
+who = "Bobby Holley <bobbyholley@gmail.com>"
+criteria = "safe-to-deploy"
+user-id = 2396 # Josh Matthews (jdm)
+start = "2019-11-12"
+end = "2023-05-04"
+notes = "I've reviewed every source contribution that was neither authored nor reviewed by Mozilla."
+
+[[wildcard-audits.core-foundation]]
+who = "Bobby Holley <bobbyholley@gmail.com>"
+criteria = "safe-to-deploy"
+user-id = 5946 # Jeff Muizelaar (jrmuizel)
+start = "2019-03-29"
+end = "2023-05-04"
+notes = "I've reviewed every source contribution that was neither authored nor reviewed by Mozilla."
+
+[[wildcard-audits.core-foundation-sys]]
+who = "Bobby Holley <bobbyholley@gmail.com>"
+criteria = "safe-to-deploy"
+user-id = 2396 # Josh Matthews (jdm)
+start = "2019-11-12"
+end = "2023-05-04"
+notes = "I've reviewed every source contribution that was neither authored nor reviewed by Mozilla."
+
+[[wildcard-audits.core-foundation-sys]]
+who = "Bobby Holley <bobbyholley@gmail.com>"
+criteria = "safe-to-deploy"
+user-id = 5946 # Jeff Muizelaar (jrmuizel)
+start = "2020-10-14"
+end = "2023-05-04"
+notes = "I've reviewed every source contribution that was neither authored nor reviewed by Mozilla."
+
+[[wildcard-audits.core-graphics]]
+who = "Bobby Holley <bobbyholley@gmail.com>"
+criteria = "safe-to-deploy"
+user-id = 2396 # Josh Matthews (jdm)
+start = "2019-10-28"
+end = "2023-05-04"
+notes = "I've reviewed every source contribution that was neither authored nor reviewed by Mozilla."
+
+[[wildcard-audits.core-graphics]]
+who = "Bobby Holley <bobbyholley@gmail.com>"
+criteria = "safe-to-deploy"
+user-id = 5946 # Jeff Muizelaar (jrmuizel)
+start = "2020-12-08"
+end = "2023-05-04"
+notes = "I've reviewed every source contribution that was neither authored nor reviewed by Mozilla."
+
+[[wildcard-audits.core-graphics-types]]
+who = "Bobby Holley <bobbyholley@gmail.com>"
+criteria = "safe-to-deploy"
+user-id = 2396 # Josh Matthews (jdm)
+start = "2020-07-20"
+end = "2023-05-04"
+notes = "I've reviewed every source contribution that was neither authored nor reviewed by Mozilla."
+
+[[wildcard-audits.core-text]]
+who = "Bobby Holley <bobbyholley@gmail.com>"
+criteria = "safe-to-deploy"
+user-id = 2396 # Josh Matthews (jdm)
+start = "2019-03-29"
+end = "2023-05-04"
+notes = "I've reviewed every source contribution that was neither authored nor reviewed by Mozilla."
+
+[[wildcard-audits.core-text]]
+who = "Bobby Holley <bobbyholley@gmail.com>"
+criteria = "safe-to-deploy"
+user-id = 5946 # Jeff Muizelaar (jrmuizel)
+start = "2021-02-14"
+end = "2023-05-04"
+notes = "I've reviewed every source contribution that was neither authored nor reviewed by Mozilla."
+
+[[wildcard-audits.etagere]]
+who = "Nicolas Silva <nical@fastmail.com>"
+criteria = "safe-to-deploy"
+user-id = 1281 # Nicolas Silva (nical)
+start = "2020-11-12"
+end = "2024-04-25"
+notes = "I am the author of this crate."
+
+[[wildcard-audits.euclid]]
+who = "Nicolas Silva <nical@fastmail.com>"
+criteria = "safe-to-deploy"
+user-id = 1281 # Nicolas Silva (nical)
+start = "2019-03-14"
+end = "2024-04-25"
+notes = "I wrote most of the commits in the euclid reprository and review every change that is not produced by me."
+
 [[wildcard-audits.glean]]
 who = "Chris H-C <chutten@mozilla.com>"
 criteria = "safe-to-deploy"
-user-id = 48
+user-id = 48 # Jan-Erik Rediger (badboy)
 start = "2020-11-10"
 end = "2024-02-24"
 notes = "The Glean SDKs are maintained by the Glean Team at Mozilla."
@@ -20,10 +167,25 @@ notes = "The Glean SDKs are maintained by the Glean Team at Mozilla."
 [[wildcard-audits.glean-core]]
 who = "Chris H-C <chutten@mozilla.com>"
 criteria = "safe-to-deploy"
-user-id = 48
+user-id = 48 # Jan-Erik Rediger (badboy)
 start = "2019-09-24"
 end = "2024-02-24"
 notes = "The Glean SDKs are maintained by the Glean Team at Mozilla."
+
+[[wildcard-audits.glslopt]]
+who = "Jamie Nicol <jnicol@mozilla.com>"
+criteria = "safe-to-deploy"
+user-id = 84794 # Jamie Nicol (jamienicol)
+start = "2020-04-07"
+end = "2024-04-25"
+
+[[wildcard-audits.io-surface]]
+who = "Bobby Holley <bobbyholley@gmail.com>"
+criteria = "safe-to-deploy"
+user-id = 2396 # Josh Matthews (jdm)
+start = "2019-07-23"
+end = "2023-05-04"
+notes = "I've reviewed every source contribution that was neither authored nor reviewed by Mozilla."
 
 [[wildcard-audits.marionette]]
 who = "Henrik Skupin <mail@hskupin.info>"
@@ -68,10 +230,50 @@ notes = "Maintained by the DevTools team at Mozilla and has no unsafe code."
 [[wildcard-audits.ohttp]]
 who = "Martin Thomson <mt@lowentropy.net>"
 criteria = "safe-to-deploy"
-user-id = 128763
+user-id = 128763 # Martin Thomson (martinthomson)
 start = "2022-08-04"
 end = "2024-03-09"
 notes = "This code contains two cryptographic back ends.  No unsafe code is contained if the Rust `hpke` crate is used (the `rust-hpke` feature).  Using NSS (the `nss` feature) involves extensive use of bindings to the native code provided by NSS.  This interface uses wrappers that attempt to add safety to a fundamentally very dangerous library, but those wrappers have only been validated for use following the needs of this crate."
+
+[[wildcard-audits.rust_cascade]]
+who = "Dana Keeler <dkeeler@mozilla.com>"
+criteria = "safe-to-deploy"
+user-id = 57462 # Dana Keeler (mozkeeler)
+start = "2019-11-15"
+end = "2024-04-24"
+notes = "Written and maintained by the security engineering team at Mozilla."
+
+[[wildcard-audits.unicode-normalization]]
+who = "Manish Goregaokar <manishsmail@gmail.com>"
+criteria = "safe-to-deploy"
+user-id = 1139 # Manish Goregaokar (Manishearth)
+start = "2019-11-06"
+end = "2024-05-03"
+notes = "All code written or reviewed by Manish"
+
+[[wildcard-audits.unicode-segmentation]]
+who = "Manish Goregaokar <manishsmail@gmail.com>"
+criteria = "safe-to-deploy"
+user-id = 1139 # Manish Goregaokar (Manishearth)
+start = "2019-05-15"
+end = "2024-05-03"
+notes = "All code written or reviewed by Manish"
+
+[[wildcard-audits.unicode-width]]
+who = "Manish Goregaokar <manishsmail@gmail.com>"
+criteria = "safe-to-deploy"
+user-id = 1139 # Manish Goregaokar (Manishearth)
+start = "2019-12-05"
+end = "2024-05-03"
+notes = "All code written or reviewed by Manish"
+
+[[wildcard-audits.unicode-xid]]
+who = "Manish Goregaokar <manishsmail@gmail.com>"
+criteria = "safe-to-deploy"
+user-id = 1139 # Manish Goregaokar (Manishearth)
+start = "2019-07-25"
+end = "2024-05-03"
+notes = "All code written or reviewed by Manish"
 
 [[wildcard-audits.webdriver]]
 who = "Henrik Skupin <mail@hskupin.info>"
@@ -263,10 +465,16 @@ who = "Mike Hommey <mh+mozilla@glandium.org>"
 criteria = "safe-to-deploy"
 delta = "0.1.8 -> 0.1.9"
 
+[[audits.audio-mixer]]
+who = "Chun-Min Chang <chun.m.chang@gmail.com>"
+criteria = "safe-to-deploy"
+version = "0.1.2"
+notes = "audio-mixer is a Mozilla-developed package."
+
 [[audits.authenticator]]
 who = "John M. Schanck <jschanck@mozilla.com>"
 criteria = "safe-to-deploy"
-version = "0.4.0-alpha.11"
+version = "0.4.0-alpha.13"
 notes = "Maintained by the CryptoEng team at Mozilla."
 
 [[audits.autocfg]]
@@ -318,6 +526,11 @@ who = "Alex Franchuk <afranchuk@mozilla.com>"
 criteria = "safe-to-deploy"
 delta = "1.3.2 -> 2.0.2"
 notes = "Removal of some unsafe code/methods. No changes to externals, just some refactoring (mostly internal)."
+
+[[audits.bitflags]]
+who = "Nicolas Silva <nical@fastmail.com>"
+criteria = "safe-to-deploy"
+delta = "2.0.2 -> 2.1.0"
 
 [[audits.block-buffer]]
 who = "Mike Hommey <mh+mozilla@glandium.org>"
@@ -529,6 +742,15 @@ was developed by other mozilla folks. Unsafe code there is reasonable (utf-8
 casts for serialization and parsing).
 """
 
+[[audits.cssparser]]
+who = "Bobby Holley <bobbyholley@gmail.com>"
+criteria = "safe-to-deploy"
+delta = "0.29.6 -> 0.31.0"
+notes = """
+All the changes in this release were authored by Mozilla staff, except the
+uninit_array stuff, which looks fine.
+"""
+
 [[audits.cssparser-macros]]
 who = "Emilio Cobos Álvarez <emilio@crisal.io>"
 criteria = "safe-to-deploy"
@@ -539,26 +761,10 @@ to a match expression.
 """
 
 [[audits.cssparser-macros]]
-who = "Tiaan Louw <tlouw@mozilla.com>"
+who = "Emilio Cobos Álvarez <emilio@crisal.io>"
 criteria = "safe-to-deploy"
-delta = "0.6.0 -> 0.6.0@git:45bc47e2bcb846f1efb5aea156be5fe7d18624bf"
-notes = "Latest version of changes to the cssparser pulled from master branch."
-
-[[audits.cssparser-macros]]
-who = "Tiaan Louw <tlouw@mozilla.com>"
-criteria = "safe-to-deploy"
-delta = "0.6.0 -> 0.6.0@git:722b30d2f1634714befab967ecae627813fa4cf0"
+delta = "0.6.0 -> 0.6.0@git:3e1bd05139cb7174ace395d498ca7128feb8f69d"
 notes = "We are pulling this package from a non crates.io source until the changes are published. No changes were made to the code."
-
-[[audits.cssparser-macros]]
-who = "Tiaan Louw <tlouw@mozilla.com>"
-criteria = "safe-to-deploy"
-delta = "0.6.0 -> 0.6.0@git:b196a164dcbb317016d4aa6c58c13147e6045ebb"
-
-[[audits.cssparser-macros]]
-who = "Tiaan Louw <tlouw@mozilla.com>"
-criteria = "safe-to-deploy"
-delta = "0.6.0 -> 0.6.0@git:d3670a89bae26ba3a8db4758eb7976616113987d"
 
 [[audits.cstr]]
 who = "Emilio Cobos Álvarez <emilio@crisal.io>"
@@ -970,6 +1176,11 @@ who = "Mike Hommey <mh+mozilla@glandium.org>"
 criteria = "safe-to-deploy"
 delta = "0.3.25 -> 0.3.26"
 
+[[audits.futures-channel]]
+who = "Bobby Holley <bobbyholley@gmail.com>"
+criteria = "safe-to-deploy"
+delta = "0.3.27 -> 0.3.26"
+
 [[audits.futures-core]]
 who = "Mike Hommey <mh+mozilla@glandium.org>"
 criteria = "safe-to-deploy"
@@ -984,6 +1195,11 @@ delta = "0.3.23 -> 0.3.25"
 who = "Mike Hommey <mh+mozilla@glandium.org>"
 criteria = "safe-to-deploy"
 delta = "0.3.25 -> 0.3.26"
+
+[[audits.futures-core]]
+who = "Bobby Holley <bobbyholley@gmail.com>"
+criteria = "safe-to-deploy"
+delta = "0.3.27 -> 0.3.26"
 
 [[audits.futures-executor]]
 who = "Mike Hommey <mh+mozilla@glandium.org>"
@@ -1000,6 +1216,11 @@ who = "Mike Hommey <mh+mozilla@glandium.org>"
 criteria = "safe-to-deploy"
 delta = "0.3.25 -> 0.3.26"
 
+[[audits.futures-executor]]
+who = "Bobby Holley <bobbyholley@gmail.com>"
+criteria = "safe-to-deploy"
+delta = "0.3.27 -> 0.3.23"
+
 [[audits.futures-io]]
 who = "Mike Hommey <mh+mozilla@glandium.org>"
 criteria = "safe-to-deploy"
@@ -1014,6 +1235,11 @@ delta = "0.3.23 -> 0.3.25"
 who = "Mike Hommey <mh+mozilla@glandium.org>"
 criteria = "safe-to-deploy"
 delta = "0.3.25 -> 0.3.26"
+
+[[audits.futures-io]]
+who = "Bobby Holley <bobbyholley@gmail.com>"
+criteria = "safe-to-deploy"
+delta = "0.3.27 -> 0.3.23"
 
 [[audits.futures-macro]]
 who = "Mike Hommey <mh+mozilla@glandium.org>"
@@ -1044,6 +1270,11 @@ delta = "0.3.23 -> 0.3.25"
 who = "Mike Hommey <mh+mozilla@glandium.org>"
 criteria = "safe-to-deploy"
 delta = "0.3.25 -> 0.3.26"
+
+[[audits.futures-sink]]
+who = "Bobby Holley <bobbyholley@gmail.com>"
+criteria = "safe-to-deploy"
+delta = "0.3.27 -> 0.3.23"
 
 [[audits.futures-task]]
 who = "Mike Hommey <mh+mozilla@glandium.org>"
@@ -1095,6 +1326,16 @@ delta = "0.2.6 -> 0.2.7"
 who = "Mike Hommey <mh+mozilla@glandium.org>"
 criteria = "safe-to-deploy"
 delta = "0.2.7 -> 0.2.8"
+
+[[audits.getrandom]]
+who = "Yannis Juglaret <yjuglaret@mozilla.com>"
+criteria = "safe-to-deploy"
+delta = "0.2.8 -> 0.2.9"
+
+[[audits.gleam]]
+who = "Jamie Nicol <jnicol@mozilla.com>"
+criteria = "safe-to-deploy"
+delta = "0.13.1 -> 0.15.0"
 
 [[audits.glob]]
 who = "Mike Hommey <mh+mozilla@glandium.org>"
@@ -1480,7 +1721,17 @@ delta = "0.11.0@git:4b796b157cb2b67b0ab166a2238fe4e9473bfd52 -> 0.11.0@git:9742f
 [[audits.naga]]
 who = "Nicolas Silva <nical@fastmail.com>"
 criteria = "safe-to-deploy"
+delta = "0.11.0@git:9742f1616c3e3dd2cc9a5880616fc886c391bb9f -> 0.11.0@git:f59668ccfaf7bdb3a7e43d84363a21c77357b2fe"
+
+[[audits.naga]]
+who = "Nicolas Silva <nical@fastmail.com>"
+criteria = "safe-to-deploy"
 delta = "0.11.0@git:f0edae8ce9e55eeef489fc53b10dc95fb79561cc -> 0.11.0@git:4b796b157cb2b67b0ab166a2238fe4e9473bfd52"
+
+[[audits.naga]]
+who = "Nicolas Silva <nical@fastmail.com>"
+criteria = "safe-to-deploy"
+delta = "0.11.0@git:f59668ccfaf7bdb3a7e43d84363a21c77357b2fe -> 0.12.0@git:b99d58ea435090e561377949f428bce2c18451bb"
 
 [[audits.net2]]
 who = "Mike Hommey <mh+mozilla@glandium.org>"
@@ -2086,6 +2337,11 @@ delta = "1.0.10 -> 1.0.13"
 who = "Mike Hommey <mh+mozilla@glandium.org>"
 criteria = "safe-to-deploy"
 delta = "1.0.13 -> 1.0.16"
+
+[[audits.semver]]
+who = "Bobby Holley <bobbyholley@gmail.com>"
+criteria = "safe-to-deploy"
+delta = "1.0.17 -> 1.0.16"
 
 [[audits.serde]]
 who = "Mike Hommey <mh+mozilla@glandium.org>"
@@ -2856,6 +3112,11 @@ who = "Ryan Hunt <rhunt@eqrion.net>"
 criteria = "safe-to-deploy"
 delta = "48.0.0 -> 49.0.0"
 
+[[audits.wast]]
+who = "Ben Visness <bvisness@mozilla.com>"
+criteria = "safe-to-deploy"
+delta = "55.0.0 -> 56.0.0"
+
 [[audits.webrtc-sdp]]
 who = "Byron Campen <docfaraday@gmail.com>"
 criteria = "safe-to-deploy"
@@ -2927,6 +3188,11 @@ criteria = "safe-to-deploy"
 delta = "0.15.0@git:581b22e6a026ac92589be2f36a30357600f9d02c -> 0.15.0@git:b33731c44c9dd3bfb79d889e7a699c26c3929cd3"
 
 [[audits.wgpu-core]]
+who = "Nicolas Silva <nical@fastmail.com>"
+criteria = "safe-to-deploy"
+delta = "0.15.0@git:73b4257b17cc62ecc8df6d6aa3730bd9c6cba4b9 -> 0.15.0@git:f3bf0f782e4dfc561d48e758e1f1e04f77860925"
+
+[[audits.wgpu-core]]
 who = "Teodor Tanasoaia <ttanasoaia@mozilla.com>"
 criteria = "safe-to-deploy"
 delta = "0.15.0@git:74303308cd6030071889e865c40aa638214ed938 -> 0.15.0@git:73b4257b17cc62ecc8df6d6aa3730bd9c6cba4b9"
@@ -2935,6 +3201,11 @@ delta = "0.15.0@git:74303308cd6030071889e865c40aa638214ed938 -> 0.15.0@git:73b42
 who = "Nicolas Silva <nical@fastmail.com>"
 criteria = "safe-to-deploy"
 delta = "0.15.0@git:b33731c44c9dd3bfb79d889e7a699c26c3929cd3 -> 0.15.0@git:74303308cd6030071889e865c40aa638214ed938"
+
+[[audits.wgpu-core]]
+who = "Nicolas Silva <nical@fastmail.com>"
+criteria = "safe-to-deploy"
+delta = "0.15.0@git:f3bf0f782e4dfc561d48e758e1f1e04f77860925 -> 0.16.0@git:25cb9f61e9a6be572ee42536bbe57aa5f759a700"
 
 [[audits.wgpu-hal]]
 who = "Dzmitry Malyshau <kvark@fastmail.com>"
@@ -2990,6 +3261,11 @@ criteria = "safe-to-deploy"
 delta = "0.15.1@git:581b22e6a026ac92589be2f36a30357600f9d02c -> 0.15.1@git:b33731c44c9dd3bfb79d889e7a699c26c3929cd3"
 
 [[audits.wgpu-hal]]
+who = "Nicolas Silva <nical@fastmail.com>"
+criteria = "safe-to-deploy"
+delta = "0.15.1@git:73b4257b17cc62ecc8df6d6aa3730bd9c6cba4b9 -> 0.15.1@git:f3bf0f782e4dfc561d48e758e1f1e04f77860925"
+
+[[audits.wgpu-hal]]
 who = "Teodor Tanasoaia <ttanasoaia@mozilla.com>"
 criteria = "safe-to-deploy"
 delta = "0.15.1@git:74303308cd6030071889e865c40aa638214ed938 -> 0.15.1@git:73b4257b17cc62ecc8df6d6aa3730bd9c6cba4b9"
@@ -2998,6 +3274,11 @@ delta = "0.15.1@git:74303308cd6030071889e865c40aa638214ed938 -> 0.15.1@git:73b42
 who = "Nicolas Silva <nical@fastmail.com>"
 criteria = "safe-to-deploy"
 delta = "0.15.1@git:b33731c44c9dd3bfb79d889e7a699c26c3929cd3 -> 0.15.1@git:74303308cd6030071889e865c40aa638214ed938"
+
+[[audits.wgpu-hal]]
+who = "Nicolas Silva <nical@fastmail.com>"
+criteria = "safe-to-deploy"
+delta = "0.15.1@git:f3bf0f782e4dfc561d48e758e1f1e04f77860925 -> 0.16.0@git:25cb9f61e9a6be572ee42536bbe57aa5f759a700"
 
 [[audits.wgpu-types]]
 who = "Dzmitry Malyshau <kvark@fastmail.com>"
@@ -3053,6 +3334,11 @@ criteria = "safe-to-deploy"
 delta = "0.15.0@git:581b22e6a026ac92589be2f36a30357600f9d02c -> 0.15.0@git:b33731c44c9dd3bfb79d889e7a699c26c3929cd3"
 
 [[audits.wgpu-types]]
+who = "Nicolas Silva <nical@fastmail.com>"
+criteria = "safe-to-deploy"
+delta = "0.15.0@git:73b4257b17cc62ecc8df6d6aa3730bd9c6cba4b9 -> 0.15.0@git:f3bf0f782e4dfc561d48e758e1f1e04f77860925"
+
+[[audits.wgpu-types]]
 who = "Teodor Tanasoaia <ttanasoaia@mozilla.com>"
 criteria = "safe-to-deploy"
 delta = "0.15.0@git:74303308cd6030071889e865c40aa638214ed938 -> 0.15.0@git:73b4257b17cc62ecc8df6d6aa3730bd9c6cba4b9"
@@ -3061,6 +3347,11 @@ delta = "0.15.0@git:74303308cd6030071889e865c40aa638214ed938 -> 0.15.0@git:73b42
 who = "Nicolas Silva <nical@fastmail.com>"
 criteria = "safe-to-deploy"
 delta = "0.15.0@git:b33731c44c9dd3bfb79d889e7a699c26c3929cd3 -> 0.15.0@git:74303308cd6030071889e865c40aa638214ed938"
+
+[[audits.wgpu-types]]
+who = "Nicolas Silva <nical@fastmail.com>"
+criteria = "safe-to-deploy"
+delta = "0.15.0@git:f3bf0f782e4dfc561d48e758e1f1e04f77860925 -> 0.16.0@git:25cb9f61e9a6be572ee42536bbe57aa5f759a700"
 
 [[audits.whatsys]]
 who = "Bobby Holley <bobbyholley@gmail.com>"
@@ -3111,3 +3402,189 @@ delta = "0.6.2 -> 0.6.3"
 who = "Mike Hommey <mh+mozilla@glandium.org>"
 criteria = "safe-to-run"
 delta = "0.6.3 -> 0.6.4"
+
+[[trusted.aho-corasick]]
+criteria = "safe-to-deploy"
+user-id = 189 # Andrew Gallant (BurntSushi)
+start = "2019-03-28"
+end = "2024-05-03"
+
+[[trusted.async-trait]]
+criteria = "safe-to-deploy"
+user-id = 3618 # David Tolnay (dtolnay)
+start = "2019-07-23"
+end = "2024-04-25"
+
+[[trusted.byteorder]]
+criteria = "safe-to-deploy"
+user-id = 189 # Andrew Gallant (BurntSushi)
+start = "2019-06-09"
+end = "2024-05-03"
+
+[[trusted.dtoa]]
+criteria = "safe-to-deploy"
+user-id = 3618 # David Tolnay (dtolnay)
+start = "2019-05-02"
+end = "2024-04-25"
+
+[[trusted.headers]]
+criteria = "safe-to-deploy"
+user-id = 359 # Sean McArthur (seanmonstar)
+start = "2019-09-09"
+end = "2024-04-25"
+
+[[trusted.httparse]]
+criteria = "safe-to-deploy"
+user-id = 359 # Sean McArthur (seanmonstar)
+start = "2019-07-03"
+end = "2024-04-25"
+
+[[trusted.inherent]]
+criteria = "safe-to-deploy"
+user-id = 3618 # David Tolnay (dtolnay)
+start = "2019-07-14"
+end = "2024-04-25"
+
+[[trusted.itoa]]
+criteria = "safe-to-deploy"
+user-id = 3618 # David Tolnay (dtolnay)
+start = "2019-05-02"
+end = "2024-04-25"
+
+[[trusted.memchr]]
+criteria = "safe-to-deploy"
+user-id = 189 # Andrew Gallant (BurntSushi)
+start = "2019-07-07"
+end = "2024-05-03"
+
+[[trusted.mime]]
+criteria = "safe-to-deploy"
+user-id = 359 # Sean McArthur (seanmonstar)
+start = "2019-09-09"
+end = "2024-04-25"
+
+[[trusted.num_cpus]]
+criteria = "safe-to-deploy"
+user-id = 359 # Sean McArthur (seanmonstar)
+start = "2019-06-10"
+end = "2024-04-25"
+
+[[trusted.paste]]
+criteria = "safe-to-deploy"
+user-id = 3618 # David Tolnay (dtolnay)
+start = "2019-03-19"
+end = "2024-04-25"
+
+[[trusted.proc-macro-hack]]
+criteria = "safe-to-deploy"
+user-id = 3618 # David Tolnay (dtolnay)
+start = "2019-04-16"
+end = "2024-04-25"
+
+[[trusted.regex]]
+criteria = "safe-to-deploy"
+user-id = 189 # Andrew Gallant (BurntSushi)
+start = "2019-02-27"
+end = "2024-05-03"
+
+[[trusted.regex-syntax]]
+criteria = "safe-to-deploy"
+user-id = 189 # Andrew Gallant (BurntSushi)
+start = "2019-03-30"
+end = "2024-05-03"
+
+[[trusted.ryu]]
+criteria = "safe-to-deploy"
+user-id = 3618 # David Tolnay (dtolnay)
+start = "2019-05-02"
+end = "2024-04-25"
+
+[[trusted.same-file]]
+criteria = "safe-to-deploy"
+user-id = 189 # Andrew Gallant (BurntSushi)
+start = "2019-07-16"
+end = "2024-05-03"
+
+[[trusted.serde]]
+criteria = "safe-to-deploy"
+user-id = 3618 # David Tolnay (dtolnay)
+start = "2019-03-01"
+end = "2024-04-25"
+
+[[trusted.serde_bytes]]
+criteria = "safe-to-deploy"
+user-id = 3618 # David Tolnay (dtolnay)
+start = "2019-02-25"
+end = "2024-04-25"
+
+[[trusted.serde_derive]]
+criteria = "safe-to-deploy"
+user-id = 3618 # David Tolnay (dtolnay)
+start = "2019-03-01"
+end = "2024-04-25"
+
+[[trusted.serde_json]]
+criteria = "safe-to-deploy"
+user-id = 3618 # David Tolnay (dtolnay)
+start = "2019-02-28"
+end = "2024-04-25"
+
+[[trusted.serde_repr]]
+criteria = "safe-to-deploy"
+user-id = 3618 # David Tolnay (dtolnay)
+start = "2019-04-26"
+end = "2024-04-25"
+
+[[trusted.serde_yaml]]
+criteria = "safe-to-deploy"
+user-id = 3618 # David Tolnay (dtolnay)
+start = "2019-05-02"
+end = "2024-04-25"
+
+[[trusted.syn]]
+criteria = "safe-to-deploy"
+user-id = 3618 # David Tolnay (dtolnay)
+start = "2019-03-01"
+end = "2024-04-25"
+
+[[trusted.termcolor]]
+criteria = "safe-to-deploy"
+user-id = 189 # Andrew Gallant (BurntSushi)
+start = "2019-06-04"
+end = "2024-05-03"
+
+[[trusted.thiserror]]
+criteria = "safe-to-deploy"
+user-id = 3618 # David Tolnay (dtolnay)
+start = "2019-10-09"
+end = "2024-04-25"
+
+[[trusted.thiserror-impl]]
+criteria = "safe-to-deploy"
+user-id = 3618 # David Tolnay (dtolnay)
+start = "2019-10-09"
+end = "2024-04-25"
+
+[[trusted.threadbound]]
+criteria = "safe-to-deploy"
+user-id = 3618 # David Tolnay (dtolnay)
+start = "2020-06-16"
+end = "2024-04-25"
+
+[[trusted.unicode-ident]]
+criteria = "safe-to-deploy"
+user-id = 3618 # David Tolnay (dtolnay)
+start = "2021-10-02"
+end = "2024-04-25"
+
+[[trusted.walkdir]]
+criteria = "safe-to-deploy"
+user-id = 189 # Andrew Gallant (BurntSushi)
+start = "2019-06-09"
+end = "2024-05-03"
+
+[[trusted.winapi-util]]
+criteria = "safe-to-deploy"
+user-id = 189 # Andrew Gallant (BurntSushi)
+start = "2020-01-11"
+end = "2024-05-03"

@@ -477,20 +477,8 @@ void MediaFormatReader::DecoderFactory::DoInitDecoder(Data& aData) {
                   ownerData.GetCurrentInfo()->mMimeType);
             }
             if (aTrack == TrackInfo::kAudioTrack) {
-              nsCString processName = ownerData.mDecoder->GetProcessName();
-              nsCString audioProcessPerCodecName(
-                  processName + ","_ns + ownerData.mDecoder->GetCodecName());
-              if (processName != "utility"_ns) {
-                if (!StaticPrefs::media_rdd_process_enabled()) {
-                  audioProcessPerCodecName += ",rdd-disabled"_ns;
-                }
-                if (!StaticPrefs::media_utility_process_enabled()) {
-                  audioProcessPerCodecName += ",utility-disabled"_ns;
-                }
-              }
-              Telemetry::ScalarAdd(
-                  Telemetry::ScalarID::MEDIA_AUDIO_PROCESS_PER_CODEC_NAME,
-                  NS_ConvertUTF8toUTF16(audioProcessPerCodecName), 1);
+              ownerData.mProcessName = ownerData.mDecoder->GetProcessName();
+              ownerData.mCodecName = ownerData.mDecoder->GetCodecName();
             }
           },
           [this, &aData, &ownerData](const MediaResult& aError) {
@@ -1373,6 +1361,12 @@ void MediaFormatReader::ReadUpdatedMetadata(MediaInfo* aInfo) {
     MutexAutoLock lock(mAudio.mMutex);
     if (HasAudio()) {
       aInfo->mAudio = *mAudio.GetWorkingInfo()->GetAsAudioInfo();
+      Maybe<nsCString> audioProcessPerCodecName = GetAudioProcessPerCodec();
+      if (audioProcessPerCodecName.isSome()) {
+        Telemetry::ScalarAdd(
+            Telemetry::ScalarID::MEDIA_AUDIO_PROCESS_PER_CODEC_NAME,
+            NS_ConvertUTF8toUTF16(*audioProcessPerCodecName), 1);
+      }
     }
   }
 }
@@ -2983,13 +2977,15 @@ void MediaFormatReader::OnSeekFailed(TrackType aTrack,
 
   auto type = aTrack == TrackType::kAudioTrack ? MediaData::Type::AUDIO_DATA
                                                : MediaData::Type::VIDEO_DATA;
-  mSeekPromise.Reject(SeekRejectValue(type, aError), __func__);
+  mSeekPromise.RejectIfExists(SeekRejectValue(type, aError), __func__);
 }
 
 void MediaFormatReader::DoVideoSeek() {
   AUTO_PROFILER_LABEL("MediaFormatReader::DoVideoSeek", MEDIA_PLAYBACK);
   MOZ_ASSERT(mPendingSeekTime.isSome());
   LOGV("Seeking video to %" PRId64, mPendingSeekTime.ref().ToMicroseconds());
+  MOZ_DIAGNOSTIC_ASSERT(!IsAudioOnlySeeking());
+  MOZ_DIAGNOSTIC_ASSERT(!mVideo.mSeekRequest.Exists());
   auto seekTime = mPendingSeekTime.ref();
   mVideo.mTrackDemuxer->Seek(seekTime)
       ->Then(OwnerThread(), __func__, this,
@@ -3020,7 +3016,7 @@ void MediaFormatReader::OnVideoSeekCompleted(TimeUnit aTime) {
     DoAudioSeek();
   } else {
     mPendingSeekTime.reset();
-    mSeekPromise.Resolve(aTime, __func__);
+    mSeekPromise.ResolveIfExists(aTime, __func__);
   }
 }
 
@@ -3073,6 +3069,8 @@ void MediaFormatReader::DoAudioSeek() {
   AUTO_PROFILER_LABEL("MediaFormatReader::DoAudioSeek", MEDIA_PLAYBACK);
   MOZ_ASSERT(mPendingSeekTime.isSome());
   LOGV("Seeking audio to %" PRId64, mPendingSeekTime.ref().ToMicroseconds());
+  MOZ_DIAGNOSTIC_ASSERT(!IsVideoOnlySeeking());
+  MOZ_DIAGNOSTIC_ASSERT(!mAudio.mSeekRequest.Exists());
   auto seekTime = mPendingSeekTime.ref();
   mAudio.mTrackDemuxer->Seek(seekTime)
       ->Then(OwnerThread(), __func__, this,
@@ -3089,7 +3087,7 @@ void MediaFormatReader::OnAudioSeekCompleted(TimeUnit aTime) {
   mAudio.mSeekRequest.Complete();
   mAudio.mFirstFrameTime = Some(aTime);
   mPendingSeekTime.reset();
-  mSeekPromise.Resolve(aTime, __func__);
+  mSeekPromise.ResolveIfExists(aTime, __func__);
 }
 
 void MediaFormatReader::OnAudioSeekFailed(const MediaResult& aError) {
@@ -3242,6 +3240,28 @@ RefPtr<GenericPromise> MediaFormatReader::RequestDebugInfo(
   }
   GetDebugInfo(aInfo);
   return GenericPromise::CreateAndResolve(true, __func__);
+}
+
+Maybe<nsCString> MediaFormatReader::GetAudioProcessPerCodec() {
+  if (mAudio.mDescription == "uninitialized"_ns) {
+    return Nothing();
+  }
+
+  MOZ_ASSERT(mAudio.mProcessName.Length() > 0,
+             "Should have had a process name");
+  MOZ_ASSERT(mAudio.mCodecName.Length() > 0, "Should have had a codec name");
+
+  nsCString processName = mAudio.mProcessName;
+  nsCString audioProcessPerCodecName(processName + ","_ns + mAudio.mCodecName);
+  if (processName != "utility"_ns) {
+    if (!StaticPrefs::media_rdd_process_enabled()) {
+      audioProcessPerCodecName += ",rdd-disabled"_ns;
+    }
+    if (!StaticPrefs::media_utility_process_enabled()) {
+      audioProcessPerCodecName += ",utility-disabled"_ns;
+    }
+  }
+  return Some(audioProcessPerCodecName);
 }
 
 void MediaFormatReader::GetDebugInfo(dom::MediaFormatReaderDebugInfo& aInfo) {

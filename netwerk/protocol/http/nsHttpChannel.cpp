@@ -1412,7 +1412,7 @@ nsresult nsHttpChannel::SetupTransaction() {
   EnsureRequestContext();
 
   HttpTrafficCategory category = CreateTrafficCategory();
-  std::function<void(TransactionObserverResult &&)> observer;
+  std::function<void(TransactionObserverResult&&)> observer;
   if (mTransactionObserver) {
     observer = [transactionObserver{std::move(mTransactionObserver)}](
                    TransactionObserverResult&& aResult) {
@@ -1520,6 +1520,10 @@ nsresult nsHttpChannel::CallOnStartRequest() {
   MOZ_RELEASE_ASSERT(!LoadRequireCORSPreflight() || LoadIsCorsPreflightDone(),
                      "CORS preflight must have been finished by the time we "
                      "call OnStartRequest");
+
+  MOZ_RELEASE_ASSERT(mCanceled || LoadProcessCrossOriginSecurityHeadersCalled(),
+                     "Security headers need to have been processed before "
+                     "calling CallOnStartRequest");
 
   mEarlyHintObserver = nullptr;
 
@@ -5247,6 +5251,15 @@ nsresult nsHttpChannel::AsyncProcessRedirection(uint32_t redirectType) {
     return NS_ERROR_CORRUPTED_CONTENT;
   }
 
+  if (!StaticPrefs::network_allow_redirect_to_data() &&
+      !mLoadInfo->GetAllowInsecureRedirectToDataURI() &&
+      mRedirectURI->SchemeIs("data")) {
+    LOG(("Invalid data URI for redirect!"));
+    nsContentSecurityManager::ReportBlockedDataURI(mRedirectURI, mLoadInfo,
+                                                   true);
+    return NS_ERROR_DOM_BAD_URI;
+  }
+
   // Perform the URL query string stripping for redirects. We will only strip
   // the query string if it is redirecting to a third-party URI in the top
   // level.
@@ -5439,9 +5452,17 @@ NS_IMETHODIMP nsHttpChannel::OnAuthCancelled(bool userCancel) {
     // the origin server.
     if (LoadProxyAuthPending()) Cancel(NS_ERROR_PROXY_CONNECTION_REFUSED);
 
+    // Make sure to process security headers before calling CallOnStartRequest.
+    nsresult rv = ProcessCrossOriginSecurityHeaders();
+    if (NS_FAILED(rv)) {
+      mStatus = rv;
+      HandleAsyncAbort();
+      return rv;
+    }
+
     // ensure call of OnStartRequest of the current listener here,
     // it would not be called otherwise at all
-    nsresult rv = CallOnStartRequest();
+    rv = CallOnStartRequest();
 
     // drop mAuthRetryPending flag and resume the transaction
     // this resumes load of the unauthenticated content data (which

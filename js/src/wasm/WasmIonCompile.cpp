@@ -28,6 +28,7 @@
 #include "jit/CompileInfo.h"
 #include "jit/Ion.h"
 #include "jit/IonOptimizationLevels.h"
+#include "jit/MIR.h"
 #include "jit/ShuffleAnalysis.h"
 #include "js/ScalarType.h"  // js::Scalar::Type
 #include "wasm/WasmBaselineCompile.h"
@@ -1625,7 +1626,7 @@ class FunctionCompiler {
 
   /************************************************ Global variable accesses */
 
-  MDefinition* loadGlobalVar(unsigned globalDataOffset, bool isConst,
+  MDefinition* loadGlobalVar(unsigned instanceDataOffset, bool isConst,
                              bool isIndirect, MIRType type) {
     if (inDeadCode()) {
       return nullptr;
@@ -1639,23 +1640,23 @@ class FunctionCompiler {
       // |true| for the first node's |isConst| value, irrespective of
       // the |isConst| formal parameter to this method.  The latter
       // applies to the denoted value as a whole.
-      auto* cellPtr =
-          MWasmLoadGlobalVar::New(alloc(), MIRType::Pointer, globalDataOffset,
-                                  /*isConst=*/true, instancePointer_);
+      auto* cellPtr = MWasmLoadInstanceDataField::New(
+          alloc(), MIRType::Pointer, instanceDataOffset,
+          /*isConst=*/true, instancePointer_);
       curBlock_->add(cellPtr);
       load = MWasmLoadGlobalCell::New(alloc(), type, cellPtr);
     } else {
       // Pull the value directly out of Instance::globalArea.
-      load = MWasmLoadGlobalVar::New(alloc(), type, globalDataOffset, isConst,
-                                     instancePointer_);
+      load = MWasmLoadInstanceDataField::New(alloc(), type, instanceDataOffset,
+                                             isConst, instancePointer_);
     }
     curBlock_->add(load);
     return load;
   }
 
   [[nodiscard]] bool storeGlobalVar(uint32_t lineOrBytecode,
-                                    uint32_t globalDataOffset, bool isIndirect,
-                                    MDefinition* v) {
+                                    uint32_t instanceDataOffset,
+                                    bool isIndirect, MDefinition* v) {
     if (inDeadCode()) {
       return true;
     }
@@ -1663,9 +1664,9 @@ class FunctionCompiler {
     if (isIndirect) {
       // Pull a pointer to the value out of Instance::globalArea, then
       // store through that pointer.
-      auto* valueAddr =
-          MWasmLoadGlobalVar::New(alloc(), MIRType::Pointer, globalDataOffset,
-                                  /*isConst=*/true, instancePointer_);
+      auto* valueAddr = MWasmLoadInstanceDataField::New(
+          alloc(), MIRType::Pointer, instanceDataOffset,
+          /*isConst=*/true, instancePointer_);
       curBlock_->add(valueAddr);
 
       // Handle a store to a ref-typed field specially
@@ -1697,7 +1698,7 @@ class FunctionCompiler {
       // Compute the address of the ref-typed global
       auto* valueAddr = MWasmDerivedPointer::New(
           alloc(), instancePointer_,
-          wasm::Instance::offsetOfGlobalArea() + globalDataOffset);
+          wasm::Instance::offsetInData(instanceDataOffset));
       curBlock_->add(valueAddr);
 
       // Load the previous value for the post-write barrier
@@ -1708,7 +1709,7 @@ class FunctionCompiler {
       // Store the new value
       auto* store =
           MWasmStoreRef::New(alloc(), instancePointer_, valueAddr,
-                             /*valueOffset=*/0, v, AliasSet::WasmGlobalVar,
+                             /*valueOffset=*/0, v, AliasSet::WasmInstanceData,
                              WasmPreBarrierKind::Normal);
       curBlock_->add(store);
 
@@ -1716,37 +1717,37 @@ class FunctionCompiler {
       return postBarrierPrecise(lineOrBytecode, valueAddr, prevValue);
     }
 
-    auto* store = MWasmStoreGlobalVar::New(alloc(), globalDataOffset, v,
-                                           instancePointer_);
+    auto* store = MWasmStoreInstanceDataField::New(alloc(), instanceDataOffset,
+                                                   v, instancePointer_);
     curBlock_->add(store);
     return true;
   }
 
-  MDefinition* loadTableField(const TableDesc& table, unsigned fieldOffset,
+  MDefinition* loadTableField(uint32_t tableIndex, unsigned fieldOffset,
                               MIRType type) {
-    uint32_t globalDataOffset = wasm::Instance::offsetOfGlobalArea() +
-                                table.globalDataOffset + fieldOffset;
+    uint32_t instanceDataOffset = wasm::Instance::offsetInData(
+        moduleEnv_.offsetOfTableInstanceData(tableIndex) + fieldOffset);
     auto* load =
-        MWasmLoadInstance::New(alloc(), instancePointer_, globalDataOffset,
+        MWasmLoadInstance::New(alloc(), instancePointer_, instanceDataOffset,
                                type, AliasSet::Load(AliasSet::WasmTableMeta));
     curBlock_->add(load);
     return load;
   }
 
-  MDefinition* loadTableLength(const TableDesc& table) {
-    return loadTableField(table, offsetof(TableInstanceData, length),
+  MDefinition* loadTableLength(uint32_t tableIndex) {
+    return loadTableField(tableIndex, offsetof(TableInstanceData, length),
                           MIRType::Int32);
   }
 
-  MDefinition* loadTableElements(const TableDesc& table) {
-    return loadTableField(table, offsetof(TableInstanceData, elements),
+  MDefinition* loadTableElements(uint32_t tableIndex) {
+    return loadTableField(tableIndex, offsetof(TableInstanceData, elements),
                           MIRType::Pointer);
   }
 
-  MDefinition* tableGetAnyRef(const TableDesc& table, MDefinition* index) {
+  MDefinition* tableGetAnyRef(uint32_t tableIndex, MDefinition* index) {
     // Load the table length and perform a bounds check with spectre index
     // masking
-    auto* length = loadTableLength(table);
+    auto* length = loadTableLength(tableIndex);
     auto* check = MWasmBoundsCheck::New(
         alloc(), index, length, bytecodeOffset(), MWasmBoundsCheck::Unknown);
     curBlock_->add(check);
@@ -1755,18 +1756,18 @@ class FunctionCompiler {
     }
 
     // Load the table elements and load the element
-    auto* elements = loadTableElements(table);
+    auto* elements = loadTableElements(tableIndex);
     auto* element = MWasmLoadTableElement::New(alloc(), elements, index);
     curBlock_->add(element);
     return element;
   }
 
-  [[nodiscard]] bool tableSetAnyRef(const TableDesc& table, MDefinition* index,
+  [[nodiscard]] bool tableSetAnyRef(uint32_t tableIndex, MDefinition* index,
                                     MDefinition* value,
                                     uint32_t lineOrBytecode) {
     // Load the table length and perform a bounds check with spectre index
     // masking
-    auto* length = loadTableLength(table);
+    auto* length = loadTableLength(tableIndex);
     auto* check = MWasmBoundsCheck::New(
         alloc(), index, length, bytecodeOffset(), MWasmBoundsCheck::Unknown);
     curBlock_->add(check);
@@ -1775,7 +1776,7 @@ class FunctionCompiler {
     }
 
     // Load the table elements
-    auto* elements = loadTableElements(table);
+    auto* elements = loadTableElements(tableIndex);
 
     // Load the previous value
     auto* prevValue = MWasmLoadTableElement::New(alloc(), elements, index);
@@ -2165,8 +2166,8 @@ class FunctionCompiler {
     if (moduleEnv_.isAsmJS()) {
       MOZ_ASSERT(tableIndex == 0);
       MOZ_ASSERT(callIndirectId.kind() == CallIndirectIdKind::AsmJS);
-      const TableDesc& table =
-          moduleEnv_.tables[moduleEnv_.asmJSSigToTableIndex[funcTypeIndex]];
+      uint32_t tableIndex = moduleEnv_.asmJSSigToTableIndex[funcTypeIndex];
+      const TableDesc& table = moduleEnv_.tables[tableIndex];
       MOZ_ASSERT(IsPowerOfTwo(table.initialLength));
 
       MDefinition* mask = constantI32(int32_t(table.initialLength - 1));
@@ -2174,11 +2175,12 @@ class FunctionCompiler {
       curBlock_->add(maskedIndex);
 
       index = maskedIndex;
-      callee = CalleeDesc::asmJSTable(table);
+      callee = CalleeDesc::asmJSTable(moduleEnv_, tableIndex);
     } else {
       MOZ_ASSERT(callIndirectId.kind() != CallIndirectIdKind::AsmJS);
       const TableDesc& table = moduleEnv_.tables[tableIndex];
-      callee = CalleeDesc::wasmTable(table, callIndirectId);
+      callee =
+          CalleeDesc::wasmTable(moduleEnv_, table, tableIndex, callIndirectId);
     }
 
     CallSiteDesc desc(lineOrBytecode, CallSiteDesc::Indirect);
@@ -2191,7 +2193,7 @@ class FunctionCompiler {
     return collectCallResults(resultType, call.stackResultArea_, results);
   }
 
-  [[nodiscard]] bool callImport(unsigned globalDataOffset,
+  [[nodiscard]] bool callImport(unsigned instanceDataOffset,
                                 uint32_t lineOrBytecode,
                                 const CallCompileState& call,
                                 const FuncType& funcType, DefVector* results) {
@@ -2200,7 +2202,7 @@ class FunctionCompiler {
     }
 
     CallSiteDesc desc(lineOrBytecode, CallSiteDesc::Import);
-    auto callee = CalleeDesc::import(globalDataOffset);
+    auto callee = CalleeDesc::import(instanceDataOffset);
     ArgTypeVector args(funcType);
     ResultType resultType = ResultType::Vector(funcType.results());
 
@@ -2812,9 +2814,9 @@ class FunctionCompiler {
   }
 
   MDefinition* loadTag(uint32_t tagIndex) {
-    MWasmLoadGlobalVar* tag = MWasmLoadGlobalVar::New(
-        alloc(), MIRType::RefOrNull, moduleEnv_.tags[tagIndex].globalDataOffset,
-        true, instancePointer_);
+    MWasmLoadInstanceDataField* tag = MWasmLoadInstanceDataField::New(
+        alloc(), MIRType::RefOrNull,
+        moduleEnv_.offsetOfTagInstanceData(tagIndex), true, instancePointer_);
     curBlock_->add(tag);
     return tag;
   }
@@ -3695,9 +3697,9 @@ class FunctionCompiler {
     uint32_t superTypeVectorOffset =
         moduleEnv().offsetOfSuperTypeVector(typeIndex);
 
-    auto* load = MWasmLoadGlobalVar::New(alloc(), MIRType::Pointer,
-                                         superTypeVectorOffset,
-                                         /*isConst=*/true, instancePointer_);
+    auto* load = MWasmLoadInstanceDataField::New(
+        alloc(), MIRType::Pointer, superTypeVectorOffset,
+        /*isConst=*/true, instancePointer_);
     if (!load) {
       return nullptr;
     }
@@ -3706,8 +3708,8 @@ class FunctionCompiler {
   }
 
   [[nodiscard]] MDefinition* loadTypeDefInstanceData(uint32_t typeIndex) {
-    size_t offset = Instance::offsetOfGlobalArea() +
-                    moduleEnv_.offsetOfTypeDefInstanceData(typeIndex);
+    size_t offset = Instance::offsetInData(
+        moduleEnv_.offsetOfTypeDefInstanceData(typeIndex));
     auto* result = MWasmDerivedPointer::New(alloc(), instancePointer_, offset);
     if (!result) {
       return nullptr;
@@ -4206,12 +4208,19 @@ class FunctionCompiler {
   }
 
   [[nodiscard]] MDefinition* isGcObjectSubtypeOf(MDefinition* object,
-                                                 uint32_t castTypeIndex,
-                                                 bool succeedOnNull) {
-    auto* superSuperTypeVector = loadSuperTypeVector(castTypeIndex);
-    auto* isSubTypeOf = MWasmGcObjectIsSubtypeOf::New(
-        alloc(), object, superSuperTypeVector,
-        moduleEnv_.types->type(castTypeIndex).subTypingDepth(), succeedOnNull);
+                                                 const RefType& type) {
+    MInstruction* isSubTypeOf = nullptr;
+    if (type.isTypeRef()) {
+      uint32_t typeIndex = moduleEnv_.types->indexOf(*type.typeDef());
+      MDefinition* superSuperTypeVector = loadSuperTypeVector(typeIndex);
+      isSubTypeOf = MWasmGcObjectIsSubtypeOfConcrete::New(
+          alloc(), object, superSuperTypeVector, type);
+    } else {
+      isSubTypeOf =
+          MWasmGcObjectIsSubtypeOfAbstract::New(alloc(), object, type);
+    }
+    MOZ_ASSERT(isSubTypeOf);
+
     curBlock_->add(isSubTypeOf);
     return isSubTypeOf;
   }
@@ -4220,9 +4229,8 @@ class FunctionCompiler {
   // downcast fails, we trap.  If it succeeds, then `ref` can be assumed to
   // have a type that is a subtype of (or the same as) `castToTypeDef` after
   // this point.
-  [[nodiscard]] bool refCast(MDefinition* ref, uint32_t castTypeIndex) {
-    MDefinition* success =
-        isGcObjectSubtypeOf(ref, castTypeIndex, /*succeedOnNull=*/true);
+  [[nodiscard]] bool refCast(MDefinition* ref, const RefType& castType) {
+    MDefinition* success = isGcObjectSubtypeOf(ref, castType);
     if (!success) {
       return false;
     }
@@ -4234,13 +4242,14 @@ class FunctionCompiler {
 
   // Generate MIR that computes a boolean value indicating whether or not it
   // is possible to downcast `ref` to `castToTypeDef`.
-  [[nodiscard]] MDefinition* refTest(MDefinition* ref, uint32_t castTypeIndex) {
-    return isGcObjectSubtypeOf(ref, castTypeIndex, /*succeedOnNull=*/false);
+  [[nodiscard]] MDefinition* refTest(MDefinition* ref,
+                                     const RefType& castType) {
+    return isGcObjectSubtypeOf(ref, castType);
   }
 
   // Generates MIR for br_on_cast and br_on_cast_fail.
   [[nodiscard]] bool brOnCastCommon(bool onSuccess, uint32_t labelRelativeDepth,
-                                    uint32_t castTypeIndex,
+                                    const RefType& type,
                                     const ResultType& labelType,
                                     const DefVector& values) {
     if (inDeadCode()) {
@@ -4264,8 +4273,7 @@ class FunctionCompiler {
     MDefinition* ref = values.back();
     MOZ_ASSERT(ref->type() == MIRType::RefOrNull);
 
-    MDefinition* success =
-        isGcObjectSubtypeOf(ref, castTypeIndex, /*succeedOnNull=*/false);
+    MDefinition* success = isGcObjectSubtypeOf(ref, type);
     if (!success) {
       return false;
     }
@@ -4882,9 +4890,9 @@ static bool EmitCall(FunctionCompiler& f, bool asmJSFuncDef) {
 
   DefVector results;
   if (f.moduleEnv().funcIsImport(funcIndex)) {
-    uint32_t globalDataOffset =
+    uint32_t instanceDataOffset =
         f.moduleEnv().offsetOfFuncImportInstanceData(funcIndex);
-    if (!f.callImport(globalDataOffset, lineOrBytecode, call, funcType,
+    if (!f.callImport(instanceDataOffset, lineOrBytecode, call, funcType,
                       &results)) {
       return false;
     }
@@ -6140,7 +6148,7 @@ static bool EmitTableGet(FunctionCompiler& f) {
 
   const TableDesc& table = f.moduleEnv().tables[tableIndex];
   if (table.elemType.tableRepr() == TableRepr::Ref) {
-    MDefinition* ret = f.tableGetAnyRef(table, index);
+    MDefinition* ret = f.tableGetAnyRef(tableIndex, index);
     if (!ret) {
       return false;
     }
@@ -6212,7 +6220,7 @@ static bool EmitTableSet(FunctionCompiler& f) {
 
   const TableDesc& table = f.moduleEnv().tables[tableIndex];
   if (table.elemType.tableRepr() == TableRepr::Ref) {
-    return f.tableSetAnyRef(table, index, value, bytecodeOffset);
+    return f.tableSetAnyRef(tableIndex, index, value, bytecodeOffset);
   }
 
   MDefinition* tableIndexArg = f.constantI32(int32_t(tableIndex));
@@ -6234,9 +6242,7 @@ static bool EmitTableSize(FunctionCompiler& f) {
     return true;
   }
 
-  const TableDesc& table = f.moduleEnv().tables[tableIndex];
-
-  MDefinition* length = f.loadTableLength(table);
+  MDefinition* length = f.loadTableLength(tableIndex);
   if (!length) {
     return false;
   }
@@ -7020,10 +7026,10 @@ static bool EmitArrayCopy(FunctionCompiler& f) {
                              numElements, elemSizeDef);
 }
 
-static bool EmitRefTest(FunctionCompiler& f) {
+static bool EmitRefTestV5(FunctionCompiler& f) {
   MDefinition* ref;
   uint32_t typeIndex;
-  if (!f.iter().readRefTest(&typeIndex, &ref)) {
+  if (!f.iter().readRefTestV5(&typeIndex, &ref)) {
     return false;
   }
 
@@ -7031,7 +7037,9 @@ static bool EmitRefTest(FunctionCompiler& f) {
     return true;
   }
 
-  MDefinition* success = f.refTest(ref, typeIndex);
+  const TypeDef& typeDef = f.moduleEnv().types->type(typeIndex);
+  const RefType& type = RefType::fromTypeDef(&typeDef, false);
+  MDefinition* success = f.refTest(ref, type);
   if (!success) {
     return false;
   }
@@ -7040,10 +7048,10 @@ static bool EmitRefTest(FunctionCompiler& f) {
   return true;
 }
 
-static bool EmitRefCast(FunctionCompiler& f) {
+static bool EmitRefCastV5(FunctionCompiler& f) {
   MDefinition* ref;
   uint32_t typeIndex;
-  if (!f.iter().readRefCast(&typeIndex, &ref)) {
+  if (!f.iter().readRefCastV5(&typeIndex, &ref)) {
     return false;
   }
 
@@ -7051,7 +7059,9 @@ static bool EmitRefCast(FunctionCompiler& f) {
     return true;
   }
 
-  if (!f.refCast(ref, typeIndex)) {
+  const TypeDef& typeDef = f.moduleEnv().types->type(typeIndex);
+  const RefType& type = RefType::fromTypeDef(&typeDef, /*nullable=*/true);
+  if (!f.refCast(ref, type)) {
     return false;
   }
 
@@ -7059,24 +7069,98 @@ static bool EmitRefCast(FunctionCompiler& f) {
   return true;
 }
 
-static bool EmitBrOnCastCommon(FunctionCompiler& f, bool onSuccess) {
+static bool EmitRefTest(FunctionCompiler& f, bool nullable) {
+  MDefinition* ref;
+  RefType type;
+  if (!f.iter().readRefTest(nullable, &type, &ref)) {
+    return false;
+  }
+
+  if (f.inDeadCode()) {
+    return true;
+  }
+
+  MDefinition* success = f.refTest(ref, type);
+  if (!success) {
+    return false;
+  }
+
+  f.iter().setResult(success);
+  return true;
+}
+
+static bool EmitRefCast(FunctionCompiler& f, bool nullable) {
+  MDefinition* ref;
+  RefType type;
+  if (!f.iter().readRefCast(nullable, &type, &ref)) {
+    return false;
+  }
+
+  if (f.inDeadCode()) {
+    return true;
+  }
+
+  if (!f.refCast(ref, type)) {
+    return false;
+  }
+
+  f.iter().setResult(ref);
+  return true;
+}
+
+static bool EmitBrOnCast(FunctionCompiler& f) {
+  bool onSuccess;
+  uint32_t labelRelativeDepth;
+  RefType destType;
+  ResultType labelType;
+  DefVector values;
+  if (!f.iter().readBrOnCast(&onSuccess, &labelRelativeDepth, &destType,
+                             &labelType, &values)) {
+    return false;
+  }
+
+  return f.brOnCastCommon(onSuccess, labelRelativeDepth, destType, labelType,
+                          values);
+}
+
+static bool EmitBrOnCastCommonV5(FunctionCompiler& f, bool onSuccess) {
   uint32_t labelRelativeDepth;
   uint32_t castTypeIndex;
   ResultType labelType;
   DefVector values;
   if (onSuccess
-          ? !f.iter().readBrOnCast(&labelRelativeDepth, &castTypeIndex,
-                                   &labelType, &values)
-          : !f.iter().readBrOnCastFail(&labelRelativeDepth, &castTypeIndex,
-                                       &labelType, &values)) {
+          ? !f.iter().readBrOnCastV5(&labelRelativeDepth, &castTypeIndex,
+                                     &labelType, &values)
+          : !f.iter().readBrOnCastFailV5(&labelRelativeDepth, &castTypeIndex,
+                                         &labelType, &values)) {
     return false;
   }
 
-  return f.brOnCastCommon(onSuccess, labelRelativeDepth, castTypeIndex,
-                          labelType, values);
+  const TypeDef& typeDef = f.moduleEnv().types->type(castTypeIndex);
+  const RefType& type = RefType::fromTypeDef(&typeDef, false);
+  return f.brOnCastCommon(onSuccess, labelRelativeDepth, type, labelType,
+                          values);
 }
 
-static bool EmitRefAsStruct(FunctionCompiler& f) {
+static bool EmitBrOnCastHeapV5(FunctionCompiler& f, bool onSuccess,
+                               bool nullable) {
+  uint32_t labelRelativeDepth;
+  RefType destType;
+  ResultType labelType;
+  DefVector values;
+  if (onSuccess
+          ? !f.iter().readBrOnCastHeapV5(nullable, &labelRelativeDepth,
+                                         &destType, &labelType, &values)
+          : !f.iter().readBrOnCastFailHeapV5(nullable, &labelRelativeDepth,
+                                             &destType, &labelType, &values)) {
+    return false;
+  }
+
+  return f.brOnCastCommon(onSuccess, labelRelativeDepth, destType, labelType,
+                          values);
+}
+
+static bool EmitRefAsStructV5(FunctionCompiler& f) {
   MDefinition* value;
   if (!f.iter().readConversion(ValType(RefType::any()),
                                ValType(RefType::struct_().asNonNullable()),
@@ -7087,11 +7171,11 @@ static bool EmitRefAsStruct(FunctionCompiler& f) {
   return true;
 }
 
-static bool EmitBrOnNonStruct(FunctionCompiler& f) {
+static bool EmitBrOnNonStructV5(FunctionCompiler& f) {
   uint32_t labelRelativeDepth;
   ResultType labelType;
   DefVector values;
-  if (!f.iter().readBrOnNonStruct(&labelRelativeDepth, &labelType, &values)) {
+  if (!f.iter().readBrOnNonStructV5(&labelRelativeDepth, &labelType, &values)) {
     return false;
   }
   return f.brOnNonStruct(values);
@@ -7710,6 +7794,7 @@ static bool EmitBodyExprs(FunctionCompiler& f) {
             CHECK(EmitArrayNewFixed(f));
           case uint32_t(GcOp::ArrayNewData):
             CHECK(EmitArrayNewData(f));
+          case uint32_t(GcOp::ArrayInitFromElemStaticV5):
           case uint32_t(GcOp::ArrayNewElem):
             CHECK(EmitArrayNewElem(f));
           case uint32_t(GcOp::ArraySet):
@@ -7726,18 +7811,39 @@ static bool EmitBodyExprs(FunctionCompiler& f) {
             CHECK(EmitArrayLen(f, /*decodeIgnoredTypeIndex=*/false));
           case uint32_t(GcOp::ArrayCopy):
             CHECK(EmitArrayCopy(f));
-          case uint32_t(GcOp::RefTest):
-            CHECK(EmitRefTest(f));
-          case uint32_t(GcOp::RefCast):
-            CHECK(EmitRefCast(f));
+          case uint32_t(GcOp::RefTestV5):
+            CHECK(EmitRefTestV5(f));
+          case uint32_t(GcOp::RefCastV5):
+            CHECK(EmitRefCastV5(f));
           case uint32_t(GcOp::BrOnCast):
-            CHECK(EmitBrOnCastCommon(f, /*onSuccess=*/true));
-          case uint32_t(GcOp::BrOnCastFail):
-            CHECK(EmitBrOnCastCommon(f, /*onSuccess=*/false));
-          case uint32_t(GcOp::RefAsStruct):
-            CHECK(EmitRefAsStruct(f));
-          case uint32_t(GcOp::BrOnNonStruct):
-            CHECK(EmitBrOnNonStruct(f));
+            CHECK(EmitBrOnCast(f));
+          case uint32_t(GcOp::BrOnCastV5):
+            CHECK(EmitBrOnCastCommonV5(f, /*onSuccess=*/true));
+          case uint32_t(GcOp::BrOnCastFailV5):
+            CHECK(EmitBrOnCastCommonV5(f, /*onSuccess=*/false));
+          case uint32_t(GcOp::BrOnCastHeapV5):
+            CHECK(
+                EmitBrOnCastHeapV5(f, /*onSuccess=*/true, /*nullable=*/false));
+          case uint32_t(GcOp::BrOnCastHeapNullV5):
+            CHECK(EmitBrOnCastHeapV5(f, /*onSuccess=*/true, /*nullable=*/true));
+          case uint32_t(GcOp::BrOnCastFailHeapV5):
+            CHECK(
+                EmitBrOnCastHeapV5(f, /*onSuccess=*/false, /*nullable=*/false));
+          case uint32_t(GcOp::BrOnCastFailHeapNullV5):
+            CHECK(
+                EmitBrOnCastHeapV5(f, /*onSuccess=*/false, /*nullable=*/true));
+          case uint32_t(GcOp::RefAsStructV5):
+            CHECK(EmitRefAsStructV5(f));
+          case uint32_t(GcOp::BrOnNonStructV5):
+            CHECK(EmitBrOnNonStructV5(f));
+          case uint32_t(GcOp::RefTest):
+            CHECK(EmitRefTest(f, /*nullable=*/false));
+          case uint32_t(GcOp::RefTestNull):
+            CHECK(EmitRefTest(f, /*nullable=*/true));
+          case uint32_t(GcOp::RefCast):
+            CHECK(EmitRefCast(f, /*nullable=*/false));
+          case uint32_t(GcOp::RefCastNull):
+            CHECK(EmitRefCast(f, /*nullable=*/true));
           case uint16_t(GcOp::ExternInternalize):
             CHECK(EmitExternInternalize(f));
           case uint16_t(GcOp::ExternExternalize):
@@ -8383,12 +8489,18 @@ static bool EmitBodyExprs(FunctionCompiler& f) {
           case uint32_t(MozOp::F64Mod):
             CHECK(EmitRem(f, ValType::F64, MIRType::Double,
                           /* isUnsigned = */ false));
-          case uint32_t(MozOp::F64Sin):
-            CHECK(EmitUnaryMathBuiltinCall(f, SASigSinD));
-          case uint32_t(MozOp::F64Cos):
-            CHECK(EmitUnaryMathBuiltinCall(f, SASigCosD));
-          case uint32_t(MozOp::F64Tan):
-            CHECK(EmitUnaryMathBuiltinCall(f, SASigTanD));
+          case uint32_t(MozOp::F64SinNative):
+            CHECK(EmitUnaryMathBuiltinCall(f, SASigSinNativeD));
+          case uint32_t(MozOp::F64SinFdlibm):
+            CHECK(EmitUnaryMathBuiltinCall(f, SASigSinFdlibmD));
+          case uint32_t(MozOp::F64CosNative):
+            CHECK(EmitUnaryMathBuiltinCall(f, SASigCosNativeD));
+          case uint32_t(MozOp::F64CosFdlibm):
+            CHECK(EmitUnaryMathBuiltinCall(f, SASigCosFdlibmD));
+          case uint32_t(MozOp::F64TanNative):
+            CHECK(EmitUnaryMathBuiltinCall(f, SASigTanNativeD));
+          case uint32_t(MozOp::F64TanFdlibm):
+            CHECK(EmitUnaryMathBuiltinCall(f, SASigTanFdlibmD));
           case uint32_t(MozOp::F64Asin):
             CHECK(EmitUnaryMathBuiltinCall(f, SASigASinD));
           case uint32_t(MozOp::F64Acos):

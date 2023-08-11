@@ -40,24 +40,6 @@ union OriginDocument
   PDocAccessible;
 };
 
-struct BatchData
-{
-  OriginDocument Document;
-  uint64_t ID;
-  uint64_t State;
-  LayoutDeviceIntRect Bounds;
-  uint8_t ActionCount;
-  nsString Name;
-  nsString TextValue;
-  nsString DOMNodeID;
-  nsString Description;
-  double CurValue;
-  double MinValue;
-  double MaxValue;
-  double Step;
-  nullable AccAttributes Attributes;
-};
-
 struct ShowEventData
 {
   uint64_t ID;
@@ -125,9 +107,6 @@ parent:
    * document.
    */
   async BindChildDoc(PDocAccessible aChildDoc, uint64_t aID);
-
-  // Android
-  async Batch(uint64_t aBatchType, BatchData[] aData);
 
   /*
    * Cache The World
@@ -261,13 +240,8 @@ child:
 
   [Nested=inside_sync] sync StartOffset(uint64_t aID) returns(uint32_t aRetVal, bool aOk);
   [Nested=inside_sync] sync EndOffset(uint64_t aID) returns(uint32_t aRetVal, bool aOk);
-  [Nested=inside_sync] sync IsLinkValid(uint64_t aID) returns(bool aRetVal);
-  [Nested=inside_sync] sync AnchorCount(uint64_t aID) returns(uint32_t aRetVal, bool aOk);
-  [Nested=inside_sync] sync AnchorURIAt(uint64_t aID, uint32_t aIndex) returns(nsCString aURI, bool aOk);
-  [Nested=inside_sync] sync AnchorAt(uint64_t aID, uint32_t aIndex) returns(uint64_t aIDOfAnchor, bool aOk);
 
   [Nested=inside_sync] sync LinkCount(uint64_t aID) returns(uint32_t aCount);
-  [Nested=inside_sync] sync LinkAt(uint64_t aID, uint32_t aIndex) returns(uint64_t aIDOfLink, bool aOk);
   [Nested=inside_sync] sync LinkIndexAtOffset(uint64_t aID, uint32_t aOffset) returns(int32_t aIndex);
 
   [Nested=inside_sync] sync TableOfACell(uint64_t aID) returns(uint64_t aTableID, bool aOk);
@@ -335,7 +309,7 @@ child:
   [Nested=inside_sync] sync AtkKeyBinding(uint64_t aID) returns(nsString aResult);
 
   [Nested=inside_sync] sync CurValue(uint64_t aID) returns(double aValue);
-  [Nested=inside_sync] sync SetCurValue(uint64_t aID, double aValue) returns(bool aRetVal);
+  async SetCurValue(uint64_t aID, double aValue);
   [Nested=inside_sync] sync MinValue(uint64_t aID) returns(double aValue);
   [Nested=inside_sync] sync MaxValue(uint64_t aID) returns(double aValue);
   [Nested=inside_sync] sync Step(uint64_t aID) returns(double aStep);

@@ -12,6 +12,7 @@
 #include "IrishCasing.h"
 #include "mozilla/ComputedStyleInlines.h"
 #include "mozilla/MemoryReporting.h"
+#include "mozilla/StaticPrefs_layout.h"
 #include "mozilla/TextEditor.h"
 #include "mozilla/gfx/2D.h"
 #include "nsGkAtoms.h"
@@ -269,10 +270,11 @@ static LanguageSpecificCasingBehavior GetCasingFor(const nsAtom* aLang) {
 
 bool nsCaseTransformTextRunFactory::TransformString(
     const nsAString& aString, nsString& aConvertedString,
-    const Maybe<StyleTextTransform>& aGlobalTransform, bool aCaseTransformsOnly,
-    const nsAtom* aLanguage, nsTArray<bool>& aCharsToMergeArray,
-    nsTArray<bool>& aDeletedCharsArray, const nsTransformedTextRun* aTextRun,
-    uint32_t aOffsetInTextRun, nsTArray<uint8_t>* aCanBreakBeforeArray,
+    const Maybe<StyleTextTransform>& aGlobalTransform, char16_t aMaskChar,
+    bool aCaseTransformsOnly, const nsAtom* aLanguage,
+    nsTArray<bool>& aCharsToMergeArray, nsTArray<bool>& aDeletedCharsArray,
+    const nsTransformedTextRun* aTextRun, uint32_t aOffsetInTextRun,
+    nsTArray<uint8_t>* aCanBreakBeforeArray,
     nsTArray<RefPtr<nsTransformedCharStyle>>* aStyleArray) {
   bool auxiliaryOutputArrays = aCanBreakBeforeArray && aStyleArray;
   MOZ_ASSERT(!auxiliaryOutputArrays || aTextRun,
@@ -280,7 +282,9 @@ bool nsCaseTransformTextRunFactory::TransformString(
 
   uint32_t length = aString.Length();
   const char16_t* str = aString.BeginReading();
-  const char16_t kPasswordMask = TextEditor::PasswordMask();
+  // If an unconditional mask character was passed, we'll use it; if not, any
+  // masking called for by the textrun styles will use TextEditor's mask char.
+  const char16_t mask = aMaskChar ? aMaskChar : TextEditor::PasswordMask();
 
   bool mergeNeeded = false;
 
@@ -332,7 +336,13 @@ bool nsCaseTransformTextRunFactory::TransformString(
       }
     }
 
-    bool maskPassword = charStyle && charStyle->mMaskPassword;
+    // These should be mutually exclusive: mMaskPassword is set if we are
+    // handling <input type=password>, where the TextEditor code controls
+    // masking and we use its PasswordMask() character, in which case
+    // aMaskChar (from -webkit-text-security) is not used.
+    MOZ_ASSERT_IF(aMaskChar, !(charStyle && charStyle->mMaskPassword));
+
+    bool maskPassword = (charStyle && charStyle->mMaskPassword) || aMaskChar;
     int extraChars = 0;
     const mozilla::unicode::MultiCharMapping* mcm;
     bool inhibitBreakBefore = false;  // have we just deleted preceding hyphen?
@@ -622,6 +632,16 @@ bool nsCaseTransformTextRunFactory::TransformString(
             // to check for special uppercase (ß)
           }
 
+          // Updated mapping for German eszett, not currently reflected in the
+          // Unicode data files. This is behind a pref, as it may not work well
+          // with many (esp. older) fonts.
+          if (ch == 0x00DF &&
+              StaticPrefs::
+                  layout_css_text_transform_uppercase_eszett_enabled()) {
+            ch = 0x1E9E;
+            break;
+          }
+
           mcm = mozilla::unicode::SpecialUpper(ch);
           if (mcm) {
             int j = 0;
@@ -773,12 +793,12 @@ bool nsCaseTransformTextRunFactory::TransformString(
       }
 
       if (IS_IN_BMP(ch)) {
-        aConvertedString.Append(maskPassword ? kPasswordMask : ch);
+        aConvertedString.Append(maskPassword ? mask : ch);
       } else {
         if (maskPassword) {
-          aConvertedString.Append(kPasswordMask);
+          aConvertedString.Append(mask);
           // TODO: We should show a password mask for a surrogate pair later.
-          aConvertedString.Append(kPasswordMask);
+          aConvertedString.Append(mask);
         } else {
           aConvertedString.Append(H_SURROGATE(ch));
           aConvertedString.Append(L_SURROGATE(ch));
@@ -819,7 +839,7 @@ void nsCaseTransformTextRunFactory::RebuildTextRun(
           ? Some(StyleTextTransform{StyleTextTransformCase::Uppercase, {}})
           : Nothing();
   bool mergeNeeded = TransformString(
-      aTextRun->mString, convertedString, globalTransform,
+      aTextRun->mString, convertedString, globalTransform, mMaskChar,
       /* aCaseTransformsOnly = */ false, nullptr, charsToMergeArray,
       deletedCharsArray, aTextRun, 0, &canBreakBeforeArray, &styleArray);
 

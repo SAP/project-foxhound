@@ -35,10 +35,6 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(ScrollTimeline,
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mSource.mElement)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
-NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN_INHERITED(ScrollTimeline,
-                                               AnimationTimeline)
-NS_IMPL_CYCLE_COLLECTION_TRACE_END
-
 NS_IMPL_ISUPPORTS_CYCLE_COLLECTION_INHERITED_0(ScrollTimeline,
                                                AnimationTimeline)
 
@@ -53,8 +49,9 @@ ScrollTimeline::ScrollTimeline(Document* aDocument, const Scroller& aScroller,
   RegisterWithScrollSource();
 }
 
-static std::pair<const Element*, PseudoStyleType> FindNearestScroller(
-    Element* aSubject, PseudoStyleType aPseudoType) {
+/* static */ std::pair<const Element*, PseudoStyleType>
+ScrollTimeline::FindNearestScroller(Element* aSubject,
+                                    PseudoStyleType aPseudoType) {
   MOZ_ASSERT(aSubject);
   Element* subject =
       AnimationUtils::GetElementForRestyle(aSubject, aPseudoType);
@@ -93,15 +90,15 @@ already_AddRefed<ScrollTimeline> ScrollTimeline::MakeAnonymous(
       scroller = Scroller::Nearest(const_cast<Element*>(element), pseudo);
       break;
     }
+    case StyleScroller::SelfElement:
+      scroller = Scroller::Self(aTarget.mElement, aTarget.mPseudoType);
+      break;
   }
 
-  // Note: We create new ScrollTimeline for anonymous scroll timeline, i.e.
-  // scroll(). In other words, each anonymous scroll timeline is a different
-  // object per the resolution of this spec issue:
-  // https://github.com/w3c/csswg-drafts/issues/8204
-  //
-  // FIXME: Perhaps it's still possible to reuse scroll(root). Need to revisit
-  // this after we start to work on JS support.
+  // Each use of scroll() corresponds to its own instance of ScrollTimeline in
+  // the Web Animations API, even if multiple elements use scroll() to refer to
+  // the same scroll container with the same arguments.
+  // https://drafts.csswg.org/scroll-animations-1/#scroll-notation
   return MakeAndAddRef<ScrollTimeline>(aDocument, scroller, aAxis);
 }
 
@@ -135,20 +132,21 @@ Nullable<TimeDuration> ScrollTimeline::GetCurrentTimeAsDuration() const {
     return nullptr;
   }
 
-  const nsPoint& scrollOffset = scrollFrame->GetScrollPosition();
-  const nsRect& scrollRange = scrollFrame->GetScrollRange();
   const bool isHorizontal = orientation == layers::ScrollDirection::eHorizontal;
+  const nsPoint& scrollPosition = scrollFrame->GetScrollPosition();
+  const Maybe<ScrollOffsets>& offsets =
+      ComputeOffsets(scrollFrame, orientation);
+  if (!offsets) {
+    return nullptr;
+  }
 
-  // Note: For RTL, scrollOffset.x or scrollOffset.y may be negative, e.g. the
-  // range of its value is [0, -range], so we have to use the absolute value.
-  double position = std::abs(isHorizontal ? scrollOffset.x : scrollOffset.y);
-  double range = isHorizontal ? scrollRange.width : scrollRange.height;
-  MOZ_ASSERT(range > 0.0);
-  // Use the definition of interval progress to compute the progress.
-  // Note: We simplify the scroll offsets to [0%, 100%], so offset weight and
-  // offset index are ignored here.
-  // https://drafts.csswg.org/scroll-animations-1/#progress-calculation-algorithm
-  double progress = position / range;
+  // Note: For RTL, scrollPosition.x or scrollPosition.y may be negative,
+  // e.g. the range of its value is [0, -range], so we have to use the
+  // absolute value.
+  nscoord position =
+      std::abs(isHorizontal ? scrollPosition.x : scrollPosition.y);
+  double progress = static_cast<double>(position - offsets->mStart) /
+                    static_cast<double>(offsets->mEnd - offsets->mStart);
   return TimeDuration::FromMilliseconds(progress *
                                         PROGRESS_TIMELINE_DURATION_MILLISEC);
 }
@@ -205,6 +203,17 @@ void ScrollTimeline::ReplacePropertiesWith(const Element* aReferenceElement,
   }
 }
 
+Maybe<ScrollTimeline::ScrollOffsets> ScrollTimeline::ComputeOffsets(
+    const nsIScrollableFrame* aScrollFrame,
+    layers::ScrollDirection aOrientation) const {
+  const nsRect& scrollRange = aScrollFrame->GetScrollRange();
+  nscoord range = aOrientation == layers::ScrollDirection::eHorizontal
+                      ? scrollRange.width
+                      : scrollRange.height;
+  MOZ_ASSERT(range > 0);
+  return Some(ScrollOffsets{0, range});
+}
+
 void ScrollTimeline::RegisterWithScrollSource() {
   if (!mSource) {
     return;
@@ -246,6 +255,7 @@ const nsIScrollableFrame* ScrollTimeline::GetScrollFrame() const {
       return nullptr;
     case Scroller::Type::Nearest:
     case Scroller::Type::Name:
+    case Scroller::Type::Self:
       return nsLayoutUtils::FindScrollableFrameFor(mSource.mElement);
   }
 

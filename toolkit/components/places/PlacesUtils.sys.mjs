@@ -185,8 +185,10 @@ const BOOKMARK_VALIDATORS = Object.freeze({
   index: simpleValidateFunc(
     v => Number.isInteger(v) && v >= PlacesUtils.bookmarks.DEFAULT_INDEX
   ),
-  dateAdded: simpleValidateFunc(v => v.constructor.name == "Date"),
-  lastModified: simpleValidateFunc(v => v.constructor.name == "Date"),
+  dateAdded: simpleValidateFunc(v => v.constructor.name == "Date" && !isNaN(v)),
+  lastModified: simpleValidateFunc(
+    v => v.constructor.name == "Date" && !isNaN(v)
+  ),
   type: simpleValidateFunc(
     v =>
       Number.isInteger(v) &&
@@ -527,7 +529,10 @@ export var PlacesUtils = {
    * @return microseconds from the epoch.
    */
   toPRTime(date) {
-    if (typeof date != "number" && date.constructor.name != "Date") {
+    if (
+      (typeof date != "number" && date.constructor.name != "Date") ||
+      isNaN(date)
+    ) {
       throw new Error("Invalid value passed to toPRTime");
     }
     return date * 1000;
@@ -541,7 +546,7 @@ export var PlacesUtils = {
    * @return a Date object.
    */
   toDate(time) {
-    if (typeof time != "number") {
+    if (typeof time != "number" || isNaN(time)) {
       throw new Error("Invalid value passed to toDate");
     }
     return new Date(parseInt(time / 1000));
@@ -2366,7 +2371,7 @@ PlacesUtils.metadata = {
   },
 
   canonicalizeKey(key) {
-    if (typeof key != "string" || !/^[a-zA-Z0-9\/]+$/.test(key)) {
+    if (typeof key != "string" || !/^[a-zA-Z0-9\/_]+$/.test(key)) {
       throw new TypeError("Invalid metadata key: " + key);
     }
     return key.toLowerCase();

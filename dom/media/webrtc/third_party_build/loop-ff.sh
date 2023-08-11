@@ -7,7 +7,7 @@ LOOP_OUTPUT_LOG=$LOG_DIR/log-loop-ff.txt
 
 function echo_log()
 {
-  echo "===loop-ff=== $@" 2>&1| tee -a $LOOP_OUTPUT_LOG
+  echo "===loop-ff=== $@" 2>&1| tee --append $LOOP_OUTPUT_LOG
 }
 
 function show_error_msg()
@@ -43,6 +43,10 @@ fi
 if [ "x$MOZ_STOP_AFTER_COMMIT" = "x" ]; then
   MOZ_STOP_AFTER_COMMIT=`cd $MOZ_LIBWEBRTC_SRC ; git show $MOZ_TARGET_UPSTREAM_BRANCH_HEAD --format='%h' --name-only | head -1`
   echo "No MOZ_STOP_AFTER_COMMIT variable defined - stopping at $MOZ_TARGET_UPSTREAM_BRANCH_HEAD"
+fi
+
+if [ "x$MOZ_ADVANCE_ONE_COMMIT" = "x" ]; then
+  MOZ_ADVANCE_ONE_COMMIT=""
 fi
 
 if [ "x$SKIP_NEXT_REVERT_CHK" = "x" ]; then
@@ -118,7 +122,8 @@ When fixed, please resume this script with the following command:
 "
 if [ "x$SKIP_NEXT_REVERT_CHK" == "x0" ]; then
   echo_log "Check for upcoming revert commit"
-  AUTO_FIX_REVERT_AS_NOOP=1 bash $SCRIPT_DIR/detect_upstream_revert.sh 2>&1| tee -a $LOOP_OUTPUT_LOG
+  AUTO_FIX_REVERT_AS_NOOP=1 bash $SCRIPT_DIR/detect_upstream_revert.sh \
+      2>&1| tee --append $LOOP_OUTPUT_LOG
 fi
 SKIP_NEXT_REVERT_CHK="0"
 ERROR_HELP=""
@@ -130,7 +135,7 @@ if [ -f $STATE_DIR/$MOZ_LIBWEBRTC_NEXT_BASE.no-op-cherry-pick-msg ]; then
 fi
 
 echo_log "Moving from moz-libwebrtc commit $MOZ_LIBWEBRTC_BASE to $MOZ_LIBWEBRTC_NEXT_BASE"
-bash $SCRIPT_DIR/fast-forward-libwebrtc.sh 2>&1| tee -a $LOOP_OUTPUT_LOG
+bash $SCRIPT_DIR/fast-forward-libwebrtc.sh 2>&1| tee --append $LOOP_OUTPUT_LOG
 
 MOZ_CHANGED=`hg diff -c tip --stat \
    | egrep -ve "README.moz-ff-commit|README.mozilla|files changed," \
@@ -163,6 +168,15 @@ elif [ $MOZ_CHANGED -ne $GIT_CHANGED ]; then
 fi
 HANDLE_NOOP_COMMIT=""
 
+# save the current patch stack in case we need to reconstitute it later
+./mach python $SCRIPT_DIR/save_patch_stack.py \
+    --repo-path $MOZ_LIBWEBRTC_SRC \
+    --branch $MOZ_LIBWEBRTC_BRANCH \
+    --patch-path "third_party/libwebrtc/moz-patch-stack" \
+    --state-path $STATE_DIR \
+    --target-branch-head $MOZ_TARGET_UPSTREAM_BRANCH_HEAD \
+    2>&1| tee --append $LOOP_OUTPUT_LOG
+
 MODIFIED_BUILD_RELATED_FILE_CNT=`hg diff -c tip --stat \
     --include 'third_party/libwebrtc/**BUILD.gn' \
     --include 'third_party/libwebrtc/webrtc.gni' \
@@ -186,7 +200,7 @@ echo_log "Modified BUILD.gn (or webrtc.gni) files: $MODIFIED_BUILD_RELATED_FILE_
 if [ "x$MODIFIED_BUILD_RELATED_FILE_CNT" != "x0" ]; then
   echo_log "Regenerate build files"
   ./mach python python/mozbuild/mozbuild/gn_processor.py \
-      $SCRIPT_DIR/gn-configs/webrtc.json 2>&1| tee -a $LOOP_OUTPUT_LOG
+      $SCRIPT_DIR/gn-configs/webrtc.json 2>&1| tee --append $LOOP_OUTPUT_LOG
 
   MOZ_BUILD_CHANGE_CNT=`hg status third_party/libwebrtc \
       --include 'third_party/libwebrtc/**moz.build' | wc -l | tr -d " "`
@@ -194,7 +208,7 @@ if [ "x$MODIFIED_BUILD_RELATED_FILE_CNT" != "x0" ]; then
     echo_log "Detected modified moz.build files, commiting"
   fi
 
-  bash $SCRIPT_DIR/commit-build-file-changes.sh 2>&1| tee -a $LOOP_OUTPUT_LOG
+  bash $SCRIPT_DIR/commit-build-file-changes.sh 2>&1| tee --append $LOOP_OUTPUT_LOG
 fi
 ERROR_HELP=""
 
@@ -203,13 +217,18 @@ The test build has failed.  Most likely this is due to an upstream api change th
 must be reflected in Mozilla code outside of the third_party/libwebrtc directory.
 "
 echo_log "Test build"
-./mach build 2>&1| tee -a $LOOP_OUTPUT_LOG
+./mach build 2>&1| tee --append $LOOP_OUTPUT_LOG
 ERROR_HELP=""
 
 if [ ! "x$MOZ_STOP_AFTER_COMMIT" = "x" ]; then
 if [ $MOZ_LIBWEBRTC_NEXT_BASE = $MOZ_STOP_AFTER_COMMIT ]; then
   break
 fi
+fi
+
+if [ ! "x$MOZ_ADVANCE_ONE_COMMIT" = "x" ]; then
+  echo_log "Done advancing one commit."
+  exit
 fi
 
 done

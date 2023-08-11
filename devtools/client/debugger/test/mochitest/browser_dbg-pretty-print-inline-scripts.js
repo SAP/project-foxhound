@@ -92,7 +92,7 @@ add_task(async function() {
   const secondMessageLink = secondMessage.querySelector(".frame-link-source");
   is(
     secondMessageLink.innerText,
-    `${PRETTY_PRINTED_FILENAME}:36:12`,
+    `${PRETTY_PRINTED_FILENAME}:41:12`,
     "second console message has expected location"
   );
   info(
@@ -101,7 +101,7 @@ add_task(async function() {
   secondMessageLink.click();
   await waitForSelectedSource(dbg, PRETTY_PRINTED_FILENAME);
   ok(true, "pretty printed file was selected in debugger…");
-  await waitForSelectedLocation(dbg, 36);
+  await waitForSelectedLocation(dbg, 41);
   ok(true, "…at the expected location");
 
   info("Check that event listener popup is pointing to pretty-printed file");
@@ -132,7 +132,7 @@ add_task(async function() {
   const headerFilename = header.querySelector(".event-tooltip-filename")
     .innerText;
   ok(
-    headerFilename.endsWith(`${PRETTY_PRINTED_FILENAME}:46`),
+    headerFilename.endsWith(`${PRETTY_PRINTED_FILENAME}:51`),
     `Location in event tooltip is the pretty printed one (${headerFilename})`
   );
   info(
@@ -141,7 +141,7 @@ add_task(async function() {
   header.querySelector(".event-tooltip-debugger-icon").click();
   await waitForSelectedSource(dbg, PRETTY_PRINTED_FILENAME);
   ok(true, "pretty printed file was selected in debugger…");
-  await waitForSelectedLocation(dbg, 46);
+  await waitForSelectedLocation(dbg, 51);
   ok(true, "…at the expected location");
 });
 
@@ -199,12 +199,15 @@ function getExpectedPrettyPrintedHtml() {
     <script id="inline" type="application/javascript">
 ➤const userInfo = JSON.parse(document.getElementById('json-data').text);
 ➤console.log('User information: %o', userInfo);
-➤document.addEventListener('click', function onClick(e) {
-➤  console.log('in inline script');
-  // this is
-  // something
-➤  e.target;
-➤});
+➤document.addEventListener(
+  'click',
+  function onClick(e) {
+➤    console.log('in inline script');
+    // this is
+    // something
+➤    e.target;
+➤  }
+);
 </script>
   </head>
 
@@ -214,7 +217,9 @@ function getExpectedPrettyPrintedHtml() {
     <script></script>
     <!-- Single line "minified" script -->
     <script id="minified" type="module">
-➤for (const x of[42]) {
+➤for (const x of [
+  42
+]) {
 ➤  if (x > 0) {
 ➤    console.log(x, 'yay')
   } else {
@@ -226,7 +231,7 @@ function getExpectedPrettyPrintedHtml() {
     <script>
 {
   'use strict';
-➤  document.querySelector('h1').addEventListener('mousedown', e=>{
+➤  document.querySelector('h1').addEventListener('mousedown', e => {
 ➤    console.log('mousedown on h1')
 ➤  })
 ➤}
@@ -242,7 +247,7 @@ function getExpectedPrettyPrintedHtml() {
   2,
   3
 ];
-➤y.map(i=>i * 2)
+➤y.map(i => i * 2)
 </script>
   </body>
 </html>

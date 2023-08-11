@@ -61,6 +61,36 @@ add_task(async function() {
     0,
     "We stopped recording traces, an the function call isn't logged in the console"
   );
+
+  await navigate(dbg, "doc-sourcemaps2.html", "main.js", "main.min.js");
+
+  info("Re-enable the tracing after navigation");
+  await clickElement(dbg, "trace");
+
+  const newTopLevelThread =
+    dbg.toolbox.commands.targetCommand.targetFront.threadFront.actorID;
+  info("Wait for tracing to be re-enabled");
+  await waitForState(dbg, state => {
+    return dbg.selectors.getIsThreadCurrentlyTracing(newTopLevelThread);
+  });
+
+  invokeInTab("logMessage");
+
+  await hasConsoleMessage(dbg, "λ logMessage");
+
+  const traceMessages2 = await findConsoleMessages(dbg.toolbox, "λ logMessage");
+  is(
+    traceMessages2.length,
+    1,
+    "We got a unique trace for 'logMessage' function call"
+  );
+  const sourceLink2 = traceMessages2[0].querySelector(".frame-link-source");
+  sourceLink2.click();
+
+  info("Wait for the 'logMessage' function to be highlighted in the debugger");
+  await waitForSelectedSource(dbg, "main.js");
+  await waitForSelectedLocation(dbg, 4, 2);
+  ok(true, "The selected source and location is on the original file");
 });
 
 add_task(async function testPersitentLogMethod() {
@@ -85,4 +115,79 @@ add_task(async function testPersitentLogMethod() {
 
   info("Reset back to the default value");
   dbg.actions.setJavascriptTracingLogMethod("console");
+});
+
+add_task(async function testPageKeyShortcut() {
+  // Ensures that the key shortcut emitted in the content process bubbles up to the parent process
+  await pushPref("test.events.async.enabled", true);
+
+  // Fake DevTools being opened by a real user interaction.
+  // Tests are bypassing DevToolsStartup to open the tools by calling gDevTools directly.
+  // By doing so DevToolsStartup considers itself as uninitialized,
+  // whereas we want it to handle the key shortcut we trigger in this test.
+  const DevToolsStartup = Cc["@mozilla.org/devtools/startup-clh;1"].getService(
+    Ci.nsISupports
+  ).wrappedJSObject;
+  DevToolsStartup.initialized = true;
+  registerCleanupFunction(() => {
+    DevToolsStartup.initialized = false;
+  });
+
+  const dbg = await initDebugger("data:text/html,key-shortcut");
+
+  const topLevelThread =
+    dbg.toolbox.commands.targetCommand.targetFront.threadFront.actorID;
+  ok(
+    !dbg.selectors.getIsThreadCurrentlyTracing(topLevelThread),
+    "Tracing is disabled on debugger opening"
+  );
+
+  info(
+    "Focus the page in order to assert that the page keeps the focus when enabling the tracer"
+  );
+  await SpecialPowers.spawn(gBrowser.selectedBrowser, [], async function() {
+    content.focus();
+  });
+  await waitFor(
+    () => Services.focus.focusedElement == gBrowser.selectedBrowser
+  );
+  is(
+    Services.focus.focusedElement,
+    gBrowser.selectedBrowser,
+    "The tab is still focused before enabling tracing"
+  );
+
+  info("Toggle ON the tracing via the key shortcut from the web page");
+  await SpecialPowers.spawn(gBrowser.selectedBrowser, [], async function() {
+    EventUtils.synthesizeKey(
+      "VK_5",
+      { ctrlKey: true, shiftKey: true },
+      content
+    );
+  });
+
+  info("Wait for tracing to be enabled");
+  await waitForState(dbg, state => {
+    return dbg.selectors.getIsThreadCurrentlyTracing(topLevelThread);
+  });
+
+  is(
+    Services.focus.focusedElement,
+    gBrowser.selectedBrowser,
+    "The tab is still focused after enabling tracing"
+  );
+
+  info("Toggle it back off, wit the same shortcut");
+  await SpecialPowers.spawn(gBrowser.selectedBrowser, [], async function() {
+    EventUtils.synthesizeKey(
+      "VK_5",
+      { ctrlKey: true, shiftKey: true },
+      content
+    );
+  });
+
+  info("Wait for tracing to be disabled");
+  await waitForState(dbg, state => {
+    return !dbg.selectors.getIsThreadCurrentlyTracing(topLevelThread);
+  });
 });

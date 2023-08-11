@@ -144,6 +144,13 @@ TimerThread::~TimerThread() {
   mThread = nullptr;
 
   NS_ASSERTION(mTimers.IsEmpty(), "Timers remain in TimerThread::~TimerThread");
+
+#if TIMER_THREAD_STATISTICS
+  {
+    MonitorAutoLock lock(mMonitor);
+    PrintStatistics();
+  }
+#endif
 }
 
 namespace {
@@ -617,6 +624,77 @@ size_t TimerThread::ComputeTimerInsertionIndex(const TimeStamp& timeout) const {
   return firstGtIndex;
 }
 
+TimeStamp TimerThread::ComputeWakeupTimeFromTimers() const {
+  mMonitor.AssertCurrentThreadOwns();
+
+  // Timer list should be non-empty and first timer should always be
+  // non-canceled at this point and we rely on that here.
+  MOZ_ASSERT(!mTimers.IsEmpty());
+  MOZ_ASSERT(mTimers[0].Value());
+
+  // Overview: Find the last timer in the list that can be "bundled" together in
+  // the same wake-up with mTimers[0] and use its timeout as our target wake-up
+  // time.
+
+  // bundleWakeup is when we should wake up in order to be able to fire all of
+  // the timers in our selected bundle. It will always be the timeout of the
+  // last timer in the bundle.
+  TimeStamp bundleWakeup = mTimers[0].Timeout();
+
+  // cutoffTime is the latest that we can wake up for the timers currently
+  // accepted into the bundle. These needs to be updated as we go through the
+  // list because later timers may have more strict delay tolerances.
+  const TimeDuration minTimerDelay = TimeDuration::FromMilliseconds(
+      StaticPrefs::timer_minimum_firing_delay_tolerance_ms());
+  const TimeDuration maxTimerDelay = TimeDuration::FromMilliseconds(
+      StaticPrefs::timer_maximum_firing_delay_tolerance_ms());
+  TimeStamp cutoffTime =
+      bundleWakeup + ComputeAcceptableFiringDelay(mTimers[0].Delay(),
+                                                  minTimerDelay, maxTimerDelay);
+
+  const size_t timerCount = mTimers.Length();
+  for (size_t entryIndex = 1; entryIndex < timerCount; ++entryIndex) {
+    const Entry& curEntry = mTimers[entryIndex];
+    const nsTimerImpl* curTimer = curEntry.Value();
+    if (!curTimer) {
+      // Canceled timer - skip it
+      continue;
+    }
+
+    const TimeStamp curTimerDue = curEntry.Timeout();
+    if (curTimerDue > cutoffTime) {
+      // Can't include this timer in the bundle - it fires too late.
+      break;
+    }
+
+    // This timer can be included in the bundle. Update bundleWakeup and
+    // cutoffTime.
+    bundleWakeup = curTimerDue;
+    cutoffTime = std::min(
+        curTimerDue + ComputeAcceptableFiringDelay(
+                          curEntry.Delay(), minTimerDelay, maxTimerDelay),
+        cutoffTime);
+    MOZ_ASSERT(bundleWakeup <= cutoffTime);
+  }
+
+  MOZ_ASSERT(bundleWakeup - mTimers[0].Timeout() <=
+             ComputeAcceptableFiringDelay(mTimers[0].Delay(), minTimerDelay,
+                                          maxTimerDelay));
+  return bundleWakeup;
+}
+
+TimeDuration TimerThread::ComputeAcceptableFiringDelay(
+    TimeDuration timerDuration, TimeDuration minDelay,
+    TimeDuration maxDelay) const {
+  // Use the timer's duration divided by this value as a base for how much
+  // firing delay a timer can accept. 8 was chosen specifically because it is a
+  // power of two which means that this division turns nicely into a shift.
+  constexpr int64_t timerDurationDivider = 8;
+  static_assert(IsPowerOfTwo(static_cast<uint64_t>(timerDurationDivider)));
+  const TimeDuration tmp = timerDuration / timerDurationDivider;
+  return std::min(std::max(minDelay, tmp), maxDelay);
+}
+
 NS_IMETHODIMP
 TimerThread::Run() {
   MonitorAutoLock lock(mMonitor);
@@ -673,6 +751,15 @@ TimerThread::Run() {
       waitFor = TimeDuration::Forever();
       TimeStamp now = TimeStamp::Now();
 
+#if TIMER_THREAD_STATISTICS
+      if (!mNotified && !mIntendedWakeupTime.IsNull() &&
+          now < mIntendedWakeupTime) {
+        ++mEarlyWakeups;
+        const double earlinessms = (mIntendedWakeupTime - now).ToMilliseconds();
+        mTotalEarlyWakeupTime += earlinessms;
+      }
+#endif
+
       RemoveLeadingCanceledTimersInternal();
 
       if (!mTimers.IsEmpty()) {
@@ -723,14 +810,14 @@ TimerThread::Run() {
         // interval is so small we should not wait at all).
         double microseconds = (timeout - now).ToMicroseconds();
 
+        // The mean value of sFractions must be 1 to ensure that the average of
+        // a long sequence of timeouts converges to the actual sum of their
+        // times.
+        static constexpr double sChaosFractions[] = {0.0, 0.25, 0.5, 0.75,
+                                                     1.0, 1.75, 2.75};
         if (ChaosMode::isActive(ChaosFeature::TimerScheduling)) {
-          // The mean value of sFractions must be 1 to ensure that
-          // the average of a long sequence of timeouts converges to the
-          // actual sum of their times.
-          static const float sFractions[] = {0.0f, 0.25f, 0.5f, 0.75f,
-                                             1.0f, 1.75f, 2.75f};
-          microseconds *= sFractions[ChaosMode::randomUint32LessThan(
-              ArrayLength(sFractions))];
+          microseconds *= sChaosFractions[ChaosMode::randomUint32LessThan(
+              ArrayLength(sChaosFractions))];
           forceRunNextTimer = true;
         }
 
@@ -738,11 +825,37 @@ TimerThread::Run() {
           forceRunNextTimer = false;
           goto next;  // round down; execute event now
         }
-        waitFor = TimeDuration::FromMicroseconds(microseconds);
-        if (waitFor.IsZero()) {
-          // round up, wait the minimum time we can wait
-          waitFor = TimeDuration::FromMicroseconds(1);
+
+        // TECHNICAL NOTE: Determining waitFor (by subtracting |now| from our
+        // desired wake-up time) at this point is not ideal. For one thing, the
+        // |now| that we have at this point is somewhat old. Secondly, there is
+        // quite a bit of code between here and where we actually use waitFor to
+        // request sleep. If I am thinking about this correctly, both of these
+        // will contribute to us requesting more sleep than is actually needed
+        // to wake up at our desired time. We could avoid this problem by only
+        // determining our desired wake-up time here and then calculating the
+        // wait time when we're actually about to sleep.
+        const TimeStamp wakeupTime = ComputeWakeupTimeFromTimers();
+        waitFor = wakeupTime - now;
+
+        // If this were to fail that would mean that we had more timers that we
+        // should have fired.
+        MOZ_ASSERT(!waitFor.IsZero());
+
+        if (ChaosMode::isActive(ChaosFeature::TimerScheduling)) {
+          // If chaos mode is active then mess with the amount of time that we
+          // request to sleep (without changing what we record as our expected
+          // wake-up time). This will simulate unintended early/late wake-ups.
+          const double waitInMs = waitFor.ToMilliseconds();
+          const double chaosWaitInMs =
+              waitInMs * sChaosFractions[ChaosMode::randomUint32LessThan(
+                             ArrayLength(sChaosFractions))];
+          waitFor = TimeDuration::FromMilliseconds(chaosWaitInMs);
         }
+
+        mIntendedWakeupTime = wakeupTime;
+      } else {
+        mIntendedWakeupTime = TimeStamp{};
       }
 
       if (MOZ_LOG_TEST(GetTimerLog(), LogLevel::Debug)) {
@@ -754,8 +867,6 @@ TimerThread::Run() {
       }
     }
 
-    mWaiting = true;
-    mNotified = false;
     {
       // About to sleep - let's make note of how many timers we processed and
       // see if we should send out a new batch of telemetry.
@@ -766,7 +877,36 @@ TimerThread::Run() {
             queuedTimersFiredPerWakeup);
         queuedTimerFiredCount = 0;
       }
-      timersFiredThisWakeup = 0;
+    }
+
+#if TIMER_THREAD_STATISTICS
+    {
+      size_t bucketIndex = 0;
+      while (bucketIndex < sTimersFiredPerWakeupBucketCount - 1 &&
+             timersFiredThisWakeup >
+                 sTimersFiredPerWakeupThresholds[bucketIndex]) {
+        ++bucketIndex;
+      }
+      MOZ_ASSERT(bucketIndex < sTimersFiredPerWakeupBucketCount);
+      ++mTimersFiredPerWakeup[bucketIndex];
+
+      ++mTotalWakeupCount;
+      if (mNotified) {
+        ++mTimersFiredPerNotifiedWakeup[bucketIndex];
+        ++mTotalNotifiedWakeupCount;
+      } else {
+        ++mTimersFiredPerUnnotifiedWakeup[bucketIndex];
+        ++mTotalUnnotifiedWakeupCount;
+      }
+    }
+#endif
+
+    timersFiredThisWakeup = 0;
+
+    mWaiting = true;
+    mNotified = false;
+
+    {
       AUTO_PROFILER_TRACING_MARKER("TimerThread", "Wait", OTHER);
       mMonitor.Wait(waitFor);
     }
@@ -801,21 +941,32 @@ nsresult TimerThread::AddTimer(nsTimerImpl* aTimer,
   }
 
   // Awaken the timer thread if:
-  // - This timer wants to fire *before* the Timer Thread is scheduled to wake
-  //   up. We don't track this directly but we know that we will have attempted
-  //   to wake up at the timeout for the first time in our list (if it exists),
-  //   so we can use that. Note: This is true even if the timer has since been
-  //   canceled.
+  // - This timer needs to fire *before* the Timer Thread is scheduled to wake
+  //   up.
   // AND/OR
   // - The delay is 0, which is usually meant to be run as soon as possible.
   //   Note: Even if the thread is scheduled to wake up now/soon, on some
   //   systems there could be a significant delay compared to notifying, which
   //   is almost immediate; and some users of 0-delay depend on it being this
   //   fast!
+  const TimeDuration minTimerDelay = TimeDuration::FromMilliseconds(
+      StaticPrefs::timer_minimum_firing_delay_tolerance_ms());
+  const TimeDuration maxTimerDelay = TimeDuration::FromMilliseconds(
+      StaticPrefs::timer_maximum_firing_delay_tolerance_ms());
+  const TimeDuration firingDelay = ComputeAcceptableFiringDelay(
+      aTimer->mDelay, minTimerDelay, maxTimerDelay);
+  const bool firingBeforeNextWakeup =
+      mIntendedWakeupTime.IsNull() ||
+      (aTimer->mTimeout + firingDelay < mIntendedWakeupTime);
   const bool wakeUpTimerThread =
-      mWaiting &&
-      (mTimers.Length() == 0 || aTimer->mTimeout < mTimers[0].Timeout() ||
-       aTimer->mDelay.IsZero());
+      mWaiting && (firingBeforeNextWakeup || aTimer->mDelay.IsZero());
+
+#if TIMER_THREAD_STATISTICS
+  if (mTotalTimersAdded == 0) {
+    mFirstTimerAdded = TimeStamp::Now();
+  }
+  ++mTotalTimersAdded;
+#endif
 
   // Add the timer to our list.
   if (!AddTimerInternal(*aTimer)) {
@@ -856,6 +1007,10 @@ nsresult TimerThread::RemoveTimer(nsTimerImpl* aTimer,
   if (!RemoveTimerInternal(*aTimer)) {
     return NS_ERROR_NOT_AVAILABLE;
   }
+
+#if TIMER_THREAD_STATISTICS
+  ++mTotalTimersRemoved;
+#endif
 
   // Note: The timer thread is *not* awoken.
   // The removed-timer entry is just left null, and will be reused (by a new or
@@ -1059,6 +1214,19 @@ void TimerThread::PostTimerEvent(already_AddRefed<nsTimerImpl> aTimerRef) {
   AUTO_TIMERS_STATS(TimerThread_PostTimerEvent);
 
   RefPtr<nsTimerImpl> timer(aTimerRef);
+
+#if TIMER_THREAD_STATISTICS
+  const double actualFiringDelay =
+      std::max((TimeStamp::Now() - timer->mTimeout).ToMilliseconds(), 0.0);
+  if (mNotified) {
+    ++mTotalTimersFiredNotified;
+    mTotalActualTimerFiringDelayNotified += actualFiringDelay;
+  } else {
+    ++mTotalTimersFiredUnnotified;
+    mTotalActualTimerFiringDelayUnnotified += actualFiringDelay;
+  }
+#endif
+
   if (!timer->mEventTarget) {
     NS_ERROR("Attempt to post timer event to NULL event target");
     return;
@@ -1093,6 +1261,9 @@ void TimerThread::PostTimerEvent(already_AddRefed<nsTimerImpl> aTimerRef) {
       // different order than is used in RemoveTimer().  RemoveTimer() has
       // aTimer->mMutex first.   We use timer.get() to keep static analysis
       // happy
+      // NOTE: I'm not sure that any of the below is actually necessary. It
+      // seems to me that the timer that we're trying to fire will have already
+      // been removed prior to this.
       MutexAutoLock lock1(timer.get()->mMutex);
       MonitorAutoLock lock2(mMonitor);
       RemoveTimerInternal(*timer);
@@ -1141,4 +1312,171 @@ TimerThread::Observe(nsISupports* /* aSubject */, const char* aTopic,
 uint32_t TimerThread::AllowedEarlyFiringMicroseconds() {
   MonitorAutoLock lock(mMonitor);
   return mAllowedEarlyFiringMicroseconds;
+}
+
+#if TIMER_THREAD_STATISTICS
+void TimerThread::PrintStatistics() const {
+  mMonitor.AssertCurrentThreadOwns();
+
+  const TimeStamp freshNow = TimeStamp::Now();
+  const double timeElapsed = mFirstTimerAdded.IsNull()
+                                 ? 0.0
+                                 : (freshNow - mFirstTimerAdded).ToSeconds();
+  printf_stderr("TimerThread Stats (Total time %8.2fs)\n", timeElapsed);
+
+  printf_stderr("Added: %6llu Removed: %6llu Fired: %6llu\n", mTotalTimersAdded,
+                mTotalTimersRemoved,
+                mTotalTimersFiredNotified + mTotalTimersFiredUnnotified);
+
+  auto PrintTimersFiredBucket =
+      [](const AutoTArray<size_t, sTimersFiredPerWakeupBucketCount>& buckets,
+         const size_t wakeupCount, const size_t timersFiredCount,
+         const double totalTimerDelay, const char* label) {
+        printf_stderr("%s : [", label);
+        for (size_t bucketVal : buckets) {
+          printf_stderr(" %5llu", bucketVal);
+        }
+        printf_stderr(
+            " ] Wake-ups/timer %6llu / %6llu (%7.4f) Avg Timer Delay %7.4f\n",
+            wakeupCount, timersFiredCount,
+            static_cast<double>(wakeupCount) / timersFiredCount,
+            totalTimerDelay / timersFiredCount);
+      };
+
+  printf_stderr("Wake-ups:\n");
+  PrintTimersFiredBucket(
+      mTimersFiredPerWakeup, mTotalWakeupCount,
+      mTotalTimersFiredNotified + mTotalTimersFiredUnnotified,
+      mTotalActualTimerFiringDelayNotified +
+          mTotalActualTimerFiringDelayUnnotified,
+      "Total      ");
+  PrintTimersFiredBucket(mTimersFiredPerNotifiedWakeup,
+                         mTotalNotifiedWakeupCount, mTotalTimersFiredNotified,
+                         mTotalActualTimerFiringDelayNotified, "Notified   ");
+  PrintTimersFiredBucket(mTimersFiredPerUnnotifiedWakeup,
+                         mTotalUnnotifiedWakeupCount,
+                         mTotalTimersFiredUnnotified,
+                         mTotalActualTimerFiringDelayUnnotified, "Unnotified ");
+
+  printf_stderr("Early Wake-ups: %6llu Avg: %7.4fms\n", mEarlyWakeups,
+                mTotalEarlyWakeupTime / mEarlyWakeups);
+}
+#endif
+
+/* This nsReadOnlyTimer class is used for the values returned by the
+ * TimerThread::GetTimers method.
+ * It is not possible to return a strong reference to the nsTimerImpl
+ * instance (that could extend the lifetime of the timer and cause it to fire
+ * a callback pointing to already freed memory) or a weak reference
+ * (nsSupportsWeakReference doesn't support freeing the referee on a thread
+ * that isn't the thread that owns the weak reference), so instead the timer
+ * name, delay and type are copied to a new object. */
+class nsReadOnlyTimer final : public nsITimer {
+ public:
+  explicit nsReadOnlyTimer(const nsACString& aName, uint32_t aDelay,
+                           uint32_t aType)
+      : mName(aName), mDelay(aDelay), mType(aType) {}
+  NS_DECL_ISUPPORTS
+
+  NS_IMETHOD Init(nsIObserver* aObserver, uint32_t aDelayInMs,
+                  uint32_t aType) override {
+    return NS_ERROR_NOT_IMPLEMENTED;
+  }
+  NS_IMETHOD InitWithCallback(nsITimerCallback* aCallback, uint32_t aDelayInMs,
+                              uint32_t aType) override {
+    return NS_ERROR_NOT_IMPLEMENTED;
+  }
+  NS_IMETHOD InitHighResolutionWithCallback(nsITimerCallback* aCallback,
+                                            const mozilla::TimeDuration& aDelay,
+                                            uint32_t aType) override {
+    return NS_ERROR_NOT_IMPLEMENTED;
+  }
+  NS_IMETHOD Cancel(void) override { return NS_ERROR_NOT_IMPLEMENTED; }
+  NS_IMETHOD InitWithNamedFuncCallback(nsTimerCallbackFunc aCallback,
+                                       void* aClosure, uint32_t aDelay,
+                                       uint32_t aType,
+                                       const char* aName) override {
+    return NS_ERROR_NOT_IMPLEMENTED;
+  }
+  NS_IMETHOD InitHighResolutionWithNamedFuncCallback(
+      nsTimerCallbackFunc aCallback, void* aClosure,
+      const mozilla::TimeDuration& aDelay, uint32_t aType,
+      const char* aName) override {
+    return NS_ERROR_NOT_IMPLEMENTED;
+  }
+
+  NS_IMETHOD GetName(nsACString& aName) override {
+    aName = mName;
+    return NS_OK;
+  }
+  NS_IMETHOD GetDelay(uint32_t* aDelay) override {
+    *aDelay = mDelay;
+    return NS_OK;
+  }
+  NS_IMETHOD SetDelay(uint32_t aDelay) override {
+    return NS_ERROR_NOT_IMPLEMENTED;
+  }
+  NS_IMETHOD GetType(uint32_t* aType) override {
+    *aType = mType;
+    return NS_OK;
+  }
+  NS_IMETHOD SetType(uint32_t aType) override {
+    return NS_ERROR_NOT_IMPLEMENTED;
+  }
+  NS_IMETHOD GetClosure(void** aClosure) override {
+    return NS_ERROR_NOT_IMPLEMENTED;
+  }
+  NS_IMETHOD GetCallback(nsITimerCallback** aCallback) override {
+    return NS_ERROR_NOT_IMPLEMENTED;
+  }
+  NS_IMETHOD GetTarget(nsIEventTarget** aTarget) override {
+    return NS_ERROR_NOT_IMPLEMENTED;
+  }
+  NS_IMETHOD SetTarget(nsIEventTarget* aTarget) override {
+    return NS_ERROR_NOT_IMPLEMENTED;
+  }
+  NS_IMETHOD GetAllowedEarlyFiringMicroseconds(
+      uint32_t* aAllowedEarlyFiringMicroseconds) override {
+    return NS_ERROR_NOT_IMPLEMENTED;
+  }
+  size_t SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf) override {
+    return sizeof(*this);
+  }
+
+ private:
+  nsCString mName;
+  uint32_t mDelay;
+  uint32_t mType;
+  ~nsReadOnlyTimer() = default;
+};
+
+NS_IMPL_ISUPPORTS(nsReadOnlyTimer, nsITimer)
+
+nsresult TimerThread::GetTimers(nsTArray<RefPtr<nsITimer>>& aRetVal) {
+  nsTArray<RefPtr<nsTimerImpl>> timers;
+  {
+    MonitorAutoLock lock(mMonitor);
+    for (const auto& entry : mTimers) {
+      nsTimerImpl* timer = entry.Value();
+      if (!timer) {
+        continue;
+      }
+      timers.AppendElement(timer);
+    }
+  }
+
+  for (nsTimerImpl* timer : timers) {
+    nsAutoCString name;
+    timer->GetName(name);
+
+    uint32_t delay;
+    timer->GetDelay(&delay);
+
+    uint32_t type;
+    timer->GetType(&type);
+
+    aRetVal.AppendElement(new nsReadOnlyTimer(name, delay, type));
+  }
+
+  return NS_OK;
 }

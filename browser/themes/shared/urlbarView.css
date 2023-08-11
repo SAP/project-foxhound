@@ -20,6 +20,7 @@
   --urlbarView-favicon-width: 16px;
   --urlbarView-icon-margin-end: calc(var(--urlbar-icon-padding) + var(--identity-box-margin-inline));
 
+  --urlbarView-result-button-size: 24px;
   --urlbarView-result-button-background-opacity: 60%;
   --urlbarView-result-button-selected-color: var(--toolbar-field-focus-color);
   --urlbarView-result-button-selected-background-color: color-mix(in srgb, var(--toolbar-field-focus-background-color) var(--urlbarView-result-button-background-opacity), transparent);
@@ -248,15 +249,6 @@
   -moz-context-properties: fill, fill-opacity;
 }
 
-
-.urlbarView-row[type=tip] > .urlbarView-row-inner > .urlbarView-no-wrap > .urlbarView-favicon {
-  width: 24px;
-  height: 24px;
-  margin-inline-end: 12px;
-  flex-basis: 24px;
-  flex-grow:  0;
-}
-
 .urlbarView-row[tail-suggestion] > .urlbarView-row-inner > .urlbarView-no-wrap > .urlbarView-favicon {
   visibility: hidden;
 }
@@ -287,7 +279,7 @@
 
 .urlbarView-row[type=bookmark] > .urlbarView-row-inner > .urlbarView-no-wrap > .urlbarView-type-icon {
   background-image: url(chrome://browser/skin/bookmark-12.svg);
-  fill: var(--toolbar-field-icon-fill-attention);
+  fill: var(--toolbarbutton-icon-fill-attention);
 }
 
 .urlbarView-row[pinned] > .urlbarView-row-inner > .urlbarView-no-wrap > .urlbarView-type-icon {
@@ -303,8 +295,8 @@
 
 .urlbarView-button {
   display: inline-block;
-  min-width: 24px;
-  min-height: 24px;
+  min-width: var(--urlbarView-result-button-size);
+  min-height: var(--urlbarView-result-button-size);
   background-size: 16px;
   background-position: center;
   background-repeat: no-repeat;
@@ -341,17 +333,40 @@
   background-image: url("chrome://global/skin/icons/help.svg");
 }
 
+/* Result menu button */
+
 .urlbarView-button-menu {
   background-image: url("chrome://global/skin/icons/more.svg");
+  background-color: var(--button-bgcolor);
 }
 
-.urlbarView-results:not([disable-resultmenu-autohide]) > .urlbarView-row:not(:hover, [selected]) > .urlbarView-row-inner + .urlbarView-button-menu:not([open]) {
+.urlbarView-results:not([disable-resultmenu-autohide]) > .urlbarView-row:not(:hover, [selected]) > .urlbarView-row-inner + .urlbarView-button-menu:not([open]):empty {
   display: none;
+}
+
+/* Labeled result menu button */
+
+.urlbarView-results:not([wrap]) > .urlbarView-row > .urlbarView-button-menu:not(:empty) {
+  display: inline-flex;
+  align-items: center;
+  border-radius: var(--urlbarView-result-button-size);
+  padding-inline: 8px 26px;
+  background-position-x: right 4px;
+  font-size: 0.85em;
+}
+
+.urlbarView-results:not([wrap]) > .urlbarView-row > .urlbarView-button-menu:not(:empty):-moz-locale-dir(rtl) {
+  background-position-x: left 4px;
+}
+
+.urlbarView-results[wrap] > .urlbarView-row > .urlbarView-button-menu:not(:empty) {
+  /* Hide the label in narrow windows. */
+  font-size: 0;
 }
 
 /* Button with label, e.g. tip button */
 
-.urlbarView-button:not(:empty) {
+.urlbarView-button:not(:empty, .urlbarView-button-menu) {
   border-radius: var(--toolbarbutton-border-radius);
   padding: 7px;
   font-size: 0.93em;
@@ -364,21 +379,21 @@
   flex-shrink: 0;
 }
 
-.urlbarView-button:not(:empty, :hover) {
+.urlbarView-button:not(:empty, :hover, .urlbarView-button-menu) {
   background-color: var(--button-bgcolor);
 }
 
-.urlbarView-button:not(:empty)[selected] {
+.urlbarView-button:not(:empty, .urlbarView-button-menu)[selected] {
   color: var(--button-primary-color);
   background-color: var(--button-primary-bgcolor);
   outline-offset: var(--focus-outline-offset);
 }
 
-.urlbarView-button:not(:empty)[selected]:hover {
+.urlbarView-button:not(:empty, .urlbarView-button-menu)[selected]:hover {
   background-color: var(--button-primary-hover-bgcolor);
 }
 
-.urlbarView-button:not(:empty)[selected]:hover:active {
+.urlbarView-button:not(:empty, .urlbarView-button-menu)[selected]:hover:active {
   background-color: var(--button-primary-active-bgcolor);
 }
 
@@ -387,7 +402,7 @@
   margin-inline-start: 1.8em;
 }
 
-.urlbarView-button:not(:empty):last-child {
+.urlbarView-button:not(:empty, .urlbarView-button-menu):last-child {
   /* Add space between a labeled button and the trailing edge of the panel. */
   margin-inline-end: 1.8em;
 }
@@ -400,12 +415,12 @@
 }
 
 .urlbarView-row[type=tip]:not(:last-child) {
-  border-bottom: 1px solid var(--panel-separator-color);
+  border-bottom: 1px solid var(--autocomplete-popup-separator-color);
   margin-bottom: 4px;
 }
 
 .urlbarView-row[type=tip]:not(:first-child) {
-  border-top: 1px solid var(--panel-separator-color);
+  border-top: 1px solid var(--autocomplete-popup-separator-color);
   margin-top: 4px;
 }
 
@@ -417,6 +432,14 @@
   margin-inline-end: 1.8em;
 }
 
+.urlbarView-row[type=tip]:not([tip-type=dismissalAcknowledgment]) > .urlbarView-row-inner > .urlbarView-no-wrap > .urlbarView-favicon {
+  width: 24px;
+  height: 24px;
+  margin-inline-end: 12px;
+  flex-basis: 24px;
+  flex-grow:  0;
+}
+
 .urlbarView-row[type=tip] > .urlbarView-row-inner > .urlbarView-no-wrap > .urlbarView-title-separator,
 .urlbarView-row[type=tip] > .urlbarView-row-inner > .urlbarView-url {
   display: none;
@@ -424,6 +447,10 @@
 
 .urlbarView-row[type=tip] > .urlbarView-row-inner > .urlbarView-no-wrap > .urlbarView-title {
   white-space: normal;
+}
+
+.urlbarView-row[type=tip][tip-type=dismissalAcknowledgment] {
+  padding-block: 6px;
 }
 
 /* Row label (a.k.a. group label) */
@@ -455,6 +482,29 @@
   /* `margin-block-start` controls how far the main part of the row is from the
      main part of the previous row. */
   margin-block-start: calc(1.46em + 4px);
+}
+
+/* Feedback acknowledgment */
+
+.urlbarView-row[feedback-acknowledgment]::after {
+  content: attr(feedback-acknowledgment);
+  display: flex;
+  align-items: center;
+  position: absolute;
+  bottom: 0.72em;
+  font-size: 0.85em;
+  margin-inline-start: var(--urlbarView-item-inline-padding);
+  padding-inline-start: calc(var(--urlbarView-favicon-width) + 6px);
+  background-image: url("chrome://branding/content/icon32.png");
+  background-repeat: no-repeat;
+  background-position: 0 center;
+  background-size: var(--urlbarView-favicon-width);
+  min-height: var(--urlbarView-favicon-width);
+}
+
+.urlbarView-row[feedback-acknowledgment] {
+  position: relative;
+  padding-bottom: 1.94em;
 }
 
 /* Title */
@@ -785,7 +835,7 @@
 .urlbarView-row[source="bookmarks"] > .urlbarView-row-inner > .urlbarView-no-wrap > .urlbarView-favicon,
 #urlbar-engine-one-off-item-bookmarks {
   list-style-image: url("chrome://browser/skin/bookmark.svg");
-  fill: var(--toolbar-field-icon-fill-attention);
+  fill: var(--toolbarbutton-icon-fill-attention);
   fill-opacity: 1;
   -moz-context-properties: fill, fill-opacity;
 }

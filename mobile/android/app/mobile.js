@@ -155,8 +155,11 @@ pref("xpinstall.whitelist.add", "https://addons.mozilla.org");
 pref("extensions.langpacks.signatures.required", true);
 pref("xpinstall.signatures.required", true);
 
-// Use blocklist v2 until blocklist v3 is enabled on Android - bug 1639050
-pref("extensions.blocklist.useMLBF", false);
+#ifndef NIGHTLY_BUILD
+// Use blocklist v2 until blocklist v3 is enabled on Android - bug 1824863
+    pref("extensions.blocklist.useMLBF", false);
+#endif
+
 
 // Whether MV3 restrictions for actions popup urls should be extended to MV2 extensions
 // (only allowing same extension urls to be used as action popup urls).
@@ -238,9 +241,6 @@ pref("browser.casting.enabled", true);
 pref("chrome.override_package.global", "browser");
 pref("chrome.override_package.mozapps", "browser");
 pref("chrome.override_package.passwordmgr", "browser");
-
-// disable color management
-pref("gfx.color_management.mode", 0);
 
 // don't allow JS to move and resize existing windows
 pref("dom.disable_window_move_resize", true);

@@ -58,6 +58,10 @@ class AboutWelcomeChild extends JSWindowActorChild {
   exportFunctions() {
     let window = this.contentWindow;
 
+    Cu.exportFunction(this.AWAddScreenImpression.bind(this), window, {
+      defineAs: "AWAddScreenImpression",
+    });
+
     Cu.exportFunction(this.AWGetFeatureConfig.bind(this), window, {
       defineAs: "AWGetFeatureConfig",
     });
@@ -155,6 +159,12 @@ class AboutWelcomeChild extends JSWindowActorChild {
     );
   }
 
+  AWAddScreenImpression(screen) {
+    return this.wrapPromise(
+      this.sendQuery("AWPage:ADD_SCREEN_IMPRESSION", screen)
+    );
+  }
+
   /**
    * Send initial data to page including experiment information
    */
@@ -234,9 +244,10 @@ class AboutWelcomeChild extends JSWindowActorChild {
    * Send message that can be handled by AboutWelcomeParent.jsm
    * @param {string} type
    * @param {any=} data
+   * @returns {Promise<unknown>}
    */
   AWSendToParent(type, data) {
-    this.sendAsyncMessage(`AWPage:${type}`, data);
+    return this.sendQueryAndCloneForContent(`AWPage:${type}`, data);
   }
 
   AWWaitForMigrationClose() {

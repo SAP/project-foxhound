@@ -9,6 +9,7 @@
 #include "nsCharSeparatedTokenizer.h"
 #include "nsContentUtils.h"
 #include "nsHttpHandler.h"
+#include "nsHttpChannel.h"
 #include "nsHostResolver.h"
 #include "nsIHttpChannel.h"
 #include "nsIHttpChannelInternal.h"
@@ -950,7 +951,7 @@ void TRR::ReportStatus(nsresult aStatusCode) {
   // it as failed; otherwise it can cause the confirmation to fail.
   if (UseDefaultServer() && aStatusCode != NS_ERROR_ABORT) {
     // Bad content is still considered "okay" if the HTTP response is okay
-    TRRService::Get()->RecordTRRStatus(aStatusCode);
+    TRRService::Get()->RecordTRRStatus(this);
   }
 }
 
@@ -999,7 +1000,7 @@ TRR::OnStopRequest(nsIRequest* aRequest, nsresult aStatusCode) {
     }
   }
 
-  ReportStatus(aStatusCode);
+  auto scopeExit = MakeScopeExit([&] { ReportStatus(aStatusCode); });
 
   nsresult rv = NS_OK;
   // if status was "fine", parse the response and pass on the answer
@@ -1072,7 +1073,9 @@ void TRR::Cancel(nsresult aStatus) {
       isTRRServiceChannel = false;
     }
   }
-  if (isTRRServiceChannel && !XRE_IsSocketProcess()) {
+  // nsHttpChannel can be only canceled on the main thread.
+  RefPtr<nsHttpChannel> httpChannel = do_QueryObject(mChannel);
+  if (isTRRServiceChannel && !XRE_IsSocketProcess() && !httpChannel) {
     if (TRRService::Get()) {
       nsCOMPtr<nsIThread> thread = TRRService::Get()->TRRThread();
       if (thread && !thread->IsOnCurrentThread()) {

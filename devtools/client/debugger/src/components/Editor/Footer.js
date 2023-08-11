@@ -6,7 +6,6 @@ import React, { PureComponent } from "react";
 import PropTypes from "prop-types";
 import { connect } from "../../utils/connect";
 import { createLocation } from "../../utils/location";
-import classnames from "classnames";
 import actions from "../../actions";
 import {
   getSelectedSource,
@@ -25,6 +24,8 @@ import { isPretty, getFilename, shouldBlackbox } from "../../utils/source";
 
 import { PaneToggleButton } from "../shared/Button";
 import AccessibleImage from "../shared/AccessibleImage";
+
+const classnames = require("devtools/client/shared/classnames.js");
 
 import "./Footer.css";
 

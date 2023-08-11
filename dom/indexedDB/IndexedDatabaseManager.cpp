@@ -75,7 +75,8 @@ class FileManagerInfo {
 
     return !mPersistentStorageFileManagers.IsEmpty() ||
            !mTemporaryStorageFileManagers.IsEmpty() ||
-           !mDefaultStorageFileManagers.IsEmpty();
+           !mDefaultStorageFileManagers.IsEmpty() ||
+           !mPrivateStorageFileManagers.IsEmpty();
   }
 
   void InvalidateAllFileManagers() const;
@@ -97,6 +98,7 @@ class FileManagerInfo {
   nsTArray<SafeRefPtr<DatabaseFileManager> > mPersistentStorageFileManagers;
   nsTArray<SafeRefPtr<DatabaseFileManager> > mTemporaryStorageFileManagers;
   nsTArray<SafeRefPtr<DatabaseFileManager> > mDefaultStorageFileManagers;
+  nsTArray<SafeRefPtr<DatabaseFileManager> > mPrivateStorageFileManagers;
 };
 
 }  // namespace indexedDB
@@ -495,6 +497,19 @@ void IndexedDatabaseManager::InvalidateAllFileManagers() {
 }
 
 void IndexedDatabaseManager::InvalidateFileManagers(
+    PersistenceType aPersistenceType) {
+  AssertIsOnIOThread();
+
+  for (auto iter = mFileManagerInfos.Iter(); !iter.Done(); iter.Next()) {
+    iter.Data()->InvalidateAndRemoveFileManagers(aPersistenceType);
+
+    if (!iter.Data()->HasFileManagers()) {
+      iter.Remove();
+    }
+  }
+}
+
+void IndexedDatabaseManager::InvalidateFileManagers(
     PersistenceType aPersistenceType, const nsACString& aOrigin) {
   AssertIsOnIOThread();
   MOZ_ASSERT(!aOrigin.IsEmpty());
@@ -667,6 +682,10 @@ void FileManagerInfo::InvalidateAllFileManagers() const {
   for (i = 0; i < mDefaultStorageFileManagers.Length(); i++) {
     mDefaultStorageFileManagers[i]->Invalidate();
   }
+
+  for (i = 0; i < mPrivateStorageFileManagers.Length(); i++) {
+    mPrivateStorageFileManagers[i]->Invalidate();
+  }
 }
 
 void FileManagerInfo::InvalidateAndRemoveFileManagers(
@@ -707,6 +726,8 @@ nsTArray<SafeRefPtr<DatabaseFileManager> >& FileManagerInfo::GetArray(
       return mTemporaryStorageFileManagers;
     case PERSISTENCE_TYPE_DEFAULT:
       return mDefaultStorageFileManagers;
+    case PERSISTENCE_TYPE_PRIVATE:
+      return mPrivateStorageFileManagers;
 
     case PERSISTENCE_TYPE_INVALID:
     default:

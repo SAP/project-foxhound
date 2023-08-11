@@ -150,6 +150,29 @@ function TupleToReversed() {
   return std_Tuple_unchecked(newList);
 }
 
+// ES 2017 draft (April 8, 2016) 22.1.3.1.1
+function IsConcatSpreadable(O) {
+  // Step 1.
+  if (!IsObject(O) && !IsTuple(O)) {
+    return false;
+  }
+
+  // Step 2.
+  var spreadable = O[GetBuiltinSymbol("isConcatSpreadable")];
+
+  // Step 3.
+  if (spreadable !== undefined) {
+    return ToBoolean(spreadable);
+  }
+
+  if (IsTuple(O)) {
+    return true;
+  }
+
+  // Step 4.
+  return IsArray(O);
+}
+
 // proposal-record-tuple
 // Tuple.prototype.concat()
 function TupleConcat() {
@@ -250,7 +273,7 @@ function TupleJoin(separator) {
 
   // Steps 3-4
   var sep = ",";
-  if (separator !== undefined && separator !== null) {
+  if (!IsNullOrUndefined(separator)) {
     let toString = IsCallable(separator.toString)
       ? separator.toString
       : std_Object_toString;
@@ -273,7 +296,7 @@ function TupleJoin(separator) {
     let element = T[k];
     // Step 7c
     var next = "";
-    if (element !== undefined && element !== null) {
+    if (!IsNullOrUndefined(element)) {
       let toString = IsCallable(element.toString)
         ? element.toString
         : std_Object_toString;

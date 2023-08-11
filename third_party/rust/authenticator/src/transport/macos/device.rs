@@ -5,9 +5,10 @@
 extern crate log;
 
 use crate::consts::{CID_BROADCAST, MAX_HID_RPT_SIZE};
+use crate::ctap2::commands::get_info::AuthenticatorInfo;
 use crate::transport::hid::HIDDevice;
 use crate::transport::platform::iokit::*;
-use crate::transport::{AuthenticatorInfo, FidoDevice, HIDError, SharedSecret};
+use crate::transport::{FidoDevice, HIDError, SharedSecret};
 use crate::u2ftypes::{U2FDevice, U2FDeviceInfo};
 use core_foundation::base::*;
 use core_foundation::string::*;
@@ -202,19 +203,6 @@ impl HIDDevice for Device {
 
     fn set_authenticator_info(&mut self, authenticator_info: AuthenticatorInfo) {
         self.authenticator_info = Some(authenticator_info);
-    }
-
-    /// This is used for cancellation of blocking read()-requests.
-    /// With this, we can clone the Device, pass it to another thread and call "cancel()" on that.
-    fn clone_device_as_write_only(&self) -> Result<Self, HIDError> {
-        Ok(Self {
-            device_ref: self.device_ref,
-            cid: self.cid,
-            report_rx: None,
-            dev_info: self.dev_info.clone(),
-            secret: self.secret.clone(),
-            authenticator_info: self.authenticator_info.clone(),
-        })
     }
 }
 

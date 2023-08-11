@@ -142,16 +142,13 @@ nsChangeHint HTMLOptionElement::GetAttributeChangeHint(const nsAtom* aAttribute,
   return retval;
 }
 
-nsresult HTMLOptionElement::BeforeSetAttr(int32_t aNamespaceID, nsAtom* aName,
-                                          const nsAttrValueOrString* aValue,
-                                          bool aNotify) {
-  nsresult rv =
-      nsGenericHTMLElement::BeforeSetAttr(aNamespaceID, aName, aValue, aNotify);
-  NS_ENSURE_SUCCESS(rv, rv);
+void HTMLOptionElement::BeforeSetAttr(int32_t aNamespaceID, nsAtom* aName,
+                                      const nsAttrValue* aValue, bool aNotify) {
+  nsGenericHTMLElement::BeforeSetAttr(aNamespaceID, aName, aValue, aNotify);
 
   if (aNamespaceID != kNameSpaceID_None || aName != nsGkAtoms::selected ||
       mSelectedChanged) {
-    return NS_OK;
+    return;
   }
 
   // We just changed out selected state (since we look at the "selected"
@@ -162,7 +159,7 @@ nsresult HTMLOptionElement::BeforeSetAttr(int32_t aNamespaceID, nsAtom* aName,
     // If option is a child of select, SetOptionsSelectedByIndex will set
     // mIsSelected if needed.
     mIsSelected = aValue;
-    return NS_OK;
+    return;
   }
 
   NS_ASSERTION(!mSelectedChanged, "Shouldn't be here");
@@ -193,15 +190,13 @@ nsresult HTMLOptionElement::BeforeSetAttr(int32_t aNamespaceID, nsAtom* aName,
   // mIsSelected might have been changed by SetOptionsSelectedByIndex.  Possibly
   // more than once; make sure our mSelectedChanged state is set back correctly.
   mSelectedChanged = false;
-
-  return NS_OK;
 }
 
-nsresult HTMLOptionElement::AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
-                                         const nsAttrValue* aValue,
-                                         const nsAttrValue* aOldValue,
-                                         nsIPrincipal* aSubjectPrincipal,
-                                         bool aNotify) {
+void HTMLOptionElement::AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
+                                     const nsAttrValue* aValue,
+                                     const nsAttrValue* aOldValue,
+                                     nsIPrincipal* aSubjectPrincipal,
+                                     bool aNotify) {
   if (aNameSpaceID == kNameSpaceID_None) {
     if (aName == nsGkAtoms::disabled) {
       UpdateDisabledState(aNotify);

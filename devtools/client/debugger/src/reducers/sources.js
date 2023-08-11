@@ -12,41 +12,42 @@ import { prefs } from "../utils/prefs";
 import { createPendingSelectedLocation } from "../utils/location";
 
 export function initialSourcesState(state) {
+  /* eslint sort-keys: "error" */
   return {
     /**
-     * All currently available sources.
+     * List of all breakpoint positions for all sources (generated and original).
+     * Map of source id (string) to dictionary object whose keys are line numbers
+     * and values of array of positions.
+     * A position is an object made with two attributes:
+     * location and generatedLocation. Both refering to breakpoint positions
+     * in original and generated sources.
+     * In case of generated source, the two location will be the same.
      *
-     * See create.js: `createSourceObject` method for the description of stored objects.
+     * Map(source id => Dictionary(int => array<Position>))
      */
-    mutableSources: new Map(),
+    mutableBreakpointPositions: new Map(),
 
     /**
-     * @backward-compat { version 112 } Specifies if the server supports overrides
-     * Remove this property once fully supported.
+     * List of all breakable lines for original sources only.
+     *
+     * Map(source id => array<int : breakable line numbers>)
      */
-    isOverridesSupported: state?.isOverridesSupported || false,
+    mutableOriginalBreakableLines: new Map(),
+
+    /**
+     * Map of the source id's to one or more related original source id's
+     * Only generated sources which have related original sources will be maintained here.
+     *
+     * Map(source id => array<Original Source ID>)
+     */
+    mutableOriginalSources: new Map(),
+
     /**
      * List of override objects whose sources texts have been locally overridden.
      *
      * Object { sourceUrl, path }
      */
     mutableOverrideSources: state?.mutableOverrideSources || new Map(),
-
-    /**
-     * All sources associated with a given URL. When using source maps, multiple
-     * sources can have the same URL.
-     *
-     * Dictionary(url => array<source id>)
-     */
-    urls: {},
-
-    /**
-     * Map of the source id's to one or more related original source id's
-     * Only generated sources which have related original sources will be maintained here.
-     *
-     * Dictionary(source id => array<Original Source ID>)
-     */
-    originalSources: {},
 
     /**
      * Mapping of source id's to one or more source-actor's.
@@ -57,12 +58,32 @@ export function initialSourcesState(state) {
      * "source" are the objects stored in this reducer, in the `sources` attribute.
      * "source-actor" are the objects stored in the "source-actors.js" reducer, in its `sourceActors` attribute.
      *
-     * Dictionary(source id => array<Object(id: SourceActor Id, thread: Thread Actor ID)>)
+     * Map(source id => array<Source Actor object>)
      */
-    actors: {},
+    mutableSourceActors: new Map(),
 
-    breakpointPositions: {},
-    breakableLines: {},
+    /**
+     * All currently available sources.
+     *
+     * See create.js: `createSourceObject` method for the description of stored objects.
+     */
+    mutableSources: new Map(),
+
+    /**
+     * All sources associated with a given URL. When using source maps, multiple
+     * sources can have the same URL.
+     *
+     * Map(url => array<source>)
+     */
+    mutableSourcesPerUrl: new Map(),
+
+    /**
+     * When we want to select a source that isn't available yet, use this.
+     * The location object should have a url attribute instead of a sourceId.
+     *
+     * See `createPendingSelectedLocation` for the definition of this object.
+     */
+    pendingSelectedLocation: prefs.pendingSelectedLocation,
 
     /**
      * The actual currently selected location.
@@ -75,15 +96,8 @@ export function initialSourcesState(state) {
      * See `createLocation` for the definition of this object.
      */
     selectedLocation: undefined,
-
-    /**
-     * When we want to select a source that isn't available yet, use this.
-     * The location object should have a url attribute instead of a sourceId.
-     *
-     * See `createPendingSelectedLocation` for the definition of this object.
-     */
-    pendingSelectedLocation: prefs.pendingSelectedLocation,
   };
+  /* eslint-disable sort-keys */
 }
 
 function update(state = initialSourcesState(), action) {
@@ -137,26 +151,29 @@ function update(state = initialSourcesState(), action) {
     }
 
     case "SET_ORIGINAL_BREAKABLE_LINES": {
-      const { breakableLines, sourceId } = action;
+      state.mutableOriginalBreakableLines.set(
+        action.sourceId,
+        action.breakableLines
+      );
+
       return {
         ...state,
-        breakableLines: {
-          ...state.breakableLines,
-          [sourceId]: breakableLines,
-        },
       };
     }
 
     case "ADD_BREAKPOINT_POSITIONS": {
-      const { source, positions } = action;
-      const breakpointPositions = state.breakpointPositions[source.id];
+      // Merge existing and new reported position if some where already stored
+      let positions = state.mutableBreakpointPositions.get(action.source.id);
+      if (positions) {
+        positions = { ...positions, ...action.positions };
+      } else {
+        positions = action.positions;
+      }
+
+      state.mutableBreakpointPositions.set(action.source.id, positions);
 
       return {
         ...state,
-        breakpointPositions: {
-          ...state.breakpointPositions,
-          [source.id]: { ...breakpointPositions, ...positions },
-        },
       };
     }
 
@@ -164,7 +181,7 @@ function update(state = initialSourcesState(), action) {
       return initialSourcesState(state);
 
     case "REMOVE_THREAD": {
-      return removeSourcesAndActors(state, action.threadActorID);
+      return removeSourcesAndActors(state, action);
     }
 
     case "SET_OVERRIDE": {
@@ -186,121 +203,141 @@ function update(state = initialSourcesState(), action) {
 /*
  * Add sources to the sources store
  * - Add the source to the sources store
- * - Add the source URL to the urls map
+ * - Add the source URL to the source url map
  */
 function addSources(state, sources) {
-  state = {
-    ...state,
-    urls: { ...state.urls },
-  };
-
   for (const source of sources) {
     state.mutableSources.set(source.id, source);
 
     // Update the source url map
-    const existing = state.urls[source.url] || [];
-    if (!existing.includes(source.id)) {
-      state.urls[source.url] = [...existing, source.id];
+    const existing = state.mutableSourcesPerUrl.get(source.url);
+    if (existing) {
+      // We never return this array from selectors as-is,
+      // we either return the first entry or lookup for a precise entry
+      // so we can mutate it.
+      existing.push(source);
+    } else {
+      state.mutableSourcesPerUrl.set(source.url, [source]);
     }
 
+    // In case of original source, maintain the mapping of generated source to original sources map.
     if (source.isOriginal) {
       const generatedSourceId = originalToGeneratedId(source.id);
-      if (!state.originalSources[generatedSourceId]) {
-        state.originalSources[generatedSourceId] = [];
+      let originalSourceIds = state.mutableOriginalSources.get(
+        generatedSourceId
+      );
+      if (!originalSourceIds) {
+        originalSourceIds = [];
+        state.mutableOriginalSources.set(generatedSourceId, originalSourceIds);
       }
-      state.originalSources[generatedSourceId].push(source.id);
+      // We never return this array out of selectors, so mutate the list
+      originalSourceIds.push(source.id);
     }
   }
 
-  return state;
+  return { ...state };
 }
 
-function removeSourcesAndActors(state, threadActorID) {
-  state = {
-    ...state,
-    urls: { ...state.urls },
-    actors: { ...state.actors },
-    originalSources: { ...state.originalSources },
-  };
+function removeSourcesAndActors(state, action) {
+  const {
+    mutableSourcesPerUrl,
+    mutableSources,
+    mutableOriginalSources,
+    mutableSourceActors,
+    mutableOriginalBreakableLines,
+    mutableBreakpointPositions,
+  } = state;
+  for (const removedSource of action.sources) {
+    const sourceId = removedSource.id;
 
-  for (const sourceId in state.actors) {
-    let i = state.actors[sourceId].length;
-    while (i--) {
-      // delete the source actors which belong to the
-      // specified thread.
-      if (state.actors[sourceId][i].thread == threadActorID) {
-        state.actors[sourceId].splice(i, 1);
+    // Clear the urls Map
+    const sourceUrl = removedSource.url;
+    if (sourceUrl) {
+      const sourcesForSameUrl = (
+        mutableSourcesPerUrl.get(sourceUrl) || []
+      ).filter(s => s != removedSource);
+      if (!sourcesForSameUrl.length) {
+        // All sources with this URL have been removed
+        mutableSourcesPerUrl.delete(sourceUrl);
+      } else {
+        // There are other sources still alive with the same URL
+        mutableSourcesPerUrl.set(sourceUrl, sourcesForSameUrl);
       }
     }
-    // Delete the source only if all its actors belong to
-    // the same thread.
-    if (!state.actors[sourceId].length) {
-      delete state.actors[sourceId];
 
-      const source = state.mutableSources.get(sourceId);
-      if (source.url) {
-        // urls
-        if (state.urls[source.url]) {
-          state.urls[source.url] = state.urls[source.url].filter(
-            id => id !== source.id
-          );
-        }
-        if (state.urls[source.url]?.length == 0) {
-          delete state.urls[source.url];
-        }
-      }
+    mutableSources.delete(sourceId);
 
-      state.mutableSources.delete(sourceId);
+    // Note that the caller of this method queried the reducer state
+    // to aggregate the related original sources.
+    // So if we were having related original sources, they will be
+    // in `action.sources`.
+    mutableOriginalSources.delete(sourceId);
 
-      // Also remove any original sources related to this generated source
-      const originalSourceIds = state.originalSources[sourceId];
-      if (originalSourceIds && originalSourceIds.length) {
-        originalSourceIds.forEach(id => state.mutableSources.delete(id));
-        delete state.originalSources[sourceId];
-      }
+    // If a source is removed, immediately remove all its related source actors.
+    // It can speed-up the following for loop cleaning actors.
+    mutableSourceActors.delete(sourceId);
+
+    if (removedSource.isOriginal) {
+      mutableOriginalBreakableLines.delete(sourceId);
+    }
+
+    mutableBreakpointPositions.delete(sourceId);
+  }
+
+  for (const removedActor of action.actors) {
+    const sourceId = removedActor.source;
+    const actorsForSource = mutableSourceActors.get(sourceId);
+    // actors may have already been cleared by the previous for..loop
+    if (!actorsForSource) {
+      continue;
+    }
+    const idx = actorsForSource.indexOf(removedActor);
+    if (idx != -1) {
+      actorsForSource.splice(idx, 1);
+      // While the Map is mutable, we expect new array instance on each new change
+      mutableSourceActors.set(sourceId, [...actorsForSource]);
+    }
+
+    // Remove the entry in the Map if there is no more actors for that source
+    if (!actorsForSource.length) {
+      mutableSourceActors.delete(sourceId);
     }
   }
-  return state;
+
+  return { ...state };
 }
 
 function insertSourceActors(state, action) {
   const { sourceActors } = action;
-  state = {
-    ...state,
-    actors: { ...state.actors },
-  };
 
+  const { mutableSourceActors } = state;
   // The `sourceActor` objects are defined from `newGeneratedSources` action:
   // https://searchfox.org/mozilla-central/rev/4646b826a25d3825cf209db890862b45fa09ffc3/devtools/client/debugger/src/actions/sources/newSources.js#300-314
   for (const sourceActor of sourceActors) {
-    state.actors[sourceActor.source] = [
-      ...(state.actors[sourceActor.source] || []),
-      {
-        id: sourceActor.id,
-        thread: sourceActor.thread,
-        startLine: sourceActor.startLine,
-        column: sourceActor.column,
-        length: sourceActor.length,
-      },
-    ];
+    const sourceId = sourceActor.source;
+    // We always clone the array of source actors as we return it from selectors.
+    // So the map is mutable, but its values are considered immutable and will change
+    // anytime there is a new actor added per source ID.
+    const existing = mutableSourceActors.get(sourceId);
+    if (existing) {
+      mutableSourceActors.set(sourceId, [...existing, sourceActor]);
+    } else {
+      mutableSourceActors.set(sourceId, [sourceActor]);
+    }
   }
 
   const scriptActors = sourceActors.filter(
     item => item.introductionType === "scriptElement"
   );
   if (scriptActors.length) {
-    const { ...breakpointPositions } = state.breakpointPositions;
-
     // If new HTML sources are being added, we need to clear the breakpoint
     // positions since the new source is a <script> with new breakpoints.
     for (const { source } of scriptActors) {
-      delete breakpointPositions[source];
+      state.mutableBreakpointPositions.delete(source);
     }
-
-    state = { ...state, breakpointPositions };
   }
 
-  return state;
+  return { ...state };
 }
 
 export default update;

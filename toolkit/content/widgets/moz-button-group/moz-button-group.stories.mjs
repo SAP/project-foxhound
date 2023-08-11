@@ -10,7 +10,7 @@ import {
 } from "./moz-button-group.mjs";
 
 export default {
-  title: "Design System/Experiments/MozButtonGroup",
+  title: "Button Group",
   component: "moz-button-group",
   argTypes: {
     platform: {
@@ -19,6 +19,7 @@ export default {
     },
   },
   parameters: {
+    status: "stable",
     fluent: `
 moz-button-group-p = The button group is below. Card for emphasis.
 moz-button-group-ok = OK

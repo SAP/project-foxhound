@@ -34,7 +34,7 @@ export function highlightCalls(cx) {
       getCurrentThread(getState())
     );
 
-    if (!frame) {
+    if (!frame || !parserWorker.isLocationSupported(frame.location)) {
       return null;
     }
 
@@ -45,11 +45,7 @@ export function highlightCalls(cx) {
       return null;
     }
 
-    if (!frame.location.source) {
-      return null;
-    }
-
-    const symbols = getSymbols(getState(), frame.location.source);
+    const symbols = getSymbols(getState(), frame.location);
 
     if (!symbols) {
       return null;

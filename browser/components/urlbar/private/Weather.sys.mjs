@@ -10,6 +10,8 @@ ChromeUtils.defineESModuleGetters(lazy, {
   clearTimeout: "resource://gre/modules/Timer.sys.mjs",
   MerinoClient: "resource:///modules/MerinoClient.sys.mjs",
   PromiseUtils: "resource://gre/modules/PromiseUtils.sys.mjs",
+  QuickSuggestRemoteSettings:
+    "resource:///modules/urlbar/private/QuickSuggestRemoteSettings.sys.mjs",
   setTimeout: "resource://gre/modules/Timer.sys.mjs",
   UrlbarPrefs: "resource:///modules/UrlbarPrefs.sys.mjs",
 });
@@ -34,6 +36,11 @@ const NOTIFICATIONS = {
  */
 export class Weather extends BaseFeature {
   get shouldEnable() {
+    // The feature itself is enabled by setting these prefs regardless of
+    // whether any config is defined. This is necessary to allow the feature to
+    // sync the config from remote settings and Nimbus. Suggestion fetches will
+    // not start until the config has been either synced from remote settings or
+    // set by Nimbus.
     return (
       lazy.UrlbarPrefs.get("weatherFeatureGate") &&
       lazy.UrlbarPrefs.get("suggest.weather") &&
@@ -55,17 +62,61 @@ export class Weather extends BaseFeature {
 
   /**
    * @returns {Set}
-   *   The set of keywords that should trigger the weather suggestion. Null if
-   *   the suggestion should be shown on zero prefix (empty search string).
+   *   The set of keywords that should trigger the weather suggestion. This will
+   *   be null when no config is defined.
    */
   get keywords() {
     return this.#keywords;
   }
 
+  /**
+   * @returns {number}
+   *   The minimum prefix length of a weather keyword the user must type to
+   *   trigger the suggestion. Note that the strings returned from `keywords`
+   *   already take this into account. The min length is determined from the
+   *   first config source below whose value is non-zero. If no source has a
+   *   non-zero value, zero will be returned, and `this.keywords` will contain
+   *   only full keywords.
+   *
+   *   1. The `weather.minKeywordLength` pref, which is set when the user
+   *      increments the min length
+   *   2. `weatherKeywordsMinimumLength` in Nimbus
+   *   3. `min_keyword_length` in remote settings
+   */
+  get minKeywordLength() {
+    let minLength =
+      lazy.UrlbarPrefs.get("weather.minKeywordLength") ||
+      lazy.UrlbarPrefs.get("weatherKeywordsMinimumLength") ||
+      this.#rsData?.min_keyword_length ||
+      0;
+    return Math.max(minLength, 0);
+  }
+
+  /**
+   * @returns {boolean}
+   *   Weather the min keyword length can be incremented. A cap on the min
+   *   length can be set in remote settings and Nimbus.
+   */
+  get canIncrementMinKeywordLength() {
+    let cap =
+      lazy.UrlbarPrefs.get("weatherKeywordsMinimumLengthCap") ||
+      this.#rsData?.min_keyword_length_cap ||
+      0;
+    return !cap || this.minKeywordLength < cap;
+  }
+
   update() {
+    let wasEnabled = this.isEnabled;
     super.update();
-    if (this.isEnabled) {
-      this.#updateKeywords();
+
+    // This method is called by `QuickSuggest` in a
+    // `NimbusFeatures.urlbar.onUpdate()` callback, when a change occurs to a
+    // Nimbus variable or to a pref that's a fallback for a Nimbus variable. A
+    // config-related variable or pref may have changed, so update it, but only
+    // if the feature was already enabled because if it wasn't, `enable(true)`
+    // was just called, which calls `#init()`, which calls `#updateConfig()`.
+    if (wasEnabled && this.isEnabled) {
+      this.#updateConfig();
     }
   }
 
@@ -74,6 +125,21 @@ export class Weather extends BaseFeature {
       this.#init();
     } else {
       this.#uninit();
+    }
+  }
+
+  /**
+   * Increments the minimum prefix length of a weather keyword the user must
+   * type to trigger the suggestion, if possible. A cap on the min length can be
+   * set in remote settings and Nimbus, and if the cap has been reached, the
+   * length is not incremented.
+   */
+  incrementMinKeywordLength() {
+    if (this.canIncrementMinKeywordLength) {
+      lazy.UrlbarPrefs.set(
+        "weather.minKeywordLength",
+        this.minKeywordLength + 1
+      );
     }
   }
 
@@ -91,7 +157,23 @@ export class Weather extends BaseFeature {
     return this.#waitForFetchesDeferred.promise;
   }
 
+  async onRemoteSettingsSync(rs) {
+    this.logger.debug("Loading weather config from remote settings");
+    let records = await rs.get({ filters: { type: "weather" } });
+    if (rs != lazy.QuickSuggestRemoteSettings.rs) {
+      return;
+    }
+
+    this.logger.debug("Got weather records: " + JSON.stringify(records));
+    this.#rsData = records?.[0]?.weather;
+    this.#updateConfig();
+  }
+
   get #vpnDetected() {
+    if (lazy.UrlbarPrefs.get("weather.ignoreVPN")) {
+      return false;
+    }
+
     let linkService =
       this._test_linkService ||
       Cc["@mozilla.org/network/network-link-service;1"].getService(
@@ -110,15 +192,44 @@ export class Weather extends BaseFeature {
   }
 
   #init() {
+    // On feature init, we only update the config and listen for changes that
+    // affect the config. Suggestion fetches will not start until a config has
+    // been either synced from remote settings or set by Nimbus.
+    this.#updateConfig();
+    lazy.UrlbarPrefs.addObserver(this);
+    lazy.QuickSuggestRemoteSettings.register(this);
+  }
+
+  #uninit() {
+    this.#stopFetching();
+    lazy.QuickSuggestRemoteSettings.unregister(this);
+    lazy.UrlbarPrefs.removeObserver(this);
+    this.#keywords = null;
+  }
+
+  #startFetching() {
+    if (this.#merino) {
+      this.logger.debug("Suggestion fetching already started");
+      return;
+    }
+
+    this.logger.debug("Starting suggestion fetching");
+
     this.#merino = new lazy.MerinoClient(this.constructor.name);
     this.#fetch();
-    this.#updateKeywords();
     for (let notif of Object.values(NOTIFICATIONS)) {
       Services.obs.addObserver(this, notif);
     }
   }
 
-  #uninit() {
+  #stopFetching() {
+    if (!this.#merino) {
+      this.logger.debug("Suggestion fetching already stopped");
+      return;
+    }
+
+    this.logger.debug("Stopping suggestion fetching");
+
     for (let notif of Object.values(NOTIFICATIONS)) {
       Services.obs.removeObserver(this, notif);
     }
@@ -126,7 +237,6 @@ export class Weather extends BaseFeature {
     this.#merino = null;
     this.#suggestion = null;
     this.#fetchTimer = 0;
-    this.#keywords = null;
   }
 
   async #fetch() {
@@ -261,23 +371,44 @@ export class Weather extends BaseFeature {
     this.#restartFetchTimer(remainingIntervalMs);
   }
 
-  #updateKeywords() {
-    let fullKeywords = lazy.UrlbarPrefs.get("weatherKeywords");
-    let minLength = lazy.UrlbarPrefs.get("weatherKeywordsMinimumLength");
-    if (!fullKeywords || !minLength) {
+  #updateConfig() {
+    this.logger.debug("Starting config update");
+
+    // Get the full keywords, preferring Nimbus over remote settings.
+    let fullKeywords =
+      lazy.UrlbarPrefs.get("weatherKeywords") ?? this.#rsData?.keywords;
+    if (!fullKeywords) {
+      this.logger.debug("No keywords defined, stopping suggestion fetching");
       this.#keywords = null;
+      this.#stopFetching();
       return;
     }
 
-    this.#keywords = new Set();
+    let minLength = this.minKeywordLength;
+    this.logger.debug(
+      "Updating keywords: " + JSON.stringify({ fullKeywords, minLength })
+    );
 
-    // Create keywords that are prefixes of the full keywords starting at the
-    // specified minimum length.
-    for (let full of fullKeywords) {
-      this.#keywords.add(full);
-      for (let i = minLength; i < full.length; i++) {
-        this.#keywords.add(full.substring(0, i));
+    if (!minLength) {
+      this.logger.debug("Min length is undefined or zero, using full keywords");
+      this.#keywords = new Set(fullKeywords);
+    } else {
+      // Create keywords that are prefixes of the full keywords starting at the
+      // specified minimum length.
+      this.#keywords = new Set();
+      for (let full of fullKeywords) {
+        for (let i = minLength; i <= full.length; i++) {
+          this.#keywords.add(full.substring(0, i));
+        }
       }
+    }
+
+    this.#startFetching();
+  }
+
+  onPrefChanged(pref) {
+    if (pref == "weather.minKeywordLength") {
+      this.#updateConfig();
     }
   }
 
@@ -345,6 +476,11 @@ export class Weather extends BaseFeature {
     await this.#fetch();
   }
 
+  _test_setRsData(data) {
+    this.#rsData = data;
+    this.#updateConfig();
+  }
+
   _test_setSuggestionToNull() {
     this.#suggestion = null;
   }
@@ -361,6 +497,7 @@ export class Weather extends BaseFeature {
   #lastFetchTimeMs = 0;
   #merino = null;
   #pendingFetchCount = 0;
+  #rsData = null;
   #suggestion = null;
   #timeoutMs = MERINO_TIMEOUT_MS;
   #waitForFetchesDeferred = null;

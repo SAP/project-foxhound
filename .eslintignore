@@ -9,6 +9,7 @@
 
 !.eslintrc*.js
 !.prettierrc.js
+!.babel-eslint.rc.js
 
 # Always ignore node_modules.
 **/node_modules/
@@ -37,8 +38,8 @@ browser/components/sessionstore/test/unit/data/sessionstore_valid.js
 browser/components/sessionstore/test/unit/data/sessionstore_invalid.js
 # This file is split into two in order to keep it as a valid json file
 # for documentation purposes (policies.json) but to be accessed by the
-# code as a .jsm (schema.jsm)
-browser/components/enterprisepolicies/schemas/schema.jsm
+# code as a .sys.mjs (schema.sys.mjs)
+browser/components/enterprisepolicies/schemas/schema.sys.mjs
 # generated or library files in pocket
 browser/components/pocket/content/panels/js/tmpl.js
 browser/components/pocket/content/panels/js/vendor.bundle.js
@@ -90,6 +91,7 @@ devtools/client/webconsole/test/browser/test-autocomplete-mapped.src.js
 devtools/client/inspector/markup/test/shadowdom_open_debugger.min.js
 devtools/client/webconsole/test/browser/test-click-function-to-source*.js
 devtools/client/webconsole/test/browser/test-external-script-errors.js
+devtools/client/webconsole/test/browser/test-mangled-function.*
 devtools/client/webconsole/test/browser/test-message-categories-canvas-css.js
 devtools/client/webconsole/test/browser/test-message-categories-empty-getelementbyid.js
 devtools/client/webconsole/test/browser/test-sourcemap*.js
@@ -239,9 +241,6 @@ tools/tryselect/selectors/chooser/templates/chooser.html
 
 # Ignore preprocessed *(P)refs.js files in update-packaging.
 tools/update-packaging/**/*refs.js
-
-# Ignore backgroundtasks preferences files.
-toolkit/components/backgroundtasks/defaults
 
 # Ignore pre-generated webpack and typescript transpiled files for translations
 browser/extensions/translations/extension/

@@ -21,6 +21,8 @@ export class MigrationWizard extends HTMLElement {
   #resourceTypeList = null;
   #shadowRoot = null;
   #importButton = null;
+  #importFromFileButton = null;
+  #chooseImportFromFile = null;
   #safariPermissionButton = null;
   #selectAllCheckbox = null;
   #resourceSummary = null;
@@ -30,13 +32,13 @@ export class MigrationWizard extends HTMLElement {
     return `
       <template>
         <link rel="stylesheet" href="chrome://browser/skin/migration/migration-wizard.css">
-        <named-deck id="wizard-deck" selected-view="page-loading" aria-live="polite" aria-busy="true">
+        <named-deck id="wizard-deck" selected-view="page-loading" aria-busy="true" part="deck">
           <div name="page-loading">
             <h1 data-l10n-id="migration-wizard-selection-header"></h1>
             <div class="loading-block large"></div>
             <div class="loading-block small"></div>
             <div class="loading-block small"></div>
-            <moz-button-group class="buttons">
+            <moz-button-group class="buttons" part="buttons">
               <!-- If possible, use the same button labels as the SELECTION page with the same strings.
                    That'll prevent flicker when the load state exits if we then enter the SELECTION page. -->
               <button class="cancel-close" data-l10n-id="migration-cancel-button-label" disabled></button>
@@ -46,13 +48,13 @@ export class MigrationWizard extends HTMLElement {
 
           <div name="page-selection">
             <h1 data-l10n-id="migration-wizard-selection-header"></h1>
-            <button id="browser-profile-selector">
-              <span class="migrator-icon"></span>
-              <div class="migrator-description">
-                <div class="migrator-name">&nbsp;</div>
-                <div class="profile-name deemphasized-text"></div>
+            <button id="browser-profile-selector" aria-haspopup="menu" aria-labelledby="migrator-name profile-name">
+              <span class="migrator-icon" role="img"></span>
+              <div class="migrator-description" role="presentation">
+                <div id="migrator-name">&nbsp;</div>
+                <div id="profile-name" class="deemphasized-text"></div>
               </div>
-              <span class="dropdown-icon"></span>
+              <span class="dropdown-icon" role="img"></span>
             </button>
             <div class="no-resources-found error-message">
               <span class="error-icon" role="img"></span>
@@ -84,8 +86,9 @@ export class MigrationWizard extends HTMLElement {
               </fieldset>
             </details>
 
-            <moz-button-group class="buttons">
+            <moz-button-group class="buttons" part="buttons">
               <button class="cancel-close" data-l10n-id="migration-cancel-button-label"></button>
+              <button id="import-from-file" class="primary" data-l10n-id="migration-import-from-file-button-label"></button>
               <button id="import" class="primary" data-l10n-id="migration-import-button-label"></button>
             </moz-button-group>
           </div>
@@ -117,9 +120,38 @@ export class MigrationWizard extends HTMLElement {
                 <span class="success-text deemphasized-text">&nbsp;</span>
               </div>
             </div>
-            <moz-button-group class="buttons">
+            <moz-button-group class="buttons" part="buttons">
               <button class="cancel-close" data-l10n-id="migration-cancel-button-label" disabled></button>
-              <button class="primary" id="done-button" data-l10n-id="migration-done-button-label"></button>
+              <button class="primary finish-button done-button" data-l10n-id="migration-done-button-label"></button>
+              <button class="primary finish-button continue-button" data-l10n-id="migration-continue-button-label"></button>
+            </moz-button-group>
+          </div>
+
+          <div name="page-file-import-progress">
+            <h1 id="file-import-progress-header"></h1>
+            <div class="resource-progress">
+              <div data-resource-type="PASSWORDS_FROM_FILE" class="resource-progress-group">
+                <span class="progress-icon-parent"><span class="progress-icon" role="img"></span></span>
+                <span data-l10n-id="migration-passwords-from-file"></span>
+                <span class="success-text deemphasized-text">&nbsp;</span>
+              </div>
+
+              <div data-resource-type="PASSWORDS_NEW" class="resource-progress-group">
+                <span class="progress-icon-parent"><span class="progress-icon" role="img"></span></span>
+                <span data-l10n-id="migration-passwords-new"></span>
+                <span class="success-text deemphasized-text">&nbsp;</span>
+              </div>
+
+              <div data-resource-type="PASSWORDS_UPDATED" class="resource-progress-group">
+                <span class="progress-icon-parent"><span class="progress-icon" role="img"></span></span>
+                <span data-l10n-id="migration-passwords-updated"></span>
+                <span class="success-text deemphasized-text">&nbsp;</span>
+              </div>
+            </div>
+            <moz-button-group class="buttons" part="buttons">
+              <button class="cancel-close" data-l10n-id="migration-cancel-button-label" disabled></button>
+              <button class="primary finish-button done-button" data-l10n-id="migration-done-button-label"></button>
+              <button class="primary finish-button continue-button" data-l10n-id="migration-continue-button-label"></button>
             </moz-button-group>
           </div>
 
@@ -135,7 +167,7 @@ export class MigrationWizard extends HTMLElement {
                 <span class="page-portrait-icon"></span>
               </li>
             </ol>
-            <moz-button-group class="buttons">
+            <moz-button-group class="buttons" part="buttons">
               <button class="cancel-close" data-l10n-id="migration-safari-password-import-skip-button"></button>
               <button class="primary" data-l10n-id="migration-safari-password-import-select-button"></button>
             </moz-button-group>
@@ -148,9 +180,9 @@ export class MigrationWizard extends HTMLElement {
               <li data-l10n-id="migration-wizard-safari-instructions-continue"></li>
               <li data-l10n-id="migration-wizard-safari-instructions-folder"></li>
             </ol>
-            <moz-button-group class="buttons">
+            <moz-button-group class="buttons" part="buttons">
               <button class="cancel-close" data-l10n-id="migration-cancel-button-label"></button>
-              <button id="safari-request-permissions" class="primary" data-l10n-id="migration-wizard-safari-select-button"></button>
+              <button id="safari-request-permissions" class="primary" data-l10n-id="migration-continue-button-label"></button>
             </moz-button-group>
           </div>
 
@@ -160,8 +192,9 @@ export class MigrationWizard extends HTMLElement {
               <span class="error-icon" role="img"></span>
               <div class="no-browsers-found-message" data-l10n-id="migration-wizard-import-browser-no-browsers"></div>
             </div>
-            <moz-button-group class="buttons">
+            <moz-button-group class="buttons" part="buttons">
               <button class="cancel-close" data-l10n-id="migration-cancel-button-label"></button>
+              <button id="choose-import-from-file" class="primary" data-l10n-id="migration-choose-to-import-from-file-button-label"></button>
             </moz-button-group>
           </div>
         </named-deck>
@@ -213,11 +246,19 @@ export class MigrationWizard extends HTMLElement {
       button.addEventListener("click", this);
     }
 
-    let doneCloseButtons = shadow.querySelector("#done-button");
-    doneCloseButtons.addEventListener("click", this);
+    let finishButtons = shadow.querySelectorAll(".finish-button");
+    for (let button of finishButtons) {
+      button.addEventListener("click", this);
+    }
 
     this.#importButton = shadow.querySelector("#import");
     this.#importButton.addEventListener("click", this);
+    this.#importFromFileButton = shadow.querySelector("#import-from-file");
+    this.#importFromFileButton.addEventListener("click", this);
+    this.#chooseImportFromFile = shadow.querySelector(
+      "#choose-import-from-file"
+    );
+    this.#chooseImportFromFile.addEventListener("click", this);
 
     this.#browserProfileSelector.addEventListener("click", this);
     this.#resourceTypeList = shadow.querySelector("#resource-type-list");
@@ -276,6 +317,14 @@ export class MigrationWizard extends HTMLElement {
         this.#onShowingProgress(state);
         break;
       }
+      case MigrationWizardConstants.PAGES.FILE_IMPORT_PROGRESS: {
+        this.#onShowingFileImportProgress(state);
+        break;
+      }
+      case MigrationWizardConstants.PAGES.NO_BROWSERS_FOUND: {
+        this.#onShowingNoBrowsersFound(state);
+        break;
+      }
     }
 
     this.#deck.toggleAttribute(
@@ -287,6 +336,10 @@ export class MigrationWizard extends HTMLElement {
     if (window.IS_STORYBOOK) {
       this.#updateForStorybook();
     }
+  }
+
+  get #dialogMode() {
+    return this.hasAttribute("dialog-mode");
   }
 
   #ensureSelectionDropdown() {
@@ -308,6 +361,7 @@ export class MigrationWizard extends HTMLElement {
     // migration wizard to style the selector dropdown so that it more
     // closely lines up with the edges of the selector button.
     this.#browserProfileSelectorList.style.boxSizing = "border-box";
+    this.#browserProfileSelectorList.style.overflowY = "auto";
   }
 
   /**
@@ -315,13 +369,13 @@ export class MigrationWizard extends HTMLElement {
    * should update the list of resource types to match what's supported
    * by the selected migrator and profile.
    *
-   *  @param {Element} panelItem the selected <oabel-item>
+   *  @param {Element} panelItem the selected <panel-item>
    */
   #onBrowserProfileSelectionChanged(panelItem) {
     this.#browserProfileSelector.selectedPanelItem = panelItem;
-    this.#browserProfileSelector.querySelector(".migrator-name").textContent =
+    this.#browserProfileSelector.querySelector("#migrator-name").textContent =
       panelItem.displayName;
-    this.#browserProfileSelector.querySelector(".profile-name").textContent =
+    this.#browserProfileSelector.querySelector("#profile-name").textContent =
       panelItem.profile?.name || "";
 
     if (panelItem.brandImage) {
@@ -336,7 +390,10 @@ export class MigrationWizard extends HTMLElement {
 
     let key = panelItem.getAttribute("key");
     let resourceTypes = panelItem.resourceTypes;
-    for (let child of this.#resourceTypeList.children) {
+
+    for (let child of this.#resourceTypeList.querySelectorAll(
+      "label[data-resource-type]"
+    )) {
       child.hidden = true;
       child.control.checked = false;
     }
@@ -369,13 +426,19 @@ export class MigrationWizard extends HTMLElement {
     }
     let selectAll = this.#shadowRoot.querySelector("#select-all").control;
     selectAll.checked = true;
+
     this.#displaySelectedResources();
     this.#browserProfileSelector.selectedPanelItem = panelItem;
 
     let selectionPage = this.#shadowRoot.querySelector(
       "div[name='page-selection']"
     );
-    selectionPage.toggleAttribute("no-resources", !resourceTypes.length);
+    selectionPage.setAttribute("migrator-type", panelItem.getAttribute("type"));
+    selectionPage.toggleAttribute(
+      "no-resources",
+      panelItem.getAttribute("type") ==
+        MigrationWizardConstants.MIGRATOR_TYPES.BROWSER && !resourceTypes.length
+    );
   }
 
   /**
@@ -404,6 +467,7 @@ export class MigrationWizard extends HTMLElement {
     for (let migrator of state.migrators) {
       let opt = document.createElement("panel-item");
       opt.setAttribute("key", migrator.key);
+      opt.setAttribute("type", migrator.type);
       opt.profile = migrator.profile;
       opt.displayName = migrator.displayName;
       opt.resourceTypes = migrator.resourceTypes;
@@ -422,6 +486,20 @@ export class MigrationWizard extends HTMLElement {
         button.style.backgroundImage = `url(${migrator.brandImage})`;
       } else {
         button.style.backgroundImage = `url("chrome://global/skin/icons/defaultFavicon.svg")`;
+      }
+
+      // Bug 1823489 - since the panel-list and panel-items are slotted, we
+      // cannot style them or their children in migration-wizard.css. We use
+      // inline styles for now to achieve the desired appearance, but bug 1823489
+      // will investigate having MigrationWizard own the <xul:panel>,
+      // <panel-list> and <panel-item>'s so that styling can be done in the
+      // stylesheet instead.
+      if (migrator.type == MigrationWizardConstants.MIGRATOR_TYPES.FILE) {
+        button.style.backgroundSize = "20px";
+        button.style.backgroundPosition = "6px center";
+        if (this.#browserProfileSelectorList.isDocumentRTL()) {
+          button.style.backgroundPositionX = "right 6px";
+        }
       }
 
       if (migrator.profile) {
@@ -451,6 +529,14 @@ export class MigrationWizard extends HTMLElement {
         this.#browserProfileSelectorList.firstElementChild
       );
     }
+
+    // Since this is called before the named-deck actually switches to
+    // show the selection page, we cannot focus this button immediately.
+    // Instead, we use a rAF to queue this up for focusing before the
+    // next paint.
+    requestAnimationFrame(() => {
+      this.#browserProfileSelector.focus({ focusVisible: false });
+    });
   }
 
   /**
@@ -479,7 +565,10 @@ export class MigrationWizard extends HTMLElement {
    */
   #onShowingProgress(state) {
     // Any resource progress group not included in state.progress is hidden.
-    let resourceGroups = this.#shadowRoot.querySelectorAll(
+    let progressPage = this.#shadowRoot.querySelector(
+      "div[name='page-progress']"
+    );
+    let resourceGroups = progressPage.querySelectorAll(
       ".resource-progress-group"
     );
     let totalProgressGroups = Object.keys(state.progress).length;
@@ -538,13 +627,116 @@ export class MigrationWizard extends HTMLElement {
     let header = this.#shadowRoot.getElementById("progress-header");
     document.l10n.setAttributes(header, headerL10nID);
 
+    let finishButtons = progressPage.querySelectorAll(".finish-button");
+    let cancelButton = progressPage.querySelector(".cancel-close");
+
+    for (let finishButton of finishButtons) {
+      finishButton.hidden = !migrationDone;
+    }
+
+    cancelButton.hidden = migrationDone;
+
+    if (migrationDone) {
+      // Since this might be called before the named-deck actually switches to
+      // show the progress page, we cannot focus this button immediately.
+      // Instead, we use a rAF to queue this up for focusing before the
+      // next paint.
+      requestAnimationFrame(() => {
+        let button = this.#dialogMode
+          ? progressPage.querySelector(".done-button")
+          : progressPage.querySelector(".continue-button");
+        button.focus({ focusVisible: false });
+      });
+    }
+  }
+
+  /**
+   * Called when showing the progress / success page of the wizard for
+   * files.
+   *
+   * @param {object} state
+   *   The state object passed into setState. The following properties are
+   *   used:
+   * @param {string} state.title
+   *   The string to display in the header.
+   * @param {Object<string, ProgressState>} state.progress
+   *   An object whose keys match one of DISPLAYED_FILE_RESOURCE_TYPES.
+   *
+   *   Any resource type not included in state.progress will be hidden.
+   */
+  #onShowingFileImportProgress(state) {
+    // Any resource progress group not included in state.progress is hidden.
     let progressPage = this.#shadowRoot.querySelector(
-      "div[name='page-progress']"
+      "div[name='page-file-import-progress']"
     );
-    let doneButton = progressPage.querySelector("#done-button");
+    let resourceGroups = progressPage.querySelectorAll(
+      ".resource-progress-group"
+    );
+    let totalProgressGroups = Object.keys(state.progress).length;
+    let remainingProgressGroups = totalProgressGroups;
+
+    for (let group of resourceGroups) {
+      let resourceType = group.dataset.resourceType;
+      if (!state.progress.hasOwnProperty(resourceType)) {
+        group.hidden = true;
+        continue;
+      }
+      group.hidden = false;
+
+      let progressIcon = group.querySelector(".progress-icon");
+      let successText = group.querySelector(".success-text");
+
+      if (state.progress[resourceType].inProgress) {
+        document.l10n.setAttributes(
+          progressIcon,
+          "migration-wizard-progress-icon-in-progress"
+        );
+        progressIcon.classList.remove("completed");
+        // With no status text, we re-insert the &nbsp; so that the status
+        // text area does not fully collapse.
+        successText.appendChild(document.createTextNode("\u00A0"));
+      } else {
+        document.l10n.setAttributes(
+          progressIcon,
+          "migration-wizard-progress-icon-completed"
+        );
+        progressIcon.classList.add("completed");
+        successText.textContent = state.progress[resourceType].message;
+        remainingProgressGroups--;
+      }
+    }
+
+    let migrationDone = remainingProgressGroups == 0;
+    let header = this.#shadowRoot.getElementById("file-import-progress-header");
+    header.textContent = state.title;
+
+    let doneButton = progressPage.querySelector(".primary");
     let cancelButton = progressPage.querySelector(".cancel-close");
     doneButton.hidden = !migrationDone;
     cancelButton.hidden = migrationDone;
+
+    if (migrationDone) {
+      // Since this might be called before the named-deck actually switches to
+      // show the progress page, we cannot focus this button immediately.
+      // Instead, we use a rAF to queue this up for focusing before the
+      // next paint.
+      requestAnimationFrame(() => {
+        doneButton.focus({ focusVisible: false });
+      });
+    }
+  }
+
+  /**
+   * Called when showing the "no browsers found" page of the wizard.
+   *
+   * @param {object} state
+   *   The state object passed into setState. The following properties are
+   *   used:
+   * @param {string} state.hasFileMigrators
+   *   True if at least one FileMigrator is available for use.
+   */
+  #onShowingNoBrowsersFound(state) {
+    this.#chooseImportFromFile.hidden = !state.hasFileMigrators;
   }
 
   /**
@@ -611,6 +803,7 @@ export class MigrationWizard extends HTMLElement {
   #gatherMigrationEventDetails() {
     let panelItem = this.#browserProfileSelector.selectedPanelItem;
     let key = panelItem.getAttribute("key");
+    let type = panelItem.getAttribute("type");
     let profile = panelItem.profile;
     let hasPermissions = panelItem.hasPermissions;
 
@@ -626,6 +819,7 @@ export class MigrationWizard extends HTMLElement {
 
     return {
       key,
+      type,
       profile,
       resourceTypes,
       hasPermissions,
@@ -749,11 +943,14 @@ export class MigrationWizard extends HTMLElement {
   handleEvent(event) {
     switch (event.type) {
       case "click": {
-        if (event.target == this.#importButton) {
+        if (
+          event.target == this.#importButton ||
+          event.target == this.#importFromFileButton
+        ) {
           this.#doImport();
         } else if (
           event.target.classList.contains("cancel-close") ||
-          event.target.id == "done-button"
+          event.target.classList.contains("finish-button")
         ) {
           this.dispatchEvent(
             new CustomEvent("MigrationWizard:Close", { bubbles: true })
@@ -765,10 +962,28 @@ export class MigrationWizard extends HTMLElement {
           event.target != this.#browserProfileSelectorList
         ) {
           this.#onBrowserProfileSelectionChanged(event.target);
+          // If the user selected a file migration type from the selector, we'll
+          // help the user out by immediately starting the file migration flow,
+          // rather than waiting for them to click the "Select File".
+          if (
+            event.target.getAttribute("type") ==
+            MigrationWizardConstants.MIGRATOR_TYPES.FILE
+          ) {
+            this.#doImport();
+          }
         } else if (event.target == this.#safariPermissionButton) {
           this.#requestSafariPermissions();
         } else if (event.currentTarget == this.#resourceSummary) {
           this.#expandedDetails = true;
+        } else if (event.target == this.#chooseImportFromFile) {
+          this.dispatchEvent(
+            new CustomEvent("MigrationWizard:RequestState", {
+              bubbles: true,
+              detail: {
+                allowOnlyFileMigrators: true,
+              },
+            })
+          );
         }
         break;
       }

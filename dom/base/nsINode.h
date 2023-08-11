@@ -40,6 +40,7 @@ class nsAttrChildContentList;
 template <typename T>
 class nsCOMArray;
 class nsDOMAttributeMap;
+class nsGenericHTMLElement;
 class nsIAnimationObserver;
 class nsIContent;
 class nsIContentSecurityPolicy;
@@ -516,7 +517,7 @@ class nsINode : public mozilla::dom::EventTarget {
   /**
    * https://html.spec.whatwg.org/multipage/popover.html#popover-target-element
    */
-  mozilla::dom::Element* GetEffectivePopoverTargetElement() const;
+  nsGenericHTMLElement* GetEffectivePopoverTargetElement() const;
 
   /**
    * https://html.spec.whatwg.org/multipage/popover.html#topmost-clicked-popover
@@ -1409,9 +1410,15 @@ class nsINode : public mozilla::dom::EventTarget {
    */
   nsIContent* GetClosestNativeAnonymousSubtreeRoot() const {
     if (!IsInNativeAnonymousSubtree()) {
+      MOZ_ASSERT(!HasBeenInUAWidget(), "UA widget implies anonymous");
       return nullptr;
     }
     MOZ_ASSERT(IsContent(), "How did non-content end up in NAC?");
+    if (HasBeenInUAWidget()) {
+      // reinterpret_cast because in this header we don't know ShadowRoot is an
+      // nsIContent. ShadowRoot constructor asserts this is correct.
+      return reinterpret_cast<nsIContent*>(GetContainingShadow());
+    }
     for (const nsINode* node = this; node; node = node->GetParentNode()) {
       if (node->IsRootOfNativeAnonymousSubtree()) {
         return const_cast<nsINode*>(node)->AsContent();
@@ -1684,6 +1691,8 @@ class nsINode : public mozilla::dom::EventTarget {
    * TODO: Convert this to MOZ_CAN_RUN_SCRIPT (bug 1415230)
    */
   MOZ_CAN_RUN_SCRIPT_BOUNDARY void FireNodeRemovedForChildren();
+
+  void QueueDevtoolsAnonymousEvent(bool aIsRemove);
 
  private:
   mozilla::dom::SVGUseElement* DoGetContainingSVGUseShadowHost() const;

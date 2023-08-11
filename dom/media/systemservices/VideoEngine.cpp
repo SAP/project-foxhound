@@ -104,9 +104,6 @@ int VideoEngine::ReleaseVideoCapture(const int32_t aId) {
 
   if (!found) {
     WithEntry(aId, [&found](CaptureEntry& cap) {
-      if (cap.mVideoCaptureModule) {
-        cap.mVideoCaptureModule->NotifyReleasing();
-      }
       cap.mVideoCaptureModule = nullptr;
       found = true;
     });
@@ -238,6 +235,11 @@ VideoEngine::VideoEngine(const CaptureDeviceType& aCaptureDeviceType)
   LOG(("%s", __PRETTY_FUNCTION__));
   LOG(("Creating new VideoEngine with CaptureDeviceType %s",
        mCaptureDevInfo.TypeName()));
+}
+
+VideoEngine::~VideoEngine() {
+  MOZ_ASSERT(mCaps.empty());
+  MOZ_ASSERT(mIdMap.empty());
 }
 
 }  // namespace mozilla::camera

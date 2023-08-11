@@ -13,9 +13,12 @@ var { XPCOMUtils } = ChromeUtils.importESModule(
 
 ChromeUtils.defineESModuleGetters(this, {
   BrowserUtils: "resource://gre/modules/BrowserUtils.sys.mjs",
+
   ContextualIdentityService:
     "resource://gre/modules/ContextualIdentityService.sys.mjs",
+
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
+  ShellService: "resource:///modules/ShellService.sys.mjs",
   URILoadingHelper: "resource:///modules/URILoadingHelper.sys.mjs",
 });
 
@@ -23,7 +26,6 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   AboutNewTab: "resource:///modules/AboutNewTab.jsm",
   BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.jsm",
   ExtensionSettingsStore: "resource://gre/modules/ExtensionSettingsStore.jsm",
-  ShellService: "resource:///modules/ShellService.jsm",
 });
 
 XPCOMUtils.defineLazyGetter(this, "ReferrerInfo", () =>
@@ -503,6 +505,19 @@ function openFeedbackPage() {
   openTrustedLinkIn(url, "tab");
 }
 
+/**
+ * Appends UTM parameters to then opens the SUMO URL for device migration.
+ */
+function openSwitchingDevicesPage() {
+  let url = getHelpLinkURL("switching-devices");
+  let parsedUrl = new URL(url);
+  parsedUrl.searchParams.set("utm_content", "switch-to-new-device");
+  parsedUrl.searchParams.set("utm_source", "help-menu");
+  parsedUrl.searchParams.set("utm_medium", "firefox-desktop");
+  parsedUrl.searchParams.set("utm_campaign", "migration");
+  openTrustedLinkIn(parsedUrl.href, "tab");
+}
+
 function buildHelpMenu() {
   document.getElementById(
     "feedbackPage"
@@ -554,6 +569,11 @@ function buildHelpMenu() {
     let isReportablePage =
       uri && (uri.schemeIs("http") || uri.schemeIs("https"));
     reportSiteIssue.disabled = !isReportablePage;
+  }
+
+  if (NimbusFeatures.deviceMigration.getVariable("helpMenuHidden")) {
+    let helpMenuItem = document.getElementById("helpSwitchDevice");
+    helpMenuItem.hidden = true;
   }
 }
 

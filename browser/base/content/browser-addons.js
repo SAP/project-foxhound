@@ -1210,6 +1210,7 @@ var gUnifiedExtensions = {
 
     gBrowser.addTabsProgressListener(this);
     window.addEventListener("TabSelect", () => this.updateAttention());
+    window.addEventListener("toolbarvisibilitychange", this);
 
     this.permListener = () => this.updateAttention();
     lazy.ExtensionPermissions.addListener(this.permListener);
@@ -1224,6 +1225,8 @@ var gUnifiedExtensions = {
     if (!this._initialized) {
       return;
     }
+
+    window.removeEventListener("toolbarvisibilitychange", this);
 
     lazy.ExtensionPermissions.removeListener(this.permListener);
     this.permListener = null;
@@ -1355,6 +1358,10 @@ var gUnifiedExtensions = {
       case "customizationstarting":
         this.panel.hidePopup();
         break;
+
+      case "toolbarvisibilitychange":
+        this.onToolbarVisibilityChange(event.target.id, event.detail.visible);
+        break;
     }
   },
 
@@ -1382,6 +1389,109 @@ var gUnifiedExtensions = {
     }
     // If temporary access was granted, (maybe) clear attention indicator.
     requestAnimationFrame(() => this.updateAttention());
+  },
+
+  onToolbarVisibilityChange(toolbarId, isVisible) {
+    // A list of extension widget IDs (possibly empty).
+    let widgetIDs;
+
+    try {
+      widgetIDs = CustomizableUI.getWidgetIdsInArea(toolbarId).filter(
+        CustomizableUI.isWebExtensionWidget
+      );
+    } catch {
+      // Do nothing if the area does not exist for some reason.
+      return;
+    }
+
+    // The list of overflowed extensions in the extensions panel.
+    const overflowedExtensionsList = this.panel.querySelector(
+      "#overflowed-extensions-list"
+    );
+
+    // We are going to move all the extension widgets via DOM manipulation
+    // *only* so that it looks like these widgets have moved (and users will
+    // see that) but CUI still thinks the widgets haven't been moved.
+    //
+    // We can move the extension widgets either from the toolbar to the
+    // extensions panel OR the other way around (when the toolbar becomes
+    // visible again).
+    for (const widgetID of widgetIDs) {
+      const widget = CustomizableUI.getWidget(widgetID);
+      if (!widget) {
+        continue;
+      }
+
+      if (isVisible) {
+        this._maybeMoveWidgetNodeBack(widget.id);
+      } else {
+        const { node } = widget.forWindow(window);
+        // Artificially overflow the extension widget in the extensions panel
+        // when the toolbar is hidden.
+        node.setAttribute("overflowedItem", true);
+        node.setAttribute("artificallyOverflowed", true);
+        // This attribute forces browser action popups to be anchored to the
+        // extensions button.
+        node.setAttribute("cui-anchorid", "unified-extensions-button");
+        overflowedExtensionsList.appendChild(node);
+
+        this._updateWidgetClassName(widgetID, /* inPanel */ true);
+      }
+    }
+  },
+
+  _maybeMoveWidgetNodeBack(widgetID) {
+    const widget = CustomizableUI.getWidget(widgetID);
+    if (!widget) {
+      return;
+    }
+
+    // We only want to move back widget nodes that have been manually moved
+    // previously via `onToolbarVisibilityChange()`.
+    const { node } = widget.forWindow(window);
+    if (!node.hasAttribute("artificallyOverflowed")) {
+      return;
+    }
+
+    const { area, position } = CustomizableUI.getPlacementOfWidget(widgetID);
+
+    // This is where we are going to re-insert the extension widgets (DOM
+    // nodes) but we need to account for some hidden DOM nodes already present
+    // in this container when determining where to put the nodes back.
+    const container = document.getElementById(area);
+
+    let moved = false;
+    let currentPosition = 0;
+
+    for (const child of container.childNodes) {
+      const isSkipToolbarset = child.getAttribute("skipintoolbarset") == "true";
+      if (isSkipToolbarset && child !== container.lastChild) {
+        continue;
+      }
+
+      if (currentPosition === position) {
+        child.before(node);
+        moved = true;
+        break;
+      }
+
+      if (child === container.lastChild) {
+        child.after(node);
+        moved = true;
+        break;
+      }
+
+      currentPosition++;
+    }
+
+    if (moved) {
+      // Remove the attribute set when we artificially overflow the widget.
+      node.removeAttribute("overflowedItem");
+      node.removeAttribute("artificallyOverflowed");
+      node.removeAttribute("cui-anchorid");
+
+      this._updateWidgetClassName(widgetID, /* inPanel */ false);
+    }
   },
 
   _panel: null,
@@ -1464,6 +1574,12 @@ var gUnifiedExtensions = {
         PanelMultiView.hidePopup(panel);
         this._button.open = false;
       } else {
+        // Overflow extensions placed in collapsed toolbars, if any.
+        for (const toolbarId of CustomizableUI.getCollapsedToolbarIds(window)) {
+          // We pass `false` because all these toolbars are collapsed.
+          this.onToolbarVisibilityChange(toolbarId, /* isVisible */ false);
+        }
+
         panel.hidden = false;
         PanelMultiView.openPopup(panel, this._button, {
           position: "bottomright topright",
@@ -1476,7 +1592,7 @@ var gUnifiedExtensions = {
     window.dispatchEvent(new CustomEvent("UnifiedExtensionsTogglePanel"));
   },
 
-  async updateContextMenu(menu, event) {
+  updateContextMenu(menu, event) {
     // When the context menu is open, `onpopupshowing` is called when menu
     // items open sub-menus. We don't want to update the context menu in this
     // case.
@@ -1485,7 +1601,6 @@ var gUnifiedExtensions = {
     }
 
     const id = this._getExtensionId(menu);
-    const addon = await AddonManager.getAddonByID(id);
     const widgetId = this._getWidgetId(menu);
     const forBrowserAction = !!widgetId;
 
@@ -1501,20 +1616,54 @@ var gUnifiedExtensions = {
     const menuSeparator = menu.querySelector(
       ".unified-extensions-context-menu-management-separator"
     );
+    const moveUp = menu.querySelector(
+      ".unified-extensions-context-menu-move-widget-up"
+    );
+    const moveDown = menu.querySelector(
+      ".unified-extensions-context-menu-move-widget-down"
+    );
 
-    menuSeparator.hidden = !forBrowserAction;
-    pinButton.hidden = !forBrowserAction;
+    for (const element of [menuSeparator, pinButton, moveUp, moveDown]) {
+      element.hidden = !forBrowserAction;
+    }
+
+    reportButton.hidden = !gAddonAbuseReportEnabled;
+    // We use this syntax instead of async/await to not block this method that
+    // updates the context menu. This avoids the context menu to be out of sync
+    // on macOS.
+    AddonManager.getAddonByID(id).then(addon => {
+      removeButton.disabled = !(
+        addon.permissions & AddonManager.PERM_CAN_UNINSTALL
+      );
+    });
 
     if (forBrowserAction) {
       let area = CustomizableUI.getPlacementOfWidget(widgetId).area;
       let inToolbar = area != CustomizableUI.AREA_ADDONS;
       pinButton.setAttribute("checked", inToolbar);
-    }
 
-    reportButton.hidden = !gAddonAbuseReportEnabled;
-    removeButton.disabled = !(
-      addon.permissions & AddonManager.PERM_CAN_UNINSTALL
-    );
+      const placement = CustomizableUI.getPlacementOfWidget(widgetId);
+      const notInPanel = placement?.area !== CustomizableUI.AREA_ADDONS;
+      // We rely on the DOM nodes because CUI widgets will always exist but
+      // not necessarily with DOM nodes created depending on the window. For
+      // example, in PB mode, not all extensions will be listed in the panel
+      // but the CUI widgets may be all created.
+      if (
+        notInPanel ||
+        document.querySelector("#unified-extensions-area > :first-child")
+          ?.id === widgetId
+      ) {
+        moveUp.hidden = true;
+      }
+
+      if (
+        notInPanel ||
+        document.querySelector("#unified-extensions-area > :last-child")?.id ===
+          widgetId
+      ) {
+        moveDown.hidden = true;
+      }
+    }
 
     ExtensionsUI.originControlsMenu(menu, id);
 
@@ -1526,6 +1675,16 @@ var gUnifiedExtensions = {
 
   // This is registered on the top-level unified extensions context menu.
   onContextMenuCommand(menu, event) {
+    // Do not close the extensions panel automatically when we move extension
+    // widgets.
+    const { classList } = event.target;
+    if (
+      classList.contains("unified-extensions-context-menu-move-widget-up") ||
+      classList.contains("unified-extensions-context-menu-move-widget-down")
+    ) {
+      return;
+    }
+
     this.togglePanel();
   },
 
@@ -1580,6 +1739,16 @@ var gUnifiedExtensions = {
       return;
     }
 
+    // We artificially overflow extension widgets that are placed in collapsed
+    // toolbars and CUI does not know about it. For end users, these widgets
+    // appear in the list of overflowed extensions in the panel. When we unpin
+    // and then pin one of these extensions to the toolbar, we need to first
+    // move the DOM node back to where it was (i.e.  in the collapsed toolbar)
+    // so that CUI can retrieve the DOM node and do the pinning correctly.
+    if (shouldPinToToolbar) {
+      this._maybeMoveWidgetNodeBack(widgetId);
+    }
+
     this.pinToToolbar(widgetId, shouldPinToToolbar);
   },
 
@@ -1592,6 +1761,39 @@ var gUnifiedExtensions = {
     CustomizableUI.addWidgetToArea(widgetId, newArea, newPosition);
 
     this.updateAttention();
+  },
+
+  async moveWidget(menu, direction) {
+    // We'll move the widgets based on the DOM node positions. This is because
+    // in PB mode (for example), we might not have the same extensions listed
+    // in the panel but CUI does not know that. As far as CUI is concerned, all
+    // extensions will likely have widgets.
+    const node = menu.triggerNode.closest(".unified-extensions-item");
+
+    // Find the element that is before or after the current widget/node to
+    // move. `element` might be `null`, e.g. if the current node is the first
+    // one listed in the panel (though it shouldn't be possible to call this
+    // method in this case).
+    let element;
+    if (direction === "up" && node.previousElementSibling) {
+      element = node.previousElementSibling;
+    } else if (direction === "down" && node.nextElementSibling) {
+      element = node.nextElementSibling;
+    }
+
+    // Now we need to retrieve the position of the CUI placement.
+    const placement = CustomizableUI.getPlacementOfWidget(element?.id);
+    if (placement) {
+      let newPosition = placement.position;
+      // That, I am not sure why this is required but it looks like we need to
+      // always add one to the current position if we want to move a widget
+      // down in the list.
+      if (direction === "down") {
+        newPosition += 1;
+      }
+
+      CustomizableUI.moveWidgetWithinArea(node.id, newPosition);
+    }
   },
 
   onWidgetAdded(aWidgetId, aArea, aPosition) {
@@ -1645,21 +1847,31 @@ var gUnifiedExtensions = {
   },
 
   // This internal method is used to change some CSS classnames on the action
-  // button of an extension (CUI) widget. When the widget is placed in the
-  // panel, the action button should have the `.subviewbutton` class and not
-  // the `.toolbarbutton-1` one. When NOT placed in the panel, it is the other
-  // way around.
+  // and menu buttons of an extension (CUI) widget. When the widget is placed
+  // in the panel, the action and menu buttons should have the `.subviewbutton`
+  // class and not the `.toolbarbutton-1` one. When NOT placed in the panel,
+  // it is the other way around.
   _updateWidgetClassName(aWidgetId, inPanel) {
     if (!CustomizableUI.isWebExtensionWidget(aWidgetId)) {
       return;
     }
 
-    const actionButton = CustomizableUI.getWidget(aWidgetId)
-      ?.forWindow(window)
-      ?.node?.querySelector(".unified-extensions-item-action-button");
+    const node = CustomizableUI.getWidget(aWidgetId)?.forWindow(window)?.node;
+    const actionButton = node?.querySelector(
+      ".unified-extensions-item-action-button"
+    );
     if (actionButton) {
       actionButton.classList.toggle("subviewbutton", inPanel);
+      actionButton.classList.toggle("subviewbutton-iconic", inPanel);
       actionButton.classList.toggle("toolbarbutton-1", !inPanel);
+    }
+    const menuButton = node?.querySelector(
+      ".unified-extensions-item-menu-button"
+    );
+    if (menuButton) {
+      menuButton.classList.toggle("subviewbutton", inPanel);
+      menuButton.classList.toggle("subviewbutton-iconic", inPanel);
+      menuButton.classList.toggle("toolbarbutton-1", !inPanel);
     }
   },
 };

@@ -2237,11 +2237,6 @@ void nsHTMLScrollFrame::AsyncScroll::InitSmoothScroll(
   mAnimationPhysics->Update(aTime, aDestination, aCurrentVelocity);
 }
 
-/* static */
-bool nsHTMLScrollFrame::IsSmoothScrollingEnabled() {
-  return StaticPrefs::general_smoothScroll();
-}
-
 /*
  * Callback function from AsyncSmoothMSDScroll, used in
  * nsHTMLScrollFrame::ScrollTo
@@ -2563,7 +2558,8 @@ void nsHTMLScrollFrame::ScrollToWithOrigin(nsPoint aScrollPosition,
     mAsyncScroll->SetRefreshObserver(this);
   }
 
-  const bool isSmoothScroll = aParams.IsSmooth() && IsSmoothScrollingEnabled();
+  const bool isSmoothScroll =
+      aParams.IsSmooth() && nsLayoutUtils::IsSmoothScrollingEnabled();
   if (isSmoothScroll) {
     mAsyncScroll->InitSmoothScroll(now, GetScrollPosition(), mDestination,
                                    aParams.mOrigin, range, currentVelocity);
@@ -3299,12 +3295,18 @@ void nsHTMLScrollFrame::ScrollToImpl(
   }
 }
 
-static Maybe<int32_t> MaxZIndexInList(nsDisplayList* aList,
-                                      nsDisplayListBuilder* aBuilder) {
+// Finds the max z-index of the items in aList that meet the following
+// conditions
+//   1) have z-index auto or z-index >= 0, and
+//   2) aFrame is a proper ancestor of the item's frame.
+// Returns Nothing() if there is no such item.
+static Maybe<int32_t> MaxZIndexInListOfItemsContainedInFrame(
+    nsDisplayList* aList, nsIFrame* aFrame) {
   Maybe<int32_t> maxZIndex = Nothing();
   for (nsDisplayItem* item : *aList) {
     int32_t zIndex = item->ZIndex();
-    if (zIndex < 0) {
+    if (zIndex < 0 ||
+        !nsLayoutUtils::IsProperAncestorFrame(aFrame, item->Frame())) {
       continue;
     }
     if (!maxZIndex) {
@@ -3335,7 +3337,8 @@ static const uint32_t APPEND_TOP = 0x10;
 
 static void AppendToTop(nsDisplayListBuilder* aBuilder,
                         const nsDisplayListSet& aLists, nsDisplayList* aSource,
-                        nsIFrame* aSourceFrame, uint32_t aFlags) {
+                        nsIFrame* aSourceFrame, nsIFrame* aScrollFrame,
+                        uint32_t aFlags) {
   if (aSource->IsEmpty()) {
     return;
   }
@@ -3374,7 +3377,8 @@ static void AppendToTop(nsDisplayListBuilder* aBuilder,
     if (aFlags & APPEND_TOP) {
       zIndex = Some(INT32_MAX);
     } else if (aFlags & APPEND_OVERLAY) {
-      zIndex = MaxZIndexInList(aLists.PositionedDescendants(), aBuilder);
+      zIndex = MaxZIndexInListOfItemsContainedInFrame(
+          aLists.PositionedDescendants(), aScrollFrame);
     } else if (aSourceFrame->StylePosition()->mZIndex.IsInteger()) {
       zIndex = Some(aSourceFrame->StylePosition()->mZIndex.integer._0);
     }
@@ -3528,7 +3532,7 @@ void nsHTMLScrollFrame::AppendScrollPartsTo(nsDisplayListBuilder* aBuilder,
           aBuilder, scrollTargetId, scrollDirection, createLayer);
 
       ::AppendToTop(aBuilder, aLists, partList.PositionedDescendants(),
-                    scrollParts[i], appendToTopFlags);
+                    scrollParts[i], this, appendToTopFlags);
     }
   }
 }
@@ -3659,25 +3663,6 @@ class MOZ_RAII AutoContainsBlendModeCapturer {
                                   uncapturedContainsBlendMode);
   }
 };
-
-// Finds the max z-index of the items in aList that meet the following
-// conditions
-//   1) have z-index auto or z-index >= 0.
-//   2) aFrame is a proper ancestor of the item's frame.
-// Returns -1 if there is no such item.
-static int32_t MaxZIndexInListOfItemsContainedInFrame(nsDisplayList* aList,
-                                                      nsIFrame* aFrame) {
-  int32_t maxZIndex = -1;
-  for (nsDisplayItem* item : *aList) {
-    nsIFrame* itemFrame = item->Frame();
-    // Perspective items return the scroll frame as their Frame(), so consider
-    // their TransformFrame() instead.
-    if (nsLayoutUtils::IsProperAncestorFrame(aFrame, itemFrame)) {
-      maxZIndex = std::max(maxZIndex, item->ZIndex());
-    }
-  }
-  return maxZIndex;
-}
 
 void nsHTMLScrollFrame::MaybeCreateTopLayerAndWrapRootItems(
     nsDisplayListBuilder* aBuilder, nsDisplayListCollection& aSet,
@@ -4253,8 +4238,12 @@ void nsHTMLScrollFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
     // Make sure that APZ will dispatch events back to content so we can
     // create a displayport for this frame. We'll add the item later on.
     if (!mWillBuildScrollableLayer && aBuilder->BuildCompositorHitTestInfo()) {
+      // Make sure the z-index of the inactive item is at least zero.
+      // Otherwise, it will end up behind non-positioned items in the scrolled
+      // content.
       int32_t zIndex = MaxZIndexInListOfItemsContainedInFrame(
-          set.PositionedDescendants(), this);
+                           set.PositionedDescendants(), this)
+                           .valueOr(0);
       if (aBuilder->IsPartialUpdate()) {
         for (nsDisplayItem* item : mScrolledFrame->DisplayItems()) {
           if (item->GetType() ==
@@ -4269,10 +4258,6 @@ void nsHTMLScrollFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
           }
         }
       }
-      // Make sure the z-index of the inactive item is at least zero.
-      // Otherwise, it will end up behind non-positioned items in the scrolled
-      // content.
-      zIndex = std::max(zIndex, 0);
       nsDisplayCompositorHitTestInfo* hitInfo =
           MakeDisplayItemWithIndex<nsDisplayCompositorHitTestInfo>(
               aBuilder, mScrolledFrame, 1, area, info);
@@ -7917,7 +7902,7 @@ bool nsHTMLScrollFrame::IsSmoothScroll(dom::ScrollBehavior aBehavior) const {
   // smooth scrolls. A requested smooth scroll when smooth scrolling is
   // disabled should be equivalent to an instant scroll.
   if (aBehavior == dom::ScrollBehavior::Instant ||
-      !nsHTMLScrollFrame::IsSmoothScrollingEnabled()) {
+      !nsLayoutUtils::IsSmoothScrollingEnabled()) {
     return false;
   }
 

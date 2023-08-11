@@ -10,9 +10,11 @@ import { SyncEngine, Tracker } from "resource://services-sync/engines.sys.mjs";
 import { Svc, Utils } from "resource://services-sync/util.sys.mjs";
 import { Log } from "resource://gre/modules/Log.sys.mjs";
 
-const { SCORE_INCREMENT_SMALL, STATUS_OK, URI_LENGTH_MAX } = ChromeUtils.import(
-  "resource://services-sync/constants.js"
-);
+import {
+  SCORE_INCREMENT_SMALL,
+  STATUS_OK,
+  URI_LENGTH_MAX,
+} from "resource://services-sync/constants.sys.mjs";
 import { CommonUtils } from "resource://services-common/utils.sys.mjs";
 import { Async } from "resource://services-common/async.sys.mjs";
 
@@ -27,7 +29,6 @@ const FAR_FUTURE = 4102405200000; // 2100/01/01
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
-  NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
   PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
   ReaderMode: "resource://gre/modules/ReaderMode.sys.mjs",
@@ -583,23 +584,11 @@ TabTracker.prototype = {
     let { scheduler } = this.engine.service;
     let delayInMs = lazy.SYNC_AFTER_DELAY_MS;
 
-    // We have this check to determine if the experiment is enabled and wants
-    // to override the default values (whether to lengthen the delay or disable completely)
-    const override = lazy.NimbusFeatures.syncAfterTabChange.getVariable(
-      "syncDelayAfterTabChangeOverride"
-    );
-    if (override) {
-      delayInMs = lazy.NimbusFeatures.syncAfterTabChange.getVariable(
-        "syncDelayAfterTabChange"
-      );
-    }
-
-    // If we are part of the experiment don't use score here
-    // and instead schedule a sync once we detect a tab change
-    // to ensure the server always has the most up to date tabs]
+    // Schedule a sync once we detect a tab change
+    // to ensure the server always has the most up to date tabs
     if (
       delayInMs > 0 &&
-      scheduler.numClients > 1 // Only schedule quick syncs for single client users
+      scheduler.numClients > 1 // Only schedule quick syncs for multi client users
     ) {
       if (this.tabsQuickWriteTimer) {
         this._log.debug(

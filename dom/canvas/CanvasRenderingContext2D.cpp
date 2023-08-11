@@ -2403,18 +2403,18 @@ static already_AddRefed<const ComputedStyle> GetFontStyleForServo(
 
   ServoStyleSet* styleSet = aPresShell->StyleSet();
 
+  // Have to get a parent ComputedStyle for inherit-like relative values (2em,
+  // bolder, etc.)
   RefPtr<const ComputedStyle> parentStyle;
-  // have to get a parent ComputedStyle for inherit-like relative
-  // values (2em, bolder, etc.)
-  if (aElement && aElement->IsInComposedDoc()) {
+  if (aElement) {
     parentStyle = nsComputedDOMStyle::GetComputedStyle(aElement);
-    if (!parentStyle) {
-      // The flush killed the shell, so we couldn't get any meaningful style
-      // back.
+    if (NS_WARN_IF(aPresShell->IsDestroying())) {
+      // The flush might've killed the shell.
       aError.Throw(NS_ERROR_FAILURE);
       return nullptr;
     }
-  } else {
+  }
+  if (!parentStyle) {
     RefPtr<RawServoDeclarationBlock> declarations =
         CreateFontDeclarationForServo("10px sans-serif"_ns,
                                       aPresShell->GetDocument());
@@ -4201,13 +4201,8 @@ TextMetrics* CanvasRenderingContext2D::DrawOrMeasureText(
   }
 
   RefPtr<const ComputedStyle> canvasStyle;
-  if (mCanvasElement && mCanvasElement->IsInComposedDoc()) {
-    // try to find the closest context
+  if (mCanvasElement) {
     canvasStyle = nsComputedDOMStyle::GetComputedStyle(mCanvasElement);
-    if (!canvasStyle) {
-      aError = NS_ERROR_FAILURE;
-      return nullptr;
-    }
   }
 
   // Get text direction, either from the property or inherited from context.
@@ -4884,11 +4879,7 @@ SurfaceFromElementResult CanvasRenderingContext2D::CachedSurfaceFromElement(
     return res;
   }
 
-  int32_t corsmode = CORS_NONE;
-  if (NS_SUCCEEDED(imgRequest->GetCORSMode(&corsmode))) {
-    res.mCORSUsed = corsmode != CORS_NONE;
-  }
-
+  res.mCORSUsed = nsLayoutUtils::ImageRequestUsesCORS(imgRequest);
   res.mSize = res.mIntrinsicSize = res.mSourceSurface->GetSize();
   res.mPrincipal = std::move(principal);
   res.mImageRequest = std::move(imgRequest);

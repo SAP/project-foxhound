@@ -237,6 +237,11 @@ class DrawTargetWebgl : public DrawTarget, public SupportsWeakPtr {
     // The constant blend color used for the blending operation.
     Maybe<DeviceColor> mLastBlendColor;
 
+    // The cached scissor state. Operations that rely on scissor state should
+    // take care to enable or disable the cached scissor state as necessary.
+    bool mScissorEnabled = false;
+    IntRect mLastScissor = {-1, -1, -1, -1};
+
     // A most-recently-used list of allocated texture handles.
     LinkedList<RefPtr<TextureHandle>> mTextureHandles;
     size_t mNumTextureHandles = 0;
@@ -299,6 +304,9 @@ class DrawTargetWebgl : public DrawTarget, public SupportsWeakPtr {
     void ClearLastTexture();
 
     bool SupportsPattern(const Pattern& aPattern);
+
+    void EnableScissor(const IntRect& aRect);
+    void DisableScissor();
 
     void SetTexFilter(WebGLTextureJS* aTex, bool aFilter);
     void InitTexParameters(WebGLTextureJS* aTex, bool aFilter = true);
@@ -513,8 +521,9 @@ class DrawTargetWebgl : public DrawTarget, public SupportsWeakPtr {
 
   void DrawRectFallback(const Rect& aRect, const Pattern& aPattern,
                         const DrawOptions& aOptions,
-                        Maybe<DeviceColor> aMaskColor, bool aTransform,
-                        bool aClipped, const StrokeOptions* aStrokeOptions);
+                        Maybe<DeviceColor> aMaskColor = Nothing(),
+                        bool aTransform = true, bool aClipped = true,
+                        const StrokeOptions* aStrokeOptions = nullptr);
   bool DrawRect(const Rect& aRect, const Pattern& aPattern,
                 const DrawOptions& aOptions,
                 Maybe<DeviceColor> aMaskColor = Nothing(),
@@ -524,6 +533,8 @@ class DrawTargetWebgl : public DrawTarget, public SupportsWeakPtr {
                 const StrokeOptions* aStrokeOptions = nullptr);
 
   ColorPattern GetClearPattern() const;
+
+  bool RectContainsViewport(const Rect& aRect) const;
 
   bool ShouldAccelPath(const DrawOptions& aOptions,
                        const StrokeOptions* aStrokeOptions);

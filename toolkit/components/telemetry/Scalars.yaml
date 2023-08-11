@@ -1513,12 +1513,13 @@ cookie.banners:
     bug_numbers:
       - 1797073
       - 1804259
+      - 1827765
     description: >
       Counts the number of hit/miss of cookie banner rule lookups for every
       load. We collect three types of counters, including counters for overall
       rule lookup, counters for cookie rule lookup and counters for click rule
       lookup. We also divide the counter by top-level loads and iframe loads.
-    expires: '115'
+    expires: '120'
     kind: uint
     keyed: true
     notification_emails:
@@ -1533,13 +1534,14 @@ cookie.banners:
     bug_numbers:
       - 1797073
       - 1804259
+      - 1827765
     description: >
       Counts the number of hit/miss of cookie banner rule lookups for domain.
       We collect three types of counters, including counters for overall
       rule lookup, counters for cookie rule lookup and counters for click rule
       lookup. We also divide the counter by top-level loads and iframe loads.
       For each domain, we will only collect once.
-    expires: '115'
+    expires: '120'
     kind: uint
     keyed: true
     notification_emails:
@@ -1556,12 +1558,13 @@ cookie.banners.click:
     bug_numbers:
       - 1797078
       - 1804259
+      - 1827765
     description: >
       Given a matching cookie banner click rule, how often do we handle or fail
       to handle cookie banners, labelled by reason. The 'success' and 'fail'
       counters count the total numbers independently of the reason counters.
       Counters are incremented after the content window has been destroyed.
-    expires: '115'
+    expires: '120'
     keyed: true
     kind: uint
     notification_emails:
@@ -2957,6 +2960,22 @@ dom.parentprocess:
     record_in_processes:
       - 'main'
 
+  process_launch_errors:
+    bug_numbers:
+      - 1819311
+    description: >
+      Collect precise set of error code and calling site upon process creation failure path.
+    expires: "never"
+    kind: uint
+    keyed: true
+    notification_emails:
+      - alissy@mozilla.com
+    products:
+      - 'firefox'
+    record_in_processes:
+      - 'main'
+    release_channel_collection: opt-out
+
 devtools.toolbar.eyedropper:
   opened:
     bug_numbers:
@@ -3672,22 +3691,6 @@ dom.event:
       - 'fennec'
     record_in_processes:
       - 'content'
-
-dom.midi:
-  has_devices:
-    bug_numbers:
-      - 1797019
-    description: >
-      Records if the user machine has connected MIDI devices.
-    expires: "120"
-    kind: boolean
-    notification_emails:
-      - bholley@mozilla.com
-    release_channel_collection: opt-out
-    products:
-      - 'firefox'
-    record_in_processes:
-      - main
 
 navigator.storage:
   estimate_count:
@@ -7887,6 +7890,22 @@ urlbar.searchmode:
       - 'firefox'
     record_in_processes:
       - main
+  historymenu:
+    bug_numbers:
+      - 1736939
+    description: >
+      A keyed uint recording how many times the user entered a particular search
+      mode after selecing the Search History menu item in a History menu.
+    expires: never
+    kind: uint
+    keyed: true
+    notification_emails:
+      - fx-search-telemetry@mozilla.com
+    release_channel_collection: opt-out
+    products:
+      - 'firefox'
+    record_in_processes:
+      - main
   other:
     bug_numbers:
       - 1654680
@@ -8099,6 +8118,23 @@ urlbar.picked.searchmode:
     description: >
       A keyed uint recording how many times the user picked a particular kind of
       result while in search mode after entering search mode by typing an alias.
+    expires: never
+    kind: uint
+    keyed: true
+    notification_emails:
+      - fx-search-telemetry@mozilla.com
+    release_channel_collection: opt-out
+    products:
+      - 'firefox'
+    record_in_processes:
+      - main
+  historymenu:
+    bug_numbers:
+      - 1736939
+    description: >
+      A keyed uint recording how many times the user picked a particular kind of
+      result while in search mode after entering search mode from the Search
+      History menu item in a History menu.
     expires: never
     kind: uint
     keyed: true
@@ -8826,23 +8862,6 @@ contextual.services.quicksuggest:
       A keyed uint recording how many times the user has blocked/dismissed
       Firefox Suggest weather results in the urlbar. The key is the 1-based
       index of each result.
-    expires: never
-    kind: uint
-    keyed: true
-    notification_emails:
-      - fx-search-telemetry@mozilla.com
-    release_channel_collection: opt-out
-    products:
-      - 'firefox'
-    record_in_processes:
-      - main
-  exposure_weather:
-    bug_numbers:
-      - 1806765
-    description: >
-      A keyed uint recording how many times the user has been exposed to a
-      Firefox Suggest weather result in the urlbar. The key is the 1-based index
-      of each result.
     expires: never
     kind: uint
     keyed: true
@@ -9767,6 +9786,21 @@ places:
     kind: uint
     notification_emails:
       - fx-search-telemetry@mozilla.com
+    release_channel_collection: opt-out
+    products:
+      - 'firefox'
+    record_in_processes:
+      - main
+
+  previousday_visits:
+    bug_numbers:
+      - 1824380
+    description: >
+      Number of history entries for the previous day.
+    expires: never
+    kind: uint
+    notification_emails:
+      - firefox-view-engineers@mozilla.com
     release_channel_collection: opt-out
     products:
       - 'firefox'

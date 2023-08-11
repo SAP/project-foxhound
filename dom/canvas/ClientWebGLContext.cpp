@@ -76,6 +76,73 @@ void webgl::ObjectJS::WarnInvalidUse(const ClientWebGLContext& targetContext,
                              argName);
 }
 
+// -
+
+WebGLBufferJS::~WebGLBufferJS() {
+  const auto webgl = Context();
+  if (webgl) {
+    webgl->DeleteBuffer(this);
+  }
+}
+
+WebGLFramebufferJS::~WebGLFramebufferJS() {
+  const auto webgl = Context();
+  if (webgl) {
+    webgl->DeleteFramebuffer(this);
+  }
+}
+
+WebGLQueryJS::~WebGLQueryJS() {
+  const auto webgl = Context();
+  if (webgl) {
+    webgl->DeleteQuery(this);
+  }
+}
+
+WebGLRenderbufferJS::~WebGLRenderbufferJS() {
+  const auto webgl = Context();
+  if (webgl) {
+    webgl->DeleteRenderbuffer(this);
+  }
+}
+
+WebGLSamplerJS::~WebGLSamplerJS() {
+  const auto webgl = Context();
+  if (webgl) {
+    webgl->DeleteSampler(this);
+  }
+}
+
+WebGLSyncJS::~WebGLSyncJS() {
+  const auto webgl = Context();
+  if (webgl) {
+    webgl->DeleteSync(this);
+  }
+}
+
+WebGLTextureJS::~WebGLTextureJS() {
+  const auto webgl = Context();
+  if (webgl) {
+    webgl->DeleteTexture(this);
+  }
+}
+
+WebGLTransformFeedbackJS::~WebGLTransformFeedbackJS() {
+  const auto webgl = Context();
+  if (webgl) {
+    webgl->DeleteTransformFeedback(this);
+  }
+}
+
+WebGLVertexArrayJS::~WebGLVertexArrayJS() {
+  const auto webgl = Context();
+  if (webgl) {
+    webgl->DeleteVertexArray(this);
+  }
+}
+
+// -
+
 static bool GetJSScalarFromGLType(GLenum type,
                                   js::Scalar::Type* const out_scalarType) {
   switch (type) {
@@ -474,7 +541,8 @@ Maybe<layers::SurfaceDescriptor> ClientWebGLContext::GetFrontBuffer(
   const auto& textureId = fb ? fb->mLastRemoteTextureId : mLastRemoteTextureId;
   auto& needsSync = fb ? fb->mNeedsRemoteTextureSync : mNeedsRemoteTextureSync;
   if (ownerId && textureId) {
-    if (gfx::gfxVars::WebglOopAsyncPresentForceSync() || needsSync) {
+    if (XRE_IsParentProcess() ||
+        gfx::gfxVars::WebglOopAsyncPresentForceSync() || needsSync) {
       needsSync = false;
       // Request the front buffer from IPDL to cause a sync, even though we
       // will continue to use the remote texture descriptor after.

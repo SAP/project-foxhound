@@ -2806,7 +2806,7 @@ already_AddRefed<PreloaderBase> XMLHttpRequestMainThread::FindPreload() {
   }
 
   preload->RemoveSelf(doc);
-  preload->NotifyUsage(PreloaderBase::LoadBackground::Keep);
+  preload->NotifyUsage(doc, PreloaderBase::LoadBackground::Keep);
 
   return preload.forget();
 }

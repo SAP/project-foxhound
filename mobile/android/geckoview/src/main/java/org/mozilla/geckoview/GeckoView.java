@@ -649,16 +649,20 @@ public class GeckoView extends FrameLayout {
     if (mSession != null) {
       final GeckoRuntime runtime = mSession.getRuntime();
       if (runtime != null) {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.JELLY_BEAN_MR1
-            || Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.JELLY_BEAN_MR1) {
           // onConfigurationChanged is not called for 180 degree orientation changes,
           // we will miss such rotations and the screen orientation will not be
           // updated.
           //
           // If API is 17+, we use DisplayManager API to detect all degree
-          // orientation change. But if API is 31+, DisplayManager API may report previous
-          // information. So we have to report it again.
+          // orientation change.
           runtime.orientationChanged(newConfig.orientation);
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+          // If API is 31+, DisplayManager API may report previous information.
+          // So we have to report it again. But since Configuration.orientation may still have
+          // previous information even if onConfigurationChanged is called, we have to calculate it
+          // from display data.
+          runtime.orientationChanged();
         }
 
         runtime.configurationChanged(newConfig);
@@ -1201,20 +1205,29 @@ public class GeckoView extends FrameLayout {
     }
 
     public void onPrint(@NonNull final InputStream pdfStream) {
+      onPrintWithStatus(pdfStream);
+    }
+
+    public GeckoResult<Boolean> onPrintWithStatus(@NonNull final InputStream pdfStream) {
+      final GeckoResult<Boolean> isDialogFinished = new GeckoResult<Boolean>();
       if (mActivityDelegate == null) {
         Log.w(LOGTAG, "Missing an activity context delegate, which is required for printing.");
-        return;
+        isDialogFinished.completeExceptionally(new Exception("Missing activity context delegate."));
+        return isDialogFinished;
       }
       final Context printContext = mActivityDelegate.getActivityContext();
       if (printContext == null) {
         Log.w(LOGTAG, "An activity context is required for printing.");
-        return;
+        isDialogFinished.completeExceptionally(new Exception("Missing an activity context."));
+        return isDialogFinished;
       }
       final PrintManager printManager =
           (PrintManager)
               mActivityDelegate.getActivityContext().getSystemService(Context.PRINT_SERVICE);
-      final PrintDocumentAdapter pda = new GeckoViewPrintDocumentAdapter(pdfStream, getContext());
+      final PrintDocumentAdapter pda =
+          new GeckoViewPrintDocumentAdapter(pdfStream, getContext(), isDialogFinished);
       printManager.print("Firefox", pda, null);
+      return isDialogFinished;
     }
   }
 }

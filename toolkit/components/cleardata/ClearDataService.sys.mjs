@@ -1418,48 +1418,88 @@ const PreflightCacheCleaner = {
   },
 };
 
-// TODO: Re-enable cleaner after Bug 1823655 has been resolved.
-// eslint-disable-next-line no-unused-vars
 const IdentityCredentialStorageCleaner = {
   async deleteAll() {
-    lazy.IdentityCredentialStorageService.clear();
+    if (
+      Services.prefs.getBoolPref(
+        "dom.security.credentialmanagement.identity.enabled",
+        false
+      )
+    ) {
+      lazy.IdentityCredentialStorageService.clear();
+    }
   },
 
   async deleteByPrincipal(aPrincipal, aIsUserRequest) {
-    lazy.IdentityCredentialStorageService.deleteFromPrincipal(aPrincipal);
+    if (
+      Services.prefs.getBoolPref(
+        "dom.security.credentialmanagement.identity.enabled",
+        false
+      )
+    ) {
+      lazy.IdentityCredentialStorageService.deleteFromPrincipal(aPrincipal);
+    }
   },
 
   async deleteByBaseDomain(aBaseDomain, aIsUserRequest) {
     if (!aIsUserRequest) {
       return;
     }
-    lazy.IdentityCredentialStorageService.deleteFromBaseDomain(aBaseDomain);
+    if (
+      Services.prefs.getBoolPref(
+        "dom.security.credentialmanagement.identity.enabled",
+        false
+      )
+    ) {
+      lazy.IdentityCredentialStorageService.deleteFromBaseDomain(aBaseDomain);
+    }
   },
 
   async deleteByRange(aFrom, aTo) {
-    lazy.IdentityCredentialStorageService.deleteFromTimeRange(aFrom, aTo);
+    if (
+      Services.prefs.getBoolPref(
+        "dom.security.credentialmanagement.identity.enabled",
+        false
+      )
+    ) {
+      lazy.IdentityCredentialStorageService.deleteFromTimeRange(aFrom, aTo);
+    }
   },
 
   async deleteByHost(aHost, aOriginAttributes) {
-    // Delete data from both HTTP and HTTPS sites.
-    let httpURI = Services.io.newURI("http://" + aHost);
-    let httpsURI = Services.io.newURI("https://" + aHost);
-    let httpPrincipal = Services.scriptSecurityManager.createContentPrincipal(
-      httpURI,
-      aOriginAttributes
-    );
-    let httpsPrincipal = Services.scriptSecurityManager.createContentPrincipal(
-      httpsURI,
-      aOriginAttributes
-    );
-    lazy.IdentityCredentialStorageService.deleteFromPrincipal(httpPrincipal);
-    lazy.IdentityCredentialStorageService.deleteFromPrincipal(httpsPrincipal);
+    if (
+      Services.prefs.getBoolPref(
+        "dom.security.credentialmanagement.identity.enabled",
+        false
+      )
+    ) {
+      // Delete data from both HTTP and HTTPS sites.
+      let httpURI = Services.io.newURI("http://" + aHost);
+      let httpsURI = Services.io.newURI("https://" + aHost);
+      let httpPrincipal = Services.scriptSecurityManager.createContentPrincipal(
+        httpURI,
+        aOriginAttributes
+      );
+      let httpsPrincipal = Services.scriptSecurityManager.createContentPrincipal(
+        httpsURI,
+        aOriginAttributes
+      );
+      lazy.IdentityCredentialStorageService.deleteFromPrincipal(httpPrincipal);
+      lazy.IdentityCredentialStorageService.deleteFromPrincipal(httpsPrincipal);
+    }
   },
 
   async deleteByOriginAttributes(aOriginAttributesString) {
-    lazy.IdentityCredentialStorageService.deleteFromOriginAttributesPattern(
-      aOriginAttributesString
-    );
+    if (
+      Services.prefs.getBoolPref(
+        "dom.security.credentialmanagement.identity.enabled",
+        false
+      )
+    ) {
+      lazy.IdentityCredentialStorageService.deleteFromOriginAttributesPattern(
+        aOriginAttributesString
+      );
+    }
   },
 };
 
@@ -1573,12 +1613,10 @@ const FLAGS_MAP = [
     cleaners: [PreflightCacheCleaner],
   },
 
-  // Disable the cleaner so we don't run the IdentityCredentialStorageService
-  // with crash Bug 1823655.
-  // {
-  //   flag: Ci.nsIClearDataService.CLEAR_CREDENTIAL_MANAGER_STATE, cleaners:
-  //   [IdentityCredentialStorageCleaner],
-  // },
+  {
+    flag: Ci.nsIClearDataService.CLEAR_CREDENTIAL_MANAGER_STATE,
+    cleaners: [IdentityCredentialStorageCleaner],
+  },
 ];
 
 export function ClearDataService() {

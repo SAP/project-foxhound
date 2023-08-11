@@ -45,7 +45,7 @@ function ThrowIncompatibleMethod(name, thisv) {
 // ES 2016 draft Mar 25, 2016 21.1.3.11.
 function String_match(regexp) {
   // Step 1.
-  if (this === undefined || this === null) {
+  if (IsNullOrUndefined(this)) {
     ThrowIncompatibleMethod("match", this);
   }
 
@@ -53,8 +53,7 @@ function String_match(regexp) {
   var isPatternString = typeof regexp === "string";
   if (
     !(isPatternString && StringProtoHasNoMatch()) &&
-    regexp !== undefined &&
-    regexp !== null
+    !IsNullOrUndefined(regexp)
   ) {
     // Step 2.a.
     var matcher = GetMethod(regexp, GetBuiltinSymbol("match"));
@@ -100,19 +99,19 @@ function String_match(regexp) {
 // String.prototype.matchAll ( regexp )
 function String_matchAll(regexp) {
   // Step 1.
-  if (this === undefined || this === null) {
+  if (IsNullOrUndefined(this)) {
     ThrowIncompatibleMethod("matchAll", this);
   }
 
   // Step 2.
-  if (regexp !== undefined && regexp !== null) {
+  if (!IsNullOrUndefined(regexp)) {
     // Steps 2.a-b.
     if (IsRegExp(regexp)) {
       // Step 2.b.i.
       var flags = regexp.flags;
 
       // Step 2.b.ii.
-      if (flags === undefined || flags === null) {
+      if (IsNullOrUndefined(flags)) {
         ThrowTypeError(JSMSG_FLAGS_UNDEFINED_OR_NULL);
       }
 
@@ -151,7 +150,7 @@ function String_matchAll(regexp) {
  */
 function String_pad(maxLength, fillString, padEnd) {
   // Step 1.
-  if (this === undefined || this === null) {
+  if (IsNullOrUndefined(this)) {
     ThrowIncompatibleMethod(padEnd ? "padEnd" : "padStart", this);
   }
 
@@ -247,15 +246,14 @@ function Substring(str, from, length) {
 // ES 2016 draft Mar 25, 2016 21.1.3.14.
 function String_replace(searchValue, replaceValue) {
   // Step 1.
-  if (this === undefined || this === null) {
+  if (IsNullOrUndefined(this)) {
     ThrowIncompatibleMethod("replace", this);
   }
 
   // Step 2.
   if (
     !(typeof searchValue === "string" && StringProtoHasNoReplace()) &&
-    searchValue !== undefined &&
-    searchValue !== null
+    !IsNullOrUndefined(searchValue)
   ) {
     // Step 2.a.
     var replacer = GetMethod(searchValue, GetBuiltinSymbol("replace"));
@@ -335,19 +333,19 @@ function String_replace(searchValue, replaceValue) {
 // String.prototype.replaceAll ( searchValue, replaceValue )
 function String_replaceAll(searchValue, replaceValue) {
   // Step 1.
-  if (this === undefined || this === null) {
+  if (IsNullOrUndefined(this)) {
     ThrowIncompatibleMethod("replaceAll", this);
   }
 
   // Step 2.
-  if (searchValue !== undefined && searchValue !== null) {
+  if (!IsNullOrUndefined(searchValue)) {
     // Steps 2.a-b.
     if (IsRegExp(searchValue)) {
       // Step 2.b.i.
       var flags = searchValue.flags;
 
       // Step 2.b.ii.
-      if (flags === undefined || flags === null) {
+      if (IsNullOrUndefined(flags)) {
         ThrowTypeError(JSMSG_FLAGS_UNDEFINED_OR_NULL);
       }
 
@@ -476,7 +474,7 @@ function IsStringSearchOptimizable() {
 // ES 2016 draft Mar 25, 2016 21.1.3.15.
 function String_search(regexp) {
   // Step 1.
-  if (this === undefined || this === null) {
+  if (IsNullOrUndefined(this)) {
     ThrowIncompatibleMethod("search", this);
   }
 
@@ -484,8 +482,7 @@ function String_search(regexp) {
   var isPatternString = typeof regexp === "string";
   if (
     !(isPatternString && StringProtoHasNoSearch()) &&
-    regexp !== undefined &&
-    regexp !== null
+    !IsNullOrUndefined(regexp)
   ) {
     // Step 2.a.
     var searcher = GetMethod(regexp, GetBuiltinSymbol("search"));
@@ -529,7 +526,7 @@ function StringProtoHasNoSplit() {
 // ES 2016 draft Mar 25, 2016 21.1.3.17.
 function String_split(separator, limit) {
   // Step 1.
-  if (this === undefined || this === null) {
+  if (IsNullOrUndefined(this)) {
     ThrowIncompatibleMethod("split", this);
   }
 
@@ -551,8 +548,7 @@ function String_split(separator, limit) {
   // Step 2.
   if (
     !(typeof separator === "string" && StringProtoHasNoSplit()) &&
-    separator !== undefined &&
-    separator !== null
+    !IsNullOrUndefined(separator)
   ) {
     // Step 2.a.
     var splitter = GetMethod(separator, GetBuiltinSymbol("split"));
@@ -605,7 +601,7 @@ function String_split(separator, limit) {
 // 21.1.3.22 String.prototype.substring ( start, end )
 function String_substring(start, end) {
   // Step 1.
-  if (this === undefined || this === null) {
+  if (IsNullOrUndefined(this)) {
     ThrowIncompatibleMethod("substring", this);
   }
 
@@ -647,7 +643,7 @@ SetIsInlinableLargeFunction(String_substring);
 // B.2.3.1 String.prototype.substr ( start, length )
 function String_substr(start, length) {
   // Steps 1.
-  if (this === undefined || this === null) {
+  if (IsNullOrUndefined(this)) {
     ThrowIncompatibleMethod("substr", this);
   }
 
@@ -695,7 +691,7 @@ SetIsInlinableLargeFunction(String_substr);
 // Note: String.prototype.concat.length is 1.
 function String_concat(arg1) {
   // Step 1.
-  if (this === undefined || this === null) {
+  if (IsNullOrUndefined(this)) {
     ThrowIncompatibleMethod("concat", this);
   }
 
@@ -733,7 +729,7 @@ function String_concat(arg1) {
 // 21.1.3.19 String.prototype.slice ( start, end )
 function String_slice(start, end) {
   // Step 1.
-  if (this === undefined || this === null) {
+  if (IsNullOrUndefined(this)) {
     ThrowIncompatibleMethod("slice", this);
   }
 
@@ -776,7 +772,7 @@ SetIsInlinableLargeFunction(String_slice);
 // 21.1.3.3 String.prototype.codePointAt ( pos )
 function String_codePointAt(pos) {
   // Step 1.
-  if (this === undefined || this === null) {
+  if (IsNullOrUndefined(this)) {
     ThrowIncompatibleMethod("codePointAt", this);
   }
 
@@ -814,7 +810,7 @@ function String_codePointAt(pos) {
 // 21.1.3.16 String.prototype.repeat ( count )
 function String_repeat(count) {
   // Step 1.
-  if (this === undefined || this === null) {
+  if (IsNullOrUndefined(this)) {
     ThrowIncompatibleMethod("repeat", this);
   }
 
@@ -870,7 +866,7 @@ function String_repeat(count) {
 // ES6 draft specification, section 21.1.3.27, version 2013-09-27.
 function String_iterator() {
   // Step 1.
-  if (this === undefined || this === null) {
+  if (IsNullOrUndefined(this)) {
     ThrowTypeError(
       JSMSG_INCOMPATIBLE_PROTO2,
       "String",
@@ -941,7 +937,7 @@ var collatorCache = new_Record();
  */
 function String_localeCompare(that) {
   // Step 1.
-  if (this === undefined || this === null) {
+  if (IsNullOrUndefined(this)) {
     ThrowIncompatibleMethod("localeCompare", this);
   }
 
@@ -978,7 +974,7 @@ function String_localeCompare(that) {
  */
 function String_toLocaleLowerCase() {
   // Step 1.
-  if (this === undefined || this === null) {
+  if (IsNullOrUndefined(this)) {
     ThrowIncompatibleMethod("toLocaleLowerCase", this);
   }
 
@@ -1023,7 +1019,7 @@ function String_toLocaleLowerCase() {
  */
 function String_toLocaleUpperCase() {
   // Step 1.
-  if (this === undefined || this === null) {
+  if (IsNullOrUndefined(this)) {
     ThrowIncompatibleMethod("toLocaleUpperCase", this);
   }
 
@@ -1118,7 +1114,7 @@ function String_static_raw(callSite /*, ...substitutions*/) {
 // String.prototype.at ( index )
 function String_at(index) {
   // Step 1.
-  if (this === undefined || this === null) {
+  if (IsNullOrUndefined(this)) {
     ThrowIncompatibleMethod("at", this);
   }
 
@@ -1150,7 +1146,7 @@ function String_at(index) {
 
 // ES6 draft 2014-04-27 B.2.3.3
 function String_big() {
-  if (this === undefined || this === null) {
+  if (IsNullOrUndefined(this)) {
     ThrowIncompatibleMethod("big", this);
   }
   return "<big>" + ToString(this) + "</big>";
@@ -1158,7 +1154,7 @@ function String_big() {
 
 // ES6 draft 2014-04-27 B.2.3.4
 function String_blink() {
-  if (this === undefined || this === null) {
+  if (IsNullOrUndefined(this)) {
     ThrowIncompatibleMethod("blink", this);
   }
   return "<blink>" + ToString(this) + "</blink>";
@@ -1166,7 +1162,7 @@ function String_blink() {
 
 // ES6 draft 2014-04-27 B.2.3.5
 function String_bold() {
-  if (this === undefined || this === null) {
+  if (IsNullOrUndefined(this)) {
     ThrowIncompatibleMethod("bold", this);
   }
   return "<b>" + ToString(this) + "</b>";
@@ -1174,7 +1170,7 @@ function String_bold() {
 
 // ES6 draft 2014-04-27 B.2.3.6
 function String_fixed() {
-  if (this === undefined || this === null) {
+  if (IsNullOrUndefined(this)) {
     ThrowIncompatibleMethod("fixed", this);
   }
   return "<tt>" + ToString(this) + "</tt>";
@@ -1182,7 +1178,7 @@ function String_fixed() {
 
 // ES6 draft 2014-04-27 B.2.3.9
 function String_italics() {
-  if (this === undefined || this === null) {
+  if (IsNullOrUndefined(this)) {
     ThrowIncompatibleMethod("italics", this);
   }
   return "<i>" + ToString(this) + "</i>";
@@ -1190,7 +1186,7 @@ function String_italics() {
 
 // ES6 draft 2014-04-27 B.2.3.11
 function String_small() {
-  if (this === undefined || this === null) {
+  if (IsNullOrUndefined(this)) {
     ThrowIncompatibleMethod("small", this);
   }
   return "<small>" + ToString(this) + "</small>";
@@ -1198,7 +1194,7 @@ function String_small() {
 
 // ES6 draft 2014-04-27 B.2.3.12
 function String_strike() {
-  if (this === undefined || this === null) {
+  if (IsNullOrUndefined(this)) {
     ThrowIncompatibleMethod("strike", this);
   }
   return "<strike>" + ToString(this) + "</strike>";
@@ -1206,7 +1202,7 @@ function String_strike() {
 
 // ES6 draft 2014-04-27 B.2.3.13
 function String_sub() {
-  if (this === undefined || this === null) {
+  if (IsNullOrUndefined(this)) {
     ThrowIncompatibleMethod("sub", this);
   }
   return "<sub>" + ToString(this) + "</sub>";
@@ -1214,7 +1210,7 @@ function String_sub() {
 
 // ES6 draft 2014-04-27 B.2.3.14
 function String_sup() {
-  if (this === undefined || this === null) {
+  if (IsNullOrUndefined(this)) {
     ThrowIncompatibleMethod("sup", this);
   }
   return "<sup>" + ToString(this) + "</sup>";
@@ -1227,7 +1223,7 @@ function EscapeAttributeValue(v) {
 
 // ES6 draft 2014-04-27 B.2.3.2
 function String_anchor(name) {
-  if (this === undefined || this === null) {
+  if (IsNullOrUndefined(this)) {
     ThrowIncompatibleMethod("anchor", this);
   }
   var S = ToString(this);
@@ -1236,7 +1232,7 @@ function String_anchor(name) {
 
 // ES6 draft 2014-04-27 B.2.3.7
 function String_fontcolor(color) {
-  if (this === undefined || this === null) {
+  if (IsNullOrUndefined(this)) {
     ThrowIncompatibleMethod("fontcolor", this);
   }
   var S = ToString(this);
@@ -1245,7 +1241,7 @@ function String_fontcolor(color) {
 
 // ES6 draft 2014-04-27 B.2.3.8
 function String_fontsize(size) {
-  if (this === undefined || this === null) {
+  if (IsNullOrUndefined(this)) {
     ThrowIncompatibleMethod("fontsize", this);
   }
   var S = ToString(this);
@@ -1254,7 +1250,7 @@ function String_fontsize(size) {
 
 // ES6 draft 2014-04-27 B.2.3.10
 function String_link(url) {
-  if (this === undefined || this === null) {
+  if (IsNullOrUndefined(this)) {
     ThrowIncompatibleMethod("link", this);
   }
   var S = ToString(this);

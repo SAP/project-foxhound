@@ -56,9 +56,17 @@ function assertImpressionTelemetry(expectedExtraList) {
   _assertGleanTelemetry("impression", expectedExtraList);
 }
 
+function assertExposureTelemetry(expectedExtraList) {
+  _assertGleanTelemetry("exposure", expectedExtraList);
+}
+
 function _assertGleanTelemetry(telemetryName, expectedExtraList) {
   const telemetries = Glean.urlbar[telemetryName].testGetValue() ?? [];
-  Assert.equal(telemetries.length, expectedExtraList.length);
+  Assert.equal(
+    telemetries.length,
+    expectedExtraList.length,
+    "Telemetry event length matches expected event length."
+  );
 
   for (let i = 0; i < telemetries.length; i++) {
     const telemetry = telemetries[i];
@@ -179,6 +187,15 @@ async function doPasteAndGo(data) {
 async function doTest(testFn) {
   await Services.fog.testFlushAllChildren();
   Services.fog.testResetFOG();
+  // Enable recording telemetry for abandonment, engagement and impression.
+  Services.fog.setMetricsFeatureConfig(
+    JSON.stringify({
+      "urlbar.abandonment": true,
+      "urlbar.engagement": true,
+      "urlbar.impression": true,
+    })
+  );
+
   gURLBar.controller.engagementEvent.reset();
   await PlacesUtils.history.clear();
   await PlacesUtils.bookmarks.eraseEverything();
@@ -189,7 +206,11 @@ async function doTest(testFn) {
   await QuickSuggest.blockedSuggestions._test_readyPromise;
   await updateTopSites(() => true);
 
-  await BrowserTestUtils.withNewTab(gBrowser, testFn);
+  try {
+    await BrowserTestUtils.withNewTab(gBrowser, testFn);
+  } finally {
+    Services.fog.setMetricsFeatureConfig("{}");
+  }
 }
 
 async function initGroupTest() {
@@ -219,15 +240,6 @@ async function initNCharsAndNWordsTest() {
   await setup();
 }
 
-async function initPreferencesTest() {
-  /* import-globals-from head-preferences.js */
-  Services.scriptloader.loadSubScript(
-    "chrome://mochitests/content/browser/browser/components/urlbar/tests/engagementTelemetry/browser/head-preferences.js",
-    this
-  );
-  await setup();
-}
-
 async function initSapTest() {
   /* import-globals-from head-sap.js */
   Services.scriptloader.loadSubScript(
@@ -241,6 +253,15 @@ async function initSearchModeTest() {
   /* import-globals-from head-search_mode.js */
   Services.scriptloader.loadSubScript(
     "chrome://mochitests/content/browser/browser/components/urlbar/tests/engagementTelemetry/browser/head-search_mode.js",
+    this
+  );
+  await setup();
+}
+
+async function initExposureTest() {
+  /* import-globals-from head-exposure.js */
+  Services.scriptloader.loadSubScript(
+    "chrome://mochitests/content/browser/browser/components/urlbar/tests/engagementTelemetry/browser/head-exposure.js",
     this
   );
   await setup();

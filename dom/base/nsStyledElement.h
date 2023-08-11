@@ -79,10 +79,10 @@ class nsStyledElement : public nsStyledElementBase {
                            nsIPrincipal* aMaybeScriptedPrincipal,
                            nsAttrValue& aResult, bool aForceInDataDoc);
 
-  virtual bool ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
-                              const nsAString& aValue,
-                              nsIPrincipal* aMaybeScriptedPrincipal,
-                              nsAttrValue& aResult) override;
+  bool ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
+                      const nsAString& aValue,
+                      nsIPrincipal* aMaybeScriptedPrincipal,
+                      nsAttrValue& aResult) override;
 
   friend class mozilla::dom::Element;
 
@@ -97,9 +97,8 @@ class nsStyledElement : public nsStyledElementBase {
   virtual nsresult CheckTaintSinkSetAttr(int32_t aNamespaceID, nsAtom* aName,
                                          const nsAString& aValue) override;
 
-  virtual nsresult BeforeSetAttr(int32_t aNamespaceID, nsAtom* aName,
-                                 const nsAttrValueOrString* aValue,
-                                 bool aNotify) override;
+  void BeforeSetAttr(int32_t aNamespaceID, nsAtom* aName,
+                     const nsAttrValue* aValue, bool aNotify) override;
 };
 
 NS_DEFINE_STATIC_IID_ACCESSOR(nsStyledElement, NS_STYLED_ELEMENT_IID)

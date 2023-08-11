@@ -149,8 +149,8 @@ async function initProfileStorage(
   records,
   collectionName = "addresses"
 ) {
-  let { FormAutofillStorage } = ChromeUtils.import(
-    "resource://autofill/FormAutofillStorage.jsm"
+  let { FormAutofillStorage } = ChromeUtils.importESModule(
+    "resource://autofill/FormAutofillStorage.sys.mjs"
   );
   let path = getTempFile(fileName).path;
   let profileStorage = new FormAutofillStorage(path);
@@ -203,7 +203,10 @@ function verifySectionFieldDetails(sections, expectedResults) {
 
     sectionInfo.forEach((field, fieldIndex) => {
       let expectedField = expectedSectionInfo[fieldIndex];
-      delete field._reason;
+      if (!("part" in expectedField)) {
+        expectedField.part = null;
+      }
+      delete field.reason;
       delete field.elementWeakRef;
       delete field.confidence;
       Assert.deepEqual(field, expectedField);
@@ -216,11 +219,14 @@ var AddressDataLoader, FormAutofillUtils;
 
 async function runHeuristicsTest(patterns, fixturePathPrefix) {
   add_setup(async () => {
-    ({ FormAutofillHeuristics } = ChromeUtils.import(
-      "resource://autofill/FormAutofillHeuristics.jsm"
+    ({ FormAutofillHeuristics } = ChromeUtils.importESModule(
+      "resource://gre/modules/shared/FormAutofillHeuristics.sys.mjs"
     ));
-    ({ AddressDataLoader, FormAutofillUtils, LabelUtils } = ChromeUtils.import(
-      "resource://autofill/FormAutofillUtils.jsm"
+    ({ AddressDataLoader, FormAutofillUtils } = ChromeUtils.importESModule(
+      "resource://gre/modules/shared/FormAutofillUtils.sys.mjs"
+    ));
+    ({ LabelUtils } = ChromeUtils.importESModule(
+      "resource://gre/modules/shared/LabelUtils.sys.mjs"
     ));
   });
 
@@ -309,11 +315,6 @@ function objectMatches(object, fields) {
 
 add_setup(async function head_initialize() {
   Services.prefs.setBoolPref("extensions.experiments.enabled", true);
-  Services.prefs.setBoolPref(
-    "extensions.formautofill.heuristics.enabled",
-    true
-  );
-  Services.prefs.setBoolPref("extensions.formautofill.section.enabled", true);
   Services.prefs.setBoolPref("dom.forms.autocomplete.formautofill", true);
 
   Services.prefs.setCharPref(
@@ -338,8 +339,6 @@ add_setup(async function head_initialize() {
     );
     Services.prefs.clearUserPref("extensions.formautofill.addresses.supported");
     Services.prefs.clearUserPref("extensions.formautofill.creditCards.enabled");
-    Services.prefs.clearUserPref("extensions.formautofill.heuristics.enabled");
-    Services.prefs.clearUserPref("extensions.formautofill.section.enabled");
     Services.prefs.clearUserPref("dom.forms.autocomplete.formautofill");
     Services.prefs.clearUserPref("extensions.formautofill.addresses.enabled");
     Services.prefs.clearUserPref("extensions.formautofill.creditCards.enabled");

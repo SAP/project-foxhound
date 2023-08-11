@@ -348,8 +348,10 @@ class TaintFlow
     bool operator==(const TaintFlow& other) const { return head_ == other.head_; }
     bool operator!=(const TaintFlow& other) const { return head_ != other.head_; }
 
-    // Boolean operator, indicates whether this taint flow is empty or now.
-    operator bool() const { return !!head_; }
+    bool isEmpty() const { return !!head_; }
+
+    // Boolean operator, indicates whether this taint flow is empty or not.
+    operator bool() const { return isEmpty(); }
 
     static const TaintFlow& getEmptyTaintFlow();
 

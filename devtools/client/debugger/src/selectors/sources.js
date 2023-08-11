@@ -50,25 +50,18 @@ export function getSourceByActorId(state, actorId) {
 }
 
 function getSourcesByURL(state, url) {
-  const urls = getUrls(state);
-  if (!url || !urls[url]) {
-    return [];
-  }
-  return urls[url].map(id => getSource(state, id));
+  return state.sources.mutableSourcesPerUrl.get(url) || [];
 }
 
 export function getSourceByURL(state, url) {
   const foundSources = getSourcesByURL(state, url);
-  return foundSources ? foundSources[0] : null;
+  return foundSources[0];
 }
 
 // This is used by tabs selectors
 export function getSpecificSourceByURL(state, url, isOriginal) {
   const foundSources = getSourcesByURL(state, url);
-  if (foundSources) {
-    return foundSources.find(source => source.isOriginal == isOriginal);
-  }
-  return null;
+  return foundSources.find(source => source.isOriginal == isOriginal);
 }
 
 function getOriginalSourceByURL(state, url) {
@@ -106,10 +99,6 @@ export function getPrettySource(state, id) {
   }
 
   return getOriginalSourceByURL(state, getPrettySourceURL(source.url));
-}
-
-function getUrls(state) {
-  return state.sources.urls;
 }
 
 // This is only used by Project Search and tests.
@@ -164,14 +153,11 @@ export function getFirstSourceActorForGeneratedSource(
   if (source.isOriginal) {
     source = getSource(state, originalToGeneratedId(source.id));
   }
-  let actorsInfo = state.sources.actors[source.id];
-  if (!actorsInfo || !actorsInfo.length) {
-    return null;
-  }
+  const actors = getSourceActorsForSource(state, source.id);
   if (threadId) {
-    actorsInfo = actorsInfo.filter(actorInfo => actorInfo.thread == threadId);
+    return actors.find(actorInfo => actorInfo.thread == threadId) || null;
   }
-  return actorsInfo.length ? getSourceActor(state, actorsInfo[0].id) : null;
+  return actors[0] || null;
 }
 
 /**
@@ -184,25 +170,12 @@ export function getFirstSourceActorForGeneratedSource(
  *         List of source actors
  */
 export function getSourceActorsForSource(state, id) {
-  const actorsInfo = state.sources.actors[id];
-  if (!actorsInfo) {
-    return [];
-  }
-
-  return actorsInfo
-    .map(actorInfo => getSourceActor(state, actorInfo.id))
-    .filter(actor => !!actor);
+  return state.sources.mutableSourceActors.get(id) || [];
 }
 
 export function isSourceWithMap(state, id) {
-  const actorsInfo = state.sources.actors[id];
-  if (!actorsInfo) {
-    return false;
-  }
-
-  return actorsInfo.some(actorInfo =>
-    isSourceActorWithSourceMap(state, actorInfo.id)
-  );
+  const actors = getSourceActorsForSource(state, id);
+  return actors.some(actor => isSourceActorWithSourceMap(state, actor.id));
 }
 
 export function canPrettyPrintSource(state, location) {
@@ -262,14 +235,8 @@ export function getPrettyPrintMessage(state, location) {
   return L10N.getStr("sourceTabs.prettyPrint");
 }
 
-// Used by visibleColumnBreakpoints selectors
-export function getBreakpointPositions(state) {
-  return state.sources.breakpointPositions;
-}
-
 export function getBreakpointPositionsForSource(state, sourceId) {
-  const positions = getBreakpointPositions(state);
-  return positions?.[sourceId];
+  return state.sources.mutableBreakpointPositions.get(sourceId);
 }
 
 // This is only used by one test
@@ -298,21 +265,17 @@ export function getBreakableLines(state, sourceId) {
   }
 
   if (source.isOriginal) {
-    return state.sources.breakableLines[sourceId];
+    return state.sources.mutableOriginalBreakableLines.get(sourceId);
   }
 
-  const sourceActorsInfo = state.sources.actors[sourceId];
-  if (!sourceActorsInfo?.length) {
+  const sourceActors = getSourceActorsForSource(state, sourceId);
+  if (!sourceActors.length) {
     return null;
   }
 
   // We pull generated file breakable lines directly from the source actors
   // so that breakable lines can be added as new source actors on HTML loads.
-  return getBreakableLinesForSourceActors(
-    state,
-    sourceActorsInfo.map(actorInfo => actorInfo.id),
-    source.isHTML
-  );
+  return getBreakableLinesForSourceActors(state, sourceActors, source.isHTML);
 }
 
 export const getSelectedBreakableLines = createSelector(
@@ -330,8 +293,59 @@ export function isSourceOverridden(state, source) {
   return state.sources.mutableOverrideSources.has(source.url);
 }
 
-// @backward-compat { version 114 } Checks if the server supports override
-// Remove this selector completely.
-export function getOverridesSupport(state) {
-  return state.sources.isOverridesSupported;
+/**
+ * Compute the list of source actors and source objects to be removed
+ * when removing a given target/thread.
+ *
+ * @param {String} threadActorID
+ *        The thread to be removed.
+ * @return {Object}
+ *         An object with two arrays:
+ *         - actors: list of source actor objects to remove
+ *         - sources: list of source objects to remove
+ */
+export function getSourcesToRemoveForThread(state, threadActorID) {
+  const sourcesToRemove = [];
+  const actorsToRemove = [];
+
+  for (const [
+    sourceId,
+    actorsForSource,
+  ] of state.sources.mutableSourceActors.entries()) {
+    let removedActorsCount = 0;
+    // Find all actors for the current source which belongs to the given thread actor
+    for (const actor of actorsForSource) {
+      if (actor.thread == threadActorID) {
+        actorsToRemove.push(actor);
+        removedActorsCount++;
+      }
+    }
+
+    // If we are about to remove all source actors for the current source,
+    // or if for some unexpected reason we have a source with no actors,
+    // notify the caller to also remove this source.
+    if (
+      removedActorsCount == actorsForSource.length ||
+      !actorsForSource.length
+    ) {
+      sourcesToRemove.push(state.sources.mutableSources.get(sourceId));
+
+      // Also remove any original sources related to this generated source
+      const originalSourceIds = state.sources.mutableOriginalSources.get(
+        sourceId
+      );
+      if (originalSourceIds?.length > 0) {
+        for (const originalSourceId of originalSourceIds) {
+          sourcesToRemove.push(
+            state.sources.mutableSources.get(originalSourceId)
+          );
+        }
+      }
+    }
+  }
+
+  return {
+    actors: actorsToRemove,
+    sources: sourcesToRemove,
+  };
 }

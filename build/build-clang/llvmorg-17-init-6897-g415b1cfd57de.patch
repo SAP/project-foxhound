@@ -127,7 +127,7 @@ index d096a8faa2c7e..8ccdeb23fa995 100644
 +    return nullptr;
 +
 +  Metadata *b = (Metadata *)allocator.GetMetaData(beg);
-+  if (b->get_requested_size() == 0)
++  if (b->GetRequestedSize() == 0)
 +    return nullptr;
 +
 +  tag_t tag = GetTagFromPointer((uptr)p);

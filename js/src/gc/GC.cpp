@@ -1274,6 +1274,8 @@ uint32_t GCRuntime::getParameter(JSGCParamKey key, const AutoLockGC& lock) {
       return tunables.mallocThresholdBase() / 1024 / 1024;
     case JSGC_URGENT_THRESHOLD_MB:
       return tunables.urgentThresholdBytes() / 1024 / 1024;
+    case JSGC_PARALLEL_MARKING_THRESHOLD_KB:
+      return tunables.parallelMarkingThresholdBytes() / 1024;
     case JSGC_CHUNK_BYTES:
       return ChunkSize;
     case JSGC_HELPER_THREAD_RATIO:
@@ -2388,6 +2390,25 @@ bool CompartmentCheckTracer::edgeIsInCrossCompartmentMap(JS::GCCellPtr dst) {
          InCrossCompartmentMap(runtime(), static_cast<JSObject*>(src), dst);
 }
 
+static bool IsPartiallyInitializedObject(Cell* cell) {
+  if (!cell->is<JSObject>()) {
+    return false;
+  }
+
+  JSObject* obj = cell->as<JSObject>();
+  if (!obj->is<NativeObject>()) {
+    return false;
+  }
+
+  NativeObject* nobj = &obj->as<NativeObject>();
+
+  // Check for failed allocation of dynamic slots in
+  // NativeObject::allocateInitialSlots.
+  size_t nDynamicSlots = NativeObject::calculateDynamicSlots(
+      nobj->numFixedSlots(), nobj->slotSpan(), nobj->getClass());
+  return nDynamicSlots != 0 && !nobj->hasDynamicSlots();
+}
+
 void GCRuntime::checkForCompartmentMismatches() {
   JSContext* cx = rt->mainContextFromOwnThread();
   if (cx->disableStrictProxyCheckingCount) {
@@ -2401,6 +2422,12 @@ void GCRuntime::checkForCompartmentMismatches() {
     for (auto thingKind : AllAllocKinds()) {
       for (auto i = zone->cellIterUnsafe<TenuredCell>(thingKind, empty);
            !i.done(); i.next()) {
+        // We may encounter partially initialized objects. These are unreachable
+        // and it's safe to ignore them.
+        if (IsPartiallyInitializedObject(i.getCell())) {
+          continue;
+        }
+
         trc.src = i.getCell();
         trc.srcKind = MapAllocToTraceKind(thingKind);
         trc.compartment = MapGCThingTyped(
@@ -2987,7 +3014,8 @@ inline bool GCRuntime::canMarkInParallel() const {
   }
 #endif
 
-  return markers.length() > 1;
+  return markers.length() > 1 && stats().initialCollectedBytes() >=
+                                     tunables.parallelMarkingThresholdBytes();
 }
 
 IncrementalProgress GCRuntime::markUntilBudgetExhausted(
@@ -3254,7 +3282,7 @@ void GCRuntime::maybeStopPretenuring() {
   nursery().maybeStopPretenuring(this);
 
   for (GCZonesIter zone(this); !zone.done(); zone.next()) {
-    if (zone->allocNurseryStrings) {
+    if (!zone->nurseryStringsDisabled) {
       continue;
     }
 
@@ -3262,21 +3290,10 @@ void GCRuntime::maybeStopPretenuring() {
     size_t numStrings = zone->markedStrings + zone->finalizedStrings;
     double rate = double(zone->finalizedStrings) / double(numStrings);
     if (rate > tunables.stopPretenureStringThreshold()) {
-      CancelOffThreadIonCompile(zone);
-      bool preserving = zone->isPreservingCode();
-      zone->setPreservingCode(false);
-      zone->discardJitCode(rt->gcContext());
-      zone->setPreservingCode(preserving);
-      for (RealmsInZoneIter r(zone); !r.done(); r.next()) {
-        if (jit::JitRealm* jitRealm = r->jitRealm()) {
-          jitRealm->discardStubs();
-          jitRealm->setStringsCanBeInNursery(true);
-        }
-      }
-
       zone->markedStrings = 0;
       zone->finalizedStrings = 0;
-      zone->allocNurseryStrings = true;
+      zone->nurseryStringsDisabled = false;
+      nursery().updateAllocFlagsForZone(zone);
     }
   }
 }

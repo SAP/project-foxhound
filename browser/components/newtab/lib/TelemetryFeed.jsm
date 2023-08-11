@@ -35,11 +35,6 @@ ChromeUtils.defineModuleGetter(
 );
 ChromeUtils.defineModuleGetter(
   lazy,
-  "pktApi",
-  "chrome://pocket/content/pktApi.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  lazy,
   "UTEventReporting",
   "resource://activity-stream/lib/UTEventReporting.jsm"
 );
@@ -47,6 +42,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
   ClientID: "resource://gre/modules/ClientID.sys.mjs",
   ExperimentAPI: "resource://nimbus/ExperimentAPI.sys.mjs",
   NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
+  pktApi: "chrome://pocket/content/pktApi.sys.mjs",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
   TelemetryEnvironment: "resource://gre/modules/TelemetryEnvironment.sys.mjs",
   TelemetrySession: "resource://gre/modules/TelemetrySession.sys.mjs",
@@ -858,10 +854,17 @@ class TelemetryFeed {
 
   handleTopSitesSponsoredImpressionStats(action) {
     const { data } = action;
-    const { type, position, source } = data;
+    const {
+      type,
+      position,
+      source,
+      advertiser: advertiser_name,
+      tile_id,
+    } = data;
     // Legacy telemetry (scalars and PingCentre payloads) expects 1-based tile
     // positions.
     const legacyTelemetryPosition = position + 1;
+
     let pingType;
 
     const session = this.sessions.get(au.getPortIdOfSender(action));
@@ -874,6 +877,8 @@ class TelemetryFeed {
       );
       if (session) {
         Glean.topsites.impression.record({
+          advertiser_name,
+          tile_id: tile_id.toString(),
           newtab_visit_id: session.session_id,
           is_sponsored: true,
           position,
@@ -888,6 +893,8 @@ class TelemetryFeed {
       );
       if (session) {
         Glean.topsites.click.record({
+          advertiser_name,
+          tile_id: tile_id.toString(),
           newtab_visit_id: session.session_id,
           is_sponsored: true,
           position,

@@ -11,7 +11,7 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/ErrorResult.h"
 #include "mozilla/NotNull.h"
-#include "mozilla/RangedPtr.h"
+#include "mozilla/Span.h"
 #include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/TypedArray.h"
 #include "mozilla/dom/VideoColorSpaceBinding.h"
@@ -58,14 +58,7 @@ struct VideoFrameData {
   VideoFrameData(layers::Image* aImage, const VideoPixelFormat& aFormat,
                  gfx::IntRect aVisibleRect, gfx::IntSize aDisplaySize,
                  Maybe<uint64_t> aDuration, int64_t aTimestamp,
-                 const VideoColorSpaceInit& aColorSpace)
-      : mImage(aImage),
-        mFormat(aFormat),
-        mVisibleRect(aVisibleRect),
-        mDisplaySize(aDisplaySize),
-        mDuration(aDuration),
-        mTimestamp(aTimestamp),
-        mColorSpace(aColorSpace) {}
+                 const VideoColorSpaceInit& aColorSpace);
 
   const RefPtr<layers::Image> mImage;
   const VideoPixelFormat mFormat;
@@ -83,11 +76,8 @@ struct VideoFrameSerializedData : VideoFrameData {
                            gfx::IntSize aDisplaySize, Maybe<uint64_t> aDuration,
                            int64_t aTimestamp,
                            const VideoColorSpaceInit& aColorSpace,
-                           already_AddRefed<nsIURI> aPrincipalURI)
-      : VideoFrameData(aImage, aFormat, aVisibleRect, aDisplaySize, aDuration,
-                       aTimestamp, aColorSpace),
-        mCodedSize(aCodedSize),
-        mPrincipalURI(aPrincipalURI) {}
+                           already_AddRefed<nsIURI> aPrincipalURI);
+
   const gfx::IntSize mCodedSize;
   const nsCOMPtr<nsIURI> mPrincipalURI;
 };
@@ -231,8 +221,7 @@ class VideoFrame final : public nsISupports, public nsWrapperCache {
     ~Resource() = default;
     uint32_t Stride(const Format::Plane& aPlane) const;
     bool CopyTo(const Format::Plane& aPlane, const gfx::IntRect& aRect,
-                RangedPtr<uint8_t>&& aPlaneDest,
-                size_t aDestinationStride) const;
+                Span<uint8_t>&& aPlaneDest, size_t aDestinationStride) const;
 
     const RefPtr<layers::Image> mImage;
     const Format mFormat;

@@ -29,6 +29,11 @@
 #include "sdnAccessible.h"
 #include "sdnTextAccessible.h"
 #include "HyperTextAccessible-inl.h"
+#include "ServiceProvider.h"
+#include "Statistics.h"
+#include "GeckoCustom.h"
+#include "ARIAMap.h"
+#include "mozilla/PresShell.h"
 
 using namespace mozilla;
 using namespace mozilla::a11y;
@@ -1099,10 +1104,10 @@ MsaaAccessible::get_accRole(
 
   uint32_t msaaRole = 0;
 
-#define ROLE(_geckoRole, stringRole, atkRole, macRole, macSubrole, _msaaRole, \
-             ia2Role, androidClass, nameRule)                                 \
-  case roles::_geckoRole:                                                     \
-    msaaRole = _msaaRole;                                                     \
+#define ROLE(_geckoRole, stringRole, ariaRole, atkRole, macRole, macSubrole, \
+             _msaaRole, ia2Role, androidClass, nameRule)                     \
+  case roles::_geckoRole:                                                    \
+    msaaRole = _msaaRole;                                                    \
     break;
 
   switch (geckoRole) {

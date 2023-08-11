@@ -120,7 +120,7 @@ use style::shared_lock::{
 use style::string_cache::{Atom, WeakAtom};
 use style::style_adjuster::StyleAdjuster;
 use style::stylesheets::container_rule::ContainerSizeQuery;
-use style::stylesheets::import_rule::ImportSheet;
+use style::stylesheets::import_rule::{ImportSheet, ImportLayer};
 use style::stylesheets::keyframes_rule::{Keyframe, KeyframeSelector, KeyframesStepValue};
 use style::stylesheets::layer_rule::LayerOrder;
 use style::stylesheets::supports_rule::parse_condition_or_declaration;
@@ -2710,8 +2710,21 @@ pub extern "C" fn Servo_ImportRule_GetLayerName(
     rule: &RawServoImportRule,
     result: &mut nsACString,
 ) {
+    // https://w3c.github.io/csswg-drafts/cssom/#dom-cssimportrule-layername
     read_locked_arc(rule, |rule: &ImportRule| match rule.layer {
-        Some(ref layer) => layer.name.to_css(&mut CssWriter::new(result)).unwrap(),
+        ImportLayer::Named(ref name) => name.to_css(&mut CssWriter::new(result)).unwrap(), // "return the layer name declared in the at-rule itself"
+        ImportLayer::Anonymous => {}, // "or an empty string if the layer is anonymous"
+        ImportLayer::None => result.set_is_void(true), // "or null if the at-rule does not declare a layer"
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn Servo_ImportRule_GetSupportsText(
+    rule: &RawServoImportRule,
+    result: &mut nsACString,
+) {
+    read_locked_arc(rule, |rule: &ImportRule| match rule.supports {
+        Some(ref supports) => supports.condition.to_css(&mut CssWriter::new(result)).unwrap(),
         None => result.set_is_void(true),
     })
 }
@@ -2719,7 +2732,7 @@ pub extern "C" fn Servo_ImportRule_GetLayerName(
 #[no_mangle]
 pub extern "C" fn Servo_ImportRule_GetSheet(rule: &RawServoImportRule) -> *const DomStyleSheet {
     read_locked_arc(rule, |rule: &ImportRule| {
-        rule.stylesheet.as_sheet().unwrap().raw() as *const DomStyleSheet
+        rule.stylesheet.as_sheet().map_or(ptr::null(), |s| s.raw() as *const DomStyleSheet)
     })
 }
 
@@ -3910,9 +3923,7 @@ counter_style_descriptors! {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn Servo_ComputedValues_GetForAnonymousBox(
-    parent_style_or_null: Option<&ComputedValues>,
-    pseudo: PseudoStyleType,
+pub unsafe extern "C" fn Servo_ComputedValues_GetForPageContent(
     raw_data: &RawServoStyleSet,
     page_name: *const nsAtom,
 ) -> Strong<ComputedValues> {
@@ -3920,47 +3931,69 @@ pub unsafe extern "C" fn Servo_ComputedValues_GetForAnonymousBox(
     let guard = global_style_data.shared_lock.read();
     let guards = StylesheetGuards::same(&guard);
     let data = PerDocumentStyleData::from_ffi(raw_data).borrow_mut();
-    let pseudo = PseudoElement::from_pseudo_type(pseudo).unwrap();
-    debug_assert!(pseudo.is_anon_box());
 
-    // If the pseudo element is PageContent, we should append @page rules to the
-    // precomputed pseudo.
     let mut extra_declarations = vec![];
-    if pseudo == PseudoElement::PageContent {
-        let iter = data.stylist.iter_extra_data_origins_rev();
-        for (data, origin) in iter {
-            let level = match origin {
-                Origin::UserAgent => CascadeLevel::UANormal,
-                Origin::User => CascadeLevel::UserNormal,
-                Origin::Author => CascadeLevel::same_tree_author_normal(),
-            };
-            extra_declarations.reserve(data.pages.global.len());
-            let mut add_rule = |rule: &Arc<Locked<PageRule>>| {
-                extra_declarations.push(ApplicableDeclarationBlock::from_declarations(
-                    rule.read_with(level.guard(&guards)).block.clone(),
-                    level,
-                    LayerOrder::root(),
-                ));
-            };
-            for &(ref rule, _layer_id) in data.pages.global.iter() {
-                add_rule(&rule.0);
-            }
-            if !page_name.is_null() {
-                Atom::with(page_name, |name| {
-                    if let Some(rules) = data.pages.named.get(name) {
-                        // Rules are already sorted by source order.
-                        rules.iter().for_each(|d| add_rule(&d.rule));
-                    }
-                });
-            }
+    let iter = data.stylist.iter_extra_data_origins_rev();
+    for (data, origin) in iter {
+        let level = match origin {
+            Origin::UserAgent => CascadeLevel::UANormal,
+            Origin::User => CascadeLevel::UserNormal,
+            Origin::Author => CascadeLevel::same_tree_author_normal(),
+        };
+        extra_declarations.reserve(data.pages.global.len());
+        let mut add_rule = |rule: &Arc<Locked<PageRule>>| {
+            extra_declarations.push(ApplicableDeclarationBlock::from_declarations(
+                rule.read_with(level.guard(&guards)).block.clone(),
+                level,
+                LayerOrder::root(),
+            ));
+        };
+        for &(ref rule, _layer_id) in data.pages.global.iter() {
+            add_rule(&rule.0);
         }
-    } else {
-        debug_assert!(page_name.is_null());
+        if !page_name.is_null() {
+            Atom::with(page_name, |name| {
+                if let Some(rules) = data.pages.named.get(name) {
+                    // Rules are already sorted by source order.
+                    rules.iter().for_each(|d| add_rule(&d.rule));
+                }
+            });
+        }
     }
 
     let rule_node =
         data.stylist
-            .rule_node_for_precomputed_pseudo(&guards, &pseudo, extra_declarations);
+            .rule_node_for_precomputed_pseudo(
+                &guards,
+                &PseudoElement::PageContent,
+                extra_declarations);
+
+    data.stylist
+        .precomputed_values_for_pseudo_with_rule_node::<GeckoElement>(
+            &guards,
+            &PseudoElement::PageContent,
+            None,
+            rule_node,
+        )
+        .into()
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn Servo_ComputedValues_GetForAnonymousBox(
+    parent_style_or_null: Option<&ComputedValues>,
+    pseudo: PseudoStyleType,
+    raw_data: &RawServoStyleSet,
+) -> Strong<ComputedValues> {
+    let pseudo = PseudoElement::from_pseudo_type(pseudo).unwrap();
+    debug_assert!(pseudo.is_anon_box());
+    debug_assert_ne!(pseudo, PseudoElement::PageContent);
+    let global_style_data = &*GLOBAL_STYLE_DATA;
+    let guard = global_style_data.shared_lock.read();
+    let guards = StylesheetGuards::same(&guard);
+    let data = PerDocumentStyleData::from_ffi(raw_data).borrow_mut();
+    let rule_node =
+        data.stylist
+            .rule_node_for_precomputed_pseudo(&guards, &pseudo, vec![]);
 
     data.stylist
         .precomputed_values_for_pseudo_with_rule_node::<GeckoElement>(
@@ -5199,9 +5232,7 @@ macro_rules! get_longhand_from_id {
     ($id:expr) => {
         match PropertyId::from_nscsspropertyid($id) {
             Ok(PropertyId::Longhand(long)) => long,
-            _ => {
-                panic!("stylo: unknown presentation property with id");
-            },
+            _ => panic!("stylo: unknown presentation property with id"),
         }
     };
 }
@@ -5225,7 +5256,7 @@ pub extern "C" fn Servo_DeclarationBlock_PropertyIsSet(
     property: nsCSSPropertyID,
 ) -> bool {
     read_locked_arc(declarations, |decls: &PropertyDeclarationBlock| {
-        decls.contains(get_longhand_from_id!(property))
+        decls.contains(PropertyDeclarationId::Longhand(get_longhand_from_id!(property)))
     })
 }
 
@@ -5816,6 +5847,30 @@ pub extern "C" fn Servo_CSSSupports(
 
     let namespaces = Default::default();
     cond.eval(&context, &namespaces)
+}
+
+#[no_mangle]
+pub extern "C" fn Servo_CSSSupportsForImport(after_rule: &nsACString) -> bool {
+    let condition = unsafe { after_rule.as_str_unchecked() };
+    let mut input = ParserInput::new(&condition);
+    let mut input = Parser::new(&mut input);
+
+    // NOTE(emilio): The supports API is not associated to any stylesheet,
+    // so the fact that there is no namespace map here is fine.
+    let context = ParserContext::new(
+        Origin::Author,
+        unsafe { dummy_url_data() },
+        Some(CssRuleType::Style),
+        ParsingMode::DEFAULT,
+        QuirksMode::NoQuirks,
+        None,
+        None,
+    );
+
+    let namespaces = Default::default();
+    let (_layer, supports) = ImportRule::parse_layer_and_supports(&mut input, &context, &namespaces);
+
+    supports.map_or(true, |s| s.enabled)
 }
 
 #[no_mangle]

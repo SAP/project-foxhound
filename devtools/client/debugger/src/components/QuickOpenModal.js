@@ -73,6 +73,7 @@ export class QuickOpenModal extends Component {
       blackBoxRanges: PropTypes.object.isRequired,
       enabled: PropTypes.bool.isRequired,
       highlightLineRange: PropTypes.func.isRequired,
+      clearHighlightLineRange: PropTypes.func.isRequired,
       query: PropTypes.string.isRequired,
       searchType: PropTypes.oneOf([
         "functions",
@@ -278,7 +279,11 @@ export class QuickOpenModal extends Component {
   };
 
   onSelectResultItem = item => {
-    const { selectedSource, highlightLineRange } = this.props;
+    const {
+      selectedSource,
+      highlightLineRange,
+      clearHighlightLineRange,
+    } = this.props;
     if (
       selectedSource == null ||
       !this.isSymbolSearch() ||
@@ -287,11 +292,15 @@ export class QuickOpenModal extends Component {
       return;
     }
 
-    highlightLineRange(
-      item.location != null
-        ? { start: item.location.start.line, end: item.location.end.line }
-        : {}
-    );
+    if (item.location) {
+      highlightLineRange({
+        start: item.location.start.line,
+        end: item.location.end.line,
+        sourceId: selectedSource.id,
+      });
+    } else {
+      clearHighlightLineRange();
+    }
   };
 
   traverseResults = e => {
@@ -492,11 +501,11 @@ export class QuickOpenModal extends Component {
 /* istanbul ignore next: ignoring testing of redux connection stuff */
 function mapStateToProps(state) {
   const selectedSource = getSelectedSource(state);
+  const location = getSelectedLocation(state);
   const displayedSources = getDisplayedSourcesList(state);
   const tabs = getTabs(state);
   const tabUrls = [...new Set(tabs.map(tab => tab.url))];
-  const symbols = getSymbols(state, selectedSource);
-  const location = getSelectedLocation(state);
+  const symbols = getSymbols(state, location);
 
   return {
     cx: getContext(state),
@@ -516,10 +525,10 @@ function mapStateToProps(state) {
   };
 }
 
-/* istanbul ignore next: ignoring testing of redux connection stuff */
 export default connect(mapStateToProps, {
   selectSpecificLocation: actions.selectSpecificLocation,
   setQuickOpenQuery: actions.setQuickOpenQuery,
   highlightLineRange: actions.highlightLineRange,
+  clearHighlightLineRange: actions.clearHighlightLineRange,
   closeQuickOpen: actions.closeQuickOpen,
 })(QuickOpenModal);

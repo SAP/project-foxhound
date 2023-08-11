@@ -13,6 +13,7 @@ var EXPORTED_SYMBOLS = [
   "Management",
   "SitePermission",
   "ExtensionAddonObserver",
+  "ExtensionProcessCrashObserver",
   "PRIVILEGED_PERMS",
 ];
 
@@ -70,6 +71,7 @@ XPCOMUtils.defineLazyModuleGetters(lazy, {
   ExtensionScriptingStore: "resource://gre/modules/ExtensionScriptingStore.jsm",
   ExtensionStorage: "resource://gre/modules/ExtensionStorage.jsm",
   ExtensionStorageIDB: "resource://gre/modules/ExtensionStorageIDB.jsm",
+  extensionStorageSync: "resource://gre/modules/ExtensionStorageSync.jsm",
   ExtensionTelemetry: "resource://gre/modules/ExtensionTelemetry.jsm",
   LightweightThemeManager: "resource://gre/modules/LightweightThemeManager.jsm",
   NetUtil: "resource://gre/modules/NetUtil.jsm",
@@ -140,6 +142,37 @@ XPCOMUtils.defineLazyPreferenceGetter(
   lazy,
   "eventPagesEnabled",
   "extensions.eventPages.enabled"
+);
+
+// This pref is used to check if storage.sync is still the Kinto-based backend
+// (GeckoView should be the only one still using it).
+XPCOMUtils.defineLazyPreferenceGetter(
+  lazy,
+  "storageSyncOldKintoBackend",
+  "webextensions.storage.sync.kinto",
+  false
+);
+
+// Deprecation of browser_style, through .supported & .same_as_mv2 prefs:
+// - true true  = warn only: deprecation message only (no behavioral changes).
+// - true false = deprecate: default to false, even if default was true in MV2.
+// - false      = remove: always use false, even when true is specified.
+//                (if .same_as_mv2 is set, also warn if the default changed)
+// Deprecation plan: https://bugzilla.mozilla.org/show_bug.cgi?id=1827910#c1
+// Bug 1830711 will set browser_style_mv3.supported to false.
+XPCOMUtils.defineLazyPreferenceGetter(
+  lazy,
+  "browserStyleMV3supported",
+  "extensions.browser_style_mv3.supported",
+  false
+);
+// Bug 1830710 will set browser_style_mv3.same_as_mv2 to true.
+// Bug 1830711 will then set browser_style_mv3.supported to false.
+XPCOMUtils.defineLazyPreferenceGetter(
+  lazy,
+  "browserStyleMV3sameAsMV2",
+  "extensions.browser_style_mv3.same_as_mv2",
+  false
 );
 
 var {
@@ -524,6 +557,16 @@ var ExtensionAddonObserver = {
         lazy.ExtensionStorage.clear(addon.id, { shouldNotifyListeners: false })
       );
 
+      // Clear browser.storage.sync rust-based backend.
+      // (storage.sync clearOnUninstall will resolve and log an error on the
+      // browser console in case of unexpected failures).
+      if (!lazy.storageSyncOldKintoBackend) {
+        lazy.AsyncShutdown.profileChangeTeardown.addBlocker(
+          `Clear Extension StorageSync ${addon.id}`,
+          lazy.extensionStorageSync.clearOnUninstall(addon.id)
+        );
+      }
+
       // Clear any IndexedDB and Cache API storage created by the extension.
       // If LSNG is enabled, this also clears localStorage.
       Services.qms.clearStoragesForPrincipal(principal);
@@ -580,6 +623,89 @@ var ExtensionAddonObserver = {
 };
 
 ExtensionAddonObserver.init();
+
+/**
+ * Observer ExtensionProcess crashes and notify all the extensions
+ * using a Management event named "extension-process-crash".
+ */
+var ExtensionProcessCrashObserver = {
+  initialized: false,
+  // Technically there is at most one child extension process,
+  // but we may need to adjust this assumption to account for more
+  // than one if that ever changes in the future.
+  currentProcessChildID: undefined,
+  lastCrashedProcessChildID: undefined,
+  QueryInterface: ChromeUtils.generateQI(["nsIObserver"]),
+
+  init() {
+    if (!this.initialized) {
+      Services.obs.addObserver(this, "ipc:content-created");
+      Services.obs.addObserver(this, "process-type-set");
+      Services.obs.addObserver(this, "ipc:content-shutdown");
+      this.initialized = true;
+    }
+  },
+
+  uninit() {
+    if (this.initialized) {
+      try {
+        Services.obs.removeObserver(this, "ipc:content-created");
+        Services.obs.removeObserver(this, "process-type-set");
+        Services.obs.removeObserver(this, "ipc:content-shutdown");
+      } catch (err) {
+        // Removing the observer may fail if they are not registered anymore,
+        // this shouldn't happen in practice, but let's still log the error
+        // in case it does.
+        Cu.reportError(err);
+      }
+      this.initialized = false;
+    }
+  },
+
+  observe(subject, topic, data) {
+    let childID = data;
+    switch (topic) {
+      case "process-type-set":
+      // Intentional fall-through
+      case "ipc:content-created": {
+        let pp = subject.QueryInterface(Ci.nsIDOMProcessParent);
+        if (pp.remoteType === "extension") {
+          this.currentProcessChildID = childID;
+        }
+        break;
+      }
+      case "ipc:content-shutdown": {
+        if (Services.startup.shuttingDown) {
+          // The application is shutting down, don't bother
+          // signaling process crashes anymore.
+          return;
+        }
+        if (this.currentProcessChildID !== childID) {
+          // Ignore non-extension child process shutdowns.
+          return;
+        }
+
+        // At this point we are sure that the current extension
+        // process is gone, and so even if the process did shutdown
+        // cleanly instead of crashing, we can clear the property
+        // that keeps track of the current extension process childID.
+        this.currentProcessChildID = undefined;
+
+        subject.QueryInterface(Ci.nsIPropertyBag2);
+        if (!subject.get("abnormal")) {
+          // Ignore non-abnormal child process shutdowns.
+          return;
+        }
+
+        this.lastCrashedProcessChildID = childID;
+        Management.emit("extension-process-crash", { childID });
+        break;
+      }
+    }
+  },
+};
+
+ExtensionProcessCrashObserver.init();
 
 const manifestTypes = new Map([
   ["theme", "manifest.ThemeManifest"],
@@ -1185,6 +1311,51 @@ class ExtensionData {
     return lazy.Schemas.normalize(this.rawManifest, manifestType, context);
   }
 
+  #parseBrowserStyleInManifest(manifest, manifestKey, defaultValueInMV2) {
+    const obj = manifest[manifestKey];
+    if (!obj) {
+      return;
+    }
+    const browserStyleIsVoid = obj.browser_style == null;
+    obj.browser_style ??= defaultValueInMV2;
+    if (this.manifestVersion < 3 || !obj.browser_style) {
+      // MV2 (true or false), or MV3 (false set explicitly or default false).
+      // No changes in observed behavior, return now to avoid logspam.
+      return;
+    }
+    // Now there are two cases (MV3 only):
+    // - browser_style was not specified, but defaults to true.
+    // - browser_style was set to true by the extension.
+    //
+    // These will eventually be deprecated. For the deprecation plan, see
+    // https://bugzilla.mozilla.org/show_bug.cgi?id=1827910#c1
+    let warning;
+    if (!lazy.browserStyleMV3supported) {
+      obj.browser_style = false;
+      if (browserStyleIsVoid && !lazy.browserStyleMV3sameAsMV2) {
+        // defaultValueInMV2 is true, but there was no intent to use these
+        // defaults. Don't warn.
+        return;
+      }
+      warning = `"browser_style:true" is no longer supported in Manifest Version 3.`;
+    } else {
+      warning = `"browser_style:true" has been deprecated in Manifest Version 3 and will be unsupported in the near future.`;
+    }
+    if (browserStyleIsVoid) {
+      warning += ` While "${manifestKey}.browser_style" was not explicitly specified in manifest.json, its default value was true.`;
+      if (!lazy.browserStyleMV3sameAsMV2) {
+        obj.browser_style = false;
+        warning += ` The default value of "${manifestKey}.browser_style" has changed from true to false in Manifest Version 3.`;
+      } else {
+        warning += ` Its default will change to false in Manifest Version 3 starting from Firefox 115.`;
+      }
+    }
+
+    this.manifestWarning(
+      `Warning processing ${manifestKey}.browser_style: ${warning}`
+    );
+  }
+
   async initializeAddonTypeAndID() {
     if (this.type) {
       // Already initialized.
@@ -1323,6 +1494,24 @@ class ExtensionData {
       this.manifestError(
         "Cannot use browser and/or page actions in hidden add-ons"
       );
+    }
+
+    if (manifest.options_ui) {
+      if (manifest.options_ui.open_in_tab) {
+        // browser_style:true has no effect when open_in_tab is true.
+        manifest.options_ui.browser_style = false;
+      } else {
+        this.#parseBrowserStyleInManifest(manifest, "options_ui", true);
+      }
+    }
+    if (this.manifestVersion < 3) {
+      this.#parseBrowserStyleInManifest(manifest, "browser_action", false);
+    } else {
+      this.#parseBrowserStyleInManifest(manifest, "action", false);
+    }
+    this.#parseBrowserStyleInManifest(manifest, "page_action", false);
+    if (AppConstants.MOZ_BUILD_APP === "browser") {
+      this.#parseBrowserStyleInManifest(manifest, "sidebar_action", true);
     }
 
     let apiNames = new Set();

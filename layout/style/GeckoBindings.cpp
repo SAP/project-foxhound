@@ -567,7 +567,9 @@ void Gecko_UpdateAnimations(const Element* aElement,
   }
 
   if (aTasks & UpdateAnimationsTasks::ViewTimelines) {
-    // TODO: Bug 1737920. Add support for view timelines.
+    presContext->TimelineManager()->UpdateTimelines(
+        const_cast<Element*>(element), pseudoType, aComputedData,
+        TimelineManager::ProgressTimelineType::View);
   }
 
   if (aTasks & UpdateAnimationsTasks::CSSAnimations) {
@@ -772,9 +774,8 @@ bool Gecko_MatchLang(const Element* aElement, nsAtom* aOverrideLang,
   // from the parent we have to be prepared to look at all parent
   // nodes.  The language itself is encoded in the LANG attribute.
   if (auto* language = aHasOverrideLang ? aOverrideLang : aElement->GetLang()) {
-    return nsStyleUtil::DashMatchCompare(
-        nsDependentAtomString(language), nsDependentString(aValue),
-        nsASCIICaseInsensitiveStringComparator);
+    return nsStyleUtil::LangTagCompare(nsAtomCString(language),
+                                       NS_ConvertUTF16toUTF8(aValue));
   }
 
   // Try to get the language from the HTTP header or if this
@@ -784,11 +785,10 @@ bool Gecko_MatchLang(const Element* aElement, nsAtom* aOverrideLang,
   nsAutoString language;
   aElement->OwnerDoc()->GetContentLanguage(language);
 
-  nsDependentString langString(aValue);
+  NS_ConvertUTF16toUTF8 langString(aValue);
   language.StripWhitespace();
   for (auto const& lang : language.Split(char16_t(','))) {
-    if (nsStyleUtil::DashMatchCompare(lang, langString,
-                                      nsASCIICaseInsensitiveStringComparator)) {
+    if (nsStyleUtil::LangTagCompare(NS_ConvertUTF16toUTF8(lang), langString)) {
       return true;
     }
   }
@@ -1374,18 +1374,19 @@ void Gecko_nsStyleFont_CopyLangFrom(nsStyleFont* aFont,
 
 Length Gecko_nsStyleFont_ComputeMinSize(const nsStyleFont* aFont,
                                         const Document* aDocument) {
-  // Don't change font-size:0, since that would un-hide hidden text,
-  // or SVG text, or chrome docs, we assume those know what they do.
-  if (aFont->mSize.IsZero() || !aFont->mAllowZoomAndMinSize ||
-      nsContentUtils::IsChromeDoc(aDocument)) {
+  // Don't change font-size:0, since that would un-hide hidden text.
+  if (aFont->mSize.IsZero()) {
     return {0};
   }
-
+  // Don't change it for docs where we don't enable the min-font-size.
+  if (!aFont->MinFontSizeEnabled()) {
+    return {0};
+  }
   Length minFontSize;
   bool needsCache = false;
 
   auto MinFontSize = [&](bool* aNeedsToCache) {
-    auto* prefs =
+    const auto* prefs =
         aDocument->GetFontPrefsForLang(aFont->mLanguage, aNeedsToCache);
     return prefs ? prefs->mMinimumFontSize : Length{0};
   };

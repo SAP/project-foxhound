@@ -72,6 +72,8 @@ class FetchParent final : public PFetchParent {
 
   void OnReportPerformanceTiming(const ResponseTiming&& aTiming);
 
+  void OnNotifyNetworkMonitorAlternateStack(uint64_t aChannelID);
+
  private:
   ~FetchParent();
 
@@ -94,6 +96,7 @@ class FetchParent final : public PFetchParent {
   bool mNeedOnDataAvailable{false};
   bool mHasCSPEventListener{false};
   bool mExtendForCSPEventListener{false};
+  uint64_t mAssociatedBrowsingContextID{0};
 
   Atomic<bool> mIsDone{false};
   Atomic<bool> mActorDestroyed{false};

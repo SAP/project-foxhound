@@ -819,11 +819,6 @@ class NativeObject : public JSObject {
   }
 
  public:
-  /* Object allocation may directly initialize slots so this is public. */
-  void initSlots(HeapSlot* slots) {
-    MOZ_ASSERT(slots);
-    slots_ = slots;
-  }
   inline void initEmptyDynamicSlots();
 
   [[nodiscard]] static bool generateNewDictionaryShape(
@@ -913,6 +908,8 @@ class NativeObject : public JSObject {
   bool hadGetterSetterChange() const {
     return hasFlag(ObjectFlag::HadGetterSetterChange);
   }
+
+  bool allocateInitialSlots(JSContext* cx, uint32_t capacity);
 
   /*
    * Grow or shrink slots immediately before changing the slot span.
@@ -1453,6 +1450,11 @@ class NativeObject : public JSObject {
   inline void initDenseElements(const Value* src, uint32_t count);
   inline void initDenseElements(NativeObject* src, uint32_t srcStart,
                                 uint32_t count);
+
+  // Copy the first `count` dense elements from `src` to `this`, starting at
+  // `destStart`. The initialized length must already include the new elements.
+  inline void initDenseElementRange(uint32_t destStart, NativeObject* src,
+                                    uint32_t count);
 
   // Store the Values in the range [begin, end) as elements of this array.
   //

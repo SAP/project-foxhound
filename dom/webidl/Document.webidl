@@ -441,7 +441,7 @@ partial interface Document {
   attribute boolean styleSheetChangeEventsEnabled;
 
   [ChromeOnly]
-  attribute boolean shadowRootAttachedEventEnabled;
+  attribute boolean devToolsAnonymousAndShadowEventsEnabled;
 
   [ChromeOnly] readonly attribute DOMString contentLanguage;
 
@@ -528,7 +528,7 @@ partial interface Document {
    * Removes the element inserted into the CanvasFrame given an AnonymousContent
    * instance.
    */
-  [ChromeOnly, Throws]
+  [ChromeOnly]
   undefined removeAnonymousContent(AnonymousContent aContent);
 };
 

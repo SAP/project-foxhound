@@ -26,7 +26,7 @@ const PREF_URLBAR_BRANCH = "browser.urlbar.";
 // NOTE: Don't name prefs (relative to the `browser.urlbar` branch) the same as
 // Nimbus urlbar features. Doing so would cause a name collision because pref
 // names and Nimbus feature names are both kept as keys in UrlbarPref's map. For
-// a list of Nimbus features, see: toolkit/components/nimbus/FeatureManifest.js
+// a list of Nimbus features, see toolkit/components/nimbus/FeatureManifest.yaml.
 const PREF_URLBAR_DEFAULTS = new Map([
   // Whether we announce to screen readers when tab-to-search results are
   // inserted.
@@ -115,6 +115,12 @@ const PREF_URLBAR_DEFAULTS = new Map([
   // Whether the urlbar displays a permanent search button.
   ["experimental.searchButton", false],
 
+  // Comma-separated list of `source.providers` combinations, that are used to
+  // determine if an exposure event should be fired. This can be set by a
+  // Nimbus variable and is expected to be set via nimbus experiment
+  // configuration.
+  ["exposureResults", ""],
+
   // When we send events to (privileged) extensions (urlbar API), we wait this
   // amount of time in milliseconds for them to respond before timing out.
   ["extension.timeout", 400],
@@ -129,12 +135,15 @@ const PREF_URLBAR_DEFAULTS = new Map([
   // Applies URL highlighting and other styling to the text in the urlbar input.
   ["formatting.enabled", true],
 
-  // Whether search engagement telemetry should be recorded. This pref is a
-  // fallback for the Nimbus variable `searchEngagementTelemetryEnabled`.
-  ["searchEngagementTelemetry.enabled", false],
-
   // Interval time until taking pause impression telemetry.
   ["searchEngagementTelemetry.pauseImpressionIntervalMs", 1000],
+
+  // Boolean to determine if the providers defined in `exposureResults`
+  // should be displayed in search results. This can be set by a
+  // Nimbus variable and is expected to be set via nimbus experiment
+  // configuration. For the control branch of an experiment this would be
+  // false and true for the treatment.
+  ["showExposureResults", false],
 
   // Whether Firefox Suggest group labels are shown in the urlbar view in en-*
   // locales. Labels are not shown in other locales but likely will be in the
@@ -393,6 +402,15 @@ const PREF_URLBAR_DEFAULTS = new Map([
   // Feature gate pref for weather suggestions in the urlbar.
   ["weather.featureGate", false],
 
+  // When false, the weather suggestion will not be fetched when a VPN is
+  // detected. When true, it will be fetched anyway.
+  ["weather.ignoreVPN", false],
+
+  // The minimum prefix length of a weather keyword the user must type to
+  // trigger the suggestion. 0 means the min length should be taken from Nimbus
+  // or remote settings.
+  ["weather.minKeywordLength", 0],
+
   // Feature gate pref for trending suggestions in the urlbar.
   ["trending.featureGate", false],
 
@@ -427,6 +445,7 @@ const NIMBUS_DEFAULTS = {
   recordNavigationalSuggestionTelemetry: false,
   weatherKeywords: null,
   weatherKeywordsMinimumLength: 0,
+  weatherKeywordsMinimumLengthCap: 0,
 };
 
 // Maps preferences under browser.urlbar.suggest to behavior names, as defined
@@ -1231,6 +1250,22 @@ class Preferences {
    */
   addObserver(observer) {
     this._observerWeakRefs.push(Cu.getWeakReference(observer));
+  }
+
+  /**
+   * Removes a preference observer.
+   *
+   * @param {object} observer
+   *   An observer previously added with `addObserver()`.
+   */
+  removeObserver(observer) {
+    for (let i = 0; i < this._observerWeakRefs.length; i++) {
+      let obs = this._observerWeakRefs[i].get();
+      if (obs && obs == observer) {
+        this._observerWeakRefs.splice(i, 1);
+        break;
+      }
+    }
   }
 
   /**

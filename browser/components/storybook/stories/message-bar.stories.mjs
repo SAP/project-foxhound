@@ -15,7 +15,7 @@ const MESSAGE_TYPES = {
 };
 
 export default {
-  title: "Design System/Components/Message Bar",
+  title: "UI Widgets/Message Bar",
   component: "message-bar",
   argTypes: {
     type: {
@@ -25,6 +25,7 @@ export default {
     },
   },
   parameters: {
+    status: "stable",
     fluent: `
 message-bar-text = A very expressive and slightly whimsical message goes here.
 message-bar-button = Click me, please!

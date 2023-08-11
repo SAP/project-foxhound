@@ -126,7 +126,13 @@ function handleMessages(engine) {
       if (data.type === "initialize") {
         throw new Error("The Translations engine must not be re-initialized.");
       }
-      log("Received message", data);
+      if (data.type === "translation-request") {
+        // Only show these messages when "All" logging is on, since there are so many
+        // of them.
+        trace("Received message", data);
+      } else {
+        log("Received message", data);
+      }
 
       switch (data.type) {
         case "translation-request": {
@@ -665,6 +671,8 @@ class MockedEngine {
       return `${message} [${this.fromLanguage} to ${this.toLanguage}${html}]`;
     });
   }
+
+  discardTranslations() {}
 }
 
 /**

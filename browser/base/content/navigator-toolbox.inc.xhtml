@@ -378,7 +378,7 @@
                     role="button"
                     data-l10n-id="urlbar-translations-button"
                     hidden="true"
-                    onclick="TranslationsParent.urlBarButtonClick(event);">
+                    onclick="TranslationsPanel.open(event);">
                 <image class="urlbar-icon"/>
               </hbox>
               <toolbarbutton id="urlbar-zoom-button"
@@ -456,7 +456,7 @@
       </toolbarbutton>
 
       <toolbarbutton id="unified-extensions-button"
-                     class="toolbarbutton-1"
+                     class="toolbarbutton-1 chromeclass-toolbar-additional"
                      delegatesanchor="true"
                      data-l10n-id="unified-extensions-button"
                      hidden="true"
@@ -625,6 +625,10 @@
                   data-l10n-args='{ "isVisible": false }'
                   oncommand="SidebarUI.toggle('viewBookmarksSidebar');"
                   key="viewBookmarksSidebarKb"/>
+        <menuitem id="BMB_searchBookmarks"
+                  class="subviewbutton"
+                  data-l10n-id="bookmarks-search"
+                  oncommand="PlacesCommandHook.searchBookmarks();"/>
         <!-- NB: temporary solution for bug 985024, this should go away soon. -->
         <menuitem id="BMB_bookmarksShowAllTop"
                   class="subviewbutton"

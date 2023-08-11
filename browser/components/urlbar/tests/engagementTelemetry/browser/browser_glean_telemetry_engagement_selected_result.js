@@ -546,7 +546,7 @@ add_task(async function selected_result_experimental_addon() {
   await extension.unload();
 });
 
-add_task(async function selected_result_suggest_sponsor() {
+add_task(async function selected_result_adm_sponsored() {
   const cleanupQuickSuggest = await ensureQuickSuggestInit();
 
   await doTest(async browser => {
@@ -556,10 +556,10 @@ add_task(async function selected_result_suggest_sponsor() {
 
     assertEngagementTelemetry([
       {
-        selected_result: "suggest_sponsor",
+        selected_result: "rs_adm_sponsored",
         selected_result_subtype: "",
         provider: "UrlbarProviderQuickSuggest",
-        results: "search_engine,suggest_sponsor",
+        results: "search_engine,rs_adm_sponsored",
       },
     ]);
   });
@@ -567,7 +567,7 @@ add_task(async function selected_result_suggest_sponsor() {
   cleanupQuickSuggest();
 });
 
-add_task(async function selected_result_suggest_non_sponsor() {
+add_task(async function selected_result_adm_nonsponsored() {
   const cleanupQuickSuggest = await ensureQuickSuggestInit();
 
   await doTest(async browser => {
@@ -577,10 +577,10 @@ add_task(async function selected_result_suggest_non_sponsor() {
 
     assertEngagementTelemetry([
       {
-        selected_result: "suggest_non_sponsor",
+        selected_result: "rs_adm_nonsponsored",
         selected_result_subtype: "",
         provider: "UrlbarProviderQuickSuggest",
-        results: "search_engine,suggest_non_sponsor",
+        results: "search_engine,rs_adm_nonsponsored",
       },
     ]);
   });
@@ -620,7 +620,7 @@ add_task(async function selected_result_weather() {
   await MerinoTestUtils.initWeather();
 
   await doTest(async browser => {
-    await openPopup("");
+    await openPopup(MerinoTestUtils.WEATHER_KEYWORD);
     await selectRowByProvider("Weather");
     await doEnter();
 
@@ -629,7 +629,7 @@ add_task(async function selected_result_weather() {
         selected_result: "weather",
         selected_result_subtype: "",
         provider: "Weather",
-        results: "weather",
+        results: "search_engine,weather",
       },
     ]);
   });
@@ -660,10 +660,10 @@ add_task(async function selected_result_navigational() {
 
     assertEngagementTelemetry([
       {
-        selected_result: "navigational",
+        selected_result: "merino_top_picks",
         selected_result_subtype: "",
         provider: "UrlbarProviderQuickSuggest",
-        results: "search_engine,navigational",
+        results: "search_engine,merino_top_picks",
       },
     ]);
   });
@@ -694,10 +694,10 @@ add_task(async function selected_result_dynamic_wikipedia() {
 
     assertEngagementTelemetry([
       {
-        selected_result: "dynamic_wikipedia",
+        selected_result: "merino_wikipedia",
         selected_result_subtype: "",
         provider: "UrlbarProviderQuickSuggest",
-        results: "search_engine,dynamic_wikipedia",
+        results: "search_engine,merino_wikipedia",
       },
     ]);
   });

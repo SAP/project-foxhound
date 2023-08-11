@@ -7,6 +7,17 @@ import {
   MessageHandler,
 } from "chrome://remote/content/shared/messagehandler/MessageHandler.sys.mjs";
 
+const lazy = {};
+
+ChromeUtils.defineESModuleGetters(lazy, {
+  error: "chrome://remote/content/shared/webdriver/Errors.sys.mjs",
+  getMessageHandlerFrameChildActor:
+    "chrome://remote/content/shared/messagehandler/transports/js-window-actors/MessageHandlerFrameChild.sys.mjs",
+  RootMessageHandler:
+    "chrome://remote/content/shared/messagehandler/RootMessageHandler.sys.mjs",
+  WindowRealm: "chrome://remote/content/shared/Realm.sys.mjs",
+});
+
 /**
  * A WindowGlobalMessageHandler is dedicated to debugging a single window
  * global. It follows the lifecycle of the corresponding window global and will
@@ -16,11 +27,25 @@ import {
  */
 export class WindowGlobalMessageHandler extends MessageHandler {
   #innerWindowId;
+  #realms;
 
   constructor() {
     super(...arguments);
 
     this.#innerWindowId = this.context.window.windowGlobalChild.innerWindowId;
+
+    // Maps sandbox names to instances of window realms,
+    // the default realm is mapped to an empty string sandbox name.
+    this.#realms = new Map([["", new lazy.WindowRealm(this.context.window)]]);
+  }
+
+  destroy() {
+    for (const realm of this.#realms.values()) {
+      realm.destroy();
+    }
+    this.#realms = null;
+
+    super.destroy();
   }
 
   /**
@@ -59,12 +84,30 @@ export class WindowGlobalMessageHandler extends MessageHandler {
     return this.#innerWindowId;
   }
 
-  get processActor() {
-    return ChromeUtils.domProcessChild.getActor("WebDriverProcessData");
+  get realms() {
+    return this.#realms;
   }
 
   get window() {
     return this.context.window;
+  }
+
+  #getRealmFromSandboxName(sandboxName = null) {
+    if (sandboxName === null || sandboxName === "") {
+      return this.#realms.get("");
+    }
+
+    if (this.#realms.has(sandboxName)) {
+      return this.#realms.get(sandboxName);
+    }
+
+    const realm = new lazy.WindowRealm(this.context.window, {
+      sandboxName,
+    });
+
+    this.#realms.set(sandboxName, realm);
+
+    return realm;
   }
 
   async applyInitialSessionDataItems(sessionDataItems) {
@@ -132,9 +175,47 @@ export class WindowGlobalMessageHandler extends MessageHandler {
   }
 
   forwardCommand(command) {
-    throw new Error(
-      `Cannot forward commands from a "WINDOW_GLOBAL" MessageHandler`
+    switch (command.destination.type) {
+      case lazy.RootMessageHandler.type:
+        return lazy
+          .getMessageHandlerFrameChildActor(this)
+          .sendCommand(command, this.sessionId);
+      default:
+        throw new Error(
+          `Cannot forward command to "${command.destination.type}" from "${this.constructor.type}".`
+        );
+    }
+  }
+
+  /**
+   * If <var>realmId</var> is null or not provided get the realm for
+   * a given <var>sandboxName</var>, otherwise find the realm
+   * in the cache with the realm id equal given <var>realmId</var>.
+   *
+   * @param {object} options
+   * @param {string|null=} options.realmId
+   *     The realm id.
+   * @param {string=} options.sandboxName
+   *     The name of sandbox
+   *
+   * @returns {Realm}
+   *     The realm object.
+   */
+  getRealm(options = {}) {
+    const { realmId = null, sandboxName } = options;
+    if (realmId === null) {
+      return this.#getRealmFromSandboxName(sandboxName);
+    }
+
+    const realm = Array.from(this.#realms.values()).find(
+      realm => realm.id === realmId
     );
+
+    if (realm) {
+      return realm;
+    }
+
+    throw new lazy.error.NoSuchFrameError(`Realm with id ${realmId} not found`);
   }
 
   matchesContext(contextDescriptor) {
@@ -143,5 +224,22 @@ export class WindowGlobalMessageHandler extends MessageHandler {
       (contextDescriptor.type === ContextDescriptorType.TopBrowsingContext &&
         contextDescriptor.id === this.context.browserId)
     );
+  }
+
+  /**
+   * Send a command to the root MessageHandler.
+   *
+   * @param {Command} command
+   *     The command to send to the root MessageHandler.
+   * @returns {Promise}
+   *     A promise which resolves with the return value of the command.
+   */
+  sendRootCommand(command) {
+    return this.handleCommand({
+      ...command,
+      destination: {
+        type: lazy.RootMessageHandler.type,
+      },
+    });
   }
 }

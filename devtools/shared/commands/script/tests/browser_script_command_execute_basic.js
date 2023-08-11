@@ -64,6 +64,10 @@ add_task(async () => {
     async function testAsyncAwait() { await 1; return 10; }
     async function * testAsyncGen() { return 10; }
     async function * testAsyncGenAwait() { await 1; return 10; }
+
+    function testFunc() {}
+
+    var testLocale = new Intl.Locale("de-latn-de-u-ca-gregory-co-phonebk-hc-h23-kf-true-kn-false-nu-latn");
   </script>
   <body id="body1" class="class2"><h1>Body text</h1></body>
   </html>`);
@@ -629,6 +633,25 @@ async function doEagerEvalESGetters(commands) {
     ["testDataView.byteLength", 1],
     ["testDataView.byteOffset", 2],
 
+    // Error
+    ["typeof new Error().stack", "string"],
+
+    // Function
+    ["typeof testFunc.arguments", "object"],
+    ["typeof testFunc.caller", "object"],
+
+    // Intl.Locale
+    ["testLocale.baseName", "de-Latn-DE"],
+    ["testLocale.calendar", "gregory"],
+    ["testLocale.caseFirst", ""],
+    ["testLocale.collation", "phonebk"],
+    ["testLocale.hourCycle", "h23"],
+    ["testLocale.numeric", false],
+    ["testLocale.numberingSystem", "latn"],
+    ["testLocale.language", "de"],
+    ["testLocale.script", "Latn"],
+    ["testLocale.region", "DE"],
+
     // Map
     ["testMap.size", 4],
 
@@ -658,6 +681,64 @@ async function doEagerEvalESGetters(commands) {
   ];
 
   for (const [code, expectedResult] of testData) {
+    const response = await commands.scriptCommand.execute(code, {
+      eager: true,
+    });
+    checkObject(
+      response,
+      {
+        input: code,
+        result: expectedResult,
+      },
+      code
+    );
+
+    ok(!response.exception, "no eval exception");
+    ok(!response.helperResult, "no helper result");
+  }
+
+  // Test RegExp static properties.
+  // Run preparation code here to avoid interference with other tests,
+  // given RegExp static properties are global state.
+  const regexpPreparationCode = `
+/b(c)(d)(e)(f)(g)(h)(i)(j)(k)l/.test("abcdefghijklm")
+`;
+
+  const prepResponse = await commands.scriptCommand.execute(
+    regexpPreparationCode
+  );
+  checkObject(prepResponse, {
+    input: regexpPreparationCode,
+    result: true,
+  });
+
+  ok(!prepResponse.exception, "no eval exception");
+  ok(!prepResponse.helperResult, "no helper result");
+
+  const testDataRegExp = [
+    // RegExp static
+    ["RegExp.input", "abcdefghijklm"],
+    ["RegExp.lastMatch", "bcdefghijkl"],
+    ["RegExp.lastParen", "k"],
+    ["RegExp.leftContext", "a"],
+    ["RegExp.rightContext", "m"],
+    ["RegExp.$1", "c"],
+    ["RegExp.$2", "d"],
+    ["RegExp.$3", "e"],
+    ["RegExp.$4", "f"],
+    ["RegExp.$5", "g"],
+    ["RegExp.$6", "h"],
+    ["RegExp.$7", "i"],
+    ["RegExp.$8", "j"],
+    ["RegExp.$9", "k"],
+    ["RegExp.$_", "abcdefghijklm"], // input
+    ["RegExp['$&']", "bcdefghijkl"], // lastMatch
+    ["RegExp['$+']", "k"], // lastParen
+    ["RegExp['$`']", "a"], // leftContext
+    ["RegExp[`$'`]", "m"], // rightContext
+  ];
+
+  for (const [code, expectedResult] of testDataRegExp) {
     const response = await commands.scriptCommand.execute(code, {
       eager: true,
     });

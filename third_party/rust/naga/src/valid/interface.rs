@@ -63,6 +63,8 @@ pub enum VaryingError {
 pub enum EntryPointError {
     #[error("Multiple conflicting entry points")]
     Conflict,
+    #[error("Vertex shaders must return a `@builtin(position)` output value")]
+    MissingVertexOutputPosition,
     #[error("Early depth test is not applicable")]
     UnexpectedEarlyDepthTest,
     #[error("Workgroup size is not applicable")]
@@ -305,7 +307,7 @@ impl VaryingContext<'_> {
                 let needs_interpolation = match self.stage {
                     crate::ShaderStage::Vertex => self.output,
                     crate::ShaderStage::Fragment => !self.output,
-                    _ => false,
+                    crate::ShaderStage::Compute => false,
                 };
 
                 // It doesn't make sense to specify a sampling when `interpolation` is `Flat`, but
@@ -353,7 +355,6 @@ impl VaryingContext<'_> {
                 .map_err(|e| e.with_span_context(span_context)),
             None => {
                 match self.types[ty].inner {
-                    //TODO: check the member types
                     crate::TypeInner::Struct { ref members, .. } => {
                         for (index, member) in members.iter().enumerate() {
                             let span_context = self.types.get_span_context(ty);
@@ -369,7 +370,6 @@ impl VaryingContext<'_> {
                                     #[cfg(not(feature = "validate"))]
                                     let _ = index;
                                 }
-                                // TODO: shouldn't this be validate?
                                 Some(ref binding) => self
                                     .validate_impl(member.ty, binding)
                                     .map_err(|e| e.with_span_context(span_context))?,
@@ -440,7 +440,9 @@ impl super::Validator {
                 match types[var.ty].inner {
                     crate::TypeInner::Image { .. }
                     | crate::TypeInner::Sampler { .. }
-                    | crate::TypeInner::BindingArray { .. } => {}
+                    | crate::TypeInner::BindingArray { .. }
+                    | crate::TypeInner::AccelerationStructure
+                    | crate::TypeInner::RayQuery => {}
                     _ => {
                         return Err(GlobalVariableError::InvalidType(var.space));
                     }
@@ -601,6 +603,16 @@ impl super::Validator {
             };
             ctx.validate(fr.ty, fr.binding.as_ref())
                 .map_err_inner(|e| EntryPointError::Result(e).with_span())?;
+
+            #[cfg(feature = "validate")]
+            if ep.stage == crate::ShaderStage::Vertex
+                && !result_built_ins.contains(&crate::BuiltIn::Position { invariant: false })
+            {
+                return Err(EntryPointError::MissingVertexOutputPosition.with_span());
+            }
+        } else if ep.stage == crate::ShaderStage::Vertex {
+            #[cfg(feature = "validate")]
+            return Err(EntryPointError::MissingVertexOutputPosition.with_span());
         }
 
         for bg in self.bind_group_masks.iter_mut() {

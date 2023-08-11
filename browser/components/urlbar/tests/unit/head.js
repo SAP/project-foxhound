@@ -132,6 +132,10 @@ function createContext(searchString = "foo", properties = {}) {
     get visibleResults() {
       return context.results;
     },
+    controller: {
+      removeResult() {},
+    },
+    acknowledgeDismissal() {},
   };
   UrlbarTokenizer.tokenize(context);
   return context;
@@ -387,33 +391,6 @@ async function cleanupPlaces() {
 
   await PlacesUtils.bookmarks.eraseEverything();
   await PlacesUtils.history.clear();
-}
-
-/**
- * Returns the frecency of a url.
- *
- * @param {string} aURI The URI or spec to get frecency for.
- * @returns {number} the frecency value.
- */
-function frecencyForUrl(aURI) {
-  let url = aURI;
-  if (aURI instanceof Ci.nsIURI) {
-    url = aURI.spec;
-  } else if (URL.isInstance(aURI)) {
-    url = aURI.href;
-  }
-  let stmt = DBConn().createStatement(
-    "SELECT frecency FROM moz_places WHERE url_hash = hash(?1) AND url = ?1"
-  );
-  stmt.bindByIndex(0, url);
-  try {
-    if (!stmt.executeStep()) {
-      throw new Error("No result for frecency.");
-    }
-    return stmt.getInt32(0);
-  } finally {
-    stmt.finalize();
-  }
 }
 
 /**
@@ -941,7 +918,7 @@ async function check_results({
   // return reliable resultsets, thus we have to wait.
   await PlacesTestUtils.promiseAsyncUpdates();
 
-  let controller = UrlbarTestUtils.newMockController({
+  const controller = UrlbarTestUtils.newMockController({
     input: {
       isPrivate: context.isPrivate,
       onFirstResult() {
@@ -1030,8 +1007,8 @@ async function check_results({
       `result.heuristic at result index ${i}`
     );
     Assert.equal(
-      actual.isBestMatch,
-      expected.isBestMatch,
+      !!actual.isBestMatch,
+      !!expected.isBestMatch,
       `result.isBestMatch at result index ${i}`
     );
     if (expected.providerName) {

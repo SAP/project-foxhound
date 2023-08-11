@@ -21,7 +21,9 @@ job-template:
         symbol: BMN
     upstream-artifacts:
         - taskType: signing
-          paths: ["public/build/target.tar.gz"]
+          paths:
+              - public/build/target.tar.gz
+              - public/build/target.pkg
           formats: ["apple_notarization"]
           taskId:
               task-reference: <build-mac-signing>

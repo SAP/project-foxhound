@@ -98,13 +98,8 @@ inline NSString* ToNSString(id aValue) {
   MOZ_ASSERT(mGeckoAccessible);
 
   int32_t lineNumber = -1;
-  if (mGeckoAccessible->IsLocal()) {
-    if (HyperTextAccessible* textAcc =
-            mGeckoAccessible->AsLocal()->AsHyperText()) {
-      lineNumber = textAcc->CaretLineNumber() - 1;
-    }
-  } else {
-    lineNumber = mGeckoAccessible->AsRemote()->CaretLineNumber() - 1;
+  if (HyperTextAccessibleBase* textAcc = mGeckoAccessible->AsHyperTextBase()) {
+    lineNumber = textAcc->CaretLineNumber() - 1;
   }
 
   return (lineNumber >= 0) ? [NSNumber numberWithInt:lineNumber] : nil;
@@ -125,12 +120,8 @@ inline NSString* ToNSString(id aValue) {
     return NSAccessibilitySecureTextFieldSubrole;
   }
 
-  if (mRole == roles::ENTRY) {
-    LocalAccessible* acc = mGeckoAccessible->AsLocal();
-    RemoteAccessible* proxy = mGeckoAccessible->AsRemote();
-    if ((acc && acc->IsSearchbox()) || (proxy && proxy->IsSearchbox())) {
-      return @"AXSearchField";
-    }
+  if (mRole == roles::ENTRY && mGeckoAccessible->IsSearchbox()) {
+    return @"AXSearchField";
   }
 
   return nil;

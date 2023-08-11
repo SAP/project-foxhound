@@ -9,17 +9,15 @@ extern crate log;
 extern crate xpcom;
 
 use authenticator::{
-    authenticatorservice::{
-        AuthenticatorService, CtapVersion, GetAssertionOptions, MakeCredentialsOptions,
-        RegisterArgsCtap2, SignArgsCtap2,
-    },
+    authenticatorservice::{AuthenticatorService, RegisterArgs, SignArgs},
     ctap2::attestation::AttestationStatement,
     ctap2::server::{
-        PublicKeyCredentialDescriptor, PublicKeyCredentialParameters, RelyingParty, User,
+        PublicKeyCredentialDescriptor, PublicKeyCredentialParameters, RelyingParty,
+        ResidentKeyRequirement, User, UserVerificationRequirement,
     },
     errors::{AuthenticatorError, PinError, U2FTokenError},
     statecallback::StateCallback,
-    Assertion, Pin, RegisterResult, SignResult, StatusUpdate,
+    Assertion, Pin, RegisterResult, SignResult, StatusPinUv, StatusUpdate,
 };
 use moz_task::RunnableBuilder;
 use nserror::{
@@ -78,20 +76,14 @@ fn make_pin_required_prompt(
 
 fn authrs_to_nserror(e: &AuthenticatorError) -> nsresult {
     match e {
-        AuthenticatorError::U2FToken(U2FTokenError::Unknown) => NS_ERROR_DOM_UNKNOWN_ERR,
         AuthenticatorError::U2FToken(U2FTokenError::NotSupported) => NS_ERROR_DOM_NOT_SUPPORTED_ERR,
         AuthenticatorError::U2FToken(U2FTokenError::InvalidState) => NS_ERROR_DOM_INVALID_STATE_ERR,
-        AuthenticatorError::U2FToken(U2FTokenError::ConstraintError) => NS_ERROR_DOM_UNKNOWN_ERR,
         AuthenticatorError::U2FToken(U2FTokenError::NotAllowed) => NS_ERROR_DOM_NOT_ALLOWED_ERR,
         AuthenticatorError::PinError(PinError::PinRequired) => NS_ERROR_DOM_OPERATION_ERR,
-        AuthenticatorError::PinError(PinError::PinIsTooShort) => NS_ERROR_DOM_UNKNOWN_ERR,
-        AuthenticatorError::PinError(PinError::PinIsTooLong(_)) => NS_ERROR_DOM_UNKNOWN_ERR,
-        AuthenticatorError::PinError(PinError::InvalidKeyLen) => NS_ERROR_DOM_UNKNOWN_ERR,
         AuthenticatorError::PinError(PinError::InvalidPin(_)) => NS_ERROR_DOM_OPERATION_ERR,
         AuthenticatorError::PinError(PinError::PinAuthBlocked) => NS_ERROR_DOM_OPERATION_ERR,
         AuthenticatorError::PinError(PinError::PinBlocked) => NS_ERROR_DOM_OPERATION_ERR,
-        AuthenticatorError::PinError(PinError::PinNotSet) => NS_ERROR_DOM_UNKNOWN_ERR,
-        AuthenticatorError::PinError(PinError::Crypto(_)) => NS_ERROR_DOM_UNKNOWN_ERR,
+        AuthenticatorError::PinError(PinError::PinNotSet) => NS_ERROR_DOM_OPERATION_ERR,
         _ => NS_ERROR_DOM_UNKNOWN_ERR,
     }
 }
@@ -102,20 +94,10 @@ pub struct CtapRegisterResult {
 }
 
 impl CtapRegisterResult {
-    xpcom_method!(get_client_data_json => GetClientDataJSON() -> nsACString);
-    fn get_client_data_json(&self) -> Result<nsCString, nsresult> {
-        match &self.result {
-            Ok(RegisterResult::CTAP2(_, client_data)) => {
-                return Ok(nsCString::from(client_data.serialized_data.clone()))
-            }
-            _ => return Err(NS_ERROR_FAILURE),
-        }
-    }
-
     xpcom_method!(get_attestation_object => GetAttestationObject() -> ThinVec<u8>);
     fn get_attestation_object(&self) -> Result<ThinVec<u8>, nsresult> {
         let mut out = ThinVec::new();
-        if let Ok(RegisterResult::CTAP2(attestation, _)) = &self.result {
+        if let Ok(RegisterResult::CTAP2(attestation)) = &self.result {
             if let Ok(encoded_att_obj) = serde_cbor::to_vec(&attestation) {
                 out.extend_from_slice(&encoded_att_obj);
                 return Ok(out);
@@ -127,7 +109,7 @@ impl CtapRegisterResult {
     xpcom_method!(get_credential_id => GetCredentialId() -> ThinVec<u8>);
     fn get_credential_id(&self) -> Result<ThinVec<u8>, nsresult> {
         let mut out = ThinVec::new();
-        if let Ok(RegisterResult::CTAP2(attestation, _)) = &self.result {
+        if let Ok(RegisterResult::CTAP2(attestation)) = &self.result {
             if let Some(credential_data) = &attestation.auth_data.credential_data {
                 out.extend(credential_data.credential_id.clone());
                 return Ok(out);
@@ -140,7 +122,7 @@ impl CtapRegisterResult {
     fn get_status(&self) -> Result<nsresult, nsresult> {
         match &self.result {
             Ok(_) => Ok(NS_OK),
-            Err(e) => Err(authrs_to_nserror(e)),
+            Err(e) => Ok(authrs_to_nserror(e)),
         }
     }
 }
@@ -224,7 +206,7 @@ impl CtapSignResult {
     fn get_status(&self) -> Result<nsresult, nsresult> {
         match &self.result {
             Ok(_) => Ok(NS_OK),
-            Err(e) => Err(authrs_to_nserror(e)),
+            Err(e) => Ok(authrs_to_nserror(e)),
         }
     }
 }
@@ -287,14 +269,12 @@ impl Controller {
         // to an error. Otherwise we convert the entries of SignResult (= Vec<Assertion>) into
         // CtapSignResults with OK statuses.
         let mut assertions: ThinVec<Option<RefPtr<nsICtapSignResult>>> = ThinVec::new();
-        let mut client_data = nsCString::new();
         match result {
             Err(e) => assertions.push(
                 CtapSignResult::allocate(InitCtapSignResult { result: Err(e) })
                     .query_interface::<nsICtapSignResult>(),
             ),
-            Ok(SignResult::CTAP2(assertion_vec, json)) => {
-                client_data = nsCString::from(json.serialized_data);
+            Ok(SignResult::CTAP2(assertion_vec)) => {
                 for assertion in assertion_vec.0 {
                     assertions.push(
                         CtapSignResult::allocate(InitCtapSignResult {
@@ -308,7 +288,7 @@ impl Controller {
         }
 
         unsafe {
-            (**(self.0.borrow())).FinishSign(tid, &mut *client_data, &mut assertions);
+            (**(self.0.borrow())).FinishSign(tid, &mut assertions);
         }
         Ok(())
     }
@@ -358,50 +338,57 @@ fn status_callback(
                 };
                 controller.send_prompt(tid, &notification_str);
             }
-            Ok(StatusUpdate::PinError(error, sender)) => match error {
-                PinError::PinRequired => {
-                    let guard = pin_receiver.lock();
-                    if let Ok(mut entry) = guard {
-                        entry.replace((tid, sender));
-                    } else {
-                        return;
-                    }
-                    let notification_str =
-                        make_pin_required_prompt(tid, origin, browsing_context_id, false, -1);
-                    controller.send_prompt(tid, &notification_str);
-                    continue;
+            Ok(StatusUpdate::PinUvError(StatusPinUv::PinRequired(sender))) => {
+                let guard = pin_receiver.lock();
+                if let Ok(mut entry) = guard {
+                    entry.replace((tid, sender));
+                } else {
+                    return;
                 }
-                PinError::InvalidPin(attempts) => {
-                    let guard = pin_receiver.lock();
-                    if let Ok(mut entry) = guard {
-                        entry.replace((tid, sender));
-                    } else {
-                        return;
-                    }
-                    let notification_str = make_pin_required_prompt(
-                        tid,
-                        origin,
-                        browsing_context_id,
-                        true,
-                        attempts.map_or(-1, |x| x as i64),
-                    );
-                    controller.send_prompt(tid, &notification_str);
-                    continue;
+                let notification_str =
+                    make_pin_required_prompt(tid, origin, browsing_context_id, false, -1);
+                controller.send_prompt(tid, &notification_str);
+            }
+            Ok(StatusUpdate::PinUvError(StatusPinUv::InvalidPin(sender, attempts))) => {
+                let guard = pin_receiver.lock();
+                if let Ok(mut entry) = guard {
+                    entry.replace((tid, sender));
+                } else {
+                    return;
                 }
-                PinError::PinAuthBlocked => {
-                    let notification_str =
-                        make_pin_error_prompt("pin-auth-blocked", tid, origin, browsing_context_id);
-                    controller.send_prompt(tid, &notification_str);
-                }
-                PinError::PinBlocked => {
-                    let notification_str =
-                        make_pin_error_prompt("device-blocked", tid, origin, browsing_context_id);
-                    controller.send_prompt(tid, &notification_str);
-                }
-                e => {
-                    warn!("Unexpected error: {:?}", e)
-                }
-            },
+                let notification_str = make_pin_required_prompt(
+                    tid,
+                    origin,
+                    browsing_context_id,
+                    true,
+                    attempts.map_or(-1, |x| x as i64),
+                );
+                controller.send_prompt(tid, &notification_str);
+            }
+            Ok(StatusUpdate::PinUvError(StatusPinUv::PinAuthBlocked)) => {
+                let notification_str =
+                    make_pin_error_prompt("pin-auth-blocked", tid, origin, browsing_context_id);
+                controller.send_prompt(tid, &notification_str);
+            }
+            Ok(StatusUpdate::PinUvError(StatusPinUv::PinBlocked)) => {
+                let notification_str =
+                    make_pin_error_prompt("device-blocked", tid, origin, browsing_context_id);
+                controller.send_prompt(tid, &notification_str);
+            }
+            Ok(StatusUpdate::PinUvError(StatusPinUv::PinNotSet)) => {
+                let notification_str =
+                    make_pin_error_prompt("pin-not-set", tid, origin, browsing_context_id);
+                controller.send_prompt(tid, &notification_str);
+            }
+            Ok(StatusUpdate::PinUvError(e)) => {
+                warn!("Unexpected error: {:?}", e)
+            }
+            Ok(StatusUpdate::InteractiveManagement((_, dev_info, auth_info))) => {
+                debug!(
+                    "STATUS: interactive management: {}, {:?}",
+                    dev_info, auth_info
+                );
+            }
             Err(RecvError) => {
                 debug!("STATUS: end");
                 return;
@@ -466,11 +453,10 @@ impl AuthrsTransport {
         let mut relying_party_id = nsString::new();
         unsafe { args.GetRpId(&mut *relying_party_id) }.to_result()?;
 
-        let mut challenge = ThinVec::new();
-        unsafe { args.GetChallenge(&mut challenge) }.to_result()?;
-
-        let mut client_data_json = nsCString::new();
-        unsafe { args.GetClientDataJSON(&mut *client_data_json) }.to_result()?;
+        let mut client_data_hash = ThinVec::new();
+        unsafe { args.GetClientDataHash(&mut client_data_hash) }.to_result()?;
+        let mut client_data_hash_arr = [0u8; 32];
+        client_data_hash_arr.copy_from_slice(&client_data_hash);
 
         let mut timeout_ms = 0u32;
         unsafe { args.GetTimeoutMS(&mut timeout_ms) }.to_result()?;
@@ -504,12 +490,29 @@ impl AuthrsTransport {
             .map(|alg| PublicKeyCredentialParameters::try_from(*alg).unwrap())
             .collect();
 
-        let mut require_resident_key = false;
-        unsafe { args.GetRequireResidentKey(&mut require_resident_key) }.to_result()?;
+        let mut resident_key = nsString::new();
+        unsafe { args.GetResidentKey(&mut *resident_key) }.to_result()?;
+        let resident_key_req = if resident_key.eq("required") {
+            ResidentKeyRequirement::Required
+        } else if resident_key.eq("preferred") {
+            ResidentKeyRequirement::Preferred
+        } else if resident_key.eq("discouraged") {
+            ResidentKeyRequirement::Discouraged
+        } else {
+            return Err(NS_ERROR_FAILURE);
+        };
 
         let mut user_verification = nsString::new();
         unsafe { args.GetUserVerification(&mut *user_verification) }.to_result()?;
-        let require_user_verification = user_verification.eq("required");
+        let user_verification_req = if user_verification.eq("required") {
+            UserVerificationRequirement::Required
+        } else if user_verification.eq("preferred") {
+            UserVerificationRequirement::Preferred
+        } else if user_verification.eq("discouraged") {
+            UserVerificationRequirement::Discouraged
+        } else {
+            return Err(NS_ERROR_FAILURE);
+        };
 
         let mut attestation_conveyance_preference = nsString::new();
         unsafe { args.GetAttestationConveyancePreference(&mut *attestation_conveyance_preference) }
@@ -524,8 +527,8 @@ impl AuthrsTransport {
         //     _ => (),
         // }
 
-        let info = RegisterArgsCtap2 {
-            challenge: challenge.to_vec(),
+        let info = RegisterArgs {
+            client_data_hash: client_data_hash_arr,
             relying_party: RelyingParty {
                 id: relying_party_id.to_string(),
                 name: None,
@@ -540,12 +543,11 @@ impl AuthrsTransport {
             },
             pub_cred_params,
             exclude_list,
-            options: MakeCredentialsOptions {
-                resident_key: require_resident_key.then_some(true),
-                user_verification: require_user_verification.then_some(true),
-            },
+            user_verification_req,
+            resident_key_req,
             extensions: Default::default(),
             pin: None,
+            use_ctap1_fallback: static_prefs::pref!("security.webauthn.ctap2") == false,
         };
 
         let (status_tx, status_rx) = channel::<StatusUpdate>();
@@ -577,13 +579,13 @@ impl AuthrsTransport {
                         "AuthrsTransport::MakeCredential",
                         2,
                     )),
-                    Ok(RegisterResult::CTAP2(mut attestation_object, client_data)) => {
+                    Ok(RegisterResult::CTAP2(mut attestation_object)) => {
                         // Tokens always provide attestation, but the user may have asked we not
                         // include the attestation statement in the response.
                         if none_attestation {
                             attestation_object.att_statement = AttestationStatement::None;
                         }
-                        Ok(RegisterResult::CTAP2(attestation_object, client_data))
+                        Ok(RegisterResult::CTAP2(attestation_object))
                     }
                     Err(e) => Err(e),
                 };
@@ -615,11 +617,10 @@ impl AuthrsTransport {
         let mut relying_party_id = nsString::new();
         unsafe { args.GetRpId(&mut *relying_party_id) }.to_result()?;
 
-        let mut challenge = ThinVec::new();
-        unsafe { args.GetChallenge(&mut challenge) }.to_result()?;
-
-        let mut client_data_json = nsCString::new();
-        unsafe { args.GetClientDataJSON(&mut *client_data_json) }.to_result()?;
+        let mut client_data_hash = ThinVec::new();
+        unsafe { args.GetClientDataHash(&mut client_data_hash) }.to_result()?;
+        let mut client_data_hash_arr = [0u8; 32];
+        client_data_hash_arr.copy_from_slice(&client_data_hash);
 
         let mut timeout_ms = 0u32;
         unsafe { args.GetTimeoutMS(&mut timeout_ms) }.to_result()?;
@@ -636,7 +637,15 @@ impl AuthrsTransport {
 
         let mut user_verification = nsString::new();
         unsafe { args.GetUserVerification(&mut *user_verification) }.to_result()?;
-        let require_user_verification = user_verification.eq("required");
+        let user_verification_req = if user_verification.eq("required") {
+            UserVerificationRequirement::Required
+        } else if user_verification.eq("preferred") {
+            UserVerificationRequirement::Preferred
+        } else if user_verification.eq("discouraged") {
+            UserVerificationRequirement::Discouraged
+        } else {
+            return Err(NS_ERROR_FAILURE);
+        };
 
         let mut alternate_rp_id = None;
         let mut maybe_alternate_rp_id = nsString::new();
@@ -677,7 +686,7 @@ impl AuthrsTransport {
                         "AuthrsTransport::GetAssertion",
                         2,
                     )),
-                    Ok(SignResult::CTAP2(mut assertion_object, client_data)) => {
+                    Ok(SignResult::CTAP2(mut assertion_object)) => {
                         // In CTAP 2.0, but not CTAP 2.1, the assertion object's credential field
                         // "May be omitted if the allowList has exactly one Credential." If we had
                         // a unique allowed credential, then copy its descriptor to the output.
@@ -688,25 +697,24 @@ impl AuthrsTransport {
                                 }
                             }
                         }
-                        Ok(SignResult::CTAP2(assertion_object, client_data))
+                        Ok(SignResult::CTAP2(assertion_object))
                     }
                     Err(e) => Err(e),
                 };
                 let _ = controller.finish_sign(tid, result);
             }));
 
-        let info = SignArgsCtap2 {
-            challenge: challenge.to_vec(),
+        let info = SignArgs {
+            client_data_hash: client_data_hash_arr,
             relying_party_id: relying_party_id.to_string(),
             origin: origin.to_string(),
             allow_list,
-            options: GetAssertionOptions {
-                user_presence: Some(true),
-                user_verification: require_user_verification.then_some(true),
-            },
+            user_verification_req,
+            user_presence_req: true,
             extensions: Default::default(),
             pin: None,
             alternate_rp_id,
+            use_ctap1_fallback: static_prefs::pref!("security.webauthn.ctap2") == false,
         };
 
         self.auth_service
@@ -732,7 +740,7 @@ impl AuthrsTransport {
 pub extern "C" fn authrs_transport_constructor(
     result: *mut *const nsIWebAuthnTransport,
 ) -> nsresult {
-    let mut auth_service = match AuthenticatorService::new(CtapVersion::CTAP2) {
+    let mut auth_service = match AuthenticatorService::new() {
         Ok(auth_service) => auth_service,
         _ => return NS_ERROR_FAILURE,
     };

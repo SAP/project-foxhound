@@ -282,7 +282,7 @@ static bool RegisterExecutableMemory(void* p, size_t bytes, size_t pageSize) {
   // RtlAddGrowableFunctionTable is only available in Windows 8.1 and higher.
   // This can be simplified if our compile target changes.
   HMODULE ntdll_module =
-      LoadLibraryEx("ntdll.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
+      LoadLibraryExW(L"ntdll.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
 
   static decltype(&::RtlAddGrowableFunctionTable) addGrowableFunctionTable =
       reinterpret_cast<decltype(&::RtlAddGrowableFunctionTable)>(
@@ -897,9 +897,10 @@ bool js::jit::ReprotectRegion(void* start, size_t size,
   std::atomic_thread_fence(std::memory_order_seq_cst);
 
 #  ifdef XP_WIN
-  DWORD oldProtect;
   DWORD flags = ProtectionSettingToFlags(protection);
-  if (!VirtualProtect(pageStart, size, flags, &oldProtect)) {
+  // This is a essentially a VirtualProtect, but with lighter impact on
+  // antivirus analysis. See bug 1823634.
+  if (!VirtualAlloc(pageStart, size, MEM_COMMIT, flags)) {
     return false;
   }
 #  else

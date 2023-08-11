@@ -18,6 +18,7 @@
 #include "mozilla/Range.h"
 #include "mozilla/EnumeratedRange.h"
 #include "mozilla/StaticPrefs_gfx.h"
+#include "mozilla/StaticPrefs_webgl.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/gfx/gfxVars.h"
 #include "mozilla/gfx/GPUParent.h"
@@ -314,15 +315,15 @@ WebRenderBridgeParent::WebRenderBridgeParent(
   if (IsRootWebRenderBridgeParent()) {
     MOZ_ASSERT(!mCompositorScheduler);
     mCompositorScheduler = new CompositorVsyncScheduler(this, mWidget);
+    UpdateDebugFlags();
+    UpdateQualitySettings();
+    UpdateProfilerUI();
+    UpdateParameters();
+    // Start with the cached bool parameter bits inverted so that we update them
+    // all.
+    mBoolParameterBits = ~gfxVars::WebRenderBoolParameters();
+    UpdateBoolParameters();
   }
-  UpdateDebugFlags();
-  UpdateQualitySettings();
-  UpdateProfilerUI();
-  UpdateParameters();
-  // Start with the cached bool parameter bits inverted so that we update
-  // them all.
-  mBoolParameterBits = ~gfxVars::WebRenderBoolParameters();
-  UpdateBoolParameters();
 }
 
 WebRenderBridgeParent::WebRenderBridgeParent(const wr::PipelineId& aPipelineId,
@@ -1138,6 +1139,15 @@ bool WebRenderBridgeParent::ProcessDisplayListData(
   wr::TransactionBuilder txn(mApi);
   Maybe<wr::AutoTransactionSender> sender;
 
+  if (aDisplayList.mScrollData && !aDisplayList.mScrollData->Validate()) {
+    // If the scroll data is invalid, the entire transaction needs to be dropped
+    // because the scroll data and the display list cross-reference each other.
+    MOZ_ASSERT(
+        false,
+        "Content sent malformed scroll data (or validation check has a bug)");
+    aValidTransaction = false;
+  }
+
   if (!aValidTransaction) {
     return true;
   }
@@ -1486,16 +1496,20 @@ bool WebRenderBridgeParent::ProcessWebRenderParentCommands(
         mAsyncImageManager->UpdateAsyncImagePipeline(
             op.pipelineId(), op.scBounds(), op.rotation(), op.filter(),
             op.mixBlendMode());
+        auto* list = mApi->GetPendingRemoteTextureInfoList();
+        MOZ_ASSERT_IF(IsRootWebRenderBridgeParent(), !list);
         mAsyncImageManager->ApplyAsyncImageForPipeline(op.pipelineId(), aTxn,
-                                                       txnForImageBridge);
+                                                       txnForImageBridge, list);
         break;
       }
       case WebRenderParentCommand::TOpUpdatedAsyncImagePipeline: {
         const OpUpdatedAsyncImagePipeline& op =
             cmd.get_OpUpdatedAsyncImagePipeline();
         aTxn.InvalidateRenderedFrame(wr::RenderReasons::ASYNC_IMAGE);
+        auto* list = mApi->GetPendingRemoteTextureInfoList();
+        MOZ_ASSERT_IF(IsRootWebRenderBridgeParent(), !list);
         mAsyncImageManager->ApplyAsyncImageForPipeline(op.pipelineId(), aTxn,
-                                                       txnForImageBridge);
+                                                       txnForImageBridge, list);
         break;
       }
       case WebRenderParentCommand::TCompositableOperation: {
@@ -1604,21 +1618,40 @@ void WebRenderBridgeParent::DisableNativeCompositor() {
 }
 
 void WebRenderBridgeParent::UpdateQualitySettings() {
+  if (!IsRootWebRenderBridgeParent()) {
+    MOZ_ASSERT_UNREACHABLE("unexpected to be called");
+    return;
+  }
   wr::TransactionBuilder txn(mApi);
   txn.UpdateQualitySettings(gfxVars::ForceSubpixelAAWherePossible());
   mApi->SendTransaction(txn);
 }
 
 void WebRenderBridgeParent::UpdateDebugFlags() {
+  if (!IsRootWebRenderBridgeParent()) {
+    MOZ_ASSERT_UNREACHABLE("unexpected to be called");
+    return;
+  }
+
   mApi->UpdateDebugFlags(gfxVars::WebRenderDebugFlags());
 }
 
 void WebRenderBridgeParent::UpdateProfilerUI() {
+  if (!IsRootWebRenderBridgeParent()) {
+    MOZ_ASSERT_UNREACHABLE("unexpected to be called");
+    return;
+  }
+
   nsCString uiString = gfxVars::GetWebRenderProfilerUIOrDefault();
   mApi->SetProfilerUI(uiString);
 }
 
 void WebRenderBridgeParent::UpdateParameters() {
+  if (!IsRootWebRenderBridgeParent()) {
+    MOZ_ASSERT_UNREACHABLE("unexpected to be called");
+    return;
+  }
+
   uint32_t count = gfxVars::WebRenderBatchingLookback();
   mApi->SetBatchingLookback(count);
   mApi->SetInt(wr::IntParameter::BatchedUploadThreshold,
@@ -1628,6 +1661,11 @@ void WebRenderBridgeParent::UpdateParameters() {
 }
 
 void WebRenderBridgeParent::UpdateBoolParameters() {
+  if (!IsRootWebRenderBridgeParent()) {
+    MOZ_ASSERT_UNREACHABLE("unexpected to be called");
+    return;
+  }
+
   uint32_t bits = gfxVars::WebRenderBoolParameters();
   uint32_t changedBits = mBoolParameterBits ^ bits;
 
@@ -1654,6 +1692,10 @@ void WebRenderBridgeParent::MaybeCaptureScreenPixels() {
 
   if (mDestroyed) {
     return;
+  }
+
+  if (auto* cbp = GetRootCompositorBridgeParent()) {
+    cbp->FlushPendingWrTransactionEventsWithWait();
   }
 
   // This function should only get called in the root WRBP.
@@ -1694,6 +1736,10 @@ mozilla::ipc::IPCResult WebRenderBridgeParent::RecvGetSnapshot(
   CompositorBridgeParent* cbp = GetRootCompositorBridgeParent();
   if (mDestroyed || !cbp || cbp->IsPaused()) {
     return IPC_OK();
+  }
+
+  if (auto* cbp = GetRootCompositorBridgeParent()) {
+    cbp->FlushPendingWrTransactionEventsWithWait();
   }
 
   LOG("WebRenderBridgeParent::RecvGetSnapshot() PipelineId %" PRIx64
@@ -2273,29 +2319,6 @@ TimeDuration WebRenderBridgeParent::GetVsyncInterval() const {
   return TimeDuration();
 }
 
-class SchedulePendingRemoteTextures : public wr::NotificationHandler {
- public:
-  SchedulePendingRemoteTextures(
-      wr::WindowId aWindowId,
-      UniquePtr<RemoteTextureInfoList>&& aPendingRemoteTextures)
-      : mWindowId(aWindowId),
-        mPendingRemoteTextures(std::move(aPendingRemoteTextures)) {}
-
-  virtual void Notify(wr::Checkpoint aCheckpoint) override {
-    if (aCheckpoint == wr::Checkpoint::FrameBuilt) {
-      wr::RenderThread::Get()->PushPendingRemoteTexture(
-          mWindowId, std::move(mPendingRemoteTextures));
-
-    } else {
-      MOZ_ASSERT(aCheckpoint == wr::Checkpoint::TransactionDropped);
-    }
-  }
-
- protected:
-  wr::WindowId mWindowId;
-  UniquePtr<RemoteTextureInfoList> mPendingRemoteTextures;
-};
-
 void WebRenderBridgeParent::MaybeGenerateFrame(VsyncId aId,
                                                bool aForceGenerateFrame,
                                                wr::RenderReasons aReasons) {
@@ -2368,14 +2391,6 @@ void WebRenderBridgeParent::MaybeGenerateFrame(VsyncId aId,
 
   SetOMTASampleTime();
   SetAPZSampleTime();
-
-  auto pendingTextures = mAsyncImageManager->GetPendingRemoteTextures();
-  if (pendingTextures) {
-    MOZ_ASSERT(!pendingTextures->mList.empty());
-    fastTxn.Notify(wr::Checkpoint::FrameBuilt,
-                   MakeUnique<SchedulePendingRemoteTextures>(
-                       mApi->GetId(), std::move(pendingTextures)));
-  }
 
 #if defined(ENABLE_FRAME_LATENCY_LOG)
   auto startTime = TimeStamp::Now();
@@ -2682,6 +2697,10 @@ void WebRenderBridgeParent::ClearResources() {
     return;
   }
 
+  if (!IsRootWebRenderBridgeParent()) {
+    mApi->FlushPendingWrTransactionEventsWithoutWait();
+  }
+
   LOG("WebRenderBridgeParent::ClearResources() PipelineId %" PRIx64
       " Id %" PRIx64 " root %d",
       wr::AsUint64(mPipelineId), wr::AsUint64(mApi->GetId()),
@@ -2832,6 +2851,13 @@ void WebRenderBridgeParent::ExtractImageCompositeNotifications(
     return;
   }
   mAsyncImageManager->FlushImageNotifications(aNotifications);
+}
+
+void WebRenderBridgeParent::FlushPendingWrTransactionEventsWithWait() {
+  if (mDestroyed || IsRootWebRenderBridgeParent()) {
+    return;
+  }
+  mApi->FlushPendingWrTransactionEventsWithWait();
 }
 
 RefPtr<WebRenderBridgeParentRef>

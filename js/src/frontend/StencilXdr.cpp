@@ -331,7 +331,7 @@ XDRResult StencilXDR::codeSharedData(XDRState<mode>* xdr,
       MOZ_TRY(xdr->borrowedData(&isd, size));
       sisd->setExternal(isd, hash);
     } else {
-      auto isd = ImmutableScriptData::new_(xdr->cx(), size);
+      auto isd = ImmutableScriptData::new_(xdr->fc(), size);
       if (!isd) {
         return xdr->fail(JS::TranscodeResult::Throw);
       }
@@ -856,7 +856,7 @@ template <XDRMode mode>
   if (stencil.scriptExtra[CompilationStencil::TopLevelIndex].isModule()) {
     if (mode == XDR_DECODE) {
       stencil.moduleMetadata =
-          xdr->cx()->template new_<StencilModuleMetadata>();
+          xdr->fc()->getAllocator()->template new_<StencilModuleMetadata>();
       if (!stencil.moduleMetadata) {
         return xdr->fail(JS::TranscodeResult::Throw);
       }
@@ -902,7 +902,7 @@ struct UnretrievableSourceDecoder {
         uncompressedLength_(uncompressedLength) {}
 
   XDRResult decode() {
-    auto sourceUnits = xdr_->cx()->make_pod_array<Unit>(
+    auto sourceUnits = xdr_->fc()->getAllocator()->make_pod_array<Unit>(
         std::max<size_t>(uncompressedLength_, 1));
     if (!sourceUnits) {
       return xdr_->fail(JS::TranscodeResult::Throw);
@@ -911,7 +911,7 @@ struct UnretrievableSourceDecoder {
     MOZ_TRY(xdr_->codeChars(sourceUnits.get(), uncompressedLength_));
 
     if (!scriptSource_->initializeUnretrievableUncompressedSource(
-            xdr_->cx(), std::move(sourceUnits), uncompressedLength_)) {
+            xdr_->fc(), std::move(sourceUnits), uncompressedLength_)) {
       return xdr_->fail(JS::TranscodeResult::Throw);
     }
 
@@ -1024,14 +1024,15 @@ XDRResult StencilXDR::codeSourceCompressedData(XDRState<mode>* const xdr,
 
   if (mode == XDR_DECODE) {
     // Compressed data is always single-byte chars.
-    auto bytes = xdr->cx()->template make_pod_array<char>(compressedLength);
+    auto bytes = xdr->fc()->getAllocator()->template make_pod_array<char>(
+        compressedLength);
     if (!bytes) {
       return xdr->fail(JS::TranscodeResult::Throw);
     }
     MOZ_TRY(xdr->codeBytes(bytes.get(), compressedLength));
 
     if (!ss->initializeWithUnretrievableCompressedSource<Unit>(
-            xdr->cx(), std::move(bytes), compressedLength,
+            xdr->fc(), std::move(bytes), compressedLength,
             uncompressedLength)) {
       return xdr->fail(JS::TranscodeResult::Throw);
     }
@@ -1424,7 +1425,7 @@ XDRResult XDRStencilEncoder::codeStencil(
     const frontend::CompilationStencil& stencil) {
 #ifdef DEBUG
   auto sanityCheck = mozilla::MakeScopeExit(
-      [&] { MOZ_ASSERT(validateResultCode(cx(), fc(), resultCode())); });
+      [&] { MOZ_ASSERT(validateResultCode(fc(), resultCode())); });
 #endif
 
   MOZ_TRY(frontend::StencilXDR::checkCompilationStencil(this, stencil));
@@ -1473,7 +1474,7 @@ XDRResult XDRStencilDecoder::codeStencil(
     const JS::DecodeOptions& options, frontend::CompilationStencil& stencil) {
 #ifdef DEBUG
   auto sanityCheck = mozilla::MakeScopeExit(
-      [&] { MOZ_ASSERT(validateResultCode(cx(), fc(), resultCode())); });
+      [&] { MOZ_ASSERT(validateResultCode(fc(), resultCode())); });
 #endif
 
   auto resetOptions = mozilla::MakeScopeExit([&] { options_ = nullptr; });

@@ -887,6 +887,16 @@ slot {
   display: contents;
 }
 
+/* Un-invert images and videos for users using inverted colors.
+ * "User agents must add the following rule to their UA style sheet"
+ * https://www.w3.org/TR/mediaqueries-5/#inverted
+ */
+@media (inverted-colors) {
+  img:not(picture > img), picture, video {
+    filter: invert(100%);
+  }
+}
+
 /* Hide noscript elements if scripting is enabled */
 @media (scripting) {
   noscript {
@@ -896,12 +906,12 @@ slot {
 
 /* Popover UA style, https://html.spec.whatwg.org/#flow-content-3 */
 @media (-moz-popover-enabled) {
-  [popover]:closed:not(dialog[open]) {
-    display: none;
+  [popover]:not(:popover-open):not(dialog[open]) {
+    display:none;
   }
 
-  dialog[popover]:not(:closed) {
-    display: block;
+  dialog:popover-open {
+    display:block;
   }
 
   [popover] {
@@ -917,7 +927,11 @@ slot {
     background-color: Canvas;
   }
 
-  [popover]:open::backdrop {
+  :popover-open {
+    -moz-top-layer: top;
+  }
+
+  :popover-open::backdrop {
     position: fixed;
     inset: 0;
     pointer-events: none !important;

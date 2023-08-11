@@ -141,6 +141,9 @@ html {
     justify-content: center;
     width: $main-section-width;
     flex-shrink: 0;
+  }
+
+  .section-main:not(.embedded-migration) {
     position: relative;
   }
 
@@ -184,6 +187,7 @@ html {
     .arrow-icon {
       -moz-context-properties: fill;
       fill: currentColor;
+      text-decoration: none;
 
       &::after {
         content: '';
@@ -206,12 +210,28 @@ html {
     font-size: 0.72em;
     font-weight: 600;
     padding: 8px 16px;
+    text-decoration: none;
 
     &:hover {
-      text-decoration: none;
       // sass-lint:disable-block no-important
       background-color: var(--in-content-button-background-hover) !important;
       color: var(--in-content-button-text-color-hover);
+    }
+  }
+
+  @mixin text-link-styles {
+    text-decoration: underline;
+    cursor: pointer;
+    color: var(--in-content-link-color);
+
+    &:hover {
+      text-decoration: none;
+      color: var(--in-content-link-color-hover);
+    }
+
+    &:active {
+      text-decoration: none;
+      color: var(--in-content-link-color-active);
     }
   }
 
@@ -431,16 +451,10 @@ html {
               margin: 8px 0;
 
               &.cta-link {
-                color: var(--in-content-link-color);
+                @include text-link-styles;
                 background: none;
                 padding: 0;
                 font-weight: normal;
-                text-decoration: underline;
-                cursor: pointer;
-
-                &:hover {
-                  color: var(--in-content-link-color-hover);
-                }
               }
 
               &.secondary {
@@ -481,6 +495,10 @@ html {
             margin-block: 10px 35px;
             text-align: initial;
             align-items: initial;
+
+            &:empty {
+              margin: 0;
+            }
 
             h1 {
               font-size: 24px;
@@ -803,6 +821,10 @@ html {
     @media only screen and (max-width: 800px) {
       text-align: center;
     }
+  }
+
+  .text-link {
+    @include text-link-styles;
   }
 
   .welcome-text {
@@ -1137,10 +1159,9 @@ html {
     }
 
     .email-link {
+      @include text-link-styles;
       font-size: 16px;
       font-weight: 400;
-      text-decoration: underline;
-      color: var(--in-content-link-color);
       background: none;
 
       &:hover {
@@ -1462,7 +1483,8 @@ html {
       transition-delay: 0.8s;
     }
 
-    .tiles-theme-section {
+    .tiles-theme-section,
+    migration-wizard {
       transition-delay: 0.9s;
     }
 
@@ -1558,7 +1580,8 @@ html {
       .checkbox-container,
       .secondary,
       .secondary-cta:not(.top),
-      .cta-link {
+      .cta-link,
+      migration-wizard {
         opacity: 0;
         translate: 0 calc(-1 * var(--translate));
       }
@@ -1591,12 +1614,14 @@ html {
         transition-delay: 0.1s;
       }
 
+      // content that is nested between inner main content and navigation CTAs
+      // requires an additional 0.1s transition to avoid overlap
       .tiles-theme-section,
-      .colorway-text {
+      .colorway-text,
+      migration-wizard {
         opacity: 0;
         translate: 0 var(--translate);
         transition-delay: 0.2s;
-
       }
 
       .primary,
@@ -1626,6 +1651,20 @@ html {
         translate: 0 calc(2 * var(--translate));
         transition-delay: 0.4s;
       }
+    }
+  }
+
+  migration-wizard {
+    width: unset;
+    transition: var(--transition);
+
+    &::part(buttons) {
+      margin-top: 32px;
+      justify-content: flex-start;
+    }
+
+    &::part(deck) {
+      font-size: 0.83em;
     }
   }
 }

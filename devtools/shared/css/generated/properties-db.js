@@ -59,7 +59,8 @@ exports.CSS_PROPERTIES = {
       "step-end",
       "step-start",
       "steps",
-      "unset"
+      "unset",
+      "view"
     ]
   },
   "-moz-animation-delay": {
@@ -1331,7 +1332,8 @@ exports.CSS_PROPERTIES = {
       "step-end",
       "step-start",
       "steps",
-      "unset"
+      "unset",
+      "view"
     ]
   },
   "-webkit-animation-delay": {
@@ -2479,6 +2481,24 @@ exports.CSS_PROPERTIES = {
       "unset"
     ]
   },
+  "-webkit-text-security": {
+    "isInherited": true,
+    "subproperties": [
+      "-webkit-text-security"
+    ],
+    "supports": [],
+    "values": [
+      "circle",
+      "disc",
+      "inherit",
+      "initial",
+      "none",
+      "revert",
+      "revert-layer",
+      "square",
+      "unset"
+    ]
+  },
   "-webkit-text-size-adjust": {
     "isInherited": true,
     "subproperties": [
@@ -3153,6 +3173,7 @@ exports.CSS_PROPERTIES = {
       "text-decoration-skip-ink",
       "hyphenate-character",
       "forced-color-adjust",
+      "-webkit-text-security",
       "cursor",
       "pointer-events",
       "-moz-user-input",
@@ -3347,7 +3368,8 @@ exports.CSS_PROPERTIES = {
       "step-end",
       "step-start",
       "steps",
-      "unset"
+      "unset",
+      "view"
     ]
   },
   "animation-composition": {

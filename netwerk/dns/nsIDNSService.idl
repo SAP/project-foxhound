@@ -98,6 +98,15 @@ interface nsIDNSService : nsISupports
         ALL_DNSFLAGS_BITS = ((1 << 17) - 1),
     };
 
+    cenum ConfirmationState : 8 {
+        CONFIRM_OFF = 0,
+        CONFIRM_TRYING_OK = 1,
+        CONFIRM_OK = 2,
+        CONFIRM_FAILED = 3,
+        CONFIRM_TRYING_FAILED = 4,
+        CONFIRM_DISABLED = 5,
+    };
+
     /**
      * kicks off an asynchronous host lookup.
      *
@@ -270,6 +279,18 @@ interface nsIDNSService : nsISupports
     ACString getTRRSkipReasonName(in nsITRRSkipReason_value value);
 
     /**
+     * The channel status of the last TRR confirmation attempt.
+     * In strict mode it reflects the channel status of the last TRR request.
+     */
+    readonly attribute nsresult lastConfirmationStatus;
+
+    /**
+     * The TRR skip reason of the last TRR confirmation attempt.
+     * In strict mode it reflects the TRR skip reason of the last TRR request.
+     */
+    readonly attribute nsITRRSkipReason_value lastConfirmationSkipReason;
+
+    /**
      * Notifies the DNS service that we failed to connect to this alternative
      * endpoint.
      * @param aOwnerName
@@ -306,8 +327,6 @@ interface nsIDNSService : nsISupports
      * Returns the value of the TRR Service's current default mode.
      */
     readonly attribute nsIDNSService_ResolverMode currentTrrMode;
-
-    void setTRRModeInChild(in nsIDNSService_ResolverMode mode);
 
     /**
      * The TRRService's current confirmation state.

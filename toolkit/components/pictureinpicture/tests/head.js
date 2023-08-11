@@ -24,6 +24,8 @@ const TEST_PAGE_WITH_NAN_VIDEO_DURATION =
 const TEST_PAGE_WITH_WEBVTT = TEST_ROOT + "test-page-with-webvtt.html";
 const TEST_PAGE_MULTIPLE_CONTEXTS =
   TEST_ROOT + "test-page-multiple-contexts.html";
+const TEST_PAGE_TRANSPARENT_NESTED_IFRAMES =
+  TEST_ROOT + "test-transparent-nested-iframes.html";
 const WINDOW_TYPE = "Toolkit:PictureInPicture";
 const TOGGLE_POSITION_PREF =
   "media.videocontrols.picture-in-picture.video-toggle.position";
@@ -944,17 +946,19 @@ async function isVideoMuted(browser, videoID) {
  * @param {Element} browser The <xul:browser> hosting the <video>
  * @param {String} videoID The ID of the video being checked
  * @param {Integer} defaultTrackIndex The index of the track to be loaded, or none if -1
+ * @param {String} trackMode the mode that the video's textTracks should be set to
  */
 async function prepareVideosAndWebVTTTracks(
   browser,
   videoID,
-  defaultTrackIndex = 0
+  defaultTrackIndex = 0,
+  trackMode = "showing"
 ) {
   info("Preparing video and initial text tracks");
   await ensureVideosReady(browser);
   await SpecialPowers.spawn(
     browser,
-    [{ videoID, defaultTrackIndex }],
+    [{ videoID, defaultTrackIndex, trackMode }],
     async args => {
       let video = content.document.getElementById(args.videoID);
       let tracks = video.textTracks;
@@ -965,8 +969,8 @@ async function prepareVideosAndWebVTTTracks(
       if (args.defaultTrackIndex >= 0) {
         info(`Loading track ${args.defaultTrackIndex + 1}`);
         let track = tracks[args.defaultTrackIndex];
-        tracks.mode = "showing";
-        track.mode = "showing";
+        tracks.mode = args.trackMode;
+        track.mode = args.trackMode;
       }
 
       // Briefly play the video to load text tracks onto the pip window.

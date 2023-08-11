@@ -1278,6 +1278,20 @@
       "type": "object",
       "patternProperties": {
         "^.*$": { "type": "string" }
+      },
+      "properties": {
+        "Add": {
+          "type": "object",
+          "patternProperties": {
+            "^.*$": { "type": "string" }
+          }
+        },
+        "Delete": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
       }
     },
 
@@ -1347,7 +1361,7 @@
     },
 
     "WebsiteFilter": {
-      "type": "object",
+      "type": ["object", "JSON"],
       "properties": {
         "Block": {
           "type": "array",

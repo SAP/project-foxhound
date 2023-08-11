@@ -60,6 +60,7 @@
 
 #include "mozilla/AppShutdown.h"
 #include "mozilla/AutoRestore.h"
+#include "mozilla/Likely.h"
 #include "mozilla/PreXULSkeletonUI.h"
 #include "mozilla/Logging.h"
 #include "mozilla/MathAlgorithms.h"
@@ -1406,8 +1407,6 @@ DWORD nsWindow::WindowStyle() {
     if (mBorderStyle == BorderStyle::None ||
         !(mBorderStyle & BorderStyle::Title)) {
       style &= ~WS_DLGFRAME;
-      style |= WS_POPUP;
-      style &= ~WS_CHILD;
     }
 
     if (mBorderStyle == BorderStyle::None ||
@@ -1910,16 +1909,6 @@ void nsWindow::LockAspectRatio(bool aShouldLock) {
  **************************************************************/
 void nsWindow::SetInputRegion(const InputRegion& aInputRegion) {
   mInputRegion = aInputRegion;
-
-  if (!mWnd) {
-    return;
-  }
-
-  const bool transparent = aInputRegion.mFullyTransparent;
-  LONG_PTR oldStyle = ::GetWindowLongPtrW(mWnd, GWL_EXSTYLE);
-  LONG_PTR newStyle = transparent ? (oldStyle | WS_EX_TRANSPARENT)
-                                  : (oldStyle & ~WS_EX_TRANSPARENT);
-  ::SetWindowLongPtrW(mWnd, GWL_EXSTYLE, newStyle);
 }
 
 /**************************************************************
@@ -2896,19 +2885,20 @@ bool nsWindow::UpdateNonClientMargins(bool aReflowWindow) {
     mNonClientOffset.left = mHorResizeMargin;
     mNonClientOffset.right = mHorResizeMargin;
   } else if (sizeMode == nsSizeMode_Maximized) {
-    // On Windows 10+, we make the entire frame part of the client area.
-    // We leave the default frame sizes for left, right and bottom since
-    // Windows will automagically position the edges "offscreen" for maximized
-    // windows.
+    // On Windows 10+, we make the entire frame part of the client area. We
+    // leave the default frame sizes for left, right and bottom since Windows
+    // will automagically position the edges "offscreen" for maximized windows.
+    //
     // On versions prior to Windows 10, we add padding to the widget to
     // circumvent a bug in DwmDefWindowProc (see
     // nsNativeThemeWin::GetWidgetPadding).  We "undo" that padding in
     // WM_NCCALCSIZE by adding the caption (as well as the sizing frame) to the
     // client area.
+    //
     // The padding is not needed on Win10+ because we handle window buttons
-    // non-natively in the theme.  It also does not work on Win10+ -- it
-    // exposes a new issue where widget edges would sometimes appear to bleed
-    // into other displays (bug 1614218).
+    // non-natively in the theme.  It also does not work on Win10+ -- it exposes
+    // a new issue where widget edges would sometimes appear to bleed into other
+    // displays (bug 1614218).
     int verticalResize = 0;
     if (IsWin10OrLater()) {
       verticalResize =
@@ -2922,29 +2912,24 @@ bool nsWindow::UpdateNonClientMargins(bool aReflowWindow) {
     mNonClientOffset.left = 0;
     mNonClientOffset.right = 0;
 
-    APPBARDATA appBarData;
-    appBarData.cbSize = sizeof(appBarData);
-    UINT taskbarState = SHAppBarMessage(ABM_GETSTATE, &appBarData);
-    if (ABS_AUTOHIDE & taskbarState) {
-      UINT edge = -1;
-      appBarData.hWnd = FindWindow(L"Shell_TrayWnd", nullptr);
-      if (appBarData.hWnd) {
-        HMONITOR taskbarMonitor =
-            ::MonitorFromWindow(appBarData.hWnd, MONITOR_DEFAULTTOPRIMARY);
-        HMONITOR windowMonitor =
-            ::MonitorFromWindow(mWnd, MONITOR_DEFAULTTONEAREST);
-        if (taskbarMonitor == windowMonitor) {
-          SHAppBarMessage(ABM_GETTASKBARPOS, &appBarData);
-          edge = appBarData.uEdge;
-        }
+    mozilla::Maybe<UINT> maybeEdge = GetHiddenTaskbarEdge();
+    if (maybeEdge) {
+      auto edge = maybeEdge.value();
+      if (ABE_LEFT == edge) {
+        mNonClientOffset.left -= kHiddenTaskbarSize;
+      } else if (ABE_RIGHT == edge) {
+        mNonClientOffset.right -= kHiddenTaskbarSize;
+      } else if (ABE_BOTTOM == edge || ABE_TOP == edge) {
+        mNonClientOffset.bottom -= kHiddenTaskbarSize;
       }
 
-      if (ABE_LEFT == edge) {
-        mNonClientOffset.left -= 1;
-      } else if (ABE_RIGHT == edge) {
-        mNonClientOffset.right -= 1;
-      } else if (ABE_BOTTOM == edge || ABE_TOP == edge) {
-        mNonClientOffset.bottom -= 1;
+      // On Windows 10+, when we are drawing the non-client region, we need
+      // to clear the portion of the NC region that is exposed by the
+      // hidden taskbar.  As above, we clear the bottom of the NC region
+      // when the taskbar is at the top of the screen.
+      if (IsWin10OrLater()) {
+        UINT clearEdge = (edge == ABE_TOP) ? ABE_BOTTOM : edge;
+        mClearNCEdge = Some(clearEdge);
       }
     }
   } else {
@@ -3652,7 +3637,153 @@ void nsWindow::CleanupFullscreenTransition() {
   mTransitionWnd = nullptr;
 }
 
+void nsWindow::TryDwmResizeHack() {
+  // The "DWM resize hack", aka the "fullscreen resize hack", is a workaround
+  // for DWM's occasional and not-entirely-predictable failure to update its
+  // internal state when the client area of a window changes without changing
+  // the window size. The effect of this is that DWM will clip the content of
+  // the window to its former client area.
+  //
+  // It is not known under what circumstances the bug will trigger. Windows 11
+  // is known to be required, but many Windows 11 machines do not exhibit the
+  // issue. Even machines that _do_ exhibit it will sometimes not do so when
+  // apparently- irrelevant changes are made to the configuration. (See bug
+  // 1763981.)
+  //
+  // The bug is triggered by Firefox when a maximized window (which has window
+  // decorations) becomes fullscreen (which doesn't). To work around this, if we
+  // think it may occur, we "flicker-resize" the relevant window -- that is, we
+  // reduce its height by 1px, then restore it. This causes DWM to acquire the
+  // new client-area metrics.
+  //
+  // This is admittedly a sledgehammer where a screwdriver should suffice.
+
+  // ---------------------------------------------------------------------------
+
+  // Regardless of preferences or heuristics, only apply the hack if this is the
+  // first time we've entered fullscreen across the entire Firefox session.
+  // (Subsequent transitions to fullscreen, even with different windows, don't
+  // appear to induce the bug.)
+  {
+    // (main thread only; `atomic` not needed)
+    static bool sIsFirstFullscreenEntry = true;
+    bool isFirstFullscreenEntry = sIsFirstFullscreenEntry;
+    sIsFirstFullscreenEntry = false;
+    if (MOZ_LIKELY(!isFirstFullscreenEntry)) {
+      return;
+    }
+    MOZ_LOG(gWindowsLog, LogLevel::Verbose,
+            ("%s: first fullscreen entry", __PRETTY_FUNCTION__));
+  }
+
+  // Check whether to try to apply the DWM resize hack, based on the override
+  // pref and/or some internal heuristics.
+  {
+    const auto hackApplicationHeuristics = [&]() -> bool {
+      // The bug has only been seen under Windows 11. (At time of writing, this
+      // is the latest version of Windows.)
+      if (!IsWin11OrLater()) {
+        return false;
+      }
+
+      KnowsCompositor const* const kc = mWindowRenderer->AsKnowsCompositor();
+      // This should never happen...
+      MOZ_ASSERT(kc);
+      // ... so if it does, we are in uncharted territory: don't apply the hack.
+      if (!kc) {
+        return false;
+      }
+
+      // The bug doesn't occur when we're using a separate compositor window
+      // (since the compositor window always comprises exactly its client area,
+      // with no non-client border).
+      if (kc->GetUseCompositorWnd()) {
+        return false;
+      }
+
+      // Otherwise, apply the hack.
+      return true;
+    };
+
+    // Figure out whether or not we should perform the hack, and -- arguably
+    // more importantly -- log that decision.
+    bool const shouldApplyHack = [&]() {
+      enum Reason : bool { Pref, Heuristics };
+      auto const msg = [&](bool decision, Reason reason) -> bool {
+        MOZ_LOG(gWindowsLog, LogLevel::Verbose,
+                ("%s %s per %s", decision ? "applying" : "skipping",
+                 "DWM resize hack", reason == Pref ? "pref" : "heuristics"));
+        return decision;
+      };
+      switch (StaticPrefs::widget_windows_apply_dwm_resize_hack()) {
+        case 0:
+          return msg(false, Pref);
+        case 1:
+          return msg(true, Pref);
+        default:  // treat all other values as `auto`
+          return msg(hackApplicationHeuristics(), Heuristics);
+      }
+    }();
+
+    if (!shouldApplyHack) {
+      return;
+    }
+  }
+
+  // The DWM bug is believed to involve a race condition: some users have
+  // reported that setting a custom theme or adding unused command-line
+  // parameters sometimes causes the bug to vanish.
+  //
+  // Out of an abundance of caution, we therefore apply the hack in a later
+  // event, rather than inline.
+  NS_DispatchToMainThread(NS_NewRunnableFunction(
+      "nsWindow::TryFullscreenResizeHack", [self = RefPtr(this)]() {
+        HWND const hwnd = self->GetWindowHandle();
+
+        if (self->mFrameState->GetSizeMode() != nsSizeMode_Fullscreen) {
+          MOZ_LOG(gWindowsLog, mozilla::LogLevel::Info,
+                  ("DWM resize hack: window no longer fullscreen; aborting"));
+          return;
+        }
+
+        RECT origRect;
+        if (!::GetWindowRect(hwnd, &origRect)) {
+          MOZ_LOG(gWindowsLog, mozilla::LogLevel::Error,
+                  ("DWM resize hack: could not get window size?!"));
+          return;
+        }
+        LONG const x = origRect.left;
+        LONG const y = origRect.top;
+        LONG const width = origRect.right - origRect.left;
+        LONG const height = origRect.bottom - origRect.top;
+
+        MOZ_DIAGNOSTIC_ASSERT(!self->mIsPerformingDwmFlushHack);
+        auto const onExit =
+            MakeScopeExit([&, oldVal = self->mIsPerformingDwmFlushHack]() {
+              self->mIsPerformingDwmFlushHack = oldVal;
+            });
+        self->mIsPerformingDwmFlushHack = true;
+
+        MOZ_LOG(gWindowsLog, LogLevel::Debug,
+                ("beginning DWM resize hack for HWND %08" PRIXPTR,
+                 uintptr_t(hwnd)));
+        ::MoveWindow(hwnd, x, y, width, height - 1, FALSE);
+        ::MoveWindow(hwnd, x, y, width, height, TRUE);
+        MOZ_LOG(gWindowsLog, LogLevel::Debug,
+                ("concluded DWM resize hack for HWND %08" PRIXPTR,
+                 uintptr_t(hwnd)));
+      }));
+}
+
 void nsWindow::OnFullscreenChanged(nsSizeMode aOldSizeMode, bool aFullScreen) {
+  MOZ_ASSERT((aOldSizeMode != nsSizeMode_Fullscreen) == aFullScreen);
+
+  // HACK: Potentially flicker-resize the window, to force DWM to get the right
+  // client-area information.
+  if (aFullScreen) {
+    TryDwmResizeHack();
+  }
+
   // Hide chrome and reposition window. Note this will also cache dimensions for
   // restoration, so it should only be called once per fullscreen request.
   //
@@ -4332,13 +4463,6 @@ BOOL CALLBACK nsWindow::DispatchStarvedPaints(HWND aWnd, LPARAM aMsg) {
 // Note: We do not dispatch pending paint messages for non
 // nsIWidget managed windows.
 void nsWindow::DispatchPendingEvents() {
-  if (mPainting) {
-    NS_WARNING(
-        "We were asked to dispatch pending events during painting, "
-        "denying since that's unsafe.");
-    return;
-  }
-
   // We need to ensure that reflow events do not get starved.
   // At the same time, we don't want to recurse through here
   // as that would prevent us from dispatching starved paints.
@@ -4890,7 +5014,7 @@ static bool DisplaySystemMenu(HWND hWnd, nsSizeMode sizeMode, bool isRtl,
 }
 
 // The WndProc procedure for all nsWindows in this toolkit. This merely catches
-// exceptions and passes the real work to WindowProcInternal. See bug 587406
+// SEH exceptions and passes the real work to WindowProcInternal. See bug 587406
 // and http://msdn.microsoft.com/en-us/library/ms633573%28VS.85%29.aspx
 LRESULT CALLBACK nsWindow::WindowProc(HWND hWnd, UINT msg, WPARAM wParam,
                                       LPARAM lParam) {
@@ -5110,6 +5234,17 @@ bool nsWindow::ProcessMessageInternal(UINT msg, WPARAM& wParam, LPARAM& lParam,
   bool result = false;  // call the default nsWindow proc
   *aRetValue = 0;
 
+  // The DWM resize hack (see bug 1763981) causes us to process a number of
+  // messages, notably including some WM_WINDOWPOSCHANG{ING,ED} messages which
+  // would ordinarily result in a whole lot of internal state being updated.
+  //
+  // Since we're supposed to end in the same state we started in (and since the
+  // content shouldn't know about any of this nonsense), just discard any
+  // messages synchronously dispatched from within the hack.
+  if (MOZ_UNLIKELY(mIsPerformingDwmFlushHack)) {
+    return true;
+  }
+
   // Glass hit testing w/custom transparent margins
   LRESULT dwmHitResult;
   if (mCustomNonClient &&
@@ -5130,33 +5265,29 @@ bool nsWindow::ProcessMessageInternal(UINT msg, WPARAM& wParam, LPARAM& lParam,
   // effect immediately.
   static const bool sSwitchKeyboardLayout =
       Preferences::GetBool("intl.keyboard.per_window_layout", false);
-  static Maybe<bool> sCanQuit;
+  AppShutdownReason shutdownReason = AppShutdownReason::Unknown;
 
   // (Large blocks of code should be broken out into OnEvent handlers.)
   switch (msg) {
     // WM_QUERYENDSESSION must be handled by all windows.
     // Otherwise Windows thinks the window can just be killed at will.
-    case WM_QUERYENDSESSION:
-      if (sCanQuit.isNothing()) {
-        // Ask if it's ok to quit, and store the answer until we
-        // get WM_ENDSESSION signaling the round is complete.
-        nsCOMPtr<nsIObserverService> obsServ =
-            mozilla::services::GetObserverService();
-        nsCOMPtr<nsISupportsPRBool> cancelQuitWrapper =
-            do_CreateInstance(NS_SUPPORTS_PRBOOL_CONTRACTID);
-        cancelQuitWrapper->SetData(false);
+    case WM_QUERYENDSESSION: {
+      // Ask around if it's ok to quit.
+      nsCOMPtr<nsIObserverService> obsServ =
+          mozilla::services::GetObserverService();
+      nsCOMPtr<nsISupportsPRBool> cancelQuitWrapper =
+          do_CreateInstance(NS_SUPPORTS_PRBOOL_CONTRACTID);
+      cancelQuitWrapper->SetData(false);
 
-        const char16_t* quitType = GetQuitType();
-        obsServ->NotifyObservers(cancelQuitWrapper,
-                                 "quit-application-requested", quitType);
+      const char16_t* quitType = GetQuitType();
+      obsServ->NotifyObservers(cancelQuitWrapper, "quit-application-requested",
+                               quitType);
 
-        bool shouldCancelQuit;
-        cancelQuitWrapper->GetData(&shouldCancelQuit);
-        sCanQuit.emplace(!shouldCancelQuit);
-      }
-      *aRetValue = *sCanQuit;
+      bool shouldCancelQuit;
+      cancelQuitWrapper->GetData(&shouldCancelQuit);
+      *aRetValue = !shouldCancelQuit;
       result = true;
-      break;
+    } break;
 
     case MOZ_WM_STARTA11Y:
 #if defined(ACCESSIBILITY)
@@ -5167,45 +5298,69 @@ bool nsWindow::ProcessMessageInternal(UINT msg, WPARAM& wParam, LPARAM& lParam,
 #endif
       break;
 
-    case WM_ENDSESSION:
-    case MOZ_WM_APP_QUIT:
-      // For WM_ENDSESSION, wParam indicates whether the session is being ended
-      // (TRUE) or not (FALSE)
-      if (msg == MOZ_WM_APP_QUIT || (wParam && sCanQuit.valueOr(false))) {
-        // Let's fake a shutdown sequence without actually closing windows etc.
-        // to avoid Windows killing us in the middle. A proper shutdown would
-        // require having a chance to pump some messages. Unfortunately
-        // Windows won't let us do that. Bug 212316.
-        nsCOMPtr<nsIObserverService> obsServ =
-            mozilla::services::GetObserverService();
-        const char16_t* syncShutdown = u"syncShutdown";
-        const char16_t* quitType = GetQuitType();
-
-        AppShutdown::Init(AppShutdownMode::Normal, 0);
-
-        obsServ->NotifyObservers(nullptr, "quit-application-granted",
-                                 syncShutdown);
-        obsServ->NotifyObservers(nullptr, "quit-application-forced", nullptr);
-
-        AppShutdown::OnShutdownConfirmed();
-
-        AppShutdown::AdvanceShutdownPhase(ShutdownPhase::AppShutdownConfirmed,
-                                          quitType);
-        AppShutdown::AdvanceShutdownPhase(ShutdownPhase::AppShutdownNetTeardown,
-                                          nullptr);
-        AppShutdown::AdvanceShutdownPhase(ShutdownPhase::AppShutdownTeardown,
-                                          nullptr);
-        AppShutdown::AdvanceShutdownPhase(ShutdownPhase::AppShutdown, nullptr);
-        AppShutdown::AdvanceShutdownPhase(ShutdownPhase::AppShutdownQM,
-                                          nullptr);
-        AppShutdown::AdvanceShutdownPhase(ShutdownPhase::AppShutdownTelemetry,
-                                          nullptr);
-
-        AppShutdown::DoImmediateExit();
+    case WM_ENDSESSION: {
+      // For WM_ENDSESSION, wParam indicates whether we need to shutdown
+      // (TRUE) or not (FALSE).
+      if (!wParam) {
+        result = true;
+        break;
       }
-      sCanQuit.reset();
-      result = true;
-      break;
+      // According to WM_ENDSESSION lParam documentation:
+      //   0 -> OS shutdown or restart (no way to distinguish)
+      //   ENDSESSION_LOGOFF -> User is logging off
+      //   ENDSESSION_CLOSEAPP -> Application must shutdown
+      //   ENDSESSION_CRITICAL -> Application is forced to shutdown
+      // The difference of the last two is not very clear.
+      if (lParam == 0) {
+        shutdownReason = AppShutdownReason::OSShutdown;
+      } else if (lParam & ENDSESSION_LOGOFF) {
+        shutdownReason = AppShutdownReason::OSSessionEnd;
+      } else if (lParam & (ENDSESSION_CLOSEAPP | ENDSESSION_CRITICAL)) {
+        shutdownReason = AppShutdownReason::OSForceClose;
+      } else {
+        MOZ_DIAGNOSTIC_ASSERT(false,
+                              "Received WM_ENDSESSION with unknown flags.");
+        shutdownReason = AppShutdownReason::OSForceClose;
+      }
+    }
+      [[fallthrough]];
+    case MOZ_WM_APP_QUIT: {
+      if (shutdownReason == AppShutdownReason::Unknown) {
+        // TODO: We do not expect that these days anybody sends us
+        // MOZ_WM_APP_QUIT, see bug 1827807.
+        shutdownReason = AppShutdownReason::WinUnexpectedMozQuit;
+      }
+      // Let's fake a shutdown sequence without actually closing windows etc.
+      // to avoid Windows killing us in the middle. A proper shutdown would
+      // require having a chance to pump some messages. Unfortunately
+      // Windows won't let us do that. Bug 212316.
+      nsCOMPtr<nsIObserverService> obsServ =
+          mozilla::services::GetObserverService();
+      const char16_t* syncShutdown = u"syncShutdown";
+      const char16_t* quitType = GetQuitType();
+
+      AppShutdown::Init(AppShutdownMode::Normal, 0, shutdownReason);
+
+      obsServ->NotifyObservers(nullptr, "quit-application-granted",
+                               syncShutdown);
+      obsServ->NotifyObservers(nullptr, "quit-application-forced", nullptr);
+
+      AppShutdown::OnShutdownConfirmed();
+
+      AppShutdown::AdvanceShutdownPhase(ShutdownPhase::AppShutdownConfirmed,
+                                        quitType);
+      AppShutdown::AdvanceShutdownPhase(ShutdownPhase::AppShutdownNetTeardown,
+                                        nullptr);
+      AppShutdown::AdvanceShutdownPhase(ShutdownPhase::AppShutdownTeardown,
+                                        nullptr);
+      AppShutdown::AdvanceShutdownPhase(ShutdownPhase::AppShutdown, nullptr);
+      AppShutdown::AdvanceShutdownPhase(ShutdownPhase::AppShutdownQM, nullptr);
+      AppShutdown::AdvanceShutdownPhase(ShutdownPhase::AppShutdownTelemetry,
+                                        nullptr);
+
+      AppShutdown::DoImmediateExit();
+      MOZ_ASSERT_UNREACHABLE("Our process was supposed to exit.");
+    } break;
 
     case WM_SYSCOLORCHANGE:
       // No need to invalidate layout for system color changes, but we need to
@@ -5564,14 +5719,12 @@ bool nsWindow::ProcessMessageInternal(UINT msg, WPARAM& wParam, LPARAM& lParam,
       DispatchPendingEvents();
     } break;
 
-    // say we've dealt with erase background if widget does
-    // not need auto-erasing
-    case WM_ERASEBKGND:
-      if (!AutoErase((HDC)wParam)) {
-        *aRetValue = 1;
-        result = true;
-      }
-      break;
+    // Say we've dealt with erasing the background. (This is actually handled in
+    // WM_PAINT, where necessary.)
+    case WM_ERASEBKGND: {
+      *aRetValue = 1;
+      result = true;
+    } break;
 
     case WM_MOUSEMOVE: {
       MaybeHideCursor(false);
@@ -7493,9 +7646,6 @@ void nsWindow::OnSizeModeChange() {
 
 bool nsWindow::OnHotKey(WPARAM wParam, LPARAM lParam) { return true; }
 
-// Can be overriden. Controls auto-erase of background.
-bool nsWindow::AutoErase(HDC dc) { return false; }
-
 bool nsWindow::IsPopup() { return mWindowType == WindowType::Popup; }
 
 bool nsWindow::ShouldUseOffMainThreadCompositing() {
@@ -8175,6 +8325,9 @@ bool nsWindow::DealWithPopups(HWND aWnd, UINT aMessage, WPARAM aWParam,
   bool consumeRollupEvent = false;
   Maybe<POINT> touchPoint;  // In screen coords.
 
+  // If we rollup with animations but get occluded right away, we might not
+  // advance the refresh driver enough for the animation to finish.
+  auto allowAnimations = nsIRollupListener::AllowAnimations::Yes;
   nsWindow* popupWindow = static_cast<nsWindow*>(popup.get());
   UINT nativeMessage = WinUtils::GetNativeMessage(aMessage);
   switch (nativeMessage) {
@@ -8255,6 +8408,7 @@ bool nsWindow::DealWithPopups(HWND aWnd, UINT aMessage, WPARAM aWParam,
       return consumeRollupEvent;
 
     case WM_ACTIVATEAPP:
+      allowAnimations = nsIRollupListener::AllowAnimations::No;
       break;
 
     case WM_ACTIVATE:
@@ -8318,6 +8472,7 @@ bool nsWindow::DealWithPopups(HWND aWnd, UINT aMessage, WPARAM aWParam,
           return false;
         }
       }
+      allowAnimations = nsIRollupListener::AllowAnimations::No;
       break;
 
     case MOZ_WM_REACTIVATE:
@@ -8382,6 +8537,7 @@ bool nsWindow::DealWithPopups(HWND aWnd, UINT aMessage, WPARAM aWParam,
     case WM_SHOWWINDOW:
       // If the window is being minimized, close popups.
       if (aLParam == SW_PARENTCLOSING) {
+        allowAnimations = nsIRollupListener::AllowAnimations::No;
         break;
       }
       return false;
@@ -8390,6 +8546,7 @@ bool nsWindow::DealWithPopups(HWND aWnd, UINT aMessage, WPARAM aWParam,
       // If focus moves to other window created in different process/thread,
       // e.g., a plugin window, popups should be rolled up.
       if (IsDifferentThreadWindow(reinterpret_cast<HWND>(aWParam))) {
+        allowAnimations = nsIRollupListener::AllowAnimations::No;
         break;
       }
       return false;
@@ -8408,6 +8565,8 @@ bool nsWindow::DealWithPopups(HWND aWnd, UINT aMessage, WPARAM aWParam,
   nsIRollupListener::RollupOptions rollupOptions{
       popupsToRollup,
       nsIRollupListener::FlushViews::Yes,
+      /* mPoint = */ nullptr,
+      allowAnimations,
   };
 
   if (nativeMessage == WM_TOUCH || nativeMessage == WM_LBUTTONDOWN ||
@@ -9192,6 +9351,57 @@ nsresult nsWindow::SetHiDPIMode(bool aHiDPI) {
 
 nsresult nsWindow::RestoreHiDPIMode() { return WinUtils::RestoreHiDPIMode(); }
 #endif
+
+mozilla::Maybe<UINT> nsWindow::GetHiddenTaskbarEdge() {
+  HMONITOR windowMonitor = ::MonitorFromWindow(mWnd, MONITOR_DEFAULTTONEAREST);
+
+  if (!IsWin8OrLater()) {
+    // Per-monitor taskbar information is not available.
+    APPBARDATA appBarData;
+    appBarData.cbSize = sizeof(appBarData);
+    UINT taskbarState = SHAppBarMessage(ABM_GETSTATE, &appBarData);
+    if (ABS_AUTOHIDE & taskbarState) {
+      appBarData.hWnd = FindWindow(L"Shell_TrayWnd", nullptr);
+      if (appBarData.hWnd) {
+        HMONITOR taskbarMonitor =
+            ::MonitorFromWindow(appBarData.hWnd, MONITOR_DEFAULTTOPRIMARY);
+        if (taskbarMonitor == windowMonitor) {
+          SHAppBarMessage(ABM_GETTASKBARPOS, &appBarData);
+          return Some(appBarData.uEdge);
+        }
+      }
+    }
+    return Nothing();
+  }
+
+  // Check all four sides of our monitor for an appbar.  Skip any that aren't
+  // the system taskbar.
+  MONITORINFO mi;
+  mi.cbSize = sizeof(MONITORINFO);
+  ::GetMonitorInfo(windowMonitor, &mi);
+
+  APPBARDATA appBarData;
+  appBarData.cbSize = sizeof(appBarData);
+  appBarData.rc = mi.rcMonitor;
+  const auto kEdges = {ABE_BOTTOM, ABE_TOP, ABE_LEFT, ABE_RIGHT};
+  for (auto edge : kEdges) {
+    appBarData.uEdge = edge;
+    // ABM_GETAUTOHIDEBAREX is not defined before Windows 8.
+    static constexpr DWORD ABM_GETAUTOHIDEBAREX = 0x000b;
+    HWND appBarHwnd = (HWND)SHAppBarMessage(ABM_GETAUTOHIDEBAREX, &appBarData);
+    if (appBarHwnd) {
+      nsAutoString className;
+      if (WinUtils::GetClassName(appBarHwnd, className)) {
+        if (className.Equals(L"Shell_TrayWnd") ||
+            className.Equals(L"Shell_SecondaryTrayWnd")) {
+          return Some(edge);
+        }
+      }
+    }
+  }
+
+  return Nothing();
+}
 
 static nsSizeMode GetSizeModeForWindowFrame(HWND aWnd, bool aFullscreenMode) {
   WINDOWPLACEMENT pl;

@@ -67,16 +67,8 @@ enum Stat {
   // Number of strings deduplicated.
   STAT_STRINGS_DEDUPLICATED,
 
-  // Number of realms that had nursery strings disabled due to large numbers
-  // being tenured.
-  STAT_NURSERY_STRING_REALMS_DISABLED,
-
   // Number of BigInts tenured.
   STAT_BIGINTS_TENURED,
-
-  // Number of realms that had nursery BigInts disabled due to large numbers
-  // being tenured.
-  STAT_NURSERY_BIGINT_REALMS_DISABLED,
 
   STAT_LIMIT
 };
@@ -234,20 +226,12 @@ struct Statistics {
   }
   bool hasTrigger() const { return recordedTrigger.isSome(); }
 
-  void noteNurseryAlloc() { allocsSinceMinorGC.nursery++; }
-
   // tenured allocs don't include nursery evictions.
   void setAllocsSinceMinorGCTenured(uint32_t allocs) {
-    allocsSinceMinorGC.tenured = allocs;
+    tenuredAllocsSinceMinorGC = allocs;
   }
 
-  uint32_t allocsSinceMinorGCNursery() { return allocsSinceMinorGC.nursery; }
-
-  uint32_t allocsSinceMinorGCTenured() { return allocsSinceMinorGC.tenured; }
-
-  uint32_t* addressOfAllocsSinceMinorGCNursery() {
-    return &allocsSinceMinorGC.nursery;
-  }
+  uint32_t allocsSinceMinorGCTenured() { return tenuredAllocsSinceMinorGC; }
 
   void beginNurseryCollection(JS::GCReason reason);
   void endNurseryCollection(JS::GCReason reason);
@@ -398,10 +382,7 @@ struct Statistics {
    * These events cannot be kept in the above array, we need to take their
    * address.
    */
-  struct {
-    uint32_t nursery;
-    uint32_t tenured;
-  } allocsSinceMinorGC;
+  uint32_t tenuredAllocsSinceMinorGC;
 
   /* Total GC heap size before and after the GC ran. */
   size_t preTotalHeapBytes;

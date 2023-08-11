@@ -454,7 +454,7 @@ bool JitScript::ensureHasCachedBaselineJitData(JSContext* cx,
 bool JitScript::ensureHasCachedIonData(JSContext* cx, HandleScript script) {
   MOZ_ASSERT(script->jitScript() == this);
 
-  if (cachedIonBytecodeInfo_.isSome()) {
+  if (usesEnvironmentChain_.isSome()) {
     return true;
   }
 
@@ -462,7 +462,7 @@ bool JitScript::ensureHasCachedIonData(JSContext* cx, HandleScript script) {
     return false;
   }
 
-  cachedIonBytecodeInfo_.emplace(AnalyzeBytecodeForIon(cx, script));
+  usesEnvironmentChain_.emplace(ScriptUsesEnvironmentChain(script));
   return true;
 }
 
@@ -637,7 +637,7 @@ gc::AllocSite* JitScript::createAllocSite(JSScript* script) {
   if (!nursery.canCreateAllocSite()) {
     // Don't block attaching an optimized stub, but don't process allocations
     // for this site.
-    return script->zone()->unknownAllocSite();
+    return script->zone()->unknownAllocSite(JS::TraceKind::Object);
   }
 
   if (!allocSites_.reserve(allocSites_.length() + 1)) {
@@ -651,7 +651,7 @@ gc::AllocSite* JitScript::createAllocSite(JSScript* script) {
     return nullptr;
   }
 
-  new (site) gc::AllocSite(script->zone(), script);
+  new (site) gc::AllocSite(script->zone(), script, JS::TraceKind::Object);
 
   allocSites_.infallibleAppend(site);
 

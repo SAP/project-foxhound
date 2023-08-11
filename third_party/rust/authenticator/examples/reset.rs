@@ -3,7 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 use authenticator::{
-    authenticatorservice::{AuthenticatorService, CtapVersion},
+    authenticatorservice::AuthenticatorService,
     ctap2::commands::StatusCode,
     errors::{AuthenticatorError, CommandError, HIDError},
     statecallback::StateCallback,
@@ -42,7 +42,7 @@ fn main() {
         return;
     }
 
-    let mut manager = AuthenticatorService::new(CtapVersion::CTAP2)
+    let mut manager = AuthenticatorService::new()
         .expect("The auth service should initialize safely");
 
     if !matches.opt_present("no-u2f-usb-hid") {
@@ -109,7 +109,7 @@ fn main() {
                 println!("STATUS: Continuing with device: {dev_info}");
                 break;
             }
-            Ok(StatusUpdate::PinError(..)) => panic!("Reset should never ask for a PIN!"),
+            Ok(StatusUpdate::PinUvError(..)) => panic!("Reset should never ask for a PIN!"),
             Ok(_) => { /* Ignore all other updates */ }
             Err(RecvError) => {
                 println!("RecvError");

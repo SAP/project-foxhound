@@ -8,66 +8,70 @@ Please note that some targeting attributes require stricter controls on the tele
 
 ## Available attributes
 
-* [addonsInfo](#addonsinfo)
-* [attributionData](#attributiondata)
-* [browserSettings](#browsersettings)
-* [currentDate](#currentdate)
-* [devToolsOpenedCount](#devtoolsopenedcount)
-* [isDefaultBrowser](#isdefaultbrowser)
-* [isDefaultHandler](#isdefaulthandler)
-* [defaultPDFHandler](#defaultpdfhandler)
-* [firefoxVersion](#firefoxversion)
-* [locale](#locale)
-* [localeLanguageCode](#localelanguagecode)
-* [needsUpdate](#needsupdate)
-* [pinnedSites](#pinnedsites)
-* [previousSessionEnd](#previoussessionend)
-* [profileAgeCreated](#profileagecreated)
-* [profileAgeReset](#profileagereset)
-* [providerCohorts](#providercohorts)
-* [region](#region)
-* [searchEngines](#searchengines)
-* [sync](#sync)
-* [topFrecentSites](#topfrecentsites)
-* [totalBookmarksCount](#totalbookmarkscount)
-* [usesFirefoxSync](#usesfirefoxsync)
-* [isFxAEnabled](#isfxaenabled)
-* [isFxASignedIn](#isfxasignedin)
-* [creditCardsSaved](#creditcardssaved)
-* [addressesSaved](#addressessaved)
-* [xpinstallEnabled](#xpinstallenabled)
-* [hasPinnedTabs](#haspinnedtabs)
-* [hasAccessedFxAPanel](#hasaccessedfxapanel)
-* [isWhatsNewPanelEnabled](#iswhatsnewpanelenabled)
-* [totalBlockedCount](#totalblockedcount)
-* [recentBookmarks](#recentbookmarks)
-* [userPrefs](#userprefs)
-* [attachedFxAOAuthClients](#attachedfxaoauthclients)
-* [platformName](#platformname)
-* [messageImpressions](#messageimpressions)
-* [blockedCountByType](#blockedcountbytype)
-* [isChinaRepack](#ischinarepack)
-* [userId](#userid)
-* [profileRestartCount](#profilerestartcount)
-* [homePageSettings](#homepagesettings)
-* [newtabSettings](#newtabsettings)
 * [activeNotifications](#activenotifications)
-* [isMajorUpgrade](#ismajorupgrade)
-* [hasActiveEnterprisePolicies](#hasactiveenterprisepolicies)
-* [userMonthlyActivity](#usermonthlyactivity)
+* [addonsInfo](#addonsinfo)
+* [addressesSaved](#addressessaved)
+* [attachedFxAOAuthClients](#attachedfxaoauthclients)
+* [attributionData](#attributiondata)
+* [backgroundTaskName](#backgroundtaskname)
+* [blockedCountByType](#blockedcountbytype)
+* [browserSettings](#browsersettings)
+* [colorwaysActive](#colorwaysActive)
+* [creditCardsSaved](#creditcardssaved)
+* [currentDate](#currentdate)
+* [defaultPDFHandler](#defaultpdfhandler)
+* [devToolsOpenedCount](#devtoolsopenedcount)
+* [distributionId](#distributionId)
 * [doesAppNeedPin](#doesappneedpin)
 * [doesAppNeedPrivatePin](#doesappneedprivatepin)
-* [isBackgroundTaskMode](#isbackgroundtaskmode)
-* [backgroundTaskName](#backgroundtaskname)
-* [userPrefersReducedMotion](#userprefersreducedmotion)
-* [colorwaysActive](#colorwaysactive)
-* [userEnabledActiveColorway](#userenabledactivecolorway)
-* [inMr2022Holdback](#inmr2022holdback)
-* [distributionId](#distributionid)
+* [firefoxVersion](#firefoxversion)
 * [fxViewButtonAreaType](#fxviewbuttonareatype)
+* [hasAccessedFxAPanel](#hasaccessedfxapanel)
+* [hasActiveEnterprisePolicies](#hasactiveenterprisepolicies)
 * [hasMigratedBookmarks](#hasmigratedbookmarks)
 * [hasMigratedHistory](#hasmigratedhistory)
 * [hasMigratedPasswords](#hasmigratedpasswords)
+* [hasPinnedTabs](#haspinnedtabs)
+* [homePageSettings](#homepagesettings)
+* [inMr2022Holdback](#inmr2022holdback)
+* [isBackgroundTaskMode](#isbackgroundtaskmode)
+* [isChinaRepack](#ischinarepack)
+* [isDefaultBrowser](#isdefaultbrowser)
+* [isDefaultHandler](#isdefaulthandler)
+* [isDeviceMigration](#isdevicemigration)
+* [isFxAEnabled](#isfxaenabled)
+* [isFxASignedIn](#isFxASignedIn)
+* [isMajorUpgrade](#ismajorupgrade)
+* [isRTAMO](#isrtamo)
+* [isWhatsNewPanelEnabled](#iswhatsnewpanelenabled)
+* [locale](#locale)
+* [localeLanguageCode](#localelanguagecode)
+* [messageImpressions](#messageimpressions)
+* [needsUpdate](#needsupdate)
+* [newtabSettings](#newtabsettings)
+* [pinnedSites](#pinnedsites)
+* [platformName](#platformname)
+* [previousSessionEnd](#previoussessionend)
+* [profileAgeCreated](#profileagecreated)
+* [profileAgeReset](#profileagereset)
+* [profileRestartCount](#profilerestartcount)
+* [providerCohorts](#providercohorts)
+* [recentBookmarks](#recentbookmarks)
+* [region](#region)
+* [screenImpressions](#screenImpressions)
+* [searchEngines](#searchengines)
+* [sync](#sync)
+* [topFrecentSites](#topfrecentsites)
+* [totalBlockedCount](#totalblockedcount)
+* [totalBookmarksCount](#totalbookmarkscount)
+* [userEnabledActiveColorway](#userEnabledActiveColorway)
+* [userId](#userid)
+* [userMonthlyActivity](#usermonthlyactivity)
+* [userPrefersReducedMotion](#userprefersreducedmotion)
+* [useEmbeddedMigrationWizard][#useembeddedmigrationwizard]
+* [userPrefs](#userprefs)
+* [usesFirefoxSync](#usesfirefoxsync)
+* [xpinstallEnabled](#xpinstallEnabled)
 
 ## Detailed usage
 
@@ -936,14 +940,6 @@ mode, or `null` if this invocation is not running in background task mode.
 
 Checks if user prefers reduced motion as indicated by the value of a media query for `prefers-reduced-motion`.
 
-### `colorwaysActive`
-
-A boolean. `true` when there are Colorways available.
-
-### `userEnabledActiveColorway`
-
-A boolean. `true` when user has an active Colorway theme enabled.
-
 ### `inMr2022Holdback`
 
 A boolean. `true` when the user is in the Major Release 2022 holdback study.
@@ -968,3 +964,23 @@ A boolean. `true` if the user ever used the Migration Wizard to migrate history.
 ### `hasMigratedPasswords`
 
 A boolean. `true` if the user ever used the Migration Wizard to migrate passwords.
+
+### `useEmbeddedMigrationWizard`
+
+A boolean. `true` if the user is configured to use the embedded Migration Wizard in about:welcome.
+
+### `isRTAMO`
+
+A boolean. `true` when [RTAMO](first-run.md#return-to-amo-rtamo) has been used to download Firefox, `false` otherwise.
+
+### `isDeviceMigration`
+
+A boolean. `true` when [support.mozilla.org](https://support.mozilla.org) has been used to download the browser as part of a "migration" campaign, for device migration guidance, `false` otherwise.
+### `screenImpressions`
+
+An array that maps about:welcome screen IDs to their most recent impression timestamp. Should only be used for unique screen IDs to avoid unintentionally targeting messages with identical screen IDs.
+#### Definition
+
+```
+declare const screenImpressions: { [key: string]: Array<UnixEpochNumber> };
+```

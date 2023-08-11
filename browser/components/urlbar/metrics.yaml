@@ -12,6 +12,7 @@ $tags:
 
 urlbar:
   abandonment:
+    disabled: true
     type: event
     description: Recorded when the user abandons a search (blurring the urlbar).
     extra_keys:
@@ -91,15 +92,19 @@ urlbar:
           `autofill_url`,
           `bookmark`,
           `calc`,
-          `dynamic_wikipedia`,
           `history`,
           `intervention_clear`,
           `intervention_refresh`,
           `intervention_unknown`,
           `intervention_update`,
           `keyword`,
-          `navigational`,
+          `merino_adm_nonsponsored`,
+          `merino_adm_sponsored`,
+          `merino_top_picks`,
+          `merino_wikipedia`,
           `remote_tab`,
+          `rs_adm_nonsponsored`,
+          `rs_adm_sponsored`,
           `search_engine`,
           `search_history`,
           `search_suggest`,
@@ -107,6 +112,7 @@ urlbar:
           `suggest_sponsor`,
           `tab`,
           `tab_to_search`,
+          `tip_dismissal_acknowledgment`,
           `tip_onboard`,
           `tip_persist`,
           `tip_redirect`,
@@ -129,6 +135,7 @@ urlbar:
       - fx-search-telemetry@mozilla.com
     expires: never
   engagement:
+    disabled: true
     type: event
     description: Recorded when the user executes an action on a result.
     extra_keys:
@@ -196,7 +203,6 @@ urlbar:
           `autofill_url`,
           `bookmark`,
           `calc`,
-          `dynamic_wikipedia`,
           `experimental_addon`,
           `history`,
           `input_field`,
@@ -205,8 +211,13 @@ urlbar:
           `intervention_unknown`,
           `intervention_update`,
           `keyword`,
-          `navigational`,
+          `merino_adm_nonsponsored`,
+          `merino_adm_sponsored`,
+          `merino_top_picks`,
+          `merino_wikipedia`,
           `remote_tab`,
+          `rs_adm_nonsponsored`,
+          `rs_adm_sponsored`,
           `search_engine`,
           `search_history`,
           `search_shortcut_button`,
@@ -216,6 +227,7 @@ urlbar:
           `suggest_sponsor`,
           `tab`,
           `tab_to_search`,
+          `tip_dismissal_acknowledgment`,
           `tip_onboard`,
           `tip_persist`,
           `tip_redirect`,
@@ -255,8 +267,17 @@ urlbar:
       engagement_type:
         description: >
           Records how the user selected the result. The possible values are:
-          `click`, `enter`, `go_button`, `drop_go`, `paste_go`, `dismiss`,
-          `help`.
+          `click`,
+          `dismiss`,
+          `drop_go`,
+          `enter`,
+          `go_button`,
+          `help`,
+          `inaccurate_location`,
+          `not_interested`,
+          `not_relevant`,
+          `paste_go`,
+          `show_less_frequently`
         type: string
       groups:
         description: >
@@ -285,15 +306,19 @@ urlbar:
           `autofill_url`,
           `bookmark`,
           `calc`,
-          `dynamic_wikipedia`,
           `history`,
           `intervention_clear`,
           `intervention_refresh`,
           `intervention_unknown`,
           `intervention_update`,
           `keyword`,
-          `navigational`,
+          `merino_adm_nonsponsored`,
+          `merino_adm_sponsored`,
+          `merino_top_picks`,
+          `merino_wikipedia`,
           `remote_tab`,
+          `rs_adm_nonsponsored`,
+          `rs_adm_sponsored`,
           `search_engine`,
           `search_history`,
           `search_suggest`,
@@ -301,6 +326,7 @@ urlbar:
           `suggest_sponsor`,
           `tab`,
           `tab_to_search`,
+          `tip_dismissal_acknowledgment`,
           `tip_onboard`,
           `tip_persist`,
           `tip_redirect`,
@@ -323,6 +349,7 @@ urlbar:
       - fx-search-telemetry@mozilla.com
     expires: never
   impression:
+    disabled: true
     type: event
     description: Recorded when urlbar results are shown to the user.
     extra_keys:
@@ -405,15 +432,19 @@ urlbar:
           `autofill_url`,
           `bookmark`,
           `calc`,
-          `dynamic_wikipedia`,
           `history`,
           `intervention_clear`,
           `intervention_refresh`,
           `intervention_unknown`,
           `intervention_update`,
           `keyword`,
-          `navigational`,
+          `merino_adm_nonsponsored`,
+          `merino_adm_sponsored`,
+          `merino_top_picks`,
+          `merino_wikipedia`,
           `remote_tab`,
+          `rs_adm_nonsponsored`,
+          `rs_adm_sponsored`,
           `search_engine`,
           `search_history`,
           `search_suggest`,
@@ -421,6 +452,7 @@ urlbar:
           `suggest_sponsor`,
           `tab`,
           `tab_to_search`,
+          `tip_dismissal_acknowledgment`,
           `tip_onboard`,
           `tip_persist`,
           `tip_redirect`,
@@ -437,6 +469,25 @@ urlbar:
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1800579#c4
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1805717#c4
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - fx-search-telemetry@mozilla.com
+    expires: never
+
+  exposure:
+    type: event
+    description: >
+      Recorded when client is exposed to urlbar experiment results.
+    extra_keys:
+      results:
+        description: >
+          Comma separated list of results that were visible to the user.
+        type: string
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1819766
+    data_reviews:
+      - ""
     data_sensitivity:
       - interaction
     notification_emails:

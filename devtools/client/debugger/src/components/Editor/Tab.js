@@ -33,7 +33,7 @@ import {
   getContext,
 } from "../../selectors";
 
-import classnames from "classnames";
+const classnames = require("devtools/client/shared/classnames.js");
 
 class Tab extends PureComponent {
   static get propTypes() {
@@ -206,6 +206,7 @@ class Tab extends PureComponent {
     const className = classnames("source-tab", {
       active,
       pretty: isPrettyCode,
+      blackboxed: this.props.isBlackBoxed,
     });
 
     const path = getDisplayPath(source, tabSources);

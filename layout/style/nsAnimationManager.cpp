@@ -20,6 +20,7 @@
 #include "mozilla/dom/KeyframeEffect.h"
 #include "mozilla/dom/MutationObservers.h"
 #include "mozilla/dom/ScrollTimeline.h"
+#include "mozilla/dom/ViewTimeline.h"
 
 #include "nsPresContext.h"
 #include "nsPresContextInlines.h"
@@ -41,6 +42,7 @@ using mozilla::dom::Element;
 using mozilla::dom::KeyframeEffect;
 using mozilla::dom::MutationObservers;
 using mozilla::dom::ScrollTimeline;
+using mozilla::dom::ViewTimeline;
 
 ////////////////////////// nsAnimationManager ////////////////////////////
 
@@ -215,6 +217,7 @@ static already_AddRefed<dom::AnimationTimeline> GetNamedProgressTimeline(
   // 2. that element’s descendants
   // 3. that element’s following siblings and their descendants
   // https://drafts.csswg.org/scroll-animations-1/#timeline-scope
+  // FIXME: Bug 1823500. Reduce default scoping to ancestors only.
   for (Element* curr = AnimationUtils::GetElementForRestyle(
            aTarget.mElement, aTarget.mPseudoType);
        curr; curr = curr->GetParentElement()) {
@@ -235,7 +238,12 @@ static already_AddRefed<dom::AnimationTimeline> GetNamedProgressTimeline(
         }
       }
 
-      // TODO: Bug 1737920. Support view-timeline.
+      if (auto* collection =
+              TimelineCollection<ViewTimeline>::Get(element, pseudoType)) {
+        if (RefPtr<ViewTimeline> timeline = collection->Lookup(aName)) {
+          return timeline.forget();
+        }
+      }
     }
   }
 
@@ -260,7 +268,12 @@ static already_AddRefed<dom::AnimationTimeline> GetTimeline(
     case StyleAnimationTimeline::Tag::Scroll: {
       const auto& scroll = aStyleTimeline.AsScroll();
       return ScrollTimeline::MakeAnonymous(aPresContext->Document(), aTarget,
-                                           scroll._0, scroll._1);
+                                           scroll.axis, scroll.scroller);
+    }
+    case StyleAnimationTimeline::Tag::View: {
+      const auto& view = aStyleTimeline.AsView();
+      return ViewTimeline::MakeAnonymous(aPresContext->Document(), aTarget,
+                                         view.axis, view.inset);
     }
     case StyleAnimationTimeline::Tag::Auto:
       return do_AddRef(aTarget.mElement->OwnerDoc()->Timeline());

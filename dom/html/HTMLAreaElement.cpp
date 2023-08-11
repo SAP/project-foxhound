@@ -96,11 +96,11 @@ nsresult HTMLAreaElement::CheckTaintSinkSetAttr(int32_t aNamespaceID, nsAtom* aN
   return nsGenericHTMLElement::CheckTaintSinkSetAttr(aNamespaceID, aName, aValue);
 }
 
-nsresult HTMLAreaElement::AfterSetAttr(int32_t aNamespaceID, nsAtom* aName,
-                                       const nsAttrValue* aValue,
-                                       const nsAttrValue* aOldValue,
-                                       nsIPrincipal* aSubjectPrincipal,
-                                       bool aNotify) {
+void HTMLAreaElement::AfterSetAttr(int32_t aNamespaceID, nsAtom* aName,
+                                   const nsAttrValue* aValue,
+                                   const nsAttrValue* aOldValue,
+                                   nsIPrincipal* aSubjectPrincipal,
+                                   bool aNotify) {
   if (aNamespaceID == kNameSpaceID_None) {
     // This must happen after the attribute is set. We will need the updated
     // attribute value because notifying the document that content states have

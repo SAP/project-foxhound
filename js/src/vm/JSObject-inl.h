@@ -183,15 +183,14 @@ class MOZ_RAII AutoSuppressAllocationMetadataBuilder {
 // may be the passed pointer, relocated by GC. If no GC could occur, it's just
 // passed through. We root nothing unless necessary.
 template <typename T>
-[[nodiscard]] static MOZ_ALWAYS_INLINE T* SetNewObjectMetadata(JSContext* cx,
-                                                               T* obj) {
+[[nodiscard]] static inline T* SetNewObjectMetadata(JSContext* cx, T* obj) {
   MOZ_ASSERT(cx->isMainThreadContext());
+  MOZ_ASSERT(cx->realm()->hasAllocationMetadataBuilder());
   MOZ_ASSERT(!cx->realm()->hasObjectPendingMetadata());
 
   // The metadata builder is invoked for each object created on the main thread,
   // except when it's suppressed.
-  if (MOZ_UNLIKELY(cx->realm()->hasAllocationMetadataBuilder()) &&
-      !cx->zone()->suppressAllocationMetadataBuilder) {
+  if (!cx->zone()->suppressAllocationMetadataBuilder) {
     // Don't collect metadata on objects that represent metadata, to avoid
     // recursion.
     AutoSuppressAllocationMetadataBuilder suppressMetadata(cx);

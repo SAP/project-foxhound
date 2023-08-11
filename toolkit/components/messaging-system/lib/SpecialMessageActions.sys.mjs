@@ -12,13 +12,13 @@ const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   FxAccounts: "resource://gre/modules/FxAccounts.sys.mjs",
   MigrationUtils: "resource:///modules/MigrationUtils.sys.mjs",
+  UIState: "resource://services-sync/UIState.sys.mjs",
   UITour: "resource:///modules/UITour.sys.mjs",
 });
 
 XPCOMUtils.defineLazyModuleGetters(lazy, {
   AddonManager: "resource://gre/modules/AddonManager.jsm",
   Spotlight: "resource://activity-stream/lib/Spotlight.jsm",
-  ColorwayClosetOpener: "resource:///modules/ColorwayClosetOpener.jsm",
 });
 
 export const SpecialMessageActions = {
@@ -191,6 +191,10 @@ export const SpecialMessageActions = {
     // Array of prefs that are allowed to be edited by SET_PREF
     const allowedPrefs = [
       "browser.dataFeatureRecommendations.enabled",
+      "browser.migrate.content-modal.about-welcome-behavior",
+      "browser.migrate.content-modal.enabled",
+      "browser.migrate.content-modal.import-all.enabled",
+      "browser.migrate.preferences-entrypoint.enabled",
       "browser.startup.homepage",
       "browser.privateWindowSeparation.enabled",
       "browser.firefox-view.feature-tour",
@@ -226,12 +230,134 @@ export const SpecialMessageActions = {
   },
 
   /**
+   * Open an FxA sign-in page and automatically close it once sign-in
+   * completes.
+   *
+   * @param {any=} data
+   * @param {Browser} browser the xul:browser rendering the page
+   * @returns {Promise<boolean>} true if the user signed in, false otherwise
+   */
+  async fxaSignInFlow(data, browser) {
+    if (!(await lazy.FxAccounts.canConnectAccount())) {
+      return false;
+    }
+    const url = await lazy.FxAccounts.config.promiseConnectAccountURI(
+      data?.entrypoint || "activity-stream-firstrun",
+      data?.extraParams || {}
+    );
+
+    let window = browser.ownerGlobal;
+
+    let fxaBrowser = await new Promise(resolve => {
+      window.openLinkIn(url, data?.where || "tab", {
+        private: false,
+        triggeringPrincipal: Services.scriptSecurityManager.createNullPrincipal(
+          {}
+        ),
+        csp: null,
+        resolveOnContentBrowserCreated: resolve,
+        forceForeground: true,
+      });
+    });
+
+    let gBrowser = fxaBrowser.getTabBrowser();
+    let fxaTab = gBrowser.getTabForBrowser(fxaBrowser);
+
+    let didSignIn = await new Promise(resolve => {
+      // We're going to be setting up a listener and an observer for this
+      // mechanism.
+      //
+      // 1. An event listener for the TabClose event, to detect if the user
+      //    closes the tab before completing sign-in
+      // 2. An nsIObserver that listens for the UIState for FxA to reach
+      //    STATUS_SIGNED_IN.
+      //
+      // We want to clean up both the listener and observer when all of this
+      // is done.
+      //
+      // We use an AbortController to make it easier to manage the cleanup.
+      let controller = new AbortController();
+      let { signal } = controller;
+
+      // This nsIObserver will listen for the UIState status to change to
+      // STATUS_SIGNED_IN as our definitive signal that FxA sign-in has
+      // completed. It will then resolve the outer Promise to `true`.
+      let fxaObserver = {
+        QueryInterface: ChromeUtils.generateQI([
+          Ci.nsIObserver,
+          Ci.nsISupportsWeakReference,
+        ]),
+
+        observe(aSubject, aTopic, aData) {
+          let state = lazy.UIState.get();
+          if (state.status === lazy.UIState.STATUS_SIGNED_IN) {
+            // We completed sign-in, so tear down our listener / observer and resolve
+            // didSignIn to true.
+            controller.abort();
+            resolve(true);
+          }
+        },
+      };
+
+      // The TabClose event listener _can_ accept the AbortController signal,
+      // which will then remove the event listener after controller.abort is
+      // called.
+      fxaTab.addEventListener(
+        "TabClose",
+        () => {
+          // If the TabClose event was fired before the event handler was
+          // removed, this means that the tab was closed and sign-in was
+          // not completed, which means we should resolve didSignIn to false.
+          controller.abort();
+          resolve(false);
+        },
+        { once: true, signal }
+      );
+
+      let window = fxaTab.ownerGlobal;
+      window.addEventListener("unload", () => {
+        // If the hosting window unload event was fired before the event handler
+        // was removed, this means that the window was closed and sign-in was
+        // not completed, which means we should resolve didSignIn to false.
+        controller.abort();
+        resolve(false);
+      });
+
+      Services.obs.addObserver(fxaObserver, lazy.UIState.ON_UPDATE);
+
+      // Unfortunately, nsIObserverService.addObserver does not accept an
+      // AbortController signal as a parameter, so instead we listen for the
+      // abort event on the signal to remove the observer.
+      signal.addEventListener(
+        "abort",
+        () => {
+          Services.obs.removeObserver(fxaObserver, lazy.UIState.ON_UPDATE);
+        },
+        { once: true }
+      );
+    });
+
+    // If the user completed sign-in, we'll close the fxaBrowser tab for
+    // them to bring them back to the about:welcome flow.
+    //
+    // If the sign-in page was loaded in a new window, this will close the
+    // tab for that window. That will close the window as well if it's the
+    // last tab in that window.
+    if (didSignIn && data?.autoClose !== false) {
+      gBrowser.removeTab(fxaTab);
+    }
+
+    return didSignIn;
+  },
+
+  /**
    * Processes "Special Message Actions", which are definitions of behaviors such as opening tabs
    * installing add-ons, or focusing the awesome bar that are allowed to can be triggered from
    * Messaging System interactions.
    *
    * @param {{type: string, data?: any}} action User action defined in message JSON.
    * @param browser {Browser} The browser most relevant to the message.
+   * @returns {Promise<unknown>} Type depends on action type. See cases below.
    */
   async handleAction(action, browser) {
     const window = browser.ownerGlobal;
@@ -341,6 +467,9 @@ export const SpecialMessageActions = {
           csp: null,
         });
         break;
+      case "FXA_SIGNIN_FLOW":
+        /** @returns {Promise<boolean>} */
+        return this.fxaSignInFlow(action.data, browser);
       case "OPEN_PROTECTION_PANEL":
         let { gProtectionsHandler } = window;
         gProtectionsHandler.showProtectionsPopup({});
@@ -405,15 +534,10 @@ export const SpecialMessageActions = {
         );
         clickElement?.click();
         break;
-      case "OPEN_FIREFOX_VIEW_AND_COLORWAYS_MODAL":
-        window.FirefoxViewHandler.openTab();
-        lazy.ColorwayClosetOpener.openModal({
-          source: "firefoxview",
-        });
-        break;
       case "RELOAD_BROWSER":
         browser.reload();
         break;
     }
+    return undefined;
   },
 };

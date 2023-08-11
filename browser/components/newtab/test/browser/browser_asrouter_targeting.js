@@ -7,7 +7,6 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   CFRMessageProvider: "resource://activity-stream/lib/CFRMessageProvider.jsm",
   HomePage: "resource:///modules/HomePage.jsm",
   QueryCache: "resource://activity-stream/lib/ASRouterTargeting.jsm",
-  ShellService: "resource:///modules/ShellService.jsm",
 });
 ChromeUtils.defineESModuleGetters(this, {
   AppConstants: "resource://gre/modules/AppConstants.sys.mjs",
@@ -21,6 +20,7 @@ ChromeUtils.defineESModuleGetters(this, {
   PlacesTestUtils: "resource://testing-common/PlacesTestUtils.sys.mjs",
   ProfileAge: "resource://gre/modules/ProfileAge.sys.mjs",
   Region: "resource://gre/modules/Region.sys.mjs",
+  ShellService: "resource:///modules/ShellService.sys.mjs",
   TargetingContext: "resource://messaging-system/targeting/Targeting.sys.mjs",
   TelemetryEnvironment: "resource://gre/modules/TelemetryEnvironment.sys.mjs",
   TelemetrySession: "resource://gre/modules/TelemetrySession.sys.mjs",
@@ -1224,64 +1224,6 @@ add_task(async function check_userPrefersReducedMotion() {
   );
 });
 
-add_task(async function check_colorwaysActive() {
-  is(
-    typeof (await ASRouterTargeting.Environment.colorwaysActive),
-    "boolean",
-    "Should return a boolean"
-  );
-
-  const sandbox = sinon.createSandbox();
-  registerCleanupFunction(async () => {
-    sandbox.restore();
-  });
-
-  let stub = sandbox
-    .stub(BuiltInThemes, "findActiveColorwayCollection")
-    .returns(true);
-
-  ok(
-    await ASRouterTargeting.Environment.colorwaysActive,
-    "returns true when an colorways are active"
-  );
-
-  stub.returns(false);
-
-  ok(
-    !(await ASRouterTargeting.Environment.colorwaysActive),
-    "returns false when an colorways are inactive"
-  );
-});
-
-add_task(async function check_userEnabledActiveColorway() {
-  is(
-    typeof (await ASRouterTargeting.Environment.userEnabledActiveColorway),
-    "boolean",
-    "Should return a boolean"
-  );
-
-  const sandbox = sinon.createSandbox();
-  registerCleanupFunction(async () => {
-    sandbox.restore();
-  });
-
-  let currentCollectionStub = sandbox
-    .stub(BuiltInThemes, "isColorwayFromCurrentCollection")
-    .returns(false);
-
-  ok(
-    !(await ASRouterTargeting.Environment.userEnabledActiveColorway),
-    "returns false when an active colorway is not enabled"
-  );
-
-  currentCollectionStub.returns(true);
-
-  ok(
-    await ASRouterTargeting.Environment.userEnabledActiveColorway,
-    "returns true when an active colorway is enabled"
-  );
-});
-
 add_task(async function test_mr2022Holdback() {
   await ExperimentAPI.ready();
 
@@ -1519,4 +1461,236 @@ add_task(async function test_migrationInteractions() {
   ok(await ASRouterTargeting.Environment.hasMigratedBookmarks);
   ok(await ASRouterTargeting.Environment.hasMigratedHistory);
   ok(await ASRouterTargeting.Environment.hasMigratedPasswords);
+});
+
+add_task(async function check_useEmbeddedMigrationWizard() {
+  await pushPrefs([
+    "browser.migrate.content-modal.about-welcome-behavior",
+    "default",
+  ]);
+
+  ok(!(await ASRouterTargeting.Environment.useEmbeddedMigrationWizard));
+
+  await pushPrefs([
+    "browser.migrate.content-modal.about-welcome-behavior",
+    "autoclose",
+  ]);
+
+  ok(!(await ASRouterTargeting.Environment.useEmbeddedMigrationWizard));
+
+  await pushPrefs([
+    "browser.migrate.content-modal.about-welcome-behavior",
+    "embedded",
+  ]);
+
+  ok(await ASRouterTargeting.Environment.useEmbeddedMigrationWizard);
+
+  await pushPrefs([
+    "browser.migrate.content-modal.about-welcome-behavior",
+    "standalone",
+  ]);
+
+  ok(!(await ASRouterTargeting.Environment.useEmbeddedMigrationWizard));
+});
+
+add_task(async function check_isRTAMO() {
+  is(
+    typeof ASRouterTargeting.Environment.isRTAMO,
+    "boolean",
+    "Should return a boolean"
+  );
+
+  const TEST_CASES = [
+    {
+      title: "no attribution data",
+      attributionData: {},
+      expected: false,
+    },
+    {
+      title: "null attribution data",
+      attributionData: null,
+      expected: false,
+    },
+    {
+      title: "no content",
+      attributionData: {
+        source: "addons.mozilla.org",
+      },
+      expected: false,
+    },
+    {
+      title: "empty content",
+      attributionData: {
+        source: "addons.mozilla.org",
+        content: "",
+      },
+      expected: false,
+    },
+    {
+      title: "null content",
+      attributionData: {
+        source: "addons.mozilla.org",
+        content: null,
+      },
+      expected: false,
+    },
+    {
+      title: "empty source",
+      attributionData: {
+        source: "",
+      },
+      expected: false,
+    },
+    {
+      title: "null source",
+      attributionData: {
+        source: null,
+      },
+      expected: false,
+    },
+    {
+      title: "valid attribution data for RTAMO with content not encoded",
+      attributionData: {
+        source: "addons.mozilla.org",
+        content: "rta:<encoded-addon-id>",
+      },
+      expected: true,
+    },
+    {
+      title: "valid attribution data for RTAMO with content encoded once",
+      attributionData: {
+        source: "addons.mozilla.org",
+        content: "rta%3A<encoded-addon-id>",
+      },
+      expected: true,
+    },
+    {
+      title: "valid attribution data for RTAMO with content encoded twice",
+      attributionData: {
+        source: "addons.mozilla.org",
+        content: "rta%253A<encoded-addon-id>",
+      },
+      expected: true,
+    },
+    {
+      title: "invalid source",
+      attributionData: {
+        source: "www.mozilla.org",
+        content: "rta%3A<encoded-addon-id>",
+      },
+      expected: false,
+    },
+  ];
+
+  const sandbox = sinon.createSandbox();
+  registerCleanupFunction(async () => {
+    sandbox.restore();
+  });
+
+  const stub = sandbox.stub(AttributionCode, "getCachedAttributionData");
+
+  for (const { title, attributionData, expected } of TEST_CASES) {
+    stub.returns(attributionData);
+
+    is(
+      ASRouterTargeting.Environment.isRTAMO,
+      expected,
+      `${title} - Expected isRTAMO to have the expected value`
+    );
+  }
+
+  sandbox.restore();
+});
+
+add_task(async function check_isDeviceMigration() {
+  is(
+    typeof ASRouterTargeting.Environment.isDeviceMigration,
+    "boolean",
+    "Should return a boolean"
+  );
+
+  const TEST_CASES = [
+    {
+      title: "no attribution data",
+      attributionData: {},
+      expected: false,
+    },
+    {
+      title: "null attribution data",
+      attributionData: null,
+      expected: false,
+    },
+    {
+      title: "no campaign",
+      attributionData: {
+        source: "support.mozilla.org",
+      },
+      expected: false,
+    },
+    {
+      title: "empty campaign",
+      attributionData: {
+        source: "support.mozilla.org",
+        campaign: "",
+      },
+      expected: false,
+    },
+    {
+      title: "null campaign",
+      attributionData: {
+        source: "addons.mozilla.org",
+        campaign: null,
+      },
+      expected: false,
+    },
+    {
+      title: "empty source",
+      attributionData: {
+        source: "",
+      },
+      expected: false,
+    },
+    {
+      title: "null source",
+      attributionData: {
+        source: null,
+      },
+      expected: false,
+    },
+    {
+      title: "other source",
+      attributionData: {
+        source: "www.mozilla.org",
+        campaign: "migration",
+      },
+      expected: true,
+    },
+    {
+      title: "valid attribution data for isDeviceMigration",
+      attributionData: {
+        source: "support.mozilla.org",
+        campaign: "migration",
+      },
+      expected: true,
+    },
+  ];
+
+  const sandbox = sinon.createSandbox();
+  registerCleanupFunction(async () => {
+    sandbox.restore();
+  });
+
+  const stub = sandbox.stub(AttributionCode, "getCachedAttributionData");
+
+  for (const { title, attributionData, expected } of TEST_CASES) {
+    stub.returns(attributionData);
+
+    is(
+      ASRouterTargeting.Environment.isDeviceMigration,
+      expected,
+      `${title} - Expected isDeviceMigration to have the expected value`
+    );
+  }
+
+  sandbox.restore();
 });

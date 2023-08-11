@@ -93,6 +93,8 @@ struct LinkDataCacheablePod {
 
 WASM_DECLARE_CACHEABLE_POD(LinkDataCacheablePod);
 
+WASM_CHECK_CACHEABLE_POD_PADDING(LinkDataCacheablePod)
+
 struct LinkData : LinkDataCacheablePod {
   explicit LinkData(Tier tier) : tier(tier) {}
 
@@ -353,30 +355,40 @@ using FuncImportVector = Vector<FuncImport, 0, SystemAllocPolicy>;
 struct MetadataCacheablePod {
   ModuleKind kind;
   Maybe<MemoryDesc> memory;
-  uint32_t globalDataLength;
+  uint32_t instanceDataLength;
   Maybe<uint32_t> startFuncIndex;
   Maybe<uint32_t> nameCustomSectionIndex;
   bool filenameIsURL;
   bool omitsBoundsChecks;
+  uint32_t typeDefsOffsetStart;
+  uint32_t tablesOffsetStart;
+  uint32_t tagsOffsetStart;
+  uint32_t padding;
 
-  WASM_CHECK_CACHEABLE_POD(kind, memory, globalDataLength, startFuncIndex,
+  WASM_CHECK_CACHEABLE_POD(kind, memory, instanceDataLength, startFuncIndex,
                            nameCustomSectionIndex, filenameIsURL,
-                           omitsBoundsChecks)
+                           omitsBoundsChecks, typeDefsOffsetStart,
+                           tablesOffsetStart, tagsOffsetStart)
 
   explicit MetadataCacheablePod(ModuleKind kind)
       : kind(kind),
-        globalDataLength(0),
+        instanceDataLength(0),
         filenameIsURL(false),
-        omitsBoundsChecks(false) {}
+        omitsBoundsChecks(false),
+        typeDefsOffsetStart(UINT32_MAX),
+        tablesOffsetStart(UINT32_MAX),
+        tagsOffsetStart(UINT32_MAX),
+        padding(0) {}
 };
 
 WASM_DECLARE_CACHEABLE_POD(MetadataCacheablePod)
+
+WASM_CHECK_CACHEABLE_POD_PADDING(MetadataCacheablePod)
 
 using ModuleHash = uint8_t[8];
 
 struct Metadata : public ShareableBase<Metadata>, public MetadataCacheablePod {
   SharedTypeContext types;
-  uint32_t typeIdsOffsetStart;
   GlobalDescVector globals;
   TableDescVector tables;
   TagDescVector tags;

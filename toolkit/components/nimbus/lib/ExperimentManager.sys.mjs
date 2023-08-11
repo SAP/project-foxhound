@@ -7,18 +7,15 @@ import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
+  ClientEnvironment: "resource://normandy/lib/ClientEnvironment.sys.mjs",
   ExperimentStore: "resource://nimbus/lib/ExperimentStore.sys.mjs",
   FirstStartup: "resource://gre/modules/FirstStartup.sys.mjs",
   NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
+  NormandyUtils: "resource://normandy/lib/NormandyUtils.sys.mjs",
+  PrefUtils: "resource://normandy/lib/PrefUtils.sys.mjs",
   Sampling: "resource://gre/modules/components-utils/Sampling.sys.mjs",
   TelemetryEnvironment: "resource://gre/modules/TelemetryEnvironment.sys.mjs",
-});
-
-XPCOMUtils.defineLazyModuleGetters(lazy, {
-  ClientEnvironment: "resource://normandy/lib/ClientEnvironment.jsm",
-  NormandyUtils: "resource://normandy/lib/NormandyUtils.jsm",
-  TelemetryEvents: "resource://normandy/lib/TelemetryEvents.jsm",
-  PrefUtils: "resource://normandy/lib/PrefUtils.jsm",
+  TelemetryEvents: "resource://normandy/lib/TelemetryEvents.sys.mjs",
 });
 
 XPCOMUtils.defineLazyGetter(lazy, "log", () => {
@@ -163,7 +160,7 @@ export class _ExperimentManager {
     this.sessions.get(source).add(slug);
 
     if (this.store.has(slug)) {
-      this.updateEnrollment(recipe);
+      await this.updateEnrollment(recipe);
     } else if (isEnrollmentPaused) {
       lazy.log.debug(`Enrollment is paused for "${slug}"`);
     } else if (!(await this.isInBucketAllocation(recipe.bucketConfig))) {
@@ -500,13 +497,21 @@ export class _ExperimentManager {
    * @param {RecipeArgs} recipe
    * @returns {boolean} whether the enrollment is still active
    */
-  updateEnrollment(recipe) {
+  async updateEnrollment(recipe) {
     /** @type Enrollment */
     const enrollment = this.store.get(recipe.slug);
 
     // Don't update experiments that were already unenrolled.
     if (enrollment.active === false) {
       lazy.log.debug(`Enrollment ${recipe.slug} has expired, aborting.`);
+      return false;
+    }
+
+    if (
+      recipe.isRollout &&
+      !(await this.isInBucketAllocation(recipe.bucketConfig))
+    ) {
+      this.unenroll(recipe.slug, "bucketing");
       return false;
     }
 

@@ -42,7 +42,7 @@ nsIFrame* NS_NewSVGGeometryFrame(mozilla::PresShell* aPresShell,
 
 namespace mozilla {
 
-class SVGGeometryFrame : public nsIFrame, public ISVGDisplayableFrame {
+class SVGGeometryFrame final : public nsIFrame, public ISVGDisplayableFrame {
   using DrawTarget = gfx::DrawTarget;
 
   friend nsIFrame* ::NS_NewSVGGeometryFrame(mozilla::PresShell* aPresShell,
@@ -95,11 +95,10 @@ class SVGGeometryFrame : public nsIFrame, public ISVGDisplayableFrame {
 
   bool IsInvisible() const;
 
- protected:
+ private:
   // ISVGDisplayableFrame interface:
   void PaintSVG(gfxContext& aContext, const gfxMatrix& aTransform,
-                imgDrawingParams& aImgParams,
-                const nsIntRect* aDirtyRect = nullptr) override;
+                imgDrawingParams& aImgParams) override;
   nsIFrame* GetFrameForPoint(const gfxPoint& aPoint) override;
   void ReflowSVG() override;
   void NotifySVGChanged(uint32_t aFlags) override;
@@ -107,12 +106,11 @@ class SVGGeometryFrame : public nsIFrame, public ISVGDisplayableFrame {
                               uint32_t aFlags) override;
   bool IsDisplayContainer() override { return false; }
 
- private:
   enum { eRenderFill = 1, eRenderStroke = 2 };
   void Render(gfxContext* aContext, uint32_t aRenderComponents,
               const gfxMatrix& aTransform, imgDrawingParams& aImgParams);
 
-  virtual bool CreateWebRenderCommands(
+  bool CreateWebRenderCommands(
       mozilla::wr::DisplayListBuilder& aBuilder,
       mozilla::wr::IpcResourceUpdateQueue& aResources,
       const mozilla::layers::StackingContextHelper& aSc,
@@ -163,7 +161,7 @@ class DisplaySVGGeometry final : public DisplaySVGItem {
                                           /*aDryRun=*/true);
   }
 
-  virtual bool CreateWebRenderCommands(
+  bool CreateWebRenderCommands(
       mozilla::wr::DisplayListBuilder& aBuilder,
       mozilla::wr::IpcResourceUpdateQueue& aResources,
       const mozilla::layers::StackingContextHelper& aSc,

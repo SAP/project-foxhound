@@ -19,6 +19,7 @@ const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   ChromeMigrationUtils: "resource:///modules/ChromeMigrationUtils.sys.mjs",
+  FormHistory: "resource://gre/modules/FormHistory.sys.mjs",
   PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
   Qihoo360seMigrationUtils: "resource:///modules/360seMigrationUtils.sys.mjs",
 });
@@ -106,7 +107,7 @@ export class ChromeProfileMigrator extends MigratorBase {
     let path = await lazy.ChromeMigrationUtils.getDataPath(
       this._chromeUserDataPathSuffix
     );
-    let exists = await IOUtils.exists(path);
+    let exists = path && (await IOUtils.exists(path));
     if (exists) {
       this._chromeUserDataPath = path;
     } else {
@@ -126,6 +127,7 @@ export class ChromeProfileMigrator extends MigratorBase {
         let possibleResourcePromises = [
           GetBookmarksResource(profileFolder, this.constructor.key),
           GetHistoryResource(profileFolder),
+          GetFormdataResource(profileFolder),
         ];
         if (lazy.ChromeMigrationUtils.supportsLoginsForPlatform) {
           possibleResourcePromises.push(
@@ -611,6 +613,65 @@ async function GetHistoryResource(aProfileFolder) {
           aCallback(false);
         }
       );
+    },
+  };
+}
+
+async function GetFormdataResource(aProfileFolder) {
+  let formdataPath = PathUtils.join(aProfileFolder, "Web Data");
+  if (!(await IOUtils.exists(formdataPath))) {
+    return null;
+  }
+  let countQuery = "SELECT COUNT(*) FROM autofill";
+
+  let countRows = await MigrationUtils.getRowsFromDBWithoutLocks(
+    formdataPath,
+    "Chrome formdata",
+    countQuery
+  );
+  if (!countRows[0].getResultByName("COUNT(*)")) {
+    return null;
+  }
+  return {
+    type: MigrationUtils.resourceTypes.FORMDATA,
+
+    async migrate(aCallback) {
+      let query =
+        "SELECT name, value, count, date_created, date_last_used FROM autofill";
+      let rows = await MigrationUtils.getRowsFromDBWithoutLocks(
+        formdataPath,
+        "Chrome formdata",
+        query
+      );
+      let addOps = [];
+      for (let row of rows) {
+        try {
+          let fieldname = row.getResultByName("name");
+          let value = row.getResultByName("value");
+          if (fieldname && value) {
+            addOps.push({
+              op: "add",
+              fieldname,
+              value,
+              timesUsed: row.getResultByName("count"),
+              firstUsed: row.getResultByName("date_created") * 1000,
+              lastUsed: row.getResultByName("date_last_used") * 1000,
+            });
+          }
+        } catch (e) {
+          console.error(e);
+        }
+      }
+
+      try {
+        await lazy.FormHistory.update(addOps);
+      } catch (e) {
+        console.error(e);
+        aCallback(false);
+        return;
+      }
+
+      aCallback(true);
     },
   };
 }

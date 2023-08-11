@@ -23,6 +23,7 @@
 #include "gc/FindSCCs.h"
 #include "gc/GCMarker.h"
 #include "gc/NurseryAwareHashMap.h"
+#include "gc/Pretenuring.h"
 #include "gc/Statistics.h"
 #include "gc/ZoneAllocator.h"
 #include "js/GCHashTable.h"
@@ -172,15 +173,22 @@ class Zone : public js::ZoneAllocator, public js::gc::GraphNodeBase<JS::Zone> {
 
   js::MainThreadData<uint32_t> tenuredBigInts;
 
-  js::MainThreadOrIonCompileData<uint64_t> nurseryAllocatedStrings;
-
   // Number of marked/finalized JSStrings/JSFatInlineStrings during major GC.
   js::MainThreadOrGCTaskData<size_t> markedStrings;
   js::MainThreadOrGCTaskData<size_t> finalizedStrings;
 
-  js::MainThreadData<bool> allocNurseryStrings;
-  js::MainThreadData<bool> allocNurseryBigInts;
+  // Flags permanently set when nursery allocation is disabled for this zone.
+  js::MainThreadData<bool> nurseryStringsDisabled;
+  js::MainThreadData<bool> nurseryBigIntsDisabled;
 
+ private:
+  // Flags dynamically updated based on more than one condition, including the
+  // flags above.
+  js::MainThreadData<bool> allocNurseryObjects_;
+  js::MainThreadData<bool> allocNurseryStrings_;
+  js::MainThreadData<bool> allocNurseryBigInts_;
+
+ public:
   // When true, skip calling the metadata callback. We use this:
   // - to avoid invoking the callback recursively;
   // - to avoid observing lazy prototype setup (which confuses callbacks that
@@ -321,6 +329,10 @@ class Zone : public js::ZoneAllocator, public js::gc::GraphNodeBase<JS::Zone> {
   void discardJitCode(JS::GCContext* gcx,
                       const DiscardOptions& options = DiscardOptions());
 
+  // Discard JIT code regardless of isPreservingCode().
+  void forceDiscardJitCode(JS::GCContext* gcx,
+                           const DiscardOptions& options = DiscardOptions());
+
   void resetAllocSitesAndInvalidate(bool resetNurserySites,
                                     bool resetPretenuredSites);
 
@@ -455,6 +467,14 @@ class Zone : public js::ZoneAllocator, public js::gc::GraphNodeBase<JS::Zone> {
   void traceWeakCCWEdges(JSTracer* trc);
   static void fixupAllCrossCompartmentWrappersAfterMovingGC(JSTracer* trc);
 
+  void fixupAfterMovingGC();
+  void fixupScriptMapsAfterMovingGC(JSTracer* trc);
+
+  void updateNurseryAllocFlags(const js::Nursery& nursery);
+  bool allocNurseryObjects() const { return allocNurseryObjects_; }
+  bool allocNurseryStrings() const { return allocNurseryStrings_; }
+  bool allocNurseryBigInts() const { return allocNurseryBigInts_; }
+
   mozilla::LinkedList<detail::WeakCacheBase>& weakCaches() {
     return weakCaches_.ref();
   }
@@ -526,9 +546,6 @@ class Zone : public js::ZoneAllocator, public js::gc::GraphNodeBase<JS::Zone> {
 
   js::ShapeZone& shapeZone() { return shapeZone_.ref(); }
 
-  void fixupAfterMovingGC();
-  void fixupScriptMapsAfterMovingGC(JSTracer* trc);
-
   // Gets an existing UID in |uidp| if one exists.
   [[nodiscard]] bool maybeGetUniqueId(js::gc::Cell* cell, uint64_t* uidp);
 
@@ -575,11 +592,14 @@ class Zone : public js::ZoneAllocator, public js::gc::GraphNodeBase<JS::Zone> {
   // See: https://tc39.es/proposal-weakrefs/#sec-clear-kept-objects
   void clearKeptObjects();
 
-  js::gc::AllocSite* unknownAllocSite() {
-    return &pretenuring.unknownAllocSite;
+  js::gc::AllocSite* unknownAllocSite(JS::TraceKind kind) {
+    return &pretenuring.unknownAllocSite(kind);
   }
   js::gc::AllocSite* optimizedAllocSite() {
     return &pretenuring.optimizedAllocSite;
+  }
+  uint32_t nurseryAllocCount(JS::TraceKind kind) const {
+    return pretenuring.nurseryAllocCount(kind);
   }
 
 #ifdef JSGC_HASH_TABLE_CHECKS

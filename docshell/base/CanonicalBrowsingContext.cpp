@@ -329,6 +329,10 @@ void CanonicalBrowsingContext::ReplacedBy(
   txn.SetDisplayMode(GetDisplayMode());
   txn.SetForceDesktopViewport(GetForceDesktopViewport());
 
+  // Propagate the default load flags so that the TRR mode flags are forwarded
+  // to the new browsing context. See bug 1828643.
+  txn.SetDefaultLoadFlags(GetDefaultLoadFlags());
+
   // As this is a different BrowsingContext, set InitialSandboxFlags to the
   // current flags in the new context so that they also apply to any initial
   // about:blank documents created in it.
@@ -2125,7 +2129,7 @@ CanonicalBrowsingContext::ChangeRemoteness(
     change->mContentParent->WaitForLaunchAsync()->Then(
         GetMainThreadSerialEventTarget(), __func__,
         [change](ContentParent*) { change->ProcessLaunched(); },
-        [change](LaunchError) { change->Cancel(NS_ERROR_FAILURE); });
+        [change]() { change->Cancel(NS_ERROR_FAILURE); });
   } else {
     change->ProcessLaunched();
   }
@@ -3011,6 +3015,16 @@ void CanonicalBrowsingContext::StopApzAutoscroll(nsViewID aScrollId,
 
   mozilla::layers::ScrollableLayerGuid guid(layersId, aPresShellId, aScrollId);
   widget->StopAsyncAutoscroll(guid);
+}
+
+already_AddRefed<nsISHEntry>
+CanonicalBrowsingContext::GetMostRecentLoadingSessionHistoryEntry() {
+  if (mLoadingEntries.IsEmpty()) {
+    return nullptr;
+  }
+
+  RefPtr<SessionHistoryEntry> entry = mLoadingEntries.LastElement().mEntry;
+  return entry.forget();
 }
 
 NS_IMPL_CYCLE_COLLECTION_CLASS(CanonicalBrowsingContext)

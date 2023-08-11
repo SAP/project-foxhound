@@ -83,6 +83,7 @@ class nsTextControlFrame : public nsContainerFrame,
     if (!IsSingleLineTextControl()) {
       return Nothing{};
     }
+    NS_ASSERTION(!IsSubtreeDirty(), "frame must not be dirty");
     return GetSingleLineTextControlBaseline(this, mFirstBaseline, aWM,
                                             aBaselineGroup);
   }
@@ -115,13 +116,6 @@ class nsTextControlFrame : public nsContainerFrame,
     return nsContainerFrame::IsFrameOfType(
         aFlags & ~(nsIFrame::eReplaced | nsIFrame::eReplacedContainsBlock));
   }
-
-#ifdef DEBUG
-  void MarkIntrinsicISizesDirty() override {
-    // Need another Reflow to have a correct baseline value again.
-    mFirstBaseline = NS_INTRINSIC_ISIZE_UNKNOWN;
-  }
-#endif
 
   // nsIAnonymousContentCreator
   nsresult CreateAnonymousContent(nsTArray<ContentInfo>& aElements) override;
@@ -354,19 +348,19 @@ class nsTextControlFrame : public nsContainerFrame,
   // is modified, this is cleared.
   //
   // FIXME(bug 1402545): Consider using an nsAutoString here.
-  nsString mCachedValue;
+  nsString mCachedValue{VoidString()};
 
   // Our first baseline, or NS_INTRINSIC_ISIZE_UNKNOWN if we have a pending
   // Reflow (or if we're contain:layout, which means we have no baseline).
-  nscoord mFirstBaseline;
+  nscoord mFirstBaseline = NS_INTRINSIC_ISIZE_UNKNOWN;
 
   // these packed bools could instead use the high order bits on mState, saving
   // 4 bytes
-  bool mEditorHasBeenInitialized;
-  bool mIsProcessing;
+  bool mEditorHasBeenInitialized = false;
+  bool mIsProcessing = false;
 
 #ifdef DEBUG
-  bool mInEditorInitialization;
+  bool mInEditorInitialization = false;
   friend class EditorInitializerEntryTracker;
 #endif
 };

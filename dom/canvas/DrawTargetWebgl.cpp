@@ -1378,9 +1378,47 @@ bool DrawTargetWebgl::SharedContext::CreateShaders() {
   return true;
 }
 
+void DrawTargetWebgl::SharedContext::EnableScissor(const IntRect& aRect) {
+  // Only update scissor state if it actually changes.
+  if (!mLastScissor.IsEqualEdges(aRect)) {
+    mLastScissor = aRect;
+    mWebgl->Scissor(aRect.x, aRect.y, aRect.width, aRect.height);
+  }
+  if (!mScissorEnabled) {
+    mScissorEnabled = true;
+    mWebgl->Enable(LOCAL_GL_SCISSOR_TEST);
+  }
+}
+
+void DrawTargetWebgl::SharedContext::DisableScissor() {
+  if (mScissorEnabled) {
+    mScissorEnabled = false;
+    mWebgl->Disable(LOCAL_GL_SCISSOR_TEST);
+  }
+}
+
 inline ColorPattern DrawTargetWebgl::GetClearPattern() const {
   return ColorPattern(
       DeviceColor(0.0f, 0.0f, 0.0f, IsOpaque(mFormat) ? 1.0f : 0.0f));
+}
+
+// Check if the transformed rect would contain the entire viewport.
+inline bool DrawTargetWebgl::RectContainsViewport(const Rect& aRect) const {
+  return mTransform.PreservesAxisAlignedRectangles() &&
+         MatrixDouble(mTransform)
+             .TransformBounds(
+                 RectDouble(aRect.x, aRect.y, aRect.width, aRect.height))
+             .Contains(RectDouble(GetRect()));
+}
+
+// Ensure that the rect, after transform, is within reasonable precision limits
+// such that when transformed and clipped in the shader it will not round bits
+// from the mantissa in a way that will diverge in a noticeable way from path
+// geometry calculated by the path fallback.
+static inline bool RectInsidePrecisionLimits(const Rect& aRect,
+                                             const Matrix& aTransform) {
+  return Rect(-(1 << 20), -(1 << 20), 2 << 20, 2 << 20)
+      .Contains(aTransform.TransformBounds(aRect));
 }
 
 void DrawTargetWebgl::ClearRect(const Rect& aRect) {
@@ -1389,14 +1427,28 @@ void DrawTargetWebgl::ClearRect(const Rect& aRect) {
     return;
   }
 
-  DrawRect(aRect, GetClearPattern(),
-           DrawOptions(1.0f, CompositionOp::OP_CLEAR));
+  bool containsViewport = RectContainsViewport(aRect);
+  if (containsViewport) {
+    // If the rect encompasses the entire viewport, just clear the viewport
+    // instead to avoid transform issues.
+    DrawRect(Rect(GetRect()), GetClearPattern(),
+             DrawOptions(1.0f, CompositionOp::OP_CLEAR), Nothing(), nullptr,
+             false);
+  } else if (RectInsidePrecisionLimits(aRect, mTransform)) {
+    // If the rect transform won't stress precision, then just use it.
+    DrawRect(aRect, GetClearPattern(),
+             DrawOptions(1.0f, CompositionOp::OP_CLEAR));
+  } else {
+    // Otherwise, using the transform in the shader may lead to inaccuracies, so
+    // just fall back.
+    MarkSkiaChanged();
+    mSkia->ClearRect(aRect);
+  }
 
   // If the clear rectangle encompasses the entire viewport and is not clipped,
   // then mark the target as entirely clear.
-  if (mTransform.PreservesAxisAlignedRectangles() &&
-      mTransform.TransformBounds(aRect).Contains(Rect(GetRect())) &&
-      mSharedContext->IsCurrentTarget(this) && !mSharedContext->HasClipMask() &&
+  if (containsViewport && mSharedContext->IsCurrentTarget(this) &&
+      !mSharedContext->HasClipMask() &&
       mSharedContext->mClipAARect.Contains(Rect(GetRect()))) {
     mIsClear = true;
   }
@@ -1426,6 +1478,7 @@ bool DrawTargetWebgl::CreateFramebuffer() {
                                 LOCAL_GL_COLOR_ATTACHMENT0, LOCAL_GL_TEXTURE_2D,
                                 mTex, 0);
     webgl->Viewport(0, 0, mSize.width, mSize.height);
+    mSharedContext->DisableScissor();
     DeviceColor color = PremultiplyColor(GetClearPattern().mColor);
     webgl->ClearColor(color.b, color.g, color.r, color.a);
     webgl->Clear(LOCAL_GL_COLOR_BUFFER_BIT);
@@ -1924,12 +1977,10 @@ bool DrawTargetWebgl::SharedContext::DrawRectAccel(
   }
 
   // Set up the scissor test to reflect the clipping rectangle, if supplied.
-  bool scissor = false;
   if (!mClipRect.Contains(IntRect(IntPoint(), mViewportSize))) {
-    scissor = true;
-    mWebgl->Enable(LOCAL_GL_SCISSOR_TEST);
-    mWebgl->Scissor(mClipRect.x, mClipRect.y, mClipRect.width,
-                    mClipRect.height);
+    EnableScissor(mClipRect);
+  } else {
+    DisableScissor();
   }
 
   bool success = false;
@@ -1954,20 +2005,22 @@ bool DrawTargetWebgl::SharedContext::DrawRectAccel(
         // transform must map to an axis-aligned integer rectangle.
         if (Maybe<IntRect> intRect =
                 IsAlignedRect(aTransformed, currentTransform, aRect)) {
-          if (!intRect->Contains(mClipRect)) {
-            scissor = true;
-            mWebgl->Enable(LOCAL_GL_SCISSOR_TEST);
-            auto scissorRect = intRect->Intersect(mClipRect);
-            mWebgl->Scissor(scissorRect.x, scissorRect.y, scissorRect.width,
-                            scissorRect.height);
+          // Only use a clear if the area is larger than a quarter or the
+          // viewport.
+          if (intRect->Area() >=
+              (mViewportSize.width / 2) * (mViewportSize.height / 2)) {
+            if (!intRect->Contains(mClipRect)) {
+              EnableScissor(intRect->Intersect(mClipRect));
+            }
+            if (aOptions.mCompositionOp == CompositionOp::OP_CLEAR) {
+              color =
+                  PremultiplyColor(mCurrentTarget->GetClearPattern().mColor);
+            }
+            mWebgl->ClearColor(color.b, color.g, color.r, color.a);
+            mWebgl->Clear(LOCAL_GL_COLOR_BUFFER_BIT);
+            success = true;
+            break;
           }
-          if (aOptions.mCompositionOp == CompositionOp::OP_CLEAR) {
-            color = PremultiplyColor(mCurrentTarget->GetClearPattern().mColor);
-          }
-          mWebgl->ClearColor(color.b, color.g, color.r, color.a);
-          mWebgl->Clear(LOCAL_GL_COLOR_BUFFER_BIT);
-          success = true;
-          break;
         }
       }
       // Map the composition op to a WebGL blend mode, if possible.
@@ -2083,6 +2136,11 @@ bool DrawTargetWebgl::SharedContext::DrawRectAccel(
 
       // We need to be able to transform from local space into texture space.
       Matrix invMatrix = surfacePattern.mMatrix;
+      // If drawing a pre-transformed vertex range, then we need to ensure the
+      // user-space pattern is still transformed to screen-space.
+      if (aVertexRange && !aTransformed) {
+        invMatrix *= currentTransform;
+      }
       if (!invMatrix.Invert()) {
         break;
       }
@@ -2253,8 +2311,7 @@ bool DrawTargetWebgl::SharedContext::DrawRectAccel(
                         : aMaskColor.valueOr(DeviceColor(1, 1, 1, 1)),
                     aOptions.mAlpha);
       float colorData[4] = {color.b, color.g, color.r, color.a};
-      float swizzleData =
-          aMaskColor && format == SurfaceFormat::A8 ? 1.0f : 0.0f;
+      float swizzleData = format == SurfaceFormat::A8 ? 1.0f : 0.0f;
       Matrix xform(aRect.width, 0.0f, 0.0f, aRect.height, aRect.x, aRect.y);
       if (aTransformed) {
         xform *= currentTransform;
@@ -2359,11 +2416,6 @@ bool DrawTargetWebgl::SharedContext::DrawRectAccel(
   }
   // mWebgl->Disable(LOCAL_GL_BLEND);
 
-  // Clean up any scissor state if there was clipping.
-  if (scissor) {
-    mWebgl->Disable(LOCAL_GL_SCISSOR_TEST);
-  }
-
   return success;
 }
 
@@ -2455,22 +2507,23 @@ bool DrawTargetWebgl::SharedContext::PruneTextureMemory(size_t aMargin,
   return mNumTextureHandles < oldItems;
 }
 
-// Ensure that the rect, after transform, is within reasonable precision limits
-// such that when transformed and clipped in the shader it will not round bits
-// from the mantissa in a way that will diverge in a noticeable way from path
-// geometry calculated by the path fallback.
-static inline bool RectInsidePrecisionLimits(const Rect& aRect,
-                                             const Matrix& aTransform) {
-  return Rect(-(1 << 20), -(1 << 20), 2 << 20, 2 << 20)
-      .Contains(aTransform.TransformBounds(aRect));
-}
-
 void DrawTargetWebgl::FillRect(const Rect& aRect, const Pattern& aPattern,
                                const DrawOptions& aOptions) {
-  if (SupportsPattern(aPattern) &&
-      RectInsidePrecisionLimits(aRect, GetTransform())) {
-    DrawRect(aRect, aPattern, aOptions);
-  } else if (!mWebglValid) {
+  if (SupportsPattern(aPattern)) {
+    if (RectInsidePrecisionLimits(aRect, mTransform)) {
+      DrawRect(aRect, aPattern, aOptions);
+      return;
+    }
+    if (aPattern.GetType() == PatternType::COLOR &&
+        RectContainsViewport(aRect)) {
+      // If the pattern is transform-invariant and the rect encompasses the
+      // entire viewport, just clip drawing to the viewport to avoid transform
+      // issues.
+      DrawRect(Rect(GetRect()), aPattern, aOptions, Nothing(), nullptr, false);
+      return;
+    }
+  }
+  if (!mWebglValid) {
     MarkSkiaChanged(aOptions);
     mSkia->FillRect(aRect, aPattern, aOptions);
   } else {
@@ -2620,8 +2673,16 @@ void DrawTargetWebgl::Fill(const Path* aPath, const Pattern& aPattern,
   // Draw the path as a simple rectangle with a supported pattern when possible.
   if (skiaPath.isRect(&skiaRect) && SupportsPattern(aPattern)) {
     Rect rect = SkRectToRect(skiaRect);
-    if (RectInsidePrecisionLimits(rect, GetTransform())) {
+    if (RectInsidePrecisionLimits(rect, mTransform)) {
       DrawRect(rect, aPattern, aOptions);
+      return;
+    }
+    if (aPattern.GetType() == PatternType::COLOR &&
+        RectContainsViewport(rect)) {
+      // If the pattern is transform-invariant and the rect encompasses the
+      // entire viewport, just clip drawing to the viewport to avoid transform
+      // issues.
+      DrawRect(Rect(GetRect()), aPattern, aOptions, Nothing(), nullptr, false);
       return;
     }
   }
@@ -2665,10 +2726,10 @@ static Maybe<QuantizedPath> GenerateQuantizedPath(const SkPath& aPath,
   if (!pb) {
     return Nothing();
   }
-  WGR::wgr_builder_set_fill_mode(
-      pb, aPath.getFillType() == SkPath::kWinding_FillType
-              ? WGR::FillMode::Winding
-              : WGR::FillMode::EvenOdd);
+  WGR::wgr_builder_set_fill_mode(pb,
+                                 aPath.getFillType() == SkPathFillType::kWinding
+                                     ? WGR::FillMode::Winding
+                                     : WGR::FillMode::EvenOdd);
 
   SkPath::RawIter iter(aPath);
   SkPoint params[4];
@@ -3076,30 +3137,26 @@ bool DrawTargetWebgl::SharedContext::DrawPathAccel(
         //  path will need to be quantized again because it differs from the
         //  path used for the cache entry, but this allows us to avoid
         //  generating a fill path on a cache hit.
-        SkPaint paint;
-        if (StrokeOptionsToPaint(paint, *aStrokeOptions)) {
-          Maybe<SkRect> cullRect;
-          Matrix invTransform = currentTransform;
-          if (invTransform.Invert()) {
-            // Transform the stroking clip rect from device space to local
-            // space.
-            Rect invRect = invTransform.TransformBounds(Rect(mClipRect));
-            invRect.RoundOut();
-            cullRect = Some(RectToSkRect(invRect));
-          }
-          SkPath fillPath;
-          if (paint.getFillPath(pathSkia->GetPath(), &fillPath,
-                                cullRect.ptrOr(nullptr),
-                                ComputeResScaleForStroking(currentTransform))) {
-            // printf_stderr("    stroke fill... verbs %d, points %d\n",
-            //     int(fillPath.countVerbs()),
-            //     int(fillPath.countPoints()));
-            if (Maybe<QuantizedPath> qp = GenerateQuantizedPath(
-                    fillPath, quantBounds, currentTransform)) {
-              wgrVB = GeneratePathVertexBuffer(
-                  *qp, IntRect(-intBounds.TopLeft(), mViewportSize),
-                  mRasterizationTruncates, outputBuffer, outputBufferCapacity);
-            }
+        Maybe<Rect> cullRect;
+        Matrix invTransform = currentTransform;
+        if (invTransform.Invert()) {
+          // Transform the stroking clip rect from device space to local
+          // space.
+          Rect invRect = invTransform.TransformBounds(Rect(mClipRect));
+          invRect.RoundOut();
+          cullRect = Some(invRect);
+        }
+        SkPath fillPath;
+        if (pathSkia->GetFillPath(*aStrokeOptions, currentTransform, fillPath,
+                                  cullRect)) {
+          // printf_stderr("    stroke fill... verbs %d, points %d\n",
+          //     int(fillPath.countVerbs()),
+          //     int(fillPath.countPoints()));
+          if (Maybe<QuantizedPath> qp = GenerateQuantizedPath(
+                  fillPath, quantBounds, currentTransform)) {
+            wgrVB = GeneratePathVertexBuffer(
+                *qp, IntRect(-intBounds.TopLeft(), mViewportSize),
+                mRasterizationTruncates, outputBuffer, outputBufferCapacity);
           }
         }
       }
@@ -4274,6 +4331,10 @@ void DrawTargetWebgl::BeginFrame(const IntRect& aPersistedRect) {
       if (aPersistedRect.IsEmpty()) {
         // If nothing needs to persist, just mark the WebGL context valid.
         mWebglValid = true;
+        // Even if the Skia framebuffer is marked clear, since the WebGL
+        // context is not valid, its contents may be out-of-date and not
+        // necessarily clear.
+        mIsClear = false;
       } else {
         FlushFromSkia();
       }

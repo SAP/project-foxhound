@@ -37,6 +37,7 @@ migration-wizard-migrator-display-name-chromium-edge = Microsoft Edge
 migration-wizard-migrator-display-name-chromium-edge-beta = Microsoft Edge Beta
 migration-wizard-migrator-display-name-edge-legacy = Microsoft Edge Legacy
 migration-wizard-migrator-display-name-firefox = Firefox
+migration-wizard-migrator-display-name-file-password-csv = Passwords from CSV file
 migration-wizard-migrator-display-name-ie = Microsoft Internet Explorer
 migration-wizard-migrator-display-name-opera = Opera
 migration-wizard-migrator-display-name-opera-gx = Opera GX
@@ -61,9 +62,57 @@ migration-favorites-option-label = Favorites
 migration-logins-and-passwords-option-label = Saved logins and passwords
 migration-history-option-label = Browsing history
 migration-form-autofill-option-label = Form autofill data
+
+migration-passwords-from-file-progress-header = Import Passwords File
+migration-passwords-from-file-success-header = Passwords Imported Successfully
+migration-passwords-from-file = Checking file for passwords
+migration-passwords-new = New passwords
+migration-passwords-updated = Existing passwords
+
+migration-passwords-from-file-picker-title = Import Passwords File
+# A description for the .csv file format that may be shown as the file type
+# filter by the operating system.
+migration-passwords-from-file-csv-filter-title =
+  { PLATFORM() ->
+      [macos] CSV Document
+     *[other] CSV File
+  }
+# A description for the .tsv file format that may be shown as the file type
+# filter by the operating system. TSV is short for 'tab separated values'.
+migration-passwords-from-file-tsv-filter-title =
+  { PLATFORM() ->
+      [macos] TSV Document
+     *[other] TSV File
+  }
+
+# Shown in the migration wizard after importing passwords from a file
+# has completed, if new passwords were added.
+#
+# Variables:
+#  $newEntries (Number): the number of new successfully imported passwords
+migration-wizard-progress-success-new-passwords =
+    { $newEntries ->
+        [one] { $newEntries } added
+       *[other] { $newEntries } added
+    }
+
+# Shown in the migration wizard after importing passwords from a file
+# has completed, if existing passwords were updated.
+#
+# Variables:
+#  $updatedEntries (Number): the number of updated passwords
+migration-wizard-progress-success-updated-passwords =
+    { $updatedEntries ->
+        [one] { $updatedEntries } updated
+       *[other] { $updatedEntries } updated
+    }
+
 migration-import-button-label = Import
+migration-choose-to-import-from-file-button-label = Import From File
+migration-import-from-file-button-label = Select File
 migration-cancel-button-label = Cancel
 migration-done-button-label = Done
+migration-continue-button-label = Continue
 
 migration-wizard-import-browser-no-browsers = { -brand-short-name } couldn’t find any programs that contain bookmark, history or password data.
 migration-wizard-import-browser-no-resources = There was an error. { -brand-short-name } can’t find any data to import from that browser profile.
@@ -153,4 +202,3 @@ migration-wizard-progress-success-formdata = Form history
 migration-wizard-safari-permissions-sub-header = To import Safari bookmarks and browsing history:
 migration-wizard-safari-instructions-continue = Select “Continue”
 migration-wizard-safari-instructions-folder = Select Safari folder in the list and choose “Open”
-migration-wizard-safari-select-button = Select File

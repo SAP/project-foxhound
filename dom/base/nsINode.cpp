@@ -358,8 +358,8 @@ bool nsINode::IsSelected(const uint32_t aStartOffset,
                  "Why is this range registered with a node?");
       // Looks like that IsInSelection() assert fails sometimes...
       if (range->IsInAnySelection()) {
-        for (const auto* selectionWrapper : range->GetSelections()) {
-          ancestorSelections.Insert(selectionWrapper->Get());
+        for (const WeakPtr<Selection>& selection : range->GetSelections()) {
+          ancestorSelections.Insert(selection);
         }
       }
     }
@@ -444,6 +444,15 @@ Element* nsINode::GetAnonymousRootElementOfTextEditor(
     textEditor.forget(aTextEditor);
   }
   return rootElement;
+}
+
+void nsINode::QueueDevtoolsAnonymousEvent(bool aIsRemove) {
+  MOZ_ASSERT(IsRootOfNativeAnonymousSubtree());
+  MOZ_ASSERT(OwnerDoc()->DevToolsAnonymousAndShadowEventsEnabled());
+  AsyncEventDispatcher* dispatcher = new AsyncEventDispatcher(
+      this, aIsRemove ? u"anonymousrootremoved"_ns : u"anonymousrootcreated"_ns,
+      CanBubble::eYes, ChromeOnlyDispatch::eYes, Composed::eYes);
+  dispatcher->PostDOMEvent();
 }
 
 nsINode* nsINode::GetRootNode(const GetRootNodeOptions& aOptions) {
@@ -3205,15 +3214,14 @@ Element* nsINode::GetNearestInclusiveTargetPopoverForInvoker() const {
   return nullptr;
 }
 
-Element* nsINode::GetEffectivePopoverTargetElement() const {
+nsGenericHTMLElement* nsINode::GetEffectivePopoverTargetElement() const {
   const auto* formControl =
       nsGenericHTMLFormControlElementWithState::FromNode(this);
-  if (!formControl || !formControl->IsConceptButton() ||
-      formControl->IsDisabled() ||
-      (formControl->GetForm() && formControl->IsSubmitControl())) {
+  if (!formControl || formControl->IsDisabled() ||
+      !formControl->IsButtonControl()) {
     return nullptr;
   }
-  if (auto* popover = nsGenericHTMLElement::FromNode(
+  if (auto* popover = nsGenericHTMLElement::FromNodeOrNull(
           formControl->GetPopoverTargetElement())) {
     if (popover->GetPopoverState() != PopoverState::None) {
       return popover;
@@ -3621,10 +3629,16 @@ ParentObject nsINode::GetParentObject() const {
   ParentObject p(OwnerDoc());
   // Note that mReflectionScope is a no-op for chrome, and other places where we
   // don't check this value.
-  if (ShouldUseUAWidgetScope(this)) {
-    p.mReflectionScope = ReflectionScope::UAWidget;
-  } else if (ShouldUseNACScope(this)) {
-    p.mReflectionScope = ReflectionScope::NAC;
+  if (IsInNativeAnonymousSubtree()) {
+    if (ShouldUseUAWidgetScope(this)) {
+      p.mReflectionScope = ReflectionScope::UAWidget;
+    } else {
+      MOZ_ASSERT(ShouldUseNACScope(this));
+      p.mReflectionScope = ReflectionScope::NAC;
+    }
+  } else {
+    MOZ_ASSERT(!ShouldUseNACScope(this));
+    MOZ_ASSERT(!ShouldUseUAWidgetScope(this));
   }
   return p;
 }

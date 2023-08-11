@@ -78,6 +78,8 @@ class FetchDriverObserver {
 
   virtual void OnReportPerformanceTiming() {}
 
+  virtual void OnNotifyNetworkMonitorAlternateStack(uint64_t aChannelID) {}
+
  protected:
   virtual ~FetchDriverObserver() = default;
 
@@ -140,6 +142,10 @@ class FetchDriver final : public nsIStreamListener,
 
   void EnableNetworkInterceptControl();
 
+  void SetAssociatedBrowsingContextID(uint64_t aID) {
+    mAssociatedBrowsingContextID = aID;
+  }
+
  private:
   nsCOMPtr<nsIPrincipal> mPrincipal;
   nsCOMPtr<nsILoadGroup> mLoadGroup;
@@ -189,6 +195,8 @@ class FetchDriver final : public nsIStreamListener,
   bool mFetchCalled;
 #endif
   nsCOMPtr<nsINetworkInterceptController> mInterceptController;
+
+  uint64_t mAssociatedBrowsingContextID{0};
 
   friend class AlternativeDataStreamListener;
 

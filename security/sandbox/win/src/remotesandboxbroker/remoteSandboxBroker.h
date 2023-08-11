@@ -10,6 +10,9 @@
 #include "sandboxBroker.h"
 #include "RemoteSandboxBrokerParent.h"
 
+#include "mozilla/Result.h"
+#include "mozilla/ipc/LaunchError.h"
+
 namespace mozilla {
 
 // To make sandboxing an x86 plugin-container process on Windows on ARM64,
@@ -27,10 +30,11 @@ class RemoteSandboxBroker : public AbstractSandboxBroker {
   // Note: This should be called on the IPC launch thread, and this spins
   // the event loop. So this means potentially another IPC launch could occur
   // re-entrantly while calling this.
-  bool LaunchApp(const wchar_t* aPath, const wchar_t* aArguments,
-                 base::EnvironmentMap& aEnvironment,
-                 GeckoProcessType aProcessType, const bool aEnableLogging,
-                 const IMAGE_THUNK_DATA*, void** aProcessHandle) override;
+  Result<Ok, mozilla::ipc::LaunchError> LaunchApp(
+      const wchar_t* aPath, const wchar_t* aArguments,
+      base::EnvironmentMap& aEnvironment, GeckoProcessType aProcessType,
+      const bool aEnableLogging, const IMAGE_THUNK_DATA*,
+      void** aProcessHandle) override;
 
   // Security levels for different types of processes
   void SetSecurityLevelForContentProcess(int32_t aSandboxLevel,
@@ -53,7 +57,7 @@ class RemoteSandboxBroker : public AbstractSandboxBroker {
   // Parameters that we use to launch the child process.
   LaunchParameters mParameters;
 
-  RemoteSandboxBrokerParent mParent;
+  RefPtr<RemoteSandboxBrokerParent> mParent;
 
   // We bind the RemoteSandboxBrokerParent to the IPC launch thread.
   // As such, we must close its channel on the same thread. So we save

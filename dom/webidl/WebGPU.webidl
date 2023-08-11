@@ -84,14 +84,24 @@ enum GPUPowerPreference {
 
 [Pref="dom.webgpu.enabled",
  Exposed=(Window /* ,DedicatedWorker */), SecureContext]
+interface GPUAdapterInfo {
+    readonly attribute DOMString vendor;
+    readonly attribute DOMString architecture;
+    readonly attribute DOMString device;
+    readonly attribute DOMString description;
+};
+
+[Pref="dom.webgpu.enabled",
+ Exposed=(Window /* ,DedicatedWorker */), SecureContext]
 interface GPUAdapter {
-    readonly attribute DOMString name;
     [SameObject] readonly attribute GPUSupportedFeatures features;
     [SameObject] readonly attribute GPUSupportedLimits limits;
     readonly attribute boolean isFallbackAdapter;
 
     [NewObject]
     Promise<GPUDevice> requestDevice(optional GPUDeviceDescriptor descriptor = {});
+    [NewObject]
+    Promise<GPUAdapterInfo> requestAdapterInfo(optional sequence<DOMString> unmaskHints = []);
 };
 
 dictionary GPUDeviceDescriptor {
@@ -546,9 +556,12 @@ interface GPUCompilationInfo {
     readonly attribute sequence<GPUCompilationMessage> messages;
 };
 
-// Common stuff for ComputePipeline and RenderPipeline
+enum GPUAutoLayoutMode {
+    "auto"
+};
+
 dictionary GPUPipelineDescriptorBase : GPUObjectDescriptorBase {
-    GPUPipelineLayout layout;
+    required (GPUPipelineLayout or GPUAutoLayoutMode) layout;
 };
 
 interface mixin GPUPipelineBase {
@@ -777,8 +790,8 @@ dictionary GPUVertexAttribute {
 
 dictionary GPUImageDataLayout {
     GPUSize64 offset = 0;
-    required GPUSize32 bytesPerRow;
-    GPUSize32 rowsPerImage = 0;
+    GPUSize32 bytesPerRow;
+    GPUSize32 rowsPerImage;
 };
 
 dictionary GPUImageCopyBuffer : GPUImageDataLayout {
@@ -885,7 +898,7 @@ interface GPUComputePassEncoder {
     undefined dispatchWorkgroupsIndirect(GPUBuffer indirectBuffer, GPUSize64 indirectOffset);
 
     [Throws]
-    undefined endPass();
+    undefined end();
 };
 GPUComputePassEncoder includes GPUObjectBase;
 GPUComputePassEncoder includes GPUProgrammablePassEncoder;
@@ -939,7 +952,7 @@ interface GPURenderPassEncoder {
     undefined executeBundles(sequence<GPURenderBundle> bundles);
 
     [Throws]
-    undefined endPass();
+    undefined end();
 };
 GPURenderPassEncoder includes GPUObjectBase;
 GPURenderPassEncoder includes GPUProgrammablePassEncoder;
@@ -955,22 +968,28 @@ dictionary GPURenderPassColorAttachment {
     required GPUTextureView view;
     GPUTextureView resolveTarget;
 
-    required (GPULoadOp or GPUColor) loadValue;
+    GPUColor clearValue;
+    required GPULoadOp loadOp;
     required GPUStoreOp storeOp;
 };
 
 dictionary GPURenderPassDepthStencilAttachment {
     required GPUTextureView view;
 
-    required (GPULoadOp or float) depthLoadValue;
-    required GPUStoreOp depthStoreOp;
+    float depthClearValue;
+    GPULoadOp depthLoadOp;
+    GPUStoreOp depthStoreOp;
+    boolean depthReadOnly = false;
 
-    required (GPULoadOp or GPUStencilValue) stencilLoadValue;
-    required GPUStoreOp stencilStoreOp;
+    GPUStencilValue stencilClearValue = 0;
+    GPULoadOp stencilLoadOp;
+    GPUStoreOp stencilStoreOp;
+    boolean stencilReadOnly = false;
 };
 
 enum GPULoadOp {
-    "load"
+    "load",
+    "clear"
 };
 
 enum GPUStoreOp {
@@ -1072,6 +1091,8 @@ enum GPUQueryType {
 [Pref="dom.webgpu.enabled",
  Exposed=(Window /* ,DedicatedWorker */), SecureContext]
 interface GPUCanvasContext {
+    readonly attribute (HTMLCanvasElement or OffscreenCanvas) canvas;
+
     // Calling configure() a second time invalidates the previous one,
     // and all of the textures it's produced.
     undefined configure(GPUCanvasConfiguration descriptor);

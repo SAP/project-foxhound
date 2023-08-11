@@ -23,6 +23,7 @@ ChromeUtils.defineESModuleGetters(this, {
   Deprecated: "resource://gre/modules/Deprecated.sys.mjs",
   DevToolsSocketStatus:
     "resource://devtools/shared/security/DevToolsSocketStatus.sys.mjs",
+  DownloadUtils: "resource://gre/modules/DownloadUtils.sys.mjs",
   DownloadsCommon: "resource:///modules/DownloadsCommon.sys.mjs",
   E10SUtils: "resource://gre/modules/E10SUtils.sys.mjs",
   FirefoxViewNotificationManager:
@@ -30,6 +31,8 @@ ChromeUtils.defineESModuleGetters(this, {
   LightweightThemeConsumer:
     "resource://gre/modules/LightweightThemeConsumer.sys.mjs",
   Log: "resource://gre/modules/Log.sys.mjs",
+  LoginHelper: "resource://gre/modules/LoginHelper.sys.mjs",
+  LoginManagerParent: "resource://gre/modules/LoginManagerParent.sys.mjs",
   MigrationUtils: "resource:///modules/MigrationUtils.sys.mjs",
   NewTabUtils: "resource://gre/modules/NewTabUtils.sys.mjs",
   NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
@@ -38,11 +41,13 @@ ChromeUtils.defineESModuleGetters(this, {
   PlacesUIUtils: "resource:///modules/PlacesUIUtils.sys.mjs",
   PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
   PluralForm: "resource://gre/modules/PluralForm.sys.mjs",
+  Pocket: "chrome://pocket/content/Pocket.sys.mjs",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
   PromiseUtils: "resource://gre/modules/PromiseUtils.sys.mjs",
   PromptUtils: "resource://gre/modules/PromptUtils.sys.mjs",
   ReaderMode: "resource://gre/modules/ReaderMode.sys.mjs",
   Sanitizer: "resource:///modules/Sanitizer.sys.mjs",
+  SaveToPocket: "chrome://pocket/content/SaveToPocket.sys.mjs",
   ScreenshotsUtils: "resource:///modules/ScreenshotsUtils.sys.mjs",
   SearchUIUtils: "resource:///modules/SearchUIUtils.sys.mjs",
   SessionStartup: "resource:///modules/sessionstore/SessionStartup.sys.mjs",
@@ -78,21 +83,16 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.jsm",
   CFRPageActions: "resource://activity-stream/lib/CFRPageActions.jsm",
   CustomizableUI: "resource:///modules/CustomizableUI.jsm",
-  DownloadUtils: "resource://gre/modules/DownloadUtils.jsm",
   ExtensionsUI: "resource:///modules/ExtensionsUI.jsm",
   HomePage: "resource:///modules/HomePage.jsm",
-  LoginHelper: "resource://gre/modules/LoginHelper.jsm",
-  LoginManagerParent: "resource://gre/modules/LoginManagerParent.jsm",
   NetUtil: "resource://gre/modules/NetUtil.jsm",
   OpenInTabsUtils: "resource:///modules/OpenInTabsUtils.jsm",
   PageActions: "resource:///modules/PageActions.jsm",
   PageThumbs: "resource://gre/modules/PageThumbs.jsm",
   PanelMultiView: "resource:///modules/PanelMultiView.jsm",
   PanelView: "resource:///modules/PanelMultiView.jsm",
-  Pocket: "chrome://pocket/content/Pocket.jsm",
   ProcessHangMonitor: "resource:///modules/ProcessHangMonitor.jsm",
   SafeBrowsing: "resource://gre/modules/SafeBrowsing.jsm",
-  SaveToPocket: "chrome://pocket/content/SaveToPocket.jsm",
   SiteDataManager: "resource:///modules/SiteDataManager.jsm",
   SitePermissions: "resource:///modules/SitePermissions.jsm",
   TabCrashHandler: "resource:///modules/ContentCrashHandlers.jsm",
@@ -107,14 +107,6 @@ XPCOMUtils.defineLazyGetter(this, "fxAccounts", () => {
     "resource://gre/modules/FxAccounts.sys.mjs"
   ).getFxAccountsSingleton();
 });
-
-if (AppConstants.MOZ_CRASHREPORTER) {
-  ChromeUtils.defineModuleGetter(
-    this,
-    "PluginCrashReporter",
-    "resource:///modules/ContentCrashHandlers.jsm"
-  );
-}
 
 XPCOMUtils.defineLazyScriptGetter(
   this,
@@ -190,6 +182,11 @@ XPCOMUtils.defineLazyScriptGetter(
   this,
   "gPermissionPanel",
   "chrome://browser/content/browser-sitePermissionPanel.js"
+);
+XPCOMUtils.defineLazyScriptGetter(
+  this,
+  "TranslationsPanel",
+  "chrome://browser/content/translations/translationsPanel.js"
 );
 XPCOMUtils.defineLazyScriptGetter(
   this,
@@ -333,8 +330,8 @@ XPCOMUtils.defineLazyGetter(this, "gBrowserBundle", () => {
 });
 
 XPCOMUtils.defineLazyGetter(this, "gCustomizeMode", () => {
-  let { CustomizeMode } = ChromeUtils.import(
-    "resource:///modules/CustomizeMode.jsm"
+  let { CustomizeMode } = ChromeUtils.importESModule(
+    "resource:///modules/CustomizeMode.sys.mjs"
   );
   return new CustomizeMode(window);
 });
@@ -1666,6 +1663,10 @@ var gBrowserInit = {
 
   onLoad() {
     gBrowser.addEventListener("DOMUpdateBlockedPopups", gPopupBlockerObserver);
+    gBrowser.addEventListener(
+      "TranslationsParent:LanguageState",
+      TranslationsPanel
+    );
 
     window.addEventListener("AppCommand", HandleAppCommandEvent, true);
 
@@ -5342,7 +5343,7 @@ var XULBrowserWindow = {
     button?.setAttribute("disabled", "true");
 
     // Try not to instantiate gCustomizeMode as much as possible,
-    // so don't use CustomizeMode.jsm to check for URI or customizing.
+    // so don't use CustomizeMode.sys.mjs to check for URI or customizing.
     if (
       location == "about:blank" &&
       gBrowser.selectedTab.hasAttribute("customizemode")
@@ -5358,7 +5359,7 @@ var XULBrowserWindow = {
     CFRPageActions.updatePageActions(gBrowser.selectedBrowser);
 
     AboutReaderParent.updateReaderButton(gBrowser.selectedBrowser);
-    TranslationsParent.updateButtonFromLocationChange(gBrowser.selectedBrowser);
+    TranslationsParent.onLocationChange(gBrowser.selectedBrowser);
 
     PictureInPicture.updateUrlbarToggle(gBrowser.selectedBrowser);
 
@@ -7608,6 +7609,14 @@ var WebAuthnPromptHelper = {
         "deviceBlocked",
         "webauthn.deviceBlockedPrompt"
       );
+    } else if (data.action == "pin-not-set") {
+      this.show_info(
+        mgr,
+        data.origin,
+        data.tid,
+        "pinNotSet",
+        "webauthn.pinNotSetPrompt"
+      );
     }
   },
 
@@ -9687,9 +9696,9 @@ var ConfirmationHint = {
     this._panel.setAttribute("data-message-id", messageId);
 
     // The timeout value used here allows the panel to stay open for
-    // 1.5s second after the text transition (duration=120ms) has finished.
-    // If there is a description, we show for 4s after the text transition.
-    const DURATION = options.showDescription ? 4000 : 1500;
+    // 3s after the text transition (duration=120ms) has finished.
+    // If there is a description, we show for 6s after the text transition.
+    const DURATION = options.showDescription ? 6000 : 3000;
     this._panel.addEventListener(
       "popupshown",
       () => {

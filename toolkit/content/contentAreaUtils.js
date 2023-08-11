@@ -12,6 +12,7 @@ var { XPCOMUtils } = ChromeUtils.importESModule(
 ChromeUtils.defineESModuleGetters(this, {
   BrowserUtils: "resource://gre/modules/BrowserUtils.sys.mjs",
   Deprecated: "resource://gre/modules/Deprecated.sys.mjs",
+  DownloadLastDir: "resource://gre/modules/DownloadLastDir.sys.mjs",
   DownloadPaths: "resource://gre/modules/DownloadPaths.sys.mjs",
   Downloads: "resource://gre/modules/Downloads.sys.mjs",
   FileUtils: "resource://gre/modules/FileUtils.sys.mjs",
@@ -19,7 +20,6 @@ ChromeUtils.defineESModuleGetters(this, {
 });
 
 XPCOMUtils.defineLazyModuleGetters(this, {
-  DownloadLastDir: "resource://gre/modules/DownloadLastDir.jsm",
   NetUtil: "resource://gre/modules/NetUtil.jsm",
 });
 
@@ -674,20 +674,10 @@ function promiseTargetFile(
 
     // We must prompt for the file name explicitly.
     // If we must prompt because we were asked to...
-    let file = await new Promise(resolve => {
-      if (useDownloadDir) {
-        // Keep async behavior in both branches
-        Services.tm.dispatchToMainThread(function() {
-          resolve(null);
-        });
-      } else {
-        downloadLastDir.getFileAsync(aRelatedURI, function getFileAsyncCB(
-          aFile
-        ) {
-          resolve(aFile);
-        });
-      }
-    });
+    let file = null;
+    if (!useDownloadDir) {
+      file = await downloadLastDir.getFileAsync(aRelatedURI);
+    }
     if (file && (await IOUtils.exists(file.path))) {
       dir = file;
       dirExists = true;

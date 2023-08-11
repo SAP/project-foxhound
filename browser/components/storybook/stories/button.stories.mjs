@@ -5,9 +5,10 @@
 import { classMap, html } from "lit.all.mjs";
 
 export default {
-  title: "Design System/Atoms/Button",
+  title: "UI Widgets/Button",
   component: "button",
   parameters: {
+    status: "stable",
     fluent: `
 button-regular = Regular
 button-primary = Primary

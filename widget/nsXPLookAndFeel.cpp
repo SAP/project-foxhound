@@ -17,6 +17,7 @@
 #include "nsFont.h"
 #include "nsIFrame.h"
 #include "nsIXULRuntime.h"
+#include "nsLayoutUtils.h"
 #include "Theme.h"
 #include "SurfaceCacheUtils.h"
 #include "mozilla/dom/ContentParent.h"
@@ -182,6 +183,7 @@ static const char sIntPrefs[][45] = {
     "ui.systemUsesDarkTheme",
     "ui.prefersReducedMotion",
     "ui.prefersReducedTransparency",
+    "ui.invertedColors",
     "ui.primaryPointerCapabilities",
     "ui.allPointerCapabilities",
     "ui.systemScrollbarSize",
@@ -547,6 +549,10 @@ void nsXPLookAndFeel::Init() {
   sInitialized = true;
 
   RecomputeColorSchemes();
+
+  if (XRE_IsParentProcess()) {
+    nsLayoutUtils::RecomputeSmoothScrollDefault();
+  }
 
   // XXX If we could reorganize the pref names, we should separate the branch
   //     for each types.  Then, we could reduce the unnecessary loop from
@@ -1169,8 +1175,9 @@ void nsXPLookAndFeel::RefreshImpl() {
   sIntCache.Clear();
   RecomputeColorSchemes();
 
-  // Clear any cached FullLookAndFeel data, which is now invalid.
   if (XRE_IsParentProcess()) {
+    nsLayoutUtils::RecomputeSmoothScrollDefault();
+    // Clear any cached FullLookAndFeel data, which is now invalid.
     widget::RemoteLookAndFeel::ClearCachedData();
   }
 }

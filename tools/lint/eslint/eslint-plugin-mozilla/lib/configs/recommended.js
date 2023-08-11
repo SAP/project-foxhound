@@ -4,12 +4,6 @@
 
 "use strict";
 
-let prettierRules = { "prettier/prettier": "error" };
-
-if (process.env.MOZ_SEPARATE_PRETTIER) {
-  prettierRules = { "prettier/prettier": "off" };
-}
-
 /**
  * The configuration is based on eslint:recommended config. The details for all
  * the ESLint rules, and which ones are in the recommended configuration can
@@ -119,13 +113,11 @@ module.exports = {
   },
 
   // When adding items to this file please check for effects on sub-directories.
-  plugins: ["html", "fetch-options", "prettier", "no-unsanitized"],
+  plugins: ["html", "fetch-options", "no-unsanitized"],
 
   // When adding items to this file please check for effects on all of toolkit
   // and browser
   rules: {
-    ...prettierRules,
-
     // This may conflict with prettier, so we turn it off.
     "arrow-body-style": "off",
 

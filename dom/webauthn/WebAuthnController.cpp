@@ -402,10 +402,13 @@ void WebAuthnController::RunFinishRegister(
     return;
   }
 
-  nsresult rv;
   nsresult status;
-  rv = aResult->GetStatus(&status);
-  if (NS_WARN_IF(NS_FAILED(rv)) || NS_FAILED(status)) {
+  nsresult rv = aResult->GetStatus(&status);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    AbortTransaction(aTransactionId, NS_ERROR_FAILURE, true);
+    return;
+  }
+  if (NS_FAILED(status)) {
     bool shouldCancelActiveDialog = true;
     if (status == NS_ERROR_DOM_OPERATION_ERR) {
       // PIN-related errors. Let the dialog show to inform the user
@@ -417,12 +420,7 @@ void WebAuthnController::RunFinishRegister(
     return;
   }
 
-  nsCString clientDataJson;
-  rv = aResult->GetClientDataJSON(clientDataJson);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    AbortTransaction(aTransactionId, NS_ERROR_FAILURE, true);
-    return;
-  }
+  nsCString clientDataJson = mPendingRegisterInfo.ref().ClientDataJSON();
 
   nsTArray<uint8_t> attObj;
   rv = aResult->GetAttestationObject(attObj);
@@ -518,16 +516,15 @@ void WebAuthnController::Sign(PWebAuthnTransactionParent* aTransactionParent,
 
 NS_IMETHODIMP
 WebAuthnController::FinishSign(
-    uint64_t aTransactionId, const nsACString& aClientDataJson,
+    uint64_t aTransactionId,
     const nsTArray<RefPtr<nsICtapSignResult>>& aResult) {
   MOZ_ASSERT(XRE_IsParentProcess());
   nsTArray<RefPtr<nsICtapSignResult>> ownedResult = aResult.Clone();
 
   nsCOMPtr<nsIRunnable> r(
-      NewRunnableMethod<uint64_t, nsCString,
-                        nsTArray<RefPtr<nsICtapSignResult>>>(
+      NewRunnableMethod<uint64_t, nsTArray<RefPtr<nsICtapSignResult>>>(
           "WebAuthnController::RunFinishSign", this,
-          &WebAuthnController::RunFinishSign, aTransactionId, aClientDataJson,
+          &WebAuthnController::RunFinishSign, aTransactionId,
           std::move(ownedResult)));
 
   if (!gWebAuthnBackgroundThread) {
@@ -537,7 +534,7 @@ WebAuthnController::FinishSign(
 }
 
 void WebAuthnController::RunFinishSign(
-    uint64_t aTransactionId, const nsACString& aClientDataJson,
+    uint64_t aTransactionId,
     const nsTArray<RefPtr<nsICtapSignResult>>& aResult) {
   mozilla::ipc::AssertIsOnBackgroundThread();
   if (mTransaction.isNothing() ||
@@ -554,7 +551,11 @@ void WebAuthnController::RunFinishSign(
 
   if (aResult.Length() == 1) {
     nsresult status;
-    aResult[0]->GetStatus(&status);
+    nsresult rv = aResult[0]->GetStatus(&status);
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      AbortTransaction(aTransactionId, NS_ERROR_FAILURE, true);
+      return;
+    }
     if (NS_FAILED(status)) {
       bool shouldCancelActiveDialog = true;
       if (status == NS_ERROR_DOM_OPERATION_ERR) {
@@ -568,7 +569,6 @@ void WebAuthnController::RunFinishSign(
       return;
     }
     mPendingSignResults = aResult.Clone();
-    mTransaction.ref().mClientDataJSON = aClientDataJson;
     RunResumeWithSelectedSignResult(aTransactionId, 0);
     return;
   }
@@ -576,7 +576,11 @@ void WebAuthnController::RunFinishSign(
   // If we more than one assertion, all of them should have OK status.
   for (const auto& assertion : aResult) {
     nsresult status;
-    assertion->GetStatus(&status);
+    nsresult rv = assertion->GetStatus(&status);
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      AbortTransaction(aTransactionId, NS_ERROR_FAILURE, true);
+      return;
+    }
     if (NS_WARN_IF(NS_FAILED(status))) {
       Telemetry::ScalarAdd(Telemetry::ScalarID::SECURITY_WEBAUTHN_USED,
                            u"CTAPSignAbort"_ns, 1);
@@ -600,7 +604,6 @@ void WebAuthnController::RunFinishSign(
       });
 
   mPendingSignResults = aResult.Clone();
-  mTransaction.ref().mClientDataJSON = aClientDataJson;
   NS_ConvertUTF16toUTF8 origin(mPendingSignInfo.ref().Origin());
   SendPromptNotification(kSelectSignResultNotification,
                          mTransaction.ref().mTransactionId, origin.get(),

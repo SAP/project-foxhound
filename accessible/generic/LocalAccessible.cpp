@@ -70,7 +70,6 @@
 #include "nsReadableUtils.h"
 #include "prdtoa.h"
 #include "nsAtom.h"
-#include "nsIURI.h"
 #include "nsArrayUtils.h"
 #include "nsWhitespaceTokenizer.h"
 #include "nsAttrName.h"
@@ -1293,6 +1292,11 @@ void LocalAccessible::DOMAttributeChanged(int32_t aNameSpaceID,
     }
   }
 
+  if (aAttribute == nsGkAtoms::_class) {
+    mDoc->QueueCacheUpdate(this, CacheDomain::DOMNodeIDAndClass);
+    return;
+  }
+
   // When a details object has its open attribute changed
   // we should fire a state-change event on the accessible of
   // its main summary
@@ -1415,7 +1419,7 @@ void LocalAccessible::DOMAttributeChanged(int32_t aNameSpaceID,
     SendCache(CacheDomain::Actions, CacheUpdateType::Update);
   }
 
-  if (aAttribute == nsGkAtoms::href) {
+  if (aAttribute == nsGkAtoms::href || aAttribute == nsGkAtoms::src) {
     mDoc->QueueCacheUpdate(this, CacheDomain::Value);
   }
 
@@ -2776,22 +2780,6 @@ bool LocalAccessible::IsLink() const {
   return mParent && mParent->IsHyperText() && !IsText();
 }
 
-uint32_t LocalAccessible::AnchorCount() {
-  MOZ_ASSERT(IsLink(), "AnchorCount is called on not hyper link!");
-  return 1;
-}
-
-LocalAccessible* LocalAccessible::AnchorAt(uint32_t aAnchorIndex) {
-  MOZ_ASSERT(IsLink(), "GetAnchor is called on not hyper link!");
-  return aAnchorIndex == 0 ? this : nullptr;
-}
-
-already_AddRefed<nsIURI> LocalAccessible::AnchorURIAt(
-    uint32_t aAnchorIndex) const {
-  MOZ_ASSERT(IsLink(), "AnchorURIAt is called on not hyper link!");
-  return nullptr;
-}
-
 ////////////////////////////////////////////////////////////////////////////////
 // SelectAccessible
 
@@ -3220,6 +3208,24 @@ already_AddRefed<AccAttributes> LocalAccessible::BundleFieldsForCache(
         fields->SetAttribute(nsGkAtoms::aria_valuetext, DeleteEntry());
       }
     }
+
+    if (IsImage()) {
+      // Cache the src of images. This is used by some clients to help remediate
+      // inaccessible images. If the image has a name, it's accessible, so this
+      // isn't necessary.
+      MOZ_ASSERT(mContent, "Image must have mContent");
+      nsAutoString name;
+      Name(name);
+      if (name.IsEmpty()) {
+        nsString src;
+        mContent->AsElement()->GetAttr(kNameSpaceID_None, nsGkAtoms::src, src);
+        if (!src.IsEmpty()) {
+          fields->SetAttribute(nsGkAtoms::src, std::move(src));
+        } else if (aUpdateType == CacheUpdateType::Update) {
+          fields->SetAttribute(nsGkAtoms::src, DeleteEntry());
+        }
+      }
+    }
   }
 
   if (aCacheDomain & CacheDomain::Viewport && IsDoc()) {
@@ -3539,12 +3545,21 @@ already_AddRefed<AccAttributes> LocalAccessible::BundleFieldsForCache(
     }
   }
 
-  if (aCacheDomain & CacheDomain::DOMNodeID && mContent) {
+  if (aCacheDomain & CacheDomain::DOMNodeIDAndClass && mContent) {
     nsAtom* id = mContent->GetID();
     if (id) {
       fields->SetAttribute(nsGkAtoms::id, id);
     } else if (aUpdateType == CacheUpdateType::Update) {
       fields->SetAttribute(nsGkAtoms::id, DeleteEntry());
+    }
+    if (auto* el = dom::Element::FromNodeOrNull(mContent)) {
+      nsAutoString className;
+      el->GetClassName(className);
+      if (!className.IsEmpty()) {
+        fields->SetAttribute(nsGkAtoms::_class, std::move(className));
+      } else if (aUpdateType == CacheUpdateType::Update) {
+        fields->SetAttribute(nsGkAtoms::_class, DeleteEntry());
+      }
     }
   }
 
@@ -3905,6 +3920,20 @@ void LocalAccessible::MaybeQueueCacheUpdateForStyleChanges() {
 nsAtom* LocalAccessible::TagName() const {
   return mContent && mContent->IsElement() ? mContent->NodeInfo()->NameAtom()
                                            : nullptr;
+}
+
+already_AddRefed<nsAtom> LocalAccessible::InputType() const {
+  if (!IsTextField() && !IsDateTimeField()) {
+    return nullptr;
+  }
+
+  dom::Element* el = mContent->AsElement();
+  if (const nsAttrValue* attr = el->GetParsedAttr(nsGkAtoms::type)) {
+    RefPtr<nsAtom> inputType = attr->GetAsAtom();
+    return inputType.forget();
+  }
+
+  return nullptr;
 }
 
 already_AddRefed<nsAtom> LocalAccessible::DisplayStyle() const {

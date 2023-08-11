@@ -330,6 +330,36 @@ double RemoteAccessibleBase<Derived>::Step() const {
 }
 
 template <class Derived>
+bool RemoteAccessibleBase<Derived>::SetCurValue(double aValue) {
+  if (!HasNumericValue() || IsProgress()) {
+    return false;
+  }
+
+  if (StaticPrefs::accessibility_cache_enabled_AtStartup()) {
+    // XXX: If cache is disabled there is a slight regression
+    // where we don't check the readonly/unavailable state or the min/max
+    // values. This will go away once cache is enabled by default.
+    const uint32_t kValueCannotChange = states::READONLY | states::UNAVAILABLE;
+    if (State() & kValueCannotChange) {
+      return false;
+    }
+
+    double checkValue = MinValue();
+    if (!std::isnan(checkValue) && aValue < checkValue) {
+      return false;
+    }
+
+    checkValue = MaxValue();
+    if (!std::isnan(checkValue) && aValue > checkValue) {
+      return false;
+    }
+  }
+
+  Unused << mDoc->SendSetCurValue(mID, aValue);
+  return true;
+}
+
+template <class Derived>
 bool RemoteAccessibleBase<Derived>::ContainsPoint(int32_t aX, int32_t aY) {
   if (!BoundsWithOffset(Nothing(), true).Contains(aX, aY)) {
     return false;
@@ -699,11 +729,7 @@ LayoutDeviceIntRect RemoteAccessibleBase<Derived>::BoundsWithOffset(
           // happens in this loop instead of both inside and outside of
           // the loop (like ApplyTransform).
           // Never apply scroll offsets past a fixed container.
-          // XXX: ApplyScrollOffset wrapped in an immediately-invoked lambda
-          // to work around a suspected gcc bug. See Bug 1825516.
-          const bool hasScrollArea = [&]() {
-            return remoteAcc->ApplyScrollOffset(bounds);
-          }();
+          const bool hasScrollArea = remoteAcc->ApplyScrollOffset(bounds);
 
           // If we are hit testing and the Accessible has a scroll area, ensure
           // that the bounds we've calculated so far are constrained to the
@@ -1182,7 +1208,7 @@ template <class Derived>
 void RemoteAccessibleBase<Derived>::DOMNodeID(nsString& aID) const {
   if (mCachedFields) {
     mCachedFields->GetAttribute(nsGkAtoms::id, aID);
-    VERIFY_CACHE(CacheDomain::DOMNodeID);
+    VERIFY_CACHE(CacheDomain::DOMNodeIDAndClass);
   }
 }
 
@@ -1395,6 +1421,20 @@ already_AddRefed<AccAttributes> RemoteAccessibleBase<Derived>::Attributes() {
     if (!id.IsEmpty()) {
       attributes->SetAttribute(nsGkAtoms::id, std::move(id));
     }
+
+    nsString className;
+    mCachedFields->GetAttribute(nsGkAtoms::_class, className);
+    if (!className.IsEmpty()) {
+      attributes->SetAttribute(nsGkAtoms::_class, std::move(className));
+    }
+
+    if (IsImage()) {
+      nsString src;
+      mCachedFields->GetAttribute(nsGkAtoms::src, src);
+      if (!src.IsEmpty()) {
+        attributes->SetAttribute(nsGkAtoms::src, std::move(src));
+      }
+    }
   }
 
   nsAutoString name;
@@ -1423,6 +1463,19 @@ nsAtom* RemoteAccessibleBase<Derived>::TagName() const {
     if (auto tag =
             mCachedFields->GetAttribute<RefPtr<nsAtom>>(nsGkAtoms::tag)) {
       return *tag;
+    }
+  }
+
+  return nullptr;
+}
+
+template <class Derived>
+already_AddRefed<nsAtom> RemoteAccessibleBase<Derived>::InputType() const {
+  if (mCachedFields) {
+    if (auto inputType = mCachedFields->GetAttribute<RefPtr<nsAtom>>(
+            nsGkAtoms::textInputType)) {
+      RefPtr<nsAtom> result = *inputType;
+      return result.forget();
     }
   }
 

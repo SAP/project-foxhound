@@ -1358,9 +1358,9 @@ JSLinearString* ScriptSource::functionBodyString(JSContext* cx) {
   return substring(cx, start, stop);
 }
 
-template <typename Unit>
+template <typename ContextT, typename Unit>
 [[nodiscard]] bool ScriptSource::setUncompressedSourceHelper(
-    JSContext* cx, EntryUnits<Unit>&& source, size_t length,
+    ContextT* cx, EntryUnits<Unit>&& source, size_t length,
     SourceRetrievable retrievable) {
   auto& cache = SharedImmutableStringsCache::getSingleton();
 
@@ -1475,7 +1475,7 @@ void ScriptSource::triggerConvertToCompressedSource(
 
 template <typename Unit>
 [[nodiscard]] bool ScriptSource::initializeWithUnretrievableCompressedSource(
-    JSContext* cx, UniqueChars&& compressed, size_t rawLength,
+    FrontendContext* fc, UniqueChars&& compressed, size_t rawLength,
     size_t sourceLength) {
   MOZ_ASSERT(data.is<Missing>(), "shouldn't be double-initializing");
   MOZ_ASSERT(compressed != nullptr);
@@ -1483,7 +1483,7 @@ template <typename Unit>
   auto& cache = SharedImmutableStringsCache::getSingleton();
   auto deduped = cache.getOrCreate(std::move(compressed), rawLength);
   if (!deduped) {
-    ReportOutOfMemory(cx);
+    ReportOutOfMemory(fc);
     return false;
   }
 
@@ -1505,10 +1505,10 @@ template <typename Unit>
 }
 
 template bool ScriptSource::initializeWithUnretrievableCompressedSource<
-    Utf8Unit>(JSContext* cx, UniqueChars&& compressed, size_t rawLength,
+    Utf8Unit>(FrontendContext* fc, UniqueChars&& compressed, size_t rawLength,
               size_t sourceLength);
 template bool ScriptSource::initializeWithUnretrievableCompressedSource<
-    char16_t>(JSContext* cx, UniqueChars&& compressed, size_t rawLength,
+    char16_t>(FrontendContext* fc, UniqueChars&& compressed, size_t rawLength,
               size_t sourceLength);
 
 template <typename Unit>
@@ -1826,7 +1826,7 @@ bool ScriptSource::xdrFinalizeEncoder(JSContext* cx,
   auto cleanup = mozilla::MakeScopeExit([&] { xdrEncoder_.reset(); });
 
   AutoReportFrontendContext fc(cx);
-  XDRStencilEncoder encoder(cx, &fc, buffer);
+  XDRStencilEncoder encoder(&fc, buffer);
 
   frontend::BorrowingCompilationStencil borrowingStencil(
       xdrEncoder_.merger_->getResult());
@@ -1845,16 +1845,16 @@ void ScriptSource::xdrAbortEncoder() { xdrEncoder_.reset(); }
 
 template <typename Unit>
 [[nodiscard]] bool ScriptSource::initializeUnretrievableUncompressedSource(
-    JSContext* cx, EntryUnits<Unit>&& source, size_t length) {
+    FrontendContext* fc, EntryUnits<Unit>&& source, size_t length) {
   MOZ_ASSERT(data.is<Missing>(), "must be initializing a fresh ScriptSource");
-  return setUncompressedSourceHelper(cx, std::move(source), length,
+  return setUncompressedSourceHelper(fc, std::move(source), length,
                                      SourceRetrievable::No);
 }
 
 template bool ScriptSource::initializeUnretrievableUncompressedSource(
-    JSContext* cx, EntryUnits<Utf8Unit>&& source, size_t length);
+    FrontendContext* fc, EntryUnits<Utf8Unit>&& source, size_t length);
 template bool ScriptSource::initializeUnretrievableUncompressedSource(
-    JSContext* cx, EntryUnits<char16_t>&& source, size_t length);
+    FrontendContext* fc, EntryUnits<char16_t>&& source, size_t length);
 
 // Format and return a cx->pod_malloc'ed URL for a generated script like:
 //   {filename} line {lineno} > {introducer}
@@ -1965,7 +1965,12 @@ bool ScriptSource::setFilename(FrontendContext* fc, const char* filename) {
 bool ScriptSource::setFilename(FrontendContext* fc, UniqueChars&& filename) {
   MOZ_ASSERT(!filename_);
   filename_ = getOrCreateStringZ(fc, std::move(filename));
-  return bool(filename_);
+  if (filename_) {
+    filenameHash_ =
+        mozilla::HashStringKnownLength(filename_.chars(), filename_.length());
+    return true;
+  }
+  return false;
 }
 
 bool ScriptSource::setIntroducerFilename(FrontendContext* fc,
@@ -2094,8 +2099,8 @@ js::UniquePtr<ImmutableScriptData> js::ImmutableScriptData::new_(
 }
 
 js::UniquePtr<ImmutableScriptData> js::ImmutableScriptData::new_(
-    JSContext* cx, uint32_t totalSize) {
-  void* raw = cx->pod_malloc<uint8_t>(totalSize);
+    FrontendContext* fc, uint32_t totalSize) {
+  void* raw = fc->getAllocator()->pod_malloc<uint8_t>(totalSize);
   MOZ_ASSERT(uintptr_t(raw) % alignof(ImmutableScriptData) == 0);
   UniquePtr<ImmutableScriptData> result(
       reinterpret_cast<ImmutableScriptData*>(raw));
@@ -3340,6 +3345,9 @@ static void DumpMutableScriptFlags(js::JSONPrinter& json,
           break;
         case MutableScriptFlagsEnum::Uninlineable:
           json.value("Uninlineable");
+          break;
+        case MutableScriptFlagsEnum::NoEagerBaselineHint:
+          json.value("NoEagerBaselineHint");
           break;
         case MutableScriptFlagsEnum::FailedBoundsCheck:
           json.value("FailedBoundsCheck");

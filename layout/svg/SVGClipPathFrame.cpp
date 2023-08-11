@@ -95,6 +95,41 @@ static void ComposeExtraMask(DrawTarget* aTarget, SourceSurface* aExtraMask) {
   aTarget->SetTransform(origin);
 }
 
+void SVGClipPathFrame::PaintChildren(gfxContext& aMaskContext,
+                                     nsIFrame* aClippedFrame,
+                                     const gfxMatrix& aMatrix) {
+  // Check if this clipPath is itself clipped by another clipPath:
+  SVGClipPathFrame* clipPathThatClipsClipPath;
+  // XXX check return value?
+  SVGObserverUtils::GetAndObserveClipPath(this, &clipPathThatClipsClipPath);
+  SVGUtils::MaskUsage maskUsage;
+  SVGUtils::DetermineMaskUsage(this, true, maskUsage);
+
+  gfxGroupForBlendAutoSaveRestore autoGroupForBlend(&aMaskContext);
+  if (maskUsage.shouldApplyClipPath) {
+    clipPathThatClipsClipPath->ApplyClipPath(aMaskContext, aClippedFrame,
+                                             aMatrix);
+  } else if (maskUsage.shouldGenerateClipMaskLayer) {
+    RefPtr<SourceSurface> maskSurface = clipPathThatClipsClipPath->GetClipMask(
+        aMaskContext, aClippedFrame, aMatrix);
+    // We want the mask to be untransformed so use the inverse of the current
+    // transform as the maskTransform to compensate.
+    Matrix maskTransform = aMaskContext.CurrentMatrix();
+    maskTransform.Invert();
+    autoGroupForBlend.PushGroupForBlendBack(gfxContentType::ALPHA, 1.0f,
+                                            maskSurface, maskTransform);
+  }
+
+  // Paint our children into the mask:
+  for (nsIFrame* kid = mFrames.FirstChild(); kid; kid = kid->GetNextSibling()) {
+    PaintFrameIntoMask(kid, aClippedFrame, aMaskContext);
+  }
+
+  if (maskUsage.shouldApplyClipPath) {
+    aMaskContext.PopClip();
+  }
+}
+
 void SVGClipPathFrame::PaintClipMask(gfxContext& aMaskContext,
                                      nsIFrame* aClippedFrame,
                                      const gfxMatrix& aMatrix,
@@ -119,39 +154,7 @@ void SVGClipPathFrame::PaintClipMask(gfxContext& aMaskContext,
   // transform.
   mMatrixForChildren = GetClipPathTransform(aClippedFrame) * aMatrix;
 
-  // Check if this clipPath is itself clipped by another clipPath:
-  SVGClipPathFrame* clipPathThatClipsClipPath;
-  // XXX check return value?
-  SVGObserverUtils::GetAndObserveClipPath(this, &clipPathThatClipsClipPath);
-  SVGUtils::MaskUsage maskUsage;
-  SVGUtils::DetermineMaskUsage(this, true, maskUsage);
-
-  if (maskUsage.shouldApplyClipPath) {
-    clipPathThatClipsClipPath->ApplyClipPath(aMaskContext, aClippedFrame,
-                                             aMatrix);
-  } else if (maskUsage.shouldGenerateClipMaskLayer) {
-    RefPtr<SourceSurface> maskSurface = clipPathThatClipsClipPath->GetClipMask(
-        aMaskContext, aClippedFrame, aMatrix);
-    // We want the mask to be untransformed so use the inverse of the current
-    // transform as the maskTransform to compensate.
-    Matrix maskTransform = aMaskContext.CurrentMatrix();
-    maskTransform.Invert();
-    aMaskContext.PushGroupForBlendBack(gfxContentType::ALPHA, 1.0, maskSurface,
-                                       maskTransform);
-    // The corresponding PopGroupAndBlend call below will mask the
-    // blend using |maskSurface|.
-  }
-
-  // Paint our children into the mask:
-  for (nsIFrame* kid = mFrames.FirstChild(); kid; kid = kid->GetNextSibling()) {
-    PaintFrameIntoMask(kid, aClippedFrame, aMaskContext);
-  }
-
-  if (maskUsage.shouldGenerateClipMaskLayer) {
-    aMaskContext.PopGroupAndBlend();
-  } else if (maskUsage.shouldApplyClipPath) {
-    aMaskContext.PopClip();
-  }
+  PaintChildren(aMaskContext, aClippedFrame, aMatrix);
 
   if (aExtraMask) {
     ComposeExtraMask(maskDT, aExtraMask);
@@ -180,6 +183,7 @@ void SVGClipPathFrame::PaintFrameIntoMask(nsIFrame* aFrame,
 
   SVGUtils::MaskUsage maskUsage;
   SVGUtils::DetermineMaskUsage(aFrame, true, maskUsage);
+  gfxGroupForBlendAutoSaveRestore autoGroupForBlend(&aTarget);
   if (maskUsage.shouldApplyClipPath) {
     clipPathThatClipsChild->ApplyClipPath(
         aTarget, aClippedFrame,
@@ -193,10 +197,8 @@ void SVGClipPathFrame::PaintFrameIntoMask(nsIFrame* aFrame,
     // transform as the maskTransform to compensate.
     Matrix maskTransform = aTarget.CurrentMatrix();
     maskTransform.Invert();
-    aTarget.PushGroupForBlendBack(gfxContentType::ALPHA, 1.0, maskSurface,
-                                  maskTransform);
-    // The corresponding PopGroupAndBlend call below will mask the
-    // blend using |maskSurface|.
+    autoGroupForBlend.PushGroupForBlendBack(gfxContentType::ALPHA, 1.0f,
+                                            maskSurface, maskTransform);
   }
 
   gfxMatrix toChildsUserSpace = mMatrixForChildren;
@@ -216,9 +218,7 @@ void SVGClipPathFrame::PaintFrameIntoMask(nsIFrame* aFrame,
   // only the geometry (opaque black) if set.
   frame->PaintSVG(aTarget, toChildsUserSpace, imgParams);
 
-  if (maskUsage.shouldGenerateClipMaskLayer) {
-    aTarget.PopGroupAndBlend();
-  } else if (maskUsage.shouldApplyClipPath) {
+  if (maskUsage.shouldApplyClipPath) {
     aTarget.PopClip();
   }
 }

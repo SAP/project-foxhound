@@ -84,11 +84,20 @@ enum class TypeCode {
   // Type constructor for non-nullable reference types.
   Ref = 0x6b,  // SLEB128(-0x15)
 
+  // A null reference in the extern hierarchy.
+  NullExternRef = 0x69,  // SLEB128(-0x17)
+
+  // A null reference in the func hierarchy.
+  NullFuncRef = 0x68,  // SLEB128(-0x18)
+
   // A reference to any struct value.
   StructRef = 0x67,  // SLEB128(-0x19)
 
   // A reference to any array value.
   ArrayRef = 0x66,  // SLEB128(-0x1A)
+
+  // A null reference in the any hierarchy.
+  NullAnyRef = 0x65,  // SLEB128(-0x1B)
 
   // Type constructor for function types
   Func = 0x60,  // SLEB128(-0x20)
@@ -483,7 +492,10 @@ enum class GcOp {
   ArrayNewFixed = 0x1a,
   ArrayNewDefault = 0x1c,
   ArrayNewData = 0x1d,
-  ArrayNewElem = 0x10,
+  // array.init_from_elem_static in V5 became array.new_elem in V6, changing
+  // opcodes in the process
+  ArrayInitFromElemStaticV5 = 0x10,
+  ArrayNewElem = 0x1f,
   ArrayGet = 0x13,
   ArrayGetS = 0x14,
   ArrayGetU = 0x15,
@@ -493,14 +505,23 @@ enum class GcOp {
   ArrayLen = 0x19,
 
   // Ref operations
-  RefTest = 0x44,
-  RefCast = 0x45,
-  BrOnCast = 0x46,
-  BrOnCastFail = 0x47,
+  RefTestV5 = 0x44,
+  RefCastV5 = 0x45,
+  BrOnCastV5 = 0x46,
+  BrOnCastHeapV5 = 0x42,
+  BrOnCastHeapNullV5 = 0x4a,
+  BrOnCastFailV5 = 0x47,
+  BrOnCastFailHeapV5 = 0x43,
+  BrOnCastFailHeapNullV5 = 0x4b,
+  RefTest = 0x40,
+  RefCast = 0x41,
+  RefTestNull = 0x48,
+  RefCastNull = 0x49,
+  BrOnCast = 0x4f,
 
   // Dart compatibility instruction
-  RefAsStruct = 0x59,
-  BrOnNonStruct = 0x64,
+  RefAsStructV5 = 0x59,
+  BrOnNonStructV5 = 0x64,
 
   // Extern/any coercion operations
   ExternInternalize = 0x70,
@@ -959,9 +980,12 @@ enum class MozOp {
   F32TeeStore,
   F64TeeStore,
   F64Mod,
-  F64Sin,
-  F64Cos,
-  F64Tan,
+  F64SinNative,
+  F64SinFdlibm,
+  F64CosNative,
+  F64CosFdlibm,
+  F64TanNative,
+  F64TanFdlibm,
   F64Asin,
   F64Acos,
   F64Atan,

@@ -19,10 +19,7 @@ const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   BrowserUtils: "resource://gre/modules/BrowserUtils.sys.mjs",
   NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
-});
-
-XPCOMUtils.defineLazyModuleGetters(lazy, {
-  ShellService: "resource:///modules/ShellService.jsm",
+  ShellService: "resource:///modules/ShellService.sys.mjs",
 });
 
 XPCOMUtils.defineLazyPreferenceGetter(
@@ -47,9 +44,9 @@ XPCOMUtils.defineLazyPreferenceGetter(
 
 const L10N = new Localization([
   "branding/brand.ftl",
-  "toolkit/branding/brandings.ftl",
-  "browser/branding/sync-brand.ftl",
   "browser/newtab/onboarding.ftl",
+  "toolkit/branding/brandings.ftl",
+  "toolkit/branding/accounts.ftl",
 ]);
 
 const HOMEPAGE_PREF = "browser.startup.homepage";

@@ -479,6 +479,8 @@ let interfaceNamesInGlobalScope = [
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "GPUAdapter", nightly: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "GPUAdapterInfo", nightly: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "GPUBindGroup", nightly: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "GPUBindGroupLayout", nightly: true },
@@ -1446,41 +1448,17 @@ let interfaceNamesInGlobalScope = [
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "WebSocket", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
-  {
-    name: "WebTransport",
-    insecureContext: false,
-    nightly: true,
-  },
+  { name: "WebTransport", insecureContext: false },
   // IMPORTANT: Do not change this list without review from a DOM peer!
-  {
-    name: "WebTransportBidirectionalStream",
-    insecureContext: false,
-    nightly: true,
-  },
+  { name: "WebTransportBidirectionalStream", insecureContext: false },
   // IMPORTANT: Do not change this list without review from a DOM peer!
-  {
-    name: "WebTransportDatagramDuplexStream",
-    insecureContext: false,
-    nightly: true,
-  },
+  { name: "WebTransportDatagramDuplexStream", insecureContext: false },
   // IMPORTANT: Do not change this list without review from a DOM peer!
-  {
-    name: "WebTransportError",
-    insecureContext: false,
-    nightly: true,
-  },
+  { name: "WebTransportError", insecureContext: false },
   // IMPORTANT: Do not change this list without review from a DOM peer!
-  {
-    name: "WebTransportReceiveStream",
-    insecureContext: false,
-    nightly: true,
-  },
+  { name: "WebTransportReceiveStream", insecureContext: false },
   // IMPORTANT: Do not change this list without review from a DOM peer!
-  {
-    name: "WebTransportSendStream",
-    insecureContext: false,
-    nightly: true,
-  },
+  { name: "WebTransportSendStream", insecureContext: false },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "WheelEvent", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
@@ -1884,12 +1862,7 @@ let interfaceNamesInGlobalScope = [
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "postMessage", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
-  {
-    name: "print",
-    insecureContext: true,
-    android: false,
-    nightlyAndroid: true,
-  },
+  { name: "print", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "prompt", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!

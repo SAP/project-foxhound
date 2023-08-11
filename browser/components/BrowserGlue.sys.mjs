@@ -38,6 +38,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
   LoginBreaches: "resource:///modules/LoginBreaches.sys.mjs",
   NewTabUtils: "resource://gre/modules/NewTabUtils.sys.mjs",
   NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
+  Normandy: "resource://normandy/Normandy.sys.mjs",
   OsEnvironment: "resource://gre/modules/OsEnvironment.sys.mjs",
   PageDataService: "resource:///modules/pagedata/PageDataService.sys.mjs",
   PdfJs: "resource://pdf.js/PdfJs.sys.mjs",
@@ -49,8 +50,10 @@ ChromeUtils.defineESModuleGetters(lazy, {
   PluginManager: "resource:///actors/PluginParent.sys.mjs",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
   ProvenanceData: "resource:///modules/ProvenanceData.sys.mjs",
+
   PublicSuffixList:
     "resource://gre/modules/netwerk-dns/PublicSuffixList.sys.mjs",
+
   QuickSuggest: "resource:///modules/QuickSuggest.sys.mjs",
   RFPHelper: "resource://gre/modules/RFPHelper.sys.mjs",
 
@@ -58,13 +61,17 @@ ChromeUtils.defineESModuleGetters(lazy, {
     "resource://gre/modules/psm/RemoteSecuritySettings.sys.mjs",
 
   RemoteSettings: "resource://services-settings/remote-settings.sys.mjs",
+  SaveToPocket: "chrome://pocket/content/SaveToPocket.sys.mjs",
   ScreenshotsUtils: "resource:///modules/ScreenshotsUtils.sys.mjs",
   SearchSERPTelemetry: "resource:///modules/SearchSERPTelemetry.sys.mjs",
   SessionStartup: "resource:///modules/sessionstore/SessionStartup.sys.mjs",
   SessionStore: "resource:///modules/sessionstore/SessionStore.sys.mjs",
+  ShellService: "resource:///modules/ShellService.sys.mjs",
   ShortcutUtils: "resource://gre/modules/ShortcutUtils.sys.mjs",
+
   SpecialMessageActions:
     "resource://messaging-system/lib/SpecialMessageActions.sys.mjs",
+
   TRRRacer: "resource:///modules/TRRPerformance.sys.mjs",
   TelemetryUtils: "resource://gre/modules/TelemetryUtils.sys.mjs",
   UIState: "resource://services-sync/UIState.sys.mjs",
@@ -78,10 +85,8 @@ ChromeUtils.defineESModuleGetters(lazy, {
 XPCOMUtils.defineLazyModuleGetters(lazy, {
   AboutNewTab: "resource:///modules/AboutNewTab.jsm",
   AddonManager: "resource://gre/modules/AddonManager.jsm",
-
   ASRouterDefaultConfig:
     "resource://activity-stream/lib/ASRouterDefaultConfig.jsm",
-
   ASRouterNewTabHook: "resource://activity-stream/lib/ASRouterNewTabHook.jsm",
   ASRouter: "resource://activity-stream/lib/ASRouter.jsm",
   Blocklist: "resource://gre/modules/Blocklist.jsm",
@@ -92,19 +97,14 @@ XPCOMUtils.defineLazyModuleGetters(lazy, {
   ExtensionsUI: "resource:///modules/ExtensionsUI.jsm",
   HomePage: "resource:///modules/HomePage.jsm",
   NetUtil: "resource://gre/modules/NetUtil.jsm",
-  Normandy: "resource://normandy/Normandy.jsm",
-
   OnboardingMessageProvider:
     "resource://activity-stream/lib/OnboardingMessageProvider.jsm",
-
   PageActions: "resource:///modules/PageActions.jsm",
   PageThumbs: "resource://gre/modules/PageThumbs.jsm",
   PluralForm: "resource://gre/modules/PluralForm.jsm",
   ProcessHangMonitor: "resource:///modules/ProcessHangMonitor.jsm",
   SafeBrowsing: "resource://gre/modules/SafeBrowsing.jsm",
   Sanitizer: "resource:///modules/Sanitizer.jsm",
-  SaveToPocket: "chrome://pocket/content/SaveToPocket.jsm",
-  ShellService: "resource:///modules/ShellService.jsm",
   TabCrashHandler: "resource:///modules/ContentCrashHandlers.jsm",
   TabUnloader: "resource:///modules/TabUnloader.jsm",
 });
@@ -179,7 +179,7 @@ let JSPROCESSACTORS = {
 
   RefreshBlockerObserver: {
     child: {
-      moduleURI: "resource:///actors/RefreshBlockerChild.jsm",
+      esModuleURI: "resource:///actors/RefreshBlockerChild.sys.mjs",
       observers: [
         "webnavigation-create",
         "chrome-webnavigation-create",
@@ -265,7 +265,10 @@ let JSWINDOWACTORS = {
     child: {
       esModuleURI: "resource:///actors/AboutNewTabChild.sys.mjs",
       events: {
+        DOMDocElementInserted: {},
         DOMContentLoaded: {},
+        load: { capture: true },
+        unload: { capture: true },
         pageshow: {},
         visibilitychange: {},
       },
@@ -695,10 +698,10 @@ let JSWINDOWACTORS = {
 
   RefreshBlocker: {
     parent: {
-      moduleURI: "resource:///actors/RefreshBlockerParent.jsm",
+      esModuleURI: "resource:///actors/RefreshBlockerParent.sys.mjs",
     },
     child: {
-      moduleURI: "resource:///actors/RefreshBlockerChild.jsm",
+      esModuleURI: "resource:///actors/RefreshBlockerChild.sys.mjs",
     },
 
     messageManagerGroups: ["browsers"],
@@ -724,20 +727,21 @@ let JSWINDOWACTORS = {
       events: {
         DOMContentLoaded: {},
         pageshow: { mozSystemGroup: true },
-        // The 'unload' event is only used to clean up state, and should not
+        // The 'pagehide' event is only used to clean up state, and should not
         // force actor creation.
-        unload: { createActor: false },
+        pagehide: { createActor: false },
         load: { mozSystemGroup: true, capture: true },
       },
     },
+    matches: ["https://*/*"],
   },
 
   ShieldFrame: {
     parent: {
-      moduleURI: "resource://normandy-content/ShieldFrameParent.jsm",
+      esModuleURI: "resource://normandy-content/ShieldFrameParent.sys.mjs",
     },
     child: {
-      moduleURI: "resource://normandy-content/ShieldFrameChild.jsm",
+      esModuleURI: "resource://normandy-content/ShieldFrameChild.sys.mjs",
       events: {
         pageshow: {},
         pagehide: {},
@@ -808,10 +812,10 @@ let JSWINDOWACTORS = {
 
   WebRTC: {
     parent: {
-      moduleURI: "resource:///actors/WebRTCParent.jsm",
+      esModuleURI: "resource:///actors/WebRTCParent.sys.mjs",
     },
     child: {
-      moduleURI: "resource:///actors/WebRTCChild.jsm",
+      esModuleURI: "resource:///actors/WebRTCChild.sys.mjs",
     },
 
     allFrames: true,
@@ -1699,6 +1703,8 @@ BrowserGlue.prototype = {
       "security.ui.protections",
       true
     );
+
+    Services.telemetry.setEventRecordingEnabled("security.doh.neterror", true);
 
     lazy.PageActions.init();
 
@@ -2711,19 +2717,12 @@ BrowserGlue.prototype = {
         task: () => {
           Services.fog.initializeFOG();
 
-          // Grabbing the configuration here in case the registration of the
-          // callback below doesn't trigger invoking the callback if we are
-          // already enrolled. See Bug 1818738 for more info.
-          Services.fog.setMetricsFeatureConfig(
-            JSON.stringify(
-              lazy.NimbusFeatures.glean.getVariable("metricsDisabled")
-            )
-          );
-
           // Register Glean to listen for experiment updates releated to the
           // "glean" feature defined in the t/c/nimbus/FeatureManifest.yaml
           lazy.NimbusFeatures.glean.onUpdate(() => {
-            let cfg = lazy.NimbusFeatures.glean.getVariable("metricsDisabled");
+            let cfg = lazy.NimbusFeatures.glean.getVariable(
+              "gleanMetricConfiguration"
+            );
             Services.fog.setMetricsFeatureConfig(JSON.stringify(cfg));
           });
         },
@@ -2991,21 +2990,6 @@ BrowserGlue.prototype = {
 
       function reportInstallationTelemetry() {
         lazy.BrowserUsageTelemetry.reportInstallationTelemetry();
-      },
-
-      async function reportHasMIDIDevices() {
-        let win = lazy.BrowserWindowTracker.getTopWindow({ private: false });
-        if (!win) {
-          return;
-        }
-
-        if (typeof win.navigator.requestMIDIAccess != "function") {
-          return;
-        }
-
-        const { inputs, outputs } = await win.navigator.requestMIDIAccess();
-        const hasMIDIDevices = inputs.size + outputs.size > 0;
-        Services.telemetry.scalarSet("dom.midi.has_devices", hasMIDIDevices);
       },
     ];
 
@@ -3465,14 +3449,6 @@ BrowserGlue.prototype = {
    * Show the notificationBox for a locked places database.
    */
   _showPlacesLockedNotificationBox: function BG__showPlacesLockedNotificationBox() {
-    var applicationName = lazy.gBrandBundle.GetStringFromName("brandShortName");
-    var placesBundle = Services.strings.createBundle(
-      "chrome://browser/locale/places/places.properties"
-    );
-    var text = placesBundle.formatStringFromName("lockPrompt.text", [
-      applicationName,
-    ]);
-
     var win = lazy.BrowserWindowTracker.getTopWindow();
     var buttons = [{ supportPage: "places-locked" }];
 
@@ -3480,7 +3456,7 @@ BrowserGlue.prototype = {
     var notification = notifyBox.appendNotification(
       "places-locked",
       {
-        label: text,
+        label: { "l10n-id": "places-locked-prompt" },
         priority: win.gNotificationBox.PRIORITY_CRITICAL_MEDIUM,
       },
       buttons
@@ -3536,7 +3512,7 @@ BrowserGlue.prototype = {
   _migrateUI: function BG__migrateUI() {
     // Use an increasing number to keep track of the current migration state.
     // Completely unrelated to the current Firefox release number.
-    const UI_VERSION = 136;
+    const UI_VERSION = 137;
     const BROWSER_DOCURL = AppConstants.BROWSER_CHROME_URL;
 
     const PROFILE_DIR = Services.dirsvc.get("ProfD", Ci.nsIFile).path;
@@ -4360,6 +4336,19 @@ BrowserGlue.prototype = {
         "placesList",
         "width"
       );
+    }
+
+    if (currentUIVersion < 137) {
+      // The default value for enabling smooth scrolls is now false if the
+      // user prefers reduced motion. If the value was previously set, do
+      // not reset it, but if it was not explicitly set preserve the old
+      // default value.
+      if (
+        !Services.prefs.prefHasUserValue("general.smoothScroll") &&
+        Services.appinfo.prefersReducedMotion
+      ) {
+        Services.prefs.setBoolPref("general.smoothScroll", true);
+      }
     }
 
     // Update the migration version.

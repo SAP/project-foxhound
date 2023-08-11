@@ -247,7 +247,7 @@ typedef OfflineResourceList ApplicationCache;
   [Pref="dom.window.clientinformation.enabled", BinaryName="Navigator"]
   readonly attribute Navigator clientInformation;
 
-  [Replaceable, Throws] readonly attribute External external;
+  [Replaceable] readonly attribute External external;
   [Throws, SecureContext, Pref="browser.cache.offline.enable"] readonly attribute ApplicationCache applicationCache;
 
   // user prompts
@@ -400,9 +400,6 @@ partial interface Window {
 
 // https://dvcs.w3.org/hg/webcrypto-api/raw-file/tip/spec/Overview.html
 Window includes GlobalCrypto;
-
-// https://fidoalliance.org/specifications/download/
-Window includes GlobalU2F;
 
 dictionary SizeToContentConstraints {
   long maxWidth = 0;
@@ -595,7 +592,7 @@ partial interface Window {
 // Mozilla extension
 // Sidebar is deprecated and it will be removed in the next cycles. See bug 1640138.
 partial interface Window {
-  [Replaceable, Throws, UseCounter, Pref="dom.window.sidebar.enabled"]
+  [Replaceable, UseCounter, Pref="dom.window.sidebar.enabled"]
   readonly attribute (External or WindowProxy) sidebar;
 };
 
@@ -726,7 +723,7 @@ partial interface Window {
   [NewObject, Func="nsGlobalWindowInner::IsPrivilegedChromeWindow"]
   Promise<any> promiseDocumentFlushed(PromiseDocumentFlushedCallback callback);
 
-  [ChromeOnly]
+  [Func="IsChromeOrUAWidget"]
   readonly attribute boolean isChromeWindow;
 
   [ChromeOnly]

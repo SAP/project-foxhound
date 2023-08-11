@@ -376,9 +376,6 @@ class GCRuntime {
   const void* addressOfBigIntNurseryCurrentEnd() {
     return nursery_.refNoCheck().addressOfCurrentBigIntEnd();
   }
-  uint32_t* addressOfNurseryAllocCount() {
-    return stats().addressOfAllocsSinceMinorGCNursery();
-  }
 
   const void* addressOfLastBufferedWholeCell() {
     return storeBuffer_.refNoCheck().addressOfLastBufferedWholeCell();
@@ -413,6 +410,7 @@ class GCRuntime {
   // Internal public interface
   ZoneVector& zones() { return zones_.ref(); }
   gcstats::Statistics& stats() { return stats_.ref(); }
+  const gcstats::Statistics& stats() const { return stats_.ref(); }
   State state() const { return incrementalState; }
   bool isHeapCompacting() const { return state() == State::Compact; }
   bool isForegroundSweeping() const { return state() == State::Sweep; }
@@ -613,22 +611,18 @@ class GCRuntime {
   template <AllowGC allowGC>
   [[nodiscard]] bool checkAllocatorState(JSContext* cx, AllocKind kind);
   template <AllowGC allowGC>
-  JSObject* tryNewNurseryObject(JSContext* cx, size_t thingSize,
-                                size_t nDynamicSlots, const JSClass* clasp,
-                                AllocSite* site);
+  void* tryNewNurseryObject(JSContext* cx, size_t thingSize,
+                            const JSClass* clasp, AllocSite* site);
   template <AllowGC allowGC>
-  static JSObject* tryNewTenuredObject(JSContext* cx, AllocKind kind,
-                                       size_t thingSize, size_t nDynamicSlots);
+  static void* tryNewTenuredThing(JSContext* cx, AllocKind kind,
+                                  size_t thingSize);
   template <AllowGC allowGC>
-  static TenuredCell* tryNewTenuredThing(JSContext* cx, AllocKind kind,
-                                         size_t thingSize);
-  template <AllowGC allowGC>
-  Cell* tryNewNurseryStringCell(JSContext* cx, size_t thingSize,
+  void* tryNewNurseryStringCell(JSContext* cx, size_t thingSize,
                                 AllocKind kind);
   template <AllowGC allowGC>
-  Cell* tryNewNurseryBigIntCell(JSContext* cx, size_t thingSize,
+  void* tryNewNurseryBigIntCell(JSContext* cx, size_t thingSize,
                                 AllocKind kind);
-  static TenuredCell* refillFreeListInGC(Zone* zone, AllocKind thingKind);
+  static void* refillFreeListInGC(Zone* zone, AllocKind thingKind);
 
   // Delayed marking.
   void delayMarkingChildren(gc::Cell* cell, MarkColor color);
@@ -690,10 +684,11 @@ class GCRuntime {
 
   // Allocator internals
   [[nodiscard]] bool gcIfNeededAtAllocation(JSContext* cx);
-  template <typename T>
-  static void checkIncrementalZoneState(JSContext* cx, T* t);
-  static TenuredCell* refillFreeList(JSContext* cx, AllocKind thingKind);
+  static void* refillFreeList(JSContext* cx, AllocKind thingKind);
   void attemptLastDitchGC(JSContext* cx);
+#ifdef DEBUG
+  static void checkIncrementalZoneState(JSContext* cx, void* ptr);
+#endif
 
   /*
    * Return the list of chunks that can be released outside the GC lock.

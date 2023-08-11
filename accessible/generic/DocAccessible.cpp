@@ -796,21 +796,6 @@ void DocAccessible::AttributeWillChange(dom::Element* aElement,
   }
 }
 
-void DocAccessible::NativeAnonymousChildListChange(nsIContent* aContent,
-                                                   bool aIsRemove) {
-  if (aIsRemove) {
-#ifdef A11Y_LOG
-    if (logging::IsEnabled(logging::eTree)) {
-      logging::MsgBegin("TREE", "Anonymous content removed; doc: %p", this);
-      logging::Node("node", aContent);
-      logging::MsgEnd();
-    }
-#endif
-
-    ContentRemoved(aContent);
-  }
-}
-
 void DocAccessible::AttributeChanged(dom::Element* aElement,
                                      int32_t aNameSpaceID, nsAtom* aAttribute,
                                      int32_t aModType,
@@ -860,7 +845,7 @@ void DocAccessible::AttributeChanged(dom::Element* aElement,
     dom::Element* elm = accessible->Elm();
     RelocateARIAOwnedIfNeeded(elm);
     ARIAActiveDescendantIDMaybeMoved(accessible);
-    accessible->SendCache(CacheDomain::DOMNodeID, CacheUpdateType::Update);
+    QueueCacheUpdate(accessible, CacheDomain::DOMNodeIDAndClass);
     QueueCacheUpdateForDependentRelations(accessible);
   }
 
@@ -1002,7 +987,7 @@ void DocAccessible::ElementStateChanged(dom::Document* aDocument,
 
   if (aStateMask.HasState(dom::ElementState::INVALID)) {
     RefPtr<AccEvent> event =
-        new AccStateChangeEvent(accessible, states::INVALID, true);
+        new AccStateChangeEvent(accessible, states::INVALID);
     FireDelayedEvent(event);
   }
 
@@ -1585,10 +1570,9 @@ LocalAccessible* DocAccessible::GetAccessibleEvenIfNotInMap(
   if (imageFrame) {
     LocalAccessible* parent = GetAccessible(imageFrame->GetContent());
     if (parent) {
-      LocalAccessible* area =
-          parent->AsImageMap()->GetChildAccessibleFor(aNode);
-      if (area) return area;
-
+      if (HTMLImageMapAccessible* imageMap = parent->AsImageMap()) {
+        return imageMap->GetChildAccessibleFor(aNode);
+      }
       return nullptr;
     }
   }

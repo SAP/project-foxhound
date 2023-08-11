@@ -84,6 +84,12 @@ class HyperTextAccessibleBase {
   virtual void SetCaretOffset(int32_t aOffset) = 0;
 
   /**
+   * Provide the line number for the caret.
+   * @return 1-based index for the line number with the caret
+   */
+  virtual int32_t CaretLineNumber();
+
+  /**
    * Transform magic offset into text offset.
    */
   index_t ConvertMagicOffset(int32_t aOffset) const;
@@ -99,6 +105,12 @@ class HyperTextAccessibleBase {
    */
   bool CharAt(int32_t aOffset, nsAString& aChar,
               int32_t* aStartOffset = nullptr, int32_t* aEndOffset = nullptr);
+
+  virtual char16_t CharAt(int32_t aOffset) {
+    nsAutoString charAtOffset;
+    CharAt(aOffset, charAtOffset);
+    return charAtOffset.CharAt(0);
+  }
 
   /**
    * Return a rect (in dev pixels) for character at given offset relative

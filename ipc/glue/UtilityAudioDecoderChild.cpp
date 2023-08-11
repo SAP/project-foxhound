@@ -41,7 +41,7 @@ static EnumeratedArray<SandboxingKind, SandboxingKind::COUNT,
     sAudioDecoderChilds;
 
 UtilityAudioDecoderChild::UtilityAudioDecoderChild(SandboxingKind aKind)
-    : mSandbox(aKind) {
+    : mSandbox(aKind), mAudioDecoderChildStart(TimeStamp::Now()) {
   MOZ_ASSERT(NS_IsMainThread());
   nsCOMPtr<nsIObserverService> observerService = services::GetObserverService();
   if (observerService) {

@@ -21,6 +21,7 @@
 #include "mozilla/dom/DOMRect.h"
 #include "mozilla/dom/ValidityState.h"
 #include "mozilla/dom/PopoverData.h"
+#include "mozilla/dom/ToggleEvent.h"
 
 class nsDOMTokenList;
 class nsIFormControlFrame;
@@ -157,9 +158,16 @@ class nsGenericHTMLElement : public nsGenericHTMLElementBase {
   void PopoverPseudoStateUpdate(bool aOpen, bool aNotify);
   bool PopoverOpen() const;
   bool CheckPopoverValidity(mozilla::dom::PopoverVisibilityState aExpectedState,
-                            ErrorResult& aRv);
+                            Document* aExpectedDocument, ErrorResult& aRv);
   /** Returns true if the event has been cancelled. */
-  MOZ_CAN_RUN_SCRIPT bool FireBeforeToggle(bool aIsOpen);
+  MOZ_CAN_RUN_SCRIPT bool FireToggleEvent(
+      mozilla::dom::PopoverVisibilityState aOldState,
+      mozilla::dom::PopoverVisibilityState aNewState, const nsAString& aType);
+  MOZ_CAN_RUN_SCRIPT void QueuePopoverEventTask(
+      mozilla::dom::PopoverVisibilityState aOldState);
+  MOZ_CAN_RUN_SCRIPT void RunPopoverToggleEventTask(
+      mozilla::dom::PopoverToggleEventTask* aTask,
+      mozilla::dom::PopoverVisibilityState aOldState);
   MOZ_CAN_RUN_SCRIPT void ShowPopover(ErrorResult& aRv);
   MOZ_CAN_RUN_SCRIPT_BOUNDARY void HidePopoverWithoutRunningScript();
   MOZ_CAN_RUN_SCRIPT void HidePopoverInternal(bool aFocusPreviousElement,
@@ -168,8 +176,8 @@ class nsGenericHTMLElement : public nsGenericHTMLElementBase {
   MOZ_CAN_RUN_SCRIPT void HidePopover(ErrorResult& aRv);
   MOZ_CAN_RUN_SCRIPT void TogglePopover(bool force, ErrorResult& aRv);
   MOZ_CAN_RUN_SCRIPT void FocusPopover();
-  MOZ_CAN_RUN_SCRIPT void HandleFocusAfterHidingPopover(
-      bool aFocusPreviousElement);
+  void ForgetPreviouslyFocusedElementAfterHidingPopover();
+  MOZ_CAN_RUN_SCRIPT void FocusPreviousElementAfterHidingPopover();
 
   MOZ_CAN_RUN_SCRIPT void FocusCandidate(Element&, bool aClearUpFocus);
 
@@ -749,16 +757,14 @@ class nsGenericHTMLElement : public nsGenericHTMLElementBase {
   nsresult CheckTaintSinkSetAttr(int32_t aNamespaceID, nsAtom* aName,
                                          const nsAString& aValue) override;
 
-  nsresult BeforeSetAttr(int32_t aNamespaceID, nsAtom* aName,
-                         const nsAttrValueOrString* aValue,
-                         bool aNotify) override;
-
+  void BeforeSetAttr(int32_t aNamespaceID, nsAtom* aName,
+                     const nsAttrValue* aValue, bool aNotify) override;
   // TODO: Convert AfterSetAttr to MOZ_CAN_RUN_SCRIPT and get rid of
   // kungFuDeathGrip in it.
-  MOZ_CAN_RUN_SCRIPT_BOUNDARY nsresult
-  AfterSetAttr(int32_t aNamespaceID, nsAtom* aName, const nsAttrValue* aValue,
-               const nsAttrValue* aOldValue,
-               nsIPrincipal* aMaybeScriptedPrincipal, bool aNotify) override;
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY void AfterSetAttr(
+      int32_t aNamespaceID, nsAtom* aName, const nsAttrValue* aValue,
+      const nsAttrValue* aOldValue, nsIPrincipal* aMaybeScriptedPrincipal,
+      bool aNotify) override;
 
   mozilla::EventListenerManager* GetEventListenerManagerForAttr(
       nsAtom* aAttrName, bool* aDefer) override;
@@ -1057,15 +1063,14 @@ class nsGenericHTMLFormElement : public nsGenericHTMLElement {
 
   nsresult CheckTaintSinkSetAttr(int32_t aNamespaceID, nsAtom* aName,
                                          const nsAString& aValue) override;
-  
-  nsresult BeforeSetAttr(int32_t aNameSpaceID, nsAtom* aName,
-                         const nsAttrValueOrString* aValue,
-                         bool aNotify) override;
 
-  nsresult AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
-                        const nsAttrValue* aValue, const nsAttrValue* aOldValue,
-                        nsIPrincipal* aMaybeScriptedPrincipal,
-                        bool aNotify) override;
+  void BeforeSetAttr(int32_t aNamespaceID, nsAtom* aName,
+                     const nsAttrValue* aValue, bool aNotify) override;
+
+  void AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
+                    const nsAttrValue* aValue, const nsAttrValue* aOldValue,
+                    nsIPrincipal* aMaybeScriptedPrincipal,
+                    bool aNotify) override;
 
   virtual void BeforeSetForm(bool aBindToTree) {}
 
@@ -1244,7 +1249,7 @@ class nsGenericHTMLFormControlElementWithState
   NS_IMPL_FROMNODE_HELPER(nsGenericHTMLFormControlElementWithState,
                           IsGenericHTMLFormControlElementWithState())
 
-  // nsIContent
+  // Element
   bool ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
                       const nsAString& aValue,
                       nsIPrincipal* aMaybeScriptedPrincipal,
@@ -1259,6 +1264,11 @@ class nsGenericHTMLFormControlElementWithState
   void SetPopoverTargetAction(const nsAString& aValue) {
     SetHTMLAttr(nsGkAtoms::popovertargetaction, aValue);
   }
+
+  /**
+   * https://html.spec.whatwg.org/#popover-target-attribute-activation-behavior
+   */
+  MOZ_CAN_RUN_SCRIPT void HandlePopoverTargetAction();
 
   /**
    * Get the presentation state for a piece of content, or create it if it does

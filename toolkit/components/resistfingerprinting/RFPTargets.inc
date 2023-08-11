@@ -5,12 +5,21 @@
 
 ITEM_VALUE(TouchEvents, 0x0001)
 ITEM_VALUE(PointerEvents, 0x0002)
-// Reserving 3/4 for Keyboard Events
+ITEM_VALUE(KeyboardEvents, 0x0003)
 
 ITEM_VALUE(ScreenOrientation, 0x0005)
 
 // SpeechSynthesis part of the Web Speech API
 ITEM_VALUE(SpeechSynthesis, 0x0006)
+
+// `prefers-color-scheme` CSS media feature
+ITEM_VALUE(CSSPrefersColorScheme, 0x0007)
+
+// `prefers-reduced-motion` CSS media feature
+ITEM_VALUE(CSSPrefersReducedMotion, 0x0008)
+
+// `prefers-contrast` CSS media feature
+ITEM_VALUE(CSSPrefersContrast, 0x0009)
 
 /*
  * Certain classes (Document, at time of writing) have a cached value for

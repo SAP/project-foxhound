@@ -257,6 +257,11 @@
 #  include "nsIStringBundle.h"
 #endif
 
+#ifdef USE_GLX_TEST
+#  include "mozilla/GUniquePtr.h"
+#  include "mozilla/GfxInfo.h"
+#endif
+
 extern uint32_t gRestartMode;
 extern void InstallSignalHandlers(const char* ProgramName);
 
@@ -324,11 +329,6 @@ nsString gProcessStartupShortcut;
 
 #if defined(MOZ_WIDGET_GTK)
 #  include <glib.h>
-#  if defined(DEBUG) || defined(NS_BUILD_REFCNT_LOGGING)
-#    define CLEANUP_MEMORY 1
-#    define PANGO_ENABLE_BACKEND
-#    include <pango/pangofc-fontmap.h>
-#  endif
 #  include "mozilla/WidgetUtilsGtk.h"
 #  include <gtk/gtk.h>
 #  ifdef MOZ_WAYLAND
@@ -338,7 +338,6 @@ nsString gProcessStartupShortcut;
 #  ifdef MOZ_X11
 #    include <gdk/gdkx.h>
 #  endif /* MOZ_X11 */
-#  include <fontconfig/fontconfig.h>
 #endif
 #include "BinaryPath.h"
 
@@ -417,6 +416,51 @@ static void UnexpectedExit() {
     MOZ_CRASH("Exit called by third party code.");
   }
 }
+
+#if defined(MOZ_WAYLAND)
+bool IsWaylandEnabled() {
+  static bool isWaylandEnabled = []() {
+    const char* waylandDisplay = PR_GetEnv("WAYLAND_DISPLAY");
+    if (!waylandDisplay) {
+      return false;
+    }
+    if (!PR_GetEnv("DISPLAY")) {
+      // No X11 display, so try to run wayland.
+      return true;
+    }
+    // MOZ_ENABLE_WAYLAND is our primary Wayland on/off switch.
+    if (const char* waylandPref = PR_GetEnv("MOZ_ENABLE_WAYLAND")) {
+      return *waylandPref == '1';
+    }
+    if (const char* backendPref = PR_GetEnv("GDK_BACKEND")) {
+      if (!strncmp(backendPref, "wayland", 7)) {
+        NS_WARNING(
+            "Wayland backend should be enabled by MOZ_ENABLE_WAYLAND=1."
+            "GDK_BACKEND is a Gtk3 debug variable and may cause issues.");
+        return true;
+      }
+    }
+#  ifdef EARLY_BETA_OR_EARLIER
+    // Enable by default when we're running on a recent enough GTK version. We'd
+    // like to check further details like compositor version and so on ideally
+    // to make sure we don't enable it on old Mutter or what not, but we can't,
+    // so let's assume that if the user is running on a Wayland session by
+    // default we're ok, since either the distro has enabled Wayland by default,
+    // or the user has gone out of their way to use Wayland.
+    //
+    // TODO(emilio): If users hit problems, we might be able to restrict it to
+    // GNOME / KDE  / known-good-desktop environments by checking
+    // XDG_CURRENT_DESKTOP or so...
+    return !gtk_check_version(3, 24, 30);
+#  else
+    return false;
+#  endif
+  }();
+  return isWaylandEnabled;
+}
+#else
+bool IsWaylandEnabled() { return false; }
+#endif
 
 /**
  * Output a string to the user.  This method is really only meant to be used to
@@ -990,8 +1034,8 @@ namespace mozilla {
 
 bool SessionHistoryInParent() {
   return FissionAutostart() ||
-         StaticPrefs::
-             fission_sessionHistoryInParent_AtStartup_DoNotUseDirectly();
+         !StaticPrefs::
+             fission_disableSessionHistoryInParent_AtStartup_DoNotUseDirectly();
 }
 
 bool BFCacheInParent() {
@@ -1572,6 +1616,13 @@ NS_IMETHODIMP
 nsXULAppInfo::GetContentThemeDerivedColorSchemeIsDark(bool* aResult) {
   *aResult =
       LookAndFeel::ThemeDerivedColorSchemeForContent() == ColorScheme::Dark;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsXULAppInfo::GetPrefersReducedMotion(bool* aResult) {
+  *aResult =
+      LookAndFeel::GetInt(LookAndFeel::IntID::PrefersReducedMotion, 0) == 1;
   return NS_OK;
 }
 
@@ -3628,10 +3679,6 @@ static DWORD WINAPI InitDwriteBG(LPVOID lpdwThreadParam) {
 }
 #endif
 
-#ifdef USE_GLX_TEST
-bool fire_glxtest_process();
-#endif
-
 #include "GeckoProfiler.h"
 #include "ProfilerControl.h"
 
@@ -3865,8 +3912,17 @@ int XREMain::XRE_mainInit(bool* aExitFlag) {
       CheckArg("backgroundtask", &backgroundTaskName, CheckArgFlag::None)) {
     backgroundTask = Some(backgroundTaskName);
 
+    CheckArgFlag checkArgFlag =
+#  ifdef XP_WIN
+        CheckArgFlag::None;  // attach-console is consumed below in
+                             // NS_CreateNativeAppSupport on Windows
+#  else
+        CheckArgFlag::RemoveArg;  // but not on non-Windows, so we consume it
+                                  // explicitly here
+#  endif
+
     if (BackgroundTasks::IsNoOutputTaskName(backgroundTask.ref()) &&
-        !CheckArgExists("attach-console") &&
+        !CheckArg("attach-console", nullptr, checkArgFlag) &&
         !EnvHasValue("MOZ_BACKGROUNDTASKS_IGNORE_NO_OUTPUT")) {
       // Suppress output, somewhat crudely.  We need to suppress stderr as well
       // as stdout because assertions, of which there are many, write to stderr.
@@ -3957,17 +4013,6 @@ int XREMain::XRE_mainInit(bool* aExitFlag) {
 #endif
 
   mozilla::startup::IncreaseDescriptorLimits();
-
-#ifdef USE_GLX_TEST
-  // bug 639842 - it's very important to fire this process BEFORE we set up
-  // error handling. indeed, this process is expected to be crashy, and we
-  // don't want the user to see its crashes. That's the whole reason for
-  // doing this in a separate process.
-  //
-  // This call will cause a fork and the fork will terminate itself separately
-  // from the usual shutdown sequence
-  fire_glxtest_process();
-#endif
 
   SetupErrorHandling(gArgv[0]);
 
@@ -4406,46 +4451,6 @@ static void PR_CALLBACK ReadAheadDlls_ThreadStart(void* arg) {
 }
 #endif
 
-#if defined(MOZ_WAYLAND)
-bool IsWaylandEnabled() {
-  const char* waylandDisplay = PR_GetEnv("WAYLAND_DISPLAY");
-  if (!waylandDisplay) {
-    return false;
-  }
-  if (!PR_GetEnv("DISPLAY")) {
-    // No X11 display, so try to run wayland.
-    return true;
-  }
-  // MOZ_ENABLE_WAYLAND is our primary Wayland on/off switch.
-  if (const char* waylandPref = PR_GetEnv("MOZ_ENABLE_WAYLAND")) {
-    return *waylandPref == '1';
-  }
-  if (const char* backendPref = PR_GetEnv("GDK_BACKEND")) {
-    if (!strncmp(backendPref, "wayland", 7)) {
-      NS_WARNING(
-          "Wayland backend should be enabled by MOZ_ENABLE_WAYLAND=1."
-          "GDK_BACKEND is a Gtk3 debug variable and may cause issues.");
-      return true;
-    }
-  }
-#  ifdef EARLY_BETA_OR_EARLIER
-  // Enable by default when we're running on a recent enough GTK version. We'd
-  // like to check further details like compositor version and so on ideally
-  // to make sure we don't enable it on old Mutter or what not, but we can't,
-  // so let's assume that if the user is running on a Wayland session by
-  // default we're ok, since either the distro has enabled Wayland by default,
-  // or the user has gone out of their way to use Wayland.
-  //
-  // TODO(emilio): If users hit problems, we might be able to restrict it to
-  // GNOME / KDE  / known-good-desktop environments by checking
-  // XDG_CURRENT_DESKTOP or so...
-  return !gtk_check_version(3, 24, 30);
-#  else
-  return false;
-#  endif
-}
-#endif
-
 #if defined(MOZ_UPDATER) && !defined(MOZ_WIDGET_ANDROID)
 enum struct ShouldNotProcessUpdatesReason {
   DevToolsLaunching,
@@ -4693,6 +4698,11 @@ int XREMain::XRE_mainStartup(bool* aExitFlag) {
     return result;
   }
 
+  bool isBackgroundTaskMode = false;
+#ifdef MOZ_BACKGROUNDTASKS
+  isBackgroundTaskMode = BackgroundTasks::IsBackgroundTaskMode();
+#endif
+
 #ifdef MOZ_HAS_REMOTE
   if (gfxPlatform::IsHeadless()) {
     mDisableRemoteClient = true;
@@ -4704,12 +4714,12 @@ int XREMain::XRE_mainStartup(bool* aExitFlag) {
   // Init X11 in thread-safe mode. Must be called prior to the first call to
   // XOpenDisplay (called inside gdk_display_open). This is a requirement for
   // off main tread compositing.
-  if (!gfxPlatform::IsHeadless()) {
+  if (!isBackgroundTaskMode && !gfxPlatform::IsHeadless()) {
     XInitThreads();
   }
 #endif
 #if defined(MOZ_WIDGET_GTK)
-  if (!gfxPlatform::IsHeadless()) {
+  if (!isBackgroundTaskMode && !gfxPlatform::IsHeadless()) {
     const char* display_name = nullptr;
     bool saveDisplayArg = false;
 
@@ -4722,10 +4732,7 @@ int XREMain::XRE_mainStartup(bool* aExitFlag) {
       saveDisplayArg = true;
     }
 
-    bool waylandEnabled = false;
-#  if defined(MOZ_WAYLAND)
-    waylandEnabled = IsWaylandEnabled();
-#  endif
+    bool waylandEnabled = IsWaylandEnabled();
     // On Wayland disabled builds read X11 DISPLAY env exclusively
     // and don't care about different displays.
     if (!waylandEnabled && !display_name) {
@@ -5129,6 +5136,20 @@ int XREMain::XRE_mainStartup(bool* aExitFlag) {
 
   // Flush any pending page load events.
   mozilla::glean_pings::Pageload.Submit("startup"_ns);
+
+  if (!isBackgroundTaskMode) {
+#ifdef USE_GLX_TEST
+    GfxInfo::FireGLXTestProcess();
+#endif
+#ifdef MOZ_WAYLAND
+    // Make sure we have wayland connection for main thread.
+    // It's used as template to create display connections
+    // for different threads.
+    if (IsWaylandEnabled()) {
+      MOZ_UNUSED(WaylandDisplayGet());
+    }
+#endif
+  }
 
   return 0;
 }
@@ -6118,14 +6139,10 @@ mozilla::BinPathType XRE_GetChildProcBinPathType(
 }
 
 // From mozglue/static/rust/lib.rs
-extern "C" void install_rust_panic_hook();
-extern "C" void install_rust_oom_hook();
+extern "C" void install_rust_hooks();
 
 struct InstallRustHooks {
-  InstallRustHooks() {
-    install_rust_panic_hook();
-    install_rust_oom_hook();
-  }
+  InstallRustHooks() { install_rust_hooks(); }
 };
 
 InstallRustHooks sInstallRustHooks;

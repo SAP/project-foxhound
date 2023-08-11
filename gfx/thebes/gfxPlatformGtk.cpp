@@ -212,7 +212,7 @@ void gfxPlatformGtk::InitDmabufConfig() {
     gfxInfo->GetDrmRenderDevice(drmRenderDevice);
     gfxVars::SetDrmRenderDevice(drmRenderDevice);
 
-    if (!GetDMABufDevice()->Configure(failureId)) {
+    if (!GetDMABufDevice()->IsEnabled(failureId)) {
       feature.ForceDisable(FeatureStatus::Failed, "Failed to configure",
                            failureId);
     }
@@ -459,7 +459,7 @@ int32_t gfxPlatformGtk::GetFontScaleDPI() {
   gtk_settings_get_for_screen(screen);
   int32_t dpi = int32_t(round(gdk_screen_get_resolution(screen)));
   if (dpi <= 0) {
-    // Fall back to something sane
+    // Fall back to something reasonable
     dpi = 96;
   }
   sDPI = dpi;

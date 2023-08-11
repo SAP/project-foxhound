@@ -113,7 +113,7 @@ TextureType TexTypeForWebgl(KnowsCompositor* const knowsCompositor) {
 #ifdef MOZ_WAYLAND
   if (kIsWayland) {
     if (!knowsCompositor->UsingSoftwareWebRender() &&
-        widget::GetDMABufDevice()->IsDMABufWebGLEnabled()) {
+        widget::DMABufDevice::IsDMABufWebGLEnabled()) {
       return TextureType::DMABUF;
     }
   }

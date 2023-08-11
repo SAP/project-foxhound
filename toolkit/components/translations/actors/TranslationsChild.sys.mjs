@@ -8,6 +8,8 @@
  * @typedef {import("../translations").LanguageIdEnginePayload} LanguageIdEnginePayload
  * @typedef {import("../translations").LanguageTranslationModelFiles} LanguageTranslationModelFiles
  * @typedef {import("../translations").TranslationsEnginePayload} TranslationsEnginePayload
+ * @typedef {import("../translations").LanguagePair} LanguagePair
+ * @typedef {import("../translations").SupportedLanguages} SupportedLanguages
  */
 
 /**
@@ -56,12 +58,6 @@ XPCOMUtils.defineLazyGetter(lazy, "console", () => {
     prefix: "Translations",
   });
 });
-
-XPCOMUtils.defineLazyPreferenceGetter(
-  lazy,
-  "autoTranslatePagePref",
-  "browser.translations.autoTranslate"
-);
 
 export class LanguageIdEngine {
   /** @type {Worker} */
@@ -116,7 +112,7 @@ export class LanguageIdEngine {
    * the language identification model was that it identified the correct language.
    *
    * @param {string} message
-   * @returns {Promise<{ languageLabel: string, confidence: number }>}
+   * @returns {Promise<{ langTag: string, confidence: number }>}
    */
   identifyLanguage(message) {
     const messageId = this.#messageId++;
@@ -128,8 +124,8 @@ export class LanguageIdEngine {
           return;
         }
         if (data.type === "language-id-response") {
-          let { languageLabel, confidence } = data;
-          resolve({ languageLabel, confidence });
+          let { langTag, confidence } = data;
+          resolve({ langTag, confidence });
         }
         if (data.type === "language-id-error") {
           reject(data.error);
@@ -168,7 +164,9 @@ class TranslationsEngineCache {
    */
   createGetter(actor, fromLanguage, toLanguage) {
     return async (onlyFromCache = false) => {
-      let enginePromise = this.#engines[fromLanguage + toLanguage];
+      let enginePromise = this.#engines[
+        TranslationsChild.languagePairKey(fromLanguage, toLanguage)
+      ];
       if (enginePromise) {
         return enginePromise;
       }
@@ -179,7 +177,9 @@ class TranslationsEngineCache {
       // A new engine needs to be created.
       enginePromise = actor.createTranslationsEngine(fromLanguage, toLanguage);
 
-      this.#engines[fromLanguage + toLanguage] = enginePromise;
+      this.#engines[
+        TranslationsChild.languagePairKey(fromLanguage, toLanguage)
+      ] = enginePromise;
 
       const engine = await enginePromise;
 
@@ -212,20 +212,20 @@ class TranslationsEngineCache {
    * @param {string} toLanguage
    */
   keepAlive(fromLanguage, toLanguage) {
-    const languagePair = fromLanguage + toLanguage;
-    const timeoutId = this.#timeouts[languagePair];
+    const key = TranslationsChild.languagePairKey(fromLanguage);
+    const timeoutId = this.#timeouts[key];
     if (timeoutId) {
       lazy.clearTimeout(timeoutId);
     }
-    const enginePromise = this.#engines[languagePair];
+    const enginePromise = this.#engines[key];
     if (!enginePromise) {
       // It appears that the engine is already dead.
       return;
     }
-    this.#timeouts[languagePair] = lazy.setTimeout(() => {
+    this.#timeouts[key] = lazy.setTimeout(() => {
       // Delete the caches.
-      delete this.#engines[languagePair];
-      delete this.#timeouts[languagePair];
+      delete this.#engines[key];
+      delete this.#timeouts[key];
 
       // Terminate the engine worker.
       enginePromise.then(engine => engine.terminate());
@@ -237,7 +237,9 @@ class TranslationsEngineCache {
    */
   isInCache(fromLanguage, toLanguage) {
     this.keepAlive(fromLanguage, toLanguage);
-    return Boolean(this.#engines[fromLanguage + toLanguage]);
+    return Boolean(
+      this.#engines[TranslationsChild.languagePairKey(fromLanguage, toLanguage)]
+    );
   }
 }
 
@@ -478,6 +480,17 @@ export class TranslationsChild extends JSWindowActorChild {
   #langTags = null;
 
   /**
+   * Creates a lookup key that is unique to each fromLanguage-toLanguage pair.
+   *
+   * @param {string} fromLanguage
+   * @param {string} toLanguage
+   * @returns {string}
+   */
+  static languagePairKey(fromLanguage, toLanguage) {
+    return `${fromLanguage},${toLanguage}`;
+  }
+
+  /**
    * @returns {Promise<ArrayBuffer>}
    */
   async #getBergamotWasmArrayBuffer() {
@@ -540,6 +553,7 @@ export class TranslationsChild extends JSWindowActorChild {
   }
 
   /**
+   * @overrides JSWindowActorChild.prototype.handleEvent
    * @param {{ type: string }} event
    */
   handleEvent(event) {
@@ -551,7 +565,7 @@ export class TranslationsChild extends JSWindowActorChild {
     switch (event.type) {
       case "DOMContentLoaded":
         this.innerWindowId = this.contentWindow.windowGlobalChild.innerWindowId;
-        this.maybeOfferTranslation();
+        this.maybeOfferTranslation().catch(error => lazy.console.error(error));
         break;
       case "pagehide":
         lazy.console.log(
@@ -559,17 +573,18 @@ export class TranslationsChild extends JSWindowActorChild {
           this.contentWindow.location,
           this.#langTags
         );
-        this.reportLangTagsToParent(null);
+        this.reportDetectedLangTagsToParent(null);
         break;
     }
+    return undefined;
   }
 
   /**
    * This is used to conditionally add the translations button.
    * @param {null | { appLangTag: string, docLangTag: string }} langTags
    */
-  reportLangTagsToParent(langTags) {
-    this.sendAsyncMessage("Translations:ReportLangTags", {
+  reportDetectedLangTagsToParent(langTags) {
+    this.sendAsyncMessage("Translations:ReportDetectedLangTags", {
       langTags,
     });
   }
@@ -582,6 +597,10 @@ export class TranslationsChild extends JSWindowActorChild {
    * @returns {Promise<null | { appLangTag: string, docLangTag: string }>}
    */
   async getLangTagsForTranslation(translationsStart = this.docShell.now()) {
+    if (this.#langTags) {
+      return this.#langTags;
+    }
+
     const { href } = this.contentWindow.location;
     if (
       !href.startsWith("http://") &&
@@ -604,15 +623,14 @@ export class TranslationsChild extends JSWindowActorChild {
     // to identify the page's language using the LanguageIdEngine.
     if (!docLangTag) {
       let languageIdEngine = await this.createLanguageIdEngine();
-      let {
-        languageLabel,
-        confidence,
-      } = await languageIdEngine.identifyLanguage(this.#getTextToIdentify());
+      let { langTag, confidence } = await languageIdEngine.identifyLanguage(
+        this.#getTextToIdentify()
+      );
       lazy.console.log(
-        `${languageLabel}(${confidence.toFixed(2)}) Detected Page Language`
+        `${langTag}(${confidence.toFixed(2)}) Detected Page Language`
       );
       if (confidence >= DOC_LANGUAGE_DETECTION_THRESHOLD) {
-        docLangTag = languageLabel;
+        docLangTag = langTag;
       }
     }
 
@@ -645,29 +663,32 @@ export class TranslationsChild extends JSWindowActorChild {
       return null;
     }
 
-    // There is no reason to look at supported languages if the engine is already in
+    // There is no reason to look at the language pairs if the engine is already in
     // the cache.
     if (!translationsEngineCache.isInCache(docLangTag, appLangTag)) {
-      // TODO - This is wrong for non-bidirectional translation pairs.
-      const supportedLanguages = await this.getSupportedLanguages();
+      const languagePairs = await this.getLanguagePairs();
       if (this.#isDestroyed) {
         return null;
       }
       if (
-        !supportedLanguages.some(({ langTag }) => langTag === appLangTag) ||
-        !supportedLanguages.some(({ langTag }) => langTag === docLangTag)
+        !languagePairs.some(
+          ({ fromLang, toLang }) =>
+            fromLang === docLangTag && toLang === appLangTag
+        )
       ) {
+        // No language pairs match.
         const message = `Translating from "${docLangTag}" to "${appLangTag}" is not supported.`;
         ChromeUtils.addProfilerMarker(
           "TranslationsChild",
           { innerWindowId: this.innerWindowId },
           message
         );
-        lazy.console.log(message, supportedLanguages);
+        lazy.console.log(message, languagePairs);
         return null;
       }
     }
-    return { appLangTag, docLangTag };
+    this.#langTags = { appLangTag, docLangTag };
+    return this.#langTags;
   }
 
   /**
@@ -687,10 +708,17 @@ export class TranslationsChild extends JSWindowActorChild {
     const langTags = await this.getLangTagsForTranslation(translationsStart);
 
     this.#langTags = langTags;
-    this.reportLangTagsToParent(langTags);
+    this.reportDetectedLangTagsToParent(langTags);
 
-    if (langTags && lazy.autoTranslatePagePref) {
-      this.translatePage(langTags, translationsStart);
+    if (
+      langTags &&
+      (await this.sendQuery("Translations:MaybeAutoTranslate", langTags))
+    ) {
+      this.translatePage(
+        langTags.docLangTag,
+        langTags.appLangTag,
+        translationsStart
+      );
     }
   }
 
@@ -711,12 +739,13 @@ export class TranslationsChild extends JSWindowActorChild {
   /**
    * Load the translation engine and translate the page.
    *
-   * @param {{docLangTag: string, appLangTag: string}} langTags
+   * @param {{fromLanguage: string, toLanguage: string}} langTags
    * @param {number} [translationsStart]
    * @returns {Promise<void>}
    */
   async translatePage(
-    { docLangTag, appLangTag },
+    fromLanguage,
+    toLanguage,
     translationsStart = this.docShell.now()
   ) {
     if (this.translatedDoc) {
@@ -725,14 +754,13 @@ export class TranslationsChild extends JSWindowActorChild {
     }
     try {
       const engineLoadStart = this.docShell.now();
-
       // Create a function to get an engine. These engines are pretty heavy in terms
       // of memory usage, so they will be destroyed when not in use, and attempt to
       // be re-used when loading a new page.
       this.#getTranslationsEngine = await translationsEngineCache.createGetter(
         this,
-        docLangTag,
-        appLangTag
+        fromLanguage,
+        toLanguage
       );
       if (this.#isDestroyed) {
         return;
@@ -760,9 +788,18 @@ export class TranslationsChild extends JSWindowActorChild {
       return;
     }
 
+    // Ensure the translation engine loads correctly at least once before instantiating
+    // the TranslationsDocument.
+    try {
+      await this.#getTranslationsEngine();
+    } catch (error) {
+      this.sendAsyncMessage("Translations:FullPageTranslationFailed");
+      return;
+    }
+
     this.translatedDoc = new lazy.TranslationsDocument(
       this.document,
-      docLangTag,
+      fromLanguage,
       this.innerWindowId,
       html =>
         this.#getTranslationsEngine().then(engine =>
@@ -808,34 +845,88 @@ export class TranslationsChild extends JSWindowActorChild {
    *
    * @param {{ name: string, data: any }} message
    */
-  receiveMessage(message) {
-    switch (message.name) {
+  receiveMessage({ name, data }) {
+    switch (name) {
       case "Translations:TranslatePage":
-        if (!this.#langTags) {
+        const langTags = data ?? this.#langTags;
+        if (!langTags) {
           lazy.console.warn(
-            "Attempting to translate a page, but no language tags were present."
+            "Attempting to translate a page, but no language tags were given."
           );
           break;
         }
-        this.translatePage(this.#langTags);
+        this.translatePage(langTags.fromLanguage, langTags.toLanguage);
         break;
+      case "Translations:GetLangTagsForTranslation":
+        return this.getLangTagsForTranslation();
       default:
-        lazy.console.warn("Unknown message.");
+        lazy.console.warn("Unknown message.", name);
     }
+    return undefined;
   }
 
   /**
    * Get the list of languages and their display names, sorted by their display names.
+   * This is more expensive of a call than getLanguagePairs since the display names
+   * are looked up.
    *
-   * TODO (Bug 1813775) - Not all languages have bi-directional translations, like
-   * Icelandic. These are listed as "Beta" in the addon. This list should be changed into
-   * a "from" and "to" list, and the logic enhanced in the dropdowns to only allow valid
-   * translations.
-   *
-   * @returns {Promise<Array<{ langTag: string, displayName }>>}
+   * @returns {Promise<Array<SupportedLanguages>>}
    */
   getSupportedLanguages() {
     return this.sendQuery("Translations:GetSupportedLanguages");
+  }
+
+  /**
+   * @param {string} language The BCP 47 language tag.
+   */
+  hasAllFilesForLanguage(language) {
+    return this.sendQuery("Translations:HasAllFilesForLanguage", {
+      language,
+    });
+  }
+
+  /**
+   * @param {string} language The BCP 47 language tag.
+   */
+  deleteLanguageFiles(language) {
+    return this.sendQuery("Translations:DeleteLanguageFiles", {
+      language,
+    });
+  }
+
+  /**
+   * @param {string} language The BCP 47 language tag.
+   */
+  downloadLanguageFiles(language) {
+    return this.sendQuery("Translations:DownloadLanguageFiles", {
+      language,
+    });
+  }
+
+  /**
+   * Download all files from Remote Settings.
+   */
+  downloadAllFiles() {
+    return this.sendQuery("Translations:DownloadAllFiles");
+  }
+
+  /**
+   * Delete all language files.
+   * @returns {Promise<string[]>} Returns a list of deleted record ids.
+   */
+  deleteAllLanguageFiles() {
+    return this.sendQuery("Translations:DeleteAllLanguageFiles");
+  }
+
+  /**
+   * Get the language pairs that can be used for translations. This is cheaper than
+   * the getSupportedLanguages call, since the localized display names of the languages
+   * are not needed.
+   *
+   * @returns {Promise<Array<LanguagePair>>}
+   */
+  getLanguagePairs() {
+    return this.sendQuery("Translations:GetLanguagePairs");
   }
 
   /**
@@ -851,9 +942,9 @@ export class TranslationsChild extends JSWindowActorChild {
       "Translations:GetLanguageIdEngineMockedPayload"
     );
     if (mockedPayload) {
-      const { languageLabel, confidence } = mockedPayload;
+      const { langTag, confidence } = mockedPayload;
       return {
-        languageLabel,
+        langTag,
         confidence,
       };
     }
@@ -897,14 +988,14 @@ export class TranslationsChild extends JSWindowActorChild {
   async createLanguageIdEngine() {
     const {
       confidence,
-      languageLabel,
+      langTag,
       modelBuffer,
       wasmBuffer,
     } = await this.#getLanguageIdEnginePayload();
     const engine = new LanguageIdEngine({
       type: "initialize",
       confidence,
-      languageLabel,
+      langTag,
       modelBuffer,
       wasmBuffer,
       isLoggingEnabled:

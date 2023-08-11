@@ -7,6 +7,7 @@ from typing import (Any,
                     MutableMapping,
                     Optional,
                     Sequence,
+                    Set,
                     Type,
                     TypeVar,
                     Union)
@@ -28,6 +29,12 @@ class PauseAction(Action):
 
     def __init__(self, duration: Optional[int] = None):
         self.duration = duration
+
+    def to_json(self) -> MutableMapping[str, Any]:
+        rv = super().to_json()
+        if self.duration is not None:
+            rv["duration"] = self.duration
+        return rv
 
 
 class KeyAction(Action):
@@ -251,6 +258,12 @@ class KeyInputSource(InputSource):
         self.actions.append(KeyUpAction(key))
         return self
 
+    def send_keys(self, keys: str) -> "KeyInputSource":
+        for c in keys:
+            self.key_down(c)
+            self.key_up(c)
+        return self
+
 
 class PointerInputSource(InputSource):
     input_type = "pointer"
@@ -304,7 +317,7 @@ class WheelInputSource(InputSource):
 class Actions:
     def __init__(self) -> None:
         self.input_sources: List[InputSource] = []
-        self.seen_names: MutableMapping[str, set[str]] = defaultdict(set)
+        self.seen_names: MutableMapping[str, Set[str]] = defaultdict(set)
 
     def _add_source(self,
                     cls: Type[InputSourceType],
@@ -359,3 +372,7 @@ class Input(BidiModule):
     def release_actions(self, context: str) -> Mapping[str, Any]:
         params: MutableMapping[str, Any] = {"context": context}
         return params
+
+
+def get_element_origin(element: Any):
+    return {"type": "element", "element": {"sharedId": element["sharedId"]}}

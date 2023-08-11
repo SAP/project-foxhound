@@ -2036,6 +2036,11 @@ class nsLayoutUtils {
       const mozilla::StyleImageOrientation& aOrientation);
 
   /**
+   * Given an image request, determine if the request uses CORS.
+   */
+  static bool ImageRequestUsesCORS(imgIRequest* aRequest);
+
+  /**
    * Determine if any corner radius is of nonzero size
    *   @param aCorners the |BorderRadius| object to check
    *   @return true unless all the coordinates are 0%, 0 or null.
@@ -3033,6 +3038,19 @@ class nsLayoutUtils {
    * Note CSS clip or clip-path isn't accounted for.
    **/
   static nsIFrame* GetNearestOverflowClipFrame(nsIFrame* aFrame);
+
+  /*
+   * Returns true if the user's preferences allow for smooth scrolling.
+   */
+  static bool IsSmoothScrollingEnabled();
+
+  /*
+   * Recompute the default value of general.smoothScroll based on
+   * the system settings for prefers-reduced-motion.
+   *
+   * Note: Must only be called from the main thread.
+   */
+  static void RecomputeSmoothScrollDefault();
 
  private:
   /**

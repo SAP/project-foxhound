@@ -1024,7 +1024,7 @@ function ArrayFrom(items, mapfn = undefined, thisArg = undefined) {
 
   // Step 5.
   // Inlined: GetMethod, step 3.
-  if (usingIterator !== undefined && usingIterator !== null) {
+  if (!IsNullOrUndefined(usingIterator)) {
     // Inlined: GetMethod, step 4.
     if (!IsCallable(usingIterator)) {
       ThrowTypeError(JSMSG_NOT_ITERABLE, DecompileArg(0, items));
@@ -1135,7 +1135,7 @@ function ArrayToLocaleString(locales, options) {
 
   // Steps 6-7.
   var R;
-  if (firstElement === undefined || firstElement === null) {
+  if (IsNullOrUndefined(firstElement)) {
     R = "";
   } else {
 #if JS_HAS_INTL_API
@@ -1165,7 +1165,7 @@ function ArrayToLocaleString(locales, options) {
 
     // Steps 9.a, 9.c-e.
     R += separator;
-    if (!(nextElement === undefined || nextElement === null)) {
+    if (!IsNullOrUndefined(nextElement)) {
 #if JS_HAS_INTL_API
       R += ToString(
         callContentFunction(
@@ -1247,124 +1247,6 @@ function ArraySpeciesCreate(originalArray, length) {
 
   // Step 8.
   return constructContentFunction(C, C, length);
-}
-
-// ES 2017 draft (April 8, 2016) 22.1.3.1.1
-function IsConcatSpreadable(O) {
-  // Step 1.
-  // prettier-ignore
-  if (!IsObject(O)
-#ifdef ENABLE_RECORD_TUPLE
-    && !IsTuple(O)
-#endif
-  ) {
-    return false;
-  }
-
-  // Step 2.
-  var spreadable = O[GetBuiltinSymbol("isConcatSpreadable")];
-
-  // Step 3.
-  if (spreadable !== undefined) {
-    return ToBoolean(spreadable);
-  }
-
-#ifdef ENABLE_RECORD_TUPLE
-  if (IsTuple(O)) {
-    return true;
-  }
-#endif
-
-  // Step 4.
-  return IsArray(O);
-}
-
-// ES 2016 draft Mar 25, 2016 22.1.3.1.
-// Note: Array.prototype.concat.length is 1.
-function ArrayConcat(arg1) {
-  // Step 1.
-  var O = ToObject(this);
-
-  // Step 2.
-  var A = ArraySpeciesCreate(O, 0);
-
-  // Step 3.
-  var n = 0;
-
-  // Step 4 (handled implicitly with |ArgumentsLength| and |GetArgument|).
-
-  // Step 5.
-  var i = 0;
-  var argsLen = ArgumentsLength();
-
-  // Step 5.a (first element).
-  var E = O;
-
-  var k, len;
-  while (true) {
-    // Steps 5.b-c.
-    if (IsConcatSpreadable(E)) {
-#ifdef ENABLE_RECORD_TUPLE
-      // FIXME: spec bug - steps below expect that |E| is an object.
-      E = ToObject(E);
-#endif
-
-      // Step 5.c.ii.
-      len = ToLength(E.length);
-
-      // Step 5.c.iii.
-      if (n + len > MAX_NUMERIC_INDEX) {
-        ThrowTypeError(JSMSG_TOO_LONG_ARRAY);
-      }
-
-      if (IsPackedArray(A) && IsPackedArray(E)) {
-        // Step 5.c.i, 5.c.iv, and 5.c.iv.5.
-        for (k = 0; k < len; k++) {
-          // Steps 5.c.iv.1-3.
-          // IsPackedArray(E) ensures that |k in E| is always true.
-          DefineDataProperty(A, n, E[k]);
-
-          // Step 5.c.iv.4.
-          n++;
-        }
-      } else {
-        // Step 5.c.i, 5.c.iv, and 5.c.iv.5.
-        for (k = 0; k < len; k++) {
-          // Steps 5.c.iv.1-3.
-          if (k in E) {
-            DefineDataProperty(A, n, E[k]);
-          }
-
-          // Step 5.c.iv.4.
-          n++;
-        }
-      }
-    } else {
-      // Step 5.d.i.
-      if (n >= MAX_NUMERIC_INDEX) {
-        ThrowTypeError(JSMSG_TOO_LONG_ARRAY);
-      }
-
-      // Step 5.d.ii.
-      DefineDataProperty(A, n, E);
-
-      // Step 5.d.iii.
-      n++;
-    }
-
-    if (i >= argsLen) {
-      break;
-    }
-    // Step 5.a (subsequent elements).
-    E = GetArgument(i);
-    i++;
-  }
-
-  // Step 6.
-  A.length = n;
-
-  // Step 7.
-  return A;
 }
 
 // ES2020 draft rev dc1e21c454bd316810be1c0e7af0131a2d7f38e9

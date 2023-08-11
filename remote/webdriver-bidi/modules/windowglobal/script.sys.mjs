@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-import { Module } from "chrome://remote/content/shared/messagehandler/Module.sys.mjs";
+import { WindowGlobalBiDiModule } from "chrome://remote/content/webdriver-bidi/modules/WindowGlobalBiDiModule.sys.mjs";
 
 const lazy = {};
 
@@ -11,9 +11,11 @@ ChromeUtils.defineESModuleGetters(lazy, {
   error: "chrome://remote/content/shared/webdriver/Errors.sys.mjs",
   getFramesFromStack: "chrome://remote/content/shared/Stack.sys.mjs",
   isChromeFrame: "chrome://remote/content/shared/Stack.sys.mjs",
+  OwnershipModel: "chrome://remote/content/webdriver-bidi/RemoteValue.sys.mjs",
   serialize: "chrome://remote/content/webdriver-bidi/RemoteValue.sys.mjs",
+  setDefaultSerializationOptions:
+    "chrome://remote/content/webdriver-bidi/RemoteValue.sys.mjs",
   stringify: "chrome://remote/content/webdriver-bidi/RemoteValue.sys.mjs",
-  WindowRealm: "chrome://remote/content/webdriver-bidi/Realm.sys.mjs",
 });
 
 /**
@@ -31,19 +33,12 @@ const EvaluationStatus = {
   Throw: "throw",
 };
 
-class ScriptModule extends Module {
-  #defaultRealm;
+class ScriptModule extends WindowGlobalBiDiModule {
   #observerListening;
   #preloadScripts;
-  #realms;
 
   constructor(messageHandler) {
     super(messageHandler);
-
-    this.#defaultRealm = new lazy.WindowRealm(this.messageHandler.window);
-
-    // Maps sandbox names to instances of window realms.
-    this.#realms = new Map();
 
     // Set of structs with an item named expression, which is a string,
     // and an item named sandbox which is a string or null.
@@ -54,13 +49,6 @@ class ScriptModule extends Module {
     this.#preloadScripts = null;
 
     this.#stopObserving();
-
-    this.#defaultRealm.destroy();
-
-    for (const realm of this.#realms.values()) {
-      realm.destroy();
-    }
-    this.#realms = null;
   }
 
   observe(subject, topic) {
@@ -76,16 +64,20 @@ class ScriptModule extends Module {
     }
   }
 
-  #buildExceptionDetails(
-    exception,
-    stack,
-    realm,
-    resultOwnership,
-    serializeOptions
-  ) {
+  #buildExceptionDetails(exception, stack, realm, resultOwnership, options) {
     exception = this.#toRawObject(exception);
-    const frames = lazy.getFramesFromStack(stack) || [];
 
+    // A stacktrace is mandatory to build exception details and a missing stack
+    // means we encountered an unexpected issue. Throw with an explicit error.
+    if (!stack) {
+      throw new Error(
+        `Missing stack, unable to build exceptionDetails for exception: ${lazy.stringify(
+          exception
+        )}`
+      );
+    }
+
+    const frames = lazy.getFramesFromStack(stack) || [];
     const callFrames = frames
       // Remove chrome/internal frames
       .filter(frame => !lazy.isChromeFrame(frame))
@@ -104,11 +96,11 @@ class ScriptModule extends Module {
       columnNumber: stack.column - 1,
       exception: lazy.serialize(
         exception,
-        1,
+        lazy.setDefaultSerializationOptions(),
         resultOwnership,
         new Map(),
         realm,
-        serializeOptions
+        options
       ),
       lineNumber: stack.line - 1,
       stackTrace: { callFrames },
@@ -121,7 +113,8 @@ class ScriptModule extends Module {
     realm,
     awaitPromise,
     resultOwnership,
-    serializeOptions
+    serializationOptions,
+    options
   ) {
     let evaluationStatus, exception, result, stack;
 
@@ -143,7 +136,13 @@ class ScriptModule extends Module {
           exception = realm.globalObjectReference.makeDebuggeeValue(
             asyncException
           );
-          stack = rv.return.promiseResolutionSite;
+
+          // If the returned promise was rejected by calling its reject callback
+          // the stack will be available on promiseResolutionSite.
+          // Otherwise, (eg. rejected Promise chained with a then() call) we
+          // fallback on the promiseAllocationSite.
+          stack =
+            rv.return.promiseResolutionSite || rv.return.promiseAllocationSite;
         }
       } else {
         // rv.return is a Debugger.Object or a primitive.
@@ -163,11 +162,11 @@ class ScriptModule extends Module {
           evaluationStatus,
           result: lazy.serialize(
             this.#toRawObject(result),
-            1,
+            serializationOptions,
             resultOwnership,
             new Map(),
             realm,
-            serializeOptions
+            options
           ),
           realmId: realm.id,
         };
@@ -179,7 +178,7 @@ class ScriptModule extends Module {
             stack,
             realm,
             resultOwnership,
-            serializeOptions
+            options
           ),
           realmId: realm.id,
         };
@@ -190,6 +189,35 @@ class ScriptModule extends Module {
     }
   }
 
+  /**
+   * Emit "script.message" event with provided data.
+   *
+   * @param {Realm} realm
+   * @param {ChannelProperties} channelProperties
+   * @param {RemoteValue} message
+   */
+  #emitScriptMessage = (realm, channelProperties, message) => {
+    const {
+      channel,
+      ownership: ownershipType = lazy.OwnershipModel.None,
+      serializationOptions,
+    } = channelProperties;
+
+    const data = lazy.serialize(
+      this.#toRawObject(message),
+      lazy.setDefaultSerializationOptions(serializationOptions),
+      ownershipType,
+      new Map(),
+      realm
+    );
+
+    this.emitEvent("script.message", {
+      channel,
+      data,
+      source: this.#getSource(realm),
+    });
+  };
+
   #evaluatePreloadScripts() {
     let resolveBlockerPromise;
     const blockerPromise = new Promise(resolve => {
@@ -199,10 +227,21 @@ class ScriptModule extends Module {
     // Block script parsing.
     this.messageHandler.window.document.blockParsing(blockerPromise);
     for (const script of this.#preloadScripts.values()) {
-      const { functionDeclaration, sandbox } = script;
-      const realm = this.#getRealmFromSandboxName(sandbox);
-
-      const rv = realm.executeInGlobalWithBindings(functionDeclaration, []);
+      const {
+        arguments: commandArguments,
+        functionDeclaration,
+        sandbox,
+      } = script;
+      const realm = this.messageHandler.getRealm({ sandboxName: sandbox });
+      const deserializedArguments = commandArguments.map(arg =>
+        lazy.deserialize(realm, arg, {
+          emitScriptMessage: this.#emitScriptMessage,
+        })
+      );
+      const rv = realm.executeInGlobalWithBindings(
+        functionDeclaration,
+        deserializedArguments
+      );
 
       if ("throw" in rv) {
         const exception = this.#toRawObject(rv.throw);
@@ -214,42 +253,11 @@ class ScriptModule extends Module {
     resolveBlockerPromise();
   }
 
-  #getRealm(realmId, sandboxName) {
-    if (realmId === null) {
-      return this.#getRealmFromSandboxName(sandboxName);
-    }
-
-    if (this.#defaultRealm.id == realmId) {
-      return this.#defaultRealm;
-    }
-
-    const sandboxRealm = Array.from(this.#realms.values()).find(
-      realm => realm.id === realmId
-    );
-
-    if (sandboxRealm) {
-      return sandboxRealm;
-    }
-
-    throw new lazy.error.NoSuchFrameError(`Realm with id ${realmId} not found`);
-  }
-
-  #getRealmFromSandboxName(sandboxName) {
-    if (sandboxName === null || sandboxName === "") {
-      return this.#defaultRealm;
-    }
-
-    if (this.#realms.has(sandboxName)) {
-      return this.#realms.get(sandboxName);
-    }
-
-    const realm = new lazy.WindowRealm(this.messageHandler.window, {
-      sandboxName,
-    });
-
-    this.#realms.set(sandboxName, realm);
-
-    return realm;
+  #getSource(realm) {
+    return {
+      realm: realm.id,
+      context: this.messageHandler.context,
+    };
   }
 
   #startObserving() {
@@ -302,6 +310,9 @@ class ScriptModule extends Module {
    *     The ownership model to use for the results of this evaluation.
    * @param {string=} options.sandbox
    *     The name of the sandbox.
+   * @param {SerializationOptions=} options.serializationOptions
+   *     An object which holds the information of how the result of evaluation
+   *     in case of ECMAScript objects should be serialized.
    * @param {RemoteValue=} options.thisParameter
    *     The value of the this keyword for the function call.
    *
@@ -320,22 +331,29 @@ class ScriptModule extends Module {
       realmId = null,
       resultOwnership,
       sandbox: sandboxName = null,
+      serializationOptions,
       thisParameter = null,
     } = options;
 
-    const realm = this.#getRealm(realmId, sandboxName);
-    const nodeCache = this.messageHandler.processActor.getNodeCache();
+    const realm = this.messageHandler.getRealm({ realmId, sandboxName });
+    const nodeCache = this.nodeCache;
 
     const deserializedArguments =
       commandArguments !== null
         ? commandArguments.map(arg =>
-            lazy.deserialize(realm, arg, { nodeCache })
+            lazy.deserialize(realm, arg, {
+              emitScriptMessage: this.#emitScriptMessage,
+              nodeCache,
+            })
           )
         : [];
 
     const deserializedThis =
       thisParameter !== null
-        ? lazy.deserialize(realm, thisParameter, { nodeCache })
+        ? lazy.deserialize(realm, thisParameter, {
+            emitScriptMessage: this.#emitScriptMessage,
+            nodeCache,
+          })
         : null;
 
     const rv = realm.executeInGlobalWithBindings(
@@ -344,9 +362,16 @@ class ScriptModule extends Module {
       deserializedThis
     );
 
-    return this.#buildReturnValue(rv, realm, awaitPromise, resultOwnership, {
-      nodeCache,
-    });
+    return this.#buildReturnValue(
+      rv,
+      realm,
+      awaitPromise,
+      resultOwnership,
+      serializationOptions,
+      {
+        nodeCache,
+      }
+    );
   }
 
   /**
@@ -363,7 +388,7 @@ class ScriptModule extends Module {
    */
   disownHandles(options) {
     const { handles, realmId = null, sandbox: sandboxName = null } = options;
-    const realm = this.#getRealm(realmId, sandboxName);
+    const realm = this.messageHandler.getRealm({ realmId, sandboxName });
     for (const handle of handles) {
       realm.removeObjectHandle(handle);
     }
@@ -399,16 +424,23 @@ class ScriptModule extends Module {
       realmId = null,
       resultOwnership,
       sandbox: sandboxName = null,
+      serializationOptions,
     } = options;
 
-    const realm = this.#getRealm(realmId, sandboxName);
-    const nodeCache = this.messageHandler.processActor.getNodeCache();
+    const realm = this.messageHandler.getRealm({ realmId, sandboxName });
 
     const rv = realm.executeInGlobal(expression);
 
-    return this.#buildReturnValue(rv, realm, awaitPromise, resultOwnership, {
-      nodeCache,
-    });
+    return this.#buildReturnValue(
+      rv,
+      realm,
+      awaitPromise,
+      resultOwnership,
+      serializationOptions,
+      {
+        nodeCache: this.nodeCache,
+      }
+    );
   }
 
   /**
@@ -416,15 +448,16 @@ class ScriptModule extends Module {
    *
    * @returns {Array<object>}
    *     - context {BrowsingContext} The browsing context, associated with the realm.
-   *     - id {string} The realm unique identifier.
    *     - origin {string} The serialization of an origin.
+   *     - realm {string} The realm unique identifier.
    *     - sandbox {string=} The name of the sandbox.
    *     - type {RealmType.Window} The window realm type.
    */
   getWindowRealms() {
-    return [this.#defaultRealm, ...this.#realms.values()].map(realm =>
-      realm.getInfo()
-    );
+    return Array.from(this.messageHandler.realms.values()).map(realm => {
+      const { context, origin, realm: id, sandbox, type } = realm.getInfo();
+      return { context, origin, realm: id, sandbox, type };
+    });
   }
 
   /**

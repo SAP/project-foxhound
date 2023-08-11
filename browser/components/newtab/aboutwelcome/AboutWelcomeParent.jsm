@@ -16,17 +16,20 @@ ChromeUtils.defineESModuleGetters(lazy, {
   BrowserUtils: "resource://gre/modules/BrowserUtils.sys.mjs",
   BuiltInThemes: "resource:///modules/BuiltInThemes.sys.mjs",
   FxAccounts: "resource://gre/modules/FxAccounts.sys.mjs",
+  ShellService: "resource:///modules/ShellService.sys.mjs",
   SpecialMessageActions:
     "resource://messaging-system/lib/SpecialMessageActions.sys.mjs",
 });
 
 XPCOMUtils.defineLazyModuleGetters(lazy, {
   AddonManager: "resource://gre/modules/AddonManager.jsm",
+
   AboutWelcomeTelemetry:
     "resource://activity-stream/aboutwelcome/lib/AboutWelcomeTelemetry.jsm",
+
   AboutWelcomeDefaults:
     "resource://activity-stream/aboutwelcome/lib/AboutWelcomeDefaults.jsm",
-  ShellService: "resource:///modules/ShellService.jsm",
+
   LangPackMatcher: "resource://gre/modules/LangPackMatcher.jsm",
   AWScreenUtils: "resource://activity-stream/lib/AWScreenUtils.jsm",
 });
@@ -175,8 +178,7 @@ class AboutWelcomeParent extends JSWindowActorParent {
         }
         break;
       case "AWPage:SPECIAL_ACTION":
-        lazy.SpecialMessageActions.handleAction(data, browser);
-        break;
+        return lazy.SpecialMessageActions.handleAction(data, browser);
       case "AWPage:FXA_METRICS_FLOW_URI":
         return lazy.FxAccounts.config.promiseMetricsFlowURI("aboutwelcome");
       case "AWPage:TELEMETRY_EVENT":
@@ -229,6 +231,8 @@ class AboutWelcomeParent extends JSWindowActorParent {
         return lazy.LangPackMatcher.getAppAndSystemLocaleInfo();
       case "AWPage:EVALUATE_SCREEN_TARGETING":
         return lazy.AWScreenUtils.evaluateTargetingAndRemoveScreens(data);
+      case "AWPage:ADD_SCREEN_IMPRESSION":
+        return lazy.AWScreenUtils.addScreenImpression(data);
       case "AWPage:NEGOTIATE_LANGPACK":
         return lazy.LangPackMatcher.negotiateLangPackForLanguageMismatch(data);
       case "AWPage:ENSURE_LANG_PACK_INSTALLED":

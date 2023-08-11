@@ -519,7 +519,7 @@ nsresult FetchDriver::HttpFetch(
   RefPtr<PreloaderBase> fetchPreload = FindPreload(uri);
   if (fetchPreload) {
     fetchPreload->RemoveSelf(mDocument);
-    fetchPreload->NotifyUsage(PreloaderBase::LoadBackground::Keep);
+    fetchPreload->NotifyUsage(mDocument, PreloaderBase::LoadBackground::Keep);
 
     rv = fetchPreload->AsyncConsume(this);
     if (NS_SUCCEEDED(rv)) {
@@ -646,6 +646,12 @@ nsresult FetchDriver::HttpFetch(
     nsCOMPtr<nsILoadInfo> loadInfo = chan->LoadInfo();
     rv = loadInfo->SetLoadingEmbedderPolicy(mRequest->GetEmbedderPolicy());
     NS_ENSURE_SUCCESS(rv, rv);
+  }
+
+  if (mAssociatedBrowsingContextID) {
+    nsCOMPtr<nsILoadInfo> loadInfo = chan->LoadInfo();
+    rv = loadInfo->SetWorkerAssociatedBrowsingContextID(
+        mAssociatedBrowsingContextID);
   }
 
   // If the fetch is created by FetchEvent.request or NavigationPreload request,
@@ -832,6 +838,9 @@ nsresult FetchDriver::HttpFetch(
   }
 
   NotifyNetworkMonitorAlternateStack(chan, std::move(mOriginStack));
+  if (mObserver && httpChan) {
+    mObserver->OnNotifyNetworkMonitorAlternateStack(httpChan->ChannelId());
+  }
 
   // if the preferred alternative data type in InternalRequest is not empty, set
   // the data type on the created channel and also create a

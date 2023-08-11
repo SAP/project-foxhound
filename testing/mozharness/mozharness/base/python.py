@@ -217,9 +217,9 @@ class VirtualenvMixin(object):
                     + pip_freeze_output
                 )
 
-        for line in pip_freeze_output.splitlines():
+        for l in pip_freeze_output.splitlines():
             # parse the output into package, version
-            line = line.strip()
+            line = l.strip()
             if not line:
                 # whitespace
                 continue
@@ -300,16 +300,6 @@ class VirtualenvMixin(object):
                 command += ["--no-index"]
             for opt in global_options:
                 command += ["--global-option", opt]
-        elif install_method == "easy_install":
-            if not module:
-                self.fatal(
-                    "module parameter required with install_method='easy_install'"
-                )
-            if requirements:
-                # Install pip requirements files separately, since they're
-                # not understood by easy_install.
-                self.install_module(requirements=requirements, install_method="pip")
-            command = [self.query_python_path(), "-m", "easy_install"]
         else:
             self.fatal(
                 "install_module() doesn't understand an install_method of %s!"
@@ -531,23 +521,29 @@ class VirtualenvMixin(object):
                                     sys.executable, str(expected_python_debug_exe)
                                 )
 
+            venv_creation_flags = ["-m", "venv", venv_path]
+
+            if self._is_windows():
+                # To workaround an issue on Windows10 jobs in CI we have to
+                # explicitly install the default pip separately. Ideally we
+                # could just remove the "--without-pip" above and get the same
+                # result, but that's apparently not always the case.
+                venv_creation_flags = venv_creation_flags + ["--without-pip"]
+
             self.mkdir_p(dirs["abs_work_dir"])
             self.run_command(
-                [sys.executable, "-m", "venv", "--without-pip", venv_path],
+                [sys.executable] + venv_creation_flags,
                 cwd=dirs["abs_work_dir"],
                 error_list=VirtualenvErrorList,
                 halt_on_failure=True,
             )
 
-            # To workaround an issue on Windows10 jobs in CI we have to
-            # explicitly install the default pip separately. Ideally we
-            # could just remove the "--without-pip" above and get the same
-            # result, but that's apparently not always the case.
-            self.run_command(
-                [str(venv_python_bin), "-m", "ensurepip", "--default-pip"],
-                cwd=dirs["abs_work_dir"],
-                halt_on_failure=True,
-            )
+            if self._is_windows():
+                self.run_command(
+                    [str(venv_python_bin), "-m", "ensurepip", "--default-pip"],
+                    cwd=dirs["abs_work_dir"],
+                    halt_on_failure=True,
+                )
 
             self._ensure_python_exe(venv_python_bin.parent)
 
@@ -630,8 +626,6 @@ class VirtualenvMixin(object):
                 module_url = self.config.get("%s_url" % module, module_url)
                 module_name = module
             install_method = "pip"
-            if module_name in ("pywin32",):
-                install_method = "easy_install"
             self.install_module(
                 module=module_name,
                 module_url=module_url,

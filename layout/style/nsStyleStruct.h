@@ -102,7 +102,7 @@ struct ContainSizeAxes {
 }  // namespace mozilla
 
 struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleFont {
-  nsStyleFont(const nsStyleFont& aStyleFont);
+  nsStyleFont(const nsStyleFont&);
   explicit nsStyleFont(const mozilla::dom::Document&);
   MOZ_COUNTED_DTOR(nsStyleFont)
   static constexpr bool kHasTriggerImageLoads = false;
@@ -144,15 +144,16 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleFont {
   mozilla::StyleMathStyle mMathStyle;
 
   // allow different min font-size for certain cases
-  uint8_t mMinFontSizeRatio;  // percent * 100
+  uint8_t mMinFontSizeRatio = 100;  // percent * 100
 
-  // was mLanguage set based on a lang attribute in the document?
-  bool mExplicitLanguage;
+  // Was mLanguage set based on a lang attribute in the document?
+  bool mExplicitLanguage = false;
 
-  // should calls to ZoomText() and UnZoomText() be made to the font
-  // size on this nsStyleFont? Also used to prevent SVG text from being
-  // affected by minimum font size pref.
-  bool mAllowZoomAndMinSize;
+  mozilla::StyleXTextScale mXTextScale;
+
+  bool MinFontSizeEnabled() const {
+    return mXTextScale == mozilla::StyleXTextScale::All;
+  }
 
   // The value mSize would have had if scriptminsize had never been applied
   mozilla::NonNegativeLength mScriptUnconstrainedSize;
@@ -935,6 +936,25 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleText {
   mozilla::StyleHyphenateCharacter mHyphenateCharacter =
       mozilla::StyleHyphenateCharacter::Auto();
 
+  mozilla::StyleTextSecurity mWebkitTextSecurity =
+      mozilla::StyleTextSecurity::None;
+
+  char16_t TextSecurityMaskChar() const {
+    switch (mWebkitTextSecurity) {
+      case mozilla::StyleTextSecurity::None:
+        return 0;
+      case mozilla::StyleTextSecurity::Circle:
+        return 0x25E6;
+      case mozilla::StyleTextSecurity::Disc:
+        return 0x2022;
+      case mozilla::StyleTextSecurity::Square:
+        return 0x25A0;
+      default:
+        MOZ_ASSERT_UNREACHABLE("unknown StyleTextSecurity value!");
+        return 0;
+    }
+  }
+
   mozilla::StyleWordBreak EffectiveWordBreak() const {
     if (mWordBreak == mozilla::StyleWordBreak::BreakWord) {
       return mozilla::StyleWordBreak::Normal;
@@ -1254,6 +1274,10 @@ struct StyleViewTimeline {
   // we can rely on the default constructor to handle the new constructed
   // elements.
   void SetInitialValues() {}
+
+  const nsAtom* GetName() const { return mName._0.AsAtom(); }
+  StyleScrollAxis GetAxis() const { return mAxis; }
+  const StyleViewTimelineInset& GetInset() const { return mInset; }
 
   bool operator==(const StyleViewTimeline& aOther) const {
     return mName == aOther.mName && mAxis == aOther.mAxis &&
@@ -2126,6 +2150,10 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleEffects {
   bool HasMixBlendMode() const {
     return mMixBlendMode != mozilla::StyleBlend::Normal;
   }
+
+  bool IsOpaque() const { return mOpacity >= 1.0f; }
+
+  bool IsTransparent() const { return mOpacity == 0.0f; }
 
   mozilla::StyleOwnedSlice<mozilla::StyleFilter> mFilters;
   mozilla::StyleOwnedSlice<mozilla::StyleBoxShadow> mBoxShadow;

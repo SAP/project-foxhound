@@ -12,6 +12,7 @@
 #include <stdint.h>
 
 #include "gc/AllocKind.h"
+#include "gc/Cell.h"
 #include "js/TypeDecls.h"
 
 namespace js {
@@ -33,40 +34,67 @@ namespace js {
 enum AllowGC { NoGC = 0, CanGC = 1 };
 
 namespace gc {
+
 class AllocSite;
 struct Cell;
 class TenuredCell;
 
+// Allocator implementation functions. SpiderMonkey code outside this file
+// should use:
+//
+//     cx->newCell<T>(...)
+//
+// or optionally:
+//
+//     cx->newCell<T, AllowGC::NoGC>(...)
+//
 // `friend` js::gc::CellAllocator in a subtype T of Cell in order to allow it to
 // be allocated with cx->newCell<T>(...). The friend declaration will allow
 // calling T's constructor.
+//
+// The parameters will be passed to a type-specific function or constructor. For
+// nursery-allocatable types, see e.g. the AllocateString, AllocateObject, and
+// AllocateBigInt methods. For all other types, the parameters will be forwarded
+// to the constructor.
 class CellAllocator {
-  template <AllowGC allowGC = CanGC>
-  static gc::Cell* AllocateStringCell(JSContext* cx, gc::AllocKind kind,
-                                      size_t size, gc::InitialHeap heap);
+ public:
+  template <typename T, js::AllowGC allowGC = CanGC, typename... Args>
+  static T* NewCell(JSContext* cx, Args&&... args);
 
-  // Allocate a string. Use cx->newCell<StringT>([heap]).
+ private:
+  template <AllowGC allowGC = CanGC>
+  static void* AllocateStringCell(JSContext* cx, gc::AllocKind kind,
+                                  size_t size, gc::InitialHeap heap);
+
+  // Allocate a string. Use cx->newCell<T>([heap]).
   //
   // Use for nursery-allocatable strings. Returns a value cast to the correct
   // type. Non-nursery-allocatable strings will go through the fallback
   // tenured-only allocation path.
-  template <typename StringT, AllowGC allowGC = CanGC, typename... Args>
-  static StringT* AllocateString(JSContext* cx, gc::InitialHeap heap,
-                                 Args&&... args) {
-    static_assert(std::is_base_of_v<JSString, StringT>);
-    gc::AllocKind kind = gc::MapTypeToAllocKind<StringT>::kind;
-    gc::Cell* cell =
-        AllocateStringCell<allowGC>(cx, kind, sizeof(StringT), heap);
-    if (!cell) {
+  template <typename T, AllowGC allowGC = CanGC, typename... Args>
+  static T* AllocateString(JSContext* cx, gc::InitialHeap heap,
+                           Args&&... args) {
+    static_assert(std::is_base_of_v<JSString, T>);
+    gc::AllocKind kind = gc::MapTypeToAllocKind<T>::kind;
+    void* ptr = AllocateStringCell<allowGC>(cx, kind, sizeof(T), heap);
+    if (!ptr) {
       return nullptr;
     }
-    return new (mozilla::KnownNotNull, cell)
-        StringT(std::forward<Args>(args)...);
+    return new (mozilla::KnownNotNull, ptr) T(std::forward<Args>(args)...);
   }
 
   // Use for nursery-allocatable BigInt.
   template <AllowGC allowGC = CanGC>
-  static JS::BigInt* AllocateBigInt(JSContext* cx, gc::InitialHeap heap);
+  static void* AllocateBigIntCell(JSContext* cx, gc::InitialHeap heap);
+
+  template <typename T, AllowGC allowGC /* = CanGC */>
+  static T* AllocateBigInt(JSContext* cx, InitialHeap heap) {
+    void* ptr = AllocateBigIntCell<allowGC>(cx, heap);
+    if (ptr) {
+      return new (mozilla::KnownNotNull, ptr) T();
+    }
+    return nullptr;
+  }
 
   // Allocate a JSObject. Use cx->newCell<ObjectT>(kind, ...).
   //
@@ -74,37 +102,37 @@ class CellAllocator {
   // they will be allocated and the pointer stored directly in
   // |NativeObject::slots_|.
   template <AllowGC allowGC = CanGC>
-  static JSObject* AllocateObject(JSContext* cx, gc::AllocKind kind,
-                                  size_t nDynamicSlots, gc::InitialHeap heap,
-                                  const JSClass* clasp,
-                                  gc::AllocSite* site = nullptr);
+  static void* AllocateObjectCell(JSContext* cx, gc::AllocKind kind,
+                                  gc::InitialHeap heap, const JSClass* clasp,
+                                  gc::AllocSite* site);
 
- public:
-  template <typename T, js::AllowGC allowGC = CanGC, typename... Args>
-  static T* NewCell(JSContext* cx, Args&&... args);
+  template <typename T, AllowGC allowGC = CanGC>
+  static T* AllocateObject(JSContext* cx, gc::AllocKind kind,
+                           gc::InitialHeap heap, const JSClass* clasp,
+                           gc::AllocSite* site = nullptr) {
+    void* cell = AllocateObjectCell<allowGC>(cx, kind, heap, clasp, site);
+    if (!cell) {
+      return nullptr;
+    }
+    return new (mozilla::KnownNotNull, cell) T();
+  }
+
+  template <AllowGC allowGC = CanGC>
+  static void* AllocateTenuredCell(JSContext* cx, gc::AllocKind kind,
+                                   size_t size);
+
+  // Allocate all other kinds of GC thing.
+  template <typename T, AllowGC allowGC = CanGC, typename... Args>
+  static T* AllocateTenured(JSContext* cx, Args&&... args) {
+    gc::AllocKind kind = gc::MapTypeToAllocKind<T>::kind;
+    void* cell = AllocateTenuredCell<allowGC>(cx, kind, sizeof(T));
+    if (!cell) {
+      return nullptr;
+    }
+    return new (mozilla::KnownNotNull, cell) T(std::forward<Args>(args)...);
+  }
 };
 
-namespace detail {
-
-// Allocator implementation functions. SpiderMonkey code outside this file
-// should use
-//
-//     cx->newCell<T>(...)
-//
-// or optionally
-//
-//     cx->newCell<T, AllowGC::NoGC>(...)
-//
-// The parameters will be passed to a type-specific function or constructor. For
-// nursery-allocatable types, see eg AllocateString, AllocateObject, and
-// AllocateBigInt in the CellAllocator class. For all other types, the
-// parameters will be forwarded to the constructor.
-
-template <AllowGC allowGC = CanGC>
-gc::TenuredCell* AllocateTenuredCell(JSContext* cx, gc::AllocKind kind,
-                                     size_t size);
-
-}  // namespace detail
 }  // namespace gc
 
 // This is the entry point for all allocation, though callers should still not
@@ -120,13 +148,12 @@ T* gc::CellAllocator::NewCell(JSContext* cx, Args&&... args) {
 
   // Objects. See the valid parameter list in AllocateObject, above.
   if constexpr (std::is_base_of_v<JSObject, T>) {
-    return static_cast<T*>(
-        AllocateObject<allowGC>(cx, std::forward<Args>(args)...));
+    return AllocateObject<T, allowGC>(cx, std::forward<Args>(args)...);
   }
 
   // BigInt
   else if constexpr (std::is_base_of_v<JS::BigInt, T>) {
-    return AllocateBigInt<allowGC>(cx, std::forward<Args>(args)...);
+    return AllocateBigInt<T, allowGC>(cx, std::forward<Args>(args)...);
   }
 
   // "Normal" strings (all of which can be nursery allocated). Atoms and
@@ -143,13 +170,7 @@ T* gc::CellAllocator::NewCell(JSContext* cx, Args&&... args) {
     // Allocate a new tenured GC thing that's not nursery-allocatable. Use
     // cx->newCell<T>(...), where the parameters are forwarded to the type's
     // constructor.
-    gc::AllocKind kind = gc::MapTypeToAllocKind<T>::kind;
-    gc::TenuredCell* cell =
-        gc::detail::AllocateTenuredCell<allowGC>(cx, kind, sizeof(T));
-    if (!cell) {
-      return nullptr;
-    }
-    return new (mozilla::KnownNotNull, cell) T(std::forward<Args>(args)...);
+    return AllocateTenured<T, allowGC>(cx, std::forward<Args>(args)...);
   }
 }
 

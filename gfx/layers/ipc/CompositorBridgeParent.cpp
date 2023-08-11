@@ -1231,6 +1231,9 @@ void CompositorBridgeParent::UpdateQualitySettings() {
 
   MonitorAutoLock lock(*sIndirectLayerTreesLock);
   ForEachWebRenderBridgeParent([&](WebRenderBridgeParent* wrBridge) -> void {
+    if (!wrBridge->IsRootWebRenderBridgeParent()) {
+      return;
+    }
     wrBridge->UpdateQualitySettings();
   });
 }
@@ -1251,6 +1254,9 @@ void CompositorBridgeParent::UpdateDebugFlags() {
 
   MonitorAutoLock lock(*sIndirectLayerTreesLock);
   ForEachWebRenderBridgeParent([&](WebRenderBridgeParent* wrBridge) -> void {
+    if (!wrBridge->IsRootWebRenderBridgeParent()) {
+      return;
+    }
     wrBridge->UpdateDebugFlags();
   });
 }
@@ -1269,6 +1275,9 @@ void CompositorBridgeParent::UpdateWebRenderBoolParameters() {
 
   MonitorAutoLock lock(*sIndirectLayerTreesLock);
   ForEachWebRenderBridgeParent([&](WebRenderBridgeParent* wrBridge) -> void {
+    if (!wrBridge->IsRootWebRenderBridgeParent()) {
+      return;
+    }
     wrBridge->UpdateBoolParameters();
   });
 }
@@ -1287,6 +1296,9 @@ void CompositorBridgeParent::UpdateWebRenderParameters() {
 
   MonitorAutoLock lock(*sIndirectLayerTreesLock);
   ForEachWebRenderBridgeParent([&](WebRenderBridgeParent* wrBridge) -> void {
+    if (!wrBridge->IsRootWebRenderBridgeParent()) {
+      return;
+    }
     wrBridge->UpdateParameters();
   });
 }
@@ -1298,6 +1310,9 @@ void CompositorBridgeParent::UpdateWebRenderProfilerUI() {
   }
   MonitorAutoLock lock(*sIndirectLayerTreesLock);
   ForEachWebRenderBridgeParent([&](WebRenderBridgeParent* wrBridge) -> void {
+    if (!wrBridge->IsRootWebRenderBridgeParent()) {
+      return;
+    }
     wrBridge->UpdateProfilerUI();
   });
 }
@@ -1899,6 +1914,26 @@ mozilla::ipc::IPCResult CompositorBridgeParent::RecvEndRecording(
   mHaveCompositionRecorder = false;
 
   return IPC_OK();
+}
+
+void CompositorBridgeParent::FlushPendingWrTransactionEventsWithWait() {
+  if (!mWrBridge) {
+    return;
+  }
+
+  std::vector<RefPtr<WebRenderBridgeParent>> bridgeParents;
+  {  // scope lock
+    MonitorAutoLock lock(*sIndirectLayerTreesLock);
+    ForEachIndirectLayerTree([&](LayerTreeState* lts, LayersId) -> void {
+      if (lts->mWrBridge) {
+        bridgeParents.emplace_back(lts->mWrBridge);
+      }
+    });
+  }
+
+  for (auto& bridge : bridgeParents) {
+    bridge->FlushPendingWrTransactionEventsWithWait();
+  }
 }
 
 void RecordCompositionPayloadsPresented(

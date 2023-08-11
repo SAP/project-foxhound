@@ -61,6 +61,11 @@ const cases = [
   },
 
   {
+    name: "for..of loop",
+    input: "for (const x of [1,2,3]) { console.log(x) }",
+  },
+
+  {
     name: "String with semicolon",
     input: "var foo = ';';\n",
   },
@@ -135,6 +140,14 @@ const cases = [
   {
     name: "Arrays",
     input: "var a=[1,2,3];",
+  },
+  {
+    name: "Arrays and spread operator",
+    input: "var a=[1,...[2,3],...[], 4];",
+  },
+  {
+    name: "Empty object/array literals",
+    input: `let a=[];const b={};c={...{},d: 42};for(let x of []){for(let y in {}){}}`,
   },
   {
     name: "Code that relies on ASI",
@@ -375,6 +388,24 @@ const cases = [
             #b
         }
       }
+    `,
+  },
+  {
+    name: "Long parenthesis",
+    input: `
+      if (thisIsAVeryLongVariable && thisIsAnotherOne || yetAnotherVeryLongVariable) {
+        (thisIsAnotherOne = thisMayReturnNull() || "hi", thisIsAVeryLongVariable = 42, yetAnotherVeryLongVariable && doSomething(true /* do it well */,thisIsAVeryLongVariable, thisIsAnotherOne, yetAnotherVeryLongVariable))
+      }
+      for (let thisIsAnotherVeryLongVariable = 0; i < thisIsAnotherVeryLongVariable.length; thisIsAnotherVeryLongVariable++) {}
+      const x = ({thisIsAnotherVeryLongPropertyName: "but should not cause the paren to be a line delimiter"})
+    `,
+  },
+  {
+    name: "Fat arrow function",
+    input: `
+      const a = () => 42
+      addEventListener("click", e => { return false });
+      const sum = (c,d) => c+d
     `,
   },
 ];

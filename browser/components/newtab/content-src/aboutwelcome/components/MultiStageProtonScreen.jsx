@@ -18,6 +18,7 @@ import { CTAParagraph } from "./CTAParagraph";
 import { HeroImage } from "./HeroImage";
 import { OnboardingVideo } from "./OnboardingVideo";
 import { AdditionalCTA } from "./AdditionalCTA";
+import { EmbeddedMigrationWizard } from "./EmbeddedMigrationWizard";
 
 export const MultiStageProtonScreen = props => {
   const { autoAdvance, handleAction, order } = props;
@@ -226,6 +227,9 @@ export class ProtonScreen extends React.PureComponent {
             handleAction={this.props.handleAction}
           />
         ) : null}
+        {content.tiles && content.tiles.type === "migration-wizard" ? (
+          <EmbeddedMigrationWizard handleAction={this.props.handleAction} />
+        ) : null}
       </React.Fragment>
     );
   }
@@ -314,13 +318,9 @@ export class ProtonScreen extends React.PureComponent {
             : {}
         }
       >
-        {content.image_alt_text ? (
-          <div
-            className="sr-only image-alt"
-            role="img"
-            data-l10n-id={content.image_alt_text.string_id}
-          />
-        ) : null}
+        <Localized text={content.image_alt_text}>
+          <div className="sr-only image-alt" role="img" />
+        </Localized>
         {content.hero_image ? (
           <HeroImage url={content.hero_image.url} />
         ) : (
@@ -369,6 +369,7 @@ export class ProtonScreen extends React.PureComponent {
           content?.video_container
         )
       : "";
+    const isEmbeddedMigration = content.tiles?.type === "migration-wizard";
 
     return (
       <main
@@ -383,7 +384,12 @@ export class ProtonScreen extends React.PureComponent {
         }}
       >
         {isCenterPosition ? null : this.renderSecondarySection(content)}
-        <div className="section-main" role="document">
+        <div
+          className={`section-main ${
+            isEmbeddedMigration ? "embedded-migration" : ""
+          }`}
+          role="document"
+        >
           {content.secondary_button_top ? (
             <SecondaryCTA
               content={content}
@@ -415,22 +421,26 @@ export class ProtonScreen extends React.PureComponent {
 
             <div className="main-content-inner">
               <div className={`welcome-text ${content.title_style || ""}`}>
-                <Localized text={content.title}>
-                  <h1 id="mainContentHeader" />
-                </Localized>
-                <Localized text={content.subtitle}>
-                  <h2
-                    data-l10n-args={JSON.stringify({
-                      "addon-name": this.props.addonName,
-                      ...this.props.appAndSystemLocaleInfo?.displayNames,
-                    })}
-                    aria-flowto={
-                      this.props.messageId?.includes("FEATURE_TOUR")
-                        ? "steps"
-                        : ""
-                    }
-                  />
-                </Localized>
+                {content.title ? (
+                  <Localized text={content.title}>
+                    <h1 id="mainContentHeader" />
+                  </Localized>
+                ) : null}
+                {content.subtitle ? (
+                  <Localized text={content.subtitle}>
+                    <h2
+                      data-l10n-args={JSON.stringify({
+                        "addon-name": this.props.addonName,
+                        ...this.props.appAndSystemLocaleInfo?.displayNames,
+                      })}
+                      aria-flowto={
+                        this.props.messageId?.includes("FEATURE_TOUR")
+                          ? "steps"
+                          : ""
+                      }
+                    />
+                  </Localized>
+                ) : null}
                 {content.cta_paragraph ? (
                   <CTAParagraph
                     content={content.cta_paragraph}

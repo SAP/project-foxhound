@@ -20,7 +20,6 @@
 #include "nsLayoutUtils.h"
 #include "imgINotificationObserver.h"
 #include "SVGGeometryProperty.h"
-#include "SVGGeometryFrame.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/StaticPrefs_image.h"
 #include "mozilla/SVGContentUtils.h"
@@ -56,9 +55,11 @@ class SVGImageListener final : public imgINotificationObserver {
 
 // ---------------------------------------------------------------------
 // nsQueryFrame methods
+
 NS_QUERYFRAME_HEAD(SVGImageFrame)
+  NS_QUERYFRAME_ENTRY(ISVGDisplayableFrame)
   NS_QUERYFRAME_ENTRY(SVGImageFrame)
-NS_QUERYFRAME_TAIL_INHERITING(SVGGeometryFrame)
+NS_QUERYFRAME_TAIL_INHERITING(nsIFrame)
 
 }  // namespace mozilla
 
@@ -90,7 +91,8 @@ void SVGImageFrame::Init(nsIContent* aContent, nsContainerFrame* aParent,
   NS_ASSERTION(aContent->IsSVGElement(nsGkAtoms::image),
                "Content is not an SVG image!");
 
-  SVGGeometryFrame::Init(aContent, aParent, aPrevInFlow);
+  AddStateBits(aParent->GetStateBits() & NS_STATE_SVG_CLIPPATH_CHILD);
+  nsIFrame::Init(aContent, aParent, aPrevInFlow);
 
   if (HasAnyStateBits(NS_FRAME_IS_NONDISPLAY)) {
     // Non-display frames are likely to be patterns, masks or the like.
@@ -167,6 +169,11 @@ void SVGImageFrame::DidSetComputedStyle(ComputedStyle* aOldStyle) {
   }
 
   // TODO(heycam): We should handle aspect-ratio, like nsImageFrame does.
+}
+
+bool SVGImageFrame::IsSVGTransformed(gfx::Matrix* aOwnTransform,
+                                     gfx::Matrix* aFromParentTransform) const {
+  return SVGUtils::IsSVGTransformed(this, aOwnTransform, aFromParentTransform);
 }
 
 //----------------------------------------------------------------------
@@ -310,8 +317,7 @@ bool SVGImageFrame::TransformContextForPainting(gfxContext* aGfxContext,
 // ISVGDisplayableFrame methods
 
 void SVGImageFrame::PaintSVG(gfxContext& aContext, const gfxMatrix& aTransform,
-                             imgDrawingParams& aImgParams,
-                             const nsIntRect* aDirtyRect) {
+                             imgDrawingParams& aImgParams) {
   if (!StyleVisibility()->IsVisible()) {
     return;
   }
@@ -356,43 +362,13 @@ void SVGImageFrame::PaintSVG(gfxContext& aContext, const gfxMatrix& aTransform,
       opacity = StyleEffects()->mOpacity;
     }
 
-    if (opacity != 1.0f ||
-        StyleEffects()->mMixBlendMode != StyleBlend::Normal) {
-      aContext.PushGroupForBlendBack(gfxContentType::COLOR_ALPHA, opacity);
+    gfxGroupForBlendAutoSaveRestore autoGroupForBlend(&aContext);
+    if (opacity != 1.0f || StyleEffects()->HasMixBlendMode()) {
+      autoGroupForBlend.PushGroupForBlendBack(gfxContentType::COLOR_ALPHA,
+                                              opacity);
     }
 
     nscoord appUnitsPerDevPx = PresContext()->AppUnitsPerDevPixel();
-    nsRect dirtyRect;  // only used if aDirtyRect is non-null
-    if (aDirtyRect) {
-      NS_ASSERTION(HasAnyStateBits(NS_FRAME_IS_NONDISPLAY),
-                   "Display lists handle dirty rect intersection test");
-      dirtyRect = ToAppUnits(*aDirtyRect, appUnitsPerDevPx);
-
-      // dirtyRect is relative to the outer <svg>, we should transform it
-      // down to <image>.
-      Rect dir(dirtyRect.x, dirtyRect.y, dirtyRect.width, dirtyRect.height);
-      dir.Scale(1.f / AppUnitsPerCSSPixel());
-
-      // FIXME: This isn't correct if there is an inner <svg> enclosing
-      // the <image>. But that seems to be a quite obscure usecase, we can
-      // add a dedicated utility for that purpose to replace the GetCTM
-      // here if necessary.
-      auto mat = SVGContentUtils::GetCTM(imgElem, false);
-      if (mat.IsSingular()) {
-        return;
-      }
-
-      mat.Invert();
-      dir = mat.TransformRect(dir);
-
-      // x, y offset of <image> is not included in CTM.
-      dir.MoveBy(-x, -y);
-
-      dir.Scale(AppUnitsPerCSSPixel());
-      dir.Round();
-      dirtyRect = nsRect(dir.x, dir.y, dir.width, dir.height);
-    }
-
     uint32_t flags = aImgParams.imageFlags;
     if (mForceSyncDecoding) {
       flags |= imgIContainer::FLAG_SYNC_DECODE;
@@ -406,7 +382,7 @@ void SVGImageFrame::PaintSVG(gfxContext& aContext, const gfxMatrix& aTransform,
       // of the SVG image's internal document that is visible, in combination
       // with preserveAspectRatio and viewBox.
       const SVGImageContext context(
-          Some(CSSIntSize::Truncate(width, height)),
+          Some(CSSIntSize::Ceil(width, height)),
           Some(imgElem->mPreserveAspectRatio.GetAnimValue()));
 
       // For the actual draw operation to draw crisply (and at the right size),
@@ -420,19 +396,15 @@ void SVGImageFrame::PaintSVG(gfxContext& aContext, const gfxMatrix& aTransform,
       // and that's not always true for TYPE_VECTOR images.
       aImgParams.result &= nsLayoutUtils::DrawSingleImage(
           aContext, PresContext(), mImageContainer,
-          nsLayoutUtils::GetSamplingFilterForFrame(this), destRect,
-          aDirtyRect ? dirtyRect : destRect, context, flags);
+          nsLayoutUtils::GetSamplingFilterForFrame(this), destRect, destRect,
+          context, flags);
     } else {  // mImageContainer->GetType() == TYPE_RASTER
       aImgParams.result &= nsLayoutUtils::DrawSingleUnscaledImage(
           aContext, PresContext(), mImageContainer,
           nsLayoutUtils::GetSamplingFilterForFrame(this), nsPoint(0, 0),
-          aDirtyRect ? &dirtyRect : nullptr, SVGImageContext(), flags);
+          nullptr, SVGImageContext(), flags);
     }
 
-    if (opacity != 1.0f ||
-        StyleEffects()->mMixBlendMode != StyleBlend::Normal) {
-      aContext.PopGroupAndBlend();
-    }
     // gfxContextAutoSaveRestore goes out of scope & cleans up our gfxContext
   }
 }
@@ -447,7 +419,7 @@ void SVGImageFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
     if (!IsVisibleForPainting()) {
       return;
     }
-    if (StyleEffects()->mOpacity == 0.0f) {
+    if (StyleEffects()->IsTransparent()) {
       return;
     }
     aBuilder->BuildCompositorHitTestInfoIfNeeded(this,
@@ -455,7 +427,18 @@ void SVGImageFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
   }
 
   DisplayOutline(aBuilder, aLists);
-  aLists.Content()->AppendNewToTop<DisplaySVGGeometry>(aBuilder, this);
+  aLists.Content()->AppendNewToTop<DisplaySVGImage>(aBuilder, this);
+}
+
+bool SVGImageFrame::IsInvisible() const {
+  if (!StyleVisibility()->IsVisible()) {
+    return true;
+  }
+
+  // Anything below will round to zero later down the pipeline.
+  constexpr float opacity_threshold = 1.0 / 128.0;
+
+  return StyleEffects()->mOpacity <= opacity_threshold;
 }
 
 bool SVGImageFrame::CreateWebRenderCommands(
@@ -463,7 +446,7 @@ bool SVGImageFrame::CreateWebRenderCommands(
     mozilla::wr::IpcResourceUpdateQueue& aResources,
     const mozilla::layers::StackingContextHelper& aSc,
     mozilla::layers::RenderRootStateManager* aManager,
-    nsDisplayListBuilder* aDisplayListBuilder, DisplaySVGGeometry* aItem,
+    nsDisplayListBuilder* aDisplayListBuilder, DisplaySVGImage* aItem,
     bool aDryRun) {
   if (!StyleVisibility()->IsVisible()) {
     return true;
@@ -478,7 +461,7 @@ bool SVGImageFrame::CreateWebRenderCommands(
     // FIXME: not implemented, might be trivial
     return false;
   }
-  if (StyleEffects()->mMixBlendMode != StyleBlend::Normal) {
+  if (StyleEffects()->HasMixBlendMode()) {
     // FIXME: not implemented
     return false;
   }
@@ -641,7 +624,7 @@ bool SVGImageFrame::CreateWebRenderCommands(
       flags |= imgIContainer::FLAG_RECORD_BLOB;
     }
     // Forward preserveAspectRatio to inner SVGs
-    svgContext.SetViewportSize(Some(CSSIntSize::Truncate(width, height)));
+    svgContext.SetViewportSize(Some(CSSIntSize::Ceil(width, height)));
     svgContext.SetPreserveAspectRatio(
         Some(imgElem->mPreserveAspectRatio.GetAnimValue()));
   }

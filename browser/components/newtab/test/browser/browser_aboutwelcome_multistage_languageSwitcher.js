@@ -52,8 +52,8 @@ async function openAboutWelcome() {
 
   // Stub out the doesAppNeedPin to false so the about:welcome pages do not attempt
   // to pin the app.
-  const { ShellService } = ChromeUtils.import(
-    "resource:///modules/ShellService.jsm"
+  const { ShellService } = ChromeUtils.importESModule(
+    "resource:///modules/ShellService.sys.mjs"
   );
   sandbox.stub(ShellService, "doesAppNeedPin").returns(false);
 
@@ -63,6 +63,8 @@ async function openAboutWelcome() {
     .withArgs(
       "os.windowsBuildNumber >= 15063 && !isDefaultBrowser && !doesAppNeedPin"
     )
+    .resolves(false)
+    .withArgs("isDeviceMigration")
     .resolves(false);
 
   info("Opening about:welcome");
@@ -193,6 +195,14 @@ add_task(async function test_aboutwelcome_languageSwitcher_accept() {
   });
 
   const { browser, flushClickTelemetry } = await openAboutWelcome();
+  await testScreenContent(
+    browser,
+    "First Screen primary CTA loaded",
+    // Expected selectors:
+    [`button.primary[value="primary_button"]`],
+    // Unexpected selectors:
+    []
+  );
 
   info("Clicking the primary button to start the onboarding process.");
   await clickVisibleButton(browser, `button.primary[value="primary_button"]`);
@@ -307,6 +317,14 @@ add_task(async function test_aboutwelcome_languageSwitcher_decline() {
   });
 
   const { browser, flushClickTelemetry } = await openAboutWelcome();
+  await testScreenContent(
+    browser,
+    "First Screen primary CTA loaded",
+    // Expected selectors:
+    [`button.primary[value="primary_button"]`],
+    // Unexpected selectors:
+    []
+  );
 
   info("Clicking the primary button to view language switching page.");
   await clickVisibleButton(browser, `button.primary[value="primary_button"]`);

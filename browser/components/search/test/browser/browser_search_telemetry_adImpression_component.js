@@ -13,15 +13,17 @@ const {
 const WINDOW_HEIGHT = 768;
 const WINDOW_WIDTH = 1024;
 
+// Note: example.org is used for the SERP page, and example.com is used to serve
+// the ads. This is done to simulate different domains like the real servers.
 const TEST_PROVIDER_INFO = [
   {
     telemetryId: "example",
-    searchPageRegexp: /^http:\/\/mochi.test:.+\/browser\/browser\/components\/search\/test\/browser\/searchTelemetryAd_components_/,
+    searchPageRegexp: /^https:\/\/example.org\/browser\/browser\/components\/search\/test\/browser\/searchTelemetryAd_components_/,
     queryParamName: "s",
     codeParamName: "abc",
     taggedCodes: ["ff"],
     adServerAttributes: ["mozAttr"],
-    extraAdServersRegexps: [/^https:\/\/example\.com\/ad$/],
+    extraAdServersRegexps: [/^https:\/\/example\.com\/ad/],
     components: [
       {
         type: SearchSERPTelemetryUtils.COMPONENTS.AD_CAROUSEL,
@@ -63,7 +65,7 @@ const TEST_PROVIDER_INFO = [
           },
           children: [
             {
-              selector: ".moz-suggestion a",
+              selector: ".moz-rich-suggestion a",
             },
           ],
         },
@@ -98,27 +100,8 @@ const TEST_PROVIDER_INFO = [
         },
       },
       {
-        type: SearchSERPTelemetryUtils.COMPONENTS.SHOPPING_TAB,
-        included: {
-          regexps: [/^https:\/\/example\.com\/search\?(?:.+)&page=shop/],
-        },
-        nonAd: true,
-      },
-      {
-        type: SearchSERPTelemetryUtils.COMPONENTS.SHOPPING_TAB,
-        included: {
-          parent: {
-            selector: "nav .list-item-shop a",
-          },
-        },
-        topDown: true,
-        nonAd: true,
-      },
-      {
         type: SearchSERPTelemetryUtils.COMPONENTS.AD_LINK,
-        included: {
-          default: true,
-        },
+        default: true,
       },
     ],
   },
@@ -128,7 +111,7 @@ function getSERPUrl(page, organic = false) {
   let url =
     getRootDirectory(gTestPath).replace(
       "chrome://mochitests/content",
-      "http://mochi.test:8888"
+      "https://example.org"
     ) + page;
   return `${url}?s=test${organic ? "" : "&abc=ff"}`;
 }
@@ -421,11 +404,7 @@ add_task(async function test_ad_visibility() {
   BrowserTestUtils.removeTab(tab);
 });
 
-// Refinement buttons won't be detected unless there is at least
-// one ad on the page. There are two instances of the shopping tab on this page:
-// one using a bottom up approach with regular expressions and the other using
-// a top down approach via the document object.
-add_task(async function test_ad_impressions_with_refined_search_button() {
+add_task(async function test_impressions_without_ads() {
   resetTelemetry();
   let url = getSERPUrl(
     "searchTelemetryAd_components_refined_search_button.html"
@@ -439,40 +418,6 @@ add_task(async function test_ad_impressions_with_refined_search_button() {
       component: SearchSERPTelemetryUtils.COMPONENTS.REFINED_SEARCH_BUTTONS,
       ads_loaded: "2",
       ads_visible: "2",
-      ads_hidden: "0",
-    },
-    {
-      component: SearchSERPTelemetryUtils.COMPONENTS.AD_LINK,
-      ads_loaded: "1",
-      ads_visible: "1",
-      ads_hidden: "0",
-    },
-  ]);
-  BrowserTestUtils.removeTab(tab);
-});
-
-// Shopping tabs won't be detected unless there is at least one
-// ad on the page. There are two instances of the shopping tab on this page:
-// one using a bottom up approach with regular expressions and the other using
-// a top down approach via the document object.
-add_task(async function test_ad_impressions_with_shop_tab() {
-  resetTelemetry();
-  let url = getSERPUrl("searchTelemetryAd_components_shopping_tab.html");
-  let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, url);
-
-  await promiseAdImpressionReceived();
-
-  assertAdImpressionEvents([
-    {
-      component: SearchSERPTelemetryUtils.COMPONENTS.SHOPPING_TAB,
-      ads_loaded: "2",
-      ads_visible: "2",
-      ads_hidden: "0",
-    },
-    {
-      component: SearchSERPTelemetryUtils.COMPONENTS.AD_LINK,
-      ads_loaded: "1",
-      ads_visible: "1",
       ads_hidden: "0",
     },
   ]);

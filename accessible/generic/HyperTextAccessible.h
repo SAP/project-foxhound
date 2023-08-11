@@ -127,12 +127,6 @@ class HyperTextAccessible : public AccessibleWrap,
 
   using HyperTextAccessibleBase::CharAt;
 
-  char16_t CharAt(int32_t aOffset) {
-    nsAutoString charAtOffset;
-    CharAt(aOffset, charAtOffset);
-    return charAtOffset.CharAt(0);
-  }
-
   /**
    * Return true if char at the given offset equals to given char.
    */
@@ -189,11 +183,7 @@ class HyperTextAccessible : public AccessibleWrap,
   virtual int32_t CaretOffset() const override;
   virtual void SetCaretOffset(int32_t aOffset) override;
 
-  /**
-   * Provide the line number for the caret.
-   * @return 1-based index for the line number with the caret
-   */
-  int32_t CaretLineNumber();
+  virtual int32_t CaretLineNumber() override;
 
   /**
    * Return the caret rect and the widget containing the caret within this

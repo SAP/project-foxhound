@@ -10,6 +10,7 @@
 #include "mozilla/HoldDropJSObjects.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/UnderlyingSourceBinding.h"
+#include "mozilla/WeakPtr.h"
 #include "nsIAsyncInputStream.h"
 #include "nsISupports.h"
 #include "nsISupportsImpl.h"
@@ -176,7 +177,7 @@ class InputStreamHolder final : public nsIInputStreamCallback {
   InputStreamHolder(JSContext* aCx, InputToReadableStreamAlgorithms* aCallback,
                     nsIAsyncInputStream* aInput);
 
-  // This MUST be called before we're destroyed
+  // Used by Worker shutdown
   void Shutdown();
 
   // These just proxy the calls to the nsIAsyncInputStream
@@ -193,9 +194,8 @@ class InputStreamHolder final : public nsIInputStreamCallback {
  private:
   ~InputStreamHolder();
 
-  // Purposely rawptr to avoid cycles.  Must be cleared with Shutdown() before
-  // destruction
-  InputToReadableStreamAlgorithms* mCallback;
+  // WeakPtr to avoid cycles
+  WeakPtr<InputToReadableStreamAlgorithms> mCallback;
   // To ensure the worker sticks around
   RefPtr<StrongWorkerRef> mAsyncWaitWorkerRef;
   RefPtr<StrongWorkerRef> mWorkerRef;
@@ -204,7 +204,8 @@ class InputStreamHolder final : public nsIInputStreamCallback {
 
 class InputToReadableStreamAlgorithms final
     : public UnderlyingSourceAlgorithmsWrapper,
-      public nsIInputStreamCallback {
+      public nsIInputStreamCallback,
+      public SupportsWeakPtr {
   NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_NSIINPUTSTREAMCALLBACK
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(InputToReadableStreamAlgorithms,
@@ -212,8 +213,7 @@ class InputToReadableStreamAlgorithms final
 
   InputToReadableStreamAlgorithms(JSContext* aCx, nsIAsyncInputStream* aInput,
                                   ReadableStream* aStream)
-      : mState(eInitializing),
-        mOwningEventTarget(GetCurrentSerialEventTarget()),
+      : mOwningEventTarget(GetCurrentSerialEventTarget()),
         mInput(new InputStreamHolder(aCx, this, aInput)),
         mStream(aStream) {}
 
@@ -247,32 +247,14 @@ class InputToReadableStreamAlgorithms final
 
   // Common methods
 
-  enum State {
-    // This is the beginning state before any reading operation.
-    eInitializing,
-
-    // RequestDataCallback has not been called yet. We haven't started to read
-    // data from the stream yet.
-    eWaiting,
-
-    // We are reading data in a separate I/O thread.
-    eReading,
-
-    // We are ready to write something in the JS Buffer.
-    eWriting,
-
-    // After a writing, we want to check if the stream is closed. After the
-    // check, we go back to eWaiting. If a reading request happens in the
-    // meantime, we move to eReading state.
-    eChecking,
-
-    // Operation completed.
-    eClosed,
-  };
-
-  State mState;
+  bool IsClosed() { return !mInput; }
 
   nsCOMPtr<nsIEventTarget> mOwningEventTarget;
+
+  // This promise is created by PullCallback and resolved when
+  // OnInputStreamReady succeeds. No need to try hard to settle it though, see
+  // also ReleaseObjects() for the reason.
+  RefPtr<Promise> mPullPromise;
 
   RefPtr<InputStreamHolder> mInput;
   RefPtr<ReadableStream> mStream;

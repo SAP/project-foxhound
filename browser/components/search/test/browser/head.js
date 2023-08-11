@@ -346,3 +346,39 @@ function assertAdImpressionEvents(expectedAdImpressions) {
     );
   }
 }
+
+function assertAbandonmentEvent(expectedAbandonment) {
+  let recordedAbandonment = Glean.serp.abandonment.testGetValue() ?? [];
+
+  Assert.equal(
+    recordedAbandonment[0].extra.reason,
+    expectedAbandonment.abandonment.reason,
+    "Should have the correct abandonment reason."
+  );
+}
+
+async function promiseAdImpressionReceived(num) {
+  if (num) {
+    return TestUtils.waitForCondition(() => {
+      let adImpressions = Glean.serp.adImpression.testGetValue() ?? [];
+      return adImpressions.length == num;
+    }, `Should have received an ${num} ad impressions.`);
+  }
+  return TestUtils.waitForCondition(() => {
+    let adImpressions = Glean.serp.adImpression.testGetValue() ?? [];
+    return adImpressions.length;
+  }, "Should have received an ad impression.");
+}
+
+async function waitForPageWithAdImpressions() {
+  return new Promise(resolve => {
+    let listener = win => {
+      Services.obs.removeObserver(
+        listener,
+        "reported-page-with-ad-impressions"
+      );
+      resolve();
+    };
+    Services.obs.addObserver(listener, "reported-page-with-ad-impressions");
+  });
+}

@@ -318,7 +318,6 @@ class nsWindow final : public nsBaseWidget {
   /**
    * Misc.
    */
-  bool AutoErase(HDC dc);
   bool WidgetTypeSupportsAcceleration() override;
 
   void ForcePresent();
@@ -703,6 +702,7 @@ class nsWindow final : public nsBaseWidget {
                         uint32_t aOrientation = 90);
 
   void OnFullscreenChanged(nsSizeMode aOldSizeMode, bool aFullScreen);
+  void TryDwmResizeHack();
 
   static void OnCloakEvent(HWND aWnd, bool aCloaked);
   void OnCloakChanged(bool aCloaked);
@@ -711,6 +711,10 @@ class nsWindow final : public nsBaseWidget {
   virtual nsresult SetHiDPIMode(bool aHiDPI) override;
   virtual nsresult RestoreHiDPIMode() override;
 #endif
+
+  // Get the orientation of the hidden taskbar, on the screen that this window
+  // is on, or Nothing if taskbar isn't hidden.
+  mozilla::Maybe<UINT> GetHiddenTaskbarEdge();
 
   static bool sTouchInjectInitialized;
   static InjectTouchInputPtr sInjectTouchFuncPtr;
@@ -760,7 +764,6 @@ class nsWindow final : public nsBaseWidget {
   bool mInDtor = false;
   bool mIsVisible = false;
   bool mIsCloaked = false;
-  bool mPainting = false;
   bool mTouchWindow = false;
   bool mDisplayPanFeedback = false;
   bool mHideChrome = false;
@@ -774,6 +777,7 @@ class nsWindow final : public nsBaseWidget {
   bool mIsShowingPreXULSkeletonUI = false;
   bool mResizable = false;
   bool mForMenupopupFrame = false;
+  bool mIsPerformingDwmFlushHack = false;
   DWORD_PTR mOldStyle = 0;
   DWORD_PTR mOldExStyle = 0;
   nsNativeDragTarget* mNativeDragTarget = nullptr;
@@ -918,7 +922,13 @@ class nsWindow final : public nsBaseWidget {
 
   mozilla::DataMutex<Desktop> mDesktopId;
 
+  // If set, indicates the edge of the NC region we should clear to black
+  // on next paint.  One of: ABE_TOP, ABE_BOTTOM, ABE_LEFT or ABE_RIGHT.
+  mozilla::Maybe<UINT> mClearNCEdge;
+
   friend class nsWindowGfx;
+
+  static constexpr int kHiddenTaskbarSize = 2;
 };
 
 #endif  // WIDGET_WINDOWS_NSWINDOW_H_

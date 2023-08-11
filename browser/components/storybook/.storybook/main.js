@@ -37,13 +37,18 @@ module.exports = {
     "../**/*.stories.md",
     "../stories/**/*.stories.mdx",
     "../stories/**/*.stories.@(js|jsx|mjs|ts|tsx|md)",
-    `${projectRoot}/toolkit/**/*.stories.@(js|jsx|mjs|ts|tsx|md)`,
+    {
+      directory: `${projectRoot}/toolkit/content/widgets`,
+      files: `**/*.stories.@(js|jsx|mjs|ts|tsx|md)`,
+      titlePrefix: "UI Widgets",
+    },
   ],
   // Additions to the staticDirs might also need to get added to
   // MozXULElement.importCss in preview.mjs to enable auto-reloading.
   staticDirs: [
     `${projectRoot}/toolkit/content/widgets/`,
     `${projectRoot}/browser/themes/shared/`,
+    `${projectRoot}/browser/components/firefoxview/`,
   ],
   addons: [
     "@storybook/addon-links",
@@ -57,6 +62,7 @@ module.exports = {
     },
     "@storybook/addon-a11y",
     path.resolve(__dirname, "addon-pseudo-localization"),
+    path.resolve(__dirname, "addon-component-status"),
   ],
   framework: "@storybook/web-components",
   webpackFinal: async (config, { configType }) => {

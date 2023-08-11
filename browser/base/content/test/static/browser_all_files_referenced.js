@@ -71,6 +71,12 @@ var gExceptionPaths = [
 
   // Localization file added programatically in featureCallout.jsm
   "resource://app/localization/en-US/browser/featureCallout.ftl",
+
+  // Will be removed in bug 1737308
+  "resource://gre/modules/lz4.js",
+  "resource://gre/modules/lz4_internal.js",
+  "resource://gre/modules/osfile.jsm",
+  "resource://gre/modules/osfile/",
 ];
 
 // These are not part of the omni.ja file, so we find them only when running
@@ -123,6 +129,12 @@ var whitelist = [
     platforms: ["linux", "macosx"],
   },
 
+  // This file is referenced by the build system to generate the
+  // Firefox .desktop entry. See bug 1824327 (and perhaps bug 1526672)
+  {
+    file: "resource://app/localization/en-US/browser/linuxDesktopEntry.ftl",
+  },
+
   // toolkit/content/aboutRights-unbranded.xhtml doesn't use aboutRights.css
   { file: "chrome://global/skin/aboutRights.css", skipUnofficial: true },
 
@@ -136,7 +148,7 @@ var whitelist = [
   { file: "chrome://global/content/third_party/d3/d3.js" },
 
   // SpiderMonkey parser API, currently unused in browser/ and toolkit/
-  { file: "resource://gre/modules/reflect.jsm" },
+  { file: "resource://gre/modules/reflect.sys.mjs" },
 
   // extensions/pref/autoconfig/src/nsReadConfig.cpp
   { file: "resource://gre/defaults/autoconfig/prefcalls.js" },
@@ -299,6 +311,12 @@ var whitelist = [
 
   // Bug 1824826 - Implement a view of history in Firefox View
   { file: "resource://gre/modules/PlacesQuery.sys.mjs" },
+
+  // Should be removed in bug 1824826 when moz-tab-list is used in Firefox View
+  { file: "resource://app/localization/en-US/browser/mozTabList.ftl" },
+  { file: "chrome://browser/content/moz-tab-list.css" },
+  { file: "chrome://browser/content/moz-tab-list.mjs" },
+  { file: "chrome://browser/content/moz-tab-row.css" },
 ];
 
 if (AppConstants.NIGHTLY_BUILD && AppConstants.platform != "win") {
@@ -418,7 +436,7 @@ trackResourcePrefix("gre");
 trackResourcePrefix("app");
 
 function getBaseUriForChromeUri(chromeUri) {
-  let chromeFile = chromeUri + "gobbledygooknonexistentfile.reallynothere";
+  let chromeFile = chromeUri + "nonexistentfile.reallynothere";
   let uri = Services.io.newURI(chromeFile);
   let fileUri = gChromeReg.convertChromeURL(uri);
   return fileUri.resolve(".");

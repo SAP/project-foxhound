@@ -8,12 +8,12 @@
 
 #include <locale>
 
+#include "mozilla/AppShutdown.h"
 #include "mozilla/ClearOnShutdown.h"
-#include "mozilla/DataMutex.h"
 #include "mozilla/glean/bindings/jog/jog_ffi_generated.h"
 #include "mozilla/Logging.h"
-#include "mozilla/Omnijar.h"
 #include "mozilla/StaticPrefs_telemetry.h"
+#include "mozilla/AppShutdown.h"
 #include "nsDirectoryServiceDefs.h"
 #include "nsDirectoryServiceUtils.h"
 #include "nsThreadUtils.h"
@@ -29,6 +29,7 @@ static mozilla::LazyLogModule sLog("jog");
 // Thread Safety: Only used on the main thread.
 StaticAutoPtr<nsTHashSet<nsCString>> gCategories;
 StaticAutoPtr<nsTHashMap<nsCString, uint32_t>> gMetrics;
+StaticAutoPtr<nsTHashMap<uint32_t, nsCString>> gMetricNames;
 StaticAutoPtr<nsTHashMap<nsCString, uint32_t>> gPings;
 
 // static
@@ -114,9 +115,42 @@ Maybe<uint32_t> JOG::GetMetric(const nsACString& aMetricName) {
 }
 
 // static
+Maybe<nsCString> JOG::GetMetricName(uint32_t aMetricId) {
+  MOZ_ASSERT(NS_IsMainThread());
+  return !gMetricNames ? Nothing() : gMetricNames->MaybeGet(aMetricId);
+}
+
+// static
+void JOG::GetMetricNames(const nsACString& aCategoryName,
+                         nsTArray<nsString>& aNames) {
+  MOZ_ASSERT(NS_IsMainThread());
+  if (!gMetricNames) {
+    return;
+  }
+  for (const auto& identifier : gMetricNames->Values()) {
+    if (StringBeginsWith(identifier, aCategoryName) &&
+        identifier.CharAt(aCategoryName.Length()) == '.') {
+      const char* metricName = &identifier.Data()[aCategoryName.Length() + 1];
+      aNames.AppendElement()->AssignASCII(metricName);
+    }
+  }
+}
+
+// static
 Maybe<uint32_t> JOG::GetPing(const nsACString& aPingName) {
   MOZ_ASSERT(NS_IsMainThread());
   return !gPings ? Nothing() : gPings->MaybeGet(aPingName);
+}
+
+// static
+void JOG::GetPingNames(nsTArray<nsString>& aNames) {
+  MOZ_ASSERT(NS_IsMainThread());
+  if (!gPings) {
+    return;
+  }
+  for (const auto& ping : gPings->Keys()) {
+    aNames.EmplaceBack(NS_ConvertUTF8toUTF16(ping));
+  }
 }
 
 }  // namespace mozilla::glean
@@ -174,12 +208,14 @@ nsCString kebabToCamel(const nsACString& aKebab) {
 using mozilla::AppShutdown;
 using mozilla::ShutdownPhase;
 using mozilla::glean::gCategories;
+using mozilla::glean::gMetricNames;
 using mozilla::glean::gMetrics;
 using mozilla::glean::gPings;
 
-extern "C" NS_EXPORT void JOG_RegisterMetric(const nsACString& aCategory,
-                                             const nsACString& aName,
-                                             uint32_t aMetric) {
+extern "C" NS_EXPORT void JOG_RegisterMetric(
+    const nsACString& aCategory, const nsACString& aName,
+    uint32_t aMetric,  // includes type.
+    uint32_t aMetricId) {
   MOZ_ASSERT(NS_IsMainThread());
 
   if (AppShutdown::IsInOrBeyond(ShutdownPhase::XPCOMWillShutdown)) {
@@ -205,6 +241,14 @@ extern "C" NS_EXPORT void JOG_RegisterMetric(const nsACString& aCategory,
                   ShutdownPhase::XPCOMWillShutdown);
   }
   gMetrics->InsertOrUpdate(categoryCamel + "."_ns + nameCamel, aMetric);
+
+  // Register the metric name (for GIFFT)
+  if (!gMetricNames) {
+    gMetricNames = new nsTHashMap<uint32_t, nsCString>();
+    RunOnShutdown([&] { gMetricNames = nullptr; },
+                  ShutdownPhase::XPCOMWillShutdown);
+  }
+  gMetricNames->InsertOrUpdate(aMetricId, categoryCamel + "."_ns + nameCamel);
 }
 
 extern "C" NS_EXPORT void JOG_RegisterPing(const nsACString& aPingName,

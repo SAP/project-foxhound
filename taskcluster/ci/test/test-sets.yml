@@ -21,6 +21,7 @@ web-platform-tests:
     - web-platform-tests-print-reftest
     - web-platform-tests-reftest
     - web-platform-tests-wdspec
+    - web-platform-tests-webgpu
 
 web-platform-tests-backlog:
     - web-platform-tests-backlog
@@ -90,7 +91,6 @@ browsertime:
     - browsertime-youtube-playback-power
     - browsertime-custom
     - browsertime-first-install
-    - browsertime-grandprix
     - browsertime-responsiveness
     - browsertime-regression-tests
     - browsertime-upload
@@ -104,7 +104,6 @@ browsertime-clang:
     - browsertime-benchmark
     - browsertime-benchmark-wasm
     - browsertime-youtube-playback
-    - browsertime-grandprix
     - browsertime-responsiveness
 
 browsertime-profiling:

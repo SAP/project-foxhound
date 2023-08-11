@@ -95,7 +95,6 @@ class SVGBBox final {
   bool IsFinite() const { return mBBox.IsFinite(); }
 
   void Scale(float aScale) { mBBox.Scale(aScale); }
-  void MoveBy(float x, float y) { mBBox.MoveBy(x, y); }
 
   void UnionEdges(const SVGBBox& aSVGBBox) {
     if (aSVGBBox.mIsEmpty) {
@@ -242,12 +241,11 @@ class SVGUtils final {
   static nsIFrame* GetOuterSVGFrameAndCoveredRegion(nsIFrame* aFrame,
                                                     nsRect* aRect);
 
-  /* Paint SVG frame with SVG effects - aDirtyRect is the area being
-   * redrawn, in device pixel coordinates relative to the outer svg */
+  /* Paint SVG frame with SVG effects
+   */
   static void PaintFrameWithEffects(nsIFrame* aFrame, gfxContext& aContext,
                                     const gfxMatrix& aTransform,
-                                    imgDrawingParams& aImgParams,
-                                    const nsIntRect* aDirtyRect = nullptr);
+                                    imgDrawingParams& aImgParams);
 
   /* Hit testing - check if point hits the clipPath of indicated
    * frame.  Returns true if no clipPath set. */

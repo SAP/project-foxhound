@@ -215,7 +215,6 @@
       "../../babel-loader/lib/index.js??ref--1!../../../packages/devtools-source-map/src/utils/index.js": 64,
       "../../babel-loader/lib/index.js??ref--1!../../devtools-modules/src/utils/event-emitter.js": 65,
       "../../fuzzaldrin-plus/lib/scorer.js": 66,
-      "../../classnames/index.js": 67,
       "../../@babel/types/lib/utils/shallowEqual.js": 68,
       "../../lodash/_Stack.js": 69,
       "../../lodash/_Map.js": 70,
@@ -1092,7 +1091,6 @@
       "../node_modules/extract-text-webpack-plugin/dist/loader.js??ref--3-0!../node_modules/css-loader/index.js??ref--3-1!../node_modules/postcss-loader/lib/index.js!../node_modules/react-aria-components/src/tabs/tab-list.css": 940,
       "../node_modules/babel-loader/lib/index.js??ref--1!../node_modules/react-aria-components/src/tabs/tabs.js": 941,
       "../node_modules/babel-loader/lib/index.js??ref--1!../node_modules/react-aria-components/src/utils/unique-id.js": 942,
-      "../node_modules/classnames/index.js": 943,
       "../node_modules/babel-loader/lib/index.js??ref--1!../packages/devtools-splitter/index.js": 944,
       "../node_modules/babel-loader/lib/index.js??ref--1!../packages/devtools-splitter/src/SplitBox.js": 945,
       "../node_modules/babel-loader/lib/index.js??ref--1!../packages/devtools-splitter/src/Draggable.js": 946,
@@ -1269,7 +1267,10 @@
       "../node_modules/@babel/generator/node_modules/source-map/lib/quick-sort.js": 1117,
       "../node_modules/@babel/generator/node_modules/source-map/lib/source-node.js": 1118,
       "../node_modules/source-map/lib/wasm.js": 1119,
-      "external \"devtools/client/shared/vendor/micromatch/micromatch\"": 1120
+      "external \"devtools/client/shared/vendor/micromatch/micromatch\"": 1120,
+      "../node_modules/node-libs-browser/node_modules/buffer/index.js": 1121,
+      "../node_modules/node-libs-browser/node_modules/base64-js/index.js": 1122,
+      "../node_modules/node-libs-browser/node_modules/ieee754/index.js": 1123
     },
     "usedIds": {
       "0": 0,
@@ -2392,7 +2393,10 @@
       "1117": 1117,
       "1118": 1118,
       "1119": 1119,
-      "1120": 1120
+      "1120": 1120,
+      "1121": 1121,
+      "1122": 1122,
+      "1123": 1123
     }
   },
   "chunks": {
@@ -2408,10 +2412,7 @@
     },
     "byBlocks": {},
     "usedIds": {
-      "0": 0,
-      "1": 1,
-      "4": 4,
-      "5": 5
+      "1": 1
     }
   },
   "extract-text-webpack-plugin ../../extract-text-webpack-plugin/dist ../../css-loader/index.js??ref--3-1!../../postcss-loader/lib/index.js!../../../packages/devtools-contextmenu/menu.css": [

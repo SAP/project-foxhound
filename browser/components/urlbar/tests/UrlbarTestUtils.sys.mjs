@@ -118,7 +118,7 @@ export var UrlbarTestUtils = {
     window,
     value,
     waitForFocus,
-    fireInputEvent = false,
+    fireInputEvent = true,
     selectionStart = -1,
     selectionEnd = -1,
   } = {}) {
@@ -261,14 +261,23 @@ export var UrlbarTestUtils = {
       win.gURLBar.view.resultMenu,
       "popupshown"
     );
-    this._testScope?.info(`selecting the result at index ${resultIndex}`);
-    while (win.gURLBar.view.selectedRowIndex != resultIndex) {
-      this.EventUtils.synthesizeKey("KEY_ArrowDown", {}, win);
-    }
     if (byMouse) {
+      this._testScope?.info(
+        `synthesizing mousemove on row to make the menu button visible`
+      );
+      await this.EventUtils.promiseElementReadyForUserInput(
+        menuButton.closest(".urlbarView-row"),
+        win,
+        this._testScope?.info
+      );
+      this._testScope?.info(`got mousemove, now clicking the menu button`);
       this.EventUtils.synthesizeMouseAtCenter(menuButton, {}, win);
       this._testScope?.info(`waiting for the menu popup to open via mouse`);
     } else {
+      this._testScope?.info(`selecting the result at index ${resultIndex}`);
+      while (win.gURLBar.view.selectedRowIndex != resultIndex) {
+        this.EventUtils.synthesizeKey("KEY_ArrowDown", {}, win);
+      }
       if (this.getSelectedElement(win) != menuButton) {
         this.EventUtils.synthesizeKey("KEY_Tab", {}, win);
       }
@@ -291,6 +300,76 @@ export var UrlbarTestUtils = {
   },
 
   /**
+   * Opens the result menu of a specific result and gets a menu item by either
+   * accesskey or command name. Either `accesskey` or `command` must be given.
+   *
+   * @param {object} options
+   *   The options object.
+   * @param {object} options.window
+   *   The window containing the urlbar.
+   * @param {string} options.accesskey
+   *   The access key of the menu item to return.
+   * @param {string} options.command
+   *   The command name of the menu item to return.
+   * @param {number} options.resultIndex
+   *   The index of the result. Defaults to the current selected index.
+   * @param {boolean} options.openByMouse
+   *   Whether to open the menu by mouse or keyboard.
+   * @param {Array} options.submenuSelectors
+   *   If the command is in the top-level result menu, leave this as an empty
+   *   array. If it's in a submenu, set this to an array where each element i is
+   *   a selector that can be used to get the i'th menu item that opens a
+   *   submenu.
+   */
+  async openResultMenuAndGetItem({
+    window,
+    accesskey,
+    command,
+    resultIndex = window.gURLBar.view.selectedRowIndex,
+    openByMouse = false,
+    submenuSelectors = [],
+  }) {
+    await this.openResultMenu(window, { resultIndex, byMouse: openByMouse });
+
+    // Open the sequence of submenus that contains the item.
+    for (let selector of submenuSelectors) {
+      let menuitem = window.gURLBar.view.resultMenu.querySelector(selector);
+      if (!menuitem) {
+        throw new Error("Submenu item not found for selector: " + selector);
+      }
+
+      this._testScope?.info("Clicking submenu item with selector: " + selector);
+      let promisePopup = lazy.BrowserTestUtils.waitForEvent(
+        window.gURLBar.view.resultMenu,
+        "popupshown"
+      );
+      this.EventUtils.synthesizeMouseAtCenter(menuitem, {}, window);
+      this._testScope?.info("Waiting for submenu popupshown event");
+      await promisePopup;
+      this._testScope?.info("Got the submenu popupshown event");
+    }
+
+    // Now get the item.
+    let menuitem;
+    if (accesskey) {
+      await lazy.BrowserTestUtils.waitForCondition(() => {
+        menuitem = window.gURLBar.view.resultMenu.querySelector(
+          `menuitem[accesskey=${accesskey}]`
+        );
+        return menuitem;
+      }, "Waiting for strings to load");
+    } else if (command) {
+      menuitem = window.gURLBar.view.resultMenu.querySelector(
+        `menuitem[data-command=${command}]`
+      );
+    } else {
+      throw new Error("accesskey or command must be specified");
+    }
+
+    return menuitem;
+  },
+
+  /**
    * Opens the result menu of a specific result and presses an access key to
    * activate a menu item.
    *
@@ -310,14 +389,12 @@ export var UrlbarTestUtils = {
       openByMouse = false,
     } = {}
   ) {
-    await this.openResultMenu(win, { resultIndex, byMouse: openByMouse });
-    await lazy.BrowserTestUtils.waitForCondition(
-      () =>
-        win.gURLBar.view.resultMenu.querySelector(
-          `menuitem[accesskey=${accesskey}]`
-        ),
-      "Waiting for strings to load"
-    );
+    await this.openResultMenuAndGetItem({
+      accesskey,
+      resultIndex,
+      openByMouse,
+      window: win,
+    });
 
     this._testScope?.info(
       `pressing access key (${accesskey}) to activate menu item`
@@ -330,6 +407,59 @@ export var UrlbarTestUtils = {
     this._testScope?.info("waiting for command event");
     await promiseCommand;
     this._testScope?.info("got the command event");
+  },
+
+  /**
+   * Opens the result menu of a specific result and clicks a menu item with a
+   * specified command name.
+   *
+   * @param {object} win
+   *   The window containing the urlbar.
+   * @param {string|Array} commandOrArray
+   *   If the command is in the top-level result menu, set this to the command
+   *   name. If it's in a submenu, set this to an array where each element i is
+   *   a selector that can be used to click the i'th menu item that opens a
+   *   submenu, and the last element is the command name.
+   * @param {object} options
+   *   The options object.
+   * @param {number} options.resultIndex
+   *   The index of the result. Defaults to the current selected index.
+   * @param {boolean} options.openByMouse
+   *   Whether to open the menu by mouse or keyboard.
+   */
+  async openResultMenuAndClickItem(
+    win,
+    commandOrArray,
+    {
+      resultIndex = win.gURLBar.view.selectedRowIndex,
+      openByMouse = false,
+    } = {}
+  ) {
+    let submenuSelectors = Array.isArray(commandOrArray)
+      ? commandOrArray
+      : [commandOrArray];
+    let command = submenuSelectors.pop();
+
+    let menuitem = await this.openResultMenuAndGetItem({
+      resultIndex,
+      openByMouse,
+      command,
+      submenuSelectors,
+      window: win,
+    });
+    if (!menuitem) {
+      throw new Error("Menu item not found for command: " + command);
+    }
+
+    this._testScope?.info("Clicking menu item with command: " + command);
+    let promiseCommand = lazy.BrowserTestUtils.waitForEvent(
+      win.gURLBar.view.resultMenu,
+      "command"
+    );
+    this.EventUtils.synthesizeMouseAtCenter(menuitem, {}, win);
+    this._testScope?.info("Waiting for command event");
+    await promiseCommand;
+    this._testScope?.info("Got the command event");
   },
 
   /**
@@ -1018,26 +1148,38 @@ export var UrlbarTestUtils = {
   },
 
   /**
-   * Enrolls in a mock Nimbus rollout.
+   * Enrolls in a mock Nimbus feature.
    *
    * If you call UrlbarPrefs.updateFirefoxSuggestScenario() from an xpcshell
    * test, you must call this first to intialize the Nimbus urlbar feature.
    *
    * @param {object} value
    *   Define any desired Nimbus variables in this object.
+   * @param {string} [feature]
+   *   The feature to init.
+   * @param {string} [enrollmentType]
+   *   The enrollment type, either "rollout" (default) or "config".
    * @returns {Function}
-   *   A cleanup function that will remove the mock rollout.
+   *   A cleanup function that will unenroll the feature, returns a promise.
    */
-  async initNimbusFeature(value = {}) {
+  async initNimbusFeature(
+    value = {},
+    feature = "urlbar",
+    enrollmentType = "rollout"
+  ) {
     this.info?.("initNimbusFeature awaiting ExperimentManager.onStartup");
     await lazy.ExperimentManager.onStartup();
 
     this.info?.("initNimbusFeature awaiting ExperimentAPI.ready");
     await lazy.ExperimentAPI.ready();
 
-    this.info?.("initNimbusFeature awaiting ExperimentFakes.enrollWithRollout");
-    let doCleanup = await lazy.ExperimentFakes.enrollWithRollout({
-      featureId: lazy.NimbusFeatures.urlbar.featureId,
+    let method =
+      enrollmentType == "rollout"
+        ? "enrollWithRollout"
+        : "enrollWithFeatureConfig";
+    this.info?.(`initNimbusFeature awaiting ExperimentFakes.${method}`);
+    let doCleanup = await lazy.ExperimentFakes[method]({
+      featureId: lazy.NimbusFeatures[feature].featureId,
       value: { enabled: true, ...value },
     });
 

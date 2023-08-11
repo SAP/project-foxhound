@@ -115,14 +115,14 @@ parking_lot = { path = "build/rust/parking_lot" }
 # Override tinyvec with smallvec
 tinyvec = { path = "build/rust/tinyvec" }
 
+# Patch base64 0.13 to 0.21
+base64 = { path = "build/rust/base64" }
+
 # Patch wasi 0.10 to 0.11
 wasi = { path = "build/rust/wasi" }
 
 # Patch bindgen 0.63 to 0.64
-bindgen = { path = "build/rust/bindgen" }
-
-# Patch memoffset 0.6 to 0.8
-memoffset = { path = "build/rust/memoffset" }
+bindgen_0_63 = { package = "bindgen", path = "build/rust/bindgen" }
 
 # Patch ntapi 0.3 to 0.4
 ntapi = { path = "build/rust/ntapi" }
@@ -145,6 +145,9 @@ web-sys = { path = "build/rust/dummy-web/web-sys" }
 # Overrides to allow easier use of common internal crates.
 moz_asserts = { path = "mozglue/static/rust/moz_asserts" }
 
+# Patch bindgen to work around issues with some unsound transmutes when compiling with LLVM 16+.
+bindgen = { path = "third_party/rust/bindgen" }
+
 # Patch `rure` to disable building the cdylib and staticlib targets
 # Cargo has no way to disable building targets your dependencies provide which
 # you don't depend on, and linking the cdylib breaks during instrumentation
@@ -162,8 +165,6 @@ packed_simd = { package = "packed_simd_2", git = "https://github.com/hsivonen/pa
 midir = { git = "https://github.com/mozilla/midir.git", rev = "519e651241e867af3391db08f9ae6400bc023e18" }
 # warp 0.3.3 + https://github.com/seanmonstar/warp/pull/1007
 warp = { git = "https://github.com/glandium/warp", rev = "4af45fae95bc98b0eba1ef0db17e1dac471bb23d" }
-
-cssparser = { git = "https://github.com/servo/rust-cssparser", rev = "45bc47e2bcb846f1efb5aea156be5fe7d18624bf" }
 
 # application-services overrides to make updating them all simpler.
 interrupt-support = { git = "https://github.com/mozilla/application-services", rev = "86c84c217036c12283d19368867323a66bf35883" }
@@ -184,3 +185,8 @@ uniffi_bindgen = "=0.23.0"
 uniffi_build = "=0.23.0"
 uniffi_macros = "=0.23.0"
 weedle2 = "=4.0.0"
+
+# Backport https://github.com/mozilla/authenticator-rs/commit/2da9e991 to
+# authenticator-rs 0.4.0-alpha.14 for Bug 1824811.
+[patch.crates-io.authenticator]
+path = "third_party/rust/authenticator"

@@ -15,10 +15,15 @@
 #include <sys/types.h>
 #include <sys/utsname.h>
 #include <sys/wait.h>
+#include <glib.h>
+#include <fcntl.h>
 
 #include "mozilla/gfx/Logging.h"
 #include "mozilla/SSE.h"
 #include "mozilla/Telemetry.h"
+#include "mozilla/XREAppData.h"
+#include "mozilla/ScopeExit.h"
+#include "mozilla/GUniquePtr.h"
 #include "nsCRTGlue.h"
 #include "nsExceptionHandler.h"
 #include "nsPrintfCString.h"
@@ -29,14 +34,14 @@
 #include "prenv.h"
 #include "WidgetUtilsGtk.h"
 #include "MediaCodecsSupport.h"
+#include "nsAppRunner.h"
 
-// How long we wait for data from glxtest process in milliseconds.
-#define GLXTEST_TIMEOUT 4000
+// How long we wait for data from glxtest/vaapi test process in milliseconds.
+#define GFX_TEST_TIMEOUT 4000
+#define VAAPI_TEST_TIMEOUT 2000
 
-#define EXIT_STATUS_BUFFER_TOO_SMALL 2
-#ifdef DEBUG
-bool fire_glxtest_process();
-#endif
+#define GLX_PROBE_BINARY u"glxtest"_ns
+#define VAAPI_PROBE_BINARY u"vaapitest"_ns
 
 namespace mozilla::widget {
 
@@ -44,9 +49,8 @@ namespace mozilla::widget {
 NS_IMPL_ISUPPORTS_INHERITED(GfxInfo, GfxInfoBase, nsIGfxInfoDebug)
 #endif
 
-// these global variables will be set when firing the glxtest process
-int glxtest_pipe = -1;
-pid_t glxtest_pid = 0;
+int GfxInfo::sGLXTestPipe = -1;
+pid_t GfxInfo::sGLXTestPID = 0;
 
 // bits to use decoding codec information returned from glxtest
 constexpr int CODEC_HW_H264 = 1 << 4;
@@ -64,7 +68,6 @@ nsresult GfxInfo::Init() {
   mIsXWayland = false;
   mHasMultipleGPUs = false;
   mGlxTestError = false;
-  mIsVAAPISupported = false;
   return GfxInfoBase::Init();
 }
 
@@ -96,96 +99,131 @@ void GfxInfo::AddCrashReportAnnotations() {
   }
 }
 
-void GfxInfo::GetData() {
-  GfxInfoBase::GetData();
+static bool MakeFdNonBlocking(int fd) {
+  return fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) | O_NONBLOCK) != -1;
+}
 
-  // to understand this function, see bug 639842. We retrieve the OpenGL driver
-  // information in a separate process to protect against bad drivers.
-
-  // if glxtest_pipe == -1, that means that we already read the information
-  if (glxtest_pipe == -1) {
-    return;
+static bool ManageChildProcess(const char* aProcessName, int* aPID, int* aPipe,
+                               int aTimeout, char** aData) {
+  // Don't try anything if we failed before
+  if (*aPID < 0) {
+    return false;
   }
+
+  GIOChannel* channel = nullptr;
+  *aData = nullptr;
+
+  auto free = mozilla::MakeScopeExit([&] {
+    if (channel) {
+      g_io_channel_unref(channel);
+    }
+    if (*aPipe >= 0) {
+      close(*aPipe);
+      *aPipe = -1;
+    }
+  });
 
   const TimeStamp deadline =
-      TimeStamp::Now() + TimeDuration::FromMilliseconds(GLXTEST_TIMEOUT);
-
-  enum { buf_size = 2048 };
-  char buf[buf_size];
-  ssize_t bytesread = 0;
+      TimeStamp::Now() + TimeDuration::FromMilliseconds(aTimeout);
 
   struct pollfd pfd {};
-  pfd.fd = glxtest_pipe;
+  pfd.fd = *aPipe;
   pfd.events = POLLIN;
-  auto ret = poll(&pfd, 1, GLXTEST_TIMEOUT);
-  if (ret <= 0) {
-    gfxCriticalNote << "glxtest: failed to read data from glxtest, we may "
-                       "fallback to software rendering\n";
-  } else {
-    // -1 because we'll append a zero
-    bytesread = read(glxtest_pipe, &buf, buf_size - 1);
-  }
-  close(glxtest_pipe);
-  glxtest_pipe = -1;
 
-  // bytesread < 0 would mean that the above read() call failed.
-  // This should never happen. If it did, the outcome would be to blocklist
-  // anyway.
-  if (bytesread < 0) {
-    bytesread = 0;
-  } else if (bytesread == buf_size - 1) {
-    gfxCriticalNote << "glxtest: read from pipe exceeded buffer size";
+  while (poll(&pfd, 1, aTimeout) != 1) {
+    if (errno != EAGAIN && errno != EINTR) {
+      gfxCriticalNote << "ManageChildProcess(" << aProcessName
+                      << "): poll failed: " << strerror(errno) << "\n";
+      return false;
+    }
+    if (TimeStamp::Now() > deadline) {
+      gfxCriticalNote << "ManageChildProcess(" << aProcessName
+                      << "): process hangs\n";
+      return false;
+    }
   }
 
-  // let buf be a zero-terminated string
-  buf[bytesread] = 0;
+  channel = g_io_channel_unix_new(*aPipe);
+  MakeFdNonBlocking(*aPipe);
 
-  // Wait for the glxtest process to finish. This serves 2 purposes:
-  // * avoid having a zombie glxtest process laying around
-  // * get the glxtest process status info.
-  int glxtest_status = 0;
-  bool wait_for_glxtest_process = true;
-  bool waiting_for_glxtest_process_failed = false;
-  int waitpid_errno = 0;
-  while (wait_for_glxtest_process) {
-    wait_for_glxtest_process = false;
-    if (waitpid(glxtest_pid, &glxtest_status, WNOHANG) == -1) {
-      waitpid_errno = errno;
-      if (waitpid_errno == EAGAIN || waitpid_errno == EINTR) {
-        wait_for_glxtest_process = true;
-      } else {
+  GUniquePtr<GError> error;
+  gsize length = 0;
+  int ret;
+  do {
+    error = nullptr;
+    ret = g_io_channel_read_to_end(channel, aData, &length,
+                                   getter_Transfers(error));
+  } while (ret == G_IO_STATUS_AGAIN && TimeStamp::Now() < deadline);
+  if (error || ret != G_IO_STATUS_NORMAL) {
+    gfxCriticalNote << "ManageChildProcess(" << aProcessName
+                    << "): failed to read data from child process: ";
+    if (error) {
+      gfxCriticalNote << error->message;
+    } else {
+      gfxCriticalNote << "timeout";
+    }
+    return false;
+  }
+
+  int status = 0;
+  int pid = *aPID;
+  *aPID = -1;
+
+  while (true) {
+    int ret = waitpid(pid, &status, WNOHANG);
+    if (ret > 0) {
+      break;
+    }
+    if (ret < 0) {
+      if (errno == ECHILD) {
         // Bug 718629
         // ECHILD happens when the glxtest process got reaped got reaped after a
         // PR_CreateProcess as per bug 227246. This shouldn't matter, as we
         // still seem to get the data from the pipe, and if we didn't, the
         // outcome would be to blocklist anyway.
-        waiting_for_glxtest_process_failed = (waitpid_errno != ECHILD);
+        return true;
+      }
+      if (errno != EAGAIN && errno != EINTR) {
+        gfxCriticalNote << "ManageChildProcess(" << aProcessName
+                        << "): waitpid failed: " << strerror(errno) << "\n";
+        return false;
       }
     }
-    if (wait_for_glxtest_process) {
-      if (TimeStamp::Now() > deadline) {
-        gfxCriticalNote << "glxtest: glxtest process hangs\n";
-        waiting_for_glxtest_process_failed = true;
-        break;
-      }
-      // Wait 100ms to another waitpid() check.
-      usleep(100000);
+    if (TimeStamp::Now() > deadline) {
+      gfxCriticalNote << "ManageChildProcess(" << aProcessName
+                      << "): process hangs\n";
+      return false;
     }
+    // Wait 50ms to another waitpid() check.
+    usleep(50000);
   }
 
-  int exit_code = EXIT_FAILURE;
-  bool exited_with_error_code = false;
-  if (!waiting_for_glxtest_process_failed && WIFEXITED(glxtest_status)) {
-    exit_code = WEXITSTATUS(glxtest_status);
-    exited_with_error_code = exit_code != EXIT_SUCCESS;
+  return WIFEXITED(status) && WEXITSTATUS(status) == EXIT_SUCCESS;
+}
+
+// to understand this function, see bug 639842. We retrieve the OpenGL driver
+// information in a separate process to protect against bad drivers.
+void GfxInfo::GetData() {
+  if (mInitialized) {
+    return;
   }
+  mInitialized = true;
 
-  bool received_signal =
-      !waiting_for_glxtest_process_failed && WIFSIGNALED(glxtest_status);
+  // In some cases (xpcshell test, Profile manager etc.)
+  // FireGLXTestProcess() is not fired in advance
+  // so we call it here.
+  GfxInfo::FireGLXTestProcess();
 
-  bool error = waiting_for_glxtest_process_failed || exited_with_error_code ||
-               received_signal;
-  bool errorLog = false;
+  GfxInfoBase::GetData();
+
+  char* glxData = nullptr;
+  auto free = mozilla::MakeScopeExit([&] { g_free((void*)glxData); });
+
+  bool error = !ManageChildProcess("glxtest", &sGLXTestPID, &sGLXTestPipe,
+                                   GFX_TEST_TIMEOUT, &glxData);
+  if (error) {
+    gfxCriticalNote << "glxtest: ManageChildProcess failed\n";
+  }
 
   nsCString glVendor;
   nsCString glRenderer;
@@ -202,7 +240,6 @@ void GfxInfo::GetData() {
   nsCString adapterRam;
 
   nsCString drmRenderDevice;
-  nsCString isVAAPISupported;
 
   nsCString ddxDriver;
 
@@ -211,8 +248,10 @@ void GfxInfo::GetData() {
 
   nsCString* stringToFill = nullptr;
   bool logString = false;
+  bool errorLog = false;
 
-  char* bufptr = buf;
+  char* bufptr = glxData;
+
   while (true) {
     char* line = NS_strtok("\n", &bufptr);
     if (!line) break;
@@ -248,29 +287,6 @@ void GfxInfo::GetData() {
       stringToFill = pciDevices.AppendElement();
     } else if (!strcmp(line, "DRM_RENDERDEVICE")) {
       stringToFill = &drmRenderDevice;
-    } else if (!strcmp(line, "VAAPI_SUPPORTED")) {
-      stringToFill = &isVAAPISupported;
-    } else if (!strcmp(line, "VAAPI_HWCODECS")) {
-      line = NS_strtok("\n", &bufptr);
-      if (!line) break;
-      int codecs = 0;
-      std::istringstream(line) >> codecs;
-      if (codecs & CODEC_HW_H264) {
-        media::MCSInfo::AddSupport(
-            media::MediaCodecsSupport::H264HardwareDecode);
-      }
-      if (codecs & CODEC_HW_VP8) {
-        media::MCSInfo::AddSupport(
-            media::MediaCodecsSupport::VP8HardwareDecode);
-      }
-      if (codecs & CODEC_HW_VP9) {
-        media::MCSInfo::AddSupport(
-            media::MediaCodecsSupport::VP9HardwareDecode);
-      }
-      if (codecs & CODEC_HW_AV1) {
-        media::MCSInfo::AddSupport(
-            media::MediaCodecsSupport::AV1HardwareDecode);
-      }
     } else if (!strcmp(line, "TEST_TYPE")) {
       stringToFill = &testType;
     } else if (!strcmp(line, "WARNING")) {
@@ -332,7 +348,6 @@ void GfxInfo::GetData() {
   }
 
   mDrmRenderDevice = std::move(drmRenderDevice);
-  mIsVAAPISupported = isVAAPISupported.Equals("TRUE");
   mTestType = std::move(testType);
 
   // Mesa always exposes itself in the GL_VERSION string, but not always the
@@ -452,14 +467,14 @@ void GfxInfo::GetData() {
   // If we still don't have a vendor ID, we can try the PCI vendor list.
   if (mVendorId.IsEmpty()) {
     if (pciVendors.IsEmpty()) {
-      gfxCriticalNote << "No GPUs detected via PCI";
+      gfxCriticalNote << "No GPUs detected via PCI\n";
     } else {
       for (size_t i = 0; i < pciVendors.Length(); ++i) {
         if (mVendorId.IsEmpty()) {
           mVendorId = pciVendors[i];
         } else if (mVendorId != pciVendors[i]) {
           gfxCriticalNote << "More than 1 GPU vendor detected via PCI, cannot "
-                             "deduce vendor";
+                             "deduce vendor\n";
           mVendorId.Truncate();
           break;
         }
@@ -476,7 +491,7 @@ void GfxInfo::GetData() {
           mDeviceId = pciDevices[i];
         } else if (mDeviceId != pciDevices[i]) {
           gfxCriticalNote << "More than 1 GPU from same vendor detected via "
-                             "PCI, cannot deduce device";
+                             "PCI, cannot deduce device\n";
           mDeviceId.Truncate();
           break;
         }
@@ -488,7 +503,7 @@ void GfxInfo::GetData() {
   if (!mVendorId.IsEmpty()) {
     if (pciLen > 2) {
       gfxCriticalNote
-          << "More than 2 GPUs detected via PCI, secondary GPU is arbitrary";
+          << "More than 2 GPUs detected via PCI, secondary GPU is arbitrary\n";
     }
     for (size_t i = 0; i < pciLen; ++i) {
       if (!mVendorId.Equals(pciVendors[i]) ||
@@ -504,7 +519,7 @@ void GfxInfo::GetData() {
   if (mVendorId.IsEmpty()) {
     for (size_t i = 0; i < pciLen; ++i) {
       gfxCriticalNote << "PCI candidate " << pciVendors[i].get() << "/"
-                      << pciDevices[i].get();
+                      << pciDevices[i].get() << "\n";
     }
   }
 
@@ -546,29 +561,152 @@ void GfxInfo::GetData() {
     mGlxTestError = true;
   }
 
-  if (error) {
-    nsAutoCString msg("glxtest: process failed");
-    if (waiting_for_glxtest_process_failed) {
-      msg.AppendPrintf(" (waitpid failed with errno=%d for pid %d)",
-                       waitpid_errno, glxtest_pid);
-    }
+  AddCrashReportAnnotations();
+}
 
-    if (exited_with_error_code) {
-      if (exit_code == EXIT_STATUS_BUFFER_TOO_SMALL) {
-        msg.AppendLiteral(" (buffer too small)");
-      } else {
-        msg.AppendPrintf(" (exited with status %d)",
-                         WEXITSTATUS(glxtest_status));
-      }
-    }
-    if (received_signal) {
-      msg.AppendPrintf(" (received signal %d)", WTERMSIG(glxtest_status));
-    }
+int GfxInfo::FireTestProcess(const nsAString& aBinaryFile, int* aOutPipe,
+                             const char** aStringArgs) {
+  nsCOMPtr<nsIFile> appFile;
+  nsresult rv = XRE_GetBinaryPath(getter_AddRefs(appFile));
+  if (NS_FAILED(rv)) {
+    gfxCriticalNote << "Couldn't find application file.\n";
+    return false;
+  }
+  nsCOMPtr<nsIFile> exePath;
+  rv = appFile->GetParent(getter_AddRefs(exePath));
+  if (NS_FAILED(rv)) {
+    gfxCriticalNote << "Couldn't get application directory.\n";
+    return false;
+  }
+  exePath->Append(aBinaryFile);
 
-    gfxCriticalNote << msg.get();
+#define MAX_ARGS 8
+  char* argv[MAX_ARGS + 2];
+
+  argv[0] = strdup(exePath->NativePath().get());
+  for (int i = 0; i < MAX_ARGS; i++) {
+    if (aStringArgs[i]) {
+      argv[i + 1] = strdup(aStringArgs[i]);
+    } else {
+      argv[i + 1] = nullptr;
+      break;
+    }
   }
 
-  AddCrashReportAnnotations();
+  // Use G_SPAWN_LEAVE_DESCRIPTORS_OPEN | G_SPAWN_DO_NOT_REAP_CHILD flags
+  // to g_spawn_async_with_pipes() run posix_spawn() directly.
+  int pid;
+  GUniquePtr<GError> err;
+  g_spawn_async_with_pipes(
+      nullptr, argv, nullptr,
+      GSpawnFlags(G_SPAWN_LEAVE_DESCRIPTORS_OPEN | G_SPAWN_DO_NOT_REAP_CHILD),
+      nullptr, nullptr, &pid, nullptr, aOutPipe, nullptr,
+      getter_Transfers(err));
+  if (err) {
+    gfxCriticalNote << "FireTestProcess failed: " << err->message << "\n";
+    pid = 0;
+  }
+  for (auto& arg : argv) {
+    if (!arg) {
+      break;
+    }
+    free(arg);
+  }
+  return pid;
+}
+
+bool GfxInfo::FireGLXTestProcess() {
+  if (sGLXTestPID != 0) {
+    return true;
+  }
+
+  int pfd[2];
+  if (pipe(pfd) == -1) {
+    gfxCriticalNote << "FireGLXTestProcess failed to create pipe\n";
+    return false;
+  }
+  sGLXTestPipe = pfd[0];
+
+  auto pipeID = std::to_string(pfd[1]);
+  const char* args[] = {"-f", pipeID.c_str(),
+                        IsWaylandEnabled() ? "-w" : nullptr, nullptr};
+  sGLXTestPID = FireTestProcess(GLX_PROBE_BINARY, nullptr, args);
+  // Set pid to -1 to avoid further test launch.
+  if (!sGLXTestPID) {
+    sGLXTestPID = -1;
+  }
+  close(pfd[1]);
+  return true;
+}
+
+void GfxInfo::GetDataVAAPI() {
+  if (mIsVAAPISupported.isSome()) {
+    return;
+  }
+  mIsVAAPISupported = Some(false);
+
+#ifdef MOZ_WAYLAND
+  char* vaapiData = nullptr;
+  auto free = mozilla::MakeScopeExit([&] { g_free((void*)vaapiData); });
+
+  int vaapiPipe = -1;
+  int vaapiPID = 0;
+  const char* args[] = {"-d", mDrmRenderDevice.get(), nullptr};
+  vaapiPID = FireTestProcess(VAAPI_PROBE_BINARY, &vaapiPipe, args);
+  if (!vaapiPID) {
+    return;
+  }
+
+  if (!ManageChildProcess("vaapitest", &vaapiPID, &vaapiPipe,
+                          VAAPI_TEST_TIMEOUT, &vaapiData)) {
+    gfxCriticalNote << "vaapitest: ManageChildProcess failed\n";
+    return;
+  }
+
+  char* bufptr = vaapiData;
+  char* line;
+  while ((line = NS_strtok("\n", &bufptr))) {
+    if (!strcmp(line, "VAAPI_SUPPORTED")) {
+      line = NS_strtok("\n", &bufptr);
+      if (!line) {
+        gfxCriticalNote << "vaapitest: Failed to get VAAPI support\n";
+        return;
+      }
+      mIsVAAPISupported = Some(!strcmp(line, "TRUE"));
+    } else if (!strcmp(line, "VAAPI_HWCODECS")) {
+      line = NS_strtok("\n", &bufptr);
+      if (!line) {
+        gfxCriticalNote << "vaapitest: Failed to get VAAPI codecs\n";
+        return;
+      }
+      int codecs = 0;
+      std::istringstream(line) >> codecs;
+      if (codecs & CODEC_HW_H264) {
+        media::MCSInfo::AddSupport(
+            media::MediaCodecsSupport::H264HardwareDecode);
+      }
+      if (codecs & CODEC_HW_VP8) {
+        media::MCSInfo::AddSupport(
+            media::MediaCodecsSupport::VP8HardwareDecode);
+      }
+      if (codecs & CODEC_HW_VP9) {
+        media::MCSInfo::AddSupport(
+            media::MediaCodecsSupport::VP9HardwareDecode);
+      }
+      if (codecs & CODEC_HW_AV1) {
+        media::MCSInfo::AddSupport(
+            media::MediaCodecsSupport::AV1HardwareDecode);
+      }
+    } else if (!strcmp(line, "WARNING") || !strcmp(line, "ERROR")) {
+      gfxCriticalNote << "vaapitest: " << line;
+      line = NS_strtok("\n", &bufptr);
+      if (line) {
+        gfxCriticalNote << "vaapitest: " << line << "\n";
+      }
+      return;
+    }
+  }
+#endif
 }
 
 const nsTArray<GfxDriverInfo>& GfxInfo::GetGfxDriverInfo() {
@@ -684,12 +822,13 @@ const nsTArray<GfxDriverInfo>& GfxInfo::GetGfxDriverInfo() {
         DRIVER_COMPARISON_IGNORED, V(0, 0, 0, 0),
         "FEATURE_FAILURE_WEBRENDER_NO_LINUX_ATI", "");
 
+    // Disable R600 GPUs with Mesa drivers.
     // Bug 1673939 - Garbled text on RS880 GPUs with Mesa drivers.
     APPEND_TO_DRIVER_BLOCKLIST_EXT(
         OperatingSystem::Linux, ScreenSizeStatus::All, BatteryStatus::All,
         WindowProtocol::All, DriverVendor::MesaAll, DeviceFamily::AmdR600,
         nsIGfxInfo::FEATURE_WEBRENDER, nsIGfxInfo::FEATURE_BLOCKED_DEVICE,
-        DRIVER_LESS_THAN, V(22, 2, 0, 0),
+        DRIVER_COMPARISON_IGNORED, V(0, 0, 0, 0),
         "FEATURE_FAILURE_WEBRENDER_BUG_1673939",
         "https://gitlab.freedesktop.org/mesa/mesa/-/issues/3720");
 
@@ -991,15 +1130,20 @@ nsresult GfxInfo::GetFeatureStatusImpl(
     }
   }
 
+  auto ret = GfxInfoBase::GetFeatureStatusImpl(
+      aFeature, aStatus, aSuggestedDriverVersion, aDriverInfo, aFailureId, &os);
+
+  // Probe VA-API on supported devices only
   if (aFeature == nsIGfxInfo::FEATURE_HARDWARE_VIDEO_DECODING &&
-      !mIsVAAPISupported) {
-    *aStatus = nsIGfxInfo::FEATURE_BLOCKED_PLATFORM_TEST;
-    aFailureId = "FEATURE_FAILURE_VIDEO_DECODING_TEST_FAILED";
-    return NS_OK;
+      *aStatus == nsIGfxInfo::FEATURE_STATUS_OK) {
+    GetDataVAAPI();
+    if (!mIsVAAPISupported.value()) {
+      *aStatus = nsIGfxInfo::FEATURE_BLOCKED_PLATFORM_TEST;
+      aFailureId = "FEATURE_FAILURE_VIDEO_DECODING_TEST_FAILED";
+    }
   }
 
-  return GfxInfoBase::GetFeatureStatusImpl(
-      aFeature, aStatus, aSuggestedDriverVersion, aDriverInfo, aFailureId, &os);
+  return ret;
 }
 
 NS_IMETHODIMP
@@ -1196,16 +1340,6 @@ NS_IMETHODIMP GfxInfo::SpoofDriverVersion(const nsAString& aDriverVersion) {
 
 NS_IMETHODIMP GfxInfo::SpoofOSVersion(uint32_t aVersion) {
   // We don't support OS versioning on Linux. There's just "Linux".
-  return NS_OK;
-}
-
-NS_IMETHODIMP GfxInfo::FireTestProcess() {
-  // If the pid is zero, then we have never run the test process to query for
-  // driver information. This would normally be run on startup, but we need to
-  // manually invoke it for XPC shell tests.
-  if (glxtest_pid == 0) {
-    fire_glxtest_process();
-  }
   return NS_OK;
 }
 

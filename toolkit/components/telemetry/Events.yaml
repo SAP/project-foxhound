@@ -47,6 +47,7 @@ activity_stream:
       "DIALOG_OPEN",
       "DRAG",
       "DROP",
+      "IMPRESSION",
       "MIGRATION_CANCEL",
       "MIGRATION_START",
       "OPEN_NEWTAB_PREFS",
@@ -3204,6 +3205,102 @@ security.doh.trrPerformance:
     products:
       - firefox
 
+security.doh.neterror:
+  load:
+    objects: ["dohwarning"]
+    bug_numbers:
+      - 1829342
+    description: >
+      The DoH warning page is loaded.
+    expiry_version: never
+    notification_emails:
+      - necko@mozilla.com
+      - kershaw@mozilla.com
+    release_channel_collection: opt-out
+    products:
+      - "firefox"
+    record_in_processes: ["content"]
+    extra_keys:
+      mode: Current TRR mode
+      provider_key: TRR provider
+      skip_reason: The reason why DoH request is failed
+  click:
+    objects: [
+      "try_again_button",
+      "add_exception_button",
+      "settings_button",
+      "continue_button",
+      "disable_warning",
+      "learn_more_link",
+    ]
+    bug_numbers:
+      - 1829342
+    description: >
+      User interaction by click buttons on the DoH warning page.
+    expiry_version: never
+    notification_emails:
+      - necko@mozilla.com
+      - kershaw@mozilla.com
+    release_channel_collection: opt-out
+    products:
+      - "firefox"
+    record_in_processes: ["content"]
+    extra_keys:
+      mode: Current TRR mode
+      provider_key: TRR provider
+      skip_reason: The reason why DoH request is failed
+
+security.doh.settings:
+  mode_changed:
+    objects: ["button"]
+    bug_numbers:
+      - 1829905
+    description: >
+      User changed the TRR mode in about:preferences#privacy settings
+      Value is id of the clicked button.
+    expiry_version: never
+    record_in_processes:
+      - main
+    release_channel_collection: opt-out
+    notification_emails:
+      - vgosu@mozilla.com
+      - necko@mozilla.com
+    products:
+      - firefox
+  warn_checkbox:
+    objects: ["checkbox"]
+    bug_numbers:
+      - 1829905
+    description: >
+      User clicked the Warn if a third party actively prevents secure DNS
+      checkbox in about:preferences#privacy.
+      Value is true or false, reflecting if box is checked or unchecked.
+    expiry_version: never
+    record_in_processes:
+      - main
+    release_channel_collection: opt-out
+    notification_emails:
+      - vgosu@mozilla.com
+      - necko@mozilla.com
+    products:
+      - firefox
+  provider_choice:
+    objects: ["value"]
+    bug_numbers:
+      - 1829905
+    description: >
+      User changed their DoH provider. Recorded value is URL of one of the
+      existing providers or "custom".
+    expiry_version: never
+    record_in_processes:
+      - main
+    release_channel_collection: opt-out
+    notification_emails:
+      - vgosu@mozilla.com
+      - necko@mozilla.com
+    products:
+      - firefox
+
 security.ui.certerror:
   load:
     objects: ["aboutcerterror"]
@@ -3633,7 +3730,10 @@ contextservices.quicksuggest:
       "click": The user picked the suggestion.
       "help": The user picked the suggestion's help button.
       "impression_only": The user picked some other row.
-    objects: ["block", "click", "help", "impression_only"]
+      "other": The user engaged with the suggestion in some other way, for
+        example by picking a command in the result menu. This is a catch-all
+        category and going forward Glean telemetry should be preferred.
+    objects: ["block", "click", "help", "impression_only", "other"]
     extra_keys:
       match_type: >
         "best-match" if the suggestion was a best match or "firefox-suggest" if
@@ -3734,88 +3834,6 @@ synced_tabs:
     extra_keys:
       tab_pos: position of the tab clicked
       filter: was there a filter enabled
-
-colorways_modal:
-  try_colorways:
-    objects: ["firefoxview", "aboutaddons", "unknown"]
-    description: >
-      Recorded when the Colorway Closet modal opens when no colorway from the current collection was selected. The object is the source from where the user opened the modal.
-    notification_emails:
-      - firefoxview@mozilla.com
-    products:
-      - "firefox"
-    record_in_processes:
-      - main
-    bug_numbers:
-      - 1779642
-      - 1747229
-    expiry_version: "never"
-    release_channel_collection: opt-out
-  change_colorway:
-    objects: ["firefoxview", "aboutaddons", "unknown"]
-    description: >
-      Recorded when the Colorway Closet modal opens when a colorway from the current collection was already selected. The object is the source from where the user opened the modal.
-    notification_emails:
-      - firefoxview@mozilla.com
-    products:
-      - "firefox"
-    record_in_processes:
-      - main
-    bug_numbers:
-      - 1779642
-      - 1747229
-    expiry_version: "never"
-    release_channel_collection: opt-out
-  cancel:
-    description: >
-      Recorded when colorway selection is canceled and the colorway closet modal is closed. This may be done by pressing the Cancel button or ESC key, or by closing the browser tab or window.
-    objects: ["modal"]
-    release_channel_collection: opt-out
-    record_in_processes:
-      - "main"
-    bug_numbers: [1747229]
-    notification_emails:
-      - firefoxview@mozilla.com
-    expiry_version: "never"
-    products: ["firefox"]
-  set_colorway:
-    description: >
-      Recorded when a colorway and intensity are set in the colorway closet modal
-    objects: ["modal"]
-    extra_keys:
-      colorway_id: The id of the selected colorway
-    release_channel_collection: opt-out
-    record_in_processes:
-      - "main"
-    bug_numbers: [1747229]
-    notification_emails:
-      - firefoxview@mozilla.com
-    expiry_version: "never"
-    products: ["firefox"]
-  homepage_reset:
-    description: >
-      Recorded when the apply button is selected in the colorway modal. This will set the user’s home page default to Firefox Home
-    objects: ["modal"]
-    release_channel_collection: opt-out
-    record_in_processes:
-      - "main"
-    bug_numbers: [1747229]
-    notification_emails:
-      - firefoxview@mozilla.com
-    expiry_version: "never"
-    products: ["firefox"]
-  homepage_reset_undo:
-    description: >
-      Recorded when the undo button is selected in the colorway modal. This will undo the apply button selection for setting Firefox Home to default
-    objects: ["modal"]
-    release_channel_collection: opt-out
-    record_in_processes:
-      - "main"
-    bug_numbers: [1747229]
-    notification_emails:
-      - firefoxview@mozilla.com
-    expiry_version: "never"
-    products: ["firefox"]
 
 firefoxview:
   entered:

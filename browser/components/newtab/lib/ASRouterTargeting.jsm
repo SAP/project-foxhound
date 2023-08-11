@@ -15,15 +15,15 @@ const { AppConstants } = ChromeUtils.importESModule(
 const { NewTabUtils } = ChromeUtils.importESModule(
   "resource://gre/modules/NewTabUtils.sys.mjs"
 );
-const { ShellService } = ChromeUtils.import(
-  "resource:///modules/ShellService.jsm"
+const { ShellService } = ChromeUtils.importESModule(
+  "resource:///modules/ShellService.sys.mjs"
 );
 
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   AttributionCode: "resource:///modules/AttributionCode.sys.mjs",
-  BuiltInThemes: "resource:///modules/BuiltInThemes.sys.mjs",
+  ClientEnvironment: "resource://normandy/lib/ClientEnvironment.sys.mjs",
   NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
   ProfileAge: "resource://gre/modules/ProfileAge.sys.mjs",
   Region: "resource://gre/modules/Region.sys.mjs",
@@ -35,7 +35,6 @@ ChromeUtils.defineESModuleGetters(lazy, {
 XPCOMUtils.defineLazyModuleGetters(lazy, {
   ASRouterPreferences: "resource://activity-stream/lib/ASRouterPreferences.jsm",
   AddonManager: "resource://gre/modules/AddonManager.jsm",
-  ClientEnvironment: "resource://normandy/lib/ClientEnvironment.jsm",
   HomePage: "resource:///modules/HomePage.jsm",
   AboutNewTab: "resource:///modules/AboutNewTab.jsm",
   BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.jsm",
@@ -136,6 +135,16 @@ XPCOMUtils.defineLazyPreferenceGetter(
   "hasMigratedPasswords",
   "browser.migrate.interactions.passwords",
   false
+);
+XPCOMUtils.defineLazyPreferenceGetter(
+  lazy,
+  "useEmbeddedMigrationWizard",
+  "browser.migrate.content-modal.about-welcome-behavior",
+  "default",
+  null,
+  behaviorString => {
+    return behaviorString === "embedded";
+  }
 );
 
 XPCOMUtils.defineLazyServiceGetters(lazy, {
@@ -482,6 +491,30 @@ async function getAutofillRecords(data) {
     data,
   });
   return records?.length ?? 0;
+}
+
+// Attribution data can be encoded multiple times so we need this function to
+// get a cleartext value.
+function decodeAttributionValue(value) {
+  if (!value) {
+    return null;
+  }
+
+  let decodedValue = value;
+
+  while (decodedValue.includes("%")) {
+    try {
+      const result = decodeURIComponent(decodedValue);
+      if (result === decodedValue) {
+        break;
+      }
+      decodedValue = result;
+    } catch (e) {
+      break;
+    }
+  }
+
+  return decodedValue;
 }
 
 const TargetingGetters = {
@@ -834,32 +867,7 @@ const TargetingGetters = {
     let window = Services.appShell.hiddenDOMWindow;
     return window?.matchMedia("(prefers-reduced-motion: reduce)")?.matches;
   },
-  /**
-   * Is there an active Colorway collection?
-   * @return {boolean} `true` if an active collection exists.
-   */
-  get colorwaysActive() {
-    return !!lazy.BuiltInThemes.findActiveColorwayCollection();
-  },
-  /**
-   * Has the user enabled an active Colorway as their theme?
-   * @return {boolean} `true` if an active theme from the current
-   * collection is enabled.
-   */
-  get userEnabledActiveColorway() {
-    let bts = Cc["@mozilla.org/backgroundtasks;1"]?.getService(
-      Ci.nsIBackgroundTasks
-    );
-    if (bts?.isBackgroundTaskMode) {
-      return Promise.resolve(false);
-    }
-    return QueryCache.getters.currentThemes.get().then(themes => {
-      let themeId = themes.find(theme => theme.isActive)?.id;
-      return !!(
-        themeId && lazy.BuiltInThemes.isColorwayFromCurrentCollection(themeId)
-      );
-    });
-  },
+
   /**
    * Whether or not the user is in the Major Release 2022 holdback study.
    */
@@ -868,6 +876,7 @@ const TargetingGetters = {
       lazy.NimbusFeatures.majorRelease2022.getVariable("onboarding") === false
     );
   },
+
   /**
    * The distribution id, if any.
    * @return {string}
@@ -930,6 +939,42 @@ const TargetingGetters = {
    */
   get hasMigratedPasswords() {
     return lazy.hasMigratedPasswords;
+  },
+
+  /**
+   * Returns true if the user is configured to use the embedded migration
+   * wizard in about:welcome by having
+   * "browser.migrate.content-modal.about-welcome-behavior" be equal to
+   * "embedded".
+   * @return {boolean} `true` if the embedded migration wizard is enabled.
+   */
+  get useEmbeddedMigrationWizard() {
+    return lazy.useEmbeddedMigrationWizard;
+  },
+
+  /**
+   * Whether the user installed Firefox via the RTAMO flow.
+   * @return {boolean} `true` when RTAMO has been used to download Firefox,
+   * `false` otherwise.
+   */
+  get isRTAMO() {
+    const { attributionData } = this;
+
+    return (
+      attributionData?.source === "addons.mozilla.org" &&
+      !!decodeAttributionValue(attributionData?.content)?.startsWith("rta:")
+    );
+  },
+
+  /**
+   * Whether the user installed via the device migration flow.
+   * @return {boolean} `true` when the link to download the browser was part
+   * of guidance for device migration. `false` otherwise.
+   */
+  get isDeviceMigration() {
+    const { attributionData } = this;
+
+    return attributionData?.campaign === "migration";
   },
 };
 

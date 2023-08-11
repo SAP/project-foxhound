@@ -1474,12 +1474,6 @@ nsDNSService::GetCurrentTrrURI(nsACString& aURI) {
 }
 
 NS_IMETHODIMP
-nsDNSService::SetTRRModeInChild(nsIDNSService::ResolverMode mode) {
-  MOZ_ASSERT(false, "Why are we calling this?");
-  return NS_ERROR_NOT_AVAILABLE;
-}
-
-NS_IMETHODIMP
 nsDNSService::GetCurrentTrrMode(nsIDNSService::ResolverMode* aMode) {
   *aMode = nsIDNSService::MODE_NATIVEONLY;  // The default mode.
   if (mTrrService) {
@@ -1499,6 +1493,7 @@ nsDNSService::GetCurrentTrrConfirmationState(uint32_t* aConfirmationState) {
 
 NS_IMETHODIMP
 nsDNSService::GetTrrDomain(nsACString& aTRRDomain) {
+  aTRRDomain.Truncate();
   nsAutoCString url;
   if (mTrrService) {
     mTrrService->GetURI(url);
@@ -1506,7 +1501,8 @@ nsDNSService::GetTrrDomain(nsACString& aTRRDomain) {
   nsCOMPtr<nsIURI> uri;
   nsresult rv = NS_NewURI(getter_AddRefs(uri), url);
   if (NS_FAILED(rv)) {
-    return rv;
+    // An empty TRR domain in case of invalid URL.
+    return NS_OK;
   }
   return uri->GetHost(aTRRDomain);
 }
@@ -1575,6 +1571,24 @@ NS_IMETHODIMP
 nsDNSService::ResetExcludedSVCDomainName(const nsACString& aOwnerName) {
   MutexAutoLock lock(mLock);
   mFailedSVCDomainNames.Remove(aOwnerName);
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsDNSService::GetLastConfirmationStatus(nsresult* aConfirmationStatus) {
+  if (!mTrrService) {
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+  *aConfirmationStatus = mTrrService->LastConfirmationStatus();
+  return NS_OK;
+}
+
+NS_IMETHODIMP nsDNSService::GetLastConfirmationSkipReason(
+    TRRSkippedReason* aSkipReason) {
+  if (!mTrrService) {
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+  *aSkipReason = mTrrService->LastConfirmationSkipReason();
   return NS_OK;
 }
 

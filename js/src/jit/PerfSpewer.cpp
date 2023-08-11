@@ -22,6 +22,34 @@
 #  include <unistd.h>
 #  define gettid() static_cast<pid_t>(syscall(__NR_gettid))
 #endif
+
+#if defined(JS_ION_PERF) && defined(XP_MACOSX)
+#  include <pthread.h>
+#  include <unistd.h>
+
+pid_t gettid_pthread() {
+  uint64_t tid;
+  if (pthread_threadid_np(nullptr, &tid) != 0) {
+    return 0;
+  }
+  // Truncate the tid to 32 bits. macOS thread IDs are usually small enough.
+  // And even if we do end up truncating, it doesn't matter much for Jitdump
+  // as long as the process ID is correct.
+  return pid_t(tid);
+}
+#  define gettid() gettid_pthread()
+
+const char* get_current_dir_name_cwd() {
+  constexpr size_t CWD_MAX = 256;
+  char* buffer = (char*)malloc(CWD_MAX);
+  if (getcwd(buffer, CWD_MAX) == nullptr) {
+    buffer[0] = 0;
+  }
+  return buffer;
+}
+#  define get_current_dir_name() get_current_dir_name_cwd()
+#endif
+
 #include "jit/PerfSpewer.h"
 
 #include <atomic>
@@ -81,14 +109,7 @@ static bool IsPerfProfiling() { return JitDumpFilePtr != nullptr; }
 
 AutoLockPerfSpewer::AutoLockPerfSpewer() { PerfMutex.lock(); }
 
-AutoLockPerfSpewer::~AutoLockPerfSpewer() {
-#ifdef JS_ION_PERF
-  if (JitDumpFilePtr) {
-    fflush(JitDumpFilePtr);
-  }
-#endif
-  PerfMutex.unlock();
-}
+AutoLockPerfSpewer::~AutoLockPerfSpewer() { PerfMutex.unlock(); }
 
 #ifdef JS_ION_PERF
 static uint64_t GetMonotonicTimestamp() {
@@ -171,7 +192,9 @@ static bool openJitDump() {
     if (env_dir[0] == '/') {
       spew_dir = JS_smprintf("%s", env_dir);
     } else {
-      spew_dir = JS_smprintf("%s/%s", get_current_dir_name(), env_dir);
+      const char* dir = get_current_dir_name();
+      spew_dir = JS_smprintf("%s/%s", dir, env_dir);
+      free((void*)dir);
     }
   } else {
     fprintf(stderr, "Please define PERF_SPEW_DIR as an output directory.\n");
@@ -192,6 +215,7 @@ static bool openJitDump() {
     return false;
   }
 
+#  ifdef XP_LINUX
   // We need to mmap the jitdump file for perf to find it.
   long page_size = sysconf(_SC_PAGESIZE);
   mmap_address =
@@ -200,6 +224,7 @@ static bool openJitDump() {
     PerfMode = PerfModeType::None;
     return false;
   }
+#  endif
 
   writeJitDumpHeader(lock);
   return true;
@@ -538,7 +563,7 @@ void BaselinePerfSpewer::recordInstruction(JSContext* cx, MacroAssembler& masm,
 #ifdef JS_JITSPEW
   if (PerfIROpsEnabled()) {
     JSScript* script = frame.script;
-    unsigned numOperands = js::StackUses(pc);
+    unsigned numOperands = js::StackUses(op, pc);
 
     Sprinter buf(cx);
     CHECK_RETURN(buf.init());
@@ -587,6 +612,11 @@ void BaselinePerfSpewer::recordInstruction(JSContext* cx, MacroAssembler& masm,
 const char* BaselinePerfSpewer::CodeName(unsigned op) {
   return js::CodeName(static_cast<JSOp>(op));
 }
+
+const char* BaselineInterpreterPerfSpewer::CodeName(unsigned op) {
+  return js::CodeName(static_cast<JSOp>(op));
+}
+
 const char* IonPerfSpewer::CodeName(unsigned op) {
   return js::jit::LIRCodeName(static_cast<LNode::Opcode>(op));
 }
@@ -987,6 +1017,86 @@ void BaselinePerfSpewer::saveProfile(JSContext* cx, JSScript* script,
   }
   UniqueChars desc = GetFunctionDesc("Baseline", cx, script);
   PerfSpewer::saveProfile(code, desc, script);
+}
+
+void BaselineInterpreterPerfSpewer::saveProfile(JitCode* code) {
+  if (!PerfEnabled()) {
+    return;
+  }
+
+  enum class SpewKind { Uninitialized, SingleSym, MultiSym };
+
+  // Check which type of Baseline Interpreter Spew is requested.
+  static SpewKind kind = SpewKind::Uninitialized;
+  if (kind == SpewKind::Uninitialized) {
+    if (getenv("IONPERF_SINGLE_BLINTERP")) {
+      kind = SpewKind::SingleSym;
+    } else {
+      kind = SpewKind::MultiSym;
+    }
+  }
+
+  // For SingleSym, just emit one "BaselineInterpreter" symbol
+  // and emit the opcodes as IR if IONPERF=ir is used.
+  if (kind == SpewKind::SingleSym) {
+    UniqueChars desc = DuplicateString("BaselineInterpreter");
+    PerfSpewer::saveProfile(code, desc, nullptr);
+    return;
+  }
+
+  // For MultiSym, split up each opcode into its own symbol.
+  // No IR is emitted in this case, so we can skip PerfSpewer::saveProfile.
+  MOZ_ASSERT(kind == SpewKind::MultiSym);
+  for (size_t i = 1; i < opcodes_.length(); i++) {
+    uintptr_t base = uintptr_t(code->raw()) + opcodes_[i - 1].offset;
+    uintptr_t size = opcodes_[i].offset - opcodes_[i - 1].offset;
+
+    UniqueChars rangeName;
+    if (opcodes_[i - 1].str) {
+      rangeName = JS_smprintf("BlinterpOp: %s", opcodes_[i - 1].str.get());
+    } else {
+      rangeName =
+          JS_smprintf("BlinterpOp: %s", CodeName(opcodes_[i - 1].opcode));
+    }
+
+    // If rangeName is empty, we probably went OOM.
+    if (!rangeName) {
+      AutoLockPerfSpewer lock;
+      DisablePerfSpewer(lock);
+      return;
+    }
+
+    MOZ_ASSERT(base + size <=
+               uintptr_t(code->raw()) + code->instructionsSize());
+    CollectPerfSpewerJitCodeProfile(base, size, rangeName.get());
+  }
+}
+
+void BaselineInterpreterPerfSpewer::recordOffset(MacroAssembler& masm,
+                                                 JSOp op) {
+  if (!PerfEnabled()) {
+    return;
+  }
+
+  if (!opcodes_.emplaceBack(masm.currentOffset(), unsigned(op))) {
+    opcodes_.clear();
+    AutoLockPerfSpewer lock;
+    DisablePerfSpewer(lock);
+  }
+}
+
+void BaselineInterpreterPerfSpewer::recordOffset(MacroAssembler& masm,
+                                                 const char* name) {
+  if (!PerfEnabled()) {
+    return;
+  }
+
+  UniqueChars desc = DuplicateString(name);
+  if (!opcodes_.emplaceBack(masm.currentOffset(), desc)) {
+    opcodes_.clear();
+    AutoLockPerfSpewer lock;
+    DisablePerfSpewer(lock);
+  }
 }
 
 void IonPerfSpewer::saveProfile(JSContext* cx, JSScript* script,
