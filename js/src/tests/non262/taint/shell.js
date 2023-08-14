@@ -8,6 +8,12 @@
 // Token to indicate the end of a string.
 var STR_END = -1;
 
+if (typeof taint === 'undefined') {
+    var taint = function(str) {
+        return String.tainted(str);
+    }
+}
+
 if (typeof stringifyTaint === 'undefined') {
     // Produce a string representation of the provided taint information.
     var stringifyTaint = function(taint) {
