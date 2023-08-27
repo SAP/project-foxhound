@@ -27,6 +27,10 @@
           check_tainted(document.baseURI);
       });
 
+      add_task(async function test_document_referrer() {
+          check_tainted(document.referrer);
+      });
+
     </script>
   </head>
   <body>
