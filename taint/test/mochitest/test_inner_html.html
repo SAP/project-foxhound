@@ -1,0 +1,27 @@
+<!DOCTYPE HTML>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>Check Inner HTML</title>
+    <script src="/tests/SimpleTest/SimpleTest.js"></script>
+    <link rel="stylesheet" href="/tests/SimpleTest/test.css"/>
+    <script id="script">
+      function check_tainted(str) {
+          ok(str.taint.length > 0, "Check tainted");
+      }
+
+      function check_untainted(str) {
+          ok(str.taint.length == 0, "Check untainted");
+      }
+
+      add_task(async function test_innerHTML() {
+          let script = document.getElementById("script");
+          check_tainted(script.innerHTML);
+      });
+
+    </script>
+  </head>
+  <body>
+    innerHTML
+  </body>
+</html>
