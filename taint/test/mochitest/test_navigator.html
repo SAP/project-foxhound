@@ -2,19 +2,15 @@
 <html xmlns="http://www.w3.org/1999/xhtml">
   <head>
     <meta charset="utf-8">
-    <title>Check XMLHttpRequest Sink</title>
+    <title>Check Navigator Sink</title>
     <script src="/tests/SimpleTest/SimpleTest.js"></script>
     <link rel="stylesheet" href="/tests/SimpleTest/test.css"/>
     <script "text/javascript">
 
 
       let sink_names = [
-          "XMLHttpRequest.open(url)",
-          "XMLHttpRequest.open(username)",
-          "XMLHttpRequest.open(password)",
-          "XMLHttpRequest.setRequestHeader(name)",
-          "XMLHttpRequest.setRequestHeader(value)",
-          "XMLHttpRequest.send",
+          "navigator.sendBeacon(url)",
+          "navigator.sendBeacon(body)",
       ];
 
       function check_tainted(str) {
@@ -38,16 +34,9 @@
       }, false);
 
       function startTest() {
-          let request = new XMLHttpRequest();
-
-          request.open("GET", String.tainted("url"));
-          request.open("GET", "url", true, String.tainted("user"));
-          request.open("GET", "url", true, "user", String.tainted("password"));
-
-          request.setRequestHeader(String.tainted("name"), null);
-          request.setRequestHeader("name", String.tainted("value"));
-
-          request.send(String.tainted("body"));
+          let navigator = window.navigator;
+          navigator.sendBeacon(String.tainted("url"));
+          navigator.sendBeacon("url", String.tainted("body"));
       }
 
     </script>
