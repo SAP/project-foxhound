@@ -1,0 +1,41 @@
+<!DOCTYPE HTML>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>Taint JSON propagation</title>
+    <script src="/tests/SimpleTest/SimpleTest.js"></script>
+    <link rel="stylesheet" href="/tests/SimpleTest/test.css"/>
+    <script>
+        function check_tainted(str) {
+            ok(str.taint.length > 0, "Check tainted");
+        }
+
+        function check_untainted(str) {
+            ok(str.taint.length == 0, "Check untainted");
+        }
+
+        SimpleTest.waitForExplicitFinish();
+        function startTests() {
+            const tainted_str = String.tainted("tainted=hello");
+            const json_str = '{"tainted":"' + tainted_str + '", "untainted": "test"}';
+            const json_obj = JSON.parse(json_str);
+
+            check_tainted(json_obj.tainted);
+            check_untainted(json_obj.untainted);
+
+            const revived_obj = JSON.parse(json_str, (key, value) => {
+                return typeof key === String ? value + "some_untainted_str" : value;
+            });
+
+            check_tainted(revived_obj.tainted);
+            check_untainted(revived_obj.untainted);
+
+            check_tainted(JSON.stringify(json_obj));
+
+            SimpleTest.finish();
+        }
+    </script>
+  </head>
+  <body onload="startTests()">
+  </body>
+</html>
