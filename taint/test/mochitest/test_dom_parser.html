@@ -1,0 +1,58 @@
+<!DOCTYPE HTML>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>Taint DOM Parser propagation</title>
+    <script src="/tests/SimpleTest/SimpleTest.js"></script>
+    <link rel="stylesheet" href="/tests/SimpleTest/test.css"/>
+    <script>
+        function check_tainted(str) {
+            ok(str.taint.length > 0, "Check tainted");
+        }
+
+        function check_untainted(str) {
+            ok(str.taint.length == 0, "Check untainted");
+        }
+
+        let sink_names = [
+            "object.data"
+        ];
+
+        let i = 0;
+
+        SimpleTest.waitForExplicitFinish();
+        addEventListener("__taintreport", (report) => {
+            SimpleTest.is(report.detail.str, "tainted=hello", "Check sink string content");
+
+            let flow = report.detail.str.taint[0].flow;
+            SimpleTest.is(flow[2].operation, sink_names[i]);
+
+            i += 1;
+            if (i >= sink_names.length) {
+                SimpleTest.finish();
+            }
+        }, false);
+
+
+        function startTests() {
+            const parser = new DOMParser();
+
+            const tainted_str = String.tainted("tainted=hello");
+            const tainted_dom_str = "<p>" + tainted_str + "</p>";
+
+            const doc1 = parser.parseFromString(tainted_dom_str, "text/html");
+
+            check_tainted(doc1.body.firstChild.textContent);
+
+            const tainted_xml_str = "<warning>" + tainted_str + "</warning>";
+            const doc2 = parser.parseFromString(tainted_xml_str, "application/xml");
+
+            check_tainted(doc2.documentElement.textContent);
+
+            SimpleTest.finish();
+        }
+    </script>
+  </head>
+  <body onload="startTests()">
+  </body>
+</html>
