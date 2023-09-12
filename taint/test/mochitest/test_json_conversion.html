@@ -21,6 +21,7 @@
             const json_obj = JSON.parse(json_str);
 
             check_tainted(json_obj.tainted);
+            check_untainted(json_obj.tainted.substring(tainted_str.length));
             check_untainted(json_obj.untainted);
 
             const revived_obj = JSON.parse(json_str, (key, value) => {
@@ -28,6 +29,7 @@
             });
 
             check_tainted(revived_obj.tainted);
+            check_untainted(revived_obj.tainted.substring(tainted_str.length));
             check_untainted(revived_obj.untainted);
 
             check_tainted(JSON.stringify(json_obj));
