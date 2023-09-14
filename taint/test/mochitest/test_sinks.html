@@ -15,6 +15,7 @@
 	  "outerHTML",
 	  "insertAdjacentHTML",
       "embed.src",
+      "media.src",
       ];
 
       let i = 0;
@@ -48,6 +49,9 @@
 
       let embed = document.createElement("embed");
       embed.src = taint_string;
+
+      let media = document.createElement("audio");
+      media.src = taint_string;
 
 
       
