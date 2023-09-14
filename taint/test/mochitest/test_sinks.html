@@ -16,7 +16,8 @@
 	  "insertAdjacentHTML",
       "embed.src",
       "media.src",
-      "track.src"
+      "track.src",
+      "Range.createContextualFragment(fragment)",
       ];
 
       let i = 0;
@@ -56,6 +57,9 @@
 
       let track = document.createElement("track");
       track.src = taint_string;
+
+      let range = document.createRange();
+      let fragment = range.createContextualFragment(taint_string);
 
 
       
