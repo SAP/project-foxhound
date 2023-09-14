@@ -13,7 +13,8 @@
 	  "document.writeln",
 	  "innerHTML",
 	  "outerHTML",
-	  "insertAdjacentHTML"
+	  "insertAdjacentHTML",
+      "embed.src"
       ];
 
       let i = 0;
@@ -44,6 +45,10 @@
       p.outerHTML = taint_string;
 
       p.insertAdjacentHTML("beforeend", taint_string);
+
+      let embed = document.createElement("embed");
+      embed.src = taint_string;
+
 
       
     </script>
