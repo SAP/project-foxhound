@@ -7,21 +7,16 @@
     <link rel="stylesheet" href="/tests/SimpleTest/test.css"/>
     <script>
 
-      let string_content = "hello";
       let sink_names = [
-	  "document.write",
-	  "document.writeln",
-	  "innerHTML",
-	  "outerHTML",
-	  "insertAdjacentHTML",
-      "embed.src",
+        "fetch.url",
+        "fetch.body"
       ];
 
       let i = 0;
       
       SimpleTest.waitForExplicitFinish();
       addEventListener("__taintreport", (report) => {
-          is(report.detail.str, string_content, "Check sink string content");
+          is(report.detail.str, "http://mochi.test:8888/tests/taint/test/mochitest/hello", "Check sink string content");
 
           let flow = report.detail.str.taint[0].flow;
           is(flow[2].operation, sink_names[i]);
@@ -32,28 +27,20 @@
 	  }
       }, false);
 
-      let taint_string = String.tainted(string_content);
+      function startTest() {
+          let taint_string = String.tainted("http://mochi.test:8888/tests/taint/test/mochitest/hello",);
 
-      document.write(taint_string);
-      document.writeln(taint_string);
-
-      const d1 = document.createElement("div");
-      d1.innerHTML = taint_string;
-
-      let p = document.createElement("p");
-      document.body.appendChild(p);
-      p.outerHTML = taint_string;
-
-      p.insertAdjacentHTML("beforeend", taint_string);
-
-      let embed = document.createElement("embed");
-      embed.src = taint_string;
-
+          fetch(taint_string);
+          fetch("some_url", {
+            method: 'POST',
+            body: taint_string,
+          });
+      }
 
       
     </script>
   </head>
-  <body>
+  <body onload="startTest()">
     <p id="display"></p>
     <div id="content" style="display: none"></div>
     <p id="test"></p>
