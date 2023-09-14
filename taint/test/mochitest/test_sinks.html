@@ -16,6 +16,7 @@
 	  "insertAdjacentHTML",
       "embed.src",
       "media.src",
+      "track.src"
       ];
 
       let i = 0;
@@ -52,6 +53,9 @@
 
       let media = document.createElement("audio");
       media.src = taint_string;
+
+      let track = document.createElement("track");
+      track.src = taint_string;
 
 
       
