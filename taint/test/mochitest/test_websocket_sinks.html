@@ -1,0 +1,61 @@
+<!DOCTYPE HTML>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>Test WebSocket Sinks</title>
+    <script src="/tests/SimpleTest/SimpleTest.js"></script>
+    <link rel="stylesheet" href="/tests/SimpleTest/test.css"/>
+    <script>
+
+        let string_content = "hello";
+        let sink_names = [
+          "WebSocket",
+          "WebSocket.send",
+        ];
+
+        let i = 0;
+
+        SimpleTest.waitForExplicitFinish();
+        addEventListener("__taintreport", (report) => {
+          SimpleTest.is(report.detail.str, "tainted=hello", "Check sink string content");
+
+          let flow = report.detail.str.taint[0].flow;
+          SimpleTest.is(flow[2].operation, sink_names[i]);
+
+          i += 1;
+          if (i >= sink_names.length) {
+              SimpleTest.finish();
+          }
+        }, false);
+
+        function startTest() {
+            let tainted_str = String.tainted("tainted=hello");
+
+            // Test constructor sink
+            try {
+                let socket = new WebSocket(tainted_str);
+            } catch(e) {
+            }
+
+            // Create working websocket
+            let sink = new WebSocket("ws://mochi.test:8888/tests/taint/test/mochitest/file_websocket");
+            info("WTF");
+
+            sink.addEventListener("open", (event) => {
+                info("OPENED");
+                sink.send(tainted_str);
+                sink.close();
+            });
+        }
+      
+    </script>
+  </head>
+
+  <body onload="startTest();">
+      <a id="link">
+      <map name="idk">
+          <area id="area">
+      </map>
+  </body>
+
+</html>
