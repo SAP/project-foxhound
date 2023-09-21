@@ -18,6 +18,7 @@
       "media.src",
       "track.src",
       "Range.createContextualFragment(fragment)",
+      "EventSource",
       ];
 
       let i = 0;
@@ -61,6 +62,7 @@
       let range = document.createRange();
       let fragment = range.createContextualFragment(taint_string);
 
+      new EventSource(taint_string);
 
       
     </script>
