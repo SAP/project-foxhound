@@ -67,6 +67,7 @@
 
       new EventSource(taint_string);
 
+      // TODO: Find out why this doesn't work / if this calls Element::SetEventHandler in dom/base/Element.cpp
       let button = document.createElement("button");
       button.onclick = taint_string;
 

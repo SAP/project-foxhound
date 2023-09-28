@@ -16,8 +16,6 @@
 </pre>
 
 <script class="testbody" type="text/javascript">
-  /* globals webPushEncrypt */
-
   function check_tainted(str) {
       ok(str.taint.length > 0, "Check tainted");
   }
@@ -78,13 +76,14 @@
   }
 
   add_task(async function sendPushMessageFromPage() {
+    // TODO: Does not receive message, same problem in dom/push/tests/test_data.html
     var message = await waitForMessage(pushSubscription, "Text message from page");
 
     check_tainted(message.text);
     check_tainted(JSON.stringify(message.json));
   });
 
-    add_task(async function unsubscribe() {
+  add_task(async function unsubscribe() {
     controlledFrame.remove();
     await pushSubscription.unsubscribe();
   });
