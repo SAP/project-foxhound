@@ -1,6 +1,5 @@
 <!DOCTYPE HTML>
-<html>
-  <head>
+<html> <head>
     <meta charset="utf-8">
     <title>Test WebSocket Sinks</title>
     <script src="/tests/SimpleTest/SimpleTest.js"></script>
@@ -39,10 +38,8 @@
 
             // Create working websocket
             let sink = new WebSocket("ws://mochi.test:8888/tests/taint/test/mochitest/file_websocket");
-            info("WTF");
 
             sink.addEventListener("open", (event) => {
-                info("OPENED");
                 sink.send(tainted_str);
                 sink.close();
             });
