@@ -14,11 +14,13 @@
 	  "innerHTML",
 	  "outerHTML",
 	  "insertAdjacentHTML",
+      "insertAdjacentText",
       "embed.src",
       "media.src",
       "track.src",
       "Range.createContextualFragment(fragment)",
       "EventSource",
+      "eventHandler",
       ];
 
       let i = 0;
@@ -49,6 +51,7 @@
       p.outerHTML = taint_string;
 
       p.insertAdjacentHTML("beforeend", taint_string);
+      p.insertAdjacentText("afterbegin", taint_string);
 
       let embed = document.createElement("embed");
       embed.src = taint_string;
@@ -64,6 +67,9 @@
 
       new EventSource(taint_string);
 
+      let button = document.createElement("button");
+      button.onclick = taint_string;
+
       
     </script>
   </head>
@@ -71,5 +77,6 @@
     <p id="display"></p>
     <div id="content" style="display: none"></div>
     <p id="test"></p>
+    <button id="btn"></button>
   </body>
 </html>
