@@ -1129,7 +1129,6 @@ void SerializeString(const nsCString& aInput, nsAString& aValue) {
   const unsigned char* p = (const unsigned char*)aInput.get();
   const unsigned char* end = p + aInput.Length();
 
-  unsigned int i = 0;
   while (p != end) {
     // ' ' to '+'
     if (*p == 0x20) {
@@ -1143,9 +1142,7 @@ void SerializeString(const nsCString& aInput, nsAString& aValue) {
       aValue.AppendPrintf("%%%.2X", *p);
     }
 
-    aInput.taint().set(i, aValue.taint().atRef(i));
     ++p;
-    ++i;
   }
 }
 
