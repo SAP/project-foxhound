@@ -3878,7 +3878,7 @@ void Element::SetInnerHTML(const nsAString& aInnerHTML,
 
 void Element::GetOuterHTML(nsAString& aOuterHTML) {
   GetMarkup(true, aOuterHTML);
-    MarkTaintOperation(aOuterHTML, "element.outerHTML");
+  MarkTaintOperation(aOuterHTML, "element.outerHTML");
 }
 
 void Element::SetOuterHTML(const nsAString& aOuterHTML, ErrorResult& aError) {

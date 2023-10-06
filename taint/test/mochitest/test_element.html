@@ -1,0 +1,33 @@
+<!DOCTYPE HTML>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>Check Element Sources</title>
+    <script src="/tests/SimpleTest/SimpleTest.js"></script>
+    <link rel="stylesheet" href="/tests/SimpleTest/test.css"/>
+    <script>
+
+        function check_tainted(str) {
+          ok(str.taint.length > 0, "Check tainted");
+        }
+
+        function check_untainted(str) {
+          ok(str.taint.length == 0, "Check untainted");
+        }
+
+        SimpleTest.waitForExplicitFinish();
+
+        function startTests() {
+            const div = document.getElementById("tainted");
+
+            check_tainted(div.getAttribute("id"));
+
+            SimpleTest.finish();
+        }
+
+    </script>
+  </head>
+  <body onload="startTests()">
+    <div id="tainted" style="display: none"></div>
+  </body>
+</html>

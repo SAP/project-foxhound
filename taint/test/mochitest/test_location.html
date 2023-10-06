@@ -1,0 +1,58 @@
+<!DOCTYPE HTML>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>Check Location Sources</title>
+    <script src="/tests/SimpleTest/SimpleTest.js"></script>
+    <link rel="stylesheet" href="/tests/SimpleTest/test.css"/>
+    <script>
+
+      function check_tainted(str) {
+          ok(str.taint.length > 0, "Check tainted");
+      }
+
+      function check_untainted(str) {
+          ok(str.taint.length == 0, "Check untainted");
+      }
+
+      add_task(async function test_location_static() {
+          check_untainted("hello");
+      });
+
+      add_task(async function test_location_hash() {
+          location.hash = "test";
+          check_tainted(location.hash);
+      });
+
+      add_task(async function test_location_href() {
+          check_tainted(location.href);
+      });
+
+      add_task(async function test_location_host() {
+          check_tainted(location.host);
+      });
+
+      add_task(async function test_location_hostname() {
+          check_tainted(location.hostname);
+      });
+
+      add_task(async function test_location_origin() {
+          check_tainted(location.origin);
+      });
+
+      add_task(async function test_location_pathname() {
+          check_tainted(location.pathname);
+      });
+
+      add_task(async function test_location_protocol() {
+          check_tainted(location.protocol);
+      });
+
+    </script>
+  </head>
+  <body>
+    <p id="display"></p>
+    <div id="content" style="display: none"></div>
+    <pre id="test"></pre>
+  </body>
+</html>

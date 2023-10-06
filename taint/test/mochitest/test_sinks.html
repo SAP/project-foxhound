@@ -1,0 +1,83 @@
+<!DOCTYPE HTML>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>Test HTML Taint Sinks</title>
+    <script src="/tests/SimpleTest/SimpleTest.js"></script>
+    <link rel="stylesheet" href="/tests/SimpleTest/test.css"/>
+    <script>
+
+      let string_content = "hello";
+      let sink_names = [
+	  "document.write",
+	  "document.writeln",
+	  "innerHTML",
+	  "outerHTML",
+	  "insertAdjacentHTML",
+      "insertAdjacentText",
+      "embed.src",
+      "media.src",
+      "track.src",
+      "Range.createContextualFragment(fragment)",
+      "EventSource",
+      "eventHandler",
+      ];
+
+      let i = 0;
+      
+      SimpleTest.waitForExplicitFinish();
+      addEventListener("__taintreport", (report) => {
+          is(report.detail.str, string_content, "Check sink string content");
+
+          let flow = report.detail.str.taint[0].flow;
+          is(flow[2].operation, sink_names[i]);
+
+	  i += 1;
+	  if (i >= sink_names.length) {
+              SimpleTest.finish();
+	  }
+      }, false);
+
+      let taint_string = String.tainted(string_content);
+
+      document.write(taint_string);
+      document.writeln(taint_string);
+
+      const d1 = document.createElement("div");
+      d1.innerHTML = taint_string;
+
+      let p = document.createElement("p");
+      document.body.appendChild(p);
+      p.outerHTML = taint_string;
+
+      p.insertAdjacentHTML("beforeend", taint_string);
+      p.insertAdjacentText("afterbegin", taint_string);
+
+      let embed = document.createElement("embed");
+      embed.src = taint_string;
+
+      let media = document.createElement("audio");
+      media.src = taint_string;
+
+      let track = document.createElement("track");
+      track.src = taint_string;
+
+      let range = document.createRange();
+      let fragment = range.createContextualFragment(taint_string);
+
+      new EventSource(taint_string);
+
+      // TODO: Find out why this doesn't work / if this calls Element::SetEventHandler in dom/base/Element.cpp
+      let button = document.createElement("button");
+      button.onclick = taint_string;
+
+      
+    </script>
+  </head>
+  <body>
+    <p id="display"></p>
+    <div id="content" style="display: none"></div>
+    <p id="test"></p>
+    <button id="btn"></button>
+  </body>
+</html>
