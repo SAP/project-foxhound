@@ -229,9 +229,6 @@ with Files("Mouse*"):
 with Files("MutationEvent.webidl"):
     BUG_COMPONENT = ("Core", "DOM: Events")
 
-with Files("NativeOSFileInternals.webidl"):
-    BUG_COMPONENT = ("Toolkit", "OS.File")
-
 with Files("NavigationPreloadManager.webidl"):
     BUG_COMPONENT = ("Core", "DOM: Service Workers")
 
@@ -495,6 +492,7 @@ WEBIDL_FILES = [
     "CSSMozDocumentRule.webidl",
     "CSSNamespaceRule.webidl",
     "CSSPageRule.webidl",
+    "CSSPropertyRule.webidl",
     "CSSPseudoElement.webidl",
     "CSSRule.webidl",
     "CSSRuleList.webidl",
@@ -746,7 +744,6 @@ WEBIDL_FILES = [
     "MutationEvent.webidl",
     "MutationObserver.webidl",
     "NamedNodeMap.webidl",
-    "NativeOSFileInternals.webidl",
     "NavigationPreloadManager.webidl",
     "Navigator.webidl",
     "NetErrorInfo.webidl",
@@ -759,7 +756,6 @@ WEBIDL_FILES = [
     "NotificationEvent.webidl",
     "NotifyPaintEvent.webidl",
     "OfflineAudioContext.webidl",
-    "OfflineResourceList.webidl",
     "OffscreenCanvas.webidl",
     "OffscreenCanvasRenderingContext2D.webidl",
     "OscillatorNode.webidl",

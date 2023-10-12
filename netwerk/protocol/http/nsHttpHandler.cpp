@@ -2186,19 +2186,9 @@ nsHttpHandler::Observe(nsISupports* subject, const char* topic,
         }
       }
     }
-  } else if (!strcmp(topic, "psm:user-certificate-added")) {
-    // A user certificate has just been added.
-    // We should immediately disable speculative connect
-    mSpeculativeConnectEnabled = false;
-  } else if (!strcmp(topic, "psm:user-certificate-deleted")) {
-    // If a user certificate has been removed, we need to check if there
-    // are others installed
-    MaybeEnableSpeculativeConnect();
   } else if (!strcmp(topic, "intl:app-locales-changed")) {
     // If the locale changed, there's a chance the accept language did too
     mAcceptLanguagesIsDirty = true;
-  } else if (!strcmp(topic, "browser-delayed-startup-finished")) {
-    MaybeEnableSpeculativeConnect();
   } else if (!strcmp(topic, "network:captive-portal-connectivity")) {
     nsAutoCString data8 = NS_ConvertUTF16toUTF8(data);
     mThroughCaptivePortal = data8.EqualsLiteral("captive");
@@ -2216,79 +2206,19 @@ nsHttpHandler::Observe(nsISupports* subject, const char* topic,
 
 // nsISpeculativeConnect
 
-static bool CanEnableSpeculativeConnect() {
-  nsCOMPtr<nsINSSComponent> component(do_GetService(PSM_COMPONENT_CONTRACTID));
-
-  MOZ_ASSERT(!NS_IsMainThread(), "Must run on the background thread");
-  // Check if any 3rd party PKCS#11 module are installed, as they may produce
-  // client certificates
-  bool activeSmartCards = false;
-  nsresult rv = component->HasActiveSmartCards(&activeSmartCards);
-  if (NS_FAILED(rv) || activeSmartCards) {
-    return false;
-  }
-
-  // If there are any client certificates installed, we can't enable speculative
-  // connect, as it may pop up the certificate chooser at any time.
-  bool hasUserCerts = false;
-  rv = component->HasUserCertsInstalled(&hasUserCerts);
-  if (NS_FAILED(rv) || hasUserCerts) {
-    return false;
-  }
-
-  // No smart cards and no client certificates means
-  // we can enable speculative connect.
-  return true;
-}
-
-void nsHttpHandler::MaybeEnableSpeculativeConnect() {
-  MOZ_ASSERT(NS_IsMainThread(), "Main thread only");
-
-  // We don't need to and can't check this in the child and socket process.
-  if (!XRE_IsParentProcess()) {
-    return;
-  }
-
-  net_EnsurePSMInit();
-
-  NS_DispatchBackgroundTask(
-      NS_NewRunnableFunction("CanEnableSpeculativeConnect", [] {
-        gHttpHandler->mSpeculativeConnectEnabled =
-            CanEnableSpeculativeConnect();
-      }));
-}
-
 nsresult nsHttpHandler::SpeculativeConnectInternal(
-    nsIURI* aURI, nsIPrincipal* aPrincipal, nsIInterfaceRequestor* aCallbacks,
-    bool anonymous) {
+    nsIURI* aURI, nsIPrincipal* aPrincipal,
+    Maybe<OriginAttributes>&& aOriginAttributes,
+    nsIInterfaceRequestor* aCallbacks, bool anonymous) {
   if (IsNeckoChild()) {
-    gNeckoChild->SendSpeculativeConnect(aURI, aPrincipal, anonymous);
+    gNeckoChild->SendSpeculativeConnect(
+        aURI, aPrincipal, std::move(aOriginAttributes), anonymous);
     return NS_OK;
   }
 
   if (!mHandlerActive) return NS_OK;
 
   MOZ_ASSERT(NS_IsMainThread());
-  nsCOMPtr<nsIObserverService> obsService = services::GetObserverService();
-  if (mDebugObservations && obsService) {
-    // this is basically used for test coverage of an otherwise 'hintable'
-    // feature
-
-    // This is used to test if the `crossOrigin` attribute is parsed correctly.
-    nsPrintfCString debugURL("%s%s", aURI->GetSpecOrDefault().get(),
-                             anonymous ? "anonymous" : "use-credentials");
-    obsService->NotifyObservers(nullptr, "speculative-connect-request",
-                                NS_ConvertUTF8toUTF16(debugURL).get());
-    for (auto* cp :
-         dom::ContentParent::AllProcesses(dom::ContentParent::eLive)) {
-      PNeckoParent* neckoParent =
-          SingleManagedOrNull(cp->ManagedPNeckoParent());
-      if (!neckoParent) {
-        continue;
-      }
-      Unused << neckoParent->SendSpeculativeConnectRequest();
-    }
-  }
 
   nsISiteSecurityService* sss = gHttpHandler->GetSSService();
   bool isStsHost = false;
@@ -2298,14 +2228,17 @@ nsresult nsHttpHandler::SpeculativeConnectInternal(
   OriginAttributes originAttributes;
   // If the principal is given, we use the originAttributes from this
   // principal. Otherwise, we use the originAttributes from the loadContext.
-  if (aPrincipal) {
+  if (aOriginAttributes) {
+    originAttributes = std::move(aOriginAttributes.ref());
+  } else if (aPrincipal) {
     originAttributes = aPrincipal->OriginAttributesRef();
+    StoragePrincipalHelper::UpdateOriginAttributesForNetworkState(
+        aURI, originAttributes);
   } else if (loadContext) {
     loadContext->GetOriginAttributes(originAttributes);
+    StoragePrincipalHelper::UpdateOriginAttributesForNetworkState(
+        aURI, originAttributes);
   }
-
-  StoragePrincipalHelper::UpdateOriginAttributesForNetworkState(
-      aURI, originAttributes);
 
   nsCOMPtr<nsIURI> clone;
   if (NS_SUCCEEDED(sss->IsSecureURI(aURI, originAttributes, &isStsHost)) &&
@@ -2334,20 +2267,6 @@ nsresult nsHttpHandler::SpeculativeConnectInternal(
     return NS_ERROR_UNEXPECTED;
   }
 
-  nsCOMPtr<nsISpeculativeConnectionOverrider> overrider =
-      do_GetInterface(aCallbacks);
-  bool ignoreUserCertCheck =
-      overrider ? overrider->GetIgnoreUserCertCheck() : false;
-
-  // Construct connection info object
-  if (aURI->SchemeIs("https") && !mSpeculativeConnectEnabled &&
-      !ignoreUserCertCheck) {
-    glean::networking::speculative_connect_outcome
-        .Get("aborted_https_not_enabled"_ns)
-        .Add(1);
-    return NS_ERROR_UNEXPECTED;
-  }
-
   nsAutoCString host;
   rv = aURI->GetAsciiHost(host);
   if (NS_FAILED(rv)) return rv;
@@ -2366,20 +2285,62 @@ nsresult nsHttpHandler::SpeculativeConnectInternal(
   if (originAttributes.mPrivateBrowsingId > 0) {
     ci->SetPrivate(true);
   }
+
+  if (mDebugObservations) {
+    // this is basically used for test coverage of an otherwise 'hintable'
+    // feature
+
+    nsCOMPtr<nsIObserverService> obsService = services::GetObserverService();
+    if (obsService) {
+      // This is used to test if the speculative connection has the right
+      // connection info.
+      nsPrintfCString debugHashKey("%s", ci->HashKey().get());
+      obsService->NotifyObservers(nullptr, "speculative-connect-request",
+                                  NS_ConvertUTF8toUTF16(debugHashKey).get());
+      for (auto* cp :
+           dom::ContentParent::AllProcesses(dom::ContentParent::eLive)) {
+        PNeckoParent* neckoParent =
+            SingleManagedOrNull(cp->ManagedPNeckoParent());
+        if (!neckoParent) {
+          continue;
+        }
+        Unused << neckoParent->SendSpeculativeConnectRequest();
+      }
+    }
+  }
+
   return SpeculativeConnect(ci, aCallbacks);
 }
 
 NS_IMETHODIMP
 nsHttpHandler::SpeculativeConnect(nsIURI* aURI, nsIPrincipal* aPrincipal,
-                                  nsIInterfaceRequestor* aCallbacks) {
-  return SpeculativeConnectInternal(aURI, aPrincipal, aCallbacks, false);
+                                  nsIInterfaceRequestor* aCallbacks,
+                                  bool aAnonymous) {
+  return SpeculativeConnectInternal(aURI, aPrincipal, Nothing(), aCallbacks,
+                                    aAnonymous);
 }
 
-NS_IMETHODIMP
-nsHttpHandler::SpeculativeAnonymousConnect(nsIURI* aURI,
-                                           nsIPrincipal* aPrincipal,
-                                           nsIInterfaceRequestor* aCallbacks) {
-  return SpeculativeConnectInternal(aURI, aPrincipal, aCallbacks, true);
+NS_IMETHODIMP nsHttpHandler::SpeculativeConnectWithOriginAttributes(
+    nsIURI* aURI, JS::Handle<JS::Value> aOriginAttributes,
+    nsIInterfaceRequestor* aCallbacks, bool aAnonymous, JSContext* aCx) {
+  OriginAttributes attrs;
+  if (!aOriginAttributes.isObject() || !attrs.Init(aCx, aOriginAttributes)) {
+    return NS_ERROR_INVALID_ARG;
+  }
+
+  SpeculativeConnectWithOriginAttributesNative(aURI, std::move(attrs),
+                                               aCallbacks, aAnonymous);
+  return NS_OK;
+}
+
+NS_IMETHODIMP_(void)
+nsHttpHandler::SpeculativeConnectWithOriginAttributesNative(
+    nsIURI* aURI, OriginAttributes&& aOriginAttributes,
+    nsIInterfaceRequestor* aCallbacks, bool aAnonymous) {
+  Maybe<OriginAttributes> originAttributes;
+  originAttributes.emplace(aOriginAttributes);
+  Unused << SpeculativeConnectInternal(
+      aURI, nullptr, std::move(originAttributes), aCallbacks, aAnonymous);
 }
 
 void nsHttpHandler::TickleWifi(nsIInterfaceRequestor* cb) {

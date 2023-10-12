@@ -3,18 +3,20 @@
 const { AsyncShutdown } = ChromeUtils.importESModule(
   "resource://gre/modules/AsyncShutdown.sys.mjs"
 );
-const { NativeManifests } = ChromeUtils.import(
-  "resource://gre/modules/NativeManifests.jsm"
+const { NativeManifests } = ChromeUtils.importESModule(
+  "resource://gre/modules/NativeManifests.sys.mjs"
 );
 const { FileUtils } = ChromeUtils.importESModule(
   "resource://gre/modules/FileUtils.sys.mjs"
 );
-const { Schemas } = ChromeUtils.import("resource://gre/modules/Schemas.jsm");
+const { Schemas } = ChromeUtils.importESModule(
+  "resource://gre/modules/Schemas.sys.mjs"
+);
 const { Subprocess } = ChromeUtils.importESModule(
   "resource://gre/modules/Subprocess.sys.mjs"
 );
-const { NativeApp } = ChromeUtils.import(
-  "resource://gre/modules/NativeMessaging.jsm"
+const { NativeApp } = ChromeUtils.importESModule(
+  "resource://gre/modules/NativeMessaging.sys.mjs"
 );
 
 let registry = null;
@@ -524,7 +526,7 @@ while True:
   });
 
   let buffer = NativeApp.encodeMessage(mockContext, MSG);
-  app.send(new StructuredCloneHolder(buffer));
+  app.send(new StructuredCloneHolder("", null, buffer));
   await recvPromise;
 
   app._cleanup();

@@ -343,7 +343,8 @@ class ElementStyle {
         earlier &&
         computedProp.priority === "important" &&
         earlier.priority !== "important" &&
-        !computedProp.textProp.rule.inherited
+        // For !important only consider rules applying to the same parent node.
+        computedProp.textProp.rule.inherited == earlier.textProp.rule.inherited
       ) {
         // New property is higher priority. Mark the earlier property
         // overridden (which will reverse its dirty state).
@@ -652,9 +653,8 @@ class ElementStyle {
       return;
     }
 
-    const { declarationsToAdd, firstValue } = this._getValueAndExtraProperties(
-      value
-    );
+    const { declarationsToAdd, firstValue } =
+      this._getValueAndExtraProperties(value);
     const parsedValue = parseSingleValue(
       this.cssProperties.isKnown,
       firstValue

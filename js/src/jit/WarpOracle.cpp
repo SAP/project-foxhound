@@ -872,8 +872,13 @@ AbortReasonOr<Ok> WarpScriptOracle::maybeInlineIC(WarpOpSnapshotList& snapshots,
           return abort(AbortReason::Error);
         }
         break;
-      case CacheOp::CallRegExpTesterResult:
-        if (!cx_->realm()->jitRealm()->ensureRegExpTesterStubExists(cx_)) {
+      case CacheOp::RegExpBuiltinExecMatchResult:
+        if (!cx_->realm()->jitRealm()->ensureRegExpExecMatchStubExists(cx_)) {
+          return abort(AbortReason::Error);
+        }
+        break;
+      case CacheOp::RegExpBuiltinExecTestResult:
+        if (!cx_->realm()->jitRealm()->ensureRegExpExecTestStubExists(cx_)) {
           return abort(AbortReason::Error);
         }
         break;
@@ -1142,6 +1147,10 @@ bool WarpScriptOracle::replaceNurseryAndAllocSitePointers(
         static_assert(std::is_convertible_v<BaseScript*, gc::TenuredCell*>,
                       "Code assumes scripts are tenured");
         break;
+      case StubField::Type::JitCode:
+        static_assert(std::is_convertible_v<JitCode*, gc::TenuredCell*>,
+                      "Code assumes JitCodes are tenured");
+        break;
       case StubField::Type::JSObject: {
         JSObject* obj =
             stubInfo->getStubField<ICCacheIRStub, JSObject*>(stub, offset);
@@ -1185,7 +1194,7 @@ bool WarpScriptOracle::replaceNurseryAndAllocSitePointers(
       case StubField::Type::AllocSite: {
         uintptr_t oldWord = stubInfo->getStubRawWord(stub, offset);
         auto* site = reinterpret_cast<gc::AllocSite*>(oldWord);
-        gc::InitialHeap initialHeap = site->initialHeap();
+        gc::Heap initialHeap = site->initialHeap();
         uintptr_t newWord = uintptr_t(initialHeap);
         stubInfo->replaceStubRawWord(stubDataCopy, offset, oldWord, newWord);
         break;

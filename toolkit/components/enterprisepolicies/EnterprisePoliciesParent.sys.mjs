@@ -133,6 +133,14 @@ EnterprisePoliciesManager.prototype = {
   },
 
   _reportEnterpriseTelemetry(policies = {}) {
+    let excludedDistributionIDs = [
+      "mozilla-mac-eol-esr115",
+      "mozilla-win-eol-esr115",
+    ];
+    let distroId = Services.prefs
+      .getDefaultBranch(null)
+      .getCharPref("distribution.id", "");
+
     let policiesLength = Object.keys(policies).length;
 
     Services.telemetry.scalarSet("policies.count", policiesLength);
@@ -140,7 +148,7 @@ EnterprisePoliciesManager.prototype = {
     let isEnterprise =
       // As we migrate folks to ESR for other reasons (deprecating an OS),
       // we need to add checks here for distribution IDs.
-      AppConstants.IS_ESR ||
+      (AppConstants.IS_ESR && !excludedDistributionIDs.includes(distroId)) ||
       // If there are multiple policies then its enterprise.
       policiesLength > 1 ||
       // If ImportEnterpriseRoots isn't the only policy then it's enterprise.
@@ -188,12 +196,10 @@ EnterprisePoliciesManager.prototype = {
         continue;
       }
 
-      let {
-        valid: parametersAreValid,
-        parsedValue: parsedParameters,
-      } = lazy.JsonSchemaValidator.validate(policyParameters, policySchema, {
-        allowExtraProperties: true,
-      });
+      let { valid: parametersAreValid, parsedValue: parsedParameters } =
+        lazy.JsonSchemaValidator.validate(policyParameters, policySchema, {
+          allowExtraProperties: true,
+        });
 
       if (!parametersAreValid) {
         lazy.log.error(`Invalid parameters specified for ${policyName}.`);
@@ -458,8 +464,9 @@ EnterprisePoliciesManager.prototype = {
       return false;
     }
     let { hostname } = urlObject;
-    let exemptArray = this.getActivePolicies()
-      ?.ExemptDomainFileTypePairsFromFileTypeDownloadWarnings;
+    let exemptArray =
+      this.getActivePolicies()
+        ?.ExemptDomainFileTypePairsFromFileTypeDownloadWarnings;
     if (!hostname || !extension || !exemptArray) {
       return false;
     }
@@ -542,12 +549,8 @@ class JSONPoliciesProvider {
     let configFile = null;
 
     if (AppConstants.platform == "linux" && AppConstants.MOZ_SYSTEM_POLICIES) {
-      let systemConfigFile = Cc["@mozilla.org/file/local;1"].createInstance(
-        Ci.nsIFile
-      );
-      systemConfigFile.initWithPath(
-        "/etc/" + Services.appinfo.name.toLowerCase() + "/policies"
-      );
+      let systemConfigFile = Services.dirsvc.get("SysConfD", Ci.nsIFile);
+      systemConfigFile.append("policies");
       systemConfigFile.append(POLICIES_FILENAME);
       if (systemConfigFile.exists()) {
         return systemConfigFile;

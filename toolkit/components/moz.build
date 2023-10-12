@@ -46,11 +46,9 @@ DIRS += [
     "httpsonlyerror",
     "jsoncpp/src/lib_json",
     "kvstore",
-    "lz4",
     "mediasniffer",
     "mozintl",
     "mozprotocol",
-    "osfile",
     "parentalcontrols",
     "passwordmgr",
     "pdfjs",
@@ -119,7 +117,7 @@ if CONFIG["MOZ_WIDGET_TOOLKIT"] == "windows":
 
 if CONFIG["MOZ_WIDGET_TOOLKIT"] != "android":
     EXTRA_JS_MODULES += [
-        "DefaultCLH.jsm",
+        "DefaultCLH.sys.mjs",
     ]
 
     XPCOM_MANIFESTS += [

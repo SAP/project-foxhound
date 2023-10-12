@@ -934,15 +934,19 @@ void ModuleLoaderBase::FinishDynamicImportAndReject(ModuleLoadRequest* aRequest,
   FinishDynamicImport(jsapi.cx(), aRequest, aResult, nullptr);
 }
 
+/* static */
 void ModuleLoaderBase::FinishDynamicImport(
     JSContext* aCx, ModuleLoadRequest* aRequest, nsresult aResult,
     JS::Handle<JSObject*> aEvaluationPromise) {
+  LOG(("ScriptLoadRequest (%p): Finish dynamic import %x %d", aRequest,
+       unsigned(aResult), JS_IsExceptionPending(aCx)));
+
+  MOZ_ASSERT(GetCurrentModuleLoader(aCx) == aRequest->mLoader);
+
   // If aResult is a failed result, we don't have an EvaluationPromise. If it
   // succeeded, evaluationPromise may still be null, but in this case it will
   // be handled by rejecting the dynamic module import promise in the JSAPI.
   MOZ_ASSERT_IF(NS_FAILED(aResult), !aEvaluationPromise);
-  LOG(("ScriptLoadRequest (%p): Finish dynamic import %x %d", aRequest,
-       unsigned(aResult), JS_IsExceptionPending(aCx)));
 
   // Complete the dynamic import, report failures indicated by aResult or as a
   // pending exception on the context.
@@ -955,8 +959,10 @@ void ModuleLoaderBase::FinishDynamicImport(
   if (NS_FAILED(aResult) &&
       aResult != NS_SUCCESS_DOM_SCRIPT_EVALUATION_THREW_UNCATCHABLE) {
     MOZ_ASSERT(!JS_IsExceptionPending(aCx));
-    JS_ReportErrorNumberUC(aCx, js::GetErrorMessage, nullptr,
-                           JSMSG_DYNAMIC_IMPORT_FAILED);
+    nsAutoCString url;
+    aRequest->mURI->GetSpec(url);
+    JS_ReportErrorNumberASCII(aCx, js::GetErrorMessage, nullptr,
+                              JSMSG_DYNAMIC_IMPORT_FAILED, url.get());
   }
 
   JS::Rooted<JS::Value> referencingScript(aCx,
@@ -1180,6 +1186,7 @@ nsresult ModuleLoaderBase::EvaluateModuleInContext(
     JSContext* aCx, ModuleLoadRequest* aRequest,
     JS::ModuleErrorBehaviour errorBehaviour) {
   MOZ_ASSERT(aRequest->mLoader == this);
+  MOZ_ASSERT(mGlobalObject->GetModuleLoader(aCx) == this);
 
   AUTO_PROFILER_LABEL("ModuleLoaderBase::EvaluateModule", JS);
 
@@ -1213,6 +1220,7 @@ nsresult ModuleLoaderBase::EvaluateModuleInContext(
 
   JS::Rooted<JSObject*> module(aCx, moduleScript->ModuleRecord());
   MOZ_ASSERT(module);
+  MOZ_ASSERT(CurrentGlobalOrNull(aCx) == GetNonCCWObjectGlobal(module));
 
   if (!xpc::Scriptability::AllowedIfExists(module)) {
     return NS_OK;

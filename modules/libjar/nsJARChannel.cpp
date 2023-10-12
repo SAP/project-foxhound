@@ -77,6 +77,7 @@ class nsJARInputThunk : public nsIInputStream {
         mJarReader(zipReader),
         mJarEntry(jarEntry),
         mContentLength(-1) {
+    MOZ_DIAGNOSTIC_ASSERT(zipReader, "zipReader must not be null");
     if (ENTRY_IS_DIRECTORY(mJarEntry) && fullJarURI) {
       nsCOMPtr<nsIURI> urlWithoutQueryRef;
       nsresult rv = NS_MutateURI(fullJarURI)
@@ -110,6 +111,9 @@ class nsJARInputThunk : public nsIInputStream {
 NS_IMPL_ISUPPORTS(nsJARInputThunk, nsIInputStream)
 
 nsresult nsJARInputThunk::Init() {
+  if (!mJarReader) {
+    return NS_ERROR_INVALID_ARG;
+  }
   nsresult rv;
   if (ENTRY_IS_DIRECTORY(mJarEntry)) {
     // A directory stream also needs the Spec of the FullJarURI
@@ -1324,7 +1328,7 @@ nsJARChannel::OnDataAvailable(nsIRequest* req, nsIInputStream* stream,
 }
 
 NS_IMETHODIMP
-nsJARChannel::RetargetDeliveryTo(nsIEventTarget* aEventTarget) {
+nsJARChannel::RetargetDeliveryTo(nsISerialEventTarget* aEventTarget) {
   MOZ_ASSERT(NS_IsMainThread());
 
   nsCOMPtr<nsIThreadRetargetableRequest> request = do_QueryInterface(mRequest);
@@ -1336,7 +1340,7 @@ nsJARChannel::RetargetDeliveryTo(nsIEventTarget* aEventTarget) {
 }
 
 NS_IMETHODIMP
-nsJARChannel::GetDeliveryTarget(nsIEventTarget** aEventTarget) {
+nsJARChannel::GetDeliveryTarget(nsISerialEventTarget** aEventTarget) {
   MOZ_ASSERT(NS_IsMainThread());
 
   nsCOMPtr<nsIThreadRetargetableRequest> request = do_QueryInterface(mRequest);

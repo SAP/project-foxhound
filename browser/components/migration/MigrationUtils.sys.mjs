@@ -112,6 +112,9 @@ const FILE_MIGRATOR_MODULES = Object.freeze({
   PasswordFileMigrator: {
     moduleURI: "resource:///modules/FileMigrators.sys.mjs",
   },
+  BookmarksFileMigrator: {
+    moduleURI: "resource:///modules/FileMigrators.sys.mjs",
+  },
 });
 
 /**
@@ -139,6 +142,7 @@ class MigrationUtils {
     BOOKMARKS: 0x0020,
     OTHERDATA: 0x0040,
     SESSION: 0x0080,
+    PAYMENT_METHODS: 0x0100,
   });
 
   /**
@@ -179,7 +183,7 @@ class MigrationUtils {
    *   the wrapped function.
    */
   wrapMigrateFunction(aFunction, aCallback) {
-    return function() {
+    return function () {
       let success = false;
       try {
         aFunction.apply(null, arguments);
@@ -291,9 +295,8 @@ class MigrationUtils {
         MIGRATOR_MODULES
       )) {
         if (platforms.includes(AppConstants.platform)) {
-          let { [symbol]: migratorClass } = ChromeUtils.importESModule(
-            moduleURI
-          );
+          let { [symbol]: migratorClass } =
+            ChromeUtils.importESModule(moduleURI);
           if (gMigrators.has(migratorClass.key)) {
             console.error(
               "A pre-existing migrator exists with key " +
@@ -561,12 +564,44 @@ class MigrationUtils {
    *   just after opening the dialog window.
    */
   showMigrationWizard(aOpener, aOptions) {
+    // When migration is kicked off from about:welcome, there are
+    // a few different behaviors that we want to test, controlled
+    // by a preference that is instrumented for Nimbus. The pref
+    // has the following possible states:
+    //
+    // "autoclose":
+    //   The user will be directed to the migration wizard in
+    //   about:preferences, but once the wizard is dismissed,
+    //   the tab will close.
+    //
+    // "standalone":
+    //   The migration wizard will open in a new top-level content
+    //   window.
+    //
+    // "legacy":
+    //   The legacy migration wizard will open, even if the new migration
+    //   wizard is enabled by default.
+    //
+    // "default" / other
+    //   The user will be directed to the migration wizard in
+    //   about:preferences. The tab will not close once the
+    //   user closes the wizard.
+    let aboutWelcomeBehavior = Services.prefs.getCharPref(
+      "browser.migrate.content-modal.about-welcome-behavior",
+      "default"
+    );
+
+    let aboutWelcomeLegacyBehavior =
+      aboutWelcomeBehavior == "legacy" &&
+      aOptions.entrypoint == this.MIGRATION_ENTRYPOINTS.NEWTAB;
+
     if (
       Services.prefs.getBoolPref(
         "browser.migrate.content-modal.enabled",
         false
       ) &&
-      !aOptions?.isStartupMigration
+      !aOptions?.isStartupMigration &&
+      !aboutWelcomeLegacyBehavior
     ) {
       let entrypoint =
         aOptions.entrypoint || this.MIGRATION_ENTRYPOINTS.UNKNOWN;
@@ -598,29 +633,6 @@ class MigrationUtils {
 
       if (aOpener?.openPreferences) {
         if (aOptions.entrypoint == this.MIGRATION_ENTRYPOINTS.NEWTAB) {
-          // When migration is kicked off from about:welcome, there are
-          // a few different behaviors that we want to test, controlled
-          // by a preference that is instrumented for Nimbus. The pref
-          // has the following possible states:
-          //
-          // "autoclose":
-          //   The user will be directed to the migration wizard in
-          //   about:preferences, but once the wizard is dismissed,
-          //   the tab will close.
-          //
-          // "standalone":
-          //   The migration wizard will open in a new top-level content
-          //   window.
-          //
-          // "default" / other
-          //   The user will be directed to the migration wizard in
-          //   about:preferences. The tab will not close once the
-          //   user closes the wizard.
-          let aboutWelcomeBehavior = Services.prefs.getCharPref(
-            "browser.migrate.content-modal.about-welcome-behavior",
-            "default"
-          );
-
           if (aboutWelcomeBehavior == "autoclose") {
             return aOpener.openPreferences("general-migrate-autoclose");
           } else if (aboutWelcomeBehavior == "standalone") {
@@ -767,6 +779,7 @@ class MigrationUtils {
     bookmarks: 0,
     logins: 0,
     history: 0,
+    cards: 0,
   };
 
   getImportedCount(type) {
@@ -817,7 +830,7 @@ class MigrationUtils {
         if (parent == lazy.PlacesUtils.bookmarks.toolbarGuid) {
           lazy.PlacesUIUtils.maybeToggleBookmarkToolbarVisibility(
             true /* aForceVisible */
-          );
+          ).catch(console.error);
         }
       },
       ex => console.error(ex)
@@ -892,6 +905,22 @@ class MigrationUtils {
         null,
         Services.scriptSecurityManager.getSystemPrincipal()
       );
+    }
+  }
+
+  async insertCreditCardsWrapper(cards) {
+    this._importQuantities.cards += cards.length;
+    let { formAutofillStorage } = ChromeUtils.importESModule(
+      "resource://autofill/FormAutofillStorage.sys.mjs"
+    );
+
+    await formAutofillStorage.initialize();
+    for (let card of cards) {
+      try {
+        await formAutofillStorage.creditCards.add(card);
+      } catch (e) {
+        console.error("Failed to insert credit card due to error: ", e, card);
+      }
     }
   }
 

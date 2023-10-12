@@ -935,8 +935,16 @@ nsresult WorkerScriptLoader::LoadScript(
     nsCOMPtr<nsIReferrerInfo> referrerInfo;
     uint32_t secFlags;
     if (request->IsModuleRequest()) {
-      referrerInfo =
-          new ReferrerInfo(request->mReferrer, request->ReferrerPolicy());
+      // https://fetch.spec.whatwg.org/#concept-main-fetch
+      // Step 8. If request’s referrer policy is the empty string, then set
+      //         request’s referrer policy to request’s policy container’s
+      //         referrer policy.
+      ReferrerPolicy policy =
+          request->ReferrerPolicy() == ReferrerPolicy::_empty
+              ? mWorkerRef->Private()->GetReferrerPolicy()
+              : request->ReferrerPolicy();
+
+      referrerInfo = new ReferrerInfo(request->mReferrer, policy);
       rv = GetModuleSecFlags(
           loadContext->IsTopLevel(), principal, mWorkerScriptType,
           request->mURI, mWorkerRef->Private()->WorkerCredentials(), secFlags);
@@ -1334,6 +1342,9 @@ nsresult ScriptLoaderRunnable::Run() {
       mScriptLoader->IsDebuggerScript()) {
     for (ThreadSafeRequestHandle* handle : mLoadingRequests) {
       handle->mRunnable = this;
+    }
+
+    for (ThreadSafeRequestHandle* handle : mLoadingRequests) {
       nsresult rv = mScriptLoader->LoadScript(handle);
       if (NS_WARN_IF(NS_FAILED(rv))) {
         LoadingFinished(handle, rv);

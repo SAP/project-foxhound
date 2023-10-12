@@ -124,7 +124,6 @@
 #include "mozilla/StaticPrefs_layout.h"
 #include "mozilla/StaticPrefs_network.h"
 #include "mozilla/StaticPrefs_page_load.h"
-#include "mozilla/StaticPrefs_plugins.h"
 #include "mozilla/StaticPrefs_privacy.h"
 #include "mozilla/StaticPrefs_security.h"
 #include "mozilla/StaticPrefs_widget.h"
@@ -147,6 +146,7 @@
 #include "mozilla/css/Rule.h"
 #include "mozilla/css/SheetParsingMode.h"
 #include "mozilla/dom/AnonymousContent.h"
+#include "mozilla/dom/BlobURLProtocolHandler.h"
 #include "mozilla/dom/BrowserChild.h"
 #include "mozilla/dom/BrowsingContext.h"
 #include "mozilla/dom/BrowsingContextGroup.h"
@@ -253,7 +253,6 @@
 #include "mozilla/ipc/IdleSchedulerChild.h"
 #include "mozilla/ipc/MessageChannel.h"
 #include "mozilla/net/ChannelEventQueue.h"
-#include "mozilla/net/ChildDNSService.h"
 #include "mozilla/net/CookieJarSettings.h"
 #include "mozilla/net/NeckoChannelParams.h"
 #include "mozilla/net/RequestContextService.h"
@@ -329,6 +328,7 @@
 #include "nsIDocumentLoader.h"
 #include "nsIDocumentLoaderFactory.h"
 #include "nsIDocumentObserver.h"
+#include "nsIDNSService.h"
 #include "nsIEditingSession.h"
 #include "nsIEditor.h"
 #include "nsIEffectiveTLDService.h"
@@ -1477,7 +1477,7 @@ Document::Document(const char* aContentType)
 
   // Create these unconditionally, they will be used to warn about the `zoom`
   // property, even if use counters are disabled.
-  mStyleUseCounters = Servo_UseCounters_Create().Consume();
+  mStyleUseCounters.reset(Servo_UseCounters_Create());
 
   SetContentType(nsDependentCString(aContentType));
 
@@ -1924,31 +1924,8 @@ void Document::GetFailedCertSecurityInfo(FailedCertSecurityInfo& aInfo,
   Unused << NS_WARN_IF(NS_FAILED(pkps->HostHasPins(aURI, &aInfo.mHasHPKP)));
 }
 
-bool Document::AllowDeprecatedTls() {
-  return Preferences::GetBool("security.tls.version.enable-deprecated", false);
-}
-
-void Document::SetAllowDeprecatedTls(bool value) {
-  if (!IsErrorPage()) {
-    return;
-  }
-
-  auto docShell = GetDocShell();
-  if (!docShell) {
-    return;
-  }
-
-  auto child = BrowserChild::GetFrom(docShell);
-  if (!child) {
-    return;
-  }
-
-  child->SendSetAllowDeprecatedTls(value);
-}
-
 bool Document::IsAboutPage() const {
-  nsCOMPtr<nsIPrincipal> principal = NodePrincipal();
-  return principal->SchemeIs("about");
+  return NodePrincipal()->SchemeIs("about");
 }
 
 void Document::ConstructUbiNode(void* storage) {
@@ -2082,6 +2059,9 @@ void Document::AccumulatePageLoadTelemetry(
     return;
   }
 
+  // Default duration is 0, use this to check for bogus negative values.
+  const TimeDuration zeroDuration;
+
   TimeStamp responseStart;
   timedChannel->GetResponseStart(&responseStart);
 
@@ -2097,8 +2077,23 @@ void Document::AccumulatePageLoadTelemetry(
   }
 
   if (!redirectStart.IsNull() && !redirectEnd.IsNull()) {
-    aEventTelemetryDataOut.redirectTime = mozilla::Some(
-        static_cast<uint32_t>((redirectEnd - redirectStart).ToMilliseconds()));
+    TimeDuration redirectTime = redirectEnd - redirectStart;
+    if (redirectTime > zeroDuration) {
+      aEventTelemetryDataOut.redirectTime =
+          mozilla::Some(static_cast<uint32_t>(redirectTime.ToMilliseconds()));
+    }
+  }
+
+  TimeStamp dnsLookupStart, dnsLookupEnd;
+  timedChannel->GetDomainLookupStart(&dnsLookupStart);
+  timedChannel->GetDomainLookupEnd(&dnsLookupEnd);
+
+  if (!dnsLookupStart.IsNull() && !dnsLookupEnd.IsNull()) {
+    TimeDuration dnsLookupTime = dnsLookupEnd - dnsLookupStart;
+    if (dnsLookupTime > zeroDuration) {
+      aEventTelemetryDataOut.dnsLookupTime =
+          mozilla::Some(static_cast<uint32_t>(dnsLookupTime.ToMilliseconds()));
+    }
   }
 
   TimeStamp navigationStart =
@@ -2118,9 +2113,13 @@ void Document::AccumulatePageLoadTelemetry(
     bool resolvedByTRR = false;
     Unused << httpChannel->GetIsResolvedByTRR(&resolvedByTRR);
     if (resolvedByTRR) {
-      RefPtr<net::ChildDNSService> dnsServiceChild =
-          net::ChildDNSService::GetSingleton();
-      dnsServiceChild->GetTRRDomainKey(dnsKey);
+      if (nsCOMPtr<nsIDNSService> dns =
+              do_GetService(NS_DNSSERVICE_CONTRACTID)) {
+        dns->GetTRRDomainKey(dnsKey);
+      } else {
+        // Failed to get the DNS service.
+        dnsKey = "(fail)"_ns;
+      }
       aEventTelemetryDataOut.trrDomain = mozilla::Some(dnsKey);
     }
 
@@ -2202,8 +2201,11 @@ void Document::AccumulatePageLoadTelemetry(
         Telemetry::PERF_FIRST_CONTENTFUL_PAINT_FROM_RESPONSESTART_MS,
         responseStart, firstContentfulComposite);
 
-    aEventTelemetryDataOut.fcpTime = mozilla::Some(static_cast<uint32_t>(
-        (firstContentfulComposite - navigationStart).ToMilliseconds()));
+    TimeDuration fcpTime = firstContentfulComposite - navigationStart;
+    if (fcpTime > zeroDuration) {
+      aEventTelemetryDataOut.fcpTime =
+          mozilla::Some(static_cast<uint32_t>(fcpTime.ToMilliseconds()));
+    }
   }
 
   // DOM Content Loaded event
@@ -2242,10 +2244,17 @@ void Document::AccumulatePageLoadTelemetry(
         Telemetry::PERF_PAGE_LOAD_TIME_FROM_RESPONSESTART_MS, responseStart,
         loadEventStart);
 
-    aEventTelemetryDataOut.responseTime = mozilla::Some(static_cast<uint32_t>(
-        (responseStart - navigationStart).ToMilliseconds()));
-    aEventTelemetryDataOut.loadTime = mozilla::Some(static_cast<uint32_t>(
-        (loadEventStart - navigationStart).ToMilliseconds()));
+    TimeDuration responseTime = responseStart - navigationStart;
+    if (responseTime > zeroDuration) {
+      aEventTelemetryDataOut.responseTime =
+          mozilla::Some(static_cast<uint32_t>(responseTime.ToMilliseconds()));
+    }
+
+    TimeDuration loadTime = loadEventStart - navigationStart;
+    if (loadTime > zeroDuration) {
+      aEventTelemetryDataOut.loadTime =
+          mozilla::Some(static_cast<uint32_t>(loadTime.ToMilliseconds()));
+    }
   }
 }
 
@@ -3959,6 +3968,13 @@ nsresult Document::InitFeaturePolicy(nsIChannel* aChannel) {
   }
 
   return NS_OK;
+}
+
+void Document::EnsureNotEnteringAndExitFullscreen() {
+  Document::ClearPendingFullscreenRequests(this);
+  if (GetFullscreenElement()) {
+    Document::AsyncExitFullscreen(this);
+  }
 }
 
 void Document::SetReferrerInfo(nsIReferrerInfo* aReferrerInfo) {
@@ -7843,7 +7859,7 @@ void Document::SetScriptGlobalObject(
   }
 
   // Tell the script loader about the new global object.
-  if (mScriptLoader) {
+  if (mScriptLoader && !IsTemplateContentsOwner()) {
     mScriptLoader->SetGlobalObject(mScriptGlobalObject);
   }
 
@@ -8114,15 +8130,6 @@ void Document::DispatchContentLoadedEvents() {
 
       parent = parent->GetInProcessParentDocument();
     }
-  }
-
-  // If the document has a manifest attribute, fire a MozApplicationManifest
-  // event.
-  Element* root = GetRootElement();
-  if (root && root->HasAttr(kNameSpaceID_None, nsGkAtoms::manifest)) {
-    nsContentUtils::DispatchChromeEvent(this, ToSupports(this),
-                                        u"MozApplicationManifest"_ns,
-                                        CanBubble::eYes, Cancelable::eYes);
   }
 
   nsPIDOMWindowInner* inner = GetInnerWindow();
@@ -10775,10 +10782,9 @@ void Document::SetMetaViewportData(UniquePtr<ViewportMetaData> aData) {
   // Trigger recomputation of the nsViewportInfo the next time it's queried.
   mViewportType = Unknown;
 
-  RefPtr<AsyncEventDispatcher> asyncDispatcher =
-      new AsyncEventDispatcher(this, u"DOMMetaViewportFitChanged"_ns,
-                               CanBubble::eYes, ChromeOnlyDispatch::eYes);
-  asyncDispatcher->RunDOMEventWhenSafe();
+  AsyncEventDispatcher::RunDOMEventWhenSafe(
+      *this, u"DOMMetaViewportFitChanged"_ns, CanBubble::eYes,
+      ChromeOnlyDispatch::eYes);
 }
 
 EventListenerManager* Document::GetOrCreateListenerManager() {
@@ -11986,9 +11992,10 @@ void Document::MutationEventDispatched(nsINode* aTarget) {
 
   mSubtreeModifiedTargets.Clear();
 
-  for (nsINode* target : realTargets) {
+  for (const nsCOMPtr<nsINode>& target : realTargets) {
     InternalMutationEvent mutation(true, eLegacySubtreeModified);
-    (new AsyncEventDispatcher(target, mutation))->RunDOMEventWhenSafe();
+    // MOZ_KnownLive due to bug 1620312
+    AsyncEventDispatcher::RunDOMEventWhenSafe(MOZ_KnownLive(*target), mutation);
   }
 }
 
@@ -12233,9 +12240,8 @@ void Document::SetReadyStateInternal(ReadyState aReadyState,
     RecordNavigationTiming(aReadyState);
   }
 
-  RefPtr<AsyncEventDispatcher> asyncDispatcher = new AsyncEventDispatcher(
-      this, u"readystatechange"_ns, CanBubble::eNo, ChromeOnlyDispatch::eNo);
-  asyncDispatcher->RunDOMEventWhenSafe();
+  AsyncEventDispatcher::RunDOMEventWhenSafe(
+      *this, u"readystatechange"_ns, CanBubble::eNo, ChromeOnlyDispatch::eNo);
 }
 
 void Document::GetReadyState(nsAString& aReadyState) const {
@@ -12425,12 +12431,12 @@ void Document::MaybePreLoadImage(nsIURI* aUri,
                                  ReferrerPolicyEnum aReferrerPolicy,
                                  bool aIsImgSet, bool aLinkPreload,
                                  const TimeStamp& aInitTimestamp) {
+  const CORSMode corsMode = dom::Element::StringToCORSMode(aCrossOriginAttr);
   if (aLinkPreload) {
     // Check if the image was already preloaded in this document to avoid
     // duplicate preloading.
-    PreloadHashKey key = PreloadHashKey::CreateAsImage(
-        aUri, NodePrincipal(),
-        dom::Element::StringToCORSMode(aCrossOriginAttr));
+    PreloadHashKey key =
+        PreloadHashKey::CreateAsImage(aUri, NodePrincipal(), corsMode);
     if (!mPreloadService.PreloadExists(key)) {
       PreLoadImage(aUri, aCrossOriginAttr, aReferrerPolicy, aIsImgSet,
                    aLinkPreload, 0);
@@ -12441,7 +12447,7 @@ void Document::MaybePreLoadImage(nsIURI* aUri,
   // Early exit if the img is already present in the img-cache
   // which indicates that the "real" load has already started and
   // that we shouldn't preload it.
-  if (nsContentUtils::IsImageInCache(aUri, this)) {
+  if (nsContentUtils::IsImageAvailable(aUri, NodePrincipal(), corsMode, this)) {
     return;
   }
 
@@ -12500,11 +12506,10 @@ void Document::MaybePreconnect(nsIURI* aOrigURI, mozilla::CORSMode aCORSMode) {
     return;
   }
 
-  if (aCORSMode == CORS_ANONYMOUS) {
-    speculator->SpeculativeAnonymousConnect(uri, NodePrincipal(), nullptr);
-  } else {
-    speculator->SpeculativeConnect(uri, NodePrincipal(), nullptr);
-  }
+  OriginAttributes oa;
+  StoragePrincipalHelper::GetOriginAttributesForNetworkState(this, oa);
+  speculator->SpeculativeConnectWithOriginAttributesNative(
+      uri, std::move(oa), nullptr, aCORSMode == CORS_ANONYMOUS);
 }
 
 void Document::ForgetImagePreload(nsIURI* aURI) {
@@ -12799,6 +12804,7 @@ Document* Document::GetTemplateContentsOwner() {
     mTemplateContentsOwner->mTemplateContentsOwner = mTemplateContentsOwner;
   }
 
+  MOZ_ASSERT(mTemplateContentsOwner->IsTemplateContentsOwner());
   return mTemplateContentsOwner;
 }
 
@@ -14057,9 +14063,9 @@ NS_IMPL_ISUPPORTS(DevToolsMutationObserver, nsIMutationObserver)
 
 void DevToolsMutationObserver::FireEvent(nsINode* aTarget,
                                          const nsAString& aType) {
-  (new AsyncEventDispatcher(aTarget, aType, CanBubble::eNo,
-                            ChromeOnlyDispatch::eYes, Composed::eYes))
-      ->RunDOMEventWhenSafe();
+  AsyncEventDispatcher::RunDOMEventWhenSafe(*aTarget, aType, CanBubble::eNo,
+                                            ChromeOnlyDispatch::eYes,
+                                            Composed::eYes);
 }
 
 void DevToolsMutationObserver::AttributeChanged(Element* aElement,
@@ -15018,32 +15024,54 @@ void Document::HideAllPopoversUntil(nsINode& aEndpoint,
     return;
   }
 
-  RefPtr<const Element> lastToHide = nullptr;
-  bool foundEndpoint = false;
-  for (const Element* popover : AutoPopoverList()) {
-    if (popover == &aEndpoint) {
-      foundEndpoint = true;
-    } else if (foundEndpoint) {
-      lastToHide = popover;
-      break;
-    }
-  }
+  // https://github.com/whatwg/html/pull/9198
+  auto needRepeatingHide = [&]() {
+    auto autoList = AutoPopoverList();
+    return autoList.Contains(&aEndpoint) &&
+           &aEndpoint != autoList.LastElement();
+  };
 
-  if (!foundEndpoint) {
-    closeAllOpenPopovers();
-    return;
-  }
-
-  while (lastToHide && lastToHide->IsPopoverOpen()) {
-    RefPtr<Element> topmost = GetTopmostAutoPopover();
-    if (!topmost) {
-      break;
+  MOZ_ASSERT((&aEndpoint)->IsElement() &&
+             (&aEndpoint)->AsElement()->IsAutoPopover());
+  bool repeatingHide = false;
+  bool fireEvents = aFireEvents;
+  do {
+    RefPtr<const Element> lastToHide = nullptr;
+    bool foundEndpoint = false;
+    for (const Element* popover : AutoPopoverList()) {
+      if (popover == &aEndpoint) {
+        foundEndpoint = true;
+      } else if (foundEndpoint) {
+        lastToHide = popover;
+        break;
+      }
     }
-    HidePopover(*topmost, aFocusPreviousElement, aFireEvents, IgnoreErrors());
-  }
+
+    if (!foundEndpoint) {
+      closeAllOpenPopovers();
+      return;
+    }
+
+    while (lastToHide && lastToHide->IsPopoverOpen()) {
+      RefPtr<Element> topmost = GetTopmostAutoPopover();
+      if (!topmost) {
+        break;
+      }
+      HidePopover(*topmost, aFocusPreviousElement, fireEvents, IgnoreErrors());
+    }
+
+    repeatingHide = needRepeatingHide();
+    if (repeatingHide) {
+      fireEvents = false;
+    }
+  } while (repeatingHide);
 }
 
-// https://html.spec.whatwg.org/#dom-hidepopover
+MOZ_CAN_RUN_SCRIPT_BOUNDARY void
+Document::HideAllPopoversWithoutRunningScript() {
+  return HideAllPopoversUntil(*this, false, false);
+}
+
 void Document::HidePopover(Element& aPopover, bool aFocusPreviousElement,
                            bool aFireEvents, ErrorResult& aRv) {
   RefPtr<nsGenericHTMLElement> popoverHTMLEl =
@@ -15055,9 +15083,15 @@ void Document::HidePopover(Element& aPopover, bool aFocusPreviousElement,
     return;
   }
 
+  bool wasHiding = popoverHTMLEl->GetPopoverData()->IsHiding();
+  popoverHTMLEl->GetPopoverData()->SetIsHiding(true);
+  auto restoreIsHiding = MakeScopeExit([&]() {
+    if (auto* popoverData = popoverHTMLEl->GetPopoverData()) {
+      popoverData->SetIsHiding(wasHiding);
+    }
+  });
+
   if (popoverHTMLEl->IsAutoPopover()) {
-    // TODO: There might be a circle if show other auto popover while hidding
-    // See, https://github.com/whatwg/html/issues/9196
     HideAllPopoversUntil(*popoverHTMLEl, aFocusPreviousElement, aFireEvents);
     if (!popoverHTMLEl->CheckPopoverValidity(PopoverVisibilityState::Showing,
                                              nullptr, aRv)) {
@@ -15079,10 +15113,12 @@ void Document::HidePopover(Element& aPopover, bool aFocusPreviousElement,
     }
   }
 
-  aPopover.SetHasPopoverInvoker(false);
+  auto* data = popoverHTMLEl->GetPopoverData();
+  MOZ_ASSERT(data, "Should have popover data");
+  data->SetInvoker(nullptr);
 
   // Fire beforetoggle event and re-check popover validity.
-  if (aFireEvents) {
+  if (aFireEvents && !wasHiding) {
     // Intentionally ignore the return value here as only on open event for
     // beforetoggle the cancelable attribute is initialized to true.
     popoverHTMLEl->FireToggleEvent(PopoverVisibilityState::Showing,
@@ -15274,6 +15310,10 @@ bool Document::FullscreenElementReadyCheck(FullscreenRequest& aRequest) {
     aRequest.Reject("FullscreenDeniedNotInDocument");
     return false;
   }
+  if (elem->IsPopoverOpen()) {
+    aRequest.Reject("FullscreenDeniedPopoverOpen");
+    return false;
+  }
   if (elem->OwnerDoc() != this) {
     aRequest.Reject("FullscreenDeniedMovedDocument");
     return false;
@@ -15292,15 +15332,6 @@ bool Document::FullscreenElementReadyCheck(FullscreenRequest& aRequest) {
   }
   if (elem->IsHTMLElement(nsGkAtoms::dialog)) {
     aRequest.Reject("FullscreenDeniedHTMLDialog");
-    return false;
-  }
-  // XXXsmaug Note, we don't follow the latest fullscreen spec here.
-  //         This whole check could be probably removed.
-  if (fullscreenElement && !nsContentUtils::ContentIsHostIncludingDescendantOf(
-                               elem, fullscreenElement)) {
-    // If this document is fullscreen, only grant fullscreen requests from
-    // a descendant of the current fullscreen element.
-    aRequest.Reject("FullscreenDeniedNotDescendant");
     return false;
   }
   if (!nsContentUtils::IsChromeDoc(this) && !IsInFocusedTab(this)) {
@@ -15413,9 +15444,17 @@ void Document::RequestFullscreenInContentProcess(
   PendingFullscreenChangeList::Add(std::move(aRequest));
   // If we are not the top level process, dispatch an event to make
   // our parent process go fullscreen first.
-  nsContentUtils::DispatchEventOnlyToChrome(
-      this, ToSupports(this), u"MozDOMFullscreen:Request"_ns, CanBubble::eYes,
-      Cancelable::eNo, /* DefaultAction */ nullptr);
+  Dispatch(
+      TaskCategory::Other,
+      NS_NewRunnableFunction(
+          "Document::RequestFullscreenInContentProcess", [self = RefPtr{this}] {
+            if (!self->HasPendingFullscreenRequests()) {
+              return;
+            }
+            nsContentUtils::DispatchEventOnlyToChrome(
+                self, ToSupports(self), u"MozDOMFullscreen:Request"_ns,
+                CanBubble::eYes, Cancelable::eNo, /* DefaultAction */ nullptr);
+          }));
 }
 
 void Document::RequestFullscreenInParentProcess(
@@ -15493,6 +15532,9 @@ bool Document::ApplyFullscreen(UniquePtr<FullscreenRequest> aRequest) {
   if (!FullscreenElementReadyCheck(*aRequest)) {
     return false;
   }
+
+  RefPtr<Document> doc = aRequest->Document();
+  doc->HideAllPopoversWithoutRunningScript();
 
   // Stash a reference to any existing fullscreen doc, we'll use this later
   // to detect if the origin which is fullscreen has changed.
@@ -16184,18 +16226,31 @@ void Document::SendPageUseCounters() {
   wgc->SendAccumulatePageUseCounters(counters);
 }
 
-void Document::RecomputeResistFingerprinting() {
-  mShouldResistFingerprinting =
-      !nsContentUtils::IsChromeDoc(this) &&
-      nsContentUtils::ShouldResistFingerprinting(
-          mChannel, RFPTarget::IsAlwaysEnabledForPrecompute);
+bool Document::RecomputeResistFingerprinting() {
+  const bool previous = mShouldResistFingerprinting;
+
+  if (mParentDocument &&
+      (NodePrincipal()->Equals(mParentDocument->NodePrincipal()) ||
+       NodePrincipal()->GetIsNullPrincipal())) {
+    // If we have a parent document, defer to it only when we have a null
+    // principal (e.g. a sandboxed iframe or a data: uri) or when the parent
+    // document's principal matches.  This means we will defer about:blank,
+    // about:srcdoc, blob and same-origin iframes to the parent, but not
+    // cross-origin iframes.
+    mShouldResistFingerprinting = !nsContentUtils::IsChromeDoc(this) &&
+                                  mParentDocument->ShouldResistFingerprinting(
+                                      RFPTarget::IsAlwaysEnabledForPrecompute);
+  } else {
+    mShouldResistFingerprinting =
+        !nsContentUtils::IsChromeDoc(this) &&
+        nsContentUtils::ShouldResistFingerprinting(
+            mChannel, RFPTarget::IsAlwaysEnabledForPrecompute);
+  }
+
+  return previous != mShouldResistFingerprinting;
 }
 
-bool Document::ShouldResistFingerprinting(
-    RFPTarget aTarget /* = RFPTarget::Unknown */) const {
-  if (aTarget == RFPTarget::IgnoreTargetAndReturnCachedValue) {
-    return mShouldResistFingerprinting;
-  }
+bool Document::ShouldResistFingerprinting(RFPTarget aTarget) const {
   return mShouldResistFingerprinting && nsRFPService::IsRFPEnabledFor(aTarget);
 }
 
@@ -18165,20 +18220,30 @@ nsICookieJarSettings* Document::CookieJarSettings() {
   if (!mCookieJarSettings) {
     Document* inProcessParent = GetInProcessParentDocument();
 
-    mCookieJarSettings =
-        inProcessParent
-            ? net::CookieJarSettings::Create(
-                  inProcessParent->CookieJarSettings()->GetCookieBehavior(),
-                  mozilla::net::CookieJarSettings::Cast(
-                      inProcessParent->CookieJarSettings())
-                      ->GetPartitionKey(),
-                  inProcessParent->CookieJarSettings()
-                      ->GetIsFirstPartyIsolated(),
-                  inProcessParent->CookieJarSettings()
-                      ->GetIsOnContentBlockingAllowList(),
-                  inProcessParent->CookieJarSettings()
-                      ->GetShouldResistFingerprinting())
-            : net::CookieJarSettings::Create(NodePrincipal());
+    if (inProcessParent) {
+      mCookieJarSettings = net::CookieJarSettings::Create(
+          inProcessParent->CookieJarSettings()->GetCookieBehavior(),
+          mozilla::net::CookieJarSettings::Cast(
+              inProcessParent->CookieJarSettings())
+              ->GetPartitionKey(),
+          inProcessParent->CookieJarSettings()->GetIsFirstPartyIsolated(),
+          inProcessParent->CookieJarSettings()
+              ->GetIsOnContentBlockingAllowList(),
+          inProcessParent->CookieJarSettings()
+              ->GetShouldResistFingerprinting());
+
+      // Inherit the fingerprinting random key from the parent.
+      nsTArray<uint8_t> randomKey;
+      nsresult rv = inProcessParent->CookieJarSettings()
+                        ->GetFingerprintingRandomizationKey(randomKey);
+
+      if (NS_SUCCEEDED(rv)) {
+        net::CookieJarSettings::Cast(mCookieJarSettings)
+            ->SetFingerprintingRandomizationKey(randomKey);
+      }
+    } else {
+      mCookieJarSettings = net::CookieJarSettings::Create(NodePrincipal());
+    }
 
     if (auto* wgc = GetWindowGlobalChild()) {
       net::CookieJarSettingsArgs csArgs;

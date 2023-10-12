@@ -1090,7 +1090,8 @@ nsHttpTransaction::ErrorCodeToFailedReason(nsresult aErrorCode) {
 }
 
 bool nsHttpTransaction::PrepareSVCBRecordsForRetry(
-    const nsACString& aFailedDomainName, bool& aAllRecordsHaveEchConfig) {
+    const nsACString& aFailedDomainName, const nsACString& aFailedAlpn,
+    bool& aAllRecordsHaveEchConfig) {
   MOZ_ASSERT(mRecordsForRetry.IsEmpty());
   if (!mHTTPSSVCRecord) {
     return false;
@@ -1100,10 +1101,11 @@ bool nsHttpTransaction::PrepareSVCBRecordsForRetry(
   // h3.
   bool noHttp3 = mCaps & NS_HTTP_DISALLOW_HTTP3;
 
+  bool unused;
   nsTArray<RefPtr<nsISVCBRecord>> records;
   Unused << mHTTPSSVCRecord->GetAllRecordsWithEchConfig(
       mCaps & NS_HTTP_DISALLOW_SPDY, noHttp3, &aAllRecordsHaveEchConfig,
-      &mAllRecordsInH3ExcludedListBefore, records);
+      &unused, records);
 
   // Note that it's possible that we can't get any usable record here. For
   // example, when http3 connection is failed, we won't select records with
@@ -1119,11 +1121,15 @@ bool nsHttpTransaction::PrepareSVCBRecordsForRetry(
   for (const auto& record : records) {
     nsAutoCString name;
     record->GetName(name);
-    // If all records are in the http3 excluded list, we'll give the previous
-    // failed record one more chance.
-    if (name == aFailedDomainName && !mAllRecordsInH3ExcludedListBefore) {
-      // Skip the failed one.
-      continue;
+    nsAutoCString alpn;
+    nsresult rv = record->GetSelectedAlpn(alpn);
+
+    if (name == aFailedDomainName) {
+      // If the record has no alpn or the alpn is already tried, we skip this
+      // record.
+      if (NS_FAILED(rv) || alpn == aFailedAlpn) {
+        continue;
+      }
     }
 
     mRecordsForRetry.InsertElementAt(0, record);
@@ -1260,6 +1266,7 @@ void nsHttpTransaction::PrepareConnInfoForRetry(nsresult aReason) {
       if (mHTTPSSVCRecord) {
         bool allRecordsHaveEchConfig = true;
         if (!PrepareSVCBRecordsForRetry(failedConnInfo->GetRoutedHost(),
+                                        failedConnInfo->GetNPNToken(),
                                         allRecordsHaveEchConfig)) {
           LOG(
               (" Can't find other records with echConfig, "
@@ -1272,12 +1279,8 @@ void nsHttpTransaction::PrepareConnInfoForRetry(nsresult aReason) {
           return;
         }
       } else {
-        LOG(
-            (" No available records to retry, "
-             "mAllRecordsInH3ExcludedListBefore=%d",
-             mAllRecordsInH3ExcludedListBefore));
-        if (gHttpHandler->FallbackToOriginIfConfigsAreECHAndAllFailed() &&
-            !mAllRecordsInH3ExcludedListBefore) {
+        LOG((" No available records to retry"));
+        if (gHttpHandler->FallbackToOriginIfConfigsAreECHAndAllFailed()) {
           useOrigConnInfoToRetry();
         }
         return;
@@ -1289,7 +1292,9 @@ void nsHttpTransaction::PrepareConnInfoForRetry(nsresult aReason) {
       for (const auto& r : mRecordsForRetry) {
         nsAutoCString name;
         r->GetName(name);
-        LOG((" name=%s", name.get()));
+        nsAutoCString alpn;
+        r->GetSelectedAlpn(alpn);
+        LOG((" name=%s alpn=%s", name.get(), alpn.get()));
       }
       LOG(("]"));
     }

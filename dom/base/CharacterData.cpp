@@ -358,7 +358,7 @@ nsresult CharacterData::SetTextInternal(
       }
 
       mozAutoSubtreeModified subtree(OwnerDoc(), this);
-      (new AsyncEventDispatcher(this, mutation))->RunDOMEventWhenSafe();
+      AsyncEventDispatcher::RunDOMEventWhenSafe(*this, mutation);
     }
   }
 

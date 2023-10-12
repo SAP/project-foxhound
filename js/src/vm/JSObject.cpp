@@ -26,6 +26,7 @@
 #include "builtin/String.h"
 #include "builtin/Symbol.h"
 #include "builtin/WeakSetObject.h"
+#include "gc/AllocKind.h"
 #include "gc/GC.h"
 #include "js/CharacterEncoding.h"
 #include "js/friend/DumpFunctions.h"  // js::DumpObject
@@ -67,6 +68,7 @@
 #endif
 #include "wasm/WasmGcObject.h"
 
+#include "gc/StableCellHasher-inl.h"
 #include "vm/BooleanObject-inl.h"
 #include "vm/EnvironmentObject-inl.h"
 #include "vm/Interpreter-inl.h"
@@ -768,7 +770,7 @@ static MOZ_ALWAYS_INLINE NativeObject* NewObject(JSContext* cx,
     return nullptr;
   }
 
-  gc::InitialHeap heap = GetInitialHeap(newKind, clasp);
+  gc::Heap heap = GetInitialHeap(newKind, clasp);
   NativeObject* obj = NativeObject::create(cx, kind, heap, shape);
   if (!obj) {
     return nullptr;
@@ -1080,6 +1082,7 @@ bool NativeObject::fixupAfterSwap(JSContext* cx, Handle<NativeObject*> obj,
   uint32_t oldDictionarySlotSpan =
       obj->inDictionaryMode() ? slotValues.length() : 0;
 
+  MOZ_ASSERT(!obj->hasUniqueId());
   size_t ndynamic =
       calculateDynamicSlots(nfixed, slotValues.length(), obj->getClass());
   size_t currentSlots = obj->getSlotsHeader()->capacity();
@@ -1187,21 +1190,6 @@ bool ProxyObject::fixupAfterSwap(JSContext* cx,
   return true;
 }
 
-#ifdef DEBUG
-static bool IsBackgroundFinalizedWhenTenured(JSObject* obj) {
-  if (obj->isTenured()) {
-    return gc::IsBackgroundFinalized(obj->asTenured().getAllocKind());
-  }
-
-  if (obj->is<ProxyObject>()) {
-    return gc::IsBackgroundFinalized(
-        obj->as<ProxyObject>().allocKindForTenure());
-  }
-
-  return js::gc::CanUseBackgroundAllocKind(obj->getClass());
-}
-#endif
-
 static gc::AllocKind SwappableObjectAllocKind(JSObject* obj) {
   MOZ_ASSERT(ObjectMayBeSwapped(obj));
 
@@ -1220,8 +1208,7 @@ static gc::AllocKind SwappableObjectAllocKind(JSObject* obj) {
 void JSObject::swap(JSContext* cx, HandleObject a, HandleObject b,
                     AutoEnterOOMUnsafeRegion& oomUnsafe) {
   // Ensure swap doesn't cause a finalizer to be run at the wrong time.
-  MOZ_ASSERT(IsBackgroundFinalizedWhenTenured(a) ==
-             IsBackgroundFinalizedWhenTenured(b));
+  MOZ_ASSERT(a->isBackgroundFinalized() == b->isBackgroundFinalized());
 
   MOZ_ASSERT(a->compartment() == b->compartment());
 
@@ -1254,16 +1241,45 @@ void JSObject::swap(JSContext* cx, HandleObject a, HandleObject b,
 
   unsigned r = NotifyGCPreSwap(a, b);
 
-  bool aIsProxyWithInlineValues =
-      a->is<ProxyObject>() && a->as<ProxyObject>().usingInlineValueArray();
-  bool bIsProxyWithInlineValues =
-      b->is<ProxyObject>() && b->as<ProxyObject>().usingInlineValueArray();
+  ProxyObject* pa = a->is<ProxyObject>() ? &a->as<ProxyObject>() : nullptr;
+  ProxyObject* pb = b->is<ProxyObject>() ? &b->as<ProxyObject>() : nullptr;
+  bool aIsProxyWithInlineValues = pa && pa->usingInlineValueArray();
+  bool bIsProxyWithInlineValues = pb && pb->usingInlineValueArray();
 
   bool aIsUsedAsPrototype = a->isUsedAsPrototype();
   bool bIsUsedAsPrototype = b->isUsedAsPrototype();
 
   // Swap element associations.
   Zone* zone = a->zone();
+
+  // Record any associated unique IDs and prepare for swap.
+  //
+  // Note that unique IDs are NOT swapped but remain associated with the
+  // original address.
+  uint64_t aid = 0;
+  uint64_t bid = 0;
+  (void)gc::MaybeGetUniqueId(a, &aid);
+  (void)gc::MaybeGetUniqueId(b, &bid);
+  NativeObject* na = a->is<NativeObject>() ? &a->as<NativeObject>() : nullptr;
+  NativeObject* nb = b->is<NativeObject>() ? &b->as<NativeObject>() : nullptr;
+  if ((aid || bid) && (na || nb)) {
+    // We can't remove unique IDs from native objects when they are swapped with
+    // objects without an ID. Instead ensure they both have IDs so we always
+    // have something to overwrite the old ID with.
+    if (!gc::GetOrCreateUniqueId(a, &aid) ||
+        !gc::GetOrCreateUniqueId(b, &bid)) {
+      oomUnsafe.crash("Failed to create unique ID during swap");
+    }
+
+    // IDs stored in NativeObjects could shadow those stored in the zone
+    // table. Remove any zone table IDs first.
+    if (pa && aid) {
+      gc::RemoveUniqueId(a);
+    }
+    if (pb && bid) {
+      gc::RemoveUniqueId(b);
+    }
+  }
 
   gc::AllocKind ka = SwappableObjectAllocKind(a);
   gc::AllocKind kb = SwappableObjectAllocKind(b);
@@ -1305,8 +1321,6 @@ void JSObject::swap(JSContext* cx, HandleObject a, HandleObject b,
     // objects.
     RootedValueVector avals(cx);
     RootedValueVector bvals(cx);
-    NativeObject* na = a->is<NativeObject>() ? &a->as<NativeObject>() : nullptr;
-    NativeObject* nb = b->is<NativeObject>() ? &b->as<NativeObject>() : nullptr;
     if (na && !na->prepareForSwap(cx, &avals)) {
       oomUnsafe.crash("NativeObject::prepareForSwap");
     }
@@ -1315,8 +1329,6 @@ void JSObject::swap(JSContext* cx, HandleObject a, HandleObject b,
     }
 
     // Do the same for proxy value arrays.
-    ProxyObject* pa = a->is<ProxyObject>() ? &a->as<ProxyObject>() : nullptr;
-    ProxyObject* pb = b->is<ProxyObject>() ? &b->as<ProxyObject>() : nullptr;
     if (pa && !pa->prepareForSwap(cx, &avals)) {
       oomUnsafe.crash("ProxyObject::prepareForSwap");
     }
@@ -1347,6 +1359,16 @@ void JSObject::swap(JSContext* cx, HandleObject a, HandleObject b,
       oomUnsafe.crash("ProxyObject::fixupAfterSwap");
     }
   }
+
+  // Restore original unique IDs.
+  if ((aid || bid) && (na || nb)) {
+    if ((aid && !gc::SetOrUpdateUniqueId(cx, a, aid)) ||
+        (bid && !gc::SetOrUpdateUniqueId(cx, b, bid))) {
+      oomUnsafe.crash("Failed to set unique ID after swap");
+    }
+  }
+  MOZ_ASSERT_IF(aid, gc::GetUniqueIdInfallible(a) == aid);
+  MOZ_ASSERT_IF(bid, gc::GetUniqueIdInfallible(b) == bid);
 
   // Preserve the IsUsedAsPrototype flag on the objects.
   if (aIsUsedAsPrototype) {
@@ -2191,6 +2213,7 @@ JS_PUBLIC_API bool js::ShouldIgnorePropertyDefinition(JSContext* cx,
        id == NameToId(cx->names().groupToMap))) {
     return true;
   }
+#endif
 
   // It's gently surprising that this is JSProto_Function, but the trick
   // to realize is that this is a -constructor function-, not a function
@@ -2200,9 +2223,7 @@ JS_PUBLIC_API bool js::ShouldIgnorePropertyDefinition(JSContext* cx,
       id == NameToId(cx->names().fromAsync)) {
     return true;
   }
-#endif
 
-#ifdef ENABLE_CHANGE_ARRAY_BY_COPY
   if (key == JSProto_Array &&
       !cx->realm()->creationOptions().getChangeArrayByCopyEnabled() &&
       (id == NameToId(cx->names().with) ||
@@ -2219,7 +2240,6 @@ JS_PUBLIC_API bool js::ShouldIgnorePropertyDefinition(JSContext* cx,
        id == NameToId(cx->names().toSorted))) {
     return true;
   }
-#endif
 
 #ifdef ENABLE_NEW_SET_METHODS
   if (key == JSProto_Set &&
@@ -3198,15 +3218,6 @@ JS_PUBLIC_API void js::DumpInterpreterFrame(JSContext* cx,
 
 #endif /* defined(DEBUG) || defined(JS_JITSPEW) */
 
-namespace js {
-
-// We don't want jsfriendapi.h to depend on GenericPrinter,
-// so these functions are declared directly in the cpp.
-
-JS_PUBLIC_API void DumpBacktrace(JSContext* cx, js::GenericPrinter& out);
-
-}  // namespace js
-
 JS_PUBLIC_API void js::DumpBacktrace(JSContext* cx, FILE* fp) {
   Fprinter out(fp);
   js::DumpBacktrace(cx, out);
@@ -3246,6 +3257,15 @@ JS_PUBLIC_API void js::DumpBacktrace(JSContext* cx) {
 }
 
 /* * */
+
+bool JSObject::isBackgroundFinalized() const {
+  if (isTenured()) {
+    return js::gc::IsBackgroundFinalized(asTenured().getAllocKind());
+  }
+
+  js::Nursery& nursery = runtimeFromMainThread()->gc.nursery();
+  return js::gc::IsBackgroundFinalized(allocKindForTenure(nursery));
+}
 
 js::gc::AllocKind JSObject::allocKindForTenure(
     const js::Nursery& nursery) const {
@@ -3579,7 +3599,7 @@ void js::AssertJSClassInvariants(const JSClass* clasp) {
 
 /* static */
 void JSObject::debugCheckNewObject(Shape* shape, js::gc::AllocKind allocKind,
-                                   js::gc::InitialHeap heap) {
+                                   js::gc::Heap heap) {
   const JSClass* clasp = shape->getObjectClass();
 
   if (!ClassCanHaveFixedData(clasp)) {
@@ -3612,7 +3632,7 @@ void JSObject::debugCheckNewObject(Shape* shape, js::gc::AllocKind allocKind,
   }
 
   MOZ_ASSERT_IF(clasp->hasFinalize(),
-                heap == gc::TenuredHeap ||
+                heap == gc::Heap::Tenured ||
                     CanNurseryAllocateFinalizedClass(clasp) ||
                     clasp->isProxyObject());
 

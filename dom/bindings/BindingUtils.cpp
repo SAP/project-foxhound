@@ -2865,7 +2865,6 @@ bool IsNonExposedGlobal(JSContext* aCx, JSObject* aGlobal,
                 GlobalNames::SharedWorkerGlobalScope |
                 GlobalNames::ServiceWorkerGlobalScope |
                 GlobalNames::WorkerDebuggerGlobalScope |
-                GlobalNames::WorkletGlobalScope |
                 GlobalNames::AudioWorkletGlobalScope |
                 GlobalNames::PaintWorkletGlobalScope |
                 GlobalNames::ShadowRealmGlobalScope)) == 0,
@@ -2895,11 +2894,6 @@ bool IsNonExposedGlobal(JSContext* aCx, JSObject* aGlobal,
 
   if ((aNonExposedGlobals & GlobalNames::WorkerDebuggerGlobalScope) &&
       !strcmp(name, "WorkerDebuggerGlobalScopex")) {
-    return true;
-  }
-
-  if ((aNonExposedGlobals & GlobalNames::WorkletGlobalScope) &&
-      !strcmp(name, "WorkletGlobalScope")) {
     return true;
   }
 

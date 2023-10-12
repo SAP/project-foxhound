@@ -151,11 +151,6 @@ class LocalAccessible : public nsISupports, public Accessible {
   virtual void Value(nsString& aValue) const override;
 
   /**
-   * Get help string for the accessible.
-   */
-  void Help(nsString& aHelp) const { aHelp.Truncate(); }
-
-  /**
    * Get the name of this accessible.
    */
   virtual ENameValueFlag Name(nsString& aName) const override;
@@ -355,7 +350,7 @@ class LocalAccessible : public nsISupports, public Accessible {
   /**
    * Return embedded accessible child at the given index.
    */
-  virtual LocalAccessible* EmbeddedChildAt(uint32_t aIndex) override;
+  virtual Accessible* EmbeddedChildAt(uint32_t aIndex) override;
 
   virtual int32_t IndexOfEmbeddedChild(Accessible* aChild) override;
 

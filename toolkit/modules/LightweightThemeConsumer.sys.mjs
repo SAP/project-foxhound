@@ -163,8 +163,8 @@ export function LightweightThemeConsumer(aDocument) {
   this.darkThemeMediaQuery = this._win.matchMedia("(-moz-system-dark-theme)");
   this.darkThemeMediaQuery.addListener(this);
 
-  const { LightweightThemeManager } = ChromeUtils.import(
-    "resource://gre/modules/LightweightThemeManager.jsm"
+  const { LightweightThemeManager } = ChromeUtils.importESModule(
+    "resource://gre/modules/LightweightThemeManager.sys.mjs"
   );
   this._update(LightweightThemeManager.themeData);
 
@@ -467,7 +467,7 @@ function _determineToolbarAndContentTheme(
     return null;
   }
 
-  let toolbarTheme = (function() {
+  let toolbarTheme = (function () {
     if (!aTheme) {
       if (!DEFAULT_THEME_RESPECTS_SYSTEM_COLOR_SCHEME) {
         return kLight;
@@ -501,7 +501,7 @@ function _determineToolbarAndContentTheme(
     return prefValue(colors.textcolor || "black", /* aIsForeground = */ true);
   })();
 
-  let contentTheme = (function() {
+  let contentTheme = (function () {
     if (lazy.BROWSER_THEME_UNIFIED_COLOR_SCHEME) {
       return toolbarTheme;
     }

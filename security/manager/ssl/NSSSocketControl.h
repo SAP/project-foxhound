@@ -70,6 +70,7 @@ class NSSSocketControl final : public CommonSocketControl {
   NS_IMETHOD DisableEarlyData(void) override;
   NS_IMETHOD SetHandshakeCallbackListener(
       nsITlsHandshakeCallbackListener* callback) override;
+  NS_IMETHOD Claim() override;
 
   PRStatus CloseSocketAndDestroy();
 
@@ -230,13 +231,24 @@ class NSSSocketControl final : public CommonSocketControl {
     MOZ_LOG(
         gPIPNSSLog, mozilla::LogLevel::Debug,
         ("[%p] setting pending select client auth certificate", (void*)mFd));
-    mPendingSelectClientAuthCertificate =
-        std::move(selectClientAuthCertificate);
+    // If the connection corresponding to this socket hasn't been claimed, it
+    // is a speculative connection. The connection will block until the "choose
+    // a client auth certificate" dialog has been shown. The dialog will only
+    // be shown when this connection gets claimed. However, necko will never
+    // claim the connection as long as it is blocking. Thus, this connection
+    // can't proceed, so it's best to cancel it. Necko will create a new,
+    // non-speculative connection instead.
+    if (!mClaimed) {
+      SetCanceled(PR_CONNECT_RESET_ERROR);
+    } else {
+      mPendingSelectClientAuthCertificate =
+          std::move(selectClientAuthCertificate);
+    }
   }
 
   void MaybeDispatchSelectClientAuthCertificate() {
     COMMON_SOCKET_CONTROL_ASSERT_ON_OWNING_THREAD();
-    if (!IsWaitingForCertVerification() &&
+    if (!IsWaitingForCertVerification() && mClaimed &&
         mPendingSelectClientAuthCertificate) {
       MOZ_LOG(gPIPNSSLog, mozilla::LogLevel::Debug,
               ("[%p] dispatching pending select client auth certificate",
@@ -300,6 +312,7 @@ class NSSSocketControl final : public CommonSocketControl {
   mozilla::TimeStamp mSocketCreationTimestamp;
   uint64_t mPlaintextBytesRead;
 
+  bool mClaimed;
   nsCOMPtr<nsIRunnable> mPendingSelectClientAuthCertificate;
 
   // Regarding the client certificate message in the TLS handshake, RFC 5246

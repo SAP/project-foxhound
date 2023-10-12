@@ -2251,6 +2251,11 @@ HTMLEditor::InsertNodeIntoProperAncestorWithTransaction(
   }
   MOZ_ASSERT(aPointToInsert.IsSetAndValid());
 
+  if (aContentToInsert.NodeType() == nsINode::DOCUMENT_TYPE_NODE ||
+      aContentToInsert.NodeType() == nsINode::PROCESSING_INSTRUCTION_NODE) {
+    return CreateNodeResultBase<NodeType>::NotHandled();
+  }
+
   // Search up the parent chain to find a suitable container.
   EditorDOMPoint pointToInsert(aPointToInsert);
   MOZ_ASSERT(pointToInsert.IsSet());
@@ -2291,7 +2296,8 @@ HTMLEditor::InsertNodeIntoProperAncestorWithTransaction(
       NS_WARNING("HTMLEditor::SplitNodeDeepWithTransaction() failed");
       return splitNodeResult.propagateErr();
     }
-    pointToInsert = splitNodeResult.inspect().AtSplitPoint<EditorDOMPoint>();
+    pointToInsert =
+        splitNodeResult.inspect().template AtSplitPoint<EditorDOMPoint>();
     MOZ_ASSERT(pointToInsert.IsSetAndValidInComposedDoc());
     // Caret should be set by the caller of this method so that we don't
     // need to handle it here.
@@ -4317,6 +4323,9 @@ Result<EditorDOMPoint, nsresult> HTMLEditor::RemoveContainerWithTransaction(
   // For making all MoveNodeTransactions have a referenc node in the current
   // parent, move nodes from last one to preceding ones.
   for (const OwningNonNull<nsIContent>& child : Reversed(arrayOfChildren)) {
+    if (MOZ_UNLIKELY(!HTMLEditUtils::IsRemovableNode(child))) {
+      continue;
+    }
     Result<MoveNodeResult, nsresult> moveChildResult = MoveNodeWithTransaction(
         MOZ_KnownLive(child),  // due to bug 1622253.
         previousChild ? EditorDOMPoint::After(previousChild)
@@ -4348,6 +4357,10 @@ Result<EditorDOMPoint, nsresult> HTMLEditor::RemoveContainerWithTransaction(
         "The removing element has already been moved to another element");
     return Err(NS_ERROR_EDITOR_UNEXPECTED_DOM_TREE);
   }
+
+  NS_WARNING_ASSERTION(!aElement.GetFirstChild(),
+                       "The removing container still has some children, but "
+                       "they are removed by removing the container");
 
   auto GetNextSiblingOf =
       [](const nsTArray<OwningNonNull<nsIContent>>& aArrayOfMovedContent,
@@ -4384,12 +4397,12 @@ Result<EditorDOMPoint, nsresult> HTMLEditor::RemoveContainerWithTransaction(
 
 MOZ_CAN_RUN_SCRIPT_BOUNDARY void HTMLEditor::ContentAppended(
     nsIContent* aFirstNewContent) {
-  DoContentInserted(aFirstNewContent, eAppended);
+  DoContentInserted(aFirstNewContent, ContentNodeIs::Appended);
 }
 
 MOZ_CAN_RUN_SCRIPT_BOUNDARY void HTMLEditor::ContentInserted(
     nsIContent* aChild) {
-  DoContentInserted(aChild, eInserted);
+  DoContentInserted(aChild, ContentNodeIs::Inserted);
 }
 
 bool HTMLEditor::IsInObservedSubtree(nsIContent* aChild) {
@@ -4416,7 +4429,7 @@ bool HTMLEditor::IsInObservedSubtree(nsIContent* aChild) {
 }
 
 void HTMLEditor::DoContentInserted(nsIContent* aChild,
-                                   InsertedOrAppended aInsertedOrAppended) {
+                                   ContentNodeIs aContentNodeIs) {
   MOZ_ASSERT(aChild);
   nsINode* container = aChild->GetParentNode();
   MOZ_ASSERT(container);
@@ -4464,7 +4477,7 @@ void HTMLEditor::DoContentInserted(nsIContent* aChild,
     // Update spellcheck for only the newly-inserted node (bug 743819)
     if (mInlineSpellChecker) {
       nsIContent* endContent = aChild;
-      if (aInsertedOrAppended == eAppended) {
+      if (aContentNodeIs == ContentNodeIs::Appended) {
         nsIContent* child = nullptr;
         for (child = aChild; child; child = child->GetNextSibling()) {
           if (child->InclusiveDescendantMayNeedSpellchecking(this)) {

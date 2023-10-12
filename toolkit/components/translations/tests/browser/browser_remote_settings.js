@@ -8,8 +8,8 @@
  * @typedef {import("../../translations").TranslationModelRecord} TranslationModelRecord
  */
 
-const { RemoteSettings } = ChromeUtils.import(
-  "resource://services-settings/remote-settings.js"
+const { RemoteSettings } = ChromeUtils.importESModule(
+  "resource://services-settings/remote-settings.sys.mjs"
 );
 
 // The full Firefox version string.
@@ -265,7 +265,10 @@ add_task(async function test_get_records_with_multiple_versions() {
     client.db.create(record);
   }
 
-  TranslationsParent.mockRemoteSettingsClient(client);
+  TranslationsParent.mockTranslationsEngine(
+    client,
+    await createTranslationsWasmRemoteClient()
+  );
 
   const retrievedRecords = await TranslationsParent.getMaxVersionRecords(
     client,
@@ -296,5 +299,5 @@ add_task(async function test_get_records_with_multiple_versions() {
     ), but found ${retrievedRecords.length}\n`
   );
 
-  TranslationsParent.mockRemoteSettingsClient(null);
+  TranslationsParent.unmockTranslationsEngine();
 });

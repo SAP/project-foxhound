@@ -130,6 +130,7 @@
 #define AUDIO_MIDI "audio/x-midi"
 #define AUDIO_MATROSKA "audio/x-matroska"
 #define AUDIO_AAC "audio/aac"
+#define AUDIO_AACP "audio/aacp"
 #define AUDIO_MPEG_TS "audio/mp2t"
 #define AUDIO_MPEG_URL "audio/mpegurl"
 
@@ -214,6 +215,7 @@
 #define VIDEO_MATROSKA "video/x-matroska"
 #define APPLICATION_OGG "application/ogg"
 #define APPLICATION_MPEGURL "application/vnd.apple.mpegurl"
+#define APPLICATION_DASH_XML "application/dash+xml"
 
 /* x-uuencode-apple-single. QuickMail made me do this. */
 #define UUENCODE_APPLE_SINGLE "x-uuencode-apple-single"
