@@ -18,12 +18,6 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "jstaint.h"
-// Taintfox: are these needed?
-class JSString;
-
-struct JSContext;
-
 #include "js/TypeDecls.h"
 #include "js/Utility.h"
 

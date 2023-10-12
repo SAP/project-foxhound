@@ -1005,17 +1005,17 @@ JSString* js::ConcatStringsQuiet(
 
 template JSString* js::ConcatStringsQuiet<CanGC>(JSContext* cx, HandleString left,
                                             HandleString right,
-                                            gc::InitialHeap heap);
+                                            gc::Heap heap);
 
 template JSString* js::ConcatStringsQuiet<NoGC>(JSContext* cx, JSString* const& left,
                                            JSString* const& right,
-                                           gc::InitialHeap heap);
+                                           gc::Heap heap);
 
 template <AllowGC allowGC>
 JSString* js::ConcatStrings(
     JSContext* cx, typename MaybeRooted<JSString*, allowGC>::HandleType left,
     typename MaybeRooted<JSString*, allowGC>::HandleType right,
-    gc::InitialHeap heap) {
+    gc::Heap heap) {
 
   TaintOperation op("concat");
   if ((left && right) && (left->taint().hasTaint() || right->taint().hasTaint())) {
@@ -1593,18 +1593,11 @@ static MOZ_ALWAYS_INLINE JSInlineString* NewInlineStringDeflated(
 
 template <AllowGC allowGC>
 static JSLinearString* NewStringDeflated(JSContext* cx, const char16_t* s,
-<<<<<<< HEAD
-                                         size_t n, gc::InitialHeap heap) {
+                                         size_t n, gc::Heap heap) {
 // Foxhound: Avoid creating atoms
 //  if (JSLinearString* str = TryEmptyOrStaticString(cx, s, n)) {
 //    return str;
 //  }
-=======
-                                         size_t n, gc::Heap heap) {
-  if (JSLinearString* str = TryEmptyOrStaticString(cx, s, n)) {
-    return str;
-  }
->>>>>>> fdbb85992450ee14d23efe08c0dd655eedab0e1d
 
   if (JSInlineString::lengthFits<Latin1Char>(n)) {
     return NewInlineStringDeflated<allowGC>(
@@ -1660,21 +1653,13 @@ static JSAtom* NewAtomDeflatedValidLength(JSContext* cx, const char16_t* s,
 
 template <AllowGC allowGC, typename CharT>
 JSLinearString* js::NewStringDontDeflate(
-<<<<<<< HEAD
   JSContext* cx, UniquePtr<CharT[], JS::FreePolicy> chars, size_t length,
-  gc::InitialHeap heap) {
+  gc::Heap heap) {
   // TaintFox: TODO disabled for now, causes XPConnect string conversion to
   // fail wrt taint propagation if this function returns a JSAtom.
   // if (JSLinearString* str = TryEmptyOrStaticString(cx, chars.get(), length)) {
   //   return str;
   // }
-=======
-    JSContext* cx, UniquePtr<CharT[], JS::FreePolicy> chars, size_t length,
-    gc::Heap heap) {
-  if (JSLinearString* str = TryEmptyOrStaticString(cx, chars.get(), length)) {
-    return str;
-  }
->>>>>>> fdbb85992450ee14d23efe08c0dd655eedab0e1d
 
   if (JSInlineString::lengthFits<CharT>(length)) {
     // |chars.get()| is safe because 1) |NewInlineString| necessarily *copies*,
@@ -1764,18 +1749,11 @@ template JSLinearString* NewStringCopyNDontDeflateNonStaticValidLength<CanGC>(
 
 template <AllowGC allowGC, typename CharT>
 JSLinearString* NewStringCopyNDontDeflate(JSContext* cx, const CharT* s,
-<<<<<<< HEAD
-                                          size_t n, gc::InitialHeap heap) {
+                                          size_t n, gc::Heap heap) {
   // Foxhound: don't create atoms
   // if (JSLinearString* str = TryEmptyOrStaticString(cx, s, n)) {
   //   return str;
   // }
-=======
-                                          size_t n, gc::Heap heap) {
-  if (JSLinearString* str = TryEmptyOrStaticString(cx, s, n)) {
-    return str;
-  }
->>>>>>> fdbb85992450ee14d23efe08c0dd655eedab0e1d
 
   if (MOZ_UNLIKELY(!JSLinearString::validateLength(cx, n))) {
     return nullptr;
@@ -1963,21 +1941,12 @@ MOZ_ALWAYS_INLINE void ExternalStringCache::put(JSString* str) {
 
 JSString* NewMaybeExternalString(JSContext* cx, const char16_t* s, size_t n,
                                  const JSExternalStringCallbacks* callbacks,
-<<<<<<< HEAD
-                                 bool* allocatedExternal,
-                                 gc::InitialHeap heap) {
+                                 bool* allocatedExternal, gc::Heap heap) {
 // Foxhound: Avoid creating atoms
 //  if (JSString* str = TryEmptyOrStaticString(cx, s, n)) {
 //    *allocatedExternal = false;
 //    return str;
 //  }
-=======
-                                 bool* allocatedExternal, gc::Heap heap) {
-  if (JSString* str = TryEmptyOrStaticString(cx, s, n)) {
-    *allocatedExternal = false;
-    return str;
-  }
->>>>>>> fdbb85992450ee14d23efe08c0dd655eedab0e1d
 
   if (JSThinInlineString::lengthFits<Latin1Char>(n) &&
       CanStoreCharsAsLatin1(s, n)) {

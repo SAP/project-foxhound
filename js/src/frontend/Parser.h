@@ -929,11 +929,10 @@ class MOZ_STACK_CLASS GeneralParser : public PerHandlerParser<ParseHandler> {
                 const Unit* units, size_t length, const StringTaint& taint, bool foldConstants,
                 CompilationState& compilationState, SyntaxParser* syntaxParser);
 
-  GeneralParser(FrontendContext* fc, JS::NativeStackLimit stackLimit,
-                const JS::ReadOnlyCompileOptions& options, const Unit* units,
-                size_t length, bool foldConstants,
+  GeneralParser(FrontendContext* fc, const JS::ReadOnlyCompileOptions& options,
+                const Unit* units, size_t length, bool foldConstants,
                 CompilationState& compilationState, SyntaxParser* syntaxParser) :
-   GeneralParser(fc, stackLimit, options, units, length, EmptyTaint, foldConstants,
+   GeneralParser(fc, options, units, length, EmptyTaint, foldConstants,
                  compilationState, syntaxParser) {}
   
   inline void setAwaitHandling(AwaitHandling awaitHandling);

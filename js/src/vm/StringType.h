@@ -1615,7 +1615,7 @@ template <AllowGC allowGC>
 extern JSString* ConcatStringsQuiet(
     JSContext* cx, typename MaybeRooted<JSString*, allowGC>::HandleType left,
     typename MaybeRooted<JSString*, allowGC>::HandleType right,
-    js::gc::InitialHeap heap = js::gc::DefaultHeap);
+    js::gc::Heap heap = js::gc::Heap::Default);
 /*
  * Test if strings are equal. The caller can call the function even if str1
  * or str2 are not GC-allocated things.

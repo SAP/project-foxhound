@@ -239,8 +239,31 @@ class SourceText final : public TaintableString {
                                             const StringTaint& taint,
                                             SourceOwnership ownership) {
     return initImpl(cx, reinterpret_cast<const Unit*>(chars), charsLength,
-                    ownership);
+                    taint, ownership);
   }
+
+  template <typename Char,
+            typename = std::enable_if_t<std::is_same_v<Char, CharT> &&
+                                        !std::is_same_v<Char, Unit>>>
+  [[nodiscard]] MOZ_IS_CLASS_INIT bool init(JSContext* cx, const Char* chars,
+                                            size_t charsLength,
+                                            SourceOwnership ownership) {
+    return initImpl(cx, reinterpret_cast<const Unit*>(chars), charsLength,
+                    EmptyTaint, ownership);
+  }
+
+  template <typename Char,
+            typename = std::enable_if_t<std::is_same_v<Char, CharT> &&
+                                        !std::is_same_v<Char, Unit>>>
+  [[nodiscard]] MOZ_IS_CLASS_INIT bool init(JS::FrontendContext* fc,
+                                            const Char* chars,
+                                            size_t charsLength,
+                                            const StringTaint& taint,
+                                            SourceOwnership ownership) {
+    return initImpl(fc, reinterpret_cast<const Unit*>(chars), charsLength,
+                    taint, ownership);
+  }
+
   template <typename Char,
             typename = std::enable_if_t<std::is_same_v<Char, CharT> &&
                                         !std::is_same_v<Char, Unit>>>
@@ -249,7 +272,7 @@ class SourceText final : public TaintableString {
                                             size_t charsLength,
                                             SourceOwnership ownership) {
     return initImpl(fc, reinterpret_cast<const Unit*>(chars), charsLength,
-                    ownership);
+                    EmptyTaint, ownership);
   }
 
   /**
@@ -262,12 +285,13 @@ class SourceText final : public TaintableString {
     return init(cx, data.release(), dataLength, taint, SourceOwnership::TakeOwnership);
   }
 
-    [[nodiscard]] bool init(JSContext* cx,
+  [[nodiscard]] bool init(JSContext* cx,
                           js::UniquePtr<Unit[], JS::FreePolicy> data,
                           size_t dataLength) {
-    return initImpl(cx, data.release(), dataLength,
+    return initImpl(cx, data.release(), dataLength, EmptyTaint,
                     SourceOwnership::TakeOwnership);
   }
+
   [[nodiscard]] bool init(JS::FrontendContext* fc,
                           js::UniquePtr<Unit[], JS::FreePolicy> data,
                           size_t dataLength) {
@@ -318,21 +342,20 @@ class SourceText final : public TaintableString {
    * SourceText and must be explicitly configured to the same unit type as this
    * SourceText.
    */
-  [[nodiscard]] bool initMaybeBorrowed(JSContext* cx,
-                                       const StringTaint& taint,
-                                       AutoStableStringChars& linearChars);
+  [[nodiscard]] bool initMaybeBorrowed(JSContext* cx,                                       
+                                       AutoStableStringChars& linearChars,
+                                       const StringTaint& taint);
   [[nodiscard]] bool initMaybeBorrowed(JS::FrontendContext* fc,
-                                       const StringTaint& taint,
-                                       AutoStableStringChars& linearChars);
+                                       AutoStableStringChars& linearChars,
+                                       const StringTaint& taint);
 
   [[nodiscard]] bool initMaybeBorrowed(JSContext* cx,
                                        AutoStableStringChars& linearChars) {
-    return initMaybeBorrowed(cx, EmptyTaint, linearChars);
+    return initMaybeBorrowed(cx, linearChars, EmptyTaint);
   }
-
   [[nodiscard]] bool initMaybeBorrowed(JS::FrontendContext* fc,
                                        AutoStableStringChars& linearChars) {
-    return initMaybeBorrowed(fc, EmptyTaint, linearChars);
+    return initMaybeBorrowed(fc, linearChars, EmptyTaint);
   }
 
   /**

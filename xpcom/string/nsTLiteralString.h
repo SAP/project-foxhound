@@ -70,7 +70,6 @@ class nsTLiteralString : public mozilla::detail::nsTStringRepr<T> {
   explicit constexpr nsTLiteralString(const char_type (&aStr)[N])
       : nsTLiteralString(aStr, N - 1) {}
 
-  nsTLiteralString(const nsTLiteralString&) = default;
 
   /**
    * For compatibility with existing code that requires const ns[C]String*.
