@@ -662,7 +662,6 @@ inline bool JSONFullParseHandler<CharT>::setStringValue(
 
   // TaintFox: Add taint operation.
   if (str->taint().hasTaint()) {
-    DumpTaint(str->taint());
     str->taint().extend(TaintOperationFromContext(cx, "JSON.parse", true));
   }
 

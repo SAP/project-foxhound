@@ -707,10 +707,11 @@ const TaintFlow* StringTaint::at(uint32_t index) const
 
 const TaintFlow& StringTaint::atRef(uint32_t index) const
 {
-    // TODO make this a binary search
-    for (auto& range : *this) {
-        if (range.begin() <= index && range.end() > index)
-            return range.flow();
+    auto rangeItr = std::lower_bound(begin(), end(), index);
+    if (rangeItr != end()) {
+        if (rangeItr->contains(index)) {
+            return rangeItr->flow();
+        }
     }
     return TaintFlow::getEmptyTaintFlow();
 }
