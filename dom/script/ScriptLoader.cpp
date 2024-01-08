@@ -258,19 +258,21 @@ ScriptLoader::~ScriptLoader() {
 void ScriptLoader::SetGlobalObject(nsIGlobalObject* aGlobalObject) {
   if (!aGlobalObject) {
     // The document is being detached.
+    CancelAndClearScriptLoadRequests();
     return;
   }
 
   MOZ_ASSERT(!HasPendingRequests());
 
-  if (mModuleLoader) {
-    MOZ_ASSERT(mModuleLoader->GetGlobalObject() == aGlobalObject);
-    return;
+  if (!mModuleLoader) {
+    // The module loader is associated with a global object, so don't create it
+    // until we have a global set.
+    mModuleLoader = new ModuleLoader(this, aGlobalObject, ModuleLoader::Normal);
   }
 
-  // The module loader is associated with a global object, so don't create it
-  // until we have a global set.
-  mModuleLoader = new ModuleLoader(this, aGlobalObject, ModuleLoader::Normal);
+  MOZ_ASSERT(mModuleLoader->GetGlobalObject() == aGlobalObject);
+  MOZ_ASSERT(aGlobalObject->GetModuleLoader(dom::danger::GetJSContext()) ==
+             mModuleLoader);
 }
 
 void ScriptLoader::RegisterContentScriptModuleLoader(ModuleLoader* aLoader) {
@@ -675,12 +677,12 @@ nsresult ScriptLoader::StartLoadInternal(
        aRequest->GetScriptLoadContext()->IsTracking()));
 
   if (aRequest->GetScriptLoadContext()->IsLinkPreloadScript()) {
-    // This is <link rel="preload" as="script"> initiated speculative load,
-    // put it to the group that is not blocked by leaders and doesn't block
-    // follower at the same time. Giving it a much higher priority will make
-    // this request be processed ahead of other Unblocked requests, but with
-    // the same weight as Leaders.  This will make us behave similar way for
-    // both http2 and http1.
+    // This is <link rel="preload" as="script"> or <link rel="modulepreload">
+    // initiated speculative load, put it to the group that is not blocked by
+    // leaders and doesn't block follower at the same time. Giving it a much
+    // higher priority will make this request be processed ahead of other
+    // Unblocked requests, but with the same weight as Leaders. This will make
+    // us behave similar way for both http2 and http1.
     ScriptLoadContext::PrioritizeAsPreload(channel);
     ScriptLoadContext::AddLoadBackgroundFlag(channel);
   } else if (nsCOMPtr<nsIClassOfService> cos = do_QueryInterface(channel)) {
@@ -786,7 +788,8 @@ nsresult ScriptLoader::StartLoadInternal(
       aRequest->mURI, aRequest->CORSMode(), aRequest->mKind);
   aRequest->GetScriptLoadContext()->NotifyOpen(
       key, channel, mDocument,
-      aRequest->GetScriptLoadContext()->IsLinkPreloadScript());
+      aRequest->GetScriptLoadContext()->IsLinkPreloadScript(),
+      aRequest->IsModuleRequest());
 
   if (aEarlyHintPreloaderId) {
     nsCOMPtr<nsIHttpChannelInternal> channelInternal =
@@ -871,7 +874,8 @@ already_AddRefed<ScriptLoadRequest> ScriptLoader::CreateLoadRequest(
   return aRequest.forget();
 }
 
-bool ScriptLoader::ProcessScriptElement(nsIScriptElement* aElement) {
+bool ScriptLoader::ProcessScriptElement(nsIScriptElement* aElement,
+                                        const nsAutoString& aTypeAttr) {
   // We need a document to evaluate scripts.
   NS_ENSURE_TRUE(mDocument, false);
 
@@ -883,9 +887,6 @@ bool ScriptLoader::ProcessScriptElement(nsIScriptElement* aElement) {
   NS_ASSERTION(!aElement->IsMalformed(), "Executing malformed script");
 
   nsCOMPtr<nsIContent> scriptContent = do_QueryInterface(aElement);
-
-  nsAutoString type;
-  bool hasType = aElement->GetScriptType(type);
 
   ScriptKind scriptKind;
   if (aElement->GetScriptIsModule()) {
@@ -901,28 +902,6 @@ bool ScriptLoader::ProcessScriptElement(nsIScriptElement* aElement) {
     return false;
   }
 
-  // For classic scripts, check the type attribute to determine language and
-  // version. If type exists, it trumps the deprecated 'language='
-  if (scriptKind == ScriptKind::eClassic) {
-    if (!type.IsEmpty()) {
-      NS_ENSURE_TRUE(nsContentUtils::IsJavascriptMIMEType(type), false);
-    } else if (!hasType) {
-      // no 'type=' element
-      // "language" is a deprecated attribute of HTML, so we check it only for
-      // HTML script elements.
-      if (scriptContent->IsHTMLElement()) {
-        nsAutoString language;
-        scriptContent->AsElement()->GetAttr(kNameSpaceID_None,
-                                            nsGkAtoms::language, language);
-        if (!language.IsEmpty()) {
-          if (!nsContentUtils::IsJavaScriptLanguage(language)) {
-            return false;
-          }
-        }
-      }
-    }
-  }
-
   // "In modern user agents that support module scripts, the script element with
   // the nomodule attribute will be ignored".
   // "The nomodule attribute must not be specified on module scripts (and will
@@ -936,7 +915,8 @@ bool ScriptLoader::ProcessScriptElement(nsIScriptElement* aElement) {
 
   // Step 15. and later in the HTML5 spec
   if (aElement->GetScriptExternal()) {
-    return ProcessExternalScript(aElement, scriptKind, type, scriptContent);
+    return ProcessExternalScript(aElement, scriptKind, aTypeAttr,
+                                 scriptContent);
   }
 
   return ProcessInlineScript(aElement, scriptKind);
@@ -1327,10 +1307,13 @@ ScriptLoadRequest* ScriptLoader::LookupPreloadRequest(
   if (i == nsTArray<PreloadInfo>::NoIndex) {
     return nullptr;
   }
+  RefPtr<ScriptLoadRequest> request = mPreloads[i].mRequest;
+  if (aScriptKind != request->mKind) {
+    return nullptr;
+  }
 
   // Found preloaded request. Note that a script-inserted script can steal a
   // preload!
-  RefPtr<ScriptLoadRequest> request = mPreloads[i].mRequest;
   request->GetScriptLoadContext()->SetIsLoadRequest(aElement);
 
   if (request->GetScriptLoadContext()->mWasCompiledOMT &&
@@ -1346,9 +1329,11 @@ ScriptLoadRequest* ScriptLoader::LookupPreloadRequest(
   nsAutoString elementCharset;
   aElement->GetScriptCharset(elementCharset);
 
-  if (!elementCharset.Equals(preloadCharset) ||
-      aElement->GetCORSMode() != request->CORSMode() ||
-      aScriptKind != request->mKind) {
+  // Bug 1832361: charset and crossorigin attributes shouldn't affect matching
+  // of module scripts and modulepreload
+  if (!request->IsModuleRequest() &&
+      (!elementCharset.Equals(preloadCharset) ||
+       aElement->GetCORSMode() != request->CORSMode())) {
     // Drop the preload.
     request->Cancel();
     AccumulateCategorical(LABELS_DOM_SCRIPT_PRELOAD_RESULT::RequestMismatch);
@@ -1421,6 +1406,10 @@ void ScriptLoader::CancelAndClearScriptLoadRequests() {
   mNonAsyncExternalScriptInsertedRequests.CancelRequestsAndClear();
   mXSLTRequests.CancelRequestsAndClear();
   mOffThreadCompilingRequests.CancelRequestsAndClear();
+
+  if (mModuleLoader) {
+    mModuleLoader->CancelAndClearDynamicImports();
+  }
 
   for (ModuleLoader* loader : mWebExtModuleLoaders) {
     loader->CancelAndClearDynamicImports();
@@ -3055,7 +3044,7 @@ nsresult ScriptLoader::SaveSRIHash(ScriptLoadRequest* aRequest,
   }
 
   // Verify that the exported and predicted length correspond.
-  mozilla::DebugOnly<uint32_t> srilen;
+  DebugOnly<uint32_t> srilen{};
   MOZ_ASSERT(NS_SUCCEEDED(SRICheckDataVerifier::DataSummaryLength(
       len, aRequest->mScriptBytecode.begin(), &srilen)));
   MOZ_ASSERT(srilen == len);

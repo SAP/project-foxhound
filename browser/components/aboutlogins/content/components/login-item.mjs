@@ -55,9 +55,8 @@ export default class LoginItem extends HTMLElement {
     );
     this._form = this.shadowRoot.querySelector("form");
     this._originInput = this.shadowRoot.querySelector("input[name='origin']");
-    this._originDisplayInput = this.shadowRoot.querySelector(
-      "a[name='origin']"
-    );
+    this._originDisplayInput =
+      this.shadowRoot.querySelector("a[name='origin']");
     this._usernameInput = this.shadowRoot.querySelector(
       "input[name='username']"
     );
@@ -82,9 +81,8 @@ export default class LoginItem extends HTMLElement {
     this._breachAlertLink = this._breachAlert.querySelector(".alert-link");
     this._breachAlertDate = this._breachAlert.querySelector(".alert-date");
     this._vulnerableAlert = this.shadowRoot.querySelector(".vulnerable-alert");
-    this._vulnerableAlertLink = this._vulnerableAlert.querySelector(
-      ".alert-link"
-    );
+    this._vulnerableAlertLink =
+      this._vulnerableAlert.querySelector(".alert-link");
     this._vulnerableAlertLearnMoreLink = this._vulnerableAlert.querySelector(
       ".alert-learn-more-link"
     );
@@ -139,7 +137,8 @@ export default class LoginItem extends HTMLElement {
             loginTitle: this._error.login.title,
           }
         );
-        this._errorMessageLink.dataset.errorGuid = this._error.existingLoginGuid;
+        this._errorMessageLink.dataset.errorGuid =
+          this._error.existingLoginGuid;
         this._errorMessageText.hidden = true;
         this._errorMessageLink.hidden = false;
       } else {
@@ -328,6 +327,13 @@ export default class LoginItem extends HTMLElement {
         break;
       }
       case "blur": {
+        // TODO(Bug 1838494): Remove this if block
+        // This is a temporary fix until Bug 1750072 lands
+        const focusCheckboxNext = event.relatedTarget === this._revealCheckbox;
+        if (focusCheckboxNext) {
+          return;
+        }
+
         if (this.dataset.editing && event.target === this._passwordInput) {
           this._revealCheckbox.checked = false;
           this._updatePasswordRevealState();
@@ -351,9 +357,18 @@ export default class LoginItem extends HTMLElement {
         break;
       }
       case "focus": {
-        const { target } = event;
+        // TODO(Bug 1838494): Remove this if block
+        // This is a temporary fix until Bug 1750072 lands
+        const focusFromCheckbox = event.relatedTarget === this._revealCheckbox;
+        const isEditingMode = this.dataset.editing || this.dataset.isNewLogin;
+        if (focusFromCheckbox && isEditingMode) {
+          this._passwordInput.type = this._revealCheckbox.checked
+            ? "text"
+            : "password";
+          return;
+        }
 
-        if (target === this._passwordDisplayInput) {
+        if (event.target === this._passwordDisplayInput) {
           this._revealCheckbox.checked = !!this.dataset.editing;
           this._updatePasswordRevealState();
         }
@@ -363,6 +378,14 @@ export default class LoginItem extends HTMLElement {
       case "click": {
         let classList = event.currentTarget.classList;
         if (classList.contains("reveal-password-checkbox")) {
+          // TODO(Bug 1838494): Remove this if block
+          // This is a temporary fix until Bug 1750072 lands
+          if (this.dataset.editing || this.dataset.isNewLogin) {
+            this._passwordDisplayInput.replaceWith(this._passwordInput);
+            this._passwordInput.type = "text";
+            this._passwordInput.focus();
+            return;
+          }
           // We prompt for the primary password when entering edit mode already.
           if (this._revealCheckbox.checked && !this.dataset.editing) {
             let primaryPasswordAuth = await promptForPrimaryPassword(
@@ -434,9 +457,8 @@ export default class LoginItem extends HTMLElement {
 
           copyButton.disabled = true;
           copyButton.dataset.copied = true;
-          let propertyToCopy = this._login[
-            copyButton.dataset.copyLoginProperty
-          ];
+          let propertyToCopy =
+            this._login[copyButton.dataset.copyLoginProperty];
           document.dispatchEvent(
             new CustomEvent("AboutLoginsCopyLoginDetail", {
               bubbles: true,

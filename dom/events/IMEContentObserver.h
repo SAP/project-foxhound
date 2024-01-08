@@ -183,6 +183,15 @@ class IMEContentObserver final : public nsStubMutationObserver,
   void BeforeEditAction();
   void CancelEditAction();
 
+  /**
+   * Called when text control value is changed while this is not observing
+   * mRootElement.  This is typically there is no frame for the editor (i.e.,
+   * no proper anonymous <div> element for the editor yet) or the TextEditor
+   * has not been created (i.e., IMEStateManager has not been reinitialized
+   * this instance with new anonymous <div> element yet).
+   */
+  void OnTextControlValueChangedWhileNotObservable(const nsAString& aNewValue);
+
   dom::Element* GetObservingElement() const {
     return mIsObserving ? mRootElement.get() : nullptr;
   }
@@ -395,7 +404,10 @@ class IMEContentObserver final : public nsStubMutationObserver,
   class DocumentObserver final : public nsStubDocumentObserver {
    public:
     explicit DocumentObserver(IMEContentObserver& aIMEContentObserver)
-        : mIMEContentObserver(&aIMEContentObserver), mDocumentUpdating(0) {}
+        : mIMEContentObserver(&aIMEContentObserver), mDocumentUpdating(0) {
+      SetEnabledCallbacks(nsIMutationObserver::kBeginUpdate |
+                          nsIMutationObserver::kEndUpdate);
+    }
 
     NS_DECL_CYCLE_COLLECTION_CLASS(DocumentObserver)
     NS_DECL_CYCLE_COLLECTING_ISUPPORTS
@@ -497,8 +509,12 @@ class IMEContentObserver final : public nsStubMutationObserver,
   EventStateManager* mESM;
 
   const IMENotificationRequests* mIMENotificationRequests;
-  uint32_t mSuppressNotifications;
-  int64_t mPreCharacterDataChangeLength;
+  int64_t mPreCharacterDataChangeLength = -1;
+  uint32_t mSuppressNotifications = 0;
+
+  // If the observing editor is a text control's one, this is set to the value
+  // length.
+  uint32_t mTextControlValueLength = 0;
 
   // mSendingNotification is a notification which is now sending from
   // IMENotificationSender.  When the value is NOTIFY_IME_OF_NOTHING, it's

@@ -389,7 +389,13 @@
   <!-- Translations -->
   <vbox id="translationsGroup" hidden="true" data-subcategory="translations">
     <label><html:h2 data-l10n-id="translations-manage-header"/></label>
-    <description data-l10n-id="translations-manage-description"/>
+    <hbox id="translations-manage-description" align="center">
+      <description flex="1" data-l10n-id="translations-manage-description"/>
+        <button id="translations-manage-settings-button"
+                is="highlightable-button"
+                class="accessory-button"
+                data-l10n-id="translations-manage-settings-button"/>
+    </hbox>
     <vbox>
       <html:div id="translations-manage-install-list" hidden="true">
         <hbox class="translations-manage-language">
@@ -541,9 +547,9 @@
                 is="highlightable-button"
                 disabled="true"/>
       </hbox>
-      <hbox id="downloading" align="start" data-l10n-id="update-downloading">
+      <hbox id="downloading" align="start" data-l10n-id="settings-update-downloading" data-l10n-args='{"transfer":""}'>
         <html:img class="update-throbber" data-l10n-name="icon"/>
-        <label id="downloadStatus" data-l10n-name="download-status"/>
+        <label data-l10n-name="download-status"/>
       </hbox>
       <hbox id="applying" align="start">
         <html:img class="update-throbber"/>
@@ -582,7 +588,7 @@
                 disabled="true"/>
       </hbox>
       <hbox id="manualUpdate" align="start">
-        <description class="face-sad" data-l10n-id="aboutdialog-update-manual">
+        <description class="face-sad" data-l10n-id="settings-update-manual-with-link" data-l10n-args='{"displayUrl":""}'>
           <html:a class="manualLink" data-l10n-name="manual-link" target="_blank"/>
         </description>
         <button data-l10n-id="update-checkForUpdatesButton"
@@ -605,7 +611,7 @@
                 disabled="true"/>
       </hbox>
       <hbox id="internalError" align="start">
-        <description class="face-sad" flex="1" data-l10n-id="update-internal-error">
+        <description class="face-sad" flex="1" data-l10n-id="update-internal-error2" data-l10n-args='{"displayUrl":""}'>
           <label class="manualLink" data-l10n-name="manual-link" is="text-link"/>
         </description>
         <button data-l10n-id="update-checkForUpdatesButton"

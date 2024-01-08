@@ -58,9 +58,8 @@ NewProcessSelector.prototype = {
 };
 
 let registrar = Components.manager.QueryInterface(Ci.nsIComponentRegistrar);
-let selectorFactory = ComponentUtils.generateSingletonFactory(
-  NewProcessSelector
-);
+let selectorFactory =
+  ComponentUtils.generateSingletonFactory(NewProcessSelector);
 registrar.registerFactory(OUR_PROCESSSELECTOR_CID, "", null, selectorFactory);
 
 const kAboutPageRegistrationContentScript =
@@ -247,7 +246,7 @@ export var BrowserTestUtils = {
       }
 
       promises = [
-        BrowserTestUtils.switchTab(tabbrowser, function() {
+        BrowserTestUtils.switchTab(tabbrowser, function () {
           if (typeof opening == "function") {
             opening();
             tab = tabbrowser.selectedTab;
@@ -377,7 +376,7 @@ export var BrowserTestUtils = {
     let promise = new Promise(resolve => {
       tabbrowser.addEventListener(
         "TabSwitchDone",
-        function() {
+        function () {
           TestUtils.executeSoon(() => {
             ChromeUtils.addProfilerMarker(
               "BrowserTestUtils",
@@ -657,7 +656,7 @@ export var BrowserTestUtils = {
    * @resolves When STATE_STOP reaches the tab's progress listener
    */
   browserStopped(browser, expectedURI, checkAborts = false) {
-    let testFn = function(aStateFlags, aStatus) {
+    let testFn = function (aStateFlags, aStatus) {
       return (
         aStateFlags & Ci.nsIWebProgressListener.STATE_IS_NETWORK &&
         aStateFlags & Ci.nsIWebProgressListener.STATE_STOP &&
@@ -689,7 +688,7 @@ export var BrowserTestUtils = {
    * @resolves When STATE_START reaches the tab's progress listener
    */
   browserStarted(browser, expectedURI) {
-    let testFn = function(aStateFlags, aStatus) {
+    let testFn = function (aStateFlags, aStatus) {
       return (
         aStateFlags & Ci.nsIWebProgressListener.STATE_IS_NETWORK &&
         aStateFlags & Ci.nsIWebProgressListener.STATE_START
@@ -1542,7 +1541,7 @@ export var BrowserTestUtils = {
     );
     Services.ppmm.sharedData.flush();
 
-    let unregisterFunction = function() {
+    let unregisterFunction = function () {
       if (!eventListenerState.has(id)) {
         return;
       }
@@ -1623,7 +1622,7 @@ export var BrowserTestUtils = {
       return Promise.resolve();
     }
     return new Promise(resolve => {
-      let obs = new target.ownerGlobal.MutationObserver(function() {
+      let obs = new target.ownerGlobal.MutationObserver(function () {
         if (checkFn()) {
           obs.disconnect();
           resolve();
@@ -2644,7 +2643,8 @@ export var BrowserTestUtils = {
    */
   addTab(tabbrowser, uri, params = {}, beforeLoadFunc = null) {
     if (!params.triggeringPrincipal) {
-      params.triggeringPrincipal = Services.scriptSecurityManager.getSystemPrincipal();
+      params.triggeringPrincipal =
+        Services.scriptSecurityManager.getSystemPrincipal();
     }
     if (!params.allowInheritPrincipal) {
       params.allowInheritPrincipal = true;
@@ -2653,7 +2653,7 @@ export var BrowserTestUtils = {
       let window = tabbrowser.ownerGlobal;
       window.addEventListener(
         "TabOpen",
-        function(e) {
+        function (e) {
           beforeLoadFunc(e.target);
         },
         { once: true }
@@ -2763,9 +2763,8 @@ export var BrowserTestUtils = {
       await this.waitForCondition(() => aBrowsingContext.currentWindowGlobal);
     }
 
-    let actor = aBrowsingContext.currentWindowGlobal.getActor(
-      "BrowserTestUtils"
-    );
+    let actor =
+      aBrowsingContext.currentWindowGlobal.getActor("BrowserTestUtils");
     actor.sendAsyncMessage(aMessageName, aMessageData);
   },
 
@@ -2784,9 +2783,8 @@ export var BrowserTestUtils = {
       await this.waitForCondition(() => aBrowsingContext.currentWindowGlobal);
     }
 
-    let actor = aBrowsingContext.currentWindowGlobal.getActor(
-      "BrowserTestUtils"
-    );
+    let actor =
+      aBrowsingContext.currentWindowGlobal.getActor("BrowserTestUtils");
     return actor.sendQuery(aMessageName, aMessageData).then(val => {
       ChromeUtils.addProfilerMarker(
         "BrowserTestUtils",
@@ -2804,12 +2802,15 @@ export var BrowserTestUtils = {
    * @param {DOMWindow} window
    *   The top-level window that the about:preferences tab is likely to open
    *   in if the new migration wizard is enabled.
+   * @param {boolean} forceLegacy
+   *   True if, despite the browser.migrate.content-modal.enabled pref value,
+   *   the legacy XUL migration wizard is expected.
    * @returns {Promise<Element>}
    *   Resolves to the dialog window in the legacy case, and the
    *   about:preferences tab otherwise.
    */
-  async waitForMigrationWizard(window) {
-    if (!this._usingNewMigrationWizard) {
+  async waitForMigrationWizard(window, forceLegacy = false) {
+    if (!this._usingNewMigrationWizard || forceLegacy) {
       return this.waitForCondition(() => {
         let win = Services.wm.getMostRecentWindow("Browser:MigrationWizard");
         if (win?.document?.readyState == "complete") {
@@ -2836,10 +2837,13 @@ export var BrowserTestUtils = {
    *   the about:preferences tab otherwise. In general, it's probably best to
    *   just pass whatever BrowserTestUtils.waitForMigrationWizard resolved to
    *   into this in order to handle both the old and new migration wizard.
+   * @param {boolean} forceLegacy
+   *   True if, despite the browser.migrate.content-modal.enabled pref value,
+   *   the legacy XUL migration wizard is expected.
    * @returns {Promise<undefined>}
    */
-  closeMigrationWizard(wizardWindowOrTab) {
-    if (!this._usingNewMigrationWizard) {
+  closeMigrationWizard(wizardWindowOrTab, forceLegacy = false) {
+    if (!this._usingNewMigrationWizard || forceLegacy) {
       return BrowserTestUtils.closeWindow(wizardWindowOrTab);
     }
 

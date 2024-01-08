@@ -22,16 +22,13 @@ XPCOMUtils.defineLazyServiceGetters(lazy, {
 });
 
 ChromeUtils.defineESModuleGetters(lazy, {
+  AddonManager: "resource://gre/modules/AddonManager.sys.mjs",
   BookmarksPolicies: "resource:///modules/policies/BookmarksPolicies.sys.mjs",
+  CustomizableUI: "resource:///modules/CustomizableUI.sys.mjs",
   FileUtils: "resource://gre/modules/FileUtils.sys.mjs",
   PdfJsDefaultPreferences: "resource://pdf.js/PdfJsDefaultPreferences.sys.mjs",
   ProxyPolicies: "resource:///modules/policies/ProxyPolicies.sys.mjs",
   WebsiteFilter: "resource:///modules/policies/WebsiteFilter.sys.mjs",
-});
-
-XPCOMUtils.defineLazyModuleGetters(lazy, {
-  AddonManager: "resource://gre/modules/AddonManager.jsm",
-  CustomizableUI: "resource:///modules/CustomizableUI.jsm",
 });
 
 const PREF_LOGLEVEL = "browser.policies.loglevel";
@@ -114,7 +111,7 @@ export var Policies = {
 
   AllowedDomainsForApps: {
     onBeforeAddons(manager, param) {
-      Services.obs.addObserver(function(subject, topic, data) {
+      Services.obs.addObserver(function (subject, topic, data) {
         let channel = subject.QueryInterface(Ci.nsIHttpChannel);
         if (channel.URI.host.endsWith(".google.com")) {
           channel.setRequestHeader("X-GoogApps-Allowed-Domains", param, true);
@@ -236,11 +233,12 @@ export var Policies = {
 
   Authentication: {
     onBeforeAddons(manager, param) {
+      // When Authentication was originally implemented, it was always
+      // locked, so it defaults to locked.
       let locked = true;
       if ("Locked" in param) {
         locked = param.Locked;
       }
-
       if ("SPNEGO" in param) {
         PoliciesUtils.setDefaultPref(
           "network.negotiate-auth.trusted-uris",
@@ -425,7 +423,7 @@ export var Policies = {
               continue;
             }
             let reader = new FileReader();
-            reader.onloadend = function() {
+            reader.onloadend = function () {
               if (reader.readyState != reader.DONE) {
                 lazy.log.error(`Unable to read certificate - ${certfile.path}`);
                 return;
@@ -925,26 +923,22 @@ export var Policies = {
 
   DNSOverHTTPS: {
     onBeforeAddons(manager, param) {
-      let locked = false;
-      if ("Locked" in param) {
-        locked = param.Locked;
-      }
       if ("Enabled" in param) {
         let mode = param.Enabled ? 2 : 5;
-        PoliciesUtils.setDefaultPref("network.trr.mode", mode, locked);
+        PoliciesUtils.setDefaultPref("network.trr.mode", mode, param.Locked);
       }
       if ("ProviderURL" in param) {
         PoliciesUtils.setDefaultPref(
           "network.trr.uri",
           param.ProviderURL.href,
-          locked
+          param.Locked
         );
       }
       if ("ExcludedDomains" in param) {
         PoliciesUtils.setDefaultPref(
           "network.trr.excluded-domains",
           param.ExcludedDomains.join(","),
-          locked
+          param.Locked
         );
       }
     },
@@ -1018,15 +1012,11 @@ export var Policies = {
 
   EncryptedMediaExtensions: {
     onBeforeAddons(manager, param) {
-      let locked = false;
-      if ("Locked" in param) {
-        locked = param.Locked;
-      }
       if ("Enabled" in param) {
         PoliciesUtils.setDefaultPref(
           "media.eme.enabled",
           param.Enabled,
-          locked
+          param.Locked
         );
       }
     },
@@ -1228,81 +1218,59 @@ export var Policies = {
 
   FirefoxHome: {
     onBeforeAddons(manager, param) {
-      let locked = param.Locked || false;
       if ("Search" in param) {
         PoliciesUtils.setDefaultPref(
           "browser.newtabpage.activity-stream.showSearch",
           param.Search,
-          locked
+          param.Locked
         );
       }
       if ("TopSites" in param) {
         PoliciesUtils.setDefaultPref(
           "browser.newtabpage.activity-stream.feeds.topsites",
           param.TopSites,
-          locked
+          param.Locked
         );
       }
       if ("SponsoredTopSites" in param) {
         PoliciesUtils.setDefaultPref(
           "browser.newtabpage.activity-stream.showSponsoredTopSites",
           param.SponsoredTopSites,
-          locked
+          param.Locked
         );
       }
       if ("Highlights" in param) {
         PoliciesUtils.setDefaultPref(
           "browser.newtabpage.activity-stream.feeds.section.highlights",
           param.Highlights,
-          locked
+          param.Locked
         );
       }
       if ("Pocket" in param) {
         PoliciesUtils.setDefaultPref(
           "browser.newtabpage.activity-stream.feeds.system.topstories",
           param.Pocket,
-          locked
+          param.Locked
         );
         PoliciesUtils.setDefaultPref(
           "browser.newtabpage.activity-stream.feeds.section.topstories",
           param.Pocket,
-          locked
+          param.Locked
         );
       }
       if ("SponsoredPocket" in param) {
         PoliciesUtils.setDefaultPref(
           "browser.newtabpage.activity-stream.showSponsored",
           param.SponsoredPocket,
-          locked
+          param.Locked
         );
       }
       if ("Snippets" in param) {
         PoliciesUtils.setDefaultPref(
           "browser.newtabpage.activity-stream.feeds.snippets",
           param.Snippets,
-          locked
+          param.Locked
         );
-      }
-    },
-  },
-
-  FlashPlugin: {
-    onBeforeUIStartup(manager, param) {
-      addAllowDenyPermissions("plugin:flash", param.Allow, param.Block);
-
-      const FLASH_NEVER_ACTIVATE = 0;
-      const FLASH_ASK_TO_ACTIVATE = 1;
-
-      let flashPrefVal;
-      if (param.Default === undefined || param.Default) {
-        flashPrefVal = FLASH_ASK_TO_ACTIVATE;
-      } else {
-        flashPrefVal = FLASH_NEVER_ACTIVATE;
-      }
-      if (param.Locked) {
-        setAndLockPref("plugin.state.flash", flashPrefVal);
-      } else if (param.Default !== undefined) {
-        PoliciesUtils.setDefaultPref("plugin.state.flash", flashPrefVal);
       }
     },
   },
@@ -1342,9 +1310,8 @@ export var Policies = {
       if ("schemes" in param) {
         for (let scheme in param.schemes) {
           let handlerInfo = param.schemes[scheme];
-          let realHandlerInfo = lazy.gExternalProtocolService.getProtocolHandlerInfo(
-            scheme
-          );
+          let realHandlerInfo =
+            lazy.gExternalProtocolService.getProtocolHandlerInfo(scheme);
           processMIMEInfo(handlerInfo, realHandlerInfo);
         }
       }
@@ -1780,12 +1747,19 @@ export var Policies = {
             continue;
           }
 
+          let prefBranch;
           if (param[preference].Status == "user") {
-            var prefBranch = Services.prefs;
+            prefBranch = Services.prefs;
           } else {
             prefBranch = Services.prefs.getDefaultBranch("");
           }
 
+          // Prefs that were previously locked should stay locked,
+          // but policy can update the value.
+          let prefWasLocked = Services.prefs.prefIsLocked(preference);
+          if (prefWasLocked) {
+            Services.prefs.unlockPref(preference);
+          }
           try {
             switch (typeof param[preference].Value) {
               case "boolean":
@@ -1839,7 +1813,7 @@ export var Policies = {
             );
           }
 
-          if (param[preference].Status == "locked") {
+          if (param[preference].Status == "locked" || prefWasLocked) {
             Services.prefs.lockPref(preference);
           }
         }
@@ -2055,7 +2029,7 @@ export var Policies = {
           await runOncePerModification(
             "removeSearchEngines",
             JSON.stringify(param.Remove),
-            async function() {
+            async function () {
               for (let engineName of param.Remove) {
                 let engine = Services.search.getEngineByName(engineName);
                 if (engine) {
@@ -2205,13 +2179,11 @@ export var Policies = {
     },
     onAllWindowsRestored(manager, param) {
       if (param) {
-        let homeButtonPlacement = lazy.CustomizableUI.getPlacementOfWidget(
-          "home-button"
-        );
+        let homeButtonPlacement =
+          lazy.CustomizableUI.getPlacementOfWidget("home-button");
         if (!homeButtonPlacement) {
-          let placement = lazy.CustomizableUI.getPlacementOfWidget(
-            "forward-button"
-          );
+          let placement =
+            lazy.CustomizableUI.getPlacementOfWidget("forward-button");
           lazy.CustomizableUI.addWidgetToArea(
             "home-button",
             lazy.CustomizableUI.AREA_NAVBAR,
@@ -2280,29 +2252,25 @@ export var Policies = {
 
   UserMessaging: {
     onBeforeAddons(manager, param) {
-      let locked = false;
-      if ("Locked" in param) {
-        locked = param.Locked;
-      }
       if ("WhatsNew" in param) {
         PoliciesUtils.setDefaultPref(
           "browser.messaging-system.whatsNewPanel.enabled",
           param.WhatsNew,
-          locked
+          param.Locked
         );
       }
       if ("ExtensionRecommendations" in param) {
         PoliciesUtils.setDefaultPref(
           "browser.newtabpage.activity-stream.asrouter.userprefs.cfr.addons",
           param.ExtensionRecommendations,
-          locked
+          param.Locked
         );
       }
       if ("FeatureRecommendations" in param) {
         PoliciesUtils.setDefaultPref(
           "browser.newtabpage.activity-stream.asrouter.userprefs.cfr.features",
           param.FeatureRecommendations,
-          locked
+          param.Locked
         );
       }
       if ("UrlbarInterventions" in param && !param.UrlbarInterventions) {
@@ -2312,14 +2280,14 @@ export var Policies = {
         PoliciesUtils.setDefaultPref(
           "browser.aboutwelcome.enabled",
           !param.SkipOnboarding,
-          locked
+          param.Locked
         );
       }
       if ("MoreFromMozilla" in param) {
         PoliciesUtils.setDefaultPref(
           "browser.preferences.moreFromMozilla",
           param.MoreFromMozilla,
-          locked
+          param.Locked
         );
       }
     },
@@ -2384,8 +2352,9 @@ export function setAndLockPref(prefName, prefValue) {
  */
 
 export var PoliciesUtils = {
-  setDefaultPref(prefName, prefValue, locked = false) {
-    if (Services.prefs.prefIsLocked(prefName)) {
+  setDefaultPref(prefName, prefValue, locked) {
+    let prefWasLocked = Services.prefs.prefIsLocked(prefName);
+    if (prefWasLocked) {
       Services.prefs.unlockPref(prefName);
     }
 
@@ -2422,7 +2391,9 @@ export var PoliciesUtils = {
         break;
     }
 
-    if (locked) {
+    // Prefs can only be unlocked explicitly.
+    // If they were locked before, they stay locked.
+    if (locked || (prefWasLocked && locked !== false)) {
       Services.prefs.lockPref(prefName);
     }
   },
@@ -2478,8 +2449,9 @@ function addAllowDenyPermissions(permissionName, allowList, blockList) {
     } catch (ex) {
       // It's possible if the origin was invalid, we'll have a string instead of an origin.
       lazy.log.error(
-        `Unable to add ${permissionName} permission for ${origin.href ||
-          origin}`
+        `Unable to add ${permissionName} permission for ${
+          origin.href || origin
+        }`
       );
     }
   }
@@ -2701,7 +2673,7 @@ let ChromeURLBlockPolicy = {
     }
     let contentLocationSpec = contentLocation.spec.toLowerCase();
     if (
-      gBlockedAboutPages.some(function(aboutPage) {
+      gBlockedAboutPages.some(function (aboutPage) {
         return contentLocationSpec.startsWith(aboutPage.toLowerCase());
       })
     ) {

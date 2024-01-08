@@ -921,8 +921,7 @@ static JSLinearString* EnsureLinear(
 template <AllowGC allowGC>
 JSString* js::ConcatStringsQuiet(
     JSContext* cx, typename MaybeRooted<JSString*, allowGC>::HandleType left,
-    typename MaybeRooted<JSString*, allowGC>::HandleType right,
-    gc::InitialHeap heap) {
+    typename MaybeRooted<JSString*, allowGC>::HandleType right, gc::Heap heap) {
   MOZ_ASSERT_IF(!left->isAtom(), cx->isInsideCurrentZone(left));
   MOZ_ASSERT_IF(!right->isAtom(), cx->isInsideCurrentZone(right));
 
@@ -1006,17 +1005,17 @@ JSString* js::ConcatStringsQuiet(
 
 template JSString* js::ConcatStringsQuiet<CanGC>(JSContext* cx, HandleString left,
                                             HandleString right,
-                                            gc::InitialHeap heap);
+                                            gc::Heap heap);
 
 template JSString* js::ConcatStringsQuiet<NoGC>(JSContext* cx, JSString* const& left,
                                            JSString* const& right,
-                                           gc::InitialHeap heap);
+                                           gc::Heap heap);
 
 template <AllowGC allowGC>
 JSString* js::ConcatStrings(
     JSContext* cx, typename MaybeRooted<JSString*, allowGC>::HandleType left,
     typename MaybeRooted<JSString*, allowGC>::HandleType right,
-    gc::InitialHeap heap) {
+    gc::Heap heap) {
 
   TaintOperation op("concat");
   if ((left && right) && (left->taint().hasTaint() || right->taint().hasTaint())) {
@@ -1033,12 +1032,11 @@ JSString* js::ConcatStrings(
 }
 
 template JSString* js::ConcatStrings<CanGC>(JSContext* cx, HandleString left,
-                                            HandleString right,
-                                            gc::InitialHeap heap);
+                                            HandleString right, gc::Heap heap);
 
 template JSString* js::ConcatStrings<NoGC>(JSContext* cx, JSString* const& left,
                                            JSString* const& right,
-                                           gc::InitialHeap heap);
+                                           gc::Heap heap);
 
 /**
  * Copy |src[0..length]| to |dest[0..length]| when copying doesn't narrow and
@@ -1498,7 +1496,21 @@ bool JS::SourceText<char16_t>::initMaybeBorrowed(
   JS::SourceOwnership ownership = linearChars.maybeGiveOwnershipToCaller()
                                       ? JS::SourceOwnership::TakeOwnership
                                       : JS::SourceOwnership::Borrowed;
-  return init(cx, chars, length, taint, ownership);
+  return initImpl(cx, chars, length, taint, ownership);
+}
+
+template <>
+bool JS::SourceText<char16_t>::initMaybeBorrowed(
+    JS::FrontendContext* fc, JS::AutoStableStringChars& linearChars, const StringTaint& taint) {
+  MOZ_ASSERT(linearChars.isTwoByte(),
+             "AutoStableStringChars must be initialized with char16_t");
+
+  const char16_t* chars = linearChars.twoByteChars();
+  size_t length = linearChars.length();
+  JS::SourceOwnership ownership = linearChars.maybeGiveOwnershipToCaller()
+                                      ? JS::SourceOwnership::TakeOwnership
+                                      : JS::SourceOwnership::Borrowed;
+  return initImpl(fc, chars, length, taint, ownership);
 }
 
 #if defined(DEBUG) || defined(JS_JITSPEW) || defined(JS_CACHEIR_SPEW)
@@ -1525,7 +1537,7 @@ void JSExternalString::dumpRepresentation(js::GenericPrinter& out,
 
 JSLinearString* js::NewDependentString(JSContext* cx, JSString* baseArg,
                                        size_t start, size_t length,
-                                       gc::InitialHeap heap) {
+                                       gc::Heap heap) {
   if (length == 0) {
     return cx->emptyString();
   }
@@ -1566,7 +1578,7 @@ static inline bool CanStoreCharsAsLatin1(const char16_t* s, size_t length) {
 template <AllowGC allowGC>
 static MOZ_ALWAYS_INLINE JSInlineString* NewInlineStringDeflated(
     JSContext* cx, const mozilla::Range<const char16_t>& chars,
-    gc::InitialHeap heap = gc::DefaultHeap) {
+    gc::Heap heap = gc::Heap::Default) {
   size_t len = chars.length();
   Latin1Char* storage;
   JSInlineString* str = AllocateInlineString<allowGC>(cx, len, &storage, heap);
@@ -1581,7 +1593,7 @@ static MOZ_ALWAYS_INLINE JSInlineString* NewInlineStringDeflated(
 
 template <AllowGC allowGC>
 static JSLinearString* NewStringDeflated(JSContext* cx, const char16_t* s,
-                                         size_t n, gc::InitialHeap heap) {
+                                         size_t n, gc::Heap heap) {
 // Foxhound: Avoid creating atoms
 //  if (JSLinearString* str = TryEmptyOrStaticString(cx, s, n)) {
 //    return str;
@@ -1642,7 +1654,7 @@ static JSAtom* NewAtomDeflatedValidLength(JSContext* cx, const char16_t* s,
 template <AllowGC allowGC, typename CharT>
 JSLinearString* js::NewStringDontDeflate(
   JSContext* cx, UniquePtr<CharT[], JS::FreePolicy> chars, size_t length,
-  gc::InitialHeap heap) {
+  gc::Heap heap) {
   // TaintFox: TODO disabled for now, causes XPConnect string conversion to
   // fail wrt taint propagation if this function returns a JSAtom.
   // if (JSLinearString* str = TryEmptyOrStaticString(cx, chars.get(), length)) {
@@ -1660,26 +1672,23 @@ JSLinearString* js::NewStringDontDeflate(
 }
 
 template JSLinearString* js::NewStringDontDeflate<CanGC>(
-    JSContext* cx, UniqueTwoByteChars chars, size_t length,
-    gc::InitialHeap heap);
+    JSContext* cx, UniqueTwoByteChars chars, size_t length, gc::Heap heap);
 
 template JSLinearString* js::NewStringDontDeflate<NoGC>(
-    JSContext* cx, UniqueTwoByteChars chars, size_t length,
-    gc::InitialHeap heap);
+    JSContext* cx, UniqueTwoByteChars chars, size_t length, gc::Heap heap);
 
 template JSLinearString* js::NewStringDontDeflate<CanGC>(
-    JSContext* cx, UniqueLatin1Chars chars, size_t length,
-    gc::InitialHeap heap);
+    JSContext* cx, UniqueLatin1Chars chars, size_t length, gc::Heap heap);
 
 template JSLinearString* js::NewStringDontDeflate<NoGC>(JSContext* cx,
                                                         UniqueLatin1Chars chars,
                                                         size_t length,
-                                                        gc::InitialHeap heap);
+                                                        gc::Heap heap);
 
 template <AllowGC allowGC, typename CharT>
 JSLinearString* js::NewString(JSContext* cx,
                               UniquePtr<CharT[], JS::FreePolicy> chars,
-                              size_t length, gc::InitialHeap heap) {
+                              size_t length, gc::Heap heap) {
   if constexpr (std::is_same_v<CharT, char16_t>) {
     if (CanStoreCharsAsLatin1(chars.get(), length)) {
       // Deflating copies from |chars.get()| and lets |chars| be freed on
@@ -1693,29 +1702,27 @@ JSLinearString* js::NewString(JSContext* cx,
 
 template JSLinearString* js::NewString<CanGC>(JSContext* cx,
                                               UniqueTwoByteChars chars,
-                                              size_t length,
-                                              gc::InitialHeap heap);
+                                              size_t length, gc::Heap heap);
 
 template JSLinearString* js::NewString<NoGC>(JSContext* cx,
                                              UniqueTwoByteChars chars,
-                                             size_t length,
-                                             gc::InitialHeap heap);
+                                             size_t length, gc::Heap heap);
 
 template JSLinearString* js::NewString<CanGC>(JSContext* cx,
                                               UniqueLatin1Chars chars,
-                                              size_t length,
-                                              gc::InitialHeap heap);
+                                              size_t length, gc::Heap heap);
 
 template JSLinearString* js::NewString<NoGC>(JSContext* cx,
                                              UniqueLatin1Chars chars,
-                                             size_t length,
-                                             gc::InitialHeap heap);
+                                             size_t length, gc::Heap heap);
 
 namespace js {
 
 template <AllowGC allowGC, typename CharT>
-JSLinearString* NewStringCopyNDontDeflateNonStaticValidLength(
-    JSContext* cx, const CharT* s, size_t n, gc::InitialHeap heap) {
+JSLinearString* NewStringCopyNDontDeflateNonStaticValidLength(JSContext* cx,
+                                                              const CharT* s,
+                                                              size_t n,
+                                                              gc::Heap heap) {
   if (JSInlineString::lengthFits<CharT>(n)) {
     return NewInlineString<allowGC>(cx, mozilla::Range<const CharT>(s, n),
                                     heap);
@@ -1735,14 +1742,14 @@ JSLinearString* NewStringCopyNDontDeflateNonStaticValidLength(
 }
 
 template JSLinearString* NewStringCopyNDontDeflateNonStaticValidLength<CanGC>(
-    JSContext* cx, const char16_t* s, size_t n, gc::InitialHeap heap);
+    JSContext* cx, const char16_t* s, size_t n, gc::Heap heap);
 
 template JSLinearString* NewStringCopyNDontDeflateNonStaticValidLength<CanGC>(
-    JSContext* cx, const Latin1Char* s, size_t n, gc::InitialHeap heap);
+    JSContext* cx, const Latin1Char* s, size_t n, gc::Heap heap);
 
 template <AllowGC allowGC, typename CharT>
 JSLinearString* NewStringCopyNDontDeflate(JSContext* cx, const CharT* s,
-                                          size_t n, gc::InitialHeap heap) {
+                                          size_t n, gc::Heap heap) {
   // Foxhound: don't create atoms
   // if (JSLinearString* str = TryEmptyOrStaticString(cx, s, n)) {
   //   return str;
@@ -1758,25 +1765,25 @@ JSLinearString* NewStringCopyNDontDeflate(JSContext* cx, const CharT* s,
 template JSLinearString* NewStringCopyNDontDeflate<CanGC>(JSContext* cx,
                                                           const char16_t* s,
                                                           size_t n,
-                                                          gc::InitialHeap heap);
+                                                          gc::Heap heap);
 
 template JSLinearString* NewStringCopyNDontDeflate<NoGC>(JSContext* cx,
                                                          const char16_t* s,
                                                          size_t n,
-                                                         gc::InitialHeap heap);
+                                                         gc::Heap heap);
 
 template JSLinearString* NewStringCopyNDontDeflate<CanGC>(JSContext* cx,
                                                           const Latin1Char* s,
                                                           size_t n,
-                                                          gc::InitialHeap heap);
+                                                          gc::Heap heap);
 
 template JSLinearString* NewStringCopyNDontDeflate<NoGC>(JSContext* cx,
                                                          const Latin1Char* s,
                                                          size_t n,
-                                                         gc::InitialHeap heap);
+                                                         gc::Heap heap);
 
 JSLinearString* NewLatin1StringZ(JSContext* cx, UniqueChars chars,
-                                 gc::InitialHeap heap) {
+                                 gc::Heap heap) {
   size_t length = strlen(chars.get());
   UniqueLatin1Chars latin1(reinterpret_cast<Latin1Char*>(chars.release()));
   return NewString<CanGC>(cx, std::move(latin1), length, heap);
@@ -1784,7 +1791,7 @@ JSLinearString* NewLatin1StringZ(JSContext* cx, UniqueChars chars,
 
 template <AllowGC allowGC, typename CharT>
 JSLinearString* NewStringCopyN(JSContext* cx, const CharT* s, size_t n,
-                               gc::InitialHeap heap) {
+                               gc::Heap heap) {
   if constexpr (std::is_same_v<CharT, char16_t>) {
     if (CanStoreCharsAsLatin1(s, n)) {
       return NewStringDeflated<allowGC>(cx, s, n, heap);
@@ -1795,18 +1802,18 @@ JSLinearString* NewStringCopyN(JSContext* cx, const CharT* s, size_t n,
 }
 
 template JSLinearString* NewStringCopyN<CanGC>(JSContext* cx, const char16_t* s,
-                                               size_t n, gc::InitialHeap heap);
+                                               size_t n, gc::Heap heap);
 
 template JSLinearString* NewStringCopyN<NoGC>(JSContext* cx, const char16_t* s,
-                                              size_t n, gc::InitialHeap heap);
+                                              size_t n, gc::Heap heap);
 
 template JSLinearString* NewStringCopyN<CanGC>(JSContext* cx,
                                                const Latin1Char* s, size_t n,
-                                               gc::InitialHeap heap);
+                                               gc::Heap heap);
 
 template JSLinearString* NewStringCopyN<NoGC>(JSContext* cx,
                                               const Latin1Char* s, size_t n,
-                                              gc::InitialHeap heap);
+                                              gc::Heap heap);
 
 template <typename CharT>
 JSAtom* NewAtomCopyNDontDeflateValidLength(JSContext* cx, const CharT* s,
@@ -1862,7 +1869,7 @@ template JSAtom* NewAtomCopyNMaybeDeflateValidLength(JSContext* cx,
                                                      js::HashNumber hash);
 
 JSLinearString* NewStringCopyUTF8N(JSContext* cx, const JS::UTF8Chars utf8,
-                                   gc::InitialHeap heap) {
+                                   gc::Heap heap) {
   JS::SmallestEncoding encoding = JS::FindSmallestEncoding(utf8);
   if (encoding == JS::SmallestEncoding::ASCII) {
     return NewStringCopyN<js::CanGC>(cx, utf8.begin().get(), utf8.length(),
@@ -1934,8 +1941,7 @@ MOZ_ALWAYS_INLINE void ExternalStringCache::put(JSString* str) {
 
 JSString* NewMaybeExternalString(JSContext* cx, const char16_t* s, size_t n,
                                  const JSExternalStringCallbacks* callbacks,
-                                 bool* allocatedExternal,
-                                 gc::InitialHeap heap) {
+                                 bool* allocatedExternal, gc::Heap heap) {
 // Foxhound: Avoid creating atoms
 //  if (JSString* str = TryEmptyOrStaticString(cx, s, n)) {
 //    *allocatedExternal = false;
@@ -2012,8 +2018,7 @@ template <typename CheckString, typename CharT>
 static bool FillWithRepresentatives(JSContext* cx, Handle<ArrayObject*> array,
                                     uint32_t* index, const CharT* chars,
                                     size_t len, size_t fatInlineMaxLength,
-                                    const CheckString& check,
-                                    gc::InitialHeap heap) {
+                                    const CheckString& check, gc::Heap heap) {
   auto AppendString = [&check](JSContext* cx, Handle<ArrayObject*> array,
                                uint32_t* index, HandleString s) {
     MOZ_ASSERT(check(s));
@@ -2161,25 +2166,25 @@ bool JSString::fillWithRepresentatives(JSContext* cx,
   if (!FillWithRepresentatives(cx, array, &index, twoByteChars,
                                std::size(twoByteChars) - 1,
                                JSFatInlineString::MAX_LENGTH_TWO_BYTE,
-                               CheckTwoByte, gc::InitialHeap::TenuredHeap)) {
+                               CheckTwoByte, gc::Heap::Tenured)) {
     return false;
   }
   if (!FillWithRepresentatives(cx, array, &index, latin1Chars,
                                std::size(latin1Chars) - 1,
                                JSFatInlineString::MAX_LENGTH_LATIN1,
-                               CheckLatin1, gc::InitialHeap::TenuredHeap)) {
+                               CheckLatin1, gc::Heap::Tenured)) {
     return false;
   }
   if (!FillWithRepresentatives(cx, array, &index, twoByteChars,
                                std::size(twoByteChars) - 1,
                                JSFatInlineString::MAX_LENGTH_TWO_BYTE,
-                               CheckTwoByte, gc::InitialHeap::DefaultHeap)) {
+                               CheckTwoByte, gc::Heap::Default)) {
     return false;
   }
   if (!FillWithRepresentatives(cx, array, &index, latin1Chars,
                                std::size(latin1Chars) - 1,
                                JSFatInlineString::MAX_LENGTH_LATIN1,
-                               CheckLatin1, gc::InitialHeap::DefaultHeap)) {
+                               CheckLatin1, gc::Heap::Default)) {
     return false;
   }
 

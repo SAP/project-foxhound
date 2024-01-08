@@ -10,25 +10,25 @@ const lazy = {};
 // Ignore unused lazy property for PluginManager.
 // eslint-disable-next-line mozilla/valid-lazy
 ChromeUtils.defineESModuleGetters(lazy, {
+  ASRouterNewTabHook:
+    "resource://activity-stream/lib/ASRouterNewTabHook.sys.mjs",
   ActorManagerParent: "resource://gre/modules/ActorManagerParent.sys.mjs",
+  AddonManager: "resource://gre/modules/AddonManager.sys.mjs",
   AppMenuNotifications: "resource://gre/modules/AppMenuNotifications.sys.mjs",
   AsyncShutdown: "resource://gre/modules/AsyncShutdown.sys.mjs",
+  Blocklist: "resource://gre/modules/Blocklist.sys.mjs",
   BookmarkHTMLUtils: "resource://gre/modules/BookmarkHTMLUtils.sys.mjs",
   BookmarkJSONUtils: "resource://gre/modules/BookmarkJSONUtils.sys.mjs",
   BrowserSearchTelemetry: "resource:///modules/BrowserSearchTelemetry.sys.mjs",
   BuiltInThemes: "resource:///modules/BuiltInThemes.sys.mjs",
-
   ContextualIdentityService:
     "resource://gre/modules/ContextualIdentityService.sys.mjs",
-
   Corroborate: "resource://gre/modules/Corroborate.sys.mjs",
   DAPTelemetrySender: "resource://gre/modules/DAPTelemetrySender.sys.mjs",
   DeferredTask: "resource://gre/modules/DeferredTask.sys.mjs",
   DoHController: "resource:///modules/DoHController.sys.mjs",
-
   DownloadsViewableInternally:
     "resource:///modules/DownloadsViewableInternally.sys.mjs",
-
   E10SUtils: "resource://gre/modules/E10SUtils.sys.mjs",
   FeatureGate: "resource://featuregates/FeatureGate.sys.mjs",
   FxAccounts: "resource://gre/modules/FxAccounts.sys.mjs",
@@ -41,6 +41,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
   Normandy: "resource://normandy/Normandy.sys.mjs",
   OsEnvironment: "resource://gre/modules/OsEnvironment.sys.mjs",
   PageDataService: "resource:///modules/pagedata/PageDataService.sys.mjs",
+  PageThumbs: "resource://gre/modules/PageThumbs.sys.mjs",
   PdfJs: "resource://pdf.js/PdfJs.sys.mjs",
   PermissionUI: "resource:///modules/PermissionUI.sys.mjs",
   PlacesBackups: "resource://gre/modules/PlacesBackups.sys.mjs",
@@ -50,17 +51,15 @@ ChromeUtils.defineESModuleGetters(lazy, {
   PluginManager: "resource:///actors/PluginParent.sys.mjs",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
   ProvenanceData: "resource:///modules/ProvenanceData.sys.mjs",
-
   PublicSuffixList:
     "resource://gre/modules/netwerk-dns/PublicSuffixList.sys.mjs",
-
   QuickSuggest: "resource:///modules/QuickSuggest.sys.mjs",
   RFPHelper: "resource://gre/modules/RFPHelper.sys.mjs",
-
   RemoteSecuritySettings:
     "resource://gre/modules/psm/RemoteSecuritySettings.sys.mjs",
-
   RemoteSettings: "resource://services-settings/remote-settings.sys.mjs",
+  SafeBrowsing: "resource://gre/modules/SafeBrowsing.sys.mjs",
+  Sanitizer: "resource:///modules/Sanitizer.sys.mjs",
   SaveToPocket: "chrome://pocket/content/SaveToPocket.sys.mjs",
   ScreenshotsUtils: "resource:///modules/ScreenshotsUtils.sys.mjs",
   SearchSERPTelemetry: "resource:///modules/SearchSERPTelemetry.sys.mjs",
@@ -68,10 +67,8 @@ ChromeUtils.defineESModuleGetters(lazy, {
   SessionStore: "resource:///modules/sessionstore/SessionStore.sys.mjs",
   ShellService: "resource:///modules/ShellService.sys.mjs",
   ShortcutUtils: "resource://gre/modules/ShortcutUtils.sys.mjs",
-
   SpecialMessageActions:
     "resource://messaging-system/lib/SpecialMessageActions.sys.mjs",
-
   TRRRacer: "resource:///modules/TRRPerformance.sys.mjs",
   TelemetryUtils: "resource://gre/modules/TelemetryUtils.sys.mjs",
   UIState: "resource://services-sync/UIState.sys.mjs",
@@ -84,12 +81,9 @@ ChromeUtils.defineESModuleGetters(lazy, {
 
 XPCOMUtils.defineLazyModuleGetters(lazy, {
   AboutNewTab: "resource:///modules/AboutNewTab.jsm",
-  AddonManager: "resource://gre/modules/AddonManager.jsm",
   ASRouterDefaultConfig:
     "resource://activity-stream/lib/ASRouterDefaultConfig.jsm",
-  ASRouterNewTabHook: "resource://activity-stream/lib/ASRouterNewTabHook.jsm",
   ASRouter: "resource://activity-stream/lib/ASRouter.jsm",
-  Blocklist: "resource://gre/modules/Blocklist.jsm",
   BrowserUsageTelemetry: "resource:///modules/BrowserUsageTelemetry.jsm",
   BrowserUIUtils: "resource:///modules/BrowserUIUtils.jsm",
   BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.jsm",
@@ -100,11 +94,7 @@ XPCOMUtils.defineLazyModuleGetters(lazy, {
   OnboardingMessageProvider:
     "resource://activity-stream/lib/OnboardingMessageProvider.jsm",
   PageActions: "resource:///modules/PageActions.jsm",
-  PageThumbs: "resource://gre/modules/PageThumbs.jsm",
-  PluralForm: "resource://gre/modules/PluralForm.jsm",
   ProcessHangMonitor: "resource:///modules/ProcessHangMonitor.jsm",
-  SafeBrowsing: "resource://gre/modules/SafeBrowsing.jsm",
-  Sanitizer: "resource:///modules/Sanitizer.jsm",
   TabCrashHandler: "resource:///modules/ContentCrashHandlers.jsm",
   TabUnloader: "resource:///modules/TabUnloader.jsm",
 });
@@ -125,6 +115,16 @@ XPCOMUtils.defineLazyServiceGetters(lazy, {
   BrowserHandler: ["@mozilla.org/browser/clh;1", "nsIBrowserHandler"],
   PushService: ["@mozilla.org/push/Service;1", "nsIPushService"],
 });
+
+XPCOMUtils.defineLazyGetter(
+  lazy,
+  "accountsL10n",
+  () =>
+    new Localization(
+      ["browser/accounts.ftl", "toolkit/branding/accounts.ftl"],
+      true
+    )
+);
 
 if (AppConstants.ENABLE_WEBDRIVER) {
   XPCOMUtils.defineLazyServiceGetter(
@@ -297,7 +297,6 @@ let JSWINDOWACTORS = {
 
     matches: ["about:plugins"],
   },
-
   AboutPocket: {
     parent: {
       esModuleURI: "resource:///actors/AboutPocketParent.sys.mjs",
@@ -577,6 +576,7 @@ let JSWINDOWACTORS = {
       "chrome://browser/content/places/historySidebar.xhtml",
       "chrome://browser/content/places/bookmarksSidebar.xhtml",
       "about:firefoxview",
+      "about:firefoxview-next",
     ],
   },
 
@@ -611,6 +611,7 @@ let JSWINDOWACTORS = {
         "MigrationWizard:RequestState": { wantUntrusted: true },
         "MigrationWizard:BeginMigration": { wantUntrusted: true },
         "MigrationWizard:RequestSafariPermissions": { wantUntrusted: true },
+        "MigrationWizard:SelectSafariPasswordFile": { wantUntrusted: true },
       },
     },
 
@@ -834,13 +835,13 @@ if (AppConstants.MOZ_CRASHREPORTER) {
   });
 }
 
-XPCOMUtils.defineLazyGetter(lazy, "gBrandBundle", function() {
+XPCOMUtils.defineLazyGetter(lazy, "gBrandBundle", function () {
   return Services.strings.createBundle(
     "chrome://branding/locale/brand.properties"
   );
 });
 
-XPCOMUtils.defineLazyGetter(lazy, "gBrowserBundle", function() {
+XPCOMUtils.defineLazyGetter(lazy, "gBrowserBundle", function () {
   return Services.strings.createBundle(
     "chrome://browser/locale/browser.properties"
   );
@@ -906,7 +907,7 @@ export function BrowserGlue() {
     "nsIUserIdleService"
   );
 
-  XPCOMUtils.defineLazyGetter(this, "_distributionCustomizer", function() {
+  XPCOMUtils.defineLazyGetter(this, "_distributionCustomizer", function () {
     const { DistributionCustomizer } = ChromeUtils.import(
       "resource:///modules/distribution.js"
     );
@@ -2108,9 +2109,8 @@ BrowserGlue.prototype = {
 
     const _checkIonPref = async () => {
       for (let win of Services.wm.getEnumerator("navigator:browser")) {
-        win.document.getElementById(
-          "ion-button"
-        ).hidden = !Services.prefs.getStringPref(PREF_ION_ID, null);
+        win.document.getElementById("ion-button").hidden =
+          !Services.prefs.getStringPref(PREF_ION_ID, null);
       }
     };
 
@@ -2634,7 +2634,7 @@ BrowserGlue.prototype = {
       {
         name: "trackStartupCrashEndSetTimeout",
         task: () => {
-          lazy.setTimeout(function() {
+          lazy.setTimeout(function () {
             Services.tm.idleDispatchToMainThread(
               Services.startup.trackStartupCrashEnd
             );
@@ -3030,7 +3030,7 @@ BrowserGlue.prototype = {
 
   _addBreachAlertsPrefObserver() {
     const BREACH_ALERTS_PREF = "signon.management.page.breach-alerts.enabled";
-    const clearVulnerablePasswordsIfBreachAlertsDisabled = async function() {
+    const clearVulnerablePasswordsIfBreachAlertsDisabled = async function () {
       if (!Services.prefs.getBoolPref(BREACH_ALERTS_PREF)) {
         await lazy.LoginBreaches.clearAllPotentiallyVulnerablePasswords();
       }
@@ -3153,15 +3153,12 @@ BrowserGlue.prototype = {
       checkboxLabelId = "tabbrowser-confirm-close-tabs-checkbox";
     }
 
-    const [
-      title,
-      buttonLabel,
-      checkboxLabel,
-    ] = win.gBrowser.tabLocalization.formatMessagesSync([
-      titleId,
-      buttonLabelId,
-      checkboxLabelId,
-    ]);
+    const [title, buttonLabel, checkboxLabel] =
+      win.gBrowser.tabLocalization.formatMessagesSync([
+        titleId,
+        buttonLabelId,
+        checkboxLabelId,
+      ]);
 
     let warnOnClose = { value: true };
     let flags =
@@ -3403,14 +3400,10 @@ BrowserGlue.prototype = {
       this._bookmarksBackupIdleTime = idleTime;
 
       if (this._isNewProfile) {
-        try {
-          // New profiles may have existing bookmarks (imported from another browser or
-          // copied into the profile) and we want to show the bookmark toolbar for them
-          // in some cases.
-          lazy.PlacesUIUtils.maybeToggleBookmarkToolbarVisibility();
-        } catch (ex) {
-          console.error(ex);
-        }
+        // New profiles may have existing bookmarks (imported from another browser or
+        // copied into the profile) and we want to show the bookmark toolbar for them
+        // in some cases.
+        await lazy.PlacesUIUtils.maybeToggleBookmarkToolbarVisibility();
       }
     })()
       .catch(ex => {
@@ -3428,7 +3421,7 @@ BrowserGlue.prototype = {
    * If a backup for today doesn't exist, this creates one.
    */
   _backupBookmarks: function BG__backupBookmarks() {
-    return (async function() {
+    return (async function () {
       let lastBackupFile = await lazy.PlacesBackups.getMostRecentBackup();
       // Should backup bookmarks if there are no backups or the maximum
       // interval between backups elapsed.
@@ -3448,28 +3441,28 @@ BrowserGlue.prototype = {
   /**
    * Show the notificationBox for a locked places database.
    */
-  _showPlacesLockedNotificationBox: function BG__showPlacesLockedNotificationBox() {
-    var win = lazy.BrowserWindowTracker.getTopWindow();
-    var buttons = [{ supportPage: "places-locked" }];
+  _showPlacesLockedNotificationBox:
+    function BG__showPlacesLockedNotificationBox() {
+      var win = lazy.BrowserWindowTracker.getTopWindow();
+      var buttons = [{ supportPage: "places-locked" }];
 
-    var notifyBox = win.gBrowser.getNotificationBox();
-    var notification = notifyBox.appendNotification(
-      "places-locked",
-      {
-        label: { "l10n-id": "places-locked-prompt" },
-        priority: win.gNotificationBox.PRIORITY_CRITICAL_MEDIUM,
-      },
-      buttons
-    );
-    notification.persistence = -1; // Until user closes it
-  },
+      var notifyBox = win.gBrowser.getNotificationBox();
+      var notification = notifyBox.appendNotification(
+        "places-locked",
+        {
+          label: { "l10n-id": "places-locked-prompt" },
+          priority: win.gNotificationBox.PRIORITY_CRITICAL_MEDIUM,
+        },
+        buttons
+      );
+      notification.persistence = -1; // Until user closes it
+    },
 
   _onThisDeviceConnected() {
-    let bundle = Services.strings.createBundle(
-      "chrome://browser/locale/accounts.properties"
-    );
-    let title = bundle.GetStringFromName("deviceConnDisconnTitle");
-    let body = bundle.GetStringFromName("thisDeviceConnectedBody");
+    const [title, body] = lazy.accountsL10n.formatValuesSync([
+      "account-connection-title",
+      "account-connection-connected",
+    ]);
 
     let clickCallback = (subject, topic, data) => {
       if (topic != "alertclickcallback") {
@@ -4008,8 +4001,8 @@ BrowserGlue.prototype = {
       // In Firefox 83, we moved to a dynamic button, so it needs to be removed
       // from default placement. This is done early enough that it doesn't
       // impact adding new managed bookmarks.
-      const { CustomizableUI } = ChromeUtils.import(
-        "resource:///modules/CustomizableUI.jsm"
+      const { CustomizableUI } = ChromeUtils.importESModule(
+        "resource:///modules/CustomizableUI.sys.mjs"
       );
       CustomizableUI.removeWidgetFromArea("managed-bookmarks");
     }
@@ -4454,9 +4447,8 @@ BrowserGlue.prototype = {
         return "disallow-postUpdate";
       }
 
-      const useMROnboarding = lazy.NimbusFeatures.majorRelease2022.getVariable(
-        "onboarding"
-      );
+      const useMROnboarding =
+        lazy.NimbusFeatures.majorRelease2022.getVariable("onboarding");
       const showUpgradeDialog =
         useMROnboarding ??
         lazy.NimbusFeatures.upgradeDialog.getVariable("enabled");
@@ -4492,8 +4484,8 @@ BrowserGlue.prototype = {
 
     await lazy.ASRouter.waitForInitialized;
     lazy.ASRouter.sendTriggerMessage({
-      browser: lazy.BrowserWindowTracker.getTopWindow()?.gBrowser
-        .selectedBrowser,
+      browser:
+        lazy.BrowserWindowTracker.getTopWindow()?.gBrowser.selectedBrowser,
       // triggerId and triggerContext
       id: "defaultBrowserCheck",
       context: { willShowDefaultPrompt: willPrompt, source: "startup" },
@@ -4643,58 +4635,52 @@ BrowserGlue.prototype = {
       await Promise.all(URIs.slice(1).map(URI => openTab(URI)));
 
       const deviceName = URIs[0].sender && URIs[0].sender.name;
-      let title, body;
-      const bundle = Services.strings.createBundle(
-        "chrome://browser/locale/accounts.properties"
-      );
+      let titleL10nId, body;
       if (URIs.length == 1) {
         // Due to bug 1305895, tabs from iOS may not have device information, so
         // we have separate strings to handle those cases. (See Also
         // unnamedTabsArrivingNotificationNoDevice.body below)
-        if (deviceName) {
-          title = bundle.formatStringFromName(
-            "tabArrivingNotificationWithDevice.title",
-            [deviceName]
-          );
-        } else {
-          title = bundle.GetStringFromName("tabArrivingNotification.title");
-        }
+        titleL10nId = deviceName
+          ? {
+              id: "account-single-tab-arriving-from-device-title",
+              args: { deviceName },
+            }
+          : { id: "account-single-tab-arriving-title" };
         // Use the page URL as the body. We strip the fragment and query (after
         // the `?` and `#` respectively) to reduce size, and also format it the
         // same way that the url bar would.
-        body = URIs[0].uri.replace(/([?#]).*$/, "$1");
-        let wasTruncated = body.length < URIs[0].uri.length;
-        body = lazy.BrowserUIUtils.trimURL(body);
+        let url = URIs[0].uri.replace(/([?#]).*$/, "$1");
+        const wasTruncated = url.length < URIs[0].uri.length;
+        url = lazy.BrowserUIUtils.trimURL(url);
         if (wasTruncated) {
-          body = bundle.formatStringFromName(
-            "singleTabArrivingWithTruncatedURL.body",
-            [body]
+          body = await lazy.accountsL10n.formatValue(
+            "account-single-tab-arriving-truncated-url",
+            { url }
           );
+        } else {
+          body = url;
         }
       } else {
-        title = bundle.GetStringFromName(
-          "multipleTabsArrivingNotification.title"
-        );
+        titleL10nId = { id: "account-multiple-tabs-arriving-title" };
         const allKnownSender = URIs.every(URI => URI.sender != null);
         const allSameDevice =
           allKnownSender &&
           URIs.every(URI => URI.sender.id == URIs[0].sender.id);
-        let tabArrivingBody;
+        let bodyL10nId;
         if (allSameDevice) {
-          if (deviceName) {
-            tabArrivingBody = "unnamedTabsArrivingNotification2.body";
-          } else {
-            tabArrivingBody = "unnamedTabsArrivingNotificationNoDevice.body";
-          }
+          bodyL10nId = deviceName
+            ? "account-multiple-tabs-arriving-from-single-device"
+            : "account-multiple-tabs-arriving-from-unknown-device";
         } else {
-          tabArrivingBody = "unnamedTabsArrivingNotificationMultiple2.body";
+          bodyL10nId = "account-multiple-tabs-arriving-from-multiple-devices";
         }
 
-        body = bundle.GetStringFromName(tabArrivingBody);
-        body = lazy.PluralForm.get(URIs.length, body);
-        body = body.replace("#1", URIs.length);
-        body = body.replace("#2", deviceName);
+        body = await lazy.accountsL10n.formatValue(bodyL10nId, {
+          deviceName,
+          tabCount: URIs.length,
+        });
       }
+      const title = await lazy.accountsL10n.formatValue(titleL10nId);
 
       const clickCallback = (obsSubject, obsTopic, obsData) => {
         if (obsTopic == "alertclickcallback") {
@@ -4757,14 +4743,12 @@ BrowserGlue.prototype = {
   },
 
   _onDeviceConnected(deviceName) {
-    let accountsBundle = Services.strings.createBundle(
-      "chrome://browser/locale/accounts.properties"
-    );
-    let title = accountsBundle.GetStringFromName("deviceConnDisconnTitle");
-    let body = accountsBundle.formatStringFromName(
-      "otherDeviceConnectedBody" + (deviceName ? "" : ".noDeviceName"),
-      [deviceName]
-    );
+    const [title, body] = lazy.accountsL10n.formatValuesSync([
+      { id: "account-connection-title" },
+      deviceName
+        ? { id: "account-connection-connected-with", args: { deviceName } }
+        : { id: "account-connection-connected-with-noname" },
+    ]);
 
     let clickCallback = async (subject, topic, data) => {
       if (topic != "alertclickcallback") {
@@ -4796,11 +4780,10 @@ BrowserGlue.prototype = {
   },
 
   _onDeviceDisconnected() {
-    let bundle = Services.strings.createBundle(
-      "chrome://browser/locale/accounts.properties"
-    );
-    let title = bundle.GetStringFromName("deviceConnDisconnTitle");
-    let body = bundle.GetStringFromName("thisDeviceDisconnectedBody");
+    const [title, body] = lazy.accountsL10n.formatValuesSync([
+      "account-connection-title",
+      "account-connection-disconnected",
+    ]);
 
     let clickCallback = (subject, topic, data) => {
       if (topic != "alertclickcallback") {
@@ -4904,9 +4887,9 @@ var ContentBlockingCategoriesPrefs = {
         "privacy.trackingprotection.emailtracking.enabled": null,
         "privacy.trackingprotection.emailtracking.pbmode.enabled": null,
         "privacy.annotate_channels.strict_list.enabled": null,
-        "privacy.annotate_channels.strict_list.pbmode.enabled": null,
         "network.http.referer.disallowCrossSiteRelaxingDefault": null,
-        "network.http.referer.disallowCrossSiteRelaxingDefault.top_navigation": null,
+        "network.http.referer.disallowCrossSiteRelaxingDefault.top_navigation":
+          null,
         "privacy.partition.network_state.ocsp_cache": null,
         "privacy.query_stripping.enabled": null,
         "privacy.query_stripping.enabled.pbmode": null,
@@ -4922,9 +4905,9 @@ var ContentBlockingCategoriesPrefs = {
         "privacy.trackingprotection.emailtracking.enabled": null,
         "privacy.trackingprotection.emailtracking.pbmode.enabled": null,
         "privacy.annotate_channels.strict_list.enabled": null,
-        "privacy.annotate_channels.strict_list.pbmode.enabled": null,
         "network.http.referer.disallowCrossSiteRelaxingDefault": null,
-        "network.http.referer.disallowCrossSiteRelaxingDefault.top_navigation": null,
+        "network.http.referer.disallowCrossSiteRelaxingDefault.top_navigation":
+          null,
         "privacy.partition.network_state.ocsp_cache": null,
         "privacy.query_stripping.enabled": null,
         "privacy.query_stripping.enabled.pbmode": null,
@@ -5014,16 +4997,6 @@ var ContentBlockingCategoriesPrefs = {
         case "-lvl2":
           this.CATEGORY_PREFS[type][
             "privacy.annotate_channels.strict_list.enabled"
-          ] = false;
-          break;
-        case "lvl2PBM":
-          this.CATEGORY_PREFS[type][
-            "privacy.annotate_channels.strict_list.pbmode.enabled"
-          ] = true;
-          break;
-        case "-lvl2PBM":
-          this.CATEGORY_PREFS[type][
-            "privacy.annotate_channels.strict_list.pbmode.enabled"
           ] = false;
           break;
         case "rp":
@@ -6137,9 +6110,8 @@ export var AboutHomeStartupCache = {
     let cacheScriptInputStream;
     try {
       this.log.trace("Connecting script stream to pipe.");
-      cacheScriptInputStream = this._cacheEntry.openAlternativeInputStream(
-        "script"
-      );
+      cacheScriptInputStream =
+        this._cacheEntry.openAlternativeInputStream("script");
       lazy.NetUtil.asyncCopy(
         cacheScriptInputStream,
         this.scriptPipe.outputStream,

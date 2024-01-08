@@ -528,10 +528,6 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
   void SetHttpHandlerInitArgs(const HttpHandlerInitArgs& aArgs);
   void SetDeviceModelId(const nsACString& aModelId);
 
-  // Checks if there are any user certs or active smart cards on a different
-  // thread. Updates mSpeculativeConnectEnabled when done.
-  void MaybeEnableSpeculativeConnect();
-
   // We only allow DNSUtils and TRRServiceChannel itself to create
   // TRRServiceChannel.
   friend class TRRServiceChannel;
@@ -740,10 +736,6 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
   // The ratio for dispatching transactions from the focused window.
   float mFocusedWindowTransactionRatio{0.9f};
 
-  // We may disable speculative connect if the browser has user certificates
-  // installed as that might randomly popup the certificate choosing window.
-  Atomic<bool, Relaxed> mSpeculativeConnectEnabled{false};
-
   // If true, the transactions from active tab will be dispatched first.
   bool mActiveTabPriority{true};
 
@@ -786,8 +778,9 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
 
  private:
   [[nodiscard]] nsresult SpeculativeConnectInternal(
-      nsIURI* aURI, nsIPrincipal* aPrincipal, nsIInterfaceRequestor* aCallbacks,
-      bool anonymous);
+      nsIURI* aURI, nsIPrincipal* aPrincipal,
+      Maybe<OriginAttributes>&& aOriginAttributes,
+      nsIInterfaceRequestor* aCallbacks, bool anonymous);
   void ExcludeHttp2OrHttp3Internal(const nsHttpConnectionInfo* ci);
 
   // State for generating channelIds
@@ -865,7 +858,29 @@ class nsHttpsHandler : public nsIHttpProtocolHandler,
   NS_DECL_NSIPROTOCOLHANDLER
   NS_FORWARD_NSIPROXIEDPROTOCOLHANDLER(gHttpHandler->)
   NS_FORWARD_NSIHTTPPROTOCOLHANDLER(gHttpHandler->)
-  NS_FORWARD_NSISPECULATIVECONNECT(gHttpHandler->)
+
+  NS_IMETHOD SpeculativeConnect(nsIURI* aURI, nsIPrincipal* aPrincipal,
+                                nsIInterfaceRequestor* aCallbacks,
+                                bool aAnonymous) override {
+    return gHttpHandler->SpeculativeConnect(aURI, aPrincipal, aCallbacks,
+                                            aAnonymous);
+  }
+
+  NS_IMETHOD SpeculativeConnectWithOriginAttributes(
+      nsIURI* aURI, JS::Handle<JS::Value> originAttributes,
+      nsIInterfaceRequestor* aCallbacks, bool aAnonymous,
+      JSContext* cx) override {
+    return gHttpHandler->SpeculativeConnectWithOriginAttributes(
+        aURI, originAttributes, aCallbacks, aAnonymous, cx);
+  }
+
+  NS_IMETHOD_(void)
+  SpeculativeConnectWithOriginAttributesNative(
+      nsIURI* aURI, mozilla::OriginAttributes&& originAttributes,
+      nsIInterfaceRequestor* aCallbacks, bool aAnonymous) override {
+    gHttpHandler->SpeculativeConnectWithOriginAttributesNative(
+        aURI, std::move(originAttributes), aCallbacks, aAnonymous);
+  }
 
   nsHttpsHandler() = default;
 

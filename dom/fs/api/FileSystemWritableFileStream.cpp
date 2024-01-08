@@ -78,11 +78,14 @@ class WritableFileStreamUnderlyingSinkAlgorithms final
 };
 
 // TODO: Refactor this function, see Bug 1804614
-void WriteImpl(const RefPtr<nsISerialEventTarget>& aTaskQueue,
+void WriteImpl(RefPtr<FileSystemWritableFileStream> aStream,
+               const RefPtr<nsISerialEventTarget>& aTaskQueue,
                nsCOMPtr<nsIInputStream> aInputStream,
                RefPtr<fs::FileSystemThreadSafeStreamOwner>& aOutStreamOwner,
                const Maybe<uint64_t> aPosition,
                const RefPtr<Promise>& aPromise) {
+  auto command = aStream->CreateCommand();
+
   InvokeAsync(
       aTaskQueue, __func__,
       [aTaskQueue, inputStream = std::move(aInputStream), aOutStreamOwner,
@@ -127,7 +130,8 @@ void WriteImpl(const RefPtr<nsISerialEventTarget>& aTaskQueue,
       })
       ->Then(
           GetCurrentSerialEventTarget(), __func__,
-          [aPromise](const Int64Promise::ResolveOrRejectValue& aValue) {
+          [command,
+           aPromise](const Int64Promise::ResolveOrRejectValue& aValue) {
             if (aValue.IsResolve()) {
               aPromise->MaybeResolve(aValue.ResolveValue());
               return;
@@ -146,6 +150,21 @@ void WriteImpl(const RefPtr<nsISerialEventTarget>& aTaskQueue,
 }
 
 }  // namespace
+
+class FileSystemWritableFileStream::Command {
+ public:
+  explicit Command(RefPtr<FileSystemWritableFileStream> aWritableFileStream)
+      : mWritableFileStream(std::move(aWritableFileStream)) {
+    MOZ_ASSERT(mWritableFileStream);
+  }
+
+  NS_INLINE_DECL_REFCOUNTING(FileSystemWritableFileStream::Command)
+
+ private:
+  ~Command() { mWritableFileStream->NoteFinishedCommand(); }
+
+  RefPtr<FileSystemWritableFileStream> mWritableFileStream;
+};
 
 class FileSystemWritableFileStream::CloseHandler {
   enum struct State : uint8_t { Initial = 0, Open, Closing, Closed };
@@ -240,10 +259,11 @@ FileSystemWritableFileStream::FileSystemWritableFileStream(
       mActor(std::move(aActor)),
       mTaskQueue(aTaskQueue),
       mStreamOwner(MakeAndAddRef<fs::FileSystemThreadSafeStreamOwner>(
-          std::move(aStream))),
+          this, std::move(aStream))),
       mWorkerRef(),
       mMetadata(std::move(aMetadata)),
-      mCloseHandler(MakeAndAddRef<CloseHandler>()) {
+      mCloseHandler(MakeAndAddRef<CloseHandler>()),
+      mCommandActive(false) {
   LOG(("Created WritableFileStream %p for fd %p", this, mStreamOwner.get()));
 
   // Connect with the actor directly in the constructor. This way the actor
@@ -257,6 +277,7 @@ FileSystemWritableFileStream::FileSystemWritableFileStream(
 }
 
 FileSystemWritableFileStream::~FileSystemWritableFileStream() {
+  MOZ_ASSERT(!mCommandActive);
   MOZ_ASSERT(IsClosed());
 
   mozilla::DropJSObjects(this);
@@ -413,6 +434,19 @@ void FileSystemWritableFileStream::LastRelease() {
   }
 }
 
+RefPtr<FileSystemWritableFileStream::Command>
+FileSystemWritableFileStream::CreateCommand() {
+  MOZ_ASSERT(!mCommandActive);
+
+  mCommandActive = true;
+
+  return MakeRefPtr<Command>(this);
+}
+
+bool FileSystemWritableFileStream::IsCommandActive() const {
+  return mCommandActive;
+}
+
 void FileSystemWritableFileStream::ClearActor() {
   MOZ_ASSERT(mActor);
 
@@ -430,12 +464,13 @@ bool FileSystemWritableFileStream::IsClosed() const {
 RefPtr<BoolPromise> FileSystemWritableFileStream::BeginClose() {
   using ClosePromise = PFileSystemWritableFileStreamChild::ClosePromise;
   if (mCloseHandler->TestAndSetClosing()) {
-    InvokeAsync(mTaskQueue, __func__,
-                [streamOwner = mStreamOwner]() mutable {
-                  streamOwner->Close();
+    Finish()
+        ->Then(mTaskQueue, __func__,
+               [streamOwner = mStreamOwner]() mutable {
+                 streamOwner->Close();
 
-                  return BoolPromise::CreateAndResolve(true, __func__);
-                })
+                 return BoolPromise::CreateAndResolve(true, __func__);
+               })
         ->Then(GetCurrentSerialEventTarget(), __func__,
                [self = RefPtr(this)](const BoolPromise::ResolveOrRejectValue&) {
                  return self->mTaskQueue->BeginShutdown();
@@ -469,8 +504,6 @@ void FileSystemWritableFileStream::SetWorkerRef(
 
 already_AddRefed<Promise> FileSystemWritableFileStream::Write(
     JSContext* aCx, JS::Handle<JS::Value> aChunk, ErrorResult& aError) {
-  MOZ_ASSERT(IsOpen());
-
   // https://fs.spec.whatwg.org/#create-a-new-filesystemwritablefilestream
   // Step 3. Let writeAlgorithm be an algorithm which takes a chunk argument
   // and returns the result of running the write a chunk algorithm with stream
@@ -492,6 +525,11 @@ already_AddRefed<Promise> FileSystemWritableFileStream::Write(
   RefPtr<Promise> promise = Promise::Create(GetParentObject(), aError);
   if (aError.Failed()) {
     return nullptr;
+  }
+
+  if (!IsOpen()) {
+    promise->MaybeRejectWithTypeError("WritableFileStream closed");
+    return promise.forget();
   }
 
   // Step 3.3. Let command be input.type if input is a WriteParams, ...
@@ -697,6 +735,8 @@ template <typename T>
 void FileSystemWritableFileStream::Write(const T& aData,
                                          const Maybe<uint64_t> aPosition,
                                          const RefPtr<Promise>& aPromise) {
+  MOZ_ASSERT(IsOpen());
+
   auto rejectAndReturn = [&aPromise](const nsresult rv) {
     if (IsFileNotFoundError(rv)) {
       aPromise->MaybeRejectWithNotFoundError("File not found");
@@ -729,7 +769,7 @@ void FileSystemWritableFileStream::Write(const T& aData,
                                                NS_ASSIGNMENT_COPY)),
            rejectAndReturn);
 
-    WriteImpl(mTaskQueue, std::move(inputStream), mStreamOwner, aPosition,
+    WriteImpl(this, mTaskQueue, std::move(inputStream), mStreamOwner, aPosition,
               aPromise);
     return;
   }
@@ -745,7 +785,7 @@ void FileSystemWritableFileStream::Write(const T& aData,
            })),
            rejectAndReturn);
 
-    WriteImpl(mTaskQueue, std::move(inputStream), mStreamOwner, aPosition,
+    WriteImpl(this, mTaskQueue, std::move(inputStream), mStreamOwner, aPosition,
               aPromise);
     return;
   }
@@ -765,13 +805,18 @@ void FileSystemWritableFileStream::Write(const T& aData,
                                                 std::move(dataString))),
          rejectAndReturn);
 
-  WriteImpl(mTaskQueue, std::move(inputStream), mStreamOwner, aPosition,
+  WriteImpl(this, mTaskQueue, std::move(inputStream), mStreamOwner, aPosition,
             aPromise);
 }
 
 void FileSystemWritableFileStream::Seek(uint64_t aPosition,
                                         const RefPtr<Promise>& aPromise) {
+  MOZ_ASSERT(IsOpen());
+
   LOG_VERBOSE(("%p: Seeking to %" PRIu64, mStreamOwner.get(), aPosition));
+
+  auto command = CreateCommand();
+
   InvokeAsync(mTaskQueue, __func__,
               [aPosition, streamOwner = mStreamOwner]() mutable {
                 QM_TRY(MOZ_TO_RESULT(streamOwner->Seek(aPosition)),
@@ -779,24 +824,29 @@ void FileSystemWritableFileStream::Seek(uint64_t aPosition,
 
                 return BoolPromise::CreateAndResolve(true, __func__);
               })
-      ->Then(GetCurrentSerialEventTarget(), __func__,
-             [aPromise](const BoolPromise::ResolveOrRejectValue& aValue) {
-               if (aValue.IsReject()) {
-                 auto rv = aValue.RejectValue();
-                 if (IsFileNotFoundError(rv)) {
-                   aPromise->MaybeRejectWithNotFoundError("File not found");
-                   return;
-                 }
-                 aPromise->MaybeReject(rv);
-                 return;
-               }
-               MOZ_ASSERT(aValue.IsResolve());
-               aPromise->MaybeResolveWithUndefined();
-             });
+      ->Then(
+          GetCurrentSerialEventTarget(), __func__,
+          [command, aPromise](const BoolPromise::ResolveOrRejectValue& aValue) {
+            if (aValue.IsReject()) {
+              auto rv = aValue.RejectValue();
+              if (IsFileNotFoundError(rv)) {
+                aPromise->MaybeRejectWithNotFoundError("File not found");
+                return;
+              }
+              aPromise->MaybeReject(rv);
+              return;
+            }
+            MOZ_ASSERT(aValue.IsResolve());
+            aPromise->MaybeResolveWithUndefined();
+          });
 }
 
 void FileSystemWritableFileStream::Truncate(uint64_t aSize,
                                             const RefPtr<Promise>& aPromise) {
+  MOZ_ASSERT(IsOpen());
+
+  auto command = CreateCommand();
+
   InvokeAsync(mTaskQueue, __func__,
               [aSize, streamOwner = mStreamOwner]() mutable {
                 QM_TRY(MOZ_TO_RESULT(streamOwner->Truncate(aSize)),
@@ -804,15 +854,32 @@ void FileSystemWritableFileStream::Truncate(uint64_t aSize,
 
                 return BoolPromise::CreateAndResolve(true, __func__);
               })
-      ->Then(GetCurrentSerialEventTarget(), __func__,
-             [aPromise](const BoolPromise::ResolveOrRejectValue& aValue) {
-               if (aValue.IsReject()) {
-                 aPromise->MaybeReject(aValue.RejectValue());
-                 return;
-               }
+      ->Then(
+          GetCurrentSerialEventTarget(), __func__,
+          [command, aPromise](const BoolPromise::ResolveOrRejectValue& aValue) {
+            if (aValue.IsReject()) {
+              aPromise->MaybeReject(aValue.RejectValue());
+              return;
+            }
 
-               aPromise->MaybeResolveWithUndefined();
-             });
+            aPromise->MaybeResolveWithUndefined();
+          });
+}
+
+void FileSystemWritableFileStream::NoteFinishedCommand() {
+  MOZ_ASSERT(mCommandActive);
+
+  mCommandActive = false;
+
+  mFinishPromiseHolder.ResolveIfExists(true, __func__);
+}
+
+RefPtr<BoolPromise> FileSystemWritableFileStream::Finish() {
+  if (!mCommandActive) {
+    return BoolPromise::CreateAndResolve(true, __func__);
+  }
+
+  return mFinishPromiseHolder.Ensure(__func__);
 }
 
 NS_IMPL_ISUPPORTS_CYCLE_COLLECTION_INHERITED_0(

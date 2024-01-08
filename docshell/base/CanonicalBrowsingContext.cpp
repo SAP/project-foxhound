@@ -328,6 +328,7 @@ void CanonicalBrowsingContext::ReplacedBy(
   txn.SetSuspendMediaWhenInactive(GetSuspendMediaWhenInactive());
   txn.SetDisplayMode(GetDisplayMode());
   txn.SetForceDesktopViewport(GetForceDesktopViewport());
+  txn.SetIsUnderHiddenEmbedderElement(GetIsUnderHiddenEmbedderElement());
 
   // Propagate the default load flags so that the TRR mode flags are forwarded
   // to the new browsing context. See bug 1828643.
@@ -1045,12 +1046,13 @@ void CanonicalBrowsingContext::NotifyOnHistoryReload(
   } else if (!mLoadingEntries.IsEmpty()) {
     const LoadingSessionHistoryEntry& loadingEntry =
         mLoadingEntries.LastElement();
+    uint64_t loadId = loadingEntry.mLoadId;
     aLoadState.emplace(
         WrapMovingNotNull(RefPtr{CreateLoadInfo(loadingEntry.mEntry)}));
     aReloadActiveEntry.emplace(false);
     if (aForceReload) {
       SessionHistoryEntry::LoadingEntry* entry =
-          SessionHistoryEntry::GetByLoadId(loadingEntry.mLoadId);
+          SessionHistoryEntry::GetByLoadId(loadId);
       if (entry) {
         shistory->RemoveFrameEntries(entry->mEntry);
       }

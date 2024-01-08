@@ -25,6 +25,7 @@
 #include "gc/ObjectKind-inl.h"
 #include "vm/BytecodeIterator-inl.h"
 #include "vm/BytecodeLocation-inl.h"
+#include "vm/JSObject-inl.h"
 
 using namespace js;
 using namespace js::jit;
@@ -322,7 +323,7 @@ bool WarpBuilder::buildInline() {
 MInstruction* WarpBuilder::buildNamedLambdaEnv(MDefinition* callee,
                                                MDefinition* env,
                                                NamedLambdaObject* templateObj) {
-  MOZ_ASSERT(!templateObj->hasDynamicSlots());
+  MOZ_ASSERT(templateObj->numDynamicSlots() == 0);
 
   MInstruction* namedLambda = MNewNamedLambdaObject::New(alloc(), templateObj);
   current->add(namedLambda);
@@ -1846,23 +1847,6 @@ bool WarpBuilder::build_GetName(BytecodeLocation loc) {
 bool WarpBuilder::build_GetGName(BytecodeLocation loc) {
   MOZ_ASSERT(!script_->hasNonSyntacticScope());
 
-  // Try to optimize undefined/NaN/Infinity.
-  PropertyName* name = loc.getPropertyName(script_);
-  const JSAtomState& names = mirGen().runtime->names();
-
-  if (name == names.undefined) {
-    pushConstant(UndefinedValue());
-    return true;
-  }
-  if (name == names.NaN) {
-    pushConstant(JS::NaNValue());
-    return true;
-  }
-  if (name == names.Infinity) {
-    pushConstant(JS::InfinityValue());
-    return true;
-  }
-
   MDefinition* env = globalLexicalEnvConstant();
   return buildIC(loc, CacheKind::GetName, {env});
 }
@@ -2497,7 +2481,16 @@ void WarpBuilder::buildCheckLexicalOp(BytecodeLocation loc) {
   current->push(lexicalCheck);
 
   if (snapshot().bailoutInfo().failedLexicalCheck()) {
+    // If we have previously had a failed lexical check in Ion, we want to avoid
+    // hoisting any lexical checks, which can cause spurious failures. In this
+    // case, we also have to be careful not to hoist any loads of this lexical
+    // past the check. For unaliased lexical variables, we can set the local
+    // slot to create a dependency (see below). For aliased lexicals, that
+    // doesn't work, so we disable LICM instead.
     lexicalCheck->setNotMovable();
+    if (op == JSOp::CheckAliasedLexical) {
+      mirGen().disableLICM();
+    }
   }
 
   if (op == JSOp::CheckLexical) {
@@ -3034,7 +3027,7 @@ bool WarpBuilder::build_Rest(BytecodeLocation loc) {
     unsigned numRest = numActuals > numFormals ? numActuals - numFormals : 0;
 
     // TODO: support pre-tenuring.
-    gc::InitialHeap heap = gc::DefaultHeap;
+    gc::Heap heap = gc::Heap::Default;
 
     // Allocate an array of the correct size.
     MInstruction* newArray;
@@ -3355,7 +3348,7 @@ bool WarpBuilder::buildIC(BytecodeLocation loc, CacheKind kind,
     case CacheKind::NewObject: {
       auto* templateConst = constant(NullValue());
       MNewObject* ins = MNewObject::NewVM(
-          alloc(), templateConst, gc::DefaultHeap, MNewObject::ObjectLiteral);
+          alloc(), templateConst, gc::Heap::Default, MNewObject::ObjectLiteral);
       current->add(ins);
       current->push(ins);
       return resumeAfter(ins, loc);
@@ -3364,7 +3357,7 @@ bool WarpBuilder::buildIC(BytecodeLocation loc, CacheKind kind,
       uint32_t length = loc.getNewArrayLength();
       MConstant* templateConst = constant(NullValue());
       MNewArray* ins =
-          MNewArray::NewVM(alloc(), length, templateConst, gc::DefaultHeap);
+          MNewArray::NewVM(alloc(), length, templateConst, gc::Heap::Default);
       current->add(ins);
       current->push(ins);
       return true;

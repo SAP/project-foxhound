@@ -310,7 +310,6 @@ module.exports = {
         "toolkit/components/narrate/Narrator.jsm",
         "toolkit/components/nimbus/**",
         "toolkit/components/normandy/**",
-        "toolkit/components/osfile/**",
         "toolkit/components/passwordmgr/**",
         "toolkit/components/pdfjs/**",
         "toolkit/components/pictureinpicture/**",
@@ -614,13 +613,6 @@ module.exports = {
       ],
     },
     {
-      // Turn off the osfile rule for osfile.
-      files: ["toolkit/components/osfile/**"],
-      rules: {
-        "mozilla/reject-osfile": "off",
-      },
-    },
-    {
       // Exempt files with these paths since they have to use http for full coverage
       files: httpTestingPaths.map(path => `${path}**`),
       rules: {
@@ -699,7 +691,7 @@ module.exports = {
         "browser/base/content/test/sanitize/browser_sanitize-history.js",
         "devtools/client/shared/test/shared-head.js",
         "devtools/client/shared/test/head.js",
-        "browser/tools/mozscreenshots/mozscreenshots/extension/configurations/ControlCenter.jsm",
+        "browser/tools/mozscreenshots/mozscreenshots/extension/configurations/ControlCenter.sys.mjs",
         // uses new HttpServer which doesn't support https
         "browser/base/content/test/favicons/browser_favicon_nostore.js",
         // That are all files that produes warnings in the existing test infrastructure.
@@ -822,7 +814,7 @@ module.exports = {
         "browser/components/firefoxview/tests/browser/browser_recently_closed_tabs.js",
         "browser/components/newtab/content-src/components/DiscoveryStreamComponents/TopSites/TopSites.jsx ",
         "browser/components/newtab/content-src/components/TopSites/TopSiteForm.jsx ",
-        "browser/components/newtab/lib/CFRMessageProvider.jsm ",
+        "browser/components/newtab/lib/CFRMessageProvider.sys.mjs ",
         "browser/components/newtab/lib/PlacesFeed.jsm ",
         "browser/components/originattributes/test/browser/browser_broadcastChannel.js",
         "browser/components/originattributes/test/browser/browser_cache.js",

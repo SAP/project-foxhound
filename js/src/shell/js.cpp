@@ -151,6 +151,7 @@
 #include "js/Modules.h"  // JS::GetModulePrivate, JS::SetModule{DynamicImport,Metadata,Resolve}Hook, JS::SetModulePrivate
 #include "js/Object.h"  // JS::GetClass, JS::GetCompartment, JS::GetReservedSlot, JS::SetReservedSlot
 #include "js/Principals.h"
+#include "js/Printer.h"  // QuoteString
 #include "js/Printf.h"
 #include "js/PropertyAndElement.h"  // JS_DefineElement, JS_DefineFunction, JS_DefineFunctions, JS_DefineProperties, JS_DefineProperty, JS_GetElement, JS_GetProperty, JS_GetPropertyById, JS_HasProperty, JS_SetElement, JS_SetProperty, JS_SetPropertyById
 #include "js/PropertySpec.h"
@@ -196,7 +197,6 @@
 #include "vm/Modules.h"
 #include "vm/Monitor.h"
 #include "vm/MutexIDs.h"
-#include "vm/Printer.h"        // QuoteString
 #include "vm/PromiseObject.h"  // js::PromiseObject
 #include "vm/Shape.h"
 #include "vm/SharedArrayObject.h"
@@ -627,13 +627,13 @@ bool shell::enableToSource = false;
 bool shell::enablePropertyErrorMessageFix = false;
 bool shell::enableIteratorHelpers = false;
 bool shell::enableShadowRealms = false;
+bool shell::enableArrayFromAsync = true;
 #ifdef NIGHTLY_BUILD
 bool shell::enableArrayGrouping = false;
-bool shell::enableArrayFromAsync = false;
+// Pref for String.prototype.{is,to}WellFormed() methods.
+bool shell::enableWellFormedUnicodeStrings = false;
 #endif
-#ifdef ENABLE_CHANGE_ARRAY_BY_COPY
 bool shell::enableChangeArrayByCopy = false;
-#endif
 #ifdef ENABLE_NEW_SET_METHODS
 bool shell::enableNewSetMethods = true;
 #endif
@@ -828,6 +828,10 @@ static bool TraceGrayRoots(JSTracer* trc, SliceBudget& budget, void* data) {
   return true;
 }
 
+static inline JSString* NewStringCopyUTF8(JSContext* cx, const char* chars) {
+  return JS_NewStringCopyUTF8N(cx, JS::UTF8Chars(chars, strlen(chars)));
+}
+
 static mozilla::UniqueFreePtr<char[]> GetLine(FILE* file, const char* prompt) {
 #ifdef EDITLINE
   /*
@@ -1013,7 +1017,7 @@ static bool RegisterScriptPathWithModuleLoader(JSContext* cx,
   // script's filename so that the module loader can use it to resolve
   // relative imports.
 
-  RootedString path(cx, JS_NewStringCopyZ(cx, filename));
+  RootedString path(cx, NewStringCopyUTF8(cx, filename));
   if (!path) {
     return false;
   }
@@ -1114,7 +1118,7 @@ enum class CompileUtf8 {
                                     bool compileOnly) {
   ShellContext* sc = GetShellContext(cx);
 
-  RootedString path(cx, JS_NewStringCopyZ(cx, filename));
+  RootedString path(cx, NewStringCopyUTF8(cx, filename));
   if (!path) {
     return false;
   }
@@ -1653,11 +1657,9 @@ PrintTaintedString(JSContext* cx, RootedValue *result) {
           GetLine(in, startline == lineno ? "js> " : "");
       if (!line) {
         if (errno) {
-          /*
-           * Use Latin1 variant here because strerror(errno)'s
-           * encoding depends on the user's C locale.
-           */
-          JS_ReportErrorLatin1(cx, "%s", strerror(errno));
+          if (UniqueChars error = SystemErrorMessage(cx, errno)) {
+            JS_ReportErrorUTF8(cx, "%s", error.get());
+          }
           return false;
         }
         hitEOF = true;
@@ -1720,31 +1722,14 @@ enum FileKind {
   FileModule,
 };
 
-static void ReportCantOpenErrorUnknownEncoding(JSContext* cx,
-                                               const char* filename) {
-  /*
-   * Filenames are in some random system encoding.  *Probably* it's UTF-8,
-   * but no guarantees.
-   *
-   * strerror(errno)'s encoding, in contrast, depends on the user's C locale.
-   *
-   * Latin-1 is possibly wrong for both of these -- but at least if it's
-   * wrong it'll produce mojibake *safely*.  Run with Latin-1 til someone
-   * complains.
-   */
-  JS_ReportErrorNumberLatin1(cx, my_GetErrorMessage, nullptr, JSSMSG_CANT_OPEN,
-                             filename, strerror(errno));
-}
-
 [[nodiscard]] static bool Process(JSContext* cx, const char* filename,
                                   bool forceTTY, FileKind kind) {
   FILE* file;
   if (forceTTY || !filename || strcmp(filename, "-") == 0) {
     file = stdin;
   } else {
-    file = fopen(filename, "rb");
+    file = OpenFile(cx, filename, "rb");
     if (!file) {
-      ReportCantOpenErrorUnknownEncoding(cx, filename);
       return false;
     }
   }
@@ -1861,11 +1846,12 @@ static bool CreateMappedArrayBuffer(JSContext* cx, unsigned argc, Value* vp) {
   // I need a file at a known location, and the only good way I know of to do
   // that right now is to include it in the repo alongside the test script.
   // Bug 944164 would introduce an alternative.
-  JSString* filenameStr = ResolvePath(cx, rawFilenameStr, ScriptRelative);
+  Rooted<JSString*> filenameStr(
+      cx, ResolvePath(cx, rawFilenameStr, ScriptRelative));
   if (!filenameStr) {
     return false;
   }
-  UniqueChars filename = JS_EncodeStringToLatin1(cx, filenameStr);
+  UniqueChars filename = JS_EncodeStringToUTF8(cx, filenameStr);
   if (!filename) {
     return false;
   }
@@ -1891,9 +1877,8 @@ static bool CreateMappedArrayBuffer(JSContext* cx, unsigned argc, Value* vp) {
     }
   }
 
-  FILE* file = fopen(filename.get(), "rb");
+  FILE* file = OpenFile(cx, filename.get(), "rb");
   if (!file) {
-    ReportCantOpenErrorUnknownEncoding(cx, filename.get());
     return false;
   }
   AutoCloseFile autoClose(file);
@@ -2069,7 +2054,7 @@ static bool LoadScript(JSContext* cx, unsigned argc, Value* vp,
       return false;
     }
 
-    UniqueChars filename = JS_EncodeStringToLatin1(cx, str);
+    UniqueChars filename = JS_EncodeStringToUTF8(cx, str);
     if (!filename) {
       return false;
     }
@@ -2633,16 +2618,13 @@ static bool Evaluate(JSContext* cx, unsigned argc, Value* vp) {
 }
 
 JSString* js::shell::FileAsString(JSContext* cx, JS::HandleString pathnameStr) {
-  UniqueChars pathname = JS_EncodeStringToLatin1(cx, pathnameStr);
+  UniqueChars pathname = JS_EncodeStringToUTF8(cx, pathnameStr);
   if (!pathname) {
     return nullptr;
   }
 
-  FILE* file;
-
-  file = fopen(pathname.get(), "rb");
+  FILE* file = OpenFile(cx, pathname.get(), "rb");
   if (!file) {
-    ReportCantOpenErrorUnknownEncoding(cx, pathname.get());
     return nullptr;
   }
 
@@ -2659,28 +2641,8 @@ JSString* js::shell::FileAsString(JSContext* cx, JS::HandleString pathnameStr) {
     return nullptr;
   }
 
-  if (fseek(file, 0, SEEK_END) != 0) {
-    pathname = JS_EncodeStringToUTF8(cx, pathnameStr);
-    if (!pathname) {
-      return nullptr;
-    }
-    JS_ReportErrorUTF8(cx, "can't seek end of %s", pathname.get());
-    return nullptr;
-  }
-
-  long endPos = ftell(file);
-  if (endPos < 0) {
-    JS_ReportErrorUTF8(cx, "can't read length of %s", pathname.get());
-    return nullptr;
-  }
-
-  size_t len = endPos;
-  if (fseek(file, 0, SEEK_SET) != 0) {
-    pathname = JS_EncodeStringToUTF8(cx, pathnameStr);
-    if (!pathname) {
-      return nullptr;
-    }
-    JS_ReportErrorUTF8(cx, "can't seek start of %s", pathname.get());
+  size_t len;
+  if (!FileSize(cx, pathname.get(), file, &len)) {
     return nullptr;
   }
 
@@ -2690,17 +2652,7 @@ JSString* js::shell::FileAsString(JSContext* cx, JS::HandleString pathnameStr) {
     return nullptr;
   }
 
-  size_t cc = fread(buf.get(), 1, len, file);
-  if (cc != len) {
-    if (ptrdiff_t(cc) < 0) {
-      ReportCantOpenErrorUnknownEncoding(cx, pathname.get());
-    } else {
-      pathname = JS_EncodeStringToUTF8(cx, pathnameStr);
-      if (!pathname) {
-        return nullptr;
-      }
-      JS_ReportErrorUTF8(cx, "can't read %s: short read", pathname.get());
-    }
+  if (!ReadFile(cx, pathname.get(), file, buf.get(), len)) {
     return nullptr;
   }
 
@@ -2709,10 +2661,6 @@ JSString* js::shell::FileAsString(JSContext* cx, JS::HandleString pathnameStr) {
                                            &len, js::MallocArena)
           .get());
   if (!ucbuf) {
-    pathname = JS_EncodeStringToUTF8(cx, pathnameStr);
-    if (!pathname) {
-      return nullptr;
-    }
     JS_ReportErrorUTF8(cx, "Invalid UTF-8 in file '%s'", pathname.get());
     return nullptr;
   }
@@ -2757,8 +2705,7 @@ static bool Run(JSContext* cx, unsigned argc, Value* vp) {
   RootedScript script(cx);
   int64_t startClock = PRMJ_Now();
   {
-    /* FIXME: This should use UTF-8 (bug 987069). */
-    UniqueChars filename = JS_EncodeStringToLatin1(cx, str);
+    UniqueChars filename = JS_EncodeStringToUTF8(cx, str);
     if (!filename) {
       return false;
     }
@@ -3438,11 +3385,12 @@ static bool DisassFile(JSContext* cx, unsigned argc, Value* vp) {
   }
 
   // We should change DisassembleOptionParser to store CallArgs.
-  JSString* str = JS::ToString(cx, HandleValue::fromMarkedLocation(&p.argv[0]));
+  Rooted<JSString*> str(
+      cx, JS::ToString(cx, HandleValue::fromMarkedLocation(&p.argv[0])));
   if (!str) {
     return false;
   }
-  UniqueChars filename = JS_EncodeStringToLatin1(cx, str);
+  UniqueChars filename = JS_EncodeStringToUTF8(cx, str);
   if (!filename) {
     return false;
   }
@@ -3502,10 +3450,8 @@ static bool DisassWithSrc(JSContext* cx, unsigned argc, Value* vp) {
       return false;
     }
 
-    FILE* file = fopen(script->filename(), "rb");
+    FILE* file = OpenFile(cx, script->filename(), "rb");
     if (!file) {
-      /* FIXME: script->filename() should become UTF-8 (bug 987069). */
-      ReportCantOpenErrorUnknownEncoding(cx, script->filename());
       return false;
     }
     auto closeFile = MakeScopeExit([file] { fclose(file); });
@@ -3523,8 +3469,7 @@ static bool DisassWithSrc(JSContext* cx, unsigned argc, Value* vp) {
     for (line1 = 0; line1 < line2 - 1; line1++) {
       char* tmp = fgets(linebuf, lineBufLen, file);
       if (!tmp) {
-        /* FIXME: This should use UTF-8 (bug 987069). */
-        JS_ReportErrorLatin1(cx, "failed to read %s fully", script->filename());
+        JS_ReportErrorUTF8(cx, "failed to read %s fully", script->filename());
         return false;
       }
     }
@@ -3549,13 +3494,8 @@ static bool DisassWithSrc(JSContext* cx, unsigned argc, Value* vp) {
         bupline = 0;
         while (line1 < line2) {
           if (!fgets(linebuf, lineBufLen, file)) {
-            /*
-             * FIXME: script->filename() should become UTF-8
-             *        (bug 987069).
-             */
-            JS_ReportErrorNumberLatin1(cx, my_GetErrorMessage, nullptr,
-                                       JSSMSG_UNEXPECTED_EOF,
-                                       script->filename());
+            JS_ReportErrorNumberUTF8(cx, my_GetErrorMessage, nullptr,
+                                     JSSMSG_UNEXPECTED_EOF, script->filename());
             return false;
           }
           line1++;
@@ -4019,13 +3959,12 @@ static void SetStandardRealmOptions(JS::RealmOptions& options) {
       .setPropertyErrorMessageFixEnabled(enablePropertyErrorMessageFix)
       .setIteratorHelpersEnabled(enableIteratorHelpers)
       .setShadowRealmsEnabled(enableShadowRealms)
+      .setArrayFromAsyncEnabled(enableArrayFromAsync)
 #ifdef NIGHTLY_BUILD
       .setArrayGroupingEnabled(enableArrayGrouping)
-      .setArrayFromAsyncEnabled(enableArrayFromAsync)
+      .setWellFormedUnicodeStringsEnabled(enableWellFormedUnicodeStrings)
 #endif
-#ifdef ENABLE_CHANGE_ARRAY_BY_COPY
       .setChangeArrayByCopyEnabled(enableChangeArrayByCopy)
-#endif
 #ifdef ENABLE_NEW_SET_METHODS
       .setNewSetMethodsEnabled(enableNewSetMethods)
 #endif
@@ -5004,7 +4943,7 @@ static bool ParseModule(JSContext* cx, unsigned argc, Value* vp) {
     }
 
     RootedString str(cx, args[1].toString());
-    filename = JS_EncodeStringToLatin1(cx, str);
+    filename = JS_EncodeStringToUTF8(cx, str);
     if (!filename) {
       return false;
     }
@@ -5026,9 +4965,7 @@ static bool ParseModule(JSContext* cx, unsigned argc, Value* vp) {
   }
 
   AutoReportFrontendContext fc(cx);
-  RootedObject module(
-      cx, frontend::CompileModule(cx, &fc, cx->stackLimitForCurrentPrincipal(),
-                                  options, srcBuf));
+  RootedObject module(cx, frontend::CompileModule(cx, &fc, options, srcBuf));
   if (!module) {
     return false;
   }
@@ -5224,7 +5161,7 @@ static bool InstantiateModuleStencilXDR(JSContext* cx, uint32_t argc,
   /* Deserialize the stencil from XDR. */
   JS::TranscodeRange xdrRange(xdrObj->buffer(), xdrObj->bufferLength());
   bool succeeded = false;
-  if (!stencil.deserializeStencils(&fc, input.get(), xdrRange, &succeeded)) {
+  if (!stencil.deserializeStencils(&fc, options, xdrRange, &succeeded)) {
     return false;
   }
   if (!succeeded) {
@@ -5484,10 +5421,10 @@ static bool DumpAST(JSContext* cx, const JS::ReadOnlyCompileOptions& options,
   using namespace js::frontend;
 
   AutoReportFrontendContext fc(cx);
-  Parser<FullParseHandler, Unit> parser(
-      &fc, cx->stackLimitForCurrentPrincipal(), options, units, length,
-      /* foldConstants = */ false, compilationState,
-      /* syntaxParser = */ nullptr);
+  Parser<FullParseHandler, Unit> parser(&fc, options, units, length,
+                                        /* foldConstants = */ false,
+                                        compilationState,
+                                        /* syntaxParser = */ nullptr);
   if (!parser.checkOptions()) {
     return false;
   }
@@ -5540,12 +5477,10 @@ template <typename Unit>
   UniquePtr<frontend::ExtensibleCompilationStencil> stencil;
   if (goal == frontend::ParseGoal::Script) {
     stencil = frontend::CompileGlobalScriptToExtensibleStencil(
-        cx, &fc, cx->stackLimitForCurrentPrincipal(), input.get(), &scopeCache,
-        srcBuf, ScopeKind::Global);
+        cx, &fc, input.get(), &scopeCache, srcBuf, ScopeKind::Global);
   } else {
     stencil = frontend::ParseModuleToExtensibleStencil(
-        cx, &fc, cx->stackLimitForCurrentPrincipal(), cx->tempLifoAlloc(),
-        input.get(), &scopeCache, srcBuf);
+        cx, &fc, cx->tempLifoAlloc(), input.get(), &scopeCache, srcBuf);
   }
 
   if (!stencil) {
@@ -5713,8 +5648,7 @@ static bool FrontendTest(JSContext* cx, unsigned argc, Value* vp,
               cx, frontend::CompilationInput(options));
           UniquePtr<frontend::ExtensibleCompilationStencil> stencil;
           if (!Smoosh::tryCompileGlobalScriptToExtensibleStencil(
-                  cx, &fc, cx->stackLimitForCurrentPrincipal(), input.get(),
-                  srcBuf, stencil)) {
+                  cx, &fc, input.get(), srcBuf, stencil)) {
             return false;
           }
           if (!stencil) {
@@ -5859,7 +5793,7 @@ static bool SyntaxParse(JSContext* cx, unsigned argc, Value* vp) {
   }
 
   Parser<frontend::SyntaxParseHandler, char16_t> parser(
-      &fc, cx->stackLimitForCurrentPrincipal(), options, chars, length,
+      &fc, options, chars, length,
       /* foldConstants = */ false, compilationState,
       /* syntaxParser = */ nullptr);
   if (!parser.checkOptions()) {
@@ -6615,7 +6549,7 @@ static bool ThisFilename(JSContext* cx, unsigned argc, Value* vp) {
     return true;
   }
 
-  JSString* str = JS_NewStringCopyZ(cx, filename.get());
+  JSString* str = NewStringCopyUTF8(cx, filename.get());
   if (!str) {
     return false;
   }
@@ -6972,9 +6906,14 @@ class ShellSourceHook : public SourceHook {
     MOZ_ASSERT((twoByteSource != nullptr) != (utf8Source != nullptr),
                "must be called requesting only one of UTF-8 or UTF-16 source");
 
-    RootedString str(cx, JS_NewStringCopyZ(cx, filename));
-    if (!str) {
-      return false;
+    RootedString str(cx);
+    if (filename) {
+      str = NewStringCopyUTF8(cx, filename);
+      if (!str) {
+        return false;
+      }
+    } else {
+      str = JS_GetEmptyString(cx);
     }
     RootedValue filenameValue(cx, StringValue(str));
 
@@ -7776,24 +7715,6 @@ done:
   }
 }
 
-static bool EnsureLatin1CharsLinearString(JSContext* cx, HandleValue value,
-                                          UniqueChars* result) {
-  if (!value.isString()) {
-    result->reset(nullptr);
-    return true;
-  }
-  RootedString str(cx, value.toString());
-  if (!str->isLinear() || !str->hasLatin1Chars()) {
-    JS_ReportErrorASCII(cx,
-                        "only latin1 chars and linear strings are expected");
-    return false;
-  }
-
-  // Use JS_EncodeStringToLatin1 to null-terminate.
-  *result = JS_EncodeStringToLatin1(cx, str);
-  return !!*result;
-}
-
 static bool ConsumeBufferSource(JSContext* cx, JS::HandleObject obj,
                                 JS::MimeType, JS::StreamConsumer* consumer) {
   {
@@ -7802,8 +7723,12 @@ static bool ConsumeBufferSource(JSContext* cx, JS::HandleObject obj,
       return false;
     }
     UniqueChars urlChars;
-    if (!EnsureLatin1CharsLinearString(cx, url, &urlChars)) {
-      return false;
+    if (url.isString()) {
+      Rooted<JSString*> str(cx, url.toString());
+      urlChars = JS_EncodeStringToUTF8(cx, str);
+      if (!urlChars) {
+        return false;
+      }
     }
 
     RootedValue mapUrl(cx);
@@ -7811,8 +7736,12 @@ static bool ConsumeBufferSource(JSContext* cx, JS::HandleObject obj,
       return false;
     }
     UniqueChars mapUrlChars;
-    if (!EnsureLatin1CharsLinearString(cx, mapUrl, &mapUrlChars)) {
-      return false;
+    if (mapUrl.isString()) {
+      Rooted<JSString*> str(cx, mapUrl.toString());
+      mapUrlChars = JS_EncodeStringToUTF8(cx, str);
+      if (!mapUrlChars) {
+        return false;
+      }
     }
 
     consumer->noteResponseURLs(urlChars.get(), mapUrlChars.get());
@@ -8195,7 +8124,7 @@ class ShellAutoEntryMonitor : JS::dbg::AutoEntryMonitor {
 
     for (size_t i = 0; i < log.length(); i++) {
       char* name = log[i].get();
-      RootedString string(cx, Atomize(cx, name, strlen(name)));
+      RootedString string(cx, AtomizeUTF8Chars(cx, name, strlen(name)));
       if (!string) {
         return false;
       }
@@ -10542,16 +10471,24 @@ static bool BindScriptArgs(JSContext* cx, OptionParser* op) {
 
   for (size_t i = 0; !msr.empty(); msr.popFront(), ++i) {
     const char* scriptArg = msr.front();
-    JS::RootedString str(cx, JS_NewStringCopyZ(cx, scriptArg));
+    UniqueChars scriptArgUtf8 = JS::EncodeNarrowToUtf8(cx, scriptArg);
+    if (!scriptArgUtf8) {
+      return false;
+    }
+    RootedString str(cx, NewStringCopyUTF8(cx, scriptArgUtf8.get()));
     if (!str || !JS_DefineElement(cx, scriptArgs, i, str, JSPROP_ENUMERATE)) {
       return false;
     }
   }
 
-  const char* scriptPath = op->getStringArg("script");
   RootedValue scriptPathValue(cx);
-  if (scriptPath) {
-    RootedString scriptPathString(cx, JS_NewStringCopyZ(cx, scriptPath));
+  if (const char* scriptPath = op->getStringArg("script")) {
+    UniqueChars scriptPathUtf8 = JS::EncodeNarrowToUtf8(cx, scriptPath);
+    if (!scriptPathUtf8) {
+      return false;
+    }
+    RootedString scriptPathString(cx,
+                                  NewStringCopyUTF8(cx, scriptPathUtf8.get()));
     if (!scriptPathString) {
       return false;
     }
@@ -10625,8 +10562,11 @@ auto minVal(T a, Ts... args) {
     size_t minArgno = minVal(ppArgno, fpArgno, ufpArgno, ccArgno, mpArgno);
 
     if (ppArgno == minArgno) {
-      char* path = preludePaths.front();
-      if (!Process(cx, path, false, PreludeScript)) {
+      UniqueChars path = JS::EncodeNarrowToUtf8(cx, preludePaths.front());
+      if (!path) {
+        return false;
+      }
+      if (!Process(cx, path.get(), false, PreludeScript)) {
         return false;
       }
 
@@ -10635,8 +10575,11 @@ auto minVal(T a, Ts... args) {
     }
 
     if (fpArgno == minArgno) {
-      char* path = filePaths.front();
-      if (!Process(cx, path, false, FileScript)) {
+      UniqueChars path = JS::EncodeNarrowToUtf8(cx, filePaths.front());
+      if (!path) {
+        return false;
+      }
+      if (!Process(cx, path.get(), false, FileScript)) {
         return false;
       }
 
@@ -10645,8 +10588,11 @@ auto minVal(T a, Ts... args) {
     }
 
     if (ufpArgno == minArgno) {
-      char* path = utf16FilePaths.front();
-      if (!Process(cx, path, false, FileScriptUtf16)) {
+      UniqueChars path = JS::EncodeNarrowToUtf8(cx, utf16FilePaths.front());
+      if (!path) {
+        return false;
+      }
+      if (!Process(cx, path.get(), false, FileScriptUtf16)) {
         return false;
       }
 
@@ -10655,7 +10601,10 @@ auto minVal(T a, Ts... args) {
     }
 
     if (ccArgno == minArgno) {
-      const char* code = codeChunks.front();
+      UniqueChars code = JS::EncodeNarrowToUtf8(cx, codeChunks.front());
+      if (!code) {
+        return false;
+      }
 
       // Command line scripts are always parsed with full-parse to evaluate
       // conditions which might filter code coverage conditions.
@@ -10663,7 +10612,8 @@ auto minVal(T a, Ts... args) {
       opts.setFileAndLine("-e", 1).setForceFullParse();
 
       JS::SourceText<Utf8Unit> srcBuf;
-      if (!srcBuf.init(cx, code, strlen(code), JS::SourceOwnership::Borrowed)) {
+      if (!srcBuf.init(cx, code.get(), strlen(code.get()),
+                       JS::SourceOwnership::Borrowed)) {
         return false;
       }
 
@@ -10682,8 +10632,11 @@ auto minVal(T a, Ts... args) {
 
     MOZ_ASSERT(mpArgno == minArgno);
 
-    char* path = modulePaths.front();
-    if (!Process(cx, path, false, FileModule)) {
+    UniqueChars path = JS::EncodeNarrowToUtf8(cx, modulePaths.front());
+    if (!path) {
+      return false;
+    }
+    if (!Process(cx, path.get(), false, FileModule)) {
       return false;
     }
 
@@ -10696,7 +10649,11 @@ auto minVal(T a, Ts... args) {
 
   /* The |script| argument is processed after all options. */
   if (const char* path = op->getStringArg("script")) {
-    if (!Process(cx, path, false, FileScript)) {
+    UniqueChars pathUtf8 = JS::EncodeNarrowToUtf8(cx, path);
+    if (!pathUtf8) {
+      return false;
+    }
+    if (!Process(cx, pathUtf8.get(), false, FileScript)) {
       return false;
     }
   }
@@ -11166,7 +11123,7 @@ int main(int argc, char** argv) {
 
   // Use a larger jemalloc page cache. This should match the value for browser
   // foreground processes in ContentChild::RecvNotifyProcessPriorityChanged.
-  moz_set_max_dirty_page_modifier(3);
+  moz_set_max_dirty_page_modifier(4);
 
   OptionParser op("Usage: {progname} [options] [[script] scriptArgs*]");
   if (!InitOptionParser(op)) {
@@ -11496,18 +11453,16 @@ bool InitOptionParser(OptionParser& op) {
                         "Enable iterator helpers") ||
       !op.addBoolOption('\0', "enable-shadow-realms", "Enable ShadowRealms") ||
       !op.addBoolOption('\0', "enable-array-grouping",
-                        "Enable Array.fromAsync") ||
+                        "Enable Array.grouping") ||
       !op.addBoolOption('\0', "enable-array-from-async",
-                        "Enable Array Grouping") ||
-#ifdef ENABLE_CHANGE_ARRAY_BY_COPY
+                        "Enable Array.fromAsync") ||
+      !op.addBoolOption('\0', "enable-well-formed-unicode-strings",
+                        "Enable String.prototype.{is,to}WellFormed() methods"
+                        "(Well-Formed Unicode Strings)") ||
       !op.addBoolOption('\0', "enable-change-array-by-copy",
                         "Enable change-array-by-copy methods") ||
       !op.addBoolOption('\0', "disable-change-array-by-copy",
                         "Disable change-array-by-copy methods") ||
-#else
-      !op.addBoolOption('\0', "enable-change-array-by-copy", "no-op") ||
-      !op.addBoolOption('\0', "disable-change-array-by-copy", "no-op") ||
-#endif
 #ifdef ENABLE_NEW_SET_METHODS
       !op.addBoolOption('\0', "enable-new-set-methods",
                         "Enable New Set methods") ||
@@ -12017,13 +11972,13 @@ bool SetContextOptions(JSContext* cx, const OptionParser& op) {
       !op.getBoolOption("disable-property-error-message-fix");
   enableIteratorHelpers = op.getBoolOption("enable-iterator-helpers");
   enableShadowRealms = op.getBoolOption("enable-shadow-realms");
+  enableArrayFromAsync = op.getBoolOption("enable-array-from-async");
 #ifdef NIGHTLY_BUILD
   enableArrayGrouping = op.getBoolOption("enable-array-grouping");
-  enableArrayFromAsync = op.getBoolOption("enable-array-from-async");
+  enableWellFormedUnicodeStrings =
+      op.getBoolOption("enable-well-formed-unicode-strings");
 #endif
-#ifdef ENABLE_CHANGE_ARRAY_BY_COPY
-  enableChangeArrayByCopy = op.getBoolOption("enable-change-array-by-copy");
-#endif
+  enableChangeArrayByCopy = !op.getBoolOption("disable-change-array-by-copy");
 #ifdef ENABLE_NEW_SET_METHODS
   enableNewSetMethods = op.getBoolOption("enable-new-set-methods");
 #endif
@@ -12679,25 +12634,32 @@ bool SetContextGCOptions(JSContext* cx, const OptionParser& op) {
 bool InitModuleLoader(JSContext* cx, const OptionParser& op) {
   RootedString moduleLoadPath(cx);
   if (const char* option = op.getStringOption("module-load-path")) {
-    RootedString jspath(cx, JS_NewStringCopyZ(cx, option));
+    UniqueChars pathUtf8 = JS::EncodeNarrowToUtf8(cx, option);
+    if (!pathUtf8) {
+      return false;
+    }
+
+    Rooted<JSString*> jspath(cx, NewStringCopyUTF8(cx, pathUtf8.get()));
     if (!jspath) {
       return false;
     }
 
     moduleLoadPath = js::shell::ResolvePath(cx, jspath, RootRelative);
+
+    processWideModuleLoadPath = JS_EncodeStringToUTF8(cx, moduleLoadPath);
+    if (!processWideModuleLoadPath) {
+      return false;
+    }
   } else {
-    UniqueChars cwd = js::shell::GetCWD();
-    moduleLoadPath = JS_NewStringCopyZ(cx, cwd.get());
-  }
+    processWideModuleLoadPath = js::shell::GetCWD(cx);
+    if (!processWideModuleLoadPath) {
+      return false;
+    }
 
-  if (!moduleLoadPath) {
-    return false;
-  }
-
-  processWideModuleLoadPath = JS_EncodeStringToUTF8(cx, moduleLoadPath);
-  if (!processWideModuleLoadPath) {
-    MOZ_ASSERT(cx->isExceptionPending());
-    return false;
+    moduleLoadPath = NewStringCopyUTF8(cx, processWideModuleLoadPath.get());
+    if (!moduleLoadPath) {
+      return false;
+    }
   }
 
   ShellContext* sc = GetShellContext(cx);

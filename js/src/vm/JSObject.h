@@ -316,10 +316,10 @@ class JSObject
 
 #ifdef DEBUG
   static void debugCheckNewObject(js::Shape* shape, js::gc::AllocKind allocKind,
-                                  js::gc::InitialHeap heap);
+                                  js::gc::Heap heap);
 #else
   static void debugCheckNewObject(js::Shape* shape, js::gc::AllocKind allocKind,
-                                  js::gc::InitialHeap heap) {}
+                                  js::gc::Heap heap) {}
 #endif
 
   /*
@@ -433,6 +433,8 @@ class JSObject
   MOZ_ALWAYS_INLINE bool isConstructor() const;
   MOZ_ALWAYS_INLINE JSNative callHook() const;
   MOZ_ALWAYS_INLINE JSNative constructHook() const;
+
+  bool isBackgroundFinalized() const;
 
   MOZ_ALWAYS_INLINE void finalize(JS::GCContext* gcx);
 
