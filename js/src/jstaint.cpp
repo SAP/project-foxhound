@@ -248,10 +248,14 @@ TaintLocation JS::TaintLocationFromContext(JSContext* cx)
         hash = ss->md5Checksum(cx);
       }
       filename = JS_GetScriptFilename(i.script());
-      line = PCToLineNumber(i.script(), i.pc(), &pos);
+      JS::LimitedColumnNumberZeroOrigin column;
+      line = PCToLineNumber(i.script(), i.pc(), &column);
+      pos = column.oneOriginValue();
     } else {
+      JS::TaggedColumnNumberZeroOrigin column;
       filename = i.filename();
-      line = i.computeLine(&pos);
+      line = i.computeLine(&column);
+      pos = column.oneOriginValue();
     }
 
     if (i.maybeFunctionDisplayAtom()) {

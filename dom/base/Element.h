@@ -1159,7 +1159,7 @@ class Element : public FragmentOrElement {
     val->ToString(aResult);
     // Taintfox element.getAttr source
     if (aResult.Length() > 0) {
-      SetTaintSourceGetAttr(aNameSpaceID, aName, aResult);
+      SetTaintSourceGetAttr(aName, aResult);
     }
     return true;
   }
@@ -1908,6 +1908,31 @@ class Element : public FragmentOrElement {
                               const nsAString& aValue,
                               nsIPrincipal* aMaybeScriptedPrincipal,
                               nsAttrValue& aResult);
+
+  /**
+   *  Taintfox: this method can be overriden by child classes to mark
+   * certain attributes as taint sources.
+   */
+  virtual void SetTaintSourceGetAttr(const nsAString& aName, DOMString& aResult) const;
+
+  virtual void SetTaintSourceGetAttr(const nsAtom* aName, DOMString& aResult) const;
+
+  virtual void SetTaintSourceGetAttr(int32_t aNameSpaceID, const nsAtom* aName,
+                                     DOMString& aResult) const;
+
+  /**
+   * Hook that is called by Element::SetAttr to allow subclasses to check
+   * whether the attribute being set is a taint sink (e.g. img.src).
+   * Will be called regardless of whether the attribute is changed.
+   * We can't use BeforeSetAttr as there is a script block imposed which stops
+   * the taint notification being fired off.
+   *
+   * @param aNamespaceID the namespace of the attr being set
+   * @param aName the localname of the attribute being set
+   * @param aValue the string being set
+   */
+  virtual nsresult CheckTaintSinkSetAttr(int32_t aNamespaceID, nsAtom* aName,
+                                         const nsAString& aValue);
 
   /**
    * Hook that is called by Element::SetAttr to allow subclasses to

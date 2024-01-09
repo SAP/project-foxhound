@@ -1193,7 +1193,16 @@ void HTMLInputElement::SetTaintSourceGetAttr(const nsAString& aName, DOMString& 
 void HTMLInputElement::SetTaintSourceGetAttr(int32_t aNameSpaceID, const nsAtom* aName,
                                    DOMString& aResult) const {
 
-  if ((aNameSpaceID == kNameSpaceID_None) && (aName == nsGkAtoms::value)) {
+  if (aNameSpaceID == kNameSpaceID_None) {
+    SetTaintSourceGetAttr(aName, aResult);
+  }
+  return;
+}
+
+void HTMLInputElement::SetTaintSourceGetAttr(const nsAtom* aName,
+                                   DOMString& aResult) const {
+
+  if (aName == nsGkAtoms::value) {
     // TaintFox: input.value source
     //
     // This will taint *all* input types, including those where the actual values

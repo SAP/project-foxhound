@@ -2772,8 +2772,13 @@ void Element::SetTaintSourceGetAttr(const nsAString& aName, DOMString& aResult) 
   return;
 }
 
+void Element::SetTaintSourceGetAttr(const nsAtom* aName, DOMString& aResult) const {
+  return;
+}
+
 void Element::SetTaintSourceGetAttr(int32_t aNameSpaceID, const nsAtom* aName,
                                             DOMString& aResult) const {
+  SetTaintSourceGetAttr(aName, aResult);
   return;
 }
 
