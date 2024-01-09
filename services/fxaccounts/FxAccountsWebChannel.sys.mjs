@@ -11,7 +11,7 @@
 
 import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 
-const {
+import {
   COMMAND_PROFILE_CHANGE,
   COMMAND_LOGIN,
   COMMAND_LOGOUT,
@@ -33,7 +33,7 @@ const {
   WEBCHANNEL_ID,
   log,
   logPII,
-} = ChromeUtils.import("resource://gre/modules/FxAccountsCommon.js");
+} from "resource://gre/modules/FxAccountsCommon.sys.mjs";
 
 const lazy = {};
 
@@ -46,7 +46,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
   Weave: "resource://services-sync/main.sys.mjs",
   WebChannel: "resource://gre/modules/WebChannel.sys.mjs",
 });
-XPCOMUtils.defineLazyGetter(lazy, "fxAccounts", () => {
+ChromeUtils.defineLazyGetter(lazy, "fxAccounts", () => {
   return ChromeUtils.importESModule(
     "resource://gre/modules/FxAccounts.sys.mjs"
   ).getFxAccountsSingleton();
@@ -136,7 +136,7 @@ export function FxAccountsWebChannel(options) {
   this._webChannelId = options.channel_id;
 
   // options.helpers is only specified by tests.
-  XPCOMUtils.defineLazyGetter(this, "_helpers", () => {
+  ChromeUtils.defineLazyGetter(this, "_helpers", () => {
     return options.helpers || new FxAccountsWebChannelHelpers(options);
   });
 
@@ -361,7 +361,7 @@ FxAccountsWebChannel.prototype = {
     let listener = (webChannelId, message, sendingContext) => {
       if (message) {
         log.debug("FxAccountsWebChannel message received", message.command);
-        if (logPII) {
+        if (logPII()) {
           log.debug("FxAccountsWebChannel message details", message);
         }
         try {

@@ -8,6 +8,7 @@
 
 #include "mozilla/dom/PWebGLChild.h"
 #include "mozilla/ipc/BigBuffer.h"
+#include "mozilla/Maybe.h"
 #include "mozilla/WeakPtr.h"
 
 #include <string>
@@ -20,6 +21,11 @@ namespace dom {
 
 struct FlushedCmdInfo final {
   size_t flushes = 0;
+  // Store a number of flushes since last IPC congestion check.
+  // It is reset to 0, when current IPC congestion check is done.
+  size_t flushesSinceLastCongestionCheck = 0;
+  // Incremented for each IPC congestion check.
+  size_t congestionCheckGeneration = 0;
   size_t flushedCmdBytes = 0;
   size_t overhead = 0;
 };
@@ -41,6 +47,8 @@ class WebGLChild final : public PWebGLChild, public SupportsWeakPtr {
                                              size_t fyiAlignmentOverhead);
   void FlushPendingCmds();
   void ActorDestroy(ActorDestroyReason why) override;
+
+  FlushedCmdInfo& GetFlushedCmdInfo() { return mFlushedCmdInfo; }
 
  private:
   friend PWebGLChild;

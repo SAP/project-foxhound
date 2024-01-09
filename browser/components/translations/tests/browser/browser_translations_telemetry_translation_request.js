@@ -43,13 +43,17 @@ add_task(async function test_translations_telemetry_manual_translation() {
     "TranslationRequest",
     Glean.translations.translationRequest,
     {
-      expectedLength: 0,
+      expectedEventCount: 0,
     }
   );
 
-  await waitForTranslationsPopupEvent("popupshown", () => {
-    click(button, "Opening the popup");
-  });
+  await waitForTranslationsPopupEvent(
+    "popupshown",
+    () => {
+      click(button, "Opening the popup");
+    },
+    assertPanelDefaultView
+  );
 
   await waitForTranslationsPopupEvent("popuphidden", () => {
     click(
@@ -95,14 +99,47 @@ add_task(async function test_translations_telemetry_manual_translation() {
     }
   );
   await TestTranslationsTelemetry.assertEvent(
+    "OpenPanel",
+    Glean.translationsPanel.open,
+    {
+      expectedEventCount: 1,
+      expectNewFlowId: true,
+      finalValuePredicates: [
+        value => value.extra.auto_show === "false",
+        value => value.extra.view_name === "defaultView",
+        value => value.extra.opened_from === "translationsButton",
+        value => value.extra.document_language === "es",
+      ],
+    }
+  );
+  await TestTranslationsTelemetry.assertEvent(
+    "TranslateButton",
+    Glean.translationsPanel.translateButton,
+    {
+      expectedEventCount: 1,
+      expectNewFlowId: false,
+    }
+  );
+  await TestTranslationsTelemetry.assertEvent(
+    "ClosePanel",
+    Glean.translationsPanel.close,
+    {
+      expectedEventCount: 1,
+      expectNewFlowId: false,
+    }
+  );
+  await TestTranslationsTelemetry.assertEvent(
     "TranslationRequest",
     Glean.translations.translationRequest,
     {
-      expectedLength: 1,
+      expectedEventCount: 1,
+      expectNewFlowId: false,
       finalValuePredicates: [
         value => value.extra.from_language === "es",
         value => value.extra.to_language === "en",
         value => value.extra.auto_translate === "false",
+        value => value.extra.document_language === "es",
+        value => value.extra.top_preferred_language === "en",
       ],
     }
   );
@@ -157,14 +194,38 @@ add_task(async function test_translations_telemetry_auto_translation() {
     }
   );
   await TestTranslationsTelemetry.assertEvent(
+    "OpenPanel",
+    Glean.translationsPanel.open,
+    {
+      expectedEventCount: 0,
+    }
+  );
+  await TestTranslationsTelemetry.assertEvent(
+    "TranslateButton",
+    Glean.translationsPanel.translateButton,
+    {
+      expectedEventCount: 0,
+    }
+  );
+  await TestTranslationsTelemetry.assertEvent(
+    "ClosePanel",
+    Glean.translationsPanel.close,
+    {
+      expectedEventCount: 0,
+    }
+  );
+  await TestTranslationsTelemetry.assertEvent(
     "TranslationRequest",
     Glean.translations.translationRequest,
     {
-      expectedLength: 1,
+      expectedEventCount: 1,
+      expectNewFlowId: true,
       finalValuePredicates: [
         value => value.extra.from_language === "es",
         value => value.extra.to_language === "en",
         value => value.extra.auto_translate === "true",
+        value => value.extra.document_language === "es",
+        value => value.extra.top_preferred_language === "en",
       ],
     }
   );

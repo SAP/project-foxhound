@@ -106,10 +106,17 @@ module.exports = {
         "mozilla/reject-importGlobalProperties": "off",
       },
     },
+    {
+      env: {
+        browser: false,
+        worker: true,
+      },
+      files: ["**/*.worker.js", "**/*.worker.mjs"],
+    },
   ],
 
   parserOptions: {
-    ecmaVersion: 12,
+    ecmaVersion: "latest",
   },
 
   // When adding items to this file please check for effects on sub-directories.

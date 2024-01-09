@@ -11,9 +11,8 @@ use crate::values::computed::Percentage as ComputedPercentage;
 use crate::values::computed::{font as computed, Length, NonNegativeLength};
 use crate::values::computed::{CSSPixelLength, Context, ToComputedValue};
 use crate::values::generics::font::VariationValue;
-use crate::values::generics::font::{
-    self as generics, FeatureTagValue, FontSettings, FontTag, GenericFontSizeAdjust,
-};
+use crate::values::generics::font::{self as generics, FeatureTagValue, FontSettings, FontTag};
+use crate::values::generics::font::{GenericFontSizeAdjust, GenericNumberOrFromFont};
 use crate::values::generics::NonNegative;
 use crate::values::specified::length::{FontBaseSize, PX_PER_PT};
 use crate::values::specified::{AllowQuirks, Angle, Integer, LengthPercentage};
@@ -448,6 +447,16 @@ impl ToComputedValue for FontStretch {
     }
 }
 
+#[cfg(feature = "gecko")]
+fn math_depth_enabled(_context: &ParserContext) -> bool {
+    static_prefs::pref!("layout.css.math-depth.enabled")
+}
+
+#[cfg(feature = "servo")]
+fn math_depth_enabled(_context: &ParserContext) -> bool {
+    false
+}
+
 /// CSS font keywords
 #[derive(
     Animate,
@@ -482,6 +491,10 @@ pub enum FontSizeKeyword {
     XXLarge,
     #[css(keyword = "xxx-large")]
     XXXLarge,
+    /// Indicate whether to apply font-size: math is specified so that extra
+    /// scaling due to math-depth changes is applied during the cascade.
+    #[parse(condition = "math_depth_enabled")]
+    Math,
     #[css(skip)]
     None,
 }
@@ -552,6 +565,7 @@ impl KeywordInfo {
     /// text-zoom.
     fn to_computed_value(&self, context: &Context) -> CSSPixelLength {
         debug_assert_ne!(self.kw, FontSizeKeyword::None);
+        debug_assert_ne!(self.kw, FontSizeKeyword::Math);
         let base = context.maybe_zoom_text(self.kw.to_length(context).0);
         base * self.factor + context.maybe_zoom_text(self.offset)
     }
@@ -685,8 +699,15 @@ impl Parse for FamilyName {
     }
 }
 
-/// Preserve the readability of text when font fallback occurs
-pub type FontSizeAdjust = GenericFontSizeAdjust<NonNegativeNumber>;
+/// A factor for one of the font-size-adjust metrics, which may be either a number
+/// or the `from-font` keyword.
+pub type FontSizeAdjustFactor = GenericNumberOrFromFont<NonNegativeNumber>;
+
+/// Specified value for font-size-adjust, intended to help
+/// preserve the readability of text when font fallback occurs.
+///
+/// https://drafts.csswg.org/css-fonts-5/#font-size-adjust-prop
+pub type FontSizeAdjust = GenericFontSizeAdjust<FontSizeAdjustFactor>;
 
 impl Parse for FontSizeAdjust {
     fn parse<'i, 't>(
@@ -694,27 +715,27 @@ impl Parse for FontSizeAdjust {
         input: &mut Parser<'i, 't>,
     ) -> Result<Self, ParseError<'i>> {
         let location = input.current_source_location();
-        if let Ok(ident) = input.try_parse(|i| i.expect_ident_cloned()) {
-            let basis_enabled = static_prefs::pref!("layout.css.font-size-adjust.basis.enabled");
-            let basis = match_ignore_ascii_case! { &ident,
-                "none" => return Ok(Self::None),
-                // Check for size adjustment basis keywords if enabled.
-                "ex-height" if basis_enabled => Self::ExHeight,
-                "cap-height" if basis_enabled => Self::CapHeight,
-                "ch-width" if basis_enabled => Self::ChWidth,
-                "ic-width" if basis_enabled => Self::IcWidth,
-                "ic-height" if basis_enabled => Self::IcHeight,
-                // Unknown (or disabled) keyword.
-                _ => return Err(location.new_custom_error(
-                    SelectorParseErrorKind::UnexpectedIdent(ident)
-                )),
-            };
-            let value = NonNegativeNumber::parse(context, input)?;
-            return Ok(basis(value));
+        // First check if we have an adjustment factor without a metrics-basis keyword.
+        if let Ok(factor) = input.try_parse(|i| FontSizeAdjustFactor::parse(context, i)) {
+            return Ok(Self::ExHeight(factor));
         }
-        // Without a basis keyword, the number refers to the 'ex-height' metric.
-        let value = NonNegativeNumber::parse(context, input)?;
-        Ok(Self::ExHeight(value))
+
+        let ident = input.expect_ident()?;
+        let basis = match_ignore_ascii_case! { &ident,
+            "none" => return Ok(Self::None),
+            // Check for size adjustment basis keywords.
+            "ex-height" => Self::ExHeight,
+            "cap-height" => Self::CapHeight,
+            "ch-width" => Self::ChWidth,
+            "ic-width" => Self::IcWidth,
+            "ic-height" => Self::IcHeight,
+            // Unknown keyword.
+            _ => return Err(location.new_custom_error(
+                SelectorParseErrorKind::UnexpectedIdent(ident.clone())
+            )),
+        };
+
+        Ok(basis(FontSizeAdjustFactor::parse(context, input)?))
     }
 }
 
@@ -740,7 +761,7 @@ impl FontSizeKeyword {
             FontSizeKeyword::XLarge => medium * 3.0 / 2.0,
             FontSizeKeyword::XXLarge => medium * 2.0,
             FontSizeKeyword::XXXLarge => medium * 3.0,
-            FontSizeKeyword::None => unreachable!(),
+            FontSizeKeyword::Math | FontSizeKeyword::None => unreachable!(),
         })
     }
 
@@ -768,6 +789,7 @@ impl FontSizeKeyword {
         quirks_mode: QuirksMode,
         base_size: Length,
     ) -> NonNegativeLength {
+        debug_assert_ne!(*self, FontSizeKeyword::Math);
         // The tables in this function are originally from
         // nsRuleNode::CalcFontPointSize in Gecko:
         //
@@ -886,9 +908,16 @@ impl FontSize {
                 calc.resolve(base_size.resolve(context).computed_size())
             },
             FontSize::Keyword(i) => {
-                // As a specified keyword, this is keyword derived
-                info = i;
-                i.to_computed_value(context).clamp_to_non_negative()
+                if i.kw == FontSizeKeyword::Math {
+                    // Scaling is done in recompute_math_font_size_if_needed().
+                    info = compose_keyword(1.);
+                    info.kw = FontSizeKeyword::Math;
+                    FontRelativeLength::Em(1.).to_computed_value(context, base_size)
+                } else {
+                    // As a specified keyword, this is keyword derived
+                    info = i;
+                    i.to_computed_value(context).clamp_to_non_negative()
+                }
             },
             FontSize::Smaller => {
                 info = compose_keyword(1. / LARGER_FONT_SIZE_RATIO);
@@ -961,7 +990,7 @@ impl FontSize {
             return Ok(FontSize::Length(lp));
         }
 
-        if let Ok(kw) = input.try_parse(FontSizeKeyword::parse) {
+        if let Ok(kw) = input.try_parse(|i| FontSizeKeyword::parse(context, i)) {
             return Ok(FontSize::Keyword(KeywordInfo::new(kw)));
         }
 
@@ -1132,37 +1161,32 @@ impl Parse for FontVariantAlternates {
                     match_ignore_ascii_case! { &name,
                         "swash" => {
                             check_if_parsed!(i, VariantAlternatesParsingFlags::SWASH);
-                            let location = i.current_source_location();
-                            let ident = CustomIdent::from_ident(location, i.expect_ident()?, &[])?;
+                            let ident = CustomIdent::parse(i, &[])?;
                             swash = Some(VariantAlternates::Swash(ident));
                             Ok(())
                         },
                         "stylistic" => {
                             check_if_parsed!(i, VariantAlternatesParsingFlags::STYLISTIC);
-                            let location = i.current_source_location();
-                            let ident = CustomIdent::from_ident(location, i.expect_ident()?, &[])?;
+                            let ident = CustomIdent::parse(i, &[])?;
                             stylistic = Some(VariantAlternates::Stylistic(ident));
                             Ok(())
                         },
                         "ornaments" => {
                             check_if_parsed!(i, VariantAlternatesParsingFlags::ORNAMENTS);
-                            let location = i.current_source_location();
-                            let ident = CustomIdent::from_ident(location, i.expect_ident()?, &[])?;
+                            let ident = CustomIdent::parse(i, &[])?;
                             ornaments = Some(VariantAlternates::Ornaments(ident));
                             Ok(())
                         },
                         "annotation" => {
                             check_if_parsed!(i, VariantAlternatesParsingFlags::ANNOTATION);
-                            let location = i.current_source_location();
-                            let ident = CustomIdent::from_ident(location, i.expect_ident()?, &[])?;
+                            let ident = CustomIdent::parse(i, &[])?;
                             annotation = Some(VariantAlternates::Annotation(ident));
                             Ok(())
                         },
                         "styleset" => {
                             check_if_parsed!(i, VariantAlternatesParsingFlags::STYLESET);
                             let idents = i.parse_comma_separated(|i| {
-                                let location = i.current_source_location();
-                                CustomIdent::from_ident(location, i.expect_ident()?, &[])
+                                CustomIdent::parse(i, &[])
                             })?;
                             styleset = Some(VariantAlternates::Styleset(idents.into()));
                             Ok(())
@@ -1170,8 +1194,7 @@ impl Parse for FontVariantAlternates {
                         "character-variant" => {
                             check_if_parsed!(i, VariantAlternatesParsingFlags::CHARACTER_VARIANT);
                             let idents = i.parse_comma_separated(|i| {
-                                let location = i.current_source_location();
-                                CustomIdent::from_ident(location, i.expect_ident()?, &[])
+                                CustomIdent::parse(i, &[])
                             })?;
                             character_variant = Some(VariantAlternates::CharacterVariant(idents.into()));
                             Ok(())

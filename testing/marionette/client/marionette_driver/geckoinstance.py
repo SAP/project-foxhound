@@ -41,13 +41,12 @@ class GeckoInstance(object):
         # and causing false-positive test failures. See bug 1176798, bug 1177018,
         # bug 1210465.
         "apz.content_response_timeout": 60000,
+        # Don't pull sponsored Top Sites content from the network
+        "browser.newtabpage.activity-stream.showSponsoredTopSites": False,
         # Disable geolocation ping (#1)
         "browser.region.network.url": "",
         # Don't pull Top Sites content from the network
         "browser.topsites.contile.enabled": False,
-        # Disable page translations, causing timeouts for wdspec tests in early
-        # beta. See Bug 1836093.
-        "browser.translations.enable": False,
         # Disable UI tour
         "browser.uitour.pinnedTabUrl": "http://%(server)s/uitour-dummy/pinnedTab",
         "browser.uitour.url": "http://%(server)s/uitour-dummy/tour",
@@ -439,9 +438,6 @@ class FennecInstance(GeckoInstance):
         "browser.sessionstore.resume_from_crash": False,
         # Disable e10s by default
         "browser.tabs.remote.autostart": False,
-        # Do not allow background tabs to be zombified, otherwise for tests that
-        # open additional tabs, the test harness tab itself might get unloaded
-        "browser.tabs.disableBackgroundZombification": True,
     }
 
     def __init__(

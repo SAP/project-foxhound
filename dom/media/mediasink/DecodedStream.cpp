@@ -72,7 +72,7 @@ class SourceVideoTrackListener : public MediaTrackListener {
 
 class DecodedStreamGraphListener {
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(DecodedStreamGraphListener)
- public:
+ private:
   DecodedStreamGraphListener(
       nsISerialEventTarget* aDecoderThread, AudioDecoderInputTrack* aAudioTrack,
       MozPromiseHolder<DecodedStream::EndedPromise>&& aAudioEndedHolder,
@@ -90,6 +90,18 @@ class DecodedStreamGraphListener {
     MOZ_ASSERT(NS_IsMainThread());
     MOZ_ASSERT(mDecoderThread);
 
+    if (!mAudioTrack) {
+      mAudioEnded = true;
+      mAudioEndedHolder.ResolveIfExists(true, __func__);
+    }
+
+    if (!mVideoTrackListener) {
+      mVideoEnded = true;
+      mVideoEndedHolder.ResolveIfExists(true, __func__);
+    }
+  }
+
+  void RegisterListeners() {
     if (mAudioTrack) {
       mOnAudioOutput = mAudioTrack->OnOutput().Connect(
           mDecoderThread,
@@ -100,17 +112,25 @@ class DecodedStreamGraphListener {
           mDecoderThread, [self = RefPtr<DecodedStreamGraphListener>(this)]() {
             self->NotifyEnded(MediaSegment::AUDIO);
           });
-    } else {
-      mAudioEnded = true;
-      mAudioEndedHolder.ResolveIfExists(true, __func__);
     }
 
     if (mVideoTrackListener) {
       mVideoTrack->AddListener(mVideoTrackListener);
-    } else {
-      mVideoEnded = true;
-      mVideoEndedHolder.ResolveIfExists(true, __func__);
     }
+  }
+
+ public:
+  static already_AddRefed<DecodedStreamGraphListener> Create(
+      nsISerialEventTarget* aDecoderThread, AudioDecoderInputTrack* aAudioTrack,
+      MozPromiseHolder<DecodedStream::EndedPromise>&& aAudioEndedHolder,
+      SourceMediaTrack* aVideoTrack,
+      MozPromiseHolder<DecodedStream::EndedPromise>&& aVideoEndedHolder) {
+    RefPtr<DecodedStreamGraphListener> listener =
+        new DecodedStreamGraphListener(
+            aDecoderThread, aAudioTrack, std::move(aAudioEndedHolder),
+            aVideoTrack, std::move(aVideoEndedHolder));
+    listener->RegisterListeners();
+    return listener.forget();
   }
 
   void Close() {
@@ -401,7 +421,7 @@ DecodedStreamData::DecodedStreamData(
       mAudioEndedPromise(aAudioEndedPromise.Ensure(__func__)),
       mVideoEndedPromise(aVideoEndedPromise.Ensure(__func__)),
       // DecodedStreamGraphListener will resolve these promises.
-      mListener(MakeRefPtr<DecodedStreamGraphListener>(
+      mListener(DecodedStreamGraphListener::Create(
           aDecoderThread, mAudioTrack, std::move(aAudioEndedPromise),
           mVideoTrack, std::move(aVideoEndedPromise))) {
   MOZ_ASSERT(NS_IsMainThread());
@@ -465,8 +485,7 @@ DecodedStream::DecodedStream(
       mPlaybackRate(aPlaybackRate),
       mPreservesPitch(aPreservesPitch),
       mAudioQueue(aAudioQueue),
-      mVideoQueue(aVideoQueue),
-      mAudioDevice(std::move(aAudioDevice)) {}
+      mVideoQueue(aVideoQueue) {}
 
 DecodedStream::~DecodedStream() {
   MOZ_ASSERT(mStartTime.isNothing(), "playback should've ended.");
@@ -722,6 +741,12 @@ void DecodedStream::SetPreservesPitch(bool aPreservesPitch) {
   }
 }
 
+RefPtr<GenericPromise> DecodedStream::SetAudioDevice(
+    RefPtr<AudioDeviceInfo> aDevice) {
+  // All audio is captured, so nothing is actually played out, so nothing to do.
+  return GenericPromise::CreateAndResolve(true, __func__);
+}
+
 double DecodedStream::PlaybackRate() const {
   AssertOwnerThread();
   return mPlaybackRate;
@@ -821,16 +846,14 @@ void DecodedStreamData::WriteVideoToSegment(
     VideoSegment* aOutput, const PrincipalHandle& aPrincipalHandle,
     double aPlaybackRate) {
   RefPtr<layers::Image> image = aImage;
-  auto end =
-      mVideoTrack->MicrosecondsToTrackTimeRoundDown(aEnd.ToMicroseconds());
-  auto start =
-      mVideoTrack->MicrosecondsToTrackTimeRoundDown(aStart.ToMicroseconds());
   aOutput->AppendFrame(image.forget(), aIntrinsicSize, aPrincipalHandle, false,
                        aTimeStamp);
   // Extend this so we get accurate durations for all frames.
   // Because this track is pushed, we need durations so the graph can track
   // when playout of the track has finished.
   MOZ_ASSERT(aPlaybackRate > 0);
+  TrackTime start = aStart.ToTicksAtRate(mVideoTrack->mSampleRate);
+  TrackTime end = aEnd.ToTicksAtRate(mVideoTrack->mSampleRate);
   aOutput->ExtendLastFrameBy(
       static_cast<TrackTime>((float)(end - start) / aPlaybackRate));
 
@@ -1011,20 +1034,25 @@ void DecodedStream::SendVideo(const PrincipalHandle& aPrincipalHandle) {
       forceBlack = true;
       // Override the frame's size (will be 0x0 otherwise)
       mData->mLastVideoImageDisplaySize = mInfo.mVideo.mDisplay;
+      LOG_DS(LogLevel::Debug, "No mLastVideoImage");
     }
     if (compensateEOS) {
       VideoSegment endSegment;
-      // Calculate the deviation clock time from DecodedStream.
-      // We round the nr of microseconds up, because WriteVideoToSegment
-      // will round the conversion from microseconds to TrackTime down.
-      auto deviation = TimeUnit::FromMicroseconds(
-          mData->mVideoTrack->TrackTimeToMicroseconds(1) + 1);
       auto start = mData->mLastVideoEndTime.valueOr(mStartTime.ref());
       mData->WriteVideoToSegment(
-          mData->mLastVideoImage, start, start + deviation,
+          mData->mLastVideoImage, start, start,
           mData->mLastVideoImageDisplaySize,
-          currentTime + (start + deviation - currentPosition).ToTimeDuration(),
-          &endSegment, aPrincipalHandle, mPlaybackRate);
+          currentTime + (start - currentPosition).ToTimeDuration(), &endSegment,
+          aPrincipalHandle, mPlaybackRate);
+      // ForwardedInputTrack drops zero duration frames, even at the end of
+      // the track.  Give the frame a minimum duration so that it is not
+      // dropped.
+      endSegment.ExtendLastFrameBy(1);
+      LOG_DS(LogLevel::Debug,
+             "compensateEOS: start %s, duration %" PRId64
+             ", mPlaybackRate %lf, sample rate %" PRId32,
+             start.ToString().get(), endSegment.GetDuration(), mPlaybackRate,
+             mData->mVideoTrack->mSampleRate);
       MOZ_ASSERT(endSegment.GetDuration() > 0);
       if (forceBlack) {
         endSegment.ReplaceWithDisabled();

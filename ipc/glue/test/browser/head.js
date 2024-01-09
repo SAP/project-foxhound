@@ -110,19 +110,19 @@ function audioTestData() {
       expectations: {
         Android: {
           process: "Utility Generic",
-          decoder: "vorbis audio decoder",
+          decoder: "ffvpx audio decoder",
         },
         Linux: {
           process: "Utility Generic",
-          decoder: "vorbis audio decoder",
+          decoder: "ffvpx audio decoder",
         },
         WINNT: {
           process: "Utility Generic",
-          decoder: "vorbis audio decoder",
+          decoder: "ffvpx audio decoder",
         },
         Darwin: {
           process: "Utility Generic",
-          decoder: "vorbis audio decoder",
+          decoder: "ffvpx audio decoder",
         },
       },
     },
@@ -191,6 +191,32 @@ function audioTestData() {
   ];
 }
 
+function audioTestDataEME() {
+  return [
+    {
+      src: {
+        audioFile:
+          "https://example.com/browser/ipc/glue/test/browser/short-aac-encrypted-audio.mp4",
+        sourceBuffer: "audio/mp4",
+      },
+      expectations: {
+        Linux: {
+          process: "Utility Generic",
+          decoder: "ffmpeg audio decoder",
+        },
+        WINNT: {
+          process: "Utility WMF",
+          decoder: "wmf audio decoder",
+        },
+        Darwin: {
+          process: "Utility AppleMedia",
+          decoder: "apple coremedia decoder",
+        },
+      },
+    },
+  ];
+}
+
 async function addMediaTab(src) {
   const tab = BrowserTestUtils.addTab(gBrowser, "about:blank", {
     forceNewProcess: true,
@@ -201,17 +227,44 @@ async function addMediaTab(src) {
   return tab;
 }
 
+async function addMediaTabWithEME(sourceBuffer, audioFile) {
+  const tab = BrowserTestUtils.addTab(
+    gBrowser,
+    "https://example.com/browser/",
+    {
+      forceNewProcess: true,
+    }
+  );
+  const browser = gBrowser.getBrowserForTab(tab);
+  await BrowserTestUtils.browserLoaded(browser);
+  await SpecialPowers.spawn(
+    browser,
+    [sourceBuffer, audioFile],
+    createAudioElementEME
+  );
+  return tab;
+}
+
 async function play(
   tab,
   expectUtility,
   expectDecoder,
   expectContent = false,
-  expectJava = false
+  expectJava = false,
+  expectError = false,
+  withEME = false
 ) {
   let browser = tab.linkedBrowser;
   return SpecialPowers.spawn(
     browser,
-    [expectUtility, expectDecoder, expectContent, expectJava],
+    [
+      expectUtility,
+      expectDecoder,
+      expectContent,
+      expectJava,
+      expectError,
+      withEME,
+    ],
     checkAudioDecoder
   );
 }
@@ -234,11 +287,51 @@ async function createAudioElement(src) {
   doc.body.appendChild(audio);
 }
 
+async function createAudioElementEME(sourceBuffer, audioFile) {
+  // Helper to clone data into content so the EME helper can use the data.
+  function cloneIntoContent(data) {
+    return Cu.cloneInto(data, content.wrappedJSObject);
+  }
+
+  // Load the EME helper into content.
+  Services.scriptloader.loadSubScript(
+    "chrome://mochitests/content/browser/ipc/glue/test/browser/eme_standalone.js",
+    content
+  );
+
+  let audio = content.document.createElement("audio");
+  audio.setAttribute("controls", "true");
+  audio.setAttribute("loop", true);
+  audio.setAttribute("_sourceBufferType", sourceBuffer);
+  audio.setAttribute("_audioUrl", audioFile);
+  content.document.body.appendChild(audio);
+
+  let emeHelper = new content.wrappedJSObject.EmeHelper();
+  emeHelper.SetKeySystem(
+    content.wrappedJSObject.EmeHelper.GetClearkeyKeySystemString()
+  );
+  emeHelper.SetInitDataTypes(cloneIntoContent(["keyids", "cenc"]));
+  emeHelper.SetAudioCapabilities(
+    cloneIntoContent([{ contentType: 'audio/mp4; codecs="mp4a.40.2"' }])
+  );
+  emeHelper.AddKeyIdAndKey(
+    "2cdb0ed6119853e7850671c3e9906c3c",
+    "808B9ADAC384DE1E4F56140F4AD76194"
+  );
+  emeHelper.onerror = error => {
+    is(false, `Got unexpected error from EME helper: ${error}`);
+  };
+  await emeHelper.ConfigureEme(audio);
+  // Done setting up EME.
+}
+
 async function checkAudioDecoder(
   expectedProcess,
   expectedDecoder,
   expectContent = false,
-  expectJava = false
+  expectJava = false,
+  expectError = false,
+  withEME = false
 ) {
   const doc = typeof content !== "undefined" ? content.document : document;
   let audio = doc.querySelector("audio");
@@ -258,7 +351,7 @@ async function checkAudioDecoder(
         audioDecoderName.indexOf(`(${expectedProcess} remote)`) > 0;
       const isJavaRemote = audioDecoderName.indexOf("(remote)") > 0;
       const isOk =
-        (isExpectedProcess && !isJavaRemote && !expectContent && !expectJava) || // Running in Utility/RDD
+        (isExpectedProcess && !isJavaRemote && !expectContent && !expectJava) || // Running in Utility
         (expectJava && !isExpectedProcess && isJavaRemote) || // Running in Java remote
         (expectContent && !isExpectedProcess && !isJavaRemote); // Running in Content
 
@@ -286,14 +379,54 @@ async function checkAudioDecoder(
       audio.addEventListener("timeupdate", timeUpdateHandler, { once: true });
     };
 
+    audio.addEventListener("error", async err => {
+      info(
+        `Received HTML media error: ${audio.error.code}: ${audio.error.message}`
+      );
+      if (expectError) {
+        const w = typeof content !== "undefined" ? content.window : window;
+        ok(
+          audio.error.code === w.MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED ||
+            w.MediaError.MEDIA_ERR_DECODE,
+          "Media supported but decoding failed"
+        );
+        resolve();
+      } else {
+        info(`Unexpected error`);
+        reject();
+      }
+    });
+
     audio.addEventListener("canplaythrough", startPlaybackHandler, {
       once: true,
     });
   });
 
-  // We need to make sure the decoder is ready before play()ing otherwise we
-  // could get into bad situations
-  audio.load();
+  if (!withEME) {
+    // We need to make sure the decoder is ready before play()ing otherwise we
+    // could get into bad situations
+    audio.load();
+  } else {
+    // For EME we need to create and load content ourselves. We do this here
+    // because if we do it in createAudioElementEME() above then we end up
+    // with events fired before we get a chance to listen to them here
+    async function once(target, name) {
+      return new Promise(r => target.addEventListener(name, r, { once: true }));
+    }
+
+    // Setup MSE.
+    const ms = new content.wrappedJSObject.MediaSource();
+    audio.src = content.wrappedJSObject.URL.createObjectURL(ms);
+    await once(ms, "sourceopen");
+    const sb = ms.addSourceBuffer(audio.getAttribute("_sourceBufferType"));
+    let fetchResponse = await content.fetch(audio.getAttribute("_audioUrl"));
+    let dataBuffer = await fetchResponse.arrayBuffer();
+    sb.appendBuffer(dataBuffer);
+    await once(sb, "updateend");
+    ms.endOfStream();
+    await once(ms, "sourceended");
+  }
+
   return checkPromise;
 }
 
@@ -304,6 +437,7 @@ async function runMochitestUtilityAudio(
     expectDecoder,
     expectContent = false,
     expectJava = false,
+    expectError = false,
   } = {}
 ) {
   info(`Add media: ${src}`);
@@ -316,7 +450,8 @@ async function runMochitestUtilityAudio(
     expectUtility,
     expectDecoder,
     expectContent,
-    expectJava
+    expectJava,
+    expectError
   );
 
   info(`Pause media: ${src}`);
@@ -421,4 +556,12 @@ async function crashSomeUtilityActor(
   );
   const utilityPid = procInfos[0].pid;
   return crashSomeUtility(utilityPid, actorsCheck);
+}
+
+function versionContains(e) {
+  return Services.appinfo.platformVersion.indexOf(e) > -1;
+}
+
+function isNightly() {
+  return versionContains("a");
 }

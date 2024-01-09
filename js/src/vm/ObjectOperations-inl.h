@@ -30,7 +30,7 @@
 #include "vm/StringType.h"    // js::NameToId
 #include "vm/SymbolType.h"    // JS::Symbol
 
-#include "vm/JSAtom-inl.h"  // js::IndexToId
+#include "vm/JSAtomUtils-inl.h"  // js::PrimitiveValueToId, js::IndexToId
 
 namespace js {
 
@@ -62,7 +62,6 @@ inline bool GetPrototype(JSContext* cx, JS::Handle<JSObject*> obj,
 inline bool IsExtensible(JSContext* cx, JS::Handle<JSObject*> obj,
                          bool* extensible) {
   if (obj->is<ProxyObject>()) {
-    MOZ_ASSERT(!cx->isHelperThreadContext());
     return Proxy::isExtensible(cx, obj, extensible);
   }
 

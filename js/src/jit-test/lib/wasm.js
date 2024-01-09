@@ -430,8 +430,8 @@ let WasmArrayrefValues = [];
 if (wasmGcEnabled()) {
     let { newStruct, newArray } = wasmEvalText(`
       (module
-        (type $s (struct))
-        (type $a (array i32))
+        (type $s (sub (struct)))
+        (type $a (sub (array i32)))
         (func (export "newStruct") (result anyref)
             struct.new $s)
         (func (export "newArray") (result anyref)
@@ -443,19 +443,55 @@ if (wasmGcEnabled()) {
     WasmArrayrefValues.push(newArray());
 }
 
+let WasmGcObjectValues = WasmStructrefValues.concat(WasmArrayrefValues);
+
 // Valid values for eqref
 let WasmEqrefValues = [...WasmStructrefValues, ...WasmArrayrefValues];
 
+// Valid values for i31ref
+let MinI31refValue = -1 * Math.pow(2, 30);
+let MaxI31refValue = Math.pow(2, 30) - 1;
+let WasmI31refValues = [
+  // first four 31-bit signed numbers
+  MinI31refValue,
+  MinI31refValue + 1,
+  MinI31refValue + 2,
+  MinI31refValue + 3,
+  // five numbers around zero
+  -2,
+  -1,
+  0,
+  1,
+  2,
+  // last four 31-bit signed numbers
+  MaxI31refValue - 3,
+  MaxI31refValue - 2,
+  MaxI31refValue - 1,
+  MaxI31refValue,
+];
+
 // Valid and invalid values for anyref
-let WasmAnyrefValues = [...WasmEqrefValues];
+let WasmAnyrefValues = [...WasmEqrefValues, ...WasmI31refValues];
 let WasmNonAnyrefValues = [
     undefined,
     true,
     false,
     {x:1337},
     ["abracadabra"],
-    1337,
     13.37,
+    -0,
+    0x7fffffff + 0.1,
+    -0x7fffffff - 0.1,
+    0x80000000 + 0.1,
+    -0x80000000 - 0.1,
+    0xffffffff + 0.1,
+    -0xffffffff - 0.1,
+    Number.EPSILON,
+    Number.MAX_SAFE_INTEGER,
+    Number.MIN_SAFE_INTEGER,
+    Number.MIN_VALUE,
+    Number.MAX_VALUE,
+    Number.NaN,
     "hi",
     37n,
     new Number(42),
@@ -474,11 +510,11 @@ let WasmExternrefValues = [null, ...WasmNonNullExternrefValues];
 
 // Common array utilities
 
-// iota(n) creates an Array of length n with values 0..n-1
-function iota(len) {
+// iota(n,k) creates an Array of length n with values k..k+n-1
+function iota(len, k=0) {
     let xs = [];
     for ( let i=0 ; i < len ; i++ )
-        xs.push(i);
+        xs.push(i+k);
     return xs;
 }
 
@@ -544,3 +580,9 @@ function assertSame(got, expected) {
         assertEq(g, e);
     }
 }
+
+// TailCallIterations is selected to be large enough to trigger
+// "too much recursion", but not to be slow.
+var TailCallIterations = getBuildConfiguration().simulator ? 1000 : 100000;
+// TailCallBallast is selected to spill registers as parameters.
+var TailCallBallast = 30;

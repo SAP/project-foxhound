@@ -80,6 +80,7 @@ class ProviderQuickActions extends UrlbarProvider {
    */
   isActive(queryContext) {
     return (
+      queryContext.trimmedSearchString.length < 50 &&
       lazy.UrlbarPrefs.get(ENABLED_PREF) &&
       ((lazy.UrlbarPrefs.get(SUGGEST_PREF) && !queryContext.searchMode) ||
         queryContext.searchMode?.source == UrlbarUtils.RESULT_SOURCE.ACTIONS)
@@ -154,6 +155,8 @@ class ProviderQuickActions extends UrlbarProvider {
         results: results.map(key => ({ key })),
         dynamicType: DYNAMIC_TYPE_NAME,
         inputLength: input.length,
+        inQuickActionsSearchMode:
+          queryContext.searchMode?.source == UrlbarUtils.RESULT_SOURCE.ACTIONS,
       }
     );
     result.suggestedIndex = SUGGESTED_INDEX;
@@ -167,6 +170,10 @@ class ProviderQuickActions extends UrlbarProvider {
         {
           name: "buttons",
           tag: "div",
+          attributes: {
+            "data-is-quickactions-searchmode":
+              result.payload.inQuickActionsSearchMode,
+          },
           children: result.payload.results.map(({ key }, i) => {
             let action = this.#actions.get(key);
             let inActive = "isActive" in action && !action.isActive();
@@ -239,24 +246,7 @@ class ProviderQuickActions extends UrlbarProvider {
     }
   }
 
-  /**
-   * Called when the user starts and ends an engagement with the urlbar.  For
-   * details on parameters, see UrlbarProvider.onEngagement().
-   *
-   * @param {boolean} isPrivate
-   *   True if the engagement is in a private context.
-   * @param {string} state
-   *   The state of the engagement, one of: start, engagement, abandonment,
-   *   discard
-   * @param {UrlbarQueryContext} queryContext
-   *   The engagement's query context.  This is *not* guaranteed to be defined
-   *   when `state` is "start".  It will always be defined for "engagement" and
-   *   "abandonment".
-   * @param {object} details
-   *   This is defined only when `state` is "engagement" or "abandonment", and
-   *   it describes the search string and picked result.
-   */
-  onEngagement(isPrivate, state, queryContext, details) {
+  onEngagement(state, queryContext, details, controller) {
     // Ignore engagements on other results that didn't end the session.
     if (details.result?.providerName != this.name && details.isSessionOngoing) {
       return;
@@ -268,7 +258,7 @@ class ProviderQuickActions extends UrlbarProvider {
       // visible result. Otherwise fall back to #getVisibleResultFromLastQuery.
       let { result } = details;
       if (result?.providerName != this.name) {
-        result = this.#getVisibleResultFromLastQuery(queryContext.view);
+        result = this.#getVisibleResultFromLastQuery(controller.view);
       }
 
       result?.payload.results.forEach(({ key }) => {

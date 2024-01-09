@@ -125,6 +125,22 @@
       }
     }
 
+    get owner() {
+      let owner = this._owner?.deref();
+      if (owner && !owner.closing) {
+        return owner;
+      }
+      return null;
+    }
+
+    set owner(owner) {
+      if (owner) {
+        this._owner = new WeakRef(owner);
+      } else {
+        this._owner = null;
+      }
+    }
+
     get container() {
       return gBrowser.tabContainer;
     }
@@ -136,6 +152,15 @@
 
       this.toggleAttribute("attention", val);
       gBrowser._tabAttrModified(this, ["attention"]);
+    }
+
+    set undiscardable(val) {
+      if (val == this.hasAttribute("undiscardable")) {
+        return;
+      }
+
+      this.toggleAttribute("undiscardable", val);
+      gBrowser._tabAttrModified(this, ["undiscardable"]);
     }
 
     set _visuallySelected(val) {
@@ -206,6 +231,10 @@
 
     get activeMediaBlocked() {
       return this.getAttribute("activemedia-blocked") == "true";
+    }
+
+    get undiscardable() {
+      return this.hasAttribute("undiscardable");
     }
 
     get isEmpty() {
@@ -542,6 +571,7 @@
       } else {
         tooltipEl.removeAttribute("data-l10n-id");
       }
+      // TODO(Itiel): Maybe simplify this when bug 1830989 lands
     }
 
     startUnselectedTabHoverTimer() {

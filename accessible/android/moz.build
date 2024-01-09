@@ -6,7 +6,6 @@
 
 EXPORTS.mozilla.a11y += [
     "AccessibleWrap.h",
-    "HyperTextAccessibleWrap.h",
     "SessionAccessibility.h",
     "TraversalRule.h",
 ]
@@ -25,7 +24,6 @@ LOCAL_INCLUDES += [
     "/accessible/generic",
     "/accessible/html",
     "/accessible/ipc",
-    "/accessible/ipc/other",
     "/accessible/xpcom",
     "/accessible/xul",
     "/dom/base",

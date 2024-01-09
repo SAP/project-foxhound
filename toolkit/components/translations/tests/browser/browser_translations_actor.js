@@ -17,21 +17,30 @@ add_task(async function test_pivot_language_behavior() {
     "Expect 4 console.error messages notifying of the lack of a pivot language."
   );
 
-  const { actor, cleanup } = await setupActorTest({
-    languagePairs: [
-      { fromLang: "en", toLang: "es", isBeta: false },
-      { fromLang: "es", toLang: "en", isBeta: false },
-      { fromLang: "en", toLang: "yue", isBeta: true },
-      { fromLang: "yue", toLang: "en", isBeta: true },
-      // This is not a bi-directional translation.
-      { fromLang: "is", toLang: "en", isBeta: false },
-      // These are non-pivot languages.
-      { fromLang: "zh", toLang: "ja", isBeta: true },
-      { fromLang: "ja", toLang: "zh", isBeta: true },
-    ],
+  const fromLanguagePairs = [
+    { fromLang: "en", toLang: "es" },
+    { fromLang: "es", toLang: "en" },
+    { fromLang: "en", toLang: "yue" },
+    { fromLang: "yue", toLang: "en" },
+    // This is not a bi-directional translation.
+    { fromLang: "is", toLang: "en" },
+    // These are non-pivot languages.
+    { fromLang: "zh", toLang: "ja" },
+    { fromLang: "ja", toLang: "zh" },
+  ];
+
+  // Sort the language pairs, as the order is not guaranteed.
+  function sort(list) {
+    return list.sort((a, b) =>
+      `${a.fromLang}-${a.toLang}`.localeCompare(`${b.fromLang}-${b.toLang}`)
+    );
+  }
+
+  const { cleanup } = await setupActorTest({
+    languagePairs: fromLanguagePairs,
   });
 
-  const { languagePairs } = await actor.getSupportedLanguages();
+  const { languagePairs } = await TranslationsParent.getSupportedLanguages();
 
   // The pairs aren't guaranteed to be sorted.
   languagePairs.sort((a, b) =>
@@ -40,17 +49,25 @@ add_task(async function test_pivot_language_behavior() {
     )
   );
 
-  Assert.deepEqual(
-    languagePairs,
-    [
-      { fromLang: "en", toLang: "es", isBeta: false },
-      { fromLang: "en", toLang: "yue", isBeta: true },
-      { fromLang: "es", toLang: "en", isBeta: false },
-      { fromLang: "is", toLang: "en", isBeta: false },
-      { fromLang: "yue", toLang: "en", isBeta: true },
-    ],
-    "Non-pivot languages were removed."
-  );
+  if (SpecialPowers.isDebugBuild) {
+    Assert.deepEqual(
+      sort(languagePairs),
+      sort([
+        { fromLang: "en", toLang: "es" },
+        { fromLang: "en", toLang: "yue" },
+        { fromLang: "es", toLang: "en" },
+        { fromLang: "is", toLang: "en" },
+        { fromLang: "yue", toLang: "en" },
+      ]),
+      "Non-pivot languages were removed on debug builds."
+    );
+  } else {
+    Assert.deepEqual(
+      sort(languagePairs),
+      sort(fromLanguagePairs),
+      "Non-pivot languages are retained on non-debug builds."
+    );
+  }
 
   return cleanup();
 });
@@ -74,7 +91,7 @@ async function usingAppLocale(locale, callback) {
 add_task(async function test_translating_to_and_from_app_language() {
   const PIVOT_LANGUAGE = "en";
 
-  const { actor, cleanup } = await setupActorTest({
+  const { cleanup } = await setupActorTest({
     languagePairs: [
       { fromLang: PIVOT_LANGUAGE, toLang: "es" },
       { fromLang: "es", toLang: PIVOT_LANGUAGE },
@@ -115,7 +132,7 @@ add_task(async function test_translating_to_and_from_app_language() {
     return usingAppLocale(app, async () => {
       Assert.deepEqual(
         getUniqueLanguagePairs(
-          await actor.getRecordsForTranslatingToAndFromAppLanguage(
+          await TranslationsParent.getRecordsForTranslatingToAndFromAppLanguage(
             requested,
             isForDeletion
           )

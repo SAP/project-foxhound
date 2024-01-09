@@ -77,10 +77,15 @@ struct AnimationValue {
   const mozilla::StyleRotate& GetRotateProperty() const;
 
   // Motion path properties.
-  const mozilla::StyleOffsetPath& GetOffsetPathProperty() const;
+  // Note: This clones the StyleOffsetPath object from its AnimatedValue, so
+  // this may be expensive if the path is a complex SVG path or polygon. The
+  // caller should be aware of this performance impact.
+  void GetOffsetPathProperty(StyleOffsetPath& aOffsetPath) const;
   const mozilla::LengthPercentage& GetOffsetDistanceProperty() const;
   const mozilla::StyleOffsetRotate& GetOffsetRotateProperty() const;
   const mozilla::StylePositionOrAuto& GetOffsetAnchorProperty() const;
+  const mozilla::StyleOffsetPosition& GetOffsetPositionProperty() const;
+  bool IsOffsetPathUrl() const;
 
   // Return the scale for mServo, which is calculated with reference to aFrame.
   mozilla::gfx::MatrixScales GetScaleValue(const nsIFrame* aFrame) const;

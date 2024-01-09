@@ -68,6 +68,7 @@ file-whitespace:
         - image/test/crashtests
         - image/test/mochitest
         - image/test/reftest
+        - intl/icu_testdata
         - intl/lwbrk/crashtests
         - intl/uconv/crashtests
         - intl/uconv/tests
@@ -84,7 +85,6 @@ file-whitespace:
         - layout/generic/crashtests
         - layout/generic/test
         - layout/inspector/tests
-        - layout/mathml/tests
         - layout/painting/crashtests/1405881-1.html
         - layout/painting/crashtests/1407470-1.html
         - layout/reftests

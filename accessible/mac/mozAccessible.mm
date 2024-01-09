@@ -20,9 +20,8 @@
 #include "nsAccUtils.h"
 #include "DocAccessibleParent.h"
 #include "Relation.h"
-#include "Role.h"
+#include "mozilla/a11y/Role.h"
 #include "RootAccessible.h"
-#include "TableAccessible.h"
 #include "mozilla/a11y/PDocAccessible.h"
 #include "mozilla/dom/BrowserParent.h"
 #include "OuterDocAccessible.h"
@@ -733,6 +732,11 @@ struct RoleDescrComparator {
 #ifndef RELEASE_OR_BETA
 - (NSString*)moxMozDebugDescription {
   NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
+
+  if (!mGeckoAccessible) {
+    return [NSString stringWithFormat:@"<%@: %p mGeckoAccessible=null>",
+                                      NSStringFromClass([self class]), self];
+  }
 
   NSMutableString* domInfo = [NSMutableString string];
   if (NSString* tagName = utils::GetAccAttr(self, nsGkAtoms::tag)) {

@@ -752,7 +752,7 @@ class TestResolver(MozbuildObject):
                 continue
 
             # If the path is a manifest, add all tests defined in that manifest.
-            if any(path.endswith(e) for e in (".ini", ".list")):
+            if any(path.endswith(e) for e in (".toml", ".ini", ".list")):
                 key = "manifest" if os.path.isabs(path) else "manifest_relpath"
                 candidate_paths |= {
                     t["file_relpath"]
@@ -842,6 +842,13 @@ class TestResolver(MozbuildObject):
         # Webdriver tests are nested in "classic" and "bidi" folders. Increase
         # the depth to avoid grouping all classic or bidi tests in one chunk.
         if test["name"].startswith(("/webdriver", "/_mozilla/webdriver")):
+            depth = depth + 1
+
+        # Webdriver BiDi tests are nested even further as tests are grouped by
+        # module but also by command / event name.
+        if test["name"].startswith(
+            ("/webdriver/tests/bidi", "/_mozilla/webdriver/bidi")
+        ):
             depth = depth + 1
 
         group = os.path.dirname(test["name"])

@@ -2144,7 +2144,8 @@ nsresult nsStandardURL::SetHostPort(const nsACString& aValue) {
 }
 
 nsresult nsStandardURL::SetHost(const nsACString& input) {
-  const nsPromiseFlatCString& hostname = PromiseFlatCString(input);
+  nsAutoCString hostname(input);
+  hostname.StripTaggedASCII(ASCIIMask::MaskCRLFTab());
 
   nsACString::const_iterator start, end;
   hostname.BeginReading(start);
@@ -2152,10 +2153,9 @@ nsresult nsStandardURL::SetHost(const nsACString& input) {
 
   FindHostLimit(start, end);
 
-  const nsCString unescapedHost(Substring(start, end));
   // Do percent decoding on the the input.
   nsAutoCString flat;
-  NS_UnescapeURL(unescapedHost.BeginReading(), unescapedHost.Length(),
+  NS_UnescapeURL(hostname.BeginReading(), end - start,
                  hostname.Taint(),
                  esc_AlwaysCopy | esc_Host, flat);
   const char* host = flat.get();
@@ -2917,6 +2917,12 @@ nsStandardURL::GetQuery(nsACString& result) {
   return NS_OK;
 }
 
+NS_IMETHODIMP
+nsStandardURL::GetHasQuery(bool* result) {
+  *result = (mQuery.mLen >= 0);
+  return NS_OK;
+}
+
 // result may contain unescaped UTF-8 characters
 NS_IMETHODIMP
 nsStandardURL::GetRef(nsACString& result) {
@@ -2959,8 +2965,9 @@ nsStandardURL::GetFileExtension(nsACString& result) {
 }
 
 nsresult nsStandardURL::SetFilePath(const nsACString& input) {
-  const nsPromiseFlatCString& flat = PromiseFlatCString(input);
-  const char* filepath = flat.get();
+  nsAutoCString str(input);
+  str.StripTaggedASCII(ASCIIMask::MaskCRLFTab());
+  const char* filepath = str.get();
 
   LOG(("nsStandardURL::SetFilePath [filepath=%s]\n", filepath));
   auto onExitGuard = MakeScopeExit([&] { SanityCheck(); });
@@ -2968,16 +2975,16 @@ nsresult nsStandardURL::SetFilePath(const nsACString& input) {
   // if there isn't a filepath, then there can't be anything
   // after the path either.  this url is likely uninitialized.
   if (mFilepath.mLen < 0) {
-    return SetPathQueryRef(flat);
+    return SetPathQueryRef(str);
   }
 
-  if (filepath && *filepath) {
+  if (!str.IsEmpty()) {
     nsAutoCString spec;
     uint32_t dirPos, basePos, extPos;
     int32_t dirLen, baseLen, extLen;
     nsresult rv;
 
-    rv = mParser->ParseFilePath(filepath, flat.Length(), &dirPos, &dirLen,
+    rv = mParser->ParseFilePath(filepath, str.Length(), &dirPos, &dirLen,
                                 &basePos, &baseLen, &extPos, &extLen);
     if (NS_FAILED(rv)) {
       return rv;
@@ -3073,7 +3080,7 @@ nsresult nsStandardURL::SetQueryWithEncoding(const nsACString& input,
 
   InvalidateCache();
 
-  if (!query || !*query) {
+  if (flat.IsEmpty()) {
     // remove existing query
     if (mQuery.mLen >= 0) {
       // remove query and leading '?'
@@ -3088,8 +3095,7 @@ nsresult nsStandardURL::SetQueryWithEncoding(const nsACString& input,
 
   // filter out unexpected chars "\r\n\t" if necessary
   nsAutoCString filteredURI(flat);
-  const ASCIIMaskArray& mask = ASCIIMask::MaskCRLFTab();
-  filteredURI.StripTaggedASCII(mask);
+  filteredURI.StripTaggedASCII(ASCIIMask::MaskCRLFTab());
 
   query = filteredURI.get();
   int32_t queryLen = filteredURI.Length();
@@ -3165,8 +3171,7 @@ nsresult nsStandardURL::SetRef(const nsACString& input) {
 
   // filter out unexpected chars "\r\n\t" if necessary
   nsAutoCString filteredURI(flat);
-  const ASCIIMaskArray& mask = ASCIIMask::MaskCRLFTab();
-  filteredURI.StripTaggedASCII(mask);
+  filteredURI.StripTaggedASCII(ASCIIMask::MaskCRLFTab());
 
   ref = filteredURI.get();
   int32_t refLen = filteredURI.Length();

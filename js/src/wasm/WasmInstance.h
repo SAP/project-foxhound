@@ -51,6 +51,8 @@ using mozilla::Atomic;
 
 class FuncImport;
 struct FuncImportInstanceData;
+struct MemoryDesc;
+struct MemoryInstanceData;
 class GlobalDesc;
 struct TableDesc;
 struct TableInstanceData;
@@ -76,15 +78,17 @@ class alignas(16) Instance {
   // from the JIT, such that they have as small an offset as possible. See the
   // next note for the end of this region.
 
-  // Pointer to the base of the default memory (or null if there is none).
-  uint8_t* memoryBase_;
+  // Pointer to the base of memory 0 (or null if there is no memories). This is
+  // always in sync with the MemoryInstanceData for memory 0.
+  uint8_t* memory0Base_;
 
-  // Bounds check limit in bytes (or zero if there is no memory).  This is
-  // 64-bits on 64-bit systems so as to allow for heap lengths up to and beyond
-  // 4GB, and 32-bits on 32-bit systems, where heaps are limited to 2GB.
+  // Bounds check limit in bytes (or zero if there is no memory) for memory 0
+  // This is 64-bits on 64-bit systems so as to allow for heap lengths up to and
+  // beyond 4GB, and 32-bits on 32-bit systems, where memories are limited to
+  // 2GB.
   //
   // See "Linear memory addresses and bounds checking" in WasmMemory.cpp.
-  uintptr_t boundsCheckLimit_;
+  uintptr_t memory0BoundsCheckLimit_;
 
   // Null or a pointer to a per-process builtin thunk that will invoke the Debug
   // Trap Handler.
@@ -103,9 +107,9 @@ class alignas(16) Instance {
   //   - Set by wasm::HandleThrow, unset by Instance::consumePendingException.
   //   - If the unwind target is a `try-delegate`, it is unset by the delegated
   //     try-catch block or function body block.
-  GCPtr<JSObject*> pendingException_;
+  GCPtr<AnyRef> pendingException_;
   // The tag object of the pending exception.
-  GCPtr<JSObject*> pendingExceptionTag_;
+  GCPtr<AnyRef> pendingExceptionTag_;
 
   // Usually equal to cx->stackLimitForJitCode(JS::StackForUntrustedScript),
   // but can be racily set to trigger immediate trap as an opportunity to
@@ -161,9 +165,6 @@ class alignas(16) Instance {
   // The wasm::Code for this instance
   const SharedCode code_;
 
-  // The memory for this instance, if any
-  const GCPtr<WasmMemoryObject*> memory_;
-
   // The tables for this instance, if any
   const SharedTableVector tables_;
 
@@ -199,6 +200,7 @@ class alignas(16) Instance {
   TypeDefInstanceData* typeDefInstanceData(uint32_t typeIndex) const;
   const void* addressOfGlobalCell(const GlobalDesc& globalDesc) const;
   FuncImportInstanceData& funcImportInstanceData(const FuncImport& fi);
+  MemoryInstanceData& memoryInstanceData(uint32_t memoryIndex) const;
   TableInstanceData& tableInstanceData(uint32_t tableIndex) const;
   TagInstanceData& tagInstanceData(uint32_t tagIndex) const;
 
@@ -210,20 +212,20 @@ class alignas(16) Instance {
                   uint64_t* argv);
 
   Instance(JSContext* cx, Handle<WasmInstanceObject*> object,
-           const SharedCode& code, Handle<WasmMemoryObject*> memory,
-           SharedTableVector&& tables, UniqueDebugState maybeDebug);
+           const SharedCode& code, SharedTableVector&& tables,
+           UniqueDebugState maybeDebug);
   ~Instance();
 
  public:
   static Instance* create(JSContext* cx, Handle<WasmInstanceObject*> object,
                           const SharedCode& code, uint32_t instanceDataLength,
-                          Handle<WasmMemoryObject*> memory,
                           SharedTableVector&& tables,
                           UniqueDebugState maybeDebug);
   static void destroy(Instance* instance);
 
   bool init(JSContext* cx, const JSObjectVector& funcImports,
             const ValVector& globalImportValues,
+            Handle<WasmMemoryObjectVector> memories,
             const WasmGlobalObjectVector& globalObjs,
             const WasmTagObjectVector& tagObjs,
             const DataSegmentVector& dataSegments,
@@ -240,11 +242,11 @@ class alignas(16) Instance {
                        uint8_t* nextPC,
                        uintptr_t highestByteVisitedInPrevFrame);
 
-  static constexpr size_t offsetOfMemoryBase() {
-    return offsetof(Instance, memoryBase_);
+  static constexpr size_t offsetOfMemory0Base() {
+    return offsetof(Instance, memory0Base_);
   }
-  static constexpr size_t offsetOfBoundsCheckLimit() {
-    return offsetof(Instance, boundsCheckLimit_);
+  static constexpr size_t offsetOfMemory0BoundsCheckLimit() {
+    return offsetof(Instance, memory0BoundsCheckLimit_);
   }
   static constexpr size_t offsetOfDebugTrapHandler() {
     return offsetof(Instance, debugTrapHandler_);
@@ -304,10 +306,11 @@ class alignas(16) Instance {
   DebugState& debug() { return *maybeDebug_; }
   uint8_t* data() const { return (uint8_t*)&data_; }
   const SharedTableVector& tables() const { return tables_; }
-  SharedMem<uint8_t*> memoryBase() const;
-  WasmMemoryObject* memory() const;
-  size_t memoryMappedSize() const;
-  SharedArrayRawBuffer* sharedMemoryBuffer() const;  // never null
+  SharedMem<uint8_t*> memoryBase(uint32_t memoryIndex) const;
+  WasmMemoryObject* memory(uint32_t memoryIndex) const;
+  size_t memoryMappedSize(uint32_t memoryIndex) const;
+  SharedArrayRawBuffer* sharedMemoryBuffer(
+      uint32_t memoryIndex) const;  // never null
   bool memoryAccessInGuardRegion(const uint8_t* addr, unsigned numBytes) const;
 
   // Methods to set, test and clear the interrupt fields. Both interrupt
@@ -363,8 +366,11 @@ class alignas(16) Instance {
 
   // Called by Wasm(Memory|Table)Object when a moving resize occurs:
 
-  void onMovingGrowMemory();
-  void onMovingGrowTable(const Table* theTable);
+  void onMovingGrowMemory(const WasmMemoryObject* memory);
+  void onMovingGrowTable(const Table* table);
+
+  bool initSegments(JSContext* cx, const DataSegmentVector& dataSegments,
+                    const ElemSegmentVector& elemSegments);
 
   // Called to apply a single ElemSegment at a given offset, assuming
   // that all bounds validation has already been performed.
@@ -393,10 +399,12 @@ class alignas(16) Instance {
  public:
   // Functions to be called directly from wasm code.
   static int32_t callImport_general(Instance*, int32_t, int32_t, uint64_t*);
-  static uint32_t memoryGrow_m32(Instance* instance, uint32_t delta);
-  static uint64_t memoryGrow_m64(Instance* instance, uint64_t delta);
-  static uint32_t memorySize_m32(Instance* instance);
-  static uint64_t memorySize_m64(Instance* instance);
+  static uint32_t memoryGrow_m32(Instance* instance, uint32_t delta,
+                                 uint32_t memoryIndex);
+  static uint64_t memoryGrow_m64(Instance* instance, uint64_t delta,
+                                 uint32_t memoryIndex);
+  static uint32_t memorySize_m32(Instance* instance, uint32_t memoryIndex);
+  static uint64_t memorySize_m64(Instance* instance, uint32_t memoryIndex);
   static int32_t memCopy_m32(Instance* instance, uint32_t dstByteOffset,
                              uint32_t srcByteOffset, uint32_t len,
                              uint8_t* memBase);
@@ -409,6 +417,10 @@ class alignas(16) Instance {
   static int32_t memCopyShared_m64(Instance* instance, uint64_t dstByteOffset,
                                    uint64_t srcByteOffset, uint64_t len,
                                    uint8_t* memBase);
+  static int32_t memCopy_any(Instance* instance, uint64_t dstByteOffset,
+                             uint64_t srcByteOffset, uint64_t len,
+                             uint32_t dstMemIndex, uint32_t srcMemIndex);
+
   static int32_t memFill_m32(Instance* instance, uint32_t byteOffset,
                              uint32_t value, uint32_t len, uint8_t* memBase);
   static int32_t memFillShared_m32(Instance* instance, uint32_t byteOffset,
@@ -421,10 +433,10 @@ class alignas(16) Instance {
                                    uint8_t* memBase);
   static int32_t memInit_m32(Instance* instance, uint32_t dstOffset,
                              uint32_t srcOffset, uint32_t len,
-                             uint32_t segIndex);
+                             uint32_t segIndex, uint32_t memIndex);
   static int32_t memInit_m64(Instance* instance, uint64_t dstOffset,
                              uint32_t srcOffset, uint32_t len,
-                             uint32_t segIndex);
+                             uint32_t segIndex, uint32_t memIndex);
   static int32_t dataDrop(Instance* instance, uint32_t segIndex);
   static int32_t tableCopy(Instance* instance, uint32_t dstOffset,
                            uint32_t srcOffset, uint32_t len,
@@ -451,32 +463,38 @@ class alignas(16) Instance {
                            uint32_t tableIndex);
   static int32_t elemDrop(Instance* instance, uint32_t segIndex);
   static int32_t wait_i32_m32(Instance* instance, uint32_t byteOffset,
-                              int32_t value, int64_t timeout);
+                              int32_t value, int64_t timeout,
+                              uint32_t memoryIndex);
   static int32_t wait_i32_m64(Instance* instance, uint64_t byteOffset,
-                              int32_t value, int64_t timeout);
+                              int32_t value, int64_t timeout,
+                              uint32_t memoryIndex);
   static int32_t wait_i64_m32(Instance* instance, uint32_t byteOffset,
-                              int64_t value, int64_t timeout);
+                              int64_t value, int64_t timeout,
+                              uint32_t memoryIndex);
   static int32_t wait_i64_m64(Instance* instance, uint64_t byteOffset,
-                              int64_t value, int64_t timeout);
+                              int64_t value, int64_t timeout,
+                              uint32_t memoryIndex);
   static int32_t wake_m32(Instance* instance, uint32_t byteOffset,
-                          int32_t count);
+                          int32_t count, uint32_t memoryIndex);
   static int32_t wake_m64(Instance* instance, uint64_t byteOffset,
-                          int32_t count);
+                          int32_t count, uint32_t memoryIndex);
   static void* refFunc(Instance* instance, uint32_t funcIndex);
-  static void postBarrier(Instance* instance, gc::Cell** location);
-  static void postBarrierPrecise(Instance* instance, JSObject** location,
-                                 JSObject* prev);
-  static void postBarrierPreciseWithOffset(Instance* instance, JSObject** base,
-                                           uint32_t offset, JSObject* prev);
-  static void* exceptionNew(Instance* instance, JSObject* tag);
-  static int32_t throwException(Instance* instance, JSObject* exn);
-  static void* structNew(Instance* instance, TypeDefInstanceData* typeDefData);
-  static void* structNewUninit(Instance* instance,
-                               TypeDefInstanceData* typeDefData);
+  static void postBarrier(Instance* instance, void** location);
+  static void postBarrierPrecise(Instance* instance, void** location,
+                                 void* prev);
+  static void postBarrierPreciseWithOffset(Instance* instance, void** base,
+                                           uint32_t offset, void* prev);
+  static void* exceptionNew(Instance* instance, void* exceptionArg);
+  static int32_t throwException(Instance* instance, void* exceptionArg);
+  template <bool ZeroFields>
+  static void* structNewIL(Instance* instance,
+                           TypeDefInstanceData* typeDefData);
+  template <bool ZeroFields>
+  static void* structNewOOL(Instance* instance,
+                            TypeDefInstanceData* typeDefData);
+  template <bool ZeroFields>
   static void* arrayNew(Instance* instance, uint32_t numElements,
                         TypeDefInstanceData* typeDefData);
-  static void* arrayNewUninit(Instance* instance, uint32_t numElements,
-                              TypeDefInstanceData* typeDefData);
   static void* arrayNewData(Instance* instance, uint32_t segByteOffset,
                             uint32_t numElements,
                             TypeDefInstanceData* typeDefData,

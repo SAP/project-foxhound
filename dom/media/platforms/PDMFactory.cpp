@@ -41,7 +41,6 @@
 
 #ifdef XP_WIN
 #  include "WMFDecoderModule.h"
-#  include "mozilla/WindowsVersion.h"
 #  ifdef MOZ_WMF_MEDIA_ENGINE
 #    include "MFMediaEngineDecoderModule.h"
 #  endif
@@ -92,17 +91,13 @@ class PDMInitializer final {
  private:
   static void InitGpuPDMs() {
 #ifdef XP_WIN
-    if (!IsWin7AndPre2000Compatible()) {
-      WMFDecoderModule::Init();
-    }
+    WMFDecoderModule::Init();
 #endif
   }
 
   static void InitRddPDMs() {
 #ifdef XP_WIN
-    if (!IsWin7AndPre2000Compatible()) {
-      WMFDecoderModule::Init();
-    }
+    WMFDecoderModule::Init();
 #endif
 #ifdef MOZ_APPLEMEDIA
     AppleDecoderModule::Init();
@@ -120,12 +115,11 @@ class PDMInitializer final {
   static void InitUtilityPDMs() {
     const ipc::SandboxingKind kind = GetCurrentSandboxingKind();
 #ifdef XP_WIN
-    if (!IsWin7AndPre2000Compatible() &&
-        kind == ipc::SandboxingKind::UTILITY_AUDIO_DECODING_WMF) {
+    if (kind == ipc::SandboxingKind::UTILITY_AUDIO_DECODING_WMF) {
       WMFDecoderModule::Init();
     }
 #  ifdef MOZ_WMF_MEDIA_ENGINE
-    if (IsWin10OrLater() && StaticPrefs::media_wmf_media_engine_enabled() &&
+    if (StaticPrefs::media_wmf_media_engine_enabled() &&
         kind == ipc::SandboxingKind::MF_MEDIA_ENGINE_CDM) {
       MFMediaEngineDecoderModule::Init();
     }
@@ -150,8 +144,10 @@ class PDMInitializer final {
   }
 
   static void InitContentPDMs() {
+#if !defined(MOZ_WIDGET_ANDROID)  // Still required for video?
+    if (StaticPrefs::media_allow_audio_non_utility()) {
+#endif  // !defined(MOZ_WIDGET_ANDROID)
 #ifdef XP_WIN
-    if (!IsWin7AndPre2000Compatible()) {
 #  ifdef MOZ_WMF
       if (!StaticPrefs::media_rdd_process_enabled() ||
           !StaticPrefs::media_rdd_wmf_enabled() ||
@@ -160,28 +156,29 @@ class PDMInitializer final {
         WMFDecoderModule::Init();
       }
 #  endif
-    }
 #endif
 #ifdef MOZ_APPLEMEDIA
-    AppleDecoderModule::Init();
+      AppleDecoderModule::Init();
 #endif
 #ifdef MOZ_OMX
-    OmxDecoderModule::Init();
+      OmxDecoderModule::Init();
 #endif
 #ifdef MOZ_FFVPX
-    FFVPXRuntimeLinker::Init();
+      FFVPXRuntimeLinker::Init();
 #endif
 #ifdef MOZ_FFMPEG
-    FFmpegRuntimeLinker::Init();
+      FFmpegRuntimeLinker::Init();
 #endif
+#if !defined(MOZ_WIDGET_ANDROID)  // Still required for video?
+    }
+#endif  // !defined(MOZ_WIDGET_ANDROID)
+
     RemoteDecoderManagerChild::Init();
   }
 
   static void InitDefaultPDMs() {
 #ifdef XP_WIN
-    if (!IsWin7AndPre2000Compatible()) {
-      WMFDecoderModule::Init();
-    }
+    WMFDecoderModule::Init();
 #endif
 #ifdef MOZ_APPLEMEDIA
     AppleDecoderModule::Init();
@@ -515,7 +512,7 @@ void PDMFactory::CreatePDMs() {
 
 void PDMFactory::CreateGpuPDMs() {
 #ifdef XP_WIN
-  if (StaticPrefs::media_wmf_enabled() && !IsWin7AndPre2000Compatible()) {
+  if (StaticPrefs::media_wmf_enabled()) {
     CreateAndStartupPDM<WMFDecoderModule>();
   }
 #endif
@@ -610,7 +607,7 @@ void PDMFactory::CreateUtilityPDMs() {
   }
 #ifdef MOZ_WMF_MEDIA_ENGINE
   if (aKind == ipc::SandboxingKind::MF_MEDIA_ENGINE_CDM) {
-    if (IsWin10OrLater() && StaticPrefs::media_wmf_media_engine_enabled()) {
+    if (StaticPrefs::media_wmf_media_engine_enabled()) {
       CreateAndStartupPDM<MFMediaEngineDecoderModule>();
     }
   }
@@ -647,49 +644,57 @@ void PDMFactory::CreateContentPDMs() {
   }
 #endif
 
+#if !defined(MOZ_WIDGET_ANDROID)  // Still required for video?
+  if (StaticPrefs::media_allow_audio_non_utility()) {
+#endif  // !defined(MOZ_WIDGET_ANDROID)
 #ifdef XP_WIN
-  if (StaticPrefs::media_wmf_enabled() && !IsWin7AndPre2000Compatible()) {
+    if (StaticPrefs::media_wmf_enabled()) {
 #  ifdef MOZ_WMF
-    if (!StaticPrefs::media_rdd_process_enabled() ||
-        !StaticPrefs::media_rdd_wmf_enabled()) {
-      if (!CreateAndStartupPDM<WMFDecoderModule>()) {
-        mFailureFlags += DecoderDoctorDiagnostics::Flags::WMFFailedToLoad;
+      if (!StaticPrefs::media_rdd_process_enabled() ||
+          !StaticPrefs::media_rdd_wmf_enabled()) {
+        if (!CreateAndStartupPDM<WMFDecoderModule>()) {
+          mFailureFlags += DecoderDoctorDiagnostics::Flags::WMFFailedToLoad;
+        }
       }
-    }
 #  endif
-  } else if (StaticPrefs::media_decoder_doctor_wmf_disabled_is_failure()) {
-    mFailureFlags += DecoderDoctorDiagnostics::Flags::WMFFailedToLoad;
-  }
+    } else if (StaticPrefs::media_decoder_doctor_wmf_disabled_is_failure()) {
+      mFailureFlags += DecoderDoctorDiagnostics::Flags::WMFFailedToLoad;
+    }
 #endif
 
 #ifdef MOZ_APPLEMEDIA
-  CreateAndStartupPDM<AppleDecoderModule>();
+    CreateAndStartupPDM<AppleDecoderModule>();
 #endif
 #ifdef MOZ_OMX
-  if (StaticPrefs::media_omx_enabled()) {
-    CreateAndStartupPDM<OmxDecoderModule>();
-  }
+    if (StaticPrefs::media_omx_enabled()) {
+      CreateAndStartupPDM<OmxDecoderModule>();
+    }
 #endif
 #ifdef MOZ_FFVPX
-  if (StaticPrefs::media_ffvpx_enabled()) {
-    CreateAndStartupPDM<FFVPXRuntimeLinker>();
-  }
+    if (StaticPrefs::media_ffvpx_enabled()) {
+      CreateAndStartupPDM<FFVPXRuntimeLinker>();
+    }
 #endif
 #ifdef MOZ_FFMPEG
-  if (StaticPrefs::media_ffmpeg_enabled() &&
-      !CreateAndStartupPDM<FFmpegRuntimeLinker>()) {
-    mFailureFlags += GetFailureFlagBasedOnFFmpegStatus(
-        FFmpegRuntimeLinker::LinkStatusCode());
-  }
+    if (StaticPrefs::media_ffmpeg_enabled() &&
+        !CreateAndStartupPDM<FFmpegRuntimeLinker>()) {
+      mFailureFlags += GetFailureFlagBasedOnFFmpegStatus(
+          FFmpegRuntimeLinker::LinkStatusCode());
+    }
 #endif
+
+    CreateAndStartupPDM<AgnosticDecoderModule>();
+#if !defined(MOZ_WIDGET_ANDROID)  // Still required for video?
+  }
+#endif  // !defined(MOZ_WIDGET_ANDROID)
+
+  // Android still needs this, the actual decoder is remoted on java side
 #ifdef MOZ_WIDGET_ANDROID
   if (StaticPrefs::media_android_media_codec_enabled()) {
     StartupPDM(AndroidDecoderModule::Create(),
                StaticPrefs::media_android_media_codec_preferred());
   }
 #endif
-
-  CreateAndStartupPDM<AgnosticDecoderModule>();
 
   if (StaticPrefs::media_gmp_decoder_enabled() &&
       !StartupPDM(GMPDecoderModule::Create(),
@@ -700,7 +705,7 @@ void PDMFactory::CreateContentPDMs() {
 
 void PDMFactory::CreateDefaultPDMs() {
 #ifdef XP_WIN
-  if (StaticPrefs::media_wmf_enabled() && !IsWin7AndPre2000Compatible()) {
+  if (StaticPrefs::media_wmf_enabled()) {
     if (!CreateAndStartupPDM<WMFDecoderModule>()) {
       mFailureFlags += DecoderDoctorDiagnostics::Flags::WMFFailedToLoad;
     }

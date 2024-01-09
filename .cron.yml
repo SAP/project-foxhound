@@ -117,7 +117,7 @@ jobs:
           - mozilla-central
       when:
           by-project:
-              mozilla-central: [{hour: 18, minute: 30}]
+              mozilla-central: [{hour: 20, minute: 30}]
 
     # For more context on this job, see:
     # https://github.com/mozsearch/mozsearch-mozilla#how-searchfoxorg-stays-up-to-date
@@ -394,3 +394,13 @@ jobs:
           - mozilla-central
       when:
           - {hour: 0, minute: 00}
+
+    - name: snap-upstream
+      job:
+          type: decision-task
+          treeherder-symbol: snap-upstream
+          target-tasks-method: snap_upstream_build
+      run-on-projects:
+          - mozilla-central
+      when:
+          - {hour: 0, minute: 0}

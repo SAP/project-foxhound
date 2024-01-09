@@ -62,9 +62,8 @@ class WebGPUChild final : public PWebGPUChild, public SupportsWeakPtr {
 
   RefPtr<AdapterPromise> InstanceRequestAdapter(
       const dom::GPURequestAdapterOptions& aOptions);
-  Maybe<DeviceRequest> AdapterRequestDevice(
-      RawId aSelfId, const dom::GPUDeviceDescriptor& aDesc,
-      ffi::WGPULimits* aLimits);
+  Maybe<DeviceRequest> AdapterRequestDevice(RawId aSelfId,
+                                            const ffi::WGPUDeviceDescriptor&);
   RawId DeviceCreateBuffer(RawId aSelfId, const dom::GPUBufferDescriptor& aDesc,
                            ipc::UnsafeSharedMemoryHandle&& aShmem);
   RawId DeviceCreateTexture(RawId aSelfId,
@@ -80,6 +79,7 @@ class WebGPUChild final : public PWebGPUChild, public SupportsWeakPtr {
   RawId RenderBundleEncoderFinish(ffi::WGPURenderBundleEncoder& aEncoder,
                                   RawId aDeviceId,
                                   const dom::GPURenderBundleDescriptor& aDesc);
+  RawId RenderBundleEncoderFinishError(RawId aDeviceId, const nsString& aLabel);
   RawId DeviceCreateBindGroupLayout(
       RawId aSelfId, const dom::GPUBindGroupLayoutDescriptor& aDesc);
   RawId DeviceCreatePipelineLayout(
@@ -99,12 +99,17 @@ class WebGPUChild final : public PWebGPUChild, public SupportsWeakPtr {
       PipelineCreationContext* const aContext,
       const dom::GPURenderPipelineDescriptor& aDesc);
   MOZ_CAN_RUN_SCRIPT already_AddRefed<ShaderModule> DeviceCreateShaderModule(
-      Device& aDevice, const dom::GPUShaderModuleDescriptor& aDesc,
+      const RefPtr<Device>& aDevice,
+      const dom::GPUShaderModuleDescriptor& aDesc,
       RefPtr<dom::Promise> aPromise);
 
   void DeviceCreateSwapChain(RawId aSelfId, const RGBDescriptor& aRgbDesc,
                              size_t maxBufferCount,
                              const layers::RemoteTextureOwnerId& aOwnerId);
+
+  void QueueOnSubmittedWorkDone(const RawId aSelfId,
+                                const RefPtr<dom::Promise>& aPromise);
+
   void SwapChainPresent(RawId aTextureId,
                         const RemoteTextureId& aRemoteTextureId,
                         const RemoteTextureOwnerId& aOwnerId);
@@ -113,13 +118,13 @@ class WebGPUChild final : public PWebGPUChild, public SupportsWeakPtr {
   void UnregisterDevice(RawId aId);
   void FreeUnregisteredInParentDevice(RawId aId);
 
-  static void ConvertTextureFormatRef(const dom::GPUTextureFormat& aInput,
-                                      ffi::WGPUTextureFormat& aOutput);
+  static ffi::WGPUTextureFormat ConvertTextureFormat(
+      const dom::GPUTextureFormat& aInput);
+
+  static void JsWarning(nsIGlobalObject* aGlobal, const nsACString& aMessage);
 
  private:
   virtual ~WebGPUChild();
-
-  void JsWarning(nsIGlobalObject* aGlobal, const nsACString& aMessage);
 
   RawId DeviceCreateComputePipelineImpl(
       PipelineCreationContext* const aContext,
@@ -134,8 +139,8 @@ class WebGPUChild final : public PWebGPUChild, public SupportsWeakPtr {
   std::unordered_map<RawId, WeakPtr<Device>> mDeviceMap;
 
  public:
-  ipc::IPCResult RecvDeviceUncapturedError(RawId aDeviceId,
-                                           const nsACString& aMessage);
+  ipc::IPCResult RecvUncapturedError(Maybe<RawId> aDeviceId,
+                                     const nsACString& aMessage);
   ipc::IPCResult RecvDropAction(const ipc::ByteBuf& aByteBuf);
   void ActorDestroy(ActorDestroyReason) override;
 };

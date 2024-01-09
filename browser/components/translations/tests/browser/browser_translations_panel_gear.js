@@ -17,12 +17,23 @@ add_task(async function test_translations_panel_manage_languages() {
     "The button is available."
   );
 
-  await waitForTranslationsPopupEvent("popupshown", () => {
-    click(button, "Opening the popup");
-  });
+  await waitForTranslationsPopupEvent(
+    "popupshown",
+    () => {
+      click(button, "Opening the popup");
+    },
+    assertPanelDefaultView
+  );
 
   const gearIcon = getByL10nId("translations-panel-settings-button");
   click(gearIcon, "Open the preferences menu");
+
+  ok(
+    getByL10nId("translations-panel-settings-about2"),
+    "The learn more link is in the gear menu."
+  );
+  // Aside: Don't actually click the link in the test since it will trigger a
+  // network request.
 
   const manageLanguages = getByL10nId(
     "translations-panel-settings-manage-languages"
@@ -30,7 +41,7 @@ add_task(async function test_translations_panel_manage_languages() {
   info("Choose to manage the languages.");
   manageLanguages.doCommand();
 
-  await TestUtils.waitForCondition(
+  await waitForCondition(
     () => gBrowser.currentURI.spec === "about:preferences#general",
     "Waiting for about:preferences to be opened."
   );

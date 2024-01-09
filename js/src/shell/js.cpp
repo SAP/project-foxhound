@@ -80,8 +80,7 @@
 #include "builtin/TestingFunctions.h"
 #include "builtin/TestingUtility.h"  // js::ParseCompileOptions, js::ParseDebugMetadata, js::CreateScriptPrivate
 #include "debugger/DebugAPI.h"
-#include "frontend/BytecodeCompilation.h"
-#include "frontend/BytecodeCompiler.h"
+#include "frontend/BytecodeCompiler.h"  // frontend::{CompileGlobalScriptToExtensibleStencil, CompileModule, ParseModuleToExtensibleStencil}
 #include "frontend/CompilationStencil.h"
 #ifdef JS_ENABLE_SMOOSH
 #  include "frontend/Frontend2.h"
@@ -91,11 +90,11 @@
 #include "frontend/Parser.h"
 #include "frontend/ScopeBindingCache.h"  // js::frontend::ScopeBindingCache
 #include "frontend/SourceNotes.h"  // SrcNote, SrcNoteType, SrcNoteIterator
+#include "gc/GC.h"
 #include "gc/PublicIterators.h"
 #ifdef DEBUG
 #  include "irregexp/RegExpAPI.h"
 #endif
-#include "gc/GC-inl.h"  // ZoneCellIter
 
 #ifdef JS_SIMULATOR_ARM
 #  include "jit/arm/Simulator-arm.h"
@@ -116,6 +115,7 @@
 #include "jit/InlinableNatives.h"
 #include "jit/Ion.h"
 #include "jit/JitcodeMap.h"
+#include "jit/JitZone.h"
 #include "jit/shared/CodeGenerator-shared.h"
 #include "js/Array.h"        // JS::NewArrayObject
 #include "js/ArrayBuffer.h"  // JS::{CreateMappedArrayBufferContents,NewMappedArrayBufferWithContents,IsArrayBufferObject,GetArrayBufferLengthAndData}
@@ -188,7 +188,7 @@
 #include "vm/ErrorObject.h"
 #include "vm/ErrorReporting.h"
 #include "vm/HelperThreads.h"
-#include "vm/JSAtom.h"
+#include "vm/JSAtomUtils.h"  // AtomizeUTF8Chars, AtomizeString, ToAtom
 #include "vm/JSContext.h"
 #include "vm/JSFunction.h"
 #include "vm/JSObject.h"
@@ -205,6 +205,7 @@
 #include "vm/ToSource.h"  // js::ValueToSource
 #include "vm/TypedArrayObject.h"
 #include "vm/WrapperObject.h"
+#include "wasm/WasmFeatures.h"
 #include "wasm/WasmJS.h"
 
 #include "vm/Compartment-inl.h"
@@ -609,13 +610,10 @@ bool shell::enableSharedMemory = SHARED_MEMORY_DEFAULT;
 bool shell::enableWasmBaseline = false;
 bool shell::enableWasmOptimizing = false;
 
-#define WASM_DEFAULT_FEATURE(NAME, ...) bool shell::enableWasm##NAME = true;
-#define WASM_EXPERIMENTAL_FEATURE(NAME, ...) \
-  bool shell::enableWasm##NAME = false;
-JS_FOR_WASM_FEATURES(WASM_DEFAULT_FEATURE, WASM_DEFAULT_FEATURE,
-                     WASM_EXPERIMENTAL_FEATURE);
-#undef WASM_DEFAULT_FEATURE
-#undef WASM_EXPERIMENTAL_FEATURE
+#define WASM_FEATURE(NAME, _, STAGE, ...) \
+  bool shell::enableWasm##NAME = STAGE != WasmFeatureStage::Experimental;
+JS_FOR_WASM_FEATURES(WASM_FEATURE);
+#undef WASM_FEATURE
 
 bool shell::enableWasmVerbose = false;
 bool shell::enableTestWasmAwaitTier2 = false;
@@ -627,15 +625,14 @@ bool shell::enableToSource = false;
 bool shell::enablePropertyErrorMessageFix = false;
 bool shell::enableIteratorHelpers = false;
 bool shell::enableShadowRealms = false;
-bool shell::enableArrayFromAsync = true;
 #ifdef NIGHTLY_BUILD
 bool shell::enableArrayGrouping = false;
 // Pref for String.prototype.{is,to}WellFormed() methods.
 bool shell::enableWellFormedUnicodeStrings = false;
-#endif
-bool shell::enableChangeArrayByCopy = false;
-#ifdef ENABLE_NEW_SET_METHODS
-bool shell::enableNewSetMethods = true;
+// Pref for new Set.prototype methods.
+bool shell::enableNewSetMethods = false;
+// Pref for ArrayBuffer.prototype.transfer{,ToFixedLength}() methods.
+bool shell::enableArrayBufferTransfer = false;
 #endif
 bool shell::enableImportAssertions = false;
 #ifdef JS_GC_ZEAL
@@ -1811,14 +1808,16 @@ static bool CreateExternalArrayBuffer(JSContext* cx, unsigned argc, Value* vp) {
     return false;
   }
 
-  void* buffer = js_malloc(bytes);
+  void* buffer = js_calloc(bytes);
   if (!buffer) {
     JS_ReportOutOfMemory(cx);
     return false;
   }
 
+  UniquePtr<void, JS::BufferContentsDeleter> ptr{buffer,
+                                                 {&freeExternalCallback}};
   RootedObject arrayBuffer(
-      cx, JS::NewExternalArrayBuffer(cx, bytes, buffer, &freeExternalCallback));
+      cx, JS::NewExternalArrayBuffer(cx, bytes, std::move(ptr)));
   if (!arrayBuffer) {
     return false;
   }
@@ -1924,6 +1923,134 @@ static bool CreateMappedArrayBuffer(JSContext* cx, unsigned argc, Value* vp) {
 
 #undef GET_FD_FROM_FILE
 
+class UserBufferObject : public NativeObject {
+  static const uint32_t BUFFER_SLOT = 0;
+  static const uint32_t BYTE_LENGTH_SLOT = 1;
+  static const uint32_t RESERVED_SLOTS = 2;
+
+  static constexpr auto BufferMemoryUse = MemoryUse::Embedding1;
+
+  static void finalize(JS::GCContext* gcx, JSObject* obj);
+
+ public:
+  static const JSClassOps classOps_;
+  static const JSClass class_;
+
+  [[nodiscard]] static UserBufferObject* create(JSContext* cx,
+                                                size_t byteLength);
+
+  void* buffer() const {
+    auto& buffer = getReservedSlot(BUFFER_SLOT);
+    if (buffer.isUndefined()) {
+      return nullptr;
+    }
+    return buffer.toPrivate();
+  }
+
+  size_t byteLength() const {
+    return size_t(getReservedSlot(BYTE_LENGTH_SLOT).toPrivate());
+  }
+};
+
+const JSClassOps UserBufferObject::classOps_ = {
+    nullptr,                     // addProperty
+    nullptr,                     // delProperty
+    nullptr,                     // enumerate
+    nullptr,                     // newEnumerate
+    nullptr,                     // resolve
+    nullptr,                     // mayResolve
+    UserBufferObject::finalize,  // finalize
+    nullptr,                     // call
+    nullptr,                     // construct
+    nullptr,                     // trace
+};
+
+const JSClass UserBufferObject::class_ = {
+    "UserBufferObject",
+    JSCLASS_HAS_RESERVED_SLOTS(UserBufferObject::RESERVED_SLOTS) |
+        JSCLASS_BACKGROUND_FINALIZE,
+    &UserBufferObject::classOps_,
+};
+
+UserBufferObject* UserBufferObject::create(JSContext* cx, size_t byteLength) {
+  void* buffer = js_calloc(byteLength);
+  if (!buffer) {
+    JS_ReportOutOfMemory(cx);
+    return nullptr;
+  }
+  UniquePtr<void, JS::FreePolicy> ptr(buffer);
+
+  auto* userBuffer = NewObjectWithGivenProto<UserBufferObject>(cx, nullptr);
+  if (!userBuffer) {
+    return nullptr;
+  }
+
+  InitReservedSlot(userBuffer, BUFFER_SLOT, ptr.release(), byteLength,
+                   BufferMemoryUse);
+  userBuffer->initReservedSlot(BYTE_LENGTH_SLOT, PrivateValue(byteLength));
+
+  return userBuffer;
+}
+
+void UserBufferObject::finalize(JS::GCContext* gcx, JSObject* obj) {
+  auto* userBuffer = &obj->as<UserBufferObject>();
+  if (auto* buffer = userBuffer->buffer()) {
+    gcx->free_(userBuffer, buffer, userBuffer->byteLength(), BufferMemoryUse);
+  }
+}
+
+static bool CreateUserArrayBuffer(JSContext* cx, unsigned argc, Value* vp) {
+  CallArgs args = CallArgsFromVp(argc, vp);
+  if (args.length() != 1) {
+    JS_ReportErrorNumberASCII(
+        cx, my_GetErrorMessage, nullptr,
+        args.length() < 1 ? JSSMSG_NOT_ENOUGH_ARGS : JSSMSG_TOO_MANY_ARGS,
+        "createUserArrayBuffer");
+    return false;
+  }
+
+  int32_t bytes = 0;
+  if (!ToInt32(cx, args[0], &bytes)) {
+    return false;
+  }
+  if (bytes < 0) {
+    JS_ReportErrorASCII(cx, "Size must be non-negative");
+    return false;
+  }
+
+  Rooted<UserBufferObject*> userBuffer(cx, UserBufferObject::create(cx, bytes));
+  if (!userBuffer) {
+    return false;
+  }
+
+  Rooted<JSObject*> arrayBuffer(
+      cx, JS::NewArrayBufferWithUserOwnedContents(cx, userBuffer->byteLength(),
+                                                  userBuffer->buffer()));
+  if (!arrayBuffer) {
+    return false;
+  }
+
+  // Create a strong reference from |arrayBuffer| to |userBuffer|. This ensures
+  // |userBuffer| can't outlive |arrayBuffer|. That way we don't have to worry
+  // about detaching the ArrayBuffer object when |userBuffer| gets finalized.
+  // The reference is made through a private name, because we don't want to
+  // expose |userBuffer| to user-code.
+
+  auto* privateName = NewPrivateName(cx, cx->names().empty_.toHandle());
+  if (!privateName) {
+    return false;
+  }
+
+  Rooted<PropertyKey> id(cx, PropertyKey::Symbol(privateName));
+  Rooted<JS::Value> userBufferVal(cx, ObjectValue(*userBuffer));
+  if (!js::DefineDataProperty(cx, arrayBuffer, id, userBufferVal, 0)) {
+    return false;
+  }
+
+  args.rval().setObject(*arrayBuffer);
+  return true;
+}
+
 static bool AddPromiseReactions(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
 
@@ -1993,8 +2120,6 @@ static bool Options(JSContext* cx, unsigned argc, Value* vp) {
 
     if (StringEqualsLiteral(opt, "throw_on_asmjs_validation_failure")) {
       JS::ContextOptionsRef(cx).toggleThrowOnAsmJSValidationFailure();
-    } else if (StringEqualsLiteral(opt, "strict_mode")) {
-      JS::ContextOptionsRef(cx).toggleStrictMode();
     } else {
       UniqueChars optChars = QuoteString(cx, opt, '"');
       if (!optChars) {
@@ -2003,8 +2128,8 @@ static bool Options(JSContext* cx, unsigned argc, Value* vp) {
 
       JS_ReportErrorASCII(cx,
                           "unknown option name %s."
-                          " The valid names are "
-                          "throw_on_asmjs_validation_failure and strict_mode.",
+                          " The valid name is "
+                          "throw_on_asmjs_validation_failure.",
                           optChars.get());
       return false;
     }
@@ -2015,11 +2140,6 @@ static bool Options(JSContext* cx, unsigned argc, Value* vp) {
   if (names && oldContextOptions.throwOnAsmJSValidationFailure()) {
     names = JS_sprintf_append(std::move(names), "%s%s", found ? "," : "",
                               "throw_on_asmjs_validation_failure");
-    found = true;
-  }
-  if (names && oldContextOptions.strictMode()) {
-    names = JS_sprintf_append(std::move(names), "%s%s", found ? "," : "",
-                              "strict_mode");
     found = true;
   }
   if (!names) {
@@ -2090,7 +2210,7 @@ static bool LoadScriptRelativeToScript(JSContext* cx, unsigned argc,
 
 static void my_LargeAllocFailCallback() {
   JSContext* cx = TlsContext.get();
-  if (!cx || cx->isHelperThreadContext()) {
+  if (!cx) {
     return;
   }
 
@@ -3538,14 +3658,13 @@ static bool CacheIRHealthReport(JSContext* cx, unsigned argc, Value* vp) {
   if (!argc) {
     // Calling CacheIRHealthReport without any arguments will create health
     // reports for all scripts in the zone.
-    for (auto base = cx->zone()->cellIter<BaseScript>(); !base.done();
-         base.next()) {
-      if (!base->hasJitScript() || base->selfHosted()) {
-        continue;
-      }
-
-      script = base->asJSScript();
-      cih.healthReportForScript(cx, script, js::jit::SpewContext::Shell);
+    if (jit::JitZone* jitZone = cx->zone()->jitZone()) {
+      jitZone->forEachJitScript([&](jit::JitScript* jitScript) {
+        script = jitScript->owningScript();
+        if (!script->selfHosted()) {
+          cih.healthReportForScript(cx, script, js::jit::SpewContext::Shell);
+        }
+      });
     }
   } else {
     RootedValue value(cx, args.get(0));
@@ -3844,7 +3963,7 @@ static bool CopyErrorReportToObject(JSContext* cx, JSErrorReport* report,
     return false;
   }
 
-  RootedValue columnVal(cx, Int32Value(report->column));
+  RootedValue columnVal(cx, Int32Value(report->column.oneOriginValue()));
   if (!DefineDataProperty(cx, obj, cx->names().columnNumber, columnVal)) {
     return false;
   }
@@ -3959,14 +4078,11 @@ static void SetStandardRealmOptions(JS::RealmOptions& options) {
       .setPropertyErrorMessageFixEnabled(enablePropertyErrorMessageFix)
       .setIteratorHelpersEnabled(enableIteratorHelpers)
       .setShadowRealmsEnabled(enableShadowRealms)
-      .setArrayFromAsyncEnabled(enableArrayFromAsync)
 #ifdef NIGHTLY_BUILD
       .setArrayGroupingEnabled(enableArrayGrouping)
       .setWellFormedUnicodeStringsEnabled(enableWellFormedUnicodeStrings)
-#endif
-      .setChangeArrayByCopyEnabled(enableChangeArrayByCopy)
-#ifdef ENABLE_NEW_SET_METHODS
       .setNewSetMethodsEnabled(enableNewSetMethods)
+      .setArrayBufferTransferEnabled(enableArrayBufferTransfer)
 #endif
       ;
 }
@@ -4096,7 +4212,7 @@ static bool EvalInContext(JSContext* cx, unsigned argc, Value* vp) {
   }
 
   JS::AutoFilename filename;
-  unsigned lineno;
+  uint32_t lineno;
 
   DescribeScriptedCaller(cx, &filename, &lineno);
   {
@@ -4767,6 +4883,19 @@ static bool SetJitCompilerOption(JSContext* cx, unsigned argc, Value* vp) {
     }
   }
 
+  // Changing code memory protection settings at runtime is not supported. Don't
+  // throw if not changing the setting because some jit-tests depend on that.
+  if (opt == JSJITCOMPILER_WRITE_PROTECT_CODE) {
+    uint32_t writeProtect;
+    MOZ_ALWAYS_TRUE(JS_GetGlobalJitCompilerOption(
+        cx, JSJITCOMPILER_WRITE_PROTECT_CODE, &writeProtect));
+    if (bool(number) != writeProtect) {
+      JS_ReportErrorASCII(cx, "Can't change code write protection at runtime");
+      return false;
+    }
+    return true;
+  }
+
   // Throw if trying to disable all the Wasm compilers.  The logic here is that
   // if we're trying to disable a compiler that is currently enabled and that is
   // the last compiler enabled then we must throw.
@@ -5345,7 +5474,7 @@ static bool GetModuleEnvironmentNames(JSContext* cx, unsigned argc, Value* vp) {
 
   // The "*namespace*" binding is a detail of current implementation so hide
   // it to give stable results in tests.
-  ids.eraseIfEqual(NameToId(cx->names().starNamespaceStar));
+  ids.eraseIfEqual(NameToId(cx->names().star_namespace_star_));
 
   uint32_t length = ids.length();
   Rooted<ArrayObject*> array(cx, NewDenseFullyAllocatedArray(cx, length));
@@ -5945,10 +6074,12 @@ static bool OffThreadCompileModuleToStencil(JSContext* cx, unsigned argc,
                                             Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
 
-  if (args.length() != 1 || !args[0].isString()) {
-    JS_ReportErrorNumberASCII(cx, my_GetErrorMessage, nullptr,
-                              JSSMSG_INVALID_ARGS,
-                              "offThreadCompileModuleToStencil");
+  if (!args.requireAtLeast(cx, "offThreadCompileModuleToStencil", 1)) {
+    return false;
+  }
+  if (!args[0].isString()) {
+    const char* typeName = InformalValueTypeName(args[0]);
+    JS_ReportErrorASCII(cx, "expected string to parse, got %s", typeName);
     return false;
   }
 
@@ -5956,6 +6087,23 @@ static bool OffThreadCompileModuleToStencil(JSContext* cx, unsigned argc,
   CompileOptions options(cx);
   options.setIntroductionType("js shell offThreadCompileModuleToStencil")
       .setFileAndLine("<string>", 1);
+
+  if (args.length() >= 2) {
+    if (!args[1].isObject()) {
+      JS_ReportErrorASCII(cx,
+                          "offThreadCompileModuleToStencil: The 2nd argument "
+                          "must be an object");
+      return false;
+    }
+
+    // Offthread compilation requires that the debug metadata be set when the
+    // script is collected from offthread, rather than when compiled.
+    RootedObject opts(cx, &args[1].toObject());
+    if (!js::ParseCompileOptions(cx, options, opts, &fileNameBytes)) {
+      return false;
+    }
+  }
+
   options.setIsRunOnce(true).setSourceIsLazy(false);
   options.forceAsync = true;
 
@@ -6636,8 +6784,12 @@ static bool NewGlobal(JSContext* cx, unsigned argc, Value* vp) {
     if (!JS_GetProperty(cx, opts, "newCompartment", &v)) {
       return false;
     }
-    if (v.isBoolean() && v.toBoolean()) {
-      creationOptions.setNewCompartmentAndZone();
+    if (v.isBoolean()) {
+      if (v.toBoolean()) {
+        creationOptions.setNewCompartmentAndZone();
+      } else {
+        creationOptions.setExistingCompartment(cx->global());
+      }
     }
 
     if (!JS_GetProperty(cx, opts, "discardSource", &v)) {
@@ -6709,11 +6861,18 @@ static bool NewGlobal(JSContext* cx, unsigned argc, Value* vp) {
       creationOptions.setDefineSharedArrayBufferConstructor(v.toBoolean());
     }
 
-    if (!JS_GetProperty(cx, opts, "shouldResistFingerprinting", &v)) {
+    if (!JS_GetProperty(cx, opts, "forceUTC", &v)) {
       return false;
     }
     if (v.isBoolean()) {
-      behaviors.setShouldResistFingerprinting(v.toBoolean());
+      creationOptions.setForceUTC(v.toBoolean());
+    }
+
+    if (!JS_GetProperty(cx, opts, "alwaysUseFdlibm", &v)) {
+      return false;
+    }
+    if (v.isBoolean()) {
+      creationOptions.setAlwaysUseFdlibm(v.toBoolean());
     }
   }
 
@@ -7534,8 +7693,7 @@ class StreamCacheEntryObject : public NativeObject {
 
     auto& bytes =
         args.thisv().toObject().as<StreamCacheEntryObject>().cache().bytes();
-    RootedArrayBufferObject buffer(
-        cx, ArrayBufferObject::createZeroed(cx, bytes.length()));
+    auto* buffer = ArrayBufferObject::createZeroed(cx, bytes.length());
     if (!buffer) {
       return false;
     }
@@ -8660,7 +8818,7 @@ static bool TransplantableObject(JSContext* cx, unsigned argc, Value* vp) {
     }
   }
 
-  jsid emptyId = NameToId(cx->names().empty);
+  jsid emptyId = NameToId(cx->names().empty_);
   RootedObject transplant(
       cx, NewFunctionByIdWithReserved(cx, TransplantObject, 0, 0, emptyId));
   if (!transplant) {
@@ -9044,7 +9202,7 @@ static const JSFunctionSpecWithHelp shell_functions[] = {
 "  Check the syntax of a string, returning success value"),
 
     JS_FN_HELP("offThreadCompileModuleToStencil", OffThreadCompileModuleToStencil, 1, 0,
-"offThreadCompileModuleToStencil(code)",
+"offThreadCompileModuleToStencil(code[, options])",
 "  Compile |code| on a helper thread, returning a job ID. To wait for the\n"
 "  compilation to finish and and get the module stencil object call\n"
 "  |finishOffThreadStencil| passing the job ID."),
@@ -9212,6 +9370,10 @@ static const JSFunctionSpecWithHelp shell_functions[] = {
     JS_FN_HELP("createMappedArrayBuffer", CreateMappedArrayBuffer, 1, 0,
 "createMappedArrayBuffer(filename, [offset, [size]])",
 "  Create an array buffer that mmaps the given file."),
+
+JS_FN_HELP("createUserArrayBuffer", CreateUserArrayBuffer, 1, 0,
+"createUserArrayBuffer(size)",
+"  Create an array buffer that uses user-controlled memory."),
 
     JS_FN_HELP("addPromiseReactions", AddPromiseReactions, 3, 0,
 "addPromiseReactions(promise, onResolve, onReject)",
@@ -10675,7 +10837,7 @@ static void SetWorkerContextOptions(JSContext* cx) {
       .setWasmBaseline(enableWasmBaseline)
       .setWasmIon(enableWasmOptimizing)
 #define WASM_FEATURE(NAME, ...) .setWasm##NAME(enableWasm##NAME)
-          JS_FOR_WASM_FEATURES(WASM_FEATURE, WASM_FEATURE, WASM_FEATURE)
+          JS_FOR_WASM_FEATURES(WASM_FEATURE)
 #undef WASM_FEATURE
 
       .setWasmVerbose(enableWasmVerbose)
@@ -11409,24 +11571,18 @@ bool InitOptionParser(OptionParser& op) {
       !op.addBoolOption('\0', "test-wasm-await-tier2",
                         "Forcibly activate tiering and block "
                         "instantiation on completion of tier2") ||
-#define WASM_DEFAULT_FEATURE(NAME, LOWER_NAME, COMPILE_PRED, COMPILER_PRED, \
-                             FLAG_PRED, SHELL, ...)                         \
-  !op.addBoolOption('\0', "no-wasm-" SHELL, "Disable wasm " SHELL "feature.") ||
-#define WASM_TENTATIVE_FEATURE(NAME, LOWER_NAME, COMPILE_PRED, COMPILER_PRED, \
-                               FLAG_PRED, SHELL, ...)                         \
-  !op.addBoolOption('\0', "no-wasm-" SHELL,                                   \
-                    "Disable wasm " SHELL "feature.") ||                      \
-      !op.addBoolOption('\0', "wasm-" SHELL, "No-op.") ||
-#define WASM_EXPERIMENTAL_FEATURE(NAME, LOWER_NAME, COMPILE_PRED,       \
-                                  COMPILER_PRED, FLAG_PRED, SHELL, ...) \
-  !op.addBoolOption('\0', "wasm-" SHELL,                                \
-                    "Enable experimental wasm " SHELL "feature.") ||    \
-      !op.addBoolOption('\0', "no-wasm-" SHELL, "No-op.") ||
-      JS_FOR_WASM_FEATURES(WASM_DEFAULT_FEATURE, WASM_TENTATIVE_FEATURE,
-                           WASM_EXPERIMENTAL_FEATURE)
-#undef WASM_DEFAULT_FEATURE
-#undef WASM_TENTATIVE_FEATURE
-#undef WASM_EXPERIMENTAL_FEATURE
+#define WASM_FEATURE(NAME, LOWER_NAME, STAGE, COMPILE_PRED, COMPILER_PRED, \
+                     FLAG_PRED, FLAG_FORCE_ON, FLAG_FUZZ_ON, SHELL, ...)   \
+  !op.addBoolOption('\0', "no-wasm-" SHELL,                                \
+                    STAGE == WasmFeatureStage::Experimental                \
+                        ? "No-op."                                         \
+                        : "Disable wasm " SHELL " feature.") ||            \
+      !op.addBoolOption('\0', "wasm-" SHELL,                               \
+                        STAGE == WasmFeatureStage::Experimental            \
+                            ? "Enable wasm " SHELL " feature."             \
+                            : "No-op.") ||
+      JS_FOR_WASM_FEATURES(WASM_FEATURE)
+#undef WASM_FEATURE
           !op.addBoolOption('\0', "no-native-regexp",
                             "Disable native regexp compilation") ||
       !op.addIntOption(
@@ -11454,24 +11610,13 @@ bool InitOptionParser(OptionParser& op) {
       !op.addBoolOption('\0', "enable-shadow-realms", "Enable ShadowRealms") ||
       !op.addBoolOption('\0', "enable-array-grouping",
                         "Enable Array.grouping") ||
-      !op.addBoolOption('\0', "enable-array-from-async",
-                        "Enable Array.fromAsync") ||
       !op.addBoolOption('\0', "enable-well-formed-unicode-strings",
                         "Enable String.prototype.{is,to}WellFormed() methods"
                         "(Well-Formed Unicode Strings)") ||
-      !op.addBoolOption('\0', "enable-change-array-by-copy",
-                        "Enable change-array-by-copy methods") ||
-      !op.addBoolOption('\0', "disable-change-array-by-copy",
-                        "Disable change-array-by-copy methods") ||
-#ifdef ENABLE_NEW_SET_METHODS
       !op.addBoolOption('\0', "enable-new-set-methods",
                         "Enable New Set methods") ||
-      !op.addBoolOption('\0', "disable-new-set-methods",
-                        "Disable New Set methods") ||
-#else
-      !op.addBoolOption('\0', "enable-new-set-methods", "no-op") ||
-      !op.addBoolOption('\0', "disable-new-set-methods", "no-op") ||
-#endif
+      !op.addBoolOption('\0', "enable-arraybuffer-transfer",
+                        "Enable ArrayBuffer.prototype.transfer() methods") ||
       !op.addBoolOption('\0', "enable-top-level-await",
                         "Enable top-level await") ||
       !op.addBoolOption('\0', "enable-class-static-blocks",
@@ -11489,6 +11634,11 @@ bool InitOptionParser(OptionParser& op) {
       !op.addStringOption('\0', "spectre-mitigations", "on/off",
                           "Whether Spectre mitigations are enabled (default: "
                           "off, on to enable)") ||
+      !op.addStringOption('\0', "write-protect-code", "on/off",
+                          "Whether the W^X policy is enforced to mark JIT code "
+                          "pages as either writable or executable but never "
+                          "both at the same time (default: on, off to "
+                          "disable)") ||
       !op.addStringOption('\0', "cache-ir-stubs", "on/off/call",
                           "Use CacheIR stubs (default: on, off to disable, "
                           "call to enable work-in-progress call ICs)") ||
@@ -11972,15 +12122,12 @@ bool SetContextOptions(JSContext* cx, const OptionParser& op) {
       !op.getBoolOption("disable-property-error-message-fix");
   enableIteratorHelpers = op.getBoolOption("enable-iterator-helpers");
   enableShadowRealms = op.getBoolOption("enable-shadow-realms");
-  enableArrayFromAsync = op.getBoolOption("enable-array-from-async");
 #ifdef NIGHTLY_BUILD
   enableArrayGrouping = op.getBoolOption("enable-array-grouping");
   enableWellFormedUnicodeStrings =
       op.getBoolOption("enable-well-formed-unicode-strings");
-#endif
-  enableChangeArrayByCopy = !op.getBoolOption("disable-change-array-by-copy");
-#ifdef ENABLE_NEW_SET_METHODS
   enableNewSetMethods = op.getBoolOption("enable-new-set-methods");
+  enableArrayBufferTransfer = op.getBoolOption("enable-arraybuffer-transfer");
 #endif
   enableImportAssertions = op.getBoolOption("enable-import-assertions");
   useFdlibmForSinCosTan = op.getBoolOption("use-fdlibm-for-sin-cos-tan");
@@ -12078,16 +12225,16 @@ bool SetContextWasmOptions(JSContext* cx, const OptionParser& op) {
     }
   }
 
-#define WASM_DEFAULT_FEATURE(NAME, LOWER_NAME, COMPILE_PRED, COMPILER_PRED, \
-                             FLAG_PRED, SHELL, ...)                         \
-  enableWasm##NAME = !op.getBoolOption("no-wasm-" SHELL);
-#define WASM_EXPERIMENTAL_FEATURE(NAME, LOWER_NAME, COMPILE_PRED,       \
-                                  COMPILER_PRED, FLAG_PRED, SHELL, ...) \
-  enableWasm##NAME = op.getBoolOption("wasm-" SHELL);
-  JS_FOR_WASM_FEATURES(WASM_DEFAULT_FEATURE, WASM_DEFAULT_FEATURE,
-                       WASM_EXPERIMENTAL_FEATURE);
-#undef WASM_DEFAULT_FEATURE
-#undef WASM_EXPERIMENTAL_FEATURE
+#define WASM_FEATURE(NAME, LOWER_NAME, STAGE, COMPILE_PRED, COMPILER_PRED, \
+                     FLAG_PRED, FLAG_FORCE_ON, FLAG_FUZZ_ON, SHELL, ...)   \
+  if (STAGE == WasmFeatureStage::Experimental) {                           \
+    enableWasm##NAME = op.getBoolOption("wasm-" SHELL);                    \
+  } else {                                                                 \
+    enableWasm##NAME = !op.getBoolOption("no-wasm-" SHELL);                \
+  }
+
+  JS_FOR_WASM_FEATURES(WASM_FEATURE);
+#undef WASM_FEATURE
 
   enableWasmVerbose = op.getBoolOption("wasm-verbose");
   enableTestWasmAwaitTier2 = op.getBoolOption("test-wasm-await-tier2");
@@ -12099,7 +12246,7 @@ bool SetContextWasmOptions(JSContext* cx, const OptionParser& op) {
       .setWasmBaseline(enableWasmBaseline)
       .setWasmIon(enableWasmOptimizing)
 #define WASM_FEATURE(NAME, ...) .setWasm##NAME(enableWasm##NAME)
-          JS_FOR_WASM_FEATURES(WASM_FEATURE, WASM_FEATURE, WASM_FEATURE)
+          JS_FOR_WASM_FEATURES(WASM_FEATURE)
 #undef WASM_FEATURE
       ;
 
@@ -12120,16 +12267,12 @@ bool SetContextWasmOptions(JSContext* cx, const OptionParser& op) {
 
   // Also the following are to be propagated.
   const char* to_propagate[] = {
-#  define WASM_DEFAULT_FEATURE(NAME, LOWER_NAME, COMPILE_PRED, COMPILER_PRED, \
-                               FLAG_PRED, SHELL, ...)                         \
-    "--no-wasm-" SHELL,
-#  define WASM_EXPERIMENTAL_FEATURE(NAME, LOWER_NAME, COMPILE_PRED,       \
-                                    COMPILER_PRED, FLAG_PRED, SHELL, ...) \
-    "--wasm-" SHELL,
-      JS_FOR_WASM_FEATURES(WASM_DEFAULT_FEATURE, WASM_DEFAULT_FEATURE,
-                           WASM_EXPERIMENTAL_FEATURE)
-#  undef WASM_DEFAULT_FEATURE
-#  undef WASM_EXPERIMENTAL_FEATURE
+#  define WASM_FEATURE(NAME, LOWER_NAME, STAGE, COMPILE_PRED, COMPILER_PRED, \
+                       FLAG_PRED, FLAG_FORCE_ON, FLAG_FUZZ_ON, SHELL, ...)   \
+    STAGE == WasmFeatureStage::Experimental ? "--wasm-" SHELL                \
+                                            : "--no-wasm-" SHELL,
+      JS_FOR_WASM_FEATURES(WASM_FEATURE)
+#  undef WASM_FEATURE
       // Compiler selection options
       "--test-wasm-await-tier2",
       NULL};
@@ -12205,6 +12348,16 @@ bool SetContextJITOptions(JSContext* cx, const OptionParser& op) {
       jit::JitOptions.spectreJitToCxxCalls = false;
     } else {
       return OptionFailure("spectre-mitigations", str);
+    }
+  }
+
+  if (const char* str = op.getStringOption("write-protect-code")) {
+    if (strcmp(str, "on") == 0) {
+      jit::JitOptions.maybeSetWriteProtectCode(true);
+    } else if (strcmp(str, "off") == 0) {
+      jit::JitOptions.maybeSetWriteProtectCode(false);
+    } else {
+      return OptionFailure("write-protect-code", str);
     }
   }
 

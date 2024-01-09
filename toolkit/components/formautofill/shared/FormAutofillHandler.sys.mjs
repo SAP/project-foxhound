@@ -4,7 +4,6 @@
 
 import { FormAutofill } from "resource://autofill/FormAutofill.sys.mjs";
 import { FormAutofillUtils } from "resource://gre/modules/shared/FormAutofillUtils.sys.mjs";
-import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 
 const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
@@ -98,7 +97,7 @@ export class FormAutofillHandler {
 
     this.onAutofillCallback = onAutofillCallback;
 
-    XPCOMUtils.defineLazyGetter(this, "log", () =>
+    ChromeUtils.defineLazyGetter(this, "log", () =>
       FormAutofill.defineLogGetter(this, "FormAutofillHandler")
     );
   }
@@ -130,9 +129,7 @@ export class FormAutofillHandler {
         }
 
         this.changeFieldState(targetFieldDetail, FIELD_STATES.NORMAL);
-        const section = this.getSectionByElement(
-          targetFieldDetail.elementWeakRef.get()
-        );
+        const section = this.getSectionByElement(targetFieldDetail.element);
         section?.clearFilled(targetFieldDetail);
       }
     }
@@ -238,20 +235,33 @@ export class FormAutofillHandler {
     const sections = lazy.FormAutofillHeuristics.getFormInfo(this.form);
     const allValidDetails = [];
     for (const section of sections) {
+      // We don't support csc field, so remove csc fields from section
+      const fieldDetails = section.fieldDetails.filter(
+        f => !["cc-csc"].includes(f.fieldName)
+      );
+      if (!fieldDetails.length) {
+        continue;
+      }
+
       let autofillableSection;
       if (section.type == lazy.FormSection.ADDRESS) {
         autofillableSection = new lazy.FormAutofillAddressSection(
-          section,
+          fieldDetails,
           this
         );
       } else {
         autofillableSection = new lazy.FormAutofillCreditCardSection(
-          section,
+          fieldDetails,
           this
         );
       }
 
-      if (ignoreInvalid && !autofillableSection.isValidSection()) {
+      // Do not include section that is either disabled or invalid.
+      // We only include invalid section for testing purpose.
+      if (
+        !autofillableSection.isEnabled() ||
+        (ignoreInvalid && !autofillableSection.isValidSection())
+      ) {
         continue;
       }
 
@@ -280,7 +290,7 @@ export class FormAutofillHandler {
    *        Used to determine the next state
    */
   changeFieldState(fieldDetail, nextState) {
-    const element = fieldDetail.elementWeakRef.get();
+    const element = fieldDetail.element;
     if (!element) {
       this.log.warn(
         fieldDetail.fieldName,

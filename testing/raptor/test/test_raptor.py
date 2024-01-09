@@ -1,16 +1,12 @@
 import os
 import sys
 import threading
-import time
 import traceback
 from unittest import mock
-from unittest.mock import Mock
 
 import mozunit
 import pytest
 from mozprofile import BaseProfile
-from mozrunner.errors import RunnerNotStartedError
-from six import reraise
 
 # need this so the raptor unit tests can find output & filter classes
 here = os.path.abspath(os.path.dirname(__file__))
@@ -19,11 +15,6 @@ sys.path.insert(0, raptor_dir)
 
 
 from browsertime import BrowsertimeAndroid, BrowsertimeDesktop
-from webextension import (
-    WebExtensionAndroid,
-    WebExtensionDesktopChrome,
-    WebExtensionFirefox,
-)
 
 DEFAULT_TIMEOUT = 125
 
@@ -53,10 +44,6 @@ class TestBrowserThread(threading.Thread):
 @pytest.mark.parametrize(
     "perftest_class, app_name",
     [
-        [WebExtensionFirefox, "firefox"],
-        [WebExtensionDesktopChrome, "chrome"],
-        [WebExtensionDesktopChrome, "chromium"],
-        [WebExtensionAndroid, "geckoview"],
         [BrowsertimeDesktop, "firefox"],
         [BrowsertimeDesktop, "chrome"],
         [BrowsertimeDesktop, "chromium"],
@@ -192,47 +179,6 @@ def test_perftest_run_test_setup(
     assert perftest.config["subtest_alert_on"] == expected_alert
 
 
-# WebExtension tests
-@pytest.mark.parametrize(
-    "app", ["firefox", pytest.mark.xfail("chrome"), pytest.mark.xfail("chromium")]
-)
-def test_start_browser(get_binary, app):
-    binary = get_binary(app)
-    assert binary
-
-    raptor = WebExtensionFirefox(app, binary, post_startup_delay=0)
-
-    tests = [{"name": "raptor-{}-tp6".format(app), "page_timeout": 1000}]
-    test_names = [test["name"] for test in tests]
-
-    thread = TestBrowserThread(raptor, tests, test_names)
-    thread.start()
-
-    timeout = time.time() + 5  # seconds
-    while time.time() < timeout:
-        try:
-            is_running = raptor.runner.is_running()
-            assert is_running
-            break
-        except RunnerNotStartedError:
-            time.sleep(0.1)
-    else:
-        # browser didn't start
-        # if the thread had an error, display it here
-        thread.print_error()
-        assert False
-
-    raptor.clean_up()
-    thread.join(5)
-
-    if thread.exc is not None:
-        exc, value, tb = thread.exc
-        reraise(exc, value, tb)
-
-    assert not raptor.runner.is_running()
-    assert raptor.runner.returncode is not None
-
-
 # Browsertime tests
 def test_cmd_arguments(ConcreteBrowsertime, browsertime_options, mock_test):
     expected_cmd = {
@@ -341,65 +287,6 @@ def test_compute_process_timeout(
     )
     bt_timeout = browsertime._compute_process_timeout(mock_test, timeout, [])
     assert bt_timeout == expected_timeout
-
-
-@pytest.mark.parametrize(
-    "host, playback, benchmark",
-    [["127.0.0.1", True, False], ["localhost", False, True]],
-)
-def test_android_reverse_ports(host, playback, benchmark):
-    original_get = WebExtensionAndroid.get_browser_meta
-    WebExtensionAndroid.get_browser_meta = mock.MagicMock()
-    WebExtensionAndroid.get_browser_meta.return_value = ("app", "version")
-
-    raptor = WebExtensionAndroid(
-        "geckoview",
-        "org.mozilla.geckoview_example",
-        host=host,
-        extra_prefs={},
-    )
-    WebExtensionAndroid.get_browser_meta = original_get
-
-    if benchmark:
-        benchmark_mock = mock.patch("raptor.raptor.benchmark.Benchmark")
-        raptor.benchmark = benchmark_mock
-        raptor.benchmark.port = 1234
-
-    if playback:
-        playback_mock = mock.patch(
-            "mozbase.mozproxy.mozproxy.backends.mitm.mitm.MitmproxyAndroid"
-        )
-        playback_mock.port = 4321
-        raptor.playback = playback_mock
-
-    raptor.set_reverse_port = Mock()
-    raptor.set_reverse_ports()
-
-    raptor.set_reverse_port.assert_any_call(raptor.control_server.port)
-    if benchmark:
-        raptor.set_reverse_port.assert_any_call(1234)
-
-    if playback:
-        raptor.set_reverse_port.assert_any_call(4321)
-
-
-def test_android_reverse_ports_non_local_host():
-    original_get = WebExtensionAndroid.get_browser_meta
-    WebExtensionAndroid.get_browser_meta = mock.MagicMock()
-    WebExtensionAndroid.get_browser_meta.return_value = ("app", "version")
-
-    raptor = WebExtensionAndroid(
-        "geckoview",
-        "org.mozilla.geckoview_example",
-        host="192.168.100.10",
-        extra_prefs={},
-    )
-    WebExtensionAndroid.get_browser_meta = original_get
-
-    raptor.set_reverse_port = Mock()
-    raptor.set_reverse_ports()
-
-    raptor.set_reverse_port.assert_not_called()
 
 
 if __name__ == "__main__":

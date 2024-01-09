@@ -8,12 +8,15 @@ import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
+  AMBrowserExtensionsImport: "resource://gre/modules/AddonManager.sys.mjs",
   LoginHelper: "resource://gre/modules/LoginHelper.sys.mjs",
   PlacesUIUtils: "resource:///modules/PlacesUIUtils.sys.mjs",
   PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
   Sqlite: "resource://gre/modules/Sqlite.sys.mjs",
   WindowsRegistry: "resource://gre/modules/WindowsRegistry.sys.mjs",
   setTimeout: "resource://gre/modules/Timer.sys.mjs",
+  MigrationWizardConstants:
+    "chrome://browser/content/migration/migration-wizard-constants.mjs",
 });
 
 var gMigrators = null;
@@ -21,6 +24,7 @@ var gFileMigrators = null;
 var gProfileStartup = null;
 var gL10n = null;
 var gPreviousDefaultBrowserKey = "";
+var gHasOpenedLegacyWizard = false;
 
 let gForceExitSpinResolve = false;
 let gKeepUndoData = false;
@@ -130,6 +134,34 @@ class MigrationUtils {
       "browser.migrate.history.maxAgeInDays",
       180
     );
+
+    ChromeUtils.registerWindowActor("MigrationWizard", {
+      parent: {
+        esModuleURI: "resource:///actors/MigrationWizardParent.sys.mjs",
+      },
+
+      child: {
+        esModuleURI: "resource:///actors/MigrationWizardChild.sys.mjs",
+        events: {
+          "MigrationWizard:RequestState": { wantUntrusted: true },
+          "MigrationWizard:BeginMigration": { wantUntrusted: true },
+          "MigrationWizard:RequestSafariPermissions": { wantUntrusted: true },
+          "MigrationWizard:SelectSafariPasswordFile": { wantUntrusted: true },
+          "MigrationWizard:OpenAboutAddons": { wantUntrusted: true },
+        },
+      },
+
+      includeChrome: true,
+      allFrames: true,
+      matches: [
+        "about:welcome",
+        "about:welcome?*",
+        "about:preferences",
+        "chrome://browser/content/migration/migration-dialog-window.html",
+        "chrome://browser/content/spotlight.html",
+        "about:firefoxview-next",
+      ],
+    });
   }
 
   resourceTypes = Object.freeze({
@@ -143,6 +175,7 @@ class MigrationUtils {
     OTHERDATA: 0x0040,
     SESSION: 0x0080,
     PAYMENT_METHODS: 0x0100,
+    EXTENSIONS: 0x0200,
   });
 
   /**
@@ -267,6 +300,9 @@ class MigrationUtils {
             console.error(ex);
           }
           previousExceptionMessage = ex.message;
+          if (ex.name == "NS_ERROR_FILE_CORRUPTED") {
+            break;
+          }
         } finally {
           try {
             if (didOpen) {
@@ -600,7 +636,6 @@ class MigrationUtils {
         "browser.migrate.content-modal.enabled",
         false
       ) &&
-      !aOptions?.isStartupMigration &&
       !aboutWelcomeLegacyBehavior
     ) {
       let entrypoint =
@@ -609,17 +644,19 @@ class MigrationUtils {
         .getHistogramById("FX_MIGRATION_ENTRY_POINT_CATEGORICAL")
         .add(entrypoint);
 
-      let openStandaloneWindow = () => {
-        const FEATURES = "dialog,centerscreen,resizable=no";
-        const win = Services.ww.openWindow(
+      let openStandaloneWindow = blocking => {
+        let features = "dialog,centerscreen,resizable=no";
+
+        if (blocking) {
+          features += ",modal";
+        }
+
+        Services.ww.openWindow(
           aOpener,
           "chrome://browser/content/migration/migration-dialog-window.html",
           "_blank",
-          FEATURES,
+          features,
           {
-            onResize: () => {
-              win.sizeToContent();
-            },
             options: aOptions,
           }
         );
@@ -627,7 +664,16 @@ class MigrationUtils {
       };
 
       if (aOptions.isStartupMigration) {
-        openStandaloneWindow();
+        // Record that the uninstaller requested a profile refresh
+        if (Services.env.get("MOZ_UNINSTALLER_PROFILE_REFRESH")) {
+          Services.env.set("MOZ_UNINSTALLER_PROFILE_REFRESH", "");
+          Services.telemetry.scalarSet(
+            "migration.uninstaller_profile_refresh",
+            true
+          );
+        }
+
+        openStandaloneWindow(true /* blocking */);
         return Promise.resolve();
       }
 
@@ -636,7 +682,7 @@ class MigrationUtils {
           if (aboutWelcomeBehavior == "autoclose") {
             return aOpener.openPreferences("general-migrate-autoclose");
           } else if (aboutWelcomeBehavior == "standalone") {
-            openStandaloneWindow();
+            openStandaloneWindow(false /* blocking */);
             return Promise.resolve();
           }
         }
@@ -645,10 +691,15 @@ class MigrationUtils {
 
       // If somehow we failed to open about:preferences, fall back to opening
       // the top-level window.
-      openStandaloneWindow();
+      openStandaloneWindow(false /* blocking */);
       return Promise.resolve();
     }
     // Legacy migration dialog
+    if (!gHasOpenedLegacyWizard) {
+      gHasOpenedLegacyWizard = true;
+      aOptions.openedTime = Cu.now();
+    }
+
     const DIALOG_URL = "chrome://browser/content/migration/migration.xhtml";
     let features = "chrome,dialog,modal,centerscreen,titlebar,resizable=no";
     if (AppConstants.platform == "macosx" && !this.isStartupMigration) {
@@ -780,6 +831,7 @@ class MigrationUtils {
     logins: 0,
     history: 0,
     cards: 0,
+    extensions: 0,
   };
 
   getImportedCount(type) {
@@ -922,6 +974,49 @@ class MigrationUtils {
         console.error("Failed to insert credit card due to error: ", e, card);
       }
     }
+  }
+
+  /**
+   * Responsible for calling the AddonManager API that ultimately installs the
+   * matched add-ons.
+   *
+   * @param {string} migratorKey a migrator key that we pass to
+   *                             `AMBrowserExtensionsImport` as the "browser
+   *                             identifier" used to match add-ons
+   * @param {string[]} extensionIDs a list of extension IDs from another browser
+   */
+  async installExtensionsWrapper(migratorKey, extensionIDs) {
+    const totalExtensions = extensionIDs.length;
+
+    let importedAddonIDs = [];
+    try {
+      const result = await lazy.AMBrowserExtensionsImport.stageInstalls(
+        migratorKey,
+        extensionIDs
+      );
+      importedAddonIDs = result.importedAddonIDs;
+    } catch (e) {
+      console.error(`Failed to import extensions: ${e}`);
+    }
+
+    this._importQuantities.extensions += importedAddonIDs.length;
+
+    if (!importedAddonIDs.length) {
+      return [
+        lazy.MigrationWizardConstants.PROGRESS_VALUE.WARNING,
+        importedAddonIDs,
+      ];
+    }
+    if (totalExtensions == importedAddonIDs.length) {
+      return [
+        lazy.MigrationWizardConstants.PROGRESS_VALUE.SUCCESS,
+        importedAddonIDs,
+      ];
+    }
+    return [
+      lazy.MigrationWizardConstants.PROGRESS_VALUE.INFO,
+      importedAddonIDs,
+    ];
   }
 
   initializeUndoData() {
@@ -1068,6 +1163,9 @@ class MigrationUtils {
 
     /** Migration is being started from about:preferences */
     PREFERENCES: "preferences",
+
+    /** Migration is being started from about:firefoxview-next */
+    FIREFOX_VIEW: "firefox_view",
   });
 
   /**

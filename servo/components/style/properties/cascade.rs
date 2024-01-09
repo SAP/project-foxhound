@@ -7,18 +7,17 @@
 use crate::applicable_declarations::CascadePriority;
 use crate::color::AbsoluteColor;
 use crate::computed_value_flags::ComputedValueFlags;
-use crate::context::QuirksMode;
 use crate::custom_properties::CustomPropertiesBuilder;
 use crate::dom::TElement;
 use crate::font_metrics::FontMetricsOrientation;
 use crate::logical_geometry::WritingMode;
-use crate::media_queries::Device;
 use crate::properties::declaration_block::{DeclarationImportanceIterator, Importance};
 use crate::properties::generated::{
     CSSWideKeyword, ComputedValues, LonghandId, LonghandIdSet, PropertyDeclaration,
     PropertyDeclarationId, PropertyFlags, ShorthandsWithPropertyReferencesCache, StyleBuilder,
     CASCADE_PROPERTY,
 };
+use crate::stylist::Stylist;
 use crate::rule_cache::{RuleCache, RuleCacheConditions};
 use crate::rule_tree::{CascadeLevel, StrongRuleNode};
 use crate::selector_parser::PseudoElement;
@@ -40,6 +39,19 @@ enum CanHaveLogicalProperties {
     Yes,
 }
 
+/// Whether we're resolving a style with the purposes of reparenting for ::first-line.
+#[derive(Copy, Clone)]
+#[allow(missing_docs)]
+pub enum FirstLineReparenting<'a> {
+    No,
+    Yes {
+        /// The style we're re-parenting for ::first-line. ::first-line only affects inherited
+        /// properties so we use this to avoid some work and also ensure correctness by copying the
+        /// reset structs from this style.
+        style_to_reparent: &'a ComputedValues,
+    },
+}
+
 /// Performs the CSS cascade, computing new styles for an element from its parent style.
 ///
 /// The arguments are:
@@ -55,17 +67,16 @@ enum CanHaveLogicalProperties {
 ///   * `flags`: Various flags.
 ///
 pub fn cascade<E>(
-    device: &Device,
+    stylist: &Stylist,
     pseudo: Option<&PseudoElement>,
     rule_node: &StrongRuleNode,
     guards: &StylesheetGuards,
     originating_element_style: Option<&ComputedValues>,
     parent_style: Option<&ComputedValues>,
-    parent_style_ignoring_first_line: Option<&ComputedValues>,
     layout_parent_style: Option<&ComputedValues>,
+    first_line_reparenting: FirstLineReparenting,
     visited_rules: Option<&StrongRuleNode>,
     cascade_input_flags: ComputedValueFlags,
-    quirks_mode: QuirksMode,
     rule_cache: Option<&RuleCache>,
     rule_cache_conditions: &mut RuleCacheConditions,
     element: Option<E>,
@@ -74,17 +85,16 @@ where
     E: TElement,
 {
     cascade_rules(
-        device,
+        stylist,
         pseudo,
         rule_node,
         guards,
         originating_element_style,
         parent_style,
-        parent_style_ignoring_first_line,
         layout_parent_style,
+        first_line_reparenting,
         CascadeMode::Unvisited { visited_rules },
         cascade_input_flags,
-        quirks_mode,
         rule_cache,
         rule_cache_conditions,
         element,
@@ -175,17 +185,16 @@ impl<'a> Iterator for DeclarationIterator<'a> {
 }
 
 fn cascade_rules<E>(
-    device: &Device,
+    stylist: &Stylist,
     pseudo: Option<&PseudoElement>,
     rule_node: &StrongRuleNode,
     guards: &StylesheetGuards,
     originating_element_style: Option<&ComputedValues>,
     parent_style: Option<&ComputedValues>,
-    parent_style_ignoring_first_line: Option<&ComputedValues>,
     layout_parent_style: Option<&ComputedValues>,
+    first_line_reparenting: FirstLineReparenting,
     cascade_mode: CascadeMode,
     cascade_input_flags: ComputedValueFlags,
-    quirks_mode: QuirksMode,
     rule_cache: Option<&RuleCache>,
     rule_cache_conditions: &mut RuleCacheConditions,
     element: Option<E>,
@@ -193,23 +202,18 @@ fn cascade_rules<E>(
 where
     E: TElement,
 {
-    debug_assert_eq!(
-        parent_style.is_some(),
-        parent_style_ignoring_first_line.is_some()
-    );
     apply_declarations(
-        device,
+        stylist,
         pseudo,
         rule_node,
         guards,
         DeclarationIterator::new(rule_node, guards, pseudo),
         originating_element_style,
         parent_style,
-        parent_style_ignoring_first_line,
         layout_parent_style,
+        first_line_reparenting,
         cascade_mode,
         cascade_input_flags,
-        quirks_mode,
         rule_cache,
         rule_cache_conditions,
         element,
@@ -235,18 +239,17 @@ pub enum CascadeMode<'a> {
 /// NOTE: This function expects the declaration with more priority to appear
 /// first.
 pub fn apply_declarations<'a, E, I>(
-    device: &Device,
+    stylist: &Stylist,
     pseudo: Option<&PseudoElement>,
     rules: &StrongRuleNode,
     guards: &StylesheetGuards,
     iter: I,
     originating_element_style: Option<&ComputedValues>,
     parent_style: Option<&ComputedValues>,
-    parent_style_ignoring_first_line: Option<&ComputedValues>,
     layout_parent_style: Option<&ComputedValues>,
+    first_line_reparenting: FirstLineReparenting,
     cascade_mode: CascadeMode,
     cascade_input_flags: ComputedValueFlags,
-    quirks_mode: QuirksMode,
     rule_cache: Option<&RuleCache>,
     rule_cache_conditions: &mut RuleCacheConditions,
     element: Option<E>,
@@ -260,20 +263,7 @@ where
         element.is_some() && pseudo.is_some()
     );
     debug_assert!(layout_parent_style.is_none() || parent_style.is_some());
-    debug_assert_eq!(
-        parent_style.is_some(),
-        parent_style_ignoring_first_line.is_some()
-    );
-    #[cfg(feature = "gecko")]
-    debug_assert!(
-        parent_style.is_none() ||
-            ::std::ptr::eq(
-                parent_style.unwrap(),
-                parent_style_ignoring_first_line.unwrap()
-            ) ||
-            parent_style.unwrap().is_first_line_style()
-    );
-
+    let device = stylist.device();
     let inherited_style = parent_style.unwrap_or(device.default_computed_values());
 
     let mut declarations = SmallVec::<[(&_, CascadePriority); 32]>::new();
@@ -303,14 +293,14 @@ where
         // 1375525.
         StyleBuilder::new(
             device,
+            Some(stylist),
             parent_style,
-            parent_style_ignoring_first_line,
             pseudo,
             Some(rules.clone()),
             custom_properties,
             is_root_element,
         ),
-        quirks_mode,
+        stylist.quirks_mode(),
         rule_cache_conditions,
         container_size_query,
     );
@@ -318,7 +308,7 @@ where
     context.style().add_flags(cascade_input_flags);
 
     let using_cached_reset_properties;
-    let mut cascade = Cascade::new(&mut context, cascade_mode, &referenced_properties);
+    let mut cascade = Cascade::new(&mut context, cascade_mode, first_line_reparenting, &referenced_properties);
     let mut shorthand_cache = ShorthandsWithPropertyReferencesCache::default();
 
     let properties_to_apply = match cascade.cascade_mode {
@@ -326,7 +316,7 @@ where
             cascade.context.builder.writing_mode = writing_mode;
             // We never insert visited styles into the cache so we don't need to
             // try looking it up. It also wouldn't be super-profitable, only a
-            // handful reset properties are non-inherited.
+            // handful :visited properties are non-inherited.
             using_cached_reset_properties = false;
             LonghandIdSet::visited_dependent()
         },
@@ -354,7 +344,6 @@ where
                     element,
                     originating_element_style,
                     parent_style,
-                    parent_style_ignoring_first_line,
                     layout_parent_style,
                     visited_rules,
                     guards,
@@ -452,7 +441,7 @@ fn tweak_when_ignoring_colors(
         // We assume here currentColor is opaque.
         color
             .to_computed_value(context)
-            .resolve_to_absolute(&AbsoluteColor::black())
+            .resolve_to_absolute(&AbsoluteColor::BLACK)
             .alpha
     }
 
@@ -549,6 +538,7 @@ fn tweak_when_ignoring_colors(
 struct Cascade<'a, 'b: 'a> {
     context: &'a mut computed::Context<'b>,
     cascade_mode: CascadeMode<'a>,
+    first_line_reparenting: FirstLineReparenting<'b>,
     /// All the properties that have a declaration in the cascade.
     referenced: &'a LonghandIdSet,
     seen: LonghandIdSet,
@@ -561,11 +551,13 @@ impl<'a, 'b: 'a> Cascade<'a, 'b> {
     fn new(
         context: &'a mut computed::Context<'b>,
         cascade_mode: CascadeMode<'a>,
+        first_line_reparenting: FirstLineReparenting<'b>,
         referenced: &'a LonghandIdSet,
     ) -> Self {
         Self {
             context,
             cascade_mode,
+            first_line_reparenting,
             referenced,
             seen: LonghandIdSet::default(),
             author_specified: LonghandIdSet::default(),
@@ -770,7 +762,6 @@ impl<'a, 'b: 'a> Cascade<'a, 'b> {
         element: Option<E>,
         originating_element_style: Option<&ComputedValues>,
         parent_style: Option<&ComputedValues>,
-        parent_style_ignoring_first_line: Option<&ComputedValues>,
         layout_parent_style: Option<&ComputedValues>,
         visited_rules: &StrongRuleNode,
         guards: &StylesheetGuards,
@@ -795,19 +786,18 @@ impl<'a, 'b: 'a> Cascade<'a, 'b> {
         // We could call apply_declarations directly, but that'd cause
         // another instantiation of this function which is not great.
         let style = cascade_rules(
-            self.context.builder.device,
+            self.context.builder.stylist.unwrap(),
             self.context.builder.pseudo,
             visited_rules,
             guards,
             visited_parent!(originating_element_style),
             visited_parent!(parent_style),
-            visited_parent!(parent_style_ignoring_first_line),
             visited_parent!(layout_parent_style),
+            self.first_line_reparenting,
             CascadeMode::Visited { writing_mode },
             // Cascade input flags don't matter for the visited style, they are
             // in the main (unvisited) style.
             Default::default(),
-            self.context.quirks_mode,
             // The rule cache doesn't care about caching :visited
             // styles, we cache the unvisited style instead. We still do
             // need to set the caching dependencies properly if present
@@ -842,6 +832,10 @@ impl<'a, 'b: 'a> Cascade<'a, 'b> {
 
         if self.author_specified.contains(LonghandId::FontFamily) {
             builder.add_flags(ComputedValueFlags::HAS_AUTHOR_SPECIFIED_FONT_FAMILY);
+        }
+
+        if self.author_specified.contains(LonghandId::Color) {
+            builder.add_flags(ComputedValueFlags::HAS_AUTHOR_SPECIFIED_TEXT_COLOR);
         }
 
         if self.author_specified.contains(LonghandId::LetterSpacing) {
@@ -879,19 +873,17 @@ impl<'a, 'b: 'a> Cascade<'a, 'b> {
         cache: Option<&'b RuleCache>,
         guards: &StylesheetGuards,
     ) -> bool {
-        let cache = match cache {
-            Some(cache) => cache,
-            None => return false,
+        let style = match self.first_line_reparenting {
+            FirstLineReparenting::Yes { style_to_reparent } => style_to_reparent,
+            FirstLineReparenting::No => {
+                let Some(cache) = cache else { return false };
+                let Some(style) = cache.find(guards, &self.context.builder) else { return false };
+                style
+            },
         };
 
         let builder = &mut self.context.builder;
-
-        let cached_style = match cache.find(guards, &builder) {
-            Some(style) => style,
-            None => return false,
-        };
-
-        builder.copy_reset_from(cached_style);
+        builder.copy_reset_from(style);
 
         // We're using the same reset style as another element, and we'll skip
         // applying the relevant properties. So we need to do the relevant
@@ -907,8 +899,9 @@ impl<'a, 'b: 'a> Cascade<'a, 'b> {
         let bits_to_copy = ComputedValueFlags::HAS_AUTHOR_SPECIFIED_BORDER_BACKGROUND |
             ComputedValueFlags::DEPENDS_ON_SELF_FONT_METRICS |
             ComputedValueFlags::DEPENDS_ON_INHERITED_FONT_METRICS |
+            ComputedValueFlags::USES_CONTAINER_UNITS |
             ComputedValueFlags::USES_VIEWPORT_UNITS;
-        builder.add_flags(cached_style.flags & bits_to_copy);
+        builder.add_flags(style.flags & bits_to_copy);
 
         true
     }
@@ -1013,7 +1006,7 @@ impl<'a, 'b: 'a> Cascade<'a, 'b> {
             let new_size = match info.kw {
                 specified::FontSizeKeyword::None => return,
                 _ => {
-                    self.context.for_non_inherited_property = None;
+                    self.context.for_non_inherited_property = false;
                     specified::FontSize::Keyword(info).to_computed_value(self.context)
                 },
             };
@@ -1091,25 +1084,19 @@ impl<'a, 'b: 'a> Cascade<'a, 'b> {
         builder.mutate_font().unzoom_fonts(device);
     }
 
-    /// MathML script* attributes do some very weird shit with font-size.
-    ///
-    /// Handle them specially here, separate from other font-size stuff.
-    ///
-    /// How this should interact with lang="" and font-family-dependent sizes is
-    /// not clear to me. For now just pretend those don't exist here.
+    /// Special handling of font-size: math (used for MathML).
+    /// https://w3c.github.io/mathml-core/#the-math-script-level-property
+    /// TODO: Bug: 1548471: MathML Core also does not specify a script min size
+    /// should we unship that feature or standardize it?
     #[cfg(feature = "gecko")]
-    fn handle_mathml_scriptlevel_if_needed(&mut self) {
+    fn recompute_math_font_size_if_needed(&mut self) {
         use crate::values::generics::NonNegative;
 
-        if !self.seen.contains(LonghandId::MathDepth) &&
-            !self.seen.contains(LonghandId::MozScriptMinSize) &&
-            !self.seen.contains(LonghandId::MozScriptSizeMultiplier)
-        {
-            return;
-        }
-
-        // If the user specifies a font-size, just let it be.
-        if self.seen.contains(LonghandId::FontSize) {
+        // Do not do anything if font-size: math or math-depth is not set.
+        if !self.seen.contains(LonghandId::MathDepth) ||
+           !self.seen.contains(LonghandId::FontSize) ||
+           self.context.builder.get_font().clone_font_size().keyword_info.kw !=
+           specified::FontSizeKeyword::Math {
             return;
         }
 
@@ -1180,14 +1167,8 @@ impl<'a, 'b: 'a> Cascade<'a, 'b> {
                 min = builder.device.zoom_text(min);
             }
 
-            // If the scriptsizemultiplier has been set to something other than
-            // the default scale, use MathML3's implementation for backward
-            // compatibility. Otherwise, follow MathML Core's algorithm.
-            let scale = if parent_font.mScriptSizeMultiplier !=
-                SCALE_FACTOR_WHEN_INCREMENTING_MATH_DEPTH_BY_ONE
-            {
-                (parent_font.mScriptSizeMultiplier as f32).powi(delta as i32)
-            } else {
+            // Calculate scale factor following MathML Core's algorithm.
+            let scale = {
                 // Script scale factors are independent of orientation.
                 let font_metrics = self.context.query_font_metrics(
                     FontBaseSize::InheritedStyle,
@@ -1235,6 +1216,61 @@ impl<'a, 'b: 'a> Cascade<'a, 'b> {
         font.mScriptUnconstrainedSize = NonNegative(new_unconstrained_size);
     }
 
+    /// If font-size-adjust used the from-font value, we need to resolve it to an actual number
+    /// using metrics from the font.
+    fn resolve_font_size_adjust_from_font_if_needed(&mut self) {
+        use crate::values::computed::font::{FontSizeAdjust, FontSizeAdjustFactor as Factor};
+
+        if !self.seen.contains(LonghandId::FontSizeAdjust) {
+            return;
+        }
+
+        let font_metrics = |vertical| {
+            let orient = if vertical {
+                FontMetricsOrientation::MatchContextPreferVertical
+            } else {
+                FontMetricsOrientation::Horizontal
+            };
+            let metrics = self.context.query_font_metrics(FontBaseSize::CurrentStyle, orient, false);
+            let font_size = self.context.style().get_font().clone_font_size().used_size.0;
+            (metrics, font_size)
+        };
+
+        // Macro to resolve a from-font value using the given metric field. If not present,
+        // returns the fallback value, or if that is negative, resolves using ascent instead
+        // of the missing field (this is the fallback for cap-height).
+        macro_rules! resolve {
+            ($basis:ident, $value:expr, $vertical:expr, $field:ident, $fallback:expr) => {
+                {
+                    if $value != Factor::FromFont {
+                        return;
+                    }
+                    let (metrics, font_size) = font_metrics($vertical);
+                    let ratio = if let Some(metric) = metrics.$field {
+                        metric / font_size
+                    } else if $fallback >= 0.0 {
+                        $fallback
+                    } else {
+                        metrics.ascent / font_size
+                    };
+                    FontSizeAdjust::$basis(Factor::new(ratio))
+                }
+            };
+        }
+
+        // If sizeAdjust is currently FromFont, we need to resolve it to a number.
+        let resolved = match self.context.builder.get_font().mFont.sizeAdjust {
+            FontSizeAdjust::None => return,
+            FontSizeAdjust::ExHeight(val) => resolve!(ExHeight, val, false, x_height, 0.5),
+            FontSizeAdjust::CapHeight(val) => resolve!(CapHeight, val, false, cap_height, -1.0 /* fall back to ascent */),
+            FontSizeAdjust::ChWidth(val) => resolve!(ChWidth, val, false, zero_advance_measure, 0.5),
+            FontSizeAdjust::IcWidth(val) => resolve!(IcWidth, val, false, ic_width, 1.0),
+            FontSizeAdjust::IcHeight(val) => resolve!(IcHeight, val, true, ic_width, 1.0),
+        };
+
+        self.context.builder.mutate_font().mFont.sizeAdjust = resolved
+    }
+
     /// Various properties affect how font-size and font-family are computed.
     ///
     /// These need to be handled here, since relative lengths and ex / ch units
@@ -1246,8 +1282,9 @@ impl<'a, 'b: 'a> Cascade<'a, 'b> {
             self.recompute_initial_font_family_if_needed();
             self.prioritize_user_fonts_if_needed();
             self.recompute_keyword_font_size_if_needed();
-            self.handle_mathml_scriptlevel_if_needed();
-            self.constrain_font_size_if_needed()
+            self.recompute_math_font_size_if_needed();
+            self.constrain_font_size_if_needed();
+            self.resolve_font_size_adjust_from_font_if_needed()
         }
     }
 }

@@ -41,6 +41,7 @@ const EXPECTED_REMOTE_SETTINGS_URLBAR_RESULT = {
     sponsoredBlockId: 1,
     sponsoredAdvertiser: "TestAdvertiser",
     isSponsored: true,
+    descriptionL10n: { id: "urlbar-result-action-sponsored" },
     helpUrl: QuickSuggest.HELP_URL,
     helpL10n: {
       id: UrlbarPrefs.get("resultMenu")
@@ -55,6 +56,7 @@ const EXPECTED_REMOTE_SETTINGS_URLBAR_RESULT = {
     },
     displayUrl: "http://test.com/q=frabbits",
     source: "remote-settings",
+    provider: "AdmWikipedia",
   },
 };
 
@@ -74,6 +76,7 @@ const EXPECTED_MERINO_URLBAR_RESULT = {
     sponsoredBlockId: 1,
     sponsoredAdvertiser: "advertiser",
     isSponsored: true,
+    descriptionL10n: { id: "urlbar-result-action-sponsored" },
     helpUrl: QuickSuggest.HELP_URL,
     helpL10n: {
       id: UrlbarPrefs.get("resultMenu")
@@ -89,12 +92,13 @@ const EXPECTED_MERINO_URLBAR_RESULT = {
     displayUrl: "url",
     requestId: "request_id",
     source: "merino",
+    provider: "adm",
   },
 };
 
 // `UrlbarProviderQuickSuggest.#merino` is lazily created on the first Merino
 // fetch, so it's easiest to create `gClient` lazily too.
-XPCOMUtils.defineLazyGetter(
+ChromeUtils.defineLazyGetter(
   this,
   "gClient",
   () => UrlbarProviderQuickSuggest._test_merino
@@ -489,6 +493,7 @@ add_task(async function multipleMerinoSuggestions() {
           sponsoredBlockId: 1,
           sponsoredAdvertiser: "multipleMerinoSuggestions 1 advertiser",
           isSponsored: true,
+          descriptionL10n: { id: "urlbar-result-action-sponsored" },
           helpUrl: QuickSuggest.HELP_URL,
           helpL10n: {
             id: UrlbarPrefs.get("resultMenu")
@@ -504,6 +509,7 @@ add_task(async function multipleMerinoSuggestions() {
           displayUrl: "multipleMerinoSuggestions 1 url",
           requestId: "request_id",
           source: "merino",
+          provider: "adm",
         },
       },
     ],

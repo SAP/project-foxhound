@@ -21,7 +21,6 @@ from os import path
 from pathlib import Path
 
 import mozpack.path as mozpath
-import yaml
 from mach.decorators import (
     Command,
     CommandArgument,
@@ -29,7 +28,6 @@ from mach.decorators import (
     SettingsProvider,
     SubCommand,
 )
-from voluptuous import All, Boolean, Required, Schema
 
 import mozbuild.settings  # noqa need @SettingsProvider hook to execute
 from mozbuild.base import (
@@ -113,6 +111,8 @@ To do so, add the corresponding file in <mozilla-root-dir>/build/cargo, followin
 
 
 def _cargo_config_yaml_schema():
+    from voluptuous import All, Boolean, Required, Schema
+
     def starts_with_cargo(s):
         if s.startswith("cargo-"):
             return s
@@ -206,6 +206,7 @@ def cargo(
     continue_on_error=False,
     subcommand_args=[],
 ):
+    import yaml
 
     from mozbuild.controller.building import BuildDriver
 
@@ -548,10 +549,26 @@ def clobber(command_context, what, full=False):
                 "-delete",
             ]
         ret = subprocess.call(cmd, cwd=command_context.topsrcdir)
+
+        # We'll keep this around to delete the legacy "_virtualenv" dir folders
+        # so that people don't get confused if they see it and try to manipulate
+        # it but it has no effect.
         shutil.rmtree(
             mozpath.join(command_context.topobjdir, "_virtualenvs"),
             ignore_errors=True,
         )
+        from mach.util import get_virtualenv_base_dir
+
+        virtualenv_dir = Path(get_virtualenv_base_dir(command_context.topsrcdir))
+
+        for specific_venv in virtualenv_dir.iterdir():
+            if specific_venv.name == "mach":
+                # We can't delete the "mach" virtualenv with clobber
+                # since it's the one doing the clobbering. It always
+                # has to be removed manually.
+                pass
+            else:
+                shutil.rmtree(specific_venv, ignore_errors=True)
 
     if "gradle" in what:
         shutil.rmtree(
@@ -1250,7 +1267,7 @@ def _get_android_run_parser():
         "--aab",
         action="store_true",
         default=False,
-        help="Install app ass App Bundle (AAB).",
+        help="Install app as Android App Bundle (AAB).",
     )
     group.add_argument(
         "--no-install",

@@ -461,21 +461,18 @@ class LJSCallInstructionHelper
 
 // Generates a polymorphic callsite, wherein the function being called is
 // unknown and anticipated to vary.
-class LCallGeneric : public LJSCallInstructionHelper<BOX_PIECES, 1, 2> {
+class LCallGeneric : public LJSCallInstructionHelper<BOX_PIECES, 1, 1> {
  public:
   LIR_HEADER(CallGeneric)
 
-  LCallGeneric(const LAllocation& func, const LDefinition& nargsreg,
-               const LDefinition& tmpobjreg)
+  LCallGeneric(const LAllocation& callee, const LDefinition& argc)
       : LJSCallInstructionHelper(classOpcode) {
-    setOperand(0, func);
-    setTemp(0, nargsreg);
-    setTemp(1, tmpobjreg);
+    setOperand(0, callee);
+    setTemp(0, argc);
   }
 
-  const LAllocation* getFunction() { return getOperand(0); }
-  const LDefinition* getNargsReg() { return getTemp(0); }
-  const LDefinition* getTempObject() { return getTemp(1); }
+  const LAllocation* getCallee() { return getOperand(0); }
+  const LDefinition* getArgc() { return getTemp(0); }
 };
 
 // Generates a hardcoded callsite for a known, non-native target.
@@ -3046,15 +3043,17 @@ class LWasmLoad : public details::LWasmLoadBase<1, 1> {
   LIR_HEADER(WasmLoad);
 };
 
-class LWasmLoadI64 : public details::LWasmLoadBase<INT64_PIECES, 1> {
+class LWasmLoadI64 : public details::LWasmLoadBase<INT64_PIECES, 2> {
  public:
   explicit LWasmLoadI64(const LAllocation& ptr,
                         const LAllocation& memoryBase = LAllocation())
       : LWasmLoadBase(classOpcode, ptr, memoryBase) {
     setTemp(0, LDefinition::BogusTemp());
+    setTemp(1, LDefinition::BogusTemp());
   }
 
   const LDefinition* ptrCopy() { return Base::getTemp(0); }
+  const LDefinition* memoryBaseCopy() { return Base::getTemp(1); }
 
   LIR_HEADER(WasmLoadI64);
 };
@@ -3120,17 +3119,18 @@ class LWasmCompareExchangeHeap : public LInstructionHelper<1, 4, 4> {
     setOperand(3, memoryBase);
     setTemp(0, LDefinition::BogusTemp());
   }
-  // MIPS32, MIPS64
+  // MIPS32, MIPS64, LoongArch64
   LWasmCompareExchangeHeap(const LAllocation& ptr, const LAllocation& oldValue,
                            const LAllocation& newValue,
                            const LDefinition& valueTemp,
                            const LDefinition& offsetTemp,
-                           const LDefinition& maskTemp)
+                           const LDefinition& maskTemp,
+                           const LAllocation& memoryBase = LAllocation())
       : LInstructionHelper(classOpcode) {
     setOperand(0, ptr);
     setOperand(1, oldValue);
     setOperand(2, newValue);
-    setOperand(3, LAllocation());
+    setOperand(3, memoryBase);
     setTemp(0, LDefinition::BogusTemp());
     setTemp(1, valueTemp);
     setTemp(2, offsetTemp);
@@ -3168,15 +3168,16 @@ class LWasmAtomicExchangeHeap : public LInstructionHelper<1, 3, 4> {
     setOperand(2, memoryBase);
     setTemp(0, LDefinition::BogusTemp());
   }
-  // MIPS32, MIPS64
+  // MIPS32, MIPS64, LoongArch64
   LWasmAtomicExchangeHeap(const LAllocation& ptr, const LAllocation& value,
                           const LDefinition& valueTemp,
                           const LDefinition& offsetTemp,
-                          const LDefinition& maskTemp)
+                          const LDefinition& maskTemp,
+                          const LAllocation& memoryBase = LAllocation())
       : LInstructionHelper(classOpcode) {
     setOperand(0, ptr);
     setOperand(1, value);
-    setOperand(2, LAllocation());
+    setOperand(2, memoryBase);
     setTemp(0, LDefinition::BogusTemp());
     setTemp(1, valueTemp);
     setTemp(2, offsetTemp);
@@ -3219,15 +3220,16 @@ class LWasmAtomicBinopHeap : public LInstructionHelper<1, 3, 6> {
     setTemp(1, LDefinition::BogusTemp());
     setTemp(2, flagTemp);
   }
-  // MIPS32, MIPS64
+  // MIPS32, MIPS64, LoongArch64
   LWasmAtomicBinopHeap(const LAllocation& ptr, const LAllocation& value,
                        const LDefinition& valueTemp,
                        const LDefinition& offsetTemp,
-                       const LDefinition& maskTemp)
+                       const LDefinition& maskTemp,
+                       const LAllocation& memoryBase = LAllocation())
       : LInstructionHelper(classOpcode) {
     setOperand(0, ptr);
     setOperand(1, value);
-    setOperand(2, LAllocation());
+    setOperand(2, memoryBase);
     setTemp(0, LDefinition::BogusTemp());
     setTemp(1, LDefinition::BogusTemp());
     setTemp(2, LDefinition::BogusTemp());
@@ -3273,16 +3275,17 @@ class LWasmAtomicBinopHeapForEffect : public LInstructionHelper<0, 3, 5> {
     setTemp(0, LDefinition::BogusTemp());
     setTemp(1, flagTemp);
   }
-  // MIPS32, MIPS64
+  // MIPS32, MIPS64, LoongArch64
   LWasmAtomicBinopHeapForEffect(const LAllocation& ptr,
                                 const LAllocation& value,
                                 const LDefinition& valueTemp,
                                 const LDefinition& offsetTemp,
-                                const LDefinition& maskTemp)
+                                const LDefinition& maskTemp,
+                                const LAllocation& memoryBase = LAllocation())
       : LInstructionHelper(classOpcode) {
     setOperand(0, ptr);
     setOperand(1, value);
-    setOperand(2, LAllocation());
+    setOperand(2, memoryBase);
     setTemp(0, LDefinition::BogusTemp());
     setTemp(1, LDefinition::BogusTemp());
     setTemp(2, valueTemp);
@@ -3390,18 +3393,23 @@ class LWasmCall : public LVariadicInstruction<0, 0> {
   }
 
   MWasmCallBase* callBase() const {
-    if (isCatchable()) {
+    if (isCatchable() && !isReturnCall()) {
       return static_cast<MWasmCallBase*>(mirCatchable());
+    }
+    if (isReturnCall()) {
+      return static_cast<MWasmReturnCall*>(mirReturnCall());
     }
     return static_cast<MWasmCallBase*>(mirUncatchable());
   }
   bool isCatchable() const { return mir_->isWasmCallCatchable(); }
+  bool isReturnCall() const { return mir_->isWasmReturnCall(); }
   MWasmCallCatchable* mirCatchable() const {
     return mir_->toWasmCallCatchable();
   }
   MWasmCallUncatchable* mirUncatchable() const {
     return mir_->toWasmCallUncatchable();
   }
+  MWasmReturnCall* mirReturnCall() const { return mir_->toWasmReturnCall(); }
 
   static bool isCallPreserved(AnyRegister reg) {
     // All MWasmCalls preserve the TLS register:
@@ -3472,7 +3480,7 @@ inline LAllocation LStackArea::ResultIterator::alloc() const {
   MWasmStackResultArea* area = alloc_.ins()->toWasmStackResultArea()->mir();
   return LStackSlot(area->base() - area->result(idx_).offset());
 }
-inline bool LStackArea::ResultIterator::isGcPointer() const {
+inline bool LStackArea::ResultIterator::isWasmAnyRef() const {
   MOZ_ASSERT(!done());
   MWasmStackResultArea* area = alloc_.ins()->toWasmStackResultArea()->mir();
   MIRType type = area->result(idx_).type();
@@ -3483,7 +3491,7 @@ inline bool LStackArea::ResultIterator::isGcPointer() const {
     return false;
   }
 #endif
-  return LDefinition::TypeFrom(type) == LDefinition::OBJECT;
+  return LDefinition::TypeFrom(type) == LDefinition::WASM_ANYREF;
 }
 
 class LWasmStackResult : public LInstructionHelper<1, 1, 0> {
@@ -3748,28 +3756,25 @@ class LIonToWasmCallI64 : public LIonToWasmCallBase<INT64_PIECES> {
       : LIonToWasmCallBase<INT64_PIECES>(classOpcode, numOperands, temp) {}
 };
 
-class LWasmGcObjectIsSubtypeOfAbstractAndBranch
+class LWasmRefIsSubtypeOfAbstractAndBranch
     : public LControlInstructionHelper<2, 2, 2> {
   wasm::RefType sourceType_;
   wasm::RefType destType_;
 
  public:
-  LIR_HEADER(WasmGcObjectIsSubtypeOfAbstractAndBranch)
+  LIR_HEADER(WasmRefIsSubtypeOfAbstractAndBranch)
 
-  static constexpr uint32_t Object = 0;
+  static constexpr uint32_t Ref = 0;
 
-  LWasmGcObjectIsSubtypeOfAbstractAndBranch(MBasicBlock* ifTrue,
-                                            MBasicBlock* ifFalse,
-                                            wasm::RefType sourceType,
-                                            wasm::RefType destType,
-                                            const LAllocation& object,
-                                            const LDefinition& temp0)
+  LWasmRefIsSubtypeOfAbstractAndBranch(
+      MBasicBlock* ifTrue, MBasicBlock* ifFalse, wasm::RefType sourceType,
+      wasm::RefType destType, const LAllocation& ref, const LDefinition& temp0)
       : LControlInstructionHelper(classOpcode),
         sourceType_(sourceType),
         destType_(destType) {
     setSuccessor(0, ifTrue);
     setSuccessor(1, ifFalse);
-    setOperand(Object, object);
+    setOperand(Ref, ref);
     setTemp(0, temp0);
   }
 
@@ -3779,24 +3784,24 @@ class LWasmGcObjectIsSubtypeOfAbstractAndBranch
   MBasicBlock* ifTrue() const { return getSuccessor(0); }
   MBasicBlock* ifFalse() const { return getSuccessor(1); }
 
-  const LAllocation* object() { return getOperand(Object); }
+  const LAllocation* ref() { return getOperand(Ref); }
   const LDefinition* temp0() { return getTemp(0); }
 };
 
-class LWasmGcObjectIsSubtypeOfConcreteAndBranch
+class LWasmRefIsSubtypeOfConcreteAndBranch
     : public LControlInstructionHelper<2, 2, 2> {
   wasm::RefType sourceType_;
   wasm::RefType destType_;
 
  public:
-  LIR_HEADER(WasmGcObjectIsSubtypeOfConcreteAndBranch)
+  LIR_HEADER(WasmRefIsSubtypeOfConcreteAndBranch)
 
-  static constexpr uint32_t Object = 0;
+  static constexpr uint32_t Ref = 0;
   static constexpr uint32_t SuperSuperTypeVector = 1;
 
-  LWasmGcObjectIsSubtypeOfConcreteAndBranch(
+  LWasmRefIsSubtypeOfConcreteAndBranch(
       MBasicBlock* ifTrue, MBasicBlock* ifFalse, wasm::RefType sourceType,
-      wasm::RefType destType, const LAllocation& object,
+      wasm::RefType destType, const LAllocation& ref,
       const LAllocation& superSuperTypeVector, const LDefinition& temp0,
       const LDefinition& temp1)
       : LControlInstructionHelper(classOpcode),
@@ -3804,7 +3809,7 @@ class LWasmGcObjectIsSubtypeOfConcreteAndBranch
         destType_(destType) {
     setSuccessor(0, ifTrue);
     setSuccessor(1, ifFalse);
-    setOperand(Object, object);
+    setOperand(Ref, ref);
     setOperand(SuperSuperTypeVector, superSuperTypeVector);
     setTemp(0, temp0);
     setTemp(1, temp1);
@@ -3816,7 +3821,7 @@ class LWasmGcObjectIsSubtypeOfConcreteAndBranch
   MBasicBlock* ifTrue() const { return getSuccessor(0); }
   MBasicBlock* ifFalse() const { return getSuccessor(1); }
 
-  const LAllocation* object() { return getOperand(Object); }
+  const LAllocation* ref() { return getOperand(Ref); }
   const LAllocation* superSuperTypeVector() {
     return getOperand(SuperSuperTypeVector);
   }

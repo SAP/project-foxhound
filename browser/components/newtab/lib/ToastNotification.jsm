@@ -11,6 +11,7 @@ const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   ExperimentAPI: "resource://nimbus/ExperimentAPI.sys.mjs",
+  PromiseUtils: "resource://gre/modules/PromiseUtils.sys.mjs",
   RemoteL10n: "resource://activity-stream/lib/RemoteL10n.sys.mjs",
 });
 
@@ -101,15 +102,40 @@ const ToastNotification = {
             action.title
           );
         }
+        if (action.launch_action) {
+          action.opaqueRelaunchData = JSON.stringify(action.launch_action);
+          delete action.launch_action;
+        }
       }
       alert.actions = actions;
     }
 
-    if (content.launch_url) {
-      alert.launchURL = Services.urlFormatter.formatURL(content.launch_url);
+    // Populate `opaqueRelaunchData`, prefering `launch_action` if given,
+    // falling back to `launch_url` if given.
+    let relaunchAction = content.launch_action;
+    if (!relaunchAction && content.launch_url) {
+      relaunchAction = {
+        type: "OPEN_URL",
+        data: {
+          args: content.launch_url,
+          where: "tab",
+        },
+      };
+    }
+    if (relaunchAction) {
+      alert.opaqueRelaunchData = JSON.stringify(relaunchAction);
     }
 
-    this.AlertsService.showAlert(alert);
+    let shownPromise = lazy.PromiseUtils.defer();
+    let obs = (subject, topic, data) => {
+      if (topic === "alertshown") {
+        shownPromise.resolve();
+      }
+    };
+
+    this.AlertsService.showAlert(alert, obs);
+
+    await shownPromise;
 
     return true;
   },

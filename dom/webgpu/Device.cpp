@@ -8,6 +8,7 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/ErrorResult.h"
 #include "mozilla/Logging.h"
+#include "mozilla/RefPtr.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/WebGPUBinding.h"
 #include "Device.h"
@@ -18,6 +19,8 @@
 #include "Buffer.h"
 #include "ComputePipeline.h"
 #include "DeviceLostInfo.h"
+#include "InternalError.h"
+#include "OutOfMemoryError.h"
 #include "PipelineLayout.h"
 #include "Queue.h"
 #include "RenderBundleEncoder.h"
@@ -43,12 +46,12 @@ GPU_IMPL_JS_WRAP(Device)
 RefPtr<WebGPUChild> Device::GetBridge() { return mBridge; }
 
 Device::Device(Adapter* const aParent, RawId aId,
-               UniquePtr<ffi::WGPULimits> aRawLimits)
+               const ffi::WGPULimits& aRawLimits)
     : DOMEventTargetHelper(aParent->GetParentObject()),
       mId(aId),
       // features are filled in Adapter::RequestDevice
       mFeatures(new SupportedFeatures(aParent)),
-      mLimits(new SupportedLimits(aParent, std::move(aRawLimits))),
+      mLimits(new SupportedLimits(aParent, aRawLimits)),
       mBridge(aParent->mBridge),
       mQueue(new class Queue(this, aParent->mBridge, aId)) {
   mBridge->RegisterDevice(this);
@@ -88,10 +91,12 @@ bool Device::IsLost() const { return !mBridge || !mBridge->CanSend(); }
 // Generate an error on the Device timeline for this device.
 //
 // aMessage is interpreted as UTF-8.
-void Device::GenerateError(const nsCString& aMessage) {
-  if (mBridge->CanSend()) {
-    mBridge->SendGenerateError(mId, aMessage);
+void Device::GenerateValidationError(const nsCString& aMessage) {
+  if (IsLost()) {
+    return;  // Just drop it?
   }
+  mBridge->SendGenerateError(Some(mId), dom::GPUErrorFilter::Validation,
+                             aMessage);
 }
 
 void Device::GetLabel(nsAString& aValue) const { aValue = mLabel; }
@@ -194,8 +199,7 @@ Device::CreateShaderModule(JSContext* aCx,
     return nullptr;
   }
 
-  return MOZ_KnownLive(mBridge)->DeviceCreateShaderModule(*this, aDesc,
-                                                          promise);
+  return MOZ_KnownLive(mBridge)->DeviceCreateShaderModule(this, aDesc, promise);
 }
 
 already_AddRefed<ComputePipeline> Device::CreateComputePipeline(
@@ -311,6 +315,9 @@ already_AddRefed<Texture> Device::InitSwapChain(
   desc.mMipLevelCount = 1;
   desc.mSampleCount = 1;
   desc.mUsage = aDesc.mUsage | dom::GPUTextureUsage_Binding::COPY_SRC;
+  desc.mViewFormats = aDesc.mViewFormats;
+  // TODO: `mColorSpace`: <https://bugzilla.mozilla.org/show_bug.cgi?id=1846608>
+  // TODO: `mAlphaMode`: <https://bugzilla.mozilla.org/show_bug.cgi?id=1846605>
   return CreateTexture(desc);
 }
 
@@ -323,19 +330,30 @@ void Device::Destroy() {
 }
 
 void Device::PushErrorScope(const dom::GPUErrorFilter& aFilter) {
-  if (mBridge->CanSend()) {
-    mBridge->SendDevicePushErrorScope(mId);
+  if (IsLost()) {
+    return;
   }
+  mBridge->SendDevicePushErrorScope(mId, aFilter);
 }
 
 already_AddRefed<dom::Promise> Device::PopErrorScope(ErrorResult& aRv) {
+  /*
+  https://www.w3.org/TR/webgpu/#errors-and-debugging:
+  > After a device is lost (described below), errors are no longer surfaced.
+  > At this point, implementations do not need to run validation or error
+  tracking: > popErrorScope() and uncapturederror stop reporting errors, > and
+  the validity of objects on the device becomes unobservable.
+  */
   RefPtr<dom::Promise> promise = dom::Promise::Create(GetParentObject(), aRv);
   if (NS_WARN_IF(aRv.Failed())) {
     return nullptr;
   }
 
-  if (!mBridge->CanSend()) {
-    promise->MaybeRejectWithOperationError("Internal communication error");
+  if (IsLost()) {
+    WebGPUChild::JsWarning(
+        GetOwnerGlobal(),
+        "popErrorScope resolving to null because device is already lost."_ns);
+    promise->MaybeResolve(JS::NullHandleValue);
     return promise.forget();
   }
 
@@ -343,26 +361,47 @@ already_AddRefed<dom::Promise> Device::PopErrorScope(ErrorResult& aRv) {
 
   errorPromise->Then(
       GetCurrentSerialEventTarget(), __func__,
-      [self = RefPtr{this}, promise](const MaybeScopedError& aMaybeError) {
-        if (aMaybeError) {
-          if (aMaybeError->operationError) {
-            promise->MaybeRejectWithOperationError("Stack is empty");
-          } else {
-            dom::OwningGPUOutOfMemoryErrorOrGPUValidationError error;
-            if (aMaybeError->validationMessage.IsEmpty()) {
-              error.SetAsGPUOutOfMemoryError();
-            } else {
-              error.SetAsGPUValidationError() = new ValidationError(
-                  self->GetParentObject(), aMaybeError->validationMessage);
-            }
-            promise->MaybeResolve(std::move(error));
-          }
-        } else {
-          promise->MaybeResolveWithUndefined();
+      [self = RefPtr{this}, promise](const PopErrorScopeResult& aResult) {
+        RefPtr<Error> error;
+
+        switch (aResult.resultType) {
+          case PopErrorScopeResultType::NoError:
+            promise->MaybeResolve(JS::NullHandleValue);
+            return;
+
+          case PopErrorScopeResultType::DeviceLost:
+            WebGPUChild::JsWarning(
+                self->GetOwnerGlobal(),
+                "popErrorScope resolving to null because device was lost."_ns);
+            promise->MaybeResolve(JS::NullHandleValue);
+            return;
+
+          case PopErrorScopeResultType::ThrowOperationError:
+            promise->MaybeRejectWithOperationError(aResult.message);
+            return;
+
+          case PopErrorScopeResultType::OutOfMemory:
+            error =
+                new OutOfMemoryError(self->GetParentObject(), aResult.message);
+            break;
+
+          case PopErrorScopeResultType::ValidationError:
+            error =
+                new ValidationError(self->GetParentObject(), aResult.message);
+            break;
+
+          case PopErrorScopeResultType::InternalError:
+            error = new InternalError(self->GetParentObject(), aResult.message);
+            break;
         }
+        promise->MaybeResolve(std::move(error));
       },
-      [promise](const ipc::ResponseRejectReason&) {
-        promise->MaybeRejectWithOperationError("Internal communication error");
+      [self = RefPtr{this}, promise](const ipc::ResponseRejectReason&) {
+        // Device was lost.
+        WebGPUChild::JsWarning(
+            self->GetOwnerGlobal(),
+            "popErrorScope resolving to null because device was just lost."_ns);
+        promise->MaybeResolve(JS::NullHandleValue);
       });
 
   return promise.forget();

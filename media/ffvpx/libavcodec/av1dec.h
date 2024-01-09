@@ -23,10 +23,12 @@
 
 #include <stdint.h>
 
+#include "libavutil/fifo.h"
 #include "libavutil/buffer.h"
 #include "libavutil/frame.h"
 #include "libavutil/pixfmt.h"
 #include "avcodec.h"
+#include "packet.h"
 #include "cbs.h"
 #include "cbs_av1.h"
 
@@ -67,12 +69,20 @@ typedef struct AV1DecContext {
     enum AVPixelFormat pix_fmt;
     CodedBitstreamContext *cbc;
     CodedBitstreamFragment current_obu;
+    AVPacket *pkt;
 
     AVBufferRef *seq_ref;
     AV1RawSequenceHeader *raw_seq;
     AVBufferRef *header_ref;
     AV1RawFrameHeader *raw_frame_header;
     TileGroupInfo *tile_group_info;
+
+    AVBufferRef *cll_ref;
+    AV1RawMetadataHDRCLL *cll;
+    AVBufferRef *mdcv_ref;
+    AV1RawMetadataHDRMDCV *mdcv;
+    AVFifo *itut_t35_fifo;
+
     uint16_t tile_num;
     uint16_t tg_start;
     uint16_t tg_end;
@@ -81,6 +91,8 @@ typedef struct AV1DecContext {
 
     AV1Frame ref[AV1_NUM_REF_FRAMES];
     AV1Frame cur_frame;
+
+    int nb_unit;
 
     // AVOptions
     int operating_point;

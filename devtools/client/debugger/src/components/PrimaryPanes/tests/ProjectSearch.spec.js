@@ -148,18 +148,33 @@ function render(overrides = {}, mounted = false) {
 
   if (mounted) {
     return mount(
-      <Provider store={store}>
-        <ProjectSearch {...props} />
-      </Provider>,
-      { context, childContextTypes: { shortcuts: PropTypes.object } }
+      React.createElement(
+        Provider,
+        {
+          store: store,
+        },
+        React.createElement(ProjectSearch, props)
+      ),
+      {
+        context,
+        childContextTypes: {
+          shortcuts: PropTypes.object,
+        },
+      }
     ).childAt(0);
   }
 
   return shallow(
-    <Provider store={store}>
-      <ProjectSearch {...props} />
-    </Provider>,
-    { context }
+    React.createElement(
+      Provider,
+      {
+        store: store,
+      },
+      React.createElement(ProjectSearch, props)
+    ),
+    {
+      context,
+    }
   ).dive();
 }
 
@@ -285,7 +300,7 @@ describe("ProjectSearch", () => {
     );
     component.instance().state.focusedItem = { ...testMatch };
     shortcuts.dispatch("Enter");
-    expect(selectSpecificLocation).toHaveBeenCalledWith(mockcx, {
+    expect(selectSpecificLocation).toHaveBeenCalledWith({
       source: {
         id: "some-target/source42",
       },

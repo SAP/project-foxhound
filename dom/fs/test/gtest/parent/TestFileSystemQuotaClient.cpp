@@ -4,6 +4,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "FileSystemParentTypes.h"
 #include "FileSystemQuotaClient.h"
 #include "TestHelpers.h"
 #include "datamodel/FileSystemDataManager.h"
@@ -46,8 +47,9 @@ quota::OriginMetadata GetTestQuotaOriginMetadata() {
 class TestFileSystemQuotaClient
     : public quota::test::QuotaManagerDependencyFixture {
  public:
+  static const int sPage = 64 * 512;
   // ExceedsPreallocation value may depend on platform and sqlite version!
-  static const int sExceedsPreallocation = 32 * 1024;
+  static const int sExceedsPreallocation = sPage;
 
  protected:
   void SetUp() override { ASSERT_NO_FATAL_FAILURE(InitializeFixture()); }
@@ -112,30 +114,32 @@ class TestFileSystemQuotaClient
 
   static void CreateNewEmptyFile(
       data::FileSystemDatabaseManager* const aDatabaseManager,
-      const FileSystemChildMetadata& aFileSlot, EntryId& aFileId) {
+      const FileSystemChildMetadata& aFileSlot, EntryId& aEntryId) {
     // The file should not exist yet
     Result<EntryId, QMResult> existingTestFile =
-        aDatabaseManager->GetOrCreateFile(aFileSlot, sContentType,
-                                          /* create */ false);
+        aDatabaseManager->GetOrCreateFile(aFileSlot, /* create */ false);
     ASSERT_TRUE(existingTestFile.isErr());
     ASSERT_NSEQ(NS_ERROR_DOM_NOT_FOUND_ERR,
                 ToNSResult(existingTestFile.unwrapErr()));
 
     // Create a new file
-    TEST_TRY_UNWRAP(aFileId, aDatabaseManager->GetOrCreateFile(
-                                 aFileSlot, sContentType, /* create */ true));
+    TEST_TRY_UNWRAP(aEntryId, aDatabaseManager->GetOrCreateFile(
+                                  aFileSlot, /* create */ true));
   }
 
   static void WriteDataToFile(
       data::FileSystemDatabaseManager* const aDatabaseManager,
-      const EntryId& aFileId, const nsCString& aData) {
+      const EntryId& aEntryId, const nsCString& aData) {
+    TEST_TRY_UNWRAP(FileId fileId, aDatabaseManager->EnsureFileId(aEntryId));
+    ASSERT_FALSE(fileId.IsEmpty());
+
     ContentType type;
     TimeStamp lastModMilliS = 0;
     Path path;
     nsCOMPtr<nsIFile> fileObj;
-
-    ASSERT_NSEQ(NS_OK, aDatabaseManager->GetFile(aFileId, type, lastModMilliS,
-                                                 path, fileObj));
+    ASSERT_NSEQ(NS_OK,
+                aDatabaseManager->GetFile(aEntryId, fileId, FileMode::EXCLUSIVE,
+                                          type, lastModMilliS, path, fileObj));
 
     uint32_t written = 0;
     ASSERT_NE(written, aData.Length());
@@ -202,11 +206,7 @@ class TestFileSystemQuotaClient
     const auto actual = dbUsage.value();
     ASSERT_GT(actual, expected);
   }
-
-  static ContentType sContentType;
 };
-
-ContentType TestFileSystemQuotaClient::sContentType;
 
 TEST_F(TestFileSystemQuotaClient, CheckUsageBeforeAnyFilesOnDisk) {
   auto backgroundTask = []() {
@@ -242,7 +242,7 @@ TEST_F(TestFileSystemQuotaClient, CheckUsageBeforeAnyFilesOnDisk) {
       // After a new file has been created (only in the database),
       // * database size has increased
       // * GetUsageForOrigin and InitOrigin should agree
-      const auto expectedUse = initialDbUsage + BytesOfName(GetTestFileName());
+      const auto expectedUse = initialDbUsage + 2 * sPage;
 
       TEST_TRY_UNWRAP(usageNow, quotaClient->GetUsageForOrigin(
                                     quota::PERSISTENCE_TYPE_DEFAULT,
@@ -316,7 +316,6 @@ TEST_F(TestFileSystemQuotaClient, WritesToFilesShouldIncreaseUsage) {
 
       // Fill the file with some content
       const nsCString& testData = GetTestData();
-      const auto expectedTotalUsage = testFileDbUsage + testData.Length();
 
       ASSERT_NO_FATAL_FAILURE(WriteDataToFile(dbm, testFileId, testData));
 
@@ -329,7 +328,9 @@ TEST_F(TestFileSystemQuotaClient, WritesToFilesShouldIncreaseUsage) {
 
       // When data manager unlocks the file, it should call update
       // but in this test we call it directly
-      ASSERT_NSEQ(NS_OK, dbm->UpdateUsage(testFileId));
+      ASSERT_NSEQ(NS_OK, dbm->UpdateUsage(FileId(testFileId)));
+
+      const auto expectedTotalUsage = testFileDbUsage + testData.Length();
 
       // Disk usage should have increased after writing
       TEST_TRY_UNWRAP(usageNow,
@@ -428,7 +429,8 @@ TEST_F(TestFileSystemQuotaClient, TrackedFilesOnInitOriginShouldCauseRescan) {
                       rdm->MutableDatabaseManagerPtr());
 
     // This should force a rescan
-    ASSERT_NSEQ(NS_OK, rdm->LockExclusive(*testFileId));
+    TEST_TRY_UNWRAP(FileId fileId, rdm->LockExclusive(*testFileId));
+    ASSERT_FALSE(fileId.IsEmpty());
     PerformOnIOThread(std::move(writingToFile), std::move(quotaClient),
                       rdm->MutableDatabaseManagerPtr());
   };
@@ -465,7 +467,7 @@ TEST_F(TestFileSystemQuotaClient, RemovingFileShouldDecreaseUsage) {
 
       // Currently, usage is expected to be updated on unlock by data manager
       // but here UpdateUsage() is called directly
-      ASSERT_NSEQ(NS_OK, dbm->UpdateUsage(testFileId));
+      ASSERT_NSEQ(NS_OK, dbm->UpdateUsage(FileId(testFileId)));
 
       // At least some file disk usage should have appeared after unlocking
       TEST_TRY_UNWRAP(usageNow, quotaClient->GetUsageForOrigin(

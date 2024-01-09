@@ -312,11 +312,6 @@ checkbox {
   margin: 4px 0;
 }
 
-#translationAttributionImage {
-  width: 70px;
-  cursor: pointer;
-}
-
 #activeLanguages > richlistitem {
   padding: 0.3em;
 }
@@ -448,6 +443,10 @@ richlistitem[selected] .actionsMenu:focus-visible {
   direction: rtl;
 }
 
+.homepage-buttons > .homepage-button {
+  flex: 1 auto;
+}
+
 .homepage-button:first-of-type {
   margin-inline-start: 0;
 }
@@ -479,7 +478,7 @@ richlistitem[selected] .actionsMenu:focus-visible {
   margin-inline-start: 0;
 }
 
-a[is="moz-support-link"] {
+a[is="moz-support-link"]:not(.sidebar-footer-link) {
   display: inline-block;
   white-space: initial;
 }
@@ -530,7 +529,7 @@ a[is="moz-support-link"] {
   margin-block: 0 4px;
 }
 
-#doNotTrackLearnMoreBox {
+#nonTechnicalPrivacyBox {
   margin-top: 32px;
 }
 
@@ -574,14 +573,6 @@ a[is="moz-support-link"] {
 
 #showUpdateHistory {
   margin-inline-start: 0;
-}
-
-@media (-moz-platform: windows-win7),
-       (-moz-platform: windows-win8) {
-  #windows-sso,
-  #windows-sso-caption {
-    display: none;
-  }
 }
 
 /**
@@ -788,10 +779,6 @@ html|dialog,
 .openLink {
   line-height: 30px;
   cursor: pointer;
-}
-
-.openLink:visited {
-  color: var(--in-content-link-color);
 }
 
 #fxaDisplayName {
@@ -1457,7 +1444,7 @@ richlistitem .text-link:hover {
 
 #translations-manage-install-list {
   height: 220px;
-  overflow: scroll;
+  overflow: auto;
   background-color: var(--in-content-box-background);
   border: 1px solid var(--in-content-box-border-color);
   border-radius: 4px;
@@ -1472,13 +1459,13 @@ richlistitem .text-link:hover {
 }
 
 .translations-manage-language {
-	align-items: center;
+  align-items: center;
   padding: 0 8px;
 }
 
-.translations-manage-language label {
-	flex: 1;
-	margin: 0 15px;
+.translations-manage-language > label {
+  flex: 1;
+  margin: 0 15px;
 }
 
 #translations-manage-error {

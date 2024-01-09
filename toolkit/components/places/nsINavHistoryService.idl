@@ -180,13 +180,6 @@ interface nsINavHistoryResultNode : nsISupports
   readonly attribute long long visitId;
 
   /**
-   * The unique ID associated with visit node which was the referrer of this
-   * history visit. For node types other than history visit nodes, or visits
-   * without any known referrer, this value is -1.
-   */
-  readonly attribute long long fromVisitId;
-
-  /**
    * The transition type associated with this visit. For node types other than
    * history visit nodes, this value is 0.
    */
@@ -932,6 +925,11 @@ interface nsINavHistoryQueryOptions : nsISupports
 [scriptable, uuid(20c974ff-ee16-4828-9326-1b7c9e036622)]
 interface nsINavHistoryService : nsISupports
 {
+  // The current database schema version.
+  // To migrate to a new version bump this, add a MigrateVXXUp function to
+  // Database.cpp/h, and a test into tests/migration/
+  const unsigned long DATABASE_SCHEMA_VERSION = 75;
+
   /**
    * System Notifications:
    *

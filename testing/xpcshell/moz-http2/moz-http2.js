@@ -347,6 +347,7 @@ function handleRequest(req, res) {
       return null;
     }
 
+    let answers = [];
     if (packet.questions.length && packet.questions[0].name.endsWith(".pd")) {
       // Bug 1543811: test edns padding extension. Return whether padding was
       // included via the first half of the ip address (1.1 vs 2.2) and the
@@ -357,6 +358,16 @@ function handleRequest(req, res) {
         packet.additionals[0].type == "OPT" &&
         packet.additionals[0].options.some(o => o.type === "PADDING")
       ) {
+        // add padding to the response, because the client must be able ignore it
+        answers.push({
+          name: ".",
+          type: "PADDING",
+          data: Buffer.from(
+            // PADDING_PADDING_PADDING
+            "50414444494e475f50414444494e475f50414444494e47",
+            "hex"
+          ),
+        });
         responseIP =
           "1.1." +
           ((requestPayload.length >> 8) & 0xff) +
@@ -397,7 +408,6 @@ function handleRequest(req, res) {
       return responseIP;
     }
 
-    let answers = [];
     if (
       responseIP != "none" &&
       responseType(packet, responseIP) == packet.questions[0].type
@@ -1521,6 +1531,25 @@ function handleRequest(req, res) {
       res.setHeader("x-conditional", "true");
     }
     // default response from here
+  } else if (u.pathname === "/immutable-test-expired-with-Expires-header") {
+    res.setHeader("Cache-Control", "immutable");
+    res.setHeader("Expires", "Mon, 01 Jan 1990 00:00:00 GMT");
+    res.setHeader("Etag", "3");
+
+    if (req.headers["if-none-match"]) {
+      res.setHeader("x-conditional", "true");
+    }
+  } else if (
+    u.pathname === "/immutable-test-expired-with-last-modified-header"
+  ) {
+    res.setHeader("Cache-Control", "public, max-age=3600, immutable");
+    res.setHeader("Date", "Mon, 01 Jan 1990 00:00:00 GMT");
+    res.setHeader("Last-modified", "Mon, 01 Jan 1990 00:00:00 GMT");
+    res.setHeader("Etag", "4");
+
+    if (req.headers["if-none-match"]) {
+      res.setHeader("x-conditional", "true");
+    }
   } else if (u.pathname === "/origin-4") {
     let originList = [];
     req.stream.connection.originFrame(originList);

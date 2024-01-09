@@ -75,8 +75,6 @@ class MOZ_RAII AutoCycleDetector {
 
 struct AutoResolving;
 
-struct FrontendErrors;  // vm/HelperThreadState.h
-
 class InternalJobQueue : public JS::JobQueue {
  public:
   explicit InternalJobQueue(JSContext* cx)
@@ -125,26 +123,16 @@ class AutoLockScriptData;
 /* Thread Local Storage slot for storing the context for a thread. */
 extern MOZ_THREAD_LOCAL(JSContext*) TlsContext;
 
-enum class ContextKind {
-  Uninitialized,
-
-  // Context for the main thread of a JSRuntime.
-  MainThread,
-
-  // Context for a helper thread.
-  HelperThread
-};
-
 #ifdef DEBUG
 JSContext* MaybeGetJSContext();
-bool CurrentThreadIsParseThread();
 #endif
 
 enum class InterruptReason : uint32_t {
-  GC = 1 << 0,
-  AttachIonCompilations = 1 << 1,
-  CallbackUrgent = 1 << 2,
-  CallbackCanWait = 1 << 3,
+  MinorGC = 1 << 0,
+  MajorGC = 1 << 1,
+  AttachIonCompilations = 1 << 2,
+  CallbackUrgent = 1 << 3,
+  CallbackCanWait = 1 << 4,
 };
 
 enum class ShouldCaptureStack { Maybe, Always };
@@ -160,22 +148,19 @@ struct JS_PUBLIC_API JSContext : public JS::RootingContext,
   JSContext(JSRuntime* runtime, const JS::ContextOptions& options);
   ~JSContext();
 
-  bool init(js::ContextKind kind);
+  bool init();
+
+  static JSContext* from(JS::RootingContext* rcx) {
+    return static_cast<JSContext*>(rcx);
+  }
 
  private:
   js::UnprotectedData<JSRuntime*> runtime_;
-  js::WriteOnceData<js::ContextKind> kind_;
+#ifdef DEBUG
+  js::WriteOnceData<bool> initialized_;
+#endif
 
   js::ContextData<JS::ContextOptions> options_;
-
-  // Thread that the JSContext is currently running on, if in use.
-  js::ThreadId currentThread_;
-
-  js::FrontendErrors* errors_;
-
-  // When a helper thread is using a context, it may need to periodically
-  // free unused memory.
-  mozilla::Atomic<bool, mozilla::ReleaseAcquire> freeUnusedMemory;
 
   // Are we currently timing execution? This flag ensures that we do not
   // double-count execution time in reentrant situations.
@@ -189,21 +174,6 @@ struct JS_PUBLIC_API JSContext : public JS::RootingContext,
   // This is used by helper threads to change the runtime their context is
   // currently operating on.
   void setRuntime(JSRuntime* rt);
-
-  void setHelperThread(const JS::ContextOptions& options,
-                       const js::AutoLockHelperThreadState& locked);
-  void clearHelperThread(const js::AutoLockHelperThreadState& locked);
-
-  bool contextAvailable(js::AutoLockHelperThreadState& locked) {
-    MOZ_ASSERT(kind_ == js::ContextKind::HelperThread);
-    return currentThread_ == js::ThreadId();
-  }
-
-  void setFreeUnusedMemory(bool shouldFree) { freeUnusedMemory = shouldFree; }
-
-  bool shouldFreeUnusedMemory() const {
-    return kind_ == js::ContextKind::HelperThread && freeUnusedMemory;
-  }
 
   bool isMeasuringExecutionTime() const { return measuringExecutionTime_; }
   void setIsMeasuringExecutionTime(bool value) {
@@ -220,16 +190,8 @@ struct JS_PUBLIC_API JSContext : public JS::RootingContext,
   void setIsExecuting(bool value) { isExecuting_ = value; }
 
 #ifdef DEBUG
-  bool isInitialized() const { return kind_ != js::ContextKind::Uninitialized; }
+  bool isInitialized() const { return initialized_; }
 #endif
-
-  bool isMainThreadContext() const {
-    return kind_ == js::ContextKind::MainThread;
-  }
-
-  bool isHelperThreadContext() const {
-    return kind_ == js::ContextKind::HelperThread;
-  }
 
   template <typename T>
   bool isInsideCurrentZone(T thing) const {
@@ -244,10 +206,6 @@ struct JS_PUBLIC_API JSContext : public JS::RootingContext,
   void onOutOfMemory();
   void* onOutOfMemory(js::AllocFunction allocFunc, arena_id_t arena,
                       size_t nbytes, void* reallocPtr = nullptr) {
-    if (isHelperThreadContext()) {
-      addPendingOutOfMemory();
-      return nullptr;
-    }
     return runtime_->onOutOfMemory(allocFunc, arena, nbytes, reallocPtr, this);
   }
 
@@ -280,7 +238,6 @@ struct JS_PUBLIC_API JSContext : public JS::RootingContext,
   JS::StackKind stackKindForCurrentPrincipal();
   JS::NativeStackLimit stackLimitForCurrentPrincipal();
   JS::NativeStackLimit stackLimit(JS::StackKind kind) {
-    MOZ_ASSERT(isMainThreadContext());
     return nativeStackLimit[kind];
   }
   JS::NativeStackLimit stackLimitForJitCode(JS::StackKind kind);
@@ -322,9 +279,6 @@ struct JS_PUBLIC_API JSContext : public JS::RootingContext,
 
   inline void leaveRealm(JS::Realm* oldRealm);
 
-  void setFrontendErrors(js::FrontendErrors* errors) { errors_ = errors; }
-  js::FrontendErrors* frontendErrors() const { return errors_; }
-
   // Threads may freely access any data in their realm, compartment and zone.
   JS::Compartment* compartment() const {
     return realm_ ? JS::GetCompartmentForRealm(realm_) : nullptr;
@@ -339,12 +293,8 @@ struct JS_PUBLIC_API JSContext : public JS::RootingContext,
   JS::Zone* zone() const {
     MOZ_ASSERT_IF(!realm() && zone_, inAtomsZone());
     MOZ_ASSERT_IF(realm(), js::GetRealmZone(realm()) == zone_);
-    return zoneRaw();
+    return zoneUnchecked();
   }
-
-  // For use when the context's zone is being read by another thread and the
-  // compartment and zone pointers might not be in sync.
-  JS::Zone* zoneRaw() const { return zone_; }
 
   // For JIT use.
   static size_t offsetOfZone() { return offsetof(JSContext, zone_); }
@@ -369,10 +319,6 @@ struct JS_PUBLIC_API JSContext : public JS::RootingContext,
   // Interface for recording telemetry metrics.
   js::Metrics metrics() { return js::Metrics(runtime_); }
 
-  // Methods specific to any HelperThread for the context.
-  void addPendingOverRecursed();
-  void addPendingOutOfMemory();
-
   JSRuntime* runtime() { return runtime_; }
   const JSRuntime* runtime() const { return runtime_; }
 
@@ -385,8 +331,6 @@ struct JS_PUBLIC_API JSContext : public JS::RootingContext,
   friend void js::ReportOversizedAllocation(JSContext*, const unsigned);
 
  public:
-  inline JS::Result<> boolToResult(bool ok);
-
   /**
    * Intentionally awkward signpost method that is stationed on the
    * boundary between Result-using and non-Result-using code.
@@ -460,10 +404,7 @@ struct JS_PUBLIC_API JSContext : public JS::RootingContext,
   mozilla::Maybe<JS::NativeStackBase> nativeStackBase_;
 
  public:
-  JS::NativeStackBase nativeStackBase() const {
-    MOZ_ASSERT(isMainThreadContext());
-    return *nativeStackBase_;
-  }
+  JS::NativeStackBase nativeStackBase() const { return *nativeStackBase_; }
 
  public:
   /* If non-null, report JavaScript entry points to this monitor. */
@@ -555,6 +496,13 @@ struct JS_PUBLIC_API JSContext : public JS::RootingContext,
   // with AutoDisableCompactingGC which uses this counter.
   js::ContextData<unsigned> compactingDisabledCount;
 
+  // Match limit result for the most recent call to RegExpSearcher.
+  js::ContextData<uint32_t> regExpSearcherLastLimit;
+
+  static constexpr size_t offsetOfRegExpSearcherLastLimit() {
+    return offsetof(JSContext, regExpSearcherLastLimit);
+  }
+
  private:
   // Pools used for recycling name maps and vectors when parsing and
   // emitting bytecode. Purged on GC when there are no active script
@@ -574,7 +522,7 @@ struct JS_PUBLIC_API JSContext : public JS::RootingContext,
   bool isInUnsafeRegion() const { return bool(inUnsafeRegion); }
 
   // For JIT use.
-  void resetInUnsafeRegion() {
+  MOZ_NEVER_INLINE void resetInUnsafeRegion() {
     MOZ_ASSERT(inUnsafeRegion >= 0);
     inUnsafeRegion = 0;
   }
@@ -608,7 +556,6 @@ struct JS_PUBLIC_API JSContext : public JS::RootingContext,
  public:
   js::LifoAlloc& tempLifoAlloc() { return tempLifoAlloc_.ref(); }
   const js::LifoAlloc& tempLifoAlloc() const { return tempLifoAlloc_.ref(); }
-  js::LifoAlloc& tempLifoAllocNoCheck() { return tempLifoAlloc_.refNoCheck(); }
 
   js::ContextData<uint32_t> debuggerMutations;
 
@@ -746,7 +693,6 @@ struct JS_PUBLIC_API JSContext : public JS::RootingContext,
       jsbytecode** pc = nullptr,
       AllowCrossRealm allowCrossRealm = AllowCrossRealm::DontAllow) const;
 
-  inline js::Nursery& nursery();
   inline void minorGC(JS::GCReason reason);
 
  public:
@@ -854,6 +800,7 @@ struct JS_PUBLIC_API JSContext : public JS::RootingContext,
   bool hasPendingInterrupt(js::InterruptReason reason) const {
     return interruptBits_ & uint32_t(reason);
   }
+  void clearPendingInterrupt(js::InterruptReason reason);
 
   // For JIT use. Points to the inlined ICScript for a baseline script
   // being invoked as part of a trial inlining.  Contains nullptr at
@@ -861,22 +808,10 @@ struct JS_PUBLIC_API JSContext : public JS::RootingContext,
   // caller and read in the callee's prologue.
   js::ContextData<js::jit::ICScript*> inlinedICScript_;
 
-  // The following two fields are a pair of associated scripts. If they are
-  // non-null, the child has been inlined into the parent, and we have bailed
-  // out due to a MonomorphicInlinedStubFolding bailout. If it wasn't
-  // trial-inlined, we need to track for the parent if we attach a new case to
-  // the corresponding folded stub which belongs to the child.
-  js::ContextData<JSScript*> lastStubFoldingBailoutChild_;
-  js::ContextData<JSScript*> lastStubFoldingBailoutParent_;
-
  public:
   void* addressOfInterruptBits() { return &interruptBits_; }
-  void* addressOfJitStackLimit() {
-    MOZ_ASSERT(isMainThreadContext());
-    return &jitStackLimit;
-  }
+  void* addressOfJitStackLimit() { return &jitStackLimit; }
   void* addressOfJitStackLimitNoInterrupt() {
-    MOZ_ASSERT(isMainThreadContext());
     return &jitStackLimitNoInterrupt;
   }
   void* addressOfZone() { return &zone_; }
@@ -959,15 +894,6 @@ struct JS_PUBLIC_API JSContext : public JS::RootingContext,
   js::ContextData<js::Debugger*> insideDebuggerEvaluationWithOnNativeCallHook;
 
 }; /* struct JSContext */
-
-inline JS::Result<> JSContext::boolToResult(bool ok) {
-  if (MOZ_LIKELY(ok)) {
-    MOZ_ASSERT(!isExceptionPending());
-    MOZ_ASSERT(!isPropagatingForcedReturn());
-    return JS::Ok();
-  }
-  return JS::Result<>(JS::Error());
-}
 
 inline JSContext* JSRuntime::mainContextFromOwnThread() {
   MOZ_ASSERT(mainContextFromAnyThread() == js::TlsContext.get());
@@ -1140,8 +1066,67 @@ class MOZ_RAII AutoUnsafeCallWithABI {
 
 } /* namespace js */
 
-#define CHECK_THREAD(cx)                            \
-  MOZ_ASSERT_IF(cx, !cx->isHelperThreadContext() && \
-                        js::CurrentThreadCanAccessRuntime(cx->runtime()))
+#define CHECK_THREAD(cx) \
+  MOZ_ASSERT_IF(cx, js::CurrentThreadCanAccessRuntime(cx->runtime()))
+
+/**
+ * [SMDOC] JS::Result transitional macros
+ *
+ * ## Checking Results when your return type is not Result
+ *
+ * This header defines alternatives to MOZ_TRY and MOZ_TRY_VAR for when you
+ * need to call a `Result` function from a function that uses false or nullptr
+ * to indicate errors:
+ *
+ *     JS_TRY_OR_RETURN_FALSE(cx, DefenestrateObject(cx, obj));
+ *     JS_TRY_VAR_OR_RETURN_FALSE(cx, v, GetObjectThrug(cx, obj));
+ *
+ *     JS_TRY_VAR_OR_RETURN_NULL(cx, v, GetObjectThrug(cx, obj));
+ *
+ * When TRY is not what you want, because you need to do some cleanup or
+ * recovery on error, use this idiom:
+ *
+ *     if (!cx->resultToBool(expr_that_is_a_Result)) {
+ *         ... your recovery code here ...
+ *     }
+ *
+ * In place of a tail call, you can use one of these methods:
+ *
+ *     return cx->resultToBool(expr);  // false on error
+ *     return cx->resultToPtr(expr);  // null on error
+ *
+ * Once we are using `Result` everywhere, including in public APIs, all of
+ * these will go away.
+ */
+
+/**
+ * JS_TRY_OR_RETURN_FALSE(cx, expr) runs expr to compute a Result value.
+ * On success, nothing happens; on error, it returns false immediately.
+ *
+ * Implementation note: this involves cx because this may eventually
+ * do the work of setting a pending exception or reporting OOM.
+ */
+#define JS_TRY_OR_RETURN_FALSE(cx, expr)                           \
+  do {                                                             \
+    auto tmpResult_ = (expr);                                      \
+    if (tmpResult_.isErr()) return (cx)->resultToBool(tmpResult_); \
+  } while (0)
+
+#define JS_TRY_VAR_OR_RETURN_FALSE(cx, target, expr)               \
+  do {                                                             \
+    auto tmpResult_ = (expr);                                      \
+    if (tmpResult_.isErr()) return (cx)->resultToBool(tmpResult_); \
+    (target) = tmpResult_.unwrap();                                \
+  } while (0)
+
+#define JS_TRY_VAR_OR_RETURN_NULL(cx, target, expr)     \
+  do {                                                  \
+    auto tmpResult_ = (expr);                           \
+    if (tmpResult_.isErr()) {                           \
+      MOZ_ALWAYS_FALSE((cx)->resultToBool(tmpResult_)); \
+      return nullptr;                                   \
+    }                                                   \
+    (target) = tmpResult_.unwrap();                     \
+  } while (0)
 
 #endif /* vm_JSContext_h */

@@ -51,8 +51,8 @@ let { PromiseTestUtils: _PromiseTestUtils } = ChromeUtils.importESModule(
   "resource://testing-common/PromiseTestUtils.sys.mjs"
 );
 
-let { NetUtil: _NetUtil } = ChromeUtils.import(
-  "resource://gre/modules/NetUtil.jsm"
+let { NetUtil: _NetUtil } = ChromeUtils.importESModule(
+  "resource://gre/modules/NetUtil.sys.mjs"
 );
 
 let { XPCOMUtils: _XPCOMUtils } = ChromeUtils.importESModule(
@@ -131,6 +131,14 @@ try {
     );
     crashReporter.UpdateCrashEventsDir();
     crashReporter.minidumpPath = do_get_minidumpdir();
+
+    // Tell the test harness that the crash reporter is set up, and any crash
+    // after this point is supposed to be caught by the crash reporter.
+    //
+    // Due to the limitation on the remote xpcshell test, the process return
+    // code does not represent the process crash. Any crash before this point
+    // can be caught by the absence of this log.
+    _testLogger.logData("crash_reporter_init");
   }
 } catch (e) {}
 

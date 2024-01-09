@@ -89,19 +89,18 @@ class Device final : public DOMEventTargetHelper, public SupportsWeakPtr {
   RefPtr<SupportedFeatures> mFeatures;
   RefPtr<SupportedLimits> mLimits;
 
-  explicit Device(Adapter* const aParent, RawId aId,
-                  UniquePtr<ffi::WGPULimits> aRawLimits);
+  explicit Device(Adapter* const aParent, RawId aId, const ffi::WGPULimits&);
 
   RefPtr<WebGPUChild> GetBridge();
   already_AddRefed<Texture> InitSwapChain(
       const dom::GPUCanvasConfiguration& aDesc,
       const layers::RemoteTextureOwnerId aOwnerId, gfx::SurfaceFormat aFormat,
-      gfx::IntSize aDefaultSize);
+      gfx::IntSize aCanvasSize);
   bool CheckNewWarning(const nsACString& aMessage);
 
   void CleanupUnregisteredInParent();
 
-  void GenerateError(const nsCString& aMessage);
+  void GenerateValidationError(const nsCString& aMessage);
 
   bool IsLost() const;
 

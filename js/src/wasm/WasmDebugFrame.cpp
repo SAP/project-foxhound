@@ -116,8 +116,8 @@ bool DebugFrame::getLocal(uint32_t localIndex, MutableHandleValue vp) {
     case jit::MIRType::Double:
       vp.set(NumberValue(JS::CanonicalizeNaN(*static_cast<double*>(dataPtr))));
       break;
-    case jit::MIRType::RefOrNull:
-      vp.set(ObjectOrNullValue(*(JSObject**)dataPtr));
+    case jit::MIRType::WasmAnyRef:
+      vp.set(((AnyRef*)dataPtr)->toJSValue());
       break;
 #ifdef ENABLE_WASM_SIMD
     case jit::MIRType::Simd128:

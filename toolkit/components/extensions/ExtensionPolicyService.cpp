@@ -28,7 +28,7 @@
 #include "nsIChannel.h"
 #include "nsIContentPolicy.h"
 #include "mozilla/dom/Document.h"
-#include "nsGlobalWindowOuter.h"
+#include "nsGlobalWindowInner.h"
 #include "nsILoadInfo.h"
 #include "nsIXULRuntime.h"
 #include "nsImportModule.h"
@@ -161,7 +161,8 @@ bool ExtensionPolicyService::IsExtensionProcess() const {
 }
 
 bool ExtensionPolicyService::GetQuarantinedDomainsEnabled() const {
-  return Preferences::GetBool(QUARANTINED_DOMAINS_ENABLED);
+  StaticAutoReadLock lock(sEPSLock);
+  return sQuarantinedDomains != nullptr;
 }
 
 WebExtensionPolicy* ExtensionPolicyService::GetByURL(const URLInfo& aURL) {
@@ -610,7 +611,7 @@ void ExtensionPolicyService::UpdateRestrictedDomains() {
 }
 
 void ExtensionPolicyService::UpdateQuarantinedDomains() {
-  if (!GetQuarantinedDomainsEnabled()) {
+  if (!Preferences::GetBool(QUARANTINED_DOMAINS_ENABLED)) {
     StaticAutoWriteLock lock(sEPSLock);
     sQuarantinedDomains = nullptr;
     return;

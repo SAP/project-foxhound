@@ -59,10 +59,6 @@ const PREF_URLBAR_DEFAULTS = new Map([
   // 30 days since user input it as the default.
   ["autoFill.adaptiveHistory.useCountThreshold", [0.47, "float"]],
 
-  // If true, the domains of the user's installed search engines will be
-  // autofilled even if the user hasn't actually visited them.
-  ["autoFill.searchEngines", false],
-
   // Affects the frecency threshold of the autofill algorithm.  The threshold is
   // the mean of all origin frecencies plus one standard deviation multiplied by
   // this value.  See UrlbarProviderPlaces.
@@ -171,6 +167,9 @@ const PREF_URLBAR_DEFAULTS = new Map([
   // The maximum number of results in the urlbar popup.
   ["maxRichResults", 10],
 
+  // Feature gate pref for mdn suggestions in the urlbar.
+  ["mdn.featureGate", false],
+
   // Comma-separated list of client variants to send to Merino
   ["merino.clientVariants", ""],
 
@@ -189,6 +188,13 @@ const PREF_URLBAR_DEFAULTS = new Map([
   // Whether addresses and search results typed into the address bar
   // should be opened in new tabs by default.
   ["openintab", false],
+
+  // Feature gate pref for Pocket suggestions in the urlbar.
+  ["pocket.featureGate", false],
+
+  // The number of times the user has clicked the "Show less frequently" command
+  // for Pocket suggestions.
+  ["pocket.showLessFrequentlyCount", 0],
 
   // When true, URLs in the user's history that look like search result pages
   // are styled to look like search engine results instead of the usual history
@@ -233,6 +239,9 @@ const PREF_URLBAR_DEFAULTS = new Map([
   // Whether results will include a calculator.
   ["suggest.calculator", false],
 
+  // Whether results will include clipboard results.
+  ["suggest.clipboard", true],
+
   // Whether results will include search engines (e.g. tab-to-search).
   ["suggest.engines", true],
 
@@ -241,6 +250,10 @@ const PREF_URLBAR_DEFAULTS = new Map([
 
   // Whether results will include switch-to-tab results.
   ["suggest.openpage", true],
+
+  // If `pocket.featureGate` is true, this controls whether Pocket suggestions
+  // are turned on.
+  ["suggest.pocket", true],
 
   // Whether results will include synced tab results. The syncing of open tabs
   // must also be enabled, from Sync preferences.
@@ -277,6 +290,10 @@ const PREF_URLBAR_DEFAULTS = new Map([
   // addon suggestions are turned on.
   ["suggest.addons", true],
 
+  // If `browser.urlbar.mdn.featureGate` is true, this controls whether
+  // mdn suggestions are turned on.
+  ["suggest.mdn", true],
+
   // Whether results will include search suggestions.
   ["suggest.searches", false],
 
@@ -286,6 +303,10 @@ const PREF_URLBAR_DEFAULTS = new Map([
   // If `browser.urlbar.weather.featureGate` is true, this controls whether
   // weather suggestions are turned on.
   ["suggest.weather", true],
+
+  // If `browser.urlbar.trending.featureGate` is true, this controls whether
+  // trending suggestions are turned on.
+  ["suggest.trending", true],
 
   // JSON'ed array of blocked quick suggest URL digests.
   ["quicksuggest.blockedDigests", ""],
@@ -388,6 +409,9 @@ const PREF_URLBAR_DEFAULTS = new Map([
   // Remove redundant portions from URLs.
   ["trimURLs", true],
 
+  // Remove 'https://' from url when urlbar is focused.
+  ["trimHttps", true],
+
   // If true, top sites may include sponsored ones.
   ["sponsoredTopSites", false],
 
@@ -396,13 +420,6 @@ const PREF_URLBAR_DEFAULTS = new Map([
 
   // The index where we show unit conversion results.
   ["unitConversion.suggestedIndex", 1],
-
-  // Results will include a built-in set of popular domains when this is true.
-  ["usepreloadedtopurls.enabled", false],
-
-  // After this many days from the profile creation date, the built-in set of
-  // popular domains will no longer be included in the results.
-  ["usepreloadedtopurls.expire_days", 14],
 
   // Controls the empty search behavior in Search Mode:
   //  0 - Show nothing
@@ -438,6 +455,9 @@ const PREF_URLBAR_DEFAULTS = new Map([
 
   // Feature gate pref for rich suggestions being shown in the urlbar.
   ["richSuggestions.featureGate", false],
+
+  // Feature gate pref for clipboard suggestions in the urlbar.
+  ["clipboard.featureGate", false],
 ]);
 
 const PREF_OTHER_DEFAULTS = new Map([
@@ -454,10 +474,12 @@ const PREF_OTHER_DEFAULTS = new Map([
 // defaults are the values of their fallbacks.
 const NIMBUS_DEFAULTS = {
   addonsShowLessFrequentlyCap: 0,
-  addonsUITreatment: "a",
+  addonsUITreatment: "b",
   experimentType: "",
   isBestMatchExperiment: false,
+  pocketShowLessFrequentlyCap: 0,
   quickSuggestRemoteSettingsDataType: "data",
+  quickSuggestScoreMap: null,
   recordNavigationalSuggestionTelemetry: false,
   weatherKeywords: null,
   weatherKeywordsMinimumLength: 0,
@@ -532,7 +554,6 @@ function makeResultGroups({ showSearchSuggestionsFirst }) {
           { group: lazy.UrlbarUtils.RESULT_GROUP.HEURISTIC_ENGINE_ALIAS },
           { group: lazy.UrlbarUtils.RESULT_GROUP.HEURISTIC_BOOKMARK_KEYWORD },
           { group: lazy.UrlbarUtils.RESULT_GROUP.HEURISTIC_AUTOFILL },
-          { group: lazy.UrlbarUtils.RESULT_GROUP.HEURISTIC_PRELOADED },
           { group: lazy.UrlbarUtils.RESULT_GROUP.HEURISTIC_TOKEN_ALIAS_ENGINE },
           { group: lazy.UrlbarUtils.RESULT_GROUP.HEURISTIC_HISTORY_URL },
           { group: lazy.UrlbarUtils.RESULT_GROUP.HEURISTIC_FALLBACK },
@@ -596,10 +617,6 @@ function makeResultGroups({ showSearchSuggestionsFirst }) {
                 // only added for queries starting with "about:".
                 flex: 2,
                 group: lazy.UrlbarUtils.RESULT_GROUP.ABOUT_PAGES,
-              },
-              {
-                flex: 1,
-                group: lazy.UrlbarUtils.RESULT_GROUP.PRELOADED,
               },
             ],
           },
@@ -1052,8 +1069,8 @@ class Preferences {
         this[methodName](scenario);
       } catch (error) {
         console.error(
-          `Error migrating Firefox Suggest prefs to version ${nextVersion}: ` +
-            error
+          `Error migrating Firefox Suggest prefs to version ${nextVersion}:`,
+          error
         );
         break;
       }

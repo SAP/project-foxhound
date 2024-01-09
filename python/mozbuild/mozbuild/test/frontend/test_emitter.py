@@ -921,9 +921,9 @@ class TestEmitterBasic(unittest.TestCase):
         self.assertEqual(len(objs), 8)
 
         metadata = {
-            "a11y.ini": {
+            "a11y.toml": {
                 "flavor": "a11y",
-                "installs": {"a11y.ini": False, "test_a11y.js": True},
+                "installs": {"a11y.toml": False, "test_a11y.js": True},
                 "pattern-installs": 1,
             },
             "browser.ini": {
@@ -1501,7 +1501,7 @@ class TestEmitterBasic(unittest.TestCase):
         with self.assertRaisesRegex(
             SandboxValidationError,
             "Test.cpp from SOURCES would have the same object name as"
-            " Test.c from SOURCES\.",
+            " Test.c from SOURCES\\.",
         ):
             self.read_topsrcdir(reader)
 
@@ -1509,7 +1509,7 @@ class TestEmitterBasic(unittest.TestCase):
         with self.assertRaisesRegex(
             SandboxValidationError,
             "Test.cpp from SOURCES would have the same object name as"
-            " subdir/Test.cpp from SOURCES\.",
+            " subdir/Test.cpp from SOURCES\\.",
         ):
             self.read_topsrcdir(reader)
 
@@ -1517,7 +1517,7 @@ class TestEmitterBasic(unittest.TestCase):
         with self.assertRaisesRegex(
             SandboxValidationError,
             "Test.cpp from UNIFIED_SOURCES would have the same object name as"
-            " Test.c from SOURCES in non-unified builds\.",
+            " Test.c from SOURCES in non-unified builds\\.",
         ):
             self.read_topsrcdir(reader)
 
@@ -1525,7 +1525,7 @@ class TestEmitterBasic(unittest.TestCase):
         with self.assertRaisesRegex(
             SandboxValidationError,
             "Test.cpp from UNIFIED_SOURCES would have the same object name as"
-            " Test.c from UNIFIED_SOURCES in non-unified builds\.",
+            " Test.c from UNIFIED_SOURCES in non-unified builds\\.",
         ):
             self.read_topsrcdir(reader)
 
@@ -1802,6 +1802,24 @@ class TestEmitterBasic(unittest.TestCase):
         self.assertIsInstance(cflags, ComputedFlags)
         self.assertIsInstance(host_cflags, ComputedFlags)
         self.assertIsInstance(lib, RustLibrary)
+
+    def test_missing_workspace_hack(self):
+        """Test detection of a missing workspace hack."""
+        reader = self.reader("rust-no-workspace-hack")
+        with six.assertRaisesRegex(
+            self, SandboxValidationError, "doesn't contain the workspace hack"
+        ):
+            self.read_topsrcdir(reader)
+
+    def test_old_workspace_hack(self):
+        """Test detection of an old workspace hack."""
+        reader = self.reader("rust-old-workspace-hack")
+        with six.assertRaisesRegex(
+            self,
+            SandboxValidationError,
+            "needs an update to its mozilla-central-workspace-hack dependency",
+        ):
+            self.read_topsrcdir(reader)
 
     def test_install_shared_lib(self):
         """Test that we can install a shared library with TEST_HARNESS_FILES"""

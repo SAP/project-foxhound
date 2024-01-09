@@ -10,10 +10,10 @@ const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   BrowserSearchTelemetry: "resource:///modules/BrowserSearchTelemetry.sys.mjs",
-  CONTEXTUAL_SERVICES_PING_TYPES:
-    "resource:///modules/PartnerLinkAttribution.sys.mjs",
+  BrowserUIUtils: "resource:///modules/BrowserUIUtils.sys.mjs",
   ExtensionSearchHandler:
     "resource://gre/modules/ExtensionSearchHandler.sys.mjs",
+  ObjectUtils: "resource://gre/modules/ObjectUtils.sys.mjs",
   PartnerLinkAttribution: "resource:///modules/PartnerLinkAttribution.sys.mjs",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
   PromiseUtils: "resource://gre/modules/PromiseUtils.sys.mjs",
@@ -29,11 +29,6 @@ ChromeUtils.defineESModuleGetters(lazy, {
   UrlbarUtils: "resource:///modules/UrlbarUtils.sys.mjs",
   UrlbarValueFormatter: "resource:///modules/UrlbarValueFormatter.sys.mjs",
   UrlbarView: "resource:///modules/UrlbarView.sys.mjs",
-});
-
-XPCOMUtils.defineLazyModuleGetters(lazy, {
-  BrowserUIUtils: "resource:///modules/BrowserUIUtils.jsm",
-  ObjectUtils: "resource://gre/modules/ObjectUtils.jsm",
 });
 
 XPCOMUtils.defineLazyServiceGetter(
@@ -211,11 +206,11 @@ export class UrlbarInput {
     this._searchModeLabel = this.querySelector("#urlbar-label-search-mode");
     this._toolbar = this.textbox.closest("toolbar");
 
-    XPCOMUtils.defineLazyGetter(this, "valueFormatter", () => {
+    ChromeUtils.defineLazyGetter(this, "valueFormatter", () => {
       return new lazy.UrlbarValueFormatter(this);
     });
 
-    XPCOMUtils.defineLazyGetter(this, "addSearchEngineHelper", () => {
+    ChromeUtils.defineLazyGetter(this, "addSearchEngineHelper", () => {
       return new AddSearchEngineHelper(this);
     });
 
@@ -251,6 +246,7 @@ export class UrlbarInput {
       "paste",
       "scrollend",
       "select",
+      "selectionchange",
     ];
     for (let name of this._inputFieldEvents) {
       this.addEventListener(name, this);
@@ -469,7 +465,7 @@ export class UrlbarInput {
 
     this.value = value;
     this.valueIsTyped = !valid;
-    this.removeAttribute("usertyping");
+    this.toggleAttribute("usertyping", !valid && value);
 
     if (this.focused && value != previousUntrimmedValue) {
       if (
@@ -1260,16 +1256,6 @@ export class UrlbarInput {
           `urlbar_${position}`,
           1
         );
-        lazy.PartnerLinkAttribution.sendContextualServicesPing(
-          {
-            position,
-            source: "urlbar",
-            tile_id: result.payload.sponsoredTileId || -1,
-            reporting_url: result.payload.sponsoredClickUrl,
-            advertiser: result.payload.title.toLocaleLowerCase(),
-          },
-          lazy.CONTEXTUAL_SERVICES_PING_TYPES.TOPSITES_SELECTION
-        );
       }
     }
 
@@ -1410,6 +1396,15 @@ export class UrlbarInput {
     }
 
     this.setResultForCurrentValue(result);
+
+    // Update placeholder selection and value to the current selected result to
+    // prevent the on_selectionchange event to detect a "accent-character"
+    // insertion.
+    if (!result.autofill && this._autofillPlaceholder) {
+      this._autofillPlaceholder.value = this.value;
+      this._autofillPlaceholder.selectionStart = this.value.length;
+      this._autofillPlaceholder.selectionEnd = this.value.length;
+    }
     return false;
   }
 
@@ -1462,6 +1457,25 @@ export class UrlbarInput {
     }
 
     this.setValueFromResult({ result });
+  }
+  /**
+   * Clears displayed autofill values and unsets the autofill placeholder.
+   */
+  #clearAutofill() {
+    if (!this._autofillPlaceholder) {
+      return;
+    }
+    let currentSelectionStart = this.selectionStart;
+    let currentSelectionEnd = this.selectionEnd;
+
+    // Overriding this value clears the selection.
+    this.inputField.value = this.value.substring(
+      0,
+      this._autofillPlaceholder.selectionStart
+    );
+    this._autofillPlaceholder = null;
+    // Restore selection
+    this.setSelectionRange(currentSelectionStart, currentSelectionEnd);
   }
 
   /**
@@ -1566,7 +1580,6 @@ export class UrlbarInput {
       isPrivate: this.isPrivate,
       maxResults: lazy.UrlbarPrefs.get("maxRichResults"),
       searchString,
-      view: this.view,
       userContextId:
         this.window.gBrowser.selectedBrowser.getAttribute("usercontextid"),
       currentPage: this.window.gBrowser.currentURI.spec,
@@ -2150,7 +2163,8 @@ export class UrlbarInput {
       return Services.uriFixup.getFixupURIInfo(searchString, flags);
     } catch (ex) {
       console.error(
-        `An error occured while trying to fixup "${searchString}": ${ex}`
+        `An error occured while trying to fixup "${searchString}"`,
+        ex
       );
     }
     return null;
@@ -2163,6 +2177,7 @@ export class UrlbarInput {
     }
     this._gotFocusChange = this._gotTabSelect = false;
 
+    this.formatValue();
     this._resetSearchState();
 
     // Switching tabs doesn't always change urlbar focus, so we must try to
@@ -2298,8 +2313,9 @@ export class UrlbarInput {
       this.selectionEnd == value.length &&
       !this.searchMode?.engineName &&
       this.searchMode?.source != lazy.UrlbarUtils.RESULT_SOURCE.SEARCH;
+
     if (!allowAutofill) {
-      this._autofillPlaceholder = null;
+      this.#clearAutofill();
       return false;
     }
 
@@ -2579,9 +2595,14 @@ export class UrlbarInput {
    *   The trimmed string
    */
   _trimValue(val) {
-    return lazy.UrlbarPrefs.get("trimURLs")
+    let trimmedValue = lazy.UrlbarPrefs.get("trimURLs")
       ? lazy.BrowserUIUtils.trimURL(val)
       : val;
+    // Only trim value if the directionality doesn't change to RTL.
+    return this.window.windowUtils.getDirectionFromText(trimmedValue) ==
+      this.window.windowUtils.DIRECTION_RTL
+      ? val
+      : trimmedValue;
   }
 
   /**
@@ -2635,7 +2656,7 @@ export class UrlbarInput {
       );
       value = info.fixedURI.spec;
     } catch (ex) {
-      console.error(`An error occured while trying to fixup "${value}": ${ex}`);
+      console.error(`An error occured while trying to fixup "${value}"`, ex);
     }
 
     this.value = value;
@@ -2671,7 +2692,13 @@ export class UrlbarInput {
     // beginning.  Do not allow it to be trimmed.
     this._setValue(value, false);
     this.inputField.setSelectionRange(selectionStart, selectionEnd);
-    this._autofillPlaceholder = { value, type, adaptiveHistoryInput };
+    this._autofillPlaceholder = {
+      value,
+      type,
+      adaptiveHistoryInput,
+      selectionStart,
+      selectionEnd,
+    };
   }
 
   /**
@@ -3212,17 +3239,25 @@ export class UrlbarInput {
     this._isHandoffSession = false;
     this.removeAttribute("focused");
 
-    if (this._autofillPlaceholder && this.window.gBrowser.userTypedValue) {
+    if (this._revertOnBlurValue == this.value) {
+      this.handleRevert();
+    } else if (
+      this._autofillPlaceholder &&
+      this.window.gBrowser.userTypedValue
+    ) {
       // If we were autofilling, remove the autofilled portion, by restoring
       // the value to the last typed one.
       this.value = this.window.gBrowser.userTypedValue;
     } else if (this.value == this._focusUntrimmedValue) {
       // If the value was untrimmed by _on_focus and didn't change, trim it.
       this.value = this._focusUntrimmedValue;
+    } else {
+      // We're not updating the value, so just format it.
+      this.formatValue();
     }
     this._focusUntrimmedValue = null;
+    this._revertOnBlurValue = null;
 
-    this.formatValue();
     this._resetSearchState();
 
     // In certain cases, like holding an override key and confirming an entry,
@@ -3241,11 +3276,6 @@ export class UrlbarInput {
     if (!lazy.UrlbarPrefs.get("ui.popup.disable_autohide")) {
       this.view.close();
     }
-
-    if (this._revertOnBlurValue == this.value) {
-      this.handleRevert();
-    }
-    this._revertOnBlurValue = null;
 
     // If there were search terms shown in the URL bar and the user
     // didn't end up modifying the userTypedValue while it was
@@ -3329,14 +3359,23 @@ export class UrlbarInput {
       if (fixedURI) {
         try {
           let expectedURI = Services.io.newURI(this._untrimmedValue);
-          untrim = fixedURI.displaySpec != expectedURI.displaySpec;
+          if (
+            lazy.UrlbarPrefs.get("trimHttps") &&
+            this._untrimmedValue.startsWith("https://")
+          ) {
+            untrim =
+              fixedURI.displaySpec.replace("http://", "https://") !=
+              expectedURI.displaySpec; // FIXME bug 1847723: Figure out a way to do this without manually messing with the fixed up URI.
+          } else {
+            untrim = fixedURI.displaySpec != expectedURI.displaySpec;
+          }
         } catch (ex) {
           untrim = true;
         }
       }
       if (untrim) {
-        this.inputField.value = this._focusUntrimmedValue =
-          this._untrimmedValue;
+        this._focusUntrimmedValue = this._untrimmedValue;
+        this._setValue(this._focusUntrimmedValue, false);
       }
     }
 
@@ -3482,11 +3521,7 @@ export class UrlbarInput {
       this._compositionClosedPopup = false;
     }
 
-    if (value) {
-      this.setAttribute("usertyping", "true");
-    } else {
-      this.removeAttribute("usertyping");
-    }
+    this.toggleAttribute("usertyping", value);
     this.removeAttribute("actiontype");
 
     if (
@@ -3540,6 +3575,21 @@ export class UrlbarInput {
       resetSearchState: false,
       event,
     });
+  }
+
+  _on_selectionchange(event) {
+    // Confirm placeholder as user text if it gets explicitly deselected. This
+    // happens when the user wants to modify the autofilled text by either
+    // clicking on it, or pressing HOME, END, RIGHT, …
+    if (
+      this._autofillPlaceholder &&
+      this._autofillPlaceholder.value == this.value &&
+      (this._autofillPlaceholder.selectionStart != this.selectionStart ||
+        this._autofillPlaceholder.selectionEnd != this.selectionEnd)
+    ) {
+      this._autofillPlaceholder = null;
+      this.window.gBrowser.userTypedValue = this.value;
+    }
   }
 
   _on_select(event) {
@@ -3611,7 +3661,7 @@ export class UrlbarInput {
       return;
     }
 
-    let oldValue = this.inputField.value;
+    let oldValue = this.value;
     let oldStart = oldValue.substring(0, this.selectionStart);
     // If there is already non-whitespace content in the URL bar
     // preceding the pasted content, it's not necessary to check
@@ -3621,33 +3671,7 @@ export class UrlbarInput {
     }
     let oldEnd = oldValue.substring(this.selectionEnd);
 
-    let fixedURI, keywordAsSent;
-    try {
-      ({ fixedURI, keywordAsSent } = Services.uriFixup.getFixupURIInfo(
-        originalPasteData,
-        Ci.nsIURIFixup.FIXUP_FLAG_FIX_SCHEME_TYPOS |
-          Ci.nsIURIFixup.FIXUP_FLAG_ALLOW_KEYWORD_LOOKUP
-      ));
-    } catch (e) {}
-
-    let pasteData;
-    if (keywordAsSent) {
-      // For only keywords, replace any white spaces including line break with
-      // white space.
-      pasteData = originalPasteData.replace(/\s/g, " ");
-    } else if (
-      fixedURI?.scheme === "data" &&
-      !fixedURI.spec.match(/^data:.+;base64,/)
-    ) {
-      // For data url without base64, replace line break with white space.
-      pasteData = originalPasteData.replace(/[\r\n]/g, " ");
-    } else {
-      // For normal url or data url having basic64, or if fixup failed, just
-      // remove line breaks.
-      pasteData = originalPasteData.replace(/[\r\n]/g, "");
-    }
-
-    pasteData = lazy.UrlbarUtils.stripUnsafeProtocolOnPaste(pasteData);
+    const pasteData = this.sanitizeTextFromClipboard(originalPasteData);
 
     if (originalPasteData != pasteData) {
       // Unfortunately we're not allowed to set the bits being pasted
@@ -3656,27 +3680,65 @@ export class UrlbarInput {
       event.stopImmediatePropagation();
 
       const value = oldStart + pasteData + oldEnd;
-      this.inputField.value = value;
-      this._untrimmedValue = value;
+      this._setValue(value);
       this.window.gBrowser.userTypedValue = value;
 
-      if (this._untrimmedValue) {
-        this.setAttribute("usertyping", "true");
-      } else {
-        this.removeAttribute("usertyping");
-      }
+      this.toggleAttribute("usertyping", this._untrimmedValue);
 
       // Fix up cursor/selection:
       let newCursorPos = oldStart.length + pasteData.length;
       this.inputField.setSelectionRange(newCursorPos, newCursorPos);
 
       this.startQuery({
-        searchString: this.inputField.value,
+        searchString: this.value,
         allowAutofill: false,
         resetSearchState: false,
         event,
       });
     }
+  }
+
+  /**
+   * Sanitize and process data retrieved from the clipboard
+   *
+   * @param {string} clipboardData
+   *   The original data retrieved from the clipboard.
+   * @returns {string}
+   *   The sanitized paste data, ready to use.
+   */
+  sanitizeTextFromClipboard(clipboardData) {
+    let fixedURI, keywordAsSent;
+    try {
+      ({ fixedURI, keywordAsSent } = Services.uriFixup.getFixupURIInfo(
+        clipboardData,
+        Ci.nsIURIFixup.FIXUP_FLAG_FIX_SCHEME_TYPOS |
+          Ci.nsIURIFixup.FIXUP_FLAG_ALLOW_KEYWORD_LOOKUP
+      ));
+    } catch (e) {}
+
+    let pasteData;
+    if (keywordAsSent) {
+      // For performance reasons, we don't want to beautify a long string.
+      if (clipboardData.length < 500) {
+        // For only keywords, replace any white spaces including line break
+        // with white space.
+        pasteData = clipboardData.replace(/\s/g, " ");
+      } else {
+        pasteData = clipboardData;
+      }
+    } else if (
+      fixedURI?.scheme == "data" &&
+      !fixedURI.spec.match(/^data:.+;base64,/)
+    ) {
+      // For data url without base64, replace line break with white space.
+      pasteData = clipboardData.replace(/[\r\n]/g, " ");
+    } else {
+      // For normal url or data url having basic64, or if fixup failed, just
+      // remove line breaks.
+      pasteData = clipboardData.replace(/[\r\n]/g, "");
+    }
+
+    return lazy.UrlbarUtils.stripUnsafeProtocolOnPaste(pasteData);
   }
 
   _on_scrollend(event) {
@@ -4172,11 +4234,9 @@ class AddSearchEngineHelper {
     elt.setAttribute("anonid", `add-engine-${index}`);
     elt.classList.add("menuitem-iconic");
     elt.classList.add("context-menu-add-engine");
-    elt.setAttribute("data-l10n-id", "search-one-offs-add-engine");
-    elt.setAttribute(
-      "data-l10n-args",
-      JSON.stringify({ engineName: engine.title })
-    );
+    this.input.document.l10n.setAttributes(elt, "search-one-offs-add-engine", {
+      engineName: engine.title,
+    });
     elt.setAttribute("uri", engine.uri);
     if (engine.icon) {
       elt.setAttribute("image", engine.icon);
@@ -4192,7 +4252,10 @@ class AddSearchEngineHelper {
     elt.setAttribute("anonid", "add-engine-menu");
     elt.classList.add("menu-iconic");
     elt.classList.add("context-menu-add-engine");
-    elt.setAttribute("data-l10n-id", "search-one-offs-add-engine-menu");
+    this.input.document.l10n.setAttributes(
+      elt,
+      "search-one-offs-add-engine-menu"
+    );
     if (engine.icon) {
       elt.setAttribute("image", engine.icon);
     }

@@ -253,6 +253,7 @@ FormAutofillUtils = {
     "cc-exp-year": "creditCard",
     "cc-exp": "creditCard",
     "cc-type": "creditCard",
+    "cc-csc": "creditCard",
   },
 
   _collators: {},
@@ -265,11 +266,11 @@ FormAutofillUtils = {
   },
 
   isCreditCardField(fieldName) {
-    return this._fieldNameInfo[fieldName] == "creditCard";
+    return this._fieldNameInfo?.[fieldName] == "creditCard";
   },
 
   isCCNumber(ccNumber) {
-    return lazy.CreditCard.isValidNumber(ccNumber);
+    return ccNumber && lazy.CreditCard.isValidNumber(ccNumber);
   },
 
   ensureLoggedIn(promptMessage) {
@@ -326,7 +327,7 @@ FormAutofillUtils = {
       "address-level2", // City/Town
       "organization", // Company or organization name
       "address-level1", // Province/State (Standardized code if possible)
-      "country-name", // Country name
+      "country", // Country name
       "postal-code", // Postal code
       "tel", // Phone number
       "email", // Email address
@@ -384,25 +385,6 @@ FormAutofillUtils = {
   toOneLineAddress(address, delimiter = "\n") {
     let addressParts = this._toStreetAddressParts(address, delimiter);
     return addressParts.join(this.getAddressSeparator());
-  },
-
-  /**
-   * Compares two addresses, removing internal whitespace
-   *
-   * @param {string} a The first address to compare
-   * @param {string} b The second address to compare
-   * @param {Array} collators Search collators that will be used for comparison
-   * @param {string} [delimiter="\n"] The separator that is used between lines in the address
-   * @returns {boolean} True if the addresses are equal, false otherwise
-   */
-  compareStreetAddress(a, b, collators, delimiter = "\n") {
-    let oneLineA = this._toStreetAddressParts(a, delimiter)
-      .map(p => p.replace(/\s/g, ""))
-      .join("");
-    let oneLineB = this._toStreetAddressParts(b, delimiter)
-      .map(p => p.replace(/\s/g, ""))
-      .join("");
-    return this.strCompare(oneLineA, oneLineB, collators);
   },
 
   /**
@@ -1184,13 +1166,13 @@ FormAutofillUtils = {
   },
 };
 
-XPCOMUtils.defineLazyGetter(FormAutofillUtils, "stringBundle", function () {
+ChromeUtils.defineLazyGetter(FormAutofillUtils, "stringBundle", function () {
   return Services.strings.createBundle(
     "chrome://formautofill/locale/formautofill.properties"
   );
 });
 
-XPCOMUtils.defineLazyGetter(FormAutofillUtils, "brandBundle", function () {
+ChromeUtils.defineLazyGetter(FormAutofillUtils, "brandBundle", function () {
   return Services.strings.createBundle(
     "chrome://branding/locale/brand.properties"
   );

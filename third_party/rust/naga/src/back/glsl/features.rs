@@ -7,6 +7,7 @@ use std::fmt::Write;
 
 bitflags::bitflags! {
     /// Structure used to encode additions to GLSL that aren't supported by all versions.
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
     pub struct Features: u32 {
         /// Buffer address space support.
         const BUFFER_STORAGE = 1;
@@ -442,7 +443,7 @@ impl<'a, W> Writer<'a, W> {
                 Expression::ImageLoad {
                     sample, level, ..
                 } => {
-                    if policies.image != crate::proc::BoundsCheckPolicy::Unchecked {
+                    if policies.image_load != crate::proc::BoundsCheckPolicy::Unchecked {
                         if sample.is_some() {
                             features.request(Features::TEXTURE_SAMPLES)
                         }

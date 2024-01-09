@@ -436,27 +436,28 @@ NSAttributedString* GeckoTextMarkerRange::AttributedText() const {
           : mRange;
 
   nsAutoString text;
-  RefPtr<AccAttributes> currentRun = nullptr;
+  RefPtr<AccAttributes> currentRun = range.Start().GetTextAttributes();
   Accessible* runAcc = range.Start().mAcc;
   for (TextLeafRange segment : range) {
     TextLeafPoint start = segment.Start();
-    if (start.mAcc->IsTextField() && start.mAcc->ChildCount() == 0) {
-      continue;
-    }
-    if (!currentRun) {
-      // This is the first segment that isn't an empty input.
-      currentRun = start.GetTextAttributes();
-    }
     TextLeafPoint attributesNext;
     do {
-      attributesNext = start.FindTextAttrsStart(eDirNext, false);
+      if (start.mAcc->IsText()) {
+        attributesNext = start.FindTextAttrsStart(eDirNext, false);
+      } else {
+        // If this segment isn't a text leaf, but another kind of inline element
+        // like a control, just consider this full segment one "attributes run".
+        attributesNext = segment.End();
+      }
       if (attributesNext == start) {
         // XXX: FindTextAttrsStart should not return the same point.
         break;
       }
       RefPtr<AccAttributes> attributes = start.GetTextAttributes();
-      MOZ_ASSERT(attributes);
-      if (attributes && !attributes->Equal(currentRun)) {
+      if (!currentRun || !attributes || !attributes->Equal(currentRun)) {
+        // If currentRun is null this is a non-text control and we will
+        // append a run with no text or attributes, just an AXAttachment
+        // referencing this accessible.
         AppendTextToAttributedString(str, runAcc, text, currentRun);
         text.Truncate();
         currentRun = attributes;
@@ -509,29 +510,5 @@ NSValue* GeckoTextMarkerRange::Bounds() const {
 
 void GeckoTextMarkerRange::Select() const { mRange.SetSelection(0); }
 
-bool GeckoTextMarkerRange::Crop(Accessible* aContainer) {
-  TextLeafPoint containerStart(aContainer, 0);
-  TextLeafPoint containerEnd(aContainer,
-                             nsIAccessibleText::TEXT_OFFSET_END_OF_TEXT);
-
-  if (mRange.End() < containerStart || containerEnd < mRange.Start()) {
-    // The range ends before the container, or starts after it.
-    return false;
-  }
-
-  if (mRange.Start() < containerStart) {
-    // If range start is before container start, adjust range start to
-    // start of container.
-    mRange.SetStart(containerStart);
-  }
-
-  if (containerEnd < mRange.End()) {
-    // If range end is after container end, adjust range end to end of
-    // container.
-    mRange.SetEnd(containerEnd);
-  }
-
-  return true;
-}
 }  // namespace a11y
 }  // namespace mozilla

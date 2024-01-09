@@ -7,7 +7,7 @@
 #include "base/process_util.h"
 #include "base/task.h"
 
-#ifdef OS_POSIX
+#ifdef XP_UNIX
 #  include <errno.h>
 #endif
 #include <type_traits>
@@ -59,16 +59,26 @@ MOZ_TYPE_SPECIFIC_SCOPED_POINTER_TEMPLATE(
 
 namespace ipc {
 
-IPCResult IPCResult::Fail(NotNull<IProtocol*> actor, const char* where,
-                          const char* why) {
+/* static */
+IPCResult IPCResult::FailImpl(NotNull<IProtocol*> actor, const char* where,
+                              const char* why) {
   // Calls top-level protocol to handle the error.
   nsPrintfCString errorMsg("%s %s\n", where, why);
   actor->GetIPCChannel()->Listener()->ProcessingError(
       HasResultCodes::MsgProcessingError, errorMsg.get());
 
-  MOZ_ASSERT_UNLESS_FUZZING(false,
-                            "Please ensure to IPC_FAIL only when in an "
-                            "unrecoverable, unexpected state.");
+#if defined(DEBUG) && !defined(FUZZING)
+  // We do not expect IPC_FAIL to ever happen in normal operations. If this
+  // happens in DEBUG, we most likely see some behavior during a test we should
+  // really investigate.
+  nsPrintfCString crashMsg(
+      "Use IPC_FAIL only in an "
+      "unrecoverable, unexpected state: %s",
+      errorMsg.get());
+  // We already leak the same information potentially on child process failures
+  // even in release, and here we are only in DEBUG.
+  MOZ_CRASH_UNSAFE(crashMsg.get());
+#endif
 
   return IPCResult(false);
 }
@@ -77,7 +87,7 @@ void AnnotateSystemError() {
   int64_t error = 0;
 #if defined(XP_WIN)
   error = ::GetLastError();
-#elif defined(OS_POSIX)
+#else
   error = errno;
 #endif
   if (error) {
@@ -401,7 +411,7 @@ void IProtocol::HandleFatalError(const char* aErrorMsg) {
 
   mozilla::ipc::FatalError(aErrorMsg, mSide == ParentSide);
   if (CanSend()) {
-    GetIPCChannel()->CloseWithError();
+    GetIPCChannel()->InduceConnectionError();
   }
 }
 
@@ -632,8 +642,6 @@ void IToplevelProtocol::NotifyImpendingShutdown() {
 }
 
 void IToplevelProtocol::Close() { GetIPCChannel()->Close(); }
-
-void IToplevelProtocol::CloseWithError() { GetIPCChannel()->CloseWithError(); }
 
 void IToplevelProtocol::SetReplyTimeoutMs(int32_t aTimeoutMs) {
   GetIPCChannel()->SetReplyTimeoutMs(aTimeoutMs);

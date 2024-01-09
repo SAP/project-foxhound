@@ -84,7 +84,8 @@ class TextControlElement : public nsGenericHTMLFormControlElementWithState {
   /**
    * Get the default value of the text control
    */
-  virtual void GetDefaultValueFromContent(nsAString& aValue) = 0;
+  virtual void GetDefaultValueFromContent(nsAString& aValue,
+                                          bool aForDisplay) = 0;
 
   /**
    * Return true if the value of the control has been changed.
@@ -100,11 +101,8 @@ class TextControlElement : public nsGenericHTMLFormControlElementWithState {
    * Get the current value of the text editor.
    *
    * @param aValue the buffer to retrieve the value in
-   * @param aIgnoreWrap whether to ignore the text wrapping behavior specified
-   * for the element.
    */
-  virtual void GetTextEditorValue(nsAString& aValue,
-                                  bool aIgnoreWrap) const = 0;
+  virtual void GetTextEditorValue(nsAString& aValue) const = 0;
 
   /**
    * Get the editor object associated with the text editor.

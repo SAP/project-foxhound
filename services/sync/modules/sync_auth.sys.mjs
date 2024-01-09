@@ -27,13 +27,13 @@ ChromeUtils.defineESModuleGetters(lazy, {
   Weave: "resource://services-sync/main.sys.mjs",
 });
 
-XPCOMUtils.defineLazyGetter(lazy, "fxAccounts", () => {
+ChromeUtils.defineLazyGetter(lazy, "fxAccounts", () => {
   return ChromeUtils.importESModule(
     "resource://gre/modules/FxAccounts.sys.mjs"
   ).getFxAccountsSingleton();
 });
 
-XPCOMUtils.defineLazyGetter(lazy, "log", function () {
+ChromeUtils.defineLazyGetter(lazy, "log", function () {
   let log = Log.repository.getLogger("Sync.SyncAuthManager");
   log.manageLevelFromPref("services.sync.log.logger.identity");
   return log;
@@ -46,9 +46,7 @@ XPCOMUtils.defineLazyPreferenceGetter(
 );
 
 // FxAccountsCommon.js doesn't use a "namespace", so create one here.
-var fxAccountsCommon = ChromeUtils.import(
-  "resource://gre/modules/FxAccountsCommon.js"
-);
+import * as fxAccountsCommon from "resource://gre/modules/FxAccountsCommon.sys.mjs";
 
 const SCOPE_OLD_SYNC = fxAccountsCommon.SCOPE_OLD_SYNC;
 
@@ -196,15 +194,16 @@ SyncAuthManager.prototype = {
         // We can use any pref that must be set if we've synced before, and check
         // the sync lock state because we might already be doing that first sync.
         let isFirstSync =
-          !lazy.Weave.Service.locked && !Svc.Prefs.get("client.syncID", null);
+          !lazy.Weave.Service.locked &&
+          !Svc.PrefBranch.getStringPref("client.syncID", null);
         if (isFirstSync) {
           this._log.info("Doing initial sync actions");
-          Svc.Prefs.set("firstSync", "resetClient");
+          Svc.PrefBranch.setCharPref("firstSync", "resetClient");
           Services.obs.notifyObservers(null, "weave:service:setup-complete");
         }
         // There's no need to wait for sync to complete and it would deadlock
         // our AsyncObserver.
-        if (!Svc.Prefs.get("testing.tps", false)) {
+        if (!Svc.PrefBranch.getBoolPref("testing.tps", false)) {
           lazy.Weave.Service.sync({ why: "login" });
         }
         break;
@@ -360,7 +359,7 @@ SyncAuthManager.prototype = {
     // We used to support services.sync.tokenServerURI but this was a
     // pain-point for people using non-default servers as Sync may auto-reset
     // all services.sync prefs. So if that still exists, it wins.
-    let url = Svc.Prefs.get("tokenServerURI"); // Svc.Prefs "root" is services.sync
+    let url = Svc.PrefBranch.getStringPref("tokenServerURI", null); // Svc.PrefBranch "root" is services.sync
     if (!url) {
       url = Services.prefs.getCharPref("identity.sync.tokenserver.uri");
     }

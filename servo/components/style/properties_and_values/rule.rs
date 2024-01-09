@@ -6,16 +6,21 @@
 //!
 //! https://drafts.css-houdini.org/css-properties-values-api-1/#at-property-rule
 
+use super::{
+    registry::PropertyRegistration,
+    syntax::{Descriptor, ParsedDescriptor},
+    value::ComputedValue,
+};
 use crate::custom_properties::{Name as CustomPropertyName, SpecifiedValue};
 use crate::error_reporting::ContextualParseError;
 use crate::parser::{Parse, ParserContext};
-use crate::properties_and_values::syntax::Descriptor as SyntaxDescriptor;
 use crate::shared_lock::{SharedRwLockReadGuard, ToCssWithGuard};
 use crate::str::CssStringWriter;
+use crate::stylesheets::UrlExtraData;
 use crate::values::serialize_atom_name;
 use cssparser::{
-    AtRuleParser, CowRcStr, DeclarationParser, ParseErrorKind, Parser, QualifiedRuleParser,
-    RuleBodyItemParser, RuleBodyParser, SourceLocation,
+    AtRuleParser, CowRcStr, DeclarationParser, ParseErrorKind, Parser, ParserInput,
+    QualifiedRuleParser, RuleBodyItemParser, RuleBodyParser, SourceLocation,
 };
 use malloc_size_of::{MallocSizeOf, MallocSizeOfOps};
 use selectors::parser::SelectorParseErrorKind;
@@ -165,13 +170,23 @@ macro_rules! property_descriptors {
 #[cfg(feature = "gecko")]
 property_descriptors! {
     /// <https://drafts.css-houdini.org/css-properties-values-api-1/#the-syntax-descriptor>
-    "syntax" syntax: SyntaxDescriptor,
+    "syntax" syntax: ParsedDescriptor,
 
     /// <https://drafts.css-houdini.org/css-properties-values-api-1/#inherits-descriptor>
     "inherits" inherits: Inherits,
 
     /// <https://drafts.css-houdini.org/css-properties-values-api-1/#initial-value-descriptor>
     "initial-value" initial_value: InitialValue,
+}
+
+/// Errors that can happen when turning a property rule into a PropertyRegistration.
+#[allow(missing_docs)]
+pub enum ToRegistrationError {
+    MissingSyntax,
+    MissingInherits,
+    NoInitialValue,
+    InvalidInitialValue,
+    InitialValueNotComputationallyIndependent,
 }
 
 impl PropertyRuleData {
@@ -186,6 +201,83 @@ impl PropertyRuleData {
             } else {
                 0
             }
+    }
+
+    /// Performs syntax validation as per the initial value descriptor.
+    /// https://drafts.css-houdini.org/css-properties-values-api-1/#initial-value-descriptor
+    pub fn validate_initial_value(
+        syntax: &Descriptor,
+        initial_value: Option<&InitialValue>,
+        url_data: &UrlExtraData,
+    ) -> Result<(), ToRegistrationError> {
+        use crate::properties::CSSWideKeyword;
+        // If the value of the syntax descriptor is the universal syntax definition, then the
+        // initial-value descriptor is optional. If omitted, the initial value of the property is
+        // the guaranteed-invalid value.
+        if syntax.is_universal() && initial_value.is_none() {
+            return Ok(())
+        }
+
+        // Otherwise, if the value of the syntax descriptor is not the universal syntax definition,
+        // the following conditions must be met for the @property rule to be valid:
+
+        // The initial-value descriptor must be present.
+        let Some(initial) = initial_value else { return Err(ToRegistrationError::NoInitialValue) };
+
+        // A value that references the environment or other variables is not computationally
+        // independent.
+        if initial.has_references() {
+            return Err(ToRegistrationError::InitialValueNotComputationallyIndependent);
+        }
+
+        let mut input = ParserInput::new(initial.css_text());
+        let mut input = Parser::new(&mut input);
+        input.skip_whitespace();
+
+        // The initial-value cannot include CSS-wide keywords.
+        if input.try_parse(CSSWideKeyword::parse).is_ok() {
+            return Err(ToRegistrationError::InitialValueNotComputationallyIndependent);
+        }
+
+        match ComputedValue::parse(&mut input, syntax, url_data) {
+            Ok(_) => {},
+            Err(_) => return Err(ToRegistrationError::InvalidInitialValue),
+        }
+
+        Ok(())
+    }
+
+    /// Performs relevant rule validity checks.
+    ///
+    /// If these don't pass, we shouldn't end up with a property registration.
+    ///
+    /// NOTE(emilio): Currently per spec these should happen at parse-time, but I think that's just
+    /// a spec bug, see https://github.com/w3c/css-houdini-drafts/issues/1098
+    pub fn to_valid_registration(
+        &self,
+        url_data: &UrlExtraData,
+    ) -> Result<PropertyRegistration, ToRegistrationError> {
+        use self::ToRegistrationError::*;
+
+        // https://drafts.css-houdini.org/css-properties-values-api-1/#the-syntax-descriptor:
+        //
+        //     The syntax descriptor is required for the @property rule to be valid; if it’s
+        //     missing, the @property rule is invalid.
+        let Some(ref syntax) = self.syntax else { return Err(MissingSyntax) };
+
+        // https://drafts.css-houdini.org/css-properties-values-api-1/#inherits-descriptor:
+        //
+        //     The inherits descriptor is required for the @property rule to be valid; if it’s
+        //     missing, the @property rule is invalid.
+        let Some(ref inherits) = self.inherits else { return Err(MissingInherits) };
+
+        Self::validate_initial_value(syntax.descriptor(), self.initial_value.as_ref(), url_data)?;
+
+        Ok(PropertyRegistration {
+            syntax: syntax.descriptor().clone(),
+            inherits: *inherits == Inherits::True,
+            initial_value: self.initial_value.clone(),
+        })
     }
 }
 
@@ -210,7 +302,7 @@ impl ToShmem for PropertyRuleData {
 
 /// A custom property name wrapper that includes the `--` prefix in its serialization
 #[derive(Clone, Debug, PartialEq)]
-pub struct PropertyRuleName(pub Arc<CustomPropertyName>);
+pub struct PropertyRuleName(pub CustomPropertyName);
 
 impl ToCss for PropertyRuleName {
     fn to_css<W: Write>(&self, dest: &mut CssWriter<W>) -> fmt::Result {

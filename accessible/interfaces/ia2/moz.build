@@ -14,7 +14,6 @@ midl_enums = [
 midl_interfaces = [
     "Accessible2",
     "Accessible2_2",
-    "Accessible2_3",
     "AccessibleAction",
     "AccessibleApplication",
     "AccessibleComponent",
@@ -30,6 +29,7 @@ midl_interfaces = [
     "AccessibleTableCell",
     "AccessibleText",
     "AccessibleText2",
+    "AccessibleTextSelectionContainer",
     "AccessibleValue",
 ]
 

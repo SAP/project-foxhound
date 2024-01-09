@@ -20,7 +20,6 @@ function generateDefaults(overrides) {
       },
     },
     blackboxedRanges: {},
-    cx: {},
     breakpointActions: {},
     editorActions: {},
     breakpoints: matchingBreakpoints,
@@ -30,7 +29,7 @@ function generateDefaults(overrides) {
 
 function render(overrides = {}) {
   const props = generateDefaults(overrides);
-  const component = shallow(<BreakpointsComponent {...props} />);
+  const component = shallow(React.createElement(BreakpointsComponent, props));
   return { component, props };
 }
 

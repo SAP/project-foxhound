@@ -11,7 +11,9 @@
     constructor() {
       super();
       const shadowRoot = this.attachShadow({ mode: "open" });
-      MozXULElement.insertFTLIfNeeded("toolkit/global/notification.ftl");
+      window.MozXULElement?.insertFTLIfNeeded(
+        "toolkit/global/notification.ftl"
+      );
       document.l10n.connectRoot(this.shadowRoot);
       const content = this.constructor.template.content.cloneNode(true);
       shadowRoot.append(content);
@@ -36,8 +38,9 @@
       commonStyles.href = "chrome://global/skin/in-content/common.css";
       const messageBarStyles = document.createElement("link");
       messageBarStyles.rel = "stylesheet";
-      messageBarStyles.href =
-        "chrome://global/content/elements/message-bar.css";
+      messageBarStyles.href = window.IS_STORYBOOK
+        ? "./message-bar.css"
+        : "chrome://global/content/elements/message-bar.css";
       template.content.append(commonStyles, messageBarStyles);
 
       // A container for the entire message bar content,

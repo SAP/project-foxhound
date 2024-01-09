@@ -63,8 +63,6 @@ exports[`Group displays a group 1`] = `
               },
             },
             "sourceActorId": "source-actor",
-            "sourceId": "source",
-            "sourceUrl": "",
           },
           "id": "frame",
           "index": 0,
@@ -112,8 +110,6 @@ exports[`Group displays a group 1`] = `
               },
             },
             "sourceActorId": "source-actor",
-            "sourceId": "source",
-            "sourceUrl": "",
           },
           "scope": Object {
             "actor": "scope-actor",
@@ -156,9 +152,9 @@ exports[`Group displays a group 1`] = `
     >
        
     </span>
-    <Badge>
-      1
-    </Badge>
+    <Badge
+      badgeText={1}
+    />
     <br
       className="clipboard-only"
     />
@@ -229,8 +225,6 @@ exports[`Group passes the getFrameTitle prop to the Frame components 1`] = `
               },
             },
             "sourceActorId": "source-actor",
-            "sourceId": "source",
-            "sourceUrl": "",
           },
           "id": "1",
           "index": 0,
@@ -278,8 +272,6 @@ exports[`Group passes the getFrameTitle prop to the Frame components 1`] = `
               },
             },
             "sourceActorId": "source-actor",
-            "sourceId": "source",
-            "sourceUrl": "",
           },
           "scope": Object {
             "actor": "scope-actor",
@@ -322,9 +314,9 @@ exports[`Group passes the getFrameTitle prop to the Frame components 1`] = `
     >
        
     </span>
-    <Badge>
-      3
-    </Badge>
+    <Badge
+      badgeText={3}
+    />
     <br
       className="clipboard-only"
     />
@@ -336,15 +328,6 @@ exports[`Group passes the getFrameTitle prop to the Frame components 1`] = `
       key="frame-indent-0"
     />
     <Frame
-      copyStackTrace={[MockFunction]}
-      cx={
-        Object {
-          "isPaused": false,
-          "navigateCounter": 0,
-          "pauseCounter": 0,
-          "thread": "FakeThread",
-        }
-      }
       disableContextMenu={false}
       displayFullUrl={false}
       frame={
@@ -394,8 +377,6 @@ exports[`Group passes the getFrameTitle prop to the Frame components 1`] = `
               },
             },
             "sourceActorId": "source-actor",
-            "sourceId": "source",
-            "sourceUrl": "",
           },
           "id": "1",
           "index": 0,
@@ -443,8 +424,6 @@ exports[`Group passes the getFrameTitle prop to the Frame components 1`] = `
               },
             },
             "sourceActorId": "source-actor",
-            "sourceId": "source",
-            "sourceUrl": "",
           },
           "scope": Object {
             "actor": "scope-actor",
@@ -481,12 +460,10 @@ exports[`Group passes the getFrameTitle prop to the Frame components 1`] = `
           "type": "call",
         }
       }
-      frameworkGroupingOn={true}
       getFrameTitle={[Function]}
       hideLocation={true}
       key="1"
       panel="webconsole"
-      restart={[MockFunction]}
       selectFrame={[MockFunction]}
       selectLocation={[MockFunction]}
       selectedFrame={
@@ -536,8 +513,6 @@ exports[`Group passes the getFrameTitle prop to the Frame components 1`] = `
               },
             },
             "sourceActorId": "source-actor",
-            "sourceId": "source",
-            "sourceUrl": "",
           },
           "id": "frame",
           "index": 0,
@@ -585,8 +560,6 @@ exports[`Group passes the getFrameTitle prop to the Frame components 1`] = `
               },
             },
             "sourceActorId": "source-actor",
-            "sourceId": "source",
-            "sourceUrl": "",
           },
           "scope": Object {
             "actor": "scope-actor",
@@ -624,22 +597,11 @@ exports[`Group passes the getFrameTitle prop to the Frame components 1`] = `
         }
       }
       shouldMapDisplayName={false}
-      toggleBlackBox={[MockFunction]}
-      toggleFrameworkGrouping={[MockFunction]}
     />
     <FrameIndent
       key="frame-indent-1"
     />
     <Frame
-      copyStackTrace={[MockFunction]}
-      cx={
-        Object {
-          "isPaused": false,
-          "navigateCounter": 0,
-          "pauseCounter": 0,
-          "thread": "FakeThread",
-        }
-      }
       disableContextMenu={false}
       displayFullUrl={false}
       frame={
@@ -689,8 +651,6 @@ exports[`Group passes the getFrameTitle prop to the Frame components 1`] = `
               },
             },
             "sourceActorId": "source-actor",
-            "sourceId": "source",
-            "sourceUrl": "",
           },
           "id": "2",
           "index": 0,
@@ -738,8 +698,6 @@ exports[`Group passes the getFrameTitle prop to the Frame components 1`] = `
               },
             },
             "sourceActorId": "source-actor",
-            "sourceId": "source",
-            "sourceUrl": "",
           },
           "scope": Object {
             "actor": "scope-actor",
@@ -776,12 +734,10 @@ exports[`Group passes the getFrameTitle prop to the Frame components 1`] = `
           "type": "call",
         }
       }
-      frameworkGroupingOn={true}
       getFrameTitle={[Function]}
       hideLocation={true}
       key="2"
       panel="webconsole"
-      restart={[MockFunction]}
       selectFrame={[MockFunction]}
       selectLocation={[MockFunction]}
       selectedFrame={
@@ -831,8 +787,6 @@ exports[`Group passes the getFrameTitle prop to the Frame components 1`] = `
               },
             },
             "sourceActorId": "source-actor",
-            "sourceId": "source",
-            "sourceUrl": "",
           },
           "id": "frame",
           "index": 0,
@@ -880,8 +834,6 @@ exports[`Group passes the getFrameTitle prop to the Frame components 1`] = `
               },
             },
             "sourceActorId": "source-actor",
-            "sourceId": "source",
-            "sourceUrl": "",
           },
           "scope": Object {
             "actor": "scope-actor",
@@ -919,22 +871,11 @@ exports[`Group passes the getFrameTitle prop to the Frame components 1`] = `
         }
       }
       shouldMapDisplayName={false}
-      toggleBlackBox={[MockFunction]}
-      toggleFrameworkGrouping={[MockFunction]}
     />
     <FrameIndent
       key="frame-indent-2"
     />
     <Frame
-      copyStackTrace={[MockFunction]}
-      cx={
-        Object {
-          "isPaused": false,
-          "navigateCounter": 0,
-          "pauseCounter": 0,
-          "thread": "FakeThread",
-        }
-      }
       disableContextMenu={false}
       displayFullUrl={false}
       frame={
@@ -984,8 +925,6 @@ exports[`Group passes the getFrameTitle prop to the Frame components 1`] = `
               },
             },
             "sourceActorId": "source-actor",
-            "sourceId": "source",
-            "sourceUrl": "",
           },
           "id": "3",
           "index": 0,
@@ -1033,8 +972,6 @@ exports[`Group passes the getFrameTitle prop to the Frame components 1`] = `
               },
             },
             "sourceActorId": "source-actor",
-            "sourceId": "source",
-            "sourceUrl": "",
           },
           "scope": Object {
             "actor": "scope-actor",
@@ -1071,12 +1008,10 @@ exports[`Group passes the getFrameTitle prop to the Frame components 1`] = `
           "type": "call",
         }
       }
-      frameworkGroupingOn={true}
       getFrameTitle={[Function]}
       hideLocation={true}
       key="3"
       panel="webconsole"
-      restart={[MockFunction]}
       selectFrame={[MockFunction]}
       selectLocation={[MockFunction]}
       selectedFrame={
@@ -1126,8 +1061,6 @@ exports[`Group passes the getFrameTitle prop to the Frame components 1`] = `
               },
             },
             "sourceActorId": "source-actor",
-            "sourceId": "source",
-            "sourceUrl": "",
           },
           "id": "frame",
           "index": 0,
@@ -1175,8 +1108,6 @@ exports[`Group passes the getFrameTitle prop to the Frame components 1`] = `
               },
             },
             "sourceActorId": "source-actor",
-            "sourceId": "source",
-            "sourceUrl": "",
           },
           "scope": Object {
             "actor": "scope-actor",
@@ -1214,8 +1145,6 @@ exports[`Group passes the getFrameTitle prop to the Frame components 1`] = `
         }
       }
       shouldMapDisplayName={false}
-      toggleBlackBox={[MockFunction]}
-      toggleFrameworkGrouping={[MockFunction]}
     />
   </div>
 </div>
@@ -1284,8 +1213,6 @@ exports[`Group renders group with anonymous functions 1`] = `
               },
             },
             "sourceActorId": "source-actor",
-            "sourceId": "source",
-            "sourceUrl": "",
           },
           "id": "1",
           "index": 0,
@@ -1333,8 +1260,6 @@ exports[`Group renders group with anonymous functions 1`] = `
               },
             },
             "sourceActorId": "source-actor",
-            "sourceId": "source",
-            "sourceUrl": "",
           },
           "scope": Object {
             "actor": "scope-actor",
@@ -1377,9 +1302,9 @@ exports[`Group renders group with anonymous functions 1`] = `
     >
        
     </span>
-    <Badge>
-      3
-    </Badge>
+    <Badge
+      badgeText={3}
+    />
     <br
       className="clipboard-only"
     />
@@ -1450,8 +1375,6 @@ exports[`Group renders group with anonymous functions 2`] = `
               },
             },
             "sourceActorId": "source-actor",
-            "sourceId": "source",
-            "sourceUrl": "",
           },
           "id": "1",
           "index": 0,
@@ -1499,8 +1422,6 @@ exports[`Group renders group with anonymous functions 2`] = `
               },
             },
             "sourceActorId": "source-actor",
-            "sourceId": "source",
-            "sourceUrl": "",
           },
           "scope": Object {
             "actor": "scope-actor",
@@ -1543,9 +1464,9 @@ exports[`Group renders group with anonymous functions 2`] = `
     >
        
     </span>
-    <Badge>
-      3
-    </Badge>
+    <Badge
+      badgeText={3}
+    />
     <br
       className="clipboard-only"
     />
@@ -1557,15 +1478,6 @@ exports[`Group renders group with anonymous functions 2`] = `
       key="frame-indent-0"
     />
     <Frame
-      copyStackTrace={[MockFunction]}
-      cx={
-        Object {
-          "isPaused": false,
-          "navigateCounter": 0,
-          "pauseCounter": 0,
-          "thread": "FakeThread",
-        }
-      }
       disableContextMenu={false}
       displayFullUrl={false}
       frame={
@@ -1615,8 +1527,6 @@ exports[`Group renders group with anonymous functions 2`] = `
               },
             },
             "sourceActorId": "source-actor",
-            "sourceId": "source",
-            "sourceUrl": "",
           },
           "id": "1",
           "index": 0,
@@ -1664,8 +1574,6 @@ exports[`Group renders group with anonymous functions 2`] = `
               },
             },
             "sourceActorId": "source-actor",
-            "sourceId": "source",
-            "sourceUrl": "",
           },
           "scope": Object {
             "actor": "scope-actor",
@@ -1702,11 +1610,9 @@ exports[`Group renders group with anonymous functions 2`] = `
           "type": "call",
         }
       }
-      frameworkGroupingOn={true}
       hideLocation={true}
       key="1"
       panel="webconsole"
-      restart={[MockFunction]}
       selectFrame={[MockFunction]}
       selectLocation={[MockFunction]}
       selectedFrame={
@@ -1756,8 +1662,6 @@ exports[`Group renders group with anonymous functions 2`] = `
               },
             },
             "sourceActorId": "source-actor",
-            "sourceId": "source",
-            "sourceUrl": "",
           },
           "id": "frame",
           "index": 0,
@@ -1805,8 +1709,6 @@ exports[`Group renders group with anonymous functions 2`] = `
               },
             },
             "sourceActorId": "source-actor",
-            "sourceId": "source",
-            "sourceUrl": "",
           },
           "scope": Object {
             "actor": "scope-actor",
@@ -1844,22 +1746,11 @@ exports[`Group renders group with anonymous functions 2`] = `
         }
       }
       shouldMapDisplayName={false}
-      toggleBlackBox={[MockFunction]}
-      toggleFrameworkGrouping={[MockFunction]}
     />
     <FrameIndent
       key="frame-indent-1"
     />
     <Frame
-      copyStackTrace={[MockFunction]}
-      cx={
-        Object {
-          "isPaused": false,
-          "navigateCounter": 0,
-          "pauseCounter": 0,
-          "thread": "FakeThread",
-        }
-      }
       disableContextMenu={false}
       displayFullUrl={false}
       frame={
@@ -1909,8 +1800,6 @@ exports[`Group renders group with anonymous functions 2`] = `
               },
             },
             "sourceActorId": "source-actor",
-            "sourceId": "source",
-            "sourceUrl": "",
           },
           "id": "2",
           "index": 0,
@@ -1958,8 +1847,6 @@ exports[`Group renders group with anonymous functions 2`] = `
               },
             },
             "sourceActorId": "source-actor",
-            "sourceId": "source",
-            "sourceUrl": "",
           },
           "scope": Object {
             "actor": "scope-actor",
@@ -1996,11 +1883,9 @@ exports[`Group renders group with anonymous functions 2`] = `
           "type": "call",
         }
       }
-      frameworkGroupingOn={true}
       hideLocation={true}
       key="2"
       panel="webconsole"
-      restart={[MockFunction]}
       selectFrame={[MockFunction]}
       selectLocation={[MockFunction]}
       selectedFrame={
@@ -2050,8 +1935,6 @@ exports[`Group renders group with anonymous functions 2`] = `
               },
             },
             "sourceActorId": "source-actor",
-            "sourceId": "source",
-            "sourceUrl": "",
           },
           "id": "frame",
           "index": 0,
@@ -2099,8 +1982,6 @@ exports[`Group renders group with anonymous functions 2`] = `
               },
             },
             "sourceActorId": "source-actor",
-            "sourceId": "source",
-            "sourceUrl": "",
           },
           "scope": Object {
             "actor": "scope-actor",
@@ -2138,22 +2019,11 @@ exports[`Group renders group with anonymous functions 2`] = `
         }
       }
       shouldMapDisplayName={false}
-      toggleBlackBox={[MockFunction]}
-      toggleFrameworkGrouping={[MockFunction]}
     />
     <FrameIndent
       key="frame-indent-2"
     />
     <Frame
-      copyStackTrace={[MockFunction]}
-      cx={
-        Object {
-          "isPaused": false,
-          "navigateCounter": 0,
-          "pauseCounter": 0,
-          "thread": "FakeThread",
-        }
-      }
       disableContextMenu={false}
       displayFullUrl={false}
       frame={
@@ -2203,8 +2073,6 @@ exports[`Group renders group with anonymous functions 2`] = `
               },
             },
             "sourceActorId": "source-actor",
-            "sourceId": "source",
-            "sourceUrl": "",
           },
           "id": "3",
           "index": 0,
@@ -2252,8 +2120,6 @@ exports[`Group renders group with anonymous functions 2`] = `
               },
             },
             "sourceActorId": "source-actor",
-            "sourceId": "source",
-            "sourceUrl": "",
           },
           "scope": Object {
             "actor": "scope-actor",
@@ -2290,11 +2156,9 @@ exports[`Group renders group with anonymous functions 2`] = `
           "type": "call",
         }
       }
-      frameworkGroupingOn={true}
       hideLocation={true}
       key="3"
       panel="webconsole"
-      restart={[MockFunction]}
       selectFrame={[MockFunction]}
       selectLocation={[MockFunction]}
       selectedFrame={
@@ -2344,8 +2208,6 @@ exports[`Group renders group with anonymous functions 2`] = `
               },
             },
             "sourceActorId": "source-actor",
-            "sourceId": "source",
-            "sourceUrl": "",
           },
           "id": "frame",
           "index": 0,
@@ -2393,8 +2255,6 @@ exports[`Group renders group with anonymous functions 2`] = `
               },
             },
             "sourceActorId": "source-actor",
-            "sourceId": "source",
-            "sourceUrl": "",
           },
           "scope": Object {
             "actor": "scope-actor",
@@ -2432,8 +2292,6 @@ exports[`Group renders group with anonymous functions 2`] = `
         }
       }
       shouldMapDisplayName={false}
-      toggleBlackBox={[MockFunction]}
-      toggleFrameworkGrouping={[MockFunction]}
     />
   </div>
 </div>

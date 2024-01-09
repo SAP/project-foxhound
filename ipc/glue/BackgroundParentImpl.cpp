@@ -55,6 +55,7 @@
 #include "mozilla/dom/localstorage/ActorsParent.h"
 #include "mozilla/dom/network/UDPSocketParent.h"
 #include "mozilla/dom/quota/ActorsParent.h"
+#include "mozilla/dom/quota/QuotaParent.h"
 #include "mozilla/dom/simpledb/ActorsParent.h"
 #include "mozilla/dom/VsyncParent.h"
 #include "mozilla/ipc/BackgroundParent.h"
@@ -1416,6 +1417,26 @@ BackgroundParentImpl::RecvEnsureUtilityProcessAndCreateBridge(
   return IPC_OK();
 }
 
+mozilla::ipc::IPCResult BackgroundParentImpl::RecvRequestCameraAccess(
+    RequestCameraAccessResolver&& aResolver) {
+#ifdef MOZ_WEBRTC
+  mozilla::camera::CamerasParent::RequestCameraAccess()->Then(
+      GetCurrentSerialEventTarget(), __func__,
+      [resolver = std::move(aResolver)](
+          const mozilla::camera::CamerasParent::CameraAccessRequestPromise::
+              ResolveOrRejectValue& aValue) {
+        if (aValue.IsResolve()) {
+          resolver(aValue.ResolveValue());
+        } else {
+          resolver(aValue.RejectValue());
+        }
+      });
+#else
+  aResolver(NS_ERROR_NOT_IMPLEMENTED);
+#endif
+  return IPC_OK();
+}
+
 bool BackgroundParentImpl::DeallocPEndpointForReportParent(
     PEndpointForReportParent* aActor) {
   RefPtr<dom::EndpointForReportParent> actor =
@@ -1454,9 +1475,9 @@ bool BackgroundParentImpl::DeallocPMediaTransportParent(
 }
 
 already_AddRefed<dom::locks::PLockManagerParent>
-BackgroundParentImpl::AllocPLockManagerParent(
-    const ContentPrincipalInfo& aPrincipalInfo, const nsID& aClientId) {
-  return MakeAndAddRef<mozilla::dom::locks::LockManagerParent>(aPrincipalInfo,
+BackgroundParentImpl::AllocPLockManagerParent(NotNull<nsIPrincipal*> aPrincipal,
+                                              const nsID& aClientId) {
+  return MakeAndAddRef<mozilla::dom::locks::LockManagerParent>(aPrincipal,
                                                                aClientId);
 }
 

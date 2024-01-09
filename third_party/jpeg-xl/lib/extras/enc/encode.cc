@@ -7,15 +7,9 @@
 
 #include <locale>
 
-#if JPEGXL_ENABLE_APNG
 #include "lib/extras/enc/apng.h"
-#endif
-#if JPEGXL_ENABLE_EXR
 #include "lib/extras/enc/exr.h"
-#endif
-#if JPEGXL_ENABLE_JPEG
 #include "lib/extras/enc/jpg.h"
-#endif
 #include "lib/extras/enc/npy.h"
 #include "lib/extras/enc/pgx.h"
 #include "lib/extras/enc/pnm.h"
@@ -58,9 +52,7 @@ Status Encoder::VerifyBitDepth(JxlDataType data_type, uint32_t bits_per_sample,
       (data_type == JXL_TYPE_UINT16 &&
        (bits_per_sample <= 8 || bits_per_sample > 16 || exponent_bits != 0)) ||
       (data_type == JXL_TYPE_FLOAT16 &&
-       (bits_per_sample != 16 || exponent_bits != 5)) ||
-      (data_type == JXL_TYPE_FLOAT &&
-       (bits_per_sample != 32 || exponent_bits != 8))) {
+       (bits_per_sample > 16 || exponent_bits > 5))) {
     return JXL_FAILURE(
         "Incompatible data_type %d and bit depth %u with exponent bits %u",
         (int)data_type, bits_per_sample, exponent_bits);
@@ -137,31 +129,46 @@ Status SelectFormat(const std::vector<JxlPixelFormat>& accepted_formats,
   return true;
 }
 
+template <int metadata>
+class MetadataEncoder : public Encoder {
+ public:
+  std::vector<JxlPixelFormat> AcceptedFormats() const override {
+    std::vector<JxlPixelFormat> formats;
+    // empty, i.e. no need for actual pixel data
+    return formats;
+  }
+
+  Status Encode(const PackedPixelFile& ppf, EncodedImage* encoded,
+                ThreadPool* pool) const override {
+    JXL_RETURN_IF_ERROR(VerifyBasicInfo(ppf.info));
+    encoded->icc.clear();
+    encoded->bitstreams.resize(1);
+    if (metadata == 0) encoded->bitstreams.front() = ppf.metadata.exif;
+    if (metadata == 1) encoded->bitstreams.front() = ppf.metadata.xmp;
+    if (metadata == 2) encoded->bitstreams.front() = ppf.metadata.jumbf;
+    return true;
+  }
+};
+
 std::unique_ptr<Encoder> Encoder::FromExtension(std::string extension) {
   std::transform(
       extension.begin(), extension.end(), extension.begin(),
       [](char c) { return std::tolower(c, std::locale::classic()); });
-#if JPEGXL_ENABLE_APNG
   if (extension == ".png" || extension == ".apng") return GetAPNGEncoder();
-#endif
-
-#if JPEGXL_ENABLE_JPEG
   if (extension == ".jpg") return GetJPEGEncoder();
   if (extension == ".jpeg") return GetJPEGEncoder();
-#endif
-
   if (extension == ".npy") return GetNumPyEncoder();
-
   if (extension == ".pgx") return GetPGXEncoder();
-
   if (extension == ".pam") return GetPAMEncoder();
   if (extension == ".pgm") return GetPGMEncoder();
   if (extension == ".ppm") return GetPPMEncoder();
   if (extension == ".pfm") return GetPFMEncoder();
-
-#if JPEGXL_ENABLE_EXR
   if (extension == ".exr") return GetEXREncoder();
-#endif
+  if (extension == ".exif") return jxl::make_unique<MetadataEncoder<0>>();
+  if (extension == ".xmp") return jxl::make_unique<MetadataEncoder<1>>();
+  if (extension == ".xml") return jxl::make_unique<MetadataEncoder<1>>();
+  if (extension == ".jumbf") return jxl::make_unique<MetadataEncoder<2>>();
+  if (extension == ".jumb") return jxl::make_unique<MetadataEncoder<2>>();
 
   return nullptr;
 }

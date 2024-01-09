@@ -4,6 +4,7 @@
 
 import React, { useEffect, useState } from "react";
 import { Localized } from "./MSLocalized";
+import { AboutWelcomeUtils } from "../../lib/aboutwelcome-utils";
 import { Colorways } from "./MRColorways";
 import { MobileDownloads } from "./MobileDownloads";
 import { MultiSelect } from "./MultiSelect";
@@ -19,6 +20,8 @@ import { HeroImage } from "./HeroImage";
 import { OnboardingVideo } from "./OnboardingVideo";
 import { AdditionalCTA } from "./AdditionalCTA";
 import { EmbeddedMigrationWizard } from "./EmbeddedMigrationWizard";
+import { AddonsPicker } from "./AddonsPicker";
+import { LegalParagraph } from "./LegalParagraph";
 
 export const MultiStageProtonScreen = props => {
   const { autoAdvance, handleAction, order } = props;
@@ -59,12 +62,13 @@ export const MultiStageProtonScreen = props => {
       messageId={props.messageId}
       negotiatedLanguage={props.negotiatedLanguage}
       langPackInstallPhase={props.langPackInstallPhase}
+      forceHideStepsIndicator={props.forceHideStepsIndicator}
     />
   );
 };
 
 export const ProtonScreenActionButtons = props => {
-  const { content, addonName } = props;
+  const { content, addonName, activeMultiSelect } = props;
   const defaultValue = content.checkbox?.defaultValue;
 
   const [isChecked, setIsChecked] = useState(defaultValue || false);
@@ -77,6 +81,13 @@ export const ProtonScreenActionButtons = props => {
     return null;
   }
 
+  // If we have a multi-select screen, we want to disable the primary button
+  // until the user has selected at least one item.
+  const isPrimaryDisabled = primaryDisabledValue =>
+    primaryDisabledValue === "hasActiveMultiSelect"
+      ? !(activeMultiSelect?.length > 0)
+      : primaryDisabledValue;
+
   return (
     <div
       className={`action-buttons ${
@@ -86,13 +97,15 @@ export const ProtonScreenActionButtons = props => {
     >
       <Localized text={content.primary_button?.label}>
         <button
-          className="primary"
+          className={`${content.primary_button?.style ?? "primary"}${
+            content.primary_button?.has_arrow_icon ? " arrow-icon" : ""
+          }`}
           // Whether or not the checkbox is checked determines which action
           // should be handled. By setting value here, we indicate to
           // this.handleAction() where in the content tree it should take
           // the action to execute from.
           value={isChecked ? "checkbox" : "primary_button"}
-          disabled={content.primary_button?.disabled === true}
+          disabled={isPrimaryDisabled(content.primary_button?.disabled)}
           onClick={props.handleAction}
           data-l10n-args={
             addonName
@@ -137,27 +150,64 @@ export class ProtonScreen extends React.PureComponent {
     isFirstScreen,
     isLastScreen,
     includeNoodles,
-    isVideoOnboarding
+    isVideoOnboarding,
+    isAddonsPicker
   ) {
     const screenClass = `screen-${this.props.order % 2 !== 0 ? 1 : 2}`;
 
-    if (isVideoOnboarding) return "with-video";
+    if (isVideoOnboarding) {
+      return "with-video";
+    }
+
+    if (isAddonsPicker) {
+      return "addons-picker";
+    }
 
     return `${isFirstScreen ? `dialog-initial` : ``} ${
       isLastScreen ? `dialog-last` : ``
     } ${includeNoodles ? `with-noodles` : ``} ${screenClass}`;
   }
 
-  renderLogo({
+  renderTitle({ title, title_logo }) {
+    return title_logo ? (
+      <div className="inline-icon-container">
+        {this.renderPicture(title_logo)}
+        <Localized text={title}>
+          <h1 id="mainContentHeader" />
+        </Localized>
+      </div>
+    ) : (
+      <Localized text={title}>
+        <h1 id="mainContentHeader" />
+      </Localized>
+    );
+  }
+
+  renderPicture({
     imageURL = "chrome://branding/content/about-logo.svg",
     darkModeImageURL,
     reducedMotionImageURL,
     darkModeReducedMotionImageURL,
     alt = "",
     height,
+    className = "logo-container",
   }) {
+    function getLoadingStrategy() {
+      for (let url of [
+        imageURL,
+        darkModeImageURL,
+        reducedMotionImageURL,
+        darkModeReducedMotionImageURL,
+      ]) {
+        if (AboutWelcomeUtils.getLoadingStrategyFor(url) === "lazy") {
+          return "lazy";
+        }
+      }
+      return "eager";
+    }
+
     return (
-      <picture className="logo-container">
+      <picture className={className}>
         {darkModeReducedMotionImageURL ? (
           <source
             srcSet={darkModeReducedMotionImageURL}
@@ -176,11 +226,15 @@ export class ProtonScreen extends React.PureComponent {
             media="(prefers-reduced-motion: reduce)"
           />
         ) : null}
+        <Localized text={alt}>
+          <div className="sr-only logo-alt" />
+        </Localized>
         <img
           className="brand-logo"
           style={{ height }}
           src={imageURL}
-          alt={alt}
+          alt=""
+          loading={getLoadingStrategy()}
           role={alt ? null : "presentation"}
         />
       </picture>
@@ -191,6 +245,15 @@ export class ProtonScreen extends React.PureComponent {
     const { content } = this.props;
     return (
       <React.Fragment>
+        {content.tiles &&
+        content.tiles.type === "addons-picker" &&
+        content.tiles.data ? (
+          <AddonsPicker
+            content={content}
+            message_id={this.props.messageId}
+            handleAction={this.props.handleAction}
+          />
+        ) : null}
         {content.tiles &&
         content.tiles.type === "colorway" &&
         content.tiles.colorways ? (
@@ -307,7 +370,9 @@ export class ProtonScreen extends React.PureComponent {
   renderSecondarySection(content) {
     return (
       <div
-        className="section-secondary"
+        className={`section-secondary ${
+          content.hide_secondary_section ? "with-secondary-section-hidden" : ""
+        }`}
         style={
           content.background
             ? {
@@ -332,9 +397,6 @@ export class ProtonScreen extends React.PureComponent {
               </Localized>
               <div className="spacer-bottom" />
             </div>
-            <Localized text={content.help_text}>
-              <span className="attrib-text" />
-            </Localized>
           </React.Fragment>
         )}
       </div>
@@ -350,12 +412,16 @@ export class ProtonScreen extends React.PureComponent {
       isFirstScreen,
       isLastScreen,
       isSingleScreen,
+      forceHideStepsIndicator,
     } = this.props;
     const includeNoodles = content.has_noodles;
     // The default screen position is "center"
     const isCenterPosition = content.position === "center" || !content.position;
     const hideStepsIndicator =
-      autoAdvance || content?.video_container || isSingleScreen;
+      autoAdvance ||
+      content?.video_container ||
+      isSingleScreen ||
+      forceHideStepsIndicator;
     const textColorClass = content.text_color
       ? `${content.text_color}-text`
       : "";
@@ -366,7 +432,8 @@ export class ProtonScreen extends React.PureComponent {
           isFirstScreen,
           isLastScreen,
           includeNoodles,
-          content?.video_container
+          content?.video_container,
+          content.tiles?.type === "addons-picker"
         )
       : "";
     const isEmbeddedMigration = content.tiles?.type === "migration-wizard";
@@ -376,6 +443,7 @@ export class ProtonScreen extends React.PureComponent {
         className={`screen ${this.props.id || ""}
           ${screenClassName} ${textColorClass}`}
         role="alertdialog"
+        layout={content.layout}
         pos={content.position || "center"}
         tabIndex="-1"
         aria-labelledby="mainContentHeader"
@@ -388,6 +456,11 @@ export class ProtonScreen extends React.PureComponent {
           className={`section-main ${
             isEmbeddedMigration ? "embedded-migration" : ""
           }`}
+          hide-secondary-section={
+            content.hide_secondary_section
+              ? String(content.hide_secondary_section)
+              : null
+          }
           role="document"
         >
           {content.secondary_button_top ? (
@@ -406,26 +479,26 @@ export class ProtonScreen extends React.PureComponent {
                 : {}
             }
           >
-            {content.logo ? this.renderLogo(content.logo) : null}
+            {content.logo ? this.renderPicture(content.logo) : null}
 
             {isRtamo ? (
               <div className="rtamo-icon">
                 <img
                   className={`${isTheme ? "rtamo-theme-icon" : "brand-logo"}`}
                   src={this.props.iconURL}
-                  role="presentation"
+                  loading={AboutWelcomeUtils.getLoadingStrategyFor(
+                    this.props.iconURL
+                  )}
                   alt=""
+                  role="presentation"
                 />
               </div>
             ) : null}
 
             <div className="main-content-inner">
               <div className={`welcome-text ${content.title_style || ""}`}>
-                {content.title ? (
-                  <Localized text={content.title}>
-                    <h1 id="mainContentHeader" />
-                  </Localized>
-                ) : null}
+                {content.title ? this.renderTitle(content) : null}
+
                 {content.subtitle ? (
                   <Localized text={content.subtitle}>
                     <h2
@@ -454,18 +527,37 @@ export class ProtonScreen extends React.PureComponent {
                   handleAction={this.props.handleAction}
                 />
               ) : null}
+              {content.inline_image
+                ? this.renderPicture({
+                    imageURL: content.inline_image.url,
+                    darkModeImageURL: content.inline_image.darkModeImageURL,
+                    height: content.inline_image.height,
+                    alt: content.inline_image.alt_text,
+                    className: "inline-image",
+                  })
+                : null}
+              {content.legal_paragraph ? (
+                <LegalParagraph
+                  content={content}
+                  handleAction={this.props.handleAction}
+                />
+              ) : null}
               {this.renderContentTiles()}
               {this.renderLanguageSwitcher()}
               <ProtonScreenActionButtons
                 content={content}
                 addonName={this.props.addonName}
                 handleAction={this.props.handleAction}
+                activeMultiSelect={this.props.activeMultiSelect}
               />
             </div>
             {!hideStepsIndicator ? this.renderStepsIndicator() : null}
           </div>
           {content.dismiss_button ? this.renderDismissButton() : null}
         </div>
+        <Localized text={content.info_text}>
+          <span className="info-text" />
+        </Localized>
       </main>
     );
   }

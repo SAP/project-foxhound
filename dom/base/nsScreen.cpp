@@ -7,6 +7,8 @@
 #include "nsContentUtils.h"
 #include "nsScreen.h"
 #include "mozilla/dom/Document.h"
+#include "nsGlobalWindowInner.h"
+#include "nsGlobalWindowOuter.h"
 #include "nsIDocShell.h"
 #include "nsPresContext.h"
 #include "nsCOMPtr.h"
@@ -52,7 +54,7 @@ NS_IMPL_CYCLE_COLLECTION_INHERITED(nsScreen, DOMEventTargetHelper,
 
 int32_t nsScreen::GetPixelDepth(ErrorResult& aRv) {
   // Return 24 to prevent fingerprinting.
-  if (ShouldResistFingerprinting()) {
+  if (ShouldResistFingerprinting(RFPTarget::ScreenPixelDepth)) {
     return 24;
   }
 
@@ -80,7 +82,7 @@ nsDeviceContext* nsScreen::GetDeviceContext() const {
 
 nsresult nsScreen::GetRect(CSSIntRect& aRect) {
   // Return window inner rect to prevent fingerprinting.
-  if (ShouldResistFingerprinting()) {
+  if (ShouldResistFingerprinting(RFPTarget::ScreenRect)) {
     return GetWindowInnerRect(aRect);
   }
 
@@ -112,7 +114,7 @@ nsresult nsScreen::GetRect(CSSIntRect& aRect) {
 
 nsresult nsScreen::GetAvailRect(CSSIntRect& aRect) {
   // Return window inner rect to prevent fingerprinting.
-  if (ShouldResistFingerprinting()) {
+  if (ShouldResistFingerprinting(RFPTarget::ScreenAvailRect)) {
     return GetWindowInnerRect(aRect);
   }
 
@@ -225,8 +227,8 @@ nsresult nsScreen::GetWindowInnerRect(CSSIntRect& aRect) {
   return NS_OK;
 }
 
-bool nsScreen::ShouldResistFingerprinting() const {
+bool nsScreen::ShouldResistFingerprinting(RFPTarget aTarget) const {
   nsCOMPtr<nsPIDOMWindowInner> owner = GetOwner();
   return owner &&
-         nsGlobalWindowInner::Cast(owner)->ShouldResistFingerprinting();
+         nsGlobalWindowInner::Cast(owner)->ShouldResistFingerprinting(aTarget);
 }

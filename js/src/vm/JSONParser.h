@@ -202,6 +202,12 @@ class MOZ_STACK_CLASS JSONFullParseHandlerAnyChar {
 
   ParseType parseType = ParseType::JSONParse;
 
+  // The number of nursery collections that have occurred.
+  size_t nurseryCollectionCount = 0;
+
+  // The heap to use for allocating GC things.
+  gc::Heap gcHeap = gc::Heap::Default;
+
  private:
   // Unused element and property vectors for previous in progress arrays and
   // objects. These vectors are not freed until the end of the parse to avoid
@@ -210,17 +216,11 @@ class MOZ_STACK_CLASS JSONFullParseHandlerAnyChar {
   Vector<PropertyVector*, 5> freeProperties;
 
  public:
-  explicit JSONFullParseHandlerAnyChar(JSContext* cx)
-      : cx(cx), freeElements(cx), freeProperties(cx) {}
+  explicit JSONFullParseHandlerAnyChar(JSContext* cx);
   ~JSONFullParseHandlerAnyChar();
 
   // Allow move construction for use with Rooted.
-  JSONFullParseHandlerAnyChar(JSONFullParseHandlerAnyChar&& other) noexcept
-      : cx(other.cx),
-        v(other.v),
-        parseType(other.parseType),
-        freeElements(std::move(other.freeElements)),
-        freeProperties(std::move(other.freeProperties)) {}
+  JSONFullParseHandlerAnyChar(JSONFullParseHandlerAnyChar&& other) noexcept;
 
   JSONFullParseHandlerAnyChar(const JSONFullParseHandlerAnyChar& other) =
       delete;
@@ -257,7 +257,7 @@ class MOZ_STACK_CLASS JSONFullParseHandlerAnyChar {
                                  PropertyVector** properties);
   inline bool finishObject(Vector<StackEntry, 10>& stack,
                            JS::MutableHandle<JS::Value> vp,
-                           PropertyVector& properties);
+                           PropertyVector* properties);
 
   inline bool arrayOpen(Vector<StackEntry, 10>& stack,
                         ElementVector** elements);
@@ -266,7 +266,7 @@ class MOZ_STACK_CLASS JSONFullParseHandlerAnyChar {
                            ElementVector** elements);
   inline bool finishArray(Vector<StackEntry, 10>& stack,
                           JS::MutableHandle<JS::Value> vp,
-                          ElementVector& elements);
+                          ElementVector* elements);
 
   inline bool errorReturn() const {
     return parseType == ParseType::AttemptForEval;
@@ -279,6 +279,10 @@ class MOZ_STACK_CLASS JSONFullParseHandlerAnyChar {
   inline void freeStackEntry(StackEntry& entry);
 
   void trace(JSTracer* trc);
+
+  static void NurseryCollectionCallback(JSContext* cx,
+                                        JS::GCNurseryProgress progress,
+                                        JS::GCReason reason, void* data);
 };
 
 template <typename CharT>
@@ -390,7 +394,7 @@ class MOZ_STACK_CLASS JSONSyntaxParseHandler {
                                  DummyValue& value,
                                  PropertyVector** properties) {}
   inline bool finishObject(Vector<StackEntry, 10>& stack, DummyValue* vp,
-                           PropertyVector& properties);
+                           PropertyVector* properties);
 
   inline bool arrayOpen(Vector<StackEntry, 10>& stack,
                         ElementVector** elements);
@@ -399,7 +403,7 @@ class MOZ_STACK_CLASS JSONSyntaxParseHandler {
     return true;
   }
   inline bool finishArray(Vector<StackEntry, 10>& stack, DummyValue* vp,
-                          ElementVector& elements);
+                          ElementVector* elements);
 
   inline bool errorReturn() const { return false; }
 

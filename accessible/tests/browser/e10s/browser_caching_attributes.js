@@ -208,6 +208,12 @@ addAccessibleTask(
   <ins id="ins">a</ins>
   <button id="button">b</button>
 </div>
+<p>
+  <span id="presentationalSpan" role="none"
+      style="display: block; position: absolute; top: 0; left: 0; translate: 1px;">
+    a
+  </span>
+</p>
   `,
   async function (browser, docAcc) {
     const div = findAccessibleChildByID(docAcc, "div");
@@ -228,6 +234,15 @@ addAccessibleTask(
       "block",
       "ins display attribute changed to block"
     );
+
+    // This span has role="none", but we force a generic Accessible because it
+    // has a transform. role="none" might have been used to avoid exposing
+    // display: block, so ensure we don't expose that.
+    const presentationalSpan = findAccessibleChildByID(
+      docAcc,
+      "presentationalSpan"
+    );
+    testAbsentAttrs(presentationalSpan, { display: "" });
   },
   { chrome: true, topLevel: true, iframe: true, remoteIframe: true }
 );
@@ -617,11 +632,8 @@ addAccessibleTask(
   async function (browser, docAcc) {
     const noAlt = findAccessibleChildByID(docAcc, "noAlt");
     testAttrs(noAlt, { src: kImgUrl }, true);
-    if (browser.isRemoteBrowser) {
-      // To avoid wasting memory, we don't cache src if there's a name.
-      const alt = findAccessibleChildByID(docAcc, "alt");
-      testAbsentAttrs(alt, { src: "" });
-    }
+    const alt = findAccessibleChildByID(docAcc, "alt");
+    testAttrs(alt, { src: kImgUrl }, true);
 
     const mutate = findAccessibleChildByID(docAcc, "mutate");
     testAbsentAttrs(mutate, { src: "" });
@@ -635,6 +647,83 @@ addAccessibleTask(
       content.document.getElementById("mutate").removeAttribute("src");
     });
     await untilCacheAttrAbsent(mutate, "src", "mutate src not present");
+  },
+  { chrome: true, topLevel: true }
+);
+
+/**
+ * Test the placeholder attribute.
+ */
+addAccessibleTask(
+  `
+<input id="htmlWithLabel" aria-label="label" placeholder="HTML">
+<input id="htmlNoLabel" placeholder="HTML">
+<input id="ariaWithLabel" aria-label="label" aria-placeholder="ARIA">
+<input id="ariaNoLabel" aria-placeholder="ARIA">
+<input id="both" aria-label="label" placeholder="HTML" aria-placeholder="ARIA">
+<input id="mutate" placeholder="HTML">
+  `,
+  async function (browser, docAcc) {
+    const htmlWithLabel = findAccessibleChildByID(docAcc, "htmlWithLabel");
+    testAttrs(htmlWithLabel, { placeholder: "HTML" }, true);
+    const htmlNoLabel = findAccessibleChildByID(docAcc, "htmlNoLabel");
+    // placeholder is used as name, so not exposed as attribute.
+    testAbsentAttrs(htmlNoLabel, { placeholder: "" });
+    const ariaWithLabel = findAccessibleChildByID(docAcc, "ariaWithLabel");
+    testAttrs(ariaWithLabel, { placeholder: "ARIA" }, true);
+    const ariaNoLabel = findAccessibleChildByID(docAcc, "ariaNoLabel");
+    // No label doesn't impact aria-placeholder.
+    testAttrs(ariaNoLabel, { placeholder: "ARIA" }, true);
+    const both = findAccessibleChildByID(docAcc, "both");
+    testAttrs(both, { placeholder: "HTML" }, true);
+
+    const mutate = findAccessibleChildByID(docAcc, "mutate");
+    testAbsentAttrs(mutate, { placeholder: "" });
+    info("Adding label to mutate");
+    await invokeContentTask(browser, [], () => {
+      content.document
+        .getElementById("mutate")
+        .setAttribute("aria-label", "label");
+    });
+    await untilCacheAttrIs(
+      mutate,
+      "placeholder",
+      "HTML",
+      "mutate placeholder correct"
+    );
+    info("Removing mutate placeholder");
+    await invokeContentTask(browser, [], () => {
+      content.document.getElementById("mutate").removeAttribute("placeholder");
+    });
+    await untilCacheAttrAbsent(
+      mutate,
+      "placeholder",
+      "mutate placeholder not present"
+    );
+    info("Setting mutate aria-placeholder");
+    await invokeContentTask(browser, [], () => {
+      content.document
+        .getElementById("mutate")
+        .setAttribute("aria-placeholder", "ARIA");
+    });
+    await untilCacheAttrIs(
+      mutate,
+      "placeholder",
+      "ARIA",
+      "mutate placeholder correct"
+    );
+    info("Setting mutate placeholder");
+    await invokeContentTask(browser, [], () => {
+      content.document
+        .getElementById("mutate")
+        .setAttribute("placeholder", "HTML");
+    });
+    await untilCacheAttrIs(
+      mutate,
+      "placeholder",
+      "HTML",
+      "mutate placeholder correct"
+    );
   },
   { chrome: true, topLevel: true }
 );

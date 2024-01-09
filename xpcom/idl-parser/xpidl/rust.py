@@ -437,14 +437,30 @@ struct_tmpl = """\
 
 #[repr(C)]
 pub struct %(name)s {
-    vtable: *const %(name)sVTable,
+    vtable: &'static %(name)sVTable,
 
     /// This field is a phantomdata to ensure that the VTable type and any
-    /// struct containing it is not safe to send across threads, as XPCOM is
-    /// generally not threadsafe.
+    /// struct containing it is not safe to send across threads by default, as
+    /// XPCOM is generally not threadsafe.
     ///
-    /// XPCOM interfaces in general are not safe to send across threads.
+    /// If this type is marked as [rust_sync], there will be explicit `Send` and
+    /// `Sync` implementations on this type, which will override the inherited
+    /// negative impls from `Rc`.
     __nosync: ::std::marker::PhantomData<::std::rc::Rc<u8>>,
+
+    // Make the rust compiler aware that there might be interior mutability
+    // in what actually implements the interface. This works around UB
+    // introduced by https://github.com/llvm/llvm-project/commit/01859da84bad95fd51d6a03b08b60c660e642a4f
+    // that a rust lint would make blatantly obvious, but doesn't exist.
+    // (See https://github.com/rust-lang/rust/issues/111229).
+    // This prevents optimizations, but those optimizations weren't available
+    // before rustc switched to LLVM 16, and they now cause problems because
+    // of the UB.
+    // Until there's a lint available to find all our UB, it's simpler to
+    // avoid the UB in the first place, at the cost of preventing optimizations
+    // in places that don't cause UB. But again, those optimizations weren't
+    // available before.
+    __maybe_interior_mutability: ::std::cell::UnsafeCell<[u8; 0]>,
 }
 
 // Implementing XpCom for an interface exposes its IID, which allows for easy
@@ -492,6 +508,15 @@ impl %(name)s {
         T::coerce_from(self)
     }
 }
+"""
+
+
+sendsync_tmpl = """\
+// This interface is marked as [rust_sync], meaning it is safe to be transferred
+// and used from multiple threads silmultaneously.  These override the default
+// from the __nosync marker type allowng the type to be sent between threads.
+unsafe impl Send for %(name)s {}
+unsafe impl Sync for %(name)s {}
 """
 
 
@@ -554,6 +579,9 @@ def write_interface(iface, fd):
     printComments(fd, iface.doccomments, "")
     fd.write(struct_tmpl % names)
 
+    if iface.attributes.rust_sync:
+        fd.write(sendsync_tmpl % {"name": iface.name})
+
     if iface.base is not None:
         fd.write(
             deref_tmpl
@@ -613,6 +641,17 @@ def write_interface(iface, fd):
                     "val": member.getValue(),
                 }
             )
+        if type(member) == xpidl.CEnum:
+            for var in member.variants:
+                consts.append(
+                    const_wrapper_tmpl
+                    % {
+                        "docs": "",
+                        "type": member.rustType("in"),
+                        "name": var.name,
+                        "val": var.getValue(),
+                    }
+                )
 
     methods = []
     for member in iface.members:

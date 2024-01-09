@@ -257,9 +257,10 @@ class TestFirefoxRefresh(MarionetteTestCase):
         self.assertEqual(loginInfo[0]["username"], self._username)
         self.assertEqual(loginInfo[0]["password"], self._password)
 
-        loginCount = self.marionette.execute_script(
+        loginCount = self.runAsyncCode(
             """
-          return Services.logins.getAllLogins().length;
+          let resolve = arguments[arguments.length - 1];
+          Services.logins.getAllLogins().then(logins => resolve(logins.length));
         """
         )
         # Note that we expect 2 logins - one from us, one from sync.
@@ -480,6 +481,17 @@ class TestFirefoxRefresh(MarionetteTestCase):
         expected_value = "test@test.com" if expect_sync_user else None
         self.assertEqual(pref_value, expected_value)
 
+    def checkStartupMigrationStateCleared(self):
+        result = self.runCode(
+            """
+          let { MigrationUtils } = ChromeUtils.importESModule(
+            "resource:///modules/MigrationUtils.sys.mjs"
+          );
+          return MigrationUtils.isStartupMigration;
+        """
+        )
+        self.assertFalse(result)
+
     def checkProfile(self, has_migrated=False, expect_sync_user=True):
         self.checkPassword()
         self.checkBookmarkInMenu()
@@ -492,6 +504,7 @@ class TestFirefoxRefresh(MarionetteTestCase):
         if has_migrated:
             self.checkBookmarkToolbarVisibility()
             self.checkSession()
+            self.checkStartupMigrationStateCleared()
 
     def createProfileData(self):
         self.savePassword()

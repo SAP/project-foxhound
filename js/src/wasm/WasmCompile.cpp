@@ -27,10 +27,12 @@
 #endif
 
 #include "jit/FlushICache.h"
+#include "jit/JitOptions.h"
 #include "util/Text.h"
 #include "vm/HelperThreads.h"
 #include "vm/Realm.h"
 #include "wasm/WasmBaselineCompile.h"
+#include "wasm/WasmFeatures.h"
 #include "wasm/WasmGenerator.h"
 #include "wasm/WasmIonCompile.h"
 #include "wasm/WasmOpIter.h"
@@ -90,7 +92,7 @@ FeatureArgs FeatureArgs::build(JSContext* cx, const FeatureOptions& options) {
 
 #define WASM_FEATURE(NAME, LOWER_NAME, ...) \
   features.LOWER_NAME = wasm::NAME##Available(cx);
-  JS_FOR_WASM_FEATURES(WASM_FEATURE, WASM_FEATURE, WASM_FEATURE);
+  JS_FOR_WASM_FEATURES(WASM_FEATURE);
 #undef WASM_FEATURE
 
   features.sharedMemory =

@@ -11,7 +11,7 @@
 #include "mozilla/ComputedStyle.h"
 #include "mozilla/Span.h"
 
-#include "nsAtom.h"
+#include "nsAtomHashKeys.h"
 #include "nsISelectionController.h"
 #include "nsTHashMap.h"
 
@@ -55,8 +55,9 @@ class MOZ_STACK_CLASS nsTextPaintStyle {
   void GetHighlightColors(nscolor* aForeColor, nscolor* aBackColor);
   // Computes colors for custom highlights.
   // Returns false if there are no rules associated with `aHighlightName`.
-  bool GetCustomHighlightColors(const nsAtom* aHighlightName,
-                                nscolor* aForeColor, nscolor* aBackColor);
+  bool GetCustomHighlightTextColor(nsAtom* aHighlightName, nscolor* aForeColor);
+  bool GetCustomHighlightBackgroundColor(nsAtom* aHighlightName,
+                                         nscolor* aBackColor);
   void GetURLSecondaryColor(nscolor* aForeColor);
   void GetIMESelectionColors(int32_t aIndex, nscolor* aForeColor,
                              nscolor* aBackColor);
@@ -118,7 +119,7 @@ class MOZ_STACK_CLASS nsTextPaintStyle {
   nscolor mSelectionTextColor;
   nscolor mSelectionBGColor;
   RefPtr<ComputedStyle> mSelectionPseudoStyle;
-  nsTHashMap<RefPtr<const nsAtom>, RefPtr<ComputedStyle>>
+  nsTHashMap<RefPtr<nsAtom>, RefPtr<ComputedStyle>>
       mCustomHighlightPseudoStyles;
 
   // Common data

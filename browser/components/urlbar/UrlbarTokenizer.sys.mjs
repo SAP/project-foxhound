@@ -8,14 +8,12 @@
  * of UrlbarTokenizer.TYPE.
  */
 
-import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
-
 const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   UrlbarUtils: "resource:///modules/UrlbarUtils.sys.mjs",
 });
 
-XPCOMUtils.defineLazyGetter(lazy, "logger", () =>
+ChromeUtils.defineLazyGetter(lazy, "logger", () =>
   lazy.UrlbarUtils.getLogger({ prefix: "Tokenizer" })
 );
 
@@ -288,9 +286,18 @@ function splitString(searchString) {
   // if the search string starts with "data:", to better support Web developers
   // and compatiblity with other browsers.
   let trimmed = searchString.trim();
-  let tokens = trimmed.startsWith("data:")
-    ? [trimmed]
-    : trimmed.split(UrlbarTokenizer.REGEXP_SPACES);
+  let tokens;
+  if (trimmed.startsWith("data:")) {
+    tokens = [trimmed];
+  } else if (trimmed.length < 500) {
+    tokens = trimmed.split(UrlbarTokenizer.REGEXP_SPACES);
+  } else {
+    // If the string is very long, tokenizing all of it would be expensive. So
+    // we only tokenize a part of it, then let the last token become a
+    // catch-all.
+    tokens = trimmed.substring(0, 500).split(UrlbarTokenizer.REGEXP_SPACES);
+    tokens[tokens.length - 1] += trimmed.substring(500);
+  }
 
   if (!tokens.length) {
     return tokens;
@@ -356,6 +363,13 @@ function filterTokens(tokens) {
       lowerCaseValue: token.toLocaleLowerCase(),
       type: UrlbarTokenizer.TYPE.TEXT,
     };
+    // For privacy reasons, we don't want to send a data (or other kind of) URI
+    // to a search engine. So we want to parse any single long token below.
+    if (tokens.length > 1 && token.length > 500) {
+      filtered.push(tokenObj);
+      break;
+    }
+
     let restrictionType = CHAR_TO_TYPE_MAP.get(token);
     if (restrictionType) {
       restrictions.push({ index: i, type: restrictionType });

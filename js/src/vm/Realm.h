@@ -25,7 +25,6 @@
 #include "vm/ArrayBufferObject.h"
 #include "vm/JSContext.h"
 #include "vm/PromiseLookup.h"  // js::PromiseLookup
-#include "vm/RegExpShared.h"
 #include "vm/SavedStacks.h"
 #include "wasm/WasmRealm.h"
 
@@ -34,10 +33,6 @@ namespace js {
 namespace coverage {
 class LCovRealm;
 }  // namespace coverage
-
-namespace jit {
-class JitRealm;
-}  // namespace jit
 
 class AutoRestoreRealmDebugMode;
 class Debugger;
@@ -260,8 +255,6 @@ class JS::Realm : public JS::shadow::Realm {
 
   JSPrincipals* principals_ = nullptr;
 
-  js::UniquePtr<js::jit::JitRealm> jitRealm_;
-
   // Bookkeeping information for debug scope objects.
   js::UniquePtr<js::DebugEnvironments> debugEnvs_;
 
@@ -338,8 +331,6 @@ class JS::Realm : public JS::shadow::Realm {
   // WebAssembly state for the realm.
   js::wasm::Realm wasm;
 
-  js::RegExpRealm regExps;
-
   js::DtoaCache dtoaCache;
   js::NewProxyCache newProxyCache;
   js::NewPlainObjectWithPropsCache newPlainObjectWithPropsCache;
@@ -407,8 +398,7 @@ class JS::Realm : public JS::shadow::Realm {
                               size_t* innerViewsArg,
                               size_t* objectMetadataTablesArg,
                               size_t* savedStacksSet,
-                              size_t* nonSyntacticLexicalEnvironmentsArg,
-                              size_t* jitRealm);
+                              size_t* nonSyntacticLexicalEnvironmentsArg);
 
   JS::Zone* zone() { return zone_; }
   const JS::Zone* zone() const { return zone_; }
@@ -482,7 +472,6 @@ class JS::Realm : public JS::shadow::Realm {
 
   void sweepAfterMinorGC(JSTracer* trc);
   void traceWeakDebugEnvironmentEdges(JSTracer* trc);
-  void traceWeakRegExps(JSTracer* trc);
 
   void clearScriptCounts();
   void clearScriptLCov();
@@ -694,11 +683,6 @@ class JS::Realm : public JS::shadow::Realm {
 
   mozilla::HashCodeScrambler randomHashCodeScrambler();
 
-  bool ensureJitRealmExists(JSContext* cx);
-  void traceWeakEdgesInJitRealm(JSTracer* trc);
-
-  js::jit::JitRealm* jitRealm() { return jitRealm_.get(); }
-
   js::DebugEnvironments* debugEnvs() { return debugEnvs_.get(); }
   js::UniquePtr<js::DebugEnvironments>& debugEnvsRef() { return debugEnvs_; }
 
@@ -718,11 +702,8 @@ class JS::Realm : public JS::shadow::Realm {
   static constexpr size_t offsetOfCompartment() {
     return offsetof(JS::Realm, compartment_);
   }
-  static constexpr size_t offsetOfRegExps() {
-    return offsetof(JS::Realm, regExps);
-  }
-  static constexpr size_t offsetOfJitRealm() {
-    return offsetof(JS::Realm, jitRealm_);
+  static constexpr size_t offsetOfAllocationMetadataBuilder() {
+    return offsetof(JS::Realm, allocationMetadataBuilder_);
   }
   static constexpr size_t offsetOfDebugModeBits() {
     return offsetof(JS::Realm, debugModeBits_);
@@ -866,7 +847,6 @@ class MOZ_RAII AutoSetNewObjectMetadata {
  public:
   explicit inline AutoSetNewObjectMetadata(JSContext* cx) : cx_(cx) {
 #ifdef DEBUG
-    MOZ_ASSERT(cx->isMainThreadContext());
     MOZ_ASSERT(!cx->realm()->hasObjectPendingMetadata());
     cx_->realm()->incNumActiveAutoSetNewObjectMetadata();
 #endif

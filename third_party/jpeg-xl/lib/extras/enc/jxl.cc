@@ -5,6 +5,7 @@
 
 #include "lib/extras/enc/jxl.h"
 
+#include <jxl/encode.h>
 #include <jxl/encode_cxx.h>
 
 #include "lib/jxl/exif.h"
@@ -62,6 +63,13 @@ bool EncodeImageJXL(const JXLCompressParams& params, const PackedPixelFile& ppf,
     fprintf(stderr, "Setting frame distance failed.\n");
     return false;
   }
+  if (params.debug_image) {
+    JxlEncoderSetDebugImageCallback(settings, params.debug_image,
+                                    params.debug_image_opaque);
+  }
+  if (params.stats) {
+    JxlEncoderCollectStats(settings, params.stats);
+  }
 
   bool use_boxes = !ppf.metadata.exif.empty() || !ppf.metadata.xmp.empty() ||
                    !ppf.metadata.jumbf.empty() || !ppf.metadata.iptc.empty();
@@ -80,14 +88,42 @@ bool EncodeImageJXL(const JXLCompressParams& params, const PackedPixelFile& ppf,
       fprintf(stderr, "Storing JPEG metadata failed.\n");
       return false;
     }
+    if (!params.jpeg_store_metadata && params.jpeg_strip_exif) {
+      JxlEncoderFrameSettingsSetOption(settings,
+                                       JXL_ENC_FRAME_SETTING_JPEG_KEEP_EXIF, 0);
+    }
+    if (!params.jpeg_store_metadata && params.jpeg_strip_xmp) {
+      JxlEncoderFrameSettingsSetOption(settings,
+                                       JXL_ENC_FRAME_SETTING_JPEG_KEEP_XMP, 0);
+    }
+    if (params.jpeg_strip_jumbf) {
+      JxlEncoderFrameSettingsSetOption(
+          settings, JXL_ENC_FRAME_SETTING_JPEG_KEEP_JUMBF, 0);
+    }
     if (JXL_ENC_SUCCESS != JxlEncoderAddJPEGFrame(settings, jpeg_bytes->data(),
                                                   jpeg_bytes->size())) {
-      fprintf(stderr, "JxlEncoderAddJPEGFrame() failed.\n");
+      JxlEncoderError error = JxlEncoderGetError(enc);
+      if (error == JXL_ENC_ERR_BAD_INPUT) {
+        fprintf(stderr,
+                "Error while decoding the JPEG image. It may be corrupt (e.g. "
+                "truncated) or of an unsupported type (e.g. CMYK).\n");
+      } else if (error == JXL_ENC_ERR_JBRD) {
+        fprintf(stderr,
+                "JPEG bitstream reconstruction data could not be created. "
+                "Possibly there is too much tail data.\n"
+                "Try using --jpeg_store_metadata 0, to losslessly "
+                "recompress the JPEG image data without bitstream "
+                "reconstruction data.\n");
+      } else {
+        fprintf(stderr, "JxlEncoderAddJPEGFrame() failed.\n");
+      }
       return false;
     }
   } else {
     size_t num_alpha_channels = 0;  // Adjusted below.
     JxlBasicInfo basic_info = ppf.info;
+    basic_info.xsize *= params.already_downsampled;
+    basic_info.ysize *= params.already_downsampled;
     if (basic_info.alpha_bits > 0) num_alpha_channels = 1;
     if (params.intensity_target > 0) {
       basic_info.intensity_target = params.intensity_target;
@@ -109,6 +145,12 @@ bool EncodeImageJXL(const JXLCompressParams& params, const PackedPixelFile& ppf,
     }
     if (JXL_ENC_SUCCESS != JxlEncoderSetBasicInfo(enc, &basic_info)) {
       fprintf(stderr, "JxlEncoderSetBasicInfo() failed.\n");
+      return false;
+    }
+    if (JXL_ENC_SUCCESS !=
+        JxlEncoderSetUpsamplingMode(enc, params.already_downsampled,
+                                    params.upsampling_mode)) {
+      fprintf(stderr, "JxlEncoderSetUpsamplingMode() failed.\n");
       return false;
     }
     if (JXL_ENC_SUCCESS !=

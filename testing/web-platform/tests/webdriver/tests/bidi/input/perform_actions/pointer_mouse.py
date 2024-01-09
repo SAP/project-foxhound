@@ -1,12 +1,19 @@
 import pytest
 
 from webdriver.bidi.modules.input import Actions, get_element_origin
+from webdriver.bidi.modules.script import ContextTarget
 
 from tests.support.asserts import assert_move_to_coordinates
 from tests.support.helpers import filter_dict
 
 from .. import get_events
-from . import get_element_rect, get_inview_center_bidi
+from . import (
+    assert_pointer_events,
+    get_element_rect,
+    get_inview_center_bidi,
+    get_shadow_root_from_test_page,
+    record_pointer_events,
+)
 
 pytestmark = pytest.mark.asyncio
 
@@ -117,6 +124,53 @@ async def test_click_element_center(
             assert e["target"] == "outer"
 
 
+@pytest.mark.parametrize("mode", ["open", "closed"])
+@pytest.mark.parametrize("nested", [False, True], ids=["outer", "inner"])
+async def test_click_element_in_shadow_tree(
+    bidi_session, top_context, get_test_page, mode, nested
+):
+    await bidi_session.browsing_context.navigate(
+        context=top_context["context"],
+        url=get_test_page(
+            shadow_doc="""
+            <div id="pointer-target"
+                 style="width: 10px; height: 10px; background-color:blue;">
+            </div>""",
+            shadow_root_mode=mode,
+            nested_shadow_dom=nested,
+        ),
+        wait="complete",
+    )
+
+    shadow_root = await get_shadow_root_from_test_page(
+        bidi_session, top_context, nested
+    )
+
+    target = await record_pointer_events(
+        bidi_session, top_context, shadow_root, "#pointer-target"
+    )
+
+    actions = Actions()
+    (
+        actions.add_pointer()
+        .pointer_move(x=0, y=0, origin=get_element_origin(target))
+        .pointer_down(button=0)
+        .pointer_up(button=0)
+    )
+
+    await bidi_session.input.perform_actions(
+        actions=actions, context=top_context["context"]
+    )
+
+    await assert_pointer_events(
+        bidi_session,
+        top_context,
+        expected_events=["pointerdown", "pointerup"],
+        target="pointer-target",
+        pointer_type="mouse",
+    )
+
+
 async def test_click_navigation(
     bidi_session,
     top_context,
@@ -211,11 +265,12 @@ async def test_drag_and_drop(
 
 
 @pytest.mark.parametrize("drag_duration", [0, 300, 800])
-async def test_drag_and_drop_with_draggable_element(
-    bidi_session, top_context, get_element, load_static_test_page, drag_duration
-):
-    new_context = await bidi_session.browsing_context.create(type_hint="window")
-    await load_static_test_page(page="test_actions.html", context=new_context)
+async def test_drag_and_drop_with_draggable_element(bidi_session, top_context,
+                                                    get_element,
+                                                    load_static_test_page,
+                                                    drag_duration):
+    await load_static_test_page(page="test_actions.html")
+
     drag_target = await get_element("#draggable")
     drop_target = await get_element("#droppable")
 
@@ -226,29 +281,59 @@ async def test_drag_and_drop_with_draggable_element(
         actions.add_pointer()
         .pointer_move(x=0, y=0, origin=get_element_origin(drag_target))
         .pointer_down(button=0)
-        .pointer_move(
-            x=50, y=25, duration=drag_duration, origin=get_element_origin(drop_target)
-        )
+        .pointer_move(x=0, y=0, duration=drag_duration, origin=get_element_origin(drop_target))
         .pointer_up(button=0)
-        .pointer_move(80, 50, duration=100, origin="pointer")
     )
 
-    await bidi_session.input.perform_actions(
-        actions=actions, context=new_context["context"]
-    )
+    await bidi_session.input.perform_actions(actions=actions,
+                                             context=top_context["context"])
 
     # mouseup that ends the drag is at the expected destination
-    events = await get_events(bidi_session, new_context["context"])
+    events = await get_events(bidi_session, top_context["context"])
 
-    assert len(events) >= 5
-    assert events[1]["type"] == "dragstart", f"Events captured were {events}"
-    assert events[2]["type"] == "dragover", f"Events captured were {events}"
     drag_events_captured = [
-        ev["type"]
-        for ev in events
+        ev["type"] for ev in events
         if ev["type"].startswith("drag") or ev["type"].startswith("drop")
     ]
-    assert "dragend" in drag_events_captured
+    assert "dragstart" in drag_events_captured
     assert "dragenter" in drag_events_captured
-    assert "dragleave" in drag_events_captured
+    # dragleave never happens if the mouse moves directly into the drop element
+    # without intermediate movements.
+    if drag_duration != 0:
+        assert "dragleave" in drag_events_captured
+    assert "dragover" in drag_events_captured
     assert "drop" in drag_events_captured
+    assert "dragend" in drag_events_captured
+
+    def last_index(list, value):
+        return len(list) - list[::-1].index(value) - 1
+
+    # The order should follow the diagram:
+    #
+    #  - dragstart
+    #  - dragenter
+    #  - ...
+    #  - dragenter
+    #  - dragleave
+    #  - ...
+    #  - dragleave
+    #  - dragover
+    #  - ...
+    #  - dragover
+    #  - drop
+    #  - dragend
+    #
+    assert drag_events_captured.index(
+        "dragstart") < drag_events_captured.index("dragenter")
+    if drag_duration != 0:
+        assert last_index(drag_events_captured,
+                      "dragenter") < last_index(drag_events_captured, "dragleave")
+        assert last_index(drag_events_captured,
+                      "dragleave") < last_index(drag_events_captured, "dragover")
+    else:
+        assert last_index(drag_events_captured,
+                      "dragenter") < last_index(drag_events_captured, "dragover")
+    assert last_index(drag_events_captured,
+                  "dragover") < drag_events_captured.index("drop")
+    assert drag_events_captured.index(
+        "drop") == drag_events_captured.index("dragend") - 1

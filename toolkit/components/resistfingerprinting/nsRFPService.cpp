@@ -24,6 +24,7 @@
 #include "mozilla/Atomics.h"
 #include "mozilla/Casting.h"
 #include "mozilla/ClearOnShutdown.h"
+#include "mozilla/glean/GleanMetrics.h"
 #include "mozilla/HashFunctions.h"
 #include "mozilla/HelperMacros.h"
 #include "mozilla/Likely.h"
@@ -85,15 +86,9 @@ using namespace mozilla;
 static mozilla::LazyLogModule gResistFingerprintingLog(
     "nsResistFingerprinting");
 
-#define RESIST_FINGERPRINTING_PREF "privacy.resistFingerprinting"
-#define RESIST_FINGERPRINTING_PBMODE_PREF "privacy.resistFingerprinting.pbmode"
-#define RESIST_FINGERPRINTINGPROTECTION_PREF "privacy.fingerprintingProtection"
-#define RESIST_FINGERPRINTINGPROTECTION_PBMODE_PREF \
-  "privacy.fingerprintingProtection.pbmode"
 #define RESIST_FINGERPRINTINGPROTECTION_OVERRIDE_PREF \
   "privacy.fingerprintingProtection.overrides"
 #define RFP_TIMER_UNCONDITIONAL_VALUE 20
-#define PROFILE_INITIALIZED_TOPIC "profile-initial-state"
 #define LAST_PB_SESSION_EXITED_TOPIC "last-pb-context-exited"
 
 static constexpr uint32_t kVideoFramesPerSec = 30;
@@ -104,8 +99,13 @@ static constexpr uint32_t kVideoDroppedRatio = 5;
 
 // Fingerprinting protections that are enabled by default. This can be
 // overridden using the privacy.fingerprintingProtection.overrides pref.
-const uint32_t kDefaultFingerintingProtections =
-    uint32_t(RFPTarget::CanvasRandomization);
+#ifdef NIGHTLY_BUILD
+const RFPTarget kDefaultFingerintingProtections =
+    RFPTarget::CanvasRandomization | RFPTarget::FontVisibilityLangPack;
+#else
+const RFPTarget kDefaultFingerintingProtections =
+    RFPTarget::FontVisibilityLangPack;
+#endif
 
 // ============================================================================
 // ============================================================================
@@ -118,7 +118,7 @@ static StaticRefPtr<nsRFPService> sRFPService;
 static bool sInitialized = false;
 
 // Actually enabled fingerprinting protections.
-static Atomic<uint32_t> sEnabledFingerintingProtections;
+static Atomic<RFPTarget> sEnabledFingerintingProtections;
 
 /* static */
 nsRFPService* nsRFPService::GetOrCreate() {
@@ -139,10 +139,6 @@ nsRFPService* nsRFPService::GetOrCreate() {
 }
 
 static const char* gCallbackPrefs[] = {
-    RESIST_FINGERPRINTING_PREF,
-    RESIST_FINGERPRINTING_PBMODE_PREF,
-    RESIST_FINGERPRINTINGPROTECTION_PREF,
-    RESIST_FINGERPRINTINGPROTECTION_PBMODE_PREF,
     RESIST_FINGERPRINTINGPROTECTION_OVERRIDE_PREF,
     nullptr,
 };
@@ -166,28 +162,33 @@ nsresult nsRFPService::Init() {
     NS_ENSURE_SUCCESS(rv, rv);
   }
 
-#if defined(XP_WIN)
-  rv = obs->AddObserver(this, PROFILE_INITIALIZED_TOPIC, false);
-  NS_ENSURE_SUCCESS(rv, rv);
-#endif
-
   Preferences::RegisterCallbacks(nsRFPService::PrefChanged, gCallbackPrefs,
                                  this);
-  // We backup the original TZ value here.
-  const char* tzValue = PR_GetEnv("TZ");
-  if (tzValue != nullptr) {
-    mInitialTZValue = nsCString(tzValue);
-  }
 
-  // Call Update here to cache the values of the prefs and set the timezone.
-  UpdateRFPPref();
+  JS::SetReduceMicrosecondTimePrecisionCallback(
+      nsRFPService::ReduceTimePrecisionAsUSecsWrapper);
+
+  // Called from here to get the initial list of enabled fingerprinting
+  // protections.
   UpdateFPPOverrideList();
 
   return rv;
 }
 
 /* static */
+bool nsRFPService::IsRFPPrefEnabled(bool aIsPrivateMode) {
+  if (StaticPrefs::privacy_resistFingerprinting_DoNotUseDirectly() ||
+      (aIsPrivateMode &&
+       StaticPrefs::privacy_resistFingerprinting_pbmode_DoNotUseDirectly())) {
+    return true;
+  }
+  return false;
+}
+
+/* static */
 bool nsRFPService::IsRFPEnabledFor(RFPTarget aTarget) {
+  MOZ_ASSERT(aTarget != RFPTarget::AllTargets);
+
   if (StaticPrefs::privacy_resistFingerprinting_DoNotUseDirectly() ||
       StaticPrefs::privacy_resistFingerprinting_pbmode_DoNotUseDirectly()) {
     return true;
@@ -198,119 +199,52 @@ bool nsRFPService::IsRFPEnabledFor(RFPTarget aTarget) {
     if (aTarget == RFPTarget::IsAlwaysEnabledForPrecompute) {
       return true;
     }
-    // All not yet explicitly defined targets are disabled by default (no
-    // fingerprinting protection).
-    if (aTarget == RFPTarget::Unknown) {
-      return false;
-    }
-    return sEnabledFingerintingProtections & uint32_t(aTarget);
+    return bool(sEnabledFingerintingProtections & aTarget);
   }
 
   return false;
-}
-
-// This function updates every fingerprinting item necessary except
-// timing-related
-void nsRFPService::UpdateRFPPref() {
-  MOZ_ASSERT(NS_IsMainThread());
-
-  bool resistFingerprinting = nsContentUtils::ShouldResistFingerprinting();
-
-  JS::SetReduceMicrosecondTimePrecisionCallback(
-      nsRFPService::ReduceTimePrecisionAsUSecsWrapper);
-
-  // The JavaScript engine can already set the timezone per realm/global,
-  // but we think there are still other users of libc that rely
-  // on the TZ environment variable.
-  if (!StaticPrefs::privacy_resistFingerprinting_testing_setTZtoUTC()) {
-    return;
-  }
-
-  if (resistFingerprinting) {
-    PR_SetEnv("TZ=UTC");
-  } else if (sInitialized) {
-    // We will not touch the TZ value if 'privacy.resistFingerprinting' is false
-    // during the time of initialization.
-    if (!mInitialTZValue.IsEmpty()) {
-      nsAutoCString tzValue = "TZ="_ns + mInitialTZValue;
-      static char* tz = nullptr;
-
-      // If the tz has been set before, we free it first since it will be
-      // allocated a new value later.
-      if (tz != nullptr) {
-        free(tz);
-      }
-      // PR_SetEnv() needs the input string been leaked intentionally, so
-      // we copy it here.
-      tz = ToNewCString(tzValue, mozilla::fallible);
-      if (tz != nullptr) {
-        PR_SetEnv(tz);
-      }
-    } else {
-#if defined(XP_WIN)
-      // For Windows, we reset the TZ to an empty string. This will make Windows
-      // to use its system timezone.
-      PR_SetEnv("TZ=");
-#else
-      // For POSIX like system, we reset the TZ to the /etc/localtime, which is
-      // the system timezone.
-      PR_SetEnv("TZ=:/etc/localtime");
-#endif
-    }
-  }
-
-  // If and only if the time zone was changed above, propagate the change to the
-  // <time.h> functions and the JS runtime.
-  if (resistFingerprinting || sInitialized) {
-    // localtime_r (and other functions) may not call tzset, so do this here
-    // after changing TZ to ensure all <time.h> functions use the new time zone.
-#if defined(XP_WIN)
-    _tzset();
-#else
-    tzset();
-#endif
-
-    nsJSUtils::ResetTimeZone();
-  }
 }
 
 void nsRFPService::UpdateFPPOverrideList() {
   nsAutoString targetOverrides;
   nsresult rv = Preferences::GetString(
       RESIST_FINGERPRINTINGPROTECTION_OVERRIDE_PREF, targetOverrides);
-  if (!NS_SUCCEEDED(rv) || targetOverrides.IsEmpty()) {
+  if (NS_WARN_IF(NS_FAILED(rv))) {
     MOZ_LOG(gResistFingerprintingLog, LogLevel::Warning,
-            ("Could not map any values"));
+            ("Could not get fingerprinting override pref value"));
     return;
   }
 
-  uint32_t enabled = kDefaultFingerintingProtections;
+  RFPTarget enabled = kDefaultFingerintingProtections;
   for (const nsAString& each : targetOverrides.Split(',')) {
     Maybe<RFPTarget> mappedValue =
         nsRFPService::TextToRFPTarget(Substring(each, 1, each.Length() - 1));
     if (mappedValue.isSome()) {
       RFPTarget target = mappedValue.value();
-      if (target == RFPTarget::IsAlwaysEnabledForPrecompute ||
-          target == RFPTarget::Unknown) {
+      if (target == RFPTarget::IsAlwaysEnabledForPrecompute) {
         MOZ_LOG(gResistFingerprintingLog, LogLevel::Warning,
                 ("RFPTarget::%s is not a valid value",
                  NS_ConvertUTF16toUTF8(each).get()));
       } else if (each[0] == '+') {
-        enabled |= uint32_t(target);
+        enabled |= target;
         MOZ_LOG(gResistFingerprintingLog, LogLevel::Warning,
-                ("Mapped value %s (0x%08x), to an addition, now we have 0x%08x",
-                 NS_ConvertUTF16toUTF8(each).get(), unsigned(target), enabled));
+                ("Mapped value %s (0x%" PRIx64
+                 "), to an addition, now we have 0x%" PRIx64,
+                 NS_ConvertUTF16toUTF8(each).get(), uint64_t(target),
+                 uint64_t(enabled)));
       } else if (each[0] == '-') {
-        enabled &= ~uint32_t(target);
-        MOZ_LOG(
-            gResistFingerprintingLog, LogLevel::Warning,
-            ("Mapped value %s (0x%08x) to a subtraction, now we have 0x%08x",
-             NS_ConvertUTF16toUTF8(each).get(), unsigned(target), enabled));
+        enabled &= ~target;
+        MOZ_LOG(gResistFingerprintingLog, LogLevel::Warning,
+                ("Mapped value %s (0x%" PRIx64
+                 ") to a subtraction, now we have 0x%" PRIx64,
+                 NS_ConvertUTF16toUTF8(each).get(), uint64_t(target),
+                 uint64_t(enabled)));
       } else {
         MOZ_LOG(gResistFingerprintingLog, LogLevel::Warning,
-                ("Mapped value %s (0x%08x) to an RFPTarget Enum, but the first "
+                ("Mapped value %s (0x%" PRIx64
+                 ") to an RFPTarget Enum, but the first "
                  "character wasn't + or -",
-                 NS_ConvertUTF16toUTF8(each).get(), unsigned(target)));
+                 NS_ConvertUTF16toUTF8(each).get(), uint64_t(target)));
       }
     } else {
       MOZ_LOG(gResistFingerprintingLog, LogLevel::Warning,
@@ -362,18 +296,6 @@ void nsRFPService::PrefChanged(const char* aPref) {
 
   if (pref.EqualsLiteral(RESIST_FINGERPRINTINGPROTECTION_OVERRIDE_PREF)) {
     UpdateFPPOverrideList();
-  } else {
-    UpdateRFPPref();
-
-#if defined(XP_WIN)
-    if (StaticPrefs::privacy_resistFingerprinting_testing_setTZtoUTC() &&
-        !XRE_IsE10sParentProcess()) {
-      // Windows does not follow POSIX. Updates to the TZ environment variable
-      // are not reflected immediately on that platform as they are on UNIX
-      // systems without this call.
-      _tzset();
-    }
-#endif
   }
 }
 
@@ -383,25 +305,6 @@ nsRFPService::Observe(nsISupports* aObject, const char* aTopic,
   if (strcmp(NS_XPCOM_SHUTDOWN_OBSERVER_ID, aTopic) == 0) {
     StartShutdown();
   }
-#if defined(XP_WIN)
-  else if (!strcmp(PROFILE_INITIALIZED_TOPIC, aTopic)) {
-    // If we're e10s, then we don't need to run this, since the child process
-    // will simply inherit the environment variable from the parent process, in
-    // which case it's unnecessary to call _tzset().
-    if (XRE_IsParentProcess() && !XRE_IsE10sParentProcess()) {
-      // Windows does not follow POSIX. Updates to the TZ environment variable
-      // are not reflected immediately on that platform as they are on UNIX
-      // systems without this call.
-      _tzset();
-    }
-
-    nsCOMPtr<nsIObserverService> obs = mozilla::services::GetObserverService();
-    NS_ENSURE_TRUE(obs, NS_ERROR_NOT_AVAILABLE);
-
-    nsresult rv = obs->RemoveObserver(this, PROFILE_INITIALIZED_TOPIC);
-    NS_ENSURE_SUCCESS(rv, rv);
-  }
-#endif
 
   if (strcmp(LAST_PB_SESSION_EXITED_TOPIC, aTopic) == 0) {
     // Clear the private session key when the private session ends so that we
@@ -763,21 +666,13 @@ double nsRFPService::ReduceTimePrecisionAsSecsRFPOnly(
 }
 
 /* static */
-double nsRFPService::ReduceTimePrecisionAsUSecsWrapper(
-    double aTime, bool aShouldResistFingerprinting, JSContext* aCx) {
+double nsRFPService::ReduceTimePrecisionAsUSecsWrapper(double aTime,
+                                                       JSContext* aCx) {
   MOZ_ASSERT(aCx);
 
   nsCOMPtr<nsIGlobalObject> global = xpc::CurrentNativeGlobal(aCx);
   MOZ_ASSERT(global);
-
-  RTPCallerType callerType;
-  if (aShouldResistFingerprinting) {
-    callerType = RTPCallerType::ResistFingerprinting;
-  } else if (global->CrossOriginIsolated()) {
-    callerType = RTPCallerType::CrossOriginIsolated;
-  } else {
-    callerType = RTPCallerType::Normal;
-  }
+  RTPCallerType callerType = global->GetRTPCallerType();
   return nsRFPService::ReduceTimePrecisionImpl(
       aTime, MicroSeconds, TimerResolution(callerType),
       0, /* For absolute timestamps (all the JS engine does), supply zero
@@ -1250,7 +1145,12 @@ nsresult nsRFPService::EnsureSessionKey(bool aIsPrivate) {
           ("Ensure the session key for %s browsing session\n",
            aIsPrivate ? "private" : "normal"));
 
-  if (!StaticPrefs::privacy_resistFingerprinting_randomization_enabled()) {
+  // If any fingerprinting randomization protection is enabled, we generate the
+  // session key.
+  // Note that there is only canvas randomization protection currently.
+  if (!nsContentUtils::ShouldResistFingerprinting(
+          "Checking the target activation globally without local context",
+          RFPTarget::CanvasRandomization)) {
     return NS_ERROR_NOT_AVAILABLE;
   }
 
@@ -1285,44 +1185,53 @@ void nsRFPService::ClearSessionKey(bool aIsPrivate) {
 }
 
 // static
-Maybe<nsTArray<uint8_t>> nsRFPService::GenerateKey(nsIURI* aTopLevelURI,
-                                                   bool aIsPrivate) {
+Maybe<nsTArray<uint8_t>> nsRFPService::GenerateKey(nsIChannel* aChannel) {
   MOZ_ASSERT(XRE_IsParentProcess());
-  MOZ_ASSERT(aTopLevelURI);
+  MOZ_ASSERT(aChannel);
+
+#ifdef DEBUG
+  // Ensure we only compute random key for top-level loads.
+  {
+    nsCOMPtr<nsILoadInfo> loadInfo = aChannel->LoadInfo();
+    MOZ_ASSERT(loadInfo->GetExternalContentPolicyType() ==
+               ExtContentPolicy::TYPE_DOCUMENT);
+  }
+#endif
+
+  nsCOMPtr<nsIURI> topLevelURI;
+  Unused << aChannel->GetURI(getter_AddRefs(topLevelURI));
+  bool isPrivate = NS_UsePrivateBrowsing(aChannel);
 
   MOZ_LOG(gResistFingerprintingLog, LogLevel::Debug,
           ("Generating %s randomization key for top-level URI: %s\n",
-           aIsPrivate ? "private" : "normal",
-           aTopLevelURI->GetSpecOrDefault().get()));
+           isPrivate ? "private" : "normal",
+           topLevelURI->GetSpecOrDefault().get()));
 
   RefPtr<nsRFPService> service = GetOrCreate();
 
-  if (NS_FAILED(service->EnsureSessionKey(aIsPrivate))) {
+  if (NS_FAILED(service->EnsureSessionKey(isPrivate))) {
     return Nothing();
   }
 
-  // Return nothing if fingerprinting resistance is disabled or fingerprinting
-  // resistance is exempted from the normal windows. Note that we still need to
-  // generate the key for exempted domains because there could be unexempted
-  // sub-documents that need the key.
+  // Return nothing if fingerprinting randomization is disabled for the given
+  // channel.
+  //
+  // Note that canvas randomization is the only fingerprinting randomization
+  // protection currently.
   if (!nsContentUtils::ShouldResistFingerprinting(
-          "Coarse Efficiency Check", RFPTarget::CanvasRandomization) ||
-      (!aIsPrivate &&
-       StaticPrefs::privacy_resistFingerprinting_testGranularityMask() &
-           0x02 /* NonPBMExemptMask */)) {
+          aChannel, RFPTarget::CanvasRandomization)) {
     return Nothing();
   }
 
-  const nsID& sessionKey = aIsPrivate
-                               ? service->mPrivateBrowsingSessionKey.ref()
-                               : service->mBrowsingSessionKey.ref();
+  const nsID& sessionKey = isPrivate ? service->mPrivateBrowsingSessionKey.ref()
+                                     : service->mBrowsingSessionKey.ref();
 
   auto sessionKeyStr = sessionKey.ToString();
 
   // Using the OriginAttributes to get the site from the top-level URI. The site
   // is composed of scheme, host, and port.
   OriginAttributes attrs;
-  attrs.SetPartitionKey(aTopLevelURI);
+  attrs.SetPartitionKey(topLevelURI);
 
   // Generate the key by using the hMAC. The key is based on the session key and
   // the partitionKey, i.e. top-level site.
@@ -1401,10 +1310,17 @@ nsresult nsRFPService::RandomizePixels(nsICookieJarSettings* aCookieJarSettings,
     return NS_OK;
   }
 
+  auto timerId =
+      glean::fingerprinting_protection::canvas_noise_calculate_time.Start();
+
   nsTArray<uint8_t> canvasKey;
   nsresult rv = GenerateCanvasKeyFromImageData(aCookieJarSettings, aData, aSize,
                                                canvasKey);
-  NS_ENSURE_SUCCESS(rv, rv);
+  if (NS_FAILED(rv)) {
+    glean::fingerprinting_protection::canvas_noise_calculate_time.Cancel(
+        std::move(timerId));
+    return rv;
+  }
 
   // Calculate the number of pixels based on the given data size. One pixel uses
   // 4 bytes that contains ARGB information.
@@ -1456,6 +1372,9 @@ nsresult nsRFPService::RandomizePixels(nsICookieJarSettings* aCookieJarSettings,
 
     aData[idx] = aData[idx] ^ (bit & 0x1);
   }
+
+  glean::fingerprinting_protection::canvas_noise_calculate_time
+      .StopAndAccumulate(std::move(timerId));
 
   return NS_OK;
 }

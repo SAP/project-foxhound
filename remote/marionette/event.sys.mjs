@@ -4,8 +4,6 @@
 
 /* eslint-disable no-restricted-globals */
 
-import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
-
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
@@ -15,7 +13,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
 /** Provides functionality for creating and sending DOM events. */
 export const event = {};
 
-XPCOMUtils.defineLazyGetter(lazy, "dblclickTimer", () => {
+ChromeUtils.defineLazyGetter(lazy, "dblclickTimer", () => {
   return Cc["@mozilla.org/timer;1"].createInstance(Ci.nsITimer);
 });
 
@@ -96,11 +94,6 @@ event.DoubleClickTracker = {
   },
 };
 
-// Only used by legacyactions.js
-event.parseModifiers_ = function (modifiers, win) {
-  return _getEventUtils(win)._parseModifiers(modifiers);
-};
-
 /**
  * Synthesise a mouse event at a point.
  *
@@ -164,6 +157,20 @@ event.synthesizeTouchAtPoint = function (left, top, opts, win) {
  *     Window object.
  */
 event.synthesizeWheelAtPoint = function (left, top, opts, win) {
+  const dpr = win.devicePixelRatio;
+
+  // All delta properties expect the value in device pixels while the
+  // WebDriver specification uses CSS pixels.
+  if (typeof opts.deltaX !== "undefined") {
+    opts.deltaX *= dpr;
+  }
+  if (typeof opts.deltaY !== "undefined") {
+    opts.deltaY *= dpr;
+  }
+  if (typeof opts.deltaZ !== "undefined") {
+    opts.deltaZ *= dpr;
+  }
+
   return _getEventUtils(win).synthesizeWheelAtPoint(left, top, opts, win);
 };
 

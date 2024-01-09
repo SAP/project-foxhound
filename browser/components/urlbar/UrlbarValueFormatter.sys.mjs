@@ -5,16 +5,11 @@
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
+  BrowserUIUtils: "resource:///modules/BrowserUIUtils.sys.mjs",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
   UrlbarPrefs: "resource:///modules/UrlbarPrefs.sys.mjs",
   UrlbarUtils: "resource:///modules/UrlbarUtils.sys.mjs",
 });
-
-ChromeUtils.defineModuleGetter(
-  lazy,
-  "BrowserUIUtils",
-  "resource:///modules/BrowserUIUtils.jsm"
-);
 
 /**
  * Applies URL highlighting and other styling to the text in the urlbar input,
@@ -268,14 +263,18 @@ export class UrlbarValueFormatter {
    */
   _formatURL() {
     let urlMetaData = this._getUrlMetaData();
-    if (!urlMetaData) {
+    if (!urlMetaData || this.window.gBrowser.selectedBrowser.searchTerms) {
       return false;
     }
 
     let { domain, origin, preDomain, schemeWSlashes, trimmedLength, url } =
       urlMetaData;
-    // We strip http, so we should not show the scheme box for it.
-    if (!lazy.UrlbarPrefs.get("trimURLs") || schemeWSlashes != "http://") {
+
+    // When the scheme has been stripped, don't show the box for it.
+    if (
+      !lazy.UrlbarPrefs.get("trimURLs") ||
+      schemeWSlashes != lazy.BrowserUIUtils.trimURLProtocol
+    ) {
       this.scheme.value = schemeWSlashes;
       this.inputField.style.setProperty(
         "--urlbar-scheme-size",

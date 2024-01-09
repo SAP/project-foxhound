@@ -113,6 +113,18 @@ search:
       type: boolean
       setPref: browser.search.serpEventTelemetry.enabled
       description: Whether the Glean SERP event telemetry is enabled.
+    trendingEnabled:
+      type: boolean
+      setPref: browser.urlbar.trending.featureGate
+      description: Feature gate that controls whether trending suggestions are enabled.
+    trendingRequireSearchMode:
+      type: boolean
+      setPref: browser.urlbar.trending.requireSearchMode
+      description: Controls whether trending suggestions are only shown in search mode or not.
+    trendingMaxResultsNoSearchMode:
+      type: int
+      setPref: browser.urlbar.trending.maxResultsNoSearchMode
+      description: The maximum number of trending results mode outside search mode.
 
 # `searchConfiguration` is for search experiment features for items that require
 # isEarlyStartup to be true. These items may require a reload of the search
@@ -199,6 +211,12 @@ urlbar:
       type: boolean
       description: >-
         Whether the experiment (or rollout) is related to best match. If true, then the Nimbus exposure event will be recorded when the user first triggers a best match (or would have triggered a best match, for users in the control group). Deprecated, please use `experimentType: "best-match"` instead.
+    mdnFeatureGate:
+      type: boolean
+      setPref: browser.urlbar.mdn.featureGate
+      description: >-
+        Feature gate that controls whether all aspects of the mdn suggestion
+        feature are exposed to the user.
     merinoClientVariants:
       type: string
       fallbackPref: browser.urlbar.merino.clientVariants
@@ -233,6 +251,19 @@ urlbar:
       setPref: browser.urlbar.showExposureResults
       description: >-
         Boolean used to determine if the results defined in `exposureResults` should be shown in search results. Should be false for Control branch of an experiment.
+    pocketFeatureGate:
+      type: boolean
+      fallbackPref: browser.urlbar.pocket.featureGate
+      description: >-
+        Feature gate that controls whether all aspects of the Pocket suggestions
+        feature are exposed to the user.
+    pocketShowLessFrequentlyCap:
+      type: int
+      description: >-
+        If defined and non-zero, this is the maximum number of times the user
+        will be able to click the "Show less frequently" command for Pocket
+        suggestions. If undefined or zero, the user will be able to click the
+        command without any limit.
     quickSuggestAllowPositionInSuggestions:
       type: boolean
       fallbackPref: browser.urlbar.quicksuggest.allowPositionInSuggestions
@@ -284,6 +315,16 @@ urlbar:
         - history
         - offline
         - online
+    quickSuggestScoreMap:
+      type: json
+      description: >-
+        A JSON object that maps telemetry result types to suggestion scores. If
+        a telemetry result type is present in this map, the client will use the
+        corresponding score as the score for all suggestions of the type,
+        overriding all other sources of scores for the type. In other words,
+        the scores in this map will override scores that are set in remote
+        settings and Merino as well as scores that are hardcoded in the client.
+        Example entries: `"amo": 0.5`, `"adm_sponsored": 0.9`
     quickSuggestShouldShowOnboardingDialog:
       type: boolean
       fallbackPref: browser.urlbar.quicksuggest.shouldShowOnboardingDialog
@@ -373,6 +414,40 @@ frecency:
         last N days, where N is controlled by this variable.
       type: int
       setPref: "places.frecency.origins.alternative.daysCutOff"
+    pagesAlternativeEnable:
+      description: >-
+        Use an alternative ranking algorithm for sorting history and bookmarks
+        among the urlbar results.
+      type: boolean
+      setPref: "places.frecency.pages.alternative.featureGate"
+    pagesNumSampledVisits:
+      description: >-
+        The number of recent visits to sample when calculating the ranking of
+        a page. Examining all the visits would be expensive, so we only sample
+        recent visits.
+      type: int
+      setPref: "places.frecency.pages.alternative.numSampledVisits"
+    pagesHalfLifeDays:
+      description: >-
+        The number of days after which the ranking halves. This implements the
+        "recency" part of the algorithm.
+      type: int
+      setPref: "places.frecency.pages.alternative.halfLifeDays"
+    pagesHighWeight:
+      description: >-
+        The weight to use for the high importance bucket.
+      type: int
+      setPref: "places.frecency.pages.alternative.highWeight"
+    pagesMediumWeight:
+      description: >-
+        The weight to use for the medium importance bucket.
+      type: int
+      setPref: "places.frecency.pages.alternative.mediumWeight"
+    pagesLowWeight:
+      description: >-
+        The weight to use for the low importance bucket.
+      type: int
+      setPref: "places.frecency.pages.alternative.lowWeight"
 
 aboutwelcome:
   description: "The about:welcome page"
@@ -728,6 +803,19 @@ password-autocomplete:
     directMigrateSingleProfile:
       type: boolean
       description: Enable direct migration?
+    firefoxRelayIntegration:
+      type: boolean
+      description: Can show Firefox Relay integration offer?
+
+cm-csv-import:
+  description: Importing logins from CSV files
+  owner: issozi@mozilla.com
+  hasExposure: false
+  variables:
+    csvImport:
+      type: boolean
+      description: Can show CSV Import in about:logins or Migration Wizard
+      setPref: "signon.management.page.fileImport.enabled"
 
 shellService:
   description: "Interface with OS, e.g., pinning and set default"
@@ -765,18 +853,6 @@ upgradeDialog:
       fallbackPref: browser.startup.upgradeDialog.enabled
       description: Is the feature enabled?
 
-readerMode:
-  description: Firefox Reader Mode
-  owner: sdowne@getpocket.com
-  hasExposure: false
-  isEarlyStartup: true
-  variables:
-    pocketCTAVersion:
-      type: string
-      fallbackPref: reader.pocket.ctaVersion
-      description: >-
-        What version of Pocket CTA to show in Reader Mode (Empty string is no
-        CTA)
 cfr:
   description: "A Firefox Messaging System message for the cfr message channel"
   owner: omc@mozilla.com
@@ -824,20 +900,55 @@ spotlight:
     path: "browser/components/newtab/content-src/asrouter/schemas/MessagingExperiment.schema.json"
   variables: {}
 
-# More info about the fx-message-* feature id prototype is available at:
-# https://docs.google.com/document/d/1KdtaNycZL5j240nXofbibm9yKh7qVvu1-uZFLdmYM7Y/
-#
-# Before each Nightly leaves the station for Beta, we're currently
-# experimenting with ensuring that we have enough fx-messages-* messages to
-# accomodate all the rollout possibilities for Release that we're aware of,
-# plus one for a buffer just-in-case.
-#
-# When adding an fxms-message-* feature id, be sure to also add it to the
-# MESSAGING_EXPERIMENTS_DEFAULT_FEATURES list in ASRouter.
+# Before 117, this feature only included one variable, pdfJsTourProgress. So,
+# the minimum version for messaging experiments using this feature ID is 117.
+featureCallout:
+  description: "A Firefox Messaging System message for the Feature Callout message channel"
+  owner: omc@mozilla.com
+  hasExposure: true
+  exposureDescription: >-
+    "Exposure is sent if the message is about to be shown after trigger and targeting conditions on the message matched."
+  isEarlyStartup: false
+  schema:
+    uri: "resource://activity-stream/schemas/MessagingExperiment.schema.json"
+    path: "browser/components/newtab/content-src/asrouter/schemas/MessagingExperiment.schema.json"
+  variables: {}
 
-# currently in use by 107+ exp/rollout pair of Import Bookmarks Infrequent
-# Existing Users with 5 bookmarks:
-# https://experimenter.services.mozilla.com/nimbus/import-infrequent-rollout-make-yourself-at-home/summary
+fullPageTranslation:
+  description: This feature opens a popup panel to offer to translate a page.
+  owner: gtatum@mozilla.com
+  hasExposure: false
+  isEarlyStartup: true
+  variables:
+    boolean:
+      description: Set to true to enable the translations feature
+      type: boolean
+      setPref: browser.translations.enable
+
+fullPageTranslationAutomaticPopup:
+  description: Controls whether the popup automatically shows for translations.
+  owner: gtatum@mozilla.com
+  hasExposure: false
+  isEarlyStartup: true
+  variables:
+    boolean:
+      description: Set to true to automatically popup, and false to only show the button.
+      type: boolean
+      setPref: browser.translations.automaticallyPopup
+
+# fxms-message-* placeholder feature ids
+#
+# https://docs.google.com/spreadsheets/d/119YbeKStLL0Fg2QkK-yN93mrtD1rlneGZGTl_jAwtyw/edit#gid=1903378504
+# has info on using these placeholder feature ids, as well as (very short) instructions on
+# checking to see if we need more (which we do once per Nightly) and how to add them.
+#
+# Instructions for adding a new fxms-message-* placeholder feature id
+# 1) clone an existing one here
+# 2) update the YAML feature id to the next unused number
+# 3) update the YAML description
+# 4) add the new feature id to MESSAGING_EXPERIMENTS_DEFAULT_FEATURES list in MessagingExperimentConstants.sys.mjs
+# 5) add the new feature id and the version it landed to the spreadsheet tab linked to above
+
 fxms-message-1:
   description: "A Firefox Messaging System message"
   owner: omc@mozilla.com
@@ -850,10 +961,6 @@ fxms-message-1:
     path: "browser/components/newtab/content-src/asrouter/schemas/MessagingExperiment.schema.json"
   variables: {}
 
-# next planned use: 110+ exp/rollout pair of Fox Doodle: Pin experiment winner
-# (Existing Users)
-# More info about the fx-message-* feature id prototype is available at:
-# https://docs.google.com/document/d/1KdtaNycZL5j240nXofbibm9yKh7qVvu1-uZFLdmYM7Y/
 fxms-message-2:
   description: "Firefox Messaging System message 2"
   owner: omc@mozilla.com
@@ -866,10 +973,6 @@ fxms-message-2:
     path: "browser/components/newtab/content-src/asrouter/schemas/MessagingExperiment.schema.json"
   variables: {}
 
-# next planned use: 110+ exp/rollout pair of Fox Doodle: Set Default (Existing
-# Users)
-# More info about the fx-message-* feature id prototype is available at:
-# https://docs.google.com/document/d/1KdtaNycZL5j240nXofbibm9yKh7qVvu1-uZFLdmYM7Y/
 fxms-message-3:
   description: "Firefox Messaging System message 3"
   owner: omc@mozilla.com
@@ -882,11 +985,6 @@ fxms-message-3:
     path: "browser/components/newtab/content-src/asrouter/schemas/MessagingExperiment.schema.json"
   variables: {}
 
-# next potential planned use: 111+ exp/rollout pair for PDF annotations callout
-# (https://mozilla-hub.atlassian.net/browse/FXE-83) experiment.
-#
-# More info about the fx-message-* feature id prototype is available at:
-# https://docs.google.com/document/d/1KdtaNycZL5j240nXofbibm9yKh7qVvu1-uZFLdmYM7Y/
 fxms-message-4:
   description: "Firefox Messaging System message 4"
   owner: omc@mozilla.com
@@ -899,11 +997,6 @@ fxms-message-4:
     path: "browser/components/newtab/content-src/asrouter/schemas/MessagingExperiment.schema.json"
   variables: {}
 
-# next potential planned use: 112+ holdback/rollout pair for default PDF handler
-# (https://mozilla-hub.atlassian.net/browse/FXE-91) experiment.
-#
-# More info about the fx-message-* feature id prototype is available at:
-# https://docs.google.com/document/d/1KdtaNycZL5j240nXofbibm9yKh7qVvu1-uZFLdmYM7Y/
 fxms-message-5:
   description: "Firefox Messaging System message 5"
   owner: omc@mozilla.com
@@ -916,11 +1009,6 @@ fxms-message-5:
     path: "browser/components/newtab/content-src/asrouter/schemas/MessagingExperiment.schema.json"
   variables: {}
 
-# next potential planned use: 114+ possible holdback/rollout pair (Device Migration):
-# https://mozilla-hub.atlassian.net/browse/FXE-271
-#
-# More info about the fx-message-* feature id prototype is available at:
-# https://docs.google.com/document/d/1KdtaNycZL5j240nXofbibm9yKh7qVvu1-uZFLdmYM7Y/
 fxms-message-6:
   description: "Firefox Messaging System message 6"
   owner: omc@mozilla.com
@@ -933,10 +1021,6 @@ fxms-message-6:
     path: "browser/components/newtab/content-src/asrouter/schemas/MessagingExperiment.schema.json"
   variables: {}
 
-# next planned use: buffer, for the unexpected
-#
-# More info about the fx-message-* feature id prototype is available at:
-# https://docs.google.com/document/d/1KdtaNycZL5j240nXofbibm9yKh7qVvu1-uZFLdmYM7Y/
 fxms-message-7:
   description: "Firefox Messaging System message 7"
   owner: omc@mozilla.com
@@ -949,11 +1033,6 @@ fxms-message-7:
     path: "browser/components/newtab/content-src/asrouter/schemas/MessagingExperiment.schema.json"
   variables: {}
 
-
-# next planned use: buffer, for the unexpected
-#
-# More info about the fx-message-* feature id prototype is available at:
-# https://docs.google.com/document/d/1KdtaNycZL5j240nXofbibm9yKh7qVvu1-uZFLdmYM7Y/
 fxms-message-8:
   description: "Firefox Messaging System message 8"
   owner: omc@mozilla.com
@@ -966,10 +1045,6 @@ fxms-message-8:
     path: "browser/components/newtab/content-src/asrouter/schemas/MessagingExperiment.schema.json"
   variables: {}
 
-# next planned use: buffer, for the unexpected
-#
-# More info about the fx-message-* feature id prototype is available at:
-# https://docs.google.com/document/d/1KdtaNycZL5j240nXofbibm9yKh7qVvu1-uZFLdmYM7Y/
 fxms-message-9:
   description: "Firefox Messaging System message 9"
   owner: omc@mozilla.com
@@ -982,10 +1057,6 @@ fxms-message-9:
     path: "browser/components/newtab/content-src/asrouter/schemas/MessagingExperiment.schema.json"
   variables: {}
 
-# next planned use: buffer, for the unexpected
-#
-# More info about the fx-message-* feature id prototype is available at:
-# https://docs.google.com/document/d/1KdtaNycZL5j240nXofbibm9yKh7qVvu1-uZFLdmYM7Y/
 fxms-message-10:
   description: "Firefox Messaging System message 10"
   owner: omc@mozilla.com
@@ -998,10 +1069,6 @@ fxms-message-10:
     path: "browser/components/newtab/content-src/asrouter/schemas/MessagingExperiment.schema.json"
   variables: {}
 
-# next planned use: buffer, for the unexpected
-#
-# More info about the fx-message-* feature id prototype is available at:
-# https://docs.google.com/document/d/1KdtaNycZL5j240nXofbibm9yKh7qVvu1-uZFLdmYM7Y/
 fxms-message-11:
   description: "Firefox Messaging System message 11"
   owner: omc@mozilla.com
@@ -1063,21 +1130,38 @@ pictureinpicture:
       description: Duration of PiP first time toggle display in days before switching to PiP icon toggle
 
 glean:
-  description: "The Glean data collection SDK within Firefox Desktop"
+  description: "The Glean data-control-plane feature within Firefox Desktop for controlling metric configuration"
   owner: glean-team@mozilla.com
   hasExposure: false
   variables:
-    finalInactive:
-      type: "boolean"
-      description: "Enables FOG early shutdown pings when true"
     newtabPingEnabled:
       type: "boolean"
       fallbackPref: "browser.newtabpage.ping.enabled"
       description: "Whether to submit the 'newtab' ping"
     gleanMetricConfiguration:
       type: json
+      description: |
+        A map of metric base-identifiers to booleans representing the state of the 'enabled' flag for that metric.
+        This variable is intended for interacting with the Glean data-control-plane via the Server Knobs functionality
+        to remotely configure metrics to be enabled or disabled.
+
+gleanInternalSdk:
+  description: "The Glean internal SDK feature intended only for internal Glean Team use"
+  hasExposure: false
+  variables:
+    finalInactive:
+      type: "boolean"
+      description: "Enables FOG early shutdown pings when true"
+    gleanMetricConfiguration:
+      type: json
+      description: |
+        A map of metric base-identifiers to booleans representing the state of the 'enabled' flag for that metric.
+        This is not for public use! For data-control-plane use, please refer to the Glean documentation and use the
+        `gleanMetricConfiguration` found in the `glean` feature for this.
+    gleanMaxPingsPerMinute:
+      type: int
       description: >-
-        "A map of metric base-identifiers to booleans representing the state of the 'disabled' flag for that metric"
+        Maximum number of pings that can be sent in a 60 second interval
 
 majorRelease2022:
   description: Major Release 2022
@@ -1118,16 +1202,6 @@ majorRelease2022:
       fallbackPref: "browser.majorrelease.onboarding"
       description: "Whether or not to use the MR2022 onboarding settings."
 
-featureCallout:
-  description: "Prefs that control users' progress through Feature Callout tours"
-  owner: omc@mozilla.com
-  hasExposure: false
-  isEarlyStartup: false
-  variables:
-    pdfJsTourProgress:
-      description: A JSON String representing the intitial state of the pref that holds the progress of the PDF.js feature tour.
-      type: string
-      setPref: "browser.pdfjs.feature-tour"
 browserLowMemoryPrefs:
   description: Prefs which control the browser's behaviour under low memory.
   owner: haftandilian@mozilla.com
@@ -1262,6 +1336,22 @@ networking:
       description: Whether Early Hints preconnect is enabled
       type: boolean
       setPref: "network.early-hints.preconnect.enabled"
+    dnsMaxPriorityThreads:
+      description: The maximum number of high priority DNS threads that can be created.
+      type: int
+      setPref: "network.dns.max_high_priority_threads"
+    dnsMaxAnyPriorityThreads:
+      description: The maximum number of DNS threads that can be created to handle any priority DNS requests.
+      type: int
+      setPref: "network.dns.max_any_priority_threads"
+    preconnect:
+      description: Whether the rel=preconnect feature is enabled
+      type: boolean
+      setPref: "network.preconnect"
+    networkPredictor:
+      description: Whether the Necko predictor is enabled
+      type: boolean
+      setPref: "network.predictor.enabled"
 
 pingsender:
   description: "In-product usage of the pingsender telemetry reporter."
@@ -1432,6 +1522,10 @@ migrationWizard:
           user closes the wizard.
       type: string
       setPref: browser.migrate.content-modal.about-welcome-behavior
+    migrateExtensions:
+      description: True if importing extensions is enabled.
+      type: boolean
+      setPref: browser.migrate.chrome.extensions.enabled
 
 mixedContentUpgrading:
   description: Prefs to control whether we upgrade mixed passive content (images, audio, video) from http to https
@@ -1538,6 +1632,33 @@ deviceMigration:
       type: boolean
       fallbackPref: browser.device-migration.help-menu.hidden
 
+shopping2023:
+  description: Prefs to control the 2023 shopping experiment.
+  owner: jhirsch@mozilla.com
+  hasExposure: true
+  exposureDescription: >-
+    The timing of the exposure event depends on the experiment, but generally
+    the event is recorded when the user first encounters onboarding UI for
+    the shopping feature.
+  variables:
+    enabled:
+      description: True if the experience is enabled
+      type: boolean
+      fallbackPref: browser.shopping.experience2023.enabled
+shoppingOHTTP:
+  description: Prefs to control the OHTTP URLs used for shopping.
+  owner: gijs@mozilla.com
+  hasExposure: false
+  variables:
+    ohttpRelayURL:
+      description: What OHTTP relay URL to use
+      type: string
+      setPref: toolkit.shopping.ohttpRelayURL
+    ohttpConfigURL:
+      description: URL for the OHTTP config to use
+      type: string
+      setPref: toolkit.shopping.ohttpConfigURL
+
 opaqueResponseBlocking:
   description: Prefs to enable Opaque Response Blocking
   owner: farre@mozilla.com
@@ -1562,3 +1683,93 @@ opaqueResponseBlocking:
         If we partially or wholly allow audio and video MIME types in conflict with spec.
       type: int
       setPref: "browser.opaqueResponseBlocking.mediaExceptionsStrategy"
+
+updatePrompt:
+  description: Prefs to control content and behavior of update notifications
+  owner: omc@mozilla.com
+  hasExposure: true
+  exposureDescription: >-
+    Exposure is sent at most once per browsing session when an update
+    notification prompt is displayed.
+  isEarlyStartup: true
+  variables:
+    showReleaseNotesLink:
+      type: boolean
+      description: >-
+        If true, the "Learn More" link will be shown in the update prompt. If
+        false or omitted, the link will only be shown for supported locales.
+    releaseNotesURL:
+      type: string
+      fallbackPref: app.releaseNotesURL.prompt
+      description: >-
+        Template for the URL opened when the user clicks the "Learn More" link
+        in the update prompt. If an empty string, the link will not be shown.
+
+powerSaver:
+  description: Prefs to control power saving behaviors
+  owner: florian@mozilla.com
+  hasExposure: false
+  isEarlyStartup: true
+  variables:
+    reduceFrameRates:
+      type: int
+      setPref: "gfx.display.max-frame-rate"
+      description: >-
+        Limit the number of frames displayed per second.
+        If omitted, the refresh rate of the screen will be used.
+    mediaAutoPlay:
+      type: int
+      setPref: "media.autoplay.default"
+      description: >-
+        Control if media is allowed to auto-play, with and without sound.
+    backgroundTimerMinTime:
+      type: int
+      setPref: "dom.min_background_timeout_value"
+      description: >-
+        Limit how frequently timers are allowed to run in background tabs.
+    backgroundTimerRegenerationRate:
+      type: int
+      setPref: "dom.timeout.background_budget_regeneration_rate"
+      description: >-
+        Limit how quickly the background tab timer budget regenerates.
+
+firefoxViewNext:
+  description: Next Iteration of Firefox View
+  owner: firefoxview@mozilla.com
+  hasExposure: false
+  isEarlyStartup: true
+  variables:
+    enabled:
+      type: boolean
+      fallbackPref: "browser.tabs.firefox-view-next"
+      description: "Whether or not to enable the new Firefox View"
+
+backgroundUpdate:
+  description: Prefs to control aspects of the background update process.
+  owner: install-update@mozilla.com
+  hasExposure: true
+  exposureDescription: >-
+    The exposure event is sent when scheduling the background task and both the
+    feature is enabled and the service registry key (Mozilla Maintenance
+    Service) is *not* available for this installation. That is the first time
+    the feature can impact Firefox behaviour and the user experience.
+  isEarlyStartup: false
+  variables:
+    allowUpdatesForUnelevatedInstallations:
+      description: >-
+        Allow the background update process to download and apply updates when
+        the Mozilla Maintenance Service is unavailable but the installation
+        directory can be written.
+      type: boolean
+      fallbackPref: app.update.background.allowUpdatesForUnelevatedInstallations
+
+bookmarks:
+  description: Prefs to control aspects of the bookmarks system.
+  owner: omc@mozilla.com
+  hasExposure: false
+  isEarlyStartup: true
+  variables:
+    enableBookmarksToolbar:
+      type: string
+      setPref: browser.toolbars.bookmarks.visibility
+      description: If the bookmarks toolbar should never, always, or only show on newtab.

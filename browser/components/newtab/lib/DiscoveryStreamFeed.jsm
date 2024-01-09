@@ -114,7 +114,8 @@ class DiscoveryStreamFeed {
       this._prefCache.config = {};
       // istanbul ignore next
       console.error(
-        `Could not parse preference. Try resetting ${PREF_CONFIG} in about:config. ${e}`
+        `Could not parse preference. Try resetting ${PREF_CONFIG} in about:config.`,
+        e
       );
     }
     this._prefCache.config.enabled =
@@ -142,18 +143,12 @@ class DiscoveryStreamFeed {
       const pocketConfig =
         this.store.getState().Prefs.values?.pocketConfig || {};
 
-      const preffedLocaleListString = pocketConfig.localeListConfig || "";
-      const preffedLocales = preffedLocaleListString
-        .split(",")
-        .map(s => s.trim());
-      const localeEnabled = this.locale && preffedLocales.includes(this.locale);
-
       const preffedRegionBffConfigString = pocketConfig.regionBffConfig || "";
       const preffedRegionBffConfig = preffedRegionBffConfigString
         .split(",")
         .map(s => s.trim());
       const regionBff = preffedRegionBffConfig.includes(this.region);
-      this._isBff = !localeEnabled && regionBff;
+      this._isBff = regionBff;
     }
 
     return this._isBff;
@@ -429,7 +424,7 @@ class DiscoveryStreamFeed {
 
       return response.json();
     } catch (error) {
-      console.error(`Failed to fetch ${endpoint}: ${error.message}`);
+      console.error(`Failed to fetch ${endpoint}:`, error.message);
     }
     return null;
   }
@@ -828,7 +823,8 @@ class DiscoveryStreamFeed {
           .catch(
             /* istanbul ignore next */ error => {
               console.error(
-                `Error trying to load component feed ${url}: ${error}`
+                `Error trying to load component feed ${url}:`,
+                error
               );
             }
           );
@@ -1470,6 +1466,7 @@ class DiscoveryStreamFeed {
             title: item.title,
             excerpt: item.excerpt,
             publisher: item.publisher,
+            time_to_read: item.timeToRead,
             raw_image_src: item.imageUrl,
           }));
         }
@@ -1669,7 +1666,7 @@ class DiscoveryStreamFeed {
       // We only make one fetch, and control which to request when we fetch.
       // So for now we only care if we need to make this request at all.
       const spocsPromise = this.loadSpocs(dispatch, isStartup).catch(error =>
-        console.error(`Error trying to load spocs feeds: ${error}`)
+        console.error("Error trying to load spocs feeds:", error)
       );
       promises.push(spocsPromise);
       if (this.showStories) {
@@ -1677,7 +1674,7 @@ class DiscoveryStreamFeed {
           dispatch,
           isStartup
         ).catch(error =>
-          console.error(`Error trying to load component feeds: ${error}`)
+          console.error("Error trying to load component feeds:", error)
         );
         promises.push(storiesPromise);
       }
@@ -2212,7 +2209,7 @@ getHardcodedLayout = ({
   spocPositions = [1, 5, 7, 11, 18, 20],
   spocTopsitesPositions = [1],
   spocPlacementData = { ad_types: [3617], zone_ids: [217758, 217995] },
-  spocTopsitesPlacementData,
+  spocTopsitesPlacementData = { ad_types: [3120], zone_ids: [280143] },
   widgetPositions = [],
   widgetData = [],
   sponsoredCollectionsEnabled = false,

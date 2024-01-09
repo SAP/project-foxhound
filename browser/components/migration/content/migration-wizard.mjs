@@ -29,6 +29,7 @@ export class MigrationWizard extends HTMLElement {
   #selectAllCheckbox = null;
   #resourceSummary = null;
   #expandedDetails = false;
+  #extensionsSuccessLink = null;
 
   static get markup() {
     return `
@@ -36,7 +37,7 @@ export class MigrationWizard extends HTMLElement {
         <link rel="stylesheet" href="chrome://browser/skin/migration/migration-wizard.css">
         <named-deck id="wizard-deck" selected-view="page-loading" aria-busy="true" part="deck">
           <div name="page-loading">
-            <h1 data-l10n-id="migration-wizard-selection-header"></h1>
+            <h1 data-l10n-id="migration-wizard-selection-header" part="header"></h1>
             <div class="loading-block large"></div>
             <div class="loading-block small"></div>
             <div class="loading-block small"></div>
@@ -49,7 +50,7 @@ export class MigrationWizard extends HTMLElement {
           </div>
 
           <div name="page-selection">
-            <h1 data-l10n-id="migration-wizard-selection-header"></h1>
+            <h1 data-l10n-id="migration-wizard-selection-header" part="header"></h1>
             <button id="browser-profile-selector" aria-haspopup="menu" aria-labelledby="migrator-name profile-name">
               <span class="migrator-icon" role="img"></span>
               <div class="migrator-description" role="presentation">
@@ -62,8 +63,8 @@ export class MigrationWizard extends HTMLElement {
               <span class="error-icon" role="img"></span>
               <div data-l10n-id="migration-wizard-import-browser-no-resources"></div>
             </div>
-            <div data-l10n-id="migration-wizard-selection-list" class="resource-selection-preamble deemphasized-text hide-on-error"></div>
-            <details class="resource-selection-details hide-on-error">
+            <div data-l10n-id="migration-wizard-selection-list" class="resource-selection-preamble deemphasized-text hide-on-no-resources-error"></div>
+            <details class="resource-selection-details hide-on-no-resources-error">
               <summary id="resource-selection-summary">
                 <div class="selected-data-header" data-l10n-id="migration-all-available-data-label"></div>
                 <div class="selected-data deemphasized-text">&nbsp;</div>
@@ -82,6 +83,9 @@ export class MigrationWizard extends HTMLElement {
                 <label id="history" data-resource-type="HISTORY">
                   <input type="checkbox"/><span data-l10n-id="migration-history-option-label"></span>
                 </label>
+                <label id="extensions" data-resource-type="EXTENSIONS">
+                  <input type="checkbox"/><span data-l10n-id="migration-extensions-option-label"></span>
+                </label>
                 <label id="form-autofill" data-resource-type="FORMDATA">
                   <input type="checkbox"/><span data-l10n-id="migration-form-autofill-option-label"></span>
                 </label>
@@ -91,6 +95,11 @@ export class MigrationWizard extends HTMLElement {
               </fieldset>
             </details>
 
+            <div class="file-import-error error-message">
+              <span class="error-icon" role="img"></span>
+              <div id="file-import-error-message"></div>
+            </div>
+
             <moz-button-group class="buttons" part="buttons">
               <button class="cancel-close" data-l10n-id="migration-cancel-button-label"></button>
               <button id="import-from-file" class="primary" data-l10n-id="migration-import-from-file-button-label"></button>
@@ -99,36 +108,70 @@ export class MigrationWizard extends HTMLElement {
           </div>
 
           <div name="page-progress">
-            <h1 id="progress-header" data-l10n-id="migration-wizard-progress-header"></h1>
+            <h1 id="progress-header" data-l10n-id="migration-wizard-progress-header" part="header"></h1>
             <div class="resource-progress">
               <div data-resource-type="BOOKMARKS" class="resource-progress-group">
                 <span class="progress-icon-parent"><span class="progress-icon" role="img"></span></span>
                 <span default-data-l10n-id="migration-bookmarks-option-label" ie-edge-data-l10n-id="migration-favorites-option-label"></span>
-                <span class="success-text deemphasized-text">&nbsp;</span>
+                <span class="message-text deemphasized-text">&nbsp;</span>
+                <a class="support-text deemphasized-text"></a>
               </div>
 
               <div data-resource-type="PASSWORDS" class="resource-progress-group">
                 <span class="progress-icon-parent"><span class="progress-icon" role="img"></span></span>
                 <span data-l10n-id="migration-logins-and-passwords-option-label"></span>
-                <span class="success-text deemphasized-text">&nbsp;</span>
+                <span class="message-text deemphasized-text">&nbsp;</span>
+                <a class="support-text deemphasized-text"></a>
               </div>
 
               <div data-resource-type="HISTORY" class="resource-progress-group">
                 <span class="progress-icon-parent"><span class="progress-icon" role="img"></span></span>
                 <span data-l10n-id="migration-history-option-label"></span>
-                <span class="success-text deemphasized-text">&nbsp;</span>
+                <span class="message-text deemphasized-text">&nbsp;</span>
+                <a class="support-text deemphasized-text"></a>
+              </div>
+
+              <div data-resource-type="EXTENSIONS" class="resource-progress-group">
+                <span class="progress-icon-parent"><span class="progress-icon" role="img"></span></span>
+                <span data-l10n-id="migration-extensions-option-label"></span>
+                <a id="extensions-success-link" href="about:addons" class="message-text deemphasized-text"></a>
+                <span class="message-text deemphasized-text"></span>
+                <a class="support-text deemphasized-text"></a>
               </div>
 
               <div data-resource-type="FORMDATA" class="resource-progress-group">
                 <span class="progress-icon-parent"><span class="progress-icon" role="img"></span></span>
                 <span data-l10n-id="migration-form-autofill-option-label"></span>
-                <span class="success-text deemphasized-text">&nbsp;</span>
+                <span class="message-text deemphasized-text">&nbsp;</span>
+                <a class="support-text deemphasized-text"></a>
               </div>
 
               <div data-resource-type="PAYMENT_METHODS" class="resource-progress-group">
                 <span class="progress-icon-parent"><span class="progress-icon" role="img"></span></span>
                 <span data-l10n-id="migration-payment-methods-option-label"></span>
-                <span class="success-text deemphasized-text">&nbsp;</span>
+                <span class="message-text deemphasized-text">&nbsp;</span>
+                <a class="support-text deemphasized-text"></a>
+              </div>
+
+              <div data-resource-type="COOKIES" class="resource-progress-group">
+                <span class="progress-icon-parent"><span class="progress-icon" role="img"></span></span>
+                <span data-l10n-id="migration-cookies-option-label"></span>
+                <span class="message-text deemphasized-text">&nbsp;</span>
+                <a class="support-text deemphasized-text"></a>
+              </div>
+
+              <div data-resource-type="SESSION" class="resource-progress-group">
+                <span class="progress-icon-parent"><span class="progress-icon" role="img"></span></span>
+                <span data-l10n-id="migration-session-option-label"></span>
+                <span class="message-text deemphasized-text">&nbsp;</span>
+                <a class="support-text deemphasized-text"></a>
+              </div>
+
+              <div data-resource-type="OTHERDATA" class="resource-progress-group">
+                <span class="progress-icon-parent"><span class="progress-icon" role="img"></span></span>
+                <span data-l10n-id="migration-otherdata-option-label"></span>
+                <span class="message-text deemphasized-text">&nbsp;</span>
+                <a class="support-text deemphasized-text"></a>
               </div>
             </div>
             <moz-button-group class="buttons" part="buttons">
@@ -139,30 +182,30 @@ export class MigrationWizard extends HTMLElement {
           </div>
 
           <div name="page-file-import-progress">
-            <h1 id="file-import-progress-header"></h1>
+            <h1 id="file-import-progress-header"part="header"></h1>
             <div class="resource-progress">
               <div data-resource-type="PASSWORDS_FROM_FILE" class="resource-progress-group">
                 <span class="progress-icon-parent"><span class="progress-icon" role="img"></span></span>
                 <span data-l10n-id="migration-passwords-from-file"></span>
-                <span class="success-text deemphasized-text">&nbsp;</span>
+                <span class="message-text deemphasized-text">&nbsp;</span>
               </div>
 
               <div data-resource-type="PASSWORDS_NEW" class="resource-progress-group">
                 <span class="progress-icon-parent"><span class="progress-icon" role="img"></span></span>
                 <span data-l10n-id="migration-passwords-new"></span>
-                <span class="success-text deemphasized-text">&nbsp;</span>
+                <span class="message-text deemphasized-text">&nbsp;</span>
               </div>
 
               <div data-resource-type="PASSWORDS_UPDATED" class="resource-progress-group">
                 <span class="progress-icon-parent"><span class="progress-icon" role="img"></span></span>
                 <span data-l10n-id="migration-passwords-updated"></span>
-                <span class="success-text deemphasized-text">&nbsp;</span>
+                <span class="message-text deemphasized-text">&nbsp;</span>
               </div>
 
               <div data-resource-type="BOOKMARKS_FROM_FILE" class="resource-progress-group">
                 <span class="progress-icon-parent"><span class="progress-icon" role="img"></span></span>
                 <span data-l10n-id="migration-bookmarks-from-file"></span>
-                <span class="success-text deemphasized-text">&nbsp;</span>
+                <span class="message-text deemphasized-text">&nbsp;</span>
               </div>
             </div>
             <moz-button-group class="buttons" part="buttons">
@@ -173,7 +216,7 @@ export class MigrationWizard extends HTMLElement {
           </div>
 
           <div name="page-safari-password-permission">
-            <h1 data-l10n-id="migration-safari-password-import-header"></h1>
+            <h1 data-l10n-id="migration-safari-password-import-header" part="header"></h1>
             <span data-l10n-id="migration-safari-password-import-steps-header"></span>
             <ol>
               <li data-l10n-id="migration-safari-password-import-step1"></li>
@@ -191,7 +234,7 @@ export class MigrationWizard extends HTMLElement {
           </div>
 
           <div name="page-safari-permission">
-            <h1 data-l10n-id="migration-wizard-selection-header"></h1>
+            <h1 data-l10n-id="migration-wizard-selection-header" part="header"></h1>
             <div data-l10n-id="migration-wizard-safari-permissions-sub-header"></div>
             <ol>
               <li data-l10n-id="migration-wizard-safari-instructions-continue"></li>
@@ -204,7 +247,7 @@ export class MigrationWizard extends HTMLElement {
           </div>
 
           <div name="page-no-browsers-found">
-            <h1 data-l10n-id="migration-wizard-selection-header"></h1>
+            <h1 data-l10n-id="migration-wizard-selection-header" part="header"></h1>
             <div class="no-browsers-found error-message">
               <span class="error-icon" role="img"></span>
               <div class="no-browsers-found-message" data-l10n-id="migration-wizard-import-browser-no-browsers"></div>
@@ -241,7 +284,7 @@ export class MigrationWizard extends HTMLElement {
 
   constructor() {
     super();
-    const shadow = this.attachShadow({ mode: "closed" });
+    const shadow = this.attachShadow({ mode: "open" });
 
     if (window.MozXULElement) {
       window.MozXULElement.insertFTLIfNeeded("branding/brand.ftl");
@@ -297,6 +340,11 @@ export class MigrationWizard extends HTMLElement {
       "#safari-password-import-select"
     );
     this.#safariPasswordImportSelectButton.addEventListener("click", this);
+
+    this.#extensionsSuccessLink = shadow.querySelector(
+      "#extensions-success-link"
+    );
+    this.#extensionsSuccessLink.addEventListener("click", this);
 
     this.#shadowRoot = shadow;
   }
@@ -373,22 +421,20 @@ export class MigrationWizard extends HTMLElement {
     if (this.#browserProfileSelectorList) {
       return;
     }
-    this.#browserProfileSelectorList = this.querySelector("panel-list");
-    if (!this.#browserProfileSelectorList) {
-      throw new Error(
-        "Could not find a <panel-list> under the MigrationWizard during initialization."
-      );
-    }
+    this.#browserProfileSelectorList = document.createElement("panel-list");
     this.#browserProfileSelectorList.toggleAttribute(
       "min-width-from-anchor",
       true
     );
     this.#browserProfileSelectorList.addEventListener("click", this);
-    // Until bug 1823489 is fixed, this is the easiest way for the
-    // migration wizard to style the selector dropdown so that it more
-    // closely lines up with the edges of the selector button.
-    this.#browserProfileSelectorList.style.boxSizing = "border-box";
-    this.#browserProfileSelectorList.style.overflowY = "auto";
+
+    if (document.createXULElement) {
+      let panel = document.createXULElement("panel");
+      panel.appendChild(this.#browserProfileSelectorList);
+      this.#shadowRoot.appendChild(panel);
+    } else {
+      this.#shadowRoot.appendChild(this.#browserProfileSelectorList);
+    }
   }
 
   /**
@@ -474,8 +520,16 @@ export class MigrationWizard extends HTMLElement {
    * @param {object} state
    *   The state object passed into setState. The following properties are
    *   used:
-   * @param {string[]} state.migrators An array of source browser names that
-   *   can be migrated from.
+   * @param {string[]} state.migrators
+   *   An array of source browser names that can be migrated from.
+   * @param {string} [state.migratorKey=null]
+   *   The key for a migrator to automatically select in the migrators array.
+   *   If not defined, the first item in the array will be selected.
+   * @param {string} [state.fileImportErrorMessage=null]
+   *   An error message to display in the event that an attempt at doing a
+   *   file import failed. File import failures are special in that they send
+   *   the wizard back to the selection page with an error message. If not
+   *   defined, it is presumed that a file import error has not occurred.
    */
   #onShowingSelection(state) {
     this.#ensureSelectionDropdown();
@@ -486,8 +540,16 @@ export class MigrationWizard extends HTMLElement {
     );
 
     let details = this.#shadowRoot.querySelector("details");
-    selectionPage.toggleAttribute("show-import-all", state.showImportAll);
-    details.open = !state.showImportAll;
+
+    if (this.hasAttribute("force-show-import-all")) {
+      let forceShowImportAll =
+        this.getAttribute("force-show-import-all") == "true";
+      selectionPage.toggleAttribute("show-import-all", forceShowImportAll);
+      details.open = !forceShowImportAll;
+    } else {
+      selectionPage.toggleAttribute("show-import-all", state.showImportAll);
+      details.open = !state.showImportAll;
+    }
 
     this.#expandedDetails = false;
 
@@ -501,32 +563,9 @@ export class MigrationWizard extends HTMLElement {
       opt.hasPermissions = migrator.hasPermissions;
       opt.brandImage = migrator.brandImage;
 
-      // Bug 1823489 - since the panel-list and panel-items are slotted, we
-      // cannot style them directly from migration-wizard.css. We use inline
-      // styles for now to achieve the desired appearance, but bug 1823489
-      // will investigate having MigrationWizard own the <xul:panel>,
-      // <panel-list> and <panel-item>'s so that styling can be done in the
-      // stylesheet instead.
       let button = opt.shadowRoot.querySelector("button");
-      button.style.minHeight = "40px";
       if (migrator.brandImage) {
         button.style.backgroundImage = `url(${migrator.brandImage})`;
-      } else {
-        button.style.backgroundImage = `url("chrome://global/skin/icons/defaultFavicon.svg")`;
-      }
-
-      // Bug 1823489 - since the panel-list and panel-items are slotted, we
-      // cannot style them or their children in migration-wizard.css. We use
-      // inline styles for now to achieve the desired appearance, but bug 1823489
-      // will investigate having MigrationWizard own the <xul:panel>,
-      // <panel-list> and <panel-item>'s so that styling can be done in the
-      // stylesheet instead.
-      if (migrator.type == MigrationWizardConstants.MIGRATOR_TYPES.FILE) {
-        button.style.backgroundSize = "20px";
-        button.style.backgroundPosition = "6px center";
-        if (this.#browserProfileSelectorList.isDocumentRTL()) {
-          button.style.backgroundPositionX = "right 6px";
-        }
       }
 
       if (migrator.profile) {
@@ -557,6 +596,25 @@ export class MigrationWizard extends HTMLElement {
       );
     }
 
+    if (state.migratorKey) {
+      let panelItem = this.#browserProfileSelectorList.querySelector(
+        `panel-item[key="${state.migratorKey}"]`
+      );
+      this.#onBrowserProfileSelectionChanged(panelItem);
+    }
+
+    let fileImportErrorMessageEl = selectionPage.querySelector(
+      "#file-import-error-message"
+    );
+
+    if (state.fileImportErrorMessage) {
+      fileImportErrorMessageEl.textContent = state.fileImportErrorMessage;
+      selectionPage.toggleAttribute("file-import-error", true);
+    } else {
+      fileImportErrorMessageEl.textContent = "";
+      selectionPage.toggleAttribute("file-import-error", false);
+    }
+
     // Since this is called before the named-deck actually switches to
     // show the selection page, we cannot focus this button immediately.
     // Instead, we use a rAF to queue this up for focusing before the
@@ -568,13 +626,19 @@ export class MigrationWizard extends HTMLElement {
 
   /**
    * @typedef {object} ProgressState
-   *   The migration progress state for a resource.
-   * @property {boolean} inProgress
-   *   True if progress is still underway.
+   *  The migration progress state for a resource.
+   * @property {number} value
+   *  One of the values from MigrationWizardConstants.PROGRESS_VALUE.
    * @property {string} [message=undefined]
-   *   An optional message to display underneath the resource in
-   *   the progress dialog. This message is only shown when inProgress
-   *   is `false`.
+   *  An optional message to display underneath the resource in
+   *  the progress dialog. This message is only shown when value
+   *  is not LOADING.
+   * @property {string} [linkURL=undefined]
+   *  The URL for an optional link to appear after the status message.
+   *  This will only be shown if linkText is also not-empty.
+   * @property {string} [linkText=undefined]
+   *  The text for an optional link to appear after the status message.
+   *  This will only be shown if linkURL is also not-empty.
    */
 
   /**
@@ -598,8 +662,11 @@ export class MigrationWizard extends HTMLElement {
     let resourceGroups = progressPage.querySelectorAll(
       ".resource-progress-group"
     );
+    this.#extensionsSuccessLink.textContent = "";
+
     let totalProgressGroups = Object.keys(state.progress).length;
     let remainingProgressGroups = totalProgressGroups;
+    let totalWarnings = 0;
 
     for (let group of resourceGroups) {
       let resourceType = group.dataset.resourceType;
@@ -610,7 +677,8 @@ export class MigrationWizard extends HTMLElement {
       group.hidden = false;
 
       let progressIcon = group.querySelector(".progress-icon");
-      let successText = group.querySelector(".success-text");
+      let messageText = group.querySelector("span.message-text");
+      let supportLink = group.querySelector(".support-text");
 
       let labelSpan = group.querySelector("span[default-data-l10n-id]");
       if (labelSpan) {
@@ -626,32 +694,93 @@ export class MigrationWizard extends HTMLElement {
           );
         }
       }
+      messageText.textContent = "";
 
-      if (state.progress[resourceType].inProgress) {
-        document.l10n.setAttributes(
-          progressIcon,
-          "migration-wizard-progress-icon-in-progress"
-        );
-        progressIcon.classList.remove("completed");
-        successText.textContent = "";
-        // With no status text, we re-insert the &nbsp; so that the status
-        // text area does not fully collapse.
-        successText.appendChild(document.createTextNode("\u00A0"));
-      } else {
-        document.l10n.setAttributes(
-          progressIcon,
-          "migration-wizard-progress-icon-completed"
-        );
-        progressIcon.classList.add("completed");
-        successText.textContent = state.progress[resourceType].message;
-        remainingProgressGroups--;
+      if (supportLink) {
+        supportLink.textContent = "";
+        supportLink.removeAttribute("href");
+      }
+      let progressValue = state.progress[resourceType].value;
+      switch (progressValue) {
+        case MigrationWizardConstants.PROGRESS_VALUE.LOADING: {
+          document.l10n.setAttributes(
+            progressIcon,
+            "migration-wizard-progress-icon-in-progress"
+          );
+          progressIcon.setAttribute("state", "loading");
+          messageText.textContent = "";
+          supportLink.textContent = "";
+          supportLink.removeAttribute("href");
+          // With no status text, we re-insert the &nbsp; so that the status
+          // text area does not fully collapse.
+          messageText.appendChild(document.createTextNode("\u00A0"));
+          break;
+        }
+        case MigrationWizardConstants.PROGRESS_VALUE.SUCCESS: {
+          document.l10n.setAttributes(
+            progressIcon,
+            "migration-wizard-progress-icon-completed"
+          );
+          progressIcon.setAttribute("state", "success");
+          messageText.textContent = state.progress[resourceType].message;
+          if (
+            resourceType ==
+            MigrationWizardConstants.DISPLAYED_RESOURCE_TYPES.EXTENSIONS
+          ) {
+            messageText.textContent = "";
+            this.#extensionsSuccessLink.textContent =
+              state.progress[resourceType].message;
+          }
+          remainingProgressGroups--;
+          break;
+        }
+        case MigrationWizardConstants.PROGRESS_VALUE.WARNING: {
+          document.l10n.setAttributes(
+            progressIcon,
+            "migration-wizard-progress-icon-completed"
+          );
+          progressIcon.setAttribute("state", "warning");
+          messageText.textContent = state.progress[resourceType].message;
+          supportLink.textContent = state.progress[resourceType].linkText;
+          supportLink.href = state.progress[resourceType].linkURL;
+          remainingProgressGroups--;
+          totalWarnings++;
+          break;
+        }
+        case MigrationWizardConstants.PROGRESS_VALUE.INFO: {
+          document.l10n.setAttributes(
+            progressIcon,
+            "migration-wizard-progress-icon-completed"
+          );
+          progressIcon.setAttribute("state", "info");
+          messageText.textContent = state.progress[resourceType].message;
+          supportLink.textContent = state.progress[resourceType].linkText;
+          supportLink.href = state.progress[resourceType].linkURL;
+          if (
+            resourceType ==
+            MigrationWizardConstants.DISPLAYED_RESOURCE_TYPES.EXTENSIONS
+          ) {
+            messageText.textContent = "";
+            this.#extensionsSuccessLink.textContent =
+              state.progress[resourceType].message;
+          }
+          remainingProgressGroups--;
+          break;
+        }
       }
     }
 
     let migrationDone = remainingProgressGroups == 0;
-    let headerL10nID = migrationDone
-      ? "migration-wizard-progress-done-header"
-      : "migration-wizard-progress-header";
+    let headerL10nID = "migration-wizard-progress-header";
+
+    if (migrationDone) {
+      if (totalWarnings) {
+        headerL10nID = "migration-wizard-progress-done-with-warnings-header";
+      } else {
+        headerL10nID = "migration-wizard-progress-done-header";
+      }
+    }
+
     let header = this.#shadowRoot.getElementById("progress-header");
     document.l10n.setAttributes(header, headerL10nID);
 
@@ -712,26 +841,48 @@ export class MigrationWizard extends HTMLElement {
       group.hidden = false;
 
       let progressIcon = group.querySelector(".progress-icon");
-      let successText = group.querySelector(".success-text");
+      let messageText = group.querySelector(".message-text");
 
-      if (state.progress[resourceType].inProgress) {
-        document.l10n.setAttributes(
-          progressIcon,
-          "migration-wizard-progress-icon-in-progress"
-        );
-        progressIcon.classList.remove("completed");
-        successText.textContent = "";
-        // With no status text, we re-insert the &nbsp; so that the status
-        // text area does not fully collapse.
-        successText.appendChild(document.createTextNode("\u00A0"));
-      } else {
-        document.l10n.setAttributes(
-          progressIcon,
-          "migration-wizard-progress-icon-completed"
-        );
-        progressIcon.classList.add("completed");
-        successText.textContent = state.progress[resourceType].message;
-        remainingProgressGroups--;
+      let progressValue = state.progress[resourceType].value;
+      switch (progressValue) {
+        case MigrationWizardConstants.PROGRESS_VALUE.LOADING: {
+          document.l10n.setAttributes(
+            progressIcon,
+            "migration-wizard-progress-icon-in-progress"
+          );
+          progressIcon.setAttribute("state", "loading");
+          messageText.textContent = "";
+          // With no status text, we re-insert the &nbsp; so that the status
+          // text area does not fully collapse.
+          messageText.appendChild(document.createTextNode("\u00A0"));
+          break;
+        }
+        case MigrationWizardConstants.PROGRESS_VALUE.SUCCESS: {
+          document.l10n.setAttributes(
+            progressIcon,
+            "migration-wizard-progress-icon-completed"
+          );
+          progressIcon.setAttribute("state", "success");
+          messageText.textContent = state.progress[resourceType].message;
+          remainingProgressGroups--;
+          break;
+        }
+        case MigrationWizardConstants.PROGRESS_VALUE.WARNING: {
+          document.l10n.setAttributes(
+            progressIcon,
+            "migration-wizard-progress-icon-completed"
+          );
+          progressIcon.setAttribute("state", "warning");
+          messageText.textContent = state.progress[resourceType].message;
+          remainingProgressGroups--;
+          break;
+        }
+        default: {
+          console.error(
+            "Unrecognized state for file migration: ",
+            progressValue
+          );
+        }
       }
     }
 
@@ -779,12 +930,41 @@ export class MigrationWizard extends HTMLElement {
     // progress elements as custom parts that the MigrationWizard story
     // can style on its own.
     this.#shadowRoot.querySelectorAll(".progress-icon").forEach(progressEl => {
-      if (progressEl.classList.contains("completed")) {
-        progressEl.removeAttribute("part");
-      } else {
+      if (progressEl.getAttribute("state") == "loading") {
         progressEl.setAttribute("part", "progress-spinner");
+      } else {
+        progressEl.removeAttribute("part");
       }
     });
+  }
+
+  /**
+   * A public method for starting a migration without the user needing
+   * to choose a browser, profile or resource types. This is typically
+   * done only for doing a profile reset.
+   *
+   * @param {string} migratorKey
+   *   The key associated with the migrator to use.
+   * @param {object|null} profile
+   *   A representation of a browser profile. When not null, this is an
+   *   object with a string "id" property, and a string "name" property.
+   * @param {string[]} resourceTypes
+   *   An array of resource types that import should occur for. These
+   *   strings should be from MigrationWizardConstants.DISPLAYED_RESOURCE_TYPES.
+   */
+  doAutoImport(migratorKey, profile, resourceTypes) {
+    let migrationEventDetail = this.#gatherMigrationEventDetails({
+      migratorKey,
+      profile,
+      resourceTypes,
+    });
+
+    this.dispatchEvent(
+      new CustomEvent("MigrationWizard:BeginMigration", {
+        bubbles: true,
+        detail: migrationEventDetail,
+      })
+    );
   }
 
   /**
@@ -820,16 +1000,50 @@ export class MigrationWizard extends HTMLElement {
    * @property {boolean} expandedDetails
    *   True if the user clicked on the <summary> element to expand the resource
    *   type list.
+   * @property {boolean} autoMigration
+   *   True if the migration is occurring automatically, without the user
+   *   having selected any items explicitly from the wizard.
+   * @property {string} [safariPasswordFilePath=null]
+   *   An optional string argument that points to the path of a passwords
+   *   export file from Safari. This file will have password imported from if
+   *   supplied. This argument is ignored if the key is not for the
+   *   Safari browser.
    */
 
   /**
    * Pulls information from the DOM state of the MigrationWizard and constructs
    * and returns an object that can be used to begin migration via and event
-   * sent to the MigrationWizardChild.
+   * sent to the MigrationWizardChild. If autoMigrationDetails is provided,
+   * this information is used to construct the object instead of the DOM state.
    *
+   * @param {object} [autoMigrationDetails=null]
+   *   Provided iff an automatic migration is being invoked. In that case, the
+   *   details are constructed from this object rather than the wizard DOM state.
+   * @param {string} autoMigrationDetails.migratorKey
+   *   The key of the migrator to do automatic migration from.
+   * @param {object|null} autoMigrationDetails.profile
+   *   A representation of a browser profile. When not null, this is an
+   *   object with a string "id" property, and a string "name" property.
+   * @param {string[]} autoMigrationDetails.resourceTypes
+   *   An array of resource types that import should occur for. These
+   *   strings should be from MigrationWizardConstants.DISPLAYED_RESOURCE_TYPES.
    * @returns {MigrationDetails} details
    */
-  #gatherMigrationEventDetails() {
+  #gatherMigrationEventDetails(autoMigrationDetails) {
+    if (autoMigrationDetails?.migratorKey) {
+      let { migratorKey, profile, resourceTypes } = autoMigrationDetails;
+
+      return {
+        key: migratorKey,
+        type: MigrationWizardConstants.MIGRATOR_TYPES.BROWSER,
+        profile,
+        resourceTypes,
+        hasPermissions: true,
+        expandedDetails: this.#expandedDetails,
+        autoMigration: true,
+      };
+    }
+
     let panelItem = this.#browserProfileSelector.selectedPanelItem;
     let key = panelItem.getAttribute("key");
     let type = panelItem.getAttribute("type");
@@ -853,6 +1067,7 @@ export class MigrationWizard extends HTMLElement {
       resourceTypes,
       hasPermissions,
       expandedDetails: this.#expandedDetails,
+      autoMigration: false,
     };
   }
 
@@ -908,6 +1123,8 @@ export class MigrationWizard extends HTMLElement {
         "migration-list-password-label",
       [MigrationWizardConstants.DISPLAYED_RESOURCE_TYPES.HISTORY]:
         "migration-list-history-label",
+      [MigrationWizardConstants.DISPLAYED_RESOURCE_TYPES.EXTENSIONS]:
+        "migration-list-extensions-label",
       [MigrationWizardConstants.DISPLAYED_RESOURCE_TYPES.FORMDATA]:
         "migration-list-autofill-label",
       [MigrationWizardConstants.DISPLAYED_RESOURCE_TYPES.PAYMENT_METHODS]:
@@ -1051,6 +1268,13 @@ export class MigrationWizard extends HTMLElement {
           }
         } else if (event.target == this.#safariPasswordImportSelectButton) {
           this.#selectSafariPasswordFile();
+        } else if (event.target == this.#extensionsSuccessLink) {
+          this.dispatchEvent(
+            new CustomEvent("MigrationWizard:OpenAboutAddons", {
+              bubbles: true,
+            })
+          );
+          event.preventDefault();
         }
         break;
       }

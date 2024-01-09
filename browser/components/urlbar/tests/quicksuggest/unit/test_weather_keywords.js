@@ -870,6 +870,9 @@ async function doMatchingQuickSuggestTest(pref, isSponsored) {
           sponsoredAdvertiser: "TestAdvertiser",
           sponsoredIabCategory: iab_category,
           isSponsored,
+          descriptionL10n: isSponsored
+            ? { id: "urlbar-result-action-sponsored" }
+            : undefined,
           helpUrl: QuickSuggest.HELP_URL,
           helpL10n: {
             id: UrlbarPrefs.get("resultMenu")
@@ -883,6 +886,7 @@ async function doMatchingQuickSuggestTest(pref, isSponsored) {
               : "firefox-suggest-urlbar-block",
           },
           source: "remote-settings",
+          provider: "AdmWikipedia",
         },
       },
     ],
@@ -1364,7 +1368,7 @@ function makeExpectedResult({
       },
       requestId: MerinoTestUtils.server.response.body.request_id,
       source: "merino",
-      merinoProvider: "accuweather",
+      provider: "accuweather",
       dynamicType: "weather",
       city: WEATHER_SUGGESTION.city_name,
       temperature:

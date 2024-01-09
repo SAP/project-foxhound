@@ -7,6 +7,7 @@
 
 #include "DocAccessible-inl.h"
 #include "DocAccessibleChild.h"
+#include "LocalAccessible-inl.h"
 #include "nsEventShell.h"
 #include "TextLeafAccessible.h"
 #include "TextUpdater.h"
@@ -136,6 +137,13 @@ bool NotificationController::QueueMutationEvent(AccTreeMutationEvent* aEvent) {
       AccTreeMutationEvent* showEvent =
           mMutationMap.GetEvent(aEvent->GetAccessible(), EventMap::ShowEvent);
       DropMutationEvent(showEvent);
+      return false;
+    }
+
+    // Don't queue a hide event on an accessible that's already being moved. It
+    // or an ancestor should already have a hide event queued.
+    if (mDocument &&
+        mDocument->IsAccessibleBeingMoved(aEvent->GetAccessible())) {
       return false;
     }
 
@@ -290,7 +298,10 @@ bool NotificationController::QueueMutationEvent(AccTreeMutationEvent* aEvent) {
 }
 
 void NotificationController::DropMutationEvent(AccTreeMutationEvent* aEvent) {
-  if (aEvent->GetEventType() == nsIAccessibleEvent::EVENT_REORDER) {
+  const uint32_t eventType = aEvent->GetEventType();
+  MOZ_ASSERT(eventType != nsIAccessibleEvent::EVENT_INNER_REORDER,
+             "Inner reorder has already been dropped, cannot drop again");
+  if (eventType == nsIAccessibleEvent::EVENT_REORDER) {
     // We don't fully drop reorder events, we just change them to inner reorder
     // events.
     AccReorderEvent* reorderEvent = downcast_accEvent(aEvent);
@@ -298,10 +309,11 @@ void NotificationController::DropMutationEvent(AccTreeMutationEvent* aEvent) {
     MOZ_ASSERT(reorderEvent);
     reorderEvent->SetInner();
     return;
-  } else if (aEvent->GetEventType() == nsIAccessibleEvent::EVENT_SHOW) {
+  }
+  if (eventType == nsIAccessibleEvent::EVENT_SHOW) {
     // unset the event bits since the event isn't being fired any more.
     aEvent->GetAccessible()->SetShowEventTarget(false);
-  } else {
+  } else if (eventType == nsIAccessibleEvent::EVENT_HIDE) {
     // unset the event bits since the event isn't being fired any more.
     aEvent->GetAccessible()->SetHideEventTarget(false);
 
@@ -311,6 +323,8 @@ void NotificationController::DropMutationEvent(AccTreeMutationEvent* aEvent) {
     if (hideEvent->NeedsShutdown()) {
       mDocument->ShutdownChildrenInSubtree(aEvent->GetAccessible());
     }
+  } else {
+    MOZ_ASSERT_UNREACHABLE("Mutation event has non-mutation event type");
   }
 
   // Do the work to splice the event out of the list.
@@ -984,9 +998,6 @@ void NotificationController::WillRefresh(mozilla::TimeStamp aTime) {
             ->SendPDocAccessibleConstructor(
                 ipcDoc, parentIPCDoc, id,
                 childDoc->DocumentNode()->GetBrowsingContext());
-#ifndef XP_WIN
-        ipcDoc->SendPDocAccessiblePlatformExtConstructor();
-#endif
       }
     }
   }

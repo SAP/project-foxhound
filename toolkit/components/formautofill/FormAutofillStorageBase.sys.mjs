@@ -127,21 +127,18 @@
  */
 
 import { FormAutofill } from "resource://autofill/FormAutofill.sys.mjs";
-import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
+  AutofillTelemetry: "resource://autofill/AutofillTelemetry.sys.mjs",
   CreditCard: "resource://gre/modules/CreditCard.sys.mjs",
+  CreditCardRecord: "resource://gre/modules/shared/CreditCardRecord.sys.mjs",
   FormAutofillNameUtils:
     "resource://gre/modules/shared/FormAutofillNameUtils.sys.mjs",
   FormAutofillUtils: "resource://gre/modules/shared/FormAutofillUtils.sys.mjs",
   OSKeyStore: "resource://gre/modules/OSKeyStore.sys.mjs",
   PhoneNumber: "resource://autofill/phonenumberutils/PhoneNumber.sys.mjs",
-});
-
-XPCOMUtils.defineLazyModuleGetters(lazy, {
-  AutofillTelemetry: "resource://autofill/AutofillTelemetry.jsm",
 });
 
 const CryptoHash = Components.Constructor(
@@ -1383,7 +1380,7 @@ class AutofillRecords {
   _normalizeRecord(record, preserveEmptyFields = false) {
     this._normalizeFields(record);
 
-    for (let key in record) {
+    for (const key in record) {
       if (!this.VALID_FIELDS.includes(key)) {
         // Though we allow unknown fields, certain fields are still protected
         // from being changed
@@ -1405,37 +1402,12 @@ class AutofillRecords {
       }
     }
 
-    if (!Object.keys(record).length) {
+    const keys = Object.keys(record);
+    // By default we ensure there is always a country field, so if this record
+    // doesn't contain other fields, this is an empty record
+    if (!keys.length || (keys.length == 1 && keys[0] == "country")) {
       throw new Error("Record contains no valid field.");
     }
-  }
-
-  /**
-   * Merge the record if storage has multiple mergeable records.
-   *
-   * @param {object} targetRecord
-   *        The record for merge.
-   * @param {boolean} [strict = false]
-   *        In strict merge mode, we'll treat the subset record with empty field
-   *        as unable to be merged, but mergeable if in non-strict mode.
-   * @returns {Array.<string>}
-   *          Return an array of the merged GUID string.
-   */
-  async mergeToStorage(targetRecord, strict = false) {
-    let mergedGUIDs = [];
-    for (let record of this._data) {
-      if (
-        !record.deleted &&
-        (await this.mergeIfPossible(record.guid, targetRecord, strict))
-      ) {
-        mergedGUIDs.push(record.guid);
-      }
-    }
-    this.log.debug(
-      "Existing records matching and merging count is",
-      mergedGUIDs.length
-    );
-    return mergedGUIDs;
   }
 
   /**
@@ -1511,9 +1483,6 @@ class AutofillRecords {
    * @throws
    */
   _validateFields(record) {}
-
-  // An interface to be inherited.
-  async mergeIfPossible(guid, record, strict) {}
 }
 
 export class AddressesBase extends AutofillRecords {
@@ -1640,13 +1609,13 @@ export class AddressesBase extends AutofillRecords {
   }
 
   _normalizeFields(address) {
-    this._normalizeName(address);
-    this._normalizeAddress(address);
-    this._normalizeCountry(address);
-    this._normalizeTel(address);
+    this._normalizeCountryFields(address);
+    this._normalizeNameFields(address);
+    this._normalizeAddressFields(address);
+    this._normalizeTelFields(address);
   }
 
-  _normalizeName(address) {
+  _normalizeNameFields(address) {
     if (address.name) {
       let nameParts = lazy.FormAutofillNameUtils.splitName(address.name);
       if (!address["given-name"] && nameParts.given) {
@@ -1662,7 +1631,7 @@ export class AddressesBase extends AutofillRecords {
     delete address.name;
   }
 
-  _normalizeAddress(address) {
+  _normalizeAddressFields(address) {
     if (STREET_ADDRESS_COMPONENTS.some(c => !!address[c])) {
       // Treat "street-address" as "address-line1" if it contains only one line
       // and "address-line1" is omitted.
@@ -1687,16 +1656,13 @@ export class AddressesBase extends AutofillRecords {
     STREET_ADDRESS_COMPONENTS.forEach(c => delete address[c]);
   }
 
-  _normalizeCountry(address) {
-    let country;
-
-    if (address.country) {
-      country = address.country.toUpperCase();
-    } else if (address["country-name"]) {
-      country = lazy.FormAutofillUtils.identifyCountryCode(
-        address["country-name"]
-      );
-    }
+  _normalizeCountryFields(address) {
+    // When we can't identify the country code, it is possible because that the region exists
+    // in regionNames.properties but not in libaddressinput.
+    const country =
+      lazy.FormAutofillUtils.identifyCountryCode(
+        address.country || address["country-name"]
+      ) || address.country;
 
     // Only values included in the region list will be saved.
     let hasLocalizedName = false;
@@ -1712,13 +1678,13 @@ export class AddressesBase extends AutofillRecords {
     if (country && hasLocalizedName) {
       address.country = country;
     } else {
-      delete address.country;
+      address.country = FormAutofill.DEFAULT_REGION;
     }
 
     delete address["country-name"];
   }
 
-  _normalizeTel(address) {
+  _normalizeTelFields(address) {
     if (address.tel || TEL_COMPONENTS.some(c => !!address[c])) {
       lazy.FormAutofillUtils.compressTel(address);
 
@@ -1731,109 +1697,6 @@ export class AddressesBase extends AutofillRecords {
       }
     }
     TEL_COMPONENTS.forEach(c => delete address[c]);
-  }
-
-  /**
-   * Merge new address into the specified address if mergeable.
-   *
-   * @param  {string} guid
-   *         Indicates which address to merge.
-   * @param  {object} address
-   *         The new address used to merge into the old one.
-   * @param  {boolean} strict
-   *         In strict merge mode, we'll treat the subset record with empty field
-   *         as unable to be merged, but mergeable if in non-strict mode.
-   * @returns {Promise<boolean>}
-   *          Return true if address is merged into target with specific guid or false if not.
-   */
-  async mergeIfPossible(guid, address, strict) {
-    throw Components.Exception("", Cr.NS_ERROR_NOT_IMPLEMENTED);
-  }
-
-  compareAddressField(field, a, b, collator) {
-    switch (field) {
-      case "street-address":
-        let ret = lazy.FormAutofillUtils.compareStreetAddress(a, b, collator);
-        return ret;
-      // TODO: support other cases
-      default:
-        return a == b;
-    }
-  }
-
-  /**
-   * Normalize the given record and return records that are either the same
-   * or is superset of the normalized given record.
-   *
-   * See the comments in `getDuplicateRecords` to see the difference between
-   * `getDuplicateRecords` and `getMatchRecords`
-   *
-   * @param {object} record
-   *        The address entry for match checking. please make sure the
-   *        record is normalized.
-   * @returns {object}
-   *          Return the first matched record found in storage, null otherwise.
-   */
-  async *getMatchRecords(record) {
-    const collators = lazy.FormAutofillUtils.getSearchCollators(
-      FormAutofill.DEFAULT_REGION
-    );
-
-    for (const recordInStorage of this._data) {
-      if (
-        this.VALID_FIELDS.every(
-          field =>
-            !record[field] ||
-            this.compareAddressField(
-              field,
-              record[field],
-              recordInStorage[field],
-              collators
-            )
-        )
-      ) {
-        yield recordInStorage;
-      }
-    }
-    return null;
-  }
-
-  /**
-   * Normalize the given record and return a duplicate address record in
-   * the storage.
-   *
-   * This is different from `getMatchRecords`, which ensures all the fields with
-   * value in the the record is equal to the returned record.
-   *
-   * @param {object} record
-   *        The address entry for duplication checking. please make sure the
-   *        record is normalized.
-   * @returns {object}
-   *          Return the first duplicated record found in storage, null otherwise.
-   */
-  async *getDuplicateRecords(record) {
-    const collators = lazy.FormAutofillUtils.getSearchCollators(
-      FormAutofill.DEFAULT_REGION
-    );
-
-    for (const recordInStorage of this._data) {
-      if (
-        this.VALID_FIELDS.every(
-          field =>
-            !record[field] ||
-            !recordInStorage[field] ||
-            this.compareAddressField(
-              field,
-              record[field],
-              recordInStorage[field],
-              collators
-            )
-        )
-      ) {
-        yield recordInStorage;
-      }
-    }
-    return null;
   }
 }
 
@@ -1972,59 +1835,7 @@ export class CreditCardsBase extends AutofillRecords {
   }
 
   _normalizeFields(creditCard) {
-    this._normalizeCCName(creditCard);
-    this._normalizeCCNumber(creditCard);
-    this._normalizeCCExpirationDate(creditCard);
-  }
-
-  _normalizeCCName(creditCard) {
-    if (
-      creditCard["cc-given-name"] ||
-      creditCard["cc-additional-name"] ||
-      creditCard["cc-family-name"]
-    ) {
-      if (!creditCard["cc-name"]) {
-        creditCard["cc-name"] = lazy.FormAutofillNameUtils.joinNameParts({
-          given: creditCard["cc-given-name"],
-          middle: creditCard["cc-additional-name"],
-          family: creditCard["cc-family-name"],
-        });
-      }
-    }
-    delete creditCard["cc-given-name"];
-    delete creditCard["cc-additional-name"];
-    delete creditCard["cc-family-name"];
-  }
-
-  _normalizeCCNumber(creditCard) {
-    if (!("cc-number" in creditCard)) {
-      return;
-    }
-    if (!lazy.CreditCard.isValidNumber(creditCard["cc-number"])) {
-      delete creditCard["cc-number"];
-      return;
-    }
-    let card = new lazy.CreditCard({ number: creditCard["cc-number"] });
-    creditCard["cc-number"] = card.number;
-  }
-
-  _normalizeCCExpirationDate(creditCard) {
-    let normalizedExpiration = lazy.CreditCard.normalizeExpiration({
-      expirationMonth: creditCard["cc-exp-month"],
-      expirationYear: creditCard["cc-exp-year"],
-      expirationString: creditCard["cc-exp"],
-    });
-    if (normalizedExpiration.month) {
-      creditCard["cc-exp-month"] = normalizedExpiration.month;
-    } else {
-      delete creditCard["cc-exp-month"];
-    }
-    if (normalizedExpiration.year) {
-      creditCard["cc-exp-year"] = normalizedExpiration.year;
-    } else {
-      delete creditCard["cc-exp-year"];
-    }
-    delete creditCard["cc-exp"];
+    lazy.CreditCardRecord.normalizeFields(creditCard);
   }
 
   _validateFields(creditCard) {
@@ -2139,21 +1950,6 @@ export class CreditCardsBase extends AutofillRecords {
       }
     }
     return null;
-  }
-
-  /**
-   * Merge new credit card into the specified record if cc-number is identical.
-   * (Note that credit card records always do non-strict merge.)
-   *
-   * @param  {string} guid
-   *         Indicates which credit card to merge.
-   * @param  {object} creditCard
-   *         The new credit card used to merge into the old one.
-   * @returns {boolean}
-   *          Return true if credit card is merged into target with specific guid or false if not.
-   */
-  async mergeIfPossible(guid, creditCard) {
-    throw Components.Exception("", Cr.NS_ERROR_NOT_IMPLEMENTED);
   }
 }
 

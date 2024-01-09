@@ -7,8 +7,6 @@
  * RemoteSettings.
  */
 
-import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
-
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
@@ -65,8 +63,7 @@ export const LoginBreaches = {
     const baseBreachAlertURL = new URL(BREACH_ALERT_URL);
 
     await Services.logins.initializationPromise;
-    const storageJSON =
-      Services.logins.wrappedJSObject._storage.wrappedJSObject;
+    const storageJSON = Services.logins.wrappedJSObject._storage;
     const dismissedBreachAlertsByLoginGUID =
       storageJSON.getBreachAlertDismissalsByLoginGUID();
 
@@ -132,8 +129,7 @@ export const LoginBreaches = {
    */
   getPotentiallyVulnerablePasswordsByLoginGUID(logins) {
     const vulnerablePasswordsByLoginGUID = new Map();
-    const storageJSON =
-      Services.logins.wrappedJSObject._storage.wrappedJSObject;
+    const storageJSON = Services.logins.wrappedJSObject._storage;
     for (const login of logins) {
       if (storageJSON.isPotentiallyVulnerablePassword(login)) {
         vulnerablePasswordsByLoginGUID.set(login.guid, true);
@@ -144,8 +140,7 @@ export const LoginBreaches = {
 
   async clearAllPotentiallyVulnerablePasswords() {
     await Services.logins.initializationPromise;
-    const storageJSON =
-      Services.logins.wrappedJSObject._storage.wrappedJSObject;
+    const storageJSON = Services.logins.wrappedJSObject._storage;
     storageJSON.clearAllPotentiallyVulnerablePasswords();
   },
 
@@ -171,6 +166,6 @@ export const LoginBreaches = {
   },
 };
 
-XPCOMUtils.defineLazyGetter(lazy, "log", () => {
+ChromeUtils.defineLazyGetter(lazy, "log", () => {
   return lazy.LoginHelper.createLogger("LoginBreaches");
 });

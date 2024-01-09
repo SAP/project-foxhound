@@ -280,6 +280,15 @@ DefaultJitOptions::DefaultJitOptions() {
   SET_DEFAULT(spectreJitToCxxCalls, true);
 #endif
 
+  // Whether the W^X policy is enforced to mark JIT code pages as either
+  // writable or executable but never both at the same time. On Apple Silicon
+  // this must always be false because we use pthread_jit_write_protect_np.
+#ifdef JS_USE_APPLE_FAST_WX
+  SET_DEFAULT(writeProtectCode, false);
+#else
+  SET_DEFAULT(writeProtectCode, true);
+#endif
+
   // This is set to its actual value in InitializeJit.
   SET_DEFAULT(supportsUnalignedAccesses, false);
 
@@ -408,6 +417,15 @@ void DefaultJitOptions::setNormalIonWarmUpThreshold(uint32_t warmUpThreshold) {
 void DefaultJitOptions::resetNormalIonWarmUpThreshold() {
   jit::DefaultJitOptions defaultValues;
   setNormalIonWarmUpThreshold(defaultValues.normalIonWarmUpThreshold);
+}
+
+void DefaultJitOptions::maybeSetWriteProtectCode(bool val) {
+#ifdef JS_USE_APPLE_FAST_WX
+  // On Apple Silicon we always use pthread_jit_write_protect_np.
+  MOZ_ASSERT(!writeProtectCode);
+#else
+  writeProtectCode = val;
+#endif
 }
 
 }  // namespace jit

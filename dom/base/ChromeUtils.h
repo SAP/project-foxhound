@@ -189,9 +189,6 @@ class ChromeUtils {
 
   static void ClearStyleSheetCache(GlobalObject& aGlobal);
 
-  static already_AddRefed<Promise> RequestPerformanceMetrics(
-      GlobalObject& aGlobal, ErrorResult& aRv);
-
   static void SetPerfStatsCollectionMask(GlobalObject& aGlobal, uint64_t aMask);
 
   static already_AddRefed<Promise> CollectPerfStats(GlobalObject& aGlobal,
@@ -228,6 +225,10 @@ class ChromeUtils {
                                     JS::Handle<JSObject*> target,
                                     JS::Handle<JSObject*> modules,
                                     ErrorResult& aRv);
+
+#ifdef XP_UNIX
+  static void GetLibcConstants(const GlobalObject&, LibcConstants& aConsts);
+#endif
 
   static void GetCallerLocation(const GlobalObject& global,
                                 nsIPrincipal* principal,
@@ -302,6 +303,9 @@ class ChromeUtils {
 
   static void GetAllPossibleUtilityActorNames(GlobalObject& aGlobal,
                                               nsTArray<nsCString>& aNames);
+
+  static bool ShouldResistFingerprinting(GlobalObject& aGlobal,
+                                         JSRFPTarget aTarget);
 
  private:
   // Number of DevTools session debugging the current process

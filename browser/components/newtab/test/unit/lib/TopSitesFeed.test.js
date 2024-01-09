@@ -280,6 +280,17 @@ describe("Top Sites Feed", () => {
       feed.refreshDefaults("https://foo.com");
     });
 
+    describe("search service failure", () => {
+      it("should show recently top site tiles", async () => {
+        sandbox
+          .stub(global.Services.search, "init")
+          .rejects(new Error("Simulating search init failure"));
+
+        const result = await feed.getLinksWithDefaults();
+        assert.ok(result);
+      });
+    });
+
     describe("general", () => {
       it("should get the links from NewTabUtils", async () => {
         const result = await feed.getLinksWithDefaults();
@@ -1621,6 +1632,18 @@ describe("Top Sites Feed", () => {
         });
     });
 
+    it("should not show search shortcuts if search service failed", async () => {
+      sandbox
+        .stub(global.Services.search, "getAppProvidedEngines")
+        .rejects(new Error("Simulating search init failure"));
+
+      let result = await feed._maybeInsertSearchShortcuts(
+        fakeNewTabUtils.pinnedLinks.links
+      );
+
+      assert.notOk(result);
+    });
+
     it("should properly disable search improvements if the pref is off", async () => {
       sandbox.stub(global.Services.prefs, "clearUserPref");
       sandbox.spy(feed.pinnedCache, "expire");
@@ -2805,6 +2828,58 @@ describe("Top Sites Feed", () => {
       assert.equal(sponsored[1].pos, 1);
     });
 
+    it("should have glean set sov partners", async () => {
+      sandbox.stub(feed._contile, "sov").get(() => sov);
+      fakeNimbusFeatures.pocketNewtab.getVariable.reset();
+      fakeNimbusFeatures.pocketNewtab.getVariable.onCall(0).returns(true);
+      fakeNimbusFeatures.pocketNewtab.getVariable.onCall(1).returns(undefined);
+      global.Sampling.ratioSample.onCall(0).resolves(0);
+      global.Sampling.ratioSample.onCall(1).resolves(1);
+      sandbox.spy(Glean.newtab.sovAllocation, "set");
+
+      await feed._mergeSponsoredLinks(fakeSponsoredLinks);
+
+      assert.calledOnce(Glean.newtab.sovAllocation.set);
+      assert.calledWith(Glean.newtab.sovAllocation.set, [
+        '{"pos":1,"assigned":"amp","chosen":"amp"}',
+        '{"pos":2,"assigned":"moz-sales","chosen":"moz-sales"}',
+      ]);
+    });
+
+    it("should have glean set sov partners even with one assignment", async () => {
+      const oneSov = {
+        name: "SOV-20230518215316",
+        allocations: [
+          {
+            position: 1,
+            allocation: [
+              {
+                partner: "amp",
+                percentage: 100,
+              },
+              {
+                partner: "moz-sales",
+                percentage: 0,
+              },
+            ],
+          },
+        ],
+      };
+      sandbox.stub(feed._contile, "sov").get(() => oneSov);
+      fakeNimbusFeatures.pocketNewtab.getVariable.reset();
+      fakeNimbusFeatures.pocketNewtab.getVariable.onCall(0).returns(true);
+      fakeNimbusFeatures.pocketNewtab.getVariable.onCall(1).returns(undefined);
+      global.Sampling.ratioSample.onCall(0).resolves(0);
+      sandbox.spy(Glean.newtab.sovAllocation, "set");
+
+      await feed._mergeSponsoredLinks(fakeSponsoredLinks);
+
+      assert.calledOnce(Glean.newtab.sovAllocation.set);
+      assert.calledWith(Glean.newtab.sovAllocation.set, [
+        '{"pos":1,"assigned":"amp","chosen":"amp"}',
+      ]);
+    });
+
     it("should add remaining contile tiles when nimbus var contile max num sponsored is present", async () => {
       sandbox.stub(feed._contile, "sov").get(() => sov);
       fakeNimbusFeatures.pocketNewtab.getVariable.reset();
@@ -2843,6 +2918,27 @@ describe("Top Sites Feed", () => {
       const sponsored = await feed._mergeSponsoredLinks(fakeSponsoredLinks);
 
       assert.equal(sponsored.length, 0);
+    });
+
+    it("should ignore empty slots from AMP links if present", async () => {
+      sandbox.stub(feed._contile, "sov").get(() => sov);
+      fakeNimbusFeatures.pocketNewtab.getVariable.reset();
+      fakeNimbusFeatures.pocketNewtab.getVariable.onCall(0).returns(true);
+      fakeNimbusFeatures.pocketNewtab.getVariable.onCall(1).returns(undefined);
+      global.Sampling.ratioSample.onCall(0).resolves(0);
+      global.Sampling.ratioSample.onCall(1).resolves(1);
+
+      // Add a few empty slots to AMP links.
+      fakeSponsoredLinks.amp.unshift(undefined);
+      fakeSponsoredLinks.amp.unshift(undefined);
+      const sponsored = await feed._mergeSponsoredLinks(fakeSponsoredLinks);
+
+      assert.equal(sponsored.length, 2);
+      assert.equal(sponsored[0].partner, "amp");
+      assert.equal(sponsored[0].sponsored_position, 1);
+      assert.equal(sponsored[1].partner, "moz-sales");
+      assert.equal(sponsored[1].sponsored_position, 2);
+      assert.equal(sponsored[1].pos, 1);
     });
   });
 

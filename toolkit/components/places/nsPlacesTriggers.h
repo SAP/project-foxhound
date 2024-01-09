@@ -33,8 +33,8 @@
         "SELECT store_last_inserted_id('moz_historyvisits', NEW.id); "        \
         "UPDATE moz_places SET "                                              \
         "visit_count = visit_count + " VISIT_COUNT_INC("NEW.visit_type") ", " \
-        "recalc_frecency = (frecency <> 0), "                                 \
-        "recalc_alt_frecency = (frecency <> 0), "                             \
+        "recalc_frecency = 1, "                                               \
+        "recalc_alt_frecency = 1, "                                           \
         "last_visit_date = MAX(IFNULL(last_visit_date, 0), NEW.visit_date) "  \
         "WHERE id = NEW.place_id;"                                            \
         "END")
@@ -139,41 +139,46 @@
 )
 
 // This trigger runs on deletes on moz_places.
-#  define CREATE_PLACES_AFTERDELETE_TRIGGER                         \
-    nsLiteralCString(                                               \
-        "CREATE TEMP TRIGGER moz_places_afterdelete_trigger "       \
-        "AFTER DELETE ON moz_places FOR EACH ROW "                  \
-        "BEGIN "                                                    \
-        "INSERT INTO moz_updateoriginsdelete_temp (prefix, host, "  \
-        "frecency_delta) "                                          \
-        "VALUES (get_prefix(OLD.url), get_host_and_port(OLD.url), " \
-        "-MAX(OLD.frecency, 0)) "                                   \
-        "ON CONFLICT(prefix, host) DO UPDATE "                      \
-        "SET frecency_delta = frecency_delta - OLD.frecency "       \
-        "WHERE OLD.frecency > 0; "                                  \
+#  define CREATE_PLACES_AFTERDELETE_TRIGGER                                    \
+    nsLiteralCString(                                                          \
+        "CREATE TEMP TRIGGER moz_places_afterdelete_trigger "                  \
+        "AFTER DELETE ON moz_places FOR EACH ROW "                             \
+        "BEGIN "                                                               \
+        "INSERT INTO moz_updateoriginsdelete_temp (prefix, host, "             \
+        "frecency_delta) "                                                     \
+        "VALUES (get_prefix(OLD.url), get_host_and_port(OLD.url), "            \
+        "-MAX(OLD.frecency, 0)) "                                              \
+        "ON CONFLICT(prefix, host) DO UPDATE "                                 \
+        "SET frecency_delta = frecency_delta - OLD.frecency "                  \
+        "WHERE OLD.frecency > 0; "                                             \
+        "UPDATE moz_origins SET recalc_frecency = 1, recalc_alt_frecency = 1 " \
+        "WHERE id = OLD.origin_id; "                                           \
         "END ")
 
 // This is an alternate version of CREATE_PLACES_AFTERDELETE_TRIGGER, with
 // support for previews tombstones. Only one of these should be used at the
 // same time
-#  define CREATE_PLACES_AFTERDELETE_WPREVIEWS_TRIGGER                   \
-    nsLiteralCString(                                                   \
-        "CREATE TEMP TRIGGER moz_places_afterdelete_wpreviews_trigger " \
-        "AFTER DELETE ON moz_places FOR EACH ROW "                      \
-        "BEGIN "                                                        \
-        "INSERT INTO moz_updateoriginsdelete_temp (prefix, host, "      \
-        "frecency_delta) "                                              \
-        "VALUES (get_prefix(OLD.url), get_host_and_port(OLD.url), "     \
-        "-MAX(OLD.frecency, 0)) "                                       \
-        "ON CONFLICT(prefix, host) DO UPDATE "                          \
-        "SET frecency_delta = frecency_delta - OLD.frecency "           \
-        "WHERE OLD.frecency > 0; "                                      \
-        "INSERT OR IGNORE INTO moz_previews_tombstones VALUES "         \
-        "(md5hex(OLD.url));"                                            \
+#  define CREATE_PLACES_AFTERDELETE_WPREVIEWS_TRIGGER                          \
+    nsLiteralCString(                                                          \
+        "CREATE TEMP TRIGGER moz_places_afterdelete_wpreviews_trigger "        \
+        "AFTER DELETE ON moz_places FOR EACH ROW "                             \
+        "BEGIN "                                                               \
+        "INSERT INTO moz_updateoriginsdelete_temp (prefix, host, "             \
+        "frecency_delta) "                                                     \
+        "VALUES (get_prefix(OLD.url), get_host_and_port(OLD.url), "            \
+        "-MAX(OLD.frecency, 0)) "                                              \
+        "ON CONFLICT(prefix, host) DO UPDATE "                                 \
+        "SET frecency_delta = frecency_delta - OLD.frecency "                  \
+        "WHERE OLD.frecency > 0; "                                             \
+        "UPDATE moz_origins SET recalc_frecency = 1, recalc_alt_frecency = 1 " \
+        "WHERE id = OLD.origin_id; "                                           \
+        "INSERT OR IGNORE INTO moz_previews_tombstones VALUES "                \
+        "(md5hex(OLD.url));"                                                   \
         "END ")
 
-// This trigger corresponds to the previous trigger.  It runs on deletes on
-// moz_updateoriginsdelete_temp -- logically, after deletes on moz_places.
+// This trigger corresponds to the previous trigger.  It runs on deletes
+// on moz_updateoriginsdelete_temp -- logically, after deletes on
+// moz_places.
 #  define CREATE_UPDATEORIGINSDELETE_AFTERDELETE_TRIGGER \
     nsLiteralCString( \
   "CREATE TEMP TRIGGER moz_updateoriginsdelete_afterdelete_trigger " \
@@ -206,10 +211,11 @@
 
 // This trigger runs on updates to moz_places.frecency.
 //
-// However, we skip this when frecency changes are due to frecency decay since
-// (1) decay updates all frecencies at once, so this trigger would run for each
-// moz_place, which would be expensive; and (2) decay does not change the
-// ordering of frecencies since all frecencies decay by the same percentage.
+// However, we skip this when frecency changes are due to frecency decay
+// since (1) decay updates all frecencies at once, so this trigger would
+// run for each moz_place, which would be expensive; and (2) decay does
+// not change the ordering of frecencies since all frecencies decay by
+// the same percentage.
 #  define CREATE_PLACES_AFTERUPDATE_FRECENCY_TRIGGER                           \
     nsLiteralCString(                                                          \
         "CREATE TEMP TRIGGER moz_places_afterupdate_frecency_trigger "         \
@@ -226,8 +232,8 @@
         "UPDATE moz_origins SET recalc_frecency = 1, recalc_alt_frecency = 1 " \
         "WHERE id = NEW.origin_id; "                                           \
         "END ")
-// This trigger corresponds to the previous trigger.  It runs on deletes on
-// moz_updateoriginsupdate_temp -- logically, after updates to
+// This trigger corresponds to the previous trigger.  It runs on deletes
+// on moz_updateoriginsupdate_temp -- logically, after updates to
 // moz_places.frecency.
 #  define CREATE_UPDATEORIGINSUPDATE_AFTERDELETE_TRIGGER \
     nsLiteralCString( \
@@ -256,7 +262,8 @@
         "END")
 
 /**
- * This trigger removes a row from moz_openpages_temp when open_count reaches 0.
+ * This trigger removes a row from moz_openpages_temp when open_count
+ * reaches 0.
  *
  * @note this should be kept up-to-date with the definition in
  *       nsPlacesAutoComplete.js
@@ -293,14 +300,14 @@
         "END")
 
 /**
- * Currently expiration skips anything with frecency = -1, since that is the
- * default value for new page insertions. Unfortunately adding and immediately
- * removing a bookmark will generate a page with frecency = -1 that would never
- * be expired until visited.
- * As a temporary workaround we set frecency to 1 on bookmark addition if it was
- * set to -1. This is not elegant, but it will be fixed by Bug 1475582 once
- * removing bookmarks will immediately take care of removing orphan pages.
- * Note setting frecency resets recalc_frecency, so do it first.
+ * Currently expiration skips anything with frecency = -1, since that is
+ * the default value for new page insertions. Unfortunately adding and
+ * immediately removing a bookmark will generate a page with frecency =
+ * -1 that would never be expired until visited. As a temporary
+ * workaround we set frecency to 1 on bookmark addition if it was set to
+ * -1. This is not elegant, but it will be fixed by Bug 1475582 once
+ * removing bookmarks will immediately take care of removing orphan
+ * pages. Note setting frecency resets recalc_frecency, so do it first.
  */
 #  define CREATE_BOOKMARKS_FOREIGNCOUNT_AFTERINSERT_TRIGGER                    \
     nsLiteralCString(                                                          \
@@ -310,8 +317,9 @@
         "SELECT store_last_inserted_id('moz_bookmarks', NEW.id); "             \
         "SELECT note_sync_change() WHERE NEW.syncChangeCounter > 0; "          \
         "UPDATE moz_places "                                                   \
-        "SET frecency = 1 WHERE frecency = -1 AND NOT " IS_PLACE_QUERY         \
-        ";"                                                                    \
+        "SET frecency = (CASE WHEN " IS_PLACE_QUERY                            \
+        "                THEN 0 ELSE 1 END) "                                  \
+        "WHERE frecency = -1 AND id = NEW.fk;"                                 \
         "UPDATE moz_places "                                                   \
         "SET foreign_count = foreign_count + 1 "                               \
         ",   hidden = " IS_PLACE_QUERY                                         \
@@ -397,8 +405,8 @@
         "SELECT note_sync_change(); "                                       \
         "END")
 
-// This trigger removes orphan search terms when interactions are removed from
-// the metadata table.
+// This trigger removes orphan search terms when interactions are
+// removed from the metadata table.
 #  define CREATE_PLACES_METADATA_AFTERDELETE_TRIGGER                   \
     nsLiteralCString(                                                  \
         "CREATE TEMP TRIGGER moz_places_metadata_afterdelete_trigger " \
@@ -410,6 +418,27 @@
         "SELECT id FROM moz_places_metadata "                          \
         "WHERE search_query_id = OLD.search_query_id "                 \
         "); "                                                          \
+        "END")
+
+// since moz_places_extra is really just storing json, there could be a
+// scenario where we have a valid row but empty json -- we should make sure
+// we have triggers to remove any such rows
+#  define CREATE_MOZ_PLACES_EXTRA_AFTERUPDATE_TRIGGER                 \
+    nsLiteralCString(                                                 \
+        "CREATE TEMP TRIGGER moz_places_extra_trigger "               \
+        "AFTER UPDATE ON moz_places_extra FOR EACH ROW "              \
+        "WHEN (NEW.sync_json = '' OR NEW.sync_json = '{}')"           \
+        "BEGIN "                                                      \
+        "DELETE FROM moz_places_extra WHERE place_id = NEW.place_id;" \
+        "END")
+
+#  define CREATE_MOZ_HISTORYVISITS_AFTERUPDATE_TRIGGER                       \
+    nsLiteralCString(                                                        \
+        "CREATE TEMP TRIGGER moz_historyvisits_extra_trigger "               \
+        "AFTER UPDATE ON moz_historyvisits_extra FOR EACH ROW "              \
+        "WHEN (NEW.sync_json = '' OR NEW.sync_json = '{}')"                  \
+        "BEGIN "                                                             \
+        "DELETE FROM moz_historyvisits_extra WHERE visit_id = NEW.visit_id;" \
         "END")
 
 #endif  // __nsPlacesTriggers_h__

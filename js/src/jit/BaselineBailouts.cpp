@@ -21,17 +21,20 @@
 #include "jit/JitFrames.h"
 #include "jit/JitRuntime.h"
 #include "jit/JitSpewer.h"
+#include "jit/JitZone.h"
 #include "jit/RematerializedFrame.h"
 #include "jit/SharedICRegisters.h"
 #include "jit/Simulator.h"
 #include "js/friend/StackLimits.h"  // js::AutoCheckRecursionLimit, js::ReportOverRecursed
 #include "js/Utility.h"
+#include "proxy/ScriptedProxyHandler.h"
 #include "util/Memory.h"
 #include "vm/ArgumentsObject.h"
 #include "vm/BytecodeUtil.h"
 #include "vm/JitActivation.h"
 
 #include "jit/JitFrames-inl.h"
+#include "vm/JSAtomUtils-inl.h"
 #include "vm/JSContext-inl.h"
 #include "vm/JSScript-inl.h"
 
@@ -368,6 +371,15 @@ class MOZ_STACK_CLASS BaselineStackBuilder {
     return true;
   }
 
+  [[nodiscard]] bool peekLastValue(Value* result) {
+    if (bufferUsed_ < sizeof(Value)) {
+      return false;
+    }
+
+    memcpy(result, header_->copyStackBottom, sizeof(Value));
+    return true;
+  }
+
   [[nodiscard]] bool maybeWritePadding(size_t alignment, size_t after,
                                        const char* info) {
     MOZ_ASSERT(framePushed_ % sizeof(Value) == 0);
@@ -410,6 +422,10 @@ class MOZ_STACK_CLASS BaselineStackBuilder {
     return reinterpret_cast<uint8_t*>(frame_) + (offset - bufferUsed_);
   }
 };
+
+void BaselineBailoutInfo::trace(JSTracer* trc) {
+  TraceRoot(trc, &tempId, "BaselineBailoutInfo::tempId");
+}
 
 BaselineStackBuilder::BaselineStackBuilder(JSContext* cx,
                                            const JSJitFrameIter& frameIter,
@@ -462,7 +478,8 @@ bool BaselineStackBuilder::initFrame() {
   }
 
   JitSpew(JitSpew_BaselineBailouts, "      Unpacking %s:%u:%u",
-          script_->filename(), script_->lineno(), script_->column());
+          script_->filename(), script_->lineno(),
+          script_->column().zeroOriginValue());
   JitSpew(JitSpew_BaselineBailouts, "      [BASELINE-JS FRAME]");
 
   // Write the previous frame pointer value. For the outermost frame we reuse
@@ -794,6 +811,7 @@ bool BaselineStackBuilder::fixUpCallerArgs(
 bool BaselineStackBuilder::buildExpressionStack() {
   JitSpew(JitSpew_BaselineBailouts, "      pushing %u expression stack slots",
           exprStackSlots());
+
   for (uint32_t i = 0; i < exprStackSlots(); i++) {
     Value v;
     // If we are in the middle of propagating an exception from Ion by
@@ -812,6 +830,48 @@ bool BaselineStackBuilder::buildExpressionStack() {
     if (!writeValue(v, "StackValue")) {
       return false;
     }
+  }
+
+  if (resumeMode() == ResumeMode::ResumeAfterCheckProxyGetResult) {
+    JitSpew(JitSpew_BaselineBailouts,
+            "      Checking that the proxy's get trap result matches "
+            "expectations.");
+    Value returnVal;
+    if (peekLastValue(&returnVal) && !returnVal.isMagic(JS_OPTIMIZED_OUT)) {
+      Value idVal = iter_.read();
+      Value targetVal = iter_.read();
+
+      MOZ_RELEASE_ASSERT(!idVal.isMagic());
+      MOZ_RELEASE_ASSERT(targetVal.isObject());
+      RootedObject target(cx_, &targetVal.toObject());
+      RootedValue rootedIdVal(cx_, idVal);
+      RootedId id(cx_);
+      if (!PrimitiveValueToId<CanGC>(cx_, rootedIdVal, &id)) {
+        return false;
+      }
+      RootedValue value(cx_, returnVal);
+
+      auto validation =
+          ScriptedProxyHandler::checkGetTrapResult(cx_, target, id, value);
+      if (validation != ScriptedProxyHandler::GetTrapValidationResult::OK) {
+        header_->tempId = id.get();
+
+        JitSpew(
+            JitSpew_BaselineBailouts,
+            "      Proxy get trap result mismatch! Overwriting bailout kind");
+        if (validation == ScriptedProxyHandler::GetTrapValidationResult::
+                              MustReportSameValue) {
+          bailoutKind_ = BailoutKind::ThrowProxyTrapMustReportSameValue;
+        } else if (validation == ScriptedProxyHandler::GetTrapValidationResult::
+                                     MustReportUndefined) {
+          bailoutKind_ = BailoutKind::ThrowProxyTrapMustReportUndefined;
+        } else {
+          return false;
+        }
+      }
+    }
+
+    return true;
   }
 
   if (resumeMode() == ResumeMode::ResumeAfterCheckIsObject) {
@@ -1436,7 +1496,7 @@ bool BaselineStackBuilder::buildOneFrame() {
           "      Resuming %s pc offset %d (op %s) (line %u) of %s:%u:%u",
           resumeAfter() ? "after" : "at", (int)pcOff, CodeName(op_),
           PCToLineNumber(script_, pc()), script_->filename(), script_->lineno(),
-          script_->column());
+          script_->column().zeroOriginValue());
   JitSpew(JitSpew_BaselineBailouts, "      Bailout kind: %s",
           BailoutKindString(bailoutKind()));
 #endif
@@ -1522,7 +1582,8 @@ bool jit::BailoutIonToBaseline(JSContext* cx, JitActivation* activation,
   JitSpew(JitSpew_BaselineBailouts,
           "Bailing to baseline %s:%u:%u (IonScript=%p) (FrameType=%d)",
           iter.script()->filename(), iter.script()->lineno(),
-          iter.script()->column(), (void*)iter.ionScript(), (int)prevFrameType);
+          iter.script()->column().zeroOriginValue(), (void*)iter.ionScript(),
+          (int)prevFrameType);
 
   if (excInfo) {
     if (excInfo->catchingException()) {
@@ -1567,7 +1628,7 @@ bool jit::BailoutIonToBaseline(JSContext* cx, JitActivation* activation,
   if (iter.maybeCallee()) {
     JitSpew(JitSpew_BaselineBailouts, "  Callee function (%s:%u:%u)",
             iter.script()->filename(), iter.script()->lineno(),
-            iter.script()->column());
+            iter.script()->column().zeroOriginValue());
   } else {
     JitSpew(JitSpew_BaselineBailouts, "  No callee!");
   }
@@ -1655,6 +1716,12 @@ static void InvalidateAfterBailout(JSContext* cx, HandleScript outerScript,
     return;
   }
 
+  // Record a invalidation for this script in the jit hints map
+  if (cx->runtime()->jitRuntime()->hasJitHintsMap()) {
+    JitHintsMap* jitHints = cx->runtime()->jitRuntime()->getJitHintsMap();
+    jitHints->recordInvalidation(outerScript);
+  }
+
   MOZ_ASSERT(!outerScript->ionScript()->invalidated());
 
   JitSpew(JitSpew_BaselineBailouts, "Invalidating due to %s", reason);
@@ -1665,9 +1732,9 @@ static void HandleLexicalCheckFailure(JSContext* cx, HandleScript outerScript,
                                       HandleScript innerScript) {
   JitSpew(JitSpew_IonBailouts,
           "Lexical check failure %s:%u:%u, inlined into %s:%u:%u",
-          innerScript->filename(), innerScript->lineno(), innerScript->column(),
-          outerScript->filename(), outerScript->lineno(),
-          outerScript->column());
+          innerScript->filename(), innerScript->lineno(),
+          innerScript->column().zeroOriginValue(), outerScript->filename(),
+          outerScript->lineno(), outerScript->column().zeroOriginValue());
 
   if (!innerScript->failedLexicalCheck()) {
     innerScript->setFailedLexicalCheck();
@@ -1743,13 +1810,13 @@ enum class BailoutAction {
 bool jit::FinishBailoutToBaseline(BaselineBailoutInfo* bailoutInfoArg) {
   JitSpew(JitSpew_BaselineBailouts, "  Done restoring frames");
 
-  // Use UniquePtr to free the bailoutInfo before we return.
-  UniquePtr<BaselineBailoutInfo> bailoutInfo(bailoutInfoArg);
+  JSContext* cx = TlsContext.get();
+  // Use UniquePtr to free the bailoutInfo before we return, and root it for
+  // the tempId field.
+  Rooted<UniquePtr<BaselineBailoutInfo>> bailoutInfo(cx, bailoutInfoArg);
   bailoutInfoArg = nullptr;
 
   MOZ_DIAGNOSTIC_ASSERT(*bailoutInfo->bailoutKind != BailoutKind::Unreachable);
-
-  JSContext* cx = TlsContext.get();
 
   // jit::Bailout(), jit::InvalidationBailout(), and jit::HandleException()
   // should have reset the counter to zero.
@@ -1894,9 +1961,10 @@ bool jit::FinishBailoutToBaseline(BaselineBailoutInfo* bailoutInfoArg) {
   JitSpew(JitSpew_BaselineBailouts,
           "  Restored outerScript=(%s:%u:%u,%u) innerScript=(%s:%u:%u,%u) "
           "(bailoutKind=%u)",
-          outerScript->filename(), outerScript->lineno(), outerScript->column(),
+          outerScript->filename(), outerScript->lineno(),
+          outerScript->column().zeroOriginValue(),
           outerScript->getWarmUpCount(), innerScript->filename(),
-          innerScript->lineno(), innerScript->column(),
+          innerScript->lineno(), innerScript->column().zeroOriginValue(),
           innerScript->getWarmUpCount(), (unsigned)bailoutKind);
 
   BailoutAction action = BailoutAction::InvalidateImmediately;
@@ -1918,15 +1986,17 @@ bool jit::FinishBailoutToBaseline(BaselineBailoutInfo* bailoutInfoArg) {
         // inner script and the outer script, so that we can properly track if
         // we add a new case to the folded stub and avoid invalidating the
         // outer script.
-        cx->lastStubFoldingBailoutChild_ = innerScript;
-        cx->lastStubFoldingBailoutParent_ = outerScript;
+        cx->zone()->jitZone()->noteStubFoldingBailout(innerScript, outerScript);
       }
       break;
 
     case BailoutKind::SpeculativePhi:
       // A value of an unexpected type flowed into a phi.
       MOZ_ASSERT(!outerScript->hadSpeculativePhiBailout());
-      outerScript->setHadSpeculativePhiBailout();
+      if (!outerScript->hasIonScript() ||
+          outerScript->ionScript()->numFixableBailouts() == 0) {
+        outerScript->setHadSpeculativePhiBailout();
+      }
       InvalidateAfterBailout(cx, outerScript, "phi specialization failure");
       break;
 
@@ -2037,6 +2107,20 @@ bool jit::FinishBailoutToBaseline(BaselineBailoutInfo* bailoutInfoArg) {
     case BailoutKind::ThrowCheckIsObject:
       MOZ_ASSERT(!cx->isExceptionPending());
       return ThrowCheckIsObject(cx, CheckIsObjectKind::IteratorReturn);
+
+    case BailoutKind::ThrowProxyTrapMustReportSameValue:
+    case BailoutKind::ThrowProxyTrapMustReportUndefined: {
+      MOZ_ASSERT(!cx->isExceptionPending());
+      RootedId rootedId(cx, bailoutInfo->tempId);
+      ScriptedProxyHandler::reportGetTrapValidationError(
+          cx, rootedId,
+          bailoutKind == BailoutKind::ThrowProxyTrapMustReportSameValue
+              ? ScriptedProxyHandler::GetTrapValidationResult::
+                    MustReportSameValue
+              : ScriptedProxyHandler::GetTrapValidationResult::
+                    MustReportUndefined);
+      return false;
+    }
 
     case BailoutKind::IonExceptionDebugMode:
       // Return false to resume in HandleException with reconstructed

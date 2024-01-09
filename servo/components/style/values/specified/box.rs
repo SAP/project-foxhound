@@ -106,102 +106,134 @@ pub enum DisplayInside {
     ToResolvedValue,
     ToShmem,
 )]
-#[repr(transparent)]
+#[repr(C)]
 pub struct Display(u16);
 
 /// Gecko-only impl block for Display (shared stuff later in this file):
 #[allow(missing_docs)]
 #[allow(non_upper_case_globals)]
 impl Display {
-    // Our u16 bits are used as follows:    LOOOOOOOIIIIIIII
-    const LIST_ITEM_BIT: u16 = 0x8000; //^
-    const DISPLAY_OUTSIDE_BITS: u16 = 7; // ^^^^^^^
-    const DISPLAY_INSIDE_BITS: u16 = 8; //        ^^^^^^^^
+    // Our u16 bits are used as follows: LOOOOOOOIIIIIIII
+    pub const LIST_ITEM_MASK: u16 = 0b1000000000000000;
+    pub const OUTSIDE_MASK: u16 = 0b0111111100000000;
+    pub const INSIDE_MASK: u16 = 0b0000000011111111;
+    pub const OUTSIDE_SHIFT: u16 = 8;
 
     /// https://drafts.csswg.org/css-display/#the-display-properties
-    pub const None: Self = Self::new(DisplayOutside::None, DisplayInside::None);
+    /// ::new() inlined so cbindgen can use it
+    pub const None: Self =
+        Self(((DisplayOutside::None as u16) << Self::OUTSIDE_SHIFT) | DisplayInside::None as u16);
     #[cfg(any(feature = "servo-layout-2020", feature = "gecko"))]
-    pub const Contents: Self = Self::new(DisplayOutside::None, DisplayInside::Contents);
-    pub const Inline: Self = Self::new(DisplayOutside::Inline, DisplayInside::Flow);
-    pub const InlineBlock: Self = Self::new(DisplayOutside::Inline, DisplayInside::FlowRoot);
-    pub const Block: Self = Self::new(DisplayOutside::Block, DisplayInside::Flow);
+    pub const Contents: Self = Self(
+        ((DisplayOutside::None as u16) << Self::OUTSIDE_SHIFT) | DisplayInside::Contents as u16,
+    );
+    pub const Inline: Self =
+        Self(((DisplayOutside::Inline as u16) << Self::OUTSIDE_SHIFT) | DisplayInside::Flow as u16);
+    pub const InlineBlock: Self = Self(
+        ((DisplayOutside::Inline as u16) << Self::OUTSIDE_SHIFT) | DisplayInside::FlowRoot as u16,
+    );
+    pub const Block: Self =
+        Self(((DisplayOutside::Block as u16) << Self::OUTSIDE_SHIFT) | DisplayInside::Flow as u16);
     #[cfg(feature = "gecko")]
-    pub const FlowRoot: Self = Self::new(DisplayOutside::Block, DisplayInside::FlowRoot);
-    pub const Flex: Self = Self::new(DisplayOutside::Block, DisplayInside::Flex);
-    pub const InlineFlex: Self = Self::new(DisplayOutside::Inline, DisplayInside::Flex);
+    pub const FlowRoot: Self =
+        Self(((DisplayOutside::Block as u16) << Self::OUTSIDE_SHIFT) | DisplayInside::FlowRoot as u16);
+    pub const Flex: Self =
+        Self(((DisplayOutside::Block as u16) << Self::OUTSIDE_SHIFT) | DisplayInside::Flex as u16);
+    pub const InlineFlex: Self =
+        Self(((DisplayOutside::Inline as u16) << Self::OUTSIDE_SHIFT) | DisplayInside::Flex as u16);
     #[cfg(feature = "gecko")]
-    pub const Grid: Self = Self::new(DisplayOutside::Block, DisplayInside::Grid);
+    pub const Grid: Self =
+        Self(((DisplayOutside::Block as u16) << Self::OUTSIDE_SHIFT) | DisplayInside::Grid as u16);
     #[cfg(feature = "gecko")]
-    pub const InlineGrid: Self = Self::new(DisplayOutside::Inline, DisplayInside::Grid);
+    pub const InlineGrid: Self =
+        Self(((DisplayOutside::Inline as u16) << Self::OUTSIDE_SHIFT) | DisplayInside::Grid as u16);
     #[cfg(any(feature = "servo-layout-2013", feature = "gecko"))]
-    pub const Table: Self = Self::new(DisplayOutside::Block, DisplayInside::Table);
+    pub const Table: Self =
+        Self(((DisplayOutside::Block as u16) << Self::OUTSIDE_SHIFT) | DisplayInside::Table as u16);
     #[cfg(any(feature = "servo-layout-2013", feature = "gecko"))]
-    pub const InlineTable: Self = Self::new(DisplayOutside::Inline, DisplayInside::Table);
+    pub const InlineTable: Self = Self(
+        ((DisplayOutside::Inline as u16) << Self::OUTSIDE_SHIFT) | DisplayInside::Table as u16,
+    );
     #[cfg(any(feature = "servo-layout-2013", feature = "gecko"))]
-    pub const TableCaption: Self = Self::new(DisplayOutside::TableCaption, DisplayInside::Flow);
+    pub const TableCaption: Self = Self(
+        ((DisplayOutside::TableCaption as u16) << Self::OUTSIDE_SHIFT) | DisplayInside::Flow as u16,
+    );
     #[cfg(feature = "gecko")]
-    pub const Ruby: Self = Self::new(DisplayOutside::Inline, DisplayInside::Ruby);
+    pub const Ruby: Self =
+        Self(((DisplayOutside::Inline as u16) << Self::OUTSIDE_SHIFT) | DisplayInside::Ruby as u16);
     #[cfg(feature = "gecko")]
-    pub const WebkitBox: Self = Self::new(DisplayOutside::Block, DisplayInside::WebkitBox);
+    pub const WebkitBox: Self = Self(
+        ((DisplayOutside::Block as u16) << Self::OUTSIDE_SHIFT) | DisplayInside::WebkitBox as u16,
+    );
     #[cfg(feature = "gecko")]
-    pub const WebkitInlineBox: Self = Self::new(DisplayOutside::Inline, DisplayInside::WebkitBox);
+    pub const WebkitInlineBox: Self = Self(
+        ((DisplayOutside::Inline as u16) << Self::OUTSIDE_SHIFT) | DisplayInside::WebkitBox as u16,
+    );
 
     // Internal table boxes.
 
     #[cfg(any(feature = "servo-layout-2013", feature = "gecko"))]
-    pub const TableRowGroup: Self =
-        Self::new(DisplayOutside::InternalTable, DisplayInside::TableRowGroup);
-
-    #[cfg(any(feature = "servo-layout-2013", feature = "gecko"))]
-    pub const TableHeaderGroup: Self = Self::new(
-        DisplayOutside::InternalTable,
-        DisplayInside::TableHeaderGroup,
+    pub const TableRowGroup: Self = Self(
+        ((DisplayOutside::InternalTable as u16) << Self::OUTSIDE_SHIFT) |
+            DisplayInside::TableRowGroup as u16,
     );
-
     #[cfg(any(feature = "servo-layout-2013", feature = "gecko"))]
-    pub const TableFooterGroup: Self = Self::new(
-        DisplayOutside::InternalTable,
-        DisplayInside::TableFooterGroup,
+    pub const TableHeaderGroup: Self = Self(
+        ((DisplayOutside::InternalTable as u16) << Self::OUTSIDE_SHIFT) |
+            DisplayInside::TableHeaderGroup as u16,
     );
-
     #[cfg(any(feature = "servo-layout-2013", feature = "gecko"))]
-    pub const TableColumn: Self =
-        Self::new(DisplayOutside::InternalTable, DisplayInside::TableColumn);
-
-    #[cfg(any(feature = "servo-layout-2013", feature = "gecko"))]
-    pub const TableColumnGroup: Self = Self::new(
-        DisplayOutside::InternalTable,
-        DisplayInside::TableColumnGroup,
+    pub const TableFooterGroup: Self = Self(
+        ((DisplayOutside::InternalTable as u16) << Self::OUTSIDE_SHIFT) |
+            DisplayInside::TableFooterGroup as u16,
     );
-
     #[cfg(any(feature = "servo-layout-2013", feature = "gecko"))]
-    pub const TableRow: Self = Self::new(DisplayOutside::InternalTable, DisplayInside::TableRow);
-
+    pub const TableColumn: Self = Self(
+        ((DisplayOutside::InternalTable as u16) << Self::OUTSIDE_SHIFT) |
+            DisplayInside::TableColumn as u16,
+    );
     #[cfg(any(feature = "servo-layout-2013", feature = "gecko"))]
-    pub const TableCell: Self = Self::new(DisplayOutside::InternalTable, DisplayInside::TableCell);
+    pub const TableColumnGroup: Self = Self(
+        ((DisplayOutside::InternalTable as u16) << Self::OUTSIDE_SHIFT) |
+            DisplayInside::TableColumnGroup as u16,
+    );
+    #[cfg(any(feature = "servo-layout-2013", feature = "gecko"))]
+    pub const TableRow: Self = Self(
+        ((DisplayOutside::InternalTable as u16) << Self::OUTSIDE_SHIFT) |
+            DisplayInside::TableRow as u16,
+    );
+    #[cfg(any(feature = "servo-layout-2013", feature = "gecko"))]
+    pub const TableCell: Self = Self(
+        ((DisplayOutside::InternalTable as u16) << Self::OUTSIDE_SHIFT) |
+            DisplayInside::TableCell as u16,
+    );
 
     /// Internal ruby boxes.
     #[cfg(feature = "gecko")]
-    pub const RubyBase: Self = Self::new(DisplayOutside::InternalRuby, DisplayInside::RubyBase);
-    #[cfg(feature = "gecko")]
-    pub const RubyBaseContainer: Self = Self::new(
-        DisplayOutside::InternalRuby,
-        DisplayInside::RubyBaseContainer,
+    pub const RubyBase: Self = Self(
+        ((DisplayOutside::InternalRuby as u16) << Self::OUTSIDE_SHIFT) |
+            DisplayInside::RubyBase as u16,
     );
     #[cfg(feature = "gecko")]
-    pub const RubyText: Self = Self::new(DisplayOutside::InternalRuby, DisplayInside::RubyText);
+    pub const RubyBaseContainer: Self = Self(
+        ((DisplayOutside::InternalRuby as u16) << Self::OUTSIDE_SHIFT) |
+            DisplayInside::RubyBaseContainer as u16,
+    );
     #[cfg(feature = "gecko")]
-    pub const RubyTextContainer: Self = Self::new(
-        DisplayOutside::InternalRuby,
-        DisplayInside::RubyTextContainer,
+    pub const RubyText: Self = Self(
+        ((DisplayOutside::InternalRuby as u16) << Self::OUTSIDE_SHIFT) |
+            DisplayInside::RubyText as u16,
+    );
+    #[cfg(feature = "gecko")]
+    pub const RubyTextContainer: Self = Self(
+        ((DisplayOutside::InternalRuby as u16) << Self::OUTSIDE_SHIFT) |
+            DisplayInside::RubyTextContainer as u16,
     );
 
     /// Make a raw display value from <display-outside> and <display-inside> values.
     #[inline]
     const fn new(outside: DisplayOutside, inside: DisplayInside) -> Self {
-        let o: u16 = ((outside as u8) as u16) << Self::DISPLAY_INSIDE_BITS;
-        let i: u16 = (inside as u8) as u16;
-        Self(o | i)
+        Self((outside as u16) << Self::OUTSIDE_SHIFT | inside as u16)
     }
 
     /// Make a display enum value from <display-outside> and <display-inside> values.
@@ -211,22 +243,19 @@ impl Display {
         if !list_item {
             return v;
         }
-        Self(v.0 | Self::LIST_ITEM_BIT)
+        Self(v.0 | Self::LIST_ITEM_MASK)
     }
 
     /// Accessor for the <display-inside> value.
     #[inline]
     pub fn inside(&self) -> DisplayInside {
-        DisplayInside::from_u16(self.0 & ((1 << Self::DISPLAY_INSIDE_BITS) - 1)).unwrap()
+        DisplayInside::from_u16(self.0 & Self::INSIDE_MASK).unwrap()
     }
 
     /// Accessor for the <display-outside> value.
     #[inline]
     pub fn outside(&self) -> DisplayOutside {
-        DisplayOutside::from_u16(
-            (self.0 >> Self::DISPLAY_INSIDE_BITS) & ((1 << Self::DISPLAY_OUTSIDE_BITS) - 1),
-        )
-        .unwrap()
+        DisplayOutside::from_u16((self.0 & Self::OUTSIDE_MASK) >> Self::OUTSIDE_SHIFT).unwrap()
     }
 
     /// Returns the raw underlying u16 value.
@@ -244,7 +273,7 @@ impl Display {
     /// Returns whether this `display` value is some kind of list-item.
     #[inline]
     pub const fn is_list_item(&self) -> bool {
-        (self.0 & Self::LIST_ITEM_BIT) != 0
+        (self.0 & Self::LIST_ITEM_MASK) != 0
     }
 
     /// Returns whether this `display` value is a ruby level container.
@@ -1177,6 +1206,10 @@ impl Parse for ContainIntrinsicSize {
         }
 
         if input.try_parse(|i| i.expect_ident_matching("auto")).is_ok() {
+            if input.try_parse(|i| i.expect_ident_matching("none")).is_ok() {
+                return Ok(Self::AutoNone);
+            }
+
             let l = NonNegativeLength::parse(context, input)?;
             return Ok(Self::AutoLength(l));
         }
@@ -1311,10 +1344,9 @@ impl ContainerName {
             DISALLOWED_CONTAINER_NAMES,
         )?);
         if !for_query {
-            while let Ok(name) = input.try_parse(|input| {
-                let ident = input.expect_ident()?;
-                CustomIdent::from_ident(location, &ident, DISALLOWED_CONTAINER_NAMES)
-            }) {
+            while let Ok(name) =
+                input.try_parse(|input| CustomIdent::parse(input, DISALLOWED_CONTAINER_NAMES))
+            {
                 idents.push(name);
             }
         }
@@ -1453,40 +1485,17 @@ pub enum Appearance {
     /// A dual toolbar button (e.g., a Back button with a dropdown)
     #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
     Dualbutton,
-    /// A groupbox.
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
-    Groupbox,
-    /// Menu Bar background
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
-    Menubar,
     /// <menu> and <menuitem> appearances
     #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
     Menuitem,
     #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
     Checkmenuitem,
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
-    Radiomenuitem,
-    /// For text on non-iconic menuitems only
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
-    Menuitemtext,
-    /// The text part of a dropdown list, to left of button.
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
-    MenulistText,
     /// Menu Popup background.
     #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
     Menupopup,
-    /// menu checkbox/radio appearances
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
-    Menucheckbox,
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
-    Menuradio,
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
-    Menuseparator,
+    /// Menu item arrow.
     #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
     Menuarrow,
-    /// An image in the menu gutter, like in bookmarks or history.
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
-    Menuimage,
     /// The meter bar's meter indicator.
     #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
     Meterchunk,
@@ -1499,18 +1508,6 @@ pub enum Appearance {
     /// The progress bar's progress indicator
     #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
     Progresschunk,
-    /// A generic container that always repaints on state changes. This is a
-    /// hack to make XUL checkboxes and radio buttons work.
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
-    CheckboxContainer,
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
-    RadioContainer,
-    /// The label part of a checkbox or radio button, used for painting a focus
-    /// outline.
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
-    CheckboxLabel,
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
-    RadioLabel,
     /// nsRangeFrame and its subparts
     #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
     Range,
@@ -1628,19 +1625,6 @@ pub enum Appearance {
     #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
     Dialog,
 
-    /// Vista Rebars.
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
-    MozWinCommunicationsToolbox,
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
-    MozWinMediaToolbox,
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
-    MozWinBrowsertabbarToolbox,
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
-    MozWinBorderlessGlass,
-    /// -moz-apperance style used in setting proper glass margins.
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
-    MozWinExcludeGlass,
-
     /// Mac help button.
     #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
     MozMacHelpButton,
@@ -1648,8 +1632,6 @@ pub enum Appearance {
     /// Windows themed window frame elements.
     #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
     MozWindowButtonBox,
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
-    MozWindowButtonBoxMaximized,
     #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
     MozWindowButtonClose,
     #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]

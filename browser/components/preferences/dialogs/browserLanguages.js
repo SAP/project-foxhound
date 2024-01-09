@@ -11,12 +11,9 @@ ChromeUtils.defineESModuleGetters(this, {
   AddonManager: "resource://gre/modules/AddonManager.sys.mjs",
   AddonRepository: "resource://gre/modules/addons/AddonRepository.sys.mjs",
   RemoteSettings: "resource://services-settings/remote-settings.sys.mjs",
+  SelectionChangedMenulist:
+    "resource:///modules/SelectionChangedMenulist.sys.mjs",
 });
-ChromeUtils.defineModuleGetter(
-  this,
-  "SelectionChangedMenulist",
-  "resource:///modules/SelectionChangedMenulist.jsm"
-);
 
 document
   .getElementById("BrowserLanguagesDialog")
@@ -300,7 +297,7 @@ class SortedItemSelectList {
    * reverted with `enableWithMessageId()`.
    */
   disableWithMessageId(messageId) {
-    this.menulist.setAttribute("data-l10n-id", messageId);
+    document.l10n.setAttributes(this.menulist, messageId);
     this.menulist.setAttribute(
       "image",
       "chrome://browser/skin/tabbrowser/tab-connecting.png"
@@ -314,7 +311,7 @@ class SortedItemSelectList {
    * reverted with `disableWithMessageId()`.
    */
   enableWithMessageId(messageId) {
-    this.menulist.setAttribute("data-l10n-id", messageId);
+    document.l10n.setAttributes(this.menulist, messageId);
     this.menulist.removeAttribute("image");
     this.menulist.disabled = this.menulist.itemCount == 0;
     this.button.disabled = !this.menulist.selectedItem;

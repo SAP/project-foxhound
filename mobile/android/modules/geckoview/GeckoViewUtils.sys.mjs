@@ -2,19 +2,15 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 import { Log } from "resource://gre/modules/Log.sys.mjs";
 
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
+  AndroidLog: "resource://gre/modules/AndroidLog.sys.mjs",
   EventDispatcher: "resource://gre/modules/Messaging.sys.mjs",
   clearTimeout: "resource://gre/modules/Timer.sys.mjs",
   setTimeout: "resource://gre/modules/Timer.sys.mjs",
-});
-
-XPCOMUtils.defineLazyModuleGetters(lazy, {
-  AndroidLog: "resource://gre/modules/AndroidLog.jsm",
 });
 
 /**
@@ -86,7 +82,7 @@ export var GeckoViewUtils = {
     name,
     { service, module, handler, observers, ppmm, mm, ged, init, once }
   ) {
-    XPCOMUtils.defineLazyGetter(scope, name, _ => {
+    ChromeUtils.defineLazyGetter(scope, name, _ => {
       let ret = undefined;
       if (module) {
         ret = ChromeUtils.importESModule(module)[name];
@@ -404,7 +400,7 @@ export var GeckoViewUtils = {
       const log = (strings, ...exprs) =>
         this._log(log.logger, level, strings, exprs);
 
-      XPCOMUtils.defineLazyGetter(log, "logger", _ => {
+      ChromeUtils.defineLazyGetter(log, "logger", _ => {
         const logger = Log.repository.getLogger(tag);
         logger.parent = this.rootLogger;
         return logger;
@@ -507,7 +503,7 @@ export var GeckoViewUtils = {
   },
 };
 
-XPCOMUtils.defineLazyGetter(
+ChromeUtils.defineLazyGetter(
   GeckoViewUtils,
   "IS_PARENT_PROCESS",
   _ => Services.appinfo.processType == Services.appinfo.PROCESS_TYPE_DEFAULT

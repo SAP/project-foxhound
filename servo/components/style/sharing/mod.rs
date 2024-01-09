@@ -76,8 +76,7 @@ use crate::stylist::Stylist;
 use crate::values::AtomIdent;
 use atomic_refcell::{AtomicRefCell, AtomicRefMut};
 use owning_ref::OwningHandle;
-use selectors::matching::{NeedsSelectorFlags, VisitedHandlingMode};
-use selectors::NthIndexCache;
+use selectors::matching::{NeedsSelectorFlags, SelectorCaches, VisitedHandlingMode};
 use servo_arc::Arc;
 use smallbitvec::SmallBitVec;
 use smallvec::SmallVec;
@@ -228,7 +227,7 @@ impl ValidationData {
         element: E,
         stylist: &Stylist,
         bloom: &StyleBloom<E>,
-        nth_index_cache: &mut NthIndexCache,
+        selector_caches: &mut SelectorCaches,
         bloom_known_valid: bool,
         needs_selector_flags: NeedsSelectorFlags,
     ) -> &SmallBitVec
@@ -255,7 +254,7 @@ impl ValidationData {
             stylist.match_revalidation_selectors(
                 element,
                 bloom_to_use,
-                nth_index_cache,
+                selector_caches,
                 needs_selector_flags,
             )
         })
@@ -320,13 +319,13 @@ impl<E: TElement> StyleSharingCandidate<E> {
         &mut self,
         stylist: &Stylist,
         bloom: &StyleBloom<E>,
-        nth_index_cache: &mut NthIndexCache,
+        selector_caches: &mut SelectorCaches,
     ) -> &SmallBitVec {
         self.validation_data.revalidation_match_results(
             self.element,
             stylist,
             bloom,
-            nth_index_cache,
+            selector_caches,
             /* bloom_known_valid = */ false,
             // The candidate must already have the right bits already, if
             // needed.
@@ -386,7 +385,7 @@ impl<E: TElement> StyleSharingTarget<E> {
         &mut self,
         stylist: &Stylist,
         bloom: &StyleBloom<E>,
-        nth_index_cache: &mut NthIndexCache,
+        selector_caches: &mut SelectorCaches,
     ) -> &SmallBitVec {
         // It's important to set the selector flags. Otherwise, if we succeed in
         // sharing the style, we may not set the slow selector flags for the
@@ -407,7 +406,7 @@ impl<E: TElement> StyleSharingTarget<E> {
             self.element,
             stylist,
             bloom,
-            nth_index_cache,
+            selector_caches,
             /* bloom_known_valid = */ true,
             NeedsSelectorFlags::Yes,
         )
@@ -421,7 +420,7 @@ impl<E: TElement> StyleSharingTarget<E> {
         let cache = &mut context.thread_local.sharing_cache;
         let shared_context = &context.shared;
         let bloom_filter = &context.thread_local.bloom_filter;
-        let nth_index_cache = &mut context.thread_local.nth_index_cache;
+        let selector_caches = &mut context.thread_local.selector_caches;
 
         if cache.dom_depth != bloom_filter.matching_depth() {
             debug!(
@@ -437,7 +436,7 @@ impl<E: TElement> StyleSharingTarget<E> {
             self.element.traversal_parent()
         );
 
-        cache.share_style_if_possible(shared_context, bloom_filter, nth_index_cache, self)
+        cache.share_style_if_possible(shared_context, bloom_filter, selector_caches, self)
     }
 
     /// Gets the validation data used to match against this target, if any.
@@ -632,7 +631,11 @@ impl<E: TElement> StyleSharingCache<E> {
         //   matching `.foo`, even if `:has()` may not even be used. Ideally we'd
         //   have something like `RelativeSelectorConsidered::RightMost`, but the
         //   element flag is required for invalidation, and this reduces more tracking.
-        if element.anchors_relative_selector() {
+        if style
+            .style
+            .0
+            .flags
+            .intersects(ComputedValueFlags::ANCHORS_RELATIVE_SELECTOR) {
             debug!("Failing to insert to the cache: may anchor relative selector");
             return;
         }
@@ -688,7 +691,7 @@ impl<E: TElement> StyleSharingCache<E> {
         &mut self,
         shared_context: &SharedStyleContext,
         bloom_filter: &StyleBloom<E>,
-        nth_index_cache: &mut NthIndexCache,
+        selector_caches: &mut SelectorCaches,
         target: &mut StyleSharingTarget<E>,
     ) -> Option<ResolvedElementStyles> {
         if shared_context.options.disable_style_sharing_cache {
@@ -718,7 +721,7 @@ impl<E: TElement> StyleSharingCache<E> {
                 candidate,
                 &shared_context,
                 bloom_filter,
-                nth_index_cache,
+                selector_caches,
                 shared_context,
             )
         })
@@ -729,7 +732,7 @@ impl<E: TElement> StyleSharingCache<E> {
         candidate: &mut StyleSharingCandidate<E>,
         shared: &SharedStyleContext,
         bloom: &StyleBloom<E>,
-        nth_index_cache: &mut NthIndexCache,
+        selector_caches: &mut SelectorCaches,
         shared_context: &SharedStyleContext,
     ) -> Option<ResolvedElementStyles> {
         debug_assert!(target.matches_user_and_content_rules());
@@ -828,7 +831,7 @@ impl<E: TElement> StyleSharingCache<E> {
             return None;
         }
 
-        if !checks::revalidate(target, candidate, shared, bloom, nth_index_cache) {
+        if !checks::revalidate(target, candidate, shared, bloom, selector_caches) {
             trace!("Miss: Revalidation");
             return None;
         }
@@ -873,25 +876,30 @@ impl<E: TElement> StyleSharingCache<E> {
             // NOTE(emilio): We only need to check name / namespace because we
             // do name-dependent style adjustments, like the display: contents
             // to display: none adjustment.
-            if target.namespace() != candidate.element.namespace() {
+            if target.namespace() != candidate.element.namespace() ||
+                target.local_name() != candidate.element.local_name()
+            {
                 return None;
             }
-            if target.local_name() != candidate.element.local_name() {
+            // When using container units, inherited style + rules matched aren't enough to
+            // determine whether the style is the same. We could actually do a full container
+            // lookup but for now we just check that our actual traversal parent matches.
+            if data
+                .styles
+                .primary()
+                .flags
+                .intersects(ComputedValueFlags::USES_CONTAINER_UNITS) &&
+                candidate.element.traversal_parent() != target.traversal_parent()
+            {
                 return None;
             }
-            // Rule nodes and styles are computed independent of the element's
-            // actual visitedness, but at the end of the cascade (in
-            // `adjust_for_visited`) we do store the visitedness as a flag in
-            // style.  (This is a subtle change from initial visited work that
-            // landed when computed values were fused, see
-            // https://bugzilla.mozilla.org/show_bug.cgi?id=1381635.)
-            // So at the moment, we need to additionally compare visitedness,
-            // since that is not accounted for by rule nodes alone.
-            // FIXME(jryans): This seems like it breaks the constant time
-            // requirements of visited, assuming we get a cache hit on only one
-            // of unvisited vs. visited.
-            // TODO(emilio): We no longer have such a flag, remove this check.
-            if target.is_visited_link() != candidate.element.is_visited_link() {
+            // Rule nodes and styles are computed independent of the element's actual visitedness,
+            // but at the end of the cascade (in `adjust_for_visited`) we do store the
+            // RELEVANT_LINK_VISITED flag, so we can't share by rule node between visited and
+            // unvisited styles. We don't check for visitedness and just refuse to share for links
+            // entirely, so that visitedness doesn't affect timing.
+            debug_assert_eq!(target.is_link(), candidate.element.is_link(), "Linkness mismatch");
+            if target.is_link() {
                 return None;
             }
 

@@ -645,7 +645,7 @@ nsresult PuppetWidget::RequestIMEToCommitComposition(bool aCancel) {
   bool isCommitted = false;
   nsAutoString committedString;
   if (NS_WARN_IF(!mBrowserChild->SendRequestIMEToCommitComposition(
-          aCancel, &isCommitted, &committedString))) {
+          aCancel, composition->Id(), &isCommitted, &committedString))) {
     return NS_ERROR_FAILURE;
   }
 
@@ -673,7 +673,7 @@ nsresult PuppetWidget::RequestIMEToCommitComposition(bool aCancel) {
   mIgnoreCompositionEvents = true;
 
   Unused << mBrowserChild->SendOnEventNeedingAckHandled(
-      eCompositionCommitRequestHandled);
+      eCompositionCommitRequestHandled, composition->Id());
 
   // NOTE: PuppetWidget might be destroyed already.
   return NS_OK;
@@ -997,13 +997,6 @@ void PuppetWidget::OnMemoryPressure(layers::MemoryPressureReason aWhy) {
 bool PuppetWidget::NeedsPaint() {
   // e10s popups are handled by the parent process, so never should be painted
   // here
-  if (XRE_IsContentProcess() &&
-      StaticPrefs::browser_tabs_remote_desktopbehavior() &&
-      mWindowType == WindowType::Popup) {
-    NS_WARNING("Trying to paint an e10s popup in the child process!");
-    return false;
-  }
-
   return mVisible;
 }
 

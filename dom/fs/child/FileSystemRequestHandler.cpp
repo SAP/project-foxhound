@@ -197,16 +197,23 @@ void ResolveCallback(
 template <>
 void ResolveCallback(
     FileSystemMoveEntryResponse&& aResponse,
-    RefPtr<Promise> aPromise) {  // NOLINT(performance-unnecessary-value-param)
+    RefPtr<Promise> aPromise,  // NOLINT(performance-unnecessary-value-param)
+    FileSystemEntryMetadata* const& aEntry, const Name& aName) {
   MOZ_ASSERT(aPromise);
   QM_TRY(OkIf(Promise::PromiseState::Pending == aPromise->State()), QM_VOID);
 
-  MOZ_ASSERT(FileSystemMoveEntryResponse::Tnsresult == aResponse.type());
-  const auto& status = aResponse.get_nsresult();
-  if (NS_OK == status) {
+  if (FileSystemMoveEntryResponse::TEntryId == aResponse.type()) {
+    if (aEntry) {
+      aEntry->entryId() = std::move(aResponse.get_EntryId());
+      aEntry->entryName() = aName;
+    }
+
     aPromise->MaybeResolveWithUndefined();
     return;
   }
+  MOZ_ASSERT(FileSystemMoveEntryResponse::Tnsresult == aResponse.type());
+  const auto& status = aResponse.get_nsresult();
+  MOZ_ASSERT(NS_FAILED(status));
   HandleFailedStatus(status, aPromise);
 }
 
@@ -281,7 +288,7 @@ void ResolveCallback(FileSystemGetWritableFileStreamResponse&& aResponse,
                          if (stream->IsOpen()) {
                            // We don't need the promise, we just begin the
                            // closing process.
-                           Unused << stream->BeginClose();
+                           Unused << stream->BeginAbort();
                          }
                        });
 
@@ -308,7 +315,7 @@ mozilla::ipc::ResolveCallback<TResponse> SelectResolveCallback(
     RefPtr<Promise> aPromise,  // NOLINT(performance-unnecessary-value-param)
     Args&&... args) {
   using TOverload = void (*)(TResponse&&, RefPtr<Promise>, Args...);
-  return static_cast<std::function<void(TResponse &&)>>(
+  return static_cast<std::function<void(TResponse&&)>>(
       // NOLINTNEXTLINE(modernize-avoid-bind)
       std::bind(static_cast<TOverload>(ResolveCallback), std::placeholders::_1,
                 aPromise, std::forward<Args>(args)...));
@@ -321,7 +328,7 @@ mozilla::ipc::ResolveCallback<TResponse> SelectResolveCallback(
     Args&&... args) {
   using TOverload =
       void (*)(TResponse&&, RefPtr<Promise>, const TReturns&, Args...);
-  return static_cast<std::function<void(TResponse &&)>>(
+  return static_cast<std::function<void(TResponse&&)>>(
       // NOLINTNEXTLINE(modernize-avoid-bind)
       std::bind(static_cast<TOverload>(ResolveCallback), std::placeholders::_1,
                 aPromise, TReturns(), std::forward<Args>(args)...));
@@ -591,10 +598,12 @@ void FileSystemRequestHandler::RemoveEntry(
 
 void FileSystemRequestHandler::MoveEntry(
     RefPtr<FileSystemManager>& aManager, FileSystemHandle* aHandle,
-    const FileSystemEntryMetadata& aEntry,
+    FileSystemEntryMetadata* const aEntry,
     const FileSystemChildMetadata& aNewEntry,
     RefPtr<Promise> aPromise,  // NOLINT(performance-unnecessary-value-param)
     ErrorResult& aError) {
+  MOZ_ASSERT(aEntry);
+  MOZ_ASSERT(!aEntry->entryId().IsEmpty());
   MOZ_ASSERT(aPromise);
   LOG(("MoveEntry"));
 
@@ -610,9 +619,9 @@ void FileSystemRequestHandler::MoveEntry(
   }
 
   aManager->BeginRequest(
-      [request = FileSystemMoveEntryRequest(aEntry, aNewEntry),
-       onResolve =
-           SelectResolveCallback<FileSystemMoveEntryResponse, void>(aPromise),
+      [request = FileSystemMoveEntryRequest(*aEntry, aNewEntry),
+       onResolve = SelectResolveCallback<FileSystemMoveEntryResponse, void>(
+           aPromise, aEntry, aNewEntry.childName()),
        onReject = GetRejectCallback(aPromise)](const auto& actor) mutable {
         actor->SendMoveEntry(request, std::move(onResolve),
                              std::move(onReject));
@@ -622,10 +631,11 @@ void FileSystemRequestHandler::MoveEntry(
 
 void FileSystemRequestHandler::RenameEntry(
     RefPtr<FileSystemManager>& aManager, FileSystemHandle* aHandle,
-    const FileSystemEntryMetadata& aEntry, const Name& aName,
+    FileSystemEntryMetadata* const aEntry, const Name& aName,
     RefPtr<Promise> aPromise,  // NOLINT(performance-unnecessary-value-param)
     ErrorResult& aError) {
-  MOZ_ASSERT(!aEntry.entryId().IsEmpty());
+  MOZ_ASSERT(aEntry);
+  MOZ_ASSERT(!aEntry->entryId().IsEmpty());
   MOZ_ASSERT(aPromise);
   LOG(("RenameEntry"));
 
@@ -641,9 +651,9 @@ void FileSystemRequestHandler::RenameEntry(
   }
 
   aManager->BeginRequest(
-      [request = FileSystemRenameEntryRequest(aEntry, aName),
-       onResolve =
-           SelectResolveCallback<FileSystemMoveEntryResponse, void>(aPromise),
+      [request = FileSystemRenameEntryRequest(*aEntry, aName),
+       onResolve = SelectResolveCallback<FileSystemMoveEntryResponse, void>(
+           aPromise, aEntry, aName),
        onReject = GetRejectCallback(aPromise)](const auto& actor) mutable {
         actor->SendRenameEntry(request, std::move(onResolve),
                                std::move(onReject));

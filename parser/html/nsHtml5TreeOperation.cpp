@@ -45,7 +45,6 @@
 
 using namespace mozilla;
 using namespace mozilla::dom;
-using mozilla::dom::Document;
 
 /**
  * Helper class that opens a notification batch if the current doc
@@ -211,7 +210,7 @@ nsHtml5TreeOperation::~nsHtml5TreeOperation() {
 }
 
 nsresult nsHtml5TreeOperation::AppendTextToTextNode(
-    const char16_t* aBuffer, uint32_t aLength, dom::Text* aTextNode,
+    const char16_t* aBuffer, uint32_t aLength, Text* aTextNode,
     nsHtml5DocumentBuilder* aBuilder) {
   MOZ_ASSERT(aTextNode, "Got null text node.");
   MOZ_ASSERT(aBuilder);
@@ -269,12 +268,12 @@ nsresult nsHtml5TreeOperation::Append(nsIContent* aNode, nsIContent* aParent,
 }
 
 nsresult nsHtml5TreeOperation::Append(nsIContent* aNode, nsIContent* aParent,
-                                      mozilla::dom::FromParser aFromParser,
+                                      FromParser aFromParser,
                                       nsHtml5DocumentBuilder* aBuilder) {
   Maybe<nsHtml5AutoPauseUpdate> autoPause;
-  Maybe<dom::AutoCEReaction> autoCEReaction;
-  dom::DocGroup* docGroup = aParent->OwnerDoc()->GetDocGroup();
-  if (docGroup && aFromParser != mozilla::dom::FROM_PARSER_FRAGMENT) {
+  Maybe<AutoCEReaction> autoCEReaction;
+  DocGroup* docGroup = aParent->OwnerDoc()->GetDocGroup();
+  if (docGroup && aFromParser != FROM_PARSER_FRAGMENT) {
     autoCEReaction.emplace(docGroup->CustomElementReactionsStack(), nullptr);
   }
   nsresult rv = Append(aNode, aParent, aBuilder);
@@ -395,7 +394,7 @@ nsresult nsHtml5TreeOperation::FosterParent(nsIContent* aNode,
 nsresult nsHtml5TreeOperation::AddAttributes(nsIContent* aNode,
                                              nsHtml5HtmlAttributes* aAttributes,
                                              nsHtml5DocumentBuilder* aBuilder) {
-  dom::Element* node = aNode->AsElement();
+  Element* node = aNode->AsElement();
   nsHtml5OtherDocUpdate update(node->OwnerDoc(), aBuilder->GetDocument());
 
   int32_t len = aAttributes->getLength();
@@ -415,13 +414,13 @@ nsresult nsHtml5TreeOperation::AddAttributes(nsIContent* aNode,
 }
 
 void nsHtml5TreeOperation::SetHTMLElementAttributes(
-    dom::Element* aElement, nsAtom* aName, nsHtml5HtmlAttributes* aAttributes) {
+    Element* aElement, nsAtom* aName, nsHtml5HtmlAttributes* aAttributes) {
   int32_t len = aAttributes->getLength();
   for (int32_t i = 0; i < len; i++) {
     nsHtml5String val = aAttributes->getValueNoBoundsCheck(i);
     nsAtom* klass = val.MaybeAsAtom();
     if (klass) {
-      aElement->SetSingleClassFromParser(klass);
+      aElement->SetClassAttrFromParser(klass);
     } else {
       nsAtom* localName = aAttributes->getLocalNameNoBoundsCheck(i);
       nsAtom* prefix = aAttributes->getPrefixNoBoundsCheck(i);
@@ -443,21 +442,15 @@ void nsHtml5TreeOperation::SetHTMLElementAttributes(
 }
 
 nsIContent* nsHtml5TreeOperation::CreateHTMLElement(
-    nsAtom* aName, nsHtml5HtmlAttributes* aAttributes,
-    mozilla::dom::FromParser aFromParser, nsNodeInfoManager* aNodeInfoManager,
-    nsHtml5DocumentBuilder* aBuilder,
-    mozilla::dom::HTMLContentCreatorFunction aCreator) {
-  RefPtr<dom::NodeInfo> nodeInfo = aNodeInfoManager->GetNodeInfo(
+    nsAtom* aName, nsHtml5HtmlAttributes* aAttributes, FromParser aFromParser,
+    nsNodeInfoManager* aNodeInfoManager, nsHtml5DocumentBuilder* aBuilder,
+    HTMLContentCreatorFunction aCreator) {
+  RefPtr<NodeInfo> nodeInfo = aNodeInfoManager->GetNodeInfo(
       aName, nullptr, kNameSpaceID_XHTML, nsINode::ELEMENT_NODE);
   NS_ASSERTION(nodeInfo, "Got null nodeinfo.");
 
-  dom::Element* newContent = nullptr;
   Document* document = nodeInfo->GetDocument();
-  bool willExecuteScript = false;
-  bool isCustomElement = false;
   RefPtr<nsAtom> isAtom;
-  dom::CustomElementDefinition* definition = nullptr;
-
   if (aAttributes) {
     nsHtml5String is = aAttributes->getValue(nsHtml5AttributeName::ATTR_IS);
     if (is) {
@@ -467,114 +460,89 @@ nsIContent* nsHtml5TreeOperation::CreateHTMLElement(
     }
   }
 
-  isCustomElement = (aCreator == NS_NewCustomElement || isAtom);
-  if (isCustomElement && aFromParser != dom::FROM_PARSER_FRAGMENT) {
+  const bool isCustomElement = aCreator == NS_NewCustomElement || isAtom;
+  CustomElementDefinition* customElementDefinition = nullptr;
+  if (isCustomElement && aFromParser != FROM_PARSER_FRAGMENT) {
     RefPtr<nsAtom> tagAtom = nodeInfo->NameAtom();
     RefPtr<nsAtom> typeAtom =
-        (aCreator == NS_NewCustomElement) ? tagAtom : isAtom;
+        aCreator == NS_NewCustomElement ? tagAtom : isAtom;
 
     MOZ_ASSERT(nodeInfo->NameAtom()->Equals(nodeInfo->LocalName()));
-    definition = nsContentUtils::LookupCustomElementDefinition(
+    customElementDefinition = nsContentUtils::LookupCustomElementDefinition(
         document, nodeInfo->NameAtom(), nodeInfo->NamespaceID(), typeAtom);
-
-    if (definition) {
-      willExecuteScript = true;
-    }
   }
 
-  if (willExecuteScript) {  // This will cause custom element constructors to
-                            // run
-    mozilla::dom::AutoSetThrowOnDynamicMarkupInsertionCounter
+  auto DoCreateElement = [&](HTMLContentCreatorFunction aCreator) -> Element* {
+    nsCOMPtr<Element> newElement;
+    if (aCreator) {
+      newElement = aCreator(nodeInfo.forget(), aFromParser);
+    } else {
+      NS_NewHTMLElement(getter_AddRefs(newElement), nodeInfo.forget(),
+                        aFromParser, isAtom, customElementDefinition);
+    }
+
+    MOZ_ASSERT(newElement, "Element creation created null pointer.");
+    Element* element = newElement.get();
+    aBuilder->HoldElement(newElement.forget());
+
+    if (auto* linkStyle = LinkStyle::FromNode(*element)) {
+      linkStyle->DisableUpdates();
+    }
+
+    if (!aAttributes) {
+      return element;
+    }
+
+    SetHTMLElementAttributes(element, aName, aAttributes);
+    return element;
+  };
+
+  if (customElementDefinition) {
+    // This will cause custom element constructors to run.
+    AutoSetThrowOnDynamicMarkupInsertionCounter
         throwOnDynamicMarkupInsertionCounter(document);
     nsHtml5AutoPauseUpdate autoPauseContentUpdate(aBuilder);
     { nsAutoMicroTask mt; }
-    dom::AutoCEReaction autoCEReaction(
+    AutoCEReaction autoCEReaction(
         document->GetDocGroup()->CustomElementReactionsStack(), nullptr);
-
-    nsCOMPtr<dom::Element> newElement;
-    NS_NewHTMLElement(getter_AddRefs(newElement), nodeInfo.forget(),
-                      aFromParser, isAtom, definition);
-
-    MOZ_ASSERT(newElement, "Element creation created null pointer.");
-    newContent = newElement;
-    aBuilder->HoldElement(newElement.forget());
-
-    if (MOZ_UNLIKELY(aName == nsGkAtoms::style || aName == nsGkAtoms::link)) {
-      if (auto* linkStyle = dom::LinkStyle::FromNode(*newContent)) {
-        linkStyle->SetEnableUpdates(false);
-      }
-    }
-
-    if (!aAttributes) {
-      return newContent;
-    }
-
-    SetHTMLElementAttributes(newContent, aName, aAttributes);
-  } else {
-    nsCOMPtr<dom::Element> newElement;
-
-    if (isCustomElement) {
-      NS_NewHTMLElement(getter_AddRefs(newElement), nodeInfo.forget(),
-                        aFromParser, isAtom, definition);
-    } else {
-      newElement = aCreator(nodeInfo.forget(), aFromParser);
-    }
-
-    MOZ_ASSERT(newElement, "Element creation created null pointer.");
-
-    newContent = newElement;
-    aBuilder->HoldElement(newElement.forget());
-
-    if (MOZ_UNLIKELY(aName == nsGkAtoms::style || aName == nsGkAtoms::link)) {
-      if (auto* linkStyle = dom::LinkStyle::FromNode(*newContent)) {
-        linkStyle->SetEnableUpdates(false);
-      }
-    }
-
-    if (!aAttributes) {
-      return newContent;
-    }
-
-    SetHTMLElementAttributes(newContent, aName, aAttributes);
+    return DoCreateElement(nullptr);
   }
-
-  return newContent;
+  return DoCreateElement(isCustomElement ? nullptr : aCreator);
 }
 
 nsIContent* nsHtml5TreeOperation::CreateSVGElement(
-    nsAtom* aName, nsHtml5HtmlAttributes* aAttributes,
-    mozilla::dom::FromParser aFromParser, nsNodeInfoManager* aNodeInfoManager,
-    nsHtml5DocumentBuilder* aBuilder,
-    mozilla::dom::SVGContentCreatorFunction aCreator) {
+    nsAtom* aName, nsHtml5HtmlAttributes* aAttributes, FromParser aFromParser,
+    nsNodeInfoManager* aNodeInfoManager, nsHtml5DocumentBuilder* aBuilder,
+    SVGContentCreatorFunction aCreator) {
   nsCOMPtr<nsIContent> newElement;
   if (MOZ_LIKELY(aNodeInfoManager->SVGEnabled())) {
-    RefPtr<dom::NodeInfo> nodeInfo = aNodeInfoManager->GetNodeInfo(
+    RefPtr<NodeInfo> nodeInfo = aNodeInfoManager->GetNodeInfo(
         aName, nullptr, kNameSpaceID_SVG, nsINode::ELEMENT_NODE);
     MOZ_ASSERT(nodeInfo, "Got null nodeinfo.");
 
-    mozilla::DebugOnly<nsresult> rv =
+    DebugOnly<nsresult> rv =
         aCreator(getter_AddRefs(newElement), nodeInfo.forget(), aFromParser);
     MOZ_ASSERT(NS_SUCCEEDED(rv) && newElement);
   } else {
-    RefPtr<dom::NodeInfo> nodeInfo = aNodeInfoManager->GetNodeInfo(
+    RefPtr<NodeInfo> nodeInfo = aNodeInfoManager->GetNodeInfo(
         aName, nullptr, kNameSpaceID_disabled_SVG, nsINode::ELEMENT_NODE);
     MOZ_ASSERT(nodeInfo, "Got null nodeinfo.");
 
     // The mismatch between NS_NewXMLElement and SVGContentCreatorFunction
     // argument types is annoying.
-    nsCOMPtr<dom::Element> xmlElement;
-    mozilla::DebugOnly<nsresult> rv =
+    nsCOMPtr<Element> xmlElement;
+    DebugOnly<nsresult> rv =
         NS_NewXMLElement(getter_AddRefs(xmlElement), nodeInfo.forget());
     MOZ_ASSERT(NS_SUCCEEDED(rv) && xmlElement);
     newElement = xmlElement;
   }
 
-  dom::Element* newContent = newElement->AsElement();
+  Element* newContent = newElement->AsElement();
   aBuilder->HoldElement(newElement.forget());
 
   if (MOZ_UNLIKELY(aName == nsGkAtoms::style)) {
-    if (auto* linkStyle = dom::LinkStyle::FromNode(*newContent)) {
-      linkStyle->SetEnableUpdates(false);
+    if (auto* linkStyle = LinkStyle::FromNode(*newContent)) {
+      linkStyle->DisableUpdates();
     }
   }
 
@@ -587,7 +555,7 @@ nsIContent* nsHtml5TreeOperation::CreateSVGElement(
     nsHtml5String val = aAttributes->getValueNoBoundsCheck(i);
     nsAtom* klass = val.MaybeAsAtom();
     if (klass) {
-      newContent->SetSingleClassFromParser(klass);
+      newContent->SetClassAttrFromParser(klass);
     } else {
       nsAtom* localName = aAttributes->getLocalNameNoBoundsCheck(i);
       nsAtom* prefix = aAttributes->getPrefixNoBoundsCheck(i);
@@ -604,26 +572,26 @@ nsIContent* nsHtml5TreeOperation::CreateSVGElement(
 nsIContent* nsHtml5TreeOperation::CreateMathMLElement(
     nsAtom* aName, nsHtml5HtmlAttributes* aAttributes,
     nsNodeInfoManager* aNodeInfoManager, nsHtml5DocumentBuilder* aBuilder) {
-  nsCOMPtr<dom::Element> newElement;
+  nsCOMPtr<Element> newElement;
   if (MOZ_LIKELY(aNodeInfoManager->MathMLEnabled())) {
-    RefPtr<dom::NodeInfo> nodeInfo = aNodeInfoManager->GetNodeInfo(
+    RefPtr<NodeInfo> nodeInfo = aNodeInfoManager->GetNodeInfo(
         aName, nullptr, kNameSpaceID_MathML, nsINode::ELEMENT_NODE);
     NS_ASSERTION(nodeInfo, "Got null nodeinfo.");
 
-    mozilla::DebugOnly<nsresult> rv =
+    DebugOnly<nsresult> rv =
         NS_NewMathMLElement(getter_AddRefs(newElement), nodeInfo.forget());
     MOZ_ASSERT(NS_SUCCEEDED(rv) && newElement);
   } else {
-    RefPtr<dom::NodeInfo> nodeInfo = aNodeInfoManager->GetNodeInfo(
+    RefPtr<NodeInfo> nodeInfo = aNodeInfoManager->GetNodeInfo(
         aName, nullptr, kNameSpaceID_disabled_MathML, nsINode::ELEMENT_NODE);
     NS_ASSERTION(nodeInfo, "Got null nodeinfo.");
 
-    mozilla::DebugOnly<nsresult> rv =
+    DebugOnly<nsresult> rv =
         NS_NewXMLElement(getter_AddRefs(newElement), nodeInfo.forget());
     MOZ_ASSERT(NS_SUCCEEDED(rv) && newElement);
   }
 
-  dom::Element* newContent = newElement;
+  Element* newContent = newElement;
   aBuilder->HoldElement(newElement.forget());
 
   if (!aAttributes) {
@@ -635,7 +603,7 @@ nsIContent* nsHtml5TreeOperation::CreateMathMLElement(
     nsHtml5String val = aAttributes->getValueNoBoundsCheck(i);
     nsAtom* klass = val.MaybeAsAtom();
     if (klass) {
-      newContent->SetSingleClassFromParser(klass);
+      newContent->SetClassAttrFromParser(klass);
     } else {
       nsAtom* localName = aAttributes->getLocalNameNoBoundsCheck(i);
       nsAtom* prefix = aAttributes->getPrefixNoBoundsCheck(i);
@@ -651,19 +619,17 @@ nsIContent* nsHtml5TreeOperation::CreateMathMLElement(
 
 void nsHtml5TreeOperation::SetFormElement(nsIContent* aNode,
                                           nsIContent* aParent) {
-  RefPtr<dom::HTMLFormElement> formElement =
-      dom::HTMLFormElement::FromNodeOrNull(aParent);
+  RefPtr formElement = HTMLFormElement::FromNodeOrNull(aParent);
   NS_ASSERTION(formElement,
                "The form element doesn't implement HTMLFormElement.");
   nsCOMPtr<nsIFormControl> formControl(do_QueryInterface(aNode));
   if (formControl &&
       formControl->ControlType() !=
           FormControlType::FormAssociatedCustomElement &&
-      !aNode->AsElement()->HasAttr(kNameSpaceID_None, nsGkAtoms::form)) {
+      !aNode->AsElement()->HasAttr(nsGkAtoms::form)) {
     formControl->SetForm(formElement);
-  } else if (HTMLImageElement* domImageElement =
-                 dom::HTMLImageElement::FromNodeOrNull(aNode)) {
-    domImageElement->SetForm(formElement);
+  } else if (auto* image = HTMLImageElement::FromNodeOrNull(aNode)) {
+    image->SetForm(formElement);
   }
 }
 
@@ -710,8 +676,7 @@ nsresult nsHtml5TreeOperation::AppendComment(nsIContent* aParent,
                                              char16_t* aBuffer, int32_t aLength,
                                              nsHtml5DocumentBuilder* aBuilder) {
   nsNodeInfoManager* nodeInfoManager = aParent->OwnerDoc()->NodeInfoManager();
-  RefPtr<dom::Comment> comment =
-      new (nodeInfoManager) dom::Comment(nodeInfoManager);
+  RefPtr<Comment> comment = new (nodeInfoManager) Comment(nodeInfoManager);
   NS_ASSERTION(comment, "Infallible malloc failed?");
   // TaintFox: TODO(samuel) need taint here!
   nsresult rv = comment->SetText(aBuffer, aLength, false, EmptyTaint);
@@ -722,8 +687,8 @@ nsresult nsHtml5TreeOperation::AppendComment(nsIContent* aParent,
 
 nsresult nsHtml5TreeOperation::AppendCommentToDocument(
     char16_t* aBuffer, int32_t aLength, nsHtml5DocumentBuilder* aBuilder) {
-  RefPtr<dom::Comment> comment = new (aBuilder->GetNodeInfoManager())
-      dom::Comment(aBuilder->GetNodeInfoManager());
+  RefPtr<Comment> comment = new (aBuilder->GetNodeInfoManager())
+      Comment(aBuilder->GetNodeInfoManager());
   NS_ASSERTION(comment, "Infallible malloc failed?");
   // TaintFox: TODO(samuel) need taint here!
   nsresult rv = comment->SetText(aBuffer, aLength, false, EmptyTaint);
@@ -737,7 +702,7 @@ nsresult nsHtml5TreeOperation::AppendDoctypeToDocument(
     nsHtml5DocumentBuilder* aBuilder) {
   // Adapted from nsXMLContentSink
   // Create a new doctype node
-  RefPtr<dom::DocumentType> docType =
+  RefPtr<DocumentType> docType =
       NS_NewDOMDocumentType(aBuilder->GetNodeInfoManager(), aName, aPublicId,
                             aSystemId, VoidString());
   return AppendToDocument(docType, aBuilder);
@@ -745,10 +710,8 @@ nsresult nsHtml5TreeOperation::AppendDoctypeToDocument(
 
 nsIContent* nsHtml5TreeOperation::GetDocumentFragmentForTemplate(
     nsIContent* aNode) {
-  dom::HTMLTemplateElement* tempElem =
-      static_cast<dom::HTMLTemplateElement*>(aNode);
-  RefPtr<dom::DocumentFragment> frag = tempElem->Content();
-  return frag;
+  auto* tempElem = static_cast<HTMLTemplateElement*>(aNode);
+  return tempElem->Content();
 }
 
 nsIContent* nsHtml5TreeOperation::GetFosterParent(nsIContent* aTable,
@@ -850,7 +813,7 @@ nsresult nsHtml5TreeOperation::Perform(nsHtml5TreeOpExecutor* aBuilder,
 
     nsresult operator()(const opCreateHTMLElement& aOperation) {
       nsIContent** target = aOperation.mContent;
-      mozilla::dom::HTMLContentCreatorFunction creator = aOperation.mCreator;
+      HTMLContentCreatorFunction creator = aOperation.mCreator;
       nsAtom* name = aOperation.mName;
       nsHtml5HtmlAttributes* attributes = aOperation.mAttributes;
       nsIContent* intendedParent =
@@ -869,7 +832,7 @@ nsresult nsHtml5TreeOperation::Perform(nsHtml5TreeOpExecutor* aBuilder,
 
     nsresult operator()(const opCreateSVGElement& aOperation) {
       nsIContent** target = aOperation.mContent;
-      mozilla::dom::SVGContentCreatorFunction creator = aOperation.mCreator;
+      SVGContentCreatorFunction creator = aOperation.mCreator;
       nsAtom* name = aOperation.mName;
       nsHtml5HtmlAttributes* attributes = aOperation.mAttributes;
       nsIContent* intendedParent =
@@ -1030,7 +993,7 @@ nsresult nsHtml5TreeOperation::Perform(nsHtml5TreeOpExecutor* aBuilder,
 
     nsresult operator()(const opSetStyleLineNumber& aOperation) {
       nsIContent* node = *(aOperation.mContent);
-      if (auto* linkStyle = dom::LinkStyle::FromNode(*node)) {
+      if (auto* linkStyle = LinkStyle::FromNode(*node)) {
         linkStyle->SetLineNumber(aOperation.mLineNumber);
       } else {
         MOZ_ASSERT(nsNameSpaceManager::GetInstance()->mSVGDisabled,
@@ -1078,7 +1041,7 @@ nsresult nsHtml5TreeOperation::Perform(nsHtml5TreeOpExecutor* aBuilder,
       nsDependentString depStr(str);
       // See viewsource.css for the possible classes
       nsAutoString klass;
-      element->GetAttr(kNameSpaceID_None, nsGkAtoms::_class, klass);
+      element->GetAttr(nsGkAtoms::_class, klass);
       if (!klass.IsEmpty()) {
         klass.Append(' ');
         klass.Append(depStr);
@@ -1151,7 +1114,7 @@ nsresult nsHtml5TreeOperation::Perform(nsHtml5TreeOpExecutor* aBuilder,
       nsAtom* otherAtom = aOperation.mOther;
       // See viewsource.css for the possible classes in addition to "error".
       nsAutoString klass;
-      element->GetAttr(kNameSpaceID_None, nsGkAtoms::_class, klass);
+      element->GetAttr(nsGkAtoms::_class, klass);
       if (!klass.IsEmpty()) {
         klass.AppendLiteral(" error");
         element->SetAttr(kNameSpaceID_None, nsGkAtoms::_class, klass, true);
@@ -1179,7 +1142,7 @@ nsresult nsHtml5TreeOperation::Perform(nsHtml5TreeOpExecutor* aBuilder,
       }
 
       nsAutoString title;
-      element->GetAttr(kNameSpaceID_None, nsGkAtoms::title, title);
+      element->GetAttr(nsGkAtoms::title, title);
       if (!title.IsEmpty()) {
         title.Append('\n');
         title.Append(message);

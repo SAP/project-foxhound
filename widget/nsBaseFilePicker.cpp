@@ -237,6 +237,11 @@ nsBaseFilePicker::AppendFilters(int32_t aFilterMask) {
     // should recognize and do the correct platform behavior for.
     AppendFilter(title, u"..apps"_ns);
   }
+  if (aFilterMask & filterPDF) {
+    titleBundle->GetStringFromName("pdfTitle", title);
+    filterBundle->GetStringFromName("pdfFilter", filter);
+    AppendFilter(title, filter);
+  }
   return NS_OK;
 }
 
@@ -336,9 +341,17 @@ NS_IMETHODIMP nsBaseFilePicker::SetDisplaySpecialDirectory(
     return NS_OK;
   }
 
-  return NS_GetSpecialDirectory(
-      NS_ConvertUTF16toUTF8(mDisplaySpecialDirectory).get(),
-      getter_AddRefs(mDisplayDirectory));
+  return ResolveSpecialDirectory(aDirectory);
+}
+
+nsresult nsBaseFilePicker::ResolveSpecialDirectory(
+    const nsAString& aSpecialDirectory) {
+  // Only perform special-directory name resolution in the parent process.
+  // (Subclasses of `nsBaseFilePicker` used in other processes must override
+  // this function.)
+  MOZ_ASSERT(XRE_IsParentProcess());
+  return NS_GetSpecialDirectory(NS_ConvertUTF16toUTF8(aSpecialDirectory).get(),
+                                getter_AddRefs(mDisplayDirectory));
 }
 
 // Get the display special directory

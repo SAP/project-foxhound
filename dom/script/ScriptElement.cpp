@@ -153,8 +153,7 @@ bool ScriptElement::MaybeProcessScript() {
     // HTML script elements.
     if (cont->IsHTMLElement()) {
       nsAutoString language;
-      cont->AsElement()->GetAttr(kNameSpaceID_None, nsGkAtoms::language,
-                                 language);
+      cont->AsElement()->GetAttr(nsGkAtoms::language, language);
       if (!language.IsEmpty() &&
           !nsContentUtils::IsJavaScriptLanguage(language)) {
         return false;
@@ -181,4 +180,30 @@ bool ScriptElement::MaybeProcessScript() {
 
   RefPtr<ScriptLoader> loader = ownerDoc->ScriptLoader();
   return loader->ProcessScriptElement(this, type);
+}
+
+bool ScriptElement::GetScriptType(nsAString& aType) {
+  Element* element = GetAsContent()->AsElement();
+
+  nsAutoString type;
+  if (!element->GetAttr(nsGkAtoms::type, type)) {
+    return false;
+  }
+
+  // ASCII whitespace https://infra.spec.whatwg.org/#ascii-whitespace:
+  // U+0009 TAB, U+000A LF, U+000C FF, U+000D CR, or U+0020 SPACE.
+  static const char kASCIIWhitespace[] = "\t\n\f\r ";
+
+  const bool wasEmptyBeforeTrim = type.IsEmpty();
+  type.Trim(kASCIIWhitespace);
+
+  // If the value before trim was not empty and the value is now empty, do not
+  // trim as we want to retain pure whitespace (by restoring original value)
+  // because we need to treat "" and " " (etc) differently.
+  if (!wasEmptyBeforeTrim && type.IsEmpty()) {
+    return element->GetAttr(nsGkAtoms::type, aType);
+  }
+
+  aType.Assign(type);
+  return true;
 }

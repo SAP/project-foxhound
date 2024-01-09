@@ -117,8 +117,6 @@ urlbar.impression.*
     not properly setting a specific autofill type, and it should not normally be
     used. If it appears in the data, it means we need to investigate and fix the
     code that is not properly setting a specific autofill type.
-  - ``autofill_preloaded``
-    For preloaded site type autofill.
   - ``autofill_url``
     For url type autofill.
 
@@ -302,7 +300,8 @@ urlbar.picked.*
   .. note::
     Firefox 102 deprecated ``autofill`` and added ``autofill_about``,
     ``autofill_adaptive``, ``autofill_origin``, ``autofill_other``,
-    ``autofill_preloaded``, and ``autofill_url``.
+    ``autofill_preloaded``, and ``autofill_url``. In Firefox 116,
+    ``autofill_preloaded`` was removed.
 
   Valid result types are:
 
@@ -337,11 +336,6 @@ urlbar.picked.*
     it should not normally be used. If it appears in the data, it means we need
     to investigate and fix the code that is not properly setting a specific
     autofill type.
-  - ``autofill_preloaded``
-    An autofilled `preloaded site`_. The preloaded-sites feature (as it relates
-    to this telemetry scalar) has never been enabled in Firefox, so this scalar
-    should never be recorded. It can be enabled by flipping a hidden preference,
-    however. It's included here for consistency and correctness.
   - ``autofill_url``
     An autofilled URL or partial URL from the user's history. Firefox autofills
     URLs "up to the next slash", so to trigger URL autofill, the user must first
@@ -353,6 +347,8 @@ urlbar.picked.*
     `adaptive history autofill document`_.
   - ``bookmark``
     A bookmarked URL.
+  - ``bookmark_adaptive``
+    A bookmarked URL retrieved from adaptive history.
   - ``dynamic``
     A specially crafted result, often used in experiments when basic types are
     not flexible enough for a rich layout.
@@ -364,6 +360,8 @@ urlbar.picked.*
     A search suggestion from previous search history.
   - ``history``
     A URL from history.
+  - ``history_adaptive``
+    A URL from history retrieved from adaptive history.
   - ``keyword``
     A bookmark keyword.
   - ``navigational``
@@ -398,7 +396,6 @@ urlbar.picked.*
 
   .. _adaptive history autofill document: https://docs.google.com/document/d/e/2PACX-1vRBLr_2dxus-aYhZRUkW9Q3B1K0uC-a0qQyE3kQDTU3pcNpDHb36-Pfo9fbETk89e7Jz4nkrqwRhi4j/pub
   .. _origin: https://html.spec.whatwg.org/multipage/origin.html#origin
-  .. _preloaded site: https://searchfox.org/mozilla-central/source/browser/components/urlbar/UrlbarProviderPreloadedSites.jsm
 
 urlbar.picked.searchmode.*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -741,10 +738,11 @@ Event Extra
     The type of the selected result at the time of submission.
     This is only present for ``engagement`` events.
     It can be one of: ``none``, ``autofill``, ``visiturl``, ``bookmark``,
-    ``history``, ``keyword``, ``searchengine``, ``searchsuggestion``,
-    ``switchtab``, ``remotetab``, ``extension``, ``oneoff``, ``keywordoffer``,
-    ``canonized``, ``tip``, ``tiphelp``, ``formhistory``, ``tabtosearch``,
-    ``help``, ``block``, ``quicksuggest``, ``unknown``
+     ``bookmark_adaptive`` ``history``, ``history_adaptive``, ``keyword``,
+     ``searchengine``, ``searchsuggestion``, ``switchtab``, ``remotetab``,
+     ``extension``, ``oneoff``, ``keywordoffer``, ``canonized``, ``tip``,
+     ``tiphelp``, ``formhistory``, ``tabtosearch``, ``help``, ``block``,
+     ``quicksuggest``, ``unknown``
     In practice, ``tabtosearch`` should not appear in real event telemetry.
     Opening a tab-to-search result enters search mode and entering search mode
     does not currently mark the end of an engagement. It is noted here for

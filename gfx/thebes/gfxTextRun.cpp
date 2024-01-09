@@ -1993,7 +1993,7 @@ void gfxFontGroup::AddFamilyToFontList(fontlist::Family* aFamily,
   }
   AutoTArray<fontlist::Face*, 4> faceList;
   aFamily->FindAllFacesForStyle(pfl->SharedFontList(), mStyle, faceList);
-  for (auto face : faceList) {
+  for (auto* face : faceList) {
     gfxFontEntry* fe = pfl->GetOrCreateFontEntry(face, aFamily);
     if (fe && !HasFont(fe)) {
       FamilyFace ff(aFamily, fe, aGeneric);
@@ -2011,9 +2011,9 @@ bool gfxFontGroup::HasFont(const gfxFontEntry* aFontEntry) {
   return false;
 }
 
-already_AddRefed<gfxFont> gfxFontGroup::GetFontAt(int32_t i, uint32_t aCh,
+already_AddRefed<gfxFont> gfxFontGroup::GetFontAt(uint32_t i, uint32_t aCh,
                                                   bool* aLoading) {
-  if (uint32_t(i) >= mFonts.Length()) {
+  if (i >= mFonts.Length()) {
     return nullptr;
   }
 
@@ -2733,6 +2733,7 @@ void gfxFontGroup::InitScriptRun(DrawTarget* aDrawTarget, gfxTextRun* aTextRun,
       bool syntheticUpper = false;
 
       if (mStyle.variantSubSuper != NS_FONT_VARIANT_POSITION_NORMAL &&
+          mStyle.useSyntheticPosition &&
           (aTextRun->GetShapingState() ==
                gfxTextRun::eShapingState_ForceFallbackFeature ||
            !matchedFont->SupportsSubSuperscript(mStyle.variantSubSuper, aString,

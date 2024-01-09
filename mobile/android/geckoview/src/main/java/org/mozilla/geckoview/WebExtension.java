@@ -1556,7 +1556,7 @@ public class WebExtension {
       /** The downloaded extension had a different type than expected. */
       public static final int ERROR_UNEXPECTED_ADDON_TYPE = -6;
 
-      /** The downloaded extension had a different version than expected */
+      /** The downloaded extension had a different version than expected. */
       public static final int ERROR_UNEXPECTED_ADDON_VERSION = -9;
 
       /** The extension did not have the expected ID. */
@@ -1564,6 +1564,12 @@ public class WebExtension {
 
       /** The extension did not have the expected ID. */
       public static final int ERROR_INVALID_DOMAIN = -8;
+
+      /** The extension is blocklisted. */
+      public static final int ERROR_BLOCKLISTED = -10;
+
+      /** The extension is incompatible. */
+      public static final int ERROR_INCOMPATIBLE = -11;
 
       /** The extension install was canceled. */
       public static final int ERROR_USER_CANCELED = -100;
@@ -1589,7 +1595,9 @@ public class WebExtension {
         final GeckoBundle bundle = (GeckoBundle) response;
         int errorCode = bundle.getInt("installError");
         final int installState = bundle.getInt("state");
-        if (errorCode == 0 && installState == StateCodes.STATE_CANCELED) {
+        if (errorCode == 0
+            && installState == StateCodes.STATE_CANCELED
+            && bundle.getBoolean("cancelledByUser")) {
           errorCode = ErrorCodes.ERROR_USER_CANCELED;
         } else if (errorCode == 0 && installState == StateCodes.STATE_POSTPONED) {
           errorCode = ErrorCodes.ERROR_POSTPONED;
@@ -1612,6 +1620,8 @@ public class WebExtension {
           ErrorCodes.ERROR_UNEXPECTED_ADDON_VERSION,
           ErrorCodes.ERROR_INCORRECT_ID,
           ErrorCodes.ERROR_INVALID_DOMAIN,
+          ErrorCodes.ERROR_BLOCKLISTED,
+          ErrorCodes.ERROR_INCOMPATIBLE,
           ErrorCodes.ERROR_USER_CANCELED,
           ErrorCodes.ERROR_POSTPONED,
         })
@@ -1620,9 +1630,13 @@ public class WebExtension {
     /** One of {@link ErrorCodes} that provides more information about this exception. */
     public final @Codes int code;
 
+    /** An optional name of the extension that caused the exception. */
+    public final @Nullable String extensionName;
+
     /** For testing */
     protected InstallException() {
       this.code = ErrorCodes.ERROR_NETWORK_FAILURE;
+      this.extensionName = null;
     }
 
     @Override
@@ -1630,8 +1644,14 @@ public class WebExtension {
       return "InstallException: " + code;
     }
 
+    /* package */ InstallException(final @Codes int code, final @Nullable String extensionName) {
+      this.code = code;
+      this.extensionName = extensionName;
+    }
+
     /* package */ InstallException(final @Codes int code) {
       this.code = code;
+      this.extensionName = null;
     }
   }
 

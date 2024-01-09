@@ -15,17 +15,14 @@
 #include "mozilla/BinarySearch.h"
 #include "mozilla/Casting.h"
 #include "mozilla/dom/CharacterData.h"
-#include "mozilla/dom/Document.h"
 #include "mozilla/dom/HTMLInputElement.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/intl/Segmenter.h"
 #include "mozilla/intl/WordBreaker.h"
 #include "mozilla/StaticPrefs_layout.h"
 #include "mozilla/TextEditor.h"
-#include "nsAccessibilityService.h"
 #include "nsAccUtils.h"
 #include "nsBlockFrame.h"
-#include "nsContentUtils.h"
 #include "nsFrameSelection.h"
 #include "nsIAccessiblePivot.h"
 #include "nsILineIterator.h"
@@ -1323,8 +1320,8 @@ bool TextLeafPoint::IsInSpellingError() const {
   if (!acc->mCachedFields) {
     return false;
   }
-  auto spellingErrors =
-      acc->mCachedFields->GetAttribute<nsTArray<int32_t>>(nsGkAtoms::spelling);
+  auto spellingErrors = acc->mCachedFields->GetAttribute<nsTArray<int32_t>>(
+      CacheKey::SpellingErrors);
   if (!spellingErrors) {
     return false;
   }
@@ -1414,8 +1411,8 @@ TextLeafPoint TextLeafPoint::FindSpellingErrorSameAcc(
   if (!acc->mCachedFields) {
     return TextLeafPoint();
   }
-  auto spellingErrors =
-      acc->mCachedFields->GetAttribute<nsTArray<int32_t>>(nsGkAtoms::spelling);
+  auto spellingErrors = acc->mCachedFields->GetAttribute<nsTArray<int32_t>>(
+      CacheKey::SpellingErrors);
   if (!spellingErrors) {
     return TextLeafPoint();
   }
@@ -1766,6 +1763,31 @@ bool TextLeafPoint::ContainsPoint(int32_t aX, int32_t aY) {
   }
 
   return CharBounds().Contains(aX, aY);
+}
+
+bool TextLeafRange::Crop(Accessible* aContainer) {
+  TextLeafPoint containerStart(aContainer, 0);
+  TextLeafPoint containerEnd(aContainer,
+                             nsIAccessibleText::TEXT_OFFSET_END_OF_TEXT);
+
+  if (mEnd < containerStart || containerEnd < mStart) {
+    // The range ends before the container, or starts after it.
+    return false;
+  }
+
+  if (mStart < containerStart) {
+    // If range start is before container start, adjust range start to
+    // start of container.
+    mStart = containerStart;
+  }
+
+  if (containerEnd < mEnd) {
+    // If range end is after container end, adjust range end to end of
+    // container.
+    mEnd = containerEnd;
+  }
+
+  return true;
 }
 
 LayoutDeviceIntRect TextLeafRange::Bounds() const {

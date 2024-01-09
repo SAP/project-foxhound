@@ -156,7 +156,7 @@ add_task(async function test_value_combo() {
     "Should upload new local bookmarks and parents"
   );
 
-  let localItemIds = await PlacesUtils.promiseManyItemIds([
+  let localItemIds = await PlacesTestUtils.promiseManyItemIds([
     "fxBmk_______",
     "tFolder_____",
     "tbBmk_______",
@@ -179,6 +179,11 @@ add_task(async function test_value_combo() {
         parentGuid: PlacesUtils.bookmarks.toolbarGuid,
         source: PlacesUtils.bookmarks.SOURCES.SYNC,
         dateAdded: now,
+        tags: "taggy,browsers",
+        frecency: 1,
+        hidden: false,
+        visitCount: 0,
+        lastVisitDate: null,
       },
     },
     {
@@ -194,6 +199,11 @@ add_task(async function test_value_combo() {
         parentGuid: PlacesUtils.bookmarks.toolbarGuid,
         source: PlacesUtils.bookmarks.SOURCES.SYNC,
         dateAdded: now,
+        tags: "",
+        frecency: 0,
+        hidden: false,
+        visitCount: 0,
+        lastVisitDate: null,
       },
     },
     {
@@ -209,6 +219,11 @@ add_task(async function test_value_combo() {
         parentGuid: "tFolder_____",
         source: PlacesUtils.bookmarks.SOURCES.SYNC,
         dateAdded: now,
+        tags: "",
+        frecency: 1,
+        hidden: false,
+        visitCount: 0,
+        lastVisitDate: null,
       },
     },
     {
@@ -224,6 +239,12 @@ add_task(async function test_value_combo() {
         source: PlacesUtils.bookmarks.SOURCES.SYNC,
         urlHref: "https://bugzilla.mozilla.org/",
         isTagging: false,
+        title: "Bugzilla",
+        tags: "new,tag",
+        frecency: 1,
+        hidden: false,
+        visitCount: 0,
+        lastVisitDate: null,
       },
     },
     {
@@ -1299,7 +1320,7 @@ add_task(async function test_keywords_complex() {
     "Should reupload all local records with corrected keywords"
   );
 
-  let localItemIds = await PlacesUtils.promiseManyItemIds([
+  let localItemIds = await PlacesTestUtils.promiseManyItemIds([
     "bookmarkAAAA",
     "bookmarkAAA1",
     "bookmarkBBB1",
@@ -1322,6 +1343,10 @@ add_task(async function test_keywords_complex() {
         guid: "bookmarkAAAA",
         parentGuid: PlacesUtils.bookmarks.menuGuid,
         source: PlacesUtils.bookmarks.SOURCES.SYNC,
+        tags: "",
+        frecency: 1,
+        hidden: false,
+        visitCount: 0,
       },
     },
     {
@@ -1336,6 +1361,10 @@ add_task(async function test_keywords_complex() {
         guid: "bookmarkAAA1",
         parentGuid: PlacesUtils.bookmarks.menuGuid,
         source: PlacesUtils.bookmarks.SOURCES.SYNC,
+        tags: "",
+        frecency: 1,
+        hidden: false,
+        visitCount: 0,
       },
     },
     {
@@ -1350,6 +1379,10 @@ add_task(async function test_keywords_complex() {
         guid: "bookmarkBBB1",
         parentGuid: PlacesUtils.bookmarks.menuGuid,
         source: PlacesUtils.bookmarks.SOURCES.SYNC,
+        tags: "",
+        frecency: 1,
+        hidden: false,
+        visitCount: 0,
       },
     },
     {
@@ -1370,6 +1403,12 @@ add_task(async function test_keywords_complex() {
         source: PlacesUtils.bookmarks.SOURCES.SYNC,
         urlHref: "http://example.com/b",
         isTagging: false,
+        title: "B",
+        tags: "",
+        frecency: 1,
+        hidden: false,
+        visitCount: 0,
+        lastVisitDate: null,
       },
     },
     {
@@ -1385,6 +1424,12 @@ add_task(async function test_keywords_complex() {
         source: PlacesUtils.bookmarks.SOURCES.SYNC,
         urlHref: "http://example.com/c-remote",
         isTagging: false,
+        title: "C (remote)",
+        tags: "",
+        frecency: -1,
+        hidden: false,
+        visitCount: 0,
+        lastVisitDate: null,
       },
     },
     {
@@ -1400,6 +1445,12 @@ add_task(async function test_keywords_complex() {
         source: PlacesUtils.bookmarks.SOURCES.SYNC,
         urlHref: "http://example.com/d",
         isTagging: false,
+        title: "D",
+        tags: "",
+        frecency: 1,
+        hidden: false,
+        visitCount: 0,
+        lastVisitDate: null,
       },
     },
     {
@@ -1415,6 +1466,12 @@ add_task(async function test_keywords_complex() {
         source: PlacesUtils.bookmarks.SOURCES.SYNC,
         urlHref: "http://example.com/e",
         isTagging: false,
+        title: "E",
+        tags: "",
+        frecency: 1,
+        hidden: false,
+        visitCount: 0,
+        lastVisitDate: null,
       },
     },
     {
@@ -2210,7 +2267,7 @@ add_task(async function test_date_added() {
     "Should flag A for weak reupload"
   );
 
-  let localItemIds = await PlacesUtils.promiseManyItemIds([
+  let localItemIds = await PlacesTestUtils.promiseManyItemIds([
     "bookmarkAAAA",
     "bookmarkBBBB",
   ]);
@@ -2458,7 +2515,7 @@ add_task(async function test_duplicate_url_rows() {
     "Should update titles for items with duplicate URLs"
   );
 
-  let localItemIds = await PlacesUtils.promiseManyItemIds([
+  let localItemIds = await PlacesTestUtils.promiseManyItemIds([
     "bookmarkAAAA",
     "bookmarkBBBB",
     "bookmarkCCCC",

@@ -382,8 +382,7 @@ struct IntrinsicSize {
 };
 
 // Pseudo bidi embedding level indicating nonexistence.
-static const mozilla::intl::BidiEmbeddingLevel kBidiLevelNone =
-    mozilla::intl::BidiEmbeddingLevel(0xff);
+constexpr mozilla::intl::BidiEmbeddingLevel kBidiLevelNone(0xff);
 
 struct FrameBidiData {
   mozilla::intl::BidiEmbeddingLevel baseLevel;
@@ -896,7 +895,7 @@ class nsIFrame : public nsQueryFrame {
       int16_t aSelectionStatus) const;
 
   already_AddRefed<ComputedStyle> ComputeHighlightSelectionStyle(
-      const nsAtom* aHighlightName);
+      nsAtom* aHighlightName);
 
   /**
    * Accessor functions for geometric parent.
@@ -4538,6 +4537,17 @@ class nsIFrame : public nsQueryFrame {
    */
   bool IsInSVGTextSubtree() const {
     return HasAnyStateBits(NS_FRAME_IS_SVG_TEXT);
+  }
+
+  /**
+   * Returns true if the frame is an SVG Rendering Observer container.
+   */
+  bool IsRenderingObserverContainer() const {
+    // NS_FRAME_SVG_LAYOUT is used as a proxy to check for an SVG frame because
+    // NS_STATE_SVG_RENDERING_OBSERVER_CONTAINER is an SVG specific state bit.
+    return HasAllStateBits(NS_FRAME_SVG_LAYOUT |
+                           NS_STATE_SVG_RENDERING_OBSERVER_CONTAINER) ||
+           IsSVGOuterSVGFrame();
   }
 
   /**

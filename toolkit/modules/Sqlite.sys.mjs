@@ -2,6 +2,21 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+/**
+ * PRIVACY WARNING
+ * ===============
+ *
+ * Database file names can be exposed through telemetry and in crash reports on
+ * the https://crash-stats.mozilla.org site, to allow recognizing the affected
+ * database.
+ * if your database name may contain privacy sensitive information, e.g. an
+ * URL origin, you should use openDatabaseWithFileURL and pass an explicit
+ * TelemetryFilename to it. That name will be used both for telemetry and for
+ * thread names in crash reports.
+ * If you have different needs (e.g. using the javascript module or an async
+ * connection from the main thread) please coordinate with the mozStorage peers.
+ */
+
 import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 
 import { setTimeout } from "resource://gre/modules/Timer.sys.mjs";
@@ -159,7 +174,7 @@ function convertStorageErrorResult(result) {
  * Barriers used to ensure that Sqlite.sys.mjs is shutdown after all
  * its clients.
  */
-XPCOMUtils.defineLazyGetter(lazy, "Barriers", () => {
+ChromeUtils.defineLazyGetter(lazy, "Barriers", () => {
   let Barriers = {
     /**
      * Public barrier that clients may use to add blockers to the

@@ -5,7 +5,6 @@
 
 import json
 import logging
-import re
 
 from taskgraph.util.parameterization import resolve_task_references
 from taskgraph.util.taskcluster import get_artifact, get_task_definition, list_artifacts
@@ -18,60 +17,25 @@ from .util import add_args_to_command, create_task_from_def, fetch_graph_and_lab
 logger = logging.getLogger(__name__)
 
 
-def get_failures(task_id):
+def get_failures(task_id, task_definition):
     """Returns a dict containing properties containing a list of
     directories containing test failures and a separate list of
     individual test failures from the errorsummary.log artifact for
     the task.
 
-    Calls the helper function munge_test_path to attempt to find an
-    appropriate test path to pass to the task in
+    Find test path to pass to the task in
     MOZHARNESS_TEST_PATHS.  If no appropriate test path can be
     determined, nothing is returned.
     """
 
-    def re_compile_list(*lst):
-        # Ideally we'd just use rb"" literals and avoid the encode, but
-        # this file needs to be importable in python2 for now.
-        return [re.compile(s.encode("utf-8")) for s in lst]
-
-    re_bad_tests = re_compile_list(
-        r"Last test finished",
-        r"LeakSanitizer",
-        r"Main app process exited normally",
-        r"ShutdownLeaks",
-        r"[(]SimpleTest/TestRunner.js[)]",
-        r"automation.py",
-        r"https?://localhost:\d+/\d+/\d+/.*[.]html",
-        r"jsreftest",
-        r"leakcheck",
-        r"mozrunner-startup",
-        r"pid: ",
-        r"RemoteProcessMonitor",
-        r"unknown test url",
-    )
-    re_extract_tests = re_compile_list(
-        r'"test": "(?:[^:]+:)?(?:https?|file):[^ ]+/reftest/tests/([^ "]+)',
-        r'"test": "(?:[^:]+:)?(?:https?|file):[^:]+:[0-9]+/tests/([^ "]+)',
-        r'xpcshell-?[^ "]*\.ini:([^ "]+)',
-        r'/tests/([^ "]+) - finished .*',
-        r'"test": "([^ "]+)"',
-        r'"message": "Error running command run_test with arguments '
-        r"[(]<wptrunner[.]wpttest[.]TestharnessTest ([^>]+)>",
-        r'"message": "TEST-[^ ]+ [|] ([^ "]+)[^|]*[|]',
-    )
-
-    def munge_test_path(line):
-        test_path = None
-        for r in re_bad_tests:
-            if r.search(line):
-                return None
-        for r in re_extract_tests:
-            m = r.search(line)
-            if m:
-                test_path = m.group(1)
-                break
-        return test_path
+    def fix_wpt_name(test):
+        tests = [test]
+        # TODO: find other cases to handle
+        if ".any." in test:
+            tests = ["%s.any.js" % test.split(".any.")[0]]
+        if ".window.html" in test:
+            tests = [test.replace(".window.html", ".window.js")]
+        return tests
 
     # collect dirs that don't have a specific manifest
     dirs = set()
@@ -97,14 +61,83 @@ def get_failures(task_id):
                 dirs.add(l["group_results"].group())
 
             elif "test" in l.keys():
-                test_path = munge_test_path(line.strip())
-                tests.add(test_path.decode("utf-8"))
+                if not l["test"]:
+                    print("Warning: no testname in errorsummary line: %s" % l)
+                    continue
+                if "signature" in l.keys():
+                    # dealing with a crash
+                    test_path = l["test"].split(" ")[0]
+
+                    # tests with url params (wpt), will get confused here
+                    if "?" not in test_path:
+                        test_path = test_path.split(":")[-1]
+
+                    # edge case where a crash on shutdown has a "test" name == group name
+                    if (
+                        test_path.endswith(".toml")
+                        or test_path.endswith(".ini")
+                        or test_path.endswith(".list")
+                    ):
+                        continue
+
+                    # edge cases with missing test names
+                    if (
+                        test_path is None
+                        or test_path == "None"
+                        or "SimpleTest" in test_path
+                    ):
+                        continue
+
+                    if "web-platform" in task_definition["extra"]["suite"]:
+                        test_path = fix_wpt_name(test_path)
+                    else:
+                        test_path = [test_path]
+
+                    if test_path:
+                        tests.update(test_path)
+                else:
+                    test_path = l["test"].split(" ")[0]
+
+                    # tests with url params (wpt), will get confused here
+                    if "?" not in test_path:
+                        test_path = test_path.split(":")[-1]
+
+                    # edge case where a crash on shutdown has a "test" name == group name
+                    if (
+                        test_path.endswith(".toml")
+                        or test_path.endswith(".ini")
+                        or test_path.endswith(".list")
+                    ):
+                        # TODO: consider running just the manifest
+                        continue
+
+                    # edge cases with missing test names
+                    if (
+                        test_path is None
+                        or test_path == "None"
+                        or "SimpleTest" in test_path
+                    ):
+                        continue
+
+                    if "status" not in l and "expected" not in l:
+                        continue
+
+                    if l["status"] != l["expected"]:
+                        if l["status"] not in l.get("known_intermittent", []):
+                            if "web-platform" in task_definition["extra"]["suite"]:
+                                test_path = fix_wpt_name(test_path)
+                            else:
+                                test_path = [test_path]
+
+                            if test_path:
+                                tests.update(test_path)
 
                 # only run the failing test not both test + dir
                 if l["group"] in dirs:
                     dirs.remove(l["group"])
 
-            if len(tests) > 4:
+            # TODO: 10 is too much; how to get only NEW failures?
+            if len(tests) > 10:
                 break
 
         # turn group into dir by stripping off leafname
@@ -131,18 +164,18 @@ def create_confirm_failure_tasks(task_definition, failures, level):
         or "mochitest" in task_name
         or "reftest" in task_name
         or "xpcshell" in task_name
+        or "web-platform" in task_name
         and "jsreftest" not in task_name
     ):
         repeatable_task = True
 
     th_dict = task_definition["extra"]["treeherder"]
     symbol = th_dict["symbol"]
-    is_windows = "windows" in th_dict["machine"]["platform"]
 
     suite = task_definition["extra"]["suite"]
     if "-coverage" in suite:
         suite = suite[: suite.index("-coverage")]
-    is_wpt = "web-platform-tests" in suite
+    is_wpt = "web-platform" in suite
 
     # command is a copy of task_definition['payload']['command'] from the original task.
     # It is used to create the new version containing the
@@ -185,17 +218,24 @@ def create_confirm_failure_tasks(task_definition, failures, level):
 
         for failure_path in failures[failure_group]:
             th_dict["symbol"] = symbol + failure_group_suffix
+            fpath = failure_path.replace("\\", "/")
             if is_wpt:
-                failure_path = "testing/web-platform/tests" + failure_path
-            if is_windows:
-                failure_path = "\\".join(failure_path.split("/"))
+                if fpath.startswith("/_mozilla"):
+                    fpath = (
+                        "testing/web-platform/mozilla/tests"
+                        + fpath.split("_mozilla")[1]
+                    )
+                else:
+                    fpath = "testing/web-platform/tests" + fpath
+                # some wpt tests have params, those are not supported
+                fpath = fpath.split("?")[0]
             task_definition["payload"]["env"]["MOZHARNESS_TEST_PATHS"] = json.dumps(
-                {suite: [failure_path]}, sort_keys=True
+                {suite: [fpath]}, sort_keys=True
             )
 
             logger.info(
                 "Creating task for path {} with command {}".format(
-                    failure_path, task_definition["payload"]["command"]
+                    fpath, task_definition["payload"]["command"]
                 )
             )
             create_task_from_def(task_definition, level)
@@ -233,6 +273,6 @@ def confirm_failures(parameters, graph_config, input, task_group_id, task_id):
     )
     task_definition.setdefault("dependencies", []).extend(dependencies.values())
 
-    failures = get_failures(task_id)
+    failures = get_failures(task_id, task_definition)
     logger.info("confirm_failures: %s" % failures)
     create_confirm_failure_tasks(task_definition, failures, parameters["level"])

@@ -28,10 +28,6 @@
 #include "GMPServiceParent.h"
 #include "HandlerServiceParent.h"
 #include "IHistory.h"
-#if defined(XP_WIN) && defined(ACCESSIBILITY)
-#  include "mozilla/a11y/AccessibleWrap.h"
-#  include "mozilla/a11y/Compatibility.h"
-#endif
 #include <map>
 #include <utility>
 
@@ -67,13 +63,13 @@
 #include "mozilla/LookAndFeel.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/NullPrincipal.h"
-#include "mozilla/PerformanceMetricsCollector.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/ProcessHangMonitor.h"
 #include "mozilla/ProcessHangMonitorIPC.h"
 #include "mozilla/ProfilerLabels.h"
 #include "mozilla/ProfilerMarkers.h"
+#include "mozilla/RecursiveMutex.h"
 #include "mozilla/ScopeExit.h"
 #include "mozilla/ScriptPreloader.h"
 #include "mozilla/Components.h"
@@ -89,6 +85,7 @@
 #include "mozilla/TaskController.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/TelemetryIPC.h"
+#include "mozilla/ThreadSafety.h"
 #include "mozilla/Unused.h"
 #include "mozilla/WebBrowserPersistDocumentParent.h"
 #include "mozilla/devtools/HeapSnapshotTempFileHelperParent.h"
@@ -188,6 +185,7 @@
 #include "nsFocusManager.h"
 #include "nsFrameLoader.h"
 #include "nsFrameMessageManager.h"
+#include "nsGlobalWindowOuter.h"
 #include "nsHashPropertyBag.h"
 #include "nsHyphenationManager.h"
 #include "nsIAlertsService.h"
@@ -203,7 +201,6 @@
 #include "nsICookie.h"
 #include "nsICrashService.h"
 #include "nsICycleCollectorListener.h"
-#include "nsIDOMChromeWindow.h"
 #include "nsIDocShell.h"
 #include "nsIDocShellTreeOwner.h"
 #include "nsIDragService.h"
@@ -249,6 +246,7 @@
 #include "nsThreadUtils.h"
 #include "nsWidgetsCID.h"
 #include "nsWindowWatcher.h"
+#include "prenv.h"
 #include "prio.h"
 #include "private/pprio.h"
 #include "xpcpublic.h"
@@ -798,37 +796,40 @@ void ContentParent::ReleaseCachedProcesses() {
              cps.GetData()->Length()));
   }
 #endif
-  // We process the toRelease array outside of the iteration to avoid modifying
-  // the list (via RemoveFromList()) while we're iterating it.
-  nsTArray<ContentParent*> toRelease;
+
+  // First let's collect all processes and keep a grip.
+  AutoTArray<RefPtr<ContentParent>, 32> fixArray;
   for (const auto& contentParents : sBrowserContentParents->Values()) {
-    // Shutting down these processes will change the array so let's use another
-    // array for the removal.
     for (auto* cp : *contentParents) {
-      if (cp->ManagedPBrowserParent().Count() == 0 &&
-          !cp->HasActiveWorkerOrJSPlugin() &&
-          cp->mRemoteType == DEFAULT_REMOTE_TYPE) {
-        toRelease.AppendElement(cp);
-      } else {
-        MOZ_LOG(ContentParent::GetLog(), LogLevel::Debug,
-                ("  Skipping %p (%s), count %d, HasActiveWorkerOrJSPlugin %d",
-                 cp, cp->mRemoteType.get(), cp->ManagedPBrowserParent().Count(),
-                 cp->HasActiveWorkerOrJSPlugin()));
-      }
+      fixArray.AppendElement(cp);
     }
   }
 
-  for (auto* cp : toRelease) {
-    MOZ_LOG(ContentParent::GetLog(), LogLevel::Debug,
-            ("  Shutdown %p (%s)", cp, cp->mRemoteType.get()));
-    PreallocatedProcessManager::Erase(cp);
-    // Start a soft shutdown.
-    cp->ShutDownProcess(SEND_SHUTDOWN_MESSAGE);
-    // Make sure we don't select this process for new tabs.
-    cp->MarkAsDead();
-    // Make sure that this process is no longer accessible from JS by its
-    // message manager.
-    cp->ShutDownMessageManager();
+  for (const auto& cp : fixArray) {
+    // Ensure the process cannot be claimed between check and MarkAsDead.
+    RecursiveMutexAutoLock lock(cp->ThreadsafeHandleMutex());
+
+    if (cp->ManagedPBrowserParent().Count() == 0 &&
+        !cp->HasActiveWorkerOrJSPlugin() &&
+        cp->mRemoteType == DEFAULT_REMOTE_TYPE) {
+      MOZ_LOG(ContentParent::GetLog(), LogLevel::Debug,
+              ("  Shutdown %p (%s)", cp.get(), cp->mRemoteType.get()));
+
+      PreallocatedProcessManager::Erase(cp);
+      // Make sure we don't select this process for new tabs or workers.
+      cp->MarkAsDead();
+      // Start a soft shutdown.
+      cp->ShutDownProcess(SEND_SHUTDOWN_MESSAGE);
+      // Make sure that this process is no longer accessible from JS by its
+      // message manager.
+      cp->ShutDownMessageManager();
+    } else {
+      MOZ_LOG(
+          ContentParent::GetLog(), LogLevel::Debug,
+          ("  Skipping %p (%s), count %d, HasActiveWorkerOrJSPlugin %d",
+           cp.get(), cp->mRemoteType.get(), cp->ManagedPBrowserParent().Count(),
+           cp->HasActiveWorkerOrJSPlugin()));
+    }
   }
 }
 
@@ -998,7 +999,7 @@ already_AddRefed<ContentParent> ContentParent::GetUsedBrowserProcess(
     // it finishes starting
     preallocated->mRemoteType.Assign(aRemoteType);
     {
-      MutexAutoLock lock(preallocated->mThreadsafeHandle->mMutex);
+      RecursiveMutexAutoLock lock(preallocated->mThreadsafeHandle->mMutex);
       preallocated->mThreadsafeHandle->mRemoteType = preallocated->mRemoteType;
     }
     preallocated->mRemoteTypeIsolationPrincipal =
@@ -1432,20 +1433,6 @@ bool ContentParent::ValidatePrincipal(
   return remoteTypeSiteOriginNoSuffix.Equals(siteOriginNoSuffix);
 }
 
-mozilla::ipc::IPCResult ContentParent::RecvRemovePermission(
-    nsIPrincipal* aPrincipal, const nsACString& aPermissionType,
-    nsresult* aRv) {
-  if (!aPrincipal) {
-    return IPC_FAIL(this, "No principal");
-  }
-
-  if (!ValidatePrincipal(aPrincipal)) {
-    LogAndAssertFailedPrincipalValidationInfo(aPrincipal, __func__);
-  }
-  *aRv = Permissions::RemovePermission(aPrincipal, aPermissionType);
-  return IPC_OK();
-}
-
 /*static*/
 already_AddRefed<RemoteBrowser> ContentParent::CreateBrowser(
     const TabContext& aContext, Element* aFrameElement,
@@ -1684,14 +1671,7 @@ void ContentParent::Init() {
   // If accessibility is running in chrome process then start it in content
   // process.
   if (GetAccService()) {
-#  if defined(XP_WIN)
-    // Don't init content a11y if we detect an incompat version of JAWS in use.
-    if (!mozilla::a11y::Compatibility::IsOldJAWS()) {
-      Unused << SendActivateA11y();
-    }
-#  else
     Unused << SendActivateA11y();
-#  endif
   }
 #endif  // #ifdef ACCESSIBILITY
 
@@ -1718,6 +1698,10 @@ bool ContentParent::CheckTabDestroyWillKeepAlive(
     uint32_t aExpectedBrowserCount) {
   return ManagedPBrowserParent().Count() != aExpectedBrowserCount ||
          ShouldKeepProcessAlive();
+}
+
+RecursiveMutex& ContentParent::ThreadsafeHandleMutex() {
+  return mThreadsafeHandle->mMutex;
 }
 
 void ContentParent::NotifyTabWillDestroy() {
@@ -1750,6 +1734,13 @@ void ContentParent::MaybeBeginShutDown(uint32_t aExpectedBrowserCount,
            ManagedPBrowserParent().Count(), aExpectedBrowserCount));
   MOZ_ASSERT(NS_IsMainThread());
 
+  // We need to lock our mutex here to ensure the state does not change
+  // between the check and the MarkAsDead.
+  // Note that if we come through BrowserParent::Destroy our mutex is
+  // already locked.
+  // TODO: We want to get rid of the ThreadsafeHandle, see bug 1683595.
+  RecursiveMutexAutoLock lock(mThreadsafeHandle->mMutex);
+
   // Both CheckTabDestroyWillKeepAlive and TryToRecycleE10SOnly will return
   // false if IsInOrBeyond(AppShutdownConfirmed), so if the parent shuts
   // down we will always shutdown the child.
@@ -1765,36 +1756,23 @@ void ContentParent::MaybeBeginShutDown(uint32_t aExpectedBrowserCount,
   // We're dying now, prevent anything from re-using this process.
   MarkAsDead();
   SignalImpendingShutdownToContentJS();
-  StartForceKillTimer();
 
   if (aSendShutDown) {
-    MaybeAsyncSendShutDownMessage();
+    AsyncSendShutDownMessage();
+  } else {
+    // aSendShutDown is false only when we get called from
+    // NotifyTabDestroying where we expect a subsequent call from
+    // NotifyTabDestroyed triggered by a Browser actor destroy
+    // roundtrip through the content process that might never arrive.
+    StartSendShutdownTimer();
   }
 }
 
-void ContentParent::MaybeAsyncSendShutDownMessage() {
+void ContentParent::AsyncSendShutDownMessage() {
   MOZ_LOG(ContentParent::GetLog(), LogLevel::Verbose,
-          ("MaybeAsyncSendShutDownMessage %p", this));
+          ("AsyncSendShutDownMessage %p", this));
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(sRecycledE10SProcess != this);
-
-#ifdef DEBUG
-  // Calling this below while the lock is acquired will deadlock.
-  bool shouldKeepProcessAlive = ShouldKeepProcessAlive();
-#endif
-
-  {
-    MutexAutoLock lock(mThreadsafeHandle->mMutex);
-    MOZ_ASSERT_IF(!mThreadsafeHandle->mRemoteWorkerActorCount,
-                  !shouldKeepProcessAlive);
-
-    if (mThreadsafeHandle->mRemoteWorkerActorCount) {
-      return;
-    }
-
-    MOZ_ASSERT(!mThreadsafeHandle->mShutdownStarted);
-    mThreadsafeHandle->mShutdownStarted = true;
-  }
 
   // In the case of normal shutdown, send a shutdown message to child to
   // allow it to perform shutdown tasks.
@@ -1835,6 +1813,8 @@ bool ContentParent::ShutDownProcess(ShutDownMethod aMethod) {
       if (CanSend()) {
         // Stop sending input events with input priority when shutting down.
         SetInputPriorityEventEnabled(false);
+        // If we did not earlier, let's signal the shutdown to JS now.
+        SignalImpendingShutdownToContentJS();
         // Send a high priority announcement first. If this fails, SendShutdown
         // will also fail.
         Unused << SendShutdownConfirmedHP();
@@ -1844,13 +1824,9 @@ bool ContentParent::ShutDownProcess(ShutDownMethod aMethod) {
               this, "ShutDownProcess: Sent shutdown message.", __FILE__,
               __LINE__);
           mShutdownPending = true;
-          // Start the force-kill timer if we haven't already.
-          // This can happen if we shutdown a process while launching or
-          // because it is removed from the cached processes pool.
-          if (!mForceKillTimer) {
-            SignalImpendingShutdownToContentJS();
-            StartForceKillTimer();
-          }
+          // We start the kill timer only after we asked our process to
+          // shutdown.
+          StartForceKillTimer();
           result = true;
         } else {
           MaybeLogBlockShutdownDiagnostics(
@@ -1879,18 +1855,13 @@ bool ContentParent::ShutDownProcess(ShutDownMethod aMethod) {
     qms->AbortOperationsForProcess(mChildID);
   }
 
-  if (aMethod == CLOSE_CHANNEL || aMethod == CLOSE_CHANNEL_WITH_ERROR) {
+  if (aMethod == CLOSE_CHANNEL) {
     if (!mCalledClose) {
       MaybeLogBlockShutdownDiagnostics(
           this, "ShutDownProcess: Closing channel.", __FILE__, __LINE__);
-      // Close()/CloseWithError() can only be called once: They kick off the
-      // destruction sequence.
+      // Close() can only be called once: It kicks off the destruction sequence.
       mCalledClose = true;
-      if (aMethod == CLOSE_CHANNEL_WITH_ERROR) {
-        CloseWithError();
-      } else {
-        Close();
-      }
+      Close();
     }
     result = true;
   }
@@ -2033,6 +2004,14 @@ void ContentParent::MarkAsDead() {
   MOZ_DIAGNOSTIC_ASSERT(!sInProcessSelector);
   RemoveFromList();
 
+  // Flag shutdown has started for us to our threadsafe handle.
+  {
+    // Depending on how we get here, the lock might or might not be set.
+    RecursiveMutexAutoLock lock(mThreadsafeHandle->mMutex);
+
+    mThreadsafeHandle->mShutdownStarted = true;
+  }
+
   // Prevent this process from being re-used.
   PreallocatedProcessManager::Erase(this);
   StopRecyclingE10SOnly(false);
@@ -2079,10 +2058,20 @@ void ContentParent::ProcessingError(Result aCode, const char* aReason) {
 #ifndef FUZZING
   KillHard(aReason);
 #endif
-  ShutDownProcess(CLOSE_CHANNEL_WITH_ERROR);
+  if (CanSend()) {
+    GetIPCChannel()->InduceConnectionError();
+  }
 }
 
 void ContentParent::ActorDestroy(ActorDestroyReason why) {
+#ifdef FUZZING_SNAPSHOT
+  MOZ_FUZZING_IPC_DROP_PEER("ContentParent::ActorDestroy");
+#endif
+
+  if (mSendShutdownTimer) {
+    mSendShutdownTimer->Cancel();
+    mSendShutdownTimer = nullptr;
+  }
   if (mForceKillTimer) {
     mForceKillTimer->Cancel();
     mForceKillTimer = nullptr;
@@ -2110,8 +2099,7 @@ void ContentParent::ActorDestroy(ActorDestroyReason why) {
   }
 
   // Make sure we always clean up.
-  ShutDownProcess(why == NormalShutdown ? CLOSE_CHANNEL
-                                        : CLOSE_CHANNEL_WITH_ERROR);
+  ShutDownProcess(CLOSE_CHANNEL);
 
   nsCOMPtr<nsIObserverService> obs = mozilla::services::GetObserverService();
   if (obs) {
@@ -2325,7 +2313,8 @@ bool ContentParent::HasActiveWorkerOrJSPlugin() {
 
   // If we have active workers, we need to stay alive.
   {
-    MutexAutoLock lock(mThreadsafeHandle->mMutex);
+    // Most of the times we'll get here with the mutex acquired, but still.
+    RecursiveMutexAutoLock lock(mThreadsafeHandle->mMutex);
     if (mThreadsafeHandle->mRemoteWorkerActorCount) {
       return true;
     }
@@ -2427,12 +2416,27 @@ void ContentParent::RemoveKeepAlive() {
   MaybeBeginShutDown();
 }
 
+void ContentParent::StartSendShutdownTimer() {
+  if (mSendShutdownTimer || !CanSend()) {
+    return;
+  }
+
+  uint32_t timeoutSecs = StaticPrefs::dom_ipc_tabs_shutdownTimeoutSecs();
+  if (timeoutSecs > 0) {
+    NS_NewTimerWithFuncCallback(getter_AddRefs(mSendShutdownTimer),
+                                ContentParent::SendShutdownTimerCallback, this,
+                                timeoutSecs * 1000, nsITimer::TYPE_ONE_SHOT,
+                                "dom::ContentParent::StartSendShutdownTimer");
+    MOZ_ASSERT(mSendShutdownTimer);
+  }
+}
+
 void ContentParent::StartForceKillTimer() {
   if (mForceKillTimer || !CanSend()) {
     return;
   }
 
-  int32_t timeoutSecs = StaticPrefs::dom_ipc_tabs_shutdownTimeoutSecs();
+  uint32_t timeoutSecs = StaticPrefs::dom_ipc_tabs_shutdownTimeoutSecs();
   if (timeoutSecs > 0) {
     NS_NewTimerWithFuncCallback(getter_AddRefs(mForceKillTimer),
                                 ContentParent::ForceKillTimerCallback, this,
@@ -2906,6 +2910,9 @@ ContentParent::ContentParent(const nsACString& aRemoteType, int32_t aJSPluginID)
 }
 
 ContentParent::~ContentParent() {
+  if (mSendShutdownTimer) {
+    mSendShutdownTimer->Cancel();
+  }
   if (mForceKillTimer) {
     mForceKillTimer->Cancel();
   }
@@ -3286,8 +3293,8 @@ bool ContentParent::InitInternal(ProcessPriority aInitialPriority) {
     nsTArray<BlobURLRegistrationData> registrations;
     BlobURLProtocolHandler::ForEachBlobURL(
         [&](BlobImpl* aBlobImpl, nsIPrincipal* aPrincipal,
-            const Maybe<nsID>& aAgentClusterId, const nsACString& aURI,
-            bool aRevoked) {
+            const Maybe<nsID>& aAgentClusterId, const nsCString& aPartitionKey,
+            const nsACString& aURI, bool aRevoked) {
           // We send all moz-extension Blob URL's to all content processes
           // because content scripts mean that a moz-extension can live in any
           // process. Same thing for system principal Blob URLs. Content Blob
@@ -3305,7 +3312,8 @@ bool ContentParent::InitInternal(ProcessPriority aInitialPriority) {
           }
 
           registrations.AppendElement(BlobURLRegistrationData(
-              nsCString(aURI), ipcBlob, aPrincipal, aAgentClusterId, aRevoked));
+              nsCString(aURI), ipcBlob, aPrincipal, aAgentClusterId,
+              nsCString(aPartitionKey), aRevoked));
 
           rv = TransmitPermissionsForPrincipal(aPrincipal);
           Unused << NS_WARN_IF(NS_FAILED(rv));
@@ -4049,15 +4057,7 @@ ContentParent::Observe(nsISupports* aSubject, const char* aTopic,
     if (*aData == '1') {
       // Make sure accessibility is running in content process when
       // accessibility gets initiated in chrome process.
-#  if defined(XP_WIN)
-      // Don't init content a11y if we detect an incompat version of JAWS in
-      // use.
-      if (!mozilla::a11y::Compatibility::IsOldJAWS()) {
-        Unused << SendActivateA11y();
-      }
-#  else
       Unused << SendActivateA11y();
-#  endif
     } else {
       // If possible, shut down accessibility in content process when
       // accessibility gets shutdown in chrome process.
@@ -4090,11 +4090,6 @@ ContentParent::Observe(nsISupports* aSubject, const char* aTopic,
       return NS_OK;
     }
     auto* cs = static_cast<CookieServiceParent*>(csParent);
-    // Do not push these cookie updates to the same process they originated
-    // from.
-    if (cs->ProcessingCookie()) {
-      return NS_OK;
-    }
     if (!nsCRT::strcmp(aData, u"batch-deleted")) {
       nsCOMPtr<nsIArray> cookieList = do_QueryInterface(aSubject);
       NS_ASSERTION(cookieList, "couldn't get cookie list");
@@ -4104,6 +4099,12 @@ ContentParent::Observe(nsISupports* aSubject, const char* aTopic,
 
     if (!nsCRT::strcmp(aData, u"cleared")) {
       cs->RemoveAll();
+      return NS_OK;
+    }
+
+    // Do not push these cookie updates to the same process they originated
+    // from.
+    if (cs->ProcessingCookie()) {
       return NS_OK;
     }
 
@@ -4435,6 +4436,13 @@ bool ContentParent::DeallocPRemoteSpellcheckEngineParent(
 }
 
 /* static */
+void ContentParent::SendShutdownTimerCallback(nsITimer* aTimer,
+                                              void* aClosure) {
+  auto* self = static_cast<ContentParent*>(aClosure);
+  self->AsyncSendShutDownMessage();
+}
+
+/* static */
 void ContentParent::ForceKillTimerCallback(nsITimer* aTimer, void* aClosure) {
   // We don't want to time out the content process during XPCShell tests. This
   // is the easiest way to ensure that.
@@ -4442,7 +4450,7 @@ void ContentParent::ForceKillTimerCallback(nsITimer* aTimer, void* aClosure) {
     return;
   }
 
-  auto self = static_cast<ContentParent*>(aClosure);
+  auto* self = static_cast<ContentParent*>(aClosure);
   self->KillHard("ShutDownKill");
 }
 
@@ -4499,7 +4507,14 @@ void ContentParent::KillHard(const char* aReason) {
     return;
   }
   mCalledKillHard = true;
-  mForceKillTimer = nullptr;
+  if (mSendShutdownTimer) {
+    mSendShutdownTimer->Cancel();
+    mSendShutdownTimer = nullptr;
+  }
+  if (mForceKillTimer) {
+    mForceKillTimer->Cancel();
+    mForceKillTimer = nullptr;
+  }
 
   RemoveShutdownBlockers();
   nsCString reason = nsDependentCString(aReason);
@@ -4517,7 +4532,9 @@ void ContentParent::KillHard(const char* aReason) {
   ProcessHandle otherProcessHandle;
   if (!base::OpenProcessHandle(OtherPid(), &otherProcessHandle)) {
     NS_ERROR("Failed to open child process when attempting kill.");
-    ShutDownProcess(CLOSE_CHANNEL_WITH_ERROR);
+    if (CanSend()) {
+      GetIPCChannel()->InduceConnectionError();
+    }
     return;
   }
 
@@ -4538,9 +4555,12 @@ void ContentParent::KillHard(const char* aReason) {
     mSubprocess->SetAlreadyDead();
   }
 
-  // After we've killed the remote process, also ensure we close the IPC channel
-  // with an error to immediately stop all IPC communication on this channel.
-  ShutDownProcess(CLOSE_CHANNEL_WITH_ERROR);
+  // After we've killed the remote process, also ensure we induce a connection
+  // error in the IPC channel to immediately stop all IPC communication on this
+  // channel.
+  if (CanSend()) {
+    GetIPCChannel()->InduceConnectionError();
+  }
 
   // EnsureProcessTerminated has responsibilty for closing otherProcessHandle.
   XRE_GetIOMessageLoop()->PostTask(
@@ -4619,13 +4639,6 @@ mozilla::ipc::IPCResult ContentParent::RecvAddMemoryReport(
   return IPC_OK();
 }
 
-mozilla::ipc::IPCResult ContentParent::RecvAddPerformanceMetrics(
-    const nsID& aID, nsTArray<PerformanceInfo>&& aMetrics) {
-  nsresult rv = PerformanceMetricsCollector::DataReceived(aID, aMetrics);
-  Unused << NS_WARN_IF(NS_FAILED(rv));
-  return IPC_OK();
-}
-
 PCycleCollectWithLogsParent* ContentParent::AllocPCycleCollectWithLogsParent(
     const bool& aDumpAllTraces, const FileDescriptor& aGCLog,
     const FileDescriptor& aCCLog) {
@@ -4697,7 +4710,7 @@ mozilla::ipc::IPCResult ContentParent::RecvAddSecurityState(
 
 already_AddRefed<PExternalHelperAppParent>
 ContentParent::AllocPExternalHelperAppParent(
-    nsIURI* uri, const Maybe<mozilla::net::LoadInfoArgs>& aLoadInfoArgs,
+    nsIURI* uri, const mozilla::net::LoadInfoArgs& aLoadInfoArgs,
     const nsACString& aMimeContentType, const nsACString& aContentDisposition,
     const uint32_t& aContentDispositionHint,
     const nsAString& aContentDispositionFilename, const bool& aForceSave,
@@ -4712,7 +4725,7 @@ ContentParent::AllocPExternalHelperAppParent(
 
 mozilla::ipc::IPCResult ContentParent::RecvPExternalHelperAppConstructor(
     PExternalHelperAppParent* actor, nsIURI* uri,
-    const Maybe<LoadInfoArgs>& loadInfoArgs, const nsACString& aMimeContentType,
+    const LoadInfoArgs& loadInfoArgs, const nsACString& aMimeContentType,
     const nsACString& aContentDisposition,
     const uint32_t& aContentDispositionHint,
     const nsAString& aContentDispositionFilename, const bool& aForceSave,
@@ -5061,19 +5074,14 @@ mozilla::ipc::IPCResult ContentParent::RecvConsoleMessage(
 }
 
 mozilla::ipc::IPCResult ContentParent::RecvReportFrameTimingData(
-    const mozilla::Maybe<LoadInfoArgs>& loadInfoArgs,
-    const nsAString& entryName, const nsAString& initiatorType,
-    UniquePtr<PerformanceTimingData>&& aData) {
+    const LoadInfoArgs& loadInfoArgs, const nsAString& entryName,
+    const nsAString& initiatorType, UniquePtr<PerformanceTimingData>&& aData) {
   if (!aData) {
     return IPC_FAIL(this, "aData should not be null");
   }
 
-  if (loadInfoArgs.isNothing()) {
-    return IPC_FAIL(this, "loadInfoArgs should not be null");
-  }
-
   RefPtr<WindowGlobalParent> parent =
-      WindowGlobalParent::GetByInnerWindowId(loadInfoArgs->innerWindowID());
+      WindowGlobalParent::GetByInnerWindowId(loadInfoArgs.innerWindowID());
   if (!parent || !parent->GetContentParent()) {
     return IPC_OK();
   }
@@ -5609,9 +5617,9 @@ mozilla::ipc::IPCResult ContentParent::CommonCreateWindow(
       return IPC_OK();
     }
 
-    nsCOMPtr<nsIDOMChromeWindow> rootChromeWin = do_QueryInterface(outerWin);
-    if (rootChromeWin) {
-      rootChromeWin->GetBrowserDOMWindow(getter_AddRefs(browserDOMWin));
+    if (nsGlobalWindowOuter::Cast(outerWin)->IsChromeWindow()) {
+      browserDOMWin =
+          nsGlobalWindowOuter::Cast(outerWin)->GetBrowserDOMWindow();
     }
   }
 
@@ -6156,7 +6164,8 @@ ContentParent::RecvNotifyPushSubscriptionModifiedObservers(
 /* static */
 void ContentParent::BroadcastBlobURLRegistration(
     const nsACString& aURI, BlobImpl* aBlobImpl, nsIPrincipal* aPrincipal,
-    const Maybe<nsID>& aAgentClusterId, ContentParent* aIgnoreThisCP) {
+    const Maybe<nsID>& aAgentClusterId, const nsCString& aPartitionKey,
+    ContentParent* aIgnoreThisCP) {
   uint64_t originHash = ComputeLoadedOriginHash(aPrincipal);
 
   bool toBeSent =
@@ -6182,7 +6191,7 @@ void ContentParent::BroadcastBlobURLRegistration(
       }
 
       Unused << cp->SendBlobURLRegistration(uri, ipcBlob, aPrincipal,
-                                            aAgentClusterId);
+                                            aAgentClusterId, aPartitionKey);
     }
   }
 }
@@ -6208,7 +6217,7 @@ void ContentParent::BroadcastBlobURLUnregistration(
 
 mozilla::ipc::IPCResult ContentParent::RecvStoreAndBroadcastBlobURLRegistration(
     const nsACString& aURI, const IPCBlob& aBlob, nsIPrincipal* aPrincipal,
-    const Maybe<nsID>& aAgentClusterId) {
+    const Maybe<nsID>& aAgentClusterId, const nsCString& aPartitionKey) {
   if (!aPrincipal) {
     return IPC_FAIL(this, "No principal");
   }
@@ -6222,9 +6231,9 @@ mozilla::ipc::IPCResult ContentParent::RecvStoreAndBroadcastBlobURLRegistration(
   }
 
   BlobURLProtocolHandler::AddDataEntry(aURI, aPrincipal, aAgentClusterId,
-                                       blobImpl);
+                                       aPartitionKey, blobImpl);
   BroadcastBlobURLRegistration(aURI, blobImpl, aPrincipal, aAgentClusterId,
-                               this);
+                               aPartitionKey, this);
 
   // We want to store this blobURL, so we can unregister it if the child
   // crashes.
@@ -6323,6 +6332,15 @@ void ContentParent::CancelContentJSExecutionIfRunning(
   ProcessHangMonitor::CancelContentJSExecutionIfRunning(
       mHangMonitorActor, aBrowserParent, aNavigationType,
       aCancelContentJSOptions);
+}
+
+void ContentParent::SetMainThreadQoSPriority(
+    nsIThread::QoSPriority aQoSPriority) {
+  if (!mHangMonitorActor) {
+    return;
+  }
+
+  ProcessHangMonitor::SetMainThreadQoSPriority(mHangMonitorActor, aQoSPriority);
 }
 
 void ContentParent::UpdateCookieStatus(nsIChannel* aChannel) {
@@ -6462,8 +6480,8 @@ void ContentParent::TransmitBlobURLsForPrincipal(nsIPrincipal* aPrincipal) {
     nsTArray<BlobURLRegistrationData> registrations;
     BlobURLProtocolHandler::ForEachBlobURL(
         [&](BlobImpl* aBlobImpl, nsIPrincipal* aBlobPrincipal,
-            const Maybe<nsID>& aAgentClusterId, const nsACString& aURI,
-            bool aRevoked) {
+            const Maybe<nsID>& aAgentClusterId, const nsCString& aPartitionKey,
+            const nsACString& aURI, bool aRevoked) {
           // This check uses `ComputeLoadedOriginHash` to compare, rather than
           // doing the more accurate `Equals` check, as it needs to match the
           // behaviour of the logic to broadcast new registrations.
@@ -6477,9 +6495,9 @@ void ContentParent::TransmitBlobURLsForPrincipal(nsIPrincipal* aPrincipal) {
             return false;
           }
 
-          registrations.AppendElement(
-              BlobURLRegistrationData(nsCString(aURI), ipcBlob, aBlobPrincipal,
-                                      aAgentClusterId, aRevoked));
+          registrations.AppendElement(BlobURLRegistrationData(
+              nsCString(aURI), ipcBlob, aBlobPrincipal, aAgentClusterId,
+              nsCString(aPartitionKey), aRevoked));
 
           rv = TransmitPermissionsForPrincipal(aBlobPrincipal);
           Unused << NS_WARN_IF(NS_FAILED(rv));
@@ -6720,15 +6738,6 @@ bool ContentParent::DeallocPSessionStorageObserverParent(
   return mozilla::dom::DeallocPSessionStorageObserverParent(aActor);
 }
 
-mozilla::ipc::IPCResult ContentParent::RecvDeviceReset() {
-  GPUProcessManager* pm = GPUProcessManager::Get();
-  if (pm) {
-    pm->SimulateDeviceReset();
-  }
-
-  return IPC_OK();
-}
-
 mozilla::ipc::IPCResult ContentParent::RecvBHRThreadHang(
     const HangDetails& aDetails) {
   nsCOMPtr<nsIObserverService> obs = mozilla::services::GetObserverService();
@@ -6783,6 +6792,7 @@ ContentParent::RecvStorageAccessPermissionGrantedForOrigin(
     const int& aAllowMode,
     const Maybe<ContentBlockingNotifier::StorageAccessPermissionGrantedReason>&
         aReason,
+    const bool& aFrameOnly,
     StorageAccessPermissionGrantedForOriginResolver&& aResolver) {
   if (aParentContext.IsNullOrDiscarded()) {
     return IPC_OK();
@@ -6803,7 +6813,7 @@ ContentParent::RecvStorageAccessPermissionGrantedForOrigin(
 
   StorageAccessAPIHelper::SaveAccessForOriginOnParentProcess(
       aTopLevelWindowId, aParentContext.get_canonical(), aTrackingPrincipal,
-      aAllowMode)
+      aAllowMode, aFrameOnly)
       ->Then(GetCurrentSerialEventTarget(), __func__,
              [aResolver = std::move(aResolver)](
                  StorageAccessAPIHelper::ParentAccessGrantPromise::
@@ -7270,7 +7280,7 @@ void ContentParent::UnregisterRemoveWorkerActor() {
   MOZ_ASSERT(NS_IsMainThread());
 
   {
-    MutexAutoLock lock(mThreadsafeHandle->mMutex);
+    RecursiveMutexAutoLock lock(mThreadsafeHandle->mMutex);
     if (--mThreadsafeHandle->mRemoteWorkerActorCount) {
       return;
     }
@@ -7732,7 +7742,7 @@ mozilla::ipc::IPCResult ContentParent::RecvBlobURLDataRequest(
     const nsACString& aBlobURL, nsIPrincipal* aTriggeringPrincipal,
     nsIPrincipal* aLoadingPrincipal, const OriginAttributes& aOriginAttributes,
     uint64_t aInnerWindowId, const Maybe<nsID>& aAgentClusterId,
-    BlobURLDataRequestResolver&& aResolver) {
+    const nsCString& aPartitionKey, BlobURLDataRequestResolver&& aResolver) {
   RefPtr<BlobImpl> blobImpl;
 
   // Since revoked blobs are also retrieved, it is possible that the blob no
@@ -7740,7 +7750,7 @@ mozilla::ipc::IPCResult ContentParent::RecvBlobURLDataRequest(
   if (!BlobURLProtocolHandler::GetDataEntry(
           aBlobURL, getter_AddRefs(blobImpl), aLoadingPrincipal,
           aTriggeringPrincipal, aOriginAttributes, aInnerWindowId,
-          aAgentClusterId, true /* AlsoIfRevoked */)) {
+          aAgentClusterId, aPartitionKey, true /* AlsoIfRevoked */)) {
     aResolver(NS_ERROR_DOM_BAD_URI);
     return IPC_OK();
   }
@@ -7807,9 +7817,10 @@ mozilla::ipc::IPCResult ContentParent::RecvHistoryGo(
     uint64_t aHistoryEpoch, bool aRequireUserInteraction, bool aUserActivation,
     HistoryGoResolver&& aResolveRequestedIndex) {
   if (!aContext.IsDiscarded()) {
-    aResolveRequestedIndex(aContext.get_canonical()->HistoryGo(
-        aOffset, aHistoryEpoch, aRequireUserInteraction, aUserActivation,
-        Some(ChildID())));
+    RefPtr<CanonicalBrowsingContext> canonical = aContext.get_canonical();
+    aResolveRequestedIndex(
+        canonical->HistoryGo(aOffset, aHistoryEpoch, aRequireUserInteraction,
+                             aUserActivation, Some(ChildID())));
   }
   return IPC_OK();
 }
@@ -8032,7 +8043,8 @@ mozilla::ipc::IPCResult ContentParent::RecvHistoryReload(
     const MaybeDiscarded<BrowsingContext>& aContext,
     const uint32_t aReloadFlags) {
   if (!aContext.IsDiscarded()) {
-    nsISHistory* shistory = aContext.get_canonical()->GetSessionHistory();
+    nsCOMPtr<nsISHistory> shistory =
+        aContext.get_canonical()->GetSessionHistory();
     if (shistory) {
       shistory->Reload(aReloadFlags);
     }
@@ -8201,14 +8213,15 @@ IPCResult ContentParent::RecvSignalFuzzingReady() {
 #endif
 
 nsCString ThreadsafeContentParentHandle::GetRemoteType() {
-  MutexAutoLock lock(mMutex);
+  RecursiveMutexAutoLock lock(mMutex);
   return mRemoteType;
 }
 
 bool ThreadsafeContentParentHandle::MaybeRegisterRemoteWorkerActor(
     MoveOnlyFunction<bool(uint32_t, bool)> aCallback) {
-  MutexAutoLock lock(mMutex);
+  RecursiveMutexAutoLock lock(mMutex);
   if (aCallback(mRemoteWorkerActorCount, mShutdownStarted)) {
+    // TODO: I'd wish we could assert here that our ContentParent is alive.
     ++mRemoteWorkerActorCount;
     return true;
   }

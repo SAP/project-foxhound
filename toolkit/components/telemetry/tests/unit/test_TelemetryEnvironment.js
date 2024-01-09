@@ -139,7 +139,8 @@ add_task(async function setup() {
   Services.fog.initializeFOG();
 
   // The system add-on must be installed before AddonManager is started.
-  const distroDir = FileUtils.getDir("ProfD", ["sysfeatures", "app0"], true);
+  const distroDir = FileUtils.getDir("ProfD", ["sysfeatures", "app0"]);
+  distroDir.create(Ci.nsIFile.DIRECTORY_TYPE, FileUtils.PERMS_DIRECTORY);
   do_get_file("system.xpi").copyTo(
     distroDir,
     "tel-system-xpi@tests.mozilla.org.xpi"
@@ -249,8 +250,8 @@ add_task(async function test_prefWatchPolicies() {
     ],
   ]);
 
-  Preferences.set(PREF_TEST_4, expectedValue);
-  Preferences.set(PREF_TEST_5, expectedValue);
+  Services.prefs.setStringPref(PREF_TEST_4, expectedValue);
+  Services.prefs.setStringPref(PREF_TEST_5, expectedValue);
 
   // Set the Environment preferences to watch.
   await TelemetryEnvironment.testWatchPreferences(PREFS_TO_WATCH);
@@ -277,9 +278,9 @@ add_task(async function test_prefWatchPolicies() {
   let oldEnvironmentData = TelemetryEnvironment.currentEnvironment;
 
   // Trigger a change in the watched preferences.
-  Preferences.set(PREF_TEST_1, expectedValue);
-  Preferences.set(PREF_TEST_2, false);
-  Preferences.set(PREF_TEST_5, unexpectedValue);
+  Services.prefs.setStringPref(PREF_TEST_1, expectedValue);
+  Services.prefs.setBoolPref(PREF_TEST_2, false);
+  Services.prefs.setStringPref(PREF_TEST_5, unexpectedValue);
   let eventEnvironmentData = await deferred.promise;
 
   // Unregister the listener.
@@ -317,7 +318,7 @@ add_task(async function test_prefWatch_prefReset() {
   ]);
 
   // Set the preference to a non-default value.
-  Preferences.set(PREF_TEST, false);
+  Services.prefs.setBoolPref(PREF_TEST, false);
 
   // Set the Environment preferences to watch.
   await TelemetryEnvironment.testWatchPreferences(PREFS_TO_WATCH);
@@ -333,7 +334,7 @@ add_task(async function test_prefWatch_prefReset() {
   );
 
   // Trigger a change in the watched preferences.
-  Preferences.reset(PREF_TEST);
+  Services.prefs.clearUserPref(PREF_TEST);
   await deferred.promise;
 
   Assert.strictEqual(
@@ -572,6 +573,10 @@ add_task(async function test_addons() {
     isSystem: false,
     isWebExtension: true,
     multiprocessCompatible: true,
+    quarantineIgnoredByUser: false,
+    // quarantineIgnoredByApp expected to be true because
+    // the test addon is signed as privileged (see signedState).
+    quarantineIgnoredByApp: true,
   };
   const SYSTEM_ADDON_ID = "tel-system-xpi@tests.mozilla.org";
   const EXPECTED_SYSTEM_ADDON_DATA = {
@@ -591,6 +596,10 @@ add_task(async function test_addons() {
     isSystem: true,
     isWebExtension: true,
     multiprocessCompatible: true,
+    quarantineIgnoredByUser: false,
+    // quarantineIgnoredByApp expected to be true because
+    // the test addon is a system addon (see isSystem).
+    quarantineIgnoredByApp: true,
   };
 
   const WEBEXTENSION_ADDON_ID = "tel-webextension-xpi@tests.mozilla.org";
@@ -612,6 +621,10 @@ add_task(async function test_addons() {
     isSystem: false,
     isWebExtension: true,
     multiprocessCompatible: true,
+    quarantineIgnoredByUser: false,
+    // quarantineIgnoredByApp expected to be true because
+    // the test addon is signed as privileged (see signedState).
+    quarantineIgnoredByApp: true,
   };
 
   let deferred = PromiseUtils.defer();
@@ -720,6 +733,11 @@ add_task(async function test_signedAddon() {
     installDay: ADDON_INSTALL_DATE,
     updateDay: ADDON_INSTALL_DATE,
     signedState: AddonManager.SIGNEDSTATE_SIGNED,
+    quarantineIgnoredByUser: false,
+    // quarantineIgnoredByApp expected to be false because
+    // the test addon is signed as a non-privileged (see signedState),
+    // and it doesn't include any recommendations.
+    quarantineIgnoredByApp: false,
   };
 
   let deferred = PromiseUtils.defer();
@@ -751,6 +769,28 @@ add_task(async function test_signedAddon() {
       f + " must have the correct value."
     );
   }
+
+  // Make sure quarantineIgnoredByUser property is updated also in the
+  // telemetry environment in response to the user changing it.
+  deferred = PromiseUtils.defer();
+  TelemetryEnvironment.registerChangeListener(
+    "test_quarantineIgnoreByUser_changed",
+    deferred.resolve
+  );
+
+  addon.quarantineIgnoredByUser = true;
+  await deferred.promise;
+  // Unregister the listener.
+  TelemetryEnvironment.unregisterChangeListener(
+    "test_quarantineIgnoreByUser_changed"
+  );
+
+  Assert.equal(
+    TelemetryEnvironment.currentEnvironment.addons.activeAddons[ADDON_ID]
+      .quarantineIgnoredByUser,
+    true,
+    "Expect quarantineIgnoredByUser to be set to true"
+  );
 
   AddonTestUtils.useRealCertChecks = false;
   await addon.startupPromise;
@@ -939,7 +979,7 @@ add_task(
     const PREFS_TO_WATCH = new Map([
       [PREF_TEST, { what: TelemetryEnvironment.RECORD_PREF_STATE }],
     ]);
-    Preferences.reset(PREF_TEST);
+    Services.prefs.clearUserPref(PREF_TEST);
 
     // Watch the test preference.
     await TelemetryEnvironment.testWatchPreferences(PREFS_TO_WATCH);
@@ -949,7 +989,7 @@ add_task(
       deferred.resolve
     );
     // Trigger an environment change.
-    Preferences.set(PREF_TEST, 1);
+    Services.prefs.setIntPref(PREF_TEST, 1);
     await deferred.promise;
     TelemetryEnvironment.unregisterChangeListener("testDefaultBrowser_pref");
 
@@ -1300,7 +1340,10 @@ add_task(
       // Test the 'yes to both' case.
 
       // This makes the weave service return that the usere is definitely a sync user
-      Preferences.set("services.sync.username", "c00lperson123@example.com");
+      Services.prefs.setStringPref(
+        "services.sync.username",
+        "c00lperson123@example.com"
+      );
       let calledFxa = false;
       cache._getFxaSignedInUser = () => {
         calledFxa = true;
@@ -1318,7 +1361,7 @@ add_task(
       });
 
       // Test the fxa-but-not-sync case.
-      Preferences.reset("services.sync.username");
+      Services.prefs.clearUserPref("services.sync.username");
       // We don't actually inspect the returned object, just t
       cache._getFxaSignedInUser = async () => {
         return {};
@@ -1345,7 +1388,7 @@ add_task(
       equal(cache.currentEnvironment.services, null);
     } finally {
       cache._getFxaSignedInUser = oldGetFxaSignedInUser;
-      Preferences.reset("services.sync.username");
+      Services.prefs.clearUserPref("services.sync.username");
     }
   }
 );
@@ -1386,7 +1429,7 @@ add_task(async function test_environmentShutdown() {
   const PREFS_TO_WATCH = new Map([
     [PREF_TEST, { what: TelemetryEnvironment.RECORD_PREF_STATE }],
   ]);
-  Preferences.reset(PREF_TEST);
+  Services.prefs.clearUserPref(PREF_TEST);
 
   // Set up the preferences and listener, then the trigger shutdown
   await TelemetryEnvironment.testWatchPreferences(PREFS_TO_WATCH);
@@ -1400,7 +1443,7 @@ add_task(async function test_environmentShutdown() {
   TelemetryEnvironment.shutdown();
 
   // Flipping  the test preference after shutdown should not trigger the listener
-  Preferences.set(PREF_TEST, 1);
+  Services.prefs.setIntPref(PREF_TEST, 1);
 
   // Unregister the listener.
   TelemetryEnvironment.unregisterChangeListener(

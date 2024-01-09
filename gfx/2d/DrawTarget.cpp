@@ -179,6 +179,21 @@ void DrawTarget::FillRoundedRect(const RoundedRect& aRect,
   Fill(path, aPattern, aOptions);
 }
 
+void DrawTarget::StrokeCircle(const Point& aOrigin, float radius,
+                              const Pattern& aPattern,
+                              const StrokeOptions& aStrokeOptions,
+                              const DrawOptions& aOptions) {
+  RefPtr<Path> path = MakePathForCircle(*this, aOrigin, radius);
+  Stroke(path, aPattern, aStrokeOptions, aOptions);
+}
+
+void DrawTarget::FillCircle(const Point& aOrigin, float radius,
+                            const Pattern& aPattern,
+                            const DrawOptions& aOptions) {
+  RefPtr<Path> path = MakePathForCircle(*this, aOrigin, radius);
+  Fill(path, aPattern, aOptions);
+}
+
 void DrawTarget::StrokeGlyphs(ScaledFont* aFont, const GlyphBuffer& aBuffer,
                               const Pattern& aPattern,
                               const StrokeOptions& aStrokeOptions,
@@ -189,6 +204,11 @@ void DrawTarget::StrokeGlyphs(ScaledFont* aFont, const GlyphBuffer& aBuffer,
 
 already_AddRefed<SourceSurface> DrawTarget::IntoLuminanceSource(
     LuminanceType aMaskType, float aOpacity) {
+  // The default IntoLuminanceSource implementation needs a format of B8G8R8A8.
+  if (mFormat != SurfaceFormat::B8G8R8A8) {
+    return nullptr;
+  }
+
   RefPtr<SourceSurface> surface = Snapshot();
   if (!surface) {
     return nullptr;

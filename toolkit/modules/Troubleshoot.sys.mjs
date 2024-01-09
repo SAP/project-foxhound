@@ -254,6 +254,13 @@ var dataProviders = {
       data.rosetta = Services.sysinfo.getProperty("rosettaStatus");
     } catch (e) {}
 
+    try {
+      // Windows - Get info about attached pointing devices
+      data.pointingDevices = Services.sysinfo
+        .getProperty("pointingDevices")
+        .split(",");
+    } catch (e) {}
+
     data.numTotalWindows = 0;
     data.numFissionWindows = 0;
     data.numRemoteWindows = 0;
@@ -310,6 +317,7 @@ var dataProviders = {
       "locale",
       "dictionary",
       "sitepermission",
+      "theme",
     ]);
     addons = addons.filter(e => !e.isSystem);
     addons.sort(function (a, b) {
@@ -450,6 +458,25 @@ var dataProviders = {
         ];
       })
     );
+  },
+
+  async legacyUserStylesheets(done) {
+    if (AppConstants.platform == "android") {
+      done({ active: false, types: [] });
+      return;
+    }
+
+    let active = Services.prefs.getBoolPref(
+      "toolkit.legacyUserProfileCustomizations.stylesheets"
+    );
+    let types = [];
+    for (let name of ["userChrome.css", "userContent.css"]) {
+      let path = PathUtils.join(PathUtils.profileDir, "chrome", name);
+      if (await IOUtils.exists(path)) {
+        types.push(name);
+      }
+    }
+    done({ active, types });
   },
 
   async environmentVariables(done) {
@@ -1071,11 +1098,15 @@ if (AppConstants.MOZ_SANDBOX) {
       );
       data.effectiveContentSandboxLevel =
         sandboxSettings.effectiveContentSandboxLevel;
-      data.contentWin32kLockdownState =
-        sandboxSettings.contentWin32kLockdownStateString;
-      data.supportSandboxGpuLevel = Services.prefs.getIntPref(
-        "security.sandbox.gpu.level"
-      );
+
+      if (AppConstants.platform == "win") {
+        data.contentWin32kLockdownState =
+          sandboxSettings.contentWin32kLockdownStateString;
+
+        data.supportSandboxGpuLevel = Services.prefs.getIntPref(
+          "security.sandbox.gpu.level"
+        );
+      }
     }
 
     done(data);

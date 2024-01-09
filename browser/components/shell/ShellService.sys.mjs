@@ -21,7 +21,7 @@ XPCOMUtils.defineLazyServiceGetter(
   "nsIXREDirProvider"
 );
 
-XPCOMUtils.defineLazyGetter(lazy, "log", () => {
+ChromeUtils.defineLazyGetter(lazy, "log", () => {
   let { ConsoleAPI } = ChromeUtils.importESModule(
     "resource://gre/modules/Console.sys.mjs"
   );
@@ -304,7 +304,7 @@ let ShellServiceInternal = {
         arguments: exeArgs,
       });
       telemetryResult = "ErrOther";
-      this._handleWDBAResult(exeProcess);
+      await this._handleWDBAResult(exeProcess);
       telemetryResult = "Success";
     } catch (ex) {
       if (ex instanceof WDBAError) {
@@ -342,7 +342,7 @@ let ShellServiceInternal = {
         ],
       });
       telemetryResult = "ErrOther";
-      this._handleWDBAResult(exeProcess);
+      await this._handleWDBAResult(exeProcess);
       telemetryResult = "Success";
     } catch (ex) {
       if (ex instanceof WDBAError) {

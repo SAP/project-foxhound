@@ -6,9 +6,7 @@
 #ifndef mozilla_a11y_DocAccessible_h__
 #define mozilla_a11y_DocAccessible_h__
 
-#include "nsIAccessiblePivot.h"
-
-#include "HyperTextAccessibleWrap.h"
+#include "HyperTextAccessible.h"
 #include "AccEvent.h"
 
 #include "nsClassHashtable.h"
@@ -18,8 +16,6 @@
 #include "nsITimer.h"
 #include "nsTHashSet.h"
 #include "nsWeakReference.h"
-
-class nsAccessiblePivot;
 
 const uint32_t kDefaultCacheLength = 128;
 
@@ -46,14 +42,11 @@ class TNotification;
  * represents a document. Tabs, in-process iframes, and out-of-process iframes
  * all use this class to represent the doc they contain.
  */
-class DocAccessible : public HyperTextAccessibleWrap,
+class DocAccessible : public HyperTextAccessible,
                       public nsIDocumentObserver,
-                      public nsSupportsWeakReference,
-                      public nsIAccessiblePivotObserver {
+                      public nsSupportsWeakReference {
   NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(DocAccessible, LocalAccessible)
-
-  NS_DECL_NSIACCESSIBLEPIVOTOBSERVER
 
  protected:
   typedef mozilla::dom::Document Document;
@@ -134,11 +127,6 @@ class DocAccessible : public HyperTextAccessibleWrap,
    * to its document.
    */
   void QueueCacheUpdateForDependentRelations(LocalAccessible* aAcc);
-
-  /**
-   * Return virtual cursor associated with the document.
-   */
-  nsIAccessiblePivot* VirtualCursor();
 
   /**
    * Returns true if the instance has shutdown.
@@ -415,6 +403,13 @@ class DocAccessible : public HyperTextAccessibleWrap,
    */
   std::pair<nsPoint, nsRect> ComputeScrollData(LocalAccessible* aAcc);
 
+  /**
+   * Only works in content process documents.
+   */
+  bool IsAccessibleBeingMoved(LocalAccessible* aAcc) {
+    return mMovedAccessibles.Contains(aAcc);
+  }
+
  protected:
   virtual ~DocAccessible();
 
@@ -536,13 +531,6 @@ class DocAccessible : public HyperTextAccessibleWrap,
   void ProcessQueuedCacheUpdates();
 
   /**
-   * Only works in content process documents.
-   */
-  bool IsAccessibleBeingMoved(LocalAccessible* aAcc) {
-    return mMovedAccessibles.Contains(aAcc);
-  }
-
-  /**
    * Called from NotificationController before mutation events are processed to
    * notify the parent process which Accessibles are being moved (if any).
    */
@@ -613,7 +601,7 @@ class DocAccessible : public HyperTextAccessibleWrap,
    */
   void SetIPCDoc(DocAccessibleChild* aIPCDoc);
 
-  friend class DocAccessibleChildBase;
+  friend class DocAccessibleChild;
 
   /**
    * Used to fire scrolling end event after page scroll.
@@ -705,11 +693,6 @@ class DocAccessible : public HyperTextAccessibleWrap,
   uint64_t mPrevStateBits;
 
   nsTArray<RefPtr<DocAccessible>> mChildDocuments;
-
-  /**
-   * The virtual cursor of the document.
-   */
-  RefPtr<nsAccessiblePivot> mVirtualCursor;
 
   /**
    * A storage class for pairing content with one of its relation attributes.

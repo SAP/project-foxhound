@@ -230,11 +230,18 @@ void Http3Session::Shutdown() {
 
   bool isEchRetry = mError == mozilla::psm::GetXPCOMFromNSSError(
                                   SSL_ERROR_ECH_RETRY_WITH_ECH);
+  bool allowToRetryWithDifferentIPFamily =
+      mBeforeConnectedError &&
+      gHttpHandler->ConnMgr()->AllowToRetryDifferentIPFamilyForHttp3(mConnInfo,
+                                                                     mError);
+  LOG(("Http3Session::Shutdown %p allowToRetryWithDifferentIPFamily=%d", this,
+       allowToRetryWithDifferentIPFamily));
   if ((mBeforeConnectedError ||
        (mError == NS_ERROR_NET_HTTP3_PROTOCOL_ERROR)) &&
       (mError !=
        mozilla::psm::GetXPCOMFromNSSError(SSL_ERROR_BAD_CERT_DOMAIN)) &&
-      !isEchRetry && !mConnInfo->GetWebTransport()) {
+      !isEchRetry && !mConnInfo->GetWebTransport() &&
+      !allowToRetryWithDifferentIPFamily && !mDontExclude) {
     gHttpHandler->ExcludeHttp3(mConnInfo);
   }
 
@@ -249,7 +256,28 @@ void Http3Session::Shutdown() {
         // transaction will be restarted with a new echConfig.
         stream->Close(mError);
       } else {
-        stream->Close(NS_ERROR_NET_RESET);
+        if (allowToRetryWithDifferentIPFamily && mNetAddr) {
+          NetAddr addr;
+          mNetAddr->GetNetAddr(&addr);
+          gHttpHandler->ConnMgr()->SetRetryDifferentIPFamilyForHttp3(
+              mConnInfo, addr.raw.family);
+          nsHttpTransaction* trans =
+              stream->Transaction()->QueryHttpTransaction();
+          if (trans) {
+            // This is a bit hacky. We redispatch the transaction here to avoid
+            // touching the complicated retry logic in nsHttpTransaction.
+            trans->RemoveConnection();
+            Unused << gHttpHandler->InitiateTransaction(trans,
+                                                        trans->Priority());
+          } else {
+            stream->Close(NS_ERROR_NET_RESET);
+          }
+          // Since Http3Session::Shutdown can be called multiple times, we set
+          // mDontExclude for not putting this domain into the excluded list.
+          mDontExclude = true;
+        } else {
+          stream->Close(NS_ERROR_NET_RESET);
+        }
       }
     } else if (!stream->HasStreamId()) {
       if (NS_SUCCEEDED(mError)) {
@@ -718,6 +746,8 @@ nsresult Http3Session::ProcessEvents() {
                 stream->GetHttp3WebTransportSession();
             MOZ_RELEASE_ASSERT(wt, "It must be a WebTransport session");
 
+            bool cleanly = false;
+
             // TODO we do not handle the case when a WebTransport session stream
             // is closed before headers are sent.
             SessionCloseReasonExternal& reasonExternal =
@@ -729,15 +759,17 @@ nsresult Http3Session::ProcessEvents() {
             } else if (reasonExternal.tag ==
                        SessionCloseReasonExternal::Tag::Status) {
               status = reasonExternal.status._0;
+              cleanly = true;
             } else {
               status = reasonExternal.clean._0;
               reason.Assign(reinterpret_cast<const char*>(data.Elements()),
                             data.Length());
+              cleanly = true;
             }
             LOG(("reason.tag=%u err=%u data=%s\n",
                  static_cast<uint32_t>(reasonExternal.tag), status,
                  reason.get()));
-            wt->OnSessionClosed(status, reason);
+            wt->OnSessionClosed(cleanly, status, reason);
 
           } break;
           case WebTransportEventExternal::Tag::NewStream: {
@@ -2254,8 +2286,10 @@ void Http3Session::CloseConnectionTelemetry(CloseError& aError, bool aClosing) {
       break;
     case CloseError::Tag::EchRetry:
       key = "transport_crypto_alert"_ns;
-      value = 121;
+      value = 100;
   }
+
+  MOZ_DIAGNOSTIC_ASSERT(value <= 100);
 
   key.Append(aClosing ? "_closing"_ns : "_closed"_ns);
 

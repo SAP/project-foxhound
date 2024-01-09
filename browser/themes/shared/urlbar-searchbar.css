@@ -19,6 +19,12 @@
   }
 }
 
+/* When rich suggestions are enabled the urlbar identity icon is given extra padding to
+ * align the results and urlbar text */
+#urlbar[richSuggestionsEnabled]:not(.searchButton) > #urlbar-input-container > #identity-box[pageproxystate="invalid"] > .identity-box-button {
+  padding-inline: calc(6px + var(--urlbar-icon-padding));
+}
+
 #urlbar-container,
 #search-container {
   padding-block: 4px;
@@ -646,10 +652,9 @@
     font-weight: bold;
   }
 
-  #translations-button[translationsactive]:hover > #translations-button-icon {
+  #translations-button[translationsactive]:is(:hover, [open]) > #translations-button-icon {
     fill: currentColor;
   }
-
 
   #translations-button:is(:hover, [open]) > #translations-button-locale {
     background-color: var(--toolbar-field-background-color);
@@ -716,6 +721,17 @@
 
 #urlbar-zoom-button > .toolbarbutton-icon {
   display: none;
+}
+
+/* Shopping Sidebar icon */
+
+#shopping-sidebar-button > .urlbar-icon {
+  list-style-image: url(resource://usercontext-content/cart.svg);
+}
+
+#shopping-sidebar-button[shoppingsidebaropen="true"] > .urlbar-icon {
+  fill: var(--toolbarbutton-icon-fill-attention);
+  fill-opacity: 1;
 }
 
 /* Search bar */

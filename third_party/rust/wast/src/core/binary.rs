@@ -108,8 +108,8 @@ impl Encoder<'_> {
 
     fn custom_sections(&mut self, place: CustomPlace) {
         for entry in self.customs.iter() {
-            if entry.place == place {
-                self.section(0, &(entry.name, entry));
+            if entry.place() == place {
+                self.section(0, &(entry.name(), entry));
             }
         }
     }
@@ -173,10 +173,25 @@ impl Encode for RecOrType<'_> {
 
 impl Encode for Type<'_> {
     fn encode(&self, e: &mut Vec<u8>) {
-        if let Some(parent) = &self.parent {
-            e.push(0x50);
-            (1 as usize).encode(e);
-            parent.encode(e);
+        match (&self.parent, self.final_type) {
+            (Some(parent), Some(true)) => {
+                // Type is final with a supertype
+                e.push(0x4e);
+                e.push(0x01);
+                parent.encode(e);
+            }
+            (Some(parent), Some(false) | None) => {
+                // Type is not final and has a declared supertype
+                e.push(0x50);
+                e.push(0x01);
+                parent.encode(e);
+            }
+            (None, Some(false)) => {
+                // Sub was used without any declared supertype
+                e.push(0x50);
+                e.push(0x00);
+            }
+            (None, _) => {} // No supertype, sub wasn't used
         }
         match &self.def {
             TypeDef::Func(func) => {
@@ -530,6 +545,10 @@ impl Encode for Elem<'_> {
                 offset.encode(e);
                 e.push(0x00); // extern_kind
             }
+            (ElemKind::Declared, ElemPayload::Indices(_)) => {
+                e.push(0x03); // flags
+                e.push(0x00); // extern_kind
+            }
             (
                 ElemKind::Active {
                     table: Index::Num(0, _),
@@ -556,10 +575,6 @@ impl Encode for Elem<'_> {
                 table.encode(e);
                 offset.encode(e);
                 ty.encode(e);
-            }
-            (ElemKind::Declared, ElemPayload::Indices(_)) => {
-                e.push(0x03); // flags
-                e.push(0x00); // extern_kind
             }
             (ElemKind::Declared, ElemPayload::Exprs { ty, .. }) => {
                 e.push(0x07); // flags
@@ -626,10 +641,10 @@ impl Encode for Func<'_> {
     }
 }
 
-impl Encode for Vec<Local<'_>> {
+impl Encode for Box<[Local<'_>]> {
     fn encode(&self, e: &mut Vec<u8>) {
         let mut locals_compressed = Vec::<(u32, ValType)>::new();
-        for local in self {
+        for local in self.iter() {
             if let Some((cnt, prev)) = locals_compressed.last_mut() {
                 if *prev == local.ty {
                     *cnt += 1;
@@ -904,7 +919,7 @@ fn find_names<'a>(
                 locals, expression, ..
             } = &f.kind
             {
-                for local in locals {
+                for local in locals.iter() {
                     if let Some(name) = get_name(&local.id, &local.name) {
                         local_names.push((local_idx, name));
                     }
@@ -1044,9 +1059,24 @@ impl<'a> Encode for SelectTypes<'a> {
 
 impl Encode for Custom<'_> {
     fn encode(&self, e: &mut Vec<u8>) {
+        match self {
+            Custom::Raw(r) => r.encode(e),
+            Custom::Producers(p) => p.encode(e),
+        }
+    }
+}
+
+impl Encode for RawCustomSection<'_> {
+    fn encode(&self, e: &mut Vec<u8>) {
         for list in self.data.iter() {
             e.extend_from_slice(list);
         }
+    }
+}
+
+impl Encode for Producers<'_> {
+    fn encode(&self, e: &mut Vec<u8>) {
+        self.fields.encode(e);
     }
 }
 
@@ -1143,7 +1173,7 @@ impl Encode for RefCast<'_> {
     }
 }
 
-fn br_on_cast_flags(on_fail: bool, from_nullable: bool, to_nullable: bool) -> u8 {
+fn br_on_cast_flags(from_nullable: bool, to_nullable: bool) -> u8 {
     let mut flag = 0;
     if from_nullable {
         flag |= 1 << 0;
@@ -1151,17 +1181,17 @@ fn br_on_cast_flags(on_fail: bool, from_nullable: bool, to_nullable: bool) -> u8
     if to_nullable {
         flag |= 1 << 1;
     }
-    if on_fail {
-        flag |= 1 << 2;
-    }
     flag
 }
 
 impl Encode for BrOnCast<'_> {
     fn encode(&self, e: &mut Vec<u8>) {
         e.push(0xfb);
-        e.push(0x4f);
-        e.push(br_on_cast_flags(false, self.from_type.nullable, self.to_type.nullable));
+        e.push(0x4e);
+        e.push(br_on_cast_flags(
+            self.from_type.nullable,
+            self.to_type.nullable,
+        ));
         self.label.encode(e);
         self.from_type.heap.encode(e);
         self.to_type.heap.encode(e);
@@ -1172,7 +1202,10 @@ impl Encode for BrOnCastFail<'_> {
     fn encode(&self, e: &mut Vec<u8>) {
         e.push(0xfb);
         e.push(0x4f);
-        e.push(br_on_cast_flags(true, self.from_type.nullable, self.to_type.nullable));
+        e.push(br_on_cast_flags(
+            self.from_type.nullable,
+            self.to_type.nullable,
+        ));
         self.label.encode(e);
         self.from_type.heap.encode(e);
         self.to_type.heap.encode(e);

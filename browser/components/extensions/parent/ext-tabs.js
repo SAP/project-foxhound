@@ -6,12 +6,8 @@
 
 "use strict";
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "BrowserUIUtils",
-  "resource:///modules/BrowserUIUtils.jsm"
-);
 ChromeUtils.defineESModuleGetters(this, {
+  BrowserUIUtils: "resource:///modules/BrowserUIUtils.sys.mjs",
   DownloadPaths: "resource://gre/modules/DownloadPaths.sys.mjs",
   ExtensionControlledPopup:
     "resource:///modules/ExtensionControlledPopup.sys.mjs",
@@ -20,7 +16,7 @@ ChromeUtils.defineESModuleGetters(this, {
   SessionStore: "resource:///modules/sessionstore/SessionStore.sys.mjs",
 });
 
-XPCOMUtils.defineLazyGetter(this, "strBundle", function () {
+ChromeUtils.defineLazyGetter(this, "strBundle", function () {
   return Services.strings.createBundle(
     "chrome://global/locale/extensions.properties"
   );
@@ -32,7 +28,7 @@ const TAB_HIDE_CONFIRMED_TYPE = "tabHideNotification";
 
 const TAB_ID_NONE = -1;
 
-XPCOMUtils.defineLazyGetter(this, "tabHidePopup", () => {
+ChromeUtils.defineLazyGetter(this, "tabHidePopup", () => {
   return new ExtensionControlledPopup({
     confirmedType: TAB_HIDE_CONFIRMED_TYPE,
     anchorId: "alltabs-button",
@@ -49,7 +45,6 @@ XPCOMUtils.defineLazyGetter(this, "tabHidePopup", () => {
         image
       );
     },
-    learnMoreMessageId: "tabHideControlled.learnMore",
     learnMoreLink: "extension-hiding-tabs",
   });
 });
@@ -155,10 +150,12 @@ const allAttrs = new Set([
   "mutedInfo",
   "sharingState",
   "title",
+  "autoDiscardable",
 ]);
 const allProperties = new Set([
   "attention",
   "audible",
+  "autoDiscardable",
   "discarded",
   "favIconUrl",
   "hidden",
@@ -423,6 +420,12 @@ this.tabs = class extends ExtensionAPIPersistent {
             filter.properties.has("audible")
           ) {
             needed.push("audible");
+          }
+          if (
+            changed.includes("undiscardable") &&
+            filter.properties.has("autoDiscardable")
+          ) {
+            needed.push("autoDiscardable");
           }
           if (changed.includes("label") && filter.properties.has("title")) {
             needed.push("title");
@@ -902,6 +905,9 @@ this.tabs = class extends ExtensionAPIPersistent {
 
           if (updateProperties.active) {
             tabbrowser.selectedTab = nativeTab;
+          }
+          if (updateProperties.autoDiscardable !== null) {
+            nativeTab.undiscardable = !updateProperties.autoDiscardable;
           }
           if (updateProperties.highlighted !== null) {
             if (updateProperties.highlighted) {

@@ -59,7 +59,7 @@ class BaseHost:
                     "log",
                     "-1",
                     "--date=iso8601-strict",
-                    "--format=%ad",
+                    "--format=%cd",
                     tag,
                 ],
                 stdout=subprocess.PIPE,
@@ -74,4 +74,7 @@ class BaseHost:
         raise Exception("Unimplemented for this subclass...")
 
     def upstream_path_to_file(self, revision, filepath):
+        raise Exception("Unimplemented for this subclass...")
+
+    def upstream_release_artifact(self, revision, release_artifact):
         raise Exception("Unimplemented for this subclass...")

@@ -23,6 +23,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
   AsyncShutdown: "resource://gre/modules/AsyncShutdown.sys.mjs",
   CertUtils: "resource://gre/modules/CertUtils.sys.mjs",
   DeferredTask: "resource://gre/modules/DeferredTask.sys.mjs",
+  UpdateLog: "resource://gre/modules/UpdateLog.sys.mjs",
   UpdateUtils: "resource://gre/modules/UpdateUtils.sys.mjs",
   WindowsRegistry: "resource://gre/modules/WindowsRegistry.sys.mjs",
   ctypes: "resource://gre/modules/ctypes.sys.mjs",
@@ -93,8 +94,6 @@ const PREF_APP_UPDATE_ELEVATE_ATTEMPTS = "app.update.elevate.attempts";
 const PREF_APP_UPDATE_ELEVATE_MAXATTEMPTS = "app.update.elevate.maxAttempts";
 const PREF_APP_UPDATE_LANGPACK_ENABLED = "app.update.langpack.enabled";
 const PREF_APP_UPDATE_LANGPACK_TIMEOUT = "app.update.langpack.timeout";
-const PREF_APP_UPDATE_LOG = "app.update.log";
-const PREF_APP_UPDATE_LOG_FILE = "app.update.log.file";
 const PREF_APP_UPDATE_NOTIFYDURINGDOWNLOAD = "app.update.notifyDuringDownload";
 const PREF_APP_UPDATE_NO_WINDOW_AUTO_RESTART_ENABLED =
   "app.update.noWindowAutoRestart.enabled";
@@ -116,10 +115,12 @@ const URI_UPDATES_PROPERTIES =
   "chrome://mozapps/locale/update/updates.properties";
 
 const KEY_EXECUTABLE = "XREExeF";
-const KEY_PROFILE_DIR = "ProfD";
 const KEY_UPDROOT = "UpdRootD";
+const KEY_OLD_UPDROOT = "OldUpdRootD";
 
 const DIR_UPDATES = "updates";
+const DIR_UPDATE_READY = "0";
+const DIR_UPDATE_DOWNLOADING = "downloading";
 
 const FILE_ACTIVE_UPDATE_XML = "active-update.xml";
 const FILE_BACKUP_UPDATE_LOG = "backup-update.log";
@@ -131,7 +132,6 @@ const FILE_UPDATE_MAR = "update.mar";
 const FILE_UPDATE_STATUS = "update.status";
 const FILE_UPDATE_TEST = "update.test";
 const FILE_UPDATE_VERSION = "update.version";
-const FILE_UPDATE_MESSAGES = "update_messages.log";
 
 const STATE_NONE = "null";
 const STATE_DOWNLOADING = "downloading";
@@ -306,8 +306,6 @@ const STAGING_POLLING_ATTEMPTS_PER_INTERVAL = 5;
 const STAGING_POLLING_MAX_DURATION_MS = 1 * 60 * 60 * 1000; // 1 hour
 
 var gUpdateMutexHandle = null;
-// This is the file stream used for the log file.
-var gLogfileOutputStream;
 // This value will be set to true if it appears that BITS is being used by
 // another user to download updates. We don't really want two users using BITS
 // at once. Computers with many users (ex: a school computer), should not end
@@ -339,22 +337,7 @@ class SelfContainedPromise {
 // `nsIApplicationUpdateService.stateTransition`.
 var gStateTransitionPromise = new SelfContainedPromise();
 
-XPCOMUtils.defineLazyGetter(lazy, "gLogEnabled", function aus_gLogEnabled() {
-  return (
-    Services.prefs.getBoolPref(PREF_APP_UPDATE_LOG, false) ||
-    Services.prefs.getBoolPref(PREF_APP_UPDATE_LOG_FILE, false)
-  );
-});
-
-XPCOMUtils.defineLazyGetter(
-  lazy,
-  "gLogfileEnabled",
-  function aus_gLogfileEnabled() {
-    return Services.prefs.getBoolPref(PREF_APP_UPDATE_LOG_FILE, false);
-  }
-);
-
-XPCOMUtils.defineLazyGetter(
+ChromeUtils.defineLazyGetter(
   lazy,
   "gUpdateBundle",
   function aus_gUpdateBundle() {
@@ -366,7 +349,7 @@ XPCOMUtils.defineLazyGetter(
  * gIsBackgroundTaskMode will be true if Firefox is currently running as a
  * background task. Otherwise it will be false.
  */
-XPCOMUtils.defineLazyGetter(
+ChromeUtils.defineLazyGetter(
   lazy,
   "gIsBackgroundTaskMode",
   function aus_gCurrentlyRunningAsBackgroundTask() {
@@ -754,6 +737,46 @@ function promiseLangPacksUpdated(update) {
   return Promise.resolve();
 }
 
+/*
+ * See nsIUpdateService.idl
+ */
+function isAppBaseDirWritable() {
+  let appDirTestFile = "";
+
+  try {
+    appDirTestFile = getAppBaseDir();
+    appDirTestFile.append(FILE_UPDATE_TEST);
+  } catch (e) {
+    LOG(
+      "isAppBaseDirWritable - Base directory or test path could not be " +
+        `determined: ${e}`
+    );
+    return false;
+  }
+
+  try {
+    LOG(
+      `isAppBaseDirWritable - testing write access for ${appDirTestFile.path}`
+    );
+
+    if (appDirTestFile.exists()) {
+      appDirTestFile.remove(false);
+    }
+    // if we're unable to create the test file this will throw an exception:
+    appDirTestFile.create(Ci.nsIFile.NORMAL_FILE_TYPE, FileUtils.PERMS_FILE);
+    appDirTestFile.remove(false);
+    LOG(`isAppBaseDirWritable - Path is writable: ${appDirTestFile.path}`);
+    return true;
+  } catch (e) {
+    LOG(
+      `isAppBaseDirWritable - Path '${appDirTestFile.path}' ` +
+        `is not writable: ${e}`
+    );
+  }
+  // No write access to the installation directory
+  return false;
+}
+
 /**
  * Determines whether or not an update can be applied. This is always true on
  * Windows when the service is used. On Mac OS X and Linux, if the user has
@@ -812,19 +835,11 @@ function getCanApplyUpdates() {
         );
         userCanElevate = false;
       }
-      if (!userCanElevate) {
-        // if we're unable to create the test file this will throw an exception.
-        let appDirTestFile = getAppBaseDir();
-        appDirTestFile.append(FILE_UPDATE_TEST);
-        LOG("getCanApplyUpdates - testing write access " + appDirTestFile.path);
-        if (appDirTestFile.exists()) {
-          appDirTestFile.remove(false);
-        }
-        appDirTestFile.create(
-          Ci.nsIFile.NORMAL_FILE_TYPE,
-          FileUtils.PERMS_FILE
+      if (!userCanElevate && !isAppBaseDirWritable) {
+        LOG(
+          "getCanApplyUpdates - unable to apply updates, because the base " +
+            "directory is not writable."
         );
-        appDirTestFile.remove(false);
       }
     }
   } catch (e) {
@@ -843,7 +858,7 @@ function getCanApplyUpdates() {
  *
  * @return true if updates can be staged for this session.
  */
-XPCOMUtils.defineLazyGetter(
+ChromeUtils.defineLazyGetter(
   lazy,
   "gCanStageUpdatesSession",
   function aus_gCSUS() {
@@ -988,31 +1003,7 @@ function getCanUseBits(transient = true) {
  *          The string to write to the error console.
  */
 function LOG(string) {
-  if (lazy.gLogEnabled) {
-    dump("*** AUS:SVC " + string + "\n");
-    if (!Cu.isInAutomation) {
-      Services.console.logStringMessage("AUS:SVC " + string);
-    }
-
-    if (lazy.gLogfileEnabled) {
-      if (!gLogfileOutputStream) {
-        let logfile = Services.dirsvc.get(KEY_PROFILE_DIR, Ci.nsIFile);
-        logfile.append(FILE_UPDATE_MESSAGES);
-        gLogfileOutputStream = FileUtils.openAtomicFileOutputStream(logfile);
-      }
-
-      try {
-        let encoded = new TextEncoder().encode(string + "\n");
-        gLogfileOutputStream.write(encoded, encoded.length);
-        gLogfileOutputStream.flush();
-      } catch (e) {
-        dump("*** AUS:SVC Unable to write to messages file: " + e + "\n");
-        Services.console.logStringMessage(
-          "AUS:SVC Unable to write to messages file: " + e
-        );
-      }
-    }
-  }
+  lazy.UpdateLog.logPrefixedString("AUS:SVC", string);
 }
 
 /**
@@ -1051,7 +1042,16 @@ function getUpdateDirCreate(pathArray) {
     }
   }
 
-  return FileUtils.getDir(KEY_UPDROOT, pathArray, true);
+  let dir = FileUtils.getDir(KEY_UPDROOT, pathArray);
+  try {
+    dir.create(Ci.nsIFile.DIRECTORY_TYPE, FileUtils.PERMS_DIRECTORY);
+  } catch (ex) {
+    if (ex.result != Cr.NS_ERROR_FILE_ALREADY_EXISTS) {
+      throw ex;
+    }
+    // Ignore the exception due to a directory that already exists.
+  }
+  return dir;
 }
 
 /**
@@ -1154,7 +1154,7 @@ function getStatusTextFromCode(code, defaultCode) {
  * @return The ready updates directory, as a nsIFile object
  */
 function getReadyUpdateDir() {
-  return getUpdateDirCreate([DIR_UPDATES, "0"]);
+  return getUpdateDirCreate([DIR_UPDATES, DIR_UPDATE_READY]);
 }
 
 /**
@@ -1164,7 +1164,7 @@ function getReadyUpdateDir() {
  * @return The downloading update directory, as a nsIFile object
  */
 function getDownloadingUpdateDir() {
-  return getUpdateDirCreate([DIR_UPDATES, "downloading"]);
+  return getUpdateDirCreate([DIR_UPDATES, DIR_UPDATE_DOWNLOADING]);
 }
 
 /**
@@ -2630,8 +2630,9 @@ export function UpdateService() {
   // profile-before-change since nsIUpdateManager uses profile-before-change
   // to shutdown and write the update xml files.
   Services.obs.addObserver(this, "quit-application");
-  // This one call observes PREF_APP_UPDATE_LOG and PREF_APP_UPDATE_LOG_FILE
-  Services.prefs.addObserver(PREF_APP_UPDATE_LOG, this);
+  lazy.UpdateLog.addConfigChangeListener(() => {
+    this._logStatus();
+  });
 
   this._logStatus();
 }
@@ -2714,28 +2715,8 @@ UpdateService.prototype = {
       case "network:offline-status-changed":
         await this._offlineStatusChanged(data);
         break;
-      case "nsPref:changed":
-        if (data == PREF_APP_UPDATE_LOG || data == PREF_APP_UPDATE_LOG_FILE) {
-          lazy.gLogEnabled; // Assigning this before it is lazy-loaded is an error.
-          lazy.gLogEnabled =
-            Services.prefs.getBoolPref(PREF_APP_UPDATE_LOG, false) ||
-            Services.prefs.getBoolPref(PREF_APP_UPDATE_LOG_FILE, false);
-        }
-        if (data == PREF_APP_UPDATE_LOG_FILE) {
-          lazy.gLogfileEnabled; // Assigning this before it is lazy-loaded is an
-          // error.
-          lazy.gLogfileEnabled = Services.prefs.getBoolPref(
-            PREF_APP_UPDATE_LOG_FILE,
-            false
-          );
-          if (lazy.gLogfileEnabled) {
-            this._logStatus();
-          }
-        }
-        break;
       case "quit-application":
         Services.obs.removeObserver(this, topic);
-        Services.prefs.removeObserver(PREF_APP_UPDATE_LOG, this);
 
         if (AppConstants.platform == "win" && gUpdateMutexHandle) {
           // If we hold the update mutex, let it go!
@@ -2766,10 +2747,6 @@ UpdateService.prototype = {
         this._downloader = null;
         // In case any update checks are in progress.
         lazy.CheckSvc.stopAllChecks();
-
-        if (gLogfileOutputStream) {
-          gLogfileOutputStream.close();
-        }
         break;
       case "test-close-handle-update-mutex":
         if (Cu.isInAutomation) {
@@ -2875,41 +2852,29 @@ UpdateService.prototype = {
       return false;
     };
     if (channelChanged(updates)) {
+      let channel = lazy.UM.readyUpdate
+        ? lazy.UM.readyUpdate.channel
+        : lazy.UM.downloadingUpdate.channel;
       LOG(
-        "UpdateService:_postUpdateProcessing - channel has changed, " +
-          "reloading default preferences to workaround bug 802022"
+        "UpdateService:_postUpdateProcessing - update channel is " +
+          "different than application's channel, removing update. update " +
+          "channel: " +
+          channel +
+          ", expected channel: " +
+          lazy.UpdateUtils.UpdateChannel
       );
-      // Workaround to get the distribution preferences loaded (Bug 774618).
-      // This can be removed after bug 802022 is fixed. Now that this code runs
-      // later during startup this code may no longer be necessary but it
-      // shouldn't be removed until after bug 802022 is fixed.
-      let prefSvc = Services.prefs.QueryInterface(Ci.nsIObserver);
-      prefSvc.observe(null, "reload-default-prefs", null);
-      if (channelChanged(updates)) {
-        let channel = lazy.UM.readyUpdate
-          ? lazy.UM.readyUpdate.channel
-          : lazy.UM.downloadingUpdate.channel;
-        LOG(
-          "UpdateService:_postUpdateProcessing - update channel is " +
-            "different than application's channel, removing update. update " +
-            "channel: " +
-            channel +
-            ", expected channel: " +
-            lazy.UpdateUtils.UpdateChannel
-        );
-        // User switched channels, clear out the old active updates and remove
-        // partial downloads
-        for (let update of updates) {
-          update.state = STATE_FAILED;
-          update.errorCode = ERR_CHANNEL_CHANGE;
-          update.statusText =
-            lazy.gUpdateBundle.GetStringFromName("statusFailed");
-        }
-        let newStatus = STATE_FAILED + ": " + ERR_CHANNEL_CHANGE;
-        pingStateAndStatusCodes(updates[0], true, newStatus);
-        cleanupActiveUpdates();
-        return;
+      // User switched channels, clear out the old active updates and remove
+      // partial downloads
+      for (let update of updates) {
+        update.state = STATE_FAILED;
+        update.errorCode = ERR_CHANNEL_CHANGE;
+        update.statusText =
+          lazy.gUpdateBundle.GetStringFromName("statusFailed");
       }
+      let newStatus = STATE_FAILED + ": " + ERR_CHANNEL_CHANGE;
+      pingStateAndStatusCodes(updates[0], true, newStatus);
+      cleanupActiveUpdates();
+      return;
     }
 
     // Handle the case when the update is the same or older than the current
@@ -3847,6 +3812,13 @@ UpdateService.prototype = {
     AUSTLMY.pingCheckCode(this._pingSuffix, AUSTLMY.CHK_DOWNLOAD_UPDATE);
   },
 
+  /**
+   * See nsIUpdateService.idl
+   */
+  get isAppBaseDirWritable() {
+    return isAppBaseDirWritable();
+  },
+
   get disabledForTesting() {
     return (
       (Cu.isInAutomation ||
@@ -4162,7 +4134,7 @@ UpdateService.prototype = {
   },
 
   _logStatus: function AUS__logStatus() {
-    if (!lazy.gLogEnabled) {
+    if (!lazy.UpdateLog.enabled) {
       return;
     }
     if (this.disabled) {
@@ -4898,6 +4870,69 @@ UpdateManager.prototype = {
   cleanupReadyUpdate: function UM_cleanupReadyUpdate() {
     LOG("UpdateManager:cleanupReadyUpdate - cleaning up ready update.");
     cleanupReadyUpdate();
+  },
+
+  /**
+   * See nsIUpdateService.idl
+   */
+  doInstallCleanup: async function UM_doInstallCleanup(isUninstall) {
+    LOG("UpdateManager:doInstallCleanup - cleaning up");
+    let completionPromises = [];
+
+    const delete_or_log = path =>
+      IOUtils.remove(path).catch(ex =>
+        console.error(`Failed to delete ${path}`, ex)
+      );
+
+    for (const key of [KEY_OLD_UPDROOT, KEY_UPDROOT]) {
+      const root = Services.dirsvc.get(key, Ci.nsIFile);
+
+      const activeUpdateXml = root.clone();
+      activeUpdateXml.append(FILE_ACTIVE_UPDATE_XML);
+      completionPromises.push(delete_or_log(activeUpdateXml.path));
+
+      const downloadingMar = root.clone();
+      downloadingMar.append(DIR_UPDATES);
+      downloadingMar.append(DIR_UPDATE_DOWNLOADING);
+      downloadingMar.append(FILE_UPDATE_MAR);
+      completionPromises.push(delete_or_log(downloadingMar.path));
+
+      const readyDir = root.clone();
+      readyDir.append(DIR_UPDATES);
+      readyDir.append(DIR_UPDATE_READY);
+      const readyMar = readyDir.clone();
+      readyMar.append(FILE_UPDATE_MAR);
+      completionPromises.push(delete_or_log(readyMar.path));
+      const readyStatus = readyDir.clone();
+      readyStatus.append(FILE_UPDATE_STATUS);
+      completionPromises.push(delete_or_log(readyStatus.path));
+      const versionFile = readyDir.clone();
+      versionFile.append(FILE_UPDATE_VERSION);
+      completionPromises.push(delete_or_log(versionFile.path));
+    }
+
+    return Promise.allSettled(completionPromises);
+  },
+
+  /**
+   * See nsIUpdateService.idl
+   */
+  doUninstallCleanup: async function UM_doUninstallCleanup(isUninstall) {
+    LOG("UpdateManager:doUninstallCleanup - cleaning up.");
+    let completionPromises = [];
+
+    completionPromises.push(
+      IOUtils.remove(Services.dirsvc.get(KEY_UPDROOT, Ci.nsIFile).path, {
+        recursive: true,
+      }).catch(ex => console.error("Failed to remove update directory", ex))
+    );
+    completionPromises.push(
+      IOUtils.remove(Services.dirsvc.get(KEY_OLD_UPDROOT, Ci.nsIFile).path, {
+        recursive: true,
+      }).catch(ex => console.error("Failed to remove old update directory", ex))
+    );
+
+    return Promise.allSettled(completionPromises);
   },
 
   classID: Components.ID("{093C2356-4843-4C65-8709-D7DBCBBE7DFB}"),
@@ -5985,7 +6020,19 @@ Downloader.prototype = {
         this._bitsActiveNotifications = true;
       }
 
-      let updateRootDir = FileUtils.getDir(KEY_UPDROOT, [], true);
+      let updateRootDir = FileUtils.getDir(KEY_UPDROOT, []);
+      try {
+        updateRootDir.create(
+          Ci.nsIFile.DIRECTORY_TYPE,
+          FileUtils.PERMS_DIRECTORY
+        );
+      } catch (ex) {
+        if (ex.result != Cr.NS_ERROR_FILE_ALREADY_EXISTS) {
+          throw ex;
+        }
+        // Ignore the exception due to a directory that already exists.
+      }
+
       let jobName = "MozillaUpdate " + updateRootDir.leafName;
       let updatePath = updateDir.path;
       if (!Bits.initialized) {

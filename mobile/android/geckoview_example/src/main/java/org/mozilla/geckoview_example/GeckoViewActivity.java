@@ -650,6 +650,17 @@ public class GeckoViewActivity extends AppCompatActivity
         }
       };
 
+  private final BooleanSetting mExtensionsProcessEnabled =
+      new BooleanSetting(
+          R.string.key_extensions_process_enabled,
+          R.bool.extensions_process_enabled_default,
+          /* reloadCurrentSession */ true) {
+        @Override
+        public void setValue(final GeckoRuntimeSettings settings, final Boolean value) {
+          settings.setExtensionsProcessEnabled(value);
+        }
+      };
+
   private final BooleanSetting mTrackingProtection =
       new BooleanSetting(R.string.key_tracking_protection, R.bool.tracking_protection_default) {
         @Override
@@ -831,6 +842,7 @@ public class GeckoViewActivity extends AppCompatActivity
           .preferredColorScheme(mPreferredColorScheme.value())
           .telemetryDelegate(new ExampleTelemetryDelegate())
           .javaScriptEnabled(mJavascriptEnabled.value())
+          .extensionsProcessEnabled(mExtensionsProcessEnabled.value())
           .aboutConfigEnabled(true);
 
       sGeckoRuntime = GeckoRuntime.create(this, runtimeSettingsBuilder.build());
@@ -1381,7 +1393,7 @@ public class GeckoViewActivity extends AppCompatActivity
   }
 
   private void printPage(GeckoSession session) {
-    session.printPageContent();
+    session.didPrintPageContent();
   }
 
   @Override
@@ -1861,6 +1873,11 @@ public class GeckoViewActivity extends AppCompatActivity
     }
 
     @Override
+    public void onProductUrl(@NonNull final GeckoSession session) {
+      Log.d("Gecko", "onProductUrl");
+    }
+
+    @Override
     public void onShowDynamicToolbar(final GeckoSession session) {
       final View toolbar = findViewById(R.id.toolbar);
       if (toolbar != null) {
@@ -2118,6 +2135,15 @@ public class GeckoViewActivity extends AppCompatActivity
     return null;
   }
 
+  public void requestAnalysis(@NonNull final GeckoSession session, @NonNull final String url) {
+    session.requestAnalysis(url);
+  }
+
+  public void requestRecommendations(
+      @NonNull final GeckoSession session, @NonNull final String url) {
+    session.requestRecommendations(url);
+  }
+
   private class ExampleNavigationDelegate implements GeckoSession.NavigationDelegate {
     @Override
     public void onLocationChange(
@@ -2129,6 +2155,8 @@ public class GeckoViewActivity extends AppCompatActivity
       }
       mTrackingProtectionPermission = getTrackingProtectionPermission(perms);
       mCurrentUri = url;
+      requestAnalysis(session, url);
+      requestRecommendations(session, url);
     }
 
     @Override

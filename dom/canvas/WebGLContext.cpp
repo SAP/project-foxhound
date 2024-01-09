@@ -86,10 +86,6 @@
 #include "WebGLValidateStrings.h"
 #include "WebGLVertexArray.h"
 
-#ifdef MOZ_WIDGET_COCOA
-#  include "nsCocoaFeatures.h"
-#endif
-
 #ifdef XP_WIN
 #  include "WGLLibrary.h"
 #endif
@@ -636,7 +632,7 @@ RefPtr<WebGLContext> WebGLContext::Create(HostWebGLContext& host,
     if (kIsAndroid) {
       types[layers::SurfaceDescriptor::TSurfaceTextureDescriptor] = true;
     }
-    if (kIsX11 || kIsWayland) {
+    if (kIsLinux) {
       types[layers::SurfaceDescriptor::TSurfaceDescriptorDMABuf] = true;
     }
     return types;
@@ -669,14 +665,6 @@ void WebGLContext::FinishInit() {
       mNeedsFakeNoStencil = true;
     }
   }
-
-  mNeedsFakeNoStencil_UserFBs = false;
-#ifdef MOZ_WIDGET_COCOA
-  if (!nsCocoaFeatures::IsAtLeastVersion(10, 12) &&
-      gl->Vendor() == gl::GLVendor::Intel) {
-    mNeedsFakeNoStencil_UserFBs = true;
-  }
-#endif
 
   mResetLayer = true;
   mOptionsFrozen = true;
@@ -1173,6 +1161,9 @@ bool WebGLContext::PushRemoteTexture(WebGLFramebuffer* fb,
     desc = surf->ToSurfaceDescriptor();
   }
   if (!desc) {
+    if (surf && surf->mDesc.type != gl::SharedSurfaceType::Basic) {
+      return onFailure();
+    }
     // If we can't serialize to a surface descriptor, then we need to create
     // a buffer to read back into that will become the remote texture.
     auto data = mRemoteTextureOwner->CreateOrRecycleBufferTextureData(
@@ -1226,6 +1217,7 @@ bool WebGLContext::PushRemoteTexture(WebGLFramebuffer* fb,
     case layers::SurfaceDescriptor::TSurfaceDescriptorMacIOSurface:
     case layers::SurfaceDescriptor::TSurfaceTextureDescriptor:
     case layers::SurfaceDescriptor::TSurfaceDescriptorAndroidHardwareBuffer:
+    case layers::SurfaceDescriptor::TSurfaceDescriptorDMABuf:
       keepAlive = surf;
       break;
     default:
@@ -1498,6 +1490,9 @@ void WebGLContext::LoseContext(const webgl::ContextLossReason reason) {
   StaticMutexAutoLock lock(sLruMutex);
   LoseContextLruLocked(reason);
   HandlePendingContextLoss();
+  if (mRemoteTextureOwner) {
+    mRemoteTextureOwner->NotifyContextLost();
+  }
 }
 
 void WebGLContext::DidRefresh() {
@@ -1640,12 +1635,6 @@ ScopedDrawCallWrapper::ScopedDrawCallWrapper(WebGLContext& webgl)
     }
     driverDepthTest &= !mWebGL.mNeedsFakeNoDepth;
     driverStencilTest &= !mWebGL.mNeedsFakeNoStencil;
-  } else {
-    if (mWebGL.mNeedsFakeNoStencil_UserFBs &&
-        fb->DepthAttachment().HasAttachment() &&
-        !fb->StencilAttachment().HasAttachment()) {
-      driverStencilTest = false;
-    }
   }
 
   const auto& gl = mWebGL.gl;

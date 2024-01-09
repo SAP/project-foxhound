@@ -732,9 +732,10 @@ void AccessibleCaretManager::OnScrollEnd() {
     }
   }
 
-  // For mouse input we don't want to show the carets.
+  // For mouse and keyboard input, we don't want to show the carets.
   if (StaticPrefs::layout_accessiblecaret_hide_carets_for_mouse_input() &&
-      mLastInputSource == MouseEvent_Binding::MOZ_SOURCE_MOUSE) {
+      (mLastInputSource == MouseEvent_Binding::MOZ_SOURCE_MOUSE ||
+       mLastInputSource == MouseEvent_Binding::MOZ_SOURCE_KEYBOARD)) {
     AC_LOG("%s: HideCaretsAndDispatchCaretStateChangedEvent()", __FUNCTION__);
     HideCaretsAndDispatchCaretStateChangedEvent();
     return;
@@ -795,11 +796,6 @@ void AccessibleCaretManager::OnKeyboardEvent() {
     AC_LOG("%s: HideCaretsAndDispatchCaretStateChangedEvent()", __FUNCTION__);
     HideCaretsAndDispatchCaretStateChangedEvent();
   }
-}
-
-void AccessibleCaretManager::OnFrameReconstruction() {
-  mCarets.GetFirst()->EnsureApzAware();
-  mCarets.GetSecond()->EnsureApzAware();
 }
 
 void AccessibleCaretManager::SetLastInputSource(uint16_t aInputSource) {
@@ -943,17 +939,16 @@ void AccessibleCaretManager::SetSelectionDragState(bool aState) const {
   }
 }
 
-bool AccessibleCaretManager::IsPhoneNumber(nsAString& aCandidate) const {
+bool AccessibleCaretManager::IsPhoneNumber(const nsAString& aCandidate) const {
   RefPtr<Document> doc = mPresShell->GetDocument();
-  nsAutoString phoneNumberRegex(u"(^\\+)?[0-9 ,\\-.()*#pw]{1,30}$"_ns);
-  return nsContentUtils::IsPatternMatching(aCandidate, phoneNumberRegex, doc)
+  nsAutoString phoneNumberRegex(u"(^\\+)?[0-9 ,\\-.\\(\\)*#pw]{1,30}$"_ns);
+  return nsContentUtils::IsPatternMatching(aCandidate,
+                                           std::move(phoneNumberRegex), doc)
       .valueOr(false);
 }
 
 void AccessibleCaretManager::SelectMoreIfPhoneNumber() const {
-  nsAutoString selectedText = StringifiedSelection();
-
-  if (IsPhoneNumber(selectedText)) {
+  if (IsPhoneNumber(StringifiedSelection())) {
     SetSelectionDirection(eDirNext);
     ExtendPhoneNumberSelection(u"forward"_ns);
 

@@ -86,7 +86,6 @@ rtc_library("audio") {
     "../modules/pacing",
     "../modules/rtp_rtcp",
     "../modules/rtp_rtcp:rtp_rtcp_format",
-    "../modules/utility:utility",
     "../rtc_base:audio_format_to_string",
     "../rtc_base:buffer",
     "../rtc_base:checks",
@@ -135,9 +134,12 @@ if (rtc_include_tests) {
       "../api/task_queue",
       "../call:fake_network",
       "../call:simulated_network",
+      "../modules/audio_device:audio_device_api",
+      "../modules/audio_device:test_audio_device_module",
       "../system_wrappers",
       "../test:test_common",
       "../test:test_support",
+      "../test:video_test_constants",
     ]
   }
 
@@ -196,8 +198,8 @@ if (rtc_include_tests) {
       "../modules/pacing",
       "../modules/rtp_rtcp:mock_rtp_rtcp",
       "../modules/rtp_rtcp:rtp_rtcp_format",
-      "../modules/utility:utility",
       "../rtc_base:checks",
+      "../rtc_base:gunit_helpers",
       "../rtc_base:macromagic",
       "../rtc_base:refcount",
       "../rtc_base:rtc_base_tests_utils",
@@ -212,9 +214,11 @@ if (rtc_include_tests) {
       "../test:mock_transformable_frame",
       "../test:mock_transport",
       "../test:rtp_test_utils",
+      "../test:run_loop",
       "../test:scoped_key_value_config",
       "../test:test_common",
       "../test:test_support",
+      "../test:video_test_constants",
       "../test/time_controller:time_controller",
       "utility:utility_tests",
       "//testing/gtest",
@@ -226,15 +230,22 @@ if (rtc_include_tests) {
     sources = [ "channel_receive_unittest.cc" ]
     deps = [
       ":audio",
+      "../api/audio_codecs:builtin_audio_decoder_factory",
       "../api/crypto:frame_decryptor_interface",
       "../api/task_queue:default_task_queue_factory",
+      "../logging:mocks",
       "../modules/audio_device:audio_device_api",
       "../modules/audio_device:mock_audio_device",
+      "../modules/rtp_rtcp",
+      "../modules/rtp_rtcp:rtp_rtcp_format",
+      "../rtc_base:logging",
       "../rtc_base:threading",
+      "../test:audio_codec_mocks",
       "../test:mock_transport",
       "../test:test_support",
       "../test/time_controller",
     ]
+    absl_deps = [ "//third_party/abseil-cpp/absl/strings" ]
   }
 
   if (rtc_enable_protobuf && !build_with_chromium) {
@@ -269,6 +280,7 @@ if (rtc_include_tests) {
         "../test:test_common",
         "../test:test_main",
         "../test:test_support",
+        "../test:video_test_constants",
         "../test/pc/e2e:network_quality_metrics_reporter",
         "//testing/gtest",
       ]

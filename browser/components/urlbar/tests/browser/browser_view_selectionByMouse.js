@@ -369,9 +369,9 @@ add_task(async function buttons() {
 
   // Implement the provider's `onEngagement()` so it removes the result.
   let onEngagementCallCount = 0;
-  provider.onEngagement = (isPrivate, state, queryContext, details) => {
+  provider.onEngagement = (state, queryContext, details, controller) => {
     onEngagementCallCount++;
-    queryContext.view.controller.removeResult(details.result);
+    controller.removeResult(details.result);
   };
 
   UrlbarProvidersManager.registerProvider(provider);
@@ -451,7 +451,7 @@ add_task(async function buttons() {
       expected: {
         mousedownSelected: true,
         topSites: {
-          pageProxyState: "invalid",
+          pageProxyState: "valid",
           value: UrlbarPrefs.get("resultMenu") ? initialTabUrl : otherResultUrl,
         },
         searchString: {

@@ -1,21 +1,21 @@
 XPCOMUtils.defineLazyModuleGetters(this, {
-  AboutNewTab: "resource:///modules/AboutNewTab.jsm",
   ASRouterTargeting: "resource://activity-stream/lib/ASRouterTargeting.jsm",
-  BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.jsm",
-  HomePage: "resource:///modules/HomePage.jsm",
   QueryCache: "resource://activity-stream/lib/ASRouterTargeting.jsm",
 });
 ChromeUtils.defineESModuleGetters(this, {
   AddonManager: "resource://gre/modules/AddonManager.sys.mjs",
   AddonTestUtils: "resource://testing-common/AddonTestUtils.sys.mjs",
+  AboutNewTab: "resource:///modules/AboutNewTab.sys.mjs",
   AppConstants: "resource://gre/modules/AppConstants.sys.mjs",
   AttributionCode: "resource:///modules/AttributionCode.sys.mjs",
+  BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.sys.mjs",
   BuiltInThemes: "resource:///modules/BuiltInThemes.sys.mjs",
   CFRMessageProvider:
     "resource://activity-stream/lib/CFRMessageProvider.sys.mjs",
   ExperimentAPI: "resource://nimbus/ExperimentAPI.sys.mjs",
   ExperimentFakes: "resource://testing-common/NimbusTestUtils.sys.mjs",
   FxAccounts: "resource://gre/modules/FxAccounts.sys.mjs",
+  HomePage: "resource:///modules/HomePage.sys.mjs",
   NewTabUtils: "resource://gre/modules/NewTabUtils.sys.mjs",
   NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
   PlacesTestUtils: "resource://testing-common/PlacesTestUtils.sys.mjs",
@@ -36,9 +36,11 @@ function sendFormAutofillMessage(name, data) {
 }
 
 async function removeAutofillRecords() {
-  let addresses = await sendFormAutofillMessage("FormAutofill:GetRecords", {
-    collectionName: "addresses",
-  });
+  let addresses = (
+    await sendFormAutofillMessage("FormAutofill:GetRecords", {
+      collectionName: "addresses",
+    })
+  ).records;
   if (addresses.length) {
     let observePromise = TestUtils.topicObserved(
       "formautofill-storage-changed"
@@ -48,9 +50,11 @@ async function removeAutofillRecords() {
     });
     await observePromise;
   }
-  let creditCards = await sendFormAutofillMessage("FormAutofill:GetRecords", {
-    collectionName: "creditCards",
-  });
+  let creditCards = (
+    await sendFormAutofillMessage("FormAutofill:GetRecords", {
+      collectionName: "creditCards",
+    })
+  ).records;
   if (creditCards.length) {
     let observePromise = TestUtils.topicObserved(
       "formautofill-storage-changed"
@@ -1346,7 +1350,7 @@ add_task(async function test_creditCardsSaved() {
           data: { collectionName: "creditCards" },
         })
       )
-      .resolves([creditcard])
+      .resolves({ records: [creditcard] })
       .callThrough();
 
     is(
@@ -1423,45 +1427,19 @@ add_task(async function test_addressesSaved() {
 });
 
 add_task(async function test_migrationInteractions() {
-  await pushPrefs(
-    ["browser.migrate.interactions.bookmarks", false],
-    ["browser.migrate.interactions.history", false],
-    ["browser.migrate.interactions.passwords", false]
-  );
+  const PREF_GETTER_MAPPING = new Map([
+    ["browser.migrate.interactions.bookmarks", "hasMigratedBookmarks"],
+    ["browser.migrate.interactions.csvpasswords", "hasMigratedCSVPasswords"],
+    ["browser.migrate.interactions.history", "hasMigratedHistory"],
+    ["browser.migrate.interactions.passwords", "hasMigratedPasswords"],
+  ]);
 
-  ok(!(await ASRouterTargeting.Environment.hasMigratedBookmarks));
-  ok(!(await ASRouterTargeting.Environment.hasMigratedHistory));
-  ok(!(await ASRouterTargeting.Environment.hasMigratedPasswords));
-
-  await pushPrefs(
-    ["browser.migrate.interactions.bookmarks", true],
-    ["browser.migrate.interactions.history", false],
-    ["browser.migrate.interactions.passwords", false]
-  );
-
-  ok(await ASRouterTargeting.Environment.hasMigratedBookmarks);
-  ok(!(await ASRouterTargeting.Environment.hasMigratedHistory));
-  ok(!(await ASRouterTargeting.Environment.hasMigratedPasswords));
-
-  await pushPrefs(
-    ["browser.migrate.interactions.bookmarks", true],
-    ["browser.migrate.interactions.history", true],
-    ["browser.migrate.interactions.passwords", false]
-  );
-
-  ok(await ASRouterTargeting.Environment.hasMigratedBookmarks);
-  ok(await ASRouterTargeting.Environment.hasMigratedHistory);
-  ok(!(await ASRouterTargeting.Environment.hasMigratedPasswords));
-
-  await pushPrefs(
-    ["browser.migrate.interactions.bookmarks", true],
-    ["browser.migrate.interactions.history", true],
-    ["browser.migrate.interactions.passwords", true]
-  );
-
-  ok(await ASRouterTargeting.Environment.hasMigratedBookmarks);
-  ok(await ASRouterTargeting.Environment.hasMigratedHistory);
-  ok(await ASRouterTargeting.Environment.hasMigratedPasswords);
+  for (let [pref, getterName] of PREF_GETTER_MAPPING) {
+    await pushPrefs([pref, false]);
+    ok(!(await ASRouterTargeting.Environment[getterName]));
+    await pushPrefs([pref, true]);
+    ok(await ASRouterTargeting.Environment[getterName]);
+  }
 });
 
 add_task(async function check_useEmbeddedMigrationWizard() {

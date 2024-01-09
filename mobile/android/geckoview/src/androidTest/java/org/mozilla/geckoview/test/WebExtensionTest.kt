@@ -488,11 +488,23 @@ class WebExtensionTest : BaseSessionTest() {
         assertTrue(list.containsKey(RuntimeCreator.TEST_SUPPORT_EXTENSION_ID))
     }
 
-    private fun testInstallError(name: String, expectedError: Int) {
+    private fun testInstallError(name: String, expectedError: Int, extensionID: String?) {
         sessionRule.delegateDuringNextWait(object : WebExtensionController.PromptDelegate {
             @AssertCalled(count = 0)
             override fun onInstallPrompt(extension: WebExtension): GeckoResult<AllowOrDeny> {
                 return GeckoResult.allow()
+            }
+        })
+
+        sessionRule.delegateDuringNextWait(object : WebExtensionController.AddonManagerDelegate {
+            @AssertCalled(count = 1)
+            override fun onInstallationFailed(
+                extension: WebExtension?,
+                installException: InstallException,
+            ) {
+                assertEquals(extensionID, extension?.id)
+                assertEquals(extension?.metaData?.name, installException.extensionName)
+                assertEquals(installException.code, expectedError)
             }
         })
 
@@ -559,24 +571,36 @@ class WebExtensionTest : BaseSessionTest() {
             ),
         )
         testInstallError(
-            "borderify-unsigned.xpi",
-            WebExtension.InstallException.ErrorCodes.ERROR_SIGNEDSTATE_REQUIRED,
+            name = "borderify-unsigned.xpi",
+            expectedError = InstallException.ErrorCodes.ERROR_SIGNEDSTATE_REQUIRED,
+            extensionID = "borderify@example.com",
         )
     }
 
     @Test
     fun installExtensionFileNotFound() {
         testInstallError(
-            "file-not-found.xpi",
-            WebExtension.InstallException.ErrorCodes.ERROR_NETWORK_FAILURE,
+            name = "file-not-found.xpi",
+            expectedError = InstallException.ErrorCodes.ERROR_NETWORK_FAILURE,
+            extensionID = null,
         )
     }
 
     @Test
     fun installExtensionMissingId() {
         testInstallError(
-            "borderify-missing-id.xpi",
-            WebExtension.InstallException.ErrorCodes.ERROR_CORRUPT_FILE,
+            name = "borderify-missing-id.xpi",
+            expectedError = InstallException.ErrorCodes.ERROR_CORRUPT_FILE,
+            extensionID = null,
+        )
+    }
+
+    @Test
+    fun installExtensionIncompatible() {
+        testInstallError(
+            name = "dummy-incompatible.xpi",
+            expectedError = InstallException.ErrorCodes.ERROR_INCOMPATIBLE,
+            extensionID = "dummy@tests.mozilla.org",
         )
     }
 
@@ -1448,7 +1472,7 @@ class WebExtensionTest : BaseSessionTest() {
     // - verifies that the messages are received when restoring the tab in a fresh session
     @Test
     fun testRestoringExtensionPagePreservesMessages() {
-        // TODO: Bug 1648158
+        // TODO: Bug 1837551
         assumeThat(sessionRule.env.isFission, equalTo(false))
 
         val extension = sessionRule.waitForResult(
@@ -2985,5 +3009,175 @@ class WebExtensionTest : BaseSessionTest() {
             sessionRule.waitForResult(controller.uninstall(webExtension))
             return
         }
+    }
+
+    @Test
+    fun testMozAddonManagerDisabledByDefault() {
+        // Assert the expected precondition (the pref to be set to false by default).
+        val geckoPrefs = sessionRule.getPrefs(
+            "extensions.webapi.enabled",
+        )
+        assumeThat(geckoPrefs[0] as Boolean, equalTo(false))
+
+        mainSession.loadUri("https://example.com")
+        sessionRule.waitForPageStop()
+
+        // This pref normally exposes the mozAddonManager API to `example.com`.
+        sessionRule.setPrefsUntilTestEnd(mapOf("extensions.webapi.testing" to true))
+
+        assertThat(
+            "mozAddonManager is not exposed",
+            mainSession.evaluateJS("typeof navigator.mozAddonManager") as String,
+            equalTo("undefined"),
+        )
+    }
+
+    @Test
+    fun testMozAddonManagerCanBeEnabledByPref() {
+        // TODO: Bug 1837551
+        assumeThat(sessionRule.env.isFission, equalTo(false))
+
+        mainSession.loadUri("https://example.com")
+        sessionRule.waitForPageStop()
+
+        sessionRule.setPrefsUntilTestEnd(
+            mapOf(
+                "extensions.webapi.enabled" to true,
+                // We still need this pref to be set to allow the API on `example.com`.
+                "extensions.webapi.testing" to true,
+            ),
+        )
+
+        assertThat(
+            "mozAddonManager is exposed",
+            mainSession.evaluateJS("typeof navigator.mozAddonManager") as String,
+            equalTo("object"),
+        )
+        assertThat(
+            "mozAddonManager.abuseReportPanelEnabled should be false",
+            mainSession.evaluateJS("navigator.mozAddonManager.abuseReportPanelEnabled") as Boolean,
+            equalTo(false),
+        )
+
+        // Install an add-on, then assert results got from `mozAddonManager.getAddonByID()`.
+        var addonId = ""
+        sessionRule.delegateDuringNextWait(object : WebExtensionController.PromptDelegate {
+            @AssertCalled
+            override fun onInstallPrompt(extension: WebExtension): GeckoResult<AllowOrDeny> {
+                assertEquals(extension.metaData.name, "Borderify")
+                assertEquals(extension.metaData.version, "1.0")
+                assertEquals(extension.isBuiltIn, false)
+                addonId = extension.id
+                return GeckoResult.allow()
+            }
+        })
+
+        val borderify = sessionRule.waitForResult(
+            controller.install("resource://android/assets/web_extensions/borderify.xpi"),
+        )
+
+        var jsCode = """
+        navigator.mozAddonManager.getAddonByID("$addonId").then(
+            addon => [addon.name, addon.version, addon.type].join(":")
+        );
+        """
+        assertThat(
+            "mozAddonManager.getAddonByID() resolved to the expected result",
+            mainSession.evaluateJS(jsCode) as String,
+            equalTo("Borderify:1.0:extension"),
+        )
+
+        // Uninstall the add-on before exiting the test.
+        sessionRule.waitForResult(controller.uninstall(borderify))
+    }
+
+    @Test
+    fun testMozAddonManagerSetting() {
+        val settings = GeckoRuntimeSettings.Builder().build()
+        assertThat(
+            "Extension web API setting should be set to false",
+            settings.extensionsWebAPIEnabled,
+            equalTo(false),
+        )
+
+        val geckoPrefs = sessionRule.getPrefs("extensions.webapi.enabled")
+        assertThat(
+            "extensionsWebAPIEnabled matches Gecko pref value",
+            settings.extensionsWebAPIEnabled,
+            equalTo(geckoPrefs[0] as Boolean),
+        )
+    }
+
+    @Test
+    fun testExtensionsProcessDisabledByDefault() {
+        val settings = GeckoRuntimeSettings.Builder()
+            .build()
+
+        assertThat(
+            "extensionsProcessEnabled setting default should be null",
+            settings.extensionsProcessEnabled,
+            equalTo(null),
+        )
+
+        val geckoPrefs = sessionRule.getPrefs(
+            "extensions.webextensions.remote",
+        )
+
+        assertThat(
+            "extensions.webextensions.remote pref default value should be false",
+            geckoPrefs[0] as Boolean,
+            equalTo(false),
+        )
+    }
+
+    @Test
+    fun testExtensionsProcessControlledFromSettings() {
+        val settings = GeckoRuntimeSettings.Builder()
+            .extensionsProcessEnabled(true)
+            .build()
+
+        assertThat(
+            "extensionsProcessEnabled setting should be set to true",
+            settings.extensionsProcessEnabled,
+            equalTo(true),
+        )
+    }
+
+    fun extensionProcessCrash() {
+        sessionRule.setPrefsUntilTestEnd(
+            mapOf(
+                "extensions.webextensions.remote" to true,
+                "dom.ipc.keepProcessesAlive.extension" to 1,
+                "xpinstall.signatures.required" to false,
+            ),
+        )
+
+        sessionRule.delegateDuringNextWait(object : WebExtensionController.PromptDelegate {
+            @AssertCalled(count = 1)
+            override fun onInstallPrompt(extension: WebExtension): GeckoResult<AllowOrDeny>? {
+                return GeckoResult.allow()
+            }
+        })
+
+        sessionRule.addExternalDelegateUntilTestEnd(
+            WebExtensionController.ExtensionProcessDelegate::class,
+            { delegate -> controller.setExtensionProcessDelegate(delegate) },
+            { controller.setExtensionProcessDelegate(null) },
+            object : WebExtensionController.ExtensionProcessDelegate {
+                @AssertCalled(count = 1)
+                override fun onDisabledProcessSpawning() {}
+            },
+        )
+
+        val borderify = sessionRule.waitForResult(
+            controller.install("resource://android/assets/web_extensions/borderify.xpi"),
+        )
+
+        val list = extensionsMap(sessionRule.waitForResult(controller.list()))
+        assertTrue(list.containsKey(borderify.id))
+
+        mainSession.loadUri("about:crashextensions")
+
+        sessionRule.waitForResult(controller.uninstall(borderify))
     }
 }

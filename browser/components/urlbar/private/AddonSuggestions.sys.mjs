@@ -19,6 +19,11 @@ ChromeUtils.defineESModuleGetters(lazy, {
   UrlbarView: "resource:///modules/UrlbarView.sys.mjs",
 });
 
+const UTM_PARAMS = {
+  utm_medium: "firefox-desktop",
+  utm_source: "firefox-suggest",
+};
+
 const VIEW_TEMPLATE = {
   attributes: {
     selectable: true,
@@ -133,6 +138,10 @@ export class AddonSuggestions extends BaseFeature {
     return ["suggest.addons", "suggest.quicksuggest.nonsponsored"];
   }
 
+  get merinoProvider() {
+    return "amo";
+  }
+
   enable(enabled) {
     if (enabled) {
       lazy.QuickSuggestRemoteSettings.register(this);
@@ -162,7 +171,7 @@ export class AddonSuggestions extends BaseFeature {
 
   async onRemoteSettingsSync(rs) {
     const records = await rs.get({ filters: { type: "amo-suggestions" } });
-    if (rs != lazy.QuickSuggestRemoteSettings.rs) {
+    if (!this.isEnabled) {
       return;
     }
 
@@ -170,26 +179,16 @@ export class AddonSuggestions extends BaseFeature {
 
     for (const record of records) {
       const { buffer } = await rs.attachments.download(record);
-      if (rs != lazy.QuickSuggestRemoteSettings.rs) {
+      if (!this.isEnabled) {
         return;
       }
 
       const results = JSON.parse(new TextDecoder("utf-8").decode(buffer));
-
-      // The keywords in remote settings are full keywords. Map each one to an
-      // array containing the full keyword's first word plus every subsequent
-      // prefix of the full keyword.
-      await suggestionsMap.add(results, fullKeyword => {
-        let keywords = [fullKeyword];
-        let spaceIndex = fullKeyword.search(/\s/);
-        if (spaceIndex >= 0) {
-          for (let i = spaceIndex; i < fullKeyword.length; i++) {
-            keywords.push(fullKeyword.substring(0, i));
-          }
-        }
-        return keywords;
+      await suggestionsMap.add(results, {
+        mapKeyword:
+          lazy.SuggestionsMap.MAP_KEYWORD_PREFIXES_STARTING_AT_FIRST_WORD,
       });
-      if (rs != lazy.QuickSuggestRemoteSettings.rs) {
+      if (!this.isEnabled) {
         return;
       }
     }
@@ -232,10 +231,19 @@ export class AddonSuggestions extends BaseFeature {
       return null;
     }
 
+    // Set UTM params unless they're already defined. This allows remote
+    // settings or Merino to override them if need be.
+    let url = new URL(suggestion.url);
+    for (let [key, value] of Object.entries(UTM_PARAMS)) {
+      if (!url.searchParams.has(key)) {
+        url.searchParams.set(key, value);
+      }
+    }
+
     const payload = {
-      source: suggestion.source,
       icon: suggestion.icon,
-      url: suggestion.url,
+      url: url.href,
+      originalUrl: suggestion.url,
       title: suggestion.title,
       description: suggestion.description,
       rating: Number(rating),
@@ -243,10 +251,9 @@ export class AddonSuggestions extends BaseFeature {
       helpUrl: lazy.QuickSuggest.HELP_URL,
       shouldNavigate: true,
       dynamicType: "addons",
-      telemetryType: "amo",
     };
 
-    return Object.assign(
+    let result = Object.assign(
       new lazy.UrlbarResult(
         lazy.UrlbarUtils.RESULT_TYPE.DYNAMIC,
         lazy.UrlbarUtils.RESULT_SOURCE.SEARCH,
@@ -257,6 +264,17 @@ export class AddonSuggestions extends BaseFeature {
       ),
       { showFeedbackMenu: true }
     );
+
+    // UrlbarProviderQuickSuggest will make the result a best match only if
+    // `browser.urlbar.bestMatch.enabled` is true. Addon suggestions should be
+    // best matches regardless (as long as `suggestion.is_top_pick` is true), so
+    // override the provider behavior by setting the related properties here.
+    if (suggestion.is_top_pick) {
+      result.isBestMatch = true;
+      result.suggestedIndex = 1;
+    }
+
+    return result;
   }
 
   getViewUpdate(result) {
@@ -364,21 +382,33 @@ export class AddonSuggestions extends BaseFeature {
     return commands;
   }
 
-  handlePossibleCommand(queryContext, result, selType) {
+  handleCommand(view, result, selType) {
     switch (selType) {
       case RESULT_MENU_COMMAND.HELP:
         // "help" is handled by UrlbarInput, no need to do anything here.
         break;
       // selType == "dismiss" when the user presses the dismiss key shortcut.
       case "dismiss":
-      case RESULT_MENU_COMMAND.NOT_INTERESTED:
       case RESULT_MENU_COMMAND.NOT_RELEVANT:
+        lazy.QuickSuggest.blockedSuggestions.add(result.payload.originalUrl);
+        result.acknowledgeDismissalL10n = {
+          id: "firefox-suggest-dismissal-acknowledgment-one",
+        };
+        view.controller.removeResult(result);
+        break;
+      case RESULT_MENU_COMMAND.NOT_INTERESTED:
         lazy.UrlbarPrefs.set("suggest.addons", false);
-        queryContext.view.acknowledgeDismissal(result);
+        result.acknowledgeDismissalL10n = {
+          id: "firefox-suggest-dismissal-acknowledgment-all",
+        };
+        view.controller.removeResult(result);
         break;
       case RESULT_MENU_COMMAND.SHOW_LESS_FREQUENTLY:
-        queryContext.view.acknowledgeFeedback(result);
+        view.acknowledgeFeedback(result);
         this.incrementShowLessFrequentlyCount();
+        if (!this.canShowLessFrequently) {
+          view.invalidateResultMenuCommands();
+        }
         break;
     }
   }

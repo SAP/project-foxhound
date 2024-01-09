@@ -17,7 +17,8 @@ struct AVPacket;
 struct AVDictionary;
 struct AVCodecParserContext;
 struct PRLibrary;
-#ifdef MOZ_WAYLAND
+struct AVChannelLayout;
+#ifdef MOZ_WIDGET_GTK
 struct AVCodecHWConfig;
 struct AVVAAPIHWConfig;
 struct AVHWFramesConstraints;
@@ -56,7 +57,7 @@ struct MOZ_ONLY_USED_TO_AVOID_STATIC_CONSTRUCTORS FFmpegLibWrapper {
   // Reset the wrapper and unlink all attached libraries.
   void Unlink();
 
-#ifdef MOZ_WAYLAND
+#ifdef MOZ_WIDGET_GTK
   // Check if mVALib are available and we can use HW decode.
   bool IsVAAPIAvailable();
   void LinkVAAPILibs();
@@ -76,6 +77,7 @@ struct MOZ_ONLY_USED_TO_AVOID_STATIC_CONSTRUCTORS FFmpegLibWrapper {
   int (*avcodec_decode_video2)(AVCodecContext* avctx, AVFrame* picture,
                                int* got_picture_ptr, const AVPacket* avpkt);
   AVCodec* (*avcodec_find_decoder)(int id);
+  AVCodec* (*avcodec_find_decoder_by_name)(const char* name);
   void (*avcodec_flush_buffers)(AVCodecContext* avctx);
   int (*avcodec_open2)(AVCodecContext* avctx, const AVCodec* codec,
                        AVDictionary** options);
@@ -121,6 +123,14 @@ struct MOZ_ONLY_USED_TO_AVOID_STATIC_CONSTRUCTORS FFmpegLibWrapper {
                              void* log_ctx);
   int (*av_image_get_buffer_size)(int pix_fmt, int width, int height,
                                   int align);
+  const char* (*av_get_sample_fmt_name)(int sample_fmt);
+  void (*av_channel_layout_default)(AVChannelLayout* ch_layout,
+                                    int nb_channels);
+  void (*av_channel_layout_from_mask)(AVChannelLayout* ch_layout,
+                                      uint64_t mask);
+  int (*av_dict_set)(AVDictionary** pm, const char* key, const char* value,
+                     int flags);
+  void (*av_dict_free)(AVDictionary** m);
 
   // libavutil v55 and later only
   AVFrame* (*av_frame_alloc)();
@@ -137,7 +147,7 @@ struct MOZ_ONLY_USED_TO_AVOID_STATIC_CONSTRUCTORS FFmpegLibWrapper {
   int (*av_frame_get_colorspace)(const AVFrame* frame);
   int (*av_frame_get_color_range)(const AVFrame* frame);
 
-#ifdef MOZ_WAYLAND
+#ifdef MOZ_WIDGET_GTK
   const AVCodecHWConfig* (*avcodec_get_hw_config)(const AVCodec* codec,
                                                   int index);
   AVBufferRef* (*av_hwdevice_ctx_alloc)(int);
@@ -154,9 +164,6 @@ struct MOZ_ONLY_USED_TO_AVOID_STATIC_CONSTRUCTORS FFmpegLibWrapper {
   int (*av_hwdevice_ctx_create_derived)(AVBufferRef** dst_ctx, int type,
                                         AVBufferRef* src_ctx, int flags);
   AVBufferRef* (*av_hwframe_ctx_alloc)(AVBufferRef* device_ctx);
-  int (*av_dict_set)(AVDictionary** pm, const char* key, const char* value,
-                     int flags);
-  void (*av_dict_free)(AVDictionary** m);
   const char* (*avcodec_get_name)(int id);
   char* (*av_get_pix_fmt_string)(char* buf, int buf_size, int pix_fmt);
 
@@ -169,7 +176,7 @@ struct MOZ_ONLY_USED_TO_AVOID_STATIC_CONSTRUCTORS FFmpegLibWrapper {
 
   PRLibrary* mAVCodecLib;
   PRLibrary* mAVUtilLib;
-#ifdef MOZ_WAYLAND
+#ifdef MOZ_WIDGET_GTK
   PRLibrary* mVALib;
   PRLibrary* mVALibDrm;
 #endif

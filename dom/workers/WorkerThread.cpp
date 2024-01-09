@@ -15,7 +15,6 @@
 #include "mozilla/EventQueue.h"
 #include "mozilla/MacroForEach.h"
 #include "mozilla/NotNull.h"
-#include "mozilla/PerformanceCounter.h"
 #include "mozilla/ThreadEventQueue.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/ipc/BackgroundChild.h"
@@ -153,14 +152,6 @@ void WorkerThread::SetWorker(const WorkerThreadFriendKey& /* aKey */,
   }
 }
 
-void WorkerThread::IncrementDispatchCounter() {
-  MutexAutoLock lock(mLock);
-  if (mWorkerPrivate) {
-    mWorkerPrivate->MutablePerformanceCounterRef().IncrementDispatchCounter(
-        DispatchCategory::Worker);
-  }
-}
-
 nsresult WorkerThread::DispatchPrimaryRunnable(
     const WorkerThreadFriendKey& /* aKey */,
     already_AddRefed<nsIRunnable> aRunnable) {
@@ -206,9 +197,6 @@ nsresult WorkerThread::DispatchAnyThread(
   }
 #endif
 
-  // Increment the PerformanceCounter dispatch count
-  // to keep track of how many runnables are executed.
-  IncrementDispatchCounter();
   nsCOMPtr<nsIRunnable> runnable(aWorkerRunnable);
 
   nsresult rv = nsThread::Dispatch(runnable.forget(), NS_DISPATCH_NORMAL);
@@ -242,23 +230,6 @@ WorkerThread::Dispatch(already_AddRefed<nsIRunnable> aRunnable,
 
   const bool onWorkerThread = PR_GetCurrentThread() == mThread;
 
-#ifdef DEBUG
-  if (runnable && !onWorkerThread) {
-    nsCOMPtr<nsIDiscardableRunnable> discardable = do_QueryInterface(runnable);
-
-    {
-      MutexAutoLock lock(mLock);
-
-      // Only enforce discardable runnables after we've started the worker loop.
-      if (!mAcceptingNonWorkerRunnables) {
-        MOZ_ASSERT(
-            discardable,
-            "Only nsIDiscardableRunnable may be dispatched to a worker!");
-      }
-    }
-  }
-#endif
-
   WorkerPrivate* workerPrivate = nullptr;
   if (onWorkerThread) {
     // No need to lock here because it is only modified on this thread.
@@ -280,9 +251,6 @@ WorkerThread::Dispatch(already_AddRefed<nsIRunnable> aRunnable,
     }
   }
 
-  // Increment the PerformanceCounter dispatch count
-  // to keep track of how many runnables are executed.
-  IncrementDispatchCounter();
   nsresult rv;
   if (runnable && onWorkerThread) {
     RefPtr<WorkerRunnable> workerRunnable =
@@ -330,11 +298,6 @@ uint32_t WorkerThread::RecursionDepth(
   MOZ_ASSERT(PR_GetCurrentThread() == mThread);
 
   return mNestedEventLoopDepth;
-}
-
-PerformanceCounter* WorkerThread::GetPerformanceCounter(nsIRunnable*) const {
-  return mWorkerPrivate ? &mWorkerPrivate->MutablePerformanceCounterRef()
-                        : nullptr;
 }
 
 NS_IMPL_ISUPPORTS(WorkerThread::Observer, nsIThreadObserver)

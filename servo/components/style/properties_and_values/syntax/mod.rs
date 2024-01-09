@@ -13,6 +13,7 @@ use crate::parser::{Parse, ParserContext};
 use crate::values::CustomIdent;
 use cssparser::{Parser as CSSParser, ParserInput as CSSParserInput};
 use style_traits::{
+    arc_slice::ArcSlice,
     CssWriter, ParseError as StyleParseError, PropertySyntaxParseError as ParseError,
     StyleParseErrorKind, ToCss,
 };
@@ -20,22 +21,62 @@ use style_traits::{
 use self::data_type::DataType;
 
 mod ascii;
-mod data_type;
+pub mod data_type;
 
 /// <https://drafts.css-houdini.org/css-properties-values-api-1/#parsing-syntax>
-#[derive(Debug, Clone, MallocSizeOf)]
-pub struct Descriptor {
-    components: Box<[Component]>,
-    css: String,
-}
+#[derive(Debug, Clone, Default, MallocSizeOf, PartialEq)]
+pub struct Descriptor(#[ignore_malloc_size_of = "arc"] pub ArcSlice<Component>);
 
 impl Descriptor {
-    /// Returns the universal syntax definition with the given CSS representation.
-    fn universal(css: &str) -> Self {
-        Self {
-            components: Default::default(),
-            css: String::from(css),
+    /// Returns whether this is the universal syntax descriptor.
+    pub fn is_universal(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    /// Parse a syntax descriptor.
+    /// https://drafts.css-houdini.org/css-properties-values-api-1/#consume-a-syntax-definition
+    pub fn from_str(css: &str) -> Result<Self, ParseError> {
+        // 1. Strip leading and trailing ASCII whitespace from string.
+        let input = ascii::trim_ascii_whitespace(css);
+
+        // 2. If string's length is 0, return failure.
+        if input.is_empty() {
+            return Err(ParseError::EmptyInput);
         }
+
+        // 3. If string's length is 1, and the only code point in string is U+002A
+        //    ASTERISK (*), return the universal syntax descriptor.
+        if input.len() == 1 && input.as_bytes()[0] == b'*' {
+            return Ok(Self::default());
+        }
+
+        // 4. Let stream be an input stream created from the code points of string,
+        //    preprocessed as specified in [css-syntax-3]. Let descriptor be an
+        //    initially empty list of syntax components.
+        //
+        // NOTE(emilio): Instead of preprocessing we cheat and treat new-lines and
+        // nulls in the parser specially.
+        let mut components = vec![];
+        {
+            let mut parser = Parser::new(input, &mut components);
+            // 5. Repeatedly consume the next input code point from stream.
+            parser.parse()?;
+        }
+        Ok(Self(ArcSlice::from_iter(components.into_iter())))
+    }
+}
+
+/// <https://drafts.css-houdini.org/css-properties-values-api-1/#parsing-syntax>
+#[derive(Debug, Clone, Default, MallocSizeOf, PartialEq)]
+pub struct ParsedDescriptor {
+    descriptor: Descriptor,
+    css: String
+}
+
+impl ParsedDescriptor {
+    /// Returns the specified syntax string.
+    pub fn descriptor(&self) -> &Descriptor {
+        &self.descriptor
     }
 
     /// Returns the specified syntax string.
@@ -44,13 +85,7 @@ impl Descriptor {
     }
 }
 
-impl PartialEq for Descriptor {
-    fn eq(&self, other: &Self) -> bool {
-        self.components == other.components
-    }
-}
-
-impl Parse for Descriptor {
+impl Parse for ParsedDescriptor {
     /// Parse a syntax descriptor.
     fn parse<'i, 't>(
         _context: &ParserContext,
@@ -58,14 +93,17 @@ impl Parse for Descriptor {
     ) -> Result<Self, StyleParseError<'i>> {
         // 1. Strip leading and trailing ASCII whitespace from string.
         let input = parser.expect_string()?;
-        match parse_descriptor(input) {
-            Ok(syntax) => Ok(syntax),
+        match Descriptor::from_str(input.as_ref()) {
+            Ok(descriptor) => Ok(Self {
+                descriptor,
+                css: input.as_ref().to_owned(),
+            }),
             Err(err) => Err(parser.new_custom_error(StyleParseErrorKind::PropertySyntaxField(err))),
         }
     }
 }
 
-impl ToCss for Descriptor {
+impl ToCss for ParsedDescriptor {
     fn to_css<W>(&self, dest: &mut CssWriter<W>) -> fmt::Result
     where
         W: Write,
@@ -140,41 +178,6 @@ impl ComponentName {
     fn is_pre_multiplied(&self) -> bool {
         self.unpremultiply().is_some()
     }
-}
-
-/// Parse a syntax descriptor.
-#[inline]
-fn parse_descriptor(css: &str) -> Result<Descriptor, ParseError> {
-    // 1. Strip leading and trailing ASCII whitespace from string.
-    let input = ascii::trim_ascii_whitespace(css);
-
-    // 2. If string's length is 0, return failure.
-    if input.is_empty() {
-        return Err(ParseError::EmptyInput);
-    }
-
-    // 3. If string's length is 1, and the only code point in string is U+002A
-    //    ASTERISK (*), return the universal syntax descriptor.
-    if input.len() == 1 && input.as_bytes()[0] == b'*' {
-        return Ok(Descriptor::universal(css));
-    }
-
-    // 4. Let stream be an input stream created from the code points of string,
-    //    preprocessed as specified in [css-syntax-3]. Let descriptor be an
-    //    initially empty list of syntax components.
-    //
-    // NOTE(emilio): Instead of preprocessing we cheat and treat new-lines and
-    // nulls in the parser specially.
-    let mut components = vec![];
-    {
-        let mut parser = Parser::new(input, &mut components);
-        // 5. Repeatedly consume the next input code point from stream.
-        parser.parse()?;
-    }
-    Ok(Descriptor {
-        components: components.into_boxed_slice(),
-        css: String::from(css),
-    })
 }
 
 struct Parser<'a> {
@@ -290,14 +293,9 @@ impl<'a> Parser<'a> {
         let input = &self.input[self.position..];
         let mut input = CSSParserInput::new(input);
         let mut input = CSSParser::new(&mut input);
-        let location = input.current_source_location();
-        let name = input
-            .expect_ident()
-            .ok()
-            .and_then(|name| CustomIdent::from_ident(location, name, &[]).ok());
-        let name = match name {
-            Some(name) => name,
-            None => return Err(ParseError::InvalidName),
+        let name = match CustomIdent::parse(&mut input, &[]) {
+            Ok(name) => name,
+            Err(_) => return Err(ParseError::InvalidName),
         };
         self.position += input.position().byte_index();
         return Ok(ComponentName::Ident(name));

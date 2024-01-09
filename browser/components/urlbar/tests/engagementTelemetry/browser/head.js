@@ -14,7 +14,7 @@ ChromeUtils.defineESModuleGetters(this, {
 
 const lazy = {};
 
-XPCOMUtils.defineLazyGetter(lazy, "QuickSuggestTestUtils", () => {
+ChromeUtils.defineLazyGetter(lazy, "QuickSuggestTestUtils", () => {
   const { QuickSuggestTestUtils: module } = ChromeUtils.importESModule(
     "resource://testing-common/QuickSuggestTestUtils.sys.mjs"
   );
@@ -22,7 +22,7 @@ XPCOMUtils.defineLazyGetter(lazy, "QuickSuggestTestUtils", () => {
   return module;
 });
 
-XPCOMUtils.defineLazyGetter(this, "MerinoTestUtils", () => {
+ChromeUtils.defineLazyGetter(this, "MerinoTestUtils", () => {
   const { MerinoTestUtils: module } = ChromeUtils.importESModule(
     "resource://testing-common/MerinoTestUtils.sys.mjs"
   );
@@ -253,6 +253,15 @@ async function initSapTest() {
   /* import-globals-from head-sap.js */
   Services.scriptloader.loadSubScript(
     "chrome://mochitests/content/browser/browser/components/urlbar/tests/engagementTelemetry/browser/head-sap.js",
+    this
+  );
+  await setup();
+}
+
+async function initSearchEngineDefaultIdTest() {
+  /* import-globals-from head-search_engine_default_id.js */
+  Services.scriptloader.loadSubScript(
+    "chrome://mochitests/content/browser/browser/components/urlbar/tests/engagementTelemetry/browser/head-search_engine_default_id.js",
     this
   );
   await setup();

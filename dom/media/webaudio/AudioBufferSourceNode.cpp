@@ -72,6 +72,7 @@ class AudioBufferSourceNodeEngine final : public AudioNodeEngine {
                          dom::AudioTimelineEvent& aEvent) override {
     MOZ_ASSERT(mDestination);
     WebAudioUtils::ConvertAudioTimelineEventToTicks(aEvent, mDestination);
+    mRecomputeOutRate = true;
 
     switch (aIndex) {
       case AudioBufferSourceNode::PLAYBACKRATE:
@@ -113,6 +114,7 @@ class AudioBufferSourceNodeEngine final : public AudioNodeEngine {
     switch (aIndex) {
       case AudioBufferSourceNode::SAMPLE_RATE:
         MOZ_ASSERT(aParam > 0);
+        MOZ_ASSERT(mRecomputeOutRate);
         mBufferSampleRate = aParam;
         mSource->SetActive();
         break;
@@ -440,7 +442,7 @@ class AudioBufferSourceNodeEngine final : public AudioNodeEngine {
   }
 
   int32_t ComputeFinalOutSampleRate(float aPlaybackRate, float aDetune) {
-    float computedPlaybackRate = aPlaybackRate * exp2(aDetune / 1200.f);
+    float computedPlaybackRate = aPlaybackRate * fdlibm_exp2f(aDetune / 1200.f);
     // Make sure the playback rate is something our resampler can work with.
     int32_t rate = WebAudioUtils::TruncateFloatToInt<int32_t>(
         mSource->mSampleRate / computedPlaybackRate);
@@ -448,15 +450,22 @@ class AudioBufferSourceNodeEngine final : public AudioNodeEngine {
   }
 
   void UpdateSampleRateIfNeeded(uint32_t aChannels, TrackTime aTrackPosition) {
+    bool simplePlaybackRate = mPlaybackRateTimeline.HasSimpleValue();
+    bool simpleDetune = mDetuneTimeline.HasSimpleValue();
+
+    if (simplePlaybackRate && simpleDetune && !mRecomputeOutRate) {
+      return;  // skipping the slow exp2f() for the detune
+    }
+    mRecomputeOutRate = false;
+
     float playbackRate;
     float detune;
-
-    if (mPlaybackRateTimeline.HasSimpleValue()) {
+    if (simplePlaybackRate) {
       playbackRate = mPlaybackRateTimeline.GetValue();
     } else {
       playbackRate = mPlaybackRateTimeline.GetValueAtTime(aTrackPosition);
     }
-    if (mDetuneTimeline.HasSimpleValue()) {
+    if (simpleDetune) {
       detune = mDetuneTimeline.GetValue();
     } else {
       detune = mDetuneTimeline.GetValueAtTime(aTrackPosition);
@@ -464,8 +473,6 @@ class AudioBufferSourceNodeEngine final : public AudioNodeEngine {
     if (playbackRate <= 0 || std::isnan(playbackRate)) {
       playbackRate = 1.0f;
     }
-
-    detune = std::min(std::max(-1200.f, detune), 1200.f);
 
     int32_t outRate = ComputeFinalOutSampleRate(playbackRate, detune);
     UpdateResampler(outRate, aChannels);
@@ -583,6 +590,7 @@ class AudioBufferSourceNodeEngine final : public AudioNodeEngine {
   AudioParamTimeline mPlaybackRateTimeline;
   AudioParamTimeline mDetuneTimeline;
   bool mLoop;
+  bool mRecomputeOutRate = true;
 };
 
 AudioBufferSourceNode::AudioBufferSourceNode(AudioContext* aContext)

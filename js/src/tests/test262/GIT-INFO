@@ -1,7 +1,23 @@
-commit 6da1d4c82cf8e7d71f43ad78150ab2c8a4e342e6
-Author: Jordan Harband <ljharb@gmail.com>
-Date:   Tue Mar 28 00:34:15 2023 -0700
+commit 016e4bf8e84c36d1653c6bd53e74c93580d8b1ff
+Author: Guillaume Emont <guijemont@igalia.com>
+Date:   Mon Jul 17 16:55:34 2023 +0200
 
-    Merge pull request #3796 from syg/transfertofixedlength-tests
+    Temporal Issue 2532 (#3858)
     
-    Add tests for ArrayBuffer.prototype.transferToFixedLength
+    * Add tests for the new PrepareTemporalFields behavior for all direct callers
+    
+    See https://github.com/tc39/proposal-temporal/pull/2570
+    
+    * Add tests for the new PrepareTemporalFields behavior for indirect callers through ToTemporalDate
+    
+    * Add tests for the new PrepareTemporalFields behavior for indirect callers through ToTemporalDateTime
+    
+    * Add tests for the new PrepareTemporalFields behavior for indirect callers through ToTemporalZonedDateTime
+    
+    * Add tests for the new PrepareTemporalFields behavior for indirect callers through ToTemporalYearMonth
+    
+    * Add tests for the new PrepareTemporalFields behavior for indirect callers through ToTemporalMonthDay
+    
+    * Add tests for the new PrepareTemporalFields behavior for indirect callers through ToRelativeTemporalObject
+    
+    * Add tests for the new PrepareTemporalFields behavior for indirect callers through AddDurationToOrSubtractDurationFromPlainYearMonth

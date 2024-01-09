@@ -17,6 +17,8 @@
 
 #include "absl/memory/memory.h"
 #include "api/call/transport.h"
+#include "api/test/mock_transformable_audio_frame.h"
+#include "api/test/mock_transformable_video_frame.h"
 #include "call/video_receive_stream.h"
 #include "modules/rtp_rtcp/source/rtp_descriptor_authentication.h"
 #include "rtc_base/event.h"
@@ -27,32 +29,24 @@
 namespace webrtc {
 namespace {
 
+using testing::Each;
+using testing::ElementsAreArray;
 using testing::NiceMock;
 using testing::Return;
+using testing::ReturnRef;
 
-class MockTransformableVideoFrame
-    : public webrtc::TransformableVideoFrameInterface {
- public:
-  MOCK_METHOD(rtc::ArrayView<const uint8_t>, GetData, (), (const override));
-  MOCK_METHOD(void, SetData, (rtc::ArrayView<const uint8_t> data), (override));
-  MOCK_METHOD(uint8_t, GetPayloadType, (), (const, override));
-  MOCK_METHOD(uint32_t, GetSsrc, (), (const, override));
-  MOCK_METHOD(uint32_t, GetTimestamp, (), (const, override));
-  MOCK_METHOD(TransformableFrameInterface::Direction,
-              GetDirection,
-              (),
-              (const, override));
-  MOCK_METHOD(bool, IsKeyFrame, (), (const, override));
-  MOCK_METHOD(std::vector<uint8_t>, GetAdditionalData, (), (const, override));
-  MOCK_METHOD(const webrtc::VideoFrameMetadata&,
-              GetMetadata,
-              (),
-              (const, override));
-  MOCK_METHOD(void,
-              SetMetadata,
-              (const webrtc::VideoFrameMetadata&),
-              (override));
-};
+TEST(FrameTransformerFactory, CloneAudioFrame) {
+  NiceMock<MockTransformableAudioFrame> original_frame;
+  uint8_t data[10];
+  std::fill_n(data, 10, 5);
+  rtc::ArrayView<uint8_t> data_view(data);
+  ON_CALL(original_frame, GetData()).WillByDefault(Return(data_view));
+  RTPHeader rtp_header;
+  ON_CALL(original_frame, GetHeader()).WillByDefault(ReturnRef(rtp_header));
+  auto cloned_frame = CloneAudioFrame(&original_frame);
+
+  EXPECT_THAT(cloned_frame->GetData(), ElementsAreArray(data));
+}
 
 TEST(FrameTransformerFactory, CloneVideoFrame) {
   NiceMock<MockTransformableVideoFrame> original_frame;
@@ -60,9 +54,17 @@ TEST(FrameTransformerFactory, CloneVideoFrame) {
   std::fill_n(data, 10, 5);
   rtc::ArrayView<uint8_t> data_view(data);
   EXPECT_CALL(original_frame, GetData()).WillRepeatedly(Return(data_view));
+  webrtc::VideoFrameMetadata metadata;
+  std::vector<uint32_t> csrcs{123, 321};
+  // Copy csrcs rather than moving so we can compare in an EXPECT_EQ later.
+  metadata.SetCsrcs(csrcs);
+
+  EXPECT_CALL(original_frame, Metadata()).WillRepeatedly(Return(metadata));
   auto cloned_frame = CloneVideoFrame(&original_frame);
+
   EXPECT_EQ(cloned_frame->GetData().size(), 10u);
-  EXPECT_THAT(cloned_frame->GetData(), testing::Each(5u));
+  EXPECT_THAT(cloned_frame->GetData(), Each(5u));
+  EXPECT_EQ(cloned_frame->Metadata().GetCsrcs(), csrcs);
 }
 
 }  // namespace

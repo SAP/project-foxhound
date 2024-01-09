@@ -106,12 +106,6 @@ ID02:
         - find
         - new-tab
         - share
-        # toolkit/locales/en-US/toolkit/about/aboutPerformance.ftl
-        - type-tab
-        - size-KB
-        - size-MB
-        - size-GB
-        - item
         # toolkit/locales/en-US/toolkit/about/aboutPlugins.ftl
         - file-dd
         - path-dd
@@ -163,8 +157,6 @@ CO01:
         # browser/locales/en-US/browser/preferences/preferences.ftl
         - sync-engine-addons
         - sync-mobile-promo
-        # browser/locales/en-US/browser/protectionsPanel.ftl
-        - protections-panel-content-blocking-breakage-report-view-description
         # devtools/client/locales/en-US/aboutdebugging.ftl
         - about-debugging-setup-usb-step-enable-debug-firefox2
         - about-debugging-browser-version-too-old-fennec

@@ -55,7 +55,7 @@ interface HTMLElement : Element {
            attribute boolean spellcheck;
   [CEReactions, Pure, SetterThrows, Pref="dom.forms.inputmode"]
            attribute DOMString inputMode;
-  [CEReactions, Pure, SetterThrows, Pref="dom.forms.enterkeyhint"]
+  [CEReactions, Pure, SetterThrows]
            attribute DOMString enterKeyHint;
   [CEReactions, Pure, SetterThrows, Pref="dom.forms.autocapitalize"]
            attribute DOMString autocapitalize;
@@ -79,7 +79,7 @@ interface HTMLElement : Element {
   [Throws, Pref="dom.element.popover.enabled"]
   undefined hidePopover();
   [Throws, Pref="dom.element.popover.enabled"]
-  undefined togglePopover(optional boolean force);
+  boolean togglePopover(optional boolean force);
 };
 
 // http://dev.w3.org/csswg/cssom-view/#extensions-to-the-htmlelement-interface

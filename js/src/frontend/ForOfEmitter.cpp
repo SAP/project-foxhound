@@ -39,24 +39,25 @@ bool ForOfEmitter::emitIterated() {
   return true;
 }
 
-bool ForOfEmitter::emitInitialize(uint32_t forPos,
-                                  bool isIteratorMethodOnStack) {
+bool ForOfEmitter::emitInitialize(uint32_t forPos) {
   MOZ_ASSERT(state_ == State::Iterated);
 
   tdzCacheForIteratedValue_.reset();
 
-  //                [stack] # if isIteratorMethodOnStack
+  //                [stack] # if AllowContentWithNext
+  //                [stack] NEXT ITER
+  //                [stack] # elif AllowContentWith
   //                [stack] ITERABLE ITERFN SYNC_ITERFN?
-  //                [stack] # else isIteratorMethodOnStack
+  //                [stack] # else
   //                [stack] ITERABLE
 
   if (iterKind_ == IteratorKind::Async) {
-    if (!bce_->emitAsyncIterator(selfHostedIter_, isIteratorMethodOnStack)) {
+    if (!bce_->emitAsyncIterator(selfHostedIter_)) {
       //            [stack] NEXT ITER
       return false;
     }
   } else {
-    if (!bce_->emitIterator(selfHostedIter_, isIteratorMethodOnStack)) {
+    if (!bce_->emitIterator(selfHostedIter_)) {
       //            [stack] NEXT ITER
       return false;
     }

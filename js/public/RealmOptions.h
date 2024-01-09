@@ -218,24 +218,16 @@ class JS_PUBLIC_API RealmCreationOptions {
     wellFormedUnicodeStrings_ = flag;
     return *this;
   }
-#endif
 
-  bool getArrayFromAsyncEnabled() const { return arrayFromAsync_; }
-  RealmCreationOptions& setArrayFromAsyncEnabled(bool flag) {
-    arrayFromAsync_ = flag;
-    return *this;
-  }
-
-  bool getChangeArrayByCopyEnabled() const { return changeArrayByCopy_; }
-  RealmCreationOptions& setChangeArrayByCopyEnabled(bool flag) {
-    changeArrayByCopy_ = flag;
-    return *this;
-  }
-
-#ifdef ENABLE_NEW_SET_METHODS
   bool getNewSetMethodsEnabled() const { return newSetMethods_; }
   RealmCreationOptions& setNewSetMethodsEnabled(bool flag) {
     newSetMethods_ = flag;
+    return *this;
+  }
+
+  bool getArrayBufferTransferEnabled() const { return arrayBufferTransfer_; }
+  RealmCreationOptions& setArrayBufferTransferEnabled(bool flag) {
+    arrayBufferTransfer_ = flag;
     return *this;
   }
 #endif
@@ -256,6 +248,23 @@ class JS_PUBLIC_API RealmCreationOptions {
   bool freezeBuiltins() const { return freezeBuiltins_; }
   RealmCreationOptions& setFreezeBuiltins(bool flag) {
     freezeBuiltins_ = flag;
+    return *this;
+  }
+
+  // Force all date/time methods in JavaScript to use the UTC timezone for
+  // fingerprinting protection.
+  bool forceUTC() const { return forceUTC_; }
+  RealmCreationOptions& setForceUTC(bool flag) {
+    forceUTC_ = flag;
+    return *this;
+  }
+
+  // Always use the fdlibm implementation of math functions instead of the
+  // platform native libc implementations. Useful for fingerprinting protection
+  // and cross-platform consistency.
+  bool alwaysUseFdlibm() const { return alwaysUseFdlibm_; }
+  RealmCreationOptions& setAlwaysUseFdlibm(bool flag) {
+    alwaysUseFdlibm_ = flag;
     return *this;
   }
 
@@ -287,14 +296,15 @@ class JS_PUBLIC_API RealmCreationOptions {
   bool arrayGrouping_ = false;
   // Pref for String.prototype.{is,to}WellFormed() methods.
   bool wellFormedUnicodeStrings_ = false;
-#endif
-  bool arrayFromAsync_ = true;
-  bool changeArrayByCopy_ = false;
-#ifdef ENABLE_NEW_SET_METHODS
+  // Pref for new Set.prototype methods.
   bool newSetMethods_ = false;
+  // Pref for ArrayBuffer.prototype.transfer{,ToFixedLength}() methods.
+  bool arrayBufferTransfer_ = false;
 #endif
   bool secureContext_ = false;
   bool freezeBuiltins_ = false;
+  bool forceUTC_ = false;
+  bool alwaysUseFdlibm_ = false;
 };
 
 /**
@@ -316,14 +326,6 @@ class JS_PUBLIC_API RealmBehaviors {
   bool clampAndJitterTime() const { return clampAndJitterTime_; }
   RealmBehaviors& setClampAndJitterTime(bool flag) {
     clampAndJitterTime_ = flag;
-    return *this;
-  }
-
-  bool shouldResistFingerprinting() const {
-    return shouldResistFingerprinting_;
-  }
-  RealmBehaviors& setShouldResistFingerprinting(bool flag) {
-    shouldResistFingerprinting_ = flag;
     return *this;
   }
 
@@ -362,7 +364,6 @@ class JS_PUBLIC_API RealmBehaviors {
  private:
   bool discardSource_ = false;
   bool clampAndJitterTime_ = true;
-  bool shouldResistFingerprinting_ = false;
   bool isNonLive_ = false;
 };
 

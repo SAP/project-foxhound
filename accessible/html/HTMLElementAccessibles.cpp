@@ -6,11 +6,10 @@
 #include "HTMLElementAccessibles.h"
 
 #include "CacheConstants.h"
-#include "DocAccessible.h"
-#include "nsAccUtils.h"
+#include "nsCoreUtils.h"
 #include "nsTextEquivUtils.h"
 #include "Relation.h"
-#include "Role.h"
+#include "mozilla/a11y/Role.h"
 #include "States.h"
 
 #include "mozilla/dom/HTMLLabelElement.h"
@@ -62,12 +61,11 @@ void HTMLLabelAccessible::DOMAttributeChanged(int32_t aNameSpaceID,
                                               int32_t aModType,
                                               const nsAttrValue* aOldValue,
                                               uint64_t aOldState) {
-  HyperTextAccessibleWrap::DOMAttributeChanged(aNameSpaceID, aAttribute,
-                                               aModType, aOldValue, aOldState);
+  HyperTextAccessible::DOMAttributeChanged(aNameSpaceID, aAttribute, aModType,
+                                           aOldValue, aOldState);
 
   if (aAttribute == nsGkAtoms::_for) {
-    mDoc->QueueCacheUpdate(this, CacheDomain::Relations);
-    SendCache(CacheDomain::Actions, CacheUpdateType::Update);
+    mDoc->QueueCacheUpdate(this, CacheDomain::Relations | CacheDomain::Actions);
   }
 }
 
@@ -101,8 +99,8 @@ void HTMLOutputAccessible::DOMAttributeChanged(int32_t aNameSpaceID,
                                                int32_t aModType,
                                                const nsAttrValue* aOldValue,
                                                uint64_t aOldState) {
-  HyperTextAccessibleWrap::DOMAttributeChanged(aNameSpaceID, aAttribute,
-                                               aModType, aOldValue, aOldState);
+  HyperTextAccessible::DOMAttributeChanged(aNameSpaceID, aAttribute, aModType,
+                                           aOldValue, aOldState);
 
   if (aAttribute == nsGkAtoms::_for) {
     mDoc->QueueCacheUpdate(this, CacheDomain::Relations);
@@ -115,7 +113,7 @@ void HTMLOutputAccessible::DOMAttributeChanged(int32_t aNameSpaceID,
 
 HTMLSummaryAccessible::HTMLSummaryAccessible(nsIContent* aContent,
                                              DocAccessible* aDoc)
-    : HyperTextAccessibleWrap(aContent, aDoc) {
+    : HyperTextAccessible(aContent, aDoc) {
   mGenericTypes |= eButton;
 }
 
@@ -145,7 +143,7 @@ void HTMLSummaryAccessible::ActionNameAt(uint8_t aIndex, nsAString& aName) {
 }
 
 uint64_t HTMLSummaryAccessible::NativeState() const {
-  uint64_t state = HyperTextAccessibleWrap::NativeState();
+  uint64_t state = HyperTextAccessible::NativeState();
 
   dom::HTMLSummaryElement* summary =
       dom::HTMLSummaryElement::FromNode(mContent);

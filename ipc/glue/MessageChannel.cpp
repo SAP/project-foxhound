@@ -42,7 +42,7 @@
 #include "nsPrintfCString.h"
 #include "nsThreadUtils.h"
 
-#ifdef OS_WIN
+#ifdef XP_WIN
 #  include "mozilla/gfx/Logging.h"
 #endif
 
@@ -438,7 +438,7 @@ MessageChannel::MessageChannel(const char* aName, IToplevelProtocol* aListener)
     : mName(aName), mListener(aListener), mMonitor(new RefCountedMonitor()) {
   MOZ_COUNT_CTOR(ipc::MessageChannel);
 
-#ifdef OS_WIN
+#ifdef XP_WIN
   mEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
   MOZ_RELEASE_ASSERT(mEvent, "CreateEvent failed! Nothing is going to work!");
 #endif
@@ -452,7 +452,7 @@ MessageChannel::~MessageChannel() {
   MonitorAutoLock lock(*mMonitor);
   MOZ_RELEASE_ASSERT(!mOnCxxStack,
                      "MessageChannel destroyed while code on CxxStack");
-#ifdef OS_WIN
+#ifdef XP_WIN
   if (mEvent) {
     BOOL ok = CloseHandle(mEvent);
     mEvent = nullptr;
@@ -1235,7 +1235,7 @@ bool MessageChannel::Send(UniquePtr<Message> aMsg, UniquePtr<Message>* aReply) {
 
   RefPtr<ActorLifecycleProxy> proxy = Listener()->GetLifecycleProxy();
 
-#ifdef OS_WIN
+#ifdef XP_WIN
   SyncStackFrame frame(this);
   NeuteredWindowRegion neuteredRgn(mFlags &
                                    REQUIRE_DEFERRED_MESSAGE_PROTECTION);
@@ -1838,7 +1838,7 @@ bool MessageChannel::WaitResponse(bool aWaitTimedOut) {
   return true;
 }
 
-#ifndef OS_WIN
+#ifndef XP_WIN
 bool MessageChannel::WaitForSyncNotify() {
   AssertWorkerThread();
 #  ifdef DEBUG
@@ -2107,29 +2107,33 @@ class GoodbyeMessage : public IPC::Message {
   }
 };
 
-void MessageChannel::CloseWithError() {
-  AssertWorkerThread();
+void MessageChannel::InduceConnectionError() {
+  MonitorAutoLock lock(*mMonitor);
 
-  // This lock guard may be reset by `NotifyMaybeChannelError` before invoking
-  // listener callbacks which may destroy this `MessageChannel`.
-  ReleasableMonitorAutoLock lock(*mMonitor);
-
+  // Either connected or closing, immediately convert to an error and notify.
   switch (mChannelState) {
-    case ChannelError:
-      // Already errored, ensure we notify if we haven't yet.
-      NotifyMaybeChannelError(lock);
-      return;
-    case ChannelClosed:
-      // Already closed, we can't do anything.
-      return;
-    default:
-      // Either connected or closing, immediately convert to an error, and
-      // notify.
-      MOZ_ASSERT(mChannelState == ChannelConnected ||
-                 mChannelState == ChannelClosing);
+    case ChannelConnected:
+      // The channel is still actively connected. Immediately shut down the
+      // connection with our peer and simulate it invoking
+      // OnChannelErrorFromLink on us.
+      //
+      // This will update the state to ChannelError, preventing new messages
+      // from being processed, leading to an error being reported asynchronously
+      // to our listener.
       mLink->Close();
+      OnChannelErrorFromLink();
+      return;
+
+    case ChannelClosing:
+      // An notify task has already been posted. Update mChannelState to stop
+      // processing new messages and treat the notification as an error.
       mChannelState = ChannelError;
-      NotifyMaybeChannelError(lock);
+      return;
+
+    default:
+      // Either already closed or errored. Nothing to do.
+      MOZ_ASSERT(mChannelState == ChannelClosed ||
+                 mChannelState == ChannelError);
       return;
   }
 }

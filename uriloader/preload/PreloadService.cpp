@@ -68,10 +68,6 @@ already_AddRefed<PreloaderBase> PreloadService::PreloadLinkElement(
     return nullptr;
   }
 
-  if (!StaticPrefs::network_preload()) {
-    return nullptr;
-  }
-
   nsAutoString as, charset, crossOrigin, integrity, referrerPolicy, rel, srcset,
       sizes, type, url;
 
@@ -85,6 +81,12 @@ already_AddRefed<PreloaderBase> PreloadService::PreloadLinkElement(
   aLinkElement->GetReferrerPolicy(referrerPolicy);
   aLinkElement->GetRel(rel);
 
+  nsAutoString nonce;
+  if (nsString* cspNonce =
+          static_cast<nsString*>(aLinkElement->GetProperty(nsGkAtoms::nonce))) {
+    nonce = *cspNonce;
+  }
+
   if (rel.LowerCaseEqualsASCII("modulepreload")) {
     as = u"script"_ns;
     type = u"module"_ns;
@@ -94,7 +96,7 @@ already_AddRefed<PreloaderBase> PreloadService::PreloadLinkElement(
   }
 
   auto result = PreloadOrCoalesce(uri, url, aPolicyType, as, type, charset,
-                                  srcset, sizes, integrity, crossOrigin,
+                                  srcset, sizes, nonce, integrity, crossOrigin,
                                   referrerPolicy, /* aFromHeader = */ false, 0);
 
   if (!result.mPreloader) {
@@ -108,27 +110,24 @@ already_AddRefed<PreloaderBase> PreloadService::PreloadLinkElement(
 
 void PreloadService::PreloadLinkHeader(
     nsIURI* aURI, const nsAString& aURL, nsContentPolicyType aPolicyType,
-    const nsAString& aAs, const nsAString& aType, const nsAString& aIntegrity,
-    const nsAString& aSrcset, const nsAString& aSizes, const nsAString& aCORS,
+    const nsAString& aAs, const nsAString& aType, const nsAString& aNonce,
+    const nsAString& aIntegrity, const nsAString& aSrcset,
+    const nsAString& aSizes, const nsAString& aCORS,
     const nsAString& aReferrerPolicy, uint64_t aEarlyHintPreloaderId) {
   if (aPolicyType == nsIContentPolicy::TYPE_INVALID) {
     MOZ_ASSERT_UNREACHABLE("Caller should check");
     return;
   }
 
-  if (!StaticPrefs::network_preload()) {
-    return;
-  }
-
   PreloadOrCoalesce(aURI, aURL, aPolicyType, aAs, aType, u""_ns, aSrcset,
-                    aSizes, aIntegrity, aCORS, aReferrerPolicy,
+                    aSizes, aNonce, aIntegrity, aCORS, aReferrerPolicy,
                     /* aFromHeader = */ true, aEarlyHintPreloaderId);
 }
 
 PreloadService::PreloadOrCoalesceResult PreloadService::PreloadOrCoalesce(
     nsIURI* aURI, const nsAString& aURL, nsContentPolicyType aPolicyType,
     const nsAString& aAs, const nsAString& aType, const nsAString& aCharset,
-    const nsAString& aSrcset, const nsAString& aSizes,
+    const nsAString& aSrcset, const nsAString& aSizes, const nsAString& aNonce,
     const nsAString& aIntegrity, const nsAString& aCORS,
     const nsAString& aReferrerPolicy, bool aFromHeader,
     uint64_t aEarlyHintPreloaderId) {
@@ -171,12 +170,13 @@ PreloadService::PreloadOrCoalesceResult PreloadService::PreloadOrCoalesce(
   }
 
   if (aAs.LowerCaseEqualsASCII("script")) {
-    PreloadScript(uri, aType, aCharset, aCORS, aReferrerPolicy, aIntegrity,
-                  true /* isInHead - TODO */, aEarlyHintPreloaderId);
+    PreloadScript(uri, aType, aCharset, aCORS, aReferrerPolicy, aNonce,
+                  aIntegrity, true /* isInHead - TODO */,
+                  aEarlyHintPreloaderId);
   } else if (aAs.LowerCaseEqualsASCII("style")) {
     auto status = mDocument->PreloadStyle(
         aURI, Encoding::ForLabel(aCharset), aCORS,
-        PreloadReferrerPolicy(aReferrerPolicy), aIntegrity,
+        PreloadReferrerPolicy(aReferrerPolicy), aNonce, aIntegrity,
         aFromHeader ? css::StylePreloadKind::FromLinkRelPreloadHeader
                     : css::StylePreloadKind::FromLinkRelPreloadElement,
         aEarlyHintPreloaderId);
@@ -203,16 +203,14 @@ PreloadService::PreloadOrCoalesceResult PreloadService::PreloadOrCoalesce(
   return {preload, false};
 }
 
-void PreloadService::PreloadScript(nsIURI* aURI, const nsAString& aType,
-                                   const nsAString& aCharset,
-                                   const nsAString& aCrossOrigin,
-                                   const nsAString& aReferrerPolicy,
-                                   const nsAString& aIntegrity,
-                                   bool aScriptFromHead,
-                                   uint64_t aEarlyHintPreloaderId) {
+void PreloadService::PreloadScript(
+    nsIURI* aURI, const nsAString& aType, const nsAString& aCharset,
+    const nsAString& aCrossOrigin, const nsAString& aReferrerPolicy,
+    const nsAString& aNonce, const nsAString& aIntegrity, bool aScriptFromHead,
+    uint64_t aEarlyHintPreloaderId) {
   mDocument->ScriptLoader()->PreloadURI(
-      aURI, aCharset, aType, aCrossOrigin, aIntegrity, aScriptFromHead, false,
-      false, false, true, PreloadReferrerPolicy(aReferrerPolicy),
+      aURI, aCharset, aType, aCrossOrigin, aNonce, aIntegrity, aScriptFromHead,
+      false, false, false, true, PreloadReferrerPolicy(aReferrerPolicy),
       aEarlyHintPreloaderId);
 }
 

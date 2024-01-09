@@ -15,6 +15,8 @@ const TRANSLATIONS_TESTER_EN =
   URL_COM_PREFIX + DIR_PATH + "translations-tester-en.html";
 const TRANSLATIONS_TESTER_ES =
   URL_COM_PREFIX + DIR_PATH + "translations-tester-es.html";
+const TRANSLATIONS_TESTER_FR =
+  URL_COM_PREFIX + DIR_PATH + "translations-tester-fr.html";
 const TRANSLATIONS_TESTER_ES_2 =
   URL_COM_PREFIX + DIR_PATH + "translations-tester-es-2.html";
 const TRANSLATIONS_TESTER_ES_DOT_ORG =
@@ -50,7 +52,7 @@ const TRANSLATIONS_TESTER_NO_TAG =
  * This is the BCP 47 language tag for the MockedLanguageIdEngine to return as
  * the mocked detected language.
  *
- * @param {Array<{ fromLang: string, toLang: string, isBeta: boolean }>} options.languagePairs
+ * @param {Array<{ fromLang: string, toLang: string }>} options.languagePairs
  * The translation languages pairs to mock for the test.
  *
  * @param {Array<[string, string]>} options.prefs
@@ -122,7 +124,7 @@ async function openAboutTranslations({
     runInPage
   );
 
-  removeMocks();
+  await removeMocks();
 
   BrowserTestUtils.removeTab(tab);
   await SpecialPowers.popPrefEnv();
@@ -285,6 +287,53 @@ function getTranslationsParent() {
 }
 
 /**
+ * Closes the translations panel settings menu if it is open.
+ */
+function closeSettingsMenuIfOpen() {
+  return waitForCondition(async () => {
+    const settings = document.getElementById(
+      "translations-panel-settings-menupopup"
+    );
+    if (!settings) {
+      return true;
+    }
+    if (settings.state === "closed") {
+      return true;
+    }
+    let popuphiddenPromise = BrowserTestUtils.waitForEvent(
+      settings,
+      "popuphidden"
+    );
+    PanelMultiView.hidePopup(settings);
+    await popuphiddenPromise;
+    return false;
+  });
+}
+
+/**
+ * Closes the translations panel if it is open.
+ */
+async function closeTranslationsPanelIfOpen() {
+  await closeSettingsMenuIfOpen();
+  return waitForCondition(async () => {
+    const panel = document.getElementById("translations-panel");
+    if (!panel) {
+      return true;
+    }
+    if (panel.state === "closed") {
+      return true;
+    }
+    let popuphiddenPromise = BrowserTestUtils.waitForEvent(
+      panel,
+      "popuphidden"
+    );
+    PanelMultiView.hidePopup(panel);
+    await popuphiddenPromise;
+    return false;
+  });
+}
+
+/**
  * This is for tests that don't need a browser page to run.
  */
 async function setupActorTest({
@@ -292,6 +341,7 @@ async function setupActorTest({
   prefs,
   detectedLanguageConfidence,
   detectedLangTag,
+  autoDownloadFromRemoteSettings = false,
 }) {
   await SpecialPowers.pushPrefEnv({
     set: [
@@ -306,21 +356,24 @@ async function setupActorTest({
     languagePairs,
     detectedLangTag,
     detectedLanguageConfidence,
+    autoDownloadFromRemoteSettings,
   });
 
   // Create a new tab so each test gets a new actor, and doesn't re-use the old one.
   const tab = await BrowserTestUtils.openNewForegroundTab(
     gBrowser,
-    BLANK_PAGE,
+    TRANSLATIONS_TESTER_EN,
     true // waitForLoad
   );
 
   return {
     actor: getTranslationsParent(),
     remoteClients,
-    cleanup() {
+    async cleanup() {
+      await closeTranslationsPanelIfOpen();
       BrowserTestUtils.removeTab(tab);
-      removeMocks();
+      await removeMocks();
+      TestTranslationsTelemetry.reset();
       return SpecialPowers.popPrefEnv();
     },
   };
@@ -330,8 +383,8 @@ async function setupActorTest({
  * Provide some default language pairs when none are provided.
  */
 const DEFAULT_LANGUAGE_PAIRS = [
-  { fromLang: "en", toLang: "es", isBeta: false },
-  { fromLang: "es", toLang: "en", isBeta: false },
+  { fromLang: "en", toLang: "es" },
+  { fromLang: "es", toLang: "en" },
 ];
 
 async function createAndMockRemoteSettings({
@@ -353,6 +406,10 @@ async function createAndMockRemoteSettings({
     ),
   };
 
+  // The TranslationsParent will pull the language pair values from the JSON dump
+  // of Remote Settings. Clear these before mocking the translations engine.
+  TranslationsParent.clearCache();
+
   TranslationsParent.mockTranslationsEngine(
     remoteClients.translationModels.client,
     remoteClients.translationsWasm.client
@@ -364,9 +421,18 @@ async function createAndMockRemoteSettings({
     remoteClients.languageIdModels.client
   );
   return {
-    removeMocks() {
+    async removeMocks() {
+      await remoteClients.translationModels.client.attachments.deleteAll();
+      await remoteClients.translationsWasm.client.attachments.deleteAll();
+      await remoteClients.languageIdModels.client.attachments.deleteAll();
+
+      await remoteClients.translationModels.client.db.clear();
+      await remoteClients.translationsWasm.client.db.clear();
+      await remoteClients.languageIdModels.client.db.clear();
+
       TranslationsParent.unmockTranslationsEngine();
       TranslationsParent.unmockLanguageIdentification();
+      TranslationsParent.clearCache();
     },
     remoteClients,
   };
@@ -379,6 +445,7 @@ async function loadTestPage({
   detectedLangTag,
   page,
   prefs,
+  autoOffer,
   permissionsUrls = [],
 }) {
   Services.fog.testResetFOG();
@@ -387,6 +454,8 @@ async function loadTestPage({
       // Enabled by default.
       ["browser.translations.enable", true],
       ["browser.translations.logLevel", "All"],
+      ["browser.translations.panelShown", true],
+      ["browser.translations.automaticallyPopup", true],
       ...(prefs ?? []),
     ],
   });
@@ -397,6 +466,10 @@ async function loadTestPage({
       context: url,
     }))
   );
+
+  if (autoOffer) {
+    TranslationsParent.testAutomaticPopup = true;
+  }
 
   // Start the tab at a blank page.
   const tab = await BrowserTestUtils.openNewForegroundTab(
@@ -414,6 +487,14 @@ async function loadTestPage({
 
   BrowserTestUtils.loadURIString(tab.linkedBrowser, page);
   await BrowserTestUtils.browserLoaded(tab.linkedBrowser);
+
+  if (autoOffer && TranslationsParent.shouldAlwaysOfferTranslations()) {
+    info("Waiting for the popup to be automatically shown.");
+    await waitForCondition(() => {
+      const panel = document.getElementById("translations-panel");
+      return panel && panel.state === "open";
+    });
+  }
 
   return {
     tab,
@@ -447,10 +528,14 @@ async function loadTestPage({
     /**
      * @returns {Promise<void>}
      */
-    cleanup() {
-      removeMocks();
+    async cleanup() {
+      await closeTranslationsPanelIfOpen();
+      await removeMocks();
       Services.fog.testResetFOG();
+      TranslationsParent.testAutomaticPopup = false;
+      TranslationsParent.resetHostsOffered();
       BrowserTestUtils.removeTab(tab);
+      TestTranslationsTelemetry.reset();
       return Promise.all([
         SpecialPowers.popPrefEnv(),
         SpecialPowers.popPermissions(),
@@ -515,13 +600,11 @@ async function captureTranslationsError(callback) {
  * @param {Object} options - The options for `loadTestPage` plus a `runInPage` function.
  */
 async function autoTranslatePage(options) {
+  const { prefs, ...otherOptions } = options;
   const { cleanup, runInPage } = await loadTestPage({
     autoDownloadFromRemoteSettings: true,
-    prefs: [
-      ["browser.translations.autoTranslate", true],
-      ...(options.prefs ?? []),
-    ],
-    ...options,
+    prefs: [["browser.translations.autoTranslate", true], ...(prefs ?? [])],
+    ...otherOptions,
   });
   await runInPage(options.runInPage);
   await cleanup();
@@ -529,18 +612,30 @@ async function autoTranslatePage(options) {
 
 /**
  * @param {RemoteSettingsClient} client
+ * @param {string} mockedCollectionName - The name of the mocked collection without
+ *  the incrementing "id" part. This is provided so that attachments can be asserted
+ *  as being of a certain version.
  * @param {boolean} autoDownloadFromRemoteSettings - Skip the manual download process,
  *  and automatically download the files. Normally it's preferrable to manually trigger
  *  the downloads to trigger the download behavior, but this flag lets you bypass this
  *  and automatically download the files.
  */
-function createAttachmentMock(client, autoDownloadFromRemoteSettings) {
+function createAttachmentMock(
+  client,
+  mockedCollectionName,
+  autoDownloadFromRemoteSettings
+) {
   const pendingDownloads = [];
   client.attachments.download = record =>
     new Promise((resolve, reject) => {
       console.log("Download requested:", client.collectionName, record.name);
       if (autoDownloadFromRemoteSettings) {
-        resolve({ buffer: new ArrayBuffer() });
+        const encoder = new TextEncoder();
+        const { buffer } = encoder.encode(
+          `Mocked download: ${mockedCollectionName} ${record.name} ${record.version}`
+        );
+
+        resolve({ buffer });
       } else {
         pendingDownloads.push({ record, resolve, reject });
       }
@@ -619,6 +714,40 @@ function createAttachmentMock(client, autoDownloadFromRemoteSettings) {
  */
 const FILES_PER_LANGUAGE_PAIR = 3;
 
+function createRecordsForLanguagePair(fromLang, toLang) {
+  const records = [];
+  const lang = fromLang + toLang;
+  const models = [
+    { fileType: "model", name: `model.${lang}.intgemm.alphas.bin` },
+    { fileType: "lex", name: `lex.50.50.${lang}.s2t.bin` },
+    { fileType: "vocab", name: `vocab.${lang}.spm` },
+  ];
+
+  if (models.length !== FILES_PER_LANGUAGE_PAIR) {
+    throw new Error("Files per language pair was wrong.");
+  }
+
+  for (const { fileType, name } of models) {
+    records.push({
+      id: crypto.randomUUID(),
+      name,
+      fromLang,
+      toLang,
+      fileType,
+      version: "1.0",
+      last_modified: Date.now(),
+      schema: Date.now(),
+    });
+  }
+  return records;
+}
+
+/**
+ * Increments each time a remote settings client is created to ensure a unique client
+ * name for each test run.
+ */
+let _remoteSettingsMockId = 0;
+
 /**
  * Creates a local RemoteSettingsClient for use within tests.
  *
@@ -631,41 +760,26 @@ async function createTranslationModelsRemoteClient(
   langPairs
 ) {
   const records = [];
-  for (const { fromLang, toLang, isBeta } of langPairs) {
-    const lang = fromLang + toLang;
-    const models = [
-      { fileType: "model", name: `model.${lang}.intgemm.alphas.bin` },
-      { fileType: "lex", name: `lex.50.50.${lang}.s2t.bin` },
-      { fileType: "vocab", name: `vocab.${lang}.spm` },
-    ];
-
-    if (models.length !== FILES_PER_LANGUAGE_PAIR) {
-      throw new Error("Files per language pair was wrong.");
-    }
-
-    for (const { fileType, name } of models) {
-      records.push({
-        id: crypto.randomUUID(),
-        name,
-        fromLang,
-        toLang,
-        fileType,
-        version: isBeta ? "0.1" : "1.0",
-        last_modified: Date.now(),
-        schema: Date.now(),
-      });
-    }
+  for (const { fromLang, toLang } of langPairs) {
+    records.push(...createRecordsForLanguagePair(fromLang, toLang));
   }
 
   const { RemoteSettings } = ChromeUtils.importESModule(
     "resource://services-settings/remote-settings.sys.mjs"
   );
-  const client = RemoteSettings("test-translation-models");
+  const mockedCollectionName = "test-translation-models";
+  const client = RemoteSettings(
+    `${mockedCollectionName}-${_remoteSettingsMockId++}`
+  );
   const metadata = {};
   await client.db.clear();
   await client.db.importChanges(metadata, Date.now(), records);
 
-  return createAttachmentMock(client, autoDownloadFromRemoteSettings);
+  return createAttachmentMock(
+    client,
+    mockedCollectionName,
+    autoDownloadFromRemoteSettings
+  );
 }
 
 /**
@@ -688,12 +802,19 @@ async function createTranslationsWasmRemoteClient(
   const { RemoteSettings } = ChromeUtils.importESModule(
     "resource://services-settings/remote-settings.sys.mjs"
   );
-  const client = RemoteSettings("test-translations-wasm");
+  const mockedCollectionName = "test-translation-wasm";
+  const client = RemoteSettings(
+    `${mockedCollectionName}-${_remoteSettingsMockId++}`
+  );
   const metadata = {};
   await client.db.clear();
   await client.db.importChanges(metadata, Date.now(), records);
 
-  return createAttachmentMock(client, autoDownloadFromRemoteSettings);
+  return createAttachmentMock(
+    client,
+    mockedCollectionName,
+    autoDownloadFromRemoteSettings
+  );
 }
 
 /**
@@ -718,18 +839,25 @@ async function createLanguageIdModelsRemoteClient(
   const { RemoteSettings } = ChromeUtils.importESModule(
     "resource://services-settings/remote-settings.sys.mjs"
   );
-  const client = RemoteSettings("test-language-id-models");
+  const client = RemoteSettings(
+    "test-language-id-models" + _remoteSettingsMockId++
+  );
+  const mockedCollectionName = "test-language-id-models";
   const metadata = {};
   await client.db.clear();
   await client.db.importChanges(metadata, Date.now(), records);
 
-  return createAttachmentMock(client, autoDownloadFromRemoteSettings);
+  return createAttachmentMock(
+    client,
+    mockedCollectionName,
+    autoDownloadFromRemoteSettings
+  );
 }
 
 async function selectAboutPreferencesElements() {
   const document = gBrowser.selectedBrowser.contentDocument;
 
-  const rows = await TestUtils.waitForCondition(() => {
+  const rows = await waitForCondition(() => {
     const elements = document.querySelectorAll(".translations-manage-language");
     if (elements.length !== 3) {
       return false;
@@ -748,17 +876,17 @@ async function selectAboutPreferencesElements() {
   );
   const frenchLabel = frenchRow.querySelector("label");
   const frenchDownload = frenchRow.querySelector(
-    `[data-l10n-id="translations-manage-download-button"]`
+    `[data-l10n-id="translations-manage-language-install-button"]`
   );
   const frenchDelete = frenchRow.querySelector(
-    `[data-l10n-id="translations-manage-delete-button"]`
+    `[data-l10n-id="translations-manage-language-remove-button"]`
   );
   const spanishLabel = spanishRow.querySelector("label");
   const spanishDownload = spanishRow.querySelector(
-    `[data-l10n-id="translations-manage-download-button"]`
+    `[data-l10n-id="translations-manage-language-install-button"]`
   );
   const spanishDelete = spanishRow.querySelector(
-    `[data-l10n-id="translations-manage-delete-button"]`
+    `[data-l10n-id="translations-manage-language-remove-button"]`
   );
 
   return {
@@ -783,6 +911,16 @@ function click(button, message) {
   button.click();
 }
 
+function hitEnterKey(button, message) {
+  info(message);
+  button.dispatchEvent(
+    new KeyboardEvent("keypress", {
+      key: "Enter",
+      keyCode: KeyboardEvent.DOM_VK_RETURN,
+    })
+  );
+}
+
 /**
  * @param {Object} options
  * @param {string} options.message
@@ -793,7 +931,7 @@ async function assertVisibility({ message, visible, hidden }) {
   info(message);
   try {
     // First wait for the condition to be met.
-    await TestUtils.waitForCondition(() => {
+    await waitForCondition(() => {
       for (const element of Object.values(visible)) {
         if (element.hidden) {
           return false;
@@ -842,9 +980,11 @@ async function setupAboutPreferences(languagePairs) {
   const elements = await selectAboutPreferencesElements();
 
   async function cleanup() {
+    await closeTranslationsPanelIfOpen();
     gBrowser.removeCurrentTab();
-    removeMocks();
+    await removeMocks();
     await SpecialPowers.popPrefEnv();
+    TestTranslationsTelemetry.reset();
   }
 
   return {
@@ -898,6 +1038,12 @@ async function mockLocales({ systemLocales, appLocales, webLanguages }) {
  * Helpful test functions for translations telemetry
  */
 class TestTranslationsTelemetry {
+  static #previousFlowId = null;
+
+  static reset() {
+    TestTranslationsTelemetry.#previousFlowId = null;
+  }
+
   /**
    * Asserts qualities about a counter telemetry metric.
    *
@@ -923,7 +1069,10 @@ class TestTranslationsTelemetry {
    * @param {string} name - The name of the metric.
    * @param {Object} event - The Glean event object.
    * @param {Object} expectations - The test expectations.
-   * @param {number} expectations.expectedLength - The expected length of the event.
+   * @param {number} expectations.expectedEventCount - The expected count of events.
+   * @param {boolean} expectations.expectNewFlowId
+   * - Expects the flowId to be different than the previous flowId if true,
+   *   and expects it to be the same if false.
    * @param {Array<function>} [expectations.allValuePredicates=[]]
    * - An array of function predicates to assert for all event values.
    * @param {Array<function>} [expectations.finalValuePredicates=[]]
@@ -932,27 +1081,65 @@ class TestTranslationsTelemetry {
   static async assertEvent(
     name,
     event,
-    { expectedLength, allValuePredicates = [], finalValuePredicates = [] }
+    {
+      expectedEventCount,
+      expectNewFlowId = null,
+      expectFirstInteraction = null,
+      allValuePredicates = [],
+      finalValuePredicates = [],
+    }
   ) {
     // Ensures that glean metrics are collected from all child processes
     // so that calls to testGetValue() are up to date.
     await Services.fog.testFlushAllChildren();
-    const values = event.testGetValue() ?? [];
-    const length = values.length;
+    const events = event.testGetValue() ?? [];
+    const eventCount = events.length;
+
+    if (eventCount > 0 && expectFirstInteraction !== null) {
+      is(
+        events[eventCount - 1].extra.first_interaction,
+        expectFirstInteraction ? "true" : "false",
+        "The newest event should be match the given first-interaction expectation"
+      );
+    }
+
+    if (eventCount > 0 && expectNewFlowId !== null) {
+      const flowId = events[eventCount - 1].extra.flow_id;
+      if (expectNewFlowId) {
+        is(
+          events[eventCount - 1].extra.flow_id !==
+            TestTranslationsTelemetry.#previousFlowId,
+          true,
+          `The newest flowId ${flowId} should be different than the previous flowId ${
+            TestTranslationsTelemetry.#previousFlowId
+          }`
+        );
+      } else {
+        is(
+          events[eventCount - 1].extra.flow_id ===
+            TestTranslationsTelemetry.#previousFlowId,
+          true,
+          `The newest flowId ${flowId} should be equal to the previous flowId ${
+            TestTranslationsTelemetry.#previousFlowId
+          }`
+        );
+      }
+      TestTranslationsTelemetry.#previousFlowId = flowId;
+    }
 
     is(
-      length,
-      expectedLength,
-      `Telemetry event ${name} should have length ${expectedLength}`
+      eventCount,
+      expectedEventCount,
+      `There should be ${expectedEventCount} telemetry events of type ${name}`
     );
 
     if (allValuePredicates.length !== 0) {
       is(
-        length > 0,
+        eventCount > 0,
         true,
         `Telemetry event ${name} should contain values if allPredicates are specified`
       );
-      for (const value of values) {
+      for (const value of events) {
         for (const predicate of allValuePredicates) {
           is(
             predicate(value),
@@ -965,13 +1152,13 @@ class TestTranslationsTelemetry {
 
     if (finalValuePredicates.length !== 0) {
       is(
-        length > 0,
+        eventCount > 0,
         true,
         `Telemetry event ${name} should contain values if finalPredicates are specified`
       );
       for (const predicate of finalValuePredicates) {
         is(
-          predicate(values[length - 1]),
+          predicate(events[eventCount - 1]),
           true,
           `Telemetry event ${name} finalPredicate { ${predicate.toString()} } should pass for final value`
         );
@@ -1008,4 +1195,18 @@ class TestTranslationsTelemetry {
       `Telemetry rate ${name} should have expected denominator`
     );
   }
+}
+
+/**
+ * Provide longer defaults for the waitForCondition.
+ *
+ * @param {Function} callback
+ * @param {string} messages
+ */
+function waitForCondition(callback, message) {
+  const interval = 100;
+  // Use 4 times the defaults to guard against intermittents. Many of the tests rely on
+  // communication between the parent and child process, which is inherently async.
+  const maxTries = 50 * 4;
+  return TestUtils.waitForCondition(callback, message, interval, maxTries);
 }

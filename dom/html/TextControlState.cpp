@@ -864,7 +864,7 @@ void TextInputListener::OnSelectionChange(Selection& aSelection,
     return;
   }
 
-  UpdateTextInputCommands(u"select"_ns, &aSelection, aReason);
+  UpdateTextInputCommands(u"select"_ns);
 }
 
 MOZ_CAN_RUN_SCRIPT
@@ -1061,8 +1061,7 @@ void TextInputListener::HandleValueChanged(TextEditor& aTextEditor) {
 }
 
 nsresult TextInputListener::UpdateTextInputCommands(
-    const nsAString& aCommandsToUpdate, Selection* aSelection,
-    int16_t aReason) {
+    const nsAString& aCommandsToUpdate) {
   nsIContent* content = mFrame->GetContent();
   if (NS_WARN_IF(!content)) {
     return NS_ERROR_FAILURE;
@@ -1075,7 +1074,7 @@ nsresult TextInputListener::UpdateTextInputCommands(
   if (NS_WARN_IF(!domWindow)) {
     return NS_ERROR_FAILURE;
   }
-  domWindow->UpdateCommands(aCommandsToUpdate, aSelection, aReason);
+  domWindow->UpdateCommands(aCommandsToUpdate);
   return NS_OK;
 }
 
@@ -1611,7 +1610,7 @@ nsresult TextControlState::BindToFrame(nsTextControlFrame* aFrame) {
   // binding to the frame.
   nsAutoString currentValue;
   if (mTextEditor) {
-    GetValue(currentValue, true);
+    GetValue(currentValue, true, /* aForDisplay = */ false);
   }
 
   mBoundFrame = aFrame;
@@ -1723,17 +1722,17 @@ nsresult TextControlState::PrepareEditor(const nsAString* aValue) {
   PresShell* presShell = presContext->GetPresShell();
 
   // Setup the editor flags
-  uint32_t editorFlags = nsIEditor::eEditorPlaintextMask;
+
+  // Spell check is diabled at creation time. It is enabled once
+  // the editor comes into focus.
+  uint32_t editorFlags = nsIEditor::eEditorSkipSpellCheck;
+
   if (IsSingleLineTextControl()) {
     editorFlags |= nsIEditor::eEditorSingleLineMask;
   }
   if (IsPasswordTextControl()) {
     editorFlags |= nsIEditor::eEditorPasswordMask;
   }
-
-  // Spell check is diabled at creation time. It is enabled once
-  // the editor comes into focus.
-  editorFlags |= nsIEditor::eEditorSkipSpellCheck;
 
   bool shouldInitializeEditor = false;
   RefPtr<TextEditor> newTextEditor;  // the editor that we might create
@@ -1778,7 +1777,7 @@ nsresult TextControlState::PrepareEditor(const nsAString* aValue) {
   if (aValue) {
     defaultValue = *aValue;
   } else {
-    GetValue(defaultValue, true);
+    GetValue(defaultValue, true, /* aForDisplay = */ true);
   }
 
   if (!mEditorInitialized) {
@@ -1831,15 +1830,13 @@ nsresult TextControlState::PrepareEditor(const nsAString* aValue) {
   nsresult rv = NS_OK;
   if (!SuppressEventHandlers(presContext)) {
     nsCOMPtr<nsIControllers> controllers;
-    if (HTMLInputElement* inputElement =
-            HTMLInputElement::FromNodeOrNull(mTextCtrlElement)) {
+    if (auto* inputElement = HTMLInputElement::FromNode(mTextCtrlElement)) {
       nsresult rv = inputElement->GetControllers(getter_AddRefs(controllers));
       if (NS_WARN_IF(NS_FAILED(rv))) {
         return rv;
       }
     } else {
-      HTMLTextAreaElement* textAreaElement =
-          HTMLTextAreaElement::FromNodeOrNull(mTextCtrlElement);
+      auto* textAreaElement = HTMLTextAreaElement::FromNode(mTextCtrlElement);
       if (!textAreaElement) {
         return NS_ERROR_FAILURE;
       }
@@ -1891,8 +1888,8 @@ nsresult TextControlState::PrepareEditor(const nsAString* aValue) {
   // Check if the readonly attribute is set.
   //
   // TODO: Should probably call IsDisabled(), as it is cheaper.
-  if (mTextCtrlElement->HasAttr(kNameSpaceID_None, nsGkAtoms::readonly) ||
-      mTextCtrlElement->HasAttr(kNameSpaceID_None, nsGkAtoms::disabled)) {
+  if (mTextCtrlElement->HasAttr(nsGkAtoms::readonly) ||
+      mTextCtrlElement->HasAttr(nsGkAtoms::disabled)) {
     editorFlags |= nsIEditor::eEditorReadonlyMask;
   }
 
@@ -2087,7 +2084,7 @@ void TextControlState::SetSelectionRange(uint32_t aStart, uint32_t aEnd,
   if (!props.HasMaxLength()) {
     // A clone without a dirty value flag may not have a max length yet
     nsAutoString value;
-    GetValue(value, false);
+    GetValue(value, false, /* aForDisplay = */ true);
     props.SetMaxLength(value.Length());
   }
 
@@ -2372,7 +2369,7 @@ void TextControlState::UnbindFromFrame(nsTextControlFrame* aFrame) {
   // We need to start storing the value outside of the editor if we're not
   // going to use it anymore, so retrieve it for now.
   nsAutoString value;
-  GetValue(value, true);
+  GetValue(value, true, /* aForDisplay = */ false);
 
   if (mRestoringSelection) {
     mRestoringSelection->Revoke();
@@ -2406,12 +2403,10 @@ void TextControlState::UnbindFromFrame(nsTextControlFrame* aFrame) {
   // Clean up the controller
   if (!SuppressEventHandlers(mBoundFrame->PresContext())) {
     nsCOMPtr<nsIControllers> controllers;
-    if (HTMLInputElement* inputElement =
-            HTMLInputElement::FromNodeOrNull(mTextCtrlElement)) {
+    if (auto* inputElement = HTMLInputElement::FromNode(mTextCtrlElement)) {
       inputElement->GetControllers(getter_AddRefs(controllers));
     } else {
-      HTMLTextAreaElement* textAreaElement =
-          HTMLTextAreaElement::FromNodeOrNull(mTextCtrlElement);
+      auto* textAreaElement = HTMLTextAreaElement::FromNode(mTextCtrlElement);
       if (textAreaElement) {
         textAreaElement->GetControllers(getter_AddRefs(controllers));
       }
@@ -2474,7 +2469,8 @@ void TextControlState::UnbindFromFrame(nsTextControlFrame* aFrame) {
   }
 }
 
-void TextControlState::GetValue(nsAString& aValue, bool aIgnoreWrap) const {
+void TextControlState::GetValue(nsAString& aValue, bool aIgnoreWrap,
+                                bool aForDisplay) const {
   // While SetValue() is being called and requesting to commit composition to
   // IME, GetValue() may be called for appending text or something.  Then, we
   // need to return the latest aValue of SetValue() since the value hasn't
@@ -2538,18 +2534,16 @@ void TextControlState::GetValue(nsAString& aValue, bool aIgnoreWrap) const {
     } else {
       mBoundFrame->ClearCachedValue();
     }
+  } else if (!mTextCtrlElement->ValueChanged() || mValue.IsVoid()) {
+    // Use nsString to avoid copying string buffer at setting aValue.
+    nsString value;
+    mTextCtrlElement->GetDefaultValueFromContent(value, aForDisplay);
+    // TODO: We should make default value not include \r.
+    nsContentUtils::PlatformToDOMLineBreaks(value);
+    aValue = std::move(value);
   } else {
-    if (!mTextCtrlElement->ValueChanged() || mValue.IsVoid()) {
-      // Use nsString to avoid copying string buffer at setting aValue.
-      nsString value;
-      mTextCtrlElement->GetDefaultValueFromContent(value);
-      // TODO: We should make default value not include \r.
-      nsContentUtils::PlatformToDOMLineBreaks(value);
-      aValue = value;
-    } else {
-      aValue = mValue;
-      MOZ_ASSERT(aValue.FindChar(u'\r') == -1);
-    }
+    aValue = mValue;
+    MOZ_ASSERT(aValue.FindChar(u'\r') == -1);
   }
 }
 
@@ -2557,7 +2551,7 @@ bool TextControlState::ValueEquals(const nsAString& aValue) const {
   // We can avoid copying string buffer in many cases.  Therefore, we should
   // use nsString rather than nsAutoString here.
   nsString value;
-  GetValue(value, true);
+  GetValue(value, true, /* aForDisplay = */ true);
   return aValue.Equals(value);
 }
 
@@ -2620,7 +2614,8 @@ bool TextControlState::SetValue(const nsAString& aValue,
     // away.
     if (auto* input = HTMLInputElement::FromNode(mTextCtrlElement)) {
       if (input->LastValueChangeWasInteractive()) {
-        GetValue(mLastInteractiveValue, /* aIgnoreWrap = */ true);
+        GetValue(mLastInteractiveValue, /* aIgnoreWrap = */ true,
+                 /* aForDisplay = */ true);
       }
     }
   }
@@ -2648,11 +2643,10 @@ bool TextControlState::SetValue(const nsAString& aValue,
       } else {
         // If setting value won't change current value, we shouldn't commit
         // composition for compatibility with the other browsers.
-        MOZ_ASSERT(!aOldValue || mBoundFrame->TextEquals(*aOldValue));
+        MOZ_ASSERT(!aOldValue || ValueEquals(*aOldValue));
         bool isSameAsCurrentValue =
-            aOldValue
-                ? aOldValue->Equals(handlingSetValue.GetSettingValue())
-                : mBoundFrame->TextEquals(handlingSetValue.GetSettingValue());
+            aOldValue ? aOldValue->Equals(handlingSetValue.GetSettingValue())
+                      : ValueEquals(handlingSetValue.GetSettingValue());
         if (isSameAsCurrentValue) {
           // Note that in this case, we shouldn't fire any events with setting
           // value because event handlers may try to set value recursively but
@@ -2730,12 +2724,12 @@ bool TextControlState::SetValueWithTextEditor(
 #endif
 
   MOZ_ASSERT(!aHandlingSetValue.GetOldValue() ||
-             mBoundFrame->TextEquals(*aHandlingSetValue.GetOldValue()));
-  bool isSameAsCurrentValue =
+             ValueEquals(*aHandlingSetValue.GetOldValue()));
+  const bool isSameAsCurrentValue =
       aHandlingSetValue.GetOldValue()
           ? aHandlingSetValue.GetOldValue()->Equals(
                 aHandlingSetValue.GetSettingValue())
-          : mBoundFrame->TextEquals(aHandlingSetValue.GetSettingValue());
+          : ValueEquals(aHandlingSetValue.GetSettingValue());
 
   // this is necessary to avoid infinite recursion
   if (isSameAsCurrentValue) {
@@ -2866,7 +2860,6 @@ bool TextControlState::SetValueWithoutTextEditor(
     nsString inputEventData(aHandlingSetValue.GetSettingValue());
     if (aHandlingSetValue.ValueSetterOptionsRef().contains(
             ValueSetterOption::BySetUserInputAPI) &&
-        StaticPrefs::dom_input_events_beforeinput_enabled() &&
         !aHandlingSetValue.HasBeforeInputEventDispatched()) {
       // This probably occurs when session restorer sets the old value with
       // `setUserInput`.  If so, we need to dispatch "beforeinput" event of

@@ -266,8 +266,7 @@ class HTMLCanvasElement final : public nsGenericHTMLElement,
   virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
   nsresult CopyInnerTo(HTMLCanvasElement* aDest);
 
-  static void MapAttributesIntoRule(const nsMappedAttributes* aAttributes,
-                                    MappedDeclarations&);
+  static void MapAttributesIntoRule(MappedDeclarationsBuilder&);
 
   /*
    * Helpers called by various users of Canvas
@@ -317,6 +316,10 @@ class HTMLCanvasElement final : public nsGenericHTMLElement,
   virtual already_AddRefed<nsICanvasRenderingContextInternal> CreateContext(
       CanvasContextType aContextType) override;
 
+  nsresult UpdateContext(JSContext* aCx,
+                         JS::Handle<JS::Value> aNewContextOptions,
+                         ErrorResult& aRvForDictionaryInit) override;
+
   nsresult ExtractData(JSContext* aCx, nsIPrincipal& aSubjectPrincipal,
                        nsAString& aType, const nsAString& aOptions,
                        nsIInputStream** aStream);
@@ -340,6 +343,7 @@ class HTMLCanvasElement final : public nsGenericHTMLElement,
 
   bool IsOffscreen() const { return !!mOffscreenCanvas; }
   OffscreenCanvas* GetOffscreenCanvas() const { return mOffscreenCanvas; }
+  void FlushOffscreenCanvas();
 
   layers::ImageContainer* GetImageContainer() const { return mImageContainer; }
 
@@ -370,7 +374,7 @@ class HTMLCanvasElement final : public nsGenericHTMLElement,
   RefPtr<nsIPrincipal> mExpandedReader;
 
   // Determines if the caller should be able to read the content.
-  bool CallerCanRead(JSContext* aCx) const;
+  bool CallerCanRead(nsIPrincipal& aPrincipal) const;
 
   bool IsPrintCallbackDone();
 

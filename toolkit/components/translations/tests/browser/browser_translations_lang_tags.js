@@ -36,12 +36,12 @@ async function runLangTagsTest(
   });
   const actor = getTranslationsParent();
 
-  await TestUtils.waitForCondition(
-    async () => (await actor.getLangTagsForTranslation())?.docLangTag,
+  await waitForCondition(
+    async () => actor.languageState.detectedLanguages?.docLangTag,
     "Waiting for a document language tag to be found."
   );
 
-  Assert.deepEqual(await actor.getLangTagsForTranslation(), langTags);
+  Assert.deepEqual(actor.languageState.detectedLanguages, langTags);
 
   await cleanupLocales();
   await cleanupTestPage();

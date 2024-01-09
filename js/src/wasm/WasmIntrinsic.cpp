@@ -21,6 +21,7 @@
 #include "util/Text.h"
 #include "vm/GlobalObject.h"
 
+#include "wasm/WasmFeatures.h"
 #include "wasm/WasmGenerator.h"
 #include "wasm/WasmIntrinsicGenerated.h"
 #include "wasm/WasmJS.h"
@@ -128,7 +129,11 @@ bool wasm::CompileIntrinsicModule(JSContext* cx,
     ReportOutOfMemory(cx);
     return false;
   }
-  moduleEnv.memory = Some(MemoryDesc(Limits(0, Nothing(), sharedMemory)));
+  if (!moduleEnv.memories.append(
+          MemoryDesc(Limits(0, Nothing(), sharedMemory)))) {
+    ReportOutOfMemory(cx);
+    return false;
+  }
 
   // Add (type (func (params ...))) for each intrinsic. The function types will
   // be deduplicated by the runtime

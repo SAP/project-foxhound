@@ -19,6 +19,7 @@
 #include "js/Value.h"
 #include "vm/StringType.h"
 #include "vm/TaggedProto.h"
+#include "wasm/WasmAnyRef.h"
 
 #include "gc/Nursery-inl.h"
 
@@ -66,6 +67,17 @@ template <>
 struct TaggedPtr<TaggedProto> {
   static TaggedProto wrap(JSObject* obj) { return TaggedProto(obj); }
   static TaggedProto empty() { return TaggedProto(); }
+};
+
+template <>
+struct TaggedPtr<wasm::AnyRef> {
+  static wasm::AnyRef wrap(JSObject* obj) {
+    return wasm::AnyRef::fromJSObjectOrNull(obj);
+  }
+  static wasm::AnyRef wrap(JSString* str) {
+    return wasm::AnyRef::fromJSString(str);
+  }
+  static wasm::AnyRef empty() { return wasm::AnyRef(); }
 };
 
 template <typename T>

@@ -452,8 +452,25 @@ function sendChar(aChar, aWindow) {
  * key state on US keyboard layout.
  */
 function sendString(aStr, aWindow) {
-  for (var i = 0; i < aStr.length; ++i) {
-    sendChar(aStr.charAt(i), aWindow);
+  for (let i = 0; i < aStr.length; ++i) {
+    // Do not split a surrogate pair to call synthesizeKey.  Dispatching two
+    // sets of keydown and keyup caused by two calls of synthesizeKey is not
+    // good behavior.  It could happen due to a bug, but a surrogate pair should
+    // be introduced with one key press operation.  Therefore, calling it with
+    // a surrogate pair is the right thing.
+    // Note that TextEventDispatcher will consider whether a surrogate pair
+    // should cause one or two keypress events automatically.  Therefore, we
+    // don't need to check the related prefs here.
+    if (
+      (aStr.charCodeAt(i) & 0xfc00) == 0xd800 &&
+      i + 1 < aStr.length &&
+      (aStr.charCodeAt(i + 1) & 0xfc00) == 0xdc00
+    ) {
+      sendChar(aStr.substring(i, i + 2), aWindow);
+      i++;
+    } else {
+      sendChar(aStr.charAt(i), aWindow);
+    }
   }
 }
 
@@ -515,9 +532,6 @@ function _parseModifiers(aEvent, aWindow = window) {
   }
   if (aEvent.symbolLockKey) {
     mval |= nsIDOMWindowUtils.MODIFIER_SYMBOLLOCK;
-  }
-  if (aEvent.osKey) {
-    mval |= nsIDOMWindowUtils.MODIFIER_OS;
   }
 
   return mval;
@@ -1373,8 +1387,8 @@ function synthesizeAndWaitNativeMouseMove(
  *
  * @description
  * ``accelKey``, ``altKey``, ``altGraphKey``, ``ctrlKey``, ``capsLockKey``,
- * ``fnKey``, ``fnLockKey``, ``numLockKey``, ``metaKey``, ``osKey``,
- * ``scrollLockKey``, ``shiftKey``, ``symbolKey``, ``symbolLockKey``
+ * ``fnKey``, ``fnLockKey``, ``numLockKey``, ``metaKey``, ``scrollLockKey``,
+ * ``shiftKey``, ``symbolKey``, ``symbolLockKey``
  * Basically, you shouldn't use these attributes.  nsITextInputProcessor
  * manages modifier key state when you synthesize modifier key events.
  * However, if some of these attributes are true, this function activates
@@ -1548,102 +1562,132 @@ const KEYBOARD_LAYOUT_ARABIC = {
   Win: 0x00000401,
   hasAltGrOnWin: false,
 };
+_defineConstant("KEYBOARD_LAYOUT_ARABIC", KEYBOARD_LAYOUT_ARABIC);
 const KEYBOARD_LAYOUT_ARABIC_PC = {
   name: "Arabic - PC",
   Mac: 7,
   Win: null,
   hasAltGrOnWin: false,
 };
+_defineConstant("KEYBOARD_LAYOUT_ARABIC_PC", KEYBOARD_LAYOUT_ARABIC_PC);
 const KEYBOARD_LAYOUT_BRAZILIAN_ABNT = {
   name: "Brazilian ABNT",
   Mac: null,
   Win: 0x00000416,
   hasAltGrOnWin: true,
 };
+_defineConstant(
+  "KEYBOARD_LAYOUT_BRAZILIAN_ABNT",
+  KEYBOARD_LAYOUT_BRAZILIAN_ABNT
+);
 const KEYBOARD_LAYOUT_DVORAK_QWERTY = {
   name: "Dvorak-QWERTY",
   Mac: 4,
   Win: null,
   hasAltGrOnWin: false,
 };
+_defineConstant("KEYBOARD_LAYOUT_DVORAK_QWERTY", KEYBOARD_LAYOUT_DVORAK_QWERTY);
 const KEYBOARD_LAYOUT_EN_US = {
   name: "US",
   Mac: 0,
   Win: 0x00000409,
   hasAltGrOnWin: false,
 };
+_defineConstant("KEYBOARD_LAYOUT_EN_US", KEYBOARD_LAYOUT_EN_US);
 const KEYBOARD_LAYOUT_FRENCH = {
   name: "French",
-  Mac: 8,
+  Mac: 8, // Some keys mapped different from PC, e.g., Digit6, Digit8, Equal, Slash and Backslash
   Win: 0x0000040c,
   hasAltGrOnWin: true,
 };
+_defineConstant("KEYBOARD_LAYOUT_FRENCH", KEYBOARD_LAYOUT_FRENCH);
+const KEYBOARD_LAYOUT_FRENCH_PC = {
+  name: "French-PC",
+  Mac: 13, // Compatible with Windows
+  Win: 0x0000040c,
+  hasAltGrOnWin: true,
+};
+_defineConstant("KEYBOARD_LAYOUT_FRENCH_PC", KEYBOARD_LAYOUT_FRENCH_PC);
 const KEYBOARD_LAYOUT_GREEK = {
   name: "Greek",
   Mac: 1,
   Win: 0x00000408,
   hasAltGrOnWin: true,
 };
+_defineConstant("KEYBOARD_LAYOUT_GREEK", KEYBOARD_LAYOUT_GREEK);
 const KEYBOARD_LAYOUT_GERMAN = {
   name: "German",
   Mac: 2,
   Win: 0x00000407,
   hasAltGrOnWin: true,
 };
+_defineConstant("KEYBOARD_LAYOUT_GERMAN", KEYBOARD_LAYOUT_GERMAN);
 const KEYBOARD_LAYOUT_HEBREW = {
   name: "Hebrew",
   Mac: 9,
   Win: 0x0000040d,
   hasAltGrOnWin: true,
 };
+_defineConstant("KEYBOARD_LAYOUT_HEBREW", KEYBOARD_LAYOUT_HEBREW);
 const KEYBOARD_LAYOUT_JAPANESE = {
   name: "Japanese",
   Mac: null,
   Win: 0x00000411,
   hasAltGrOnWin: false,
 };
+_defineConstant("KEYBOARD_LAYOUT_JAPANESE", KEYBOARD_LAYOUT_JAPANESE);
 const KEYBOARD_LAYOUT_KHMER = {
   name: "Khmer",
   Mac: null,
   Win: 0x00000453,
   hasAltGrOnWin: true,
 }; // available on Win7 or later.
+_defineConstant("KEYBOARD_LAYOUT_KHMER", KEYBOARD_LAYOUT_KHMER);
 const KEYBOARD_LAYOUT_LITHUANIAN = {
   name: "Lithuanian",
   Mac: 10,
   Win: 0x00010427,
   hasAltGrOnWin: true,
 };
+_defineConstant("KEYBOARD_LAYOUT_LITHUANIAN", KEYBOARD_LAYOUT_LITHUANIAN);
 const KEYBOARD_LAYOUT_NORWEGIAN = {
   name: "Norwegian",
   Mac: 11,
   Win: 0x00000414,
   hasAltGrOnWin: true,
 };
+_defineConstant("KEYBOARD_LAYOUT_NORWEGIAN", KEYBOARD_LAYOUT_NORWEGIAN);
 const KEYBOARD_LAYOUT_RUSSIAN_MNEMONIC = {
   name: "Russian - Mnemonic",
   Mac: null,
   Win: 0x00020419,
   hasAltGrOnWin: true,
 }; // available on Win8 or later.
+_defineConstant(
+  "KEYBOARD_LAYOUT_RUSSIAN_MNEMONIC",
+  KEYBOARD_LAYOUT_RUSSIAN_MNEMONIC
+);
 const KEYBOARD_LAYOUT_SPANISH = {
   name: "Spanish",
   Mac: 12,
   Win: 0x0000040a,
   hasAltGrOnWin: true,
 };
+_defineConstant("KEYBOARD_LAYOUT_SPANISH", KEYBOARD_LAYOUT_SPANISH);
 const KEYBOARD_LAYOUT_SWEDISH = {
   name: "Swedish",
   Mac: 3,
   Win: 0x0000041d,
   hasAltGrOnWin: true,
 };
+_defineConstant("KEYBOARD_LAYOUT_SWEDISH", KEYBOARD_LAYOUT_SWEDISH);
 const KEYBOARD_LAYOUT_THAI = {
   name: "Thai",
   Mac: 5,
   Win: 0x0002041e,
   hasAltGrOnWin: false,
 };
+_defineConstant("KEYBOARD_LAYOUT_THAI", KEYBOARD_LAYOUT_THAI);
 
 /**
  * synthesizeNativeKey() dispatches native key event on active window.
@@ -2167,7 +2211,6 @@ function _emulateToActivateModifiers(aTIP, aKeyEvent, aWindow = window) {
       { key: "Control", attr: "ctrlKey" },
       { key: "Fn", attr: "fnKey" },
       { key: "Meta", attr: "metaKey" },
-      { key: "OS", attr: "osKey" },
       { key: "Shift", attr: "shiftKey" },
       { key: "Symbol", attr: "symbolKey" },
       { key: _EU_isMac(aWindow) ? "Meta" : "Control", attr: "accelKey" },

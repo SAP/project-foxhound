@@ -1,6 +1,6 @@
 use crate::{
     arena::{Arena, Handle, UniqueArena},
-    BinaryOperator, Constant, ConstantInner, Expression, ScalarKind, ScalarValue, Type, TypeInner,
+    ArraySize, BinaryOperator, Constant, Expression, Literal, ScalarKind, Type, TypeInner,
     UnaryOperator,
 };
 
@@ -9,6 +9,7 @@ pub struct ConstantSolver<'a> {
     pub types: &'a mut UniqueArena<Type>,
     pub expressions: &'a Arena<Expression>,
     pub constants: &'a mut Arena<Constant>,
+    pub const_expressions: &'a mut Arena<Expression>,
 }
 
 #[derive(Clone, Debug, PartialEq, thiserror::Error)]
@@ -59,32 +60,84 @@ pub enum ConstantSolvingError {
     SplatScalarOnly,
     #[error("Can only swizzle vector constants")]
     SwizzleVectorOnly,
+    #[error("Type is not constructible")]
+    TypeNotConstructible,
     #[error("Not implemented as constant expression: {0}")]
     NotImplemented(String),
+}
+
+#[derive(Clone, Copy)]
+pub enum ExprType {
+    Regular,
+    Constant,
 }
 
 impl<'a> ConstantSolver<'a> {
     pub fn solve(
         &mut self,
         expr: Handle<Expression>,
-    ) -> Result<Handle<Constant>, ConstantSolvingError> {
-        let span = self.expressions.get_span(expr);
-        match self.expressions[expr] {
-            Expression::Constant(constant) => Ok(constant),
-            Expression::AccessIndex { base, index } => self.access(base, index as usize),
-            Expression::Access { base, index } => {
-                let index = self.solve(index)?;
+    ) -> Result<Handle<Expression>, ConstantSolvingError> {
+        self.solve_impl(expr, ExprType::Regular, true)
+    }
 
-                self.access(base, self.constant_index(index)?)
+    pub fn solve_impl(
+        &mut self,
+        expr: Handle<Expression>,
+        expr_type: ExprType,
+        top_level: bool,
+    ) -> Result<Handle<Expression>, ConstantSolvingError> {
+        let expressions = match expr_type {
+            ExprType::Regular => self.expressions,
+            ExprType::Constant => self.const_expressions,
+        };
+        let span = expressions.get_span(expr);
+        match expressions[expr] {
+            ref expression @ (Expression::Literal(_) | Expression::ZeroValue(_)) => match expr_type
+            {
+                ExprType::Regular => Ok(self.register_constant(expression.clone(), span)),
+                ExprType::Constant => Ok(expr),
+            },
+            Expression::Compose { ty, ref components } => match expr_type {
+                ExprType::Regular => {
+                    let mut components = components.clone();
+                    for component in &mut components {
+                        *component = self.solve_impl(*component, expr_type, false)?;
+                    }
+                    Ok(self.register_constant(Expression::Compose { ty, components }, span))
+                }
+                ExprType::Constant => Ok(expr),
+            },
+            Expression::Constant(constant) => {
+                if top_level {
+                    match expr_type {
+                        ExprType::Regular => {
+                            Ok(self.register_constant(Expression::Constant(constant), span))
+                        }
+                        ExprType::Constant => Ok(expr),
+                    }
+                } else {
+                    self.solve_impl(self.constants[constant].init, ExprType::Constant, false)
+                }
+            }
+            Expression::AccessIndex { base, index } => {
+                let base = self.solve_impl(base, expr_type, false)?;
+                self.access(base, index as usize, span)
+            }
+            Expression::Access { base, index } => {
+                let base = self.solve_impl(base, expr_type, false)?;
+                let index = self.solve_impl(index, expr_type, false)?;
+
+                self.access(base, self.constant_index(index)?, span)
             }
             Expression::Splat {
                 size,
                 value: splat_value,
             } => {
-                let value_constant = self.solve(splat_value)?;
-                let ty = match self.constants[value_constant].inner {
-                    ConstantInner::Scalar { ref value, width } => {
-                        let kind = value.scalar_kind();
+                let value_constant = self.solve_impl(splat_value, expr_type, false)?;
+                let ty = match self.const_expressions[value_constant] {
+                    Expression::Literal(literal) => {
+                        let kind = literal.scalar_kind();
+                        let width = literal.width();
                         self.types.insert(
                             Type {
                                 name: None,
@@ -93,76 +146,83 @@ impl<'a> ConstantSolver<'a> {
                             span,
                         )
                     }
-                    ConstantInner::Composite { .. } => {
+                    Expression::ZeroValue(ty) => {
+                        let inner = match self.types[ty].inner {
+                            TypeInner::Scalar { kind, width } => {
+                                TypeInner::Vector { size, kind, width }
+                            }
+                            _ => return Err(ConstantSolvingError::SplatScalarOnly),
+                        };
+                        let res_ty = self.types.insert(Type { name: None, inner }, span);
+                        let expr = Expression::ZeroValue(res_ty);
+                        return Ok(self.register_constant(expr, span));
+                    }
+                    _ => {
                         return Err(ConstantSolvingError::SplatScalarOnly);
                     }
                 };
 
-                let inner = ConstantInner::Composite {
+                let expr = Expression::Compose {
                     ty,
                     components: vec![value_constant; size as usize],
                 };
-                Ok(self.register_constant(inner, span))
+                Ok(self.register_constant(expr, span))
             }
             Expression::Swizzle {
                 size,
                 vector: src_vector,
                 pattern,
             } => {
-                let src_constant = self.solve(src_vector)?;
-                let (ty, src_components) = match self.constants[src_constant].inner {
-                    ConstantInner::Scalar { .. } => {
-                        return Err(ConstantSolvingError::SwizzleVectorOnly);
-                    }
-                    ConstantInner::Composite {
-                        ty,
-                        components: ref src_components,
-                    } => match self.types[ty].inner {
-                        crate::TypeInner::Vector {
-                            size: _,
-                            kind,
-                            width,
-                        } => {
-                            let dst_ty = self.types.insert(
-                                Type {
-                                    name: None,
-                                    inner: crate::TypeInner::Vector { size, kind, width },
-                                },
-                                span,
-                            );
-                            (dst_ty, &src_components[..])
-                        }
-                        _ => {
-                            return Err(ConstantSolvingError::SwizzleVectorOnly);
-                        }
-                    },
+                let src_constant = self.solve_impl(src_vector, expr_type, false)?;
+
+                let mut get_dst_ty = |ty| match self.types[ty].inner {
+                    crate::TypeInner::Vector {
+                        size: _,
+                        kind,
+                        width,
+                    } => Ok(self.types.insert(
+                        Type {
+                            name: None,
+                            inner: crate::TypeInner::Vector { size, kind, width },
+                        },
+                        span,
+                    )),
+                    _ => Err(ConstantSolvingError::SwizzleVectorOnly),
                 };
 
-                let components = pattern
-                    .iter()
-                    .map(|&sc| src_components[sc as usize])
-                    .collect();
-                let inner = ConstantInner::Composite { ty, components };
+                match self.const_expressions[src_constant] {
+                    Expression::ZeroValue(ty) => {
+                        let dst_ty = get_dst_ty(ty)?;
+                        let expr = Expression::ZeroValue(dst_ty);
+                        Ok(self.register_constant(expr, span))
+                    }
+                    Expression::Compose {
+                        ty,
+                        components: ref src_components,
+                    } => {
+                        let dst_ty = get_dst_ty(ty)?;
 
-                Ok(self.register_constant(inner, span))
-            }
-            Expression::Compose { ty, ref components } => {
-                let components = components
-                    .iter()
-                    .map(|c| self.solve(*c))
-                    .collect::<Result<_, _>>()?;
-                let inner = ConstantInner::Composite { ty, components };
-
-                Ok(self.register_constant(inner, span))
+                        let components = pattern
+                            .iter()
+                            .map(|&sc| src_components[sc as usize])
+                            .collect();
+                        let expr = Expression::Compose {
+                            ty: dst_ty,
+                            components,
+                        };
+                        Ok(self.register_constant(expr, span))
+                    }
+                    _ => Err(ConstantSolvingError::SwizzleVectorOnly),
+                }
             }
             Expression::Unary { expr, op } => {
-                let expr_constant = self.solve(expr)?;
+                let expr_constant = self.solve_impl(expr, expr_type, false)?;
 
                 self.unary_op(op, expr_constant, span)
             }
             Expression::Binary { left, right, op } => {
-                let left_constant = self.solve(left)?;
-                let right_constant = self.solve(right)?;
+                let left_constant = self.solve_impl(left, expr_type, false)?;
+                let right_constant = self.solve_impl(right, expr_type, false)?;
 
                 self.binary_op(op, left_constant, right_constant, span)
             }
@@ -171,76 +231,61 @@ impl<'a> ConstantSolver<'a> {
                 arg,
                 arg1,
                 arg2,
-                ..
+                arg3,
             } => {
-                let arg = self.solve(arg)?;
-                let arg1 = arg1.map(|arg| self.solve(arg)).transpose()?;
-                let arg2 = arg2.map(|arg| self.solve(arg)).transpose()?;
+                let arg = self.solve_impl(arg, expr_type, false)?;
+                let arg1 = arg1
+                    .map(|arg| self.solve_impl(arg, expr_type, false))
+                    .transpose()?;
+                let arg2 = arg2
+                    .map(|arg| self.solve_impl(arg, expr_type, false))
+                    .transpose()?;
+                let arg3 = arg3
+                    .map(|arg| self.solve_impl(arg, expr_type, false))
+                    .transpose()?;
 
-                let const0 = &self.constants[arg].inner;
-                let const1 = arg1.map(|arg| &self.constants[arg].inner);
-                let const2 = arg2.map(|arg| &self.constants[arg].inner);
+                let const0 = &self.const_expressions[arg];
+                let const1 = arg1.map(|arg| &self.const_expressions[arg]);
+                let const2 = arg2.map(|arg| &self.const_expressions[arg]);
+                let _const3 = arg3.map(|arg| &self.const_expressions[arg]);
 
                 match fun {
                     crate::MathFunction::Pow => {
-                        let (value, width) = match (const0, const1.unwrap()) {
-                            (
-                                &ConstantInner::Scalar {
-                                    width,
-                                    value: value0,
-                                },
-                                &ConstantInner::Scalar { value: value1, .. },
-                            ) => (
+                        let literal = match (const0, const1.unwrap()) {
+                            (&Expression::Literal(value0), &Expression::Literal(value1)) => {
                                 match (value0, value1) {
-                                    (ScalarValue::Sint(a), ScalarValue::Sint(b)) => {
-                                        ScalarValue::Sint(a.pow(b as u32))
+                                    (Literal::I32(a), Literal::I32(b)) => {
+                                        Literal::I32(a.pow(b as u32))
                                     }
-                                    (ScalarValue::Uint(a), ScalarValue::Uint(b)) => {
-                                        ScalarValue::Uint(a.pow(b as u32))
-                                    }
-                                    (ScalarValue::Float(a), ScalarValue::Float(b)) => {
-                                        ScalarValue::Float(a.powf(b))
-                                    }
+                                    (Literal::U32(a), Literal::U32(b)) => Literal::U32(a.pow(b)),
+                                    (Literal::F32(a), Literal::F32(b)) => Literal::F32(a.powf(b)),
                                     _ => return Err(ConstantSolvingError::InvalidMathArg),
-                                },
-                                width,
-                            ),
+                                }
+                            }
                             _ => return Err(ConstantSolvingError::InvalidMathArg),
                         };
 
-                        let inner = ConstantInner::Scalar { width, value };
-                        Ok(self.register_constant(inner, span))
+                        let expr = Expression::Literal(literal);
+                        Ok(self.register_constant(expr, span))
                     }
                     crate::MathFunction::Clamp => {
-                        let (value, width) = match (const0, const1.unwrap(), const2.unwrap()) {
+                        let literal = match (const0, const1.unwrap(), const2.unwrap()) {
                             (
-                                &ConstantInner::Scalar {
-                                    width,
-                                    value: value0,
-                                },
-                                &ConstantInner::Scalar { value: value1, .. },
-                                &ConstantInner::Scalar { value: value2, .. },
-                            ) => (
-                                match (value0, value1, value2) {
-                                    (
-                                        ScalarValue::Sint(a),
-                                        ScalarValue::Sint(b),
-                                        ScalarValue::Sint(c),
-                                    ) => ScalarValue::Sint(a.clamp(b, c)),
-                                    (
-                                        ScalarValue::Uint(a),
-                                        ScalarValue::Uint(b),
-                                        ScalarValue::Uint(c),
-                                    ) => ScalarValue::Uint(a.clamp(b, c)),
-                                    (
-                                        ScalarValue::Float(a),
-                                        ScalarValue::Float(b),
-                                        ScalarValue::Float(c),
-                                    ) => ScalarValue::Float(glsl_float_clamp(a, b, c)),
-                                    _ => return Err(ConstantSolvingError::InvalidMathArg),
-                                },
-                                width,
-                            ),
+                                &Expression::Literal(value0),
+                                &Expression::Literal(value1),
+                                &Expression::Literal(value2),
+                            ) => match (value0, value1, value2) {
+                                (Literal::I32(a), Literal::I32(b), Literal::I32(c)) => {
+                                    Literal::I32(a.clamp(b, c))
+                                }
+                                (Literal::U32(a), Literal::U32(b), Literal::U32(c)) => {
+                                    Literal::U32(a.clamp(b, c))
+                                }
+                                (Literal::F32(a), Literal::F32(b), Literal::F32(c)) => {
+                                    Literal::F32(glsl_float_clamp(a, b, c))
+                                }
+                                _ => return Err(ConstantSolvingError::InvalidMathArg),
+                            },
                             _ => {
                                 return Err(ConstantSolvingError::NotImplemented(format!(
                                     "{fun:?} applied to vector values"
@@ -248,8 +293,8 @@ impl<'a> ConstantSolver<'a> {
                             }
                         };
 
-                        let inner = ConstantInner::Scalar { width, value };
-                        Ok(self.register_constant(inner, span))
+                        let expr = Expression::Literal(literal);
+                        Ok(self.register_constant(expr, span))
                     }
                     _ => Err(ConstantSolvingError::NotImplemented(format!("{fun:?}"))),
                 }
@@ -259,7 +304,7 @@ impl<'a> ConstantSolver<'a> {
                 expr,
                 kind,
             } => {
-                let expr_constant = self.solve(expr)?;
+                let expr_constant = self.solve_impl(expr, expr_type, false)?;
 
                 match convert {
                     Some(width) => self.cast(expr_constant, kind, width, span),
@@ -267,21 +312,24 @@ impl<'a> ConstantSolver<'a> {
                 }
             }
             Expression::ArrayLength(expr) => {
-                let array = self.solve(expr)?;
+                let array = self.solve_impl(expr, expr_type, false)?;
 
-                match self.constants[array].inner {
-                    ConstantInner::Scalar { .. } => {
-                        Err(ConstantSolvingError::InvalidArrayLengthArg)
+                match self.const_expressions[array] {
+                    Expression::ZeroValue(ty) | Expression::Compose { ty, .. } => {
+                        match self.types[ty].inner {
+                            TypeInner::Array { size, .. } => match size {
+                                crate::ArraySize::Constant(len) => {
+                                    let expr = Expression::Literal(Literal::U32(len.get()));
+                                    Ok(self.register_constant(expr, span))
+                                }
+                                crate::ArraySize::Dynamic => {
+                                    Err(ConstantSolvingError::ArrayLengthDynamic)
+                                }
+                            },
+                            _ => Err(ConstantSolvingError::InvalidArrayLengthArg),
+                        }
                     }
-                    ConstantInner::Composite { ty, .. } => match self.types[ty].inner {
-                        TypeInner::Array { size, .. } => match size {
-                            crate::ArraySize::Constant(constant) => Ok(constant),
-                            crate::ArraySize::Dynamic => {
-                                Err(ConstantSolvingError::ArrayLengthDynamic)
-                            }
-                        },
-                        _ => Err(ConstantSolvingError::InvalidArrayLengthArg),
-                    },
+                    _ => Err(ConstantSolvingError::InvalidArrayLengthArg),
                 }
             }
 
@@ -291,6 +339,7 @@ impl<'a> ConstantSolver<'a> {
             Expression::Derivative { .. } => Err(ConstantSolvingError::Derivative),
             Expression::Relational { .. } => Err(ConstantSolvingError::Relational),
             Expression::CallResult { .. } => Err(ConstantSolvingError::Call),
+            Expression::WorkGroupUniformLoadResult { .. } => unreachable!(),
             Expression::AtomicResult { .. } => Err(ConstantSolvingError::Atomic),
             Expression::FunctionArgument(_) => Err(ConstantSolvingError::FunctionArg),
             Expression::GlobalVariable(_) => Err(ConstantSolvingError::GlobalVariable),
@@ -307,255 +356,354 @@ impl<'a> ConstantSolver<'a> {
         &mut self,
         base: Handle<Expression>,
         index: usize,
-    ) -> Result<Handle<Constant>, ConstantSolvingError> {
-        let base = self.solve(base)?;
+        span: crate::Span,
+    ) -> Result<Handle<Expression>, ConstantSolvingError> {
+        match self.const_expressions[base] {
+            Expression::ZeroValue(ty) => {
+                let ty_inner = &self.types[ty].inner;
+                let components = ty_inner
+                    .components()
+                    .ok_or(ConstantSolvingError::InvalidAccessBase)?;
 
-        match self.constants[base].inner {
-            ConstantInner::Scalar { .. } => Err(ConstantSolvingError::InvalidAccessBase),
-            ConstantInner::Composite { ty, ref components } => {
-                match self.types[ty].inner {
-                    TypeInner::Vector { .. }
-                    | TypeInner::Matrix { .. }
-                    | TypeInner::Array { .. }
-                    | TypeInner::Struct { .. } => (),
-                    _ => return Err(ConstantSolvingError::InvalidAccessBase),
+                if index >= components as usize {
+                    Err(ConstantSolvingError::InvalidAccessBase)
+                } else {
+                    let ty_res = ty_inner
+                        .component_type(index)
+                        .ok_or(ConstantSolvingError::InvalidAccessIndex)?;
+                    let ty = match ty_res {
+                        crate::proc::TypeResolution::Handle(ty) => ty,
+                        crate::proc::TypeResolution::Value(inner) => {
+                            self.types.insert(Type { name: None, inner }, span)
+                        }
+                    };
+                    Ok(self.register_constant(Expression::ZeroValue(ty), span))
                 }
+            }
+            Expression::Compose { ty, ref components } => {
+                let _ = self.types[ty]
+                    .inner
+                    .components()
+                    .ok_or(ConstantSolvingError::InvalidAccessBase)?;
 
                 components
                     .get(index)
                     .copied()
                     .ok_or(ConstantSolvingError::InvalidAccessIndex)
             }
+            _ => Err(ConstantSolvingError::InvalidAccessBase),
         }
     }
 
-    fn constant_index(&self, constant: Handle<Constant>) -> Result<usize, ConstantSolvingError> {
-        match self.constants[constant].inner {
-            ConstantInner::Scalar {
-                value: ScalarValue::Uint(index),
-                ..
-            } => Ok(index as usize),
+    fn constant_index(&self, expr: Handle<Expression>) -> Result<usize, ConstantSolvingError> {
+        match self.const_expressions[expr] {
+            Expression::Literal(Literal::U32(index)) => Ok(index as usize),
             _ => Err(ConstantSolvingError::InvalidAccessIndexTy),
+        }
+    }
+
+    /// Transforms a `Expression::ZeroValue` into either `Expression::Literal` or `Expression::Compose`
+    fn eval_zero_value(
+        &mut self,
+        expr: Handle<Expression>,
+        span: crate::Span,
+    ) -> Result<Handle<Expression>, ConstantSolvingError> {
+        match self.const_expressions[expr] {
+            Expression::ZeroValue(ty) => self.eval_zero_value_impl(ty, span),
+            _ => Ok(expr),
+        }
+    }
+
+    fn eval_zero_value_impl(
+        &mut self,
+        ty: Handle<Type>,
+        span: crate::Span,
+    ) -> Result<Handle<Expression>, ConstantSolvingError> {
+        match self.types[ty].inner {
+            TypeInner::Scalar { kind, width } => {
+                let expr = Expression::Literal(
+                    Literal::zero(kind, width).ok_or(ConstantSolvingError::TypeNotConstructible)?,
+                );
+                Ok(self.register_constant(expr, span))
+            }
+            TypeInner::Vector { size, kind, width } => {
+                let scalar_ty = self.types.insert(
+                    Type {
+                        name: None,
+                        inner: TypeInner::Scalar { kind, width },
+                    },
+                    span,
+                );
+                let el = self.eval_zero_value_impl(scalar_ty, span)?;
+                let expr = Expression::Compose {
+                    ty,
+                    components: vec![el; size as usize],
+                };
+                Ok(self.register_constant(expr, span))
+            }
+            TypeInner::Matrix {
+                columns,
+                rows,
+                width,
+            } => {
+                let vec_ty = self.types.insert(
+                    Type {
+                        name: None,
+                        inner: TypeInner::Vector {
+                            size: rows,
+                            kind: ScalarKind::Float,
+                            width,
+                        },
+                    },
+                    span,
+                );
+                let el = self.eval_zero_value_impl(vec_ty, span)?;
+                let expr = Expression::Compose {
+                    ty,
+                    components: vec![el; columns as usize],
+                };
+                Ok(self.register_constant(expr, span))
+            }
+            TypeInner::Array {
+                base,
+                size: ArraySize::Constant(size),
+                ..
+            } => {
+                let el = self.eval_zero_value_impl(base, span)?;
+                let expr = Expression::Compose {
+                    ty,
+                    components: vec![el; size.get() as usize],
+                };
+                Ok(self.register_constant(expr, span))
+            }
+            TypeInner::Struct { ref members, .. } => {
+                let types: Vec<_> = members.iter().map(|m| m.ty).collect();
+                let mut components = Vec::with_capacity(members.len());
+                for ty in types {
+                    components.push(self.eval_zero_value_impl(ty, span)?);
+                }
+                let expr = Expression::Compose { ty, components };
+                Ok(self.register_constant(expr, span))
+            }
+            _ => Err(ConstantSolvingError::TypeNotConstructible),
         }
     }
 
     fn cast(
         &mut self,
-        constant: Handle<Constant>,
+        expr: Handle<Expression>,
         kind: ScalarKind,
         target_width: crate::Bytes,
         span: crate::Span,
-    ) -> Result<Handle<Constant>, ConstantSolvingError> {
-        let mut inner = self.constants[constant].inner.clone();
+    ) -> Result<Handle<Expression>, ConstantSolvingError> {
+        let expr = self.eval_zero_value(expr, span)?;
 
-        match inner {
-            ConstantInner::Scalar {
-                ref mut value,
-                ref mut width,
-            } => {
-                *width = target_width;
-                *value = match kind {
-                    ScalarKind::Sint => ScalarValue::Sint(match *value {
-                        ScalarValue::Sint(v) => v,
-                        ScalarValue::Uint(v) => v as i64,
-                        ScalarValue::Float(v) => v as i64,
-                        ScalarValue::Bool(v) => v as i64,
+        let expr = match self.const_expressions[expr] {
+            Expression::Literal(literal) => {
+                let literal = match (kind, target_width) {
+                    (ScalarKind::Sint, 4) => Literal::I32(match literal {
+                        Literal::I32(v) => v,
+                        Literal::U32(v) => v as i32,
+                        Literal::F32(v) => v as i32,
+                        Literal::Bool(v) => v as i32,
+                        Literal::F64(_) => return Err(ConstantSolvingError::InvalidCastArg),
                     }),
-                    ScalarKind::Uint => ScalarValue::Uint(match *value {
-                        ScalarValue::Sint(v) => v as u64,
-                        ScalarValue::Uint(v) => v,
-                        ScalarValue::Float(v) => v as u64,
-                        ScalarValue::Bool(v) => v as u64,
+                    (ScalarKind::Uint, 4) => Literal::U32(match literal {
+                        Literal::I32(v) => v as u32,
+                        Literal::U32(v) => v,
+                        Literal::F32(v) => v as u32,
+                        Literal::Bool(v) => v as u32,
+                        Literal::F64(_) => return Err(ConstantSolvingError::InvalidCastArg),
                     }),
-                    ScalarKind::Float => ScalarValue::Float(match *value {
-                        ScalarValue::Sint(v) => v as f64,
-                        ScalarValue::Uint(v) => v as f64,
-                        ScalarValue::Float(v) => v,
-                        ScalarValue::Bool(v) => v as u64 as f64,
+                    (ScalarKind::Float, 4) => Literal::F32(match literal {
+                        Literal::I32(v) => v as f32,
+                        Literal::U32(v) => v as f32,
+                        Literal::F32(v) => v,
+                        Literal::Bool(v) => v as u32 as f32,
+                        Literal::F64(_) => return Err(ConstantSolvingError::InvalidCastArg),
                     }),
-                    ScalarKind::Bool => ScalarValue::Bool(match *value {
-                        ScalarValue::Sint(v) => v != 0,
-                        ScalarValue::Uint(v) => v != 0,
-                        ScalarValue::Float(v) => v != 0.0,
-                        ScalarValue::Bool(v) => v,
+                    (ScalarKind::Bool, crate::BOOL_WIDTH) => Literal::Bool(match literal {
+                        Literal::I32(v) => v != 0,
+                        Literal::U32(v) => v != 0,
+                        Literal::F32(v) => v != 0.0,
+                        Literal::Bool(v) => v,
+                        Literal::F64(_) => return Err(ConstantSolvingError::InvalidCastArg),
                     }),
-                }
+                    _ => return Err(ConstantSolvingError::InvalidCastArg),
+                };
+                Expression::Literal(literal)
             }
-            ConstantInner::Composite {
+            Expression::Compose {
                 ty,
-                ref mut components,
+                components: ref src_components,
             } => {
                 match self.types[ty].inner {
                     TypeInner::Vector { .. } | TypeInner::Matrix { .. } => (),
                     _ => return Err(ConstantSolvingError::InvalidCastArg),
                 }
 
-                for component in components {
+                let mut components = src_components.clone();
+                for component in &mut components {
                     *component = self.cast(*component, kind, target_width, span)?;
                 }
-            }
-        }
 
-        Ok(self.register_constant(inner, span))
+                Expression::Compose { ty, components }
+            }
+            _ => return Err(ConstantSolvingError::InvalidCastArg),
+        };
+
+        Ok(self.register_constant(expr, span))
     }
 
     fn unary_op(
         &mut self,
         op: UnaryOperator,
-        constant: Handle<Constant>,
+        expr: Handle<Expression>,
         span: crate::Span,
-    ) -> Result<Handle<Constant>, ConstantSolvingError> {
-        let mut inner = self.constants[constant].inner.clone();
+    ) -> Result<Handle<Expression>, ConstantSolvingError> {
+        let expr = self.eval_zero_value(expr, span)?;
 
-        match inner {
-            ConstantInner::Scalar { ref mut value, .. } => match op {
-                UnaryOperator::Negate => match *value {
-                    ScalarValue::Sint(ref mut v) => *v = -*v,
-                    ScalarValue::Float(ref mut v) => *v = -*v,
+        let expr = match self.const_expressions[expr] {
+            Expression::Literal(value) => Expression::Literal(match op {
+                UnaryOperator::Negate => match value {
+                    Literal::I32(v) => Literal::I32(-v),
+                    Literal::F32(v) => Literal::F32(-v),
                     _ => return Err(ConstantSolvingError::InvalidUnaryOpArg),
                 },
-                UnaryOperator::Not => match *value {
-                    ScalarValue::Sint(ref mut v) => *v = !*v,
-                    ScalarValue::Uint(ref mut v) => *v = !*v,
-                    ScalarValue::Bool(ref mut v) => *v = !*v,
-                    ScalarValue::Float(_) => return Err(ConstantSolvingError::InvalidUnaryOpArg),
+                UnaryOperator::Not => match value {
+                    Literal::I32(v) => Literal::I32(!v),
+                    Literal::U32(v) => Literal::U32(!v),
+                    Literal::Bool(v) => Literal::Bool(!v),
+                    _ => return Err(ConstantSolvingError::InvalidUnaryOpArg),
                 },
-            },
-            ConstantInner::Composite {
+            }),
+            Expression::Compose {
                 ty,
-                ref mut components,
+                components: ref src_components,
             } => {
                 match self.types[ty].inner {
                     TypeInner::Vector { .. } | TypeInner::Matrix { .. } => (),
-                    _ => return Err(ConstantSolvingError::InvalidCastArg),
+                    _ => return Err(ConstantSolvingError::InvalidUnaryOpArg),
                 }
 
-                for component in components {
-                    *component = self.unary_op(op, *component, span)?
+                let mut components = src_components.clone();
+                for component in &mut components {
+                    *component = self.unary_op(op, *component, span)?;
                 }
+
+                Expression::Compose { ty, components }
             }
-        }
+            _ => return Err(ConstantSolvingError::InvalidUnaryOpArg),
+        };
 
-        Ok(self.register_constant(inner, span))
+        Ok(self.register_constant(expr, span))
     }
 
     fn binary_op(
         &mut self,
         op: BinaryOperator,
-        left: Handle<Constant>,
-        right: Handle<Constant>,
+        left: Handle<Expression>,
+        right: Handle<Expression>,
         span: crate::Span,
-    ) -> Result<Handle<Constant>, ConstantSolvingError> {
-        let left_inner = &self.constants[left].inner;
-        let right_inner = &self.constants[right].inner;
+    ) -> Result<Handle<Expression>, ConstantSolvingError> {
+        let left = self.eval_zero_value(left, span)?;
+        let right = self.eval_zero_value(right, span)?;
 
-        let inner = match (left_inner, right_inner) {
-            (
-                &ConstantInner::Scalar {
-                    value: left_value,
-                    width,
-                },
-                &ConstantInner::Scalar {
-                    value: right_value,
-                    width: _,
-                },
-            ) => {
-                let value = match op {
-                    BinaryOperator::Equal => ScalarValue::Bool(left_value == right_value),
-                    BinaryOperator::NotEqual => ScalarValue::Bool(left_value != right_value),
-                    BinaryOperator::Less => ScalarValue::Bool(left_value < right_value),
-                    BinaryOperator::LessEqual => ScalarValue::Bool(left_value <= right_value),
-                    BinaryOperator::Greater => ScalarValue::Bool(left_value > right_value),
-                    BinaryOperator::GreaterEqual => ScalarValue::Bool(left_value >= right_value),
+        let expr = match (
+            &self.const_expressions[left],
+            &self.const_expressions[right],
+        ) {
+            (&Expression::Literal(left_value), &Expression::Literal(right_value)) => {
+                let literal = match op {
+                    BinaryOperator::Equal => Literal::Bool(left_value == right_value),
+                    BinaryOperator::NotEqual => Literal::Bool(left_value != right_value),
+                    BinaryOperator::Less => Literal::Bool(left_value < right_value),
+                    BinaryOperator::LessEqual => Literal::Bool(left_value <= right_value),
+                    BinaryOperator::Greater => Literal::Bool(left_value > right_value),
+                    BinaryOperator::GreaterEqual => Literal::Bool(left_value >= right_value),
 
                     _ => match (left_value, right_value) {
-                        (ScalarValue::Sint(a), ScalarValue::Sint(b)) => {
-                            ScalarValue::Sint(match op {
-                                BinaryOperator::Add => a.wrapping_add(b),
-                                BinaryOperator::Subtract => a.wrapping_sub(b),
-                                BinaryOperator::Multiply => a.wrapping_mul(b),
-                                BinaryOperator::Divide => a.checked_div(b).unwrap_or(0),
-                                BinaryOperator::Modulo => a.checked_rem(b).unwrap_or(0),
-                                BinaryOperator::And => a & b,
-                                BinaryOperator::ExclusiveOr => a ^ b,
-                                BinaryOperator::InclusiveOr => a | b,
-                                _ => return Err(ConstantSolvingError::InvalidBinaryOpArgs),
-                            })
-                        }
-                        (ScalarValue::Sint(a), ScalarValue::Uint(b)) => {
-                            ScalarValue::Sint(match op {
-                                BinaryOperator::ShiftLeft => a.wrapping_shl(b as u32),
-                                BinaryOperator::ShiftRight => a.wrapping_shr(b as u32),
-                                _ => return Err(ConstantSolvingError::InvalidBinaryOpArgs),
-                            })
-                        }
-                        (ScalarValue::Uint(a), ScalarValue::Uint(b)) => {
-                            ScalarValue::Uint(match op {
-                                BinaryOperator::Add => a.wrapping_add(b),
-                                BinaryOperator::Subtract => a.wrapping_sub(b),
-                                BinaryOperator::Multiply => a.wrapping_mul(b),
-                                BinaryOperator::Divide => a.checked_div(b).unwrap_or(0),
-                                BinaryOperator::Modulo => a.checked_rem(b).unwrap_or(0),
-                                BinaryOperator::And => a & b,
-                                BinaryOperator::ExclusiveOr => a ^ b,
-                                BinaryOperator::InclusiveOr => a | b,
-                                BinaryOperator::ShiftLeft => a.wrapping_shl(b as u32),
-                                BinaryOperator::ShiftRight => a.wrapping_shr(b as u32),
-                                _ => return Err(ConstantSolvingError::InvalidBinaryOpArgs),
-                            })
-                        }
-                        (ScalarValue::Float(a), ScalarValue::Float(b)) => {
-                            ScalarValue::Float(match op {
-                                BinaryOperator::Add => a + b,
-                                BinaryOperator::Subtract => a - b,
-                                BinaryOperator::Multiply => a * b,
-                                BinaryOperator::Divide => a / b,
-                                BinaryOperator::Modulo => a - b * (a / b).floor(),
-                                _ => return Err(ConstantSolvingError::InvalidBinaryOpArgs),
-                            })
-                        }
-                        (ScalarValue::Bool(a), ScalarValue::Bool(b)) => {
-                            ScalarValue::Bool(match op {
-                                BinaryOperator::LogicalAnd => a && b,
-                                BinaryOperator::LogicalOr => a || b,
-                                _ => return Err(ConstantSolvingError::InvalidBinaryOpArgs),
-                            })
-                        }
+                        (Literal::I32(a), Literal::I32(b)) => Literal::I32(match op {
+                            BinaryOperator::Add => a.wrapping_add(b),
+                            BinaryOperator::Subtract => a.wrapping_sub(b),
+                            BinaryOperator::Multiply => a.wrapping_mul(b),
+                            BinaryOperator::Divide => a.checked_div(b).unwrap_or(0),
+                            BinaryOperator::Modulo => a.checked_rem(b).unwrap_or(0),
+                            BinaryOperator::And => a & b,
+                            BinaryOperator::ExclusiveOr => a ^ b,
+                            BinaryOperator::InclusiveOr => a | b,
+                            _ => return Err(ConstantSolvingError::InvalidBinaryOpArgs),
+                        }),
+                        (Literal::I32(a), Literal::U32(b)) => Literal::I32(match op {
+                            BinaryOperator::ShiftLeft => a.wrapping_shl(b),
+                            BinaryOperator::ShiftRight => a.wrapping_shr(b),
+                            _ => return Err(ConstantSolvingError::InvalidBinaryOpArgs),
+                        }),
+                        (Literal::U32(a), Literal::U32(b)) => Literal::U32(match op {
+                            BinaryOperator::Add => a.wrapping_add(b),
+                            BinaryOperator::Subtract => a.wrapping_sub(b),
+                            BinaryOperator::Multiply => a.wrapping_mul(b),
+                            BinaryOperator::Divide => a.checked_div(b).unwrap_or(0),
+                            BinaryOperator::Modulo => a.checked_rem(b).unwrap_or(0),
+                            BinaryOperator::And => a & b,
+                            BinaryOperator::ExclusiveOr => a ^ b,
+                            BinaryOperator::InclusiveOr => a | b,
+                            BinaryOperator::ShiftLeft => a.wrapping_shl(b),
+                            BinaryOperator::ShiftRight => a.wrapping_shr(b),
+                            _ => return Err(ConstantSolvingError::InvalidBinaryOpArgs),
+                        }),
+                        (Literal::F32(a), Literal::F32(b)) => Literal::F32(match op {
+                            BinaryOperator::Add => a + b,
+                            BinaryOperator::Subtract => a - b,
+                            BinaryOperator::Multiply => a * b,
+                            BinaryOperator::Divide => a / b,
+                            BinaryOperator::Modulo => a - b * (a / b).floor(),
+                            _ => return Err(ConstantSolvingError::InvalidBinaryOpArgs),
+                        }),
+                        (Literal::Bool(a), Literal::Bool(b)) => Literal::Bool(match op {
+                            BinaryOperator::LogicalAnd => a && b,
+                            BinaryOperator::LogicalOr => a || b,
+                            _ => return Err(ConstantSolvingError::InvalidBinaryOpArgs),
+                        }),
                         _ => return Err(ConstantSolvingError::InvalidBinaryOpArgs),
                     },
                 };
-
-                ConstantInner::Scalar { value, width }
+                Expression::Literal(literal)
             }
-            (&ConstantInner::Composite { ref components, ty }, &ConstantInner::Scalar { .. }) => {
-                let mut components = components.clone();
-                for comp in components.iter_mut() {
-                    *comp = self.binary_op(op, *comp, right, span)?;
+            (
+                &Expression::Compose {
+                    components: ref src_components,
+                    ty,
+                },
+                &Expression::Literal(_),
+            ) => {
+                let mut components = src_components.clone();
+                for component in &mut components {
+                    *component = self.binary_op(op, *component, right, span)?;
                 }
-                ConstantInner::Composite { ty, components }
+                Expression::Compose { ty, components }
             }
-            (&ConstantInner::Scalar { .. }, &ConstantInner::Composite { ref components, ty }) => {
-                let mut components = components.clone();
-                for comp in components.iter_mut() {
-                    *comp = self.binary_op(op, left, *comp, span)?;
+            (
+                &Expression::Literal(_),
+                &Expression::Compose {
+                    components: ref src_components,
+                    ty,
+                },
+            ) => {
+                let mut components = src_components.clone();
+                for component in &mut components {
+                    *component = self.binary_op(op, left, *component, span)?;
                 }
-                ConstantInner::Composite { ty, components }
+                Expression::Compose { ty, components }
             }
             _ => return Err(ConstantSolvingError::InvalidBinaryOpArgs),
         };
 
-        Ok(self.register_constant(inner, span))
+        Ok(self.register_constant(expr, span))
     }
 
-    fn register_constant(&mut self, inner: ConstantInner, span: crate::Span) -> Handle<Constant> {
-        self.constants.fetch_or_append(
-            Constant {
-                name: None,
-                specialization: None,
-                inner,
-            },
-            span,
-        )
+    fn register_constant(&mut self, expr: Expression, span: crate::Span) -> Handle<Expression> {
+        self.const_expressions.append(expr, span)
     }
 }
 
@@ -572,7 +720,7 @@ impl<'a> ConstantSolver<'a> {
 /// ```
 ///
 /// Rust will return `1.0` while GLSL should return NaN.
-fn glsl_float_max(x: f64, y: f64) -> f64 {
+fn glsl_float_max(x: f32, y: f32) -> f32 {
     if x < y {
         y
     } else {
@@ -593,7 +741,7 @@ fn glsl_float_max(x: f64, y: f64) -> f64 {
 /// ```
 ///
 /// Rust will return `1.0` while GLSL should return NaN.
-fn glsl_float_min(x: f64, y: f64) -> f64 {
+fn glsl_float_min(x: f32, y: f32) -> f32 {
     if y < x {
         y
     } else {
@@ -606,7 +754,7 @@ fn glsl_float_min(x: f64, y: f64) -> f64 {
 /// While Rust does provide a `f64::clamp` method, it panics if either
 /// `min` or `max` are `NaN`s which is not the behavior specified by
 /// the glsl specification.
-fn glsl_float_clamp(value: f64, min: f64, max: f64) -> f64 {
+fn glsl_float_clamp(value: f32, min: f32, max: f32) -> f32 {
     glsl_float_min(glsl_float_max(value, min), max)
 }
 
@@ -615,23 +763,23 @@ mod tests {
     use std::vec;
 
     use crate::{
-        Arena, Constant, ConstantInner, Expression, ScalarKind, ScalarValue, Type, TypeInner,
-        UnaryOperator, UniqueArena, VectorSize,
+        Arena, Constant, Expression, Literal, ScalarKind, Type, TypeInner, UnaryOperator,
+        UniqueArena, VectorSize,
     };
 
     use super::ConstantSolver;
 
     #[test]
     fn nan_handling() {
-        assert!(super::glsl_float_max(f64::NAN, 2.0).is_nan());
-        assert!(!super::glsl_float_max(2.0, f64::NAN).is_nan());
+        assert!(super::glsl_float_max(f32::NAN, 2.0).is_nan());
+        assert!(!super::glsl_float_max(2.0, f32::NAN).is_nan());
 
-        assert!(super::glsl_float_min(f64::NAN, 2.0).is_nan());
-        assert!(!super::glsl_float_min(2.0, f64::NAN).is_nan());
+        assert!(super::glsl_float_min(f32::NAN, 2.0).is_nan());
+        assert!(!super::glsl_float_min(2.0, f32::NAN).is_nan());
 
-        assert!(super::glsl_float_clamp(f64::NAN, 1.0, 2.0).is_nan());
-        assert!(!super::glsl_float_clamp(1.0, f64::NAN, 2.0).is_nan());
-        assert!(!super::glsl_float_clamp(1.0, 2.0, f64::NAN).is_nan());
+        assert!(super::glsl_float_clamp(f32::NAN, 1.0, 2.0).is_nan());
+        assert!(!super::glsl_float_clamp(1.0, f32::NAN, 2.0).is_nan());
+        assert!(!super::glsl_float_clamp(1.0, 2.0, f32::NAN).is_nan());
     }
 
     #[test]
@@ -639,6 +787,18 @@ mod tests {
         let mut types = UniqueArena::new();
         let mut expressions = Arena::new();
         let mut constants = Arena::new();
+        let mut const_expressions = Arena::new();
+
+        let scalar_ty = types.insert(
+            Type {
+                name: None,
+                inner: TypeInner::Scalar {
+                    kind: ScalarKind::Sint,
+                    width: 4,
+                },
+            },
+            Default::default(),
+        );
 
         let vec_ty = types.insert(
             Type {
@@ -655,11 +815,10 @@ mod tests {
         let h = constants.append(
             Constant {
                 name: None,
-                specialization: None,
-                inner: ConstantInner::Scalar {
-                    width: 4,
-                    value: ScalarValue::Sint(4),
-                },
+                r#override: crate::Override::None,
+                ty: scalar_ty,
+                init: const_expressions
+                    .append(Expression::Literal(Literal::I32(4)), Default::default()),
             },
             Default::default(),
         );
@@ -667,11 +826,10 @@ mod tests {
         let h1 = constants.append(
             Constant {
                 name: None,
-                specialization: None,
-                inner: ConstantInner::Scalar {
-                    width: 4,
-                    value: ScalarValue::Sint(8),
-                },
+                r#override: crate::Override::None,
+                ty: scalar_ty,
+                init: const_expressions
+                    .append(Expression::Literal(Literal::I32(8)), Default::default()),
             },
             Default::default(),
         );
@@ -679,11 +837,15 @@ mod tests {
         let vec_h = constants.append(
             Constant {
                 name: None,
-                specialization: None,
-                inner: ConstantInner::Composite {
-                    ty: vec_ty,
-                    components: vec![h, h1],
-                },
+                r#override: crate::Override::None,
+                ty: vec_ty,
+                init: const_expressions.append(
+                    Expression::Compose {
+                        ty: vec_ty,
+                        components: vec![constants[h].init, constants[h1].init],
+                    },
+                    Default::default(),
+                ),
             },
             Default::default(),
         );
@@ -719,6 +881,7 @@ mod tests {
             types: &mut types,
             expressions: &expressions,
             constants: &mut constants,
+            const_expressions: &mut const_expressions,
         };
 
         let res1 = solver.solve(root1).unwrap();
@@ -726,43 +889,31 @@ mod tests {
         let res3 = solver.solve(root3).unwrap();
 
         assert_eq!(
-            constants[res1].inner,
-            ConstantInner::Scalar {
-                width: 4,
-                value: ScalarValue::Sint(-4),
-            },
+            const_expressions[res1],
+            Expression::Literal(Literal::I32(-4))
         );
 
         assert_eq!(
-            constants[res2].inner,
-            ConstantInner::Scalar {
-                width: 4,
-                value: ScalarValue::Sint(!4),
-            },
+            const_expressions[res2],
+            Expression::Literal(Literal::I32(!4))
         );
 
-        let res3_inner = &constants[res3].inner;
+        let res3_inner = &const_expressions[res3];
 
         match *res3_inner {
-            ConstantInner::Composite {
+            Expression::Compose {
                 ref ty,
                 ref components,
             } => {
                 assert_eq!(*ty, vec_ty);
                 let mut components_iter = components.iter().copied();
                 assert_eq!(
-                    constants[components_iter.next().unwrap()].inner,
-                    ConstantInner::Scalar {
-                        width: 4,
-                        value: ScalarValue::Sint(!4),
-                    },
+                    const_expressions[components_iter.next().unwrap()],
+                    Expression::Literal(Literal::I32(!4))
                 );
                 assert_eq!(
-                    constants[components_iter.next().unwrap()].inner,
-                    ConstantInner::Scalar {
-                        width: 4,
-                        value: ScalarValue::Sint(!8),
-                    },
+                    const_expressions[components_iter.next().unwrap()],
+                    Expression::Literal(Literal::I32(!8))
                 );
                 assert!(components_iter.next().is_none());
             }
@@ -772,17 +923,29 @@ mod tests {
 
     #[test]
     fn cast() {
+        let mut types = UniqueArena::new();
         let mut expressions = Arena::new();
         let mut constants = Arena::new();
+        let mut const_expressions = Arena::new();
+
+        let scalar_ty = types.insert(
+            Type {
+                name: None,
+                inner: TypeInner::Scalar {
+                    kind: ScalarKind::Sint,
+                    width: 4,
+                },
+            },
+            Default::default(),
+        );
 
         let h = constants.append(
             Constant {
                 name: None,
-                specialization: None,
-                inner: ConstantInner::Scalar {
-                    width: 4,
-                    value: ScalarValue::Sint(4),
-                },
+                r#override: crate::Override::None,
+                ty: scalar_ty,
+                init: const_expressions
+                    .append(Expression::Literal(Literal::I32(4)), Default::default()),
             },
             Default::default(),
         );
@@ -799,19 +962,17 @@ mod tests {
         );
 
         let mut solver = ConstantSolver {
-            types: &mut UniqueArena::new(),
+            types: &mut types,
             expressions: &expressions,
             constants: &mut constants,
+            const_expressions: &mut const_expressions,
         };
 
         let res = solver.solve(root).unwrap();
 
         assert_eq!(
-            constants[res].inner,
-            ConstantInner::Scalar {
-                width: crate::BOOL_WIDTH,
-                value: ScalarValue::Bool(true),
-            },
+            const_expressions[res],
+            Expression::Literal(Literal::Bool(true))
         );
     }
 
@@ -820,6 +981,7 @@ mod tests {
         let mut types = UniqueArena::new();
         let mut expressions = Arena::new();
         let mut constants = Arena::new();
+        let mut const_expressions = Arena::new();
 
         let matrix_ty = types.insert(
             Type {
@@ -849,15 +1011,8 @@ mod tests {
         let mut vec2_components = Vec::with_capacity(3);
 
         for i in 0..3 {
-            let h = constants.append(
-                Constant {
-                    name: None,
-                    specialization: None,
-                    inner: ConstantInner::Scalar {
-                        width: 4,
-                        value: ScalarValue::Float(i as f64),
-                    },
-                },
+            let h = const_expressions.append(
+                Expression::Literal(Literal::F32(i as f32)),
                 Default::default(),
             );
 
@@ -865,15 +1020,8 @@ mod tests {
         }
 
         for i in 3..6 {
-            let h = constants.append(
-                Constant {
-                    name: None,
-                    specialization: None,
-                    inner: ConstantInner::Scalar {
-                        width: 4,
-                        value: ScalarValue::Float(i as f64),
-                    },
-                },
+            let h = const_expressions.append(
+                Expression::Literal(Literal::F32(i as f32)),
                 Default::default(),
             );
 
@@ -883,11 +1031,15 @@ mod tests {
         let vec1 = constants.append(
             Constant {
                 name: None,
-                specialization: None,
-                inner: ConstantInner::Composite {
-                    ty: vec_ty,
-                    components: vec1_components,
-                },
+                r#override: crate::Override::None,
+                ty: vec_ty,
+                init: const_expressions.append(
+                    Expression::Compose {
+                        ty: vec_ty,
+                        components: vec1_components,
+                    },
+                    Default::default(),
+                ),
             },
             Default::default(),
         );
@@ -895,11 +1047,15 @@ mod tests {
         let vec2 = constants.append(
             Constant {
                 name: None,
-                specialization: None,
-                inner: ConstantInner::Composite {
-                    ty: vec_ty,
-                    components: vec2_components,
-                },
+                r#override: crate::Override::None,
+                ty: vec_ty,
+                init: const_expressions.append(
+                    Expression::Compose {
+                        ty: vec_ty,
+                        components: vec2_components,
+                    },
+                    Default::default(),
+                ),
             },
             Default::default(),
         );
@@ -907,11 +1063,15 @@ mod tests {
         let h = constants.append(
             Constant {
                 name: None,
-                specialization: None,
-                inner: ConstantInner::Composite {
-                    ty: matrix_ty,
-                    components: vec![vec1, vec2],
-                },
+                r#override: crate::Override::None,
+                ty: matrix_ty,
+                init: const_expressions.append(
+                    Expression::Compose {
+                        ty: matrix_ty,
+                        components: vec![constants[vec1].init, constants[vec2].init],
+                    },
+                    Default::default(),
+                ),
             },
             Default::default(),
         );
@@ -933,40 +1093,30 @@ mod tests {
             types: &mut types,
             expressions: &expressions,
             constants: &mut constants,
+            const_expressions: &mut const_expressions,
         };
 
         let res1 = solver.solve(root1).unwrap();
         let res2 = solver.solve(root2).unwrap();
 
-        let res1_inner = &constants[res1].inner;
-
-        match *res1_inner {
-            ConstantInner::Composite {
+        match const_expressions[res1] {
+            Expression::Compose {
                 ref ty,
                 ref components,
             } => {
                 assert_eq!(*ty, vec_ty);
                 let mut components_iter = components.iter().copied();
                 assert_eq!(
-                    constants[components_iter.next().unwrap()].inner,
-                    ConstantInner::Scalar {
-                        width: 4,
-                        value: ScalarValue::Float(3.),
-                    },
+                    const_expressions[components_iter.next().unwrap()],
+                    Expression::Literal(Literal::F32(3.))
                 );
                 assert_eq!(
-                    constants[components_iter.next().unwrap()].inner,
-                    ConstantInner::Scalar {
-                        width: 4,
-                        value: ScalarValue::Float(4.),
-                    },
+                    const_expressions[components_iter.next().unwrap()],
+                    Expression::Literal(Literal::F32(4.))
                 );
                 assert_eq!(
-                    constants[components_iter.next().unwrap()].inner,
-                    ConstantInner::Scalar {
-                        width: 4,
-                        value: ScalarValue::Float(5.),
-                    },
+                    const_expressions[components_iter.next().unwrap()],
+                    Expression::Literal(Literal::F32(5.))
                 );
                 assert!(components_iter.next().is_none());
             }
@@ -974,11 +1124,8 @@ mod tests {
         }
 
         assert_eq!(
-            constants[res2].inner,
-            ConstantInner::Scalar {
-                width: 4,
-                value: ScalarValue::Float(5.),
-            },
+            const_expressions[res2],
+            Expression::Literal(Literal::F32(5.))
         );
     }
 }

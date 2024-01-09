@@ -85,8 +85,8 @@ class BaseNavigationTestCase(WindowManagerMixin, MarionetteTestCase):
               if (AppConstants.MOZ_APP_NAME == "fennec") {
                 win = Services.wm.getMostRecentWindow("navigator:browser");
               } else {
-                const { BrowserWindowTracker } = ChromeUtils.import(
-                  "resource:///modules/BrowserWindowTracker.jsm"
+                const { BrowserWindowTracker } = ChromeUtils.importESModule(
+                  "resource:///modules/BrowserWindowTracker.sys.mjs"
                 );
                 win = BrowserWindowTracker.getTopWindow();
               }
@@ -297,7 +297,7 @@ class TestNavigate(BaseNavigationTestCase):
         self.marionette.navigate("about:robots")
         self.assertFalse(self.is_remote_tab)
 
-        with self.assertRaises(errors.NoSuchElementException):
+        with self.assertRaises(errors.StaleElementException):
             elem.click()
 
     def test_about_blank_for_new_docshell(self):

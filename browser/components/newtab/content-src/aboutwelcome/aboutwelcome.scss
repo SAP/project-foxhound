@@ -3,6 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 @use 'sass:math';
 @import '../styles/feature-callout';
+@import '../styles/shopping';
 
 $break-point-small: 570px;
 $break-point-medium: 610px;
@@ -15,7 +16,7 @@ $split-screen-height: 550px;
 $small-main-section-height: 450px;
 $small-secondary-section-height: 100px;
 $noodle-buffer: 106px;
-$video-section-width: 800px;
+$double-section-width: 800px;
 
 html {
   height: 100%;
@@ -201,33 +202,33 @@ html {
   }
 
   @mixin secondary-cta-styles {
-    background-color: var(--in-content-button-background) !important; // stylelint-disable-line declaration-no-important
+    background-color: var(--in-content-button-background);
     border: 1px solid var(--in-content-button-border-color);
     line-height: 12px;
     font-size: 0.72em;
     font-weight: 600;
     padding: 8px 16px;
     text-decoration: none;
+    cursor: default;
 
     &:hover {
-      background-color: var(--in-content-button-background-hover) !important; // stylelint-disable-line declaration-no-important
+      background-color: var(--in-content-button-background-hover);
       color: var(--in-content-button-text-color-hover);
     }
   }
 
   @mixin text-link-styles {
+    background: none;
     text-decoration: underline;
     cursor: pointer;
-    color: var(--in-content-link-color);
+    color: var(--link-color);
 
     &:hover {
-      text-decoration: none;
-      color: var(--in-content-link-color-hover);
+      color: var(--link-color-hover);
     }
 
     &:active {
-      text-decoration: none;
-      color: var(--in-content-link-color-active);
+      color: var(--link-color-active);
     }
   }
 
@@ -239,10 +240,10 @@ html {
     min-height: 500px;
     overflow: hidden;
 
-    --in-content-link-color: var(--in-content-primary-button-background);
-    --in-content-link-color-hover: var(--in-content-primary-button-background-hover);
-    --in-content-link-color-active: var(--in-content-primary-button-background-active);
-    --in-content-link-color-visited: var(--in-content-link-color);
+    --link-color: var(--in-content-primary-button-background);
+    --link-color-hover: var(--in-content-primary-button-background-hover);
+    --link-color-active: var(--in-content-primary-button-background-active);
+    --link-color-visited: var(--link-color);
 
     &.light-text {
       --in-content-page-color: rgb(251, 251, 254);
@@ -292,7 +293,7 @@ html {
         align-items: center;
 
         .section-main {
-          width: $video-section-width;
+          width: $double-section-width;
           height: $split-screen-height;
         }
 
@@ -338,13 +339,126 @@ html {
           }
         }
       }
+
+      &.addons-picker {
+        justify-content: center;
+        align-items: center;
+        background: none;
+
+        .section-main {
+          width: $double-section-width;
+          height: $split-screen-height;
+        }
+
+        .main-content {
+          background-color: var(--in-content-page-background);
+          border-radius: 8px;
+          box-shadow: 0 2px 14px rgba(58, 57, 68, 20%);
+          overflow: hidden;
+
+          .welcome-text {
+            display: flex;
+            margin: 0;
+          }
+
+          .main-content-inner {
+            padding: 25px 56px 0;
+            justify-content: space-between;
+          }
+
+          h1,
+          h2 {
+            align-self: start;
+          }
+
+          h2 {
+            font-size: 15px;
+            text-align: start;
+          }
+
+          .brand-logo {
+            display: block;
+            margin: 40px 56px 0;
+            transition: var(--transition);
+            height: 30px;
+          }
+
+          .additional-cta {
+            display: block;
+            margin: 8px 0;
+
+            &.cta-link {
+              background: none;
+              padding: 0;
+              font-weight: normal;
+
+              @include text-link-styles;
+            }
+
+            &.secondary {
+              &:hover {
+                background-color: var(--in-content-button-background-hover);
+              }
+            }
+          }
+
+          .secondary-cta {
+            @include arrow-icon-styles;
+
+            justify-content: end;
+
+            .secondary {
+              @include secondary-cta-styles;
+
+              color: var(--in-content-button-text-color);
+            }
+          }
+        }
+
+        .addon-container {
+          display: flex;
+          border: 1px solid var(--in-content-border-color);
+          box-shadow: 0 1px 2px 0 var(--in-content-border-color);
+          border-radius: 4px;
+          margin: 5px auto;
+          text-align: start;
+
+          .rtamo-icon {
+            img {
+              margin: 10px;
+            }
+          }
+
+          .addon-details {
+            display: grid;
+            width: 70%;
+          }
+
+          .addon-title {
+            margin: 10px 0 3px;
+            font-size: 16px;
+            font-weight: 600;
+          }
+
+          .addon-description {
+            margin: 2px 0 10px;
+            font-size: 13px;
+            font-weight: 400;
+          }
+
+          button {
+            align-self: center;
+            margin-inline: auto 12px;
+          }
+        }
+      }
     }
 
     &:not([pos='split']) {
       .secondary-cta {
         .secondary {
-          background: none;
-          color: var(--in-content-link-color);
+          @include text-link-styles;
+
           font-size: 14px;
           font-weight: normal;
           line-height: 20px;
@@ -358,6 +472,24 @@ html {
               color: #E0E0E6;
             }
           }
+        }
+      }
+
+      migration-wizard {
+        padding: 5px 60px;
+
+        &::part(header){
+          text-align: center;
+        }
+
+        &::part(buttons){
+          margin: 32px auto 0;
+        }
+      }
+
+      .welcome-text {
+        &:empty {
+          margin: 0;
         }
       }
     }
@@ -389,7 +521,7 @@ html {
         padding-inline-end: 0;
 
         button {
-          color: var(--in-content-page-color);
+          padding: 7px 15px;
         }
       }
 
@@ -400,6 +532,12 @@ html {
 
         &:dir(rtl) {
           margin: auto 0 auto auto;
+        }
+
+        &.embedded-migration {
+          .main-content {
+            padding-block: 100px 0;
+          }
         }
 
         .main-content {
@@ -419,6 +557,21 @@ html {
 
           .main-content-inner {
             min-height: 330px;
+
+            .mobile-download-buttons {
+              padding: 0;
+              margin-inline-start: -5px;
+              display: flex;
+
+              button {
+                cursor: pointer;
+              }
+            }
+
+            .qr-code-image {
+              margin: 5px 0 10px;
+              display: flex;
+            }
 
             .language-switcher-container {
               .primary {
@@ -450,11 +603,10 @@ html {
               margin: 8px 0;
 
               &.cta-link {
-                background: none;
+                @include text-link-styles;
+
                 padding: 0;
                 font-weight: normal;
-
-                @include text-link-styles;
               }
 
               &.secondary {
@@ -489,6 +641,11 @@ html {
           .brand-logo {
             height: 25px;
             margin-block: 0;
+          }
+
+          .logo-alt {
+            width: inherit;
+            height: inherit;
           }
 
           .welcome-text {
@@ -599,6 +756,19 @@ html {
         }
       }
 
+      .multi-select-container {
+        margin-inline: 0 10px;
+
+        @media only screen and (max-width: 800px) {
+          flex-direction: row;
+          align-self: stretch;
+          align-items: center;
+          justify-content: center;
+          padding: 0 30px;
+          margin-inline: 0;
+        }
+      }
+
       .tiles-theme-container {
         margin-block: -20px auto;
         align-items: initial;
@@ -676,11 +846,37 @@ html {
             margin: auto auto 0;
             border-radius: 8px 8px 0 0;
           }
+
+          &.with-secondary-section-hidden {
+            display: none;
+          }
+        }
+
+        migration-wizard {
+          &::part(deck){
+            min-width: 330px;
+            margin-inline: 36px;
+          }
         }
 
         .section-main {
           margin: 0 auto auto;
           height: $small-main-section-height;
+
+          migration-wizard::part(buttons) {
+            flex-direction: column;
+            margin-inline: 46px;
+          }
+
+          &[hide-secondary-section='responsive'] {
+            height: $split-screen-height;
+            margin: auto;
+
+            .main-content {
+              padding: 50px 0 0;
+              border-radius: 8px;
+            }
+          }
 
           .main-content {
             border-radius: 0 0 8px 8px;
@@ -700,6 +896,11 @@ html {
                 &:dir(rtl) {
                   background-position: center;
                 }
+              }
+
+              .logo-alt {
+                width: inherit;
+                height: inherit;
               }
             }
 
@@ -783,7 +984,7 @@ html {
 
         // Reposition the "Sign in" button on the welcome screen to move inside
         // the screen when it would otherwise overlap the screen.
-        @media (max-width: 590px) {
+        @media (max-width: 620px) {
           .section-main .secondary-cta.top {
             position: absolute;
             padding: 0;
@@ -809,6 +1010,11 @@ html {
       padding: unset;
       margin-top: 50px;
     }
+  }
+
+  .logo-alt {
+    width: inherit;
+    height: inherit;
   }
 
   .rtamo-theme-icon {
@@ -1128,30 +1334,25 @@ html {
   .multi-select-container {
     display: flex;
     flex-direction: column;
+    flex-wrap: wrap;
+    flex-shrink: 0;
     align-items: flex-start;
-    margin-block: -1em 1em;
+    gap: 16px;
+    margin-block: -1em 2em;
     color: #5B5B66;
     font-weight: 400;
     font-size: 14px;
     text-align: initial;
     transition: var(--transition);
     z-index: 1;
+    overflow: hidden;
 
     .checkbox-container {
       display: flex;
-      margin-bottom: 16px;
     }
-  }
 
-  @media (prefers-color-scheme: dark) {
-    .multi-select-container {
+    @media (prefers-contrast: no-preference) and (prefers-color-scheme: dark) {
       color: #CFCFD8;
-    }
-  }
-
-  @media only screen and (max-width: 800px) {
-    .multi-select-container {
-      padding: 0 30px;
     }
   }
 
@@ -1163,11 +1364,10 @@ html {
     }
 
     .email-link {
+      @include text-link-styles;
+
       font-size: 16px;
       font-weight: 400;
-      background: none;
-
-      @include text-link-styles;
 
       &:hover {
         background: none;
@@ -1264,8 +1464,7 @@ html {
     }
   }
 
-  .message-text,
-  .attrib-text {
+  .message-text {
     transition: var(--transition);
   }
 
@@ -1665,7 +1864,7 @@ html {
     transition: var(--transition);
 
     &::part(buttons) {
-      margin-top: 32px;
+      margin-top: 24px;
       justify-content: flex-start;
     }
 

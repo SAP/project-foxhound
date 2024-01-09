@@ -31,7 +31,9 @@ const { TelemetryTestUtils } = ChromeUtils.importESModule(
 );
 
 ChromeUtils.defineESModuleGetters(this, {
+  BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.sys.mjs",
   SyncedTabs: "resource://services-sync/SyncedTabs.sys.mjs",
+  TabStateFlusher: "resource:///modules/sessionstore/TabStateFlusher.sys.mjs",
 });
 
 XPCOMUtils.defineLazyModuleGetters(this, {
@@ -47,7 +49,7 @@ const TAB_PICKUP_STATE_PREF =
 
 const calloutId = "multi-stage-message-root";
 const calloutSelector = `#${calloutId}.featureCallout`;
-const primaryButtonSelector = `#${calloutId} .primary`;
+const CTASelector = `#${calloutId} :is(.primary, .secondary)`;
 
 /**
  * URLs used for browser_recently_closed_tabs_keyboard and
@@ -58,6 +60,7 @@ const URLs = [
   "https://www.example.com/",
   "https://example.net/",
   "https://example.org/",
+  "about:robots",
 ];
 
 const syncedTabsData1 = [
@@ -74,6 +77,7 @@ const syncedTabsData1 = [
         url: "https://sinonjs.org/releases/latest/sandbox/",
         icon: "https://sinonjs.org/assets/images/favicon.png",
         lastUsed: 1655391592, // Thu Jun 16 2022 14:59:52 GMT+0000
+        client: 1,
       },
       {
         type: "tab",
@@ -81,6 +85,7 @@ const syncedTabsData1 = [
         url: "https://www.mozilla.org/",
         icon: "https://www.mozilla.org/media/img/favicons/mozilla/favicon.d25d81d39065.ico",
         lastUsed: 1655730486, // Mon Jun 20 2022 13:08:06 GMT+0000
+        client: 1,
       },
     ],
   },
@@ -97,6 +102,7 @@ const syncedTabsData1 = [
         url: "https://www.theguardian.com/",
         icon: "page-icon:https://www.theguardian.com/",
         lastUsed: 1655291890, // Wed Jun 15 2022 11:18:10 GMT+0000
+        client: 2,
       },
       {
         type: "tab",
@@ -104,6 +110,7 @@ const syncedTabsData1 = [
         url: "https://www.thetimes.co.uk/",
         icon: "page-icon:https://www.thetimes.co.uk/",
         lastUsed: 1655727485, // Mon Jun 20 2022 12:18:05 GMT+0000
+        client: 2,
       },
     ],
   },
@@ -242,7 +249,7 @@ function setupRecentDeviceListMocks() {
 }
 
 function getMockTabData(clients) {
-  return SyncedTabs._internal._createRecentTabsList(clients, 3);
+  return SyncedTabs._internal._createRecentTabsList(clients, 10);
 }
 
 async function setupListState(browser) {
@@ -335,6 +342,18 @@ function setupMocks({ fxaDevices = null, state, syncEnabled = true }) {
       }),
     };
   });
+  // This is converting the device list to a client list.
+  // There are two primary differences:
+  // 1. The client list doesn't return the current device.
+  // 2. It uses clientType instead of type.
+  let tabClients = fxaDevices ? [...fxaDevices] : [];
+  for (let client of tabClients) {
+    client.clientType = client.type;
+  }
+  tabClients = tabClients.filter(device => !device.isCurrentDevice);
+  sandbox.stub(SyncedTabs, "getTabClients").callsFake(() => {
+    return Promise.resolve(tabClients);
+  });
   return sandbox;
 }
 
@@ -343,6 +362,22 @@ async function tearDown(sandbox) {
   Services.prefs.clearUserPref("services.sync.lastTabFetch");
   Services.prefs.clearUserPref(MOBILE_PROMO_DISMISSED_PREF);
 }
+
+const featureTourPref = "browser.firefox-view.feature-tour";
+const launchFeatureTourIn = win => {
+  const { FeatureCallout } = ChromeUtils.importESModule(
+    "resource:///modules/FeatureCallout.sys.mjs"
+  );
+  let callout = new FeatureCallout({
+    win,
+    pref: { name: featureTourPref },
+    location: "about:firefoxview",
+    context: "content",
+    theme: { preset: "themed-content" },
+  });
+  callout.showFeatureCallout();
+  return callout;
+};
 
 /**
  * Returns a value that can be used to set
@@ -392,8 +427,8 @@ const waitForCalloutRemoved = async doc => {
  *
  * @param {document} doc Firefox View document
  */
-const clickPrimaryButton = async doc => {
-  doc.querySelector(primaryButtonSelector).click();
+const clickCTA = async doc => {
+  doc.querySelector(CTASelector).click();
 };
 
 /**
@@ -501,9 +536,9 @@ class TelemetrySpy {
  * @return {Promise} Promise that resolves when the session store
  * has been updated after closing the tab.
  */
-async function open_then_close(url) {
+async function open_then_close(url, win = window) {
   let { updatePromise } = await BrowserTestUtils.withNewTab(
-    url,
+    { url, gBrowser: win.gBrowser },
     async browser => {
       return {
         updatePromise: BrowserTestUtils.waitForSessionStoreUpdate({
@@ -538,13 +573,28 @@ function isFirefoxViewTabSelected(win = window) {
   return isFirefoxViewTabSelectedInWindow(win);
 }
 
+function promiseAllButPrimaryWindowClosed() {
+  let windows = [];
+  for (let win of BrowserWindowTracker.orderedWindows) {
+    if (win != window) {
+      windows.push(win);
+    }
+  }
+  return Promise.all(windows.map(BrowserTestUtils.closeWindow));
+}
+
 registerCleanupFunction(() => {
-  is(
-    typeof SyncedTabs._internal?._createRecentTabsList,
-    "function",
-    "in firefoxview/head.js, SyncedTabs._internal._createRecentTabsList is a function"
-  );
   // ensure all the stubs are restored, regardless of any exceptions
   // that might have prevented it
   gSandbox?.restore();
 });
+
+function navigateToCategory(document, category) {
+  const navigation = document.querySelector("fxview-category-navigation");
+  let navButton = Array.from(navigation.categoryButtons).filter(
+    categoryButton => {
+      return categoryButton.name === category;
+    }
+  )[0];
+  navButton.buttonEl.click();
+}

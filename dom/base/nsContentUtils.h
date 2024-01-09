@@ -28,6 +28,7 @@
 #include "ErrorList.h"
 #include "Units.h"
 #include "js/Id.h"
+#include "js/RegExpFlags.h"
 #include "js/RootingAPI.h"
 #include "mozilla/AlreadyAddRefed.h"
 #include "mozilla/Assertions.h"
@@ -45,7 +46,6 @@
 #include "mozilla/fallible.h"
 #include "mozilla/gfx/Point.h"
 #include "nsCOMPtr.h"
-#include "nsHashtablesFwd.h"
 #include "nsIContentPolicy.h"
 #include "nsINode.h"
 #include "nsIScriptError.h"
@@ -120,16 +120,12 @@ class nsParser;
 class nsPIWindowRoot;
 class nsPresContext;
 class nsStringBuffer;
-class nsStringHashKey;
 class nsTextFragment;
 class nsView;
 class nsWrapperCache;
 
 struct JSContext;
 struct nsPoint;
-
-template <class T>
-class nsRefPtrHashKey;
 
 namespace IPC {
 class Message;
@@ -176,6 +172,7 @@ class ContentChild;
 class ContentFrameMessageManager;
 class ContentParent;
 struct CustomElementDefinition;
+class CustomElementFormValue;
 class CustomElementRegistry;
 class DataTransfer;
 class Document;
@@ -184,6 +181,7 @@ class DOMArena;
 class Element;
 class Event;
 class EventTarget;
+class HTMLElement;
 class HTMLInputElement;
 class IPCTransferable;
 class IPCTransferableData;
@@ -192,6 +190,7 @@ class IPCTransferableDataItem;
 struct LifecycleCallbackArgs;
 class MessageBroadcaster;
 class NodeInfo;
+class OwningFileOrUSVStringOrFormData;
 class Selection;
 struct StructuredSerializeOptions;
 class WorkerPrivate;
@@ -241,9 +240,6 @@ struct EventNameMapping {
   int32_t mType;
   mozilla::EventMessage mMessage;
   mozilla::EventClassID mEventClassID;
-  // True if mAtom is possibly used by special SVG/SMIL events, but
-  // mMessage is eUnidentifiedEvent. See EventNameList.h
-  bool mMaybeSpecialSVGorSMILEvent;
 };
 
 namespace mozilla {
@@ -357,8 +353,7 @@ class nsContentUtils {
 
   // Check whether we should avoid leaking distinguishing information to JS/CSS.
   // This function can be called both in the main thread and worker threads.
-  static bool ShouldResistFingerprinting(
-      RFPTarget aTarget = RFPTarget::Unknown);
+  static bool ShouldResistFingerprinting(RFPTarget aTarget);
   static bool ShouldResistFingerprinting(nsIGlobalObject* aGlobalObject,
                                          RFPTarget aTarget);
   // Similar to the function above, but always allows CallerType::System
@@ -369,10 +364,8 @@ class nsContentUtils {
   static bool ShouldResistFingerprinting(nsIDocShell* aDocShell,
                                          RFPTarget aTarget);
   // These functions are the new, nuanced functions
-  static bool ShouldResistFingerprinting(
-      nsIChannel* aChannel, RFPTarget aTarget = RFPTarget::Unknown);
-  static bool ShouldResistFingerprinting(
-      nsILoadInfo* aLoadInfo, RFPTarget aTarget = RFPTarget::Unknown);
+  static bool ShouldResistFingerprinting(nsIChannel* aChannel,
+                                         RFPTarget aTarget);
   // These functions are labeled as dangerous because they will do the wrong
   // thing in _most_ cases. They should only be used if you don't have a fully
   // constructed LoadInfo or Document.
@@ -382,10 +375,10 @@ class nsContentUtils {
   // (see below for more on justification strings.)
   static bool ShouldResistFingerprinting_dangerous(
       nsIURI* aURI, const mozilla::OriginAttributes& aOriginAttributes,
-      const char* aJustification, RFPTarget aTarget = RFPTarget::Unknown);
-  static bool ShouldResistFingerprinting_dangerous(
-      nsIPrincipal* aPrincipal, const char* aJustification,
-      RFPTarget aTarget = RFPTarget::Unknown);
+      const char* aJustification, RFPTarget aTarget);
+  static bool ShouldResistFingerprinting_dangerous(nsIPrincipal* aPrincipal,
+                                                   const char* aJustification,
+                                                   RFPTarget aTarget);
 
   /**
    * Implement a RFP function that only checks the pref, and does not take
@@ -397,8 +390,8 @@ class nsContentUtils {
    * require a legacy function. (Additionally, we sometimes use the coarse
    * check first, to avoid running additional code to support a nuanced check.)
    */
-  static bool ShouldResistFingerprinting(
-      const char* aJustification, RFPTarget aTarget = RFPTarget::Unknown);
+  static bool ShouldResistFingerprinting(const char* aJustification,
+                                         RFPTarget aTarget);
 
   // A helper function to calculate the rounded window size for fingerprinting
   // resistance. The rounded size is based on the chrome UI size and available
@@ -527,15 +520,6 @@ class nsContentUtils {
    */
   static Element* GetCommonFlattenedTreeAncestorForStyle(Element* aElement1,
                                                          Element* aElement2);
-
-  /**
-   * Returns the common ancestor under interactive content, if any.
-   * If neither one has interactive content as ancestor, common ancestor will be
-   * returned. If only one has interactive content as ancestor, null will be
-   * returned. If the nodes are the same, that node is returned.
-   */
-  static nsINode* GetCommonAncestorUnderInteractiveContent(nsINode* aNode1,
-                                                           nsINode* aNode2);
 
   /**
    * Returns the common BrowserParent ancestor, if any, for two given
@@ -1707,6 +1691,11 @@ class nsContentUtils {
   static EventMessage GetEventMessage(nsAtom* aName);
 
   /**
+   * Return the event type atom for a given event message.
+   */
+  static nsAtom* GetEventTypeFromMessage(EventMessage aEventMessage);
+
+  /**
    * Returns the EventMessage and nsAtom to be used for event listener
    * registration.
    */
@@ -2257,24 +2246,30 @@ class nsContentUtils {
   static nsIInterfaceRequestor* SameOriginChecker();
 
   /**
-   * Get the Origin of the passed in nsIPrincipal or nsIURI. If the passed in
-   * nsIURI or the URI of the passed in nsIPrincipal does not have a host, the
-   * origin is set to 'null'.
+   * Returns an ASCII compatible serialization of the nsIPrincipal or nsIURI's
+   * origin, as specified by the whatwg HTML specification.  If the principal
+   * does not have a host, the origin will be "null".
    *
-   * The ASCII versions return a ASCII strings that are puny-code encoded,
-   * suitable for, for example, header values. The UTF versions return strings
-   * containing international characters.
+   * https://html.spec.whatwg.org/multipage/browsers.html#ascii-serialisation-of-an-origin
    *
-   * The thread-safe versions return NS_ERROR_UNKNOWN_PROTOCOL if the
-   * operation cannot be completed on the current thread.
+   * Note that this is different from nsIPrincipal::GetOrigin, does not contain
+   * gecko-specific metadata like origin attributes, and should not be used for
+   * permissions or security checks.
    *
-   * @pre aPrincipal/aOrigin must not be null.
+   * See also `nsIPrincipal::GetWebExposedOriginSerialization`.
+   *
+   * These methods are thread-safe.
+   *
+   * @pre aPrincipal/aURI must not be null.
    *
    * @note this should be used for HTML5 origin determination.
    */
-  static nsresult GetASCIIOrigin(nsIURI* aURI, nsACString& aOrigin);
-  static nsresult GetUTFOrigin(nsIPrincipal* aPrincipal, nsAString& aOrigin);
-  static nsresult GetUTFOrigin(nsIURI* aURI, nsAString& aOrigin);
+  static nsresult GetWebExposedOriginSerialization(nsIURI* aURI,
+                                                   nsACString& aOrigin);
+  static nsresult GetWebExposedOriginSerialization(nsIPrincipal* aPrincipal,
+                                                   nsAString& aOrigin);
+  static nsresult GetWebExposedOriginSerialization(nsIURI* aURI,
+                                                   nsAString& aOrigin);
 
   /**
    * This method creates and dispatches "command" event, which implements
@@ -2471,14 +2466,6 @@ class nsContentUtils {
                                                  int32_t aOldChildCount);
 
   /**
-   * Returns true if the content is in a document and contains a plugin
-   * which we don't control event dispatch for, i.e. do any plugins in this
-   * doc tree receive key events outside of our control? This always returns
-   * false on MacOSX.
-   */
-  static bool HasPluginWithUncontrolledEventDispatch(nsIContent* aContent);
-
-  /**
    * Returns the in-process subtree root document in a document hierarchy.
    * This could be a chrome document.
    */
@@ -2490,8 +2477,7 @@ class nsContentUtils {
 
   static void GetShiftText(nsAString& text);
   static void GetControlText(nsAString& text);
-  static void GetMetaText(nsAString& text);
-  static void GetOSText(nsAString& text);
+  static void GetCommandOrWinText(nsAString& text);
   static void GetAltText(nsAString& text);
   static void GetModifierSeparatorText(nsAString& text);
 
@@ -2560,19 +2546,20 @@ class nsContentUtils {
    * This is following the HTML5 specification:
    * http://dev.w3.org/html5/spec/forms.html#attr-input-pattern
    *
-   * WARNING: This method mutates aPattern and aValue!
+   * WARNING: This method mutates aPattern!
    *
    * @param aValue       the string to check.
    * @param aPattern     the string defining the pattern.
    * @param aDocument    the owner document of the element.
    * @param aHasMultiple whether or not there are multiple values.
+   * @param aFlags       the flags to use for creating the regexp object.
    * @result             whether the given string is matches the pattern, or
    *                     Nothing() if the pattern couldn't be evaluated.
    */
-  static mozilla::Maybe<bool> IsPatternMatching(nsAString& aValue,
-                                                nsAString& aPattern,
-                                                const Document* aDocument,
-                                                bool aHasMultiple = false);
+  static mozilla::Maybe<bool> IsPatternMatching(
+      const nsAString& aValue, nsString&& aPattern, const Document* aDocument,
+      bool aHasMultiple = false,
+      JS::RegExpFlags aFlags = JS::RegExpFlag::UnicodeSets);
 
   /**
    * Calling this adds support for
@@ -2773,6 +2760,34 @@ class nsContentUtils {
    * Checks whether the  header value contains any forbidden method
    */
   static bool ContainsForbiddenMethod(const nsACString& headerValue);
+
+  class ParsedRange {
+   public:
+    explicit ParsedRange(mozilla::Maybe<uint64_t> aStart,
+                         mozilla::Maybe<uint64_t> aEnd)
+        : mStart(aStart), mEnd(aEnd) {}
+
+    mozilla::Maybe<uint64_t> Start() const { return mStart; }
+    mozilla::Maybe<uint64_t> End() const { return mEnd; }
+
+    bool operator==(const ParsedRange& aOther) const {
+      return Start() == aOther.Start() && End() == aOther.End();
+    }
+
+   private:
+    mozilla::Maybe<uint64_t> mStart;
+    mozilla::Maybe<uint64_t> mEnd;
+  };
+
+  /**
+   * Parse a single range request and return a pair containing the resulting
+   * start and end of the range.
+   *
+   * See https://fetch.spec.whatwg.org/#simple-range-header-value
+   */
+  static mozilla::Maybe<ParsedRange> ParseSingleRangeRequest(
+      const nsACString& aHeaderValue, bool aAllowWhitespace);
+
   /**
    * Returns whether a given header has characters that aren't permitted
    */
@@ -2795,6 +2810,12 @@ class nsContentUtils {
    * allowed for a non-CORS XHR or fetch request.
    */
   static bool IsAllowedNonCorsLanguage(const nsACString& aHeaderValue);
+
+  /**
+   * Returns whether a given Range header value is allowed for a non-CORS XHR or
+   * fetch request.
+   */
+  static bool IsAllowedNonCorsRange(const nsACString& aHeaderValue);
 
   /**
    * Returns whether a given header and value is a CORS-safelisted request
@@ -3050,6 +3071,15 @@ class nsContentUtils {
       mozilla::dom::ElementCallbackType aType, Element* aCustomElement,
       const mozilla::dom::LifecycleCallbackArgs& aArgs,
       mozilla::dom::CustomElementDefinition* aDefinition = nullptr);
+
+  static mozilla::dom::CustomElementFormValue ConvertToCustomElementFormValue(
+      const mozilla::dom::Nullable<
+          mozilla::dom::OwningFileOrUSVStringOrFormData>& aState);
+
+  static mozilla::dom::Nullable<mozilla::dom::OwningFileOrUSVStringOrFormData>
+  ExtractFormAssociatedCustomElementValue(
+      nsIGlobalObject* aGlobal,
+      const mozilla::dom::CustomElementFormValue& aCEValue);
 
   /**
    * Appends all "document level" native anonymous content subtree roots for
@@ -3407,6 +3437,33 @@ class nsContentUtils {
 
   static bool IsExternalProtocol(nsIURI* aURI);
 
+  /**
+   * Add an element to a list, keeping the list sorted by tree order.
+   * Can take a potential ancestor of the elements in order to speed up
+   * tree-order comparisons, if such an ancestor exists.
+   * Returns true if the element is appended to the end of the list.
+   */
+  template <typename ElementType, typename ElementPtr>
+  static bool AddElementToListByTreeOrder(nsTArray<ElementType>& aList,
+                                          ElementPtr aChild,
+                                          nsIContent* aCommonAncestor);
+
+  /**
+   * Compares the position of aContent1 and aContent2 in the document
+   * @param aContent1 First content to compare.
+   * @param aContent2 Second content to compare.
+   * @param aCommonAncestor Potential ancestor of the contents, if one exists.
+   *                        This is only a hint; if it's not an ancestor of
+   *                        aContent1 or aContent2, this function will still
+   *                        work, but it will be slower than normal.
+   * @return < 0 if aContent1 is before aContent2,
+   *         > 0 if aContent1 is after aContent2,
+   *         0 otherwise
+   */
+  static int32_t CompareTreePosition(nsIContent* aContent1,
+                                     nsIContent* aContent2,
+                                     const nsIContent* aCommonAncestor);
+
  private:
   static bool InitializeEventTable();
 
@@ -3470,10 +3527,6 @@ class nsContentUtils {
 
   static nsIConsoleService* sConsoleService;
 
-  static nsTHashMap<nsRefPtrHashKey<nsAtom>, EventNameMapping>* sAtomEventTable;
-  static nsTHashMap<nsStringHashKey, EventNameMapping>* sStringEventTable;
-  static nsTArray<RefPtr<nsAtom>>* sUserDefinedEvents;
-
   static nsIStringBundleService* sStringBundleService;
   class nsContentUtilsReporter;
 
@@ -3516,8 +3569,7 @@ class nsContentUtils {
 
   static nsString* sShiftText;
   static nsString* sControlText;
-  static nsString* sMetaText;
-  static nsString* sOSText;
+  static nsString* sCommandOrWinText;
   static nsString* sAltText;
   static nsString* sModifierSeparator;
 

@@ -11,6 +11,36 @@ $tags:
   - 'WebExtensions :: General'
 
 extensions:
+  use_remote_pref:
+    type: boolean
+    expires: never
+    lifetime: application
+    description: >
+      Corresponds to the value of `extensions.webextensions.remote` pref.
+    notification_emails:
+      - addons-dev-internal@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/1850351/
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1850351#c2
+    data_sensitivity:
+      - technical
+
+  use_remote_policy:
+    type: boolean
+    expires: never
+    lifetime: application
+    description: >
+      Corresponds to the value of `WebExtensionPolicy.useRemoteWebExtensions`.
+    notification_emails:
+      - addons-dev-internal@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/1850351/
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1850351#c2
+    data_sensitivity:
+      - technical
+
   startup_cache_load_time:
     type: timespan
     time_unit: millisecond
@@ -28,6 +58,35 @@ extensions:
     data_sensitivity:
       - technical
     telemetry_mirror: EXTENSIONS_STARTUPCACHE_LOAD_TIME
+
+  process_event:
+    type: labeled_counter
+    expires: never
+    description: |
+      Counters for how many times the extension process has crashed or been created.
+      The labels with "_fg" / "_bg" suffixes are only recorded in Android builds,
+      while the "created" and "crashed" labels are recorded on both Desktop and Android
+      builds. 
+    lifetime: application
+    notification_emails:
+      - addons-dev-internal@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/1830157/
+      - https://bugzilla.mozilla.org/1848223/
+      - https://bugzilla.mozilla.org/1850350/
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1830157#c7
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1848223#c4
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1850350#c2
+    data_sensitivity:
+      - technical
+    labels:
+      - crashed_bg
+      - crashed_fg
+      - created_bg
+      - created_fg
+      - crashed_over_threshold_bg
+      - crashed_over_threshold_fg
 
 extensions.apis.dnr:
 
@@ -170,3 +229,60 @@ extensions.apis.dnr:
     data_sensitivity:
       - technical
     telemetry_mirror: EXTENSIONS_APIS_DNR_EVALUATE_RULES_COUNT_MAX
+
+extensions.quarantined_domains:
+
+  listsize:
+    type: quantity
+    unit: domains
+    description: >
+      Number of domains listed in the quarantined domains list pref for the client during
+      this session.
+    lifetime: application
+    expires: 123
+    notification_emails:
+      - addons-dev-internal@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/1840615/
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1840615
+    data_sensitivity:
+      - technical
+    telemetry_mirror: EXTENSIONS_QUARANTINEDDOMAINS_LISTSIZE
+
+  listhash:
+    type: string
+    description: >
+      SHA1 cryptographic hash of the quarantined domains string pref.
+    lifetime: application
+    expires: 123
+    notification_emails:
+      - addons-dev-internal@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/1841683/
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1840615#c2
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1841683
+    data_sensitivity:
+      - technical
+    telemetry_mirror: EXTENSIONS_QUARANTINEDDOMAINS_LISTHASH
+
+  remotehash:
+    type: string
+    description: >
+      SHA1 cryptographic hash of the quarantined domains string pref as it was
+      set based on the value got synced from the RemoteSettings collection.
+      AMRemoteSettings will be re-processing the entries on the next application
+      startup and so this metric lifetime can be set to application and expect
+      it to be always set to the value got from the RemoteSettings collection.
+    lifetime: application
+    expires: 123
+    notification_emails:
+      - addons-dev-internal@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/1841683/
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1841683
+    data_sensitivity:
+      - technical
+    telemetry_mirror: EXTENSIONS_QUARANTINEDDOMAINS_REMOTEHASH

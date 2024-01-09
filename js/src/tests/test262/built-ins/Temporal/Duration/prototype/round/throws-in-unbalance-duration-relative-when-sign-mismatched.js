@@ -1,4 +1,4 @@
-// |reftest| skip -- Temporal is not supported
+// |reftest| skip-if(!this.hasOwnProperty('Temporal')) -- Temporal is not enabled unconditionally
 // Copyright (C) 2022 André Bargull. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 
@@ -23,7 +23,7 @@ var cal = new class extends Temporal.Calendar {
 }("iso8601");
 
 var relativeTo = new Temporal.PlainDateTime(1970, 1, 1, 0, 0, 0, 0, 0, 0, cal);
-assert.sameValue(relativeTo.calendar, cal);
+assert.sameValue(relativeTo.getCalendar(), cal);
 
 var options = {
   smallestUnit: "days",

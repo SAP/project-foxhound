@@ -111,4 +111,28 @@ url = "https://github.com/WebAssembly/extended-const"
 branch = "main"
 parent = "spec"
 directive = "; --wasm-extended-const; skip-if: !wasmExtendedConstEnabled()"
+excluded_tests = [
+  # Changed order of operands
+  "relaxed_fma_fms.wast",
+  # Different results
+  "i32x4_relaxed_trunc.wast",
+]
+
+[[repos]]
+name = "tail-call"
+url = "https://github.com/WebAssembly/tail-call"
+branch = "main"
+parent = "spec"
+directive = "; --wasm-tail-calls; skip-if: !wasmTailCallsEnabled()"
 excluded_tests = []
+
+[[repos]]
+name = "multi-memory"
+url = "https://github.com/WebAssembly/multi-memory"
+branch = "main"
+parent = "spec"
+directive = "; --wasm-multi-memory; skip-if: !wasmMultiMemoryEnabled()"
+excluded_tests = [
+  # Empty test fails parsing
+  "memory_copy1.wast",
+]

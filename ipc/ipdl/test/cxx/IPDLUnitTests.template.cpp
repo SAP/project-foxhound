@@ -51,14 +51,12 @@ char* gIPDLUnitTestName = nullptr;
 
 const char* IPDLUnitTestName() {
   if (!gIPDLUnitTestName) {
-#if defined(OS_WIN)
+#if defined(XP_WIN)
     vector<wstring> args = CommandLine::ForCurrentProcess()->GetLooseValues();
     gIPDLUnitTestName = ::strdup(WideToUTF8(args[0]).c_str());
-#elif defined(OS_POSIX)
+#else
     vector<string> argv = CommandLine::ForCurrentProcess()->argv();
     gIPDLUnitTestName = ::moz_xstrdup(argv[1].c_str());
-#else
-#  error Sorry
 #endif
   }
   return gIPDLUnitTestName;

@@ -94,13 +94,32 @@ struct KeySystemConfig {
       mCodecsDecrypted.AppendElement(aCodec);
     }
 
+#ifdef DEBUG
+    EMECodecString GetDebugInfo() const {
+      EMECodecString info;
+      info.AppendLiteral("decoding: [");
+      for (const auto& codec : mCodecsDecoded) {
+        info.Append(codec);
+        info.AppendLiteral(",");
+      }
+      info.AppendLiteral("], ");
+      info.AppendLiteral("decrypting: [");
+      for (const auto& codec : mCodecsDecrypted) {
+        info.Append(codec);
+        info.AppendLiteral(",");
+      }
+      info.AppendLiteral("]");
+      return info;
+    }
+#endif
    private:
     nsTArray<EMECodecString> mCodecsDecoded;
     nsTArray<EMECodecString> mCodecsDecrypted;
   };
 
   static bool Supports(const nsAString& aKeySystem);
-  static bool GetConfig(const nsAString& aKeySystem, KeySystemConfig& aConfig);
+  static bool CreateKeySystemConfigs(const nsAString& aKeySystem,
+                                     nsTArray<KeySystemConfig>& aOutConfigs);
 
   KeySystemConfig() = default;
   ~KeySystemConfig() = default;
@@ -135,6 +154,10 @@ struct KeySystemConfig {
   KeySystemConfig(KeySystemConfig&&) = default;
   KeySystemConfig& operator=(KeySystemConfig&&) = default;
 
+#ifdef DEBUG
+  nsString GetDebugInfo() const;
+#endif
+
   nsString mKeySystem;
   nsTArray<nsString> mInitDataTypes;
   Requirement mPersistentState = Requirement::NotAllowed;
@@ -145,12 +168,12 @@ struct KeySystemConfig {
   nsTArray<nsString> mEncryptionSchemes;
   ContainerSupport mMP4;
   ContainerSupport mWebM;
-  bool mIsHW = false;
 };
 
 KeySystemConfig::SessionType ConvertToKeySystemConfigSessionType(
     dom::MediaKeySessionType aType);
 const char* SessionTypeToStr(KeySystemConfig::SessionType aType);
+const char* RequirementToStr(KeySystemConfig::Requirement aRequirement);
 
 }  // namespace mozilla
 

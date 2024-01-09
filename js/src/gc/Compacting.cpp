@@ -329,7 +329,7 @@ Arena* ArenaList::relocateArenas(Arena* toRelocate, Arena* relocated,
 
 // Skip compacting zones unless we can free a certain proportion of their GC
 // heap memory.
-static const float MIN_ZONE_RECLAIM_PERCENT = 2.0;
+static const double MIN_ZONE_RECLAIM_PERCENT = 2.0;
 
 static bool ShouldRelocateZone(size_t arenaCount, size_t relocCount,
                                JS::GCReason reason) {
@@ -341,7 +341,8 @@ static bool ShouldRelocateZone(size_t arenaCount, size_t relocCount,
     return true;
   }
 
-  return (relocCount * 100.0f) / arenaCount >= MIN_ZONE_RECLAIM_PERCENT;
+  double relocFraction = double(relocCount) / double(arenaCount);
+  return relocFraction * 100.0 >= MIN_ZONE_RECLAIM_PERCENT;
 }
 
 static AllocKinds CompactingAllocKinds() {
@@ -458,6 +459,7 @@ void GCRuntime::sweepZoneAfterCompacting(MovingTracer* trc, Zone* zone) {
   MOZ_ASSERT(zone->isGCCompacting());
 
   zone->traceWeakMaps(trc);
+  zone->sweepObjectsWithWeakPointers(trc);
 
   traceWeakFinalizationObserverEdges(trc, zone);
 
@@ -466,18 +468,16 @@ void GCRuntime::sweepZoneAfterCompacting(MovingTracer* trc, Zone* zone) {
   }
 
   if (jit::JitZone* jitZone = zone->jitZone()) {
-    jitZone->traceWeak(trc);
+    jitZone->traceWeak(trc, zone);
   }
 
   for (CompartmentsInZoneIter c(zone); !c.done(); c.next()) {
     c->traceWeakNativeIterators(trc);
 
     for (RealmsInCompartmentIter r(c); !r.done(); r.next()) {
-      r->traceWeakRegExps(trc);
       r->traceWeakSavedStacks(trc);
       r->traceWeakGlobalEdge(trc);
       r->traceWeakDebugEnvironmentEdges(trc);
-      r->traceWeakEdgesInJitRealm(trc);
     }
   }
 }

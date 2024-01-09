@@ -19,17 +19,20 @@
 #include "ds/Sort.h"
 #include "frontend/BytecodeCompiler.h"  // js::frontend::CompileModule
 #include "frontend/FrontendContext.h"   // js::AutoReportFrontendContext
-#include "js/Context.h"                 // js::AssertHeapIsIdle
-#include "js/RootingAPI.h"              // JS::MutableHandle
-#include "js/Value.h"                   // JS::Value
-#include "vm/EnvironmentObject.h"       // js::ModuleEnvironmentObject
-#include "vm/JSContext.h"               // CHECK_THREAD, JSContext
-#include "vm/JSObject.h"                // JSObject
-#include "vm/List.h"                    // ListObject
-#include "vm/Runtime.h"                 // JSRuntime
+#include "js/ColumnNumber.h"  // JS::ColumnNumberZeroOrigin, JS::ColumnNumberOneOrigin
+#include "js/Context.h"            // js::AssertHeapIsIdle
+#include "js/ErrorReport.h"        // JSErrorBase
+#include "js/RootingAPI.h"         // JS::MutableHandle
+#include "js/Value.h"              // JS::Value
+#include "vm/EnvironmentObject.h"  // js::ModuleEnvironmentObject
+#include "vm/JSAtomUtils.h"        // AtomizeString
+#include "vm/JSContext.h"          // CHECK_THREAD, JSContext
+#include "vm/JSObject.h"           // JSObject
+#include "vm/List.h"               // ListObject
+#include "vm/Runtime.h"            // JSRuntime
 
-#include "vm/JSAtom-inl.h"
-#include "vm/JSContext-inl.h"  // JSContext::{c,releaseC}heck
+#include "vm/JSAtomUtils-inl.h"  // AtomToId
+#include "vm/JSContext-inl.h"    // JSContext::{c,releaseC}heck
 
 using namespace js;
 
@@ -194,7 +197,7 @@ JS_PUBLIC_API JSString* JS::GetRequestedModuleSpecifier(
 
 JS_PUBLIC_API void JS::GetRequestedModuleSourcePos(
     JSContext* cx, Handle<JSObject*> moduleRecord, uint32_t index,
-    uint32_t* lineNumber, uint32_t* columnNumber) {
+    uint32_t* lineNumber, JS::ColumnNumberZeroOrigin* columnNumber) {
   AssertHeapIsIdle();
   CHECK_THREAD(cx);
   cx->check(moduleRecord);
@@ -287,6 +290,14 @@ JS_PUBLIC_API void JS::ClearModuleEnvironment(JSObject* moduleObj) {
   for (uint32_t i = numReserved; i < numSlots; i++) {
     env->setSlot(i, UndefinedValue());
   }
+}
+
+JS_PUBLIC_API void JS::AssertModuleUnlinked(JSObject* moduleObj) {
+  MOZ_ASSERT(moduleObj);
+  AssertHeapIsIdle();
+
+  MOZ_DIAGNOSTIC_ASSERT(moduleObj->as<ModuleObject>().status() ==
+                        ModuleStatus::Unlinked);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -598,7 +609,7 @@ static bool ModuleResolveExport(JSContext* cx, Handle<ModuleObject*> module,
         //                this export.
         // Step 5.a.ii.2. Return ResolvedBinding Record { [[Module]]:
         //                importedModule, [[BindingName]]: namespace }.
-        name = cx->names().starNamespaceStar;
+        name = cx->names().star_namespace_star_;
         return CreateResolvedBindingObject(cx, importedModule, name, result);
       } else {
         // Step 5.a.iii.1. Assert: module imports a specific binding for this
@@ -822,7 +833,7 @@ static ModuleNamespaceObject* ModuleNamespaceCreate(
     importedModule = binding->module();
     bindingName = binding->bindingName();
 
-    if (bindingName == cx->names().starNamespaceStar) {
+    if (bindingName == cx->names().star_namespace_star_) {
       importedNamespace = GetOrCreateModuleNamespace(cx, importedModule);
       if (!importedNamespace) {
         return nullptr;
@@ -848,7 +859,7 @@ static ModuleNamespaceObject* ModuleNamespaceCreate(
 static void ThrowResolutionError(JSContext* cx, Handle<ModuleObject*> module,
                                  Handle<Value> resolution, bool isDirectImport,
                                  Handle<JSAtom*> name, uint32_t line,
-                                 uint32_t column) {
+                                 JS::ColumnNumberZeroOrigin column) {
   MOZ_ASSERT(line != 0);
 
   bool isAmbiguous = resolution == StringValue(cx->names().ambiguous);
@@ -888,15 +899,16 @@ static void ThrowResolutionError(JSContext* cx, Handle<ModuleObject*> module,
     filename =
         JS_NewStringCopyUTF8Z(cx, JS::ConstUTF8CharsZ(chars, strlen(chars)));
   } else {
-    filename = cx->names().empty;
+    filename = cx->names().empty_;
   }
   if (!filename) {
     return;
   }
 
   RootedValue error(cx);
-  if (!JS::CreateError(cx, JSEXN_SYNTAXERR, nullptr, filename, line, column,
-                       nullptr, message, JS::NothingHandleValue, &error)) {
+  if (!JS::CreateError(cx, JSEXN_SYNTAXERR, nullptr, filename, line,
+                       JS::ColumnNumberOneOrigin(column), nullptr, message,
+                       JS::NothingHandleValue, &error)) {
     return;
   }
 
@@ -990,7 +1002,7 @@ bool js::ModuleInitializeEnvironment(JSContext* cx,
       bindingName = binding->bindingName();
 
       // Step 7.d.iii. If resolution.[[BindingName]] is namespace, then:
-      if (bindingName == cx->names().starNamespaceStar) {
+      if (bindingName == cx->names().star_namespace_star_) {
         // Step 7.d.iii.1. Let namespace be ?
         //                 GetModuleNamespace(resolution.[[Module]]).
         Rooted<ModuleNamespaceObject*> ns(

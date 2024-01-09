@@ -1,4 +1,4 @@
-// |reftest| skip -- Temporal is not supported
+// |reftest| skip-if(!this.hasOwnProperty('Temporal')) -- Temporal is not enabled unconditionally
 // Copyright (C) 2022 Igalia, S.L. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 
@@ -10,9 +10,29 @@ features: [Temporal]
 ---*/
 
 const expected = [
-  // ToTemporalDate → GetTemporalCalendarWithISODefault
+  // ToTemporalDate → GetTemporalCalendarSlotValueWithISODefault
   "get date.calendar",
-  "has date.calendar.calendar",
+  "has date.calendar.dateAdd",
+  "has date.calendar.dateFromFields",
+  "has date.calendar.dateUntil",
+  "has date.calendar.day",
+  "has date.calendar.dayOfWeek",
+  "has date.calendar.dayOfYear",
+  "has date.calendar.daysInMonth",
+  "has date.calendar.daysInWeek",
+  "has date.calendar.daysInYear",
+  "has date.calendar.fields",
+  "has date.calendar.id",
+  "has date.calendar.inLeapYear",
+  "has date.calendar.mergeFields",
+  "has date.calendar.month",
+  "has date.calendar.monthCode",
+  "has date.calendar.monthDayFromFields",
+  "has date.calendar.monthsInYear",
+  "has date.calendar.weekOfYear",
+  "has date.calendar.year",
+  "has date.calendar.yearMonthFromFields",
+  "has date.calendar.yearOfWeek",
   // ToTemporalDate → CalendarFields
   "get date.calendar.fields",
   "call date.calendar.fields",

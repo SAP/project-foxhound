@@ -2,41 +2,68 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 .onboardingContainer.featureCallout {
-  --fc-background: var(--fc-background-light, #FFF);
-  --fc-color: var(--fc-color-light, #15141A);
+  --fc-background: var(--fc-background-light, #fff);
+  --fc-color: var(--fc-color-light, rgb(21, 20, 26));
   --fc-border: var(--fc-border-light, #CFCFD8);
-  --fc-accent-color: var(--fc-accent-color-light, #0061E0);
+  --fc-accent-color: var(--fc-accent-color-light, rgb(0, 97, 224));
   --fc-button-background: var(--fc-button-background-light, #F0F0F4);
-  --fc-button-color: var(--fc-button-color-light, #15141A);
+  --fc-button-color: var(--fc-button-color-light, rgb(21, 20, 26));
   --fc-button-border: var(--fc-button-border-light, transparent);
   --fc-button-background-hover: var(--fc-button-background-hover-light, #E0E0E6);
-  --fc-button-color-hover: var(--fc-button-color-hover-light, #15141A);
+  --fc-button-color-hover: var(--fc-button-color-hover-light, rgb(21, 20, 26));
   --fc-button-border-hover: var(--fc-button-border-hover-light, transparent);
   --fc-button-background-active: var(--fc-button-background-active-light, #CFCFD8);
-  --fc-button-color-active: var(--fc-button-color-active-light, #15141A);
+  --fc-button-color-active: var(--fc-button-color-active-light, rgb(21, 20, 26));
   --fc-button-border-active: var(--fc-button-border-active-light, transparent);
+  --fc-primary-button-background: var(--fc-primary-button-background-light, #0061e0);
+  --fc-primary-button-color: var(--fc-primary-button-color-light, rgb(251,251,254));
+  --fc-primary-button-border: var(--fc-primary-button-border-light, transparent);
+  --fc-primary-button-background-hover: var(--fc-primary-button-background-hover-light, #0250bb);
+  --fc-primary-button-color-hover: var(--fc-primary-button-color-hover-light, rgb(251,251,254));
+  --fc-primary-button-border-hover: var(--fc-primary-button-border-hover-light, transparent);
+  --fc-primary-button-background-active: var(--fc-primary-button-background-active-light, #053e94);
+  --fc-primary-button-color-active: var(--fc-primary-button-color-active-light, rgb(251,251,254));
+  --fc-primary-button-border-active: var(--fc-primary-button-border-active-light, transparent);
   --fc-step-color: color-mix(in srgb, currentColor 50%, transparent);
+  --fc-link-color: var(--fc-link-color-light, #0061E0);
+  --fc-link-color-hover: var(--fc-link-color-hover-light, #0250BB);
+  --fc-link-color-active: var(--fc-link-color-active-light, #053E94);
+  color-scheme: light;
   position: absolute;
   transition: opacity 0.5s ease;
-  z-index: 2147483645;
+  z-index: 2147483647;
   outline: none;
   color: var(--fc-color);
+  accent-color: var(--fc-accent-color);
+  -moz-theme: non-native;
 }
 @media (prefers-color-scheme: dark) {
   .onboardingContainer.featureCallout {
-    --fc-background: var(--fc-background-dark, #42414D);
-    --fc-color: var(--fc-color-dark, #FBFBFE);
+    --fc-background: var(--fc-background-dark, rgb(43, 42, 51));
+    --fc-color: var(--fc-color-dark, rgb(251, 251, 254));
     --fc-border: var(--fc-border-dark, #3A3944);
-    --fc-accent-color: var(--fc-accent-color-dark, #00DDFF);
+    --fc-accent-color: var(--fc-accent-color-dark, rgb(0, 221, 255));
     --fc-button-background: var(--fc-button-background-dark, #2B2A33);
-    --fc-button-color: var(--fc-button-color-dark, #FBFBFE);
+    --fc-button-color: var(--fc-button-color-dark, rgb(251, 251, 254));
     --fc-button-border: var(--fc-button-border-dark, transparent);
     --fc-button-background-hover: var(--fc-button-background-hover-dark, #52525E);
-    --fc-button-color-hover: var(--fc-button-color-hover-dark, #FBFBFE);
+    --fc-button-color-hover: var(--fc-button-color-hover-dark, rgb(251, 251, 254));
     --fc-button-border-hover: var(--fc-button-border-hover-dark, transparent);
     --fc-button-background-active: var(--fc-button-background-active-dark, #5B5B66);
-    --fc-button-color-active: var(--fc-button-color-active-dark, #FBFBFE);
+    --fc-button-color-active: var(--fc-button-color-active-dark, rgb(251, 251, 254));
     --fc-button-border-active: var(--fc-button-border-active-dark, transparent);
+    --fc-primary-button-background: var(--fc-primary-button-background-dark, rgb(0,221,255));
+    --fc-primary-button-color: var(--fc-primary-button-color-dark, rgb(43,42,51));
+    --fc-primary-button-border: var(--fc-primary-button-border-dark, transparent);
+    --fc-primary-button-background-hover: var(--fc-primary-button-background-hover-dark, rgb(128,235,255));
+    --fc-primary-button-color-hover: var(--fc-primary-button-color-hover-dark, rgb(43,42,51));
+    --fc-primary-button-border-hover: var(--fc-primary-button-border-hover-dark, transparent);
+    --fc-primary-button-background-active: var(--fc-primary-button-background-active-dark, rgb(170,242,255));
+    --fc-primary-button-color-active: var(--fc-primary-button-color-active-dark, rgb(43,42,51));
+    --fc-primary-button-border-active: var(--fc-primary-button-border-active-dark, transparent);
+    --fc-link-color: var(--fc-link-color-dark, #00DDFF);
+    --fc-link-color-hover: var(--fc-link-color-hover-dark, #80EBFF);
+    --fc-link-color-active: var(--fc-link-color-hover-active, #AAF2FF);
   }
 }
 @media (prefers-contrast) {
@@ -54,42 +81,80 @@
     --fc-button-background-active: var(--fc-button-background-active-hcm, ButtonText);
     --fc-button-color-active: var(--fc-button-color-active-hcm, ButtonFace);
     --fc-button-border-active: var(--fc-button-border-active-hcm, ButtonText);
+    --fc-primary-button-background: var(--fc-primary-button-background-hcm, ButtonText);
+    --fc-primary-button-color: var(--fc-primary-button-color-hcm, ButtonFace);
+    --fc-primary-button-border: var(--fc-primary-button-border-hcm, ButtonFace);
+    --fc-primary-button-background-hover: var(--fc-primary-button-background-hover-hcm, SelectedItem);
+    --fc-primary-button-color-hover: var(--fc-primary-button-color-hover-hcm, SelectedItemText);
+    --fc-primary-button-border-hover: var(--fc-primary-button-border-hover-hcm, SelectedItemText);
+    --fc-primary-button-background-active: var(--fc-primary-button-background-active-hcm, SelectedItemText);
+    --fc-primary-button-color-active: var(--fc-primary-button-color-active-hcm, SelectedItem);
+    --fc-primary-button-border-active: var(--fc-primary-button-border-active-hcm, SelectedItem);
     --fc-step-color: var(--fc-accent-color-hcm, LinkText);
+    --fc-link-color: var(--fc-link-color-hcm, LinkText);
+    --fc-link-color-hover: var(--fc-link-color-hover-hcm, LinkText);
+    --fc-link-color-active: var(--fc-link-color-active-hcm, ActiveText);
   }
 }
 @media (-moz-content-prefers-color-scheme: light) {
   .onboardingContainer.featureCallout.simulateContent {
-    --fc-background: var(--fc-background-light, #FFF);
-    --fc-color: var(--fc-color-light, #15141A);
+    --fc-background: var(--fc-background-light, #fff);
+    --fc-color: var(--fc-color-light, rgb(21, 20, 26));
     --fc-border: var(--fc-border-light, #CFCFD8);
-    --fc-accent-color: var(--fc-accent-color-light, #0061E0);
+    --fc-accent-color: var(--fc-accent-color-light, rgb(0, 97, 224));
     --fc-button-background: var(--fc-button-background-light, #F0F0F4);
-    --fc-button-color: var(--fc-button-color-light, #15141A);
+    --fc-button-color: var(--fc-button-color-light, rgb(21, 20, 26));
     --fc-button-border: var(--fc-button-border-light, transparent);
     --fc-button-background-hover: var(--fc-button-background-hover-light, #E0E0E6);
-    --fc-button-color-hover: var(--fc-button-color-hover-light, #15141A);
+    --fc-button-color-hover: var(--fc-button-color-hover-light, rgb(21, 20, 26));
     --fc-button-border-hover: var(--fc-button-border-hover-light, transparent);
     --fc-button-background-active: var(--fc-button-background-active-light, #CFCFD8);
-    --fc-button-color-active: var(--fc-button-color-active-light, #15141A);
+    --fc-button-color-active: var(--fc-button-color-active-light, rgb(21, 20, 26));
     --fc-button-border-active: var(--fc-button-border-active-light, transparent);
+    --fc-primary-button-background: var(--fc-primary-button-background-light, #0061e0);
+    --fc-primary-button-color: var(--fc-primary-button-color-light, rgb(251,251,254));
+    --fc-primary-button-border: var(--fc-primary-button-border-light, transparent);
+    --fc-primary-button-background-hover: var(--fc-primary-button-background-hover-light, #0250bb);
+    --fc-primary-button-color-hover: var(--fc-primary-button-color-hover-light, rgb(251,251,254));
+    --fc-primary-button-border-hover: var(--fc-primary-button-border-hover-light, transparent);
+    --fc-primary-button-background-active: var(--fc-primary-button-background-active-light, #053e94);
+    --fc-primary-button-color-active: var(--fc-primary-button-color-active-light, rgb(251,251,254));
+    --fc-primary-button-border-active: var(--fc-primary-button-border-active-light, transparent);
     --fc-step-color: color-mix(in srgb, currentColor 50%, transparent);
+    --fc-link-color: var(--fc-link-color-light, #0061E0);
+    --fc-link-color-hover: var(--fc-link-color-hover-light, #0250BB);
+    --fc-link-color-active: var(--fc-link-color-active-light, #053E94);
+    color-scheme: light;
   }
 }
 @media (-moz-content-prefers-color-scheme: dark) {
   .onboardingContainer.featureCallout.simulateContent {
-    --fc-background: var(--fc-background-dark, #42414D);
-    --fc-color: var(--fc-color-dark, #FBFBFE);
+    --fc-background: var(--fc-background-dark, rgb(43, 42, 51));
+    --fc-color: var(--fc-color-dark, rgb(251, 251, 254));
     --fc-border: var(--fc-border-dark, #3A3944);
-    --fc-accent-color: var(--fc-accent-color-dark, #00DDFF);
+    --fc-accent-color: var(--fc-accent-color-dark, rgb(0, 221, 255));
     --fc-button-background: var(--fc-button-background-dark, #2B2A33);
-    --fc-button-color: var(--fc-button-color-dark, #FBFBFE);
+    --fc-button-color: var(--fc-button-color-dark, rgb(251, 251, 254));
     --fc-button-border: var(--fc-button-border-dark, transparent);
     --fc-button-background-hover: var(--fc-button-background-hover-dark, #52525E);
-    --fc-button-color-hover: var(--fc-button-color-hover-dark, #FBFBFE);
+    --fc-button-color-hover: var(--fc-button-color-hover-dark, rgb(251, 251, 254));
     --fc-button-border-hover: var(--fc-button-border-hover-dark, transparent);
     --fc-button-background-active: var(--fc-button-background-active-dark, #5B5B66);
-    --fc-button-color-active: var(--fc-button-color-active-dark, #FBFBFE);
+    --fc-button-color-active: var(--fc-button-color-active-dark, rgb(251, 251, 254));
     --fc-button-border-active: var(--fc-button-border-active-dark, transparent);
+    --fc-primary-button-background: var(--fc-primary-button-background-dark, rgb(0,221,255));
+    --fc-primary-button-color: var(--fc-primary-button-color-dark, rgb(43,42,51));
+    --fc-primary-button-border: var(--fc-primary-button-border-dark, transparent);
+    --fc-primary-button-background-hover: var(--fc-primary-button-background-hover-dark, rgb(128,235,255));
+    --fc-primary-button-color-hover: var(--fc-primary-button-color-hover-dark, rgb(43,42,51));
+    --fc-primary-button-border-hover: var(--fc-primary-button-border-hover-dark, transparent);
+    --fc-primary-button-background-active: var(--fc-primary-button-background-active-dark, rgb(170,242,255));
+    --fc-primary-button-color-active: var(--fc-primary-button-color-active-dark, rgb(43,42,51));
+    --fc-primary-button-border-active: var(--fc-primary-button-border-active-dark, transparent);
+    --fc-link-color: var(--fc-link-color-dark, #00DDFF);
+    --fc-link-color-hover: var(--fc-link-color-hover-dark, #80EBFF);
+    --fc-link-color-active: var(--fc-link-color-hover-active, #AAF2FF);
+    color-scheme: dark;
   }
 }
 @media (prefers-contrast) {
@@ -107,7 +172,19 @@
     --fc-button-background-active: var(--fc-button-background-active-hcm, ButtonText);
     --fc-button-color-active: var(--fc-button-color-active-hcm, ButtonFace);
     --fc-button-border-active: var(--fc-button-border-active-hcm, ButtonText);
+    --fc-primary-button-background: var(--fc-primary-button-background-hcm, ButtonText);
+    --fc-primary-button-color: var(--fc-primary-button-color-hcm, ButtonFace);
+    --fc-primary-button-border: var(--fc-primary-button-border-hcm, ButtonFace);
+    --fc-primary-button-background-hover: var(--fc-primary-button-background-hover-hcm, SelectedItem);
+    --fc-primary-button-color-hover: var(--fc-primary-button-color-hover-hcm, SelectedItemText);
+    --fc-primary-button-border-hover: var(--fc-primary-button-border-hover-hcm, SelectedItemText);
+    --fc-primary-button-background-active: var(--fc-primary-button-background-active-hcm, SelectedItemText);
+    --fc-primary-button-color-active: var(--fc-primary-button-color-active-hcm, SelectedItem);
+    --fc-primary-button-border-active: var(--fc-primary-button-border-active-hcm, SelectedItem);
     --fc-step-color: var(--fc-accent-color-hcm, LinkText);
+    --fc-link-color: var(--fc-link-color-hcm, LinkText);
+    --fc-link-color-hover: var(--fc-link-color-hover-hcm, LinkText);
+    --fc-link-color-active: var(--fc-link-color-active-hcm, ActiveText);
   }
 }
 .onboardingContainer.featureCallout.hidden {
@@ -115,7 +192,16 @@
   pointer-events: none;
 }
 .onboardingContainer.featureCallout, .onboardingContainer.featureCallout .outer-wrapper {
+  --transition: none;
   height: auto;
+}
+.onboardingContainer.featureCallout:dir(rtl) {
+  transform: none;
+  direction: ltr;
+}
+.onboardingContainer.featureCallout .outer-wrapper:dir(rtl) {
+  transform: none;
+  direction: rtl;
 }
 .onboardingContainer.featureCallout .screen:dir(rtl) {
   transform: none;
@@ -124,6 +210,26 @@
   height: fit-content;
   min-height: unset;
   overflow: visible;
+}
+.onboardingContainer.featureCallout .screen[pos=callout][layout=inline] .section-main .main-content,
+.onboardingContainer.featureCallout .screen[pos=callout][layout=inline] .section-main .main-content.no-steps {
+  width: 18em;
+  padding-inline: 16px;
+  padding-block: 0;
+}
+.onboardingContainer.featureCallout .screen[pos=callout][layout=inline] .section-main .main-content .welcome-text,
+.onboardingContainer.featureCallout .screen[pos=callout][layout=inline] .section-main .main-content.no-steps .welcome-text {
+  margin-block: 12px 14px;
+  margin-inline: 0;
+  padding: 0;
+}
+.onboardingContainer.featureCallout .screen[pos=callout][layout=inline] .section-main .dismiss-button {
+  height: 24px;
+  width: 24px;
+  min-height: 24px;
+  min-width: 24px;
+  margin-block: 11px 0;
+  margin-inline: 0 12px;
 }
 .onboardingContainer.featureCallout .screen[pos=callout] .logo-container {
   display: flex;
@@ -148,10 +254,50 @@
   color: inherit;
 }
 .onboardingContainer.featureCallout .screen[pos=callout] .welcome-text h1 {
-  font-weight: bold;
+  font-weight: 600;
 }
 .onboardingContainer.featureCallout .screen[pos=callout] .welcome-text h2 {
   margin-block: 10px;
+}
+.onboardingContainer.featureCallout .screen[pos=callout] .welcome-text .inline-icon-container {
+  display: flex;
+  flex-flow: row wrap;
+  align-items: center;
+}
+.onboardingContainer.featureCallout .screen[pos=callout] .welcome-text .inline-icon-container .logo-container {
+  height: 16px;
+  width: 16px;
+  margin-inline-end: 6px;
+  -moz-context-properties: fill;
+  fill: currentColor;
+}
+.onboardingContainer.featureCallout .screen[pos=callout] .welcome-text .inline-icon-container .logo-container img {
+  height: 16px;
+  width: 16px;
+  margin: 0;
+}
+.onboardingContainer.featureCallout .screen[pos=callout] .multi-select-container {
+  margin-inline: 30px;
+  padding: 1em 0 0;
+  font-size: 0.8em;
+  color: inherit;
+}
+.onboardingContainer.featureCallout .screen[pos=callout] .cta-link {
+  background: none;
+  text-decoration: underline;
+  cursor: pointer;
+  border: none;
+  padding: 0;
+  color: var(--fc-link-color);
+  order: -1;
+  margin-inline-end: auto;
+  margin-block: 8px;
+}
+.onboardingContainer.featureCallout .screen[pos=callout] .cta-link:hover {
+  color: var(--fc-link-color-hover);
+}
+.onboardingContainer.featureCallout .screen[pos=callout] .cta-link:active {
+  color: var(--fc-link-color-active);
 }
 .onboardingContainer.featureCallout .screen[pos=callout] .section-secondary {
   display: none;
@@ -167,7 +313,7 @@
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
   border-radius: 4px;
   padding-top: 0;
-  padding-bottom: 26px;
+  padding-bottom: 30px;
   width: 25em;
   background-color: var(--fc-background);
 }
@@ -190,58 +336,83 @@
 .onboardingContainer.featureCallout .screen[pos=callout] .section-main .dismiss-button {
   font-size: 1em;
   top: 0;
-  margin-block: 15px 0;
-  margin-inline: 0 15px;
-  z-index: 2147483647;
+  margin-block: 10px 0;
+  margin-inline: 0 10px;
   background-color: var(--fc-background);
 }
+.onboardingContainer.featureCallout .screen[pos=callout] .action-buttons {
+  display: flex;
+  flex-flow: row nowrap;
+  align-items: stretch;
+  justify-content: end;
+  gap: 10px;
+  margin-inline: 30px;
+}
 .onboardingContainer.featureCallout .screen[pos=callout] .action-buttons .primary,
-.onboardingContainer.featureCallout .screen[pos=callout] .action-buttons .secondary-cta .secondary {
+.onboardingContainer.featureCallout .screen[pos=callout] .action-buttons .secondary {
   padding: 4px 16px;
+  margin: 0;
   font-size: 0.8em;
-  height: 2em;
+  font-weight: 600;
+  line-height: 16px;
+  min-height: 32px;
+  text-decoration: none;
+  cursor: default;
+}
+.onboardingContainer.featureCallout .screen[pos=callout] .action-buttons .secondary {
   background-color: var(--fc-button-background);
 }
 .onboardingContainer.featureCallout .screen[pos=callout] .action-buttons .primary {
-  font-weight: bold;
-  float: inline-end;
-  margin-inline: 10px 30px;
-  padding: 4px 16px;
-  font-size: 0.8em;
-  line-height: 16px;
-  min-height: 32px;
-}
-.onboardingContainer.featureCallout .screen[pos=callout] .action-buttons .secondary-cta {
-  float: inline-end;
+  background-color: var(--fc-primary-button-background);
 }
 .onboardingContainer.featureCallout .screen[pos=callout] .action-buttons .primary,
-.onboardingContainer.featureCallout .screen[pos=callout] .action-buttons .secondary-cta .secondary,
+.onboardingContainer.featureCallout .screen[pos=callout] .action-buttons .secondary,
 .onboardingContainer.featureCallout .screen[pos=callout] .dismiss-button {
   border-radius: 4px;
-  border: 1px solid var(--fc-button-border);
-  cursor: pointer;
-  color: var(--fc-button-color);
-}
-.onboardingContainer.featureCallout .screen[pos=callout] .action-buttons .primary:hover,
-.onboardingContainer.featureCallout .screen[pos=callout] .action-buttons .secondary-cta .secondary:hover,
-.onboardingContainer.featureCallout .screen[pos=callout] .dismiss-button:hover {
-  background-color: var(--fc-button-background-hover);
-  color: var(--fc-button-color-hover);
-  border: 1px solid var(--fc-button-border-hover);
-}
-.onboardingContainer.featureCallout .screen[pos=callout] .action-buttons .primary:hover:active,
-.onboardingContainer.featureCallout .screen[pos=callout] .action-buttons .secondary-cta .secondary:hover:active,
-.onboardingContainer.featureCallout .screen[pos=callout] .dismiss-button:hover:active {
-  background-color: var(--fc-button-background-active);
-  color: var(--fc-button-color-active);
-  border: 1px solid var(--fc-button-border-active);
 }
 .onboardingContainer.featureCallout .screen[pos=callout] .action-buttons .primary:focus-visible,
-.onboardingContainer.featureCallout .screen[pos=callout] .action-buttons .secondary-cta .secondary:focus-visible,
+.onboardingContainer.featureCallout .screen[pos=callout] .action-buttons .secondary:focus-visible,
 .onboardingContainer.featureCallout .screen[pos=callout] .dismiss-button:focus-visible {
   box-shadow: none;
   outline: 2px solid var(--fc-accent-color);
   outline-offset: 2px;
+}
+.onboardingContainer.featureCallout .screen[pos=callout] .action-buttons .primary:disabled,
+.onboardingContainer.featureCallout .screen[pos=callout] .action-buttons .secondary:disabled,
+.onboardingContainer.featureCallout .screen[pos=callout] .dismiss-button:disabled {
+  opacity: 0.4;
+  cursor: auto;
+}
+.onboardingContainer.featureCallout .screen[pos=callout] .action-buttons .secondary,
+.onboardingContainer.featureCallout .screen[pos=callout] .dismiss-button {
+  border: 1px solid var(--fc-button-border);
+  color: var(--fc-button-color);
+}
+.onboardingContainer.featureCallout .screen[pos=callout] .action-buttons .secondary:hover:not(:disabled),
+.onboardingContainer.featureCallout .screen[pos=callout] .dismiss-button:hover:not(:disabled) {
+  background-color: var(--fc-button-background-hover);
+  color: var(--fc-button-color-hover);
+  border: 1px solid var(--fc-button-border-hover);
+}
+.onboardingContainer.featureCallout .screen[pos=callout] .action-buttons .secondary:hover:not(:disabled):active,
+.onboardingContainer.featureCallout .screen[pos=callout] .dismiss-button:hover:not(:disabled):active {
+  background-color: var(--fc-button-background-active);
+  color: var(--fc-button-color-active);
+  border: 1px solid var(--fc-button-border-active);
+}
+.onboardingContainer.featureCallout .screen[pos=callout] .action-buttons .primary {
+  border: 1px solid var(--fc-primary-button-border);
+  color: var(--fc-primary-button-color);
+}
+.onboardingContainer.featureCallout .screen[pos=callout] .action-buttons .primary:hover:not(:disabled) {
+  background-color: var(--fc-primary-button-background-hover);
+  color: var(--fc-primary-button-color-hover);
+  border: 1px solid var(--fc-primary-button-border-hover);
+}
+.onboardingContainer.featureCallout .screen[pos=callout] .action-buttons .primary:hover:not(:disabled):active {
+  background-color: var(--fc-primary-button-background-active);
+  color: var(--fc-primary-button-color-active);
+  border: 1px solid var(--fc-primary-button-border-active);
 }
 .onboardingContainer.featureCallout.callout-arrow::before, .onboardingContainer.featureCallout.callout-arrow::after {
   content: "";
@@ -252,14 +423,15 @@
   transform-style: preserve-3d;
 }
 .onboardingContainer.featureCallout.callout-arrow::before {
-  z-index: 2147483647;
-  background-color: var(--fc-background);
-}
-.onboardingContainer.featureCallout.callout-arrow::after {
   background: transparent;
   outline: 1px solid var(--fc-border);
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
   z-index: -1;
+}
+.onboardingContainer.featureCallout.callout-arrow::after {
+  background-color: var(--fc-background);
+  clip-path: polygon(100% 0, 100% 2%, 2% 100%, 0 100%, 0 0);
+  z-index: 1;
 }
 .onboardingContainer.featureCallout.arrow-top::before, .onboardingContainer.featureCallout.arrow-top::after {
   top: -11px;
@@ -297,8 +469,61 @@
     border-color: var(--fc-background);
   }
 }
-.onboardingContainer.featureCallout:focus-visible.callout-arrow::after {
+.onboardingContainer.featureCallout:focus-visible.callout-arrow::before {
   outline: 2px solid var(--fc-accent-color);
+}
+
+.onboardingContainer.shopping .screen[pos=split] {
+  height: auto;
+}
+.onboardingContainer.shopping .screen[pos=split]::before {
+  content: none;
+}
+.onboardingContainer.shopping .screen[pos=split] .section-main {
+  width: auto;
+  margin: 0 auto;
+  height: auto;
+}
+.onboardingContainer.shopping .screen[pos=split] .section-main .main-content {
+  border-radius: 0;
+}
+.onboardingContainer.shopping .screen[pos=split] .section-main .main-content .inline-image {
+  margin-bottom: 26px;
+}
+.onboardingContainer.shopping .screen[pos=split] .section-main .main-content.no-steps {
+  padding: 16px 0 36px;
+}
+.onboardingContainer.shopping .screen[pos=split] .section-main .main-content .welcome-text h1 {
+  width: auto;
+  text-align: start;
+}
+.onboardingContainer.shopping .screen[pos=split] .section-main .main-content .action-buttons .primary,
+.onboardingContainer.shopping .screen[pos=split] .section-main .main-content .action-buttons .secondary {
+  min-width: auto;
+}
+.onboardingContainer.shopping .screen[pos=split] .section-main .main-content .legal-paragraph {
+  font-size: 0.6875em;
+  line-height: 1.5;
+  margin-block: 0 20px;
+  padding-inline: 30px;
+  text-align: start;
+}
+.onboardingContainer.shopping .screen[pos=split] .section-main .main-content .legal-paragraph a {
+  text-decoration: underline;
+}
+.onboardingContainer.shopping .screen[pos=split] .section-secondary {
+  display: none;
+}
+.onboardingContainer.shopping .screen[pos=split] .info-text {
+  color: #5B5B66;
+  font-size: 0.69em;
+  margin: 10px auto;
+  line-height: 1.5;
+}
+@media (prefers-contrast: no-preference) and (prefers-color-scheme: dark) {
+  .onboardingContainer.shopping .screen[pos=split] .info-text {
+    color: #CFCFD8;
+  }
 }
 
 html {
@@ -431,10 +656,10 @@ html {
   height: 100%;
   min-height: 500px;
   overflow: hidden;
-  --in-content-link-color: var(--in-content-primary-button-background);
-  --in-content-link-color-hover: var(--in-content-primary-button-background-hover);
-  --in-content-link-color-active: var(--in-content-primary-button-background-active);
-  --in-content-link-color-visited: var(--in-content-link-color);
+  --link-color: var(--in-content-primary-button-background);
+  --link-color-hover: var(--in-content-primary-button-background-hover);
+  --link-color-active: var(--in-content-primary-button-background-active);
+  --link-color-visited: var(--link-color);
 }
 .onboardingContainer .screen.light-text {
   --in-content-page-color: rgb(251, 251, 254);
@@ -523,31 +748,172 @@ html {
   background-image: url("chrome://browser/skin/back.svg");
 }
 .onboardingContainer .screen[pos=center].with-video .main-content .secondary-cta .secondary {
-  background-color: var(--in-content-button-background) !important;
+  background-color: var(--in-content-button-background);
   border: 1px solid var(--in-content-button-border-color);
   line-height: 12px;
   font-size: 0.72em;
   font-weight: 600;
   padding: 8px 16px;
   text-decoration: none;
+  cursor: default;
   color: var(--in-content-button-text-color);
 }
 .onboardingContainer .screen[pos=center].with-video .main-content .secondary-cta .secondary:hover {
-  background-color: var(--in-content-button-background-hover) !important;
+  background-color: var(--in-content-button-background-hover);
   color: var(--in-content-button-text-color-hover);
+}
+.onboardingContainer .screen[pos=center].addons-picker {
+  justify-content: center;
+  align-items: center;
+  background: none;
+}
+.onboardingContainer .screen[pos=center].addons-picker .section-main {
+  width: 800px;
+  height: 550px;
+}
+.onboardingContainer .screen[pos=center].addons-picker .main-content {
+  background-color: var(--in-content-page-background);
+  border-radius: 8px;
+  box-shadow: 0 2px 14px rgba(58, 57, 68, 0.2);
+  overflow: hidden;
+}
+.onboardingContainer .screen[pos=center].addons-picker .main-content .welcome-text {
+  display: flex;
+  margin: 0;
+}
+.onboardingContainer .screen[pos=center].addons-picker .main-content .main-content-inner {
+  padding: 25px 56px 0;
+  justify-content: space-between;
+}
+.onboardingContainer .screen[pos=center].addons-picker .main-content h1,
+.onboardingContainer .screen[pos=center].addons-picker .main-content h2 {
+  align-self: start;
+}
+.onboardingContainer .screen[pos=center].addons-picker .main-content h2 {
+  font-size: 15px;
+  text-align: start;
+}
+.onboardingContainer .screen[pos=center].addons-picker .main-content .brand-logo {
+  display: block;
+  margin: 40px 56px 0;
+  transition: var(--transition);
+  height: 30px;
+}
+.onboardingContainer .screen[pos=center].addons-picker .main-content .additional-cta {
+  display: block;
+  margin: 8px 0;
+}
+.onboardingContainer .screen[pos=center].addons-picker .main-content .additional-cta.cta-link {
+  background: none;
+  padding: 0;
+  font-weight: normal;
+  background: none;
+  text-decoration: underline;
+  cursor: pointer;
+  color: var(--link-color);
+}
+.onboardingContainer .screen[pos=center].addons-picker .main-content .additional-cta.cta-link:hover {
+  color: var(--link-color-hover);
+}
+.onboardingContainer .screen[pos=center].addons-picker .main-content .additional-cta.cta-link:active {
+  color: var(--link-color-active);
+}
+.onboardingContainer .screen[pos=center].addons-picker .main-content .additional-cta.secondary:hover {
+  background-color: var(--in-content-button-background-hover);
+}
+.onboardingContainer .screen[pos=center].addons-picker .main-content .secondary-cta {
+  justify-content: end;
+}
+.onboardingContainer .screen[pos=center].addons-picker .main-content .secondary-cta .arrow-icon {
+  -moz-context-properties: fill;
+  fill: currentColor;
+  text-decoration: none;
+}
+.onboardingContainer .screen[pos=center].addons-picker .main-content .secondary-cta .arrow-icon::after {
+  content: "";
+  padding-inline-end: 12px;
+  margin-inline-start: 4px;
+  background: url("chrome://browser/skin/forward.svg") no-repeat center/12px;
+}
+.onboardingContainer .screen[pos=center].addons-picker .main-content .secondary-cta .arrow-icon:dir(rtl)::after {
+  background-image: url("chrome://browser/skin/back.svg");
+}
+.onboardingContainer .screen[pos=center].addons-picker .main-content .secondary-cta .secondary {
+  background-color: var(--in-content-button-background);
+  border: 1px solid var(--in-content-button-border-color);
+  line-height: 12px;
+  font-size: 0.72em;
+  font-weight: 600;
+  padding: 8px 16px;
+  text-decoration: none;
+  cursor: default;
+  color: var(--in-content-button-text-color);
+}
+.onboardingContainer .screen[pos=center].addons-picker .main-content .secondary-cta .secondary:hover {
+  background-color: var(--in-content-button-background-hover);
+  color: var(--in-content-button-text-color-hover);
+}
+.onboardingContainer .screen[pos=center].addons-picker .addon-container {
+  display: flex;
+  border: 1px solid var(--in-content-border-color);
+  box-shadow: 0 1px 2px 0 var(--in-content-border-color);
+  border-radius: 4px;
+  margin: 5px auto;
+  text-align: start;
+}
+.onboardingContainer .screen[pos=center].addons-picker .addon-container .rtamo-icon img {
+  margin: 10px;
+}
+.onboardingContainer .screen[pos=center].addons-picker .addon-container .addon-details {
+  display: grid;
+  width: 70%;
+}
+.onboardingContainer .screen[pos=center].addons-picker .addon-container .addon-title {
+  margin: 10px 0 3px;
+  font-size: 16px;
+  font-weight: 600;
+}
+.onboardingContainer .screen[pos=center].addons-picker .addon-container .addon-description {
+  margin: 2px 0 10px;
+  font-size: 13px;
+  font-weight: 400;
+}
+.onboardingContainer .screen[pos=center].addons-picker .addon-container button {
+  align-self: center;
+  margin-inline: auto 12px;
 }
 .onboardingContainer .screen:not([pos=split]) .secondary-cta .secondary {
   background: none;
-  color: var(--in-content-link-color);
+  text-decoration: underline;
+  cursor: pointer;
+  color: var(--link-color);
   font-size: 14px;
   font-weight: normal;
   line-height: 20px;
+}
+.onboardingContainer .screen:not([pos=split]) .secondary-cta .secondary:hover {
+  color: var(--link-color-hover);
+}
+.onboardingContainer .screen:not([pos=split]) .secondary-cta .secondary:active {
+  color: var(--link-color-active);
 }
 .onboardingContainer .screen:not([pos=split]) .secondary-cta.top button {
   color: #FFF;
 }
 .onboardingContainer .screen:not([pos=split]) .secondary-cta.top button:hover {
   color: #E0E0E6;
+}
+.onboardingContainer .screen:not([pos=split]) migration-wizard {
+  padding: 5px 60px;
+}
+.onboardingContainer .screen:not([pos=split]) migration-wizard::part(header) {
+  text-align: center;
+}
+.onboardingContainer .screen:not([pos=split]) migration-wizard::part(buttons) {
+  margin: 32px auto 0;
+}
+.onboardingContainer .screen:not([pos=split]) .welcome-text:empty {
+  margin: 0;
 }
 .onboardingContainer .screen[pos=split] {
   margin: auto;
@@ -574,7 +940,7 @@ html {
   padding-inline-end: 0;
 }
 .onboardingContainer .screen[pos=split] .secondary-cta.top button {
-  color: var(--in-content-page-color);
+  padding: 7px 15px;
 }
 .onboardingContainer .screen[pos=split] .section-main {
   flex-direction: row;
@@ -583,6 +949,9 @@ html {
 }
 .onboardingContainer .screen[pos=split] .section-main:dir(rtl) {
   margin: auto 0 auto auto;
+}
+.onboardingContainer .screen[pos=split] .section-main.embedded-migration .main-content {
+  padding-block: 100px 0;
 }
 .onboardingContainer .screen[pos=split] .section-main .main-content {
   border-radius: 0 8px 8px 0;
@@ -599,6 +968,18 @@ html {
 }
 .onboardingContainer .screen[pos=split] .section-main .main-content .main-content-inner {
   min-height: 330px;
+}
+.onboardingContainer .screen[pos=split] .section-main .main-content .main-content-inner .mobile-download-buttons {
+  padding: 0;
+  margin-inline-start: -5px;
+  display: flex;
+}
+.onboardingContainer .screen[pos=split] .section-main .main-content .main-content-inner .mobile-download-buttons button {
+  cursor: pointer;
+}
+.onboardingContainer .screen[pos=split] .section-main .main-content .main-content-inner .qr-code-image {
+  margin: 5px 0 10px;
+  display: flex;
 }
 .onboardingContainer .screen[pos=split] .section-main .main-content .main-content-inner .language-switcher-container .primary {
   margin-bottom: 5px;
@@ -624,19 +1005,17 @@ html {
 }
 .onboardingContainer .screen[pos=split] .section-main .main-content .action-buttons .additional-cta.cta-link {
   background: none;
-  padding: 0;
-  font-weight: normal;
   text-decoration: underline;
   cursor: pointer;
-  color: var(--in-content-link-color);
+  color: var(--link-color);
+  padding: 0;
+  font-weight: normal;
 }
 .onboardingContainer .screen[pos=split] .section-main .main-content .action-buttons .additional-cta.cta-link:hover {
-  text-decoration: none;
-  color: var(--in-content-link-color-hover);
+  color: var(--link-color-hover);
 }
 .onboardingContainer .screen[pos=split] .section-main .main-content .action-buttons .additional-cta.cta-link:active {
-  text-decoration: none;
-  color: var(--in-content-link-color-active);
+  color: var(--link-color-active);
 }
 .onboardingContainer .screen[pos=split] .section-main .main-content .action-buttons .additional-cta.secondary:hover {
   background-color: var(--in-content-button-background-hover);
@@ -651,16 +1030,17 @@ html {
   inset-inline-end: 0;
 }
 .onboardingContainer .screen[pos=split] .section-main .main-content .action-buttons .secondary-cta .secondary {
-  background-color: var(--in-content-button-background) !important;
+  background-color: var(--in-content-button-background);
   border: 1px solid var(--in-content-button-border-color);
   line-height: 12px;
   font-size: 0.72em;
   font-weight: 600;
   padding: 8px 16px;
   text-decoration: none;
+  cursor: default;
 }
 .onboardingContainer .screen[pos=split] .section-main .main-content .action-buttons .secondary-cta .secondary:hover {
-  background-color: var(--in-content-button-background-hover) !important;
+  background-color: var(--in-content-button-background-hover);
   color: var(--in-content-button-text-color-hover);
 }
 .onboardingContainer .screen[pos=split] .section-main .main-content .action-buttons .secondary-cta .arrow-icon {
@@ -683,6 +1063,10 @@ html {
 .onboardingContainer .screen[pos=split] .section-main .main-content .brand-logo {
   height: 25px;
   margin-block: 0;
+}
+.onboardingContainer .screen[pos=split] .section-main .main-content .logo-alt {
+  width: inherit;
+  height: inherit;
 }
 .onboardingContainer .screen[pos=split] .section-main .main-content .welcome-text {
   margin-inline: 0 10px;
@@ -777,6 +1161,19 @@ html {
     padding-bottom: unset;
   }
 }
+.onboardingContainer .screen[pos=split] .multi-select-container {
+  margin-inline: 0 10px;
+}
+@media only screen and (max-width: 800px) {
+  .onboardingContainer .screen[pos=split] .multi-select-container {
+    flex-direction: row;
+    align-self: stretch;
+    align-items: center;
+    justify-content: center;
+    padding: 0 30px;
+    margin-inline: 0;
+  }
+}
 .onboardingContainer .screen[pos=split] .tiles-theme-container {
   margin-block: -20px auto;
   align-items: initial;
@@ -841,9 +1238,28 @@ html {
     margin: auto auto 0;
     border-radius: 8px 8px 0 0;
   }
+  .onboardingContainer .screen[pos=split] .section-secondary.with-secondary-section-hidden {
+    display: none;
+  }
+  .onboardingContainer .screen[pos=split] migration-wizard::part(deck) {
+    min-width: 330px;
+    margin-inline: 36px;
+  }
   .onboardingContainer .screen[pos=split] .section-main {
     margin: 0 auto auto;
     height: 450px;
+  }
+  .onboardingContainer .screen[pos=split] .section-main migration-wizard::part(buttons) {
+    flex-direction: column;
+    margin-inline: 46px;
+  }
+  .onboardingContainer .screen[pos=split] .section-main[hide-secondary-section=responsive] {
+    height: 550px;
+    margin: auto;
+  }
+  .onboardingContainer .screen[pos=split] .section-main[hide-secondary-section=responsive] .main-content {
+    padding: 50px 0 0;
+    border-radius: 8px;
   }
   .onboardingContainer .screen[pos=split] .section-main .main-content {
     border-radius: 0 0 8px 8px;
@@ -860,6 +1276,10 @@ html {
   }
   .onboardingContainer .screen[pos=split] .section-main .main-content .logo-container .brand-logo, .onboardingContainer .screen[pos=split] .section-main .main-content .logo-container .brand-logo:dir(rtl) {
     background-position: center;
+  }
+  .onboardingContainer .screen[pos=split] .section-main .main-content .logo-container .logo-alt {
+    width: inherit;
+    height: inherit;
   }
   .onboardingContainer .screen[pos=split] .section-main .main-content .welcome-text {
     align-items: center;
@@ -915,7 +1335,7 @@ html {
     display: none;
   }
 }
-@media only screen and (max-height: 650px) and (max-width: 590px) {
+@media only screen and (max-height: 650px) and (max-width: 620px) {
   .onboardingContainer .screen[pos=split] .section-main .secondary-cta.top {
     position: absolute;
     padding: 0;
@@ -936,6 +1356,10 @@ html {
   padding: unset;
   margin-top: 50px;
 }
+.onboardingContainer .logo-alt {
+  width: inherit;
+  height: inherit;
+}
 .onboardingContainer .rtamo-theme-icon {
   max-height: 30px;
   border-radius: 2px;
@@ -951,17 +1375,16 @@ html {
   }
 }
 .onboardingContainer .text-link {
+  background: none;
   text-decoration: underline;
   cursor: pointer;
-  color: var(--in-content-link-color);
+  color: var(--link-color);
 }
 .onboardingContainer .text-link:hover {
-  text-decoration: none;
-  color: var(--in-content-link-color-hover);
+  color: var(--link-color-hover);
 }
 .onboardingContainer .text-link:active {
-  text-decoration: none;
-  color: var(--in-content-link-color-active);
+  color: var(--link-color-active);
 }
 .onboardingContainer .welcome-text {
   display: flex;
@@ -1199,27 +1622,25 @@ html {
 .onboardingContainer .multi-select-container {
   display: flex;
   flex-direction: column;
+  flex-wrap: wrap;
+  flex-shrink: 0;
   align-items: flex-start;
-  margin-block: -1em 1em;
+  gap: 16px;
+  margin-block: -1em 2em;
   color: #5B5B66;
   font-weight: 400;
   font-size: 14px;
   text-align: initial;
   transition: var(--transition);
   z-index: 1;
+  overflow: hidden;
 }
 .onboardingContainer .multi-select-container .checkbox-container {
   display: flex;
-  margin-bottom: 16px;
 }
-@media (prefers-color-scheme: dark) {
+@media (prefers-contrast: no-preference) and (prefers-color-scheme: dark) {
   .onboardingContainer .multi-select-container {
     color: #CFCFD8;
-  }
-}
-@media only screen and (max-width: 800px) {
-  .onboardingContainer .multi-select-container {
-    padding: 0 30px;
   }
 }
 .onboardingContainer .mobile-downloads .qr-code-image {
@@ -1228,20 +1649,18 @@ html {
   height: 113px;
 }
 .onboardingContainer .mobile-downloads .email-link {
-  font-size: 16px;
-  font-weight: 400;
   background: none;
   text-decoration: underline;
   cursor: pointer;
-  color: var(--in-content-link-color);
+  color: var(--link-color);
+  font-size: 16px;
+  font-weight: 400;
 }
 .onboardingContainer .mobile-downloads .email-link:hover {
-  text-decoration: none;
-  color: var(--in-content-link-color-hover);
+  color: var(--link-color-hover);
 }
 .onboardingContainer .mobile-downloads .email-link:active {
-  text-decoration: none;
-  color: var(--in-content-link-color-active);
+  color: var(--link-color-active);
 }
 .onboardingContainer .mobile-downloads .email-link:hover {
   background: none;
@@ -1324,8 +1743,7 @@ html {
   color: var(--grey-subtitle-1);
   margin: 0 4px;
 }
-.onboardingContainer .message-text,
-.onboardingContainer .attrib-text {
+.onboardingContainer .message-text {
   transition: var(--transition);
 }
 .onboardingContainer .helptext {
@@ -1636,7 +2054,7 @@ html {
   transition: var(--transition);
 }
 .onboardingContainer migration-wizard::part(buttons) {
-  margin-top: 32px;
+  margin-top: 24px;
   justify-content: flex-start;
 }
 .onboardingContainer migration-wizard::part(deck) {

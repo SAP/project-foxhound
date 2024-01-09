@@ -458,8 +458,10 @@ static inline ARMFPRegister SelectFPReg(AnyRegister any, Register64 sixtyfour,
 void MacroAssemblerCompat::wasmLoadImpl(const wasm::MemoryAccessDesc& access,
                                         Register memoryBase_, Register ptr_,
                                         AnyRegister outany, Register64 out64) {
+  access.assertOffsetInGuardPages();
   uint32_t offset = access.offset();
-  MOZ_ASSERT(offset < asMasm().wasmMaxOffsetGuardLimit());
+
+  MOZ_ASSERT(memoryBase_ != ptr_);
 
   ARMRegister memoryBase(memoryBase_, 64);
   ARMRegister ptr(ptr_, 64);
@@ -623,8 +625,8 @@ void MacroAssemblerCompat::wasmLoadAbsolute(
 void MacroAssemblerCompat::wasmStoreImpl(const wasm::MemoryAccessDesc& access,
                                          AnyRegister valany, Register64 val64,
                                          Register memoryBase_, Register ptr_) {
+  access.assertOffsetInGuardPages();
   uint32_t offset = access.offset();
-  MOZ_ASSERT(offset < asMasm().wasmMaxOffsetGuardLimit());
 
   ARMRegister memoryBase(memoryBase_, 64);
   ARMRegister ptr(ptr_, 64);
@@ -1293,6 +1295,13 @@ void MacroAssembler::Pop(const ValueOperand& val) {
   adjustFrame(-1 * int64_t(sizeof(int64_t)));
 }
 
+void MacroAssembler::freeStackTo(uint32_t framePushed) {
+  MOZ_ASSERT(framePushed <= framePushed_);
+  Sub(GetStackPointer64(), X(FramePointer), Operand(int32_t(framePushed)));
+  syncStackPtr();
+  framePushed_ = framePushed;
+}
+
 // ===============================================================
 // Simple call functions.
 
@@ -1700,7 +1709,6 @@ void MacroAssembler::branchValueIsNurseryCell(Condition cond,
                                               Label* label) {
   branchValueIsNurseryCellImpl(cond, value, temp, label);
 }
-
 template <typename T>
 void MacroAssembler::branchValueIsNurseryCellImpl(Condition cond,
                                                   const T& value, Register temp,
@@ -3409,6 +3417,20 @@ void MacroAssembler::shiftIndex32AndAdd(Register indexTemp32, int shift,
   Add(ARMRegister(pointer, 64), ARMRegister(pointer, 64),
       Operand(ARMRegister(indexTemp32, 64), vixl::LSL, shift));
 }
+
+#ifdef ENABLE_WASM_TAIL_CALLS
+void MacroAssembler::wasmMarkSlowCall() { Mov(x28, x28); }
+
+const int32_t SlowCallMarker = 0xaa1c03fc;
+
+void MacroAssembler::wasmCheckSlowCallsite(Register ra, Label* notSlow,
+                                           Register temp1, Register temp2) {
+  MOZ_ASSERT(ra != temp2);
+  Ldr(W(temp2), MemOperand(X(ra), 0));
+  Cmp(W(temp2), Operand(SlowCallMarker));
+  B(Assembler::NotEqual, notSlow);
+}
+#endif  // ENABLE_WASM_TAIL_CALLS
 
 //}}} check_macroassembler_style
 

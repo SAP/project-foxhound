@@ -75,22 +75,25 @@ enum Stat {
 
 struct ZoneGCStats {
   /* Number of zones collected in this GC. */
-  int collectedZoneCount = 0;
+  size_t collectedZoneCount = 0;
 
   /* Total number of zones in the Runtime at the start of this GC. */
-  int zoneCount = 0;
+  size_t zoneCount = 0;
 
   /* Number of zones swept in this GC. */
-  int sweptZoneCount = 0;
+  size_t sweptZoneCount = 0;
 
   /* Total number of compartments in all zones collected. */
-  int collectedCompartmentCount = 0;
+  size_t collectedCompartmentCount = 0;
 
   /* Total number of compartments in the Runtime at the start of this GC. */
-  int compartmentCount = 0;
+  size_t compartmentCount = 0;
 
   /* Total number of compartments swept by this GC. */
-  int sweptCompartmentCount = 0;
+  size_t sweptCompartmentCount = 0;
+
+  /* Total number of realms in the Runtime at the start of this GC. */
+  size_t realmCount = 0;
 
   ZoneGCStats() = default;
 };
@@ -103,16 +106,13 @@ struct Trigger {
 #define FOR_EACH_GC_PROFILE_TIME(_)                                 \
   _(Total, "total", PhaseKind::NONE)                                \
   _(Background, "bgwrk", PhaseKind::NONE)                           \
-  _(BeginCallback, "bgnCB", PhaseKind::GC_BEGIN)                    \
   _(MinorForMajor, "evct4m", PhaseKind::EVICT_NURSERY_FOR_MAJOR_GC) \
   _(WaitBgThread, "waitBG", PhaseKind::WAIT_BACKGROUND_THREAD)      \
   _(Prepare, "prep", PhaseKind::PREPARE)                            \
   _(Mark, "mark", PhaseKind::MARK)                                  \
   _(Sweep, "sweep", PhaseKind::SWEEP)                               \
   _(Compact, "cmpct", PhaseKind::COMPACT)                           \
-  _(EndCallback, "endCB", PhaseKind::GC_END)                        \
-  _(MinorGC, "minor", PhaseKind::MINOR_GC)                          \
-  _(EvictNursery, "evict", PhaseKind::EVICT_NURSERY)
+  _(Decommit, "dcmmt", PhaseKind::DECOMMIT)
 
 static const char* const MajorGCProfilePrefix = "MajorGC:";
 static const char* const MinorGCProfilePrefix = "MinorGC:";
@@ -233,8 +233,8 @@ struct Statistics {
 
   uint32_t allocsSinceMinorGCTenured() { return tenuredAllocsSinceMinorGC; }
 
-  void beginNurseryCollection(JS::GCReason reason);
-  void endNurseryCollection(JS::GCReason reason);
+  void beginNurseryCollection();
+  void endNurseryCollection();
 
   TimeStamp beginSCC();
   void endSCC(unsigned scc, TimeStamp start);
@@ -244,8 +244,6 @@ struct Statistics {
   UniqueChars formatDetailedMessage() const;
 
   JS::GCSliceCallback setSliceCallback(JS::GCSliceCallback callback);
-  JS::GCNurseryCollectionCallback setNurseryCollectionCallback(
-      JS::GCNurseryCollectionCallback callback);
 
   TimeDuration clearMaxGCPauseAccumulator();
   TimeDuration getMaxGCPauseSinceClear();
@@ -273,13 +271,14 @@ struct Statistics {
     PhaseKindTimes totalParallelTimes;
     PhaseKindTimes maxParallelTimes;
 
-    TimeDuration duration() const { return end - start; }
+    TimeDuration duration() const;
     bool wasReset() const { return resetReason != GCAbortReason::None; }
   };
 
-  typedef Vector<SliceData, 8, SystemAllocPolicy> SliceDataVector;
+  using SliceDataVector = Vector<SliceData, 8, SystemAllocPolicy>;
 
   const SliceDataVector& slices() const { return slices_; }
+  const SliceData& sliceAt(size_t index) const { return slices_[index]; }
 
   const SliceData* lastSlice() const {
     if (slices_.length() == 0) {
@@ -344,7 +343,7 @@ struct Statistics {
 
   ZoneGCStats zoneStats;
 
-  JS::GCOptions gcOptions;
+  JS::GCOptions gcOptions = JS::GCOptions::Normal;
 
   GCAbortReason nonincrementalReason_;
 
@@ -424,7 +423,6 @@ struct Statistics {
   TimeDuration timeSinceLastGC;
 
   JS::GCSliceCallback sliceCallback;
-  JS::GCNurseryCollectionCallback nurseryCollectionCallback;
 
   /*
    * True if we saw an OOM while allocating slices or we saw an impossible
@@ -444,8 +442,8 @@ struct Statistics {
   using ProfileDurations =
       EnumeratedArray<ProfileKey, ProfileKey::KeyCount, TimeDuration>;
 
-  bool enableProfiling_;
-  bool profileWorkers_;
+  bool enableProfiling_ = false;
+  bool profileWorkers_ = false;
   TimeDuration profileThreshold_;
   ProfileDurations totalTimes_;
   uint64_t sliceCount_;
@@ -490,7 +488,7 @@ struct Statistics {
   void formatJsonPhaseTimes(const PhaseTimes& phaseTimes, JSONPrinter&) const;
   void formatJsonSlice(size_t sliceNum, JSONPrinter&) const;
 
-  double computeMMU(TimeDuration resolution) const;
+  double computeMMU(TimeDuration window) const;
 
   void printSliceProfile();
   ProfileDurations getProfileTimes(const SliceData& slice) const;

@@ -48,6 +48,7 @@ DIRS += [
     "/third_party/libwebrtc/api/function_view_gn",
     "/third_party/libwebrtc/api/libjingle_logging_api_gn",
     "/third_party/libwebrtc/api/libjingle_peerconnection_api_gn",
+    "/third_party/libwebrtc/api/location_gn",
     "/third_party/libwebrtc/api/make_ref_counted_gn",
     "/third_party/libwebrtc/api/media_stream_interface_gn",
     "/third_party/libwebrtc/api/metronome/metronome_gn",
@@ -142,6 +143,7 @@ DIRS += [
     "/third_party/libwebrtc/logging/rtc_event_audio_gn",
     "/third_party/libwebrtc/logging/rtc_event_bwe_gn",
     "/third_party/libwebrtc/logging/rtc_event_field_gn",
+    "/third_party/libwebrtc/logging/rtc_event_log_parse_status_gn",
     "/third_party/libwebrtc/logging/rtc_event_number_encodings_gn",
     "/third_party/libwebrtc/logging/rtc_event_pacing_gn",
     "/third_party/libwebrtc/logging/rtc_event_rtp_rtcp_gn",
@@ -153,7 +155,6 @@ DIRS += [
     "/third_party/libwebrtc/media/media_channel_impl_gn",
     "/third_party/libwebrtc/media/media_constants_gn",
     "/third_party/libwebrtc/media/rid_description_gn",
-    "/third_party/libwebrtc/media/rtc_encoder_simulcast_proxy_gn",
     "/third_party/libwebrtc/media/rtc_media_base_gn",
     "/third_party/libwebrtc/media/rtc_media_config_gn",
     "/third_party/libwebrtc/media/rtc_simulcast_encoder_adapter_gn",
@@ -290,9 +291,9 @@ DIRS += [
     "/third_party/libwebrtc/modules/video_coding/svc/scalability_structures_gn",
     "/third_party/libwebrtc/modules/video_coding/svc/scalable_video_controller_gn",
     "/third_party/libwebrtc/modules/video_coding/svc/svc_rate_allocator_gn",
-    "/third_party/libwebrtc/modules/video_coding/timing/codec_timer_gn",
+    "/third_party/libwebrtc/modules/video_coding/timing/decode_time_percentile_filter_gn",
     "/third_party/libwebrtc/modules/video_coding/timing/frame_delay_variation_kalman_filter_gn",
-    "/third_party/libwebrtc/modules/video_coding/timing/inter_frame_delay_gn",
+    "/third_party/libwebrtc/modules/video_coding/timing/inter_frame_delay_variation_calculator_gn",
     "/third_party/libwebrtc/modules/video_coding/timing/jitter_estimator_gn",
     "/third_party/libwebrtc/modules/video_coding/timing/rtt_filter_gn",
     "/third_party/libwebrtc/modules/video_coding/timing/timestamp_extrapolator_gn",
@@ -574,6 +575,30 @@ if CONFIG["CPU_ARCH"] == "arm" and CONFIG["OS_TARGET"] == "Linux":
         "/third_party/libwebrtc/third_party/pipewire/pipewire_gn"
     ]
 
+if CONFIG["CPU_ARCH"] == "mips32" and CONFIG["OS_TARGET"] == "Linux":
+
+    DIRS += [
+        "/third_party/libwebrtc/modules/desktop_capture/desktop_capture_gn",
+        "/third_party/libwebrtc/modules/desktop_capture/primitives_gn",
+        "/third_party/libwebrtc/modules/portal/portal_gn",
+        "/third_party/libwebrtc/third_party/drm/drm_gn",
+        "/third_party/libwebrtc/third_party/gbm/gbm_gn",
+        "/third_party/libwebrtc/third_party/libepoxy/libepoxy_gn",
+        "/third_party/libwebrtc/third_party/pipewire/pipewire_gn"
+    ]
+
+if CONFIG["CPU_ARCH"] == "mips64" and CONFIG["OS_TARGET"] == "Linux":
+
+    DIRS += [
+        "/third_party/libwebrtc/modules/desktop_capture/desktop_capture_gn",
+        "/third_party/libwebrtc/modules/desktop_capture/primitives_gn",
+        "/third_party/libwebrtc/modules/portal/portal_gn",
+        "/third_party/libwebrtc/third_party/drm/drm_gn",
+        "/third_party/libwebrtc/third_party/gbm/gbm_gn",
+        "/third_party/libwebrtc/third_party/libepoxy/libepoxy_gn",
+        "/third_party/libwebrtc/third_party/pipewire/pipewire_gn"
+    ]
+
 if CONFIG["CPU_ARCH"] == "x86" and CONFIG["OS_TARGET"] == "Linux":
 
     DIRS += [
@@ -650,4 +675,18 @@ if CONFIG["CPU_ARCH"] == "x86_64" and CONFIG["OS_TARGET"] == "WINNT":
         "/third_party/libwebrtc/modules/audio_processing/aec3/aec3_avx2_gn",
         "/third_party/libwebrtc/modules/audio_processing/agc2/rnn_vad/vector_math_avx2_gn",
         "/third_party/libwebrtc/modules/desktop_capture/desktop_capture_differ_sse2_gn"
+    ]
+
+if CONFIG["CPU_ARCH"] == "ppc64" and CONFIG["MOZ_X11"] == "1" and CONFIG["OS_TARGET"] == "Linux":
+
+    DIRS += [
+        "/third_party/libwebrtc/modules/desktop_capture/desktop_capture_gn",
+        "/third_party/libwebrtc/modules/desktop_capture/primitives_gn"
+    ]
+
+if CONFIG["CPU_ARCH"] == "riscv64" and CONFIG["MOZ_X11"] == "1" and CONFIG["OS_TARGET"] == "Linux":
+
+    DIRS += [
+        "/third_party/libwebrtc/modules/desktop_capture/desktop_capture_gn",
+        "/third_party/libwebrtc/modules/desktop_capture/primitives_gn"
     ]

@@ -9,21 +9,22 @@ extern crate log;
 extern crate xpcom;
 
 use authenticator::{
-    authenticatorservice::{AuthenticatorService, RegisterArgs, SignArgs},
-    ctap2::attestation::AttestationStatement,
+    authenticatorservice::{RegisterArgs, SignArgs},
+    ctap2::commands::get_info::AuthenticatorVersion,
     ctap2::server::{
         PublicKeyCredentialDescriptor, PublicKeyCredentialParameters, RelyingParty,
         ResidentKeyRequirement, User, UserVerificationRequirement,
     },
     errors::{AuthenticatorError, PinError, U2FTokenError},
     statecallback::StateCallback,
-    Assertion, Pin, RegisterResult, SignResult, StatusPinUv, StatusUpdate,
+    Assertion, Pin, RegisterResult, SignResult, StateMachine, StatusPinUv, StatusUpdate,
 };
+use base64::Engine;
 use moz_task::RunnableBuilder;
 use nserror::{
     nsresult, NS_ERROR_DOM_INVALID_STATE_ERR, NS_ERROR_DOM_NOT_ALLOWED_ERR,
-    NS_ERROR_DOM_NOT_SUPPORTED_ERR, NS_ERROR_DOM_OPERATION_ERR, NS_ERROR_DOM_UNKNOWN_ERR,
-    NS_ERROR_FAILURE, NS_ERROR_NOT_AVAILABLE, NS_ERROR_NOT_IMPLEMENTED, NS_ERROR_NULL_POINTER,
+    NS_ERROR_DOM_NOT_SUPPORTED_ERR, NS_ERROR_DOM_UNKNOWN_ERR, NS_ERROR_FAILURE,
+    NS_ERROR_INVALID_ARG, NS_ERROR_NOT_AVAILABLE, NS_ERROR_NOT_IMPLEMENTED, NS_ERROR_NULL_POINTER,
     NS_OK,
 };
 use nsstring::{nsACString, nsCString, nsString};
@@ -33,14 +34,28 @@ use std::sync::mpsc::{channel, Receiver, RecvError, Sender};
 use std::sync::{Arc, Mutex};
 use thin_vec::ThinVec;
 use xpcom::interfaces::{
-    nsICtapRegisterArgs, nsICtapRegisterResult, nsICtapSignArgs, nsICtapSignResult,
-    nsIWebAuthnController, nsIWebAuthnTransport,
+    nsICredentialParameters, nsICtapRegisterArgs, nsICtapRegisterResult, nsICtapSignArgs,
+    nsICtapSignResult, nsIWebAuthnController, nsIWebAuthnTransport,
 };
 use xpcom::{xpcom_method, RefPtr};
+
+mod test_token;
+use test_token::TestTokenManager;
 
 fn make_prompt(action: &str, tid: u64, origin: &str, browsing_context_id: u64) -> String {
     format!(
         r#"{{"is_ctap2":true,"action":"{action}","tid":{tid},"origin":"{origin}","browsingContextId":{browsing_context_id}}}"#,
+    )
+}
+
+fn make_uv_invalid_error_prompt(
+    tid: u64,
+    origin: &str,
+    browsing_context_id: u64,
+    retries: i64,
+) -> String {
+    format!(
+        r#"{{"is_ctap2":true,"action":"uv-invalid","tid":{tid},"origin":"{origin}","browsingContextId":{browsing_context_id},"retriesLeft":{retries}}}"#,
     )
 }
 
@@ -61,12 +76,12 @@ fn authrs_to_nserror(e: &AuthenticatorError) -> nsresult {
         AuthenticatorError::U2FToken(U2FTokenError::NotSupported) => NS_ERROR_DOM_NOT_SUPPORTED_ERR,
         AuthenticatorError::U2FToken(U2FTokenError::InvalidState) => NS_ERROR_DOM_INVALID_STATE_ERR,
         AuthenticatorError::U2FToken(U2FTokenError::NotAllowed) => NS_ERROR_DOM_NOT_ALLOWED_ERR,
-        AuthenticatorError::PinError(PinError::PinRequired) => NS_ERROR_DOM_OPERATION_ERR,
-        AuthenticatorError::PinError(PinError::InvalidPin(_)) => NS_ERROR_DOM_OPERATION_ERR,
-        AuthenticatorError::PinError(PinError::PinAuthBlocked) => NS_ERROR_DOM_OPERATION_ERR,
-        AuthenticatorError::PinError(PinError::PinBlocked) => NS_ERROR_DOM_OPERATION_ERR,
-        AuthenticatorError::PinError(PinError::PinNotSet) => NS_ERROR_DOM_OPERATION_ERR,
-        AuthenticatorError::CredentialExcluded => NS_ERROR_DOM_OPERATION_ERR,
+        AuthenticatorError::PinError(PinError::PinRequired) => NS_ERROR_DOM_INVALID_STATE_ERR,
+        AuthenticatorError::PinError(PinError::InvalidPin(_)) => NS_ERROR_DOM_INVALID_STATE_ERR,
+        AuthenticatorError::PinError(PinError::PinAuthBlocked) => NS_ERROR_DOM_INVALID_STATE_ERR,
+        AuthenticatorError::PinError(PinError::PinBlocked) => NS_ERROR_DOM_INVALID_STATE_ERR,
+        AuthenticatorError::PinError(PinError::PinNotSet) => NS_ERROR_DOM_INVALID_STATE_ERR,
+        AuthenticatorError::CredentialExcluded => NS_ERROR_DOM_INVALID_STATE_ERR,
         _ => NS_ERROR_DOM_UNKNOWN_ERR,
     }
 }
@@ -80,8 +95,8 @@ impl CtapRegisterResult {
     xpcom_method!(get_attestation_object => GetAttestationObject() -> ThinVec<u8>);
     fn get_attestation_object(&self) -> Result<ThinVec<u8>, nsresult> {
         let mut out = ThinVec::new();
-        if let Ok(RegisterResult::CTAP2(attestation)) = &self.result {
-            if let Ok(encoded_att_obj) = serde_cbor::to_vec(&attestation) {
+        if let Ok(make_cred_res) = &self.result {
+            if let Ok(encoded_att_obj) = serde_cbor::to_vec(&make_cred_res.att_obj) {
                 out.extend_from_slice(&encoded_att_obj);
                 return Ok(out);
             }
@@ -92,8 +107,8 @@ impl CtapRegisterResult {
     xpcom_method!(get_credential_id => GetCredentialId() -> ThinVec<u8>);
     fn get_credential_id(&self) -> Result<ThinVec<u8>, nsresult> {
         let mut out = ThinVec::new();
-        if let Ok(RegisterResult::CTAP2(attestation)) = &self.result {
-            if let Some(credential_data) = &attestation.auth_data.credential_data {
+        if let Ok(make_cred_res) = &self.result {
+            if let Some(credential_data) = &make_cred_res.att_obj.auth_data.credential_data {
                 out.extend(credential_data.credential_id.clone());
                 return Ok(out);
             }
@@ -142,10 +157,12 @@ impl CtapSignResult {
     fn get_authenticator_data(&self) -> Result<ThinVec<u8>, nsresult> {
         let mut out = ThinVec::new();
         if let Ok(assertion) = &self.result {
-            if let Ok(encoded_auth_data) = assertion.auth_data.to_vec() {
-                out.extend_from_slice(&encoded_auth_data);
-                return Ok(out);
-            }
+            let data = match serde_cbor::value::to_value(&assertion.auth_data) {
+                Ok(serde_cbor::value::Value::Bytes(data)) => data,
+                _ => return Err(NS_ERROR_FAILURE),
+            };
+            out.extend_from_slice(&data);
+            return Ok(out);
         }
         Err(NS_ERROR_FAILURE)
     }
@@ -257,7 +274,7 @@ impl Controller {
                 CtapSignResult::allocate(InitCtapSignResult { result: Err(e) })
                     .query_interface::<nsICtapSignResult>(),
             ),
-            Ok(SignResult::CTAP2(assertion_vec)) => {
+            Ok(assertion_vec) => {
                 for assertion in assertion_vec.0 {
                     assertions.push(
                         CtapSignResult::allocate(InitCtapSignResult {
@@ -267,7 +284,6 @@ impl Controller {
                     );
                 }
             }
-            _ => return Err(NS_ERROR_NOT_IMPLEMENTED), // SignResult::CTAP1 shouldn't happen.
         }
 
         unsafe {
@@ -293,23 +309,11 @@ fn status_callback(
 ) {
     loop {
         match status_rx.recv() {
-            Ok(StatusUpdate::DeviceAvailable { dev_info }) => {
-                debug!("STATUS: device available: {}", dev_info)
-            }
-            Ok(StatusUpdate::DeviceUnavailable { dev_info }) => {
-                debug!("STATUS: device unavailable: {}", dev_info)
-            }
-            Ok(StatusUpdate::Success { dev_info }) => {
-                debug!("STATUS: success using device: {}", dev_info);
-            }
             Ok(StatusUpdate::SelectDeviceNotice) => {
                 debug!("STATUS: Please select a device by touching one of them.");
                 let notification_str =
                     make_prompt("select-device", tid, origin, browsing_context_id);
                 controller.send_prompt(tid, &notification_str);
-            }
-            Ok(StatusUpdate::DeviceSelected(dev_info)) => {
-                debug!("STATUS: Continuing with device: {}", dev_info);
             }
             Ok(StatusUpdate::PresenceRequired) => {
                 debug!("STATUS: Waiting for user presence");
@@ -357,14 +361,26 @@ fn status_callback(
                 let notification_str = make_prompt("pin-not-set", tid, origin, browsing_context_id);
                 controller.send_prompt(tid, &notification_str);
             }
-            Ok(StatusUpdate::PinUvError(e)) => {
-                warn!("Unexpected error: {:?}", e)
-            }
-            Ok(StatusUpdate::InteractiveManagement((_, dev_info, auth_info))) => {
-                debug!(
-                    "STATUS: interactive management: {}, {:?}",
-                    dev_info, auth_info
+            Ok(StatusUpdate::PinUvError(StatusPinUv::InvalidUv(attempts))) => {
+                let notification_str = make_uv_invalid_error_prompt(
+                    tid,
+                    origin,
+                    browsing_context_id,
+                    attempts.map_or(-1, |x| x as i64),
                 );
+                controller.send_prompt(tid, &notification_str);
+            }
+            Ok(StatusUpdate::PinUvError(StatusPinUv::UvBlocked)) => {
+                let notification_str = make_prompt("uv-blocked", tid, origin, browsing_context_id);
+                controller.send_prompt(tid, &notification_str);
+            }
+            Ok(StatusUpdate::PinUvError(StatusPinUv::PinIsTooShort))
+            | Ok(StatusUpdate::PinUvError(StatusPinUv::PinIsTooLong(..))) => {
+                // These should never happen.
+                warn!("STATUS: Got unexpected StatusPinUv-error.");
+            }
+            Ok(StatusUpdate::InteractiveManagement(_)) => {
+                debug!("STATUS: interactive management");
             }
             Err(RecvError) => {
                 debug!("STATUS: end");
@@ -381,7 +397,8 @@ fn status_callback(
 // 2) a channel through which to receive a pin callback.
 #[xpcom(implement(nsIWebAuthnTransport), atomic)]
 pub struct AuthrsTransport {
-    auth_service: RefCell<AuthenticatorService>, // interior mutable for use in XPCOM methods
+    usb_token_manager: RefCell<StateMachine>, // interior mutable for use in XPCOM methods
+    test_token_manager: TestTokenManager,
     controller: Controller,
     pin_receiver: Arc<Mutex<PinReceiver>>,
 }
@@ -392,6 +409,10 @@ impl AuthrsTransport {
         Err(NS_ERROR_NOT_IMPLEMENTED)
     }
 
+    // # Safety
+    //
+    // This will mutably borrow the controller pointer through a RefCell. The caller must ensure
+    // that at most one WebAuthn transaction is active at any given time.
     xpcom_method!(set_controller => SetController(aController: *const nsIWebAuthnController));
     fn set_controller(&self, controller: *const nsIWebAuthnController) -> Result<(), nsresult> {
         self.controller.init(controller)
@@ -412,6 +433,10 @@ impl AuthrsTransport {
         }
     }
 
+    // # Safety
+    //
+    // This will mutably borrow usb_token_manager through a RefCell. The caller must ensure that at
+    // most one WebAuthn transaction is active at any given time.
     xpcom_method!(make_credential => MakeCredential(aTid: u64, aBrowsingContextId: u64, aArgs: *const nsICtapRegisterArgs));
     fn make_credential(
         &self,
@@ -464,7 +489,7 @@ impl AuthrsTransport {
         unsafe { args.GetCoseAlgs(&mut cose_algs) }.to_result()?;
         let pub_cred_params = cose_algs
             .iter()
-            .map(|alg| PublicKeyCredentialParameters::try_from(*alg).unwrap())
+            .filter_map(|alg| PublicKeyCredentialParameters::try_from(*alg).ok())
             .collect();
 
         let mut resident_key = nsString::new();
@@ -483,13 +508,21 @@ impl AuthrsTransport {
         unsafe { args.GetUserVerification(&mut *user_verification) }.to_result()?;
         let user_verification_req = if user_verification.eq("required") {
             UserVerificationRequirement::Required
-        } else if user_verification.eq("preferred") {
-            UserVerificationRequirement::Preferred
         } else if user_verification.eq("discouraged") {
             UserVerificationRequirement::Discouraged
         } else {
-            return Err(NS_ERROR_FAILURE);
+            UserVerificationRequirement::Preferred
         };
+
+        let mut authenticator_attachment = nsString::new();
+        if unsafe { args.GetAuthenticatorAttachment(&mut *authenticator_attachment) }
+            .to_result()
+            .is_ok()
+        {
+            if authenticator_attachment.eq("platform") {
+                return Err(NS_ERROR_FAILURE);
+            }
+        }
 
         let mut attestation_conveyance_preference = nsString::new();
         unsafe { args.GetAttestationConveyancePreference(&mut *attestation_conveyance_preference) }
@@ -552,17 +585,13 @@ impl AuthrsTransport {
         let state_callback = StateCallback::<Result<RegisterResult, AuthenticatorError>>::new(
             Box::new(move |result| {
                 let result = match result {
-                    Ok(RegisterResult::CTAP1(..)) => Err(AuthenticatorError::VersionMismatch(
-                        "AuthrsTransport::MakeCredential",
-                        2,
-                    )),
-                    Ok(RegisterResult::CTAP2(mut attestation_object)) => {
+                    Ok(mut make_cred_res) => {
                         // Tokens always provide attestation, but the user may have asked we not
                         // include the attestation statement in the response.
                         if none_attestation {
-                            attestation_object.att_statement = AttestationStatement::None;
+                            make_cred_res.att_obj.anonymize();
                         }
-                        Ok(RegisterResult::CTAP2(attestation_object))
+                        Ok(make_cred_res)
                     }
                     Err(e @ AuthenticatorError::CredentialExcluded) => {
                         let notification_str = make_prompt(
@@ -580,12 +609,35 @@ impl AuthrsTransport {
             }),
         );
 
-        self.auth_service
-            .borrow_mut()
-            .register(timeout_ms as u64, info.into(), status_tx, state_callback)
-            .or(Err(NS_ERROR_FAILURE))
+        // The authenticator crate provides an `AuthenticatorService` which can dispatch a request
+        // in parallel to any number of transports. We only support the USB transport in production
+        // configurations, so we do not need the full generality of `AuthenticatorService` here.
+        // We disable the USB transport in tests that use virtual devices.
+        if static_prefs::pref!("security.webauth.webauthn_enable_usbtoken") {
+            self.usb_token_manager.borrow_mut().register(
+                timeout_ms as u64,
+                info.into(),
+                status_tx,
+                state_callback,
+            );
+        } else if static_prefs::pref!("security.webauth.webauthn_enable_softtoken") {
+            self.test_token_manager.register(
+                timeout_ms as u64,
+                info.into(),
+                status_tx,
+                state_callback,
+            );
+        } else {
+            return Err(NS_ERROR_FAILURE);
+        }
+
+        Ok(())
     }
 
+    // # Safety
+    //
+    // This will mutably borrow usb_token_manager through a RefCell. The caller must ensure that at
+    // most one WebAuthn transaction is active at any given time.
     xpcom_method!(get_assertion => GetAssertion(aTid: u64, aBrowsingContextId: u64, aArgs: *const nsICtapSignArgs));
     fn get_assertion(
         &self,
@@ -626,12 +678,10 @@ impl AuthrsTransport {
         unsafe { args.GetUserVerification(&mut *user_verification) }.to_result()?;
         let user_verification_req = if user_verification.eq("required") {
             UserVerificationRequirement::Required
-        } else if user_verification.eq("preferred") {
-            UserVerificationRequirement::Preferred
         } else if user_verification.eq("discouraged") {
             UserVerificationRequirement::Discouraged
         } else {
-            return Err(NS_ERROR_FAILURE);
+            UserVerificationRequirement::Preferred
         };
 
         let mut alternate_rp_id = None;
@@ -668,11 +718,7 @@ impl AuthrsTransport {
         let state_callback =
             StateCallback::<Result<SignResult, AuthenticatorError>>::new(Box::new(move |result| {
                 let result = match result {
-                    Ok(SignResult::CTAP1(..)) => Err(AuthenticatorError::VersionMismatch(
-                        "AuthrsTransport::GetAssertion",
-                        2,
-                    )),
-                    Ok(SignResult::CTAP2(mut assertion_object)) => {
+                    Ok(mut assertion_object) => {
                         // In CTAP 2.0, but not CTAP 2.1, the assertion object's credential field
                         // "May be omitted if the allowList has exactly one Credential." If we had
                         // a unique allowed credential, then copy its descriptor to the output.
@@ -683,7 +729,7 @@ impl AuthrsTransport {
                                 }
                             }
                         }
-                        Ok(SignResult::CTAP2(assertion_object))
+                        Ok(assertion_object)
                     }
                     Err(e) => Err(e),
                 };
@@ -709,22 +755,157 @@ impl AuthrsTransport {
             use_ctap1_fallback,
         };
 
-        self.auth_service
-            .borrow_mut()
-            .sign(timeout_ms as u64, info.into(), status_tx, state_callback)
-            .or(Err(NS_ERROR_FAILURE))
+        // As in `register`, we are intentionally avoiding `AuthenticatorService` here.
+        if static_prefs::pref!("security.webauth.webauthn_enable_usbtoken") {
+            self.usb_token_manager.borrow_mut().sign(
+                timeout_ms as u64,
+                info.into(),
+                status_tx,
+                state_callback,
+            );
+        } else if static_prefs::pref!("security.webauth.webauthn_enable_softtoken") {
+            self.test_token_manager
+                .sign(timeout_ms as u64, info.into(), status_tx, state_callback);
+        } else {
+            return Err(NS_ERROR_FAILURE);
+        }
+
+        Ok(())
     }
 
+    // # Safety
+    //
+    // This will mutably borrow usb_token_manager through a RefCell. The caller must ensure that at
+    // most one WebAuthn transaction is active at any given time.
     xpcom_method!(cancel => Cancel());
-    fn cancel(&self) -> Result<nsresult, nsresult> {
+    fn cancel(&self) -> Result<(), nsresult> {
         // We may be waiting for a pin. Drop the channel to release the
         // state machine from `ask_user_for_pin`.
         drop(self.pin_receiver.lock().or(Err(NS_ERROR_FAILURE))?.take());
 
-        match &self.auth_service.borrow_mut().cancel() {
-            Ok(_) => Ok(NS_OK),
-            Err(e) => Err(authrs_to_nserror(e)),
-        }
+        self.usb_token_manager.borrow_mut().cancel();
+
+        Ok(())
+    }
+
+    xpcom_method!(
+        add_virtual_authenticator => AddVirtualAuthenticator(
+            protocol: *const nsACString,
+            transport: *const nsACString,
+            hasResidentKey: bool,
+            hasUserVerification: bool,
+            isUserConsenting: bool,
+            isUserVerified: bool) -> u64
+    );
+    fn add_virtual_authenticator(
+        &self,
+        protocol: &nsACString,
+        transport: &nsACString,
+        has_resident_key: bool,
+        has_user_verification: bool,
+        is_user_consenting: bool,
+        is_user_verified: bool,
+    ) -> Result<u64, nsresult> {
+        let protocol = match protocol.to_string().as_str() {
+            "ctap1/u2f" => AuthenticatorVersion::U2F_V2,
+            "ctap2" => AuthenticatorVersion::FIDO_2_0,
+            "ctap2_1" => AuthenticatorVersion::FIDO_2_1,
+            _ => return Err(NS_ERROR_INVALID_ARG),
+        };
+        match transport.to_string().as_str() {
+            "usb" | "nfc" | "ble" | "smart-card" | "hybrid" | "internal" => (),
+            _ => return Err(NS_ERROR_INVALID_ARG),
+        };
+        self.test_token_manager.add_virtual_authenticator(
+            protocol,
+            has_resident_key,
+            has_user_verification,
+            is_user_consenting,
+            is_user_verified,
+        )
+    }
+
+    xpcom_method!(remove_virtual_authenticator => RemoveVirtualAuthenticator(authenticatorId: u64));
+    fn remove_virtual_authenticator(&self, authenticator_id: u64) -> Result<(), nsresult> {
+        self.test_token_manager
+            .remove_virtual_authenticator(authenticator_id)
+    }
+
+    xpcom_method!(
+        add_credential => AddCredential(
+            authenticatorId: u64,
+            credentialId: *const nsACString,
+            isResidentCredential: bool,
+            rpId: *const nsACString,
+            privateKey: *const nsACString,
+            userHandle: *const nsACString,
+            signCount: u32)
+    );
+    fn add_credential(
+        &self,
+        authenticator_id: u64,
+        credential_id: &nsACString,
+        is_resident_credential: bool,
+        rp_id: &nsACString,
+        private_key: &nsACString,
+        user_handle: &nsACString,
+        sign_count: u32,
+    ) -> Result<(), nsresult> {
+        let credential_id = base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .decode(credential_id)
+            .or(Err(NS_ERROR_INVALID_ARG))?;
+        let private_key = base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .decode(private_key)
+            .or(Err(NS_ERROR_INVALID_ARG))?;
+        let user_handle = base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .decode(user_handle)
+            .or(Err(NS_ERROR_INVALID_ARG))?;
+        self.test_token_manager.add_credential(
+            authenticator_id,
+            &credential_id,
+            &private_key,
+            &user_handle,
+            sign_count,
+            rp_id.to_string(),
+            is_resident_credential,
+        )
+    }
+
+    xpcom_method!(get_credentials => GetCredentials(authenticatorId: u64) -> ThinVec<Option<RefPtr<nsICredentialParameters>>>);
+    fn get_credentials(
+        &self,
+        authenticator_id: u64,
+    ) -> Result<ThinVec<Option<RefPtr<nsICredentialParameters>>>, nsresult> {
+        self.test_token_manager.get_credentials(authenticator_id)
+    }
+
+    xpcom_method!(remove_credential => RemoveCredential(authenticatorId: u64, credentialId: *const nsACString));
+    fn remove_credential(
+        &self,
+        authenticator_id: u64,
+        credential_id: &nsACString,
+    ) -> Result<(), nsresult> {
+        let credential_id = base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .decode(credential_id)
+            .or(Err(NS_ERROR_INVALID_ARG))?;
+        self.test_token_manager
+            .remove_credential(authenticator_id, credential_id.as_ref())
+    }
+
+    xpcom_method!(remove_all_credentials => RemoveAllCredentials(authenticatorId: u64));
+    fn remove_all_credentials(&self, authenticator_id: u64) -> Result<(), nsresult> {
+        self.test_token_manager
+            .remove_all_credentials(authenticator_id)
+    }
+
+    xpcom_method!(set_user_verified => SetUserVerified(authenticatorId: u64, isUserVerified: bool));
+    fn set_user_verified(
+        &self,
+        authenticator_id: u64,
+        is_user_verified: bool,
+    ) -> Result<(), nsresult> {
+        self.test_token_manager
+            .set_user_verified(authenticator_id, is_user_verified)
     }
 }
 
@@ -732,13 +913,9 @@ impl AuthrsTransport {
 pub extern "C" fn authrs_transport_constructor(
     result: *mut *const nsIWebAuthnTransport,
 ) -> nsresult {
-    let mut auth_service = match AuthenticatorService::new() {
-        Ok(auth_service) => auth_service,
-        _ => return NS_ERROR_FAILURE,
-    };
-    auth_service.add_detected_transports();
     let wrapper = AuthrsTransport::allocate(InitAuthrsTransport {
-        auth_service: RefCell::new(auth_service),
+        usb_token_manager: RefCell::new(StateMachine::new()),
+        test_token_manager: TestTokenManager::new(),
         controller: Controller(RefCell::new(std::ptr::null())),
         pin_receiver: Arc::new(Mutex::new(None)),
     });

@@ -3,6 +3,7 @@
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
 import React, { Component } from "react";
+import { div } from "react-dom-factories";
 import PropTypes from "prop-types";
 import { connect } from "../../../utils/connect";
 
@@ -17,11 +18,7 @@ import { createHeadlessEditor } from "../../../utils/editor/create-editor";
 
 import { makeBreakpointId } from "../../../utils/breakpoint";
 
-import {
-  getSelectedSource,
-  getBreakpointSources,
-  getBlackBoxRanges,
-} from "../../../selectors";
+import { getSelectedSource, getBreakpointSources } from "../../../selectors";
 
 const classnames = require("devtools/client/shared/classnames.js");
 
@@ -35,7 +32,6 @@ class Breakpoints extends Component {
       selectedSource: PropTypes.object,
       shouldPauseOnCaughtExceptions: PropTypes.bool.isRequired,
       shouldPauseOnExceptions: PropTypes.bool.isRequired,
-      blackboxedRanges: PropTypes.array.isRequired,
     };
   }
 
@@ -58,85 +54,88 @@ class Breakpoints extends Component {
     this.headlessEditor = null;
   }
 
+  togglePauseOnException = () => {
+    this.props.pauseOnExceptions(!this.props.shouldPauseOnExceptions, false);
+  };
+
+  togglePauseOnCaughtException = () => {
+    this.props.pauseOnExceptions(
+      true,
+      !this.props.shouldPauseOnCaughtExceptions
+    );
+  };
+
   renderExceptionsOptions() {
     const {
       breakpointSources,
       shouldPauseOnExceptions,
       shouldPauseOnCaughtExceptions,
-      pauseOnExceptions,
     } = this.props;
 
     const isEmpty = !breakpointSources.length;
-
-    return (
-      <div
-        className={classnames("breakpoints-exceptions-options", {
+    return div(
+      {
+        className: classnames("breakpoints-exceptions-options", {
           empty: isEmpty,
-        })}
-      >
-        <ExceptionOption
-          className="breakpoints-exceptions"
-          label={L10N.getStr("pauseOnExceptionsItem2")}
-          isChecked={shouldPauseOnExceptions}
-          onChange={() => pauseOnExceptions(!shouldPauseOnExceptions, false)}
-        />
-
-        {shouldPauseOnExceptions && (
-          <ExceptionOption
-            className="breakpoints-exceptions-caught"
-            label={L10N.getStr("pauseOnCaughtExceptionsItem")}
-            isChecked={shouldPauseOnCaughtExceptions}
-            onChange={() =>
-              pauseOnExceptions(true, !shouldPauseOnCaughtExceptions)
-            }
-          />
-        )}
-      </div>
+        }),
+      },
+      React.createElement(ExceptionOption, {
+        className: "breakpoints-exceptions",
+        label: L10N.getStr("pauseOnExceptionsItem2"),
+        isChecked: shouldPauseOnExceptions,
+        onChange: this.togglePauseOnException,
+      }),
+      shouldPauseOnExceptions &&
+        React.createElement(ExceptionOption, {
+          className: "breakpoints-exceptions-caught",
+          label: L10N.getStr("pauseOnCaughtExceptionsItem"),
+          isChecked: shouldPauseOnCaughtExceptions,
+          onChange: this.togglePauseOnCaughtException,
+        })
     );
   }
 
   renderBreakpoints() {
-    const { breakpointSources, selectedSource, blackboxedRanges } = this.props;
+    const { breakpointSources, selectedSource } = this.props;
     if (!breakpointSources.length) {
       return null;
     }
 
     const editor = this.getEditor();
     const sources = breakpointSources.map(({ source }) => source);
-
-    return (
-      <div className="pane breakpoints-list">
-        {breakpointSources.map(({ source, breakpoints }) => {
-          return [
-            <BreakpointHeading
-              key={source.id}
-              source={source}
-              sources={sources}
-            />,
-            breakpoints.map(breakpoint => (
-              <Breakpoint
-                breakpoint={breakpoint}
-                source={source}
-                blackboxedRangesForSource={blackboxedRanges[source.url]}
-                selectedSource={selectedSource}
-                editor={editor}
-                key={makeBreakpointId(
-                  getSelectedLocation(breakpoint, selectedSource)
-                )}
-              />
-            )),
-          ];
-        })}
-      </div>
+    return div(
+      {
+        className: "pane breakpoints-list",
+      },
+      breakpointSources.map(({ source, breakpoints }) => {
+        return [
+          React.createElement(BreakpointHeading, {
+            key: source.id,
+            source,
+            sources,
+          }),
+          breakpoints.map(breakpoint =>
+            React.createElement(Breakpoint, {
+              breakpoint,
+              source,
+              editor,
+              key: makeBreakpointId(
+                getSelectedLocation(breakpoint, selectedSource)
+              ),
+            })
+          ),
+        ];
+      })
     );
   }
 
   render() {
-    return (
-      <div className="pane">
-        {this.renderExceptionsOptions()}
-        {this.renderBreakpoints()}
-      </div>
+    return div(
+      {
+        className: "pane",
+      },
+      this.renderExceptionsOptions(),
+      this.renderBreakpoints()
     );
   }
 }
@@ -144,7 +143,6 @@ class Breakpoints extends Component {
 const mapStateToProps = state => ({
   breakpointSources: getBreakpointSources(state),
   selectedSource: getSelectedSource(state),
-  blackboxedRanges: getBlackBoxRanges(state),
 });
 
 export default connect(mapStateToProps, {

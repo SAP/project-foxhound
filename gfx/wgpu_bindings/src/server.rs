@@ -3,95 +3,48 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 use crate::{
-    identity::IdentityRecyclerFactory, wgpu_string, AdapterInformation, ByteBuf,
-    CommandEncoderAction, DeviceAction, DropAction, QueueWriteAction, TextureAction,
+    error::{ErrMsg, ErrorBuffer, ErrorBufferType},
+    identity::IdentityRecyclerFactory,
+    wgpu_string, AdapterInformation, ByteBuf, CommandEncoderAction, DeviceAction, DropAction,
+    QueueWriteAction, TextureAction,
 };
 
 use nsstring::{nsACString, nsCString, nsString};
 
-use wgc::pipeline::CreateShaderModuleError;
 use wgc::{gfx_select, id};
+use wgc::{pipeline::CreateShaderModuleError, resource::BufferAccessError};
 
 use std::borrow::Cow;
+use std::slice;
 use std::sync::atomic::{AtomicU32, Ordering};
-use std::{error::Error, os::raw::c_char, ptr, slice};
+
+// The seemingly redundant u64 suffixes help cbindgen with generating the right C++ code.
+// See https://github.com/mozilla/cbindgen/issues/849.
 
 /// We limit the size of buffer allocations for stability reason.
 /// We can reconsider this limit in the future. Note that some drivers (mesa for example),
 /// have issues when the size of a buffer, mapping or copy command does not fit into a
 /// signed 32 bits integer, so beyond a certain size, large allocations will need some form
 /// of driver allow/blocklist.
-const MAX_BUFFER_SIZE: wgt::BufferAddress = 1 << 30;
+pub const MAX_BUFFER_SIZE: wgt::BufferAddress = 1u64 << 30u64;
 // Mesa has issues with height/depth that don't fit in a 16 bits signed integers.
 const MAX_TEXTURE_EXTENT: u32 = std::i16::MAX as u32;
 
-/// A fixed-capacity, null-terminated error buffer owned by C++.
-///
-/// This type points to space owned by a C++ `mozilla::webgpu::ErrorBuffer`
-/// object, owned by our callers in `WebGPUParent.cpp`. If we catch a
-/// `Result::Err` here, we convert the error to a string, copy as much of that
-/// string as fits into this buffer, and null-terminate it. The caller
-/// determines whether a error occurred by simply checking if there's any text
-/// before the first null byte.
-///
-/// C++ callers of Rust functions that expect one of these structs can create a
-/// `mozilla::webgpu::ErrorBuffer` object, and call its `ToFFI` method to
-/// construct a value of this type, available to C++ as
-/// `mozilla::webgpu::ffi::WGPUErrorBuffer`.
-#[repr(C)]
-pub struct ErrorBuffer {
-    string: *mut c_char,
-    capacity: usize,
-}
-
-impl ErrorBuffer {
-    /// Fill this buffer with the textual representation of `error`.
-    ///
-    /// If the error message is too long, truncate it as needed. In either case,
-    /// the error message is always terminated by a zero byte.
-    ///
-    /// Note that there is no explicit indication of the message's length, only
-    /// the terminating zero byte. If the textual form of `error` itself
-    /// includes a zero byte (as Rust strings can), then the C++ code receiving
-    /// this error message has no way to distinguish that from the terminating
-    /// zero byte, and will see the message as shorter than it is.
-    fn init(&mut self, error: impl Error) {
-        use std::fmt::Write;
-
-        let mut string = format!("{}", error);
-        let mut e = error.source();
-        while let Some(source) = e {
-            write!(string, ", caused by: {}", source).unwrap();
-            e = source.source();
-        }
-
-        self.init_str(&string);
-    }
-
-    fn init_str(&mut self, message: &str) {
-        assert_ne!(self.capacity, 0);
-        let length = if message.len() >= self.capacity {
-            log::warn!(
-                "Error length {} reached capacity {}",
-                message.len(),
-                self.capacity
-            );
-            self.capacity - 1
-        } else {
-            message.len()
-        };
-        unsafe {
-            ptr::copy_nonoverlapping(message.as_ptr(), self.string as *mut u8, length);
-            *self.string.add(length) = 0;
-        }
+fn restrict_limits(limits: wgt::Limits) -> wgt::Limits {
+    wgt::Limits {
+        max_buffer_size: limits.max_buffer_size.min(MAX_BUFFER_SIZE),
+        max_texture_dimension_1d: limits.max_texture_dimension_1d.min(MAX_TEXTURE_EXTENT),
+        max_texture_dimension_2d: limits.max_texture_dimension_2d.min(MAX_TEXTURE_EXTENT),
+        max_texture_dimension_3d: limits.max_texture_dimension_3d.min(MAX_TEXTURE_EXTENT),
+        .. limits
     }
 }
 
 // hide wgc's global in private
-pub struct Global(wgc::hub::Global<IdentityRecyclerFactory>);
+pub struct Global(wgc::global::Global<IdentityRecyclerFactory>);
 
 impl std::ops::Deref for Global {
-    type Target = wgc::hub::Global<IdentityRecyclerFactory>;
+    type Target = wgc::global::Global<IdentityRecyclerFactory>;
     fn deref(&self) -> &Self::Target {
         &self.0
     }
@@ -110,7 +63,7 @@ pub extern "C" fn wgpu_server_new(factory: IdentityRecyclerFactory) -> *mut Glob
         );
         wgc::instance::parse_backends_from_comma_list(&backends_pref)
     };
-    let global = Global(wgc::hub::Global::new(
+    let global = Global(wgc::global::Global::new(
         "wgpu",
         factory,
         wgt::InstanceDescriptor {
@@ -188,7 +141,7 @@ pub unsafe extern "C" fn wgpu_server_adapter_pack_info(
 
             let info = AdapterInformation {
                 id,
-                limits: gfx_select!(id => global.adapter_limits(id)).unwrap(),
+                limits: restrict_limits(gfx_select!(id => global.adapter_limits(id)).unwrap()),
                 features: gfx_select!(id => global.adapter_features(id)).unwrap(),
                 name,
                 vendor,
@@ -339,6 +292,7 @@ pub extern "C" fn wgpu_server_device_create_buffer(
     size: wgt::BufferAddress,
     usage: u32,
     mapped_at_creation: bool,
+    shm_allocation_failed: bool,
     mut error_buf: ErrorBuffer,
 ) {
     let utf8_label = label.map(|utf16| utf16.to_string());
@@ -346,8 +300,11 @@ pub extern "C" fn wgpu_server_device_create_buffer(
     let usage = wgt::BufferUsages::from_bits_retain(usage);
 
     // Don't trust the graphics driver with buffer sizes larger than our conservative max texture size.
-    if size > MAX_BUFFER_SIZE {
-        error_buf.init_str("Out of memory");
+    if shm_allocation_failed || size > MAX_BUFFER_SIZE {
+        error_buf.init(ErrMsg {
+            message: "Out of memory",
+            r#type: ErrorBufferType::OutOfMemory,
+        });
         gfx_select!(self_id => global.create_buffer_error(buffer_id, label));
         return;
     }
@@ -382,7 +339,7 @@ pub unsafe extern "C" fn wgpu_server_buffer_map(
         callback,
     };
     // All errors are also exposed to the mapping callback, so we handle them there and ignore
-    // the the returned value of buffer_map_async.
+    // the returned value of buffer_map_async.
     let _ = gfx_select!(buffer_id => global.buffer_map_async(
         buffer_id,
         start .. start + size,
@@ -430,7 +387,14 @@ pub extern "C" fn wgpu_server_buffer_unmap(
     mut error_buf: ErrorBuffer,
 ) {
     if let Err(e) = gfx_select!(buffer_id => global.buffer_unmap(buffer_id)) {
-        error_buf.init(e);
+        match e {
+            // NOTE: This is presumed by CTS test cases, and was even formally specified in the
+            // WebGPU spec. previously, but this doesn't seem formally specified now. :confused:
+            //
+            // TODO: upstream this; see <https://bugzilla.mozilla.org/show_bug.cgi?id=1842297>.
+            BufferAccessError::Invalid => (),
+            other => error_buf.init(other),
+        }
     }
 }
 
@@ -448,7 +412,7 @@ pub extern "C" fn wgpu_server_buffer_drop(global: &Global, self_id: id::BufferId
 }
 
 impl Global {
-    fn device_action<A: wgc::hub::HalApi>(
+    fn device_action<A: wgc::hal_api::HalApi>(
         &self,
         self_id: id::DeviceId,
         action: DeviceAction,
@@ -462,7 +426,10 @@ impl Global {
                     || desc.size.depth_or_array_layers > max
                 {
                     gfx_select!(self_id => self.create_texture_error(id, desc.label));
-                    error_buf.init_str("Out of memory");
+                    error_buf.init(ErrMsg {
+                        message: "Out of memory",
+                        r#type: ErrorBufferType::OutOfMemory,
+                    });
                     return;
                 }
                 let (_, error) = self.device_create_texture::<A>(self_id, &desc, id);
@@ -533,19 +500,25 @@ impl Global {
                     error_buf.init(err);
                 }
             }
+            DeviceAction::CreateRenderBundleError(buffer_id, label) => {
+                self.create_render_bundle_error::<A>(buffer_id, label);
+            }
             DeviceAction::CreateCommandEncoder(id, desc) => {
                 let (_, error) = self.device_create_command_encoder::<A>(self_id, &desc, id);
                 if let Some(err) = error {
                     error_buf.init(err);
                 }
             }
-            DeviceAction::Error(message) => {
-                error_buf.init_str(&message);
+            DeviceAction::Error { message, r#type } => {
+                error_buf.init(ErrMsg {
+                    message: &message,
+                    r#type,
+                });
             }
         }
     }
 
-    fn texture_action<A: wgc::hub::HalApi>(
+    fn texture_action<A: wgc::hal_api::HalApi>(
         &self,
         self_id: id::TextureId,
         action: TextureAction,
@@ -561,7 +534,7 @@ impl Global {
         }
     }
 
-    fn command_encoder_action<A: wgc::hub::HalApi>(
+    fn command_encoder_action<A: wgc::hal_api::HalApi>(
         &self,
         self_id: id::CommandEncoderId,
         action: CommandEncoderAction,
@@ -602,10 +575,15 @@ impl Global {
                     error_buf.init(err);
                 }
             }
-            CommandEncoderAction::RunComputePass { base } => {
-                if let Err(err) =
-                    self.command_encoder_run_compute_pass_impl::<A>(self_id, base.as_ref())
-                {
+            CommandEncoderAction::RunComputePass {
+                base,
+                timestamp_writes,
+            } => {
+                if let Err(err) = self.command_encoder_run_compute_pass_impl::<A>(
+                    self_id,
+                    base.as_ref(),
+                    timestamp_writes.as_ref(),
+                ) {
                     error_buf.init(err);
                 }
             }
@@ -641,12 +619,16 @@ impl Global {
                 base,
                 target_colors,
                 target_depth_stencil,
+                timestamp_writes,
+                occlusion_query_set_id,
             } => {
                 if let Err(err) = self.command_encoder_run_render_pass_impl::<A>(
                     self_id,
                     base.as_ref(),
                     &target_colors,
                     target_depth_stencil.as_ref(),
+                    timestamp_writes.as_ref(),
+                    occlusion_query_set_id,
                 ) {
                     error_buf.init(err);
                 }
@@ -801,6 +783,15 @@ pub unsafe extern "C" fn wgpu_server_queue_submit(
     if let Err(err) = result {
         error_buf.init(err);
     }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn wgpu_server_on_submitted_work_done(
+    global: &Global,
+    self_id: id::QueueId,
+    callback: wgc::device::queue::SubmittedWorkDoneClosureC,
+) {
+    gfx_select!(self_id => global.queue_on_submitted_work_done(self_id, wgc::device::queue::SubmittedWorkDoneClosure::from_c(callback))).unwrap();
 }
 
 /// # Safety

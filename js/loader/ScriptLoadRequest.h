@@ -55,22 +55,18 @@ class LoadContextBase;
 class ModuleLoadRequest;
 class ScriptLoadRequestList;
 
+// https://fetch.spec.whatwg.org/#concept-request-parser-metadata
+// All scripts are either "parser-inserted" or "not-parser-inserted", so
+// the empty string is not necessary.
+enum class ParserMetadata {
+  NotParserInserted,
+  ParserInserted,
+};
+
 /*
  * ScriptFetchOptions loosely corresponds to HTML's "script fetch options",
  * https://html.spec.whatwg.org/multipage/webappapis.html#script-fetch-options
  * with the exception of the following properties:
- *   cryptographic nonce
- *      The cryptographic nonce metadata used for the initial fetch and for
- *      fetching any imported modules. As this is populated by a DOM element,
- *      this is implemented via mozilla::dom::Element as the field
- *      mElement. The default value is an empty string, and is indicated
- *      when this field is a nullptr. Nonce is not represented on the dom
- *      side as per bug 1374612.
- *   parser metadata
- *      The parser metadata used for the initial fetch and for fetching any
- *      imported modules. This is populated from a mozilla::dom::Element and is
- *      handled by the field mElement. The default value is an empty string,
- *      and is indicated when this field is a nullptr.
  *   integrity metadata
  *      The integrity metadata used for the initial fetch. This is
  *      implemented in ScriptLoadRequest, as it changes for every
@@ -91,6 +87,8 @@ class ScriptFetchOptions {
 
   ScriptFetchOptions(mozilla::CORSMode aCORSMode,
                      enum mozilla::dom::ReferrerPolicy aReferrerPolicy,
+                     const nsAString& aNonce,
+                     const ParserMetadata aParserMetadata,
                      nsIPrincipal* aTriggeringPrincipal,
                      mozilla::dom::Element* aElement = nullptr);
 
@@ -106,6 +104,18 @@ class ScriptFetchOptions {
    *  imported modules
    */
   const enum mozilla::dom::ReferrerPolicy mReferrerPolicy;
+
+  /*
+   * The cryptographic nonce metadata used for the initial fetch and for
+   * fetching any imported modules.
+   */
+  const nsString mNonce;
+
+  /*
+   * The parser metadata used for the initial fetch and for fetching any
+   * imported modules
+   */
+  const ParserMetadata mParserMetadata;
 
   /*
    *  Used to determine CSP and if we are on the About page.
@@ -212,12 +222,13 @@ class ScriptLoadRequest
   bool IsFetching() const { return mState == State::Fetching; }
   bool IsCompiling() const { return mState == State::Compiling; }
   bool IsLoadingImports() const { return mState == State::LoadingImports; }
+  bool IsCanceled() const { return mState == State::Canceled; }
 
-  bool IsReadyToRun() const {
+  // Return whether the request has been completed, either successfully or
+  // otherwise.
+  bool IsFinished() const {
     return mState == State::Ready || mState == State::Canceled;
   }
-
-  bool IsCanceled() const { return mState == State::Canceled; }
 
   // Type of data provided by the nsChannel.
   enum class DataType : uint8_t { eUnknown, eTextSource, eBytecode };
@@ -231,16 +242,10 @@ class ScriptLoadRequest
     mScriptData.reset();
   }
 
-  bool IsUTF8ParsingEnabled();
-
   void SetTextSource() {
     MOZ_ASSERT(IsUnknownDataType());
     mDataType = DataType::eTextSource;
-    if (IsUTF8ParsingEnabled()) {
-      mScriptData.emplace(VariantType<ScriptTextBuffer<Utf8Unit>>());
-    } else {
-      mScriptData.emplace(VariantType<ScriptTextBuffer<char16_t>>());
-    }
+    mScriptData.emplace(VariantType<ScriptTextBuffer<Utf8Unit>>());
   }
 
   // Use a vector backed by the JS allocator for script text so that contents
@@ -286,6 +291,12 @@ class ScriptLoadRequest
   enum mozilla::dom::ReferrerPolicy ReferrerPolicy() const {
     return mFetchOptions->mReferrerPolicy;
   }
+
+  enum ParserMetadata ParserMetadata() const {
+    return mFetchOptions->mParserMetadata;
+  }
+
+  const nsString& Nonce() const { return mFetchOptions->mNonce; }
 
   nsIPrincipal* TriggeringPrincipal() const {
     return mFetchOptions->mTriggeringPrincipal;
@@ -369,6 +380,11 @@ class ScriptLoadRequest
   // LoadContext for augmenting the load depending on the loading
   // context (DOM, Worker, etc.)
   RefPtr<LoadContextBase> mLoadContext;
+
+  // EarlyHintRegistrar id to connect the http channel back to the preload, with
+  // a default of value of 0 indicating that this request is not an early hints
+  // preload.
+  uint64_t mEarlyHintPreloaderId;
 };
 
 class ScriptLoadRequestList : private mozilla::LinkedList<ScriptLoadRequest> {

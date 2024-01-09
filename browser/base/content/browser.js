@@ -15,10 +15,14 @@ ChromeUtils.importESModule("resource://gre/modules/NotificationDB.sys.mjs");
 
 ChromeUtils.defineESModuleGetters(this, {
   AMTelemetry: "resource://gre/modules/AddonManager.sys.mjs",
+  AboutNewTab: "resource:///modules/AboutNewTab.sys.mjs",
   AboutReaderParent: "resource:///actors/AboutReaderParent.sys.mjs",
   AddonManager: "resource://gre/modules/AddonManager.sys.mjs",
   BrowserSearchTelemetry: "resource:///modules/BrowserSearchTelemetry.sys.mjs",
   BrowserTelemetryUtils: "resource://gre/modules/BrowserTelemetryUtils.sys.mjs",
+  BrowserUIUtils: "resource:///modules/BrowserUIUtils.sys.mjs",
+  BrowserUsageTelemetry: "resource:///modules/BrowserUsageTelemetry.sys.mjs",
+  BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.sys.mjs",
   Color: "resource://gre/modules/Color.sys.mjs",
   ContextualIdentityService:
     "resource://gre/modules/ContextualIdentityService.sys.mjs",
@@ -29,16 +33,23 @@ ChromeUtils.defineESModuleGetters(this, {
   DownloadUtils: "resource://gre/modules/DownloadUtils.sys.mjs",
   DownloadsCommon: "resource:///modules/DownloadsCommon.sys.mjs",
   E10SUtils: "resource://gre/modules/E10SUtils.sys.mjs",
+  ExtensionsUI: "resource:///modules/ExtensionsUI.sys.mjs",
   FirefoxViewNotificationManager:
     "resource:///modules/firefox-view-notification-manager.sys.mjs",
+  HomePage: "resource:///modules/HomePage.sys.mjs",
+  isProductURL: "chrome://global/content/shopping/ShoppingProduct.mjs",
   LightweightThemeConsumer:
     "resource://gre/modules/LightweightThemeConsumer.sys.mjs",
   Log: "resource://gre/modules/Log.sys.mjs",
   LoginHelper: "resource://gre/modules/LoginHelper.sys.mjs",
   LoginManagerParent: "resource://gre/modules/LoginManagerParent.sys.mjs",
   MigrationUtils: "resource:///modules/MigrationUtils.sys.mjs",
+  NetUtil: "resource://gre/modules/NetUtil.sys.mjs",
+  NewTabPagePreloading: "resource:///modules/NewTabPagePreloading.sys.mjs",
   NewTabUtils: "resource://gre/modules/NewTabUtils.sys.mjs",
   NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
+  OpenInTabsUtils: "resource:///modules/OpenInTabsUtils.sys.mjs",
+  PageActions: "resource:///modules/PageActions.sys.mjs",
   PageThumbs: "resource://gre/modules/PageThumbs.sys.mjs",
   PanelMultiView: "resource:///modules/PanelMultiView.sys.mjs",
   PanelView: "resource:///modules/PanelMultiView.sys.mjs",
@@ -46,9 +57,9 @@ ChromeUtils.defineESModuleGetters(this, {
   PlacesTransactions: "resource://gre/modules/PlacesTransactions.sys.mjs",
   PlacesUIUtils: "resource:///modules/PlacesUIUtils.sys.mjs",
   PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
-  PluralForm: "resource://gre/modules/PluralForm.sys.mjs",
   Pocket: "chrome://pocket/content/Pocket.sys.mjs",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
+  ProcessHangMonitor: "resource:///modules/ProcessHangMonitor.sys.mjs",
   PromiseUtils: "resource://gre/modules/PromiseUtils.sys.mjs",
   PromptUtils: "resource://gre/modules/PromptUtils.sys.mjs",
   ReaderMode: "resource://gre/modules/ReaderMode.sys.mjs",
@@ -59,10 +70,13 @@ ChromeUtils.defineESModuleGetters(this, {
   SearchUIUtils: "resource:///modules/SearchUIUtils.sys.mjs",
   SessionStartup: "resource:///modules/sessionstore/SessionStartup.sys.mjs",
   SessionStore: "resource:///modules/sessionstore/SessionStore.sys.mjs",
+  ShoppingSidebarParent: "resource:///actors/ShoppingSidebarParent.sys.mjs",
   ShortcutUtils: "resource://gre/modules/ShortcutUtils.sys.mjs",
+  SiteDataManager: "resource:///modules/SiteDataManager.sys.mjs",
   SitePermissions: "resource:///modules/SitePermissions.sys.mjs",
   SubDialog: "resource://gre/modules/SubDialog.sys.mjs",
   SubDialogManager: "resource://gre/modules/SubDialog.sys.mjs",
+  TabCrashHandler: "resource:///modules/ContentCrashHandlers.sys.mjs",
   TabModalPrompt: "chrome://global/content/tabprompts.sys.mjs",
   TabsSetupFlowManager:
     "resource:///modules/firefox-view-tabs-setup-manager.sys.mjs",
@@ -79,30 +93,16 @@ ChromeUtils.defineESModuleGetters(this, {
   UrlbarValueFormatter: "resource:///modules/UrlbarValueFormatter.sys.mjs",
   Weave: "resource://services-sync/main.sys.mjs",
   WebNavigationFrames: "resource://gre/modules/WebNavigationFrames.sys.mjs",
+  webrtcUI: "resource:///modules/webrtcUI.sys.mjs",
   WebsiteFilter: "resource:///modules/policies/WebsiteFilter.sys.mjs",
+  ZoomUI: "resource:///modules/ZoomUI.sys.mjs",
 });
 
 XPCOMUtils.defineLazyModuleGetters(this, {
-  AboutNewTab: "resource:///modules/AboutNewTab.jsm",
-  NewTabPagePreloading: "resource:///modules/NewTabPagePreloading.jsm",
-  BrowserUsageTelemetry: "resource:///modules/BrowserUsageTelemetry.jsm",
-  BrowserUIUtils: "resource:///modules/BrowserUIUtils.jsm",
-  BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.jsm",
   CFRPageActions: "resource://activity-stream/lib/CFRPageActions.jsm",
-  ExtensionsUI: "resource:///modules/ExtensionsUI.jsm",
-  HomePage: "resource:///modules/HomePage.jsm",
-  NetUtil: "resource://gre/modules/NetUtil.jsm",
-  OpenInTabsUtils: "resource:///modules/OpenInTabsUtils.jsm",
-  PageActions: "resource:///modules/PageActions.jsm",
-  ProcessHangMonitor: "resource:///modules/ProcessHangMonitor.jsm",
-  SiteDataManager: "resource:///modules/SiteDataManager.jsm",
-  TabCrashHandler: "resource:///modules/ContentCrashHandlers.jsm",
-  Translation: "resource:///modules/translation/TranslationParent.jsm",
-  webrtcUI: "resource:///modules/webrtcUI.jsm",
-  ZoomUI: "resource:///modules/ZoomUI.jsm",
 });
 
-XPCOMUtils.defineLazyGetter(this, "fxAccounts", () => {
+ChromeUtils.defineLazyGetter(this, "fxAccounts", () => {
   return ChromeUtils.importESModule(
     "resource://gre/modules/FxAccounts.sys.mjs"
   ).getFxAccountsSingleton();
@@ -308,34 +308,34 @@ if (AppConstants.ENABLE_WEBDRIVER) {
   this.RemoteAgent = { running: false };
 }
 
-XPCOMUtils.defineLazyGetter(this, "RTL_UI", () => {
+ChromeUtils.defineLazyGetter(this, "RTL_UI", () => {
   return Services.locale.isAppLocaleRTL;
 });
 
-XPCOMUtils.defineLazyGetter(this, "gBrandBundle", () => {
+ChromeUtils.defineLazyGetter(this, "gBrandBundle", () => {
   return Services.strings.createBundle(
     "chrome://branding/locale/brand.properties"
   );
 });
 
-XPCOMUtils.defineLazyGetter(this, "gBrowserBundle", () => {
+ChromeUtils.defineLazyGetter(this, "gBrowserBundle", () => {
   return Services.strings.createBundle(
     "chrome://browser/locale/browser.properties"
   );
 });
 
-XPCOMUtils.defineLazyGetter(this, "gCustomizeMode", () => {
+ChromeUtils.defineLazyGetter(this, "gCustomizeMode", () => {
   let { CustomizeMode } = ChromeUtils.importESModule(
     "resource:///modules/CustomizeMode.sys.mjs"
   );
   return new CustomizeMode(window);
 });
 
-XPCOMUtils.defineLazyGetter(this, "gNavToolbox", () => {
+ChromeUtils.defineLazyGetter(this, "gNavToolbox", () => {
   return document.getElementById("navigator-toolbox");
 });
 
-XPCOMUtils.defineLazyGetter(this, "gURLBar", () => {
+ChromeUtils.defineLazyGetter(this, "gURLBar", () => {
   let urlbar = new UrlbarInput({
     textbox: document.getElementById("urlbar"),
     eventTelemetryCategory: "urlbar",
@@ -378,7 +378,7 @@ XPCOMUtils.defineLazyGetter(this, "gURLBar", () => {
   return urlbar;
 });
 
-XPCOMUtils.defineLazyGetter(this, "ReferrerInfo", () =>
+ChromeUtils.defineLazyGetter(this, "ReferrerInfo", () =>
   Components.Constructor(
     "@mozilla.org/referrer-info;1",
     "nsIReferrerInfo",
@@ -387,7 +387,7 @@ XPCOMUtils.defineLazyGetter(this, "ReferrerInfo", () =>
 );
 
 // High priority notification bars shown at the top of the window.
-XPCOMUtils.defineLazyGetter(this, "gNotificationBox", () => {
+ChromeUtils.defineLazyGetter(this, "gNotificationBox", () => {
   return new MozElements.NotificationBox(element => {
     element.classList.add("global-notificationbox");
     element.setAttribute("notificationside", "top");
@@ -397,14 +397,14 @@ XPCOMUtils.defineLazyGetter(this, "gNotificationBox", () => {
   });
 });
 
-XPCOMUtils.defineLazyGetter(this, "InlineSpellCheckerUI", () => {
+ChromeUtils.defineLazyGetter(this, "InlineSpellCheckerUI", () => {
   let { InlineSpellChecker } = ChromeUtils.importESModule(
     "resource://gre/modules/InlineSpellChecker.sys.mjs"
   );
   return new InlineSpellChecker();
 });
 
-XPCOMUtils.defineLazyGetter(this, "PopupNotifications", () => {
+ChromeUtils.defineLazyGetter(this, "PopupNotifications", () => {
   // eslint-disable-next-line no-shadow
   let { PopupNotifications } = ChromeUtils.importESModule(
     "resource://gre/modules/PopupNotifications.sys.mjs"
@@ -459,7 +459,7 @@ XPCOMUtils.defineLazyGetter(this, "PopupNotifications", () => {
   }
 });
 
-XPCOMUtils.defineLazyGetter(this, "MacUserActivityUpdater", () => {
+ChromeUtils.defineLazyGetter(this, "MacUserActivityUpdater", () => {
   if (AppConstants.platform != "macosx") {
     return null;
   }
@@ -469,7 +469,7 @@ XPCOMUtils.defineLazyGetter(this, "MacUserActivityUpdater", () => {
   );
 });
 
-XPCOMUtils.defineLazyGetter(this, "Win7Features", () => {
+ChromeUtils.defineLazyGetter(this, "Win7Features", () => {
   if (AppConstants.platform != "win") {
     return null;
   }
@@ -479,8 +479,8 @@ XPCOMUtils.defineLazyGetter(this, "Win7Features", () => {
     WINTASKBAR_CONTRACTID in Cc &&
     Cc[WINTASKBAR_CONTRACTID].getService(Ci.nsIWinTaskbar).available
   ) {
-    let { AeroPeek } = ChromeUtils.import(
-      "resource:///modules/WindowsPreviewPerTab.jsm"
+    let { AeroPeek } = ChromeUtils.importESModule(
+      "resource:///modules/WindowsPreviewPerTab.sys.mjs"
     );
     return {
       onOpenWindow() {
@@ -520,6 +520,13 @@ XPCOMUtils.defineLazyPreferenceGetter(
   "gBookmarksToolbarVisibility",
   "browser.toolbars.bookmarks.visibility",
   "newtab"
+);
+
+XPCOMUtils.defineLazyPreferenceGetter(
+  this,
+  "gBookmarksToolbarShowInPrivate",
+  "browser.toolbars.bookmarks.showInPrivateBrowsing",
+  false
 );
 
 XPCOMUtils.defineLazyPreferenceGetter(
@@ -595,6 +602,13 @@ XPCOMUtils.defineLazyPreferenceGetter(
   this,
   "gTranslationsEnabled",
   "browser.translations.enable",
+  false
+);
+
+XPCOMUtils.defineLazyPreferenceGetter(
+  this,
+  "gUseFeltPrivacyUI",
+  "browser.privatebrowsing.felt-privacy-v1",
   false
 );
 
@@ -690,6 +704,7 @@ var gInitialPages = [
   "about:blank",
   "about:home",
   "about:firefoxview",
+  "about:firefoxview-next",
   "about:newtab",
   "about:privatebrowsing",
   "about:sessionrestore",
@@ -713,6 +728,25 @@ function isInitialPage(url) {
 
 function browserWindows() {
   return Services.wm.getEnumerator("navigator:browser");
+}
+
+function updateBookmarkToolbarVisibility() {
+  // Bug 1846583 - hide bookmarks toolbar in PBM
+  if (
+    gUseFeltPrivacyUI &&
+    !gBookmarksToolbarShowInPrivate &&
+    PrivateBrowsingUtils.isWindowPrivate(window)
+  ) {
+    setToolbarVisibility(BookmarkingUI.toolbar, false, false, false);
+  } else {
+    BookmarkingUI.updateEmptyToolbarMessage();
+    setToolbarVisibility(
+      BookmarkingUI.toolbar,
+      gBookmarksToolbarVisibility,
+      false,
+      false
+    );
+  }
 }
 
 // This is a stringbundle-like interface to gBrowserBundle, formerly a getter for
@@ -862,7 +896,14 @@ const gClickAndHoldListenersOnElement = {
       aEvent.button == 0 &&
       aEvent.target == aEvent.currentTarget &&
       !aEvent.currentTarget.open &&
-      !aEvent.currentTarget.disabled
+      !aEvent.currentTarget.disabled &&
+      // When menupopup is not hidden and we receive
+      // a click event, it means the mousedown occurred
+      // on aEvent.currentTarget and mouseup occurred on
+      // aEvent.currentTarget.menupopup, we don't
+      // need to handle the click event as menupopup
+      // handled mouseup event already.
+      aEvent.currentTarget.menupopup.hidden
     ) {
       let cmdEvent = document.createEvent("xulcommandevent");
       cmdEvent.initCommandEvent(
@@ -877,7 +918,7 @@ const gClickAndHoldListenersOnElement = {
         aEvent.metaKey,
         0,
         null,
-        aEvent.mozInputSource
+        aEvent.inputSource
       );
       aEvent.currentTarget.dispatchEvent(cmdEvent);
 
@@ -1500,16 +1541,10 @@ var gBrowserInit = {
   onBeforeInitialXULLayout() {
     this._setupFirstContentWindowPaintPromise();
 
-    BookmarkingUI.updateEmptyToolbarMessage();
-    setToolbarVisibility(
-      BookmarkingUI.toolbar,
-      gBookmarksToolbarVisibility,
-      false,
-      false
-    );
+    updateBookmarkToolbarVisibility();
 
     // Set a sane starting width/height for all resolutions on new profiles.
-    if (Services.prefs.getBoolPref("privacy.resistFingerprinting")) {
+    if (ChromeUtils.shouldResistFingerprinting("RoundWindowSize")) {
       // When the fingerprinting resistance is enabled, making sure that we don't
       // have a maximum window to interfere with generating rounded window dimensions.
       document.documentElement.setAttribute("sizemode", "normal");
@@ -1532,8 +1567,8 @@ var gBrowserInit = {
       if (!toolbarMenubar.hasAttribute("autohide")) {
         toolbarMenubar.setAttribute("autohide", true);
       }
-      toolbarMenubar.setAttribute(
-        "data-l10n-id",
+      document.l10n.setAttributes(
+        toolbarMenubar,
         "toolbar-context-menu-menu-bar-cmd"
       );
       toolbarMenubar.setAttribute("data-l10n-attrs", "toolbarname");
@@ -1547,36 +1582,6 @@ var gBrowserInit = {
     TabsInTitlebar.init();
 
     new LightweightThemeConsumer(document);
-
-    if (AppConstants.platform == "win") {
-      if (
-        window.matchMedia("(-moz-platform: windows-win8)").matches &&
-        window.matchMedia("(-moz-windows-default-theme)").matches
-      ) {
-        let windowFrameColor = new Color(
-          ...ChromeUtils.importESModule(
-            "resource:///modules/Windows8WindowFrameColor.sys.mjs"
-          ).Windows8WindowFrameColor.get()
-        );
-        // Default to black for foreground text.
-        if (!windowFrameColor.isContrastRatioAcceptable(new Color(0, 0, 0))) {
-          document.documentElement.setAttribute("darkwindowframe", "true");
-        }
-      } else if (AppConstants.isPlatformAndVersionAtLeast("win", "10")) {
-        TelemetryEnvironment.onInitialized().then(() => {
-          // 17763 is the build number of Windows 10 version 1809
-          if (
-            TelemetryEnvironment.currentEnvironment.system.os
-              .windowsBuildNumber < 17763
-          ) {
-            document.documentElement.setAttribute(
-              "always-use-accent-color-for-window-border",
-              ""
-            );
-          }
-        });
-      }
-    }
 
     if (
       Services.prefs.getBoolPref(
@@ -1651,6 +1656,11 @@ var gBrowserInit = {
       "TranslationsParent:LanguageState",
       TranslationsPanel
     );
+    gBrowser.addEventListener(
+      "TranslationsParent:OfferTranslation",
+      TranslationsPanel
+    );
+    gBrowser.addTabsProgressListener(TranslationsPanel);
 
     window.addEventListener("AppCommand", HandleAppCommandEvent, true);
 
@@ -1735,7 +1745,7 @@ var gBrowserInit = {
       };
       if (tabToAdopt.linkedBrowser.isRemoteBrowser) {
         // For remote browsers, wait for the paint event, otherwise the tabs
-        //  are not yet ready and focus gets confused because the browser swaps
+        // are not yet ready and focus gets confused because the browser swaps
         // out while tabs are switching.
         addEventListener("MozAfterPaint", swapBrowsers, { once: true });
       } else {
@@ -1911,7 +1921,7 @@ var gBrowserInit = {
 
     FullScreen.init();
 
-    if (AppConstants.isPlatformAndVersionAtLeast("win", "10")) {
+    if (AppConstants.platform == "win") {
       MenuTouchModeObserver.init();
     }
 
@@ -1987,8 +1997,8 @@ var gBrowserInit = {
               toplevel.toplevel_name
             );
           } else {
-            managedBookmarksButton.setAttribute(
-              "data-l10n-id",
+            document.l10n.setAttributes(
+              managedBookmarksButton,
               "managed-bookmarks"
             );
           }
@@ -2017,7 +2027,7 @@ var gBrowserInit = {
           );
           managedBookmarksPopup.setAttribute("placespopup", "true");
           managedBookmarksPopup.setAttribute("is", "places-popup");
-          managedBookmarksPopup.setAttribute("type", "arrow");
+          managedBookmarksPopup.classList.add("toolbar-menupopup");
           managedBookmarksButton.appendChild(managedBookmarksPopup);
 
           gNavToolbox.palette.appendChild(managedBookmarksButton);
@@ -2040,6 +2050,10 @@ var gBrowserInit = {
     }
 
     CaptivePortalWatcher.delayedStartup();
+
+    if (AppConstants.NIGHTLY_BUILD) {
+      ShoppingSidebarManager.init();
+    }
 
     SessionStore.promiseAllWindowsRestored.then(() => {
       this._schedulePerWindowIdleTasks();
@@ -2460,6 +2474,10 @@ var gBrowserInit = {
 
     FirefoxViewHandler.uninit();
 
+    if (AppConstants.NIGHTLY_BUILD) {
+      ShoppingSidebarManager.uninit();
+    }
+
     // Now either cancel delayedStartup, or clean up the services initialized from
     // it.
     if (this._boundDelayedStartup) {
@@ -2512,7 +2530,7 @@ var gBrowserInit = {
       );
       Services.obs.removeObserver(gKeywordURIFixup, "keyword-uri-fixup");
 
-      if (AppConstants.isPlatformAndVersionAtLeast("win", "10")) {
+      if (AppConstants.platform == "win") {
         MenuTouchModeObserver.uninit();
       }
       BrowserOffline.uninit();
@@ -2531,7 +2549,7 @@ var gBrowserInit = {
   },
 };
 
-XPCOMUtils.defineLazyGetter(
+ChromeUtils.defineLazyGetter(
   gBrowserInit,
   "_firstContentWindowPaintDeferred",
   () => PromiseUtils.defer()
@@ -2964,7 +2982,8 @@ function BrowserOpenFileWindow() {
         nsIFilePicker.filterText |
         nsIFilePicker.filterImages |
         nsIFilePicker.filterXML |
-        nsIFilePicker.filterHTML
+        nsIFilePicker.filterHTML |
+        nsIFilePicker.filterPDF
     );
     fp.displayDirectory = gLastOpenDirectory.path;
     fp.open(fpCallback);
@@ -4477,107 +4496,13 @@ function toOpenWindowByType(inType, uri, features) {
 }
 
 /**
- * Open a new browser window.
+ * Open a new browser window. See `BrowserWindowTracker.openWindow` for
+ * options.
  *
- * @param {Object} options
- *        {
- *          private: A boolean indicating if the window should be
- *                   private
- *          remote:  A boolean indicating if the window should run
- *                   remote browser tabs or not. If omitted, the window
- *                   will choose the profile default state.
- *          fission: A boolean indicating if the window should run
- *                   with fission enabled or not. If omitted, the window
- *                   will choose the profile default state.
- *        }
  * @return a reference to the new window.
  */
-function OpenBrowserWindow(options) {
-  var telemetryObj = {};
-  TelemetryStopwatch.start("FX_NEW_WINDOW_MS", telemetryObj);
-
-  var defaultArgs = BrowserHandler.defaultArgs;
-  var wintype = document.documentElement.getAttribute("windowtype");
-
-  var extraFeatures = "";
-  if (options && options.private && PrivateBrowsingUtils.enabled) {
-    extraFeatures = ",private";
-    if (!PrivateBrowsingUtils.permanentPrivateBrowsing) {
-      // Force the new window to load about:privatebrowsing instead of the default home page
-      defaultArgs = "about:privatebrowsing";
-    }
-  } else {
-    extraFeatures = ",non-private";
-  }
-
-  if (options && options.remote) {
-    extraFeatures += ",remote";
-  } else if (options && options.remote === false) {
-    extraFeatures += ",non-remote";
-  }
-
-  if (options && options.fission) {
-    extraFeatures += ",fission";
-  } else if (options && options.fission === false) {
-    extraFeatures += ",non-fission";
-  }
-
-  // If the window is maximized, we want to skip the animation, since we're
-  // going to be taking up most of the screen anyways, and we want to optimize
-  // for showing the user a useful window as soon as possible.
-  if (window.windowState == window.STATE_MAXIMIZED) {
-    extraFeatures += ",suppressanimation";
-  }
-
-  // if and only if the current window is a browser window and it has a document with a character
-  // set, then extract the current charset menu setting from the current document and use it to
-  // initialize the new browser window...
-  var win;
-  if (
-    window &&
-    wintype == "navigator:browser" &&
-    window.content &&
-    window.content.document
-  ) {
-    var DocCharset = window.content.document.characterSet;
-    let charsetArg = "charset=" + DocCharset;
-
-    // we should "inherit" the charset menu setting in a new window
-    win = window.openDialog(
-      AppConstants.BROWSER_CHROME_URL,
-      "_blank",
-      "chrome,all,dialog=no" + extraFeatures,
-      defaultArgs,
-      charsetArg
-    );
-  } else {
-    // forget about the charset information.
-    win = window.openDialog(
-      AppConstants.BROWSER_CHROME_URL,
-      "_blank",
-      "chrome,all,dialog=no" + extraFeatures,
-      defaultArgs
-    );
-  }
-
-  win.addEventListener(
-    "MozAfterPaint",
-    () => {
-      TelemetryStopwatch.finish("FX_NEW_WINDOW_MS", telemetryObj);
-      if (
-        Services.prefs.getIntPref("browser.startup.page") == 1 &&
-        defaultArgs == HomePage.get()
-      ) {
-        // A notification for when a user has triggered their homepage. This is used
-        // to display a doorhanger explaining that an extension has modified the
-        // homepage, if necessary.
-        Services.obs.notifyObservers(win, "browser-open-homepage-start");
-      }
-    },
-    { once: true }
-  );
-
-  return win;
+function OpenBrowserWindow(options = {}) {
+  return BrowserWindowTracker.openWindow({ openerWindow: window, ...options });
 }
 
 /**
@@ -5277,13 +5202,7 @@ var XULBrowserWindow = {
     BookmarkingUI.onLocationChange();
     // If we've actually changed document, update the toolbar visibility.
     if (!isSameDocument) {
-      let bookmarksToolbar = gNavToolbox.querySelector("#PersonalToolbar");
-      setToolbarVisibility(
-        bookmarksToolbar,
-        gBookmarksToolbarVisibility,
-        false,
-        false
-      );
+      updateBookmarkToolbarVisibility();
     }
 
     let closeOpenPanels = selector => {
@@ -5434,13 +5353,19 @@ var XULBrowserWindow = {
       }
     }
 
-    if (TranslationsParent.isRestrictedPage(gBrowser.currentURI.spec)) {
+    if (TranslationsParent.isRestrictedPage(gBrowser.currentURI.scheme)) {
       this._menuItemForTranslations.setAttribute("disabled", "true");
     } else {
       this._menuItemForTranslations.removeAttribute("disabled");
     }
     if (gTranslationsEnabled) {
-      this._menuItemForTranslations.removeAttribute("hidden");
+      TranslationsParent.onIsTranslationsEngineSupported(isSupported => {
+        if (isSupported) {
+          this._menuItemForTranslations.removeAttribute("hidden");
+        } else {
+          this._menuItemForTranslations.setAttribute("hidden", "true");
+        }
+      });
     } else {
       this._menuItemForTranslations.setAttribute("hidden", "true");
     }
@@ -5952,6 +5877,17 @@ var TabsProgressListener = {
   },
 
   onLocationChange(aBrowser, aWebProgress, aRequest, aLocationURI, aFlags) {
+    // Filter out location changes in sub documents.
+    if (!aWebProgress.isTopLevel) {
+      return;
+    }
+
+    // Some shops use pushState to move between individual products, so
+    // the shopping code needs to be told about all of these.
+    if (AppConstants.NIGHTLY_BUILD) {
+      ShoppingSidebarManager.onLocationChange(aBrowser, aLocationURI);
+    }
+
     // Filter out location changes caused by anchor navigation
     // or history.push/pop/replaceState.
     if (aFlags & Ci.nsIWebProgressListener.LOCATION_CHANGE_SAME_DOCUMENT) {
@@ -5964,11 +5900,6 @@ var TabsProgressListener = {
         },
         "AboutReader"
       );
-      return;
-    }
-
-    // Filter out location changes in sub documents.
-    if (!aWebProgress.isTopLevel) {
       return;
     }
 
@@ -6512,7 +6443,7 @@ function onViewToolbarsPopupShowing(aEvent, aInsertPoint) {
     document.getElementById("toolbar-context-selectAllTabs").disabled =
       gBrowser.allTabsSelected();
     document.getElementById("toolbar-context-undoCloseTab").disabled =
-      SessionStore.getClosedTabCountForWindow(window) == 0;
+      SessionStore.getClosedTabCount() == 0;
     return;
   }
 
@@ -6571,32 +6502,38 @@ function setToolbarVisibility(
     hidingAttribute = "collapsed";
   }
 
-  // For the bookmarks toolbar, we need to persist state before toggling
-  // the visibility in this window, because the state can be different
-  // (newtab vs never or always) even when that won't change visibility
-  // in this window.
-  if (persist && toolbar.id == "PersonalToolbar") {
-    let prefValue;
-    if (typeof isVisible == "string") {
-      prefValue = isVisible;
-    } else {
-      prefValue = isVisible ? "always" : "never";
+  if (toolbar == BookmarkingUI.toolbar) {
+    // For the bookmarks toolbar, we need to persist state before toggling
+    // the visibility in this window, because the state can be different
+    // (newtab vs never or always) even when that won't change visibility
+    // in this window.
+    if (persist) {
+      let prefValue;
+      if (typeof isVisible == "string") {
+        prefValue = isVisible;
+      } else {
+        prefValue = isVisible ? "always" : "never";
+      }
+      Services.prefs.setCharPref(
+        "browser.toolbars.bookmarks.visibility",
+        prefValue
+      );
     }
-    Services.prefs.setCharPref(
-      "browser.toolbars.bookmarks.visibility",
-      prefValue
-    );
-  }
 
-  if (typeof isVisible == "string") {
+    const overlapAttr = "BookmarksToolbarOverlapsBrowser";
     switch (isVisible) {
+      case true:
       case "always":
         isVisible = true;
+        document.documentElement.toggleAttribute(overlapAttr, false);
         break;
+      case false:
       case "never":
         isVisible = false;
+        document.documentElement.toggleAttribute(overlapAttr, false);
         break;
       case "newtab":
+      default:
         let currentURI = gBrowser?.currentURI;
         if (!gBrowserInit.domContentLoaded) {
           let uriToLoad = gBrowserInit.uriToLoadPromise;
@@ -6610,10 +6547,8 @@ function setToolbarVisibility(
             } catch (ex) {}
           }
         }
-        isVisible =
-          !!currentURI &&
-          (BookmarkingUI.isOnNewTabPage({ currentURI }) ||
-            currentURI?.spec == "chrome://browser/content/blanktab.html");
+        isVisible = BookmarkingUI.isOnNewTabPage(currentURI);
+        document.documentElement.toggleAttribute(overlapAttr, isVisible);
         break;
     }
   }
@@ -6657,14 +6592,14 @@ function updateToggleControlLabel(control) {
 
 var TabletModeUpdater = {
   init() {
-    if (AppConstants.isPlatformAndVersionAtLeast("win", "10")) {
+    if (AppConstants.platform == "win") {
       this.update(WindowsUIUtils.inTabletMode);
       Services.obs.addObserver(this, "tablet-mode-change");
     }
   },
 
   uninit() {
-    if (AppConstants.isPlatformAndVersionAtLeast("win", "10")) {
+    if (AppConstants.platform == "win") {
       Services.obs.removeObserver(this, "tablet-mode-change");
     }
   },
@@ -6753,7 +6688,7 @@ var gUIDensity = {
   getCurrentDensity() {
     // Automatically override the uidensity to touch in Windows tablet mode.
     if (
-      AppConstants.isPlatformAndVersionAtLeast("win", "10") &&
+      AppConstants.platform == "win" &&
       WindowsUIUtils.inTabletMode &&
       Services.prefs.getBoolPref(this.autoTouchModePref)
     ) {
@@ -7619,6 +7554,33 @@ var WebAuthnPromptHelper = {
         "pinAuthBlocked",
         "webauthn.pinAuthBlockedPrompt"
       );
+    } else if (data.action == "uv-blocked") {
+      this.show_info(
+        mgr,
+        data.origin,
+        data.tid,
+        "uvBlocked",
+        "webauthn.uvBlockedPrompt"
+      );
+    } else if (data.action == "uv-invalid") {
+      let retriesLeft = data.retriesLeft;
+      let dialogText;
+      if (retriesLeft == 0) {
+        // We can skip that because it will either be replaced
+        // by uv-blocked or by PIN-prompt
+        return;
+      } else if (retriesLeft < 0) {
+        dialogText = this._l10n.formatValueSync(
+          "webauthn-uv-invalid-short-prompt"
+        );
+      } else {
+        dialogText = this._l10n.formatValueSync(
+          "webauthn-uv-invalid-long-prompt",
+          { retriesLeft }
+        );
+      }
+      let mainAction = this.buildCancelAction(mgr, data.tid);
+      this.show_formatted_msg(data.tid, "uvInvalid", dialogText, mainAction);
     } else if (data.action == "device-blocked") {
       this.show_info(
         mgr,
@@ -7639,6 +7601,7 @@ var WebAuthnPromptHelper = {
   },
 
   prompt_for_password(origin, wasInvalid, retriesLeft, aPassword) {
+    this.reset();
     let dialogText;
     if (!wasInvalid) {
       dialogText = this._l10n.formatValueSync("webauthn-pin-required-prompt");
@@ -7764,14 +7727,6 @@ var WebAuthnPromptHelper = {
     secondaryActions = [],
     options = {}
   ) {
-    this.reset();
-
-    try {
-      origin = Services.io.newURI(origin).asciiHost;
-    } catch (e) {
-      /* Might fail for arbitrary U2F RP IDs. */
-    }
-
     let brandShortName = document
       .getElementById("bundle_brand")
       .getString("brandShortName");
@@ -7779,13 +7734,42 @@ var WebAuthnPromptHelper = {
       "<>",
       brandShortName,
     ]);
+
+    try {
+      origin = Services.io.newURI(origin).asciiHost;
+    } catch (e) {
+      /* Might fail for arbitrary U2F RP IDs. */
+    }
+    options.name = origin;
+    this.show_formatted_msg(
+      tid,
+      id,
+      message,
+      mainAction,
+      secondaryActions,
+      options
+    );
+  },
+
+  show_formatted_msg(
+    tid,
+    id,
+    message,
+    mainAction,
+    secondaryActions = [],
+    options = {}
+  ) {
+    this.reset();
+
+    let brandShortName = document
+      .getElementById("bundle_brand")
+      .getString("brandShortName");
     if (options.hintText) {
       options.hintText = gNavigatorBundle.getFormattedString(options.hintText, [
         brandShortName,
       ]);
     }
 
-    options.name = origin;
     options.hideClose = true;
     options.persistent = true;
     options.eventCallback = event => {
@@ -8107,46 +8091,88 @@ function AddKeywordForSearchField() {
 }
 
 /**
- * Re-open a closed tab.
- * @param aIndex
- *        The index of the tab (via SessionStore.getClosedTabDataForWindow)
- * @returns a reference to the reopened tab.
+ * Applies only to the cmd|ctrl + shift + T keyboard shortcut
+ * Undo the last action that was taken - either closing the last tab or closing the last window;
+ * If none of those were the last actions, restore the last session if possible.
  */
-function undoCloseTab(aIndex) {
-  // wallpaper patch to prevent an unnecessary blank tab (bug 343895)
-  let blankTabToRemove = null;
-  if (gBrowser.tabs.length == 1 && gBrowser.selectedTab.isEmpty) {
-    blankTabToRemove = gBrowser.selectedTab;
-  }
+function restoreLastClosedTabOrWindowOrSession() {
+  let lastActionTaken = SessionStore.popLastClosedAction();
 
-  let closedTabCount = SessionStore.getLastClosedTabCount(window);
-
-  // There's nothing to do here if there are no tabs to re-open for this
-  // window...
-  if (!closedTabCount) {
-    // ... unless there's a previous session that we can restore, in which
-    // case, we use this as a signal to restore that session and merge it into
-    // the current session.
+  if (lastActionTaken) {
+    switch (lastActionTaken.type) {
+      case SessionStore.LAST_ACTION_CLOSED_TAB: {
+        undoCloseTab();
+        break;
+      }
+      case SessionStore.LAST_ACTION_CLOSED_WINDOW: {
+        undoCloseWindow();
+        break;
+      }
+    }
+  } else {
+    let closedTabCount = SessionStore.getLastClosedTabCount(window);
     if (SessionStore.canRestoreLastSession) {
       SessionStore.restoreLastSession();
+    } else if (closedTabCount) {
+      // we need to support users who have automatic session restore enabled
+      undoCloseTab();
     }
-    return null;
+  }
+}
+
+/**
+ * Re-open a closed tab into the current window.
+ * @param [aIndex]
+ *        The index of the tab (via SessionStore.getClosedTabData).
+ *        When undefined, the first n closed tabs will be re-opened, where n is provided by getLastClosedTabCount.
+ * @param {string} [sourceWindowSSId]
+ *        An optional sessionstore id to identify the source window for the tab.
+ *        I.e. the window the tab belonged to when closed.
+ *        When undefined we'll use the current window
+ * @returns a reference to the reopened tab.
+ */
+function undoCloseTab(aIndex, sourceWindowSSId) {
+  // the window we'll open the tab into
+  let targetWindow = window;
+  // the window the tab was closed from
+  let sourceWindow;
+  if (sourceWindowSSId) {
+    sourceWindow = SessionStore.getWindowById(sourceWindowSSId);
+    if (!sourceWindow) {
+      throw new Error(
+        "sourceWindowSSId argument to undoCloseTab didn't resolve to a window"
+      );
+    }
+  } else {
+    sourceWindow = window;
   }
 
+  // wallpaper patch to prevent an unnecessary blank tab (bug 343895)
+  let blankTabToRemove = null;
+  if (
+    targetWindow.gBrowser.visibleTabs.length == 1 &&
+    targetWindow.gBrowser.selectedTab.isEmpty
+  ) {
+    blankTabToRemove = targetWindow.gBrowser.selectedTab;
+  }
+
+  // We are specifically interested in the lastClosedTabCount for the source window.
+  // When aIndex is undefined, we restore all the lastClosedTabCount tabs.
+  let lastClosedTabCount = SessionStore.getLastClosedTabCount(sourceWindow);
   let tab = null;
   // aIndex is undefined if the function is called without a specific tab to restore.
   let tabsToRemove =
-    aIndex !== undefined ? [aIndex] : new Array(closedTabCount).fill(0);
+    aIndex !== undefined ? [aIndex] : new Array(lastClosedTabCount).fill(0);
   let tabsRemoved = false;
   for (let index of tabsToRemove) {
-    if (SessionStore.getClosedTabCountForWindow(window) > index) {
-      tab = SessionStore.undoCloseTab(window, index);
+    if (SessionStore.getClosedTabCountForWindow(sourceWindow) > index) {
+      tab = SessionStore.undoCloseTab(sourceWindow, index, targetWindow);
       tabsRemoved = true;
     }
   }
 
   if (tabsRemoved && blankTabToRemove) {
-    gBrowser.removeTab(blankTabToRemove);
+    targetWindow.gBrowser.removeTab(blankTabToRemove);
   }
 
   return tab;
@@ -8316,6 +8342,11 @@ var gPrivateBrowsingUI = {
     );
 
     gBrowser.updateTitlebar();
+
+    // Bug 1846583 - hide pocket button in PBM
+    if (gUseFeltPrivacyUI) {
+      document.getElementById("save-to-pocket-button").remove();
+    }
 
     if (PrivateBrowsingUtils.permanentPrivateBrowsing) {
       // Adjust the New Window menu entries
@@ -8534,7 +8565,7 @@ var MenuTouchModeObserver = {
 
   handleEvent(event) {
     let target = event.originalTarget;
-    if (event.mozInputSource == MouseEvent.MOZ_SOURCE_TOUCH) {
+    if (event.inputSource == MouseEvent.MOZ_SOURCE_TOUCH) {
       target.setAttribute("touchmode", "true");
     } else {
       target.removeAttribute("touchmode");
@@ -9782,6 +9813,7 @@ var FirefoxViewHandler = {
     this._updateEnabledState = this._updateEnabledState.bind(this);
     this._updateEnabledState();
     NimbusFeatures.majorRelease2022.onUpdate(this._updateEnabledState);
+    NimbusFeatures.firefoxViewNext.onUpdate(this._updateEnabledState);
 
     if (this._enabled) {
       this._toggleNotificationDot(
@@ -9797,9 +9829,12 @@ var FirefoxViewHandler = {
     CustomizableUI.removeListener(this);
     Services.obs.removeObserver(this, "firefoxview-notification-dot-update");
     NimbusFeatures.majorRelease2022.offUpdate(this._updateEnabledState);
+    NimbusFeatures.firefoxViewNext.offUpdate(this._updateEnabledState);
   },
   _updateEnabledState() {
-    this._enabled = NimbusFeatures.majorRelease2022.getVariable("firefoxView");
+    this._enabled =
+      NimbusFeatures.majorRelease2022.getVariable("firefoxView") ||
+      NimbusFeatures.firefoxViewNext.getVariable("enabled");
     // We use a root attribute because there's no guarantee the button is in the
     // DOM, and visibility changes need to take effect even if it isn't in the DOM
     // right now.
@@ -9830,8 +9865,19 @@ var FirefoxViewHandler = {
         CustomizableUI.getPlacementOfWidget("tabbrowser-tabs").position
       );
     }
+    const viewURL = NimbusFeatures.firefoxViewNext.getVariable("enabled")
+      ? "about:firefoxview-next"
+      : "about:firefoxview";
+    // Need to account for navigation to Firefox View pages
+    if (
+      this.tab &&
+      this.tab.linkedBrowser.currentURI.spec.split("#")[0] != viewURL
+    ) {
+      gBrowser.removeTab(this.tab);
+      this.tab = null;
+    }
     if (!this.tab) {
-      this.tab = gBrowser.addTrustedTab("about:firefoxview");
+      this.tab = gBrowser.addTrustedTab(viewURL);
       this.tab.addEventListener("TabClose", this, { once: true });
       gBrowser.tabContainer.addEventListener("TabSelect", this);
       window.addEventListener("activate", this);
@@ -9926,5 +9972,111 @@ var FirefoxViewHandler = {
   },
   _toggleNotificationDot(shouldShow) {
     this.button?.toggleAttribute("attention", shouldShow);
+  },
+};
+
+var ShoppingSidebarManager = {
+  init() {
+    this._updateVisibility = this._updateVisibility.bind(this);
+    NimbusFeatures.shopping2023.onUpdate(this._updateVisibility);
+    XPCOMUtils.defineLazyPreferenceGetter(
+      this,
+      "optedInPref",
+      "browser.shopping.experience2023.optedIn",
+      null,
+      this._updateVisibility
+    );
+    XPCOMUtils.defineLazyPreferenceGetter(
+      this,
+      "isActive",
+      ShoppingSidebarParent.SHOPPING_ACTIVE_PREF,
+      true,
+      this._updateVisibility
+    );
+    this._updateVisibility();
+
+    gBrowser.tabContainer.addEventListener("TabSelect", this);
+  },
+
+  uninit() {
+    NimbusFeatures.shopping2023.offUpdate(this._updateVisibility);
+    gBrowser.tabContainer.removeEventListener("TabSelect", this);
+  },
+
+  _updateVisibility() {
+    if (window.closed) {
+      return;
+    }
+    let optedOut = this.optedInPref === 2;
+    let isPBM = PrivateBrowsingUtils.isWindowPrivate(window);
+
+    this._enabled =
+      NimbusFeatures.shopping2023.getVariable("enabled") && !isPBM && !optedOut;
+
+    if (!this._enabled) {
+      document.querySelectorAll("shopping-sidebar").forEach(sidebar => {
+        sidebar.remove();
+      });
+      return;
+    }
+
+    let { selectedBrowser, currentURI } = gBrowser;
+    this.onLocationChange(selectedBrowser, currentURI);
+  },
+
+  /**
+   * Called by TabsProgressListener whenever any browser navigates from one
+   * URL to another.
+   * Note that this includes hash changes / pushState navigations, because
+   * those can be significant for us.
+   */
+  onLocationChange(aBrowser, aLocationURI) {
+    if (!this._enabled) {
+      return;
+    }
+
+    let browserPanel = gBrowser.getPanel(aBrowser);
+    let sidebar = browserPanel.querySelector("shopping-sidebar");
+    let actor;
+    if (sidebar) {
+      let global =
+        sidebar.querySelector("browser").browsingContext.currentWindowGlobal;
+      actor = global.getExistingActor("ShoppingSidebar");
+    }
+    let button = document.getElementById("shopping-sidebar-button");
+    let isProduct = isProductURL(aLocationURI);
+    if (isProduct && this.isActive) {
+      if (!sidebar) {
+        sidebar = document.createXULElement("shopping-sidebar");
+        sidebar.setAttribute("style", "width: 320px");
+        sidebar.hidden = false;
+        browserPanel.appendChild(sidebar);
+      } else {
+        actor?.updateProductURL(aLocationURI);
+        sidebar.hidden = false;
+      }
+    } else if (sidebar && !sidebar.hidden) {
+      actor?.updateProductURL(null);
+      sidebar.hidden = true;
+    }
+
+    button.hidden = !isProduct;
+    button.setAttribute("shoppingsidebaropen", !!this.isActive);
+    document.l10n.setAttributes(
+      button,
+      `shopping-sidebar-${this.isActive ? "close" : "open"}-button`
+    );
+  },
+
+  handleEvent(event) {
+    switch (event.type) {
+      case "TabSelect": {
+        if (!this._enabled) {
+          return;
+        }
+        this._updateVisibility();
+        break;
+      }
+    }
   },
 };

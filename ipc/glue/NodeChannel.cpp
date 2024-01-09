@@ -9,6 +9,7 @@
 #include "chrome/common/ipc_message_utils.h"
 #include "mojo/core/ports/name.h"
 #include "mozilla/ipc/BrowserProcessSubThread.h"
+#include "mozilla/ipc/GeckoChildProcessHost.h"
 #include "mozilla/ipc/ProtocolMessageUtils.h"
 #include "mozilla/ipc/ProtocolUtils.h"
 #include "nsThreadUtils.h"
@@ -41,11 +42,13 @@ namespace mozilla::ipc {
 
 NodeChannel::NodeChannel(const NodeName& aName,
                          UniquePtr<IPC::Channel> aChannel, Listener* aListener,
-                         base::ProcessId aPid)
+                         base::ProcessId aPid,
+                         GeckoChildProcessHost* aChildProcessHost)
     : mListener(aListener),
       mName(aName),
       mOtherPid(aPid),
-      mChannel(std::move(aChannel)) {}
+      mChannel(std::move(aChannel)),
+      mChildProcessHost(aChildProcessHost) {}
 
 NodeChannel::~NodeChannel() { Close(); }
 
@@ -79,34 +82,11 @@ void NodeChannel::FinalDestroy() {
   delete this;
 }
 
-void NodeChannel::Start(bool aCallConnect) {
+void NodeChannel::Start() {
   AssertIOThread();
 
-  mExistingListener = mChannel->set_listener(this);
-
-  std::queue<UniquePtr<IPC::Message>> pending;
-  if (mExistingListener) {
-    mExistingListener->GetQueuedMessages(pending);
-  }
-
-  if (aCallConnect) {
-    MOZ_ASSERT(pending.empty(), "unopened channel with pending messages?");
-    if (!mChannel->Connect()) {
-      OnChannelError();
-    }
-  } else {
-    // Check if our channel has already been connected, and knows the other PID.
-    base::ProcessId otherPid = mChannel->OtherPid();
-    if (otherPid != base::kInvalidProcessId) {
-      SetOtherPid(otherPid);
-    }
-
-    // Handle any events the previous listener had queued up. Make sure to stop
-    // if an error causes our channel to become closed.
-    while (!pending.empty() && mState != State::Closed) {
-      OnMessageReceived(std::move(pending.front()));
-      pending.pop();
-    }
+  if (!mChannel->Connect(this)) {
+    OnChannelError();
   }
 }
 
@@ -115,7 +95,6 @@ void NodeChannel::Close() {
 
   if (mState.exchange(State::Closed) != State::Closed) {
     mChannel->Close();
-    mChannel->set_listener(mExistingListener);
   }
 }
 
@@ -129,6 +108,8 @@ void NodeChannel::SetOtherPid(base::ProcessId aNewPid) {
     MOZ_RELEASE_ASSERT(previousPid == aNewPid,
                        "Different sources disagree on the correct pid?");
   }
+
+  mChannel->SetOtherPid(aNewPid);
 }
 
 #ifdef XP_MACOSX
@@ -299,13 +280,10 @@ void NodeChannel::OnChannelConnected(base::ProcessId aPeerPid) {
 
   SetOtherPid(aPeerPid);
 
-  // We may need to tell our original listener (which will be the process launch
-  // code) that the the channel has been connected to unblock completing the
-  // process launch.
-  // FIXME: This is super sketchy, but it's also what we were already doing. We
-  // should swap this out for something less sketchy.
-  if (mExistingListener) {
-    mExistingListener->OnChannelConnected(aPeerPid);
+  // We may need to tell the GeckoChildProcessHost which we were created by that
+  // the channel has been connected to unblock completing the process launch.
+  if (mChildProcessHost) {
+    mChildProcessHost->OnChannelConnected(aPeerPid);
   }
 }
 
@@ -317,9 +295,8 @@ void NodeChannel::OnChannelError() {
     return;
   }
 
-  // Clean up the channel and make sure we're no longer the active listener.
+  // Clean up the channel.
   mChannel->Close();
-  MOZ_ALWAYS_TRUE(this == mChannel->set_listener(mExistingListener));
 
   // Tell our listener about the error.
   mListener->OnChannelError(mName);

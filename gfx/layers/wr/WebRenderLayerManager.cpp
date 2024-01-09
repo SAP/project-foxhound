@@ -11,7 +11,6 @@
 #include "mozilla/StaticPrefs_layers.h"
 #include "mozilla/dom/BrowserChild.h"
 #include "mozilla/gfx/DrawEventRecorder.h"
-#include "mozilla/gfx/gfxVars.h"
 #include "mozilla/layers/CompositorBridgeChild.h"
 #include "mozilla/layers/StackingContextHelper.h"
 #include "mozilla/layers/TextureClient.h"
@@ -221,7 +220,11 @@ void WebRenderLayerManager::TakeCompositionPayloads(
 bool WebRenderLayerManager::BeginTransactionWithTarget(gfxContext* aTarget,
                                                        const nsCString& aURL) {
   mTarget = aTarget;
-  return BeginTransaction(aURL);
+  bool retval = BeginTransaction(aURL);
+  if (!retval) {
+    mTarget = nullptr;
+  }
+  return retval;
 }
 
 bool WebRenderLayerManager::BeginTransaction(const nsCString& aURL) {
@@ -244,6 +247,8 @@ bool WebRenderLayerManager::BeginTransaction(const nsCString& aURL) {
 }
 
 bool WebRenderLayerManager::EndEmptyTransaction(EndTransactionFlags aFlags) {
+  auto clearTarget = MakeScopeExit([&] { mTarget = nullptr; });
+
   // If we haven't sent a display list (since creation or since the last time we
   // sent ClearDisplayList to the parent) then we can't do an empty transaction
   // because the parent doesn't have a display list for us and we need to send a
@@ -331,6 +336,8 @@ void WebRenderLayerManager::EndTransactionWithoutLayer(
     const double aGeckoDLBuildTime) {
   AUTO_PROFILER_TRACING_MARKER("Paint", "WrDisplayList", GRAPHICS);
 
+  auto clearTarget = MakeScopeExit([&] { mTarget = nullptr; });
+
   // Since we don't do repeat transactions right now, just set the time
   mAnimationReadyTime = TimeStamp::Now();
 
@@ -377,13 +384,6 @@ void WebRenderLayerManager::EndTransactionWithoutLayer(
       builderDumpIndex =
           mDLBuilder->Dump(/*indent*/ 1, Some(builderDumpIndex), Nothing());
     }
-  }
-
-  mWidget->AddWindowOverlayWebRenderCommands(WrBridge(), *mDLBuilder,
-                                             resourceUpdates);
-  if (dumpEnabled) {
-    printf_stderr("(window overlay)\n");
-    Unused << mDLBuilder->Dump(/*indent*/ 1, Some(builderDumpIndex), Nothing());
   }
 
   if (AsyncPanZoomEnabled()) {
@@ -501,6 +501,8 @@ IntRect ToOutsideIntRect(const gfxRect& aRect) {
 }
 
 void WebRenderLayerManager::MakeSnapshotIfRequired(LayoutDeviceIntSize aSize) {
+  auto clearTarget = MakeScopeExit([&] { mTarget = nullptr; });
+
   if (!mTarget || !mTarget->GetDrawTarget() || aSize.IsEmpty()) {
     return;
   }
@@ -727,17 +729,11 @@ void WebRenderLayerManager::WaitOnTransactionProcessed() {
 void WebRenderLayerManager::SendInvalidRegion(const nsIntRegion& aRegion) {
   // XXX Webrender does not support invalid region yet.
 
-#ifdef XP_WIN
-  // When DWM is disabled, each window does not have own back buffer. They would
-  // paint directly to a buffer that was to be displayed by the video card.
-  // WM_PAINT via SendInvalidRegion() requests necessary re-paint.
-  const bool needsInvalidate = !gfx::gfxVars::DwmCompositionEnabled();
-#else
-  const bool needsInvalidate = true;
-#endif
-  if (needsInvalidate && WrBridge()) {
+#ifndef XP_WIN
+  if (WrBridge()) {
     WrBridge()->SendInvalidateRenderedFrame();
   }
+#endif
 }
 
 void WebRenderLayerManager::ScheduleComposite(wr::RenderReasons aReasons) {
@@ -746,8 +742,12 @@ void WebRenderLayerManager::ScheduleComposite(wr::RenderReasons aReasons) {
 
 already_AddRefed<PersistentBufferProvider>
 WebRenderLayerManager::CreatePersistentBufferProvider(
-    const gfx::IntSize& aSize, gfx::SurfaceFormat aFormat) {
-  if (!gfxPlatform::UseRemoteCanvas()) {
+    const gfx::IntSize& aSize, gfx::SurfaceFormat aFormat,
+    bool aWillReadFrequently) {
+  // Only initialize devices if hardware acceleration may possibly be used.
+  // Remoting moves hardware usage out-of-process, while will-read-frequently
+  // avoids hardware acceleration entirely.
+  if (!aWillReadFrequently && !gfxPlatform::UseRemoteCanvas()) {
 #ifdef XP_WIN
     // Any kind of hardware acceleration is incompatible with Win32k Lockdown
     // We don't initialize devices here so that PersistentBufferProviderShared
@@ -762,8 +762,8 @@ WebRenderLayerManager::CreatePersistentBufferProvider(
   }
 
   RefPtr<PersistentBufferProvider> provider =
-      PersistentBufferProviderShared::Create(aSize, aFormat,
-                                             AsKnowsCompositor());
+      PersistentBufferProviderShared::Create(
+          aSize, aFormat, AsKnowsCompositor(), aWillReadFrequently);
   if (provider) {
     return provider.forget();
   }

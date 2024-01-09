@@ -111,6 +111,9 @@ var SidebarUI = {
     this._switcherTarget.addEventListener("command", () => {
       this.toggleSwitcherPanel();
     });
+    this._switcherTarget.addEventListener("keydown", event => {
+      this.handleKeydown(event);
+    });
 
     this._inited = true;
 
@@ -211,16 +214,38 @@ var SidebarUI = {
     }
   },
 
+  /**
+   * Handles keydown on the the switcherTarget button
+   * @param  {Event} event
+   */
+  handleKeydown(event) {
+    switch (event.key) {
+      case "Enter":
+      case " ": {
+        this.toggleSwitcherPanel();
+        event.stopPropagation();
+        event.preventDefault();
+        break;
+      }
+      case "Escape": {
+        this.hideSwitcherPanel();
+        event.stopPropagation();
+        event.preventDefault();
+        break;
+      }
+    }
+  },
+
   hideSwitcherPanel() {
     this._switcherPanel.hidePopup();
   },
 
   showSwitcherPanel() {
-    this._ensureShortcutsShown();
     this._switcherPanel.addEventListener(
       "popuphiding",
       () => {
         this._switcherTarget.classList.remove("active");
+        this._switcherTarget.setAttribute("aria-expanded", false);
       },
       { once: true }
     );
@@ -232,41 +257,22 @@ var SidebarUI = {
         : gNavigatorBundle.getString("sidebar.moveToRight");
     this._reversePositionButton.setAttribute("label", label);
 
+    // Open the sidebar switcher popup, anchored off the switcher toggle
     this._switcherPanel.hidden = false;
     this._switcherPanel.openPopup(this._switcherTarget);
+
     this._switcherTarget.classList.add("active");
+    this._switcherTarget.setAttribute("aria-expanded", true);
   },
 
-  updateShortcut({ button, key }) {
-    // If the shortcuts haven't been rendered yet then it will be set correctly
-    // on the first render so there's nothing to do now.
-    if (!this._addedShortcuts) {
+  updateShortcut({ keyId }) {
+    let menuitem = this._switcherPanel.querySelector(`[key="${keyId}"]`);
+    if (!menuitem) {
+      // If the menu item doesn't exist yet then the accel text will be set correctly
+      // upon creation so there's nothing to do now.
       return;
     }
-    if (key) {
-      let keyId = key.getAttribute("id");
-      button = this._switcherPanel.querySelector(`[key="${keyId}"]`);
-    } else if (button) {
-      let keyId = button.getAttribute("key");
-      key = document.getElementById(keyId);
-    }
-    if (!button || !key) {
-      return;
-    }
-    button.setAttribute("shortcut", ShortcutUtils.prettifyShortcut(key));
-  },
-
-  _addedShortcuts: false,
-  _ensureShortcutsShown() {
-    if (this._addedShortcuts) {
-      return;
-    }
-    this._addedShortcuts = true;
-    for (let button of this._switcherPanel.querySelectorAll(
-      "toolbarbutton[key]"
-    )) {
-      this.updateShortcut({ button });
-    }
+    menuitem.removeAttribute("acceltext");
   },
 
   /**

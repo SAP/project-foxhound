@@ -8,9 +8,8 @@ import {
   OptInFeature,
   ParentAutocompleteOption,
 } from "resource://gre/modules/LoginHelper.sys.mjs";
-import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
-
 import { TelemetryUtils } from "resource://gre/modules/TelemetryUtils.sys.mjs";
+import { showConfirmation } from "resource://gre/modules/FillHelpers.sys.mjs";
 
 const lazy = {};
 
@@ -21,8 +20,9 @@ const gConfig = (function () {
     undefined
   );
   return {
-    scope: ["https://identity.mozilla.com/apps/relay"],
+    scope: ["profile", "https://identity.mozilla.com/apps/relay"],
     addressesUrl: baseUrl + `relayaddresses/`,
+    acceptTermsUrl: baseUrl + `terms-accepted-user/`,
     profilesUrl: baseUrl + `profiles/`,
     learnMoreURL: Services.urlFormatter.formatURLPref(
       "signon.firefoxRelay.learn_more_url"
@@ -40,15 +40,19 @@ const gConfig = (function () {
   };
 })();
 
-XPCOMUtils.defineLazyGetter(lazy, "log", () =>
+ChromeUtils.defineESModuleGetters(lazy, {
+  NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
+});
+
+ChromeUtils.defineLazyGetter(lazy, "log", () =>
   LoginHelper.createLogger("FirefoxRelay")
 );
-XPCOMUtils.defineLazyGetter(lazy, "fxAccounts", () =>
+ChromeUtils.defineLazyGetter(lazy, "fxAccounts", () =>
   ChromeUtils.importESModule(
     "resource://gre/modules/FxAccounts.sys.mjs"
   ).getFxAccountsSingleton()
 );
-XPCOMUtils.defineLazyGetter(lazy, "strings", function () {
+ChromeUtils.defineLazyGetter(lazy, "strings", function () {
   return new Localization([
     "branding/brand.ftl",
     "browser/firefoxRelay.ftl",
@@ -74,7 +78,6 @@ async function hasFirefoxAccountAsync() {
   if (!lazy.fxAccounts.constructor.config.isProductionConfig()) {
     return false;
   }
-
   return lazy.fxAccounts.hasLocalSession();
 }
 
@@ -108,30 +111,6 @@ async function fetchWithReauth(
   return response;
 }
 
-async function isRelayUserAsync() {
-  if (!(await hasFirefoxAccountAsync())) {
-    return false;
-  }
-
-  const response = await fetchWithReauth(
-    null,
-    headers => new Request(gConfig.profilesUrl, { headers })
-  );
-  if (!response) {
-    return false;
-  }
-
-  if (!response.ok) {
-    lazy.log.error(
-      `failed to check if user is a Relay user: ${response.status}:${
-        response.statusText
-      }:${await response.text()}`
-    );
-  }
-
-  return response.ok;
-}
-
 async function getReusableMasksAsync(browser, _origin) {
   const response = await fetchWithReauth(
     browser,
@@ -163,16 +142,6 @@ async function getReusableMasksAsync(browser, _origin) {
 }
 
 /**
- * Show confirmation tooltip
- * @param browser
- * @param messageId message ID from browser/browser.properties
- */
-function showConfirmation(browser, messageId) {
-  const anchor = browser.ownerDocument.getElementById("identity-icon");
-  anchor.ownerGlobal.ConfirmationHint.show(anchor, messageId, {});
-}
-
-/**
  * Show localized notification.
  * @param browser
  * @param messageId messageId from browser/firefoxRelay.ftl
@@ -193,7 +162,7 @@ async function showErrorAsync(browser, messageId, messageArgs) {
     {
       autofocus: true,
       removeOnDismissal: true,
-      popupIconURL: "page-icon:https://relay.firefox.com",
+      popupIconURL: "chrome://browser/content/logos/relay.svg",
       learnMoreURL: gConfig.learnMoreURL,
     }
   );
@@ -415,28 +384,29 @@ function isSignup(scenarioName) {
 }
 
 class RelayOffered {
-  #isRelayUser;
-
   async *autocompleteItemsAsync(_origin, scenarioName, hasInput) {
-    if (!hasInput && isSignup(scenarioName)) {
-      if (this.#isRelayUser === undefined) {
-        this.#isRelayUser = await isRelayUserAsync();
-      }
+    if (
+      !hasInput &&
+      isSignup(scenarioName) &&
+      !Services.prefs.prefIsLocked("signon.firefoxRelay.feature")
+    ) {
+      const isUserEligible = lazy.NimbusFeatures[
+        "password-autocomplete"
+      ].getVariable("firefoxRelayIntegration");
 
-      if (this.#isRelayUser) {
+      if (isUserEligible) {
         const [title, subtitle] = await formatMessages(
           "firefox-relay-opt-in-title-1",
           "firefox-relay-opt-in-subtitle-1"
         );
         yield new ParentAutocompleteOption(
-          "page-icon:https://relay.firefox.com",
+          "chrome://browser/content/logos/relay.svg",
           title,
           subtitle,
           "PasswordManager:offerRelayIntegration",
           {
             telemetry: {
               flowId: FirefoxRelay.flowId,
-              isRelayUser: this.#isRelayUser,
               scenarioName,
             },
           }
@@ -444,11 +414,38 @@ class RelayOffered {
         FirefoxRelayTelemetry.recordRelayOfferedEvent(
           "shown",
           FirefoxRelay.flowId,
-          scenarioName,
-          this.#isRelayUser
+          scenarioName
         );
       }
     }
+  }
+
+  async notifyServerTermsAcceptedAsync(browser) {
+    const response = await fetchWithReauth(
+      browser,
+      headers =>
+        new Request(gConfig.acceptTermsUrl, {
+          method: "POST",
+          headers,
+        })
+    );
+
+    if (!response?.ok) {
+      lazy.log.error(
+        `failed to notify server that terms are accepted : ${response?.status}:${response?.statusText}`
+      );
+
+      let error;
+      try {
+        error = await response?.json();
+      } catch {}
+      await showErrorAsync(browser, "firefox-relay-mask-generation-failed", {
+        status: error?.detail || response.status,
+      });
+      return false;
+    }
+
+    return true;
   }
 
   async offerRelayIntegration(feature, browser, origin) {
@@ -472,14 +469,16 @@ class RelayOffered {
       label: enableStrings.label,
       accessKey: enableStrings.accesskey,
       dismiss: true,
-      async callback() {
+      callback: async () => {
         lazy.log.info("user opted in to Firefox Relay integration");
-        feature.markAsEnabled();
-        FirefoxRelayTelemetry.recordRelayOptInPanelEvent(
-          "enabled",
-          FirefoxRelay.flowId
-        );
-        fillUsername(await generateUsernameAsync(browser, origin));
+        // Capture the flowId here since async operations might take some time to resolve
+        // and by then FirefoxRelay.flowId might have another value
+        const flowId = FirefoxRelay.flowId;
+        if (await this.notifyServerTermsAcceptedAsync(browser)) {
+          feature.markAsEnabled();
+          FirefoxRelayTelemetry.recordRelayOptInPanelEvent("enabled", flowId);
+          fillUsername(await generateUsernameAsync(browser, origin));
+        }
       },
     };
     const postpone = {
@@ -558,7 +557,7 @@ class RelayOffered {
         },
       }
     );
-
+    getRelayTokenAsync();
     return fillUsernamePromise;
   }
 }
@@ -572,7 +571,7 @@ class RelayEnabled {
     ) {
       const [title] = await formatMessages("firefox-relay-use-mask-title");
       yield new ParentAutocompleteOption(
-        "page-icon:https://relay.firefox.com",
+        "chrome://browser/content/logos/relay.svg",
         title,
         "", // when the user has opted-in, there is no subtitle content
         "PasswordManager:generateRelayUsername",
@@ -621,6 +620,7 @@ class RelayFeature extends OptInFeature {
     );
     gConfig.addressesUrl = newBaseUrl + `relayaddresses/`;
     gConfig.profilesUrl = newBaseUrl + `profiles/`;
+    gConfig.acceptTermsUrl = newBaseUrl + `terms-accepted-user/`;
   }
 
   async autocompleteItemsAsync({ origin, scenarioName, hasInput }) {

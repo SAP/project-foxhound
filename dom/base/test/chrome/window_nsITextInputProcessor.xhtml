@@ -92,8 +92,10 @@ const otherWindow = window.arguments[0];
 const otherDocument = otherWindow.document;
 const inputInChildWindow = otherDocument.getElementById("input");
 const contenteditable = document.querySelector("div[contenteditable]");
-
-const kLF = navigator.platform.startsWith("Win") ? "\r\n" : "\n";
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
+);
+const kLF = navigator.platform.startsWith("Win") && !AppConstants.NIGHTLY_BUILD ? "\r\n" : "\n";
 function getNativeText(aXPText)
 {
   if (kLF == "\n") {
@@ -2442,7 +2444,7 @@ function runConsumingKeydownBeforeCompositionTests()
   window.removeEventListener("keyup", handler, false);
 }
 
-function runKeyTests()
+async function runKeyTests()
 {
   var description = "runKeyTests(): ";
   const kModifiers =
@@ -2635,6 +2637,127 @@ function runKeyTests()
   is(input.value, "abc",
      description + "input.value should be \"abc\"");
 
+  // Emulates pressing and releasing a key which introduces a surrogate pair.
+  async function test_press_and_release_surrogate_pair_key(
+    aTestPerSurrogateKeyPress,
+    aTestIllFormedUTF16KeyValue = false
+  ) {
+    await SpecialPowers.pushPrefEnv({
+      set: [
+        ["dom.event.keypress.dispatch_once_per_surrogate_pair", !aTestPerSurrogateKeyPress],
+        ["dom.event.keypress.key.allow_lone_surrogate", aTestIllFormedUTF16KeyValue],
+      ],
+    });
+
+    const settingDescription =
+      `aTestPerSurrogateKeyPress=${aTestPerSurrogateKeyPress}, aTestIllFormedUTF16KeyValue=${aTestIllFormedUTF16KeyValue}`;
+    const allowIllFormedUTF16 = aTestPerSurrogateKeyPress && aTestIllFormedUTF16KeyValue;
+    const keySurrogatePair = new KeyboardEvent("", { key: "\uD842\uDFB7", code: "KeyA", keyCode: KeyboardEvent.DOM_VK_A });
+
+    input.value = "";
+    reset();
+    doDefaultKeydown = TIP.keydown(keySurrogatePair);
+    doDefaultKeyup = TIP.keyup(keySurrogatePair);
+
+    is(
+      doDefaultKeydown,
+      TIP.KEYPRESS_IS_CONSUMED,
+      `${
+        description
+      }TIP.keydown(keySurrogatePair), ${
+        settingDescription
+      }, should return 0x02 because the keypress event should be consumed by the input element`
+    );
+    is(
+      doDefaultKeyup,
+      true,
+      `${description}TIP.keyup(keySurrogatePair) should return true`
+    );
+    is(
+      events.length,
+      aTestPerSurrogateKeyPress ? 4 : 3,
+      `${description}TIP.keydown(keySurrogatePair), ${
+        settingDescription
+      }, should cause keydown, keypress${
+        aTestPerSurrogateKeyPress ? ", keypress" : ""
+      } and keyup event`
+    );
+    checkKeyAttrs(
+      `${description}TIP.keydown(keySurrogatePair), ${settingDescription}`,
+      events[0],
+      {
+        type: "keydown",
+        key: "\uD842\uDFB7",
+        code: "KeyA",
+        keyCode: KeyboardEvent.DOM_VK_A,
+        charCode: 0,
+      }
+    );
+    if (aTestPerSurrogateKeyPress) {
+      checkKeyAttrs(
+        `${description}TIP.keydown(keySurrogatePair), ${settingDescription}`,
+        events[1],
+        {
+          type: "keypress",
+          key: allowIllFormedUTF16
+            ? "\uD842"
+            : "\uD842\uDFB7", // First keypress should have the surrogate pair
+          code: "KeyA",
+          keyCode: 0,
+          charCode: "\uD842\uDFB7".charCodeAt(0),
+          defaultPrevented: true,
+        }
+      );
+      checkKeyAttrs(
+        `${description}TIP.keydown(keySurrogatePair), ${settingDescription}`,
+        events[2],
+        {
+          type: "keypress",
+          key: allowIllFormedUTF16
+            ? "\uDFB7"
+            : "", // But the following keypress should have empty string, instead
+          code: "KeyA",
+          keyCode: 0,
+          charCode: "\uD842\uDFB7".charCodeAt(1),
+          defaultPrevented: true,
+        }
+      );
+    } else {
+      checkKeyAttrs(
+        `${description}TIP.keydown(keySurrogatePair), ${settingDescription}`,
+        events[1],
+        {
+          type: "keypress",
+          key: "\uD842\uDFB7",
+          code: "KeyA",
+          keyCode: 0,
+          charCode: 0x20BB7,
+          defaultPrevented: true,
+        }
+      );
+    }
+    checkKeyAttrs(
+      `${description}TIP.keyup(keySurrogatePair), ${settingDescription}`,
+      events[aTestPerSurrogateKeyPress ? 3 : 2],
+      {
+        type: "keyup",
+        key: "\uD842\uDFB7",
+        code: "KeyA",
+        keyCode: KeyboardEvent.DOM_VK_A,
+        charCode: 0,
+      }
+    );
+    is(
+      input.value,
+      "\uD842\uDFB7",
+      `${description}${settingDescription}, input.value should be the surrogate pair`
+    );
+  };
+
+  await test_press_and_release_surrogate_pair_key(true, true);
+  await test_press_and_release_surrogate_pair_key(true, false);
+  await test_press_and_release_surrogate_pair_key(false);
+
   // If KEY_FORCE_PRINTABLE_KEY is specified, registered key names can be a printable key which inputs the specified value.
   input.value = "";
   var keyEnterPrintable = new KeyboardEvent("", { key: "Enter", code: "Enter", keyCode: KeyboardEvent.DOM_VK_RETURN });
@@ -2812,8 +2935,8 @@ function runKeyTests()
     { code: "ControlLeft",              location: KeyboardEvent.DOM_KEY_LOCATION_LEFT },
     { code: "ControlRight",             location: KeyboardEvent.DOM_KEY_LOCATION_RIGHT },
     { code: "Enter",                    location: KeyboardEvent.DOM_KEY_LOCATION_STANDARD },
-    { code: "OSLeft",                   location: KeyboardEvent.DOM_KEY_LOCATION_LEFT },
-    { code: "OSRight",                  location: KeyboardEvent.DOM_KEY_LOCATION_RIGHT },
+    { code: "MetaLeft",                 location: KeyboardEvent.DOM_KEY_LOCATION_LEFT },
+    { code: "MetaRight",                location: KeyboardEvent.DOM_KEY_LOCATION_RIGHT },
     { code: "ShiftLeft",                location: KeyboardEvent.DOM_KEY_LOCATION_LEFT },
     { code: "ShiftRight",               location: KeyboardEvent.DOM_KEY_LOCATION_RIGHT },
     { code: "Space",                    location: KeyboardEvent.DOM_KEY_LOCATION_STANDARD },
@@ -2935,7 +3058,6 @@ function runKeyTests()
     { key: "PrintScreen",               keyCode: KeyboardEvent.DOM_VK_PRINTSCREEN },
     { key: "Insert",                    keyCode: KeyboardEvent.DOM_VK_INSERT },
     { key: "Delete",                    keyCode: KeyboardEvent.DOM_VK_DELETE },
-    { key: "OS",                        keyCode: KeyboardEvent.DOM_VK_WIN,                isModifier: true },
     { key: "ContextMenu",               keyCode: KeyboardEvent.DOM_VK_CONTEXT_MENU },
     { key: "F1",                        keyCode: KeyboardEvent.DOM_VK_F1 },
     { key: "F2",                        keyCode: KeyboardEvent.DOM_VK_F2 },
@@ -2966,7 +3088,9 @@ function runKeyTests()
     { key: "AudioVolumeMute",           keyCode: KeyboardEvent.DOM_VK_VOLUME_MUTE },
     { key: "AudioVolumeDown",           keyCode: KeyboardEvent.DOM_VK_VOLUME_DOWN },
     { key: "AudioVolumeUp",             keyCode: KeyboardEvent.DOM_VK_VOLUME_UP },
-    { key: "Meta",                      keyCode: KeyboardEvent.DOM_VK_META,               isModifier: true },
+    { key: "Meta",                      keyCode: kIsMac
+                                          ? KeyboardEvent.DOM_VK_META
+                                          : KeyboardEvent.DOM_VK_WIN,                     isModifier: true },
     { key: "AltGraph",                  keyCode: KeyboardEvent.DOM_VK_ALTGR,              isModifier: true },
     { key: "Attn",                      keyCode: KeyboardEvent.DOM_VK_ATTN },
     { key: "CrSel",                     keyCode: KeyboardEvent.DOM_VK_CRSEL },
@@ -3046,16 +3170,14 @@ function runKeyTests()
     { key: "Control",    code: "ControlRight", isLockable: false },
     { key: "Fn",         code: "Fn",           isLockable: false },
     { key: "FnLock",     code: "",             isLockable: true },
-    { key: "Meta",       code: "OSLeft",       isLockable: false },
-    { key: "Meta",       code: "OSRight",      isLockable: false },
+    { key: "Meta",       code: "MetaLeft",     isLockable: false },
+    { key: "Meta",       code: "MetaRight",    isLockable: false },
     { key: "NumLock",    code: "NumLock",      isLockable: true },
     { key: "ScrollLock", code: "ScrollLock",   isLockable: true },
     { key: "Shift",      code: "ShiftLeft",    isLockable: false },
     { key: "Shift",      code: "ShiftRight",   isLockable: false },
     { key: "Symbol",     code: "",             isLockable: false },
     { key: "SymbolLock", code: "",             isLockable: true },
-    { key: "OS",         code: "OSLeft",       isLockable: false },
-    { key: "OS",         code: "OSRight",      isLockable: false },
   ];
 
   function checkModifiers(aTestDesc, aEvent, aType, aKey, aCode, aModifiers)
@@ -4729,7 +4851,7 @@ async function runTests()
   runCompositionTests();
   runCompositionWithKeyEventTests();
   runConsumingKeydownBeforeCompositionTests();
-  runKeyTests();
+  await runKeyTests();
   runErrorTests();
   runCommitCompositionTests();
   await runCallbackTests(false);

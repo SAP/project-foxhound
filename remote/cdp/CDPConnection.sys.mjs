@@ -2,8 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
-
 import { WebSocketConnection } from "chrome://remote/content/shared/WebSocketConnection.sys.mjs";
 
 const lazy = {};
@@ -13,7 +11,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
   UnknownMethodError: "chrome://remote/content/cdp/Error.sys.mjs",
 });
 
-XPCOMUtils.defineLazyGetter(lazy, "logger", () =>
+ChromeUtils.defineLazyGetter(lazy, "logger", () =>
   lazy.Log.get(lazy.Log.TYPES.CDP)
 );
 
@@ -192,14 +190,14 @@ export class CDPConnection extends WebSocketConnection {
   /**
    * Called by the `transport` when the connection is closed.
    */
-  onClosed() {
+  onConnectionClose() {
     // Cleanup all the registered sessions.
     for (const session of this.sessions.values()) {
       session.destructor();
     }
     this.sessions.clear();
 
-    super.onClosed();
+    super.onConnectionClose();
   }
 
   /**

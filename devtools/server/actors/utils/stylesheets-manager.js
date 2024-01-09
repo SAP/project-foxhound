@@ -78,7 +78,7 @@ const modifiedStyleSheets = new WeakMap();
 class StyleSheetsManager extends EventEmitter {
   _styleSheetCount = 0;
   _styleSheetMap = new Map();
-  // List of all watched media queries. Change listeners are being registered from getAtRules.
+  // List of all watched media queries. Change listeners are being registered from getStyleSheetRuleCountAndAtRules.
   _mqlList = [];
 
   /**
@@ -90,6 +90,7 @@ class StyleSheetsManager extends EventEmitter {
 
     this._targetActor = targetActor;
     this._onApplicableStateChanged = this._onApplicableStateChanged.bind(this);
+    this._onStylesheetRemoved = this._onStylesheetRemoved.bind(this);
     this._onTargetActorWindowReady = this._onTargetActorWindowReady.bind(this);
   }
 
@@ -110,6 +111,11 @@ class StyleSheetsManager extends EventEmitter {
     this._targetActor.chromeEventHandler.addEventListener(
       "StyleSheetApplicableStateChanged",
       this._onApplicableStateChanged,
+      true
+    );
+    this._targetActor.chromeEventHandler.addEventListener(
+      "StyleSheetRemoved",
+      this._onStylesheetRemoved,
       true
     );
     this._watchStyleSheetChangeEvents();
@@ -145,7 +151,7 @@ class StyleSheetsManager extends EventEmitter {
 
   _watchStyleSheetChangeEventsForWindow(window) {
     // We have to set this flag in order to get the
-    // StyleSheetApplicableStateChanged events. See Document.webidl.
+    // StyleSheetApplicableStateChanged and StyleSheetRemoved events. See Document.webidl.
     window.document.styleSheetChangeEventsEnabled = true;
   }
 
@@ -325,12 +331,17 @@ class StyleSheetsManager extends EventEmitter {
     InspectorUtils.parseStyleSheet(styleSheet, text);
     modifiedStyleSheets.set(styleSheet, text);
 
+    // Remove event handler from all media query list we set to. We are going to re-set
+    // those handler properly from getStyleSheetRuleCountAndAtRules.
+    for (const mql of this._mqlList) {
+      mql.onchange = null;
+    }
+
+    const { atRules, ruleCount } =
+      this.getStyleSheetRuleCountAndAtRules(styleSheet);
+
     if (kind !== UPDATE_PRESERVING_RULES) {
-      this._notifyPropertyChanged(
-        resourceId,
-        "ruleCount",
-        styleSheet.cssRules.length
-      );
+      this._notifyPropertyChanged(resourceId, "ruleCount", ruleCount);
     }
 
     if (transition) {
@@ -345,13 +356,6 @@ class StyleSheetsManager extends EventEmitter {
       });
     }
 
-    // Remove event handler from all media query list we set to. We are going to re-set
-    // those handler properly from getAtRules.
-    for (const mql of this._mqlList) {
-      mql.onchange = null;
-    }
-
-    const atRules = await this.getAtRules(styleSheet);
     this.emit("stylesheet-updated", {
       resourceId,
       updateKind: "at-rules-changed",
@@ -491,18 +495,22 @@ class StyleSheetsManager extends EventEmitter {
   }
 
   /**
-   * Retrieve the at-rules of a given stylesheet
+   * Retrieve the total number of rules (including nested ones) and
+   * all the at-rules of a given stylesheet.
    *
    * @param {StyleSheet} styleSheet
-   * @returns {Array<Object>} An array of object of the following shape:
-   *           - type {String}
-   *           - mediaText {String}
-   *           - conditionText {String}
-   *           - matches {Boolean}: true if the media rule matches the current state of the document
-   *           - line {Number}
-   *           - column {Number}
+   * @returns {Object} An object of the following shape:
+   *          - {Integer} ruleCount: The total number of rules in the stylesheet
+   *          - {Array<Object>} atRules: An array of object of the following shape:
+   *            - type {String}
+   *            - mediaText {String}
+   *            - conditionText {String}
+   *            - matches {Boolean}: true if the media rule matches the current state of the document
+   *            - layerName {String}
+   *            - line {Number}
+   *            - column {Number}
    */
-  async getAtRules(styleSheet) {
+  getStyleSheetRuleCountAndAtRules(styleSheet) {
     const resourceId = this._findStyleSheetResourceId(styleSheet);
     if (!resourceId) {
       return [];
@@ -510,78 +518,73 @@ class StyleSheetsManager extends EventEmitter {
 
     this._mqlList = [];
 
-    const styleSheetRules = await this._getCSSRules(styleSheet);
-    const document = styleSheet.associatedDocument;
-    const win = document?.ownerGlobal;
-    const CSSGroupingRule = win?.CSSGroupingRule;
-
-    // We need to go through nested rules to extract all the rules we're interested in
-    const rules = [];
-    const traverseRules = ruleList => {
-      for (const rule of ruleList) {
-        // Don't go further if the rule can't hold other rules (e.g. not a @media, @supports, …)
-        if (!CSSGroupingRule || !CSSGroupingRule.isInstance(rule)) {
-          continue;
-        }
-
-        const line = InspectorUtils.getRelativeRuleLine(rule);
-        const column = InspectorUtils.getRuleColumn(rule);
-
-        const className = ChromeUtils.getClassName(rule);
-        if (className === "CSSMediaRule") {
-          let matches = false;
-
-          try {
-            const mql = win.matchMedia(rule.media.mediaText);
-            matches = mql.matches;
-            mql.onchange = this._onMatchesChange.bind(
-              this,
-              resourceId,
-              rules.length
-            );
-            this._mqlList.push(mql);
-          } catch (e) {
-            // Ignored
-          }
-
-          rules.push({
-            type: "media",
-            mediaText: rule.media.mediaText,
-            conditionText: rule.conditionText,
-            matches,
-            line,
-            column,
-          });
-        } else if (className === "CSSContainerRule") {
-          rules.push({
-            type: "container",
-            conditionText: rule.conditionText,
-            line,
-            column,
-          });
-        } else if (className === "CSSSupportsRule") {
-          rules.push({
-            type: "support",
-            conditionText: rule.conditionText,
-            line,
-            column,
-          });
-        } else if (className === "CSSLayerBlockRule") {
-          rules.push({
-            type: "layer",
-            layerName: rule.name,
-            line,
-            column,
-          });
-        }
-
-        if (rule.cssRules) {
-          traverseRules(rule.cssRules);
-        }
+    // Accessing the stylesheet associated window might be slow due to cross compartment
+    // wrappers, so only retrieve it if it's needed.
+    let win;
+    const getStyleSheetAssociatedWindow = () => {
+      if (!win) {
+        win = styleSheet.associatedDocument?.ownerGlobal;
       }
+      return win;
     };
-    traverseRules(styleSheetRules);
-    return rules;
+
+    const styleSheetRules =
+      InspectorUtils.getAllStyleSheetCSSStyleRules(styleSheet);
+    const ruleCount = styleSheetRules.length;
+    // We need to go through nested rules to extract all the rules we're interested in
+    const atRules = [];
+    for (const rule of styleSheetRules) {
+      const className = ChromeUtils.getClassName(rule);
+      if (className === "CSSMediaRule") {
+        let matches = false;
+
+        try {
+          const mql = getStyleSheetAssociatedWindow().matchMedia(
+            rule.media.mediaText
+          );
+          matches = mql.matches;
+          mql.onchange = this._onMatchesChange.bind(
+            this,
+            resourceId,
+            atRules.length
+          );
+          this._mqlList.push(mql);
+        } catch (e) {
+          // Ignored
+        }
+
+        atRules.push({
+          type: "media",
+          mediaText: rule.media.mediaText,
+          conditionText: rule.conditionText,
+          matches,
+          line: InspectorUtils.getRelativeRuleLine(rule),
+          column: InspectorUtils.getRuleColumn(rule),
+        });
+      } else if (className === "CSSContainerRule") {
+        atRules.push({
+          type: "container",
+          conditionText: rule.conditionText,
+          line: InspectorUtils.getRelativeRuleLine(rule),
+          column: InspectorUtils.getRuleColumn(rule),
+        });
+      } else if (className === "CSSSupportsRule") {
+        atRules.push({
+          type: "support",
+          conditionText: rule.conditionText,
+          line: InspectorUtils.getRelativeRuleLine(rule),
+          column: InspectorUtils.getRuleColumn(rule),
+        });
+      } else if (className === "CSSLayerBlockRule") {
+        atRules.push({
+          type: "layer",
+          layerName: rule.name,
+          line: InspectorUtils.getRelativeRuleLine(rule),
+          column: InspectorUtils.getRuleColumn(rule),
+        });
+      }
+    }
+    return { ruleCount, atRules };
   }
 
   /**
@@ -668,7 +671,17 @@ class StyleSheetsManager extends EventEmitter {
       this._targetActor.window.document,
       true
     );
-    return styleSheets.indexOf(styleSheet);
+    let i = 0;
+    for (const sheet of styleSheets) {
+      if (!this._shouldListSheet(sheet)) {
+        continue;
+      }
+      if (sheet == styleSheet) {
+        return i;
+      }
+      i++;
+    }
+    return -1;
   }
 
   /**
@@ -751,10 +764,11 @@ class StyleSheetsManager extends EventEmitter {
    * When appending <link>, <style> or changing `disabled` attribute to false,
    * `applicable` is passed as true. The other hand, when changing `disabled`
    * to true, this will be false.
-   * NOTE: For now, StyleSheetApplicableStateChanged will not be called when removing the
-   *       link and style element.
    *
-   * @param {StyleSheetApplicableStateChanged}
+   * NOTE: StyleSheetApplicableStateChanged is _not_ called when removing the <link>/<style>,
+   *       but a StyleSheetRemovedEvent is emitted in such case (see _onStyleSheetRemoved)
+   *
+   * @param {StyleSheetApplicableStateChangedEvent}
    *        The triggering event.
    */
   _onApplicableStateChanged({ applicable, stylesheet: styleSheet }) {
@@ -770,6 +784,16 @@ class StyleSheetsManager extends EventEmitter {
     ) {
       this._registerStyleSheet(styleSheet);
     }
+  }
+
+  /**
+   * Event handler that is called when a style sheet is removed.
+   *
+   * @param {StyleSheetRemovedEvent}
+   *        The triggering event.
+   */
+  _onStylesheetRemoved(event) {
+    this._unregisterStyleSheet(event.stylesheet);
   }
 
   /**
@@ -814,19 +838,47 @@ class StyleSheetsManager extends EventEmitter {
   }
 
   /**
+   * If the stylesheet is registered, this function will emit an "applicable-stylesheet-removed" event
+   * with the stylesheet resourceId.
+   *
+   * @param {StyleSheet} styleSheet
+   */
+  _unregisterStyleSheet(styleSheet) {
+    const existingResourceId = this._findStyleSheetResourceId(styleSheet);
+    if (!existingResourceId) {
+      return;
+    }
+
+    this._styleSheetMap.delete(existingResourceId);
+    this._styleSheetCreationData?.delete(styleSheet);
+    this.emit("applicable-stylesheet-removed", {
+      resourceId: existingResourceId,
+    });
+  }
+
+  /**
    * Returns true if the passed styleSheet should be handled.
    *
    * @param {StyleSheet} styleSheet
    * @returns {Boolean}
    */
   _shouldListSheet(styleSheet) {
-    // Special case about:PreferenceStyleSheet, as it is generated on the
-    // fly and the URI is not registered with the about: handler.
+    // Special case about:PreferenceStyleSheet, as it is generated on the fly
+    // and the URI is not registered with the about: handler.
     // https://bugzilla.mozilla.org/show_bug.cgi?id=935803#c37
-    if (styleSheet.href?.toLowerCase() === "about:preferencestylesheet") {
+    const href = styleSheet.href?.toLowerCase();
+    if (href === "about:preferencestylesheet") {
       return false;
     }
-
+    // FIXME(bug 1826538): Make accessiblecaret.css and similar UA-widget
+    // sheets system sheets, then remove this special-case.
+    if (
+      href === "resource://content-accessible/accessiblecaret.css" ||
+      (href === "resource://devtools-highlighter-styles/highlighters.css" &&
+        this._targetActor.sessionContext.type !== "all")
+    ) {
+      return false;
+    }
     return true;
   }
 
@@ -842,6 +894,11 @@ class StyleSheetsManager extends EventEmitter {
       this._targetActor.chromeEventHandler.removeEventListener(
         "StyleSheetApplicableStateChanged",
         this._onApplicableStateChanged,
+        true
+      );
+      this._targetActor.chromeEventHandler.removeEventListener(
+        "StyleSheetRemoved",
+        this._onStylesheetRemoved,
         true
       );
       this._unwatchStyleSheetChangeEvents();

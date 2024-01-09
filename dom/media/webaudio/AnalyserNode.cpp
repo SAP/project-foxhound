@@ -299,7 +299,7 @@ bool AnalyserNode::FFTAnalysis() {
 
   for (uint32_t i = 0; i < mOutputBuffer.Length(); ++i) {
     double scalarMagnitude =
-        NS_hypot(mAnalysisBlock.RealData(i), mAnalysisBlock.ImagData(i)) *
+        fdlibm_hypot(mAnalysisBlock.RealData(i), mAnalysisBlock.ImagData(i)) *
         magnitudeScale;
     mOutputBuffer[i] = mSmoothingTimeConstant * mOutputBuffer[i] +
                        (1.0 - mSmoothingTimeConstant) * scalarMagnitude;
@@ -316,7 +316,8 @@ void AnalyserNode::ApplyBlackmanWindow(float* aBuffer, uint32_t aSize) {
 
   for (uint32_t i = 0; i < aSize; ++i) {
     double x = double(i) / aSize;
-    double window = a0 - a1 * cos(2 * M_PI * x) + a2 * cos(4 * M_PI * x);
+    double window =
+        a0 - a1 * fdlibm_cos(2 * M_PI * x) + a2 * fdlibm_cos(4 * M_PI * x);
     aBuffer[i] *= window;
   }
 }

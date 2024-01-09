@@ -11,13 +11,15 @@ use crate::data::{EagerPseudoStyles, ElementStyles};
 use crate::dom::TElement;
 use crate::matching::MatchMethods;
 use crate::properties::longhands::display::computed_value::T as Display;
-use crate::properties::ComputedValues;
+use crate::properties::{ComputedValues, FirstLineReparenting};
 use crate::rule_tree::StrongRuleNode;
 use crate::selector_parser::{PseudoElement, SelectorImpl};
 use crate::stylist::RuleInclusion;
 use log::Level::Trace;
-use selectors::matching::{MatchingContext, NeedsSelectorFlags};
-use selectors::matching::{MatchingMode, VisitedHandlingMode};
+use selectors::matching::{
+    MatchingForInvalidation, MatchingContext, MatchingMode, NeedsSelectorFlags,
+    RelativeSelectorMatchingState, VisitedHandlingMode,
+};
 use servo_arc::Arc;
 
 /// Whether pseudo-elements should be resolved or not.
@@ -351,8 +353,8 @@ where
             &self.context.shared.guards,
             pseudo.and(parent_style),
             parent_style,
-            parent_style,
             layout_parent_style,
+            FirstLineReparenting::No,
             Some(&self.context.thread_local.rule_cache),
             &mut conditions,
         );
@@ -463,14 +465,15 @@ where
         let mut applicable_declarations = ApplicableDeclarationList::new();
 
         let bloom_filter = self.context.thread_local.bloom_filter.filter();
-        let nth_index_cache = &mut self.context.thread_local.nth_index_cache;
+        let selector_caches = &mut self.context.thread_local.selector_caches;
         let mut matching_context = MatchingContext::new_for_visited(
             MatchingMode::Normal,
             Some(bloom_filter),
-            nth_index_cache,
+            selector_caches,
             visited_handling,
             self.context.shared.quirks_mode(),
             NeedsSelectorFlags::Yes,
+            MatchingForInvalidation::No,
         );
 
         let stylist = &self.context.shared.stylist;
@@ -503,16 +506,24 @@ where
                 }
             }
         }
-
-        if matching_context.considered_relative_selector {
-            // This is a bit awkward - ideally, the flag is set directly where `considered_relative_selector`
-            // is; however, in that context, the implementation detail of `extra_data` is not visible, so
-            // it's done here. A trait for manipulating the flags is an option, but not worth it for a single flag.
-            matching_context
-                .extra_data
-                .cascade_input_flags
-                .insert(ComputedValueFlags::CONSIDERED_RELATIVE_SELECTOR);
-        }
+        // This is a bit awkward - ideally, the flag is set directly where `considered_relative_selector`
+        // is; however, in that context, the implementation detail of `extra_data` is not visible, so
+        // it's done here. A trait for manipulating the flags is an option, but not worth it for a single flag.
+        match matching_context.considered_relative_selector {
+            RelativeSelectorMatchingState::None => (),
+            RelativeSelectorMatchingState::Considered => {
+                matching_context
+                    .extra_data
+                    .cascade_input_flags
+                    .insert(ComputedValueFlags::CONSIDERED_RELATIVE_SELECTOR);
+            },
+            RelativeSelectorMatchingState::ConsideredAnchor => {
+                matching_context.extra_data.cascade_input_flags.insert(
+                    ComputedValueFlags::ANCHORS_RELATIVE_SELECTOR |
+                        ComputedValueFlags::CONSIDERED_RELATIVE_SELECTOR,
+                );
+            },
+        };
 
         MatchingResults {
             rule_node,
@@ -548,15 +559,16 @@ where
         }
 
         let bloom_filter = self.context.thread_local.bloom_filter.filter();
-        let nth_index_cache = &mut self.context.thread_local.nth_index_cache;
+        let selector_caches = &mut self.context.thread_local.selector_caches;
 
         let mut matching_context = MatchingContext::<'_, E::Impl>::new_for_visited(
             MatchingMode::ForStatelessPseudoElement,
             Some(bloom_filter),
-            nth_index_cache,
+            selector_caches,
             visited_handling,
             self.context.shared.quirks_mode(),
             NeedsSelectorFlags::Yes,
+            MatchingForInvalidation::No,
         );
         matching_context.extra_data.originating_element_style = Some(originating_element_style);
 

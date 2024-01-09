@@ -31,20 +31,19 @@ import {
   getSourceByActorId,
   getPendingSelectedLocation,
   getPendingBreakpointsForSource,
-  getContext,
 } from "../../selectors";
 
 import { prefs } from "../../utils/prefs";
 import sourceQueue from "../../utils/source-queue";
-import { validateNavigateContext, ContextError } from "../../utils/context";
+import { validateSourceActor, ContextError } from "../../utils/context";
 
-function loadSourceMaps(cx, sources) {
+function loadSourceMaps(sources) {
   return async function ({ dispatch }) {
     try {
       const sourceList = await Promise.all(
         sources.map(async sourceActor => {
           const originalSourcesInfo = await dispatch(
-            loadSourceMap(cx, sourceActor)
+            loadSourceMap(sourceActor)
           );
           originalSourcesInfo.forEach(
             sourcesInfo => (sourcesInfo.sourceActor = sourceActor)
@@ -69,7 +68,7 @@ function loadSourceMaps(cx, sources) {
  * @memberof actions/sources
  * @static
  */
-function loadSourceMap(cx, sourceActor) {
+function loadSourceMap(sourceActor) {
   return async function ({ dispatch, getState, sourceMapLoader }) {
     if (!prefs.clientSourceMapsEnabled || !sourceActor.sourceMapURL) {
       return [];
@@ -104,20 +103,20 @@ function loadSourceMap(cx, sourceActor) {
       // existing, enable it for pretty printing
       dispatch({
         type: "CLEAR_SOURCE_ACTOR_MAP_URL",
-        cx,
-        sourceActorId: sourceActor.id,
+        sourceActor,
       });
       return [];
     }
 
-    validateNavigateContext(getState(), cx);
+    // Before dispatching this action, ensure that the related sourceActor is still registered
+    validateSourceActor(getState(), sourceActor);
     return data;
   };
 }
 
 // If a request has been made to show this source, go ahead and
 // select it.
-function checkSelectedSource(cx, sourceId) {
+function checkSelectedSource(sourceId) {
   return async ({ dispatch, getState }) => {
     const state = getState();
     const pendingLocation = getPendingSelectedLocation(state);
@@ -137,14 +136,13 @@ function checkSelectedSource(cx, sourceId) {
 
     if (rawPendingUrl === source.url) {
       if (isPrettyURL(pendingUrl)) {
-        const prettySource = await dispatch(togglePrettyPrint(cx, source.id));
-        dispatch(checkPendingBreakpoints(cx, prettySource, null));
+        const prettySource = await dispatch(togglePrettyPrint(source.id));
+        dispatch(checkPendingBreakpoints(prettySource, null));
         return;
       }
 
       await dispatch(
         selectLocation(
-          cx,
           createLocation({
             source,
             line:
@@ -159,7 +157,7 @@ function checkSelectedSource(cx, sourceId) {
   };
 }
 
-function checkPendingBreakpoints(cx, source, sourceActor) {
+function checkPendingBreakpoints(source, sourceActor) {
   return async ({ dispatch, getState }) => {
     const pendingBreakpoints = getPendingBreakpointsForSource(
       getState(),
@@ -171,20 +169,18 @@ function checkPendingBreakpoints(cx, source, sourceActor) {
     }
 
     // load the source text if there is a pending breakpoint for it
-    await dispatch(loadSourceText(cx, source, sourceActor));
-    await dispatch(
-      setBreakableLines(cx, createLocation({ source, sourceActor }))
-    );
+    await dispatch(loadSourceText(source, sourceActor));
+    await dispatch(setBreakableLines(createLocation({ source, sourceActor })));
 
     await Promise.all(
       pendingBreakpoints.map(pendingBp => {
-        return dispatch(syncPendingBreakpoint(cx, source.id, pendingBp));
+        return dispatch(syncPendingBreakpoint(source, pendingBp));
       })
     );
   };
 }
 
-function restoreBlackBoxedSources(cx, sources) {
+function restoreBlackBoxedSources(sources) {
   return async ({ dispatch, getState }) => {
     const currentRanges = getBlackBoxRanges(getState());
 
@@ -196,12 +192,12 @@ function restoreBlackBoxedSources(cx, sources) {
       const ranges = currentRanges[source.url];
       if (ranges) {
         // If the ranges is an empty then the whole source was blackboxed.
-        await dispatch(toggleBlackBox(cx, source, true, ranges));
+        await dispatch(toggleBlackBox(source, true, ranges));
       }
     }
 
     if (prefs.sourceMapIgnoreListEnabled) {
-      await dispatch(toggleSourceMapIgnoreList(cx, true));
+      await dispatch(toggleSourceMapIgnoreList(true));
     }
   };
 }
@@ -230,14 +226,11 @@ export function newOriginalSources(originalSourcesInfo) {
       );
     }
 
-    const cx = getContext(state);
-
     // Add the original sources per the generated source actors that
     // they are primarily from.
     actors.forEach(sourceActor => {
       dispatch({
         type: "ADD_ORIGINAL_SOURCES",
-        cx,
         originalSources: actorsSources[sourceActor.actor],
         generatedSourceActor: sourceActor,
       });
@@ -252,10 +245,10 @@ export function newOriginalSources(originalSourcesInfo) {
       );
     }
 
-    await dispatch(checkNewSources(cx, sources));
+    await dispatch(checkNewSources(sources));
 
     for (const source of sources) {
-      dispatch(checkPendingBreakpoints(cx, source, null));
+      dispatch(checkPendingBreakpoints(source, null));
     }
 
     return sources;
@@ -312,14 +305,13 @@ export function newGeneratedSources(sourceResources) {
 
     const newSources = Object.values(newSourcesObj);
 
-    const cx = getContext(getState());
-    dispatch(addSources(cx, newSources));
+    dispatch({ type: "ADD_SOURCES", sources: newSources });
     dispatch(insertSourceActors(newSourceActors));
 
-    await dispatch(checkNewSources(cx, newSources));
+    await dispatch(checkNewSources(newSources));
 
     (async () => {
-      await dispatch(loadSourceMaps(cx, newSourceActors));
+      await dispatch(loadSourceMaps(newSourceActors));
 
       // We would like to sync breakpoints after we are done
       // loading source maps as sometimes generated and original
@@ -333,13 +325,12 @@ export function newGeneratedSources(sourceResources) {
         if (sourceActor.sourceObject.isHTML) {
           await dispatch(
             setBreakableLines(
-              cx,
               createLocation({ source: sourceActor.sourceObject, sourceActor })
             )
           );
         }
         dispatch(
-          checkPendingBreakpoints(cx, sourceActor.sourceObject, sourceActor)
+          checkPendingBreakpoints(sourceActor.sourceObject, sourceActor)
         );
       }
     })();
@@ -348,19 +339,13 @@ export function newGeneratedSources(sourceResources) {
   };
 }
 
-function addSources(cx, sources) {
-  return ({ dispatch, getState }) => {
-    dispatch({ type: "ADD_SOURCES", cx, sources });
-  };
-}
-
-function checkNewSources(cx, sources) {
+function checkNewSources(sources) {
   return async ({ dispatch, getState }) => {
     for (const source of sources) {
-      dispatch(checkSelectedSource(cx, source.id));
+      dispatch(checkSelectedSource(source.id));
     }
 
-    await dispatch(restoreBlackBoxedSources(cx, sources));
+    await dispatch(restoreBlackBoxedSources(sources));
 
     return sources;
   };

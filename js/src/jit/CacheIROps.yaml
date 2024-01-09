@@ -237,7 +237,7 @@
   cost_estimate: 1
   args:
     obj: ObjId
-    shape: ShapeField
+    shape: WeakShapeField
 
 - name: GuardMultipleShapes
   shared: true
@@ -254,7 +254,7 @@
   cost_estimate: 1
   args:
     obj: ObjId
-    proto: ObjectField
+    proto: WeakObjectField
 
 - name: GuardNullProto
   shared: true
@@ -316,6 +316,20 @@
     input: StringId
     lastIndex: Int32Id
     stub: JitCodeField
+
+- name: RegExpSearcherLastLimitResult
+  shared: true
+  transpile: true
+  cost_estimate: 1
+  args:
+
+- name: RegExpHasCaptureGroupsResult
+  shared: false
+  transpile: true
+  cost_estimate: 1
+  args:
+    regexp: ObjId
+    input: StringId
 
 - name: RegExpBuiltinExecMatchResult
   shared: false
@@ -445,7 +459,7 @@
 
 - name: GuardHasProxyHandler
   shared: false
-  transpile: false
+  transpile: true
   cost_estimate: 1
   args:
     obj: ObjId
@@ -464,7 +478,7 @@
   cost_estimate: 1
   args:
     obj: ObjId
-    expected: ObjectField
+    expected: WeakObjectField
 
 - name: GuardObjectIdentity
   shared: true
@@ -481,7 +495,7 @@
   custom_writer: true
   args:
     fun: ObjId
-    expected: ObjectField
+    expected: WeakObjectField
     nargsAndFlags: RawInt32Field
 
 - name: GuardFunctionScript
@@ -648,6 +662,22 @@
     obj: ObjId
     offset: RawInt32Field
     val: ValueField
+
+- name: LoadScriptedProxyHandler
+  shared: true
+  transpile: true
+  cost_estimate: 1
+  args:
+    result: ValId
+    obj: ObjId
+
+- name: IdToStringOrSymbol
+  shared: true
+  transpile: true
+  cost_estimate: 2
+  args:
+    result: ValId
+    id: ValId
 
 - name: LoadFixedSlot
   shared: true
@@ -1810,6 +1840,33 @@
     flags: CallFlagsImm
     argcFixed: UInt32Imm
 
+#ifdef JS_PUNBOX64
+- name: CallScriptedProxyGetResult
+  shared: false
+  transpile: true
+  cost_estimate: 4
+  custom_writer: true
+  args:
+    target: ValId
+    receiver: ObjId
+    handler: ObjId
+    trap: ObjectField
+    property: IdField
+    nargsAndFlags: UInt32Imm
+
+- name: CallScriptedProxyGetByValueResult
+  shared: false
+  transpile: true
+  cost_estimate: 4
+  custom_writer: true
+  args:
+    target: ValId
+    receiver: ObjId
+    handler: ObjId
+    property: ValId
+    trap: ObjectField
+    nargsAndFlags: UInt32Imm
+#endif
 
 # Meta ops generate no code, but contain data for the Warp Transpiler.
 - name: MetaScriptedThisShape

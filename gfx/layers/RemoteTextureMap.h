@@ -72,6 +72,7 @@ class RemoteTextureOwnerClient final {
                             bool aIsSyncMode);
   void UnregisterTextureOwner(const RemoteTextureOwnerId aOwnerId);
   void UnregisterAllTextureOwners();
+  void NotifyContextLost();
   void PushTexture(const RemoteTextureId aTextureId,
                    const RemoteTextureOwnerId aOwnerId,
                    UniquePtr<TextureData>&& aTextureData,
@@ -133,6 +134,11 @@ class RemoteTextureMap {
   void UnregisterTextureOwner(const RemoteTextureOwnerId aOwnerIds,
                               const base::ProcessId aForPid);
   void UnregisterTextureOwners(
+      const std::unordered_set<RemoteTextureOwnerId,
+                               RemoteTextureOwnerId::HashFn>& aOwnerIds,
+      const base::ProcessId aForPid);
+
+  void NotifyContextLost(
       const std::unordered_set<RemoteTextureOwnerId,
                                RemoteTextureOwnerId::HashFn>& aOwnerIds,
       const base::ProcessId aForPid);
@@ -223,6 +229,7 @@ class RemoteTextureMap {
 
   struct TextureOwner {
     bool mIsSyncMode = true;
+    bool mIsContextLost = false;
     // Holds TextureDataHolders that wait to be used for building wr display
     // list.
     std::deque<UniquePtr<TextureDataHolder>> mWaitingTextureDataHolders;
@@ -235,6 +242,9 @@ class RemoteTextureMap {
     RemoteTextureId mLatestTextureId = {0};
     CompositableTextureHostRef mLatestTextureHost;
     CompositableTextureHostRef mLatestRenderedTextureHost;
+    // Holds compositable refs to TextureHosts of RenderTextureHosts that are
+    // waiting to be released in non-RenderThread.
+    std::deque<CompositableTextureHostRef> mReleasingRenderedTextureHosts;
     std::stack<UniquePtr<TextureData>> mRecycledTextures;
     std::queue<std::shared_ptr<gl::SharedSurface>> mRecycledSharedSurfaces;
   };

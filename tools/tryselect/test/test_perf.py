@@ -53,7 +53,9 @@ TASKS = [
 # to redo all the category counts. The platforms, and apps are
 # not forced because they change infrequently.
 TEST_VARIANTS = {
-    Variants.NO_FISSION.value: {
+    # Bug 1837058 - Switch this back to Variants.NO_FISSION when
+    # the default flips to fission on android
+    Variants.FISSION.value: {
         "query": "'nofis",
         "negation": "!nofis",
         "platforms": [Platforms.ANDROID.value],
@@ -99,7 +101,7 @@ TEST_CATEGORIES = {
         "query": {
             Suites.RAPTOR.value: ["'browsertime 'tp6 'essential"],
         },
-        "variant-restrictions": {Suites.RAPTOR.value: [Variants.NO_FISSION.value]},
+        "variant-restrictions": {Suites.RAPTOR.value: [Variants.FISSION.value]},
         "suites": [Suites.RAPTOR.value],
         "tasks": [],
     },
@@ -158,7 +160,7 @@ TEST_CATEGORIES = {
             Suites.RAPTOR.value: ["'browsertime 'youtube-playback"],
         },
         "suites": [Suites.TALOS.value, Suites.RAPTOR.value],
-        "variant-restrictions": {Suites.RAPTOR.value: [Variants.NO_FISSION.value]},
+        "variant-restrictions": {Suites.RAPTOR.value: [Variants.FISSION.value]},
         "tasks": [],
     },
 }
@@ -541,7 +543,7 @@ TEST_CATEGORIES = {
         # base here for fenix
         (
             {
-                "requested_variants": ["no-fission"],
+                "requested_variants": ["fission"],
                 "requested_apps": ["fenix"],
                 "android": True,
             },
@@ -556,7 +558,7 @@ TEST_CATEGORIES = {
                         "!profil",
                     ],
                 },
-                "Pageload android-a51 fenix no-fission": {
+                "Pageload android-a51 fenix fission": {
                     "raptor": [
                         "'browsertime 'tp6",
                         "'android 'a51 'shippable 'aarch64",
@@ -566,7 +568,7 @@ TEST_CATEGORIES = {
                         "!profil",
                     ],
                 },
-                "Pageload (essential) android fenix no-fission": {
+                "Pageload (essential) android fenix fission": {
                     "raptor": [
                         "'browsertime 'tp6 'essential",
                         "'android 'a51 'shippable 'aarch64",
@@ -587,7 +589,7 @@ TEST_CATEGORIES = {
         # for each of them
         (
             {
-                "requested_variants": ["no-fission", "live-sites"],
+                "requested_variants": ["fission", "live-sites"],
                 "requested_apps": ["fenix"],
                 "android": True,
             },
@@ -601,7 +603,7 @@ TEST_CATEGORIES = {
                         "!profil",
                     ],
                 },
-                "Pageload android-a51 fenix no-fission": {
+                "Pageload android-a51 fenix fission": {
                     "raptor": [
                         "'browsertime 'tp6",
                         "'android 'a51 'shippable 'aarch64",
@@ -621,7 +623,7 @@ TEST_CATEGORIES = {
                         "!profil",
                     ],
                 },
-                "Pageload (essential) android fenix no-fission": {
+                "Pageload (essential) android fenix fission": {
                     "raptor": [
                         "'browsertime 'tp6 'essential",
                         "'android 'a51 'shippable 'aarch64",
@@ -631,7 +633,7 @@ TEST_CATEGORIES = {
                         "!profil",
                     ],
                 },
-                "Pageload android fenix no-fission+live-sites": {
+                "Pageload android fenix fission+live-sites": {
                     "raptor": [
                         "'browsertime 'tp6",
                         "'android 'a51 'shippable 'aarch64",
@@ -841,6 +843,17 @@ def test_category_expansion(
                 "here once the tests are complete (ensure you select the right framework): "
                 "https://treeherder.mozilla.org/perfherder/compare?originalProject=try&original"
                 "Revision=revision&newProject=try&newRevision=revision\n"
+            ),
+        ),
+        (
+            {"perfcompare_beta": True},
+            [9, 2, 2, 10, 2, 1],
+            2,
+            (
+                "\n!!!NOTE!!!\n You'll be able to find a performance comparison "
+                "here once the tests are complete (ensure you select the right framework): "
+                "https://beta--mozilla-perfcompare.netlify.app/#/compare-results?"
+                "revs=revision,revision&repos=try,try\n"
             ),
         ),
     ],
@@ -1168,9 +1181,11 @@ def test_save_revision_treeherder(args, call_counts, exists_cache_file):
             {},
             [1, 0, 0, 1],
             (
-                "That's a lot of tests selected (300)!\n"
-                "These tests won't be triggered. If this was unexpected, "
-                "please file a bug in Testing :: Performance."
+                "\n\n----------------------------------------------------------------------------------------------\n"
+                f"You have selected {MAX_PERF_TASKS+1} total test runs! (selected tasks({MAX_PERF_TASKS+1}) * rebuild"
+                f" count(1) \nThese tests won't be triggered as the current maximum for a single ./mach try "
+                f"perf run is {MAX_PERF_TASKS}. \nIf this was unexpected, please file a bug in Testing :: Performance."
+                "\n----------------------------------------------------------------------------------------------\n\n"
             ),
             True,
         ),
@@ -1189,9 +1204,12 @@ def test_save_revision_treeherder(args, call_counts, exists_cache_file):
             {"show_all": True, "try_config": {"rebuild": 2}},
             [1, 0, 0, 1],
             (
-                "That's a lot of tests selected (300)!\n"
-                "These tests won't be triggered. If this was unexpected, "
-                "please file a bug in Testing :: Performance."
+                "\n\n----------------------------------------------------------------------------------------------\n"
+                f"You have selected {int((MAX_PERF_TASKS + 2) / 2) * 2} total test runs! (selected tasks("
+                f"{int((MAX_PERF_TASKS + 2) / 2)}) * rebuild"
+                f" count(2) \nThese tests won't be triggered as the current maximum for a single ./mach try "
+                f"perf run is {MAX_PERF_TASKS}. \nIf this was unexpected, please file a bug in Testing :: Performance."
+                "\n----------------------------------------------------------------------------------------------\n\n"
             ),
             True,
         ),
@@ -1239,6 +1257,38 @@ def test_max_perf_tasks(
         assert perf_print.call_count == call_counts[3]
         assert fzf.call_count == 0
         assert perf_print.call_args_list[-1][0][0] == expected_log_message
+
+
+@pytest.mark.parametrize(
+    "try_config, selected_tasks, expected_try_config",
+    [
+        (
+            {"use-artifact-builds": True},
+            ["some-android-task"],
+            {"use-artifact-builds": False},
+        ),
+        (
+            {"use-artifact-builds": True},
+            ["some-desktop-task"],
+            {"use-artifact-builds": True},
+        ),
+        (
+            {"use-artifact-builds": False},
+            ["some-android-task"],
+            {"use-artifact-builds": False},
+        ),
+        (
+            {"use-artifact-builds": True},
+            ["some-desktop-task", "some-android-task"],
+            {"use-artifact-builds": False},
+        ),
+    ],
+)
+def test_artifact_mode_autodisable(try_config, selected_tasks, expected_try_config):
+    PerfParser.setup_try_config(try_config, [], selected_tasks)
+    assert (
+        try_config["use-artifact-builds"] == expected_try_config["use-artifact-builds"]
+    )
 
 
 if __name__ == "__main__":

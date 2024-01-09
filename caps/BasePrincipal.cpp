@@ -86,14 +86,14 @@ BasePrincipal::GetOrigin(nsACString& aOrigin) {
 }
 
 NS_IMETHODIMP
-BasePrincipal::GetAsciiOrigin(nsACString& aOrigin) {
+BasePrincipal::GetWebExposedOriginSerialization(nsACString& aOrigin) {
   aOrigin.Truncate();
   nsCOMPtr<nsIURI> prinURI;
   nsresult rv = GetURI(getter_AddRefs(prinURI));
   if (NS_FAILED(rv) || !prinURI) {
     return NS_ERROR_NOT_AVAILABLE;
   }
-  return nsContentUtils::GetASCIIOrigin(prinURI, aOrigin);
+  return nsContentUtils::GetWebExposedOriginSerialization(prinURI, aOrigin);
 }
 
 NS_IMETHODIMP
@@ -1104,6 +1104,24 @@ BasePrincipal::IsURIInList(const nsACString& aList, bool* aResult) {
   }
 
   *aResult = nsContentUtils::IsURIInList(prinURI, nsCString(aList));
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+BasePrincipal::IsContentAccessibleAboutURI(bool* aResult) {
+  *aResult = false;
+
+  nsCOMPtr<nsIURI> prinURI;
+  nsresult rv = GetURI(getter_AddRefs(prinURI));
+  if (NS_FAILED(rv) || !prinURI) {
+    return NS_OK;
+  }
+
+  if (!prinURI->SchemeIs("about")) {
+    return NS_OK;
+  }
+
+  *aResult = NS_IsContentAccessibleAboutURI(prinURI);
   return NS_OK;
 }
 

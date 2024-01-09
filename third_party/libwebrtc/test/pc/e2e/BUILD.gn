@@ -49,7 +49,7 @@ if (!build_with_chromium) {
       ]
       deps = [
         "../../../api/test/pclf:media_configuration",
-        "../../../modules/audio_device:audio_device_impl",
+        "../../../modules/audio_device:test_audio_device_module",
         "../../../rtc_base:swap_queue",
       ]
     }
@@ -80,6 +80,7 @@ if (!build_with_chromium) {
       absl_deps = [
         "//third_party/abseil-cpp/absl/memory",
         "//third_party/abseil-cpp/absl/strings",
+        "//third_party/abseil-cpp/absl/types:optional",
         "//third_party/abseil-cpp/absl/types:variant",
       ]
     }
@@ -106,7 +107,7 @@ if (!build_with_chromium) {
         "../../../api/video_codecs:builtin_video_encoder_factory",
         "../../../media:rtc_audio_video",
         "../../../media:rtc_media_engine_defaults",
-        "../../../modules/audio_device:audio_device_impl",
+        "../../../modules/audio_device:test_audio_device_module",
         "../../../modules/audio_processing/aec_dump",
         "../../../p2p:rtc_p2p",
         "../../../rtc_base:rtc_task_queue",
@@ -120,23 +121,36 @@ if (!build_with_chromium) {
       ]
     }
 
+    rtc_library("test_video_capturer_video_track_source") {
+      testonly = true
+      sources = [ "media/test_video_capturer_video_track_source.h" ]
+      deps = [
+        "../..:test_video_capturer",
+        "../../../api:sequence_checker",
+        "../../../api/test/video:test_video_track_source",
+        "../../../api/video:video_frame",
+      ]
+    }
+
     rtc_library("media_helper") {
       testonly = true
       sources = [
         "media/media_helper.cc",
         "media/media_helper.h",
-        "media/test_video_capturer_video_track_source.h",
       ]
       deps = [
         ":test_peer",
+        ":test_video_capturer_video_track_source",
         "../..:fileutils",
+        "../..:frame_generator_capturer",
         "../..:platform_video_capturer",
-        "../..:video_test_common",
         "../../../api:create_frame_generator",
         "../../../api:frame_generator_api",
         "../../../api:media_stream_interface",
+        "../../../api:sequence_checker",
         "../../../api/test/pclf:media_configuration",
         "../../../api/test/pclf:peer_configurer",
+        "../../../api/test/video:test_video_track_source",
         "../../../api/video:video_frame",
         "../../../pc:session_description",
         "../../../pc:video_track_source",
@@ -316,6 +330,7 @@ if (!build_with_chromium) {
       sources = [ "peer_connection_quality_test_metric_names_test.cc" ]
       deps = [
         ":metric_metadata_keys",
+        ":network_quality_metrics_reporter",
         ":peerconnection_quality_test",
         ":stats_based_network_quality_metrics_reporter",
         "../..:test_support",

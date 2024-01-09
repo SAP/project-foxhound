@@ -6,6 +6,8 @@
 
 #include "mozilla/FOG.h"
 
+#include "mozilla/AppShutdown.h"
+#include "mozilla/Atomics.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/FOGIPC.h"
@@ -14,6 +16,7 @@
 #include "mozilla/glean/bindings/jog/jog_ffi_generated.h"
 #include "mozilla/glean/fog_ffi_generated.h"
 #include "mozilla/glean/GleanMetrics.h"
+#include "mozilla/Logging.h"
 #include "mozilla/MozPromise.h"
 #include "mozilla/ShutdownPhase.h"
 #include "mozilla/Unused.h"
@@ -23,6 +26,9 @@
 #include "nsServiceManagerUtils.h"
 
 namespace mozilla {
+
+using mozilla::LogLevel;
+static mozilla::LazyLogModule sLog("fog");
 
 using glean::LogToBrowserConsole;
 
@@ -43,6 +49,7 @@ extern "C" NS_EXPORT void _fog_force_reexport_donotcall(void) {
 #endif
 
 static StaticRefPtr<FOG> gFOG;
+static mozilla::Atomic<bool> gInitializeCalled(false);
 
 // We wait for 5s of idle before dumping IPC and flushing ping data to disk.
 // This number hasn't been tuned, so if you have a reason to change it,
@@ -54,6 +61,8 @@ already_AddRefed<FOG> FOG::GetSingleton() {
   if (gFOG) {
     return do_AddRef(gFOG);
   }
+
+  MOZ_LOG(sLog, LogLevel::Debug, ("FOG::GetSingleton()"));
 
   gFOG = new FOG();
 
@@ -76,6 +85,17 @@ already_AddRefed<FOG> FOG::GetSingleton() {
             MOZ_ASSERT(idleService);
             Unused << idleService->RemoveIdleObserver(gFOG, kIdleSecs);
           }
+          if (!gInitializeCalled) {
+            gInitializeCalled = true;
+            // Assuming default data path and application id.
+            // Consumers using non defaults _must_ initialize FOG explicitly.
+            MOZ_LOG(sLog, LogLevel::Debug,
+                    ("Init not called. Init-ing in shutdown"));
+            glean::fog::inits_during_shutdown.Add(1);
+            // It's enough to call init before shutting down.
+            // We don't need to (and can't) wait for it to complete.
+            glean::impl::fog_init(&VoidCString(), &VoidCString());
+          }
           gFOG->Shutdown();
           gFOG = nullptr;
         },
@@ -89,17 +109,32 @@ void FOG::Shutdown() {
   glean::impl::fog_shutdown();
 }
 
+// This allows us to know it's too late to submit a ping in Rust.
+extern "C" bool FOG_TooLateToSend(void) {
+  MOZ_ASSERT(XRE_IsParentProcess());
+  return AppShutdown::IsInOrBeyond(ShutdownPhase::AppShutdownNetTeardown);
+}
+
+// This allows us to pass the configurable maximum ping limit (in pings per
+// minute) to Rust. Default value is 15.
+extern "C" uint32_t FOG_MaxPingLimit(void) {
+  return NimbusFeatures::GetInt("gleanInternalSdk"_ns,
+                                "gleanMaxPingsPerMinute"_ns, 15);
+}
+
 NS_IMETHODIMP
 FOG::InitializeFOG(const nsACString& aDataPathOverride,
                    const nsACString& aAppIdOverride) {
   MOZ_ASSERT(XRE_IsParentProcess());
+  gInitializeCalled = true;
   RunOnShutdown(
       [&] {
-        if (NimbusFeatures::GetBool("glean"_ns, "finalInactive"_ns, false)) {
+        if (NimbusFeatures::GetBool("gleanInternalSdk"_ns, "finalInactive"_ns,
+                                    false)) {
           glean::impl::fog_internal_glean_handle_client_inactive();
         }
       },
-      ShutdownPhase::XPCOMWillShutdown);
+      ShutdownPhase::AppShutdownConfirmed);
 
   return glean::impl::fog_init(&aDataPathOverride, &aAppIdOverride);
 }

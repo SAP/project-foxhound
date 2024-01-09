@@ -15,6 +15,7 @@ from selection import (
     SelectionManager,
 )
 from marionette_driver.by import By
+from marionette_driver.keys import Keys
 from marionette_harness.marionette_test import (
     MarionetteTestCase,
     SkipTest,
@@ -49,6 +50,7 @@ class AccessibleCaretSelectionModeTestCase(MarionetteTestCase):
     _iframe_scroll_html = "layout/test_carets_iframe_scroll.html"
     _display_none_html = "layout/test_carets_display_none.html"
     _svg_shapes_html = "layout/test_carets_svg_shapes.html"
+    _key_scroll_html = "layout/test_carets_key_scroll.html"
 
     def setUp(self):
         # Code to execute before every test is running.
@@ -113,7 +115,7 @@ class AccessibleCaretSelectionModeTestCase(MarionetteTestCase):
         offset = self.word_offset(sel.content, ordinal)
 
         # Move the blinking cursor to the word.
-        el.tap()
+        self.actions.click(element=el).perform()
         sel.move_cursor_to_front()
         sel.move_cursor_by_offset(offset)
         x, y = sel.cursor_location()
@@ -215,7 +217,7 @@ class AccessibleCaretSelectionModeTestCase(MarionetteTestCase):
 
         # Get the location of the carets at the end of the content for later
         # use.
-        el.tap()
+        self.actions.click(element=el).perform()
         sel.select_all()
         end_caret_x, end_caret_y = sel.second_caret_location()
 
@@ -249,7 +251,7 @@ class AccessibleCaretSelectionModeTestCase(MarionetteTestCase):
 
         # Get the location of the carets at the end of the content for later
         # use.
-        el.tap()
+        self.actions.click(element=el).perform()
         sel.select_all()
         end_caret_x, end_caret_y = sel.second_caret_location()
 
@@ -297,7 +299,7 @@ class AccessibleCaretSelectionModeTestCase(MarionetteTestCase):
         # use.
         sel.select_all()
         end_caret_x, end_caret_y = sel.second_caret_location()
-        el.tap()
+        self.actions.click(element=el).perform()
 
         # Goal: Select the first character.
         target_content = original_content[0]
@@ -373,14 +375,14 @@ class AccessibleCaretSelectionModeTestCase(MarionetteTestCase):
         words = original_content.split()
         target_content = words[0]
 
-        # Goal: Tap to focus el1, and then select the first word on el2.
+        # Goal: Click to focus el1, and then select the first word on el2.
 
         # We want to collect the location of the first word in el2 here
         # since self.word_location() has the side effect which would
         # change the focus.
         x, y = self.word_location(el2, 0)
 
-        el1.tap()
+        self.actions.click(element=el1).perform()
         self.long_press_on_location(el2, x, y)
         self.assertEqual(target_content, sel.selected_content)
 
@@ -411,7 +413,7 @@ class AccessibleCaretSelectionModeTestCase(MarionetteTestCase):
         """Test tilt handling when carets overlap to each other.
 
         Let the two carets overlap each other. If they are set to tilted
-        successfully, tapping the tilted carets should not cause the selection
+        successfully, click on the tilted carets should not cause the selection
         to be collapsed and the carets should be draggable.
 
         """
@@ -446,12 +448,12 @@ class AccessibleCaretSelectionModeTestCase(MarionetteTestCase):
         tilt_left_margin_left = -0.39 * caret_width
 
         left_caret_left_edge_x = caret3_x + caret_margin_left + tilt_left_margin_left
-        el.tap(left_caret_left_edge_x + 2, caret3_y)
+        self.actions.move(el, left_caret_left_edge_x + 2, caret3_y).click().perform()
 
         right_caret_right_edge_x = (
             caret4_x + caret_margin_left + tilt_right_margin_left + caret_width
         )
-        el.tap(right_caret_right_edge_x - 2, caret4_y)
+        self.actions.move(el, right_caret_right_edge_x - 2, caret4_y).click().perform()
 
         # Drag the first caret back to the initial selection, the first word.
         self.actions.flick(el, caret3_x, caret3_y, caret1_x, caret1_y).perform()
@@ -765,3 +767,31 @@ class AccessibleCaretSelectionModeTestCase(MarionetteTestCase):
         ).perform()
 
         self.assertEqual("DDDDDD EEEEEE", sel.selected_content)
+
+    def test_carets_not_show_after_key_scroll_down_and_up(self):
+        self.open_test_html(self._key_scroll_html)
+        html = self.marionette.find_element(By.ID, "html")
+        sel = SelectionManager(html)
+
+        # Select "BBBBB" to get the position of the second caret. This is the
+        # position to which we are going to drag the caret in the step 3.
+        content2 = self.marionette.find_element(By.ID, self._content2_id)
+        self.long_press_on_word(content2, 0)
+        (_, _), (x2, y2) = sel.carets_location()
+
+        # Step 1: Select "AAAAA".
+        content = self.marionette.find_element(By.ID, self._content_id)
+        self.long_press_on_word(content, 0)
+        (_, _), (x1, y1) = sel.carets_location()
+
+        # Step 2: Scroll the page down and up.
+        self.actions.key_chain.send_keys(Keys.PAGE_DOWN).pause(1000).send_keys(
+            Keys.PAGE_UP
+        ).perform()
+        self.assertEqual("AAAAA", sel.selected_content)
+
+        # Step 3: The carets shouldn't show up after scrolling the page. We're
+        # attempting to drag the second caret down so that if the bug occurs, we
+        # can drag the second caret to extend the selection to "BBBBB".
+        self.actions.flick(html, x1, y1, x2, y2).perform()
+        self.assertNotEqual("AAAAA\nBBBBB", sel.selected_content)

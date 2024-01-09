@@ -109,7 +109,7 @@ add_task(async function () {
       // related to a previous test which is being destroyed.
       if (
         e.message.includes("nsIWorkerDebugger.initialize") ||
-        targetFront.isDestroyed() ||
+        workerDescriptorFront.isDestroyed() ||
         !workerDescriptorFront.name
       ) {
         info("Failed to connect to " + workerDescriptorFront.url);
@@ -125,7 +125,8 @@ add_task(async function () {
     );
     // Check that accessing descriptor#name getter doesn't throw (See Bug 1714974).
     ok(
-      workerDescriptorFront.name.includes(".js"),
+      workerDescriptorFront.name.includes(".js") ||
+        workerDescriptorFront.name.includes(".mjs"),
       `worker descriptor front holds the worker file name (${workerDescriptorFront.name})`
     );
     is(

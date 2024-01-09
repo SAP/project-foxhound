@@ -88,7 +88,6 @@ nsresult nsLookAndFeel::NativeGetColor(ColorID, ColorScheme, nscolor& aResult) {
     case ColorID::Captiontext:
     case ColorID::Menutext:
     case ColorID::Infotext:
-    case ColorID::MozMenubartext:
     case ColorID::Windowtext:
       aResult = mColorDarkText;
       break;
@@ -172,16 +171,8 @@ nsresult nsLookAndFeel::NativeGetColor(ColorID, ColorScheme, nscolor& aResult) {
     case ColorID::MozColheaderhovertext:
       aResult = mColorDarkText;
       break;
-    case ColorID::MozDragtargetzone:
-    case ColorID::MozMacChromeActive:
-    case ColorID::MozMacChromeInactive:
-      aResult = NS_RGB(0xaa, 0xaa, 0xaa);
-      break;
     case ColorID::MozMacFocusring:
       aResult = NS_RGB(0x3F, 0x98, 0xDD);
-      break;
-    case ColorID::MozMacMenushadow:
-      aResult = NS_RGB(0xA3, 0xA3, 0xA3);
       break;
     case ColorID::MozMacMenutextdisable:
       aResult = NS_RGB(0x88, 0x88, 0x88);
@@ -192,15 +183,8 @@ nsresult nsLookAndFeel::NativeGetColor(ColorID, ColorScheme, nscolor& aResult) {
     case ColorID::MozMacDisabledtoolbartext:
       aResult = NS_RGB(0x3F, 0x3F, 0x3F);
       break;
-    case ColorID::MozMacMenuselect:
-      aResult = NS_RGB(0xaa, 0xaa, 0xaa);
-      break;
-    case ColorID::MozButtondefault:
-      aResult = NS_RGB(0xDC, 0xDC, 0xDC);
-      break;
     case ColorID::MozCellhighlight:
     case ColorID::Selecteditem:
-    case ColorID::MozMacSecondaryhighlight:
       // For inactive list selection
       aResult = NS_RGB(0xaa, 0xaa, 0xaa);
       break;
@@ -288,15 +272,6 @@ nsLookAndFeel::NativeGetInt(IntID aID, int32_t& aResult) {
       break;
     case IntID::TreeScrollLinesMax:
       aResult = 3;
-      break;
-    case IntID::DWMCompositor:
-    case IntID::WindowsClassic:
-    case IntID::WindowsDefaultTheme:
-      aResult = 0;
-      res = NS_ERROR_NOT_IMPLEMENTED;
-      break;
-    case IntID::MacGraphiteTheme:
-      aResult = 0;
       break;
     case IntID::TabFocusModel:
       aResult = 1;  // default to just textboxes

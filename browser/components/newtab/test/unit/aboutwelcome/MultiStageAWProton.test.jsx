@@ -214,6 +214,21 @@ describe("MultiStageAboutWelcomeProton module", () => {
       );
     });
 
+    it("should render disabled primary button if activeMultiSelect is in disabled property", () => {
+      const SCREEN_PROPS = {
+        content: {
+          title: "test title",
+          primary_button: {
+            label: "test primary button",
+            disabled: "activeMultiSelect",
+          },
+        },
+      };
+      const wrapper = mount(<MultiStageProtonScreen {...SCREEN_PROPS} />);
+      assert.ok(wrapper.exists());
+      assert.isTrue(wrapper.find("button.primary[disabled]").exists());
+    });
+
     it("should not render a progress bar if there is 1 step", () => {
       const SCREEN_PROPS = {
         content: {
@@ -227,6 +242,18 @@ describe("MultiStageAboutWelcomeProton module", () => {
       assert.equal(wrapper.find(".steps.progress-bar").exists(), false);
     });
 
+    it("should not render a steps indicator if steps indicator is force hidden", () => {
+      const SCREEN_PROPS = {
+        content: {
+          title: "test title",
+        },
+        forceHideStepsIndicator: true,
+      };
+      const wrapper = mount(<MultiStageProtonScreen {...SCREEN_PROPS} />);
+      assert.ok(wrapper.exists());
+      assert.equal(wrapper.find(".steps").exists(), false);
+    });
+
     it("should render a progress bar if there are 2 steps", () => {
       const SCREEN_PROPS = {
         content: {
@@ -238,6 +265,37 @@ describe("MultiStageAboutWelcomeProton module", () => {
       const wrapper = mount(<MultiStageProtonScreen {...SCREEN_PROPS} />);
       assert.ok(wrapper.exists());
       assert.equal(wrapper.find(".steps.progress-bar").exists(), true);
+    });
+
+    it("should render confirmation-screen if layout property is set to inline", () => {
+      const SCREEN_PROPS = {
+        content: {
+          title: "test title",
+          layout: "inline",
+        },
+      };
+      const wrapper = mount(<MultiStageProtonScreen {...SCREEN_PROPS} />);
+      assert.ok(wrapper.exists());
+      assert.equal(wrapper.find("[layout='inline']").exists(), true);
+    });
+
+    it("should render an inline image with alt text and height property", async () => {
+      const SCREEN_PROPS = {
+        content: {
+          inline_image: {
+            url: "https://example.com/test.svg",
+            height: "auto",
+            alt_text: "test alt text",
+          },
+        },
+      };
+      const wrapper = mount(<MultiStageProtonScreen {...SCREEN_PROPS} />);
+      assert.ok(wrapper.exists());
+      const imageEl = wrapper.find(".inline-image img");
+      assert.equal(imageEl.exists(), true);
+      assert.propertyVal(imageEl.prop("style"), "height", "auto");
+      const altTextCointainer = wrapper.find(".sr-only");
+      assert.equal(altTextCointainer.contains("test alt text"), true);
     });
   });
 
@@ -279,6 +337,7 @@ describe("MultiStageAboutWelcomeProton module", () => {
     it("should have 'pin' button by default", async () => {
       const data = await prepConfig({ needPin: true }, [
         "AW_EASY_SETUP",
+        "AW_EASY_SETUP_EMBEDDED",
         "AW_WELCOME_BACK",
       ]);
       assert.propertyVal(
@@ -293,7 +352,7 @@ describe("MultiStageAboutWelcomeProton module", () => {
           needDefault: true,
           needPin: true,
         },
-        ["AW_EASY_SETUP", "AW_WELCOME_BACK"]
+        ["AW_EASY_SETUP", "AW_EASY_SETUP_EMBEDDED", "AW_WELCOME_BACK"]
       );
 
       assert.propertyVal(
@@ -303,34 +362,40 @@ describe("MultiStageAboutWelcomeProton module", () => {
       );
       assert.propertyVal(data.screens[0], "id", "AW_PIN_FIREFOX");
       assert.propertyVal(data.screens[1], "id", "AW_SET_DEFAULT");
-      assert.lengthOf(data.screens, getData().screens.length - 3);
+      assert.lengthOf(data.screens, getData().screens.length - 4);
     });
     it("should keep 'pin' and remove 'default' if already default", async () => {
       const data = await prepConfig({ needPin: true }, [
         "AW_EASY_SETUP",
+        "AW_EASY_SETUP_EMBEDDED",
         "AW_WELCOME_BACK",
       ]);
 
       assert.propertyVal(data.screens[0], "id", "AW_PIN_FIREFOX");
       assert.propertyVal(data.screens[1], "id", "AW_IMPORT_SETTINGS");
-      assert.lengthOf(data.screens, getData().screens.length - 4);
+      assert.lengthOf(data.screens, getData().screens.length - 5);
     });
     it("should switch to 'default' if already pinned", async () => {
       const data = await prepConfig({ needDefault: true }, [
         "AW_EASY_SETUP",
+        "AW_EASY_SETUP_EMBEDDED",
         "AW_WELCOME_BACK",
       ]);
 
       assert.propertyVal(data.screens[0], "id", "AW_ONLY_DEFAULT");
       assert.propertyVal(data.screens[1], "id", "AW_IMPORT_SETTINGS");
-      assert.lengthOf(data.screens, getData().screens.length - 4);
+      assert.lengthOf(data.screens, getData().screens.length - 5);
     });
     it("should switch to 'start' if already pinned and default", async () => {
-      const data = await prepConfig({}, ["AW_EASY_SETUP", "AW_WELCOME_BACK"]);
+      const data = await prepConfig({}, [
+        "AW_EASY_SETUP",
+        "AW_EASY_SETUP_EMBEDDED",
+        "AW_WELCOME_BACK",
+      ]);
 
       assert.propertyVal(data.screens[0], "id", "AW_GET_STARTED");
       assert.propertyVal(data.screens[1], "id", "AW_IMPORT_SETTINGS");
-      assert.lengthOf(data.screens, getData().screens.length - 4);
+      assert.lengthOf(data.screens, getData().screens.length - 5);
     });
     it("should have a FxA button", async () => {
       const data = await prepConfig({}, ["AW_WELCOME_BACK"]);
@@ -345,31 +410,6 @@ describe("MultiStageAboutWelcomeProton module", () => {
 
       assert.property(data, "skipFxA", true);
       assert.notProperty(data.screens[0].content, "secondary_button_top");
-    });
-    it("should remove the caption if deleteIfNotEn is true", async () => {
-      sandbox.stub(global.Services.locale, "appLocaleAsBCP47").value("de");
-
-      const data = await prepConfig({
-        id: "DEFAULT_ABOUTWELCOME_PROTON",
-        template: "multistage",
-        transitions: true,
-        background_url:
-          "chrome://activity-stream/content/data/content/assets/confetti.svg",
-        screens: [
-          {
-            id: "AW_PIN_FIREFOX",
-            content: {
-              position: "corner",
-              help_text: {
-                deleteIfNotEn: true,
-                string_id: "mr1-onboarding-welcome-image-caption",
-              },
-            },
-          },
-        ],
-      });
-
-      assert.notProperty(data.screens[0].content, "help_text");
     });
   });
 

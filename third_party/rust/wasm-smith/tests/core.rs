@@ -130,8 +130,14 @@ fn smoke_test_imports_config() {
                 if let wasmparser::Payload::TypeSection(rdr) = payload {
                     // Gather the signature types to later check function types against.
                     for ty in rdr {
-                        match ty.unwrap() {
-                            wasmparser::Type::Func(ft) => sig_types.push(ft),
+                        match ty.unwrap().structural_type {
+                            wasmparser::StructuralType::Func(ft) => sig_types.push(ft),
+                            wasmparser::StructuralType::Array(_) => {
+                                unimplemented!("Array types are not supported yet.")
+                            }
+                            wasmparser::StructuralType::Struct(_) => {
+                                unimplemented!("Struct types are not supported yet.")
+                            }
                         }
                     }
                 } else if let wasmparser::Payload::ImportSection(rdr) = payload {
@@ -302,6 +308,7 @@ fn parser_features_from_config(config: &impl Config) -> WasmFeatures {
         component_model: false,
         function_references: false,
         memory_control: false,
+        gc: false,
     }
 }
 

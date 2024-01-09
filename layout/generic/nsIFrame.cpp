@@ -521,19 +521,18 @@ static bool IsFontSizeInflationContainer(nsIFrame* aFrame,
 
   LayoutFrameType frameType = aFrame->Type();
   bool isInline =
-      (nsStyleDisplay::IsInlineFlow(aFrame->GetDisplay()) ||
-       RubyUtils::IsRubyBox(frameType) ||
-       (aStyleDisplay->IsFloatingStyle() &&
-        frameType == LayoutFrameType::Letter) ||
-       // Given multiple frames for the same node, only the
-       // outer one should be considered a container.
-       // (Important, e.g., for nsSelectsAreaFrame.)
-       (aFrame->GetParent()->GetContent() == content) ||
-       (content &&
-        // Form controls shouldn't become inflation containers.
-        (content->IsAnyOfHTMLElements(
-            nsGkAtoms::option, nsGkAtoms::optgroup, nsGkAtoms::select,
-            nsGkAtoms::input, nsGkAtoms::button, nsGkAtoms::textarea))));
+      aFrame->GetDisplay().IsInlineFlow() || RubyUtils::IsRubyBox(frameType) ||
+      (aStyleDisplay->IsFloatingStyle() &&
+       frameType == LayoutFrameType::Letter) ||
+      // Given multiple frames for the same node, only the
+      // outer one should be considered a container.
+      // (Important, e.g., for nsSelectsAreaFrame.)
+      (aFrame->GetParent()->GetContent() == content) ||
+      (content &&
+       // Form controls shouldn't become inflation containers.
+       (content->IsAnyOfHTMLElements(nsGkAtoms::option, nsGkAtoms::optgroup,
+                                     nsGkAtoms::select, nsGkAtoms::input,
+                                     nsGkAtoms::button, nsGkAtoms::textarea)));
   NS_ASSERTION(!aFrame->IsFrameOfType(nsIFrame::eLineParticipant) || isInline ||
                    // br frames and mathml frames report being line
                    // participants even when their position or display is
@@ -696,18 +695,6 @@ void nsIFrame::Init(nsIContent* aContent, nsContainerFrame* aParent,
     // If 'transform' dynamically changes, RestyleManager takes care of
     // updating this bit.
     AddStateBits(NS_FRAME_MAY_BE_TRANSFORMED);
-  }
-
-  if (disp->IsContainLayout() && GetContainSizeAxes().IsBoth()) {
-    // In general, frames that have contain:layout+size can be reflow roots.
-    // (One exception: table-wrapper frames don't work well as reflow roots,
-    // because their inner-table ReflowInput init path tries to reuse & deref
-    // the wrapper's containing block's reflow input, which may be null if we
-    // initiate reflow from the table-wrapper itself.)
-    //
-    // Changes to `contain` force frame reconstructions, so this bit can be set
-    // for the whole lifetime of this frame.
-    AddStateBits(NS_FRAME_REFLOW_ROOT);
   }
 
   if (nsLayoutUtils::FontSizeInflationEnabled(PresContext()) ||
@@ -1094,6 +1081,12 @@ void nsIFrame::MarkNeedsDisplayItemRebuild() {
     return;
   }
 
+#ifdef ACCESSIBILITY
+  if (nsAccessibilityService* accService = GetAccService()) {
+    accService->NotifyOfPossibleBoundsChange(PresShell(), mContent);
+  }
+#endif
+
   nsIFrame* rootFrame = PresShell()->GetRootFrame();
 
   if (rootFrame->IsFrameModified()) {
@@ -1390,17 +1383,11 @@ void nsIFrame::DidSetComputedStyle(ComputedStyle* aOldComputedStyle) {
                         : nullptr;
   const StyleOffsetPath& newPath = StyleDisplay()->mOffsetPath;
   if (!oldPath || *oldPath != newPath) {
+    // FIXME: Bug 1837042. Cache all basic shapes.
     if (newPath.IsPath()) {
-      // Here we only need to build a valid path for motion path, so
-      // using the default values of stroke-width, stoke-linecap, and fill-rule
-      // is fine for now because what we want is to get the point and its normal
-      // vector along the path, instead of rendering it.
-      RefPtr<gfx::PathBuilder> builder =
-          gfxPlatform::GetPlatform()
-              ->ScreenReferenceDrawTarget()
-              ->CreatePathBuilder(gfx::FillRule::FILL_WINDING);
+      RefPtr<gfx::PathBuilder> builder = MotionPathUtils::GetPathBuilder();
       RefPtr<gfx::Path> path =
-          MotionPathUtils::BuildPath(newPath.AsPath(), builder);
+          MotionPathUtils::BuildSVGPath(newPath.AsSVGPathData(), builder);
       if (path) {
         // The newPath could be path('') (i.e. empty path), so its gfx path
         // could be nullptr, and so we only set property for a non-empty path.
@@ -1437,8 +1424,8 @@ void nsIFrame::HandleLastRememberedSize() {
   }
   const WritingMode wm = GetWritingMode();
   const nsStylePosition* stylePos = StylePosition();
-  bool canRememberBSize = stylePos->ContainIntrinsicBSize(wm).IsAutoLength();
-  bool canRememberISize = stylePos->ContainIntrinsicISize(wm).IsAutoLength();
+  bool canRememberBSize = stylePos->ContainIntrinsicBSize(wm).HasAuto();
+  bool canRememberISize = stylePos->ContainIntrinsicISize(wm).HasAuto();
   if (!canRememberBSize) {
     element->RemoveLastRememberedBSize();
   }
@@ -2403,7 +2390,7 @@ already_AddRefed<ComputedStyle> nsIFrame::ComputeSelectionStyle(
   }
   RefPtr<ComputedStyle> pseudoStyle =
       PresContext()->StyleSet()->ProbePseudoElementStyle(
-          *element, PseudoStyleType::selection, Style());
+          *element, PseudoStyleType::selection, nullptr, Style());
   if (!pseudoStyle) {
     return nullptr;
   }
@@ -2421,13 +2408,13 @@ already_AddRefed<ComputedStyle> nsIFrame::ComputeSelectionStyle(
 }
 
 already_AddRefed<ComputedStyle> nsIFrame::ComputeHighlightSelectionStyle(
-    const nsAtom* aHighlightName) {
+    nsAtom* aHighlightName) {
   Element* element = FindElementAncestorForMozSelection(GetContent());
   if (!element) {
     return nullptr;
   }
-  return PresContext()->StyleSet()->ProbeHighlightPseudoElementStyle(
-      *element, aHighlightName, Style());
+  return PresContext()->StyleSet()->ProbePseudoElementStyle(
+      *element, PseudoStyleType::highlight, aHighlightName, Style());
 }
 
 template <typename SizeOrMaxSize>
@@ -2438,14 +2425,9 @@ static inline bool IsIntrinsicKeyword(const SizeOrMaxSize& aSize) {
 }
 
 bool nsIFrame::CanBeDynamicReflowRoot() const {
-  if (!StaticPrefs::layout_dynamic_reflow_roots_enabled()) {
-    return false;
-  }
-
-  auto& display = *StyleDisplay();
-  if (IsFrameOfType(nsIFrame::eLineParticipant) ||
-      nsStyleDisplay::IsRubyDisplayType(display.mDisplay) ||
-      display.DisplayOutside() == StyleDisplayOutside::InternalTable ||
+  const auto& display = *StyleDisplay();
+  if (IsFrameOfType(nsIFrame::eLineParticipant) || display.mDisplay.IsRuby() ||
+      display.IsInnerTableStyle() ||
       display.DisplayInside() == StyleDisplayInside::Table) {
     // We have a display type where 'width' and 'height' don't actually set the
     // width or height (i.e., the size depends on content).
@@ -2454,12 +2436,35 @@ bool nsIFrame::CanBeDynamicReflowRoot() const {
     return false;
   }
 
+  // In general, frames that have contain:layout+size can be reflow roots.
+  // (One exception: table-wrapper frames don't work well as reflow roots,
+  // because their inner-table ReflowInput init path tries to reuse & deref
+  // the wrapper's containing block's reflow input, which may be null if we
+  // initiate reflow from the table-wrapper itself.)
+  //
+  // Changes to `contain` force frame reconstructions, so we used to use
+  // NS_FRAME_REFLOW_ROOT, this bit could be set for the whole lifetime of
+  // this frame. But after the support of `content-visibility: auto` which
+  // is with contain layout + size when it's not relevant to user, and only
+  // with contain layout when it is relevant. The frame does not reconstruct
+  // when the relevancy changes. So we use NS_FRAME_DYNAMIC_REFLOW_ROOT instead.
+  //
+  // We place it above the pref check on purpose, to make sure it works for
+  // containment even with the pref disabled.
+  if (display.IsContainLayout() && GetContainSizeAxes().IsBoth()) {
+    return true;
+  }
+
+  if (!StaticPrefs::layout_dynamic_reflow_roots_enabled()) {
+    return false;
+  }
+
   // We can't serve as a dynamic reflow root if our used 'width' and 'height'
   // might be influenced by content.
   //
   // FIXME: For display:block, we should probably optimize inline-size: auto.
   // FIXME: Other flex and grid cases?
-  auto& pos = *StylePosition();
+  const auto& pos = *StylePosition();
   const auto& width = pos.mWidth;
   const auto& height = pos.mHeight;
   if (!width.IsLengthPercentage() || width.HasPercent() ||
@@ -6754,7 +6759,7 @@ void nsIFrame::DidReflow(nsPresContext* aPresContext,
   NS_FRAME_TRACE(NS_FRAME_TRACE_CALLS, ("nsIFrame::DidReflow"));
 
   if (IsHiddenByContentVisibilityOfInFlowParentForLayout()) {
-    RemoveStateBits(NS_FRAME_IN_REFLOW | NS_FRAME_FIRST_REFLOW);
+    RemoveStateBits(NS_FRAME_IN_REFLOW);
     return;
   }
 
@@ -6782,12 +6787,6 @@ void nsIFrame::DidReflow(nsPresContext* aPresContext,
   }
 
   aPresContext->ReflowedFrame();
-
-#ifdef ACCESSIBILITY
-  if (nsAccessibilityService* accService = GetAccService()) {
-    accService->NotifyOfPossibleBoundsChange(PresShell(), mContent);
-  }
-#endif
 }
 
 void nsIFrame::FinishReflowWithAbsoluteFrames(nsPresContext* aPresContext,
@@ -6902,8 +6901,11 @@ bool nsIFrame::HidesContentForLayout() const {
 
 bool nsIFrame::IsHiddenByContentVisibilityOfInFlowParentForLayout() const {
   const auto* parent = GetInFlowParent();
+  // The anonymous children owned by parent are important for properly sizing
+  // their parents.
   return parent && parent->HidesContentForLayout() &&
-         !(Style()->IsAnonBox() && !IsFrameOfType(nsIFrame::eLineParticipant));
+         !(parent->HasAnyStateBits(NS_FRAME_OWNS_ANON_BOXES) &&
+           Style()->IsAnonBox());
 }
 
 bool nsIFrame::IsHiddenByContentVisibilityOnAnyAncestor(
@@ -6912,9 +6914,10 @@ bool nsIFrame::IsHiddenByContentVisibilityOnAnyAncestor(
     return false;
   }
 
-  bool isAnonymousBlock =
-      Style()->IsAnonBox() && !IsFrameOfType(nsIFrame::eLineParticipant);
-  for (nsIFrame* cur = GetInFlowParent(); cur; cur = cur->GetInFlowParent()) {
+  auto* parent = GetInFlowParent();
+  bool isAnonymousBlock = Style()->IsAnonBox() && parent &&
+                          parent->HasAnyStateBits(NS_FRAME_OWNS_ANON_BOXES);
+  for (nsIFrame* cur = parent; cur; cur = cur->GetInFlowParent()) {
     if (!isAnonymousBlock && cur->HidesContent(aInclude)) {
       return true;
     }
@@ -7724,11 +7727,6 @@ void nsIFrame::SetPosition(const nsPoint& aPt) {
   }
   mRect.MoveTo(aPt);
   MarkNeedsDisplayItemRebuild();
-#ifdef ACCESSIBILITY
-  if (nsAccessibilityService* accService = GetAccService()) {
-    accService->NotifyOfPossibleBoundsChange(PresShell(), mContent);
-  }
-#endif
 }
 
 void nsIFrame::MovePositionBy(const nsPoint& aTranslation) {
@@ -8314,7 +8312,7 @@ nsresult nsIFrame::MakeFrameName(const nsAString& aType,
     }
     if (IsSubDocumentFrame()) {
       nsAutoString src;
-      mContent->AsElement()->GetAttr(kNameSpaceID_None, nsGkAtoms::src, src);
+      mContent->AsElement()->GetAttr(nsGkAtoms::src, src);
       buf.AppendLiteral(" src=");
       buf.Append(src);
     }
@@ -9885,16 +9883,17 @@ static void ComputeAndIncludeOutlineArea(nsIFrame* aFrame,
                                   innerRect);
   }
 
-  const nscoord offset = outline->mOutlineOffset.ToAppUnits();
   nsRect outerRect(innerRect);
+  outerRect.Inflate(outline->EffectiveOffsetFor(outerRect));
+
   if (outline->mOutlineStyle.IsAuto()) {
     nsPresContext* pc = aFrame->PresContext();
-    outerRect.Inflate(offset);
+
     pc->Theme()->GetWidgetOverflow(pc->DeviceContext(), aFrame,
                                    StyleAppearance::FocusOutline, &outerRect);
   } else {
-    nscoord width = outline->GetOutlineWidth();
-    outerRect.Inflate(width + offset);
+    const nscoord width = outline->GetOutlineWidth();
+    outerRect.Inflate(width);
   }
 
   nsRect& vo = aOverflowAreas.InkOverflow();

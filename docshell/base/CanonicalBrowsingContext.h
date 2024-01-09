@@ -37,6 +37,7 @@ class nsITimer;
 
 namespace mozilla {
 enum class CallState;
+class BounceTrackingState;
 
 namespace embedding {
 class PrintData;
@@ -201,6 +202,9 @@ class CanonicalBrowsingContext final : public BrowsingContext {
   static uint32_t CountSiteOrigins(
       GlobalObject& aGlobal,
       const Sequence<mozilla::OwningNonNull<BrowsingContext>>& aRoots);
+
+  // Return true if a private browsing session is active.
+  static bool IsPrivateBrowsingActive();
 
   // This function would propogate the action to its all child browsing contexts
   // in content processes.
@@ -380,6 +384,8 @@ class CanonicalBrowsingContext final : public BrowsingContext {
   void RecomputeAppWindowVisibility();
 
   already_AddRefed<nsISHEntry> GetMostRecentLoadingSessionHistoryEntry();
+
+  already_AddRefed<BounceTrackingState> GetBounceTrackingState();
 
  protected:
   // Called when the browsing context is being discarded.

@@ -2,8 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
-
 const KEY_DATA = {
   " ": { code: "Space" },
   "!": { code: "Digit1", shifted: true },
@@ -178,7 +176,7 @@ const KEY_DATA = {
   "\uE03B": { code: "F11", key: "F11", printable: false },
   "\uE03C": { code: "F12", key: "F12", printable: false },
   "\uE03D": {
-    code: "OSLeft",
+    code: "MetaLeft",
     key: "Meta",
     location: 1,
     modifier: "metaKey",
@@ -207,7 +205,7 @@ const KEY_DATA = {
     printable: false,
   },
   "\uE053": {
-    code: "OSRight",
+    code: "MetaRight",
     key: "Meta",
     location: 2,
     modifier: "metaKey",
@@ -287,7 +285,7 @@ const KEY_DATA = {
 
 const lazy = {};
 
-XPCOMUtils.defineLazyGetter(lazy, "SHIFT_DATA", () => {
+ChromeUtils.defineLazyGetter(lazy, "SHIFT_DATA", () => {
   // Initalize the shift mapping
   const shiftData = new Map();
   const byCode = new Map();

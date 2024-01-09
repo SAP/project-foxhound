@@ -7,7 +7,7 @@
 #include "CachedTableAccessible.h"
 
 #include "AccIterator.h"
-#include "DocAccessibleParent.h"
+#include "HTMLTableAccessible.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/UniquePtr.h"
@@ -15,8 +15,6 @@
 #include "nsIAccessiblePivot.h"
 #include "Pivot.h"
 #include "RemoteAccessible.h"
-#include "TableAccessible.h"
-#include "TableCellAccessible.h"
 
 namespace mozilla::a11y {
 
@@ -216,44 +214,14 @@ Accessible* CachedTableAccessible::CellAt(uint32_t aRowIdx, uint32_t aColIdx) {
   return mCells[cellIdx].Acc(mAcc);
 }
 
-void CachedTableAccessible::SelectCol(uint32_t aColIdx) {
-  if (LocalAccessible* localAcc = mAcc->AsLocal()) {
-    TableAccessible* table = localAcc->AsTable();
-    table->SelectCol(aColIdx);
-  }
-  // XXX Implement support for RemoteAccessible.
-}
-
-void CachedTableAccessible::UnselectCol(uint32_t aColIdx) {
-  if (LocalAccessible* localAcc = mAcc->AsLocal()) {
-    TableAccessible* table = localAcc->AsTable();
-    table->UnselectCol(aColIdx);
-  }
-  // XXX Implement support for RemoteAccessible.
-}
-
-void CachedTableAccessible::SelectRow(uint32_t aRowIdx) {
-  if (LocalAccessible* localAcc = mAcc->AsLocal()) {
-    TableAccessible* table = localAcc->AsTable();
-    table->SelectRow(aRowIdx);
-  }
-  // XXX Implement support for RemoteAccessible.
-}
-
-void CachedTableAccessible::UnselectRow(uint32_t aRowIdx) {
-  if (LocalAccessible* localAcc = mAcc->AsLocal()) {
-    TableAccessible* table = localAcc->AsTable();
-    table->UnselectRow(aRowIdx);
-  }
-  // XXX Implement support for RemoteAccessible.
-}
-
 bool CachedTableAccessible::IsProbablyLayoutTable() {
   if (RemoteAccessible* remoteAcc = mAcc->AsRemote()) {
     return remoteAcc->TableIsProbablyForLayout();
   }
-  TableAccessible* localTable = mAcc->AsLocal()->AsTable();
-  return localTable->IsProbablyLayoutTable();
+  if (auto* localTable = HTMLTableAccessible::GetFrom(mAcc->AsLocal())) {
+    return localTable->IsProbablyLayoutTable();
+  }
+  return false;
 }
 
 /* static */
@@ -261,8 +229,7 @@ CachedTableCellAccessible* CachedTableCellAccessible::GetFrom(
     Accessible* aAcc) {
   MOZ_ASSERT(aAcc->IsTableCell());
   for (Accessible* parent = aAcc; parent; parent = parent->Parent()) {
-    if (auto* table =
-            static_cast<CachedTableAccessible*>(parent->AsTableBase())) {
+    if (auto* table = static_cast<CachedTableAccessible*>(parent->AsTable())) {
       if (auto cellIdx = table->mAccToCellIdx.Lookup(aAcc)) {
         return &table->mCells[*cellIdx];
       }
@@ -278,12 +245,11 @@ Accessible* CachedTableCellAccessible::Acc(Accessible* aTableAcc) const {
   return acc;
 }
 
-TableAccessibleBase* CachedTableCellAccessible::Table() const {
+TableAccessible* CachedTableCellAccessible::Table() const {
   for (const Accessible* acc = mAcc; acc; acc = acc->Parent()) {
     // Since the caller has this cell, the table is already created, so it's
     // okay to ignore the const restriction here.
-    if (TableAccessibleBase* table =
-            const_cast<Accessible*>(acc)->AsTableBase()) {
+    if (TableAccessible* table = const_cast<Accessible*>(acc)->AsTable()) {
       return table;
     }
   }
@@ -294,18 +260,16 @@ uint32_t CachedTableCellAccessible::ColExtent() const {
   if (RemoteAccessible* remoteAcc = mAcc->AsRemote()) {
     if (remoteAcc->mCachedFields) {
       if (auto colSpan = remoteAcc->mCachedFields->GetAttribute<int32_t>(
-              nsGkAtoms::colspan)) {
+              CacheKey::ColSpan)) {
         MOZ_ASSERT(*colSpan > 0);
         return *colSpan;
       }
     }
-  } else if (LocalAccessible* localAcc = mAcc->AsLocal()) {
+  } else if (auto* cell = HTMLTableCellAccessible::GetFrom(mAcc->AsLocal())) {
     // For HTML table cells, we must use the HTMLTableCellAccessible
     // GetColExtent method rather than using the DOM attributes directly.
     // This is because of things like rowspan="0" which depend on knowing
     // about thead, tbody, etc., which is info we don't have in the a11y tree.
-    TableCellAccessible* cell = localAcc->AsTableCell();
-    MOZ_ASSERT(cell);
     uint32_t colExtent = cell->ColExtent();
     MOZ_ASSERT(colExtent > 0);
     if (colExtent > 0) {
@@ -319,18 +283,16 @@ uint32_t CachedTableCellAccessible::RowExtent() const {
   if (RemoteAccessible* remoteAcc = mAcc->AsRemote()) {
     if (remoteAcc->mCachedFields) {
       if (auto rowSpan = remoteAcc->mCachedFields->GetAttribute<int32_t>(
-              nsGkAtoms::rowspan)) {
+              CacheKey::RowSpan)) {
         MOZ_ASSERT(*rowSpan > 0);
         return *rowSpan;
       }
     }
-  } else if (LocalAccessible* localAcc = mAcc->AsLocal()) {
+  } else if (auto* cell = HTMLTableCellAccessible::GetFrom(mAcc->AsLocal())) {
     // For HTML table cells, we must use the HTMLTableCellAccessible
     // GetRowExtent method rather than using the DOM attributes directly.
     // This is because of things like rowspan="0" which depend on knowing
     // about thead, tbody, etc., which is info we don't have in the a11y tree.
-    TableCellAccessible* cell = localAcc->AsTableCell();
-    MOZ_ASSERT(cell);
     uint32_t rowExtent = cell->RowExtent();
     MOZ_ASSERT(rowExtent > 0);
     if (rowExtent > 0) {
@@ -345,7 +307,7 @@ UniquePtr<AccIterable> CachedTableCellAccessible::GetExplicitHeadersIterator() {
     if (remoteAcc->mCachedFields) {
       if (auto headers =
               remoteAcc->mCachedFields->GetAttribute<nsTArray<uint64_t>>(
-                  nsGkAtoms::headers)) {
+                  CacheKey::CellHeaders)) {
         return MakeUnique<RemoteAccIterator>(*headers, remoteAcc->Document());
       }
     }

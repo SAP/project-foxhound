@@ -136,7 +136,6 @@ function assertExpectedPrefValues(pref, branch, expected, visible, msg) {
     }have a value ${msg}`;
   }
 
-  let prefBranch;
   switch (branch) {
     case USER:
       Assert.equal(
@@ -144,7 +143,6 @@ function assertExpectedPrefValues(pref, branch, expected, visible, msg) {
         hasBranchValue,
         hasValueMsg(hasBranchValue)
       );
-      prefBranch = Services.prefs;
       break;
 
     case DEFAULT:
@@ -153,7 +151,6 @@ function assertExpectedPrefValues(pref, branch, expected, visible, msg) {
         hasBranchValue,
         hasValueMsg(hasBranchValue)
       );
-      prefBranch = Services.prefs.getDefaultBranch(null);
       break;
 
     default:
@@ -162,7 +159,7 @@ function assertExpectedPrefValues(pref, branch, expected, visible, msg) {
 
   if (hasBranchValue) {
     Assert.equal(
-      prefBranch.getStringPref(pref),
+      PrefUtils.getPref(pref, { branch }),
       expected,
       `Expected pref "${pref} on the ${branch} branch to be ${JSON.stringify(
         expected
@@ -172,7 +169,8 @@ function assertExpectedPrefValues(pref, branch, expected, visible, msg) {
 
   if (hasVisibleValue) {
     Assert.equal(
-      Services.prefs.getStringPref(pref),
+      PrefUtils.getPref(pref, { branch: USER }) ??
+        PrefUtils.getPref(pref, { branch: DEFAULT }),
       visible,
       `Expected pref "${pref}" to be ${JSON.stringify(visible)} ${msg}`
     );
@@ -1657,6 +1655,14 @@ add_task(async function test_restorePrefs_experimentAndRollout() {
 });
 
 add_task(async function test_prefChange() {
+  TelemetryEvents.init();
+
+  const LEGACY_FILTER = {
+    category: "normandy",
+    method: "unenroll",
+    object: "nimbus_experiment",
+  };
+
   /**
    * Test that pref tampering causes unenrollment.
    *
@@ -1711,6 +1717,12 @@ add_task(async function test_prefChange() {
     expectedDefault = null,
     expectedUser = null,
   }) {
+    Services.fog.testResetFOG();
+    Services.telemetry.snapshotEvents(
+      Ci.nsITelemetry.DATASET_PRERELEASE_CHANNELS,
+      /* clear = */ true
+    );
+
     const store = ExperimentFakes.store();
     const manager = ExperimentFakes.manager(store);
 
@@ -1798,9 +1810,52 @@ add_task(async function test_prefChange() {
           `An enrollment of kind ${enrollmentKind} should exist`
         );
         Assert.ok(!enrollment.active, "It should not be active");
+        Assert.equal(
+          enrollment.unenrollReason,
+          "changed-pref",
+          "The unenrollment reason should be changed-pref"
+        );
 
         store._deleteForTests(slug);
       }
+    }
+
+    const gleanEvents = Glean.nimbusEvents.unenrollment.testGetValue();
+    const expectedLegacyEvents = Object.keys(configs)
+      .filter(enrollmentKind => !expectedEnrollments.includes(enrollmentKind))
+      .map(enrollmentKind => ({
+        value: slugs[enrollmentKind],
+        extra: {
+          reason: "changed-pref",
+          changedPref: pref,
+        },
+      }));
+
+    TelemetryTestUtils.assertEvents(expectedLegacyEvents, LEGACY_FILTER);
+
+    if (expectedLegacyEvents.length) {
+      const processedGleanEvents = gleanEvents.map(event => ({
+        reason: event.extra.reason,
+        experiment: event.extra.experiment,
+        changed_pref: event.extra.changed_pref,
+      }));
+      const expectedGleanEvents = expectedLegacyEvents.map(event => ({
+        experiment: event.value,
+        reason: event.extra.reason,
+        changed_pref: event.extra.changedPref,
+      }));
+
+      Assert.deepEqual(
+        processedGleanEvents,
+        expectedGleanEvents,
+        "Glean should have the expected unenrollment events"
+      );
+    } else {
+      Assert.equal(
+        gleanEvents,
+        undefined,
+        "Glean should have no unenrollment events"
+      );
     }
 
     for (const enrollmentKind of expectedEnrollments) {
@@ -3115,4 +3170,159 @@ add_task(async function test_restorePrefs_manifestChanged() {
     Ci.nsITelemetry.DATASET_PRERELEASE_CHANNELS,
     /* clear = */ true
   );
+});
+
+add_task(async function test_nested_prefs_enroll_both() {
+  // See bugs 1850127 and 1850120.
+  const feature = new ExperimentFeature("test-set-pref-nested", {
+    description: "Nested prefs",
+    owner: "test@test.test",
+    hasExposure: false,
+    isEarlyStartup: false,
+    variables: {
+      enabled: {
+        type: "boolean",
+        description: "enable this feature",
+        setPref: "nimbus.test-only.nested",
+      },
+      setting: {
+        type: "string",
+        description: "a nested setting",
+        setPref: "nimbus.test-only.nested.setting",
+      },
+    },
+  });
+
+  const cleanupFeature = ExperimentTestUtils.addTestFeatures(feature);
+
+  async function doTest(enrollmentOrder) {
+    PrefUtils.setPref("nimbus.test-only.nested", false, { branch: DEFAULT });
+    PrefUtils.setPref("nimbus.test-only.nested.setting", "default", {
+      branch: DEFAULT,
+    });
+
+    const rollout = ExperimentFakes.recipe("nested-rollout", {
+      isRollout: true,
+      branches: [
+        {
+          ...ExperimentFakes.recipe.branches[0],
+          features: [
+            {
+              featureId: feature.featureId,
+              value: {
+                enabled: true,
+              },
+            },
+          ],
+        },
+      ],
+    });
+
+    const experiment = ExperimentFakes.recipe("nested-experiment", {
+      branches: [
+        {
+          ...ExperimentFakes.recipe.branches[0],
+          features: [
+            {
+              featureId: feature.featureId,
+              value: {
+                setting: "custom",
+              },
+            },
+          ],
+        },
+      ],
+    });
+
+    const store = ExperimentFakes.store();
+    const manager = ExperimentFakes.manager(store);
+
+    await manager.onStartup();
+    await assertEmptyStore(store);
+
+    const recipes = {
+      [ROLLOUT]: rollout,
+      [EXPERIMENT]: experiment,
+    };
+
+    for (const kind of enrollmentOrder) {
+      await manager.enroll(recipes[kind], "test");
+    }
+
+    {
+      const enrollments = store
+        .getAll()
+        .filter(e => e.active)
+        .map(e => e.slug);
+      Assert.deepEqual(
+        enrollments.sort(),
+        [experiment.slug, rollout.slug].sort(),
+        "Experiment and rollout should be enrolled"
+      );
+    }
+
+    assertExpectedPrefValues(
+      "nimbus.test-only.nested",
+      DEFAULT,
+      true,
+      true,
+      "after enrollment"
+    );
+    assertExpectedPrefValues(
+      "nimbus.test-only.nested.setting",
+      DEFAULT,
+      "custom",
+      "custom",
+      "after enrollment"
+    );
+
+    manager.unenroll(experiment.slug);
+
+    {
+      const enrollments = store
+        .getAll()
+        .filter(e => e.active)
+        .map(e => e.slug);
+      Assert.deepEqual(
+        enrollments.sort(),
+        [rollout.slug].sort(),
+        "Rollout should still be enrolled"
+      );
+    }
+
+    assertExpectedPrefValues(
+      "nimbus.test-only.nested",
+      DEFAULT,
+      true,
+      true,
+      "After experiment unenrollment"
+    );
+
+    assertExpectedPrefValues(
+      "nimbus.test-only.nested.setting",
+      DEFAULT,
+      "default",
+      "default",
+      "After experiment unenrollment"
+    );
+
+    manager.unenroll(rollout.slug);
+
+    await assertEmptyStore(store, { cleanup: true });
+  }
+
+  info(
+    "Test we can enroll in both a rollout and experiment for a feature with nested pref setting"
+  );
+  await doTest([ROLLOUT, EXPERIMENT]);
+  info(
+    "Test we can unenroll from just an experiment for a feature with nested pref setting"
+  );
+  await doTest([EXPERIMENT, ROLLOUT]);
+
+  cleanupFeature();
+  PrefUtils.setPref("nimbus.test-only.nested", null, { branch: DEFAULT });
+  PrefUtils.setPref("nimbus.test-only.nested.setting", null, {
+    branch: DEFAULT,
+  });
 });

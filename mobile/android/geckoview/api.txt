@@ -49,9 +49,11 @@ import java.io.InputStream;
 import java.lang.Boolean;
 import java.lang.CharSequence;
 import java.lang.Class;
+import java.lang.Deprecated;
 import java.lang.Double;
 import java.lang.Exception;
 import java.lang.Float;
+import java.lang.FunctionalInterface;
 import java.lang.Integer;
 import java.lang.Long;
 import java.lang.Object;
@@ -59,6 +61,7 @@ import java.lang.Runnable;
 import java.lang.RuntimeException;
 import java.lang.SafeVarargs;
 import java.lang.String;
+import java.lang.Thread;
 import java.lang.Throwable;
 import java.lang.Void;
 import java.lang.annotation.Documented;
@@ -80,6 +83,9 @@ import org.mozilla.geckoview.Autofill;
 import org.mozilla.geckoview.CompositorController;
 import org.mozilla.geckoview.ContentBlocking;
 import org.mozilla.geckoview.ContentBlockingController;
+import org.mozilla.geckoview.CrashHandler;
+import org.mozilla.geckoview.DeprecationSchedule;
+import org.mozilla.geckoview.ExperimentDelegate;
 import org.mozilla.geckoview.GeckoDisplay;
 import org.mozilla.geckoview.GeckoResult;
 import org.mozilla.geckoview.GeckoRuntime;
@@ -614,6 +620,26 @@ package org.mozilla.geckoview {
   @Retention(value=RetentionPolicy.SOURCE) public static interface ContentBlockingController.LogEntry.BlockingData.LogEvent {
   }
 
+  @FunctionalInterface public class CrashHandler implements Thread.UncaughtExceptionHandler {
+    ctor public CrashHandler(@Nullable Class<? extends android.app.Service>);
+    ctor public CrashHandler(@Nullable Context, @Nullable Class<? extends android.app.Service>);
+    ctor public CrashHandler(Thread, Class<? extends android.app.Service>);
+    ctor public CrashHandler(@Nullable Thread, Context, Class<? extends android.app.Service>);
+    method @AnyThread @NonNull public static CrashHandler createDefaultCrashHandler(@NonNull Context);
+    method @AnyThread @Nullable public Context getAppContext();
+    method @AnyThread @Nullable public String getAppPackageName();
+    method @AnyThread @NonNull public byte[] getCrashDump(@Nullable Thread, @Nullable Throwable);
+    method @AnyThread @NonNull public Bundle getCrashExtras(@NonNull Thread, @NonNull Throwable);
+    method @AnyThread @NonNull public static String getExceptionStackTrace(@NonNull Throwable);
+    method @AnyThread @NonNull public static Throwable getRootException(@NonNull Throwable);
+    method @AnyThread @NonNull public String getServerUrl(@NonNull Bundle);
+    method @AnyThread public boolean launchCrashReporter(@NonNull String, @NonNull String);
+    method @AnyThread public static void logException(@NonNull Thread, @NonNull Throwable);
+    method @AnyThread public boolean reportException(@NonNull Thread, @NonNull Throwable);
+    method @AnyThread public static void terminateProcess();
+    method @AnyThread public void unregister();
+  }
+
   public class CrashReporter {
     ctor public CrashReporter();
     method @AnyThread @NonNull public static GeckoResult<String> sendCrashReport(@NonNull Context, @NonNull Intent, @NonNull String);
@@ -625,6 +651,25 @@ package org.mozilla.geckoview {
   @Documented @Retention(value=RetentionPolicy.RUNTIME) @Target(value={ElementType.CONSTRUCTOR, ElementType.FIELD, ElementType.LOCAL_VARIABLE, ElementType.METHOD, ElementType.PACKAGE, ElementType.PARAMETER, ElementType.TYPE}) public interface DeprecationSchedule {
     element public String id();
     element public int version();
+  }
+
+  public interface ExperimentDelegate {
+    method @AnyThread @NonNull default public GeckoResult<JSONObject> onGetExperimentFeature(@NonNull String);
+    method @AnyThread @NonNull default public GeckoResult<Void> onRecordExperimentExposureEvent(@NonNull String, @NonNull String);
+    method @AnyThread @NonNull default public GeckoResult<Void> onRecordExposureEvent(@NonNull String);
+    method @AnyThread @NonNull default public GeckoResult<Void> onRecordMalformedConfigurationEvent(@NonNull String, @NonNull String);
+  }
+
+  public static class ExperimentDelegate.ExperimentException extends Exception {
+    ctor public ExperimentException(int);
+    field public static final int ERROR_EXPERIMENT_DELEGATE_NOT_IMPLEMENTED = -4;
+    field public static final int ERROR_EXPERIMENT_SLUG_NOT_FOUND = -3;
+    field public static final int ERROR_FEATURE_NOT_FOUND = -2;
+    field public static final int ERROR_UNKNOWN = -1;
+    field public final int code;
+  }
+
+  @Retention(value=RetentionPolicy.SOURCE) public static interface ExperimentDelegate.ExperimentException.Codes {
   }
 
   public class GeckoDisplay {
@@ -789,6 +834,9 @@ package org.mozilla.geckoview {
     method @Nullable public Integer getDisplayDpiOverride();
     method public boolean getDoubleTapZoomingEnabled();
     method public boolean getEnterpriseRootsEnabled();
+    method @AnyThread @Nullable public ExperimentDelegate getExperimentDelegate();
+    method @Nullable public Boolean getExtensionsProcessEnabled();
+    method public boolean getExtensionsWebAPIEnabled();
     method @NonNull public Bundle getExtras();
     method public boolean getFontInflationEnabled();
     method public float getFontSizeFactor();
@@ -814,6 +862,8 @@ package org.mozilla.geckoview {
     method @NonNull public GeckoRuntimeSettings setConsoleOutputEnabled(boolean);
     method @NonNull public GeckoRuntimeSettings setDoubleTapZoomingEnabled(boolean);
     method @NonNull public GeckoRuntimeSettings setEnterpriseRootsEnabled(boolean);
+    method @NonNull public GeckoRuntimeSettings setExtensionsProcessEnabled(boolean);
+    method @NonNull public GeckoRuntimeSettings setExtensionsWebAPIEnabled(boolean);
     method @NonNull public GeckoRuntimeSettings setFontInflationEnabled(boolean);
     method @NonNull public GeckoRuntimeSettings setFontSizeFactor(float);
     method @NonNull public GeckoRuntimeSettings setForceEnableAccessibility(boolean);
@@ -851,6 +901,9 @@ package org.mozilla.geckoview {
     method @NonNull public GeckoRuntimeSettings.Builder displayDpiOverride(int);
     method @NonNull public GeckoRuntimeSettings.Builder doubleTapZoomingEnabled(boolean);
     method @NonNull public GeckoRuntimeSettings.Builder enterpriseRootsEnabled(boolean);
+    method @AnyThread @NonNull public GeckoRuntimeSettings.Builder experimentDelegate(@Nullable ExperimentDelegate);
+    method @NonNull public GeckoRuntimeSettings.Builder extensionsProcessEnabled(boolean);
+    method @NonNull public GeckoRuntimeSettings.Builder extensionsWebAPIEnabled(boolean);
     method @NonNull public GeckoRuntimeSettings.Builder extras(@NonNull Bundle);
     method @NonNull public GeckoRuntimeSettings.Builder fontInflation(boolean);
     method @NonNull public GeckoRuntimeSettings.Builder fontSizeFactor(float);
@@ -883,6 +936,7 @@ package org.mozilla.geckoview {
     method @NonNull @UiThread public GeckoDisplay acquireDisplay();
     method @UiThread public void close();
     method @AnyThread @NonNull public GeckoResult<Boolean> containsFormData();
+    method @AnyThread @NonNull public GeckoResult<Boolean> didPrintPageContent();
     method @AnyThread public void exitFullScreen();
     method @NonNull @UiThread public SessionAccessibility getAccessibility();
     method @Nullable @UiThread public Autofill.Delegate getAutofillDelegate();
@@ -894,6 +948,7 @@ package org.mozilla.geckoview {
     method @AnyThread @Nullable public ContentBlocking.Delegate getContentBlockingDelegate();
     method @Nullable @UiThread public GeckoSession.ContentDelegate getContentDelegate();
     method @AnyThread @NonNull public static String getDefaultUserAgent();
+    method @AnyThread @Nullable public ExperimentDelegate getExperimentDelegate();
     method @AnyThread @NonNull public SessionFinder getFinder();
     method @AnyThread @Nullable public GeckoSession.HistoryDelegate getHistoryDelegate();
     method @AnyThread @Nullable public GeckoSession.MediaDelegate getMediaDelegate();
@@ -931,12 +986,15 @@ package org.mozilla.geckoview {
     method @UiThread public void releaseDisplay(@NonNull GeckoDisplay);
     method @AnyThread public void reload();
     method @AnyThread public void reload(int);
+    method @AnyThread @NonNull public GeckoResult<GeckoSession.ReviewAnalysis> requestAnalysis(@NonNull String);
+    method @AnyThread @NonNull public GeckoResult<List<GeckoSession.Recommendation>> requestRecommendations(@NonNull String);
     method @AnyThread public void restoreState(@NonNull GeckoSession.SessionState);
     method @AnyThread @NonNull public GeckoResult<InputStream> saveAsPdf();
     method @AnyThread public void setActive(boolean);
     method @UiThread public void setAutofillDelegate(@Nullable Autofill.Delegate);
     method @AnyThread public void setContentBlockingDelegate(@Nullable ContentBlocking.Delegate);
     method @UiThread public void setContentDelegate(@Nullable GeckoSession.ContentDelegate);
+    method @AnyThread public void setExperimentDelegate(@Nullable ExperimentDelegate);
     method @AnyThread public void setFocused(boolean);
     method @AnyThread public void setHistoryDelegate(@Nullable GeckoSession.HistoryDelegate);
     method @AnyThread public void setMediaDelegate(@Nullable GeckoSession.MediaDelegate);
@@ -988,12 +1046,13 @@ package org.mozilla.geckoview {
     method @UiThread default public void onFirstContentfulPaint(@NonNull GeckoSession);
     method @UiThread default public void onFocusRequest(@NonNull GeckoSession);
     method @UiThread default public void onFullScreen(@NonNull GeckoSession, boolean);
-    method @AnyThread @Nullable default public JSONObject onGetNimbusFeature(@NonNull GeckoSession, @NonNull String);
+    method @AnyThread @Deprecated @DeprecationSchedule(version=122,id="session-nimbus") @Nullable default public JSONObject onGetNimbusFeature(@NonNull GeckoSession, @NonNull String);
     method @UiThread default public void onKill(@NonNull GeckoSession);
     method @UiThread default public void onMetaViewportFitChange(@NonNull GeckoSession, @NonNull String);
     method @UiThread default public void onPaintStatusReset(@NonNull GeckoSession);
     method @UiThread default public void onPointerIconChange(@NonNull GeckoSession, @NonNull PointerIcon);
     method @UiThread default public void onPreviewImage(@NonNull GeckoSession, @NonNull String);
+    method @UiThread default public void onProductUrl(@NonNull GeckoSession);
     method @UiThread default public void onShowDynamicToolbar(@NonNull GeckoSession);
     method @Nullable @UiThread default public GeckoResult<SlowScriptResponse> onSlowScript(@NonNull GeckoSession, @NonNull String);
     method @UiThread default public void onTitleChange(@NonNull GeckoSession, @Nullable String);
@@ -1041,6 +1100,7 @@ package org.mozilla.geckoview {
     ctor protected GeckoPrintException();
     field public static final int ERROR_NO_ACTIVITY_CONTEXT = -5;
     field public static final int ERROR_NO_ACTIVITY_CONTEXT_DELEGATE = -4;
+    field public static final int ERROR_NO_PRINT_DELEGATE = -6;
     field public static final int ERROR_PRINT_SETTINGS_SERVICE_NOT_AVAILABLE = -1;
     field public static final int ERROR_UNABLE_TO_CREATE_PRINT_SETTINGS = -2;
     field public static final int ERROR_UNABLE_TO_RETRIEVE_CANONICAL_BROWSING_CONTEXT = -3;
@@ -1276,7 +1336,10 @@ package org.mozilla.geckoview {
     method @Nullable @UiThread default public GeckoResult<GeckoSession.PromptDelegate.PromptResponse> onLoginSelect(@NonNull GeckoSession, @NonNull GeckoSession.PromptDelegate.AutocompleteRequest<Autocomplete.LoginSelectOption>);
     method @Nullable @UiThread default public GeckoResult<GeckoSession.PromptDelegate.PromptResponse> onPopupPrompt(@NonNull GeckoSession, @NonNull GeckoSession.PromptDelegate.PopupPrompt);
     method @Nullable @UiThread default public GeckoResult<GeckoSession.PromptDelegate.PromptResponse> onRepostConfirmPrompt(@NonNull GeckoSession, @NonNull GeckoSession.PromptDelegate.RepostConfirmPrompt);
+    method @Nullable @UiThread default public GeckoResult<GeckoSession.PromptDelegate.PromptResponse> onSelectIdentityCredentialAccount(@NonNull GeckoSession, @NonNull GeckoSession.PromptDelegate.IdentityCredential.AccountSelectorPrompt);
+    method @Nullable @UiThread default public GeckoResult<GeckoSession.PromptDelegate.PromptResponse> onSelectIdentityCredentialProvider(@NonNull GeckoSession, @NonNull GeckoSession.PromptDelegate.IdentityCredential.ProviderSelectorPrompt);
     method @Nullable @UiThread default public GeckoResult<GeckoSession.PromptDelegate.PromptResponse> onSharePrompt(@NonNull GeckoSession, @NonNull GeckoSession.PromptDelegate.SharePrompt);
+    method @Nullable @UiThread default public GeckoResult<GeckoSession.PromptDelegate.PromptResponse> onShowPrivacyPolicyIdentityCredential(@NonNull GeckoSession, @NonNull GeckoSession.PromptDelegate.IdentityCredential.PrivacyPolicyPrompt);
     method @Nullable @UiThread default public GeckoResult<GeckoSession.PromptDelegate.PromptResponse> onTextPrompt(@NonNull GeckoSession, @NonNull GeckoSession.PromptDelegate.TextPrompt);
   }
 
@@ -1452,6 +1515,63 @@ package org.mozilla.geckoview {
     field public static final int SINGLE = 1;
   }
 
+  public static final class GeckoSession.PromptDelegate.IdentityCredential {
+    ctor public IdentityCredential();
+  }
+
+  public static class GeckoSession.PromptDelegate.IdentityCredential.AccountSelectorPrompt extends GeckoSession.PromptDelegate.BasePrompt {
+    ctor public AccountSelectorPrompt(@NonNull String, @NonNull GeckoSession.PromptDelegate.IdentityCredential.AccountSelectorPrompt.Account[], @NonNull GeckoSession.PromptDelegate.IdentityCredential.AccountSelectorPrompt.Provider, GeckoSession.PromptDelegate.BasePrompt.Observer);
+    method @NonNull @UiThread public GeckoSession.PromptDelegate.PromptResponse confirm(@NonNull int);
+    field @NonNull public final GeckoSession.PromptDelegate.IdentityCredential.AccountSelectorPrompt.Account[] accounts;
+    field @NonNull public final GeckoSession.PromptDelegate.IdentityCredential.AccountSelectorPrompt.Provider provider;
+  }
+
+  public static class GeckoSession.PromptDelegate.IdentityCredential.AccountSelectorPrompt.Account {
+    ctor public Account(int, @NonNull String, @NonNull String, @Nullable String);
+    field @NonNull public final String email;
+    field @Nullable public final String icon;
+    field public final int id;
+    field @NonNull public final String name;
+  }
+
+  public static class GeckoSession.PromptDelegate.IdentityCredential.AccountSelectorPrompt.Provider {
+    ctor public Provider(@NonNull String, @NonNull String, @Nullable String);
+    field @NonNull public final String domain;
+    field @Nullable public final String icon;
+    field @NonNull public final String name;
+  }
+
+  public static class GeckoSession.PromptDelegate.IdentityCredential.AccountSelectorPrompt.ProviderAccounts {
+    ctor public ProviderAccounts(int, @Nullable GeckoSession.PromptDelegate.IdentityCredential.AccountSelectorPrompt.Provider, @NonNull GeckoSession.PromptDelegate.IdentityCredential.AccountSelectorPrompt.Account[]);
+    field @NonNull public final GeckoSession.PromptDelegate.IdentityCredential.AccountSelectorPrompt.Account[] accounts;
+    field public final int id;
+    field @Nullable public final GeckoSession.PromptDelegate.IdentityCredential.AccountSelectorPrompt.Provider provider;
+  }
+
+  public static class GeckoSession.PromptDelegate.IdentityCredential.PrivacyPolicyPrompt extends GeckoSession.PromptDelegate.BasePrompt {
+    ctor protected PrivacyPolicyPrompt(@NonNull String, @NonNull String, @NonNull String, @NonNull String, @NonNull String, @Nullable String, @NonNull GeckoSession.PromptDelegate.BasePrompt.Observer);
+    method @NonNull @UiThread public GeckoSession.PromptDelegate.PromptResponse confirm(boolean);
+    field @NonNull public final String host;
+    field @Nullable public final String icon;
+    field @NonNull public final String privacyPolicyUrl;
+    field @NonNull public final String providerDomain;
+    field @NonNull public final String termsOfServiceUrl;
+  }
+
+  public static class GeckoSession.PromptDelegate.IdentityCredential.ProviderSelectorPrompt extends GeckoSession.PromptDelegate.BasePrompt {
+    ctor protected ProviderSelectorPrompt(@NonNull String, @NonNull GeckoSession.PromptDelegate.IdentityCredential.ProviderSelectorPrompt.Provider[], @NonNull GeckoSession.PromptDelegate.BasePrompt.Observer);
+    method @NonNull @UiThread public GeckoSession.PromptDelegate.PromptResponse confirm(int);
+    field @NonNull public final GeckoSession.PromptDelegate.IdentityCredential.ProviderSelectorPrompt.Provider[] providers;
+  }
+
+  public static class GeckoSession.PromptDelegate.IdentityCredential.ProviderSelectorPrompt.Provider {
+    ctor public Provider(int, @NonNull String, @Nullable String, @NonNull String);
+    field @NonNull public final String domain;
+    field @Nullable public final String icon;
+    field public final int id;
+    field @NonNull public final String name;
+  }
+
   public static class GeckoSession.PromptDelegate.PopupPrompt extends GeckoSession.PromptDelegate.BasePrompt {
     ctor protected PopupPrompt(@NonNull String, @Nullable String, @NonNull GeckoSession.PromptDelegate.BasePrompt.Observer);
     method @NonNull @UiThread public GeckoSession.PromptDelegate.PromptResponse confirm(@NonNull AllowOrDeny);
@@ -1495,7 +1615,43 @@ package org.mozilla.geckoview {
     field @Nullable public final String message;
   }
 
+  @AnyThread public static class GeckoSession.Recommendation {
+    ctor protected Recommendation();
+    field @Nullable public final Double adjustedRating;
+    field @Nullable public final String aid;
+    field @Nullable public final String analysisUrl;
+    field @Nullable public final String currency;
+    field @Nullable public final String grade;
+    field @Nullable public final String imageUrl;
+    field @Nullable public final String name;
+    field @Nullable public final String price;
+    field @Nullable public final Boolean sponsored;
+    field @Nullable public final String url;
+  }
+
   @Retention(value=RetentionPolicy.SOURCE) public static interface GeckoSession.RestartReason {
+  }
+
+  @AnyThread public static class GeckoSession.ReviewAnalysis {
+    ctor protected ReviewAnalysis();
+    field @NonNull public final Double adjustedRating;
+    field @Nullable public final String analysisURL;
+    field public final boolean deletedProduct;
+    field public final boolean deletedProductReported;
+    field @Nullable public final String grade;
+    field @Nullable public final GeckoSession.ReviewAnalysis.Highlight highlights;
+    field public final long lastAnalysisTime;
+    field public final boolean needsAnalysis;
+    field @Nullable public final String productId;
+  }
+
+  public class GeckoSession.ReviewAnalysis.Highlight {
+    ctor protected Highlight();
+    field @Nullable public final String[] appearance;
+    field @Nullable public final String[] competitiveness;
+    field @Nullable public final String[] price;
+    field @Nullable public final String[] quality;
+    field @Nullable public final String[] shipping;
   }
 
   public static interface GeckoSession.ScrollDelegate {
@@ -2208,6 +2364,7 @@ package org.mozilla.geckoview {
   public static class WebExtension.InstallException extends Exception {
     ctor protected InstallException();
     field public final int code;
+    field @Nullable public final String extensionName;
   }
 
   @Retention(value=RetentionPolicy.SOURCE) public static interface WebExtension.InstallException.Codes {
@@ -2215,8 +2372,10 @@ package org.mozilla.geckoview {
 
   public static class WebExtension.InstallException.ErrorCodes {
     ctor protected ErrorCodes();
+    field public static final int ERROR_BLOCKLISTED = -10;
     field public static final int ERROR_CORRUPT_FILE = -3;
     field public static final int ERROR_FILE_ACCESS = -4;
+    field public static final int ERROR_INCOMPATIBLE = -11;
     field public static final int ERROR_INCORRECT_HASH = -2;
     field public static final int ERROR_INCORRECT_ID = -7;
     field public static final int ERROR_INVALID_DOMAIN = -8;
@@ -2333,6 +2492,7 @@ package org.mozilla.geckoview {
     method @Nullable @UiThread public WebExtension.Download createDownload(int);
     method @AnyThread @NonNull public GeckoResult<WebExtension> disable(@NonNull WebExtension, int);
     method @AnyThread @NonNull public GeckoResult<WebExtension> enable(@NonNull WebExtension, int);
+    method @AnyThread public void enableExtensionProcessSpawning();
     method @AnyThread @NonNull public GeckoResult<WebExtension> ensureBuiltIn(@NonNull String, @Nullable String);
     method @Nullable @UiThread public WebExtensionController.PromptDelegate getPromptDelegate();
     method @AnyThread @NonNull public GeckoResult<WebExtension> install(@NonNull String);
@@ -2341,6 +2501,7 @@ package org.mozilla.geckoview {
     method @UiThread public void setAddonManagerDelegate(@Nullable WebExtensionController.AddonManagerDelegate);
     method @AnyThread @NonNull public GeckoResult<WebExtension> setAllowedInPrivateBrowsing(@NonNull WebExtension, boolean);
     method @UiThread public void setDebuggerDelegate(@NonNull WebExtensionController.DebuggerDelegate);
+    method @UiThread public void setExtensionProcessDelegate(@Nullable WebExtensionController.ExtensionProcessDelegate);
     method @UiThread public void setPromptDelegate(@Nullable WebExtensionController.PromptDelegate);
     method @AnyThread public void setTabActive(@NonNull GeckoSession, boolean);
     method @AnyThread @NonNull public GeckoResult<Void> uninstall(@NonNull WebExtension);
@@ -2352,6 +2513,7 @@ package org.mozilla.geckoview {
     method @UiThread default public void onDisabling(@NonNull WebExtension);
     method @UiThread default public void onEnabled(@NonNull WebExtension);
     method @UiThread default public void onEnabling(@NonNull WebExtension);
+    method @UiThread default public void onInstallationFailed(@Nullable WebExtension, @NonNull WebExtension.InstallException);
     method @UiThread default public void onInstalled(@NonNull WebExtension);
     method @UiThread default public void onInstalling(@NonNull WebExtension);
     method @UiThread default public void onUninstalled(@NonNull WebExtension);
@@ -2369,6 +2531,10 @@ package org.mozilla.geckoview {
   }
 
   @Retention(value=RetentionPolicy.SOURCE) public static interface WebExtensionController.EnableSources {
+  }
+
+  public static interface WebExtensionController.ExtensionProcessDelegate {
+    method @UiThread default public void onDisabledProcessSpawning();
   }
 
   @UiThread public static interface WebExtensionController.PromptDelegate {

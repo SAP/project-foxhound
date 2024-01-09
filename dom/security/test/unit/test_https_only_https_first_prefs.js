@@ -1,10 +1,11 @@
-const { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
-const { NetUtil } = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
-const { XPCOMUtils } = ChromeUtils.importESModule(
-  "resource://gre/modules/XPCOMUtils.sys.mjs"
+const { HttpServer } = ChromeUtils.importESModule(
+  "resource://testing-common/httpd.sys.mjs"
+);
+const { NetUtil } = ChromeUtils.importESModule(
+  "resource://gre/modules/NetUtil.sys.mjs"
 );
 
-XPCOMUtils.defineLazyGetter(this, "HTTP_TEST_URL", function () {
+ChromeUtils.defineLazyGetter(this, "HTTP_TEST_URL", function () {
   return "http://test1.example.com";
 });
 

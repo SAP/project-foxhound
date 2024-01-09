@@ -66,7 +66,7 @@ void HTMLOptionElement::OptGroupDisabledChanged(bool aNotify) {
 }
 
 void HTMLOptionElement::UpdateDisabledState(bool aNotify) {
-  bool isDisabled = HasAttr(kNameSpaceID_None, nsGkAtoms::disabled);
+  bool isDisabled = HasAttr(nsGkAtoms::disabled);
 
   if (!isDisabled) {
     nsIContent* parent = GetParent();
@@ -239,7 +239,7 @@ void HTMLOptionElement::GetText(nsAString& aText) {
 }
 
 void HTMLOptionElement::SetText(const nsAString& aText, ErrorResult& aRv) {
-  aRv = nsContentUtils::SetNodeTextContent(this, aText, true);
+  aRv = nsContentUtils::SetNodeTextContent(this, aText, false);
 }
 
 nsresult HTMLOptionElement::BindToTree(BindContext& aContext,

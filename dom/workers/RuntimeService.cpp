@@ -21,6 +21,7 @@
 #include <algorithm>
 #include "mozilla/ipc/BackgroundChild.h"
 #include "GeckoProfiler.h"
+#include "js/ColumnNumber.h"  // JS::ColumnNumberZeroOrigin
 #include "js/experimental/CTypes.h"  // JS::CTypesActivityType, JS::SetCTypesActivityCallback
 #include "jsfriendapi.h"
 #include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
@@ -63,7 +64,6 @@
 #include "nsThreadUtils.h"
 #include "nsXPCOM.h"
 #include "nsXPCOMPrivate.h"
-#include "OSFileConstants.h"
 #include "xpcpublic.h"
 #include "XPCSelfHostedShmem.h"
 
@@ -519,7 +519,7 @@ bool ContentSecurityPolicyAllows(JSContext* aCx, JS::RuntimeCode aKind,
   if (reportViolation) {
     nsString fileName;
     uint32_t lineNum = 0;
-    uint32_t columnNum = 0;
+    JS::ColumnNumberZeroOrigin columnNum;
 
     JS::AutoFilename file;
     if (JS::DescribeScriptedCaller(aCx, &file, &lineNum, &columnNum) &&
@@ -531,7 +531,8 @@ bool ContentSecurityPolicyAllows(JSContext* aCx, JS::RuntimeCode aKind,
 
     RefPtr<LogViolationDetailsRunnable> runnable =
         new LogViolationDetailsRunnable(worker, violationType, fileName,
-                                        lineNum, columnNum, scriptSample);
+                                        lineNum, columnNum.zeroOriginValue(),
+                                        scriptSample);
 
     ErrorResult rv;
     runnable->Dispatch(Killing, rv);
@@ -623,10 +624,6 @@ class JSDispatchableRunnable final : public WorkerRunnable {
   }
 
   nsresult Cancel() override {
-    // We need to check first if cancel is called twice
-    nsresult rv = WorkerRunnable::Cancel();
-    NS_ENSURE_SUCCESS(rv, rv);
-
     MOZ_ASSERT(mDispatchable);
 
     AutoJSAPI jsapi;
@@ -997,18 +994,6 @@ void PrefLanguagesChanged(const char* /* aPrefName */, void* /* aClosure */) {
   }
 }
 
-void AppNameOverrideChanged(const char* /* aPrefName */, void* /* aClosure */) {
-  AssertIsOnMainThread();
-
-  nsAutoString override;
-  Preferences::GetString("general.appname.override", override);
-
-  RuntimeService* runtime = RuntimeService::GetService();
-  if (runtime) {
-    runtime->UpdateAppNameOverridePreference(override);
-  }
-}
-
 void AppVersionOverrideChanged(const char* /* aPrefName */,
                                void* /* aClosure */) {
   AssertIsOnMainThread();
@@ -1177,9 +1162,6 @@ bool RuntimeService::RegisterWorker(WorkerPrivate& aWorkerPrivate) {
     }
   } else {
     if (!mNavigatorPropertiesLoaded) {
-      Navigator::AppName(mNavigatorProperties.mAppName,
-                         aWorkerPrivate.GetDocument(),
-                         false /* aUsePrefOverriddenValue */);
       if (NS_FAILED(Navigator::GetAppVersion(
               mNavigatorProperties.mAppVersion, aWorkerPrivate.GetDocument(),
               false /* aUsePrefOverriddenValue */)) ||
@@ -1412,7 +1394,6 @@ nsresult RuntimeService::Init() {
           LoadGCZealOptions, PREF_JS_OPTIONS_PREFIX PREF_GCZEAL)) ||
 #endif
       WORKER_PREF("intl.accept_languages", PrefLanguagesChanged) ||
-      WORKER_PREF("general.appname.override", AppNameOverrideChanged) ||
       WORKER_PREF("general.appversion.override", AppVersionOverrideChanged) ||
       WORKER_PREF("general.platform.override", PlatformOverrideChanged) ||
       NS_FAILED(Preferences::RegisterPrefixCallbackAndCall(
@@ -1428,12 +1409,6 @@ nsresult RuntimeService::Init() {
   int32_t maxPerDomain =
       Preferences::GetInt(PREF_WORKERS_MAX_PER_DOMAIN, MAX_WORKERS_PER_DOMAIN);
   gMaxWorkersPerDomain = std::max(0, maxPerDomain);
-
-  RefPtr<OSFileConstantsService> osFileConstantsService =
-      OSFileConstantsService::GetOrCreate();
-  if (NS_WARN_IF(!osFileConstantsService)) {
-    return NS_ERROR_FAILURE;
-  }
 
   if (NS_WARN_IF(!IndexedDatabaseManager::GetOrCreate())) {
     return NS_ERROR_UNEXPECTED;
@@ -1500,10 +1475,6 @@ class DumpCrashInfoRunnable : public WorkerControlRunnable {
   }
 
   nsresult Cancel() override {
-    // We need to check first if cancel is called twice
-    nsresult rv = WorkerRunnable::Cancel();
-    NS_ENSURE_SUCCESS(rv, rv);
-
     MonitorAutoLock lock(mMonitor);
     if (!mHasMsg) {
       mMsg.Assign("Canceled");
@@ -1672,7 +1643,6 @@ void RuntimeService::Cleanup() {
     if (NS_FAILED(Preferences::UnregisterPrefixCallback(
             LoadContextOptions, PREF_JS_OPTIONS_PREFIX)) ||
         WORKER_PREF("intl.accept_languages", PrefLanguagesChanged) ||
-        WORKER_PREF("general.appname.override", AppNameOverrideChanged) ||
         WORKER_PREF("general.appversion.override", AppVersionOverrideChanged) ||
         WORKER_PREF("general.platform.override", PlatformOverrideChanged) ||
 #ifdef JS_GC_ZEAL
@@ -1828,11 +1798,6 @@ void RuntimeService::UpdateAllWorkerContextOptions() {
   BroadcastAllWorkers([](auto& worker) {
     worker.UpdateContextOptions(sDefaultJSSettings->contextOptions);
   });
-}
-
-void RuntimeService::UpdateAppNameOverridePreference(const nsAString& aValue) {
-  AssertIsOnMainThread();
-  mNavigatorProperties.mAppNameOverridden = aValue;
 }
 
 void RuntimeService::UpdateAppVersionOverridePreference(

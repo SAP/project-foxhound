@@ -15,8 +15,7 @@ import {
 } from "resource://gre/modules/AddonManager.sys.mjs";
 import { AsyncShutdown } from "resource://gre/modules/AsyncShutdown.sys.mjs";
 import { FileUtils } from "resource://gre/modules/FileUtils.sys.mjs";
-
-const { NetUtil } = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+import { NetUtil } from "resource://gre/modules/NetUtil.sys.mjs";
 import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 import { EventEmitter } from "resource://gre/modules/EventEmitter.sys.mjs";
 
@@ -821,7 +820,10 @@ export var AddonTestUtils = {
     // Ensure some startup observers in XPIProvider are released.
     Services.obs.notifyObservers(null, "test-load-xpi-database");
 
-    Services.obs.notifyObservers(null, "quit-application-granted");
+    // Note: the code here used to trigger observer notifications such as
+    // "quit-application-granted". That was removed because of unwanted side
+    // effects in other components. The MockAsyncShutdown triggers here are very
+    // specific and only affect the AddonManager/XPIProvider internals.
     await MockAsyncShutdown.quitApplicationGranted.trigger();
 
     // If XPIDatabase.asyncLoadDB() has been called before, then _dbPromise is
@@ -1307,10 +1309,13 @@ export var AddonTestUtils = {
     });
   },
 
-  promiseInstallEvent(event) {
+  promiseInstallEvent(event, checkFn) {
     return new Promise(resolve => {
       let listener = {
         [event](...args) {
+          if (typeof checkFn == "function" && !checkFn(...args)) {
+            return;
+          }
           AddonManager.removeInstallListener(listener);
           resolve(args);
         },

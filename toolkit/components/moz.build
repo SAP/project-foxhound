@@ -14,7 +14,6 @@ if CONFIG["MOZ_HAS_REMOTE"]:
 DIRS += [
     "aboutcheckerboard",
     "aboutmemory",
-    "aboutperformance",
     "aboutprocesses",
     "alerts",
     "antitracking",
@@ -52,7 +51,6 @@ DIRS += [
     "parentalcontrols",
     "passwordmgr",
     "pdfjs",
-    "perfmonitoring",
     "pictureinpicture",
     "places",
     "processtools",
@@ -111,6 +109,9 @@ if CONFIG["MOZ_UPDATE_AGENT"]:
     DIRS += ["taskscheduler"]
 
 DIRS += ["build"]
+
+if CONFIG["NIGHTLY_BUILD"]:
+    DIRS += ["shopping"]
 
 if CONFIG["MOZ_WIDGET_TOOLKIT"] == "windows":
     DIRS += ["aboutthirdparty", "aboutwindowsmessages", "gfx"]

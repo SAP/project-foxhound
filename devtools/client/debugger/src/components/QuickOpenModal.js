@@ -3,6 +3,7 @@
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
 import React, { Component } from "react";
+import { div } from "react-dom-factories";
 import PropTypes from "prop-types";
 import { connect } from "../utils/connect";
 import fuzzyAldrin from "fuzzaldrin-plus";
@@ -22,7 +23,6 @@ import {
   getSettledSourceTextContent,
   getSymbols,
   getTabs,
-  getContext,
   getBlackBoxRanges,
   getProjectDirectoryRoot,
 } from "../selectors";
@@ -68,7 +68,6 @@ export class QuickOpenModal extends Component {
   static get propTypes() {
     return {
       closeQuickOpen: PropTypes.func.isRequired,
-      cx: PropTypes.object.isRequired,
       displayedSources: PropTypes.array.isRequired,
       blackBoxRanges: PropTypes.object.isRequired,
       enabled: PropTypes.bool.isRequired,
@@ -311,11 +310,10 @@ export class QuickOpenModal extends Component {
   };
 
   gotoLocation = location => {
-    const { cx, selectSpecificLocation, selectedSource } = this.props;
+    const { selectSpecificLocation, selectedSource } = this.props;
 
     if (location != null) {
       selectSpecificLocation(
-        cx,
         createLocation({
           source: location.source || selectedSource,
           line: location.line,
@@ -396,7 +394,11 @@ export class QuickOpenModal extends Component {
       },
     };
     const html = fuzzyAldrin.wrap(candidateString, query, options);
-    return <div dangerouslySetInnerHTML={{ __html: html }} />;
+    return div({
+      dangerouslySetInnerHTML: {
+        __html: html,
+      },
+    });
   }
 
   highlightMatching = (query, results) => {
@@ -448,42 +450,42 @@ export class QuickOpenModal extends Component {
     }
     const items = this.highlightMatching(query, results || []);
     const expanded = !!items && !!items.length;
-
-    return (
-      <Modal in={enabled} handleClose={this.closeModal}>
-        <SearchInput
-          query={query}
-          hasPrefix={true}
-          count={this.getResultCount()}
-          placeholder={L10N.getStr("sourceSearch.search2")}
-          summaryMsg={this.getSummaryMessage()}
-          showErrorEmoji={this.shouldShowErrorEmoji()}
-          isLoading={false}
-          onChange={this.onChange}
-          onKeyDown={this.onKeyDown}
-          handleClose={this.closeModal}
-          expanded={expanded}
-          showClose={false}
-          searchKey={searchKeys.QUICKOPEN_SEARCH}
-          showExcludePatterns={false}
-          showSearchModifiers={false}
-          selectedItemId={
-            expanded && items[selectedIndex] ? items[selectedIndex].id : ""
-          }
-          {...(this.isSourceSearch() ? SIZE_BIG : SIZE_DEFAULT)}
-        />
-        {results && (
-          <ResultList
-            key="results"
-            items={items}
-            selected={selectedIndex}
-            selectItem={this.selectResultItem}
-            ref="resultList"
-            expanded={expanded}
-            {...(this.isSourceSearch() ? SIZE_BIG : SIZE_DEFAULT)}
-          />
-        )}
-      </Modal>
+    return React.createElement(
+      Modal,
+      {
+        in: enabled,
+        handleClose: this.closeModal,
+      },
+      React.createElement(SearchInput, {
+        query: query,
+        hasPrefix: true,
+        count: this.getResultCount(),
+        placeholder: L10N.getStr("sourceSearch.search2"),
+        summaryMsg: this.getSummaryMessage(),
+        showErrorEmoji: this.shouldShowErrorEmoji(),
+        isLoading: false,
+        onChange: this.onChange,
+        onKeyDown: this.onKeyDown,
+        handleClose: this.closeModal,
+        expanded: expanded,
+        showClose: false,
+        searchKey: searchKeys.QUICKOPEN_SEARCH,
+        showExcludePatterns: false,
+        showSearchModifiers: false,
+        selectedItemId:
+          expanded && items[selectedIndex] ? items[selectedIndex].id : "",
+        ...(this.isSourceSearch() ? SIZE_BIG : SIZE_DEFAULT),
+      }),
+      results &&
+        React.createElement(ResultList, {
+          key: "results",
+          items: items,
+          selected: selectedIndex,
+          selectItem: this.selectResultItem,
+          ref: "resultList",
+          expanded: expanded,
+          ...(this.isSourceSearch() ? SIZE_BIG : SIZE_DEFAULT),
+        })
     );
   }
 }
@@ -498,7 +500,6 @@ function mapStateToProps(state) {
   const symbols = getSymbols(state, location);
 
   return {
-    cx: getContext(state),
     enabled: getQuickOpenEnabled(state),
     displayedSources,
     blackBoxRanges: getBlackBoxRanges(state),

@@ -234,7 +234,9 @@ class TestAPZCTreeManager : public APZCTreeManager {
  public:
   explicit TestAPZCTreeManager(MockContentControllerDelayed* aMcc,
                                UniquePtr<IAPZHitTester> aHitTester = nullptr)
-      : APZCTreeManager(LayersId{0}, std::move(aHitTester)), mcc(aMcc) {}
+      : APZCTreeManager(LayersId{0}, std::move(aHitTester)), mcc(aMcc) {
+    Init();
+  }
 
   RefPtr<InputQueue> GetInputQueue() const { return mInputQueue; }
 
@@ -430,10 +432,10 @@ class TestAsyncPanZoomController : public AsyncPanZoomController {
     bool ret = AdvanceAnimations(mcc->GetSampleTime());
     if (aOutTransform) {
       *aOutTransform =
-          GetCurrentAsyncTransform(AsyncPanZoomController::eForHitTesting);
+          GetCurrentAsyncTransform(AsyncPanZoomController::eForEventHandling);
     }
     aScrollOffset =
-        GetCurrentAsyncScrollOffset(AsyncPanZoomController::eForHitTesting);
+        GetCurrentAsyncScrollOffset(AsyncPanZoomController::eForEventHandling);
     return ret;
   }
 

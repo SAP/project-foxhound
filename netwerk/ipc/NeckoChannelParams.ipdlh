@@ -107,6 +107,8 @@ struct LoadInfoArgs
   uint32_t                    securityFlags;
   uint32_t                    sandboxFlags;
   uint32_t                    triggeringSandboxFlags;
+  uint64_t                    triggeringWindowId;
+  bool                        triggeringStorageAccess;
   nsContentPolicyType         contentPolicyType;
   uint32_t                    tainting;
   bool                        blockAllMixedContent;
@@ -164,6 +166,7 @@ struct LoadInfoArgs
   bool allowListFutureDocumentsCreatedFromThisRedirectChain;
   bool needForCheckingAntiTrackingHeuristic;
   nsString                    cspNonce;
+  nsString                    integrityMetadata;
   bool                        skipContentSniffing;
   uint32_t                    httpsOnlyStatus;
   bool                        hstsStatus;
@@ -236,6 +239,12 @@ struct ParentLoadInfoForwarderArgs
 
   // Sandbox Flags of the Document that triggered the load
   uint32_t triggeringSandboxFlags;
+
+  // Window ID and UsingStorageAccess of the Document that triggered the load.
+  // Used by the Storage Access API to determine if SubDocument loads should
+  // be partitioned or not.
+  uint64_t triggeringWindowId;
+  bool triggeringStorageAccess;
 
   // We must also note that the tainting value was explicitly set
   // by the service worker.
@@ -327,7 +336,7 @@ struct HttpChannelOpenArgs
   nsCString                   contentTypeHint;
   nsString                    integrityMetadata;
   IPCStream?                  uploadStream;
-  LoadInfoArgs?               loadInfo;
+  LoadInfoArgs                loadInfo;
   uint32_t                    loadFlags;
   uint32_t                    thirdPartyFlags;
   uint32_t                    tlsFlags;
@@ -477,7 +486,7 @@ struct RedirectToRealChannelArgs {
   nullable nsIURI uri;
   uint32_t newLoadFlags;
   ReplacementChannelConfigInit? init;
-  LoadInfoArgs? loadInfo;
+  LoadInfoArgs loadInfo;
   uint64_t channelId;
   nullable nsIURI originalURI;
   uint32_t redirectMode;
@@ -508,6 +517,7 @@ struct TimingStructArgs {
   TimeStamp requestStart;
   TimeStamp responseStart;
   TimeStamp responseEnd;
+  TimeStamp transactionPending;
 };
 
 struct ResourceTimingStructArgs {
@@ -525,7 +535,6 @@ struct ResourceTimingStructArgs {
   TimeStamp redirectEnd;
   uint64_t transferSize;
   uint64_t encodedBodySize;
-  nsCString protocolVersion;
 
   // Not actually part of resource timing, but not part of the transaction
   // timings either. These need to be passed to HttpChannelChild along with
@@ -584,7 +593,7 @@ struct GIOChannelOpenArgs
   uint64_t                  startPos;
   nsCString                 entityID;
   IPCStream?                uploadStream;
-  LoadInfoArgs?             loadInfo;
+  LoadInfoArgs              loadInfo;
   uint32_t                  loadFlags;
 };
 

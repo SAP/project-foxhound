@@ -12,14 +12,10 @@
 
 ChromeUtils.defineESModuleGetters(this, {
   AboutReaderParent: "resource:///actors/AboutReaderParent.sys.mjs",
+  BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.sys.mjs",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
   PromiseUtils: "resource://gre/modules/PromiseUtils.sys.mjs",
 });
-ChromeUtils.defineModuleGetter(
-  this,
-  "BrowserWindowTracker",
-  "resource:///modules/BrowserWindowTracker.jsm"
-);
 
 var { ExtensionError } = ExtensionUtils;
 
@@ -247,7 +243,7 @@ global.TabContext = class extends EventEmitter {
 // None of the code in the WebExtension modules requests that initialization.
 // It is assumed that it is started at some point. That might never happen,
 // e.g. if the application shuts down before the search service initializes.
-XPCOMUtils.defineLazyGetter(global, "searchInitialized", () => {
+ChromeUtils.defineLazyGetter(global, "searchInitialized", () => {
   if (Services.search.isInitialized) {
     return Promise.resolve();
   }
@@ -749,6 +745,10 @@ class Tab extends TabBase {
 
   get audible() {
     return this.nativeTab.soundPlaying;
+  }
+
+  get autoDiscardable() {
+    return !this.nativeTab.undiscardable;
   }
 
   get browser() {

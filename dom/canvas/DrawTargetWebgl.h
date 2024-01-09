@@ -301,7 +301,7 @@ class DrawTargetWebgl : public DrawTarget, public SupportsWeakPtr {
     // Reset the current target.
     void ClearTarget() { mCurrentTarget = nullptr; }
     // Reset the last used texture to force binding next use.
-    void ClearLastTexture();
+    void ClearLastTexture(bool aFullClear = false);
 
     bool SupportsPattern(const Pattern& aPattern);
 
@@ -329,6 +329,9 @@ class DrawTargetWebgl : public DrawTarget, public SupportsWeakPtr {
                        const IntRect& aSrcRect, const IntPoint& aDstOffset,
                        bool aInit, bool aZero = false,
                        const RefPtr<WebGLTextureJS>& aTex = nullptr);
+    already_AddRefed<TextureHandle> AllocateTextureHandle(
+        SurfaceFormat aFormat, const IntSize& aSize, bool aAllowShared = true,
+        bool aRenderable = false);
     bool DrawRectAccel(const Rect& aRect, const Pattern& aPattern,
                        const DrawOptions& aOptions,
                        Maybe<DeviceColor> aMaskColor = Nothing(),
@@ -338,9 +341,12 @@ class DrawTargetWebgl : public DrawTarget, public SupportsWeakPtr {
                        const StrokeOptions* aStrokeOptions = nullptr,
                        const PathVertexRange* aVertexRange = nullptr);
 
+    already_AddRefed<TextureHandle> DrawStrokeMask(
+        const PathVertexRange& aVertexRange, const IntSize& aSize);
     bool DrawPathAccel(const Path* aPath, const Pattern& aPattern,
                        const DrawOptions& aOptions,
                        const StrokeOptions* aStrokeOptions = nullptr,
+                       bool aAllowStrokeAlpha = false,
                        const ShadowOptions* aShadow = nullptr,
                        bool aCacheable = true);
 
@@ -540,7 +546,8 @@ class DrawTargetWebgl : public DrawTarget, public SupportsWeakPtr {
                        const StrokeOptions* aStrokeOptions);
   void DrawPath(const Path* aPath, const Pattern& aPattern,
                 const DrawOptions& aOptions,
-                const StrokeOptions* aStrokeOptions = nullptr);
+                const StrokeOptions* aStrokeOptions = nullptr,
+                bool aAllowStrokeAlpha = false);
 
   bool MarkChanged();
 

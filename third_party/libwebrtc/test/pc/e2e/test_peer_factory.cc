@@ -114,15 +114,12 @@ std::unique_ptr<TestAudioDeviceModule::Capturer> CreateAudioCapturer(
     return TestAudioDeviceModule::CreatePulsedNoiseCapturer(
         kGeneratedAudioMaxAmplitude, kDefaultSamplingFrequencyInHz);
   }
-
-  switch (audio_config->mode) {
-    case AudioConfig::Mode::kGenerated:
-      return TestAudioDeviceModule::CreatePulsedNoiseCapturer(
-          kGeneratedAudioMaxAmplitude, audio_config->sampling_frequency_in_hz);
-    case AudioConfig::Mode::kFile:
-      RTC_DCHECK(audio_config->input_file_name);
-      return TestAudioDeviceModule::CreateWavFileReader(
-          audio_config->input_file_name.value(), /*repeat=*/true);
+  if (audio_config->input_file_name) {
+    return TestAudioDeviceModule::CreateWavFileReader(
+        *audio_config->input_file_name, /*repeat=*/true);
+  } else {
+    return TestAudioDeviceModule::CreatePulsedNoiseCapturer(
+        kGeneratedAudioMaxAmplitude, audio_config->sampling_frequency_in_hz);
   }
 }
 
@@ -169,6 +166,8 @@ std::unique_ptr<cricket::MediaEngineInterface> CreateMediaEngine(
       std::move(pcf_dependencies->video_encoder_factory);
   media_deps.video_decoder_factory =
       std::move(pcf_dependencies->video_decoder_factory);
+  media_deps.audio_encoder_factory = pcf_dependencies->audio_encoder_factory;
+  media_deps.audio_decoder_factory = pcf_dependencies->audio_decoder_factory;
   webrtc::SetMediaEngineDefaults(&media_deps);
   RTC_DCHECK(pcf_dependencies->trials);
   media_deps.trials = pcf_dependencies->trials.get();

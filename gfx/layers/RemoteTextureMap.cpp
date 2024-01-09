@@ -55,10 +55,18 @@ void RemoteTextureOwnerClient::UnregisterTextureOwner(
 }
 
 void RemoteTextureOwnerClient::UnregisterAllTextureOwners() {
-  if (!mOwnerIds.empty()) {
-    RemoteTextureMap::Get()->UnregisterTextureOwners(mOwnerIds, mForPid);
-    mOwnerIds.clear();
+  if (mOwnerIds.empty()) {
+    return;
   }
+  RemoteTextureMap::Get()->UnregisterTextureOwners(mOwnerIds, mForPid);
+  mOwnerIds.clear();
+}
+
+void RemoteTextureOwnerClient::NotifyContextLost() {
+  if (mOwnerIds.empty()) {
+    return;
+  }
+  RemoteTextureMap::Get()->NotifyContextLost(mOwnerIds, mForPid);
 }
 
 void RemoteTextureOwnerClient::PushTexture(
@@ -165,6 +173,8 @@ void RemoteTextureMap::PushTexture(
     const std::shared_ptr<gl::SharedSurface>& aSharedSurface) {
   MOZ_RELEASE_ASSERT(aTextureHost);
 
+  std::vector<RefPtr<TextureHost>>
+      releasingTextures;  // Release outside the monitor
   std::vector<std::function<void(const RemoteTextureInfo&)>>
       renderingReadyCallbacks;  // Call outside the monitor
   {
@@ -174,6 +184,12 @@ void RemoteTextureMap::PushTexture(
     if (!owner) {
       MOZ_ASSERT_UNREACHABLE("unexpected to be called");
       return;
+    }
+
+    if (owner->mIsContextLost &&
+        !(aTextureHost->GetFlags() & TextureFlags::DUMMY_TEXTURE)) {
+      MOZ_ASSERT_UNREACHABLE("unexpected to be called");
+      gfxCriticalNoteOnce << "Texture pushed during context lost";
     }
 
     const auto key = std::pair(aForPid, aOwnerId);
@@ -212,9 +228,32 @@ void RemoteTextureMap::PushTexture(
 
     mMonitor.Notify();
 
+    // Release owner->mReleasingRenderedTextureHosts before checking
+    // NumCompositableRefs()
+    if (!owner->mReleasingRenderedTextureHosts.empty()) {
+      std::transform(
+          owner->mReleasingRenderedTextureHosts.begin(),
+          owner->mReleasingRenderedTextureHosts.end(),
+          std::back_inserter(releasingTextures),
+          [](CompositableTextureHostRef& aRef) { return aRef.get(); });
+      owner->mReleasingRenderedTextureHosts.clear();
+    }
+
     // Drop obsoleted remote textures.
     while (!owner->mUsingTextureDataHolders.empty()) {
       auto& front = owner->mUsingTextureDataHolders.front();
+      // If mLatestRenderedTextureHost is last compositable ref of remote
+      // texture's TextureHost, its RemoteTextureHostWrapper is already
+      // unregistered. It happens when pushed remote textures that follow are
+      // not rendered since last mLatestRenderedTextureHost update. In this
+      // case, remove the TextureHost from mUsingTextureDataHolders. It is for
+      // unblocking remote texture recyclieng.
+      if (front->mTextureHost &&
+          front->mTextureHost->NumCompositableRefs() == 1 &&
+          front->mTextureHost == owner->mLatestRenderedTextureHost) {
+        owner->mUsingTextureDataHolders.pop_front();
+        continue;
+      }
       // When compositable ref of TextureHost becomes 0, the TextureHost is not
       // used by WebRender anymore.
       if (front->mTextureHost &&
@@ -381,9 +420,20 @@ void RemoteTextureMap::UnregisterTextureOwner(
       it->second->mLatestTextureHost = nullptr;
     }
 
+    // mReleasingRenderedTextureHosts and mLatestRenderedTextureHost could
+    // simply be cleared. Since NumCompositableRefs() > 0 keeps TextureHosts in
+    // mUsingTextureDataHolders alive. They need to be cleared before
+    // KeepTextureDataAliveForTextureHostIfNecessary() call. The function uses
+    // NumCompositableRefs().
+    if (!it->second->mReleasingRenderedTextureHosts.empty()) {
+      std::transform(
+          it->second->mReleasingRenderedTextureHosts.begin(),
+          it->second->mReleasingRenderedTextureHosts.end(),
+          std::back_inserter(releasingTextures),
+          [](CompositableTextureHostRef& aRef) { return aRef.get(); });
+      it->second->mReleasingRenderedTextureHosts.clear();
+    }
     if (it->second->mLatestRenderedTextureHost) {
-      // Release CompositableRef in mMonitor
-      releasingTextures.emplace_back(it->second->mLatestRenderedTextureHost);
       it->second->mLatestRenderedTextureHost = nullptr;
     }
 
@@ -436,9 +486,20 @@ void RemoteTextureMap::UnregisterTextureOwners(
         it->second->mLatestTextureHost = nullptr;
       }
 
+      // mReleasingRenderedTextureHosts and mLatestRenderedTextureHost could
+      // simply be cleared. Since NumCompositableRefs() > 0 keeps TextureHosts
+      // in mUsingTextureDataHolders alive. They need to be cleared before
+      // KeepTextureDataAliveForTextureHostIfNecessary() call. The function uses
+      // NumCompositableRefs().
+      if (!it->second->mReleasingRenderedTextureHosts.empty()) {
+        std::transform(
+            it->second->mReleasingRenderedTextureHosts.begin(),
+            it->second->mReleasingRenderedTextureHosts.end(),
+            std::back_inserter(releasingTextures),
+            [](CompositableTextureHostRef& aRef) { return aRef.get(); });
+        it->second->mReleasingRenderedTextureHosts.clear();
+      }
       if (it->second->mLatestRenderedTextureHost) {
-        // Release CompositableRef in mMonitor
-        releasingTextures.emplace_back(it->second->mLatestRenderedTextureHost);
         it->second->mLatestRenderedTextureHost = nullptr;
       }
 
@@ -463,6 +524,24 @@ void RemoteTextureMap::UnregisterTextureOwners(
   for (auto& callback : renderingReadyCallbacks) {
     callback(info);
   }
+}
+
+void RemoteTextureMap::NotifyContextLost(
+    const std::unordered_set<RemoteTextureOwnerId,
+                             RemoteTextureOwnerId::HashFn>& aOwnerIds,
+    const base::ProcessId aForPid) {
+  MonitorAutoLock lock(mMonitor);
+
+  for (auto id : aOwnerIds) {
+    const auto key = std::pair(aForPid, id);
+    auto it = mTextureOwners.find(key);
+    if (it == mTextureOwners.end()) {
+      MOZ_ASSERT_UNREACHABLE("unexpected to be called");
+      continue;
+    }
+    it->second->mIsContextLost = true;
+  }
+  mMonitor.Notify();
 }
 
 /* static */
@@ -615,7 +694,9 @@ bool RemoteTextureMap::GetRemoteTextureForDisplayList(
           gfxCriticalNoteOnce << "unexpected remote texture size: "
                               << owner->mLatestTextureHost->GetSize()
                               << " expected: " << size;
-          MOZ_ASSERT_UNREACHABLE("unexpected to be called");
+          if (!owner->mIsContextLost) {
+            MOZ_ASSERT_UNREACHABLE("unexpected to be called");
+          }
         }
       } else {
         gfxCriticalNoteOnce << "remote texture does not exist";
@@ -684,13 +765,18 @@ wr::MaybeExternalImageId RemoteTextureMap::GetExternalImageIdOfRemoteTexture(
     // Use mLatestRenderedTextureHost for rendering. Remote texture of
     // aTextureId does not exist.
     remoteTexture = owner->mLatestRenderedTextureHost;
-    if (!it->second->mReadyCheckSuppressed) {
+    if (!it->second->mReadyCheckSuppressed && !owner->mIsContextLost) {
       MOZ_ASSERT_UNREACHABLE("unexpected to be called");
       gfxCriticalNoteOnce << "remote texture for rendering does not exist id:"
                           << uint64_t(aTextureId);
     }
   } else {
     // Update mLatestRenderedTextureHost
+    if (owner->mLatestRenderedTextureHost) {
+      owner->mReleasingRenderedTextureHosts.push_back(
+          owner->mLatestRenderedTextureHost);
+      owner->mLatestRenderedTextureHost = nullptr;
+    }
     owner->mLatestRenderedTextureHost = remoteTexture;
   }
 
@@ -839,9 +925,9 @@ bool RemoteTextureMap::CheckRemoteTextureReady(
   MonitorAutoLock lock(mMonitor);
 
   auto* owner = GetTextureOwner(lock, aInfo.mOwnerId, aInfo.mForPid);
-  if (!owner) {
-    // Owner is already removed.
-    return true;
+  if (!owner || owner->mIsContextLost) {
+    // Owner is already removed or context lost.
+    return false;
   }
 
   const auto key = std::pair(aInfo.mForPid, aInfo.mTextureId);
@@ -877,8 +963,8 @@ bool RemoteTextureMap::WaitRemoteTextureReady(const RemoteTextureInfo& aInfo) {
   MonitorAutoLock lock(mMonitor);
 
   auto* owner = GetTextureOwner(lock, aInfo.mOwnerId, aInfo.mForPid);
-  if (!owner) {
-    // Owner is already removed.
+  if (!owner || owner->mIsContextLost) {
+    // Owner is already removed or context lost.
     return false;
   }
 
@@ -913,7 +999,7 @@ bool RemoteTextureMap::WaitRemoteTextureReady(const RemoteTextureInfo& aInfo) {
     if (!remoteTexture) {
       auto* owner = GetTextureOwner(lock, aInfo.mOwnerId, aInfo.mForPid);
       // When owner is alreay unregistered, remote texture will not be pushed.
-      if (!owner) {
+      if (!owner || owner->mIsContextLost) {
         // This could happen with IPC abnormal shutdown
         return false;
       }

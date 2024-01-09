@@ -156,22 +156,22 @@ class PerftestOutput(object):
             for measurement_name, value_info in data_set["values"].items():
                 # Subtests are expected to be specified in a dictionary, this
                 # provides backwards compatibility with the old method
+                value = value_info
                 if not isinstance(value_info, dict):
-                    value_info = {"values": value_info}
-
+                    value = {"values": value_info}
                 new_subtest = {}
-                if value_info.get("subtest-prefix-type", True):
+                if value.get("subtest-prefix-type", True):
                     new_subtest["name"] = data_type + "-" + measurement_name
                 else:
                     new_subtest["name"] = measurement_name
 
-                new_subtest["value"] = value_info["values"]
-                new_subtest["lowerIsBetter"] = value_info.get("lowerIsBetter", True)
-                new_subtest["alertThreshold"] = value_info.get("alertThreshold", 2.0)
-                new_subtest["unit"] = value_info.get("unit", data_set["unit"])
+                new_subtest["value"] = value["values"]
+                new_subtest["lowerIsBetter"] = value.get("lowerIsBetter", True)
+                new_subtest["alertThreshold"] = value.get("alertThreshold", 2.0)
+                new_subtest["unit"] = value.get("unit", data_set["unit"])
 
-                if "shouldAlert" in value_info:
-                    new_subtest["shouldAlert"] = value_info.get("shouldAlert")
+                if "shouldAlert" in value:
+                    new_subtest["shouldAlert"] = value.get("shouldAlert")
 
                 subtests.append(new_subtest)
                 vals.append([new_subtest["value"], new_subtest["name"]])
@@ -515,10 +515,13 @@ class PerftestOutput(object):
                         "name": metric,
                         "replicates": [],
                     }
+                updated_metric = value
                 if not isinstance(value, Iterable):
-                    value = [value]
+                    updated_metric = [value]
                 # pylint: disable=W1633
-                _subtests[metric]["replicates"].extend([round(x, 3) for x in value])
+                _subtests[metric]["replicates"].extend(
+                    [round(x, 3) for x in updated_metric]
+                )
 
         vals = []
         subtests = []
@@ -1192,19 +1195,23 @@ class PerftestOutput(object):
     def parseTwitchAnimationOutput(self, test):
         _subtests = {}
 
-        for metric, data in test["measurements"].items():
-            if "perfstat-" not in metric and metric != "twitch-animation":
+        for metric_name, data in test["measurements"].items():
+            if "perfstat-" not in metric_name and metric_name != "twitch-animation":
                 # Only keep perfstats or the run metric
                 continue
-            if metric == "twitch-animation":
+            if metric_name == "twitch-animation":
                 metric = "run"
+            else:
+                metric = metric_name
 
             # data is just an array with a single number
-            for page_cycle in data:
+            for polymorphic_page_cycle in data:
                 # Each benchmark cycle is formatted like `[val]`, perfstats
                 # are not
-                if not isinstance(page_cycle, list):
-                    page_cycle = [page_cycle]
+                if not isinstance(polymorphic_page_cycle, list):
+                    page_cycle = [polymorphic_page_cycle]
+                else:
+                    page_cycle = polymorphic_page_cycle
                 for val in page_cycle:
                     _subtests.setdefault(
                         metric,
@@ -1695,36 +1702,23 @@ class BrowsertimeOutput(PerftestOutput):
 
             return data
 
-        def _process_alt_method(subtest, alternative_method):
-            # Don't filter with less than 10 data points
+        def _process_geomean(subtest):
             data = subtest["replicates"]
-            if len(subtest["replicates"]) > 10:
-                data = _filter_data(data, alternative_method, subtest["name"])
-            if alternative_method == "geomean":
-                subtest["value"] = round(filters.geometric_mean(data), 1)
-            elif alternative_method == "mean":
-                subtest["value"] = round(filters.mean(data), 1)
+            subtest["value"] = round(filters.geometric_mean(data), 1)
+
+        def _process_alt_method(subtest, alternative_method):
+            data = subtest["replicates"]
+            if alternative_method == "median":
+                subtest["value"] = filters.median(data)
 
         # converting suites and subtests into lists, and sorting them
-        def _process(subtest, alternative_method=""):
+        def _process(subtest, method="geomean"):
             if test["type"] == "power":
                 subtest["value"] = filters.mean(subtest["replicates"])
-            elif (
-                subtest["name"] in VISUAL_METRICS
-                or subtest["name"].startswith("perfstat")
-                or subtest["name"] == "cpuTime"
-            ):
-                if alternative_method in ("geomean", "mean"):
-                    _process_alt_method(subtest, alternative_method)
-                else:
-                    subtest["value"] = filters.median(subtest["replicates"])
+            elif method == "geomean":
+                _process_geomean(subtest)
             else:
-                if alternative_method in ("geomean", "mean"):
-                    _process_alt_method(subtest, alternative_method)
-                else:
-                    subtest["value"] = filters.median(
-                        filters.ignore_first(subtest["replicates"], 1)
-                    )
+                _process_alt_method(subtest, method)
             return subtest
 
         def _process_suite(suite):
@@ -1823,6 +1817,7 @@ class BrowsertimeOutput(PerftestOutput):
                     "subtests": {},
                 },
             )
+
             # Add the alert window settings if needed
             for alert_option, schema_name in (
                 ("min_back_window", "minBackWindow"),
@@ -1836,7 +1831,10 @@ class BrowsertimeOutput(PerftestOutput):
             if self.app in ("chrome", "chrome-m", "chromium", "custom-car"):
                 suite["shouldAlert"] = False
             # Check if the test has set optional properties
-            if "alert_change_type" in test and "alertChangeType" not in suite:
+            if (
+                test.get("alert_change_type", None) is not None
+                and "alertChangeType" not in suite
+            ):
                 suite["alertChangeType"] = test["alert_change_type"]
 
             def _process_measurements(measurement_name, replicates):

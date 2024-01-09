@@ -84,13 +84,13 @@ class FunctionBox;
   F(OptionalChain, UnaryNode)                                    \
   F(OptionalElemExpr, OptionalPropertyByValue)                   \
   F(OptionalPrivateMemberExpr, OptionalPrivateMemberAccess)      \
-  F(OptionalCallExpr, BinaryNode)                                \
+  F(OptionalCallExpr, CallNode)                                  \
   F(ArrayExpr, ListNode)                                         \
   F(Elision, NullaryNode)                                        \
   F(StatementList, ListNode)                                     \
   F(LabelStmt, LabeledStatement)                                 \
   F(ObjectExpr, ListNode)                                        \
-  F(CallExpr, BinaryNode)                                        \
+  F(CallExpr, CallNode)                                          \
   F(Arguments, ListNode)                                         \
   F(Name, NameNode)                                              \
   F(ObjectPropertyName, NameNode)                                \
@@ -101,7 +101,7 @@ class FunctionBox;
   F(StringExpr, NameNode)                                        \
   F(TemplateStringListExpr, ListNode)                            \
   F(TemplateStringExpr, NameNode)                                \
-  F(TaggedTemplateExpr, BinaryNode)                              \
+  F(TaggedTemplateExpr, CallNode)                                \
   F(CallSiteObj, CallSiteNode)                                   \
   F(RegExpExpr, RegExpLiteral)                                   \
   F(TrueExpr, BooleanLiteral)                                    \
@@ -125,7 +125,7 @@ class FunctionBox;
   F(ConstDecl, DeclarationListNode)                              \
   F(WithStmt, BinaryNode)                                        \
   F(ReturnStmt, UnaryNode)                                       \
-  F(NewExpr, BinaryNode)                                         \
+  F(NewExpr, CallNode)                                           \
   IF_DECORATORS(F(DecoratorList, ListNode))                      \
   /* Delete operations.  These must be sequential. */            \
   F(DeleteNameExpr, UnaryNode)                                   \
@@ -174,7 +174,7 @@ class FunctionBox;
   F(NewTargetExpr, NewTargetNode)                                \
   F(PosHolder, NullaryNode)                                      \
   F(SuperBase, UnaryNode)                                        \
-  F(SuperCallExpr, BinaryNode)                                   \
+  F(SuperCallExpr, CallNode)                                     \
   F(SetThis, BinaryNode)                                         \
   F(ImportMetaExpr, BinaryNode)                                  \
   F(CallImportExpr, BinaryNode)                                  \
@@ -642,7 +642,6 @@ inline bool IsTypeofKind(ParseNodeKind kind) {
   MACRO(ListNode, ListNodeType, asList)                                      \
   MACRO(CallSiteNode, CallSiteNodeType, asCallSite)                          \
   MACRO(CallNode, CallNodeType, asCallNode)                                  \
-  MACRO(CallNode, OptionalCallNodeType, asOptionalCallNode)                  \
                                                                              \
   MACRO(LoopControlStatement, LoopControlStatementType,                      \
         asLoopControlStatement)                                              \
@@ -2217,12 +2216,12 @@ class CallNode : public BinaryNode {
   const JSOp callOp_;
 
  public:
-  CallNode(ParseNodeKind kind, JSOp callOp, ParseNode* left, ParseNode* right)
+  CallNode(ParseNodeKind kind, JSOp callOp, ParseNode* left, ListNode* right)
       : CallNode(kind, callOp, TokenPos(left->pn_pos.begin, right->pn_pos.end),
                  left, right) {}
 
   CallNode(ParseNodeKind kind, JSOp callOp, TokenPos pos, ParseNode* left,
-           ParseNode* right)
+           ListNode* right)
       : BinaryNode(kind, pos, left, right), callOp_(callOp) {
     MOZ_ASSERT(is<CallNode>());
   }
@@ -2232,13 +2231,14 @@ class CallNode : public BinaryNode {
                  node.isKind(ParseNodeKind::SuperCallExpr) ||
                  node.isKind(ParseNodeKind::OptionalCallExpr) ||
                  node.isKind(ParseNodeKind::TaggedTemplateExpr) ||
-                 node.isKind(ParseNodeKind::CallImportExpr) ||
                  node.isKind(ParseNodeKind::NewExpr);
     MOZ_ASSERT_IF(match, node.is<BinaryNode>());
     return match;
   }
 
-  JSOp callOp() { return callOp_; }
+  JSOp callOp() const { return callOp_; }
+  auto* callee() const { return left(); }
+  auto* args() const { return &right()->as<ListNode>(); }
 };
 
 class ClassMethod : public BinaryNode {
@@ -2302,7 +2302,18 @@ class ClassMethod : public BinaryNode {
 class ClassField : public BinaryNode {
   bool isStatic_;
 #ifdef ENABLE_DECORATORS
-  bool hasAccessor_;
+  // The accessorGetterNode_ and accessorSetterNode_ are used to store the
+  // getter and setter synthesized by the `accessor` keyword when they are
+  // decorated. Otherwise, they are null.
+  //
+  // In most cases, the accessors are not added to the class members, and the
+  // code generation occurs immediately prior to the decorator running. For
+  // non-static private methods, the accessors are added to the class members
+  // which causes them to be stored in lexical variables. The references here
+  // are used to store the names of the accessors to look up the values of these
+  // variables during bytecode generation.
+  ClassMethod* accessorGetterNode_;
+  ClassMethod* accessorSetterNode_;
   ListNode* decorators_;
 #endif
 
@@ -2310,7 +2321,8 @@ class ClassField : public BinaryNode {
   ClassField(ParseNode* name, ParseNode* initializer, bool isStatic
 #ifdef ENABLE_DECORATORS
              ,
-             ListNode* decorators, bool hasAccessor
+             ListNode* decorators, ClassMethod* accessorGetterNode,
+             ClassMethod* accessorSetterNode
 #endif
              )
       : BinaryNode(ParseNodeKind::ClassField, initializer->pn_pos, name,
@@ -2318,10 +2330,15 @@ class ClassField : public BinaryNode {
         isStatic_(isStatic)
 #ifdef ENABLE_DECORATORS
         ,
-        hasAccessor_(hasAccessor),
+        accessorGetterNode_(accessorGetterNode),
+        accessorSetterNode_(accessorSetterNode),
         decorators_(decorators)
 #endif
   {
+#ifdef ENABLE_DECORATORS
+    MOZ_ASSERT((accessorGetterNode_ == nullptr) ==
+               (accessorSetterNode_ == nullptr));
+#endif
   }
 
   static bool test(const ParseNode& node) {
@@ -2338,7 +2355,11 @@ class ClassField : public BinaryNode {
 
 #ifdef ENABLE_DECORATORS
   ListNode* decorators() const { return decorators_; }
-  bool hasAccessor() const { return hasAccessor_; }
+  bool hasAccessor() const {
+    return accessorGetterNode_ != nullptr && accessorSetterNode_ != nullptr;
+  }
+  ClassMethod* accessorGetterNode() { return accessorGetterNode_; }
+  ClassMethod* accessorSetterNode() { return accessorSetterNode_; }
 #endif
 };
 

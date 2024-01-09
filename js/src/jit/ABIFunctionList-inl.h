@@ -52,6 +52,13 @@
 #include "builtin/Boolean-inl.h"  // js::EmulatesUndefined
 
 namespace js {
+
+namespace wasm {
+
+class AnyRef;
+
+}  // namespace wasm
+
 namespace jit {
 
 // List of all ABI functions to be used with callWithABI. Each entry stores
@@ -112,7 +119,6 @@ namespace jit {
   _(js::jit::AllocateBigIntNoGC)                                      \
   _(js::jit::AllocateFatInlineString)                                 \
   _(js::jit::AllocateDependentString)                                 \
-  _(js::jit::ArrayPushDensePure)                                      \
   _(js::jit::AssertMapObjectHash)                                     \
   _(js::jit::AssertPropertyLookup)                                    \
   _(js::jit::AssertSetObjectHash)                                     \
@@ -131,7 +137,6 @@ namespace jit {
   _(js::jit::NumberBigIntCompare<ComparisonKind::LessThan>)           \
   _(js::jit::NumberBigIntCompare<ComparisonKind::GreaterThanOrEqual>) \
   _(js::jit::BigIntNumberCompare<ComparisonKind::GreaterThanOrEqual>) \
-  _(js::jit::CreateMatchResultFallbackFunc)                           \
   _(js::jit::EqualStringsHelperPure)                                  \
   _(js::jit::FinishBailoutToBaseline)                                 \
   _(js::jit::FrameIsDebuggeeCheck)                                    \
@@ -158,8 +163,7 @@ namespace jit {
   _(js::jit::ObjectIsConstructor)                                     \
   _(js::jit::PostGlobalWriteBarrier)                                  \
   _(js::jit::PostWriteBarrier)                                        \
-  _(js::jit::PostWriteElementBarrier<IndexInBounds::Yes>)             \
-  _(js::jit::PostWriteElementBarrier<IndexInBounds::Maybe>)           \
+  _(js::jit::PostWriteElementBarrier)                                 \
   _(js::jit::Printf0)                                                 \
   _(js::jit::Printf1)                                                 \
   _(js::jit::StringFromCharCodeNoGC)                                  \
@@ -206,6 +210,7 @@ namespace jit {
   _(void (*)(JSRuntime * rt, JSObject * *objp))     \
   _(void (*)(JSRuntime * rt, JSString * *stringp))  \
   _(void (*)(JSRuntime * rt, Shape * *shapep))      \
+  _(void (*)(JSRuntime * rt, wasm::AnyRef * refp))  \
   _(void (*)(JSRuntime * rt, Value * vp))
 
 // GCC warns when the signature does not have matching attributes (for example

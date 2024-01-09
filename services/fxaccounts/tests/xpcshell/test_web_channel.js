@@ -4,7 +4,7 @@
 "use strict";
 
 const { ON_PROFILE_CHANGE_NOTIFICATION, WEBCHANNEL_ID, log } =
-  ChromeUtils.import("resource://gre/modules/FxAccountsCommon.js");
+  ChromeUtils.importESModule("resource://gre/modules/FxAccountsCommon.sys.mjs");
 const { CryptoUtils } = ChromeUtils.importESModule(
   "resource://services-crypto/utils.sys.mjs"
 );
@@ -919,10 +919,7 @@ add_task(async function test_helpers_getFxaStatus_allowed_signedInUser() {
 
     // These properties are filtered and should not
     // be returned to the requester.
-    Assert.equal(false, "kSync" in signedInUser);
-    Assert.equal(false, "kXCS" in signedInUser);
-    Assert.equal(false, "kExtSync" in signedInUser);
-    Assert.equal(false, "kExtKbHash" in signedInUser);
+    Assert.equal(false, "scopedKeys" in signedInUser);
   });
 });
 

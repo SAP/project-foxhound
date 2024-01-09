@@ -34,7 +34,7 @@
 #elif defined(XP_DARWIN)
 #  include <mach/exc.h>
 #  include <mach/mach.h>
-#else
+#elif !defined(__wasi__)
 #  include <signal.h>
 #endif
 
@@ -1040,7 +1040,7 @@ bool wasm::MemoryAccessTraps(const RegisterState& regs, uint8_t* addr,
     case Trap::IndirectCallToNull:
       // Null pointer plus the appropriate offset.
       if (addr !=
-          reinterpret_cast<uint8_t*>(wasm::Instance::offsetOfMemoryBase())) {
+          reinterpret_cast<uint8_t*>(wasm::Instance::offsetOfMemory0Base())) {
         return false;
       }
       break;

@@ -9,7 +9,6 @@ import configureStore from "redux-mock-store";
 
 import { shallow, mount } from "enzyme";
 import { QuickOpenModal } from "../QuickOpenModal";
-import { mockcx } from "../../utils/test-mockup";
 import { getDisplayURL } from "../../utils/sources-tree/getURL";
 import { searchKeys } from "../../constants";
 
@@ -32,7 +31,6 @@ function generateModal(propOverrides, renderType = "shallow") {
     },
   });
   const props = {
-    cx: mockcx,
     enabled: false,
     query: "",
     searchType: "sources",
@@ -364,16 +362,14 @@ describe("QuickOpenModal", () => {
         key: "Enter",
       };
       wrapper.find("Connect(SearchInput)").simulate("keydown", event);
-      expect(props.selectSpecificLocation).toHaveBeenCalledWith(mockcx, {
+      expect(props.selectSpecificLocation).toHaveBeenCalledWith({
         column: 12,
         line: 34,
-        sourceId: "foo",
         source: {
           id: "foo",
         },
         sourceActorId: undefined,
         sourceActor: null,
-        sourceUrl: "",
       });
     });
 
@@ -393,16 +389,14 @@ describe("QuickOpenModal", () => {
         key: "Enter",
       };
       wrapper.find("Connect(SearchInput)").simulate("keydown", event);
-      expect(props.selectSpecificLocation).toHaveBeenCalledWith(mockcx, {
+      expect(props.selectSpecificLocation).toHaveBeenCalledWith({
         column: 12,
         line: 34,
-        sourceId,
         source: {
           id: sourceId,
         },
         sourceActorId: undefined,
         sourceActor: null,
-        sourceUrl: "",
       });
     });
 
@@ -508,14 +502,12 @@ describe("QuickOpenModal", () => {
         key: "Enter",
       };
       wrapper.find("Connect(SearchInput)").simulate("keydown", event);
-      expect(props.selectSpecificLocation).toHaveBeenCalledWith(mockcx, {
+      expect(props.selectSpecificLocation).toHaveBeenCalledWith({
         column: undefined,
-        sourceId: id,
         line: 0,
         source: { id },
         sourceActorId: undefined,
         sourceActor: null,
-        sourceUrl: "",
       });
       expect(props.setQuickOpenQuery).not.toHaveBeenCalled();
     });
@@ -543,14 +535,12 @@ describe("QuickOpenModal", () => {
         key: "Enter",
       };
       wrapper.find("Connect(SearchInput)").simulate("keydown", event);
-      expect(props.selectSpecificLocation).toHaveBeenCalledWith(mockcx, {
+      expect(props.selectSpecificLocation).toHaveBeenCalledWith({
         column: undefined,
         line: 0,
-        sourceId: id,
         source: { id },
         sourceActorId: undefined,
         sourceActor: null,
-        sourceUrl: "",
       });
       expect(props.setQuickOpenQuery).not.toHaveBeenCalled();
     });
@@ -578,14 +568,12 @@ describe("QuickOpenModal", () => {
         key: "Enter",
       };
       wrapper.find("Connect(SearchInput)").simulate("keydown", event);
-      expect(props.selectSpecificLocation).toHaveBeenCalledWith(mockcx, {
+      expect(props.selectSpecificLocation).toHaveBeenCalledWith({
         column: 4,
         line: 3,
-        sourceId: id,
         source: { id },
         sourceActorId: undefined,
         sourceActor: null,
-        sourceUrl: "",
       });
       expect(props.setQuickOpenQuery).not.toHaveBeenCalled();
     });

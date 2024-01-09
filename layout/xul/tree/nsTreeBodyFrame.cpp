@@ -314,9 +314,7 @@ void nsTreeBodyFrame::DestroyFrom(nsIFrame* aDestructRoot,
 
   if (mColumns) mColumns->SetTree(nullptr);
 
-  if (mTree) {
-    mTree->BodyDestroyed(mTopRowIndex);
-  }
+  RefPtr tree = mTree;
 
   if (nsCOMPtr<nsITreeView> view = std::move(mView)) {
     nsCOMPtr<nsITreeSelection> sel;
@@ -325,6 +323,15 @@ void nsTreeBodyFrame::DestroyFrom(nsIFrame* aDestructRoot,
       sel->SetTree(nullptr);
     }
     view->SetTree(nullptr);
+  }
+
+  // Make this call now because view->SetTree can run js which can undo this
+  // call.
+  if (tree) {
+    tree->BodyDestroyed(mTopRowIndex);
+  }
+  if (mTree && mTree != tree) {
+    mTree->BodyDestroyed(mTopRowIndex);
   }
 
   SimpleXULLeafFrame::DestroyFrom(aDestructRoot, aPostDestroyData);
@@ -1774,7 +1781,7 @@ void nsTreeBodyFrame::PrefillPropertyArray(int32_t aRowIndex,
       mScratchArray.AppendElement((nsStaticAtom*)nsGkAtoms::even);
 
     XULTreeElement* tree = GetBaseElement();
-    if (tree && tree->HasAttr(kNameSpaceID_None, nsGkAtoms::editing)) {
+    if (tree && tree->HasAttr(nsGkAtoms::editing)) {
       mScratchArray.AppendElement((nsStaticAtom*)nsGkAtoms::editing);
     }
 

@@ -336,15 +336,8 @@ partial interface Window {
   [Throws, NeedsCallerType] undefined resizeBy(long x, long y);
 
   // viewport
-  // These are writable because we allow chrome to write them.  And they need
-  // to use 'any' as the type, because non-chrome writing them needs to act
-  // like a [Replaceable] attribute would, which needs the original JS value.
-  // TODO: These can be updated to follow the spec exactly a while after we
-  // enable dom.window_position_size_properties_replaceable.enabled=true
-  //[Replaceable, Throws] readonly attribute double innerWidth;
-  //[Replaceable, Throws] readonly attribute double innerHeight;
-  [Throws, NeedsCallerType] attribute any innerWidth;
-  [Throws, NeedsCallerType] attribute any innerHeight;
+  [Replaceable, Throws] readonly attribute double innerWidth;
+  [Replaceable, Throws] readonly attribute double innerHeight;
 
   // viewport scrolling
   undefined scroll(unrestricted double x, unrestricted double y);
@@ -370,19 +363,10 @@ partial interface Window {
   [Replaceable, Throws, NeedsCallerType] readonly attribute double screenTop;
 
   // client
-  // These are writable because we allow chrome to write them.  And they need
-  // to use 'any' as the type, because non-chrome writing them needs to act
-  // like a [Replaceable] attribute would, which needs the original JS value.
-  // TODO: These can be updated to follow the spec exactly a while after we
-  // enable dom.window_position_size_properties_replaceable.enabled=true
-  //[Replaceable, Throws] readonly attribute double screenX;
-  //[Replaceable, Throws] readonly attribute double screenY;
-  //[Replaceable, Throws] readonly attribute double outerWidth;
-  //[Replaceable, Throws] readonly attribute double outerHeight;
-  [Throws, NeedsCallerType] attribute any screenX;
-  [Throws, NeedsCallerType] attribute any screenY;
-  [Throws, NeedsCallerType] attribute any outerWidth;
-  [Throws, NeedsCallerType] attribute any outerHeight;
+  [Replaceable, Throws, NeedsCallerType] readonly attribute double screenX;
+  [Replaceable, Throws, NeedsCallerType] readonly attribute double screenY;
+  [Replaceable, Throws, NeedsCallerType] readonly attribute double outerWidth;
+  [Replaceable, Throws, NeedsCallerType] readonly attribute double outerHeight;
 };
 
 // https://html.spec.whatwg.org/multipage/imagebitmap-and-animations.html#animation-frames
@@ -427,17 +411,19 @@ partial interface Window {
    */
   undefined                 scrollByPages(long numPages, optional ScrollOptions options = {});
 
-  /**
-   * Method for sizing this window to the content in the window.
-   */
-  [Throws, NeedsCallerType] undefined sizeToContent();
+  // Gecko specific API that allows a web page to resize the browser window.
+  // Dropping support in bug 1600400.
+  [Throws, NeedsCallerType,
+   Deprecated="SizeToContent",
+   Func="nsGlobalWindowInner::IsSizeToContentEnabled"]
+  undefined sizeToContent();
+
   /**
    * Chrome-only method for sizing to content with a maximum-size constraint on
    * either (or both) directions.
    */
   [Throws, ChromeOnly] undefined sizeToContentConstrained(optional SizeToContentConstraints constraints = {});
 
-  // XXX Shouldn't this be in nsIDOMChromeWindow?
   [ChromeOnly, Replaceable, Throws] readonly attribute XULControllers controllers;
 
   [ChromeOnly, Throws] readonly attribute Element? realFrameElement;
@@ -478,10 +464,7 @@ partial interface Window {
 
   [Throws] attribute boolean fullScreen;
 
-  // XXX Should this be in nsIDOMChromeWindow?
-  undefined                 updateCommands(DOMString action,
-                                           optional Selection? sel = null,
-                                           optional short reason = 0);
+  undefined                 updateCommands(DOMString action);
 
   /* Find in page.
    * @param str: the search pattern
@@ -527,7 +510,7 @@ partial interface Window {
                                                optional DOMString options = "",
                                                any... extraArguments);
 
-  [Func="nsGlobalWindowInner::ContentPropertyEnabled",
+  [ChromeOnly,
    NonEnumerable, Replaceable, Throws, NeedsCallerType]
   readonly attribute object? content;
 
@@ -731,9 +714,9 @@ partial interface Window {
   [Func="IsChromeOrUAWidget"]
   readonly attribute boolean isChromeWindow;
 
-  [ChromeOnly]
+  [Func="nsGlobalWindowInner::IsGleanNeeded"]
   readonly attribute GleanImpl Glean;
-  [ChromeOnly]
+  [Func="nsGlobalWindowInner::IsGleanNeeded"]
   readonly attribute GleanPingsImpl GleanPings;
 };
 
@@ -761,10 +744,9 @@ partial interface Window {
 Window includes WindowOrWorkerGlobalScope;
 
 partial interface Window {
-  [Throws, Func="nsGlobalWindowInner::IsRequestIdleCallbackEnabled"]
+  [Throws]
   unsigned long requestIdleCallback(IdleRequestCallback callback,
                                     optional IdleRequestOptions options = {});
-  [Func="nsGlobalWindowInner::IsRequestIdleCallbackEnabled"]
   undefined     cancelIdleCallback(unsigned long handle);
 };
 

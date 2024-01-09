@@ -8,6 +8,7 @@
 
 // Parameters and flags that govern JXL compression.
 
+#include <jxl/encode.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -58,14 +59,6 @@ struct CompressParams {
   // explicit distances for extra channels (defaults to butteraugli_distance
   // when not set; value of -1 can be used to represent 'default')
   std::vector<float> ec_distance;
-  size_t target_size = 0;
-  float target_bitrate = 0.0f;
-
-  // 0.0 means search for the adaptive quantization map that matches the
-  // butteraugli distance, positive values mean quantize everywhere with that
-  // value.
-  float uniform_quant = 0.0f;
-  float quant_border_bias = 0.0f;
 
   // Try to achieve a maximum pixel-by-pixel error on each channel.
   bool max_error_mode = false;
@@ -79,18 +72,14 @@ struct CompressParams {
   // 4 = fastest speed, lowest quality
   size_t decoding_speed_tier = 0;
 
-  int max_butteraugli_iters = 4;
-
-  int max_butteraugli_iters_guetzli_mode = 100;
-
   ColorTransform color_transform = ColorTransform::kXYB;
-  YCbCrChromaSubsampling chroma_subsampling;
 
   // If true, the "modular mode options" members below are used.
   bool modular_mode = false;
 
-  // Change group size in modular mode (0=128, 1=256, 2=512, 3=1024).
-  size_t modular_group_size_shift = 1;
+  // Change group size in modular mode (0=128, 1=256, 2=512, 3=1024, -1=encoder
+  // chooses).
+  int modular_group_size_shift = -1;
 
   Override preview = Override::kDefault;
   Override noise = Override::kDefault;
@@ -118,14 +107,12 @@ struct CompressParams {
   // Default: on for lossless, off for lossy
   Override keep_invisible = Override::kDefault;
 
-  // Currently unused as of 2020-01.
-  bool clear_metadata = false;
-
-  // Prints extra information during/after encoding.
-  bool verbose = false;
-  bool log_search_state = false;
-
-  ButteraugliParams ba_params;
+  JxlCmsInterface cms;
+  bool cms_set = false;
+  void SetCms(const JxlCmsInterface& cms) {
+    this->cms = cms;
+    cms_set = true;
+  }
 
   // Force usage of CfL when doing JPEG recompression. This can have unexpected
   // effects on the decoded pixels, while still being JPEG-compliant and
@@ -134,6 +121,11 @@ struct CompressParams {
 
   // Use brotli compression for any boxes derived from a JPEG frame.
   bool jpeg_compress_boxes = true;
+
+  // Preserve this metadata when doing JPEG recompression.
+  bool jpeg_keep_exif = true;
+  bool jpeg_keep_xmp = true;
+  bool jpeg_keep_jumbf = true;
 
   // Set the noise to what it would approximately be if shooting at the nominal
   // exposure for a given ISO setting on a 35mm camera.
@@ -203,6 +195,9 @@ struct CompressParams {
 
   std::vector<float> manual_noise;
   std::vector<float> manual_xyb_factors;
+
+  JxlDebugImageCallback debug_image = nullptr;
+  void* debug_image_opaque;
 };
 
 static constexpr float kMinButteraugliForDynamicAR = 0.5f;

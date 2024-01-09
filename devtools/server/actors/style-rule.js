@@ -78,6 +78,7 @@ class StyleRuleActor extends Actor {
     this._declarations = [];
 
     this._pendingDeclarationChanges = [];
+    this._failedToGetRuleText = false;
 
     if (CSSRule.isInstance(item)) {
       this.type = item.type;
@@ -122,18 +123,26 @@ class StyleRuleActor extends Actor {
   // True if this rule supports as-authored styles, meaning that the
   // rule text can be rewritten using setRuleText.
   get canSetRuleText() {
-    return (
-      this.type === ELEMENT_STYLE ||
-      (this._parentSheet &&
-        // If a rule has been modified via CSSOM, then we should fall
-        // back to non-authored editing.
-        // https://bugzilla.mozilla.org/show_bug.cgi?id=1224121
-        !InspectorUtils.hasRulesModifiedByCSSOM(this._parentSheet) &&
-        // Special case about:PreferenceStyleSheet, as it is generated on
-        // the fly and the URI is not registered with the about:handler
-        // https://bugzilla.mozilla.org/show_bug.cgi?id=935803#c37
-        this._parentSheet.href !== "about:PreferenceStyleSheet")
-    );
+    if (this.type === ELEMENT_STYLE) {
+      // Element styles are always editable.
+      return true;
+    }
+    if (!this._parentSheet) {
+      return false;
+    }
+    if (InspectorUtils.hasRulesModifiedByCSSOM(this._parentSheet)) {
+      // If a rule has been modified via CSSOM, then we should fall back to
+      // non-authored editing.
+      // https://bugzilla.mozilla.org/show_bug.cgi?id=1224121
+      return false;
+    }
+    if (this._parentSheet.href === "about:PreferenceStyleSheet") {
+      // Special case about:PreferenceStyleSheet, as it is generated on the
+      // fly and the URI is not registered with the about: protocol handler
+      // https://bugzilla.mozilla.org/show_bug.cgi?id=935803#c37
+      return false;
+    }
+    return true;
   }
 
   /**
@@ -170,25 +179,42 @@ class StyleRuleActor extends Actor {
   get metadata() {
     const data = {};
     data.id = this.actorID;
-    // Collect information about the rule's ancestors (@media, @supports, @keyframes).
+    // Collect information about the rule's ancestors (@media, @supports, @keyframes, parent rules).
     // Used to show context for this change in the UI and to match the rule for undo/redo.
     data.ancestors = this.ancestorRules.map(rule => {
-      return {
+      const ancestorData = {
         id: rule.actorID,
-        // Rule type as number defined by CSSRule.type (ex: 4, 7, 12)
-        // @see https://developer.mozilla.org/en-US/docs/Web/API/CSSRule
-        type: rule.rawRule.type,
-        // Rule type as human-readable string (ex: "@media", "@supports", "@keyframes")
-        typeName: SharedCssLogic.getCSSAtRuleTypeName(rule.rawRule),
-        // Conditions of @container, @media and @supports rules (ex: "min-width: 1em")
-        conditionText: rule.rawRule.conditionText,
-        // Name of @keyframes rule; refrenced by the animation-name CSS property.
-        name: rule.rawRule.name,
-        // Selector of individual @keyframe rule within a @keyframes rule (ex: 0%, 100%).
-        keyText: rule.rawRule.keyText,
         // Array with the indexes of this rule and its ancestors within the CSS rule tree.
         ruleIndex: rule._ruleIndex,
       };
+
+      // Rule type as human-readable string (ex: "@media", "@supports", "@keyframes")
+      const typeName = SharedCssLogic.getCSSAtRuleTypeName(rule.rawRule);
+      if (typeName) {
+        ancestorData.typeName = typeName;
+      }
+
+      // Conditions of @container, @media and @supports rules (ex: "min-width: 1em")
+      if (rule.rawRule.conditionText !== undefined) {
+        ancestorData.conditionText = rule.rawRule.conditionText;
+      }
+
+      // Name of @keyframes rule; referenced by the animation-name CSS property.
+      if (rule.rawRule.name !== undefined) {
+        ancestorData.name = rule.rawRule.name;
+      }
+
+      // Selector of individual @keyframe rule within a @keyframes rule (ex: 0%, 100%).
+      if (rule.rawRule.keyText !== undefined) {
+        ancestorData.keyText = rule.rawRule.keyText;
+      }
+
+      // Selector of the rule; might be useful in case for nested rules
+      if (rule.rawRule.selectorText !== undefined) {
+        ancestorData.selectorText = rule.rawRule.selectorText;
+      }
+
+      return ancestorData;
     });
 
     // For changes in element style attributes, generate a unique selector.
@@ -252,6 +278,41 @@ class StyleRuleActor extends Actor {
     return sheet.associatedDocument;
   }
 
+  /**
+   * When a rule is nested in another non-at-rule (aka CSS Nesting), the client
+   * will need its desugared selector, i.e. the full selector, which includes ancestor
+   * selectors, that is computed by the platform when applying the rule.
+   * To compute it, the parent selector (&) is recursively replaced by the parent
+   * rule selector wrapped in `:is()`.
+   * For example, with the following nested rule: `body { & > main {} }`,
+   * the desugared selector will be `:is(body) > main`.
+   * See https://www.w3.org/TR/css-nesting-1/#nest-selector for more information.
+   *
+   * Returns an array of the desugared selectors. For example, if rule is:
+   *
+   * body {
+   *   & > main, & section {
+   *   }
+   * }
+   *
+   * this will return:
+   *
+   * [
+   *   `:is(body) > main`,
+   *   `:is(body) section`,
+   * ]
+   *
+   * @returns Array<String>
+   */
+  getDesugaredSelectors() {
+    // Cache the desugared selectors as it can be expensive to compute
+    if (!this._desugaredSelectors) {
+      this._desugaredSelectors = CssLogic.getSelectors(this.rawRule, true);
+    }
+
+    return this._desugaredSelectors;
+  }
+
   toString() {
     return "[StyleRuleActor for " + this.rawRule + "]";
   }
@@ -263,7 +324,6 @@ class StyleRuleActor extends Actor {
       type: this.type,
       line: this.line || undefined,
       column: this.column,
-      ancestorData: [],
       traits: {
         // Indicates whether StyleRuleActor implements and can use the setRuleText method.
         // It cannot use it if the stylesheet was programmatically mutated via the CSSOM.
@@ -271,77 +331,15 @@ class StyleRuleActor extends Actor {
       },
     };
 
-    // Go through all ancestor so we can build an array of all the media queries and
-    // layers this rule is in.
-    for (const ancestorRule of this.ancestorRules) {
-      const ruleClassName = ChromeUtils.getClassName(ancestorRule.rawRule);
-      const type = SharedCssLogic.CSSAtRuleClassNameType[ruleClassName];
-      if (
-        ruleClassName === "CSSMediaRule" &&
-        ancestorRule.rawRule.media?.length
-      ) {
-        form.ancestorData.push({
-          type,
-          value: Array.from(ancestorRule.rawRule.media).join(", "),
-        });
-      } else if (ruleClassName === "CSSLayerBlockRule") {
-        form.ancestorData.push({
-          type,
-          value: ancestorRule.rawRule.name,
-        });
-      } else if (ruleClassName === "CSSContainerRule") {
-        form.ancestorData.push({
-          type,
-          // Send containerName and containerQuery separately (instead of conditionText)
-          // so the client has more flexibility to display the information.
-          containerName: ancestorRule.rawRule.containerName,
-          containerQuery: ancestorRule.rawRule.containerQuery,
-        });
-      } else if (ruleClassName === "CSSSupportsRule") {
-        form.ancestorData.push({
-          type,
-          conditionText: ancestorRule.rawRule.conditionText,
-        });
-      }
-    }
+    const { computeDesugaredSelector, ancestorData } =
+      this._getAncestorDataForForm();
+    form.ancestorData = ancestorData;
 
     if (this._parentSheet) {
       form.parentStyleSheet =
         this.pageStyle.styleSheetsManager.getStyleSheetResourceId(
           this._parentSheet
         );
-
-      if (this._parentSheet.ownerRule) {
-        // If the rule is in a imported stylesheet with a specified layer, put it at the top
-        // of the ancestor data array.
-        if (this._parentSheet.ownerRule.layerName !== null) {
-          form.ancestorData.unshift({
-            type: "layer",
-            value: this._parentSheet.ownerRule.layerName,
-          });
-        }
-
-        // If the rule is in a imported stylesheet with specified media conditions,
-        // put them at the top of the ancestor data array.
-        if (
-          this._parentSheet.ownerRule.media?.mediaText ||
-          this._parentSheet.ownerRule.supportsText
-        ) {
-          const parts = [];
-          if (this._parentSheet.ownerRule.supportsText) {
-            parts.push(`supports(${this._parentSheet.ownerRule.supportsText})`);
-          }
-
-          if (this._parentSheet.ownerRule.media?.mediaText) {
-            parts.push(this._parentSheet.ownerRule.media.mediaText);
-          }
-
-          form.ancestorData.unshift({
-            type: "import",
-            value: parts.join(" "),
-          });
-        }
-      }
     }
 
     // One tricky thing here is that other methods in this actor must
@@ -354,6 +352,9 @@ class StyleRuleActor extends Actor {
     switch (this.type) {
       case CSSRule.STYLE_RULE:
         form.selectors = CssLogic.getSelectors(this.rawRule);
+        if (computeDesugaredSelector) {
+          form.desugaredSelectors = this.getDesugaredSelectors();
+        }
         form.cssText = this.rawStyle.cssText || "";
         break;
       case ELEMENT_STYLE:
@@ -460,6 +461,101 @@ class StyleRuleActor extends Actor {
     }
 
     return form;
+  }
+
+  /**
+   *
+   * @returns {Object} Object with the following properties:
+   *          - {Array<Object>} ancestorData: An array of ancestor item data
+   *          - {Boolean} computeDesugaredSelector: true if the rule has a non-at-rule
+   *                      parent rule (i.e. rule is likely to be a nested rule)
+   */
+  _getAncestorDataForForm() {
+    const ancestorData = [];
+    // Flag that will be set to true if the rule has a non-at-rule parent rule
+    let computeDesugaredSelector = false;
+
+    // Go through all ancestor so we can build an array of all the media queries and
+    // layers this rule is in.
+    for (const ancestorRule of this.ancestorRules) {
+      const rawRule = ancestorRule.rawRule;
+      const ruleClassName = ChromeUtils.getClassName(rawRule);
+      const type = SharedCssLogic.CSSAtRuleClassNameType[ruleClassName];
+
+      if (ruleClassName === "CSSMediaRule" && rawRule.media?.length) {
+        ancestorData.push({
+          type,
+          value: Array.from(rawRule.media).join(", "),
+        });
+      } else if (ruleClassName === "CSSLayerBlockRule") {
+        ancestorData.push({
+          // we need the actorID so we can uniquely identify nameless layers on the client
+          actorID: ancestorRule.actorID,
+          type,
+          value: rawRule.name,
+        });
+      } else if (ruleClassName === "CSSContainerRule") {
+        ancestorData.push({
+          type,
+          // Send containerName and containerQuery separately (instead of conditionText)
+          // so the client has more flexibility to display the information.
+          containerName: rawRule.containerName,
+          containerQuery: rawRule.containerQuery,
+        });
+      } else if (ruleClassName === "CSSSupportsRule") {
+        ancestorData.push({
+          type,
+          conditionText: rawRule.conditionText,
+        });
+      } else if (rawRule.selectorText) {
+        // All the previous cases where about at-rules; this one is for regular rule
+        // that are ancestors because CSS nesting was used.
+        // In such case, we want to return the selectorText so it can be displayed in the UI.
+        ancestorData.push({
+          type,
+          selectorText: rawRule.selectorText,
+        });
+        computeDesugaredSelector = true;
+      }
+    }
+
+    if (this._parentSheet) {
+      // Loop through all parent stylesheets to get the whole list of @import rules.
+      let rule = this.rawRule;
+      while ((rule = rule.parentStyleSheet?.ownerRule)) {
+        // If the rule is in a imported stylesheet with a specified layer
+        if (rule.layerName !== null) {
+          // Put the item at the top of the ancestor data array, as we're going up
+          // in the stylesheet hierarchy, and we want to display ancestor rules in the
+          // orders they're applied.
+          ancestorData.unshift({
+            type: "layer",
+            value: rule.layerName,
+          });
+        }
+
+        // If the rule is in a imported stylesheet with specified media/supports conditions
+        if (rule.media?.mediaText || rule.supportsText) {
+          const parts = [];
+          if (rule.supportsText) {
+            parts.push(`supports(${rule.supportsText})`);
+          }
+
+          if (rule.media?.mediaText) {
+            parts.push(rule.media.mediaText);
+          }
+
+          // Put the item at the top of the ancestor data array, as we're going up
+          // in the stylesheet hierarchy, and we want to display ancestor rules in the
+          // orders they're applied.
+          ancestorData.unshift({
+            type: "import",
+            value: parts.join(" "),
+          });
+        }
+      }
+    }
+    return { ancestorData, computeDesugaredSelector };
   }
 
   /**
@@ -600,22 +696,35 @@ class StyleRuleActor extends Actor {
    */
   async getAuthoredCssText(skipCache = false) {
     if (!this.canSetRuleText || !this.#isRuleSupported()) {
-      return Promise.resolve("");
+      return "";
     }
 
-    if (typeof this.authoredText === "string" && !skipCache) {
-      return Promise.resolve(this.authoredText);
+    if (!skipCache) {
+      if (this._failedToGetRuleText) {
+        return "";
+      }
+      if (typeof this.authoredText === "string") {
+        return this.authoredText;
+      }
     }
 
-    const resourceId =
-      this.pageStyle.styleSheetsManager.getStyleSheetResourceId(
-        this._parentSheet
+    try {
+      const resourceId =
+        this.pageStyle.styleSheetsManager.getStyleSheetResourceId(
+          this._parentSheet
+        );
+      const cssText = await this.pageStyle.styleSheetsManager.getText(
+        resourceId
       );
-    const cssText = await this.pageStyle.styleSheetsManager.getText(resourceId);
-    const { text } = getRuleText(cssText, this.line, this.column);
-
-    // Cache the result on the rule actor to avoid parsing again next time
-    this.authoredText = text;
+      const { text } = getRuleText(cssText, this.line, this.column);
+      // Cache the result on the rule actor to avoid parsing again next time
+      this._failedToGetRuleText = false;
+      this.authoredText = text;
+    } catch (e) {
+      this._failedToGetRuleText = true;
+      this.authoredText = undefined;
+      return "";
+    }
     return this.authoredText;
   }
 
@@ -635,7 +744,7 @@ class StyleRuleActor extends Actor {
   async getRuleText() {
     // Bail out if the rule is not supported or not an element inline style.
     if (!this.#isRuleSupported(true) && this.type !== ELEMENT_STYLE) {
-      return Promise.resolve("");
+      return "";
     }
 
     let ruleBodyText;
@@ -667,7 +776,7 @@ class StyleRuleActor extends Actor {
 
     const text = `${selectorText} {${ruleBodyText}}`;
     const { result } = SharedCssLogic.prettifyCSS(text);
-    return Promise.resolve(result);
+    return result;
   }
 
   /**
@@ -722,7 +831,8 @@ class StyleRuleActor extends Actor {
     }
 
     this.authoredText = newText;
-    this.pageStyle.refreshObservedRules();
+    await this.updateAncestorRulesAuthoredText();
+    this.pageStyle.refreshObservedRules(this.ancestorRules);
 
     // Add processed modifications to the _pendingDeclarationChanges array,
     // they will be emitted as CSS_CHANGE resources once `declarations` have
@@ -732,6 +842,16 @@ class StyleRuleActor extends Actor {
     // Returning this updated actor over the protocol will update its corresponding front
     // and any references to it.
     return this;
+  }
+
+  /**
+   * Update the authored text of the ancestor rules. This should be called when setting
+   * the authored text of a (nested) rule, so all the references are properly updated.
+   */
+  async updateAncestorRulesAuthoredText() {
+    return Promise.all(
+      this.ancestorRules.map(rule => rule.getAuthoredCssText(true))
+    );
   }
 
   /**
@@ -756,7 +876,6 @@ class StyleRuleActor extends Actor {
     // Use a fresh element for each call to this function to prevent side
     // effects that pop up based on property values that were already set on the
     // element.
-
     let document;
     if (this.rawNode) {
       document = this.rawNode.ownerDocument;
@@ -784,7 +903,7 @@ class StyleRuleActor extends Actor {
       }
     }
 
-    this.pageStyle.refreshObservedRules();
+    this.pageStyle.refreshObservedRules(this.ancestorRules);
 
     // Add processed modifications to the _pendingDeclarationChanges array,
     // they will be emitted as CSS_CHANGE resources once `declarations` have
@@ -848,7 +967,12 @@ class StyleRuleActor extends Actor {
         { kind: UPDATE_PRESERVING_RULES }
       );
     } else {
-      const cssRules = parentStyleSheet.cssRules;
+      // We retrieve the parent of the rule, which can be a regular stylesheet, but also
+      // another rule, in case the underlying rule is nested.
+      // If the rule is nested in another rule, we need to use its parent rule to "edit" it.
+      // If the rule has no parent rules, we can simply use the stylesheet.
+      const parent = this.rawRule.parentRule || parentStyleSheet;
+      const cssRules = parent.cssRules;
       const cssText = rule.cssText;
       const selectorText = rule.selectorText;
 
@@ -858,8 +982,8 @@ class StyleRuleActor extends Actor {
             // Inserts the new style rule into the current style sheet and
             // delete the current rule
             const ruleText = cssText.slice(selectorText.length).trim();
-            parentStyleSheet.insertRule(value + " " + ruleText, i);
-            parentStyleSheet.deleteRule(i + 1);
+            parent.insertRule(value + " " + ruleText, i);
+            parent.deleteRule(i + 1);
             break;
           } catch (e) {
             // The selector could be invalid, or the rule could fail to insert.
@@ -868,6 +992,8 @@ class StyleRuleActor extends Actor {
         }
       }
     }
+
+    await this.updateAncestorRulesAuthoredText();
 
     return this._getRuleFromIndex(parentStyleSheet);
   }
@@ -1016,6 +1142,9 @@ class StyleRuleActor extends Actor {
       return { ruleProps: null, isMatching: true };
     }
 
+    // Nullify cached desugared selectors as it might be outdated
+    this._desugaredSelectors = null;
+
     // The rule's previous selector is lost after calling _addNewSelector(). Save it now.
     const oldValue = this.rawRule.selectorText;
     let selectorPromise = this._addNewSelector(value, editAuthored);
@@ -1033,7 +1162,7 @@ class StyleRuleActor extends Actor {
     }
 
     return selectorPromise.then(newCssRule => {
-      let ruleProps = null;
+      let entries = null;
       let isMatching = false;
 
       if (newCssRule) {
@@ -1042,19 +1171,24 @@ class StyleRuleActor extends Actor {
           newCssRule
         );
         if (ruleEntry.length === 1) {
-          ruleProps = this.pageStyle.getAppliedProps(node, ruleEntry, {
+          entries = this.pageStyle.getAppliedProps(node, ruleEntry, {
             matchedSelectors: true,
           });
         } else {
-          ruleProps = this.pageStyle.getNewAppliedProps(node, newCssRule);
+          entries = this.pageStyle.getNewAppliedProps(node, newCssRule);
         }
 
-        isMatching = ruleProps.entries.some(
-          ruleProp => !!ruleProp.matchedSelectors.length
+        isMatching = entries.some(
+          ruleProp => !!ruleProp.matchedDesugaredSelectors.length
         );
       }
 
-      return { ruleProps, isMatching };
+      const result = { isMatching };
+      if (entries) {
+        result.ruleProps = { entries };
+      }
+
+      return result;
     });
   }
 
@@ -1105,9 +1239,13 @@ class StyleRuleActor extends Actor {
    *
    * If any have changed their used/unused state, potentially as a result of changes in
    * another rule, fire a "rule-updated" event with this rule actor in its latest state.
+   *
+   * @param {Boolean} forceRefresh: Set to true to emit "rule-updated", even if the state
+   *        of the declarations didn't change.
    */
-  refresh() {
+  maybeRefresh(forceRefresh) {
     let hasChanged = false;
+
     const el = this.pageStyle.selectedElement;
     const style = CssLogic.getComputedStyle(el);
 
@@ -1121,7 +1259,7 @@ class StyleRuleActor extends Actor {
       }
     }
 
-    if (hasChanged) {
+    if (hasChanged || forceRefresh) {
       // ⚠️ IMPORTANT ⚠️
       // When an event is emitted via the protocol with the StyleRuleActor as payload, the
       // corresponding StyleRuleFront will be automatically updated under the hood.

@@ -608,6 +608,7 @@ class TypeDef {
 
   const TypeDef* superTypeDef_;
   uint16_t subTypingDepth_;
+  bool isFinal_;
   TypeDefKind kind_;
   union {
     FuncType funcType_;
@@ -629,6 +630,7 @@ class TypeDef {
         superTypeVector_(nullptr),
         superTypeDef_(nullptr),
         subTypingDepth_(0),
+        isFinal_(false),
         kind_(TypeDefKind::None) {
     setRecGroup(recGroup);
   }
@@ -683,6 +685,8 @@ class TypeDef {
   }
 
   const TypeDef* superTypeDef() const { return superTypeDef_; }
+
+  bool isFinal() const { return isFinal_; }
 
   uint16_t subTypingDepth() const { return subTypingDepth_; }
 
@@ -740,6 +744,7 @@ class TypeDef {
   HashNumber hash() const {
     HashNumber hn = HashNumber(kind_);
     hn = mozilla::AddToHash(hn, TypeDef::forMatch(superTypeDef_, &recGroup()));
+    hn = mozilla::AddToHash(hn, isFinal_);
     switch (kind_) {
       case TypeDefKind::Func:
         hn = mozilla::AddToHash(hn, funcType_.hash(&recGroup()));
@@ -760,6 +765,9 @@ class TypeDef {
   // "Matching type definitions" in WasmValType.h for more background.
   static bool matches(const TypeDef& lhs, const TypeDef& rhs) {
     if (lhs.kind_ != rhs.kind_) {
+      return false;
+    }
+    if (lhs.isFinal_ != rhs.isFinal_) {
       return false;
     }
     if (TypeDef::forMatch(lhs.superTypeDef_, &lhs.recGroup()) !=
@@ -789,6 +797,11 @@ class TypeDef {
       return false;
     }
 
+    // A subtype can't declare a final super type.
+    if (superType->isFinal()) {
+      return false;
+    }
+
     switch (subType->kind_) {
       case TypeDefKind::Func:
         return FuncType::canBeSubTypeOf(subType->funcType_,
@@ -809,6 +822,8 @@ class TypeDef {
     superTypeDef_ = superTypeDef;
     subTypingDepth_ = superTypeDef_->subTypingDepth_ + 1;
   }
+
+  void setFinal(const bool value) { isFinal_ = value; }
 
   // Checks if `subTypeDef` is a declared sub type of `superTypeDef`.
   static bool isSubTypeOf(const TypeDef* subTypeDef,
@@ -1171,10 +1186,19 @@ class TypeContext : public AtomicRefCounted<TypeContext> {
          groupTypeIndex++) {
       uint32_t typeIndex = length() - recGroup->numTypes() + groupTypeIndex;
       const TypeDef* oldTypeDef = types_[typeIndex];
-      const TypeDef* newTypeDef = &canonicalRecGroup->type(groupTypeIndex);
-      types_[typeIndex] = newTypeDef;
+      const TypeDef* canonTypeDef = &canonicalRecGroup->type(groupTypeIndex);
+
+      types_[typeIndex] = canonTypeDef;
       moduleIndices_.remove(oldTypeDef);
-      if (!moduleIndices_.put(newTypeDef, typeIndex)) {
+
+      // Ensure there is an module index entry pointing to the canonical type
+      // definition. Don't overwrite it if it already exists, serialization
+      // relies on the module index map pointing to the first occurrence of a
+      // type definition to avoid creating forward references that didn't exist
+      // in the original module.
+      auto canonTypeIndexEntry = moduleIndices_.lookupForAdd(canonTypeDef);
+      if (!canonTypeIndexEntry &&
+          !moduleIndices_.add(canonTypeIndexEntry, canonTypeDef, typeIndex)) {
         return false;
       }
     }
@@ -1278,6 +1302,7 @@ inline RefTypeHierarchy RefType::hierarchy() const {
       return RefTypeHierarchy::Extern;
     case RefType::Any:
     case RefType::None:
+    case RefType::I31:
     case RefType::Eq:
     case RefType::Struct:
     case RefType::Array:
@@ -1338,6 +1363,11 @@ inline bool RefType::isSubTypeOf(RefType subType, RefType superType) {
 
   // eqref is a subtype of anyref
   if (subType.isEq() && superType.isAny()) {
+    return true;
+  }
+
+  // i31ref is a subtype of eqref
+  if (subType.isI31() && (superType.isAny() || superType.isEq())) {
     return true;
   }
 
@@ -1442,19 +1472,19 @@ inline bool RefType::castPossible(RefType sourceType, RefType destType) {
 // # GC types
 //
 // For GC types, an entry is always created in the global data area and a
-// unique RttValue (see wasm/TypedObject.h) is stored there. This RttValue
+// unique RttValue (see wasm/WasmGcObject.h) is stored there. This RttValue
 // is the value given by 'rtt.canon $t' for each type definition. As each entry
 // is given a unique value and no canonicalization is done (which would require
 // hash-consing of infinite-trees), this is not yet spec compliant.
 //
 // # wasm::Instance and the global type context
 //
-// As GC objects (aka TypedObject) may outlive the module they are created in,
-// types are additionally transferred to a wasm::Context (which is part of
-// JSContext) upon instantiation. This wasm::Context contains the
-// 'global type context' that RTTValues refer to by type index. Types are never
-// freed from the global type context as that would shift the index space. In
-// the future, this will be fixed.
+// As GC objects may outlive the module they are created in, types are
+// additionally transferred to a wasm::Context (which is part of JSContext) upon
+// instantiation. This wasm::Context contains the 'global type context' that
+// RTTValues refer to by type index. Types are never freed from the global type
+// context as that would shift the index space. In the future, this will be
+// fixed.
 
 }  // namespace wasm
 }  // namespace js

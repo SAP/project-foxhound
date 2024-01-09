@@ -5,11 +5,7 @@
 "use strict";
 
 /* import-globals-from ../../mochitest/states.js */
-/* import-globals-from ../../mochitest/value.js */
-loadScripts(
-  { name: "states.js", dir: MOCHITESTS_DIR },
-  { name: "value.js", dir: MOCHITESTS_DIR }
-);
+loadScripts({ name: "states.js", dir: MOCHITESTS_DIR });
 
 /**
  * Test data has the format of:
@@ -203,6 +199,36 @@ const valueTests = [
 ];
 
 /**
+ * Like testValue in accessible/tests/mochitest/value.js, but waits for cache
+ * updates.
+ */
+async function testValue(acc, value, currValue, minValue, maxValue, minIncr) {
+  const pretty = prettyName(acc);
+  await untilCacheIs(() => acc.value, value, `Wrong value of ${pretty}`);
+
+  await untilCacheIs(
+    () => acc.currentValue,
+    currValue,
+    `Wrong current value of ${pretty}`
+  );
+  await untilCacheIs(
+    () => acc.minimumValue,
+    minValue,
+    `Wrong minimum value of ${pretty}`
+  );
+  await untilCacheIs(
+    () => acc.maximumValue,
+    maxValue,
+    `Wrong maximum value of ${pretty}`
+  );
+  await untilCacheIs(
+    () => acc.minimumIncrement,
+    minIncr,
+    `Wrong minimum increment value of ${pretty}`
+  );
+}
+
+/**
  * Test caching of accessible object values
  */
 addAccessibleTask(
@@ -239,7 +265,7 @@ addAccessibleTask(
       await onUpdate;
       if (Array.isArray(expected)) {
         acc.QueryInterface(nsIAccessibleValue);
-        testValue(acc, ...expected);
+        await testValue(acc, ...expected);
       } else {
         is(acc.value, expected, `Correct value for ${prettyName(acc)}`);
       }
@@ -254,7 +280,7 @@ addAccessibleTask(
 addAccessibleTask(
   `<a id="link" href="https://example.com/">Test</a>`,
   async function (browser, docAcc) {
-    const link = findAccessibleChildByID(docAcc, "link");
+    let link = findAccessibleChildByID(docAcc, "link");
     is(link.value, "https://example.com/", "link initial value correct");
     const textLeaf = link.firstChild;
     is(textLeaf.value, "https://example.com/", "link initial value correct");
@@ -268,11 +294,27 @@ addAccessibleTask(
     );
 
     info("Removing link href");
+    let onRecreation = waitForEvents({
+      expected: [
+        [EVENT_HIDE, link],
+        [EVENT_SHOW, "link"],
+      ],
+    });
     await invokeSetAttribute(browser, "link", "href");
+    await onRecreation;
+    link = findAccessibleChildByID(docAcc, "link");
     await untilCacheIs(() => link.value, "", "link value empty after removal");
 
     info("Setting link href");
+    onRecreation = waitForEvents({
+      expected: [
+        [EVENT_HIDE, link],
+        [EVENT_SHOW, "link"],
+      ],
+    });
     await invokeSetAttribute(browser, "link", "href", "https://example.com/");
+    await onRecreation;
+    link = findAccessibleChildByID(docAcc, "link");
     await untilCacheIs(
       () => link.value,
       "https://example.com/",

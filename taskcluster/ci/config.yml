@@ -59,6 +59,7 @@ treeherder:
         'M-headless-spi-nw': 'Headless Mochitests with fission and socketprocess networking.'
         'M-headless-spi-nw-nofis': 'Headless Mochitests with fission and socketprocess networking without fission enabled.'
         'M-http3': 'Mochitests with Http/3 server'
+        'M-http2': 'Mochitests with Http/2 server'
         'M-aab': 'Mochitests with AAB test_runner.'
         'M-aab-nofis': 'Mochitests with AAB test_runner without fission enabled.'
         'M-1proc': 'Mochitests without e10s or fission'
@@ -159,8 +160,10 @@ treeherder:
         'Deb9': 'Packages for Debian 9'
         'Deb10': 'Packages for Debian 10'
         'Deb11': 'Packages for Debian 11'
+        'Deb12': 'Packages for Debian 12'
         'Ub18': 'Packages for Ubuntu 18.04'
         'Ub20': 'Packages for Ubuntu 20.04'
+        'Ub22': 'Packages for Ubuntu 22.04'
         'I': 'Docker Image Builds'
         'TA': 'Toolchain builds for Android'
         'TL': 'Toolchain builds for Linux 64-bits'
@@ -254,6 +257,11 @@ release-promotion:
         - 'devedition'
         - 'fennec'
         - 'firefox'
+    rebuild-kinds:
+        - docker-image
+        - fetch
+        - packages
+        - toolchain
     flavors:
         promote_devedition:
             product: devedition
@@ -498,6 +506,11 @@ workers:
             implementation: generic-worker
             os: windows
             worker-type: '{alias}-azure'
+        b-win2022:
+            provisioner: '{trust-domain}-{level}'
+            implementation: generic-worker
+            os: windows
+            worker-type: '{alias}'
         image:
             provisioner: '{trust-domain}-{level}'
             implementation: docker-worker
@@ -547,6 +560,14 @@ workers:
                 by-release-level:
                     production: '{trust-domain}-3-beetmover'
                     staging: '{trust-domain}-1-beetmover'
+        shipit:
+            provisioner: scriptworker-k8s
+            implementation: shipit
+            os: scriptworker
+            worker-type:
+                by-release-level:
+                    production: '{trust-domain}-3-shipit'
+                    staging: '{trust-domain}-1-shipit'
         linux-depsigning:
             provisioner: scriptworker-k8s
             implementation: scriptworker-signing
@@ -604,11 +625,6 @@ workers:
             implementation: docker-worker
             os: linux
             worker-type: 't-linux-kvm-gcp'
-        t-linux-kvm-aws:
-            provisioner: '{trust-domain}-t'
-            implementation: docker-worker
-            os: linux
-            worker-type: 't-linux-metal'
         t-linux-talos:
             provisioner: releng-hardware
             implementation: generic-worker
@@ -630,6 +646,11 @@ workers:
             os: macosx
             worker-type: 'gecko-{alias}'
         t-osx-1100-m1:
+            provisioner: releng-hardware
+            implementation: generic-worker
+            os: macosx
+            worker-type: 'gecko-{alias}'
+        t-osx-1300-m2:
             provisioner: releng-hardware
             implementation: generic-worker
             os: macosx

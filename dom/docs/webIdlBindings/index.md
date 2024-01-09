@@ -1390,6 +1390,25 @@ implementing `MyInterface`.
 Multiple `[BindingAlias]` extended attributes can be used on a single
 attribute.
 
+### `[BindingTemplate=(name, value)]`
+
+This extended attribute can be specified on an attribute, and causes the getter
+and setter for this attribute to forward to a common generated implementation,
+shared with all other attributes that have a `[BindingTemplate]` with the same
+value for the `name` argument. The `TemplatedAttributes` dictionary in
+Bindings.conf needs to contain a definition for the template with the name
+`name`. The `value` will be passed as an argument when calling the common
+generated implementation.
+
+This is aimed at very specialized use cases where an interface has a
+large number of attributes that all have the same type, and for which we have a
+native implementation that's common to all these attributes, and typically uses
+some id based on the attribute's name in the implementation. All the attributes
+that use the same template need to mostly have the same extended attributes,
+except form a small number that are allowed to differ (`[BindingTemplate]`,
+`[BindingAlias]`, `[Pure]`, [`Pref`] and [`Func`], and the annotations for
+whether the getter and setter throws exceptions).
+
 ### `[ChromeOnly]`
 
 This extended attribute can be specified on any method, attribute, or
@@ -1840,22 +1859,20 @@ details specific to Gecko:
 ### `[NeedsSubjectPrincipal]`, `[GetterNeedsSubjectPrincipal]`, `[SetterNeedsSubjectPrincipal]`
 
 Used to flag a method or an attribute that needs to know the subject
-principal. This principal will be passed as argument.  If the interface
-is not exposed on any worker global, the argument will be a
-`nsIPrincipal&` because a subject principal is always available in
-mainthread globals.  If the interface is exposed on some worker global,
-the argument will be a `const Maybe<nsIPrincipal*>&`. This `Maybe<>`
-object contains the principal *only* on the main thread; when the method
-is called on a {{domxref("Worker")}} thread, the value of the object
-will be `Nothing()`.  Note that, in workers, it is always possible to
-retrieve the correct subject principal from the `WorkerPrivate`
-object, though it cannot be used on the worker thread.
+principal. This principal will be passed as argument.  The argument
+will be a `nsIPrincipal&` because a subject principal is always
+available.
 
 `[NeedsSubjectPrincipal]` applies to both methods and attributes; for
 attributes it means both the getter and the setter need a subject
 principal. `[GetterNeedsSubjectPrincipal]` applies only to attributes.
 `[SetterNeedsSubjectPrincipal]` applies only to non-readonly
 attributes.
+
+These attributes may also be constrained to non-system principals using
+`[{Getter,Setter,}NeedsSubjectPrincipal=NonSystem]`. This changes the argument
+type to `nsIPrincipal*`, and passes `nullptr` when called with a system
+principal.
 
 ### `[NeedsCallerType]`
 

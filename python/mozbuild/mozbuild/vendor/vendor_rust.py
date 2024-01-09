@@ -75,26 +75,15 @@ Cargo.lock to the HEAD version, run `git checkout -- Cargo.lock` or
 """
 
 
-WINDOWS_UNDESIRABLE_REASON = """\
-The windows and windows-sys crates and their dependencies are too big to \
-vendor, and is a risk of version duplication due to its current update \
-cadence. Until this is worked out with upstream, we prefer to avoid them.\
-"""
-
 PACKAGES_WE_DONT_WANT = {
-    "windows-sys": WINDOWS_UNDESIRABLE_REASON,
-    "windows": WINDOWS_UNDESIRABLE_REASON,
-    "windows_aarch64_msvc": WINDOWS_UNDESIRABLE_REASON,
-    "windows_i686_gnu": WINDOWS_UNDESIRABLE_REASON,
-    "windows_i686_msvc": WINDOWS_UNDESIRABLE_REASON,
-    "windows_x86_64_gnu": WINDOWS_UNDESIRABLE_REASON,
-    "windows_x86_64_msvc": WINDOWS_UNDESIRABLE_REASON,
+    "windows": "The windows crate is too big to vendor.",
 }
 
 PACKAGES_WE_ALWAYS_WANT_AN_OVERRIDE_OF = [
     "autocfg",
     "cmake",
     "vcpkg",
+    "windows-targets",
 ]
 
 
@@ -172,12 +161,12 @@ class VendorRust(MozbuildObject):
         if not out.startswith("cargo"):
             return False
         version = LooseVersion(out.split()[1])
-        # Cargo 1.68.0 changed vendoring in a way that creates a lot of noise
+        # Cargo 1.71.0 changed vendoring in a way that creates a lot of noise
         # if we go back and forth between vendoring with an older version and
         # a newer version. Only allow the newer versions.
         minimum_rust_version = MINIMUM_RUST_VERSION
-        if LooseVersion("1.68.0") >= MINIMUM_RUST_VERSION:
-            minimum_rust_version = "1.68.0"
+        if LooseVersion("1.71.0") >= MINIMUM_RUST_VERSION:
+            minimum_rust_version = "1.71.0"
         if version < minimum_rust_version:
             self.log(
                 logging.ERROR,
@@ -310,12 +299,12 @@ Please commit or stash these changes before vendoring, or re-run with `--ignore-
     RUNTIME_LICENSE_PACKAGE_WHITELIST = {
         "BSD-2-Clause": [
             "arrayref",
-            "cloudabi",
-            "Inflector",
             "mach",
             "qlog",
         ],
-        "BSD-3-Clause": [],
+        "BSD-3-Clause": [
+            "subtle",
+        ],
     }
 
     # ICU4X is distributed as individual crates that all share the same LICENSE
@@ -556,7 +545,7 @@ license file's hash.
         for path in Path(self.topsrcdir).glob("build/rust/**/Cargo.toml"):
             with open(path) as fh:
                 cargo_toml = toml.load(fh)
-                path = path.relative_to(self.topsrcdir)
+                relative_path = path.relative_to(self.topsrcdir)
                 package = cargo_toml["package"]
                 key = (package["name"], package["version"])
                 if key in crates:
@@ -565,21 +554,21 @@ license file's hash.
                         "build_rust",
                         {
                             "path": crates[key],
-                            "path2": path,
+                            "path2": relative_path,
                             "crate": key[0],
                             "version": key[1],
                         },
                         "{path} and {path2} both contain {crate} {version}",
                     )
                     ret = False
-                crates[key] = path
+                crates[key] = relative_path
 
         for package in cargo_lock["package"]:
             key = (package["name"], package["version"])
             if key in crates and "source" not in package:
                 crates.pop(key)
 
-        for ((name, version), path) in crates.items():
+        for (name, version), path in crates.items():
             self.log(
                 logging.ERROR,
                 "build_rust",
@@ -589,9 +578,7 @@ license file's hash.
             ret = False
         return ret
 
-    def vendor(
-        self, ignore_modified=False, build_peers_said_large_imports_were_ok=False
-    ):
+    def vendor(self, ignore_modified=False, force=False):
         from mozbuild.mach_commands import cargo_vet
 
         self.populate_logger()
@@ -831,7 +818,7 @@ license file's hash.
 
         # If we failed when checking the crates list and/or running `cargo vet`,
         # stop before invoking `cargo vendor`.
-        if failed:
+        if failed and not force:
             return False
 
         res = subprocess.run(
@@ -887,7 +874,7 @@ license file's hash.
                 )
             )
 
-        if not self._check_licenses(vendor_dir):
+        if not self._check_licenses(vendor_dir) and not force:
             self.log(
                 logging.ERROR,
                 "license_check_failed",
@@ -916,7 +903,7 @@ license file's hash.
 
         # Forcefully complain about large files being added, as history has
         # shown that large-ish files typically are not needed.
-        if large_files and not build_peers_said_large_imports_were_ok:
+        if large_files:
             self.log(
                 logging.ERROR,
                 "filesize_check",
@@ -939,7 +926,8 @@ The changes from `mach vendor rust` will NOT be added to version control.
             )
             self.repository.forget_add_remove_files(vendor_dir)
             self.repository.clean_directory(vendor_dir)
-            return False
+            if not force:
+                return False
 
         # Only warn for large imports, since we may just have large code
         # drops from time to time (e.g. importing features into m-c).
@@ -958,4 +946,15 @@ a pull request upstream to ignore those files when publishing.""".format(
                     size=cumulative_added_size
                 ),
             )
+        if "MOZ_AUTOMATION" in os.environ:
+            changed = self.repository.get_changed_files(mode="staged")
+            for file in changed:
+                self.log(
+                    logging.ERROR,
+                    "vendor-change",
+                    {"file": file},
+                    "File was modified by vendor: {file}",
+                )
+            if changed:
+                return False
         return True

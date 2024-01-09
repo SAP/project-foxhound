@@ -34,7 +34,8 @@ bool ServoCSSParser::ComputeColor(ServoStyleSet* aStyleSet,
 /* static */
 already_AddRefed<StyleLockedDeclarationBlock> ServoCSSParser::ParseProperty(
     nsCSSPropertyID aProperty, const nsACString& aValue,
-    const ParsingEnvironment& aParsingEnvironment, ParsingMode aParsingMode) {
+    const ParsingEnvironment& aParsingEnvironment,
+    const StyleParsingMode& aParsingMode) {
   return Servo_ParseProperty(
              aProperty, &aValue, aParsingEnvironment.mUrlExtraData,
              aParsingMode, aParsingEnvironment.mCompatMode,
@@ -60,9 +61,9 @@ bool ServoCSSParser::ParseTransformIntoMatrix(const nsACString& aValue,
 bool ServoCSSParser::ParseFontShorthandForMatching(
     const nsACString& aValue, URLExtraData* aUrl, StyleFontFamilyList& aList,
     StyleFontStyle& aStyle, StyleFontStretch& aStretch,
-    StyleFontWeight& aWeight, float* aSize) {
-  return Servo_ParseFontShorthandForMatching(&aValue, aUrl, &aList, &aStyle,
-                                             &aStretch, &aWeight, aSize);
+    StyleFontWeight& aWeight, float* aSize, bool* aSmallCaps) {
+  return Servo_ParseFontShorthandForMatching(
+      &aValue, aUrl, &aList, &aStyle, &aStretch, &aWeight, aSize, aSmallCaps);
 }
 
 /* static */

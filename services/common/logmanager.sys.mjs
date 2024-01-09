@@ -9,14 +9,8 @@ const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   FileUtils: "resource://gre/modules/FileUtils.sys.mjs",
+  NetUtil: "resource://gre/modules/NetUtil.sys.mjs",
 });
-ChromeUtils.defineModuleGetter(
-  lazy,
-  "NetUtil",
-  "resource://gre/modules/NetUtil.jsm"
-);
-
-import { Preferences } from "resource://gre/modules/Preferences.sys.mjs";
 
 const DEFAULT_MAX_ERROR_AGE = 20 * 24 * 60 * 60; // 20 days
 
@@ -212,11 +206,8 @@ LogManager.prototype = {
   _cleaningUpFileLogs: false,
 
   init(prefRoot, logNames, logFilePrefix) {
-    if (prefRoot instanceof Preferences) {
-      this._prefs = prefRoot;
-    } else {
-      this._prefs = new Preferences(prefRoot);
-    }
+    this._prefs = Services.prefs.getBranch(prefRoot);
+    this._prefsBranch = prefRoot;
 
     this.logFilePrefix = logFilePrefix;
     if (!formatter) {
@@ -226,7 +217,7 @@ LogManager.prototype = {
       dumpAppender = new Log.DumpAppender(formatter);
     }
 
-    allBranches.add(this._prefs._branchStr);
+    allBranches.add(this._prefsBranch);
     // We create a preference observer for all our prefs so they are magically
     // reflected if the pref changes after creation.
     let setupAppender = (
@@ -244,8 +235,8 @@ LogManager.prototype = {
           // For example, if consumerA has dump=Debug then consumerB sets
           // dump=Error, we need to keep dump=Debug so consumerA is respected.
           for (let branch of allBranches) {
-            let lookPrefBranch = new Preferences(branch);
-            let lookVal = Log.Level[lookPrefBranch.get(prefName)];
+            let lookPrefBranch = Services.prefs.getBranch(branch);
+            let lookVal = Log.Level[lookPrefBranch.getCharPref(prefName, null)];
             if (lookVal && lookVal < level) {
               level = lookVal;
             }
@@ -253,10 +244,10 @@ LogManager.prototype = {
         }
         appender.level = level;
       };
-      this._prefs.observe(prefName, observer, this);
+      this._prefs.addObserver(prefName, observer);
       this._prefObservers.push([prefName, observer]);
       // and call the observer now with the current pref value.
-      observer(this._prefs.get(prefName));
+      observer(this._prefs.getCharPref(prefName, null));
       return observer;
     };
 
@@ -298,12 +289,12 @@ LogManager.prototype = {
    * Cleanup this instance
    */
   finalize() {
-    for (let [name, pref] of this._prefObservers) {
-      this._prefs.ignore(name, pref, this);
+    for (let [prefName, observer] of this._prefObservers) {
+      this._prefs.removeObserver(prefName, observer);
     }
     this._prefObservers = [];
     try {
-      allBranches.delete(this._prefs._branchStr);
+      allBranches.delete(this._prefsBranch);
     } catch (e) {}
     this._prefs = null;
   },
@@ -340,11 +331,17 @@ LogManager.prototype = {
       let reason;
       if (this._fileAppender.sawError) {
         reason = this.ERROR_LOG_WRITTEN;
-        flushToFile = this._prefs.get("log.appender.file.logOnError", true);
+        flushToFile = this._prefs.getBoolPref(
+          "log.appender.file.logOnError",
+          true
+        );
         reasonPrefix = "error";
       } else {
         reason = this.SUCCESS_LOG_WRITTEN;
-        flushToFile = this._prefs.get("log.appender.file.logOnSuccess", false);
+        flushToFile = this._prefs.getBoolPref(
+          "log.appender.file.logOnSuccess",
+          false
+        );
         reasonPrefix = "success";
       }
 
@@ -387,7 +384,7 @@ LogManager.prototype = {
    * Finds all logs older than maxErrorAge and deletes them using async I/O.
    */
   cleanupLogs() {
-    let maxAge = this._prefs.get(
+    let maxAge = this._prefs.getIntPref(
       "log.appender.file.maxErrorAge",
       DEFAULT_MAX_ERROR_AGE
     );

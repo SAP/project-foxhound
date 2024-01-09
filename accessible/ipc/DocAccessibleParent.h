@@ -25,14 +25,6 @@ namespace a11y {
 class TextRange;
 class xpcAccessibleGeneric;
 
-#if !defined(XP_WIN)
-class DocAccessiblePlatformExtParent;
-#endif
-
-#ifdef ANDROID
-class SessionAccessibility;
-#endif
-
 /*
  * These objects live in the main process and comunicate with and represent
  * an accessible document in a content process.
@@ -106,8 +98,9 @@ class DocAccessibleParent : public RemoteAccessible,
   virtual mozilla::ipc::IPCResult RecvEvent(const uint64_t& aID,
                                             const uint32_t& aType) override;
 
-  virtual mozilla::ipc::IPCResult RecvShowEvent(const ShowEventData& aData,
-                                                const bool& aFromUser) override;
+  virtual mozilla::ipc::IPCResult RecvShowEvent(
+      nsTArray<AccessibleData>&& aNewTree, const bool& aEventSuppressed,
+      const bool& aComplete, const bool& aFromUser) override;
   virtual mozilla::ipc::IPCResult RecvHideEvent(const uint64_t& aRootID,
                                                 const bool& aFromUser) override;
   mozilla::ipc::IPCResult RecvStateChangeEvent(const uint64_t& aID,
@@ -115,10 +108,7 @@ class DocAccessibleParent : public RemoteAccessible,
                                                const bool& aEnabled) final;
 
   mozilla::ipc::IPCResult RecvCaretMoveEvent(
-      const uint64_t& aID,
-#if defined(XP_WIN)
-      const LayoutDeviceIntRect& aCaretRect,
-#endif
+      const uint64_t& aID, const LayoutDeviceIntRect& aCaretRect,
       const int32_t& aOffset, const bool& aIsSelectionCollapsed,
       const bool& aIsAtEndOfLine, const int32_t& aGranularity) final;
 
@@ -127,15 +117,8 @@ class DocAccessibleParent : public RemoteAccessible,
       const uint32_t& aLen, const bool& aIsInsert,
       const bool& aFromUser) override;
 
-#if defined(XP_WIN)
-  virtual mozilla::ipc::IPCResult RecvSyncTextChangeEvent(
-      const uint64_t& aID, const nsAString& aStr, const int32_t& aStart,
-      const uint32_t& aLen, const bool& aIsInsert,
-      const bool& aFromUser) override;
-
   virtual mozilla::ipc::IPCResult RecvFocusEvent(
       const uint64_t& aID, const LayoutDeviceIntRect& aCaretRect) override;
-#endif  // defined(XP_WIN)
 
   virtual mozilla::ipc::IPCResult RecvSelectionEvent(
       const uint64_t& aID, const uint64_t& aWidgetID,
@@ -143,10 +126,8 @@ class DocAccessibleParent : public RemoteAccessible,
 
   virtual mozilla::ipc::IPCResult RecvVirtualCursorChangeEvent(
       const uint64_t& aID, const uint64_t& aOldPositionID,
-      const int32_t& aOldStartOffset, const int32_t& aOldEndOffset,
-      const uint64_t& aNewPositionID, const int32_t& aNewStartOffset,
-      const int32_t& aNewEndOffset, const int16_t& aReason,
-      const int16_t& aBoundaryType, const bool& aFromUser) override;
+      const uint64_t& aNewPositionID, const int16_t& aReason,
+      const bool& aFromUser) override;
 
   virtual mozilla::ipc::IPCResult RecvScrollingEvent(
       const uint64_t& aID, const uint64_t& aType, const uint32_t& aScrollX,
@@ -271,16 +252,6 @@ class DocAccessibleParent : public RemoteAccessible,
   HWND GetEmulatedWindowHandle() const { return mEmulatedWindowHandle; }
 #endif
 
-#if !defined(XP_WIN)
-  virtual bool DeallocPDocAccessiblePlatformExtParent(
-      PDocAccessiblePlatformExtParent* aActor) override;
-
-  virtual PDocAccessiblePlatformExtParent*
-  AllocPDocAccessiblePlatformExtParent() override;
-
-  DocAccessiblePlatformExtParent* GetPlatformExtension();
-#endif
-
   // Accessible
   virtual Accessible* Parent() const override {
     if (IsTopLevel()) {
@@ -348,10 +319,6 @@ class DocAccessibleParent : public RemoteAccessible,
 
   size_t SizeOfExcludingThis(MallocSizeOf aMallocSizeOf) override;
 
-#ifdef ANDROID
-  RefPtr<SessionAccessibility> mSessionAccessibility;
-#endif
-
  private:
   ~DocAccessibleParent();
 
@@ -379,9 +346,9 @@ class DocAccessibleParent : public RemoteAccessible,
     RemoteAccessible* mProxy;
   };
 
-  uint32_t AddSubtree(RemoteAccessible* aParent,
-                      const nsTArray<AccessibleData>& aNewTree, uint32_t aIdx,
-                      uint32_t aIdxInParent);
+  RemoteAccessible* CreateAcc(const AccessibleData& aAccData);
+  void AttachChild(RemoteAccessible* aParent, uint32_t aIndex,
+                   RemoteAccessible* aChild);
   [[nodiscard]] bool CheckDocTree() const;
   xpcAccessibleGeneric* GetXPCAccessible(RemoteAccessible* aProxy);
 
@@ -406,6 +373,9 @@ class DocAccessibleParent : public RemoteAccessible,
    * proxy object so we can't use a real map.
    */
   nsTHashtable<ProxyEntry> mAccessibles;
+  uint64_t mPendingShowChild = 0;
+  uint64_t mPendingShowParent = 0;
+  uint32_t mPendingShowIndex = 0;
   nsTHashSet<uint64_t> mMovingIDs;
   uint64_t mActorID;
   bool mTopLevel;

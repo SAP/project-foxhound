@@ -311,7 +311,7 @@ win64-plain/debug:
         platform: windows2012-64/debug
         symbol: Bp
         tier: 1
-    worker-type: b-win2012
+    worker-type: b-win2022
     worker:
         max-run-time: 7200
         env:
@@ -403,7 +403,7 @@ win64-plain/opt:
         platform: windows2012-64/opt
         symbol: Bp
         tier: 1
-    worker-type: b-win2012
+    worker-type: b-win2022
     worker:
         max-run-time: 7200
         env:
@@ -517,7 +517,7 @@ win64-shippable/opt:
         symbol: Bpgo(B)
         tier: 1
     run-on-projects: ['release']
-    worker-type: b-linux-gcp
+    worker-type: b-linux-xlarge-gcp
     worker:
         max-run-time: 10800
         env:
@@ -534,6 +534,7 @@ win64-shippable/opt:
         extra-config:
             stage_platform: win64
             mozconfig_platform: win64
+            max_build_output_timeout: 3600
     fetches:
         toolchain:
             - linux64-clang
@@ -563,7 +564,7 @@ win64-nightlyasrelease/opt:
     treeherder:
         platform: win64-nightlyasrelease/opt
         symbol: Bpgo(Bnar)
-    worker-type: b-linux-gcp
+    worker-type: b-linux-xlarge-gcp
     worker:
         max-run-time: 10800
         env:
@@ -581,6 +582,7 @@ win64-nightlyasrelease/opt:
         extra-config:
             stage_platform: win64
             mozconfig_platform: win64
+            max_build_output_timeout: 3600
         mozconfig-variant: nightly-as-release
     run-on-projects: [trunk-only]
     fetches:
@@ -790,7 +792,7 @@ win32-rusttests/opt:
         platform: windows2012-32/opt
         symbol: BR
         tier: 1
-    worker-type: b-win2012
+    worker-type: b-win2022
     worker:
         max-run-time: 5400
         env:
@@ -810,13 +812,11 @@ win32-rusttests/opt:
             disable_package_metrics: true
         mozconfig-variant: rusttests
     run-on-projects: ['mozilla-central']
-    use-sccache: true
     fetches:
         toolchain:
             - win64-clang
             - win64-rust
             - win64-cbindgen
-            - win64-sccache
             - win64-nasm
             - win64-node
             - win64-winchecksec
@@ -835,7 +835,7 @@ win32-rusttests/debug:
         platform: windows2012-32/debug
         symbol: BR
         tier: 1
-    worker-type: b-win2012
+    worker-type: b-win2022
     worker:
         max-run-time: 5400
         env:
@@ -855,13 +855,11 @@ win32-rusttests/debug:
             disable_package_metrics: true
         mozconfig-variant: rusttests-debug
     run-on-projects: ['mozilla-central']
-    use-sccache: true
     fetches:
         toolchain:
             - win64-clang
             - win64-rust
             - win64-cbindgen
-            - win64-sccache
             - win64-nasm
             - win64-node
             - win64-winchecksec
@@ -880,7 +878,7 @@ win64-rusttests/opt:
         platform: windows2012-64/opt
         symbol: BR
         tier: 1
-    worker-type: b-win2012
+    worker-type: b-win2022
     worker:
         max-run-time: 5400
         env:
@@ -897,13 +895,11 @@ win64-rusttests/opt:
             - builds/taskcluster_sub_win64/rusttests_opt.py
         mozconfig-variant: rusttests
     run-on-projects: ['mozilla-central']
-    use-sccache: true
     fetches:
         toolchain:
             - win64-clang
             - win64-rust
             - win64-cbindgen
-            - win64-sccache
             - win64-nasm
             - win64-node
             - win64-winchecksec
@@ -922,7 +918,7 @@ win64-rusttests/debug:
         platform: windows2012-64/debug
         symbol: BR
         tier: 1
-    worker-type: b-win2012
+    worker-type: b-win2022
     worker:
         max-run-time: 5400
         env:
@@ -939,13 +935,11 @@ win64-rusttests/debug:
             - builds/taskcluster_sub_win64/rusttests_opt.py
         mozconfig-variant: rusttests-debug
     run-on-projects: ['trunk']
-    use-sccache: true
     fetches:
         toolchain:
             - win64-clang
             - win64-rust
             - win64-cbindgen
-            - win64-sccache
             - win64-nasm
             - win64-node
             - win64-winchecksec
@@ -966,7 +960,7 @@ win64-ccov/opt:
         platform: windows2012-64/ccov
         symbol: B
         tier: 2
-    worker-type: b-win2012
+    worker-type: b-win2022
     worker:
         artifacts:
             - name: public/code-coverage-grcov.zip
@@ -1013,7 +1007,7 @@ win64-fuzzing-ccov/opt:
     treeherder:
         platform: windows2012-64/ccov
         symbol: Bocf
-    worker-type: b-win2012
+    worker-type: b-win2022
     worker:
         artifacts:
             - name: public/code-coverage-grcov.zip
@@ -1167,7 +1161,7 @@ win64-asan-reporter-shippable/opt:
     treeherder:
         platform: win64-asan-reporter/opt
         symbol: BoR
-    worker-type: b-linux-gcp
+    worker-type: b-linux-xlarge-gcp
     worker:
         max-run-time: 7200
         env:
@@ -1186,6 +1180,7 @@ win64-asan-reporter-shippable/opt:
         extra-config:
             stage_platform: win64-asan-reporter
             mozconfig_platform: win64
+            max_build_output_timeout: 3600
         mozconfig-variant: nightly-asan-reporter
         mar-channel-id:
             firefox-mozilla-central-asan
@@ -1338,7 +1333,7 @@ win64-devedition/opt:
         platform: windows2012-64-devedition/opt
         symbol: B
         tier: 1
-    worker-type: b-linux-gcp
+    worker-type: b-linux-xlarge-gcp
     worker:
         max-run-time: 10800
         env:
@@ -1355,6 +1350,7 @@ win64-devedition/opt:
         extra-config:
             stage_platform: win64-devedition
             mozconfig_platform: win64
+            max_build_output_timeout: 3600
         mozconfig-variant: devedition
     run-on-projects: ['mozilla-beta']
     fetches:

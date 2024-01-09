@@ -2,7 +2,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-import { html, ifDefined } from "chrome://global/content/vendor/lit.all.mjs";
+import {
+  classMap,
+  html,
+  ifDefined,
+} from "chrome://global/content/vendor/lit.all.mjs";
 import { MozLitElement } from "chrome://global/content/lit-utils.mjs";
 
 /**
@@ -10,8 +14,10 @@ import { MozLitElement } from "chrome://global/content/lit-utils.mjs";
  *
  * @property {string} sectionLabel - The aria-label used for the section landmark if the header is hidden with hideHeader
  * @property {boolean} hideHeader - Optional property given if the card container should not display a header
+ * @property {boolean} isInnerCard - Optional property given if the card a nested card within another card and given a border rather than box-shadow
  * @property {boolean} preserveCollapseState - Whether or not the expanded/collapsed state should persist
- * @property {string} viewAllPage - The location hash for the 'View all' header link to navigate to
+ * @property {string} shortPageName - Page name that the 'View all' link will navigate to and the preserveCollapseState pref will use
+ * @property {boolean} showViewAll - True if you need to display a 'View all' header link to navigate
  */
 class CardContainer extends MozLitElement {
   constructor() {
@@ -22,12 +28,16 @@ class CardContainer extends MozLitElement {
   static properties = {
     sectionLabel: { type: String },
     hideHeader: { type: Boolean },
+    isExpanded: { type: Boolean },
+    isInnerCard: { type: Boolean },
     preserveCollapseState: { type: Boolean },
-    viewAllPage: { type: String },
+    shortPageName: { type: String },
+    showViewAll: { type: Boolean },
   };
 
   static queries = {
     detailsEl: "details",
+    mainSlot: "slot[name=main]",
     summaryEl: "summary",
     viewAllLink: ".view-all-link",
   };
@@ -38,8 +48,8 @@ class CardContainer extends MozLitElement {
 
   connectedCallback() {
     super.connectedCallback();
-    if (this.preserveCollapseState && this.viewAllPage) {
-      this.openStatePref = `browser.tabs.firefox-view.ui-state.${this.viewAllPage}.open`;
+    if (this.preserveCollapseState && this.shortPageName) {
+      this.openStatePref = `browser.tabs.firefox-view.ui-state.${this.shortPageName}.open`;
       this.isExpanded = Services.prefs.getBoolPref(this.openStatePref, true);
     }
   }
@@ -48,8 +58,20 @@ class CardContainer extends MozLitElement {
 
   onToggleContainer() {
     this.isExpanded = this.detailsExpanded;
-    if (this.preserveCollapseState && this.viewAllPage) {
+    if (this.preserveCollapseState) {
       Services.prefs.setBoolPref(this.openStatePref, this.isExpanded);
+    }
+    if (!this.isExpanded && this.shortPageName) {
+      // Record telemetry
+      Services.telemetry.recordEvent(
+        "firefoxview_next",
+        "card_collapsed",
+        "card_container",
+        null,
+        {
+          data_type: this.shortPageName,
+        }
+      );
     }
   }
 
@@ -64,7 +86,7 @@ class CardContainer extends MozLitElement {
         aria-label=${ifDefined(this.sectionLabel)}
       >
         <details
-          class="card-container"
+          class=${classMap({ "card-container": true, inner: this.isInnerCard })}
           ?open=${this.isExpanded}
           @toggle=${this.onToggleContainer}
         >
@@ -72,16 +94,22 @@ class CardContainer extends MozLitElement {
             id="header"
             class="card-container-header"
             ?hidden=${ifDefined(this.hideHeader)}
-            ?withViewAll=${ifDefined(this.viewAllPage)}
+            ?withViewAll=${this.showViewAll}
           >
-            <span class="icon chevron-icon" aria-role="presentation"></span>
+            <span
+              class="icon chevron-icon"
+              aria-role="presentation"
+              data-l10n-id="firefoxview-collapse-button-${this.isExpanded
+                ? "hide"
+                : "show"}"
+            ></span>
             <slot name="header"></slot>
           </summary>
           <a
-            href="about:firefoxview-next#${this.viewAllPage}"
+            href="about:firefoxview-next#${this.shortPageName}"
             class="view-all-link"
             data-l10n-id="firefoxview-view-all-link"
-            ?hidden=${!this.viewAllPage}
+            ?hidden=${!this.showViewAll}
           ></a>
           <slot name="main"></slot>
           <slot name="footer" class="card-container-footer"></slot>

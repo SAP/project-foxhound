@@ -25,6 +25,17 @@ pub type VerticalAlign = GenericVerticalAlign<LengthPercentage>;
 /// A computed value for the `contain-intrinsic-size` property.
 pub type ContainIntrinsicSize = GenericContainIntrinsicSize<NonNegativeLength>;
 
+impl ContainIntrinsicSize {
+    /// Converts contain-intrinsic-size to auto style.
+    pub fn add_auto_if_needed(&self) -> Option<Self> {
+        Some(match *self {
+            Self::None => Self::AutoNone,
+            Self::Length(ref l) => Self::AutoLength(*l),
+            Self::AutoNone | Self::AutoLength(..) => return None,
+        })
+    }
+}
+
 /// A computed value for the `line-clamp` property.
 pub type LineClamp = GenericLineClamp<Integer>;
 

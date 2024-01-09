@@ -43,6 +43,22 @@ pub enum CanonicalFunction {
         /// The canonical options for the function.
         options: Box<[CanonicalOption]>,
     },
+    /// A function which creates a new owned handle to a resource.
+    ResourceNew {
+        /// The type index of the resource that's being created.
+        resource: u32,
+    },
+    /// A function which is used to drop resource handles of the specified type.
+    ResourceDrop {
+        /// The type index of the resource that's being dropped.
+        resource: u32,
+    },
+    /// A function which returns the underlying i32-based representation of the
+    /// specified resource.
+    ResourceRep {
+        /// The type index of the resource that's being accessed.
+        resource: u32,
+    },
 }
 
 /// A reader for the canonical section of a WebAssembly component.
@@ -74,6 +90,15 @@ impl<'a> FromReader<'a> for CanonicalFunction {
                         .collect::<Result<_>>()?,
                 },
                 x => return reader.invalid_leading_byte(x, "canonical function lower"),
+            },
+            0x02 => CanonicalFunction::ResourceNew {
+                resource: reader.read()?,
+            },
+            0x03 => CanonicalFunction::ResourceDrop {
+                resource: reader.read()?,
+            },
+            0x04 => CanonicalFunction::ResourceRep {
+                resource: reader.read()?,
             },
             x => return reader.invalid_leading_byte(x, "canonical function"),
         })

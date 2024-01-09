@@ -122,6 +122,13 @@ var gIdentityHandler = {
     );
   },
 
+  get _isContentHttpsFirstModeUpgraded() {
+    return (
+      this._state &
+      Ci.nsIWebProgressListener.STATE_HTTPS_ONLY_MODE_UPGRADED_FIRST
+    );
+  },
+
   get _isCertUserOverridden() {
     return this._state & Ci.nsIWebProgressListener.STATE_CERT_USER_OVERRIDDEN;
   },
@@ -227,10 +234,10 @@ var gIdentityHandler = {
       "identity-popup-security-httpsonlymode-menulist"
     ));
   },
-  get _identityPopupHttpsOnlyModeMenuListTempItem() {
-    delete this._identityPopupHttpsOnlyModeMenuListTempItem;
-    return (this._identityPopupHttpsOnlyModeMenuListTempItem =
-      document.getElementById("identity-popup-security-menulist-tempitem"));
+  get _identityPopupHttpsOnlyModeMenuListOffItem() {
+    delete this._identityPopupHttpsOnlyModeMenuListOffItem;
+    return (this._identityPopupHttpsOnlyModeMenuListOffItem =
+      document.getElementById("identity-popup-security-menulist-off-item"));
   },
   get _identityPopupSecurityEVContentOwner() {
     delete this._identityPopupSecurityEVContentOwner;
@@ -328,16 +335,6 @@ var gIdentityHandler = {
     );
     return this._insecureConnectionTextPBModeEnabled;
   },
-  get _protectionsPanelEnabled() {
-    delete this._protectionsPanelEnabled;
-    XPCOMUtils.defineLazyPreferenceGetter(
-      this,
-      "_protectionsPanelEnabled",
-      "browser.protections_panel.enabled",
-      false
-    );
-    return this._protectionsPanelEnabled;
-  },
   get _httpsOnlyModeEnabled() {
     delete this._httpsOnlyModeEnabled;
     XPCOMUtils.defineLazyPreferenceGetter(
@@ -355,6 +352,38 @@ var gIdentityHandler = {
       "dom.security.https_only_mode_pbm"
     );
     return this._httpsOnlyModeEnabledPBM;
+  },
+  get _httpsFirstModeEnabled() {
+    delete this._httpsFirstModeEnabled;
+    XPCOMUtils.defineLazyPreferenceGetter(
+      this,
+      "_httpsFirstModeEnabled",
+      "dom.security.https_first"
+    );
+    return this._httpsFirstModeEnabled;
+  },
+  get _httpsFirstModeEnabledPBM() {
+    delete this._httpsFirstModeEnabledPBM;
+    XPCOMUtils.defineLazyPreferenceGetter(
+      this,
+      "_httpsFirstModeEnabledPBM",
+      "dom.security.https_first_pbm"
+    );
+    return this._httpsFirstModeEnabledPBM;
+  },
+
+  _isHttpsOnlyModeActive(isWindowPrivate) {
+    return (
+      this._httpsOnlyModeEnabled ||
+      (isWindowPrivate && this._httpsOnlyModeEnabledPBM)
+    );
+  },
+  _isHttpsFirstModeActive(isWindowPrivate) {
+    return (
+      !this._isHttpsOnlyModeActive(isWindowPrivate) &&
+      (this._httpsFirstModeEnabled ||
+        (isWindowPrivate && this._httpsFirstModeEnabledPBM))
+    );
   },
 
   /**
@@ -468,11 +497,23 @@ var gIdentityHandler = {
 
   /**
    * Gets the current HTTPS-Only mode permission for the current page.
-   * Values are the same as in #identity-popup-security-httpsonlymode-menulist
+   * Values are the same as in #identity-popup-security-httpsonlymode-menulist,
+   * -1 indicates a incompatible scheme on the current URI.
    */
   _getHttpsOnlyPermission() {
+    if (
+      !gBrowser.currentURI.schemeIs("http") &&
+      !gBrowser.currentURI.schemeIs("https")
+    ) {
+      return -1;
+    }
+    const httpURI = gBrowser.currentURI.mutate().setScheme("http").finalize();
+    const principal = Services.scriptSecurityManager.createContentPrincipal(
+      httpURI,
+      gBrowser.contentPrincipal.originAttributes
+    );
     const { state } = SitePermissions.getForPrincipal(
-      gBrowser.contentPrincipal,
+      principal,
       "https-only-load-insecure"
     );
     switch (state) {
@@ -493,6 +534,13 @@ var gIdentityHandler = {
     // Note: value and permission association is laid out
     //       in _getHttpsOnlyPermission
     const oldValue = this._getHttpsOnlyPermission();
+    if (oldValue < 0) {
+      console.error(
+        "Did not update HTTPS-Only permission since scheme is incompatible"
+      );
+      return;
+    }
+
     let newValue = parseInt(
       this._identityPopupHttpsOnlyModeMenuList.selectedItem.value,
       10
@@ -503,26 +551,14 @@ var gIdentityHandler = {
       return;
     }
 
-    // Permissions set in PMB get deleted anyway, but to make sure, let's make
-    // the permission session-only.
-    if (newValue === 1 && PrivateBrowsingUtils.isWindowPrivate(window)) {
-      newValue = 2;
-    }
-
-    // Usually we want to set the permission for the current site and therefore
-    // the current principal...
-    let principal = gBrowser.contentPrincipal;
-    // ...but if we're on the HTTPS-Only error page, the content-principal is
-    // for HTTPS but. We always want to set the exception for HTTP. (Code should
-    // be almost identical to the one in AboutHttpsOnlyErrorParent.sys.mjs)
-    let newURI;
-    if (this._isAboutHttpsOnlyErrorPage) {
-      newURI = gBrowser.currentURI.mutate().setScheme("http").finalize();
-      principal = Services.scriptSecurityManager.createContentPrincipal(
-        newURI,
-        gBrowser.contentPrincipal.originAttributes
-      );
-    }
+    // We always want to set the exception for the HTTP version of the current URI,
+    // since when we check wether we should upgrade a request, we are checking permissons
+    // for the HTTP principal (Bug 1757297).
+    const newURI = gBrowser.currentURI.mutate().setScheme("http").finalize();
+    const principal = Services.scriptSecurityManager.createContentPrincipal(
+      newURI,
+      gBrowser.contentPrincipal.originAttributes
+    );
 
     // Set or remove the permission
     if (newValue === 0) {
@@ -1000,35 +1036,36 @@ var gIdentityHandler = {
 
     // If HTTPS-Only Mode is enabled, check the permission status
     const privateBrowsingWindow = PrivateBrowsingUtils.isWindowPrivate(window);
+    const isHttpsOnlyModeActive = this._isHttpsOnlyModeActive(
+      privateBrowsingWindow
+    );
+    const isHttpsFirstModeActive = this._isHttpsFirstModeActive(
+      privateBrowsingWindow
+    );
     let httpsOnlyStatus = "";
-    if (
-      this._httpsOnlyModeEnabled ||
-      (privateBrowsingWindow && this._httpsOnlyModeEnabledPBM)
-    ) {
+    if (isHttpsFirstModeActive || isHttpsOnlyModeActive) {
       // Note: value and permission association is laid out
       //       in _getHttpsOnlyPermission
       let value = this._getHttpsOnlyPermission();
 
-      // Because everything in PBM is temporary anyway, we don't need to make the distinction
-      if (privateBrowsingWindow) {
-        if (value === 2) {
-          value = 1;
-        }
-        // Hide "off temporarily" option
-        this._identityPopupHttpsOnlyModeMenuListTempItem.style.display = "none";
-      } else {
-        this._identityPopupHttpsOnlyModeMenuListTempItem.style.display = "";
-      }
+      this._identityPopupHttpsOnlyModeMenuListOffItem.hidden =
+        privateBrowsingWindow && value != 1;
 
       this._identityPopupHttpsOnlyModeMenuList.value = value;
 
       if (value > 0) {
         httpsOnlyStatus = "exception";
-      } else if (this._isAboutHttpsOnlyErrorPage) {
+      } else if (
+        this._isAboutHttpsOnlyErrorPage ||
+        (isHttpsFirstModeActive && this._isContentHttpsOnlyModeUpgradeFailed)
+      ) {
         httpsOnlyStatus = "failed-top";
       } else if (this._isContentHttpsOnlyModeUpgradeFailed) {
         httpsOnlyStatus = "failed-sub";
-      } else if (this._isContentHttpsOnlyModeUpgraded) {
+      } else if (
+        this._isContentHttpsOnlyModeUpgraded ||
+        this._isContentHttpsFirstModeUpgraded
+      ) {
         httpsOnlyStatus = "upgraded";
       }
     }

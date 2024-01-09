@@ -547,14 +547,14 @@ impl Module {
         // index in our newly generated module. Initially the option is `None` and will become a
         // `Some` when we encounter an import that uses this signature in the next portion of this
         // function. See also the `make_func_type` closure below.
-        let mut available_types = Vec::<(wasmparser::Type, Option<u32>)>::new();
+        let mut available_types = Vec::<(wasmparser::StructuralType, Option<u32>)>::new();
         let mut available_imports = Vec::<wasmparser::Import>::new();
         for payload in wasmparser::Parser::new(0).parse_all(&example_module) {
             match payload.expect("could not parse the available import payload") {
                 wasmparser::Payload::TypeSection(type_reader) => {
                     for ty in type_reader {
                         let ty = ty.expect("could not parse type section");
-                        available_types.push((ty, None));
+                        available_types.push((ty.structural_type, None));
                     }
                 }
                 wasmparser::Payload::ImportSection(import_reader) => {
@@ -587,7 +587,7 @@ impl Module {
             let serialized_sig_idx = match available_types.get_mut(parsed_sig_idx as usize) {
                 None => panic!("signature index refers to a type out of bounds"),
                 Some((_, Some(idx))) => *idx as usize,
-                Some((wasmparser::Type::Func(func_type), index_store)) => {
+                Some((wasmparser::StructuralType::Func(func_type), index_store)) => {
                     let multi_value_required = func_type.results().len() > 1;
                     let new_index = first_type_index + new_types.len();
                     if new_index >= max_types || (multi_value_required && !multi_value_enabled) {
@@ -608,6 +608,12 @@ impl Module {
                     index_store.replace(new_index as u32);
                     new_types.push(Type::Func(Rc::clone(&func_type)));
                     new_index
+                }
+                Some((wasmparser::StructuralType::Array(_array_type), _index_store)) => {
+                    unimplemented!("Array types are not supported yet.");
+                }
+                Some((wasmparser::StructuralType::Struct(_struct_type), _index_store)) => {
+                    unimplemented!("Struct types are not supported yet.");
                 }
             };
             match &new_types[serialized_sig_idx - first_type_index] {
@@ -1639,11 +1645,19 @@ fn convert_type(parsed_type: wasmparser::ValType) -> ValType {
 
 fn convert_reftype(ty: wasmparser::RefType) -> RefType {
     wasm_encoder::RefType {
-        nullable: ty.nullable,
-        heap_type: match ty.heap_type {
-            wasmparser::HeapType::Func => wasm_encoder::HeapType::Func,
-            wasmparser::HeapType::Extern => wasm_encoder::HeapType::Extern,
-            wasmparser::HeapType::TypedFunc(i) => wasm_encoder::HeapType::TypedFunc(i.into()),
+        nullable: ty.is_nullable(),
+        heap_type: match ty.heap_type() {
+            wasmparser::HeapType::Func => HeapType::Func,
+            wasmparser::HeapType::Extern => HeapType::Extern,
+            wasmparser::HeapType::Any => HeapType::Any,
+            wasmparser::HeapType::None => HeapType::None,
+            wasmparser::HeapType::NoExtern => HeapType::NoExtern,
+            wasmparser::HeapType::NoFunc => HeapType::NoFunc,
+            wasmparser::HeapType::Eq => HeapType::Eq,
+            wasmparser::HeapType::Struct => HeapType::Struct,
+            wasmparser::HeapType::Array => HeapType::Array,
+            wasmparser::HeapType::I31 => HeapType::I31,
+            wasmparser::HeapType::Indexed(i) => HeapType::Indexed(i.into()),
         },
     }
 }

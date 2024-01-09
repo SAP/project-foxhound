@@ -289,13 +289,37 @@ add_task(async function previousResultStillVisible() {
   await BrowserTestUtils.withNewTab("about:blank", async () => {
     // Do a search for the first suggestion.
     let firstSuggestion = REMOTE_SETTINGS_RESULTS[0];
+    let index = 1;
+
+    let pingSubmitted = false;
+    GleanPings.quickSuggest.testBeforeNextSubmit(() => {
+      pingSubmitted = true;
+      Assert.equal(
+        Glean.quickSuggest.pingType.testGetValue(),
+        CONTEXTUAL_SERVICES_PING_TYPES.QS_IMPRESSION
+      );
+      Assert.equal(
+        Glean.quickSuggest.improveSuggestExperience.testGetValue(),
+        false
+      );
+      Assert.equal(
+        Glean.quickSuggest.blockId.testGetValue(),
+        firstSuggestion.id
+      );
+      Assert.equal(Glean.quickSuggest.isClicked.testGetValue(), false);
+      Assert.equal(
+        Glean.quickSuggest.matchType.testGetValue(),
+        "firefox-suggest"
+      );
+      Assert.equal(Glean.quickSuggest.position.testGetValue(), index + 1);
+    });
+
     await UrlbarTestUtils.promiseAutocompleteResultPopup({
       window,
       value: firstSuggestion.keywords[0],
       fireInputEvent: true,
     });
 
-    let index = 1;
     await QuickSuggestTestUtils.assertIsQuickSuggest({
       window,
       index,
@@ -339,6 +363,7 @@ add_task(async function previousResultStillVisible() {
         },
       },
     ]);
+    Assert.ok(pingSubmitted, "Glean ping was submitted");
   });
 });
 
@@ -360,11 +385,18 @@ async function doEngagementWithoutAddingResultToView(
   // Set the timeout of the chunk timer to a really high value so that it will
   // not fire. The view updates when the timer fires, which we specifically want
   // to avoid here.
-  let originalChunkDelayMs = UrlbarProvidersManager._chunkResultsDelayMs;
-  UrlbarProvidersManager._chunkResultsDelayMs = 30000;
-  registerCleanupFunction(() => {
-    UrlbarProvidersManager._chunkResultsDelayMs = originalChunkDelayMs;
-  });
+  let originalHeuristicTimeout =
+    UrlbarProvidersManager.CHUNK_HEURISTIC_RESULTS_DELAY_MS;
+  UrlbarProvidersManager.CHUNK_HEURISTIC_RESULTS_DELAY_MS = 30000;
+  let originalOtherTimeout =
+    UrlbarProvidersManager.CHUNK_OTHER_RESULTS_DELAY_MS;
+  UrlbarProvidersManager.CHUNK_OTHER_RESULTS_DELAY_MS = 30000;
+  const cleanup = () => {
+    UrlbarProvidersManager.CHUNK_HEURISTIC_RESULTS_DELAY_MS =
+      originalHeuristicTimeout;
+    UrlbarProvidersManager.CHUNK_OTHER_RESULTS_DELAY_MS = originalOtherTimeout;
+  };
+  registerCleanupFunction(cleanup);
 
   // Stub `UrlbarProviderQuickSuggest.getPriority()` to return Infinity.
   let sandbox = sinon.createSandbox();
@@ -450,7 +482,7 @@ async function doEngagementWithoutAddingResultToView(
   await loadPromise;
 
   let engagementCalls = onEngagementSpy.getCalls().filter(call => {
-    let state = call.args[1];
+    let state = call.args[0];
     return state == "engagement";
   });
   Assert.equal(engagementCalls.length, 1, "One engagement occurred");
@@ -458,7 +490,7 @@ async function doEngagementWithoutAddingResultToView(
   // Clean up.
   resolveQuery();
   UrlbarProvidersManager.unregisterProvider(provider);
-  UrlbarProvidersManager._chunkResultsDelayMs = originalChunkDelayMs;
+  cleanup();
   sandboxCleanup();
 }
 

@@ -398,7 +398,7 @@ tooltip:not([position]) {
 @media (-moz-platform: linux) {
   tooltip {
     padding: 6px 10px; /* Matches Adwaita. */
-    line-height: 1.2;
+    line-height: 1.4;  /* For Noto Sans; note that 1.2 may clip descenders. */
   }
 }
 
@@ -408,7 +408,9 @@ tooltip:not([position]) {
     border: 1px solid;
   }
 
-  @media (-moz-windows-default-theme) {
+  /* TODO(emilio): Probably make InfoText/InfoBackground do the right thing and
+   * remove this? */
+  @media not (prefers-contrast) {
     tooltip {
       background-color: #f9f9fb;
       color: black;
@@ -672,6 +674,7 @@ menulist[popuponly] {
   height: 0 !important;
   min-height: 0 !important;
   border: 0 !important;
+  padding: 0 !important;
 }
 
 /********** splitter **********/

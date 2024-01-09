@@ -482,15 +482,15 @@ impl<'a, 'b: 'a> StyleAdjuster<'a, 'b> {
 
     fn adjust_for_contain(&mut self) {
         let box_style = self.style.get_box();
-        debug_assert_eq!(
-            box_style.clone_contain(),
-            box_style.clone_effective_containment()
-        );
         let container_type = box_style.clone_container_type();
         let content_visibility = box_style.clone_content_visibility();
         if container_type == ContainerType::Normal &&
             content_visibility == ContentVisibility::Visible
         {
+            debug_assert_eq!(
+                box_style.clone_contain(),
+                box_style.clone_effective_containment()
+            );
             return;
         }
         let old_contain = box_style.clone_contain();
@@ -522,11 +522,41 @@ impl<'a, 'b: 'a> StyleAdjuster<'a, 'b> {
             },
         }
         if new_contain == old_contain {
+            debug_assert_eq!(
+                box_style.clone_contain(),
+                box_style.clone_effective_containment()
+            );
             return;
         }
         self.style
             .mutate_box()
             .set_effective_containment(new_contain);
+    }
+
+    /// content-visibility: auto should force contain-intrinsic-size to gain
+    /// an auto value
+    ///
+    /// <https://github.com/w3c/csswg-drafts/issues/8407>
+    fn adjust_for_contain_intrinsic_size(&mut self) {
+        let content_visibility = self.style.get_box().clone_content_visibility();
+        if content_visibility != ContentVisibility::Auto {
+            return;
+        }
+
+        let pos = self.style.get_position();
+        let new_width = pos.clone_contain_intrinsic_width().add_auto_if_needed();
+        let new_height = pos.clone_contain_intrinsic_height().add_auto_if_needed();
+        if new_width.is_none() && new_height.is_none() {
+            return;
+        }
+
+        let pos = self.style.mutate_position();
+        if let Some(width) = new_width {
+            pos.set_contain_intrinsic_width(width);
+        }
+        if let Some(height) = new_height {
+            pos.set_contain_intrinsic_height(height);
+        }
     }
 
     /// Handles the relevant sections in:
@@ -948,6 +978,7 @@ impl<'a, 'b: 'a> StyleAdjuster<'a, 'b> {
         self.adjust_for_position();
         self.adjust_for_overflow();
         self.adjust_for_contain();
+        self.adjust_for_contain_intrinsic_size();
         #[cfg(feature = "gecko")]
         {
             self.adjust_for_table_text_align();

@@ -90,10 +90,7 @@ nsresult HTMLLinkElement::BindToTree(BindContext& aContext, nsINode& aParent) {
     TryDNSPrefetchOrPreconnectOrPrefetchOrPreloadOrPrerender();
   }
 
-  void (HTMLLinkElement::*update)() =
-      &HTMLLinkElement::UpdateStyleSheetInternal;
-  nsContentUtils::AddScriptRunner(
-      NewRunnableMethod("dom::HTMLLinkElement::BindToTree", this, update));
+  LinkStyle::BindToTree();
 
   if (IsInUncomposedDoc() &&
       AttrValueIs(kNameSpaceID_None, nsGkAtoms::rel, nsGkAtoms::localization,
@@ -312,26 +309,21 @@ void HTMLLinkElement::AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
 }
 
 // Keep this and the arrays below in sync with ToLinkMask in LinkStyle.cpp.
-#define SUPPORTED_REL_VALUES_BASE                                              \
-  "prefetch", "dns-prefetch", "stylesheet", "next", "alternate", "preconnect", \
-      "icon", "search", nullptr
+#define SUPPORTED_REL_VALUES_BASE                                           \
+  "preload", "prefetch", "dns-prefetch", "stylesheet", "next", "alternate", \
+      "preconnect", "icon", "search", nullptr
 
 static const DOMTokenListSupportedToken sSupportedRelValueCombinations[][12] = {
     {SUPPORTED_REL_VALUES_BASE},
     {"manifest", SUPPORTED_REL_VALUES_BASE},
-    {"preload", SUPPORTED_REL_VALUES_BASE},
-    {"preload", "manifest", SUPPORTED_REL_VALUES_BASE},
     {"modulepreload", SUPPORTED_REL_VALUES_BASE},
-    {"modulepreload", "manifest", SUPPORTED_REL_VALUES_BASE},
-    {"modulepreload", "preload", SUPPORTED_REL_VALUES_BASE},
-    {"modulepreload", "preload", "manifest", SUPPORTED_REL_VALUES_BASE}};
+    {"modulepreload", "manifest", SUPPORTED_REL_VALUES_BASE}};
 #undef SUPPORTED_REL_VALUES_BASE
 
 nsDOMTokenList* HTMLLinkElement::RelList() {
   if (!mRelList) {
     int index = (StaticPrefs::dom_manifest_enabled() ? 1 : 0) |
-                (StaticPrefs::network_preload() ? 2 : 0) |
-                (StaticPrefs::network_modulepreload() ? 4 : 0);
+                (StaticPrefs::network_modulepreload() ? 2 : 0);
 
     mRelList = new nsDOMTokenList(this, nsGkAtoms::rel,
                                   sSupportedRelValueCombinations[index]);
@@ -341,7 +333,7 @@ nsDOMTokenList* HTMLLinkElement::RelList() {
 
 Maybe<LinkStyle::SheetInfo> HTMLLinkElement::GetStyleSheetInfo() {
   nsAutoString rel;
-  GetAttr(kNameSpaceID_None, nsGkAtoms::rel, rel);
+  GetAttr(nsGkAtoms::rel, rel);
   uint32_t linkTypes = ParseLinkTypes(rel);
   if (!(linkTypes & eSTYLESHEET)) {
     return Nothing();
@@ -419,16 +411,16 @@ void HTMLLinkElement::GetContentPolicyMimeTypeMedia(
     nsAttrValue& aAsAttr, nsContentPolicyType& aPolicyType, nsString& aMimeType,
     nsAString& aMedia) {
   nsAutoString as;
-  GetAttr(kNameSpaceID_None, nsGkAtoms::as, as);
+  GetAttr(nsGkAtoms::as, as);
   net::ParseAsValue(as, aAsAttr);
   aPolicyType = net::AsValueToContentPolicy(aAsAttr);
 
   nsAutoString type;
-  GetAttr(kNameSpaceID_None, nsGkAtoms::type, type);
+  GetAttr(nsGkAtoms::type, type);
   nsAutoString notUsed;
   nsContentUtils::SplitMimeType(type, aMimeType, notUsed);
 
-  GetAttr(kNameSpaceID_None, nsGkAtoms::media, aMedia);
+  GetAttr(nsGkAtoms::media, aMedia);
 }
 
 void HTMLLinkElement::
@@ -693,7 +685,7 @@ bool HTMLLinkElement::IsCSSMimeTypeAttributeForLinkElement(
   nsAutoString type;
   nsAutoString mimeType;
   nsAutoString notUsed;
-  aSelf.GetAttr(kNameSpaceID_None, nsGkAtoms::type, type);
+  aSelf.GetAttr(nsGkAtoms::type, type);
   nsContentUtils::SplitMimeType(type, mimeType, notUsed);
   return mimeType.IsEmpty() || mimeType.LowerCaseEqualsLiteral("text/css");
 }

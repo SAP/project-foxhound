@@ -91,6 +91,7 @@ class GeckoMediaPluginServiceParent final
 
  private:
   friend class GMPServiceParent;
+  class Observer;
 
   virtual ~GeckoMediaPluginServiceParent();
 
@@ -126,6 +127,7 @@ class GeckoMediaPluginServiceParent final
       const mozilla::OriginAttributesPattern& aPattern);
   void ForgetThisBaseDomainOnGMPThread(const nsACString& aBaseDomain);
   void ClearRecentHistoryOnGMPThread(PRTime aSince);
+  void OnPreferenceChanged(mozilla::dom::Pref&& aPref);
 
   already_AddRefed<GMPParent> GetById(uint32_t aPluginId);
 
@@ -239,6 +241,11 @@ bool MatchOrigin(nsIFile* aPath, const nsACString& aSite,
                  const mozilla::OriginAttributesPattern& aPattern);
 bool MatchBaseDomain(nsIFile* aPath, const nsACString& aBaseDomain);
 
+/**
+ * This class runs in the parent process, and manages the lifecycle of the GMP
+ * process and brokering the creation of PGMPContent between the parent/content
+ * processes and the GMP process.
+ */
 class GMPServiceParent final : public PGMPServiceParent {
  public:
   explicit GMPServiceParent(GeckoMediaPluginServiceParent* aService);
@@ -257,17 +264,15 @@ class GMPServiceParent final : public PGMPServiceParent {
   ipc::IPCResult RecvGetGMPNodeId(const nsAString& aOrigin,
                                   const nsAString& aTopLevelOrigin,
                                   const nsAString& aGMPName,
-                                  nsCString* aID) override;
+                                  GetGMPNodeIdResolver&& aResolve) override;
 
   static bool Create(Endpoint<PGMPServiceParent>&& aGMPService);
 
-  ipc::IPCResult RecvLaunchGMP(
-      const NodeIdVariant& aNodeIdVariant, const nsACString& aAPI,
-      nsTArray<nsCString>&& aTags, nsTArray<ProcessId>&& aAlreadyBridgedTo,
-      uint32_t* aOutPluginId, GMPPluginType* aOutPluginType,
-      ProcessId* aOutProcessId, nsCString* aOutDisplayName,
-      Endpoint<PGMPContentParent>* aOutEndpoint, nsresult* aOutRv,
-      nsCString* aOutErrorDescription) override;
+  ipc::IPCResult RecvLaunchGMP(const NodeIdVariant& aNodeIdVariant,
+                               const nsACString& aAPI,
+                               nsTArray<nsCString>&& aTags,
+                               nsTArray<ProcessId>&& aAlreadyBridgedTo,
+                               LaunchGMPResolver&& aResolve) override;
 
  private:
   ~GMPServiceParent();

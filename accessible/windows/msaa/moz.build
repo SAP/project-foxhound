@@ -11,7 +11,6 @@ EXPORTS += [
 EXPORTS.mozilla.a11y += [
     "AccessibleWrap.h",
     "Compatibility.h",
-    "HyperTextAccessibleWrap.h",
     "LazyInstantiator.h",
     "MsaaAccessible.h",
     "MsaaIdGenerator.h",
@@ -25,7 +24,6 @@ UNIFIED_SOURCES += [
     "CompatibilityUIA.cpp",
     "DocAccessibleWrap.cpp",
     "EnumVariant.cpp",
-    "HyperTextAccessibleWrap.cpp",
     "IUnknownImpl.cpp",
     "MsaaAccessible.cpp",
     "MsaaDocAccessible.cpp",
@@ -53,7 +51,6 @@ LOCAL_INCLUDES += [
     "/accessible/generic",
     "/accessible/html",
     "/accessible/ipc",
-    "/accessible/ipc/win",
     "/accessible/windows",
     "/accessible/windows/ia2",
     "/accessible/windows/sdn",

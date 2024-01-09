@@ -19,6 +19,7 @@
 #include "jit/JitSpewer.h"
 #include "jit/ScriptFromCalleeToken.h"
 #include "jit/TrialInlining.h"
+#include "js/ColumnNumber.h"  // JS::LimitedColumnNumberZeroOrigin
 #include "vm/BytecodeUtil.h"
 #include "vm/Compartment.h"
 #include "vm/FrameIter.h"  // js::OnlyJSJitFrameIter
@@ -38,6 +39,7 @@ using mozilla::CheckedInt;
 JitScript::JitScript(JSScript* script, Offset fallbackStubsOffset,
                      Offset endOffset, const char* profileString)
     : profileString_(profileString),
+      owningScript_(script),
       endOffset_(endOffset),
       icScript_(script->getWarmUpCount(),
                 fallbackStubsOffset - offsetOfICScript(),
@@ -62,6 +64,8 @@ JitScript::~JitScript() {
   // BaselineScript and IonScript must have been destroyed at this point.
   MOZ_ASSERT(!hasBaselineScript());
   MOZ_ASSERT(!hasIonScript());
+
+  MOZ_ASSERT(!isInList());
 }
 #else
 JitScript::~JitScript() = default;
@@ -120,6 +124,8 @@ bool JSScript::createJitScript(JSContext* cx) {
 
   jitScript->icScript()->initICEntries(cx, this);
 
+  cx->zone()->jitZone()->registerJitScript(jitScript.get());
+
   warmUpData_.initJitScript(jitScript.release());
   AddCellMemory(this, allocSize.value(), MemoryUse::JitScript);
 
@@ -170,6 +176,8 @@ void JSScript::releaseJitScriptOnFinalize(JS::GCContext* gcx) {
 }
 
 void JitScript::trace(JSTracer* trc) {
+  TraceEdge(trc, &owningScript_, "JitScript::owningScript_");
+
   icScript_.trace(trc);
 
   if (hasBaselineScript()) {
@@ -189,12 +197,41 @@ void JitScript::trace(JSTracer* trc) {
   }
 }
 
+void JitScript::traceWeak(JSTracer* trc) {
+  if (!icScript_.traceWeak(trc)) {
+#ifdef DEBUG
+    hasPurgedStubs_ = true;
+#endif
+  }
+
+  if (hasInliningRoot()) {
+    inliningRoot()->traceWeak(trc);
+  }
+
+  if (hasIonScript()) {
+    ionScript()->traceWeak(trc);
+  }
+}
+
 void ICScript::trace(JSTracer* trc) {
   // Mark all IC stub codes hanging off the IC stub entries.
   for (size_t i = 0; i < numICEntries(); i++) {
     ICEntry& ent = icEntry(i);
     ent.trace(trc);
   }
+}
+
+bool ICScript::traceWeak(JSTracer* trc) {
+  // Mark all IC stub codes hanging off the IC stub entries.
+  bool allSurvived = true;
+  for (size_t i = 0; i < numICEntries(); i++) {
+    ICEntry& ent = icEntry(i);
+    if (!ent.traceWeak(trc)) {
+      allSurvived = false;
+    }
+  }
+
+  return allSurvived;
 }
 
 bool ICScript::addInlinedChild(JSContext* cx, UniquePtr<ICScript> child,
@@ -274,6 +311,9 @@ void JitScript::ensureProfileString(JSContext* cx, JSScript* script) {
 void JitScript::Destroy(Zone* zone, JitScript* script) {
   script->prepareForDestruction(zone);
 
+  // Remove from JitZone's linked list of JitScripts.
+  script->remove();
+
   js_delete(script);
 }
 
@@ -287,6 +327,7 @@ void JitScript::prepareForDestruction(Zone* zone) {
   jitScriptStubSpace_.freeAllAfterMinorGC(zone);
 
   // Trigger write barriers.
+  owningScript_ = nullptr;
   baselineScript_.set(zone, nullptr);
   ionScript_.set(zone, nullptr);
 }
@@ -320,7 +361,15 @@ static bool ComputeBinarySearchMid(FallbackStubs stubs, uint32_t pcOffset,
 
 ICEntry& ICScript::icEntryFromPCOffset(uint32_t pcOffset) {
   size_t mid;
-  MOZ_ALWAYS_TRUE(ComputeBinarySearchMid(FallbackStubs(this), pcOffset, &mid));
+  bool success = ComputeBinarySearchMid(FallbackStubs(this), pcOffset, &mid);
+#ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
+  if (!success) {
+    MOZ_CRASH_UNSAFE_PRINTF("Missing icEntry for offset %d (max offset: %d)",
+                            int(pcOffset),
+                            int(fallbackStub(numICEntries() - 1)->pcOffset()));
+  }
+#endif
+  MOZ_ALWAYS_TRUE(success);
 
   MOZ_ASSERT(mid < numICEntries());
 
@@ -402,7 +451,7 @@ void ICScript::purgeOptimizedStubs(Zone* zone) {
       stub = stub->toCacheIRStub()->next();
     }
 
-    lastStub->toFallbackStub()->clearHasFoldedStub();
+    lastStub->toFallbackStub()->clearMayHaveFoldedStub();
   }
 
 #ifdef DEBUG
@@ -548,14 +597,14 @@ void jit::JitSpewBaselineICStats(JSScript* script, const char* dumpReason) {
     uint32_t pcOffset = fallback->pcOffset();
     jsbytecode* pc = script->offsetToPC(pcOffset);
 
-    unsigned column;
+    JS::LimitedColumnNumberZeroOrigin column;
     unsigned int line = PCToLineNumber(script, pc, &column);
 
     spew->beginObject();
     spew->property("op", CodeName(JSOp(*pc)));
     spew->property("pc", pcOffset);
     spew->property("line", line);
-    spew->property("column", column);
+    spew->property("column", column.zeroOriginValue());
 
     spew->beginListProperty("counts");
     ICStub* stub = entry.firstStub();
@@ -704,7 +753,8 @@ JitScript* ICScript::outerJitScript() {
 //    other than the first changes from 0.
 // 3. The hash will change if the entered count of the fallback stub
 //    changes from 0.
-//
+// 4. The hash will change if the failure count of the fallback stub
+//    changes from 0.
 HashNumber ICScript::hash() {
   HashNumber h = 0;
   for (size_t i = 0; i < numICEntries(); i++) {
@@ -722,9 +772,10 @@ HashNumber ICScript::hash() {
       }
     }
 
-    // Hash whether the fallback has entry count 0.
+    // Hash whether the fallback has entry count 0 and failure count 0.
     MOZ_ASSERT(stub->isFallback());
     h = mozilla::AddToHash(h, stub->enteredCount() == 0);
+    h = mozilla::AddToHash(h, stub->toFallbackStub()->state().hasFailures());
   }
 
   return h;

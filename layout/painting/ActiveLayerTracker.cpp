@@ -76,7 +76,7 @@ class LayerActivity {
       case eCSSProperty_offset_distance:
       case eCSSProperty_offset_rotate:
       case eCSSProperty_offset_anchor:
-        // TODO: Bug 1559232: Add offset-position.
+      case eCSSProperty_offset_position:
         return ACTIVITY_TRANSFORM;
       default:
         MOZ_ASSERT(false);
@@ -233,7 +233,7 @@ static void IncrementScaleRestyleCountIfNeeded(nsIFrame* aFrame,
   // translate and 2d rotate, so we use Nothing() for it.)
   nsStyleTransformMatrix::TransformReferenceBox refBox(aFrame);
   Matrix4x4 transform = nsStyleTransformMatrix::ReadTransforms(
-      display->mTranslate, display->mRotate, display->mScale, Nothing(),
+      display->mTranslate, display->mRotate, display->mScale, nullptr,
       display->mTransform, refBox, AppUnitsPerCSSPixel());
   Matrix transform2D;
   if (!transform.Is2D(&transform2D)) {
@@ -309,9 +309,9 @@ static bool IsMotionPathAnimated(nsDisplayListBuilder* aBuilder,
          (!aFrame->StyleDisplay()->mOffsetPath.IsNone() &&
           ActiveLayerTracker::IsStyleAnimated(
               aBuilder, aFrame,
-              nsCSSPropertyIDSet{eCSSProperty_offset_distance,
-                                 eCSSProperty_offset_rotate,
-                                 eCSSProperty_offset_anchor}));
+              nsCSSPropertyIDSet{
+                  eCSSProperty_offset_distance, eCSSProperty_offset_rotate,
+                  eCSSProperty_offset_anchor, eCSSProperty_offset_position}));
 }
 
 /* static */

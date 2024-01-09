@@ -807,6 +807,27 @@ void nsContentSecurityUtils::NotifyEvalUsage(bool aIsSystemPrincipal,
   console->LogMessage(error);
 }
 
+// If we detect that one of the relevant prefs has been changed, reset
+// sJSHacksChecked to cause us to re-evaluate all the pref values.
+// This will stop us from crashing because a user enabled one of these
+// prefs during a session and then triggered the JavaScript load mitigation
+// (which can cause a crash).
+class JSHackPrefObserver final {
+ public:
+  JSHackPrefObserver() = default;
+  static void PrefChanged(const char* aPref, void* aData);
+
+ protected:
+  ~JSHackPrefObserver() = default;
+};
+
+// static
+void JSHackPrefObserver::PrefChanged(const char* aPref, void* aData) {
+  sJSHacksChecked = false;
+}
+
+static bool sJSHackObserverAdded = false;
+
 /* static */
 void nsContentSecurityUtils::DetectJsHacks() {
   // We can only perform the check of this preference on the Main Thread
@@ -827,6 +848,16 @@ void nsContentSecurityUtils::DetectJsHacks() {
   if (MOZ_LIKELY(sJSHacksChecked || sJSHacksPresent)) {
     return;
   }
+
+  static const char* kObservedPrefs[] = {
+      "xpinstall.signatures.required", "general.config.filename",
+      "autoadmin.global_config_url", "autoadmin.failover_to_cached", nullptr};
+  if (MOZ_UNLIKELY(!sJSHackObserverAdded)) {
+    Preferences::RegisterCallbacks(JSHackPrefObserver::PrefChanged,
+                                   kObservedPrefs);
+    sJSHackObserverAdded = true;
+  }
+
   nsresult rv;
   sJSHacksChecked = true;
 
@@ -847,39 +878,62 @@ void nsContentSecurityUtils::DetectJsHacks() {
     return;
   }
 
-  // This preference is a file used for autoconfiguration of Firefox
-  // by administrators. It has also been (ab)used by the userChromeJS
-  // project to run legacy-style 'extensions', some of which use eval,
-  // all of which run in the System Principal context.
-  nsAutoString jsConfigPref;
-  rv = Preferences::GetString("general.config.filename", jsConfigPref,
-                              PrefValueKind::Default);
-  if (!NS_FAILED(rv) && !jsConfigPref.IsEmpty()) {
-    sJSHacksPresent = true;
-    return;
-  }
-  rv = Preferences::GetString("general.config.filename", jsConfigPref,
-                              PrefValueKind::User);
-  if (!NS_FAILED(rv) && !jsConfigPref.IsEmpty()) {
-    sJSHacksPresent = true;
-    return;
-  }
+  // The content process code is probably safe to use for both, but
+  // this hack detection and related efforts has been very fragile so
+  // I'm being extra conservative.
+  if (XRE_IsParentProcess()) {
+    // This preference is a file used for autoconfiguration of Firefox
+    // by administrators. It has also been (ab)used by the userChromeJS
+    // project to run legacy-style 'extensions', some of which use eval,
+    // all of which run in the System Principal context.
+    nsAutoString jsConfigPref;
+    rv = Preferences::GetString("general.config.filename", jsConfigPref,
+                                PrefValueKind::Default);
+    if (!NS_FAILED(rv) && !jsConfigPref.IsEmpty()) {
+      sJSHacksPresent = true;
+      return;
+    }
+    rv = Preferences::GetString("general.config.filename", jsConfigPref,
+                                PrefValueKind::User);
+    if (!NS_FAILED(rv) && !jsConfigPref.IsEmpty()) {
+      sJSHacksPresent = true;
+      return;
+    }
 
-  // These preferences are for autoconfiguration of Firefox by admins.
-  // The first will load a file over the network; the second will
-  // fall back to a local file if the network is unavailable
-  nsAutoString configUrlPref;
-  rv = Preferences::GetString("autoadmin.global_config_url", configUrlPref,
-                              PrefValueKind::Default);
-  if (!NS_FAILED(rv) && !configUrlPref.IsEmpty()) {
-    sJSHacksPresent = true;
-    return;
-  }
-  rv = Preferences::GetString("autoadmin.global_config_url", configUrlPref,
-                              PrefValueKind::User);
-  if (!NS_FAILED(rv) && !configUrlPref.IsEmpty()) {
-    sJSHacksPresent = true;
-    return;
+    // These preferences are for autoconfiguration of Firefox by admins.
+    // The first will load a file over the network; the second will
+    // fall back to a local file if the network is unavailable
+    nsAutoString configUrlPref;
+    rv = Preferences::GetString("autoadmin.global_config_url", configUrlPref,
+                                PrefValueKind::Default);
+    if (!NS_FAILED(rv) && !configUrlPref.IsEmpty()) {
+      sJSHacksPresent = true;
+      return;
+    }
+    rv = Preferences::GetString("autoadmin.global_config_url", configUrlPref,
+                                PrefValueKind::User);
+    if (!NS_FAILED(rv) && !configUrlPref.IsEmpty()) {
+      sJSHacksPresent = true;
+      return;
+    }
+
+  } else {
+    if (Preferences::HasDefaultValue("general.config.filename")) {
+      sJSHacksPresent = true;
+      return;
+    }
+    if (Preferences::HasUserValue("general.config.filename")) {
+      sJSHacksPresent = true;
+      return;
+    }
+    if (Preferences::HasDefaultValue("autoadmin.global_config_url")) {
+      sJSHacksPresent = true;
+      return;
+    }
+    if (Preferences::HasUserValue("autoadmin.global_config_url")) {
+      sJSHacksPresent = true;
+      return;
+    }
   }
 
   bool failOverToCache;
@@ -1563,6 +1617,10 @@ long nsContentSecurityUtils::ClassifyDownload(
       loadingPrincipal, loadInfo->TriggeringPrincipal(), nullptr,
       nsILoadInfo::SEC_ONLY_FOR_EXPLICIT_CONTENTSEC_CHECK,
       nsIContentPolicy::TYPE_FETCH);
+  // Disable HTTPS-Only checks for that loadinfo. This is required because
+  // otherwise nsMixedContentBlocker::ShouldLoad would assume that the request
+  // is safe, because HTTPS-Only is handling it.
+  secCheckLoadInfo->SetHttpsOnlyStatus(nsILoadInfo::HTTPS_ONLY_EXEMPT);
 
   int16_t decission = nsIContentPolicy::ACCEPT;
   nsMixedContentBlocker::ShouldLoad(false,  //  aHadInsecureImageRedirect
@@ -1588,10 +1646,6 @@ long nsContentSecurityUtils::ClassifyDownload(
     return nsITransfer::DOWNLOAD_ACCEPTABLE;
   }
 
-  if (!StaticPrefs::dom_block_download_in_sandboxed_iframes()) {
-    return nsITransfer::DOWNLOAD_ACCEPTABLE;
-  }
-
   uint32_t triggeringFlags = loadInfo->GetTriggeringSandboxFlags();
   uint32_t currentflags = loadInfo->GetSandboxFlags();
 
@@ -1603,6 +1657,5 @@ long nsContentSecurityUtils::ClassifyDownload(
     }
     return nsITransfer::DOWNLOAD_FORBIDDEN;
   }
-
   return nsITransfer::DOWNLOAD_ACCEPTABLE;
 }

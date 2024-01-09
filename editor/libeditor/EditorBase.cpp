@@ -163,11 +163,6 @@ template EditorRawDOMPoint EditorBase::GetFirstSelectionStartPoint() const;
 template EditorDOMPoint EditorBase::GetFirstSelectionEndPoint() const;
 template EditorRawDOMPoint EditorBase::GetFirstSelectionEndPoint() const;
 
-template EditorDOMPoint EditorBase::FindBetterInsertionPoint(
-    const EditorDOMPoint& aPoint) const;
-template EditorRawDOMPoint EditorBase::FindBetterInsertionPoint(
-    const EditorRawDOMPoint& aPoint) const;
-
 template EditorBase::AutoCaretBidiLevelManager::AutoCaretBidiLevelManager(
     const EditorBase& aEditorBase, nsIEditor::EDirection aDirectionAndAmount,
     const EditorDOMPoint& aPointAtCaret);
@@ -182,7 +177,6 @@ EditorBase::EditorBase(EditorType aEditorType)
       mFlags(0),
       mUpdateCount(0),
       mPlaceholderBatch(0),
-      mWrapColumn(0),
       mNewlineHandling(StaticPrefs::editor_singleLine_pasteNewlines()),
       mCaretStyle(StaticPrefs::layout_selection_caret_style()),
       mDocDirtyState(-1),
@@ -564,7 +558,9 @@ bool EditorBase::GetDesiredSpellCheckState() {
     return false;
   }
 
-  if (!IsInPlaintextMode()) {
+  // XXX I'm not sure whether we don't use this path when we're a plaintext mail
+  // composer.
+  if (IsHTMLEditor() && !AsHTMLEditor()->IsPlaintextMailComposer()) {
     // Some of the page content might be editable and some not, if spellcheck=
     // is explicitly set anywhere, so if there's anything editable on the page,
     // return true and let the spellchecker figure it out.
@@ -648,9 +644,10 @@ NS_IMETHODIMP EditorBase::SetFlags(uint32_t aFlags) {
     return NS_OK;
   }
 
-  // If we're a `TextEditor` instance, the plaintext mode should always be set.
-  // If we're an `HTMLEditor` instance, either is fine.
-  MOZ_ASSERT_IF(IsTextEditor(), !!(aFlags & nsIEditor::eEditorPlaintextMask));
+  // If we're a `TextEditor` instance, it's always a plaintext editor.
+  // Therefore, `eEditorPlaintextMask` is not necessary and should not be set
+  // for the performance reason.
+  MOZ_ASSERT_IF(IsTextEditor(), !(aFlags & nsIEditor::eEditorPlaintextMask));
   // If we're an `HTMLEditor` instance, we cannot treat it as a single line
   // editor.  So, eEditorSingleLineMask is available only when we're a
   // `TextEditor` instance.
@@ -2888,7 +2885,7 @@ nsresult EditorBase::CloneAttributeWithTransaction(nsAtom& aAttribute,
                                                    Element& aDestElement,
                                                    Element& aSourceElement) {
   nsAutoString attrValue;
-  if (aSourceElement.GetAttr(kNameSpaceID_None, &aAttribute, attrValue)) {
+  if (aSourceElement.GetAttr(&aAttribute, attrValue)) {
     nsresult rv =
         SetAttributeWithTransaction(aDestElement, aAttribute, attrValue);
     NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
@@ -2996,85 +2993,6 @@ nsresult EditorBase::ScrollSelectionFocusIntoView() const {
   return NS_WARN_IF(Destroyed()) ? NS_ERROR_EDITOR_DESTROYED : NS_OK;
 }
 
-template <typename EditorDOMPointType>
-EditorDOMPointType EditorBase::FindBetterInsertionPoint(
-    const EditorDOMPointType& aPoint) const {
-  if (MOZ_UNLIKELY(NS_WARN_IF(!aPoint.IsInContentNode()))) {
-    return aPoint;
-  }
-
-  MOZ_ASSERT(aPoint.IsSetAndValid());
-
-  if (aPoint.IsInTextNode()) {
-    // There is no "better" insertion point.
-    return aPoint;
-  }
-
-  if (!IsInPlaintextMode()) {
-    // We cannot find "better" insertion point in HTML editor.
-    // WARNING: When you add some code to find better node in HTML editor,
-    //          you need to call this before calling InsertTextWithTransaction()
-    //          in HTMLEditor.
-    return aPoint;
-  }
-
-  RefPtr<Element> rootElement = GetRoot();
-  if (aPoint.GetContainer() == rootElement) {
-    // In some cases, aNode is the anonymous DIV, and offset is 0.  To avoid
-    // injecting unneeded text nodes, we first look to see if we have one
-    // available.  In that case, we'll just adjust node and offset accordingly.
-    if (aPoint.IsStartOfContainer() && aPoint.GetContainer()->HasChildren() &&
-        aPoint.GetContainer()->GetFirstChild()->IsText()) {
-      return EditorDOMPointType(aPoint.GetContainer()->GetFirstChild(), 0u);
-    }
-
-    // In some other cases, aNode is the anonymous DIV, and offset points to
-    // the terminating padding <br> element for empty last line.  In that case,
-    // we'll adjust aInOutNode and aInOutOffset to the preceding text node,
-    // if any.
-    if (!aPoint.IsStartOfContainer()) {
-      if (IsHTMLEditor()) {
-        // Fall back to a slow path that uses GetChildAt_Deprecated() for
-        // Thunderbird's plaintext editor.
-        nsIContent* child = aPoint.GetPreviousSiblingOfChild();
-        if (child && child->IsText()) {
-          return EditorDOMPointType::AtEndOf(*child);
-        }
-      } else {
-        // If we're in a real plaintext editor, use a fast path that avoids
-        // calling GetChildAt_Deprecated() which may perform a linear search.
-        nsIContent* child = aPoint.GetContainer()->GetLastChild();
-        while (child) {
-          if (child->IsText()) {
-            return EditorDOMPointType::AtEndOf(*child);
-          }
-          child = child->GetPreviousSibling();
-        }
-      }
-    }
-  }
-
-  // Sometimes, aNode is the padding <br> element itself.  In that case, we'll
-  // adjust the insertion point to the previous text node, if one exists, or
-  // to the parent anonymous DIV.
-  if (EditorUtils::IsPaddingBRElementForEmptyLastLine(
-          *aPoint.template ContainerAs<nsIContent>()) &&
-      aPoint.IsStartOfContainer()) {
-    nsIContent* previousSibling = aPoint.GetContainer()->GetPreviousSibling();
-    if (previousSibling && previousSibling->IsText()) {
-      return EditorDOMPointType::AtEndOf(*previousSibling);
-    }
-
-    nsINode* parentOfContainer = aPoint.GetContainerParent();
-    if (parentOfContainer && parentOfContainer == rootElement) {
-      return EditorDOMPointType(parentOfContainer,
-                                aPoint.template ContainerAs<nsIContent>(), 0u);
-    }
-  }
-
-  return aPoint;
-}
-
 Result<InsertTextResult, nsresult> EditorBase::InsertTextWithTransaction(
     Document& aDocument, const nsAString& aStringToInsert,
     const EditorDOMPoint& aPointToInsert) {
@@ -3091,20 +3009,13 @@ Result<InsertTextResult, nsresult> EditorBase::InsertTextWithTransaction(
   // In some cases, the node may be the anonymous div element or a padding
   // <br> element for empty last line.  Let's try to look for better insertion
   // point in the nearest text node if there is.
-  EditorDOMPoint pointToInsert = FindBetterInsertionPoint(aPointToInsert);
-
-  // If a neighboring text node already exists, use that
-  if (!pointToInsert.IsInTextNode()) {
-    nsIContent* child = nullptr;
-    if (!pointToInsert.IsStartOfContainer() &&
-        (child = pointToInsert.GetPreviousSiblingOfChild()) &&
-        child->IsText()) {
-      pointToInsert.Set(child, child->Length());
-    } else if (!pointToInsert.IsEndOfContainer() &&
-               (child = pointToInsert.GetChild()) && child->IsText()) {
-      pointToInsert.Set(child, 0);
+  EditorDOMPoint pointToInsert = [&]() {
+    if (IsTextEditor()) {
+      return AsTextEditor()->FindBetterInsertionPoint(aPointToInsert);
     }
-  }
+    return aPointToInsert
+        .GetPointInTextNodeIfPointingAroundTextNode<EditorDOMPoint>();
+  }();
 
   if (ShouldHandleIMEComposition()) {
     if (!pointToInsert.IsInTextNode()) {
@@ -3643,7 +3554,7 @@ nsresult EditorBase::GetEndChildNode(const Selection& aSelection,
 
 nsresult EditorBase::EnsurePaddingBRElementInMultilineEditor() {
   MOZ_ASSERT(IsEditActionDataAvailable());
-  MOZ_ASSERT(IsInPlaintextMode());
+  MOZ_ASSERT(IsTextEditor() || AsHTMLEditor()->IsPlaintextMailComposer());
   MOZ_ASSERT(!IsSingleLineEditor());
 
   Element* anonymousDivOrBodyElement = GetRoot();
@@ -4701,18 +4612,6 @@ nsresult EditorBase::HandleDropEvent(DragEvent* aDropEvent) {
     }
   }
 
-  if (IsInPlaintextMode()) {
-    for (nsIContent* content = droppedAt.ContainerAs<nsIContent>(); content;
-         content = content->GetParent()) {
-      nsCOMPtr<nsIFormControl> formControl(do_QueryInterface(content));
-      if (formControl && !formControl->AllowDrop()) {
-        // Don't allow dropping into a form control that doesn't allow being
-        // dropped into.
-        return NS_OK;
-      }
-    }
-  }
-
   // Combine any deletion and drop insertion into one transaction.
   AutoPlaceholderBatch treatAsOneTransaction(
       *this, ScrollSelectionIntoView::Yes, __FUNCTION__);
@@ -5262,7 +5161,7 @@ nsresult EditorBase::HandleKeyPressEvent(WidgetKeyboardEvent* aKeyboardEvent) {
 
     case NS_VK_BACK: {
       if (aKeyboardEvent->IsControl() || aKeyboardEvent->IsAlt() ||
-          aKeyboardEvent->IsMeta() || aKeyboardEvent->IsOS()) {
+          aKeyboardEvent->IsMeta()) {
         return NS_OK;
       }
       DebugOnly<nsresult> rvIgnored =
@@ -5278,8 +5177,7 @@ nsresult EditorBase::HandleKeyPressEvent(WidgetKeyboardEvent* aKeyboardEvent) {
       // modifies what delete does (cmd_cut in this case).
       // bailing here to allow the keybindings to do the cut.
       if (aKeyboardEvent->IsShift() || aKeyboardEvent->IsControl() ||
-          aKeyboardEvent->IsAlt() || aKeyboardEvent->IsMeta() ||
-          aKeyboardEvent->IsOS()) {
+          aKeyboardEvent->IsAlt() || aKeyboardEvent->IsMeta()) {
         return NS_OK;
       }
       DebugOnly<nsresult> rvIgnored =
@@ -5545,6 +5443,10 @@ nsresult EditorBase::InitializeSelection(
   // selection because if the editor is reframed, this already forgot IME
   // selection and the transaction.
   if (mComposition && mComposition->IsMovingToNewTextNode()) {
+    MOZ_DIAGNOSTIC_ASSERT(IsTextEditor());
+    if (NS_WARN_IF(!IsTextEditor())) {
+      return NS_ERROR_UNEXPECTED;
+    }
     // We need to look for the new text node from current selection.
     // XXX If selection is changed during reframe, this doesn't work well!
     const nsRange* firstRange = SelectionRef().GetRangeAt(0);
@@ -5553,7 +5455,7 @@ nsresult EditorBase::InitializeSelection(
     }
     EditorRawDOMPoint atStartOfFirstRange(firstRange->StartRef());
     EditorRawDOMPoint betterInsertionPoint =
-        FindBetterInsertionPoint(atStartOfFirstRange);
+        AsTextEditor()->FindBetterInsertionPoint(atStartOfFirstRange);
     RefPtr<Text> textNode = betterInsertionPoint.GetContainerAs<Text>();
     MOZ_ASSERT(textNode,
                "There must be text node if composition string is not empty");
@@ -5609,8 +5511,9 @@ nsresult EditorBase::FinalizeSelection() {
   // TODO: Running script from here makes harder to handle blur events.  We
   //       should do this asynchronously.
   focusManager->UpdateCaretForCaretBrowsingMode();
-  if (nsCOMPtr<nsINode> node = do_QueryInterface(GetDOMEventTarget())) {
-    if (node->OwnerDoc()->GetUnretargetedFocusedContent() != node) {
+  if (Element* rootElement = GetExposedRoot()) {
+    if (rootElement->OwnerDoc()->GetUnretargetedFocusedContent() !=
+        rootElement) {
       selectionController->SelectionWillLoseFocus();
     } else {
       // We leave this selection as the focused one. When the focus returns, it
@@ -5916,6 +5819,19 @@ bool EditorBase::CanKeepHandlingFocusEvent(
   if (!focusManager->GetFocusedElement()) {
     return false;
   }
+
+  // If there's an HTMLEditor registered in the target document and we
+  // are not that HTMLEditor (for cases like nested documents), let
+  // that HTMLEditor to handle the focus event.
+  if (IsHTMLEditor()) {
+    const HTMLEditor* precedentHTMLEditor =
+        aOriginalEventTargetNode.OwnerDoc()->GetHTMLEditor();
+
+    if (precedentHTMLEditor && precedentHTMLEditor != this) {
+      return false;
+    }
+  }
+
   const nsIContent* exposedTargetContent =
       aOriginalEventTargetNode.AsContent()
           ->FindFirstNonChromeOnlyAccessContent();
@@ -6156,94 +6072,6 @@ void EditorBase::UndefineCaretBidiLevel() const {
 
 NS_IMETHODIMP EditorBase::GetTextLength(uint32_t* aCount) {
   return NS_ERROR_NOT_IMPLEMENTED;
-}
-
-NS_IMETHODIMP EditorBase::GetWrapWidth(int32_t* aWrapColumn) {
-  if (NS_WARN_IF(!aWrapColumn)) {
-    return NS_ERROR_INVALID_ARG;
-  }
-  *aWrapColumn = WrapWidth();
-  return NS_OK;
-}
-
-//
-// See if the style value includes this attribute, and if it does,
-// cut out everything from the attribute to the next semicolon.
-//
-static void CutStyle(const char* stylename, nsString& styleValue) {
-  // Find the current wrapping type:
-  int32_t styleStart = styleValue.LowerCaseFindASCII(stylename);
-  if (styleStart >= 0) {
-    int32_t styleEnd = styleValue.Find(u";", styleStart);
-    if (styleEnd > styleStart) {
-      styleValue.Cut(styleStart, styleEnd - styleStart + 1);
-    } else {
-      styleValue.Cut(styleStart, styleValue.Length() - styleStart);
-    }
-  }
-}
-
-NS_IMETHODIMP EditorBase::SetWrapWidth(int32_t aWrapColumn) {
-  AutoEditActionDataSetter editActionData(*this, EditAction::eSetWrapWidth);
-  if (NS_WARN_IF(!editActionData.CanHandle())) {
-    return NS_ERROR_NOT_INITIALIZED;
-  }
-
-  SetWrapColumn(aWrapColumn);
-
-  // Make sure we're a plaintext editor, otherwise we shouldn't
-  // do the rest of this.
-  if (!IsInPlaintextMode()) {
-    return NS_OK;
-  }
-
-  // Ought to set a style sheet here ...
-  // Probably should keep around an mPlaintextStyleSheet for this purpose.
-  RefPtr<Element> rootElement = GetRoot();
-  if (NS_WARN_IF(!rootElement)) {
-    return NS_ERROR_NOT_INITIALIZED;
-  }
-
-  // Get the current style for this root element:
-  nsAutoString styleValue;
-  rootElement->GetAttr(kNameSpaceID_None, nsGkAtoms::style, styleValue);
-
-  // We'll replace styles for these values:
-  CutStyle("white-space", styleValue);
-  CutStyle("width", styleValue);
-  CutStyle("font-family", styleValue);
-
-  // If we have other style left, trim off any existing semicolons
-  // or white-space, then add a known semicolon-space:
-  if (!styleValue.IsEmpty()) {
-    styleValue.Trim("; \t", false, true);
-    styleValue.AppendLiteral("; ");
-  }
-
-  // Make sure we have fixed-width font.  This should be done for us,
-  // but it isn't, see bug 22502, so we have to add "font: -moz-fixed;".
-  // Only do this if we're wrapping.
-  if (IsWrapHackEnabled() && aWrapColumn >= 0) {
-    styleValue.AppendLiteral("font-family: -moz-fixed; ");
-  }
-
-  // and now we're ready to set the new white-space/wrapping style.
-  if (aWrapColumn > 0) {
-    // Wrap to a fixed column.
-    styleValue.AppendLiteral("white-space: pre-wrap; width: ");
-    styleValue.AppendInt(aWrapColumn);
-    styleValue.AppendLiteral("ch;");
-  } else if (!aWrapColumn) {
-    styleValue.AppendLiteral("white-space: pre-wrap;");
-  } else {
-    styleValue.AppendLiteral("white-space: pre;");
-  }
-
-  nsresult rv = rootElement->SetAttr(kNameSpaceID_None, nsGkAtoms::style,
-                                     styleValue, true);
-  NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
-                       "Element::SetAttr(nsGkAtoms::style) failed");
-  return rv;
 }
 
 NS_IMETHODIMP EditorBase::GetNewlineHandling(int32_t* aNewlineHandling) {
@@ -6598,10 +6426,6 @@ void EditorBase::AutoEditActionDataSetter::AppendTargetRange(
 }
 
 bool EditorBase::AutoEditActionDataSetter::IsBeforeInputEventEnabled() const {
-  if (!StaticPrefs::dom_input_events_beforeinput_enabled()) {
-    return false;
-  }
-
   // Don't dispatch "beforeinput" event when the editor user makes us stop
   // dispatching input event.
   if (mEditorBase.IsSuppressingDispatchingInputEvent()) {

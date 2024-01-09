@@ -342,6 +342,7 @@ STATIC_ATOMS = [
     Atom("dir", "dir"),
     Atom("dirAutoSetBy", "dirAutoSetBy"),
     Atom("directory", "directory"),
+    Atom("dirname", "dirname"),
     Atom("disableOutputEscaping", "disable-output-escaping"),
     Atom("disabled", "disabled"),
     Atom("disableglobalhistory", "disableglobalhistory"),
@@ -439,6 +440,7 @@ STATIC_ATOMS = [
     Atom("_false", "false"),
     Atom("farthest", "farthest"),
     Atom("featurePolicyViolation", "feature-policy-violation"),
+    Atom("fetchpriority", "fetchpriority"),
     Atom("field", "field"),
     Atom("fieldset", "fieldset"),
     Atom("file", "file"),
@@ -1933,6 +1935,8 @@ STATIC_ATOMS = [
     Atom("ondevicelight", "ondevicelight"),
     # MediaDevices device change event
     Atom("ondevicechange", "ondevicechange"),
+    # WebRTC events
+    Atom("onrtctransform", "onrtctransform"),
     # Internal Visual Viewport events
     Atom("onmozvisualresize", "onmozvisualresize"),
     Atom("onmozvisualscroll", "onmozvisualscroll"),
@@ -2232,10 +2236,6 @@ STATIC_ATOMS = [
     Atom("forcemessagemanager", "forcemessagemanager"),
     Atom("initialBrowsingContextGroupId", "initialBrowsingContextGroupId"),
     Atom("initiallyactive", "initiallyactive"),
-    # windows media query names
-    Atom("windows_win7", "windows-win7"),
-    Atom("windows_win8", "windows-win8"),
-    Atom("windows_win10", "windows-win10"),
     # Names for system metrics.
     Atom("_moz_scrollbar_start_backward", "-moz-scrollbar-start-backward"),
     Atom("_moz_scrollbar_start_forward", "-moz-scrollbar-start-forward"),
@@ -2243,15 +2243,9 @@ STATIC_ATOMS = [
     Atom("_moz_scrollbar_end_forward", "-moz-scrollbar-end-forward"),
     Atom("_moz_overlay_scrollbars", "-moz-overlay-scrollbars"),
     Atom("_moz_windows_accent_color_in_titlebar", "-moz-windows-accent-color-in-titlebar"),
-    Atom("_moz_windows_default_theme", "-moz-windows-default-theme"),
-    Atom("_moz_mac_graphite_theme", "-moz-mac-graphite-theme"),
     Atom("_moz_mac_big_sur_theme", "-moz-mac-big-sur-theme"),
     Atom("_moz_mac_rtl", "-moz-mac-rtl"),
     Atom("_moz_platform", "-moz-platform"),
-    Atom("_moz_windows_compositor", "-moz-windows-compositor"),
-    Atom("_moz_windows_classic", "-moz-windows-classic"),
-    Atom("_moz_windows_glass", "-moz-windows-glass"),
-    Atom("_moz_windows_non_native_menus", "-moz-windows-non-native-menus"),
     Atom("_moz_menubar_drag", "-moz-menubar-drag"),
     Atom("_moz_device_pixel_ratio", "-moz-device-pixel-ratio"),
     Atom("_moz_device_orientation", "-moz-device-orientation"),
@@ -2400,11 +2394,9 @@ STATIC_ATOMS = [
     Atom("onplaybackstatechange", "onplaybackstatechange"),
     Atom("onpositionstatechange", "onpositionstatechange"),
     Atom("onsupportedkeyschange", "onsupportedkeyschange"),
-    # media query for MathML Core's implementation of maction/semantics
-    Atom("_moz_mathml_core_maction_and_semantics", "-moz-mathml-core-maction-and-semantics"),
-    # media query for MathML Core's implementation of ms
-    Atom("_moz_mathml_core_ms", "-moz-mathml-core-ms"),
     Atom("_moz_popover_enabled", "-moz-popover-enabled"),
+    # media query for MathML Core's implementation of mi
+    Atom("_moz_mathml_core_mi", "-moz-mathml-core-mi"),
     # Contextual Identity / Containers
     Atom("usercontextid", "usercontextid"),
     Atom("geckoViewSessionContextId", "geckoViewSessionContextId"),
@@ -2428,6 +2420,8 @@ STATIC_ATOMS = [
     Atom("onupdateend", "onupdateend"),
     Atom("onaddsourcebuffer", "onaddsourcebuffer"),
     Atom("onremovesourcebuffer", "onremovesourcebuffer"),
+    # WebCodecs
+    Atom("ondequeue", "ondequeue"),
     # RDF (not used by mozilla-central, but still used by comm-central)
     Atom("about", "about"),
     Atom("ID", "ID"),

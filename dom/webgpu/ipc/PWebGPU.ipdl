@@ -9,12 +9,14 @@ using mozilla::layers::RGBDescriptor from "mozilla/layers/LayersSurfaces.h";
 using mozilla::layers::RemoteTextureId from "mozilla/layers/LayersTypes.h";
 using mozilla::layers::RemoteTextureOwnerId from "mozilla/layers/LayersTypes.h";
 using mozilla::webgpu::RawId from "mozilla/webgpu/WebGPUTypes.h";
+using mozilla::dom::GPUErrorFilter from "mozilla/dom/WebGPUBinding.h";
 using mozilla::dom::GPURequestAdapterOptions from "mozilla/dom/WebGPUBinding.h";
 using mozilla::dom::GPUCommandBufferDescriptor from "mozilla/dom/WebGPUBinding.h";
 using mozilla::dom::GPUBufferDescriptor from "mozilla/dom/WebGPUBinding.h";
-using mozilla::webgpu::MaybeScopedError from "mozilla/webgpu/WebGPUTypes.h";
+using mozilla::webgpu::PopErrorScopeResult from "mozilla/webgpu/WebGPUTypes.h";
 using mozilla::webgpu::WebGPUCompilationMessage from "mozilla/webgpu/WebGPUTypes.h";
 [MoveOnly] using class mozilla::ipc::UnsafeSharedMemoryHandle from "mozilla/ipc/RawShmem.h";
+using struct mozilla::void_t from "mozilla/ipc/IPCCore.h";
 
 include "mozilla/ipc/ByteBufUtils.h";
 include "mozilla/layers/LayersMessageUtils.h";
@@ -63,6 +65,7 @@ parent:
   async CommandBufferDestroy(RawId selfId);
   async RenderBundleDestroy(RawId selfId);
   async QueueSubmit(RawId selfId, RawId aDeviceId, RawId[] commandBuffers);
+  async QueueOnSubmittedWorkDone(RawId selfId) returns (void_t ok);
   async QueueWriteAction(RawId selfId, RawId aDeviceId, ByteBuf buf, UnsafeSharedMemoryHandle shmem);
 
   async BindGroupLayoutDestroy(RawId selfId);
@@ -76,15 +79,15 @@ parent:
   async SwapChainPresent(RawId textureId, RawId commandEncoderId, RemoteTextureId remoteTextureId, RemoteTextureOwnerId remoteTextureOwnerId);
   async SwapChainDestroy(RemoteTextureOwnerId ownerId);
 
-  async DevicePushErrorScope(RawId selfId);
-  async DevicePopErrorScope(RawId selfId) returns (MaybeScopedError maybeError);
+  async DevicePushErrorScope(RawId selfId, GPUErrorFilter aFilter);
+  async DevicePopErrorScope(RawId selfId) returns (PopErrorScopeResult result);
 
   // Generate an error on the Device timeline for `deviceId`.
   // The `message` parameter is interpreted as UTF-8.
-  async GenerateError(RawId deviceId, nsCString message);
+  async GenerateError(RawId? deviceId, GPUErrorFilter type, nsCString message);
 
 child:
-  async DeviceUncapturedError(RawId aDeviceId, nsCString message);
+  async UncapturedError(RawId? aDeviceId, nsCString message);
   async DropAction(ByteBuf buf);
   async __delete__();
 };

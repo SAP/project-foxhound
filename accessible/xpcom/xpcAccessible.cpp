@@ -4,9 +4,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "LocalAccessible-inl.h"
-#include "mozilla/a11y/DocAccessibleParent.h"
-#include "nsAccessibilityService.h"
 #include "AccAttributes.h"
 #include "nsAccUtils.h"
 #include "nsComponentManagerUtils.h"
@@ -14,7 +11,6 @@
 #include "nsIAccessibleRole.h"
 #include "nsAccessibleRelation.h"
 #include "Relation.h"
-#include "Role.h"
 #include "RootAccessible.h"
 #include "xpcAccessibleDocument.h"
 
@@ -655,15 +651,7 @@ NS_IMETHODIMP
 xpcAccessible::ScrollToPoint(uint32_t aCoordinateType, int32_t aX, int32_t aY) {
   if (!IntlGeneric()) return NS_ERROR_FAILURE;
 
-  if (RemoteAccessible* proxy = IntlGeneric()->AsRemote()) {
-#if defined(XP_WIN)
-    return NS_ERROR_NOT_IMPLEMENTED;
-#else
-    proxy->ScrollToPoint(aCoordinateType, aX, aY);
-#endif
-  } else {
-    Intl()->ScrollToPoint(aCoordinateType, aX, aY);
-  }
+  IntlGeneric()->ScrollToPoint(aCoordinateType, aX, aY);
 
   return NS_OK;
 }

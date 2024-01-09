@@ -44,8 +44,11 @@ ChromeUtils.defineESModuleGetters(lazy, {
 });
 
 const HTML_NS = "http://www.w3.org/1999/xhtml";
-const INLINE_COMPATIBILITY_WARNING_PREF =
-  "devtools.inspector.ruleview.inline-compatibility-warning.enabled";
+// @backward-compat { version 117 } The pref is enabled by default since 117.
+//                                  Let's completely remove it once 117 hits release.
+const inlineCompatibilityWarningEnabled = Services.prefs.getBoolPref(
+  "devtools.inspector.ruleview.inline-compatibility-warning.enabled"
+);
 
 const SHARED_SWATCH_CLASS = "ruleview-swatch";
 const COLOR_SWATCH_CLASS = "ruleview-colorswatch";
@@ -187,13 +190,21 @@ TextPropertyEditor.prototype = {
    * Create the property editor's DOM.
    */
   _create() {
-    this.element = this.doc.createElementNS(HTML_NS, "li");
+    this.element = this.doc.createElementNS(HTML_NS, "div");
+    this.element.setAttribute("role", "listitem");
     this.element.classList.add("ruleview-property");
     this.element.dataset.declarationId = this.prop.id;
     this.element._textPropertyEditor = this;
 
     this.container = createChild(this.element, "div", {
       class: "ruleview-propertycontainer",
+    });
+
+    const indent =
+      ((this.ruleEditor.rule.domRule.ancestorData.length || 0) + 1) * 2;
+    createChild(this.container, "span", {
+      class: "ruleview-rule-indent clipboard-only",
+      textContent: " ".repeat(indent),
     });
 
     // The enable checkbox will disable or enable the rule.
@@ -256,10 +267,6 @@ TextPropertyEditor.prototype = {
       class: "ruleview-unused-warning",
       hidden: "",
     });
-
-    const inlineCompatibilityWarningEnabled = Services.prefs.getBoolPref(
-      INLINE_COMPATIBILITY_WARNING_PREF
-    );
 
     if (inlineCompatibilityWarningEnabled) {
       this.compatibilityState = createChild(this.container, "div", {
@@ -866,10 +873,6 @@ TextPropertyEditor.prototype = {
 
     this.updatePropertyUsedIndicator();
 
-    const inlineCompatibilityWarningEnabled = Services.prefs.getBoolPref(
-      INLINE_COMPATIBILITY_WARNING_PREF
-    );
-
     if (inlineCompatibilityWarningEnabled) {
       this.updatePropertyCompatibilityIndicator();
     }
@@ -1394,12 +1397,7 @@ TextPropertyEditor.prototype = {
    */
   _isDraggableProperty(textProperty) {
     // Check if the feature is explicitly disabled.
-    if (
-      !Services.prefs.getBoolPref(
-        "devtools.inspector.draggable_properties",
-        false
-      )
-    ) {
+    if (!this.ruleView.draggablePropertiesEnabled) {
       return false;
     }
     // temporary way of fixing the bug when editing inline styles

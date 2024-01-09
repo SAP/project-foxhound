@@ -4,7 +4,6 @@
 
 //! Style sheets and their CSS rules.
 
-mod cascading_at_rule;
 pub mod container_rule;
 mod counter_style_rule;
 mod document_rule;
@@ -26,7 +25,6 @@ mod rules_iterator;
 mod style_rule;
 mod stylesheet;
 pub mod supports_rule;
-pub mod viewport_rule;
 
 #[cfg(feature = "gecko")]
 use crate::gecko_bindings::sugar::refptr::RefCounted;
@@ -61,8 +59,8 @@ pub use self::loader::StylesheetLoader;
 pub use self::media_rule::MediaRule;
 pub use self::namespace_rule::NamespaceRule;
 pub use self::origin::{Origin, OriginSet, OriginSetIterator, PerOrigin, PerOriginIter};
-pub use self::page_rule::{PageRule, PageSelector, PageSelectors};
 pub use self::property_rule::PropertyRule;
+pub use self::page_rule::{PageRule, PagePseudoClassFlags, PageSelector, PageSelectors};
 pub use self::rule_list::{CssRules, CssRulesHelpers};
 pub use self::rule_parser::{InsertRuleContext, State, TopLevelRuleParser};
 pub use self::rules_iterator::{AllRules, EffectiveRules};
@@ -74,7 +72,6 @@ pub use self::stylesheet::{AllowImportRules, SanitizationData, SanitizationKind}
 pub use self::stylesheet::{DocumentStyleSheet, Namespaces, Stylesheet};
 pub use self::stylesheet::{StylesheetContents, StylesheetInDocument, UserAgentStylesheets};
 pub use self::supports_rule::SupportsRule;
-pub use self::viewport_rule::ViewportRule;
 
 /// The CORS mode used for a CSS load.
 #[repr(u8)]
@@ -256,7 +253,6 @@ pub enum CssRule {
     FontFeatureValues(Arc<FontFeatureValuesRule>),
     FontPaletteValues(Arc<FontPaletteValuesRule>),
     CounterStyle(Arc<Locked<CounterStyleRule>>),
-    Viewport(Arc<ViewportRule>),
     Keyframes(Arc<Locked<KeyframesRule>>),
     Supports(Arc<SupportsRule>),
     Page(Arc<Locked<PageRule>>),
@@ -292,7 +288,6 @@ impl CssRule {
             CssRule::FontFeatureValues(_) => 0,
             CssRule::FontPaletteValues(_) => 0,
             CssRule::CounterStyle(_) => 0,
-            CssRule::Viewport(_) => 0,
             CssRule::Keyframes(_) => 0,
             CssRule::Supports(ref arc) => {
                 arc.unconditional_shallow_size_of(ops) + arc.size_of(guard, ops)
@@ -338,8 +333,6 @@ pub enum CssRuleType {
     Document = 13,
     // https://drafts.csswg.org/css-fonts/#om-fontfeaturevalues
     FontFeatureValues = 14,
-    // https://drafts.csswg.org/css-device-adapt/#css-rule-interface
-    Viewport = 15,
     // After viewport, all rules should return 0 from the API, but we still need
     // a constant somewhere.
     LayerBlock = 16,
@@ -376,8 +369,21 @@ impl CssRuleTypes {
     }
 
     /// Returns all the rules specified in the set.
+    #[inline]
     pub fn bits(self) -> u32 {
         self.0
+    }
+
+    /// Creates a raw CssRuleTypes bitfield.
+    #[inline]
+    pub fn from_bits(bits: u32) -> Self {
+        Self(bits)
+    }
+
+    /// Returns whether the rule set is empty.
+    #[inline]
+    pub fn is_empty(self) -> bool {
+        self.0 == 0
     }
 
     /// Inserts a rule type into the set.
@@ -408,7 +414,6 @@ impl CssRule {
             CssRule::CounterStyle(_) => CssRuleType::CounterStyle,
             CssRule::Keyframes(_) => CssRuleType::Keyframes,
             CssRule::Namespace(_) => CssRuleType::Namespace,
-            CssRule::Viewport(_) => CssRuleType::Viewport,
             CssRule::Supports(_) => CssRuleType::Supports,
             CssRule::Page(_) => CssRuleType::Page,
             CssRule::Property(_) => CssRuleType::Property,
@@ -429,13 +434,12 @@ impl CssRule {
         insert_rule_context: InsertRuleContext,
         parent_stylesheet_contents: &StylesheetContents,
         shared_lock: &SharedRwLock,
-        state: State,
         loader: Option<&dyn StylesheetLoader>,
         allow_import_rules: AllowImportRules,
     ) -> Result<Self, RulesMutateError> {
         let url_data = parent_stylesheet_contents.url_data.read();
         let namespaces = parent_stylesheet_contents.namespaces.read();
-        let context = ParserContext::new(
+        let mut context = ParserContext::new(
             parent_stylesheet_contents.origin,
             &url_data,
             None,
@@ -445,6 +449,16 @@ impl CssRule {
             None,
             None,
         );
+        context.rule_types = insert_rule_context.containing_rule_types;
+
+        let state = if !insert_rule_context.containing_rule_types.is_empty() {
+            State::Body
+        } else if insert_rule_context.index == 0 {
+            State::Start
+        } else {
+            let index = insert_rule_context.index;
+            insert_rule_context.max_rule_state_at_index(index - 1)
+        };
 
         let mut input = ParserInput::new(css);
         let mut input = Parser::new(&mut input);
@@ -459,6 +473,7 @@ impl CssRule {
             insert_rule_context: Some(insert_rule_context),
             allow_import_rules,
             declaration_parser_state: Default::default(),
+            error_reporting_state: Default::default(),
             rules: Default::default(),
         };
 
@@ -507,7 +522,6 @@ impl DeepCloneWithLock for CssRule {
                 let rule = arc.read_with(guard);
                 CssRule::CounterStyle(Arc::new(lock.wrap(rule.clone())))
             },
-            CssRule::Viewport(ref arc) => CssRule::Viewport(arc.clone()),
             CssRule::Keyframes(ref arc) => {
                 let rule = arc.read_with(guard);
                 CssRule::Keyframes(Arc::new(
@@ -550,7 +564,6 @@ impl ToCssWithGuard for CssRule {
             CssRule::FontFeatureValues(ref rule) => rule.to_css(guard, dest),
             CssRule::FontPaletteValues(ref rule) => rule.to_css(guard, dest),
             CssRule::CounterStyle(ref lock) => lock.read_with(guard).to_css(guard, dest),
-            CssRule::Viewport(ref rule) => rule.to_css(guard, dest),
             CssRule::Keyframes(ref lock) => lock.read_with(guard).to_css(guard, dest),
             CssRule::Media(ref rule) => rule.to_css(guard, dest),
             CssRule::Supports(ref rule) => rule.to_css(guard, dest),

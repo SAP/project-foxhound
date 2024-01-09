@@ -41,6 +41,7 @@ const char* const sExecutableExts[] = {
   ".air",         // Adobe AIR installer
   ".app",         // executable application
   ".application", // from bug 348763
+  ".appref-ms",   // ClickOnce link
   ".asp",
   ".atloc",       // Appletalk Location
   ".bas",
@@ -133,7 +134,8 @@ const char* const sExecutableExts[] = {
   ".ws",
   ".wsc",
   ".wsf",
-  ".wsh"
+  ".wsh",
+  ".xll"         // MS Excel dynamic link library
     // clang-format on
 };
 

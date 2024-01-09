@@ -23,6 +23,7 @@
 #include "nsCSSColorUtils.h"
 #include "nsCSSRendering.h"
 #include "nsScrollbarFrame.h"
+#include "nsIScrollableFrame.h"
 #include "nsIScrollbarMediator.h"
 #include "nsDeviceContext.h"
 #include "nsLayoutUtils.h"
@@ -879,11 +880,18 @@ void Theme::PaintRange(nsIFrame* aFrame, PaintBackendData& aPaintData,
     tickMarkSize = LayoutDeviceSize(tickMarkHeight, tickMarkWidth);
     thumbRect.x = aRect.x + (aRect.width - thumbRect.width) / 2;
 
-    thumbRect.y =
-        aRect.y + (aRect.height - thumbRect.height) * (1.0 - progress);
-    float midPoint = thumbRect.Center().Y();
-    trackClipRect.SetBoxY(aRect.Y(), midPoint);
-    progressClipRect.SetBoxY(midPoint, aRect.YMost());
+    if (rangeFrame->IsUpwards()) {
+      thumbRect.y =
+          aRect.y + (aRect.height - thumbRect.height) * (1.0 - progress);
+      float midPoint = thumbRect.Center().Y();
+      trackClipRect.SetBoxY(aRect.Y(), midPoint);
+      progressClipRect.SetBoxY(midPoint, aRect.YMost());
+    } else {
+      thumbRect.y = aRect.y + (aRect.height - thumbRect.height) * progress;
+      float midPoint = thumbRect.Center().Y();
+      trackClipRect.SetBoxY(midPoint, aRect.YMost());
+      progressClipRect.SetBoxY(aRect.Y(), midPoint);
+    }
   }
 
   const CSSCoord borderWidth = 1.0f;
@@ -1114,6 +1122,17 @@ static ScrollbarDrawing::ScrollbarKind ComputeScrollbarKind(
              : ScrollbarDrawing::ScrollbarKind::VerticalLeft;
 }
 
+static ScrollbarDrawing::ScrollbarKind ComputeScrollbarKindForScrollCorner(
+    nsIFrame* aFrame) {
+  nsIScrollableFrame* sf = do_QueryFrame(aFrame->GetParent());
+  if (!sf) {
+    return ScrollbarDrawing::ScrollbarKind::VerticalRight;
+  }
+  return sf->IsScrollbarOnRight()
+             ? ScrollbarDrawing::ScrollbarKind::VerticalRight
+             : ScrollbarDrawing::ScrollbarKind::VerticalLeft;
+}
+
 template <typename PaintBackendData>
 bool Theme::DoDrawWidgetBackground(PaintBackendData& aPaintData,
                                    nsIFrame* aFrame,
@@ -1281,7 +1300,7 @@ bool Theme::DoDrawWidgetBackground(PaintBackendData& aPaintData,
           colors, dpiRatio);
     }
     case StyleAppearance::Scrollcorner: {
-      auto kind = ComputeScrollbarKind(aFrame, false);
+      auto kind = ComputeScrollbarKindForScrollCorner(aFrame);
       return GetScrollbarDrawing().PaintScrollCorner(
           aPaintData, devPxRect, kind, aFrame,
           *nsLayoutUtils::StyleForScrollbar(aFrame), docState, colors,

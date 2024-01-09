@@ -18,6 +18,7 @@
 #include "NSSErrorsService.h"
 #include "base/basictypes.h"
 #include "mozilla/Components.h"
+#include "mozilla/glean/GleanMetrics.h"
 #include "mozilla/net/SSLTokensCache.h"
 #include "mozilla/ScopeExit.h"
 #include "mozilla/Tokenizer.h"
@@ -1659,6 +1660,34 @@ void nsHttpTransaction::Close(nsresult reason) {
     if (timings.responseEnd.IsNull() && !timings.responseStart.IsNull()) {
       SetResponseEnd(TimeStamp::Now());
     }
+
+    // Accumulate download throughput telemetry
+    const int64_t TELEMETRY_DOWNLOAD_SIZE_GREATER_THAN_10MB =
+        (int64_t)10 * (int64_t)(1 << 20);
+    if ((mContentRead > TELEMETRY_DOWNLOAD_SIZE_GREATER_THAN_10MB) &&
+        !timings.requestStart.IsNull() && !timings.responseEnd.IsNull()) {
+      TimeDuration elapsed = timings.responseEnd - timings.requestStart;
+      double megabits = static_cast<double>(mContentRead) * 8.0 / 1000000.0;
+      uint32_t mpbs = static_cast<uint32_t>(megabits / elapsed.ToSeconds());
+
+      switch (mHttpVersion) {
+        case HttpVersion::v1_0:
+        case HttpVersion::v1_1:
+          glean::networking::http_1_download_throughput.AccumulateSamples(
+              {mpbs});
+          break;
+        case HttpVersion::v2_0:
+          glean::networking::http_2_download_throughput.AccumulateSamples(
+              {mpbs});
+          break;
+        case HttpVersion::v3_0:
+          glean::networking::http_3_download_throughput.AccumulateSamples(
+              {mpbs});
+          break;
+        default:
+          break;
+      }
+    }
   }
 
   if (mTrafficCategory != HttpTrafficCategory::eInvalid) {
@@ -1935,8 +1964,10 @@ nsresult nsHttpTransaction::ParseLine(nsACString& line) {
   nsresult rv = NS_OK;
 
   if (!mHaveStatusLine) {
-    mResponseHead->ParseStatusLine(line);
-    mHaveStatusLine = true;
+    rv = mResponseHead->ParseStatusLine(line);
+    if (NS_SUCCEEDED(rv)) {
+      mHaveStatusLine = true;
+    }
     // XXX this should probably never happen
     if (mResponseHead->Version() == HttpVersion::v0_9) mHaveAllHeaders = true;
   } else {
@@ -2060,7 +2091,9 @@ nsresult nsHttpTransaction::ParseHead(char* buf, uint32_t count,
         // Treat any 0.9 style response of a put as a failure.
         if (mRequestHead->IsPut()) return NS_ERROR_ABORT;
 
-        mResponseHead->ParseStatusLine(""_ns);
+        if (NS_FAILED(mResponseHead->ParseStatusLine(""_ns))) {
+          return NS_ERROR_FAILURE;
+        }
         mHaveStatusLine = true;
         mHaveAllHeaders = true;
         return NS_OK;
@@ -3543,6 +3576,11 @@ void nsHttpTransaction::GetHashKeyOfConnectionEntry(nsACString& aResult) {
 
 void nsHttpTransaction::SetIsForWebTransport(bool aIsForWebTransport) {
   mIsForWebTransport = aIsForWebTransport;
+}
+
+void nsHttpTransaction::RemoveConnection() {
+  MutexAutoLock lock(mLock);
+  mConnection = nullptr;
 }
 
 }  // namespace mozilla::net

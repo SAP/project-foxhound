@@ -7,7 +7,7 @@
 with Files("**"):
     BUG_COMPONENT = ("Firefox", "General")
 
-with Files("distribution.js"):
+with Files("distribution.sys.mjs"):
     BUG_COMPONENT = ("Firefox", "Distributions")
 
 with Files("tests/**"):
@@ -58,13 +58,15 @@ DIRS += [
     "syncedtabs",
     "tabunloader",
     "textrecognition",
-    "translation",
     "translations",
     "uitour",
     "urlbar",
 ]
 
 DIRS += ["build"]
+
+if CONFIG["NIGHTLY_BUILD"]:
+    DIRS += ["shopping"]
 
 
 if CONFIG["MOZ_WIDGET_TOOLKIT"] == "cocoa":
@@ -89,7 +91,7 @@ EXTRA_COMPONENTS += [
 EXTRA_JS_MODULES += [
     "BrowserContentHandler.sys.mjs",
     "BrowserGlue.sys.mjs",
-    "distribution.js",
+    "distribution.sys.mjs",
 ]
 
 if CONFIG["MOZ_DEBUG"] or CONFIG["MOZ_DEV_EDITION"] or CONFIG["NIGHTLY_BUILD"]:

@@ -514,6 +514,15 @@ class MochitestArguments(ArgumentContainer):
             },
         ],
         [
+            ["--use-http2-server"],
+            {
+                "dest": "useHttp2Server",
+                "default": False,
+                "help": "Whether to use the Http2 server",
+                "action": "store_true",
+            },
+        ],
+        [
             ["--setpref"],
             {
                 "action": "append",
@@ -573,7 +582,7 @@ class MochitestArguments(ArgumentContainer):
                 "action": "store_true",
                 "default": False,
                 "dest": "a11y_checks",
-                "help": "Run tests with accessibility checks disabled.",
+                "help": "Run tests with accessibility checks enabled.",
             },
         ],
         [

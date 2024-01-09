@@ -34,6 +34,8 @@
 #include "mozilla/dom/DOMTypes.h"
 #include "mozilla/dom/Directory.h"
 #include "mozilla/dom/DocGroup.h"
+#include "mozilla/dom/EncodedVideoChunk.h"
+#include "mozilla/dom/EncodedVideoChunkBinding.h"
 #include "mozilla/dom/File.h"
 #include "mozilla/dom/FileList.h"
 #include "mozilla/dom/FileListBinding.h"
@@ -111,14 +113,15 @@ bool StructuredCloneCallbacksWrite(JSContext* aCx,
 }
 
 bool StructuredCloneCallbacksReadTransfer(
-    JSContext* aCx, JSStructuredCloneReader* aReader, uint32_t aTag,
-    void* aContent, uint64_t aExtraData, void* aClosure,
+    JSContext* aCx, JSStructuredCloneReader* aReader,
+    const JS::CloneDataPolicy& aCloneDataPolicy, uint32_t aTag, void* aContent,
+    uint64_t aExtraData, void* aClosure,
     JS::MutableHandle<JSObject*> aReturnObject) {
   StructuredCloneHolderBase* holder =
       static_cast<StructuredCloneHolderBase*>(aClosure);
   MOZ_ASSERT(holder);
-  return holder->CustomReadTransferHandler(aCx, aReader, aTag, aContent,
-                                           aExtraData, aReturnObject);
+  return holder->CustomReadTransferHandler(aCx, aReader, aCloneDataPolicy, aTag,
+                                           aContent, aExtraData, aReturnObject);
 }
 
 bool StructuredCloneCallbacksWriteTransfer(
@@ -303,9 +306,9 @@ bool StructuredCloneHolderBase::Read(
 }
 
 bool StructuredCloneHolderBase::CustomReadTransferHandler(
-    JSContext* aCx, JSStructuredCloneReader* aReader, uint32_t aTag,
-    void* aContent, uint64_t aExtraData,
-    JS::MutableHandle<JSObject*> aReturnObject) {
+    JSContext* aCx, JSStructuredCloneReader* aReader,
+    const JS::CloneDataPolicy& aCloneDataPolicy, uint32_t aTag, void* aContent,
+    uint64_t aExtraData, JS::MutableHandle<JSObject*> aReturnObject) {
   MOZ_CRASH("Nothing to read.");
   return false;
 }
@@ -396,6 +399,7 @@ void StructuredCloneHolder::Read(nsIGlobalObject* aGlobal, JSContext* aCx,
     mClonedSurfaces.Clear();
     mInputStreamArray.Clear();
     mVideoFrames.Clear();
+    mEncodedVideoChunks.Clear();
     Clear();
   }
 }
@@ -426,9 +430,35 @@ void StructuredCloneHolder::ReadFromBuffer(
   }
 }
 
+static bool CheckExposedGlobals(JSContext* aCx, nsIGlobalObject* aGlobal,
+                                uint16_t aExposedGlobals) {
+  JS::Rooted<JSObject*> global(aCx, aGlobal->GetGlobalJSObject());
+
+  // Sandboxes aren't really DOM globals (though they do set the
+  // JSCLASS_DOM_GLOBAL flag), and so we can't simply do the exposure check.
+  // Some sandboxes do have a DOM global as their prototype, so using the
+  // prototype to check for exposure will at least make it work for those
+  // specific cases.
+  {
+    JSObject* proto = xpc::SandboxPrototypeOrNull(aCx, global);
+    if (proto) {
+      global = proto;
+    }
+  }
+
+  if (!IsGlobalInExposureSet(aCx, global, aExposedGlobals)) {
+    ErrorResult error;
+    error.ThrowDataCloneError("Interface is not exposed.");
+    MOZ_ALWAYS_TRUE(error.MaybeSetPendingException(aCx));
+    return false;
+  }
+  return true;
+}
+
 /* static */
 JSObject* StructuredCloneHolder::ReadFullySerializableObjects(
-    JSContext* aCx, JSStructuredCloneReader* aReader, uint32_t aTag) {
+    JSContext* aCx, JSStructuredCloneReader* aReader, uint32_t aTag,
+    bool aIsForIndexedDB) {
   AssertTagValues();
 
   nsIGlobalObject* global = xpc::CurrentNativeGlobal(aCx);
@@ -436,10 +466,29 @@ JSObject* StructuredCloneHolder::ReadFullySerializableObjects(
     return nullptr;
   }
 
-  WebIDLDeserializer deserializer =
+  Maybe<std::pair<uint16_t, WebIDLDeserializer>> deserializer =
       LookupDeserializer(StructuredCloneTags(aTag));
-  if (deserializer) {
-    return deserializer(aCx, global, aReader);
+  if (deserializer.isSome()) {
+    uint16_t exposedGlobals;
+    WebIDLDeserializer deserialize;
+    std::tie(exposedGlobals, deserialize) = deserializer.ref();
+
+    // https://html.spec.whatwg.org/multipage/structured-data.html#structureddeserialize
+    //
+    // 22. Otherwise:
+    //
+    //   1. Let interfaceName be serialized.[[Type]].
+    //   2. If the interface identified by interfaceName is not exposed in
+    //      targetRealm, then throw a "DataCloneError" DOMException.
+    //
+    // The special-casing for IndexedDB is because it uses a sandbox to
+    // deserialize, which means we don't actually have access to exposure
+    // information.
+    if (!aIsForIndexedDB && !CheckExposedGlobals(aCx, global, exposedGlobals)) {
+      return nullptr;
+    }
+
+    return deserialize(aCx, global, aReader);
   }
 
   if (aTag == SCTAG_DOM_NULL_PRINCIPAL || aTag == SCTAG_DOM_SYSTEM_PRINCIPAL ||
@@ -864,52 +913,36 @@ bool WriteFormData(JSStructuredCloneWriter* aWriter, FormData* aFormData,
     return false;
   }
 
-  class MOZ_STACK_CLASS Closure final {
-    JSStructuredCloneWriter* mWriter;
-    StructuredCloneHolder* mHolder;
+  auto write = [aWriter, aHolder](
+                   const nsString& aName,
+                   const OwningBlobOrDirectoryOrUSVString& aValue) {
+    if (!StructuredCloneHolder::WriteString(aWriter, aName)) {
+      return false;
+    }
 
-   public:
-    Closure(JSStructuredCloneWriter* aWriter, StructuredCloneHolder* aHolder)
-        : mWriter(aWriter), mHolder(aHolder) {}
-
-    static bool Write(const nsString& aName,
-                      const OwningBlobOrDirectoryOrUSVString& aValue,
-                      void* aClosure) {
-      Closure* closure = static_cast<Closure*>(aClosure);
-      if (!StructuredCloneHolder::WriteString(closure->mWriter, aName)) {
+    if (aValue.IsBlob()) {
+      if (!JS_WriteUint32Pair(aWriter, SCTAG_DOM_BLOB,
+                              aHolder->BlobImpls().Length())) {
         return false;
       }
 
-      if (aValue.IsBlob()) {
-        if (!JS_WriteUint32Pair(closure->mWriter, SCTAG_DOM_BLOB,
-                                closure->mHolder->BlobImpls().Length())) {
-          return false;
-        }
+      RefPtr<BlobImpl> blobImpl = aValue.GetAsBlob()->Impl();
 
-        RefPtr<BlobImpl> blobImpl = aValue.GetAsBlob()->Impl();
-
-        closure->mHolder->BlobImpls().AppendElement(blobImpl);
-        return true;
-      }
-
-      if (aValue.IsDirectory()) {
-        Directory* directory = aValue.GetAsDirectory();
-        return WriteDirectory(closure->mWriter, directory);
-      }
-
-      size_t charSize = sizeof(nsString::char_type);
-      if (!JS_WriteUint32Pair(closure->mWriter, 0,
-                              aValue.GetAsUSVString().Length()) ||
-          !JS_WriteBytes(closure->mWriter, aValue.GetAsUSVString().get(),
-                         aValue.GetAsUSVString().Length() * charSize)) {
-        return false;
-      }
-
+      aHolder->BlobImpls().AppendElement(blobImpl);
       return true;
     }
+
+    if (aValue.IsDirectory()) {
+      Directory* directory = aValue.GetAsDirectory();
+      return WriteDirectory(aWriter, directory);
+    }
+
+    const size_t charSize = sizeof(nsString::char_type);
+    return JS_WriteUint32Pair(aWriter, 0, aValue.GetAsUSVString().Length()) &&
+           JS_WriteBytes(aWriter, aValue.GetAsUSVString().get(),
+                         aValue.GetAsUSVString().Length() * charSize);
   };
-  Closure closure(aWriter, aHolder);
-  return aFormData->ForEach(Closure::Write, &closure);
+  return aFormData->ForEach(write);
 }
 
 JSObject* ReadWasmModule(JSContext* aCx, uint32_t aIndex,
@@ -988,6 +1021,12 @@ bool WriteInputStream(JSStructuredCloneWriter* aWriter,
 
 }  // anonymous namespace
 
+static const uint16_t sWindowOrWorker =
+    GlobalNames::DedicatedWorkerGlobalScope |
+    GlobalNames::ServiceWorkerGlobalScope |
+    GlobalNames::SharedWorkerGlobalScope | GlobalNames::Window |
+    GlobalNames::WorkerDebuggerGlobalScope;
+
 JSObject* StructuredCloneHolder::CustomReadHandler(
     JSContext* aCx, JSStructuredCloneReader* aReader,
     const JS::CloneDataPolicy& aCloneDataPolicy, uint32_t aTag,
@@ -995,23 +1034,38 @@ JSObject* StructuredCloneHolder::CustomReadHandler(
   MOZ_ASSERT(mSupportsCloning);
 
   if (aTag == SCTAG_DOM_BLOB) {
+    if (!CheckExposedGlobals(aCx, mGlobal, sWindowOrWorker)) {
+      return nullptr;
+    }
     return ReadBlob(aCx, aIndex, this);
   }
 
   if (aTag == SCTAG_DOM_DIRECTORY) {
+    if (!CheckExposedGlobals(aCx, mGlobal, sWindowOrWorker)) {
+      return nullptr;
+    }
     return ReadDirectory(aCx, aReader, aIndex, this);
   }
 
   if (aTag == SCTAG_DOM_FILELIST) {
+    if (!CheckExposedGlobals(aCx, mGlobal, sWindowOrWorker)) {
+      return nullptr;
+    }
     return ReadFileList(aCx, aReader, aIndex, this);
   }
 
   if (aTag == SCTAG_DOM_FORMDATA) {
+    if (!CheckExposedGlobals(aCx, mGlobal, sWindowOrWorker)) {
+      return nullptr;
+    }
     return ReadFormData(aCx, aReader, aIndex, this);
   }
 
   if (aTag == SCTAG_DOM_IMAGEBITMAP &&
       CloneScope() == StructuredCloneScope::SameProcess) {
+    if (!CheckExposedGlobals(aCx, mGlobal, sWindowOrWorker)) {
+      return nullptr;
+    }
     // Get the current global object.
     // This can be null.
     JS::Rooted<JSObject*> result(aCx);
@@ -1038,16 +1092,23 @@ JSObject* StructuredCloneHolder::CustomReadHandler(
   }
 
   if (aTag == SCTAG_DOM_BROWSING_CONTEXT) {
+    if (!CheckExposedGlobals(aCx, mGlobal, GlobalNames::Window)) {
+      return nullptr;
+    }
     return BrowsingContext::ReadStructuredClone(aCx, aReader, this);
   }
 
   if (aTag == SCTAG_DOM_CLONED_ERROR_OBJECT) {
+    if (!CheckExposedGlobals(aCx, mGlobal, sWindowOrWorker)) {
+      return nullptr;
+    }
     return ClonedErrorHolder::ReadStructuredClone(aCx, aReader, this);
   }
 
   if (StaticPrefs::dom_media_webcodecs_enabled() &&
       aTag == SCTAG_DOM_VIDEOFRAME &&
-      CloneScope() == StructuredCloneScope::SameProcess) {
+      CloneScope() == StructuredCloneScope::SameProcess &&
+      aCloneDataPolicy.areIntraClusterClonableSharedObjectsAllowed()) {
     JS::Rooted<JSObject*> global(aCx, mGlobal->GetGlobalJSObject());
     if (VideoFrame_Binding::ConstructorEnabled(aCx, global)) {
       return VideoFrame::ReadStructuredClone(aCx, mGlobal, aReader,
@@ -1055,7 +1116,18 @@ JSObject* StructuredCloneHolder::CustomReadHandler(
     }
   }
 
-  return ReadFullySerializableObjects(aCx, aReader, aTag);
+  if (StaticPrefs::dom_media_webcodecs_enabled() &&
+      aTag == SCTAG_DOM_ENCODEDVIDEOCHUNK &&
+      CloneScope() == StructuredCloneScope::SameProcess &&
+      aCloneDataPolicy.areIntraClusterClonableSharedObjectsAllowed()) {
+    JS::Rooted<JSObject*> global(aCx, mGlobal->GetGlobalJSObject());
+    if (EncodedVideoChunk_Binding::ConstructorEnabled(aCx, global)) {
+      return EncodedVideoChunk::ReadStructuredClone(
+          aCx, mGlobal, aReader, EncodedVideoChunks()[aIndex]);
+    }
+  }
+
+  return ReadFullySerializableObjects(aCx, aReader, aTag, false);
 }
 
 bool StructuredCloneHolder::CustomWriteHandler(
@@ -1162,6 +1234,18 @@ bool StructuredCloneHolder::CustomWriteHandler(
     }
   }
 
+  // See if this is a EncodedVideoChunk object.
+  if (StaticPrefs::dom_media_webcodecs_enabled()) {
+    EncodedVideoChunk* encodedVideoChunk = nullptr;
+    if (NS_SUCCEEDED(
+            UNWRAP_OBJECT(EncodedVideoChunk, &obj, encodedVideoChunk))) {
+      SameProcessScopeRequired(aSameProcessScopeRequired);
+      return CloneScope() == StructuredCloneScope::SameProcess
+                 ? encodedVideoChunk->WriteStructuredClone(aWriter, this)
+                 : false;
+    }
+  }
+
   {
     // We only care about streams, so ReflectorToISupportsStatic is fine.
     nsCOMPtr<nsISupports> base = xpc::ReflectorToISupportsStatic(aObj);
@@ -1194,12 +1278,17 @@ already_AddRefed<MessagePort> StructuredCloneHolder::ReceiveMessagePort(
 // TODO: Convert this to MOZ_CAN_RUN_SCRIPT (bug 1415230)
 MOZ_CAN_RUN_SCRIPT_BOUNDARY bool
 StructuredCloneHolder::CustomReadTransferHandler(
-    JSContext* aCx, JSStructuredCloneReader* aReader, uint32_t aTag,
-    void* aContent, uint64_t aExtraData,
-    JS::MutableHandle<JSObject*> aReturnObject) {
+    JSContext* aCx, JSStructuredCloneReader* aReader,
+    const JS::CloneDataPolicy& aCloneDataPolicy, uint32_t aTag, void* aContent,
+    uint64_t aExtraData, JS::MutableHandle<JSObject*> aReturnObject) {
   MOZ_ASSERT(mSupportsTransferring);
 
   if (aTag == SCTAG_DOM_MAP_MESSAGEPORT) {
+    if (!CheckExposedGlobals(
+            aCx, mGlobal,
+            sWindowOrWorker | GlobalNames::AudioWorkletGlobalScope)) {
+      return false;
+    }
 #ifdef FUZZING
     if (aExtraData >= mPortIdentifiers.Length()) {
       return false;
@@ -1223,6 +1312,9 @@ StructuredCloneHolder::CustomReadTransferHandler(
 
   if (aTag == SCTAG_DOM_CANVAS &&
       CloneScope() == StructuredCloneScope::SameProcess) {
+    if (!CheckExposedGlobals(aCx, mGlobal, sWindowOrWorker)) {
+      return false;
+    }
     MOZ_ASSERT(aContent);
     OffscreenCanvasCloneData* data =
         static_cast<OffscreenCanvasCloneData*>(aContent);
@@ -1242,6 +1334,9 @@ StructuredCloneHolder::CustomReadTransferHandler(
 
   if (aTag == SCTAG_DOM_IMAGEBITMAP &&
       CloneScope() == StructuredCloneScope::SameProcess) {
+    if (!CheckExposedGlobals(aCx, mGlobal, sWindowOrWorker)) {
+      return false;
+    }
     MOZ_ASSERT(aContent);
     ImageBitmapCloneData* data = static_cast<ImageBitmapCloneData*>(aContent);
     RefPtr<ImageBitmap> bitmap =
@@ -1304,7 +1399,8 @@ StructuredCloneHolder::CustomReadTransferHandler(
 
   if (StaticPrefs::dom_media_webcodecs_enabled() &&
       aTag == SCTAG_DOM_VIDEOFRAME &&
-      CloneScope() == StructuredCloneScope::SameProcess) {
+      CloneScope() == StructuredCloneScope::SameProcess &&
+      aCloneDataPolicy.areIntraClusterClonableSharedObjectsAllowed()) {
     MOZ_ASSERT(aContent);
 
     JS::Rooted<JSObject*> globalObj(aCx, mGlobal->GetGlobalJSObject());
@@ -1376,16 +1472,17 @@ StructuredCloneHolder::CustomWriteTransferHandler(
       if (NS_SUCCEEDED(rv)) {
         MOZ_ASSERT(canvas);
 
-        if (!canvas->MayNeuter()) {
+        UniquePtr<OffscreenCanvasCloneData> clonedCanvas =
+            canvas->ToCloneData(aCx);
+        if (!clonedCanvas) {
           return false;
         }
 
         *aExtraData = 0;
         *aTag = SCTAG_DOM_CANVAS;
-        *aContent = canvas->ToCloneData();
+        *aContent = clonedCanvas.release();
         MOZ_ASSERT(*aContent);
         *aOwnership = JS::SCTAG_TMO_CUSTOM;
-        canvas->SetNeutered();
 
         return true;
       }

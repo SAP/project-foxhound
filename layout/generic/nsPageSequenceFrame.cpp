@@ -11,6 +11,7 @@
 #include "mozilla/PresShell.h"
 #include "mozilla/PrintedSheetFrame.h"
 #include "mozilla/dom/HTMLCanvasElement.h"
+#include "mozilla/gfx/Point.h"
 #include "mozilla/StaticPresData.h"
 
 #include "nsCOMPtr.h"
@@ -343,7 +344,7 @@ void nsPageSequenceFrame::Reflow(nsPresContext* aPresContext,
     // frame, we need to call this:
     sheet->ClaimPageFrameFromPrevInFlow();
 
-    const nsSize sheetSize = sheet->PrecomputeSheetSize(aPresContext);
+    const nsSize sheetSize = sheet->ComputeSheetSize(aPresContext);
 
     // Reflow the sheet
     ReflowInput kidReflowInput(
@@ -371,7 +372,7 @@ void nsPageSequenceFrame::Reflow(nsPresContext* aPresContext,
     FinishReflowChild(kidFrame, aPresContext, kidReflowOutput, &kidReflowInput,
                       x, y, ReflowChildFlags::Default);
     MOZ_ASSERT(kidFrame->GetSize() == sheetSize,
-               "PrintedSheetFrame::PrecomputeSheetSize gave the wrong size!");
+               "PrintedSheetFrame::ComputeSheetSize() gave the wrong size!");
     y += kidReflowOutput.Height();
     y += pageCSSMargin.bottom;
 
@@ -584,7 +585,10 @@ nsresult nsPageSequenceFrame::PrePrintNextSheet(nsITimerCallback* aCallback,
       nsDeviceContext* dc = PresContext()->DeviceContext();
       PR_PL(("\n"));
       PR_PL(("***************** BeginPage *****************\n"));
-      rv = dc->BeginPage();
+      const gfx::IntSize sizeInPoints =
+          currentSheet->GetPrintTargetSizeInPoints(
+              dc->AppUnitsPerPhysicalInch());
+      rv = dc->BeginPage(sizeInPoints);
       NS_ENSURE_SUCCESS(rv, rv);
 
       mCalledBeginPage = true;
@@ -675,7 +679,10 @@ nsresult nsPageSequenceFrame::PrintNextSheet() {
       // page otherwise.
       PR_PL(("\n"));
       PR_PL(("***************** BeginPage *****************\n"));
-      rv = dc->BeginPage();
+      const gfx::IntSize sizeInPoints =
+          currentSheetFrame->GetPrintTargetSizeInPoints(
+              dc->AppUnitsPerPhysicalInch());
+      rv = dc->BeginPage(sizeInPoints);
       NS_ENSURE_SUCCESS(rv, rv);
     }
   }

@@ -15,9 +15,9 @@ use crate::applicable_declarations::CascadePriority;
 use crate::context::QuirksMode;
 use crate::custom_properties::{self, CustomPropertiesBuilder};
 use crate::error_reporting::{ContextualParseError, ParseErrorReporter};
-use crate::media_queries::Device;
 use crate::parser::ParserContext;
 use crate::properties::animated_properties::{AnimationValue, AnimationValueMap};
+use crate::stylist::Stylist;
 use crate::rule_tree::CascadeLevel;
 use crate::selector_map::PrecomputedHashSet;
 use crate::selector_parser::SelectorImpl;
@@ -845,7 +845,7 @@ impl PropertyDeclarationBlock {
         dest: &mut CssStringWriter,
         computed_values: Option<&ComputedValues>,
         custom_properties_block: Option<&PropertyDeclarationBlock>,
-        device: &Device,
+        stylist: &Stylist,
     ) -> fmt::Result {
         if let Ok(shorthand) = property.as_shorthand() {
             return self.shorthand_to_css(shorthand, dest);
@@ -864,7 +864,7 @@ impl PropertyDeclarationBlock {
             if let Some(block) = custom_properties_block {
                 // FIXME(emilio): This is not super-efficient here, and all this
                 // feels like a hack anyway...
-                block.cascade_custom_properties(cv.custom_properties(), device)
+                block.cascade_custom_properties(cv.custom_properties(), stylist)
             } else {
                 cv.custom_properties().cloned()
             }
@@ -888,7 +888,7 @@ impl PropertyDeclarationBlock {
                         computed_values.writing_mode,
                         custom_properties.as_ref(),
                         QuirksMode::NoQuirks,
-                        device,
+                        stylist.device(),
                         &mut Default::default(),
                     )
                     .to_css(dest)
@@ -935,7 +935,7 @@ impl PropertyDeclarationBlock {
         &self,
         context: &Context,
     ) -> Option<Arc<crate::custom_properties::CustomPropertiesMap>> {
-        self.cascade_custom_properties(context.style().custom_properties(), context.device())
+        self.cascade_custom_properties(context.style().custom_properties(), context.style().stylist.unwrap())
     }
 
     /// Returns a custom properties map which is the result of cascading custom
@@ -944,9 +944,9 @@ impl PropertyDeclarationBlock {
     fn cascade_custom_properties(
         &self,
         inherited_custom_properties: Option<&Arc<crate::custom_properties::CustomPropertiesMap>>,
-        device: &Device,
+        stylist: &Stylist,
     ) -> Option<Arc<crate::custom_properties::CustomPropertiesMap>> {
-        let mut builder = CustomPropertiesBuilder::new(inherited_custom_properties, device);
+        let mut builder = CustomPropertiesBuilder::new(inherited_custom_properties, stylist.device());
 
         for declaration in self.normal_declaration_iter() {
             if let PropertyDeclaration::Custom(ref declaration) = *declaration {
@@ -1310,7 +1310,7 @@ pub fn parse_style_attribute(
     );
 
     let mut input = ParserInput::new(input);
-    parse_property_declaration_list(&context, &mut Parser::new(&mut input), None)
+    parse_property_declaration_list(&context, &mut Parser::new(&mut input), &[])
 }
 
 /// Parse a given property declaration. Can result in multiple
@@ -1358,7 +1358,7 @@ pub fn parse_one_declaration_into(
                 report_one_css_error(
                     &context,
                     None,
-                    None,
+                    &[],
                     err,
                     parser.slice_from(start_position),
                     property_id_for_error_reporting,
@@ -1441,7 +1441,7 @@ impl<'i> DeclarationParserState<'i> {
     pub fn report_errors_if_needed(
         &mut self,
         context: &ParserContext,
-        selectors: Option<&SelectorList<SelectorImpl>>,
+        selectors: &[SelectorList<SelectorImpl>],
     ) {
         if self.errors.is_empty() {
             return;
@@ -1453,7 +1453,7 @@ impl<'i> DeclarationParserState<'i> {
     fn do_report_css_errors(
         &mut self,
         context: &ParserContext,
-        selectors: Option<&SelectorList<SelectorImpl>>,
+        selectors: &[SelectorList<SelectorImpl>],
     ) {
         for (error, slice, property) in self.errors.drain(..) {
             report_one_css_error(
@@ -1536,7 +1536,7 @@ fn alias_of_known_property(name: &str) -> Option<PropertyId> {
 fn report_one_css_error<'i>(
     context: &ParserContext,
     block: Option<&PropertyDeclarationBlock>,
-    selectors: Option<&SelectorList<SelectorImpl>>,
+    selectors: &[SelectorList<SelectorImpl>],
     mut error: ParseError<'i>,
     slice: &str,
     property: Option<PropertyId>,
@@ -1594,7 +1594,7 @@ fn report_one_css_error<'i>(
 pub fn parse_property_declaration_list(
     context: &ParserContext,
     input: &mut Parser,
-    selectors: Option<&SelectorList<SelectorImpl>>,
+    selectors: &[SelectorList<SelectorImpl>],
 ) -> PropertyDeclarationBlock {
     let mut state = DeclarationParserState::default();
     let mut parser = PropertyDeclarationParser {

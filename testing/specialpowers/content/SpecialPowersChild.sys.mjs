@@ -14,6 +14,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
   MockFilePicker: "resource://testing-common/MockFilePicker.sys.mjs",
   MockPermissionPrompt:
     "resource://testing-common/MockPermissionPrompt.sys.mjs",
+  NetUtil: "resource://gre/modules/NetUtil.sys.mjs",
   PerTestCoverageUtils:
     "resource://testing-common/PerTestCoverageUtils.sys.mjs",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
@@ -21,11 +22,6 @@ ChromeUtils.defineESModuleGetters(lazy, {
     "resource://testing-common/SpecialPowersSandbox.sys.mjs",
   WrapPrivileged: "resource://testing-common/WrapPrivileged.sys.mjs",
 });
-ChromeUtils.defineModuleGetter(
-  lazy,
-  "NetUtil",
-  "resource://gre/modules/NetUtil.jsm"
-);
 import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
 
 Cu.crashIfNotInAutomation();
@@ -638,16 +634,6 @@ export class SpecialPowersChild extends JSWindowActorChild {
     this._addMessageListener("SPChromeScriptMessage", chromeScript);
 
     return chromeScript;
-  }
-
-  async importInMainProcess(importString) {
-    var message = await this.sendQuery("SPImportInMainProcess", importString);
-    if (message.hadError) {
-      throw new Error(
-        "SpecialPowers.importInMainProcess failed with error " +
-          message.errorMessage
-      );
-    }
   }
 
   get Services() {

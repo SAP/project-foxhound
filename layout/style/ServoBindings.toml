@@ -34,7 +34,6 @@ headers = [
     "mozilla/ServoTraversalStatistics.h",
     "mozilla/SizeOfState.h",
     "nsCSSProps.h",
-    "nsMappedAttributes.h",
     "nsNameSpaceManager.h",
 ]
 raw-lines = [
@@ -59,6 +58,7 @@ hide-types = [
 bitfield-enums = [
     "nsChangeHint",
     "mozilla::OriginFlags",
+    "NodeSelectorFlags",
 ]
 rusty-enums = [
     "nsCompatibility",
@@ -112,7 +112,6 @@ rusty-enums = [
     "mozilla::StyleRubyPosition",
     "mozilla::StyleShapeSourceType",
     "mozilla::StyleVisibility",
-    "mozilla::StyleBasicShapeType",
     "mozilla::StyleMathStyle",
     "nsStyleImageLayers_Size_DimensionType",
     "mozilla::StyleBorderCollapse",
@@ -343,7 +342,6 @@ allowlist-types = [
     "SheetParsingMode",
     "StaticRefPtr",
     "StyleAnimation",
-    "StyleBasicShapeType",
     "StyleGeometryBox",
     "StyleShapeSource",
     "StyleTransition",
@@ -353,11 +351,11 @@ allowlist-types = [
     "mozilla::DefaultDelete",
     "mozilla::Side",
     "mozilla::binding_danger::AssertAndSuppressCleanupPolicy",
-    "mozilla::ParsingMode",
     "mozilla::InheritTarget",
     "mozilla::dom::MediaList",
     "mozilla::StyleRuleInclusion",
     "nsStyleTransformMatrix::MatrixTransformOperator",
+    "NodeSelectorFlags",
 ]
 opaque-types = [
     "mozilla::StyleThinArc", # https://github.com/rust-lang/rust-bindgen/issues/1557
@@ -447,11 +445,14 @@ cbindgen-types = [
     { gecko = "StyleFontFaceSourceTechFlags", servo = "crate::font_face::FontFaceSourceTechFlags" },
     { gecko = "StyleFontLanguageOverride", servo = "crate::values::computed::font::FontLanguageOverride" },
     { gecko = "StyleOffsetPath", servo = "crate::values::computed::motion::OffsetPath" },
+    { gecko = "StyleOffsetPathFunction", servo = "crate::values::computed::motion::OffsetPathFunction" },
     { gecko = "StyleGenericOffsetPath", servo = "crate::values::generics::motion::OffsetPath" },
+    { gecko = "StyleGenericOffsetPathFunction", servo = "crate::values::generics::motion::OffsetPathFunction" },
+    { gecko = "StyleMozTheme", servo = "crate::values::computed::ui::MozTheme" },
     { gecko = "StyleOffsetPosition", servo = "crate::values::computed::motion::OffsetPosition" },
     { gecko = "StyleOffsetRotate", servo = "crate::values::computed::motion::OffsetRotate" },
     { gecko = "StylePathCommand", servo = "crate::values::specified::svg_path::PathCommand" },
-    { gecko = "StyleRayFunction", servo = "crate::values::generics::motion::RayFunction" },
+    { gecko = "StyleRayFunction", servo = "crate::values::computed::motion::RayFunction" },
     { gecko = "StyleUnicodeRange", servo = "cssparser::UnicodeRange" },
     { gecko = "StyleOverflowWrap", servo = "crate::values::computed::OverflowWrap" },
     { gecko = "StyleWordBreak", servo = "crate::values::computed::WordBreak" },
@@ -516,6 +517,7 @@ cbindgen-types = [
     { gecko = "StyleGenericPerspective", servo = "crate::values::generics::box_::Perspective" },
     { gecko = "StyleZIndex", servo = "crate::values::computed::ZIndex" },
     { gecko = "StyleGenericZIndex", servo = "crate::values::generics::position::ZIndex" },
+    { gecko = "StyleTransformBox", servo = "crate::values::computed::TransformBox" },
     { gecko = "StyleTransformOrigin", servo = "crate::values::computed::TransformOrigin" },
     { gecko = "StyleTransformStyle", servo = "crate::values::computed::TransformStyle" },
     { gecko = "StyleGenericBorderRadius", servo = "crate::values::generics::border::BorderRadius" },
@@ -544,7 +546,8 @@ cbindgen-types = [
     { gecko = "StyleGenericClipRect", servo = "crate::values::generics::GenericClipRect" },
     { gecko = "StyleGenericCursorImage", servo = "crate::values::generics::ui::GenericCursorImage" },
     { gecko = "StyleFontFamily", servo = "crate::values::computed::font::FontFamily" },
-    { gecko = "StyleGenericFontSizeAdjust", servo = "crate::values::generics::font::GenericFontSizeAdjust" },
+    { gecko = "StyleFontSizeAdjust", servo = "crate::values::computed::font::FontSizeAdjust" },
+    { gecko = "StyleFontSizeAdjustFactor", servo = "crate::values::computed::font::FontSizeAdjustFactor" },
     { gecko = "StyleFontFamilyNameSyntax", servo = "crate::values::computed::font::FontFamilyNameSyntax" },
     { gecko = "StyleGenericColor", servo = "crate::values::generics::color::Color" },
     { gecko = "StyleSystemColor", servo = "crate::values::specified::color::SystemColor" },
@@ -556,6 +559,9 @@ cbindgen-types = [
     { gecko = "StyleGenericVerticalAlign", servo = "crate::values::generics::box_::VerticalAlign" },
     { gecko = "StyleVerticalAlignKeyword", servo = "crate::values::generics::box_::VerticalAlignKeyword" },
     { gecko = "StyleGenericBasicShape", servo = "crate::values::generics::basic_shape::BasicShape" },
+    { gecko = "StyleBasicShape", servo = "crate::values::computed::basic_shape::BasicShape" },
+    { gecko = "StyleGenericInsetRect", servo = "crate::values::generics::basic_shape::InsetRect" },
+    { gecko = "StyleInsetRect", servo = "crate::values::computed::basic_shape::InsetRect" },
     { gecko = "StyleArcSlice", servo = "style_traits::arc_slice::ArcSlice" },
     { gecko = "StyleForgottenArcSlicePtr", servo = "style_traits::arc_slice::ForgottenArcSlicePtr" },
     { gecko = "StyleOwnedSlice", servo = "style_traits::owned_slice::OwnedSlice" },

@@ -65,10 +65,7 @@ void CUIDraw(CUIRendererRef r, CGRect rect, CGContextRef ctx, CFDictionaryRef op
 }
 
 static bool IsDarkAppearance(NSAppearance* appearance) {
-  if (@available(macOS 10.14, *)) {
-    return [appearance.name isEqualToString:NSAppearanceNameDarkAqua];
-  }
-  return false;
+  return [appearance.name isEqualToString:NSAppearanceNameDarkAqua];
 }
 
 // Workaround for NSCell control tint drawing
@@ -1158,41 +1155,6 @@ void nsNativeThemeCocoa::DrawMenuItem(CGContextRef cgContext, const CGRect& inBo
   }
 }
 
-void nsNativeThemeCocoa::DrawMenuSeparator(CGContextRef cgContext, const CGRect& inBoxRect,
-                                           const MenuItemParams& aParams) {
-  // Workaround for visual artifacts issues with
-  // HIThemeDrawMenuSeparator on macOS Big Sur.
-  if (nsCocoaFeatures::OnBigSurOrLater()) {
-    CGRect separatorRect = inBoxRect;
-    separatorRect.size.height = 1;
-    separatorRect.size.width -= 42;
-    separatorRect.origin.x += 21;
-    if (!IsDarkAppearance(NSAppearance.currentAppearance)) {
-      // Use transparent black with an alpha similar to the native separator.
-      // The values 231 (menu background) and 205 (separator color) have been
-      // sampled from a window screenshot of a native context menu.
-      CGContextSetRGBFillColor(cgContext, 0.0, 0.0, 0.0, (231 - 205) / 231.0);
-    } else {
-      // Similar to above, use white with an alpha. The values 45 (menu
-      // background) and 81 (separator color) were sampled on macOS 12 with the
-      // "Reduce transparency" system setting turned on.
-      CGContextSetRGBFillColor(cgContext, 1.0, 1.0, 1.0, 1.0 + ((45 - 81) / 45.0));
-    }
-    CGContextFillRect(cgContext, separatorRect);
-    return;
-  }
-
-  ThemeMenuState menuState;
-  if (aParams.disabled) {
-    menuState = kThemeMenuDisabled;
-  } else {
-    menuState = aParams.selected ? kThemeMenuSelected : kThemeMenuActive;
-  }
-
-  HIThemeMenuItemDrawInfo midi = {0, kThemeMenuItemPlain, menuState};
-  HIThemeDrawMenuSeparator(&inBoxRect, &inBoxRect, &midi, cgContext, HITHEME_ORIENTATION);
-}
-
 static bool ShouldUnconditionallyDrawFocusRingIfFocused(nsIFrame* aFrame) {
   // Mac always draws focus rings for textboxes and lists.
   switch (aFrame->StyleDisplay()->EffectiveAppearance()) {
@@ -2192,7 +2154,7 @@ void nsNativeThemeCocoa::DrawSourceListSelection(CGContextRef aContext, const CG
   NSColor* fillColor;
   if (aSelectionIsActive) {
     // Active selection, blue or graphite.
-    fillColor = ControlAccentColor();
+    fillColor = [NSColor controlAccentColor];
   } else {
     // Inactive selection, gray.
     if (aWindowIsActive) {
@@ -2246,9 +2208,6 @@ Maybe<nsNativeThemeCocoa::WidgetInfo> nsNativeThemeCocoa::ComputeWidgetInfo(
       return Some(WidgetInfo::MenuItem(ComputeMenuItemParams(
           aFrame, elementState, aAppearance == StyleAppearance::Checkmenuitem)));
 
-    case StyleAppearance::Menuseparator:
-      return Some(WidgetInfo::MenuSeparator(ComputeMenuItemParams(aFrame, elementState, false)));
-
     case StyleAppearance::ButtonArrowUp:
     case StyleAppearance::ButtonArrowDown: {
       MenuIcon icon = aAppearance == StyleAppearance::ButtonArrowUp
@@ -2262,11 +2221,11 @@ Maybe<nsNativeThemeCocoa::WidgetInfo> nsNativeThemeCocoa::ComputeWidgetInfo(
 
     case StyleAppearance::Checkbox:
     case StyleAppearance::Radio: {
-      bool isCheckbox = (aAppearance == StyleAppearance::Checkbox);
+      bool isCheckbox = aAppearance == StyleAppearance::Checkbox;
 
       CheckboxOrRadioParams params;
       params.state = CheckboxOrRadioState::eOff;
-      if (elementState.HasState(ElementState::INDETERMINATE)) {
+      if (isCheckbox && elementState.HasState(ElementState::INDETERMINATE)) {
         params.state = CheckboxOrRadioState::eIndeterminate;
       } else if (elementState.HasState(ElementState::CHECKED)) {
         params.state = CheckboxOrRadioState::eOn;
@@ -2419,9 +2378,6 @@ Maybe<nsNativeThemeCocoa::WidgetInfo> nsNativeThemeCocoa::ComputeWidgetInfo(
       return Some(WidgetInfo::Button(
           ButtonParams{ComputeControlParams(aFrame, elementState), ButtonType::eArrowButton}));
 
-    case StyleAppearance::Groupbox:
-      return Some(WidgetInfo::GroupBox());
-
     case StyleAppearance::Textfield:
     case StyleAppearance::NumberInput:
       return Some(WidgetInfo::TextField(ComputeTextFieldParams(aFrame, elementState)));
@@ -2520,18 +2476,13 @@ Maybe<nsNativeThemeCocoa::WidgetInfo> nsNativeThemeCocoa::ComputeWidgetInfo(
   NS_OBJC_END_TRY_BLOCK_RETURN(Nothing());
 }
 
-static bool IsWidgetNonNative(StyleAppearance aAppearance) {
-  return nsNativeTheme::IsWidgetScrollbarPart(aAppearance) ||
-         aAppearance == StyleAppearance::FocusOutline;
-}
-
 NS_IMETHODIMP
 nsNativeThemeCocoa::DrawWidgetBackground(gfxContext* aContext, nsIFrame* aFrame,
                                          StyleAppearance aAppearance, const nsRect& aRect,
                                          const nsRect& aDirtyRect, DrawOverflow aDrawOverflow) {
   NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
 
-  if (IsWidgetNonNative(aAppearance)) {
+  if (IsWidgetAlwaysNonNative(aFrame, aAppearance)) {
     return ThemeCocoa::DrawWidgetBackground(aContext, aFrame, aAppearance, aRect, aDirtyRect,
                                             aDrawOverflow);
   }
@@ -2621,11 +2572,6 @@ void nsNativeThemeCocoa::RenderWidget(const WidgetInfo& aWidgetInfo,
         case Widget::eMenuItem: {
           MenuItemParams params = aWidgetInfo.Params<MenuItemParams>();
           DrawMenuItem(cgContext, macRect, params);
-          break;
-        }
-        case Widget::eMenuSeparator: {
-          MenuItemParams params = aWidgetInfo.Params<MenuItemParams>();
-          DrawMenuSeparator(cgContext, macRect, params);
           break;
         }
         case Widget::eCheckbox: {
@@ -2764,7 +2710,7 @@ bool nsNativeThemeCocoa::CreateWebRenderCommandsForWidget(
     const mozilla::layers::StackingContextHelper& aSc,
     mozilla::layers::RenderRootStateManager* aManager, nsIFrame* aFrame,
     StyleAppearance aAppearance, const nsRect& aRect) {
-  if (IsWidgetNonNative(aAppearance)) {
+  if (IsWidgetAlwaysNonNative(aFrame, aAppearance)) {
     return ThemeCocoa::CreateWebRenderCommandsForWidget(aBuilder, aResources, aSc, aManager, aFrame,
                                                         aAppearance, aRect);
   }
@@ -2782,7 +2728,6 @@ bool nsNativeThemeCocoa::CreateWebRenderCommandsForWidget(
     case StyleAppearance::Menuarrow:
     case StyleAppearance::Menuitem:
     case StyleAppearance::Checkmenuitem:
-    case StyleAppearance::Menuseparator:
     case StyleAppearance::ButtonArrowUp:
     case StyleAppearance::ButtonArrowDown:
     case StyleAppearance::Checkbox:
@@ -2802,7 +2747,6 @@ bool nsNativeThemeCocoa::CreateWebRenderCommandsForWidget(
     case StyleAppearance::Menulist:
     case StyleAppearance::MenulistButton:
     case StyleAppearance::MozMenulistArrowButton:
-    case StyleAppearance::Groupbox:
     case StyleAppearance::Textfield:
     case StyleAppearance::NumberInput:
     case StyleAppearance::Searchfield:
@@ -2846,6 +2790,10 @@ static const LayoutDeviceIntMargin kAquaSearchfieldBorderBigSur(5, 5, 4, 26);
 LayoutDeviceIntMargin nsNativeThemeCocoa::GetWidgetBorder(nsDeviceContext* aContext,
                                                           nsIFrame* aFrame,
                                                           StyleAppearance aAppearance) {
+  if (IsWidgetAlwaysNonNative(aFrame, aAppearance)) {
+    return Theme::GetWidgetBorder(aContext, aFrame, aAppearance);
+  }
+
   LayoutDeviceIntMargin result;
 
   NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
@@ -2938,6 +2886,10 @@ LayoutDeviceIntMargin nsNativeThemeCocoa::GetWidgetBorder(nsDeviceContext* aCont
 bool nsNativeThemeCocoa::GetWidgetPadding(nsDeviceContext* aContext, nsIFrame* aFrame,
                                           StyleAppearance aAppearance,
                                           LayoutDeviceIntMargin* aResult) {
+  if (IsWidgetAlwaysNonNative(aFrame, aAppearance)) {
+    return Theme::GetWidgetPadding(aContext, aFrame, aAppearance, aResult);
+  }
+
   // We don't want CSS padding being used for certain widgets.
   // See bug 381639 for an example of why.
   switch (aAppearance) {
@@ -2964,7 +2916,7 @@ bool nsNativeThemeCocoa::GetWidgetPadding(nsDeviceContext* aContext, nsIFrame* a
 
 bool nsNativeThemeCocoa::GetWidgetOverflow(nsDeviceContext* aContext, nsIFrame* aFrame,
                                            StyleAppearance aAppearance, nsRect* aOverflowRect) {
-  if (IsWidgetNonNative(aAppearance)) {
+  if (IsWidgetAlwaysNonNative(aFrame, aAppearance)) {
     return ThemeCocoa::GetWidgetOverflow(aContext, aFrame, aAppearance, aOverflowRect);
   }
   nsIntMargin overflow;
@@ -2985,8 +2937,9 @@ bool nsNativeThemeCocoa::GetWidgetOverflow(nsDeviceContext* aContext, nsIFrame* 
     case StyleAppearance::Checkbox:
     case StyleAppearance::Radio:
     case StyleAppearance::Tab: {
-      overflow.SizeTo(kMaxFocusRingWidth, kMaxFocusRingWidth, kMaxFocusRingWidth,
-                      kMaxFocusRingWidth);
+      overflow.SizeTo(
+          static_cast<int32_t>(kMaxFocusRingWidth), static_cast<int32_t>(kMaxFocusRingWidth),
+          static_cast<int32_t>(kMaxFocusRingWidth), static_cast<int32_t>(kMaxFocusRingWidth));
       break;
     }
     case StyleAppearance::ProgressBar: {
@@ -3024,7 +2977,7 @@ LayoutDeviceIntSize nsNativeThemeCocoa::GetMinimumWidgetSize(nsPresContext* aPre
                                                              StyleAppearance aAppearance) {
   NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
 
-  if (IsWidgetNonNative(aAppearance)) {
+  if (IsWidgetAlwaysNonNative(aFrame, aAppearance)) {
     return ThemeCocoa::GetMinimumWidgetSize(aPresContext, aFrame, aAppearance);
   }
 
@@ -3182,7 +3135,6 @@ nsNativeThemeCocoa::WidgetStateChanged(nsIFrame* aFrame, StyleAppearance aAppear
     case StyleAppearance::Tabpanel:
     case StyleAppearance::Dialog:
     case StyleAppearance::Menupopup:
-    case StyleAppearance::Groupbox:
     case StyleAppearance::Progresschunk:
     case StyleAppearance::ProgressBar:
     case StyleAppearance::Meter:
@@ -3224,7 +3176,7 @@ nsNativeThemeCocoa::ThemeChanged() {
 
 bool nsNativeThemeCocoa::ThemeSupportsWidget(nsPresContext* aPresContext, nsIFrame* aFrame,
                                              StyleAppearance aAppearance) {
-  if (IsWidgetNonNative(aAppearance)) {
+  if (IsWidgetAlwaysNonNative(aFrame, aAppearance)) {
     return ThemeCocoa::ThemeSupportsWidget(aPresContext, aFrame, aAppearance);
   }
   // if this is a dropdown button in a combobox the answer is always no
@@ -3238,7 +3190,6 @@ bool nsNativeThemeCocoa::ThemeSupportsWidget(nsPresContext* aPresContext, nsIFra
     case StyleAppearance::Menulist:
     case StyleAppearance::MenulistButton:
     case StyleAppearance::MozMenulistArrowButton:
-    case StyleAppearance::MenulistText:
       if (aFrame && aFrame->GetWritingMode().IsVertical()) {
         return false;
       }
@@ -3253,14 +3204,10 @@ bool nsNativeThemeCocoa::ThemeSupportsWidget(nsPresContext* aPresContext, nsIFra
     case StyleAppearance::Menupopup:
     case StyleAppearance::Menuarrow:
     case StyleAppearance::Menuitem:
-    case StyleAppearance::Menuseparator:
     case StyleAppearance::Tooltip:
 
     case StyleAppearance::Checkbox:
-    case StyleAppearance::CheckboxContainer:
     case StyleAppearance::Radio:
-    case StyleAppearance::RadioContainer:
-    case StyleAppearance::Groupbox:
     case StyleAppearance::MozMacHelpButton:
     case StyleAppearance::MozMacDisclosureButtonOpen:
     case StyleAppearance::MozMacDisclosureButtonClosed:
@@ -3354,7 +3301,6 @@ bool nsNativeThemeCocoa::ThemeNeedsComboboxDropmarker() { return false; }
 bool nsNativeThemeCocoa::WidgetAppearanceDependsOnWindowFocus(StyleAppearance aAppearance) {
   switch (aAppearance) {
     case StyleAppearance::Dialog:
-    case StyleAppearance::Groupbox:
     case StyleAppearance::Tabpanels:
     case StyleAppearance::ButtonArrowUp:
     case StyleAppearance::ButtonArrowDown:
@@ -3362,7 +3308,6 @@ bool nsNativeThemeCocoa::WidgetAppearanceDependsOnWindowFocus(StyleAppearance aA
     case StyleAppearance::Menupopup:
     case StyleAppearance::Menuarrow:
     case StyleAppearance::Menuitem:
-    case StyleAppearance::Menuseparator:
     case StyleAppearance::Tooltip:
     case StyleAppearance::Spinner:
     case StyleAppearance::SpinnerUpbutton:

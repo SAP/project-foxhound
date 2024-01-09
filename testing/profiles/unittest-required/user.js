@@ -12,7 +12,6 @@ user_pref("app.normandy.api_url", "");
 // Make sure the notification permission migration test doesn't hit the network.
 user_pref("app.support.baseURL", "http://{server}/support-dummy/");
 user_pref("app.update.staging.enabled", false);
-user_pref("app.update.url.android", "");
 // Increase the APZ content response timeout in tests to 1 minute.
 // This is to accommodate the fact that test environments tends to be slower
 // than production environments (with the b2g emulator being the slowest of them
@@ -50,9 +49,6 @@ user_pref("browser.shell.checkDefaultBrowser", false);
 user_pref("browser.startup.page", 0); // use about:blank, not browser.startup.homepage
 // Don't show a delay when hiding the audio indicator during tests
 user_pref("browser.tabs.delayHidingAudioPlayingIconMS", 0);
-// Don't allow background tabs to be zombified, otherwise for tests that
-// open additional tabs, the test harness tab itself might get unloaded.
-user_pref("browser.tabs.disableBackgroundZombification", true);
 // Don't use auto-enabled e10s
 user_pref("browser.tabs.remote.autostart", false);
 // Make sure Translation won't hit the network.
@@ -71,7 +67,6 @@ user_pref("browser.urlbar.speculativeConnect.enabled", false);
 // Turn off search suggestions in the location bar so as not to trigger network
 // connections.
 user_pref("browser.urlbar.suggest.searches", false);
-user_pref("browser.urlbar.usepreloadedtopurls.enabled", false);
 // URIFixup whitelist
 user_pref("browser.fixup.domainsuffixwhitelist.test", true);
 user_pref("browser.warnOnQuit", false);
@@ -164,11 +159,10 @@ user_pref("media.hls.server.url", "http://{server}/tests/dom/media/test/hls");
 user_pref("media.libavcodec.allow-obsolete", true);
 user_pref("media.memory_cache_max_size", 32);
 user_pref("media.memory_caches_combined_limit_kb", 256);
-user_pref("media.openUnsupportedTypeWithExternalApp", false);
 user_pref("media.preload.auto", 3); // auto = enough
 user_pref("media.preload.default", 2); // default = metadata
 user_pref("media.preload.default.cellular", 2); // default = metadata
-user_pref("media.suspend-bkgnd-video.enabled", false);
+user_pref("media.suspend-background-video.enabled", false);
 user_pref("media.test.dumpDebugInfo", true);
 user_pref("media.volume_scale", "0.01");
 // Enable speech synth test service, and disable built in platform services.

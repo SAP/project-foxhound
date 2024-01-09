@@ -51,7 +51,7 @@ using namespace mozilla::gfx;
 namespace mozilla::CanvasUtils {
 
 bool IsImageExtractionAllowed(dom::Document* aDocument, JSContext* aCx,
-                              Maybe<nsIPrincipal*> aPrincipal) {
+                              nsIPrincipal& aPrincipal) {
   if (NS_WARN_IF(!aDocument)) {
     return false;
   }
@@ -99,19 +99,17 @@ bool IsImageExtractionAllowed(dom::Document* aDocument, JSContext* aCx,
   // General Exemptions
 
   // Don't proceed if we don't have a document or JavaScript context.
-  if (!aCx || !aPrincipal) {
+  if (!aCx) {
     return false;
   }
 
-  nsIPrincipal& subjectPrincipal = *aPrincipal.ref();
-
   // The system principal can always extract canvas data.
-  if (subjectPrincipal.IsSystemPrincipal()) {
+  if (aPrincipal.IsSystemPrincipal()) {
     return true;
   }
 
   // Allow extension principals.
-  auto* principal = BasePrincipal::Cast(&subjectPrincipal);
+  auto* principal = BasePrincipal::Cast(&aPrincipal);
   if (principal->AddonPolicy() || principal->ContentScriptAddonPolicy()) {
     return true;
   }
@@ -375,7 +373,8 @@ void DoDrawImageSecurityCheck(dom::OffscreenCanvas* aOffscreenCanvas,
     return;
   }
 
-  if (aOffscreenCanvas->IsWriteOnly()) {
+  nsIPrincipal* expandedReader = aOffscreenCanvas->GetExpandedReader();
+  if (aOffscreenCanvas->IsWriteOnly() && !expandedReader) {
     return;
   }
 
@@ -401,6 +400,24 @@ void DoDrawImageSecurityCheck(dom::OffscreenCanvas* aOffscreenCanvas,
   if (canvasPrincipal->Subsumes(aPrincipal)) {
     // This canvas has access to that image anyway
     return;
+  }
+
+  if (BasePrincipal::Cast(aPrincipal)->AddonPolicy()) {
+    // This is a resource from an extension content script principal.
+
+    if (expandedReader && expandedReader->Subsumes(aPrincipal)) {
+      // This canvas already allows reading from this principal.
+      return;
+    }
+
+    if (!expandedReader) {
+      // Allow future reads from this same princial only.
+      aOffscreenCanvas->SetWriteOnly(aPrincipal);
+      return;
+    }
+
+    // If we got here, this must be the *second* extension tainting
+    // the canvas.  Fall through to mark it WriteOnly for everyone.
   }
 
   aOffscreenCanvas->SetWriteOnly();

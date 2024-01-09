@@ -10,7 +10,7 @@ with Files("**"):
 with Files("ContentSearch*.sys.mjs"):
     BUG_COMPONENT = ("Firefox", "Search")
 
-with Files("AboutReaderParent.jsm"):
+with Files("AboutReaderParent.sys.mjs"):
     BUG_COMPONENT = ("Toolkit", "Reader Mode")
 
 with Files("LightweightThemeChild.sys.mjs"):
@@ -82,6 +82,8 @@ FINAL_TARGET_FILES.actors += [
     "ScreenshotsComponentChild.sys.mjs",
     "SearchSERPTelemetryChild.sys.mjs",
     "SearchSERPTelemetryParent.sys.mjs",
+    "SpeechDispatcherChild.sys.mjs",
+    "SpeechDispatcherParent.sys.mjs",
     "SwitchDocumentDirectionChild.sys.mjs",
     "WebRTCChild.sys.mjs",
     "WebRTCParent.sys.mjs",

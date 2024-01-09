@@ -102,6 +102,7 @@ class HTMLEditor final : public EditorBase,
   NS_DECL_NSIMUTATIONOBSERVER_CONTENTAPPENDED
   NS_DECL_NSIMUTATIONOBSERVER_CONTENTINSERTED
   NS_DECL_NSIMUTATIONOBSERVER_CONTENTREMOVED
+  NS_DECL_NSIMUTATIONOBSERVER_CHARACTERDATACHANGED
 
   // nsIHTMLEditor methods
   NS_DECL_NSIHTMLEDITOR
@@ -736,6 +737,22 @@ class HTMLEditor final : public EditorBase,
    * you need to refresh position of resizers with calling this.
    */
   MOZ_CAN_RUN_SCRIPT nsresult RefreshResizers();
+
+  bool IsWrapHackEnabled() const {
+    return (mFlags & nsIEditor::eEditorEnableWrapHackMask) != 0;
+  }
+
+  /**
+   * Return true if this is in the plaintext mail composer mode of
+   * Thunderbird or something.
+   * NOTE: This is different from contenteditable="plaintext-only"
+   */
+  bool IsPlaintextMailComposer() const {
+    const bool isPlaintextMode =
+        (mFlags & nsIEditor::eEditorPlaintextMask) != 0;
+    MOZ_ASSERT_IF(IsTextEditor(), isPlaintextMode);
+    return isPlaintextMode;
+  }
 
  protected:  // May be called by friends.
   /****************************************************************************
@@ -1934,12 +1951,9 @@ class HTMLEditor final : public EditorBase,
    *                            be moved.
    * @param aPointToInsert      The insertion point.  The container must not
    *                            be a data node like a text node.
-   * @param aError              The result.  If this succeeds to move children,
-   *                            returns NS_OK.  Otherwise, an error.
    */
-  void MoveAllChildren(nsINode& aContainer,
-                       const EditorRawDOMPoint& aPointToInsert,
-                       ErrorResult& aError);
+  [[nodiscard]] nsresult MoveAllChildren(
+      nsINode& aContainer, const EditorRawDOMPoint& aPointToInsert);
 
   /**
    * MoveChildrenBetween() moves all children between aFirstChild and aLastChild
@@ -1956,12 +1970,10 @@ class HTMLEditor final : public EditorBase,
    *                            order.
    * @param aPointToInsert      The insertion point.  The container must not
    *                            be a data node like a text node.
-   * @param aError              The result.  If this succeeds to move children,
-   *                            returns NS_OK.  Otherwise, an error.
    */
-  void MoveChildrenBetween(nsIContent& aFirstChild, nsIContent& aLastChild,
-                           const EditorRawDOMPoint& aPointToInsert,
-                           ErrorResult& aError);
+  [[nodiscard]] nsresult MoveChildrenBetween(
+      nsIContent& aFirstChild, nsIContent& aLastChild,
+      const EditorRawDOMPoint& aPointToInsert);
 
   /**
    * MovePreviousSiblings() moves all siblings before aChild (i.e., aChild
@@ -1972,12 +1984,9 @@ class HTMLEditor final : public EditorBase,
    *                            node to be moved.
    * @param aPointToInsert      The insertion point.  The container must not
    *                            be a data node like a text node.
-   * @param aError              The result.  If this succeeds to move children,
-   *                            returns NS_OK.  Otherwise, an error.
    */
-  void MovePreviousSiblings(nsIContent& aChild,
-                            const EditorRawDOMPoint& aPointToInsert,
-                            ErrorResult& aError);
+  [[nodiscard]] nsresult MovePreviousSiblings(
+      nsIContent& aChild, const EditorRawDOMPoint& aPointToInsert);
 
   /**
    * MoveInclusiveNextSiblings() moves aChild and all siblings after it to
@@ -1987,12 +1996,9 @@ class HTMLEditor final : public EditorBase,
    * @param aChild              The node which is first node to be moved.
    * @param aPointToInsert      The insertion point.  The container must not
    *                            be a data node like a text node.
-   * @param aError              The result.  If this succeeds to move children,
-   *                            returns NS_OK.  Otherwise, an error.
    */
-  void MoveInclusiveNextSiblings(nsIContent& aChild,
-                                 const EditorRawDOMPoint& aPointToInsert,
-                                 ErrorResult& aError);
+  [[nodiscard]] nsresult MoveInclusiveNextSiblings(
+      nsIContent& aChild, const EditorRawDOMPoint& aPointToInsert);
 
   /**
    * SplitNodeWithTransaction() creates a transaction to create a new node
@@ -3126,7 +3132,7 @@ class HTMLEditor final : public EditorBase,
   /**
    * InsertAsCitedQuotationInternal() inserts a <blockquote> element whose
    * cite attribute is aCitation and whose content is aQuotedText.
-   * Note that this shouldn't be called when IsInPlaintextMode() is true.
+   * Note that this shouldn't be called when IsPlaintextMailComposer() is true.
    *
    * @param aQuotedText     HTML source if aInsertHTML is true.  Otherwise,
    *                        plain text.  This is inserted into new <blockquote>

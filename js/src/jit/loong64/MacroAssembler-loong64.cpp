@@ -896,7 +896,7 @@ void MacroAssemblerLOONG64::ma_b(Register lhs, ImmWord imm, Label* label,
     ScratchRegisterScope scratch(asMasm());
     MOZ_ASSERT(lhs != scratch);
     ma_li(scratch, imm);
-    ma_b(lhs, Register(scratch), label, c, jumpKind);
+    ma_b(lhs, Register(scratch), label, c, jumpKind, scratch);
   }
 }
 
@@ -905,7 +905,7 @@ void MacroAssemblerLOONG64::ma_b(Register lhs, Address addr, Label* label,
   ScratchRegisterScope scratch(asMasm());
   MOZ_ASSERT(lhs != scratch);
   ma_ld_d(scratch, addr);
-  ma_b(lhs, Register(scratch), label, c, jumpKind);
+  ma_b(lhs, Register(scratch), label, c, jumpKind, scratch);
 }
 
 void MacroAssemblerLOONG64::ma_b(Address addr, Imm32 imm, Label* label,
@@ -955,7 +955,8 @@ void MacroAssemblerLOONG64::ma_bl(Label* label) {
 }
 
 void MacroAssemblerLOONG64::branchWithCode(InstImm code, Label* label,
-                                           JumpKind jumpKind) {
+                                           JumpKind jumpKind,
+                                           Register scratch) {
   // simply output the pointer of one label as its id,
   // notice that after one label destructor, the pointer will be reused.
   spew("branch .Llabel %p", label);
@@ -990,9 +991,14 @@ void MacroAssemblerLOONG64::branchWithCode(InstImm code, Label* label,
     if (code.encode() == inst_beq.encode()) {
       // Handle long jump
       addLongJump(nextOffset(), BufferOffset(label->offset()));
-      ScratchRegisterScope scratch(asMasm());
-      ma_liPatchable(scratch, ImmWord(LabelBase::INVALID_OFFSET));
-      as_jirl(zero, scratch, BOffImm16(0));  // jr scratch
+      if (scratch == Register::Invalid()) {
+        ScratchRegisterScope scratch(asMasm());
+        ma_liPatchable(scratch, ImmWord(LabelBase::INVALID_OFFSET));
+        as_jirl(zero, scratch, BOffImm16(0));  // jr scratch
+      } else {
+        ma_liPatchable(scratch, ImmWord(LabelBase::INVALID_OFFSET));
+        as_jirl(zero, scratch, BOffImm16(0));  // jr scratch
+      }
       as_nop();
       return;
     }
@@ -1007,9 +1013,14 @@ void MacroAssemblerLOONG64::branchWithCode(InstImm code, Label* label,
 #endif
     writeInst(code_r.encode());
     addLongJump(nextOffset(), BufferOffset(label->offset()));
-    ScratchRegisterScope scratch(asMasm());
-    ma_liPatchable(scratch, ImmWord(LabelBase::INVALID_OFFSET));
-    as_jirl(zero, scratch, BOffImm16(0));
+    if (scratch == Register::Invalid()) {
+      ScratchRegisterScope scratch(asMasm());
+      ma_liPatchable(scratch, ImmWord(LabelBase::INVALID_OFFSET));
+      as_jirl(zero, scratch, BOffImm16(0));  // jr scratch
+    } else {
+      ma_liPatchable(scratch, ImmWord(LabelBase::INVALID_OFFSET));
+      as_jirl(zero, scratch, BOffImm16(0));  // jr scratch
+    }
     as_nop();
     return;
   }
@@ -1485,11 +1496,13 @@ void MacroAssemblerLOONG64::ma_store(Imm32 imm, const BaseIndex& dest,
 // Branches when done from within loongarch-specific code.
 // TODO(loong64) Optimize ma_b
 void MacroAssemblerLOONG64::ma_b(Register lhs, Register rhs, Label* label,
-                                 Condition c, JumpKind jumpKind) {
+                                 Condition c, JumpKind jumpKind,
+                                 Register scratch) {
   switch (c) {
     case Equal:
     case NotEqual:
-      asMasm().branchWithCode(getBranchCode(lhs, rhs, c), label, jumpKind);
+      asMasm().branchWithCode(getBranchCode(lhs, rhs, c), label, jumpKind,
+                              scratch);
       break;
     case Always:
       ma_b(label, jumpKind);
@@ -1499,12 +1512,12 @@ void MacroAssemblerLOONG64::ma_b(Register lhs, Register rhs, Label* label,
     case Signed:
     case NotSigned:
       MOZ_ASSERT(lhs == rhs);
-      asMasm().branchWithCode(getBranchCode(lhs, c), label, jumpKind);
+      asMasm().branchWithCode(getBranchCode(lhs, c), label, jumpKind, scratch);
       break;
     default: {
       Condition cond = ma_cmp(ScratchRegister, lhs, rhs, c);
       asMasm().branchWithCode(getBranchCode(ScratchRegister, cond), label,
-                              jumpKind);
+                              jumpKind, scratch);
       break;
     }
   }
@@ -2030,8 +2043,8 @@ void MacroAssemblerLOONG64::wasmLoadImpl(const wasm::MemoryAccessDesc& access,
                                          Register memoryBase, Register ptr,
                                          Register ptrScratch,
                                          AnyRegister output, Register tmp) {
+  access.assertOffsetInGuardPages();
   uint32_t offset = access.offset();
-  MOZ_ASSERT(offset < asMasm().wasmMaxOffsetGuardLimit());
   MOZ_ASSERT_IF(offset, ptrScratch != InvalidReg);
 
   // Maybe add the offset.
@@ -2077,8 +2090,8 @@ void MacroAssemblerLOONG64::wasmStoreImpl(const wasm::MemoryAccessDesc& access,
                                           AnyRegister value,
                                           Register memoryBase, Register ptr,
                                           Register ptrScratch, Register tmp) {
+  access.assertOffsetInGuardPages();
   uint32_t offset = access.offset();
-  MOZ_ASSERT(offset < asMasm().wasmMaxOffsetGuardLimit());
   MOZ_ASSERT_IF(offset, ptrScratch != InvalidReg);
 
   // Maybe add the offset.
@@ -2124,7 +2137,6 @@ void MacroAssemblerLOONG64Compat::wasmLoadI64Impl(
     const wasm::MemoryAccessDesc& access, Register memoryBase, Register ptr,
     Register ptrScratch, Register64 output, Register tmp) {
   uint32_t offset = access.offset();
-  MOZ_ASSERT(offset < asMasm().wasmMaxOffsetGuardLimit());
   MOZ_ASSERT_IF(offset, ptrScratch != InvalidReg);
 
   // Maybe add the offset.
@@ -2170,7 +2182,6 @@ void MacroAssemblerLOONG64Compat::wasmStoreI64Impl(
     const wasm::MemoryAccessDesc& access, Register64 value, Register memoryBase,
     Register ptr, Register ptrScratch, Register tmp) {
   uint32_t offset = access.offset();
-  MOZ_ASSERT(offset < asMasm().wasmMaxOffsetGuardLimit());
   MOZ_ASSERT_IF(offset, ptrScratch != InvalidReg);
 
   // Maybe add the offset.
@@ -2530,6 +2541,12 @@ void MacroAssembler::Pop(const ValueOperand& val) {
 void MacroAssembler::PopStackPtr() {
   loadPtr(Address(StackPointer, 0), StackPointer);
   adjustFrame(-int32_t(sizeof(intptr_t)));
+}
+
+void MacroAssembler::freeStackTo(uint32_t framePushed) {
+  MOZ_ASSERT(framePushed <= framePushed_);
+  ma_sub_d(StackPointer, FramePointer, Imm32(framePushed));
+  framePushed_ = framePushed;
 }
 
 // ===============================================================
@@ -5204,7 +5221,7 @@ void MacroAssemblerLOONG64Compat::handleFailureWithHandlerTail(
   mov(StackPointer, a0);  // Use a0 since it is a first function argument
 
   // Call the handler.
-  using Fn = void (*)(ResumeFromException * rfe);
+  using Fn = void (*)(ResumeFromException* rfe);
   asMasm().setupUnalignedABICall(a1);
   asMasm().passABIArg(a0);
   asMasm().callWithABI<Fn, HandleException>(
@@ -5382,6 +5399,19 @@ void MacroAssembler::shiftIndex32AndAdd(Register indexTemp32, int shift,
   lshift32(Imm32(shift), indexTemp32);
   addPtr(indexTemp32, pointer);
 }
+
+#ifdef ENABLE_WASM_TAIL_CALLS
+void MacroAssembler::wasmMarkSlowCall() { mov(ra, ra); }
+
+const int32_t SlowCallMarker = 0x03800021;  // ori ra, ra, 0
+
+void MacroAssembler::wasmCheckSlowCallsite(Register ra_, Label* notSlow,
+                                           Register temp1, Register temp2) {
+  MOZ_ASSERT(ra_ != temp2);
+  load32(Address(ra_, 0), temp2);
+  branch32(Assembler::NotEqual, temp2, Imm32(SlowCallMarker), notSlow);
+}
+#endif  // ENABLE_WASM_TAIL_CALLS
 
 //}}} check_macroassembler_style
 

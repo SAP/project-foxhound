@@ -39,6 +39,12 @@ loader.lazyRequireGetter(
   "resource://devtools/client/shared/redux/subscriber.js",
   true
 );
+loader.lazyRequireGetter(
+  this,
+  "getMappedExpression",
+  "resource://devtools/client/debugger/src/actions/expressions.js",
+  true
+);
 
 const DBG_STRINGS_URI = [
   "devtools/client/locales/debugger.properties",
@@ -190,7 +196,11 @@ class DebuggerPanel {
   }
 
   getMappedExpression(expression) {
-    return this._actions.getMappedExpression(expression);
+    const thread = this._selectors.getCurrentThread(this._getState());
+    return getMappedExpression(expression, thread, {
+      getState: this._store.getState,
+      parserWorker: this.toolbox.parserWorker,
+    });
   }
 
   /**
@@ -212,8 +222,7 @@ class DebuggerPanel {
   }
 
   selectSourceURL(url, line, column) {
-    const cx = this._selectors.getContext(this._getState());
-    return this._actions.selectSourceURL(cx, url, { line, column });
+    return this._actions.selectSourceURL(url, { line, column });
   }
 
   /**
@@ -281,8 +290,7 @@ class DebuggerPanel {
     // But we might try to load display it early to improve user perception.
     await this.toolbox.selectTool("jsdebugger", reason);
 
-    const cx = this._selectors.getContext(this._getState());
-    await this._actions.selectSpecificLocation(cx, originalLocation);
+    await this._actions.selectSpecificLocation(originalLocation);
 
     // XXX: should this be moved to selectSpecificLocation??
     if (this._selectors.hasLogpoint(this._getState(), originalLocation)) {
@@ -324,13 +332,11 @@ class DebuggerPanel {
       source.id,
       threadActorID
     );
-    const cx = this._selectors.getContext(this._getState());
-    await this._actions.selectSource(cx, source, sourceActor);
+    await this._actions.selectSource(source, sourceActor);
   }
 
   selectThread(threadActorID) {
-    const cx = this._selectors.getContext(this._getState());
-    this._actions.selectThread(cx, threadActorID);
+    this._actions.selectThread(threadActorID);
   }
 
   toggleJavascriptTracing() {

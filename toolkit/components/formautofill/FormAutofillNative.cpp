@@ -400,6 +400,10 @@ const Rule kCreditCardRules[] = {
      "|titolare.*carta"
      // pl-PL
      "|posiadacz.*karty"
+     // es-ES
+     "|nombre.*(titular|tarjeta)"
+     // nl-NL
+     "|naam.*op.*kaart"
      // Rules from Bitwarden
      "|cc-?name"
      "|card-?name"
@@ -409,7 +413,6 @@ const Rule kCreditCardRules[] = {
      "|card.?(?:holder|owner)|name.*(\\b)?on(\\b)?.*card"
      "|(?:card|cc).?name|cc.?full.?name"
      "|(?:card|cc).?owner"
-     "|nombre.*tarjeta"                 // es
      "|nom.*carte"                      // fr-FR
      "|nome.*cart"                      // it-IT
      "|名前"                            // ja-JP
@@ -429,6 +432,10 @@ const Rule kCreditCardRules[] = {
      "|(numero|número|numéro).*(carte)"
      // pl-PL
      "|numer.*karty"
+     // es-ES
+     "|(número|numero).*tarjeta"
+     // nl-NL
+     "|kaartnummer"
      // Rules from Bitwarden
      "|cc-?number"
      "|cc-?num"
@@ -748,13 +755,11 @@ bool FormAutofillImpl::IdOrNameMatchRegExp(Element& aElement, RegexKey key) {
 
 bool FormAutofillImpl::LabelMatchesRegExp(
     Element& aElement, const nsTArray<nsCString>* labelStrings, RegexKey key) {
-  if (!labelStrings) {
-    return false;
-  }
-
-  for (const auto& str : *labelStrings) {
-    if (StringMatchesRegExp(str, key)) {
-      return true;
+  if (labelStrings) {
+    for (const auto& str : *labelStrings) {
+      if (StringMatchesRegExp(str, key)) {
+        return true;
+      }
     }
   }
 

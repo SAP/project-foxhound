@@ -274,6 +274,18 @@ add_task(function normandyErrorHandling() {
   )();
 });
 
+add_task(async function themes() {
+  let snapshot = await Troubleshoot.snapshot();
+  let foundTheme = false;
+  for (let addon of snapshot.addons) {
+    if (addon.type == "theme") {
+      foundTheme = true;
+      break;
+    }
+  }
+  ok(foundTheme, "found a theme in the addons list");
+});
+
 // This is inspired by JSON Schema, or by the example on its Wikipedia page
 // anyway.
 const SNAPSHOT_SCHEMA = {
@@ -366,6 +378,10 @@ const SNAPSHOT_SCHEMA = {
         },
         diskAvailableBytes: {
           type: "number",
+        },
+        pointingDevices: {
+          required: false,
+          type: "array",
         },
       },
     },
@@ -1033,11 +1049,11 @@ const SNAPSHOT_SCHEMA = {
           type: "number",
         },
         contentWin32kLockdownState: {
-          required: AppConstants.MOZ_SANDBOX,
+          required: AppConstants.MOZ_SANDBOX && AppConstants.platform == "win",
           type: "string",
         },
         supportSandboxGpuLevel: {
-          required: AppConstants.MOZ_SANDBOX,
+          required: AppConstants.MOZ_SANDBOX && AppConstants.platform == "win",
           type: "number",
         },
         syscallLog: {
@@ -1221,6 +1237,19 @@ const SNAPSHOT_SCHEMA = {
               slug: { type: "string", required: true },
             },
           },
+        },
+      },
+    },
+    legacyUserStylesheets: {
+      type: "object",
+      properties: {
+        active: {
+          required: true,
+          type: "boolean",
+        },
+        types: {
+          required: true,
+          type: "array",
         },
       },
     },

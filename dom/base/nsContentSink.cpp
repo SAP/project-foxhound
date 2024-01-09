@@ -14,6 +14,7 @@
 #include "mozilla/PresShell.h"
 #include "mozilla/StaticPrefs_browser.h"
 #include "mozilla/StaticPrefs_content.h"
+#include "mozilla/StaticPrefs_network.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/LinkStyle.h"
 #include "mozilla/dom/ReferrerInfo.h"
@@ -57,6 +58,14 @@
 #include "nsSandboxFlags.h"
 #include "Link.h"
 #include "HTMLLinkElement.h"
+#include "MediaList.h"
+#include "nsString.h"
+#include "nsStringFwd.h"
+#include <stdint.h>
+#include "mozilla/RefPtr.h"
+#include "nsCOMPtr.h"
+#include "nsLiteralString.h"
+#include "nsIContentPolicy.h"
 using namespace mozilla;
 using namespace mozilla::css;
 using namespace mozilla::dom;
@@ -302,16 +311,16 @@ nsresult nsContentSink::ProcessLinkFromHeader(const net::LinkHeader& aHeader,
 
     if (linkTypes & LinkStyle::ePRELOAD) {
       PreloadHref(aHeader.mHref, aHeader.mAs, aHeader.mType, aHeader.mMedia,
-                  aHeader.mIntegrity, aHeader.mSrcset, aHeader.mSizes,
-                  aHeader.mCrossOrigin, aHeader.mReferrerPolicy,
+                  aHeader.mNonce, aHeader.mIntegrity, aHeader.mSrcset,
+                  aHeader.mSizes, aHeader.mCrossOrigin, aHeader.mReferrerPolicy,
                   aEarlyHintPreloaderId);
     }
 
     if ((linkTypes & LinkStyle::eMODULE_PRELOAD) &&
         mDocument->ScriptLoader()->GetModuleLoader()) {
-      // https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-modulepreload-module-script-graph
-      // Step 1. Disallow further import maps given settings object.
-      mDocument->ScriptLoader()->GetModuleLoader()->DisallowImportMaps();
+      PreloadModule(aHeader.mHref, aHeader.mAs, aHeader.mMedia, aHeader.mNonce,
+                    aHeader.mIntegrity, aHeader.mCrossOrigin,
+                    aHeader.mReferrerPolicy, aEarlyHintPreloaderId);
     }
   }
 
@@ -411,6 +420,7 @@ void nsContentSink::PrefetchHref(const nsAString& aHref, const nsAString& aAs,
 
 void nsContentSink::PreloadHref(const nsAString& aHref, const nsAString& aAs,
                                 const nsAString& aType, const nsAString& aMedia,
+                                const nsAString& aNonce,
                                 const nsAString& aIntegrity,
                                 const nsAString& aSrcset,
                                 const nsAString& aSizes, const nsAString& aCORS,
@@ -440,8 +450,53 @@ void nsContentSink::PreloadHref(const nsAString& aHref, const nsAString& aAs,
   }
 
   mDocument->Preloads().PreloadLinkHeader(
-      uri, aHref, policyType, aAs, aType, aIntegrity, aSrcset, aSizes, aCORS,
-      aReferrerPolicy, aEarlyHintPreloaderId);
+      uri, aHref, policyType, aAs, aType, aNonce, aIntegrity, aSrcset, aSizes,
+      aCORS, aReferrerPolicy, aEarlyHintPreloaderId);
+}
+
+void nsContentSink::PreloadModule(const nsAString& aHref, const nsAString& aAs,
+                                  const nsAString& aMedia,
+                                  const nsAString& aNonce,
+                                  const nsAString& aIntegrity,
+                                  const nsAString& aCORS,
+                                  const nsAString& aReferrerPolicy,
+                                  uint64_t aEarlyHintPreloaderId) {
+  ModuleLoader* moduleLoader = mDocument->ScriptLoader()->GetModuleLoader();
+
+  if (!StaticPrefs::network_modulepreload()) {
+    // Keep behavior from https://phabricator.services.mozilla.com/D149371,
+    // prior to main implementation of modulepreload
+    moduleLoader->DisallowImportMaps();
+    return;
+  }
+
+  RefPtr<mozilla::dom::MediaList> mediaList =
+      mozilla::dom::MediaList::Create(NS_ConvertUTF16toUTF8(aMedia));
+  if (!mediaList->Matches(*mDocument)) {
+    return;
+  }
+
+  if (aHref.IsEmpty()) {
+    return;
+  }
+
+  if (!net::IsScriptLikeOrInvalid(aAs)) {
+    return;
+  }
+
+  auto encoding = mDocument->GetDocumentCharacterSet();
+  nsCOMPtr<nsIURI> uri;
+  NS_NewURI(getter_AddRefs(uri), aHref, encoding, mDocument->GetDocBaseURI());
+  if (!uri) {
+    return;
+  }
+
+  moduleLoader->DisallowImportMaps();
+
+  mDocument->Preloads().PreloadLinkHeader(
+      uri, aHref, nsIContentPolicy::TYPE_SCRIPT, u"script"_ns, u"module"_ns,
+      aNonce, aIntegrity, u""_ns, u""_ns, aCORS, aReferrerPolicy,
+      aEarlyHintPreloaderId);
 }
 
 void nsContentSink::PrefetchDNS(const nsAString& aHref) {
@@ -760,7 +815,7 @@ void nsContentSink::EndUpdate(Document* aDocument) {
 }
 
 void nsContentSink::DidBuildModelImpl(bool aTerminated) {
-  MOZ_ASSERT(aTerminated ||
+  MOZ_ASSERT(aTerminated || (mParser && mParser->IsParserClosed()) ||
                  mDocument->GetReadyStateEnum() == Document::READYSTATE_LOADING,
              "Bad readyState");
   mDocument->SetReadyStateInternal(Document::READYSTATE_INTERACTIVE);

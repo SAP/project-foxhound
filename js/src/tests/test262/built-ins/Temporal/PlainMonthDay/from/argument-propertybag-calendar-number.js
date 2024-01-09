@@ -1,4 +1,4 @@
-// |reftest| skip -- Temporal is not supported
+// |reftest| skip-if(!this.hasOwnProperty('Temporal')) -- Temporal is not enabled unconditionally
 // Copyright (C) 2022 Igalia, S.L. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 
@@ -11,13 +11,9 @@ features: [Temporal]
 
 const calendar = 19970327;
 
-let arg = { monthCode: "M11", day: 18, calendar };
-const result1 = Temporal.PlainMonthDay.from(arg);
-TemporalHelpers.assertPlainMonthDay(result1, "M11", 18, "19970327 is a valid ISO string for calendar");
-
-arg = { monthCode: "M11", day: 18, calendar: { calendar } };
-const result2 = Temporal.PlainMonthDay.from(arg);
-TemporalHelpers.assertPlainMonthDay(result2, "M11", 18, "19970327 is a valid ISO string for calendar (nested property)");
+const arg = { monthCode: "M11", day: 18, calendar };
+const result = Temporal.PlainMonthDay.from(arg);
+TemporalHelpers.assertPlainMonthDay(result, "M11", 18, "19970327 is a valid ISO string for calendar");
 
 const numbers = [
   1,
@@ -26,17 +22,11 @@ const numbers = [
 ];
 
 for (const calendar of numbers) {
-  let arg = { monthCode: "M11", day: 18, calendar };
+  const arg = { monthCode: "M11", day: 18, calendar };
   assert.throws(
     RangeError,
     () => Temporal.PlainMonthDay.from(arg),
     `Number ${calendar} does not convert to a valid ISO string for calendar`
-  );
-  arg = { monthCode: "M11", day: 18, calendar: { calendar } };
-  assert.throws(
-    RangeError,
-    () => Temporal.PlainMonthDay.from(arg),
-    `Number ${calendar} does not convert to a valid ISO string for calendar (nested property)`
   );
 }
 

@@ -23,7 +23,6 @@ const {
 } = require("resource://devtools/client/inspector/shared/utils.js");
 const { debounce } = require("resource://devtools/shared/debounce.js");
 const EventEmitter = require("resource://devtools/shared/event-emitter.js");
-const DOUBLESPACE = "  ";
 
 loader.lazyRequireGetter(
   this,
@@ -243,6 +242,8 @@ function CssRuleView(inspector, document, store) {
     this._handleDefaultColorUnitPrefChange
   );
   this._prefObserver.on(PREF_DRAGGABLE, this._handleDraggablePrefChange);
+  // Initialize value of this.draggablePropertiesEnabled
+  this._handleDraggablePrefChange();
 
   this.pseudoClassCheckboxes = this._createPseudoClassCheckboxes();
   this.showUserAgentStyles = Services.prefs.getBoolPref(PREF_UA_STYLES);
@@ -414,9 +415,9 @@ CssRuleView.prototype = {
     // Handle click on the icon next to a CSS selector.
     if (target.classList.contains("js-toggle-selector-highlighter")) {
       event.stopPropagation();
-      let selector = target.dataset.selector;
-      // dataset.selector will be empty for inline styles (inherited or not)
-      // Rules associated with a regular selector should have this data-attirbute
+      let selector = target.dataset.computedSelector;
+      // dataset.computedSelector will be initially empty for inline styles (inherited or not)
+      // Rules associated with a regular selector should have this data-attribute
       // set in devtools/client/inspector/rules/views/rule-editor.js
       if (selector === "") {
         try {
@@ -431,9 +432,8 @@ CssRuleView.prototype = {
               await this.inspector.selection.nodeFront.getUniqueSelector();
           }
 
-          // Now that the selector was computed, we can store it in
-          // dataset.selector for subsequent usage.
-          target.dataset.selector = selector;
+          // Now that the selector was computed, we can store it for subsequent usage.
+          target.dataset.computedSelector = selector;
         } finally {
           // Could not resolve a unique selector for the inline style.
         }
@@ -483,7 +483,7 @@ CssRuleView.prototype = {
             return;
           }
 
-          const query = `.js-toggle-selector-highlighter[data-selector='${selector}']`;
+          const query = `.js-toggle-selector-highlighter[data-computed-selector='${selector}']`;
           for (const node of this.styleDocument.querySelectorAll(query)) {
             node.classList.toggle(
               "highlighted",
@@ -655,9 +655,6 @@ CssRuleView.prototype = {
 
         // Remove any double newlines.
         text = text.replace(/(\r?\n)\r?\n/g, "$1");
-
-        // Replace 4 space indentation with 2 Spaces.
-        text = text.replace(/\ {4}/g, DOUBLESPACE);
       }
 
       clipboardHelper.copyString(text);
@@ -725,6 +722,10 @@ CssRuleView.prototype = {
   },
 
   _handleDraggablePrefChange() {
+    this.draggablePropertiesEnabled = Services.prefs.getBoolPref(
+      PREF_DRAGGABLE,
+      false
+    );
     // This event is consumed by text-property-editor instances in order to
     // update their draggable behavior. Preferences observer are costly, so
     // we are forwarding the preference update via the EventEmitter.
@@ -1497,9 +1498,12 @@ CssRuleView.prototype = {
       return false;
     }
 
+    const ancestorSelectors = element.querySelectorAll(
+      ".ruleview-rule-ancestor-selectorcontainer"
+    );
+
     let isHighlighted = false;
-    for (let i = 0; i < element.childNodes.length; i++) {
-      const child = element.childNodes[i];
+    for (const child of ancestorSelectors) {
       const dataText = child.innerText.toLowerCase();
       const matches = this.searchData.strictSearchValue
         ? dataText === this.searchData.strictSearchValue

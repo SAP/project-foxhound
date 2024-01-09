@@ -43,11 +43,16 @@ struct JXLCompressParams {
   bool use_container = false;
   // Whether to enable/disable byte-exact jpeg reconstruction for jpeg inputs.
   bool jpeg_store_metadata = true;
+  bool jpeg_strip_exif = false;
+  bool jpeg_strip_xmp = false;
+  bool jpeg_strip_jumbf = false;
   // Whether to create brob boxes.
   bool compress_boxes = true;
   // Upper bound on the intensity level present in the image in nits (zero means
   // that the library chooses a default).
   float intensity_target = 0;
+  int already_downsampled = 1;
+  int upsampling_mode = -1;
   // Overrides for bitdepth, codestream level and alpha premultiply.
   size_t override_bitdepth = 0;
   int32_t codestream_level = -1;
@@ -57,7 +62,9 @@ struct JXLCompressParams {
   // If runner_opaque is set, the decoder uses this parallel runner.
   JxlParallelRunner runner = JxlThreadParallelRunner;
   void* runner_opaque = nullptr;
-
+  JxlDebugImageCallback debug_image = nullptr;
+  void* debug_image_opaque = nullptr;
+  JxlEncoderStats* stats = nullptr;
   bool allow_expert_options = false;
 
   void AddOption(JxlEncoderFrameSettingId id, int64_t val) {

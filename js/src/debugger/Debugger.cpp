@@ -39,7 +39,6 @@
 #include "debugger/Object.h"              // for DebuggerObject
 #include "debugger/Script.h"              // for DebuggerScript
 #include "debugger/Source.h"              // for DebuggerSource
-#include "frontend/BytecodeCompiler.h"    // for IsIdentifier
 #include "frontend/CompilationStencil.h"  // for CompilationStencil
 #include "frontend/FrontendContext.h"     // for AutoReportFrontendContext
 #include "frontend/Parser.h"              // for Parser
@@ -77,6 +76,7 @@
 #include "js/UbiNode.h"               // for Node, RootList, Edge
 #include "js/UbiNodeBreadthFirst.h"   // for BreadthFirst
 #include "js/Wrapper.h"               // for CheckedUnwrapStatic
+#include "util/Identifier.h"          // for IsIdentifier
 #include "util/Text.h"                // for DuplicateString, js_strlen
 #include "vm/ArrayObject.h"           // for ArrayObject
 #include "vm/AsyncFunction.h"         // for AsyncFunctionGeneratorObject
@@ -89,27 +89,27 @@
 #include "vm/GlobalObject.h"          // for GlobalObject
 #include "vm/Interpreter.h"           // for Call, ReportIsNotFunction
 #include "vm/Iteration.h"             // for CreateIterResultObject
-#include "vm/JSAtom.h"                // for Atomize, ClassName
-#include "vm/JSContext.h"             // for JSContext
-#include "vm/JSFunction.h"            // for JSFunction
-#include "vm/JSObject.h"              // for JSObject, RequireObject,
-#include "vm/JSScript.h"              // for BaseScript, ScriptSourceObject
-#include "vm/ObjectOperations.h"      // for DefineDataProperty
-#include "vm/PlainObject.h"           // for js::PlainObject
-#include "vm/PromiseObject.h"         // for js::PromiseObject
-#include "vm/ProxyObject.h"           // for ProxyObject, JSObject::is
-#include "vm/Realm.h"                 // for AutoRealm, Realm
-#include "vm/Runtime.h"               // for ReportOutOfMemory, JSRuntime
-#include "vm/SavedFrame.h"            // for SavedFrame
-#include "vm/SavedStacks.h"           // for SavedStacks
-#include "vm/Scope.h"                 // for Scope
-#include "vm/StringType.h"            // for JSString, PropertyName
-#include "vm/WrapperObject.h"         // for CrossCompartmentWrapperObject
-#include "wasm/WasmDebug.h"           // for DebugState
-#include "wasm/WasmInstance.h"        // for Instance
-#include "wasm/WasmJS.h"              // for WasmInstanceObject
-#include "wasm/WasmRealm.h"           // for Realm
-#include "wasm/WasmTypeDecls.h"       // for WasmInstanceObjectVector
+#include "vm/JSAtomUtils.h"  // for Atomize, AtomizeUTF8Chars, AtomIsMarked, AtomToId, ClassName
+#include "vm/JSContext.h"         // for JSContext
+#include "vm/JSFunction.h"        // for JSFunction
+#include "vm/JSObject.h"          // for JSObject, RequireObject,
+#include "vm/JSScript.h"          // for BaseScript, ScriptSourceObject
+#include "vm/ObjectOperations.h"  // for DefineDataProperty
+#include "vm/PlainObject.h"       // for js::PlainObject
+#include "vm/PromiseObject.h"     // for js::PromiseObject
+#include "vm/ProxyObject.h"       // for ProxyObject, JSObject::is
+#include "vm/Realm.h"             // for AutoRealm, Realm
+#include "vm/Runtime.h"           // for ReportOutOfMemory, JSRuntime
+#include "vm/SavedFrame.h"        // for SavedFrame
+#include "vm/SavedStacks.h"       // for SavedStacks
+#include "vm/Scope.h"             // for Scope
+#include "vm/StringType.h"        // for JSString, PropertyName
+#include "vm/WrapperObject.h"     // for CrossCompartmentWrapperObject
+#include "wasm/WasmDebug.h"       // for DebugState
+#include "wasm/WasmInstance.h"    // for Instance
+#include "wasm/WasmJS.h"          // for WasmInstanceObject
+#include "wasm/WasmRealm.h"       // for Realm
+#include "wasm/WasmTypeDecls.h"   // for WasmInstanceObjectVector
 
 #include "debugger/DebugAPI-inl.h"
 #include "debugger/Environment-inl.h"  // for DebuggerEnvironment::owner
@@ -122,7 +122,7 @@
 #include "gc/WeakMap-inl.h"        // for DebuggerWeakMap::trace
 #include "vm/Compartment-inl.h"    // for Compartment::wrap
 #include "vm/GeckoProfiler-inl.h"  // for AutoSuppressProfilerSampling
-#include "vm/JSAtom-inl.h"         // for AtomToId, ValueToId
+#include "vm/JSAtomUtils-inl.h"    // for AtomToId, ValueToId
 #include "vm/JSContext-inl.h"      // for JSContext::check
 #include "vm/JSObject-inl.h"  // for JSObject::isCallable, NewTenuredObjectWithGivenProto
 #include "vm/JSScript-inl.h"      // for JSScript::isDebuggee, JSScript
@@ -155,7 +155,6 @@ using JS::SourceOwnership;
 using JS::SourceText;
 using JS::dbg::AutoEntryMonitor;
 using JS::dbg::Builder;
-using js::frontend::IsIdentifier;
 using mozilla::AsVariant;
 using mozilla::DebugOnly;
 using mozilla::MakeScopeExit;
@@ -394,6 +393,15 @@ bool js::ParseEvalOptions(JSContext* cx, HandleValue value,
     return false;
   }
   options.setHideFromDebugger(ToBoolean(v));
+
+  if (options.kind() == EvalOptions::EnvKind::GlobalWithExtraOuterBindings) {
+    if (!JS_GetProperty(cx, opts, "useInnerBindings", &v)) {
+      return false;
+    }
+    if (ToBoolean(v)) {
+      options.setUseInnerBindings();
+    }
+  }
 
   return true;
 }

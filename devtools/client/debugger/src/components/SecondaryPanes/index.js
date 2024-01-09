@@ -5,8 +5,8 @@
 const SplitBox = require("devtools/client/shared/components/splitter/SplitBox");
 
 import React, { Component } from "react";
+import { div, input, label, button, a } from "react-dom-factories";
 import PropTypes from "prop-types";
-import { isGeneratedId } from "devtools/client/shared/source-map-loader/index";
 import { connect } from "../../utils/connect";
 
 import actions from "../../actions";
@@ -20,7 +20,6 @@ import {
   getShouldPauseOnCaughtExceptions,
   getThreads,
   getCurrentThread,
-  getThreadContext,
   getPauseReason,
   getShouldBreakpointsPaneOpenOnPause,
   getSkipPausing,
@@ -48,15 +47,18 @@ const classnames = require("devtools/client/shared/classnames.js");
 import "./SecondaryPanes.css";
 
 function debugBtn(onClick, type, className, tooltip) {
-  return (
-    <button
-      onClick={onClick}
-      className={`${type} ${className}`}
-      key={type}
-      title={tooltip}
-    >
-      <AccessibleImage className={type} title={tooltip} aria-label={tooltip} />
-    </button>
+  return button(
+    {
+      onClick: onClick,
+      className: `${type} ${className}`,
+      key: type,
+      title: tooltip,
+    },
+    React.createElement(AccessibleImage, {
+      className: type,
+      title: tooltip,
+      "aria-label": tooltip,
+    })
   );
 }
 
@@ -75,8 +77,7 @@ class SecondaryPanes extends Component {
 
   static get propTypes() {
     return {
-      cx: PropTypes.object.isRequired,
-      evaluateExpressions: PropTypes.func.isRequired,
+      evaluateExpressionsForCurrentContext: PropTypes.func.isRequired,
       expressions: PropTypes.array.isRequired,
       hasFrames: PropTypes.bool.isRequired,
       horizontal: PropTypes.bool.isRequired,
@@ -118,7 +119,7 @@ class SecondaryPanes extends Component {
         debugBtn(
           evt => {
             evt.stopPropagation();
-            this.props.evaluateExpressions(this.props.cx);
+            this.props.evaluateExpressionsForCurrentContext();
           },
           "refresh",
           "active",
@@ -173,7 +174,7 @@ class SecondaryPanes extends Component {
       debugBtn(
         evt => {
           evt.stopPropagation();
-          this.props.removeAllBreakpoints(this.props.cx);
+          this.props.removeAllBreakpoints();
         },
         "removeAll",
         "active",
@@ -186,7 +187,7 @@ class SecondaryPanes extends Component {
     return {
       header: L10N.getStr("scopes.header"),
       className: "scopes-pane",
-      component: <Scopes />,
+      component: React.createElement(Scopes, null),
       opened: prefs.scopesVisible,
       buttons: this.getScopesButtons(),
       onToggle: opened => {
@@ -200,57 +201,68 @@ class SecondaryPanes extends Component {
 
     if (
       !selectedFrame ||
-      isGeneratedId(selectedFrame.location.sourceId) ||
+      !selectedFrame.location.source.isOriginal ||
       source?.isPrettyPrinted
     ) {
       return null;
     }
 
     return [
-      <div key="scopes-buttons">
-        <label
-          className="map-scopes-header"
-          title={L10N.getStr("scopes.mapping.label")}
-          onClick={e => e.stopPropagation()}
-        >
-          <input
-            type="checkbox"
-            checked={mapScopesEnabled ? "checked" : ""}
-            onChange={e => this.props.toggleMapScopes()}
-          />
-          {L10N.getStr("scopes.map.label")}
-        </label>
-        <a
-          className="mdn"
-          target="_blank"
-          href={mdnLink}
-          onClick={e => e.stopPropagation()}
-          title={L10N.getStr("scopes.helpTooltip.label")}
-        >
-          <AccessibleImage className="shortcuts" />
-        </a>
-      </div>,
+      div(
+        {
+          key: "scopes-buttons",
+        },
+        label(
+          {
+            className: "map-scopes-header",
+            title: L10N.getStr("scopes.mapping.label"),
+            onClick: e => e.stopPropagation(),
+          },
+          input({
+            type: "checkbox",
+            checked: mapScopesEnabled ? "checked" : "",
+            onChange: e => this.props.toggleMapScopes(),
+          }),
+          L10N.getStr("scopes.map.label")
+        ),
+        a(
+          {
+            className: "mdn",
+            target: "_blank",
+            href: mdnLink,
+            onClick: e => e.stopPropagation(),
+            title: L10N.getStr("scopes.helpTooltip.label"),
+          },
+          React.createElement(AccessibleImage, {
+            className: "shortcuts",
+          })
+        )
+      ),
     ];
   }
 
   getEventButtons() {
     const { logEventBreakpoints } = this.props;
     return [
-      <div key="events-buttons">
-        <label
-          className="events-header"
-          title={L10N.getStr("eventlisteners.log.label")}
-          onClick={e => e.stopPropagation()}
-        >
-          <input
-            type="checkbox"
-            checked={logEventBreakpoints ? "checked" : ""}
-            onChange={e => this.props.toggleEventLogging()}
-            onKeyDown={e => e.stopPropagation()}
-          />
-          {L10N.getStr("eventlisteners.log")}
-        </label>
-      </div>,
+      div(
+        {
+          key: "events-buttons",
+        },
+        label(
+          {
+            className: "events-header",
+            title: L10N.getStr("eventlisteners.log.label"),
+            onClick: e => e.stopPropagation(),
+          },
+          input({
+            type: "checkbox",
+            checked: logEventBreakpoints ? "checked" : "",
+            onChange: e => this.props.toggleEventLogging(),
+            onKeyDown: e => e.stopPropagation(),
+          }),
+          L10N.getStr("eventlisteners.log")
+        )
+      ),
     ];
   }
 
@@ -259,12 +271,10 @@ class SecondaryPanes extends Component {
       header: L10N.getStr("watchExpressions.header"),
       className: "watch-expressions-pane",
       buttons: this.watchExpressionHeaderButtons(),
-      component: (
-        <Expressions
-          showInput={this.state.showExpressionsInput}
-          onExpressionAdded={this.onExpressionAdded}
-        />
-      ),
+      component: React.createElement(Expressions, {
+        showInput: this.state.showExpressionsInput,
+        onExpressionAdded: this.onExpressionAdded,
+      }),
       opened: prefs.expressionsVisible,
       onToggle: opened => {
         prefs.expressionsVisible = opened;
@@ -279,12 +289,10 @@ class SecondaryPanes extends Component {
       header: L10N.getStr("xhrBreakpoints.header"),
       className: "xhr-breakpoints-pane",
       buttons: this.xhrBreakpointsHeaderButtons(),
-      component: (
-        <XHRBreakpoints
-          showInput={this.state.showXHRInput}
-          onXHRAdded={this.onXHRAdded}
-        />
-      ),
+      component: React.createElement(XHRBreakpoints, {
+        showInput: this.state.showXHRInput,
+        onXHRAdded: this.onXHRAdded,
+      }),
       opened: prefs.xhrBreakpointsVisible || pauseReason === "XHR",
       onToggle: opened => {
         prefs.xhrBreakpointsVisible = opened;
@@ -296,7 +304,9 @@ class SecondaryPanes extends Component {
     return {
       header: L10N.getStr("callStack.header"),
       className: "call-stack-pane",
-      component: <Frames panel="debugger" />,
+      component: React.createElement(Frames, {
+        panel: "debugger",
+      }),
       opened: prefs.callStackVisible,
       onToggle: opened => {
         prefs.callStackVisible = opened;
@@ -308,7 +318,7 @@ class SecondaryPanes extends Component {
     return {
       header: L10N.getStr("threadsHeader"),
       className: "threads-pane",
-      component: <Threads />,
+      component: React.createElement(Threads, null),
       opened: prefs.threadsVisible,
       onToggle: opened => {
         prefs.threadsVisible = opened;
@@ -330,13 +340,11 @@ class SecondaryPanes extends Component {
       header: L10N.getStr("breakpoints.header"),
       className: "breakpoints-pane",
       buttons: this.breakpointsHeaderButtons(),
-      component: (
-        <Breakpoints
-          shouldPauseOnExceptions={shouldPauseOnExceptions}
-          shouldPauseOnCaughtExceptions={shouldPauseOnCaughtExceptions}
-          pauseOnExceptions={pauseOnExceptions}
-        />
-      ),
+      component: React.createElement(Breakpoints, {
+        shouldPauseOnExceptions: shouldPauseOnExceptions,
+        shouldPauseOnCaughtExceptions: shouldPauseOnCaughtExceptions,
+        pauseOnExceptions: pauseOnExceptions,
+      }),
       opened:
         prefs.breakpointsVisible ||
         (pauseReason === "breakpoint" && shouldBreakpointsPaneOpenOnPause),
@@ -358,7 +366,7 @@ class SecondaryPanes extends Component {
       header: L10N.getStr("eventListenersHeader1"),
       className: "event-listeners-pane",
       buttons: this.getEventButtons(),
-      component: <EventListeners />,
+      component: React.createElement(EventListeners, null),
       opened: prefs.eventListenersVisible || pauseReason === "eventBreakpoint",
       onToggle: opened => {
         prefs.eventListenersVisible = opened;
@@ -373,7 +381,7 @@ class SecondaryPanes extends Component {
       header: L10N.getStr("domMutationHeader"),
       className: "dom-mutations-pane",
       buttons: [],
-      component: <DOMMutationBreakpoints />,
+      component: React.createElement(DOMMutationBreakpoints, null),
       opened:
         prefs.domMutationBreakpointsVisible ||
         pauseReason === "mutationBreakpoint",
@@ -438,49 +446,63 @@ class SecondaryPanes extends Component {
 
   renderHorizontalLayout() {
     const { renderWhyPauseDelay } = this.props;
-
-    return (
-      <div>
-        <WhyPaused delay={renderWhyPauseDelay} />
-        <Accordion items={this.getItems()} />
-      </div>
+    return div(
+      null,
+      React.createElement(WhyPaused, {
+        delay: renderWhyPauseDelay,
+      }),
+      React.createElement(Accordion, {
+        items: this.getItems(),
+      })
     );
   }
 
   renderVerticalLayout() {
-    return (
-      <SplitBox
-        initialSize="300px"
-        minSize={10}
-        maxSize="50%"
-        splitterSize={1}
-        startPanel={
-          <div style={{ width: "inherit" }}>
-            <WhyPaused delay={this.props.renderWhyPauseDelay} />
-            <Accordion items={this.getStartItems()} />
-          </div>
-        }
-        endPanel={<Accordion items={this.getEndItems()} />}
-      />
-    );
+    return React.createElement(SplitBox, {
+      initialSize: "300px",
+      minSize: 10,
+      maxSize: "50%",
+      splitterSize: 1,
+      startPanel: div(
+        {
+          style: {
+            width: "inherit",
+          },
+        },
+        React.createElement(WhyPaused, {
+          delay: this.props.renderWhyPauseDelay,
+        }),
+        React.createElement(Accordion, {
+          items: this.getStartItems(),
+        })
+      ),
+      endPanel: React.createElement(Accordion, {
+        items: this.getEndItems(),
+      }),
+    });
   }
 
   render() {
     const { skipPausing } = this.props;
-    return (
-      <div className="secondary-panes-wrapper">
-        <CommandBar horizontal={this.props.horizontal} />
-        <div
-          className={classnames(
+    return div(
+      {
+        className: "secondary-panes-wrapper",
+      },
+      React.createElement(CommandBar, {
+        horizontal: this.props.horizontal,
+      }),
+      React.createElement(
+        "div",
+        {
+          className: classnames(
             "secondary-panes",
             skipPausing && "skip-pausing"
-          )}
-        >
-          {this.props.horizontal
-            ? this.renderHorizontalLayout()
-            : this.renderVerticalLayout()}
-        </div>
-      </div>
+          ),
+        },
+        this.props.horizontal
+          ? this.renderHorizontalLayout()
+          : this.renderVerticalLayout()
+      )
     );
   }
 }
@@ -507,7 +529,6 @@ const mapStateToProps = state => {
   );
 
   return {
-    cx: getThreadContext(state),
     expressions: getExpressions(state),
     hasFrames: !!getTopFrame(state, thread),
     renderWhyPauseDelay: getRenderWhyPauseDelay(state, thread),
@@ -526,7 +547,8 @@ const mapStateToProps = state => {
 };
 
 export default connect(mapStateToProps, {
-  evaluateExpressions: actions.evaluateExpressions,
+  evaluateExpressionsForCurrentContext:
+    actions.evaluateExpressionsForCurrentContext,
   pauseOnExceptions: actions.pauseOnExceptions,
   toggleMapScopes: actions.toggleMapScopes,
   breakOnNext: actions.breakOnNext,

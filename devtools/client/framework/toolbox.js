@@ -676,7 +676,8 @@ Toolbox.prototype = {
       reason === "breakpoint" ||
       reason === "exception" ||
       reason === "resumeLimit" ||
-      reason === "XHR"
+      reason === "XHR" ||
+      reason === "breakpointConditionThrown"
     ) {
       this.raise();
       this.selectTool("jsdebugger", reason);
@@ -2170,9 +2171,10 @@ Toolbox.prototype = {
       return;
     }
 
-    const customFormatters =
-      Services.prefs.getBoolPref("devtools.custom-formatters", false) &&
-      Services.prefs.getBoolPref("devtools.custom-formatters.enabled", false);
+    const customFormatters = Services.prefs.getBoolPref(
+      "devtools.custom-formatters.enabled",
+      false
+    );
 
     await this.commands.targetConfigurationCommand.updateConfiguration({
       customFormatters,
@@ -4656,6 +4658,12 @@ Toolbox.prototype = {
         // the host title a bit in order for the event listener in targetCommand to be
         // executed.
         setTimeout(() => {
+          if (resource.targetFront.isDestroyed()) {
+            // The resource's target might have been destroyed in between and
+            // would no longer have a valid actorID available.
+            return;
+          }
+
           this._updateFrames({
             frameData: {
               id: resource.targetFront.actorID,

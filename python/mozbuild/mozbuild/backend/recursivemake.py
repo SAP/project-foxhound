@@ -623,7 +623,6 @@ class RecursiveMakeBackend(MakeBackend):
 
         elif isinstance(obj, SandboxedWasmLibrary):
             self._process_sandboxed_wasm_library(obj, backend_file)
-            self._no_skip["syms"].add(backend_file.relobjdir)
 
         elif isinstance(obj, HostLibrary):
             self._process_linked_libraries(obj, backend_file)
@@ -1385,6 +1384,8 @@ class RecursiveMakeBackend(MakeBackend):
     def _build_target_for_obj(self, obj):
         if hasattr(obj, "output_category") and obj.output_category:
             target_name = obj.output_category
+        elif isinstance(obj, BaseRustLibrary):
+            target_name = f"{obj.KIND}-objects"
         else:
             target_name = obj.KIND
         if target_name == "wasm":
@@ -1418,7 +1419,17 @@ class RecursiveMakeBackend(MakeBackend):
             or isinstance(obj, (StaticLibrary, SandboxedWasmLibrary))
             and obj.no_expand_lib
         ):
-            backend_file.write_once("%s_OBJS := %s\n" % (obj.name, objs_ref))
+            response_file_path = "%s.list" % obj.name.replace(".", "_")
+            response_file_ref = self._make_ar_response_file(
+                obj.objdir, objs, response_file_path
+            )
+            if response_file_ref:
+                backend_file.write_once(
+                    "%s_OBJS := %s\n" % (obj.name, response_file_ref)
+                )
+                backend_file.write_once("%s: %s\n" % (obj_target, response_file_path))
+            else:
+                backend_file.write_once("%s_OBJS := %s\n" % (obj.name, objs_ref))
             backend_file.write("%s: %s\n" % (obj_target, objs_ref))
         elif not isinstance(obj, (HostLibrary, StaticLibrary, SandboxedWasmLibrary)):
             list_file_path = "%s.list" % obj.name.replace(".", "_")

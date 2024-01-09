@@ -1410,14 +1410,6 @@ nsresult imgLoader::RemoveEntriesInternal(nsIPrincipal* aPrincipal,
     return NS_ERROR_INVALID_ARG;
   }
 
-  nsAutoString origin;
-  if (aPrincipal) {
-    nsresult rv = nsContentUtils::GetUTFOrigin(aPrincipal, origin);
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-      return rv;
-    }
-  }
-
   nsCOMPtr<nsIEffectiveTLDService> tldService;
   AutoTArray<RefPtr<imgCacheEntry>, 128> entriesToBeRemoved;
 
@@ -1427,18 +1419,10 @@ nsresult imgLoader::RemoveEntriesInternal(nsIPrincipal* aPrincipal,
 
     const bool shouldRemove = [&] {
       if (aPrincipal) {
-        if (key.OriginAttributesRef() !=
-            BasePrincipal::Cast(aPrincipal)->OriginAttributesRef()) {
-          return false;
-        }
-
-        nsAutoString imageOrigin;
-        nsresult rv = nsContentUtils::GetUTFOrigin(key.URI(), imageOrigin);
-        if (NS_WARN_IF(NS_FAILED(rv))) {
-          return false;
-        }
-
-        return imageOrigin == origin;
+        nsCOMPtr<nsIPrincipal> keyPrincipal =
+            BasePrincipal::CreateContentPrincipal(key.URI(),
+                                                  key.OriginAttributesRef());
+        return keyPrincipal->Equals(aPrincipal);
       }
 
       if (!aBaseDomain) {
@@ -2346,7 +2330,7 @@ nsresult imgLoader::LoadImage(
   }
 
   // Look in the preloaded images of loading document first.
-  if (StaticPrefs::network_preload() && !aLinkPreload && aLoadingDocument) {
+  if (!aLinkPreload && aLoadingDocument) {
     // All Early Hints preloads are Link preloads, therefore we don't have a
     // Early Hints preload here
     MOZ_ASSERT(!aEarlyHintPreloaderId);

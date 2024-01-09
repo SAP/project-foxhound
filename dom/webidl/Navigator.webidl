@@ -4,7 +4,7 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/.
  *
  * The origin of this IDL file is
- * http://www.whatwg.org/specs/web-apps/current-work/#the-navigator-object
+ * https://html.spec.whatwg.org/#the-navigator-object
  * http://www.w3.org/TR/tracking-dnt/
  * http://www.w3.org/TR/geolocation-API/#geolocation_interface
  * http://www.w3.org/TR/battery-status/#navigatorbattery-interface
@@ -26,7 +26,7 @@
 
 interface URI;
 
-// http://www.whatwg.org/specs/web-apps/current-work/#the-navigator-object
+// https://html.spec.whatwg.org/#the-navigator-object
 [HeaderFile="Navigator.h",
  Exposed=Window]
 interface Navigator {
@@ -40,15 +40,15 @@ Navigator includes NavigatorStorageUtils;
 Navigator includes NavigatorConcurrentHardware;
 Navigator includes NavigatorStorage;
 Navigator includes NavigatorAutomationInformation;
-Navigator includes GPUProvider;
+Navigator includes NavigatorGPU;
 Navigator includes GlobalPrivacyControl;
 
 interface mixin NavigatorID {
   // WebKit/Blink/Trident/Presto support this (hardcoded "Mozilla").
   [Constant, Cached, Throws]
   readonly attribute DOMString appCodeName; // constant "Mozilla"
-  [Constant, Cached, NeedsCallerType]
-  readonly attribute DOMString appName;
+  [Constant, Cached]
+  readonly attribute DOMString appName; // constant "Netscape"
   [Constant, Cached, Throws, NeedsCallerType]
   readonly attribute DOMString appVersion;
   [Pure, Cached, Throws, NeedsCallerType]
@@ -338,7 +338,7 @@ partial interface Navigator {
   readonly attribute MediaSession mediaSession;
 };
 
-// https://wicg.github.io/web-locks/#navigator-mixins
+// https://w3c.github.io/web-locks/#navigator-mixins
 [SecureContext]
 interface mixin NavigatorLocks {
   [Pref="dom.weblocks.enabled"]

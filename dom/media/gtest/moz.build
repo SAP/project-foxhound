@@ -21,6 +21,7 @@ LOCAL_INCLUDES += [
 UNIFIED_SOURCES += [
     "MockCubeb.cpp",
     "MockMediaResource.cpp",
+    "TestAudioBuffer.cpp",
     "TestAudioBuffers.cpp",
     "TestAudioCallbackDriver.cpp",
     "TestAudioCompactor.cpp",
@@ -31,6 +32,7 @@ UNIFIED_SOURCES += [
     "TestAudioPacketizer.cpp",
     "TestAudioRingBuffer.cpp",
     "TestAudioSegment.cpp",
+    "TestAudioSinkWrapper.cpp",
     "TestAudioTrackEncoder.cpp",
     "TestAudioTrackGraph.cpp",
     "TestBenchmarkStorage.cpp",
@@ -69,7 +71,6 @@ UNIFIED_SOURCES += [
     "TestVPXDecoding.cpp",
     "TestWebMBuffered.cpp",
     "TestWebMWriter.cpp",
-    "WaitFor.cpp",
     "YUVBufferGenerator.cpp",
 ]
 

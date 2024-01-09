@@ -29,6 +29,20 @@
 #include "builtin/MapObject.h"
 #include "builtin/ShadowRealm.h"
 #include "builtin/Symbol.h"
+#ifdef JS_HAS_TEMPORAL_API
+#  include "builtin/temporal/Calendar.h"
+#  include "builtin/temporal/Duration.h"
+#  include "builtin/temporal/Instant.h"
+#  include "builtin/temporal/PlainDate.h"
+#  include "builtin/temporal/PlainDateTime.h"
+#  include "builtin/temporal/PlainMonthDay.h"
+#  include "builtin/temporal/PlainTime.h"
+#  include "builtin/temporal/PlainYearMonth.h"
+#  include "builtin/temporal/Temporal.h"
+#  include "builtin/temporal/TemporalNow.h"
+#  include "builtin/temporal/TimeZone.h"
+#  include "builtin/temporal/ZonedDateTime.h"
+#endif
 #include "builtin/WeakMapObject.h"
 #include "builtin/WeakRefObject.h"
 #include "builtin/WeakSetObject.h"
@@ -57,6 +71,7 @@
 #include "vm/RegExpStatics.h"
 #include "vm/SelfHosting.h"
 #include "vm/StringObject.h"
+#include "wasm/WasmFeatures.h"
 #include "wasm/WasmJS.h"
 #ifdef ENABLE_RECORD_TUPLE
 #  include "vm/RecordType.h"
@@ -180,6 +195,22 @@ bool GlobalObject::skipDeselectedConstructor(JSContext* cx, JSProtoKey key) {
       return false;
 #endif
 
+#ifdef JS_HAS_TEMPORAL_API
+    case JSProto_Temporal:
+    case JSProto_Calendar:
+    case JSProto_Duration:
+    case JSProto_Instant:
+    case JSProto_PlainDate:
+    case JSProto_PlainDateTime:
+    case JSProto_PlainMonthDay:
+    case JSProto_PlainTime:
+    case JSProto_PlainYearMonth:
+    case JSProto_TemporalNow:
+    case JSProto_TimeZone:
+    case JSProto_ZonedDateTime:
+      return false;
+#endif
+
     // Return true if the given constructor has been disabled at run-time.
     case JSProto_Atomics:
     case JSProto_SharedArrayBuffer:
@@ -236,8 +267,6 @@ bool GlobalObject::resolveConstructor(JSContext* cx,
   // |global| must be same-compartment but make sure we're in its realm: the
   // code below relies on this.
   AutoRealm ar(cx, global);
-
-  MOZ_ASSERT(!cx->isHelperThreadContext());
 
   // Prohibit collection of allocation metadata. Metadata builders shouldn't
   // need to observe lazily-constructed prototype objects coming into
@@ -459,7 +488,6 @@ bool GlobalObject::maybeResolveGlobalThis(JSContext* cx,
 JSObject* GlobalObject::createBuiltinProto(JSContext* cx,
                                            Handle<GlobalObject*> global,
                                            ProtoKind kind, ObjectInitOp init) {
-  MOZ_ASSERT(!cx->isHelperThreadContext());
   if (!init(cx, global)) {
     return nullptr;
   }
@@ -471,7 +499,6 @@ JSObject* GlobalObject::createBuiltinProto(JSContext* cx,
                                            Handle<GlobalObject*> global,
                                            ProtoKind kind, Handle<JSAtom*> tag,
                                            ObjectInitWithTagOp init) {
-  MOZ_ASSERT(!cx->isHelperThreadContext());
   if (!init(cx, global, tag)) {
     return nullptr;
   }
@@ -689,29 +716,34 @@ JSFunction* GlobalObject::createConstructor(JSContext* cx, Native ctor,
 }
 
 static NativeObject* CreateBlankProto(JSContext* cx, const JSClass* clasp,
-                                      HandleObject proto) {
+                                      HandleObject proto,
+                                      ObjectFlags objFlags) {
   MOZ_ASSERT(!clasp->isJSFunction());
 
   if (clasp == &PlainObject::class_) {
+    // NOTE: There should be no reason currently to support this. It could
+    // however be added later if needed.
+    MOZ_ASSERT(objFlags.isEmpty());
     return NewPlainObjectWithProto(cx, proto, TenuredObject);
   }
 
-  return NewTenuredObjectWithGivenProto(cx, clasp, proto);
+  return NewTenuredObjectWithGivenProto(cx, clasp, proto, objFlags);
 }
 
 /* static */
 NativeObject* GlobalObject::createBlankPrototype(JSContext* cx,
                                                  Handle<GlobalObject*> global,
-                                                 const JSClass* clasp) {
+                                                 const JSClass* clasp,
+                                                 ObjectFlags objFlags) {
   RootedObject objectProto(cx, &global->getObjectPrototype());
-  return CreateBlankProto(cx, clasp, objectProto);
+  return CreateBlankProto(cx, clasp, objectProto, objFlags);
 }
 
 /* static */
 NativeObject* GlobalObject::createBlankPrototypeInheriting(JSContext* cx,
                                                            const JSClass* clasp,
                                                            HandleObject proto) {
-  return CreateBlankProto(cx, clasp, proto);
+  return CreateBlankProto(cx, clasp, proto, ObjectFlags());
 }
 
 bool js::LinkConstructorAndPrototype(JSContext* cx, JSObject* ctor_,
@@ -786,15 +818,15 @@ RegExpStatics* GlobalObject::getRegExpStatics(JSContext* cx,
                                               Handle<GlobalObject*> global) {
   MOZ_ASSERT(cx);
 
-  if (!global->data().regExpStatics) {
+  if (!global->regExpRealm().regExpStatics) {
     auto statics = RegExpStatics::create(cx);
     if (!statics) {
       return nullptr;
     }
-    global->data().regExpStatics = std::move(statics);
+    global->regExpRealm().regExpStatics = std::move(statics);
   }
 
-  return global->data().regExpStatics.get();
+  return global->regExpRealm().regExpStatics.get();
 }
 
 gc::FinalizationRegistryGlobalData*
@@ -1021,9 +1053,7 @@ void GlobalObjectData::trace(JSTracer* trc, GlobalObject* global) {
   TraceNullableEdge(trc, &boundFunctionShapeWithDefaultProto,
                     "global-bound-function-shape");
 
-  if (regExpStatics) {
-    regExpStatics->trace(trc);
-  }
+  regExpRealm.trace(trc);
 
   TraceNullableEdge(trc, &mappedArgumentsTemplate, "mapped-arguments-template");
   TraceNullableEdge(trc, &unmappedArgumentsTemplate,
@@ -1045,9 +1075,9 @@ void GlobalObjectData::addSizeOfIncludingThis(
     mozilla::MallocSizeOf mallocSizeOf, JS::ClassInfo* info) const {
   info->objectsMallocHeapGlobalData += mallocSizeOf(this);
 
-  if (regExpStatics) {
+  if (regExpRealm.regExpStatics) {
     info->objectsMallocHeapGlobalData +=
-        regExpStatics->sizeOfIncludingThis(mallocSizeOf);
+        regExpRealm.regExpStatics->sizeOfIncludingThis(mallocSizeOf);
   }
 
   info->objectsMallocHeapGlobalVarNamesSet +=

@@ -24,10 +24,21 @@ import org.mozilla.geckoview.GeckoSession.PromptDelegate.PromptResponse
 import org.mozilla.geckoview.test.rule.GeckoSessionTestRule
 import org.mozilla.geckoview.test.rule.GeckoSessionTestRule.AssertCalled
 import org.mozilla.geckoview.test.rule.GeckoSessionTestRule.WithDisplay
+import org.mozilla.geckoview.test.util.TestServer
+import java.util.UUID
 
 @RunWith(AndroidJUnit4::class)
 @MediumTest
-class PromptDelegateTest : BaseSessionTest() {
+class PromptDelegateTest : BaseSessionTest(
+    serverCustomHeaders = mapOf(
+        "Access-Control-Allow-Origin" to "*",
+    ),
+    responseModifiers = mapOf(
+        "/assets/www/fedcm_accounts_endpoint.json" to TestServer.ResponseModifier { response ->
+            response.replace("\$RANDOM_ID", UUID.randomUUID().toString())
+        },
+    ),
+) {
     @Test fun popupTestAllow() {
         // Ensure popup blocking is enabled for this test.
         sessionRule.setPrefsUntilTestEnd(mapOf("dom.disable_open_during_load" to true))
@@ -572,7 +583,79 @@ class PromptDelegateTest : BaseSessionTest() {
         )
     }
 
-    @Test fun colorTest() {
+    @Test
+    fun fedCMProviderPromptTest() {
+        sessionRule.setPrefsUntilTestEnd(
+            mapOf(
+                "dom.security.credentialmanagement.identity.enabled" to true,
+            ),
+        )
+        sessionRule.setPrefsUntilTestEnd(
+            mapOf(
+                "dom.security.credentialmanagement.identity.test_ignore_well_known" to true,
+            ),
+        )
+        mainSession.loadTestPath(FEDCM_RP_HTML_PATH)
+
+        sessionRule.delegateDuringNextWait(object : PromptDelegate {
+            @AssertCalled(count = 1)
+            override fun onSelectIdentityCredentialProvider(
+                session: GeckoSession,
+                prompt: PromptDelegate.IdentityCredential.ProviderSelectorPrompt,
+            ): GeckoResult<PromptResponse> {
+                prompt.providers.mapIndexed { index, item ->
+                    assertThat("ID should match", index, equalTo(item.id))
+                    assertThat(
+                        "Name should be the name of the IDP taken from the manifest",
+                        item.name,
+                        containsString("Demo IDP"),
+                    )
+                    assertThat("Icon should contain a valid image", item.icon ?: "", containsString("data:image"))
+                }
+                return GeckoResult.fromValue(prompt.confirm(0))
+            }
+
+            @AssertCalled(count = 1)
+            override fun onSelectIdentityCredentialAccount(
+                session: GeckoSession,
+                prompt: PromptDelegate.IdentityCredential.AccountSelectorPrompt,
+            ): GeckoResult<PromptResponse> {
+                prompt.accounts.forEachIndexed { index, item ->
+                    assertThat("ID should match", index, equalTo(item.id))
+                }
+                return GeckoResult.fromValue(prompt.confirm(0))
+            }
+
+            @AssertCalled(count = 1)
+            override fun onShowPrivacyPolicyIdentityCredential(
+                session: GeckoSession,
+                prompt: PromptDelegate.IdentityCredential.PrivacyPolicyPrompt,
+            ): GeckoResult<PromptResponse> {
+                assertThat("Host should be localhost", prompt.host, equalTo("localhost"))
+                assertThat("Privacy policy url should be the same as specified in fedcm_idp_metadata.json ", prompt.privacyPolicyUrl, equalTo("privacy_policy"))
+                assertThat("Terms of service url should be the same as specified in fedcm_idp_metadata.json ", prompt.termsOfServiceUrl, equalTo("terms_of_service"))
+                assertThat("Icon should contain a valid image", prompt.icon ?: "", containsString("data:image"))
+                return GeckoResult.fromValue(prompt.confirm(true))
+            }
+        })
+
+        mainSession.waitForJS(
+            """  
+        navigator.credentials.get({
+        identity: {
+          providers: [{
+            configURL: "${createTestUrl(FEDCM_IDP_MANIFEST_PATH)}",
+            clientId: "localhost",
+            nonce: "nonce",
+          }]
+        }
+      });
+            """.trimIndent(),
+        )
+    }
+
+    @Test
+    fun colorTest() {
         sessionRule.setPrefsUntilTestEnd(mapOf("dom.disable_open_during_load" to false))
 
         mainSession.loadTestPath(PROMPT_HTML_PATH)

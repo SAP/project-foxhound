@@ -8,6 +8,7 @@ ChromeUtils.defineESModuleGetters(this, {
   PanelTestProvider: "resource://activity-stream/lib/PanelTestProvider.sys.mjs",
   PlacesTestUtils: "resource://testing-common/PlacesTestUtils.sys.mjs",
   PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
+  sinon: "resource://testing-common/Sinon.sys.mjs",
   TelemetryTestUtils: "resource://testing-common/TelemetryTestUtils.sys.mjs",
 });
 
@@ -30,11 +31,10 @@ function whenNewWindowLoaded(aOptions, aCallback) {
 }
 
 function openWindow(aParent, aOptions) {
-  let win = aParent.OpenBrowserWindow(aOptions);
-  return TestUtils.topicObserved(
-    "browser-delayed-startup-finished",
-    subject => subject == win
-  ).then(() => win);
+  return BrowserWindowTracker.promiseOpenWindow({
+    openerWindow: aParent,
+    ...aOptions,
+  });
 }
 
 /**
@@ -66,9 +66,7 @@ async function openTabAndWaitForRender() {
 }
 
 function newDirectory() {
-  let tmpDir = FileUtils.getDir("TmpD", [], true);
-  let dir = tmpDir.clone();
-  dir.append("testdir");
+  let dir = FileUtils.getDir("TmpD", ["testdir"]);
   dir.createUnique(Ci.nsIFile.DIRECTORY_TYPE, FileUtils.PERMS_DIRECTORY);
   return dir;
 }

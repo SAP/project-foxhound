@@ -490,11 +490,15 @@ class ConfigureSandbox(dict):
         with open(path, "rb") as fh:
             source = fh.read()
 
-        code = compile(source, path, "exec")
-
+        code = self.get_compiled_source(source, path)
         exec_(code, self)
 
         self._paths.pop(-1)
+
+    @staticmethod
+    @memoize
+    def get_compiled_source(source, path):
+        return compile(source, path, "exec")
 
     def run(self, path=None):
         """Executes the given file within the sandbox, as well as everything
@@ -526,8 +530,8 @@ class ConfigureSandbox(dict):
                         "`%s`, emitted from `%s` line %d, is unknown."
                         % (
                             implied_option.option,
+                            implied_option.caller[0],
                             implied_option.caller[1],
-                            implied_option.caller[2],
                         )
                     )
                 # If the option is known, check that the implied value doesn't
@@ -665,7 +669,7 @@ class ConfigureSandbox(dict):
         if value.origin == "implied":
             recursed_value = getattr(self, "__value_for_option").get((option,))
             if recursed_value is not None:
-                _, filename, line, _, _, _ = implied[value.format(option.option)].caller
+                filename, line = implied[value.format(option.option)].caller
                 raise ConfigureError(
                     "'%s' appears somewhere in the direct or indirect dependencies when "
                     "resolving imply_option at %s:%d" % (option.option, filename, line)
@@ -1083,8 +1087,7 @@ class ConfigureSandbox(dict):
     def _get_one_import(self, _from, _import, _as, glob):
         """Perform the given import, placing the result into the dict glob."""
         if not _from and _import == "__builtin__":
-            glob[_as or "__builtin__"] = __builtin__
-            return
+            raise Exception("Importing __builtin__ is forbidden")
         if _from == "__builtin__":
             _from = "six.moves.builtins"
         # The special `__sandbox__` module gives access to the sandbox
@@ -1220,12 +1223,14 @@ class ConfigureSandbox(dict):
             if len(possible_reasons) == 1:
                 if isinstance(possible_reasons[0], Option):
                     reason = possible_reasons[0]
+        frame = inspect.currentframe()
+        line = frame.f_back.f_lineno
+        filename = frame.f_back.f_code.co_filename
         if not reason and (
             isinstance(value, (bool, tuple)) or isinstance(value, six.string_types)
         ):
             # A reason can be provided automatically when imply_option
             # is called with an immediate value.
-            _, filename, line, _, _, _ = inspect.stack()[1]
             reason = "imply_option at %s:%s" % (filename, line)
 
         if not reason:
@@ -1244,7 +1249,7 @@ class ConfigureSandbox(dict):
                 prefix=prefix,
                 name=name,
                 value=value,
-                caller=inspect.stack()[1],
+                caller=(filename, line),
                 reason=reason,
                 when=when,
             )
@@ -1262,8 +1267,8 @@ class ConfigureSandbox(dict):
         glob = SandboxedGlobal(
             (k, v)
             for k, v in six.iteritems(func.__globals__)
-            if (inspect.isfunction(v) and v not in self._templates)
-            or (inspect.isclass(v) and issubclass(v, Exception))
+            if (isinstance(v, types.FunctionType) and v not in self._templates)
+            or (isinstance(v, type) and issubclass(v, Exception))
         )
         glob.update(
             __builtins__=self.BUILTINS,

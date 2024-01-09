@@ -26,16 +26,12 @@ const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   AddonManager: "resource://gre/modules/AddonManager.sys.mjs",
+  BrowserUsageTelemetry: "resource:///modules/BrowserUsageTelemetry.sys.mjs",
   DragPositionManager: "resource:///modules/DragPositionManager.sys.mjs",
   SessionStore: "resource:///modules/sessionstore/SessionStore.sys.mjs",
   URILoadingHelper: "resource:///modules/URILoadingHelper.sys.mjs",
 });
-ChromeUtils.defineModuleGetter(
-  lazy,
-  "BrowserUsageTelemetry",
-  "resource:///modules/BrowserUsageTelemetry.jsm"
-);
-XPCOMUtils.defineLazyGetter(lazy, "gWidgetsBundle", function () {
+ChromeUtils.defineLazyGetter(lazy, "gWidgetsBundle", function () {
   const kUrl =
     "chrome://browser/locale/customizableui/customizableWidgets.properties";
   return Services.strings.createBundle(kUrl);
@@ -48,7 +44,7 @@ XPCOMUtils.defineLazyServiceGetter(
 );
 
 let gDebug;
-XPCOMUtils.defineLazyGetter(lazy, "log", () => {
+ChromeUtils.defineLazyGetter(lazy, "log", () => {
   let { ConsoleAPI } = ChromeUtils.importESModule(
     "resource://gre/modules/Console.sys.mjs"
   );
@@ -361,7 +357,7 @@ CustomizeMode.prototype = {
 
       let customizer = document.getElementById("customization-container");
       let browser = document.getElementById("browser");
-      browser.collapsed = true;
+      browser.hidden = true;
       customizer.hidden = false;
 
       this._wrapToolbarItemSync(CustomizableUI.AREA_TABSTRIP);
@@ -493,7 +489,7 @@ CustomizeMode.prototype = {
     let customizer = document.getElementById("customization-container");
     let browser = document.getElementById("browser");
     customizer.hidden = true;
-    browser.collapsed = false;
+    browser.hidden = false;
 
     window.gNavToolbox.removeEventListener("toolbarvisibilitychange", this);
 

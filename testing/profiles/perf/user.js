@@ -45,6 +45,7 @@ user_pref("dom.allow_scripts_to_close_windows", true);
 user_pref("dom.disable_open_during_load", false);
 user_pref("dom.disable_window_flip", true);
 user_pref("dom.disable_window_move_resize", true);
+// required to prevent non-local access to push.services.mozilla.com
 user_pref("dom.push.connection.enabled", false);
 user_pref("extensions.autoDisableScopes", 10);
 user_pref("extensions.blocklist.enabled", false);
@@ -95,3 +96,5 @@ user_pref("startup.homepage_welcome_url.additional", "");
 // tests (bug 1725270). Can be removed once non-about:blank intermediate pages
 // are used instead (bug 1724261).
 user_pref("browser.tabs.remote.systemTriggeredAboutBlankAnywhere", true);
+// Make sure speech dispatcher notification error does not impact how we measure visual perception in raptor tests
+user_pref("media.webspeech.synth.dont_notify_on_error", true);

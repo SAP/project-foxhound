@@ -64,7 +64,6 @@
 #include "nsCycleCollectionParticipant.h"
 #include "nsTHashMap.h"
 #include "nsDebug.h"
-#include "nsExpirationTracker.h"
 #include "nsGkAtoms.h"
 #include "nsHashKeys.h"
 #include "nsIChannel.h"
@@ -144,9 +143,7 @@ class nsFrameLoader;
 class nsFrameLoaderOwner;
 class nsGenericHTMLElement;
 class nsGlobalWindowInner;
-class nsHTMLCSSStyleSheet;
 class nsHTMLDocument;
-class nsHTMLStyleSheet;
 class nsHtml5TreeOpExecutor;
 class nsIAppWindow;
 class nsIAsyncVerifyRedirectCallback;
@@ -189,6 +186,7 @@ struct nsFont;
 
 namespace mozilla {
 class AbstractThread;
+class AttributeStyles;
 class StyleSheet;
 class EditorBase;
 class EditorCommand;
@@ -210,7 +208,6 @@ enum class StyleCursorKind : uint8_t;
 class SVGContextPaint;
 enum class ColorScheme : uint8_t;
 enum class StyleRuleChangeKind : uint32_t;
-struct StyleSelectorList;
 struct StyleUseCounters;
 template <typename>
 class OwningNonNull;
@@ -609,7 +606,7 @@ class Document : public nsINode,
                                                     aFocusedRadio, aRadioOut);
   }
   void AddToRadioGroup(const nsAString& aName, HTMLInputElement* aRadio) final {
-    DocumentOrShadowRoot::AddToRadioGroup(aName, aRadio);
+    DocumentOrShadowRoot::AddToRadioGroup(aName, aRadio, nullptr);
   }
   void RemoveFromRadioGroup(const nsAString& aName,
                             HTMLInputElement* aRadio) final {
@@ -1070,25 +1067,6 @@ class Document : public nsINode,
   void SetBidiOptions(uint32_t aBidiOptions) { mBidiOptions = aBidiOptions; }
 
   /**
-   * Set CSP flag for this document.
-   */
-  void SetHasCSP(bool aHasCSP) { mHasCSP = aHasCSP; }
-
-  /**
-   * Set unsafe-inline CSP flag for this document.
-   */
-  void SetHasUnsafeInlineCSP(bool aHasUnsafeInlineCSP) {
-    mHasUnsafeInlineCSP = aHasUnsafeInlineCSP;
-  }
-
-  /**
-   * Set unsafe-eval CSP flag for this document.
-   */
-  void SetHasUnsafeEvalCSP(bool aHasUnsafeEvalCSP) {
-    mHasUnsafeEvalCSP = aHasUnsafeEvalCSP;
-  }
-
-  /**
    * Returns true if the document holds a CSP
    * delivered through an HTTP Header.
    */
@@ -1282,7 +1260,8 @@ class Document : public nsINode,
 
   StorageAccessAPIHelper::PerformPermissionGrant CreatePermissionGrantPromise(
       nsPIDOMWindowInner* aInnerWindow, nsIPrincipal* aPrincipal,
-      bool aHasUserInteraction, const Maybe<nsCString>& aTopLevelBaseDomain);
+      bool aHasUserInteraction, const Maybe<nsCString>& aTopLevelBaseDomain,
+      bool aFrameOnly);
 
   already_AddRefed<Promise> RequestStorageAccess(ErrorResult& aRv);
 
@@ -1347,9 +1326,9 @@ class Document : public nsINode,
    */
   nsresult GetSrcdocData(nsAString& aSrcdocData);
 
-  already_AddRefed<AnonymousContent> InsertAnonymousContent(
-      Element& aElement, bool aForce, ErrorResult& aError);
-  void RemoveAnonymousContent(AnonymousContent& aContent);
+  already_AddRefed<AnonymousContent> InsertAnonymousContent(bool aForce,
+                                                            ErrorResult&);
+  void RemoveAnonymousContent(AnonymousContent&);
   /**
    * If aNode is a descendant of anonymous content inserted by
    * InsertAnonymousContent, this method returns the root element of the
@@ -1382,25 +1361,25 @@ class Document : public nsINode,
 
   void NotifyLayerManagerRecreated();
 
-  /**
-   * Add an SVG element to the list of elements that need
-   * their mapped attributes resolved to a Servo declaration block.
-   *
-   * These are weak pointers, please manually unschedule them when an element
-   * is removed.
-   */
-  void ScheduleSVGForPresAttrEvaluation(SVGElement* aSVG) {
-    mLazySVGPresElements.Insert(aSVG);
-  }
+  // Add an element to the list of elements that need their mapped attributes
+  // resolved to a declaration block.
+  //
+  // These are weak pointers, manually unschedule them when an element is
+  // removed from the tree.
+  void ScheduleForPresAttrEvaluation(Element* aElement);
 
-  // Unschedule an element scheduled by ScheduleFrameRequestCallback (e.g. for
-  // when it is destroyed)
-  void UnscheduleSVGForPresAttrEvaluation(SVGElement* aSVG) {
-    mLazySVGPresElements.Remove(aSVG);
-  }
+  // Un-schedule an element scheduled by ScheduleForPresAttrEvaluation,
+  // generally when it's unbound from the tree.
+  void UnscheduleForPresAttrEvaluation(Element* aElement);
 
-  // Resolve all SVG pres attrs scheduled in ScheduleSVGForPresAttrEvaluation
-  void ResolveScheduledSVGPresAttrs();
+  // Resolve all presentational attributes scheduled in
+  // ScheduleForPresAttrEvaluation
+  void ResolveScheduledPresAttrs() {
+    if (mLazyPresElements.IsEmpty()) {
+      return;
+    }
+    DoResolveScheduledPresAttrs();
+  }
 
   Maybe<ClientInfo> GetClientInfo() const;
   Maybe<ClientState> GetClientState() const;
@@ -1445,8 +1424,8 @@ class Document : public nsINode,
   // Returns the cookie jar settings for this and sub contexts.
   nsICookieJarSettings* CookieJarSettings();
 
-  // Returns whether this document has the storage access permission.
-  bool HasStorageAccessPermissionGranted();
+  // Returns whether this document is using unpartitioned cookies
+  bool UsingStorageAccess();
 
   // Returns whether the storage access permission of the document is granted by
   // the allow list.
@@ -1567,6 +1546,8 @@ class Document : public nsINode,
 
   void DoUnblockOnload();
 
+  void DoResolveScheduledPresAttrs();
+
   void RetrieveRelevantHeaders(nsIChannel* aChannel);
 
   void TryChannelCharset(nsIChannel* aChannel, int32_t& aCharsetSource,
@@ -1627,59 +1608,7 @@ class Document : public nsINode,
 
   void MaybeEditingStateChanged();
 
- private:
-  class SelectorCacheKey {
-   public:
-    explicit SelectorCacheKey(const nsACString& aString) : mKey(aString) {
-      MOZ_COUNT_CTOR(SelectorCacheKey);
-    }
-
-    nsCString mKey;
-    nsExpirationState mState;
-
-    nsExpirationState* GetExpirationState() { return &mState; }
-
-    MOZ_COUNTED_DTOR(SelectorCacheKey)
-  };
-
-  class SelectorCacheKeyDeleter;
-
  public:
-  class SelectorCache final : public nsExpirationTracker<SelectorCacheKey, 4> {
-   public:
-    using SelectorList = UniquePtr<StyleSelectorList>;
-    using Table = nsTHashMap<nsCStringHashKey, SelectorList>;
-
-    explicit SelectorCache(nsIEventTarget* aEventTarget);
-    void NotifyExpired(SelectorCacheKey*) final;
-
-    // We do not call MarkUsed because it would just slow down lookups and
-    // because we're OK expiring things after a few seconds even if they're
-    // being used.  Returns whether we actually had an entry for aSelector.
-    //
-    // If we have an entry and the selector list returned has a null
-    // StyleSelectorList*, that indicates that aSelector has already been
-    // parsed and is not a syntactically valid selector.
-    template <typename F>
-    StyleSelectorList* GetListOrInsertFrom(const nsACString& aSelector,
-                                           F&& aFrom) {
-      MOZ_ASSERT(NS_IsMainThread());
-      return mTable.LookupOrInsertWith(aSelector, std::forward<F>(aFrom)).get();
-    }
-
-    ~SelectorCache();
-
-   private:
-    Table mTable;
-  };
-
-  SelectorCache& GetSelectorCache() {
-    if (!mSelectorCache) {
-      mSelectorCache =
-          MakeUnique<SelectorCache>(EventTargetFor(TaskCategory::Other));
-    }
-    return *mSelectorCache;
-  }
   // Get the root <html> element, or return null if there isn't one (e.g.
   // if the root isn't <html>)
   Element* GetHtmlElement() const;
@@ -1739,8 +1668,8 @@ class Document : public nsINode,
    * and that observers should be notified and style sets updated
    */
   void StyleSheetApplicableStateChanged(StyleSheet&);
-
   void PostStyleSheetApplicableStateChangeEvent(StyleSheet&);
+  void PostStyleSheetRemovedEvent(StyleSheet&);
 
   enum additionalSheetType {
     eAgentSheet,
@@ -1787,15 +1716,7 @@ class Document : public nsINode,
    * Get this document's attribute stylesheet.  May return null if
    * there isn't one.
    */
-  nsHTMLStyleSheet* GetAttributeStyleSheet() const { return mAttrStyleSheet; }
-
-  /**
-   * Get this document's inline style sheet.  May return null if there
-   * isn't one
-   */
-  nsHTMLCSSStyleSheet* GetInlineStyleSheet() const {
-    return mStyleAttrStyleSheet;
-  }
+  AttributeStyles* GetAttributeStyles() const { return mAttributeStyles.get(); }
 
   virtual void SetScriptGlobalObject(nsIScriptGlobalObject* aGlobalObject);
 
@@ -2408,7 +2329,12 @@ class Document : public nsINode,
                                    bool aIncludeSubdocuments,
                                    bool aAllowUnloadListeners = true);
 
-  virtual nsresult Init();
+  /**
+   * Pass principals if the correct ones are known when calling Init. That way
+   * NodeInfoManager doesn't need to create a temporary null principal.
+   */
+  virtual nsresult Init(nsIPrincipal* aPrincipal,
+                        nsIPrincipal* aPartitionedPrincipal);
 
   /**
    * Notify the document that its associated ContentViewer is being destroyed.
@@ -3052,6 +2978,7 @@ class Document : public nsINode,
   SheetPreloadStatus PreloadStyle(nsIURI* aURI, const Encoding* aEncoding,
                                   const nsAString& aCrossOriginAttr,
                                   ReferrerPolicyEnum aReferrerPolicy,
+                                  const nsAString& aNonce,
                                   const nsAString& aIntegrity,
                                   css::StylePreloadKind,
                                   uint64_t aEarlyHintPreloaderId);
@@ -3351,8 +3278,8 @@ class Document : public nsINode,
   already_AddRefed<nsINode> ImportNode(nsINode& aNode, bool aDeep,
                                        ErrorResult& rv) const;
   // TODO: Convert this to MOZ_CAN_RUN_SCRIPT (bug 1415230)
-  MOZ_CAN_RUN_SCRIPT_BOUNDARY nsINode* AdoptNode(nsINode& aNode,
-                                                 ErrorResult& rv);
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY nsINode* AdoptNode(
+      nsINode& aAdoptedNode, ErrorResult& rv, bool aAcceptShadowRoot = false);
   already_AddRefed<Event> CreateEvent(const nsAString& aEventType,
                                       CallerType aCallerType,
                                       ErrorResult& rv) const;
@@ -3653,6 +3580,9 @@ class Document : public nsINode,
   void SetDevToolsWatchingDOMMutations(bool aValue);
 
   void MaybeWarnAboutZoom();
+
+  // https://drafts.csswg.org/cssom-view/#evaluate-media-queries-and-report-changes
+  void EvaluateMediaQueriesAndReportChanges(bool aRecurse);
 
   // ParentNode
   nsIHTMLCollection* Children();
@@ -4089,9 +4019,7 @@ class Document : public nsINode,
 
   mozilla::dom::FeaturePolicy* FeaturePolicy() const;
 
-  bool ModuleScriptsEnabled();
-
-  bool ImportMapsEnabled();
+  bool ImportMapsEnabled() const;
 
   /**
    * Find the (non-anonymous) content in this document for aFrame. It will
@@ -4119,6 +4047,10 @@ class Document : public nsINode,
   void SetPrototypeDocument(nsXULPrototypeDocument* aPrototype);
 
   nsIPermissionDelegateHandler* PermDelegateHandler();
+
+  // Returns whether this is a top-level about:blank page without an opener
+  // (and thus not accessible by content).
+  bool IsContentInaccessibleAboutBlank() const;
 
   // CSS prefers-color-scheme media feature for this document.
   enum class IgnoreRFP { No, Yes };
@@ -4188,6 +4120,8 @@ class Document : public nsINode,
   // Recompute the current resist fingerprinting state. Returns true when
   // the state was changed.
   bool RecomputeResistFingerprinting();
+
+  bool MayHaveDOMActivateListeners() const;
 
  protected:
   // Returns the WindowContext for the document that we will contribute
@@ -4442,8 +4376,6 @@ class Document : public nsINode,
   mutable std::bitset<eDocumentWarningCount> mDocWarningWarnedAbout;
 
   // Lazy-initialization to have mDocGroup initialized in prior to the
-  // SelectorCaches.
-  UniquePtr<SelectorCache> mSelectorCache;
   UniquePtr<ServoStyleSet> mStyleSet;
 
  protected:
@@ -4543,8 +4475,10 @@ class Document : public nsINode,
   nsNodeInfoManager* mNodeInfoManager;
   RefPtr<css::Loader> mCSSLoader;
   RefPtr<css::ImageLoader> mStyleImageLoader;
-  RefPtr<nsHTMLStyleSheet> mAttrStyleSheet;
-  RefPtr<nsHTMLCSSStyleSheet> mStyleAttrStyleSheet;
+
+  // The object that contains link color declarations (from the <body> mapped
+  // attributes), mapped attribute caches, and inline style attribute caches.
+  RefPtr<AttributeStyles> mAttributeStyles;
 
   // Tracking for images in the document.
   RefPtr<dom::ImageTracker> mImageTracker;
@@ -4735,15 +4669,6 @@ class Document : public nsINode,
   // document.
   bool mMayHaveAnimationObservers : 1;
 
-  // True if a document load has a CSP attached.
-  bool mHasCSP : 1;
-
-  // True if a document load has a CSP with unsafe-eval attached.
-  bool mHasUnsafeEvalCSP : 1;
-
-  // True if a document load has a CSP with unsafe-inline attached.
-  bool mHasUnsafeInlineCSP : 1;
-
   // True if the document has a CSP delivered throuh a header
   bool mHasCSPDeliveredThroughHeader : 1;
 
@@ -4816,10 +4741,6 @@ class Document : public nsINode,
 
   // Whether we have a designmode.css stylesheet in the style set.
   bool mDesignModeSheetAdded : 1;
-
-  // Keeps track of whether we have a pending
-  // 'style-sheet-applicable-state-changed' notification.
-  bool mSSApplicableStateNotificationPending : 1;
 
   // True if this document has ever had an HTML or SVG <title> element
   // bound to it
@@ -5320,10 +5241,9 @@ class Document : public nsINode,
 
   RefPtr<DOMStyleSheetSetList> mStyleSheetSetList;
 
-  // We lazily calculate declaration blocks for SVG elements with mapped
-  // attributes in Servo mode. This list contains all elements which need lazy
-  // resolution.
-  nsTHashSet<SVGElement*> mLazySVGPresElements;
+  // We lazily calculate declaration blocks for elements with mapped
+  // attributes. This set contains all elements which need lazy resolution.
+  nsTHashSet<Element*> mLazyPresElements;
 
   nsTHashSet<RefPtr<nsAtom>> mLanguagesUsed;
 
@@ -5554,17 +5474,27 @@ bool IsInActiveTab(Document* aDoc);
 
 // XXX These belong somewhere else
 nsresult NS_NewHTMLDocument(mozilla::dom::Document** aInstancePtrResult,
+                            nsIPrincipal* aPrincipal,
+                            nsIPrincipal* aPartitionedPrincipal,
                             bool aLoadedAsData = false);
 
 nsresult NS_NewXMLDocument(mozilla::dom::Document** aInstancePtrResult,
+                           nsIPrincipal* aPrincipal,
+                           nsIPrincipal* aPartitionedPrincipal,
                            bool aLoadedAsData = false,
                            bool aIsPlainDocument = false);
 
-nsresult NS_NewSVGDocument(mozilla::dom::Document** aInstancePtrResult);
+nsresult NS_NewSVGDocument(mozilla::dom::Document** aInstancePtrResult,
+                           nsIPrincipal* aPrincipal,
+                           nsIPrincipal* aPartitionedPrincipal);
 
-nsresult NS_NewImageDocument(mozilla::dom::Document** aInstancePtrResult);
+nsresult NS_NewImageDocument(mozilla::dom::Document** aInstancePtrResult,
+                             nsIPrincipal* aPrincipal,
+                             nsIPrincipal* aPartitionedPrincipal);
 
-nsresult NS_NewVideoDocument(mozilla::dom::Document** aInstancePtrResult);
+nsresult NS_NewVideoDocument(mozilla::dom::Document** aInstancePtrResult,
+                             nsIPrincipal* aPrincipal,
+                             nsIPrincipal* aPartitionedPrincipal);
 
 // Enum for requesting a particular type of document when creating a doc
 enum DocumentFlavor {

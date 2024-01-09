@@ -42,16 +42,16 @@ ChromeUtils.defineESModuleGetters(lazy, {
   CryptoUtils: "resource://services-crypto/utils.sys.mjs",
   ExtensionCommon: "resource://gre/modules/ExtensionCommon.sys.mjs",
   FirefoxAdapter: "resource://services-common/kinto-storage-adapter.sys.mjs",
+  KintoHttpClient: "resource://services-common/kinto-http-client.sys.mjs",
   Observers: "resource://services-common/observers.sys.mjs",
   Utils: "resource://services-sync/util.sys.mjs",
 });
 
 XPCOMUtils.defineLazyModuleGetters(lazy, {
-  KintoHttpClient: "resource://services-common/kinto-http-client.js",
   Kinto: "resource://services-common/kinto-offline-client.js",
 });
 
-XPCOMUtils.defineLazyGetter(lazy, "fxAccounts", () => {
+ChromeUtils.defineLazyGetter(lazy, "fxAccounts", () => {
   return ChromeUtils.importESModule(
     "resource://gre/modules/FxAccounts.sys.mjs"
   ).getFxAccountsSingleton();
@@ -69,7 +69,7 @@ XPCOMUtils.defineLazyPreferenceGetter(
   STORAGE_SYNC_SERVER_URL_PREF,
   KINTO_DEFAULT_SERVER_URL
 );
-XPCOMUtils.defineLazyGetter(lazy, "WeaveCrypto", function () {
+ChromeUtils.defineLazyGetter(lazy, "WeaveCrypto", function () {
   let { WeaveCrypto } = ChromeUtils.importESModule(
     "resource://services-crypto/WeaveCrypto.sys.mjs"
   );

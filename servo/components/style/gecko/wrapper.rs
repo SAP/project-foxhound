@@ -15,6 +15,7 @@
 //! the separation between the style system implementation and everything else.
 
 use crate::applicable_declarations::ApplicableDeclarationBlock;
+use crate::bloom::each_relevant_element_hash;
 use crate::context::{PostAnimationTasks, QuirksMode, SharedStyleContext, UpdateAnimationsTasks};
 use crate::data::ElementData;
 use crate::dom::{LayoutIterator, NodeInfo, OpaqueNode, TDocument, TElement, TNode, TShadowRoot};
@@ -68,13 +69,14 @@ use atomic_refcell::{AtomicRef, AtomicRefCell, AtomicRefMut};
 use dom::{DocumentState, ElementState};
 use euclid::default::Size2D;
 use fxhash::FxHashMap;
-use selectors::attr::{AttrSelectorOperation, AttrSelectorOperator};
-use selectors::attr::{CaseSensitivity, NamespaceConstraint};
+use selectors::attr::{AttrSelectorOperation, CaseSensitivity, NamespaceConstraint};
+use selectors::bloom::{BloomFilter, BLOOM_HASH_MASK};
 use selectors::matching::VisitedHandlingMode;
 use selectors::matching::{ElementSelectorFlags, MatchingContext};
 use selectors::sink::Push;
 use selectors::{Element, OpaqueElement};
 use servo_arc::{Arc, ArcBorrow};
+use std::cell::Cell;
 use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::mem;
@@ -269,17 +271,9 @@ impl<'ln> GeckoNode<'ln> {
         self.flags_atomic().fetch_or(flags, Ordering::Relaxed);
     }
 
-    #[inline]
-    fn flags_atomic(&self) -> &AtomicU32 {
-        use std::cell::Cell;
-        let flags: &Cell<u32> = &(self.0)._base._base_1.mFlags;
-
-        #[allow(dead_code)]
-        fn static_assert() {
-            let _: [u8; std::mem::size_of::<Cell<u32>>()] = [0u8; std::mem::size_of::<AtomicU32>()];
-            let _: [u8; std::mem::align_of::<Cell<u32>>()] =
-                [0u8; std::mem::align_of::<AtomicU32>()];
-        }
+    fn flags_atomic_for(flags: &Cell<u32>) -> &AtomicU32 {
+        const_assert!(std::mem::size_of::<Cell<u32>>() == std::mem::size_of::<AtomicU32>());
+        const_assert!(std::mem::align_of::<Cell<u32>>() == std::mem::align_of::<AtomicU32>());
 
         // Rust doesn't provide standalone atomic functions like GCC/clang do
         // (via the atomic intrinsics) or via std::atomic_ref, but it guarantees
@@ -289,8 +283,23 @@ impl<'ln> GeckoNode<'ln> {
     }
 
     #[inline]
+    fn flags_atomic(&self) -> &AtomicU32 {
+        Self::flags_atomic_for(&self.0._base._base_1.mFlags)
+    }
+
+    #[inline]
     fn flags(&self) -> u32 {
         self.flags_atomic().load(Ordering::Relaxed)
+    }
+
+    #[inline]
+    fn selector_flags_atomic(&self) -> &AtomicU32 {
+        Self::flags_atomic_for(&self.0.mSelectorFlags)
+    }
+
+    #[inline]
+    fn set_selector_flags(&self, flags: u32) {
+        self.selector_flags_atomic().fetch_or(flags, Ordering::Relaxed);
     }
 
     #[inline]
@@ -590,31 +599,12 @@ impl<'le> GeckoElement<'le> {
     }
 
     #[inline(always)]
-    fn non_mapped_attrs(&self) -> &[structs::AttrArray_InternalAttr] {
+    fn attrs(&self) -> &[structs::AttrArray_InternalAttr] {
         unsafe {
-            let attrs = match self.0.mAttrs.mImpl.mPtr.as_ref() {
-                Some(attrs) => attrs,
+            match self.0.mAttrs.mImpl.mPtr.as_ref() {
+                Some(attrs) => attrs.mBuffer.as_slice(attrs.mAttrCount as usize),
                 None => return &[],
-            };
-
-            attrs.mBuffer.as_slice(attrs.mAttrCount as usize)
-        }
-    }
-
-    #[inline(always)]
-    fn mapped_attrs(&self) -> &[structs::AttrArray_InternalAttr] {
-        unsafe {
-            let attrs = match self.0.mAttrs.mImpl.mPtr.as_ref() {
-                Some(attrs) => attrs,
-                None => return &[],
-            };
-
-            let attrs = match attrs.mMappedAttrs.as_ref() {
-                Some(attrs) => attrs,
-                None => return &[],
-            };
-
-            attrs.mBuffer.as_slice(attrs.mAttrCount as usize)
+            }
         }
     }
 
@@ -623,7 +613,7 @@ impl<'le> GeckoElement<'le> {
         if !self.has_part_attr() {
             return None;
         }
-        snapshot_helpers::find_attr(self.non_mapped_attrs(), &atom!("part"))
+        snapshot_helpers::find_attr(self.attrs(), &atom!("part"))
     }
 
     #[inline(always)]
@@ -639,7 +629,7 @@ impl<'le> GeckoElement<'le> {
             }
         }
 
-        snapshot_helpers::find_attr(self.non_mapped_attrs(), &atom!("class"))
+        snapshot_helpers::find_attr(self.attrs(), &atom!("class"))
     }
 
     #[inline]
@@ -877,25 +867,22 @@ impl<'le> GeckoElement<'le> {
 /// by Gecko. We could align these and then do this without conditionals, but
 /// it's probably not worth the trouble.
 fn selector_flags_to_node_flags(flags: ElementSelectorFlags) -> u32 {
-    use crate::gecko_bindings::structs::*;
+    use crate::gecko_bindings::structs::NodeSelectorFlags;
     let mut gecko_flags = 0u32;
     if flags.contains(ElementSelectorFlags::HAS_SLOW_SELECTOR) {
-        gecko_flags |= NODE_HAS_SLOW_SELECTOR;
+        gecko_flags |= NodeSelectorFlags::HasSlowSelector.0;
     }
     if flags.contains(ElementSelectorFlags::HAS_SLOW_SELECTOR_LATER_SIBLINGS) {
-        gecko_flags |= NODE_HAS_SLOW_SELECTOR_LATER_SIBLINGS;
+        gecko_flags |= NodeSelectorFlags::HasSlowSelectorLaterSiblings.0;
     }
     if flags.contains(ElementSelectorFlags::HAS_SLOW_SELECTOR_NTH_OF) {
-        gecko_flags |= NODE_HAS_SLOW_SELECTOR_NTH_OF;
+        gecko_flags |= NodeSelectorFlags::HasSlowSelectorNthOf.0;
     }
     if flags.contains(ElementSelectorFlags::HAS_EDGE_CHILD_SELECTOR) {
-        gecko_flags |= NODE_HAS_EDGE_CHILD_SELECTOR;
+        gecko_flags |= NodeSelectorFlags::HasEdgeChildSelector.0;
     }
     if flags.contains(ElementSelectorFlags::HAS_EMPTY_SELECTOR) {
-        gecko_flags |= NODE_HAS_EMPTY_SELECTOR;
-    }
-    if flags.contains(ElementSelectorFlags::ANCHORS_RELATIVE_SELECTOR) {
-        gecko_flags |= NODE_ANCHORS_RELATIVE_SELECTOR;
+        gecko_flags |= NodeSelectorFlags::HasEmptySelector.0;
     }
 
     gecko_flags
@@ -924,6 +911,16 @@ fn get_animation_rule(
         )))
     } else {
         None
+    }
+}
+
+/// Turns a gecko namespace id into an atom. Might panic if you pass any random thing that isn't a
+/// namespace id.
+#[inline(always)]
+pub unsafe fn namespace_id_to_atom(id: i32) -> *mut nsAtom {
+    unsafe {
+        let namespace_manager = structs::nsNameSpaceManager_sInstance.mRawPtr;
+        (*namespace_manager).mURIArray[id as usize].mRawPtr
     }
 }
 
@@ -1007,10 +1004,7 @@ impl<'le> TElement for GeckoElement<'le> {
 
     #[inline]
     fn namespace(&self) -> &WeakNamespace {
-        unsafe {
-            let namespace_manager = structs::nsNameSpaceManager_sInstance.mRawPtr;
-            WeakNamespace::new((*namespace_manager).mURIArray[self.namespace_id() as usize].mRawPtr)
-        }
+        unsafe { WeakNamespace::new(namespace_id_to_atom(self.namespace_id())) }
     }
 
     #[inline]
@@ -1043,7 +1037,7 @@ impl<'le> TElement for GeckoElement<'le> {
         let slot: &structs::HTMLSlotElement = unsafe { mem::transmute(self.0) };
 
         if cfg!(debug_assertions) {
-            let base: &RawGeckoElement = &slot._base._base._base._base;
+            let base: &RawGeckoElement = &slot._base._base._base;
             assert_eq!(base as *const _, self.0 as *const _, "Bad cast");
         }
 
@@ -1180,11 +1174,6 @@ impl<'le> TElement for GeckoElement<'le> {
     }
 
     #[inline]
-    fn has_attr(&self, namespace: &Namespace, attr: &AtomIdent) -> bool {
-        unsafe { bindings::Gecko_HasAttr(self.0, namespace.0.as_ptr(), attr.as_ptr()) }
-    }
-
-    #[inline]
     fn has_part_attr(&self) -> bool {
         self.as_node()
             .get_bool_flag(nsINode_BooleanFlag::ElementHasPart)
@@ -1192,7 +1181,7 @@ impl<'le> TElement for GeckoElement<'le> {
 
     #[inline]
     fn exports_any_part(&self) -> bool {
-        snapshot_helpers::find_attr(self.non_mapped_attrs(), &atom!("exportparts")).is_some()
+        snapshot_helpers::find_attr(self.attrs(), &atom!("exportparts")).is_some()
     }
 
     // FIXME(emilio): we should probably just return a reference to the Atom.
@@ -1201,28 +1190,16 @@ impl<'le> TElement for GeckoElement<'le> {
         if !self.has_id() {
             return None;
         }
-
-        snapshot_helpers::get_id(self.non_mapped_attrs())
+        snapshot_helpers::get_id(self.attrs())
     }
 
     fn each_attr_name<F>(&self, mut callback: F)
     where
         F: FnMut(&AtomIdent),
     {
-        for attr in self
-            .non_mapped_attrs()
-            .iter()
-            .chain(self.mapped_attrs().iter())
-        {
-            let is_nodeinfo = attr.mName.mBits & 1 != 0;
+        for attr in self.attrs() {
             unsafe {
-                let atom = if is_nodeinfo {
-                    let node_info = &*((attr.mName.mBits & !1) as *const structs::NodeInfo);
-                    node_info.mInner.mName
-                } else {
-                    attr.mName.mBits as *const nsAtom
-                };
-                AtomIdent::with(atom, |a| callback(a))
+                AtomIdent::with(attr.mName.name(), |a| callback(a))
             }
         }
     }
@@ -1244,7 +1221,7 @@ impl<'le> TElement for GeckoElement<'le> {
     where
         F: FnMut(&AtomIdent),
     {
-        snapshot_helpers::each_exported_part(self.non_mapped_attrs(), name, callback)
+        snapshot_helpers::each_exported_part(self.attrs(), name, callback)
     }
 
     fn each_part<F>(&self, callback: F)
@@ -1337,7 +1314,7 @@ impl<'le> TElement for GeckoElement<'le> {
             return None;
         }
 
-        PseudoElement::from_pseudo_type(unsafe { bindings::Gecko_GetImplementedPseudo(self.0) })
+        PseudoElement::from_pseudo_type(unsafe { bindings::Gecko_GetImplementedPseudo(self.0) }, None)
     }
 
     #[inline]
@@ -1730,11 +1707,6 @@ impl<'le> TElement for GeckoElement<'le> {
             }
         }
     }
-
-    fn anchors_relative_selector(&self) -> bool {
-        use crate::gecko_bindings::structs::NODE_ANCHORS_RELATIVE_SELECTOR;
-        self.flags() & NODE_ANCHORS_RELATIVE_SELECTOR != 0
-    }
 }
 
 impl<'le> PartialEq for GeckoElement<'le> {
@@ -1803,7 +1775,7 @@ impl<'le> ::selectors::Element for GeckoElement<'le> {
     fn assigned_slot(&self) -> Option<Self> {
         let slot = self.extended_slots()?._base.mAssignedSlot.mRawPtr;
 
-        unsafe { Some(GeckoElement(&slot.as_ref()?._base._base._base._base)) }
+        unsafe { Some(GeckoElement(&slot.as_ref()?._base._base._base)) }
     }
 
     #[inline]
@@ -1846,7 +1818,7 @@ impl<'le> ::selectors::Element for GeckoElement<'le> {
         // Handle flags that apply to the element.
         let self_flags = flags.for_self();
         if !self_flags.is_empty() {
-            self.set_flags(selector_flags_to_node_flags(flags))
+            self.as_node().set_selector_flags(selector_flags_to_node_flags(flags))
         }
 
         // Handle flags that apply to the parent.
@@ -1854,10 +1826,19 @@ impl<'le> ::selectors::Element for GeckoElement<'le> {
         if !parent_flags.is_empty() {
             if let Some(p) = self.as_node().parent_node() {
                 if p.is_element() || p.is_shadow_root() {
-                    p.set_flags(selector_flags_to_node_flags(parent_flags));
+                    p.set_selector_flags(selector_flags_to_node_flags(parent_flags));
                 }
             }
         }
+    }
+
+    fn has_attr_in_no_namespace(&self, local_name: &LocalName) -> bool {
+        for attr in self.attrs() {
+            if attr.mName.mBits == local_name.as_ptr() as usize {
+                return true;
+            }
+        }
+        false
     }
 
     fn attr_matches(
@@ -1866,68 +1847,7 @@ impl<'le> ::selectors::Element for GeckoElement<'le> {
         local_name: &LocalName,
         operation: &AttrSelectorOperation<&AttrValue>,
     ) -> bool {
-        unsafe {
-            match *operation {
-                AttrSelectorOperation::Exists => {
-                    bindings::Gecko_HasAttr(self.0, ns.atom_or_null(), local_name.as_ptr())
-                },
-                AttrSelectorOperation::WithValue {
-                    operator,
-                    case_sensitivity,
-                    expected_value,
-                } => {
-                    let ignore_case = match case_sensitivity {
-                        CaseSensitivity::CaseSensitive => false,
-                        CaseSensitivity::AsciiCaseInsensitive => true,
-                    };
-                    // FIXME: case sensitivity for operators other than Equal
-                    match operator {
-                        AttrSelectorOperator::Equal => bindings::Gecko_AttrEquals(
-                            self.0,
-                            ns.atom_or_null(),
-                            local_name.as_ptr(),
-                            expected_value.as_ptr(),
-                            ignore_case,
-                        ),
-                        AttrSelectorOperator::Includes => bindings::Gecko_AttrIncludes(
-                            self.0,
-                            ns.atom_or_null(),
-                            local_name.as_ptr(),
-                            expected_value.as_ptr(),
-                            ignore_case,
-                        ),
-                        AttrSelectorOperator::DashMatch => bindings::Gecko_AttrDashEquals(
-                            self.0,
-                            ns.atom_or_null(),
-                            local_name.as_ptr(),
-                            expected_value.as_ptr(),
-                            ignore_case,
-                        ),
-                        AttrSelectorOperator::Prefix => bindings::Gecko_AttrHasPrefix(
-                            self.0,
-                            ns.atom_or_null(),
-                            local_name.as_ptr(),
-                            expected_value.as_ptr(),
-                            ignore_case,
-                        ),
-                        AttrSelectorOperator::Suffix => bindings::Gecko_AttrHasSuffix(
-                            self.0,
-                            ns.atom_or_null(),
-                            local_name.as_ptr(),
-                            expected_value.as_ptr(),
-                            ignore_case,
-                        ),
-                        AttrSelectorOperator::Substring => bindings::Gecko_AttrHasSubstring(
-                            self.0,
-                            ns.atom_or_null(),
-                            local_name.as_ptr(),
-                            expected_value.as_ptr(),
-                            ignore_case,
-                        ),
-                    }
-                },
-            }
-        }
+        snapshot_helpers::attr_matches(self.attrs(), ns, local_name, operation)
     }
 
     #[inline]
@@ -2081,8 +2001,7 @@ impl<'le> ::selectors::Element for GeckoElement<'le> {
             NonTSPseudoClass::MozSelectListBox => unsafe {
                 bindings::Gecko_IsSelectListBox(self.0)
             },
-            NonTSPseudoClass::MozIsHTML => self.is_html_element_in_html_document(),
-
+            NonTSPseudoClass::MozIsHTML => self.as_node().owner_doc().is_html_document(),
             NonTSPseudoClass::MozLWTheme |
             NonTSPseudoClass::MozLocaleDir(..) |
             NonTSPseudoClass::MozWindowInactive => {
@@ -2134,7 +2053,7 @@ impl<'le> ::selectors::Element for GeckoElement<'le> {
             return false;
         }
 
-        let element_id = match snapshot_helpers::get_id(self.non_mapped_attrs()) {
+        let element_id = match snapshot_helpers::get_id(self.attrs()) {
             Some(id) => id,
             None => return false,
         };
@@ -2154,7 +2073,7 @@ impl<'le> ::selectors::Element for GeckoElement<'le> {
 
     #[inline]
     fn imported_part(&self, name: &AtomIdent) -> Option<AtomIdent> {
-        snapshot_helpers::imported_part(self.non_mapped_attrs(), name)
+        snapshot_helpers::imported_part(self.attrs(), name)
     }
 
     #[inline(always)]
@@ -2181,19 +2100,9 @@ impl<'le> ::selectors::Element for GeckoElement<'le> {
     fn ignores_nth_child_selectors(&self) -> bool {
         self.is_root_of_native_anonymous_subtree()
     }
-}
 
-/// A few helpers to help with attribute selectors and snapshotting.
-pub trait NamespaceConstraintHelpers {
-    /// Returns the namespace of the selector, or null otherwise.
-    fn atom_or_null(&self) -> *mut nsAtom;
-}
-
-impl<'a> NamespaceConstraintHelpers for NamespaceConstraint<&'a Namespace> {
-    fn atom_or_null(&self) -> *mut nsAtom {
-        match *self {
-            NamespaceConstraint::Any => ptr::null_mut(),
-            NamespaceConstraint::Specific(ref ns) => ns.0.as_ptr(),
-        }
+    fn add_element_unique_hashes(&self, filter: &mut BloomFilter) -> bool {
+        each_relevant_element_hash(*self, |hash| filter.insert_hash(hash & BLOOM_HASH_MASK));
+        true
     }
 }

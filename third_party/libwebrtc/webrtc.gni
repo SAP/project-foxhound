@@ -64,6 +64,10 @@ declare_args() {
   # This is useful for example to be able to get RTC_DLOGs on a release build.
   rtc_dlog_always_on = false
 
+  # Enables additional build targets that rely on
+  # //third_party/google_benchmarks.
+  rtc_enable_google_benchmarks = true
+
   # Setting this to true will make RTC_OBJC_EXPORT expand to code that will
   # manage symbols visibility. By default, Obj-C/Obj-C++ symbols are exported
   # if C++ symbols are but setting this arg to true while keeping
@@ -128,7 +132,7 @@ declare_args() {
 
   # Selects whether debug dumps for the audio processing module
   # should be generated.
-  apm_debug_dump = false
+  apm_debug_dump = build_with_mozilla
 
   # Selects whether the audio processing module should be excluded.
   rtc_exclude_audio_processing_module = false
@@ -217,12 +221,6 @@ declare_args() {
   # WebRTC.framework)
   rtc_include_builtin_audio_codecs = true
 
-  # When set to false, builtin video encoder/decoder factories and all the
-  # video codecs they depends on will not be included in libwebrtc.{a|lib}
-  # (they will still be included in libjingle_peerconnection_so.so and
-  # WebRTC.framework)
-  rtc_include_builtin_video_codecs = !build_with_mozilla # See Bug 1820869.
-
   # When set to true and in a standalone build, it will undefine UNICODE and
   # _UNICODE (which are always defined globally by the Chromium Windows
   # toolchain).
@@ -239,10 +237,16 @@ declare_args() {
   # Includes the dav1d decoder in the internal decoder factory when set to true.
   rtc_include_dav1d_in_internal_decoder_factory = true
 
-  # When set to true, a run-time check will make sure that all field trial keys
-  # have been registered in accordance with the field trial policy. The check
-  # will only run with builds that have RTC_DCHECKs enabled.
-  rtc_strict_field_trials = false
+  # When enabled, a run-time check will make sure that all field trial keys have
+  # been registered in accordance with the field trial policy, see
+  # g3doc/field-trials.md. The value can be set to the following:
+  #
+  #  "dcheck": RTC_DCHECKs that the field trial has been registered. RTC_DCHECK
+  #            must be enabled separately.
+  #
+  #  "warn": RTC_LOGs a message with LS_WARNING severity if the field trial
+  #          hasn't been registered.
+  rtc_strict_field_trials = ""
 }
 
 if (!build_with_mozilla) {
@@ -286,7 +290,7 @@ declare_args() {
 
   # Set this to true to enable the avx2 support in webrtc.
   # TODO: Make sure that AVX2 works also for non-clang compilers.
-  if (is_clang == true) {
+  if (is_clang == true && (target_cpu == "x86" || target_cpu == "x64")) {
     rtc_enable_avx2 = true
   } else {
     rtc_enable_avx2 = false

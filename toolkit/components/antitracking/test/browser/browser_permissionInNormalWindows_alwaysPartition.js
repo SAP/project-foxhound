@@ -12,10 +12,6 @@ AntiTracking.runTest(
       let chromeScript = SpecialPowers.loadChromeScript(_ => {
         /* eslint-env mozilla/chrome-script */
         addMessageListener("go", _ => {
-          const { Services } = ChromeUtils.import(
-            "resource://gre/modules/Services.jsm"
-          );
-
           function ok(what, msg) {
             sendAsyncMessage("ok", { what: !!what, msg });
           }
@@ -33,7 +29,10 @@ AntiTracking.runTest(
 
           for (let perm of Services.perms.getAllForPrincipal(principal)) {
             // Ignore permissions other than storage access
-            if (!perm.type.startsWith("3rdPartyStorage^")) {
+            if (
+              !perm.type.startsWith("3rdPartyStorage^") &&
+              !perm.type.startsWith("3rdPartyFrameStorage^")
+            ) {
               continue;
             }
             is(
@@ -73,7 +72,10 @@ AntiTracking.runTest(
 
         for (let perm of Services.perms.getAllForPrincipal(principal)) {
           // Ignore permissions other than storage access
-          if (!perm.type.startsWith("3rdPartyStorage^")) {
+          if (
+            !perm.type.startsWith("3rdPartyStorage^") &&
+            !perm.type.startsWith("3rdPartyFrameStorage^")
+          ) {
             continue;
           }
           is(

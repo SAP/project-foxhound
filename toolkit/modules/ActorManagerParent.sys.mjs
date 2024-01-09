@@ -105,7 +105,7 @@ let JSWINDOWACTORS = {
       },
     },
     matches: ["about:translations"],
-
+    remoteTypes: ["privilegedabout"],
     enablePreference: "browser.translations.enable",
   },
 
@@ -489,12 +489,18 @@ let JSWINDOWACTORS = {
     child: {
       esModuleURI: "resource://gre/actors/TranslationsChild.sys.mjs",
       events: {
-        pageshow: {},
-        DOMHeadElementParsed: {},
-        DOMDocElementInserted: {},
         DOMContentLoaded: {},
       },
     },
+    matches: [
+      "http://*/*",
+      "https://*/*",
+      "file:///*",
+
+      // The actor is explicitly loaded by this page,
+      // so it needs to be allowed for it.
+      "about:translations",
+    ],
     enablePreference: "browser.translations.enable",
   },
 

@@ -10,9 +10,12 @@ header = """/* This Source Code Form is subject to the terms of the Mozilla Publ
 // Work-around silly windows.h define.
 #pragma push_macro("STRICT")
 #undef STRICT
+#pragma push_macro("TRANSPARENT")
+#undef TRANSPARENT
 """
 trailer = """
 #pragma pop_macro("STRICT")
+#pragma pop_macro("TRANSPARENT")
 #pragma GCC diagnostic pop
 #include "mozilla/ServoStyleConstsInlines.h"
 """
@@ -54,6 +57,8 @@ derive_neq = true
 # These depend on the build.
 "target_pointer_width = 32" = "SERVO_32_BITS"
 "target_pointer_width = 64" = "HAVE_64BIT_BUILD"
+"unix" = "XP_UNIX"
+"windows" = "XP_WIN"
 
 [macro_expansion]
 bitflags = true
@@ -94,6 +99,7 @@ include = [
   "ComputedTimingFunction",
   "ComputedValueFlags",
   "CursorKind",
+  "Display",
   "DisplayOutside",
   "DisplayInside",
   "DisplayMode",
@@ -111,10 +117,13 @@ include = [
   "GenericFontFamily",
   "FontFamily",
   "FontFamilyNameSyntax",
+  "MozTheme",
   "OverflowWrap",
   "OffsetPath",
+  "OffsetPathFunction",
   "OffsetPosition",
   "OffsetRotate",
+  "RayFunction",
   "UnicodeRange",
   "UserSelect",
   "Float",
@@ -159,6 +168,7 @@ include = [
   "NonNegativeLengthOrNumberRect",
   "Perspective",
   "ZIndex",
+  "TransformBox",
   "TransformOrigin",
   "LineBreak",
   "LineClamp",
@@ -195,6 +205,7 @@ include = [
   "GradientItem",
   "VerticalAlign",
   "BasicShape",
+  "InsetRect",
   "ShapeRadius",
   "ArcSlice",
   "ForgottenArcSlicePtr",
@@ -298,7 +309,6 @@ renaming_overrides_prefixing = true
 "AnimationPropertySegment" = "AnimationPropertySegment"
 "RawServoAnimationValueTable" = "RawServoAnimationValueTable"
 "nsCSSUnit" = "nsCSSUnit"
-"ParsingMode" = "ParsingMode"
 "InheritTarget" = "InheritTarget"
 "PseudoStyleType" = "PseudoStyleType"
 "DeclarationBlockMutationClosure" = "DeclarationBlockMutationClosure"
@@ -312,6 +322,7 @@ renaming_overrides_prefixing = true
 "nsresult" = "nsresult"
 "gfxFontFeature" = "gfxFontFeature"
 "gfxFontFeatureValueSet" = "gfxFontFeatureValueSet"
+"GeckoFontMetrics" = "GeckoFontMetrics"
 "SeenPtrs" = "SeenPtrs"
 "gfxFontVariation" = "gfxFontVariation"
 "URLExtraData" = "URLExtraData"
@@ -327,6 +338,8 @@ renaming_overrides_prefixing = true
 "FontPaletteValueSet" = "gfx::FontPaletteValueSet"
 "PaletteValues" = "gfx::FontPaletteValueSet::PaletteValues"
 "ThinVec" = "nsTArray"
+"RawPthread" = "pthread_t"
+"RawHandle" = "void*"
 
 [export.body]
 "CSSPixelLength" = """
@@ -340,19 +353,14 @@ renaming_overrides_prefixing = true
   inline StyleCSSPixelLength ScaledBy(float) const;
 """
 
+"CalcLengthPercentage" = """
+  inline CSSCoord ResolveToCSSPixels(CSSCoord aBasis) const;
+
+  using CoordRounder = nscoord(*)(float);
+  nscoord Resolve(nscoord aBasis, CoordRounder) const;
+"""
+
 "GenericCalcNode" = """
- private:
-
-  template <typename ResultT, typename PercentageConverter>
-  ResultT ResolveInternal(ResultT aPercentageBasis,
-                          PercentageConverter aPercentageConverter) const;
-
- public:
-  CSSCoord ResolveToCSSPixels(CSSCoord aPercentageBasis) const;
-
-  using CoordPercentageRounder = nscoord(*)(float);
-  nscoord Resolve(nscoord aBasis, CoordPercentageRounder) const;
-
   void ScaleLengthsBy(float);
 """
 
@@ -411,9 +419,9 @@ renaming_overrides_prefixing = true
   inline CSSCoord ResolveToCSSPixels(CSSCoord aPercentageBasisInCSSPixels) const;
   template<typename T> inline CSSCoord ResolveToCSSPixelsWith(T aPercentageGetter) const;
   template<typename T, typename U>
-  inline nscoord Resolve(T aPercentageGetter, U aPercentRoundingFunction) const;
+  inline nscoord Resolve(T aPercentageGetter, U aRoundingFunction) const;
   template<typename T>
-  inline nscoord Resolve(nscoord aPercentageBasis, T aPercentRoundingFunction) const;
+  inline nscoord Resolve(nscoord aPercentageBasis, T aRoundingFunction) const;
   template<typename T> inline nscoord Resolve(T aPercentageGetter) const;
   inline nscoord Resolve(nscoord aPercentageBasis) const;
 """
@@ -487,6 +495,10 @@ renaming_overrides_prefixing = true
   inline T& GetBStart(WritingMode);
   inline T& GetIEnd(WritingMode);
   inline T& GetBEnd(WritingMode);
+
+  static StyleRect WithAllSides(const T& aSide) {
+    return {aSide, aSide, aSide, aSide};
+  }
 """
 
 "GenericBorderRadius" = """
@@ -543,9 +555,11 @@ renaming_overrides_prefixing = true
 
 "GenericColor" = """
   static inline StyleGenericColor FromColor(nscolor);
+
+  static inline StyleGenericColor Transparent();
   static inline StyleGenericColor Black();
   static inline StyleGenericColor White();
-  static inline StyleGenericColor Transparent();
+
   bool MaybeTransparent() const;
 
   /**
@@ -572,13 +586,9 @@ renaming_overrides_prefixing = true
 
 "AbsoluteColor" = """
   /**
-   * Create a new AbsoluteColor in the sRGB color space.
+   * Create a new AbsoluteColor in the sRGB color space in legacy color syntax.
    */
-  static inline StyleAbsoluteColor Srgb(float red, float green, float blue, float alpha);
-
-  static inline StyleAbsoluteColor Transparent();
-  static inline StyleAbsoluteColor Black();
-  static inline StyleAbsoluteColor White();
+  static inline StyleAbsoluteColor SrgbLegacy(float red, float green, float blue, float alpha);
 
   static inline StyleAbsoluteColor FromColor(nscolor);
 
@@ -638,23 +648,25 @@ renaming_overrides_prefixing = true
   [[nodiscard]] inline bool DecrementRef();
 """
 
+"HeaderSlice" = """
+  StyleHeaderSlice() = delete;
+  StyleHeaderSlice(const StyleHeaderSlice&) = delete;
+
+  inline ~StyleHeaderSlice();
+  inline bool operator==(const StyleHeaderSlice& other) const;
+  inline bool operator!=(const StyleHeaderSlice& other) const;
+
+  inline Span<const T> AsSpan() const;
+  inline size_t Length() const { return len; }
+  inline bool IsEmpty() const { return len == 0; }
+"""
+
 "ArcSlice" = """
   inline StyleArcSlice();
-  inline StyleArcSlice(const StyleArcSlice& aOther);
-
-  inline StyleArcSlice& operator=(const StyleArcSlice&);
-  inline StyleArcSlice& operator=(StyleArcSlice&&);
-
   inline explicit StyleArcSlice(const StyleForgottenArcSlicePtr<T>& aPtr);
- private:
-  inline void Release();
- public:
-  inline ~StyleArcSlice();
   inline Span<const T> AsSpan() const;
   inline size_t Length() const;
   inline bool IsEmpty() const;
-  inline bool operator==(const StyleArcSlice& other) const;
-  inline bool operator!=(const StyleArcSlice& other) const;
 """
 
 "Arc" = """
@@ -663,6 +675,9 @@ renaming_overrides_prefixing = true
  private:
   inline void Release();
  public:
+  explicit StyleArc(decltype(p) aP) : p(aP) {
+    MOZ_DIAGNOSTIC_ASSERT(p, "Arc shouldn't be null");
+  }
   inline ~StyleArc();
 
   inline StyleArc& operator=(const StyleArc&);
@@ -972,4 +987,57 @@ renaming_overrides_prefixing = true
   inline static StyleFontPalette Normal() {
     return StyleFontPalette{StyleAtom(nsGkAtoms::normal->ToAddRefed())};
   }
+"""
+
+"GenericOffsetPath" = """
+  // Return true if the <offset-path> is ray().
+  bool IsRay() const {
+    return IsOffsetPath() && AsOffsetPath().path->IsRay();
+  }
+
+  const StyleRayFunction& AsRay() const {
+    return AsOffsetPath().path->AsRay();
+  }
+
+  // Return true if the <offset-path> is url().
+  bool IsUrl() const {
+    return IsOffsetPath() && AsOffsetPath().path->IsUrl();
+  }
+
+  const StyleComputedUrl& AsUrl() const {
+    return AsOffsetPath().path->AsUrl();
+  }
+
+  // Return true if the <basic-shape> is path().
+  bool IsPath() const {
+    return IsOffsetPath() && AsOffsetPath().path->IsShape() &&
+           AsOffsetPath().path->AsShape().IsPath();
+  }
+
+  const StyleSVGPathData& AsSVGPathData() const {
+    return AsOffsetPath().path->AsShape().AsPath().path;
+  }
+
+  // Return true if this is "<basic-shape> || <coord-box>".
+  bool IsBasicShapeOrCoordBox() const {
+    return IsCoordBox() || (IsOffsetPath() && AsOffsetPath().path->IsShape());
+  }
+"""
+
+"GenericContainIntrinsicSize" = """
+  bool HasAuto() const { return IsAutoLength() || IsAutoNone(); }
+"""
+
+"Display" = """
+  inline StyleDisplayOutside Outside() const;
+  inline StyleDisplayInside Inside() const;
+  inline bool IsListItem() const;
+  inline bool IsInlineFlow() const;
+  inline bool IsInlineInside() const;
+  inline bool IsInlineOutside() const;
+  inline bool IsBlockOutside() const;
+  inline bool IsRuby() const;
+  inline bool IsInternalRuby() const;
+  inline bool IsInternalTable() const;
+  inline bool IsInternalTableExceptCell() const;
 """

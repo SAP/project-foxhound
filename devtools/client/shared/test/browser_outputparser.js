@@ -11,6 +11,7 @@ add_task(async function () {
   await pushPref("layout.css.backdrop-filter.enabled", true);
   await pushPref("layout.css.individual-transform.enabled", true);
   await pushPref("layout.css.color-mix.enabled", true);
+  await pushPref("layout.css.motion-path-basic-shapes.enabled", true);
   await addTab("about:blank");
   await performTest();
   gBrowser.removeCurrentTab();
@@ -526,11 +527,17 @@ function testParseShape(doc, parser) {
       definition: "inset()",
       spanCount: 0,
     },
+    {
+      desc: "offset-path property with inset shape value",
+      property: "offset-path",
+      definition: "inset(200px)",
+      spanCount: 1,
+    },
   ];
 
-  for (const { desc, definition, spanCount } of tests) {
+  for (const { desc, definition, property = "clip-path", spanCount } of tests) {
     info(desc);
-    const frag = parser.parseCssProperty("clip-path", definition, {
+    const frag = parser.parseCssProperty(property, definition, {
       shapeClass: "ruleview-shape",
     });
     const spans = frag.querySelectorAll(".ruleview-shape-point");
@@ -614,6 +621,38 @@ function testParseVariable(doc, parser) {
       parserExtraOptions: {
         colorSwatchClass: COLOR_TEST_CLASS,
       },
+    },
+    {
+      text: "1px solid var(--seen, seagreen)",
+      variables: { "--seen": "chartreuse" },
+      expected:
+        // prettier-ignore
+        '1px solid ' +
+        '<span data-color="chartreuse">' +
+          "<span>var(" +
+            '<span data-variable="--seen = chartreuse">--seen</span>,' +
+            '<span class="unmatched-class"> ' +
+              '<span data-color="seagreen">' +
+                "<span>seagreen</span>" +
+              "</span>" +
+            "</span>)" +
+          "</span>" +
+        "</span>",
+    },
+    {
+      text: "1px solid var(--not-seen, seagreen)",
+      variables: {},
+      expected:
+        // prettier-ignore
+        `1px solid ` +
+        `<span>var(` +
+          `<span class="unmatched-class" data-variable="--not-seen is not set">--not-seen</span>,` +
+          `<span> ` +
+            `<span data-color="seagreen">` +
+              `<span>seagreen</span>` +
+            `</span>` +
+          `</span>)` +
+        `</span>`,
     },
   ];
 
@@ -768,4 +807,33 @@ function testParseFontFamily(doc, parser) {
     const frag = parser.parseCssProperty("font-family", definition, {});
     is(frag.textContent, output, desc + " text content matches");
   }
+
+  info("Test font-family with custom properties");
+  const frag = parser.parseCssProperty(
+    "font-family",
+    "var(--family, Georgia, serif)",
+    {
+      getVariableValue: () => {},
+      unmatchedVariableClass: "unmatched-class",
+      fontFamilyClass: "ruleview-font-family",
+    }
+  );
+  const target = doc.createElement("div");
+  target.appendChild(frag);
+  is(
+    target.innerHTML,
+    // prettier-ignore
+    `<span>var(` +
+      `<span class="unmatched-class" data-variable="--family is not set">` +
+        `--family` +
+      `</span>` +
+      `,` +
+      `<span> ` +
+        `<span class="ruleview-font-family">Georgia</span>` +
+        `, ` +
+        `<span class="ruleview-font-family">serif</span>` +
+      `</span>)` +
+    `</span>`,
+    "Got expected output for font-family with custom properties"
+  );
 }

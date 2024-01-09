@@ -38,7 +38,8 @@ interface HTMLInputElement : HTMLElement {
            attribute boolean defaultChecked;
   [Pure]
            attribute boolean checked;
-           // Bug 850337 - attribute DOMString dirName;
+  [CEReactions, Pure, SetterThrows]
+           attribute DOMString dirName;
   [CEReactions, Pure, SetterThrows]
            attribute boolean disabled;
   readonly attribute HTMLFormElement? form;
@@ -132,7 +133,7 @@ interface HTMLInputElement : HTMLElement {
   [Throws]
   undefined setSelectionRange(unsigned long start, unsigned long end, optional DOMString direction);
 
-  [Throws, Pref="dom.input.showPicker"]
+  [Throws]
   undefined showPicker();
 
   // also has obsolete members

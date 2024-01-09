@@ -231,7 +231,7 @@ class MockPeerConnectionInternal : public PeerConnectionInternal {
   MOCK_METHOD(cricket::PortAllocator*, port_allocator, (), (override));
   MOCK_METHOD(LegacyStatsCollector*, legacy_stats, (), (override));
   MOCK_METHOD(PeerConnectionObserver*, Observer, (), (const, override));
-  MOCK_METHOD(bool, GetSctpSslRole, (rtc::SSLRole*), (override));
+  MOCK_METHOD(absl::optional<rtc::SSLRole>, GetSctpSslRole_n, (), (override));
   MOCK_METHOD(PeerConnectionInterface::IceConnectionState,
               ice_connection_state_internal,
               (),
@@ -263,13 +263,16 @@ class MockPeerConnectionInternal : public PeerConnectionInternal {
               (override));
   MOCK_METHOD(Call*, call_ptr, (), (override));
   MOCK_METHOD(bool, SrtpRequired, (), (const, override));
-  MOCK_METHOD(bool,
+  MOCK_METHOD(absl::optional<std::string>,
               SetupDataChannelTransport_n,
-              (const std::string&),
+              (absl::string_view mid),
               (override));
-  MOCK_METHOD(void, TeardownDataChannelTransport_n, (), (override));
-  MOCK_METHOD(void, SetSctpDataMid, (const std::string&), (override));
-  MOCK_METHOD(void, ResetSctpDataMid, (), (override));
+  MOCK_METHOD(void, TeardownDataChannelTransport_n, (RTCError), (override));
+  MOCK_METHOD(void,
+              SetSctpDataInfo,
+              (absl::string_view, absl::string_view),
+              (override));
+  MOCK_METHOD(void, ResetSctpDataInfo, (), (override));
   MOCK_METHOD(const FieldTrialsView&, trials, (), (const, override));
 
   // PeerConnectionInternal
@@ -282,10 +285,6 @@ class MockPeerConnectionInternal : public PeerConnectionInternal {
       GetTransceiversInternal,
       (),
       (const, override));
-  MOCK_METHOD(sigslot::signal1<SctpDataChannel*>&,
-              SignalSctpDataChannelCreated,
-              (),
-              (override));
   MOCK_METHOD(std::vector<DataChannelStats>,
               GetDataChannelStats,
               (),
@@ -322,8 +321,8 @@ class MockPeerConnectionInternal : public PeerConnectionInternal {
               (override));
   MOCK_METHOD(void, NoteDataAddedEvent, (), (override));
   MOCK_METHOD(void,
-              OnSctpDataChannelClosed,
-              (DataChannelInterface*),
+              OnSctpDataChannelStateChanged,
+              (int channel_id, DataChannelInterface::DataState),
               (override));
 };
 

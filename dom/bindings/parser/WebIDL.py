@@ -1020,8 +1020,8 @@ class IDLInterfaceOrNamespace(IDLInterfaceOrInterfaceMixinOrNamespace):
         self.parent = None
         self._callback = False
         self.maplikeOrSetlikeOrIterable = None
-        # namedConstructors needs deterministic ordering because bindings code
-        # outputs the constructs in the order that namedConstructors enumerates
+        # legacyFactoryFunctions needs deterministic ordering because bindings code
+        # outputs the constructs in the order that legacyFactoryFunctions enumerates
         # them.
         self.legacyFactoryFunctions = list()
         self.legacyWindowAliases = []
@@ -1967,7 +1967,7 @@ class IDLInterface(IDLInterfaceOrNamespace):
                 method = IDLConstructor(attr.location, args, attr.value())
                 method.reallyInit(self)
 
-                # Named constructors are always assumed to be able to
+                # Legacy factory functions are always assumed to be able to
                 # throw (since there's no way to indicate otherwise).
                 method.addExtendedAttributes(
                     [IDLExtendedAttribute(self.location, ("Throws",))]
@@ -5725,6 +5725,7 @@ class IDLAttribute(IDLInterfaceMember):
             or identifier == "ReturnValueNeedsContainsHack"
             or identifier == "BinaryName"
             or identifier == "NonEnumerable"
+            or identifier == "BindingTemplate"
         ):
             # Known attributes that we don't need to do anything with here
             pass
@@ -5734,6 +5735,9 @@ class IDLAttribute(IDLInterfaceMember):
                 [attr.location],
             )
         IDLInterfaceMember.handleExtendedAttribute(self, attr)
+
+    def getExtendedAttributes(self):
+        return self._extendedAttrDict
 
     def resolve(self, parentScope):
         assert isinstance(parentScope, IDLScope)

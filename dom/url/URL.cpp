@@ -11,6 +11,7 @@
 #include "URLMainThread.h"
 #include "URLWorker.h"
 
+#include "nsASCIIMask.h"
 #include "MainThreadUtils.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/dom/URLBinding.h"
@@ -231,7 +232,8 @@ void URL::SetHref(const nsAString& aHref, ErrorResult& aRv) {
 }
 
 void URL::GetOrigin(nsAString& aOrigin) const {
-  nsresult rv = nsContentUtils::GetUTFOrigin(URI(), aOrigin);
+  nsresult rv =
+      nsContentUtils::GetWebExposedOriginSerialization(URI(), aOrigin);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     aOrigin.Truncate();
   }
@@ -349,7 +351,13 @@ void URL::SetPort(const nsAString& aPort) {
   int32_t port = -1;
 
   // nsIURI uses -1 as default value.
+  portStr.StripTaggedASCII(ASCIIMask::MaskCRLFTab());
   if (!portStr.IsEmpty()) {
+    // To be valid, the port must start with an ASCII digit.
+    // (nsAString::ToInteger ignores leading junk, so check before calling.)
+    if (!IsAsciiDigit(portStr[0])) {
+      return;
+    }
     port = portStr.ToInteger(&rv);
     if (NS_FAILED(rv)) {
       return;

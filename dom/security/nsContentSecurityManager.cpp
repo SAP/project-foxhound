@@ -576,6 +576,11 @@ static nsresult DoContentSecurityChecks(nsIChannel* aChannel,
       break;
     }
 
+    case ExtContentPolicy::TYPE_WEB_TRANSPORT: {
+      mimeTypeGuess.Truncate();
+      break;
+    }
+
     case ExtContentPolicy::TYPE_INVALID:
       MOZ_ASSERT(false,
                  "can not perform security check without a valid contentType");
@@ -1758,7 +1763,7 @@ void nsContentSecurityManager::GetSerializedOrigin(
   // have a redirect-tainted origin, so we return the origin of the request
   // here.
   if (!lastOrigin) {
-    aOrigin->GetAsciiOrigin(aSerializedOrigin);
+    aOrigin->GetWebExposedOriginSerialization(aSerializedOrigin);
     return;
   }
 
@@ -1768,7 +1773,7 @@ void nsContentSecurityManager::GetSerializedOrigin(
     return;
   }
 
-  aOrigin->GetAsciiOrigin(aSerializedOrigin);
+  aOrigin->GetWebExposedOriginSerialization(aSerializedOrigin);
 }
 
 // https://html.spec.whatwg.org/multipage/browsers.html#compatible-with-cross-origin-isolation

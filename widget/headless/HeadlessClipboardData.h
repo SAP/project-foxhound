@@ -13,19 +13,21 @@ namespace widget {
 
 class HeadlessClipboardData final {
  public:
-  explicit HeadlessClipboardData() = default;
+  HeadlessClipboardData() : mPlain(VoidString()) {}
   ~HeadlessClipboardData() = default;
 
   // For text/plain
   void SetText(const nsAString& aText);
   bool HasText() const;
   const nsAString& GetText() const;
+  int32_t GetChangeCount() const;
 
   // For other APIs
   void Clear();
 
  private:
   nsAutoString mPlain;
+  int32_t mChangeCount = 0;
 };
 
 }  // namespace widget

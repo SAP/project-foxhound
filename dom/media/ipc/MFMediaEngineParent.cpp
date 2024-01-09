@@ -99,8 +99,14 @@ void MFMediaEngineParent::DestroyEngineIfExists(
     mMediaSource->ShutdownTaskQueue();
     mMediaSource = nullptr;
   }
+#ifdef MOZ_WMF_CDM
+  if (mContentProtectionManager) {
+    mContentProtectionManager->Shutdown();
+    mContentProtectionManager = nullptr;
+  }
+#endif
   if (mMediaEngine) {
-    mMediaEngine->Shutdown();
+    LOG_IF_FAILED(mMediaEngine->Shutdown());
     mMediaEngine = nullptr;
   }
   mMediaEngineEventListener.DisconnectIfExists();
@@ -108,9 +114,6 @@ void MFMediaEngineParent::DestroyEngineIfExists(
   if (mDXGIDeviceManager) {
     mDXGIDeviceManager = nullptr;
     wmf::MFUnlockDXGIDeviceManager();
-  }
-  if (mVirtualVideoWindow) {
-    DestroyWindow(mVirtualVideoWindow);
   }
   if (aError) {
     Unused << SendNotifyError(*aError);
@@ -130,7 +133,6 @@ void MFMediaEngineParent::CreateMediaEngine() {
   }
 
   InitializeDXGIDeviceManager();
-  InitializeVirtualVideoWindow();
 
   // Create an attribute and set mandatory information that are required for
   // a media engine creation.
@@ -155,19 +157,12 @@ void MFMediaEngineParent::CreateMediaEngine() {
     RETURN_VOID_IF_FAILED(creationAttributes->SetUnknown(
         MF_MEDIA_ENGINE_DXGI_MANAGER, mDXGIDeviceManager.Get()));
   }
-  if (mVirtualVideoWindow) {
-    RETURN_VOID_IF_FAILED(creationAttributes->SetUINT64(
-        MF_MEDIA_ENGINE_OPM_HWND,
-        reinterpret_cast<uint64_t>(mVirtualVideoWindow)));
-  }
 
   ComPtr<IMFMediaEngineClassFactory> factory;
   RETURN_VOID_IF_FAILED(CoCreateInstance(CLSID_MFMediaEngineClassFactory,
                                          nullptr, CLSCTX_INPROC_SERVER,
                                          IID_PPV_ARGS(&factory)));
-  const bool isLowLatency =
-      StaticPrefs::media_wmf_low_latency_enabled() &&
-      !StaticPrefs::media_wmf_low_latency_force_disabled();
+  const bool isLowLatency = StaticPrefs::media_wmf_low_latency_enabled();
   static const DWORD MF_MEDIA_ENGINE_DEFAULT = 0;
   RETURN_VOID_IF_FAILED(factory->CreateInstance(
       isLowLatency ? MF_MEDIA_ENGINE_REAL_TIME_MODE : MF_MEDIA_ENGINE_DEFAULT,
@@ -202,34 +197,6 @@ void MFMediaEngineParent::InitializeDXGIDeviceManager() {
   errorExit.release();
 }
 
-void MFMediaEngineParent::InitializeVirtualVideoWindow() {
-  static ATOM sVideoWindowClass = 0;
-  if (!sVideoWindowClass) {
-    WNDCLASS wnd{};
-    wnd.lpszClassName = L"MFMediaEngine";
-    wnd.hInstance = nullptr;
-    wnd.lpfnWndProc = DefWindowProc;
-    sVideoWindowClass = RegisterClass(&wnd);
-  }
-  if (!sVideoWindowClass) {
-    HRESULT hr = HRESULT_FROM_WIN32(GetLastError());
-    LOG("Failed to register video window class: %lX", hr);
-    return;
-  }
-  mVirtualVideoWindow =
-      CreateWindowEx(WS_EX_NOPARENTNOTIFY | WS_EX_LAYERED | WS_EX_TRANSPARENT |
-                         WS_EX_NOREDIRECTIONBITMAP,
-                     reinterpret_cast<wchar_t*>(sVideoWindowClass), L"",
-                     WS_POPUP | WS_DISABLED | WS_CLIPSIBLINGS, 0, 0, 1, 1,
-                     nullptr, nullptr, nullptr, nullptr);
-  if (!mVirtualVideoWindow) {
-    HRESULT hr = HRESULT_FROM_WIN32(GetLastError());
-    LOG("Failed to create virtual window: %lX", hr);
-    return;
-  }
-  LOG("Initialized virtual window");
-}
-
 #ifndef ENSURE_EVENT_DISPATCH_DURING_PLAYING
 #  define ENSURE_EVENT_DISPATCH_DURING_PLAYING(event)        \
     do {                                                     \
@@ -243,6 +210,7 @@ void MFMediaEngineParent::InitializeVirtualVideoWindow() {
 void MFMediaEngineParent::HandleMediaEngineEvent(
     MFMediaEngineEventWrapper aEvent) {
   AssertOnManagerThread();
+  LOG("Received media engine event %s", MediaEngineEventToStr(aEvent.mEvent));
   ENGINE_MARKER_TEXT(
       "MFMediaEngineParent::HandleMediaEngineEvent",
       nsPrintfCString("%s", MediaEngineEventToStr(aEvent.mEvent)));
@@ -400,6 +368,15 @@ mozilla::ipc::IPCResult MFMediaEngineParent::RecvNotifyMediaInfo(
                                                                     : "no",
       isEncryted);
   LOG("%s", message.get());
+
+  if (aInfo.videoInfo()) {
+    ComPtr<IMFMediaEngineEx> mediaEngineEx;
+    RETURN_PARAM_IF_FAILED(mMediaEngine.As(&mediaEngineEx), IPC_OK());
+    RETURN_PARAM_IF_FAILED(mediaEngineEx->EnableWindowlessSwapchainMode(true),
+                           IPC_OK());
+    LOG("Enabled dcomp swap chain mode");
+    ENGINE_MARKER("MFMediaEngineParent,EnabledSwapChain");
+  }
 
   mRequestSampleListener = mMediaSource->RequestSampleEvent().Connect(
       mManagerThread, this, &MFMediaEngineParent::HandleRequestSample);
@@ -619,23 +596,17 @@ void MFMediaEngineParent::EnsureDcompSurfaceHandle() {
     // Update stream size before asking for a handle. If we don't update the
     // size, media engine will create the dcomp surface in a wrong size. If
     // the size isn't changed, then we don't need to recreate the surface.
-    mDisplayWidth = width;
-    mDisplayHeight = height;
-    RECT rect = {0, 0, (LONG)mDisplayWidth, (LONG)mDisplayHeight};
+    LOG("Update video size [%lux%lu] -> [%lux%lu] ", mDisplayWidth,
+        mDisplayHeight, width, height);
+    ENGINE_MARKER_TEXT("MFMediaEngineParent,UpdateVideoSize",
+                       nsPrintfCString("%lux%lu", width, height));
+    RECT rect = {0, 0, (LONG)width, (LONG)height};
     RETURN_VOID_IF_FAILED(mediaEngineEx->UpdateVideoStream(
         nullptr /* pSrc */, &rect, nullptr /* pBorderClr */));
-    LOG("Updated video size for engine=[%lux%lu]", mDisplayWidth,
+    mDisplayWidth = width;
+    mDisplayHeight = height;
+    LOG("Updated video size [%lux%lu] correctly", mDisplayWidth,
         mDisplayHeight);
-    ENGINE_MARKER_TEXT(
-        "MFMediaEngineParent,UpdateVideoSize",
-        nsPrintfCString("%lux%lu", mDisplayWidth, mDisplayHeight));
-  }
-
-  if (!mIsEnableDcompMode) {
-    RETURN_VOID_IF_FAILED(mediaEngineEx->EnableWindowlessSwapchainMode(true));
-    LOG("Enabled dcomp swap chain mode");
-    mIsEnableDcompMode = true;
-    ENGINE_MARKER("MFMediaEngineParent,EnabledSwapChain");
   }
 
   HANDLE surfaceHandle = INVALID_HANDLE_VALUE;

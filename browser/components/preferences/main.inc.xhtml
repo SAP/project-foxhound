@@ -355,25 +355,7 @@
             data-l10n-args='{"localeName": "und"}'
             preference="intl.regional_prefs.use_os_locales"/>
 
-  <!-- TODO (Bug 1817084) This older implementation will be removed soon -->
-  <hbox id="translationBox" hidden="true">
-    <hbox align="center" flex="1">
-      <checkbox id="translate" preference="browser.translation.detectLanguage"
-                data-l10n-id="translate-web-pages"/>
-      <hbox id="bingAttribution" hidden="true" align="center">
-        <label data-l10n-id="translate-attribution">
-          <html:img id="translationAttributionImage" aria-label="Microsoft Translator"
-            src="chrome://browser/content/microsoft-translator-attribution.png"
-            data-l10n-name="logo"/>
-        </label>
-      </hbox>
-    </hbox>
-    <button id="translateButton"
-            is="highlightable-button"
-            class="accessory-button"
-            data-l10n-id="translate-exceptions"/>
-  </hbox>
-
+  <!-- This Firefox Translations UI manages the prefs for the addon only. -->
   <hbox id="fxtranslationsBox" hidden="true" data-subcategory="fxtranslations">
     <description flex="1" control="fxtranslateButton" data-l10n-id="fx-translate-web-pages"/>
     <button id="fxtranslateButton"
@@ -390,20 +372,20 @@
   <vbox id="translationsGroup" hidden="true" data-subcategory="translations">
     <label><html:h2 data-l10n-id="translations-manage-header"/></label>
     <hbox id="translations-manage-description" align="center">
-      <description flex="1" data-l10n-id="translations-manage-description"/>
-        <button id="translations-manage-settings-button"
-                is="highlightable-button"
-                class="accessory-button"
-                data-l10n-id="translations-manage-settings-button"/>
+      <description flex="1" data-l10n-id="translations-manage-intro"/>
+      <button id="translations-manage-settings-button"
+              is="highlightable-button"
+              class="accessory-button"
+              data-l10n-id="translations-manage-settings-button"/>
     </hbox>
     <vbox>
       <html:div id="translations-manage-install-list" hidden="true">
         <hbox class="translations-manage-language">
-          <label data-l10n-id="translations-manage-all-language"></label>
+          <label data-l10n-id="translations-manage-install-description"></label>
           <button id="translations-manage-install-all"
-                  data-l10n-id="translations-manage-download-button"></button>
+                  data-l10n-id="translations-manage-language-install-all-button"></button>
           <button id="translations-manage-delete-all"
-                  data-l10n-id="translations-manage-delete-button"></button>
+                  data-l10n-id="translations-manage-language-remove-all-button"></button>
         </hbox>
         <!-- The downloadable languages will be listed here. -->
       </html:div>
@@ -735,13 +717,17 @@
 #endif
 #ifdef XP_WIN
   <checkbox id="useOnScreenKeyboard"
-            hidden="true"
             data-l10n-id="browsing-use-onscreen-keyboard"
             preference="ui.osk.enabled"/>
 #endif
   <checkbox id="useCursorNavigation"
             data-l10n-id="browsing-use-cursor-navigation"
             preference="accessibility.browsewithcaret"/>
+#ifdef XP_MACOSX
+  <checkbox id="useFullKeyboardNavigation"
+            data-l10n-id="browsing-use-full-keyboard-navigation"
+            preference="accessibility.tabfocus" />
+#endif
   <checkbox id="searchStartTyping"
             data-l10n-id="browsing-search-on-start-typing"
             preference="accessibility.typeaheadfind"/>
@@ -829,7 +815,7 @@
               connection-proxy-https-sharing.label,
               connection-proxy-autotype.label,
               connection-proxy-reload.label,
-              connection-proxy-autologin.label,
+              connection-proxy-autologin-checkbox.label,
               connection-proxy-socks-remote-dns.label,
           " />
   </hbox>

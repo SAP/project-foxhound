@@ -4,7 +4,6 @@
 
 import { ExperimentStore } from "resource://nimbus/lib/ExperimentStore.sys.mjs";
 import { FileTestUtils } from "resource://testing-common/FileTestUtils.sys.mjs";
-import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 
 const lazy = {};
 
@@ -12,16 +11,13 @@ ChromeUtils.defineESModuleGetters(lazy, {
   ExperimentAPI: "resource://nimbus/ExperimentAPI.sys.mjs",
   FeatureManifest: "resource://nimbus/FeatureManifest.sys.mjs",
   JsonSchema: "resource://gre/modules/JsonSchema.sys.mjs",
+  NetUtil: "resource://gre/modules/NetUtil.sys.mjs",
   NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
   NormandyUtils: "resource://normandy/lib/NormandyUtils.sys.mjs",
   _ExperimentManager: "resource://nimbus/lib/ExperimentManager.sys.mjs",
   _RemoteSettingsExperimentLoader:
     "resource://nimbus/lib/RemoteSettingsExperimentLoader.sys.mjs",
   sinon: "resource://testing-common/Sinon.sys.mjs",
-});
-
-XPCOMUtils.defineLazyModuleGetters(lazy, {
-  NetUtil: "resource://gre/modules/NetUtil.jsm",
 });
 
 function fetchSchemaSync(uri) {
@@ -44,7 +40,7 @@ function fetchSchemaSync(uri) {
   return JSON.parse(json);
 }
 
-XPCOMUtils.defineLazyGetter(lazy, "enrollmentSchema", () => {
+ChromeUtils.defineLazyGetter(lazy, "enrollmentSchema", () => {
   return fetchSchemaSync(
     "resource://nimbus/schemas/NimbusEnrollment.schema.json"
   );
@@ -453,35 +449,8 @@ export const ExperimentFakes = {
       proposedEnrollment: 7,
       referenceBranch: "control",
       application: "firefox-desktop",
-      branches: [
-        {
-          slug: "control",
-          ratio: 1,
-          features: [
-            {
-              featureId: "testFeature",
-              value: { testInt: 123, enabled: true },
-            },
-          ],
-        },
-        {
-          slug: "treatment",
-          ratio: 1,
-          features: [
-            {
-              featureId: "testFeature",
-              value: { testInt: 123, enabled: true },
-            },
-          ],
-        },
-      ],
-      bucketConfig: {
-        namespace: "nimbus-test-utils",
-        randomizationUnit: "normandy_id",
-        start: 0,
-        count: 100,
-        total: 1000,
-      },
+      branches: ExperimentFakes.recipe.branches,
+      bucketConfig: ExperimentFakes.recipe.bucketConfig,
       userFacingName: "Nimbus recipe",
       userFacingDescription: "NimbusTestUtils recipe",
       featureIds: props?.branches?.[0].features?.map(f => f.featureId) || [
@@ -491,3 +460,42 @@ export const ExperimentFakes = {
     };
   },
 };
+
+Object.defineProperty(ExperimentFakes.recipe, "bucketConfig", {
+  get() {
+    return {
+      namespace: "nimbus-test-utils",
+      randomizationUnit: "normandy_id",
+      start: 0,
+      count: 100,
+      total: 1000,
+    };
+  },
+});
+
+Object.defineProperty(ExperimentFakes.recipe, "branches", {
+  get() {
+    return [
+      {
+        slug: "control",
+        ratio: 1,
+        features: [
+          {
+            featureId: "testFeature",
+            value: { testInt: 123, enabled: true },
+          },
+        ],
+      },
+      {
+        slug: "treatment",
+        ratio: 1,
+        features: [
+          {
+            featureId: "testFeature",
+            value: { testInt: 123, enabled: true },
+          },
+        ],
+      },
+    ];
+  },
+});

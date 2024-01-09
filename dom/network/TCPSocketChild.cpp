@@ -33,11 +33,8 @@ bool DeserializeArrayBuffer(JSContext* cx, const nsTArray<uint8_t>& aBuffer,
   memcpy(data.get(), aBuffer.Elements(), aBuffer.Length());
 
   JSObject* obj =
-      JS::NewArrayBufferWithContents(cx, aBuffer.Length(), data.get());
+      JS::NewArrayBufferWithContents(cx, aBuffer.Length(), std::move(data));
   if (!obj) return false;
-  // If JS::NewArrayBufferWithContents returns non-null, the ownership of
-  // the data is transfered to obj, so we release the ownership here.
-  mozilla::Unused << data.release();
 
   aVal.setObject(*obj);
   return true;

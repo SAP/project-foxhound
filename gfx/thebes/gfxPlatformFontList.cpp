@@ -349,7 +349,17 @@ gfxPlatformFontList::~gfxPlatformFontList() {
   // the initialization thread is using.
   AutoLock lock(mLock);
 
+  // We can't just do mSharedCmaps.Clear() here because removing each item from
+  // the table would drop its last reference, and its Release() method would
+  // then call back to MaybeRemoveCmap to search for it, which we can't do
+  // while in the middle of clearing the table.
+  // So we first clear the "shared" flag in each entry, so Release() won't try
+  // to re-find them in the table.
+  for (auto iter = mSharedCmaps.ConstIter(); !iter.Done(); iter.Next()) {
+    iter.Get()->mCharMap->ClearSharedFlag();
+  }
   mSharedCmaps.Clear();
+
   ClearLangGroupPrefFontsLocked();
 
   NS_ASSERTION(gFontListPrefObserver, "There is no font list pref observer");
@@ -860,8 +870,7 @@ gfxFontEntry* gfxPlatformFontList::LookupInSharedFaceNameList(
       auto* families = list->Families();
       if (families) {
         family = &families[rec->mFamilyIndex];
-        face = static_cast<fontlist::Face*>(
-            family->Faces(list)[rec->mFaceIndex].ToPtr(list));
+        face = family->Faces(list)[rec->mFaceIndex].ToPtr<fontlist::Face>(list);
       }
     }
   } else {
@@ -1744,7 +1753,7 @@ bool gfxPlatformFontList::InitializeFamily(fontlist::Family* aFamily,
       auto* faces = aFamily->Faces(list);
       if (faces) {
         for (size_t i = 0; i < aFamily->NumFaces(); i++) {
-          auto* face = static_cast<fontlist::Face*>(faces[i].ToPtr(list));
+          auto* face = faces[i].ToPtr<fontlist::Face>(list);
           if (face && face->mCharacterMap.IsNull()) {
             // We don't want to cache this font entry, as the parent will most
             // likely never use it again; it's just to populate the charmap for
@@ -1888,7 +1897,7 @@ ShmemCharMapHashEntry::ShmemCharMapHashEntry(const gfxSparseBitSet* aCharMap)
       mHash(aCharMap->GetChecksum()) {
   size_t len = SharedBitSet::RequiredSize(*aCharMap);
   mCharMap = mList->Alloc(len);
-  SharedBitSet::Create(mCharMap.ToPtr(mList), len, *aCharMap);
+  SharedBitSet::Create(mCharMap.ToPtr(mList, len), len, *aCharMap);
 }
 
 fontlist::Pointer gfxPlatformFontList::GetShmemCharMapLocked(
@@ -1900,28 +1909,63 @@ fontlist::Pointer gfxPlatformFontList::GetShmemCharMapLocked(
   return entry->GetCharMap();
 }
 
-// lookup cmap in the shared cmap set, adding if not already present
+// Lookup aCmap in the shared cmap set, adding if not already present.
+// This is the only way for a reference to a gfxCharacterMap to be acquired
+// by another thread than its original creator.
 already_AddRefed<gfxCharacterMap> gfxPlatformFontList::FindCharMap(
     gfxCharacterMap* aCmap) {
+  // Lock to prevent potentially racing against MaybeRemoveCmap.
   AutoLock lock(mLock);
+
+  // Find existing entry or insert a new one (which will add a reference).
   aCmap->CalcHash();
-  gfxCharacterMap* cmap = mSharedCmaps.PutEntry(aCmap)->GetKey();
-  cmap->mShared = true;
-  return do_AddRef(cmap);
+  aCmap->mShared = true;  // Set the shared flag in preparation for adding
+                          // to the global table.
+  RefPtr cmap = mSharedCmaps.PutEntry(aCmap)->GetKey();
+
+  // If we ended up finding a different, pre-existing entry, clear the
+  // shared flag on this one so that it'll get deleted on Release().
+  if (cmap.get() != aCmap) {
+    aCmap->mShared = false;
+  }
+
+  return cmap.forget();
 }
 
-// remove the cmap from the shared cmap set
-void gfxPlatformFontList::RemoveCmap(const gfxCharacterMap* aCharMap) {
+// Potentially remove the charmap from the shared cmap set. This is called
+// when a user of the charmap drops a reference and the refcount goes to 1;
+// in that case, it is possible our shared set is the only remaining user
+// of the object, and we should remove it.
+// Note that aCharMap might have already been freed, so we must not try to
+// dereference it until we have checked that it's still present in our table.
+void gfxPlatformFontList::MaybeRemoveCmap(gfxCharacterMap* aCharMap) {
+  // Lock so that nobody else can get a reference via FindCharMap while we're
+  // checking here.
   AutoLock lock(mLock);
-  // skip lookups during teardown
-  if (mSharedCmaps.Count() == 0) {
+
+  // Skip lookups during teardown.
+  if (!mSharedCmaps.Count()) {
     return;
   }
 
-  // cmap needs to match the entry *and* be the same ptr before removing
+  // aCharMap needs to match the entry and be the same ptr and still have a
+  // refcount of exactly 1 (i.e. we hold the only reference) before removing.
+  // If we're racing another thread, it might already have been removed, in
+  // which case GetEntry will not find it and we won't try to dereference the
+  // already-freed pointer.
   CharMapHashKey* found =
       mSharedCmaps.GetEntry(const_cast<gfxCharacterMap*>(aCharMap));
-  if (found && found->GetKey() == aCharMap) {
+  if (found && found->GetKey() == aCharMap && aCharMap->RefCount() == 1) {
+    // Forget our reference to the object that's being deleted, without
+    // calling Release() on it.
+    Unused << found->mCharMap.forget();
+
+    // Do the deletion.
+    delete aCharMap;
+
+    // Log this as a "Release" to keep leak-checking correct.
+    NS_LOG_RELEASE(aCharMap, 0, "gfxCharacterMap");
+
     mSharedCmaps.RemoveEntry(found);
   }
 }
@@ -2940,6 +2984,7 @@ base::SharedMemoryHandle gfxPlatformFontList::ShareShmBlockToProcess(
 void gfxPlatformFontList::ShmBlockAdded(uint32_t aGeneration, uint32_t aIndex,
                                         base::SharedMemoryHandle aHandle) {
   if (SharedFontList()) {
+    AutoLock lock(mLock);
     SharedFontList()->ShmBlockAdded(aGeneration, aIndex, std::move(aHandle));
   }
 }
@@ -2982,7 +3027,7 @@ void gfxPlatformFontList::SetCharacterMap(uint32_t aGeneration,
   if (AppShutdown::IsInOrBeyond(ShutdownPhase::AppShutdownConfirmed)) {
     return;
   }
-  fontlist::Face* face = static_cast<fontlist::Face*>(aFacePtr.ToPtr(list));
+  auto* face = aFacePtr.ToPtr<fontlist::Face>(list);
   if (face) {
     face->mCharacterMap = GetShmemCharMap(&aMap);
   }
@@ -3010,7 +3055,7 @@ void gfxPlatformFontList::SetupFamilyCharMap(
   // should have hit the MOZ_DIAGNOSTIC_ASSERT in FontList::ToSharedPointer
   // rather than passing a null or bad pointer to the parent.)
 
-  auto* family = static_cast<fontlist::Family*>(aFamilyPtr.ToPtr(list));
+  auto* family = aFamilyPtr.ToPtr<fontlist::Family>(list);
   if (!family) {
     // Unable to resolve to a native pointer (or it was null).
     NS_WARNING("unexpected null Family pointer");
@@ -3073,6 +3118,9 @@ gfxPlatformFontList::FontPrefs::FontPrefs() {
 }
 
 void gfxPlatformFontList::FontPrefs::Init() {
+  if (AppShutdown::IsInOrBeyond(ShutdownPhase::XPCOMShutdownFinal)) {
+    return;
+  }
   nsIPrefBranch* prefRootBranch = Preferences::GetRootBranch();
   if (!prefRootBranch) {
     return;

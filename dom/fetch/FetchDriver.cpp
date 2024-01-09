@@ -27,7 +27,9 @@
 #include "nsIPipe.h"
 #include "nsIRedirectHistoryEntry.h"
 
+#include "nsBaseChannel.h"
 #include "nsContentPolicyUtils.h"
+#include "nsDataChannel.h"
 #include "nsDataHandler.h"
 #include "nsNetUtil.h"
 #include "nsPrintfCString.h"
@@ -843,6 +845,21 @@ nsresult FetchDriver::HttpFetch(
     mObserver->OnNotifyNetworkMonitorAlternateStack(httpChan->ChannelId());
   }
 
+  // Should set a Content-Range header for blob scheme, and also slice the
+  // blob appropriately, so we process the Range header here for later use.
+  if (IsBlobURI(uri)) {
+    ErrorResult result;
+    nsAutoCString range;
+    mRequest->Headers()->Get("Range"_ns, range, result);
+    MOZ_ASSERT(!result.Failed());
+    if (!range.IsVoid()) {
+      rv = NS_SetChannelContentRangeForBlobURI(chan, uri, range);
+      if (NS_FAILED(rv)) {
+        return rv;
+      }
+    }
+  }
+
   // if the preferred alternative data type in InternalRequest is not empty, set
   // the data type on the created channel and also create a
   // AlternativeDataStreamListener to be the stream listener of the channel.
@@ -1001,7 +1018,6 @@ FetchDriver::OnStartRequest(nsIRequest* aRequest) {
   bool foundOpaqueRedirect = false;
 
   nsAutoCString contentType;
-  channel->GetContentType(contentType);
 
   int64_t contentLength = InternalResponse::UNKNOWN_BODY_SIZE;
   rv = channel->GetContentLength(&contentLength);
@@ -1009,6 +1025,8 @@ FetchDriver::OnStartRequest(nsIRequest* aRequest) {
                 contentLength == InternalResponse::UNKNOWN_BODY_SIZE);
 
   if (httpChannel) {
+    channel->GetContentType(contentType);
+
     uint32_t responseStatus = 0;
     rv = httpChannel->GetResponseStatus(&responseStatus);
     if (NS_FAILED(rv)) {
@@ -1057,18 +1075,46 @@ FetchDriver::OnStartRequest(nsIRequest* aRequest) {
     }
     MOZ_ASSERT(!result.Failed());
   } else {
-    response = MakeSafeRefPtr<InternalResponse>(200, "OK"_ns,
-                                                mRequest->GetCredentialsMode());
-
-    if (!contentType.IsEmpty()) {
-      nsAutoCString contentCharset;
-      channel->GetContentCharset(contentCharset);
-      if (NS_SUCCEEDED(rv) && !contentCharset.IsEmpty()) {
-        contentType += ";charset="_ns + contentCharset;
+    // Should set a Content-Range header for blob scheme
+    // (https://fetch.spec.whatwg.org/#scheme-fetch)
+    nsAutoCString contentRange(VoidCString());
+    nsCOMPtr<nsIURI> uri;
+    channel->GetURI(getter_AddRefs(uri));
+    if (IsBlobURI(uri)) {
+      nsBaseChannel* bchan = static_cast<nsBaseChannel*>(channel.get());
+      MOZ_ASSERT(bchan);
+      Maybe<nsBaseChannel::ContentRange> range = bchan->GetContentRange();
+      if (range.isSome()) {
+        range->AsHeader(contentRange);
       }
     }
 
+    response = MakeSafeRefPtr<InternalResponse>(
+        contentRange.IsVoid() ? 200 : 206,
+        contentRange.IsVoid() ? "OK"_ns : "Partial Content"_ns,
+        mRequest->GetCredentialsMode());
+
     IgnoredErrorResult result;
+    if (!contentRange.IsVoid()) {
+      response->Headers()->Append("Content-Range"_ns, contentRange, result);
+      MOZ_ASSERT(!result.Failed());
+    }
+
+    if (uri && uri->SchemeIs("data")) {
+      nsDataChannel* dchan = static_cast<nsDataChannel*>(channel.get());
+      MOZ_ASSERT(dchan);
+      contentType.Assign(dchan->MimeType());
+    } else {
+      channel->GetContentType(contentType);
+      if (!contentType.IsEmpty()) {
+        nsAutoCString contentCharset;
+        channel->GetContentCharset(contentCharset);
+        if (NS_SUCCEEDED(rv) && !contentCharset.IsEmpty()) {
+          contentType += ";charset="_ns + contentCharset;
+        }
+      }
+    }
+
     response->Headers()->Append("Content-Type"_ns, contentType, result);
     MOZ_ASSERT(!result.Failed());
 
@@ -1146,19 +1192,24 @@ FetchDriver::OnStartRequest(nsIRequest* aRequest) {
     }
   }
 
-  // We open a pipe so that we can immediately set the pipe's read end as the
-  // response's body. Setting the segment size to UINT32_MAX means that the
-  // pipe has infinite space. The nsIChannel will continue to buffer data in
-  // xpcom events even if we block on a fixed size pipe.  It might be possible
-  // to suspend the channel and then resume when there is space available, but
-  // for now use an infinite pipe to avoid blocking.
-  nsCOMPtr<nsIInputStream> pipeInputStream;
-  NS_NewPipe(getter_AddRefs(pipeInputStream), getter_AddRefs(mPipeOutputStream),
-             0, /* default segment size */
-             UINT32_MAX /* infinite pipe */,
-             true /* non-blocking input, otherwise you deadlock */,
-             false /* blocking output, since the pipe is 'in'finite */);
-  response->SetBody(pipeInputStream, contentLength);
+  // Fetch spec Main Fetch step 21: ignore body for head/connect methods.
+  nsAutoCString method;
+  mRequest->GetMethod(method);
+  if (!(method.EqualsLiteral("HEAD") || method.EqualsLiteral("CONNECT"))) {
+    // We open a pipe so that we can immediately set the pipe's read end as the
+    // response's body. Setting the segment size to UINT32_MAX means that the
+    // pipe has infinite space. The nsIChannel will continue to buffer data in
+    // xpcom events even if we block on a fixed size pipe.  It might be possible
+    // to suspend the channel and then resume when there is space available, but
+    // for now use an infinite pipe to avoid blocking.
+    nsCOMPtr<nsIInputStream> pipeInputStream;
+    NS_NewPipe(getter_AddRefs(pipeInputStream),
+               getter_AddRefs(mPipeOutputStream), 0, /* default segment size */
+               UINT32_MAX /* infinite pipe */,
+               true /* non-blocking input, otherwise you deadlock */,
+               false /* blocking output, since the pipe is 'in'finite */);
+    response->SetBody(pipeInputStream, contentLength);
+  }
 
   // If the request is a file channel, then remember the local path to
   // that file so we can later create File blobs rather than plain ones.
@@ -1311,6 +1362,16 @@ FetchDriver::OnDataAvailable(nsIRequest* aRequest, nsIInputStream* aInputStream,
   // NB: This can be called on any thread!  But we're guaranteed that it is
   // called between OnStartRequest and OnStopRequest, so we don't need to worry
   // about races.
+
+  if (!mPipeOutputStream) {
+    // We ignore the body for HEAD/CONNECT requests.
+    // nsIStreamListener mandates reading from the stream before returning.
+    uint32_t totalRead;
+    nsresult rv = aInputStream->ReadSegments(NS_DiscardSegment, nullptr, aCount,
+                                             &totalRead);
+    NS_ENSURE_SUCCESS(rv, rv);
+    return NS_OK;
+  }
 
   if (mNeedToObserveOnDataAvailable) {
     mNeedToObserveOnDataAvailable = false;

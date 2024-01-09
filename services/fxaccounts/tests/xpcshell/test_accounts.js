@@ -21,7 +21,9 @@ const {
   ONVERIFIED_NOTIFICATION,
   DEPRECATED_SCOPE_ECOSYSTEM_TELEMETRY,
   PREF_LAST_FXA_USER,
-} = ChromeUtils.import("resource://gre/modules/FxAccountsCommon.js");
+} = ChromeUtils.importESModule(
+  "resource://gre/modules/FxAccountsCommon.sys.mjs"
+);
 const { PromiseUtils } = ChromeUtils.importESModule(
   "resource://gre/modules/PromiseUtils.sys.mjs"
 );
@@ -282,18 +284,11 @@ add_task(async function test_get_signed_in_user_initially_unset() {
   result = await account.getSignedInUser();
   Assert.deepEqual(result.email, credentials.email);
   Assert.deepEqual(result.scopedKeys, undefined);
-  Assert.deepEqual(result.kSync, undefined);
-  Assert.deepEqual(result.kXCS, undefined);
-  Assert.deepEqual(result.kExtSync, undefined);
-  Assert.deepEqual(result.kExtKbHash, undefined);
+
   // for the sake of testing, use the low-level function to check it's all there
   result = await account._internal.currentAccountState.getUserAccountData();
   Assert.deepEqual(result.email, credentials.email);
   Assert.deepEqual(result.scopedKeys, credentials.scopedKeys);
-  Assert.ok(result.kSync);
-  Assert.ok(result.kXCS);
-  Assert.ok(result.kExtSync);
-  Assert.ok(result.kExtKbHash);
 
   // sign out
   let localOnly = true;
@@ -682,10 +677,6 @@ add_test(function test_getKeyForScope() {
     fxa._internal.getUserAccountData().then(user2 => {
       // Before getKeyForScope, we have no keys
       Assert.equal(!!user2.scopedKeys, false);
-      Assert.equal(!!user2.kSync, false);
-      Assert.equal(!!user2.kXCS, false);
-      Assert.equal(!!user2.kExtSync, false);
-      Assert.equal(!!user2.kExtKbHash, false);
       // And we still have a key-fetch token and unwrapBKey to use
       Assert.equal(!!user2.keyFetchToken, true);
       Assert.equal(!!user2.unwrapBKey, true);
@@ -696,10 +687,6 @@ add_test(function test_getKeyForScope() {
           Assert.equal(fxa._internal.isUserEmailVerified(user3), true);
           Assert.equal(!!user3.verified, true);
           Assert.notEqual(null, user3.scopedKeys);
-          Assert.notEqual(null, user3.kSync);
-          Assert.notEqual(null, user3.kXCS);
-          Assert.notEqual(null, user3.kExtSync);
-          Assert.notEqual(null, user3.kExtKbHash);
           Assert.equal(user3.keyFetchToken, undefined);
           Assert.equal(user3.unwrapBKey, undefined);
           run_next_test();
@@ -709,82 +696,38 @@ add_test(function test_getKeyForScope() {
   });
 });
 
-add_task(async function test_getKeyForScope_kb_migration() {
-  let fxa = new MockFxAccounts();
-  let user = getTestUser("eusebius");
+add_task(
+  async function test_getKeyForScope_scopedKeys_migration_removes_deprecated_high_level_keys() {
+    let fxa = new MockFxAccounts();
+    let user = getTestUser("eusebius");
 
-  user.verified = true;
-  // Set-up the deprecated set of keys.
-  user.kA = "e0245ab7f10e483470388e0a28f0a03379a3b417174fb2b42feab158b4ac2dbd";
-  user.kB = "eaf9570b7219a4187d3d6bf3cec2770c2e0719b7cc0dfbb38243d6f1881675e9";
+    user.verified = true;
 
-  await fxa.setSignedInUser(user);
-  await fxa.keys.getKeyForScope(SCOPE_OLD_SYNC);
-  let newUser = await fxa._internal.getUserAccountData();
-  Assert.equal(newUser.kA, null);
-  Assert.equal(newUser.kB, null);
-  Assert.deepEqual(newUser.scopedKeys, {
-    "https://identity.mozilla.com/apps/oldsync": {
-      kid: "1234567890123-IqQv4onc7VcVE1kTQkyyOw",
-      k: "DW_ll5GwX6SJ5GPqJVAuMUP2t6kDqhUulc2cbt26xbTcaKGQl-9l29FHAQ7kUiJETma4s9fIpEHrt909zgFang",
-      kty: "oct",
-    },
-    "sync:addon_storage": {
-      kid: "1234567890123-pBOR6B6JulbJr3BxKVOqIU4Cq_WAjFp4ApLn5NRVARE",
-      k: "ut7VPrNYfXkA5gTopo2GCr-d4wtclV08TV26Y_Jv2IJlzYWSP26dzRau87gryIA5qJxZ7NnojeCadBjH2U-QyQ",
-      kty: "oct",
-    },
-  });
-  // These hex values were manually confirmed to be equivalent to the b64 values above.
-  Assert.equal(
-    newUser.kSync,
-    "0d6fe59791b05fa489e463ea25502e3143f6b7a903aa152e95cd9c6eddbac5b4" +
-      "dc68a19097ef65dbd147010ee45222444e66b8b3d7c8a441ebb7dd3dce015a9e"
-  );
-  Assert.equal(newUser.kXCS, "22a42fe289dced5715135913424cb23b");
-  Assert.equal(
-    newUser.kExtSync,
-    "baded53eb3587d7900e604e8a68d860abf9de30b5c955d3c4d5dba63f26fd882" +
-      "65cd85923f6e9dcd16aef3b82bc88039a89c59ecd9e88de09a7418c7d94f90c9"
-  );
-  Assert.equal(
-    newUser.kExtKbHash,
-    "a41391e81e89ba56c9af70712953aa214e02abf5808c5a780292e7e4d4550111"
-  );
-});
+    // An account state with the deprecated kinto extension sync keys...
+    user.kExtSync =
+      "f5ccd9cfdefd9b1ac4d02c56964f59239d8dfa1ca326e63696982765c1352cdc" +
+      "5d78a5a9c633a6d25edfea0a6c221a3480332a49fd866f311c2e3508ddd07395";
+    user.kExtKbHash =
+      "6192f1cc7dce95334455ba135fa1d8fca8f70e8f594ae318528de06f24ed0273";
+    user.scopedKeys = {
+      ...MOCK_ACCOUNT_KEYS.scopedKeys,
+    };
 
-add_task(async function test_getKeyForScope_scopedKeys_migration() {
-  let fxa = new MockFxAccounts();
-  let user = getTestUser("eusebius");
-
-  user.verified = true;
-  // Set-up the keys in deprecated fields.
-  user.kSync = MOCK_ACCOUNT_KEYS.kSync;
-  user.kXCS = MOCK_ACCOUNT_KEYS.kXCS;
-  user.kExtSync = MOCK_ACCOUNT_KEYS.kExtSync;
-  user.kExtKbHash = MOCK_ACCOUNT_KEYS.kExtKbHash;
-  Assert.equal(user.scopedKeys, null);
-
-  await fxa.setSignedInUser(user);
-  await fxa.keys.getKeyForScope(SCOPE_OLD_SYNC);
-  let newUser = await fxa._internal.getUserAccountData();
-  Assert.equal(newUser.kA, null);
-  Assert.equal(newUser.kB, null);
-  // It should have correctly formatted the corresponding scoped keys.
-  const expectedScopedKeys = { ...MOCK_ACCOUNT_KEYS.scopedKeys };
-  Assert.deepEqual(newUser.scopedKeys, expectedScopedKeys);
-  // And left the existing key fields unchanged.
-  Assert.equal(newUser.kSync, user.kSync);
-  Assert.equal(newUser.kXCS, user.kXCS);
-  Assert.equal(newUser.kExtSync, user.kExtSync);
-  Assert.equal(newUser.kExtKbHash, user.kExtKbHash);
-});
+    await fxa.setSignedInUser(user);
+    // getKeyForScope will run the migration
+    await fxa.keys.getKeyForScope(SCOPE_OLD_SYNC);
+    let newUser = await fxa._internal.getUserAccountData();
+    // Then, the deprecated keys will be removed
+    Assert.strictEqual(newUser.kExtSync, undefined);
+    Assert.strictEqual(newUser.kExtKbHash, undefined);
+  }
+);
 
 add_task(
   async function test_getKeyForScope_scopedKeys_migration_removes_deprecated_scoped_keys() {
     let fxa = new MockFxAccounts();
     let user = getTestUser("eusebius");
-
+    const DEPRECATED_SCOPE_WEBEXT_SYNC = "sync:addon_storage";
     const EXTRA_SCOPE = "an unknown, but non-deprecated scope";
     user.verified = true;
     user.ecosystemUserId = "ecoUserId";
@@ -793,6 +736,8 @@ add_task(
       ...MOCK_ACCOUNT_KEYS.scopedKeys,
       [DEPRECATED_SCOPE_ECOSYSTEM_TELEMETRY]:
         MOCK_ACCOUNT_KEYS.scopedKeys[SCOPE_OLD_SYNC],
+      [DEPRECATED_SCOPE_WEBEXT_SYNC]:
+        MOCK_ACCOUNT_KEYS.scopedKeys[SCOPE_OLD_SYNC],
       [EXTRA_SCOPE]: MOCK_ACCOUNT_KEYS.scopedKeys[SCOPE_OLD_SYNC],
     };
 
@@ -800,6 +745,7 @@ add_task(
     await fxa.keys.getKeyForScope(SCOPE_OLD_SYNC);
     let newUser = await fxa._internal.getUserAccountData();
     // It should have removed the deprecated ecosystem_telemetry key,
+    // and the old kinto extension sync key
     // but left the other keys intact.
     const expectedScopedKeys = {
       ...MOCK_ACCOUNT_KEYS.scopedKeys,
@@ -882,8 +828,8 @@ add_task(async function test_getKeyForScope_invalid_token() {
   await fxa._internal.abortExistingFlow();
 });
 
-// This is the exact same test vectors as
-// https://github.com/mozilla/fxa-crypto-relier/blob/f94f441159029a645a474d4b6439c38308da0bb0/test/deriver/ScopedKeys.js#L58
+// Test vectors from
+// https://wiki.mozilla.org/Identity/AttachedServices/KeyServerProtocol#Test_Vectors
 add_task(async function test_getKeyForScope_oldsync() {
   let fxa = new MockFxAccounts();
   let client = fxa._internal.fxAccountsClient;
@@ -896,19 +842,60 @@ add_task(async function test_getKeyForScope_oldsync() {
         keyRotationTimestamp: 1510726317123,
       },
     });
+
+  // We mock the server returning the wrapKB from our test vectors
+  client.accountKeys = async () => {
+    return {
+      wrapKB: CommonUtils.hexToBytes(
+        "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f"
+      ),
+    };
+  };
+
+  // We set the user to have the keyFetchToken and unwrapBKey from our test vectors
   let user = {
     ...getTestUser("eusebius"),
     uid: "aeaa1725c7a24ff983c6295725d5fc9b",
-    kB: "eaf9570b7219a4187d3d6bf3cec2770c2e0719b7cc0dfbb38243d6f1881675e9",
+    keyFetchToken:
+      "808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9f",
+    unwrapBKey:
+      "6ea660be9c89ec355397f89afb282ea0bf21095760c8c5009bbcc894155bbe2a",
+    sessionToken: "mock session token, used in metadata request",
     verified: true,
   };
   await fxa.setSignedInUser(user);
+
+  // We derive, persist and return the sync key
   const key = await fxa.keys.getKeyForScope(SCOPE_OLD_SYNC);
+
+  // We verify the key returned matches what we would expect from the test vectors
+  // kb = 2ee722fdd8ccaa721bdeb2d1b76560efef705b04349d9357c3e592cf4906e075 (from test vectors)
+  //
+  // kid can be verified by "${keyRotationTimestamp}-${sha256(kb)[0:16]}"
+  //
+  // k can be verified by HKDF(kb, undefined, "identity.mozilla.com/picl/v1/oldsync", 64)
   Assert.deepEqual(key, {
     scope: SCOPE_OLD_SYNC,
-    kid: "1510726317123-IqQv4onc7VcVE1kTQkyyOw",
-    k: "DW_ll5GwX6SJ5GPqJVAuMUP2t6kDqhUulc2cbt26xbTcaKGQl-9l29FHAQ7kUiJETma4s9fIpEHrt909zgFang",
+    kid: "1510726317123-BAik7hEOdpGnPZnPBSdaTg",
+    k: "fwM5VZu0Spf5XcFRZYX2zk6MrqZP7zvovCBcvuKwgYMif3hz98FHmIVa3qjKjrW0J244Zj-P5oWaOcQbvypmpw",
     kty: "oct",
+  });
+});
+
+add_task(async function test_getScopedKeys_cached_key() {
+  let fxa = new MockFxAccounts();
+  let user = {
+    ...getTestUser("eusebius"),
+    uid: "aeaa1725c7a24ff983c6295725d5fc9b",
+    verified: true,
+    ...MOCK_ACCOUNT_KEYS,
+  };
+
+  await fxa.setSignedInUser(user);
+  let key = await fxa.keys.getKeyForScope(SCOPE_OLD_SYNC);
+  Assert.deepEqual(key, {
+    scope: SCOPE_OLD_SYNC,
+    ...MOCK_ACCOUNT_KEYS.scopedKeys[SCOPE_OLD_SYNC],
   });
 });
 
@@ -943,13 +930,11 @@ add_task(async function test_getScopedKeys_misconfigured_fxa_server() {
     ...getTestUser("eusebius"),
     uid: "aeaa1725c7a24ff983c6295725d5fc9b",
     verified: true,
-    kSync:
-      "0d6fe59791b05fa489e463ea25502e3143f6b7a903aa152e95cd9c6eddbac5b4dc68a19097ef65dbd147010ee45222444e66b8b3d7c8a441ebb7dd3dce015a9e",
-    kXCS: "22a42fe289dced5715135913424cb23b",
-    kExtSync:
-      "baded53eb3587d7900e604e8a68d860abf9de30b5c955d3c4d5dba63f26fd88265cd85923f6e9dcd16aef3b82bc88039a89c59ecd9e88de09a7418c7d94f90c9",
-    kExtKbHash:
-      "b776a89db29f22daedd154b44ff88397d0b210223fb956f5a749521dd8de8ddf",
+    keyFetchToken:
+      "808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9f",
+    unwrapBKey:
+      "6ea660be9c89ec355397f89afb282ea0bf21095760c8c5009bbcc894155bbe2a",
+    sessionToken: "mock session token, used in metadata request",
   };
   await fxa.setSignedInUser(user);
   await Assert.rejects(
@@ -1565,35 +1550,6 @@ add_task(async function test_checkVerificationStatusFailed() {
   user = await fxa._internal.getUserAccountData();
   Assert.equal(user.email, alice.email);
   Assert.equal(user.sessionToken, null);
-});
-
-add_task(async function test_deriveKeys() {
-  let account = await MakeFxAccounts();
-  let kBhex =
-    "fd5c747806c07ce0b9d69dcfea144663e630b65ec4963596a22f24910d7dd15d";
-  let kB = CommonUtils.hexToBytes(kBhex);
-  const uid = "1ad7f502-4cc7-4ec1-a209-071fd2fae348";
-
-  const { kSync, kXCS, kExtSync, kExtKbHash } = await account.keys._deriveKeys(
-    uid,
-    kB
-  );
-
-  Assert.equal(
-    kSync,
-    "ad501a50561be52b008878b2e0d8a73357778a712255f7722f497b5d4df14b05" +
-      "dc06afb836e1521e882f521eb34691d172337accdbf6e2a5b968b05a7bbb9885"
-  );
-  Assert.equal(kXCS, "6ae94683571c7a7c54dab4700aa3995f");
-  Assert.equal(
-    kExtSync,
-    "f5ccd9cfdefd9b1ac4d02c56964f59239d8dfa1ca326e63696982765c1352cdc" +
-      "5d78a5a9c633a6d25edfea0a6c221a3480332a49fd866f311c2e3508ddd07395"
-  );
-  Assert.equal(
-    kExtKbHash,
-    "6192f1cc7dce95334455ba135fa1d8fca8f70e8f594ae318528de06f24ed0273"
-  );
 });
 
 add_task(async function test_flushLogFile() {

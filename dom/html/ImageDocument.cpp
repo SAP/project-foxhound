@@ -45,14 +45,6 @@
 #include "mozilla/Preferences.h"
 #include <algorithm>
 
-// XXX A hack needed for Firefox's site specific zoom.
-static bool IsSiteSpecific() {
-  return !nsContentUtils::ShouldResistFingerprinting(
-             "This needs to read the global pref as long as "
-             "browser-fullZoom.js also does so.") &&
-         mozilla::Preferences::GetBool("browser.zoom.siteSpecific", false);
-}
-
 namespace mozilla::dom {
 
 class ImageListener : public MediaDocumentStreamListener {
@@ -153,8 +145,9 @@ NS_IMPL_ISUPPORTS_CYCLE_COLLECTION_INHERITED(ImageDocument, MediaDocument,
                                              imgINotificationObserver,
                                              nsIDOMEventListener)
 
-nsresult ImageDocument::Init() {
-  nsresult rv = MediaDocument::Init();
+nsresult ImageDocument::Init(nsIPrincipal* aPrincipal,
+                             nsIPrincipal* aPartitionedPrincipal) {
+  nsresult rv = MediaDocument::Init(aPrincipal, aPartitionedPrincipal);
   NS_ENSURE_SUCCESS(rv, rv);
 
   mShouldResize = StaticPrefs::browser_enable_automatic_image_resizing();
@@ -725,6 +718,11 @@ void ImageDocument::UpdateTitleAndCharset() {
                                        mImageWidth, mImageHeight, status);
 }
 
+bool ImageDocument::IsSiteSpecific() {
+  return !ShouldResistFingerprinting(RFPTarget::SiteSpecificZoom) &&
+         StaticPrefs::browser_zoom_siteSpecific();
+}
+
 void ImageDocument::ResetZoomLevel() {
   if (nsContentUtils::IsChildOfSameType(this)) {
     return;
@@ -799,11 +797,13 @@ void ImageDocument::MaybeSendResultToEmbedder(nsresult aResult) {
 }
 }  // namespace mozilla::dom
 
-nsresult NS_NewImageDocument(mozilla::dom::Document** aResult) {
+nsresult NS_NewImageDocument(mozilla::dom::Document** aResult,
+                             nsIPrincipal* aPrincipal,
+                             nsIPrincipal* aPartitionedPrincipal) {
   auto* doc = new mozilla::dom::ImageDocument();
   NS_ADDREF(doc);
 
-  nsresult rv = doc->Init();
+  nsresult rv = doc->Init(aPrincipal, aPartitionedPrincipal);
   if (NS_FAILED(rv)) {
     NS_RELEASE(doc);
   }

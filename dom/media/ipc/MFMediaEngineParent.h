@@ -70,7 +70,6 @@ class MFMediaEngineParent final : public PMFMediaEngineParent {
 
   void CreateMediaEngine();
 
-  void InitializeVirtualVideoWindow();
   void InitializeDXGIDeviceManager();
 
   void AssertOnManagerThread() const;
@@ -115,18 +114,11 @@ class MFMediaEngineParent final : public PMFMediaEngineParent {
   MediaEventListener mRequestSampleListener;
   bool mIsCreatedMediaEngine = false;
 
-  // A fake window handle passed to MF-based rendering pipeline for OPM.
-  HWND mVirtualVideoWindow = nullptr;
-
   Microsoft::WRL::ComPtr<IMFDXGIDeviceManager> mDXGIDeviceManager;
 
   // These will be always zero for audio playback.
   DWORD mDisplayWidth = 0;
   DWORD mDisplayHeight = 0;
-
-  // When it's true, the media engine will output decoded video frames to a
-  // shareable dcomp surface.
-  bool mIsEnableDcompMode = false;
 
   float mPlaybackRate = 1.0;
 

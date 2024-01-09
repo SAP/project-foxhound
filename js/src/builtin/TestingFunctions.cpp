@@ -52,11 +52,11 @@
 #  include "builtin/intl/SharedIntlData.h"
 #endif
 #include "builtin/BigInt.h"
+#include "builtin/JSON.h"
 #include "builtin/MapObject.h"
 #include "builtin/Promise.h"
 #include "builtin/TestingUtility.h"  // js::ParseCompileOptions, js::ParseDebugMetadata
-#include "frontend/BytecodeCompilation.h"  // frontend::CompileGlobalScriptToExtensibleStencil, frontend::DelazifyCanonicalScriptedFunction
-#include "frontend/BytecodeCompiler.h"  // frontend::ParseModuleToExtensibleStencil
+#include "frontend/BytecodeCompiler.h"  // frontend::{CompileGlobalScriptToExtensibleStencil,ParseModuleToExtensibleStencil}
 #include "frontend/CompilationStencil.h"  // frontend::CompilationStencil
 #include "frontend/FrontendContext.h"     // AutoReportFrontendContext
 #include "gc/Allocator.h"
@@ -77,6 +77,7 @@
 #include "js/CharacterEncoding.h"
 #include "js/CompilationAndEvaluation.h"
 #include "js/CompileOptions.h"
+#include "js/Conversions.h"
 #include "js/Date.h"
 #include "js/experimental/CodeCoverage.h"  // js::GetCodeCoverageSummary
 #include "js/experimental/CompileScript.h"  // JS::ParseGlobalScript, JS::PrepareForInstantiate
@@ -125,11 +126,14 @@
 #include "vm/SavedStacks.h"
 #include "vm/ScopeKind.h"
 #include "vm/Stack.h"
+#include "vm/StencilCache.h"   // DelazificationCache
 #include "vm/StencilObject.h"  // StencilObject, StencilXDRBufferObject
 #include "vm/StringObject.h"
 #include "vm/StringType.h"
 #include "wasm/AsmJS.h"
 #include "wasm/WasmBaselineCompile.h"
+#include "wasm/WasmFeatures.h"
+#include "wasm/WasmGcObject.h"
 #include "wasm/WasmInstance.h"
 #include "wasm/WasmIntrinsic.h"
 #include "wasm/WasmIonCompile.h"
@@ -205,14 +209,7 @@ static bool GetRealmConfiguration(JSContext* cx, unsigned argc, Value* vp) {
   }
 #endif
 
-  bool changeArrayByCopy =
-      cx->realm()->creationOptions().getChangeArrayByCopyEnabled();
-  if (!JS_SetProperty(cx, info, "enableChangeArrayByCopy",
-                      changeArrayByCopy ? TrueHandleValue : FalseHandleValue)) {
-    return false;
-  }
-
-#ifdef ENABLE_NEW_SET_METHODS
+#ifdef NIGHTLY_BUILD
   bool newSetMethods = cx->realm()->creationOptions().getNewSetMethodsEnabled();
   if (!JS_SetProperty(cx, info, "enableNewSetMethods",
                       newSetMethods ? TrueHandleValue : FalseHandleValue)) {
@@ -567,15 +564,6 @@ static bool GetBuildConfiguration(JSContext* cx, unsigned argc, Value* vp) {
     return false;
   }
 
-#ifdef ENABLE_NEW_SET_METHODS
-  value = BooleanValue(true);
-#else
-  value = BooleanValue(false);
-#endif
-  if (!JS_SetProperty(cx, info, "new-set-methods", value)) {
-    return false;
-  }
-
 #ifdef ENABLE_DECORATORS
   value = BooleanValue(true);
 #else
@@ -706,8 +694,10 @@ static bool GC(JSContext* cx, unsigned argc, Value* vp) {
 static bool MinorGC(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
   if (args.get(0) == BooleanValue(true)) {
-    cx->runtime()->gc.storeBuffer().setAboutToOverflow(
-        JS::GCReason::FULL_GENERIC_BUFFER);
+    gc::GCRuntime& gc = cx->runtime()->gc;
+    if (gc.nursery().isEnabled()) {
+      gc.storeBuffer().setAboutToOverflow(JS::GCReason::FULL_GENERIC_BUFFER);
+    }
   }
 
   cx->minorGC(JS::GCReason::API);
@@ -831,7 +821,7 @@ static bool WasmIsSupported(JSContext* cx, unsigned argc, Value* vp) {
 
 static bool WasmIsSupportedByHardware(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
-  args.rval().setBoolean(wasm::HasPlatformSupport(cx));
+  args.rval().setBoolean(wasm::HasPlatformSupport());
   return true;
 }
 
@@ -910,7 +900,7 @@ static bool WasmThreadsEnabled(JSContext* cx, unsigned argc, Value* vp) {
     args.rval().setBoolean(wasm::NAME##Available(cx));                       \
     return true;                                                             \
   }
-JS_FOR_WASM_FEATURES(WASM_FEATURE, WASM_FEATURE, WASM_FEATURE);
+JS_FOR_WASM_FEATURES(WASM_FEATURE);
 #undef WASM_FEATURE
 
 static bool WasmSimdEnabled(JSContext* cx, unsigned argc, Value* vp) {
@@ -1068,7 +1058,7 @@ static bool WasmGlobalFromArrayBuffer(JSContext* cx, unsigned argc, Value* vp) {
     JS_ReportErrorASCII(cx, "argument is not an array buffer");
     return false;
   }
-  RootedArrayBufferObject buffer(
+  Rooted<ArrayBufferObject*> buffer(
       cx, &args.get(1).toObject().as<ArrayBufferObject>());
 
   // Only allow POD to be created from bytes
@@ -1481,7 +1471,7 @@ static bool WasmGlobalToString(JSContext* cx, unsigned argc, Value* vp) {
       break;
     }
     case wasm::ValType::Ref: {
-      result = JS_smprintf("ref:%p", globalVal.ref().asJSObject());
+      result = JS_smprintf("ref:%" PRIxPTR, globalVal.ref().rawValue());
       break;
     }
     default:
@@ -2000,6 +1990,59 @@ static bool WasmIntrinsicI8VecMul(JSContext* cx, unsigned argc, Value* vp) {
   return true;
 }
 
+#ifdef ENABLE_WASM_GC
+static bool WasmGcReadField(JSContext* cx, unsigned argc, Value* vp) {
+  CallArgs args = CallArgsFromVp(argc, vp);
+  RootedObject callee(cx, &args.callee());
+
+  if (!args.requireAtLeast(cx, "wasmGcReadField", 2)) {
+    return false;
+  }
+
+  if (!args[0].isObject() || !args[0].toObject().is<WasmGcObject>()) {
+    ReportUsageErrorASCII(cx, callee,
+                          "First argument must be a WebAssembly GC object");
+    return false;
+  }
+
+  int32_t fieldIndex;
+  if (!JS::ToInt32(cx, args[1], &fieldIndex) || fieldIndex < 0) {
+    ReportUsageErrorASCII(cx, callee,
+                          "Second argument must be a non-negative integer");
+    return false;
+  }
+
+  Rooted<WasmGcObject*> gcObject(cx, &args[0].toObject().as<WasmGcObject>());
+  Rooted<Value> gcValue(cx);
+  if (!WasmGcObject::loadValue(cx, gcObject, jsid::Int(int32_t(fieldIndex)),
+                               &gcValue)) {
+    return false;
+  }
+
+  args.rval().set(gcValue);
+  return true;
+}
+
+static bool WasmGcArrayLength(JSContext* cx, unsigned argc, Value* vp) {
+  CallArgs args = CallArgsFromVp(argc, vp);
+  RootedObject callee(cx, &args.callee());
+
+  if (!args.requireAtLeast(cx, "wasmGcArrayLength", 1)) {
+    return false;
+  }
+
+  if (!args[0].isObject() || !args[0].toObject().is<WasmArrayObject>()) {
+    ReportUsageErrorASCII(cx, callee,
+                          "First argument must be a WebAssembly GC array");
+    return false;
+  }
+
+  WasmArrayObject& arr = args[0].toObject().as<WasmArrayObject>();
+  args.rval().setInt32(int32_t(arr.numElements_));
+  return true;
+}
+#endif  // ENABLE_WASM_GC
+
 static bool LargeArrayBufferSupported(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
   args.rval().setBoolean(ArrayBufferObject::MaxByteLength >
@@ -2061,7 +2104,7 @@ static bool IsInStencilCache(JSContext* cx, unsigned argc, Value* vp) {
   JSFunction* fun = &args[0].toObject().as<JSFunction>();
   BaseScript* script = fun->baseScript();
   RefPtr<ScriptSource> ss = script->scriptSource();
-  StencilCache& cache = cx->runtime()->caches().delazificationCache;
+  DelazificationCache& cache = DelazificationCache::getSingleton();
   auto guard = cache.isSourceCached(ss);
   if (!guard) {
     args.rval().setBoolean(false);
@@ -2090,7 +2133,7 @@ static bool WaitForStencilCache(JSContext* cx, unsigned argc, Value* vp) {
   JSFunction* fun = &args[0].toObject().as<JSFunction>();
   BaseScript* script = fun->baseScript();
   RefPtr<ScriptSource> ss = script->scriptSource();
-  StencilCache& cache = cx->runtime()->caches().delazificationCache;
+  DelazificationCache& cache = DelazificationCache::getSingleton();
   StencilContext key(ss, script->extent());
 
   AutoLockHelperThreadState lock;
@@ -4936,10 +4979,9 @@ class CloneBufferObject : public NativeObject {
       return false;
     }
 
-    auto* rawBuffer = buffer.release();
-    JSObject* arrayBuffer = JS::NewArrayBufferWithContents(cx, size, rawBuffer);
+    JSObject* arrayBuffer =
+        JS::NewArrayBufferWithContents(cx, size, std::move(buffer));
     if (!arrayBuffer) {
-      js_free(rawBuffer);
       return false;
     }
 
@@ -5224,6 +5266,7 @@ class CustomSerializableObject : public NativeObject {
   }
 
   static bool ReadTransfer(JSContext* cx, JSStructuredCloneReader* r,
+                           const JS::CloneDataPolicy& cloneDataPolicy,
                            uint32_t tag, void* content, uint64_t extraData,
                            void* closure,
                            JS::MutableHandleObject returnObject) {
@@ -5514,6 +5557,46 @@ static bool DetachArrayBuffer(JSContext* cx, unsigned argc, Value* vp) {
   return true;
 }
 
+static bool JSONStringify(JSContext* cx, unsigned argc, Value* vp) {
+  CallArgs args = CallArgsFromVp(argc, vp);
+
+  RootedValue value(cx, args.get(0));
+  RootedValue behaviorVal(cx, args.get(1));
+  StringifyBehavior behavior = StringifyBehavior::Normal;
+  if (behaviorVal.isString()) {
+    bool matches;
+#define MATCH(name)                                                           \
+  if (!JS_StringEqualsLiteral(cx, behaviorVal.toString(), #name, &matches)) { \
+    return false;                                                             \
+  }                                                                           \
+  if (matches) {                                                              \
+    behavior = StringifyBehavior::name;                                       \
+  }
+    MATCH(Normal)
+    MATCH(FastOnly)
+    MATCH(SlowOnly)
+    MATCH(Compare)
+#undef MATCH
+  }
+
+  JSStringBuilder sb(cx);
+  if (!Stringify(cx, &value, nullptr, UndefinedValue(), sb, behavior)) {
+    return false;
+  }
+
+  if (!sb.empty()) {
+    JSString* str = sb.finishString();
+    if (!str) {
+      return false;
+    }
+    args.rval().setString(str);
+  } else {
+    args.rval().setUndefined();
+  }
+
+  return true;
+}
+
 static bool HelperThreadCount(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
 
@@ -5706,10 +5789,12 @@ void ShapeSnapshot::checkSelf(JSContext* cx) const {
     PropertyInfo prop = propSnapshot.prop;
 
     // Skip if the map no longer matches the snapshotted data. This can
-    // only happen for non-configurable dictionary properties.
-    if (PropertySnapshot(propMap, propMapIndex) != propSnapshot) {
+    // only happen for dictionary maps because they can be mutated or compacted
+    // after a shape change.
+    if (!propMap->hasKey(propMapIndex) ||
+        PropertySnapshot(propMap, propMapIndex) != propSnapshot) {
       MOZ_RELEASE_ASSERT(propMap->isDictionary());
-      MOZ_RELEASE_ASSERT(prop.configurable());
+      MOZ_RELEASE_ASSERT(object_->shape() != shape_);
       continue;
     }
 
@@ -6579,7 +6664,7 @@ static bool EvalReturningScope(JSContext* cx, unsigned argc, Value* vp) {
   }
 
   JS::AutoFilename filename;
-  unsigned lineno;
+  uint32_t lineno;
 
   JS::DescribeScriptedCaller(cx, &filename, &lineno);
 
@@ -6881,7 +6966,7 @@ static bool CompileToStencil(JSContext* cx, uint32_t argc, Value* vp) {
 
   JS::InstantiationStorage storage;
   if (prepareForInstantiate) {
-    if (!JS::PrepareForInstantiate(&fc, compileStorage, *stencil, storage)) {
+    if (!JS::PrepareForInstantiate(&fc, *stencil, storage)) {
       return false;
     }
   }
@@ -8275,7 +8360,7 @@ static bool BaselineCompile(JSContext* cx, unsigned argc, Value* vp) {
       returnedStr = "can't compile";
       break;
     }
-    if (!cx->realm()->ensureJitRealmExists(cx)) {
+    if (!cx->zone()->ensureJitZoneExists(cx)) {
       return false;
     }
 
@@ -8363,7 +8448,7 @@ static bool GetICUOptions(JSContext* cx, unsigned argc, Value* vp) {
 
   intl::FormatBuffer<char16_t, intl::INITIAL_CHAR_BUFFER_SIZE> buf(cx);
 
-  if (auto ok = DateTimeInfo::timeZoneId(DateTimeInfo::ShouldRFP::No, buf);
+  if (auto ok = DateTimeInfo::timeZoneId(DateTimeInfo::ForceUTC::No, buf);
       ok.isErr()) {
     intl::ReportInternalError(cx, ok.unwrapErr());
     return false;
@@ -8590,7 +8675,7 @@ static bool FdLibM_Pow(JSContext* cx, unsigned argc, Value* vp) {
   if (!std::isfinite(y) && (x == 1.0 || x == -1.0)) {
     args.rval().setNaN();
   } else {
-    args.rval().setDouble(fdlibm::pow(x, y));
+    args.rval().setDouble(fdlibm_pow(x, y));
   }
   return true;
 }
@@ -9073,7 +9158,7 @@ gc::ZealModeHelpText),
     JS_FN_HELP("wasm" #NAME "Enabled", Wasm##NAME##Enabled, 0, 0, \
 "wasm" #NAME "Enabled()", \
 "  Returns a boolean indicating whether the WebAssembly " #NAME " proposal is enabled."),
-JS_FOR_WASM_FEATURES(WASM_FEATURE, WASM_FEATURE, WASM_FEATURE)
+JS_FOR_WASM_FEATURES(WASM_FEATURE)
 #undef WASM_FEATURE
 
     JS_FN_HELP("wasmThreadsEnabled", WasmThreadsEnabled, 0, 0,
@@ -9186,6 +9271,16 @@ JS_FOR_WASM_FEATURES(WASM_FEATURE, WASM_FEATURE, WASM_FEATURE)
 "wasmIntrinsicI8VecMul()",
 "  Returns a module that implements an i8 vector pairwise multiplication intrinsic."),
 
+#ifdef ENABLE_WASM_GC
+    JS_FN_HELP("wasmGcReadField", WasmGcReadField, 2, 0,
+"wasmGcReadField(obj, index)",
+"  Gets a field of a WebAssembly GC struct or array."),
+
+    JS_FN_HELP("wasmGcArrayLength", WasmGcArrayLength, 1, 0,
+"wasmGcArrayLength(arr)",
+"  Gets the length of a WebAssembly GC array."),
+#endif // ENABLE_WASM_GC
+
     JS_FN_HELP("largeArrayBufferSupported", LargeArrayBufferSupported, 0, 0,
 "largeArrayBufferSupported()",
 "  Returns true if array buffers larger than 2GB can be allocated."),
@@ -9295,6 +9390,15 @@ JS_FOR_WASM_FEATURES(WASM_FEATURE, WASM_FEATURE, WASM_FEATURE)
 "     1 - fail during readTransfer() hook\n"
 "     2 - fail during read() hook\n"
 "  Set the log to null to clear it."),
+
+    JS_FN_HELP("JSONStringify", JSONStringify, 4, 0,
+"JSONStringify(value, behavior)",
+"  Same as JSON.stringify(value), but allows setting behavior:\n"
+"    Normal: the default\n"
+"    FastOnly: throw if the fast path bails\n"
+"    SlowOnly: skip the fast path entirely\n"
+"    Compare: run both the fast and slow paths and compare the result. Crash if\n"
+"      they do not match. If the fast path bails, no comparison is done."),
 
     JS_FN_HELP("helperThreadCount", HelperThreadCount, 0, 0,
 "helperThreadCount()",

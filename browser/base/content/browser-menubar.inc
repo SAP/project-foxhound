@@ -250,6 +250,9 @@
                 <menuitem id="hiddenTabsMenu"
                           oncommand="gTabsPanel.showHiddenTabsPanel(event, 'hidden-tabs-menuitem');"
                           hidden="true" data-l10n-id="menu-history-hidden-tabs"/>
+                <menuitem id="menu_searchHistory"
+                          command="History:SearchHistory"
+                          data-l10n-id="menu-history-search"/>
                 <menu id="historyUndoMenu"
                       disabled="true" data-l10n-id="menu-history-undo-menu">
                   <menupopup id="historyUndoPopup"
@@ -312,6 +315,9 @@
                 command="Browser:AddBookmarkAs"
                 key="addBookmarkAsKb"
                 data-l10n-id="menu-bookmark-tab"/>
+      <menuitem id="menu_searchBookmarks"
+                command="Browser:SearchBookmarks"
+                data-l10n-id="menu-bookmarks-search"/>
       <menuitem id="menu_bookmarkAllTabs"
                 class="show-only-for-keyboard"
                 command="Browser:BookmarkAllTabs"

@@ -70,6 +70,10 @@ class PeerConfigurer {
       std::unique_ptr<VideoEncoderFactory> video_encoder_factory);
   PeerConfigurer* SetVideoDecoderFactory(
       std::unique_ptr<VideoDecoderFactory> video_decoder_factory);
+  PeerConfigurer* SetAudioEncoderFactory(
+      rtc::scoped_refptr<webrtc::AudioEncoderFactory> audio_encoder_factory);
+  PeerConfigurer* SetAudioDecoderFactory(
+      rtc::scoped_refptr<webrtc::AudioDecoderFactory> audio_decoder_factory);
   // Set a custom NetEqFactory to be used in the call.
   PeerConfigurer* SetNetEqFactory(std::unique_ptr<NetEqFactory> neteq_factory);
   PeerConfigurer* SetAudioProcessing(
@@ -148,10 +152,10 @@ class PeerConfigurer {
 
   // If is set, an RTCEventLog will be saved in that location and it will be
   // available for further analysis.
-  PeerConfigurer* SetRtcEventLogPath(std::string path);
+  PeerConfigurer* SetRtcEventLogPath(absl::string_view path);
   // If is set, an AEC dump will be saved in that location and it will be
   // available for further analysis.
-  PeerConfigurer* SetAecDumpPath(std::string path);
+  PeerConfigurer* SetAecDumpPath(absl::string_view path);
   PeerConfigurer* SetRTCConfiguration(
       PeerConnectionInterface::RTCConfiguration configuration);
   PeerConfigurer* SetRTCOfferAnswerOptions(

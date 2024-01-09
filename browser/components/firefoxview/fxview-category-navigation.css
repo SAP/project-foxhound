@@ -7,23 +7,20 @@
   margin-inline-start: 42px;
   border-inline-end: 1px solid transparent;
   position: sticky;
+  top: 0;
+  height: 100vh;
 }
 
 nav {
-  height: 100%;
   display: grid;
   grid-template-rows: min-content 1fr auto;
   gap: 25px;
+  margin-block-start: var(--fxview-margin-top);
 }
 
 .category-nav-header {
   /* Align the header text/icon with the category button icons */
   margin-inline-start: var(--fxviewcategorynav-button-padding);
-}
-
-::slotted(h2) {
-  font-size: 1.6em;
-  margin: 0;
 }
 
 .category-nav-buttons,

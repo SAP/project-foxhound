@@ -82,7 +82,6 @@ add_task(async function () {
       type: "iframe",
       filename: "file_use_counter_svg_getElementById.svg",
       counters: [{ name: "SVGSVGELEMENT_GETELEMENTBYID" }],
-      check_documents: false,
     },
     {
       type: "iframe",
@@ -91,7 +90,6 @@ add_task(async function () {
         { name: "SVGSVGELEMENT_CURRENTSCALE_getter" },
         { name: "SVGSVGELEMENT_CURRENTSCALE_setter" },
       ],
-      check_documents: false,
     },
 
     // Check that use counters are incremented by SVGs loaded as images.
@@ -154,12 +152,8 @@ add_task(async function () {
     let file = test.filename;
     info(`checking ${file} (${test.type})`);
 
-    let newTab = BrowserTestUtils.addTab(gBrowser, "about:blank");
-    gBrowser.selectedTab = newTab;
-    newTab.linkedBrowser.stop();
-
     // Hold on to the current values of the telemetry histograms we're
-    // interested in.
+    // interested in. Opening an about:blank tab shouldn't change those.
     let before = await grabHistogramsFromContent(
       test.counters.map(c => c.name)
     );
@@ -188,18 +182,23 @@ add_task(async function () {
         throw `unexpected type ${test.type}`;
     }
 
-    BrowserTestUtils.loadURIString(gBrowser.selectedBrowser, url);
-    await BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser);
-
+    let waitForFinish = null;
     if (test.waitForExplicitFinish) {
-      if (test.type != "direct") {
-        throw new Error(
-          `cannot use waitForExplicitFinish with test type ${test.type}`
-        );
-      }
-
+      is(
+        test.type,
+        "direct",
+        `cannot use waitForExplicitFinish with test type ${test.type}`
+      );
       // Wait until the tab changes its hash to indicate it has finished.
-      await BrowserTestUtils.waitForLocationChange(gBrowser, url + "#finished");
+      waitForFinish = BrowserTestUtils.waitForLocationChange(
+        gBrowser,
+        url + "#finished"
+      );
+    }
+
+    let newTab = await BrowserTestUtils.openNewForegroundTab(gBrowser, url);
+    if (waitForFinish) {
+      await waitForFinish;
     }
 
     if (targetElement) {
@@ -223,9 +222,7 @@ add_task(async function () {
     }
 
     // Tear down the page.
-    let tabClosed = BrowserTestUtils.waitForTabClosing(newTab);
-    gBrowser.removeTab(newTab);
-    await tabClosed;
+    await BrowserTestUtils.removeTab(newTab);
 
     // Grab histograms again.
     let after = await grabHistogramsFromContent(
@@ -251,18 +248,31 @@ add_task(async function () {
       }
     }
 
-    if (test.check_documents ?? true) {
+    if (test.filename == "file_use_counter_bfcache.html") {
+      // This test navigates a bunch of times and thus creates multiple top
+      // level document entries, as expected.
+      // Whether the last document is destroyed is a bit racy, see bug 1842800,
+      // so for now we allow it with +/- 1.
       ok(
-        after.toplevel_docs >= before.toplevel_docs + 1,
+        after.toplevel_docs == before.toplevel_docs + 5 ||
+          after.toplevel_docs == before.toplevel_docs + 6,
+        `top level destroyed document counts are correct: ${before.toplevel_docs} vs ${after.toplevel_docs}`
+      );
+    } else {
+      is(
+        after.toplevel_docs,
+        before.toplevel_docs + 1,
         "top level destroyed document counts are correct"
       );
-      // 2 documents for "img" tests: one for the outer html page containing the
-      // <img> element, and one for the SVG image itself.
-      ok(
-        after.docs >= before.docs + (test.type == "img" ? 2 : 1),
-        "destroyed document counts are correct"
-      );
     }
+
+    // 2 documents for "img" tests: one for the outer html page containing the
+    // <img> element, and one for the SVG image itself.
+    // FIXME: iframe tests and so on probably should get two at least.
+    ok(
+      after.docs >= before.docs + (test.type == "img" ? 2 : 1),
+      "destroyed document counts are correct"
+    );
   }
 });
 

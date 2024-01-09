@@ -45,7 +45,13 @@ namespace gc {
 
 struct Cell;
 
-}
+}  // namespace gc
+
+namespace wasm {
+
+class AnyRef;
+
+}  // namespace wasm
 
 namespace jit {
 
@@ -62,8 +68,6 @@ enum DataType : uint8_t {
   Type_Value,
   Type_Handle
 };
-
-enum MaybeTailCall : bool { TailCall, NonTailCall };
 
 // [SMDOC] JIT-to-C++ Function Calls. (callVM)
 //
@@ -139,7 +143,7 @@ enum MaybeTailCall : bool { TailCall, NonTailCall };
 
 // Data for a VM function. All VMFunctionDatas are stored in a constexpr array.
 struct VMFunctionData {
-#if defined(DEBUG) || defined(JS_JITSPEW)
+#if defined(DEBUG) || defined(JS_JITSPEW) || defined(JS_ION_PERF)
   // Informative name of the wrapped function. The name should not be present
   // in release builds in order to save memory.
   const char* name_;
@@ -204,11 +208,6 @@ struct VMFunctionData {
   // wrapper.
   uint8_t extraValuesToPop;
 
-  // On some architectures, called functions need to explicitly push their
-  // return address, for a tail call, there is nothing to push, so tail-callness
-  // needs to be known at compile time.
-  MaybeTailCall expectTailCall;
-
   uint32_t argc() const {
     // JSContext * + args + (OutParam? *)
     return 1 + explicitArgc() + ((outParam == Type_Void) ? 0 : 1);
@@ -234,7 +233,7 @@ struct VMFunctionData {
     return ((argumentPassedInFloatRegs >> explicitArg) & 1) == 1;
   }
 
-#if defined(DEBUG) || defined(JS_JITSPEW)
+#if defined(DEBUG) || defined(JS_JITSPEW) || defined(JS_ION_PERF)
   const char* name() const { return name_; }
 #endif
 
@@ -306,10 +305,9 @@ struct VMFunctionData {
                            uint32_t argumentPassedInFloatRegs,
                            uint64_t argRootTypes, DataType outParam,
                            RootType outParamRootType, DataType returnType,
-                           uint8_t extraValuesToPop = 0,
-                           MaybeTailCall expectTailCall = NonTailCall)
+                           uint8_t extraValuesToPop = 0)
       :
-#if defined(DEBUG) || defined(JS_JITSPEW)
+#if defined(DEBUG) || defined(JS_JITSPEW) || defined(JS_ION_PERF)
         name_(name),
 #endif
         argumentRootTypes(argRootTypes),
@@ -319,8 +317,7 @@ struct VMFunctionData {
         outParamRootType(outParamRootType),
         outParam(outParam),
         returnType(returnType),
-        extraValuesToPop(extraValuesToPop),
-        expectTailCall(expectTailCall) {
+        extraValuesToPop(extraValuesToPop) {
     // Check for valid failure/return type.
     MOZ_ASSERT_IF(outParam != Type_Void,
                   returnType == Type_Void || returnType == Type_Bool);
@@ -376,8 +373,6 @@ template <ComparisonKind Kind>
 bool StringsCompare(JSContext* cx, HandleString lhs, HandleString rhs,
                     bool* res);
 
-[[nodiscard]] bool ArrayPushDensePure(JSContext* cx, ArrayObject* arr,
-                                      Value* v);
 JSString* ArrayJoin(JSContext* cx, HandleObject array, HandleString sep);
 [[nodiscard]] bool SetArrayLength(JSContext* cx, HandleObject obj,
                                   HandleValue value, bool strict);
@@ -413,9 +408,6 @@ bool OperatorIn(JSContext* cx, HandleValue key, HandleObject obj, bool* out);
 void PostWriteBarrier(JSRuntime* rt, js::gc::Cell* cell);
 void PostGlobalWriteBarrier(JSRuntime* rt, GlobalObject* obj);
 
-enum class IndexInBounds { Yes, Maybe };
-
-template <IndexInBounds InBounds>
 void PostWriteElementBarrier(JSRuntime* rt, JSObject* obj, int32_t index);
 
 // If |str| represents an int32, assign it to |result| and return true.
@@ -514,6 +506,7 @@ void JitValuePreWriteBarrier(JSRuntime* rt, Value* vp);
 void JitStringPreWriteBarrier(JSRuntime* rt, JSString** stringp);
 void JitObjectPreWriteBarrier(JSRuntime* rt, JSObject** objp);
 void JitShapePreWriteBarrier(JSRuntime* rt, Shape** shapep);
+void JitWasmAnyRefPreWriteBarrier(JSRuntime* rt, wasm::AnyRef* refp);
 
 bool ObjectIsCallable(JSObject* obj);
 bool ObjectIsConstructor(JSObject* obj);
@@ -544,6 +537,9 @@ bool CallDOMSetter(JSContext* cx, const JSJitInfo* jitInfo, HandleObject obj,
 
 void HandleCodeCoverageAtPC(BaselineFrame* frame, jsbytecode* pc);
 void HandleCodeCoverageAtPrologue(BaselineFrame* frame);
+
+bool CheckProxyGetByValueResult(JSContext* cx, HandleObject obj, HandleValue id,
+                                HandleValue value, MutableHandleValue result);
 
 bool GetNativeDataPropertyPure(JSContext* cx, JSObject* obj, PropertyKey id,
                                MegamorphicCacheEntry* entry, Value* vp);
@@ -591,8 +587,6 @@ void* AllocateBigIntNoGC(JSContext* cx, bool requestMinorGC);
 void AllocateAndInitTypedArrayBuffer(JSContext* cx, TypedArrayObject* obj,
                                      int32_t count);
 
-void* CreateMatchResultFallbackFunc(JSContext* cx, gc::AllocKind kind,
-                                    size_t nDynamicSlots);
 #ifdef JS_GC_PROBES
 void TraceCreateObject(JSObject* obj);
 #endif
@@ -694,11 +688,9 @@ void AssumeUnreachable(const char* output);
 void Printf0(const char* output);
 void Printf1(const char* output, uintptr_t value);
 
-enum class TailCallVMFunctionId;
 enum class VMFunctionId;
 
 extern const VMFunctionData& GetVMFunction(VMFunctionId id);
-extern const VMFunctionData& GetVMFunction(TailCallVMFunctionId id);
 
 }  // namespace jit
 }  // namespace js

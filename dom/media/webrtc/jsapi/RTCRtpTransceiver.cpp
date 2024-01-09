@@ -3,37 +3,84 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "jsapi/RTCRtpTransceiver.h"
-#include "mozilla/UniquePtr.h"
+
+#include <stdint.h>
+
 #include <algorithm>
 #include <string>
 #include <vector>
-#include "libwebrtcglue/AudioConduit.h"
-#include "libwebrtcglue/VideoConduit.h"
-#include "MediaTrackGraph.h"
-#include "transportbridge/MediaPipeline.h"
-#include "transportbridge/MediaPipelineFilter.h"
-#include "jsep/JsepTrack.h"
-#include "sdp/SdpHelper.h"
-#include "MediaTrackGraphImpl.h"
-#include "transport/logging.h"
-#include "MediaEngine.h"
-#include "nsIPrincipal.h"
-#include "MediaSegment.h"
-#include "RemoteTrackSource.h"
-#include "libwebrtcglue/RtpRtcpConfig.h"
-#include "MediaTransportHandler.h"
+#include <utility>
+#include <set>
+#include <string>
+#include <tuple>
+
+#include "api/video_codecs/video_codec.h"
+
+#include "nsCOMPtr.h"
+#include "nsContentUtils.h"
+#include "nsCycleCollectionParticipant.h"
+#include "nsDebug.h"
+#include "nsISerialEventTarget.h"
+#include "nsISupports.h"
+#include "nsProxyRelease.h"
+#include "nsStringFwd.h"
+#include "nsString.h"
+#include "nsTArray.h"
+#include "nsThreadUtils.h"
+#include "nsWrapperCache.h"
+#include "PrincipalHandle.h"
+#include "ErrorList.h"
+#include "MainThreadUtils.h"
+#include "MediaEventSource.h"
+#include "mozilla/AbstractThread.h"
+#include "mozilla/Assertions.h"
+#include "mozilla/ErrorResult.h"
+#include "mozilla/fallible.h"
+#include "mozilla/Maybe.h"
+#include "mozilla/mozalloc_oom.h"
+#include "mozilla/MozPromise.h"
+#include "mozilla/Preferences.h"
+#include "mozilla/UniquePtr.h"
+#include "mozilla/StateMirroring.h"
+#include "mozilla/RefPtr.h"
+#include "mozilla/dom/Nullable.h"
+#include "mozilla/dom/RTCStatsReportBinding.h"
 #include "mozilla/dom/RTCRtpReceiverBinding.h"
 #include "mozilla/dom/RTCRtpSenderBinding.h"
 #include "mozilla/dom/RTCRtpTransceiverBinding.h"
 #include "mozilla/dom/Promise.h"
+#include "utils/PerformanceRecorder.h"
+#include "systemservices/MediaUtils.h"
+#include "MediaTrackGraph.h"
+#include "js/RootingAPI.h"
+#include "libwebrtcglue/AudioConduit.h"
+#include "libwebrtcglue/VideoConduit.h"
+#include "transportbridge/MediaPipeline.h"
+#include "jsep/JsepTrack.h"
+#include "sdp/SdpHelper.h"
+#include "transport/logging.h"
+#include "RemoteTrackSource.h"
+#include "libwebrtcglue/RtpRtcpConfig.h"
+#include "MediaTransportHandler.h"
 #include "RTCDtlsTransport.h"
 #include "RTCRtpReceiver.h"
 #include "RTCRtpSender.h"
 #include "RTCDTMFSender.h"
-#include "systemservices/MediaUtils.h"
+#include "PeerConnectionImpl.h"
+#include "RTCStatsIdGenerator.h"
 #include "libwebrtcglue/WebrtcCallWrapper.h"
-#include "libwebrtcglue/WebrtcGmpVideoCodec.h"
-#include "utils/PerformanceRecorder.h"
+#include "libwebrtcglue/FrameTransformerProxy.h"
+#include "jsep/JsepCodecDescription.h"
+#include "jsep/JsepSession.h"
+#include "jsep/JsepTrackEncoding.h"
+#include "libwebrtcglue/CodecConfig.h"
+#include "libwebrtcglue/MediaConduitControl.h"
+#include "libwebrtcglue/MediaConduitInterface.h"
+#include "RTCStatsReport.h"
+#include "sdp/SdpAttribute.h"
+#include "sdp/SdpEnum.h"
+#include "sdp/SdpMediaSection.h"
+#include "transport/transportlayer.h"
 
 namespace mozilla {
 
@@ -56,40 +103,39 @@ struct ConduitControlState : public AudioConduitControlInterface,
   const nsMainThreadPtrHandle<RTCRtpReceiver> mReceiver;
 
   // MediaConduitControlInterface
-  AbstractCanonical<bool>* CanonicalReceiving() override {
+  Canonical<bool>& CanonicalReceiving() override {
     return mReceiver->CanonicalReceiving();
   }
-  AbstractCanonical<bool>* CanonicalTransmitting() override {
+  Canonical<bool>& CanonicalTransmitting() override {
     return mSender->CanonicalTransmitting();
   }
-  AbstractCanonical<Ssrcs>* CanonicalLocalSsrcs() override {
+  Canonical<Ssrcs>& CanonicalLocalSsrcs() override {
     return mSender->CanonicalSsrcs();
   }
-  AbstractCanonical<std::string>* CanonicalLocalCname() override {
+  Canonical<std::string>& CanonicalLocalCname() override {
     return mSender->CanonicalCname();
   }
-  AbstractCanonical<std::string>* CanonicalMid() override {
+  Canonical<std::string>& CanonicalMid() override {
     return mTransceiver->CanonicalMid();
   }
-  AbstractCanonical<Ssrc>* CanonicalRemoteSsrc() override {
+  Canonical<Ssrc>& CanonicalRemoteSsrc() override {
     return mReceiver->CanonicalSsrc();
   }
-  AbstractCanonical<std::string>* CanonicalSyncGroup() override {
+  Canonical<std::string>& CanonicalSyncGroup() override {
     return mTransceiver->CanonicalSyncGroup();
   }
-  AbstractCanonical<RtpExtList>* CanonicalLocalRecvRtpExtensions() override {
+  Canonical<RtpExtList>& CanonicalLocalRecvRtpExtensions() override {
     return mReceiver->CanonicalLocalRtpExtensions();
   }
-  AbstractCanonical<RtpExtList>* CanonicalLocalSendRtpExtensions() override {
+  Canonical<RtpExtList>& CanonicalLocalSendRtpExtensions() override {
     return mSender->CanonicalLocalRtpExtensions();
   }
 
   // AudioConduitControlInterface
-  AbstractCanonical<Maybe<AudioCodecConfig>>* CanonicalAudioSendCodec()
-      override {
+  Canonical<Maybe<AudioCodecConfig>>& CanonicalAudioSendCodec() override {
     return mSender->CanonicalAudioCodec();
   }
-  AbstractCanonical<std::vector<AudioCodecConfig>>* CanonicalAudioRecvCodecs()
+  Canonical<std::vector<AudioCodecConfig>>& CanonicalAudioRecvCodecs()
       override {
     return mReceiver->CanonicalAudioCodecs();
   }
@@ -98,31 +144,36 @@ struct ConduitControlState : public AudioConduitControlInterface,
   }
 
   // VideoConduitControlInterface
-  AbstractCanonical<Ssrcs>* CanonicalLocalVideoRtxSsrcs() override {
+  Canonical<Ssrcs>& CanonicalLocalVideoRtxSsrcs() override {
     return mSender->CanonicalVideoRtxSsrcs();
   }
-  AbstractCanonical<Ssrc>* CanonicalRemoteVideoRtxSsrc() override {
+  Canonical<Ssrc>& CanonicalRemoteVideoRtxSsrc() override {
     return mReceiver->CanonicalVideoRtxSsrc();
   }
-  AbstractCanonical<Maybe<VideoCodecConfig>>* CanonicalVideoSendCodec()
-      override {
+  Canonical<Maybe<VideoCodecConfig>>& CanonicalVideoSendCodec() override {
     return mSender->CanonicalVideoCodec();
   }
-  AbstractCanonical<Maybe<RtpRtcpConfig>>* CanonicalVideoSendRtpRtcpConfig()
-      override {
+  Canonical<Maybe<RtpRtcpConfig>>& CanonicalVideoSendRtpRtcpConfig() override {
     return mSender->CanonicalVideoRtpRtcpConfig();
   }
-  AbstractCanonical<std::vector<VideoCodecConfig>>* CanonicalVideoRecvCodecs()
+  Canonical<std::vector<VideoCodecConfig>>& CanonicalVideoRecvCodecs()
       override {
     return mReceiver->CanonicalVideoCodecs();
   }
-  AbstractCanonical<Maybe<RtpRtcpConfig>>* CanonicalVideoRecvRtpRtcpConfig()
-      override {
+  Canonical<Maybe<RtpRtcpConfig>>& CanonicalVideoRecvRtpRtcpConfig() override {
     return mReceiver->CanonicalVideoRtpRtcpConfig();
   }
-  AbstractCanonical<webrtc::VideoCodecMode>* CanonicalVideoCodecMode()
-      override {
+  Canonical<webrtc::VideoCodecMode>& CanonicalVideoCodecMode() override {
     return mSender->CanonicalVideoCodecMode();
+  }
+  Canonical<RefPtr<FrameTransformerProxy>>& CanonicalFrameTransformerProxySend()
+      override {
+    return mSender->CanonicalFrameTransformerProxy();
+  }
+
+  Canonical<RefPtr<FrameTransformerProxy>>& CanonicalFrameTransformerProxyRecv()
+      override {
+    return mReceiver->CanonicalFrameTransformerProxy();
   }
 };
 }  // namespace
@@ -189,6 +240,7 @@ SdpDirectionAttribute::Direction ToSdpDirection(
     case dom::RTCRtpTransceiverDirection::Recvonly:
       return SdpDirectionAttribute::Direction::kRecvonly;
     case dom::RTCRtpTransceiverDirection::Inactive:
+    case dom::RTCRtpTransceiverDirection::Stopped:
       return SdpDirectionAttribute::Direction::kInactive;
     case dom::RTCRtpTransceiverDirection::EndGuard_:;
   }
@@ -310,17 +362,10 @@ void RTCRtpTransceiver::InitConduitControl() {
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(mConduit);
   ConduitControlState control(this, mSender, mReceiver);
-  mCallWrapper->mCallThread->Dispatch(NS_NewRunnableFunction(
-      __func__, [conduit = mConduit, control = std::move(control)]() mutable {
-        conduit->AsVideoSessionConduit().apply(
-            [&](VideoSessionConduit* aConduit) {
-              aConduit->InitControl(&control);
-            });
-        conduit->AsAudioSessionConduit().apply(
-            [&](AudioSessionConduit* aConduit) {
-              aConduit->InitControl(&control);
-            });
-      }));
+  mConduit->AsVideoSessionConduit().apply(
+      [&](auto aConduit) { aConduit->InitControl(&control); });
+  mConduit->AsAudioSessionConduit().apply(
+      [&](auto aConduit) { aConduit->InitControl(&control); });
 }
 
 void RTCRtpTransceiver::Close() {
@@ -329,7 +374,7 @@ void RTCRtpTransceiver::Close() {
   // https://w3c.github.io/webrtc-pc/#dom-rtcpeerconnection-close
   mShutdown = true;
   if (mDtlsTransport) {
-    mDtlsTransport->UpdateState(TransportLayer::TS_CLOSED);
+    mDtlsTransport->UpdateStateNoEvent(TransportLayer::TS_CLOSED);
   }
   StopImpl();
 }
@@ -461,8 +506,11 @@ void RTCRtpTransceiver::SyncFromJsep(const JsepSession& aSession) {
 
   mJsepTransceiver = *aSession.GetTransceiver(mTransceiverId);
 
-  // Transceivers can stop due to JSEP negotiation, so we need to check that
-  if (mJsepTransceiver.IsStopped()) {
+  // Transceivers can stop due to sRD, so we need to check that
+  if (!mStopped && mJsepTransceiver.IsStopped()) {
+    MOZ_MTLOG(ML_DEBUG, mPc->GetHandle()
+                            << "[" << mMid.Ref() << "]: " << __FUNCTION__
+                            << " JSEP transceiver is stopped");
     StopImpl();
   }
 
@@ -497,7 +545,7 @@ void RTCRtpTransceiver::SyncFromJsep(const JsepSession& aSession) {
   }
 
   mShouldRemove = mJsepTransceiver.IsRemoved();
-  mHasTransport = mJsepTransceiver.HasLevel() && !mJsepTransceiver.IsStopped();
+  mHasTransport = !mStopped && mJsepTransceiver.mTransport.mComponents;
 }
 
 void RTCRtpTransceiver::SyncToJsep(JsepSession& aSession) const {
@@ -511,7 +559,7 @@ void RTCRtpTransceiver::SyncToJsep(JsepSession& aSession) const {
         mReceiver->SyncToJsep(aTransceiver);
         mSender->SyncToJsep(aTransceiver);
         aTransceiver.mJsDirection = ToSdpDirection(mDirection);
-        if (mStopped) {
+        if (mStopping || mStopped) {
           aTransceiver.Stop();
         }
       });
@@ -542,17 +590,27 @@ std::string RTCRtpTransceiver::GetMidAscii() const {
 
 void RTCRtpTransceiver::SetDirection(RTCRtpTransceiverDirection aDirection,
                                      ErrorResult& aRv) {
-  if (mStopped) {
-    aRv.ThrowInvalidStateError("Transceiver is stopped!");
+  // If transceiver.[[Stopping]] is true, throw an InvalidStateError.
+  if (mStopping) {
+    aRv.ThrowInvalidStateError("Transceiver is stopping/stopped!");
     return;
   }
 
+  // If newDirection is equal to transceiver.[[Direction]], abort these steps.
   if (aDirection == mDirection) {
     return;
   }
 
+  // If newDirection is equal to "stopped", throw a TypeError.
+  if (aDirection == RTCRtpTransceiverDirection::Stopped) {
+    aRv.ThrowTypeError("Cannot use \"stopped\" in setDirection!");
+    return;
+  }
+
+  // Set transceiver.[[Direction]] to newDirection.
   SetDirectionInternal(aDirection);
 
+  // Update the negotiation-needed flag for connection.
   mPc->UpdateNegotiationNeeded();
 }
 
@@ -574,7 +632,7 @@ bool RTCRtpTransceiver::CanSendDTMF() const {
   // so this is pretty close.
   // TODO (bug 1265827): Base this on RTCPeerConnectionState instead.
   // TODO (bug 1623193): Tighten this up
-  if (!IsSending() || !mSender->GetTrack()) {
+  if (!IsSending() || !mSender->GetTrack() || Stopping()) {
     return false;
   }
 
@@ -818,13 +876,30 @@ void RTCRtpTransceiver::Stop(ErrorResult& aRv) {
     return;
   }
 
-  StopImpl();
+  if (mStopping) {
+    return;
+  }
+
+  StopTransceiving();
   mPc->UpdateNegotiationNeeded();
 }
 
-void RTCRtpTransceiver::StopImpl() {
-  if (mStopped) {
+void RTCRtpTransceiver::StopTransceiving() {
+  if (mStopping) {
+    MOZ_ASSERT(false);
     return;
+  }
+  mStopping = true;
+  // This is the "Stop sending and receiving" algorithm from webrtc-pc
+  mSender->Stop();
+  mReceiver->Stop();
+  mDirection = RTCRtpTransceiverDirection::Inactive;
+}
+
+void RTCRtpTransceiver::StopImpl() {
+  // This is the "stop the RTCRtpTransceiver" algorithm from webrtc-pc
+  if (!mStopping) {
+    StopTransceiving();
   }
 
   if (mCallWrapper) {
@@ -845,6 +920,8 @@ void RTCRtpTransceiver::StopImpl() {
 
   mSender->Stop();
   mReceiver->Stop();
+
+  mHasTransport = false;
 
   auto self = nsMainThreadPtrHandle<RTCRtpTransceiver>(
       new nsMainThreadPtrHolder<RTCRtpTransceiver>(

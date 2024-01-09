@@ -171,6 +171,10 @@ void EnsureUnwoundJitExitFrame(JitActivation* act, JitFrameLayout* frame);
 
 void TraceJitActivations(JSContext* cx, JSTracer* trc);
 
+// Trace weak pointers in baseline stubs in activations for zones that are
+// currently being swept.
+void TraceWeakJitActivationsInSweepingZones(JSContext* cx, JSTracer* trc);
+
 void UpdateJitActivationsForMinorGC(JSRuntime* rt);
 
 static inline uint32_t MakeFrameDescriptor(FrameType type) {
@@ -302,8 +306,16 @@ class IonICCallFrameLayout : public CommonFrameLayout {
   JitCode* stubCode_;
 
  public:
+  static constexpr size_t LocallyTracedValueOffset = sizeof(void*);
+
   JitCode** stubCode() { return &stubCode_; }
   static size_t Size() { return sizeof(IonICCallFrameLayout); }
+
+  inline Value* locallyTracedValuePtr(size_t index) {
+    uint8_t* fp = reinterpret_cast<uint8_t*>(this);
+    return reinterpret_cast<Value*>(fp - LocallyTracedValueOffset -
+                                    index * sizeof(Value));
+  }
 };
 
 enum class ExitFrameType : uint8_t {
@@ -702,12 +714,19 @@ class BaselineStubFrameLayout : public CommonFrameLayout {
  public:
   static constexpr size_t ICStubOffset = sizeof(void*);
   static constexpr int ICStubOffsetFromFP = -int(ICStubOffset);
+  static constexpr size_t LocallyTracedValueOffset = 2 * sizeof(void*);
 
   static inline size_t Size() { return sizeof(BaselineStubFrameLayout); }
 
   inline ICStub* maybeStubPtr() {
     uint8_t* fp = reinterpret_cast<uint8_t*>(this);
     return *reinterpret_cast<ICStub**>(fp - ICStubOffset);
+  }
+
+  inline Value* locallyTracedValuePtr(size_t index) {
+    uint8_t* fp = reinterpret_cast<uint8_t*>(this);
+    return reinterpret_cast<Value*>(fp - LocallyTracedValueOffset -
+                                    index * sizeof(Value));
   }
 };
 

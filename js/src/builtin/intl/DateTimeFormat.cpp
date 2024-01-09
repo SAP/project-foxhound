@@ -36,7 +36,6 @@
 #include "vm/JSContext.h"
 #include "vm/PlainObject.h"  // js::PlainObject
 #include "vm/Runtime.h"
-#include "vm/WellKnownAtom.h"  // js_*_str
 
 #include "vm/GeckoProfiler-inl.h"
 #include "vm/JSObject-inl.h"
@@ -94,7 +93,7 @@ static const JSFunctionSpec dateTimeFormat_methods[] = {
     JS_SELF_HOSTED_FN("formatRange", "Intl_DateTimeFormat_formatRange", 2, 0),
     JS_SELF_HOSTED_FN("formatRangeToParts",
                       "Intl_DateTimeFormat_formatRangeToParts", 2, 0),
-    JS_FN(js_toSource_str, dateTimeFormat_toSource, 0, 0),
+    JS_FN("toSource", dateTimeFormat_toSource, 0, 0),
     JS_FS_END};
 
 static const JSPropertySpec dateTimeFormat_properties[] = {
@@ -404,7 +403,7 @@ bool js::intl_defaultTimeZone(JSContext* cx, unsigned argc, Value* vp) {
 
   FormatBuffer<char16_t, intl::INITIAL_CHAR_BUFFER_SIZE> timeZone(cx);
   auto result =
-      DateTimeInfo::timeZoneId(DateTimeInfo::shouldRFP(cx->realm()), timeZone);
+      DateTimeInfo::timeZoneId(DateTimeInfo::forceUTC(cx->realm()), timeZone);
   if (result.isErr()) {
     intl::ReportInternalError(cx, result.unwrapErr());
     return false;
@@ -424,7 +423,7 @@ bool js::intl_defaultTimeZoneOffset(JSContext* cx, unsigned argc, Value* vp) {
   MOZ_ASSERT(args.length() == 0);
 
   auto offset =
-      DateTimeInfo::getRawOffsetMs(DateTimeInfo::shouldRFP(cx->realm()));
+      DateTimeInfo::getRawOffsetMs(DateTimeInfo::forceUTC(cx->realm()));
   if (offset.isErr()) {
     intl::ReportInternalError(cx, offset.unwrapErr());
     return false;
@@ -448,7 +447,7 @@ bool js::intl_isDefaultTimeZone(JSContext* cx, unsigned argc, Value* vp) {
 
   FormatBuffer<char16_t, intl::INITIAL_CHAR_BUFFER_SIZE> chars(cx);
   auto result =
-      DateTimeInfo::timeZoneId(DateTimeInfo::shouldRFP(cx->realm()), chars);
+      DateTimeInfo::timeZoneId(DateTimeInfo::forceUTC(cx->realm()), chars);
   if (result.isErr()) {
     intl::ReportInternalError(cx, result.unwrapErr());
     return false;

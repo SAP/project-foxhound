@@ -39,7 +39,6 @@
 
 const char* kOskEnabled = "ui.osk.enabled";
 const char* kOskDetectPhysicalKeyboard = "ui.osk.detect_physical_keyboard";
-const char* kOskRequireWin10 = "ui.osk.require_win10";
 const char* kOskDebugReason = "ui.osk.debug.keyboardDisplayReason";
 
 namespace mozilla {
@@ -698,20 +697,18 @@ bool IMEHandler::IsOnScreenKeyboardSupported() {
     return true;
   }
 #endif  // NIGHTLY_BUILD
-  if (!IsWin8OrLater() || !Preferences::GetBool(kOskEnabled, true) ||
+  if (!Preferences::GetBool(kOskEnabled, true) ||
       !IMEHandler::NeedOnScreenKeyboard()) {
     return false;
   }
 
-  // On Windows 10 we require tablet mode, unless the user has set the relevant
-  // Windows setting to enable the on-screen keyboard in desktop mode.
-  // We might be disabled specifically on Win8(.1), so we check that afterwards.
-  if (IsWin10OrLater() && !IsWin11OrLater()) {
+  // On Windows 11, we ignore tablet mode (see bug 1722208)
+  if (!IsWin11OrLater()) {
+    // On Windows 10 we require tablet mode, unless the user has set the
+    // relevant setting to enable the on-screen keyboard in desktop mode.
     if (!IsInTabletMode() && !AutoInvokeOnScreenKeyboardInDesktopMode()) {
       return false;
     }
-  } else if (Preferences::GetBool(kOskRequireWin10, true)) {
-    return false;
   }
 
   return true;
@@ -738,10 +735,6 @@ void IMEHandler::MaybeDismissOnScreenKeyboard(nsWindow* aWindow, Sync aSync) {
     OSKVRManager::DismissOnScreenKeyboard();
   }
 #endif  // NIGHTLY_BUILD
-  if (!IsWin8OrLater()) {
-    return;
-  }
-
   if (aSync == Sync::Yes) {
     DismissOnScreenKeyboard(aWindow);
     return;
@@ -780,12 +773,6 @@ bool IMEHandler::WStringStartsWithCaseInsensitive(const std::wstring& aHaystack,
 // an on-screen keyboard for text input.
 // static
 bool IMEHandler::NeedOnScreenKeyboard() {
-  // This function is only supported for Windows 8 and up.
-  if (!IsWin8OrLater()) {
-    Preferences::SetString(kOskDebugReason, L"IKPOS: Requires Win8+.");
-    return false;
-  }
-
   if (!Preferences::GetBool(kOskDetectPhysicalKeyboard, true)) {
     Preferences::SetString(kOskDebugReason, L"IKPOS: Detection disabled.");
     return true;

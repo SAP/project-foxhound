@@ -11,6 +11,7 @@
 #include "mozilla/dom/WebSocketBinding.h"
 #include "mozilla/net/WebSocketChannel.h"
 
+#include "js/ColumnNumber.h"  // JS::ColumnNumberZeroOrigin
 #include "jsapi.h"
 #include "jsfriendapi.h"
 #include "mozilla/Atomics.h"
@@ -33,7 +34,6 @@
 #include "mozilla/dom/WorkerScope.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/LoadInfo.h"
-#include "nsGlobalWindow.h"
 #include "nsIScriptGlobalObject.h"
 #include "mozilla/dom/Document.h"
 #include "nsXPCOM.h"
@@ -1378,7 +1378,8 @@ already_AddRefed<WebSocket> WebSocket::ConstructorCommon(
     WorkerPrivate* workerPrivate = GetCurrentThreadWorkerPrivate();
     MOZ_ASSERT(workerPrivate);
 
-    unsigned lineno, column;
+    uint32_t lineno;
+    JS::ColumnNumberZeroOrigin column;
     JS::AutoFilename file;
     if (!JS::DescribeScriptedCaller(aGlobal.Context(), &file, &lineno,
                                     &column)) {
@@ -1388,7 +1389,8 @@ already_AddRefed<WebSocket> WebSocket::ConstructorCommon(
     RefPtr<InitRunnable> runnable = new InitRunnable(
         workerPrivate, webSocketImpl,
         workerPrivate->GlobalScope()->GetClientInfo(), !!aTransportProvider,
-        aUrl, protocolArray, nsDependentCString(file.get()), lineno, column);
+        aUrl, protocolArray, nsDependentCString(file.get()), lineno,
+        column.zeroOriginValue());
     runnable->Dispatch(Canceling, aRv);
     if (NS_WARN_IF(aRv.Failed())) {
       return nullptr;
@@ -1615,12 +1617,13 @@ nsresult WebSocketImpl::Init(JSContext* aCx, bool aIsSecure,
   } else {
     MOZ_ASSERT(aCx);
 
-    unsigned lineno, column;
+    uint32_t lineno;
+    JS::ColumnNumberZeroOrigin column;
     JS::AutoFilename file;
     if (JS::DescribeScriptedCaller(aCx, &file, &lineno, &column)) {
       mScriptFile = file.get();
       mScriptLine = lineno;
-      mScriptColumn = column;
+      mScriptColumn = column.zeroOriginValue();
     }
   }
 
@@ -1777,10 +1780,11 @@ nsresult WebSocketImpl::AsyncOpen(
   MOZ_ASSERT(NS_IsMainThread(), "Not running on main thread");
   MOZ_ASSERT_IF(!aTransportProvider, aNegotiatedExtensions.IsEmpty());
 
-  nsCString asciiOrigin;
-  nsresult rv = aPrincipal->GetAsciiOrigin(asciiOrigin);
+  nsCString webExposedOriginSerialization;
+  nsresult rv = aPrincipal->GetWebExposedOriginSerialization(
+      webExposedOriginSerialization);
   if (NS_FAILED(rv)) {
-    asciiOrigin.AssignLiteral("null");
+    webExposedOriginSerialization.AssignLiteral("null");
   }
 
   if (aTransportProvider) {
@@ -1789,7 +1793,7 @@ nsresult WebSocketImpl::AsyncOpen(
     NS_ENSURE_SUCCESS(rv, rv);
   }
 
-  ToLowerCase(asciiOrigin);
+  ToLowerCase(webExposedOriginSerialization);
 
   nsCOMPtr<nsIURI> uri;
   if (!aTransportProvider) {
@@ -1797,7 +1801,7 @@ nsresult WebSocketImpl::AsyncOpen(
     MOZ_ASSERT(NS_SUCCEEDED(rv));
   }
 
-  rv = mChannel->AsyncOpenNative(uri, asciiOrigin,
+  rv = mChannel->AsyncOpenNative(uri, webExposedOriginSerialization,
                                  aPrincipal->OriginAttributesRef(),
                                  aInnerWindowID, this, nullptr);
   if (NS_WARN_IF(NS_FAILED(rv))) {
@@ -2132,7 +2136,8 @@ nsresult WebSocketImpl::ParseURL(const nsAString& aURL) {
     return NS_ERROR_DOM_SYNTAX_ERR;
   }
 
-  rv = nsContentUtils::GetUTFOrigin(parsedURL, mUTF16Origin);
+  rv =
+      nsContentUtils::GetWebExposedOriginSerialization(parsedURL, mUTF16Origin);
   NS_ENSURE_SUCCESS(rv, NS_ERROR_DOM_SYNTAX_ERR);
 
   mAsciiHost = host;

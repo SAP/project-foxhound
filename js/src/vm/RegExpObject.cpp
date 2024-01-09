@@ -30,7 +30,6 @@
 #include "vm/PlainObject.h"
 #include "vm/RegExpStatics.h"
 #include "vm/StringType.h"
-#include "vm/WellKnownAtom.h"  // js_*_str
 
 #include "vm/JSContext-inl.h"
 #include "vm/JSObject-inl.h"
@@ -59,6 +58,8 @@ static_assert(RegExpFlag::DotAll == REGEXP_DOTALL_FLAG,
               "self-hosted JS and /s flag bits must agree");
 static_assert(RegExpFlag::Unicode == REGEXP_UNICODE_FLAG,
               "self-hosted JS and /u flag bits must agree");
+static_assert(RegExpFlag::UnicodeSets == REGEXP_UNICODESETS_FLAG,
+              "self-hosted JS and /v flag bits must agree");
 static_assert(RegExpFlag::Sticky == REGEXP_STICKY_FLAG,
               "self-hosted JS and /y flag bits must agree");
 
@@ -148,6 +149,10 @@ bool RegExpObject::isOriginalFlagGetter(JSNative native, RegExpFlags* mask) {
     *mask = RegExpFlag::Unicode;
     return true;
   }
+  if (native == regexp_unicodeSets) {
+    *mask = RegExpFlag::UnicodeSets;
+    return true;
+  }
 
   return false;
 }
@@ -176,7 +181,7 @@ static const ClassSpec RegExpObjectClassSpec = {
     FinishRegExpClassInit};
 
 const JSClass RegExpObject::class_ = {
-    js_RegExp_str,
+    "RegExp",
     JSCLASS_HAS_RESERVED_SLOTS(RegExpObject::RESERVED_SLOTS) |
         JSCLASS_HAS_CACHED_PROTO(JSProto_RegExp),
     JS_NULL_CLASS_OPS, &RegExpObjectClassSpec};
@@ -436,7 +441,7 @@ static bool EscapeRegExpPattern(StringBuffer& sb, const CharT* oldChars,
 JSLinearString* js::EscapeRegExpPattern(JSContext* cx, Handle<JSAtom*> src) {
   // Step 2.
   if (src->length() == 0) {
-    return cx->names().emptyRegExp;
+    return cx->names().emptyRegExp_;
   }
 
   // We may never need to use |sb|. Start using it lazily.
@@ -501,6 +506,9 @@ JSLinearString* RegExpObject::toString(JSContext* cx,
     return nullptr;
   }
   if (obj->unicode() && !sb.append('u')) {
+    return nullptr;
+  }
+  if (obj->unicodeSets() && !sb.append('v')) {
     return nullptr;
   }
   if (obj->sticky() && !sb.append('y')) {
@@ -847,90 +855,95 @@ size_t RegExpShared::sizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf) {
 RegExpRealm::RegExpRealm()
     : optimizableRegExpPrototypeShape_(nullptr),
       optimizableRegExpInstanceShape_(nullptr) {
-  for (auto& templateObj : matchResultTemplateObjects_) {
-    templateObj = nullptr;
+  for (auto& shape : matchResultShapes_) {
+    shape = nullptr;
   }
 }
 
-ArrayObject* RegExpRealm::createMatchResultTemplateObject(
-    JSContext* cx, ResultTemplateKind kind) {
-  MOZ_ASSERT(!matchResultTemplateObjects_[kind]);
+SharedShape* RegExpRealm::createMatchResultShape(JSContext* cx,
+                                                 ResultShapeKind kind) {
+  MOZ_ASSERT(!matchResultShapes_[kind]);
 
   /* Create template array object */
-  Rooted<ArrayObject*> templateObject(
-      cx,
-      NewDenseUnallocatedArray(cx, RegExpObject::MaxPairCount, TenuredObject));
+  Rooted<ArrayObject*> templateObject(cx, NewDenseEmptyArray(cx));
   if (!templateObject) {
     return nullptr;
   }
 
-  if (kind == ResultTemplateKind::Indices) {
+  if (kind == ResultShapeKind::Indices) {
     /* The |indices| array only has a |groups| property. */
-    RootedValue groupsVal(cx, UndefinedValue());
     if (!NativeDefineDataProperty(cx, templateObject, cx->names().groups,
-                                  groupsVal, JSPROP_ENUMERATE)) {
+                                  UndefinedHandleValue, JSPROP_ENUMERATE)) {
       return nullptr;
     }
     MOZ_ASSERT(templateObject->getLastProperty().slot() == IndicesGroupsSlot);
 
-    matchResultTemplateObjects_[kind].set(templateObject);
-    return matchResultTemplateObjects_[kind];
+    matchResultShapes_[kind].set(templateObject->sharedShape());
+    return matchResultShapes_[kind];
   }
 
   /* Set dummy index property */
-  RootedValue index(cx, Int32Value(0));
-  if (!NativeDefineDataProperty(cx, templateObject, cx->names().index, index,
-                                JSPROP_ENUMERATE)) {
+  if (!NativeDefineDataProperty(cx, templateObject, cx->names().index,
+                                UndefinedHandleValue, JSPROP_ENUMERATE)) {
     return nullptr;
   }
   MOZ_ASSERT(templateObject->getLastProperty().slot() ==
              MatchResultObjectIndexSlot);
 
   /* Set dummy input property */
-  RootedValue inputVal(cx, StringValue(cx->runtime()->emptyString));
-  if (!NativeDefineDataProperty(cx, templateObject, cx->names().input, inputVal,
-                                JSPROP_ENUMERATE)) {
+  if (!NativeDefineDataProperty(cx, templateObject, cx->names().input,
+                                UndefinedHandleValue, JSPROP_ENUMERATE)) {
     return nullptr;
   }
   MOZ_ASSERT(templateObject->getLastProperty().slot() ==
              MatchResultObjectInputSlot);
 
   /* Set dummy groups property */
-  RootedValue groupsVal(cx, UndefinedValue());
   if (!NativeDefineDataProperty(cx, templateObject, cx->names().groups,
-                                groupsVal, JSPROP_ENUMERATE)) {
+                                UndefinedHandleValue, JSPROP_ENUMERATE)) {
     return nullptr;
   }
   MOZ_ASSERT(templateObject->getLastProperty().slot() ==
              MatchResultObjectGroupsSlot);
 
-  if (kind == ResultTemplateKind::WithIndices) {
+  if (kind == ResultShapeKind::WithIndices) {
     /* Set dummy indices property */
-    RootedValue indicesVal(cx, UndefinedValue());
     if (!NativeDefineDataProperty(cx, templateObject, cx->names().indices,
-                                  indicesVal, JSPROP_ENUMERATE)) {
+                                  UndefinedHandleValue, JSPROP_ENUMERATE)) {
       return nullptr;
     }
     MOZ_ASSERT(templateObject->getLastProperty().slot() ==
                MatchResultObjectIndicesSlot);
   }
 
-  matchResultTemplateObjects_[kind].set(templateObject);
+#ifdef DEBUG
+  if (kind == ResultShapeKind::Normal) {
+    MOZ_ASSERT(templateObject->numFixedSlots() == 0);
+    MOZ_ASSERT(templateObject->numDynamicSlots() ==
+               MatchResultObjectNumDynamicSlots);
+    MOZ_ASSERT(templateObject->slotSpan() == MatchResultObjectSlotSpan);
+  }
+#endif
 
-  return matchResultTemplateObjects_[kind];
+  matchResultShapes_[kind].set(templateObject->sharedShape());
+
+  return matchResultShapes_[kind];
 }
 
-void RegExpRealm::traceWeak(JSTracer* trc) {
-  for (auto& templateObject : matchResultTemplateObjects_) {
-    TraceWeakEdge(trc, &templateObject,
-                  "RegExpRealm::matchResultTemplateObject_");
+void RegExpRealm::trace(JSTracer* trc) {
+  if (regExpStatics) {
+    regExpStatics->trace(trc);
   }
 
-  TraceWeakEdge(trc, &optimizableRegExpPrototypeShape_,
-                "RegExpRealm::optimizableRegExpPrototypeShape_");
+  for (auto& shape : matchResultShapes_) {
+    TraceNullableEdge(trc, &shape, "RegExpRealm::matchResultShapes_");
+  }
 
-  TraceWeakEdge(trc, &optimizableRegExpInstanceShape_,
-                "RegExpRealm::optimizableRegExpInstanceShape_");
+  TraceNullableEdge(trc, &optimizableRegExpPrototypeShape_,
+                    "RegExpRealm::optimizableRegExpPrototypeShape_");
+
+  TraceNullableEdge(trc, &optimizableRegExpInstanceShape_,
+                    "RegExpRealm::optimizableRegExpInstanceShape_");
 }
 
 RegExpShared* RegExpZone::get(JSContext* cx, Handle<JSAtom*> source,
@@ -1011,6 +1024,9 @@ static bool ParseRegExpFlags(const CharT* chars, size_t length,
       case 'u':
         flag = RegExpFlag::Unicode;
         break;
+      case 'v':
+        flag = RegExpFlag::UnicodeSets;
+        break;
       case 'y':
         flag = RegExpFlag::Sticky;
         break;
@@ -1022,6 +1038,16 @@ static bool ParseRegExpFlags(const CharT* chars, size_t length,
       *invalidFlag = chars[i];
       return false;
     }
+
+    // /u and /v flags are mutually exclusive.
+    if (((*flagsOut & RegExpFlag::Unicode) &&
+         (flag & RegExpFlag::UnicodeSets)) ||
+        ((*flagsOut & RegExpFlag::UnicodeSets) &&
+         (flag & RegExpFlag::Unicode))) {
+      *invalidFlag = chars[i];
+      return false;
+    }
+
     *flagsOut |= flag;
   }
 
@@ -1218,12 +1244,14 @@ JS_PUBLIC_API bool JS::CheckRegExpSyntax(JSContext* cx, const char16_t* chars,
       dummyTokenStream, source, flags);
   error.set(UndefinedValue());
   if (!success) {
+    if (!fc.convertToRuntimeErrorAndClear()) {
+      return false;
+    }
     // We can fail because of OOM or over-recursion even if the syntax is valid.
-    if (fc.hadOutOfMemory() || fc.hadOverRecursed()) {
+    if (cx->isThrowingOutOfMemory() || cx->isThrowingOverRecursed()) {
       return false;
     }
 
-    fc.convertToRuntimeErrorAndClear();
     if (!cx->getPendingException(error)) {
       return false;
     }

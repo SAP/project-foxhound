@@ -2795,11 +2795,6 @@ nsPrefBranch::UnlockPref(const char* aPrefName) {
 }
 
 NS_IMETHODIMP
-nsPrefBranch::ResetBranch(const char* aStartingAt) {
-  return NS_ERROR_NOT_IMPLEMENTED;
-}
-
-NS_IMETHODIMP
 nsPrefBranch::DeleteBranch(const char* aStartingAt) {
   ENSURE_PARENT_PROCESS("DeleteBranch", aStartingAt);
   NS_ENSURE_ARG(aStartingAt);
@@ -4526,11 +4521,8 @@ static int pref_CompareFileNames(nsIFile* aFile1, nsIFile* aFile2,
 }
 
 // Load default pref files from a directory. The files in the directory are
-// sorted reverse-alphabetically; a set of "special file names" may be
-// specified which are loaded after all the others.
-static nsresult pref_LoadPrefsInDir(nsIFile* aDir,
-                                    char const* const* aSpecialFiles,
-                                    uint32_t aSpecialFilesCount) {
+// sorted reverse-alphabetically.
+static nsresult pref_LoadPrefsInDir(nsIFile* aDir) {
   MOZ_ASSERT(XRE_IsParentProcess());
 
   nsresult rv, rv2;
@@ -4550,7 +4542,6 @@ static nsresult pref_LoadPrefsInDir(nsIFile* aDir,
   }
 
   nsCOMArray<nsIFile> prefFiles(INITIAL_PREF_FILES);
-  nsCOMArray<nsIFile> specialFiles(aSpecialFilesCount);
   nsCOMPtr<nsIFile> prefFile;
 
   while (NS_SUCCEEDED(dirIterator->GetNextFile(getter_AddRefs(prefFile))) &&
@@ -4564,25 +4555,11 @@ static nsresult pref_LoadPrefsInDir(nsIFile* aDir,
     // Skip non-js files.
     if (StringEndsWith(leafName, ".js"_ns,
                        nsCaseInsensitiveCStringComparator)) {
-      bool shouldParse = true;
-
-      // Separate out special files.
-      for (uint32_t i = 0; i < aSpecialFilesCount; ++i) {
-        if (leafName.Equals(nsDependentCString(aSpecialFiles[i]))) {
-          shouldParse = false;
-          // Special files should be processed in order. We put them into the
-          // array by index, which can make the array sparse.
-          specialFiles.ReplaceObjectAt(prefFile, i);
-        }
-      }
-
-      if (shouldParse) {
-        prefFiles.AppendObject(prefFile);
-      }
+      prefFiles.AppendObject(prefFile);
     }
   }
 
-  if (prefFiles.Count() + specialFiles.Count() == 0) {
+  if (prefFiles.Count() == 0) {
     NS_WARNING("No default pref files found.");
     if (NS_SUCCEEDED(rv)) {
       rv = NS_SUCCESS_FILE_DIRECTORY_EMPTY;
@@ -4599,19 +4576,6 @@ static nsresult pref_LoadPrefsInDir(nsIFile* aDir,
     if (NS_FAILED(rv2)) {
       NS_ERROR("Default pref file not parsed successfully.");
       rv = rv2;
-    }
-  }
-
-  arrayCount = specialFiles.Count();
-  for (i = 0; i < arrayCount; ++i) {
-    // This may be a sparse array; test before parsing.
-    nsIFile* file = specialFiles[i];
-    if (file) {
-      rv2 = openPrefFile(file, PrefValueKind::Default);
-      if (NS_FAILED(rv2)) {
-        NS_ERROR("Special default pref file not parsed successfully.");
-        rv = rv2;
-      }
     }
   }
 
@@ -4895,24 +4859,7 @@ nsresult Preferences::InitInitialObjects(bool aIsStartup) {
                               getter_AddRefs(defaultPrefDir));
   NS_ENSURE_SUCCESS(rv, rv);
 
-  // These pref file names should not be used: we process them after all other
-  // application pref files for backwards compatibility.
-  static const char* specialFiles[] = {
-#if defined(XP_MACOSX)
-    "macprefs.js"
-#elif defined(XP_WIN)
-    "winpref.js"
-#elif defined(XP_UNIX)
-    "unix.js"
-#  if defined(_AIX)
-    ,
-    "aix.js"
-#  endif
-#endif
-  };
-
-  rv = pref_LoadPrefsInDir(defaultPrefDir, specialFiles,
-                           ArrayLength(specialFiles));
+  rv = pref_LoadPrefsInDir(defaultPrefDir);
   if (NS_FAILED(rv)) {
     NS_WARNING("Error parsing application default preferences.");
   }
@@ -4985,7 +4932,7 @@ nsresult Preferences::InitInitialObjects(bool aIsStartup) {
       }
 
       // Do we care if a file provided by this process fails to load?
-      pref_LoadPrefsInDir(path, nullptr, 0);
+      pref_LoadPrefsInDir(path);
     }
   }
 
@@ -5001,7 +4948,7 @@ nsresult Preferences::InitInitialObjects(bool aIsStartup) {
   defaultSystemPrefDir->AppendNative("defaults"_ns);
   defaultSystemPrefDir->AppendNative("pref"_ns);
 
-  rv = pref_LoadPrefsInDir(defaultSystemPrefDir, nullptr, 0);
+  rv = pref_LoadPrefsInDir(defaultSystemPrefDir);
   if (NS_FAILED(rv)) {
     NS_WARNING("Error parsing application default preferences.");
   }
@@ -6039,7 +5986,8 @@ struct PrefListEntry {
 //      StaticPrefList.yml), a string pref, and it is NOT exempted in
 //      sDynamicPrefOverrideList
 //
-// This behavior is codified in ShouldSanitizePreference() below
+// This behavior is codified in ShouldSanitizePreference() below where
+// exclusions of preferences can be defined.
 static const PrefListEntry sRestrictFromWebContentProcesses[] = {
     // Remove prefs with user data
     PREF_LIST_ENTRY("datareporting.policy."),
@@ -6092,6 +6040,7 @@ static const PrefListEntry sRestrictFromWebContentProcesses[] = {
 // StaticPrefList) and would normally by blocklisted but we allow them through
 // anyway, so this override list acts as an allowlist
 static const PrefListEntry sDynamicPrefOverrideList[]{
+    PREF_LIST_ENTRY("accessibility.tabfocus"),
     PREF_LIST_ENTRY("app.update.channel"),
     PREF_LIST_ENTRY("apz.subtest"),
     PREF_LIST_ENTRY("autoadmin.global_config_url"),  // Bug 1780575
@@ -6114,7 +6063,6 @@ static const PrefListEntry sDynamicPrefOverrideList[]{
     PREF_LIST_ENTRY("extensions.foobaz"),
     PREF_LIST_ENTRY(
         "extensions.formautofill.creditCards.heuristics.testConfidence"),
-    PREF_LIST_ENTRY("general.appname.override"),
     PREF_LIST_ENTRY("general.appversion.override"),
     PREF_LIST_ENTRY("general.buildID.override"),
     PREF_LIST_ENTRY("general.oscpu.override"),
@@ -6128,6 +6076,7 @@ static const PrefListEntry sDynamicPrefOverrideList[]{
     PREF_LIST_ENTRY("logging.config.LOG_FILE"),
     PREF_LIST_ENTRY("media.audio_loopback_dev"),
     PREF_LIST_ENTRY("media.decoder-doctor."),
+    PREF_LIST_ENTRY("media.cubeb.backend"),
     PREF_LIST_ENTRY("media.cubeb.output_device"),
     PREF_LIST_ENTRY("media.getusermedia.fake-camera-name"),
     PREF_LIST_ENTRY("media.hls.server.url"),
@@ -6142,14 +6091,13 @@ static const PrefListEntry sDynamicPrefOverrideList[]{
     PREF_LIST_ENTRY("network.security.ports.banned"),
     PREF_LIST_ENTRY("nimbus.syncdatastore."),
     PREF_LIST_ENTRY("pdfjs."),
+    PREF_LIST_ENTRY("plugins.force.wmode"),
     PREF_LIST_ENTRY("print.printer_"),
     PREF_LIST_ENTRY("print_printer"),
     PREF_LIST_ENTRY("places.interactions.customBlocklist"),
     PREF_LIST_ENTRY("remote.log.level"),
-    PREF_LIST_ENTRY(
-        "services.settings.preview_enabled"),  // This is really a boolean
-                                               // dynamic pref, but one Nightly
-                                               // user has it set as a string...
+    // services.* preferences should be added in ShouldSanitizePreference - the
+    // whole preference branch gets sanitized by default.
     PREF_LIST_ENTRY("spellchecker.dictionary"),
     PREF_LIST_ENTRY("test.char"),
     PREF_LIST_ENTRY("Test.IPC."),
@@ -6186,6 +6134,10 @@ static bool ShouldSanitizePreference(const Pref* const aPref) {
       const auto* p = prefName;  // This avoids clang-format doing ugly things.
       return !(strncmp("services.settings.clock_skew_seconds", p, 36) == 0 ||
                strncmp("services.settings.last_update_seconds", p, 37) == 0 ||
+               strncmp("services.settings.loglevel", p, 26) == 0 ||
+               // This is really a boolean dynamic pref, but one Nightly user
+               // has it set as a string...
+               strncmp("services.settings.preview_enabled", p, 33) == 0 ||
                strncmp("services.settings.server", p, 24) == 0);
     }
   }

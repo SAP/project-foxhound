@@ -367,7 +367,7 @@ impl FontFamily {
         generic_font_family!(MOZ_EMOJI, MozEmoji);
         generic_font_family!(SYSTEM_UI, SystemUi);
 
-        match generic {
+        let family = match generic {
             GenericFontFamily::None => {
                 debug_assert!(false, "Bogus caller!");
                 &*SERIF
@@ -379,7 +379,9 @@ impl FontFamily {
             GenericFontFamily::Fantasy => &*FANTASY,
             GenericFontFamily::MozEmoji => &*MOZ_EMOJI,
             GenericFontFamily::SystemUi => &*SYSTEM_UI,
-        }
+        };
+        debug_assert_eq!(*family.families.iter().next().unwrap(), SingleFontFamily::Generic(generic));
+        family
     }
 }
 
@@ -744,8 +746,20 @@ impl FontFamilyList {
     }
 }
 
-/// Preserve the readability of text when font fallback occurs
-pub type FontSizeAdjust = generics::GenericFontSizeAdjust<NonNegativeNumber>;
+/// A factor for one of the font-size-adjust metrics, which may be either a number
+/// or the `from-font` keyword.
+pub type FontSizeAdjustFactor = generics::GenericNumberOrFromFont<NonNegativeNumber>;
+
+impl FontSizeAdjustFactor {
+    #[inline]
+    /// Create a ratio from a raw number
+    pub fn new(val: f32) -> Self {
+        FontSizeAdjustFactor::Number(NonNegative(val))
+    }
+}
+
+/// Preserve the readability of text when font fallback occurs.
+pub type FontSizeAdjust = generics::GenericFontSizeAdjust<FontSizeAdjustFactor>;
 
 impl FontSizeAdjust {
     #[inline]

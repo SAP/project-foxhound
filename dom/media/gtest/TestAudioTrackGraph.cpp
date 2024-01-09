@@ -15,17 +15,16 @@
 #  include "MediaEngineWebRTCAudio.h"
 #endif  // MOZ_WEBRTC
 #include "MockCubeb.h"
+#include "mozilla/gtest/WaitFor.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/SpinEventLoopUntil.h"
 #include "mozilla/StaticPrefs_media.h"
-#include "WaitFor.h"
 #include "WavDumper.h"
 
 #define DRIFT_BUFFERING_PREF "media.clockdrift.buffering"
 
 using namespace mozilla;
 
-namespace {
 // Short-hand for InvokeAsync on the current thread.
 #define Invoke(f) InvokeAsync(GetCurrentSerialEventTarget(), __func__, f)
 
@@ -37,6 +36,7 @@ namespace {
 #define DispatchMethod(t, m, args...) \
   NS_DispatchToCurrentThread(NewRunnableMethod(__func__, t, m, ##args))
 
+namespace {
 #ifdef MOZ_WEBRTC
 /*
  * Common ControlMessages
@@ -2460,6 +2460,14 @@ void TestCrossGraphPort(uint32_t aInputRate, uint32_t aOutputRate,
   Unused << WaitFor(primaryStarted);
   Unused << WaitFor(partnerStarted);
 
+  nsIThread* currentThread = NS_GetCurrentThread();
+  cubeb_state inputState = CUBEB_STATE_STARTED;
+  MediaEventListener inputStateListener = inputStream->StateEvent().Connect(
+      currentThread, [&](cubeb_state aState) { inputState = aState; });
+  cubeb_state partnerState = CUBEB_STATE_STARTED;
+  MediaEventListener partnerStateListener = partnerStream->StateEvent().Connect(
+      currentThread, [&](cubeb_state aState) { partnerState = aState; });
+
   // Wait for 3s worth of audio data on the receiver stream.
   DispatchFunction([&] {
     processingTrack->GraphImpl()->AppendMessage(MakeUnique<GoFaster>(cubeb));
@@ -2500,6 +2508,13 @@ void TestCrossGraphPort(uint32_t aInputRate, uint32_t aOutputRate,
   // The waveform from AudioGenerator starts at 0, but we don't control its
   // ending, so we expect a discontinuity there.
   EXPECT_LE(nrDiscontinuities, 1U);
+
+  SpinEventLoopUntil("streams have stopped"_ns, [&] {
+    return inputState == CUBEB_STATE_STOPPED &&
+           partnerState == CUBEB_STATE_STOPPED;
+  });
+  inputStateListener.Disconnect();
+  partnerStateListener.Disconnect();
 }
 
 TEST(TestAudioTrackGraph, CrossGraphPort)
@@ -2535,3 +2550,7 @@ TEST(TestAudioTrackGraph, CrossGraphPortLargeBuffer)
   Preferences::SetInt(DRIFT_BUFFERING_PREF, oldBuffering);
 }
 #endif  // MOZ_WEBRTC
+
+#undef Invoke
+#undef DispatchFunction
+#undef DispatchMethod

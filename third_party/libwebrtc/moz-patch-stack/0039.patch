@@ -15,10 +15,10 @@ Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/d380a43d59f4f7cbc
  4 files changed, 35 insertions(+)
 
 diff --git a/audio/audio_send_stream.cc b/audio/audio_send_stream.cc
-index 7d6ec794d4..20af3f7722 100644
+index e0ad1a8bd6..9330932e3c 100644
 --- a/audio/audio_send_stream.cc
 +++ b/audio/audio_send_stream.cc
-@@ -442,6 +442,7 @@ webrtc::AudioSendStream::Stats AudioSendStream::GetStats(
+@@ -436,6 +436,7 @@ webrtc::AudioSendStream::Stats AudioSendStream::GetStats(
    stats.target_bitrate_bps = channel_send_->GetTargetBitrate();
  
    webrtc::CallSendStatistics call_stats = channel_send_->GetRTCPStatistics();
@@ -27,7 +27,7 @@ index 7d6ec794d4..20af3f7722 100644
    stats.header_and_padding_bytes_sent =
        call_stats.header_and_padding_bytes_sent;
 diff --git a/audio/channel_send.cc b/audio/channel_send.cc
-index 0bca328846..c84a91770e 100644
+index 6a34a9ad44..c81758eb63 100644
 --- a/audio/channel_send.cc
 +++ b/audio/channel_send.cc
 @@ -56,6 +56,31 @@ class RtpPacketSenderProxy;
@@ -62,7 +62,7 @@ index 0bca328846..c84a91770e 100644
  class ChannelSend : public ChannelSendInterface,
                      public AudioPacketizationCallback,  // receive encoded
                                                          // packets from the ACM
-@@ -208,6 +233,8 @@ class ChannelSend : public ChannelSendInterface,
+@@ -210,6 +235,8 @@ class ChannelSend : public ChannelSendInterface,
    // RtcpBandwidthObserver
    const std::unique_ptr<VoERtcpObserver> rtcp_observer_;
  
@@ -71,7 +71,7 @@ index 0bca328846..c84a91770e 100644
    PacketRouter* packet_router_ RTC_GUARDED_BY(&worker_thread_checker_) =
        nullptr;
    TransportFeedbackObserver* const feedback_observer_;
-@@ -460,6 +487,7 @@ ChannelSend::ChannelSend(
+@@ -463,6 +490,7 @@ ChannelSend::ChannelSend(
      : ssrc_(ssrc),
        event_log_(rtc_event_log),
        rtcp_observer_(new VoERtcpObserver(this)),
@@ -79,7 +79,7 @@ index 0bca328846..c84a91770e 100644
        feedback_observer_(feedback_observer),
        rtp_packet_pacer_proxy_(new RtpPacketSenderProxy()),
        retransmission_rate_limiter_(
-@@ -482,6 +510,8 @@ ChannelSend::ChannelSend(
+@@ -485,6 +513,8 @@ ChannelSend::ChannelSend(
  
    configuration.event_log = event_log_;
    configuration.rtt_stats = rtcp_rtt_stats;
@@ -88,7 +88,7 @@ index 0bca328846..c84a91770e 100644
    configuration.retransmission_rate_limiter =
        retransmission_rate_limiter_.get();
    configuration.extmap_allow_mixed = extmap_allow_mixed;
-@@ -759,6 +789,7 @@ CallSendStatistics ChannelSend::GetRTCPStatistics() const {
+@@ -763,6 +793,7 @@ CallSendStatistics ChannelSend::GetRTCPStatistics() const {
    RTC_DCHECK_RUN_ON(&worker_thread_checker_);
    CallSendStatistics stats = {0};
    stats.rttMs = GetRTT();
@@ -97,7 +97,7 @@ index 0bca328846..c84a91770e 100644
    StreamDataCounters rtp_stats;
    StreamDataCounters rtx_stats;
 diff --git a/audio/channel_send.h b/audio/channel_send.h
-index cf9a273f70..9b3969161c 100644
+index 08d3f92f1d..47361882d5 100644
 --- a/audio/channel_send.h
 +++ b/audio/channel_send.h
 @@ -43,6 +43,7 @@ struct CallSendStatistics {
@@ -109,7 +109,7 @@ index cf9a273f70..9b3969161c 100644
    // Within this list, the sender-source SSRC pair is unique and per-pair the
    // ReportBlockData represents the latest Report Block that was received for
 diff --git a/call/audio_send_stream.h b/call/audio_send_stream.h
-index 0f42d0fb82..bafa22d312 100644
+index f9e49db574..5f4f871bf0 100644
 --- a/call/audio_send_stream.h
 +++ b/call/audio_send_stream.h
 @@ -31,6 +31,7 @@

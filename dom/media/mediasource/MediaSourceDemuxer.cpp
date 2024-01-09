@@ -17,6 +17,12 @@
 #include <limits>
 #include <stdint.h>
 
+extern mozilla::LogModule* GetMediaSourceLog();
+
+#define MSE_DEBUG(arg, ...)                                              \
+  DDMOZ_LOG(GetMediaSourceLog(), mozilla::LogLevel::Debug, "::%s: " arg, \
+            __func__, ##__VA_ARGS__)
+
 namespace mozilla {
 
 typedef TrackInfo::TrackType TrackType;
@@ -376,6 +382,12 @@ RefPtr<MediaSourceTrackDemuxer::SeekPromise> MediaSourceTrackDemuxer::DoSeek(
     seekTime = std::max(mManager->HighestStartTime(mType) - mPreRoll,
                         TimeUnit::Zero());
   }
+
+  MSE_DEBUG("DoSeek, original target=%" PRId64 "%s, seekTime=%" PRId64
+            "%s, buffered=%s",
+            aTime.ToMicroseconds(), aTime.ToString().get(),
+            seekTime.ToMicroseconds(), seekTime.ToString().get(),
+            DumpTimeRanges(buffered).get());
   if (!buffered.ContainsWithStrictEnd(seekTime)) {
     if (!buffered.ContainsWithStrictEnd(aTime)) {
       // We don't have the data to seek to.
@@ -389,6 +401,10 @@ RefPtr<MediaSourceTrackDemuxer::SeekPromise> MediaSourceTrackDemuxer::DoSeek(
     // the interval.
     TimeIntervals::IndexType index = buffered.Find(aTime);
     MOZ_ASSERT(index != TimeIntervals::NoIndex);
+    MSE_DEBUG("Can't find seekTime %" PRId64
+              " in the buffer range, use the earliest time %" PRId64,
+              seekTime.ToMicroseconds(),
+              buffered[index].mStart.ToMicroseconds());
     seekTime = buffered[index].mStart;
   }
   seekTime = mManager->Seek(mType, seekTime, MediaSourceDemuxer::EOS_FUZZ);
@@ -396,7 +412,9 @@ RefPtr<MediaSourceTrackDemuxer::SeekPromise> MediaSourceTrackDemuxer::DoSeek(
   RefPtr<MediaRawData> sample =
       mManager->GetSample(mType, TimeUnit::Zero(), result);
   MOZ_ASSERT(NS_SUCCEEDED(result) && sample);
-  mNextSample = Some(sample);
+  if (sample) {
+    mNextSample = Some(sample);
+  }
   mReset = false;
   {
     MonitorAutoLock mon(mMonitor);
@@ -438,24 +456,25 @@ MediaSourceTrackDemuxer::DoGetSamples(int32_t aNumSamples) {
     mReset = false;
   }
   RefPtr<MediaRawData> sample;
-  MediaResult result = NS_OK;
   if (mNextSample) {
     sample = mNextSample.ref();
     mNextSample.reset();
   } else {
+    MediaResult result = NS_OK;
     sample = mManager->GetSample(mType, MediaSourceDemuxer::EOS_FUZZ, result);
-  }
-  if (!sample) {
-    if (result == NS_ERROR_DOM_MEDIA_END_OF_STREAM ||
-        result == NS_ERROR_DOM_MEDIA_WAITING_FOR_DATA) {
-      return SamplesPromise::CreateAndReject(
-          (result == NS_ERROR_DOM_MEDIA_END_OF_STREAM && mManager->IsEnded())
-              ? NS_ERROR_DOM_MEDIA_END_OF_STREAM
-              : NS_ERROR_DOM_MEDIA_WAITING_FOR_DATA,
-          __func__);
+    if (!sample) {
+      if (result == NS_ERROR_DOM_MEDIA_END_OF_STREAM ||
+          result == NS_ERROR_DOM_MEDIA_WAITING_FOR_DATA) {
+        return SamplesPromise::CreateAndReject(
+            (result == NS_ERROR_DOM_MEDIA_END_OF_STREAM && mManager->IsEnded())
+                ? NS_ERROR_DOM_MEDIA_END_OF_STREAM
+                : NS_ERROR_DOM_MEDIA_WAITING_FOR_DATA,
+            __func__);
+      }
+      return SamplesPromise::CreateAndReject(result, __func__);
     }
-    return SamplesPromise::CreateAndReject(result, __func__);
   }
+  MOZ_DIAGNOSTIC_ASSERT(sample);
   RefPtr<SamplesHolder> samples = new SamplesHolder;
   samples->AppendSample(sample);
   {
@@ -515,5 +534,7 @@ void MediaSourceTrackDemuxer::DetachManager() {
   MonitorAutoLock mon(mMonitor);
   mManager = nullptr;
 }
+
+#undef MSE_DEBUG
 
 }  // namespace mozilla

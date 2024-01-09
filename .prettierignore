@@ -670,8 +670,6 @@ dom/svg/test/test_style_sheet.html
 dom/svg/test/test_text_update.html
 dom/tests/browser/dummy.html
 dom/tests/browser/image.html
-dom/tests/browser/perfmetrics/dummy.html
-dom/tests/browser/perfmetrics/sound.html
 dom/tests/browser/test_new_window_from_content_child.html
 dom/tests/mochitest/beacon/test_beaconOriginHeader.html
 dom/tests/mochitest/beacon/test_beaconRedirect.html
@@ -1113,9 +1111,10 @@ dom/serviceworkers/test/file_js_cache.js
 
 # Intentional broken files
 dom/base/test/file_js_cache_syntax_error.js
+dom/base/test/jsmodules/test_scriptNotParsedAsModule.html
 dom/base/test/jsmodules/test_syntaxError.html
 dom/base/test/jsmodules/test_syntaxErrorAsync.html
-dom/base/test/jsmodules/module_badSyntax.js
+dom/base/test/jsmodules/module_badSyntax.mjs
 dom/base/test/jsmodules/test_syntaxErrorInline.html
 dom/base/test/jsmodules/test_syntaxErrorInlineAsync.html
 dom/base/test/test_bug687859.html
@@ -1175,10 +1174,6 @@ remote/marionette/atom.sys.mjs
 remote/shared/messagehandler/test/browser/resources/modules/root/invalid.sys.mjs
 
 # services/ exclusions
-
-# Third party services
-services/common/kinto-http-client.js
-services/common/kinto-offline-client.js
 
 # Webpack-bundled library
 services/fxaccounts/FxAccountsPairingChannel.sys.mjs
@@ -1257,7 +1252,6 @@ browser/components/storybook/node_modules/
 browser/extensions/formautofill/content/third-party/
 browser/extensions/formautofill/test/fixtures/third_party/
 browser/extensions/formautofill/test/unit/heuristics/
-browser/extensions/screenshots/build/raven.js
 devtools/client/inspector/markup/test/lib_*
 devtools/client/jsonview/lib/require.js
 devtools/client/shared/build/babel.js
@@ -1374,7 +1368,6 @@ media/libpng/
 media/libsoundtouch/
 media/libspeex_resampler/
 media/libtheora/
-media/libtremor/
 media/libvorbis/
 media/libvpx/
 media/libwebp/
@@ -1407,6 +1400,8 @@ security/manager/tools/log_list.json
 security/nss/
 security/sandbox/chromium/
 security/sandbox/chromium-shim/
+services/common/kinto-http-client.sys.mjs
+services/common/kinto-offline-client.js
 testing/gtest/gmock/
 testing/gtest/gtest/
 testing/mochitest/MochiKit/
@@ -1476,7 +1471,7 @@ node_modules/
 security/manager/tools/KnownRootHashes.json
 security/manager/tools/PreloadedHPKPins.json
 services/settings/dumps/
-testing/talos/talos/tests/devtools/addon/content/pages/custom/debugger/static/js/minified.js
+testing/talos/talos/tests/devtools/addon/content/pages/custom/debugger/app-build/static/js/minified.js
 toolkit/components/nimbus/schemas/NimbusExperiment.schema.json
 toolkit/components/pdfjs/content/PdfJsDefaultPreferences.sys.mjs
 toolkit/components/uniffi-js/UniFFIGeneratedScaffolding.cpp

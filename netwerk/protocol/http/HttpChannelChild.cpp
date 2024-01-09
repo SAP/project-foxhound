@@ -31,7 +31,6 @@
 #include "nsCOMPtr.h"
 #include "nsContentPolicyUtils.h"
 #include "nsDOMNavigationTiming.h"
-#include "nsGlobalWindow.h"
 #include "nsStringStream.h"
 #include "nsHttpChannel.h"
 #include "nsHttpHandler.h"
@@ -107,11 +106,11 @@ HttpChannelChild::HttpChannelChild()
 HttpChannelChild::~HttpChannelChild() {
   LOG(("Destroying HttpChannelChild @%p\n", this));
 
-#ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
   // See HttpChannelChild::Release, HttpChannelChild should be always destroyed
   // on the main thread.
-  MOZ_DIAGNOSTIC_ASSERT(NS_IsMainThread());
+  MOZ_RELEASE_ASSERT(NS_IsMainThread());
 
+#ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
   if (mDoDiagnosticAssertWhenOnStopNotCalledOnDestroy && mAsyncOpenSucceeded &&
       !mSuccesfullyRedirected && !LoadOnStopRequestCalled()) {
     bool emptyBgChildQueue, nullBgChild;
@@ -360,12 +359,14 @@ void HttpChannelChild::ProcessOnStartRequest(
       this, [self = UnsafePtr<HttpChannelChild>(this), aResponseHead,
 #ifdef NIGHTLY_BUILD
              aUseResponseHead, aRequestHeaders, aArgs, start]() {
+        TimeDuration delay = TimeStamp::Now() - start;
         if (self->mLoadFlags & nsIRequest::LOAD_RECORD_START_REQUEST_DELAY) {
-          TimeDuration delay = TimeStamp::Now() - start;
           Telemetry::Accumulate(
               Telemetry::HTTP_PRELOAD_IMAGE_STARTREQUEST_DELAY,
               static_cast<uint32_t>(delay.ToMilliseconds()));
         }
+        glean::networking::http_content_onstart_delay.AccumulateRawDuration(
+            delay);
 #else
              aUseResponseHead, aRequestHeaders, aArgs]() {
 #endif
@@ -386,6 +387,7 @@ static void ResourceTimingStructArgsToTimingsStruct(
   aTimings.requestStart = aArgs.requestStart();
   aTimings.responseStart = aArgs.responseStart();
   aTimings.responseEnd = aArgs.responseEnd();
+  aTimings.transactionPending = aArgs.transactionPending();
 }
 
 void HttpChannelChild::OnStartRequest(
@@ -427,6 +429,7 @@ void HttpChannelChild::OnStartRequest(
   mCacheEntryAvailable = aArgs.cacheEntryAvailable();
   mCacheEntryId = aArgs.cacheEntryId();
   mCacheFetchCount = aArgs.cacheFetchCount();
+  mProtocolVersion = aArgs.protocolVersion();
   mCacheExpirationTime = aArgs.cacheExpirationTime();
   mSelfAddr = aArgs.selfAddr();
   mPeerAddr = aArgs.peerAddr();
@@ -808,11 +811,22 @@ void HttpChannelChild::ProcessOnStopRequest(
        this, aFromSocketProcess));
   MOZ_ASSERT(OnSocketThread());
 
+#ifdef NIGHTLY_BUILD
+  TimeStamp start = TimeStamp::Now();
+#endif
+
   mEventQ->RunOrEnqueue(new NeckoTargetChannelFunctionEvent(
       this, [self = UnsafePtr<HttpChannelChild>(this), aChannelStatus, aTiming,
              aResponseTrailers,
              consoleReports = CopyableTArray{aConsoleReports.Clone()},
-             aFromSocketProcess]() mutable {
+#ifdef NIGHTLY_BUILD
+             aFromSocketProcess, start]() mutable {
+        TimeDuration delay = TimeStamp::Now() - start;
+        glean::networking::http_content_onstop_delay.AccumulateRawDuration(
+            delay);
+#else
+              aFromSocketProcess]() mutable {
+#endif
         self->OnStopRequest(aChannelStatus, aTiming, aResponseTrailers);
         if (!aFromSocketProcess) {
           self->DoOnConsoleReport(std::move(consoleReports));
@@ -887,10 +901,11 @@ void HttpChannelChild::OnStopRequest(
   mRedirectEndTimeStamp = aTiming.redirectEnd();
   mTransferSize = aTiming.transferSize();
   mEncodedBodySize = aTiming.encodedBodySize();
-  mProtocolVersion = aTiming.protocolVersion();
 
   mCacheReadStart = aTiming.cacheReadStart();
   mCacheReadEnd = aTiming.cacheReadEnd();
+
+  const TimeStamp now = TimeStamp::Now();
 
   if (profiler_thread_is_being_profiled_for_markers()) {
     nsAutoCString requestMethod;
@@ -903,14 +918,14 @@ void HttpChannelChild::OnStopRequest(
     GetPriority(&priority);
     profiler_add_network_marker(
         mURI, requestMethod, priority, mChannelId, NetworkLoadType::LOAD_STOP,
-        mLastStatusReported, TimeStamp::Now(), mTransferSize, kCacheUnknown,
+        mLastStatusReported, now, mTransferSize, kCacheUnknown,
         mLoadInfo->GetInnerWindowID(),
         mLoadInfo->GetOriginAttributes().mPrivateBrowsingId > 0,
         &mTransactionTimings, std::move(mSource),
         Some(nsDependentCString(contentType.get())));
   }
 
-  TimeDuration channelCompletionDuration = TimeStamp::Now() - mAsyncOpenTime;
+  TimeDuration channelCompletionDuration = now - mAsyncOpenTime;
   if (mIsFromCache) {
     PerfStats::RecordMeasurement(PerfStats::Metric::HttpChannelCompletion_Cache,
                                  channelCompletionDuration);
@@ -927,10 +942,10 @@ void HttpChannelChild::OnStopRequest(
     ClassOfService::ToString(mClassOfService, cosString);
     Telemetry::AccumulateTimeDelta(
         Telemetry::NETWORK_RESPONSE_END_PARENT_TO_CONTENT_MS, cosString,
-        aTiming.responseEnd(), TimeStamp::Now());
+        aTiming.responseEnd(), now);
     PerfStats::RecordMeasurement(
         PerfStats::Metric::HttpChannelResponseEndParentToContent,
-        TimeStamp::Now() - aTiming.responseEnd());
+        now - aTiming.responseEnd());
   }
 
   mResponseTrailers = MakeUnique<nsHttpHeaderArray>(aResponseTrailers);
@@ -2074,9 +2089,6 @@ nsresult HttpChannelChild::AsyncOpenInternal(nsIStreamListener* aListener) {
   StoreWasOpened(true);
   mListener = listener;
 
-  // add ourselves to the load group.
-  if (mLoadGroup) mLoadGroup->AddRequest(this, nullptr);
-
   if (mCanceled) {
     // We may have been canceled already, either by on-modify-request
     // listeners or by load group observers; in that case, don't create IPDL
@@ -2177,6 +2189,20 @@ nsresult HttpChannelChild::ContinueAsyncOpen() {
   }
   SetTopLevelContentWindowId(contentWindowId);
 
+  if (browserChild && !browserChild->IPCOpen()) {
+    return NS_ERROR_FAILURE;
+  }
+
+  ContentChild* cc = static_cast<ContentChild*>(gNeckoChild->Manager());
+  if (cc->IsShuttingDown()) {
+    return NS_ERROR_FAILURE;
+  }
+
+  // add ourselves to the load group.
+  if (mLoadGroup) {
+    mLoadGroup->AddRequest(this, nullptr);
+  }
+
   HttpChannelOpenArgs openArgs;
   // No access to HttpChannelOpenArgs members, but they each have a
   // function with the struct name that returns a ref.
@@ -2252,15 +2278,6 @@ nsresult HttpChannelChild::ContinueAsyncOpen() {
   LOG(("HttpChannelChild::ContinueAsyncOpen this=%p gid=%" PRIu64
        " browser id=%" PRIx64,
        this, mChannelId, mBrowserId));
-
-  if (browserChild && !browserChild->IPCOpen()) {
-    return NS_ERROR_FAILURE;
-  }
-
-  ContentChild* cc = static_cast<ContentChild*>(gNeckoChild->Manager());
-  if (cc->IsShuttingDown()) {
-    return NS_ERROR_FAILURE;
-  }
 
   openArgs.launchServiceWorkerStart() = mLaunchServiceWorkerStart;
   openArgs.launchServiceWorkerEnd() = mLaunchServiceWorkerEnd;

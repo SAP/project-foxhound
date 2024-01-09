@@ -6,6 +6,7 @@ import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 
 const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
+  CLIENT_NOT_CONFIGURED: "resource://services-sync/constants.sys.mjs",
   FileUtils: "resource://gre/modules/FileUtils.sys.mjs",
 });
 
@@ -118,7 +119,7 @@ WeaveService.prototype = {
               "resource://services-sync/main.sys.mjs"
             );
             isConfigured =
-              Weave.Status.checkSetup() != Weave.CLIENT_NOT_CONFIGURED;
+              Weave.Status.checkSetup() != lazy.CLIENT_NOT_CONFIGURED;
           }
           if (isConfigured) {
             this.ensureLoaded();
@@ -160,7 +161,15 @@ AboutWeaveLog.prototype = {
   },
 
   newChannel(aURI, aLoadInfo) {
-    let dir = lazy.FileUtils.getDir("ProfD", ["weave", "logs"], true);
+    let dir = lazy.FileUtils.getDir("ProfD", ["weave", "logs"]);
+    try {
+      dir.create(Ci.nsIFile.DIRECTORY_TYPE, lazy.FileUtils.PERMS_DIRECTORY);
+    } catch (ex) {
+      if (ex.result != Cr.NS_ERROR_FILE_ALREADY_EXISTS) {
+        throw ex;
+      }
+      // Ignore the exception due to a directory that already exists.
+    }
     let uri = Services.io.newFileURI(dir);
     let channel = Services.io.newChannelFromURIWithLoadInfo(uri, aLoadInfo);
 

@@ -19,7 +19,6 @@
 #include "mozilla/Maybe.h"
 #include "mozilla/MozPromise.h"
 #include "mozilla/OriginTrials.h"
-#include "mozilla/PerformanceCounter.h"
 #include "mozilla/RelativeTimeline.h"
 #include "mozilla/Result.h"
 #include "mozilla/StorageAccess.h"
@@ -526,13 +525,9 @@ class WorkerPrivate final
 
   void StopSyncLoop(nsIEventTarget* aSyncLoopTarget, nsresult aResult);
 
-  bool AllPendingRunnablesShouldBeCanceled() const {
-    return mCancelAllPendingRunnables;
-  }
-
   void ShutdownModuleLoader();
 
-  void ClearMainEventQueue(WorkerRanOrNot aRanOrNot);
+  void ClearPreStartRunnables();
 
   void ClearDebuggerEventQueue();
 
@@ -547,6 +542,13 @@ class WorkerPrivate final
   {
   }
 #endif
+
+  void AssertIsNotPotentiallyLastGCCCRunning() {
+#ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
+    auto data = mWorkerThreadAccessible.Access();
+    MOZ_DIAGNOSTIC_ASSERT(!data->mIsPotentiallyLastGCCCRunning);
+#endif
+  }
 
   void SetWorkerScriptExecutedSuccessfully() {
     AssertIsOnWorkerThread();
@@ -614,14 +616,6 @@ class WorkerPrivate final
   void ExecutionReady();
 
   PerformanceStorage* GetPerformanceStorage();
-
-  PerformanceCounter& MutablePerformanceCounterRef() const {
-    return *mPerformanceCounter;
-  }
-
-  const PerformanceCounter& PerformanceCounterRef() const {
-    return MutablePerformanceCounterRef();
-  }
 
   bool IsAcceptingEvents() {
     AssertIsOnParentThread();
@@ -940,7 +934,7 @@ class WorkerPrivate final
 
   mozilla::StorageAccess StorageAccess() const {
     AssertIsOnWorkerThread();
-    if (mLoadInfo.mHasStorageAccessPermissionGranted) {
+    if (mLoadInfo.mUsingStorageAccess) {
       return mozilla::StorageAccess::eAllow;
     }
 
@@ -952,9 +946,9 @@ class WorkerPrivate final
     return mLoadInfo.mUseRegularPrincipal;
   }
 
-  bool HasStorageAccessPermissionGranted() const {
+  bool UsingStorageAccess() const {
     AssertIsOnWorkerThread();
-    return mLoadInfo.mHasStorageAccessPermissionGranted;
+    return mLoadInfo.mUsingStorageAccess;
   }
 
   nsICookieJarSettings* CookieJarSettings() const {
@@ -983,6 +977,8 @@ class WorkerPrivate final
   }
 
   bool IsWatchedByDevTools() const { return mLoadInfo.mWatchedByDevTools; }
+
+  bool ShouldResistFingerprinting(RFPTarget aTarget) const;
 
   RemoteWorkerChild* GetRemoteWorkerController();
 
@@ -1134,6 +1130,11 @@ class WorkerPrivate final
   void DecreaseWorkerFinishedRunnableCount() { --mWorkerFinishedRunnableCount; }
 
   void RunShutdownTasks();
+
+  bool CancelBeforeWorkerScopeConstructed() const {
+    auto data = mWorkerThreadAccessible.Access();
+    return data->mCancelBeforeWorkerScopeConstructed;
+  }
 
  private:
   WorkerPrivate(
@@ -1483,6 +1484,11 @@ class WorkerPrivate final
     bool mJSThreadExecutionGranted;
     bool mCCCollectedAnything;
     FlippedOnce<false> mDeletionScheduled;
+    FlippedOnce<false> mCancelBeforeWorkerScopeConstructed;
+    FlippedOnce<false> mPerformedShutdownAfterLastContentTaskExecuted;
+#ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
+    bool mIsPotentiallyLastGCCCRunning = false;
+#endif
   };
   ThreadBound<WorkerThreadAccessible> mWorkerThreadAccessible;
 
@@ -1503,13 +1509,11 @@ class WorkerPrivate final
 
   // List of operations to do at the end of the last sync event loop.
   enum {
-    ePendingEventQueueClearing = 0x01,
     eDispatchCancelingRunnable = 0x02,
   };
 
   bool mParentWindowPaused;
 
-  bool mCancelAllPendingRunnables;
   bool mWorkerScriptExecutedSuccessfully;
   bool mFetchHandlerWasAdded;
   bool mMainThreadObjectsForgotten;
@@ -1544,10 +1548,6 @@ class WorkerPrivate final
   // mIsInAutomation is true when we're running in test automation.
   // We expose some extra testing functions in that case.
   bool mIsInAutomation;
-
-  const RefPtr<PerformanceCounter> mPerformanceCounter =
-      MakeRefPtr<PerformanceCounter>(nsPrintfCString(
-          "Worker:%s", NS_ConvertUTF16toUTF8(mWorkerName).get()));
 
   nsString mId;
 

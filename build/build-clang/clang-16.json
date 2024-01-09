@@ -5,7 +5,7 @@
         "unpoison-thread-stacks_clang_10.patch",
         "downgrade-mangling-error_clang_12.patch",
         "fuzzing_ccov_build_clang_12.patch",
-        "partial-revert-llvmorg-16-init-15775-g1ae7d83803e4.patch",
+        "partial-revert-llvmorg-16-init-17151-gaa0883b59ae1.patch",
         "revert-llvmorg-16-init-11301-g163bb6d64e5f.patch",
         "revert-llvmorg-16-init-7598-g54bfd0484615.patch",
         "revert-llvmorg-15-init-13446-g7524fe962e47.patch",
@@ -21,9 +21,8 @@
         "llvmorg-17-init-6905-gc81a322476a1.patch",
         "llvmorg-17-init-6909-gd644ab022a7b.patch",
         "llvmorg-17-init-8140-gb1bd52cd0d86.patch",
-        "llvmorg-17-init-11952-g2f0a1699eab7.patch",
+        "llvmorg-17-init-13415-g57dc16fbe307.patch",
         "D146664_clang_15.patch",
-        "D151864.patch",
         "win64-ret-null-on-commitment-limit_clang_14.patch",
         "compiler-rt-rss-limit-heap-profile.patch"
     ]

@@ -30,7 +30,7 @@ const {
 
     g,
 } = ChromeUtils.import("resource://reftest/globals.jsm");
-const { NetUtil } = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+const { NetUtil } = ChromeUtils.importESModule("resource://gre/modules/NetUtil.sys.mjs");
 const { AppConstants } = ChromeUtils.importESModule(
     "resource://gre/modules/AppConstants.sys.mjs"
 );
@@ -599,8 +599,6 @@ function BuildConditionSandbox(aURL) {
     // config specific prefs
     sandbox.appleSilicon = prefs.getBoolPref("sandbox.apple_silicon", false);
 
-    // Set a flag on sandbox if the windows default theme is active
-    sandbox.windowsDefaultTheme = g.containingWindow.matchMedia("(-moz-windows-default-theme)").matches;
     sandbox.gpuProcessForceEnabled = prefs.getBoolPref("layers.gpu-process.force-enabled", false);
 
     sandbox.prefs = Cu.cloneInto({

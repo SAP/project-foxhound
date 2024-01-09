@@ -37,6 +37,7 @@
 #include "jstypes.h"
 
 #include "gc/Memory.h"
+#include "jit/ProcessExecutableMemory.h"
 #include "js/AllocPolicy.h"
 #include "js/UniquePtr.h"
 #include "js/Utility.h"
@@ -242,7 +243,9 @@ class ModuleSegment : public CodeSegment {
   WASM_DECLARE_FRIEND_SERIALIZE(ModuleSegment);
 };
 
-extern UniqueCodeBytes AllocateCodeBytes(uint32_t codeLength);
+extern UniqueCodeBytes AllocateCodeBytes(
+    mozilla::Maybe<jit::AutoMarkJitCodeWritableForThread>& writable,
+    uint32_t codeLength);
 extern bool StaticallyLink(const ModuleSegment& ms, const LinkData& linkData);
 extern void StaticallyUnlink(uint8_t* base, const LinkData& linkData);
 
@@ -354,28 +357,27 @@ using FuncImportVector = Vector<FuncImport, 0, SystemAllocPolicy>;
 
 struct MetadataCacheablePod {
   ModuleKind kind;
-  Maybe<MemoryDesc> memory;
   uint32_t instanceDataLength;
   Maybe<uint32_t> startFuncIndex;
   Maybe<uint32_t> nameCustomSectionIndex;
   bool filenameIsURL;
-  bool omitsBoundsChecks;
   uint32_t typeDefsOffsetStart;
+  uint32_t memoriesOffsetStart;
   uint32_t tablesOffsetStart;
   uint32_t tagsOffsetStart;
   uint32_t padding;
 
-  WASM_CHECK_CACHEABLE_POD(kind, memory, instanceDataLength, startFuncIndex,
+  WASM_CHECK_CACHEABLE_POD(kind, instanceDataLength, startFuncIndex,
                            nameCustomSectionIndex, filenameIsURL,
-                           omitsBoundsChecks, typeDefsOffsetStart,
+                           typeDefsOffsetStart, memoriesOffsetStart,
                            tablesOffsetStart, tagsOffsetStart)
 
   explicit MetadataCacheablePod(ModuleKind kind)
       : kind(kind),
         instanceDataLength(0),
         filenameIsURL(false),
-        omitsBoundsChecks(false),
         typeDefsOffsetStart(UINT32_MAX),
+        memoriesOffsetStart(UINT32_MAX),
         tablesOffsetStart(UINT32_MAX),
         tagsOffsetStart(UINT32_MAX),
         padding(0) {}
@@ -389,6 +391,7 @@ using ModuleHash = uint8_t[8];
 
 struct Metadata : public ShareableBase<Metadata>, public MetadataCacheablePod {
   SharedTypeContext types;
+  MemoryDescVector memories;
   GlobalDescVector globals;
   TableDescVector tables;
   TagDescVector tags;
@@ -414,13 +417,11 @@ struct Metadata : public ShareableBase<Metadata>, public MetadataCacheablePod {
   MetadataCacheablePod& pod() { return *this; }
   const MetadataCacheablePod& pod() const { return *this; }
 
-  bool usesMemory() const { return memory.isSome(); }
-  bool usesSharedMemory() const {
-    return memory.isSome() && memory->isShared();
-  }
-
   const FuncType& getFuncImportType(const FuncImport& funcImport) const {
     return types->type(funcImport.typeIndex()).funcType();
+  }
+  const TypeDef& getFuncExportTypeDef(const FuncExport& funcExport) const {
+    return types->type(funcExport.typeIndex());
   }
   const FuncType& getFuncExportType(const FuncExport& funcExport) const {
     return types->type(funcExport.typeIndex()).funcType();

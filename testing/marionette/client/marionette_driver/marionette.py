@@ -150,6 +150,36 @@ class ActionSequence(object):
         self._key_action("keyUp", value)
         return self
 
+    def scroll(self, x, y, delta_x, delta_y, duration=None, origin=None):
+        """Queue a scroll action.
+
+        :param x: Destination x-axis coordinate of pointer in CSS pixels.
+        :param y: Destination y-axis coordinate of pointer in CSS pixels.
+        :param delta_x: Scroll delta for x-axis in CSS pixels.
+        :param delta_y: Scroll delta for y-axis in CSS pixels.
+        :param duration: Number of milliseconds over which to distribute the
+                         scroll. If None, remote end defaults to 0.
+        :param origin: Origin of coordinates, either "viewport", "pointer" or
+                       an Element. If None, remote end defaults to "viewport".
+        """
+        action = {
+            "type": "scroll",
+            "x": x,
+            "y": y,
+            "deltaX": delta_x,
+            "deltaY": delta_y,
+        }
+
+        if duration is not None:
+            action["duration"] = duration
+        if origin is not None:
+            if isinstance(origin, HTMLElement):
+                action["origin"] = {origin.kind: origin.id}
+            else:
+                action["origin"] = origin
+        self._actions.append(action)
+        return self
+
     def send_keys(self, keys):
         """Queue a keyDown and keyUp action for each character in `keys`.
 
@@ -254,17 +284,6 @@ class HTMLElement(object):
     def click(self):
         """Simulates a click on the element."""
         self.marionette._send_message("WebDriver:ElementClick", {"id": self.id})
-
-    def tap(self, x=None, y=None):
-        """Simulates a set of tap events on the element.
-
-        :param x: X coordinate of tap event.  If not given, default to
-            the centre of the element.
-        :param y: Y coordinate of tap event. If not given, default to
-            the centre of the element.
-        """
-        body = {"id": self.id, "x": x, "y": y}
-        self.marionette._send_message("Marionette:SingleTap", body)
 
     @property
     def text(self):

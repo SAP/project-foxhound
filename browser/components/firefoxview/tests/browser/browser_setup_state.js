@@ -32,11 +32,13 @@ async function setupWithDesktopDevices() {
         name: "This Device",
         isCurrentDevice: true,
         type: "desktop",
+        tabs: [],
       },
       {
         id: 2,
         name: "Other Device",
         type: "desktop",
+        tabs: [],
       },
     ],
   });
@@ -67,18 +69,6 @@ add_setup(async function () {
 
 add_task(async function test_unconfigured_initial_state() {
   await clearAllParentTelemetryEvents();
-  // test with the pref set to show FEATURE TOUR CALLOUT
-  await SpecialPowers.pushPrefEnv({
-    set: [
-      [
-        "browser.firefox-view.feature-tour",
-        JSON.stringify({
-          screen: `FEATURE_CALLOUT_1`,
-          complete: false,
-        }),
-      ],
-    ],
-  });
   const sandbox = setupMocks({
     state: UIState.STATUS_NOT_CONFIGURED,
     syncEnabled: false,
@@ -131,6 +121,7 @@ add_task(async function test_signed_in() {
         name: "This Device",
         isCurrentDevice: true,
         type: "desktop",
+        tabs: [],
       },
     ],
   });
@@ -188,6 +179,7 @@ add_task(async function test_support_links() {
         name: "This Device",
         isCurrentDevice: true,
         type: "desktop",
+        tabs: [],
       },
     ],
   });
@@ -214,11 +206,13 @@ add_task(async function test_2nd_desktop_connected() {
         name: "This Device",
         isCurrentDevice: true,
         type: "desktop",
+        tabs: [],
       },
       {
         id: 2,
         name: "Other Device",
         type: "desktop",
+        tabs: [],
       },
     ],
   });
@@ -258,11 +252,13 @@ add_task(async function test_mobile_connected() {
         name: "This Device",
         isCurrentDevice: true,
         type: "desktop",
+        tabs: [],
       },
       {
         id: 2,
         name: "Other Device",
         type: "mobile",
+        tabs: [],
       },
     ],
   });
@@ -302,11 +298,13 @@ add_task(async function test_tablet_connected() {
         name: "This Device",
         isCurrentDevice: true,
         type: "desktop",
+        tabs: [],
       },
       {
         id: 2,
         name: "Other Device",
         type: "tablet",
+        tabs: [],
       },
     ],
   });
@@ -346,11 +344,13 @@ add_task(async function test_tab_sync_enabled() {
         name: "This Device",
         isCurrentDevice: true,
         type: "desktop",
+        tabs: [],
       },
       {
         id: 2,
         name: "Other Device",
         type: "mobile",
+        tabs: [],
       },
     ],
   });
@@ -396,7 +396,6 @@ add_task(async function test_tab_sync_enabled() {
       mobilePromo: false,
       mobileConfirmation: false,
     });
-    await waitForElementVisible(browser, ".featureCallout .FEATURE_CALLOUT_1");
     ok(true, "Tab pickup product tour screen renders when sync is enabled");
     ok(
       Services.prefs.getBoolPref("services.sync.engine.tabs", false),
@@ -426,6 +425,7 @@ add_task(async function test_mobile_promo() {
       id: 3,
       name: "Mobile Device",
       type: "mobile",
+      tabs: [],
     });
 
     Services.obs.notifyObservers(null, "fxaccounts:devicelist_updated");
@@ -568,6 +568,7 @@ add_task(async function test_mobile_promo_windows() {
           id: 3,
           name: "Mobile Device",
           type: "mobile",
+          tabs: [],
         });
 
         Services.obs.notifyObservers(null, "fxaccounts:devicelist_updated");
@@ -724,6 +725,7 @@ add_task(async function test_close_device_connected_tab() {
         name: "This Device",
         isCurrentDevice: true,
         type: "desktop",
+        tabs: [],
       },
     ],
   });

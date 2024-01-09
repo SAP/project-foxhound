@@ -13,7 +13,7 @@
 #include "builtin/ModuleObject.h"
 #include "builtin/Promise.h"
 #include "builtin/WrappedFunctionObject.h"
-#include "frontend/BytecodeCompilation.h"
+#include "frontend/BytecodeCompiler.h"  // CompileEvalScript
 #include "js/ErrorReport.h"
 #include "js/Exception.h"
 #include "js/GlobalObject.h"
@@ -232,7 +232,7 @@ static bool PerformShadowRealmEval(JSContext* cx, Handle<JSString*> sourceText,
     // https://bugzilla.mozilla.org/show_bug.cgi?id=1770017
     RootedScript callerScript(cx);
     const char* filename;
-    unsigned lineno;
+    uint32_t lineno;
     uint32_t pcOffset;
     bool mutedErrors;
     DescribeScriptedCallerForCompilation(cx, &callerScript, &filename, &lineno,
@@ -419,7 +419,7 @@ static JSObject* ShadowRealmImportValue(JSContext* cx,
     // Not Speced: Get referencing private to pass to importHook.
     RootedScript script(cx);
     const char* filename;
-    unsigned lineno;
+    uint32_t lineno;
     uint32_t pcOffset;
     bool mutedErrors;
     DescribeScriptedCallerForCompilation(cx, &script, &filename, &lineno,

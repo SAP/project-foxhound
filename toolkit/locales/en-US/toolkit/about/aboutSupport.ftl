@@ -19,6 +19,10 @@ support-addons-type = Type
 support-addons-enabled = Enabled
 support-addons-version = Version
 support-addons-id = ID
+legacy-user-stylesheets-title = Legacy User Stylesheets
+legacy-user-stylesheets-enabled = Active
+legacy-user-stylesheets-stylesheet-types = Stylesheets
+legacy-user-stylesheets-no-stylesheets-found = No stylesheets found
 security-software-title = Security Software
 security-software-type = Type
 security-software-name = Name
@@ -78,6 +82,7 @@ app-basics-key-mozilla = Mozilla Location Service Key
 app-basics-safe-mode = Safe Mode
 app-basics-memory-size = Memory Size (RAM)
 app-basics-disk-available = Disk Space Available
+app-basics-pointing-devices = Pointing Devices
 
 # Variables:
 #   $value (number) - Amount of data being stored
@@ -177,6 +182,15 @@ media-capabilities-title = Media Capabilities
 media-codec-support-info = Codec Support Information
 # List all the entries of the database.
 media-capabilities-enumerate = Enumerate database
+
+## Codec support table
+
+media-codec-support-sw-decoding = Software Decoding
+media-codec-support-hw-decoding = Hardware Decoding
+media-codec-support-codec-name = Codec Name
+media-codec-support-supported = Supported
+media-codec-support-unsupported = Unsupported
+media-codec-support-error = Codec support information unavailable. Try again after playing back a media file.
 
 ##
 
@@ -413,3 +427,10 @@ support-remote-experiments-see-about-studies = See <a data-l10n-name="support-ab
 support-remote-features-title = Remote Features
 support-remote-features-name = Name
 support-remote-features-status = Status
+
+## Pointing devices
+
+pointing-device-mouse = Mouse
+pointing-device-touchscreen = Touchscreen
+pointing-device-pen-digitizer = Pen Digitizer
+pointing-device-none = No pointing devices

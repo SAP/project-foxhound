@@ -7,6 +7,7 @@
 "use strict";
 
 ChromeUtils.defineESModuleGetters(this, {
+  BrowserUsageTelemetry: "resource:///modules/BrowserUsageTelemetry.sys.mjs",
   CustomizableUI: "resource:///modules/CustomizableUI.sys.mjs",
   ExtensionTelemetry: "resource://gre/modules/ExtensionTelemetry.sys.mjs",
   OriginControls: "resource://gre/modules/ExtensionPermissions.sys.mjs",
@@ -14,11 +15,6 @@ ChromeUtils.defineESModuleGetters(this, {
   clearTimeout: "resource://gre/modules/Timer.sys.mjs",
   setTimeout: "resource://gre/modules/Timer.sys.mjs",
 });
-ChromeUtils.defineModuleGetter(
-  this,
-  "BrowserUsageTelemetry",
-  "resource:///modules/BrowserUsageTelemetry.jsm"
-);
 
 var { DefaultWeakMap, ExtensionError } = ExtensionUtils;
 
@@ -36,7 +32,7 @@ const POPUP_PRELOAD_TIMEOUT_MS = 200;
 // WeakMap[Extension -> BrowserAction]
 const browserActionMap = new WeakMap();
 
-XPCOMUtils.defineLazyGetter(this, "browserAreas", () => {
+ChromeUtils.defineLazyGetter(this, "browserAreas", () => {
   return {
     navbar: CustomizableUI.AREA_NAVBAR,
     menupanel: CustomizableUI.AREA_ADDONS,
@@ -237,8 +233,8 @@ this.browserAction = class extends ExtensionAPIPersistent {
           "unified-extensions-item-message",
           "unified-extensions-item-message-hover-menu-button"
         );
-        messageHoverForMenuButton.setAttribute(
-          "data-l10n-id",
+        document.l10n.setAttributes(
+          messageHoverForMenuButton,
           "unified-extensions-item-message-manage"
         );
         deck.appendChild(messageHoverForMenuButton);
@@ -253,8 +249,8 @@ this.browserAction = class extends ExtensionAPIPersistent {
           "unified-extensions-item-menu-button"
         );
 
-        menuButton.setAttribute(
-          "data-l10n-id",
+        document.l10n.setAttributes(
+          menuButton,
           "unified-extensions-item-open-menu"
         );
         // Allow the users to quickly move between extension items using
@@ -324,9 +320,10 @@ this.browserAction = class extends ExtensionAPIPersistent {
         const menuButton = node.querySelector(
           ".unified-extensions-item-menu-button"
         );
-        menuButton.setAttribute(
-          "data-l10n-args",
-          JSON.stringify({ extensionName: this.extension.name })
+        node.ownerDocument.l10n.setAttributes(
+          menuButton,
+          "unified-extensions-item-open-menu",
+          { extensionName: this.extension.name }
         );
 
         menuButton.onblur = event => this.handleMenuButtonEvent(event);
@@ -337,7 +334,11 @@ this.browserAction = class extends ExtensionAPIPersistent {
         actionButton.onblur = event => this.handleEvent(event);
         actionButton.onfocus = event => this.handleEvent(event);
 
-        this.updateButton(node, this.action.getContextData(null), true, false);
+        this.updateButton(
+          node,
+          this.action.getContextData(null),
+          /* sync */ true
+        );
       },
 
       onBeforeCommand: (event, node) => {
@@ -791,7 +792,13 @@ this.browserAction = class extends ExtensionAPIPersistent {
 
   // Update the toolbar button |node| with the tab context data
   // in |tabData|.
-  updateButton(node, tabData, sync = false, attention = false) {
+  updateButton(
+    node,
+    tabData,
+    sync = false,
+    attention = false,
+    quarantined = false
+  ) {
     // This is the primary/action button in the custom widget.
     let button = node.querySelector(".unified-extensions-item-action-button");
     let extensionTitle = tabData.title || this.extension.name;
@@ -808,13 +815,13 @@ this.browserAction = class extends ExtensionAPIPersistent {
       // This is set on the node so that it looks good in the toolbar.
       node.toggleAttribute("attention", attention);
 
-      node.ownerDocument.l10n.setAttributes(
-        button,
-        attention
-          ? "origin-controls-toolbar-button-permission-needed"
-          : "origin-controls-toolbar-button",
-        { extensionTitle }
-      );
+      let msgId = "origin-controls-toolbar-button";
+      if (attention) {
+        msgId = quarantined
+          ? "origin-controls-toolbar-button-quarantined"
+          : "origin-controls-toolbar-button-permission-needed";
+      }
+      node.ownerDocument.l10n.setAttributes(button, msgId, { extensionTitle });
 
       button.querySelector(".unified-extensions-item-name").textContent =
         this.extension?.name;
@@ -907,11 +914,17 @@ this.browserAction = class extends ExtensionAPIPersistent {
     let node = this.widget.forWindow(window).node;
     if (node) {
       let tab = window.gBrowser.selectedTab;
+      let { attention, quarantined } = OriginControls.getAttentionState(
+        this.extension.policy,
+        window
+      );
+
       this.updateButton(
         node,
         this.action.getContextData(tab),
-        false,
-        OriginControls.getAttention(this.extension.policy, window)
+        /* sync */ false,
+        attention,
+        quarantined
       );
     }
   }
@@ -962,6 +975,12 @@ this.browserAction = class extends ExtensionAPIPersistent {
           extensionApi: this,
         }).api(),
 
+        getUserSettings: () => {
+          let { area } = CustomizableUI.getPlacementOfWidget(
+            action.buttonDelegate.id
+          );
+          return { isOnToolbar: area !== CustomizableUI.AREA_ADDONS };
+        },
         openPopup: async options => {
           const isHandlingUserInput =
             context.callContextData?.isHandlingUserInput;

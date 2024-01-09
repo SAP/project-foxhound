@@ -7,6 +7,12 @@
 with Files("**"):
     BUG_COMPONENT = ("Core", "Privacy: Anti-Tracking")
 
+JAR_MANIFESTS += ["jar.mn"]
+
+DIRS += [
+    "bouncetrackingprotection",
+]
+
 XPIDL_SOURCES += [
     "nsIContentBlockingAllowList.idl",
     "nsIPartitioningExceptionListService.idl",

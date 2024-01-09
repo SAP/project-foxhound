@@ -47,17 +47,16 @@ static void RecordingSourceSurfaceUserDataFunc(void* aUserData) {
   });
 }
 
-static void EnsureSurfaceStoredRecording(DrawEventRecorderPrivate* aRecorder,
+static bool EnsureSurfaceStoredRecording(DrawEventRecorderPrivate* aRecorder,
                                          SourceSurface* aSurface,
                                          const char* reason) {
-  if (aRecorder->HasStoredObject(aSurface)) {
-    return;
-  }
-
-  // It's important that AddStoredObject is called first because that will
+  // It's important that TryAddStoredObject is called first because that will
   // run any pending processing required by recorded objects that have been
   // deleted off the main thread.
-  aRecorder->AddStoredObject(aSurface);
+  if (!aRecorder->TryAddStoredObject(aSurface)) {
+    // Surface is already stored.
+    return false;
+  }
   aRecorder->StoreSourceSurfaceRecording(aSurface, reason);
   aRecorder->AddSourceSurface(aSurface);
 
@@ -66,6 +65,7 @@ static void EnsureSurfaceStoredRecording(DrawEventRecorderPrivate* aRecorder,
   userData->recorder = aRecorder;
   aSurface->AddUserData(reinterpret_cast<UserDataKey*>(aRecorder), userData,
                         &RecordingSourceSurfaceUserDataFunc);
+  return true;
 }
 
 class SourceSurfaceRecording : public SourceSurface {
@@ -252,6 +252,17 @@ void DrawTargetRecording::Fill(const Path* aPath, const Pattern& aPattern,
     return;
   }
 
+  if (aPath->GetBackendType() == BackendType::RECORDING) {
+    const PathRecording* path = static_cast<const PathRecording*>(aPath);
+    auto circle = path->AsCircle();
+    if (circle) {
+      EnsurePatternDependenciesStored(aPattern);
+      mRecorder->RecordEvent(
+          RecordedFillCircle(this, circle.value(), aPattern, aOptions));
+      return;
+    }
+  }
+
   RefPtr<PathRecording> pathRecording = EnsurePathStored(aPath);
   EnsurePatternDependenciesStored(aPattern);
 
@@ -355,6 +366,26 @@ void DrawTargetRecording::MaskSurface(const Pattern& aSource,
 void DrawTargetRecording::Stroke(const Path* aPath, const Pattern& aPattern,
                                  const StrokeOptions& aStrokeOptions,
                                  const DrawOptions& aOptions) {
+  if (aPath->GetBackendType() == BackendType::RECORDING) {
+    const PathRecording* path = static_cast<const PathRecording*>(aPath);
+    auto circle = path->AsCircle();
+    if (circle && circle->closed) {
+      EnsurePatternDependenciesStored(aPattern);
+      mRecorder->RecordEvent(RecordedStrokeCircle(
+          this, circle.value(), aPattern, aStrokeOptions, aOptions));
+      return;
+    }
+
+    auto line = path->AsLine();
+    if (line) {
+      EnsurePatternDependenciesStored(aPattern);
+      mRecorder->RecordEvent(RecordedStrokeLine(this, line->origin,
+                                                line->destination, aPattern,
+                                                aStrokeOptions, aOptions));
+      return;
+    }
+  }
+
   RefPtr<PathRecording> pathRecording = EnsurePathStored(aPath);
   EnsurePatternDependenciesStored(aPattern);
 
@@ -550,27 +581,26 @@ already_AddRefed<SourceSurface> DrawTargetRecording::OptimizeSourceSurface(
     if (strongRef) {
       return do_AddRef(strongRef);
     }
-  }
+  } else {
+    if (!EnsureSurfaceStoredRecording(mRecorder, aSurface,
+                                      "OptimizeSourceSurface")) {
+      // Surface was already stored, but doesn't have UserData so must be one
+      // of our recording surfaces.
+      MOZ_ASSERT(aSurface->GetType() == SurfaceType::RECORDING);
+      return do_AddRef(aSurface);
+    }
 
-  if (aSurface->GetType() == SurfaceType::RECORDING &&
-      mRecorder->HasStoredObject(aSurface)) {
-    // aSurface is already optimized for our recorder.
-    return do_AddRef(aSurface);
+    userData = static_cast<RecordingSourceSurfaceUserData*>(
+        aSurface->GetUserData(reinterpret_cast<UserDataKey*>(mRecorder.get())));
+    MOZ_ASSERT(userData,
+               "User data should always have been set by "
+               "EnsureSurfaceStoredRecording.");
   }
-
-  EnsureSurfaceStoredRecording(mRecorder, aSurface, "OptimizeSourceSurface");
 
   RefPtr<SourceSurface> retSurf = new SourceSurfaceRecording(
       aSurface->GetSize(), aSurface->GetFormat(), mRecorder, aSurface);
-
   mRecorder->RecordEvent(
       RecordedOptimizeSourceSurface(aSurface, this, retSurf));
-
-  userData = static_cast<RecordingSourceSurfaceUserData*>(
-      aSurface->GetUserData(reinterpret_cast<UserDataKey*>(mRecorder.get())));
-  MOZ_ASSERT(
-      userData,
-      "User data should always have been set by EnsureSurfaceStoredRecording.");
   userData->optimizedSurface = retSurf;
 
   return retSurf.forget();
@@ -693,7 +723,8 @@ already_AddRefed<PathRecording> DrawTargetRecording::EnsurePathStored(
   if (aPath->GetBackendType() == BackendType::RECORDING) {
     pathRecording =
         const_cast<PathRecording*>(static_cast<const PathRecording*>(aPath));
-    if (mRecorder->HasStoredObject(aPath)) {
+    if (!mRecorder->TryAddStoredObject(pathRecording)) {
+      // Path is already stored.
       return pathRecording.forget();
     }
   } else {
@@ -703,12 +734,12 @@ already_AddRefed<PathRecording> DrawTargetRecording::EnsurePathStored(
         new PathBuilderRecording(mFinalDT->GetBackendType(), fillRule);
     aPath->StreamToSink(builderRecording);
     pathRecording = builderRecording->Finish().downcast<PathRecording>();
+    mRecorder->AddStoredObject(pathRecording);
   }
 
-  // It's important that AddStoredObject is called first because that will
-  // run any pending processing required by recorded objects that have been
-  // deleted off the main thread.
-  mRecorder->AddStoredObject(pathRecording);
+  // It's important that AddStoredObject or TryAddStoredObject is called before
+  // this because that will run any pending processing required by recorded
+  // objects that have been deleted off the main thread.
   mRecorder->RecordEvent(RecordedPathCreation(pathRecording.get()));
   pathRecording->mStoredRecorders.push_back(mRecorder);
 

@@ -71,7 +71,7 @@ def browser_kwargs(logger, test_type, run_info_data, config, **kwargs):
             "tests_root": config.doc_root,
             "specialpowers_path": kwargs["specialpowers_path"],
             "debug_test": kwargs["debug_test"],
-            "env_extras" : dict([x.split('=') for x in kwargs.get("env", [])])}
+            "env_extras": dict([x.split('=') for x in kwargs.get("env", [])])}
 
 
 def executor_kwargs(logger, test_type, test_environment, run_info_data,
@@ -125,7 +125,6 @@ class ProfileCreator(FirefoxProfileCreator):
             "dom.disable_open_during_load": False,
             "places.history.enabled": False,
             "dom.send_after_paint_to_content": True,
-            "network.preload": True,
             "browser.tabs.remote.autostart": True,
         })
 

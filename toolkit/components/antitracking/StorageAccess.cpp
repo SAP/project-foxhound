@@ -607,16 +607,16 @@ bool ShouldAllowAccessFor(nsPIDOMWindowInner* aWindow, nsIURI* aURI,
     return false;
   }
 
-  // Document::HasStoragePermission first checks if storage access granted is
+  // Document::UsingStorageAccess first checks if storage access granted is
   // cached in the inner window, if no, it then checks the storage permission
   // flag in the channel's loadinfo
-  bool allowed = document->HasStorageAccessPermissionGranted();
+  bool allowed = document->UsingStorageAccess();
 
   if (!allowed) {
     *aRejectedReason = blockedReason;
   } else {
     if (MOZ_LOG_TEST(gAntiTrackingLog, mozilla::LogLevel::Debug) &&
-        aWindow->HasStorageAccessPermissionGranted()) {
+        aWindow->UsingStorageAccess()) {
       LOG(("Permission stored in the window. All good."));
     }
   }
@@ -807,7 +807,7 @@ bool ShouldAllowAccessFor(nsIChannel* aChannel, nsIURI* aURI,
 
   // Let's see if we have to grant the access for this particular channel.
 
-  // HasStorageAccessPermissionGranted only applies to channels that load
+  // UsingStorageAccess only applies to channels that load
   // documents, for sub-resources loads, just returns the result from loadInfo.
   bool isDocument = false;
   aChannel->GetIsDocument(&isDocument);
@@ -815,7 +815,7 @@ bool ShouldAllowAccessFor(nsIChannel* aChannel, nsIURI* aURI,
   if (isDocument) {
     nsCOMPtr<nsPIDOMWindowInner> inner =
         AntiTrackingUtils::GetInnerWindow(targetBC);
-    if (inner && inner->HasStorageAccessPermissionGranted()) {
+    if (inner && inner->UsingStorageAccess()) {
       LOG(("Permission stored in the window. All good."));
       return true;
     }
@@ -897,17 +897,13 @@ bool ApproximateAllowAccessForWithoutChannel(
     return cookiePermission != nsICookiePermission::ACCESS_DENY;
   }
 
-  nsAutoCString origin;
-  nsresult rv = nsContentUtils::GetASCIIOrigin(aURI, origin);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    LOG_SPEC(("Failed to compute the origin from %s", _spec), aURI);
-    return false;
-  }
-
   nsIPrincipal* parentPrincipal = parentDocument->NodePrincipal();
 
+  nsCOMPtr<nsIPrincipal> principal = BasePrincipal::CreateContentPrincipal(
+      aURI, parentPrincipal->OriginAttributesRef());
+
   nsAutoCString type;
-  AntiTrackingUtils::CreateStoragePermissionKey(origin, type);
+  AntiTrackingUtils::CreateStoragePermissionKey(principal, type);
 
   return AntiTrackingUtils::CheckStoragePermission(
       parentPrincipal, type,

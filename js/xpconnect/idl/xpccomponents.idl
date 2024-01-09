@@ -244,9 +244,6 @@ interface nsIXPCComponents_Utils : nsISupports
      */
     readonly attribute nsIXPCComponents_utils_Sandbox Sandbox;
 
-    [implicit_jscontext]
-    jsval createServicesCache();
-
     /*
      * evalInSandbox is designed to be called from JavaScript only.
      *
@@ -610,15 +607,6 @@ interface nsIXPCComponents_Utils : nsISupports
      */
     [implicit_jscontext]
     void dispatch(in jsval runnable, [optional] in jsval scope);
-
-    /*
-     * Bug 1621603 - Remove strict_mode.
-     *
-     * Do not use this API! Instead use "use strict"; at the top of your JS
-     * file.
-     */
-    [implicit_jscontext]
-    attribute boolean strict_mode;
 
     // Returns true if we're running in automation and certain security
     // restrictions can be eased.

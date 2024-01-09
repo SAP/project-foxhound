@@ -26,10 +26,9 @@ const TEST_MESSAGE = {
       screens: [
         {
           id: "TEST_SCREEN_ID",
-          parent_selector: "#tabpickup-steps",
+          anchors: [{ selector: "#tabpickup-steps", arrow_position: "top" }],
           content: {
             position: "callout",
-            arrow_position: "top",
             title: {
               string_id: "Test",
             },
@@ -71,19 +70,21 @@ add_setup(async () => {
 });
 
 add_task(async function test_CLICK_ELEMENT() {
-  SpecialPowers.pushPrefEnv([
-    "browser.firefox-view.feature-tour",
-    JSON.stringify({
-      screen: "",
-      complete: true,
-    }),
-  ]);
-
   const sendTriggerStub = sandbox.stub(ASRouter, "sendTriggerMessage");
   sendTriggerStub.resolves(TEST_MESSAGE);
 
   await withFirefoxView({ openNewWindow: true }, async browser => {
     const { document } = browser.contentWindow;
+    const { FeatureCallout } = ChromeUtils.importESModule(
+      "resource:///modules/FeatureCallout.sys.mjs"
+    );
+    let callout = new FeatureCallout({
+      win: browser.contentWindow,
+      location: "about:firefoxview",
+      context: "content",
+      theme: { preset: "themed-content" },
+    });
+    callout.showFeatureCallout();
     const calloutSelector = "#multi-stage-message-root.featureCallout";
 
     await BrowserTestUtils.waitForCondition(() => {

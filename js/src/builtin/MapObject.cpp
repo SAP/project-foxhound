@@ -231,7 +231,7 @@ bool GlobalObject::initMapIteratorProto(JSContext* cx,
     return false;
   }
   if (!JS_DefineFunctions(cx, proto, MapIteratorObject::methods) ||
-      !DefineToStringTag(cx, proto, cx->names().MapIterator)) {
+      !DefineToStringTag(cx, proto, cx->names().Map_Iterator_)) {
     return false;
   }
   global->initBuiltinProto(ProtoKind::MapIteratorProto, proto);
@@ -452,11 +452,12 @@ const JSClassOps MapObject::classOps_ = {
 const ClassSpec MapObject::classSpec_ = {
     GenericCreateConstructor<MapObject::construct, 0, gc::AllocKind::FUNCTION>,
     GenericCreatePrototype<MapObject>,
-    nullptr,
+    MapObject::staticMethods,
     MapObject::staticProperties,
     MapObject::methods,
     MapObject::properties,
-    MapObject::finishInit};
+    MapObject::finishInit,
+};
 
 const JSClass MapObject::class_ = {
     "Map",
@@ -464,17 +465,23 @@ const JSClass MapObject::class_ = {
         JSCLASS_HAS_RESERVED_SLOTS(MapObject::SlotCount) |
         JSCLASS_HAS_CACHED_PROTO(JSProto_Map) | JSCLASS_FOREGROUND_FINALIZE |
         JSCLASS_SKIP_NURSERY_FINALIZE,
-    &MapObject::classOps_, &MapObject::classSpec_};
+    &MapObject::classOps_,
+    &MapObject::classSpec_,
+};
 
 const JSClass MapObject::protoClass_ = {
-    "Map.prototype", JSCLASS_HAS_CACHED_PROTO(JSProto_Map), JS_NULL_CLASS_OPS,
-    &MapObject::classSpec_};
+    "Map.prototype",
+    JSCLASS_HAS_CACHED_PROTO(JSProto_Map),
+    JS_NULL_CLASS_OPS,
+    &MapObject::classSpec_,
+};
 
 const JSPropertySpec MapObject::properties[] = {
     JS_PSG("size", size, 0),
-    JS_STRING_SYM_PS(toStringTag, "Map", JSPROP_READONLY), JS_PS_END};
+    JS_STRING_SYM_PS(toStringTag, "Map", JSPROP_READONLY),
+    JS_PS_END,
+};
 
-// clang-format off
 const JSFunctionSpec MapObject::methods[] = {
     JS_INLINABLE_FN("get", get, 1, 0, MapGet),
     JS_INLINABLE_FN("has", has, 1, 0, MapHas),
@@ -488,12 +495,20 @@ const JSFunctionSpec MapObject::methods[] = {
     // @@iterator is re-defined in finishInit so that it has the
     // same identity as |entries|.
     JS_SYM_FN(iterator, entries, 0, 0),
-    JS_FS_END
+    JS_FS_END,
 };
-// clang-format on
 
 const JSPropertySpec MapObject::staticProperties[] = {
-    JS_SELF_HOSTED_SYM_GET(species, "$MapSpecies", 0), JS_PS_END};
+    JS_SELF_HOSTED_SYM_GET(species, "$MapSpecies", 0),
+    JS_PS_END,
+};
+
+const JSFunctionSpec MapObject::staticMethods[] = {
+#ifdef NIGHTLY_BUILD
+    JS_SELF_HOSTED_FN("groupBy", "MapGroupBy", 2, 0),
+#endif
+    JS_FS_END,
+};
 
 /* static */ bool MapObject::finishInit(JSContext* cx, HandleObject ctor,
                                         HandleObject proto) {
@@ -1090,7 +1105,7 @@ bool GlobalObject::initSetIteratorProto(JSContext* cx,
     return false;
   }
   if (!JS_DefineFunctions(cx, proto, SetIteratorObject::methods) ||
-      !DefineToStringTag(cx, proto, cx->names().SetIterator)) {
+      !DefineToStringTag(cx, proto, cx->names().Set_Iterator_)) {
     return false;
   }
   global->initBuiltinProto(ProtoKind::SetIteratorProto, proto);
@@ -1264,7 +1279,8 @@ const ClassSpec SetObject::classSpec_ = {
     SetObject::staticProperties,
     SetObject::methods,
     SetObject::properties,
-    SetObject::finishInit};
+    SetObject::finishInit,
+};
 
 const JSClass SetObject::class_ = {
     "Set",
@@ -1277,14 +1293,18 @@ const JSClass SetObject::class_ = {
 };
 
 const JSClass SetObject::protoClass_ = {
-    "Set.prototype", JSCLASS_HAS_CACHED_PROTO(JSProto_Set), JS_NULL_CLASS_OPS,
-    &SetObject::classSpec_};
+    "Set.prototype",
+    JSCLASS_HAS_CACHED_PROTO(JSProto_Set),
+    JS_NULL_CLASS_OPS,
+    &SetObject::classSpec_,
+};
 
 const JSPropertySpec SetObject::properties[] = {
     JS_PSG("size", size, 0),
-    JS_STRING_SYM_PS(toStringTag, "Set", JSPROP_READONLY), JS_PS_END};
+    JS_STRING_SYM_PS(toStringTag, "Set", JSPROP_READONLY),
+    JS_PS_END,
+};
 
-// clang-format off
 const JSFunctionSpec SetObject::methods[] = {
     JS_INLINABLE_FN("has", has, 1, 0, SetHas),
     JS_FN("add", add, 1, 0),
@@ -1292,7 +1312,7 @@ const JSFunctionSpec SetObject::methods[] = {
     JS_FN("entries", entries, 0, 0),
     JS_FN("clear", clear, 0, 0),
     JS_SELF_HOSTED_FN("forEach", "SetForEach", 2, 0),
-#ifdef ENABLE_NEW_SET_METHODS
+#ifdef NIGHTLY_BUILD
     JS_SELF_HOSTED_FN("union", "SetUnion", 1, 0),
     JS_SELF_HOSTED_FN("difference", "SetDifference", 1, 0),
     JS_SELF_HOSTED_FN("intersection", "SetIntersection", 1, 0),
@@ -1306,12 +1326,14 @@ const JSFunctionSpec SetObject::methods[] = {
     // same identity as |values|.
     JS_FN("keys", values, 0, 0),
     JS_SYM_FN(iterator, values, 0, 0),
-    JS_FS_END
+    JS_FS_END,
 };
 // clang-format on
 
 const JSPropertySpec SetObject::staticProperties[] = {
-    JS_SELF_HOSTED_SYM_GET(species, "$SetSpecies", 0), JS_PS_END};
+    JS_SELF_HOSTED_SYM_GET(species, "$SetSpecies", 0),
+    JS_PS_END,
+};
 
 /* static */ bool SetObject::finishInit(JSContext* cx, HandleObject ctor,
                                         HandleObject proto) {
@@ -1712,6 +1734,33 @@ bool SetObject::clear(JSContext* cx, unsigned argc, Value* vp) {
   AutoJSMethodProfilerEntry pseudoFrame(cx, "Set.prototype", "clear");
   CallArgs args = CallArgsFromVp(argc, vp);
   return CallNonGenericMethod(cx, is, clear_impl, args);
+}
+
+bool SetObject::copy(JSContext* cx, unsigned argc, Value* vp) {
+  CallArgs args = CallArgsFromVp(argc, vp);
+  MOZ_ASSERT(args.length() == 1);
+  MOZ_ASSERT(SetObject::is(args[0]));
+
+  auto* result = SetObject::create(cx);
+  if (!result) {
+    return false;
+  }
+
+  ValueSet* set = result->getData();
+  MOZ_ASSERT(set);
+
+  auto* from = &args[0].toObject().as<SetObject>();
+  for (auto range = from->getData()->all(); !range.empty(); range.popFront()) {
+    HashableValue value = range.front().get();
+
+    if (!PostWriteBarrier(result, value) || !set->put(value)) {
+      ReportOutOfMemory(cx);
+      return false;
+    }
+  }
+
+  args.rval().setObject(*result);
+  return true;
 }
 
 /*** JS static utility functions ********************************************/

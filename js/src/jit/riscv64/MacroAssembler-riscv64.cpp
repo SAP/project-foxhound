@@ -53,7 +53,7 @@ void MacroAssemblerRiscv64::ma_cmp_set(Register rd, Register rj, ImmPtr imm,
 
 void MacroAssemblerRiscv64::ma_cmp_set(Register rd, Address address, Imm32 imm,
                                        Condition c) {
-  // TODO(loong64): 32-bit ma_cmp_set?
+  // TODO(riscv): 32-bit ma_cmp_set?
   UseScratchRegisterScope temps(this);
   Register scratch2 = temps.Acquire();
   ma_load(scratch2, address, SizeWord);
@@ -1100,8 +1100,8 @@ void MacroAssemblerRiscv64::computeScaledAddress(const BaseIndex& address,
 void MacroAssemblerRiscv64Compat::wasmLoadI64Impl(
     const wasm::MemoryAccessDesc& access, Register memoryBase, Register ptr,
     Register ptrScratch, Register64 output, Register tmp) {
+  access.assertOffsetInGuardPages();
   uint32_t offset = access.offset();
-  MOZ_ASSERT(offset < asMasm().wasmMaxOffsetGuardLimit());
   MOZ_ASSERT_IF(offset, ptrScratch != InvalidReg);
 
   // Maybe add the offset.
@@ -1135,7 +1135,7 @@ void MacroAssemblerRiscv64Compat::wasmLoadI64Impl(
       lw(output.reg, ScratchRegister, 0);
       break;
     case Scalar::Uint32:
-      // TODO(loong64): Why need zero-extension here?
+      // TODO(riscv): Why need zero-extension here?
       add(ScratchRegister, memoryBase, ptr);
       lwu(output.reg, ScratchRegister, 0);
       break;
@@ -1154,8 +1154,8 @@ void MacroAssemblerRiscv64Compat::wasmLoadI64Impl(
 void MacroAssemblerRiscv64Compat::wasmStoreI64Impl(
     const wasm::MemoryAccessDesc& access, Register64 value, Register memoryBase,
     Register ptr, Register ptrScratch, Register tmp) {
+  access.assertOffsetInGuardPages();
   uint32_t offset = access.offset();
-  MOZ_ASSERT(offset < asMasm().wasmMaxOffsetGuardLimit());
   MOZ_ASSERT_IF(offset, ptrScratch != InvalidReg);
 
   // Maybe add the offset.
@@ -2125,7 +2125,8 @@ CodeOffset MacroAssembler::nopPatchableToCall() {
 CodeOffset MacroAssembler::wasmTrapInstruction() {
   CodeOffset offset(currentOffset());
   BlockTrampolinePoolScope block_trampoline_pool(this, 2);
-  break_(kWasmTrapCode);  // TODO: teq(zero, zero, WASM_TRAP)
+  illegal_trap(kWasmTrapCode);
+  ebreak();
   return offset;
 }
 size_t MacroAssembler::PushRegsInMaskSizeInBytes(LiveRegisterSet set) {
@@ -4285,7 +4286,12 @@ void MacroAssembler::widenInt32(Register r) {
 // modified by UpdateLoad64Value, either during compilation (eg.
 // Assembler::bind), or during execution (eg. jit::PatchJump).
 void MacroAssemblerRiscv64::ma_liPatchable(Register dest, Imm32 imm) {
-  return ma_liPatchable(dest, ImmWord(uintptr_t(imm.value)));
+  m_buffer.ensureSpace(2 * sizeof(uint32_t));
+  int64_t value = imm.value;
+  int64_t high_20 = ((value + 0x800) >> 12);
+  int64_t low_12 = value << 52 >> 52;
+  lui(dest, high_20);
+  addi(dest, dest, low_12);
 }
 
 void MacroAssemblerRiscv64::ma_liPatchable(Register dest, ImmPtr imm) {
@@ -5543,7 +5549,7 @@ void MacroAssemblerRiscv64::ma_add32TestCarry(Condition cond, Register rd,
 
 void MacroAssemblerRiscv64::ma_subPtrTestOverflow(Register rd, Register rj,
                                                   Imm32 imm, Label* overflow) {
-  // TODO(loong64): Check subPtrTestOverflow
+  // TODO(riscv): Check subPtrTestOverflow
   MOZ_ASSERT(imm.value != INT32_MIN);
   ma_addPtrTestOverflow(rd, rj, Imm32(-imm.value), overflow);
 }
@@ -6337,8 +6343,8 @@ void MacroAssemblerRiscv64::wasmLoadImpl(const wasm::MemoryAccessDesc& access,
                                          Register memoryBase, Register ptr,
                                          Register ptrScratch,
                                          AnyRegister output, Register tmp) {
+  access.assertOffsetInGuardPages();
   uint32_t offset = access.offset();
-  MOZ_ASSERT(offset < asMasm().wasmMaxOffsetGuardLimit());
   MOZ_ASSERT_IF(offset, ptrScratch != InvalidReg);
 
   // Maybe add the offset.
@@ -6395,8 +6401,8 @@ void MacroAssemblerRiscv64::wasmStoreImpl(const wasm::MemoryAccessDesc& access,
                                           AnyRegister value,
                                           Register memoryBase, Register ptr,
                                           Register ptrScratch, Register tmp) {
+  access.assertOffsetInGuardPages();
   uint32_t offset = access.offset();
-  MOZ_ASSERT(offset < asMasm().wasmMaxOffsetGuardLimit());
   MOZ_ASSERT_IF(offset, ptrScratch != InvalidReg);
 
   // Maybe add the offset.

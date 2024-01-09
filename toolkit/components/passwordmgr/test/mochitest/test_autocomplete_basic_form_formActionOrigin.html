@@ -23,7 +23,7 @@ const chromeScript = runChecksAfterCommonInit();
 /** Test for Login Manager: multiple login autocomplete. **/
 
 add_setup(async () => {
-  await addLoginsInParent(
+  await setStoredLoginsAsync(
     [window.location.origin, "https://differentFormSubmitURL", null, "dfsu1", "dfsp1", "uname", "pword"]
   );
   listenForUnexpectedPopupShown();
@@ -67,6 +67,7 @@ add_task(async function test_form1_menu_shows_logins_for_different_formActionOri
 
   synthesizeKey("KEY_Enter");
   await promiseFormsProcessedInSameProcess();
+  await untilAutocompletePopupClosed();
   checkLoginForm(form.uname, "dfsu1", form.pword, "dfsp1");
 });
 </script>

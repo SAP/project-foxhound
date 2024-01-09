@@ -151,8 +151,12 @@ class AsyncEventDispatcher : public CancelableRunnable {
   // assert.
   void RequireNodeInDocument();
 
- protected:
+  // NOTE: The static version of this should be preferred when possible, because
+  // it avoids the allocation but this is useful when used in combination with
+  // LoadBlockingAsyncEventDispatcher.
   void RunDOMEventWhenSafe();
+
+ protected:
   MOZ_CAN_RUN_SCRIPT static void DispatchEventOnTarget(
       dom::EventTarget* aTarget, dom::Event* aEvent,
       ChromeOnlyDispatch aOnlyChromeDispatch, Composed aComposed);
@@ -185,20 +189,16 @@ class LoadBlockingAsyncEventDispatcher final : public AsyncEventDispatcher {
       : AsyncEventDispatcher(aEventNode, aEventType, aBubbles,
                              aDispatchChromeOnly),
         mBlockedDoc(aEventNode->OwnerDoc()) {
-    if (mBlockedDoc) {
-      mBlockedDoc->BlockOnload();
-    }
+    mBlockedDoc->BlockOnload();
   }
 
   LoadBlockingAsyncEventDispatcher(nsINode* aEventNode, dom::Event* aEvent)
       : AsyncEventDispatcher(aEventNode, aEvent),
         mBlockedDoc(aEventNode->OwnerDoc()) {
-    if (mBlockedDoc) {
-      mBlockedDoc->BlockOnload();
-    }
+    mBlockedDoc->BlockOnload();
   }
 
-  ~LoadBlockingAsyncEventDispatcher();
+  ~LoadBlockingAsyncEventDispatcher() { mBlockedDoc->UnblockOnload(true); }
 
  private:
   RefPtr<dom::Document> mBlockedDoc;

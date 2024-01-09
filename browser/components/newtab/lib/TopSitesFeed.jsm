@@ -212,8 +212,8 @@ class ContileIntegration {
    *   string value of the Contile resposne cache-control header
    */
   _extractCacheValidFor(cacheHeader) {
-    if (cacheHeader === undefined) {
-      lazy.log.warn("Contile response cache control header is undefined");
+    if (!cacheHeader) {
+      lazy.log.warn("Contile response cache control header is empty");
       return 0;
     }
     const [, staleIfError] = cacheHeader.match(/stale-if-error=\s*([0-9]+)/i);
@@ -883,7 +883,13 @@ class TopSitesFeed {
     const searchShortcutsExperiment = prefValues[SEARCH_SHORTCUTS_EXPERIMENT];
     // We must wait for search services to initialize in order to access default
     // search engine properties without triggering a synchronous initialization
-    await Services.search.init();
+    try {
+      await Services.search.init();
+    } catch {
+      // We continue anyway because we want the user to see their sponsored,
+      // saved, or visited shortcut tiles even if search engines are not
+      // available.
+    }
 
     // Get all frecent sites from history.
     let frecent = [];
@@ -1115,19 +1121,23 @@ class TopSitesFeed {
       return Object.values(sponsoredLinks).flat();
     }
 
+    // AMP links might have empty slots, remove them as SOV doesn't need those.
+    sponsoredLinks[SPONSORED_TILE_PARTNER_AMP] =
+      sponsoredLinks[SPONSORED_TILE_PARTNER_AMP].filter(Boolean);
+
     const sampleInput = `${lazy.contextId}-${this._contile.sov.name}`;
     let sponsored = [];
-
+    let chosenPartners = [];
     for (const allocation of this._contile.sov.allocations) {
       let link = null;
-      let chosenPartner = null;
+      let assignedPartner = null;
       const ratios = allocation.allocation.map(alloc => alloc.percentage);
       if (ratios.length) {
         const index = await lazy.Sampling.ratioSample(sampleInput, ratios);
-        chosenPartner = allocation.allocation[index].partner;
+        assignedPartner = allocation.allocation[index].partner;
         // Unknown partners are allowed so that new parters can be added to Shepherd
         // sooner without waiting for client changes.
-        link = sponsoredLinks[chosenPartner]?.shift();
+        link = sponsoredLinks[assignedPartner]?.shift();
       }
 
       if (!link) {
@@ -1136,7 +1146,7 @@ class TopSitesFeed {
         // against the remaining partners.
         for (const partner of SPONSORED_TILE_PARTNERS) {
           if (
-            partner === chosenPartner ||
+            partner === assignedPartner ||
             sponsoredLinks[partner].length === 0
           ) {
             continue;
@@ -1147,6 +1157,11 @@ class TopSitesFeed {
 
         if (!link) {
           // No more links to be added across all the partners, just return.
+          if (chosenPartners.length) {
+            Glean.newtab.sovAllocation.set(
+              chosenPartners.map(entry => JSON.stringify(entry))
+            );
+          }
           return sponsored;
         }
       }
@@ -1158,7 +1173,20 @@ class TopSitesFeed {
         link.pos = allocation.position - 1;
       }
       sponsored.push(link);
+
+      chosenPartners.push({
+        pos: allocation.position,
+        assigned: assignedPartner, // The assigned partner based on SOV
+        chosen: link.partner,
+      });
     }
+    // Record chosen partners to glean
+    if (chosenPartners.length) {
+      Glean.newtab.sovAllocation.set(
+        chosenPartners.map(entry => JSON.stringify(entry))
+      );
+    }
+
     // add the remaining contile sponsoredLinks when nimbus variable present
     if (
       lazy.NimbusFeatures.pocketNewtab.getVariable(

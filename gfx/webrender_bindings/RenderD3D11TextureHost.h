@@ -25,7 +25,7 @@ class RenderDXGITextureHost final : public RenderTextureHostSWGL {
       WindowsHandle aHandle,
       Maybe<layers::GpuProcessTextureId>& aGpuProcessTextureId,
       uint32_t aArrayIndex, gfx::SurfaceFormat aFormat, gfx::ColorSpace2,
-      gfx::ColorRange aColorRange, gfx::IntSize aSize);
+      gfx::ColorRange aColorRange, gfx::IntSize aSize, bool aHasKeyedMutex);
 
   wr::WrExternalImage Lock(uint8_t aChannelIndex, gl::GLContext* aGL) override;
   void Unlock() override;
@@ -34,7 +34,7 @@ class RenderDXGITextureHost final : public RenderTextureHostSWGL {
   gfx::IntSize GetSize(uint8_t aChannelIndex) const;
   GLuint GetGLHandle(uint8_t aChannelIndex) const;
 
-  bool SyncObjectNeeded() override { return true; }
+  bool SyncObjectNeeded() override;
 
   RenderDXGITextureHost* AsRenderDXGITextureHost() override { return this; }
 
@@ -81,6 +81,9 @@ class RenderDXGITextureHost final : public RenderTextureHostSWGL {
 
   uint32_t ArrayIndex() const { return mArrayIndex; }
 
+  void SetIsSoftwareDecodedVideo() override { mIsSoftwareDecodedVideo = true; }
+  bool IsSoftwareDecodedVideo() override { return mIsSoftwareDecodedVideo; }
+
  private:
   virtual ~RenderDXGITextureHost();
 
@@ -109,11 +112,14 @@ class RenderDXGITextureHost final : public RenderTextureHostSWGL {
   // handles for Y and CbCr data.
   GLuint mTextureHandle[2];
 
+  bool mIsSoftwareDecodedVideo = false;
+
  public:
   const gfx::SurfaceFormat mFormat;
   const gfx::ColorSpace2 mColorSpace;
   const gfx::ColorRange mColorRange;
   const gfx::IntSize mSize;
+  const bool mHasKeyedMutex;
 
  private:
   bool mLocked;

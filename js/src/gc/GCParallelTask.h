@@ -120,8 +120,6 @@ class GCParallelTask : private mozilla::LinkedListElement<GCParallelTask>,
   // Amount of time this task took to execute.
   MainThreadOrGCTaskData<mozilla::TimeDuration> duration_;
 
-  explicit GCParallelTask(const GCParallelTask&) = delete;
-
  protected:
   // A flag to signal a request for early completion of the off-thread task.
   mozilla::Atomic<bool, mozilla::MemoryOrdering::ReleaseAcquire> cancel_;
@@ -134,12 +132,14 @@ class GCParallelTask : private mozilla::LinkedListElement<GCParallelTask>,
         use(use),
         state_(State::Idle),
         cancel_(false) {}
-  GCParallelTask(GCParallelTask&& other)
+  GCParallelTask(GCParallelTask&& other) noexcept
       : gc(other.gc),
         phaseKind(other.phaseKind),
         use(other.use),
         state_(other.state_),
         cancel_(false) {}
+
+  explicit GCParallelTask(const GCParallelTask&) = delete;
 
   // Derived classes must override this to ensure that join() gets called
   // before members get destructed.

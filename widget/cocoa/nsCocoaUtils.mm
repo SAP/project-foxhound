@@ -17,7 +17,6 @@
 #include "nsCocoaUtils.h"
 #include "nsChildView.h"
 #include "nsMenuBarX.h"
-#include "nsCocoaFeatures.h"
 #include "nsCocoaWindow.h"
 #include "nsCOMPtr.h"
 #include "nsIInterfaceRequestorUtils.h"
@@ -33,7 +32,6 @@
 #include "nsToolkit.h"
 #include "nsCRT.h"
 #include "mozilla/ClearOnShutdown.h"
-#include "mozilla/glean/GleanMetrics.h"
 #include "mozilla/Logging.h"
 #include "mozilla/MiscEvents.h"
 #include "mozilla/Preferences.h"
@@ -79,6 +77,7 @@ StaticMutex nsCocoaUtils::sMediaCaptureMutex;
  */
 NSString* const kPublicUrlPboardType = @"public.url";
 NSString* const kPublicUrlNamePboardType = @"public.url-name";
+NSString* const kPasteboardConcealedType = @"org.nspasteboard.ConcealedType";
 NSString* const kUrlsWithTitlesPboardType = @"WebURLsWithTitlesPboardType";
 NSString* const kMozWildcardPboardType = @"org.mozilla.MozillaWildcard";
 NSString* const kMozCustomTypesPboardType = @"org.mozilla.custom-clipdata";
@@ -89,6 +88,7 @@ NSString* const kMozFileUrlsPboardType = @"org.mozilla.file-urls";
 + (NSString*)stringFromPboardType:(NSString*)aType {
   if ([aType isEqualToString:kMozWildcardPboardType] ||
       [aType isEqualToString:kMozCustomTypesPboardType] ||
+      [aType isEqualToString:kPasteboardConcealedType] ||
       [aType isEqualToString:kPublicUrlPboardType] ||
       [aType isEqualToString:kPublicUrlNamePboardType] ||
       [aType isEqualToString:kMozFileUrlsPboardType] ||
@@ -300,7 +300,6 @@ BOOL nsCocoaUtils::ShouldRestoreStateDueToLaunchAtLoginImpl() {
 BOOL nsCocoaUtils::ShouldRestoreStateDueToLaunchAtLogin() {
   BOOL shouldRestore = ShouldRestoreStateDueToLaunchAtLoginImpl();
   Telemetry::ScalarSet(Telemetry::ScalarID::STARTUP_IS_RESTORED_BY_MACOS, !!shouldRestore);
-  mozilla::glean::startup::is_restored_by_macos.Set(!!shouldRestore);
   return shouldRestore;
 }
 
@@ -896,16 +895,12 @@ struct KeyConversionData {
 
 static const KeyConversionData gKeyConversions[] = {
 
-#define KEYCODE_ENTRY(aStr, aCode)             \
-  {                                            \
-#    aStr, sizeof(#aStr) - 1, NS_##aStr, aCode \
-  }
+#define KEYCODE_ENTRY(aStr, aCode) \
+  { #aStr, sizeof(#aStr) - 1, NS_##aStr, aCode }
 
 // Some keycodes may have different name in KeyboardEvent from its key name.
-#define KEYCODE_ENTRY2(aStr, aNSName, aCode)      \
-  {                                               \
-#    aStr, sizeof(#aStr) - 1, NS_##aNSName, aCode \
-  }
+#define KEYCODE_ENTRY2(aStr, aNSName, aCode) \
+  { #aStr, sizeof(#aStr) - 1, NS_##aNSName, aCode }
 
     KEYCODE_ENTRY(VK_CANCEL, 0x001B),
     KEYCODE_ENTRY(VK_DELETE, NSDeleteFunctionKey),
@@ -1204,33 +1199,6 @@ bool nsCocoaUtils::ShouldMinimizeOnTitlebarDoubleClick() {
   return [ActionOnDoubleClickSystemPref() isEqualToString:@"Minimize"];
 }
 
-// AVAuthorizationStatus is not needed unless we are running on 10.14.
-// However, on pre-10.14 SDK's, AVAuthorizationStatus and its enum values
-// are both defined and prohibited from use by compile-time checks. We
-// define a copy of AVAuthorizationStatus to allow compilation on pre-10.14
-// SDK's. The enum values must match what is defined in the 10.14 SDK.
-// We use ASSERTS for 10.14 SDK builds to check the enum values match.
-enum GeckoAVAuthorizationStatus : NSInteger {
-  GeckoAVAuthorizationStatusNotDetermined = 0,
-  GeckoAVAuthorizationStatusRestricted = 1,
-  GeckoAVAuthorizationStatusDenied = 2,
-  GeckoAVAuthorizationStatusAuthorized = 3
-};
-
-#if !defined(MAC_OS_X_VERSION_10_14) || MAC_OS_X_VERSION_MAX_ALLOWED < MAC_OS_X_VERSION_10_14
-// Define authorizationStatusForMediaType: as returning
-// GeckoAVAuthorizationStatus instead of AVAuthorizationStatus to allow
-// compilation on pre-10.14 SDK's.
-@interface AVCaptureDevice (GeckoAVAuthorizationStatus)
-+ (GeckoAVAuthorizationStatus)authorizationStatusForMediaType:(AVMediaType)mediaType;
-@end
-
-@interface AVCaptureDevice (WithCompletionHandler)
-+ (void)requestAccessForMediaType:(AVMediaType)mediaType
-                completionHandler:(void (^)(BOOL granted))handler;
-@end
-#endif
-
 static const char* AVMediaTypeToString(AVMediaType aType) {
   if (aType == AVMediaTypeVideo) {
     return "video";
@@ -1247,16 +1215,16 @@ static void LogAuthorizationStatus(AVMediaType aType, int aState) {
   const char* stateString;
 
   switch (aState) {
-    case GeckoAVAuthorizationStatusAuthorized:
+    case AVAuthorizationStatusAuthorized:
       stateString = "AVAuthorizationStatusAuthorized";
       break;
-    case GeckoAVAuthorizationStatusDenied:
+    case AVAuthorizationStatusDenied:
       stateString = "AVAuthorizationStatusDenied";
       break;
-    case GeckoAVAuthorizationStatusNotDetermined:
+    case AVAuthorizationStatusNotDetermined:
       stateString = "AVAuthorizationStatusNotDetermined";
       break;
-    case GeckoAVAuthorizationStatusRestricted:
+    case AVAuthorizationStatusRestricted:
       stateString = "AVAuthorizationStatusRestricted";
       break;
     default:
@@ -1269,32 +1237,28 @@ static void LogAuthorizationStatus(AVMediaType aType, int aState) {
 static nsresult GetPermissionState(AVMediaType aMediaType, uint16_t& aState) {
   MOZ_ASSERT(aMediaType == AVMediaTypeVideo || aMediaType == AVMediaTypeAudio);
 
-  // Only attempt to check authorization status on 10.14+.
-  if (@available(macOS 10.14, *)) {
-    GeckoAVAuthorizationStatus authStatus = static_cast<GeckoAVAuthorizationStatus>(
-        [AVCaptureDevice authorizationStatusForMediaType:aMediaType]);
-    LogAuthorizationStatus(aMediaType, authStatus);
+  AVAuthorizationStatus authStatus = static_cast<AVAuthorizationStatus>(
+      [AVCaptureDevice authorizationStatusForMediaType:aMediaType]);
+  LogAuthorizationStatus(aMediaType, authStatus);
 
-    // Convert GeckoAVAuthorizationStatus to nsIOSPermissionRequest const
-    switch (authStatus) {
-      case GeckoAVAuthorizationStatusAuthorized:
-        aState = nsIOSPermissionRequest::PERMISSION_STATE_AUTHORIZED;
-        return NS_OK;
-      case GeckoAVAuthorizationStatusDenied:
-        aState = nsIOSPermissionRequest::PERMISSION_STATE_DENIED;
-        return NS_OK;
-      case GeckoAVAuthorizationStatusNotDetermined:
-        aState = nsIOSPermissionRequest::PERMISSION_STATE_NOTDETERMINED;
-        return NS_OK;
-      case GeckoAVAuthorizationStatusRestricted:
-        aState = nsIOSPermissionRequest::PERMISSION_STATE_RESTRICTED;
-        return NS_OK;
-      default:
-        MOZ_ASSERT(false, "Invalid authorization status");
-        return NS_ERROR_UNEXPECTED;
-    }
+  // Convert AVAuthorizationStatus to nsIOSPermissionRequest const
+  switch (authStatus) {
+    case AVAuthorizationStatusAuthorized:
+      aState = nsIOSPermissionRequest::PERMISSION_STATE_AUTHORIZED;
+      return NS_OK;
+    case AVAuthorizationStatusDenied:
+      aState = nsIOSPermissionRequest::PERMISSION_STATE_DENIED;
+      return NS_OK;
+    case AVAuthorizationStatusNotDetermined:
+      aState = nsIOSPermissionRequest::PERMISSION_STATE_NOTDETERMINED;
+      return NS_OK;
+    case AVAuthorizationStatusRestricted:
+      aState = nsIOSPermissionRequest::PERMISSION_STATE_RESTRICTED;
+      return NS_OK;
+    default:
+      MOZ_ASSERT(false, "Invalid authorization status");
+      return NS_ERROR_UNEXPECTED;
   }
-  return NS_ERROR_NOT_IMPLEMENTED;
 }
 
 nsresult nsCocoaUtils::GetVideoCapturePermissionState(uint16_t& aPermissionState) {
@@ -1314,93 +1278,86 @@ nsresult nsCocoaUtils::GetAudioCapturePermissionState(uint16_t& aPermissionState
 nsresult nsCocoaUtils::GetScreenCapturePermissionState(uint16_t& aPermissionState) {
   aPermissionState = nsIOSPermissionRequest::PERMISSION_STATE_NOTDETERMINED;
 
-  // Only attempt to check screen recording authorization status on 10.15+.
-  // On earlier macOS versions, screen recording is allowed by default.
-  if (@available(macOS 10.15, *)) {
-    if (!StaticPrefs::media_macos_screenrecording_oscheck_enabled()) {
-      aPermissionState = nsIOSPermissionRequest::PERMISSION_STATE_AUTHORIZED;
-      LOG("screen authorization status: authorized (test disabled via pref)");
-      return NS_OK;
-    }
-
-    // Unlike with camera and microphone capture, there is no support for
-    // checking the screen recording permission status. Instead, an application
-    // can use the presence of window names (which are privacy sensitive) in
-    // the window info list as an indication. The list only includes window
-    // names if the calling application has been authorized to record the
-    // screen. We use the window name, window level, and owning PID as
-    // heuristics to determine if we have screen recording permission.
-    AutoCFRelease<CFArrayRef> windowArray =
-        CGWindowListCopyWindowInfo(kCGWindowListOptionAll, kCGNullWindowID);
-    if (!windowArray) {
-      LOG("GetScreenCapturePermissionState() ERROR: got NULL window info list");
-      return NS_ERROR_UNEXPECTED;
-    }
-
-    int32_t windowLevelDock = CGWindowLevelForKey(kCGDockWindowLevelKey);
-    int32_t windowLevelNormal = CGWindowLevelForKey(kCGNormalWindowLevelKey);
-    LOG("GetScreenCapturePermissionState(): DockWindowLevel: %d, "
-        "NormalWindowLevel: %d",
-        windowLevelDock, windowLevelNormal);
-
-    int32_t thisPid = [[NSProcessInfo processInfo] processIdentifier];
-
-    CFIndex windowCount = CFArrayGetCount(windowArray);
-    LOG("GetScreenCapturePermissionState() returned %ld windows", windowCount);
-    if (windowCount == 0) {
-      return NS_ERROR_UNEXPECTED;
-    }
-
-    for (CFIndex i = 0; i < windowCount; i++) {
-      CFDictionaryRef windowDict =
-          reinterpret_cast<CFDictionaryRef>(CFArrayGetValueAtIndex(windowArray, i));
-
-      // Get the window owner's PID
-      int32_t windowOwnerPid = -1;
-      CFNumberRef windowPidRef =
-          reinterpret_cast<CFNumberRef>(CFDictionaryGetValue(windowDict, kCGWindowOwnerPID));
-      if (!windowPidRef || !CFNumberGetValue(windowPidRef, kCFNumberIntType, &windowOwnerPid)) {
-        LOG("GetScreenCapturePermissionState() ERROR: failed to get window owner");
-        continue;
-      }
-
-      // Our own window names are always readable and
-      // therefore not relevant to the heuristic.
-      if (thisPid == windowOwnerPid) {
-        continue;
-      }
-
-      CFStringRef windowName =
-          reinterpret_cast<CFStringRef>(CFDictionaryGetValue(windowDict, kCGWindowName));
-      if (!windowName) {
-        continue;
-      }
-
-      CFNumberRef windowLayerRef =
-          reinterpret_cast<CFNumberRef>(CFDictionaryGetValue(windowDict, kCGWindowLayer));
-      int32_t windowLayer;
-      if (!windowLayerRef || !CFNumberGetValue(windowLayerRef, kCFNumberIntType, &windowLayer)) {
-        LOG("GetScreenCapturePermissionState() ERROR: failed to get layer");
-        continue;
-      }
-
-      // If we have a window name and the window is in the dock or normal window
-      // level, and for another process, assume we have screen recording access.
-      LOG("GetScreenCapturePermissionState(): windowLayer: %d", windowLayer);
-      if (windowLayer == windowLevelDock || windowLayer == windowLevelNormal) {
-        aPermissionState = nsIOSPermissionRequest::PERMISSION_STATE_AUTHORIZED;
-        LOG("screen authorization status: authorized");
-        return NS_OK;
-      }
-    }
-
-    aPermissionState = nsIOSPermissionRequest::PERMISSION_STATE_DENIED;
-    LOG("screen authorization status: not authorized");
+  if (!StaticPrefs::media_macos_screenrecording_oscheck_enabled()) {
+    aPermissionState = nsIOSPermissionRequest::PERMISSION_STATE_AUTHORIZED;
+    LOG("screen authorization status: authorized (test disabled via pref)");
     return NS_OK;
   }
 
-  LOG("GetScreenCapturePermissionState(): nothing to do, not on 10.15+");
-  return NS_ERROR_NOT_IMPLEMENTED;
+  // Unlike with camera and microphone capture, there is no support for
+  // checking the screen recording permission status. Instead, an application
+  // can use the presence of window names (which are privacy sensitive) in
+  // the window info list as an indication. The list only includes window
+  // names if the calling application has been authorized to record the
+  // screen. We use the window name, window level, and owning PID as
+  // heuristics to determine if we have screen recording permission.
+  AutoCFRelease<CFArrayRef> windowArray =
+      CGWindowListCopyWindowInfo(kCGWindowListOptionAll, kCGNullWindowID);
+  if (!windowArray) {
+    LOG("GetScreenCapturePermissionState() ERROR: got NULL window info list");
+    return NS_ERROR_UNEXPECTED;
+  }
+
+  int32_t windowLevelDock = CGWindowLevelForKey(kCGDockWindowLevelKey);
+  int32_t windowLevelNormal = CGWindowLevelForKey(kCGNormalWindowLevelKey);
+  LOG("GetScreenCapturePermissionState(): DockWindowLevel: %d, "
+      "NormalWindowLevel: %d",
+      windowLevelDock, windowLevelNormal);
+
+  int32_t thisPid = [[NSProcessInfo processInfo] processIdentifier];
+
+  CFIndex windowCount = CFArrayGetCount(windowArray);
+  LOG("GetScreenCapturePermissionState() returned %ld windows", windowCount);
+  if (windowCount == 0) {
+    return NS_ERROR_UNEXPECTED;
+  }
+
+  for (CFIndex i = 0; i < windowCount; i++) {
+    CFDictionaryRef windowDict =
+        reinterpret_cast<CFDictionaryRef>(CFArrayGetValueAtIndex(windowArray, i));
+
+    // Get the window owner's PID
+    int32_t windowOwnerPid = -1;
+    CFNumberRef windowPidRef =
+        reinterpret_cast<CFNumberRef>(CFDictionaryGetValue(windowDict, kCGWindowOwnerPID));
+    if (!windowPidRef || !CFNumberGetValue(windowPidRef, kCFNumberIntType, &windowOwnerPid)) {
+      LOG("GetScreenCapturePermissionState() ERROR: failed to get window owner");
+      continue;
+    }
+
+    // Our own window names are always readable and
+    // therefore not relevant to the heuristic.
+    if (thisPid == windowOwnerPid) {
+      continue;
+    }
+
+    CFStringRef windowName =
+        reinterpret_cast<CFStringRef>(CFDictionaryGetValue(windowDict, kCGWindowName));
+    if (!windowName) {
+      continue;
+    }
+
+    CFNumberRef windowLayerRef =
+        reinterpret_cast<CFNumberRef>(CFDictionaryGetValue(windowDict, kCGWindowLayer));
+    int32_t windowLayer;
+    if (!windowLayerRef || !CFNumberGetValue(windowLayerRef, kCFNumberIntType, &windowLayer)) {
+      LOG("GetScreenCapturePermissionState() ERROR: failed to get layer");
+      continue;
+    }
+
+    // If we have a window name and the window is in the dock or normal window
+    // level, and for another process, assume we have screen recording access.
+    LOG("GetScreenCapturePermissionState(): windowLayer: %d", windowLayer);
+    if (windowLayer == windowLevelDock || windowLayer == windowLevelNormal) {
+      aPermissionState = nsIOSPermissionRequest::PERMISSION_STATE_AUTHORIZED;
+      LOG("screen authorization status: authorized");
+      return NS_OK;
+    }
+  }
+
+  aPermissionState = nsIOSPermissionRequest::PERMISSION_STATE_DENIED;
+  LOG("screen authorization status: not authorized");
+  return NS_OK;
 }
 
 nsresult nsCocoaUtils::RequestVideoCapturePermission(RefPtr<Promise>& aPromise) {
@@ -1427,53 +1384,33 @@ nsresult nsCocoaUtils::RequestCapturePermission(AVMediaType aType, RefPtr<Promis
                                                 PromiseArray& aPromiseList,
                                                 void (^aHandler)(BOOL granted)) {
   MOZ_ASSERT(aType == AVMediaTypeVideo || aType == AVMediaTypeAudio);
-#if defined(MAC_OS_X_VERSION_10_14)
-  // Ensure our enum constants match. We can only do this when
-  // compiling on 10.14+ because AVAuthorizationStatus is
-  // prohibited by preprocessor checks on earlier OS versions.
-  if (@available(macOS 10.14, *)) {
-    static_assert(
-        (int)GeckoAVAuthorizationStatusNotDetermined == (int)AVAuthorizationStatusNotDetermined,
-        "GeckoAVAuthorizationStatusNotDetermined  does not match");
-    static_assert((int)GeckoAVAuthorizationStatusRestricted == (int)AVAuthorizationStatusRestricted,
-                  "GeckoAVAuthorizationStatusRestricted does not match");
-    static_assert((int)GeckoAVAuthorizationStatusDenied == (int)AVAuthorizationStatusDenied,
-                  "GeckoAVAuthorizationStatusDenied does not match");
-    static_assert((int)GeckoAVAuthorizationStatusAuthorized == (int)AVAuthorizationStatusAuthorized,
-                  "GeckoAVAuthorizationStatusAuthorized does not match");
-  }
-#endif
   LOG("RequestCapturePermission(%s)", AVMediaTypeToString(aType));
 
-  // Only attempt to request authorization on 10.14+.
-  if (@available(macOS 10.14, *)) {
-    sMediaCaptureMutex.Lock();
+  sMediaCaptureMutex.Lock();
 
-    // Initialize our list of promises on first invocation
-    if (aPromiseList == nullptr) {
-      aPromiseList = new nsTArray<RefPtr<Promise>>;
-      ClearOnShutdown(&aPromiseList);
-    }
+  // Initialize our list of promises on first invocation
+  if (aPromiseList == nullptr) {
+    aPromiseList = new nsTArray<RefPtr<Promise>>;
+    ClearOnShutdown(&aPromiseList);
+  }
 
-    aPromiseList->AppendElement(aPromise);
-    size_t nPromises = aPromiseList->Length();
+  aPromiseList->AppendElement(aPromise);
+  size_t nPromises = aPromiseList->Length();
 
-    sMediaCaptureMutex.Unlock();
+  sMediaCaptureMutex.Unlock();
 
-    LOG("RequestCapturePermission(%s): %ld promise(s) unresolved", AVMediaTypeToString(aType),
-        nPromises);
+  LOG("RequestCapturePermission(%s): %ld promise(s) unresolved", AVMediaTypeToString(aType),
+      nPromises);
 
-    // If we had one or more more existing promises waiting to be resolved
-    // by the completion handler, we don't need to start another request.
-    if (nPromises > 1) {
-      return NS_OK;
-    }
-
-    // Start the request
-    [AVCaptureDevice requestAccessForMediaType:aType completionHandler:aHandler];
+  // If we had one or more more existing promises waiting to be resolved
+  // by the completion handler, we don't need to start another request.
+  if (nPromises > 1) {
     return NS_OK;
   }
-  return NS_ERROR_NOT_IMPLEMENTED;
+
+  // Start the request
+  [AVCaptureDevice requestAccessForMediaType:aType completionHandler:aHandler];
+  return NS_OK;
 }
 
 //

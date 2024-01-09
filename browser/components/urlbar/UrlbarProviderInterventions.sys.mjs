@@ -2,8 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
-
 import {
   UrlbarProvider,
   UrlbarUtils,
@@ -13,6 +11,7 @@ const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   AppUpdater: "resource://gre/modules/AppUpdater.sys.mjs",
+  BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.sys.mjs",
   NLP: "resource://gre/modules/NLP.sys.mjs",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
   ResetProfile: "resource://gre/modules/ResetProfile.sys.mjs",
@@ -22,11 +21,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
   UrlbarTokenizer: "resource:///modules/UrlbarTokenizer.sys.mjs",
 });
 
-XPCOMUtils.defineLazyModuleGetters(lazy, {
-  BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.jsm",
-});
-
-XPCOMUtils.defineLazyGetter(lazy, "appUpdater", () => new lazy.AppUpdater());
+ChromeUtils.defineLazyGetter(lazy, "appUpdater", () => new lazy.AppUpdater());
 
 // The possible tips to show.  These names (except NONE) are used in the names
 // of keys in the `urlbar.tips` keyed scalar telemetry (see telemetry.rst).
@@ -446,7 +441,7 @@ class ProviderInterventions extends UrlbarProvider {
     this.tipsShownInCurrentEngagement = new Set();
 
     // This object is used to match the user's queries to tips.
-    XPCOMUtils.defineLazyGetter(this, "queryScorer", () => {
+    ChromeUtils.defineLazyGetter(this, "queryScorer", () => {
       let queryScorer = new QueryScorer({
         variations: new Map([
           // Recognize "fire fox", "fox fire", and "foxfire" as "firefox".
@@ -714,10 +709,15 @@ class ProviderInterventions extends UrlbarProvider {
     }
   }
 
-  onEngagement(isPrivate, state, queryContext, details, window) {
+  onEngagement(state, queryContext, details, controller) {
     let { result } = details;
-    if (result?.providerName == this.name) {
-      this.#pickResult(result, window);
+
+    // `selType` is "tip" when the tip's main button is picked. Ignore clicks on
+    // the help command ("tiphelp"), which is handled by UrlbarInput since we
+    // set `helpUrl` on the result payload. Currently there aren't any other
+    // buttons or commands but this will ignore clicks on them too.
+    if (result?.providerName == this.name && details.selType == "tip") {
+      this.#pickResult(result, controller.browserWindow);
     }
 
     if (["engagement", "abandonment"].includes(state)) {

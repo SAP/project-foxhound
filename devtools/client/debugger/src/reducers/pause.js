@@ -10,6 +10,7 @@
  */
 
 import { prefs } from "../utils/prefs";
+import { findClosestFunction } from "../utils/ast";
 
 // Pause state associated with an individual thread.
 
@@ -28,7 +29,6 @@ export function initialPauseState(thread = "UnknownThread") {
       thread,
       pauseCounter: 0,
     },
-    highlightedCalls: null,
     threads: {},
     skipPausing: prefs.skipPausing,
     mapScopes: prefs.mapScopes,
@@ -49,7 +49,6 @@ const resumedPauseState = {
   selectedFrameId: null,
   why: null,
   inlinePreview: {},
-  highlightedCalls: null,
 };
 
 const createInitialPauseState = () => ({
@@ -68,30 +67,42 @@ export function getThreadPauseState(state, thread) {
 }
 
 function update(state = initialPauseState(), action) {
-  // Actions need to specify any thread they are operating on. These helpers
-  // manage updating the pause state for that thread.
-  const threadState = () => {
-    if (!action.thread) {
+  // All the actions updating pause state must pass an object which designate
+  // the related thread.
+  const getActionThread = () => {
+    const thread =
+      action.thread || action.selectedFrame?.thread || action.frame?.thread;
+    if (!thread) {
       throw new Error(`Missing thread in action ${action.type}`);
     }
-    return getThreadPauseState(state, action.thread);
+    return thread;
   };
 
+  // `threadState` and `updateThreadState` help easily get and update
+  // the pause state for a given thread.
+  const threadState = () => {
+    return getThreadPauseState(state, getActionThread());
+  };
   const updateThreadState = newThreadState => {
-    if (!action.thread) {
-      throw new Error(`Missing thread in action ${action.type}`);
-    }
     return {
       ...state,
       threads: {
         ...state.threads,
-        [action.thread]: { ...threadState(), ...newThreadState },
+        [getActionThread()]: { ...threadState(), ...newThreadState },
       },
     };
   };
 
   switch (action.type) {
     case "SELECT_THREAD": {
+      // Ignore the action if the related thread doesn't exist.
+      if (!state.threads[action.thread]) {
+        console.warn(
+          `Trying to select a destroyed or non-existent thread '${action.thread}'`
+        );
+        return state;
+      }
+
       return {
         ...state,
         threadcx: {
@@ -116,9 +127,20 @@ function update(state = initialPauseState(), action) {
             thread: action.newThread.actor,
             pauseCounter: state.threadcx.pauseCounter + 1,
           },
+          threads: {
+            ...state.threads,
+            [action.newThread.actor]: createInitialPauseState(),
+          },
         };
       }
-      break;
+
+      return {
+        ...state,
+        threads: {
+          ...state.threads,
+          [action.newThread.actor]: createInitialPauseState(),
+        },
+      };
     }
 
     case "REMOVE_THREAD": {
@@ -152,7 +174,7 @@ function update(state = initialPauseState(), action) {
     }
 
     case "PAUSED": {
-      const { thread, frame, why } = action;
+      const { thread, topFrame, why } = action;
       state = {
         ...state,
         threadcx: {
@@ -164,9 +186,11 @@ function update(state = initialPauseState(), action) {
 
       return updateThreadState({
         isWaitingOnBreak: false,
-        selectedFrameId: frame ? frame.id : undefined,
+        selectedFrameId: topFrame.id,
         isPaused: true,
-        frames: frame ? [frame] : undefined,
+        // On pause, we only receive the top frame, all subsequent ones
+        // will be asynchronously populated via `fetchFrames` action
+        frames: [topFrame],
         framesLoading: true,
         frameScopes: { ...resumedPauseState.frameScopes },
         why,
@@ -203,9 +227,21 @@ function update(state = initialPauseState(), action) {
       return updateThreadState({ frames });
     }
 
+    case "SET_SYMBOLS": {
+      // Ignore the beginning of this async action
+      if (action.status === "start") {
+        return state;
+      }
+      return updateFrameOriginalDisplayName(
+        state,
+        action.location.source,
+        action.value
+      );
+    }
+
     case "ADD_SCOPES": {
-      const { frame, status, value } = action;
-      const selectedFrameId = frame.id;
+      const { status, value } = action;
+      const selectedFrameId = action.selectedFrame.id;
 
       const generated = {
         ...threadState().frameScopes.generated,
@@ -224,8 +260,8 @@ function update(state = initialPauseState(), action) {
     }
 
     case "MAP_SCOPES": {
-      const { frame, status, value } = action;
-      const selectedFrameId = frame.id;
+      const { status, value } = action;
+      const selectedFrameId = action.selectedFrame.id;
 
       const original = {
         ...threadState().frameScopes.original,
@@ -352,26 +388,14 @@ function update(state = initialPauseState(), action) {
     }
 
     case "ADD_INLINE_PREVIEW": {
-      const { frame, previews } = action;
-      const selectedFrameId = frame.id;
+      const { selectedFrame, previews } = action;
+      const selectedFrameId = selectedFrame.id;
 
       return updateThreadState({
         inlinePreview: {
           ...threadState().inlinePreview,
           [selectedFrameId]: previews,
         },
-      });
-    }
-
-    case "HIGHLIGHT_CALLS": {
-      const { highlightedCalls } = action;
-      return updateThreadState({ ...threadState(), highlightedCalls });
-    }
-
-    case "UNHIGHLIGHT_CALLS": {
-      return updateThreadState({
-        ...threadState(),
-        highlightedCalls: null,
       });
     }
 
@@ -404,6 +428,97 @@ function getPauseLocation(state, action) {
     location: frame.location,
     generatedLocation: frame.generatedLocation,
   };
+}
+
+/**
+ * For frames related to non-WASM original sources, try to lookup for the function
+ * name in the original source. The server will provide the function name in `displayName`
+ * in the generated source, but not in the original source.
+ * This information will be stored in frame's `originalDisplayName` attribute
+ */
+function mapDisplayName(frame, symbols) {
+  // Ignore WASM original frames
+  if (frame.isOriginal) {
+    return frame;
+  }
+  // When it is a regular (non original) JS source, the server already returns a valid displayName attribute.
+  if (!frame.location.source.isOriginal) {
+    return frame;
+  }
+  // Ignore the frame if we already computed this attribute from `mapFrames` action
+  if (frame.originalDisplayName) {
+    return frame;
+  }
+
+  if (!symbols.functions) {
+    return frame;
+  }
+
+  const originalDisplayName = getOriginalDisplayNameForOriginalLocation(
+    symbols,
+    frame.location
+  );
+  if (!originalDisplayName) {
+    return frame;
+  }
+
+  // Fork the object to force a re-render
+  return { ...frame, originalDisplayName };
+}
+
+function updateFrameOriginalDisplayName(state, source, symbols) {
+  // Only map display names for original sources
+  if (!source.isOriginal) {
+    return state;
+  }
+
+  // Update all thread's frame's `originalDisplayName` attribute
+  // if some frames relate to the symbols source.
+  let newState = null;
+  for (const threadActorId in state.threads) {
+    const thread = state.threads[threadActorId];
+    if (!thread.frames) {
+      continue;
+    }
+    // Only try updating frames if at least one frame object relates to the source
+    // for which we just fetched the symbols
+    const shouldUpdateThreadFrames = thread.frames.some(
+      frame => frame.location.source == source
+    );
+    if (!shouldUpdateThreadFrames) {
+      continue;
+    }
+    // Now only process frames matching the symbols source
+    const frames = thread.frames.map(frame =>
+      frame.location.source == source ? mapDisplayName(frame, symbols) : frame
+    );
+    if (!newState) {
+      newState = { ...state };
+    }
+    newState.threads[threadActorId] = {
+      ...thread,
+      frames,
+    };
+  }
+  return newState ? newState : state;
+}
+
+/**
+ * For a given location, return the closest function name.
+ *
+ * @param {Object} symbols
+ *        Symbols object for the passed location.
+ * @param {Object} location
+ *        A location
+ */
+export function getOriginalDisplayNameForOriginalLocation(symbols, location) {
+  if (!symbols.functions) {
+    return null;
+  }
+
+  const originalFunction = findClosestFunction(symbols, location);
+
+  return originalFunction ? originalFunction.name : null;
 }
 
 export default update;

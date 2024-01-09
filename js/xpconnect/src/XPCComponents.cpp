@@ -8,7 +8,6 @@
 
 #include "xpcprivate.h"
 #include "xpc_make_class.h"
-#include "JSServices.h"
 #include "XPCJSWeakReference.h"
 #include "AccessCheck.h"
 #include "WrapperFactory.h"
@@ -20,7 +19,6 @@
 #include "js/Array.h"  // JS::IsArrayObject
 #include "js/CallAndConstruct.h"  // JS::IsCallable, JS_CallFunctionName, JS_CallFunctionValue
 #include "js/CharacterEncoding.h"
-#include "js/ContextOptions.h"
 #include "js/friend/WindowProxy.h"  // js::ToWindowProxyIfWindow
 #include "js/Object.h"              // JS::GetClass, JS::GetCompartment
 #include "js/PropertyAndElement.h"  // JS_DefineProperty, JS_DefinePropertyById, JS_Enumerate, JS_GetProperty, JS_GetPropertyById, JS_HasProperty, JS_SetProperty, JS_SetPropertyById
@@ -48,7 +46,7 @@
 #include "nsIException.h"
 #include "nsIScriptError.h"
 #include "nsPIDOMWindow.h"
-#include "nsGlobalWindow.h"
+#include "nsGlobalWindowInner.h"
 #include "nsScriptError.h"
 #include "GeckoProfiler.h"
 #include "ProfilerControl.h"
@@ -1310,16 +1308,6 @@ nsXPCComponents_Utils::GetSandbox(nsIXPCComponents_utils_Sandbox** aSandbox) {
 }
 
 NS_IMETHODIMP
-nsXPCComponents_Utils::CreateServicesCache(JSContext* aCx,
-                                           MutableHandleValue aServices) {
-  if (JSObject* services = NewJSServices(aCx)) {
-    aServices.setObject(*services);
-    return NS_OK;
-  }
-  return NS_ERROR_FAILURE;
-}
-
-NS_IMETHODIMP
 nsXPCComponents_Utils::PrintStderr(const nsACString& message) {
   printf_stderr("%s", PromiseFlatUTF8String(message).get());
   return NS_OK;
@@ -1421,7 +1409,7 @@ nsXPCComponents_Utils::ReportError(HandleValue error, HandleValue stack,
   if (err) {
     // It's a proper JS Error
     nsAutoString fileUni;
-    CopyUTF8toUTF16(mozilla::MakeStringSpan(err->filename), fileUni);
+    CopyUTF8toUTF16(mozilla::MakeStringSpan(err->filename.c_str()), fileUni);
 
     uint32_t column = err->tokenOffset();
 
@@ -2061,22 +2049,6 @@ nsXPCComponents_Utils::Dispatch(HandleValue runnableArg, HandleValue scope,
   // Dispatch.
   return NS_DispatchToMainThread(run);
 }
-
-#define GENERATE_JSCONTEXTOPTION_GETTER_SETTER(_attr, _getter, _setter) \
-  NS_IMETHODIMP                                                         \
-  nsXPCComponents_Utils::Get##_attr(JSContext* cx, bool* aValue) {      \
-    *aValue = ContextOptionsRef(cx)._getter();                          \
-    return NS_OK;                                                       \
-  }                                                                     \
-  NS_IMETHODIMP                                                         \
-  nsXPCComponents_Utils::Set##_attr(JSContext* cx, bool aValue) {       \
-    ContextOptionsRef(cx)._setter(aValue);                              \
-    return NS_OK;                                                       \
-  }
-
-GENERATE_JSCONTEXTOPTION_GETTER_SETTER(Strict_mode, strictMode, setStrictMode)
-
-#undef GENERATE_JSCONTEXTOPTION_GETTER_SETTER
 
 NS_IMETHODIMP
 nsXPCComponents_Utils::SetGCZeal(int32_t aValue, JSContext* cx) {

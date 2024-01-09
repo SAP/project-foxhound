@@ -6,8 +6,6 @@
  * This module exports a component used to sort results in a UrlbarQueryContext.
  */
 
-import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
-
 import {
   UrlbarMuxer,
   UrlbarUtils,
@@ -26,7 +24,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
   UrlbarSearchUtils: "resource:///modules/UrlbarSearchUtils.sys.mjs",
 });
 
-XPCOMUtils.defineLazyGetter(lazy, "logger", () =>
+ChromeUtils.defineLazyGetter(lazy, "logger", () =>
   UrlbarUtils.getLogger({ prefix: "MuxerUnifiedComplete" })
 );
 
@@ -134,11 +132,16 @@ class MuxerUnifiedComplete extends UrlbarMuxer {
       }
     }
 
+    // Show Top Sites above trending results.
+    let showSearchSuggestionsFirst = !(
+      lazy.UrlbarPrefs.get("suggest.trending") && !context.searchString
+    );
     // Determine the result groups to use for this sort.  In search mode with
     // an engine, show search suggestions first.
-    let rootGroup = context.searchMode?.engineName
-      ? lazy.UrlbarPrefs.makeResultGroups({ showSearchSuggestionsFirst: true })
-      : lazy.UrlbarPrefs.resultGroups;
+    let rootGroup =
+      context.searchMode?.engineName || !showSearchSuggestionsFirst
+        ? lazy.UrlbarPrefs.makeResultGroups({ showSearchSuggestionsFirst })
+        : lazy.UrlbarPrefs.resultGroups;
     lazy.logger.debug(`Groups: ${JSON.stringify(rootGroup)}`);
 
     // Fill the root group.
@@ -806,10 +809,13 @@ class MuxerUnifiedComplete extends UrlbarMuxer {
     }
 
     // Discard form history and remote suggestions that dupe previously added
-    // suggestions or the heuristic.
+    // suggestions or the heuristic. We do not deduplicate rich suggestions so
+    // they do not visually disapear as the suggestion is completed and
+    // becomes the same url as the heuristic result.
     if (
       result.type == UrlbarUtils.RESULT_TYPE.SEARCH &&
-      result.payload.lowerCaseSuggestion
+      result.payload.lowerCaseSuggestion &&
+      !result.isRichSuggestion
     ) {
       let suggestion = result.payload.lowerCaseSuggestion.trim();
       if (!suggestion || state.suggestions.has(suggestion)) {
@@ -821,7 +827,7 @@ class MuxerUnifiedComplete extends UrlbarMuxer {
     if (
       result.type == UrlbarUtils.RESULT_TYPE.SEARCH &&
       result.payload.tail &&
-      !result.payload.isRichSuggestion &&
+      !result.isRichSuggestion &&
       !state.canShowTailSuggestions
     ) {
       return false;

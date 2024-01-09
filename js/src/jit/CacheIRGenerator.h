@@ -153,6 +153,10 @@ class MOZ_RAII GetPropIRGenerator : public IRGenerator {
   AttachDecision tryAttachGenericProxy(Handle<ProxyObject*> obj,
                                        ObjOperandId objId, HandleId id,
                                        bool handleDOMProxies);
+#ifdef JS_PUNBOX64
+  AttachDecision tryAttachScriptedProxy(Handle<ProxyObject*> obj,
+                                        ObjOperandId objId, HandleId id);
+#endif
   AttachDecision tryAttachDOMProxyExpando(Handle<ProxyObject*> obj,
                                           ObjOperandId objId, HandleId id,
                                           ValOperandId receiverId);
@@ -614,6 +618,8 @@ class MOZ_RAII InlinableNativeIRGenerator {
   AttachDecision tryAttachHasClass(const JSClass* clasp,
                                    bool isPossiblyWrapped);
   AttachDecision tryAttachRegExpMatcherSearcher(InlinableNative native);
+  AttachDecision tryAttachRegExpSearcherLastLimit();
+  AttachDecision tryAttachRegExpHasCaptureGroups();
   AttachDecision tryAttachRegExpPrototypeOptimizable();
   AttachDecision tryAttachRegExpInstanceOptimizable();
   AttachDecision tryAttachIntrinsicRegExpBuiltinExec(InlinableNative native);
@@ -693,6 +699,7 @@ class MOZ_RAII InlinableNativeIRGenerator {
   AttachDecision tryAttachBigIntAsIntN();
   AttachDecision tryAttachBigIntAsUintN();
   AttachDecision tryAttachSetHas();
+  AttachDecision tryAttachSetSize();
   AttachDecision tryAttachMapHas();
   AttachDecision tryAttachMapGet();
 #ifdef FUZZING_JS_FUZZILLI

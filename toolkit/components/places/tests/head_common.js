@@ -34,6 +34,8 @@ ChromeUtils.defineESModuleGetters(this, {
   BookmarkHTMLUtils: "resource://gre/modules/BookmarkHTMLUtils.sys.mjs",
   BookmarkJSONUtils: "resource://gre/modules/BookmarkJSONUtils.sys.mjs",
   FileUtils: "resource://gre/modules/FileUtils.sys.mjs",
+  NetUtil: "resource://gre/modules/NetUtil.sys.mjs",
+  ObjectUtils: "resource://gre/modules/ObjectUtils.sys.mjs",
   PlacesBackups: "resource://gre/modules/PlacesBackups.sys.mjs",
   PlacesDBUtils: "resource://gre/modules/PlacesDBUtils.sys.mjs",
   PlacesTestUtils: "resource://testing-common/PlacesTestUtils.sys.mjs",
@@ -45,12 +47,7 @@ ChromeUtils.defineESModuleGetters(this, {
   TestUtils: "resource://testing-common/TestUtils.sys.mjs",
 });
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  NetUtil: "resource://gre/modules/NetUtil.jsm",
-  ObjectUtils: "resource://gre/modules/ObjectUtils.jsm",
-});
-
-XPCOMUtils.defineLazyGetter(this, "SMALLPNG_DATA_URI", function () {
+ChromeUtils.defineLazyGetter(this, "SMALLPNG_DATA_URI", function () {
   return NetUtil.newURI(
     "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAA" +
       "AAAA6fptVAAAACklEQVQI12NgAAAAAgAB4iG8MwAAAABJRU5ErkJggg=="
@@ -58,7 +55,7 @@ XPCOMUtils.defineLazyGetter(this, "SMALLPNG_DATA_URI", function () {
 });
 const SMALLPNG_DATA_LEN = 67;
 
-XPCOMUtils.defineLazyGetter(this, "SMALLSVG_DATA_URI", function () {
+ChromeUtils.defineLazyGetter(this, "SMALLSVG_DATA_URI", function () {
   return NetUtil.newURI(
     "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy5" +
       "3My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIiBmaWxs" +
@@ -70,7 +67,7 @@ XPCOMUtils.defineLazyGetter(this, "SMALLSVG_DATA_URI", function () {
   );
 });
 
-XPCOMUtils.defineLazyGetter(this, "PlacesFrecencyRecalculator", () => {
+ChromeUtils.defineLazyGetter(this, "PlacesFrecencyRecalculator", () => {
   return Cc["@mozilla.org/places/frecency-recalculator;1"].getService(
     Ci.nsIObserver
   ).wrappedJSObject;
@@ -80,11 +77,6 @@ var gTestDir = do_get_cwd();
 
 // Initialize profile.
 var gProfD = do_get_profile(true);
-
-Services.prefs.setBoolPref("browser.urlbar.usepreloadedtopurls.enabled", false);
-registerCleanupFunction(() =>
-  Services.prefs.clearUserPref("browser.urlbar.usepreloadedtopurls.enabled")
-);
 
 // Remove any old database.
 clearDB();

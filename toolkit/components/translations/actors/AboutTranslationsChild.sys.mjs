@@ -6,12 +6,23 @@ import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 
 const lazy = {};
 
-XPCOMUtils.defineLazyGetter(lazy, "console", () => {
+ChromeUtils.defineLazyGetter(lazy, "console", () => {
   return console.createInstance({
     maxLogLevelPref: "browser.translations.logLevel",
     prefix: "Translations",
   });
 });
+
+ChromeUtils.defineESModuleGetters(lazy, {
+  LanguageDetector:
+    "resource://gre/modules/translation/LanguageDetector.sys.mjs",
+});
+
+XPCOMUtils.defineLazyPreferenceGetter(
+  lazy,
+  "useFastTextPref",
+  "browser.translations.languageIdentification.useFastText"
+);
 
 /**
  * @typedef {import("./TranslationsChild.sys.mjs").LanguageIdEngine} LanguageIdEngine
@@ -183,7 +194,7 @@ export class AboutTranslationsChild extends JSWindowActorChild {
    */
   AT_isTranslationEngineSupported() {
     return this.#convertToContentPromise(
-      this.#getTranslationsChild().isTranslationsEngineSupported
+      this.#getTranslationsChild().isTranslationsEngineSupported()
     );
   }
 
@@ -206,7 +217,7 @@ export class AboutTranslationsChild extends JSWindowActorChild {
     }
     return this.#convertToContentPromise(
       this.#getTranslationsChild()
-        .createLanguageIdEngine()
+        .getOrCreateLanguageIdEngine()
         .then(engine => {
           this.languageIdEngine = engine;
         })
@@ -250,17 +261,29 @@ export class AboutTranslationsChild extends JSWindowActorChild {
    * @returns {Promise<{ langTag: string, confidence: number }>}
    */
   AT_identifyLanguage(message) {
-    if (!this.languageIdEngine) {
-      const { Promise, Error } = this.contentWindow;
-      return Promise.reject(
-        new Error("The language identification was not created.")
+    if (lazy.useFastTextPref) {
+      if (!this.languageIdEngine) {
+        const { Promise, Error } = this.contentWindow;
+        return Promise.reject(
+          new Error("The language identification was not created.")
+        );
+      }
+
+      return this.#convertToContentPromise(
+        this.languageIdEngine
+          .identifyLanguage(message)
+          .then(data => Cu.cloneInto(data, this.contentWindow))
       );
     }
-
     return this.#convertToContentPromise(
-      this.languageIdEngine
-        .identifyLanguage(message)
-        .then(data => Cu.cloneInto(data, this.contentWindow))
+      lazy.LanguageDetector.detectLanguage(message).then(data =>
+        Cu.cloneInto(
+          // This language detector reports confidence as a boolean instead of
+          // a percentage, so we need to map the confidence to 0.0 or 1.0.
+          { langTag: data.language, confidence: data.confident ? 1.0 : 0.0 },
+          this.contentWindow
+        )
+      )
     );
   }
 

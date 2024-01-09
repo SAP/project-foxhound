@@ -46,7 +46,7 @@ class Suites(ClassificationEnum):
 
 
 class Variants(ClassificationEnum):
-    NO_FISSION = {"value": "no-fission", "index": 0}
+    FISSION = {"value": "fission", "index": 0}
     BYTECODE_CACHED = {"value": "bytecode-cached", "index": 1}
     LIVE_SITES = {"value": "live-sites", "index": 2}
     PROFILING = {"value": "profiling", "index": 3}
@@ -162,16 +162,20 @@ class ClassificationProvider:
                 "query": "'custom-car",
                 "negation": "!custom-car",
                 "restriction": check_for_custom_car,
-                "platforms": [Platforms.LINUX.value, Platforms.WINDOWS.value],
+                "platforms": [
+                    Platforms.LINUX.value,
+                    Platforms.WINDOWS.value,
+                    Platforms.MACOSX.value,
+                ],
             },
         }
 
     @property
     def variants(self):
         return {
-            Variants.NO_FISSION.value: {
-                "query": "'nofis",
-                "negation": "!nofis",
+            Variants.FISSION.value: {
+                "query": "!nofis",
+                "negation": "'nofis",
                 "platforms": [Platforms.ANDROID.value],
                 "apps": [Apps.FENIX.value, Apps.GECKOVIEW.value],
             },
@@ -217,7 +221,7 @@ class ClassificationProvider:
                 "apps": list(self.apps.keys()),
                 "platforms": list(self.platforms.keys()),
                 "variants": [
-                    Variants.NO_FISSION.value,
+                    Variants.FISSION.value,
                     Variants.LIVE_SITES.value,
                     Variants.PROFILING.value,
                     Variants.BYTECODE_CACHED.value,
@@ -262,33 +266,11 @@ class ClassificationProvider:
                 "suites": [Suites.RAPTOR.value],
                 "tasks": [],
             },
-            "Pageload (essential)": {
-                "query": {
-                    Suites.RAPTOR.value: ["'browsertime 'tp6 'essential"],
-                },
-                "variant-restrictions": {
-                    Suites.RAPTOR.value: [Variants.NO_FISSION.value]
-                },
-                "suites": [Suites.RAPTOR.value],
-                "app-restrictions": {
-                    Suites.RAPTOR.value: [
-                        Apps.FIREFOX.value,
-                        Apps.CHROME.value,
-                        Apps.CHROMIUM.value,
-                        Apps.FENIX.value,
-                        Apps.GECKOVIEW.value,
-                        Apps.CHROMIUM_RELEASE.value,
-                    ],
-                },
-                "tasks": [],
-            },
             "Speedometer 3": {
                 "query": {
                     Suites.RAPTOR.value: ["'browsertime 'speedometer3"],
                 },
-                "variant-restrictions": {
-                    Suites.RAPTOR.value: [Variants.NO_FISSION.value]
-                },
+                "variant-restrictions": {Suites.RAPTOR.value: [Variants.FISSION.value]},
                 "suites": [Suites.RAPTOR.value],
                 "app-restrictions": {},
                 "tasks": [],
@@ -357,9 +339,7 @@ class ClassificationProvider:
                     Suites.RAPTOR.value: ["'browsertime 'youtube-playback"],
                 },
                 "suites": [Suites.TALOS.value, Suites.RAPTOR.value],
-                "variant-restrictions": {
-                    Suites.RAPTOR.value: [Variants.NO_FISSION.value]
-                },
+                "variant-restrictions": {Suites.RAPTOR.value: [Variants.FISSION.value]},
                 "app-restrictions": {
                     Suites.RAPTOR.value: [
                         Apps.FIREFOX.value,

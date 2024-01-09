@@ -4,8 +4,8 @@
 
 "use strict";
 
-var { DelayedInit } = ChromeUtils.import(
-  "resource://gre/modules/DelayedInit.jsm"
+var { DelayedInit } = ChromeUtils.importESModule(
+  "resource://gre/modules/DelayedInit.sys.mjs"
 );
 var { XPCOMUtils } = ChromeUtils.importESModule(
   "resource://gre/modules/XPCOMUtils.sys.mjs"
@@ -18,17 +18,14 @@ ChromeUtils.defineESModuleGetters(this, {
   GeckoViewActorManager: "resource://gre/modules/GeckoViewActorManager.sys.mjs",
   GeckoViewSettings: "resource://gre/modules/GeckoViewSettings.sys.mjs",
   GeckoViewUtils: "resource://gre/modules/GeckoViewUtils.sys.mjs",
+  HistogramStopwatch: "resource://gre/modules/GeckoViewTelemetry.sys.mjs",
+  InitializationTracker: "resource://gre/modules/GeckoViewTelemetry.sys.mjs",
   RemoteSecuritySettings:
     "resource://gre/modules/psm/RemoteSecuritySettings.sys.mjs",
   SafeBrowsing: "resource://gre/modules/SafeBrowsing.sys.mjs",
 });
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  HistogramStopwatch: "resource://gre/modules/GeckoViewTelemetry.jsm",
-  InitializationTracker: "resource://gre/modules/GeckoViewTelemetry.jsm",
-});
-
-XPCOMUtils.defineLazyGetter(this, "WindowEventDispatcher", () =>
+ChromeUtils.defineLazyGetter(this, "WindowEventDispatcher", () =>
   EventDispatcher.for(window)
 );
 
@@ -603,7 +600,7 @@ function startup() {
                 "MozDOMFullscreen:Request": {},
                 MozFirstContentfulPaint: {},
                 MozPaintStatusReset: {},
-                contextmenu: { capture: true },
+                contextmenu: {},
               },
             },
             allFrames: true,
@@ -839,6 +836,20 @@ function startup() {
             child: {
               esModuleURI:
                 "resource:///actors/GeckoViewPrintDelegateChild.sys.mjs",
+            },
+            allFrames: true,
+          },
+        },
+      },
+    },
+    {
+      name: "GeckoViewExperimentDelegate",
+      onInit: {
+        actors: {
+          GeckoViewExperimentDelegate: {
+            parent: {
+              esModuleURI:
+                "resource:///actors/GeckoViewExperimentDelegateParent.sys.mjs",
             },
             allFrames: true,
           },

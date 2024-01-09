@@ -186,6 +186,12 @@ export class PictureInPictureParent extends JSWindowActorParent {
         player.setScrubberPosition(scrubberPosition);
         break;
       }
+      case "PictureInPicture:VolumeChange": {
+        let { volume } = aMessage.data;
+        let player = PictureInPicture.getWeakPipPlayer(this);
+        player.setVolume(volume);
+        break;
+      }
     }
   }
 }
@@ -815,6 +821,7 @@ export var PictureInPicture = {
 
     win.setScrubberPosition(videoData.scrubberPosition);
     win.setTimestamp(videoData.timestamp);
+    win.setVolume(videoData.volume);
 
     Services.prefs.setBoolPref(TOGGLE_HAS_USED_PREF, true);
 
@@ -1406,7 +1413,7 @@ export var PictureInPicture = {
       0,
       null,
       0,
-      data.mozInputSource
+      data.inputSource
     );
     popup.openPopupAtScreen(newEvent.screenX, newEvent.screenY, true, newEvent);
   },
@@ -1421,7 +1428,7 @@ export var PictureInPicture = {
   },
 
   /**
-   * This is used in AsyncTabSwitcher.jsm and tabbrowser.js to check if the browser
+   * This is used in AsyncTabSwitcher.sys.mjs and tabbrowser.js to check if the browser
    * currently has a PiP window.
    * If the browser has a PiP window we want to keep the browser in an active state because
    * the browser is still partially visible.

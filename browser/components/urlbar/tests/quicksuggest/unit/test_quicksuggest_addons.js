@@ -15,7 +15,7 @@ const MERINO_SUGGESTIONS = [
   {
     provider: "amo",
     icon: "icon",
-    url: "url",
+    url: "https://example.com/merino-addon",
     title: "title",
     description: "description",
     is_top_pick: true,
@@ -65,15 +65,23 @@ const REMOTE_SETTINGS_RESULTS = [
         description: "Description for the Third Addon",
         number_of_ratings: 3,
       },
+      {
+        url: "https://example.com/fourth-addon?utm_medium=aaa&utm_source=bbb",
+        guid: "fourth@addon",
+        icon: "https://example.com/fourth-addon.svg",
+        title: "Fourth Addon",
+        rating: "4.7",
+        keywords: ["fourth", "4th"],
+        description: "Description for the Fourth Addon",
+        number_of_ratings: 4,
+      },
     ],
   },
 ];
 
 add_setup(async function init() {
   UrlbarPrefs.set("quicksuggest.enabled", true);
-  UrlbarPrefs.set("bestMatch.enabled", true);
   UrlbarPrefs.set("suggest.quicksuggest.nonsponsored", true);
-  UrlbarPrefs.set("addons.featureGate", true);
 
   // Disable search suggestions so we don't hit the network.
   Services.prefs.setBoolPref("browser.search.suggest.enabled", false);
@@ -82,43 +90,49 @@ add_setup(async function init() {
     remoteSettingsResults: REMOTE_SETTINGS_RESULTS,
     merinoSuggestions: MERINO_SUGGESTIONS,
   });
+  await waitForRemoteSettingsSuggestions();
 });
 
-// When non-sponsored suggestions are disabled, addon suggestions should be
-// disabled.
-add_task(async function nonsponsoredDisabled() {
-  // Disable sponsored suggestions. Addon suggestions are non-sponsored, so
-  // doing this should not prevent them from being enabled.
-  UrlbarPrefs.set("suggest.quicksuggest.sponsored", false);
+add_task(async function telemetryType() {
+  Assert.equal(
+    QuickSuggest.getFeature("AddonSuggestions").getSuggestionTelemetryType({}),
+    "amo",
+    "Telemetry type should be 'amo'"
+  );
+});
 
-  // First make sure the suggestion is added when non-sponsored suggestions are
-  // enabled.
-  await check_results({
-    context: createContext("test", {
-      providers: [UrlbarProviderQuickSuggest.name],
-      isPrivate: false,
-    }),
-    matches: [
-      makeExpectedResult({
-        suggestion: MERINO_SUGGESTIONS[0],
-        source: "merino",
-        isTopPick: true,
+// When quick suggest prefs are disabled, addon suggestions should be disabled.
+add_task(async function quickSuggestPrefsDisabled() {
+  let prefs = ["quicksuggest.enabled", "suggest.quicksuggest.nonsponsored"];
+  for (let pref of prefs) {
+    // Before disabling the pref, first make sure the suggestion is added.
+    await check_results({
+      context: createContext("test", {
+        providers: [UrlbarProviderQuickSuggest.name],
+        isPrivate: false,
       }),
-    ],
-  });
+      matches: [
+        makeExpectedResult({
+          suggestion: MERINO_SUGGESTIONS[0],
+          source: "merino",
+          isTopPick: true,
+        }),
+      ],
+    });
 
-  // Now disable them.
-  UrlbarPrefs.set("suggest.quicksuggest.nonsponsored", false);
-  await check_results({
-    context: createContext("test", {
-      providers: [UrlbarProviderQuickSuggest.name],
-      isPrivate: false,
-    }),
-    matches: [],
-  });
+    // Now disable the pref.
+    UrlbarPrefs.set(pref, false);
+    await check_results({
+      context: createContext("test", {
+        providers: [UrlbarProviderQuickSuggest.name],
+        isPrivate: false,
+      }),
+      matches: [],
+    });
 
-  UrlbarPrefs.set("suggest.quicksuggest.nonsponsored", true);
-  UrlbarPrefs.clear("suggest.quicksuggest.sponsored");
+    UrlbarPrefs.set(pref, true);
+    await waitForRemoteSettingsSuggestions();
+  }
 });
 
 // When addon suggestions specific preference is disabled, addon suggestions
@@ -152,7 +166,8 @@ add_task(async function addonSuggestionsSpecificPrefDisabled() {
     });
 
     // Revert.
-    UrlbarPrefs.set(pref, true);
+    UrlbarPrefs.clear(pref);
+    await waitForRemoteSettingsSuggestions();
   }
 });
 
@@ -173,6 +188,7 @@ add_task(async function nimbus() {
   const cleanUpNimbusEnable = await UrlbarTestUtils.initNimbusFeature({
     addonsFeatureGate: true,
   });
+  await waitForRemoteSettingsSuggestions();
   await check_results({
     context: createContext("test", {
       providers: [UrlbarProviderQuickSuggest.name],
@@ -190,6 +206,7 @@ add_task(async function nimbus() {
 
   // Enable locally.
   UrlbarPrefs.set("addons.featureGate", true);
+  await waitForRemoteSettingsSuggestions();
 
   // Disable by Nimbus.
   const cleanUpNimbusDisable = await UrlbarTestUtils.initNimbusFeature({
@@ -205,7 +222,8 @@ add_task(async function nimbus() {
   await cleanUpNimbusDisable();
 
   // Revert.
-  UrlbarPrefs.set("addons.featureGate", true);
+  UrlbarPrefs.clear("addons.featureGate");
+  await waitForRemoteSettingsSuggestions();
 });
 
 add_task(async function hideIfAlreadyInstalled() {
@@ -417,6 +435,15 @@ add_task(async function remoteSettings() {
         isTopPick: true,
       }),
     },
+    {
+      input: "fourth",
+      expected: makeExpectedResult({
+        suggestion: REMOTE_SETTINGS_RESULTS[0].attachment[3],
+        source: "remote-settings",
+        isTopPick: true,
+        setUtmParams: false,
+      }),
+    },
   ];
 
   // Disable Merino so we trigger only remote settings suggestions.
@@ -473,235 +500,48 @@ add_task(async function merinoIsTopPick() {
   });
 });
 
-// Tests "show less frequently" with the cap set in remote settings.
-add_task(async function showLessFrequently_rs() {
-  await doShowLessFrequentlyTest({
-    rs: {
-      show_less_frequently_cap: 3,
-    },
-    tests: [
-      {
-        showLessFrequentlyCount: 0,
-        canShowLessFrequently: true,
-        searches: {
-          f: false,
-          fi: false,
-          fir: false,
-          firs: false,
-          first: true,
-          t: false,
-          tw: false,
-          two: true,
-          "two ": true,
-          "two w": true,
-          "two wo": true,
-          "two wor": true,
-          "two word": true,
-          "two words": true,
-          a: true,
-          "a ": true,
-          "a b": true,
-          "a b ": true,
-          "a b c": true,
-        },
-      },
-      {
-        showLessFrequentlyCount: 1,
-        canShowLessFrequently: true,
-        searches: {
-          first: false,
-          two: false,
-          a: false,
-        },
-      },
-      {
-        showLessFrequentlyCount: 2,
-        canShowLessFrequently: true,
-        searches: {
-          "two ": false,
-          "a ": false,
-        },
-      },
-      {
-        showLessFrequentlyCount: 3,
-        canShowLessFrequently: false,
-        searches: {
-          "two w": false,
-          "a b": false,
-        },
-      },
-      {
-        showLessFrequentlyCount: 3,
-        canShowLessFrequently: false,
-        searches: {},
-      },
-    ],
+// Tests the "show less frequently" behavior.
+add_task(async function showLessFrequently() {
+  await doShowLessFrequentlyTests({
+    feature: QuickSuggest.getFeature("AddonSuggestions"),
+    showLessFrequentlyCountPref: "addons.showLessFrequentlyCount",
+    nimbusCapVariable: "addonsShowLessFrequentlyCap",
+    expectedResult: makeExpectedResult({
+      suggestion: REMOTE_SETTINGS_RESULTS[0].attachment[0],
+      source: "remote-settings",
+      isTopPick: true,
+    }),
+    keyword: "two words",
   });
 });
 
-// Tests "show less frequently" with the cap set in both Nimbus and remote
-// settings. Nimbus should override remote settings.
-add_task(async function showLessFrequently_nimbus() {
-  await doShowLessFrequentlyTest({
-    nimbus: {
-      addonsShowLessFrequentlyCap: 3,
-    },
-    rs: {
-      show_less_frequently_cap: 10,
-    },
-    tests: [
-      {
-        showLessFrequentlyCount: 0,
-        canShowLessFrequently: true,
-        searches: {
-          a: true,
-          "a ": true,
-          "a b": true,
-          "a b ": true,
-          "a b c": true,
-        },
-      },
-      {
-        showLessFrequentlyCount: 1,
-        canShowLessFrequently: true,
-        searches: {
-          a: false,
-        },
-      },
-      {
-        showLessFrequentlyCount: 2,
-        canShowLessFrequently: true,
-        searches: {
-          "a ": false,
-        },
-      },
-      {
-        showLessFrequentlyCount: 3,
-        canShowLessFrequently: false,
-        searches: {
-          "a b": false,
-        },
-      },
-      {
-        showLessFrequentlyCount: 3,
-        canShowLessFrequently: false,
-        searches: {},
-      },
-    ],
-  });
-});
-
-/**
- * Does a group of searches, increments the `showLessFrequentlyCount`, and
- * repeats until all groups are done. The cap can be set by remote settings
- * config and/or Nimbus.
- *
- * @param {object} options
- *   Options object.
- * @param {object} options.tests
- *   An array where each item describes a group of searches to perform and
- *   expected state. Each item should look like this:
- *   `{ showLessFrequentlyCount, canShowLessFrequently, searches }`
- *
- *   {number} showLessFrequentlyCount
- *     The expected value of `showLessFrequentlyCount` before the group of
- *     searches is performed.
- *   {boolean} canShowLessFrequently
- *     The expected value of `canShowLessFrequently` before the group of
- *     searches is performed.
- *   {object} searches
- *     An object that maps each search string to a boolean that indicates
- *     whether the first remote settings suggestion should be triggered by the
- *     search string. `searches` objects are cumulative: The intended use is to
- *     pass a large initial group of searches in the first search group, and
- *     then each following `searches` is a diff against the previous.
- * @param {object} options.rs
- *   The remote settings config to set.
- * @param {object} options.nimbus
- *   The Nimbus variables to set.
- */
-async function doShowLessFrequentlyTest({ tests, rs = {}, nimbus = {} }) {
-  // Disable Merino so we trigger only remote settings suggestions.
-  UrlbarPrefs.set("quicksuggest.dataCollection.enabled", false);
-
-  // We'll be testing with the first remote settings suggestion.
-  let suggestion = REMOTE_SETTINGS_RESULTS[0].attachment[0];
-
-  let addonSuggestions = QuickSuggest.getFeature("AddonSuggestions");
-
-  // Set Nimbus variables and RS config.
-  let cleanUpNimbus = await UrlbarTestUtils.initNimbusFeature(nimbus);
-  await QuickSuggestTestUtils.withConfig({
-    config: rs,
-    callback: async () => {
-      let cumulativeSearches = {};
-
-      for (let {
-        showLessFrequentlyCount,
-        canShowLessFrequently,
-        searches,
-      } of tests) {
-        Assert.equal(
-          addonSuggestions.showLessFrequentlyCount,
-          showLessFrequentlyCount,
-          "showLessFrequentlyCount should be correct initially"
-        );
-        Assert.equal(
-          UrlbarPrefs.get("addons.showLessFrequentlyCount"),
-          showLessFrequentlyCount,
-          "Pref should be correct initially"
-        );
-        Assert.equal(
-          addonSuggestions.canShowLessFrequently,
-          canShowLessFrequently,
-          "canShowLessFrequently should be correct initially"
-        );
-
-        // Merge the current `searches` object into the cumulative object.
-        cumulativeSearches = {
-          ...cumulativeSearches,
-          ...searches,
-        };
-
-        for (let [searchString, isExpected] of Object.entries(
-          cumulativeSearches
-        )) {
-          await check_results({
-            context: createContext(searchString, {
-              providers: [UrlbarProviderQuickSuggest.name],
-              isPrivate: false,
-            }),
-            matches: !isExpected
-              ? []
-              : [
-                  makeExpectedResult({
-                    suggestion,
-                    source: "remote-settings",
-                    isTopPick: true,
-                  }),
-                ],
-          });
-        }
-
-        addonSuggestions.incrementShowLessFrequentlyCount();
-      }
-    },
-  });
-
-  await cleanUpNimbus();
-  UrlbarPrefs.clear("addons.showLessFrequentlyCount");
-  UrlbarPrefs.set("quicksuggest.dataCollection.enabled", true);
-}
-
-function makeExpectedResult({ suggestion, source, isTopPick }) {
+function makeExpectedResult({
+  suggestion,
+  source,
+  isTopPick,
+  setUtmParams = true,
+}) {
+  let provider;
   let rating;
   let number_of_ratings;
   if (source === "remote-settings") {
+    provider = "AddonSuggestions";
     rating = suggestion.rating;
     number_of_ratings = suggestion.number_of_ratings;
   } else {
+    provider = "amo";
     rating = suggestion.custom_details.amo.rating;
     number_of_ratings = suggestion.custom_details.amo.number_of_ratings;
+  }
+
+  let url;
+  if (setUtmParams) {
+    url = new URL(suggestion.url);
+    url.searchParams.set("utm_medium", "firefox-desktop");
+    url.searchParams.set("utm_source", "firefox-suggest");
+    url = url.href;
+  } else {
+    url = suggestion.url;
   }
 
   return {
@@ -714,8 +554,9 @@ function makeExpectedResult({ suggestion, source, isTopPick }) {
       telemetryType: "amo",
       dynamicType: "addons",
       title: suggestion.title,
-      url: suggestion.url,
-      displayUrl: suggestion.url.replace(/^https:\/\//, ""),
+      url,
+      originalUrl: suggestion.url,
+      displayUrl: url.replace(/^https:\/\//, ""),
       icon: suggestion.icon,
       description: suggestion.description,
       rating: Number(rating),
@@ -723,6 +564,15 @@ function makeExpectedResult({ suggestion, source, isTopPick }) {
       shouldNavigate: true,
       helpUrl: QuickSuggest.HELP_URL,
       source,
+      provider,
     },
   };
+}
+
+async function waitForRemoteSettingsSuggestions(keyword = "first") {
+  let feature = QuickSuggest.getFeature("AddonSuggestions");
+  await TestUtils.waitForCondition(async () => {
+    let suggestions = await feature.queryRemoteSettings(keyword);
+    return !!suggestions.length;
+  }, "Waiting for AddonSuggestions to serve remote settings suggestions");
 }

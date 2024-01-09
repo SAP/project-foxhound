@@ -288,7 +288,7 @@ nsresult nsMenuPopupFrame::CreateWidgetForView(nsView* aView) {
                                          nsGkAtoms::normal, eCaseMatters)) {
     widgetData.mBorderStyle = widget::BorderStyle::Title;
 
-    mContent->AsElement()->GetAttr(kNameSpaceID_None, nsGkAtoms::label, title);
+    mContent->AsElement()->GetAttr(nsGkAtoms::label, title);
     if (mContent->AsElement()->AttrValueIs(kNameSpaceID_None, nsGkAtoms::close,
                                            nsGkAtoms::_true, eCaseMatters)) {
       widgetData.mBorderStyle =
@@ -784,6 +784,7 @@ void nsMenuPopupFrame::InitializePopup(nsIContent* aAnchorContent,
   mIsTopLevelContextMenu = false;
   mVFlip = false;
   mHFlip = false;
+  mConstrainedByLayout = false;
   mAlignmentOffset = 0;
   mPositionedOffset = 0;
   mPositionedByMoveToRect = false;
@@ -795,13 +796,10 @@ void nsMenuPopupFrame::InitializePopup(nsIContent* aAnchorContent,
   // If false, those attributes are only used if the values passed in are empty
   if (aAnchorContent || aAnchorType == MenuPopupAnchorType_Rect) {
     nsAutoString anchor, align, position, flip;
-    mContent->AsElement()->GetAttr(kNameSpaceID_None, nsGkAtoms::popupanchor,
-                                   anchor);
-    mContent->AsElement()->GetAttr(kNameSpaceID_None, nsGkAtoms::popupalign,
-                                   align);
-    mContent->AsElement()->GetAttr(kNameSpaceID_None, nsGkAtoms::position,
-                                   position);
-    mContent->AsElement()->GetAttr(kNameSpaceID_None, nsGkAtoms::flip, flip);
+    mContent->AsElement()->GetAttr(nsGkAtoms::popupanchor, anchor);
+    mContent->AsElement()->GetAttr(nsGkAtoms::popupalign, align);
+    mContent->AsElement()->GetAttr(nsGkAtoms::position, position);
+    mContent->AsElement()->GetAttr(nsGkAtoms::flip, flip);
 
     if (aAttributesOverride) {
       // if the attributes are set, clear the offset position. Otherwise,
@@ -888,8 +886,8 @@ void nsMenuPopupFrame::InitializePopup(nsIContent* aAnchorContent,
     // Use |left| and |top| dimension attributes to position the popup if
     // present, as they may have been persisted.
     nsAutoString left, top;
-    mContent->AsElement()->GetAttr(kNameSpaceID_None, nsGkAtoms::left, left);
-    mContent->AsElement()->GetAttr(kNameSpaceID_None, nsGkAtoms::top, top);
+    mContent->AsElement()->GetAttr(nsGkAtoms::left, left);
+    mContent->AsElement()->GetAttr(nsGkAtoms::top, top);
 
     nsresult err;
     if (!left.IsEmpty()) {
@@ -1052,6 +1050,7 @@ void nsMenuPopupFrame::HidePopup(bool aDeselectMenu, nsPopupState aNewState,
 
   mIsOpenChanged = false;
   mHFlip = mVFlip = false;
+  mConstrainedByLayout = false;
 
   if (auto* widget = GetWidget()) {
     // Ideally we should call ClearCachedWebrenderResources but there are
@@ -1559,6 +1558,7 @@ auto nsMenuPopupFrame::GetRects(const nsSize& aPrefSize) const -> Rects {
       if (result.mUsedRect.height > constraintRect->height) {
         result.mUsedRect.height = constraintRect->height;
       }
+      result.mConstrainedByLayout = true;
     }
 
     if (IS_WAYLAND_DISPLAY() && widget) {
@@ -1713,6 +1713,7 @@ void nsMenuPopupFrame::PerformMove(const Rects& aRects) {
   mLastClientOffset = aRects.mClientOffset;
   mHFlip = aRects.mHFlip;
   mVFlip = aRects.mVFlip;
+  mConstrainedByLayout = aRects.mConstrainedByLayout;
 
   // If this is a noautohide popup, set the screen coordinates of the popup.
   // This way, the popup stays at the location where it was opened even when the
@@ -2104,8 +2105,7 @@ nsresult nsMenuPopupFrame::AttributeChanged(int32_t aNameSpaceID,
       nsIWidget* widget = view->GetWidget();
       if (widget) {
         nsAutoString title;
-        mContent->AsElement()->GetAttr(kNameSpaceID_None, nsGkAtoms::label,
-                                       title);
+        mContent->AsElement()->GetAttr(nsGkAtoms::label, title);
         if (!title.IsEmpty()) {
           widget->SetTitle(title);
         }
@@ -2115,8 +2115,7 @@ nsresult nsMenuPopupFrame::AttributeChanged(int32_t aNameSpaceID,
     nsXULPopupManager* pm = nsXULPopupManager::GetInstance();
     if (pm) {
       nsAutoString ignorekeys;
-      mContent->AsElement()->GetAttr(kNameSpaceID_None, nsGkAtoms::ignorekeys,
-                                     ignorekeys);
+      mContent->AsElement()->GetAttr(nsGkAtoms::ignorekeys, ignorekeys);
       pm->UpdateIgnoreKeys(ignorekeys.EqualsLiteral("true"));
     }
   }
@@ -2130,8 +2129,8 @@ void nsMenuPopupFrame::MoveToAttributePosition() {
   // lots of FE notifications and is likely to be slow as molasses. Use |moveTo|
   // on the element if possible.
   nsAutoString left, top;
-  mContent->AsElement()->GetAttr(kNameSpaceID_None, nsGkAtoms::left, left);
-  mContent->AsElement()->GetAttr(kNameSpaceID_None, nsGkAtoms::top, top);
+  mContent->AsElement()->GetAttr(nsGkAtoms::left, left);
+  mContent->AsElement()->GetAttr(nsGkAtoms::top, top);
   nsresult err1, err2;
   mozilla::CSSIntPoint pos(left.ToInteger(&err1), top.ToInteger(&err2));
 

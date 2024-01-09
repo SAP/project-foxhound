@@ -49,14 +49,14 @@
 #include "util/StringBuffer.h"
 #include "vm/BigIntType.h"
 #include "vm/GlobalObject.h"
-#include "vm/JSAtom.h"
+#include "vm/JSAtomUtils.h"  // Atomize, AtomizeString
 #include "vm/JSContext.h"
 #include "vm/JSObject.h"
 #include "vm/StaticStrings.h"
-#include "vm/WellKnownAtom.h"  // js_*_str
 
 #include "vm/Compartment-inl.h"  // For js::UnwrapAndTypeCheckThis
 #include "vm/GeckoProfiler-inl.h"
+#include "vm/JSAtomUtils-inl.h"  // BackfillIndexInCharBuffer
 #include "vm/NativeObject-inl.h"
 #include "vm/NumberObject-inl.h"
 #include "vm/StringType-inl.h"
@@ -648,12 +648,12 @@ static bool num_parseInt(JSContext* cx, unsigned argc, Value* vp) {
 }
 
 static const JSFunctionSpec number_functions[] = {
-    JS_SELF_HOSTED_FN(js_isNaN_str, "Global_isNaN", 1, JSPROP_RESOLVING),
-    JS_SELF_HOSTED_FN(js_isFinite_str, "Global_isFinite", 1, JSPROP_RESOLVING),
+    JS_SELF_HOSTED_FN("isNaN", "Global_isNaN", 1, JSPROP_RESOLVING),
+    JS_SELF_HOSTED_FN("isFinite", "Global_isFinite", 1, JSPROP_RESOLVING),
     JS_FS_END};
 
 const JSClass NumberObject::class_ = {
-    js_Number_str,
+    "Number",
     JSCLASS_HAS_RESERVED_SLOTS(1) | JSCLASS_HAS_CACHED_PROTO(JSProto_Number),
     JS_NULL_CLASS_OPS, &NumberObject::classSpec_};
 
@@ -1246,7 +1246,7 @@ static bool num_toFixed(JSContext* cx, unsigned argc, Value* vp) {
       return true;
     }
 
-    args.rval().setString(cx->names().NegativeInfinity);
+    args.rval().setString(cx->names().NegativeInfinity_);
     return true;
   }
 
@@ -1318,7 +1318,7 @@ static bool num_toExponential(JSContext* cx, unsigned argc, Value* vp) {
       return true;
     }
 
-    args.rval().setString(cx->names().NegativeInfinity);
+    args.rval().setString(cx->names().NegativeInfinity_);
     return true;
   }
 
@@ -1381,7 +1381,7 @@ static bool num_toPrecision(JSContext* cx, unsigned argc, Value* vp) {
       return true;
     }
 
-    args.rval().setString(cx->names().NegativeInfinity);
+    args.rval().setString(cx->names().NegativeInfinity_);
     return true;
   }
 
@@ -1406,14 +1406,14 @@ static bool num_toPrecision(JSContext* cx, unsigned argc, Value* vp) {
 }
 
 static const JSFunctionSpec number_methods[] = {
-    JS_FN(js_toSource_str, num_toSource, 0, 0),
-    JS_INLINABLE_FN(js_toString_str, num_toString, 1, 0, NumberToString),
+    JS_FN("toSource", num_toSource, 0, 0),
+    JS_INLINABLE_FN("toString", num_toString, 1, 0, NumberToString),
 #if JS_HAS_INTL_API
-    JS_SELF_HOSTED_FN(js_toLocaleString_str, "Number_toLocaleString", 0, 0),
+    JS_SELF_HOSTED_FN("toLocaleString", "Number_toLocaleString", 0, 0),
 #else
-    JS_FN(js_toLocaleString_str, num_toLocaleString, 0, 0),
+    JS_FN("toLocaleString", num_toLocaleString, 0, 0),
 #endif
-    JS_FN(js_valueOf_str, num_valueOf, 0, 0),
+    JS_FN("valueOf", num_valueOf, 0, 0),
     JS_FN("toFixed", num_toFixed, 1, 0),
     JS_FN("toExponential", num_toExponential, 1, 0),
     JS_FN("toPrecision", num_toPrecision, 1, 0),
@@ -2004,8 +2004,6 @@ bool js::StringToNumberPure(JSContext* cx, JSString* str, double* result) {
 
 JS_PUBLIC_API bool js::ToNumberSlow(JSContext* cx, HandleValue v_,
                                     double* out) {
-  MOZ_ASSERT(cx->isMainThreadContext());
-
   RootedValue v(cx, v_);
   MOZ_ASSERT(!v.isNumber());
 
@@ -2053,7 +2051,6 @@ JS_PUBLIC_API bool js::ToNumberSlow(JSContext* cx, HandleValue v_,
 
 // BigInt proposal section 3.1.6
 bool js::ToNumericSlow(JSContext* cx, MutableHandleValue vp) {
-  MOZ_ASSERT(cx->isMainThreadContext());
   MOZ_ASSERT(!vp.isNumeric());
 
   // Step 1.

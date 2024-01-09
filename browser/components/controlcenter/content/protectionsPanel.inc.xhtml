@@ -45,19 +45,8 @@
       <vbox id="protections-popup-main-body" class="panel-subview-body">
         <vbox id="protections-popup-tp-switch-section" class="protections-popup-section protections-popup-switch-section">
           <hbox id="protections-popup-tp-switch-section-header" class="protections-popup-switch-section-header">
-            <vbox class="protections-popup-tp-switch-label-box" flex="1" align="start">
-              <label class="protections-popup-switch-header protections-popup-tp-switch-on-header"
-                     role="heading"
-                     aria-level="2" data-l10n-id="protections-panel-etp-on-header"></label>
-              <label class="protections-popup-switch-header protections-popup-tp-switch-off-header"
-                     role="heading"
-                     aria-level="2" data-l10n-id="protections-panel-etp-off-header"></label>
-            </vbox>
-            <vbox class="protections-popup-tp-switch-box">
-              <toolbarbutton id="protections-popup-tp-switch"
-                             class="protections-popup-tp-switch"
-                             enabled="false"
-                             oncommand="gProtectionsHandler.onTPSwitchCommand();" />
+            <vbox class="protections-popup-tp-switch-box" flex="1" align="stretch">
+              <html:moz-toggle id="protections-popup-tp-switch" data-l10n-attrs="label, description"></html:moz-toggle>
             </vbox>
           </hbox>
           <hbox id="protections-popup-tp-switch-section-footer">
@@ -193,19 +182,8 @@
                role="document"
                data-l10n-id="protections-panel-site-not-working-view">
         <hbox id="protections-popup-siteNotWorkingView-header">
-          <vbox class="protections-popup-tp-switch-label-box" flex="1">
-            <label class="protections-popup-switch-header protections-popup-tp-switch-on-header"
-                   role="heading"
-                   aria-level="1" data-l10n-id="protections-panel-etp-on-header"></label>
-            <label class="protections-popup-switch-header protections-popup-tp-switch-off-header"
-                   role="heading"
-                   aria-level="1" data-l10n-id="protections-panel-etp-off-header"></label>
-          </vbox>
-          <vbox class="protections-popup-tp-switch-box">
-            <toolbarbutton id="protections-popup-siteNotWorking-tp-switch"
-                           class="protections-popup-tp-switch"
-                           enabled="false"
-                           oncommand="gProtectionsHandler.onTPSwitchCommand();" />
+          <vbox class="protections-popup-tp-switch-box" flex="1" align="stretch">
+            <html:moz-toggle id="protections-popup-siteNotWorking-tp-switch" data-l10n-attrs="label, description"></html:moz-toggle>
           </vbox>
         </hbox>
         <toolbarseparator></toolbarseparator>
@@ -240,10 +218,11 @@
             <vbox flex="1">
               <description data-l10n-id="protections-panel-description-shim-allowed">
               </description>
-              <label class="protections-popup-shim-allow-learn-more"
-                     is="text-link"
-                     data-l10n-id="protections-panel-description-shim-allowed-learn-more">
-              </label>
+              <html:a class="protections-popup-shim-allow-learn-more"
+                     is="moz-support-link"
+                     data-l10n-id="protections-panel-description-shim-allowed-learn-more"
+                     support-page="smartblock-enhanced-tracking-protection"
+              />
             </vbox>
           </hbox>
         </vbox>
@@ -269,10 +248,11 @@
             <vbox flex="1">
               <description data-l10n-id="protections-panel-description-shim-allowed">
               </description>
-              <label class="protections-popup-shim-allow-learn-more"
-                     is="text-link"
-                     data-l10n-id="protections-panel-description-shim-allowed-learn-more">
-              </label>
+              <html:a class="protections-popup-shim-allow-learn-more"
+                     is="moz-support-link"
+                     data-l10n-id="protections-panel-description-shim-allowed-learn-more"
+                     support-page="smartblock-enhanced-tracking-protection"
+              />
             </vbox>
           </hbox>
         </vbox>
@@ -315,10 +295,11 @@
             <vbox flex="1">
               <description data-l10n-id="protections-panel-description-shim-allowed">
               </description>
-              <label class="protections-popup-shim-allow-learn-more"
-                     is="text-link"
-                     data-l10n-id="protections-panel-description-shim-allowed-learn-more">
-              </label>
+              <html:a class="protections-popup-shim-allow-learn-more"
+                     is="moz-support-link"
+                     data-l10n-id="protections-panel-description-shim-allowed-learn-more"
+                     support-page="smartblock-enhanced-tracking-protection"
+              />
             </vbox>
           </hbox>
         </vbox>
@@ -344,10 +325,11 @@
             <vbox flex="1">
               <description data-l10n-id="protections-panel-description-shim-allowed">
               </description>
-              <label class="protections-popup-shim-allow-learn-more"
-                     is="text-link"
-                     data-l10n-id="protections-panel-description-shim-allowed-learn-more">
-              </label>
+              <html:a class="protections-popup-shim-allow-learn-more"
+                     is="moz-support-link"
+                     data-l10n-id="protections-panel-description-shim-allowed-learn-more"
+                     support-page="smartblock-enhanced-tracking-protection"
+              />
             </vbox>
           </hbox>
         </vbox>
@@ -366,9 +348,11 @@
                class="PanelUI-subView"
                data-l10n-id="protections-panel-content-blocking-breakage-report-view">
         <vbox id="protections-popup-sendReportView-heading">
-          <description data-l10n-id="protections-panel-content-blocking-breakage-report-view-description">
-            <label id="protections-popup-sendReportView-learn-more"
-                   is="text-link" data-l10n-name="learn-more"></label>
+          <description id="protections-popup-sendReportView-description">
+            <label data-l10n-id="protections-panel-content-blocking-breakage-report-view-description2"/>
+            <html:a id="protections-popup-sendReportView-learn-more"
+                   is="moz-support-link"
+                   support-page="blocking-breakage" />
           </description>
         </vbox>
         <toolbarseparator></toolbarseparator>

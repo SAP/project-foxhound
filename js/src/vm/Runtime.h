@@ -263,20 +263,20 @@ class Metrics {
   // values so take care not to redefine the value of enum values. In the
   // future, these should become Glean Labeled Counter metrics.
   struct Enumeration {
-    using SourceType = int;
+    using SourceType = unsigned int;
     static uint32_t convert(SourceType sample) {
-      MOZ_ASSERT(sample >= 0 && sample <= 100);
+      MOZ_ASSERT(sample <= 100);
       return static_cast<uint32_t>(sample);
     }
   };
 
-  // Record a percentage distribution which is an integer in the range 0 to 100.
-  // In the future, this will be a Glean Custom Distribution unless they add a
-  // better match.
+  // Record a percentage distribution in the range 0 to 100. This takes a double
+  // and converts it to an integer. In the future, this will be a Glean Custom
+  // Distribution unless they add a better match.
   struct Percentage {
-    using SourceType = int;
+    using SourceType = double;
     static uint32_t convert(SourceType sample) {
-      MOZ_ASSERT(sample >= 0 && sample <= 100);
+      MOZ_ASSERT(sample >= 0.0 && sample <= 100.0);
       return static_cast<uint32_t>(sample);
     }
   };
@@ -987,7 +987,7 @@ struct JSRuntime {
   // but Ion needs to be able to access addresses inside here, which should be
   // safe, as the actual cache lookups will be performed on the main thread
   // through jitted code.
-  js::MainThreadOrParseOrIonCompileData<js::RuntimeCaches> caches_;
+  js::MainThreadOrIonCompileData<js::RuntimeCaches> caches_;
 
  public:
   js::RuntimeCaches& caches() { return caches_.ref(); }
@@ -1020,8 +1020,7 @@ struct JSRuntime {
 
   // The supported module import assertions.
   // https://tc39.es/proposal-import-assertions/#sec-hostgetsupportedimportassertions
-  js::MainThreadOrParseData<JS::ImportAssertionVector>
-      supportedImportAssertions;
+  js::MainThreadData<JS::ImportAssertionVector> supportedImportAssertions;
 
   // Hooks called when script private references are created and destroyed.
   js::MainThreadData<JS::ScriptPrivateReferenceHook> scriptPrivateAddRefHook;

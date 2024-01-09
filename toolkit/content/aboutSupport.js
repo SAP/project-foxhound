@@ -17,7 +17,6 @@ const { AppConstants } = ChromeUtils.importESModule(
 ChromeUtils.defineESModuleGetters(this, {
   DownloadUtils: "resource://gre/modules/DownloadUtils.sys.mjs",
   PlacesDBUtils: "resource://gre/modules/PlacesDBUtils.sys.mjs",
-  PluralForm: "resource://gre/modules/PluralForm.sys.mjs",
   ProcessType: "resource://gre/modules/ProcessType.sys.mjs",
 });
 
@@ -93,6 +92,17 @@ var snapshotFormatters = {
     }
     if (AppConstants.platform == "macosx") {
       $("rosetta-box").textContent = data.rosetta;
+    }
+    if (AppConstants.platform == "win") {
+      const translatedList = await Promise.all(
+        data.pointingDevices.map(deviceName => {
+          return document.l10n.formatValue(deviceName);
+        })
+      );
+
+      const formatter = new Intl.ListFormat();
+
+      $("pointing-devices-box").textContent = formatter.format(translatedList);
     }
     $("binary-box").textContent = Services.dirsvc.get(
       "XREExeF",
@@ -236,6 +246,19 @@ var snapshotFormatters = {
     formatHumanReadableBytes($("disk-available-box"), data.diskAvailableBytes);
   },
 
+  async legacyUserStylesheets(legacyUserStylesheets) {
+    $("legacyUserStylesheets-enabled").textContent =
+      legacyUserStylesheets.active;
+    $("legacyUserStylesheets-types").textContent =
+      new Intl.ListFormat(undefined, { style: "short", type: "unit" }).format(
+        legacyUserStylesheets.types
+      ) ||
+      document.l10n.setAttributes(
+        $("legacyUserStylesheets-types"),
+        "legacy-user-stylesheets-no-stylesheets-found"
+      );
+  },
+
   crashes(data) {
     if (!AppConstants.MOZ_CRASHREPORTER) {
       return;
@@ -318,7 +341,7 @@ var snapshotFormatters = {
   },
 
   securitySoftware(data) {
-    if (!AppConstants.isPlatformAndVersionAtLeast("win", "6.2")) {
+    if (AppConstants.platform !== "win") {
       $("security-software").hidden = true;
       $("security-software-table").hidden = true;
       return;
@@ -912,7 +935,7 @@ var snapshotFormatters = {
     }
   },
 
-  media(data) {
+  async media(data) {
     function insertBasicInfo(key, value) {
       function createRow(key, value) {
         let th = $.new("th", null, "column");
@@ -1109,9 +1132,101 @@ var snapshotFormatters = {
     // Media Capabilitites
     insertEnumerateDatabase();
 
-    // Codec decode/encode support information (inc. HW accel)
+    // Create codec support matrix if possible
+    let supportInfo = null;
+    if (data.codecSupportInfo.length) {
+      const [
+        supportText,
+        unsupportedText,
+        codecNameHeaderText,
+        codecSWDecodeText,
+        codecHWDecodeText,
+      ] = await document.l10n.formatValues([
+        "media-codec-support-supported",
+        "media-codec-support-unsupported",
+        "media-codec-support-codec-name",
+        "media-codec-support-sw-decoding",
+        "media-codec-support-hw-decoding",
+      ]);
+
+      function formatCodecRowHeader(a, b, c) {
+        let h1 = $.new("th", a);
+        let h2 = $.new("th", b);
+        let h3 = $.new("th", c);
+        h1.classList.add("codec-table-name");
+        h2.classList.add("codec-table-sw");
+        h3.classList.add("codec-table-hw");
+        return $.new("tr", [h1, h2, h3]);
+      }
+
+      function formatCodecRow(codec, sw, hw) {
+        let swCell = $.new("td", sw ? supportText : unsupportedText);
+        let hwCell = $.new("td", hw ? supportText : unsupportedText);
+        if (sw) {
+          swCell.classList.add("supported");
+        } else {
+          swCell.classList.add("unsupported");
+        }
+        if (hw) {
+          hwCell.classList.add("supported");
+        } else {
+          hwCell.classList.add("unsupported");
+        }
+        return $.new("tr", [$.new("td", codec), swCell, hwCell]);
+      }
+
+      // Parse codec support string and create dictionary containing
+      // SW/HW support information for each codec found
+      let codecs = {};
+      for (const codec_string of data.codecSupportInfo.split("\n")) {
+        const s = codec_string.split(" ");
+        const codec_name = s[0];
+        const codec_support = s[1];
+
+        if (!(codec_name in codecs)) {
+          codecs[codec_name] = {
+            name: codec_name,
+            sw: false,
+            hw: false,
+          };
+        }
+
+        if (codec_support === "SW") {
+          codecs[codec_name].sw = true;
+        } else if (codec_support === "HW") {
+          codecs[codec_name].hw = true;
+        }
+      }
+
+      // Create row in support table for each codec
+      let codecSupportRows = [];
+      for (const c in codecs) {
+        if (!codecs.hasOwnProperty(c)) {
+          continue;
+        }
+        codecSupportRows.push(
+          formatCodecRow(codecs[c].name, codecs[c].sw, codecs[c].hw)
+        );
+      }
+
+      let codecSupportTable = $.new("table", [
+        formatCodecRowHeader(
+          codecNameHeaderText,
+          codecSWDecodeText,
+          codecHWDecodeText
+        ),
+        $.new("tbody", codecSupportRows),
+      ]);
+      codecSupportTable.id = "codec-table";
+      supportInfo = [codecSupportTable];
+    } else {
+      // Don't have access to codec support information
+      supportInfo = await document.l10n.formatValue(
+        "media-codec-support-error"
+      );
+    }
     if (["win", "macosx", "linux"].includes(AppConstants.platform)) {
-      insertBasicInfo("media-codec-support-info", data.codecSupportInfo);
+      insertBasicInfo("media-codec-support-info", supportInfo);
     }
   },
 

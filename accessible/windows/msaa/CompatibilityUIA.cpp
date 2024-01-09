@@ -7,46 +7,21 @@
 #include "Compatibility.h"
 
 #include "mozilla/a11y/Platform.h"
-#include "mozilla/ScopeExit.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/UniquePtrExtensions.h"
-#include "mozilla/WindowsVersion.h"
 #include "mozilla/UniquePtr.h"
-#include "nsdefs.h"
-#include "nspr/prenv.h"
-
-#include "nsIFile.h"
-#include "nsTHashMap.h"
-#include "nsTHashSet.h"
-#include "nsPrintfCString.h"
+#include "mozilla/WindowsVersion.h"
 #include "nsReadableUtils.h"
 #include "nsString.h"
-#include "nsTHashtable.h"
-#include "nsUnicharUtils.h"
+#include "nsTHashSet.h"
 #include "nsWindowsHelpers.h"
-#include "nsWinUtils.h"
 
 #include "NtUndoc.h"
-
-#if defined(UIA_LOGGING)
-
-#  define LOG_ERROR(FuncName)                                       \
-    {                                                               \
-      DWORD err = ::GetLastError();                                 \
-      nsPrintfCString msg(#FuncName " failed with code %u\n", err); \
-      ::OutputDebugStringA(msg.get());                              \
-    }
-
-#else
-
-#  define LOG_ERROR(FuncName)
-
-#endif  // defined(UIA_LOGGING)
 
 using namespace mozilla;
 
 struct ByteArrayDeleter {
-  void operator()(void* aBuf) { delete[] reinterpret_cast<char*>(aBuf); }
+  void operator()(void* aBuf) { delete[] reinterpret_cast<std::byte*>(aBuf); }
 };
 
 typedef UniquePtr<OBJECT_DIRECTORY_INFORMATION, ByteArrayDeleter> ObjDirInfoPtr;
@@ -86,7 +61,7 @@ static bool FindNamedObject(const ComparatorFnT& aComparator) {
 
   ULONG objDirInfoBufLen = 1024 * sizeof(OBJECT_DIRECTORY_INFORMATION);
   ObjDirInfoPtr objDirInfo(reinterpret_cast<OBJECT_DIRECTORY_INFORMATION*>(
-      new char[objDirInfoBufLen]));
+      new std::byte[objDirInfoBufLen]));
 
   // Now query that directory object for every named object that it contains.
 
@@ -105,7 +80,7 @@ static bool FindNamedObject(const ComparatorFnT& aComparator) {
       // This case only occurs on 32-bit builds running atop WOW64.
       // (See https://bugzilla.mozilla.org/show_bug.cgi?id=1423999#c3)
       objDirInfo.reset(reinterpret_cast<OBJECT_DIRECTORY_INFORMATION*>(
-          new char[returnedLen]));
+          new std::byte[returnedLen]));
       objDirInfoBufLen = returnedLen;
       continue;
     } else if (!NT_SUCCESS(ntStatus)) {
@@ -137,208 +112,231 @@ static bool FindNamedObject(const ComparatorFnT& aComparator) {
   return false;
 }
 
-static const char* gBlockedUiaClients[] = {"osk.exe"};
-
-static bool ShouldBlockUIAClient(nsIFile* aClientExe) {
-  if (PR_GetEnv("MOZ_DISABLE_ACCESSIBLE_BLOCKLIST")) {
-    return false;
-  }
-
-  nsAutoString leafName;
-  nsresult rv = aClientExe->GetLeafName(leafName);
-  if (NS_FAILED(rv)) {
-    return false;
-  }
-
-  for (size_t index = 0, len = ArrayLength(gBlockedUiaClients); index < len;
-       ++index) {
-    if (leafName.EqualsIgnoreCase(gBlockedUiaClients[index])) {
-      return true;
-    }
-  }
-
-  return false;
-}
-
-namespace mozilla {
-namespace a11y {
-
-Maybe<DWORD> Compatibility::sUiaRemotePid;
-
-Maybe<bool> Compatibility::OnUIAMessage(WPARAM aWParam, LPARAM aLParam) {
-  auto clearUiaRemotePid = MakeScopeExit([]() { sUiaRemotePid = Nothing(); });
-
-  Telemetry::AutoTimer<Telemetry::A11Y_UIA_DETECTION_TIMING_MS> timer;
-
-  // UIA creates a section containing the substring "HOOK_SHMEM_"
-  constexpr auto kStrHookShmem = u"HOOK_SHMEM_"_ns;
-
-  // The section name always ends with this suffix, which is derived from the
-  // current thread id and the UIA message's WPARAM and LPARAM.
-  nsAutoString partialSectionSuffix;
-  partialSectionSuffix.AppendPrintf("_%08lx_%08" PRIxLPTR "_%08zx",
-                                    ::GetCurrentThreadId(), aLParam, aWParam);
-
-  // Find any named Section that matches the naming convention of the UIA shared
-  // memory.
-  nsAutoHandle section;
-  auto comparator = [&](const nsDependentSubstring& aName,
-                        const nsDependentSubstring& aType) -> bool {
-    if (aType.Equals(u"Section"_ns) && FindInReadable(kStrHookShmem, aName) &&
-        StringEndsWith(aName, partialSectionSuffix)) {
-      section.own(::OpenFileMapping(GENERIC_READ, FALSE,
-                                    PromiseFlatString(aName).get()));
-      return false;
-    }
-
-    return true;
-  };
-
-  if (!FindNamedObject(comparator) || !section) {
-    return Nothing();
-  }
-
+// ComparatorFnT returns true to continue searching, or else false to indicate
+// search completion.
+template <typename ComparatorFnT>
+static bool FindHandle(const ComparatorFnT& aComparator) {
   NTSTATUS ntStatus;
-
   // First we must query for a list of all the open handles in the system.
-  UniquePtr<char[]> handleInfoBuf;
+  UniquePtr<std::byte[]> handleInfoBuf;
   ULONG handleInfoBufLen = sizeof(SYSTEM_HANDLE_INFORMATION_EX) +
                            1024 * sizeof(SYSTEM_HANDLE_TABLE_ENTRY_INFO_EX);
-
   // We must query for handle information in a loop, since we are effectively
   // asking the kernel to take a snapshot of all the handles on the system;
   // the size of the required buffer may fluctuate between successive calls.
   while (true) {
     // These allocations can be hundreds of megabytes on some computers, so
     // we should use fallible new here.
-    handleInfoBuf = MakeUniqueFallible<char[]>(handleInfoBufLen);
+    handleInfoBuf = MakeUniqueFallible<std::byte[]>(handleInfoBufLen);
     if (!handleInfoBuf) {
-      return Nothing();
+      return false;
     }
-
     ntStatus = ::NtQuerySystemInformation(
         (SYSTEM_INFORMATION_CLASS)SystemExtendedHandleInformation,
         handleInfoBuf.get(), handleInfoBufLen, &handleInfoBufLen);
     if (ntStatus == STATUS_INFO_LENGTH_MISMATCH) {
       continue;
     }
-
     if (!NT_SUCCESS(ntStatus)) {
-      return Nothing();
+      return false;
     }
-
     break;
   }
 
+  auto handleInfo =
+      reinterpret_cast<SYSTEM_HANDLE_INFORMATION_EX*>(handleInfoBuf.get());
+  for (ULONG index = 0; index < handleInfo->mHandleCount; ++index) {
+    SYSTEM_HANDLE_TABLE_ENTRY_INFO_EX& info = handleInfo->mHandles[index];
+    HANDLE handle = reinterpret_cast<HANDLE>(info.mHandle);
+    if (!aComparator(info, handle)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+static void GetUiaClientPidsWin11(nsTArray<DWORD>& aPids) {
+  const DWORD ourPid = ::GetCurrentProcessId();
+  FindHandle([&](auto aInfo, auto aHandle) {
+    if (aInfo.mPid != ourPid) {
+      // We're only interested in handles in our own process.
+      return true;
+    }
+    // Get the name of the handle.
+    ULONG objNameBufLen;
+    NTSTATUS ntStatus = ::NtQueryObject(
+        aHandle, (OBJECT_INFORMATION_CLASS)ObjectNameInformation, nullptr, 0,
+        &objNameBufLen);
+    if (ntStatus != STATUS_INFO_LENGTH_MISMATCH) {
+      return true;
+    }
+    auto objNameBuf = MakeUnique<std::byte[]>(objNameBufLen);
+    ntStatus = ::NtQueryObject(aHandle,
+                               (OBJECT_INFORMATION_CLASS)ObjectNameInformation,
+                               objNameBuf.get(), objNameBufLen, &objNameBufLen);
+    if (!NT_SUCCESS(ntStatus)) {
+      return true;
+    }
+    auto objNameInfo =
+        reinterpret_cast<OBJECT_NAME_INFORMATION*>(objNameBuf.get());
+    if (!objNameInfo->Name.Length) {
+      return true;
+    }
+    nsDependentString objName(objNameInfo->Name.Buffer,
+                              objNameInfo->Name.Length / sizeof(wchar_t));
+
+    // UIA creates a named pipe between the client and server processes. Find
+    // our handle to that pipe (if any).
+    if (StringBeginsWith(objName, u"\\Device\\NamedPipe\\UIA_PIPE_"_ns)) {
+      // Get the process id of the remote end. Counter-intuitively, for this
+      // pipe, we're the client and the remote process is the server.
+      ULONG pid = 0;
+      ::GetNamedPipeServerProcessId(aHandle, &pid);
+      aPids.AppendElement(pid);
+    }
+    return true;
+  });
+}
+
+static DWORD GetUiaClientPidWin10() {
+  // UIA creates a section of the form "HOOK_SHMEM_%08lx_%08lx_%08lx_%08lx"
+  constexpr auto kStrHookShmem = u"HOOK_SHMEM_"_ns;
+  // The second %08lx is the thread id.
+  nsAutoString sectionThread;
+  sectionThread.AppendPrintf("_%08lx_", ::GetCurrentThreadId());
+  // This is the number of characters from the end of the section name where
+  // the sectionThread substring begins.
+  constexpr size_t sectionThreadRPos = 27;
+  // This is the length of sectionThread.
+  constexpr size_t sectionThreadLen = 10;
+  // Find any named Section that matches the naming convention of the UIA shared
+  // memory. There can only be one of these at a time, since this only exists
+  // while UIA is processing a request and it can only process a single request
+  // on a single thread.
+  nsAutoHandle section;
+  auto objectComparator = [&](const nsDependentSubstring& aName,
+                              const nsDependentSubstring& aType) -> bool {
+    if (aType.Equals(u"Section"_ns) && FindInReadable(kStrHookShmem, aName) &&
+        Substring(aName, aName.Length() - sectionThreadRPos,
+                  sectionThreadLen) == sectionThread) {
+      // Get a handle to this section so we can get its kernel object and
+      // use that to find the handle for this section in the remote process.
+      section.own(::OpenFileMapping(GENERIC_READ, FALSE,
+                                    PromiseFlatString(aName).get()));
+      return false;
+    }
+    return true;
+  };
+  if (!FindNamedObject(objectComparator) || !section) {
+    return 0;
+  }
+
+  // Now, find the kernel object associated with our section, the handle in the
+  // remote process associated with that kernel object and thus the remote
+  // process id.
+  NTSTATUS ntStatus;
   const DWORD ourPid = ::GetCurrentProcessId();
   Maybe<PVOID> kernelObject;
   static Maybe<USHORT> sectionObjTypeIndex;
   nsTHashSet<uint32_t> nonSectionObjTypes;
   nsTHashMap<nsVoidPtrHashKey, DWORD> objMap;
-
-  auto handleInfo =
-      reinterpret_cast<SYSTEM_HANDLE_INFORMATION_EX*>(handleInfoBuf.get());
-
-  for (ULONG index = 0; index < handleInfo->mHandleCount; ++index) {
-    SYSTEM_HANDLE_TABLE_ENTRY_INFO_EX& curHandle = handleInfo->mHandles[index];
-
-    HANDLE handle = reinterpret_cast<HANDLE>(curHandle.mHandle);
-
-    // The mapping of the curHandle.mObjectTypeIndex field depends on the
+  DWORD remotePid = 0;
+  FindHandle([&](auto aInfo, auto aHandle) {
+    // The mapping of the aInfo.mObjectTypeIndex field depends on the
     // underlying OS kernel. As we scan through the handle list, we record the
     // type indices such that we may use those values to skip over handles that
     // refer to non-section objects.
     if (sectionObjTypeIndex) {
       // If we know the type index for Sections, that's the fastest check...
-      if (sectionObjTypeIndex.value() != curHandle.mObjectTypeIndex) {
+      if (sectionObjTypeIndex.value() != aInfo.mObjectTypeIndex) {
         // Not a section
-        continue;
+        return true;
       }
     } else if (nonSectionObjTypes.Contains(
-                   static_cast<uint32_t>(curHandle.mObjectTypeIndex))) {
+                   static_cast<uint32_t>(aInfo.mObjectTypeIndex))) {
       // Otherwise we check whether or not the object type is definitely _not_
       // a Section...
-      continue;
-    } else if (ourPid == curHandle.mPid) {
+      return true;
+    } else if (ourPid == aInfo.mPid) {
       // Otherwise we need to issue some system calls to find out the object
       // type corresponding to the current handle's type index.
       ULONG objTypeBufLen;
-      ntStatus = ::NtQueryObject(handle, ObjectTypeInformation, nullptr, 0,
+      ntStatus = ::NtQueryObject(aHandle, ObjectTypeInformation, nullptr, 0,
                                  &objTypeBufLen);
       if (ntStatus != STATUS_INFO_LENGTH_MISMATCH) {
-        continue;
+        return true;
       }
-
-      auto objTypeBuf = MakeUnique<char[]>(objTypeBufLen);
+      auto objTypeBuf = MakeUnique<std::byte[]>(objTypeBufLen);
       ntStatus =
-          ::NtQueryObject(handle, ObjectTypeInformation, objTypeBuf.get(),
+          ::NtQueryObject(aHandle, ObjectTypeInformation, objTypeBuf.get(),
                           objTypeBufLen, &objTypeBufLen);
       if (!NT_SUCCESS(ntStatus)) {
-        continue;
+        return true;
       }
-
       auto objType =
           reinterpret_cast<PUBLIC_OBJECT_TYPE_INFORMATION*>(objTypeBuf.get());
-
       // Now we check whether the object's type name matches "Section"
       nsDependentSubstring objTypeName(
           objType->TypeName.Buffer, objType->TypeName.Length / sizeof(wchar_t));
       if (!objTypeName.Equals(u"Section"_ns)) {
         nonSectionObjTypes.Insert(
-            static_cast<uint32_t>(curHandle.mObjectTypeIndex));
-        continue;
+            static_cast<uint32_t>(aInfo.mObjectTypeIndex));
+        return true;
       }
-
-      sectionObjTypeIndex = Some(curHandle.mObjectTypeIndex);
+      sectionObjTypeIndex = Some(aInfo.mObjectTypeIndex);
     }
 
-    // At this point we know that curHandle references a Section object.
+    // At this point we know that aInfo references a Section object.
     // Now we can do some actual tests on it.
-
-    if (ourPid != curHandle.mPid) {
-      if (kernelObject && kernelObject.value() == curHandle.mObject) {
+    if (ourPid != aInfo.mPid) {
+      if (kernelObject && kernelObject.value() == aInfo.mObject) {
         // The kernel objects match -- we have found the remote pid!
-        sUiaRemotePid = Some(curHandle.mPid);
-        break;
+        remotePid = aInfo.mPid;
+        return false;
       }
-
       // An object that is not ours. Since we do not yet know which kernel
       // object we're interested in, we'll save the current object for later.
-      objMap.InsertOrUpdate(curHandle.mObject, curHandle.mPid);
-    } else if (handle == section.get()) {
+      objMap.InsertOrUpdate(aInfo.mObject, aInfo.mPid);
+    } else if (aHandle == section.get()) {
       // This is the file mapping that we opened above. We save this mObject
       // in order to compare to Section objects opened by other processes.
-      kernelObject = Some(curHandle.mObject);
+      kernelObject = Some(aInfo.mObject);
     }
-  }
+    return true;
+  });
 
+  if (remotePid) {
+    return remotePid;
+  }
   if (!kernelObject) {
-    return Nothing();
+    return 0;
   }
 
-  if (!sUiaRemotePid) {
-    // We found kernelObject *after* we saw the remote process's copy. Now we
-    // must look it up in objMap.
-    DWORD pid;
-    if (objMap.Get(kernelObject.value(), &pid)) {
-      sUiaRemotePid = Some(pid);
+  // If we reach here, we found kernelObject *after* we saw the remote process's
+  // copy. Now we must look it up in objMap.
+  if (objMap.Get(kernelObject.value(), &remotePid)) {
+    return remotePid;
+  }
+
+  return 0;
+}
+
+namespace mozilla {
+namespace a11y {
+
+void Compatibility::GetUiaClientPids(nsTArray<DWORD>& aPids) {
+  if (!::GetModuleHandleW(L"uiautomationcore.dll")) {
+    // UIAutomationCore isn't loaded, so there is no UIA client.
+    return;
+  }
+  Telemetry::AutoTimer<Telemetry::A11Y_UIA_DETECTION_TIMING_MS> timer;
+  if (IsWin11OrLater()) {
+    GetUiaClientPidsWin11(aPids);
+  } else {
+    if (DWORD pid = GetUiaClientPidWin10()) {
+      aPids.AppendElement(pid);
     }
   }
-
-  if (!sUiaRemotePid) {
-    return Nothing();
-  }
-
-  a11y::SetInstantiator(sUiaRemotePid.value());
-
-  // Block if necessary
-  nsCOMPtr<nsIFile> instantiator;
-  if (a11y::GetInstantiator(getter_AddRefs(instantiator)) &&
-      ShouldBlockUIAClient(instantiator)) {
-    return Some(false);
-  }
-
-  return Some(true);
 }
 
 }  // namespace a11y

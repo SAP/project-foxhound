@@ -33,7 +33,6 @@ import {
   getFirstSourceActorForGeneratedSource,
   getSourceByURL,
   getSelectedLocation,
-  getThreadContext,
 } from "../../selectors";
 
 import { selectSource } from "./select";
@@ -232,7 +231,7 @@ async function prettyPrintHtmlFile({
   return prettyPrintWorkerResult;
 }
 
-function createPrettySource(cx, source) {
+function createPrettySource(source, sourceActor) {
   return async ({ dispatch, sourceMapLoader, getState }) => {
     const url = getPrettyOriginalSourceURL(source);
     const id = generatedToOriginalId(source.id, url);
@@ -240,14 +239,14 @@ function createPrettySource(cx, source) {
 
     dispatch({
       type: "ADD_ORIGINAL_SOURCES",
-      cx,
       originalSources: [prettySource],
+      generatedSourceActor: sourceActor,
     });
     return prettySource;
   };
 }
 
-function selectPrettyLocation(cx, prettySource) {
+function selectPrettyLocation(prettySource) {
   return async thunkArgs => {
     const { dispatch, getState } = thunkArgs;
     let location = getSelectedLocation(getState());
@@ -257,19 +256,18 @@ function selectPrettyLocation(cx, prettySource) {
     if (
       location &&
       location.line >= 1 &&
-      location.sourceId == originalToGeneratedId(prettySource.id)
+      location.source.id == originalToGeneratedId(prettySource.id)
     ) {
       location = await getOriginalLocation(location, thunkArgs);
 
       return dispatch(
         selectSpecificLocation(
-          cx,
           createLocation({ ...location, source: prettySource })
         )
       );
     }
 
-    return dispatch(selectSource(cx, prettySource));
+    return dispatch(selectSource(prettySource));
   };
 }
 
@@ -277,13 +275,12 @@ function selectPrettyLocation(cx, prettySource) {
  * Toggle the pretty printing of a source's text.
  * Nothing will happen for non-javascript files.
  *
- * @param Object cx
  * @param String sourceId
  *        The source ID for the minified/generated source object.
  * @returns Promise
  *          A promise that resolves to the Pretty print/original source object.
  */
-export function togglePrettyPrint(cx, sourceId) {
+export function togglePrettyPrint(sourceId) {
   return async ({ dispatch, getState }) => {
     const source = getSource(getState(), sourceId);
     if (!source) {
@@ -304,21 +301,23 @@ export function togglePrettyPrint(cx, sourceId) {
       source.id
     );
 
-    await dispatch(loadGeneratedSourceText({ cx, sourceActor }));
+    await dispatch(loadGeneratedSourceText(sourceActor));
 
     const url = getPrettySourceURL(source.url);
     const prettySource = getSourceByURL(getState(), url);
 
     if (prettySource) {
-      return dispatch(selectPrettyLocation(cx, prettySource));
+      return dispatch(selectPrettyLocation(prettySource));
     }
 
-    const newPrettySource = await dispatch(createPrettySource(cx, source));
+    const newPrettySource = await dispatch(
+      createPrettySource(source, sourceActor)
+    );
 
     // Force loading the pretty source/original text.
     // This will end up calling prettyPrintSource() of this module, and
     // more importantly, will populate the sourceMapLoader, which is used by selectPrettyLocation.
-    await dispatch(loadOriginalSourceText({ cx, source: newPrettySource }));
+    await dispatch(loadOriginalSourceText(newPrettySource));
     // Select the pretty/original source based on the location we may
     // have had against the minified/generated source.
     // This uses source map to map locations.
@@ -326,13 +325,12 @@ export function togglePrettyPrint(cx, sourceId) {
     // * opening tabs
     // * fetching symbols/inline scope
     // * fetching breakable lines
-    await dispatch(selectPrettyLocation(cx, newPrettySource));
+    await dispatch(selectPrettyLocation(newPrettySource));
 
-    const threadcx = getThreadContext(getState());
     // Update frames to the new pretty/original source (in case we were paused)
-    await dispatch(mapFrames(threadcx));
+    await dispatch(mapFrames(sourceActor.thread));
     // Update breakpoints locations to the new pretty/original source
-    await dispatch(updateBreakpointsForNewPrettyPrintedSource(cx, sourceId));
+    await dispatch(updateBreakpointsForNewPrettyPrintedSource(source));
 
     return newPrettySource;
   };

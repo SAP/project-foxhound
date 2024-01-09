@@ -64,13 +64,13 @@ already_AddRefed<Highlight> Highlight::Constructor(
 }
 
 void Highlight::AddToHighlightRegistry(HighlightRegistry& aHighlightRegistry,
-                                       const nsAtom& aHighlightName) {
+                                       nsAtom& aHighlightName) {
   mHighlightRegistries.LookupOrInsert(&aHighlightRegistry)
       .Insert(&aHighlightName);
 }
 
 void Highlight::RemoveFromHighlightRegistry(
-    HighlightRegistry& aHighlightRegistry, const nsAtom& aHighlightName) {
+    HighlightRegistry& aHighlightRegistry, nsAtom& aHighlightName) {
   if (auto entry = mHighlightRegistries.Lookup(&aHighlightRegistry)) {
     auto& highlightNames = entry.Data();
     highlightNames.Remove(&aHighlightName);
@@ -81,14 +81,13 @@ void Highlight::RemoveFromHighlightRegistry(
 }
 
 already_AddRefed<Selection> Highlight::CreateHighlightSelection(
-    const nsAtom* aHighlightName, nsFrameSelection* aFrameSelection) const {
+    nsAtom* aHighlightName, nsFrameSelection* aFrameSelection) {
   MOZ_ASSERT(aFrameSelection);
   MOZ_ASSERT(aFrameSelection->GetPresShell());
   RefPtr<Selection> selection =
       MakeRefPtr<Selection>(SelectionType::eHighlight, aFrameSelection);
-  selection->SetHighlightName(aHighlightName);
+  selection->SetHighlightSelectionData({aHighlightName, this});
   AutoFrameSelectionBatcher selectionBatcher(__FUNCTION__);
-  selectionBatcher.AddFrameSelection(aFrameSelection);
   for (const RefPtr<AbstractRange>& range : mRanges) {
     if (range->GetComposedDocOfContainers() ==
         aFrameSelection->GetPresShell()->GetDocument()) {

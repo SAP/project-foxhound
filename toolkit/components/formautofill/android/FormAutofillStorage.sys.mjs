@@ -6,10 +6,6 @@
  * Implements an interface of the storage of Form Autofill for GeckoView.
  */
 
-// We expose a singleton from this module. Some tests may import the
-// constructor via a backstage pass.
-import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
-
 import {
   FormAutofillStorageBase,
   CreditCardsBase,
@@ -19,10 +15,10 @@ import { JSONFile } from "resource://gre/modules/JSONFile.sys.mjs";
 
 const lazy = {};
 
-XPCOMUtils.defineLazyModuleGetters(lazy, {
-  Address: "resource://gre/modules/GeckoViewAutocomplete.jsm",
-  CreditCard: "resource://gre/modules/GeckoViewAutocomplete.jsm",
-  GeckoViewAutocomplete: "resource://gre/modules/GeckoViewAutocomplete.jsm",
+ChromeUtils.defineESModuleGetters(lazy, {
+  Address: "resource://gre/modules/GeckoViewAutocomplete.sys.mjs",
+  CreditCard: "resource://gre/modules/GeckoViewAutocomplete.sys.mjs",
+  GeckoViewAutocomplete: "resource://gre/modules/GeckoViewAutocomplete.sys.mjs",
 });
 
 class GeckoViewStorage extends JSONFile {
@@ -124,10 +120,6 @@ class Addresses extends AddressesBase {
   }
 
   async findDuplicateGUID(remoteRecord) {
-    throw Components.Exception("", Cr.NS_ERROR_NOT_IMPLEMENTED);
-  }
-
-  async mergeToStorage(targetRecord, strict = false) {
     throw Components.Exception("", Cr.NS_ERROR_NOT_IMPLEMENTED);
   }
 }
@@ -233,10 +225,6 @@ class CreditCards extends CreditCardsBase {
   }
 
   async findDuplicateGUID(remoteRecord) {
-    throw Components.Exception("", Cr.NS_ERROR_NOT_IMPLEMENTED);
-  }
-
-  async mergeToStorage(targetRecord, strict = false) {
     throw Components.Exception("", Cr.NS_ERROR_NOT_IMPLEMENTED);
   }
 }

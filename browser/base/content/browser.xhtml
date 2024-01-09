@@ -26,9 +26,6 @@
 <?xml-stylesheet href="chrome://browser/content/places/places.css" type="text/css"?>
 <?xml-stylesheet href="chrome://browser/content/usercontext/usercontext.css" type="text/css"?>
 <?xml-stylesheet href="chrome://browser/skin/" type="text/css"?>
-#ifdef XP_WIN
-<?xml-stylesheet href="chrome://browser/skin/browser-aero.css" type="text/css"?>
-#endif
 
 <?xml-stylesheet href="chrome://browser/skin/controlcenter/panel.css" type="text/css"?>
 <?xml-stylesheet href="chrome://browser/skin/customizableui/panelUI.css" type="text/css"?>
@@ -72,6 +69,7 @@
   <link rel="localization" href="browser/browserContext.ftl"/>
   <link rel="localization" href="browser/browserSets.ftl"/>
   <link rel="localization" href="browser/firefoxView.ftl"/>
+  <link rel="localization" href="browser/identityCredentialNotification.ftl" />
   <link rel="localization" href="browser/menubar.ftl"/>
   <link rel="localization" href="browser/originControls.ftl"/>
   <link rel="localization" href="browser/panelUI.ftl"/>
@@ -90,10 +88,11 @@
   <link rel="localization" href="toolkit/global/textActions.ftl"/>
   <link rel="localization" href="toolkit/printing/printUI.ftl"/>
   <!-- Untranslated FTL files -->
-  <link rel="localization" href="preview/firefoxSuggest.ftl" />
-  <link rel="localization" href="preview/identityCredentialNotification.ftl" />
+  <link rel="localization" href="preview/enUS-searchFeatures.ftl" />
   <link rel="localization" href="preview/interventions.ftl" />
-  <link rel="localization" href="preview/stripOnShare.ftl" />
+#ifdef NIGHTLY_BUILD
+  <link rel="localization" href="preview/shopping.ftl"/>
+#endif
 
   <title data-l10n-id="browser-main-window-title"></title>
 
@@ -122,6 +121,9 @@
   Services.scriptloader.loadSubScript("chrome://browser/content/places/places-menupopup.js", this);
   Services.scriptloader.loadSubScript("chrome://browser/content/search/autocomplete-popup.js", this);
   Services.scriptloader.loadSubScript("chrome://browser/content/search/searchbar.js", this);
+  if (AppConstants.NIGHTLY_BUILD) {
+    Services.scriptloader.loadSubScript("chrome://browser/content/shopping/shopping-sidebar.js", this);
+  }
 
   window.onload = gBrowserInit.onLoad.bind(gBrowserInit);
   window.onunload = gBrowserInit.onUnload.bind(gBrowserInit);

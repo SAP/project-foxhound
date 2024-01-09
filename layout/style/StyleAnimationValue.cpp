@@ -87,9 +87,9 @@ const StyleTransform& AnimationValue::GetTransformProperty() const {
   return *Servo_AnimationValue_GetTransform(mServo);
 }
 
-const mozilla::StyleOffsetPath& AnimationValue::GetOffsetPathProperty() const {
+void AnimationValue::GetOffsetPathProperty(StyleOffsetPath& aOffsetPath) const {
   MOZ_ASSERT(mServo);
-  return *Servo_AnimationValue_GetOffsetPath(mServo);
+  Servo_AnimationValue_GetOffsetPath(mServo, &aOffsetPath);
 }
 
 const mozilla::LengthPercentage& AnimationValue::GetOffsetDistanceProperty()
@@ -108,6 +108,16 @@ const mozilla::StylePositionOrAuto& AnimationValue::GetOffsetAnchorProperty()
     const {
   MOZ_ASSERT(mServo);
   return *Servo_AnimationValue_GetOffsetAnchor(mServo);
+}
+
+const mozilla::StyleOffsetPosition& AnimationValue::GetOffsetPositionProperty()
+    const {
+  MOZ_ASSERT(mServo);
+  return *Servo_AnimationValue_GetOffsetPosition(mServo);
+}
+
+bool AnimationValue::IsOffsetPathUrl() const {
+  return mServo && Servo_AnimationValue_IsOffsetPathUrl(mServo);
 }
 
 MatrixScales AnimationValue::GetScaleValue(const nsIFrame* aFrame) const {
@@ -134,7 +144,7 @@ MatrixScales AnimationValue::GetScaleValue(const nsIFrame* aFrame) const {
   TransformReferenceBox refBox(aFrame);
   Matrix4x4 t =
       ReadTransforms(StyleTranslate::None(), StyleRotate::None(),
-                     StyleScale::None(), Nothing(), GetTransformProperty(),
+                     StyleScale::None(), nullptr, GetTransformProperty(),
                      refBox, aFrame->PresContext()->AppUnitsPerDevPixel());
   Matrix transform2d;
   bool canDraw2D = t.CanDraw2D(&transform2d);
@@ -202,7 +212,8 @@ AnimationValue AnimationValue::FromString(nsCSSPropertyID aProperty,
 
   RefPtr<StyleLockedDeclarationBlock> declarations =
       ServoCSSParser::ParseProperty(aProperty, aValue,
-                                    ServoCSSParser::GetParsingEnvironment(doc));
+                                    ServoCSSParser::GetParsingEnvironment(doc),
+                                    StyleParsingMode::DEFAULT);
 
   if (!declarations) {
     return result;
@@ -260,6 +271,10 @@ already_AddRefed<StyleAnimationValue> AnimationValue::FromAnimatable(
     case layers::Animatable::TStylePositionOrAuto:
       return Servo_AnimationValue_OffsetAnchor(
                  &aAnimatable.get_StylePositionOrAuto())
+          .Consume();
+    case layers::Animatable::TStyleOffsetPosition:
+      return Servo_AnimationValue_OffsetPosition(
+                 &aAnimatable.get_StyleOffsetPosition())
           .Consume();
     default:
       MOZ_ASSERT_UNREACHABLE("Unsupported type");

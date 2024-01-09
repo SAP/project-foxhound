@@ -37,9 +37,9 @@
 #include "ScopedGLHelpers.h"
 #ifdef MOZ_WIDGET_GTK
 #  include "mozilla/WidgetUtilsGtk.h"
+#  include "mozilla/widget/DMABufLibWrapper.h"
 #  ifdef MOZ_WAYLAND
 #    include "mozilla/widget/nsWaylandDisplay.h"
-#    include "mozilla/widget/DMABufLibWrapper.h"
 #  endif  // MOZ_WIDGET_GTK
 #  include <gdk/gdk.h>
 #endif  // MOZ_WAYLAND
@@ -163,7 +163,7 @@ static std::shared_ptr<EglDisplay> GetAndInitDisplay(
   return EglDisplay::Create(egl, display, false, aProofOfLock);
 }
 
-#ifdef MOZ_WAYLAND
+#ifdef MOZ_WIDGET_GTK
 static std::shared_ptr<EglDisplay> GetAndInitDeviceDisplay(
     GLLibraryEGL& egl, const StaticMutexAutoLock& aProofOfLock) {
   nsAutoCString drmRenderDevice(gfx::gfxVars::DrmRenderDevice());
@@ -447,17 +447,7 @@ bool GLLibraryEGL::Init(nsACString* const out_failureId) {
 
     do {
       // Windows 8.1+ has d3dcompiler_47.dll in the system directory.
-      // Try it first. Note that _46 will never be in the system
-      // directory. So there is no point trying _46 in the system
-      // directory.
-
       if (LoadLibrarySystem32(L"d3dcompiler_47.dll")) break;
-
-#  ifdef MOZ_D3DCOMPILER_VISTA_DLL
-      if (LoadLibraryForEGLOnWindows(NS_LITERAL_STRING_FROM_CSTRING(
-              MOZ_STRINGIFY(MOZ_D3DCOMPILER_VISTA_DLL))))
-        break;
-#  endif
 
       MOZ_ASSERT(false, "d3dcompiler DLL loading failed.");
     } while (false);
@@ -897,13 +887,15 @@ std::shared_ptr<EglDisplay> GLLibraryEGL::CreateDisplayLocked(
     }
   } else {
     void* nativeDisplay = EGL_DEFAULT_DISPLAY;
-#ifdef MOZ_WAYLAND
+#ifdef MOZ_WIDGET_GTK
     if (!gdk_display_get_default()) {
       ret = GetAndInitDeviceDisplay(*this, aProofOfLock);
       if (!ret) {
         ret = GetAndInitSurfacelessDisplay(*this, aProofOfLock);
       }
-    } else if (widget::GdkIsWaylandDisplay()) {
+    }
+#  ifdef MOZ_WAYLAND
+    else if (widget::GdkIsWaylandDisplay()) {
       // Wayland does not support EGL_DEFAULT_DISPLAY
       nativeDisplay = widget::WaylandDisplayGetWLDisplay();
       if (!nativeDisplay) {
@@ -911,6 +903,7 @@ std::shared_ptr<EglDisplay> GLLibraryEGL::CreateDisplayLocked(
         return nullptr;
       }
     }
+#  endif
 #endif
     if (!ret) {
       ret = GetAndInitDisplay(*this, nativeDisplay, aProofOfLock);

@@ -26,6 +26,7 @@
   --arrowpanel-dimmed: color-mix(in srgb, currentColor 17%, transparent);
   --arrowpanel-dimmed-further: color-mix(in srgb, currentColor 30%, transparent);
 
+  --panel-separator-color: color-mix(in srgb, currentColor 25%, transparent);
   --panel-disabled-color: color-mix(in srgb, currentColor 40%, transparent);
 
   --popup-notification-body-width: calc(31em - calc(2 * var(--arrowpanel-padding)));
@@ -49,9 +50,15 @@
 }
 
 @media (prefers-contrast) {
-  :root:not(:-moz-lwtheme) {
+  :root {
+    /* Reduce the opacity of disabled toolbar buttons in order to increase
+       contrast with the enabled state. */
     --toolbarbutton-disabled-opacity: 0.3;
 
+    --panel-separator-color: currentColor;
+  }
+
+  :root:not(:-moz-lwtheme) {
     --panel-disabled-color: GrayText;
   }
 }
@@ -143,7 +150,7 @@ xul|label[disabled="true"] {
 
 .text-link,
 a {
-  color: -moz-nativehyperlinktext;
+  color: var(--link-color);
   cursor: pointer;
   text-decoration: underline;
 }
@@ -154,10 +161,7 @@ a {
 
 :is(a, .text-link):focus-visible {
   outline: var(--focus-outline);
-  /* Not using --focus-outline-offset here because that's intended for elements
-     with a background, and we only want a slight offset here while not
-     overlapping adjacent text. */
-  outline-offset: 1px;
+  outline-offset: var(--link-focus-outline-offset);
   border-radius: 1px;
 }
 

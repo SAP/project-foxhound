@@ -160,13 +160,13 @@ wix-3.14.0:
         sha256: 923892298f37514622c58cbbd9c2cadf2822d9bb53df8ee83aaeb05280777611
         size: 34664320
 
-zlib-1.2.13:
-    description: zlib 1.2.13 source code
+zlib-1.3:
+    description: zlib 1.3 source code
     fetch:
         type: static-url
-        url: https://zlib.net/zlib-1.2.13.tar.gz
-        sha256: b3a24de97a8fdbc835b9833169501030b8977031bcb54b3b3ac13740f846ab30
-        size: 1497445
+        url: https://zlib.net/zlib-1.3.tar.gz
+        sha256: ff0ba4c292013dbc27530b3a81e1f9a813cd39de01ca5e0f8bf355702efa593e
+        size: 1495873
         gpg-signature:
             sig-url: "{url}.asc"
             key-path: build/unix/build-gcc/5ED46A6721D365587791E2AA783FCD8E58BCAFBA.key
@@ -300,8 +300,8 @@ sccache:
     fetch:
         type: git
         repo: https://github.com/mozilla/sccache
-        # 0.4.1 release
-        revision: d0d1beadd2739653ed878055215c0d9b7decb3b9
+        # 0.5.4 release + a few patches
+        revision: a21e9f89e161d38cb078fcdb42cdcff1d7c0356b
 
 fxc2:
     description: fxc2 source code
@@ -316,6 +316,15 @@ mingw-w64:
         type: git
         repo: https://git.code.sf.net/p/mingw-w64/mingw-w64
         revision: f9500e2d85b9400c0982518663660a127e1dc61a
+
+mingw-w64-trunk:
+    description: mingw-w64 master branch source code
+    attributes:
+        cached_task: false
+    fetch:
+        type: git
+        repo: https://git.code.sf.net/p/mingw-w64/mingw-w64
+        branch: master
 
 llvm-mingw:
     description: llvm-mingw source code
@@ -346,11 +355,18 @@ clang-14:
         revision: 4bc1d0b51c8e488d78ab69c8b19cfbcd1f7db6a4
 
 clang-16:
-    description: clang 16.0.4 source code
+    description: clang 16.0.6 source code
     fetch:
         type: git
         repo: https://github.com/llvm/llvm-project
-        revision: ae42196bc493ffe877a7e3dff8be32035dea4d07
+        revision: 7cbf1a2591520c2491aa35339f227775f4d3adf6
+
+clang-17:
+    description: clang 17.0.0-rc2 source code
+    fetch:
+        type: git
+        repo: https://github.com/llvm/llvm-project
+        revision: edc0ee3ccad416ab186202bf928ea64e3a7987b7
 
 clang-trunk:
     description: clang main branch source code
@@ -364,13 +380,13 @@ clang-trunk:
 # We build stable rust from source so the resulting compiler acts as a nightly
 # rust compiler, allowing to use unstable features like -Zbuild-std and
 # sanitizers.
-rust-1.69.0:
-    description: Rust 1.69.0 source code
+rust-1.71.0:
+    description: Rust 1.71.0 source code
     fetch:
         type: git
         include-dot-git: true
         repo: https://github.com/rust-lang/rust/
-        revision: 84c898d65adf2f39a5a98507f1fe0ce10a2b8dbc
+        revision: 8ede3aae28fe6e4d52b38157d7bfe0d3bceef225
 
 wasi-sdk:
     description: wasi-sdk-20 source code
@@ -419,7 +435,7 @@ fix-stacks:
     fetch:
         type: git
         repo: https://github.com/mozilla/fix-stacks/
-        revision: cfa7048e437c6778b066e7ecb5ce834eb8c3efe7
+        revision: 1fb1bcc8cb4dd65fbe342853954651563a0a88e7
 
 winchecksec:
     description: winchecksec source code
@@ -585,26 +601,26 @@ pkgconf:
         strip-components: 1
         add-prefix: pkgconf/
 
-afl-2.5:
-    description: AFL 2.5x source
+afl-plus-plus-4.0:
+    description: AFL++ 4.0x source
     fetch:
         type: git
-        repo: https://github.com/google/AFL
-        revision: e75894a889fe854c02b9435186bd1e2927d6d490
+        repo: https://github.com/AFLplusplus/AFLplusplus
+        revision: 497ff5ff7962ee492fef315227366d658c637ab2
 
 cargo-vet:
     description: cargo-vet source
     fetch:
         type: git
         repo: https://github.com/mozilla/cargo-vet
-        revision: 088586cdf13a9959ce9ca4e1321203b34e467656
+        revision: 8c8b6d7a5237544c613de616a031586587f49a42
 
 symbol-scrapers:
     description: Linux distribution symbol scraper source
     fetch:
         type: git
         repo: http://github.com/mozilla/symbol-scrapers
-        revision: f61d24345d27760a5c2dc8f9370368bdaa9a4e82
+        revision: 1f82450ec821ce4466501b771cc93004968a4f66
 
 cpython-3.8.10:
     description: cpython 3.8.10 source code

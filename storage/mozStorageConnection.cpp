@@ -4,11 +4,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "nsError.h"
 #include "nsThreadUtils.h"
 #include "nsIFile.h"
 #include "nsIFileURL.h"
 #include "nsIXPConnect.h"
 #include "mozilla/AppShutdown.h"
+#include "mozilla/CheckedInt.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/Mutex.h"
 #include "mozilla/CondVar.h"
@@ -37,10 +39,13 @@
 #include "FileSystemModule.h"
 #include "mozStorageHelper.h"
 
+#include "mozilla/Assertions.h"
 #include "mozilla/Logging.h"
 #include "mozilla/Printf.h"
 #include "mozilla/ProfilerLabels.h"
+#include "mozilla/RefPtr.h"
 #include "nsProxyRelease.h"
+#include "nsStringFwd.h"
 #include "nsURLHelper.h"
 
 #define MIN_AVAILABLE_BYTES_PER_CHUNKED_GROWTH 524288000  // 500 MiB
@@ -134,15 +139,22 @@ int sqlite3_T_double(sqlite3_context* aCtx, double aValue) {
 }
 
 int sqlite3_T_text(sqlite3_context* aCtx, const nsCString& aValue) {
-  ::sqlite3_result_text(aCtx, aValue.get(), aValue.Length(), SQLITE_TRANSIENT);
+  CheckedInt<int32_t> length(aValue.Length());
+  if (!length.isValid()) {
+    return SQLITE_MISUSE;
+  }
+  ::sqlite3_result_text(aCtx, aValue.get(), length.value(), SQLITE_TRANSIENT);
   return SQLITE_OK;
 }
 
 int sqlite3_T_text16(sqlite3_context* aCtx, const nsString& aValue) {
-  ::sqlite3_result_text16(
-      aCtx, aValue.get(),
-      aValue.Length() * sizeof(char16_t),  // Number of bytes.
-      SQLITE_TRANSIENT);
+  CheckedInt<int32_t> n_bytes =
+      CheckedInt<int32_t>(aValue.Length()) * sizeof(char16_t);
+  if (!n_bytes.isValid()) {
+    return SQLITE_MISUSE;
+  }
+  ::sqlite3_result_text16(aCtx, aValue.get(), n_bytes.value(),
+                          SQLITE_TRANSIENT);
   return SQLITE_OK;
 }
 
@@ -572,7 +584,8 @@ class AsyncVacuumEvent final : public Runnable {
 
 Connection::Connection(Service* aService, int aFlags,
                        ConnectionOperation aSupportedOperations,
-                       bool aInterruptible, bool aIgnoreLockingMode)
+                       const nsCString& aTelemetryFilename, bool aInterruptible,
+                       bool aIgnoreLockingMode)
     : sharedAsyncExecutionMutex("Connection::sharedAsyncExecutionMutex"),
       sharedDBMutex("Connection::sharedDBMutex"),
       eventTargetOpenedOn(WrapNotNull(GetCurrentSerialEventTarget())),
@@ -594,6 +607,9 @@ Connection::Connection(Service* aService, int aFlags,
   MOZ_ASSERT(!mIgnoreLockingMode || mFlags & SQLITE_OPEN_READONLY,
              "Can't ignore locking for a non-readonly connection!");
   mStorageService->registerConnection(this);
+  MOZ_ASSERT(!aTelemetryFilename.IsEmpty(),
+             "A telemetry filename should have been passed-in.");
+  mTelemetryFilename.Assign(aTelemetryFilename);
 }
 
 Connection::~Connection() {
@@ -699,8 +715,15 @@ nsIEventTarget* Connection::getAsyncExecutionTarget() {
 
   // Create the async event target if there's none yet.
   if (!mAsyncExecutionThread) {
+    // Names start with "sqldb:" followed by a recognizable name, like the
+    // database file name, or a specially crafted name like "memory".
+    // This name will be surfaced on https://crash-stats.mozilla.org, so any
+    // sensitive part of the file name (e.g. an URL origin) should be replaced
+    // by passing an explicit telemetryName to openDatabaseWithFileURL.
+    nsAutoCString name("sqldb:"_ns);
+    name.Append(mTelemetryFilename);
     static nsThreadPoolNaming naming;
-    nsresult rv = NS_NewNamedThread(naming.GetNextThreadName("mozStorage"),
+    nsresult rv = NS_NewNamedThread(naming.GetNextThreadName(name),
                                     getter_AddRefs(mAsyncExecutionThread));
     if (NS_FAILED(rv)) {
       NS_WARNING("Failed to create async thread.");
@@ -823,8 +846,6 @@ nsresult Connection::initialize(const nsACString& aStorageKey,
       mName.IsEmpty() ? nsAutoCString(":memory:"_ns)
                       : "file:"_ns + mName + "?mode=memory&cache=shared"_ns;
 
-  mTelemetryFilename.AssignLiteral(":memory:");
-
   int srv =
       ::sqlite3_open_v2(path.get(), &mDBConn, mFlags, GetBaseVFSName(true));
   if (srv != SQLITE_OK) {
@@ -860,7 +881,6 @@ nsresult Connection::initialize(nsIFile* aDatabaseFile) {
   // Do not set mFileURL here since this is database does not have an associated
   // URL.
   mDatabaseFile = aDatabaseFile;
-  aDatabaseFile->GetNativeLeafName(mTelemetryFilename);
 
   nsAutoString path;
   nsresult rv = aDatabaseFile->GetPath(path);
@@ -909,8 +929,7 @@ nsresult Connection::initialize(nsIFile* aDatabaseFile) {
   return NS_OK;
 }
 
-nsresult Connection::initialize(nsIFileURL* aFileURL,
-                                const nsACString& aTelemetryFilename) {
+nsresult Connection::initialize(nsIFileURL* aFileURL) {
   NS_ASSERTION(aFileURL, "Passed null file URL!");
   NS_ASSERTION(!connectionReady(),
                "Initialize called on already opened database!");
@@ -923,12 +942,6 @@ nsresult Connection::initialize(nsIFileURL* aFileURL,
   // Set both mDatabaseFile and mFileURL here.
   mFileURL = aFileURL;
   mDatabaseFile = databaseFile;
-
-  if (!aTelemetryFilename.IsEmpty()) {
-    mTelemetryFilename = aTelemetryFilename;
-  } else {
-    databaseFile->GetNativeLeafName(mTelemetryFilename);
-  }
 
   nsAutoCString spec;
   rv = aFileURL->GetSpec(spec);
@@ -989,9 +1002,6 @@ nsresult Connection::initializeInternal() {
   MOZ_ASSERT(srv2 == SQLITE_OK,
              "SQLITE_DBCONFIG_ENABLE_FTS3_TOKENIZER should be enabled");
 #endif
-
-  MOZ_ASSERT(!mTelemetryFilename.IsEmpty(),
-             "A telemetry filename should have been set by now.");
 
   // Properly wrap the database handle's mutex.
   sharedDBMutex.initWithMutex(sqlite3_db_mutex(mDBConn));
@@ -1393,8 +1403,9 @@ int Connection::stepStatement(sqlite3* aNativeConnection,
                                  : Telemetry::kSlowSQLThresholdForHelperThreads;
   if (duration.ToMilliseconds() >= threshold) {
     nsDependentCString statementString(::sqlite3_sql(aStatement));
-    Telemetry::RecordSlowSQLStatement(statementString, mTelemetryFilename,
-                                      duration.ToMilliseconds());
+    Telemetry::RecordSlowSQLStatement(
+        statementString, mTelemetryFilename,
+        static_cast<uint32_t>(duration.ToMilliseconds()));
   }
 
   (void)::sqlite3_extended_result_codes(aNativeConnection, 0);
@@ -1472,8 +1483,9 @@ int Connection::executeSql(sqlite3* aNativeConnection, const char* aSqlString) {
                                  : Telemetry::kSlowSQLThresholdForHelperThreads;
   if (duration.ToMilliseconds() >= threshold) {
     nsDependentCString statementString(aSqlString);
-    Telemetry::RecordSlowSQLStatement(statementString, mTelemetryFilename,
-                                      duration.ToMilliseconds());
+    Telemetry::RecordSlowSQLStatement(
+        statementString, mTelemetryFilename,
+        static_cast<uint32_t>(duration.ToMilliseconds()));
   }
 
   return srv;
@@ -1714,7 +1726,7 @@ Connection::AsyncClone(bool aReadOnly,
   // The cloned connection will still implement the synchronous API, but throw
   // if any synchronous methods are called on the main thread.
   RefPtr<Connection> clone =
-      new Connection(mStorageService, flags, ASYNCHRONOUS);
+      new Connection(mStorageService, flags, ASYNCHRONOUS, mTelemetryFilename);
 
   RefPtr<AsyncInitializeClone> initEvent =
       new AsyncInitializeClone(this, clone, aReadOnly, aCallback);
@@ -1733,7 +1745,7 @@ nsresult Connection::initializeClone(Connection* aClone, bool aReadOnly) {
   if (!mStorageKey.IsEmpty()) {
     rv = aClone->initialize(mStorageKey, mName);
   } else if (mFileURL) {
-    rv = aClone->initialize(mFileURL, mTelemetryFilename);
+    rv = aClone->initialize(mFileURL);
   } else {
     rv = aClone->initialize(mDatabaseFile);
   }
@@ -1878,8 +1890,9 @@ Connection::Clone(bool aReadOnly, mozIStorageConnection** _connection) {
     flags = (~SQLITE_OPEN_CREATE & flags);
   }
 
-  RefPtr<Connection> clone = new Connection(
-      mStorageService, flags, mSupportedOperations, mInterruptible);
+  RefPtr<Connection> clone =
+      new Connection(mStorageService, flags, mSupportedOperations,
+                     mTelemetryFilename, mInterruptible);
 
   rv = initializeClone(clone, aReadOnly);
   if (NS_FAILED(rv)) {
@@ -2057,8 +2070,9 @@ Connection::GetSchemaVersion(int32_t* _version) {
 
   *_version = 0;
   bool hasResult;
-  if (NS_SUCCEEDED(stmt->ExecuteStep(&hasResult)) && hasResult)
+  if (NS_SUCCEEDED(stmt->ExecuteStep(&hasResult)) && hasResult) {
     *_version = stmt->AsInt32(0);
+  }
 
   return NS_OK;
 }

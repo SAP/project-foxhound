@@ -11,18 +11,16 @@ import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
+  CLIENT_NOT_CONFIGURED: "resource://services-sync/constants.sys.mjs",
+  BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.sys.mjs",
   CustomizableUI: "resource:///modules/CustomizableUI.sys.mjs",
   MigrationUtils: "resource:///modules/MigrationUtils.sys.mjs",
+  OpenInTabsUtils: "resource:///modules/OpenInTabsUtils.sys.mjs",
   PlacesTransactions: "resource://gre/modules/PlacesTransactions.sys.mjs",
   PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
   PromiseUtils: "resource://gre/modules/PromiseUtils.sys.mjs",
   Weave: "resource://services-sync/main.sys.mjs",
-});
-
-XPCOMUtils.defineLazyModuleGetters(lazy, {
-  BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.jsm",
-  OpenInTabsUtils: "resource:///modules/OpenInTabsUtils.jsm",
 });
 
 const gInContentProcess =
@@ -63,11 +61,7 @@ let InternalFaviconLoader = {
       request.cancel();
     } catch (ex) {
       console.error(
-        "When cancelling a request for " +
-          uri.spec +
-          " because " +
-          reason +
-          ", it was already canceled!"
+        `When cancelling a request for ${uri.spec} because ${reason}, it was already canceled!`
       );
     }
   },
@@ -1071,14 +1065,13 @@ export var PlacesUIUtils = {
   openNodeWithEvent: function PUIU_openNodeWithEvent(aNode, aEvent) {
     let window = aEvent.target.ownerGlobal;
 
-    let browserWindow = getBrowserWindow(window);
-
     let where = window.whereToOpenLink(aEvent, false, true);
     if (this.loadBookmarksInTabs && lazy.PlacesUtils.nodeIsBookmark(aNode)) {
       if (where == "current" && !aNode.uri.startsWith("javascript:")) {
         where = "tab";
       }
-      if (where == "tab" && browserWindow.gBrowser.selectedTab.isEmpty) {
+      let browserWindow = getBrowserWindow(window);
+      if (where == "tab" && browserWindow?.gBrowser.selectedTab.isEmpty) {
         where = "current";
       }
     }
@@ -1189,8 +1182,8 @@ export var PlacesUIUtils = {
 
   shouldShowTabsFromOtherComputersMenuitem() {
     let weaveOK =
-      lazy.Weave.Status.checkSetup() != lazy.Weave.CLIENT_NOT_CONFIGURED &&
-      lazy.Weave.Svc.Prefs.get("firstSync", "") != "notReady";
+      lazy.Weave.Status.checkSetup() != lazy.CLIENT_NOT_CONFIGURED &&
+      lazy.Weave.Svc.PrefBranch.getCharPref("firstSync", "") != "notReady";
     return weaveOK;
   },
 
@@ -1243,17 +1236,11 @@ export var PlacesUIUtils = {
     }
 
     let parent = {
-      itemId: await lazy.PlacesUtils.promiseItemId(aFetchInfo.parentGuid),
       bookmarkGuid: aFetchInfo.parentGuid,
       type: Ci.nsINavHistoryResultNode.RESULT_TYPE_FOLDER,
     };
 
-    let itemId =
-      aFetchInfo.guid === lazy.PlacesUtils.bookmarks.unsavedGuid
-        ? undefined
-        : await lazy.PlacesUtils.promiseItemId(aFetchInfo.guid);
     return Object.freeze({
-      itemId,
       bookmarkGuid: aFetchInfo.guid,
       title: aFetchInfo.title,
       uri: aFetchInfo.url !== undefined ? aFetchInfo.url.href : "",
@@ -1857,13 +1844,24 @@ export var PlacesUIUtils = {
     }
   },
 
+  /**
+   * Generates a moz-anno:favicon: link for an icon URL, that will allow to
+   * fetch the icon from the local favicons cache, rather than from the network.
+   * If the icon URL is invalid, fallbacks to the default favicon URL.
+   *
+   * @param {string} icon The url of the icon to load from local cache.
+   * @returns {string} a "moz-anno:favicon:" prefixed URL, unless the original
+   *   URL protocol refers to a local resource, then it will just pass-through
+   *   unchanged.
+   */
   getImageURL(icon) {
-    let iconURL = icon;
     // don't initiate a connection just to fetch a favicon (see bug 467828)
-    if (/^https?:/.test(iconURL)) {
-      iconURL = "moz-anno:favicon:" + iconURL;
-    }
-    return iconURL;
+    try {
+      return lazy.PlacesUtils.favicons.getFaviconLinkForIcon(
+        Services.io.newURI(icon)
+      ).spec;
+    } catch (ex) {}
+    return lazy.PlacesUtils.favicons.defaultFavicon.spec;
   },
 
   /**
@@ -1946,32 +1944,32 @@ PlacesUIUtils.canLoadToolbarContentPromise = new Promise(resolve => {
 });
 
 // These are lazy getters to avoid importing PlacesUtils immediately.
-XPCOMUtils.defineLazyGetter(PlacesUIUtils, "PLACES_FLAVORS", () => {
+ChromeUtils.defineLazyGetter(PlacesUIUtils, "PLACES_FLAVORS", () => {
   return [
     lazy.PlacesUtils.TYPE_X_MOZ_PLACE_CONTAINER,
     lazy.PlacesUtils.TYPE_X_MOZ_PLACE_SEPARATOR,
     lazy.PlacesUtils.TYPE_X_MOZ_PLACE,
   ];
 });
-XPCOMUtils.defineLazyGetter(PlacesUIUtils, "URI_FLAVORS", () => {
+ChromeUtils.defineLazyGetter(PlacesUIUtils, "URI_FLAVORS", () => {
   return [
     lazy.PlacesUtils.TYPE_X_MOZ_URL,
     TAB_DROP_TYPE,
     lazy.PlacesUtils.TYPE_PLAINTEXT,
   ];
 });
-XPCOMUtils.defineLazyGetter(PlacesUIUtils, "SUPPORTED_FLAVORS", () => {
+ChromeUtils.defineLazyGetter(PlacesUIUtils, "SUPPORTED_FLAVORS", () => {
   return [...PlacesUIUtils.PLACES_FLAVORS, ...PlacesUIUtils.URI_FLAVORS];
 });
 
-XPCOMUtils.defineLazyGetter(PlacesUIUtils, "ellipsis", function () {
+ChromeUtils.defineLazyGetter(PlacesUIUtils, "ellipsis", function () {
   return Services.prefs.getComplexValue(
     "intl.ellipsis",
     Ci.nsIPrefLocalizedString
   ).data;
 });
 
-XPCOMUtils.defineLazyGetter(PlacesUIUtils, "promptLocalization", () => {
+ChromeUtils.defineLazyGetter(PlacesUIUtils, "promptLocalization", () => {
   return new Localization(
     ["browser/placesPrompts.ftl", "branding/brand.ftl"],
     true

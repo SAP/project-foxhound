@@ -193,24 +193,10 @@ class RtpVideoSenderTestFixture {
   MockTransport& transport() { return transport_; }
   void AdvanceTime(TimeDelta delta) { time_controller_.AdvanceTime(delta); }
 
-  void Stop() {
-    RunOnTransportQueue([&]() { router_->Stop(); });
-  }
+  void Stop() { router_->Stop(); }
 
   void SetActiveModules(const std::vector<bool>& active_modules) {
-    RunOnTransportQueue([&]() { router_->SetActiveModules(active_modules); });
-  }
-
-  // Several RtpVideoSender methods expect to be called on the task queue as
-  // owned by the send transport. While the SequenceChecker may pick up the
-  // default thread as the transport queue, explicit checks for the transport
-  // queue (not just using a SequenceChecker) aren't possible unless such a
-  // queue is actually active. So RunOnTransportQueue is a convenience function
-  // that allow for running a `task` on the transport queue, similar to
-  // SendTask().
-  void RunOnTransportQueue(absl::AnyInvocable<void() &&> task) {
-    transport_controller_.GetWorkerQueue()->RunOrPost(std::move(task));
-    AdvanceTime(TimeDelta::Zero());
+    router_->SetActiveModules(active_modules);
   }
 
  private:
@@ -281,7 +267,7 @@ TEST(RtpVideoSenderTest, SendSimulcastSetActive) {
             test.router()->OnEncodedImage(encoded_image_1, &codec_info).error);
 
   EncodedImage encoded_image_2(encoded_image_1);
-  encoded_image_2.SetSpatialIndex(1);
+  encoded_image_2.SetSimulcastIndex(1);
   EXPECT_EQ(EncodedImageCallback::Result::OK,
             test.router()->OnEncodedImage(encoded_image_2, &codec_info).error);
 
@@ -306,7 +292,7 @@ TEST(RtpVideoSenderTest, SendSimulcastSetActiveModules) {
   encoded_image_1.SetEncodedData(EncodedImageBuffer::Create(&kPayload, 1));
 
   EncodedImage encoded_image_2(encoded_image_1);
-  encoded_image_2.SetSpatialIndex(1);
+  encoded_image_2.SetSimulcastIndex(1);
 
   RtpVideoSenderTestFixture test({kSsrc1, kSsrc2}, {kRtxSsrc1, kRtxSsrc2},
                                  kPayloadType, {});
@@ -332,9 +318,8 @@ TEST(RtpVideoSenderTest, SendSimulcastSetActiveModules) {
             test.router()->OnEncodedImage(encoded_image_1, &codec_info).error);
 }
 
-TEST(
-    RtpVideoSenderTest,
-    DiscardsHigherSpatialVideoFramesAfterLayerDisabledInVideoLayersAllocation) {
+TEST(RtpVideoSenderTest,
+     DiscardsHigherSimulcastFramesAfterLayerDisabledInVideoLayersAllocation) {
   constexpr uint8_t kPayload = 'a';
   EncodedImage encoded_image_1;
   encoded_image_1.SetTimestamp(1);
@@ -342,7 +327,7 @@ TEST(
   encoded_image_1._frameType = VideoFrameType::kVideoFrameKey;
   encoded_image_1.SetEncodedData(EncodedImageBuffer::Create(&kPayload, 1));
   EncodedImage encoded_image_2(encoded_image_1);
-  encoded_image_2.SetSpatialIndex(1);
+  encoded_image_2.SetSimulcastIndex(1);
   CodecSpecificInfo codec_info;
   codec_info.codecType = kVideoCodecVP8;
   RtpVideoSenderTestFixture test({kSsrc1, kSsrc2}, {kRtxSsrc1, kRtxSsrc2},
@@ -638,7 +623,7 @@ TEST(RtpVideoSenderTest, EarlyRetransmits) {
   encoded_image._frameType = VideoFrameType::kVideoFrameKey;
   encoded_image.SetEncodedData(
       EncodedImageBuffer::Create(kPayload, sizeof(kPayload)));
-  encoded_image.SetSpatialIndex(0);
+  encoded_image.SetSimulcastIndex(0);
 
   CodecSpecificInfo codec_specific;
   codec_specific.codecType = VideoCodecType::kVideoCodecGeneric;
@@ -666,7 +651,7 @@ TEST(RtpVideoSenderTest, EarlyRetransmits) {
 
   uint16_t frame2_rtp_sequence_number = 0;
   uint16_t frame2_transport_sequence_number = 0;
-  encoded_image.SetSpatialIndex(1);
+  encoded_image.SetSimulcastIndex(1);
   EXPECT_CALL(test.transport(), SendRtp)
       .WillOnce(
           [&frame2_rtp_sequence_number, &frame2_transport_sequence_number](

@@ -207,9 +207,9 @@ Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/26eee332d844bd3f9
  .../linux/x11/screen_capturer_x11.cc          |   2 +-
  .../linux/x11/window_capturer_x11.cc          |  12 +-
  .../linux/x11/window_capturer_x11.h           |   4 +
- .../desktop_capture/linux/x11/x_error_trap.cc |  70 ++++---
+ .../desktop_capture/linux/x11/x_error_trap.cc |  68 +++---
  .../desktop_capture/linux/x11/x_error_trap.h  |  29 ++-
- .../mouse_cursor_monitor_win.cc               |   7 +-
+ .../mouse_cursor_monitor_win.cc               |   4 +
  .../win/screen_capture_utils.cc               |   3 +-
  .../win/screen_capturer_win_gdi.cc            |   1 +
  .../win/screen_capturer_win_magnifier.cc      |  16 +-
@@ -232,14 +232,14 @@ Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/26eee332d844bd3f9
  modules/video_capture/video_capture_impl.h    |   6 +-
  .../codecs/vp9/libvpx_vp9_encoder.cc          |   2 +
  .../codecs/vp9/libvpx_vp9_encoder.h           |   4 +
+ .../video_coding/deprecated/session_info.cc   |  32 ++-
  modules/video_coding/generic_decoder.cc       |   5 +-
- modules/video_coding/session_info.cc          |  32 ++-
  test/fuzzers/rtp_packet_fuzzer.cc             |   5 +
  test/vcm_capturer.cc                          |   2 +-
- 45 files changed, 652 insertions(+), 134 deletions(-)
+ 45 files changed, 649 insertions(+), 132 deletions(-)
 
 diff --git a/api/rtp_headers.cc b/api/rtp_headers.cc
-index e0ad9eb26e..8e1efc7262 100644
+index 0573e54684..40d4690397 100644
 --- a/api/rtp_headers.cc
 +++ b/api/rtp_headers.cc
 @@ -26,7 +26,8 @@ RTPHeaderExtension::RTPHeaderExtension()
@@ -253,7 +253,7 @@ index e0ad9eb26e..8e1efc7262 100644
  RTPHeaderExtension::RTPHeaderExtension(const RTPHeaderExtension& other) =
      default;
 diff --git a/api/rtp_headers.h b/api/rtp_headers.h
-index 743fd6d1b6..261c984d05 100644
+index 5d4d4190d5..9868365f24 100644
 --- a/api/rtp_headers.h
 +++ b/api/rtp_headers.h
 @@ -89,6 +89,19 @@ inline bool operator!=(const AbsoluteCaptureTime& lhs,
@@ -289,10 +289,10 @@ index 743fd6d1b6..261c984d05 100644
  struct RTC_EXPORT RTPHeader {
    RTPHeader();
 diff --git a/api/rtp_parameters.cc b/api/rtp_parameters.cc
-index c48b8da02c..c1d12e5d8d 100644
+index 54132bcdbb..cf8b3ad3dc 100644
 --- a/api/rtp_parameters.cc
 +++ b/api/rtp_parameters.cc
-@@ -148,7 +148,8 @@ bool RtpExtension::IsSupportedForAudio(absl::string_view uri) {
+@@ -151,7 +151,8 @@ bool RtpExtension::IsSupportedForAudio(absl::string_view uri) {
           uri == webrtc::RtpExtension::kTransportSequenceNumberV2Uri ||
           uri == webrtc::RtpExtension::kMidUri ||
           uri == webrtc::RtpExtension::kRidUri ||
@@ -303,7 +303,7 @@ index c48b8da02c..c1d12e5d8d 100644
  
  bool RtpExtension::IsSupportedForVideo(absl::string_view uri) {
 diff --git a/call/BUILD.gn b/call/BUILD.gn
-index f4c3295ff5..0e52e8fb3f 100644
+index c40cfcf28e..63a3a2d53d 100644
 --- a/call/BUILD.gn
 +++ b/call/BUILD.gn
 @@ -20,6 +20,7 @@ rtc_library("call_interfaces") {
@@ -325,10 +325,10 @@ index f4c3295ff5..0e52e8fb3f 100644
    deps = [
      ":audio_sender_interface",
 diff --git a/call/video_receive_stream.h b/call/video_receive_stream.h
-index 0fa257e5ba..15b313a3b9 100644
+index bde8c8b615..1918354009 100644
 --- a/call/video_receive_stream.h
 +++ b/call/video_receive_stream.h
-@@ -199,6 +199,8 @@ class VideoReceiveStreamInterface : public MediaReceiveStreamInterface {
+@@ -201,6 +201,8 @@ class VideoReceiveStreamInterface : public MediaReceiveStreamInterface {
        // disabled.
        KeyFrameReqMethod keyframe_method = KeyFrameReqMethod::kPliRtcp;
  
@@ -338,7 +338,7 @@ index 0fa257e5ba..15b313a3b9 100644
        LntfConfig lntf;
  
 diff --git a/modules/audio_coding/acm2/acm_receiver.h b/modules/audio_coding/acm2/acm_receiver.h
-index 18b662aed0..a61247627f 100644
+index 820150aede..39653be00b 100644
 --- a/modules/audio_coding/acm2/acm_receiver.h
 +++ b/modules/audio_coding/acm2/acm_receiver.h
 @@ -18,6 +18,7 @@
@@ -349,7 +349,7 @@ index 18b662aed0..a61247627f 100644
  
  #include "absl/types/optional.h"
  #include "api/array_view.h"
-@@ -215,12 +216,15 @@ class AcmReceiver {
+@@ -230,12 +231,15 @@ class AcmReceiver {
  
    mutable Mutex mutex_;
    absl::optional<DecoderInfo> last_decoder_ RTC_GUARDED_BY(mutex_);
@@ -363,7 +363,7 @@ index 18b662aed0..a61247627f 100644
 +  std::unique_ptr<int16_t[]> last_audio_buffer_;
 +  CallStatistics call_stats_;
    const std::unique_ptr<NetEq> neteq_;  // NetEq is thread-safe; no lock needed.
-   Clock* const clock_;
+   Clock& clock_;
 -  bool resampled_last_output_frame_ RTC_GUARDED_BY(mutex_);
 +  std::atomic<bool> resampled_last_output_frame_;
  };
@@ -622,10 +622,10 @@ index 4ab6baad83..aa8496819b 100644
  };
  
 diff --git a/modules/desktop_capture/desktop_capturer.h b/modules/desktop_capture/desktop_capturer.h
-index d336723f18..6909a57891 100644
+index fd884f13ff..f39852b58e 100644
 --- a/modules/desktop_capture/desktop_capturer.h
 +++ b/modules/desktop_capture/desktop_capturer.h
-@@ -79,6 +79,7 @@ class RTC_EXPORT DesktopCapturer {
+@@ -82,6 +82,7 @@ class RTC_EXPORT DesktopCapturer {
    struct Source {
      // The unique id to represent a Source of current DesktopCapturer.
      SourceId id;
@@ -757,25 +757,22 @@ index ac591c272e..cfd29eca66 100644
  
    rtc::scoped_refptr<SharedXDisplay> x_display_;
 diff --git a/modules/desktop_capture/linux/x11/x_error_trap.cc b/modules/desktop_capture/linux/x11/x_error_trap.cc
-index 94e3a03c73..3314dd286c 100644
+index 24c2065111..3314dd286c 100644
 --- a/modules/desktop_capture/linux/x11/x_error_trap.cc
 +++ b/modules/desktop_capture/linux/x11/x_error_trap.cc
-@@ -10,50 +10,60 @@
+@@ -12,48 +12,58 @@
  
- #include "modules/desktop_capture/linux/x11/x_error_trap.h"
- 
--#include <atomic>
--
  #include <stddef.h>
  
--#include "rtc_base/checks.h"
--
--namespace webrtc {
+-#include <atomic>
 +#include <limits>
  
--namespace {
-+#include "rtc_base/checks.h"
+ #include "rtc_base/checks.h"
  
+-namespace webrtc {
+-
+-namespace {
+-
 -static int g_last_xserver_error_code = 0;
 -static std::atomic<Display*> g_display_for_error_handler = nullptr;
  
@@ -906,7 +903,7 @@ index 1f21ab969c..df7e86bf03 100644
  
  }  // namespace webrtc
 diff --git a/modules/desktop_capture/mouse_cursor_monitor_win.cc b/modules/desktop_capture/mouse_cursor_monitor_win.cc
-index c892d59955..18ef43eeb4 100644
+index c892d59955..aa2347423c 100644
 --- a/modules/desktop_capture/mouse_cursor_monitor_win.cc
 +++ b/modules/desktop_capture/mouse_cursor_monitor_win.cc
 @@ -88,6 +88,7 @@ MouseCursorMonitorWin::~MouseCursorMonitorWin() {
@@ -926,17 +923,7 @@ index c892d59955..18ef43eeb4 100644
    RTC_DCHECK(callback_);
  
    CURSORINFO cursor_info;
-@@ -107,7 +110,8 @@ void MouseCursorMonitorWin::Capture() {
-   }
- 
-   if (!IsSameCursorShape(cursor_info, last_cursor_)) {
--    if (cursor_info.flags == CURSOR_SUPPRESSED) {
-+    // Mozilla - CURSOR_SUPPRESSED is win8 and above; so we seem not to be able to see the symbol
-+    if (cursor_info.flags != CURSOR_SHOWING) {
-       // The cursor is intentionally hidden now, send an empty bitmap.
-       last_cursor_ = cursor_info;
-       callback_->OnMouseCursor(new MouseCursor(
-@@ -168,6 +172,7 @@ void MouseCursorMonitorWin::Capture() {
+@@ -168,6 +171,7 @@ void MouseCursorMonitorWin::Capture() {
  }
  
  DesktopRect MouseCursorMonitorWin::GetScreenRect() {
@@ -945,10 +932,10 @@ index c892d59955..18ef43eeb4 100644
    if (screen_ == kFullDesktopScreenId) {
      return DesktopRect::MakeXYWH(GetSystemMetrics(SM_XVIRTUALSCREEN),
 diff --git a/modules/desktop_capture/win/screen_capture_utils.cc b/modules/desktop_capture/win/screen_capture_utils.cc
-index 3d4aecf14d..1dc2918d08 100644
+index 3745e9cba5..5409417a88 100644
 --- a/modules/desktop_capture/win/screen_capture_utils.cc
 +++ b/modules/desktop_capture/win/screen_capture_utils.cc
-@@ -51,7 +51,7 @@ bool GetScreenList(DesktopCapturer::SourceList* screens,
+@@ -52,7 +52,7 @@ bool GetScreenList(DesktopCapturer::SourceList* screens,
        continue;
      }
  
@@ -957,7 +944,7 @@ index 3d4aecf14d..1dc2918d08 100644
      if (device_names) {
        device_names->push_back(rtc::ToUtf8(device.DeviceName));
      }
-@@ -147,6 +147,7 @@ DesktopRect GetFullscreenRect() {
+@@ -170,6 +170,7 @@ DesktopVector GetDpiForMonitor(HMONITOR monitor) {
  
  DesktopRect GetScreenRect(const DesktopCapturer::SourceId screen,
                            const std::wstring& device_key) {
@@ -966,7 +953,7 @@ index 3d4aecf14d..1dc2918d08 100644
      return GetFullscreenRect();
    }
 diff --git a/modules/desktop_capture/win/screen_capturer_win_gdi.cc b/modules/desktop_capture/win/screen_capturer_win_gdi.cc
-index 57b1f71b0d..c6d4a75931 100644
+index 4d07b6b92f..2a81fb5184 100644
 --- a/modules/desktop_capture/win/screen_capturer_win_gdi.cc
 +++ b/modules/desktop_capture/win/screen_capturer_win_gdi.cc
 @@ -186,6 +186,7 @@ void ScreenCapturerWinGdi::PrepareCaptureResources() {
@@ -1012,10 +999,10 @@ index 214eb0e463..ce747e0141 100644
  
  void ScreenCapturerWinMagnifier::Start(Callback* callback) {
 diff --git a/modules/rtp_rtcp/source/rtcp_sender.cc b/modules/rtp_rtcp/source/rtcp_sender.cc
-index 7983371097..983851a55b 100644
+index 75f403d6fa..c62c65506a 100644
 --- a/modules/rtp_rtcp/source/rtcp_sender.cc
 +++ b/modules/rtp_rtcp/source/rtcp_sender.cc
-@@ -201,7 +201,7 @@ void RTCPSender::SetRTCPStatus(RtcpMode new_method) {
+@@ -199,7 +199,7 @@ void RTCPSender::SetRTCPStatus(RtcpMode new_method) {
      next_time_to_send_rtcp_ = absl::nullopt;
    } else if (method_ == RtcpMode::kOff) {
      // When switching on, reschedule the next packet
@@ -1075,10 +1062,10 @@ index 81961c69aa..a57d9e7f62 100644
  //
  // E.g. default video or screenshare.
 diff --git a/modules/rtp_rtcp/source/rtp_header_extensions.h b/modules/rtp_rtcp/source/rtp_header_extensions.h
-index d80e0da4f8..89c73955a2 100644
+index 04b2cd63a6..e085f89c03 100644
 --- a/modules/rtp_rtcp/source/rtp_header_extensions.h
 +++ b/modules/rtp_rtcp/source/rtp_header_extensions.h
-@@ -292,6 +292,21 @@ class ColorSpaceExtension {
+@@ -298,6 +298,21 @@ class ColorSpaceExtension {
    static size_t WriteLuminance(uint8_t* data, float f, int denominator);
  };
  
@@ -1116,10 +1103,10 @@ index 6c7dff322b..9495841984 100644
    }
  }
 diff --git a/modules/rtp_rtcp/source/rtp_packet_unittest.cc b/modules/rtp_rtcp/source/rtp_packet_unittest.cc
-index 1d51d75662..41bc114efb 100644
+index bf9f757647..09a1c87eb7 100644
 --- a/modules/rtp_rtcp/source/rtp_packet_unittest.cc
 +++ b/modules/rtp_rtcp/source/rtp_packet_unittest.cc
-@@ -121,6 +121,18 @@ constexpr uint8_t kPacketWithMid[] = {
+@@ -123,6 +123,18 @@ constexpr uint8_t kPacketWithMid[] = {
      0xbe, 0xde, 0x00, 0x01,
      0xb2, 'm', 'i', 'd'};
  
@@ -1138,7 +1125,7 @@ index 1d51d75662..41bc114efb 100644
  constexpr uint32_t kCsrcs[] = {0x34567890, 0x32435465};
  constexpr uint8_t kPayload[] = {'p', 'a', 'y', 'l', 'o', 'a', 'd'};
  constexpr uint8_t kPacketPaddingSize = 8;
-@@ -385,6 +397,24 @@ TEST(RtpPacketTest, FailsToSetUnregisteredExtension) {
+@@ -395,6 +407,24 @@ TEST(RtpPacketTest, FailsToSetUnregisteredExtension) {
    EXPECT_EQ(packet.GetExtension<TransportSequenceNumber>(), absl::nullopt);
  }
  
@@ -1177,10 +1164,10 @@ index 3e6aa3baae..9ac7696ce9 100644
  constexpr int RTCP_MAX_REPORT_BLOCKS = 31;  // RFC 3550 page 37
  }  // namespace webrtc
 diff --git a/modules/rtp_rtcp/source/rtp_sender.cc b/modules/rtp_rtcp/source/rtp_sender.cc
-index ac3bd55e05..0ed7243d0a 100644
+index 5cc7724fec..05f293287a 100644
 --- a/modules/rtp_rtcp/source/rtp_sender.cc
 +++ b/modules/rtp_rtcp/source/rtp_sender.cc
-@@ -132,6 +132,10 @@ bool IsNonVolatile(RTPExtensionType type) {
+@@ -130,6 +130,10 @@ bool IsNonVolatile(RTPExtensionType type) {
      case kRtpExtensionNumberOfExtensions:
        RTC_DCHECK_NOTREACHED();
        return false;
@@ -1653,10 +1640,10 @@ index eddc31414a..187eba76a0 100644
  
    // Returns the name of the device used by this module.
 diff --git a/modules/video_capture/video_capture_factory.cc b/modules/video_capture/video_capture_factory.cc
-index c0e1479caf..e4a46902e0 100644
+index 563ef5abd2..e085ac2df8 100644
 --- a/modules/video_capture/video_capture_factory.cc
 +++ b/modules/video_capture/video_capture_factory.cc
-@@ -16,19 +16,11 @@ namespace webrtc {
+@@ -16,11 +16,7 @@ namespace webrtc {
  
  rtc::scoped_refptr<VideoCaptureModule> VideoCaptureFactory::Create(
      const char* deviceUniqueIdUTF8) {
@@ -1667,6 +1654,10 @@ index c0e1479caf..e4a46902e0 100644
 -#endif
  }
  
+ rtc::scoped_refptr<VideoCaptureModule> VideoCaptureFactory::Create(
+@@ -37,11 +33,7 @@ rtc::scoped_refptr<VideoCaptureModule> VideoCaptureFactory::Create(
+ }
+ 
  VideoCaptureModule::DeviceInfo* VideoCaptureFactory::CreateDeviceInfo() {
 -#if defined(WEBRTC_ANDROID) || defined(WEBRTC_MAC)
 -  return nullptr;
@@ -1675,7 +1666,7 @@ index c0e1479caf..e4a46902e0 100644
 -#endif
  }
  
- }  // namespace webrtc
+ VideoCaptureModule::DeviceInfo* VideoCaptureFactory::CreateDeviceInfo(
 diff --git a/modules/video_capture/video_capture_impl.cc b/modules/video_capture/video_capture_impl.cc
 index d539b38264..d5ec4daae1 100644
 --- a/modules/video_capture/video_capture_impl.cc
@@ -1766,10 +1757,10 @@ index d539b38264..d5ec4daae1 100644
  
    return 0;
 diff --git a/modules/video_capture/video_capture_impl.h b/modules/video_capture/video_capture_impl.h
-index fee93396d3..f874580471 100644
+index 1f7aa89883..a9fdaf6307 100644
 --- a/modules/video_capture/video_capture_impl.h
 +++ b/modules/video_capture/video_capture_impl.h
-@@ -55,8 +55,10 @@ class VideoCaptureImpl : public VideoCaptureModule {
+@@ -62,8 +62,10 @@ class RTC_EXPORT VideoCaptureImpl : public VideoCaptureModule {
        rtc::VideoSinkInterface<VideoFrame>* dataCallback) override;
    virtual void RegisterCaptureDataCallback(
        RawVideoSinkInterface* dataCallback) override;
@@ -1781,7 +1772,7 @@ index fee93396d3..f874580471 100644
    int32_t SetCaptureRotation(VideoRotation rotation) override;
    bool SetApplyRotation(bool enable) override;
    bool GetApplyRotation() override;
-@@ -98,7 +100,7 @@ class VideoCaptureImpl : public VideoCaptureModule {
+@@ -105,7 +107,7 @@ class RTC_EXPORT VideoCaptureImpl : public VideoCaptureModule {
    // last time the frame rate callback function was called.
    int64_t _lastFrameRateCallbackTimeNanos;
  
@@ -1791,7 +1782,7 @@ index fee93396d3..f874580471 100644
  
    int64_t _lastProcessFrameTimeNanos;
 diff --git a/modules/video_coding/codecs/vp9/libvpx_vp9_encoder.cc b/modules/video_coding/codecs/vp9/libvpx_vp9_encoder.cc
-index c2884c0395..35b13058a2 100644
+index e05428964d..d8c9593466 100644
 --- a/modules/video_coding/codecs/vp9/libvpx_vp9_encoder.cc
 +++ b/modules/video_coding/codecs/vp9/libvpx_vp9_encoder.cc
 @@ -254,6 +254,7 @@ LibvpxVp9Encoder::LibvpxVp9Encoder(const cricket::VideoCodec& codec,
@@ -1832,26 +1823,10 @@ index 6b662ae8f9..bb871f8498 100644
  
    std::unique_ptr<ScalableVideoController> svc_controller_;
    absl::optional<ScalabilityMode> scalability_mode_;
-diff --git a/modules/video_coding/generic_decoder.cc b/modules/video_coding/generic_decoder.cc
-index b660e02b72..54467d1477 100644
---- a/modules/video_coding/generic_decoder.cc
-+++ b/modules/video_coding/generic_decoder.cc
-@@ -32,7 +32,10 @@ namespace webrtc {
- 
- namespace {
- 
--constexpr size_t kDecoderFrameMemoryLength = 10;
-+// Changed from 10 to 30 in Mozilla Bug 989944: Increase decode
-+// timestamp map to handle delayed decode on 8x10.  The map is
-+// now a deque (as of libwebrtc upstream commit 1c51ec4d74).
-+constexpr size_t kDecoderFrameMemoryLength = 30;
- 
- }
- 
-diff --git a/modules/video_coding/session_info.cc b/modules/video_coding/session_info.cc
-index 854230ae0a..e31b8b1d25 100644
---- a/modules/video_coding/session_info.cc
-+++ b/modules/video_coding/session_info.cc
+diff --git a/modules/video_coding/deprecated/session_info.cc b/modules/video_coding/deprecated/session_info.cc
+index b15dc0a9ff..837dccaeb6 100644
+--- a/modules/video_coding/deprecated/session_info.cc
++++ b/modules/video_coding/deprecated/session_info.cc
 @@ -210,16 +210,26 @@ size_t VCMSessionInfo::InsertBuffer(uint8_t* frame_buffer,
    if (h264 && h264->packetization_type == kH264StapA) {
      size_t required_length = 0;
@@ -1916,6 +1891,22 @@ index 854230ae0a..e31b8b1d25 100644
    return static_cast<int>(returnLength);
  }
  
+diff --git a/modules/video_coding/generic_decoder.cc b/modules/video_coding/generic_decoder.cc
+index b660e02b72..54467d1477 100644
+--- a/modules/video_coding/generic_decoder.cc
++++ b/modules/video_coding/generic_decoder.cc
+@@ -32,7 +32,10 @@ namespace webrtc {
+ 
+ namespace {
+ 
+-constexpr size_t kDecoderFrameMemoryLength = 10;
++// Changed from 10 to 30 in Mozilla Bug 989944: Increase decode
++// timestamp map to handle delayed decode on 8x10.  The map is
++// now a deque (as of libwebrtc upstream commit 1c51ec4d74).
++constexpr size_t kDecoderFrameMemoryLength = 30;
+ 
+ }
+ 
 diff --git a/test/fuzzers/rtp_packet_fuzzer.cc b/test/fuzzers/rtp_packet_fuzzer.cc
 index 60afb986de..0e10a8fa3a 100644
 --- a/test/fuzzers/rtp_packet_fuzzer.cc
@@ -1933,10 +1924,10 @@ index 60afb986de..0e10a8fa3a 100644
    }
  
 diff --git a/test/vcm_capturer.cc b/test/vcm_capturer.cc
-index a037f9eff6..e02fc722b2 100644
+index 0a9226ef6f..620c1c02f3 100644
 --- a/test/vcm_capturer.cc
 +++ b/test/vcm_capturer.cc
-@@ -81,7 +81,7 @@ void VcmCapturer::Destroy() {
+@@ -83,7 +83,7 @@ void VcmCapturer::Destroy() {
      return;
  
    vcm_->StopCapture();

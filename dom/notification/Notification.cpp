@@ -41,7 +41,6 @@
 #include "nsContentUtils.h"
 #include "nsDOMJSUtils.h"
 #include "nsFocusManager.h"
-#include "nsGlobalWindow.h"
 #include "nsIAlertsService.h"
 #include "nsIContentPermissionPrompt.h"
 #include "nsILoadContext.h"
@@ -321,7 +320,14 @@ class NotificationWorkerRunnable : public MainThreadWorkerRunnable {
   bool WorkerRun(JSContext* aCx, WorkerPrivate* aWorkerPrivate) override {
     aWorkerPrivate->AssertIsOnWorkerThread();
     aWorkerPrivate->ModifyBusyCountFromWorker(true);
-    WorkerRunInternal(aWorkerPrivate);
+    // WorkerScope might start dying at the moment. And WorkerRunInternal()
+    // should not be executed once WorkerScope is dying, since
+    // WorkerRunInternal() might access resources which already been freed
+    // during WorkerRef::Notify().
+    if (aWorkerPrivate->GlobalScope() &&
+        !aWorkerPrivate->GlobalScope()->IsDying()) {
+      WorkerRunInternal(aWorkerPrivate);
+    }
     return true;
   }
 
@@ -360,15 +366,23 @@ class ReleaseNotificationRunnable final : public NotificationWorkerRunnable {
       : NotificationWorkerRunnable(aNotification->mWorkerPrivate),
         mNotification(aNotification) {}
 
+  bool WorkerRun(JSContext* aCx, WorkerPrivate* aWorkerPrivate) override {
+    aWorkerPrivate->AssertIsOnWorkerThread();
+    aWorkerPrivate->ModifyBusyCountFromWorker(true);
+    // ReleaseNotificationRunnable is only used in StrongWorkerRef's shutdown
+    // callback. At the moment, it is supposed to executing
+    // mNotification->ReleaseObject() safely even though the corresponding
+    // WorkerScope::IsDying() is true. It is unlike other
+    // NotificationWorkerRunnable.
+    WorkerRunInternal(aWorkerPrivate);
+    return true;
+  }
+
   void WorkerRunInternal(WorkerPrivate* aWorkerPrivate) override {
     mNotification->ReleaseObject();
   }
 
   nsresult Cancel() override {
-    // We need to check first if cancel is called twice
-    nsresult rv = NotificationWorkerRunnable::Cancel();
-    NS_ENSURE_SUCCESS(rv, rv);
-
     mNotification->ReleaseObject();
     return NS_OK;
   }
@@ -479,13 +493,15 @@ NotificationPermissionRequest::Run() {
   bool blocked = false;
   if (isSystem) {
     mPermission = NotificationPermission::Granted;
+  } else if (mPrincipal->GetPrivateBrowsingId() != 0) {
+    mPermission = NotificationPermission::Denied;
+    blocked = true;
   } else {
     // File are automatically granted permission.
 
     if (mPrincipal->SchemeIs("file")) {
       mPermission = NotificationPermission::Granted;
-    } else if (!StaticPrefs::dom_webnotifications_allowinsecure() &&
-               !mWindow->IsSecureContext()) {
+    } else if (!mWindow->IsSecureContext()) {
       mPermission = NotificationPermission::Denied;
       blocked = true;
       nsCOMPtr<Document> doc = mWindow->GetExtantDoc();
@@ -674,17 +690,6 @@ NotificationTask::Run() {
 
 // static
 bool Notification::PrefEnabled(JSContext* aCx, JSObject* aObj) {
-  if (!NS_IsMainThread()) {
-    WorkerPrivate* workerPrivate = GetWorkerPrivateFromContext(aCx);
-    if (!workerPrivate) {
-      return false;
-    }
-
-    if (workerPrivate->IsServiceWorker()) {
-      return StaticPrefs::dom_webnotifications_serviceworker_enabled();
-    }
-  }
-
   return StaticPrefs::dom_webnotifications_enabled();
 }
 
@@ -1466,7 +1471,12 @@ already_AddRefed<Promise> Notification::RequestPermission(
     aRv.Throw(NS_ERROR_UNEXPECTED);
     return nullptr;
   }
+
   nsCOMPtr<nsIPrincipal> principal = sop->GetPrincipal();
+  if (!principal) {
+    aRv.Throw(NS_ERROR_UNEXPECTED);
+    return nullptr;
+  }
 
   RefPtr<Promise> promise = Promise::Create(window->AsGlobal(), aRv);
   if (aRv.Failed()) {
@@ -1520,6 +1530,14 @@ NotificationPermission Notification::GetPermissionInternal(
   }
 
   nsCOMPtr<nsIPrincipal> principal = sop->GetPrincipal();
+  if (!principal) {
+    aRv.Throw(NS_ERROR_UNEXPECTED);
+    return NotificationPermission::Denied;
+  }
+
+  if (principal->GetPrivateBrowsingId() != 0) {
+    return NotificationPermission::Denied;
+  }
   // Disallow showing notification if our origin is not the same origin as the
   // toplevel one, see https://github.com/whatwg/notifications/issues/177.
   if (!StaticPrefs::dom_webnotifications_allowcrossoriginiframe()) {
@@ -1881,7 +1899,8 @@ nsresult Notification::GetOrigin(nsIPrincipal* aPrincipal, nsString& aOrigin) {
     return NS_ERROR_FAILURE;
   }
 
-  nsresult rv = nsContentUtils::GetUTFOrigin(aPrincipal, aOrigin);
+  nsresult rv =
+      nsContentUtils::GetWebExposedOriginSerialization(aPrincipal, aOrigin);
   NS_ENSURE_SUCCESS(rv, rv);
 
   return NS_OK;
