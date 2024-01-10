@@ -2,16 +2,20 @@
 
 This directory contains files used in gecko builds from FFmpeg
 (http://ffmpeg.org). The current files are from FFmpeg as of
-revision fed07efcde72824ac1ada80d4af4e91ac4fcfc14
+revision
+d9d56953
 git clone https://git.ffmpeg.org/ffmpeg.git ffmpeg
-git checkout fed07efcde72824ac1ada80d4af4e91ac4fcfc14
+git checkout d9d56953
 
 All source files match their path from the library's source archive.
 
-Currently, we only use the vp8, vp9, av1 (libdav1d), mp3, and flac portion of
-the library. If this changes, configuration files will most likely need to be
-updated. Decoding AV1 via libdav1d is supported, although the decoder
-(libdav1d) is vendored separately, `ffvpx` only contains the code to use `libdav1d` through the `ffmpeg` API.
+Currently, we only use the vp8, vp9, av1 (via libdav1d), mp3, flac, vorbis (via
+libvorbis), opus (via libopus) and PCM portion of the library. If this changes,
+configuration files will most likely need to be updated.
+
+Decoding AV1 via libdav1d and libvorbis is supported, although the decoder
+libraries are vendored separately, `ffvpx` only contains the code to use
+those libraries through the `ffmpeg` API.
 
 The ffmpeg project recommends to use ffmpeg's tip, not a particular release.
 

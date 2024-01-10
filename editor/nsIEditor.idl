@@ -89,7 +89,7 @@ interface nsIEditor  : nsISupports
   const short eNoStrip = 1;
 
   // If you want an HTML editor to behave as a plaintext editor, specify this
-  // flag.  Note that this is always set if the instance is a text editor.
+  // flag.  This is currently used only with plaintext email composer.
   const long eEditorPlaintextMask       = 0x0001;
   // We don't support single line editor mode with HTML editors.  Therefore,
   // don't specify this for HTML editor.
@@ -599,14 +599,6 @@ interface nsIEditor  : nsISupports
     * The length of the contents in characters.
     */
   readonly attribute unsigned long textLength;
-
-  /** Get and set the body wrap width.
-    *
-    * Special values:
-    *    0 = wrap to window width
-    *   -1 = no wrap at all
-    */
-  attribute long wrapWidth;
 
   /** Get and set newline handling.
    *

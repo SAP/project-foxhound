@@ -74,6 +74,7 @@ const EXPECTED_BEST_MATCH_URLBAR_RESULT = {
     sponsoredClickUrl: "http://example.com/click",
     sponsoredBlockId: 1,
     sponsoredAdvertiser: "TestAdvertiser",
+    descriptionL10n: { id: "urlbar-result-action-sponsored" },
     helpUrl: QuickSuggest.HELP_URL,
     helpL10n: {
       id: UrlbarPrefs.get("resultMenu")
@@ -88,6 +89,7 @@ const EXPECTED_BEST_MATCH_URLBAR_RESULT = {
     },
     displayUrl: "http://example.com",
     source: "remote-settings",
+    provider: "AdmWikipedia",
   },
 };
 
@@ -107,6 +109,7 @@ const EXPECTED_NON_BEST_MATCH_URLBAR_RESULT = {
     sponsoredClickUrl: "http://example.com/click",
     sponsoredBlockId: 1,
     sponsoredAdvertiser: "TestAdvertiser",
+    descriptionL10n: { id: "urlbar-result-action-sponsored" },
     helpUrl: QuickSuggest.HELP_URL,
     helpL10n: {
       id: UrlbarPrefs.get("resultMenu")
@@ -121,6 +124,7 @@ const EXPECTED_NON_BEST_MATCH_URLBAR_RESULT = {
     },
     displayUrl: "http://example.com",
     source: "remote-settings",
+    provider: "AdmWikipedia",
   },
 };
 
@@ -140,6 +144,7 @@ const EXPECTED_BEST_MATCH_POSITION_URLBAR_RESULT = {
     sponsoredClickUrl: "http://example.com/click",
     sponsoredBlockId: 2,
     sponsoredAdvertiser: "TestAdvertiser",
+    descriptionL10n: { id: "urlbar-result-action-sponsored" },
     helpUrl: QuickSuggest.HELP_URL,
     helpL10n: {
       id: UrlbarPrefs.get("resultMenu")
@@ -154,6 +159,7 @@ const EXPECTED_BEST_MATCH_POSITION_URLBAR_RESULT = {
     },
     displayUrl: "http://example.com/best-match-position",
     source: "remote-settings",
+    provider: "AdmWikipedia",
   },
 };
 

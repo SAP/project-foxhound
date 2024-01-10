@@ -187,7 +187,7 @@ CompileRealm::addressOfRandomNumberGenerator() {
   return realm()->addressOfRandomNumberGenerator();
 }
 
-const JitRealm* CompileRealm::jitRealm() { return realm()->jitRealm(); }
+const JitZone* CompileZone::jitZone() { return zone()->jitZone(); }
 
 const GlobalObject* CompileRealm::maybeGlobal() {
   // This uses unsafeUnbarrieredMaybeGlobal() so as not to trigger the read
@@ -200,8 +200,8 @@ const uint32_t* CompileRealm::addressOfGlobalWriteBarriered() {
   return &realm()->globalWriteBarriered;
 }
 
-bool CompileRealm::hasAllocationMetadataBuilder() {
-  return realm()->hasAllocationMetadataBuilder();
+bool CompileZone::hasRealmWithAllocMetadataBuilder() {
+  return zone()->hasRealmWithAllocMetadataBuilder();
 }
 
 JitCompileOptions::JitCompileOptions()

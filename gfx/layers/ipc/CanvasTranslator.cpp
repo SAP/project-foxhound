@@ -131,6 +131,10 @@ mozilla::ipc::IPCResult CanvasTranslator::RecvInitTranslator(
     ipc::SharedMemoryBasic::Handle&& aReadHandle,
     CrossProcessSemaphoreHandle&& aReaderSem,
     CrossProcessSemaphoreHandle&& aWriterSem) {
+  if (mStream) {
+    return IPC_FAIL(this, "RecvInitTranslator called twice.");
+  }
+
   mTextureType = aTextureType;
 
   // We need to initialize the stream first, because it might be used to
@@ -242,7 +246,7 @@ void CanvasTranslator::Deactivate() {
 bool CanvasTranslator::TranslateRecording() {
   MOZ_ASSERT(CanvasThreadHolder::IsInCanvasWorker());
 
-  int32_t eventType = mStream->ReadNextEvent();
+  uint8_t eventType = mStream->ReadNextEvent();
   while (mStream->good()) {
     bool success = RecordedEvent::DoWithEventFromStream(
         *mStream, static_cast<RecordedEvent::EventType>(eventType),

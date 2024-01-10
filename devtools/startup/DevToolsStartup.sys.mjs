@@ -27,8 +27,6 @@ const kDebuggerPrefs = [
 
 const DEVTOOLS_POLICY_DISABLED_PREF = "devtools.policy.disabled";
 
-import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
-
 import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
 
 const lazy = {};
@@ -47,7 +45,7 @@ ChromeUtils.defineModuleGetter(
 
 // We don't want to spend time initializing the full loader here so we create
 // our own lazy require.
-XPCOMUtils.defineLazyGetter(lazy, "Telemetry", function () {
+ChromeUtils.defineLazyGetter(lazy, "Telemetry", function () {
   const { require } = ChromeUtils.importESModule(
     "resource://devtools/shared/loader/Loader.sys.mjs"
   );
@@ -57,7 +55,7 @@ XPCOMUtils.defineLazyGetter(lazy, "Telemetry", function () {
   return Telemetry;
 });
 
-XPCOMUtils.defineLazyGetter(lazy, "KeyShortcutsBundle", function () {
+ChromeUtils.defineLazyGetter(lazy, "KeyShortcutsBundle", function () {
   return new Localization(["devtools/startup/key-shortcuts.ftl"], true);
 });
 
@@ -83,7 +81,7 @@ function getLocalizedKeyShortcut(id) {
   }
 }
 
-XPCOMUtils.defineLazyGetter(lazy, "KeyShortcuts", function () {
+ChromeUtils.defineLazyGetter(lazy, "KeyShortcuts", function () {
   const isMac = AppConstants.platform == "macosx";
 
   // Common modifier shared by most key shortcuts
@@ -291,7 +289,7 @@ export function validateProfilerWebChannelUrl(targetUrl) {
   return frontEndUrl;
 }
 
-XPCOMUtils.defineLazyGetter(lazy, "ProfilerPopupBackground", function () {
+ChromeUtils.defineLazyGetter(lazy, "ProfilerPopupBackground", function () {
   return ChromeUtils.import(
     "resource://devtools/client/performance-new/shared/background.jsm.js"
   );
@@ -453,6 +451,14 @@ DevToolsStartup.prototype = {
       return;
     }
 
+    const require = this.initDevTools("CommandLine");
+    const { gDevTools } = require("devtools/client/framework/devtools");
+    const toolbox = gDevTools.getToolboxForTab(window.gBrowser.selectedTab);
+    // Ignore the url if there is no devtools currently opened for the current tab
+    if (!toolbox) {
+      return;
+    }
+
     // Avoid regular Firefox code from processing this argument,
     // otherwise we would open the source in DevTools and in a new tab.
     //
@@ -465,30 +471,20 @@ DevToolsStartup.prototype = {
       cmdLine.preventDefault = true;
     }
 
+    // Immediately focus the browser window in order, to focus devtools, or the view-source tab.
+    // Otherwise, without this, the terminal would still be the topmost window.
+    toolbox.win.focus();
+
     // Note that the following method is async and returns a promise.
     // But the current method has to be synchronous because of cmdLine.removeArguments.
-    this.openSourceInDebugger(window, {
+    // Also note that it will fallback to view-source when the source url isn't found in the debugger
+    toolbox.viewSourceInDebugger(
       url,
-      line: parseInt(line, 10),
-      column: parseInt(column || 0, 10),
-    });
-  },
-
-  /**
-   * If DevTools and the debugger are opened, try to open the source
-   * at specified location in the debugger.
-   * Otherwise fallback by opening this location via view-source.
-   *
-   * @param {Window} window
-   *        The top level browser window into which we should open the URL.
-   * @param {String} url
-   * @param {Number} line
-   * @param {Number} column
-   */
-  async openSourceInDebugger(window, { url, line, column }) {
-    const require = this.initDevTools("CommandLine");
-    const { gDevTools } = require("devtools/client/framework/devtools");
-    await gDevTools.openSourceInDebugger(window, { url, line, column });
+      parseInt(line, 10),
+      parseInt(column || 0, 10),
+      null,
+      "CommandLine"
+    );
   },
 
   readCommandLineFlags(cmdLine) {
@@ -1345,8 +1341,8 @@ const JsonView = {
       chrome.saveBrowser(browser);
     } else {
       if (
-        !message.data.startsWith("blob:null") ||
-        !browser.contentPrincipal.isNullPrincipal
+        !message.data.startsWith("blob:resource://devtools/") ||
+        browser.contentPrincipal.origin != "resource://devtools"
       ) {
         console.error("Got invalid request to save JSON data");
         return;

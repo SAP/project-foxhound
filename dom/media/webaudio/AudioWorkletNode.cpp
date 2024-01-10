@@ -48,7 +48,9 @@ struct NamedAudioParamTimeline {
 
 struct ProcessorErrorDetails {
   ProcessorErrorDetails() : mLineno(0), mColno(0) {}
+  // Line number (1-origin).
   unsigned mLineno;
+  // Column number in UTF-16 code units (1-origin).
   unsigned mColno;
   nsString mFilename;
   nsString mMessage;
@@ -230,13 +232,14 @@ void WorkletNodeEngine::SendProcessorError(AudioNodeTrack* aTrack,
 
     ProcessorErrorDetails details;
 
-    CopyUTF8toUTF16(mozilla::MakeStringSpan(jsReport.report()->filename),
-                    details.mFilename);
+    CopyUTF8toUTF16(
+        mozilla::MakeStringSpan(jsReport.report()->filename.c_str()),
+        details.mFilename);
 
     xpc::ErrorReport::ErrorReportToMessageString(jsReport.report(),
                                                  details.mMessage);
     details.mLineno = jsReport.report()->lineno;
-    details.mColno = jsReport.report()->column;
+    details.mColno = jsReport.report()->column.oneOriginValue();
     MOZ_ASSERT(!jsReport.report()->isMuted);
 
     SendErrorToMainThread(aTrack, details);

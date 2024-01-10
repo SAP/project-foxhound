@@ -34,9 +34,11 @@
 #include "mozilla/Assertions.h"
 #include "mozilla/AutoRestore.h"
 #include "mozilla/BasePrincipal.h"
+#include "mozilla/dom/MediaQueryList.h"
 #include "mozilla/CycleCollectedJSContext.h"
 #include "mozilla/DebugOnly.h"
 #include "mozilla/DisplayPortUtils.h"
+#include "mozilla/Hal.h"
 #include "mozilla/InputTaskManager.h"
 #include "mozilla/IntegerRange.h"
 #include "mozilla/PresShell.h"
@@ -132,23 +134,6 @@ namespace {
 // disconnected). When this reaches zero we will call
 // nsRefreshDriver::Shutdown.
 static uint32_t sRefreshDriverCount = 0;
-
-// RAII-helper for recording elapsed duration for refresh tick phases.
-class AutoRecordPhase {
- public:
-  explicit AutoRecordPhase(double* aResultMs)
-      : mTotalMs(aResultMs), mStartTime(TimeStamp::Now()) {
-    MOZ_ASSERT(mTotalMs);
-  }
-  ~AutoRecordPhase() {
-    *mTotalMs = (TimeStamp::Now() - mStartTime).ToMilliseconds();
-  }
-
- private:
-  double* mTotalMs;
-  mozilla::TimeStamp mStartTime;
-};
-
 }  // namespace
 
 namespace mozilla {
@@ -645,6 +630,10 @@ class VsyncRefreshDriverTimer : public RefreshDriverTimer {
     // longer tick this timer.
     mVsyncObserver->Shutdown();
     mVsyncObserver = nullptr;
+
+    if (mClosePerfSessionTimer) {
+      mClosePerfSessionTimer->Cancel();
+    }
   }
 
   bool ShouldGiveNonVsyncTasksMoreTime() {
@@ -795,6 +784,12 @@ class VsyncRefreshDriverTimer : public RefreshDriverTimer {
     mProcessedVsync = true;
   }
 
+  TimeDuration GetPerformanceHintTarget() {
+    // Estimate that we want to the tick to complete in at most half of the
+    // vsync period. This is fairly arbitrary and can be tweaked later.
+    return GetTimerRate() / int64_t(2);
+  }
+
   void TickRefreshDriver(VsyncId aId, TimeStamp aVsyncTimestamp) {
     MOZ_ASSERT(NS_IsMainThread());
 
@@ -802,7 +797,14 @@ class VsyncRefreshDriverTimer : public RefreshDriverTimer {
 
     TimeStamp tickStart = TimeStamp::Now();
 
-    TimeDuration rate = GetTimerRate();
+    const TimeDuration previousRate = mVsyncRate;
+    const TimeDuration rate = GetTimerRate();
+
+    if (mPerformanceHintSession && rate != previousRate) {
+      mPerformanceHintSession->UpdateTargetWorkDuration(
+          GetPerformanceHintTarget());
+    }
+
     if (TimeDuration::FromMilliseconds(nsRefreshDriver::DefaultInterval() / 2) >
         rate) {
       sMostRecentHighRateVsync = tickStart;
@@ -825,6 +827,10 @@ class VsyncRefreshDriverTimer : public RefreshDriverTimer {
     RunRefreshDrivers(aId, aVsyncTimestamp);
 
     TimeStamp tickEnd = TimeStamp::Now();
+
+    if (mPerformanceHintSession) {
+      mPerformanceHintSession->ReportActualWorkDuration(tickEnd - tickStart);
+    }
 
     // Re-read mLastTickStart in case there was a nested tick inside this
     // tick.
@@ -885,6 +891,35 @@ class VsyncRefreshDriverTimer : public RefreshDriverTimer {
       OnTimerStart();
     }
     mIsTicking = true;
+
+    static bool canUsePerformanceHintSession = true;
+    if (canUsePerformanceHintSession) {
+      if (mClosePerfSessionTimer) {
+        mClosePerfSessionTimer->Cancel();
+      }
+
+      // While the timer is active create a PerformanceHintSession for the main
+      // thread and stylo threads in the content process.  We can only do so
+      // when using a single vsync source for the process, otherwise these
+      // threads may be performing work for multiple VsyncRefreshDriverTimers
+      // and we will misreport the duration.
+      if (XRE_IsContentProcess() && !mPerformanceHintSession && mVsyncChild) {
+        nsTArray<PlatformThreadHandle> threads;
+        Servo_ThreadPool_GetThreadHandles(&threads);
+#ifdef XP_WIN
+        threads.AppendElement(GetCurrentThread());
+#else
+        threads.AppendElement(pthread_self());
+#endif
+
+        mPerformanceHintSession = hal::CreatePerformanceHintSession(
+            threads, GetPerformanceHintTarget());
+
+        // Avoid repeatedly attempting to create a session if it is not
+        // supported.
+        canUsePerformanceHintSession = mPerformanceHintSession != nullptr;
+      }
+    }
   }
 
   void StopTimer() override {
@@ -896,6 +931,25 @@ class VsyncRefreshDriverTimer : public RefreshDriverTimer {
       mVsyncChild->RemoveChildRefreshTimer(mVsyncObserver);
     }
     mIsTicking = false;
+
+    if (mPerformanceHintSession) {
+      if (!mClosePerfSessionTimer) {
+        mClosePerfSessionTimer = NS_NewTimer();
+      }
+      // If the timer is not restarted within 5 seconds then close the
+      // PerformanceHintSession. This is a balance between wanting to close the
+      // session promptly when timer is inactive to save power, but equally not
+      // wanting to repeatedly create and destroy sessions nor cause frequent
+      // wakeups by the timer repeatedly firing.
+      mClosePerfSessionTimer->InitWithNamedFuncCallback(
+          [](nsITimer* aTimer, void* aClosure) {
+            VsyncRefreshDriverTimer* self =
+                static_cast<VsyncRefreshDriverTimer*>(aClosure);
+            self->mPerformanceHintSession.reset();
+          },
+          this, 5000, nsITimer::TYPE_ONE_SHOT_LOW_PRIORITY,
+          "VsyncRefreshDriverTimer::mClosePerfSessionTimer");
+    }
   }
 
  public:
@@ -953,6 +1007,12 @@ class VsyncRefreshDriverTimer : public RefreshDriverTimer {
   // The timestamp is effectively mLastProcessedTick + some duration.
   TimeStamp mSuspendVsyncPriorityTicksUntil;
   bool mProcessedVsync;
+
+  UniquePtr<hal::PerformanceHintSession> mPerformanceHintSession;
+  // Used to wait a certain amount of time after the refresh driver timer is
+  // stopped before closing the PerformanceHintSession if the timer has not
+  // been restarted.
+  RefPtr<nsITimer> mClosePerfSessionTimer;
 };  // VsyncRefreshDriverTimer
 
 /**
@@ -1338,6 +1398,7 @@ nsRefreshDriver::nsRefreshDriver(nsPresContext* aPresContext)
       mResizeSuppressed(false),
       mNotifyDOMContentFlushed(false),
       mNeedToUpdateIntersectionObservations(false),
+      mMightNeedMediaQueryListenerUpdate(false),
       mNeedToUpdateContentRelevancy(false),
       mInNormalTick(false),
       mAttemptedExtraTickSinceLastVsync(false),
@@ -1419,10 +1480,17 @@ void nsRefreshDriver::AddRefreshObserver(nsARefreshObserver* aObserver,
                                          FlushType aFlushType,
                                          const char* aObserverDescription) {
   ObserverArray& array = ArrayFor(aFlushType);
+  MOZ_ASSERT(!array.Contains(aObserver),
+             "We don't want to redundantly register the same observer");
   array.AppendElement(
       ObserverData{aObserver, aObserverDescription, TimeStamp::Now(),
                    MarkerInnerWindowIdFromDocShell(GetDocShell(mPresContext)),
                    profiler_capture_backtrace(), aFlushType});
+#ifdef DEBUG
+  MOZ_ASSERT(aObserver->mRegistrationCount >= 0,
+             "Registration count shouldn't be able to go negative");
+  aObserver->mRegistrationCount++;
+#endif
   EnsureTimerStarted();
 }
 
@@ -1447,6 +1515,11 @@ bool nsRefreshDriver::RemoveRefreshObserver(nsARefreshObserver* aObserver,
   }
 
   array.RemoveElementAt(index);
+#ifdef DEBUG
+  aObserver->mRegistrationCount--;
+  MOZ_ASSERT(aObserver->mRegistrationCount >= 0,
+             "Registration count shouldn't be able to go negative");
+#endif
   return true;
 }
 
@@ -1516,6 +1589,21 @@ void nsRefreshDriver::DispatchVisualViewportScrollEvents() {
   for (auto& event : events) {
     event->Run();
   }
+}
+
+// https://drafts.csswg.org/cssom-view/#evaluate-media-queries-and-report-changes
+void nsRefreshDriver::EvaluateMediaQueriesAndReportChanges() {
+  if (!mMightNeedMediaQueryListenerUpdate) {
+    return;
+  }
+  mMightNeedMediaQueryListenerUpdate = false;
+  if (!mPresContext) {
+    return;
+  }
+  AUTO_PROFILER_LABEL_RELEVANT_FOR_JS(
+      "Evaluate media queries and report changes", LAYOUT);
+  RefPtr<Document> doc = mPresContext->Document();
+  doc->EvaluateMediaQueriesAndReportChanges(/* aRecurse = */ true);
 }
 
 void nsRefreshDriver::AddPostRefreshObserver(
@@ -1938,6 +2026,9 @@ auto nsRefreshDriver::GetReasonsToTick() const -> TickReasons {
   if (mNeedToUpdateIntersectionObservations) {
     reasons |= TickReasons::eNeedsToUpdateIntersectionObservations;
   }
+  if (mMightNeedMediaQueryListenerUpdate) {
+    reasons |= TickReasons::eHasPendingMediaQueryListeners;
+  }
   if (mNeedToUpdateContentRelevancy) {
     reasons |= TickReasons::eNeedsToUpdateContentRelevancy;
   }
@@ -1970,6 +2061,9 @@ void nsRefreshDriver::AppendTickReasonsToString(TickReasons aReasons,
   }
   if (aReasons & TickReasons::eNeedsToUpdateIntersectionObservations) {
     aStr.AppendLiteral(" NeedsToUpdateIntersectionObservations");
+  }
+  if (aReasons & TickReasons::eHasPendingMediaQueryListeners) {
+    aStr.AppendLiteral(" HasPendingMediaQueryListeners");
   }
   if (aReasons & TickReasons::eNeedsToUpdateContentRelevancy) {
     aStr.AppendLiteral(" NeedsToUpdateContentRelevancy");
@@ -2551,10 +2645,6 @@ void nsRefreshDriver::Tick(VsyncId aId, TimeStamp aNowTime,
   }
   DispatchVisualViewportResizeEvents();
 
-  double phaseMetrics[MOZ_ARRAY_LENGTH(mObservers)] = {
-      0.0,
-  };
-
   /*
    * The timer holds a reference to |this| while calling |Notify|.
    * However, implementations of |WillRefresh| are permitted to destroy
@@ -2562,8 +2652,6 @@ void nsRefreshDriver::Tick(VsyncId aId, TimeStamp aNowTime,
    * null.  If this happens, we must stop notifying observers.
    */
   for (uint32_t i = 0; i < ArrayLength(mObservers); ++i) {
-    AutoRecordPhase phaseRecord(&phaseMetrics[i]);
-
     for (RefPtr<nsARefreshObserver> obs : mObservers[i].EndLimitedRange()) {
       obs->WillRefresh(aNowTime);
 
@@ -2601,6 +2689,7 @@ void nsRefreshDriver::Tick(VsyncId aId, TimeStamp aNowTime,
       FlushAutoFocusDocuments();
       DispatchScrollEvents();
       DispatchVisualViewportScrollEvents();
+      EvaluateMediaQueriesAndReportChanges();
       DispatchAnimationEvents();
       RunFullscreenSteps();
       RunFrameRequestCallbacks(aNowTime);
@@ -2706,10 +2795,8 @@ void nsRefreshDriver::Tick(VsyncId aId, TimeStamp aNowTime,
 
   UpdateAnimatedImages(previousRefresh, aNowTime);
 
-  double phasePaint = 0.0;
   bool dispatchTasksAfterTick = false;
   if (mViewManagerFlushIsPending && !mThrottled) {
-    AutoRecordPhase paintRecord(&phasePaint);
     nsCString transactionId;
     if (profiler_thread_is_being_profiled_for_markers()) {
       transactionId.AppendLiteral("Transaction ID: ");
@@ -2779,36 +2866,11 @@ void nsRefreshDriver::Tick(VsyncId aId, TimeStamp aNowTime,
     mCompositionPayloads.Clear();
   }
 
-  double totalMs = (TimeStamp::Now() - mTickStart).ToMilliseconds();
-
 #ifndef ANDROID /* bug 1142079 */
+  double totalMs = (TimeStamp::Now() - mTickStart).ToMilliseconds();
   mozilla::Telemetry::Accumulate(mozilla::Telemetry::REFRESH_DRIVER_TICK,
                                  static_cast<uint32_t>(totalMs));
 #endif
-
-  // Bug 1568107: If the totalMs is greater than 1/60th second (ie. 1000/60 ms)
-  // then record, via telemetry, the percentage of time spent in each
-  // sub-system.
-  if (totalMs > 1000.0 / 60.0) {
-    auto record = [=](const nsCString& aKey, double aDurationMs) -> void {
-      MOZ_ASSERT(aDurationMs <= totalMs);
-      auto phasePercent = static_cast<uint32_t>(aDurationMs * 100.0 / totalMs);
-      Telemetry::Accumulate(Telemetry::REFRESH_DRIVER_TICK_PHASE_WEIGHT, aKey,
-                            phasePercent);
-    };
-
-    record("Event"_ns, phaseMetrics[0]);
-    record("Style"_ns, phaseMetrics[1]);
-    record("Reflow"_ns, phaseMetrics[2]);
-    record("Display"_ns, phaseMetrics[3]);
-    record("Paint"_ns, phasePaint);
-
-    // Explicitly record the time unaccounted for.
-    double other = totalMs -
-                   std::accumulate(phaseMetrics, ArrayEnd(phaseMetrics), 0.0) -
-                   phasePaint;
-    record("Other"_ns, other);
-  }
 
   if (mNotifyDOMContentFlushed) {
     mNotifyDOMContentFlushed = false;

@@ -168,7 +168,8 @@ class nsHtml5SpeculativeLoad {
 
   inline void InitScript(nsHtml5String aUrl, nsHtml5String aCharset,
                          nsHtml5String aType, nsHtml5String aCrossOrigin,
-                         nsHtml5String aMedia, nsHtml5String aIntegrity,
+                         nsHtml5String aMedia, nsHtml5String aNonce,
+                         nsHtml5String aIntegrity,
                          nsHtml5String aReferrerPolicy, bool aParserInHead,
                          bool aAsync, bool aDefer, bool aNoModule,
                          bool aLinkPreload) {
@@ -187,6 +188,7 @@ class nsHtml5SpeculativeLoad {
         mTypeOrCharsetSourceOrDocumentModeOrMetaCSPOrSizesOrIntegrity);
     aCrossOrigin.ToString(mCrossOrigin);
     aMedia.ToString(mMedia);
+    aNonce.ToString(mNonce);
     aIntegrity.ToString(mReferrerPolicyOrIntegrity);
     nsAutoString referrerPolicy;
     aReferrerPolicy.ToString(referrerPolicy);
@@ -211,14 +213,15 @@ class nsHtml5SpeculativeLoad {
     mCrossOrigin.SetIsVoid(true);
     mMedia.SetIsVoid(true);
     mReferrerPolicyOrIntegrity.SetIsVoid(true);
+    mNonce.SetIsVoid(true);
     mTypeOrCharsetSourceOrDocumentModeOrMetaCSPOrSizesOrIntegrity.SetIsVoid(
         true);
   }
 
   inline void InitStyle(nsHtml5String aUrl, nsHtml5String aCharset,
                         nsHtml5String aCrossOrigin, nsHtml5String aMedia,
-                        nsHtml5String aReferrerPolicy, nsHtml5String aIntegrity,
-                        bool aLinkPreload) {
+                        nsHtml5String aReferrerPolicy, nsHtml5String aNonce,
+                        nsHtml5String aIntegrity, bool aLinkPreload) {
     MOZ_ASSERT(mOpCode == eSpeculativeLoadUninitialized,
                "Trying to reinitialize a speculative load!");
     mOpCode = eSpeculativeLoadStyle;
@@ -232,6 +235,7 @@ class nsHtml5SpeculativeLoad {
     mReferrerPolicyOrIntegrity.Assign(
         nsContentUtils::TrimWhitespace<nsContentUtils::IsHTMLWhitespace>(
             referrerPolicy));
+    aNonce.ToString(mNonce);
     aIntegrity.ToString(
         mTypeOrCharsetSourceOrDocumentModeOrMetaCSPOrSizesOrIntegrity);
     mIsLinkPreload = aLinkPreload;
@@ -406,6 +410,11 @@ class nsHtml5SpeculativeLoad {
    * will be a void string.
    */
   nsString mMedia;
+  /**
+   * If mOpCode is eSpeculativeLoadScript[FromHead] this represents the value
+   * of the "nonce" attribute.
+   */
+  nsString mNonce;
   /**
    * If mOpCode is eSpeculativeLoadScript[FromHead] this represents the value
    * of the "referrerpolicy" attribute. This field holds one of the values

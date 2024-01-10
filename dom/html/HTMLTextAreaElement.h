@@ -60,7 +60,9 @@ class HTMLTextAreaElement final : public TextControlElement,
 
   // nsGenericHTMLFormElement
   void SaveState() override;
-  bool RestoreState(PresState* aState) override;
+
+  // FIXME: Shouldn't be a CAN_RUN_SCRIPT_BOUNDARY probably?
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY bool RestoreState(PresState*) override;
 
   // nsIFormControl
   MOZ_CAN_RUN_SCRIPT_BOUNDARY
@@ -81,9 +83,9 @@ class HTMLTextAreaElement final : public TextControlElement,
   int32_t GetCols() override;
   int32_t GetWrapCols() override;
   int32_t GetRows() override;
-  void GetDefaultValueFromContent(nsAString& aValue) override;
+  void GetDefaultValueFromContent(nsAString& aValue, bool aForDisplay) override;
   bool ValueChanged() const override;
-  void GetTextEditorValue(nsAString& aValue, bool aIgnoreWrap) const override;
+  void GetTextEditorValue(nsAString& aValue) const override;
   MOZ_CAN_RUN_SCRIPT TextEditor* GetTextEditor() override;
   TextEditor* GetTextEditorWithoutCreation() override;
   nsISelectionController* GetSelectionController() override;
@@ -124,11 +126,10 @@ class HTMLTextAreaElement final : public TextControlElement,
                        int32_t* aTabIndex) override;
 
   void DoneAddingChildren(bool aHaveNotified) override;
-  bool IsDoneAddingChildren() override;
 
-  MOZ_CAN_RUN_SCRIPT_BOUNDARY
   nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY
   nsresult CopyInnerTo(Element* aDest);
 
   /**
@@ -168,6 +169,12 @@ class HTMLTextAreaElement final : public TextControlElement,
   void SetCols(uint32_t aCols, ErrorResult& aError) {
     uint32_t cols = aCols ? aCols : DEFAULT_COLS;
     SetUnsignedIntAttr(nsGkAtoms::cols, cols, DEFAULT_COLS, aError);
+  }
+  void GetDirName(nsAString& aValue) {
+    GetHTMLAttr(nsGkAtoms::dirname, aValue);
+  }
+  void SetDirName(const nsAString& aValue, ErrorResult& aError) {
+    SetHTMLAttr(nsGkAtoms::dirname, aValue, aError);
   }
   bool Disabled() { return GetBoolAttr(nsGkAtoms::disabled); }
   void SetDisabled(bool aDisabled, ErrorResult& aError) {
@@ -236,14 +243,7 @@ class HTMLTextAreaElement final : public TextControlElement,
   void GetDefaultValue(nsAString& aDefaultValue, ErrorResult& aError) const;
   void SetDefaultValue(const nsAString& aDefaultValue, ErrorResult& aError);
   void GetValue(nsAString& aValue);
-  /**
-   * ValueEquals() is designed for internal use so that aValue shouldn't
-   * include \r character.  It should be handled before calling this with
-   * nsContentUtils::PlatformToDOMLineBreaks().
-   */
-  bool ValueEquals(const nsAString& aValue) const;
-  MOZ_CAN_RUN_SCRIPT_BOUNDARY void SetValue(const nsAString& aValue,
-                                            ErrorResult& aError);
+  MOZ_CAN_RUN_SCRIPT void SetValue(const nsAString&, ErrorResult&);
 
   uint32_t GetTextLength();
 
@@ -393,8 +393,7 @@ class HTMLTextAreaElement final : public TextControlElement,
                          ErrorResult& aRv);
 
  private:
-  static void MapAttributesIntoRule(const nsMappedAttributes* aAttributes,
-                                    MappedDeclarations&);
+  static void MapAttributesIntoRule(MappedDeclarationsBuilder&);
 };
 
 }  // namespace dom

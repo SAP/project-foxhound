@@ -24,23 +24,26 @@ struct SizeConstraints;
 
 namespace extras {
 
-// Codecs supported by CodecInOut::Encode.
+// Codecs supported by DecodeBytes.
 enum class Codec : uint32_t {
-  kUnknown,  // for CodecFromExtension
+  kUnknown,  // for CodecFromPath
   kPNG,
   kPNM,
   kPGX,
   kJPG,
   kGIF,
-  kEXR
+  kEXR,
+  kJXL
 };
 
-std::vector<Codec> AvailableCodecs();
+bool CanDecode(Codec codec);
 
 // If and only if extension is ".pfm", *bits_per_sample is updated to 32 so
 // that Encode() would encode to PFM instead of PPM.
-Codec CodecFromExtension(std::string extension,
-                         size_t* JXL_RESTRICT bits_per_sample = nullptr);
+Codec CodecFromPath(std::string path,
+                    size_t* JXL_RESTRICT bits_per_sample = nullptr,
+                    std::string* basename = nullptr,
+                    std::string* extension = nullptr);
 
 // Decodes "bytes" info *ppf.
 // color_space_hint may specify the color space, otherwise, defaults to sRGB.

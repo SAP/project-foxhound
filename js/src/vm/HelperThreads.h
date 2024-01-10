@@ -28,6 +28,7 @@ union Utf8Unit;
 namespace JS {
 class OffThreadToken {};
 class JS_PUBLIC_API ReadOnlyCompileOptions;
+class JS_PUBLIC_API ReadOnlyDecodeOptions;
 class Zone;
 
 template <typename UnitT>
@@ -156,8 +157,8 @@ struct ZonesInState {
   JS::shadow::Zone::GCState state;
 };
 
-using CompilationSelector = mozilla::Variant<JSScript*, JS::Realm*, JS::Zone*,
-                                             ZonesInState, JSRuntime*>;
+using CompilationSelector =
+    mozilla::Variant<JSScript*, JS::Zone*, ZonesInState, JSRuntime*>;
 
 /*
  * Cancel scheduled or in progress Ion compilations.
@@ -166,10 +167,6 @@ void CancelOffThreadIonCompile(const CompilationSelector& selector);
 
 inline void CancelOffThreadIonCompile(JSScript* script) {
   CancelOffThreadIonCompile(CompilationSelector(script));
-}
-
-inline void CancelOffThreadIonCompile(JS::Realm* realm) {
-  CancelOffThreadIonCompile(CompilationSelector(realm));
 }
 
 inline void CancelOffThreadIonCompile(JS::Zone* zone) {
@@ -186,11 +183,8 @@ inline void CancelOffThreadIonCompile(JSRuntime* runtime) {
 }
 
 #ifdef DEBUG
-bool HasOffThreadIonCompile(JS::Realm* realm);
+bool HasOffThreadIonCompile(JS::Zone* zone);
 #endif
-
-// True iff the current thread is a ParseTask or a DelazifyTask.
-bool CurrentThreadIsParseThread();
 
 /*
  * Cancel all scheduled, in progress or finished parses for runtime.
@@ -237,18 +231,13 @@ JS::OffThreadToken* StartOffThreadCompileModuleToStencil(
     JS::OffThreadCompileCallback callback, void* callbackData);
 
 JS::OffThreadToken* StartOffThreadDecodeStencil(
-    JSContext* cx, const JS::DecodeOptions& options,
+    JSContext* cx, const JS::ReadOnlyDecodeOptions& options,
     const JS::TranscodeRange& range, JS::OffThreadCompileCallback callback,
-    void* callbackData);
-
-JS::OffThreadToken* StartOffThreadDecodeMultiStencils(
-    JSContext* cx, const JS::DecodeOptions& options,
-    JS::TranscodeSources& sources, JS::OffThreadCompileCallback callback,
     void* callbackData);
 
 // Start off-thread delazification task, to race the delazification of inner
 // functions.
-void StartOffThreadDelazification(JSContext* cx,
+void StartOffThreadDelazification(JSContext* maybeCx,
                                   const JS::ReadOnlyCompileOptions& options,
                                   const frontend::CompilationStencil& stencil);
 

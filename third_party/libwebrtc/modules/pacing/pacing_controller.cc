@@ -19,15 +19,12 @@
 #include "modules/pacing/bitrate_prober.h"
 #include "modules/pacing/interval_budget.h"
 #include "rtc_base/checks.h"
-#include "rtc_base/experiments/field_trial_parser.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/time_utils.h"
 #include "system_wrappers/include/clock.h"
 
 namespace webrtc {
 namespace {
-// Time limit in milliseconds between packet bursts.
-constexpr TimeDelta kDefaultMinPacketLimit = TimeDelta::Millis(5);
 constexpr TimeDelta kCongestedPacketInterval = TimeDelta::Millis(500);
 // TODO(sprang): Consider dropping this limit.
 // The maximum debt level, in terms of time, capped when sending packets.
@@ -70,7 +67,8 @@ PacingController::PacingController(Clock* clock,
           IsEnabled(field_trials_, "WebRTC-Pacer-IgnoreTransportOverhead")),
       fast_retransmissions_(
           IsEnabled(field_trials_, "WebRTC-Pacer-FastRetransmissions")),
-      min_packet_limit_(kDefaultMinPacketLimit),
+      keyframe_flushing_(
+          IsEnabled(field_trials_, "WebRTC-Pacer-KeyframeFlushing")),
       transport_overhead_per_packet_(DataSize::Zero()),
       send_burst_interval_(TimeDelta::Zero()),
       last_timestamp_(clock_->CurrentTime()),
@@ -95,11 +93,6 @@ PacingController::PacingController(Clock* clock,
     RTC_LOG(LS_WARNING) << "Pacer queues will not be drained,"
                            "pushback experiment must be enabled.";
   }
-  FieldTrialParameter<int> min_packet_limit_ms("", min_packet_limit_.ms());
-  ParseFieldTrial({&min_packet_limit_ms},
-                  field_trials_.Lookup("WebRTC-Pacer-MinPacketLimitMs"));
-  min_packet_limit_ = TimeDelta::Millis(min_packet_limit_ms.Get());
-  UpdateBudgetWithElapsedTime(min_packet_limit_);
 }
 
 PacingController::~PacingController() = default;
@@ -196,6 +189,21 @@ void PacingController::EnqueuePacket(std::unique_ptr<RtpPacketToSend> packet) {
   RTC_DCHECK(pacing_rate_ > DataRate::Zero())
       << "SetPacingRate must be called before InsertPacket.";
   RTC_CHECK(packet->packet_type());
+
+  if (keyframe_flushing_ &&
+      packet->packet_type() == RtpPacketMediaType::kVideo &&
+      packet->is_key_frame() && packet->is_first_packet_of_frame() &&
+      !packet_queue_.HasKeyframePackets(packet->Ssrc())) {
+    // First packet of a keyframe (and no keyframe packets currently in the
+    // queue). Flush any pending packets currently in the queue for that stream
+    // in order to get the new keyframe out as quickly as possible.
+    packet_queue_.RemovePacketsForSsrc(packet->Ssrc());
+    absl::optional<uint32_t> rtx_ssrc =
+        packet_sender_->GetRtxSsrcForMedia(packet->Ssrc());
+    if (rtx_ssrc) {
+      packet_queue_.RemovePacketsForSsrc(*rtx_ssrc);
+    }
+  }
 
   prober_.OnIncomingPacket(DataSize::Bytes(packet->payload_size()));
 
@@ -559,12 +567,6 @@ DataSize PacingController::PaddingToAdd(DataSize recommended_probe_size,
 
   if (congested_) {
     // Don't add padding if congested, even if requested for probing.
-    return DataSize::Zero();
-  }
-
-  if (!seen_first_packet_) {
-    // We can not send padding unless a normal packet has first been sent. If
-    // we do, timestamps get messed up.
     return DataSize::Zero();
   }
 

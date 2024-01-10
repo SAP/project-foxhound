@@ -914,7 +914,7 @@ run_benchmark() {
     --input "${src_img_dir}/*.png"
     --codec=jpeg:yuv420:q85,webp:q80,jxl:d1:6,jxl:d1:6:downsampling=8,jxl:d5:6,jxl:d5:6:downsampling=8,jxl:m:d0:2,jxl:m:d0:3,jxl:m:d2:2
     --output_dir "${output_dir}"
-    --noprofiler --show_progress
+    --show_progress
     --num_threads="${num_threads}"
   )
   if [[ "${STORE_IMAGES}" == "1" ]]; then
@@ -1246,7 +1246,7 @@ cmd_lint() {
     git -C "${MYDIR}" "${clang_format}" --binary "${clang_format}" \
       --style=file --diff "${MR_ANCESTOR_SHA}" -- >"${tmppatch}" || true
     { set +x; } 2>/dev/null
-    if grep -E '^--- ' "${tmppatch}">/dev/null; then
+    if grep -E '^--- ' "${tmppatch}" | grep -v 'a/third_party' >/dev/null; then
       if [[ -n "${LINT_OUTPUT:-}" ]]; then
         cp "${tmppatch}" "${LINT_OUTPUT}"
       fi

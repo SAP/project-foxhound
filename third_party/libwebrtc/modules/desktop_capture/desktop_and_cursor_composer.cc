@@ -21,6 +21,7 @@
 #include "modules/desktop_capture/mouse_cursor.h"
 #include "modules/desktop_capture/mouse_cursor_monitor.h"
 #include "rtc_base/checks.h"
+#include "rtc_base/logging.h"
 
 namespace webrtc {
 
@@ -104,6 +105,11 @@ DesktopFrameWithCursor::DesktopFrameWithCursor(
   cursor_rect_.IntersectWith(DesktopRect::MakeSize(size()));
 
   if (!previous_cursor_rect.equals(cursor_rect_)) {
+    RTC_LOG(LS_VERBOSE) << "[MOUSE] cursors moved => cursor_rect=("
+                        << cursor_rect_.top_left().x() << ","
+                        << cursor_rect_.top_left().y() << ") ("
+                        << cursor_rect_.size().width() << "x"
+                        << cursor_rect_.size().height() << ")";
     mutable_updated_region()->AddRect(cursor_rect_);
     // TODO(crbug:1323241) Update this code to properly handle the case where
     // |previous_cursor_rect| is outside of the boundaries of |frame|.
@@ -112,6 +118,11 @@ DesktopFrameWithCursor::DesktopFrameWithCursor(
     // we're running on.
     mutable_updated_region()->AddRect(previous_cursor_rect);
   } else if (cursor_changed) {
+    RTC_LOG(LS_VERBOSE) << "[MOUSE] cursor changed => cursor_rect=("
+                        << cursor_rect_.top_left().x() << ","
+                        << cursor_rect_.top_left().y() << ") ("
+                        << cursor_rect_.size().width() << "x"
+                        << cursor_rect_.size().height() << ")";
     mutable_updated_region()->AddRect(cursor_rect_);
   }
 
@@ -177,6 +188,10 @@ void DesktopAndCursorComposer::Start(DesktopCapturer::Callback* callback) {
   desktop_capturer_->Start(this);
 }
 
+void DesktopAndCursorComposer::SetMaxFrameRate(uint32_t max_frame_rate) {
+  desktop_capturer_->SetMaxFrameRate(max_frame_rate);
+}
+
 void DesktopAndCursorComposer::SetSharedMemoryFactory(
     std::unique_ptr<SharedMemoryFactory> shared_memory_factory) {
   desktop_capturer_->SetSharedMemoryFactory(std::move(shared_memory_factory));
@@ -213,6 +228,10 @@ DesktopCaptureMetadata DesktopAndCursorComposer::GetMetadata() {
   return desktop_capturer_->GetMetadata();
 }
 #endif  // defined(WEBRTC_USE_GIO)
+
+void DesktopAndCursorComposer::OnFrameCaptureStart() {
+  callback_->OnFrameCaptureStart();
+}
 
 void DesktopAndCursorComposer::OnCaptureResult(
     DesktopCapturer::Result result,

@@ -63,6 +63,7 @@ class RTPSender {
   uint16_t SequenceNumber() const RTC_LOCKS_EXCLUDED(send_mutex_);
   void SetSequenceNumber(uint16_t seq) RTC_LOCKS_EXCLUDED(send_mutex_);
 
+  std::vector<uint32_t> Csrcs() const;
   void SetCsrcs(const std::vector<uint32_t>& csrcs)
       RTC_LOCKS_EXCLUDED(send_mutex_);
 
@@ -138,6 +139,10 @@ class RTPSender {
   size_t MaxRtpPacketSize() const RTC_LOCKS_EXCLUDED(send_mutex_);
 
   uint32_t SSRC() const RTC_LOCKS_EXCLUDED(send_mutex_) { return ssrc_; }
+
+  const std::string& Rid() const RTC_LOCKS_EXCLUDED(send_mutex_) {
+    return rid_;
+  }
 
   absl::optional<uint32_t> FlexfecSsrc() const RTC_LOCKS_EXCLUDED(send_mutex_) {
     return flexfec_ssrc_;

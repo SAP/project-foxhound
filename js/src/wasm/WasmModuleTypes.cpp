@@ -20,11 +20,11 @@
 
 #include "mozilla/Range.h"
 
-#include "vm/JSAtom.h"
+#include "vm/JSAtomUtils.h"  // AtomizeUTF8Chars
 #include "vm/MallocProvider.h"
 #include "wasm/WasmUtility.h"
 
-#include "vm/JSAtom-inl.h"
+#include "vm/JSAtomUtils-inl.h"  // AtomToId
 
 using namespace js;
 using namespace js::wasm;
@@ -86,14 +86,13 @@ Export::Export(CacheableName&& fieldName, uint32_t index, DefinitionKind kind)
   pod.index_ = index;
 }
 
-Export::Export(CacheableName&& fieldName, DefinitionKind kind)
-    : fieldName_(std::move(fieldName)) {
-  pod.kind_ = kind;
-  pod.index_ = 0;
-}
-
 uint32_t Export::funcIndex() const {
   MOZ_ASSERT(pod.kind_ == DefinitionKind::Function);
+  return pod.index_;
+}
+
+uint32_t Export::memoryIndex() const {
+  MOZ_ASSERT(pod.kind_ == DefinitionKind::Memory);
   return pod.index_;
 }
 

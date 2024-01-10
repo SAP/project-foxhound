@@ -64,12 +64,12 @@ struct EdgeValue {
 
 struct VerifyNode {
   JS::GCCellPtr thing;
-  uint32_t count;
+  uint32_t count = 0;
   EdgeValue edges[1];
 };
 
-typedef HashMap<Cell*, VerifyNode*, DefaultHasher<Cell*>, SystemAllocPolicy>
-    NodeMap;
+using NodeMap =
+    HashMap<Cell*, VerifyNode*, DefaultHasher<Cell*>, SystemAllocPolicy>;
 
 /*
  * The verifier data structures are simple. The entire graph is stored in a
@@ -171,10 +171,10 @@ static VerifyNode* MakeNode(VerifyPreTracer* trc, JS::GCCellPtr thing) {
 static VerifyNode* NextNode(VerifyNode* node) {
   if (node->count == 0) {
     return (VerifyNode*)((char*)node + sizeof(VerifyNode) - sizeof(EdgeValue));
-  } else {
-    return (VerifyNode*)((char*)node + sizeof(VerifyNode) +
-                         sizeof(EdgeValue) * (node->count - 1));
   }
+
+  return (VerifyNode*)((char*)node + sizeof(VerifyNode) +
+                       sizeof(EdgeValue) * (node->count - 1));
 }
 
 template <typename ZonesIterT>
@@ -448,7 +448,7 @@ void js::gc::GCRuntime::finishVerifier() {
 }
 
 struct GCChunkHasher {
-  typedef gc::TenuredChunk* Lookup;
+  using Lookup = gc::TenuredChunk*;
 
   /*
    * Strip zeros for better distribution after multiplying by the golden
@@ -868,7 +868,8 @@ bool HeapCheckTracerBase::traceHeap(AutoTraceSession& session) {
     if (item.processed) {
       stack.popBack();
     } else {
-      parentIndex = stack.length() - 1;
+      MOZ_ASSERT(stack.length() <= INT_MAX);
+      parentIndex = int(stack.length()) - 1;
       stack.back().processed = true;
       TraceChildren(this, item.thing);
     }
@@ -1083,7 +1084,7 @@ bool js::gc::CheckWeakMapEntryMarking(const WeakMapBase* map, Cell* key,
 #  ifdef DEBUG
     fprintf(stderr, "Key:\n");
     key->dump();
-    if (auto delegate = MaybeGetDelegate(key); delegate) {
+    if (auto* delegate = MaybeGetDelegate(key); delegate) {
       fprintf(stderr, "Delegate:\n");
       delegate->dump();
     }

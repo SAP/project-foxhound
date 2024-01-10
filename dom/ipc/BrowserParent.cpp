@@ -13,7 +13,6 @@
 #ifdef ACCESSIBILITY
 #  include "mozilla/a11y/DocAccessibleParent.h"
 #  include "mozilla/a11y/Platform.h"
-#  include "mozilla/a11y/RemoteAccessibleBase.h"
 #  include "nsAccessibilityService.h"
 #endif
 #include "mozilla/Components.h"
@@ -56,6 +55,7 @@
 #include "mozilla/Preferences.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/ProcessHangMonitor.h"
+#include "mozilla/RecursiveMutex.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/TextEventDispatcher.h"
@@ -695,7 +695,15 @@ void BrowserParent::Deactivated() {
   ProcessPriorityManager::BrowserPriorityChanged(this, /* aPriority = */ false);
 }
 
-void BrowserParent::DestroyInternal() {
+void BrowserParent::Destroy() {
+  // Aggressively release the window to avoid leaking the world in shutdown
+  // corner cases.
+  mBrowserDOMWindow = nullptr;
+
+  if (mIsDestroyed) {
+    return;
+  }
+
   Deactivated();
 
   RemoveWindowListeners();
@@ -709,31 +717,25 @@ void BrowserParent::DestroyInternal() {
   }
 #endif
 
-  // If this fails, it's most likely due to a content-process crash,
-  // and auto-cleanup will kick in.  Otherwise, the child side will
-  // destroy itself and send back __delete__().
-  Unused << SendDestroy();
-}
+  {
+    // The following sequence assumes that the keepalive state does not change
+    // between the calls, but our ThreadsafeHandle might be accessed from other
+    // threads in the meantime.
+    RecursiveMutexAutoLock lock(Manager()->ThreadsafeHandleMutex());
 
-void BrowserParent::Destroy() {
-  // Aggressively release the window to avoid leaking the world in shutdown
-  // corner cases.
-  mBrowserDOMWindow = nullptr;
+    // If we are shutting down everything or we know to be the last
+    // BrowserParent, signal the impending shutdown early to the content process
+    // to avoid to run the SendDestroy before we know we are ExpectingShutdown.
+    Manager()->NotifyTabWillDestroy();
 
-  if (mIsDestroyed) {
-    return;
+    // If this fails, it's most likely due to a content-process crash, and
+    // auto-cleanup will kick in.  Otherwise, the child side will destroy itself
+    // and send back __delete__().
+    (void)SendDestroy();
+    mIsDestroyed = true;
+
+    Manager()->NotifyTabDestroying();
   }
-
-  // If we are shutting down everything or we know to be the last
-  // BrowserParent, signal the impending shutdown early to the content process
-  // to avoid to run the SendDestroy before we know we are ExpectingShutdown.
-  Manager()->NotifyTabWillDestroy();
-
-  DestroyInternal();
-
-  mIsDestroyed = true;
-
-  Manager()->NotifyTabDestroying();
 
   // This `AddKeepAlive` will be cleared if `mMarkedDestroying` is set in
   // `ActorDestroy`. Out of caution, we don't add the `KeepAlive` if our IPC
@@ -2499,7 +2501,7 @@ mozilla::ipc::IPCResult BrowserParent::RecvNotifyIMEPositionChange(
 }
 
 mozilla::ipc::IPCResult BrowserParent::RecvOnEventNeedingAckHandled(
-    const EventMessage& aMessage) {
+    const EventMessage& aMessage, const uint32_t& aCompositionId) {
   // This is called when the child process receives WidgetCompositionEvent or
   // WidgetSelectionEvent.
   // FYI: Don't check if widget is nullptr here because it's more important to
@@ -2509,7 +2511,7 @@ mozilla::ipc::IPCResult BrowserParent::RecvOnEventNeedingAckHandled(
   // While calling OnEventNeedingAckHandled(), BrowserParent *might* be
   // destroyed since it may send notifications to IME.
   RefPtr<BrowserParent> kungFuDeathGrip(this);
-  mContentCache.OnEventNeedingAckHandled(widget, aMessage);
+  mContentCache.OnEventNeedingAckHandled(widget, aMessage, aCompositionId);
   return IPC_OK();
 }
 
@@ -3168,10 +3170,18 @@ bool BrowserParent::HandleQueryContentEvent(WidgetQueryContentEvent& aEvent) {
   return true;
 }
 
-bool BrowserParent::SendCompositionEvent(WidgetCompositionEvent& aEvent) {
+bool BrowserParent::SendCompositionEvent(WidgetCompositionEvent& aEvent,
+                                         uint32_t aCompositionId) {
   if (mIsDestroyed) {
     return false;
   }
+
+  // When the composition is handled in a remote process, we need to handle
+  // commit/cancel result for composition with the composition ID to avoid
+  // to abort newer composition.  Therefore, we need to let the remote process
+  // know the composition ID.
+  MOZ_ASSERT(aCompositionId != 0);
+  aEvent.mCompositionId = aCompositionId;
 
   if (!mContentCache.OnCompositionEvent(aEvent)) {
     return true;
@@ -3326,7 +3336,8 @@ void BrowserParent::UnsetLastMouseRemoteTarget(BrowserParent* aBrowserParent) {
 }
 
 mozilla::ipc::IPCResult BrowserParent::RecvRequestIMEToCommitComposition(
-    const bool& aCancel, bool* aIsCommitted, nsString* aCommittedString) {
+    const bool& aCancel, const uint32_t& aCompositionId, bool* aIsCommitted,
+    nsString* aCommittedString) {
   nsCOMPtr<nsIWidget> widget = GetTextInputHandlingWidget();
   if (!widget) {
     *aIsCommitted = false;
@@ -3334,7 +3345,7 @@ mozilla::ipc::IPCResult BrowserParent::RecvRequestIMEToCommitComposition(
   }
 
   *aIsCommitted = mContentCache.RequestIMEToCommitComposition(
-      widget, aCancel, *aCommittedString);
+      widget, aCancel, aCompositionId, *aCommittedString);
   return IPC_OK();
 }
 

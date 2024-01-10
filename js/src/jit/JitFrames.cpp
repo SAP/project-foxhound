@@ -1005,6 +1005,15 @@ static void TraceIonJSFrame(JSTracer* trc, const JSJitFrameIter& frame) {
     }
   }
 #endif
+
+  // Skip over slots/elements to get to wasm anyrefs
+  while (safepoint.getSlotsOrElementsSlot(&entry)) {
+  }
+
+  while (safepoint.getWasmAnyRefSlot(&entry)) {
+    wasm::AnyRef* v = (wasm::AnyRef*)layout->slotRef(entry);
+    TraceRoot(trc, v, "ion-wasm-anyref-slot");
+  }
 }
 
 static void TraceBailoutFrame(JSTracer* trc, const JSJitFrameIter& frame) {
@@ -1108,6 +1117,24 @@ static void TraceBaselineStubFrame(JSTracer* trc, const JSJitFrameIter& frame) {
     } else {
       MOZ_ASSERT(stub->toCacheIRStub()->makesGCCalls());
       stub->toCacheIRStub()->trace(trc);
+
+      for (int i = 0; i < stub->jitCode()->localTracingSlots(); ++i) {
+        TraceRoot(trc, layout->locallyTracedValuePtr(i),
+                  "baseline-local-tracing-slot");
+      }
+    }
+  }
+}
+
+static void TraceWeakBaselineStubFrame(JSTracer* trc,
+                                       const JSJitFrameIter& frame) {
+  MOZ_ASSERT(frame.type() == FrameType::BaselineStub);
+  BaselineStubFrameLayout* layout = (BaselineStubFrameLayout*)frame.fp();
+
+  if (ICStub* stub = layout->maybeStubPtr()) {
+    if (!stub->isFallback()) {
+      MOZ_ASSERT(stub->toCacheIRStub()->makesGCCalls());
+      stub->toCacheIRStub()->traceWeak(trc);
     }
   }
 }
@@ -1116,6 +1143,11 @@ static void TraceIonICCallFrame(JSTracer* trc, const JSJitFrameIter& frame) {
   MOZ_ASSERT(frame.type() == FrameType::IonICCall);
   IonICCallFrameLayout* layout = (IonICCallFrameLayout*)frame.fp();
   TraceRoot(trc, layout->stubCode(), "ion-ic-call-code");
+
+  for (int i = 0; i < (*layout->stubCode())->localTracingSlots(); ++i) {
+    TraceRoot(trc, layout->locallyTracedValuePtr(i),
+              "ion-ic-local-tracing-slot");
+  }
 }
 
 #if defined(JS_CODEGEN_ARM64) || defined(JS_CODEGEN_MIPS32)
@@ -1410,6 +1442,21 @@ void TraceJitActivations(JSContext* cx, JSTracer* trc) {
   for (JitActivationIterator activations(cx); !activations.done();
        ++activations) {
     TraceJitActivation(trc, activations->asJit());
+  }
+}
+
+void TraceWeakJitActivationsInSweepingZones(JSContext* cx, JSTracer* trc) {
+  for (JitActivationIterator activation(cx); !activation.done(); ++activation) {
+    if (activation->compartment()->zone()->isGCSweeping()) {
+      for (JitFrameIter frame(activation->asJit()); !frame.done(); ++frame) {
+        if (frame.isJSJit()) {
+          const JSJitFrameIter& jitFrame = frame.asJSJit();
+          if (jitFrame.type() == FrameType::BaselineStub) {
+            TraceWeakBaselineStubFrame(trc, jitFrame);
+          }
+        }
+      }
+    }
   }
 }
 

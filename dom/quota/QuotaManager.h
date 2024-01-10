@@ -69,6 +69,7 @@ class ClientDirectoryLock;
 class DirectoryLockImpl;
 class GroupInfo;
 class GroupInfoPair;
+class NormalOriginOperationBase;
 class OriginDirectoryLock;
 class OriginInfo;
 class OriginScope;
@@ -129,6 +130,10 @@ class QuotaManager final : public BackgroundThreadObject {
   static bool IsOSMetadata(const nsAString& aFileName);
 
   static bool IsDotFile(const nsAString& aFileName);
+
+  void RegisterNormalOriginOp(NormalOriginOperationBase& aNormalOriginOp);
+
+  void UnregisterNormalOriginOp(NormalOriginOperationBase& aNormalOriginOp);
 
   bool IsOriginInitialized(const nsACString& aOrigin) const {
     AssertIsOnIOThread();
@@ -232,6 +237,14 @@ class QuotaManager final : public BackgroundThreadObject {
 
   Result<nsCOMPtr<nsIFile>, nsresult> GetOriginDirectory(
       const OriginMetadata& aOriginMetadata) const;
+
+  static nsresult CreateDirectoryMetadata(
+      nsIFile& aDirectory, int64_t aTimestamp,
+      const OriginMetadata& aOriginMetadata);
+
+  static nsresult CreateDirectoryMetadata2(
+      nsIFile& aDirectory, int64_t aTimestamp, bool aPersisted,
+      const OriginMetadata& aOriginMetadata);
 
   nsresult RestoreDirectoryMetadata2(nsIFile* aDirectory);
 

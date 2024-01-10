@@ -13,7 +13,6 @@ from logger.logger import RaptorLogger
 from mozdevice import ADBDeviceFactory
 from performance_tuning import tune_performance
 from perftest import PerftestAndroid
-from power import disable_charging, enable_charging
 
 from .base import Browsertime
 
@@ -83,6 +82,10 @@ class BrowsertimeAndroid(PerftestAndroid, Browsertime):
             "false",
             "--videoParams.addTimer",
             "false",
+            "--videoParams.androidVideoWaitTime",
+            "20000",
+            "--android.enabled",
+            "true",
         ]
 
         if self.config["app"] == "chrome-m":
@@ -90,7 +93,6 @@ class BrowsertimeAndroid(PerftestAndroid, Browsertime):
                 [
                     "--browser",
                     "chrome",
-                    "--android",
                 ]
             )
         else:
@@ -106,17 +108,12 @@ class BrowsertimeAndroid(PerftestAndroid, Browsertime):
                 [
                     "--browser",
                     "firefox",
-                    "--android",
                     "--firefox.android.package",
                     self.config["binary"],
                     "--firefox.android.activity",
                     activity,
                 ]
             )
-
-        # Setup power testing
-        if self.config["power_test"]:
-            args_list.extend(["--androidPower", "true"])
 
         if self.config["app"] == "fenix":
             # See bug 1768889
@@ -252,13 +249,7 @@ class BrowsertimeAndroid(PerftestAndroid, Browsertime):
             # Make sure that chrome is enabled on the device
             self.device.shell_output("pm enable com.android.chrome")
 
-        try:
-            if self.config["power_test"]:
-                disable_charging(self.device)
-            return super(BrowsertimeAndroid, self).run_tests(tests, test_names)
-        finally:
-            if self.config["power_test"]:
-                enable_charging(self.device)
+        return super(BrowsertimeAndroid, self).run_tests(tests, test_names)
 
     def run_test_teardown(self, test):
         LOG.info("removing reverse socket connections")

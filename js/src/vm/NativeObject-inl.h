@@ -22,6 +22,7 @@
 #include "vm/JSContext.h"
 #include "vm/PlainObject.h"
 #include "vm/PropertyResult.h"
+#include "vm/StringType.h"
 #include "vm/TypedArrayObject.h"
 
 #include "gc/Heap-inl.h"
@@ -165,6 +166,22 @@ inline void NativeObject::initDenseElements(const Value* src, uint32_t count) {
 #endif
 
   memcpy(reinterpret_cast<Value*>(elements_), src, count * sizeof(Value));
+  elementsRangePostWriteBarrier(0, count);
+}
+
+inline void NativeObject::initDenseElements(JSLinearString** src,
+                                            uint32_t count) {
+  MOZ_ASSERT(getDenseInitializedLength() == 0);
+  MOZ_ASSERT(count <= getDenseCapacity());
+  MOZ_ASSERT(src);
+  MOZ_ASSERT(isExtensible());
+
+  setDenseInitializedLength(count);
+  Value* elementsBase = reinterpret_cast<Value*>(elements_);
+  for (size_t i = 0; i < count; i++) {
+    elementsBase[i].setString(src[i]);
+  }
+
   elementsRangePostWriteBarrier(0, count);
 }
 
@@ -651,8 +668,6 @@ static MOZ_ALWAYS_INLINE bool CallResolveOp(JSContext* cx,
                                             Handle<NativeObject*> obj,
                                             HandleId id,
                                             PropertyResult* propp) {
-  MOZ_ASSERT(!cx->isHelperThreadContext());
-
   // Avoid recursion on (obj, id) already being resolved on cx.
   AutoResolving resolving(cx, obj, id);
   if (resolving.alreadyStarted()) {
@@ -829,7 +844,6 @@ static MOZ_ALWAYS_INLINE bool NativeLookupPropertyInline(
     // we can simply loop within this call frame.
     if (proto->getOpsLookupProperty()) {
       if constexpr (allowGC) {
-        MOZ_ASSERT(!cx->isHelperThreadContext());
         RootedObject protoRoot(cx, proto);
         return LookupProperty(cx, protoRoot, id, objp, propp);
       } else {

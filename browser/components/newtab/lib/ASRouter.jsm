@@ -15,6 +15,9 @@ const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   Downloader: "resource://services-settings/Attachments.sys.mjs",
   ExperimentAPI: "resource://nimbus/ExperimentAPI.sys.mjs",
+  FeatureCalloutBroker:
+    "resource://activity-stream/lib/FeatureCalloutBroker.sys.mjs",
+  KintoHttpClient: "resource://services-common/kinto-http-client.sys.mjs",
   MacAttribution: "resource:///modules/MacAttribution.sys.mjs",
   NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
   PanelTestProvider: "resource://activity-stream/lib/PanelTestProvider.sys.mjs",
@@ -41,7 +44,6 @@ XPCOMUtils.defineLazyModuleGetters(lazy, {
     "resource://activity-stream/lib/ASRouterPreferences.jsm",
   ASRouterTriggerListeners:
     "resource://activity-stream/lib/ASRouterTriggerListeners.jsm",
-  KintoHttpClient: "resource://services-common/kinto-http-client.js",
 });
 
 XPCOMUtils.defineLazyServiceGetters(lazy, {
@@ -50,7 +52,9 @@ XPCOMUtils.defineLazyServiceGetters(lazy, {
 const { actionCreators: ac } = ChromeUtils.importESModule(
   "resource://activity-stream/common/Actions.sys.mjs"
 );
-
+const { MESSAGING_EXPERIMENTS_DEFAULT_FEATURES } = ChromeUtils.importESModule(
+  "resource://activity-stream/lib/MessagingExperimentConstants.sys.mjs"
+);
 const { CFRMessageProvider } = ChromeUtils.importESModule(
   "resource://activity-stream/lib/CFRMessageProvider.sys.mjs"
 );
@@ -103,29 +107,16 @@ const TOPIC_EXPERIMENT_ENROLLMENT_CHANGED = "nimbus:enrollments-updated";
 const USE_REMOTE_L10N_PREF =
   "browser.newtabpage.activity-stream.asrouter.useRemoteL10n";
 
-const MESSAGING_EXPERIMENTS_DEFAULT_FEATURES = [
-  "cfr",
-  "fxms-message-1",
-  "fxms-message-2",
-  "fxms-message-3",
-  "fxms-message-4",
-  "fxms-message-5",
-  "fxms-message-6",
-  "fxms-message-7",
-  "fxms-message-8",
-  "fxms-message-9",
-  "fxms-message-10",
-  "fxms-message-11",
-  "infobar",
-  "moments-page",
-  "pbNewtab",
-  "spotlight",
-];
-
 // Experiment groups that need to report the reach event in Messaging-Experiments.
 // If you're adding new groups to it, make sure they're also added in the
 // `messaging_experiments.reach.objects` defined in "toolkit/components/telemetry/Events.yaml"
-const REACH_EVENT_GROUPS = ["cfr", "moments-page", "infobar", "spotlight"];
+const REACH_EVENT_GROUPS = [
+  "cfr",
+  "moments-page",
+  "infobar",
+  "spotlight",
+  "featureCallout",
+];
 const REACH_EVENT_CATEGORY = "messaging_experiments";
 const REACH_EVENT_METHOD = "reach";
 
@@ -1163,12 +1154,23 @@ class _ASRouter {
         }
 
         const target = {};
-        const promises = Object.entries(object).map(async ([key, value]) => [
-          key,
-          await resolve(await value),
-        ]);
-        for (const [key, value] of await Promise.all(promises)) {
-          target[key] = value;
+        const promises = Object.entries(object).map(async ([key, value]) => {
+          try {
+            let resolvedValue = await resolve(await value);
+            return [key, resolvedValue];
+          } catch (error) {
+            lazy.ASRouterPreferences.console.debug(
+              `getTargetingParameters: Error resolving ${key}: `,
+              error
+            );
+            throw error;
+          }
+        });
+        for (const { status, value } of await Promise.allSettled(promises)) {
+          if (status === "fulfilled") {
+            const [key, resolvedValue] = value;
+            target[key] = resolvedValue;
+          }
         }
         return target;
       }
@@ -1398,6 +1400,20 @@ class _ASRouter {
           this.dispatchCFRAction
         );
         break;
+      case "feature_callout":
+        // featureCalloutCheck only comes from within FeatureCallout, where it
+        // is used to request a matching message. It is not a real trigger.
+        // pdfJsFeatureCalloutCheck is used for PDF.js feature callouts, which
+        // are managed by the trigger listener itself.
+        switch (trigger.id) {
+          case "featureCalloutCheck":
+          case "pdfJsFeatureCalloutCheck":
+          case "newtabFeatureCalloutCheck":
+            break;
+          default:
+            lazy.FeatureCalloutBroker.showFeatureCallout(browser, message);
+        }
+        break;
       case "toast_notification":
         lazy.ToastNotification.showToastNotification(
           message,
@@ -1433,8 +1449,8 @@ class _ASRouter {
       `entering addImpression for ${message.id}`
     );
 
-    const groupsWithFrequency = this.state.groups.filter(
-      ({ frequency, id }) => frequency && message.groups.includes(id)
+    const groupsWithFrequency = this.state.groups?.filter(
+      ({ frequency, id }) => frequency && message.groups?.includes(id)
     );
     // We only need to store impressions for messages that have frequency, or
     // that have providers that have frequency

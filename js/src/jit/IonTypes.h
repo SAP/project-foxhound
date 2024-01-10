@@ -189,6 +189,11 @@ enum class BailoutKind : uint8_t {
   // was not an object.
   ThrowCheckIsObject,
 
+  // These two are similar to ThrowCheckIsObject. We have to throw an exception
+  // because the result of a Proxy get trap didn't match the requirements.
+  ThrowProxyTrapMustReportSameValue,
+  ThrowProxyTrapMustReportUndefined,
+
   // We have executed code that should be unreachable, and need to assert.
   Unreachable,
 
@@ -237,6 +242,10 @@ inline const char* BailoutKindString(BailoutKind kind) {
       return "OnStackInvalidation";
     case BailoutKind::ThrowCheckIsObject:
       return "ThrowCheckIsObject";
+    case BailoutKind::ThrowProxyTrapMustReportSameValue:
+      return "ThrowProxyTrapMustReportSameValue";
+    case BailoutKind::ThrowProxyTrapMustReportUndefined:
+      return "ThrowProxyTrapMustReportUndefined";
     case BailoutKind::Unreachable:
       return "Unreachable";
 
@@ -515,7 +524,7 @@ enum class MIRType : uint8_t {
   Slots,         // A slots vector
   Elements,      // An elements vector
   Pointer,       // An opaque pointer that receives no special treatment
-  RefOrNull,     // Wasm Ref/AnyRef/NullRef: a raw JSObject* or a raw (void*)0
+  WasmAnyRef,    // Wasm Ref/AnyRef/NullRef: a raw JSObject* or a raw (void*)0
   StackResults,  // Wasm multi-value stack result area, which may contain refs
   Shape,         // A Shape pointer.
   Last = Shape
@@ -605,7 +614,7 @@ static inline size_t MIRTypeToSize(MIRType type) {
     case MIRType::Simd128:
       return 16;
     case MIRType::Pointer:
-    case MIRType::RefOrNull:
+    case MIRType::WasmAnyRef:
       return sizeof(uintptr_t);
     default:
       MOZ_CRASH("MIRTypeToSize - unhandled case");
@@ -656,8 +665,8 @@ static inline const char* StringFromMIRType(MIRType type) {
       return "Elements";
     case MIRType::Pointer:
       return "Pointer";
-    case MIRType::RefOrNull:
-      return "RefOrNull";
+    case MIRType::WasmAnyRef:
+      return "WasmAnyRef";
     case MIRType::StackResults:
       return "StackResults";
     case MIRType::Shape:
@@ -901,6 +910,9 @@ enum ABIFunctionType : uint64_t {
       ArgType_Int32, {ArgType_General, ArgType_Int32}),
   Args_Int32_GeneralInt32Int32 = detail::MakeABIFunctionType(
       ArgType_Int32, {ArgType_General, ArgType_Int32, ArgType_Int32}),
+  Args_Int32_GeneralInt32Int32Int32 = detail::MakeABIFunctionType(
+      ArgType_Int32,
+      {ArgType_General, ArgType_Int32, ArgType_Int32, ArgType_Int32}),
   Args_Int32_GeneralInt32Int32Int32Int32 = detail::MakeABIFunctionType(
       ArgType_Int32, {ArgType_General, ArgType_Int32, ArgType_Int32,
                       ArgType_Int32, ArgType_Int32}),
@@ -944,21 +956,21 @@ enum ABIFunctionType : uint64_t {
   Args_Int32_GeneralInt32Int32Int32General = detail::MakeABIFunctionType(
       ArgType_Int32, {ArgType_General, ArgType_Int32, ArgType_Int32,
                       ArgType_Int32, ArgType_General}),
-  Args_Int32_GeneralInt32Int32Int64 = detail::MakeABIFunctionType(
-      ArgType_Int32,
-      {ArgType_General, ArgType_Int32, ArgType_Int32, ArgType_Int64}),
   Args_Int32_GeneralInt32Int32General = detail::MakeABIFunctionType(
       ArgType_Int32,
       {ArgType_General, ArgType_Int32, ArgType_Int32, ArgType_General}),
-  Args_Int32_GeneralInt32Int64Int64 = detail::MakeABIFunctionType(
-      ArgType_Int32,
-      {ArgType_General, ArgType_Int32, ArgType_Int64, ArgType_Int64}),
+  Args_Int32_GeneralInt32Int32Int64Int32 = detail::MakeABIFunctionType(
+      ArgType_Int32, {ArgType_General, ArgType_Int32, ArgType_Int32,
+                      ArgType_Int64, ArgType_Int32}),
   Args_Int32_GeneralInt32GeneralInt32 = detail::MakeABIFunctionType(
       ArgType_Int32,
       {ArgType_General, ArgType_Int32, ArgType_General, ArgType_Int32}),
   Args_Int32_GeneralInt32GeneralInt32Int32 = detail::MakeABIFunctionType(
       ArgType_Int32, {ArgType_General, ArgType_Int32, ArgType_General,
                       ArgType_Int32, ArgType_Int32}),
+  Args_Int32_GeneralInt32Int64Int64Int32 = detail::MakeABIFunctionType(
+      ArgType_Int32, {ArgType_General, ArgType_Int32, ArgType_Int64,
+                      ArgType_Int64, ArgType_Int32}),
   Args_Int32_GeneralGeneral = detail::MakeABIFunctionType(
       ArgType_Int32, {ArgType_General, ArgType_General}),
   Args_Int32_GeneralGeneralGeneral = detail::MakeABIFunctionType(
@@ -977,33 +989,44 @@ enum ABIFunctionType : uint64_t {
   Args_General_GeneralInt32Int32GeneralInt32 = detail::MakeABIFunctionType(
       ArgType_General, {ArgType_General, ArgType_Int32, ArgType_Int32,
                         ArgType_General, ArgType_Int32}),
-  Args_Int32_GeneralInt64Int32Int32Int32 = detail::MakeABIFunctionType(
-      ArgType_Int32, {ArgType_General, ArgType_Int64, ArgType_Int32,
-                      ArgType_Int32, ArgType_Int32}),
-  Args_Int32_GeneralInt64Int32 = detail::MakeABIFunctionType(
-      ArgType_Int32, {ArgType_General, ArgType_Int64, ArgType_Int32}),
-  Args_Int32_GeneralInt64Int32Int64 = detail::MakeABIFunctionType(
+  Args_Int32_GeneralInt64Int32Int32 = detail::MakeABIFunctionType(
       ArgType_Int32,
-      {ArgType_General, ArgType_Int64, ArgType_Int32, ArgType_Int64}),
+      {ArgType_General, ArgType_Int64, ArgType_Int32, ArgType_Int32}),
+  Args_Int32_GeneralInt64Int32Int32Int32Int32 = detail::MakeABIFunctionType(
+      ArgType_Int32, {ArgType_General, ArgType_Int64, ArgType_Int32,
+                      ArgType_Int32, ArgType_Int32, ArgType_Int32}),
+  Args_Int32_GeneralInt64Int32Int64Int32 = detail::MakeABIFunctionType(
+      ArgType_Int32, {ArgType_General, ArgType_Int64, ArgType_Int32,
+                      ArgType_Int64, ArgType_Int32}),
   Args_Int32_GeneralInt64Int32Int64General = detail::MakeABIFunctionType(
       ArgType_Int32, {ArgType_General, ArgType_Int64, ArgType_Int32,
                       ArgType_Int64, ArgType_General}),
   Args_Int32_GeneralInt64Int64Int64 = detail::MakeABIFunctionType(
       ArgType_Int32,
       {ArgType_General, ArgType_Int64, ArgType_Int64, ArgType_Int64}),
+  Args_Int32_GeneralInt64Int64Int64Int32 = detail::MakeABIFunctionType(
+      ArgType_Int32, {ArgType_General, ArgType_Int64, ArgType_Int64,
+                      ArgType_Int64, ArgType_Int32}),
   Args_Int32_GeneralInt64Int64General = detail::MakeABIFunctionType(
       ArgType_Int32,
       {ArgType_General, ArgType_Int64, ArgType_Int64, ArgType_General}),
   Args_Int32_GeneralInt64Int64Int64General = detail::MakeABIFunctionType(
       ArgType_Int32, {ArgType_General, ArgType_Int64, ArgType_Int64,
                       ArgType_Int64, ArgType_General}),
+  Args_Int32_GeneralInt64Int64Int64GeneralGeneral = detail::MakeABIFunctionType(
+      ArgType_Int32, {ArgType_General, ArgType_Int64, ArgType_Int64,
+                      ArgType_Int64, ArgType_General, ArgType_General}),
 
   // Functions that return Int64 are tricky because SpiderMonkey's ReturnRegI64
   // does not match the ABI int64 return register on x86.  Wasm only!
   Args_Int64_General =
       detail::MakeABIFunctionType(ArgType_Int64, {ArgType_General}),
+  Args_Int64_GeneralInt32 = detail::MakeABIFunctionType(
+      ArgType_Int64, {ArgType_General, ArgType_Int32}),
   Args_Int64_GeneralInt64 = detail::MakeABIFunctionType(
       ArgType_Int64, {ArgType_General, ArgType_Int64}),
+  Args_Int64_GeneralInt64Int32 = detail::MakeABIFunctionType(
+      ArgType_Int64, {ArgType_General, ArgType_Int64, ArgType_Int32}),
 
 };
 
@@ -1048,6 +1071,10 @@ enum class ResumeMode : uint8_t {
   // CloseIter causes an invalidation bailout.
   ResumeAfterCheckIsObject,
 
+  // Similar to ResumeAfterCheckIsObject, but we must check that the result
+  // of a proxy get trap aligns with what the spec requires.
+  ResumeAfterCheckProxyGetResult,
+
   // Innermost frame. Resume at the current bytecode op when bailing out.
   ResumeAt,
 
@@ -1077,6 +1104,8 @@ inline const char* ResumeModeToString(ResumeMode mode) {
       return "InlinedAccessor";
     case ResumeMode::ResumeAfterCheckIsObject:
       return "ResumeAfterCheckIsObject";
+    case ResumeMode::ResumeAfterCheckProxyGetResult:
+      return "ResumeAfterCheckProxyGetResult";
   }
   MOZ_CRASH("Invalid mode");
 }
@@ -1085,6 +1114,7 @@ inline bool IsResumeAfter(ResumeMode mode) {
   switch (mode) {
     case ResumeMode::ResumeAfter:
     case ResumeMode::ResumeAfterCheckIsObject:
+    case ResumeMode::ResumeAfterCheckProxyGetResult:
       return true;
     default:
       return false;
@@ -1095,6 +1125,8 @@ inline bool IsResumeAfter(ResumeMode mode) {
 // that aren't on the expression stack, but are needed during bailouts.
 inline uint32_t NumIntermediateValues(ResumeMode mode) {
   switch (mode) {
+    case ResumeMode::ResumeAfterCheckProxyGetResult:
+      return 2;
     case ResumeMode::ResumeAfterCheckIsObject:
       return 1;
     default:

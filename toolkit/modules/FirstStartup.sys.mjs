@@ -44,14 +44,27 @@ export var FirstStartup = {
     let initialized = false;
 
     let promises = [];
+
+    let normandyInitEndTime = null;
     if (AppConstants.MOZ_NORMANDY) {
-      promises.push(lazy.Normandy.init({ runAsync: false }));
+      promises.push(
+        lazy.Normandy.init({ runAsync: false }).finally(() => {
+          normandyInitEndTime = Cu.now();
+        })
+      );
     }
 
+    let deleteTasksEndTime = null;
     if (AppConstants.MOZ_UPDATE_AGENT) {
       // It's technically possible for a previous installation to leave an old
       // OS-level scheduled task around.  Start fresh.
-      promises.push(lazy.TaskScheduler.deleteAllTasks().catch(() => {}));
+      promises.push(
+        lazy.TaskScheduler.deleteAllTasks()
+          .catch(() => {})
+          .finally(() => {
+            deleteTasksEndTime = Cu.now();
+          })
+      );
     }
 
     if (promises.length) {
@@ -71,6 +84,18 @@ export var FirstStartup = {
       });
     } else {
       this._state = this.UNSUPPORTED;
+    }
+
+    if (AppConstants.MOZ_NORMANDY) {
+      Glean.firstStartup.normandyInitTime.set(
+        Math.ceil(normandyInitEndTime || Cu.now() - startingTime)
+      );
+    }
+
+    if (AppConstants.MOZ_UPDATE_AGENT) {
+      Glean.firstStartup.deleteTasksTime.set(
+        Math.ceil(deleteTasksEndTime || Cu.now() - startingTime)
+      );
     }
 
     Glean.firstStartup.statusCode.set(this._state);

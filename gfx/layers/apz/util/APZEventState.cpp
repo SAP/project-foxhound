@@ -11,8 +11,10 @@
 #include "APZCCallbackHelper.h"
 #include "ActiveElementManager.h"
 #include "TouchManager.h"
+#include "mozilla/Assertions.h"
 #include "mozilla/BasicEvents.h"
 #include "mozilla/dom/Document.h"
+#include "mozilla/EventForwards.h"
 #include "mozilla/IntegerPrintfMacros.h"
 #include "mozilla/PositionedEventTargeting.h"
 #include "mozilla/Preferences.h"
@@ -28,6 +30,7 @@
 #include "mozilla/layers/IAPZCTreeManager.h"
 #include "mozilla/widget/nsAutoRollup.h"
 #include "nsCOMPtr.h"
+#include "nsContentUtils.h"
 #include "nsDocShell.h"
 #include "nsIDOMWindowUtils.h"
 #include "nsINamed.h"
@@ -82,9 +85,6 @@ int32_t WidgetModifiersToDOMModifiers(mozilla::Modifiers aModifiers) {
   if (aModifiers & mozilla::MODIFIER_SYMBOLLOCK) {
     result |= nsIDOMWindowUtils::MODIFIER_SYMBOLLOCK;
   }
-  if (aModifiers & mozilla::MODIFIER_OS) {
-    result |= nsIDOMWindowUtils::MODIFIER_OS;
-  }
   return result;
 }
 
@@ -104,6 +104,8 @@ APZEventState::APZEventState(nsIWidget* aWidget,
       mEndTouchIsClick(false),
       mFirstTouchCancelled(false),
       mTouchEndCancelled(false),
+      mReceivedNonTouchStart(false),
+      mTouchStartPrevented(false),
       mSingleTapsPendingTargetInfo(),
       mLastTouchIdentifier(0) {
   nsresult rv;
@@ -254,14 +256,7 @@ PreventDefaultResult APZEventState::FireContextmenuEvents(
     nsEventStatus status = APZCCallbackHelper::DispatchSynthesizedMouseEvent(
         eMouseLongTap, aPoint * aScale, aModifiers,
         /*clickCount*/ 1, aWidget);
-    if (status == nsEventStatus_eConsumeNoDefault) {
-      // Assuming no JS actor listens eMouseLongTap events.
-      preventDefaultResult = PreventDefaultResult::ByContent;
-    } else {
-      preventDefaultResult = PreventDefaultResult::No;
-    }
-    APZES_LOG("eMouseLongTap event %s\n",
-              ToString(preventDefaultResult).c_str());
+    APZES_LOG("eMouseLongTap event %s\n", ToString(status).c_str());
 #endif
   }
 
@@ -273,14 +268,27 @@ void APZEventState::ProcessLongTap(PresShell* aPresShell,
                                    const CSSToLayoutDeviceScale& aScale,
                                    Modifiers aModifiers,
                                    uint64_t aInputBlockId) {
-  APZES_LOG("Handling long tap at %s\n", ToString(aPoint).c_str());
+  APZES_LOG("Handling long tap at %s block id %" PRIu64 "\n",
+            ToString(aPoint).c_str(), aInputBlockId);
 
   nsCOMPtr<nsIWidget> widget = GetWidget();
   if (!widget) {
     return;
   }
 
-  SendPendingTouchPreventedResponse(false);
+  // If the touch block is waiting for a content response, send one now.
+  // Bug 1848736: Why is a content response needed here? Can it be removed?
+  // However, do not clear |mPendingTouchPreventedResponse|, because APZ will
+  // wait for an additional content response before processing touch-move
+  // events (since the first touch-move could still be prevented, and that
+  // should prevent the touch block from being processed).
+  if (mPendingTouchPreventedResponse) {
+    APZES_LOG("Sending response %d for pending guid: %s block id: %" PRIu64
+              " due to long tap\n",
+              false, ToString(mPendingTouchPreventedGuid).c_str(),
+              mPendingTouchPreventedBlockId);
+    mContentReceivedInputBlockCallback(mPendingTouchPreventedBlockId, false);
+  }
 
 #ifdef XP_WIN
   // On Windows, we fire the contextmenu events when the user lifts their
@@ -288,41 +296,40 @@ void APZEventState::ProcessLongTap(PresShell* aPresShell,
   // ProcessLongTapUp function. However, we still fire the eMouseLongTap event
   // at this time, because things like text selection or dragging may want
   // to know about it.
-  nsEventStatus status = APZCCallbackHelper::DispatchSynthesizedMouseEvent(
+  APZCCallbackHelper::DispatchSynthesizedMouseEvent(
       eMouseLongTap, aPoint * aScale, aModifiers, /*clickCount*/ 1, widget);
-
-  PreventDefaultResult preventDefaultResult =
-      (status == nsEventStatus_eConsumeNoDefault)
-          ? PreventDefaultResult::ByContent
-          : PreventDefaultResult::No;
 #else
   PreventDefaultResult preventDefaultResult =
       FireContextmenuEvents(aPresShell, aPoint, aScale, aModifiers, widget);
 #endif
-  mContentReceivedInputBlockCallback(
-      aInputBlockId, preventDefaultResult != PreventDefaultResult::No);
 
-  const bool eventHandled =
-#ifdef MOZ_WIDGET_ANDROID
+  const bool contextmenuOpen =
+#ifdef XP_WIN
+      // On Windows context menu will never be opened by long tap events, the
+      // menu will open after the user lifts their finger.
+      false;
+#elif defined(MOZ_WIDGET_ANDROID)
       // On Android, GeckoView calls preventDefault() in a JSActor
       // (ContentDelegateChild.jsm) when opening context menu so that we can
       // tell whether contextmenu opens in response to the contextmenu event by
       // checking where preventDefault() got called.
       preventDefaultResult == PreventDefaultResult::ByChrome;
 #else
-      // Unfortunately on desktop platforms other than Windows we can't use
-      // the same approach for Android since we no longer call preventDefault()
-      // since bug 1558506. So for now, we keep the current behavior that is
-      // sending a touchcancel event if the contextmenu event was
-      // preventDefault-ed in an event handler in the content itself.
-      preventDefaultResult == PreventDefaultResult::ByContent;
+      // On desktop platforms (other than Windows) unlike Android, context menu
+      // can be opened anywhere even if, for example, there's no link under the
+      // touch point. So we can assume that "not preventDefault" means a context
+      // menu is open.
+      preventDefaultResult == PreventDefaultResult::No;
 #endif
-  if (eventHandled) {
+  // Assuming that contextmenuOpen=true here means a context menu was opened, it
+  // will be treated as "preventDefaulted" in APZ.
+  mContentReceivedInputBlockCallback(aInputBlockId, contextmenuOpen);
+
+  if (contextmenuOpen) {
     // Also send a touchcancel to content
     //  a) on Android if browser's contextmenu is open
-    //  b) on Windows if the long tap event was consumed
-    //  c) on other platforms if preventDefault() was called for the contextmenu
-    //     event
+    //  b) on desktop platforms other than Windows if browser's contextmenu is
+    //     open
     // so that listeners that might be waiting for a touchend don't trigger.
     WidgetTouchEvent cancelTouchEvent(true, eTouchCancel, widget.get());
     cancelTouchEvent.mModifiers = aModifiers;
@@ -363,12 +370,13 @@ void APZEventState::ProcessTouchEvent(
   }
 
   bool isTouchPrevented = aContentResponse == nsEventStatus_eConsumeNoDefault;
-  bool sentContentResponse = false;
+  bool mayNeedPointerCancelEvent = false;
   APZES_LOG("Handling event type %d isPrevented=%d\n", aEvent.mMessage,
             isTouchPrevented);
   switch (aEvent.mMessage) {
     case eTouchStart: {
       mTouchEndCancelled = false;
+      mReceivedNonTouchStart = false;
       mTouchRollup = do_GetWeakReference(widget::nsAutoRollup::GetLastRollup());
 
       SendPendingTouchPreventedResponse(false);
@@ -395,9 +403,9 @@ void APZEventState::ProcessTouchEvent(
         isTouchPrevented |= mFirstTouchCancelled;
       }
 
+      mTouchStartPrevented = isTouchPrevented;
       if (isTouchPrevented) {
         mContentReceivedInputBlockCallback(aInputBlockId, isTouchPrevented);
-        sentContentResponse = true;
       } else {
         APZES_LOG("Event not prevented; pending response for %" PRIu64 " %s\n",
                   aInputBlockId, ToString(aGuid).c_str());
@@ -418,10 +426,18 @@ void APZEventState::ProcessTouchEvent(
       mActiveElementManager->HandleTouchEndEvent(mEndTouchIsClick);
       [[fallthrough]];
     case eTouchMove: {
+      if (!mReceivedNonTouchStart) {
+        // In the case where `touchstart` was preventDefaulted,
+        // pointercancel event should NOT be fired.
+        mayNeedPointerCancelEvent = !isTouchPrevented && !mTouchStartPrevented;
+        mReceivedNonTouchStart = true;
+      }
+
       if (mPendingTouchPreventedResponse) {
         MOZ_ASSERT(aGuid == mPendingTouchPreventedGuid);
+        mContentReceivedInputBlockCallback(aInputBlockId, isTouchPrevented);
+        mPendingTouchPreventedResponse = false;
       }
-      sentContentResponse = SendPendingTouchPreventedResponse(isTouchPrevented);
       break;
     }
 
@@ -435,10 +451,22 @@ void APZEventState::ProcessTouchEvent(
     mFirstTouchCancelled = false;
   }
 
-  APZES_LOG("Pointercancel if %d %d %d %d\n", sentContentResponse,
+  APZES_LOG("Pointercancel if %d %d %d %d\n", mayNeedPointerCancelEvent,
             !isTouchPrevented, aApzResponse == nsEventStatus_eConsumeDoDefault,
             MainThreadAgreesEventsAreConsumableByAPZ());
-  if (sentContentResponse && !isTouchPrevented &&
+  // From https://w3c.github.io/pointerevents/#the-pointercancel-event;
+  //  The user agent MUST fire a pointer event named pointercancel when it
+  //  detects a scenario to suppress a pointer event stream.
+  //
+  // And "suppress a pointer event steam" is defined in
+  // https://w3c.github.io/pointerevents/#suppressing-a-pointer-event-stream .
+  //
+  // There are four scenarios when the user agent fires a pointercancel event in
+  // the spec. Below code corresponds to one of the scenarios (the third bullet
+  // point);
+  //  The pointer is subsequently used by the user agent to manipulate the page
+  //  viewport (e.g. panning or zooming).
+  if (mayNeedPointerCancelEvent &&
       aApzResponse == nsEventStatus_eConsumeDoDefault &&
       MainThreadAgreesEventsAreConsumableByAPZ()) {
     WidgetTouchEvent cancelEvent(aEvent);
@@ -577,16 +605,16 @@ void APZEventState::ProcessAPZStateChange(ViewID aViewId,
   }
 }
 
-bool APZEventState::SendPendingTouchPreventedResponse(bool aPreventDefault) {
+void APZEventState::SendPendingTouchPreventedResponse(bool aPreventDefault) {
   if (mPendingTouchPreventedResponse) {
-    APZES_LOG("Sending response %d for pending guid: %s\n", aPreventDefault,
-              ToString(mPendingTouchPreventedGuid).c_str());
+    APZES_LOG("Sending response %d for pending guid: %s block id: %" PRIu64
+              "\n",
+              aPreventDefault, ToString(mPendingTouchPreventedGuid).c_str(),
+              mPendingTouchPreventedBlockId);
     mContentReceivedInputBlockCallback(mPendingTouchPreventedBlockId,
                                        aPreventDefault);
     mPendingTouchPreventedResponse = false;
-    return true;
   }
-  return false;
 }
 
 already_AddRefed<nsIWidget> APZEventState::GetWidget() const {

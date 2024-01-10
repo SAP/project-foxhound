@@ -6,7 +6,6 @@
 #define CanvasRenderingContext2D_h
 
 #include <vector>
-#include "mozilla/dom/BasicRenderingContext2D.h"
 #include "mozilla/dom/CanvasRenderingContext2DBinding.h"
 #include "mozilla/dom/HTMLCanvasElement.h"
 #include "mozilla/intl/Bidi.h"
@@ -24,6 +23,7 @@
 #include "FilterDescription.h"
 #include "gfx2DGlue.h"
 #include "gfxFontConstants.h"
+#include "gfxTextRun.h"
 #include "gfxUtils.h"
 #include "nsICanvasRenderingContextInternal.h"
 #include "nsColor.h"
@@ -48,9 +48,9 @@ enum class LayersBackend : int8_t;
 
 namespace dom {
 class
-    HTMLImageElementOrSVGImageElementOrHTMLCanvasElementOrHTMLVideoElementOrOffscreenCanvasOrImageBitmap;
+    HTMLImageElementOrSVGImageElementOrHTMLCanvasElementOrHTMLVideoElementOrOffscreenCanvasOrImageBitmapOrVideoFrame;
 using CanvasImageSource =
-    HTMLImageElementOrSVGImageElementOrHTMLCanvasElementOrHTMLVideoElementOrOffscreenCanvasOrImageBitmap;
+    HTMLImageElementOrSVGImageElementOrHTMLCanvasElementOrHTMLVideoElementOrOffscreenCanvasOrImageBitmapOrVideoFrame;
 class ImageBitmap;
 class ImageData;
 class UTF8StringOrCanvasGradientOrCanvasPattern;
@@ -77,8 +77,7 @@ struct DOMMatrix2DInit;
  ** CanvasRenderingContext2D
  **/
 class CanvasRenderingContext2D : public nsICanvasRenderingContextInternal,
-                                 public nsWrapperCache,
-                                 public BasicRenderingContext2D {
+                                 public nsWrapperCache {
  protected:
   virtual ~CanvasRenderingContext2D();
 
@@ -97,6 +96,8 @@ class CanvasRenderingContext2D : public nsICanvasRenderingContextInternal,
     return mCanvasElement->GetOriginalCanvas();
   }
 
+  void GetContextAttributes(CanvasRenderingContext2DSettings& aSettings) const;
+
   void OnMemoryPressure() override;
   void OnBeforePaintTransaction() override;
   void OnDidPaintTransaction() override;
@@ -105,8 +106,8 @@ class CanvasRenderingContext2D : public nsICanvasRenderingContextInternal,
   Maybe<layers::SurfaceDescriptor> GetFrontBuffer(
       WebGLFramebufferJS*, const bool webvr = false) override;
 
-  void Save() override;
-  void Restore() override;
+  void Save();
+  void Restore();
 
   void Reset() {
     // reset the rendering context to its default state
@@ -114,28 +115,25 @@ class CanvasRenderingContext2D : public nsICanvasRenderingContextInternal,
     SetDimensions(GetWidth(), GetHeight());
   }
 
-  void Scale(double aX, double aY, mozilla::ErrorResult& aError) override;
-  void Rotate(double aAngle, mozilla::ErrorResult& aError) override;
-  void Translate(double aX, double aY, mozilla::ErrorResult& aError) override;
+  void Scale(double aX, double aY, mozilla::ErrorResult& aError);
+  void Rotate(double aAngle, mozilla::ErrorResult& aError);
+  void Translate(double aX, double aY, mozilla::ErrorResult& aError);
   void Transform(double aM11, double aM12, double aM21, double aM22, double aDx,
-                 double aDy, mozilla::ErrorResult& aError) override;
-  already_AddRefed<DOMMatrix> GetTransform(
-      mozilla::ErrorResult& aError) override;
+                 double aDy, mozilla::ErrorResult& aError);
+  already_AddRefed<DOMMatrix> GetTransform(mozilla::ErrorResult& aError);
   void SetTransform(double aM11, double aM12, double aM21, double aM22,
-                    double aDx, double aDy,
-                    mozilla::ErrorResult& aError) override;
-  void SetTransform(const DOMMatrix2DInit& aInit,
-                    mozilla::ErrorResult& aError) override;
-  void ResetTransform(mozilla::ErrorResult& aError) override;
+                    double aDx, double aDy, mozilla::ErrorResult& aError);
+  void SetTransform(const DOMMatrix2DInit& aInit, mozilla::ErrorResult& aError);
+  void ResetTransform(mozilla::ErrorResult& aError);
 
-  double GlobalAlpha() override { return CurrentState().globalAlpha; }
+  double GlobalAlpha() { return CurrentState().globalAlpha; }
 
   // Useful for silencing cast warnings
   static mozilla::gfx::Float ToFloat(double aValue) {
     return mozilla::gfx::Float(aValue);
   }
 
-  void SetGlobalAlpha(double aGlobalAlpha) override {
+  void SetGlobalAlpha(double aGlobalAlpha) {
     if (aGlobalAlpha >= 0.0 && aGlobalAlpha <= 1.0) {
       CurrentState().globalAlpha = ToFloat(aGlobalAlpha);
     }
@@ -146,74 +144,69 @@ class CanvasRenderingContext2D : public nsICanvasRenderingContextInternal,
                             ResolveCurrentColor = ResolveCurrentColor::Yes);
 
   void GetGlobalCompositeOperation(nsAString& aOp,
-                                   mozilla::ErrorResult& aError) override;
+                                   mozilla::ErrorResult& aError);
   void SetGlobalCompositeOperation(const nsAString& aOp,
-                                   mozilla::ErrorResult& aError) override;
+                                   mozilla::ErrorResult& aError);
 
-  void GetStrokeStyle(
-      OwningUTF8StringOrCanvasGradientOrCanvasPattern& aValue) override {
+  void GetStrokeStyle(OwningUTF8StringOrCanvasGradientOrCanvasPattern& aValue) {
     GetStyleAsUnion(aValue, Style::STROKE);
   }
 
-  void SetStrokeStyle(
-      const UTF8StringOrCanvasGradientOrCanvasPattern& aValue) override {
+  void SetStrokeStyle(const UTF8StringOrCanvasGradientOrCanvasPattern& aValue) {
     SetStyleFromUnion(aValue, Style::STROKE);
   }
 
-  void GetFillStyle(
-      OwningUTF8StringOrCanvasGradientOrCanvasPattern& aValue) override {
+  void GetFillStyle(OwningUTF8StringOrCanvasGradientOrCanvasPattern& aValue) {
     GetStyleAsUnion(aValue, Style::FILL);
   }
 
-  void SetFillStyle(
-      const UTF8StringOrCanvasGradientOrCanvasPattern& aValue) override {
+  void SetFillStyle(const UTF8StringOrCanvasGradientOrCanvasPattern& aValue) {
     SetStyleFromUnion(aValue, Style::FILL);
   }
 
   already_AddRefed<CanvasGradient> CreateLinearGradient(double aX0, double aY0,
-                                                        double aX1,
-                                                        double aY1) override;
-  already_AddRefed<CanvasGradient> CreateRadialGradient(
-      double aX0, double aY0, double aR0, double aX1, double aY1, double aR1,
-      ErrorResult& aError) override;
+                                                        double aX1, double aY1);
+  already_AddRefed<CanvasGradient> CreateRadialGradient(double aX0, double aY0,
+                                                        double aR0, double aX1,
+                                                        double aY1, double aR1,
+                                                        ErrorResult& aError);
   already_AddRefed<CanvasGradient> CreateConicGradient(double aAngle,
-                                                       double aCx,
-                                                       double aCy) override;
+                                                       double aCx, double aCy);
   already_AddRefed<CanvasPattern> CreatePattern(
       const CanvasImageSource& aElement, const nsAString& aRepeat,
-      ErrorResult& aError) override;
+      ErrorResult& aError);
 
-  double ShadowOffsetX() override { return CurrentState().shadowOffset.x; }
+  double ShadowOffsetX() { return CurrentState().shadowOffset.x; }
 
-  void SetShadowOffsetX(double aShadowOffsetX) override {
+  void SetShadowOffsetX(double aShadowOffsetX) {
     CurrentState().shadowOffset.x = ToFloat(aShadowOffsetX);
   }
 
-  double ShadowOffsetY() override { return CurrentState().shadowOffset.y; }
+  double ShadowOffsetY() { return CurrentState().shadowOffset.y; }
 
-  void SetShadowOffsetY(double aShadowOffsetY) override {
+  void SetShadowOffsetY(double aShadowOffsetY) {
     CurrentState().shadowOffset.y = ToFloat(aShadowOffsetY);
   }
 
-  double ShadowBlur() override { return CurrentState().shadowBlur; }
+  double ShadowBlur() { return CurrentState().shadowBlur; }
 
-  void SetShadowBlur(double aShadowBlur) override {
+  void SetShadowBlur(double aShadowBlur) {
     if (aShadowBlur >= 0.0) {
       CurrentState().shadowBlur = ToFloat(aShadowBlur);
     }
   }
 
-  void GetShadowColor(nsACString& aShadowColor) override {
+  void GetShadowColor(nsACString& aShadowColor) {
     StyleColorToString(CurrentState().shadowColor, aShadowColor);
   }
 
   void GetFilter(nsACString& aFilter) { aFilter = CurrentState().filterString; }
 
-  void SetShadowColor(const nsACString& aShadowColor) override;
+  void SetShadowColor(const nsACString& aShadowColor);
   void SetFilter(const nsACString& aFilter, mozilla::ErrorResult& aError);
-  void ClearRect(double aX, double aY, double aW, double aH) override;
-  void FillRect(double aX, double aY, double aW, double aH) override;
-  void StrokeRect(double aX, double aY, double aW, double aH) override;
+  void ClearRect(double aX, double aY, double aW, double aH);
+  void FillRect(double aX, double aY, double aW, double aH);
+  void StrokeRect(double aX, double aY, double aW, double aH);
   void BeginPath();
   void Fill(const CanvasWindingRule& aWinding);
   void Fill(const CanvasPath& aPath, const CanvasWindingRule& aWinding);
@@ -226,23 +219,13 @@ class CanvasRenderingContext2D : public nsICanvasRenderingContextInternal,
   bool IsPointInPath(JSContext* aCx, double aX, double aY,
                      const CanvasWindingRule& aWinding,
                      nsIPrincipal& aSubjectPrincipal);
-  bool IsPointInPath(JSContext* aCx, double aX, double aY,
-                     const CanvasWindingRule& aWinding,
-                     Maybe<nsIPrincipal*> aSubjectPrincipal);
   bool IsPointInPath(JSContext* aCx, const CanvasPath& aPath, double aX,
                      double aY, const CanvasWindingRule& aWinding,
                      nsIPrincipal&);
-  bool IsPointInPath(JSContext* aCx, const CanvasPath& aPath, double aX,
-                     double aY, const CanvasWindingRule& aWinding,
-                     Maybe<nsIPrincipal*>);
   bool IsPointInStroke(JSContext* aCx, double aX, double aY,
                        nsIPrincipal& aSubjectPrincipal);
-  bool IsPointInStroke(JSContext* aCx, double aX, double aY,
-                       Maybe<nsIPrincipal*> aSubjectPrincipal);
   bool IsPointInStroke(JSContext* aCx, const CanvasPath& aPath, double aX,
                        double aY, nsIPrincipal&);
-  bool IsPointInStroke(JSContext* aCx, const CanvasPath& aPath, double aX,
-                       double aY, Maybe<nsIPrincipal*>);
   void FillText(const nsAString& aText, double aX, double aY,
                 const Optional<double>& aMaxWidth,
                 mozilla::ErrorResult& aError);
@@ -253,19 +236,18 @@ class CanvasRenderingContext2D : public nsICanvasRenderingContextInternal,
                            mozilla::ErrorResult& aError);
 
   void DrawImage(const CanvasImageSource& aImage, double aDx, double aDy,
-                 mozilla::ErrorResult& aError) override {
+                 mozilla::ErrorResult& aError) {
     DrawImage(aImage, 0.0, 0.0, 0.0, 0.0, aDx, aDy, 0.0, 0.0, 0, aError);
   }
 
   void DrawImage(const CanvasImageSource& aImage, double aDx, double aDy,
-                 double aDw, double aDh,
-                 mozilla::ErrorResult& aError) override {
+                 double aDw, double aDh, mozilla::ErrorResult& aError) {
     DrawImage(aImage, 0.0, 0.0, 0.0, 0.0, aDx, aDy, aDw, aDh, 2, aError);
   }
 
   void DrawImage(const CanvasImageSource& aImage, double aSx, double aSy,
                  double aSw, double aSh, double aDx, double aDy, double aDw,
-                 double aDh, mozilla::ErrorResult& aError) override {
+                 double aDh, mozilla::ErrorResult& aError) {
     DrawImage(aImage, aSx, aSy, aSw, aSh, aDx, aDy, aDw, aDh, 6, aError);
   }
 
@@ -277,30 +259,32 @@ class CanvasRenderingContext2D : public nsICanvasRenderingContextInternal,
                                            int32_t aSw, int32_t aSh,
                                            nsIPrincipal& aSubjectPrincipal,
                                            ErrorResult&);
-  already_AddRefed<ImageData> GetImageData(
-      JSContext*, int32_t aSx, int32_t aSy, int32_t aSw, int32_t aSh,
-      Maybe<nsIPrincipal*> aSubjectPrincipal, ErrorResult&);
   void PutImageData(ImageData&, int32_t aDx, int32_t aDy, ErrorResult&);
   void PutImageData(ImageData&, int32_t aDx, int32_t aDy, int32_t aDirtyX,
                     int32_t aDirtyY, int32_t aDirtyWidth, int32_t aDirtyHeight,
                     ErrorResult&);
 
-  double LineWidth() override { return CurrentState().lineWidth; }
+  double LineWidth() { return CurrentState().lineWidth; }
 
-  void SetLineWidth(double aWidth) override {
+  void SetLineWidth(double aWidth) {
     if (aWidth > 0.0) {
       CurrentState().lineWidth = ToFloat(aWidth);
     }
   }
-  void GetLineCap(nsAString& aLinecapStyle) override;
-  void SetLineCap(const nsAString& aLinecapStyle) override;
-  void GetLineJoin(nsAString& aLinejoinStyle,
-                   mozilla::ErrorResult& aError) override;
-  void SetLineJoin(const nsAString& aLinejoinStyle) override;
 
-  double MiterLimit() override { return CurrentState().miterLimit; }
+  CanvasLineCap LineCap() { return CurrentState().lineCap; }
+  void SetLineCap(const CanvasLineCap& aLinecapStyle) {
+    CurrentState().lineCap = aLinecapStyle;
+  }
 
-  void SetMiterLimit(double aMiter) override {
+  CanvasLineJoin LineJoin() { return CurrentState().lineJoin; }
+  void SetLineJoin(const CanvasLineJoin& aLinejoinStyle) {
+    CurrentState().lineJoin = aLinejoinStyle;
+  }
+
+  double MiterLimit() { return CurrentState().miterLimit; }
+
+  void SetMiterLimit(double aMiter) {
     if (aMiter > 0.0) {
       CurrentState().miterLimit = ToFloat(aMiter);
     }
@@ -309,15 +293,52 @@ class CanvasRenderingContext2D : public nsICanvasRenderingContextInternal,
   void GetFont(nsACString& aFont) { aFont = GetFont(); }
 
   void SetFont(const nsACString& aFont, mozilla::ErrorResult& aError);
-  void GetTextAlign(nsAString& aTextAlign);
-  void SetTextAlign(const nsAString& aTextAlign);
-  void GetTextBaseline(nsAString& aTextBaseline);
-  void SetTextBaseline(const nsAString& aTextBaseline);
-  void GetDirection(nsAString& aDirection);
-  void SetDirection(const nsAString& aDirection);
 
-  void GetFontKerning(nsAString& aFontKerning);
-  void SetFontKerning(const nsAString& aFontKerning);
+  CanvasTextAlign TextAlign() { return CurrentState().textAlign; }
+  void SetTextAlign(const CanvasTextAlign& aTextAlign) {
+    CurrentState().textAlign = aTextAlign;
+  }
+
+  CanvasTextBaseline TextBaseline() { return CurrentState().textBaseline; }
+  void SetTextBaseline(const CanvasTextBaseline& aTextBaseline) {
+    CurrentState().textBaseline = aTextBaseline;
+  }
+
+  CanvasDirection Direction() { return CurrentState().textDirection; }
+  void SetDirection(const CanvasDirection& aDirection) {
+    CurrentState().textDirection = aDirection;
+  }
+
+  CanvasFontKerning FontKerning() { return CurrentState().fontKerning; }
+  void SetFontKerning(const CanvasFontKerning& aFontKerning) {
+    if (CurrentState().fontKerning != aFontKerning) {
+      CurrentState().fontKerning = aFontKerning;
+      CurrentState().fontGroup = nullptr;
+    }
+  }
+
+  CanvasFontStretch FontStretch() { return CurrentState().fontStretch; }
+  void SetFontStretch(const CanvasFontStretch& aFontStretch) {
+    if (CurrentState().fontStretch != aFontStretch) {
+      CurrentState().fontStretch = aFontStretch;
+      CurrentState().fontGroup = nullptr;
+    }
+  }
+
+  CanvasFontVariantCaps FontVariantCaps() {
+    return CurrentState().fontVariantCaps;
+  }
+  void SetFontVariantCaps(const CanvasFontVariantCaps& aFontVariantCaps) {
+    if (CurrentState().fontVariantCaps != aFontVariantCaps) {
+      CurrentState().fontVariantCaps = aFontVariantCaps;
+      CurrentState().fontGroup = nullptr;
+    }
+  }
+
+  CanvasTextRendering TextRendering() { return CurrentState().textRendering; }
+  void SetTextRendering(const CanvasTextRendering& aTextRendering) {
+    CurrentState().textRendering = aTextRendering;
+  }
 
   void GetLetterSpacing(nsACString& aLetterSpacing);
   void SetLetterSpacing(const nsACString& aLetterSpacing);
@@ -326,27 +347,26 @@ class CanvasRenderingContext2D : public nsICanvasRenderingContextInternal,
 
   void EnsureCapped() {
     if (mPathPruned) {
-      if (mPathBuilder) {
-        mPathBuilder->LineTo(mPathBuilder->CurrentPoint());
-      } else {
-        mDSPathBuilder->LineTo(mDSPathBuilder->CurrentPoint());
-      }
+      mPathBuilder->LineTo(mPathBuilder->CurrentPoint());
       mPathPruned = false;
     }
   }
 
-  void ClosePath() override {
+  void EnsureActivePath() {
+    if (mPathPruned && !mPathBuilder->IsActive()) {
+      mPathBuilder->MoveTo(mPathBuilder->CurrentPoint());
+      mPathPruned = false;
+    }
+  }
+
+  void ClosePath() {
     EnsureWritablePath();
 
-    if (mPathBuilder) {
-      mPathBuilder->Close();
-    } else {
-      mDSPathBuilder->Close();
-    }
+    mPathBuilder->Close();
     mPathPruned = false;
   }
 
-  void MoveTo(double aX, double aY) override {
+  void MoveTo(double aX, double aY) {
     EnsureWritablePath();
 
     mozilla::gfx::Point pos(ToFloat(aX), ToFloat(aY));
@@ -355,23 +375,16 @@ class CanvasRenderingContext2D : public nsICanvasRenderingContextInternal,
     }
 
     EnsureCapped();
-    if (mPathBuilder) {
-      mPathBuilder->MoveTo(pos);
-    } else {
-      mozilla::gfx::Point transformedPos =
-          mTarget->GetTransform().TransformPoint(pos);
-      mDSPathBuilder->MoveTo(transformedPos);
-    }
+    mPathBuilder->MoveTo(pos);
   }
 
-  void LineTo(double aX, double aY) override {
+  void LineTo(double aX, double aY) {
     EnsureWritablePath();
 
     LineTo(mozilla::gfx::Point(ToFloat(aX), ToFloat(aY)));
   }
 
-  void QuadraticCurveTo(double aCpx, double aCpy, double aX,
-                        double aY) override {
+  void QuadraticCurveTo(double aCpx, double aCpy, double aX, double aY) {
     EnsureWritablePath();
 
     mozilla::gfx::Point cp1(ToFloat(aCpx), ToFloat(aCpy));
@@ -380,27 +393,17 @@ class CanvasRenderingContext2D : public nsICanvasRenderingContextInternal,
       return;
     }
 
-    if (mPathBuilder) {
-      if (cp1 == mPathBuilder->CurrentPoint() && cp1 == cp2) {
-        mPathPruned = true;
-        return;
-      }
-      mPathBuilder->QuadraticBezierTo(cp1, cp2);
-    } else {
-      mozilla::gfx::Matrix transform = mTarget->GetTransform();
-      mozilla::gfx::Point transformedPos = transform.TransformPoint(cp1);
-      if (transformedPos == mDSPathBuilder->CurrentPoint() && cp1 == cp2) {
-        mPathPruned = true;
-        return;
-      }
-      mDSPathBuilder->QuadraticBezierTo(transformedPos,
-                                        transform.TransformPoint(cp2));
+    if (cp1 == mPathBuilder->CurrentPoint() && cp1 == cp2) {
+      mPathPruned = true;
+      return;
     }
+    EnsureActivePath();
+    mPathBuilder->QuadraticBezierTo(cp1, cp2);
     mPathPruned = false;
   }
 
   void BezierCurveTo(double aCp1x, double aCp1y, double aCp2x, double aCp2y,
-                     double aX, double aY) override {
+                     double aX, double aY) {
     EnsureWritablePath();
 
     BezierTo(mozilla::gfx::Point(ToFloat(aCp1x), ToFloat(aCp1y)),
@@ -409,35 +412,32 @@ class CanvasRenderingContext2D : public nsICanvasRenderingContextInternal,
   }
 
   void ArcTo(double aX1, double aY1, double aX2, double aY2, double aRadius,
-             mozilla::ErrorResult& aError) override;
-  void Rect(double aX, double aY, double aW, double aH) override;
+             mozilla::ErrorResult& aError);
+  void Rect(double aX, double aY, double aW, double aH);
   void RoundRect(
       double aX, double aY, double aW, double aH,
       const UnrestrictedDoubleOrDOMPointInitOrUnrestrictedDoubleOrDOMPointInitSequence&
           aRadii,
       ErrorResult& aError);
   void Arc(double aX, double aY, double aRadius, double aStartAngle,
-           double aEndAngle, bool aAnticlockwise,
-           mozilla::ErrorResult& aError) override;
+           double aEndAngle, bool aAnticlockwise, mozilla::ErrorResult& aError);
   void Ellipse(double aX, double aY, double aRadiusX, double aRadiusY,
                double aRotation, double aStartAngle, double aEndAngle,
-               bool aAnticlockwise, ErrorResult& aError) override;
+               bool aAnticlockwise, ErrorResult& aError);
 
   void GetFillRule(nsAString& aFillRule);
   void SetFillRule(const nsAString& aFillRule);
 
   void SetLineDash(const Sequence<double>& aSegments,
-                   mozilla::ErrorResult& aRv) override;
-  void GetLineDash(nsTArray<double>& aSegments) const override;
+                   mozilla::ErrorResult& aRv);
+  void GetLineDash(nsTArray<double>& aSegments) const;
 
-  void SetLineDashOffset(double aOffset) override;
-  double LineDashOffset() const override;
+  void SetLineDashOffset(double aOffset);
+  double LineDashOffset() const;
 
-  bool ImageSmoothingEnabled() override {
-    return CurrentState().imageSmoothingEnabled;
-  }
+  bool ImageSmoothingEnabled() { return CurrentState().imageSmoothingEnabled; }
 
-  void SetImageSmoothingEnabled(bool aImageSmoothingEnabled) override {
+  void SetImageSmoothingEnabled(bool aImageSmoothingEnabled) {
     if (aImageSmoothingEnabled != CurrentState().imageSmoothingEnabled) {
       CurrentState().imageSmoothingEnabled = aImageSmoothingEnabled;
     }
@@ -455,8 +455,8 @@ class CanvasRenderingContext2D : public nsICanvasRenderingContextInternal,
   nsresult Redraw();
 
   gfx::IntSize GetSize() const { return gfx::IntSize(mWidth, mHeight); }
-  virtual int32_t GetWidth() override { return GetSize().width; }
-  virtual int32_t GetHeight() override { return GetSize().height; }
+  int32_t GetWidth() override { return GetSize().width; }
+  int32_t GetHeight() override { return GetSize().height; }
 
   // nsICanvasRenderingContextInternal
   /**
@@ -534,21 +534,12 @@ class CanvasRenderingContext2D : public nsICanvasRenderingContextInternal,
     if (!aPoint.IsFinite()) {
       return;
     }
-    if (mPathBuilder) {
-      if (mPathBuilder->CurrentPoint() == aPoint) {
-        mPathPruned = true;
-        return;
-      }
-      mPathBuilder->LineTo(aPoint);
-    } else {
-      mozilla::gfx::Point transformedPt =
-          mTarget->GetTransform().TransformPoint(aPoint);
-      if (mDSPathBuilder->CurrentPoint() == transformedPt) {
-        mPathPruned = true;
-        return;
-      }
-      mDSPathBuilder->LineTo(transformedPt);
+    if (mPathBuilder->CurrentPoint() == aPoint) {
+      mPathPruned = true;
+      return;
     }
+    EnsureActivePath();
+    mPathBuilder->LineTo(aPoint);
     mPathPruned = false;
   }
 
@@ -559,24 +550,12 @@ class CanvasRenderingContext2D : public nsICanvasRenderingContextInternal,
       return;
     }
 
-    if (mPathBuilder) {
-      if (aCP1 == mPathBuilder->CurrentPoint() && aCP1 == aCP2 &&
-          aCP1 == aCP3) {
-        mPathPruned = true;
-        return;
-      }
-      mPathBuilder->BezierTo(aCP1, aCP2, aCP3);
-    } else {
-      mozilla::gfx::Matrix transform = mTarget->GetTransform();
-      mozilla::gfx::Point transformedPos = transform.TransformPoint(aCP1);
-      if (transformedPos == mDSPathBuilder->CurrentPoint() && aCP1 == aCP2 &&
-          aCP1 == aCP3) {
-        mPathPruned = true;
-        return;
-      }
-      mDSPathBuilder->BezierTo(transformedPos, transform.TransformPoint(aCP2),
-                               transform.TransformPoint(aCP3));
+    if (aCP1 == mPathBuilder->CurrentPoint() && aCP1 == aCP2 && aCP1 == aCP3) {
+      mPathPruned = true;
+      return;
     }
+    EnsureActivePath();
+    mPathBuilder->BezierTo(aCP1, aCP2, aCP3);
     mPathPruned = false;
   }
 
@@ -606,7 +585,7 @@ class CanvasRenderingContext2D : public nsICanvasRenderingContextInternal,
 
   nsresult GetImageDataArray(JSContext* aCx, int32_t aX, int32_t aY,
                              uint32_t aWidth, uint32_t aHeight,
-                             Maybe<nsIPrincipal*> aSubjectPrincipal,
+                             nsIPrincipal& aSubjectPrincipal,
                              JSObject** aRetval);
 
   void PutImageData_explicit(int32_t aX, int32_t aY, ImageData&,
@@ -675,15 +654,18 @@ class CanvasRenderingContext2D : public nsICanvasRenderingContextInternal,
   // mContextAttributesHasAlpha.
   void UpdateIsOpaque();
 
+  // Shared implementation for Stroke() and Stroke(CanvasPath) methods.
+  void StrokeImpl(const mozilla::gfx::Path& aPath);
+
+  // Shared implementation for Fill() methods.
+  void FillImpl(const mozilla::gfx::Path& aPath);
+
   /**
    * Creates the error target, if it doesn't exist
    */
   static void EnsureErrorTarget();
 
-  /* This function ensures there is a writable pathbuilder available, this
-   * pathbuilder may be working in user space or in device space or
-   * device space.
-   * After calling this function mPathTransformWillUpdate will be false
+  /* This function ensures there is a writable pathbuilder available
    */
   void EnsureWritablePath();
 
@@ -695,7 +677,7 @@ class CanvasRenderingContext2D : public nsICanvasRenderingContextInternal,
    * Needs to be called before updating the transform. This makes a call to
    * EnsureTarget() so you don't have to.
    */
-  void TransformWillUpdate();
+  void TransformCurrentPath(const mozilla::gfx::Matrix& aTransform);
 
   // Report the fillRule has changed.
   void FillRuleChanged();
@@ -797,6 +779,8 @@ class CanvasRenderingContext2D : public nsICanvasRenderingContextInternal,
     return CurrentState().font;
   }
 
+  bool GetEffectiveWillReadFrequently() const;
+
   // Member vars
   int32_t mWidth, mHeight;
 
@@ -891,10 +875,7 @@ class CanvasRenderingContext2D : public nsICanvasRenderingContextInternal,
    * mPath is always in user-space.
    */
   RefPtr<mozilla::gfx::Path> mPath;
-  RefPtr<mozilla::gfx::PathBuilder> mDSPathBuilder;
   RefPtr<mozilla::gfx::PathBuilder> mPathBuilder;
-  bool mPathTransformWillUpdate;
-  mozilla::gfx::Matrix mPathToDS;
   bool mPathPruned = false;
 
   /**
@@ -947,32 +928,11 @@ class CanvasRenderingContext2D : public nsICanvasRenderingContextInternal,
 
   // text
 
- protected:
-  enum class TextAlign : uint8_t { START, END, LEFT, RIGHT, CENTER };
-
-  enum class TextBaseline : uint8_t {
-    TOP,
-    HANGING,
-    MIDDLE,
-    ALPHABETIC,
-    IDEOGRAPHIC,
-    BOTTOM
-  };
-
-  enum class TextDrawOperation : uint8_t { FILL, STROKE, MEASURE };
-
-  enum class TextDirection : uint8_t { LTR, RTL, INHERIT };
-
-  // Match values from the style system, so we don't have to bother mapping
-  // between them when setting up an nsFont.
-  enum class FontKerning : uint8_t {
-    AUTO = NS_FONT_KERNING_AUTO,
-    NORMAL = NS_FONT_KERNING_NORMAL,
-    NONE = NS_FONT_KERNING_NONE
-  };
-
- protected:
+ public:
   gfxFontGroup* GetCurrentFontStyle();
+
+ protected:
+  enum class TextDrawOperation : uint8_t { FILL, STROKE, MEASURE };
 
   /**
    * Implementation of the fillText, strokeText, and measure functions with
@@ -1036,10 +996,13 @@ class CanvasRenderingContext2D : public nsICanvasRenderingContextInternal,
     EnumeratedArray<Style, Style::MAX, nscolor> colorStyles;
 
     nsCString font;
-    TextAlign textAlign = TextAlign::START;
-    TextBaseline textBaseline = TextBaseline::ALPHABETIC;
-    TextDirection textDirection = TextDirection::INHERIT;
-    FontKerning fontKerning = FontKerning::AUTO;
+    CanvasTextAlign textAlign = CanvasTextAlign::Start;
+    CanvasTextBaseline textBaseline = CanvasTextBaseline::Alphabetic;
+    CanvasDirection textDirection = CanvasDirection::Inherit;
+    CanvasFontKerning fontKerning = CanvasFontKerning::Auto;
+    CanvasFontStretch fontStretch = CanvasFontStretch::Normal;
+    CanvasFontVariantCaps fontVariantCaps = CanvasFontVariantCaps::Normal;
+    CanvasTextRendering textRendering = CanvasTextRendering::Auto;
 
     gfx::Float letterSpacing = 0.0f;
     gfx::Float wordSpacing = 0.0f;
@@ -1060,8 +1023,8 @@ class CanvasRenderingContext2D : public nsICanvasRenderingContextInternal,
 
     mozilla::gfx::CompositionOp op = mozilla::gfx::CompositionOp::OP_OVER;
     mozilla::gfx::FillRule fillRule = mozilla::gfx::FillRule::FILL_WINDING;
-    mozilla::gfx::CapStyle lineCap = mozilla::gfx::CapStyle::BUTT;
-    mozilla::gfx::JoinStyle lineJoin = mozilla::gfx::JoinStyle::MITER_OR_BEVEL;
+    CanvasLineCap lineCap = CanvasLineCap::Butt;
+    CanvasLineJoin lineJoin = CanvasLineJoin::Miter;
 
     nsCString filterString{"none"};
     StyleOwnedSlice<StyleFilter> filterChain;

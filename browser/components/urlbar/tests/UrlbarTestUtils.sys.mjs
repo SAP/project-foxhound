@@ -1,8 +1,6 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
-import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
-
 import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
 
 import {
@@ -15,6 +13,8 @@ const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   AddonTestUtils: "resource://testing-common/AddonTestUtils.sys.mjs",
   BrowserTestUtils: "resource://testing-common/BrowserTestUtils.sys.mjs",
+  BrowserUIUtils: "resource:///modules/BrowserUIUtils.sys.mjs",
+  BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.sys.mjs",
   ExperimentAPI: "resource://nimbus/ExperimentAPI.sys.mjs",
   ExperimentFakes: "resource://testing-common/NimbusTestUtils.sys.mjs",
   ExperimentManager: "resource://nimbus/lib/ExperimentManager.sys.mjs",
@@ -29,11 +29,6 @@ ChromeUtils.defineESModuleGetters(lazy, {
   UrlbarPrefs: "resource:///modules/UrlbarPrefs.sys.mjs",
   UrlbarSearchUtils: "resource:///modules/UrlbarSearchUtils.sys.mjs",
   setTimeout: "resource://gre/modules/Timer.sys.mjs",
-});
-
-XPCOMUtils.defineLazyModuleGetters(lazy, {
-  BrowserUIUtils: "resource:///modules/BrowserUIUtils.jsm",
-  BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.jsm",
 });
 
 export var UrlbarTestUtils = {
@@ -106,6 +101,17 @@ export var UrlbarTestUtils = {
       // Search mode may start a second query.
       context = await waitForQuery();
     }
+    if (win.gURLBar.view.oneOffSearchButtons._rebuilding) {
+      await new Promise(resolve =>
+        win.gURLBar.view.oneOffSearchButtons.addEventListener(
+          "rebuild",
+          resolve,
+          {
+            once: true,
+          }
+        )
+      );
+    }
     return context;
   },
 
@@ -137,14 +143,14 @@ export var UrlbarTestUtils = {
     }
 
     const setup = () => {
-      window.gURLBar.inputField.focus();
+      window.gURLBar.focus();
       // Using the value setter in some cases may trim and fetch unexpected
       // results, then pick an alternate path.
       if (
         lazy.UrlbarPrefs.get("trimURLs") &&
         value != lazy.BrowserUIUtils.trimURL(value)
       ) {
-        window.gURLBar.inputField.value = value;
+        window.gURLBar._setValue(value, false);
         fireInputEvent = true;
       } else {
         window.gURLBar.value = value;
@@ -1238,11 +1244,68 @@ export var UrlbarTestUtils = {
    *   The text to be input.
    */
   async inputIntoURLBar(win, text) {
-    this.EventUtils.synthesizeMouseAtCenter(win.gURLBar.inputField, {}, win);
-    await lazy.BrowserTestUtils.waitForCondition(
-      () => win.document.activeElement === win.gURLBar.inputField
+    if (win.gURLBar.focused) {
+      win.gURLBar.select();
+    } else {
+      this.EventUtils.synthesizeMouseAtCenter(win.gURLBar.inputField, {}, win);
+      await lazy.TestUtils.waitForCondition(() => win.gURLBar.focused);
+    }
+    if (text.length > 1) {
+      // Set most of the string directly instead of going through sendString,
+      // so that we don't make life unnecessarily hard for consumers by
+      // possibly starting multiple searches.
+      win.gURLBar._setValue(
+        text.substr(0, text.length - 1),
+        false /* allowTrim = */
+      );
+    }
+    this.EventUtils.sendString(text.substr(-1, 1), win);
+  },
+
+  /**
+   * Checks the urlbar value fomatting for a given URL.
+   *
+   * @param {window} win
+   *   The input in this window will be tested.
+   * @param {string} urlFormatString
+   *   The URL to test. The parts the are expected to be de-emphasized should be
+   *   wrapped in "<" and ">" chars.
+   * @param {object} [options]
+   *   Options object.
+   * @param {string} [options.clobberedURLString]
+   *      Normally the URL is de-emphasized in-place, thus it's enough to pass
+   *      urlString. In some cases however the formatter may decide to replace
+   *      the URL with a fixed one, because it can't properly guess a host. In
+   *      that case clobberedURLString is the expected de-emphasized value. The
+   *      parts the are expected to be de-emphasized should be wrapped in "<"
+   *      and ">" chars.
+   * @param {string} [options.additionalMsg]
+   *   Additional message to use for Assert.equal.
+   */
+  checkFormatting(
+    win,
+    urlFormatString,
+    { clobberedURLString = null, additionalMsg = null } = {}
+  ) {
+    let selectionController = win.gURLBar.editor.selectionController;
+    let selection = selectionController.getSelection(
+      selectionController.SELECTION_URLSECONDARY
     );
-    this.EventUtils.sendString(text, win);
+    let value = win.gURLBar.editor.rootElement.textContent;
+    let result = "";
+    for (let i = 0; i < selection.rangeCount; i++) {
+      let range = selection.getRangeAt(i).toString();
+      let pos = value.indexOf(range);
+      result += value.substring(0, pos) + "<" + range + ">";
+      value = value.substring(pos + range.length);
+    }
+    result += value;
+    this.Assert.equal(
+      result,
+      clobberedURLString || urlFormatString,
+      "Correct part of the URL is de-emphasized" +
+        (additionalMsg ? ` (${additionalMsg})` : "")
+    );
   },
 };
 
@@ -1355,6 +1418,7 @@ class TestProvider extends UrlbarProvider {
    * @param {number} [options.addTimeout]
    *   If non-zero, each result will be added on this timeout.  If zero, all
    *   results will be added immediately and synchronously.
+   *   If there's no results, the query will be completed after this timeout.
    * @param {Function} [options.onCancel]
    *   If given, a function that will be called when the provider's cancelQuery
    *   method is called.
@@ -1397,6 +1461,9 @@ class TestProvider extends UrlbarProvider {
     return true;
   }
   async startQuery(context, addCallback) {
+    if (!this._results.length && this._addTimeout) {
+      await new Promise(resolve => lazy.setTimeout(resolve, this._addTimeout));
+    }
     for (let result of this._results) {
       if (!this._addTimeout) {
         addCallback(this, result);
@@ -1422,9 +1489,9 @@ class TestProvider extends UrlbarProvider {
     }
   }
 
-  onEngagement(isPrivate, state, queryContext, details) {
+  onEngagement(state, queryContext, details, controller) {
     if (this._onEngagement) {
-      this._onEngagement(isPrivate, state, queryContext, details);
+      this._onEngagement(state, queryContext, details, controller);
     }
   }
 }

@@ -114,7 +114,7 @@ extern bool enableWasmBaseline;
 extern bool enableWasmOptimizing;
 
 #define WASM_FEATURE(NAME, ...) extern bool enableWasm##NAME;
-JS_FOR_WASM_FEATURES(WASM_FEATURE, WASM_FEATURE, WASM_FEATURE);
+JS_FOR_WASM_FEATURES(WASM_FEATURE);
 #undef WASM_FEATURE
 
 extern bool enableWasmVerbose;
@@ -128,15 +128,9 @@ extern bool enablePropertyErrorMessageFix;
 extern bool enableIteratorHelpers;
 extern bool enableShadowRealms;
 extern bool enableArrayGrouping;
-extern bool enableArrayFromAsync;
 extern bool enableWellFormedUnicodeStrings;
-extern bool enablePrivateClassFields;
-extern bool enablePrivateClassMethods;
-extern bool enableChangeArrayByCopy;
-#ifdef ENABLE_NEW_SET_METHODS
+extern bool enableArrayBufferTransfer;
 extern bool enableNewSetMethods;
-#endif
-extern bool enableClassStaticBlocks;
 extern bool enableImportAssertions;
 #ifdef JS_GC_ZEAL
 extern uint32_t gZealBits;

@@ -23,7 +23,7 @@
 #include "mozilla/ipc/BackgroundChild.h"
 #include "mozilla/ipc/PBackgroundChild.h"
 
-#ifdef OS_WIN
+#ifdef XP_WIN
 #  include "WinWebAuthnManager.h"
 #endif
 
@@ -93,7 +93,8 @@ nsresult GetOrigin(nsPIDOMWindowInner* aParent,
   MOZ_ASSERT(doc);
 
   nsCOMPtr<nsIPrincipal> principal = doc->NodePrincipal();
-  nsresult rv = nsContentUtils::GetUTFOrigin(principal, aOrigin);
+  nsresult rv =
+      nsContentUtils::GetWebExposedOriginSerialization(principal, aOrigin);
   if (NS_WARN_IF(NS_FAILED(rv)) || NS_WARN_IF(aOrigin.IsEmpty())) {
     return NS_ERROR_FAILURE;
   }
@@ -451,7 +452,7 @@ already_AddRefed<Promise> WebAuthnManager::MakeCredential(
       adjustedTimeout, excludeList, rpInfo, userInfo, coseAlgos, extensions,
       authSelection, attestation, context->Top()->Id());
 
-#ifdef OS_WIN
+#ifdef XP_WIN
   if (!WinWebAuthnManager::AreWebAuthNApisAvailable()) {
     ListenForVisibilityEvents();
   }
@@ -607,6 +608,10 @@ already_AddRefed<Promise> WebAuthnManager::GetAssertion(
       allowList.AppendElement(c);
     }
   }
+  if (allowList.Length() == 0 && aOptions.mAllowCredentials.Length() != 0) {
+    promise->MaybeReject(NS_ERROR_DOM_NOT_ALLOWED_ERR);
+    return promise.forget();
+  }
 
   if (!MaybeCreateBackgroundActor()) {
     promise->MaybeReject(NS_ERROR_DOM_OPERATION_ERR);
@@ -658,7 +663,7 @@ already_AddRefed<Promise> WebAuthnManager::GetAssertion(
                                 extensions, aOptions.mUserVerification,
                                 context->Top()->Id());
 
-#ifdef OS_WIN
+#ifdef XP_WIN
   if (!WinWebAuthnManager::AreWebAuthNApisAvailable()) {
     ListenForVisibilityEvents();
   }

@@ -27,9 +27,6 @@ class ChildOf {
 };
 
 class ObjectBase : public nsWrapperCache {
- private:
-  nsString mLabel;
-
  protected:
   virtual ~ObjectBase() = default;
 
@@ -53,6 +50,12 @@ class ObjectBase : public nsWrapperCache {
 
   void GetLabel(nsAString& aValue) const;
   void SetLabel(const nsAString& aLabel);
+
+  auto CLabel() const { return NS_ConvertUTF16toUTF8(mLabel); }
+
+ protected:
+  // Object label, initialized from GPUObjectDescriptorBase.label.
+  nsString mLabel;
 };
 
 }  // namespace mozilla::webgpu

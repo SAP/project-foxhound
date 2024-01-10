@@ -3,11 +3,18 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 do-not-track-description = Send websites a “Do Not Track” signal that you don’t want to be tracked
+do-not-track-description2 =
+    .label = Send websites a “Do Not Track” request
+    .accesskey = d
 do-not-track-learn-more = Learn more
 do-not-track-option-default-content-blocking-known =
     .label = Only when { -brand-short-name } is set to block known trackers
 do-not-track-option-always =
     .label = Always
+
+global-privacy-control-description =
+    .label = Tell websites not to sell or share my data
+    .accesskey = s
 
 settings-page-title = Settings
 
@@ -319,15 +326,7 @@ manage-browser-languages-button =
 confirm-browser-language-change-description = Restart { -brand-short-name } to apply these changes
 confirm-browser-language-change-button = Apply and Restart
 
-translate-web-pages =
-    .label = Translate web content
-    .accesskey = T
-
 fx-translate-web-pages = { -translations-brand-name }
-
-# The <img> element is replaced by the logo of the provider
-# used to provide machine translations for web pages.
-translate-attribution = Translations by <img data-l10n-name="logo"/>
 
 translate-exceptions =
     .label = Exceptions…
@@ -590,6 +589,10 @@ browsing-use-onscreen-keyboard =
 browsing-use-cursor-navigation =
     .label = Always use the cursor keys to navigate within pages
     .accesskey = k
+
+browsing-use-full-keyboard-navigation =
+    .label = Use the tab key to move focus between form controls and links
+    .accesskey = t
 
 browsing-search-on-start-typing =
     .label = Search for text when you start typing
@@ -892,10 +895,12 @@ prefs-sync-turn-on-syncing =
 
 prefs-sync-offer-setup-label2 = Synchronize your bookmarks, history, tabs, passwords, add-ons, and settings across all your devices.
 
-prefs-sync-now =
-    .labelnotsyncing = Sync Now
-    .accesskeynotsyncing = N
-    .labelsyncing = Syncing…
+prefs-sync-now-button =
+    .label = Sync Now
+    .accesskey = N
+
+prefs-syncing-button =
+    .label = Syncing…
 
 ## The list of things currently syncing.
 
@@ -1280,7 +1285,7 @@ content-blocking-tracking-protection-option-all-windows =
   .label = In all windows
   .accesskey = A
 content-blocking-option-private =
-  .label = Only in Private Windows
+  .label = Only in private windows
   .accesskey = p
 content-blocking-tracking-protection-change-block-list = Change block list
 
@@ -1298,9 +1303,17 @@ content-blocking-cryptominers-label =
 
 # Browser fingerprinting is a method of tracking users by the configuration and settings information (their "digital fingerprint")
 # that is visible to websites they browse, rather than traditional tracking methods such as IP addresses and unique cookies.
-content-blocking-fingerprinters-label =
-  .label = Fingerprinters
-  .accesskey = F
+#
+# The known fingerprinters are those that are known for collecting browser fingerprints from user devices.
+content-blocking-known-fingerprinters-label =
+  .label = Known fingerprinters
+  .accesskey = K
+
+# The suspected fingerprinters are those that we are uncertain about browser fingerprinting activities. But they could
+# possibly acquire browser fingerprints because of the behavior on accessing APIs that expose browser fingerprints.
+content-blocking-suspected-fingerprinters-label =
+  .label = Suspected fingerprinters
+  .accesskey = S
 
 ## Privacy Section - Tracking
 

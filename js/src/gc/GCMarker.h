@@ -150,8 +150,8 @@ class MarkStack {
   explicit MarkStack(const MarkStack& other);
   MarkStack& operator=(const MarkStack& other);
 
-  MarkStack(MarkStack&& other);
-  MarkStack& operator=(MarkStack&& other);
+  MarkStack(MarkStack&& other) noexcept;
+  MarkStack& operator=(MarkStack&& other) noexcept;
 
   // The unit for MarkStack::capacity() is mark stack words.
   size_t capacity() { return stack().length(); }
@@ -177,7 +177,7 @@ class MarkStack {
 
   // GCMarker::eagerlyMarkChildren uses unused marking stack as temporary
   // storage to hold rope pointers.
-  [[nodiscard]] bool pushTempRope(JSRope* ptr);
+  [[nodiscard]] bool pushTempRope(JSRope* rope);
 
   bool isEmpty() const { return position() == 0; }
   bool hasEntries() const { return !isEmpty(); }
@@ -235,6 +235,8 @@ static_assert(unsigned(SlotsOrElementsKind::Unused) ==
 // Bitmask of options to parameterize MarkingTracerT.
 namespace MarkingOptions {
 enum : uint32_t {
+  None = 0,
+
   // Set the compartment's hasMarkedCells flag for roots.
   MarkRootCompartments = 1,
 
@@ -247,6 +249,8 @@ enum : uint32_t {
 };
 }  // namespace MarkingOptions
 
+// A default set of marking options that works during normal marking and weak
+// marking modes. Used for barriers and testing code.
 constexpr uint32_t NormalMarkingOptions = MarkingOptions::MarkImplicitEdges;
 
 template <uint32_t markingOptions>
@@ -263,8 +267,9 @@ class MarkingTracerT
   GCMarker* getMarker();
 };
 
-using MarkingTracer = MarkingTracerT<NormalMarkingOptions>;
+using MarkingTracer = MarkingTracerT<MarkingOptions::None>;
 using RootMarkingTracer = MarkingTracerT<MarkingOptions::MarkRootCompartments>;
+using WeakMarkingTracer = MarkingTracerT<MarkingOptions::MarkImplicitEdges>;
 using ParallelMarkingTracer = MarkingTracerT<MarkingOptions::ParallelMarking>;
 
 enum ShouldReportMarkTime : bool {
@@ -274,7 +279,7 @@ enum ShouldReportMarkTime : bool {
 
 } /* namespace gc */
 
-class alignas(TypicalCacheLineSize) GCMarker {
+class GCMarker {
   enum MarkingState : uint8_t {
     // Have not yet started marking.
     NotActive,
@@ -477,7 +482,7 @@ class alignas(TypicalCacheLineSize) GCMarker {
   inline void repush(JSObject* obj);
 
   template <typename T>
-  void markImplicitEdgesHelper(T oldThing);
+  void markImplicitEdgesHelper(T markedThing);
 
   // Mark through edges whose target color depends on the colors of two source
   // entities (eg a WeakMap and one of its keys), and push the target onto the
@@ -502,7 +507,7 @@ class alignas(TypicalCacheLineSize) GCMarker {
    * state.
    */
   mozilla::Variant<gc::MarkingTracer, gc::RootMarkingTracer,
-                   gc::ParallelMarkingTracer>
+                   gc::WeakMarkingTracer, gc::ParallelMarkingTracer>
       tracer_;
 
   JSRuntime* const runtime_;

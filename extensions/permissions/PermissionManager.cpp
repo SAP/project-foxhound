@@ -10,7 +10,10 @@
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/ContentPrincipal.h"
 #include "mozilla/DebugOnly.h"
+#include "mozilla/dom/CanonicalBrowsingContext.h"
 #include "mozilla/dom/ContentParent.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/WindowGlobalParent.h"
 #include "mozilla/ExpandedPrincipal.h"
 #include "mozilla/net/NeckoMessageUtils.h"
 #include "mozilla/Permission.h"
@@ -29,6 +32,7 @@
 #include "nsComponentManagerUtils.h"
 #include "nsContentUtils.h"
 #include "nsCRT.h"
+#include "nsDebug.h"
 #include "nsEffectiveTLDService.h"
 #include "nsIConsoleService.h"
 #include "nsIUserIdleService.h"
@@ -40,6 +44,7 @@
 #include "nsIURIMutator.h"
 #include "nsIWritablePropertyBag2.h"
 #include "nsReadLine.h"
+#include "nsStringFwd.h"
 #include "nsTHashSet.h"
 #include "nsToolkitCompsCID.h"
 
@@ -127,7 +132,7 @@ static const nsLiteralCString kPreloadPermissions[] = {
     // interception when a user has disabled storage for a specific site.  Once
     // service worker interception moves to the parent process this should be
     // removed.  See bug 1428130.
-    "cookie"_ns};
+    "cookie"_ns, "https-only-load-insecure"_ns};
 
 // NOTE: nullptr can be passed as aType - if it is this function will return
 // "false" unconditionally.
@@ -151,8 +156,8 @@ bool IsPreloadPermission(const nsACString& aType) {
 // This is because perms are sent to the content process in bulk by perm key.
 // Non-preloaded, but OA stripped permissions would not be accessible by sites
 // in private browsing / non-default user context.
-static constexpr std::array<nsLiteralCString, 1> kStripOAPermissions = {
-    {"cookie"_ns}};
+static constexpr std::array<nsLiteralCString, 2> kStripOAPermissions = {
+    {"cookie"_ns, "https-only-load-insecure"_ns}};
 
 bool IsOAForceStripPermission(const nsACString& aType) {
   if (aType.IsEmpty()) {
@@ -169,8 +174,9 @@ bool IsOAForceStripPermission(const nsACString& aType) {
 // Array of permission prefixes which should be isolated only by site.
 // These site-scoped permissions are stored under their site's principal.
 // GetAllForPrincipal also needs to look for these especially.
-static constexpr std::array<nsLiteralCString, 2> kSiteScopedPermissions = {
-    {"3rdPartyStorage^"_ns, "AllowStorageAccessRequest^"_ns}};
+static constexpr std::array<nsLiteralCString, 3> kSiteScopedPermissions = {
+    {"3rdPartyStorage^"_ns, "AllowStorageAccessRequest^"_ns,
+     "3rdPartyFrameStorage^"_ns}};
 
 bool IsSiteScopedPermission(const nsACString& aType) {
   if (aType.IsEmpty()) {
@@ -179,6 +185,29 @@ bool IsSiteScopedPermission(const nsACString& aType) {
   for (const auto& perm : kSiteScopedPermissions) {
     if (aType.Length() >= perm.Length() &&
         Substring(aType, 0, perm.Length()) == perm) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// Array of permission type prefixes which have a secondary key encoded in the
+// permission type. These permissions will not be stored in-process with the
+// secondary key, but updates to them will cause "perm-changed" notifications on
+// processes for that key.
+static constexpr std::array<nsLiteralCString, 3> kSecondaryKeyedPermissions = {
+    {"3rdPartyStorage^"_ns, "AllowStorageAccessRequest^"_ns,
+     "3rdPartyFrameStorage^"_ns}};
+
+bool GetSecondaryKey(const nsACString& aType, nsACString& aSecondaryKey) {
+  aSecondaryKey.Truncate();
+  if (aType.IsEmpty()) {
+    return false;
+  }
+  for (const auto& perm : kSecondaryKeyedPermissions) {
+    if (aType.Length() > perm.Length() &&
+        Substring(aType, 0, perm.Length()) == perm) {
+      aSecondaryKey = Substring(aType, perm.Length());
       return true;
     }
   }
@@ -572,6 +601,49 @@ bool IsPersistentExpire(uint32_t aExpire, const nsACString& aType) {
   bool res = (aExpire != nsIPermissionManager::EXPIRE_SESSION &&
               aExpire != nsIPermissionManager::EXPIRE_POLICY);
   return res;
+}
+
+nsresult NotifySecondaryKeyPermissionUpdateInContentProcess(
+    const nsACString& aType, const nsACString& aSecondaryKey,
+    nsIPrincipal* aTopPrincipal) {
+  NS_ENSURE_ARG_POINTER(aTopPrincipal);
+  MOZ_ASSERT(XRE_IsParentProcess());
+  AutoTArray<RefPtr<BrowsingContextGroup>, 5> bcGroups;
+  BrowsingContextGroup::GetAllGroups(bcGroups);
+  for (const auto& bcGroup : bcGroups) {
+    for (const auto& topBC : bcGroup->Toplevels()) {
+      CanonicalBrowsingContext* topCBC = topBC->Canonical();
+      RefPtr<nsIURI> topURI = topCBC->GetCurrentURI();
+      if (!topURI) {
+        continue;
+      }
+      bool thirdParty;
+      nsresult rv = aTopPrincipal->IsThirdPartyURI(topURI, &thirdParty);
+      if (NS_FAILED(rv)) {
+        continue;
+      }
+      if (!thirdParty) {
+        AutoTArray<RefPtr<BrowsingContext>, 5> bcs;
+        topBC->GetAllBrowsingContextsInSubtree(bcs);
+        for (const auto& bc : bcs) {
+          CanonicalBrowsingContext* cbc = bc->Canonical();
+          ContentParent* cp = cbc->GetContentParent();
+          if (!cp) {
+            continue;
+          }
+          if (cp->NeedsPermissionsUpdate(aSecondaryKey)) {
+            WindowGlobalParent* wgp = cbc->GetCurrentWindowGlobal();
+            if (!wgp) {
+              continue;
+            }
+            bool success = wgp->SendNotifyPermissionChange(aType);
+            Unused << NS_WARN_IF(!success);
+          }
+        }
+      }
+    }
+  }
+  return NS_OK;
 }
 
 }  // namespace
@@ -1757,13 +1829,21 @@ nsresult PermissionManager::AddInternal(
 
     nsAutoCString permissionKey;
     GetKeyForPermission(aPrincipal, aType, permissionKey);
+    bool isSecondaryKeyed;
+    nsAutoCString secondaryKey;
+    isSecondaryKeyed = GetSecondaryKey(aType, secondaryKey);
+    if (isSecondaryKeyed) {
+      NotifySecondaryKeyPermissionUpdateInContentProcess(aType, secondaryKey,
+                                                         aPrincipal);
+    }
 
     nsTArray<ContentParent*> cplist;
     ContentParent::GetAll(cplist);
     for (uint32_t i = 0; i < cplist.Length(); ++i) {
       ContentParent* cp = cplist[i];
-      if (cp->NeedsPermissionsUpdate(permissionKey))
+      if (cp->NeedsPermissionsUpdate(permissionKey)) {
         Unused << cp->SendAddPermission(permission);
+      }
     }
   }
 
@@ -2608,10 +2688,12 @@ NS_IMETHODIMP PermissionManager::Observe(nsISupports* aSubject,
 
 nsresult PermissionManager::RemoveAllModifiedSince(int64_t aModificationTime) {
   ENSURE_NOT_CHILD_PROCESS;
-
+  // Skip remove calls for default permissions to avoid
+  // creating UNKNOWN_ACTION overrides in AddInternal
   return RemovePermissionEntries(
       [aModificationTime](const PermissionEntry& aPermEntry) {
-        return aModificationTime <= aPermEntry.mModificationTime;
+        return aModificationTime <= aPermEntry.mModificationTime &&
+               aPermEntry.mID != cIDPermissionIsDefault;
       });
 }
 

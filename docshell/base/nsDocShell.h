@@ -710,6 +710,13 @@ class nsDocShell final : public nsDocLoader,
   nsresult ScrollToAnchor(bool aCurHasRef, bool aNewHasRef,
                           nsACString& aNewHash, uint32_t aLoadType);
 
+  // This returns the load type for a form submission (see
+  // https://html.spec.whatwg.org/#form-submission-algorithm). The load type
+  // should be set as soon as the target BC has been determined.
+  uint32_t GetLoadTypeForFormSubmission(
+      mozilla::dom::BrowsingContext* aTargetBC,
+      nsDocShellLoadState* aLoadState);
+
  private:
   // Returns true if would have called FireOnLocationChange,
   // but did not because aFireOnLocationChange was false on entry.
@@ -1153,7 +1160,10 @@ class nsDocShell final : public nsDocLoader,
                                const nsAString& aTitle, bool aReplace,
                                nsIURI* aCurrentURI, bool aEqualURIs);
 
- private:  // data members
+ private:
+  void SetCurrentURIInternal(nsIURI* aURI);
+
+  // data members
   nsString mTitle;
   nsCString mOriginalUriString;
   nsTObserverArray<nsWeakPtr> mPrivacyObservers;
@@ -1198,6 +1208,7 @@ class nsDocShell final : public nsDocLoader,
   mozilla::UniquePtr<mozilla::ObservedDocShell> mObserved;
 
   // mCurrentURI should be marked immutable on set if possible.
+  // Change mCurrentURI only through SetCurrentURIInternal method.
   nsCOMPtr<nsIURI> mCurrentURI;
   nsCOMPtr<nsIReferrerInfo> mReferrerInfo;
 

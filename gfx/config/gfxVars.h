@@ -40,7 +40,8 @@ class gfxVarReceiver;
   _(UseWebRenderANGLE, bool, false)                                \
   _(UseWebRenderFlipSequentialWin, bool, false)                    \
   _(UseWebRenderDCompWin, bool, false)                             \
-  _(UseWebRenderDCompVideoOverlayWin, bool, false)                 \
+  _(UseWebRenderDCompVideoHwOverlayWin, bool, false)               \
+  _(UseWebRenderDCompVideoSwOverlayWin, bool, false)               \
   _(UseWebRenderTripleBufferingWin, bool, false)                   \
   _(UseWebRenderCompositor, bool, false)                           \
   _(UseWebRenderProgramBinaryDisk, bool, false)                    \
@@ -75,7 +76,6 @@ class gfxVarReceiver;
   _(UseDoubleBufferingWithCompositor, bool, false)                 \
   _(UseGLSwizzle, bool, true)                                      \
   _(ForceSubpixelAAWherePossible, bool, false)                     \
-  _(DwmCompositionEnabled, bool, true)                             \
   _(FxREmbedded, bool, false)                                      \
   _(UseAHardwareBufferSharedSurfaceWebglOop, bool, false)          \
   _(UseEGL, bool, false)                                           \
@@ -98,7 +98,7 @@ class gfxVarReceiver;
   _(AllowBackdropFilter, bool, true)                               \
   _(WebglOopAsyncPresentForceSync, bool, true)                     \
   _(UseAcceleratedCanvas2D, bool, false)                           \
-  _(UseWebRenderDCompSwVideoOverlayWin, bool, false)
+  _(AllowSoftwareWebRenderOGL, bool, false)
 
 /* Add new entries above this line. */
 

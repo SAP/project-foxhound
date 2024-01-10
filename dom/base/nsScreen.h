@@ -14,11 +14,14 @@
 #include "mozilla/ErrorResult.h"
 #include "mozilla/StaticPrefs_media.h"
 #include "nsCOMPtr.h"
-#include "nsGlobalWindowOuter.h"
 #include "mozilla/gfx/Rect.h"
 #include "Units.h"
 
 class nsDeviceContext;
+
+namespace mozilla {
+enum class RFPTarget : uint64_t;
+}
 
 // Script "screen" object
 class nsScreen : public mozilla::DOMEventTargetHelper {
@@ -133,7 +136,7 @@ class nsScreen : public mozilla::DOMEventTargetHelper {
   explicit nsScreen(nsPIDOMWindowInner* aWindow);
   virtual ~nsScreen();
 
-  bool ShouldResistFingerprinting() const;
+  bool ShouldResistFingerprinting(mozilla::RFPTarget aTarget) const;
 
   mozilla::dom::Document* TopContentDocumentInRDMPane() const;
 

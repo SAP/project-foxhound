@@ -184,6 +184,7 @@ Structure:
             DWriteEnabled: <bool>, // null on failure
             ContentBackend: <string> // One of "Cairo", "Skia", or "Direct2D 1.1"
             Headless: <bool>, // null on failure
+            TargetFrameRate: <number>, // frame rate in Hz, typically 60 or more
             //DWriteVersion: <string>, // temporarily removed, pending bug 1154500
             adapters: [
               {
@@ -386,9 +387,13 @@ The following is a partial list of `collected preferences <https://searchfox.org
 
 - ``browser.migrate.interactions.bookmarks``: True if the user has imported bookmarks from another browser before. This preference gets transferred during profile resets.
 
+- ``browser.migrate.interactions.csvpasswords``: True if the user has imported passwords through the migration wizard from a CSV file. This preference gets transferred during profile resets.
+
 - ``browser.migrate.interactions.history``: True if the user has imported history from another browser before. This preference gets transferred during profile resets.
 
 - ``browser.migrate.interactions.passwords``: True if the user has imported passwords from another browser before. This preference gets transferred during profile resets.
+
+- ``browser.privatebrowsing.autostart``: True if the user has enabled the permanent private browsing mode. Defaults to false.
 
 - ``browser.search.suggest.enabled``: The "master switch" for search suggestions everywhere in Firefox (search bar, urlbar, etc.). Defaults to true.
 

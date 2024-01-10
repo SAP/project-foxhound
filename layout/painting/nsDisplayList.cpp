@@ -41,6 +41,7 @@
 #include "mozilla/ViewportUtils.h"
 #include "nsCSSRendering.h"
 #include "nsCSSRenderingGradients.h"
+#include "nsCaseTreatment.h"
 #include "nsRefreshDriver.h"
 #include "nsRegion.h"
 #include "nsStyleStructInlines.h"
@@ -650,7 +651,6 @@ nsDisplayListBuilder::nsDisplayListBuilder(nsIFrame* aReferenceFrame,
       mCurrentContainerASR(nullptr),
       mCurrentFrame(aReferenceFrame),
       mCurrentReferenceFrame(aReferenceFrame),
-      mGlassDisplayItem(nullptr),
       mCaretFrame(nullptr),
       mScrollInfoItemsForHoisting(nullptr),
       mFirstClipChainToDestroy(nullptr),
@@ -660,7 +660,6 @@ nsDisplayListBuilder::nsDisplayListBuilder(nsIFrame* aReferenceFrame,
       mFilterASR(nullptr),
       mDirtyRect(-1, -1, -1, -1),
       mBuildingExtraPagesForPageNum(0),
-      mHasGlassItemDuringPartial(false),
       mMode(aMode),
       mContainsBlendMode(false),
       mIsBuildingScrollbar(false),
@@ -774,14 +773,21 @@ void nsDisplayListBuilder::AddEffectUpdate(dom::RemoteBrowser* aBrowser,
   // we get from each display item.
   nsPresContext* pc =
       mReferenceFrame ? mReferenceFrame->PresContext() : nullptr;
-  if (pc && (pc->Type() != nsPresContext::eContext_Galley)) {
+  if (pc && pc->Type() != nsPresContext::eContext_Galley) {
     Maybe<dom::EffectsInfo> existing = mEffectsUpdates.MaybeGet(aBrowser);
-    if (existing.isSome()) {
+    if (existing) {
       // Only the visible rect should differ, the scales should match.
       MOZ_ASSERT(existing->mRasterScale == aUpdate.mRasterScale &&
                  existing->mTransformToAncestorScale ==
                      aUpdate.mTransformToAncestorScale);
-      update.mVisibleRect = update.mVisibleRect.Union(existing->mVisibleRect);
+      if (existing->mVisibleRect) {
+        if (update.mVisibleRect) {
+          update.mVisibleRect =
+              Some(update.mVisibleRect->Union(*existing->mVisibleRect));
+        } else {
+          update.mVisibleRect = existing->mVisibleRect;
+        }
+      }
     }
   }
   mEffectsUpdates.InsertOrUpdate(aBrowser, update);
@@ -790,6 +796,7 @@ void nsDisplayListBuilder::AddEffectUpdate(dom::RemoteBrowser* aBrowser,
 void nsDisplayListBuilder::EndFrame() {
   NS_ASSERTION(!mInInvalidSubtree,
                "Someone forgot to cleanup mInInvalidSubtree!");
+  mCurrentContainerASR = nullptr;
   mActiveScrolledRoots.Clear();
   mEffectsUpdates.Clear();
   FreeClipChains();
@@ -855,46 +862,6 @@ void nsDisplayListBuilder::MarkFrameForDisplayIfVisible(
   AddFrameMarkedForDisplayIfVisible(aFrame);
 
   MarkFrameForDisplayIfVisibleInternal(aFrame, aStopAtFrame);
-}
-
-void nsDisplayListBuilder::SetGlassDisplayItem(nsDisplayItem* aItem) {
-  // Web pages or extensions could trigger the "Multiple glass backgrounds
-  // found?" warning by using -moz-appearance:win-borderless-glass etc on their
-  // own elements (as long as they are root frames, which is rare as each doc
-  // only gets one near the root). We only care about the first one, since that
-  // will be the background of the root window.
-
-  if (IsPartialUpdate()) {
-    if (aItem->Frame()->Style()->IsRootElementStyle()) {
-#ifdef DEBUG
-      if (mHasGlassItemDuringPartial) {
-        NS_WARNING("Multiple glass backgrounds found?");
-      } else
-#endif
-          if (!mHasGlassItemDuringPartial) {
-        mHasGlassItemDuringPartial = true;
-        aItem->SetIsGlassItem();
-      }
-    }
-    return;
-  }
-
-  if (aItem->Frame()->Style()->IsRootElementStyle()) {
-#ifdef DEBUG
-    if (mGlassDisplayItem) {
-      NS_WARNING("Multiple glass backgrounds found?");
-    } else
-#endif
-        if (!mGlassDisplayItem) {
-      mGlassDisplayItem = aItem;
-      mGlassDisplayItem->SetIsGlassItem();
-    }
-  }
-}
-
-bool nsDisplayListBuilder::NeedToForceTransparentSurfaceForItem(
-    nsDisplayItem* aItem) {
-  return aItem == mGlassDisplayItem;
 }
 
 void nsDisplayListBuilder::SetIsRelativeToLayoutViewport() {
@@ -1383,8 +1350,9 @@ void nsDisplayListBuilder::MarkFramesForDisplayList(
       nsIContent* content = e->GetContent();
       if (content && content->IsInNativeAnonymousSubtree() &&
           content->IsElement()) {
-        auto* classList = content->AsElement()->ClassList();
-        if (classList->Contains(u"moz-accessiblecaret"_ns)) {
+        const nsAttrValue* classes = content->AsElement()->GetClasses();
+        if (classes &&
+            classes->Contains(nsGkAtoms::mozAccessiblecaret, eCaseMatters)) {
           continue;
         }
       }
@@ -1467,12 +1435,12 @@ ActiveScrolledRoot* nsDisplayListBuilder::AllocateActiveScrolledRoot(
 const DisplayItemClipChain* nsDisplayListBuilder::AllocateDisplayItemClipChain(
     const DisplayItemClip& aClip, const ActiveScrolledRoot* aASR,
     const DisplayItemClipChain* aParent) {
-  MOZ_ASSERT(!(aParent && aParent->mOnStack));
+  MOZ_DIAGNOSTIC_ASSERT(!(aParent && aParent->mOnStack));
   void* p = Allocate(sizeof(DisplayItemClipChain),
                      DisplayListArenaObjectId::CLIPCHAIN);
   DisplayItemClipChain* c = new (KnownNotNull, p)
       DisplayItemClipChain(aClip, aASR, aParent, mFirstClipChainToDestroy);
-#ifdef DEBUG
+#if defined(DEBUG) || defined(MOZ_DIAGNOSTIC_ASSERT_ENABLED)
   c->mOnStack = false;
 #endif
   auto result = mClipDeduplicator.insert(c);
@@ -1824,7 +1792,6 @@ void nsDisplayListBuilder::AddSizeOfExcludingThis(nsWindowSizes& aSizes) const {
   n += mDocumentWillChangeBudgets.ShallowSizeOfExcludingThis(mallocSizeOf);
   n += mFrameWillChangeBudgets.ShallowSizeOfExcludingThis(mallocSizeOf);
   n += mEffectsUpdates.ShallowSizeOfExcludingThis(mallocSizeOf);
-  n += mWindowExcludeGlassRegion.SizeOfExcludingThis(mallocSizeOf);
   n += mRetainedWindowDraggingRegion.SizeOfExcludingThis(mallocSizeOf);
   n += mRetainedWindowNoDraggingRegion.SizeOfExcludingThis(mallocSizeOf);
   n += mRetainedWindowOpaqueRegion.SizeOfExcludingThis(mallocSizeOf);
@@ -1895,19 +1862,13 @@ void nsDisplayListBuilder::WeakFrameRegion::RemoveModifiedFramesAndRects() {
 void nsDisplayListBuilder::RemoveModifiedWindowRegions() {
   mRetainedWindowDraggingRegion.RemoveModifiedFramesAndRects();
   mRetainedWindowNoDraggingRegion.RemoveModifiedFramesAndRects();
-  mWindowExcludeGlassRegion.RemoveModifiedFramesAndRects();
   mRetainedWindowOpaqueRegion.RemoveModifiedFramesAndRects();
-
-  mHasGlassItemDuringPartial = false;
 }
 
 void nsDisplayListBuilder::ClearRetainedWindowRegions() {
   mRetainedWindowDraggingRegion.Clear();
   mRetainedWindowNoDraggingRegion.Clear();
-  mWindowExcludeGlassRegion.Clear();
   mRetainedWindowOpaqueRegion.Clear();
-
-  mGlassDisplayItem = nullptr;
 }
 
 const uint32_t gWillChangeAreaMultiplier = 3;
@@ -2280,6 +2241,10 @@ void nsDisplayList::PaintRoot(nsDisplayListBuilder* aBuilder, gfxContext* aCtx,
   Document* document = presShell->GetDocument();
 
   ScopeExit g([&]() {
+#ifdef DEBUG
+    MOZ_ASSERT(!layerManager || !layerManager->GetTarget());
+#endif
+
     // For layers-free mode, we check the invalidation state bits in the
     // EndTransaction. So we clear the invalidation state bits after
     // EndTransaction.
@@ -2324,6 +2289,7 @@ void nsDisplayList::PaintRoot(nsDisplayListBuilder* aBuilder, gfxContext* aCtx,
 
     bool sent = false;
     if (aFlags & PAINT_IDENTICAL_DISPLAY_LIST) {
+      MOZ_ASSERT(!aCtx);
       sent = layerManager->EndEmptyTransaction();
     }
 
@@ -2401,7 +2367,7 @@ struct FramesWithDepth {
       // first
       return mDepth > aOther.mDepth;
     }
-    return this < &aOther;
+    return false;
   }
   bool operator==(const FramesWithDepth& aOther) const {
     return this == &aOther;
@@ -2418,7 +2384,7 @@ static void FlushFramesArray(nsTArray<FramesWithDepth>& aSource,
   if (aSource.IsEmpty()) {
     return;
   }
-  aSource.Sort();
+  aSource.StableSort();
   uint32_t length = aSource.Length();
   for (uint32_t i = 0; i < length; i++) {
     aDest->AppendElements(std::move(aSource[i].mFrames));
@@ -2474,7 +2440,7 @@ void nsDisplayList::HitTest(nsDisplayListBuilder* aBuilder, const nsRect& aRect,
         continue;
       }
       AutoTArray<nsIFrame*, 1> neverUsed;
-      // Start gethering leaves of the 3D rendering context, and
+      // Start gathering leaves of the 3D rendering context, and
       // append leaves at the end of mItemBuffer.  Leaves are
       // processed at following iterations.
       aState->mInPreserves3D = true;
@@ -3124,13 +3090,6 @@ static void DealWithWindowsAppearanceHacks(nsIFrame* aFrame,
     return;
   }
 
-  if (defaultAppearance == StyleAppearance::MozWinExcludeGlass) {
-    // Check for frames that are marked as a part of the region used in
-    // calculating glass margins on Windows.
-    aBuilder->AddWindowExcludeGlassRegion(
-        aFrame, nsRect(aBuilder->ToReferenceFrame(aFrame), aFrame->GetSize()));
-  }
-
   if (auto type = disp.GetWindowButtonType()) {
     if (auto* widget = aFrame->GetNearestWidget()) {
       auto rect = LayoutDevicePixel::FromAppUnitsToNearest(
@@ -3718,10 +3677,6 @@ void nsDisplayThemedBackground::Init(nsDisplayListBuilder* aBuilder) {
     RegisterThemeGeometry(aBuilder, this, StyleFrame(), type);
   }
 
-  if (mAppearance == StyleAppearance::MozWinBorderlessGlass) {
-    aBuilder->SetGlassDisplayItem(this);
-  }
-
   mBounds = GetBoundsInternal();
 }
 
@@ -3753,9 +3708,6 @@ nsRegion nsDisplayThemedBackground::GetOpaqueRegion(
 
 Maybe<nscolor> nsDisplayThemedBackground::IsUniform(
     nsDisplayListBuilder* aBuilder) const {
-  if (mAppearance == StyleAppearance::MozWinBorderlessGlass) {
-    return Some(NS_RGBA(0, 0, 0, 0));
-  }
   return Nothing();
 }
 
@@ -4063,7 +4015,7 @@ void nsDisplayOutline::Paint(nsDisplayListBuilder* aBuilder, gfxContext* aCtx) {
   nsRect rect = GetInnerRect() + ToReferenceFrame();
   nsPresContext* pc = mFrame->PresContext();
   if (IsThemedOutline()) {
-    rect.Inflate(mFrame->StyleOutline()->mOutlineOffset.ToAppUnits());
+    rect.Inflate(mFrame->StyleOutline()->EffectiveOffsetFor(rect));
     pc->Theme()->DrawWidgetBackground(aCtx, mFrame,
                                       StyleAppearance::FocusOutline, rect,
                                       GetPaintRect(aBuilder, aCtx));
@@ -4092,7 +4044,7 @@ bool nsDisplayOutline::CreateWebRenderCommands(
   nsPresContext* pc = mFrame->PresContext();
   nsRect rect = GetInnerRect() + ToReferenceFrame();
   if (IsThemedOutline()) {
-    rect.Inflate(mFrame->StyleOutline()->mOutlineOffset.ToAppUnits());
+    rect.Inflate(mFrame->StyleOutline()->EffectiveOffsetFor(rect));
     return pc->Theme()->CreateWebRenderCommandsForWidget(
         aBuilder, aResources, aSc, aManager, mFrame,
         StyleAppearance::FocusOutline, rect);
@@ -5221,10 +5173,10 @@ bool nsDisplayOwnLayer::IsScrollbarContainer() const {
 }
 
 bool nsDisplayOwnLayer::IsRootScrollbarContainer() const {
-  if (!IsScrollbarContainer()) {
-    return false;
-  }
+  return IsScrollbarContainer() && IsScrollbarLayerForRoot();
+}
 
+bool nsDisplayOwnLayer::IsScrollbarLayerForRoot() const {
   return mFrame->PresContext()->IsRootContentDocumentCrossProcess() &&
          mScrollbarData.mTargetViewId ==
              nsLayoutUtils::ScrollIdForRootScrollFrame(mFrame->PresContext());
@@ -5359,11 +5311,15 @@ bool nsDisplayOwnLayer::UpdateScrollData(WebRenderScrollData* aData,
     aLayerData->SetScrollbarAnimationId(mWrAnimationId);
     LayoutDeviceRect bounds = LayoutDeviceIntRect::FromAppUnits(
         mBounds, mFrame->PresContext()->AppUnitsPerDevPixel());
-    // We use a resolution of 1.0 because this is a WebRender codepath which
-    // always uses containerless scrolling, and so resolution doesn't apply to
-    // scrollbars.
+    // Subframe scrollbars are subject to the pinch-zoom scale,
+    // but root scrollbars are not because they are outside of the
+    // region that is zoomed.
+    const float resolution =
+        IsScrollbarLayerForRoot()
+            ? 1.0f
+            : mFrame->PresContext()->PresShell()->GetCumulativeResolution();
     LayerIntRect layerBounds =
-        RoundedOut(bounds * LayoutDeviceToLayerScale(1.0f));
+        RoundedOut(bounds * LayoutDeviceToLayerScale(resolution));
     aLayerData->SetVisibleRegion(LayerIntRegion(layerBounds));
   }
   return true;
@@ -6128,13 +6084,13 @@ Point3D nsDisplayTransform::GetDeltaToTransformOrigin(
   CSSPoint origin = nsStyleTransformMatrix::Convert2DPosition(
       transformOrigin.horizontal, transformOrigin.vertical, aRefBox);
 
-  if (aFrame->HasAnyStateBits(NS_FRAME_SVG_LAYOUT)) {
-    // SVG frames (unlike other frames) have a reference box that can be (and
-    // typically is) offset from the TopLeft() of the frame. We need to account
-    // for that here.
-    origin.x += CSSPixel::FromAppUnits(aRefBox.X());
-    origin.y += CSSPixel::FromAppUnits(aRefBox.Y());
-  }
+  // Note:
+  // 1. SVG frames have a reference box that can be (and typically is) offset
+  //    from the TopLeft() of the frame. We need to account for that here.
+  // 2. If we are using transform-box:content-box in CSS layout, we have the
+  //    offset from TopLeft() of the frame as well.
+  origin.x += CSSPixel::FromAppUnits(aRefBox.X());
+  origin.y += CSSPixel::FromAppUnits(aRefBox.Y());
 
   float scale = AppUnitsPerCSSPixel() / float(aAppUnitsPerPixel);
   float z = transformOrigin.depth._0;
@@ -6264,7 +6220,7 @@ Matrix4x4 nsDisplayTransform::GetResultingTransformMatrixInternal(
   if (aProperties.HasTransform()) {
     result = nsStyleTransformMatrix::ReadTransforms(
         aProperties.mTranslate, aProperties.mRotate, aProperties.mScale,
-        aProperties.mMotion, aProperties.mTransform, aRefBox,
+        aProperties.mMotion.ptrOr(nullptr), aProperties.mTransform, aRefBox,
         aAppUnitsPerPixel);
   } else if (hasSVGTransforms) {
     // Correct the translation components for zoom:
@@ -7670,6 +7626,9 @@ void nsDisplayText::RenderToContext(gfxContext* aCtx,
       // necessary. This is done here because we want selection be
       // compressed at the same time as text.
       gfxPoint pt = nsLayoutUtils::PointToGfxPoint(framePt, A2D);
+      if (f->GetTextRun(nsTextFrame::eInflated)->IsRightToLeft()) {
+        pt.x += gfxFloat(f->GetSize().width) / A2D;
+      }
       gfxMatrix mat = aCtx->CurrentMatrixDouble()
                           .PreTranslate(pt)
                           .PreScale(scaleFactor, 1.0)
@@ -8067,20 +8026,21 @@ static Maybe<wr::WrClipChainId> CreateSimpleClipRegion(
   wr::WrClipId clipId{};
 
   switch (shape.tag) {
-    case StyleBasicShape::Tag::Inset: {
-      const nsRect insetRect = ShapeUtils::ComputeInsetRect(shape, refBox) +
-                               aDisplayItem.ToReferenceFrame();
+    case StyleBasicShape::Tag::Rect: {
+      const nsRect rect =
+          ShapeUtils::ComputeInsetRect(shape.AsRect().rect, refBox) +
+          aDisplayItem.ToReferenceFrame();
 
       nscoord radii[8] = {0};
-
-      if (ShapeUtils::ComputeInsetRadii(shape, refBox, insetRect, radii)) {
+      if (ShapeUtils::ComputeRectRadii(shape.AsRect().round, refBox, rect,
+                                       radii)) {
         clipId = aBuilder.DefineRoundedRectClip(
             Nothing(),
-            wr::ToComplexClipRegion(insetRect, radii, appUnitsPerDevPixel));
+            wr::ToComplexClipRegion(rect, radii, appUnitsPerDevPixel));
       } else {
         clipId = aBuilder.DefineRectClip(
             Nothing(), wr::ToLayoutRect(LayoutDeviceRect::FromAppUnits(
-                           insetRect, appUnitsPerDevPixel)));
+                           rect, appUnitsPerDevPixel)));
       }
 
       break;

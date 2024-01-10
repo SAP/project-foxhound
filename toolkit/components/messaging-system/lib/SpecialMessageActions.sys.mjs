@@ -196,16 +196,22 @@ export const SpecialMessageActions = {
       "browser.migrate.content-modal.enabled",
       "browser.migrate.content-modal.import-all.enabled",
       "browser.migrate.preferences-entrypoint.enabled",
+      "browser.shopping.experience2023.active",
+      "browser.shopping.experience2023.optedIn",
       "browser.startup.homepage",
       "browser.privateWindowSeparation.enabled",
       "browser.firefox-view.feature-tour",
       "browser.pdfjs.feature-tour",
+      "browser.newtab.feature-tour",
       "cookiebanners.service.mode",
       "cookiebanners.service.mode.privateBrowsing",
       "cookiebanners.service.detectOnly",
     ];
 
-    if (!allowedPrefs.includes(pref.name)) {
+    if (
+      !allowedPrefs.includes(pref.name) &&
+      !pref.name.startsWith("messaging-system-action.")
+    ) {
       pref.name = `messaging-system-action.${pref.name}`;
     }
     // If pref has no value, reset it, otherwise set it to desired value

@@ -1166,7 +1166,7 @@ fails-if(Android) == 455826-1.html 455826-1-ref.html
 == chrome://reftest/content/bugs/456147.xhtml 456147-ref.html
 fuzzy(24-110,110-800) == 456219-1a.html 456219-1-ref.html # bug 1128229
 fuzzy(24-110,107-1251) == 456219-1b.html 456219-1-ref.html # bug 1128229
-fuzzy(24-110,107-3051) == 456219-1c.html 456219-1-ref.html # bug 1128229
+fuzzy(24-110,107-3600) == 456219-1c.html 456219-1-ref.html # bug 1128229
 fuzzy(0-10,0-8) == 456219-2.html 456219-2-ref.html
 == 456330-1.gif 456330-1-ref.png
 == 456484-1.html 456484-1-ref.html
@@ -1801,9 +1801,9 @@ pref(layout.css.moz-document.content.enabled,false) == 1035091-2.html 1035091-re
 == 1053035-1-flex.html 1053035-1-ref.html
 == 1053035-1-grid.html 1053035-1-ref.html
 == 1059167-1.html 1059167-1-ref.html
-fails-if(!useDrawSnapshot) == 1059498-1.html 1059498-1-ref.html # WebRender: see bug 1504290
-fails-if(!useDrawSnapshot) == 1059498-2.html 1059498-1-ref.html # WebRender: see bug 1504290
-fails-if(!useDrawSnapshot) == 1059498-3.html 1059498-1-ref.html # WebRender: see bug 1499113
+== 1059498-1.html 1059498-1-ref.html # WebRender: see bug 1504290
+== 1059498-2.html 1059498-1-ref.html # WebRender: see bug 1504290
+== 1059498-3.html 1059498-1-ref.html # WebRender: see bug 1499113
 == 1062108-1.html 1062108-1-ref.html
 == 1062792-1.html 1062792-1-ref.html
 == 1066554-1.html 1066554-1-ref.html
@@ -2091,6 +2091,9 @@ fuzzy(0-2,0-96600) == 1648282-1b.html 1648282-1-ref.html
 == 1673677-3.html 1673677-3-ref.html
 == 1686729-1.html 1686729-1-ref.html
 != chrome://reftest/content/bugs/1688004.xhtml about:blank
+pref(image.downscale-during-decode.enabled,true) fuzzy-if(OSX||winWidget,0-167,0-44310) fuzzy-if(gtkWidget,0-2,0-37220) == 1714763-1.html 1714763-1-ref.html
+pref(image.downscale-during-decode.enabled,true) fuzzy-if(OSX||winWidget,0-166,0-22530) fuzzy-if(gtkWidget,0-18,0-19006) fuzzy-if(Android,0-21,0-22254) == 1714763-2.html 1714763-2-ref.html
+pref(image.downscale-during-decode.enabled,true) fuzzy-if(OSX||winWidget,0-235,0-289) fuzzy-if(gtkWidget,0-186,0-240) fuzzy-if(Android,0-185,0-232) == 1714763-3.html 1714763-3-ref.html
 skip-if(!appleSilicon) != 1721223-1.html 1721223-1-notref.html # Big Sur required for updated system font; OSX value is clamped to 10.15
 skip-if(Android) == 1727172-1.xhtml 1727172-1-ref.html
 == 1726663-1.html 1726663-1-ref.html
@@ -2143,3 +2146,15 @@ pref(layout.testing.overlay-scrollbars.always-visible,true) pref(ui.useOverlaySc
 skip-if(!OSX) != 1834316-1.html 1834316-1-notref.html
 skip-if(!OSX) test-pref(layout.css.font-visibility.standard,1) ref-pref(layout.css.font-visibility.standard,3) == 1835271-1.html 1835271-1-ref.html
 skip-if(!OSX) != 1836024-1.html 1836024-1-notref.html
+# The 1840511-* tests are reliably fuzzy on certain configurations, per bug
+# 1840511.  (It passes on macOS and Android. It also passes with software WR,
+# or when using drawSnapshot.)
+fuzzy-if(!cocoaWidget&&!Android&&!swgl&&!useDrawSnapshot,1-1,142-142) == 1840511-1.html 1840511-1-ref.html
+fuzzy-if(!cocoaWidget&&!Android&&!swgl&&!useDrawSnapshot,1-1,284-284) fuzzy-if(useDrawSnapshot,1-1,4-4) == 1840511-2.html 1840511-1-ref.html
+# This test should render blank, but is reliably fuzzy, per bug 1840747.
+fuzzy-if(!useDrawSnapshot,18-19,294-322) == 1840747-1.html about:blank
+# This test has some fine/expected AA-related fuzziness along the edge of a
+# covered-up red shape. But there's a single bright-red pixel that shines
+# through, which is unexpected and is responsible for the 255-255 difference
+# here. That's tracked in bug 1840747.
+fuzzy-if(!useDrawSnapshot&&!swgl,254-255,110-121) fuzzy-if(useDrawSnapshot,18-18,93-93) fuzzy-if(swgl,19-19,58-58) == 1841355-1.html about:blank

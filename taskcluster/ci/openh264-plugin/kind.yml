@@ -21,6 +21,7 @@ job-defaults:
     run-on-projects: []
     repo: 'https://github.com/cisco/openh264.git'
     revision: '31c4d2e4a037526fd30d4e5c39f60885986cf865'
+    use-system-python: false
     worker:
         chain-of-trust: true
 
@@ -155,7 +156,7 @@ jobs:
             build_type: opt
         treeherder:
             platform: win32/opt
-        worker-type: b-win2012
+        worker-type: b-win2022
         worker:
             max-run-time: 1800
             artifacts:
@@ -180,7 +181,7 @@ jobs:
             build_type: opt
         treeherder:
             platform: win64/opt
-        worker-type: b-win2012
+        worker-type: b-win2022
         worker:
             max-run-time: 1800
             artifacts:
@@ -205,7 +206,7 @@ jobs:
             build_type: opt
         treeherder:
             platform: win64-aarch64/opt
-        worker-type: b-win2012
+        worker-type: b-win2022
         worker:
             max-run-time: 1800
             artifacts:

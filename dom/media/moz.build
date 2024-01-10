@@ -44,6 +44,7 @@ DIRS += [
     "mediasource",
     "mediasession",
     "mp3",
+    "mp4",
     "ogg",
     "platforms",
     "systemservices",
@@ -59,9 +60,6 @@ DIRS += [
 
 if CONFIG["MOZ_ANDROID_HLS_SUPPORT"]:
     DIRS += ["hls"]
-
-if CONFIG["MOZ_FMP4"]:
-    DIRS += ["mp4"]
 
 if CONFIG["MOZ_WEBRTC"]:
     DIRS += ["bridge"]
@@ -86,6 +84,7 @@ MOCHITEST_MANIFESTS += [
     "test/mochitest_bugs.ini",
     "test/mochitest_compat.ini",
     "test/mochitest_eme.ini",
+    "test/mochitest_media_engine.ini",
     "test/mochitest_media_recorder.ini",
     "test/mochitest_seek.ini",
     "test/mochitest_stream.ini",
@@ -206,7 +205,6 @@ EXPORTS += [
     "VideoLimits.h",
     "VideoSegment.h",
     "VideoUtils.h",
-    "VorbisUtils.h",
     "WavDumper.h",
     "XiphExtradata.h",
 ]

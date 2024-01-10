@@ -27,6 +27,7 @@
 #include <shlobj.h>
 
 #include <lm.h>
+#include <shellapi.h>
 #include <shlwapi.h>
 #include <wchar.h>
 #include <windows.h>
@@ -126,8 +127,57 @@ bool LaunchControlPanelDefaultPrograms() {
   return true;
 }
 
+static bool IsAppRegistered(HKEY rootKey, const wchar_t* appRegName) {
+  const wchar_t* keyPath = L"Software\\RegisteredApplications";
+
+  DWORD size = sizeof(uint32_t);
+  LSTATUS ls = RegGetValueW(rootKey, keyPath, appRegName, RRF_RT_ANY, nullptr,
+                            nullptr, &size);
+  return ls == ERROR_SUCCESS;
+}
+
+static bool LaunchMsSettingsProtocol() {
+  mozilla::UniquePtr<wchar_t[]> params = nullptr;
+  if (mozilla::HasPackageIdentity()) {
+    mozilla::UniquePtr<wchar_t[]> packageFamilyName =
+        mozilla::GetPackageFamilyName();
+    if (packageFamilyName) {
+      const wchar_t* paramFormat =
+          L"ms-settings:defaultapps?registeredAUMID=%s!App";
+      int bufferSize = _scwprintf(paramFormat, packageFamilyName.get());
+      ++bufferSize;  // Extra byte for terminating null
+      params = mozilla::MakeUnique<wchar_t[]>(bufferSize);
+      _snwprintf_s(params.get(), bufferSize, _TRUNCATE, paramFormat,
+                   packageFamilyName.get());
+    }
+  }
+  if (!params) {
+    mozilla::UniquePtr<wchar_t[]> appRegName;
+    GetAppRegName(appRegName);
+    const wchar_t* paramFormat =
+        IsAppRegistered(HKEY_CURRENT_USER, appRegName.get()) ||
+                !IsAppRegistered(HKEY_LOCAL_MACHINE, appRegName.get())
+            ? L"ms-settings:defaultapps?registeredAppUser=%s"
+            : L"ms-settings:defaultapps?registeredAppMachine=%s";
+    int bufferSize = _scwprintf(paramFormat, appRegName.get());
+    ++bufferSize;  // Extra byte for terminating null
+    params = mozilla::MakeUnique<wchar_t[]>(bufferSize);
+    _snwprintf_s(params.get(), bufferSize, _TRUNCATE, paramFormat,
+                 appRegName.get());
+  }
+
+  SHELLEXECUTEINFOW seinfo = {sizeof(seinfo)};
+  seinfo.lpFile = params.get();
+  seinfo.nShow = SW_SHOWNORMAL;
+  return ShellExecuteExW(&seinfo);
+}
+
 bool LaunchModernSettingsDialogDefaultApps() {
-  if (!mozilla::IsWindowsBuildOrLater(14965) && !IsWindowsLogonConnected() &&
+  if (mozilla::IsWin11OrLater()) {
+    return LaunchMsSettingsProtocol();
+  }
+
+  if (!mozilla::IsWindows10BuildOrLater(14965) && !IsWindowsLogonConnected() &&
       SettingsAppBelievesConnected()) {
     // Use the classic Control Panel to work around a bug of older
     // builds of Windows 10.

@@ -25,6 +25,15 @@ ChromeUtils.defineESModuleGetters(lazy, {
   UrlbarTokenizer: "resource:///modules/UrlbarTokenizer.sys.mjs",
 });
 
+const RESULT_MENU_COMMANDS = {
+  TRENDING_BLOCK: "trendingblock",
+  TRENDING_HELP: "help",
+};
+
+const TRENDING_HELP_URL =
+  Services.urlFormatter.formatURLPref("app.support.baseURL") +
+  "google-trending-searches-on-awesomebar";
+
 /**
  * Returns whether the passed in string looks like a url.
  *
@@ -318,7 +327,34 @@ class ProviderSearchSuggestions extends UrlbarProvider {
     }
   }
 
-  onEngagement(isPrivate, state, queryContext, details) {
+  /**
+   * Returns the menu commands to be shown for trending results.
+   *
+   * @param {UrlbarResult} result
+   *   The result to get menu comands for.
+   *
+   * @returns {Array} The commands to be shown.
+   */
+  getResultCommands(result) {
+    if (result.payload.trending) {
+      return [
+        {
+          name: RESULT_MENU_COMMANDS.TRENDING_BLOCK,
+          l10n: { id: "urlbar-result-menu-trending-dont-show" },
+        },
+        {
+          name: "separator",
+        },
+        {
+          name: RESULT_MENU_COMMANDS.TRENDING_HELP,
+          l10n: { id: "urlbar-result-menu-trending-why" },
+        },
+      ];
+    }
+    return undefined;
+  }
+
+  onEngagement(state, queryContext, details, controller) {
     let { result } = details;
     if (result?.providerName != this.name) {
       return;
@@ -332,7 +368,19 @@ class ProviderSearchSuggestions extends UrlbarProvider {
       }).catch(error =>
         console.error(`Removing form history failed: ${error}`)
       );
-      queryContext.view.controller.removeResult(result);
+      controller.removeResult(result);
+      return;
+    }
+
+    switch (details.selType) {
+      case RESULT_MENU_COMMANDS.TRENDING_HELP:
+        // Handled by UrlbarInput
+        break;
+      case RESULT_MENU_COMMANDS.TRENDING_BLOCK:
+        lazy.UrlbarPrefs.set("suggest.trending", false);
+        this.#recordTrendingBlockedTelemetry(details.selType);
+        this.#replaceTrendingResultWithAcknowledgement(controller);
+        break;
     }
   }
 
@@ -449,30 +497,35 @@ class ProviderSearchSuggestions extends UrlbarProvider {
       }
 
       try {
+        let payload = {
+          engine: [engine.name, UrlbarUtils.HIGHLIGHT.TYPED],
+          suggestion: [entry.value, UrlbarUtils.HIGHLIGHT.SUGGESTED],
+          lowerCaseSuggestion: entry.value.toLocaleLowerCase(),
+          tailPrefix,
+          tail: [tail, UrlbarUtils.HIGHLIGHT.SUGGESTED],
+          tailOffsetIndex: tail ? entry.tailOffsetIndex : undefined,
+          keyword: [alias ? alias : undefined, UrlbarUtils.HIGHLIGHT.TYPED],
+          trending: entry.trending,
+          description: entry.description || undefined,
+          query: [searchString.trim(), UrlbarUtils.HIGHLIGHT.NONE],
+          icon: !entry.value ? engine.iconURI?.spec : entry.icon,
+        };
+
+        if (entry.trending) {
+          payload.helpUrl = TRENDING_HELP_URL;
+        }
+
         results.push(
-          new lazy.UrlbarResult(
-            UrlbarUtils.RESULT_TYPE.SEARCH,
-            UrlbarUtils.RESULT_SOURCE.SEARCH,
-            ...lazy.UrlbarResult.payloadAndSimpleHighlights(
-              queryContext.tokens,
-              {
-                engine: [engine.name, UrlbarUtils.HIGHLIGHT.TYPED],
-                suggestion: [entry.value, UrlbarUtils.HIGHLIGHT.SUGGESTED],
-                lowerCaseSuggestion: entry.value.toLocaleLowerCase(),
-                tailPrefix,
-                tail: [tail, UrlbarUtils.HIGHLIGHT.SUGGESTED],
-                tailOffsetIndex: tail ? entry.tailOffsetIndex : undefined,
-                keyword: [
-                  alias ? alias : undefined,
-                  UrlbarUtils.HIGHLIGHT.TYPED,
-                ],
-                trending: entry.trending,
-                isRichSuggestion: !!entry.icon,
-                description: entry.description || undefined,
-                query: [searchString.trim(), UrlbarUtils.HIGHLIGHT.NONE],
-                icon: !entry.value ? engine.iconURI?.spec : entry.icon,
-              }
-            )
+          Object.assign(
+            new lazy.UrlbarResult(
+              UrlbarUtils.RESULT_TYPE.SEARCH,
+              UrlbarUtils.RESULT_SOURCE.SEARCH,
+              ...lazy.UrlbarResult.payloadAndSimpleHighlights(
+                queryContext.tokens,
+                payload
+              )
+            ),
+            { isRichSuggestion: !!entry.icon }
           )
         );
       } catch (err) {
@@ -558,9 +611,36 @@ class ProviderSearchSuggestions extends UrlbarProvider {
     return !!(
       queryContext.searchString == "" &&
       lazy.UrlbarPrefs.get("trending.featureGate") &&
+      lazy.UrlbarPrefs.get("suggest.trending") &&
       (queryContext.searchMode ||
         !lazy.UrlbarPrefs.get("trending.requireSearchMode"))
     );
+  }
+
+  /*
+   * Send telemetry to indicating trending results have been hidden.
+   */
+  #recordTrendingBlockedTelemetry() {
+    Services.telemetry.scalarAdd("urlbar.trending.block", 1);
+  }
+
+  /*
+   * Remove all the trending results and show an acknowledgement that the
+   * trending suggestions have been turned off.
+   */
+  #replaceTrendingResultWithAcknowledgement(controller) {
+    let resultsToRemove = controller.view.visibleResults.filter(
+      result => result.payload.trending
+    );
+    if (resultsToRemove.length) {
+      // Show an acknowledgement tip for the first result.
+      resultsToRemove[0].acknowledgeDismissalL10n = {
+        id: "urlbar-trending-dismissal-acknowledgment",
+      };
+    }
+    // Remove results in reverse order so the acknowledgment tip isn't removed.
+    resultsToRemove.reverse();
+    resultsToRemove.forEach(result => controller.removeResult(result));
   }
 }
 

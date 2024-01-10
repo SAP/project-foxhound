@@ -624,7 +624,6 @@ bool ClassEmitter::emitDerivedClass(TaggedParserAtomIndex name,
 }
 
 bool ClassEmitter::emitInitConstructor(bool needsHomeObject) {
-  MOZ_ASSERT(propertyState_ == PropertyState::Start);
   MOZ_ASSERT(classState_ == ClassState::Class ||
              classState_ == ClassState::InstanceMemberInitializersEnd);
 
@@ -698,8 +697,8 @@ bool ClassEmitter::prepareForMemberInitializers(size_t numInitializers,
   // code (the initializer) for each field. Upon an object's construction,
   // these lambdas will be called, defining the values.
   auto initializers =
-      isStatic ? TaggedParserAtomIndex::WellKnown::dotStaticInitializers()
-               : TaggedParserAtomIndex::WellKnown::dotInitializers();
+      isStatic ? TaggedParserAtomIndex::WellKnown::dot_staticInitializers_()
+               : TaggedParserAtomIndex::WellKnown::dot_initializers_();
   initializersAssignment_.emplace(bce_, initializers,
                                   NameOpEmitter::Kind::Initialize);
   if (!initializersAssignment_->prepareForRhs()) {

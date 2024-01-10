@@ -20,6 +20,7 @@
 #include "mozilla/net/NeckoParent.h"
 #include "mozilla/InputStreamLengthHelper.h"
 #include "mozilla/IntegerPrintfMacros.h"
+#include "mozilla/Preferences.h"
 #include "mozilla/ProfilerLabels.h"
 #include "mozilla/StoragePrincipalHelper.h"
 #include "mozilla/UniquePtr.h"
@@ -389,7 +390,7 @@ bool HttpChannelParent::DoAsyncOpen(
     const uint64_t& startPos, const nsCString& entityID, const bool& allowSpdy,
     const bool& allowHttp3, const bool& allowAltSvc, const bool& beConservative,
     const bool& bypassProxy, const uint32_t& tlsFlags,
-    const Maybe<LoadInfoArgs>& aLoadInfoArgs, const uint32_t& aCacheKey,
+    const LoadInfoArgs& aLoadInfoArgs, const uint32_t& aCacheKey,
     const uint64_t& aRequestContextID,
     const Maybe<CorsPreflightArgs>& aCorsPreflightArgs,
     const uint32_t& aInitialRwin, const bool& aBlockAuthPrompt,
@@ -1046,10 +1047,6 @@ static ResourceTimingStructArgs GetTimingAttributes(HttpBaseChannel* aChannel) {
   // decodedBodySize can be computed in the child process so it doesn't need
   // to be passed down.
 
-  nsCString protocolVersion;
-  aChannel->GetProtocolVersion(protocolVersion);
-  args.protocolVersion() = protocolVersion;
-
   aChannel->GetCacheReadStart(&timeStamp);
   args.cacheReadStart() = timeStamp;
 
@@ -1137,6 +1134,7 @@ HttpChannelParent::OnStartRequest(nsIRequest* aRequest) {
     httpChannelImpl->GetCacheEntryId(&args.cacheEntryId());
     httpChannelImpl->GetCacheTokenFetchCount(&args.cacheFetchCount());
     httpChannelImpl->GetCacheTokenExpirationTime(&args.cacheExpirationTime());
+    httpChannelImpl->GetProtocolVersion(args.protocolVersion());
 
     mDataSentToChildProcess = httpChannelImpl->DataSentToChildProcess();
 
@@ -2108,6 +2106,17 @@ void HttpChannelParent::SetCookie(nsCString&& aCookie) {
   LOG(("HttpChannelParent::SetCookie [this=%p]", this));
   MOZ_ASSERT(!mAfterOnStartRequestBegun);
   MOZ_ASSERT(mCookie.IsEmpty());
+
+  // The loadGroup of the channel in the parent process could be null in the
+  // XPCShell content process test, see test_cookiejars_wrap.js. In this case,
+  // we cannot explicitly set the loadGroup for the parent channel because it's
+  // created from the content process. To workaround this, we add a testing pref
+  // to skip this check.
+  if (!Preferences::GetBool(
+          "network.cookie.skip_browsing_context_check_in_parent_for_testing") &&
+      mChannel->IsBrowsingContextDiscarded()) {
+    return;
+  }
   mCookie = std::move(aCookie);
 }
 

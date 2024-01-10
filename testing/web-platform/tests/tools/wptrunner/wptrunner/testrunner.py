@@ -1,9 +1,11 @@
 # mypy: allow-untyped-defs
 
 import threading
+import time
 import traceback
 from queue import Empty
 from collections import namedtuple
+from typing import Optional
 
 from mozlog import structuredlog, capture
 
@@ -175,6 +177,7 @@ class BrowserManager:
 
         self.started = False
 
+        self.browser_pid = None
         self.init_timer = None
         self.command_queue = command_queue
 
@@ -269,7 +272,7 @@ class TestRunnerManager(threading.Thread):
                  test_implementation_by_type, stop_flag, rerun=1,
                  pause_after_test=False, pause_on_unexpected=False,
                  restart_on_unexpected=True, debug_info=None,
-                 capture_stdio=True, restart_on_new_group=True, recording=None):
+                 capture_stdio=True, restart_on_new_group=True, recording=None, max_restarts=5):
         """Thread that owns a single TestRunner process and any processes required
         by the TestRunner (e.g. the Firefox binary).
 
@@ -294,16 +297,16 @@ class TestRunnerManager(threading.Thread):
 
         self.test_implementation_by_type = {}
         for test_type, test_implementation in test_implementation_by_type.items():
-            kwargs = test_implementation.browser_kwargs
-            if kwargs.get("device_serial"):
-                kwargs = kwargs.copy()
+            browser_kwargs = test_implementation.browser_kwargs
+            if browser_kwargs.get("device_serial"):
+                browser_kwargs = browser_kwargs.copy()
                 # Assign Android device to runner according to current manager index
-                kwargs["device_serial"] = kwargs["device_serial"][index]
+                browser_kwargs["device_serial"] = browser_kwargs["device_serial"][index]
                 self.test_implementation_by_type[test_type] = TestImplementation(
                     test_implementation.executor_cls,
                     test_implementation.executor_kwargs,
                     test_implementation.browser_cls,
-                    kwargs)
+                    browser_kwargs)
             else:
                 self.test_implementation_by_type[test_type] = test_implementation
 
@@ -328,7 +331,7 @@ class TestRunnerManager(threading.Thread):
 
         self.test_runner_proc = None
 
-        threading.Thread.__init__(self, name="TestRunnerManager-%s-%i" % (test_type, index))
+        super().__init__(name=f"TestRunnerManager-{index}")
         # This is started in the actual new thread
         self.logger = None
 
@@ -341,7 +344,7 @@ class TestRunnerManager(threading.Thread):
 
         self.timer = None
 
-        self.max_restarts = 5
+        self.max_restarts = max_restarts
 
         self.browser = None
 
@@ -511,16 +514,10 @@ class TestRunnerManager(threading.Thread):
         self.browser.update_settings(self.state.test)
 
         result = self.browser.init(self.state.group_metadata)
-        if result is Stop:
-            return RunnerManagerState.error()
-        elif not result:
-            return RunnerManagerState.initializing(self.state.test_type,
-                                                   self.state.test,
-                                                   self.state.test_group,
-                                                   self.state.group_metadata,
-                                                   self.state.failure_count + 1)
-        else:
-            self.start_test_runner()
+        if not result:
+            return self.init_failed()
+
+        self.start_test_runner()
 
     def start_test_runner(self):
         # Note that we need to be careful to start the browser before the
@@ -680,7 +677,7 @@ class TestRunnerManager(threading.Thread):
         status = file_result.status
 
         if self.browser.check_crash(test.id) and status != "CRASH":
-            if test.test_type == "crashtest" or status == "EXTERNAL-TIMEOUT":
+            if test.test_type in ["crashtest", "wdspec"] or status == "EXTERNAL-TIMEOUT":
                 self.logger.info("Found a crash dump file; changing status to CRASH")
                 status = "CRASH"
             else:
@@ -698,16 +695,17 @@ class TestRunnerManager(threading.Thread):
 
         self.test_count += 1
         is_unexpected = expected != status and status not in known_intermittent
+        is_pass_or_expected = status in ["OK", "PASS"] or (not is_unexpected)
 
         if is_unexpected or subtest_unexpected:
             self.unexpected_tests.add(test.id)
 
         # A result is unexpected pass if the test or any subtest run
-        # unexpectedly, and the overall status is OK (for test harness test), or
-        # PASS (for reftest), and all unexpected results for subtests (if any) are
-        # unexpected pass.
+        # unexpectedly, and the overall status is expected or passing (OK for test
+        # harness test, or PASS for reftest), and all unexpected results for
+        # subtests (if any) are unexpected pass.
         is_unexpected_pass = ((is_unexpected or subtest_unexpected) and
-                              status in ["OK", "PASS"] and subtest_all_pass_or_expected)
+                              is_pass_or_expected and subtest_all_pass_or_expected)
         if is_unexpected_pass:
             self.unexpected_pass_tests.add(test.id)
 
@@ -910,7 +908,8 @@ class ManagerGroup:
                  debug_info=None,
                  capture_stdio=True,
                  restart_on_new_group=True,
-                 recording=None):
+                 recording=None,
+                 max_restarts=5):
         self.suite_name = suite_name
         self.test_source_cls = test_source_cls
         self.test_source_kwargs = test_source_kwargs
@@ -924,6 +923,7 @@ class ManagerGroup:
         self.restart_on_new_group = restart_on_new_group
         self.recording = recording
         assert recording is not None
+        self.max_restarts = max_restarts
 
         self.pool = set()
         # Event that is polled by threads so that they can gracefully exit in the face
@@ -957,15 +957,25 @@ class ManagerGroup:
                                         self.debug_info,
                                         self.capture_stdio,
                                         self.restart_on_new_group,
-                                        recording=self.recording)
+                                        recording=self.recording,
+                                        max_restarts=self.max_restarts)
             manager.start()
             self.pool.add(manager)
         self.wait()
 
-    def wait(self):
-        """Wait for all the managers in the group to finish"""
+    def wait(self, timeout: Optional[float] = None) -> None:
+        """Wait for all the managers in the group to finish.
+
+        Arguments:
+            timeout: Overall timeout (in seconds) for all threads to join. The
+                default value indicates an indefinite timeout.
+        """
+        deadline = None if timeout is None else time.time() + timeout
         for manager in self.pool:
-            manager.join()
+            manager_timeout = None
+            if deadline is not None:
+                manager_timeout = max(0, deadline - time.time())
+            manager.join(manager_timeout)
 
     def stop(self):
         """Set the stop flag so that all managers in the group stop as soon

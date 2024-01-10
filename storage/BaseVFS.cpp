@@ -84,7 +84,7 @@ int BaseCheckReservedLock(sqlite3_file* pFile, int* pResOut) {
 }
 
 int BaseFileControl(sqlite3_file* pFile, int op, void* pArg) {
-#ifdef EARLY_BETA_OR_EARLIER
+#if defined(MOZ_SQLITE_PERSIST_AUXILIARY_FILES)
   // Persist auxiliary files (-shm and -wal) on disk, because creating and
   // deleting them may be expensive on slow storage.
   // Only do this when there is a journal size limit, so the journal is

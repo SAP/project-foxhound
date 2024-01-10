@@ -45,11 +45,30 @@ __attribute__((section(".text._init_trampoline"), naked)) int init_trampoline(
 }
 #endif
 
+// On aarch64, a similar problem exists, but long_call is not an option at all
+// (even GCC doesn't support them on aarch64).
+#ifdef __aarch64__
+__attribute__((section(".text._init_trampoline"), naked)) int init_trampoline(
+    int argc, char** argv, char** env) {
+  __asm__ __volatile__(
+      "  adrp x8, .LADDR\n"
+      "  add x8, x8, :lo12:.LADDR\n"  // adrp + add gives us the full address
+                                      // for .LADDR
+      "  ldr x0, [x8]\n"  // Load the address of real_original_init relative to
+                          // .LADDR
+      "  add x0, x8, x0\n"  // Add the address of .LADDR
+      "  br x0\n"           // Branch to real_original_init
+      ".LADDR:\n"
+      "  .xword real_original_init-.LADDR\n");
+}
+#endif
+
 extern __attribute__((visibility("hidden"))) void original_init(int argc,
                                                                 char** argv,
                                                                 char** env);
 
 extern __attribute__((visibility("hidden"))) Elf_Addr relhack[];
+extern __attribute__((visibility("hidden"))) Elf_Addr relhack_end[];
 extern __attribute__((visibility("hidden"))) Elf_Ehdr elf_header;
 
 extern __attribute__((visibility("hidden"))) int (*mprotect_cb)(void* addr,
@@ -61,7 +80,7 @@ extern __attribute__((visibility("hidden"))) char relro_end[];
 
 static inline __attribute__((always_inline)) void do_relocations(void) {
   Elf_Addr* ptr;
-  for (Elf_Addr* entry = relhack; *entry; entry++) {
+  for (Elf_Addr* entry = relhack; entry < relhack_end; entry++) {
     if ((*entry & 1) == 0) {
       ptr = (Elf_Addr*)((intptr_t)&elf_header + *entry);
       *ptr += (intptr_t)&elf_header;

@@ -32,23 +32,25 @@ const UNITS_PERCENTAGE = Ci.nsIMemoryReporter.UNITS_PERCENTAGE;
 const { XPCOMUtils } = ChromeUtils.importESModule(
   "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
-const { NetUtil } = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+const { NetUtil } = ChromeUtils.importESModule(
+  "resource://gre/modules/NetUtil.sys.mjs"
+);
 ChromeUtils.defineESModuleGetters(this, {
   Downloads: "resource://gre/modules/Downloads.sys.mjs",
   FileUtils: "resource://gre/modules/FileUtils.sys.mjs",
 });
 
-XPCOMUtils.defineLazyGetter(this, "nsBinaryStream", () =>
+ChromeUtils.defineLazyGetter(this, "nsBinaryStream", () =>
   CC(
     "@mozilla.org/binaryinputstream;1",
     "nsIBinaryInputStream",
     "setInputStream"
   )
 );
-XPCOMUtils.defineLazyGetter(this, "nsFile", () =>
+ChromeUtils.defineLazyGetter(this, "nsFile", () =>
   CC("@mozilla.org/file/local;1", "nsIFile", "initWithPath")
 );
-XPCOMUtils.defineLazyGetter(this, "nsGzipConverter", () =>
+ChromeUtils.defineLazyGetter(this, "nsGzipConverter", () =>
   CC(
     "@mozilla.org/streamconv;1?from=gzip&to=uncompressed",
     "nsIStreamConverter"

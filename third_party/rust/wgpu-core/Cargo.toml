@@ -12,7 +12,7 @@
 [package]
 edition = "2021"
 name = "wgpu-core"
-version = "0.16.0"
+version = "0.17.0"
 authors = ["wgpu developers"]
 description = "WebGPU core logic on wgpu-hal"
 homepage = "https://wgpu.rs/"
@@ -47,14 +47,15 @@ smallvec = "1"
 thiserror = "1"
 
 [dependencies.hal]
-version = "0.16"
+version = "0.17"
 path = "../wgpu-hal"
+default_features = false
 package = "wgpu-hal"
 
 [dependencies.naga]
-version = "0.12.0"
+version = "0.13.0"
 git = "https://github.com/gfx-rs/naga"
-rev = "b99d58ea435090e561377949f428bce2c18451bb"
+rev = "bac2d82a430fbfcf100ee22b7c3bc12f3d593079"
 features = [
     "clone",
     "span",
@@ -79,17 +80,22 @@ features = ["serde_derive"]
 optional = true
 
 [dependencies.wgt]
-version = "0.16"
+version = "0.17"
 path = "../wgpu-types"
 package = "wgpu-types"
 
 [features]
 angle = ["hal/gles"]
-default = []
+default = ["link"]
 dx11 = ["hal/dx11"]
 dx12 = ["hal/dx12"]
+fragile-send-sync-non-atomic-wasm = [
+    "hal/fragile-send-sync-non-atomic-wasm",
+    "wgt/fragile-send-sync-non-atomic-wasm",
+]
 gles = ["hal/gles"]
 id32 = []
+link = ["hal/link"]
 metal = ["hal/metal"]
 renderdoc = ["hal/renderdoc"]
 replay = [
@@ -115,7 +121,7 @@ vulkan = ["hal/vulkan"]
 wgsl = ["naga/wgsl-in"]
 
 [target."cfg(all(target_arch = \"wasm32\", not(target_os = \"emscripten\")))".dependencies.web-sys]
-version = "0.3.60"
+version = "0.3.64"
 features = [
     "HtmlCanvasElement",
     "OffscreenCanvas",

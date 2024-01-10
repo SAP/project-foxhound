@@ -19,9 +19,9 @@
 #include "nsStringFwd.h"
 #include "nsStubMutationObserver.h"
 #include "nsStyleStruct.h"
-#include "nsCycleCollectionParticipant.h"
 
 class nsAtom;
+class nsCycleCollectionTraversalCallback;
 class nsIFrame;
 class nsIURI;
 
@@ -36,6 +36,7 @@ namespace dom {
 class CanvasRenderingContext2D;
 class Element;
 class SVGGeometryElement;
+class SVGMPathElement;
 }  // namespace dom
 }  // namespace mozilla
 
@@ -98,9 +99,15 @@ class SVGRenderingObserver : public nsStubMutationObserver {
   virtual ~SVGRenderingObserver() = default;
 
  public:
+  enum Flags : uint32_t {
+    OBSERVE_ATTRIBUTE_CHANGES = 0x01,
+    OBSERVE_CONTENT_CHANGES = 0x02
+  };
   using Element = dom::Element;
 
-  SVGRenderingObserver() : mInObserverSet(false) {}
+  SVGRenderingObserver(uint32_t aFlags = OBSERVE_ATTRIBUTE_CHANGES |
+                                         OBSERVE_CONTENT_CHANGES)
+      : mInObserverSet(false), mFlags(aFlags) {}
 
   // nsIMutationObserver
   NS_DECL_NSIMUTATIONOBSERVER_ATTRIBUTECHANGED
@@ -161,6 +168,9 @@ class SVGRenderingObserver : public nsStubMutationObserver {
 
   // Whether we're in our observed element's observer set at this time.
   bool mInObserverSet;
+
+  // Flags to control what changes we notify about.
+  uint32_t mFlags;
 };
 
 class SVGObserverUtils {
@@ -335,6 +345,16 @@ class SVGObserverUtils {
       nsIFrame* aClippedFrame, SVGClipPathFrame** aClipPathFrame);
 
   /**
+   * Get the element of the SVG Shape element, if any, and set up |aFrame| as a
+   * rendering observer of the geometry frame, to post a restyle if it changes.
+   *
+   * We use this function to resolve offset-path:url() and build the equivalent
+   * path from this shape element, and generate the transformation from for CSS
+   * Motion.
+   */
+  static SVGGeometryElement* GetAndObserveGeometry(nsIFrame* aFrame);
+
+  /**
    * If masking is applied to aMaskedFrame, gets an array of any SVG masks
    * that are referenced, setting up aMaskFrames as a rendering observer of
    * those masks (if any).
@@ -361,6 +381,16 @@ class SVGObserverUtils {
    * SVGGeometryElement that it references, if any.
    */
   static void RemoveTextPathObserver(nsIFrame* aTextPathFrame);
+
+  /**
+   * Get the SVGGeometryElement that is referenced by aSVGMPathElement, and
+   * make aSVGMPathElement start observing rendering changes to that element.
+   */
+  static SVGGeometryElement* GetAndObserveMPathsPath(
+      dom::SVGMPathElement* aSVGMPathElement);
+
+  static void TraverseMPathObserver(dom::SVGMPathElement* aSVGMPathElement,
+                                    nsCycleCollectionTraversalCallback* aCB);
 
   /**
    * Gets the nsIFrame of a referenced SVG "template" element, if any, and

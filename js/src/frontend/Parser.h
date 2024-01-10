@@ -186,6 +186,7 @@
 #include "frontend/SharedContext.h"
 #include "frontend/SyntaxParseHandler.h"
 #include "frontend/TokenStream.h"
+#include "js/CharacterEncoding.h"     // JS::ConstUTF8CharsZ
 #include "js/friend/ErrorMessages.h"  // JSErrNum, JSMSG_*
 #include "vm/GeneratorAndAsyncKind.h"  // js::GeneratorKind, js::FunctionAsyncKind
 
@@ -271,6 +272,8 @@ class MOZ_STACK_CLASS ParserSharedBase {
 
   LifoAlloc& stencilAlloc() { return compilationState_.alloc; }
 
+  const UsedNameTracker& usedNames() { return usedNames_; }
+
 #if defined(DEBUG) || defined(JS_JITSPEW)
   void dumpAtom(TaggedParserAtomIndex index) const;
 #endif
@@ -329,7 +332,7 @@ class MOZ_STACK_CLASS ParserBase : public ParserSharedBase,
 
   bool checkOptions();
 
-  const char* getFilename() const { return anyChars.getFilename(); }
+  JS::ConstUTF8CharsZ getFilename() const { return anyChars.getFilename(); }
   TokenPos pos() const { return anyChars.currentToken().pos; }
 
   // Determine whether |yield| is a valid name in the current context.
@@ -1331,15 +1334,15 @@ class MOZ_STACK_CLASS GeneralParser : public PerHandlerParser<ParseHandler> {
       TokenPos propNamePos);
 
 #ifdef ENABLE_DECORATORS
-  Node synthesizeAccessor(Node propName, TokenPos propNamePos,
-                          TaggedParserAtomIndex propAtom,
-                          TaggedParserAtomIndex privateStateNameAtom,
-                          bool isStatic, FunctionSyntaxKind syntaxKind,
-                          ListNodeType decorators,
-                          ClassInitializedMembers& classInitializedMembers);
+  ClassMethodType synthesizeAccessor(
+      Node propName, TokenPos propNamePos, TaggedParserAtomIndex propAtom,
+      TaggedParserAtomIndex privateStateNameAtom, bool isStatic,
+      FunctionSyntaxKind syntaxKind,
+      ClassInitializedMembers& classInitializedMembers);
 
-  FunctionNodeType synthesizeAccessorBody(TokenPos propNamePos,
-                                          TaggedParserAtomIndex atom,
+  FunctionNodeType synthesizeAccessorBody(TaggedParserAtomIndex funNameAtom,
+                                          TokenPos propNamePos,
+                                          TaggedParserAtomIndex propNameAtom,
                                           FunctionSyntaxKind syntaxKind);
 #endif
 
@@ -1384,8 +1387,18 @@ class MOZ_STACK_CLASS GeneralParser : public PerHandlerParser<ParseHandler> {
   void reportMissingClosing(unsigned errorNumber, unsigned noteNumber,
                             uint32_t openedPos);
 
+  void reportRedeclarationHelper(TaggedParserAtomIndex& name,
+                                 DeclarationKind& prevKind, TokenPos& pos,
+                                 uint32_t& prevPos, const unsigned& errorNumber,
+                                 const unsigned& noteErrorNumber);
+
   void reportRedeclaration(TaggedParserAtomIndex name, DeclarationKind prevKind,
                            TokenPos pos, uint32_t prevPos);
+
+  void reportMismatchedPlacement(TaggedParserAtomIndex name,
+                                 DeclarationKind prevKind, TokenPos pos,
+                                 uint32_t prevPos);
+
   bool notePositionalFormalParameter(FunctionNodeType funNode,
                                      TaggedParserAtomIndex name,
                                      uint32_t beginPos,
@@ -1933,26 +1946,6 @@ LexicalScope::ParserData* NewEmptyLexicalScopeData(FrontendContext* fc,
 FunctionScope::ParserData* NewEmptyFunctionScopeData(FrontendContext* fc,
                                                      LifoAlloc& alloc,
                                                      uint32_t numBindings);
-
-mozilla::Maybe<GlobalScope::ParserData*> NewGlobalScopeData(
-    JSContext* cx, FrontendContext* fc, ParseContext::Scope& scope,
-    LifoAlloc& alloc, ParseContext* pc);
-
-mozilla::Maybe<EvalScope::ParserData*> NewEvalScopeData(
-    JSContext* cx, FrontendContext* fc, ParseContext::Scope& scope,
-    LifoAlloc& alloc, ParseContext* pc);
-
-mozilla::Maybe<FunctionScope::ParserData*> NewFunctionScopeData(
-    JSContext* cx, FrontendContext* fc, ParseContext::Scope& scope,
-    bool hasParameterExprs, LifoAlloc& alloc, ParseContext* pc);
-
-mozilla::Maybe<VarScope::ParserData*> NewVarScopeData(
-    JSContext* cx, FrontendContext* fc, ParseContext::Scope& scope,
-    LifoAlloc& alloc, ParseContext* pc);
-
-mozilla::Maybe<LexicalScope::ParserData*> NewLexicalScopeData(
-    JSContext* cx, FrontendContext* fc, ParseContext::Scope& scope,
-    LifoAlloc& alloc, ParseContext* pc);
 
 bool FunctionScopeHasClosedOverBindings(ParseContext* pc);
 bool LexicalScopeHasClosedOverBindings(ParseContext* pc,

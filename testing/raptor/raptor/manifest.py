@@ -9,6 +9,7 @@ import re
 from constants.raptor_tests_constants import YOUTUBE_PLAYBACK_MEASURE
 from logger.logger import RaptorLogger
 from manifestparser import TestManifest
+from perftest import TRACE_APPS
 from six.moves.urllib.parse import parse_qs, unquote, urlencode, urlsplit, urlunsplit
 from utils import (
     bool_from_str,
@@ -94,7 +95,6 @@ def validate_test_ini(test_details):
     # if 'alert-on' is specified, we need to make sure that the value given is valid
     # i.e. any 'alert_on' values must be values that exist in the 'measure' ini setting
     if test_details.get("alert_on") is not None:
-
         # support with or without spaces, i.e. 'measure = fcp, loadtime' or '= fcp,loadtime'
         # convert to a list; and remove any spaces
         # this can also have regexes inside
@@ -444,7 +444,9 @@ def get_raptor_test_list(args, oskey):
             next_test.pop("gecko_profile_threads", None)
             next_test.pop("gecko_profile_features", None)
 
-        if args.extra_profiler_run is True and args.app == "firefox":
+        if args.extra_profiler_run is True and (
+            args.app == "firefox" or args.app in TRACE_APPS
+        ):
             next_test["extra_profiler_run"] = True
             LOG.info("extra-profiler-run enabled")
             next_test["extra_profiler_run_browser_cycles"] = 1
@@ -468,13 +470,12 @@ def get_raptor_test_list(args, oskey):
             LOG.info(
                 "setting page-cycles to %d as specified on cmd line" % args.page_cycles
             )
-        else:
-            if int(next_test.get("page_cycles", 1)) > max_page_cycles:
-                next_test["page_cycles"] = max_page_cycles
-                LOG.info(
-                    "setting page-cycles to %d because gecko-profling is enabled"
-                    % next_test["page_cycles"]
-                )
+        elif int(next_test.get("page_cycles", 1)) > max_page_cycles:
+            next_test["page_cycles"] = max_page_cycles
+            LOG.info(
+                "setting page-cycles to %d because gecko-profling is enabled"
+                % next_test["page_cycles"]
+            )
 
         # if --browser-cycles was provided on the command line, use that instead of INI
         # if just provided in the INI use that but cap at 3 if gecko-profiling is enabled
@@ -484,13 +485,12 @@ def get_raptor_test_list(args, oskey):
                 "setting browser-cycles to %d as specified on cmd line"
                 % args.browser_cycles
             )
-        else:
-            if int(next_test.get("browser_cycles", 1)) > max_browser_cycles:
-                next_test["browser_cycles"] = max_browser_cycles
-                LOG.info(
-                    "setting browser-cycles to %d because gecko-profilng is enabled"
-                    % next_test["browser_cycles"]
-                )
+        elif int(next_test.get("browser_cycles", 1)) > max_browser_cycles:
+            next_test["browser_cycles"] = max_browser_cycles
+            LOG.info(
+                "setting browser-cycles to %d because gecko-profilng is enabled"
+                % next_test["browser_cycles"]
+            )
 
         # if --page-timeout was provided on the command line, use that instead of INI
         if args.page_timeout is not None:

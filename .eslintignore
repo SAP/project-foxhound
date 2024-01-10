@@ -9,9 +9,8 @@
 # - intentionally invalid files
 # - build directories and other items that we need to ignore
 
-!.eslintrc*.js
-!.prettierrc.js
-!.babel-eslint.rc.js
+# Include all js dot files.
+!.*.js
 
 # For now, skip all json files for ESLint, these will still be run through
 # Prettier.
@@ -137,9 +136,10 @@ dom/serviceworkers/test/file_js_cache.js
 
 # Intentional broken files
 dom/base/test/file_js_cache_syntax_error.js
+dom/base/test/jsmodules/test_scriptNotParsedAsModule.html
 dom/base/test/jsmodules/test_syntaxError.html
 dom/base/test/jsmodules/test_syntaxErrorAsync.html
-dom/base/test/jsmodules/module_badSyntax.js
+dom/base/test/jsmodules/module_badSyntax.mjs
 dom/base/test/jsmodules/test_syntaxErrorInline.html
 dom/base/test/jsmodules/test_syntaxErrorInlineAsync.html
 dom/base/test/test_bug687859.html
@@ -201,7 +201,7 @@ remote/shared/messagehandler/test/browser/resources/modules/root/invalid.sys.mjs
 # services/ exclusions
 
 # Third party services
-services/common/kinto-http-client.js
+services/common/kinto-http-client.sys.mjs
 services/common/kinto-offline-client.js
 
 # Webpack-bundled library

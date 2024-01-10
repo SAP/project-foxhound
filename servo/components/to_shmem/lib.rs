@@ -20,7 +20,7 @@ extern crate smallvec;
 extern crate string_cache;
 extern crate thin_vec;
 
-use servo_arc::{Arc, ThinArc};
+use servo_arc::{Arc, HeaderSlice};
 use smallbitvec::{InternalStorage, SmallBitVec};
 use smallvec::{Array, SmallVec};
 use std::alloc::Layout;
@@ -463,7 +463,7 @@ impl<T: ToShmem> ToShmem for Arc<T> {
     }
 }
 
-impl<H: ToShmem, T: ToShmem> ToShmem for ThinArc<H, T> {
+impl<H: ToShmem, T: ToShmem> ToShmem for Arc<HeaderSlice<H, T>> {
     fn to_shmem(&self, builder: &mut SharedMemoryBuilder) -> Result<Self> {
         // We don't currently have any shared ThinArc values in stylesheets,
         // so don't support them for now.
@@ -476,37 +476,38 @@ impl<H: ToShmem, T: ToShmem> ToShmem for ThinArc<H, T> {
 
         // Make a clone of the Arc-owned header and slice values with all of
         // their heap allocations placed in the shared memory buffer.
-        let header = self.header.header.to_shmem(builder)?;
-        let mut values = Vec::with_capacity(self.slice.len());
-        for v in self.slice.iter() {
+        let header = self.header.to_shmem(builder)?;
+        let mut values = Vec::with_capacity(self.len());
+        for v in self.slice().iter() {
             values.push(v.to_shmem(builder)?);
         }
 
         // Create a new ThinArc with the shared value and have it place
         // its ArcInner in the shared memory buffer.
-        unsafe {
-            let static_arc = ThinArc::static_from_header_and_iter(
-                |layout| builder.alloc(layout),
-                ManuallyDrop::into_inner(header),
-                values.into_iter().map(ManuallyDrop::into_inner),
-            );
+        let len = values.len();
+        let static_arc = Self::from_header_and_iter_alloc(
+            |layout| builder.alloc(layout),
+            ManuallyDrop::into_inner(header),
+            values.into_iter().map(ManuallyDrop::into_inner),
+            len,
+            /* is_static = */ true,
+        );
 
-            #[cfg(debug_assertions)]
-            builder.shared_values.insert(self.heap_ptr());
+        #[cfg(debug_assertions)]
+        builder.shared_values.insert(self.heap_ptr());
 
-            Ok(ManuallyDrop::new(static_arc))
-        }
+        Ok(ManuallyDrop::new(static_arc))
     }
 }
 
 impl<T: ToShmem> ToShmem for ThinVec<T> {
     fn to_shmem(&self, builder: &mut SharedMemoryBuilder) -> Result<Self> {
-        let len = self.len();
-        if len == 0 {
-            return Ok(ManuallyDrop::new(Self::new()));
-        }
-
         assert_eq!(mem::size_of::<Self>(), mem::size_of::<*const ()>());
+
+        // NOTE: We need to do the work of allocating the header in shared memory even if the
+        // length is zero, because an empty ThinVec, even though it doesn't allocate, references
+        // static memory which will not be mapped to other processes, see bug 1841011.
+        let len = self.len();
 
         // nsTArrayHeader size.
         // FIXME: Would be nice not to hard-code this, but in practice thin-vec crate also relies

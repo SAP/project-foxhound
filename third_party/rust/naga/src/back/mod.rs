@@ -71,6 +71,14 @@ struct FunctionCtx<'a> {
 }
 
 impl FunctionCtx<'_> {
+    fn resolve_type<'a>(
+        &'a self,
+        handle: crate::Handle<crate::Expression>,
+        types: &'a crate::UniqueArena<crate::Type>,
+    ) -> &'a crate::TypeInner {
+        self.info[handle].ty.inner_with(types)
+    }
+
     /// Helper method that generates a [`NameKey`](crate::proc::NameKey) for a local in the current function
     const fn name_key(&self, local: crate::Handle<crate::LocalVariable>) -> crate::proc::NameKey {
         match self.ty {
@@ -228,7 +236,7 @@ bitflags::bitflags! {
     /// we might as well make one back end's life easier.)
     ///
     /// [`RayDesc`]: crate::Module::generate_ray_desc_type
-    #[derive(Default)]
+    #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
     pub struct RayFlag: u32 {
         const OPAQUE = 0x01;
         const NO_OPAQUE = 0x02;

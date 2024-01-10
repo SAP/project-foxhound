@@ -30,7 +30,7 @@
 #include "nsDebug.h"
 #include "nsEffectiveTLDService.h"
 #include "nsError.h"
-#include "nsGlobalWindowInner.h"
+#include "nsGlobalWindowOuter.h"
 #include "nsIChannel.h"
 #include "nsIClassifiedChannel.h"
 #include "nsIContentPolicy.h"
@@ -418,7 +418,10 @@ ThirdPartyUtil::GetBaseDomain(nsIURI* aHostURI, nsACString& aBaseDomain) {
     // cases.
     rv = aHostURI->GetAsciiHost(aBaseDomain);
   }
-  NS_ENSURE_SUCCESS(rv, rv);
+
+  if (NS_FAILED(rv)) {
+    return rv;
+  }
 
   // aHostURI (and thus aBaseDomain) may be the string '.'. If so, fail.
   if (aBaseDomain.Length() == 1 && aBaseDomain.Last() == '.')

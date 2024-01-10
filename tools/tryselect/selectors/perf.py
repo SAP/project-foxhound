@@ -12,6 +12,7 @@ import subprocess
 from contextlib import redirect_stdout
 from datetime import datetime, timedelta
 
+import requests
 from mach.util import get_state_dir
 from mozbuild.base import MozbuildObject
 from mozversioncontrol import get_repository_object
@@ -43,11 +44,15 @@ PERFHERDER_BASE_URL = (
     "https://treeherder.mozilla.org/perfherder/"
     "compare?originalProject=try&originalRevision=%s&newProject=try&newRevision=%s"
 )
+PERFCOMPARE_BASE_URL = "https://beta--mozilla-perfcompare.netlify.app/#/compare-results?revs=%s,%s&repos=try,try"
 TREEHERDER_TRY_BASE_URL = "https://treeherder.mozilla.org/jobs?repo=try&revision=%s"
+TREEHERDER_ALERT_TASKS_URL = (
+    "https://treeherder.mozilla.org/api/performance/alertsummary-tasks/?id=%s"
+)
 
 # Prevent users from running more than 300 tests at once. It's possible, but
 # it's more likely that a query is broken and is selecting far too much.
-MAX_PERF_TASKS = 300
+MAX_PERF_TASKS = 600
 
 # Name of the base category with no variants applied to it
 BASE_CATEGORY_NAME = "base"
@@ -277,6 +282,22 @@ class PerfParser(CompareParser):
             },
         ],
         [
+            ["--clear-cache"],
+            {
+                "action": "store_true",
+                "default": False,
+                "help": "Deletes the try_perf_revision_cache file",
+            },
+        ],
+        [
+            ["--alert"],
+            {
+                "type": str,
+                "default": None,
+                "help": "Run tests that produced this alert summary.",
+            },
+        ],
+        [
             ["--extra-args"],
             {
                 "nargs": "*",
@@ -286,6 +307,14 @@ class PerfParser(CompareParser):
                 "help": "Set the extra args "
                 "(e.x, --extra-args verbose post-startup-delay=1)",
                 "metavar": "",
+            },
+        ],
+        [
+            ["--perfcompare-beta"],
+            {
+                "action": "store_true",
+                "default": False,
+                "help": "Use PerfCompare Beta instead of CompareView.",
             },
         ],
     ]
@@ -982,7 +1011,28 @@ class PerfParser(CompareParser):
         with cache_file.open(mode="w") as f:
             json.dump(cache_data, f, indent=4)
 
-    def setup_try_config(try_config, extra_args, base_revision_treeherder=None):
+    def found_android_tasks(selected_tasks):
+        """
+        Check if any of the selected tasks are android.
+
+        :param selected_tasks list: List of tasks selected.
+        :return bool: True if android tasks were found, False otherwise.
+        """
+        return any("android" in task for task in selected_tasks)
+
+    def setup_try_config(
+        try_config, extra_args, selected_tasks, base_revision_treeherder=None
+    ):
+        """
+        Setup the try config for a push.
+
+        :param try_config dict: The current try config to be modified.
+        :param extra_args list: A list of extra options to add to the tasks being run.
+        :param selected_tasks list: List of tasks selected. Used for determining if android
+            tasks are selected to disable artifact mode.
+        :param base_revision_treeherder str: The base revision of treeherder to save
+        :return: None
+        """
         if try_config is None:
             try_config = {}
         if extra_args:
@@ -994,6 +1044,12 @@ class PerfParser(CompareParser):
             try_config.setdefault("env", {})[
                 "PERF_BASE_REVISION"
             ] = base_revision_treeherder
+        if PerfParser.found_android_tasks(selected_tasks) and try_config.get(
+            "use-artifact-builds", False
+        ):
+            # XXX: Fix artifact mode on android (no bug)
+            try_config["use-artifact-builds"] = False
+            print("Disabling artifact mode due to android task selection")
 
     def perf_push_to_try(
         selected_tasks,
@@ -1005,6 +1061,7 @@ class PerfParser(CompareParser):
         extra_args,
         comparator,
         comparator_args,
+        alert_summary_id,
     ):
         """Perf-specific push to try method.
 
@@ -1024,6 +1081,8 @@ class PerfParser(CompareParser):
             ",".join(selected_categories),
             "&".join([q for q in queries if q is not None and len(q) > 0]),
         )
+        if alert_summary_id:
+            msg = f"Perf alert summary id={alert_summary_id}"
 
         # Get the comparator to run
         comparator_klass = get_comparator(comparator)
@@ -1059,7 +1118,9 @@ class PerfParser(CompareParser):
                 base_extra_args = list(extra_args)
                 base_try_config = copy.deepcopy(try_config)
                 comparator_obj.setup_base_revision(base_extra_args)
-                PerfParser.setup_try_config(base_try_config, base_extra_args)
+                PerfParser.setup_try_config(
+                    base_try_config, base_extra_args, selected_tasks
+                )
 
                 with redirect_stdout(log_processor):
                     # XXX Figure out if we can use the `again` selector in some way
@@ -1090,6 +1151,7 @@ class PerfParser(CompareParser):
             PerfParser.setup_try_config(
                 try_config,
                 new_extra_args,
+                selected_tasks,
                 base_revision_treeherder=base_revision_treeherder,
             )
 
@@ -1125,6 +1187,7 @@ class PerfParser(CompareParser):
         query=None,
         detect_changes=False,
         rebuild=1,
+        clear_cache=False,
         **kwargs,
     ):
         # Setup fzf
@@ -1133,6 +1196,10 @@ class PerfParser(CompareParser):
         if not fzf:
             print(FZF_NOT_FOUND)
             return 1
+
+        if clear_cache:
+            print(f"Removing cached {cache_file} file")
+            cache_file.unlink(missing_ok=True)
 
         all_tasks, dep_cache, cache_dir = setup_tasks_for_fzf(
             not dry_run,
@@ -1145,7 +1212,30 @@ class PerfParser(CompareParser):
         # Perform the selection, then push to try and return the revisions
         queries = []
         selected_categories = []
-        if not show_all:
+        alert_summary_id = kwargs.get("alert")
+        if alert_summary_id:
+            alert_tasks = requests.get(
+                TREEHERDER_ALERT_TASKS_URL % alert_summary_id,
+                headers={"User-Agent": "mozilla-central"},
+            )
+            if alert_tasks.status_code != 200:
+                print(
+                    "\nFailed to obtain tasks from alert due to:\n"
+                    f"Alert ID: {alert_summary_id}\n"
+                    f"Status Code: {alert_tasks.status_code}\n"
+                    f"Response Message: {alert_tasks.json()}\n"
+                )
+                alert_tasks.raise_for_status()
+            alert_tasks = set([task for task in alert_tasks.json()["tasks"] if task])
+            selected_tasks = alert_tasks & set(all_tasks)
+            if not selected_tasks:
+                raise Exception("Alert ID has no task to run.")
+            elif len(selected_tasks) != len(alert_tasks):
+                print(
+                    "\nAll the tasks of the Alert Summary couldn't be found in the taskgraph.\n"
+                    f"Not exist tasks: {alert_tasks - set(all_tasks)}\n"
+                )
+        elif not show_all:
             # Expand the categories first
             categories = PerfParser.get_categories(**kwargs)
             selected_tasks, selected_categories, queries = PerfParser.get_perf_tasks(
@@ -1158,11 +1248,14 @@ class PerfParser(CompareParser):
             print("No tasks selected")
             return None
 
-        if (len(selected_tasks) * rebuild) > MAX_PERF_TASKS:
+        total_task_count = len(selected_tasks) * rebuild
+        if total_task_count > MAX_PERF_TASKS:
             print(
-                "That's a lot of tests selected (%s)!\n"
-                "These tests won't be triggered. If this was unexpected, "
-                "please file a bug in Testing :: Performance." % MAX_PERF_TASKS
+                "\n\n----------------------------------------------------------------------------------------------\n"
+                f"You have selected {total_task_count} total test runs! (selected tasks({len(selected_tasks)}) * rebuild"
+                f" count({rebuild}) \nThese tests won't be triggered as the current maximum for a single ./mach try "
+                f"perf run is {MAX_PERF_TASKS}. \nIf this was unexpected, please file a bug in Testing :: Performance."
+                "\n----------------------------------------------------------------------------------------------\n\n"
             )
             return None
 
@@ -1179,6 +1272,7 @@ class PerfParser(CompareParser):
             kwargs.get("extra_args", []),
             kwargs.get("comparator", "BasePerfComparator"),
             kwargs.get("comparator_args", []),
+            alert_summary_id,
         )
 
     def run_category_checks():
@@ -1282,6 +1376,13 @@ class PerfParser(CompareParser):
         )
 
 
+def get_compare_url(revisions, perfcompare_beta=False):
+    """Setup the comparison link."""
+    if perfcompare_beta:
+        return PERFCOMPARE_BASE_URL % revisions
+    return PERFHERDER_BASE_URL % revisions
+
+
 def run(**kwargs):
     if (
         kwargs.get("browsertime_upload_apk") is not None
@@ -1312,7 +1413,9 @@ def run(**kwargs):
 
     # Provide link to perfherder for comparisons now
     if not kwargs.get("single_run", False):
-        perfcompare_url = PERFHERDER_BASE_URL % revisions
+        perfcompare_url = get_compare_url(
+            revisions, perfcompare_beta=kwargs.get("perfcompare_beta", False)
+        )
         original_try_url = TREEHERDER_TRY_BASE_URL % revisions[0]
         local_change_try_url = TREEHERDER_TRY_BASE_URL % revisions[1]
         print(

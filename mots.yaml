@@ -8,7 +8,7 @@
 # documentation and how to modify this file.
 repo: mozilla-central
 created_at: '2021-10-14T12:50:40.073465'
-updated_at: '2023-06-02T12:15:59.982018'
+updated_at: '2023-08-22T15:58:39.751800'
 export:
   path: ./docs/mots/index.rst
   format: rst
@@ -35,6 +35,10 @@ people:
     bmo_id: 421286
     name: ''
     nick: agi
+  - &aglavic
+    bmo_id: 692423
+    name: Andrej Glavic
+    nick: aglavic
   - &ahal
     bmo_id: 382067
     name: Andrew Halberstadt
@@ -59,10 +63,6 @@ people:
     bmo_id: 555858
     name: Andi
     nick: andi
-  - &andrej
-    bmo_id: 692423
-    name: Andrej Glavic
-    nick: andrej
   - &aoprea
     bmo_id: 509499
     name: Andrei Oprea
@@ -135,10 +135,6 @@ people:
     bmo_id: 165012
     name: Brian Birtles
     nick: birtles
-  - &bmo
-    bmo_id: 365032
-    name: Florian Quèze
-    nick: bmo
   - &bobowen
     bmo_id: 458623
     name: Bob Owen
@@ -260,6 +256,10 @@ people:
     bmo_id: 278074
     name: Daniel Holbert
     nick: dholbert
+  - &dimi
+    bmo_id: 468232
+    name: Dimi Lee
+    nick: dimi
   - &djackson
     bmo_id: 644159
     name: Dennis Jackson
@@ -268,10 +268,6 @@ people:
     bmo_id: 436087
     name: Kannan Vijayan
     nick: djvj
-  - &dlee
-    bmo_id: 468232
-    name: Dimi Lee
-    nick: dlee
   - &dlrobertson
     bmo_id: 705145
     name: Dan Robertson
@@ -336,6 +332,10 @@ people:
     bmo_id: 496127
     name: Eric Rahm
     nick: erahm
+  - &ErichDonGubler
+    bmo_id: 713343
+    name: Erich Gubler
+    nick: ErichDonGubler
   - &evilpie
     bmo_id: 393835
     name: Tom S
@@ -351,6 +351,10 @@ people:
     bmo_id: 130462
     name: Francesco Lodolo
     nick: flod
+  - &florian
+    bmo_id: 149052
+    name: Florian Quèze
+    nick: florian
   - &freddy
     bmo_id: 428608
     name: Frederik Braun
@@ -481,6 +485,10 @@ people:
     bmo_id: 456498
     name: Jan-Ivar Bruaroey
     nick: jib
+  - &jimb
+    bmo_id: 298765
+    name: Jim Blandy
+    nick: jimb
   - &jimm
     bmo_id: 279663
     name: Jim Mathies
@@ -533,6 +541,10 @@ people:
     bmo_id: 646284
     name: Jens Stutte
     nick: jstutte
+  - &jteow
+    bmo_id: 701257
+    name: James Teow
+    nick: jteow
   - &jwatt
     bmo_id: 32767
     name: Jonathan Watt
@@ -742,7 +754,7 @@ people:
     nick: niklas
   - &nkulatova
     bmo_id: 697976
-    name: ''
+    name: Anna Weine
     nick: nkulatova
   - &nlapre
     bmo_id: 711793
@@ -760,10 +772,14 @@ people:
     bmo_id: 283262
     name: Alexandre Poirot
     nick: ochameau
-  - &ohall
+  - &olivia
     bmo_id: 694341
     name: Olivia Hall
-    nick: ohall
+    nick: olivia
+  - &overholt
+    bmo_id: 442218
+    name: Andrew Overholt
+    nick: overholt
   - &owlish
     bmo_id: 579431
     name: ''
@@ -911,6 +927,10 @@ people:
     bmo_id: 586681
     name: Ted Campbell
     nick: tcampbell
+  - &teoxoy
+    bmo_id: 715425
+    name: Teodor Tanasoaia
+    nick: teoxoy
   - &teshaq
     bmo_id: 663555
     name: Tarik Eshaq
@@ -1010,19 +1030,23 @@ people:
     name: Tomislav Jovanovic
     nick: zombie
 modules:
-  - name: mozilla-toplevel
-    description: The top level directory for the mozilla tree.
+  - name: firefox-toplevel
+    description: The top level directory for the Firefox/Gecko tree. Owned by the
+      TLMC
     includes:
       - README.txt
-        # TODO: verify, as this was toolkit/README
     meta:
       owners_emeritus:
         - Brendan Eich
     owners:
-        # - Technical Leadership Module
-        # TODO
+      - *bholley
+      - *overholt
+      - *mossop
+      - *k88hudson
+      - *nalexander
+      - *nika
     peers: []
-    machine_name: _mozillatoplevel
+    machine_name: _firefoxtoplevel
 
   - machine_name: code_coverage
     name: Code Coverage
@@ -1109,7 +1133,7 @@ modules:
       - *timhuang
     peers:
       - *baku
-      - *dlee
+      - *dimi
       - *pbz
       - *johannh
     machine_name: core_antitracking
@@ -1473,6 +1497,7 @@ modules:
       components:
         - Core::DOM
         - 'Core::DOM: Core & HTML'
+      review_group: dom-core
     owners:
       - *peterv
     peers:
@@ -1602,7 +1627,7 @@ modules:
       - *mstange
     peers:
       - *canova
-      - *bmo
+      - *florian
       - *jseward
     machine_name: core_gecko_profiler
 
@@ -1631,7 +1656,7 @@ modules:
       - *calu
       - *jonalmeida
       - *mkato
-      - *ohall
+      - *olivia
     machine_name: core_geckoview
 
   - name: 'Core: Global Key Bindings'
@@ -1783,6 +1808,7 @@ modules:
       url: https://developer.mozilla.org/en/IndexedDB
       components:
         - 'Core::DOM: IndexedDB'
+      review_group: dom-storage-reviewers
     owners:
       - *janv
     peers:
@@ -1813,6 +1839,7 @@ modules:
       group: dev-platform
       components:
         - Core::IPC
+      review_group: ipc-reviewers
     owners:
       - *nika
     peers:
@@ -2402,7 +2429,7 @@ modules:
       peers_emeritus:
         - Nikhil Marathe
       components:
-        - 'Core::DOM: Push Notifications'
+        - 'Core::DOM: Notifications'
     peers:
       - *mt
       - *dragana
@@ -2720,6 +2747,7 @@ modules:
       url: https://developer.mozilla.org/docs/Web/API/Web_Workers_API/Using_web_workers
       components:
         - 'Core::DOM: Workers'
+      review_group: dom-worker-reviewers
     owners:
       - *asuth
     peers:
@@ -2731,16 +2759,28 @@ modules:
     description: WebGPU implementation
     includes:
       - dom/webgpu/**/*
+      - gfx/wgpu_bindings/**/*
+      - third_party/rust/naga/**/*
+      - third_party/rust/wgpu-core/**/*
+      - third_party/rust/wgpu-hal/**/*
+      - third_party/rust/wgpu-types/**/*
     meta:
       group: dev-platform
       url: https://wiki.mozilla.org/Platform/GFX/WebGPU
       components:
         - Core::Graphics::WebGPU
+      review_group: webgpu-reviewers
+      owners_emeritus:
+        - *kvark
+      peers_emeritus:
+        - *josh
     owners:
-      - *kvark
+      - *jimb
     peers:
-      - *josh
+      - *ErichDonGubler
       - *jgilbert
+      - *nical
+      - *teoxoy
     machine_name: core_webgpu_graphics_submodule
 
   - name: 'Core: WebRTC'
@@ -3005,6 +3045,7 @@ modules:
       url: :ref:`XPCOM`
       components:
         - Core::XPCOM
+      review_group: xpcom-reviewers
     owners:
       - *nika
     peers:
@@ -3181,6 +3222,10 @@ modules:
             - Asaf Romano
             - David Dahl
             - Shawn Wilsher
+          components:
+            - Firefox::Bookmarks & History
+            - Toolkit::Places
+          review_group: places-reviewers
         owners:
           - *mak
         peers:
@@ -3207,6 +3252,7 @@ modules:
           - *itielyn8
           - *sfoster
           - *amy
+          - *emilio
         machine_name: desktop_theme
 
       - name: Desktop UI
@@ -3218,7 +3264,7 @@ modules:
           - *jaws
         peers:
           - *mconley
-          - *bmo
+          - *florian
         machine_name: desktop_ui
 
       - name: Download Manager
@@ -3292,7 +3338,7 @@ modules:
           - *serg
         peers:
           - *tgiles
-          - *dlee
+          - *dimi
         machine_name: form_autofill
 
       - name: In-product Messaging
@@ -3386,7 +3432,7 @@ modules:
         peers:
           - *jaws
           - *tgiles
-          - *dlee
+          - *dimi
           - *sfoster
         machine_name: password_manager
 
@@ -3459,6 +3505,7 @@ modules:
           - *mak
           - *dao
           - *mcheang
+          - *jteow
         machine_name: search_and_address_bar
 
       - name: Security and Privacy UI
@@ -3528,9 +3575,15 @@ modules:
       - name: Tabbed Browser
         description: The UI component controlling browser tabs.
         includes:
-        # TODO double check that this works as expected
           - browser/base/content/tabbrowser*
-          - browser/modules/AsyncTabSwitcher.jsm
+          - browser/base/content/browser-allTabsMenu.js
+          - browser/base/content/browser-ctrlTab.js
+          - browser/base/content/browser-fullZoom.js
+          - browser/modules/AsyncTabSwitcher.sys.mjs
+          - browser/modules/NewTabPagePreloading.sys.mjs
+          - browser/modules/OpenInTabsUtils.sys.mjs
+          - browser/modules/TabsList.sys.mjs
+          - browser/modules/TabUnloader.sys.mjs
         meta:
           components:
             - Firefox::Tabbed Browser
@@ -3541,6 +3594,7 @@ modules:
           - *dao
         peers:
           - *mak
+          - *mconley
         machine_name: tabbed_browser
 
       - name: Windows Installer
@@ -3924,7 +3978,7 @@ modules:
     owners:
       - *sparky
     peers:
-      - *andrej
+      - *aglavic
       - *davehunt
       - *kimberlythegeek
       - *kshampur
@@ -4090,7 +4144,7 @@ modules:
       - netwerk/url-classifier/**/*
     excludes: []
     owners:
-      - *dlee
+      - *dimi
       - *groovecoder
     peers:
       - *timhuang
@@ -4105,5 +4159,5 @@ modules:
         - Ryan Tilder
       group: dev-platform
 hashes:
-  config: d6ca20525e7cdc4dfd962b03d957892136be787d
-  export: 9909fc4158a83f3004594960a36b257941ed272e
+  config: acde4a03bdcc4ad796839a5ad11ea939d58ecab4
+  export: 87c127c6e3af0eb35823a20acf445a33cbc0d9c0

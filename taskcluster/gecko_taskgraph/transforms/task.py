@@ -291,6 +291,7 @@ def payload_builder(name, schema):
     )
 
     def wrap(func):
+        assert name not in payload_builders, f"duplicate payload builder name {name}"
         payload_builders[name] = PayloadBuilder(schema, func)
         return func
 
@@ -303,6 +304,7 @@ index_builders = {}
 
 def index_builder(name):
     def wrap(func):
+        assert name not in index_builders, f"duplicate index builder name {name}"
         index_builders[name] = func
         return func
 
@@ -1451,6 +1453,7 @@ def set_implementation(config, tasks):
     Set the worker implementation based on the worker-type alias.
     """
     for task in tasks:
+        worker = task.setdefault("worker", {})
         if "implementation" in task["worker"]:
             yield task
             continue
@@ -1464,7 +1467,6 @@ def set_implementation(config, tasks):
         if os:
             tags["os"] = os
 
-        worker = task.setdefault("worker", {})
         worker["implementation"] = impl
         if os:
             worker["os"] = os

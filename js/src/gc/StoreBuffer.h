@@ -21,6 +21,7 @@
 #include "js/AllocPolicy.h"
 #include "js/UniquePtr.h"
 #include "threading/Mutex.h"
+#include "wasm/WasmAnyRef.h"
 
 namespace JS {
 struct GCSizes;
@@ -59,7 +60,7 @@ class BufferableRef {
   bool maybeInRememberedSet(const Nursery&) const { return true; }
 };
 
-typedef HashSet<void*, PointerHasher<void*>, SystemAllocPolicy> EdgeSet;
+using EdgeSet = HashSet<void*, PointerHasher<void*>, SystemAllocPolicy>;
 
 /* The size of a single block of store buffer storage space. */
 static const size_t LifoAllocBlockSize = 8 * 1024;
@@ -86,7 +87,7 @@ class StoreBuffer {
   template <typename T>
   struct MonoTypeBuffer {
     /* The canonical set of stores. */
-    typedef HashSet<T, typename T::Hasher, SystemAllocPolicy> StoreSet;
+    using StoreSet = HashSet<T, typename T::Hasher, SystemAllocPolicy>;
     StoreSet stores_;
 
     /*
@@ -104,6 +105,9 @@ class StoreBuffer {
 
     explicit MonoTypeBuffer(StoreBuffer* owner, JS::GCReason reason)
         : last_(T()), owner_(owner), gcReason_(reason) {}
+
+    MonoTypeBuffer(const MonoTypeBuffer& other) = delete;
+    MonoTypeBuffer& operator=(const MonoTypeBuffer& other) = delete;
 
     void clear() {
       last_ = T();
@@ -149,10 +153,6 @@ class StoreBuffer {
     }
 
     bool isEmpty() const { return last_ == T() && stores_.empty(); }
-
-   private:
-    MonoTypeBuffer(const MonoTypeBuffer& other) = delete;
-    MonoTypeBuffer& operator=(const MonoTypeBuffer& other) = delete;
   };
 
   struct WholeCellBuffer {
@@ -163,6 +163,9 @@ class StoreBuffer {
     StoreBuffer* owner_;
 
     explicit WholeCellBuffer(StoreBuffer* owner) : owner_(owner) {}
+
+    WholeCellBuffer(const WholeCellBuffer& other) = delete;
+    WholeCellBuffer& operator=(const WholeCellBuffer& other) = delete;
 
     [[nodiscard]] bool init();
 
@@ -192,9 +195,6 @@ class StoreBuffer {
 
    private:
     ArenaCellSet* allocateCellSet(Arena* arena);
-
-    WholeCellBuffer(const WholeCellBuffer& other) = delete;
-    WholeCellBuffer& operator=(const WholeCellBuffer& other) = delete;
   };
 
   struct GenericBuffer {
@@ -203,6 +203,9 @@ class StoreBuffer {
 
     explicit GenericBuffer(StoreBuffer* owner)
         : storage_(nullptr), owner_(owner) {}
+
+    GenericBuffer(const GenericBuffer& other) = delete;
+    GenericBuffer& operator=(const GenericBuffer& other) = delete;
 
     [[nodiscard]] bool init();
 
@@ -250,10 +253,6 @@ class StoreBuffer {
     }
 
     bool isEmpty() const { return !storage_ || storage_->isEmpty(); }
-
-   private:
-    GenericBuffer(const GenericBuffer& other) = delete;
-    GenericBuffer& operator=(const GenericBuffer& other) = delete;
   };
 
   template <typename Edge>
@@ -391,13 +390,43 @@ class StoreBuffer {
 
     explicit operator bool() const { return objectAndKind_ != 0; }
 
-    typedef struct Hasher {
+    struct Hasher {
       using Lookup = SlotsEdge;
       static HashNumber hash(const Lookup& l) {
         return mozilla::HashGeneric(l.objectAndKind_, l.start_, l.count_);
       }
       static bool match(const SlotsEdge& k, const Lookup& l) { return k == l; }
-    } Hasher;
+    };
+  };
+
+  struct WasmAnyRefEdge {
+    wasm::AnyRef* edge;
+
+    WasmAnyRefEdge() : edge(nullptr) {}
+    explicit WasmAnyRefEdge(wasm::AnyRef* v) : edge(v) {}
+    bool operator==(const WasmAnyRefEdge& other) const {
+      return edge == other.edge;
+    }
+    bool operator!=(const WasmAnyRefEdge& other) const {
+      return edge != other.edge;
+    }
+
+    Cell* deref() const {
+      return edge->isGCThing() ? static_cast<Cell*>(edge->toGCThing())
+                               : nullptr;
+      return nullptr;
+    }
+
+    bool maybeInRememberedSet(const Nursery& nursery) const {
+      MOZ_ASSERT(IsInsideNursery(deref()));
+      return !nursery.isInside(edge);
+    }
+
+    void trace(TenuringTracer& mover) const;
+
+    explicit operator bool() const { return edge != nullptr; }
+
+    using Hasher = PointerEdgeHasher<WasmAnyRefEdge>;
   };
 
 #ifdef DEBUG
@@ -435,11 +464,12 @@ class StoreBuffer {
   MonoTypeBuffer<BigIntPtrEdge> bufBigIntCell;
   MonoTypeBuffer<ObjectPtrEdge> bufObjCell;
   MonoTypeBuffer<SlotsEdge> bufferSlot;
+  MonoTypeBuffer<WasmAnyRefEdge> bufferWasmAnyRef;
   WholeCellBuffer bufferWholeCell;
   GenericBuffer bufferGeneric;
 
   JSRuntime* runtime_;
-  const Nursery& nursery_;
+  Nursery& nursery_;
 
   bool aboutToOverflow_;
   bool enabled_;
@@ -453,7 +483,7 @@ class StoreBuffer {
   bool markingNondeduplicatable;
 #endif
 
-  explicit StoreBuffer(JSRuntime* rt, const Nursery& nursery);
+  explicit StoreBuffer(JSRuntime* rt, Nursery& nursery);
   [[nodiscard]] bool enable();
 
   void disable();
@@ -497,6 +527,13 @@ class StoreBuffer {
     }
   }
 
+  void putWasmAnyRef(wasm::AnyRef* vp) {
+    put(bufferWasmAnyRef, WasmAnyRefEdge(vp));
+  }
+  void unputWasmAnyRef(wasm::AnyRef* vp) {
+    unput(bufferWasmAnyRef, WasmAnyRefEdge(vp));
+  }
+
   inline void putWholeCell(Cell* cell);
   inline void putWholeCellDontCheckLast(Cell* cell);
   const void* addressOfLastBufferedWholeCell() {
@@ -519,6 +556,9 @@ class StoreBuffer {
     bufObjCell.trace(mover);
   }
   void traceSlots(TenuringTracer& mover) { bufferSlot.trace(mover); }
+  void traceWasmAnyRefs(TenuringTracer& mover) {
+    bufferWasmAnyRef.trace(mover);
+  }
   void traceWholeCells(TenuringTracer& mover) { bufferWholeCell.trace(mover); }
   void traceGenericEntries(JSTracer* trc) { bufferGeneric.trace(trc); }
 

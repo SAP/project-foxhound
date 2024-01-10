@@ -39,9 +39,6 @@ class PerftestResultsHandler(object):
     def __init__(
         self,
         gecko_profile=False,
-        power_test=False,
-        cpu_test=False,
-        memory_test=False,
         live_sites=False,
         app=None,
         conditioned_profile=None,
@@ -54,9 +51,6 @@ class PerftestResultsHandler(object):
         **kwargs
     ):
         self.gecko_profile = gecko_profile
-        self.power_test = power_test
-        self.cpu_test = cpu_test
-        self.memory_test = memory_test
         self.live_sites = live_sites
         self.app = app
         self.conditioned_profile = conditioned_profile
@@ -188,11 +182,6 @@ class PerftestResultsHandler(object):
         self.existing_results = directory
 
     def _get_expected_perfherder(self, output):
-        def is_resource_test():
-            if self.power_test or self.cpu_test or self.memory_test:
-                return True
-            return False
-
         # if results exists, determine if any test is of type 'scenario'
         is_scenario = False
         if output.summarized_results or output.summarized_supporting_data:
@@ -204,27 +193,10 @@ class PerftestResultsHandler(object):
                 if data_type == "scenario":
                     is_scenario = True
                     break
-
-        if is_scenario and not is_resource_test():
-            # skip perfherder check when a scenario test-type is run without
-            # a resource flag
+        if is_scenario:
+            # skip perfherder check when a scenario test-type is run
             return None
-
-        expected_perfherder = 1
-
-        if is_resource_test():
-            # when resource tests are run, no perfherder data is output
-            # for the regular raptor tests (i.e. speedometer) so we
-            # expect one per resource-type, starting with 0
-            expected_perfherder = 0
-            if self.power_test:
-                expected_perfherder += 1
-            if self.memory_test:
-                expected_perfherder += 1
-            if self.cpu_test:
-                expected_perfherder += 1
-
-        return expected_perfherder
+        return 1
 
     def _validate_treeherder_data(self, output, output_perfdata):
         # late import is required, because install is done in create_virtualenv
@@ -557,11 +529,8 @@ class BrowsertimeResultsHandler(PerftestResultsHandler):
                 )
         elif load_existing:
             pass  # Use whatever is there.
-        else:
-            if len(raw_btresults) != int(page_cycles):
-                raise MissingResultsError(
-                    "Missing results for at least 1 warm page-cycle."
-                )
+        elif len(raw_btresults) != int(page_cycles):
+            raise MissingResultsError("Missing results for at least 1 warm page-cycle.")
 
         # now parse out the values
         page_counter = 0
@@ -603,58 +572,44 @@ class BrowsertimeResultsHandler(PerftestResultsHandler):
                 ):
                     bt_result["measurements"].setdefault("cpuTime", []).extend(cpu_vals)
 
-            if self.power_test:
-                power_result = {
-                    "bt_ver": bt_ver,
-                    "browser": bt_browser,
-                    "url": bt_url,
-                    "measurements": {},
-                    "statistics": {},
-                    "power_data": True,
-                }
+            if any(raw_result["extras"]):
+                # Each entry here is a separate cold pageload iteration
+                for custom_types in raw_result["extras"]:
+                    for custom_type in custom_types:
+                        data = custom_types[custom_type]
+                        if handle_custom_data:
+                            if test_summary in ("flatten",):
+                                data = flatten(data, ())
+                            for k, v in data.items():
 
-                for cycle in raw_result["android"]["power"]:
-                    for metric in cycle:
-                        if "total" in metric:
-                            continue
-                        power_result["measurements"].setdefault(metric, []).append(
-                            cycle[metric]
-                        )
-                power_result["statistics"] = raw_result["statistics"]["android"][
-                    "power"
-                ]
-                results.append(power_result)
+                                def _ignore_metric(*args):
+                                    if any(
+                                        type(arg) not in (int, float) for arg in args
+                                    ):
+                                        return True
+                                    return False
 
-            custom_types = raw_result["extras"][0]
-            if custom_types:
-                for custom_type in custom_types:
-                    data = custom_types[custom_type]
-                    if handle_custom_data:
-                        if test_summary in ("flatten",):
-                            data = flatten(data, ())
-                        for k, v in data.items():
+                                # Ignore any non-numerical results
+                                if _ignore_metric(v) and _ignore_metric(*v):
+                                    continue
 
-                            def _ignore_metric(*args):
-                                if any(type(arg) not in (int, float) for arg in args):
-                                    return True
-                                return False
+                                # Clean up the name if requested
+                                filtered_k = k
+                                for name_filter in subtest_name_filters.split(","):
+                                    filtered_k = filtered_k.replace(name_filter, "")
 
-                            # Ignore any non-numerical results
-                            if _ignore_metric(v) and _ignore_metric(*v):
-                                continue
-
-                            # Clean up the name if requested
-                            for name_filter in subtest_name_filters.split(","):
-                                k = k.replace(name_filter, "")
-
-                            if isinstance(v, Iterable):
-                                bt_result["measurements"].setdefault(k, []).extend(v)
-                            else:
+                                if isinstance(v, Iterable):
+                                    bt_result["measurements"].setdefault(
+                                        filtered_k, []
+                                    ).extend(v)
+                                else:
+                                    bt_result["measurements"].setdefault(
+                                        filtered_k, []
+                                    ).append(v)
+                            bt_result["custom_data"] = True
+                        else:
+                            for k, v in data.items():
                                 bt_result["measurements"].setdefault(k, []).append(v)
-                        bt_result["custom_data"] = True
-                    else:
-                        for k, v in data.items():
-                            bt_result["measurements"].setdefault(k, []).append(v)
                 if self.perfstats:
                     for cycle in raw_result["geckoPerfStats"]:
                         for metric in cycle:
@@ -974,6 +929,9 @@ class BrowsertimeResultsHandler(PerftestResultsHandler):
                     new_result["min_back_window"] = test.get("min_back_window", None)
                     new_result["max_back_window"] = test.get("max_back_window", None)
                     new_result["fore_window"] = test.get("fore_window", None)
+                    new_result["alert_change_type"] = test.get(
+                        "alert_change_type", None
+                    )
 
                     # All Browsertime measurements are elapsed times in milliseconds.
                     new_result["subtest_lower_is_better"] = test.get(

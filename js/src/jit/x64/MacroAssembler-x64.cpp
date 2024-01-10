@@ -512,7 +512,7 @@ void MacroAssemblerX64::handleFailureWithHandlerTail(Label* profilerExitTail,
   movq(rsp, rax);
 
   // Call the handler.
-  using Fn = void (*)(ResumeFromException * rfe);
+  using Fn = void (*)(ResumeFromException* rfe);
   asMasm().setupUnalignedABICall(rcx);
   asMasm().passABIArg(rax);
   asMasm().callWithABI<Fn, HandleException>(
@@ -1597,6 +1597,22 @@ void MacroAssembler::wasmBoundsCheck64(Condition cond, Register64 index,
     cmovCCq(cond, Operand(boundsCheckLimit), index.reg);
   }
 }
+
+#ifdef ENABLE_WASM_TAIL_CALLS
+void MacroAssembler::wasmMarkSlowCall() {
+  static_assert(InstanceReg == r14);
+  orPtr(Imm32(0), r14);
+}
+
+const int32_t SlowCallMarker = 0x00ce8349;  // OR r14, 0
+
+void MacroAssembler::wasmCheckSlowCallsite(Register ra, Label* notSlow,
+                                           Register temp1, Register temp2) {
+  // Check if RA has slow marker.
+  cmp32(Address(ra, 0), Imm32(SlowCallMarker));
+  j(Assembler::NotEqual, notSlow);
+}
+#endif  // ENABLE_WASM_TAIL_CALLS
 
 // ========================================================================
 // Integer compare-then-conditionally-load/move operations.

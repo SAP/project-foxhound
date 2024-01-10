@@ -1,4 +1,4 @@
-// |reftest| skip -- Temporal is not supported
+// |reftest| skip-if(!this.hasOwnProperty('Temporal')) -- Temporal is not enabled unconditionally
 // Copyright (C) 2020 Igalia, S.L. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 
@@ -52,12 +52,12 @@ const expected = [
   // CalendarDateFromFields
   "get this.calendar.dateFromFields",
   "call this.calendar.dateFromFields",
+  "get this.calendar.dateAdd",
   // CopyDataProperties
   "ownKeys options",
   "getOwnPropertyDescriptor options.overflow",
   "get options.overflow",
   // CalendarDateAdd
-  "get this.calendar.dateAdd",
   "call this.calendar.dateAdd",
   // inside Calendar.p.dateAdd
   "get options.overflow",

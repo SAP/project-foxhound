@@ -497,30 +497,6 @@ static const struct EVInfo kEVInfos[] = {
     "DL4=",
   },
   {
-    // CN=E-Tugra Global Root CA RSA v3,OU=E-Tugra Trust Center,O=E-Tugra EBG A.S.,L=Ankara,C=TR
-    "2.23.140.1.1",
-    "CA/Browser Forum EV OID",
-    { 0xEF, 0x66, 0xB0, 0xB1, 0x0A, 0x3C, 0xDB, 0x9F, 0x2E, 0x36, 0x48,
-      0xC7, 0x6B, 0xD2, 0xAF, 0x18, 0xEA, 0xD2, 0xBF, 0xE6, 0xF1, 0x17,
-      0x65, 0x5E, 0x28, 0xC4, 0x06, 0x0D, 0xA1, 0xA3, 0xF4, 0xC2 },
-    "MIGAMQswCQYDVQQGEwJUUjEPMA0GA1UEBxMGQW5rYXJhMRkwFwYDVQQKExBFLVR1"
-    "Z3JhIEVCRyBBLlMuMR0wGwYDVQQLExRFLVR1Z3JhIFRydXN0IENlbnRlcjEmMCQG"
-    "A1UEAxMdRS1UdWdyYSBHbG9iYWwgUm9vdCBDQSBSU0EgdjM=",
-    "DU3FzRYilZYIfrgLfxUGNPt5EDQ=",
-  },
-  {
-    // CN=E-Tugra Global Root CA ECC v3,OU=E-Tugra Trust Center,O=E-Tugra EBG A.S.,L=Ankara,C=TR
-    "2.23.140.1.1",
-    "CA/Browser Forum EV OID",
-    { 0x87, 0x3F, 0x46, 0x85, 0xFA, 0x7F, 0x56, 0x36, 0x25, 0x25, 0x2E,
-      0x6D, 0x36, 0xBC, 0xD7, 0xF1, 0x6F, 0xC2, 0x49, 0x51, 0xF2, 0x64,
-      0xE4, 0x7E, 0x1B, 0x95, 0x4F, 0x49, 0x08, 0xCD, 0xCA, 0x13 },
-    "MIGAMQswCQYDVQQGEwJUUjEPMA0GA1UEBxMGQW5rYXJhMRkwFwYDVQQKExBFLVR1"
-    "Z3JhIEVCRyBBLlMuMR0wGwYDVQQLExRFLVR1Z3JhIFRydXN0IENlbnRlcjEmMCQG"
-    "A1UEAxMdRS1UdWdyYSBHbG9iYWwgUm9vdCBDQSBFQ0MgdjM=",
-    "JkYZdzHhT28oNt45UYbm1JeIIsE=",
-  },
-  {
     // CN=Actalis Authentication Root CA,O=Actalis S.p.A./03358520967,L=Milan,C=IT
     "1.3.159.1.17.1",
     "Actalis EV OID",
@@ -852,6 +828,28 @@ static const struct EVInfo kEVInfos[] = {
     "VrYpzTS8ePY=",
   },
   {
+    // CN=SSL.com TLS ECC Root CA 2022,O=SSL Corporation,C=US
+    "2.23.140.1.1",
+    "CA/Browser Forum EV OID",
+    { 0xC3, 0x2F, 0xFD, 0x9F, 0x46, 0xF9, 0x36, 0xD1, 0x6C, 0x36, 0x73,
+      0x99, 0x09, 0x59, 0x43, 0x4B, 0x9A, 0xD6, 0x0A, 0xAF, 0xBB, 0x9E,
+      0x7C, 0xF3, 0x36, 0x54, 0xF1, 0x44, 0xCC, 0x1B, 0xA1, 0x43 },
+    "ME4xCzAJBgNVBAYTAlVTMRgwFgYDVQQKDA9TU0wgQ29ycG9yYXRpb24xJTAjBgNV"
+    "BAMMHFNTTC5jb20gVExTIEVDQyBSb290IENBIDIwMjI=",
+    "FAP1q/s3ixdAW+JDsqXRxA==",
+  },
+  {
+    // CN=SSL.com TLS RSA Root CA 2022,O=SSL Corporation,C=US
+    "2.23.140.1.1",
+    "CA/Browser Forum EV OID",
+    { 0x8F, 0xAF, 0x7D, 0x2E, 0x2C, 0xB4, 0x70, 0x9B, 0xB8, 0xE0, 0xB3,
+      0x36, 0x66, 0xBF, 0x75, 0xA5, 0xDD, 0x45, 0xB5, 0xDE, 0x48, 0x0F,
+      0x8E, 0xA8, 0xD4, 0xBF, 0xE6, 0xBE, 0xBC, 0x17, 0xF2, 0xED },
+    "ME4xCzAJBgNVBAYTAlVTMRgwFgYDVQQKDA9TU0wgQ29ycG9yYXRpb24xJTAjBgNV"
+    "BAMMHFNTTC5jb20gVExTIFJTQSBSb290IENBIDIwMjI=",
+    "b77arXO9CEDii02+1PdbkQ==",
+  },
+  {
     // CN=UCA Extended Validation Root,O=UniTrust,C=CN
     "2.23.140.1.1",
     "CA/Browser Forum EV OID",
@@ -1092,17 +1090,6 @@ static const struct EVInfo kEVInfos[] = {
     "Z3SdjXfYO2rbIvT/WeK/zg==",
   },
   {
-    // CN=HiPKI Root CA - G1,O="Chunghwa Telecom Co., Ltd.",C=TW
-    "2.23.140.1.1",
-    "CA/Browser Forum EV OID",
-    { 0xF0, 0x15, 0xCE, 0x3C, 0xC2, 0x39, 0xBF, 0xEF, 0x06, 0x4B, 0xE9,
-      0xF1, 0xD2, 0xC4, 0x17, 0xE1, 0xA0, 0x26, 0x4A, 0x0A, 0x94, 0xBE,
-      0x1F, 0x0C, 0x8D, 0x12, 0x18, 0x64, 0xEB, 0x69, 0x49, 0xCC },
-    "ME8xCzAJBgNVBAYTAlRXMSMwIQYDVQQKDBpDaHVuZ2h3YSBUZWxlY29tIENvLiwg"
-    "THRkLjEbMBkGA1UEAwwSSGlQS0kgUm9vdCBDQSAtIEcx",
-    "Ld2szmKXlKFD6LDNdmpeYA==",
-  },
-  {
     // CN=vTrus Root CA,O="iTrusChina Co.,Ltd.",C=CN
     "2.23.140.1.1",
     "CA/Browser Forum EV OID",
@@ -1180,6 +1167,30 @@ static const struct EVInfo kEVInfos[] = {
     "MFQxCzAJBgNVBAYTAkNOMSYwJAYDVQQKDB1CRUlKSU5HIENFUlRJRklDQVRFIEFV"
     "VEhPUklUWTEdMBsGA1UEAwwUQkpDQSBHbG9iYWwgUm9vdCBDQTI=",
     "LBcIfWQqwP6FGFkGz7RK6w==",
+  },
+  {
+    // CN=Sectigo Public Server Authentication Root E46,O=Sectigo Limited,C=GB
+    "2.23.140.1.1",
+    "CA/Browser Forum EV OID",
+    { 0xC9, 0x0F, 0x26, 0xF0, 0xFB, 0x1B, 0x40, 0x18, 0xB2, 0x22, 0x27,
+      0x51, 0x9B, 0x5C, 0xA2, 0xB5, 0x3E, 0x2C, 0xA5, 0xB3, 0xBE, 0x5C,
+      0xF1, 0x8E, 0xFE, 0x1B, 0xEF, 0x47, 0x38, 0x0C, 0x53, 0x83 },
+    "MF8xCzAJBgNVBAYTAkdCMRgwFgYDVQQKEw9TZWN0aWdvIExpbWl0ZWQxNjA0BgNV"
+    "BAMTLVNlY3RpZ28gUHVibGljIFNlcnZlciBBdXRoZW50aWNhdGlvbiBSb290IEU0"
+    "Ng==",
+    "QvLM2htpN0RfFf51KBC49A==",
+  },
+  {
+    // CN=Sectigo Public Server Authentication Root R46,O=Sectigo Limited,C=GB
+    "2.23.140.1.1",
+    "CA/Browser Forum EV OID",
+    { 0x7B, 0xB6, 0x47, 0xA6, 0x2A, 0xEE, 0xAC, 0x88, 0xBF, 0x25, 0x7A,
+      0xA5, 0x22, 0xD0, 0x1F, 0xFE, 0xA3, 0x95, 0xE0, 0xAB, 0x45, 0xC7,
+      0x3F, 0x93, 0xF6, 0x56, 0x54, 0xEC, 0x38, 0xF2, 0x5A, 0x06 },
+    "MF8xCzAJBgNVBAYTAkdCMRgwFgYDVQQKEw9TZWN0aWdvIExpbWl0ZWQxNjA0BgNV"
+    "BAMTLVNlY3RpZ28gUHVibGljIFNlcnZlciBBdXRoZW50aWNhdGlvbiBSb290IFI0"
+    "Ng==",
+    "dY39i658BwD6qSWn4cetFA==",
   },
     // clang-format on
 };

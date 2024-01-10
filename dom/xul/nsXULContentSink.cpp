@@ -17,7 +17,6 @@
 #include "jsfriendapi.h"
 
 #include "nsCOMPtr.h"
-#include "nsHTMLStyleSheet.h"
 #include "nsIContentSink.h"
 #include "mozilla/dom/Document.h"
 #include "nsIFormControl.h"
@@ -417,8 +416,8 @@ XULContentSinkImpl::HandleEndElement(const char16_t* aName) {
 
         script->mOutOfLine = false;
         if (doc) {
-          script->Compile(mText, mTextLength, JS::SourceOwnership::Borrowed,
-                          mDocumentURL, script->mLineNo, doc);
+          script->Compile(mText, mTextLength, mDocumentURL, script->mLineNo,
+                          doc);
         }
       }
 

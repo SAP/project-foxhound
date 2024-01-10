@@ -227,6 +227,7 @@ JS_FOR_EACH_TRACEKIND(IMPL_CHECK_TRACED_THING);
 #  undef IMPL_CHECK_TRACED_THING
 
 template void CheckTracedThing<Value>(JSTracer*, const Value&);
+template void CheckTracedThing<wasm::AnyRef>(JSTracer*, const wasm::AnyRef&);
 
 }  // namespace js
 
@@ -290,24 +291,24 @@ static inline bool ShouldMarkCrossCompartment(GCMarker* marker, JSObject* src,
     }
 
     return dstZone->isGCMarking();
-  } else {
-    // Check our sweep groups are correct as above.
-    MOZ_ASSERT_IF(!dst.isMarkedAny(), !dstZone->isGCSweeping());
-
-    if (dstZone->isGCMarkingBlackOnly()) {
-      /*
-       * The destination compartment is being not being marked gray now,
-       * but it will be later, so record the cell so it can be marked gray
-       * at the appropriate time.
-       */
-      if (!dst.isMarkedAny()) {
-        DelayCrossCompartmentGrayMarking(marker, src);
-      }
-      return false;
-    }
-
-    return dstZone->isGCMarkingBlackAndGray();
   }
+
+  // Check our sweep groups are correct as above.
+  MOZ_ASSERT_IF(!dst.isMarkedAny(), !dstZone->isGCSweeping());
+
+  if (dstZone->isGCMarkingBlackOnly()) {
+    /*
+     * The destination compartment is being not being marked gray now,
+     * but it will be later, so record the cell so it can be marked gray
+     * at the appropriate time.
+     */
+    if (!dst.isMarkedAny()) {
+      DelayCrossCompartmentGrayMarking(marker, src);
+    }
+    return false;
+  }
+
+  return dstZone->isGCMarkingBlackAndGray();
 }
 
 static bool ShouldTraceCrossCompartment(JSTracer* trc, JSObject* src,
@@ -394,11 +395,11 @@ JS_FOR_EACH_PUBLIC_TAGGED_GC_POINTER_TYPE(DEFINE_UNSAFE_TRACE_ROOT_FUNCTION)
 // Also, for the moment, define TraceRoot for internal GC pointer types.
 DEFINE_UNSAFE_TRACE_ROOT_FUNCTION(AbstractGeneratorObject*)
 DEFINE_UNSAFE_TRACE_ROOT_FUNCTION(SavedFrame*)
+DEFINE_UNSAFE_TRACE_ROOT_FUNCTION(wasm::AnyRef)
 
 #undef DEFINE_UNSAFE_TRACE_ROOT_FUNCTION
 
-namespace js {
-namespace gc {
+namespace js::gc {
 
 #define INSTANTIATE_INTERNAL_TRACE_FUNCTIONS(type)                     \
   template void TraceRangeInternal<type>(JSTracer*, size_t len, type*, \
@@ -414,8 +415,7 @@ INSTANTIATE_INTERNAL_TRACE_FUNCTIONS(TaggedProto)
 #undef INSTANTIATE_INTERNAL_TRACE_FUNCTIONS_FROM_TRACEKIND
 #undef INSTANTIATE_INTERNAL_TRACE_FUNCTIONS
 
-}  // namespace gc
-}  // namespace js
+}  // namespace js::gc
 
 // In debug builds, makes a note of the current compartment before calling a
 // trace hook or traceChildren() method on a GC thing.
@@ -587,11 +587,11 @@ void js::TraceManuallyBarrieredGenericPointerEdge(JSTracer* trc, Cell** thingp,
     return;
   }
 
-  auto traced = MapGCThingTyped(thing, thing->getTraceKind(),
-                                [trc, name](auto t) -> Cell* {
-                                  TraceManuallyBarrieredEdge(trc, &t, name);
-                                  return t;
-                                });
+  auto* traced = MapGCThingTyped(thing, thing->getTraceKind(),
+                                 [trc, name](auto t) -> Cell* {
+                                   TraceManuallyBarrieredEdge(trc, &t, name);
+                                   return t;
+                                 });
   if (traced != thing) {
     *thingp = traced;
   }
@@ -669,6 +669,10 @@ bool js::gc::TraceEdgeInternal(JSTracer* trc, TaggedProto* thingp,
                                const char* name) {
   return TraceTaggedPtrEdge(trc, thingp, name);
 }
+bool js::gc::TraceEdgeInternal(JSTracer* trc, wasm::AnyRef* thingp,
+                               const char* name) {
+  return TraceTaggedPtrEdge(trc, thingp, name);
+}
 
 template <typename T>
 void js::gc::TraceRangeInternal(JSTracer* trc, size_t len, T* vec,
@@ -718,9 +722,10 @@ void GCMarker::markEphemeronEdges(EphemeronEdgeVector& edges,
     CellColor targetColor = std::min(srcColor, edge.color);
     MOZ_ASSERT(CellColor(markColor()) >= targetColor);
     if (targetColor == markColor()) {
-      ApplyGCThingTyped(
-          edge.target, edge.target->getTraceKind(),
-          [this](auto t) { markAndTraverse<NormalMarkingOptions>(t); });
+      ApplyGCThingTyped(edge.target, edge.target->getTraceKind(),
+                        [this](auto t) {
+                          markAndTraverse<MarkingOptions::MarkImplicitEdges>(t);
+                        });
     }
   }
 
@@ -926,7 +931,10 @@ void MarkingTracerT<opts>::onEdge(T** thingp, const char* name) {
 }
 
 #define INSTANTIATE_ONEDGE_METHOD(name, type, _1, _2)                 \
-  template void MarkingTracerT<NormalMarkingOptions>::onEdge<type>(   \
+  template void MarkingTracerT<MarkingOptions::None>::onEdge<type>(   \
+      type * *thingp, const char* name);                              \
+  template void                                                       \
+  MarkingTracerT<MarkingOptions::MarkImplicitEdges>::onEdge<type>(    \
       type * *thingp, const char* name);                              \
   template void                                                       \
   MarkingTracerT<MarkingOptions::MarkRootCompartments>::onEdge<type>( \
@@ -1143,8 +1151,10 @@ void js::GCMarker::pushThing(T* thing) {
   pushTaggedPtr(thing);
 }
 
-template void js::GCMarker::markAndTraverse<NormalMarkingOptions, JSObject>(
+template void js::GCMarker::markAndTraverse<MarkingOptions::None, JSObject>(
     JSObject* thing);
+template void js::GCMarker::markAndTraverse<MarkingOptions::MarkImplicitEdges,
+                                            JSObject>(JSObject* thing);
 template void js::GCMarker::markAndTraverse<
     MarkingOptions::MarkRootCompartments, JSObject>(JSObject* thing);
 
@@ -1204,8 +1214,8 @@ void js::GCMarker::markAndTraverseEdge(S source, T* target) {
 }
 
 template <uint32_t opts, typename S, typename T>
-void js::GCMarker::markAndTraverseEdge(S source, const T& thing) {
-  ApplyGCThingTyped(thing, [this, source](auto t) {
+void js::GCMarker::markAndTraverseEdge(S source, const T& target) {
+  ApplyGCThingTyped(target, [this, source](auto t) {
     this->markAndTraverseEdge<opts>(source, t);
   });
 }
@@ -1273,7 +1283,11 @@ bool GCMarker::markUntilBudgetExhausted(SliceBudget& budget,
     return false;
   }
 
-  return doMarking<NormalMarkingOptions>(budget, reportTime);
+  if (isWeakMarking()) {
+    return doMarking<MarkingOptions::MarkImplicitEdges>(budget, reportTime);
+  }
+
+  return doMarking<MarkingOptions::None>(budget, reportTime);
 }
 
 template <uint32_t opts>
@@ -1681,7 +1695,7 @@ MarkStack& MarkStack::operator=(const MarkStack& other) {
   return *this;
 }
 
-MarkStack::MarkStack(MarkStack&& other)
+MarkStack::MarkStack(MarkStack&& other) noexcept
     : stack_(std::move(other.stack_.ref())),
       topIndex_(other.topIndex_.ref())
 #ifdef JS_GC_ZEAL
@@ -1692,7 +1706,7 @@ MarkStack::MarkStack(MarkStack&& other)
   other.topIndex_ = 0;
 }
 
-MarkStack& MarkStack::operator=(MarkStack&& other) {
+MarkStack& MarkStack::operator=(MarkStack&& other) noexcept {
   new (this) MarkStack(std::move(other));
   return *this;
 }
@@ -2102,7 +2116,6 @@ void GCMarker::setMarkingStateAndTracer(MarkingState prev, MarkingState next) {
 
 bool GCMarker::enterWeakMarkingMode() {
   MOZ_ASSERT(tracer()->weakMapAction() == JS::WeakMapTraceAction::Expand);
-  MOZ_ASSERT(state == RegularMarking);
   if (!haveAllImplicitEdges) {
     return false;
   }
@@ -2117,7 +2130,7 @@ bool GCMarker::enterWeakMarkingMode() {
   // Set state before doing anything else, so any new key that is marked
   // during the following gcEphemeronEdges scan will itself be looked up in
   // gcEphemeronEdges and marked according to ephemeron rules.
-  state = WeakMarking;
+  setMarkingStateAndTracer<WeakMarkingTracer>(RegularMarking, WeakMarking);
 
   return true;
 }
@@ -2173,8 +2186,11 @@ IncrementalProgress JS::Zone::enterWeakMarkingMode(GCMarker* marker,
 }
 
 void GCMarker::leaveWeakMarkingMode() {
-  MOZ_ASSERT(state == WeakMarking || state == RegularMarking);
-  state = RegularMarking;
+  if (state == RegularMarking) {
+    return;
+  }
+
+  setMarkingStateAndTracer<MarkingTracer>(WeakMarking, RegularMarking);
 
   // The gcEphemeronEdges table is still populated and may be used during a
   // future weak marking mode within this GC.
@@ -2492,8 +2508,7 @@ inline void SweepingTracer::onEdge(T** thingp, const char* name) {
   }
 }
 
-namespace js {
-namespace gc {
+namespace js::gc {
 
 template <typename T>
 JS_PUBLIC_API bool TraceWeakEdge(JSTracer* trc, JS::Heap<T>* thingp) {
@@ -2539,8 +2554,7 @@ JS_FOR_EACH_PUBLIC_TAGGED_GC_POINTER_TYPE(
 #undef INSTANTIATE_INTERNAL_MARKING_FUNCTIONS_FROM_TRACEKIND
 #undef INSTANTIATE_IATBF_FUNCTION_FOR_TAGGED_POINTER
 
-} /* namespace gc */
-} /* namespace js */
+}  // namespace js::gc
 
 /*** Cycle Collector Barrier Implementation *********************************/
 
@@ -2727,8 +2741,7 @@ bool js::UnmarkGrayShapeRecursively(Shape* shape) {
 Cell* js::gc::UninlinedForwarded(const Cell* cell) { return Forwarded(cell); }
 #endif
 
-namespace js {
-namespace debug {
+namespace js::debug {
 
 MarkInfo GetMarkInfo(Cell* rawCell) {
   if (!rawCell->isTenured()) {
@@ -2773,5 +2786,4 @@ uintptr_t GetMarkMask(Cell* cell, uint32_t colorBit) {
   return mask;
 }
 
-}  // namespace debug
-}  // namespace js
+}  // namespace js::debug

@@ -11,6 +11,7 @@
 #include "PLDHashTable.h"
 #include "mozilla/BasicEvents.h"
 #include "mozilla/gfx/Types.h"
+#include "mozilla/TypedEnumBits.h"
 #include "nsHashtablesFwd.h"
 #include "nsICookieJarSettings.h"
 #include "nsIObserver.h"
@@ -47,7 +48,6 @@
 #  define SPOOFED_PLATFORM "Linux x86_64"
 #endif
 
-#define SPOOFED_APPNAME "Netscape"
 #define LEGACY_BUILD_ID "20181001000000"
 #define LEGACY_UA_GECKO_TRAIL "20100101"
 
@@ -62,6 +62,8 @@
 #endif
 
 struct JSContext;
+
+class nsIChannel;
 
 namespace mozilla {
 class WidgetKeyboardEvent;
@@ -145,11 +147,13 @@ enum TimerPrecisionType {
 // NOLINTNEXTLINE(bugprone-macro-parentheses)
 #define ITEM_VALUE(name, val) name = val,
 
-enum class RFPTarget : uint32_t {
+enum class RFPTarget : uint64_t {
 #include "RFPTargets.inc"
 };
 
 #undef ITEM_VALUE
+
+MOZ_MAKE_ENUM_CLASS_BITWISE_OPERATORS(RFPTarget);
 
 // ============================================================================
 
@@ -160,6 +164,10 @@ class nsRFPService final : public nsIObserver {
 
   static nsRFPService* GetOrCreate();
 
+  // _Rarely_ you will need to know if RFP is enabled, or if FPP is enabled.
+  // 98% of the time you should use nsContentUtils::ShouldResistFingerprinting
+  // as the difference will not matter to you.
+  static bool IsRFPPrefEnabled(bool aIsPrivateMode);
   static bool IsRFPEnabledFor(RFPTarget aTarget);
 
   // --------------------------------------------------------------------------
@@ -182,8 +190,7 @@ class nsRFPService final : public nsIObserver {
                                                  RTPCallerType aRTPCallerType);
 
   // Used by the JS Engine, as it doesn't know about the TimerPrecisionType enum
-  static double ReduceTimePrecisionAsUSecsWrapper(
-      double aTime, bool aShouldResistFingerprinting, JSContext* aCx);
+  static double ReduceTimePrecisionAsUSecsWrapper(double aTime, JSContext* aCx);
 
   // Public only for testing purposes
   static double ReduceTimePrecisionImpl(double aTime, TimeScale aTimeScale,
@@ -264,8 +271,7 @@ class nsRFPService final : public nsIObserver {
 
   // The method to generate the key for randomization. It can return nothing if
   // the session key is not available due to the randomization is disabled.
-  static Maybe<nsTArray<uint8_t>> GenerateKey(nsIURI* aTopLevelURI,
-                                              bool aIsPrivate);
+  static Maybe<nsTArray<uint8_t>> GenerateKey(nsIChannel* aChannel);
 
   // The method to add random noises to the image data based on the random key
   // of the given cookieJarSettings.
@@ -282,9 +288,6 @@ class nsRFPService final : public nsIObserver {
 
   ~nsRFPService() = default;
 
-  nsCString mInitialTZValue;
-
-  void UpdateRFPPref();
   void UpdateFPPOverrideList();
   void StartShutdown();
 

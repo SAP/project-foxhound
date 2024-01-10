@@ -656,12 +656,10 @@ NS_IMETHODIMP IPCFuzzController::IPCFuzzLoop::Run() {
       continue;
     }
 
-    buffer.shrinkTo(bufsize);
-
     const uint8_t* controlData = (uint8_t*)buffer.begin();
 
     char* ipcMsgData = buffer.begin() + controlLen;
-    size_t ipcMsgLen = buffer.length() - controlLen;
+    size_t ipcMsgLen = bufsize - controlLen;
 
     // Copy the header of the original message
     memcpy(ipcMsgData, IPCFuzzController::instance().sampleHeader.begin(),
@@ -803,6 +801,14 @@ NS_IMETHODIMP IPCFuzzController::IPCFuzzLoop::Run() {
   MOZ_FUZZING_NYX_DEBUG("DEBUG: Synchronizing due to end of iteration...\n");
   IPCFuzzController::instance().SynchronizeOnMessageExecution(
       expected_messages);
+
+  SyncRunnable::DispatchToThread(
+      GetMainThreadSerialEventTarget(),
+      NS_NewRunnableFunction("IPCFuzzController::StartFuzzing", [&]() -> void {
+        MOZ_FUZZING_NYX_DEBUG("DEBUG: Main thread runnable start.\n");
+        NS_ProcessPendingEvents(NS_GetCurrentThread());
+        MOZ_FUZZING_NYX_DEBUG("DEBUG: Main thread runnable done.\n");
+      }));
 
   MOZ_FUZZING_NYX_DEBUG(
       "DEBUG: ======== END OF ITERATION (RELEASE) ========\n");

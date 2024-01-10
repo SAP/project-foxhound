@@ -1,11 +1,13 @@
 "use strict";
 
-const { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
+const { HttpServer } = ChromeUtils.importESModule(
+  "resource://testing-common/httpd.sys.mjs"
+);
 
 var httpServer = null;
 var path = "/bug699001";
 
-XPCOMUtils.defineLazyGetter(this, "URI", function () {
+ChromeUtils.defineLazyGetter(this, "URI", function () {
   return "http://localhost:" + httpServer.identity.primaryPort + path;
 });
 

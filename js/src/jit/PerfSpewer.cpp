@@ -23,6 +23,25 @@
 #  define gettid() static_cast<pid_t>(syscall(__NR_gettid))
 #endif
 
+#if defined(JS_ION_PERF) && (defined(ANDROID) || defined(XP_MACOSX))
+#  include <limits.h>
+#  include <stdlib.h>
+#  include <unistd.h>
+char* get_current_dir_name() {
+  char* buffer = (char*)malloc(PATH_MAX * sizeof(char));
+  if (buffer == nullptr) {
+    return nullptr;
+  }
+
+  if (getcwd(buffer, PATH_MAX) == nullptr) {
+    free(buffer);
+    return nullptr;
+  }
+
+  return buffer;
+}
+#endif
+
 #if defined(JS_ION_PERF) && defined(XP_MACOSX)
 #  include <pthread.h>
 #  include <unistd.h>
@@ -38,16 +57,6 @@ pid_t gettid_pthread() {
   return pid_t(tid);
 }
 #  define gettid() gettid_pthread()
-
-const char* get_current_dir_name_cwd() {
-  constexpr size_t CWD_MAX = 256;
-  char* buffer = (char*)malloc(CWD_MAX);
-  if (getcwd(buffer, CWD_MAX) == nullptr) {
-    buffer[0] = 0;
-  }
-  return buffer;
-}
-#  define get_current_dir_name() get_current_dir_name_cwd()
 #endif
 
 #include "jit/PerfSpewer.h"
@@ -58,6 +67,7 @@ const char* get_current_dir_name_cwd() {
 #include "jit/JitSpewer.h"
 #include "jit/LIR.h"
 #include "jit/MIR.h"
+#include "js/ColumnNumber.h"  // JS::LimitedColumnNumberZeroOrigin, JS::ColumnNumberOffset
 #include "js/JitCodeAPI.h"
 #include "js/Printf.h"
 #include "vm/BytecodeUtil.h"
@@ -145,9 +155,10 @@ static void WriteToJitDumpFile(const void* addr, uint32_t size,
 }
 
 static void WriteJitDumpDebugEntry(uint64_t addr, const char* filename,
-                                   uint32_t lineno, uint32_t colno,
+                                   uint32_t lineno,
+                                   JS::LimitedColumnNumberZeroOrigin colno,
                                    AutoLockPerfSpewer& lock) {
-  JitDumpDebugEntry entry = {addr, lineno, colno};
+  JitDumpDebugEntry entry = {addr, lineno, colno.zeroOriginValue()};
   WriteToJitDumpFile(&entry, sizeof(entry), lock);
   WriteToJitDumpFile(filename, strlen(filename) + 1, lock);
 }
@@ -193,6 +204,10 @@ static bool openJitDump() {
       spew_dir = JS_smprintf("%s", env_dir);
     } else {
       const char* dir = get_current_dir_name();
+      if (!dir) {
+        fprintf(stderr, "couldn't get current dir name\n");
+        return false;
+      }
       spew_dir = JS_smprintf("%s/%s", dir, env_dir);
       free((void*)dir);
     }
@@ -778,7 +793,8 @@ void PerfSpewer::saveJitCodeIRInfo(JitCode* code,
       }
       uint64_t addr = uint64_t(code->raw()) + entry.offset;
       uint64_t lineno = i + 1;
-      WriteJitDumpDebugEntry(addr, scriptFilename.get(), lineno, 0, lock);
+      WriteJitDumpDebugEntry(addr, scriptFilename.get(), lineno,
+                             JS::LimitedColumnNumberZeroOrigin::zero(), lock);
     }
 #endif
 
@@ -850,7 +866,7 @@ void BaselinePerfSpewer::saveJitCodeSourceInfo(
 #endif
 
   uint32_t lineno = script->lineno();
-  uint32_t colno = script->column();
+  JS::LimitedColumnNumberZeroOrigin colno = script->column();
   uint64_t offset = 0;
   for (SrcNoteIterator iter(script->notes()); !iter.atEnd(); ++iter) {
     const auto* sn = *iter;
@@ -859,10 +875,10 @@ void BaselinePerfSpewer::saveJitCodeSourceInfo(
     SrcNoteType type = sn->type();
     if (type == SrcNoteType::SetLine) {
       lineno = SrcNote::SetLine::getLine(sn, script->lineno());
-      colno = 0;
+      colno = JS::LimitedColumnNumberZeroOrigin::zero();
     } else if (type == SrcNoteType::NewLine) {
       lineno++;
-      colno = 0;
+      colno = JS::LimitedColumnNumberZeroOrigin::zero();
     } else if (type == SrcNoteType::ColSpan) {
       colno += SrcNote::ColSpan::getSpan(sn);
     } else {
@@ -924,7 +940,7 @@ void IonPerfSpewer::saveJitCodeSourceInfo(JSScript* script, JitCode* code,
   }
 #endif
   uint32_t lineno = 0;
-  uint32_t colno = 0;
+  JS::LimitedColumnNumberZeroOrigin colno;
 
   for (OpcodeEntry& entry : opcodes_) {
     jsbytecode* pc = entry.bytecodepc;
@@ -964,11 +980,11 @@ static UniqueChars GetFunctionDesc(const char* tierName, JSContext* cx,
   if (stubName) {
     return JS_smprintf("%s: %s : %s (%s:%u:%u)", tierName, stubName,
                        funName ? funName.get() : "*", script->filename(),
-                       script->lineno(), script->column());
+                       script->lineno(), script->column().zeroOriginValue());
   }
   return JS_smprintf("%s: %s (%s:%u:%u)", tierName,
                      funName ? funName.get() : "*", script->filename(),
-                     script->lineno(), script->column());
+                     script->lineno(), script->column().zeroOriginValue());
 }
 
 void PerfSpewer::saveDebugInfo(JSScript* script, JitCode* code,
@@ -1182,6 +1198,15 @@ void js::jit::PerfSpewerRangeRecorder::recordOffset(const char* name) {
     return;
   }
   UniqueChars desc = DuplicateString(name);
+  appendEntry(desc);
+}
+
+void js::jit::PerfSpewerRangeRecorder::recordVMWrapperOffset(const char* name) {
+  if (!PerfEnabled()) {
+    return;
+  }
+
+  UniqueChars desc = JS_smprintf("VMWrapper: %s", name);
   appendEntry(desc);
 }
 

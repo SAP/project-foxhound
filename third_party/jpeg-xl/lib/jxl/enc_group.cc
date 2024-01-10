@@ -16,7 +16,6 @@
 #include "lib/jxl/ac_strategy.h"
 #include "lib/jxl/base/bits.h"
 #include "lib/jxl/base/compiler_specific.h"
-#include "lib/jxl/base/profiler.h"
 #include "lib/jxl/common.h"
 #include "lib/jxl/dct_util.h"
 #include "lib/jxl/dec_transforms-inl.h"
@@ -45,15 +44,14 @@ void QuantizeBlockAC(const Quantizer& quantizer, const bool error_diffusion,
                      size_t xsize, size_t ysize, float* thresholds,
                      const float* JXL_RESTRICT block_in, int32_t* quant,
                      int32_t* JXL_RESTRICT block_out) {
-  PROFILER_FUNC;
   const float* JXL_RESTRICT qm = quantizer.InvDequantMatrix(quant_kind, c);
   float qac = quantizer.Scale() * (*quant);
-  // Not SIMD-fied for now.
-  if (c != 1 && (xsize > 1 || ysize > 1)) {
+  // Not SIMD-ified for now.
+  if (c != 1 && xsize * ysize >= 4) {
     for (int i = 0; i < 4; ++i) {
-      thresholds[i] -= Clamp1(0.003f * xsize * ysize, 0.f, 0.08f);
-      if (thresholds[i] < 0.54) {
-        thresholds[i] = 0.54;
+      thresholds[i] -= 0.00744f * xsize * ysize;
+      if (thresholds[i] < 0.5) {
+        thresholds[i] = 0.5;
       }
     }
   }
@@ -101,7 +99,9 @@ void AdjustQuantBlockAC(const Quantizer& quantizer, size_t c,
       (1 << AcStrategy::Type::DCT8X4) | (1 << AcStrategy::Type::AFV0) |
       (1 << AcStrategy::Type::AFV1) | (1 << AcStrategy::Type::AFV2) |
       (1 << AcStrategy::Type::AFV3);
-  if ((1 << quant_kind) & kPartialBlockKinds) return;
+  if ((1 << quant_kind) & kPartialBlockKinds) {
+    return;
+  }
 
   const float* JXL_RESTRICT qm = quantizer.InvDequantMatrix(quant_kind, c);
   float qac = quantizer.Scale() * (*quant);
@@ -114,6 +114,8 @@ void AdjustQuantBlockAC(const Quantizer& quantizer, size_t c,
     }
   }
   float sum_of_highest_freq_row_and_column = 0;
+  float sum_of_error = 0;
+  float sum_of_vals = 0;
   float hfNonZeros[4] = {};
   float hfMaxError[4] = {};
 
@@ -127,48 +129,71 @@ void AdjustQuantBlockAC(const Quantizer& quantizer, size_t c,
                            static_cast<size_t>(x >= xsize * kBlockDim / 2));
       const float val = block_in[pos] * (qm[pos] * qac * qm_multiplier);
       const float v = (std::abs(val) < thresholds[hfix]) ? 0 : rintf(val);
+      const float error = std::abs(val - v);
+      sum_of_error += error;
+      sum_of_vals += std::abs(v);
       if (c == 1 && v == 0) {
-        const float error = std::abs(val);
         if (hfMaxError[hfix] < error) {
           hfMaxError[hfix] = error;
         }
       }
       if (v != 0.0f) {
         hfNonZeros[hfix] += std::abs(v);
-        if ((y == ysize * kBlockDim - 1 || x == xsize * kBlockDim - 1) &&
-            (x >= xsize * 4 && y >= ysize * 4)) {
+        bool in_corner = y >= 7 * ysize && x >= 7 * xsize;
+        bool on_border =
+            y == ysize * kBlockDim - 1 || x == xsize * kBlockDim - 1;
+        bool in_larger_corner = x >= 4 * xsize && y >= 4 * ysize;
+        if (in_corner || (on_border && in_larger_corner)) {
           sum_of_highest_freq_row_and_column += std::abs(val);
         }
       }
     }
   }
-  if (c == 1) {
-    static const double kLimit = 0.49f;
+  if (c == 1 && sum_of_vals < std::max(xsize, ysize)) {
+    static const double kLimit[4] = {
+        0.46,
+        0.46,
+        0.46,
+        0.46,
+    };
+    static const double kMul[4] = {
+        0.9999,
+        0.9999,
+        0.9999,
+        0.9999,
+    };
+    const int32_t orig_quant = *quant;
+    int32_t new_quant = *quant;
     for (int i = 1; i < 4; ++i) {
-      if (hfNonZeros[i] == 0.0 && hfMaxError[i] > kLimit) {
-        thresholds[i] = 0.9999 * hfMaxError[i];
+      if (hfNonZeros[i] == 0.0 && hfMaxError[i] > kLimit[i]) {
+        new_quant = orig_quant + 1;
+        break;
       }
+    }
+    *quant = new_quant;
+    if (hfNonZeros[3] == 0.0 && hfMaxError[3] > kLimit[3]) {
+      thresholds[3] = kMul[3] * hfMaxError[3] * new_quant / orig_quant;
+    } else if ((hfNonZeros[1] == 0.0 && hfMaxError[1] > kLimit[1]) ||
+               (hfNonZeros[2] == 0.0 && hfMaxError[2] > kLimit[2])) {
+      thresholds[1] = kMul[1] * std::max(hfMaxError[1], hfMaxError[2]) *
+                      new_quant / orig_quant;
+      thresholds[2] = thresholds[1];
+    } else if (hfNonZeros[0] == 0.0 && hfMaxError[0] > kLimit[0]) {
+      thresholds[0] = kMul[0] * hfMaxError[0] * new_quant / orig_quant;
     }
   }
   // Heuristic for improving accuracy of high-frequency patterns
   // occurring in an environment with no medium-frequency masking
-  // patterns. This should be improved later to be done in X and B
-  // planes too as 32x32 and larger transforms become rather ugly
-  // when this is not compensated for.
-  if (15 * sum_of_highest_freq_row_and_column >= hfNonZeros[0] + 1) {
-    constexpr int inc = 5;
-    *quant += inc;
-    if (8 * sum_of_highest_freq_row_and_column >= hfNonZeros[0] + 1) {
-      *quant += inc;
-    }
-    if (5 * sum_of_highest_freq_row_and_column >= hfNonZeros[0] + 1) {
-      *quant += inc;
-    }
-    if (3 * sum_of_highest_freq_row_and_column >= hfNonZeros[0] + 1) {
-      *quant += inc;
-    }
-    if (*quant >= Quantizer::kQuantMax) {
-      *quant = Quantizer::kQuantMax - 1;
+  // patterns.
+  {
+    float all =
+        hfNonZeros[0] + hfNonZeros[1] + hfNonZeros[2] + hfNonZeros[3] + 1;
+    float mul[3] = {70, 30, 60};
+    if (mul[c] * sum_of_highest_freq_row_and_column >= all) {
+      *quant += mul[c] * sum_of_highest_freq_row_and_column / all;
+      if (*quant >= Quantizer::kQuantMax) {
+        *quant = Quantizer::kQuantMax - 1;
+      }
     }
   }
   if (quant_kind == AcStrategy::Type::DCT) {
@@ -178,6 +203,67 @@ void AdjustQuantBlockAC(const Quantizer& quantizer, size_t c,
       *quant += 1;
       if (*quant >= Quantizer::kQuantMax) {
         *quant = Quantizer::kQuantMax - 1;
+      }
+    }
+  }
+  {
+    static const double kMul1[3][3] = {
+        {
+            0.13289977307244785,
+            0.13991489841351781,
+            0.083900681804010419,
+        },
+        {
+            0.69938583107168562,
+            0.19612117586770869,
+            0.15307492924107463,
+        },
+        {
+            0.099160801461836312,
+            0.16684944507307059,
+            0.16608517854968413,
+        },
+    };
+    static const double kMul2[3][3] = {
+        {
+            0.24773711435293466,
+            0.65189637683223112,
+            1.0,
+        },
+        {
+            0.46465181913392556,
+            0.3142440606068525,
+            0.30128806880068809,
+        },
+        {
+            0.45203398366713637,
+            0.15063329382779103,
+            0.067846407329923752,
+        },
+    };
+    const float kQuantNormalizer = 2.8261379721245263;
+    sum_of_error *= kQuantNormalizer;
+    sum_of_vals *= kQuantNormalizer;
+    if (quant_kind >= AcStrategy::Type::DCT16X16) {
+      int ix = 2;
+      if (quant_kind == AcStrategy::Type::DCT32X16 ||
+          quant_kind == AcStrategy::Type::DCT16X32) {
+        ix = 1;
+      } else if (quant_kind == AcStrategy::Type::DCT16X16) {
+        ix = 0;
+      }
+      int step =
+          sum_of_error / (kMul1[ix][c] * xsize * ysize * kBlockDim * kBlockDim +
+                          kMul2[ix][c] * sum_of_vals);
+      if (step >= 2) {
+        step = 2;
+      }
+      if (sum_of_error > kMul1[ix][c] * xsize * ysize * kBlockDim * kBlockDim +
+                             kMul2[ix][c] * sum_of_vals) {
+        *quant += step;
+        if (*quant >= Quantizer::kQuantMax) {
+          *quant = Quantizer::kQuantMax - 1;
+        }
       }
     }
   }
@@ -193,6 +279,11 @@ void AdjustQuantBlockAC(const Quantizer& quantizer, size_t c,
       activity = 15;
     }
     int32_t qp = *quant - activity;
+    if (c == 1) {
+      for (int i = 1; i < 4; ++i) {
+        thresholds[i] += 0.01 * activity;
+      }
+    }
     if (qp < orig_qp_limit) {
       qp = orig_qp_limit;
     }
@@ -235,7 +326,6 @@ void QuantizeRoundtripYBlockAC(PassesEncoderState* enc_state, const size_t size,
   QuantizeBlockAC(quantizer, error_diffusion, 1, 1.0f, quant_kind, xsize, ysize,
                   &thres_y[0], inout + size, quant, quantized + size);
 
-  PROFILER_ZONE("enc quant adjust bias");
   const float* JXL_RESTRICT dequant_matrix =
       quantizer.DequantMatrix(quant_kind, 1);
 
@@ -252,7 +342,6 @@ void QuantizeRoundtripYBlockAC(PassesEncoderState* enc_state, const size_t size,
 
 void ComputeCoefficients(size_t group_idx, PassesEncoderState* enc_state,
                          const Image3F& opsin, Image3F* dc) {
-  PROFILER_FUNC;
   const Rect block_group_rect = enc_state->shared.BlockGroupRect(group_idx);
   const Rect group_rect = enc_state->shared.GroupRect(group_idx);
   const Rect cmap_rect(

@@ -65,13 +65,13 @@ constexpr double kAudioSampleDurationSeconds = 0.01;
 constexpr int kVoiceEngineMinMinPlayoutDelayMs = 0;
 constexpr int kVoiceEngineMaxMinPlayoutDelayMs = 10000;
 
-AudioCodingModule::Config AcmConfig(
+acm2::AcmReceiver::Config AcmConfig(
     NetEqFactory* neteq_factory,
     rtc::scoped_refptr<AudioDecoderFactory> decoder_factory,
     absl::optional<AudioCodecPairId> codec_pair_id,
     size_t jitter_buffer_max_packets,
     bool jitter_buffer_fast_playout) {
-  AudioCodingModule::Config acm_config;
+  acm2::AcmReceiver::Config acm_config;
   acm_config.neteq_factory = neteq_factory;
   acm_config.decoder_factory = decoder_factory;
   acm_config.neteq_config.codec_pair_id = codec_pair_id;
@@ -742,7 +742,7 @@ void ChannelReceive::ReceivedRTCPPacket(const uint8_t* data, size_t length) {
   UpdatePlayoutTimestamp(true, rtc::TimeMillis());
 
   // Deliver RTCP packet to RTP/RTCP module for parsing
-  rtp_rtcp_->IncomingRtcpPacket(data, length);
+  rtp_rtcp_->IncomingRtcpPacket(rtc::MakeArrayView(data, length));
 
   int64_t rtt = 0;
   rtp_rtcp_->RTT(remote_ssrc_, &rtt, /*avg_rtt=*/nullptr, /*min_rtt=*/nullptr,
@@ -752,21 +752,18 @@ void ChannelReceive::ReceivedRTCPPacket(const uint8_t* data, size_t length) {
     return;
   }
 
-  uint32_t ntp_secs = 0;
-  uint32_t ntp_frac = 0;
-  uint32_t rtp_timestamp = 0;
-  if (rtp_rtcp_->RemoteNTP(&ntp_secs, &ntp_frac,
-                           /*rtcp_arrival_time_secs=*/nullptr,
-                           /*rtcp_arrival_time_frac=*/nullptr,
-                           &rtp_timestamp) != 0) {
+  absl::optional<RtpRtcpInterface::SenderReportStats> last_sr =
+      rtp_rtcp_->GetSenderReportStats();
+  if (!last_sr.has_value()) {
     // Waiting for RTCP.
     return;
   }
 
   {
     MutexLock lock(&ts_stats_lock_);
-    ntp_estimator_.UpdateRtcpTimestamp(
-        TimeDelta::Millis(rtt), NtpTime(ntp_secs, ntp_frac), rtp_timestamp);
+    ntp_estimator_.UpdateRtcpTimestamp(TimeDelta::Millis(rtt),
+                                       last_sr->last_remote_timestamp,
+                                       last_sr->last_remote_rtp_timestamp);
     absl::optional<int64_t> remote_to_local_clock_offset =
         ntp_estimator_.EstimateRemoteToLocalClockOffset();
     if (remote_to_local_clock_offset.has_value()) {
@@ -832,17 +829,17 @@ CallReceiveStatistics ChannelReceive::GetRTCPStatistics() const {
 
   // Data counters.
   if (statistician) {
-    stats.payload_bytes_rcvd = rtp_stats.packet_counter.payload_bytes;
+    stats.payload_bytes_received = rtp_stats.packet_counter.payload_bytes;
 
-    stats.header_and_padding_bytes_rcvd =
+    stats.header_and_padding_bytes_received =
         rtp_stats.packet_counter.header_bytes +
         rtp_stats.packet_counter.padding_bytes;
     stats.packetsReceived = rtp_stats.packet_counter.packets;
     stats.last_packet_received_timestamp_ms =
         rtp_stats.last_packet_received_timestamp_ms;
   } else {
-    stats.payload_bytes_rcvd = 0;
-    stats.header_and_padding_bytes_rcvd = 0;
+    stats.payload_bytes_received = 0;
+    stats.header_and_padding_bytes_received = 0;
     stats.packetsReceived = 0;
     stats.last_packet_received_timestamp_ms = absl::nullopt;
   }
@@ -1036,13 +1033,14 @@ absl::optional<Syncable::Info> ChannelReceive::GetSyncInfo() const {
   // these locks aren't needed.
   RTC_DCHECK_RUN_ON(&worker_thread_checker_);
   Syncable::Info info;
-  if (rtp_rtcp_->RemoteNTP(&info.capture_time_ntp_secs,
-                           &info.capture_time_ntp_frac,
-                           /*rtcp_arrival_time_secs=*/nullptr,
-                           /*rtcp_arrival_time_frac=*/nullptr,
-                           &info.capture_time_source_clock) != 0) {
+  absl::optional<RtpRtcpInterface::SenderReportStats> last_sr =
+      rtp_rtcp_->GetSenderReportStats();
+  if (!last_sr.has_value()) {
     return absl::nullopt;
   }
+  info.capture_time_ntp_secs = last_sr->last_remote_timestamp.seconds();
+  info.capture_time_ntp_frac = last_sr->last_remote_timestamp.fractions();
+  info.capture_time_source_clock = last_sr->last_remote_rtp_timestamp;
 
   if (!last_received_rtp_timestamp_ || !last_received_rtp_system_time_ms_) {
     return absl::nullopt;

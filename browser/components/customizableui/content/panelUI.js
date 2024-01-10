@@ -644,7 +644,7 @@ const PanelUI = {
       // their localization IDs are set on "appmenu-data-l10n-id" attributes.
       let l10nId = node.getAttribute("appmenu-data-l10n-id");
       if (l10nId) {
-        button.setAttribute("data-l10n-id", l10nId);
+        document.l10n.setAttributes(button, l10nId);
       }
 
       if (node.id) {
@@ -935,6 +935,12 @@ const PanelUI = {
     if (notification.options.popupIconURL) {
       popupnotification.setAttribute("icon", notification.options.popupIconURL);
       popupnotification.setAttribute("hasicon", true);
+    }
+    if (notification.options.learnMoreURL) {
+      popupnotification.setAttribute(
+        "learnmoreurl",
+        notification.options.learnMoreURL
+      );
     }
 
     popupnotification.notification = notification;

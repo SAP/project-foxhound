@@ -763,7 +763,11 @@ const CopyButton = ({
   const timeout = (0,external_React_namespaceObject.useRef)(null);
   const onClick = (0,external_React_namespaceObject.useCallback)(() => {
     let text = document.querySelector(inputSelector).value;
-    if (transformer) text = transformer(text);
+
+    if (transformer) {
+      text = transformer(text);
+    }
+
     navigator.clipboard.writeText(text);
     clearTimeout(timeout.current);
     setCopied(true);
@@ -7707,7 +7711,10 @@ const READING_WPM = 220;
  */
 
 function readTimeFromWordCount(wordCount) {
-  if (!wordCount) return false;
+  if (!wordCount) {
+    return false;
+  }
+
   return Math.ceil(parseInt(wordCount, 10) / READING_WPM);
 }
 const DSSource = ({
@@ -7984,9 +7991,7 @@ class _DSCard extends (external_React_default()).PureComponent {
       DiscoveryStream,
       saveToPocketCard
     } = this.props;
-    let {
-      source
-    } = this.props;
+    let source = this.props.source || this.props.publisher;
 
     if (!source) {
       try {
@@ -8732,6 +8737,7 @@ class _CardGrid extends (external_React_default()).PureComponent {
         sponsored_by_override: rec.sponsored_by_override,
         dispatch: this.props.dispatch,
         source: rec.domain,
+        publisher: rec.publisher,
         pocket_id: rec.pocket_id,
         context_type: rec.context_type,
         bookmarkGuid: rec.bookmarkGuid,
@@ -14628,7 +14634,7 @@ class _Search extends (external_React_default()).PureComponent {
   onInputMount(input) {
     if (input) {
       // The "healthReportKey" and needs to be "newtab" or "abouthome" so that
-      // BrowserUsageTelemetry.jsm knows to handle events with this name, and
+      // BrowserUsageTelemetry.sys.mjs knows to handle events with this name, and
       // can add the appropriate telemetry probes for search. Without the correct
       // name, certain tests like browser_UsageTelemetry_content.js will fail
       // (See github ticket #2348 for more details)

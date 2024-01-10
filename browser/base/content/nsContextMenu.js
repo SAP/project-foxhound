@@ -101,7 +101,7 @@ function openContextMenu(aMessage, aBrowser, aActor) {
     2,
     null,
     0,
-    context.mozInputSource
+    context.inputSource
   );
   popup.openPopupAtScreen(newEvent.screenX, newEvent.screenY, true, newEvent);
 }
@@ -1155,14 +1155,14 @@ class nsContextMenu {
       // Set the correct label for the fill menu
       let fillMenu = document.getElementById("fill-login");
       if (onPasswordLikeField) {
-        fillMenu.setAttribute(
-          "data-l10n-id",
+        document.l10n.setAttributes(
+          fillMenu,
           "main-context-menu-use-saved-password"
         );
       } else {
         // On a username field
-        fillMenu.setAttribute(
-          "data-l10n-id",
+        document.l10n.setAttributes(
+          fillMenu,
           "main-context-menu-use-saved-login"
         );
       }
@@ -1199,8 +1199,9 @@ class nsContextMenu {
       popup.appendChild(fragment);
     } finally {
       const documentURI = this.contentData?.documentURIObject;
-      const origin = LoginHelper.getLoginOrigin(documentURI?.spec);
-      const showRelay = origin && this.contentData?.context.showRelay;
+      const showRelay =
+        this.contentData?.context.showRelay &&
+        LoginHelper.getLoginOrigin(documentURI?.spec);
 
       this.showItem("fill-login", showUseSavedLogin);
       this.showItem("fill-login-generated-password", showGenerate);

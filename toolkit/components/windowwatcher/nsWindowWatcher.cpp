@@ -17,7 +17,8 @@
 #include "nsJSUtils.h"
 
 #include "nsDocShell.h"
-#include "nsGlobalWindow.h"
+#include "nsGlobalWindowInner.h"
+#include "nsGlobalWindowOuter.h"
 #include "nsHashPropertyBag.h"
 #include "nsIBaseWindow.h"
 #include "nsIBrowserDOMWindow.h"
@@ -30,7 +31,6 @@
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/DocumentInlines.h"
 #include "nsIDragService.h"
-#include "nsIDOMChromeWindow.h"
 #include "nsIPrompt.h"
 #include "nsIScriptObjectPrincipal.h"
 #include "nsIScreen.h"
@@ -74,7 +74,6 @@
 #include "mozilla/dom/SessionStorageManager.h"
 #include "nsIAppWindow.h"
 #include "nsIXULBrowserWindow.h"
-#include "nsGlobalWindow.h"
 #include "ReferrerInfo.h"
 
 using namespace mozilla;
@@ -1280,6 +1279,12 @@ nsresult nsWindowWatcher::OpenWindowInternal(
       loadState->SetTriggeringSandboxFlags(parentBC->GetSandboxFlags());
     }
 
+    if (parentInnerWin) {
+      loadState->SetTriggeringWindowId(parentInnerWin->WindowID());
+      loadState->SetTriggeringStorageAccess(
+          parentInnerWin->UsingStorageAccess());
+    }
+
     if (subjectPrincipal) {
       loadState->SetTriggeringPrincipal(subjectPrincipal);
     }
@@ -2299,8 +2304,7 @@ static void SizeOpenedWindow(nsIDocShellTreeOwner* aTreeOwner,
   if (aIsCallerChrome) {
     // Only enable special privileges for chrome when chrome calls
     // open() on a chrome window
-    nsCOMPtr<nsIDOMChromeWindow> chromeWin(do_QueryInterface(aParent));
-    enabled = !aParent || chromeWin;
+    enabled = !aParent || nsGlobalWindowOuter::Cast(aParent)->IsChromeWindow();
   }
 
   const CSSIntCoord extraWidth = sizeChromeWidth ? CSSIntCoord(0) : chromeWidth;
@@ -2333,7 +2337,13 @@ static void SizeOpenedWindow(nsIDocShellTreeOwner* aTreeOwner,
           screenDesktopRect.Size() / screenCssToDesktopScale;
 
       if (aSizeSpec.SizeSpecified()) {
-        if (!nsContentUtils::ShouldResistFingerprinting()) {
+        if (!nsContentUtils::ShouldResistFingerprinting(
+                "When RFP is enabled, we unconditionally round new window "
+                "sizes. The code paths that create new windows are "
+                "complicated, and this is a conservative behavior to avoid "
+                "exempting something that shouldn't be. It also presents a "
+                "uniform behavior for something that's very browser-related.",
+                RFPTarget::RoundWindowSize)) {
           /* Unlike position, force size out-of-bounds check only if
              size actually was specified. Otherwise, intrinsically sized
              windows are broken. */
@@ -2342,14 +2352,14 @@ static void SizeOpenedWindow(nsIDocShellTreeOwner* aTreeOwner,
             winHeight = height + extraHeight;
           }
           if (winHeight > screenCssSize.height) {
-            height = screenCssSize.height - extraHeight;
+            height = static_cast<int32_t>(screenCssSize.height - extraHeight);
           }
           if (width < 100) {
             width = 100;
             winWidth = width + extraWidth;
           }
           if (winWidth > screenCssSize.width) {
-            width = screenCssSize.width - extraWidth;
+            width = static_cast<int32_t>(screenCssSize.width - extraWidth);
           }
         } else {
           int32_t targetContentWidth = 0;

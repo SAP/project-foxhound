@@ -603,7 +603,7 @@ namespace JS {
   D(DISABLE_GENERATIONAL_GC, 24)                                       \
   D(FINISH_GC, 25)                                                     \
   D(PREPARE_FOR_TRACING, 26)                                           \
-  D(UNUSED4, 27)                                                       \
+  D(FULL_WASM_ANYREF_BUFFER, 27)                                       \
   D(FULL_CELL_PTR_STR_BUFFER, 28)                                      \
   D(TOO_MUCH_JIT_CODE, 29)                                             \
   D(FULL_CELL_PTR_BIGINT_BUFFER, 30)                                   \
@@ -924,14 +924,16 @@ enum class GCNurseryProgress {
  */
 using GCNurseryCollectionCallback = void (*)(JSContext* cx,
                                              GCNurseryProgress progress,
-                                             GCReason reason);
+                                             GCReason reason, void* data);
 
 /**
- * Set the nursery collection callback for the given runtime. When set, it will
+ * Add and remove nursery collection callbacks for the given runtime. These will
  * be called at the start and end of every nursery collection.
  */
-extern JS_PUBLIC_API GCNurseryCollectionCallback SetGCNurseryCollectionCallback(
-    JSContext* cx, GCNurseryCollectionCallback callback);
+extern JS_PUBLIC_API bool AddGCNurseryCollectionCallback(
+    JSContext* cx, GCNurseryCollectionCallback callback, void* data);
+extern JS_PUBLIC_API void RemoveGCNurseryCollectionCallback(
+    JSContext* cx, GCNurseryCollectionCallback callback, void* data);
 
 typedef void (*DoCycleCollectionCallback)(JSContext* cx);
 

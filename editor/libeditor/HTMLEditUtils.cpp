@@ -431,9 +431,7 @@ bool HTMLEditUtils::IsNamedAnchor(const nsINode* aNode) {
   }
 
   nsAutoString text;
-  return aNode->AsElement()->GetAttr(kNameSpaceID_None, nsGkAtoms::name,
-                                     text) &&
-         !text.IsEmpty();
+  return aNode->AsElement()->GetAttr(nsGkAtoms::name, text) && !text.IsEmpty();
 }
 
 /**
@@ -956,7 +954,7 @@ bool HTMLEditUtils::ShouldInsertLinefeedCharacter(
 // address, applet, article, aside, blockquote, button, center, del, details,
 // dialog, dir, div, dl, fieldset, figure, footer, form, h1, h2, h3, h4, h5,
 // h6, header, hgroup, hr, iframe, ins, main, map, menu, nav, noframes,
-// noscript, object, ol, p, pre, table, section, summary, ul
+// noscript, object, ol, p, pre, table, search, section, summary, ul
 #define GROUP_BLOCK (1 << 7)
 
 // frame, frameset
@@ -1157,6 +1155,7 @@ static const ElementInfo kElements[eHTMLTag_userdefined] = {
     ELEM(s, true, true, GROUP_FONTSTYLE, GROUP_INLINE_ELEMENT),
     ELEM(samp, true, true, GROUP_PHRASE, GROUP_INLINE_ELEMENT),
     ELEM(script, true, false, GROUP_HEAD_CONTENT | GROUP_SPECIAL, GROUP_LEAF),
+    ELEM(search, true, true, GROUP_BLOCK, GROUP_FLOW_ELEMENT),
     ELEM(section, true, true, GROUP_BLOCK, GROUP_FLOW_ELEMENT),
     ELEM(select, true, false, GROUP_FORMCONTROL, GROUP_SELECT_CONTENT),
     ELEM(small, true, true, GROUP_FONTSTYLE, GROUP_INLINE_ELEMENT),
@@ -2206,7 +2205,7 @@ bool HTMLEditUtils::IsInlineStyleSetByElement(
       return true;
     }
     nsAutoString value;
-    element->GetAttr(kNameSpaceID_None, aStyle.mAttribute, value);
+    element->GetAttr(aStyle.mAttribute, value);
     if (aOutValue) {
       *aOutValue = value;
     }
@@ -2382,8 +2381,11 @@ bool HTMLEditUtils::MaybeCSSSpecificColorValue(const nsAString& aColorValue) {
     return true;
   }
   nscolor color = NS_RGB(0, 0, 0);
-  if (colorValue.IsEmpty() || colorValue.First() == '#' ||
-      NS_ColorNameToRGB(colorValue, &color)) {
+  if (colorValue.IsEmpty() || colorValue.First() == '#') {
+    return false;
+  }
+  const NS_ConvertUTF16toUTF8 colorU8(colorValue);
+  if (Servo_ColorNameToRgb(&colorU8, &color)) {
     return false;
   }
   if (colorValue.LowerCaseEqualsASCII("initial") ||
@@ -2393,7 +2395,7 @@ bool HTMLEditUtils::MaybeCSSSpecificColorValue(const nsAString& aColorValue) {
       colorValue.LowerCaseEqualsASCII("currentcolor")) {
     return true;
   }
-  return ServoCSSParser::IsValidCSSColor(NS_ConvertUTF16toUTF8(colorValue));
+  return ServoCSSParser::IsValidCSSColor(colorU8);
 }
 
 static bool ComputeColor(const nsAString& aColorValue, nscolor* aColor,

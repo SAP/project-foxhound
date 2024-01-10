@@ -14,7 +14,9 @@ const { setTimeout } = ChromeUtils.importESModule(
 const { FileUtils } = ChromeUtils.importESModule(
   "resource://gre/modules/FileUtils.sys.mjs"
 );
-const { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
+const { HttpServer } = ChromeUtils.importESModule(
+  "resource://testing-common/httpd.sys.mjs"
+);
 const { Preferences } = ChromeUtils.importESModule(
   "resource://gre/modules/Preferences.sys.mjs"
 );
@@ -942,7 +944,7 @@ async function test_checkForAddons_installAddon(
       wantInstallReject
   );
   let httpServer = new HttpServer();
-  let dir = FileUtils.getDir("TmpD", [], true);
+  let dir = FileUtils.getDir("TmpD", []);
   httpServer.registerDirectory("/", dir);
   httpServer.start(-1);
   let testserverPort = httpServer.identity.primaryPort;
@@ -1184,7 +1186,8 @@ add_task(async function test_GMPExtractor_paths() {
     "dummy_gmp.zip"
   );
   let tempDirName = "TmpDir#猫";
-  let tempDir = FileUtils.getDir("TmpD", [tempDirName], true);
+  let tempDir = FileUtils.getDir("TmpD", [tempDirName]);
+  tempDir.create(Ci.nsIFile.DIRECTORY_TYPE, FileUtils.PERMS_DIRECTORY);
   let zipPath = PathUtils.join(tempDir.path, "dummy_gmp.zip");
   await IOUtils.copy(srcPath, zipPath);
   // The path inside the profile dir we'll extract to. Make sure we handle
@@ -1414,7 +1417,7 @@ function createNewZipFile(zipName, data) {
   let zipWriter = Cc["@mozilla.org/zipwriter;1"].createInstance(
     Ci.nsIZipWriter
   );
-  let zipFile = FileUtils.getFile("TmpD", [zipName]);
+  let zipFile = new FileUtils.File(PathUtils.join(PathUtils.tempDir, zipName));
   if (zipFile.exists()) {
     zipFile.remove(false);
   }

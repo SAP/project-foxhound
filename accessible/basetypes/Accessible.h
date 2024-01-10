@@ -29,8 +29,8 @@ class LocalAccessible;
 class Relation;
 enum class RelationType;
 class RemoteAccessible;
-class TableAccessibleBase;
-class TableCellAccessibleBase;
+class TableAccessible;
+class TableCellAccessible;
 
 /**
  * Name type flags.
@@ -80,7 +80,6 @@ class KeyBinding {
   static const uint32_t kControl = 2;
   static const uint32_t kAlt = 4;
   static const uint32_t kMeta = 8;
-  static const uint32_t kOS = 16;
 
   static uint32_t AccelModifier();
 
@@ -373,6 +372,12 @@ class Accessible {
   virtual void ScrollTo(uint32_t aHow) const = 0;
 
   /**
+   * Scroll the accessible to the given point.
+   */
+  virtual void ScrollToPoint(uint32_t aCoordinateType, int32_t aX,
+                             int32_t aY) = 0;
+
+  /**
    * Return tag name of associated DOM node.
    */
   virtual nsAtom* TagName() const = 0;
@@ -475,20 +480,19 @@ class Accessible {
 
   bool IsDoc() const { return HasGenericType(eDocument); }
 
-  /**
-   * Note: The eTable* types defined in the ARIA map are used in
-   * nsAccessibilityService::CreateAccessible to determine which ARIAGrid*
-   * classes to use for accessible object creation. However, an invalid table
-   * structure might cause these classes not to be used after all.
-   *
-   * To make sure we're really dealing with a table/row/cell, only check the
-   * generic type defined by the class, not the type defined in the ARIA map.
-   */
-  bool IsTableRow() const { return mGenericTypes & eTableRow; }
+  bool IsTableRow() const { return HasGenericType(eTableRow); }
 
-  bool IsTableCell() const { return mGenericTypes & eTableCell; }
+  bool IsTableCell() const {
+    // The eTableCell type defined in the ARIA map is used in
+    // nsAccessibilityService::CreateAccessible to specify when
+    // ARIAGridCellAccessible should be used for object creation. However, an
+    // invalid table structure might cause this class not to be used after all.
+    // To make sure we're really dealing with a cell, only check the generic
+    // type defined by the class, not the type defined in the ARIA map.
+    return mGenericTypes & eTableCell;
+  }
 
-  bool IsTable() const { return mGenericTypes & eTable; }
+  bool IsTable() const { return HasGenericType(eTable); }
 
   bool IsHyperText() const { return HasGenericType(eHyperText); }
 
@@ -532,6 +536,7 @@ class Accessible {
   bool IsHTMLRadioButton() const { return mType == eHTMLRadioButtonType; }
 
   bool IsHTMLTable() const { return mType == eHTMLTableType; }
+  bool IsHTMLTableCell() const { return mType == eHTMLTableCellType; }
   bool IsHTMLTableRow() const { return mType == eHTMLTableRowType; }
 
   bool IsImageMap() const { return mType == eImageMapType; }
@@ -579,6 +584,39 @@ class Accessible {
   virtual bool HasNumericValue() const = 0;
 
   /**
+   * Returns true if this is a generic container element that has no meaning on
+   * its own.
+   */
+  bool IsGeneric() const {
+    role accRole = Role();
+    return accRole == roles::TEXT || accRole == roles::TEXT_CONTAINER ||
+           accRole == roles::SECTION;
+  }
+
+  /**
+   * Returns the nearest ancestor which is not a generic element.
+   */
+  Accessible* GetNonGenericParent() const {
+    for (Accessible* parent = Parent(); parent; parent = parent->Parent()) {
+      if (!parent->IsGeneric()) {
+        return parent;
+      }
+    }
+    return nullptr;
+  }
+
+  /**
+   * Returns true if the accessible is non-interactive.
+   */
+  bool IsNonInteractive() const {
+    if (IsGeneric()) {
+      return true;
+    }
+    const role accRole = Role();
+    return accRole == role::LANDMARK || accRole == role::REGION;
+  }
+
+  /**
    * Return true if the link is valid (e. g. points to a valid URL).
    */
   bool IsLinkValid();
@@ -608,8 +646,8 @@ class Accessible {
 
   virtual HyperTextAccessibleBase* AsHyperTextBase() { return nullptr; }
 
-  virtual TableAccessibleBase* AsTableBase() { return nullptr; }
-  virtual TableCellAccessibleBase* AsTableCellBase() { return nullptr; }
+  virtual TableAccessible* AsTable() { return nullptr; }
+  virtual TableCellAccessible* AsTableCell() { return nullptr; }
 
 #ifdef A11Y_LOG
   /**
@@ -693,7 +731,7 @@ class Accessible {
   uint32_t mGenericTypes : kGenericTypesBits;
   uint8_t mRoleMapEntryIndex;
 
-  friend class DocAccessibleChildBase;
+  friend class DocAccessibleChild;
   friend class AccGroupInfo;
 };
 

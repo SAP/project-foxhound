@@ -10,7 +10,6 @@ requestLongerTimeout(5);
 // Test pausing with mapScopes enabled and disabled
 add_task(async function () {
   const dbg = await initDebugger("doc-sourcemapped.html");
-  dbg.actions.toggleMapScopes();
 
   info("1. Pause on line 20");
   const url = "webpack3-babel6://./esmodules-cjs/input.js";
@@ -22,16 +21,28 @@ add_task(async function () {
   await waitForPaused(dbg);
 
   info("2. Hover on a token with mapScopes enabled");
-  await previewToken(dbg, 20, 16, '"a-default"');
-  ok(getOriginalScope(dbg) != null, "Scopes are mapped");
+  await toggleMapScopes(dbg);
+  await waitForLoadedScopes(dbg);
+  ok(getOriginalScope(dbg) != null, "Scopes are now mapped");
+
+  await assertPreviewTextValue(dbg, 20, 16, {
+    result: '"a-default"',
+    expression: "aDefault",
+  });
 
   info("3. Hover on a token with mapScopes disabled");
-  clickElement(dbg, "mapScopesCheckbox");
-  await previewToken(dbg, 21, 16, "undefined");
+  await toggleMapScopes(dbg);
+  await assertPreviewTextValue(dbg, 21, 16, {
+    result: "undefined",
+    expression: "anAliased",
+  });
 
   info("4. StepOver with mapScopes disabled");
   await stepOver(dbg);
-  await previewToken(dbg, 20, 16, "undefined");
+  await assertPreviewTextValue(dbg, 20, 16, {
+    result: "undefined",
+    expression: "aDefault",
+  });
   ok(getOriginalScope(dbg) == null, "Scopes are not mapped");
 });
 
@@ -41,8 +52,8 @@ function getOriginalScope(dbg) {
   );
 }
 
-async function previewToken(dbg, line, column, value) {
-  const previewEl = await tryHovering(dbg, line, column, "previewPopup");
-  is(previewEl.innerText, value);
-  dbg.actions.clearPreview(getContext(dbg));
+async function toggleMapScopes(dbg) {
+  const onDispatch = waitForDispatch(dbg.store, "TOGGLE_MAP_SCOPES");
+  clickElement(dbg, "mapScopesCheckbox");
+  return onDispatch;
 }

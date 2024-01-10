@@ -82,12 +82,6 @@ static UniquePtr<nsTHashtable<nsCStringHashKey>> sLaunchErrors;
 // PolicyBase::AddRuleInternal.
 static sandbox::ResultCode AddWin32kLockdownPolicy(
     sandbox::TargetPolicy* aPolicy, bool aEnableOpm) {
-  // On Windows 7, where Win32k lockdown is not supported, the Chromium
-  // sandbox does something weird that breaks COM instantiation.
-  if (!IsWin8OrLater()) {
-    return sandbox::SBOX_ALL_OK;
-  }
-
   sandbox::MitigationFlags flags = aPolicy->GetProcessMitigations();
   MOZ_ASSERT(flags,
              "Mitigations should be set before AddWin32kLockdownPolicy.");
@@ -276,6 +270,18 @@ Result<Ok, mozilla::ipc::LaunchError> SandboxBroker::LaunchApp(
   // Set stdout and stderr, to allow inheritance for logging.
   mPolicy->SetStdoutHandle(::GetStdHandle(STD_OUTPUT_HANDLE));
   mPolicy->SetStderrHandle(::GetStdHandle(STD_ERROR_HANDLE));
+
+  // If we're running from a network drive then we can't block loading from
+  // remote locations. Strangely using MITIGATION_IMAGE_LOAD_NO_LOW_LABEL in
+  // this situation also means the process fails to start (bug 1423296).
+  if (sRunningFromNetworkDrive) {
+    sandbox::MitigationFlags mitigations = mPolicy->GetProcessMitigations();
+    mitigations &= ~(sandbox::MITIGATION_IMAGE_LOAD_NO_REMOTE |
+                     sandbox::MITIGATION_IMAGE_LOAD_NO_LOW_LABEL);
+    MOZ_RELEASE_ASSERT(
+        mPolicy->SetProcessMitigations(mitigations) == sandbox::SBOX_ALL_OK,
+        "Setting the reduced set of flags should always succeed");
+  }
 
   // If logging enabled, set up the policy.
   if (aEnableLogging) {
@@ -569,55 +575,6 @@ static sandbox::ResultCode AddCigToPolicy(
   return sandbox::SBOX_ALL_OK;
 }
 
-// Checks whether we can use a job object as part of the sandbox.
-static bool CanUseJob() {
-  // Windows 8 and later allows nested jobs, no need for further checks.
-  if (IsWin8OrLater()) {
-    return true;
-  }
-
-  BOOL inJob = true;
-  // If we can't determine if we are in a job then assume we can use one.
-  if (!::IsProcessInJob(::GetCurrentProcess(), nullptr, &inJob)) {
-    return true;
-  }
-
-  // If there is no job then we are fine to use one.
-  if (!inJob) {
-    return true;
-  }
-
-  JOBOBJECT_EXTENDED_LIMIT_INFORMATION job_info = {};
-  // If we can't get the job object flags then again assume we can use a job.
-  if (!::QueryInformationJobObject(nullptr, JobObjectExtendedLimitInformation,
-                                   &job_info, sizeof(job_info), nullptr)) {
-    return true;
-  }
-
-  // If we can break away from the current job then we are free to set our own.
-  if (job_info.BasicLimitInformation.LimitFlags &
-      JOB_OBJECT_LIMIT_BREAKAWAY_OK) {
-    return true;
-  }
-
-  // Chromium added a command line flag to allow no job to be used, which was
-  // originally supposed to only be used for remote sessions. If you use runas
-  // to start Firefox then this also uses a separate job and we would fail to
-  // start on Windows 7. An unknown number of people use (or used to use) runas
-  // with Firefox for some security benefits (see bug 1228880). This is now a
-  // counterproductive technique, but allowing both the remote and local case
-  // for now and adding telemetry to see if we can restrict this to just remote.
-  nsAutoString localRemote(::GetSystemMetrics(SM_REMOTESESSION) ? u"remote"
-                                                                : u"local");
-  Telemetry::ScalarSet(Telemetry::ScalarID::SANDBOX_NO_JOB, localRemote, true);
-
-  // Allow running without the job object in this case. This slightly reduces
-  // the ability of the sandbox to protect its children from spawning new
-  // processes or preventing them from shutting down Windows or accessing the
-  // clipboard.
-  return false;
-}
-
 // Returns the most strict dynamic code mitigation flag that is compatible with
 // system libraries MSAudDecMFT.dll and msmpeg2vdec.dll. This depends on the
 // Windows version and the architecture. See bug 1783223 comment 27.
@@ -641,17 +598,6 @@ static sandbox::MitigationFlags DynamicCodeFlagForSystemMediaLibraries() {
     return sandbox::MitigationFlags{};
   }();
   return dynamicCodeFlag;
-}
-
-static sandbox::ResultCode SetJobLevel(sandbox::TargetPolicy* aPolicy,
-                                       sandbox::JobLevel aJobLevel,
-                                       uint32_t aUiExceptions) {
-  static bool sCanUseJob = CanUseJob();
-  if (sCanUseJob) {
-    return aPolicy->SetJobLevel(aJobLevel, aUiExceptions);
-  }
-
-  return aPolicy->SetJobLevel(sandbox::JOB_NONE, 0);
 }
 
 static void HexEncode(const Span<const uint8_t>& aBytes, nsACString& aEncoded) {
@@ -897,7 +843,7 @@ void SandboxBroker::SetSecurityLevelForContentProcess(int32_t aSandboxLevel,
 #else
   DWORD uiExceptions = 0;
 #endif
-  sandbox::ResultCode result = SetJobLevel(mPolicy, jobLevel, uiExceptions);
+  sandbox::ResultCode result = mPolicy->SetJobLevel(jobLevel, uiExceptions);
   MOZ_RELEASE_ASSERT(sandbox::SBOX_ALL_OK == result,
                      "Setting job level failed, have you set memory limit when "
                      "jobLevel == JOB_NONE?");
@@ -943,6 +889,8 @@ void SandboxBroker::SetSecurityLevelForContentProcess(int32_t aSandboxLevel,
       sandbox::MITIGATION_BOTTOM_UP_ASLR | sandbox::MITIGATION_HEAP_TERMINATE |
       sandbox::MITIGATION_SEHOP | sandbox::MITIGATION_DEP_NO_ATL_THUNK |
       sandbox::MITIGATION_DEP | sandbox::MITIGATION_EXTENSION_POINT_DISABLE |
+      sandbox::MITIGATION_IMAGE_LOAD_NO_REMOTE |
+      sandbox::MITIGATION_IMAGE_LOAD_NO_LOW_LABEL |
       sandbox::MITIGATION_IMAGE_LOAD_PREFER_SYS32;
 
 #if defined(_M_ARM64)
@@ -951,16 +899,6 @@ void SandboxBroker::SetSecurityLevelForContentProcess(int32_t aSandboxLevel,
     mitigations |= sandbox::MITIGATION_CONTROL_FLOW_GUARD_DISABLE;
   }
 #endif
-
-  if (aSandboxLevel > 3) {
-    // If we're running from a network drive then we can't block loading from
-    // remote locations. Strangely using MITIGATION_IMAGE_LOAD_NO_LOW_LABEL in
-    // this situation also means the process fails to start (bug 1423296).
-    if (!sRunningFromNetworkDrive) {
-      mitigations |= sandbox::MITIGATION_IMAGE_LOAD_NO_REMOTE |
-                     sandbox::MITIGATION_IMAGE_LOAD_NO_LOW_LABEL;
-    }
-  }
 
   if (StaticPrefs::security_sandbox_content_shadow_stack_enabled()) {
     mitigations |= sandbox::MITIGATION_CET_COMPAT_MODE;
@@ -1129,7 +1067,6 @@ void SandboxBroker::SetSecurityLevelForContentProcess(int32_t aSandboxLevel,
 void SandboxBroker::SetSecurityLevelForGPUProcess(int32_t aSandboxLevel) {
   MOZ_RELEASE_ASSERT(mPolicy, "mPolicy must be set before this call.");
 
-  sandbox::JobLevel jobLevel;
   sandbox::TokenLevel accessTokenLevel;
   sandbox::IntegrityLevel initialIntegrityLevel;
   sandbox::IntegrityLevel delayedIntegrityLevel;
@@ -1138,34 +1075,30 @@ void SandboxBroker::SetSecurityLevelForGPUProcess(int32_t aSandboxLevel) {
   // crude) tool while we are tightening the policy. Gaps are left to try and
   // avoid changing their meaning.
   if (aSandboxLevel >= 2) {
-    jobLevel = sandbox::JOB_NONE;
     accessTokenLevel = sandbox::USER_LIMITED;
     initialIntegrityLevel = sandbox::INTEGRITY_LEVEL_LOW;
     delayedIntegrityLevel = sandbox::INTEGRITY_LEVEL_LOW;
   } else {
     MOZ_RELEASE_ASSERT(aSandboxLevel >= 1,
                        "Should not be called with aSandboxLevel < 1");
-    jobLevel = sandbox::JOB_NONE;
-    accessTokenLevel = sandbox::USER_NON_ADMIN;
+    accessTokenLevel = sandbox::USER_RESTRICTED_NON_ADMIN;
     initialIntegrityLevel = sandbox::INTEGRITY_LEVEL_LOW;
     delayedIntegrityLevel = sandbox::INTEGRITY_LEVEL_LOW;
   }
 
-  sandbox::ResultCode result =
-      SetJobLevel(mPolicy, jobLevel, 0 /* ui_exceptions */);
+  // We use JOB_LIMITED_USER for the setting that limits the job to one active
+  // process, which prevents the creation of child processes. For the moment
+  // the other restrictions are added as excpetions until we can assess them.
+  sandbox::ResultCode result = mPolicy->SetJobLevel(
+      sandbox::JOB_LIMITED_USER,
+      JOB_OBJECT_UILIMIT_SYSTEMPARAMETERS | JOB_OBJECT_UILIMIT_DESKTOP |
+          JOB_OBJECT_UILIMIT_EXITWINDOWS | JOB_OBJECT_UILIMIT_DISPLAYSETTINGS);
   MOZ_RELEASE_ASSERT(sandbox::SBOX_ALL_OK == result,
                      "Setting job level failed, have you set memory limit when "
                      "jobLevel == JOB_NONE?");
 
-  // If the delayed access token is not restricted we don't want the initial one
-  // to be either, because it can interfere with running from a network drive.
-  sandbox::TokenLevel initialAccessTokenLevel =
-      (accessTokenLevel == sandbox::USER_UNPROTECTED ||
-       accessTokenLevel == sandbox::USER_NON_ADMIN)
-          ? sandbox::USER_UNPROTECTED
-          : sandbox::USER_RESTRICTED_SAME_ACCESS;
-
-  result = mPolicy->SetTokenLevel(initialAccessTokenLevel, accessTokenLevel);
+  result = mPolicy->SetTokenLevel(sandbox::USER_RESTRICTED_SAME_ACCESS,
+                                  accessTokenLevel);
   MOZ_RELEASE_ASSERT(sandbox::SBOX_ALL_OK == result,
                      "Lockdown level cannot be USER_UNPROTECTED or USER_LAST "
                      "if initial level was USER_RESTRICTED_SAME_ACCESS");
@@ -1184,7 +1117,8 @@ void SandboxBroker::SetSecurityLevelForGPUProcess(int32_t aSandboxLevel) {
   sandbox::MitigationFlags mitigations =
       sandbox::MITIGATION_BOTTOM_UP_ASLR | sandbox::MITIGATION_HEAP_TERMINATE |
       sandbox::MITIGATION_SEHOP | sandbox::MITIGATION_DEP_NO_ATL_THUNK |
-      sandbox::MITIGATION_DEP;
+      sandbox::MITIGATION_IMAGE_LOAD_NO_REMOTE |
+      sandbox::MITIGATION_IMAGE_LOAD_NO_LOW_LABEL | sandbox::MITIGATION_DEP;
 
   if (StaticPrefs::security_sandbox_gpu_shadow_stack_enabled()) {
     mitigations |= sandbox::MITIGATION_CET_COMPAT_MODE;
@@ -1255,7 +1189,7 @@ bool SandboxBroker::SetSecurityLevelForRDDProcess() {
   }
 
   auto result =
-      SetJobLevel(mPolicy, sandbox::JOB_LOCKDOWN, 0 /* ui_exceptions */);
+      mPolicy->SetJobLevel(sandbox::JOB_LOCKDOWN, 0 /* ui_exceptions */);
   SANDBOX_ENSURE_SUCCESS(
       result,
       "SetJobLevel should never fail with these arguments, what happened?");
@@ -1289,6 +1223,9 @@ bool SandboxBroker::SetSecurityLevelForRDDProcess() {
       sandbox::MITIGATION_BOTTOM_UP_ASLR | sandbox::MITIGATION_HEAP_TERMINATE |
       sandbox::MITIGATION_SEHOP | sandbox::MITIGATION_EXTENSION_POINT_DISABLE |
       sandbox::MITIGATION_DEP_NO_ATL_THUNK | sandbox::MITIGATION_DEP |
+      sandbox::MITIGATION_NONSYSTEM_FONT_DISABLE |
+      sandbox::MITIGATION_IMAGE_LOAD_NO_REMOTE |
+      sandbox::MITIGATION_IMAGE_LOAD_NO_LOW_LABEL |
       sandbox::MITIGATION_IMAGE_LOAD_PREFER_SYS32;
 
   if (StaticPrefs::security_sandbox_rdd_shadow_stack_enabled()) {
@@ -1358,7 +1295,7 @@ bool SandboxBroker::SetSecurityLevelForSocketProcess() {
   }
 
   auto result =
-      SetJobLevel(mPolicy, sandbox::JOB_LOCKDOWN, 0 /* ui_exceptions */);
+      mPolicy->SetJobLevel(sandbox::JOB_LOCKDOWN, 0 /* ui_exceptions */);
   SANDBOX_ENSURE_SUCCESS(
       result,
       "SetJobLevel should never fail with these arguments, what happened?");
@@ -1393,6 +1330,9 @@ bool SandboxBroker::SetSecurityLevelForSocketProcess() {
       sandbox::MITIGATION_BOTTOM_UP_ASLR | sandbox::MITIGATION_HEAP_TERMINATE |
       sandbox::MITIGATION_SEHOP | sandbox::MITIGATION_EXTENSION_POINT_DISABLE |
       sandbox::MITIGATION_DEP_NO_ATL_THUNK | sandbox::MITIGATION_DEP |
+      sandbox::MITIGATION_NONSYSTEM_FONT_DISABLE |
+      sandbox::MITIGATION_IMAGE_LOAD_NO_REMOTE |
+      sandbox::MITIGATION_IMAGE_LOAD_NO_LOW_LABEL |
       sandbox::MITIGATION_IMAGE_LOAD_PREFER_SYS32;
 
   if (StaticPrefs::security_sandbox_socket_shadow_stack_enabled()) {
@@ -1472,6 +1412,9 @@ struct UtilitySandboxProps {
       sandbox::MITIGATION_BOTTOM_UP_ASLR | sandbox::MITIGATION_HEAP_TERMINATE |
       sandbox::MITIGATION_SEHOP | sandbox::MITIGATION_EXTENSION_POINT_DISABLE |
       sandbox::MITIGATION_DEP_NO_ATL_THUNK | sandbox::MITIGATION_DEP |
+      sandbox::MITIGATION_NONSYSTEM_FONT_DISABLE |
+      sandbox::MITIGATION_IMAGE_LOAD_NO_REMOTE |
+      sandbox::MITIGATION_IMAGE_LOAD_NO_LOW_LABEL |
       sandbox::MITIGATION_IMAGE_LOAD_PREFER_SYS32 |
       sandbox::MITIGATION_CET_COMPAT_MODE;
 
@@ -1545,13 +1488,6 @@ struct UtilityMfMediaEngineCdmSandboxProps : public UtilitySandboxProps {
       };
     }
     mUseWin32kLockdown = false;
-    mInitialMitigations =
-        sandbox::MITIGATION_BOTTOM_UP_ASLR |
-        sandbox::MITIGATION_HEAP_TERMINATE | sandbox::MITIGATION_SEHOP |
-        sandbox::MITIGATION_EXTENSION_POINT_DISABLE |
-        sandbox::MITIGATION_DEP_NO_ATL_THUNK | sandbox::MITIGATION_DEP |
-        sandbox::MITIGATION_CET_COMPAT_MODE;
-
     mDelayedMitigations = sandbox::MITIGATION_DLL_SEARCH_ORDER;
   }
 };
@@ -1640,7 +1576,7 @@ bool BuildUtilitySandbox(sandbox::TargetPolicy* policy,
                          const UtilitySandboxProps& us) {
   LogUtilitySandboxProps(us);
 
-  auto result = SetJobLevel(policy, us.mJobLevel, 0 /* ui_exceptions */);
+  auto result = policy->SetJobLevel(us.mJobLevel, 0 /* ui_exceptions */);
   SANDBOX_ENSURE_SUCCESS(
       result,
       "SetJobLevel should never fail with these arguments, what happened?");
@@ -1761,7 +1697,7 @@ bool SandboxBroker::SetSecurityLevelForGMPlugin(SandboxLevel aLevel,
   }
 
   auto result =
-      SetJobLevel(mPolicy, sandbox::JOB_LOCKDOWN, 0 /* ui_exceptions */);
+      mPolicy->SetJobLevel(sandbox::JOB_LOCKDOWN, 0 /* ui_exceptions */);
   SANDBOX_ENSURE_SUCCESS(
       result,
       "SetJobLevel should never fail with these arguments, what happened?");
@@ -1795,6 +1731,9 @@ bool SandboxBroker::SetSecurityLevelForGMPlugin(SandboxLevel aLevel,
   sandbox::MitigationFlags mitigations =
       sandbox::MITIGATION_BOTTOM_UP_ASLR | sandbox::MITIGATION_HEAP_TERMINATE |
       sandbox::MITIGATION_SEHOP | sandbox::MITIGATION_EXTENSION_POINT_DISABLE |
+      sandbox::MITIGATION_NONSYSTEM_FONT_DISABLE |
+      sandbox::MITIGATION_IMAGE_LOAD_NO_REMOTE |
+      sandbox::MITIGATION_IMAGE_LOAD_NO_LOW_LABEL |
       sandbox::MITIGATION_DEP_NO_ATL_THUNK | sandbox::MITIGATION_DEP;
 
   if (StaticPrefs::security_sandbox_gmp_shadow_stack_enabled()) {
@@ -1804,9 +1743,7 @@ bool SandboxBroker::SetSecurityLevelForGMPlugin(SandboxLevel aLevel,
   result = mPolicy->SetProcessMitigations(mitigations);
   SANDBOX_ENSURE_SUCCESS(result, "Invalid flags for SetProcessMitigations.");
 
-  // Chromium only implements win32k disable for PPAPI on Win10 or later,
-  // believed to be due to the interceptions required for OPM.
-  if (StaticPrefs::security_sandbox_gmp_win32k_disable() && IsWin10OrLater()) {
+  if (StaticPrefs::security_sandbox_gmp_win32k_disable()) {
     result = AddWin32kLockdownPolicy(mPolicy, true);
     SANDBOX_ENSURE_SUCCESS(result, "Failed to add the win32k lockdown policy");
   }

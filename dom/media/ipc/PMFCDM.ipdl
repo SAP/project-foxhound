@@ -69,7 +69,8 @@ struct MFCDMInitParamsIPDL {
   nsString[] initDataTypes;
   Requirement distinctiveID;
   Requirement persistentState;
-  bool hwSecure;
+  MFCDMMediaCapability[] audioCapabilities;
+  MFCDMMediaCapability[] videoCapabilities;
 };
 
 struct MFCDMInitIPDL {
@@ -97,7 +98,7 @@ async protocol PMFCDM
 {
   manager PRemoteDecoderManager;
 parent:
-  async GetCapabilities() returns (MFCDMCapabilitiesResult result);
+  async GetCapabilities(bool isHwSecured) returns (MFCDMCapabilitiesResult result);
   async Init(MFCDMInitParamsIPDL params) returns (MFCDMInitResult result);
   async CreateSessionAndGenerateRequest(MFCDMCreateSessionParamsIPDL type)
       returns (MFCDMSessionResult result);

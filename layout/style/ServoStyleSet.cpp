@@ -10,6 +10,7 @@
 #include "gfxPlatformFontList.h"
 #include "mozilla/AutoRestyleTimelineMarker.h"
 #include "mozilla/DocumentStyleRootIterator.h"
+#include "mozilla/AttributeStyles.h"
 #include "mozilla/EffectCompositor.h"
 #include "mozilla/IntegerRange.h"
 #include "mozilla/Keyframe.h"
@@ -25,6 +26,7 @@
 #include "mozilla/StyleAnimationValue.h"
 #include "mozilla/css/Loader.h"
 #include "mozilla/dom/AnonymousContent.h"
+#include "mozilla/dom/CSSBinding.h"
 #include "mozilla/dom/CSSCounterStyleRule.h"
 #include "mozilla/dom/CSSFontFaceRule.h"
 #include "mozilla/dom/CSSFontFeatureValuesRule.h"
@@ -48,7 +50,6 @@
 #include "nsCSSFrameConstructor.h"
 #include "nsCSSPseudoElements.h"
 #include "nsDeviceContext.h"
-#include "nsHTMLStyleSheet.h"
 #include "nsIAnonymousContentCreator.h"
 #include "nsLayoutUtils.h"
 #include "mozilla/dom/DocumentInlines.h"
@@ -321,14 +322,6 @@ const ServoElementSnapshotTable& ServoStyleSet::Snapshots() {
   return GetPresContext()->RestyleManager()->Snapshots();
 }
 
-void ServoStyleSet::ResolveMappedAttrDeclarationBlocks() {
-  if (nsHTMLStyleSheet* sheet = mDocument->GetAttributeStyleSheet()) {
-    sheet->CalculateMappedServoDeclarations();
-  }
-
-  mDocument->ResolveScheduledSVGPresAttrs();
-}
-
 void ServoStyleSet::PreTraverseSync() {
   // Get the Document's root element to ensure that the cache is valid before
   // calling into the (potentially-parallel) Servo traversal, where a cache hit
@@ -341,7 +334,7 @@ void ServoStyleSet::PreTraverseSync() {
   // can end up doing editing stuff, which adds stylesheets etc...
   mDocument->FlushUserFontSet();
 
-  ResolveMappedAttrDeclarationBlocks();
+  mDocument->ResolveScheduledPresAttrs();
 
   LookAndFeel::NativeInit();
 
@@ -458,13 +451,17 @@ static inline bool LazyPseudoIsCacheable(PseudoStyleType aType,
 
 already_AddRefed<ComputedStyle> ServoStyleSet::ResolvePseudoElementStyle(
     const Element& aOriginatingElement, PseudoStyleType aType,
-    ComputedStyle* aParentStyle, IsProbe aIsProbe) {
+    nsAtom* aFunctionalPseudoParameter, ComputedStyle* aParentStyle,
+    IsProbe aIsProbe) {
   // Runs from frame construction, this should have clean styles already, except
   // with non-lazy FC...
   UpdateStylistIfNeeded();
   MOZ_ASSERT(PseudoStyle::IsPseudoElement(aType));
 
+  // caching is done using `aType` only, therefore results would be wrong for
+  // pseudos with functional parameters (e.g. `::highlight(foo)`).
   const bool cacheable =
+      !aFunctionalPseudoParameter &&
       LazyPseudoIsCacheable(aType, aOriginatingElement, aParentStyle);
   RefPtr<ComputedStyle> style =
       cacheable ? aParentStyle->GetCachedLazyPseudoStyle(aType) : nullptr;
@@ -476,9 +473,9 @@ already_AddRefed<ComputedStyle> ServoStyleSet::ResolvePseudoElementStyle(
     //
     // There are callers which do pass the wrong parent style and it would
     // assert (like ComputeSelectionStyle()). That's messy!
-    style = Servo_ResolvePseudoStyle(&aOriginatingElement, aType, isProbe,
-                                     isProbe ? nullptr : aParentStyle,
-                                     mRawData.get())
+    style = Servo_ResolvePseudoStyle(
+                &aOriginatingElement, aType, aFunctionalPseudoParameter,
+                isProbe, isProbe ? nullptr : aParentStyle, mRawData.get())
                 .Consume();
     if (!style) {
       MOZ_ASSERT(isProbe);
@@ -496,20 +493,6 @@ already_AddRefed<ComputedStyle> ServoStyleSet::ResolvePseudoElementStyle(
   }
 
   return style.forget();
-}
-
-already_AddRefed<ComputedStyle> ServoStyleSet::ProbeHighlightPseudoElementStyle(
-    const dom::Element& aOriginatingElement, const nsAtom* aHighlightName,
-    ComputedStyle* aParentStyle) {
-  MOZ_ASSERT(!StylistNeedsUpdate());
-  MOZ_ASSERT(aHighlightName);
-
-  RefPtr<ComputedStyle> style =
-      Servo_ComputedValues_ResolveHighlightPseudoStyle(
-          &aOriginatingElement, aHighlightName, mRawData.get())
-          .Consume();
-
-  return style ? style.forget() : nullptr;
 }
 
 already_AddRefed<ComputedStyle>
@@ -572,7 +555,7 @@ ServoStyleSet::ResolveNonInheritingAnonymousBoxStyle(PseudoStyleType aType) {
 }
 
 already_AddRefed<ComputedStyle> ServoStyleSet::ResolvePageContentStyle(
-    const nsAtom* aPageName) {
+    const nsAtom* aPageName, const StylePagePseudoClassFlags& aPseudo) {
   // The empty atom is used to indicate no specified page name, and is not
   // usable as a page-rule selector. Changing this to null is a slight
   // optimization to avoid the Servo code from doing an unnecessary hashtable
@@ -580,10 +563,12 @@ already_AddRefed<ComputedStyle> ServoStyleSet::ResolvePageContentStyle(
   if (aPageName == nsGkAtoms::_empty) {
     aPageName = nullptr;
   }
-  // Only use the cache if we are not doing a lookup for a named page style.
+  // Only use the cache when we are doing a lookup for page styles without a
+  // page-name or any pseudo classes.
+  const bool useCache = !aPageName && !aPseudo;
   RefPtr<ComputedStyle>& cache =
       mNonInheritingComputedStyles[nsCSSAnonBoxes::NonInheriting::pageContent];
-  if (!aPageName && cache) {
+  if (useCache && cache) {
     RefPtr<ComputedStyle> retval = cache;
     return retval.forget();
   }
@@ -591,11 +576,11 @@ already_AddRefed<ComputedStyle> ServoStyleSet::ResolvePageContentStyle(
   UpdateStylistIfNeeded();
 
   RefPtr<ComputedStyle> computedValues =
-      Servo_ComputedValues_GetForPageContent(mRawData.get(), aPageName)
+      Servo_ComputedValues_GetForPageContent(mRawData.get(), aPageName, aPseudo)
           .Consume();
   MOZ_ASSERT(computedValues);
 
-  if (!aPageName) {
+  if (useCache) {
     cache = computedValues;
   }
   return computedValues.forget();
@@ -606,7 +591,8 @@ already_AddRefed<ComputedStyle> ServoStyleSet::ResolveXULTreePseudoStyle(
     ComputedStyle* aParentStyle, const AtomArray& aInputWord) {
   MOZ_ASSERT(nsCSSAnonBoxes::IsTreePseudoElement(aPseudoTag));
   MOZ_ASSERT(aParentStyle);
-  MOZ_ASSERT(!StylistNeedsUpdate());
+  NS_ASSERTION(!StylistNeedsUpdate(),
+               "Stylesheets modified when resolving XUL tree pseudo");
 
   return Servo_ComputedValues_ResolveXULTreePseudoStyle(
              aParentElement, aPseudoTag, aParentStyle, &aInputWord,
@@ -684,7 +670,8 @@ StyleSheet* ServoStyleSet::SheetAt(Origin aOrigin, size_t aIndex) const {
 ServoStyleSet::FirstPageSizeAndOrientation
 ServoStyleSet::GetFirstPageSizeAndOrientation(const nsAtom* aFirstPageName) {
   FirstPageSizeAndOrientation retval;
-  const RefPtr<ComputedStyle> style = ResolvePageContentStyle(aFirstPageName);
+  const RefPtr<ComputedStyle> style =
+      ResolvePageContentStyle(aFirstPageName, StylePagePseudoClassFlags::FIRST);
   const StylePageSize& pageSize = style->StylePage()->mSize;
 
   if (pageSize.IsSize()) {
@@ -1025,9 +1012,6 @@ void ServoStyleSet::RuleChangedInternal(StyleSheet& aSheet, css::Rule& aRule,
     // @namespace and @import rules, and can't be mutated.
     case StyleCssRuleType::Namespace:
       break;
-    case StyleCssRuleType::Viewport:
-      MOZ_ASSERT_UNREACHABLE("Gecko doesn't implement @viewport");
-      break;
     case StyleCssRuleType::Keyframe:
       // FIXME: We should probably just forward to the parent @keyframes rule? I
       // think that'd do the right thing, but meanwhile...
@@ -1104,15 +1088,6 @@ already_AddRefed<ComputedStyle> ServoStyleSet::GetBaseContextForElement(
     Element* aElement, const ComputedStyle* aStyle) {
   return Servo_StyleSet_GetBaseComputedValuesForElement(
              mRawData.get(), aElement, aStyle, &Snapshots())
-      .Consume();
-}
-
-already_AddRefed<ComputedStyle>
-ServoStyleSet::ResolveServoStyleByAddingAnimation(
-    Element* aElement, const ComputedStyle* aStyle,
-    StyleAnimationValue* aAnimationValue) {
-  return Servo_StyleSet_GetComputedValuesByAddingAnimation(
-             mRawData.get(), aElement, aStyle, &Snapshots(), aAnimationValue)
       .Consume();
 }
 
@@ -1219,7 +1194,7 @@ void ServoStyleSet::ClearNonInheritingComputedStyles() {
 
 already_AddRefed<ComputedStyle> ServoStyleSet::ResolveStyleLazily(
     const Element& aElement, PseudoStyleType aPseudoType,
-    StyleRuleInclusion aRuleInclusion) {
+    nsAtom* aFunctionalPseudoParameter, StyleRuleInclusion aRuleInclusion) {
   PreTraverseSync();
   MOZ_ASSERT(!StylistNeedsUpdate());
 
@@ -1263,7 +1238,8 @@ already_AddRefed<ComputedStyle> ServoStyleSet::ResolveStyleLazily(
                            pc->PresShell()->DidInitialize();
   return Servo_ResolveStyleLazily(
              elementForStyleResolution, pseudoTypeForStyleResolution,
-             aRuleInclusion, &restyleManager->Snapshots(),
+             aFunctionalPseudoParameter, aRuleInclusion,
+             &restyleManager->Snapshots(),
              restyleManager->GetUndisplayedRestyleGeneration(), canUseCache,
              mRawData.get())
       .Consume();
@@ -1434,10 +1410,8 @@ bool ServoStyleSet::HasDocumentStateDependency(
 
 already_AddRefed<ComputedStyle> ServoStyleSet::ReparentComputedStyle(
     ComputedStyle* aComputedStyle, ComputedStyle* aNewParent,
-    ComputedStyle* aNewParentIgnoringFirstLine, ComputedStyle* aNewLayoutParent,
-    Element* aElement) {
-  return Servo_ReparentStyle(aComputedStyle, aNewParent,
-                             aNewParentIgnoringFirstLine, aNewLayoutParent,
+    ComputedStyle* aNewLayoutParent, Element* aElement) {
+  return Servo_ReparentStyle(aComputedStyle, aNewParent, aNewLayoutParent,
                              aElement, mRawData.get())
       .Consume();
 }
@@ -1450,6 +1424,34 @@ void ServoStyleSet::InvalidateForViewportUnits(OnlyDynamic aOnlyDynamic) {
 
   Servo_InvalidateForViewportUnits(mRawData.get(), root,
                                    aOnlyDynamic == OnlyDynamic::Yes);
+}
+
+void ServoStyleSet::RegisterProperty(const PropertyDefinition& aDefinition,
+                                     ErrorResult& aRv) {
+  using Result = StyleRegisterCustomPropertyResult;
+  auto result = Servo_RegisterCustomProperty(
+      RawData(), mDocument->DefaultStyleAttrURLData(), &aDefinition.mName,
+      &aDefinition.mSyntax, aDefinition.mInherits,
+      aDefinition.mInitialValue.WasPassed() ? &aDefinition.mInitialValue.Value()
+                                            : nullptr);
+  switch (result) {
+    case Result::SuccessfullyRegistered:
+      break;
+    case Result::InvalidName:
+      return aRv.ThrowSyntaxError("Invalid name");
+    case Result::InvalidSyntax:
+      return aRv.ThrowSyntaxError("Invalid syntax descriptor");
+    case Result::InvalidInitialValue:
+      return aRv.ThrowSyntaxError("Invalid initial value syntax");
+    case Result::NoInitialValue:
+      return aRv.ThrowSyntaxError(
+          "Initial value is required when syntax is not universal");
+    case Result::InitialValueNotComputationallyIndependent:
+      return aRv.ThrowSyntaxError(
+          "Initial value is required when syntax is not universal");
+    case Result::AlreadyRegistered:
+      return aRv.ThrowInvalidModificationError("Property already registered");
+  }
 }
 
 NS_IMPL_ISUPPORTS(UACacheReporter, nsIMemoryReporter)

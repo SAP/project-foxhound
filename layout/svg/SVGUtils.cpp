@@ -261,11 +261,6 @@ float SVGUtils::ObjectSpace(const gfxRect& aRect,
          axis;
 }
 
-float SVGUtils::UserSpace(SVGElement* aSVGElement,
-                          const SVGAnimatedLength* aLength) {
-  return aLength->GetAnimValue(aSVGElement);
-}
-
 float SVGUtils::UserSpace(nsIFrame* aNonSVGContext,
                           const SVGAnimatedLength* aLength) {
   MOZ_ASSERT(!aNonSVGContext->IsTextFrame(), "Not expecting text content");
@@ -448,7 +443,6 @@ void SVGUtils::DetermineMaskUsage(const nsIFrame* aFrame, bool aHandleOpacity,
       break;
     case ClipPathType::Shape:
     case ClipPathType::Box:
-    case ClipPathType::Path:
       aUsage.shouldApplyBasicShapeOrPath = true;
       break;
     case ClipPathType::None:
@@ -731,9 +725,14 @@ void SVGUtils::PaintFrameWithEffects(nsIFrame* aFrame, gfxContext& aContext,
                              : aTransform,
                          aImgParams);
     };
+    // If we're masking a userSpaceOnUse mask we may need to include the
+    // stroke too. Err on the side of caution and include it always.
+    gfxRect bbox = GetBBox(aFrame, SVGUtils::eUseFrameBoundsForOuterSVG |
+                                       SVGUtils::eBBoxIncludeFillGeometry |
+                                       SVGUtils::eBBoxIncludeStroke);
     FilterInstance::PaintFilteredFrame(
         aFrame, aFrame->StyleEffects()->mFilters.AsSpan(), target, callback,
-        nullptr, aImgParams);
+        nullptr, aImgParams, 1.0f, &bbox);
   } else {
     svgFrame->PaintSVG(*target, aTransform, aImgParams);
   }
@@ -1540,7 +1539,7 @@ gfxMatrix SVGUtils::GetTransformMatrixInUserSpace(const nsIFrame* aFrame) {
   if (properties.HasTransform()) {
     trans = nsStyleTransformMatrix::ReadTransforms(
         properties.mTranslate, properties.mRotate, properties.mScale,
-        properties.mMotion, properties.mTransform, refBox,
+        properties.mMotion.ptrOr(nullptr), properties.mTransform, refBox,
         AppUnitsPerCSSPixel());
   } else {
     trans = Matrix4x4::From2D(svgTransform);

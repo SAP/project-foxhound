@@ -336,9 +336,12 @@ struct BaseCompiler final {
 
   inline const FuncType& funcType() const;
   inline bool usesMemory() const;
-  inline bool usesSharedMemory() const;
-  inline bool isMem32() const;
-  inline bool isMem64() const;
+  inline bool usesSharedMemory(uint32_t memoryIndex) const;
+  inline bool isMem32(uint32_t memoryIndex) const;
+  inline bool isMem64(uint32_t memoryIndex) const;
+  inline bool hugeMemoryEnabled(uint32_t memoryIndex) const;
+  inline uint32_t instanceOffsetOfMemoryBase(uint32_t memoryIndex) const;
+  inline uint32_t instanceOffsetOfBoundsCheckLimit(uint32_t memoryIndex) const;
 
   // The casts are used by some of the ScratchRegister implementations.
   operator MacroAssembler&() const { return masm; }
@@ -750,6 +753,9 @@ struct BaseCompiler final {
   inline RegI32 popI64ToI32();
   inline RegI32 popI64ToSpecificI32(RegI32 specific);
 
+  // Pop an I32 or I64 as an I64. The value is zero extended out to 64-bits.
+  inline RegI64 popIndexToInt64(IndexType indexType);
+
   // Pop the stack until it has the desired size, but do not move the physical
   // stack pointer.
   inline void popValueStackTo(uint32_t stackSize);
@@ -949,7 +955,8 @@ struct BaseCompiler final {
 
   bool callIndirect(uint32_t funcTypeIndex, uint32_t tableIndex,
                     const Stk& indexVal, const FunctionCall& call,
-                    CodeOffset* fastCallOffset, CodeOffset* slowCallOffset);
+                    bool tailCall, CodeOffset* fastCallOffset,
+                    CodeOffset* slowCallOffset);
   CodeOffset callImport(unsigned instanceDataOffset, const FunctionCall& call);
 #ifdef ENABLE_WASM_FUNCTION_REFERENCES
   void callRef(const Stk& calleeRef, const FunctionCall& call,
@@ -1124,42 +1131,41 @@ struct BaseCompiler final {
 
   void branchAddNoOverflow(uint64_t offset, RegI32 ptr, Label* ok);
   void branchTestLowZero(RegI32 ptr, Imm32 mask, Label* ok);
-  void boundsCheck4GBOrLargerAccess(RegPtr instance, RegI32 ptr, Label* ok);
-  void boundsCheckBelow4GBAccess(RegPtr instance, RegI32 ptr, Label* ok);
+  void boundsCheck4GBOrLargerAccess(uint32_t memoryIndex, RegPtr instance,
+                                    RegI32 ptr, Label* ok);
+  void boundsCheckBelow4GBAccess(uint32_t memoryIndex, RegPtr instance,
+                                 RegI32 ptr, Label* ok);
 
   void branchAddNoOverflow(uint64_t offset, RegI64 ptr, Label* ok);
   void branchTestLowZero(RegI64 ptr, Imm32 mask, Label* ok);
-  void boundsCheck4GBOrLargerAccess(RegPtr instance, RegI64 ptr, Label* ok);
-  void boundsCheckBelow4GBAccess(RegPtr instance, RegI64 ptr, Label* ok);
+  void boundsCheck4GBOrLargerAccess(uint32_t memoryIndex, RegPtr instance,
+                                    RegI64 ptr, Label* ok);
+  void boundsCheckBelow4GBAccess(uint32_t memoryIndex, RegPtr instance,
+                                 RegI64 ptr, Label* ok);
 
-#if defined(WASM_HAS_HEAPREG)
-  template <typename RegIndexType>
-  BaseIndex prepareAtomicMemoryAccess(MemoryAccessDesc* access,
-                                      AccessCheck* check, RegPtr instance,
-                                      RegIndexType ptr);
-#else
   // Some consumers depend on the returned Address not incorporating instance,
   // as instance may be the scratch register.
   template <typename RegIndexType>
   Address prepareAtomicMemoryAccess(MemoryAccessDesc* access,
                                     AccessCheck* check, RegPtr instance,
                                     RegIndexType ptr);
-#endif
 
   template <typename RegIndexType>
   void computeEffectiveAddress(MemoryAccessDesc* access);
 
-  [[nodiscard]] bool needInstanceForAccess(const AccessCheck& check);
+  [[nodiscard]] bool needInstanceForAccess(const MemoryAccessDesc* access,
+                                           const AccessCheck& check);
 
   // ptr and dest may be the same iff dest is I32.
   // This may destroy ptr even if ptr and dest are not the same.
   void executeLoad(MemoryAccessDesc* access, AccessCheck* check,
-                   RegPtr instance, RegI32 ptr, AnyReg dest, RegI32 temp);
+                   RegPtr instance, RegPtr memoryBase, RegI32 ptr, AnyReg dest,
+                   RegI32 temp);
   void load(MemoryAccessDesc* access, AccessCheck* check, RegPtr instance,
-            RegI32 ptr, AnyReg dest, RegI32 temp);
+            RegPtr memoryBase, RegI32 ptr, AnyReg dest, RegI32 temp);
 #ifdef ENABLE_WASM_MEMORY64
   void load(MemoryAccessDesc* access, AccessCheck* check, RegPtr instance,
-            RegI64 ptr, AnyReg dest, RegI64 temp);
+            RegPtr memoryBase, RegI64 ptr, AnyReg dest, RegI64 temp);
 #endif
 
   template <typename RegType>
@@ -1170,12 +1176,13 @@ struct BaseCompiler final {
   // ptr and src must not be the same register.
   // This may destroy ptr and src.
   void executeStore(MemoryAccessDesc* access, AccessCheck* check,
-                    RegPtr instance, RegI32 ptr, AnyReg src, RegI32 temp);
+                    RegPtr instance, RegPtr memoryBase, RegI32 ptr, AnyReg src,
+                    RegI32 temp);
   void store(MemoryAccessDesc* access, AccessCheck* check, RegPtr instance,
-             RegI32 ptr, AnyReg src, RegI32 temp);
+             RegPtr memoryBase, RegI32 ptr, AnyReg src, RegI32 temp);
 #ifdef ENABLE_WASM_MEMORY64
   void store(MemoryAccessDesc* access, AccessCheck* check, RegPtr instance,
-             RegI64 ptr, AnyReg src, RegI64 temp);
+             RegPtr memoryBase, RegI64 ptr, AnyReg src, RegI64 temp);
 #endif
 
   template <typename RegType>
@@ -1216,7 +1223,7 @@ struct BaseCompiler final {
   template <typename RegType>
   RegType popMemoryAccess(MemoryAccessDesc* access, AccessCheck* check);
 
-  void pushHeapBase();
+  void pushHeapBase(uint32_t memoryIndex);
 
   ////////////////////////////////////////////////////////////////////////////
   //
@@ -1390,13 +1397,17 @@ struct BaseCompiler final {
     False
   };
 
-  [[nodiscard]] bool emitCallArgs(const ValTypeVector& argTypes,
-                                  const StackResultsLoc& results,
+  // The typename T for emitCallArgs can be one of the following:
+  // NormalCallResults, TailCallResults, or NoCallResults.
+  template <typename T>
+  [[nodiscard]] bool emitCallArgs(const ValTypeVector& argTypes, T results,
                                   FunctionCall* baselineCall,
                                   CalleeOnStack calleeOnStack);
 
   [[nodiscard]] bool emitCall();
+  [[nodiscard]] bool emitReturnCall();
   [[nodiscard]] bool emitCallIndirect();
+  [[nodiscard]] bool emitReturnCallIndirect();
   [[nodiscard]] bool emitUnaryMathBuiltinCall(SymbolicAddress callee,
                                               ValType operandType);
   [[nodiscard]] bool emitGetLocal();
@@ -1404,9 +1415,13 @@ struct BaseCompiler final {
   [[nodiscard]] bool emitTeeLocal();
   [[nodiscard]] bool emitGetGlobal();
   [[nodiscard]] bool emitSetGlobal();
-  [[nodiscard]] RegPtr maybeLoadInstanceForAccess(const AccessCheck& check);
-  [[nodiscard]] RegPtr maybeLoadInstanceForAccess(const AccessCheck& check,
-                                                  RegPtr specific);
+  [[nodiscard]] RegPtr maybeLoadMemoryBaseForAccess(
+      RegPtr instance, const MemoryAccessDesc* access);
+  [[nodiscard]] RegPtr maybeLoadInstanceForAccess(
+      const MemoryAccessDesc* access, const AccessCheck& check);
+  [[nodiscard]] RegPtr maybeLoadInstanceForAccess(
+      const MemoryAccessDesc* access, const AccessCheck& check,
+      RegPtr specific);
   [[nodiscard]] bool emitLoad(ValType type, Scalar::Type viewType);
   [[nodiscard]] bool emitStore(ValType resultType, Scalar::Type viewType);
   [[nodiscard]] bool emitSelect(bool typed);
@@ -1613,12 +1628,12 @@ struct BaseCompiler final {
   [[nodiscard]] bool emitAtomicXchg(ValType type, Scalar::Type viewType);
   [[nodiscard]] bool emitMemInit();
   [[nodiscard]] bool emitMemCopy();
-  [[nodiscard]] bool memCopyCall();
+  [[nodiscard]] bool memCopyCall(uint32_t dstMemIndex, uint32_t srcMemIndex);
   void memCopyInlineM32();
   [[nodiscard]] bool emitTableCopy();
   [[nodiscard]] bool emitDataOrElemDrop(bool isData);
   [[nodiscard]] bool emitMemFill();
-  [[nodiscard]] bool memFillCall();
+  [[nodiscard]] bool memFillCall(uint32_t memoryIndex);
   void memFillInlineM32();
   [[nodiscard]] bool emitTableInit();
   [[nodiscard]] bool emitTableFill();
@@ -1646,6 +1661,8 @@ struct BaseCompiler final {
   [[nodiscard]] bool emitArraySet();
   [[nodiscard]] bool emitArrayLen(bool decodeIgnoredTypeIndex);
   [[nodiscard]] bool emitArrayCopy();
+  [[nodiscard]] bool emitI31New();
+  [[nodiscard]] bool emitI31Get(FieldWideningOp wideningOp);
   [[nodiscard]] bool emitRefTestV5();
   [[nodiscard]] bool emitRefCastV5();
   [[nodiscard]] bool emitBrOnCastV5(bool onSuccess);
@@ -1658,7 +1675,7 @@ struct BaseCompiler final {
                                         uint32_t labelRelativeDepth,
                                         const ResultType& labelType,
                                         RefType sourceType, RefType destType);
-  [[nodiscard]] bool emitBrOnCast();
+  [[nodiscard]] bool emitBrOnCast(bool onSuccess);
   [[nodiscard]] bool emitExternInternalize();
   [[nodiscard]] bool emitExternExternalize();
 
@@ -1692,10 +1709,10 @@ struct BaseCompiler final {
   // Common code for both old and new ref.cast instructions.
   void emitRefCastCommon(RefType sourceType, RefType destType);
 
-  // Allocate registers and branch if the given object is a subtype of the given
-  // heap type.
-  void branchGcRefType(RegRef object, RefType sourceType, RefType destType,
-                       Label* label, bool onSuccess);
+  // Allocate registers and branch if the given wasm ref is a subtype of the
+  // given heap type.
+  void branchIfRefSubtype(RegRef ref, RefType sourceType, RefType destType,
+                          Label* label, bool onSuccess);
 
   // Write `value` to wasm struct `object`, at `areaBase + areaOffset`.  The
   // caller must decide on the in- vs out-of-lineness before the call and set

@@ -635,10 +635,6 @@ static nsCString GetModifiersName(Modifiers aModifiers) {
     ADD_SEPARATOR_IF_NECESSARY(names);
     names += NS_DOM_KEYNAME_SYMBOLLOCK;
   }
-  if (aModifiers & MODIFIER_OS) {
-    ADD_SEPARATOR_IF_NECESSARY(names);
-    names += NS_DOM_KEYNAME_OS;
-  }
   return names;
 }
 
@@ -2675,7 +2671,7 @@ TSFTextStore::QueryInsert(LONG acpTestStart, LONG acpTestEnd, ULONG cch,
 
   // XXX need to adjust to cluster boundary
   // Assume we are given good offsets for now
-  if (IsWin8OrLater() && mComposition.isNothing() &&
+  if (mComposition.isNothing() &&
       ((StaticPrefs::
             intl_tsf_hack_ms_traditional_chinese_query_insert_result() &&
         TSFStaticSink::IsMSChangJieOrMSQuickActive()) ||
@@ -2798,7 +2794,13 @@ Maybe<TSFTextStore::Content>& TSFTextStore::ContentForTSF() {
   }
 
   if (mContentForTSF.isNothing()) {
+    MOZ_DIAGNOSTIC_ASSERT(
+        !mIsInitializingContentForTSF,
+        "TSFTextStore::ContentForTSF() shouldn't be called recursively");
+
     AutoNotifyingTSFBatch deferNotifyingTSF(*this);
+    AutoRestore<bool> saveInitializingContetTSF(mIsInitializingContentForTSF);
+    mIsInitializingContentForTSF = true;
 
     nsString text;  // Don't use auto string for avoiding to copy long string.
     if (NS_WARN_IF(!GetCurrentText(text))) {
@@ -2890,7 +2892,14 @@ Maybe<TSFTextStore::Selection>& TSFTextStore::SelectionForTSF() {
       MOZ_ASSERT_UNREACHABLE("There should be non-destroyed widget");
     }
 
+    MOZ_DIAGNOSTIC_ASSERT(
+        !mIsInitializingSelectionForTSF,
+        "TSFTextStore::SelectionForTSF() shouldn't be called recursively");
+
     AutoNotifyingTSFBatch deferNotifyingTSF(*this);
+    AutoRestore<bool> saveInitializingSelectionForTSF(
+        mIsInitializingSelectionForTSF);
+    mIsInitializingSelectionForTSF = true;
 
     WidgetQueryContentEvent querySelectedTextEvent(true, eQuerySelectedText,
                                                    mWidget);
@@ -3868,9 +3877,8 @@ bool TSFTextStore::ShouldSetInputScopeOfURLBarToDefault() {
     case TextInputProcessorID::eMicrosoftPinyinNewExperienceInputStyle:
     case TextInputProcessorID::eMicrosoftOldHangul:
     case TextInputProcessorID::eMicrosoftWubi:
-      return true;
     case TextInputProcessorID::eMicrosoftIMEForKorean:
-      return IsWin8OrLater();
+      return true;
     default:
       return false;
   }
@@ -4795,8 +4803,7 @@ bool TSFTextStore::MaybeHackNoErrorLayoutBugs(LONG& aACPStart, LONG& aACPEnd) {
       }
       [[fallthrough]];
     case TextInputProcessorID::eMicrosoftChangJie:
-      if (!IsWin8OrLater() ||
-          !StaticPrefs::
+      if (!StaticPrefs::
               intl_tsf_hack_ms_traditional_chinese_do_not_return_no_layout_error()) {
         return false;
       }
@@ -4813,8 +4820,7 @@ bool TSFTextStore::MaybeHackNoErrorLayoutBugs(LONG& aACPStart, LONG& aACPEnd) {
     //      there is stateful cause or race in them.
     case TextInputProcessorID::eMicrosoftPinyin:
     case TextInputProcessorID::eMicrosoftWubi:
-      if (!IsWin8OrLater() ||
-          !StaticPrefs::
+      if (!StaticPrefs::
               intl_tsf_hack_ms_simplified_chinese_do_not_return_no_layout_error()) {
         return false;
       }
@@ -6084,6 +6090,9 @@ void TSFTextStore::NotifyTSFOfSelectionChange() {
   // If selection range isn't actually changed, we don't need to notify TSF
   // of this selection change.
   if (mSelectionForTSF.isNothing()) {
+    MOZ_DIAGNOSTIC_ASSERT(!mIsInitializingSelectionForTSF,
+                          "While mSelectionForTSF is being initialized, this "
+                          "should not be called");
     mSelectionForTSF.emplace(*mPendingSelectionChangeData);
   } else if (!mSelectionForTSF->SetSelection(*mPendingSelectionChangeData)) {
     mPendingSelectionChangeData.reset();

@@ -28,7 +28,6 @@
 #include "vm/RegExpObject.h"
 #include "vm/RegExpStatics.h"
 #include "vm/SelfHosting.h"
-#include "vm/WellKnownAtom.h"  // js_*_str
 
 #include "vm/EnvironmentObject-inl.h"
 #include "vm/GeckoProfiler-inl.h"
@@ -89,14 +88,13 @@ bool js::CreateRegExpMatchResult(JSContext* cx, HandleRegExpShared re,
 
   bool hasIndices = re->hasIndices();
 
-  // Get the templateObject that defines the shape and type of the output
-  // object.
-  RegExpRealm::ResultTemplateKind kind =
-      hasIndices ? RegExpRealm::ResultTemplateKind::WithIndices
-                 : RegExpRealm::ResultTemplateKind::Normal;
-  ArrayObject* templateObject =
-      cx->realm()->regExps.getOrCreateMatchResultTemplateObject(cx, kind);
-  if (!templateObject) {
+  // Get the shape for the output object.
+  RegExpRealm::ResultShapeKind kind =
+      hasIndices ? RegExpRealm::ResultShapeKind::WithIndices
+                 : RegExpRealm::ResultShapeKind::Normal;
+  Rooted<SharedShape*> shape(
+      cx, cx->global()->regExpRealm().getOrCreateMatchResultShape(cx, kind));
+  if (!shape) {
     return false;
   }
 
@@ -105,8 +103,8 @@ bool js::CreateRegExpMatchResult(JSContext* cx, HandleRegExpShared re,
   MOZ_ASSERT(numPairs > 0);
 
   // Steps 20-21: Allocate the match result object.
-  Rooted<ArrayObject*> arr(cx, NewDenseFullyAllocatedArrayWithTemplate(
-                                   cx, numPairs, templateObject));
+  Rooted<ArrayObject*> arr(
+      cx, NewDenseFullyAllocatedArrayWithShape(cx, numPairs, shape));
   if (!arr) {
     return false;
   }
@@ -147,11 +145,13 @@ bool js::CreateRegExpMatchResult(JSContext* cx, HandleRegExpShared re,
   Rooted<PlainObject*> indicesGroups(cx);
   if (hasIndices) {
     // MakeIndicesArray: step 8
-    ArrayObject* indicesTemplate =
-        cx->realm()->regExps.getOrCreateMatchResultTemplateObject(
-            cx, RegExpRealm::ResultTemplateKind::Indices);
-    indices =
-        NewDenseFullyAllocatedArrayWithTemplate(cx, numPairs, indicesTemplate);
+    Rooted<SharedShape*> indicesShape(
+        cx, cx->global()->regExpRealm().getOrCreateMatchResultShape(
+                cx, RegExpRealm::ResultShapeKind::Indices));
+    if (!indicesShape) {
+      return false;
+    }
+    indices = NewDenseFullyAllocatedArrayWithShape(cx, numPairs, indicesShape);
     if (!indices) {
       return false;
     }
@@ -163,10 +163,8 @@ bool js::CreateRegExpMatchResult(JSContext* cx, HandleRegExpShared re,
       if (!indicesGroups) {
         return false;
       }
-      indices->setSlot(RegExpRealm::IndicesGroupsSlot,
-                       ObjectValue(*indicesGroups));
-    } else {
-      indices->setSlot(RegExpRealm::IndicesGroupsSlot, UndefinedValue());
+      indices->initSlot(RegExpRealm::IndicesGroupsSlot,
+                        ObjectValue(*indicesGroups));
     }
 
     // MakeIndicesArray: step 13 a-d. (Step 13.e is implemented below.)
@@ -240,34 +238,36 @@ bool js::CreateRegExpMatchResult(JSContext* cx, HandleRegExpShared re,
   } else {
     for (uint32_t i = 0; i < re->numNamedCaptures(); i++) {
       uint32_t idx = re->getNamedCaptureIndex(i);
-      groups->setSlot(i, arr->getDenseElement(idx));
+      groups->initSlot(i, arr->getDenseElement(idx));
 
       // MakeIndicesArray: Step 13.e (reordered)
       if (hasIndices) {
-        indicesGroups->setSlot(i, indices->getDenseElement(idx));
+        indicesGroups->initSlot(i, indices->getDenseElement(idx));
       }
     }
   }
 
   // Step 22 (reordered).
   // Set the |index| property.
-  arr->setSlot(RegExpRealm::MatchResultObjectIndexSlot,
-               Int32Value(matches[0].start));
+  arr->initSlot(RegExpRealm::MatchResultObjectIndexSlot,
+                Int32Value(matches[0].start));
 
   // Step 23 (reordered).
   // Set the |input| property.
-  arr->setSlot(RegExpRealm::MatchResultObjectInputSlot, StringValue(input));
+  arr->initSlot(RegExpRealm::MatchResultObjectInputSlot, StringValue(input));
 
   // Step 32 (reordered)
   // Set the |groups| property.
-  arr->setSlot(RegExpRealm::MatchResultObjectGroupsSlot,
-               groups ? ObjectValue(*groups) : UndefinedValue());
+  if (groups) {
+    arr->initSlot(RegExpRealm::MatchResultObjectGroupsSlot,
+                  ObjectValue(*groups));
+  }
 
   // Step 34b
   // Set the |indices| property.
   if (re->hasIndices()) {
-    arr->setSlot(RegExpRealm::MatchResultObjectIndicesSlot,
-                 ObjectValue(*indices));
+    arr->initSlot(RegExpRealm::MatchResultObjectIndicesSlot,
+                  ObjectValue(*indices));
   }
 
 #ifdef DEBUG
@@ -289,13 +289,20 @@ bool js::CreateRegExpMatchResult(JSContext* cx, HandleRegExpShared re,
   return true;
 }
 
-static int32_t CreateRegExpSearchResult(const MatchPairs& matches) {
-  /* Fit the start and limit of match into a int32_t. */
-  uint32_t position = matches[0].start;
-  uint32_t lastIndex = matches[0].limit;
-  MOZ_ASSERT(position < 0x8000);
-  MOZ_ASSERT(lastIndex < 0x8000);
-  return position | (lastIndex << 15);
+static int32_t CreateRegExpSearchResult(JSContext* cx,
+                                        const MatchPairs& matches) {
+  MOZ_ASSERT(matches[0].start >= 0);
+  MOZ_ASSERT(matches[0].limit >= 0);
+
+  MOZ_ASSERT(cx->regExpSearcherLastLimit == RegExpSearcherLastLimitSentinel);
+
+#ifdef DEBUG
+  static_assert(JSString::MAX_LENGTH < RegExpSearcherLastLimitSentinel);
+  MOZ_ASSERT(uint32_t(matches[0].limit) < RegExpSearcherLastLimitSentinel);
+#endif
+
+  cx->regExpSearcherLastLimit = matches[0].limit;
+  return matches[0].start;
 }
 
 /*
@@ -414,7 +421,7 @@ static bool RegExpInitializeIgnoringLastIndex(JSContext* cx,
   Rooted<JSAtom*> pattern(cx);
   if (patternValue.isUndefined()) {
     /* Step 1. */
-    pattern = cx->names().empty;
+    pattern = cx->names().empty_;
   } else {
     /* Step 2. */
     pattern = ToAtom<CanGC>(cx, patternValue);
@@ -880,7 +887,7 @@ bool js::regexp_multiline(JSContext* cx, unsigned argc, JS::Value* vp) {
 static bool regexp_source(JSContext* cx, unsigned argc, JS::Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
   // Step 3.a. Return "(?:)" for %RegExp.prototype%.
-  RootedValue fallback(cx, StringValue(cx->names().emptyRegExp));
+  RootedValue fallback(cx, StringValue(cx->names().emptyRegExp_));
   return RegExpGetter(
       cx, args, "source",
       [cx, args](RegExpObject* unwrapped) {
@@ -933,6 +940,16 @@ bool js::regexp_unicode(JSContext* cx, unsigned argc, JS::Value* vp) {
   });
 }
 
+// https://arai-a.github.io/ecma262-compare/?pr=2418&id=sec-get-regexp.prototype.unicodesets
+// 21.2.6.19 get RegExp.prototype.unicodeSets
+bool js::regexp_unicodeSets(JSContext* cx, unsigned argc, JS::Value* vp) {
+  CallArgs args = CallArgsFromVp(argc, vp);
+  return RegExpGetter(cx, args, "unicodeSets", [args](RegExpObject* unwrapped) {
+    args.rval().setBoolean(unwrapped->unicodeSets());
+    return true;
+  });
+}
+
 const JSPropertySpec js::regexp_properties[] = {
     JS_SELF_HOSTED_GET("flags", "$RegExpFlagsGetter", 0),
     JS_PSG("hasIndices", regexp_hasIndices, 0),
@@ -943,11 +960,12 @@ const JSPropertySpec js::regexp_properties[] = {
     JS_PSG("source", regexp_source, 0),
     JS_PSG("sticky", regexp_sticky, 0),
     JS_PSG("unicode", regexp_unicode, 0),
+    JS_PSG("unicodeSets", regexp_unicodeSets, 0),
     JS_PS_END};
 
 const JSFunctionSpec js::regexp_methods[] = {
-    JS_SELF_HOSTED_FN(js_toSource_str, "$RegExpToString", 0, 0),
-    JS_SELF_HOSTED_FN(js_toString_str, "$RegExpToString", 0, 0),
+    JS_SELF_HOSTED_FN("toSource", "$RegExpToString", 0, 0),
+    JS_SELF_HOSTED_FN("toString", "$RegExpToString", 0, 0),
     JS_FN("compile", regexp_compile, 2, 0),
     JS_SELF_HOSTED_FN("exec", "RegExp_prototype_Exec", 1, 0),
     JS_SELF_HOSTED_FN("test", "RegExpTest", 1, 0),
@@ -1236,6 +1254,12 @@ static bool RegExpSearcherImpl(JSContext* cx, HandleObject regexp,
   /* Execute regular expression and gather matches. */
   VectorMatchPairs matches;
 
+#ifdef DEBUG
+  // Ensure we assert if RegExpSearcherLastLimit is called when there's no
+  // match.
+  cx->regExpSearcherLastLimit = RegExpSearcherLastLimitSentinel;
+#endif
+
   /* Steps 3, 9-14, except 12.a.i, 12.c.i.1. */
   RegExpRunStatus status =
       ExecuteRegExp(cx, regexp, string, lastIndex, &matches);
@@ -1250,7 +1274,7 @@ static bool RegExpSearcherImpl(JSContext* cx, HandleObject regexp,
   }
 
   /* Steps 16-25 */
-  *result = CreateRegExpSearchResult(matches);
+  *result = CreateRegExpSearchResult(cx, matches);
   return true;
 }
 
@@ -1293,10 +1317,29 @@ bool js::RegExpSearcherRaw(JSContext* cx, HandleObject regexp,
   // RegExp execution was successful only if the pairs have actually been
   // filled in. Note that IC code always passes a nullptr maybeMatches.
   if (maybeMatches && maybeMatches->pairsRaw()[0] > MatchPair::NoMatch) {
-    *result = CreateRegExpSearchResult(*maybeMatches);
+    *result = CreateRegExpSearchResult(cx, *maybeMatches);
     return true;
   }
   return RegExpSearcherImpl(cx, regexp, input, lastIndex, result);
+}
+
+bool js::RegExpSearcherLastLimit(JSContext* cx, unsigned argc, Value* vp) {
+  CallArgs args = CallArgsFromVp(argc, vp);
+  MOZ_ASSERT(args.length() == 1);
+  MOZ_ASSERT(args[0].isString());
+
+  // Assert the limit is not the sentinel value and is valid for this string.
+  MOZ_ASSERT(cx->regExpSearcherLastLimit != RegExpSearcherLastLimitSentinel);
+  MOZ_ASSERT(cx->regExpSearcherLastLimit <= args[0].toString()->length());
+
+  args.rval().setInt32(cx->regExpSearcherLastLimit);
+
+#ifdef DEBUG
+  // Ensure we assert if this function is called again without a new call to
+  // RegExpSearcher.
+  cx->regExpSearcherLastLimit = RegExpSearcherLastLimitSentinel;
+#endif
+  return true;
 }
 
 template <bool CalledFromJit>
@@ -1925,6 +1968,31 @@ bool js::RegExpExec(JSContext* cx, Handle<JSObject*> regexp,
   return true;
 }
 
+bool js::RegExpHasCaptureGroups(JSContext* cx, Handle<RegExpObject*> obj,
+                                Handle<JSString*> input, bool* result) {
+  // pairCount is only available for compiled regular expressions.
+  if (!obj->hasShared() ||
+      obj->getShared()->kind() == RegExpShared::Kind::Unparsed) {
+    Rooted<RegExpShared*> shared(cx, RegExpObject::getShared(cx, obj));
+    if (!shared) {
+      return false;
+    }
+    Rooted<JSLinearString*> inputLinear(cx, input->ensureLinear(cx));
+    if (!inputLinear) {
+      return false;
+    }
+    if (!RegExpShared::compileIfNecessary(cx, &shared, inputLinear,
+                                          RegExpShared::CodeKind::Any)) {
+      return false;
+    }
+  }
+
+  MOZ_ASSERT(obj->getShared()->pairCount() >= 1);
+
+  *result = obj->getShared()->pairCount() > 1;
+  return true;
+}
+
 /* ES 2021 21.1.3.17.1 */
 // https://tc39.es/ecma262/#sec-getsubstitution
 bool js::RegExpGetSubstitution(JSContext* cx, Handle<ArrayObject*> matchResult,
@@ -2107,7 +2175,8 @@ bool js::RegExpPrototypeOptimizableRaw(JSContext* cx, JSObject* proto) {
 
   NativeObject* nproto = static_cast<NativeObject*>(proto);
 
-  Shape* shape = cx->realm()->regExps.getOptimizableRegExpPrototypeShape();
+  RegExpRealm& realm = cx->global()->regExpRealm();
+  Shape* shape = realm.getOptimizableRegExpPrototypeShape();
   if (shape == nproto->shape()) {
     return true;
   }
@@ -2122,7 +2191,7 @@ bool js::RegExpPrototypeOptimizableRaw(JSContext* cx, JSObject* proto) {
   }
 
   if (!IsSelfHostedFunctionWithName(flagsGetter,
-                                    cx->names().RegExpFlagsGetter)) {
+                                    cx->names().dollar_RegExpFlagsGetter_)) {
     return false;
   }
 
@@ -2186,6 +2255,16 @@ bool js::RegExpPrototypeOptimizableRaw(JSContext* cx, JSObject* proto) {
     return false;
   }
 
+  JSNative unicodeSetsGetter;
+  if (!GetOwnNativeGetterPure(cx, proto, NameToId(cx->names().unicodeSets),
+                              &unicodeSetsGetter)) {
+    return false;
+  }
+
+  if (unicodeSetsGetter != regexp_unicodeSets) {
+    return false;
+  }
+
   JSNative dotAllGetter;
   if (!GetOwnNativeGetterPure(cx, proto, NameToId(cx->names().dotAll),
                               &dotAllGetter)) {
@@ -2223,7 +2302,7 @@ bool js::RegExpPrototypeOptimizableRaw(JSContext* cx, JSObject* proto) {
     return false;
   }
 
-  cx->realm()->regExps.setOptimizableRegExpPrototypeShape(nproto->shape());
+  realm.setOptimizableRegExpPrototypeShape(nproto->shape());
   return true;
 }
 
@@ -2244,7 +2323,8 @@ bool js::RegExpInstanceOptimizableRaw(JSContext* cx, JSObject* obj,
 
   RegExpObject* rx = &obj->as<RegExpObject>();
 
-  Shape* shape = cx->realm()->regExps.getOptimizableRegExpInstanceShape();
+  RegExpRealm& realm = cx->global()->regExpRealm();
+  Shape* shape = realm.getOptimizableRegExpInstanceShape();
   if (shape == rx->shape()) {
     return true;
   }
@@ -2261,7 +2341,7 @@ bool js::RegExpInstanceOptimizableRaw(JSContext* cx, JSObject* obj,
     return false;
   }
 
-  cx->realm()->regExps.setOptimizableRegExpInstanceShape(rx->shape());
+  realm.setOptimizableRegExpInstanceShape(rx->shape());
   return true;
 }
 

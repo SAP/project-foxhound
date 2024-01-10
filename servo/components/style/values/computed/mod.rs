@@ -20,8 +20,9 @@ use crate::font_metrics::{FontMetrics, FontMetricsOrientation};
 use crate::media_queries::Device;
 #[cfg(feature = "gecko")]
 use crate::properties;
-use crate::properties::{ComputedValues, LonghandId, StyleBuilder};
+use crate::properties::{ComputedValues, StyleBuilder};
 use crate::rule_cache::RuleCacheConditions;
+use crate::stylist::Stylist;
 use crate::stylesheets::container_rule::{
     ContainerInfo, ContainerSizeQuery, ContainerSizeQueryResult,
 };
@@ -67,7 +68,7 @@ pub use self::effects::{BoxShadow, Filter, SimpleShadow};
 pub use self::flex::FlexBasis;
 pub use self::font::{FontFamily, FontLanguageOverride, FontPalette, FontStyle};
 pub use self::font::{FontFeatureSettings, FontVariantLigatures, FontVariantNumeric};
-pub use self::font::{FontSize, FontSizeAdjust, FontStretch, FontSynthesis};
+pub use self::font::{FontSize, FontSizeAdjust, FontSizeAdjustFactor, FontStretch, FontSynthesis};
 pub use self::font::{FontVariantAlternates, FontWeight};
 pub use self::font::{FontVariantEastAsian, FontVariationSettings};
 pub use self::font::{MathDepth, MozScriptMinSize, MozScriptSizeMultiplier, XLang, XTextScale};
@@ -100,7 +101,7 @@ pub use self::text::{OverflowWrap, RubyPosition, TextOverflow, WordBreak, WordSp
 pub use self::text::{TextAlign, TextAlignLast, TextEmphasisPosition, TextEmphasisStyle};
 pub use self::text::{TextDecorationLength, TextDecorationSkipInk, TextJustify};
 pub use self::time::Time;
-pub use self::transform::{Rotate, Scale, Transform, TransformOperation};
+pub use self::transform::{Rotate, Scale, Transform, TransformBox, TransformOperation};
 pub use self::transform::{TransformOrigin, TransformStyle, Translate};
 #[cfg(feature = "gecko")]
 pub use self::ui::CursorImage;
@@ -185,11 +186,10 @@ pub struct Context<'a> {
     /// Returns the container information to evaluate a given container query.
     pub container_info: Option<ContainerInfo>,
 
-    /// The property we are computing a value for, if it is a non-inherited
-    /// property.  None if we are computed a value for an inherited property
-    /// or not computing for a property at all (e.g. in a media query
-    /// evaluation).
-    pub for_non_inherited_property: Option<LonghandId>,
+    /// Whether we're computing a value for a non-inherited property.
+    /// False if we are computed a value for an inherited property or not computing for a property
+    /// at all (e.g. in a media query evaluation).
+    pub for_non_inherited_property: bool,
 
     /// The conditions to cache a rule node on the rule cache.
     ///
@@ -216,14 +216,14 @@ impl<'a> Context<'a> {
     {
         let mut conditions = RuleCacheConditions::default();
         let context = Context {
-            builder: StyleBuilder::for_inheritance(device, None, None),
+            builder: StyleBuilder::for_inheritance(device, None, None, None),
             cached_system_font: None,
             in_media_query: true,
             in_container_query: false,
             quirks_mode,
             for_smil_animation: false,
             container_info: None,
-            for_non_inherited_property: None,
+            for_non_inherited_property: false,
             rule_cache_conditions: RefCell::new(&mut conditions),
             container_size_query: RefCell::new(ContainerSizeQuery::none()),
         };
@@ -234,6 +234,7 @@ impl<'a> Context<'a> {
     /// specified.
     pub fn for_container_query_evaluation<F, R>(
         device: &Device,
+        stylist: Option<&Stylist>,
         container_info_and_style: Option<(ContainerInfo, Arc<ComputedValues>)>,
         container_size_query: ContainerSizeQuery,
         f: F,
@@ -251,14 +252,14 @@ impl<'a> Context<'a> {
         let style = style.as_ref().map(|s| &**s);
         let quirks_mode = device.quirks_mode();
         let context = Context {
-            builder: StyleBuilder::for_inheritance(device, style, None),
+            builder: StyleBuilder::for_inheritance(device, stylist, style, None),
             cached_system_font: None,
             in_media_query: false,
             in_container_query: true,
             quirks_mode,
             for_smil_animation: false,
             container_info,
-            for_non_inherited_property: None,
+            for_non_inherited_property: false,
             rule_cache_conditions: RefCell::new(&mut conditions),
             container_size_query: RefCell::new(container_size_query),
         };
@@ -281,7 +282,7 @@ impl<'a> Context<'a> {
             quirks_mode,
             container_info: None,
             for_smil_animation: false,
-            for_non_inherited_property: None,
+            for_non_inherited_property: false,
             rule_cache_conditions: RefCell::new(rule_cache_conditions),
             container_size_query: RefCell::new(container_size_query),
         }
@@ -303,7 +304,7 @@ impl<'a> Context<'a> {
             quirks_mode,
             container_info: None,
             for_smil_animation,
-            for_non_inherited_property: None,
+            for_non_inherited_property: false,
             rule_cache_conditions: RefCell::new(rule_cache_conditions),
             container_size_query: RefCell::new(container_size_query),
         }
@@ -321,7 +322,7 @@ impl<'a> Context<'a> {
         orientation: FontMetricsOrientation,
         retrieve_math_scales: bool,
     ) -> FontMetrics {
-        if self.for_non_inherited_property.is_some() {
+        if self.for_non_inherited_property {
             self.rule_cache_conditions.borrow_mut().set_uncacheable();
         }
         self.builder.add_flags(match base_size {
@@ -672,6 +673,7 @@ trivial_to_computed_value!(String);
 trivial_to_computed_value!(Box<str>);
 trivial_to_computed_value!(crate::OwnedStr);
 trivial_to_computed_value!(style_traits::values::specified::AllowedNumericType);
+trivial_to_computed_value!(crate::values::generics::color::ColorMixFlags);
 
 #[allow(missing_docs)]
 #[derive(

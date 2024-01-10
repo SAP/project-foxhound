@@ -41,6 +41,10 @@ export class FirefoxProfileMigrator extends MigratorBase {
     return "migration-wizard-migrator-display-name-firefox";
   }
 
+  static get brandImage() {
+    return "chrome://branding/content/icon128.png";
+  }
+
   _getAllProfiles() {
     let allProfiles = new Map();
     let profileService = Cc[
@@ -353,7 +357,7 @@ export class FirefoxProfileMigrator extends MigratorBase {
         try {
           let oldRawPrefs = await readOldPrefs();
           let writePrefs = false;
-          const PREFS = ["bookmarks", "history", "passwords"];
+          const PREFS = ["bookmarks", "csvpasswords", "history", "passwords"];
 
           for (let pref of PREFS) {
             let fullPref = `browser\.migrate\.interactions\.${pref}`;

@@ -5,7 +5,6 @@
 
 #include "nsAccUtils.h"
 
-#include "LocalAccessible-inl.h"
 #include "AccAttributes.h"
 #include "ARIAMap.h"
 #include "nsCoreUtils.h"
@@ -14,15 +13,13 @@
 #include "DocAccessibleParent.h"
 #include "HyperTextAccessible.h"
 #include "nsIAccessibleTypes.h"
-#include "Role.h"
+#include "mozilla/a11y/Role.h"
 #include "States.h"
 #include "TextLeafAccessible.h"
 
 #include "nsIBaseWindow.h"
 #include "nsIDocShellTreeOwner.h"
 #include "nsIDOMXULContainerElement.h"
-#include "nsISimpleEnumerator.h"
-#include "mozilla/a11y/PDocAccessibleChild.h"
 #include "mozilla/a11y/RemoteAccessible.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/Element.h"
@@ -139,7 +136,7 @@ bool nsAccUtils::HasDefinedARIAToken(nsIContent* aContent, nsAtom* aAtom) {
 }
 
 bool nsAccUtils::HasDefinedARIAToken(const AttrArray* aAttrs, nsAtom* aAtom) {
-  return aAttrs->HasAttr(kNameSpaceID_None, aAtom) &&
+  return aAttrs->HasAttr(aAtom) &&
          !aAttrs->AttrValueIs(kNameSpaceID_None, aAtom, nsGkAtoms::_empty,
                               eCaseMatters) &&
          !aAttrs->AttrValueIs(kNameSpaceID_None, aAtom, nsGkAtoms::_undefined,
@@ -544,26 +541,26 @@ const AttrArray* nsAccUtils::GetARIADefaults(dom::Element* aElement) {
 }
 
 bool nsAccUtils::HasARIAAttr(dom::Element* aElement, const nsAtom* aName) {
-  if (aElement->HasAttr(kNameSpaceID_None, aName)) {
+  if (aElement->HasAttr(aName)) {
     return true;
   }
   const auto* defaults = GetARIADefaults(aElement);
   if (!defaults) {
     return false;
   }
-  return defaults->HasAttr(kNameSpaceID_None, aName);
+  return defaults->HasAttr(aName);
 }
 
 bool nsAccUtils::GetARIAAttr(dom::Element* aElement, const nsAtom* aName,
                              nsAString& aResult) {
-  if (aElement->GetAttr(kNameSpaceID_None, aName, aResult)) {
+  if (aElement->GetAttr(aName, aResult)) {
     return true;
   }
   const auto* defaults = GetARIADefaults(aElement);
   if (!defaults) {
     return false;
   }
-  return defaults->GetAttr(kNameSpaceID_None, aName, aResult);
+  return defaults->GetAttr(aName, aResult);
 }
 
 const nsAttrValue* nsAccUtils::GetARIAAttr(dom::Element* aElement,

@@ -17,6 +17,9 @@
  *   In this implementation, session objects are only visible to the session
  *   that created or generated them.
  */
+
+#include <limits.h> /* for UINT_MAX and ULONG_MAX */
+
 #include "seccomon.h"
 #include "secitem.h"
 #include "secport.h"
@@ -1912,6 +1915,10 @@ NSC_DigestInit(CK_SESSION_HANDLE hSession,
         INIT_MECH(SHA256)
         INIT_MECH(SHA384)
         INIT_MECH(SHA512)
+        INIT_MECH(SHA3_224)
+        INIT_MECH(SHA3_256)
+        INIT_MECH(SHA3_384)
+        INIT_MECH(SHA3_512)
 
         default:
             crv = CKR_MECHANISM_INVALID;
@@ -1952,8 +1959,17 @@ NSC_Digest(CK_SESSION_HANDLE hSession,
         goto finish;
     }
 
-    /* do it: */
+#if (ULONG_MAX > UINT_MAX)
+    /* The context->hashUpdate function takes an unsigned int for its data
+     * length argument, but NSC_Digest takes an unsigned long. */
+    while (ulDataLen > UINT_MAX) {
+        (*context->hashUpdate)(context->cipherInfo, pData, UINT_MAX);
+        pData += UINT_MAX;
+        ulDataLen -= UINT_MAX;
+    }
+#endif
     (*context->hashUpdate)(context->cipherInfo, pData, ulDataLen);
+
     /*  NOTE: this assumes buf size is bigenough for the algorithm */
     (*context->end)(context->cipherInfo, pDigest, &digestLen, maxout);
     *pulDigestLen = digestLen;
@@ -1978,8 +1994,18 @@ NSC_DigestUpdate(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pPart,
     crv = sftk_GetContext(hSession, &context, SFTK_HASH, PR_TRUE, NULL);
     if (crv != CKR_OK)
         return crv;
-    /* do it: */
+
+#if (ULONG_MAX > UINT_MAX)
+    /* The context->hashUpdate function takes an unsigned int for its data
+     * length argument, but NSC_DigestUpdate takes an unsigned long. */
+    while (ulPartLen > UINT_MAX) {
+        (*context->hashUpdate)(context->cipherInfo, pPart, UINT_MAX);
+        pPart += UINT_MAX;
+        ulPartLen -= UINT_MAX;
+    }
+#endif
     (*context->hashUpdate)(context->cipherInfo, pPart, ulPartLen);
+
     return CKR_OK;
 }
 
@@ -2947,6 +2973,10 @@ NSC_SignInit(CK_SESSION_HANDLE hSession,
             INIT_HMAC_MECH(SHA256)
             INIT_HMAC_MECH(SHA384)
             INIT_HMAC_MECH(SHA512)
+            INIT_HMAC_MECH(SHA3_224)
+            INIT_HMAC_MECH(SHA3_256)
+            INIT_HMAC_MECH(SHA3_384)
+            INIT_HMAC_MECH(SHA3_512)
 
         case CKM_AES_CMAC_GENERAL:
             PORT_Assert(pMechanism->pParameter);
@@ -3160,6 +3190,13 @@ sftk_MACUpdate(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pPart,
         return crv;
 
     if (context->hashInfo) {
+#if (ULONG_MAX > UINT_MAX)
+        while (ulPartLen > UINT_MAX) {
+            (*context->hashUpdate)(context->cipherInfo, pPart, UINT_MAX);
+            pPart += UINT_MAX;
+            ulPartLen -= UINT_MAX;
+        }
+#endif
         (*context->hashUpdate)(context->hashInfo, pPart, ulPartLen);
     } else {
         /* must be block cipher MACing */
@@ -3692,6 +3729,10 @@ NSC_VerifyInit(CK_SESSION_HANDLE hSession,
             INIT_HMAC_MECH(SHA256)
             INIT_HMAC_MECH(SHA384)
             INIT_HMAC_MECH(SHA512)
+            INIT_HMAC_MECH(SHA3_224)
+            INIT_HMAC_MECH(SHA3_256)
+            INIT_HMAC_MECH(SHA3_384)
+            INIT_HMAC_MECH(SHA3_512)
 
         case CKM_SSL3_MD5_MAC:
             PORT_Assert(pMechanism->pParameter);
@@ -8313,6 +8354,10 @@ NSC_DeriveKey(CK_SESSION_HANDLE hSession,
             DERIVE_KEY_HASH(SHA256)
             DERIVE_KEY_HASH(SHA384)
             DERIVE_KEY_HASH(SHA512)
+            DERIVE_KEY_HASH(SHA3_224)
+            DERIVE_KEY_HASH(SHA3_256)
+            DERIVE_KEY_HASH(SHA3_384)
+            DERIVE_KEY_HASH(SHA3_512)
 
         case CKM_DH_PKCS_DERIVE: {
             SECItem derived, dhPublic;
@@ -8755,6 +8800,11 @@ NSC_GetOperationState(CK_SESSION_HANDLE hSession,
     if (crv != CKR_OK)
         return crv;
 
+    /* a zero cipherInfoLen signals that this context cannot be serialized */
+    if (context->cipherInfoLen == 0) {
+        return CKR_STATE_UNSAVEABLE;
+    }
+
     *pulOperationStateLen = context->cipherInfoLen + sizeof(CK_MECHANISM_TYPE) + sizeof(SFTKContextType);
     if (pOperationState == NULL) {
         sftk_FreeSession(session);
@@ -8825,6 +8875,10 @@ NSC_SetOperationState(CK_SESSION_HANDLE hSession,
                                       NULL);
                 if (crv != CKR_OK)
                     break;
+                if (context->cipherInfoLen == 0) {
+                    crv = CKR_SAVED_STATE_INVALID;
+                    break;
+                }
                 PORT_Memcpy(context->cipherInfo, pOperationState,
                             context->cipherInfoLen);
                 pOperationState += context->cipherInfoLen;

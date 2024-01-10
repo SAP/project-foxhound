@@ -49,7 +49,7 @@
 #include "vm/DateObject.h"
 #include "vm/Interpreter.h"
 #include "vm/Iteration.h"
-#include "vm/JSAtom.h"
+#include "vm/JSAtomUtils.h"  // Atomize
 #include "vm/JSContext.h"
 #include "vm/JSFunction.h"
 #include "vm/JSScript.h"
@@ -58,7 +58,6 @@
 #include "vm/Shape.h"
 #include "vm/TypedArrayObject.h"
 #include "vm/Watchtower.h"
-#include "vm/WellKnownAtom.h"  // js_*_str
 #include "vm/WrapperObject.h"
 #ifdef ENABLE_RECORD_TUPLE
 #  include "builtin/RecordObject.h"
@@ -72,7 +71,7 @@
 #include "vm/BooleanObject-inl.h"
 #include "vm/EnvironmentObject-inl.h"
 #include "vm/Interpreter-inl.h"
-#include "vm/JSAtom-inl.h"
+#include "vm/JSAtomUtils-inl.h"  // AtomToId, PrimitiveValueToId, IndexToId
 #include "vm/JSContext-inl.h"
 #include "vm/NativeObject-inl.h"
 #include "vm/NumberObject-inl.h"
@@ -292,13 +291,6 @@ bool js::Throw(JSContext* cx, HandleId id, unsigned errorNumber,
 
 /*** PropertyDescriptor operations and DefineProperties *********************/
 
-#ifndef ENABLE_DECORATORS
-// These are defined by CommonPropertyNames.h and WellKnownAtom.{cpp,h}
-// when decorators are enabled.
-static const char js_getter_str[] = "getter";
-static const char js_setter_str[] = "setter";
-#endif
-
 static Result<> CheckCallable(JSContext* cx, JSObject* obj,
                               const char* fieldName) {
   if (obj && !obj->isCallable()) {
@@ -376,15 +368,14 @@ bool js::ToPropertyDescriptor(JSContext* cx, HandleValue descval,
   if (hasGet) {
     if (v.isObject()) {
       if (checkAccessors) {
-        JS_TRY_OR_RETURN_FALSE(cx,
-                               CheckCallable(cx, &v.toObject(), js_getter_str));
+        JS_TRY_OR_RETURN_FALSE(cx, CheckCallable(cx, &v.toObject(), "getter"));
       }
       getter = &v.toObject();
     } else if (v.isUndefined()) {
       getter = nullptr;
     } else {
       JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
-                                JSMSG_BAD_GET_SET_FIELD, js_getter_str);
+                                JSMSG_BAD_GET_SET_FIELD, "getter");
       return false;
     }
   }
@@ -399,15 +390,14 @@ bool js::ToPropertyDescriptor(JSContext* cx, HandleValue descval,
   if (hasSet) {
     if (v.isObject()) {
       if (checkAccessors) {
-        JS_TRY_OR_RETURN_FALSE(cx,
-                               CheckCallable(cx, &v.toObject(), js_setter_str));
+        JS_TRY_OR_RETURN_FALSE(cx, CheckCallable(cx, &v.toObject(), "setter"));
       }
       setter = &v.toObject();
     } else if (v.isUndefined()) {
       setter = nullptr;
     } else {
       JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
-                                JSMSG_BAD_GET_SET_FIELD, js_setter_str);
+                                JSMSG_BAD_GET_SET_FIELD, "setter");
       return false;
     }
   }
@@ -438,11 +428,11 @@ bool js::ToPropertyDescriptor(JSContext* cx, HandleValue descval,
 Result<> js::CheckPropertyDescriptorAccessors(JSContext* cx,
                                               Handle<PropertyDescriptor> desc) {
   if (desc.hasGetter()) {
-    MOZ_TRY(CheckCallable(cx, desc.getter(), js_getter_str));
+    MOZ_TRY(CheckCallable(cx, desc.getter(), "getter"));
   }
 
   if (desc.hasSetter()) {
-    MOZ_TRY(CheckCallable(cx, desc.setter(), js_setter_str));
+    MOZ_TRY(CheckCallable(cx, desc.setter(), "setter"));
   }
 
   return Ok();
@@ -740,11 +730,9 @@ bool js::TestIntegrityLevel(JSContext* cx, HandleObject obj,
 
 /* * */
 
-static MOZ_ALWAYS_INLINE NativeObject* NewObject(JSContext* cx,
-                                                 const JSClass* clasp,
-                                                 Handle<TaggedProto> proto,
-                                                 gc::AllocKind kind,
-                                                 NewObjectKind newKind) {
+static MOZ_ALWAYS_INLINE NativeObject* NewObject(
+    JSContext* cx, const JSClass* clasp, Handle<TaggedProto> proto,
+    gc::AllocKind kind, NewObjectKind newKind, ObjectFlags objFlags) {
   MOZ_ASSERT(clasp->isNativeObject());
 
   // Some classes have specialized allocation functions and shouldn't end up
@@ -765,7 +753,7 @@ static MOZ_ALWAYS_INLINE NativeObject* NewObject(JSContext* cx,
 
   Rooted<SharedShape*> shape(
       cx, SharedShape::getInitialShape(cx, clasp, cx->realm(), proto, nfixed,
-                                       ObjectFlags()));
+                                       objFlags));
   if (!shape) {
     return nullptr;
   }
@@ -780,21 +768,20 @@ static MOZ_ALWAYS_INLINE NativeObject* NewObject(JSContext* cx,
   return obj;
 }
 
-NativeObject* js::NewObjectWithGivenTaggedProto(JSContext* cx,
-                                                const JSClass* clasp,
-                                                Handle<TaggedProto> proto,
-                                                gc::AllocKind allocKind,
-                                                NewObjectKind newKind) {
-  return NewObject(cx, clasp, proto, allocKind, newKind);
+NativeObject* js::NewObjectWithGivenTaggedProto(
+    JSContext* cx, const JSClass* clasp, Handle<TaggedProto> proto,
+    gc::AllocKind allocKind, NewObjectKind newKind, ObjectFlags objFlags) {
+  return NewObject(cx, clasp, proto, allocKind, newKind, objFlags);
 }
 
 NativeObject* js::NewObjectWithClassProto(JSContext* cx, const JSClass* clasp,
                                           HandleObject protoArg,
                                           gc::AllocKind allocKind,
-                                          NewObjectKind newKind) {
+                                          NewObjectKind newKind,
+                                          ObjectFlags objFlags) {
   if (protoArg) {
     return NewObjectWithGivenTaggedProto(cx, clasp, AsTaggedProto(protoArg),
-                                         allocKind, newKind);
+                                         allocKind, newKind, objFlags);
   }
 
   // Find the appropriate proto for clasp. Built-in classes have a cached
@@ -810,7 +797,7 @@ NativeObject* js::NewObjectWithClassProto(JSContext* cx, const JSClass* clasp,
   }
 
   Rooted<TaggedProto> taggedProto(cx, TaggedProto(proto));
-  return NewObject(cx, clasp, taggedProto, allocKind, newKind);
+  return NewObject(cx, clasp, taggedProto, allocKind, newKind, objFlags);
 }
 
 bool js::GetPrototypeFromConstructor(JSContext* cx, HandleObject newTarget,
@@ -1663,7 +1650,7 @@ bool js::LookupNameUnqualified(JSContext* cx, Handle<PropertyName*> name,
   // See note above RuntimeLexicalErrorObject.
   if (pobj == env) {
     bool isTDZ = false;
-    if (prop.isFound() && name != cx->names().dotThis) {
+    if (prop.isFound() && name != cx->names().dot_this_) {
       // Treat Debugger environments specially for TDZ checks, as they
       // look like non-native environments but in fact wrap native
       // environments.
@@ -1693,7 +1680,7 @@ bool js::LookupNameUnqualified(JSContext* cx, Handle<PropertyName*> name,
       if (!(env->is<BlockLexicalEnvironmentObject>() &&
             env->as<BlockLexicalEnvironmentObject>().scope().kind() ==
                 ScopeKind::NamedLambda)) {
-        MOZ_ASSERT(name != cx->names().dotThis);
+        MOZ_ASSERT(name != cx->names().dot_this_);
         env =
             RuntimeLexicalErrorObject::create(cx, env, JSMSG_BAD_CONST_ASSIGN);
         if (!env) {
@@ -1939,13 +1926,10 @@ bool js::SetPrototype(JSContext* cx, HandleObject obj, HandleObject proto,
   }
 
   /*
-   * Disallow mutating the [[Prototype]] on Typed Objects, per the spec.
+   * Disallow mutating the [[Prototype]] on WebAssembly GC objects.
    */
   if (obj->is<WasmGcObject>()) {
-    JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
-                              JSMSG_CANT_SET_PROTO_OF,
-                              "incompatible WebAssembly object");
-    return false;
+    return result.fail(JSMSG_CANT_SET_PROTO);
   }
 
   /* ES6 9.1.2 step 5 forbids changing [[Prototype]] if not [[Extensible]]. */
@@ -1996,6 +1980,10 @@ bool js::PreventExtensions(JSContext* cx, HandleObject obj,
                            ObjectOpResult& result) {
   if (obj->is<ProxyObject>()) {
     return js::Proxy::preventExtensions(cx, obj, result);
+  }
+
+  if (obj->is<WasmGcObject>()) {
+    return result.failCantPreventExtensions();
   }
 
   if (!obj->nonProxyIsExtensible()) {
@@ -2077,7 +2065,6 @@ bool js::DefineAccessorProperty(JSContext* cx, HandleObject obj, HandleId id,
               setter ? mozilla::Some(setter) : mozilla::Nothing(), attrs));
 
   if (DefinePropertyOp op = obj->getOpsDefineProperty()) {
-    MOZ_ASSERT(!cx->isHelperThreadContext());
     return op(cx, obj, id, desc, result);
   }
   return NativeDefineProperty(cx, obj.as<NativeObject>(), id, desc, result);
@@ -2088,7 +2075,6 @@ bool js::DefineDataProperty(JSContext* cx, HandleObject obj, HandleId id,
                             ObjectOpResult& result) {
   Rooted<PropertyDescriptor> desc(cx, PropertyDescriptor::Data(value, attrs));
   if (DefinePropertyOp op = obj->getOpsDefineProperty()) {
-    MOZ_ASSERT(!cx->isHelperThreadContext());
     return op(cx, obj, id, desc, result);
   }
   return NativeDefineProperty(cx, obj.as<NativeObject>(), id, desc, result);
@@ -2102,7 +2088,6 @@ bool js::DefineAccessorProperty(JSContext* cx, HandleObject obj, HandleId id,
     return false;
   }
   if (!result) {
-    MOZ_ASSERT(!cx->isHelperThreadContext());
     result.reportError(cx, obj, id);
     return false;
   }
@@ -2116,7 +2101,6 @@ bool js::DefineDataProperty(JSContext* cx, HandleObject obj, HandleId id,
     return false;
   }
   if (!result) {
-    MOZ_ASSERT(!cx->isHelperThreadContext());
     result.reportError(cx, obj, id);
     return false;
   }
@@ -2147,7 +2131,6 @@ bool js::DefineDataElement(JSContext* cx, HandleObject obj, uint32_t index,
 bool js::SetImmutablePrototype(JSContext* cx, HandleObject obj,
                                bool* succeeded) {
   if (obj->hasDynamicPrototype()) {
-    MOZ_ASSERT(!cx->isHelperThreadContext());
     return Proxy::setImmutablePrototype(cx, obj, succeeded);
   }
 
@@ -2207,41 +2190,17 @@ JS_PUBLIC_API bool js::ShouldIgnorePropertyDefinition(JSContext* cx,
   }
 
 #ifdef NIGHTLY_BUILD
-  if (key == JSProto_Array &&
-      !cx->realm()->creationOptions().getArrayGroupingEnabled() &&
-      (id == NameToId(cx->names().group) ||
-       id == NameToId(cx->names().groupToMap))) {
-    return true;
-  }
-#endif
-
   // It's gently surprising that this is JSProto_Function, but the trick
   // to realize is that this is a -constructor function-, not a function
   // on the prototype; and the proto of the constructor is JSProto_Function.
   if (key == JSProto_Function &&
-      !cx->realm()->creationOptions().getArrayFromAsyncEnabled() &&
-      id == NameToId(cx->names().fromAsync)) {
+      !cx->realm()->creationOptions().getArrayGroupingEnabled() &&
+      (id == NameToId(cx->names().groupBy))) {
     return true;
   }
+#endif
 
-  if (key == JSProto_Array &&
-      !cx->realm()->creationOptions().getChangeArrayByCopyEnabled() &&
-      (id == NameToId(cx->names().with) ||
-       id == NameToId(cx->names().toReversed) ||
-       id == NameToId(cx->names().toSorted) ||
-       id == NameToId(cx->names().toSpliced))) {
-    return true;
-  }
-
-  if (key == JSProto_TypedArray &&
-      !cx->realm()->creationOptions().getChangeArrayByCopyEnabled() &&
-      (id == NameToId(cx->names().with) ||
-       id == NameToId(cx->names().toReversed) ||
-       id == NameToId(cx->names().toSorted))) {
-    return true;
-  }
-
-#ifdef ENABLE_NEW_SET_METHODS
+#ifdef NIGHTLY_BUILD
   if (key == JSProto_Set &&
       !cx->realm()->creationOptions().getNewSetMethodsEnabled() &&
       (id == NameToId(cx->names().union_) ||
@@ -2251,6 +2210,16 @@ JS_PUBLIC_API bool js::ShouldIgnorePropertyDefinition(JSContext* cx,
        id == NameToId(cx->names().isSupersetOf) ||
        id == NameToId(cx->names().isDisjointFrom) ||
        id == NameToId(cx->names().symmetricDifference))) {
+    return true;
+  }
+#endif
+
+#ifdef NIGHTLY_BUILD
+  if (key == JSProto_ArrayBuffer &&
+      !cx->realm()->creationOptions().getArrayBufferTransferEnabled() &&
+      (id == NameToId(cx->names().transfer) ||
+       id == NameToId(cx->names().transferToFixedLength) ||
+       id == NameToId(cx->names().detached))) {
     return true;
   }
 #endif
@@ -2362,7 +2331,7 @@ bool JS::OrdinaryToPrimitive(JSContext* cx, HandleObject obj, JSType hint,
         if (fun->maybeNative() == obj_toString &&
             !MaybeHasInterestingSymbolProperty(
                 cx, obj, cx->wellKnownSymbols().toStringTag)) {
-          vp.setString(cx->names().objectObject);
+          vp.setString(cx->names().object_Object_);
           return true;
         }
         if (!js::Call(cx, vp, obj, vp)) {
@@ -2729,7 +2698,7 @@ void GetObjectSlotNameFunctor::operator()(JS::TracingContext* tcx, char* buf,
         }
 #define TEST_SLOT_MATCHES_PROTOTYPE(name, clasp) \
   else if ((JSProto_##name) == slot) {           \
-    slotname = js_##name##_str;                  \
+    slotname = #name;                            \
   }
         JS_FOR_EACH_PROTOTYPE(TEST_SLOT_MATCHES_PROTOTYPE)
 #undef TEST_SLOT_MATCHES_PROTOTYPE

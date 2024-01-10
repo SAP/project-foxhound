@@ -25,7 +25,7 @@ class MFCDMChild final : public PMFCDMChild {
   explicit MFCDMChild(const nsAString& aKeySystem);
 
   using CapabilitiesPromise = MozPromise<MFCDMCapabilitiesIPDL, nsresult, true>;
-  RefPtr<CapabilitiesPromise> GetCapabilities();
+  RefPtr<CapabilitiesPromise> GetCapabilities(bool aIsHWSecured);
 
   template <typename PromiseType>
   already_AddRefed<PromiseType> InvokeAsync(
@@ -33,12 +33,13 @@ class MFCDMChild final : public PMFCDMChild {
       MozPromiseHolder<PromiseType>& aPromise);
 
   using InitPromise = MozPromise<MFCDMInitIPDL, nsresult, true>;
-  RefPtr<InitPromise> Init(const nsAString& aOrigin,
-                           const CopyableTArray<nsString>& aInitDataTypes,
-                           const KeySystemConfig::Requirement aPersistentState,
-                           const KeySystemConfig::Requirement aDistinctiveID,
-                           const bool aHWSecure,
-                           WMFCDMProxyCallback* aProxyCallback);
+  RefPtr<InitPromise> Init(
+      const nsAString& aOrigin, const CopyableTArray<nsString>& aInitDataTypes,
+      const KeySystemConfig::Requirement aPersistentState,
+      const KeySystemConfig::Requirement aDistinctiveID,
+      const CopyableTArray<MFCDMMediaCapability>& aAudioCapabilities,
+      const CopyableTArray<MFCDMMediaCapability>& aVideoCapabilities,
+      WMFCDMProxyCallback* aProxyCallback);
 
   using SessionPromise = MozPromise<nsString, nsresult, true>;
   RefPtr<SessionPromise> CreateSessionAndGenerateRequest(
@@ -67,6 +68,7 @@ class MFCDMChild final : public PMFCDMChild {
       const MFCDMKeyExpiration& aExpiration);
 
   uint64_t Id() const { return mId; }
+  const nsString& KeySystem() const { return mKeySystem; }
 
   void IPDLActorDestroyed() {
     AssertOnManagerThread();

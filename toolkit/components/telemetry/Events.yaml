@@ -125,12 +125,12 @@ aboutprivatebrowsing:
     record_in_processes: ["content"]
     description: >
       This is recorded when a user clicks a link on the private browsing newtab.
-    bug_numbers: [1709344, 1754635, 1781973, 1811146]
+    bug_numbers: [1709344, 1754635, 1781973, 1811146, 1841925]
     notification_emails:
       - "dmosedale@mozilla.com"
       - "barret@mozilla.com"
       - "omc@mozilla.com"
-    expiry_version: "118"
+    expiry_version: "124"
     products:
       - "firefox"
 
@@ -167,21 +167,6 @@ readermode:
       label: The type of button clicked.
     products:
       - "firefox"
-  pocket_cta:
-    objects: ["close_cta", "sign_up_click", "rec_click", "minimize_recs_click", "cta_seen", "rec_saved"]
-    release_channel_collection: opt-out
-    record_in_processes: ["content"]
-    description: >
-      Reader Mode Pocket CTA events
-    bug_numbers: [1726395]
-    notification_emails:
-      - "kirill@getpocket.com"
-      - "sdowne@getpocket.com"
-    expiry_version: never
-    extra_keys:
-      logged_in: Pocket user login status.
-    products:
-      - "firefox"
 
 addonsManager:
   install:
@@ -205,7 +190,7 @@ addonsManager:
       error: The AddonManager error related to an install or update failure.
       source: >
         The source that originally triggered the add-on installation, one of "about:addons",
-        "about:debugging", "about:preferences", "amo", "disco", "distribution",
+        "about:debugging", "about:preferences", "amo", "browser-import", "disco", "distribution",
         "extension", "enterprise-policy", "file-url", "geckoview-app", "gmp-plugin",
         "internal", "plugin", "rtamo", "siteperm-addon-provider" "sync", "system-addon",
         "temporary-addon", "unknown".
@@ -783,7 +768,7 @@ urlbar:
       search result.
       The value field records the initial interaction type. One of:
         "typed", "dropped", "pasted", "topsites"
-    bug_numbers: [1559136, 1671404]
+    bug_numbers: [1559136, 1671404, 1466103]
     notification_emails:
       - "fx-search-telemetry@mozilla.com"
     expiry_version: never
@@ -794,11 +779,12 @@ urlbar:
       selIndex: index of the selected result in the urlbar panel, or -1.
       selType: >
         type of the selected result in the urlbar panel. One of:
-          "autofill", "visit", "bookmark", "history", "keyword", "search",
-          "searchsuggestion", "searchsuggestion_rich", "switchtab",
-          "remotetab", "extension", "oneoff", "keywordoffer", "canonized",
-          "tip", "tiphelp", "formhistory", "tabtosearch", "quicksuggest",
-          "weather", "dynamic-wikipedia", "navigational", "none"
+          "autofill", "visit", "bookmark", "bookmark_adaptive", "history",
+          "history_adaptive", "keyword", "search", "searchsuggestion",
+          "searchsuggestion_rich", "switchtab", "remotetab", "extension",
+          "oneoff", "keywordoffer", "canonized", "tip", "tiphelp",
+          "formhistory", "tabtosearch", "quicksuggest", "weather",
+          "dynamic-wikipedia", "navigational", "none"
       provider: The name of the provider that presented the result.
   abandonment:
     objects: ["blur"]
@@ -928,8 +914,10 @@ normandy:
       addonVersion: For addon_study, the version of the addon for which the recipe ended.
       branch: The branch of the experiment that this client was on.
       enrollmentId: A unique ID for this enrollment that will be included in all related Telemetry.
-      changedPref: For preference_study, the preference that was detected to change that caused the unenrollment.
-    bug_numbers: [1443560]
+      changedPref: >
+        For preference_study or nimbus_experiment, the preference that was
+        detected to change that caused the unenrollment.
+    bug_numbers: [1443560, 1843126]
     notification_emails: ["normandy-notifications@mozilla.com"]
     products:
       - "firefox"
@@ -1151,6 +1139,8 @@ browser.migration:
         "1" if bookmarks were selected. "0" otherwise.
       payment_methods: >
         "1" if payment methods were selected. "0" otherwise.
+      extensions: >
+        "1" if extensions were selected. "0" otherwise.
       other: A count of the number of other resource types that were selected.
       configured: >
         "1" if Variant 2 of the new Migration Wizard was being used, and the list of
@@ -1209,6 +1199,8 @@ browser.migration:
         "1" if bookmarks are being migrated. "0" otherwise.
       payment_methods: >
         "1" if payment methods are being migrated. "0" otherwise.
+      extensions: >
+        "1" if extensions are being migrated. "0" otherwise.
       other: A count of the number of other resource types that are being migrated.
   migration_finished:
     objects: ["legacy_wizard", "wizard"]
@@ -1235,6 +1227,10 @@ browser.migration:
         "1" if bookmarks were migrated. "0" otherwise.
       payment_methods: >
         "1" if payment methods were migrated. "0" otherwise.
+      extensions: >
+        "1" if no extensions were matched, "2" if only some extensions
+        were matched, "3" if all extensions were matched, and "0" if extensions
+        weren't selected for migration.
       other: A count of the number of other resource types that were migrated.
 
 pwmgr:
@@ -1435,6 +1431,7 @@ relay_integration:
       is_relay_user: >
         Whether the user is a relay user or not.
         Only present if the object is "offer_relay"
+    release_channel_collection: opt-out
   mask_panel:
     description: >
       Panels to show the state of the email alias generation
@@ -1449,6 +1446,7 @@ relay_integration:
       error_code: >
         The error code after users click the email alias generation panel.
         When the event is successful, the error_code  is 0.
+    release_channel_collection: opt-out
   opt_in_panel:
     description: >
       Panel to opt-in Firefox Relay Integration
@@ -1459,6 +1457,7 @@ relay_integration:
     products: ["firefox"]
     record_in_processes: [main]
     notification_emails: ["passwords-dev@mozilla.org"]
+    release_channel_collection: opt-out
   pref_change:
     description: >
       Checkbox in the settings page to enable/disable relay
@@ -1469,6 +1468,7 @@ relay_integration:
     products: ["firefox"]
     record_in_processes: [main]
     notification_emails: ["passwords-dev@mozilla.org"]
+    release_channel_collection: opt-out
 
 jsonfile:
   load:
@@ -1610,25 +1610,16 @@ messaging_experiments:
     notification_emails:
       - ujet@mozilla.com
     expiry_version: never
-  feature_callout:
-    objects:
-      - create_failed
-    methods:
-      - feature_callout
-    release_channel_collection: opt-out
-    products:
-      - firefox
-    record_in_processes:
-      - main
-    description: >
-      Record errors when the feature callout surface is unable to be
-      created due to a missing parent element. The value field contains a
-      concatenation of the Message ID and the parent selector.
-    bug_numbers:
-      - 1788996
-    notification_emails:
-      - omc@mozilla.com
-    expiry_version: never
+
+telemetry:
+  early_event:
+    objects: ["startup"]
+    bug_numbers: [1837230]
+    notification_emails: ["chutten@mozilla.com"]
+    products: ["firefox"]
+    record_in_processes: ["main"]
+    description: This is a mirrored-to verification event.
+    expiry_version: "120"
 
 # This category contains event entries used for Telemetry tests.
 # They will not be sent out with any pings.
@@ -2583,6 +2574,29 @@ security.ui.protectionspopup:
     release_channel_collection: opt-out
     record_in_processes:
       - main
+    products:
+      - firefox
+
+privacy.ui.fpp:
+  click:
+    objects: [
+      "checkbox",
+      "menu",
+    ]
+    bug_numbers:
+      - 1841097
+    description: >
+      User interaction by click events on fingerprinting protection checkbox in
+      the ETP Custom subpanel.
+    expiry_version: never
+    notification_emails:
+      - tom@mozilla.com
+      - tschuster@mozilla.com
+      - tihuang@mozilla.com
+      - seceng-telemetry@mozilla.com
+    release_channel_collection: opt-out
+    record_in_processes:
+      - all
     products:
       - firefox
 
@@ -3936,6 +3950,76 @@ firefoxview:
       - main
     bug_numbers:
       - 1779642
+    expiry_version: "never"
+    release_channel_collection: opt-out
+
+firefoxview_next:
+  recently_closed:
+    objects: ["tabs"]
+    description: >
+      Recorded when a recently closed tab is clicked
+    extra_keys:
+      delta: Time since the tab was closed
+      position: The position of the tab in the recently closed tab list (starting at 1)
+      page: The short page name where the recently closed tab was clicked
+    notification_emails:
+      - firefoxview@mozilla.com
+    products:
+      - "firefox"
+    record_in_processes:
+      - main
+    bug_numbers:
+      - 1842616
+    expiry_version: "never"
+    release_channel_collection: opt-out
+  dismiss_closed_tab:
+    objects: ["tabs"]
+    description: >
+      Recorded when a recently closed tab is dismissed
+    extra_keys:
+      delta: Time since the tab was closed to when dismissed
+      position: The position of the tab in the recently closed tab list (starting at 1)
+      page: The short page name where the recently closed tab was dismissed
+    notification_emails:
+      - firefoxview@mozilla.com
+    products:
+      - "firefox"
+    record_in_processes:
+      - main
+    bug_numbers:
+      - 1842616
+    expiry_version: "never"
+    release_channel_collection: opt-out
+  card_collapsed:
+    objects: ["card_container"]
+    description: >
+      Recorded when a card-container is collapsed
+    extra_keys:
+      data_type: The type of data being collapsed in a card on the 'Recent browsing' page
+    notification_emails:
+      - firefoxview@mozilla.com
+    products:
+      - "firefox"
+    record_in_processes:
+      - main
+    bug_numbers:
+      - 1842616
+    expiry_version: "never"
+    release_channel_collection: opt-out
+  change_page:
+    objects: ["navigation"]
+    description: >
+      Recorded when the page/view is changed in Firefox View
+    extra_keys:
+      page: The short page name that the user is navigating to
+    notification_emails:
+      - firefoxview@mozilla.com
+    products:
+      - "firefox"
+    record_in_processes:
+      - main
+    bug_numbers:
+      - 1842616
     expiry_version: "never"
     release_channel_collection: opt-out
 

@@ -113,6 +113,7 @@
     --input-disabled-border-color: GrayText;
     --input-hover-border-color: Highlight;
     --link-outline: 1.5px solid LinkText;
+    --hcm-highligh-filter: invert(100%);
   }
   .annotationLayer .textWidgetAnnotation :is(input, textarea):required,
   .annotationLayer .choiceWidgetAnnotation select:required,
@@ -123,7 +124,34 @@
   }
 
   .annotationLayer .linkAnnotation:hover {
-    backdrop-filter: invert(100%);
+    backdrop-filter: var(--hcm-highligh-filter);
+  }
+
+  .annotationLayer .linkAnnotation > a:hover {
+    opacity: 0 !important;
+    background: none !important;
+    box-shadow: none;
+  }
+
+  .annotationLayer .popupAnnotation .popup {
+    outline: calc(1.5px * var(--scale-factor)) solid CanvasText !important;
+    background-color: ButtonFace !important;
+    color: ButtonText !important;
+  }
+
+  .annotationLayer .highlightArea:hover::after {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    backdrop-filter: var(--hcm-highligh-filter);
+    content: "";
+    pointer-events: none;
+  }
+
+  .annotationLayer .popupAnnotation.focused .popup {
+    outline: calc(3px * var(--scale-factor)) solid Highlight !important;
   }
 }
 
@@ -150,6 +178,7 @@
   position: absolute;
   width: 100%;
   height: 100%;
+  pointer-events: none;
 }
 
 .annotationLayer section {
@@ -174,11 +203,19 @@
 }
 
 .annotationLayer
-  :is(.linkAnnotation, .buttonWidgetAnnotation.pushButton)
+  :is(.linkAnnotation, .buttonWidgetAnnotation.pushButton):not(.hasBorder)
   > a:hover {
   opacity: 0.2;
-  background: rgba(255, 255, 0, 1);
+  background-color: rgba(255, 255, 0, 1);
   box-shadow: 0 2px 10px rgba(255, 255, 0, 1);
+}
+
+.annotationLayer .linkAnnotation.hasBorder:hover {
+  background-color: rgba(255, 255, 0, 0.2);
+}
+
+.annotationLayer .hasBorder {
+  background-size: 100% 100%;
 }
 
 .annotationLayer .textAnnotation img {
@@ -322,32 +359,27 @@
   appearance: none;
 }
 
-.annotationLayer .popupTriggerArea {
+.annotationLayer .fileAttachmentAnnotation .popupTriggerArea {
   height: 100%;
   width: 100%;
 }
 
-.annotationLayer .fileAttachmentAnnotation .popupTriggerArea {
-  position: absolute;
-}
-
-.annotationLayer .popupWrapper {
+.annotationLayer .popupAnnotation {
   position: absolute;
   font-size: calc(9px * var(--scale-factor));
-  width: 100%;
-  min-width: calc(180px * var(--scale-factor));
   pointer-events: none;
+  width: max-content;
+  max-width: 45%;
+  height: auto;
 }
 
 .annotationLayer .popup {
-  position: absolute;
-  max-width: calc(180px * var(--scale-factor));
   background-color: rgba(255, 255, 153, 1);
   box-shadow: 0 calc(2px * var(--scale-factor)) calc(5px * var(--scale-factor))
     rgba(136, 136, 136, 1);
   border-radius: calc(2px * var(--scale-factor));
+  outline: 1.5px solid rgb(255, 255, 74);
   padding: calc(6px * var(--scale-factor));
-  margin-left: calc(5px * var(--scale-factor));
   cursor: pointer;
   font: message-box;
   white-space: normal;
@@ -355,17 +387,27 @@
   pointer-events: auto;
 }
 
-.annotationLayer .popup > * {
+.annotationLayer .popupAnnotation.focused .popup {
+  outline-width: 3px;
+}
+
+.annotationLayer .popup * {
   font-size: calc(9px * var(--scale-factor));
 }
 
-.annotationLayer .popup h1 {
+.annotationLayer .popup > .header {
   display: inline-block;
 }
 
-.annotationLayer .popupDate {
+.annotationLayer .popup > .header h1 {
+  display: inline;
+}
+
+.annotationLayer .popup > .header .popupDate {
   display: inline-block;
   margin-left: calc(5px * var(--scale-factor));
+  width: -moz-fit-content;
+  width: fit-content;
 }
 
 .annotationLayer .popupContent {
@@ -417,6 +459,16 @@
 .annotationLayer .annotationTextContent span {
   width: 100%;
   display: inline-block;
+}
+
+.annotationLayer svg.quadrilateralsContainer {
+  contain: strict;
+  width: 0;
+  height: 0;
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: -1;
 }
 
 
@@ -736,10 +788,18 @@
 
 
 :root {
-  --focus-outline: solid 2px blue;
-  --hover-outline: dashed 2px blue;
+  --outline-width: 2px;
+  --outline-color: blue;
+  --focus-outline: solid var(--outline-width) var(--outline-color);
+  --hover-outline: dashed var(--outline-width) var(--outline-color);
   --freetext-line-height: 1.35;
   --freetext-padding: 2px;
+  --resizer-size: 8px;
+  --resizer-shift: calc(
+    0px - var(--outline-width) - var(--resizer-size) / 2 - var(--outline-width) /
+      2
+  );
+  --resizer-color: white;
   --editorFreeText-editing-cursor: text;
   --editorInk-editing-cursor: url(images/cursor-editorInk.svg) 0 16, pointer;
 }
@@ -753,8 +813,10 @@
 
 @media screen and (forced-colors: active) {
   :root {
-    --focus-outline: solid 3px ButtonText;
-    --hover-outline: dashed 3px ButtonText;
+    --outline-width: 3px;
+    --outline-color: ButtonText;
+    --resizer-size: 12px;
+    --resizer-color: ButtonFace;
   }
 }
 
@@ -771,12 +833,20 @@
 .annotationEditorLayer {
   background: transparent;
   position: absolute;
-  top: 0;
-  left: 0;
+  inset: 0;
   font-size: calc(100px * var(--scale-factor));
   transform-origin: 0 0;
   cursor: auto;
   z-index: 4;
+}
+
+.annotationEditorLayer.waiting {
+  content: "";
+  cursor: wait;
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
 }
 
 .annotationEditorLayer.freeTextEditing {
@@ -787,47 +857,49 @@
   cursor: var(--editorInk-editing-cursor);
 }
 
-.annotationEditorLayer :is(.freeTextEditor, .inkEditor)[draggable="true"] {
+.annotationEditorLayer
+  :is(.freeTextEditor, .inkEditor, .stampEditor).draggable.selectedEditor {
   cursor: move;
 }
 
 .annotationEditorLayer .selectedEditor {
   outline: var(--focus-outline);
-  resize: none;
 }
 
-.annotationEditorLayer .freeTextEditor {
+.annotationEditorLayer :is(.freeTextEditor, .inkEditor, .stampEditor) {
   position: absolute;
   background: transparent;
   border-radius: 3px;
-  padding: calc(var(--freetext-padding) * var(--scale-factor));
-  resize: none;
-  width: auto;
-  height: auto;
   z-index: 1;
   transform-origin: 0 0;
-  touch-action: none;
   cursor: auto;
+  max-width: 100%;
+  max-height: 100%;
+}
+
+.annotationEditorLayer .freeTextEditor {
+  padding: calc(var(--freetext-padding) * var(--scale-factor));
+  width: auto;
+  height: auto;
+  touch-action: none;
 }
 
 .annotationEditorLayer .freeTextEditor .internal {
   background: transparent;
   border: none;
-  top: 0;
-  left: 0;
+  inset: 0;
   overflow: visible;
   white-space: nowrap;
-  resize: none;
   font: 10px sans-serif;
   line-height: var(--freetext-line-height);
+  user-select: none;
 }
 
 .annotationEditorLayer .freeTextEditor .overlay {
   position: absolute;
   display: none;
   background: transparent;
-  top: 0;
-  left: 0;
+  inset: 0;
   width: 100%;
   height: 100%;
 }
@@ -843,45 +915,165 @@
 
 .annotationEditorLayer .freeTextEditor .internal:focus {
   outline: none;
-}
-
-.annotationEditorLayer .inkEditor.disabled {
-  resize: none;
-}
-
-.annotationEditorLayer .inkEditor.disabled.selectedEditor {
-  resize: horizontal;
+  user-select: auto;
 }
 
 .annotationEditorLayer
-  :is(.freeTextEditor, .inkEditor):hover:not(.selectedEditor) {
+  :is(.freeTextEditor, .inkEditor, .stampEditor):hover:not(.selectedEditor) {
   outline: var(--hover-outline);
 }
 
 .annotationEditorLayer .inkEditor {
-  position: absolute;
-  background: transparent;
-  border-radius: 3px;
-  overflow: auto;
   width: 100%;
   height: 100%;
-  z-index: 1;
-  transform-origin: 0 0;
-  cursor: auto;
 }
 
 .annotationEditorLayer .inkEditor.editing {
-  resize: none;
   cursor: inherit;
 }
 
 .annotationEditorLayer .inkEditor .inkEditorCanvas {
   position: absolute;
-  top: 0;
-  left: 0;
+  inset: 0;
   width: 100%;
   height: 100%;
   touch-action: none;
+}
+
+.annotationEditorLayer .stampEditor {
+  width: auto;
+  height: auto;
+}
+
+.annotationEditorLayer .stampEditor canvas {
+  width: 100%;
+  height: 100%;
+}
+
+.annotationEditorLayer {
+  :is(.freeTextEditor, .inkEditor, .stampEditor) {
+    & > .resizers {
+      width: 100%;
+      height: 100%;
+      position: absolute;
+      inset: 0;
+
+      &.hidden {
+        display: none;
+      }
+
+      & > .resizer {
+        width: var(--resizer-size);
+        height: var(--resizer-size);
+        border-radius: 50%;
+        background: var(--resizer-color);
+        border: var(--focus-outline);
+        position: absolute;
+
+        &.topLeft {
+          top: var(--resizer-shift);
+          left: var(--resizer-shift);
+        }
+
+        &.topMiddle {
+          top: var(--resizer-shift);
+          left: calc(50% + var(--resizer-shift));
+        }
+
+        &.topRight {
+          top: var(--resizer-shift);
+          right: var(--resizer-shift);
+        }
+
+        &.middleRight {
+          top: calc(50% + var(--resizer-shift));
+          right: var(--resizer-shift);
+        }
+
+        &.bottomRight {
+          bottom: var(--resizer-shift);
+          right: var(--resizer-shift);
+        }
+
+        &.bottomMiddle {
+          bottom: var(--resizer-shift);
+          left: calc(50% + var(--resizer-shift));
+        }
+
+        &.bottomLeft {
+          bottom: var(--resizer-shift);
+          left: var(--resizer-shift);
+        }
+
+        &.middleLeft {
+          top: calc(50% + var(--resizer-shift));
+          left: var(--resizer-shift);
+        }
+      }
+    }
+  }
+
+  &[data-main-rotation="0"]
+    :is([data-editor-rotation="0"], [data-editor-rotation="180"]),
+  &[data-main-rotation="90"]
+    :is([data-editor-rotation="270"], [data-editor-rotation="90"]),
+  &[data-main-rotation="180"]
+    :is([data-editor-rotation="180"], [data-editor-rotation="0"]),
+  &[data-main-rotation="270"]
+    :is([data-editor-rotation="90"], [data-editor-rotation="270"]) {
+    & > .resizers > .resizer {
+      &.topLeft,
+      &.bottomRight {
+        cursor: nwse-resize;
+      }
+
+      &.topMiddle,
+      &.bottomMiddle {
+        cursor: ns-resize;
+      }
+
+      &.topRight,
+      &.bottomLeft {
+        cursor: nesw-resize;
+      }
+
+      &.middleRight,
+      &.middleLeft {
+        cursor: ew-resize;
+      }
+    }
+  }
+
+  &[data-main-rotation="0"]
+    :is([data-editor-rotation="90"], [data-editor-rotation="270"]),
+  &[data-main-rotation="90"]
+    :is([data-editor-rotation="0"], [data-editor-rotation="180"]),
+  &[data-main-rotation="180"]
+    :is([data-editor-rotation="270"], [data-editor-rotation="90"]),
+  &[data-main-rotation="270"]
+    :is([data-editor-rotation="180"], [data-editor-rotation="0"]) {
+    & > .resizers > .resizer {
+      &.topLeft,
+      &.bottomRight {
+        cursor: nesw-resize;
+      }
+
+      &.topMiddle,
+      &.bottomMiddle {
+        cursor: ew-resize;
+      }
+
+      &.topRight,
+      &.bottomLeft {
+        cursor: nwse-resize;
+      }
+
+      &.middleRight,
+      &.middleLeft {
+        cursor: ns-resize;
+      }
+    }
+  }
 }
 
 :root {
@@ -952,6 +1144,10 @@
   position: relative;
   width: 0;
   height: var(--viewer-container-height);
+}
+
+.pdfViewer.noUserSelect {
+  user-select: none;
 }
 
 .pdfViewer:is(.scrollHorizontal, .scrollWrapped),
@@ -1071,6 +1267,7 @@
   --toggled-btn-color: rgba(0, 0, 0, 1);
   --toggled-btn-bg-color: rgba(0, 0, 0, 0.3);
   --toggled-hover-active-btn-color: rgba(0, 0, 0, 0.4);
+  --toggled-hover-btn-outline: none;
   --dropdown-btn-bg-color: rgba(215, 215, 219, 1);
   --dropdown-btn-border: none;
   --separator-color: rgba(0, 0, 0, 0.3);
@@ -1098,6 +1295,7 @@
   --treeitem-collapsed-icon: url(images/treeitem-collapsed.svg);
   --toolbarButton-editorFreeText-icon: url(images/toolbarButton-editorFreeText.svg);
   --toolbarButton-editorInk-icon: url(images/toolbarButton-editorInk.svg);
+  --toolbarButton-editorStamp-icon: url(images/toolbarButton-editorStamp.svg);
   --toolbarButton-menuArrow-icon: url(images/toolbarButton-menuArrow.svg);
   --toolbarButton-sidebarToggle-icon: url(images/toolbarButton-sidebarToggle.svg);
   --toolbarButton-secondaryToolbarToggle-icon: url(images/toolbarButton-secondaryToolbarToggle.svg);
@@ -1131,6 +1329,7 @@
   --secondaryToolbarButton-spreadOdd-icon: url(images/secondaryToolbarButton-spreadOdd.svg);
   --secondaryToolbarButton-spreadEven-icon: url(images/secondaryToolbarButton-spreadEven.svg);
   --secondaryToolbarButton-documentProperties-icon: url(images/secondaryToolbarButton-documentProperties.svg);
+  --editorParams-stampAddImage-icon: url(images/toolbarButton-zoomIn.svg);
 }
 
 :root:dir(rtl) {
@@ -1191,6 +1390,8 @@
     --toolbar-icon-opacity: 1;
     --toolbar-icon-bg-color: ButtonText;
     --toolbar-icon-hover-bg-color: ButtonFace;
+    --toggled-hover-active-btn-color: ButtonText;
+    --toggled-hover-btn-outline: 2px solid ButtonBorder;
     --toolbar-border-color: CanvasText;
     --toolbar-border-bottom: 1px solid var(--toolbar-border-color);
     --toolbar-box-shadow: none;
@@ -1572,20 +1773,30 @@ body {
   margin-bottom: -4px;
 }
 
-#editorInkParamsToolbar {
+#editorStampParamsToolbar {
   inset-inline-end: 40px;
   background-color: var(--toolbar-bg-color);
 }
 
-#editorFreeTextParamsToolbar {
+#editorInkParamsToolbar {
   inset-inline-end: 68px;
   background-color: var(--toolbar-bg-color);
+}
+
+#editorFreeTextParamsToolbar {
+  inset-inline-end: 96px;
+  background-color: var(--toolbar-bg-color);
+}
+
+#editorStampAddImage::before {
+  mask-image: var(--editorParams-stampAddImage-icon);
 }
 
 .doorHanger,
 .doorHangerRight {
   border-radius: 2px;
-  box-shadow: 0 1px 5px var(--doorhanger-border-color),
+  box-shadow:
+    0 1px 5px var(--doorhanger-border-color),
     0 0 0 1px var(--doorhanger-border-color);
   border: var(--doorhanger-border-color-whcm);
 }
@@ -1762,6 +1973,11 @@ body {
   color: var(--toggled-btn-color);
 }
 
+:is(.toolbarButton, .secondaryToolbarButton).toggled:hover,
+.splitToolbarButton.toggled > .toolbarButton.toggled:hover {
+  outline: var(--toggled-hover-btn-outline) !important;
+}
+
 :is(.toolbarButton, .secondaryToolbarButton).toggled::before {
   background-color: var(--toggled-btn-color);
 }
@@ -1894,6 +2110,10 @@ body {
 
 #editorInk::before {
   mask-image: var(--toolbarButton-editorInk-icon);
+}
+
+#editorStamp::before {
+  mask-image: var(--toolbarButton-editorStamp-icon);
 }
 
 #print::before,

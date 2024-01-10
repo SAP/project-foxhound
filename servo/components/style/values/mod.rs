@@ -12,7 +12,7 @@ use crate::parser::{Parse, ParserContext};
 use crate::values::distance::{ComputeSquaredDistance, SquaredDistance};
 use crate::Atom;
 pub use cssparser::{serialize_identifier, serialize_name, CowRcStr, Parser};
-pub use cssparser::{SourceLocation, Token, RGBA};
+pub use cssparser::{SourceLocation, Token};
 use precomputed_hash::PrecomputedHash;
 use selectors::parser::SelectorParseErrorKind;
 use std::fmt::{self, Debug, Write};
@@ -96,6 +96,14 @@ fn nan_inf_enabled() -> bool {
     static_prefs::pref!("layout.css.nan-inf.enabled")
 }
 
+/// Serialize a number with calc, and NaN/infinity handling (if enabled)
+pub fn serialize_number<W>(v: f32, was_calc: bool, dest: &mut CssWriter<W>) -> fmt::Result
+where
+    W: Write,
+{
+    serialize_specified_dimension(v, "", was_calc, dest)
+}
+
 /// Serialize a specified dimension with unit, calc, and NaN/infinity handling (if enabled)
 pub fn serialize_specified_dimension<W>(
     v: f32,
@@ -117,11 +125,15 @@ where
         // requires an expression like calc(infinity * 1px)."
 
         if v.is_nan() {
-            dest.write_str("NaN * 1")?;
+            dest.write_str("NaN")?;
         } else if v == f32::INFINITY {
-            dest.write_str("infinity * 1")?;
+            dest.write_str("infinity")?;
         } else if v == f32::NEG_INFINITY {
-            dest.write_str("-infinity * 1")?;
+            dest.write_str("-infinity")?;
+        }
+
+        if !unit.is_empty() {
+            dest.write_str(" * 1")?;
         }
     } else {
         v.to_css(dest)?;
@@ -497,6 +509,19 @@ impl<A: Debug, B: Debug> Debug for Either<A, B> {
 pub struct CustomIdent(pub Atom);
 
 impl CustomIdent {
+    /// Parse a <custom-ident>
+    ///
+    /// TODO(zrhoffman, bug 1844501): Use CustomIdent::parse in more places instead of
+    /// CustomIdent::from_ident.
+    pub fn parse<'i, 't>(
+        input: &mut Parser<'i, 't>,
+        invalid: &[&str],
+    ) -> Result<Self, ParseError<'i>> {
+        let location = input.current_source_location();
+        let ident = input.expect_ident()?;
+        CustomIdent::from_ident(location, ident, invalid)
+    }
+
     /// Parse an already-tokenizer identifier
     pub fn from_ident<'i>(
         location: SourceLocation,

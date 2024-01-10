@@ -24,12 +24,13 @@
 #include "js/Printf.h"
 #include "js/Value.h"
 
-#include "vm/JSAtom.h"
+#include "vm/JSAtomUtils.h"  // Atomize
 #include "vm/JSObject.h"
 #include "vm/StringType.h"
+#include "wasm/WasmFeatures.h"
 #include "wasm/WasmJS.h"
 
-#include "vm/JSAtom-inl.h"
+#include "vm/JSAtomUtils-inl.h"  // AtomToId
 #include "vm/JSObject-inl.h"
 
 using namespace js;
@@ -39,6 +40,7 @@ RefType RefType::topType() const {
   switch (kind()) {
     case RefType::Any:
     case RefType::Eq:
+    case RefType::I31:
     case RefType::Array:
     case RefType::Struct:
     case RefType::None:
@@ -98,6 +100,10 @@ static bool ToRefType(JSContext* cx, JSLinearString* typeLinearStr,
     }
     if (StringEqualsLiteral(typeLinearStr, "eqref")) {
       *out = RefType::eq();
+      return true;
+    }
+    if (StringEqualsLiteral(typeLinearStr, "i31ref")) {
+      *out = RefType::i31();
       return true;
     }
     if (StringEqualsLiteral(typeLinearStr, "structref")) {
@@ -171,6 +177,8 @@ static RefTypeResult MaybeToRefType(JSContext* cx, HandleObject obj,
     *out = RefType::any();
   } else if (GcAvailable(cx) && StringEqualsLiteral(typeLinearStr, "eq")) {
     *out = RefType::eq();
+  } else if (GcAvailable(cx) && StringEqualsLiteral(typeLinearStr, "i31")) {
+    *out = RefType::i31();
   } else if (GcAvailable(cx) && StringEqualsLiteral(typeLinearStr, "struct")) {
     *out = RefType::struct_();
   } else if (GcAvailable(cx) && StringEqualsLiteral(typeLinearStr, "array")) {
@@ -303,6 +311,9 @@ UniqueChars wasm::ToString(RefType type, const TypeContext* types) {
       case RefType::Eq:
         literal = "eqref";
         break;
+      case RefType::I31:
+        literal = "i31ref";
+        break;
       case RefType::Struct:
         literal = "structref";
         break;
@@ -338,6 +349,9 @@ UniqueChars wasm::ToString(RefType type, const TypeContext* types) {
       heapType = "none";
       break;
     case RefType::Eq:
+      heapType = "eq";
+      break;
+    case RefType::I31:
       heapType = "eq";
       break;
     case RefType::Struct:

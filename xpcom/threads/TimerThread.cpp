@@ -9,14 +9,12 @@
 
 #include "GeckoProfiler.h"
 #include "nsThreadUtils.h"
-#include "pratom.h"
 
 #include "nsIObserverService.h"
 #include "mozilla/Services.h"
 #include "mozilla/ChaosMode.h"
 #include "mozilla/ArenaAllocator.h"
 #include "mozilla/ArrayUtils.h"
-#include "mozilla/BinarySearch.h"
 #include "mozilla/OperatorNewExtensions.h"
 #include "mozilla/StaticPrefs_timer.h"
 
@@ -25,13 +23,6 @@
 #include <math.h>
 
 using namespace mozilla;
-
-// Bug 1829983 reports an assertion failure that (so far) has only failed once
-// in over a month of the assert existing. This #define enables some additional
-// output that should get printed out if the assert fails again.
-#if defined(XP_WIN) && defined(DEBUG)
-#  define HACK_OUTPUT_FOR_BUG_1829983
-#endif
 
 // Uncomment the following line to enable runtime stats during development.
 // #define TIMERS_RUNTIME_STATS
@@ -684,31 +675,13 @@ TimeStamp TimerThread::ComputeWakeupTimeFromTimers() const {
     MOZ_ASSERT(bundleWakeup <= cutoffTime);
   }
 
-#ifdef HACK_OUTPUT_FOR_BUG_1829983
-  const bool assertCondition =
-      bundleWakeup - mTimers[0].Timeout() <=
-      ComputeAcceptableFiringDelay(mTimers[0].Delay(), minTimerDelay,
-                                   maxTimerDelay);
-  if (!assertCondition) {
-    printf_stderr("*** Special TimerThread debug output ***\n");
-    const int64_t tDMin = minTimerDelay.GetValue();
-    const int64_t tDMax = maxTimerDelay.GetValue();
-    printf_stderr("%16llx / %16llx\n", tDMin, tDMax);
-    const size_t l = mTimers.Length();
-    for (size_t i = 0; i < l; ++i) {
-      const Entry& e = mTimers[i];
-      const TimeStamp tS = e.Timeout();
-      const TimeStampValue tSV = tS.GetValue();
-      const TimeDuration d = e.Delay();
-      printf_stderr("[%5zu] %16llx / %16llx / %d / %d / %16llx\n", i, tSV.GTC(),
-                    tSV.QPC(), (int)tSV.IsNull(), (int)tSV.HasQPC(),
-                    d.GetValue());
-    }
-  }
-#endif
+#if !defined(XP_WIN)
+  // Due to the fact that, on Windows, each TimeStamp object holds two distinct
+  // "values", this assert is not valid there. See bug 1829983 for the details.
   MOZ_ASSERT(bundleWakeup - mTimers[0].Timeout() <=
              ComputeAcceptableFiringDelay(mTimers[0].Delay(), minTimerDelay,
                                           maxTimerDelay));
+#endif
 
   return bundleWakeup;
 }
@@ -731,24 +704,12 @@ TimerThread::Run() {
 
   mProfilerThreadId = profiler_current_thread_id();
 
-  // We need to know how many microseconds give a positive PRIntervalTime. This
-  // is platform-dependent and we calculate it at runtime, finding a value |v|
-  // such that |PR_MicrosecondsToInterval(v) > 0| and then binary-searching in
-  // the range [0, v) to find the ms-to-interval scale.
-  uint32_t usForPosInterval = 1;
-  while (PR_MicrosecondsToInterval(usForPosInterval) == 0) {
-    usForPosInterval <<= 1;
-  }
+  // TODO: Make mAllowedEarlyFiringMicroseconds const and initialize it in the
+  // constructor.
+  mAllowedEarlyFiringMicroseconds = 250;
+  const TimeDuration allowedEarlyFiring =
+      TimeDuration::FromMicroseconds(mAllowedEarlyFiringMicroseconds);
 
-  size_t usIntervalResolution;
-  BinarySearchIf(MicrosecondsToInterval(), 0, usForPosInterval,
-                 IntervalComparator(), &usIntervalResolution);
-  MOZ_ASSERT(PR_MicrosecondsToInterval(usIntervalResolution - 1) == 0);
-  MOZ_ASSERT(PR_MicrosecondsToInterval(usIntervalResolution) == 1);
-
-  // Half of the amount of microseconds needed to get positive PRIntervalTime.
-  // We use this to decide how to round our wait times later
-  mAllowedEarlyFiringMicroseconds = usIntervalResolution / 2;
   bool forceRunNextTimer = false;
 
   // Queue for tracking of how many timers are fired on each wake-up. We need to
@@ -793,7 +754,8 @@ TimerThread::Run() {
       RemoveLeadingCanceledTimersInternal();
 
       if (!mTimers.IsEmpty()) {
-        if (now >= mTimers[0].Value()->mTimeout || forceRunThisTimer) {
+        if (now + allowedEarlyFiring >= mTimers[0].Value()->mTimeout ||
+            forceRunThisTimer) {
         next:
           // NB: AddRef before the Release under RemoveTimerInternal to avoid
           // mRefCnt passing through zero, in case all other refs than the one

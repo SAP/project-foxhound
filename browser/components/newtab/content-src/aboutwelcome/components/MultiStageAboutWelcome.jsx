@@ -167,9 +167,13 @@ export const MultiStageAboutWelcome = props => {
     return false;
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Save the active multi select state containing array of checkbox ids
-  // used in handleAction to update MULTI_ACTION data
-  const [activeMultiSelect, setActiveMultiSelect] = useState(null);
+  // Save the active multi select state for each screen as an object keyed by
+  // screen id. Each screen id has an array containing checkbox ids used in
+  // handleAction to update MULTI_ACTION data. This allows us to remember the
+  // state of each screen's multi select checkboxes when navigating back and
+  // forth between screens, while also allowing a message to have more than one
+  // multi select screen.
+  const [activeMultiSelects, setActiveMultiSelects] = useState({});
 
   // Get the active theme so the rendering code can make it selected
   // by default.
@@ -207,6 +211,15 @@ export const MultiStageAboutWelcome = props => {
           const totalNumberOfScreens = screens.length;
           const isSingleScreen = totalNumberOfScreens === 1;
 
+          const setActiveMultiSelect = valueOrFn =>
+            setActiveMultiSelects(prevState => ({
+              ...prevState,
+              [screen.id]:
+                typeof valueOrFn === "function"
+                  ? valueOrFn(prevState[screen.id])
+                  : valueOrFn,
+            }));
+
           return index === order ? (
             <WelcomeScreen
               key={screen.id + order}
@@ -226,11 +239,12 @@ export const MultiStageAboutWelcome = props => {
               initialTheme={initialTheme}
               setActiveTheme={setActiveTheme}
               setInitialTheme={setInitialTheme}
-              activeMultiSelect={activeMultiSelect}
+              activeMultiSelect={activeMultiSelects[screen.id]}
               setActiveMultiSelect={setActiveMultiSelect}
               autoAdvance={screen.auto_advance}
               negotiatedLanguage={negotiatedLanguage}
               langPackInstallPhase={langPackInstallPhase}
+              forceHideStepsIndicator={screen.force_hide_steps_indicator}
             />
           ) : null;
         })}
@@ -240,12 +254,26 @@ export const MultiStageAboutWelcome = props => {
 };
 
 export const SecondaryCTA = props => {
-  let targetElement = props.position
+  const targetElement = props.position
     ? `secondary_button_${props.position}`
     : `secondary_button`;
-  const buttonStyling = props.content.secondary_button?.has_arrow_icon
-    ? `secondary text-link arrow-icon`
-    : `secondary text-link`;
+  let buttonStyling = props.content.secondary_button?.has_arrow_icon
+    ? `secondary arrow-icon`
+    : `secondary`;
+  const isTextLink =
+    !["split", "callout"].includes(props.content.position) &&
+    props.content.tiles?.type !== "addons-picker";
+  const isPrimary = props.content.secondary_button?.style === "primary";
+
+  if (isTextLink) {
+    buttonStyling += " text-link";
+  }
+
+  if (isPrimary) {
+    buttonStyling = props.content.secondary_button?.has_arrow_icon
+      ? `primary arrow-icon`
+      : `primary`;
+  }
 
   return (
     <div
@@ -355,25 +383,47 @@ export class WelcomeScreen extends React.PureComponent {
     }
 
     let { action } = targetContent;
+    action = JSON.parse(JSON.stringify(action));
 
     if (action.collectSelect) {
-      // Populate MULTI_ACTION data actions property with selected checkbox actions from tiles data
-      action.data = {
-        actions: [],
-      };
+      // Populate MULTI_ACTION data actions property with selected checkbox
+      // actions from tiles data
+      if (action.type !== "MULTI_ACTION") {
+        console.error(
+          "collectSelect is only supported for MULTI_ACTION type actions"
+        );
+        action.type = "MULTI_ACTION";
+      }
+      if (!Array.isArray(action.data?.actions)) {
+        console.error(
+          "collectSelect is only supported for MULTI_ACTION type actions with an array of actions"
+        );
+        action.data = {
+          actions: [],
+        };
+      }
 
+      // Prepend the multi-select actions to the CTA's actions array, but keep
+      // the actions in the same order they appear in. This way the CTA action
+      // can go last, after the multi-select actions are processed. For example,
+      // 1. checkbox action 1
+      // 2. checkbox action 2
+      // 3. radio action
+      // 4. CTA action (which perhaps depends on the radio action)
+      let multiSelectActions = [];
       for (const checkbox of props.content?.tiles?.data ?? []) {
         let checkboxAction;
-        if (this.props.activeMultiSelect.includes(checkbox.id)) {
+        if (this.props.activeMultiSelect?.includes(checkbox.id)) {
           checkboxAction = checkbox.checkedAction ?? checkbox.action;
         } else {
           checkboxAction = checkbox.uncheckedAction;
         }
 
         if (checkboxAction) {
-          action.data.actions.push(checkboxAction);
+          multiSelectActions.push(checkboxAction);
         }
       }
+      action.data.actions.unshift(...multiSelectActions);
 
       // Send telemetry with selected checkbox ids
       AboutWelcomeUtils.sendActionTelemetry(
@@ -462,6 +512,7 @@ export class WelcomeScreen extends React.PureComponent {
         isSingleScreen={this.props.isSingleScreen}
         startsWithCorner={this.props.startsWithCorner}
         autoAdvance={this.props.autoAdvance}
+        forceHideStepsIndicator={this.props.forceHideStepsIndicator}
       />
     );
   }

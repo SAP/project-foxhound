@@ -344,6 +344,8 @@ with modules["NETWORK"]:
     errors["NS_ERROR_NON_LOCAL_CONNECTION_REFUSED"] = FAILURE(88)
     # Connection to a sts host without a hsts header.
     errors["NS_ERROR_BAD_HSTS_CERT"] = FAILURE(89)
+    # Error parsing the status line of an HTTP response
+    errors["NS_ERROR_PARSING_HTTP_STATUS_LINE"] = FAILURE(90)
 
     # XXX really need to better rationalize these error codes.  are consumers of
     # necko really expected to know how to discern the meaning of these??
@@ -751,6 +753,8 @@ with modules["DOM"]:
     # Cross-Origin-Opener-Policy response header.
     # https://html.spec.whatwg.org/multipage/origin.html#cross-origin-opener-policies
     errors["NS_ERROR_DOM_COOP_FAILED"] = FAILURE(1041)
+
+    errors["NS_ERROR_DOM_INVALID_HEADER_VALUE"] = FAILURE(1042)
 
     # May be used to indicate when e.g. setting a property value didn't
     # actually change the value, like for obj.foo = "bar"; obj.foo = "bar";
@@ -1175,6 +1179,7 @@ with modules["DOM_MEDIA"]:
     errors["NS_ERROR_DOM_MEDIA_CUBEB_INITIALIZATION_ERR"] = FAILURE(101)
     errors["NS_ERROR_DOM_MEDIA_EXTERNAL_ENGINE_NOT_SUPPORTED_ERR"] = FAILURE(102)
     errors["NS_ERROR_DOM_MEDIA_CDM_PROXY_NOT_SUPPORTED_ERR"] = FAILURE(103)
+    errors["NS_ERROR_DOM_MEDIA_DENIED_IN_NON_UTILITY"] = FAILURE(104)
 
 # =======================================================================
 # 42: NS_ERROR_MODULE_URL_CLASSIFIER

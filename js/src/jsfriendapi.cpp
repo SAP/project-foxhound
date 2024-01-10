@@ -18,6 +18,7 @@
 #include "frontend/FrontendContext.h"  // FrontendContext
 #include "gc/PublicIterators.h"
 #include "gc/WeakMap.h"
+#include "js/ColumnNumber.h"  // JS::LimitedColumnNumberZeroOrigin
 #include "js/experimental/CodeCoverage.h"
 #include "js/experimental/CTypes.h"  // JS::AutoCTypesActivityCallback, JS::SetCTypesActivityCallback
 #include "js/experimental/Intl.h"  // JS::AddMoz{DateTimeFormat,DisplayNames}Constructor
@@ -61,7 +62,8 @@ using namespace js;
 
 using mozilla::PodArrayZero;
 
-JS::RootingContext::RootingContext() : realm_(nullptr), zone_(nullptr) {
+JS::RootingContext::RootingContext(js::Nursery* nursery)
+    : nursery_(nursery), zone_(nullptr), realm_(nullptr) {
   for (auto& listHead : stackRoots_) {
     listHead = nullptr;
   }
@@ -357,11 +359,6 @@ js::AutoCheckRecursionLimit::stackKindForCurrentPrincipal(JSContext* cx) const {
   return cx->stackKindForCurrentPrincipal();
 }
 
-JS_PUBLIC_API void js::AutoCheckRecursionLimit::assertMainThread(
-    JSContext* cx) const {
-  MOZ_ASSERT(cx->isMainThreadContext());
-}
-
 JS::NativeStackLimit AutoCheckRecursionLimit::getStackLimit(
     FrontendContext* fc) const {
   return fc->stackLimit();
@@ -482,8 +479,9 @@ void js::SetPreserveWrapperCallbacks(
   cx->runtime()->hasReleasedWrapperCallback = hasReleasedWrapper;
 }
 
-JS_PUBLIC_API unsigned JS_PCToLineNumber(JSScript* script, jsbytecode* pc,
-                                         unsigned* columnp) {
+JS_PUBLIC_API unsigned JS_PCToLineNumber(
+    JSScript* script, jsbytecode* pc,
+    JS::LimitedColumnNumberZeroOrigin* columnp) {
   return PCToLineNumber(script, pc, columnp);
 }
 

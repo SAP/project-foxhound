@@ -10,15 +10,20 @@
   --autocomplete-popup-highlight-background: SelectedItem;
   --autocomplete-popup-highlight-color: SelectedItemText;
 
-  --urlbar-popup-action-color: hsl(178, 100%, 28%);
+  --urlbarView-secondary-text-color: color-mix(in srgb, currentColor 73%, transparent);
 
   --urlbarView-action-slide-in-distance: 200px;
 
   --urlbarView-row-gutter: 2px;
 
+  --urlbarView-small-font-size: 0.85em;
+
   --urlbarView-item-inline-padding: var(--urlbar-icon-padding);
   --urlbarView-favicon-width: 16px;
+  --urlbarView-icon-margin-start: 0px;
   --urlbarView-icon-margin-end: calc(var(--urlbar-icon-padding) + var(--identity-box-margin-inline));
+
+  --urlbarView-rich-suggestion-default-icon-size: 28px;
 
   --urlbarView-result-button-size: 24px;
   --urlbarView-result-button-background-opacity: 60%;
@@ -38,25 +43,30 @@
 
 :root[lwt-toolbar-field-focus-brighttext] {
   --urlbar-popup-url-color: var(--lwt-brighttext-url-color);
-  --urlbar-popup-action-color: #30e60b;
+  --urlbar-popup-action-color: rgb(191,191,201);
 }
 
 :root[lwt-toolbar-field-brighttext] {
   --autocomplete-popup-highlight-background: rgb(0, 99, 225);
 }
 
-:root[lwt-toolbar-field-focus-brighttext] {
-  --urlbar-popup-action-color: rgb(191,191,201);
-}
-
 @media (prefers-contrast) {
   :root {
     --urlbarView-result-button-background-opacity: 100%;
+    --urlbarView-secondary-text-color: currentColor;
   }
 }
 
 :root:-moz-locale-dir(rtl) {
   --urlbarView-action-slide-in-distance: -200px;
+}
+
+/* Align the favicons and titles of rows with standard 16px icons with those
+   of rich suggestions. */
+#urlbar[richSuggestionsEnabled] .urlbarView-row:not([rich-suggestion]),
+#urlbar[richSuggestionsEnabled] .urlbarView-row[rich-suggestion][icon-size="16"] {
+  --urlbarView-icon-margin-start: calc((var(--urlbarView-rich-suggestion-default-icon-size) - 16px) / 2);
+  --urlbarView-icon-margin-end: calc(var(--urlbar-icon-padding) + var(--identity-box-margin-inline) + ((var(--urlbarView-rich-suggestion-default-icon-size) - 16px) / 2));
 }
 
 .urlbarView {
@@ -166,7 +176,7 @@
 /* Wrap the url to a second line when the window is narrow. Do not wrap when the
    window is also short, because fewer results will be shown. */
 @media screen and (min-height: 600px) {
-  .urlbarView-results[wrap] > .urlbarView-row:where(:not([rich-suggestion=with-icon])) > .urlbarView-row-inner {
+  .urlbarView-results[wrap] > .urlbarView-row:where(:not([rich-suggestion])) > .urlbarView-row-inner {
     flex-wrap: wrap;
   }
   .urlbarView-results[wrap] > .urlbarView-row > .urlbarView-row-inner > .urlbarView-no-wrap {
@@ -174,26 +184,22 @@
     flex-basis: 100%;
   }
   .urlbarView-results[wrap] > .urlbarView-row[has-url] > .urlbarView-row-inner > .urlbarView-url,
-  .urlbarView-results[wrap] > .urlbarView-row[type=bestmatch] > .urlbarView-row-inner > .urlbarView-row-body > .urlbarView-row-body-top > .urlbarView-url {
+  .urlbarView-results[wrap] > .urlbarView-row[rich-suggestion] > .urlbarView-row-inner > .urlbarView-row-body > .urlbarView-row-body-top > .urlbarView-url {
     margin-top: 2px;
   }
   /* urlbarView-url is forced to be LTR for RTL locales, so set the padding based on the browser's directionality. */
   .urlbarView-results[wrap] > .urlbarView-row[has-url] > .urlbarView-row-inner > .urlbarView-url:-moz-locale-dir(ltr) {
-    padding-left: calc(var(--urlbarView-item-inline-padding) + var(--identity-box-margin-inline) + var(--urlbarView-favicon-width));
+    margin-left: calc(var(--urlbarView-icon-margin-start) + var(--urlbarView-icon-margin-end) + var(--urlbarView-favicon-width));
   }
   .urlbarView-results[wrap] > .urlbarView-row[has-url] > .urlbarView-row-inner > .urlbarView-url:-moz-locale-dir(rtl) {
-    padding-right: calc(var(--urlbarView-item-inline-padding) + var(--identity-box-margin-inline) + var(--urlbarView-favicon-width));
-  }
-  /* When rich suggestions are enabled the space for the icon increases to allow for larger icons */
-  .urlbarView-results[wrap]>.urlbarView-row[rich-suggestion=no-icon][has-url]>.urlbarView-row-inner>.urlbarView-url {
-    margin-inline-start: var(--urlbarView-icon-margin-end);
+    margin-right: calc(var(--urlbarView-icon-margin-start) + var(--urlbarView-icon-margin-end) + var(--urlbarView-favicon-width));
   }
   /* Note: switchtab entries show the url only in override mode,
      remotetab and sponsored ones only when selected or :hover. */
   .urlbarView[actionoverride] .urlbarView-results[wrap] > .urlbarView-row[has-url] > .urlbarView-row-inner > .urlbarView-no-wrap > .urlbarView-title-separator,
   .urlbarView-results[wrap] > .urlbarView-row[has-url]:not([type$=tab], [sponsored]) > .urlbarView-row-inner > .urlbarView-no-wrap > .urlbarView-title-separator,
   .urlbarView-results[wrap] > .urlbarView-row[has-url]:is([type=remotetab], [sponsored]):is(:hover, [selected]) > .urlbarView-row-inner > .urlbarView-no-wrap > .urlbarView-title-separator,
-  .urlbarView-results[wrap] > .urlbarView-row[type=bestmatch] > .urlbarView-row-inner > .urlbarView-row-body > .urlbarView-row-body-top > .urlbarView-row-body-top-no-wrap > .urlbarView-title-separator,
+  .urlbarView-results[wrap] > .urlbarView-row[has-url] > .urlbarView-row-inner > .urlbarView-row-body > .urlbarView-row-body-top > .urlbarView-row-body-top-no-wrap > .urlbarView-title-separator,
   .urlbarView-results[wrap] > .urlbarView-row[type=tabtosearch] > .urlbarView-row-inner > .urlbarView-no-wrap > .urlbarView-title-separator {
     display: none;
   }
@@ -202,13 +208,13 @@
   }
   .urlbarView-results[wrap] > .urlbarView-row[type=tabtosearch] > .urlbarView-row-inner > .urlbarView-no-wrap > .urlbarView-action {
     flex-basis: 100%;
-    margin-inline-start: calc(var(--urlbarView-item-inline-padding) + var(--identity-box-margin-inline) + var(--urlbarView-favicon-width));
+    margin-inline-start: calc(var(--urlbarView-icon-margin-start) + var(--urlbarView-icon-margin-end) + var(--urlbarView-favicon-width));
   }
 
-  .urlbarView-results[wrap] > .urlbarView-row[type=bestmatch] > .urlbarView-row-inner > .urlbarView-row-body > .urlbarView-row-body-top {
+  .urlbarView-results[wrap] > .urlbarView-row[rich-suggestion] > .urlbarView-row-inner > .urlbarView-row-body > .urlbarView-row-body-top {
     flex-wrap: wrap;
   }
-  .urlbarView-results[wrap] > .urlbarView-row[type=bestmatch] > .urlbarView-row-inner > .urlbarView-row-body > .urlbarView-row-body-top > .urlbarView-row-body-top-no-wrap {
+  .urlbarView-results[wrap] > .urlbarView-row[rich-suggestion] > .urlbarView-row-inner > .urlbarView-row-body > .urlbarView-row-body-top > .urlbarView-row-body-top-no-wrap {
     flex-basis: 100%;
   }
 }
@@ -240,46 +246,12 @@
   text-align: right;
 }
 
-/* Rich Suggestions */
-
-.urlbarView-row[rich-suggestion=with-icon] > .urlbarView-row-inner > .urlbarView-favicon {
-  width: 28px;
-  height: 28px;
-  margin-inline-end: 8px;
-}
-
-.urlbarView-row[rich-suggestion=with-icon] > .urlbarView-row-inner {
-  padding-block: 4px;
-  flex-wrap: nowrap;
-}
-
-.urlbarView-row[rich-suggestion=no-icon]:not([firefox-suggest-sponsored]) .urlbarView-favicon {
-  margin-inline: 4px 16px;
-}
-
-.urlbarView-row[rich-suggestion=with-icon] > .urlbarView-row-inner > .urlbarView-no-wrap {
-  display: grid;
-  grid-template-columns: repeat(3, min-content);
-  align-items: center;
-  flex-shrink: 1;
-}
-
-.urlbarView-row[rich-suggestion=with-icon]:not(:hover) .urlbarView-action {
-  visibility: collapse;
-}
-
-.urlbarView-description {
-  /* We want the description to be last visually but to be after the title
-     in the screenreader */
-  order: 2;
-  grid-area: 2 / 1 / 3 / 4;
-}
-
 /* Favicon */
 
 .urlbarView-favicon {
   width: var(--urlbarView-favicon-width);
   height: var(--urlbarView-favicon-width);
+  margin-inline-start: var(--urlbarView-icon-margin-start);
   margin-inline-end: var(--urlbarView-icon-margin-end);
   background-repeat: no-repeat;
   background-size: contain;
@@ -307,7 +279,7 @@
   width: 12px;
   height: 12px;
   margin-top: var(--urlbarView-favicon-width);
-  margin-inline-start: 8px;
+  margin-inline-start: calc(var(--urlbarView-icon-margin-start) + var(--urlbarView-favicon-width) - 6px);
   background-repeat: no-repeat;
   background-size: contain;
   -moz-context-properties: fill, stroke;
@@ -342,26 +314,26 @@
   margin-inline: 4px;
   -moz-context-properties: fill, fill-opacity;
   border-radius: 100%;
-}
 
-.urlbarView-button[selected] {
-  outline: var(--focus-outline);
-  outline-color: var(--autocomplete-popup-highlight-color);
-  outline-offset: 1px;
-}
+  &[selected] {
+    outline: var(--focus-outline);
+    outline-color: var(--autocomplete-popup-highlight-color);
+    outline-offset: 1px;
+  }
 
-.urlbarView-row:is([row-selectable]:hover, [selected]) > .urlbarView-button:not(:hover, [open]) {
-  color: var(--urlbarView-result-button-selected-color);
-  background-color: var(--urlbarView-result-button-selected-background-color);
-}
+  .urlbarView-row:is([row-selectable]:hover, [selected]) > &:not(:hover, [open]) {
+    color: var(--urlbarView-result-button-selected-color);
+    background-color: var(--urlbarView-result-button-selected-background-color);
+  }
 
-.urlbarView-button:is(:hover, [open]) {
-  color: var(--urlbarView-result-button-hover-color);
-  background-color: var(--urlbarView-result-button-hover-background-color);
-}
+  &:is(:hover, [open]) {
+    color: var(--urlbarView-result-button-hover-color);
+    background-color: var(--urlbarView-result-button-hover-background-color);
+  }
 
-.urlbarView-button + .urlbarView-button {
-  margin-inline-start: 0;
+  & + & {
+    margin-inline-start: 0;
+  }
 }
 
 .urlbarView-button-block {
@@ -377,73 +349,75 @@
 .urlbarView-button-menu {
   background-image: url("chrome://global/skin/icons/more.svg");
   background-color: var(--button-bgcolor);
-}
 
-.urlbarView-results:not([disable-resultmenu-autohide]) > .urlbarView-row:not(:hover, [selected]) > .urlbarView-row-inner + .urlbarView-button-menu:not([open]):empty {
-  display: none;
-}
+  .urlbarView-results:not([disable-resultmenu-autohide]) > .urlbarView-row:not(:hover, [selected]) > .urlbarView-row-inner + &:not([open]):empty {
+    display: none;
+  }
 
-/* Labeled result menu button */
+  /* Labeled result menu button */
 
-.urlbarView-results:not([wrap]) > .urlbarView-row > .urlbarView-button-menu:not(:empty) {
-  display: inline-flex;
-  align-items: center;
-  border-radius: var(--urlbarView-result-button-size);
-  padding-inline: 8px 26px;
-  background-position-x: right 4px;
-  font-size: 0.85em;
-}
+  .urlbarView-results:not([wrap]) > .urlbarView-row > &:not(:empty) {
+    display: inline-flex;
+    align-items: center;
+    border-radius: var(--urlbarView-result-button-size);
+    padding-inline: 8px 26px;
+    background-position-x: right 4px;
+    font-size: var(--urlbarView-small-font-size);
 
-.urlbarView-results:not([wrap]) > .urlbarView-row > .urlbarView-button-menu:not(:empty):-moz-locale-dir(rtl) {
-  background-position-x: left 4px;
-}
+    &:-moz-locale-dir(rtl) {
+      background-position-x: left 4px;
+    }
+  }
 
-.urlbarView-results[wrap] > .urlbarView-row > .urlbarView-button-menu:not(:empty) {
-  /* Hide the label in narrow windows. */
-  font-size: 0;
+  .urlbarView-results[wrap] > .urlbarView-row > &:not(:empty) {
+    /* Hide the label in narrow windows. */
+    font-size: 0;
+  }
 }
 
 /* Button with label, e.g. tip button */
 
-.urlbarView-button:not(:empty, .urlbarView-button-menu) {
-  border-radius: var(--toolbarbutton-border-radius);
-  padding: 7px;
-  font-size: 0.93em;
-  font-weight: 600;
-  background-clip: padding-box;
-  min-height: 16px;
-  min-width: 8.75em;
-  text-align: center;
-  flex-basis: initial;
-  flex-shrink: 0;
-}
+.urlbarView-button:not(:empty) {
+  &:not(.urlbarView-button-menu) {
+    border-radius: var(--toolbarbutton-border-radius);
+    padding: 7px;
+    font-size: 0.93em;
+    font-weight: 600;
+    background-clip: padding-box;
+    min-height: 16px;
+    min-width: 8.75em;
+    text-align: center;
+    flex-basis: initial;
+    flex-shrink: 0;
 
-.urlbarView-button:not(:empty, :hover, .urlbarView-button-menu) {
-  background-color: var(--button-bgcolor);
-}
+    &:not(:hover) {
+      background-color: var(--button-bgcolor);
+    }
 
-.urlbarView-button:not(:empty, .urlbarView-button-menu)[selected] {
-  color: var(--button-primary-color);
-  background-color: var(--button-primary-bgcolor);
-  outline-offset: var(--focus-outline-offset);
-}
+    &[selected] {
+      color: var(--button-primary-color);
+      background-color: var(--button-primary-bgcolor);
+      outline-offset: var(--focus-outline-offset);
+    }
 
-.urlbarView-button:not(:empty, .urlbarView-button-menu)[selected]:hover {
-  background-color: var(--button-primary-hover-bgcolor);
-}
+    &[selected]:hover {
+      background-color: var(--button-primary-hover-bgcolor);
+    }
 
-.urlbarView-button:not(:empty, .urlbarView-button-menu)[selected]:hover:active {
-  background-color: var(--button-primary-active-bgcolor);
-}
+    &[selected]:hover:active {
+      background-color: var(--button-primary-active-bgcolor);
+    }
 
-.urlbarView-button:not(:empty) + .urlbarView-button:empty {
-  /* Add space between a labeled button followed by an unlabeled button. */
-  margin-inline-start: 1.8em;
-}
+    &:last-child {
+      /* Add space between a labeled button and the trailing edge of the panel. */
+      margin-inline-end: 1.8em;
+    }
+  }
 
-.urlbarView-button:not(:empty, .urlbarView-button-menu):last-child {
-  /* Add space between a labeled button and the trailing edge of the panel. */
-  margin-inline-end: 1.8em;
+  + .urlbarView-button:empty {
+    /* Add space between a labeled button followed by an unlabeled button. */
+    margin-inline-start: 1.8em;
+  }
 }
 
 /* Tip rows */
@@ -451,46 +425,47 @@
 .urlbarView-row[type=tip] {
   padding-block: 18px;
   border-radius: 0;
+
+  &:not(:last-child) {
+    border-bottom: 1px solid var(--autocomplete-popup-separator-color);
+    margin-bottom: 4px;
+  }
+
+  &:not(:first-child) {
+    border-top: 1px solid var(--autocomplete-popup-separator-color);
+    margin-top: 4px;
+  }
+
+  & > .urlbarView-row-inner {
+    min-height: 32px;
+
+    /* Add space between the tip title (and the rest of row-inner) and its
+       button. */
+    margin-inline-end: 1.8em;
+  }
+
+  &:not([tip-type=dismissalAcknowledgment]) > .urlbarView-row-inner > .urlbarView-no-wrap > .urlbarView-favicon {
+    width: 24px;
+    height: 24px;
+    margin-inline-end: 12px;
+    flex-basis: 24px;
+    flex-grow:  0;
+  }
+
+  & > .urlbarView-row-inner > .urlbarView-no-wrap > .urlbarView-title-separator,
+  & > .urlbarView-row-inner > .urlbarView-url {
+    display: none;
+  }
+
+  & > .urlbarView-row-inner > .urlbarView-no-wrap > .urlbarView-title {
+    white-space: normal;
+  }
+
+  &[tip-type=dismissalAcknowledgment] {
+    padding-block: 6px;
+  }
 }
 
-.urlbarView-row[type=tip]:not(:last-child) {
-  border-bottom: 1px solid var(--autocomplete-popup-separator-color);
-  margin-bottom: 4px;
-}
-
-.urlbarView-row[type=tip]:not(:first-child) {
-  border-top: 1px solid var(--autocomplete-popup-separator-color);
-  margin-top: 4px;
-}
-
-.urlbarView-row[type=tip] > .urlbarView-row-inner {
-  min-height: 32px;
-
-  /* Add space between the tip title (and the rest of row-inner) and its
-     button. */
-  margin-inline-end: 1.8em;
-}
-
-.urlbarView-row[type=tip]:not([tip-type=dismissalAcknowledgment]) > .urlbarView-row-inner > .urlbarView-no-wrap > .urlbarView-favicon {
-  width: 24px;
-  height: 24px;
-  margin-inline-end: 12px;
-  flex-basis: 24px;
-  flex-grow:  0;
-}
-
-.urlbarView-row[type=tip] > .urlbarView-row-inner > .urlbarView-no-wrap > .urlbarView-title-separator,
-.urlbarView-row[type=tip] > .urlbarView-row-inner > .urlbarView-url {
-  display: none;
-}
-
-.urlbarView-row[type=tip] > .urlbarView-row-inner > .urlbarView-no-wrap > .urlbarView-title {
-  white-space: normal;
-}
-
-.urlbarView-row[type=tip][tip-type=dismissalAcknowledgment] {
-  padding-block: 6px;
-}
 
 /* Row label (a.k.a. group label) */
 
@@ -531,9 +506,9 @@
   align-items: center;
   position: absolute;
   bottom: 0.72em;
-  font-size: 0.85em;
-  margin-inline-start: var(--urlbarView-item-inline-padding);
-  padding-inline-start: calc(var(--urlbarView-favicon-width) + 6px);
+  font-size: var(--urlbarView-small-font-size);
+  margin-inline-start: calc(var(--urlbarView-item-inline-padding) + var(--urlbarView-icon-margin-start));
+  padding-inline-start: calc(var(--urlbarView-favicon-width) + var(--urlbarView-icon-margin-end));
   background-image: url("chrome://branding/content/icon32.png");
   background-repeat: no-repeat;
   background-position: 0 center;
@@ -591,7 +566,7 @@
 .urlbarView-tags,
 .urlbarView-url,
 .urlbarView-title:not(:empty) ~ .urlbarView-action {
-  font-size: .85em;
+  font-size: var(--urlbarView-small-font-size);
 }
 
 .urlbarView-title:not(:empty) ~ .urlbarView-action {
@@ -603,59 +578,8 @@
   opacity: .6;
 }
 
-.urlbarView-row[sponsored][selected] > .urlbarView-row-inner > .urlbarView-no-wrap > .urlbarView-action,
-.urlbarView-row[sponsored] > .urlbarView-row-inner[selected] > .urlbarView-no-wrap > .urlbarView-action {
+.urlbarView-row[sponsored][selected] > .urlbarView-row-inner > .urlbarView-no-wrap > .urlbarView-action {
   opacity: 1;
-}
-
-/* Firefox Suggest sponsored results */
-
-.urlbarView-row[firefox-suggest-sponsored] > .urlbarView-row-inner {
-  /* 0px of top padding because the space between the favicon/title and the top
-     edge of the row is determined by the favicon margin-top and we don't want
-     any extra padding to complicate that. 1px of bottom padding so the bottom
-     edge of the action isn't touching the bottom edge of the row. The space
-     between the bottom edge of the favicon and the bottom edge of the row is
-     determined by this + the action margin-top. */
-  padding-block: 0 1px;
-}
-
-.urlbarView-row[firefox-suggest-sponsored] > .urlbarView-row-inner > .urlbarView-no-wrap {
-  /* Wrap the action span onto a new row. */
-  flex-wrap: wrap;
-}
-
-.urlbarView-row[firefox-suggest-sponsored] > .urlbarView-row-inner > .urlbarView-no-wrap > .urlbarView-favicon {
-  /* The favicon should be vertically centered in the row. The action span wraps
-     below the favicon and title, leaving the favicon centered with the title,
-     not the row, so we add margin-top. Normally there is 8x between the top
-     edge of the favicon and the top edge of the row. Here 1em = 13.75px, so
-     that's 8 / 13.75 =~ 0.58em. */
-  margin-top: 0.58em;
-}
-
-.urlbarView-row[firefox-suggest-sponsored] > .urlbarView-row-inner > .urlbarView-no-wrap > .urlbarView-title {
-  /* The width of favicon + this title element + help icon is over than total
-     displayed width, favicon and title will collapse as different row, the style
-     will be broken. To avoid it, we specify the max displayable width for title
-     explicitly. */
-  flex-basis: calc(100% - var(--urlbarView-favicon-width) - var(--urlbarView-icon-margin-end));
-  /* Move the title away from the action a little. This does not affect the
-     height of the row. */
-  margin-top: -0.3em;
-}
-
-.urlbarView-row[firefox-suggest-sponsored] > .urlbarView-row-inner > .urlbarView-no-wrap > .urlbarView-action {
-  flex-basis: 100%;
-  margin-inline-start: calc(var(--urlbarView-favicon-width) + var(--urlbarView-icon-margin-end));
-  font-size: 0.73em;
-  /* This value + the bottom padding control the space between the bottom edge
-     of the favicon and the bottom edge of the row. The bottom padding is 1px,
-     leaving 8px - 1px = 7px we need to make up here. Here 1em = 0.73 * 13.75 =~
-     10px, so that's 7 / 10 = 0.7em. However, the action itself takes up some of
-     that space, so it's not that simple. The value used here was arrived at by
-     trial and error and is approximately 5px. */
-  margin-top: -0.5em;
 }
 
 @media (prefers-reduced-motion: no-preference) {
@@ -689,13 +613,18 @@
 
 .urlbarView-row:is(:hover, [selected]) > .urlbarView-row-inner > .urlbarView-no-wrap > .urlbarView-action,
 .urlbarView-row[selected] > .urlbarView-row-inner > .urlbarView-url,
+.urlbarView-row[rich-suggestion]:is(:hover, [selected]) > .urlbarView-row-inner > .urlbarView-row-body > .urlbarView-row-body-top > .urlbarView-row-body-top-no-wrap > .urlbarView-action,
+.urlbarView-row[rich-suggestion][selected] > .urlbarView-row-inner > .urlbarView-row-body > .urlbarView-row-body-top > .urlbarView-url,
 .urlbarView-row[type=tabtosearch][selected] > .urlbarView-row-inner > .urlbarView-no-wrap > .urlbarView-favicon {
   color: inherit;
 }
 
 .urlbarView-row:is([type=remotetab], [sponsored]):not([selected], :hover) > .urlbarView-row-inner > .urlbarView-url,
+.urlbarView-row:is([show-action-text]) > .urlbarView-row-inner > .urlbarView-url,
 .urlbarView-row:is([type=search], [restyled-search]):not([selected], [show-action-text], :hover) > .urlbarView-row-inner > .urlbarView-no-wrap > .urlbarView-title-separator,
+.urlbarView-row:is([type=search], [restyled-search]):not([selected], [show-action-text], :hover) > .urlbarView-row-inner > .urlbarView-row-body > .urlbarView-row-body-top > .urlbarView-row-body-top-no-wrap > .urlbarView-title-separator,
 .urlbarView-row:not([has-action], [has-url], [restyled-search]) > .urlbarView-row-inner > .urlbarView-no-wrap > .urlbarView-title-separator,
+.urlbarView-row:not([has-action], [has-url], [restyled-search]) > .urlbarView-row-inner > .urlbarView-row-body > .urlbarView-row-body-top > .urlbarView-row-body-top-no-wrap > .urlbarView-title-separator,
 .urlbarView:not([actionoverride]) .urlbarView-row[type=switchtab] > .urlbarView-row-inner > .urlbarView-url {
   /* Use visibility:collapse instead of display:none since the latter can
      confuse the overflow state of title and url elements when their content
@@ -704,9 +633,9 @@
 }
 
 .urlbarView-row[has-url]:is([type=remotetab], [sponsored]):is([selected], :hover) > .urlbarView-row-inner > .urlbarView-no-wrap > .urlbarView-action,
-.urlbarView-row:is([type=search], [restyled-search]):not([selected], [rich-selection], [show-action-text], :hover) > .urlbarView-row-inner > .urlbarView-no-wrap > .urlbarView-action,
+.urlbarView-row:is([type=search], [restyled-search]):not([selected], [show-action-text], :hover) > .urlbarView-row-inner > .urlbarView-no-wrap > .urlbarView-action,
+.urlbarView-row:is([type=search], [restyled-search]):not([selected], [show-action-text], :hover) > .urlbarView-row-inner > .urlbarView-row-body > .urlbarView-row-body-top > .urlbarView-row-body-top-no-wrap > .urlbarView-action,
 .urlbarView-row:not([has-action], [has-url], [restyled-search]) > .urlbarView-row-inner > .urlbarView-no-wrap > .urlbarView-action,
-.urlbarView-row[firefox-suggest-sponsored] > .urlbarView-row-inner > .urlbarView-no-wrap > .urlbarView-title-separator,
 .urlbarView[actionoverride] .urlbarView-row[type=switchtab] > .urlbarView-row-inner > .urlbarView-no-wrap > .urlbarView-action {
   display: none;
 }
@@ -758,64 +687,123 @@
   border-radius: 4px;
 }
 
-/* Best match */
+/* Rich suggestions */
 
-.urlbarView-row[type=bestmatch] > .urlbarView-row-inner {
+.urlbarView-row[rich-suggestion] > .urlbarView-row-inner {
   align-items: center;
   justify-content: start;
 }
 
-.urlbarView-row[type=bestmatch] > .urlbarView-row-inner,
-.urlbarView-results[wrap] > .urlbarView-row[type=bestmatch] > .urlbarView-row-inner {
-  flex-wrap: nowrap;
+.urlbarView-row[rich-suggestion] > .urlbarView-row-inner > .urlbarView-favicon {
+  width: var(--urlbarView-rich-suggestion-default-icon-size);
+  height: var(--urlbarView-rich-suggestion-default-icon-size);
+  flex-basis: var(--urlbarView-rich-suggestion-default-icon-size);
+  flex-shrink: 0;
+  flex-grow: 0;
 }
 
-.urlbarView-row[type=bestmatch] > .urlbarView-row-inner > .urlbarView-favicon {
+.urlbarView-row[rich-suggestion][icon-size="16"] > .urlbarView-row-inner > .urlbarView-favicon {
+  width: 16px;
+  height: 16px;
+  flex-basis: 16px;
+}
+
+.urlbarView-row[rich-suggestion][icon-size="24"] > .urlbarView-row-inner > .urlbarView-favicon {
+  width: 24px;
+  height: 24px;
+  flex-basis: 24px;
+}
+
+.urlbarView-row[rich-suggestion][icon-size="52"] > .urlbarView-row-inner > .urlbarView-favicon {
   width: 52px;
   height: 52px;
   flex-basis: 52px;
-  flex-shrink: 0;
-  flex-grow: 0;
   border-radius: 2px;
 }
 
-.urlbarView-row[type=bestmatch] > .urlbarView-row-inner > .urlbarView-row-body {
+.urlbarView-row[rich-suggestion] > .urlbarView-row-inner > .urlbarView-row-body {
   flex-grow: 1;
   flex-shrink: 1;
   min-width: 0;
 }
 
-.urlbarView-row[type=bestmatch] > .urlbarView-row-inner > .urlbarView-row-body > .urlbarView-row-body-top {
+.urlbarView-row[rich-suggestion] > .urlbarView-row-inner > .urlbarView-row-body > .urlbarView-row-body-top {
   display: flex;
   flex-wrap: nowrap;
   flex-direction: row;
-  align-items: center;
+  align-items: baseline;
   justify-content: start;
 }
 
-.urlbarView-row[type=bestmatch] > .urlbarView-row-inner > .urlbarView-row-body > .urlbarView-row-body-top > .urlbarView-row-body-top-no-wrap {
+.urlbarView-row[rich-suggestion] > .urlbarView-row-inner > .urlbarView-row-body > .urlbarView-row-body-top > .urlbarView-row-body-top-no-wrap {
   display: flex;
   flex-wrap: nowrap;
   flex-direction: row;
-  align-items: center;
+  align-items: baseline;
   justify-content: start;
   flex-shrink: 0;
   min-width: 0;
 }
 
-.urlbarView-results:not([wrap]) > .urlbarView-row[type=bestmatch] > .urlbarView-row-inner > .urlbarView-row-body > .urlbarView-row-body-top > .urlbarView-row-body-top-no-wrap {
+.urlbarView-results:not([wrap]) > .urlbarView-row[rich-suggestion] > .urlbarView-row-inner > .urlbarView-row-body > .urlbarView-row-body-top > .urlbarView-row-body-top-no-wrap {
   /* Limit the title (which is inside .urlbarView-row-body-top-no-wrap) to 70%
      of the width so the URL is never completely hidden. */
   max-width: 70%;
 }
 
-.urlbarView-row[type=bestmatch] > .urlbarView-row-inner > .urlbarView-row-body > .urlbarView-row-body-bottom {
-  font-size: 0.73em;
-  opacity: 0.6;
+.urlbarView-row[rich-suggestion] > .urlbarView-row-inner > .urlbarView-row-body > .urlbarView-row-body-description,
+.urlbarView-row[rich-suggestion] > .urlbarView-row-inner > .urlbarView-row-body > .urlbarView-row-body-bottom {
+  font-size: var(--urlbarView-small-font-size);
+  color: var(--urlbarView-secondary-text-color);
+  white-space: normal;
 }
 
-.urlbarView-row[type=bestmatch][selected] > .urlbarView-row-inner > .urlbarView-row-body > .urlbarView-row-body-bottom {
-  opacity: 1;
+.urlbarView-row[rich-suggestion] > .urlbarView-row-inner > .urlbarView-row-body > .urlbarView-row-body-description {
+  max-width: 80ch;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow-y: hidden;
+}
+
+.urlbarView-row[rich-suggestion][selected] > .urlbarView-row-inner > .urlbarView-row-body > .urlbarView-row-body-description,
+.urlbarView-row[rich-suggestion][selected] > .urlbarView-row-inner > .urlbarView-row-body > .urlbarView-row-body-bottom {
+  color: inherit;
+}
+
+.urlbarView-row[rich-suggestion] > .urlbarView-row-inner > .urlbarView-row-body > .urlbarView-row-body-description:not(:empty) + .urlbarView-row-body-bottom:not(:empty) {
+  margin-block-start: 1em;
+}
+
+/* Sponsored Firefox Suggest rows */
+
+.urlbarView-row[type$=_adm_sponsored] > .urlbarView-row-inner {
+  /* Keep the status quo before these rows were rich suggestions, where the row
+     height is roughly the same as usual rows. */
+  padding-block: 0;
+}
+
+/* Pocket suggestions */
+
+.urlbarView-row[type$=_pocket] > .urlbarView-row-inner > .urlbarView-favicon,
+.urlbarView-row[type$=_pocket] > .urlbarView-row-inner > .urlbarView-no-wrap > .urlbarView-favicon {
+  fill: var(--pocket-icon-fill);
+  fill-opacity: 1;
+}
+
+.urlbarView-row[type$=_pocket][icon-size="24"] > .urlbarView-row-inner > .urlbarView-favicon {
+  padding: calc((52px - 24px) / 2);
+  background-color: var(--urlbar-box-focus-bgcolor);
+  border-radius: 2px;
+}
+
+.urlbarView-row[type$=_pocket][icon-size="24"]:is([selected], :hover) > .urlbarView-row-inner > .urlbarView-favicon {
+  background-color: var(--urlbarView-result-button-selected-background-color);
+}
+
+.urlbarView-row[type$=_mdn] > .urlbarView-row-inner > .urlbarView-row-body > .urlbarView-row-body-description,
+.urlbarView-row[type$=_pocket] > .urlbarView-row-inner > .urlbarView-row-body > .urlbarView-row-body-description {
+  -webkit-line-clamp: 2;
 }
 
 /* Search one-offs */

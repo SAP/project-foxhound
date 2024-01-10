@@ -86,11 +86,10 @@ Bookmarks.prototype = {
     // Thus, we must create a map from bookmark URLs -> their favicon entry's UUID.
     let bookmarkURLToUUIDMap = new Map();
 
-    const faviconFolder = FileUtils.getDir(
-      "ULibDir",
-      ["Safari", "Favicon Cache"],
-      false
-    ).path;
+    const faviconFolder = FileUtils.getDir("ULibDir", [
+      "Safari",
+      "Favicon Cache",
+    ]).path;
     let dbPath = PathUtils.join(faviconFolder, "favicons.db");
 
     try {
@@ -272,11 +271,10 @@ Bookmarks.prototype = {
     let favicons = [];
     let convertedEntries = [];
 
-    const faviconFolder = FileUtils.getDir(
-      "ULibDir",
-      ["Safari", "Favicon Cache"],
-      false
-    ).path;
+    const faviconFolder = FileUtils.getDir("ULibDir", [
+      "Safari",
+      "Favicon Cache",
+    ]).path;
 
     for (const entry of entries) {
       let type = entry.get("WebBookmarkType");
@@ -298,7 +296,8 @@ Bookmarks.prototype = {
           new URL(url);
         } catch (ex) {
           console.error(
-            `Ignoring ${url} when importing from Safari because of exception: ${ex}`
+            `Ignoring ${url} when importing from Safari because of exception:`,
+            ex
           );
           continue;
         }
@@ -349,11 +348,7 @@ Bookmarks.prototype = {
 };
 
 async function GetHistoryResource() {
-  let dbPath = FileUtils.getDir(
-    "ULibDir",
-    ["Safari", "History.db"],
-    false
-  ).path;
+  let dbPath = FileUtils.getDir("ULibDir", ["Safari", "History.db"]).path;
   let maxAge = msToNSDate(
     Date.now() - MigrationUtils.HISTORY_MAX_AGE_IN_MILLISECONDS
   );
@@ -540,7 +535,7 @@ export class SafariProfileMigrator extends MigratorBase {
   }
 
   async getResources() {
-    let profileDir = FileUtils.getDir("ULibDir", ["Safari"], false);
+    let profileDir = FileUtils.getDir("ULibDir", ["Safari"]);
     if (!profileDir.exists()) {
       return null;
     }
@@ -576,7 +571,7 @@ export class SafariProfileMigrator extends MigratorBase {
   }
 
   async getLastUsedDate() {
-    const profileDir = FileUtils.getDir("ULibDir", ["Safari"], false);
+    const profileDir = FileUtils.getDir("ULibDir", ["Safari"]);
     const dates = await Promise.all(
       ["Bookmarks.plist", "History.db"].map(file => {
         const path = PathUtils.join(profileDir.path, file);
@@ -593,22 +588,33 @@ export class SafariProfileMigrator extends MigratorBase {
     if (this._hasPermissions) {
       return true;
     }
-    // Check if we have access to both bookmarks and favicons:
-    let bookmarkTarget = FileUtils.getDir(
-      "ULibDir",
-      ["Safari", "Bookmarks.plist"],
-      false
-    );
-    let faviconTarget = FileUtils.getDir(
-      "ULibDir",
-      ["Safari", "Favicon Cache", "favicons.db"],
-      false
-    );
+    // Check if we have access to some key files, but only if they exist.
+    let historyTarget = FileUtils.getDir("ULibDir", ["Safari", "History.db"]);
+    let bookmarkTarget = FileUtils.getDir("ULibDir", [
+      "Safari",
+      "Bookmarks.plist",
+    ]);
+    let faviconTarget = FileUtils.getDir("ULibDir", [
+      "Safari",
+      "Favicon Cache",
+      "favicons.db",
+    ]);
     try {
-      // 'stat' is always allowed, but reading is somehow not, if the user hasn't
-      // allowed it:
-      await IOUtils.read(bookmarkTarget.path, { maxBytes: 1 });
-      await IOUtils.read(faviconTarget.path, { maxBytes: 1 });
+      let historyExists = await IOUtils.exists(historyTarget.path);
+      let bookmarksExists = await IOUtils.exists(bookmarkTarget.path);
+      let faviconsExists = await IOUtils.exists(faviconTarget.path);
+      // We now know which files exist, which is always allowed.
+      // To determine if we have read permissions, try to read a single byte
+      // from each file that exists, which will throw if we need permissions.
+      if (historyExists) {
+        await IOUtils.read(historyTarget.path, { maxBytes: 1 });
+      }
+      if (bookmarksExists) {
+        await IOUtils.read(bookmarkTarget.path, { maxBytes: 1 });
+      }
+      if (faviconsExists) {
+        await IOUtils.read(faviconTarget.path, { maxBytes: 1 });
+      }
       this._hasPermissions = true;
       return true;
     } catch (ex) {
@@ -624,7 +630,7 @@ export class SafariProfileMigrator extends MigratorBase {
       // The title (second arg) is not displayed on macOS, so leave it blank.
       fp.init(win, "", Ci.nsIFilePicker.modeGetFolder);
       fp.filterIndex = 1;
-      fp.displayDirectory = FileUtils.getDir("ULibDir", [""], false);
+      fp.displayDirectory = FileUtils.getDir("ULibDir", [""]);
       // Now wait for the filepicker to open and close. If the user picks
       // the Safari folder, macOS will grant us read access to everything
       // inside, so we don't need to check or do anything else with what's
@@ -640,7 +646,7 @@ export class SafariProfileMigrator extends MigratorBase {
 
   get mainPreferencesPropertyList() {
     if (this._mainPreferencesPropertyList === undefined) {
-      let file = FileUtils.getDir("UsrPrfs", [], false);
+      let file = FileUtils.getDir("UsrPrfs", []);
       if (file.exists()) {
         file.append("com.apple.Safari.plist");
         if (file.exists()) {

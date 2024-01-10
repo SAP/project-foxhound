@@ -1,10 +1,7 @@
 #[cfg(feature = "validate")]
-use std::ops::Index;
-
-#[cfg(feature = "validate")]
 use super::{
-    compose::validate_compose, validate_atomic_compare_exchange_struct, FunctionInfo, ShaderStages,
-    TypeFlags,
+    compose::validate_compose, validate_atomic_compare_exchange_struct, FunctionInfo, ModuleInfo,
+    ShaderStages, TypeFlags,
 };
 #[cfg(feature = "validate")]
 use crate::arena::UniqueArena;
@@ -25,8 +22,10 @@ pub enum ExpressionError {
     InvalidBaseType(Handle<crate::Expression>),
     #[error("Accessing with index {0:?} can't be done")]
     InvalidIndexType(Handle<crate::Expression>),
-    #[error("Accessing index {1:?} is out of {0:?} bounds")]
-    IndexOutOfBounds(Handle<crate::Expression>, crate::ScalarValue),
+    #[error("Accessing {0:?} via a negative index is invalid")]
+    NegativeIndex(Handle<crate::Expression>),
+    #[error("Accessing index {1} is out of {0:?} bounds")]
+    IndexOutOfBounds(Handle<crate::Expression>, u32),
     #[error("The expression {0:?} may only be indexed by a constant")]
     IndexMustBeConstant(Handle<crate::Expression>),
     #[error("Function argument {0:?} doesn't exist")]
@@ -94,7 +93,7 @@ pub enum ExpressionError {
         has_ref: bool,
     },
     #[error("Sample offset constant {1:?} doesn't match the image dimension {0:?}")]
-    InvalidSampleOffset(crate::ImageDimension, Handle<crate::Constant>),
+    InvalidSampleOffset(crate::ImageDimension, Handle<crate::Expression>),
     #[error("Depth reference {0:?} is not a scalar float")]
     InvalidDepthReference(Handle<crate::Expression>),
     #[error("Depth sample level can only be Auto or Zero")]
@@ -119,6 +118,10 @@ pub enum ExpressionError {
     InvalidArgumentType(crate::MathFunction, u32, Handle<crate::Expression>),
     #[error("Atomic result type can't be {0:?}")]
     InvalidAtomicResultType(Handle<crate::Type>),
+    #[error(
+        "workgroupUniformLoad result type can't be {0:?}. It can only be a constructible type."
+    )]
+    InvalidWorkGroupUniformLoadResultType(Handle<crate::Type>),
     #[error("Shader requires capability {0:?}")]
     MissingCapabilities(super::Capabilities),
 }
@@ -131,7 +134,7 @@ struct ExpressionTypeResolver<'a> {
 }
 
 #[cfg(feature = "validate")]
-impl<'a> Index<Handle<crate::Expression>> for ExpressionTypeResolver<'a> {
+impl<'a> std::ops::Index<Handle<crate::Expression>> for ExpressionTypeResolver<'a> {
     type Output = crate::TypeInner;
 
     #[allow(clippy::panic)]
@@ -150,6 +153,29 @@ impl<'a> Index<Handle<crate::Expression>> for ExpressionTypeResolver<'a> {
 
 #[cfg(feature = "validate")]
 impl super::Validator {
+    pub(super) fn validate_const_expression(
+        &self,
+        handle: Handle<crate::Expression>,
+        gctx: crate::proc::GlobalCtx,
+        mod_info: &mut ModuleInfo,
+    ) -> Result<(), super::ConstExpressionError> {
+        use crate::Expression as E;
+
+        match gctx.const_expressions[handle] {
+            E::Literal(_) | E::Constant(_) | E::ZeroValue(_) => {}
+            E::Compose { ref components, ty } => {
+                validate_compose(
+                    ty,
+                    gctx,
+                    components.iter().map(|&handle| mod_info[handle].clone()),
+                )?;
+            }
+            _ => return Err(super::ConstExpressionError::NonConst),
+        }
+
+        Ok(())
+    }
+
     pub(super) fn validate_expression(
         &self,
         root: Handle<crate::Expression>,
@@ -157,7 +183,7 @@ impl super::Validator {
         function: &crate::Function,
         module: &crate::Module,
         info: &FunctionInfo,
-        other_infos: &[FunctionInfo],
+        mod_info: &ModuleInfo,
     ) -> Result<ShaderStages, ExpressionError> {
         use crate::{Expression as E, ScalarKind as Sk, TypeInner as Ti};
 
@@ -204,27 +230,19 @@ impl super::Validator {
                 if let crate::proc::IndexableLength::Known(known_length) =
                     base_type.indexable_length(module)?
                 {
-                    if let E::Constant(k) = function.expressions[index] {
-                        if let crate::Constant {
-                            // We must treat specializable constants as unknown.
-                            specialization: None,
-                            // Non-scalar indices should have been caught above.
-                            inner: crate::ConstantInner::Scalar { value, .. },
-                            ..
-                        } = module.constants[k]
-                        {
-                            match value {
-                                crate::ScalarValue::Uint(u) if u >= known_length as u64 => {
-                                    return Err(ExpressionError::IndexOutOfBounds(base, value));
-                                }
-                                crate::ScalarValue::Sint(s)
-                                    if s < 0 || s >= known_length as i64 =>
-                                {
-                                    return Err(ExpressionError::IndexOutOfBounds(base, value));
-                                }
-                                _ => (),
+                    match module
+                        .to_ctx()
+                        .eval_expr_to_u32_from(index, &function.expressions)
+                    {
+                        Ok(value) => {
+                            if value >= known_length {
+                                return Err(ExpressionError::IndexOutOfBounds(base, value));
                             }
                         }
+                        Err(crate::proc::U32EvalError::Negative) => {
+                            return Err(ExpressionError::NegativeIndex(base))
+                        }
+                        Err(crate::proc::U32EvalError::NonConst) => {}
                     }
                 }
 
@@ -244,9 +262,9 @@ impl super::Validator {
                         } => size as u32,
                         Ti::Matrix { columns, .. } => columns as u32,
                         Ti::Array {
-                            size: crate::ArraySize::Constant(handle),
+                            size: crate::ArraySize::Constant(len),
                             ..
-                        } => module.constants[handle].to_array_length().unwrap(),
+                        } => len.get(),
                         Ti::Array { .. } | Ti::BindingArray { .. } => u32::MAX, // can't statically know, but need run-time checks
                         Ti::Pointer { base, .. } if top_level => {
                             resolve_index_limit(module, top, &module.types[base].inner, false)?
@@ -262,14 +280,10 @@ impl super::Validator {
 
                 let limit = resolve_index_limit(module, base, &resolver[base], true)?;
                 if index >= limit {
-                    return Err(ExpressionError::IndexOutOfBounds(
-                        base,
-                        crate::ScalarValue::Uint(limit as _),
-                    ));
+                    return Err(ExpressionError::IndexOutOfBounds(base, limit));
                 }
                 ShaderStages::all()
             }
-            E::Constant(_handle) => ShaderStages::all(),
             E::Splat { size: _, value } => match resolver[value] {
                 Ti::Scalar { .. } => ShaderStages::all(),
                 ref other => {
@@ -296,11 +310,11 @@ impl super::Validator {
                 }
                 ShaderStages::all()
             }
+            E::Literal(_) | E::Constant(_) | E::ZeroValue(_) => ShaderStages::all(),
             E::Compose { ref components, ty } => {
                 validate_compose(
                     ty,
-                    &module.constants,
-                    &module.types,
+                    module.to_ctx(),
                     components.iter().map(|&handle| info[handle].ty.clone()),
                 )?;
                 ShaderStages::all()
@@ -410,26 +424,17 @@ impl super::Validator {
                 }
 
                 // check constant offset
-                if let Some(const_handle) = offset {
-                    let good = match module.constants[const_handle].inner {
-                        crate::ConstantInner::Scalar {
-                            width: _,
-                            value: crate::ScalarValue::Sint(_),
-                        } => num_components == 1,
-                        crate::ConstantInner::Scalar { .. } => false,
-                        crate::ConstantInner::Composite { ty, .. } => {
-                            match module.types[ty].inner {
-                                Ti::Vector {
-                                    size,
-                                    kind: Sk::Sint,
-                                    ..
-                                } => size as u32 == num_components,
-                                _ => false,
-                            }
+                if let Some(const_expr) = offset {
+                    match *mod_info[const_expr].inner_with(&module.types) {
+                        Ti::Scalar { kind: Sk::Sint, .. } if num_components == 1 => {}
+                        Ti::Vector {
+                            size,
+                            kind: Sk::Sint,
+                            ..
+                        } if size as u32 == num_components => {}
+                        _ => {
+                            return Err(ExpressionError::InvalidSampleOffset(dim, const_expr));
                         }
-                    };
-                    if !good {
-                        return Err(ExpressionError::InvalidSampleOffset(dim, const_handle));
                     }
                 }
 
@@ -1386,7 +1391,7 @@ impl super::Validator {
                 }
                 ShaderStages::all()
             }
-            E::CallResult(function) => other_infos[function.index()].available_stages,
+            E::CallResult(function) => mod_info.functions[function.index()].available_stages,
             E::AtomicResult { ty, comparison } => {
                 let scalar_predicate = |ty: &crate::TypeInner| match ty {
                     &crate::TypeInner::Scalar {
@@ -1410,6 +1415,18 @@ impl super::Validator {
                     return Err(ExpressionError::InvalidAtomicResultType(ty));
                 }
                 ShaderStages::all()
+            }
+            E::WorkGroupUniformLoadResult { ty } => {
+                if self.types[ty.index()]
+                    .flags
+                    // Sized | Constructible is exactly the types currently supported by
+                    // WorkGroupUniformLoad
+                    .contains(TypeFlags::SIZED | TypeFlags::CONSTRUCTIBLE)
+                {
+                    ShaderStages::COMPUTE
+                } else {
+                    return Err(ExpressionError::InvalidWorkGroupUniformLoadResultType(ty));
+                }
             }
             E::ArrayLength(expr) => match resolver[expr] {
                 Ti::Pointer { base, .. } => {

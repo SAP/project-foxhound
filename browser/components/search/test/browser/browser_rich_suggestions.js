@@ -74,7 +74,7 @@ async function check_results({ featureEnabled = false }) {
     Assert.equal(result.type, UrlbarUtils.RESULT_TYPE.SEARCH);
     Assert.equal(result.providerName, "SearchSuggestions");
     Assert.equal(result.payload.engine, "basic");
-    Assert.equal(result.payload.isRichSuggestion, featureEnabled);
+    Assert.equal(result.isRichSuggestion, featureEnabled);
     if (featureEnabled) {
       Assert.equal(typeof result.payload.description, "string");
       Assert.ok(result.payload.icon.startsWith("data:"));
@@ -108,3 +108,37 @@ async function check_results({ featureEnabled = false }) {
 
   await SpecialPowers.popPrefEnv();
 }
+
+add_task(async function test_richsuggestion_deduplication() {
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.urlbar.richSuggestions.featureGate", true]],
+  });
+
+  await UrlbarTestUtils.promiseAutocompleteResultPopup({
+    window,
+    value: "test0",
+    waitForFocus: SimpleTest.waitForFocus,
+  });
+
+  let { result: heuristicResult } = await UrlbarTestUtils.getDetailsOfResultAt(
+    window,
+    0
+  );
+  let { result: richResult } = await UrlbarTestUtils.getDetailsOfResultAt(
+    window,
+    1
+  );
+
+  // The Rich Suggestion that points to the same query as the Hueristic result
+  // should not be deduplicated.
+  Assert.equal(heuristicResult.type, UrlbarUtils.RESULT_TYPE.SEARCH);
+  Assert.equal(heuristicResult.providerName, "HeuristicFallback");
+  Assert.equal(richResult.type, UrlbarUtils.RESULT_TYPE.SEARCH);
+  Assert.equal(richResult.providerName, "SearchSuggestions");
+  Assert.equal(
+    heuristicResult.payload.query,
+    richResult.payload.lowerCaseSuggestion
+  );
+
+  await UrlbarTestUtils.promisePopupClose(window);
+});

@@ -729,14 +729,18 @@ items from that key's value."
 
         # print its contents
         content = self.read_from_file(abs_mozconfig_path, error_level=FATAL)
+
+        extra_content = self.config.get("extra_mozconfig_content")
+        if extra_content:
+            content += "\n".join(extra_content)
+
         self.info("mozconfig content:")
         self.info(content)
 
         # finally, copy the mozconfig to a path that 'mach build' expects it to
         # be
-        self.copyfile(
-            abs_mozconfig_path, os.path.join(dirs["abs_src_dir"], ".mozconfig")
-        )
+        with open(os.path.join(dirs["abs_src_dir"], ".mozconfig"), "w") as fh:
+            fh.write(content)
 
     def _run_tooltool(self):
         env = self.query_build_env()
@@ -807,13 +811,13 @@ items from that key's value."
         self.preflight_build()
         self._run_mach_command_in_build_env(["configure"])
         self._run_mach_command_in_build_env(
-            ["static-analysis", "autotest", "--intree-tool"], use_subprocess=True
+            ["static-analysis", "autotest", "--intree-tool"]
         )
 
     def _query_mach(self):
         return [sys.executable, "mach"]
 
-    def _run_mach_command_in_build_env(self, args, use_subprocess=False):
+    def _run_mach_command_in_build_env(self, args):
         """Run a mach command in a build context."""
         env = self.query_build_env()
         env.update(self.query_mach_build_env())
@@ -822,23 +826,13 @@ items from that key's value."
 
         mach = self._query_mach()
 
-        # XXX See bug 1483883
-        # Work around an interaction between Gradle and mozharness
-        # Not using `subprocess` causes gradle to hang
-        if use_subprocess:
-            import subprocess
-
-            return_code = subprocess.call(
-                mach + ["--log-no-times"] + args, env=env, cwd=dirs["abs_src_dir"]
-            )
-        else:
-            return_code = self.run_command(
-                command=mach + ["--log-no-times"] + args,
-                cwd=dirs["abs_src_dir"],
-                env=env,
-                error_list=MakefileErrorList,
-                output_timeout=self.config.get("max_build_output_timeout", 60 * 40),
-            )
+        return_code = self.run_command(
+            command=mach + ["--log-no-times"] + args,
+            cwd=dirs["abs_src_dir"],
+            env=env,
+            error_list=MakefileErrorList,
+            output_timeout=self.config.get("max_build_output_timeout", 60 * 40),
+        )
 
         if return_code:
             self.return_code = self.worst_level(
@@ -1045,11 +1039,20 @@ items from that key's value."
 
     def _load_sccache_stats(self):
         stats_file = os.path.join(
-            self.query_abs_dirs()["abs_obj_dir"], "sccache-stats.json"
+            self.query_abs_dirs()["base_work_dir"], "artifacts", "sccache-stats.json"
         )
         if not os.path.exists(stats_file):
-            self.info("%s does not exist; not loading sccache stats" % stats_file)
-            return
+            msg = "%s does not exist; not loading sccache stats" % stats_file
+            if (
+                os.environ.get("USE_SCCACHE") == "1"
+                and not os.environ.get("SCCACHE_DISABLE") == "1"
+            ):
+                # We know we use sccache but we didn't find it.
+                # Fails to make sure the dev knows it
+                self.fatal(msg)
+            else:
+                self.info(msg)
+                return
 
         with open(stats_file, "r") as fh:
             stats = json.load(fh)

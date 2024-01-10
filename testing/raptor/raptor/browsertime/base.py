@@ -6,6 +6,7 @@
 
 import json
 import os
+import pathlib
 import re
 import sys
 from abc import ABCMeta, abstractmethod
@@ -16,7 +17,7 @@ import six
 from benchmark import Benchmark
 from logger.logger import RaptorLogger
 from manifestparser.util import evaluate_list_from_string
-from perftest import Perftest
+from perftest import TRACE_APPS, Perftest
 from results import BrowsertimeResultsHandler
 
 LOG = RaptorLogger(component="raptor-browsertime")
@@ -118,7 +119,7 @@ class Browsertime(Perftest):
 
         if test.get("type") == "benchmark":
             # benchmark-type tests require the benchmark test to be served out
-            self.benchmark = Benchmark(self.config, test)
+            self.benchmark = Benchmark(self.config, test, debug_mode=self.debug_mode)
             test["test_url"] = test["test_url"].replace("<host>", self.benchmark.host)
             test["test_url"] = test["test_url"].replace("<port>", self.benchmark.port)
 
@@ -147,6 +148,37 @@ class Browsertime(Perftest):
                 else:
                     chromedriver_version = DEFAULT_CHROMEVERSION
 
+                # Bug 1844578 - Remove this, and change the cd_extracted_names during task
+                # setup once all chrome versions use the new artifact setup.
+                cd_extracted_names_115 = {
+                    "windows": str(
+                        pathlib.Path("{}chromedriver-win32", "chromedriver.exe")
+                    ),
+                    "mac": str(pathlib.Path("{}chromedriver-mac-x64", "chromedriver")),
+                    "default": str(
+                        pathlib.Path("{}chromedriver-linux64", "chromedriver")
+                    ),
+                }
+
+                if int(chromedriver_version) >= 115:
+                    if "mac" in self.config["platform"]:
+                        self.browsertime_chromedriver = (
+                            self.browsertime_chromedriver.replace(
+                                "{}chromedriver", cd_extracted_names_115["mac"]
+                            )
+                        )
+                    elif "win" in self.config["platform"]:
+                        self.browsertime_chromedriver = (
+                            self.browsertime_chromedriver.replace(
+                                "{}chromedriver.exe", cd_extracted_names_115["windows"]
+                            )
+                        )
+                    else:
+                        self.browsertime_chromedriver = (
+                            self.browsertime_chromedriver.replace(
+                                "{}chromedriver", cd_extracted_names_115["default"]
+                            )
+                        )
                 self.browsertime_chromedriver = self.browsertime_chromedriver.format(
                     chromedriver_version
                 )
@@ -172,10 +204,14 @@ class Browsertime(Perftest):
     def run_test_teardown(self, test):
         super(Browsertime, self).run_test_teardown(test)
 
-        # if we were using a playback tool, stop it
+        # If we were using a playback tool, stop it
         if self.playback is not None:
             self.playback.stop()
             self.playback = None
+
+        # Stop the benchmark server if we're running a benchmark test
+        if self.benchmark:
+            self.benchmark.stop_http_server()
 
     def check_for_crashes(self):
         super(Browsertime, self).check_for_crashes()
@@ -220,43 +256,43 @@ class Browsertime(Perftest):
                 browsertime_path,
                 "browsertime_benchmark.js",
             )
+        elif (
+            test.get("name", "") == "browsertime"
+        ):  # Custom scripts are treated as pageload tests for now
+            # Check for either a script or a url from the
+            # --browsertime-arg options
+            browsertime_script = None
+            for option in self.browsertime_user_args:
+                arg, val = option.split("=", 1)
+                if arg in ("test_script", "url"):
+                    browsertime_script = val
+            if browsertime_script is None:
+                raise Exception(
+                    "You must provide a path to the test script or the url like so: "
+                    "`--browsertime-arg test_script=PATH/TO/SCRIPT`, or "
+                    "`--browsertime-arg url=https://www.sitespeed.io`"
+                )
+
+            # Make it simple to use our builtin test scripts
+            if browsertime_script == "pageload":
+                browsertime_script = os.path.join(
+                    browsertime_path, "browsertime_pageload.js"
+                )
+            elif browsertime_script == "interactive":
+                browsertime_script = os.path.join(
+                    browsertime_path, "browsertime_interactive.js"
+                )
+
+        elif test.get("interactive", False):
+            browsertime_script = os.path.join(
+                browsertime_path,
+                "browsertime_interactive.js",
+            )
         else:
-            # Custom scripts are treated as pageload tests for now
-            if test.get("name", "") == "browsertime":
-                # Check for either a script or a url from the
-                # --browsertime-arg options
-                browsertime_script = None
-                for option in self.browsertime_user_args:
-                    arg, val = option.split("=", 1)
-                    if arg in ("test_script", "url"):
-                        browsertime_script = val
-                if browsertime_script is None:
-                    raise Exception(
-                        "You must provide a path to the test script or the url like so: "
-                        "`--browsertime-arg test_script=PATH/TO/SCRIPT`, or "
-                        "`--browsertime-arg url=https://www.sitespeed.io`"
-                    )
-
-                # Make it simple to use our builtin test scripts
-                if browsertime_script == "pageload":
-                    browsertime_script = os.path.join(
-                        browsertime_path, "browsertime_pageload.js"
-                    )
-                elif browsertime_script == "interactive":
-                    browsertime_script = os.path.join(
-                        browsertime_path, "browsertime_interactive.js"
-                    )
-
-            elif test.get("interactive", False):
-                browsertime_script = os.path.join(
-                    browsertime_path,
-                    "browsertime_interactive.js",
-                )
-            else:
-                browsertime_script = os.path.join(
-                    browsertime_path,
-                    test.get("test_script", "browsertime_pageload.js"),
-                )
+            browsertime_script = os.path.join(
+                browsertime_path,
+                test.get("test_script", "browsertime_pageload.js"),
+            )
 
         page_cycle_delay = "1000"
         if self.config["live_sites"]:
@@ -316,8 +352,6 @@ class Browsertime(Perftest):
             else str(self.post_startup_delay),
             "--iterations",
             str(browser_cycles),
-            "--videoParams.androidVideoWaitTime",
-            "20000",
             # running browsertime test in chimera mode
             "--browsertime.chimera",
             "true" if self.config["chimera"] else "false",
@@ -354,6 +388,14 @@ class Browsertime(Perftest):
                 ["--browsertime.secondary_url", test.get("secondary_url")]
             )
 
+        # These options can have multiple entries in a browsertime command
+        MULTI_OPTS = [
+            "--firefox.android.intentArgument",
+            "--firefox.args",
+            "--firefox.preference",
+            "--chrome.traceCategory",
+        ]
+
         # In this code block we check if any priority 2 argument is in conflict with a priority
         # 3 arg if so we overwrite the value with the priority 2 argument, and otherwise we
         # simply add the priority 2 arg
@@ -366,8 +408,8 @@ class Browsertime(Perftest):
                         "One of the browsertime_args from the test was not split properly. "
                         f"Expecting a --flag, or a --option=value pairing. Found: {split_arg}"
                     )
-                if pairing[0] in browsertime_options:
-                    # If it's a flag, don't re-add it
+                if pairing[0] in browsertime_options and pairing[0] not in MULTI_OPTS:
+                    # If it's not a flag, then overwrite the existing value
                     if len(pairing) > 1:
                         ind = browsertime_options.index(pairing[0])
                         browsertime_options[ind + 1] = pairing[1]
@@ -458,52 +500,21 @@ class Browsertime(Perftest):
         else:
             priority1_options.extend(["--video", "false", "--visualMetrics", "false"])
 
-        if self.config["gecko_profile"] or extra_profiler_run:
+        if self.config["app"] == "firefox" and (
+            self.config["gecko_profile"] or extra_profiler_run
+        ):
             self.config[
                 "browsertime_result_dir"
             ] = self.results_handler.result_dir_for_test(test)
-            self._init_gecko_profiling(test)
-            priority1_options.append("--firefox.geckoProfiler")
-            if self._expose_gecko_profiler(extra_profiler_run, test):
-                priority1_options.extend(
-                    [
-                        "--firefox.geckoProfilerRecordingType",
-                        "custom",
-                    ]
-                )
-            for option, browser_time_option, default in (
-                (
-                    "gecko_profile_features",
-                    "--firefox.geckoProfilerParams.features",
-                    "js,stackwalk,cpu,screenshots",
-                ),
-                (
-                    "gecko_profile_threads",
-                    "--firefox.geckoProfilerParams.threads",
-                    "GeckoMain,Compositor,Renderer",
-                ),
-                (
-                    "gecko_profile_interval",
-                    "--firefox.geckoProfilerParams.interval",
-                    None,
-                ),
-                (
-                    "gecko_profile_entries",
-                    "--firefox.geckoProfilerParams.bufferSize",
-                    str(13_107_200 * 5),  # ~500mb
-                ),
-            ):
-                # 0 is a valid value. The setting may be present but set to None.
-                value = self.config.get(option)
-                if value is None:
-                    value = test.get(option)
-                if value is None:
-                    value = default
-                if option == "gecko_profile_threads":
-                    extra = self.config.get("gecko_profile_extra_threads", [])
-                    value = ",".join(value.split(",") + extra)
-                if value is not None:
-                    priority1_options.extend([browser_time_option, str(value)])
+            self._compose_gecko_profiler_cmds(test, priority1_options)
+
+        elif self.config["app"] in TRACE_APPS and extra_profiler_run:
+            self.config[
+                "browsertime_result_dir"
+            ] = self.results_handler.result_dir_for_test(test)
+            self._compose_chrome_trace_cmds(
+                test, priority1_options, browsertime_options
+            )
 
         # Add any user-specified flags here, let them override anything
         # with no restrictions
@@ -513,11 +524,6 @@ class Browsertime(Perftest):
 
         # In this code block we check if any priority 1 arguments are in conflict with a
         # priority 2/3/4 argument
-        MULTI_OPTS = [
-            "--firefox.android.intentArgument",
-            "--firefox.args",
-            "--firefox.preference",
-        ]
         for index, argument in list(enumerate(priority1_options)):
             if argument in MULTI_OPTS:
                 browsertime_options.extend([argument, priority1_options[index + 1]])
@@ -551,6 +557,85 @@ class Browsertime(Perftest):
             + [browsertime_script]
             + browsertime_options
         )
+
+    def _compose_gecko_profiler_cmds(self, test, priority1_options):
+        """Modify the command line options for running the gecko profiler
+        in the Firefox application"""
+
+        LOG.info("Composing Gecko Profiler commands")
+        self._init_gecko_profiling(test)
+        priority1_options.append("--firefox.geckoProfiler")
+        if self._expose_gecko_profiler(self.config.get("extra_profiler_run"), test):
+            priority1_options.extend(
+                [
+                    "--firefox.geckoProfilerRecordingType",
+                    "custom",
+                ]
+            )
+        for option, browsertime_option, default in (
+            (
+                "gecko_profile_features",
+                "--firefox.geckoProfilerParams.features",
+                "js,stackwalk,cpu,screenshots",
+            ),
+            (
+                "gecko_profile_threads",
+                "--firefox.geckoProfilerParams.threads",
+                "GeckoMain,Compositor,Renderer",
+            ),
+            (
+                "gecko_profile_interval",
+                "--firefox.geckoProfilerParams.interval",
+                None,
+            ),
+            (
+                "gecko_profile_entries",
+                "--firefox.geckoProfilerParams.bufferSize",
+                str(13_107_200 * 5),  # ~500mb
+            ),
+        ):
+            # 0 is a valid value. The setting may be present but set to None.
+            value = self.config.get(option)
+            if value is None:
+                value = test.get(option)
+            if value is None:
+                value = default
+            if option == "gecko_profile_threads":
+                extra = self.config.get("gecko_profile_extra_threads", [])
+                value = ",".join(value.split(",") + extra)
+            if value is not None:
+                priority1_options.extend([browsertime_option, str(value)])
+
+    def _compose_chrome_trace_cmds(self, test, priority1_options, browsertime_options):
+        """Modify the command line options for running a Trace on chrom* applications
+        as defined by the TRACE_APPS variable"""
+
+        LOG.info("Composing Chrome Trace commands")
+        self._init_chrome_trace(test)
+        priority1_options.extend(["--chrome.trace"])
+
+        # current categories to capture, we can modify this as needed in the future
+        # reference:
+        # https://source.chromium.org/chromium/chromium/src/+/main:third_party/devtools-frontend/src/front_end/panels/timeline/TimelineController.ts;l=80-94;drc=6c0298a8ce155553c84b312a701298141bfc1330
+        # https://github.com/sitespeedio/browsertime/blob/28bd484d31f51412b6e5e132f81749f65949b47c/lib/chrome/settings/traceCategories.js#L4
+        trace_categories = [
+            "disabled-by-default-devtools.timeline",
+            "disabled-by-default-devtools.timeline.frame",
+            "disabled-by-default-devtools.timeline.stack",
+            "disabled-by-default-v8.compile",
+            "disabled-by-default-v8.cpu_profiler.hires",
+            "disabled-by-default-lighthouse",
+            "disabled-by-default-v8.cpu_profiler",
+        ]
+
+        if "--chrome.traceCategory" not in browsertime_options:
+            # if this option already exists presumably the user has
+            # already specified the desired options So we can skip to
+            # enabling screenshots before returning
+            for cat in trace_categories:
+                # add each tracing event we want to capture with browsertime
+                priority1_options.extend(["--chrome.traceCategory", cat])
+        priority1_options.extend(["--chrome.enableTraceScreenshots"])
 
     def _finalize_pageload_test_setup(self, browsertime_options, test):
         """This function finalizes remaining configurations for browsertime pageload tests.
@@ -718,7 +803,6 @@ class Browsertime(Perftest):
             LOG.info("Failed during the extra profiler run: " + str(e))
 
     def run_test(self, test, timeout):
-        global BROWSERTIME_PAGELOAD_OUTPUT_TIMEOUT
 
         self.run_test_setup(test)
         # timeout is a single page-load timeout value (ms) from the test INI

@@ -10,10 +10,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
  - encoder API: add `JxlEncoderSetExtraChannelDistance` to adjust the quality
    of extra channels (like alpha) separately.
+ - encoder API: new api functions for streaming encoding:
+  - `JxlEncoderSetOutputCallback`,
+  - `JxlEncoderChunkedImageFrameStart`,
+  - `JxlEncoderChunkedImageFrameAddPart` and new
+  - `JXL_ENC_FRAME_SETTING_BUFFERING` enum value.
+ - encoder API: new options for more fine-grained control over metadata
+   preservation when using `JxlEncoderAddJPEGFrame`:
+  - `JXL_ENC_FRAME_SETTING_JPEG_KEEP_EXIF`
+  - `JXL_ENC_FRAME_SETTING_JPEG_KEEP_XMP`
+  - `JXL_ENC_FRAME_SETTING_JPEG_KEEP_JUMBF`
+ - encoder API: new function `JxlEncoderSetUpsamplingMode` to change the upsampling
+   method, e.g. to use nearest-neighbor upsampling for pixel art
+ - cjxl can now be used to explicitly add/update/strip Exif/XMP/JUMBF metadata using
+   the decoder-hints syntax, e.g. `cjxl input.ppm -x exif=input.exif output.jxl`
+ - djxl can now be used to extract Exif/XMP/JUMBF metadata
 
 ### Removed
+ - API: the Butteraugli API (`jxl/butteraugli.h`) was removed.
+ - encoder and decoder API: all deprecated functions were removed:
+   `JxlDecoderDefaultPixelFormat`, `JxlEncoderOptionsSetLossless`,
+   `JxlEncoderOptionsSetEffort`, `JxlEncoderOptionsSetDecodingSpeed`,
+   `JxlEncoderOptionsSetDistance`, `JxlEncoderOptionsCreate`, as well as
+   the deprecated enumerator values `JXL_DEC_EXTENSIONS`, `JXL_ENC_NOT_SUPPORTED`,
+   `JXL_TYPE_BOOLEAN`, `JXL_TYPE_UINT32`, and deprecated type `JxlEncoderOptions`.
+ - decoder API: the signature of `JxlDecoderGetColorAsEncodedProfile`,
+   `JxlDecoderGetICCProfileSize`, and `JxlDecoderGetColorAsICCProfile`
+   changed: a deprecated unused argument was removed.
 
-### Changed 
+### Changed
  - changed the name of the cjxl flag `photon_noise` to `photon_noise_iso`
 
 ## [0.8.0] - 2023-01-18
@@ -40,6 +65,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed / clarified
  - encoder API: `JxlEncoderProcessOutput` requires at least 32 bytes of output
    space to proceed and guarantees that at least one byte will be written
+
 ## [0.7] - 2022-07-21
 
 ### Added

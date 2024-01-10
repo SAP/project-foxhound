@@ -19,7 +19,7 @@ XPCOMUtils.defineLazyPreferenceGetter(
   false
 );
 
-XPCOMUtils.defineLazyGetter(lazy, "logger", () => lazy.Log.get());
+ChromeUtils.defineLazyGetter(lazy, "logger", () => lazy.Log.get());
 
 // Ensure we are in the parent process.
 if (Services.appinfo.processType != Ci.nsIXULRuntime.PROCESS_TYPE_DEFAULT) {
@@ -105,6 +105,9 @@ const COMMON_PREFERENCES = new Map([
   // inconsistently.
   ["browser.download.panel.shown", true],
 
+  // Make sure Topsites doesn't hit the network to retrieve sponsored tiles.
+  ["browser.newtabpage.activity-stream.showSponsoredTopSites", false],
+
   // Always display a blank page
   ["browser.newtabpage.enabled", false],
 
@@ -144,11 +147,6 @@ const COMMON_PREFERENCES = new Map([
 
   // Do not close the window when the last tab gets closed
   ["browser.tabs.closeWindowWithLastTab", false],
-
-  // Do not allow background tabs to be zombified on Android, otherwise for
-  // tests that open additional tabs, the test harness tab itself might get
-  // unloaded
-  ["browser.tabs.disableBackgroundZombification", false],
 
   // Don't unload tabs when available memory is running low
   ["browser.tabs.unloadOnLowMemory", false],

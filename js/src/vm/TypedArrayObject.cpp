@@ -643,8 +643,7 @@ class TypedArrayObjectTemplate : public TypedArrayObject {
 
     // Step 6.b.iii.3.
     if (dataObj->is<ArrayBufferObjectMaybeShared>()) {
-      HandleArrayBufferObjectMaybeShared buffer =
-          dataObj.as<ArrayBufferObjectMaybeShared>();
+      auto buffer = dataObj.as<ArrayBufferObjectMaybeShared>();
       return fromBufferSameCompartment(cx, buffer, byteOffset, length, proto);
     }
     return fromBufferWrapped(cx, dataObj, byteOffset, length, proto);
@@ -688,7 +687,7 @@ class TypedArrayObjectTemplate : public TypedArrayObject {
   // 23.2.5.1.3 InitializeTypedArrayFromArrayBuffer ( O, buffer, byteOffset,
   // length ) Steps 5-8.
   static bool computeAndCheckLength(
-      JSContext* cx, HandleArrayBufferObjectMaybeShared bufferMaybeUnwrapped,
+      JSContext* cx, Handle<ArrayBufferObjectMaybeShared*> bufferMaybeUnwrapped,
       uint64_t byteOffset, uint64_t lengthIndex, size_t* length) {
     MOZ_ASSERT(byteOffset % BYTES_PER_ELEMENT == 0);
     MOZ_ASSERT(byteOffset < uint64_t(DOUBLE_INTEGRAL_PRECISION_LIMIT));
@@ -704,6 +703,7 @@ class TypedArrayObjectTemplate : public TypedArrayObject {
 
     // Step 6.
     size_t bufferByteLength = bufferMaybeUnwrapped->byteLength();
+    MOZ_ASSERT(bufferByteLength <= MaxByteLength);
 
     size_t len;
     if (lengthIndex == UINT64_MAX) {
@@ -747,14 +747,7 @@ class TypedArrayObjectTemplate : public TypedArrayObject {
       len = size_t(lengthIndex);
     }
 
-    if (len > MaxByteLength / BYTES_PER_ELEMENT) {
-      JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
-                                JSMSG_TYPED_ARRAY_CONSTRUCT_TOO_LARGE,
-                                Scalar::name(ArrayTypeID()));
-      return false;
-    }
-
-    MOZ_ASSERT(len < SIZE_MAX);
+    MOZ_ASSERT(len <= MaxByteLength / BYTES_PER_ELEMENT);
     *length = len;
     return true;
   }
@@ -763,7 +756,7 @@ class TypedArrayObjectTemplate : public TypedArrayObject {
   // 23.2.5.1.3 InitializeTypedArrayFromArrayBuffer ( O, buffer, byteOffset,
   // length ) Steps 5-13.
   static TypedArrayObject* fromBufferSameCompartment(
-      JSContext* cx, HandleArrayBufferObjectMaybeShared buffer,
+      JSContext* cx, Handle<ArrayBufferObjectMaybeShared*> buffer,
       uint64_t byteOffset, uint64_t lengthIndex, HandleObject proto) {
     // Steps 5-8.
     size_t length = 0;
@@ -804,7 +797,7 @@ class TypedArrayObjectTemplate : public TypedArrayObject {
       return nullptr;
     }
 
-    RootedArrayBufferObjectMaybeShared unwrappedBuffer(cx);
+    Rooted<ArrayBufferObjectMaybeShared*> unwrappedBuffer(cx);
     unwrappedBuffer = &unwrapped->as<ArrayBufferObjectMaybeShared>();
 
     size_t length = 0;
@@ -859,8 +852,7 @@ class TypedArrayObjectTemplate : public TypedArrayObject {
 
     uint64_t lengthIndex = lengthInt >= 0 ? uint64_t(lengthInt) : UINT64_MAX;
     if (bufobj->is<ArrayBufferObjectMaybeShared>()) {
-      HandleArrayBufferObjectMaybeShared buffer =
-          bufobj.as<ArrayBufferObjectMaybeShared>();
+      auto buffer = bufobj.as<ArrayBufferObjectMaybeShared>();
       return fromBufferSameCompartment(cx, buffer, byteOffset, lengthIndex,
                                        nullptr);
     }
@@ -1164,10 +1156,14 @@ template <typename T>
   MOZ_ASSERT(!obj->isSharedMemory());
   if (srcArray->isSharedMemory()) {
     if (!ElementSpecific<T, SharedOps>::setFromTypedArray(obj, srcArray, 0)) {
+      MOZ_ASSERT_UNREACHABLE(
+          "setFromTypedArray can only fail for overlapping buffers");
       return nullptr;
     }
   } else {
     if (!ElementSpecific<T, UnsharedOps>::setFromTypedArray(obj, srcArray, 0)) {
+      MOZ_ASSERT_UNREACHABLE(
+          "setFromTypedArray can only fail for overlapping buffers");
       return nullptr;
     }
   }
@@ -1559,9 +1555,12 @@ static bool SetTypedArrayFromTypedArray(JSContext* cx,
 
   // Steps 6-12, 16-24.
   switch (target->type()) {
-#define SET_FROM_TYPED_ARRAY(_, T, N)                                \
-  case Scalar::N:                                                    \
-    if (!SetFromTypedArray<T>(target, source, offset)) return false; \
+#define SET_FROM_TYPED_ARRAY(_, T, N)                    \
+  case Scalar::N:                                        \
+    if (!SetFromTypedArray<T>(target, source, offset)) { \
+      ReportOutOfMemory(cx);                             \
+      return false;                                      \
+    }                                                    \
     break;
     JS_FOR_EACH_TYPED_ARRAY(SET_FROM_TYPED_ARRAY)
 #undef SET_FROM_TYPED_ARRAY

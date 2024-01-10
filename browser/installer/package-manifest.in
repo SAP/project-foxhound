@@ -90,6 +90,7 @@
 #endif
 #ifdef XP_MACOSX
 @BINPATH@/@MOZ_CHILD_PROCESS_NAME@.app/
+@BINPATH@/@MOZ_EME_PROCESS_NAME@.app/
 #else
 @BINPATH@/@MOZ_CHILD_PROCESS_NAME@
 #endif
@@ -101,16 +102,17 @@
 #endif
 @BINPATH@/@MSVC_CXX_RUNTIME_DLL@
 #endif
-#if MOZ_PACKAGE_WIN_UCRT_DLLS
-@BINPATH@/api-ms-win-*.dll
-@BINPATH@/ucrtbase.dll
-#endif
 #endif
 #ifdef MOZ_GTK
 @BINPATH@/glxtest
 @BINPATH@/@DLL_PREFIX@mozgtk@DLL_SUFFIX@
 #ifdef MOZ_WAYLAND
 @BINPATH@/@DLL_PREFIX@mozwayland@DLL_SUFFIX@
+#endif
+#ifdef MOZ_ENABLE_V4L2
+@BINPATH@/v4l2test
+#endif
+#ifdef MOZ_ENABLE_VAAPI
 @BINPATH@/vaapitest
 #endif
 #endif
@@ -119,13 +121,10 @@
 ; build because we haven't run the relevant parts of configure, so we guess
 ; here and trust what came from our source build.
 #if defined(MOZ_ARTIFACT_BUILDS) && defined(XP_WIN)
-@BINPATH@/api-ms-win-*.dll
-@BINPATH@/ucrtbase.dll
 @BINPATH@/vcruntime*.dll
 @BINPATH@/msvcp*.dll
 @BINPATH@/libEGL.dll
 @BINPATH@/libGLESv2.dll
-@BINPATH@/d3dcompiler_47.dll
 #endif
 
 [browser]
@@ -152,6 +151,7 @@
 @BINPATH@/@DLL_PREFIX@mozsqlite3@DLL_SUFFIX@
 #endif
 @BINPATH@/@DLL_PREFIX@lgpllibs@DLL_SUFFIX@
+@BINPATH@/@DLL_PREFIX@gkcodecs@DLL_SUFFIX@
 #ifdef MOZ_FFVPX
 @BINPATH@/@DLL_PREFIX@mozavutil@DLL_SUFFIX@
 @BINPATH@/@DLL_PREFIX@mozavcodec@DLL_SUFFIX@
@@ -211,10 +211,6 @@
 #ifdef MOZ_ANGLE_RENDERER
 @BINPATH@/libEGL.dll
 @BINPATH@/libGLESv2.dll
-
-#ifdef MOZ_D3DCOMPILER_VISTA_DLL
-@BINPATH@/@MOZ_D3DCOMPILER_VISTA_DLL@
-#endif
 #endif # MOZ_ANGLE_RENDERER
 
 ; [Browser Chrome Files]
@@ -461,6 +457,7 @@ i686/xul.dll
 i686/nss3.dll
 i686/mozglue.dll
 i686/lgpllibs.dll
+i686/gkcodecs.dll
 i686/msvcp140.dll
 i686/vcruntime140.dll
 i686/vcruntime140_1.dll

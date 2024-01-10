@@ -96,7 +96,6 @@ class nsIPrincipal;
 class nsIScreen;
 class nsIScrollableFrame;
 class nsIURI;
-class nsMappedAttributes;
 class nsPresContext;
 class nsWindowSizes;
 struct JSContext;
@@ -108,6 +107,7 @@ class nsGetterAddRefs;
 
 namespace mozilla {
 class DeclarationBlock;
+class MappedDeclarationsBuilder;
 class ErrorResult;
 class OOMReporter;
 class SMILAttr;
@@ -146,6 +146,8 @@ typedef nsTHashMap<nsRefPtrHashKey<DOMIntersectionObserver>, int32_t>
     IntersectionObserverList;
 }  // namespace dom
 }  // namespace mozilla
+
+using nsMapRuleToAttributesFunc = void (*)(mozilla::MappedDeclarationsBuilder&);
 
 // Declared here because of include hell.
 extern "C" bool Servo_Element_IsDisplayContents(const mozilla::dom::Element*);
@@ -390,9 +392,15 @@ class Element : public FragmentOrElement {
   /**
    * Get the mapped attributes, if any, for this element.
    */
-  const nsMappedAttributes* GetMappedAttributes() const;
+  StyleLockedDeclarationBlock* GetMappedAttributeStyle() const {
+    return mAttrs.GetMappedDeclarationBlock();
+  }
 
-  void ClearMappedServoStyle() { mAttrs.ClearMappedServoStyle(); }
+  bool IsPendingMappedAttributeEvaluation() const {
+    return mAttrs.IsPendingMappedAttributeEvaluation();
+  }
+
+  void SetMappedDeclarationBlock(already_AddRefed<StyleLockedDeclarationBlock>);
 
   /**
    * InlineStyleDeclarationWillChange is called before SetInlineStyleDeclaration
@@ -458,13 +466,15 @@ class Element : public FragmentOrElement {
   virtual nsIMozBrowserFrame* GetAsMozBrowserFrame() { return nullptr; }
 
   /**
-   * Is the attribute named stored in the mapped attributes?
-   *
-   * // XXXbz we use this method in HasAttributeDependentStyle, so svg
-   *    returns true here even though it stores nothing in the mapped
-   *    attributes.
+   * Is the attribute named aAttribute a mapped attribute?
    */
   NS_IMETHOD_(bool) IsAttributeMapped(const nsAtom* aAttribute) const;
+
+  nsresult BindToTree(BindContext&, nsINode& aParent) override;
+  void UnbindFromTree(bool aNullParent = true) override;
+
+  virtual nsMapRuleToAttributesFunc GetAttributeMappingFunction() const;
+  static void MapNoAttributesInto(mozilla::MappedDeclarationsBuilder&);
 
   /**
    * Get a hint that tells the style system what to do when
@@ -590,7 +600,7 @@ class Element : public FragmentOrElement {
   /**
    * https://html.spec.whatwg.org/multipage/popover.html#topmost-popover-ancestor
    */
-  mozilla::dom::Element* GetTopmostPopoverAncestor() const;
+  Element* GetTopmostPopoverAncestor(const Element* aInvoker) const;
 
   ElementAnimationData* GetAnimationData() const {
     if (!MayHaveAnimations()) {
@@ -807,10 +817,6 @@ class Element : public FragmentOrElement {
 
   void UpdateEditableState(bool aNotify) override;
 
-  nsresult BindToTree(BindContext&, nsINode& aParent) override;
-
-  void UnbindFromTree(bool aNullParent = true) override;
-
   /**
    * Normalizes an attribute name and returns it as a nodeinfo if an attribute
    * with that name exists. This method is intended for character case
@@ -875,11 +881,11 @@ class Element : public FragmentOrElement {
                               bool* aHasListeners, bool* aOldValueSet);
 
   /**
-   * Sets the class attribute to a value that contains no whitespace.
+   * Sets the class attribute.
    * Assumes that we are not notifying and that the attribute hasn't been
    * set previously.
    */
-  nsresult SetSingleClassFromParser(nsAtom* aSingleClassName);
+  nsresult SetClassAttrFromParser(nsAtom* aValue);
 
   // aParsedValue receives the old value of the attribute. That's useful if
   // either the input or output value of aParsedValue is StoresOwnData.
@@ -900,10 +906,7 @@ class Element : public FragmentOrElement {
    */
   bool GetAttr(int32_t aNameSpaceID, const nsAtom* aName,
                nsAString& aResult) const;
-
-  bool GetAttr(const nsAtom* aName, nsAString& aResult) const {
-    return GetAttr(kNameSpaceID_None, aName, aResult);
-  }
+  bool GetAttr(const nsAtom* aName, nsAString& aResult) const;
 
   /**
    * Determine if an attribute has been set (empty string or otherwise).
@@ -913,11 +916,11 @@ class Element : public FragmentOrElement {
    * @param aAttr the attribute name
    * @return whether an attribute exists
    */
-  inline bool HasAttr(int32_t aNameSpaceID, const nsAtom* aName) const;
-
-  bool HasAttr(const nsAtom* aAttr) const {
-    return HasAttr(kNameSpaceID_None, aAttr);
+  inline bool HasAttr(int32_t aNameSpaceID, const nsAtom* aName) const {
+    return mAttrs.HasAttr(aNameSpaceID, aName);
   }
+
+  bool HasAttr(const nsAtom* aAttr) const { return mAttrs.HasAttr(aAttr); }
 
   /**
    * Determine if an attribute has been set to a non-empty string value. If the
@@ -1147,24 +1150,33 @@ class Element : public FragmentOrElement {
                                       uint32_t aMapCount);
 
  protected:
+  inline bool GetAttr(const nsAtom* aName, DOMString& aResult) const {
+    MOZ_ASSERT(aResult.IsEmpty(), "Should have empty string coming in");
+    const nsAttrValue* val = mAttrs.GetAttr(aName);
+    if (!val) {
+      return false;  // DOMString comes pre-emptied.
+    }
+    val->ToString(aResult);
+    // Taintfox element.getAttr source
+    if (aResult.Length() > 0) {
+      SetTaintSourceGetAttr(aName, aResult);
+    }
+    return true;
+  }
 
   inline bool GetAttr(int32_t aNameSpaceID, const nsAtom* aName,
                       DOMString& aResult) const {
-    NS_ASSERTION(nullptr != aName, "must have attribute name");
-    NS_ASSERTION(aNameSpaceID != kNameSpaceID_Unknown,
-                 "must have a real namespace ID!");
     MOZ_ASSERT(aResult.IsEmpty(), "Should have empty string coming in");
     const nsAttrValue* val = mAttrs.GetAttr(aName, aNameSpaceID);
-    if (val) {
-      val->ToString(aResult);
-      // Taintfox element.getAttr source
-      if (aResult.Length() > 0) {
-        SetTaintSourceGetAttr(aNameSpaceID, aName, aResult);
-      }
-      return true;
+    if (!val) {
+      return false;  // DOMString comes pre-emptied.
     }
-    // else DOMString comes pre-emptied.
-    return false;
+    val->ToString(aResult);
+    // Taintfox element.getAttr source
+    if (aResult.Length() > 0) {
+      SetTaintSourceGetAttr(aNameSpaceID, aName, aResult);
+    }
+    return true;
   }
 
  public:
@@ -1186,20 +1198,16 @@ class Element : public FragmentOrElement {
   }
 
   void GetTagName(nsAString& aTagName) const { aTagName = NodeName(); }
-  void GetId(nsAString& aId) const {
-    GetAttr(kNameSpaceID_None, nsGkAtoms::id, aId);
-  }
-  void GetId(DOMString& aId) const {
-    GetAttr(kNameSpaceID_None, nsGkAtoms::id, aId);
-  }
+  void GetId(nsAString& aId) const { GetAttr(nsGkAtoms::id, aId); }
+  void GetId(DOMString& aId) const { GetAttr(nsGkAtoms::id, aId); }
   void SetId(const nsAString& aId) {
     SetAttr(kNameSpaceID_None, nsGkAtoms::id, aId, true);
   }
   void GetClassName(nsAString& aClassName) {
-    GetAttr(kNameSpaceID_None, nsGkAtoms::_class, aClassName);
+    GetAttr(nsGkAtoms::_class, aClassName);
   }
   void GetClassName(DOMString& aClassName) {
-    GetAttr(kNameSpaceID_None, nsGkAtoms::_class, aClassName);
+    GetAttr(nsGkAtoms::_class, aClassName);
   }
   void SetClassName(const nsAString& aClassName) {
     SetAttr(kNameSpaceID_None, nsGkAtoms::_class, aClassName, true);
@@ -1661,9 +1669,7 @@ class Element : public FragmentOrElement {
    * @param aAttr    name of attribute.
    * @param aValue   Boolean value of attribute.
    */
-  bool GetBoolAttr(nsAtom* aAttr) const {
-    return HasAttr(kNameSpaceID_None, aAttr);
-  }
+  bool GetBoolAttr(nsAtom* aAttr) const { return HasAttr(aAttr); }
 
   /**
    * Sets value of boolean attribute by removing attribute or setting it to
@@ -1904,31 +1910,12 @@ class Element : public FragmentOrElement {
                               nsAttrValue& aResult);
 
   /**
-   * Try to set the attribute as a mapped attribute, if applicable.  This will
-   * only be called for attributes that are in the null namespace and only on
-   * attributes that returned true when passed to IsAttributeMapped.  The
-   * caller will not try to set the attr in any other way if this method
-   * returns true (the value of aRetval does not matter for that purpose).
-   *
-   * @param aName the name of the attribute
-   * @param aValue the nsAttrValue to set. Will be swapped with the existing
-   *               value of the attribute if the attribute already exists.
-   * @param [out] aValueWasSet If the attribute was not set previously,
-   *                           aValue will be swapped with an empty attribute
-   *                           and aValueWasSet will be set to false. Otherwise,
-   *                           aValueWasSet will be set to true and aValue will
-   *                           contain the previous value set.
-   * @param [out] aRetval the nsresult status of the operation, if any.
-   * @return true if the setting was attempted, false otherwise.
-   */
-  virtual bool SetAndSwapMappedAttribute(nsAtom* aName, nsAttrValue& aValue,
-                                         bool* aValueWasSet, nsresult* aRetval);
-
-  /**
    *  Taintfox: this method can be overriden by child classes to mark
    * certain attributes as taint sources.
    */
   virtual void SetTaintSourceGetAttr(const nsAString& aName, DOMString& aResult) const;
+
+  virtual void SetTaintSourceGetAttr(const nsAtom* aName, DOMString& aResult) const;
 
   virtual void SetTaintSourceGetAttr(int32_t aNameSpaceID, const nsAtom* aName,
                                      DOMString& aResult) const;
@@ -2199,14 +2186,6 @@ class Element : public FragmentOrElement {
 };
 
 NS_DEFINE_STATIC_IID_ACCESSOR(Element, NS_ELEMENT_IID)
-
-inline bool Element::HasAttr(int32_t aNameSpaceID, const nsAtom* aName) const {
-  NS_ASSERTION(nullptr != aName, "must have attribute name");
-  NS_ASSERTION(aNameSpaceID != kNameSpaceID_Unknown,
-               "must have a real namespace ID!");
-
-  return mAttrs.IndexOfAttr(aName, aNameSpaceID) >= 0;
-}
 
 inline bool Element::HasNonEmptyAttr(int32_t aNameSpaceID,
                                      const nsAtom* aName) const {

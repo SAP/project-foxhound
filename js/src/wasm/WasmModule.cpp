@@ -42,7 +42,7 @@
 
 #include "debugger/DebugAPI-inl.h"
 #include "vm/ArrayBufferObject-inl.h"
-#include "vm/JSAtom-inl.h"
+#include "vm/JSAtomUtils-inl.h"  // AtomToId
 #include "wasm/WasmInstance-inl.h"
 
 using namespace js;
@@ -434,80 +434,6 @@ bool Module::extractCode(JSContext* cx, Tier tier,
   return true;
 }
 
-#ifdef DEBUG
-static bool AllSegmentsArePassive(const DataSegmentVector& vec) {
-  for (const DataSegment* seg : vec) {
-    if (seg->active()) {
-      return false;
-    }
-  }
-  return true;
-}
-#endif
-
-bool Module::initSegments(JSContext* cx,
-                          Handle<WasmInstanceObject*> instanceObj,
-                          Handle<WasmMemoryObject*> memoryObj) const {
-  MOZ_ASSERT_IF(!memoryObj, AllSegmentsArePassive(dataSegments_));
-
-  Instance& instance = instanceObj->instance();
-  const SharedTableVector& tables = instance.tables();
-
-  // Write data/elem segments into memories/tables.
-
-  for (const ElemSegment* seg : elemSegments_) {
-    if (seg->active()) {
-      RootedVal offsetVal(cx);
-      if (!seg->offset().evaluate(cx, instanceObj, &offsetVal)) {
-        return false;  // OOM
-      }
-      uint32_t offset = offsetVal.get().i32();
-      uint32_t count = seg->length();
-
-      uint32_t tableLength = tables[seg->tableIndex]->length();
-      if (offset > tableLength || tableLength - offset < count) {
-        JS_ReportErrorNumberUTF8(cx, GetErrorMessage, nullptr,
-                                 JSMSG_WASM_OUT_OF_BOUNDS);
-        return false;
-      }
-
-      if (!instance.initElems(seg->tableIndex, *seg, offset, 0, count)) {
-        return false;  // OOM
-      }
-    }
-  }
-
-  if (memoryObj) {
-    size_t memoryLength = memoryObj->volatileMemoryLength();
-    uint8_t* memoryBase =
-        memoryObj->buffer().dataPointerEither().unwrap(/* memcpy */);
-
-    for (const DataSegment* seg : dataSegments_) {
-      if (!seg->active()) {
-        continue;
-      }
-
-      RootedVal offsetVal(cx);
-      if (!seg->offset().evaluate(cx, instanceObj, &offsetVal)) {
-        return false;  // OOM
-      }
-      uint64_t offset = memoryObj->indexType() == IndexType::I32
-                            ? offsetVal.get().i32()
-                            : offsetVal.get().i64();
-      uint32_t count = seg->bytes.length();
-
-      if (offset > memoryLength || memoryLength - offset < count) {
-        JS_ReportErrorNumberUTF8(cx, GetErrorMessage, nullptr,
-                                 JSMSG_WASM_OUT_OF_BOUNDS);
-        return false;
-      }
-      memcpy(memoryBase + uintptr_t(offset), seg->bytes.begin(), count);
-    }
-  }
-
-  return true;
-}
-
 static const Import& FindImportFunction(const ImportVector& imports,
                                         uint32_t funcImportIndex) {
   for (const Import& import : imports) {
@@ -624,61 +550,69 @@ static bool CheckSharing(JSContext* cx, bool declaredShared, bool isShared) {
 // asm.js module instantiation supplies its own buffer, but for wasm, create and
 // initialize the buffer if one is requested. Either way, the buffer is wrapped
 // in a WebAssembly.Memory object which is what the Instance stores.
-bool Module::instantiateMemory(JSContext* cx,
-                               MutableHandle<WasmMemoryObject*> memory) const {
-  if (!metadata().usesMemory()) {
-    MOZ_ASSERT(!memory);
-    MOZ_ASSERT(AllSegmentsArePassive(dataSegments_));
-    return true;
+bool Module::instantiateMemories(
+    JSContext* cx, const WasmMemoryObjectVector& memoryImports,
+    MutableHandle<WasmMemoryObjectVector> memoryObjs) const {
+  for (uint32_t memoryIndex = 0; memoryIndex < metadata().memories.length();
+       memoryIndex++) {
+    const MemoryDesc& desc = metadata().memories[memoryIndex];
+
+    Rooted<WasmMemoryObject*> memory(cx);
+    if (memoryIndex < memoryImports.length()) {
+      memory = memoryImports[memoryIndex];
+      MOZ_ASSERT_IF(metadata().isAsmJS(),
+                    memory->buffer().isPreparedForAsmJS());
+      MOZ_ASSERT_IF(!metadata().isAsmJS(), memory->buffer().isWasm());
+
+      if (memory->indexType() != desc.indexType()) {
+        JS_ReportErrorNumberUTF8(cx, GetErrorMessage, nullptr,
+                                 JSMSG_WASM_BAD_IMP_INDEX,
+                                 ToString(memory->indexType()));
+        return false;
+      }
+
+      if (!CheckLimits(cx, desc.initialPages(), desc.maximumPages(),
+                       /* defaultMax */ MaxMemoryPages(desc.indexType()),
+                       /* actualLength */
+                       memory->volatilePages(), memory->sourceMaxPages(),
+                       metadata().isAsmJS(), "Memory")) {
+        return false;
+      }
+
+      if (!CheckSharing(cx, desc.isShared(), memory->isShared())) {
+        return false;
+      }
+    } else {
+      MOZ_ASSERT(!metadata().isAsmJS());
+
+      if (desc.initialPages() > MaxMemoryPages(desc.indexType())) {
+        JS_ReportErrorNumberUTF8(cx, GetErrorMessage, nullptr,
+                                 JSMSG_WASM_MEM_IMP_LIMIT);
+        return false;
+      }
+
+      Rooted<ArrayBufferObjectMaybeShared*> buffer(cx,
+                                                   CreateWasmBuffer(cx, desc));
+      if (!buffer) {
+        return false;
+      }
+
+      RootedObject proto(cx, &cx->global()->getPrototype(JSProto_WasmMemory));
+      memory = WasmMemoryObject::create(
+          cx, buffer, IsHugeMemoryEnabled(desc.indexType()), proto);
+      if (!memory) {
+        return false;
+      }
+    }
+
+    MOZ_RELEASE_ASSERT(metadata().isAsmJS() ||
+                       memory->isHuge() ==
+                           IsHugeMemoryEnabled(desc.indexType()));
+
+    if (!memoryObjs.get().append(memory)) {
+      return false;
+    }
   }
-
-  MemoryDesc desc = *metadata().memory;
-  if (memory) {
-    MOZ_ASSERT_IF(metadata().isAsmJS(), memory->buffer().isPreparedForAsmJS());
-    MOZ_ASSERT_IF(!metadata().isAsmJS(), memory->buffer().isWasm());
-
-    if (memory->indexType() != desc.indexType()) {
-      JS_ReportErrorNumberUTF8(cx, GetErrorMessage, nullptr,
-                               JSMSG_WASM_BAD_IMP_INDEX,
-                               ToString(memory->indexType()));
-      return false;
-    }
-
-    if (!CheckLimits(cx, desc.initialPages(), desc.maximumPages(),
-                     /* defaultMax */ MaxMemoryPages(desc.indexType()),
-                     /* actualLength */
-                     memory->volatilePages(), memory->sourceMaxPages(),
-                     metadata().isAsmJS(), "Memory")) {
-      return false;
-    }
-
-    if (!CheckSharing(cx, desc.isShared(), memory->isShared())) {
-      return false;
-    }
-  } else {
-    MOZ_ASSERT(!metadata().isAsmJS());
-
-    if (desc.initialPages() > MaxMemoryPages(desc.indexType())) {
-      JS_ReportErrorNumberUTF8(cx, GetErrorMessage, nullptr,
-                               JSMSG_WASM_MEM_IMP_LIMIT);
-      return false;
-    }
-
-    RootedArrayBufferObjectMaybeShared buffer(cx);
-    if (!CreateWasmBuffer(cx, desc, &buffer)) {
-      return false;
-    }
-
-    RootedObject proto(cx, &cx->global()->getPrototype(JSProto_WasmMemory));
-    memory.set(WasmMemoryObject::create(
-        cx, buffer, IsHugeMemoryEnabled(desc.indexType()), proto));
-    if (!memory) {
-      return false;
-    }
-  }
-
-  MOZ_RELEASE_ASSERT(memory->isHuge() == metadata().omitsBoundsChecks);
-
   return true;
 }
 
@@ -943,8 +877,8 @@ static bool GetGlobalExport(JSContext* cx,
 static bool CreateExportObject(
     JSContext* cx, Handle<WasmInstanceObject*> instanceObj,
     const JSObjectVector& funcImports, const WasmTableObjectVector& tableObjs,
-    Handle<WasmMemoryObject*> memoryObj, const WasmTagObjectVector& tagObjs,
-    const ValVector& globalImportValues,
+    const WasmMemoryObjectVector& memoryObjs,
+    const WasmTagObjectVector& tagObjs, const ValVector& globalImportValues,
     const WasmGlobalObjectVector& globalObjs, const ExportVector& exports) {
   const Instance& instance = instanceObj->instance();
   const Metadata& metadata = instance.metadata();
@@ -997,7 +931,7 @@ static bool CreateExportObject(
         break;
       }
       case DefinitionKind::Memory: {
-        val = ObjectValue(*memoryObj);
+        val = ObjectValue(*memoryObjs[exp.memoryIndex()]);
         break;
       }
       case DefinitionKind::Global: {
@@ -1039,8 +973,8 @@ bool Module::instantiate(JSContext* cx, ImportValues& imports,
     return false;
   }
 
-  Rooted<WasmMemoryObject*> memory(cx, imports.memory);
-  if (!instantiateMemory(cx, &memory)) {
+  Rooted<WasmMemoryObjectVector> memories(cx);
+  if (!instantiateMemories(cx, imports.memories, &memories)) {
     return false;
   }
 
@@ -1079,15 +1013,15 @@ bool Module::instantiate(JSContext* cx, ImportValues& imports,
 
   instance.set(WasmInstanceObject::create(
       cx, code_, dataSegments_, elemSegments_, metadata().instanceDataLength,
-      memory, std::move(tables), imports.funcs, metadata().globals,
+      memories, std::move(tables), imports.funcs, metadata().globals,
       imports.globalValues, imports.globalObjs, imports.tagObjs, instanceProto,
       std::move(maybeDebug)));
   if (!instance) {
     return false;
   }
 
-  if (!CreateExportObject(cx, instance, imports.funcs, tableObjs.get(), memory,
-                          imports.tagObjs, imports.globalValues,
+  if (!CreateExportObject(cx, instance, imports.funcs, tableObjs.get(),
+                          memories.get(), imports.tagObjs, imports.globalValues,
                           imports.globalObjs, exports_)) {
     return false;
   }
@@ -1106,7 +1040,7 @@ bool Module::instantiate(JSContext* cx, ImportValues& imports,
   // constructed since this can make the instance live to content (even if the
   // start function fails).
 
-  if (!initSegments(cx, instance, memory)) {
+  if (!instance->instance().initSegments(cx, dataSegments_, elemSegments_)) {
     return false;
   }
 

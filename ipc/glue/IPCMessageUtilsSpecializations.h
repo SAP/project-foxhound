@@ -658,6 +658,12 @@ struct ParamTraits<nsILoadInfo::CrossOriginEmbedderPolicy>
     : EnumSerializer<nsILoadInfo::CrossOriginEmbedderPolicy,
                      CrossOriginEmbedderPolicyValidator> {};
 
+template <>
+struct ParamTraits<nsIThread::QoSPriority>
+    : public ContiguousEnumSerializerInclusive<nsIThread::QoSPriority,
+                                               nsIThread::QOS_PRIORITY_NORMAL,
+                                               nsIThread::QOS_PRIORITY_LOW> {};
+
 template <size_t N, typename Word>
 struct ParamTraits<mozilla::BitSet<N, Word>> {
   typedef mozilla::BitSet<N, Word> paramType;
@@ -753,6 +759,7 @@ struct ParamTraits<mozilla::net::LinkHeader> {
     WriteParam(aWriter, aParam.mHref);
     WriteParam(aWriter, aParam.mRel);
     WriteParam(aWriter, aParam.mTitle);
+    WriteParam(aWriter, aParam.mNonce);
     WriteParam(aWriter, aParam.mIntegrity);
     WriteParam(aWriter, aParam.mSrcset);
     WriteParam(aWriter, aParam.mSizes);
@@ -770,6 +777,9 @@ struct ParamTraits<mozilla::net::LinkHeader> {
       return false;
     }
     if (!ReadParam(aReader, &aResult->mTitle)) {
+      return false;
+    }
+    if (!ReadParam(aReader, &aResult->mNonce)) {
       return false;
     }
     if (!ReadParam(aReader, &aResult->mIntegrity)) {

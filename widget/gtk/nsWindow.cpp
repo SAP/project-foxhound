@@ -408,7 +408,6 @@ nsWindow::nsWindow()
       mPanInProgress(false),
       mDrawToContainer(false),
       mTitlebarBackdropState(false),
-      mIsPIPWindow(false),
       mIsWaylandPanelWindow(false),
       mIsChildWindow(false),
       mAlwaysOnTop(false),
@@ -2572,7 +2571,7 @@ bool nsWindow::WaylandPopupCheckAndGetAnchor(GdkRectangle* aPopupAnchor,
     return false;
   }
 
-  if (popupFrame->IsFlippedByLayout()) {
+  if (popupFrame->IsConstrainedByLayout()) {
     LOG("  can't use move-to-rect, flipped / constrained by layout");
     return false;
   }
@@ -4025,9 +4024,13 @@ gboolean nsWindow::OnConfigureEvent(GtkWidget* aWidget,
   //   Override-redirect windows are children of the root window so parent
   //   coordinates are root coordinates.
 
-  LOG("configure event %d,%d -> %d x %d scale %d\n", aEvent->x, aEvent->y,
-      aEvent->width, aEvent->height,
-      mGdkWindow ? gdk_window_get_scale_factor(mGdkWindow) : -1);
+#ifdef MOZ_LOGGING
+  int scale = mGdkWindow ? gdk_window_get_scale_factor(mGdkWindow) : -1;
+  LOG("configure event %d,%d -> %d x %d direct mGdkWindow scale %d (scaled "
+      "size %d x %d)\n",
+      aEvent->x, aEvent->y, aEvent->width, aEvent->height, scale,
+      aEvent->width * scale, aEvent->height * scale);
+#endif
 
   if (mPendingConfigures > 0) {
     mPendingConfigures--;
@@ -4988,8 +4991,7 @@ void nsWindow::OnScrollEvent(GdkEventScroll* aEvent) {
 
           LOG("[%d] pan smooth event dx=%f dy=%f inprogress=%d\n", aEvent->time,
               aEvent->delta_x, aEvent->delta_y, mPanInProgress);
-          PanGestureInput::PanGestureType eventType =
-              PanGestureInput::PANGESTURE_PAN;
+          auto eventType = PanGestureInput::PANGESTURE_PAN;
           if (sGdkEventIsScrollStopEvent((GdkEvent*)aEvent)) {
             eventType = PanGestureInput::PANGESTURE_END;
             mPanInProgress = false;
@@ -5026,7 +5028,11 @@ void nsWindow::OnScrollEvent(GdkEventScroll* aEvent) {
           mCurrentSynthesizedTouchpadPan.mTouchpadGesturePhase.reset();
 
           const bool isPageMode =
+#ifdef NIGHTLY_BUILD
+              StaticPrefs::apz_gtk_pangesture_delta_mode() == 1;
+#else
               StaticPrefs::apz_gtk_pangesture_delta_mode() != 2;
+#endif
           const double multiplier =
               isPageMode
                   ? StaticPrefs::apz_gtk_pangesture_page_delta_mode_multiplier()
@@ -5290,16 +5296,18 @@ void nsWindow::OnCompositedChanged() {
   mCompositedScreen = gdk_screen_is_composited(gdk_screen_get_default());
 }
 
-void nsWindow::OnScaleChanged() {
+void nsWindow::OnScaleChanged(bool aForce) {
   // Force scale factor recalculation
   if (!mGdkWindow) {
     mWindowScaleFactorChanged = true;
     return;
   }
-  LOG("OnScaleChanged -> %d\n", gdk_window_get_scale_factor(mGdkWindow));
+  LOG("OnScaleChanged -> %d, frac=%f\n",
+      gdk_window_get_scale_factor(mGdkWindow), FractionalScaleFactor());
 
   // Gtk supply us sometimes with doubled events so stay calm in such case.
-  if (gdk_window_get_scale_factor(mGdkWindow) == mWindowScaleFactor) {
+  if (!aForce &&
+      gdk_window_get_scale_factor(mGdkWindow) == mWindowScaleFactor) {
     return;
   }
 
@@ -5908,7 +5916,6 @@ nsresult nsWindow::Create(nsIWidget* aParent, nsNativeWidget aNativeParent,
   }
 
   mAlwaysOnTop = aInitData && aInitData->mAlwaysOnTop;
-  mIsPIPWindow = aInitData && aInitData->mPIPWindow;
   // mNoAutoHide seems to be always false here.
   // The mNoAutoHide state is set later on nsMenuPopupFrame level
   // and can be changed so we use WaylandPopupIsPermanent() to get
@@ -8337,7 +8344,7 @@ static void scale_changed_cb(GtkWidget* widget, GParamSpec* aPSpec,
     return;
   }
 
-  window->OnScaleChanged();
+  window->OnScaleChanged(/* aForce = */ false);
 }
 
 static gboolean touch_event_cb(GtkWidget* aWidget, GdkEventTouch* aEvent) {
@@ -8929,24 +8936,14 @@ gint nsWindow::GdkCeiledScaleFactor() {
   return mWindowScaleFactor;
 }
 
-bool nsWindow::UseFractionalScale() const {
-#ifdef MOZ_WAYLAND
-  return GdkIsWaylandDisplay() &&
-         StaticPrefs::widget_wayland_fractional_buffer_scale_AtStartup() > 0 &&
-         WaylandDisplayGet()->GetViewporter();
-#else
-  return false;
-#endif
-}
-
 double nsWindow::FractionalScaleFactor() {
 #ifdef MOZ_WAYLAND
-  if (UseFractionalScale()) {
-    double scale =
-        StaticPrefs::widget_wayland_fractional_buffer_scale_AtStartup();
-    scale = std::max(scale, 0.5);
-    scale = std::min(scale, 8.0);
-    return scale;
+  if (mContainer) {
+    double fractional_scale =
+        moz_container_wayland_get_fractional_scale(mContainer);
+    if (fractional_scale != 0.0) {
+      return fractional_scale;
+    }
   }
 #endif
   return GdkCeiledScaleFactor();
@@ -9504,9 +9501,10 @@ static void relative_pointer_handle_relative_motion(
 
   WidgetMouseEvent event(true, eMouseMove, window, WidgetMouseEvent::eReal);
 
+  gint scale = window->GdkCeiledScaleFactor();
   event.mRefPoint = window->GetNativePointerLockCenter();
-  event.mRefPoint.x += wl_fixed_to_int(dx_w);
-  event.mRefPoint.y += wl_fixed_to_int(dy_w);
+  event.mRefPoint.x += int(wl_fixed_to_double(dx_w) * scale);
+  event.mRefPoint.y += int(wl_fixed_to_double(dy_w) * scale);
 
   event.AssignEventTime(window->GetWidgetEventTime(time_lo));
   window->DispatchInputEvent(&event);
@@ -9714,10 +9712,14 @@ void nsWindow::SetEGLNativeWindowSize(
   if (!mContainer || !GdkIsWaylandDisplay()) {
     return;
   }
+
+  gint scale = GdkCeiledScaleFactor();
   if (moz_container_wayland_egl_window_needs_size_update(
-          mContainer, aEGLWindowSize.ToUnknownSize(), GdkCeiledScaleFactor())) {
-    LOG("nsWindow::SetEGLNativeWindowSize() %d x %d", aEGLWindowSize.width,
-        aEGLWindowSize.height);
+          mContainer, aEGLWindowSize.ToUnknownSize(), scale)) {
+    LOG("nsWindow::SetEGLNativeWindowSize() %d x %d scale %d (unscaled %d x "
+        "%d)",
+        aEGLWindowSize.width, aEGLWindowSize.height, scale,
+        aEGLWindowSize.width / scale, aEGLWindowSize.height / scale);
     moz_container_wayland_egl_window_set_size(mContainer,
                                               aEGLWindowSize.ToUnknownSize());
     moz_container_wayland_set_scale_factor(mContainer);

@@ -61,9 +61,8 @@
       <popupnotificationcontent id="webRTC-selectSpeaker" orient="vertical">
         <html:div class="webRTC-selectDevice-selector-container">
           <xul:image id="webRTC-selectSpeaker-icon" data-l10n-id="popup-select-speaker-icon" class="webRTC-selectDevice-icon"/>
-          <menulist id="webRTC-selectSpeaker-menulist" aria-labelledby="webRTC-selectSpeaker-icon" size="large">
-            <menupopup id="webRTC-selectSpeaker-menupopup"/>
-          </menulist>
+          <richlistbox id="webRTC-selectSpeaker-richlistbox" aria-labelledby="webRTC-selectSpeaker-icon" size="large">
+          </richlistbox>
           <label id="webRTC-selectSpeaker-single-device-label" class="webRTC-selectDevice-label"></label>
         </html:div>
       </popupnotificationcontent>
@@ -119,7 +118,12 @@
         <label id="addon-webext-perm-single-entry" class="addon-webext-perm-single-entry"/>
         <html:ul id="addon-webext-perm-list" class="addon-webext-perm-list"/>
         <hbox>
-          <label id="addon-webext-perm-info" is="text-link" class="popup-notification-learnmore-link"/>
+          <html:a
+            is="moz-support-link"
+            id="addon-webext-perm-info"
+            class="popup-notification-learnmore-link"
+            support-page="extension-permissions"
+          />
         </hbox>
       </popupnotificationcontent>
     </popupnotification>
@@ -188,7 +192,10 @@
           <html:label class="identity-credential-list-item" align="center">
             <html:input type="radio" name="credential-provider" class="identity-credential-list-item-radio"></html:input>
             <html:img class="identity-credential-list-item-icon" src="chrome://global/skin/icons/defaultFavicon.svg"></html:img>
-            <span class="identity-credential-list-item-label"></span>
+            <div class="identity-credential-list-item-info">
+              <span class="identity-credential-list-item-label-primary"></span>
+              <span class="identity-credential-list-item-label-secondary" hidden="true"></span>
+            </div>
           </html:label>
         </html:template>
       </popupnotificationcontent>
@@ -206,8 +213,8 @@
             <html:input type="radio" name="credential-account" class="identity-credential-list-item-radio"></html:input>
             <html:img class="identity-credential-list-item-icon" src="chrome://browser/skin/fxa/avatar.svg"></html:img>
             <div class="identity-credential-list-item-label-stack">
-              <div class="identity-credential-list-item-label-name"></div>
-              <div class="identity-credential-list-item-label-email"></div>
+              <div class="identity-credential-list-item-label-primary"></div>
+              <div class="identity-credential-list-item-label-secondary"></div>
             </div>
           </html:label>
         </html:template>

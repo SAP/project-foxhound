@@ -22,7 +22,6 @@ Services.scriptloader.loadSubScript(
   this
 );
 
-const { LocalizationHelper } = require("resource://devtools/shared/l10n.js");
 const INSPECTOR_L10N = new LocalizationHelper(
   "devtools/client/locales/inspector.properties"
 );
@@ -815,6 +814,11 @@ function waitForStyleEditor(toolbox, href) {
       // A helper that resolves the promise once it receives an editor that
       // matches the expected href. Returns false if the editor was not correct.
       const gotEditor = editor => {
+        if (!editor) {
+          info("Editor went away after selected?");
+          return false;
+        }
+
         const currentHref = editor.styleSheet.href;
         if (!href || (href && currentHref.endsWith(href))) {
           info("Stylesheet editor selected");
@@ -1456,4 +1460,57 @@ async function isNodeCorrectlyHighlighted(highlighterTestFront, selector) {
       );
     }
   }
+}
+
+/**
+ * Get the position and size of the measuring tool.
+ *
+ * @param {Object} Object returned by getHighlighterHelperFor()
+ * @return {Promise<Object>} A promise that resolves with an object containing
+ *    the x, y, width, and height properties of the measuring tool which has
+ *    been drawn on-screen
+ */
+async function getAreaRect({ getElementAttribute }) {
+  // The 'box-path' element holds the width and height of the
+  // measuring area as well as the position relative to its
+  // parent <g> element.
+  const d = await getElementAttribute("box-path", "d");
+  // The tool element itself is a <g> element grouping all paths.
+  // Though <g> elements do not have coordinates by themselves,
+  // therefore it is positioned using the 'transform' CSS property.
+  // So, in order to get the position of the measuring area, the
+  // coordinates need to be read from the translate() function.
+  const transform = await getElementAttribute("tool", "transform");
+  const reDir = /(\d+) (\d+)/g;
+  const reTransform = /(\d+),(\d+)/;
+  const coords = {
+    x: 0,
+    y: 0,
+    width: 0,
+    height: 0,
+  };
+  let match;
+  while ((match = reDir.exec(d))) {
+    let [, x, y] = match;
+    x = Number(x);
+    y = Number(y);
+    if (x < coords.x) {
+      coords.x = x;
+    }
+    if (y < coords.y) {
+      coords.y = y;
+    }
+    if (x > coords.width) {
+      coords.width = x;
+    }
+    if (y > coords.height) {
+      coords.height = y;
+    }
+  }
+
+  match = reTransform.exec(transform);
+  coords.x += Number(match[1]);
+  coords.y += Number(match[2]);
+
+  return coords;
 }

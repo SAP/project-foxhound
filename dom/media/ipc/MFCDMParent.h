@@ -41,7 +41,7 @@ class MFCDMParent final : public PMFCDMParent {
   uint64_t Id() const { return mId; }
 
   mozilla::ipc::IPCResult RecvGetCapabilities(
-      GetCapabilitiesResolver&& aResolver);
+      const bool aIsHWSecured, GetCapabilitiesResolver&& aResolver);
 
   mozilla::ipc::IPCResult RecvInit(const MFCDMInitParamsIPDL& aParams,
                                    InitResolver&& aResolver);
@@ -71,10 +71,12 @@ class MFCDMParent final : public PMFCDMParent {
 
   already_AddRefed<MFCDMProxy> GetMFCDMProxy();
 
+  void ShutdownCDM();
+
   void Destroy();
 
  private:
-  ~MFCDMParent() { Unregister(); }
+  ~MFCDMParent();
 
   HRESULT LoadFactory();
 

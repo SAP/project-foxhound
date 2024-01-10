@@ -133,6 +133,8 @@ async function getStats(requestFullRefresh) {
     requestFullRefresh ||
     !Services.prefs.getBoolPref("media.aboutwebrtc.hist.enabled")
   ) {
+    // Upon clearing the history we need to get all the stats to rebuild what
+    // will become the skeleton of the page.hg wip
     const { reports } = await new Promise(r => WGI.getAllStats(r));
     appendStats(reports);
     return reports.sort((a, b) => b.timestamp - a.timestamp);
@@ -249,43 +251,23 @@ class SavePage extends Control {
         node.style.removeProperty("display");
       }
     }
-    this.message = "about-webrtc-save-page-msg";
+    this.message = "about-webrtc-save-page-complete-msg";
     this.messageArgs = { path: FilePicker.file.path };
     this.update();
   }
 }
 
-class DebugMode extends Control {
+class EnableLogging extends Control {
   constructor() {
     super();
-    this.messageHeader = "about-webrtc-debug-mode-msg-label";
-
-    if (WGI.debugLevel > 0) {
-      this.setState(true);
-    } else {
-      this.label = "about-webrtc-debug-mode-off-state-label";
-    }
-  }
-
-  setState(state) {
-    this.label = state
-      ? "about-webrtc-debug-mode-on-state-label"
-      : "about-webrtc-debug-mode-off-state-label";
-    try {
-      const file = Services.prefs.getCharPref("media.webrtc.debug.log_file");
-      this.message = state
-        ? "about-webrtc-debug-mode-on-state-msg"
-        : "about-webrtc-debug-mode-off-state-msg";
-      this.messageArgs = { path: file };
-    } catch (e) {
-      this.message = null;
-    }
-    return state;
+    this.label = "about-webrtc-enable-logging-label";
+    this.message = null;
   }
 
   onClick() {
-    this.setState((WGI.debugLevel = WGI.debugLevel ? 0 : WEBRTC_TRACE_ALL));
+    WGI.debugLevel = WEBRTC_TRACE_ALL;
     this.update();
+    window.open("about:logging?preset=webrtc");
   }
 }
 
@@ -309,10 +291,10 @@ class AecLogging extends Control {
     try {
       if (!state) {
         const file = WGI.aecDebugLogDir;
-        this.message = "about-webrtc-aec-logging-off-state-msg";
+        this.message = "about-webrtc-aec-logging-toggled-off-state-msg";
         this.messageArgs = { path: file };
       } else {
-        this.message = "about-webrtc-aec-logging-on-state-msg";
+        this.message = "about-webrtc-aec-logging-toggled-on-state-msg";
       }
     } catch (e) {
       this.message = null;
@@ -320,7 +302,11 @@ class AecLogging extends Control {
   }
 
   onClick() {
-    this.setState((WGI.aecDebug = !WGI.aecDebug));
+    if (Services.env.get("MOZ_DISABLE_CONTENT_SANDBOX") != "1") {
+      this.message = "about-webrtc-aec-logging-unavailable-sandbox";
+    } else {
+      this.setState((WGI.aecDebug = !WGI.aecDebug));
+    }
     this.update();
   }
 }
@@ -350,6 +336,8 @@ class ShowTab extends Control {
   // Setup. Retrieve reports & log while page loads.
   const haveReports = getStats();
   const haveLog = getLog();
+  const rndr = elemRenderer;
+
   await new Promise(r => (window.onload = r));
   {
     const ctrl = renderElement("div", { className: "control" });
@@ -359,25 +347,33 @@ class ShowTab extends Control {
       msg.appendChild(message);
     };
     add(new SavePage().render());
-    add(new DebugMode().render());
+    add(new EnableLogging().render());
     add(new AecLogging().render());
     // Add the autorefresh checkbox and its label
     const autorefresh = document.createElement("input");
     Object.assign(autorefresh, {
       type: "checkbox",
       id: "autorefresh",
-      checked: true,
+      checked: Services.prefs.getBoolPref("media.aboutwebrtc.auto_refresh"),
+      onchange: () =>
+        Services.prefs.setBoolPref(
+          "media.aboutwebrtc.auto_refresh",
+          autorefresh.checked
+        ),
     });
     const autorefreshLabel = document.createElement("label");
     document.l10n.setAttributes(
       autorefreshLabel,
-      "about-webrtc-auto-refresh-label"
+      "about-webrtc-auto-refresh-default-label"
     );
 
     const ctrls = document.querySelector("#controls");
-    ctrls.append(renderElements("div", { className: "controls" }, [ctrl, msg]));
     ctrls.appendChild(autorefresh);
     ctrls.appendChild(autorefreshLabel);
+    ctrls.append(renderElements("div", { className: "controls" }, [ctrl, msg]));
+
+    const mediactx = document.querySelector("#mediactx");
+    mediactx.append(await renderMediaCtx(elemRenderer));
   }
 
   // Render pcs and log
@@ -393,6 +389,30 @@ class ShowTab extends Control {
   const content = document.querySelector("#content");
   content.append(peerConnections, connectionLog, userPrefs);
 
+  // Adding a pcid to this list will cause the stats for that list to be refreshed
+  // on the next update interval. This is useful for one time refreshes like the
+  // "Refresh" button. The list is cleared at the end of each refresh interval.
+  const forceRefreshList = [];
+
+  const openPeerConnectionReports = reports.filter(r => !r.closed);
+  const closedPeerConnectionReports = reports.filter(r => r.closed);
+  const closedPCSection = rndr.elem_div({});
+  if (closedPeerConnectionReports.length) {
+    const closedPeerConnectionDisclosure = renderFoldableSection(
+      closedPCSection,
+      {
+        showMsg: "about-webrtc-closed-peerconnection-disclosure-show-msg",
+        hideMsg: "about-webrtc-closed-peerconnection-disclosure-hide-msg",
+        startsCollapsed: [...openPeerConnectionReports].size,
+      }
+    );
+    closedPCSection.append(closedPeerConnectionDisclosure);
+    closedPeerConnectionDisclosure.append(
+      ...closedPeerConnectionReports.map(r =>
+        renderPeerConnection(r, () => forceRefreshList.push(r.pcid))
+      )
+    );
+  }
   // This does not handle the auto-refresh, only the manual refreshes needed
   // for certain user actions, and the initial population of the data
   function refresh() {
@@ -413,7 +433,10 @@ class ShowTab extends Control {
           "about-webrtc-stats-clear"
         ),
       ]),
-      ...reports.map(renderPeerConnection),
+      ...openPeerConnectionReports.map(r =>
+        renderPeerConnection(r, () => forceRefreshList.push(r.pcid))
+      ),
+      closedPCSection,
     ]);
     const logDiv = renderElements("div", { className: "log" }, [
       renderElements("span", { className: "section-heading" }, [
@@ -434,8 +457,8 @@ class ShowTab extends Control {
     ]);
     if (log.length) {
       const div = renderFoldableSection(logDiv, {
-        showMsg: "about-webrtc-log-show-msg",
-        hideMsg: "about-webrtc-log-hide-msg",
+        showMsg: "about-webrtc-log-section-show-msg",
+        hideMsg: "about-webrtc-log-section-hide-msg",
       });
       div.append(...log.map(line => renderText("p", line)));
       logDiv.append(div);
@@ -443,7 +466,7 @@ class ShowTab extends Control {
     // Replace previous info
     peerConnections.replaceWith(pcDiv);
     connectionLog.replaceWith(logDiv);
-    userPrefs.replaceWith((userPrefs = renderUserPrefs()));
+    userPrefs.replaceWith((userPrefs = renderUserPrefs(rndr)));
 
     peerConnections = pcDiv;
     connectionLog = logDiv;
@@ -457,14 +480,12 @@ class ShowTab extends Control {
     return frag;
   }
 
+  // Used by the renderTransportStats function to calculate stat deltas
+  const hist = {};
+  // This handles autorefresh and forced refresh, not initial document loading
   window.setInterval(
-    async hist => {
+    async () => {
       const statReports = await getStats();
-      // Only refresh if the autorefresh checkbox is checked
-      if (!document.getElementById("autorefresh").checked) {
-        return;
-      }
-      const rndr = elemRenderer;
 
       const translateSection = async (report, id, renderFunc) => {
         const element = document.getElementById(`${id}: ${report.pcid}`);
@@ -475,12 +496,29 @@ class ShowTab extends Control {
 
       const sections = (
         await Promise.all(
-          statReports.flatMap(report => [
-            translateSection(report, "ice-stats", renderICEStats),
-            translateSection(report, "rtp-stats", renderRTPStats),
-            translateSection(report, "bandwidth-stats", renderBandwidthStats),
-            translateSection(report, "frame-stats", renderFrameRateStats),
-          ])
+          // Add filter to check the refreshEnabledPcids
+          statReports
+            .filter(
+              ({ pcid }) =>
+                document.getElementById(`autorefresh-${pcid}`)?.checked ||
+                forceRefreshList.includes(pcid)
+            )
+            .flatMap(report => [
+              translateSection(
+                report,
+                "pc-heading",
+                renderPeerConnectionHeading
+              ),
+              translateSection(report, "ice-stats", renderICEStats),
+              translateSection(
+                report,
+                "ice-raw-stats-fold",
+                renderRawICEStatsFold
+              ),
+              translateSection(report, "rtp-stats", renderRTPStats),
+              translateSection(report, "bandwidth-stats", renderBandwidthStats),
+              translateSection(report, "frame-stats", renderFrameRateStats),
+            ])
         )
       ).filter(({ element }) => element);
 
@@ -489,45 +527,34 @@ class ShowTab extends Control {
         element.replaceWith(translated);
       }
       document.l10n.resumeObserving();
+      while (forceRefreshList.length) {
+        forceRefreshList.pop();
+      }
     },
     250,
-    {}
+    null
   );
 })();
 
-function renderPeerConnection(report) {
+function renderCopyTextToClipboardButton(rndr, id, l10n_id, getTextFn) {
+  return rndr.elem_button(
+    {
+      id: `copytextbutton-${id}`,
+      onclick() {
+        navigator.clipboard.writeText(getTextFn());
+      },
+    },
+    l10n_id
+  );
+}
+
+function renderPeerConnection(report, forceRefreshFn) {
   const rndr = elemRenderer;
-  const {
-    pcid,
-    browserId,
-    closed: isClosed,
-    timestamp,
-    configuration,
-  } = report;
+  const { pcid, configuration } = report;
+  const pcStats = report.peerConnectionStats[0];
 
   const pcDiv = renderElement("div", { className: "peer-connection" });
-  {
-    const id = pcid.match(/id=(\S+)/)[1];
-    const url = pcid.match(/url=([^)]+)/)[1];
-    const now = new Date(timestamp);
-
-    pcDiv.append(
-      isClosed
-        ? renderElement("h3", {}, "about-webrtc-connection-closed", {
-            "browser-id": browserId,
-            id,
-            url,
-            now,
-          })
-        : renderElement("h3", {}, "about-webrtc-connection-open", {
-            "browser-id": browserId,
-            id,
-            url,
-            now,
-          })
-    );
-    pcDiv.append(new ShowTab(browserId).render()[0]);
-  }
+  pcDiv.append(renderPeerConnectionTools(rndr, report, forceRefreshFn));
   {
     const section = renderFoldableSection(pcDiv);
     section.append(
@@ -540,10 +567,29 @@ function renderPeerConnection(report) {
           "about-webrtc-peerconnection-id-label"
         ),
         renderText("span", pcid, { className: "info-body" }),
+        rndr.elems_p({}, [
+          rndr.elem_span(
+            { className: "info-label" },
+            "about-webrtc-data-channels-opened-label"
+          ),
+          rndr.text_span(pcStats.dataChannelsOpened, {
+            className: "info-body",
+          }),
+        ]),
+        rndr.elems_p({}, [
+          rndr.elem_span(
+            { className: "info-label" },
+            "about-webrtc-data-channels-closed-label"
+          ),
+          rndr.text_span(pcStats.dataChannelsClosed, {
+            className: "info-body",
+          }),
+        ]),
         renderConfiguration(rndr, configuration),
       ]),
       renderRTPStats(rndr, report),
       renderICEStats(rndr, report),
+      renderRawICEStats(rndr, report),
       renderSDPStats(rndr, report),
       renderBandwidthStats(rndr, report),
       renderFrameRateStats(rndr, report)
@@ -551,6 +597,174 @@ function renderPeerConnection(report) {
     pcDiv.append(section);
   }
   return pcDiv;
+}
+
+function renderPeerConnectionMediaSummary(rndr, report) {
+  // Takes a codecId value and returns a corresponding codec stats object
+  const getCodecById = aId => report.codecStats.find(({ id }) => id == aId);
+
+  // Find all the codecs used by send streams
+  const sendCodecs = new Set(
+    [...report.outboundRtpStreamStats]
+      .filter(({ codecId }) => codecId)
+      .map(({ codecId }) => getCodecById(codecId).mimeType)
+      .sort()
+  );
+
+  // Find all the codecs used by receive streams
+  const recvCodecs = new Set(
+    [...report.inboundRtpStreamStats]
+      .filter(({ codecId }) => codecId)
+      .map(({ codecId }) => getCodecById(codecId).mimeType)
+      .sort()
+  );
+
+  // Take all the codecs that appear in both the send and receive codec lists
+  const sendRecvCodecs = new Set(
+    [...sendCodecs, ...recvCodecs].filter(
+      c => sendCodecs.has(c) && recvCodecs.has(c)
+    )
+  );
+
+  // Remove the common codecs from the send and receive codec lists.
+  // sendCodecs will now contain send only codecs
+  // receiveCodecs will now contain receive only codecs
+  sendRecvCodecs.forEach(c => {
+    sendCodecs.delete(c);
+    recvCodecs.delete(c);
+  });
+
+  const formatter = new Intl.ListFormat("en", {
+    style: "short",
+    type: "conjunction",
+  });
+
+  // Create a label with the codecs common to send and receive streams
+  const sendRecvSpan = sendRecvCodecs.size
+    ? [
+        rndr.elem_span({}, "about-webrtc-short-send-receive-direction", {
+          codecs: formatter.format(sendRecvCodecs),
+        }),
+      ]
+    : [];
+
+  // Do the same for send only codecs
+  const sendSpan = sendCodecs.size
+    ? [
+        rndr.elem_span({}, "about-webrtc-short-send-direction", {
+          codecs: formatter.format(sendCodecs),
+        }),
+      ]
+    : [];
+
+  // Do the same for receive only codecs
+  const recvSpan = recvCodecs.size
+    ? [
+        rndr.elem_span({}, "about-webrtc-short-receive-direction", {
+          codecs: formatter.format(recvCodecs),
+        }),
+      ]
+    : [];
+
+  return [...sendRecvSpan, ...sendSpan, ...recvSpan];
+}
+
+function renderPeerConnectionHeading(rndr, report) {
+  const { pcid, timestamp, closed: isClosed, browserId } = report;
+  const id = pcid.match(/id=(\S+)/)[1];
+  const url = pcid.match(/url=([^)]+)/)[1];
+  const now = new Date(timestamp);
+  return isClosed
+    ? rndr.elems_div(
+        {
+          id: `pc-heading: ${pcid}`,
+          class: "pc-heading",
+        },
+        [
+          rndr.elems_h3({}, [
+            rndr.elem_span({}, "about-webrtc-connection-closed", {
+              "browser-id": browserId,
+              id,
+              url,
+              now,
+            }),
+            ...renderPeerConnectionMediaSummary(rndr, report),
+          ]),
+        ]
+      )
+    : rndr.elems_div(
+        {
+          id: `pc-heading: ${pcid}`,
+          class: "pc-heading",
+        },
+        [
+          rndr.elems_h3({}, [
+            rndr.elem_span({}, "about-webrtc-connection-open", {
+              "browser-id": browserId,
+              id,
+              url,
+              now,
+            }),
+            ...renderPeerConnectionMediaSummary(rndr, report),
+          ]),
+        ]
+      );
+}
+
+function renderPeerConnectionTools(rndr, report, forceRefreshFn) {
+  const { pcid, browserId } = report;
+  const id = pcid.match(/id=(\S+)/)[1];
+  const copyHistButton = !Services.prefs.getBoolPref(
+    "media.aboutwebrtc.hist.enabled"
+  )
+    ? []
+    : [
+        rndr.elem_button(
+          {
+            id: `copytextbutton-hist-${id}`,
+            onclick() {
+              WGI.getStatsHistorySince(
+                hist =>
+                  navigator.clipboard.writeText(JSON.stringify(hist, null, 2)),
+                pcid
+              );
+            },
+          },
+          "about-webrtc-copy-report-history-button"
+        ),
+      ];
+  const autorefreshButton = rndr.elem_input({
+    id: `autorefresh-${pcid}`,
+    type: "checkbox",
+    checked: Services.prefs.getBoolPref("media.aboutwebrtc.auto_refresh"),
+  });
+  const forceRefreshButton = rndr.elem_button(
+    {
+      id: `force-refresh-pc-${id}`,
+      onclick() {
+        forceRefreshFn();
+      },
+    },
+    "about-webrtc-force-refresh-button"
+  );
+  const autorefreshLabel = rndr.elem_label(
+    {},
+    "about-webrtc-auto-refresh-label"
+  );
+  return renderElements("div", { id: "pc-tools: " + pcid }, [
+    renderPeerConnectionHeading(rndr, report),
+    new ShowTab(browserId).render()[0],
+    renderCopyTextToClipboardButton(
+      rndr,
+      report.pcid,
+      "about-webrtc-copy-report-button",
+      () => JSON.stringify({ ...report }, null, 2)
+    ),
+    ...copyHistButton,
+    forceRefreshButton,
+    autorefreshButton,
+    autorefreshLabel,
+  ]);
 }
 
 const trimNewlines = sdp => sdp.replaceAll("\r\n", "\n");
@@ -812,12 +1026,9 @@ function renderRTPStats(rndr, report, hist) {
       // For some (remote) graphs data comes in slowly.
       // Those graphs can be larger to show trends.
       const histSecs = gd.getConfig().histSecs;
-      const canvas = rndr.elem_canvas({
-        width: (histSecs > 30 ? histSecs / 3 : 15) * 20,
-        height: 100,
-        className: "line-graph",
-      });
-      const graph = new GraphImpl(canvas, canvas.width, canvas.height);
+      const width = (histSecs > 30 ? histSecs / 3 : 15) * 20;
+      const height = 100;
+      const graph = new GraphImpl(width, height);
       graph.startTime = () => stat.timestamp - histSecs * 1000;
       graph.stopTime = () => stat.timestamp;
       if (gd.subKey == "packetsLost") {
@@ -828,8 +1039,7 @@ function renderRTPStats(rndr, report, hist) {
       const dataSet = gd.getDataSetSince(
         graph.startTime() - histSecs * 0.2 * 1000
       );
-      graph.drawSparseValues(dataSet, gd.subKey, gd.getConfig());
-      return canvas;
+      return graph.drawSparseValues(dataSet, gd.subKey, gd.getConfig());
     });
   // Render stats set
   return renderElements("div", { id: "rtp-stats: " + report.pcid }, [
@@ -1301,6 +1511,11 @@ function renderICEStats(rndr, report) {
       report.iceRollbacks
     )
   );
+  return iceDiv;
+}
+
+function renderRawICEStats(rndr, report) {
+  const iceDiv = renderElement("div", {});
 
   // Render raw ICECandidate section
   {
@@ -1308,27 +1523,29 @@ function renderICEStats(rndr, report) {
       renderElement("h4", {}, "about-webrtc-raw-candidates-heading"),
     ]);
     const foldSection = renderFoldableSection(section, {
-      showMsg: "about-webrtc-raw-cand-show-msg",
-      hideMsg: "about-webrtc-raw-cand-hide-msg",
+      showMsg: "about-webrtc-raw-cand-section-show-msg",
+      hideMsg: "about-webrtc-raw-cand-section-hide-msg",
     });
 
     // render raw candidates
-    foldSection.append(
-      renderElements("div", {}, [
-        renderRawIceTable(
-          "about-webrtc-raw-local-candidate",
-          report.rawLocalCandidates
-        ),
-        renderRawIceTable(
-          "about-webrtc-raw-remote-candidate",
-          report.rawRemoteCandidates
-        ),
-      ])
-    );
+    foldSection.append(renderRawICEStatsFold(rndr, report));
     section.append(foldSection);
     iceDiv.append(section);
   }
   return iceDiv;
+}
+
+function renderRawICEStatsFold(rndr, report) {
+  return renderElements("div", { id: "ice-raw-stats-fold: " + report.pcid }, [
+    renderRawIceTable(
+      "about-webrtc-raw-local-candidate",
+      report.rawLocalCandidates
+    ),
+    renderRawIceTable(
+      "about-webrtc-raw-remote-candidate",
+      report.rawRemoteCandidates
+    ),
+  ]);
 }
 
 function renderIceMetric(label, value) {
@@ -1357,18 +1574,7 @@ function candidateToString({
   return `${address}:${port}/${protocol}(${candidateType})${proxied}`;
 }
 
-function renderUserPrefs() {
-  const getPref = key => {
-    switch (Services.prefs.getPrefType(key)) {
-      case Services.prefs.PREF_BOOL:
-        return Services.prefs.getBoolPref(key);
-      case Services.prefs.PREF_INT:
-        return Services.prefs.getIntPref(key);
-      case Services.prefs.PREF_STRING:
-        return Services.prefs.getStringPref(key);
-    }
-    return "";
-  };
+function renderUserPrefs(rndr) {
   const prefs = [
     "media.aboutwebrtc",
     "media.peerconnection",
@@ -1376,11 +1582,13 @@ function renderUserPrefs() {
     "media.getusermedia",
     "media.gmp-gmpopenh264.enabled",
   ];
-  const renderPref = p => renderText("p", `${p}: ${getPref(p)}`);
+  const hidden_prefs = ["media.aboutwebrtc.auto_refresh"];
+  const renderPrefLine = pref => renderPref(rndr, pref);
   const display = prefs
     .flatMap(Services.prefs.getChildList)
     .filter(Services.prefs.prefHasUserValue)
-    .map(renderPref);
+    .filter(p => !hidden_prefs.includes(p))
+    .map(renderPrefLine);
   return renderElements(
     "div",
     {
@@ -1427,18 +1635,21 @@ class FoldEffect {
   constructor(
     target,
     {
-      showMsg = "about-webrtc-fold-show-msg",
-      hideMsg = "about-webrtc-fold-hide-msg",
+      showMsg = "about-webrtc-fold-default-show-msg",
+      hideMsg = "about-webrtc-fold-default-hide-msg",
+      startsCollapsed = true,
     } = {}
   ) {
-    Object.assign(this, { target, showMsg, hideMsg });
+    Object.assign(this, { target, showMsg, hideMsg, startsCollapsed });
   }
 
   render() {
     this.target.classList.add("fold-target");
     this.trigger = renderElement("div", { className: "fold-trigger" });
     this.trigger.classList.add(this.showMsg, this.hideMsg);
-    this.collapse();
+    if (this.startsCollapsed) {
+      this.collapse();
+    }
     this.trigger.onclick = () => {
       if (this.target.classList.contains("fold-closed")) {
         this.expand();
@@ -1478,4 +1689,128 @@ class FoldEffect {
       document.l10n.setAttributes(trigger, showMsg);
     }
   }
+}
+
+function renderPref(rndr, path) {
+  const copyPrefButton = () => {
+    const button = rndr.text_span(String.fromCodePoint(0x1f4cb), {
+      className: "copy-button-base",
+    });
+    button.classList.add("copy-button");
+    button.onclick = () => {
+      if (!button.classList.contains("copy-button")) {
+        return;
+      }
+
+      const handleAnimation = async () => {
+        const switchFadeDirection = () => {
+          if (button.classList.contains("copy-button-fade-out")) {
+            // We just faded out so let's fade in
+            button.classList.toggle("copy-button-fade-out");
+            button.classList.toggle("copy-button-fade-in");
+          } else {
+            // We just faded in so let's fade out
+            button.classList.toggle("copy-button-fade-out");
+            button.classList.toggle("copy-button-fade-in");
+          }
+        };
+
+        // Fade out clipboard icon
+        // Fade out the clipboard character
+        button.classList.toggle("copy-button-fade-out");
+        // Wait for CSS transition to end
+        await new Promise(r => (button.ontransitionend = r));
+
+        // Fade in checkmark icon
+        // This is the start of fade in.
+        // Switch to the checkmark character
+        button.textContent = String.fromCodePoint(0x2705);
+        // Trigger CSS fade in transition
+        switchFadeDirection();
+        // Wait for CSS transition to end
+        await new Promise(r => (button.ontransitionend = r));
+
+        // Fade out clipboard icon
+        // Trigger CSS fade out transition
+        switchFadeDirection();
+        // Wait for CSS transition to end
+        await new Promise(r => (button.ontransitionend = r));
+
+        // Fade in clipboard icon
+        // This is the start of fade in.
+        // Switch to the clipboard character
+        button.textContent = String.fromCodePoint(0x1f4cb);
+        // Trigger CSS fade in transition
+        switchFadeDirection();
+        // Wait for CSS transition to end
+        await new Promise(r => (button.ontransitionend = r));
+
+        // Remove fade
+        button.classList.toggle("copy-button-fade-in");
+        // Re-enable clicks and hidding when parent div has lost :hover
+        button.classList.add("copy-button");
+      };
+
+      // Note the fade effect is handled in the CSS, we just need to swap
+      // between the different CSS classes. This returns a promise that waits
+      // for the current fade to end, starts the next fade, then resolves.
+
+      navigator.clipboard.writeText(path);
+      // Prevent animation from disappearing when parent div losses :hover,
+      // and prevent additional clicks until the animation finishes.
+      button.classList.remove("copy-button");
+      handleAnimation(); // runs unawaited
+    };
+    return button;
+  };
+
+  const getPref = () => {
+    switch (Services.prefs.getPrefType(path)) {
+      case Services.prefs.PREF_BOOL:
+        return Services.prefs.getBoolPref(path);
+      case Services.prefs.PREF_INT:
+        return Services.prefs.getIntPref(path);
+      case Services.prefs.PREF_STRING:
+        return Services.prefs.getStringPref(path);
+    }
+    return "";
+  };
+
+  return rndr.elems_p({ className: "pref" }, [
+    copyPrefButton(path),
+    rndr.text_span(`${path}: ${getPref(path)}`),
+  ]);
+}
+
+async function renderMediaCtx(rndr) {
+  const ctx = WGI.getMediaContext();
+  const prefs = [
+    "media.peerconnection.video.vp9_enabled",
+    "media.peerconnection.video.vp9_preferred",
+    "media.navigator.video.h264.level",
+    "media.navigator.video.h264.max_mbps",
+    "media.navigator.video.h264.max_mbps",
+    "media.navigator.video.max_fs",
+    "media.navigator.video.max_fr",
+    "media.navigator.video.use_tmmbr",
+    "media.navigator.video.use_remb",
+    "media.navigator.video.use_transport_cc",
+    "media.navigator.audio.use_fec",
+    "media.navigator.video.red_ulpfec_enabled",
+  ];
+
+  const inner = rndr.elems_div({}, [
+    rndr.text_p(`hasH264Hardware: ${ctx.hasH264Hardware}`),
+    rndr.elem_hr(),
+    ...prefs.map(pref => renderPref(rndr, pref)),
+  ]);
+  const outer = document.createElement("div");
+  outer.append(rndr.elem_h3({}, "about-webrtc-media-context-heading"));
+  const section = renderFoldableSection(outer, {
+    showMsg: "about-webrtc-media-context-show-msg",
+    hideMsg: "about-webrtc-media-context-hide-msg",
+  });
+  outer.append(section);
+  section.append(inner);
+  return outer;
 }

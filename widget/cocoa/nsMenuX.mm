@@ -88,14 +88,13 @@ nsMenuX::nsMenuX(nsMenuParentX* aParent, nsMenuGroupOwnerX* aMenuGroupOwner, nsI
   SwizzleDynamicIndexingMethods();
 
   mMenuDelegate = [[MenuDelegate alloc] initWithGeckoMenu:this];
-  mMenuDelegate.menuIsInMenubar = mMenuGroupOwner->GetMenuBar() != nullptr;
 
   if (!nsMenuBarX::sNativeEventTarget) {
     nsMenuBarX::sNativeEventTarget = [[NativeMenuItemTarget alloc] init];
   }
 
   if (mContent->IsElement()) {
-    mContent->AsElement()->GetAttr(kNameSpaceID_None, nsGkAtoms::label, mLabel);
+    mContent->AsElement()->GetAttr(nsGkAtoms::label, mLabel);
   }
   mNativeMenu = CreateMenuWithGeckoString(mLabel);
 
@@ -815,7 +814,7 @@ RefPtr<nsMenuItemX> nsMenuX::CreateMenuItem(nsIContent* aMenuItemContent) {
 
   nsAutoString menuitemName;
   if (aMenuItemContent->IsElement()) {
-    aMenuItemContent->AsElement()->GetAttr(kNameSpaceID_None, nsGkAtoms::label, menuitemName);
+    aMenuItemContent->AsElement()->GetAttr(nsGkAtoms::label, menuitemName);
   }
 
   EMenuItemType itemType = eRegularMenuItemType;
@@ -912,7 +911,7 @@ bool nsMenuX::IsXULHelpMenu(nsIContent* aMenuContent) {
   bool retval = false;
   if (aMenuContent && aMenuContent->IsElement()) {
     nsAutoString id;
-    aMenuContent->AsElement()->GetAttr(kNameSpaceID_None, nsGkAtoms::id, id);
+    aMenuContent->AsElement()->GetAttr(nsGkAtoms::id, id);
     if (id.Equals(u"helpMenu"_ns)) {
       retval = true;
     }
@@ -924,7 +923,7 @@ bool nsMenuX::IsXULWindowMenu(nsIContent* aMenuContent) {
   bool retval = false;
   if (aMenuContent && aMenuContent->IsElement()) {
     nsAutoString id;
-    aMenuContent->AsElement()->GetAttr(kNameSpaceID_None, nsGkAtoms::id, id);
+    aMenuContent->AsElement()->GetAttr(nsGkAtoms::id, id);
     if (id.Equals(u"windowMenu"_ns)) {
       retval = true;
     }
@@ -949,7 +948,7 @@ void nsMenuX::ObserveAttributeChanged(dom::Document* aDocument, nsIContent* aCon
     SetEnabled(!mContent->AsElement()->AttrValueIs(kNameSpaceID_None, nsGkAtoms::disabled,
                                                    nsGkAtoms::_true, eCaseMatters));
   } else if (aAttribute == nsGkAtoms::label) {
-    mContent->AsElement()->GetAttr(kNameSpaceID_None, nsGkAtoms::label, mLabel);
+    mContent->AsElement()->GetAttr(nsGkAtoms::label, mLabel);
     NSString* newCocoaLabelString = nsMenuUtilsX::GetTruncatedCocoaLabel(mLabel);
     mNativeMenu.title = newCocoaLabelString;
     mNativeMenuItem.title = newCocoaLabelString;
@@ -1151,20 +1150,6 @@ void nsMenuX::Dump(uint32_t aIndent) const {
   // menus, but it also resolves many other problems.
   if (nsMenuX::sIndexingMenuLevel > 0) {
     return;
-  }
-
-  if (self.menuIsInMenubar) {
-    // If a menu in the menubar is trying open while a non-native menu is open, roll up the
-    // non-native menu and reject the menubar opening attempt, effectively consuming the event.
-    nsIRollupListener* rollupListener = nsBaseWidget::GetActiveRollupListener();
-    if (rollupListener) {
-      nsCOMPtr<nsIWidget> rollupWidget = rollupListener->GetRollupWidget();
-      if (rollupWidget) {
-        rollupListener->Rollup({0, nsIRollupListener::FlushViews::Yes});
-        [menu cancelTracking];
-        return;
-      }
-    }
   }
 
   // Hold a strong reference to mGeckoMenu while calling its methods.

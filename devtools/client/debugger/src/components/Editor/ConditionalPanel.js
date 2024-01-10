@@ -2,7 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
-import React, { PureComponent } from "react";
+import { PureComponent } from "react";
+import { div, textarea } from "react-dom-factories";
 import ReactDOM from "react-dom";
 import PropTypes from "prop-types";
 import { connect } from "../../utils/connect";
@@ -15,7 +16,6 @@ import {
   getClosestBreakpoint,
   getConditionalPanelLocation,
   getLogPointStatus,
-  getContext,
 } from "../../selectors";
 
 const classnames = require("devtools/client/shared/classnames.js");
@@ -42,7 +42,6 @@ export class ConditionalPanel extends PureComponent {
     return {
       breakpoint: PropTypes.object,
       closeConditionalPanel: PropTypes.func.isRequired,
-      cx: PropTypes.object.isRequired,
       editor: PropTypes.object.isRequired,
       location: PropTypes.any.isRequired,
       log: PropTypes.bool.isRequired,
@@ -78,7 +77,7 @@ export class ConditionalPanel extends PureComponent {
   };
 
   setBreakpoint(value) {
-    const { cx, log, breakpoint } = this.props;
+    const { log, breakpoint } = this.props;
     // If breakpoint is `pending`, props will not contain a breakpoint.
     // If source is a URL without location, breakpoint will contain no generatedLocation.
     const location =
@@ -87,7 +86,7 @@ export class ConditionalPanel extends PureComponent {
         : this.props.location;
     const options = breakpoint ? breakpoint.options : {};
     const type = log ? "logValue" : "condition";
-    return this.props.setBreakpointOptions(cx, location, {
+    return this.props.setBreakpointOptions(location, {
       ...options,
       [type]: value,
     });
@@ -137,7 +136,7 @@ export class ConditionalPanel extends PureComponent {
     }
     const { location, editor } = props;
 
-    const editorLine = toEditorLine(location.sourceId, location.line || 0);
+    const editorLine = toEditorLine(location.source.id, location.line || 0);
     this.cbPanel = editor.codeMirror.addLineWidget(
       editorLine,
       this.renderConditionalPanel(props),
@@ -222,19 +221,25 @@ export class ConditionalPanel extends PureComponent {
 
     const panel = document.createElement("div");
     ReactDOM.render(
-      <div
-        className={classnames("conditional-breakpoint-panel", {
-          "log-point": log,
-        })}
-        onClick={() => this.keepFocusOnInput()}
-        ref={node => (this.panelNode = node)}
-      >
-        <div className="prompt">»</div>
-        <textarea
-          defaultValue={defaultValue}
-          ref={input => this.createEditor(input)}
-        />
-      </div>,
+      div(
+        {
+          className: classnames("conditional-breakpoint-panel", {
+            "log-point": log,
+          }),
+          onClick: () => this.keepFocusOnInput(),
+          ref: node => (this.panelNode = node),
+        },
+        div(
+          {
+            className: "prompt",
+          },
+          "»"
+        ),
+        textarea({
+          defaultValue,
+          ref: input => this.createEditor(input),
+        })
+      ),
       panel
     );
     return panel;
@@ -255,7 +260,6 @@ const mapStateToProps = state => {
   const breakpoint = getClosestBreakpoint(state, location);
 
   return {
-    cx: getContext(state),
     breakpoint,
     location,
     log: getLogPointStatus(state),

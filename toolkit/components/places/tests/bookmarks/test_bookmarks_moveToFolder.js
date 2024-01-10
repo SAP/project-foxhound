@@ -256,7 +256,7 @@ async function testMoveToFolder(details) {
 
       expectedNotifications.push({
         type: "bookmark-moved",
-        id: await PlacesUtils.promiseItemId(origItem.guid),
+        id: await PlacesTestUtils.promiseItemId(origItem.guid),
         itemType: PlacesUtils.bookmarks.TYPE_BOOKMARK,
         url: origItem.url,
         guid: origItem.guid,
@@ -266,6 +266,12 @@ async function testMoveToFolder(details) {
         oldParentGuid: origItem.parentGuid,
         oldIndex: notification.originalIndex,
         isTagging: false,
+        title: origItem.title,
+        tags: "",
+        frecency: 1,
+        hidden: false,
+        visitCount: 0,
+        lastVisitDate: null,
       });
     }
     observer.check(expectedNotifications);

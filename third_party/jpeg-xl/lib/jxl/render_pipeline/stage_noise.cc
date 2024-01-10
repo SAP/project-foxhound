@@ -19,7 +19,6 @@ namespace HWY_NAMESPACE {
 
 // These templates are not found via ADL.
 using hwy::HWY_NAMESPACE::Max;
-using hwy::HWY_NAMESPACE::ShiftRight;
 using hwy::HWY_NAMESPACE::Vec;
 using hwy::HWY_NAMESPACE::ZeroIfNegative;
 
@@ -155,8 +154,6 @@ class AddNoiseStage : public RenderPipelineStage {
   void ProcessRow(const RowInfo& input_rows, const RowInfo& output_rows,
                   size_t xextra, size_t xsize, size_t xpos, size_t ypos,
                   size_t thread_id) const final {
-    PROFILER_ZONE("Noise apply");
-
     if (!noise_params_.HasAny()) return;
     const StrengthEvalLut noise_model(noise_params_);
     D d;
@@ -237,8 +234,6 @@ class ConvolveNoiseStage : public RenderPipelineStage {
   void ProcessRow(const RowInfo& input_rows, const RowInfo& output_rows,
                   size_t xextra, size_t xsize, size_t xpos, size_t ypos,
                   size_t thread_id) const final {
-    PROFILER_ZONE("Noise convolve");
-
     const HWY_FULL(float) d;
     for (size_t c = first_c_; c < first_c_ + 3; c++) {
       float* JXL_RESTRICT rows[5];

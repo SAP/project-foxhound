@@ -302,12 +302,21 @@ void StyleSheet::SetComplete() {
 
 void StyleSheet::ApplicableStateChanged(bool aApplicable) {
   MOZ_ASSERT(aApplicable == IsApplicable());
-  auto Notify = [this](DocumentOrShadowRoot& target) {
+  Document* docToPostEvent = nullptr;
+  auto Notify = [&](DocumentOrShadowRoot& target) {
     nsINode& node = target.AsNode();
     if (ShadowRoot* shadow = ShadowRoot::FromNode(node)) {
       shadow->StyleSheetApplicableStateChanged(*this);
+      MOZ_ASSERT(!docToPostEvent || !shadow->IsInComposedDoc() ||
+                 docToPostEvent == shadow->GetComposedDoc());
+      if (!docToPostEvent) {
+        docToPostEvent = shadow->GetComposedDoc();
+      }
     } else {
-      node.AsDocument()->StyleSheetApplicableStateChanged(*this);
+      Document* doc = node.AsDocument();
+      MOZ_ASSERT(!docToPostEvent || docToPostEvent == doc);
+      doc->StyleSheetApplicableStateChanged(*this);
+      docToPostEvent = doc;
     }
   };
 
@@ -325,6 +334,10 @@ void StyleSheet::ApplicableStateChanged(bool aApplicable) {
     if (adopter != sheet.mConstructorDocument) {
       Notify(*adopter);
     }
+  }
+
+  if (docToPostEvent) {
+    docToPostEvent->PostStyleSheetApplicableStateChangeEvent(*this);
   }
 }
 
@@ -366,12 +379,7 @@ StyleSheetInfo::StyleSheetInfo(CORSMode aCORSMode,
       mReferrerInfo(new ReferrerInfo(nullptr)),
       mIntegrity(aIntegrity),
       mContents(Servo_StyleSheet_Empty(aParsingMode).Consume()),
-      mURLData(URLExtraData::Dummy())
-#ifdef DEBUG
-      ,
-      mPrincipalSet(false)
-#endif
-{
+      mURLData(URLExtraData::Dummy()) {
   if (!mPrincipal) {
     MOZ_CRASH("NullPrincipal::Init failed");
   }
@@ -721,11 +729,11 @@ already_AddRefed<dom::Promise> StyleSheet::Replace(const nsACString& aText,
   // observers (i.e., set mMustNotify to true)?
   auto* loader = mConstructorDocument->CSSLoader();
   auto loadData = MakeRefPtr<css::SheetLoadData>(
-      loader, nullptr, this, /* aSyncLoad */ false,
+      loader, /* aURI = */ nullptr, this, css::SyncLoad::No,
       css::Loader::UseSystemPrincipal::No, css::StylePreloadKind::None,
-      /* aPreloadEncoding */ nullptr,
-      /* aObserver */ nullptr, mConstructorDocument->NodePrincipal(),
-      GetReferrerInfo());
+      /* aPreloadEncoding */ nullptr, /* aObserver */ nullptr,
+      mConstructorDocument->NodePrincipal(), GetReferrerInfo(),
+      /* aNonce */ u""_ns);
 
   // In parallel
   // 5.1 Parse aText into rules.
@@ -769,8 +777,7 @@ void StyleSheet::ReplaceSync(const nsACString& aText, ErrorResult& aRv) {
   RefPtr<const StyleStylesheetContents> rawContent =
       Servo_StyleSheet_FromUTF8Bytes(
           loader, this,
-          /* load_data = */ nullptr, &aText, mParsingMode, Inner().mURLData,
-          /* line_number_offset = */ 0,
+          /* load_data = */ nullptr, &aText, mParsingMode, URLData(),
           mConstructorDocument->GetCompatibilityMode(),
           /* reusable_sheets = */ nullptr,
           mConstructorDocument->GetStyleUseCounters(),
@@ -1209,9 +1216,11 @@ RefPtr<StyleSheetParsePromise> StyleSheet::ParseSheet(
   auto allowImportRules = SelfOrAncestorIsConstructed()
                               ? StyleAllowImportRules::No
                               : StyleAllowImportRules::Yes;
+  URLExtraData* urlData = URLData();
   const bool shouldRecordCounters =
-      aLoader.GetDocument() && aLoader.GetDocument()->GetStyleUseCounters();
-  if (!AllowParallelParse(aLoader, Inner().mURLData)) {
+      aLoader.GetDocument() && aLoader.GetDocument()->GetStyleUseCounters() &&
+      !urlData->ChromeRulesEnabled();
+  if (!AllowParallelParse(aLoader, urlData)) {
     UniquePtr<StyleUseCounters> counters;
     if (shouldRecordCounters) {
       counters.reset(Servo_UseCounters_Create());
@@ -1219,8 +1228,8 @@ RefPtr<StyleSheetParsePromise> StyleSheet::ParseSheet(
 
     RefPtr<StyleStylesheetContents> contents =
         Servo_StyleSheet_FromUTF8Bytes(
-            &aLoader, this, &aLoadData, &aBytes, mParsingMode, Inner().mURLData,
-            aLoadData.mLineNumber, aLoadData.mCompatMode,
+            &aLoader, this, &aLoadData, &aBytes, mParsingMode, urlData,
+            aLoadData.mCompatMode,
             /* reusable_sheets = */ nullptr, counters.get(), allowImportRules,
             StyleSanitizationKind::None,
             /* sanitized_output = */ nullptr)
@@ -1228,9 +1237,9 @@ RefPtr<StyleSheetParsePromise> StyleSheet::ParseSheet(
     FinishAsyncParse(contents.forget(), std::move(counters));
   } else {
     auto holder = MakeRefPtr<css::SheetLoadDataHolder>(__func__, &aLoadData);
-    Servo_StyleSheet_FromUTF8BytesAsync(
-        holder, Inner().mURLData, &aBytes, mParsingMode, aLoadData.mLineNumber,
-        aLoadData.mCompatMode, shouldRecordCounters, allowImportRules);
+    Servo_StyleSheet_FromUTF8BytesAsync(holder, urlData, &aBytes, mParsingMode,
+                                        aLoadData.mCompatMode,
+                                        shouldRecordCounters, allowImportRules);
   }
 
   return p;
@@ -1249,7 +1258,7 @@ void StyleSheet::FinishAsyncParse(
 
 void StyleSheet::ParseSheetSync(
     css::Loader* aLoader, const nsACString& aBytes,
-    css::SheetLoadData* aLoadData, uint32_t aLineNumber,
+    css::SheetLoadData* aLoadData,
     css::LoaderReusableStyleSheets* aReusableSheets) {
   const nsCompatibility compatMode = [&] {
     if (aLoadData) {
@@ -1261,8 +1270,11 @@ void StyleSheet::ParseSheetSync(
     return eCompatibility_FullStandards;
   }();
 
+  SetURLExtraData();
+
+  URLExtraData* urlData = URLData();
   const StyleUseCounters* useCounters =
-      aLoader && aLoader->GetDocument()
+      aLoader && aLoader->GetDocument() && !urlData->ChromeRulesEnabled()
           ? aLoader->GetDocument()->GetStyleUseCounters()
           : nullptr;
 
@@ -1270,14 +1282,12 @@ void StyleSheet::ParseSheetSync(
                               ? StyleAllowImportRules::No
                               : StyleAllowImportRules::Yes;
 
-  SetURLExtraData();
-  Inner().mContents =
-      Servo_StyleSheet_FromUTF8Bytes(
-          aLoader, this, aLoadData, &aBytes, mParsingMode, Inner().mURLData,
-          aLineNumber, compatMode, aReusableSheets, useCounters,
-          allowImportRules, StyleSanitizationKind::None,
-          /* sanitized_output = */ nullptr)
-          .Consume();
+  Inner().mContents = Servo_StyleSheet_FromUTF8Bytes(
+                          aLoader, this, aLoadData, &aBytes, mParsingMode,
+                          urlData, compatMode, aReusableSheets, useCounters,
+                          allowImportRules, StyleSanitizationKind::None,
+                          /* sanitized_output = */ nullptr)
+                          .Consume();
 
   FinishParse();
 }
@@ -1330,11 +1340,6 @@ void StyleSheet::ReparseSheet(const nsACString& aInput, ErrorResult& aRv) {
   }
   Inner().mChildren.Clear();
 
-  uint32_t lineNumber = 1;
-  if (auto* linkStyle = LinkStyle::FromNodeOrNull(mOwningNode)) {
-    lineNumber = linkStyle->GetLineNumber();
-  }
-
   // Notify to the stylesets about the old rules going away.
   {
     ServoCSSRuleList* ruleList = GetCssRulesInternal();
@@ -1353,8 +1358,7 @@ void StyleSheet::ReparseSheet(const nsACString& aInput, ErrorResult& aRv) {
     ruleList->SetRawContents(nullptr, /* aFromClone = */ false);
   }
 
-  ParseSheetSync(loader, aInput, /* aLoadData = */ nullptr, lineNumber,
-                 &reusableSheets);
+  ParseSheetSync(loader, aInput, /* aLoadData = */ nullptr, &reusableSheets);
 
   FixUpRuleListAfterContentsChangeIfNeeded();
 
@@ -1471,7 +1475,7 @@ nsresult StyleSheet::InsertRuleIntoGroupInternal(const nsACString& aRule,
                                                  uint32_t aIndex) {
   MOZ_ASSERT(!IsReadOnly());
 
-  ServoCSSRuleList* rules = aGroup->GetCssRules();
+  ServoCSSRuleList* rules = aGroup->CssRules();
   MOZ_ASSERT(rules && rules->GetParentRule() == aGroup);
   return rules->InsertRule(aRule, aIndex);
 }
@@ -1486,7 +1490,7 @@ void StyleSheet::SetSharedContents(const StyleLockedCssRules* aSharedRules) {
   SetURLExtraData();
 
   Inner().mContents =
-      Servo_StyleSheet_FromSharedData(Inner().mURLData, aSharedRules).Consume();
+      Servo_StyleSheet_FromSharedData(URLData(), aSharedRules).Consume();
 
   // Don't call FinishParse(), since that tries to set source map URLs,
   // which we don't have.

@@ -22,7 +22,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
 const kPrefCustomizationDebug = "browser.uiCustomization.debug";
 const kPrefScreenshots = "extensions.screenshots.disabled";
 
-XPCOMUtils.defineLazyGetter(lazy, "log", () => {
+ChromeUtils.defineLazyGetter(lazy, "log", () => {
   let { ConsoleAPI } = ChromeUtils.importESModule(
     "resource://gre/modules/Console.sys.mjs"
   );
@@ -111,11 +111,12 @@ export const CustomizableWidgets = [
       let panelview = event.target;
       let document = panelview.ownerDocument;
       let window = document.defaultView;
+      const closedTabCount = lazy.SessionStore.getClosedTabCount();
 
       lazy.PanelMultiView.getViewNode(
         document,
         "appMenuRecentlyClosedTabs"
-      ).disabled = lazy.SessionStore.getClosedTabCountForWindow(window) == 0;
+      ).disabled = closedTabCount == 0;
       lazy.PanelMultiView.getViewNode(
         document,
         "appMenuRecentlyClosedWindows"
@@ -457,7 +458,7 @@ if (Services.prefs.getBoolPref("identity.fxaccounts.enabled")) {
           ? "syncing-data-l10n-id"
           : "sync-now-data-l10n-id"
       );
-      syncNowBtn.setAttribute("data-l10n-id", l10nId);
+      doc.l10n.setAttributes(syncNowBtn, l10nId);
 
       let SyncedTabsPanelList = doc.defaultView.SyncedTabsPanelList;
       panelview.syncedTabsPanelList = new SyncedTabsPanelList(

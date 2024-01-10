@@ -6,6 +6,7 @@
 #include "WebGPUParent.h"
 #include "mozilla/PodOperations.h"
 #include "mozilla/ScopeExit.h"
+#include "mozilla/dom/WebGPUBinding.h"
 #include "mozilla/webgpu/ffi/wgpu.h"
 #include "mozilla/layers/CompositorThread.h"
 #include "mozilla/layers/ImageDataSerializer.h"
@@ -35,31 +36,59 @@ static mozilla::LazyLogModule sLogger("WebGPU");
 class ErrorBuffer {
   // if the message doesn't fit, it will be truncated
   static constexpr unsigned BUFFER_SIZE = 512;
-  char mUtf8[BUFFER_SIZE] = {};
-  bool mGuard = false;
+  ffi::WGPUErrorBufferType mType = ffi::WGPUErrorBufferType_None;
+  char mMessageUtf8[BUFFER_SIZE] = {};
+  bool mAwaitingGetError = false;
 
  public:
-  ErrorBuffer() { mUtf8[0] = 0; }
+  ErrorBuffer() { mMessageUtf8[0] = 0; }
   ErrorBuffer(const ErrorBuffer&) = delete;
-  ~ErrorBuffer() { MOZ_ASSERT(!mGuard); }
+  ~ErrorBuffer() { MOZ_ASSERT(!mAwaitingGetError); }
 
   ffi::WGPUErrorBuffer ToFFI() {
-    mGuard = true;
-    ffi::WGPUErrorBuffer errorBuf = {mUtf8, BUFFER_SIZE};
+    mAwaitingGetError = true;
+    ffi::WGPUErrorBuffer errorBuf = {&mType, mMessageUtf8, BUFFER_SIZE};
     return errorBuf;
   }
 
-  // If an error message was stored in this buffer, return Some(m)
-  // where m is the message as a UTF-8 nsCString. Otherwise, return Nothing.
-  //
-  // Mark this ErrorBuffer as having been handled, so its destructor
-  // won't assert.
-  Maybe<nsCString> GetError() {
-    mGuard = false;
-    if (!mUtf8[0]) {
-      return Nothing();
+  ffi::WGPUErrorBufferType GetType() { return mType; }
+
+  static Maybe<dom::GPUErrorFilter> ErrorTypeToFilterType(
+      ffi::WGPUErrorBufferType aType) {
+    switch (aType) {
+      case ffi::WGPUErrorBufferType_None:
+        return {};
+      case ffi::WGPUErrorBufferType_Internal:
+        return Some(dom::GPUErrorFilter::Internal);
+      case ffi::WGPUErrorBufferType_Validation:
+        return Some(dom::GPUErrorFilter::Validation);
+      case ffi::WGPUErrorBufferType_OutOfMemory:
+        return Some(dom::GPUErrorFilter::Out_of_memory);
+      case ffi::WGPUErrorBufferType_Sentinel:
+        break;
     }
-    return Some(nsCString(mUtf8));
+
+    MOZ_CRASH("invalid `ErrorBufferType`");
+  }
+
+  struct Error {
+    dom::GPUErrorFilter type;
+    nsCString message;
+  };
+
+  // Retrieve the error message was stored in this buffer. Asserts that
+  // this instance actually contains an error (viz., that `GetType() !=
+  // ffi::WGPUErrorBufferType_None`).
+  //
+  // Mark this `ErrorBuffer` as having been handled, so its destructor
+  // won't assert.
+  Maybe<Error> GetError() {
+    mAwaitingGetError = false;
+    auto filterType = ErrorTypeToFilterType(mType);
+    if (!filterType) {
+      return {};
+    }
+    return Some(Error{*filterType, nsCString{mMessageUtf8}});
   }
 };
 
@@ -233,33 +262,39 @@ void WebGPUParent::MaintainDevices() {
   ffi::wgpu_server_poll_all_devices(mContext.get(), false);
 }
 
-bool WebGPUParent::ForwardError(RawId aDeviceId, ErrorBuffer& aError) {
-  // don't do anything if the error is empty
-  auto cString = aError.GetError();
-  if (!cString) {
-    return false;
+bool WebGPUParent::ForwardError(const Maybe<RawId> aDeviceId,
+                                ErrorBuffer& aError) {
+  if (auto error = aError.GetError()) {
+    ReportError(aDeviceId, error->type, error->message);
+    return true;
   }
-
-  ReportError(aDeviceId, cString.value());
-
-  return true;
+  return false;
 }
 
 // Generate an error on the Device timeline of aDeviceId.
 // aMessage is interpreted as UTF-8.
-void WebGPUParent::ReportError(RawId aDeviceId, const nsCString& aMessage) {
+void WebGPUParent::ReportError(const Maybe<RawId> aDeviceId,
+                               const GPUErrorFilter aType,
+                               const nsCString& aMessage) {
   // find the appropriate error scope
-  const auto& lookup = mErrorScopeMap.find(aDeviceId);
-  if (lookup != mErrorScopeMap.end() && !lookup->second.mStack.IsEmpty()) {
-    auto& last = lookup->second.mStack.LastElement();
-    if (last.isNothing()) {
-      last.emplace(ScopedError{false, aMessage});
+  if (aDeviceId) {
+    const auto& itr = mErrorScopeStackByDevice.find(*aDeviceId);
+    if (itr != mErrorScopeStackByDevice.end()) {
+      auto& stack = itr->second;
+      for (auto& scope : Reversed(stack)) {
+        if (scope.filter != aType) {
+          continue;
+        }
+        if (!scope.firstMessage) {
+          scope.firstMessage = Some(aMessage);
+        }
+        return;
+      }
     }
-  } else {
-    // fall back to the uncaptured error handler
-    if (!SendDeviceUncapturedError(aDeviceId, aMessage)) {
-      NS_ERROR("Unable to SendError");
-    }
+  }
+  // No error scope found, so fall back to the uncaptured error handler
+  if (!SendUncapturedError(aDeviceId, aMessage)) {
+    NS_ERROR("SendDeviceUncapturedError failed");
   }
 }
 
@@ -271,6 +306,8 @@ ipc::IPCResult WebGPUParent::RecvInstanceRequestAdapter(
   if (aOptions.mPowerPreference.WasPassed()) {
     options.power_preference = static_cast<ffi::WGPUPowerPreference>(
         aOptions.mPowerPreference.Value());
+  } else {
+    options.power_preference = ffi::WGPUPowerPreference_LowPower;
   }
   options.force_fallback_adapter = aOptions.mForceFallbackAdapter;
 
@@ -312,7 +349,7 @@ ipc::IPCResult WebGPUParent::RecvAdapterRequestDevice(
   if (ForwardError(0, error)) {
     resolver(false);
   } else {
-    mErrorScopeMap.insert({aAdapterId, ErrorScopeStack()});
+    mErrorScopeStackByDevice.insert({aDeviceId, {}});
     resolver(true);
   }
   return IPC_OK();
@@ -325,7 +362,7 @@ ipc::IPCResult WebGPUParent::RecvAdapterDestroy(RawId aAdapterId) {
 
 ipc::IPCResult WebGPUParent::RecvDeviceDestroy(RawId aDeviceId) {
   ffi::wgpu_server_device_drop(mContext.get(), aDeviceId);
-  mErrorScopeMap.erase(aDeviceId);
+  mErrorScopeStackByDevice.erase(aDeviceId);
   return IPC_OK();
 }
 
@@ -348,22 +385,31 @@ ipc::IPCResult WebGPUParent::RecvCreateBuffer(
 
   bool hasMapFlags = aDesc.mUsage & (dom::GPUBufferUsage_Binding::MAP_WRITE |
                                      dom::GPUBufferUsage_Binding::MAP_READ);
+  bool shmAllocationFailed = false;
   if (hasMapFlags || aDesc.mMappedAtCreation) {
-    uint64_t offset = 0;
-    uint64_t size = 0;
-    if (aDesc.mMappedAtCreation) {
-      size = aDesc.mSize;
-      MOZ_RELEASE_ASSERT(shmem.Size() >= aDesc.mSize);
-    }
+    if (shmem.Size() < aDesc.mSize) {
+      MOZ_RELEASE_ASSERT(shmem.Size() == 0);
+      // If we requested a non-zero mappable buffer and get a size of zero, it
+      // indicates that the shmem allocation failed on the client side.
+      shmAllocationFailed = true;
+    } else {
+      uint64_t offset = 0;
+      uint64_t size = 0;
 
-    BufferMapData data = {std::move(shmem), hasMapFlags, offset, size};
-    mSharedMemoryMap.insert({aBufferId, std::move(data)});
+      if (aDesc.mMappedAtCreation) {
+        size = aDesc.mSize;
+      }
+
+      BufferMapData data = {std::move(shmem), hasMapFlags, offset, size};
+      mSharedMemoryMap.insert({aBufferId, std::move(data)});
+    }
   }
 
   ErrorBuffer error;
   ffi::wgpu_server_device_create_buffer(mContext.get(), aDeviceId, aBufferId,
                                         label.Get(), aDesc.mSize, aDesc.mUsage,
-                                        aDesc.mMappedAtCreation, error.ToFFI());
+                                        aDesc.mMappedAtCreation,
+                                        shmAllocationFailed, error.ToFFI());
   ForwardError(aDeviceId, error);
   return IPC_OK();
 }
@@ -618,6 +664,31 @@ ipc::IPCResult WebGPUParent::RecvQueueSubmit(
   return IPC_OK();
 }
 
+struct OnSubmittedWorkDoneRequest {
+  RefPtr<WebGPUParent> mParent;
+  WebGPUParent::QueueOnSubmittedWorkDoneResolver mResolver;
+};
+
+void OnSubmittedWorkDoneCallback(uint8_t* userdata) {
+  auto req = std::unique_ptr<OnSubmittedWorkDoneRequest>(
+      reinterpret_cast<OnSubmittedWorkDoneRequest*>(userdata));
+  if (req->mParent->CanSend()) {
+    req->mResolver(void_t());
+  }
+}
+
+ipc::IPCResult WebGPUParent::RecvQueueOnSubmittedWorkDone(
+    RawId aQueueId, std::function<void(mozilla::void_t)>&& aResolver) {
+  std::unique_ptr<OnSubmittedWorkDoneRequest> request(
+      new OnSubmittedWorkDoneRequest{this, std::move(aResolver)});
+
+  ffi::WGPUSubmittedWorkDoneClosureC callback = {
+      &OnSubmittedWorkDoneCallback,
+      reinterpret_cast<uint8_t*>(request.release())};
+  ffi::wgpu_server_on_submitted_work_done(mContext.get(), aQueueId, callback);
+  return IPC_OK();
+}
+
 ipc::IPCResult WebGPUParent::RecvQueueWriteAction(
     RawId aQueueId, RawId aDeviceId, const ipc::ByteBuf& aByteBuf,
     ipc::UnsafeSharedMemoryHandle&& aShmem) {
@@ -830,10 +901,10 @@ static void PresentCallback(ffi::WGPUBufferMapAsyncStatus status,
     }
     ErrorBuffer error;
     wgpu_server_buffer_unmap(req->mContext, bufferId, error.ToFFI());
-    if (auto errorString = error.GetError()) {
-      MOZ_LOG(
-          sLogger, LogLevel::Info,
-          ("WebGPU present: buffer unmap failed: %s\n", errorString->get()));
+    if (auto innerError = error.GetError()) {
+      MOZ_LOG(sLogger, LogLevel::Info,
+              ("WebGPU present: buffer unmap failed: %s\n",
+               innerError->message.get()));
     }
   } else {
     // TODO: better handle errors
@@ -898,7 +969,7 @@ ipc::IPCResult WebGPUParent::RecvSwapChainPresent(
       ErrorBuffer error;
       ffi::wgpu_server_device_create_buffer(mContext.get(), data->mDeviceId,
                                             bufferId, nullptr, bufferSize,
-                                            usage, false, error.ToFFI());
+                                            usage, false, false, error.ToFFI());
       if (ForwardError(data->mDeviceId, error)) {
         return IPC_OK();
       }
@@ -1037,13 +1108,9 @@ ipc::IPCResult WebGPUParent::RecvDeviceAction(RawId aDeviceId,
 ipc::IPCResult WebGPUParent::RecvDeviceActionWithAck(
     RawId aDeviceId, const ipc::ByteBuf& aByteBuf,
     DeviceActionWithAckResolver&& aResolver) {
-  ErrorBuffer error;
-  ffi::wgpu_server_device_action(mContext.get(), aDeviceId, ToFFI(&aByteBuf),
-                                 error.ToFFI());
-
-  ForwardError(aDeviceId, error);
+  auto result = RecvDeviceAction(aDeviceId, aByteBuf);
   aResolver(true);
-  return IPC_OK();
+  return result;
 }
 
 ipc::IPCResult WebGPUParent::RecvTextureAction(RawId aTextureId,
@@ -1083,45 +1150,78 @@ ipc::IPCResult WebGPUParent::RecvBumpImplicitBindGroupLayout(RawId aPipelineId,
   return IPC_OK();
 }
 
-ipc::IPCResult WebGPUParent::RecvDevicePushErrorScope(RawId aDeviceId) {
-  const auto& lookup = mErrorScopeMap.find(aDeviceId);
-  if (lookup == mErrorScopeMap.end()) {
+ipc::IPCResult WebGPUParent::RecvDevicePushErrorScope(
+    RawId aDeviceId, const dom::GPUErrorFilter aFilter) {
+  const auto& itr = mErrorScopeStackByDevice.find(aDeviceId);
+  if (itr == mErrorScopeStackByDevice.end()) {
     // Content can cause this simply by destroying a device and then
     // calling `pushErrorScope`.
     return IPC_OK();
   }
+  auto& stack = itr->second;
 
-  lookup->second.mStack.EmplaceBack();
+  // Let's prevent `while (true) { pushErrorScope(); }`.
+  constexpr size_t MAX_ERROR_SCOPE_STACK_SIZE = 1'000'000;
+  if (stack.size() >= MAX_ERROR_SCOPE_STACK_SIZE) {
+    nsPrintfCString m("pushErrorScope: Hit MAX_ERROR_SCOPE_STACK_SIZE of %zu",
+                      MAX_ERROR_SCOPE_STACK_SIZE);
+    ReportError(Some(aDeviceId), dom::GPUErrorFilter::Out_of_memory, m);
+    return IPC_OK();
+  }
+
+  const auto newScope = ErrorScope{aFilter};
+  stack.push_back(newScope);
   return IPC_OK();
 }
 
 ipc::IPCResult WebGPUParent::RecvDevicePopErrorScope(
     RawId aDeviceId, DevicePopErrorScopeResolver&& aResolver) {
-  const auto& lookup = mErrorScopeMap.find(aDeviceId);
-  if (lookup == mErrorScopeMap.end()) {
-    // Content can cause this simply by destroying a device and then
-    // calling `popErrorScope`.
-    ScopedError error = {true};
-    aResolver(Some(error));
-    return IPC_OK();
-  }
+  const auto popResult = [&]() {
+    const auto& itr = mErrorScopeStackByDevice.find(aDeviceId);
+    if (itr == mErrorScopeStackByDevice.end()) {
+      // Content can cause this simply by destroying a device and then
+      // calling `popErrorScope`.
+      return PopErrorScopeResult{PopErrorScopeResultType::DeviceLost};
+    }
 
-  if (lookup->second.mStack.IsEmpty()) {
-    // Content can cause this simply by calling `popErrorScope` when
-    // there is no error scope pushed.
-    ScopedError error = {true};
-    aResolver(Some(error));
-    return IPC_OK();
-  }
+    auto& stack = itr->second;
+    if (!stack.size()) {
+      // Content can cause this simply by calling `popErrorScope` when
+      // there is no error scope pushed.
+      return PopErrorScopeResult{PopErrorScopeResultType::ThrowOperationError,
+                                 "popErrorScope on empty stack"_ns};
+    }
 
-  auto scope = lookup->second.mStack.PopLastElement();
-  aResolver(scope);
+    const auto& scope = stack.back();
+    const auto popLater = MakeScopeExit([&]() { stack.pop_back(); });
+
+    auto ret = PopErrorScopeResult{PopErrorScopeResultType::NoError};
+    if (scope.firstMessage) {
+      ret.message = *scope.firstMessage;
+      switch (scope.filter) {
+        case dom::GPUErrorFilter::Validation:
+          ret.resultType = PopErrorScopeResultType::ValidationError;
+          break;
+        case dom::GPUErrorFilter::Out_of_memory:
+          ret.resultType = PopErrorScopeResultType::OutOfMemory;
+          break;
+        case dom::GPUErrorFilter::Internal:
+          ret.resultType = PopErrorScopeResultType::InternalError;
+          break;
+        case dom::GPUErrorFilter::EndGuard_:
+          MOZ_CRASH("Bad GPUErrorFilter");
+      }
+    }
+    return ret;
+  }();
+  aResolver(popResult);
   return IPC_OK();
 }
 
-ipc::IPCResult WebGPUParent::RecvGenerateError(RawId aDeviceId,
+ipc::IPCResult WebGPUParent::RecvGenerateError(const Maybe<RawId> aDeviceId,
+                                               const dom::GPUErrorFilter aType,
                                                const nsCString& aMessage) {
-  ReportError(aDeviceId, aMessage);
+  ReportError(aDeviceId, aType, aMessage);
   return IPC_OK();
 }
 

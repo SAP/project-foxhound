@@ -10,8 +10,6 @@ const CUSTOM_FORMATTED_BODY = "customFormattedBody";
 const VARIABLE_NAME = "xyz";
 
 add_task(async function () {
-  // TODO: This preference can be removed once the custom formatters feature is stable enough
-  await pushPref("devtools.custom-formatters", true);
   await pushPref("devtools.custom-formatters.enabled", true);
 
   const dbg = await initDebugger(TEST_FILENAME);
@@ -123,7 +121,8 @@ add_task(async function () {
 
   await assertPreviewTextValue(dbg, 26, 16, {
     expression: VARIABLE_NAME,
-    text: "CUSTOM",
+    result: "CUSTOM",
+    doNotClose: true,
   });
 
   const tooltipPopup = findElement(dbg, "previewPopup");
@@ -150,9 +149,6 @@ add_task(async function () {
     CUSTOM_FORMATTED_BODY,
     "The tooltip variable body text is correct"
   );
-
-  info("Close tooltip");
-  dbg.actions.clearPreview(getContext(dbg));
 
   await resume(dbg);
 });

@@ -13,13 +13,14 @@ var { XPCOMUtils } = ChromeUtils.importESModule(
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
+  AMBrowserExtensionsImport: "resource://gre/modules/AddonManager.sys.mjs",
   ExtensionParent: "resource://gre/modules/ExtensionParent.sys.mjs",
   ExtensionPermissions: "resource://gre/modules/ExtensionPermissions.sys.mjs",
   OriginControls: "resource://gre/modules/ExtensionPermissions.sys.mjs",
   SITEPERMS_ADDON_TYPE:
     "resource://gre/modules/addons/siteperms-addon-utils.sys.mjs",
 });
-XPCOMUtils.defineLazyGetter(lazy, "l10n", function () {
+ChromeUtils.defineLazyGetter(lazy, "l10n", function () {
   return new Localization(
     ["browser/addonNotifications.ftl", "branding/brand.ftl"],
     true
@@ -71,6 +72,11 @@ const ERROR_L10N_IDS = new Map([
     ["addon-install-error-not-signed", "addon-local-install-error-not-signed"],
   ],
   [-8, ["addon-install-error-invalid-domain"]],
+  [-10, ["addon-install-error-blocklisted", "addon-install-error-blocklisted"]],
+  [
+    -11,
+    ["addon-install-error-incompatible", "addon-install-error-incompatible"],
+  ],
 ]);
 
 customElements.define(
@@ -895,17 +901,16 @@ var gXPInstallObserver = {
             // TODO bug 1834484: simplify computation of isLocal.
             const isLocal = !host;
             let errorId = ERROR_L10N_IDS.get(install.error)?.[isLocal ? 1 : 0];
-            const args = { addonName: install.name };
+            const args = {
+              addonName: install.name,
+              appVersion: Services.appinfo.version,
+            };
+            // TODO: Bug 1846725 - when there is no error ID (which shouldn't
+            // happen but... we never know) we use the "incompatible" error
+            // message for now but we should have a better error message
+            // instead.
             if (!errorId) {
-              if (
-                install.addon.blocklistState ==
-                Ci.nsIBlocklistService.STATE_BLOCKED
-              ) {
-                errorId = "addon-install-error-blocklisted";
-              } else {
-                errorId = "addon-install-error-incompatible";
-                args.appVersion = Services.appinfo.version;
-              }
+              errorId = "addon-install-error-incompatible";
             }
             messageString = lazy.l10n.formatValueSync(errorId, args);
           }
@@ -1004,14 +1009,17 @@ var gExtensionsNotifications = {
   },
 
   _createAddonButton(l10nId, addon, callback) {
-    let text = lazy.l10n.formatValueSync(l10nId, { addonName: addon.name });
+    let text = addon
+      ? lazy.l10n.formatValueSync(l10nId, { addonName: addon.name })
+      : lazy.l10n.formatValueSync(l10nId);
     let button = document.createXULElement("toolbarbutton");
+    button.setAttribute("id", l10nId);
     button.setAttribute("wrap", "true");
     button.setAttribute("label", text);
     button.setAttribute("tooltiptext", text);
     const DEFAULT_EXTENSION_ICON =
       "chrome://mozapps/skin/extensions/extensionGeneric.svg";
-    button.setAttribute("image", addon.iconURL || DEFAULT_EXTENSION_ICON);
+    button.setAttribute("image", addon?.iconURL || DEFAULT_EXTENSION_ICON);
     button.className = "addon-banner-item subviewbutton";
 
     button.addEventListener("command", callback);
@@ -1029,6 +1037,13 @@ var gExtensionsNotifications = {
     }
 
     let items = 0;
+    if (lazy.AMBrowserExtensionsImport.canCompleteOrCancelInstalls) {
+      this._createAddonButton("webext-imported-addons", null, evt => {
+        lazy.AMBrowserExtensionsImport.completeInstalls();
+      });
+      items++;
+    }
+
     for (let update of updates) {
       if (++items > 4) {
         break;
@@ -1222,19 +1237,27 @@ var gUnifiedExtensions = {
 
       // Only show for extensions which are not already visible in the toolbar.
       if (!widget || widget.areaType !== CustomizableUI.TYPE_TOOLBAR) {
-        if (lazy.OriginControls.getAttention(policy, window)) {
+        if (lazy.OriginControls.getAttentionState(policy, window).attention) {
           attention = true;
           break;
         }
       }
     }
-    this.button.toggleAttribute("attention", attention);
-    this.button.ownerDocument.l10n.setAttributes(
-      this.button,
-      attention
-        ? "unified-extensions-button-permissions-needed"
-        : "unified-extensions-button"
-    );
+
+    // If the domain is quarantined and we have extensions not allowed, we'll
+    // show a notification in the panel so we want to let the user know about
+    // it.
+    const quarantined = this._shouldShowQuarantinedNotification();
+
+    this.button.toggleAttribute("attention", quarantined || attention);
+    let msgId = attention
+      ? "unified-extensions-button-permissions-needed"
+      : "unified-extensions-button";
+    // Quarantined state takes precedence over anything else.
+    if (quarantined) {
+      msgId = "unified-extensions-button-quarantined";
+    }
+    this.button.ownerDocument.l10n.setAttributes(this.button, msgId);
   },
 
   getPopupAnchorID(aBrowser, aWindow) {
@@ -1344,20 +1367,17 @@ var gUnifiedExtensions = {
       list.appendChild(item);
     }
 
-    const isQuarantinedDomain = this.getActivePolicies().some(
-      policy =>
-        lazy.OriginControls.getState(policy, window.gBrowser.selectedTab)
-          .quarantined
-    );
     const container = panelview.querySelector(
       "#unified-extensions-messages-container"
     );
+    const shouldShowQuarantinedNotification =
+      this._shouldShowQuarantinedNotification();
 
-    if (isQuarantinedDomain) {
+    if (shouldShowQuarantinedNotification) {
       if (!this._messageBarQuarantinedDomain) {
         this._messageBarQuarantinedDomain = this._makeMessageBar({
           titleFluentId: "unified-extensions-mb-quarantined-domain-title",
-          messageFluentId: "unified-extensions-mb-quarantined-domain-message",
+          messageFluentId: "unified-extensions-mb-quarantined-domain-message-2",
           supportPage: "quarantined-domains",
           dismissable: false,
         });
@@ -1370,7 +1390,7 @@ var gUnifiedExtensions = {
 
       container.appendChild(this._messageBarQuarantinedDomain);
     } else if (
-      !isQuarantinedDomain &&
+      !shouldShowQuarantinedNotification &&
       this._messageBarQuarantinedDomain &&
       container.contains(this._messageBarQuarantinedDomain)
     ) {
@@ -1914,5 +1934,20 @@ var gUnifiedExtensions = {
     }
 
     return messageBar;
+  },
+
+  _shouldShowQuarantinedNotification() {
+    const { currentURI, selectedTab } = window.gBrowser;
+    // We should show the quarantined notification when the domain is in the
+    // list of quarantined domains and we have at least one extension
+    // quarantined. In addition, we check that we have extensions in the panel
+    // until Bug 1778684 is resolved.
+    return (
+      WebExtensionPolicy.isQuarantinedURI(currentURI) &&
+      this.hasExtensionsInPanel() &&
+      this.getActivePolicies().some(
+        policy => lazy.OriginControls.getState(policy, selectedTab).quarantined
+      )
+    );
   },
 };

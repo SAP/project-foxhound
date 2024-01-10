@@ -24,12 +24,12 @@ namespace {
 using xdg_portal::kScreenCastInterfaceName;
 using xdg_portal::PrepareSignalHandle;
 using xdg_portal::RequestResponse;
+using xdg_portal::RequestResponseFromPortalResponse;
 using xdg_portal::RequestSessionProxy;
 using xdg_portal::SetupRequestResponseSignal;
 using xdg_portal::SetupSessionRequestHandlers;
 using xdg_portal::StartSessionRequest;
 using xdg_portal::TearDownSession;
-using xdg_portal::RequestResponseFromPortalResponse;
 
 }  // namespace
 
@@ -370,7 +370,7 @@ void ScreenCastPortal::OnStartRequestResponseSignal(GDBusConnection* connection,
   }
 
   // Array of PipeWire streams. See
-  // https://github.com/flatpak/xdg-desktop-portal/blob/master/data/org.freedesktop.portal.ScreenCast.xml
+  // https://github.com/flatpak/xdg-desktop-portal/blob/main/data/org.freedesktop.portal.ScreenCast.xml
   // documentation for <method name="Start">.
   if (g_variant_lookup(response_data.get(), "streams", "a(ua{sv})",
                        iter.receive())) {

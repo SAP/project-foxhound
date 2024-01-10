@@ -97,17 +97,16 @@ void RestyleManager::ContentAppended(nsIContent* aFirstNewContent) {
     }
   }
 #endif
-  uint32_t selectorFlags =
-      container->GetFlags() &
-      (NODE_RESTYLE_SELECTOR_FLAGS & ~NODE_HAS_SLOW_SELECTOR_LATER_SIBLINGS);
-  if (selectorFlags == 0) {
+  const auto selectorFlags = container->GetSelectorFlags() &
+                             NodeSelectorFlags::AllSimpleRestyleFlagsForAppend;
+  if (!selectorFlags) {
     return;
   }
 
   // The container cannot be a document.
   MOZ_ASSERT(container->IsElement() || container->IsShadowRoot());
 
-  if (selectorFlags & NODE_HAS_EMPTY_SELECTOR) {
+  if (selectorFlags & NodeSelectorFlags::HasEmptySelector) {
     // see whether we need to restyle the container
     bool wasEmpty = true;  // :empty or :-moz-only-whitespace
     for (nsIContent* cur = container->GetFirstChild(); cur != aFirstNewContent;
@@ -127,7 +126,7 @@ void RestyleManager::ContentAppended(nsIContent* aFirstNewContent) {
     }
   }
 
-  if (selectorFlags & NODE_HAS_SLOW_SELECTOR) {
+  if (selectorFlags & NodeSelectorFlags::HasSlowSelector) {
     if (container->IsElement()) {
       PostRestyleEvent(container->AsElement(), RestyleHint::RestyleSubtree(),
                        nsChangeHint(0));
@@ -139,7 +138,7 @@ void RestyleManager::ContentAppended(nsIContent* aFirstNewContent) {
     return;
   }
 
-  if (selectorFlags & NODE_HAS_EDGE_CHILD_SELECTOR) {
+  if (selectorFlags & NodeSelectorFlags::HasEdgeChildSelector) {
     // restyle the last element child before this node
     for (nsIContent* cur = aFirstNewContent->GetPreviousSibling(); cur;
          cur = cur->GetPreviousSibling()) {
@@ -176,8 +175,8 @@ void RestyleManager::RestyleForEmptyChange(Element* aContainer) {
   // In some cases (:empty + E, :empty ~ E), a change in the content of
   // an element requires restyling its parent's siblings.
   nsIContent* grandparent = aContainer->GetParent();
-  if (!grandparent ||
-      !(grandparent->GetFlags() & NODE_HAS_SLOW_SELECTOR_LATER_SIBLINGS)) {
+  if (!grandparent || !(grandparent->GetSelectorFlags() &
+                        NodeSelectorFlags::HasSlowSelectorLaterSiblings)) {
     return;
   }
   RestyleSiblingsStartingWith(aContainer->GetNextSibling());
@@ -185,7 +184,8 @@ void RestyleManager::RestyleForEmptyChange(Element* aContainer) {
 
 void RestyleManager::MaybeRestyleForEdgeChildChange(nsINode* aContainer,
                                                     nsIContent* aChangedChild) {
-  MOZ_ASSERT(aContainer->GetFlags() & NODE_HAS_EDGE_CHILD_SELECTOR);
+  MOZ_ASSERT(aContainer->GetSelectorFlags() &
+             NodeSelectorFlags::HasEdgeChildSelector);
   MOZ_ASSERT(aChangedChild->GetParent() == aContainer);
   // restyle the previously-first element child if it is after this node
   bool passedChild = false;
@@ -267,9 +267,10 @@ void RestyleManager::CharacterDataChanged(
   nsINode* parent = aContent->GetParentNode();
   MOZ_ASSERT(parent, "How were we notified of a stray node?");
 
-  uint32_t slowSelectorFlags = parent->GetFlags() & NODE_RESTYLE_SELECTOR_FLAGS;
-  if (!(slowSelectorFlags &
-        (NODE_HAS_EMPTY_SELECTOR | NODE_HAS_EDGE_CHILD_SELECTOR))) {
+  const auto slowSelectorFlags =
+      parent->GetSelectorFlags() & NodeSelectorFlags::AllSimpleRestyleFlags;
+  if (!(slowSelectorFlags & (NodeSelectorFlags::HasEmptySelector |
+                             NodeSelectorFlags::HasEdgeChildSelector))) {
     // Nothing to do, no other slow selector can change as a result of this.
     return;
   }
@@ -324,7 +325,7 @@ void RestyleManager::CharacterDataChanged(
     return;
   }
 
-  if (slowSelectorFlags & NODE_HAS_EMPTY_SELECTOR) {
+  if (slowSelectorFlags & NodeSelectorFlags::HasEmptySelector) {
     if (!HasAnySignificantSibling(parent->AsElement(), aContent)) {
       // We used to be empty, restyle the parent.
       RestyleForEmptyChange(parent->AsElement());
@@ -332,7 +333,7 @@ void RestyleManager::CharacterDataChanged(
     }
   }
 
-  if (slowSelectorFlags & NODE_HAS_EDGE_CHILD_SELECTOR) {
+  if (slowSelectorFlags & NodeSelectorFlags::HasEdgeChildSelector) {
     MaybeRestyleForEdgeChildChange(parent, aContent);
   }
 }
@@ -347,8 +348,9 @@ void RestyleManager::RestyleForInsertOrChange(nsIContent* aChild) {
   nsINode* container = aChild->GetParentNode();
   MOZ_ASSERT(container);
 
-  uint32_t selectorFlags = container->GetFlags() & NODE_RESTYLE_SELECTOR_FLAGS;
-  if (selectorFlags == 0) {
+  const auto selectorFlags =
+      container->GetSelectorFlags() & NodeSelectorFlags::AllSimpleRestyleFlags;
+  if (!selectorFlags) {
     return;
   }
 
@@ -358,7 +360,8 @@ void RestyleManager::RestyleForInsertOrChange(nsIContent* aChild) {
   // The container cannot be a document.
   MOZ_ASSERT(container->IsElement() || container->IsShadowRoot());
 
-  if (selectorFlags & NODE_HAS_EMPTY_SELECTOR && container->IsElement()) {
+  if (selectorFlags & NodeSelectorFlags::HasEmptySelector &&
+      container->IsElement()) {
     // See whether we need to restyle the container due to :empty /
     // :-moz-only-whitespace.
     const bool wasEmpty =
@@ -372,7 +375,7 @@ void RestyleManager::RestyleForInsertOrChange(nsIContent* aChild) {
     }
   }
 
-  if (selectorFlags & NODE_HAS_SLOW_SELECTOR) {
+  if (selectorFlags & NodeSelectorFlags::HasSlowSelector) {
     if (container->IsElement()) {
       PostRestyleEvent(container->AsElement(), RestyleHint::RestyleSubtree(),
                        nsChangeHint(0));
@@ -384,12 +387,12 @@ void RestyleManager::RestyleForInsertOrChange(nsIContent* aChild) {
     return;
   }
 
-  if (selectorFlags & NODE_HAS_SLOW_SELECTOR_LATER_SIBLINGS) {
+  if (selectorFlags & NodeSelectorFlags::HasSlowSelectorLaterSiblings) {
     // Restyle all later siblings.
     RestyleSiblingsStartingWith(aChild->GetNextSibling());
   }
 
-  if (selectorFlags & NODE_HAS_EDGE_CHILD_SELECTOR) {
+  if (selectorFlags & NodeSelectorFlags::HasEdgeChildSelector) {
     MaybeRestyleForEdgeChildChange(container, aChild);
   }
 }
@@ -411,8 +414,9 @@ void RestyleManager::ContentRemoved(nsIContent* aOldChild,
     IncrementUndisplayedRestyleGeneration();
   }
 
-  uint32_t selectorFlags = container->GetFlags() & NODE_RESTYLE_SELECTOR_FLAGS;
-  if (selectorFlags == 0) {
+  const auto selectorFlags =
+      container->GetSelectorFlags() & NodeSelectorFlags::AllSimpleRestyleFlags;
+  if (!selectorFlags) {
     return;
   }
 
@@ -427,7 +431,8 @@ void RestyleManager::ContentRemoved(nsIContent* aOldChild,
   // The container cannot be a document.
   MOZ_ASSERT(container->IsElement() || container->IsShadowRoot());
 
-  if (selectorFlags & NODE_HAS_EMPTY_SELECTOR && container->IsElement()) {
+  if (selectorFlags & NodeSelectorFlags::HasEmptySelector &&
+      container->IsElement()) {
     // see whether we need to restyle the container
     bool isEmpty = true;  // :empty or :-moz-only-whitespace
     for (nsIContent* child = container->GetFirstChild(); child;
@@ -447,7 +452,7 @@ void RestyleManager::ContentRemoved(nsIContent* aOldChild,
     }
   }
 
-  if (selectorFlags & NODE_HAS_SLOW_SELECTOR) {
+  if (selectorFlags & NodeSelectorFlags::HasSlowSelector) {
     if (container->IsElement()) {
       PostRestyleEvent(container->AsElement(), RestyleHint::RestyleSubtree(),
                        nsChangeHint(0));
@@ -459,12 +464,12 @@ void RestyleManager::ContentRemoved(nsIContent* aOldChild,
     return;
   }
 
-  if (selectorFlags & NODE_HAS_SLOW_SELECTOR_LATER_SIBLINGS) {
+  if (selectorFlags & NodeSelectorFlags::HasSlowSelectorLaterSiblings) {
     // Restyle all later siblings.
     RestyleSiblingsStartingWith(aFollowingSibling);
   }
 
-  if (selectorFlags & NODE_HAS_EDGE_CHILD_SELECTOR) {
+  if (selectorFlags & NodeSelectorFlags::HasEdgeChildSelector) {
     // restyle the now-first element child if it was after aOldChild
     bool reachedFollowingSibling = false;
     for (nsIContent* content = container->GetFirstChild(); content;
@@ -1623,6 +1628,22 @@ void RestyleManager::ProcessRestyledFrames(nsStyleChangeList& aChangeList) {
         // transformed by other means. It's OK to have the bit even if it's
         // not needed.
       }
+      // When dropping a running transform animation we will first add an
+      // nsChangeHint_UpdateTransformLayer hint as part of the animation-only
+      // restyle. During the subsequent regular restyle, if the animation was
+      // the only reason the element had any transform applied, we will add
+      // nsChangeHint_AddOrRemoveTransform as part of the regular restyle.
+      //
+      // With the Gecko backend, these two change hints are processed
+      // after each restyle but when using the Servo backend they accumulate
+      // and are processed together after we have already removed the
+      // transform as part of the regular restyle. Since we don't actually
+      // need the nsChangeHint_UpdateTransformLayer hint if we already have
+      // a nsChangeHint_AddOrRemoveTransform hint, and since we
+      // will fail an assertion in ApplyRenderingChangeToTree if we try
+      // specify nsChangeHint_UpdateTransformLayer but don't have any
+      // transform style, we just drop the unneeded hint here.
+      hint &= ~nsChangeHint_UpdateTransformLayer;
     }
 
     if (!frame->FrameMaintainsOverflow()) {
@@ -1642,25 +1663,6 @@ void RestyleManager::ProcessRestyledFrames(nsStyleChangeList& aChangeList) {
       // nsChangeHint_UpdateTransformLayerhint.
       hint &= ~(nsChangeHint_UpdatePostTransformOverflow |
                 nsChangeHint_UpdateTransformLayer);
-    }
-
-    if (hint & nsChangeHint_AddOrRemoveTransform) {
-      // When dropping a running transform animation we will first add an
-      // nsChangeHint_UpdateTransformLayer hint as part of the animation-only
-      // restyle. During the subsequent regular restyle, if the animation was
-      // the only reason the element had any transform applied, we will add
-      // nsChangeHint_AddOrRemoveTransform as part of the regular restyle.
-      //
-      // With the Gecko backend, these two change hints are processed
-      // after each restyle but when using the Servo backend they accumulate
-      // and are processed together after we have already removed the
-      // transform as part of the regular restyle. Since we don't actually
-      // need the nsChangeHint_UpdateTransformLayer hint if we already have
-      // a nsChangeHint_AddOrRemoveTransform hint, and since we
-      // will fail an assertion in ApplyRenderingChangeToTree if we try
-      // specify nsChangeHint_UpdateTransformLayer but don't have any
-      // transform style, we just drop the unneeded hint here.
-      hint &= ~nsChangeHint_UpdateTransformLayer;
     }
 
     if ((hint & nsChangeHint_UpdateEffects) &&
@@ -1731,6 +1733,14 @@ void RestyleManager::ProcessRestyledFrames(nsStyleChangeList& aChangeList) {
          nsChangeHint_ChildrenOnlyTransform | nsChangeHint_SchedulePaint)) {
       ApplyRenderingChangeToTree(presContext->PresShell(), frame, hint);
     }
+
+    if (hint & (nsChangeHint_UpdateTransformLayer |
+                nsChangeHint_AddOrRemoveTransform)) {
+      // We need to trigger re-snapping to this content if we snapped to the
+      // content on the last scroll operation.
+      ScrollSnapUtils::PostPendingResnapIfNeededFor(frame);
+    }
+
     if ((hint & nsChangeHint_RecomputePosition) && !didReflowThisFrame) {
       // It is possible for this to fall back to a reflow
       if (!RecomputePosition(frame)) {
@@ -2352,6 +2362,8 @@ void RestyleManager::PostRestyleEventForAnimations(Element* aElement,
     return;
   }
 
+  mPresContext->TriggeredAnimationRestyle();
+
   AutoRestyleTimelineMarker marker(mPresContext->GetDocShell(),
                                    true /* animation-only */);
   Servo_NoteExplicitHints(elementToRestyle, aRestyleHint, nsChangeHint(0));
@@ -2416,7 +2428,7 @@ void RestyleManager::ClearRestyleStateFromSubtree(Element* aElement) {
     }
   }
 
-  bool wasRestyled;
+  bool wasRestyled = false;
   Unused << Servo_TakeChangeHint(aElement, &wasRestyled);
   aElement->UnsetFlags(Element::kAllServoDescendantBits);
 }
@@ -2529,7 +2541,7 @@ static void UpdateBackdropIfNeeded(nsIFrame* aFrame, ServoStyleSet& aStyleSet,
              PseudoStyleType::backdrop);
 
   RefPtr<ComputedStyle> newStyle = aStyleSet.ResolvePseudoElementStyle(
-      *aFrame->GetContent()->AsElement(), PseudoStyleType::backdrop,
+      *aFrame->GetContent()->AsElement(), PseudoStyleType::backdrop, nullptr,
       aFrame->Style());
 
   // NOTE(emilio): We can't use the changes handled for the owner of the
@@ -2576,7 +2588,8 @@ static void UpdateOneAdditionalComputedStyle(nsIFrame* aFrame, uint32_t aIndex,
 
   RefPtr<ComputedStyle> newStyle =
       aRestyleState.StyleSet().ResolvePseudoElementStyle(
-          *aFrame->GetContent()->AsElement(), pseudoType, aFrame->Style());
+          *aFrame->GetContent()->AsElement(), pseudoType, nullptr,
+          aFrame->Style());
 
   uint32_t equalStructs;  // Not used, actually.
   nsChangeHint childHint =
@@ -2732,7 +2745,7 @@ bool RestyleManager::ProcessPostTraversal(Element* aElement,
       primaryFrame && primaryFrame->IsColumnSpanInMulticolSubtree();
 
   // Grab the change hint from Servo.
-  bool wasRestyled;
+  bool wasRestyled = false;
   nsChangeHint changeHint =
       static_cast<nsChangeHint>(Servo_TakeChangeHint(aElement, &wasRestyled));
 
@@ -2784,7 +2797,8 @@ bool RestyleManager::ProcessPostTraversal(Element* aElement,
         !nsLayoutUtils::GetMarkerPseudo(aElement)) {
       RefPtr<ComputedStyle> pseudoStyle =
           aRestyleState.StyleSet().ProbePseudoElementStyle(
-              *aElement, PseudoStyleType::marker, upToDateStyleIfRestyled);
+              *aElement, PseudoStyleType::marker, nullptr,
+              upToDateStyleIfRestyled);
       if (pseudoStyle) {
         changeHint |= nsChangeHint_ReconstructFrame;
       }
@@ -3143,6 +3157,7 @@ void RestyleManager::DoProcessPendingRestyles(ServoTraversalFlags aFlags) {
     nsTArray<RefPtr<Element>> anchorsToSuppress;
 
     {
+      // This marker is not used for testing, so can be removed
       AutoRestyleTimelineMarker marker(presContext->GetDocShell(), false);
       DocumentStyleRootIterator iter(doc->GetServoRestyleRoot());
       while (Element* root = iter.GetNextStyleRoot()) {
@@ -3351,8 +3366,8 @@ void RestyleManager::MaybeRestyleForNthOfState(ServoStyleSet& aStyleSet,
                                                ElementState aChangedBits) {
   const auto* parentNode = aChild->GetParentNode();
   MOZ_ASSERT(parentNode);
-  const auto parentFlags = parentNode->GetFlags();
-  if (!(parentFlags & NODE_HAS_SLOW_SELECTOR_NTH_OF)) {
+  const auto parentFlags = parentNode->GetSelectorFlags();
+  if (!(parentFlags & NodeSelectorFlags::HasSlowSelectorNthOf)) {
     return;
   }
 
@@ -3462,18 +3477,14 @@ void RestyleManager::TakeSnapshotForAttributeChange(Element& aElement,
 
 // For some attribute changes we must restyle the whole subtree:
 //
-// * <td> is affected by the cellpadding on its ancestor table
 // * lang="" and xml:lang="" can affect all descendants due to :lang()
 // * exportparts can affect all descendant parts. We could certainly integrate
 //   it better in the invalidation machinery if it was necessary.
 static inline bool AttributeChangeRequiresSubtreeRestyle(
     const Element& aElement, nsAtom* aAttr) {
-  if (aAttr == nsGkAtoms::cellpadding) {
-    return aElement.IsHTMLElement(nsGkAtoms::table);
-  }
-  // TODO(emilio, bug 1598094): Maybe finer-grained invalidation for exportparts
-  // attribute changes?
   if (aAttr == nsGkAtoms::exportparts) {
+    // TODO(emilio, bug 1598094): Maybe finer-grained invalidation for
+    // exportparts attribute changes?
     return !!aElement.GetShadowRoot();
   }
   return aAttr == nsGkAtoms::lang;
@@ -3495,9 +3506,6 @@ void RestyleManager::AttributeChanged(Element* aElement, int32_t aNameSpaceID,
     restyleHint |= RestyleHint::RESTYLE_STYLE_ATTRIBUTE;
   } else if (AttributeChangeRequiresSubtreeRestyle(*aElement, aAttribute)) {
     restyleHint |= RestyleHint::RestyleSubtree();
-  } else if (aElement->IsAttributeMapped(aAttribute)) {
-    // FIXME(emilio): Does this really need to re-selector-match?
-    restyleHint |= RestyleHint::RESTYLE_SELF;
   } else if (aElement->IsInShadowTree() && aAttribute == nsGkAtoms::part) {
     // TODO(emilio, bug 1598094): Maybe finer-grained invalidation for part
     // attribute changes?
@@ -3538,20 +3546,21 @@ void RestyleManager::AttributeChanged(Element* aElement, int32_t aNameSpaceID,
   }
 }
 
-void RestyleManager::RestyleSiblings(
-    Element* aChild, nsBaseContentList::FlagsType aParentFlags) {
+void RestyleManager::RestyleSiblings(Element* aChild,
+                                     NodeSelectorFlags aParentFlags) {
   const DebugOnly<nsINode*> parentNode = aChild->GetParentNode();
   MOZ_ASSERT(parentNode->IsElement() || parentNode->IsShadowRoot());
 
   DebugOnly<bool> restyledSiblings = false;
-  // NODE_HAS_SLOW_SELECTOR typically indicates restyling the parent, but since
-  // we know we're restyling for :nth-last-child(.. of <selector>), we can
-  // restyle only previous siblings without under-invalidating.
-  if (aParentFlags & NODE_HAS_SLOW_SELECTOR) {
+  // NodeSelectorFlags::HasSlowSelector typically indicates restyling the
+  // parent, but since we know we're restyling for :nth-last-child(.. of
+  // <selector>), we can restyle only previous siblings without
+  // under-invalidating.
+  if (aParentFlags & NodeSelectorFlags::HasSlowSelector) {
     RestylePreviousSiblings(aChild->GetPreviousSibling());
     restyledSiblings = true;
   }
-  if (aParentFlags & NODE_HAS_SLOW_SELECTOR_LATER_SIBLINGS) {
+  if (aParentFlags & NodeSelectorFlags::HasSlowSelectorLaterSiblings) {
     RestyleSiblingsStartingWith(aChild->GetNextSibling());
     restyledSiblings = true;
   }
@@ -3563,8 +3572,8 @@ void RestyleManager::MaybeRestyleForNthOfAttribute(
     Element* aChild, nsAtom* aAttribute, const nsAttrValue* aOldValue) {
   const auto* parentNode = aChild->GetParentNode();
   MOZ_ASSERT(parentNode);
-  const auto parentFlags = parentNode->GetFlags();
-  if (!(parentFlags & NODE_HAS_SLOW_SELECTOR_NTH_OF)) {
+  const auto parentFlags = parentNode->GetSelectorFlags();
+  if (!(parentFlags & NodeSelectorFlags::HasSlowSelectorNthOf)) {
     return;
   }
   if (!aChild->HasServoData()) {
@@ -3613,11 +3622,25 @@ void RestyleManager::ReparentComputedStyleForFirstLine(nsIFrame* aFrame) {
   DoReparentComputedStyleForFirstLine(aFrame, *StyleSet());
 }
 
+static bool IsFrameAboutToGoAway(nsIFrame* aFrame) {
+  auto* element = Element::FromNode(aFrame->GetContent());
+  if (!element) {
+    return false;
+  }
+  return !element->HasServoData();
+}
+
 void RestyleManager::DoReparentComputedStyleForFirstLine(
     nsIFrame* aFrame, ServoStyleSet& aStyleSet) {
   if (aFrame->IsBackdropFrame()) {
     // Style context of backdrop frame has no parent style, and thus we do not
     // need to reparent it.
+    return;
+  }
+
+  if (IsFrameAboutToGoAway(aFrame)) {
+    // We're entering a display: none subtree, which we know it's going to get
+    // rebuilt. Don't bother reparenting.
     return;
   }
 
@@ -3696,23 +3719,6 @@ void RestyleManager::DoReparentComputedStyleForFirstLine(
   Element* ourElement = isElement ? aFrame->GetContent()->AsElement() : nullptr;
   ComputedStyle* newParent = newParentStyle;
 
-  ComputedStyle* newParentIgnoringFirstLine;
-  if (newParent->GetPseudoType() == PseudoStyleType::firstLine) {
-    MOZ_ASSERT(
-        providerFrame && providerFrame->GetParent()->IsBlockFrameOrSubclass(),
-        "How could we get a ::first-line parent style without having "
-        "a ::first-line provider frame?");
-    // If newParent is a ::first-line style, get the parent blockframe, and then
-    // correct it for our pseudo as needed (e.g. stepping out of anon boxes).
-    // Use the resulting style for the "parent style ignoring ::first-line".
-    nsIFrame* blockFrame = providerFrame->GetParent();
-    nsIFrame* correctedFrame = nsIFrame::CorrectStyleParentFrame(
-        blockFrame, oldStyle->GetPseudoType());
-    newParentIgnoringFirstLine = correctedFrame->Style();
-  } else {
-    newParentIgnoringFirstLine = newParent;
-  }
-
   if (!providerFrame) {
     // No providerFrame means we inherited from a display:contents thing.  Our
     // layout parent style is the style of our nearest ancestor frame.  But we
@@ -3730,8 +3736,7 @@ void RestyleManager::DoReparentComputedStyleForFirstLine(
   ComputedStyle* layoutParent = providerFrame->Style();
 
   RefPtr<ComputedStyle> newStyle = aStyleSet.ReparentComputedStyle(
-      oldStyle, newParent, newParentIgnoringFirstLine, layoutParent,
-      ourElement);
+      oldStyle, newParent, layoutParent, ourElement);
   aFrame->SetComputedStyle(newStyle);
 
   // This logic somewhat mirrors the logic in
@@ -3740,12 +3745,12 @@ void RestyleManager::DoReparentComputedStyleForFirstLine(
     // We can't use UpdateAdditionalComputedStyles as-is because it needs a
     // ServoRestyleState and maintaining one of those during a _frametree_
     // traversal is basically impossible.
-    uint32_t index = 0;
+    int32_t index = 0;
     while (auto* oldAdditionalStyle =
                aFrame->GetAdditionalComputedStyle(index)) {
       RefPtr<ComputedStyle> newAdditionalContext =
           aStyleSet.ReparentComputedStyle(oldAdditionalStyle, newStyle,
-                                          newStyle, newStyle, nullptr);
+                                          newStyle, nullptr);
       aFrame->SetAdditionalComputedStyle(index, newAdditionalContext);
       ++index;
     }
@@ -3771,12 +3776,6 @@ void RestyleManager::DoReparentComputedStyleForFirstLine(
 void RestyleManager::ReparentFrameDescendants(nsIFrame* aFrame,
                                               nsIFrame* aProviderChild,
                                               ServoStyleSet& aStyleSet) {
-  if (aFrame->GetContent()->IsElement() &&
-      !aFrame->GetContent()->AsElement()->HasServoData()) {
-    // We're getting into a display: none subtree, avoid reparenting into stuff
-    // that is going to go away anyway in seconds.
-    return;
-  }
   for (const auto& childList : aFrame->ChildLists()) {
     for (nsIFrame* child : childList.mList) {
       // only do frames that are in flow

@@ -16,6 +16,7 @@
 #include "js/PropertyAndElement.h"
 #include "js/TypeDecls.h"
 #include "js/Value.h"
+#include "js/Iterator.h"
 #include "mozilla/AlreadyAddRefed.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/Attributes.h"
@@ -24,12 +25,12 @@
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/dom/BindingCallContext.h"
 #include "mozilla/dom/ByteStreamHelpers.h"
-#include "mozilla/dom/BodyStream.h"
 #include "mozilla/dom/QueueWithSizes.h"
 #include "mozilla/dom/QueuingStrategyBinding.h"
 #include "mozilla/dom/ReadRequest.h"
 #include "mozilla/dom/ReadableByteStreamController.h"
 #include "mozilla/dom/ReadableStreamBYOBReader.h"
+#include "mozilla/dom/ReadableStreamBYOBRequest.h"
 #include "mozilla/dom/ReadableStreamBinding.h"
 #include "mozilla/dom/ReadableStreamController.h"
 #include "mozilla/dom/ReadableStreamDefaultController.h"
@@ -238,6 +239,224 @@ already_AddRefed<ReadableStream> ReadableStream::Constructor(
   }
 
   return readableStream.forget();
+}
+
+// https://streams.spec.whatwg.org/#readable-stream-from-iterable
+class ReadableStreamFromAlgorithms final
+    : public UnderlyingSourceAlgorithmsWrapper {
+ public:
+  NS_DECL_ISUPPORTS_INHERITED
+  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS_INHERITED(
+      ReadableStreamFromAlgorithms, UnderlyingSourceAlgorithmsWrapper)
+
+  ReadableStreamFromAlgorithms(nsIGlobalObject* aGlobal,
+                               JS::Handle<JSObject*> aIteratorRecord)
+      : mGlobal(aGlobal), mIteratorRecordMaybeCrossRealm(aIteratorRecord) {
+    mozilla::HoldJSObjects(this);
+  };
+
+  // Step 3. Let startAlgorithm be an algorithm that returns undefined.
+  // Note: Provided by UnderlyingSourceAlgorithmsWrapper::StartCallback.
+
+  // Step 4. Let pullAlgorithm be the following steps:
+  MOZ_CAN_RUN_SCRIPT already_AddRefed<Promise> PullCallbackImpl(
+      JSContext* aCx, ReadableStreamController& aController,
+      ErrorResult& aRv) override {
+    aRv.MightThrowJSException();
+
+    JS::Rooted<JSObject*> iteratorRecord(aCx, mIteratorRecordMaybeCrossRealm);
+    JSAutoRealm ar(aCx, iteratorRecord);
+
+    // Step 1. Let nextResult be IteratorNext(iteratorRecord).
+    JS::Rooted<JS::Value> nextResult(aCx);
+    if (!JS::IteratorNext(aCx, iteratorRecord, &nextResult)) {
+      // Step 2. If nextResult is an abrupt completion, return a promise
+      // rejected with nextResult.[[Value]].
+      aRv.StealExceptionFromJSContext(aCx);
+      return nullptr;
+    }
+
+    // Step 3. Let nextPromise be a promise resolved with nextResult.[[Value]].
+    RefPtr<Promise> nextPromise = Promise::CreateInfallible(mGlobal);
+    nextPromise->MaybeResolve(nextResult);
+
+    // Step 4. Return the result of reacting to nextPromise with the following
+    // fulfillment steps, given iterResult:
+    auto result = nextPromise->ThenWithCycleCollectedArgs(
+        [](JSContext* aCx, JS::Handle<JS::Value> aIterResult, ErrorResult& aRv,
+           const RefPtr<ReadableStreamDefaultController>& aController)
+            MOZ_CAN_RUN_SCRIPT_FOR_DEFINITION -> already_AddRefed<Promise> {
+              aRv.MightThrowJSException();
+
+              // Step 4.1. If Type(iterResult) is not Object, throw a TypeError.
+              if (!aIterResult.isObject()) {
+                aRv.ThrowTypeError("next() returned a non-object value");
+                return nullptr;
+              }
+
+              JS::Rooted<JSObject*> iterResult(aCx, &aIterResult.toObject());
+              JSAutoRealm ar(aCx, iterResult);
+
+              // Step 4.2. Let done be ? IteratorComplete(iterResult).
+              bool done = false;
+              if (!JS::IteratorComplete(aCx, iterResult, &done)) {
+                aRv.StealExceptionFromJSContext(aCx);
+                return nullptr;
+              }
+
+              // Step 4.3. If done is true:
+              if (done) {
+                // Step 4.3.1. Perform !
+                // ReadableStreamDefaultControllerClose(stream.[[controller]]).
+                ReadableStreamDefaultControllerClose(aCx, aController, aRv);
+              } else {
+                // Step 4.4. Otherwise:
+                // Step 4.4.1. Let value be ? IteratorValue(iterResult).
+                JS::Rooted<JS::Value> value(aCx);
+                if (!JS::IteratorValue(aCx, iterResult, &value)) {
+                  aRv.StealExceptionFromJSContext(aCx);
+                  return nullptr;
+                }
+
+                // Step 4.4.2. Perform !
+                // ReadableStreamDefaultControllerEnqueue(stream.[[controller]],
+                // value).
+                ReadableStreamDefaultControllerEnqueue(aCx, aController, value,
+                                                       aRv);
+              }
+
+              return nullptr;
+            },
+        RefPtr(aController.AsDefault()));
+    if (result.isErr()) {
+      aRv.Throw(result.unwrapErr());
+      return nullptr;
+    }
+    return result.unwrap().forget();
+  };
+
+  // Step 5. Let cancelAlgorithm be the following steps, given reason:
+  MOZ_CAN_RUN_SCRIPT already_AddRefed<Promise> CancelCallbackImpl(
+      JSContext* aCx, const Optional<JS::Handle<JS::Value>>& aReason,
+      ErrorResult& aRv) override {
+    aRv.MightThrowJSException();
+
+    JS::Rooted<JSObject*> iteratorRecord(aCx, mIteratorRecordMaybeCrossRealm);
+    JSAutoRealm ar(aCx, iteratorRecord);
+
+    // Step 1. Let iterator be iteratorRecord.[[Iterator]].
+    JS::Rooted<JS::Value> iterator(aCx);
+    if (!JS::GetIteratorRecordIterator(aCx, iteratorRecord, &iterator)) {
+      aRv.StealExceptionFromJSContext(aCx);
+      return nullptr;
+    }
+
+    // Step 2. Let returnMethod be GetMethod(iterator, "return").
+    JS::Rooted<JS::Value> returnMethod(aCx);
+    if (!JS::GetReturnMethod(aCx, iterator, &returnMethod)) {
+      // Step 3. If returnMethod is an abrupt completion, return a promise
+      // rejected with returnMethod.[[Value]].
+      aRv.StealExceptionFromJSContext(aCx);
+      return nullptr;
+    }
+
+    // Step 4. If returnMethod.[[Value]] is undefined, return a promise resolved
+    // with undefined.
+    if (returnMethod.isUndefined()) {
+      return Promise::CreateResolvedWithUndefined(mGlobal, aRv);
+    }
+
+    // Step 5. Let returnResult be Call(returnMethod.[[Value]], iterator, «
+    // reason »).
+    JS::Rooted<JS::Value> returnResult(aCx);
+    if (!JS::Call(aCx, iterator, returnMethod,
+                  JS::HandleValueArray(aReason.Value()), &returnResult)) {
+      // Step 6. If returnResult is an abrupt completion, return a promise
+      // rejected with returnResult.[[Value]].
+      aRv.StealExceptionFromJSContext(aCx);
+      return nullptr;
+    }
+
+    // Step 7. Let returnPromise be a promise resolved with
+    // returnResult.[[Value]].
+    RefPtr<Promise> returnPromise = Promise::CreateInfallible(mGlobal);
+    returnPromise->MaybeResolve(returnResult);
+
+    // Step 8. Return the result of reacting to returnPromise with the following
+    // fulfillment steps, given iterResult:
+    auto result = returnPromise->ThenWithCycleCollectedArgs(
+        [](JSContext* aCx, JS::Handle<JS::Value> aIterResult, ErrorResult& aRv)
+            MOZ_CAN_RUN_SCRIPT_FOR_DEFINITION -> already_AddRefed<Promise> {
+              // Step 8.1. If Type(iterResult) is not Object, throw a TypeError.
+              if (!aIterResult.isObject()) {
+                aRv.ThrowTypeError("return() returned a non-object value");
+                return nullptr;
+              }
+
+              // Step 8.2. Return undefined.
+              return nullptr;
+            });
+    if (result.isErr()) {
+      aRv.Throw(result.unwrapErr());
+      return nullptr;
+    }
+    return result.unwrap().forget();
+  };
+
+ protected:
+  ~ReadableStreamFromAlgorithms() override { mozilla::DropJSObjects(this); };
+
+ private:
+  // Virtually const, but are cycle collected
+  nsCOMPtr<nsIGlobalObject> mGlobal;
+  JS::Heap<JSObject*> mIteratorRecordMaybeCrossRealm;
+};
+
+NS_IMPL_CYCLE_COLLECTION_INHERITED_WITH_JS_MEMBERS(
+    ReadableStreamFromAlgorithms, UnderlyingSourceAlgorithmsWrapper, (mGlobal),
+    (mIteratorRecordMaybeCrossRealm))
+NS_IMPL_ADDREF_INHERITED(ReadableStreamFromAlgorithms,
+                         UnderlyingSourceAlgorithmsWrapper)
+NS_IMPL_RELEASE_INHERITED(ReadableStreamFromAlgorithms,
+                          UnderlyingSourceAlgorithmsWrapper)
+NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(ReadableStreamFromAlgorithms)
+NS_INTERFACE_MAP_END_INHERITING(UnderlyingSourceAlgorithmsWrapper)
+
+// https://streams.spec.whatwg.org/#readable-stream-from-iterable
+static already_AddRefed<ReadableStream> MOZ_CAN_RUN_SCRIPT
+ReadableStreamFromIterable(JSContext* aCx, nsIGlobalObject* aGlobal,
+                           JS::Handle<JS::Value> aAsyncIterable,
+                           ErrorResult& aRv) {
+  aRv.MightThrowJSException();
+
+  // Step 1. Let stream be undefined. (not required)
+  // Step 2. Let iteratorRecord be ? GetIterator(asyncIterable, async).
+  JS::Rooted<JSObject*> iteratorRecord(
+      aCx, JS::GetIteratorObject(aCx, aAsyncIterable, true));
+  if (!iteratorRecord) {
+    aRv.StealExceptionFromJSContext(aCx);
+    return nullptr;
+  }
+
+  // Steps 3-5. are in ReadableStreamFromAlgorithms.
+  auto algorithms =
+      MakeRefPtr<ReadableStreamFromAlgorithms>(aGlobal, iteratorRecord);
+
+  // Step 6. Set stream to ! CreateReadableStream(startAlgorithm, pullAlgorithm,
+  // cancelAlgorithm, 0).
+  // Step 7. Return stream.
+  return ReadableStream::CreateAbstract(aCx, aGlobal, algorithms,
+                                        mozilla::Some(0.0), nullptr, aRv);
+}
+
+/* static */
+already_AddRefed<ReadableStream> ReadableStream::From(
+    const GlobalObject& aGlobal, JS::Handle<JS::Value> aAsyncIterable,
+    ErrorResult& aRv) {
+  // Step 1. Return ? ReadableStreamFromIterable(asyncIterable).
+  nsCOMPtr<nsIGlobalObject> global = do_QueryInterface(aGlobal.GetAsSupports());
+  return ReadableStreamFromIterable(aGlobal.Context(), global, aAsyncIterable,
+                                    aRv);
 }
 
 // Dealing with const this ptr is a pain, so just re-implement.
@@ -1040,11 +1259,15 @@ already_AddRefed<ReadableStream> ReadableStream::CreateByteAbstract(
 // https://streams.spec.whatwg.org/#readablestream-set-up
 // (except this instead creates a new ReadableStream rather than accepting an
 // existing instance)
-already_AddRefed<ReadableStream> ReadableStream::CreateNative(
-    JSContext* aCx, nsIGlobalObject* aGlobal,
-    UnderlyingSourceAlgorithmsWrapper& aAlgorithms,
-    mozilla::Maybe<double> aHighWaterMark, QueuingStrategySize* aSizeAlgorithm,
-    ErrorResult& aRv) {
+// _BOUNDARY because `aAlgorithms->StartCallback` (called by
+// SetUpReadableStreamDefaultController below) should not be able to run script
+// in this case.
+MOZ_CAN_RUN_SCRIPT_BOUNDARY already_AddRefed<ReadableStream>
+ReadableStream::CreateNative(JSContext* aCx, nsIGlobalObject* aGlobal,
+                             UnderlyingSourceAlgorithmsWrapper& aAlgorithms,
+                             mozilla::Maybe<double> aHighWaterMark,
+                             QueuingStrategySize* aSizeAlgorithm,
+                             ErrorResult& aRv) {
   // an optional number highWaterMark (default 1)
   double highWaterMark = aHighWaterMark.valueOr(1);
   // and if given, highWaterMark must be a non-negative, non-NaN number.
@@ -1078,7 +1301,10 @@ already_AddRefed<ReadableStream> ReadableStream::CreateNative(
 }
 
 // https://streams.spec.whatwg.org/#readablestream-set-up-with-byte-reading-support
-void ReadableStream::SetUpByteNative(
+// _BOUNDARY because `aAlgorithms->StartCallback` (called by
+// SetUpReadableByteStreamController below) should not be able to run script in
+// this case.
+MOZ_CAN_RUN_SCRIPT_BOUNDARY void ReadableStream::SetUpByteNative(
     JSContext* aCx, UnderlyingSourceAlgorithmsWrapper& aAlgorithms,
     mozilla::Maybe<double> aHighWaterMark, ErrorResult& aRv) {
   // an optional number highWaterMark (default 0)
@@ -1242,7 +1468,7 @@ void ReadableStream::EnqueueNative(JSContext* aCx, JS::Handle<JS::Value> aChunk,
     MOZ_ASSERT(JS_GetArrayBufferViewByteOffset(chunk) ==
                JS_GetArrayBufferViewByteOffset(byobView));
     // Step 4.2: Assert: chunk.[[ByteLength]] ≤ byobView.[[ByteLength]].
-    MOZ_ASSERT(JS_GetArrayBufferViewByteLength(chunk) ==
+    MOZ_ASSERT(JS_GetArrayBufferViewByteLength(chunk) <=
                JS_GetArrayBufferViewByteLength(byobView));
     // Step 4.3: Perform ?
     // ReadableByteStreamControllerRespond(stream.[[controller]],
@@ -1259,6 +1485,29 @@ void ReadableStream::EnqueueNative(JSContext* aCx, JS::Handle<JS::Value> aChunk,
   // Step 5: Otherwise, perform ?
   // ReadableByteStreamControllerEnqueue(stream.[[controller]], chunk).
   ReadableByteStreamControllerEnqueue(aCx, controller, chunk, aRv);
+}
+
+// https://streams.spec.whatwg.org/#readablestream-current-byob-request-view
+void ReadableStream::GetCurrentBYOBRequestView(
+    JSContext* aCx, JS::MutableHandle<JSObject*> aView, ErrorResult& aRv) {
+  aView.set(nullptr);
+
+  // Step 1: Assert: stream.[[controller]] implements
+  // ReadableByteStreamController.
+  MOZ_ASSERT(mController->IsByte());
+
+  // Step 2: Let byobRequest be !
+  // ReadableByteStreamControllerGetBYOBRequest(stream.[[controller]]).
+  RefPtr<ReadableStreamBYOBRequest> byobRequest =
+      mController->AsByte()->GetByobRequest(aCx, aRv);
+
+  // Step 3: If byobRequest is null, then return null.
+  if (!byobRequest || aRv.Failed()) {
+    return;
+  }
+
+  // Step 4: Return byobRequest.[[view]].
+  byobRequest->GetView(aCx, aView);
 }
 
 // https://streams.spec.whatwg.org/#readablestream-get-a-reader

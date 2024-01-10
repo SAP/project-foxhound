@@ -48,12 +48,12 @@ ChromeUtils.defineESModuleGetters(lazy, {
   FileUtils: "resource://gre/modules/FileUtils.sys.mjs",
   ProductAddonChecker:
     "resource://gre/modules/addons/ProductAddonChecker.sys.mjs",
+  NetUtil: "resource://gre/modules/NetUtil.sys.mjs",
   UpdateUtils: "resource://gre/modules/UpdateUtils.sys.mjs",
 });
 
 XPCOMUtils.defineLazyModuleGetters(lazy, {
   BuiltInThemesHelpers: "resource://gre/modules/addons/XPIDatabase.jsm",
-  NetUtil: "resource://gre/modules/NetUtil.jsm",
   AddonInternal: "resource://gre/modules/addons/XPIDatabase.jsm",
   XPIDatabase: "resource://gre/modules/addons/XPIDatabase.jsm",
   XPIInternal: "resource://gre/modules/addons/XPIProvider.jsm",
@@ -1426,7 +1426,10 @@ class AddonInstall {
         logger.debug(`Cancelling postponed install of ${this.addon.id}`);
         this.state = AddonManager.STATE_CANCELLED;
         this._cleanup();
-        this._callInstallListeners("onInstallCancelled");
+        this._callInstallListeners(
+          "onInstallCancelled",
+          /* aCancelledByUser */ false
+        );
         this.removeTemporaryFile();
 
         let stagingDir = this.location.installer.getStagingDir();
@@ -1703,7 +1706,10 @@ class AddonInstall {
             logger.info(`Install of ${this.addon.id} cancelled by user`);
             this.state = AddonManager.STATE_CANCELLED;
             this._cleanup();
-            this._callInstallListeners("onInstallCancelled");
+            this._callInstallListeners(
+              "onInstallCancelled",
+              /* aCancelledByUser */ true
+            );
           }
           return;
         }
@@ -1746,7 +1752,10 @@ class AddonInstall {
       this.state = AddonManager.STATE_DOWNLOADED;
       this.removeTemporaryFile();
       this._cleanup();
-      this._callInstallListeners("onInstallCancelled");
+      this._callInstallListeners(
+        "onInstallCancelled",
+        /* aCancelledByUser */ false
+      );
       return;
     }
 
@@ -1958,9 +1967,6 @@ class AddonInstall {
       // Point the add-on to its extracted files as the xpi may get deleted
       this.addon.sourceBundle = stagedAddon;
 
-      // Cache the AddonInternal as it may have updated compatibility info
-      this.location.stageAddon(this.addon.id, this.addon.toJSON());
-
       logger.debug(
         `Staged install of ${this.addon.id} from ${this.sourceURI.spec} ready; waiting for restart.`
       );
@@ -1968,6 +1974,14 @@ class AddonInstall {
         delete this.existingAddon.pendingUpgrade;
         this.existingAddon.pendingUpgrade = this.addon;
       }
+    }
+
+    if (this.state === AddonManager.STATE_POSTPONED) {
+      // Cache the AddonInternal as it may have updated compatibility info. We
+      // do that unconditionally in case the staged install isn't finalized in
+      // the same session. That way, on the next app startup, the add-on will
+      // be installed.
+      this.location.stageAddon(this.addon.id, this.addon.toJSON());
     }
   }
 
@@ -1990,8 +2004,10 @@ class AddonInstall {
    *
    * @param {function} resumeFn
    *        A function for the add-on to run when resuming.
+   * @param {boolean} requiresRestart
+   *        Whether this add-on requires restart.
    */
-  async postpone(resumeFn) {
+  async postpone(resumeFn, requiresRestart = true) {
     this.state = AddonManager.STATE_POSTPONED;
 
     let stagingDir = this.location.installer.getStagingDir();
@@ -2002,7 +2018,7 @@ class AddonInstall {
 
       let stagedAddon = getFile(`${this.addon.id}.xpi`, stagingDir);
 
-      await this.stageInstall(true, stagedAddon, true);
+      await this.stageInstall(requiresRestart, stagedAddon, true);
     } catch (e) {
       logger.warn(`Failed to postpone install of ${this.addon.id}`, e);
       this.state = AddonManager.STATE_INSTALL_FAILED;
@@ -2145,6 +2161,10 @@ var LocalAddonInstall = class extends AddonInstall {
       this.addon.recordAddonBlockChangeTelemetry("addon_install");
     }
 
+    if (this.addon.blocklistState === nsIBlocklistService.STATE_BLOCKED) {
+      this.error = AddonManager.ERROR_BLOCKLISTED;
+    }
+
     if (!this.addon.isCompatible) {
       this.state = AddonManager.STATE_CHECKING_UPDATE;
 
@@ -2152,9 +2172,21 @@ var LocalAddonInstall = class extends AddonInstall {
         new UpdateChecker(
           this.addon,
           {
-            onUpdateFinished: aAddon => {
+            onUpdateFinished: (aAddon, aError) => {
               this.state = AddonManager.STATE_DOWNLOADED;
-              this._callInstallListeners("onNewInstall");
+              // If checking for an updated compatibility range fails or the
+              // add-on is still incompatible, then set the expected
+              // `install.error` to `ERROR_INCOMPATIBLE`.
+              if (!this.addon.isCompatible) {
+                this.error = AddonManager.ERROR_INCOMPATIBLE;
+              }
+              if (aError < 0) {
+                logger.warn(
+                  `UpdateChecker failed to download updates for ${this.addon.id}, error code: ${aError}`
+                );
+              } else {
+                this._callInstallListeners("onNewInstall");
+              }
               resolve();
             },
           },
@@ -2627,6 +2659,12 @@ var DownloadAddonInstall = class extends AddonInstall {
       );
     }
 
+    if (this.addon.blocklistState === nsIBlocklistService.STATE_BLOCKED) {
+      this.error = AddonManager.ERROR_BLOCKLISTED;
+    } else if (!this.addon.isCompatible) {
+      this.error = AddonManager.ERROR_INCOMPATIBLE;
+    }
+
     if (this._callInstallListeners("onDownloadEnded")) {
       // If a listener changed our state then do not proceed with the install
       if (this.state != AddonManager.STATE_DOWNLOADED) {
@@ -2814,8 +2852,8 @@ AddonInstallWrapper.prototype = {
     return installFor(this).install();
   },
 
-  postpone(returnFn) {
-    return installFor(this).postpone(returnFn);
+  postpone(returnFn, requiresRestart) {
+    return installFor(this).postpone(returnFn, requiresRestart);
   },
 
   cancel() {

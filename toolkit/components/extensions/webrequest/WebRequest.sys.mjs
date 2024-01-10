@@ -4,30 +4,29 @@
 
 const { nsIHttpActivityObserver, nsISocketTransport } = Ci;
 
-import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
-
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
+  ExtensionDNR: "resource://gre/modules/ExtensionDNR.sys.mjs",
   ExtensionParent: "resource://gre/modules/ExtensionParent.sys.mjs",
   ExtensionUtils: "resource://gre/modules/ExtensionUtils.sys.mjs",
   SecurityInfo: "resource://gre/modules/SecurityInfo.sys.mjs",
   WebRequestUpload: "resource://gre/modules/WebRequestUpload.sys.mjs",
 });
 
-XPCOMUtils.defineLazyModuleGetters(lazy, {
-  ExtensionDNR: "resource://gre/modules/ExtensionDNR.jsm",
-});
-
 // WebRequest.jsm's only consumer is ext-webRequest.js, so we can depend on
 // the apiManager.global being initialized.
-XPCOMUtils.defineLazyGetter(lazy, "tabTracker", () => {
+ChromeUtils.defineLazyGetter(lazy, "tabTracker", () => {
   return lazy.ExtensionParent.apiManager.global.tabTracker;
 });
-XPCOMUtils.defineLazyGetter(lazy, "getCookieStoreIdForOriginAttributes", () => {
-  return lazy.ExtensionParent.apiManager.global
-    .getCookieStoreIdForOriginAttributes;
-});
+ChromeUtils.defineLazyGetter(
+  lazy,
+  "getCookieStoreIdForOriginAttributes",
+  () => {
+    return lazy.ExtensionParent.apiManager.global
+      .getCookieStoreIdForOriginAttributes;
+  }
+);
 
 // URI schemes that service workers are allowed to load scripts from (any other
 // scheme is not allowed by the specs and it is not expected by the service workers

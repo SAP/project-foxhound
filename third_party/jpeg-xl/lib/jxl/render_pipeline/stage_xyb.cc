@@ -29,8 +29,6 @@ class XYBStage : public RenderPipelineStage {
   void ProcessRow(const RowInfo& input_rows, const RowInfo& output_rows,
                   size_t xextra, size_t xsize, size_t xpos, size_t ypos,
                   size_t thread_id) const final {
-    PROFILER_ZONE("UndoXYB");
-
     const HWY_FULL(float) d;
     JXL_ASSERT(xextra == 0);
     const size_t xsize_v = RoundUpTo(xsize, Lanes(d));
@@ -115,6 +113,7 @@ std::unique_ptr<RenderPipelineStage> GetXYBStage(
   return HWY_DYNAMIC_DISPATCH(GetXYBStage)(output_encoding_info);
 }
 
+#if !JXL_HIGH_PRECISION
 namespace {
 class FastXYBStage : public RenderPipelineStage {
  public:
@@ -171,6 +170,7 @@ std::unique_ptr<RenderPipelineStage> GetFastXYBTosRGB8Stage(
   return make_unique<FastXYBStage>(rgb, stride, width, height, rgba, has_alpha,
                                    alpha_c);
 }
+#endif
 
 }  // namespace jxl
 #endif

@@ -12,13 +12,12 @@ const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   AboutReaderParent: "resource:///actors/AboutReaderParent.sys.mjs",
   BrowserUtils: "resource://gre/modules/BrowserUtils.sys.mjs",
+  EveryWindow: "resource:///modules/EveryWindow.sys.mjs",
+  FeatureCalloutBroker:
+    "resource://activity-stream/lib/FeatureCalloutBroker.sys.mjs",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
   clearTimeout: "resource://gre/modules/Timer.sys.mjs",
   setTimeout: "resource://gre/modules/Timer.sys.mjs",
-});
-
-XPCOMUtils.defineLazyModuleGetters(lazy, {
-  EveryWindow: "resource:///modules/EveryWindow.jsm",
 });
 
 XPCOMUtils.defineLazyGetter(lazy, "log", () => {
@@ -353,13 +352,11 @@ const ASRouterTriggerListeners = new Map([
             this.id,
             win => {
               if (!isPrivateWindow(win)) {
-                win.addEventListener("TabSelect", this.onTabSwitch);
                 win.gBrowser.addTabsProgressListener(this);
               }
             },
             win => {
               if (!isPrivateWindow(win)) {
-                win.removeEventListener("TabSelect", this.onTabSwitch);
                 win.gBrowser.removeTabsProgressListener(this);
               }
             }
@@ -865,7 +862,7 @@ const ASRouterTriggerListeners = new Map([
       },
       get _soundPlaying() {
         return [...Services.wm.getEnumerator("navigator:browser")].some(win =>
-          win.gBrowser?.tabs.some(tab => tab.soundPlaying)
+          win.gBrowser?.tabs.some(tab => !tab.closing && tab.soundPlaying)
         );
       },
       init(triggerHandler) {
@@ -999,9 +996,10 @@ const ASRouterTriggerListeners = new Map([
         if (this._idleSince && this._quietSince) {
           const win = Services.wm.getMostRecentBrowserWindow();
           if (win && !isPrivateWindow(win) && !this._triggerTimeout) {
-            // Number of ms since the last user interaction/audio playback
+            // Time since the most recent user interaction/audio playback,
+            // reported as the number of milliseconds the user has been idle.
             const idleForMilliseconds =
-              Date.now() - Math.min(this._idleSince, this._quietSince);
+              Date.now() - Math.max(this._idleSince, this._quietSince);
             this._triggerTimeout = lazy.setTimeout(() => {
               this._triggerHandler(win.gBrowser.selectedBrowser, {
                 id: this.id,
@@ -1079,6 +1077,322 @@ const ASRouterTriggerListeners = new Map([
           this._initialized = false;
           this._triggerHandler = null;
         }
+      },
+    },
+  ],
+  [
+    "pdfJsFeatureCalloutCheck",
+    {
+      id: "pdfJsFeatureCalloutCheck",
+      _initialized: false,
+      _triggerHandler: null,
+      _callouts: new WeakMap(),
+
+      init(triggerHandler) {
+        if (!this._initialized) {
+          this.onLocationChange = this.onLocationChange.bind(this);
+          this.onStateChange = this.onLocationChange;
+          lazy.EveryWindow.registerCallback(
+            this.id,
+            win => {
+              this.onBrowserWindow(win);
+              win.addEventListener("TabSelect", this);
+              win.addEventListener("TabClose", this);
+              win.addEventListener("SSTabRestored", this);
+              win.gBrowser.addTabsProgressListener(this);
+            },
+            win => {
+              win.removeEventListener("TabSelect", this);
+              win.removeEventListener("TabClose", this);
+              win.removeEventListener("SSTabRestored", this);
+              win.gBrowser.removeTabsProgressListener(this);
+            }
+          );
+          this._initialized = true;
+        }
+        this._triggerHandler = triggerHandler;
+      },
+
+      uninit() {
+        if (this._initialized) {
+          lazy.EveryWindow.unregisterCallback(this.id);
+          this._initialized = false;
+          this._triggerHandler = null;
+          for (let key of ChromeUtils.nondeterministicGetWeakMapKeys(
+            this._callouts
+          )) {
+            const item = this._callouts.get(key);
+            if (item) {
+              item.callout.endTour(true);
+              item.cleanup();
+              this._callouts.delete(key);
+            }
+          }
+        }
+      },
+
+      async showFeatureCalloutTour(win, browser, panelId, context) {
+        const result = await this._triggerHandler(browser, {
+          id: "pdfJsFeatureCalloutCheck",
+          context,
+        });
+        if (result.message.trigger) {
+          const callout = lazy.FeatureCalloutBroker.showCustomFeatureCallout(
+            {
+              win,
+              browser,
+              pref: {
+                name:
+                  result.message.content?.tour_pref_name ??
+                  "browser.pdfjs.feature-tour",
+                defaultValue: result.message.content?.tour_pref_default_value,
+              },
+              location: "pdfjs",
+              theme: { preset: "pdfjs", simulateContent: true },
+              cleanup: () => {
+                this._callouts.delete(win);
+              },
+            },
+            result.message
+          );
+          if (callout) {
+            callout.panelId = panelId;
+            this._callouts.set(win, callout);
+          }
+        }
+      },
+
+      onLocationChange(browser) {
+        const tabbrowser = browser.getTabBrowser();
+        if (browser !== tabbrowser.selectedBrowser) {
+          return;
+        }
+        const win = tabbrowser.ownerGlobal;
+        const tab = tabbrowser.selectedTab;
+        const existingCallout = this._callouts.get(win);
+        const isPDFJS =
+          browser.contentPrincipal.originNoSuffix === "resource://pdf.js";
+        if (
+          existingCallout &&
+          (existingCallout.panelId !== tab.linkedPanel || !isPDFJS)
+        ) {
+          existingCallout.callout.endTour(true);
+          existingCallout.cleanup();
+        }
+        if (!this._callouts.has(win) && isPDFJS) {
+          this.showFeatureCalloutTour(win, browser, tab.linkedPanel, {
+            source: "open",
+          });
+        }
+      },
+
+      handleEvent(event) {
+        const tab = event.target;
+        const win = tab.ownerGlobal;
+        const { gBrowser } = win;
+        if (!gBrowser) {
+          return;
+        }
+        switch (event.type) {
+          case "SSTabRestored":
+            if (tab !== gBrowser.selectedTab) {
+              return;
+            }
+          // fall through
+          case "TabSelect": {
+            const browser = gBrowser.getBrowserForTab(tab);
+            const existingCallout = this._callouts.get(win);
+            const isPDFJS =
+              browser.contentPrincipal.originNoSuffix === "resource://pdf.js";
+            if (
+              existingCallout &&
+              (existingCallout.panelId !== tab.linkedPanel || !isPDFJS)
+            ) {
+              existingCallout.callout.endTour(true);
+              existingCallout.cleanup();
+            }
+            if (!this._callouts.has(win) && isPDFJS) {
+              this.showFeatureCalloutTour(win, browser, tab.linkedPanel, {
+                source: "open",
+              });
+            }
+            break;
+          }
+          case "TabClose": {
+            const existingCallout = this._callouts.get(win);
+            if (
+              existingCallout &&
+              existingCallout.panelId === tab.linkedPanel
+            ) {
+              existingCallout.callout.endTour(true);
+              existingCallout.cleanup();
+            }
+            break;
+          }
+        }
+      },
+
+      onBrowserWindow(win) {
+        this.onLocationChange(win.gBrowser.selectedBrowser);
+      },
+    },
+  ],
+  [
+    "newtabFeatureCalloutCheck",
+    {
+      id: "newtabFeatureCalloutCheck",
+      _initialized: false,
+      _triggerHandler: null,
+      _callouts: new WeakMap(),
+
+      init(triggerHandler) {
+        if (!this._initialized) {
+          this.onLocationChange = this.onLocationChange.bind(this);
+          this.onStateChange = this.onLocationChange;
+          lazy.EveryWindow.registerCallback(
+            this.id,
+            win => {
+              this.onBrowserWindow(win);
+              win.addEventListener("TabSelect", this);
+              win.addEventListener("TabClose", this);
+              win.addEventListener("SSTabRestored", this);
+              win.gBrowser.addTabsProgressListener(this);
+            },
+            win => {
+              win.removeEventListener("TabSelect", this);
+              win.removeEventListener("TabClose", this);
+              win.removeEventListener("SSTabRestored", this);
+              win.gBrowser.removeTabsProgressListener(this);
+            }
+          );
+          this._initialized = true;
+        }
+        this._triggerHandler = triggerHandler;
+      },
+
+      uninit() {
+        if (this._initialized) {
+          lazy.EveryWindow.unregisterCallback(this.id);
+          this._initialized = false;
+          this._triggerHandler = null;
+          for (let key of ChromeUtils.nondeterministicGetWeakMapKeys(
+            this._callouts
+          )) {
+            const item = this._callouts.get(key);
+            if (item) {
+              item.callout.endTour(true);
+              item.cleanup();
+              this._callouts.delete(key);
+            }
+          }
+        }
+      },
+
+      async showFeatureCalloutTour(win, browser, panelId, context) {
+        const result = await this._triggerHandler(browser, {
+          id: "newtabFeatureCalloutCheck",
+          context,
+        });
+        if (result.message.trigger) {
+          const callout = lazy.FeatureCalloutBroker.showCustomFeatureCallout(
+            {
+              win,
+              browser,
+              pref: {
+                name:
+                  result.message.content?.tour_pref_name ??
+                  "browser.newtab.feature-tour",
+                defaultValue: result.message.content?.tour_pref_default_value,
+              },
+              location: "newtab",
+              theme: { preset: "newtab", simulateContent: true },
+              cleanup: () => {
+                this._callouts.delete(win);
+              },
+            },
+            result.message
+          );
+          if (callout) {
+            callout.panelId = panelId;
+            this._callouts.set(win, callout);
+          }
+        }
+      },
+
+      onLocationChange(browser) {
+        const tabbrowser = browser.getTabBrowser();
+        if (browser !== tabbrowser.selectedBrowser) {
+          return;
+        }
+        const win = tabbrowser.ownerGlobal;
+        const tab = tabbrowser.selectedTab;
+        const existingCallout = this._callouts.get(win);
+        const isNewtabOrHome =
+          browser.currentURI.spec.startsWith("about:home") ||
+          browser.currentURI.spec.startsWith("about:newtab");
+        if (
+          existingCallout &&
+          (existingCallout.panelId !== tab.linkedPanel || !isNewtabOrHome)
+        ) {
+          existingCallout.callout.endTour(true);
+          existingCallout.cleanup();
+        }
+        if (!this._callouts.has(win) && isNewtabOrHome && tab.linkedPanel) {
+          this.showFeatureCalloutTour(win, browser, tab.linkedPanel, {
+            source: "open",
+          });
+        }
+      },
+
+      handleEvent(event) {
+        const tab = event.target;
+        const win = tab.ownerGlobal;
+        const { gBrowser } = win;
+        if (!gBrowser) {
+          return;
+        }
+        switch (event.type) {
+          case "SSTabRestored":
+            if (tab !== gBrowser.selectedTab) {
+              return;
+            }
+          // fall through
+          case "TabSelect": {
+            const browser = gBrowser.getBrowserForTab(tab);
+            const existingCallout = this._callouts.get(win);
+            const isNewtabOrHome =
+              browser.currentURI.spec.startsWith("about:home") ||
+              browser.currentURI.spec.startsWith("about:newtab");
+            if (
+              existingCallout &&
+              (existingCallout.panelId !== tab.linkedPanel || !isNewtabOrHome)
+            ) {
+              existingCallout.callout.endTour(true);
+              existingCallout.cleanup();
+            }
+            if (!this._callouts.has(win) && isNewtabOrHome) {
+              this.showFeatureCalloutTour(win, browser, tab.linkedPanel, {
+                source: "open",
+              });
+            }
+            break;
+          }
+          case "TabClose": {
+            const existingCallout = this._callouts.get(win);
+            if (
+              existingCallout &&
+              existingCallout.panelId === tab.linkedPanel
+            ) {
+              existingCallout.callout.endTour(true);
+              existingCallout.cleanup();
+            }
+            break;
+          }
+        }
+      },
+
+      onBrowserWindow(win) {
+        this.onLocationChange(win.gBrowser.selectedBrowser);
       },
     },
   ],

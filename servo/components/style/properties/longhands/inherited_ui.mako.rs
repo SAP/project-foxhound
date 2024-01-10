@@ -14,6 +14,7 @@ ${helpers.predefined_type(
     initial_specified_value="specified::Cursor::auto()",
     animation_value_type="discrete",
     spec="https://drafts.csswg.org/css-ui/#cursor",
+    affects="paint",
 )}
 
 // NB: `pointer-events: auto` (and use of `pointer-events` in anything that isn't SVG, in fact)
@@ -27,6 +28,7 @@ ${helpers.single_keyword(
     extra_gecko_values="visiblepainted visiblefill visiblestroke visible painted fill stroke all",
     spec="https://www.w3.org/TR/SVG11/interact.html#PointerEventsProperty",
     gecko_enum_prefix="StylePointerEvents",
+    affects="paint",
 )}
 
 ${helpers.single_keyword(
@@ -38,6 +40,7 @@ ${helpers.single_keyword(
     animation_value_type="discrete",
     enabled_in="ua",
     spec="Nonstandard (https://html.spec.whatwg.org/multipage/#inert-subtrees)",
+    affects="paint",
 )}
 
 ${helpers.single_keyword(
@@ -48,6 +51,7 @@ ${helpers.single_keyword(
     gecko_enum_prefix="StyleUserInput",
     animation_value_type="discrete",
     spec="Nonstandard (https://developer.mozilla.org/en-US/docs/Web/CSS/-moz-user-input)",
+    affects="",
 )}
 
 ${helpers.single_keyword(
@@ -59,6 +63,7 @@ ${helpers.single_keyword(
     needs_conversion=True,
     animation_value_type="discrete",
     spec="Nonstandard (https://developer.mozilla.org/en-US/docs/Web/CSS/-moz-user-modify)",
+    affects="",
 )}
 
 ${helpers.single_keyword(
@@ -69,6 +74,7 @@ ${helpers.single_keyword(
     gecko_enum_prefix="StyleUserFocus",
     animation_value_type="discrete",
     spec="Nonstandard (https://developer.mozilla.org/en-US/docs/Web/CSS/-moz-user-focus)",
+    affects="",
 )}
 
 ${helpers.predefined_type(
@@ -79,6 +85,7 @@ ${helpers.predefined_type(
     spec="https://drafts.csswg.org/css-ui/#caret-color",
     animation_value_type="CaretColor",
     ignored_when_colors_disabled=True,
+    affects="paint",
 )}
 
 ${helpers.predefined_type(
@@ -87,10 +94,9 @@ ${helpers.predefined_type(
     "generics::color::ColorOrAuto::Auto",
     engines="gecko",
     spec="https://drafts.csswg.org/css-ui-4/#widget-accent",
-    gecko_pref="layout.css.accent-color.enabled",
     animation_value_type="ColorOrAuto",
     ignored_when_colors_disabled=True,
-    has_effect_on_gecko_scrollbars=False,
+    affects="paint",
 )}
 
 ${helpers.predefined_type(
@@ -99,11 +105,9 @@ ${helpers.predefined_type(
     "specified::color::ColorScheme::normal()",
     engines="gecko",
     spec="https://drafts.csswg.org/css-color-adjust/#color-scheme-prop",
-    gecko_pref="layout.css.color-scheme.enabled",
     animation_value_type="discrete",
-    has_effect_on_gecko_scrollbars=False,
     ignored_when_colors_disabled=True,
-    enabled_in="chrome",
+    affects="paint",
 )}
 
 ${helpers.predefined_type(
@@ -115,4 +119,16 @@ ${helpers.predefined_type(
     animation_value_type="ScrollbarColor",
     boxed=True,
     ignored_when_colors_disabled=True,
+    affects="paint",
+)}
+
+${helpers.predefined_type(
+    "-moz-theme",
+    "ui::MozTheme",
+    "specified::ui::MozTheme::Auto",
+    engines="gecko",
+    enabled_in="chrome",
+    animation_value_type="discrete",
+    spec="Internal",
+    affects="paint",
 )}

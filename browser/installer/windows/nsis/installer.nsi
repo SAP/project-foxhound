@@ -41,7 +41,6 @@ Var TmpVal
 Var InstallType
 Var AddStartMenuSC
 Var AddTaskbarSC
-Var AddQuickLaunchSC
 Var AddDesktopSC
 Var AddPrivateBrowsingSC
 Var InstallMaintenanceService
@@ -108,7 +107,7 @@ VIAddVersionKey "OriginalFilename" "setup.exe"
 !insertmacro ChangeMUIHeaderImage
 !insertmacro ChangeMUISidebarImage
 !insertmacro CheckForFilesInUse
-!insertmacro CleanUpdateDirectories
+!insertmacro CleanMaintenanceServiceLogs
 !insertmacro CopyFilesFromDir
 !insertmacro CopyPostSigningData
 !insertmacro CopyProvenanceData
@@ -311,8 +310,8 @@ Section "-InstallStartCleanup"
   ; setup the application model id registration value
   ${InitHashAppModelId} "$INSTDIR" "Software\Mozilla\${AppName}\TaskBarIDs"
 
-  ; Remove the updates directory
-  ${CleanUpdateDirectories} "Mozilla\Firefox" "Mozilla\updates"
+  ; Clean up old maintenance service logs
+  ${CleanMaintenanceServiceLogs} "Mozilla\Firefox"
 
   ${RemoveDeprecatedFiles}
   ${RemovePrecompleteEntries} "false"
@@ -383,22 +382,20 @@ Section "-Application" APP_IDX
 
   ClearErrors
 
-  ${If} ${AtLeastWin10}
-    ; Apply LPAC permissions to install directory.
-    ${LogHeader} "File access permissions"
-    Push "Marker"
-    AccessControl::GrantOnFile \
-      "$INSTDIR" "(${LpacFirefoxInstallFilesSid})" "GenericRead + GenericExecute"
-    Pop $TmpVal ; get "Marker" or error msg
-    ${If} $TmpVal == "Marker"
-      ${LogMsg} "Granted access for LPAC to $INSTDIR"
-    ${Else}
-      ${LogMsg} "** Error granting access for LPAC to $INSTDIR : $TmpVal **"
-      Pop $TmpVal ; get "Marker"
-    ${EndIf}
-
-    ClearErrors
+  ; Apply LPAC permissions to install directory.
+  ${LogHeader} "File access permissions"
+  Push "Marker"
+  AccessControl::GrantOnFile \
+    "$INSTDIR" "(${LpacFirefoxInstallFilesSid})" "GenericRead + GenericExecute"
+  Pop $TmpVal ; get "Marker" or error msg
+  ${If} $TmpVal == "Marker"
+    ${LogMsg} "Granted access for LPAC to $INSTDIR"
+  ${Else}
+    ${LogMsg} "** Error granting access for LPAC to $INSTDIR : $TmpVal **"
+    Pop $TmpVal ; get "Marker"
   ${EndIf}
+
+  ClearErrors
 
   ; Default for creating Start Menu shortcut
   ; (1 = create, 0 = don't create)
@@ -408,16 +405,6 @@ Section "-Application" APP_IDX
 
   ${If} $AddPrivateBrowsingSC == ""
     StrCpy $AddPrivateBrowsingSC "1"
-  ${EndIf}
-
-  ; Default for creating Quick Launch shortcut (1 = create, 0 = don't create)
-  ${If} $AddQuickLaunchSC == ""
-    ; Don't install the quick launch shortcut on Windows 7
-    ${If} ${AtLeastWin7}
-      StrCpy $AddQuickLaunchSC "0"
-    ${Else}
-      StrCpy $AddQuickLaunchSC "1"
-    ${EndIf}
   ${EndIf}
 
   ; Default for creating Desktop shortcut (1 = create, 0 = don't create)
@@ -488,13 +475,12 @@ Section "-Application" APP_IDX
   ${AddDisabledDDEHandlerValues} "FirefoxURL-$AppUserModelID" "$2" "$8,${IDI_DOCUMENT_ZERO_BASED}" \
                                  "${AppRegName} URL" "true"
 
-  ; For pre win8, the following keys should only be set if we can write to HKLM.
-  ; For post win8, the keys below can be set in HKCU if needed.
+  ; The keys below can be set in HKCU if needed.
   ${If} $TmpVal == "HKLM"
     ; Set the Start Menu Internet and Registered App HKLM registry keys.
     ${SetStartMenuInternet} "HKLM"
     ${FixShellIconHandler} "HKLM"
-  ${ElseIf} ${AtLeastWin8}
+  ${Else}
     ; Set the Start Menu Internet and Registered App HKCU registry keys.
     ${SetStartMenuInternet} "HKCU"
     ${FixShellIconHandler} "HKCU"
@@ -555,9 +541,7 @@ Section "-Application" APP_IDX
   WriteRegDWORD HKCU ${MOZ_LAUNCHER_SUBKEY} "$INSTDIR\${FileMainEXE}|Telemetry" 1
 !endif
 
-  ${If} ${AtLeastWin10}
-    ${WriteToastNotificationRegistration} $TmpVal
-  ${EndIf}
+  ${WriteToastNotificationRegistration} $TmpVal
 
   ; Create shortcuts
   ${LogHeader} "Adding Shortcuts"
@@ -646,16 +630,14 @@ Section "-Application" APP_IDX
   ; Update lastwritetime of the Start Menu shortcut to clear the tile cache.
   ; Do this for both shell contexts in case the user has shortcuts in multiple
   ; locations, then restore the previous context at the end.
-  ${If} ${AtLeastWin8}
+  SetShellVarContext all
+  ${TouchStartMenuShortcut}
+  SetShellVarContext current
+  ${TouchStartMenuShortcut}
+  ${If} $TmpVal == "HKLM"
     SetShellVarContext all
-    ${TouchStartMenuShortcut}
+  ${ElseIf} $TmpVal == "HKCU"
     SetShellVarContext current
-    ${TouchStartMenuShortcut}
-    ${If} $TmpVal == "HKLM"
-      SetShellVarContext all
-    ${ElseIf} $TmpVal == "HKCU"
-      SetShellVarContext current
-    ${EndIf}
   ${EndIf}
 
   ${If} $AddDesktopSC == 1
@@ -682,27 +664,6 @@ Section "-Application" APP_IDX
         ${LogMsg} "** ERROR Adding Shortcut: $DESKTOP\${BrandShortName}.lnk"
       ${EndIf}
     ${EndIf}
-  ${EndIf}
-
-  ; If elevated the Quick Launch shortcut must be added from the unelevated
-  ; original process.
-  ${If} $AddQuickLaunchSC == 1
-    ${Unless} ${AtLeastWin7}
-      ClearErrors
-      ${GetParameters} $0
-      ${GetOptions} "$0" "/UAC:" $0
-      ${If} ${Errors}
-        Call AddQuickLaunchShortcut
-        ${LogMsg} "Added Shortcut: $QUICKLAUNCH\${BrandShortName}.lnk"
-      ${Else}
-        ; It is not possible to add a log entry from the unelevated process so
-        ; add the log entry without the path since there is no simple way to
-        ; know the correct full path.
-        ${LogMsg} "Added Quick Launch Shortcut: ${BrandShortName}.lnk"
-        GetFunctionAddress $0 AddQuickLaunchShortcut
-        UAC::ExecCodeSegment $0
-      ${EndIf}
-    ${EndUnless}
   ${EndIf}
 
 !ifdef MOZ_OPTIONAL_EXTENSIONS
@@ -776,6 +737,11 @@ Section "-Application" APP_IDX
   WriteRegDWORD HKCU "Software\Mozilla\${AppName}\Installer\$AppUserModelID" \
                      "DidRegisterDefaultBrowserAgent" $RegisterDefaultAgent
 !endif
+
+; Return value is saved to an unused variable to prevent the the error flag
+; from being set.
+Var /GLOBAL UnusedExecCatchReturn
+ExecWait '"$INSTDIR\${FileMainEXE}" --backgroundtask install' $UnusedExecCatchReturn
 SectionEnd
 
 ; Cleanup operations to perform at the end of the installation.
@@ -986,14 +952,6 @@ FunctionEnd
 
 ################################################################################
 # Helper Functions
-
-Function AddQuickLaunchShortcut
-  CreateShortCut "$QUICKLAUNCH\${BrandShortName}.lnk" "$INSTDIR\${FileMainEXE}"
-  ${If} ${FileExists} "$QUICKLAUNCH\${BrandShortName}.lnk"
-    ShellLink::SetShortCutWorkingDirectory "$QUICKLAUNCH\${BrandShortName}.lnk" \
-                                           "$INSTDIR"
-  ${EndIf}
-FunctionEnd
 
 Function CheckExistingInstall
   ; If there is a pending file copy from a previous upgrade don't allow
@@ -1688,55 +1646,15 @@ Function preSummary
     DeleteINIStr "$PLUGINSDIR\summary.ini" "Settings" NextButtonText
   ${EndIf}
 
-
-  ; Remove the "Field 4" ini section in case the user hits back and changes the
-  ; installation directory which could change whether the make default checkbox
-  ; should be displayed.
-  DeleteINISec "$PLUGINSDIR\summary.ini" "Field 4"
-
-  ; Check if it is possible to write to HKLM
-  ClearErrors
-  WriteRegStr HKLM "Software\Mozilla" "${BrandShortName}InstallerTest" "Write Test"
-  ${Unless} ${Errors}
-    DeleteRegValue HKLM "Software\Mozilla" "${BrandShortName}InstallerTest"
-    ; Check if Firefox is the http handler for this user.
-    SetShellVarContext current ; Set SHCTX to the current user
-    ${IsHandlerForInstallDir} "http" $R9
-    ; If Firefox isn't the http handler for this user show the option to set
-    ; Firefox as the default browser.
-    ${If} "$R9" != "true"
-    ${AndIf} ${AtMostWin2008R2}
-      WriteINIStr "$PLUGINSDIR\summary.ini" "Settings" NumFields "4"
-      WriteINIStr "$PLUGINSDIR\summary.ini" "Field 4" Type   "checkbox"
-      WriteINIStr "$PLUGINSDIR\summary.ini" "Field 4" Text   "$(SUMMARY_TAKE_DEFAULTS)"
-      WriteINIStr "$PLUGINSDIR\summary.ini" "Field 4" Left   "0"
-      WriteINIStr "$PLUGINSDIR\summary.ini" "Field 4" Right  "-1"
-      WriteINIStr "$PLUGINSDIR\summary.ini" "Field 4" State  "1"
-      WriteINIStr "$PLUGINSDIR\summary.ini" "Field 4" Top    "32"
-      WriteINIStr "$PLUGINSDIR\summary.ini" "Field 4" Bottom "53"
-    ${EndIf}
-  ${EndUnless}
-
   ${If} "$TmpVal" == "true"
-    ; If there is already a Type entry in the "Field 4" section with a value of
-    ; checkbox then the set as the default browser checkbox is displayed and
-    ; this text must be moved below it.
-    ReadINIStr $0 "$PLUGINSDIR\summary.ini" "Field 4" "Type"
-    ${If} "$0" == "checkbox"
-      StrCpy $0 "5"
-      WriteINIStr "$PLUGINSDIR\summary.ini" "Field $0" Top    "53"
-      WriteINIStr "$PLUGINSDIR\summary.ini" "Field $0" Bottom "68"
-    ${Else}
-      StrCpy $0 "4"
-      WriteINIStr "$PLUGINSDIR\summary.ini" "Field $0" Top    "35"
-      WriteINIStr "$PLUGINSDIR\summary.ini" "Field $0" Bottom "50"
-    ${EndIf}
-    WriteINIStr "$PLUGINSDIR\summary.ini" "Settings" NumFields "$0"
+    WriteINIStr "$PLUGINSDIR\summary.ini" "Settings" NumFields "4"
 
-    WriteINIStr "$PLUGINSDIR\summary.ini" "Field $0" Type   "label"
-    WriteINIStr "$PLUGINSDIR\summary.ini" "Field $0" Text   "$(SUMMARY_REBOOT_REQUIRED_INSTALL)"
-    WriteINIStr "$PLUGINSDIR\summary.ini" "Field $0" Left   "0"
-    WriteINIStr "$PLUGINSDIR\summary.ini" "Field $0" Right  "-1"
+    WriteINIStr "$PLUGINSDIR\summary.ini" "Field 4" Type   "label"
+    WriteINIStr "$PLUGINSDIR\summary.ini" "Field 4" Text   "$(SUMMARY_REBOOT_REQUIRED_INSTALL)"
+    WriteINIStr "$PLUGINSDIR\summary.ini" "Field 4" Left   "0"
+    WriteINIStr "$PLUGINSDIR\summary.ini" "Field 4" Right  "-1"
+    WriteINIStr "$PLUGINSDIR\summary.ini" "Field 4" Top    "35"
+    WriteINIStr "$PLUGINSDIR\summary.ini" "Field 4" Bottom "50"
   ${EndIf}
 
   !insertmacro MUI_HEADER_TEXT "$(SUMMARY_PAGE_TITLE)" "$(SUMMARY_PAGE_SUBTITLE)"
@@ -1835,8 +1753,8 @@ Function .onInit
   ; SSE2 instruction set is available. Result returned in $R7.
   System::Call "kernel32::IsProcessorFeaturePresent(i 10)i .R7"
 
-  ; Windows NT 6.0 (Vista/Server 2008) and lower are not supported.
-  ${Unless} ${AtLeastWin7}
+  ; Windows 8.1/Server 2012 R2 and lower are not supported.
+  ${Unless} ${AtLeastWin10}
     ${If} "$R7" == "0"
       strCpy $R7 "$(WARN_MIN_SUPPORTED_OSVER_CPU_MSG)"
     ${Else}
@@ -1857,7 +1775,6 @@ Function .onInit
 !ifdef HAVE_64BIT_BUILD
   ${If} "${ARCH}" == "AArch64"
     ${IfNot} ${IsNativeARM64}
-    ${OrIfNot} ${AtLeastWin10}
       MessageBox MB_OKCANCEL|MB_ICONSTOP "$(WARN_MIN_SUPPORTED_OSVER_MSG)" IDCANCEL +2
       ExecShell "open" "${URLSystemRequirements}"
       Quit

@@ -24,14 +24,18 @@ let shouldEnterFullscreen = false;
 button.addEventListener("click", function(e) {
   clickCount++;
   if (shouldEnterFullscreen) {
-    lastFullscreenPromise = document.getElementById("fullscreen").requestFullscreen();
+    const fullscreenElement = document.getElementById("fullscreen");
+    lastFullscreenPromise = SimpleTest.promiseFocus().then(() => {
+      fullscreenElement.focus();
+      return fullscreenElement.requestFullscreen();
+    });
   }
 });
 
 function clickButton(expectEvent) {
   let lastClickCount = clickCount;
   synthesizeMouseAtCenter(button, {});
-  (expectEvent ? isnot : is)(lastClickCount, clickCount, `Should've ${expectEvent ? "" : "not "}been able to click`);
+  (expectEvent ? isnot : is)(clickCount, lastClickCount, `Should've ${expectEvent ? "" : "not "}been able to click`);
 }
 
 function enterFullscreen() {
@@ -46,7 +50,7 @@ function enterFullscreen() {
 async function testFullscreenIsModal(modal) {
   info("testing modal: " + modal);
   is(document.fullscreenElement, null, "Shouldn't be in fullscreen");
-  await SpecialPowers.pushPrefEnv({ set: [["dom.fullscreen.modal", modal]] });
+
   await enterFullscreen();
 
   clickButton(/* expectEvent = */ !modal);
@@ -62,7 +66,4 @@ add_task(async function() {
   await testFullscreenIsModal(true);
 });
 
-add_task(async function() {
-  await testFullscreenIsModal(false);
-});
 </script>

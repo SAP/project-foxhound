@@ -98,7 +98,7 @@ bool testCompile() {
     const js::CompileError& error = fc->maybeError().ref();
     CHECK(JSEXN_SYNTAXERR == error.exnType);
     CHECK(error.lineno == 1);
-    CHECK(error.column == 9);
+    CHECK(error.column.oneOriginValue() == 10);
   }
 
   return true;
@@ -199,7 +199,7 @@ bool testCompileModule() {
     const js::CompileError& error = fc->maybeError().ref();
     CHECK(JSEXN_SYNTAXERR == error.exnType);
     CHECK(error.lineno == 1);
-    CHECK(error.column == 9);
+    CHECK(error.column.oneOriginValue() == 10);
   }
 
   return true;
@@ -231,8 +231,7 @@ bool testPrepareForInstantiate() {
   CHECK(compileStorage.getInput().atomCache.empty());
 
   JS::InstantiationStorage storage;
-  CHECK(JS::PrepareForInstantiate(fc, compileStorage, *stencil, storage));
-  CHECK(compileStorage.getInput().atomCache.size() == 1);  // 'field'
+  CHECK(JS::PrepareForInstantiate(fc, *stencil, storage));
   CHECK(storage.isValid());
   // TODO storage.gcOutput_ is private, so there isn't a good way to check the
   // scriptData and scopeData capacities

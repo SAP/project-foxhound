@@ -6047,7 +6047,6 @@ _ZN5style7sharing17SHARING_CACHE_KEY7__getit17he592e433f2be153cE
 ?DoResolveOrReject@ThenValueBase@?$MozPromise@PAXULaunchError@ipc@mozilla@@$0A@@mozilla@@IAEXAAVResolveOrRejectValue@23@@Z
 ?IsOnCurrentThreadInfallible@AbstractThread@mozilla@@UAG_NXZ
 ?AddTargetPeer@SandboxBroker@mozilla@@SA_NPAX@Z
-?RegisterChildCrashAnnotationFileDescriptor@CrashReporter@@YAXKPAUPRFileDesc@@@Z
 ?CreateAdditionalChildMinidump@CrashReporter@@YA_NPAXKPAVnsIFile@@ABV?$nsTSubstring@D@@@Z
 ?_Tidy@?$deque@VMessage@IPC@@V?$allocator@VMessage@IPC@@@std@@@std@@IAEXXZ
 ?_Tidy@?$vector@V?$basic_string@_WU?$char_traits@_W@std@@V?$allocator@_W@2@@std@@V?$allocator@V?$basic_string@_WU?$char_traits@_W@std@@V?$allocator@_W@2@@std@@@2@@std@@AAEXXZ
@@ -7478,7 +7477,6 @@ _ZN5style7stylist11CascadeData18clear_cascade_data17heb714cd17ee568d9E
 ?ConstructorEnabled@ElementInternals_Binding@dom@mozilla@@YA_NPAUJSContext@@V?$Handle@PAVJSObject@@@JS@@@Z
 ?html5_inert_enabled@StaticPrefs@mozilla@@YA_NXZ
 ?dom_forms_inputmode@StaticPrefs@mozilla@@YA_NXZ
-?dom_forms_enterkeyhint@StaticPrefs@mozilla@@YA_NXZ
 ?dom_forms_autocapitalize@StaticPrefs@mozilla@@YA_NXZ
 ?CustomElements@nsGlobalWindowInner@@UAEPAVCustomElementRegistry@dom@mozilla@@XZ
 ??0CustomElementRegistry@dom@mozilla@@QAE@PAVnsPIDOMWindowInner@@@Z

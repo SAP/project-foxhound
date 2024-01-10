@@ -24,7 +24,7 @@ export const TELEMETRY_SETTINGS_KEY = "search-telemetry-v2";
 
 const impressionIdsWithoutEngagementsSet = new Set();
 
-XPCOMUtils.defineLazyGetter(lazy, "logConsole", () => {
+ChromeUtils.defineLazyGetter(lazy, "logConsole", () => {
   return console.createInstance({
     prefix: "SearchTelemetry",
     maxLogLevel: lazy.SearchUtils.loggingEnabled ? "Debug" : "Warn",
@@ -251,7 +251,7 @@ class TelemetryHandler {
    */
   handleEvent(event) {
     if (event.type != "TabClose") {
-      console.error(`Received unexpected event type ${event.type}`);
+      console.error("Received unexpected event type", event.type);
       return;
     }
 
@@ -292,11 +292,6 @@ class TelemetryHandler {
       };
       if (provider.extraAdServersRegexps) {
         newProvider.extraAdServersRegexps = provider.extraAdServersRegexps.map(
-          r => new RegExp(r)
-        );
-      }
-      if (provider.extraPageRegexps) {
-        newProvider.extraPageRegexps = provider.extraPageRegexps.map(
           r => new RegExp(r)
         );
       }
@@ -980,11 +975,19 @@ class ContentHandler {
         (channel.loadInfo.isTopLevelLoad ||
           info.nonAdsLinkRegexps.some(r => r.test(URL)))
       ) {
-        let start = Cu.now();
+        let browser = wrappedChannel.browserElement;
+        // If the load is from history, don't record an event.
+        if (
+          browser?.browsingContext.webProgress?.loadType &
+          Ci.nsIDocShell.LOAD_CMD_HISTORY
+        ) {
+          lazy.logConsole.debug("Ignoring load from history");
+          return;
+        }
 
         // Step 1: Check if the browser associated with the request was a
         // tracked SERP.
-        let browser = wrappedChannel.browserElement;
+        let start = Cu.now();
         let telemetryState;
         let isFromNewtab = false;
         if (item.browserTelemetryStateMap.has(browser)) {
@@ -1292,13 +1295,13 @@ class ContentHandler {
         tagged: impressionInfo.tagged,
         partner_code: impressionInfo.partnerCode,
         source: impressionInfo.source,
-        shopping_tab_displayed: info.hasShoppingTab,
+        shopping_tab_displayed: info.shoppingTabDisplayed,
         is_shopping_page: impressionInfo.isShoppingPage,
       });
       lazy.logConsole.debug(`Reported Impression:`, {
         impressionId,
         ...impressionInfo,
-        hasShopping: info.hasShoppingTab,
+        shoppingTabDisplayed: info.shoppingTabDisplayed,
       });
     } else {
       lazy.logConsole.debug("Could not find an impression id.");

@@ -32,7 +32,6 @@
 
   --tabs-navbar-shadow-size: 1px;
 
-  --panel-separator-color: color-mix(in srgb, currentColor 25%, transparent);
   --panel-shortcut-color: inherit;
   --panelui-subview-transition-duration: 150ms;
 
@@ -80,6 +79,8 @@
   --urlbar-icon-border-radius: calc(var(--toolbarbutton-border-radius) - 1px);
   --urlbar-popup-url-color: -moz-nativehyperlinktext;
 
+  --pocket-icon-fill: #ef4056;
+
   --lwt-additional-images: none;
   --lwt-background-alignment: right top;
   --lwt-background-tiling: no-repeat;
@@ -97,7 +98,6 @@
 @media (prefers-contrast) {
   :root {
     --autocomplete-popup-separator-color: color-mix(in srgb, currentColor 86%, transparent);
-    --panel-separator-color: currentColor;
     --urlbar-icon-fill-opacity: 1;
     --checkbox-checked-border-color: var(--checkbox-checked-bgcolor);
   }
@@ -183,17 +183,20 @@ toolbar[brighttext] :is(a, .text-link):-moz-lwtheme,
   transition: var(--ext-theme-background-transition);
 }
 
-/* Bookmark toolbar */
+/* Bookmarks toolbar */
 
 #PersonalToolbar {
+  padding-inline: 6px;
+  /* For vertical sliding animation: */
   overflow: clip;
   max-height: 4em;
-  padding-inline: 6px;
 }
 
 :root[uidensity=compact] #PersonalToolbar {
   padding-inline: 2px;
 }
+
+/* Bookmarks toolbar vertical sliding animation */
 
 :root[sessionrestored] #PersonalToolbar:not(.instant) {
   transition: min-height 170ms ease-out, max-height 170ms ease-out, var(--ext-theme-background-transition);
@@ -207,6 +210,39 @@ toolbar[brighttext] :is(a, .text-link):-moz-lwtheme,
 :root[sessionrestored] #PersonalToolbar:not(.instant)[collapsed=true] {
   transition: min-height 170ms ease-out, max-height 170ms ease-out, visibility 170ms linear;
 }
+
+#PersonalToolbar[collapsed=true].instant {
+  visibility: collapse;
+}
+
+/* Bookmarks toolbar only-on-new-tab mode */
+
+:root {
+  --bookmarks-toolbar-overlapping-browser-height: max(28px, 2em);
+}
+
+:root[BookmarksToolbarOverlapsBrowser] #PersonalToolbar {
+  height: var(--bookmarks-toolbar-overlapping-browser-height);
+}
+
+:root[BookmarksToolbarOverlapsBrowser] #navigator-toolbox-background {
+  /* Overlap the content area by the height of the bookmarks toolbar so that
+     temporarily showing the toolbar for new tabs doesn't resize the content
+     area for all tabs. */
+  margin-bottom: calc(-1 * var(--bookmarks-toolbar-overlapping-browser-height));
+  z-index: 1;
+}
+
+:root[BookmarksToolbarOverlapsBrowser] .newTabBrowserPanel,
+:root[BookmarksToolbarOverlapsBrowser] #sidebar-box {
+  /* Make room for the bookmarks toolbar so that it won't visibly overlap the
+     new tab page and sidebar contents. We do not put this padding on #browser
+     as that would resize the content area for all tabs including background
+     tabs, which is what we explicitly want to avoid doing here. */
+  padding-top: var(--bookmarks-toolbar-overlapping-browser-height);
+}
+
+/* Bookmarks toolbar empty message */
 
 #PersonalToolbar[collapsed=false]:not([initialized]) > #personal-toolbar-empty {
   visibility: hidden;
@@ -232,9 +268,7 @@ toolbar[brighttext] :is(a, .text-link):-moz-lwtheme,
   z-index: 1;
 }
 
-#PersonalToolbar[collapsed=true].instant {
-  visibility: collapse;
-}
+/* Bookmarks toolbar in customize mode */
 
 #PersonalToolbar[customizing] {
   outline: 1px dashed;
@@ -246,12 +280,15 @@ toolbar[brighttext] :is(a, .text-link):-moz-lwtheme,
   min-height: 22px;
 }
 
+/* Bookmarks toolbar drop indicator */
+
 #PlacesToolbarDropIndicator {
   list-style-image: url(chrome://browser/skin/toolbar-drag-indicator.svg);
   pointer-events: none;
 }
 
-/* rules for menupopup drop indicators */
+/* Menupopup drop indicators */
+
 menupopup::part(drop-indicator-container) {
   /* TODO(emilio): When menupopups get ported to modern flex layout we can
    * probably simplify this substantially, by making the indicator position:
@@ -699,13 +736,6 @@ menupopup::part(drop-indicator) {
   overflow: hidden;
 }
 
-/* ENABLE DEVTOOLS POPUP */
-@media (-moz-platform: macos), (-moz-platform: windows) {
-  #enable-devtools-popup {
-    font-size: 1.18em;
-  }
-}
-
 #sharing-tabs-warning-panel > hbox[type="window"] > vbox > label > #sharing-warning-screen-panel-header,
 #sharing-tabs-warning-panel > hbox[type="screen"] > vbox > label > #sharing-warning-window-panel-header {
   display: none;
@@ -739,6 +769,17 @@ menupopup::part(drop-indicator) {
 .webRTC-selectDevice-selector-container > menulist {
   flex: 1;
   min-width: 0;
+}
+
+#webRTC-selectSpeaker-richlistbox {
+  flex: 1;
+  /* Keep the richlistbox small enough that a large number of devices doesn't
+     push the main and secondary action buttons off the bottom of the
+     popupnotification window when limited by screen size.  Only enough
+     richlistitems need to be shown to indicate that there are options
+     available but give enough space for the common case of only a few
+     devices.  */
+  max-height: 600px;
 }
 
 popupnotificationcontent {
@@ -793,7 +834,7 @@ popupnotificationcontent {
 }
 
 #webRTC-selectSpeaker-icon {
-  list-style-image: url("chrome://global/skin/media/audio.svg");
+  list-style-image: url("chrome://browser/skin/notification-icons/speaker.svg");
 }
 
 .popup-notification-body :is(description, label:not(.learnMore), checkbox, input) {

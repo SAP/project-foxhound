@@ -8,17 +8,23 @@
 MARKUPMAP(
     a,
     [](Element* aElement, LocalAccessible* aContext) -> LocalAccessible* {
+      // An anchor element without an href attribute and without a click
+      // listener should be a generic.
+      if (!aElement->HasAttr(nsGkAtoms::href) &&
+          !nsCoreUtils::HasClickListener(aElement)) {
+        return new HyperTextAccessible(aElement, aContext->Document());
+      }
       // Only some roles truly enjoy life as HTMLLinkAccessibles, for
       // details see closed bug 494807.
       const nsRoleMapEntry* roleMapEntry = aria::GetRoleMap(aElement);
       if (roleMapEntry && roleMapEntry->role != roles::NOTHING &&
           roleMapEntry->role != roles::LINK) {
-        return new HyperTextAccessibleWrap(aElement, aContext->Document());
+        return new HyperTextAccessible(aElement, aContext->Document());
       }
 
       return new HTMLLinkAccessible(aElement, aContext->Document());
     },
-    roles::LINK)
+    0)
 
 MARKUPMAP(abbr, New_HyperText, 0)
 
@@ -54,10 +60,9 @@ MARKUPMAP(
     },
     0)
 
-// XXX: Uncomment this once HTML-aam agrees to map to same as ARIA.
-// MARKUPMAP(code, New_HyperText, roles::CODE)
+MARKUPMAP(code, New_HyperText, roles::CODE)
 
-MARKUPMAP(dd, New_HTMLDtOrDd<HyperTextAccessibleWrap>, roles::DEFINITION)
+MARKUPMAP(dd, New_HTMLDtOrDd<HyperTextAccessible>, roles::DEFINITION)
 
 MARKUPMAP(del, New_HyperText, roles::CONTENT_DELETION)
 
@@ -74,8 +79,8 @@ MARKUPMAP(
         return nullptr;
       }
       // Always create an accessible if the div has an id.
-      if (aElement->HasAttr(kNameSpaceID_None, nsGkAtoms::id)) {
-        return new HyperTextAccessibleWrap(aElement, aContext->Document());
+      if (aElement->HasAttr(nsGkAtoms::id)) {
+        return new HyperTextAccessible(aElement, aContext->Document());
       }
       // Never create an accessible if the div is not display:block; or
       // display:inline-block or the like.
@@ -93,7 +98,7 @@ MARKUPMAP(
       if (prevSibling) {
         nsIFrame* prevSiblingFrame = prevSibling->GetPrimaryFrame();
         if (prevSiblingFrame && prevSiblingFrame->IsInlineOutside()) {
-          return new HyperTextAccessibleWrap(aElement, aContext->Document());
+          return new HyperTextAccessible(aElement, aContext->Document());
         }
       }
       // Now, check the children.
@@ -113,7 +118,7 @@ MARKUPMAP(
         }
         // Check to see if first child has an inline frame.
         if (firstChildFrame && firstChildFrame->IsInlineOutside()) {
-          return new HyperTextAccessibleWrap(aElement, aContext->Document());
+          return new HyperTextAccessible(aElement, aContext->Document());
         }
         nsIContent* lastChild = aElement->GetLastChild();
         MOZ_ASSERT(lastChild);
@@ -131,7 +136,7 @@ MARKUPMAP(
           }
           // Check to see if last child has an inline frame.
           if (lastChildFrame && lastChildFrame->IsInlineOutside()) {
-            return new HyperTextAccessibleWrap(aElement, aContext->Document());
+            return new HyperTextAccessible(aElement, aContext->Document());
           }
         }
       }
@@ -328,6 +333,8 @@ MARKUPMAP(
 
 MARKUPMAP(q, New_HyperText, 0)
 
+MARKUPMAP(s, New_HyperText, roles::CONTENT_DELETION)
+
 MARKUPMAP(
     section,
     [](Element* aElement, LocalAccessible* aContext) -> LocalAccessible* {
@@ -349,28 +356,9 @@ MARKUPMAP(sup, New_HyperText, roles::SUPERSCRIPT)
 MARKUPMAP(
     table,
     [](Element* aElement, LocalAccessible* aContext) -> LocalAccessible* {
-      if (!aElement->GetPrimaryFrame() ||
-          aElement->GetPrimaryFrame()->AccessibleType() != eHTMLTableType) {
-        return new ARIAGridAccessible(aElement, aContext->Document());
-      }
-
-      // Make sure that our children are proper layout table parts
-      for (nsIContent* child = aElement->GetFirstChild(); child;
-           child = child->GetNextSibling()) {
-        if (child->IsAnyOfHTMLElements(nsGkAtoms::thead, nsGkAtoms::tfoot,
-                                       nsGkAtoms::tbody, nsGkAtoms::tr)) {
-          // These children elements need to participate in the layout table
-          // and need table row(group) frames.
-          nsIFrame* childFrame = child->GetPrimaryFrame();
-          if (childFrame && (!childFrame->IsTableRowGroupFrame() &&
-                             !childFrame->IsTableRowFrame())) {
-            return new ARIAGridAccessible(aElement, aContext->Document());
-          }
-        }
-      }
-      return nullptr;
+      return new HTMLTableAccessible(aElement, aContext->Document());
     },
-    0)
+    roles::TABLE)
 
 MARKUPMAP(time, New_HyperText, 0, Attr(xmlroles, time),
           AttrFromDOM(datetime, datetime))
@@ -380,24 +368,14 @@ MARKUPMAP(tbody, nullptr, roles::GROUPING)
 MARKUPMAP(
     td,
     [](Element* aElement, LocalAccessible* aContext) -> LocalAccessible* {
-      if (aContext->IsTableRow() &&
-          aContext->GetContent() == aElement->GetParent()) {
-        // If HTML:td element is part of its HTML:table, which has CSS
-        // display style other than 'table', then create a generic table
-        // cell accessible, because there's no underlying table layout and
-        // thus native HTML table cell class doesn't work. The same is
-        // true if the cell itself has CSS display:block;.
-        if (!aContext->IsHTMLTableRow() || !aElement->GetPrimaryFrame() ||
-            aElement->GetPrimaryFrame()->AccessibleType() !=
-                eHTMLTableCellType) {
-          return new ARIAGridCellAccessible(aElement, aContext->Document());
-        }
-        if (aElement->HasAttr(kNameSpaceID_None, nsGkAtoms::scope)) {
-          return new HTMLTableHeaderCellAccessible(aElement,
-                                                   aContext->Document());
-        }
+      if (!aContext->IsHTMLTableRow()) {
+        return nullptr;
       }
-      return nullptr;
+      if (aElement->HasAttr(nsGkAtoms::scope)) {
+        return new HTMLTableHeaderCellAccessible(aElement,
+                                                 aContext->Document());
+      }
+      return new HTMLTableCellAccessible(aElement, aContext->Document());
     },
     0)
 
@@ -406,22 +384,10 @@ MARKUPMAP(tfoot, nullptr, roles::GROUPING)
 MARKUPMAP(
     th,
     [](Element* aElement, LocalAccessible* aContext) -> LocalAccessible* {
-      if (aContext->IsTableRow() &&
-          aContext->GetContent() == aElement->GetParent()) {
-        // If HTML:th element is part of its HTML:table, which has CSS
-        // display style other than 'table', then create a generic table
-        // cell accessible, because there's no underlying table layout and
-        // thus native HTML table cell class doesn't work. The same is
-        // true if the cell itself has CSS display:block;.
-        if (!aContext->IsHTMLTableRow() || !aElement->GetPrimaryFrame() ||
-            aElement->GetPrimaryFrame()->AccessibleType() !=
-                eHTMLTableCellType) {
-          return new ARIAGridCellAccessible(aElement, aContext->Document());
-        }
-        return new HTMLTableHeaderCellAccessible(aElement,
-                                                 aContext->Document());
+      if (!aContext->IsHTMLTableRow()) {
+        return nullptr;
       }
-      return nullptr;
+      return new HTMLTableHeaderCellAccessible(aElement, aContext->Document());
     },
     0)
 
@@ -430,37 +396,21 @@ MARKUPMAP(thead, nullptr, roles::GROUPING)
 MARKUPMAP(
     tr,
     [](Element* aElement, LocalAccessible* aContext) -> LocalAccessible* {
-      // If HTML:tr element is part of its HTML:table, which has CSS
-      // display style other than 'table', then create a generic table row
-      // accessible, because there's no underlying table layout and thus
-      // native HTML table row class doesn't work. Refer to
-      // CreateAccessibleByFrameType dual logic.
-      LocalAccessible* table = aContext->IsTable() ? aContext : nullptr;
-      if (!table && aContext->LocalParent() &&
-          aContext->LocalParent()->IsTable()) {
-        table = aContext->LocalParent();
+      if (aContext->IsTableRow()) {
+        // A <tr> within a row isn't valid.
+        return nullptr;
       }
-      if (table) {
-        nsIContent* parentContent = aElement->GetParent();
-        nsIFrame* parentFrame = parentContent->GetPrimaryFrame();
-        if (!parentFrame || !parentFrame->IsTableWrapperFrame()) {
-          parentContent = parentContent->GetParent();
-          // parentContent can be null if this tr is at the top level of a
-          // shadow root (with the table outside the shadow root).
-          parentFrame =
-              parentContent ? parentContent->GetPrimaryFrame() : nullptr;
-          if (table->GetContent() == parentContent &&
-              ((!parentFrame || !parentFrame->IsTableWrapperFrame()) ||
-               !aElement->GetPrimaryFrame() ||
-               aElement->GetPrimaryFrame()->AccessibleType() !=
-                   eHTMLTableRowType)) {
-            return new ARIARowAccessible(aElement, aContext->Document());
-          }
-        }
+      // Check if this <tr> is within a table. We check the grandparent because
+      // it might be inside a rowgroup. We don't specifically check for an HTML
+      // table because there are cases where there is a <tr> inside a
+      // <div role="table"> such as Monorail.
+      if (aContext->IsTable() ||
+          (aContext->LocalParent() && aContext->LocalParent()->IsTable())) {
+        return new HTMLTableRowAccessible(aElement, aContext->Document());
       }
       return nullptr;
     },
-    0)
+    roles::ROW)
 
 MARKUPMAP(
     ul,
@@ -475,3 +425,5 @@ MARKUPMAP(
       return new HTMLMeterAccessible(aElement, aContext->Document());
     },
     roles::METER)
+
+MARKUPMAP(search, New_HyperText, roles::LANDMARK)

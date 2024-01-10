@@ -77,6 +77,9 @@ JSObject* InitRegExpClass(JSContext* cx, HandleObject obj);
                                             MatchPairs* maybeMatches,
                                             int32_t* result);
 
+[[nodiscard]] extern bool RegExpSearcherLastLimit(JSContext* cx, unsigned argc,
+                                                  Value* vp);
+
 [[nodiscard]] extern bool RegExpBuiltinExecMatchFromJit(
     JSContext* cx, Handle<RegExpObject*> regexp, HandleString input,
     MatchPairs* maybeMatches, MutableHandleValue output);
@@ -145,6 +148,11 @@ JSObject* InitRegExpClass(JSContext* cx, HandleObject obj);
     Handle<JSLinearString*> replacement, size_t firstDollarIndex,
     HandleValue namedCaptures, MutableHandleValue rval);
 
+[[nodiscard]] extern bool RegExpHasCaptureGroups(JSContext* cx,
+                                                 Handle<RegExpObject*> obj,
+                                                 Handle<JSString*> input,
+                                                 bool* result);
+
 [[nodiscard]] extern bool GetFirstDollarIndex(JSContext* cx, unsigned argc,
                                               Value* vp);
 
@@ -175,6 +183,13 @@ extern const JSFunctionSpec regexp_methods[];
                                         JS::Value* vp);
 [[nodiscard]] extern bool regexp_unicode(JSContext* cx, unsigned argc,
                                          JS::Value* vp);
+[[nodiscard]] extern bool regexp_unicodeSets(JSContext* cx, unsigned argc,
+                                             JS::Value* vp);
+
+#ifdef DEBUG
+// Sentinel value for cx->regExpSearcherLastLimit.
+constexpr uint32_t RegExpSearcherLastLimitSentinel = UINT32_MAX;
+#endif
 
 } /* namespace js */
 

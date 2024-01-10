@@ -355,12 +355,13 @@ class EventStream {
 
 class RecordedEvent {
  public:
-  enum EventType {
+  enum EventType : uint8_t {
     DRAWTARGETCREATION = 0,
     DRAWTARGETDESTRUCTION,
     FILLRECT,
     STROKERECT,
     STROKELINE,
+    STROKECIRCLE,
     CLEARRECT,
     COPYSURFACE,
     SETTRANSFORM,
@@ -368,6 +369,7 @@ class RecordedEvent {
     PUSHCLIPRECT,
     POPCLIP,
     FILL,
+    FILLCIRCLE,
     FILLGLYPHS,
     MASK,
     STROKE,
@@ -474,9 +476,9 @@ class RecordedEvent {
   template <class S>
   static void RecordUnscaledFontImpl(UnscaledFont* aUnscaledFont, S& aOutput);
 
-  MOZ_IMPLICIT RecordedEvent(int32_t aType) : mType(aType) {}
+  MOZ_IMPLICIT RecordedEvent(EventType aType) : mType(aType) {}
 
-  int32_t mType;
+  EventType mType;
   std::vector<Float> mDashPatternStorage;
 };
 

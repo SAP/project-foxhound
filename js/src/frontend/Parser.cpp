@@ -37,7 +37,6 @@
 #include "jsnum.h"
 #include "jstypes.h"
 
-#include "frontend/BytecodeCompiler.h"
 #include "frontend/FoldConstants.h"
 #include "frontend/FunctionSyntaxKind.h"  // FunctionSyntaxKind
 #include "frontend/ModuleSharedContext.h"
@@ -45,8 +44,10 @@
 #include "frontend/ParseNodeVerify.h"
 #include "frontend/ParserAtom.h"  // TaggedParserAtomIndex, ParserAtomsTable, ParserAtom
 #include "frontend/ScriptIndex.h"  // ScriptIndex
-#include "frontend/TokenStream.h"
+#include "frontend/TokenStream.h"  // IsKeyword, ReservedWordTokenKind, ReservedWordToCharZ, DeprecatedContent, *TokenStream*, CharBuffer, TokenKindToDesc
 #include "irregexp/RegExpAPI.h"
+#include "js/ColumnNumber.h"  // JS::LimitedColumnNumberZeroOrigin, JS::ColumnNumberZeroOrigin, JS::ColumnNumberOneOrigin
+#include "js/ErrorReport.h"   // JSErrorBase
 #include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
 #include "js/HashTable.h"
 #include "js/RegExpFlags.h"     // JS::RegExpFlags
@@ -59,7 +60,6 @@
 #include "vm/JSScript.h"
 #include "vm/ModuleBuilder.h"  // js::ModuleBuilder
 #include "vm/Scope.h"          // GetScopeDataTrailingNames
-#include "vm/WellKnownAtom.h"  // js_*_str
 #include "wasm/AsmJS.h"
 
 #include "frontend/ParseContext-inl.h"
@@ -280,13 +280,6 @@ FunctionBox* PerHandlerParser<ParseHandler>::newFunctionBox(
   SourceExtent extent;
   extent.toStringStart = toStringStart;
 
-  /*
-   * We use JSContext.tempLifoAlloc to allocate parsed objects and place them
-   * on a list in this Parser to ensure GC safety. Thus the tempLifoAlloc
-   * arenas containing the entries must be alive until we are done with
-   * scanning, parsing and code generation for the whole script or top-level
-   * function.
-   */
   FunctionBox* funbox = alloc_.new_<FunctionBox>(
       fc_, extent, compilationState_, inheritedDirectives, generatorKind,
       asyncKind, isInitialStencil, explicitName, flags, index);
@@ -315,13 +308,6 @@ FunctionBox* PerHandlerParser<ParseHandler>::newFunctionBox(
     return nullptr;
   }
 
-  /*
-   * We use JSContext.tempLifoAlloc to allocate parsed objects and place them
-   * on a list in this Parser to ensure GC safety. Thus the tempLifoAlloc
-   * arenas containing the entries must be alive until we are done with
-   * scanning, parsing and code generation for the whole script or top-level
-   * function.
-   */
   FunctionBox* funbox = alloc_.new_<FunctionBox>(
       fc_, cachedScriptExtra.extent, compilationState_,
       Directives(/* strict = */ false), cachedScriptExtra.generatorKind(),
@@ -393,7 +379,8 @@ typename ParseHandler::ListNodeType GeneralParser<ParseHandler, Unit>::parse() {
   MOZ_ASSERT(checkOptionsCalled_);
 
   SourceExtent extent = SourceExtent::makeGlobalExtent(
-      /* len = */ 0, options().lineno, options().column);
+      /* len = */ 0, options().lineno,
+      JS::LimitedColumnNumberZeroOrigin::fromUnlimited(options().column));
   Directives directives(options().forceStrictMode());
   GlobalSharedContext globalsc(this->fc_, ScopeKind::Global, options(),
                                directives, extent);
@@ -484,18 +471,19 @@ void GeneralParser<ParseHandler, Unit>::reportMissingClosing(
     return;
   }
 
-  uint32_t line, column;
+  uint32_t line;
+  JS::LimitedColumnNumberZeroOrigin column;
   tokenStream.computeLineAndColumn(openedPos, &line, &column);
 
   const size_t MaxWidth = sizeof("4294967295");
   char columnNumber[MaxWidth];
-  SprintfLiteral(columnNumber, "%" PRIu32, column);
+  SprintfLiteral(columnNumber, "%" PRIu32, column.oneOriginValue());
   char lineNumber[MaxWidth];
   SprintfLiteral(lineNumber, "%" PRIu32, line);
 
-  if (!notes->addNoteASCII(this->fc_, getFilename(), 0, line, column,
-                           GetErrorMessage, nullptr, noteNumber, lineNumber,
-                           columnNumber)) {
+  if (!notes->addNoteASCII(this->fc_, getFilename().c_str(), 0, line,
+                           JS::ColumnNumberOneOrigin(column), GetErrorMessage,
+                           nullptr, noteNumber, lineNumber, columnNumber)) {
     return;
   }
 
@@ -503,9 +491,10 @@ void GeneralParser<ParseHandler, Unit>::reportMissingClosing(
 }
 
 template <class ParseHandler, typename Unit>
-void GeneralParser<ParseHandler, Unit>::reportRedeclaration(
-    TaggedParserAtomIndex name, DeclarationKind prevKind, TokenPos pos,
-    uint32_t prevPos) {
+void GeneralParser<ParseHandler, Unit>::reportRedeclarationHelper(
+    TaggedParserAtomIndex& name, DeclarationKind& prevKind, TokenPos& pos,
+    uint32_t& prevPos, const unsigned& errorNumber,
+    const unsigned& noteErrorNumber) {
   UniqueChars bytes = this->parserAtoms().toPrintableString(name);
   if (!bytes) {
     ReportOutOfMemory(this->fc_);
@@ -513,7 +502,7 @@ void GeneralParser<ParseHandler, Unit>::reportRedeclaration(
   }
 
   if (prevPos == DeclaredNameInfo::npos) {
-    errorAt(pos.begin, JSMSG_REDECLARED_VAR, DeclarationKindString(prevKind),
+    errorAt(pos.begin, errorNumber, DeclarationKindString(prevKind),
             bytes.get());
     return;
   }
@@ -524,23 +513,41 @@ void GeneralParser<ParseHandler, Unit>::reportRedeclaration(
     return;
   }
 
-  uint32_t line, column;
+  uint32_t line;
+  JS::LimitedColumnNumberZeroOrigin column;
   tokenStream.computeLineAndColumn(prevPos, &line, &column);
 
   const size_t MaxWidth = sizeof("4294967295");
   char columnNumber[MaxWidth];
-  SprintfLiteral(columnNumber, "%" PRIu32, column);
+  SprintfLiteral(columnNumber, "%" PRIu32, column.oneOriginValue());
   char lineNumber[MaxWidth];
   SprintfLiteral(lineNumber, "%" PRIu32, line);
 
-  if (!notes->addNoteASCII(this->fc_, getFilename(), 0, line, column,
-                           GetErrorMessage, nullptr, JSMSG_REDECLARED_PREV,
-                           lineNumber, columnNumber)) {
+  if (!notes->addNoteASCII(this->fc_, getFilename().c_str(), 0, line,
+                           JS::ColumnNumberOneOrigin(column), GetErrorMessage,
+                           nullptr, noteErrorNumber, lineNumber,
+                           columnNumber)) {
     return;
   }
 
-  errorWithNotesAt(std::move(notes), pos.begin, JSMSG_REDECLARED_VAR,
+  errorWithNotesAt(std::move(notes), pos.begin, errorNumber,
                    DeclarationKindString(prevKind), bytes.get());
+}
+
+template <class ParseHandler, typename Unit>
+void GeneralParser<ParseHandler, Unit>::reportRedeclaration(
+    TaggedParserAtomIndex name, DeclarationKind prevKind, TokenPos pos,
+    uint32_t prevPos) {
+  reportRedeclarationHelper(name, prevKind, pos, prevPos, JSMSG_REDECLARED_VAR,
+                            JSMSG_PREV_DECLARATION);
+}
+
+template <class ParseHandler, typename Unit>
+void GeneralParser<ParseHandler, Unit>::reportMismatchedPlacement(
+    TaggedParserAtomIndex name, DeclarationKind prevKind, TokenPos pos,
+    uint32_t prevPos) {
+  reportRedeclarationHelper(name, prevKind, pos, prevPos,
+                            JSMSG_MISMATCHED_PLACEMENT, JSMSG_PREV_DECLARATION);
 }
 
 // notePositionalFormalParameter is called for both the arguments of a regular
@@ -705,8 +712,7 @@ bool GeneralParser<ParseHandler, Unit>::noteDeclaredName(
     case DeclarationKind::SloppyLexicalFunction: {
       // Functions in block have complex allowances in sloppy mode for being
       // labelled that other lexical declarations do not have. Those checks
-      // are more complex than calling checkLexicalDeclarationDirectlyWithin-
-      // Block and are done in checkFunctionDefinition.
+      // are done in functionStmt.
 
       ParseContext::Scope* scope = pc_->innermostScope();
       if (AddDeclaredNamePtr p = scope->lookupDeclaredNameForAdd(name)) {
@@ -793,7 +799,8 @@ bool GeneralParser<ParseHandler, Unit>::noteDeclaredName(
     case DeclarationKind::VarForAnnexBLexicalFunction:
       MOZ_CRASH(
           "Synthesized Annex B vars should go through "
-          "tryDeclareVarForAnnexBLexicalFunction");
+          "addPossibleAnnexBFunctionBox, and "
+          "propagateAndMarkAnnexBFunctionBoxes");
       break;
   }
 
@@ -812,8 +819,12 @@ bool GeneralParser<ParseHandler, Unit>::noteDeclaredPrivateName(
   PrivateNameKind kind;
   switch (propType) {
     case PropertyType::Field:
-    case PropertyType::FieldWithAccessor:
       kind = PrivateNameKind::Field;
+      break;
+    case PropertyType::FieldWithAccessor:
+      // In this case, we create a new private field for the underlying storage,
+      // and use the current name for the getter and setter.
+      kind = PrivateNameKind::GetterSetter;
       break;
     case PropertyType::Method:
     case PropertyType::GeneratorMethod:
@@ -862,7 +873,7 @@ bool GeneralParser<ParseHandler, Unit>::noteDeclaredPrivateName(
       }
     }
 
-    reportRedeclaration(name, p->value()->kind(), pos, p->value()->pos());
+    reportMismatchedPlacement(name, p->value()->kind(), pos, p->value()->pos());
     return false;
   }
 
@@ -892,12 +903,15 @@ bool ParserBase::noteUsedNameInternal(TaggedParserAtomIndex name,
   // global scope. It is not incorrect to track them, this is an
   // optimization.
   //
-  // As an exception however, we continue to track private name references,
-  // as the used names tracker is used to provide early errors for undeclared
-  // private name references
+  // Exceptions:
+  //   (a) Track private name references, as the used names tracker is used to
+  //       provide early errors for undeclared private name references
+  //   (b) If the script has extra bindings, track all references to detect
+  //       references to extra bindings
   ParseContext::Scope* scope = pc_->innermostScope();
   if (pc_->sc()->isGlobalContext() && scope == &pc_->varScope() &&
-      visibility == NameVisibility::Public) {
+      visibility == NameVisibility::Public &&
+      !this->compilationState_.input.hasExtraBindings()) {
     return true;
   }
 
@@ -1083,10 +1097,9 @@ static MOZ_ALWAYS_INLINE void InitializeBindingData(
   data->length = count;
 }
 
-Maybe<GlobalScope::ParserData*> NewGlobalScopeData(FrontendContext* fc,
-                                                   ParseContext::Scope& scope,
-                                                   LifoAlloc& alloc,
-                                                   ParseContext* pc) {
+static Maybe<GlobalScope::ParserData*> NewGlobalScopeData(
+    FrontendContext* fc, ParseContext::Scope& scope, LifoAlloc& alloc,
+    ParseContext* pc) {
   ParserBindingNameVector vars(fc);
   ParserBindingNameVector lets(fc);
   ParserBindingNameVector consts(fc);
@@ -1148,10 +1161,9 @@ Maybe<GlobalScope::ParserData*> ParserBase::newGlobalScopeData(
   return NewGlobalScopeData(fc_, scope, stencilAlloc(), pc_);
 }
 
-Maybe<ModuleScope::ParserData*> NewModuleScopeData(FrontendContext* fc,
-                                                   ParseContext::Scope& scope,
-                                                   LifoAlloc& alloc,
-                                                   ParseContext* pc) {
+static Maybe<ModuleScope::ParserData*> NewModuleScopeData(
+    FrontendContext* fc, ParseContext::Scope& scope, LifoAlloc& alloc,
+    ParseContext* pc) {
   ParserBindingNameVector imports(fc);
   ParserBindingNameVector vars(fc);
   ParserBindingNameVector lets(fc);
@@ -1216,10 +1228,9 @@ Maybe<ModuleScope::ParserData*> ParserBase::newModuleScopeData(
   return NewModuleScopeData(fc_, scope, stencilAlloc(), pc_);
 }
 
-Maybe<EvalScope::ParserData*> NewEvalScopeData(FrontendContext* fc,
-                                               ParseContext::Scope& scope,
-                                               LifoAlloc& alloc,
-                                               ParseContext* pc) {
+static Maybe<EvalScope::ParserData*> NewEvalScopeData(
+    FrontendContext* fc, ParseContext::Scope& scope, LifoAlloc& alloc,
+    ParseContext* pc) {
   ParserBindingNameVector vars(fc);
 
   // Treat all bindings as closed over in non-strict eval.
@@ -1258,7 +1269,7 @@ Maybe<EvalScope::ParserData*> ParserBase::newEvalScopeData(
   return NewEvalScopeData(fc_, scope, stencilAlloc(), pc_);
 }
 
-Maybe<FunctionScope::ParserData*> NewFunctionScopeData(
+static Maybe<FunctionScope::ParserData*> NewFunctionScopeData(
     FrontendContext* fc, ParseContext::Scope& scope, bool hasParameterExprs,
     LifoAlloc& alloc, ParseContext* pc) {
   ParserBindingNameVector positionalFormals(fc);
@@ -1395,10 +1406,10 @@ VarScope::ParserData* NewEmptyVarScopeData(FrontendContext* fc,
   return NewEmptyBindingData<VarScope>(fc, alloc, numBindings);
 }
 
-Maybe<VarScope::ParserData*> NewVarScopeData(FrontendContext* fc,
-                                             ParseContext::Scope& scope,
-                                             LifoAlloc& alloc,
-                                             ParseContext* pc) {
+static Maybe<VarScope::ParserData*> NewVarScopeData(FrontendContext* fc,
+                                                    ParseContext::Scope& scope,
+                                                    LifoAlloc& alloc,
+                                                    ParseContext* pc) {
   ParserBindingNameVector vars(fc);
 
   bool allBindingsClosedOver =
@@ -1450,10 +1461,9 @@ Maybe<VarScope::ParserData*> ParserBase::newVarScopeData(
   return NewVarScopeData(fc_, scope, stencilAlloc(), pc_);
 }
 
-Maybe<LexicalScope::ParserData*> NewLexicalScopeData(FrontendContext* fc,
-                                                     ParseContext::Scope& scope,
-                                                     LifoAlloc& alloc,
-                                                     ParseContext* pc) {
+static Maybe<LexicalScope::ParserData*> NewLexicalScopeData(
+    FrontendContext* fc, ParseContext::Scope& scope, LifoAlloc& alloc,
+    ParseContext* pc) {
   ParserBindingNameVector lets(fc);
   ParserBindingNameVector consts(fc);
 
@@ -1530,7 +1540,7 @@ Maybe<LexicalScope::ParserData*> ParserBase::newLexicalScopeData(
   return NewLexicalScopeData(fc_, scope, stencilAlloc(), pc_);
 }
 
-Maybe<ClassBodyScope::ParserData*> NewClassBodyScopeData(
+static Maybe<ClassBodyScope::ParserData*> NewClassBodyScopeData(
     FrontendContext* fc, ParseContext::Scope& scope, LifoAlloc& alloc,
     ParseContext* pc) {
   ParserBindingNameVector privateBrand(fc);
@@ -1545,7 +1555,8 @@ Maybe<ClassBodyScope::ParserData*> NewClassBodyScopeData(
                               allBindingsClosedOver || bi.closedOver());
     switch (bi.kind()) {
       case BindingKind::Synthetic:
-        if (bi.name() == TaggedParserAtomIndex::WellKnown::dotPrivateBrand()) {
+        if (bi.name() ==
+            TaggedParserAtomIndex::WellKnown::dot_privateBrand_()) {
           MOZ_ASSERT(privateBrand.empty());
           if (!privateBrand.append(binding)) {
             return Nothing();
@@ -1604,7 +1615,7 @@ Maybe<ClassBodyScope::ParserData*> NewClassBodyScopeData(
   // if `.privateBrand` is first in the scope, it will be stored there.
   MOZ_ASSERT_IF(!privateBrand.empty(),
                 GetScopeDataTrailingNames(bindings)[0].name() ==
-                    TaggedParserAtomIndex::WellKnown::dotPrivateBrand());
+                    TaggedParserAtomIndex::WellKnown::dot_privateBrand_());
 
   return Some(bindings);
 }
@@ -1918,7 +1929,7 @@ ModuleNode* Parser<FullParseHandler, Unit>::moduleBody(
   moduleNode->setBody(&stmtList->as<ListNode>());
 
   if (pc_->isAsync()) {
-    if (!noteUsedName(TaggedParserAtomIndex::WellKnown::dotGenerator())) {
+    if (!noteUsedName(TaggedParserAtomIndex::WellKnown::dot_generator_())) {
       return null();
     }
 
@@ -1968,12 +1979,14 @@ ModuleNode* Parser<FullParseHandler, Unit>::moduleBody(
 
   // Reserve an environment slot for a "*namespace*" psuedo-binding and mark as
   // closed-over. We do not know until module linking if this will be used.
-  if (!noteDeclaredName(TaggedParserAtomIndex::WellKnown::starNamespaceStar(),
-                        DeclarationKind::Const, pos())) {
+  if (!noteDeclaredName(
+          TaggedParserAtomIndex::WellKnown::star_namespace_star_(),
+          DeclarationKind::Const, pos())) {
     return nullptr;
   }
   modulepc.varScope()
-      .lookupDeclaredName(TaggedParserAtomIndex::WellKnown::starNamespaceStar())
+      .lookupDeclaredName(
+          TaggedParserAtomIndex::WellKnown::star_namespace_star_())
       ->value()
       ->setClosedOver();
 
@@ -2043,19 +2056,19 @@ PerHandlerParser<ParseHandler>::newInternalDotName(TaggedParserAtomIndex name) {
 template <class ParseHandler>
 typename ParseHandler::NameNodeType
 PerHandlerParser<ParseHandler>::newThisName() {
-  return newInternalDotName(TaggedParserAtomIndex::WellKnown::dotThis());
+  return newInternalDotName(TaggedParserAtomIndex::WellKnown::dot_this_());
 }
 
 template <class ParseHandler>
 typename ParseHandler::NameNodeType
 PerHandlerParser<ParseHandler>::newNewTargetName() {
-  return newInternalDotName(TaggedParserAtomIndex::WellKnown::dotNewTarget());
+  return newInternalDotName(TaggedParserAtomIndex::WellKnown::dot_newTarget_());
 }
 
 template <class ParseHandler>
 typename ParseHandler::NameNodeType
 PerHandlerParser<ParseHandler>::newDotGeneratorName() {
-  return newInternalDotName(TaggedParserAtomIndex::WellKnown::dotGenerator());
+  return newInternalDotName(TaggedParserAtomIndex::WellKnown::dot_generator_());
 }
 
 template <class ParseHandler>
@@ -2604,7 +2617,8 @@ TaggedParserAtomIndex ParserBase::prefixAccessorName(
 template <class ParseHandler, typename Unit>
 void GeneralParser<ParseHandler, Unit>::setFunctionStartAtPosition(
     FunctionBox* funbox, TokenPos pos) const {
-  uint32_t startLine, startColumn;
+  uint32_t startLine;
+  JS::LimitedColumnNumberZeroOrigin startColumn;
   tokenStream.computeLineAndColumn(pos.begin, &startLine, &startColumn);
 
   // NOTE: `Debugger::CallData::findScripts` relies on sourceStart and
@@ -3493,7 +3507,7 @@ bool GeneralParser<ParseHandler, Unit>::functionFormalParametersAndBody(
 
   if (kind == FunctionSyntaxKind::ClassConstructor ||
       kind == FunctionSyntaxKind::DerivedClassConstructor) {
-    if (!noteUsedName(TaggedParserAtomIndex::WellKnown::dotInitializers())) {
+    if (!noteUsedName(TaggedParserAtomIndex::WellKnown::dot_initializers_())) {
       return false;
     }
   }
@@ -3821,14 +3835,14 @@ static inline bool IsUseStrictDirective(const TokenPos& pos,
                                         TaggedParserAtomIndex atom) {
   // the length of "use strict", including quotation.
   static constexpr size_t useStrictLength = 12;
-  return atom == TaggedParserAtomIndex::WellKnown::useStrict() &&
+  return atom == TaggedParserAtomIndex::WellKnown::use_strict_() &&
          pos.begin + useStrictLength == pos.end;
 }
 static inline bool IsUseAsmDirective(const TokenPos& pos,
                                      TaggedParserAtomIndex atom) {
   // the length of "use asm", including quotation.
   static constexpr size_t useAsmLength = 9;
-  return atom == TaggedParserAtomIndex::WellKnown::useAsm() &&
+  return atom == TaggedParserAtomIndex::WellKnown::use_asm_() &&
          pos.begin + useAsmLength == pos.end;
 }
 
@@ -4973,7 +4987,7 @@ bool GeneralParser<ParseHandler, Unit>::assertClause(
     ListNodeType assertionsSet) {
   MOZ_ASSERT(anyChars.isCurrentTokenType(TokenKind::Assert));
 
-  if (!options().importAssertions) {
+  if (!options().importAssertions()) {
     error(JSMSG_IMPORT_ASSERTIONS_NOT_SUPPORTED);
     return false;
   }
@@ -7610,6 +7624,9 @@ typename ParseHandler::ListNodeType
 GeneralParser<ParseHandler, Unit>::decoratorList(YieldHandling yieldHandling) {
   ListNodeType decorators =
       handler_.newList(ParseNodeKind::DecoratorList, pos());
+  if (!decorators) {
+    return null();
+  }
 
   // Build a decorator list element. At each entry point to this loop we have
   // already consumed the |@| token
@@ -7647,12 +7664,18 @@ GeneralParser<ParseHandler, Unit>::decoratorList(YieldHandling yieldHandling) {
 
       // Handle DecoratorMemberExpression
       decorator = handler_.newName(name, pos());
+      if (!decorator) {
+        return null();
+      }
 
       // Ok, this DecoratorMemberExpression is actually a list of
       // Identifiers separated by `.`
       if (tt == TokenKind::Dot) {
         ListNodeType ids =
             handler_.newList(ParseNodeKind::DecoratorList, pos());
+        if (!ids) {
+          return null();
+        }
         handler_.addList(ids, decorator);
         for (;;) {
           if (!tokenStream.getToken(&tt)) {
@@ -7666,6 +7689,9 @@ GeneralParser<ParseHandler, Unit>::decoratorList(YieldHandling yieldHandling) {
           }
           TaggedParserAtomIndex name = anyChars.currentName();
           Node id = handler_.newName(name, pos());
+          if (!id) {
+            return null();
+          }
           handler_.addList(ids, id);
 
           if (!tokenStream.getToken(&tt)) {
@@ -7682,13 +7708,15 @@ GeneralParser<ParseHandler, Unit>::decoratorList(YieldHandling yieldHandling) {
       // We've hit a `(`, so it's actually a DecoratorCallExpression
       if (tt == TokenKind::LeftParen) {
         bool isSpread = false;
-        Node args = argumentList(yieldHandling, &isSpread);
+        ListNodeType args = argumentList(yieldHandling, &isSpread);
         if (!args) {
           return null();
         }
         decorator = handler_.newCall(decorator, args,
                                      isSpread ? JSOp::SpreadCall : JSOp::Call);
-
+        if (!decorator) {
+          return null();
+        }
         if (!tokenStream.getToken(&tt)) {
           return null();
         }
@@ -7803,7 +7831,7 @@ bool GeneralParser<ParseHandler, Unit>::classMember(
     }
 
     if (handler_.isPrivateName(propName)) {
-      if (propAtom == TaggedParserAtomIndex::WellKnown::hashConstructor()) {
+      if (propAtom == TaggedParserAtomIndex::WellKnown::hash_constructor_()) {
         errorAt(propNameOffset, JSMSG_BAD_METHOD_DEF);
         return false;
       }
@@ -7818,6 +7846,8 @@ bool GeneralParser<ParseHandler, Unit>::classMember(
     }
 
 #ifdef ENABLE_DECORATORS
+    ClassMethodType accessorGetterNode = null();
+    ClassMethodType accessorSetterNode = null();
     if (propType == PropertyType::FieldWithAccessor) {
       // Decorators Proposal
       // https://arai-a.github.io/ecma262-compare/?pr=2417&id=sec-runtime-semantics-classfielddefinitionevaluation
@@ -7849,26 +7879,46 @@ bool GeneralParser<ParseHandler, Unit>::classMember(
 
       // Step 5. Let getter be MakeAutoAccessorGetter(homeObject, name,
       // privateStateName).
-      Node method = synthesizeAccessor(
+      accessorGetterNode = synthesizeAccessor(
           propName, propNamePos, propAtom, privateStateName, isStatic,
-          FunctionSyntaxKind::Getter, decorators, classInitializedMembers);
-      if (!method) {
+          FunctionSyntaxKind::Getter, classInitializedMembers);
+      if (!accessorGetterNode) {
         return false;
       }
-      if (!handler_.addClassMemberDefinition(classMembers, method)) {
-        return false;
+      // If the accessor is not decorated or is a non-static private field,
+      // add it to the class here. Otherwise, we'll handle this when the
+      // decorators are called. We don't need to keep a reference to the node
+      // after this except for non-static private accessors. Please see the
+      // comment in the definition of ClassField for details.
+      bool addAccessorImmediately =
+          !decorators || (!isStatic && handler_.isPrivateName(propName));
+      if (addAccessorImmediately) {
+        if (!handler_.addClassMemberDefinition(classMembers,
+                                               accessorGetterNode)) {
+          return false;
+        }
+        if (!handler_.isPrivateName(propName)) {
+          accessorGetterNode = null();
+        }
       }
 
       // Step 6. Let setter be MakeAutoAccessorSetter(homeObject, name,
       // privateStateName).
-      method = synthesizeAccessor(
+      accessorSetterNode = synthesizeAccessor(
           propName, propNamePos, propAtom, privateStateName, isStatic,
-          FunctionSyntaxKind::Setter, decorators, classInitializedMembers);
-      if (!method) {
+          FunctionSyntaxKind::Setter, classInitializedMembers);
+      if (!accessorSetterNode) {
         return false;
       }
-      if (!handler_.addClassMemberDefinition(classMembers, method)) {
-        return false;
+
+      if (addAccessorImmediately) {
+        if (!handler_.addClassMemberDefinition(classMembers,
+                                               accessorSetterNode)) {
+          return false;
+        }
+        if (!handler_.isPrivateName(propName)) {
+          accessorSetterNode = null();
+        }
       }
 
       // Step 10. Return ClassElementDefinition Record { [[Key]]: name,
@@ -7877,7 +7927,9 @@ bool GeneralParser<ParseHandler, Unit>::classMember(
       // initializers, [[Decorators]]: empty }.
       propName = handler_.newPrivateName(privateStateName, pos());
       propAtom = privateStateName;
-      decorators = handler_.newList(ParseNodeKind::DecoratorList, pos());
+      // We maintain `decorators` here to perform this step at the same time:
+      // https://arai-a.github.io/ecma262-compare/?pr=2417&id=sec-static-semantics-classelementevaluation
+      // 4. Set fieldDefinition.[[Decorators]] to decorators.
     }
 #endif
     if (isStatic) {
@@ -7902,7 +7954,7 @@ bool GeneralParser<ParseHandler, Unit>::classMember(
         propName, initializer, isStatic
 #ifdef ENABLE_DECORATORS
         ,
-        decorators, propType == PropertyType::FieldWithAccessor
+        decorators, accessorGetterNode, accessorSetterNode
 #endif
     );
     if (!field) {
@@ -7991,7 +8043,7 @@ bool GeneralParser<ParseHandler, Unit>::classMember(
       return false;
     }
 
-    if (!noteDeclaredName(TaggedParserAtomIndex::WellKnown::dotInitializers(),
+    if (!noteDeclaredName(TaggedParserAtomIndex::WellKnown::dot_initializers_(),
                           DeclarationKind::Let, pos())) {
       return false;
     }
@@ -8010,7 +8062,7 @@ bool GeneralParser<ParseHandler, Unit>::classMember(
 
   Maybe<FunctionNodeType> initializerIfPrivate = Nothing();
   if (handler_.isPrivateName(propName)) {
-    if (propAtom == TaggedParserAtomIndex::WellKnown::hashConstructor()) {
+    if (propAtom == TaggedParserAtomIndex::WellKnown::hash_constructor_()) {
       // #constructor is an invalid private name.
       errorAt(propNameOffset, JSMSG_BAD_METHOD_DEF);
       return false;
@@ -8083,7 +8135,7 @@ bool GeneralParser<ParseHandler, Unit>::finishClassConstructor(
       return false;
     }
 
-    if (!noteDeclaredName(TaggedParserAtomIndex::WellKnown::dotInitializers(),
+    if (!noteDeclaredName(TaggedParserAtomIndex::WellKnown::dot_initializers_(),
                           DeclarationKind::Let, pos())) {
       return false;
     }
@@ -8272,25 +8324,26 @@ GeneralParser<ParseHandler, Unit>::classDefinition(
           0) {
         // We declare `.privateBrand` as ClosedOver because the constructor
         // always uses it, even a default constructor. We could equivalently
-        // `noteNameUsed` when parsing the constructor, except that at that
+        // `noteUsedName` when parsing the constructor, except that at that
         // time, we don't necessarily know if the class has a private brand.
         if (!noteDeclaredName(
-                TaggedParserAtomIndex::WellKnown::dotPrivateBrand(),
+                TaggedParserAtomIndex::WellKnown::dot_privateBrand_(),
                 DeclarationKind::Synthetic, namePos, ClosedOver::Yes)) {
           return null();
         }
       }
 
       if (classInitializedMembers.instanceFieldKeys > 0) {
-        if (!noteDeclaredName(TaggedParserAtomIndex::WellKnown::dotFieldKeys(),
-                              DeclarationKind::Synthetic, namePos)) {
+        if (!noteDeclaredName(
+                TaggedParserAtomIndex::WellKnown::dot_fieldKeys_(),
+                DeclarationKind::Synthetic, namePos)) {
           return null();
         }
       }
 
       if (classInitializedMembers.staticFields > 0) {
         if (!noteDeclaredName(
-                TaggedParserAtomIndex::WellKnown::dotStaticInitializers(),
+                TaggedParserAtomIndex::WellKnown::dot_staticInitializers_(),
                 DeclarationKind::Synthetic, namePos)) {
           return null();
         }
@@ -8298,7 +8351,7 @@ GeneralParser<ParseHandler, Unit>::classDefinition(
 
       if (classInitializedMembers.staticFieldKeys > 0) {
         if (!noteDeclaredName(
-                TaggedParserAtomIndex::WellKnown::dotStaticFieldKeys(),
+                TaggedParserAtomIndex::WellKnown::dot_staticFieldKeys_(),
                 DeclarationKind::Synthetic, namePos)) {
           return null();
         }
@@ -8480,7 +8533,7 @@ GeneralParser<ParseHandler, Unit>::synthesizeConstructorBody(
     // Synthesize the equivalent to `function f(...args)`
     funbox->setHasRest();
     if (!notePositionalFormalParameter(
-            funNode, TaggedParserAtomIndex::WellKnown::dotArgs(),
+            funNode, TaggedParserAtomIndex::WellKnown::dot_args_(),
             synthesizedBodyPos.begin,
             /* disallowDuplicateParams = */ false,
             /* duplicatedParam = */ nullptr)) {
@@ -8498,17 +8551,17 @@ GeneralParser<ParseHandler, Unit>::synthesizeConstructorBody(
     return null();
   }
 
-  if (!noteUsedName(TaggedParserAtomIndex::WellKnown::dotThis())) {
+  if (!noteUsedName(TaggedParserAtomIndex::WellKnown::dot_this_())) {
     return null();
   }
 
-  if (!noteUsedName(TaggedParserAtomIndex::WellKnown::dotInitializers())) {
+  if (!noteUsedName(TaggedParserAtomIndex::WellKnown::dot_initializers_())) {
     return null();
   }
 
   if (hasHeritage == HasHeritage::Yes) {
     // |super()| implicitly reads |new.target|.
-    if (!noteUsedName(TaggedParserAtomIndex::WellKnown::dotNewTarget())) {
+    if (!noteUsedName(TaggedParserAtomIndex::WellKnown::dot_newTarget_())) {
       return null();
     }
 
@@ -8529,11 +8582,11 @@ GeneralParser<ParseHandler, Unit>::synthesizeConstructorBody(
     }
 
     NameNodeType argsNameNode = newName(
-        TaggedParserAtomIndex::WellKnown::dotArgs(), synthesizedBodyPos);
+        TaggedParserAtomIndex::WellKnown::dot_args_(), synthesizedBodyPos);
     if (!argsNameNode) {
       return null();
     }
-    if (!noteUsedName(TaggedParserAtomIndex::WellKnown::dotArgs())) {
+    if (!noteUsedName(TaggedParserAtomIndex::WellKnown::dot_args_())) {
       return null();
     }
 
@@ -8909,10 +8962,10 @@ GeneralParser<ParseHandler, Unit>::fieldInitializerOpt(
     NameNodeType fieldKeysName;
     if (isStatic) {
       fieldKeysName = newInternalDotName(
-          TaggedParserAtomIndex::WellKnown::dotStaticFieldKeys());
+          TaggedParserAtomIndex::WellKnown::dot_staticFieldKeys_());
     } else {
-      fieldKeysName =
-          newInternalDotName(TaggedParserAtomIndex::WellKnown::dotFieldKeys());
+      fieldKeysName = newInternalDotName(
+          TaggedParserAtomIndex::WellKnown::dot_fieldKeys_());
     }
     if (!fieldKeysName) {
       return null();
@@ -9066,11 +9119,11 @@ GeneralParser<ParseHandler, Unit>::synthesizePrivateMethodInitializer(
 #ifdef ENABLE_DECORATORS
 
 template <class ParseHandler, typename Unit>
-typename ParseHandler::Node
+typename ParseHandler::ClassMethodType
 GeneralParser<ParseHandler, Unit>::synthesizeAccessor(
     Node propName, TokenPos propNamePos, TaggedParserAtomIndex propAtom,
     TaggedParserAtomIndex privateStateNameAtom, bool isStatic,
-    FunctionSyntaxKind syntaxKind, ListNodeType decorators,
+    FunctionSyntaxKind syntaxKind,
     ClassInitializedMembers& classInitializedMembers) {
   // Decorators Proposal
   // https://arai-a.github.io/ecma262-compare/?pr=2417&id=sec-makeautoaccessorgetter
@@ -9091,7 +9144,7 @@ GeneralParser<ParseHandler, Unit>::synthesizeAccessor(
                                   : AccessorType::Setter;
 
   mozilla::Maybe<FunctionNodeType> initializerIfPrivate = Nothing();
-  if (handler_.isPrivateName(propName)) {
+  if (!isStatic && handler_.isPrivateName(propName)) {
     classInitializedMembers.privateAccessors++;
     auto initializerNode =
         synthesizePrivateMethodInitializer(propAtom, accessorType, propNamePos);
@@ -9107,8 +9160,16 @@ GeneralParser<ParseHandler, Unit>::synthesizeAccessor(
   //
   // https://arai-a.github.io/ecma262-compare/?pr=2417&id=sec-makeautoaccessorsetter
   // 2. Let setter be CreateBuiltinFunction(setterClosure, 1, "set", « »).
-  FunctionNodeType funNode =
-      synthesizeAccessorBody(propNamePos, privateStateNameAtom, syntaxKind);
+  StringBuffer storedMethodName(fc_);
+  if (!storedMethodName.append(accessorType == AccessorType::Getter ? "get"
+                                                                    : "set")) {
+    return null();
+  }
+  TaggedParserAtomIndex funNameAtom =
+      storedMethodName.finishParserAtom(this->parserAtoms(), fc_);
+
+  FunctionNodeType funNode = synthesizeAccessorBody(
+      funNameAtom, propNamePos, privateStateNameAtom, syntaxKind);
   if (!funNode) {
     return null();
   }
@@ -9120,16 +9181,15 @@ GeneralParser<ParseHandler, Unit>::synthesizeAccessor(
   // https://arai-a.github.io/ecma262-compare/?pr=2417&id=sec-makeautoaccessorsetter
   // 3. Perform MakeMethod(setter, homeObject).
   // 4. Return setter.
-  return handler_.newClassMethodDefinition(propName, funNode, accessorType,
-                                           isStatic, initializerIfPrivate,
-                                           decorators);
+  return handler_.newClassMethodDefinition(
+      propName, funNode, accessorType, isStatic, initializerIfPrivate, null());
 }
 
 template <class ParseHandler, typename Unit>
 typename ParseHandler::FunctionNodeType
 GeneralParser<ParseHandler, Unit>::synthesizeAccessorBody(
-    TokenPos propNamePos, TaggedParserAtomIndex propAtom,
-    FunctionSyntaxKind syntaxKind) {
+    TaggedParserAtomIndex funNameAtom, TokenPos propNamePos,
+    TaggedParserAtomIndex propNameAtom, FunctionSyntaxKind syntaxKind) {
   if (!abortIfSyntaxParser()) {
     return null();
   }
@@ -9149,8 +9209,8 @@ GeneralParser<ParseHandler, Unit>::synthesizeAccessorBody(
   // Create the FunctionBox and link it to the function object.
   Directives directives(true);
   FunctionBox* funbox =
-      newFunctionBox(funNode, TaggedParserAtomIndex::null(), flags,
-                     propNamePos.begin, directives, generatorKind, asyncKind);
+      newFunctionBox(funNode, funNameAtom, flags, propNamePos.begin, directives,
+                     generatorKind, asyncKind);
   if (!funbox) {
     return null();
   }
@@ -9196,7 +9256,7 @@ GeneralParser<ParseHandler, Unit>::synthesizeAccessorBody(
     return null();
   }
 
-  NameNodeType privateNameNode = privateNameReference(propAtom);
+  NameNodeType privateNameNode = privateNameReference(propNameAtom);
   if (!privateNameNode) {
     return null();
   }
@@ -9521,7 +9581,7 @@ typename ParseHandler::Node GeneralParser<ParseHandler, Unit>::statement(
       // detected this way, so don't bother passing around an extra parameter
       // everywhere.
       if (!pc_->allowReturn()) {
-        error(JSMSG_BAD_RETURN_OR_YIELD, js_return_str);
+        error(JSMSG_BAD_RETURN_OR_YIELD, "return");
         return null();
       }
       return returnStatement(yieldHandling);
@@ -9616,7 +9676,7 @@ GeneralParser<ParseHandler, Unit>::statementListItem(
     case TokenKind::String:
       if (!canHaveDirectives &&
           anyChars.currentToken().atom() ==
-              TaggedParserAtomIndex::WellKnown::useAsm()) {
+              TaggedParserAtomIndex::WellKnown::use_asm_()) {
         if (!warning(JSMSG_USE_ASM_DIRECTIVE_FAIL)) {
           return null();
         }
@@ -9735,7 +9795,7 @@ GeneralParser<ParseHandler, Unit>::statementListItem(
       // detected this way, so don't bother passing around an extra parameter
       // everywhere.
       if (!pc_->allowReturn()) {
-        error(JSMSG_BAD_RETURN_OR_YIELD, js_return_str);
+        error(JSMSG_BAD_RETURN_OR_YIELD, "return");
         return null();
       }
       return returnStatement(yieldHandling);
@@ -9768,7 +9828,7 @@ GeneralParser<ParseHandler, Unit>::statementListItem(
       //   DecoratorList[?Yield, ?Await] opt ClassDeclaration[?Yield, ~Default]
 #ifdef ENABLE_DECORATORS
     case TokenKind::At:
-      return classDefinition(yieldHandling, ClassExpression, NameRequired);
+      return classDefinition(yieldHandling, ClassStatement, NameRequired);
 #endif
 
     case TokenKind::Class:
@@ -10476,10 +10536,10 @@ const char* PerHandlerParser<ParseHandler>::nameIsArgumentsOrEval(Node node) {
              "must only call this function on known names");
 
   if (handler_.isEvalName(node)) {
-    return js_eval_str;
+    return "eval";
   }
   if (handler_.isArgumentsName(node)) {
-    return js_arguments_str;
+    return "arguments";
   }
   return nullptr;
 }
@@ -10956,7 +11016,7 @@ typename ParseHandler::Node GeneralParser<ParseHandler, Unit>::memberExpr(
       }
 
       bool isSpread = false;
-      Node args;
+      ListNodeType args;
       if (matched) {
         args = argumentList(yieldHandling, &isSpread);
       } else {
@@ -11051,7 +11111,7 @@ typename ParseHandler::Node GeneralParser<ParseHandler, Unit>::memberExpr(
         }
 
         if (!noteUsedName(
-                TaggedParserAtomIndex::WellKnown::dotInitializers())) {
+                TaggedParserAtomIndex::WellKnown::dot_initializers_())) {
           return null();
         }
       } else {
@@ -11180,7 +11240,7 @@ typename ParseHandler::Node GeneralParser<ParseHandler, Unit>::memberSuperCall(
   // generator, we still inherit the yieldHandling of the
   // memberExpression, per spec. Curious.
   bool isSpread = false;
-  Node args = argumentList(yieldHandling, &isSpread);
+  ListNodeType args = argumentList(yieldHandling, &isSpread);
   if (!args) {
     return null();
   }
@@ -11191,7 +11251,7 @@ typename ParseHandler::Node GeneralParser<ParseHandler, Unit>::memberSuperCall(
   }
 
   // |super()| implicitly reads |new.target|.
-  if (!noteUsedName(TaggedParserAtomIndex::WellKnown::dotNewTarget())) {
+  if (!noteUsedName(TaggedParserAtomIndex::WellKnown::dot_newTarget_())) {
     return null();
   }
 
@@ -11255,7 +11315,8 @@ typename ParseHandler::Node GeneralParser<ParseHandler, Unit>::memberCall(
     bool isSpread = false;
     PossibleError* asyncPossibleError =
         maybeAsyncArrow ? possibleError : nullptr;
-    Node args = argumentList(yieldHandling, &isSpread, asyncPossibleError);
+    ListNodeType args =
+        argumentList(yieldHandling, &isSpread, asyncPossibleError);
     if (!args) {
       return null();
     }
@@ -11508,16 +11569,17 @@ RegExpLiteral* Parser<FullParseHandler, Unit>::newRegExp() {
   RegExpFlags flags = anyChars.currentToken().regExpFlags();
 
   uint32_t offset = anyChars.currentToken().pos.begin;
-  uint32_t line, column;
+  uint32_t line;
+  JS::LimitedColumnNumberZeroOrigin column;
   tokenStream.computeLineAndColumn(offset, &line, &column);
 
   if (!handler_.reuseRegexpSyntaxParse()) {
     // Verify that the Regexp will syntax parse when the time comes to
     // instantiate it. If we have already done a syntax parse, we can
     // skip this.
-    if (!irregexp::CheckPatternSyntax(this->alloc_, this->fc_->stackLimit(),
-                                      anyChars, range, flags, Some(line),
-                                      Some(column))) {
+    if (!irregexp::CheckPatternSyntax(
+            this->alloc_, this->fc_->stackLimit(), anyChars, range, flags,
+            Some(line), Some(JS::ColumnNumberZeroOrigin(column)))) {
       return nullptr;
     }
   }
@@ -11553,13 +11615,14 @@ Parser<SyntaxParseHandler, Unit>::newRegExp() {
   RegExpFlags flags = anyChars.currentToken().regExpFlags();
 
   uint32_t offset = anyChars.currentToken().pos.begin;
-  uint32_t line, column;
+  uint32_t line;
+  JS::LimitedColumnNumberZeroOrigin column;
   tokenStream.computeLineAndColumn(offset, &line, &column);
 
   mozilla::Range<const char16_t> source(chars.begin(), chars.length());
   if (!irregexp::CheckPatternSyntax(this->alloc_, this->fc_->stackLimit(),
                                     anyChars, source, flags, Some(line),
-                                    Some(column))) {
+                                    Some(JS::ColumnNumberZeroOrigin(column)))) {
     return null();
   }
 
@@ -12263,7 +12326,7 @@ GeneralParser<ParseHandler, Unit>::objectLiteral(YieldHandling yieldHandling,
           return null();
         }
 
-        if (propAtom == TaggedParserAtomIndex::WellKnown::proto()) {
+        if (propAtom == TaggedParserAtomIndex::WellKnown::proto_()) {
           if (seenPrototypeMutation) {
             // Directly report the error when we're definitely not
             // in a destructuring context.
@@ -12507,7 +12570,7 @@ GeneralParser<ParseHandler, Unit>::recordLiteral(YieldHandling yieldHandling) {
           return null();
         }
 
-        if (propAtom == TaggedParserAtomIndex::WellKnown::proto()) {
+        if (propAtom == TaggedParserAtomIndex::WellKnown::proto_()) {
           errorAt(namePos.begin, JSMSG_RECORD_NO_PROTO);
           return null();
         }
@@ -12800,7 +12863,7 @@ GeneralParser<ParseHandler, Unit>::importExpr(YieldHandling yieldHandling,
     }
 
     Node optionalArg;
-    if (options().importAssertions) {
+    if (options().importAssertions()) {
       if (next == TokenKind::Comma) {
         tokenStream.consumeKnownToken(TokenKind::Comma,
                                       TokenStream::SlashIsRegExp);

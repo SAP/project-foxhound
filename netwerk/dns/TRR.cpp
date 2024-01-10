@@ -150,6 +150,7 @@ nsresult TRR::CreateQueryURI(nsIURI** aOutURI) {
 
   nsresult rv = NS_NewURI(getter_AddRefs(dnsURI), uri);
   if (NS_FAILED(rv)) {
+    RecordReason(TRRSkippedReason::TRR_BAD_URL);
     return rv;
   }
 
@@ -667,8 +668,16 @@ void TRR::SaveAdditionalRecords(
   }
   nsresult rv;
   for (const auto& recordEntry : aRecords) {
-    if (recordEntry.GetData() && recordEntry.GetData()->mAddresses.IsEmpty()) {
+    if (!recordEntry.GetData() || recordEntry.GetData()->mAddresses.IsEmpty()) {
       // no point in adding empty records.
+      continue;
+    }
+    // If IPv6 is disabled don't add anything else than IPv4.
+    if (StaticPrefs::network_dns_disableIPv6() &&
+        std::find_if(recordEntry.GetData()->mAddresses.begin(),
+                     recordEntry.GetData()->mAddresses.end(),
+                     [](const NetAddr& addr) { return !addr.IsIPAddrV4(); }) !=
+            recordEntry.GetData()->mAddresses.end()) {
       continue;
     }
     RefPtr<nsHostRecord> hostRecord;
@@ -707,6 +716,12 @@ void TRR::StoreIPHintAsDNSRecord(const struct SVCB& aSVCBRecord) {
        aSVCBRecord.mSvcDomainName.get()));
   CopyableTArray<NetAddr> addresses;
   aSVCBRecord.GetIPHints(addresses);
+
+  if (StaticPrefs::network_dns_disableIPv6()) {
+    addresses.RemoveElementsBy(
+        [](const NetAddr& addr) { return !addr.IsIPAddrV4(); });
+  }
+
   if (addresses.IsEmpty()) {
     return;
   }
@@ -902,7 +917,9 @@ nsresult TRR::On200Response(nsIChannel* aChannel) {
     HandleDecodeError(rv);
     return rv;
   }
-  SaveAdditionalRecords(additionalRecords);
+  if (StaticPrefs::network_trr_add_additional_records()) {
+    SaveAdditionalRecords(additionalRecords);
+  }
 
   if (mResult.is<TypeRecordHTTPSSVC>()) {
     auto& results = mResult.as<TypeRecordHTTPSSVC>();

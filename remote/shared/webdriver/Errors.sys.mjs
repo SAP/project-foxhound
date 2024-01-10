@@ -27,6 +27,7 @@ const ERRORS = new Set([
   "NoSuchElementError",
   "NoSuchFrameError",
   "NoSuchHandleError",
+  "NoSuchInterceptError",
   "NoSuchNodeError",
   "NoSuchScriptError",
   "NoSuchShadowRootError",
@@ -35,6 +36,7 @@ const ERRORS = new Set([
   "SessionNotCreatedError",
   "StaleElementReferenceError",
   "TimeoutError",
+  "UnableToCaptureScreen",
   "UnableToSetCookieError",
   "UnexpectedAlertOpenError",
   "UnknownCommandError",
@@ -584,6 +586,21 @@ class NoSuchHandleError extends WebDriverError {
 }
 
 /**
+ * Tried to remove an unknown network intercept.
+ *
+ * @param {string=} message
+ *     Optional string describing error situation.
+ * @param {object=} data
+ *     Additional error data helpful in diagnosing the error.
+ */
+class NoSuchInterceptError extends WebDriverError {
+  constructor(message, data = {}) {
+    super(message, data);
+    this.status = "no such intercept";
+  }
+}
+
+/**
  * A node as given by its unique shared id could not be found within the cache
  * of known nodes.
  *
@@ -692,6 +709,21 @@ class UnableToSetCookieError extends WebDriverError {
 }
 
 /**
+ * A command to capture a screenshot could not be satisfied.
+ *
+ * @param {string=} message
+ *     Optional string describing error situation.
+ * @param {object=} data
+ *     Additional error data helpful in diagnosing the error.
+ */
+class UnableToCaptureScreen extends WebDriverError {
+  constructor(message, data = {}) {
+    super(message, data);
+    this.status = "unable to capture screen";
+  }
+}
+
+/**
  * A modal dialog was open, blocking this operation.
  *
  * @param {string=} message
@@ -771,6 +803,7 @@ const STATUSES = new Map([
   ["no such element", NoSuchElementError],
   ["no such frame", NoSuchFrameError],
   ["no such handle", NoSuchHandleError],
+  ["no such intercept", NoSuchInterceptError],
   ["no such node", NoSuchNodeError],
   ["no such script", NoSuchScriptError],
   ["no such shadow root", NoSuchShadowRootError],
@@ -779,6 +812,7 @@ const STATUSES = new Map([
   ["session not created", SessionNotCreatedError],
   ["stale element reference", StaleElementReferenceError],
   ["timeout", TimeoutError],
+  ["unable to capture screen", UnableToCaptureScreen],
   ["unable to set cookie", UnableToSetCookieError],
   ["unexpected alert open", UnexpectedAlertOpenError],
   ["unknown command", UnknownCommandError],

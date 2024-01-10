@@ -213,6 +213,8 @@ extensions-warning-check-compatibility-button = Enable
 extensions-warning-update-security = Add-on update security checking is disabled. You may be compromised by updates.
 extensions-warning-update-security-button = Enable
     .title = Enable add-on update security checking
+extensions-warning-imported-addons = Please finalize the installation of extensions that were imported to { -brand-short-name }.
+extensions-warning-imported-addons-button = Install Extensions
 
 ## Strings connected to add-on updates
 
@@ -393,12 +395,6 @@ addon-detail-rating-label = Rating
 install-postponed-message = This extension will be updated when { -brand-short-name } restarts.
 install-postponed-button = Update Now
 
-# The average rating that the add-on has received.
-# Variables:
-#   $rating (number) - A number between 0 and 5. The translation should show at most one digit after the comma.
-five-star-rating =
-  .title = Rated { NUMBER($rating, maximumFractionDigits: 1) } out of 5
-
 # This string is used to show that an add-on is disabled.
 # Variables:
 #   $name (string) - The name of the add-on
@@ -426,6 +422,10 @@ addon-detail-updates-radio-on = On
 addon-detail-updates-radio-off = Off
 addon-detail-update-check-label = Check for Updates
 install-update-button = Update
+# aria-label associated to the updates row to help screen readers to announce the group
+# of input controls being entered.
+addon-detail-group-label-updates =
+    .aria-label = { addon-detail-updates-label }
 
 # This is the tooltip text for the private browsing badge in about:addons. The
 # badge is the private browsing icon included next to the extension's name.
@@ -435,6 +435,24 @@ addon-badge-private-browsing-allowed2 =
 addon-detail-private-browsing-help = When allowed, the extension will have access to your online activities while private browsing. <a data-l10n-name="learn-more">Learn more</a>
 addon-detail-private-browsing-allow = Allow
 addon-detail-private-browsing-disallow = Don’t Allow
+# aria-label associated to the private browsing row to help screen readers to announce the group
+# of input controls being entered.
+addon-detail-group-label-private-browsing =
+    .aria-label = { detail-private-browsing-label }
+
+## "sites with restrictions" (internally called "quarantined") are special domains
+## where add-ons are normally blocked for security reasons.
+
+# Used as a description for the option to allow or block an add-on on quarantined domains.
+addon-detail-quarantined-domains-label = Run on sites with restrictions
+# Used as help text part of the quarantined domains UI controls row.
+addon-detail-quarantined-domains-help = When allowed, the extension will have access to sites restricted by { -vendor-short-name }. Allow only if you trust this extension.
+# Used as label and tooltip text on the radio inputs associated to the quarantined domains UI controls.
+addon-detail-quarantined-domains-allow = Allow
+addon-detail-quarantined-domains-disallow = Don’t Allow
+# aria-label associated to the quarantined domains exempt row to help screen readers to announce the group.
+addon-detail-group-label-quarantined-domains =
+    .aria-label = { addon-detail-quarantined-domains-label }
 
 ## This is the tooltip text for the recommended badges for an extension in about:addons. The
 ## badge is a small icon displayed next to an extension when it is recommended on AMO.

@@ -3,22 +3,77 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "RTCRtpSender.h"
-#include "transport/logging.h"
-#include "mozilla/dom/MediaStreamTrack.h"
-#include "mozilla/dom/Promise.h"
-#include "mozilla/glean/GleanMetrics.h"
+
+#include <stdint.h>
+
+#include <vector>
+#include <string>
+#include <algorithm>
+#include <utility>
+#include <iterator>
+#include <set>
+#include <sstream>
+
+#include "system_wrappers/include/clock.h"
+#include "call/call.h"
+#include "api/rtp_parameters.h"
+#include "api/units/time_delta.h"
+#include "api/units/timestamp.h"
+#include "api/video_codecs/video_codec.h"
+#include "api/video/video_codec_constants.h"
+#include "call/audio_send_stream.h"
+#include "call/video_send_stream.h"
+#include "modules/rtp_rtcp/include/report_block_data.h"
+#include "modules/rtp_rtcp/include/rtp_rtcp_defines.h"
+
 #include "nsPIDOMWindow.h"
 #include "nsString.h"
+#include "MainThreadUtils.h"
+#include "nsCOMPtr.h"
+#include "nsContentUtils.h"
+#include "nsCycleCollectionParticipant.h"
+#include "nsDebug.h"
+#include "nsISupports.h"
+#include "nsLiteralString.h"
+#include "nsStringFwd.h"
+#include "nsTArray.h"
+#include "nsThreadUtils.h"
+#include "nsWrapperCache.h"
+#include "mozilla/AbstractThread.h"
+#include "mozilla/AlreadyAddRefed.h"
+#include "mozilla/Assertions.h"
+#include "mozilla/Attributes.h"
+#include "mozilla/fallible.h"
+#include "mozilla/Logging.h"
+#include "mozilla/mozalloc_oom.h"
+#include "mozilla/MozPromise.h"
+#include "mozilla/OwningNonNull.h"
+#include "mozilla/RefPtr.h"
+#include "mozilla/StateWatching.h"
+#include "mozilla/UniquePtr.h"
+#include "mozilla/Unused.h"
+#include "mozilla/StateMirroring.h"
+#include "mozilla/Maybe.h"
+#include "mozilla/dom/MediaStreamTrack.h"
+#include "mozilla/dom/Promise.h"
+#include "mozilla/dom/RTCRtpScriptTransform.h"
 #include "mozilla/dom/VideoStreamTrack.h"
-#include "jsep/JsepTransceiver.h"
 #include "mozilla/dom/RTCRtpSenderBinding.h"
+#include "mozilla/dom/MediaStreamTrackBinding.h"
+#include "mozilla/dom/Nullable.h"
+#include "mozilla/dom/RTCRtpParametersBinding.h"
+#include "mozilla/dom/RTCStatsReportBinding.h"
+#include "mozilla/glean/GleanMetrics.h"
+#include "js/RootingAPI.h"
+#include "jsep/JsepTransceiver.h"
 #include "RTCStatsReport.h"
-#include "mozilla/Preferences.h"
 #include "RTCRtpTransceiver.h"
 #include "PeerConnectionImpl.h"
-#include "libwebrtcglue/AudioConduit.h"
-#include <vector>
-#include "call/call.h"
+#include "libwebrtcglue/CodecConfig.h"
+#include "libwebrtcglue/MediaConduitControl.h"
+#include "libwebrtcglue/MediaConduitInterface.h"
+#include "sdp/SdpAttribute.h"
+#include "sdp/SdpEnum.h"
 
 namespace mozilla::dom {
 
@@ -31,7 +86,7 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(RTCRtpSender)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(RTCRtpSender)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mWindow, mPc, mSenderTrack, mTransceiver,
-                                    mStreams, mDtmf)
+                                    mStreams, mTransform, mDtmf)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_IMPL_CYCLE_COLLECTING_ADDREF(RTCRtpSender)
@@ -66,8 +121,9 @@ RTCRtpSender::RTCRtpSender(nsPIDOMWindowInner* aWindow, PeerConnectionImpl* aPc,
       INIT_CANONICAL(mVideoRtpRtcpConfig, Nothing()),
       INIT_CANONICAL(mVideoCodecMode, webrtc::VideoCodecMode::kRealtimeVideo),
       INIT_CANONICAL(mCname, std::string()),
-      INIT_CANONICAL(mTransmitting, false) {
-  mPipeline = new MediaPipelineTransmit(
+      INIT_CANONICAL(mTransmitting, false),
+      INIT_CANONICAL(mFrameTransformerProxy, nullptr) {
+  mPipeline = MediaPipelineTransmit::Create(
       mPc->GetHandle(), aTransportHandler, aCallThread, aStsThread,
       aConduit->type() == MediaSessionConduit::VIDEO, aConduit);
   mPipeline->InitControl(this);
@@ -251,6 +307,17 @@ nsTArray<RefPtr<dom::RTCStatsPromise>> RTCRtpSender::GetStatsInternal(
                 }
               };
 
+          auto constructCommonMediaSourceStats =
+              [&](RTCMediaSourceStats& aStats) {
+                nsString id = u"mediasource_"_ns + idstr + trackName;
+                aStats.mTimestamp.Construct(
+                    pipeline->GetTimestampMaker().GetNow().ToDom());
+                aStats.mId.Construct(id);
+                aStats.mType.Construct(RTCStatsType::Media_source);
+                aStats.mTrackIdentifier = trackName;
+                aStats.mKind = kind;
+              };
+
           asAudio.apply([&](auto& aConduit) {
             Maybe<webrtc::AudioSendStream::Stats> audioStats =
                 aConduit->GetSenderStats();
@@ -328,6 +395,14 @@ nsTArray<RefPtr<dom::RTCStatsPromise>> RTCRtpSender::GetStatsInternal(
              */
             if (!report->mOutboundRtpStreamStats.AppendElement(std::move(local),
                                                                fallible)) {
+              mozalloc_handle_oom(0);
+            }
+
+            // TODO(bug 1804678): Use RTCAudioSourceStats
+            RTCMediaSourceStats mediaSourceStats;
+            constructCommonMediaSourceStats(mediaSourceStats);
+            if (!report->mMediaSourceStats.AppendElement(
+                    std::move(mediaSourceStats), fallible)) {
               mozalloc_handle_oom(0);
             }
           });
@@ -424,6 +499,7 @@ nsTArray<RefPtr<dom::RTCStatsPromise>> RTCRtpSender::GetStatsInternal(
                 videoStats->total_encoded_bytes_target);
             local.mFrameWidth.Construct(streamStats->width);
             local.mFrameHeight.Construct(streamStats->height);
+            local.mFramesPerSecond.Construct(streamStats->encode_frame_rate);
             local.mFramesSent.Construct(streamStats->frames_encoded);
             local.mHugeFramesSent.Construct(streamStats->huge_frames_sent);
             local.mTotalEncodeTime.Construct(
@@ -436,26 +512,28 @@ nsTArray<RefPtr<dom::RTCStatsPromise>> RTCRtpSender::GetStatsInternal(
                                                                fallible)) {
               mozalloc_handle_oom(0);
             }
+
+            RTCVideoSourceStats videoSourceStats;
+            constructCommonMediaSourceStats(videoSourceStats);
+            // webrtc::VideoSendStream::Stats does not have width/height. We
+            // might be able to get this somewhere else?
+            // videoStats->frames is not documented, but looking at the
+            // implementation it appears to be the number of frames inputted to
+            // the encoder, which ought to work.
+            videoSourceStats.mFrames.Construct(videoStats->frames);
+            videoSourceStats.mFramesPerSecond.Construct(
+                videoStats->input_frame_rate);
+            auto resolution = aConduit->GetLastResolution();
+            resolution.apply(
+                [&](const VideoSessionConduit::Resolution& aResolution) {
+                  videoSourceStats.mWidth.Construct(aResolution.width);
+                  videoSourceStats.mHeight.Construct(aResolution.height);
+                });
+            if (!report->mVideoSourceStats.AppendElement(
+                    std::move(videoSourceStats), fallible)) {
+              mozalloc_handle_oom(0);
+            }
           });
-        }
-
-        auto constructCommonMediaSourceStats =
-            [&](RTCMediaSourceStats& aStats) {
-              nsString id = u"mediasource_"_ns + idstr + trackName;
-              aStats.mTimestamp.Construct(
-                  pipeline->GetTimestampMaker().GetNow().ToDom());
-              aStats.mId.Construct(id);
-              aStats.mType.Construct(RTCStatsType::Media_source);
-              aStats.mTrackIdentifier = trackName;
-              aStats.mKind = kind;
-            };
-
-        // TODO(bug 1804678): Use RTCAudioSourceStats/RTCVideoSourceStats
-        RTCMediaSourceStats mediaSourceStats;
-        constructCommonMediaSourceStats(mediaSourceStats);
-        if (!report->mMediaSourceStats.AppendElement(
-                std::move(mediaSourceStats), fallible)) {
-          mozalloc_handle_oom(0);
         }
 
         return RTCStatsPromise::CreateAndResolve(std::move(report), __func__);
@@ -509,10 +587,11 @@ already_AddRefed<Promise> RTCRtpSender::SetParameters(
     return p.forget();
   }
 
-  // If transceiver.[[Stopped]] is true, return a promise rejected with a newly
+  // If transceiver.[[Stopping]] is true, return a promise rejected with a newly
   // created InvalidStateError.
-  if (mTransceiver->Stopped()) {
-    p->MaybeRejectWithInvalidStateError("This sender's transceiver is stopped");
+  if (mTransceiver->Stopping()) {
+    p->MaybeRejectWithInvalidStateError(
+        "This sender's transceiver is stopping/stopped");
     return p.forget();
   }
 
@@ -1109,18 +1188,18 @@ ReplaceTrackOperation::ReplaceTrackOperation(
 
 RefPtr<dom::Promise> ReplaceTrackOperation::CallImpl(ErrorResult& aError) {
   RefPtr<RTCRtpSender> sender = mTransceiver->Sender();
-  // If transceiver.[[Stopped]] is true, return a promise rejected with a newly
-  // created InvalidStateError.
-  if (mTransceiver->Stopped()) {
+  // If transceiver.[[Stopping]] is true, return a promise rejected with a
+  // newly created InvalidStateError.
+  if (mTransceiver->Stopped() || mTransceiver->Stopping()) {
     RefPtr<dom::Promise> error = sender->MakePromise(aError);
     if (aError.Failed()) {
       return nullptr;
     }
     MOZ_LOG(gSenderLog, LogLevel::Debug,
-            ("%s Cannot call replaceTrack when transceiver is stopped",
+            ("%s Cannot call replaceTrack when transceiver is stopping",
              __FUNCTION__));
     error->MaybeRejectWithInvalidStateError(
-        "Cannot call replaceTrack when transceiver is stopped");
+        "Cannot call replaceTrack when transceiver is stopping");
     return error;
   }
 
@@ -1213,13 +1292,16 @@ bool RTCRtpSender::SeamlessTrackSwitch(
 
 void RTCRtpSender::SetTrack(const RefPtr<MediaStreamTrack>& aTrack) {
   // Used for RTCPeerConnection.removeTrack and RTCPeerConnection.addTrack
+  if (mTransceiver->Stopping()) {
+    return;
+  }
   mSenderTrack = aTrack;
   SeamlessTrackSwitch(aTrack);
   if (aTrack) {
     // RFC says (in the section on remote rollback):
     // However, an RtpTransceiver MUST NOT be removed if a track was attached
     // to the RtpTransceiver via the addTrack method.
-    mAddTrackCalled = true;
+    mSenderTrackSetByAddTrack = true;
   }
 }
 
@@ -1238,6 +1320,9 @@ void RTCRtpSender::Shutdown() {
   mWatchManager.Shutdown();
   mPipeline->Shutdown();
   mPipeline = nullptr;
+  if (mTransform) {
+    mTransform->GetProxy().SetSender(nullptr);
+  }
 }
 
 void RTCRtpSender::BreakCycles() {
@@ -1366,7 +1451,7 @@ void RTCRtpSender::SyncToJsep(JsepTransceiver& aJsepTransceiver) const {
     aJsepTransceiver.mSendTrack.SetMaxEncodings(1);
   }
 
-  if (mAddTrackCalled) {
+  if (mSenderTrackSetByAddTrack) {
     aJsepTransceiver.SetOnlyExistsBecauseOfSetRemote(false);
   }
 }
@@ -1595,8 +1680,6 @@ void RTCRtpSender::ApplyVideoConfig(const VideoConfig& aConfig) {
 }
 
 void RTCRtpSender::ApplyAudioConfig(const AudioConfig& aConfig) {
-  mTransmitting = false;
-
   mSsrcs = aConfig.mSsrcs;
   mCname = aConfig.mCname;
   mLocalRtpExtensions = aConfig.mLocalRtpExtensions;
@@ -1611,7 +1694,7 @@ void RTCRtpSender::ApplyAudioConfig(const AudioConfig& aConfig) {
 }
 
 void RTCRtpSender::Stop() {
-  MOZ_ASSERT(mTransceiver->Stopped());
+  MOZ_ASSERT(mTransceiver->Stopping());
   mTransmitting = false;
 }
 
@@ -1647,6 +1730,50 @@ void RTCRtpSender::UpdateDtmfSender() {
   }
 
   mDtmf->StopPlayout();
+}
+
+void RTCRtpSender::SetTransform(RTCRtpScriptTransform* aTransform,
+                                ErrorResult& aError) {
+  if (aTransform == mTransform.get()) {
+    // Ok... smile and nod
+    // TODO: Depending on spec, this might throw
+    // https://github.com/w3c/webrtc-encoded-transform/issues/189
+    return;
+  }
+
+  if (aTransform && aTransform->IsClaimed()) {
+    aError.ThrowInvalidStateError("transform has already been used elsewhere");
+    return;
+  }
+
+  // Seamless switch for frames
+  if (aTransform) {
+    mFrameTransformerProxy = &aTransform->GetProxy();
+  } else {
+    mFrameTransformerProxy = nullptr;
+  }
+
+  if (mTransform) {
+    mTransform->GetProxy().SetSender(nullptr);
+  }
+
+  mTransform = const_cast<RTCRtpScriptTransform*>(aTransform);
+
+  if (mTransform) {
+    mTransform->GetProxy().SetSender(this);
+    mTransform->SetClaimed();
+  }
+}
+
+bool RTCRtpSender::GenerateKeyFrame(const Maybe<std::string>& aRid) {
+  if (!mTransform || !mPipeline || !mSenderTrack) {
+    return false;
+  }
+
+  mPipeline->mConduit->AsVideoSessionConduit().apply([&](const auto& conduit) {
+    conduit->GenerateKeyFrame(aRid, &mTransform->GetProxy());
+  });
+  return true;
 }
 
 }  // namespace mozilla::dom

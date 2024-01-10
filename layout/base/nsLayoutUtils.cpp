@@ -55,6 +55,7 @@
 #include "mozilla/dom/KeyframeEffect.h"
 #include "mozilla/dom/SVGViewportElement.h"
 #include "mozilla/dom/UIEvent.h"
+#include "mozilla/dom/VideoFrame.h"
 #include "mozilla/intl/BidiEmbeddingLevel.h"
 #include "mozilla/EffectCompositor.h"
 #include "mozilla/EffectSet.h"
@@ -64,6 +65,7 @@
 #include "mozilla/gfx/2D.h"
 #include "mozilla/gfx/gfxVars.h"
 #include "mozilla/gfx/PathHelpers.h"
+#include "mozilla/gfx/DataSurfaceHelpers.h"
 #include "mozilla/IntegerRange.h"
 #include "mozilla/layers/APZCCallbackHelper.h"
 #include "mozilla/layers/APZPublicUtils.h"  // for apz::CalculatePendingDisplayPort
@@ -86,6 +88,7 @@
 #include "mozilla/ServoStyleSet.h"
 #include "mozilla/ServoStyleSetInlines.h"
 #include "mozilla/StaticPrefs_apz.h"
+#include "mozilla/StaticPrefs_browser.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/StaticPrefs_font.h"
 #include "mozilla/StaticPrefs_general.h"
@@ -733,7 +736,7 @@ static bool HasVisibleAnonymousContents(Document* aDoc) {
     // For now we assume that if it has a frame, it is visible. We might be able
     // to refine this further by adding complexity if it turns out this
     // condition results in a lot of false positives.
-    if (ac->ContentNode().GetPrimaryFrame()) {
+    if (ac->Host()->GetPrimaryFrame()) {
       return true;
     }
   }
@@ -1608,7 +1611,7 @@ bool nsLayoutUtils::HasPseudoStyle(nsIContent* aContent,
   RefPtr<ComputedStyle> pseudoContext;
   if (aContent) {
     pseudoContext = aPresContext->StyleSet()->ProbePseudoElementStyle(
-        *aContent->AsElement(), aPseudoElement, aComputedStyle);
+        *aContent->AsElement(), aPseudoElement, nullptr, aComputedStyle);
   }
   return pseudoContext != nullptr;
 }
@@ -3160,13 +3163,9 @@ void nsLayoutUtils::PaintFrame(gfxContext* aRenderingContext, nsIFrame* aFrame,
   // If we are in a remote browser, then apply clipping from ancestor browsers
   if (BrowserChild* browserChild = BrowserChild::GetFrom(presShell)) {
     if (!browserChild->IsTopLevel()) {
-      Maybe<nsRect> unscaledVisibleRect = browserChild->GetVisibleRect();
-
-      if (!unscaledVisibleRect) {
-        unscaledVisibleRect = Some(nsRect());
-      }
-
-      rootInkOverflow.IntersectRect(rootInkOverflow, *unscaledVisibleRect);
+      const nsRect unscaledVisibleRect =
+          browserChild->GetVisibleRect().valueOr(nsRect());
+      rootInkOverflow.IntersectRect(rootInkOverflow, unscaledVisibleRect);
     }
   }
 
@@ -3445,14 +3444,10 @@ void nsLayoutUtils::PaintFrame(gfxContext* aRenderingContext, nsIFrame* aFrame,
   // glass boundaries on Windows. Also set up the window dragging region.
   if ((aFlags & PaintFrameFlags::WidgetLayers) &&
       !(aFlags & PaintFrameFlags::DocumentRelative)) {
-    nsIWidget* widget = aFrame->GetNearestWidget();
-    if (widget) {
-      nsRegion opaqueRegion;
-      opaqueRegion.And(builder->GetWindowExcludeGlassRegion(),
-                       builder->GetWindowOpaqueRegion());
+    if (nsIWidget* widget = aFrame->GetNearestWidget()) {
+      const nsRegion& opaqueRegion = builder->GetWindowOpaqueRegion();
       widget->UpdateOpaqueRegion(LayoutDeviceIntRegion::FromUnknownRegion(
           opaqueRegion.ToNearestPixels(presContext->AppUnitsPerDevPixel())));
-
       widget->UpdateWindowDraggingRegion(builder->GetWindowDraggingRegion());
     }
   }
@@ -6902,13 +6897,6 @@ widget::TransparencyMode nsLayoutUtils::GetFrameTransparency(
     return TransparencyMode::Transparent;
   }
 
-  StyleAppearance appearance =
-      aCSSRootFrame->StyleDisplay()->EffectiveAppearance();
-
-  if (appearance == StyleAppearance::MozWinBorderlessGlass) {
-    return TransparencyMode::BorderlessGlass;
-  }
-
   nsITheme::Transparency transparency;
   if (aCSSRootFrame->IsThemed(&transparency)) {
     return transparency == nsITheme::eTransparent
@@ -7006,8 +6994,10 @@ nsIFrame* nsLayoutUtils::GetReferenceFrame(nsIFrame* aFrame) {
       result |= gfx::ShapedTextFlags::TEXT_OPTIMIZE_SPEED;
       break;
     case StyleTextRendering::Auto:
-      if (aPresContext && aStyleFont->mFont.size.ToCSSPixels() <
-                              aPresContext->GetAutoQualityMinFontSize()) {
+      if (aPresContext &&
+          aStyleFont->mFont.size.ToCSSPixels() <
+              aPresContext->DevPixelsToFloatCSSPixels(
+                  StaticPrefs::browser_display_auto_quality_min_font_size())) {
         result |= gfx::ShapedTextFlags::TEXT_OPTIMIZE_SPEED;
       }
       break;
@@ -7131,79 +7121,6 @@ bool nsLayoutUtils::IsInPositionFixedSubtree(const nsIFrame* aFrame) {
   return false;
 }
 
-SurfaceFromElementResult nsLayoutUtils::SurfaceFromOffscreenCanvas(
-    OffscreenCanvas* aOffscreenCanvas, uint32_t aSurfaceFlags,
-    RefPtr<DrawTarget>& aTarget) {
-  SurfaceFromElementResult result;
-
-  IntSize size = aOffscreenCanvas->GetWidthHeight();
-
-  result.mSourceSurface =
-      aOffscreenCanvas->GetSurfaceSnapshot(&result.mAlphaType);
-  if (!result.mSourceSurface) {
-    // If the element doesn't have a context then we won't get a snapshot. The
-    // canvas spec wants us to not error and just draw nothing, so return an
-    // empty surface.
-    result.mAlphaType = gfxAlphaType::Opaque;
-    RefPtr<DrawTarget> ref =
-        aTarget ? aTarget : gfxPlatform::ThreadLocalScreenReferenceDrawTarget();
-    if (ref->CanCreateSimilarDrawTarget(size, SurfaceFormat::B8G8R8A8)) {
-      RefPtr<DrawTarget> dt =
-          ref->CreateSimilarDrawTarget(size, SurfaceFormat::B8G8R8A8);
-      if (dt) {
-        result.mSourceSurface = dt->Snapshot();
-      }
-    }
-  } else if (aTarget) {
-    RefPtr<SourceSurface> opt =
-        aTarget->OptimizeSourceSurface(result.mSourceSurface);
-    if (opt) {
-      result.mSourceSurface = opt;
-    }
-  }
-
-  result.mHasSize = true;
-  result.mSize = size;
-  result.mIntrinsicSize = size;
-  result.mIsWriteOnly = aOffscreenCanvas->IsWriteOnly();
-
-  nsIGlobalObject* global = aOffscreenCanvas->GetParentObject();
-  if (global) {
-    result.mPrincipal = global->PrincipalOrNull();
-  }
-
-  return result;
-}
-
-SurfaceFromElementResult nsLayoutUtils::SurfaceFromImageBitmap(
-    mozilla::dom::ImageBitmap* aImageBitmap, uint32_t aSurfaceFlags) {
-  SurfaceFromElementResult result;
-  RefPtr<DrawTarget> dt = Factory::CreateDrawTarget(
-      BackendType::SKIA, IntSize(1, 1), SurfaceFormat::B8G8R8A8);
-
-  // An ImageBitmap, not being a DOM element, only has `origin-clean`
-  // (via our `IsWriteOnly`), and does not participate in CORS.
-  // Right now we mark this by setting mCORSUsed to true.
-  result.mCORSUsed = true;
-  result.mIsWriteOnly = aImageBitmap->IsWriteOnly();
-  result.mSourceSurface = aImageBitmap->PrepareForDrawTarget(dt);
-
-  if (result.mSourceSurface) {
-    result.mSize = result.mIntrinsicSize = result.mSourceSurface->GetSize();
-    result.mHasSize = true;
-    result.mAlphaType = IsOpaque(result.mSourceSurface->GetFormat())
-                            ? gfxAlphaType::Opaque
-                            : gfxAlphaType::Premult;
-  }
-
-  nsCOMPtr<nsIGlobalObject> global = aImageBitmap->GetParentObject();
-  if (global) {
-    result.mPrincipal = global->PrincipalOrNull();
-  }
-
-  return result;
-}
-
 static RefPtr<SourceSurface> ScaleSourceSurface(SourceSurface& aSurface,
                                                 const IntSize& aTargetSize) {
   const IntSize surfaceSize = aSurface.GetSize();
@@ -7222,6 +7139,170 @@ static RefPtr<SourceSurface> ScaleSourceSurface(SourceSurface& aSurface,
   dt->DrawSurface(&aSurface, Rect(Point(), Size(aTargetSize)),
                   Rect(Point(), Size(surfaceSize)));
   return dt->GetBackingSurface();
+}
+
+SurfaceFromElementResult nsLayoutUtils::SurfaceFromOffscreenCanvas(
+    OffscreenCanvas* aOffscreenCanvas, uint32_t aSurfaceFlags,
+    RefPtr<DrawTarget>& aTarget) {
+  SurfaceFromElementResult result;
+
+  IntSize size = aOffscreenCanvas->GetWidthHeight();
+  if (size.IsEmpty()) {
+    return result;
+  }
+
+  result.mSourceSurface =
+      aOffscreenCanvas->GetSurfaceSnapshot(&result.mAlphaType);
+  if (!result.mSourceSurface) {
+    // If the element doesn't have a context then we won't get a snapshot. The
+    // canvas spec wants us to not error and just draw nothing, so return an
+    // empty surface.
+    result.mSize = size;
+    result.mAlphaType = gfxAlphaType::Opaque;
+    RefPtr<DrawTarget> ref =
+        aTarget ? aTarget : gfxPlatform::ThreadLocalScreenReferenceDrawTarget();
+    if (ref->CanCreateSimilarDrawTarget(size, SurfaceFormat::B8G8R8A8)) {
+      RefPtr<DrawTarget> dt =
+          ref->CreateSimilarDrawTarget(size, SurfaceFormat::B8G8R8A8);
+      if (dt) {
+        result.mSourceSurface = dt->Snapshot();
+      }
+    }
+  } else {
+    result.mSize = result.mSourceSurface->GetSize();
+
+    // If we want an exact sized surface, then we need to scale if we don't
+    // match the intrinsic size.
+    const bool exactSize = aSurfaceFlags & SFE_EXACT_SIZE_SURFACE;
+    if (exactSize && size != result.mSize) {
+      result.mSize = size;
+      result.mSourceSurface = ScaleSourceSurface(*result.mSourceSurface, size);
+    }
+
+    if (aTarget && result.mSourceSurface) {
+      RefPtr<SourceSurface> opt =
+          aTarget->OptimizeSourceSurface(result.mSourceSurface);
+      if (opt) {
+        result.mSourceSurface = opt;
+      }
+    }
+  }
+
+  result.mHasSize = true;
+  result.mIntrinsicSize = size;
+  result.mIsWriteOnly = aOffscreenCanvas->IsWriteOnly();
+
+  nsIGlobalObject* global = aOffscreenCanvas->GetParentObject();
+  if (global) {
+    result.mPrincipal = global->PrincipalOrNull();
+  }
+
+  return result;
+}
+
+SurfaceFromElementResult nsLayoutUtils::SurfaceFromVideoFrame(
+    VideoFrame* aVideoFrame, uint32_t aSurfaceFlags,
+    RefPtr<DrawTarget>& aTarget) {
+  SurfaceFromElementResult result;
+
+  RefPtr<layers::Image> layersImage = aVideoFrame->GetImage();
+  if (!layersImage) {
+    return result;
+  }
+
+  IntSize codedSize = aVideoFrame->NativeCodedSize();
+  IntRect visibleRect = aVideoFrame->NativeVisibleRect();
+  IntSize displaySize = aVideoFrame->NativeDisplaySize();
+
+  MOZ_ASSERT(layersImage->GetSize() == codedSize);
+  IntRect codedRect(IntPoint(0, 0), codedSize);
+
+  if (visibleRect.IsEqualEdges(codedRect) && displaySize == codedSize) {
+    // The display and coded rects are identical, which means we can just use
+    // the image as is.
+    result.mLayersImage = std::move(layersImage);
+    result.mSize = codedSize;
+    result.mIntrinsicSize = codedSize;
+  } else if (aSurfaceFlags & SFE_ALLOW_UNCROPPED_UNSCALED) {
+    // The caller supports cropping/scaling.
+    result.mLayersImage = std::move(layersImage);
+    result.mCropRect = Some(visibleRect);
+    result.mSize = codedSize;
+    result.mIntrinsicSize = displaySize;
+  } else {
+    // The caller does not support cropping/scaling. We need to on its behalf.
+    RefPtr<SourceSurface> surface = layersImage->GetAsSourceSurface();
+    if (!surface) {
+      return result;
+    }
+
+    RefPtr<DrawTarget> ref = aTarget
+                                 ? aTarget
+                                 : gfxPlatform::GetPlatform()
+                                       ->ThreadLocalScreenReferenceDrawTarget();
+    if (!ref->CanCreateSimilarDrawTarget(displaySize,
+                                         SurfaceFormat::B8G8R8A8)) {
+      return result;
+    }
+
+    RefPtr<DrawTarget> dt =
+        ref->CreateSimilarDrawTarget(displaySize, SurfaceFormat::B8G8R8A8);
+    if (!dt) {
+      return result;
+    }
+
+    gfx::Rect dstRect(0, 0, displaySize.Width(), displaySize.Height());
+    gfx::Rect srcRect(visibleRect.X(), visibleRect.Y(), visibleRect.Width(),
+                      visibleRect.Height());
+    dt->DrawSurface(surface, dstRect, srcRect);
+    result.mSourceSurface = dt->Snapshot();
+    if (NS_WARN_IF(!result.mSourceSurface)) {
+      return result;
+    }
+
+    result.mSize = displaySize;
+    result.mIntrinsicSize = displaySize;
+  }
+
+  // TODO(aosmond): Presumably we can do better than assuming premultiplied.
+  // Depending on how the VideoFrame was created, we may have had more
+  // information about its transpancy status.
+  result.mAlphaType = gfxAlphaType::Premult;
+  result.mHasSize = true;
+
+  // We shouldn't have a VideoFrame if either of these is true.
+  result.mHadCrossOriginRedirects = false;
+  result.mIsWriteOnly = false;
+
+  nsIGlobalObject* global = aVideoFrame->GetParentObject();
+  if (global) {
+    result.mPrincipal = global->PrincipalOrNull();
+  }
+
+  if (aTarget) {
+    // They gave us a DrawTarget to optimize for, so even though we may have a
+    // layers::Image, we should unconditionally try to grab a SourceSurface and
+    // try to optimize it.
+    if (result.mLayersImage) {
+      MOZ_ASSERT(!result.mSourceSurface);
+      result.mSourceSurface = result.mLayersImage->GetAsSourceSurface();
+    }
+
+    if (result.mSourceSurface) {
+      RefPtr<SourceSurface> opt =
+          aTarget->OptimizeSourceSurface(result.mSourceSurface);
+      if (opt) {
+        result.mSourceSurface = std::move(opt);
+      }
+    }
+  }
+
+  return result;
+}
+
+SurfaceFromElementResult nsLayoutUtils::SurfaceFromImageBitmap(
+    mozilla::dom::ImageBitmap* aImageBitmap, uint32_t aSurfaceFlags) {
+  return aImageBitmap->SurfaceFrom(aSurfaceFlags);
 }
 
 SurfaceFromElementResult nsLayoutUtils::SurfaceFromElement(
@@ -7334,12 +7415,15 @@ SurfaceFromElementResult nsLayoutUtils::SurfaceFromElement(
     if (!result.mSourceSurface) {
       return result;
     }
-    if (exactSize && result.mSourceSurface->GetSize() != result.mSize) {
+    IntSize surfSize = result.mSourceSurface->GetSize();
+    if (exactSize && surfSize != result.mSize) {
       result.mSourceSurface =
           ScaleSourceSurface(*result.mSourceSurface, result.mSize);
       if (!result.mSourceSurface) {
         return result;
       }
+    } else {
+      result.mSize = surfSize;
     }
     // The surface we return is likely to be cached. We don't want to have to
     // convert to a surface that's compatible with aTarget each time it's used
@@ -7394,6 +7478,9 @@ SurfaceFromElementResult nsLayoutUtils::SurfaceFromElement(
   SurfaceFromElementResult result;
 
   IntSize size = aElement->GetSize();
+  if (size.IsEmpty()) {
+    return result;
+  }
 
   auto pAlphaType = &result.mAlphaType;
   if (!(aSurfaceFlags & SFE_ALLOW_NON_PREMULT)) {
@@ -7405,6 +7492,7 @@ SurfaceFromElementResult nsLayoutUtils::SurfaceFromElement(
     // If the element doesn't have a context then we won't get a snapshot. The
     // canvas spec wants us to not error and just draw nothing, so return an
     // empty surface.
+    result.mSize = size;
     result.mAlphaType = gfxAlphaType::Opaque;
     RefPtr<DrawTarget> ref =
         aTarget ? aTarget
@@ -7416,11 +7504,23 @@ SurfaceFromElementResult nsLayoutUtils::SurfaceFromElement(
         result.mSourceSurface = dt->Snapshot();
       }
     }
-  } else if (aTarget) {
-    RefPtr<SourceSurface> opt =
-        aTarget->OptimizeSourceSurface(result.mSourceSurface);
-    if (opt) {
-      result.mSourceSurface = opt;
+  } else {
+    result.mSize = result.mSourceSurface->GetSize();
+
+    // If we want an exact sized surface, then we need to scale if we don't
+    // match the intrinsic size.
+    const bool exactSize = aSurfaceFlags & SFE_EXACT_SIZE_SURFACE;
+    if (exactSize && size != result.mSize) {
+      result.mSize = size;
+      result.mSourceSurface = ScaleSourceSurface(*result.mSourceSurface, size);
+    }
+
+    if (aTarget && result.mSourceSurface) {
+      RefPtr<SourceSurface> opt =
+          aTarget->OptimizeSourceSurface(result.mSourceSurface);
+      if (opt) {
+        result.mSourceSurface = opt;
+      }
     }
   }
 
@@ -7429,7 +7529,6 @@ SurfaceFromElementResult nsLayoutUtils::SurfaceFromElement(
   aElement->MarkContextClean();
 
   result.mHasSize = true;
-  result.mSize = size;
   result.mIntrinsicSize = size;
   result.mPrincipal = aElement->NodePrincipal();
   result.mHadCrossOriginRedirects = false;
@@ -8818,11 +8917,11 @@ ScrollMetadata nsLayoutUtils::ComputeScrollMetadata(
         // compositor.
         if (presContext->GetDynamicToolbarState() ==
             DynamicToolbarState::Collapsed) {
-          metrics.SetFixedLayerMargins(
-              ScreenMargin(0, 0,
-                           presContext->GetDynamicToolbarHeight() -
-                               presContext->GetDynamicToolbarMaxHeight(),
-                           0));
+          metrics.SetFixedLayerMargins(ScreenMargin(
+              0, 0,
+              ScreenCoord(presContext->GetDynamicToolbarHeight() -
+                          presContext->GetDynamicToolbarMaxHeight()),
+              0));
         }
       }
     }
@@ -9460,14 +9559,45 @@ bool nsLayoutUtils::IsInvisibleBreak(nsINode* aNode,
   return lineNonEmpty;
 }
 
+/* static */
+nsRect nsLayoutUtils::ComputeSVGViewBox(SVGViewportElement* aElement) {
+  if (!aElement) {
+    return {};
+  }
+
+  if (aElement->HasViewBox()) {
+    // If a `viewBox` attribute is specified for the SVG viewport creating
+    // element:
+    // 1. The reference box is positioned at the origin of the coordinate
+    //    system established by the `viewBox` attribute.
+    // 2. The dimension of the reference box is set to the width and height
+    //    values of the `viewBox` attribute.
+    const SVGViewBox& value = aElement->GetAnimatedViewBox()->GetAnimValue();
+    return nsRect(nsPresContext::CSSPixelsToAppUnits(value.x),
+                  nsPresContext::CSSPixelsToAppUnits(value.y),
+                  nsPresContext::CSSPixelsToAppUnits(value.width),
+                  nsPresContext::CSSPixelsToAppUnits(value.height));
+  }
+
+  // No viewBox is specified, uses the nearest SVG viewport as reference
+  // box.
+  svgFloatSize viewportSize = aElement->GetViewportSize();
+  return nsRect(0, 0, nsPresContext::CSSPixelsToAppUnits(viewportSize.width),
+                nsPresContext::CSSPixelsToAppUnits(viewportSize.height));
+}
+
 static nsRect ComputeSVGReferenceRect(nsIFrame* aFrame,
                                       StyleGeometryBox aGeometryBox) {
   MOZ_ASSERT(aFrame->GetContent()->IsSVGElement());
   nsRect r;
 
   // For SVG elements without associated CSS layout box, the used value for
-  // content-box, padding-box, border-box and margin-box is fill-box.
+  // content-box and padding-box is fill-box and for
+  // border-box and margin-box is stroke-box.
   switch (aGeometryBox) {
+    case StyleGeometryBox::NoBox:
+    case StyleGeometryBox::BorderBox:
+    case StyleGeometryBox::MarginBox:
     case StyleGeometryBox::StrokeBox: {
       // XXX Bug 1299876
       // The size of stroke-box is not correct if this graphic element has
@@ -9485,35 +9615,11 @@ static nsRect ComputeSVGReferenceRect(nsIFrame* aFrame,
         // We should not render without a viewport so return an empty rect.
         break;
       }
-
-      if (viewportElement->HasViewBox()) {
-        // If a `viewBox` attribute is specified for the SVG viewport creating
-        // element:
-        // 1. The reference box is positioned at the origin of the coordinate
-        //    system established by the `viewBox` attribute.
-        // 2. The dimension of the reference box is set to the width and height
-        //    values of the `viewBox` attribute.
-        const SVGViewBox& value =
-            viewportElement->GetAnimatedViewBox()->GetAnimValue();
-        r = nsRect(nsPresContext::CSSPixelsToAppUnits(value.x),
-                   nsPresContext::CSSPixelsToAppUnits(value.y),
-                   nsPresContext::CSSPixelsToAppUnits(value.width),
-                   nsPresContext::CSSPixelsToAppUnits(value.height));
-      } else {
-        // No viewBox is specified, uses the nearest SVG viewport as reference
-        // box.
-        svgFloatSize viewportSize = viewportElement->GetViewportSize();
-        r = nsRect(0, 0, nsPresContext::CSSPixelsToAppUnits(viewportSize.width),
-                   nsPresContext::CSSPixelsToAppUnits(viewportSize.height));
-      }
-
+      r = nsLayoutUtils::ComputeSVGViewBox(viewportElement);
       break;
     }
-    case StyleGeometryBox::NoBox:
-    case StyleGeometryBox::BorderBox:
     case StyleGeometryBox::ContentBox:
     case StyleGeometryBox::PaddingBox:
-    case StyleGeometryBox::MarginBox:
     case StyleGeometryBox::FillBox: {
       gfxRect bbox =
           SVGUtils::GetBBox(aFrame, SVGUtils::eBBoxIncludeFillGeometry);
@@ -9532,8 +9638,9 @@ static nsRect ComputeSVGReferenceRect(nsIFrame* aFrame,
   return r;
 }
 
-static nsRect ComputeHTMLReferenceRect(nsIFrame* aFrame,
-                                       StyleGeometryBox aGeometryBox) {
+/* static */
+nsRect nsLayoutUtils::ComputeHTMLReferenceRect(const nsIFrame* aFrame,
+                                               StyleGeometryBox aGeometryBox) {
   nsRect r;
 
   // For elements with associated CSS layout box, the used value for fill-box,
@@ -9562,6 +9669,26 @@ static nsRect ComputeHTMLReferenceRect(nsIFrame* aFrame,
   }
 
   return r;
+}
+
+/* static */
+StyleGeometryBox nsLayoutUtils::CoordBoxToGeometryBox(StyleCoordBox aCoordBox) {
+  switch (aCoordBox) {
+    case StyleCoordBox::ContentBox:
+      return StyleGeometryBox::ContentBox;
+    case StyleCoordBox::PaddingBox:
+      return StyleGeometryBox::PaddingBox;
+    case StyleCoordBox::BorderBox:
+      return StyleGeometryBox::BorderBox;
+    case StyleCoordBox::FillBox:
+      return StyleGeometryBox::FillBox;
+    case StyleCoordBox::StrokeBox:
+      return StyleGeometryBox::StrokeBox;
+    case StyleCoordBox::ViewBox:
+      return StyleGeometryBox::ViewBox;
+  }
+  MOZ_ASSERT_UNREACHABLE("Unknown coord-box type");
+  return StyleGeometryBox::BorderBox;
 }
 
 static StyleGeometryBox ShapeBoxToGeometryBox(const StyleShapeBox& aBox) {
@@ -9695,29 +9822,30 @@ void nsLayoutUtils::ComputeSystemFont(nsFont* aSystemFont,
   aSystemFont->size = Length::FromPixels(fontStyle.size);
 
   // aSystemFont->langGroup = fontStyle.langGroup;
+
   switch (StyleFontSizeAdjust::Tag(fontStyle.sizeAdjustBasis)) {
     case StyleFontSizeAdjust::Tag::None:
       aSystemFont->sizeAdjust = StyleFontSizeAdjust::None();
       break;
     case StyleFontSizeAdjust::Tag::ExHeight:
-      aSystemFont->sizeAdjust =
-          StyleFontSizeAdjust::ExHeight(fontStyle.sizeAdjust);
+      aSystemFont->sizeAdjust = StyleFontSizeAdjust::ExHeight(
+          StyleFontSizeAdjustFactor::Number(fontStyle.sizeAdjust));
       break;
     case StyleFontSizeAdjust::Tag::CapHeight:
-      aSystemFont->sizeAdjust =
-          StyleFontSizeAdjust::CapHeight(fontStyle.sizeAdjust);
+      aSystemFont->sizeAdjust = StyleFontSizeAdjust::CapHeight(
+          StyleFontSizeAdjustFactor::Number(fontStyle.sizeAdjust));
       break;
     case StyleFontSizeAdjust::Tag::ChWidth:
-      aSystemFont->sizeAdjust =
-          StyleFontSizeAdjust::ChWidth(fontStyle.sizeAdjust);
+      aSystemFont->sizeAdjust = StyleFontSizeAdjust::ChWidth(
+          StyleFontSizeAdjustFactor::Number(fontStyle.sizeAdjust));
       break;
     case StyleFontSizeAdjust::Tag::IcWidth:
-      aSystemFont->sizeAdjust =
-          StyleFontSizeAdjust::IcWidth(fontStyle.sizeAdjust);
+      aSystemFont->sizeAdjust = StyleFontSizeAdjust::IcWidth(
+          StyleFontSizeAdjustFactor::Number(fontStyle.sizeAdjust));
       break;
     case StyleFontSizeAdjust::Tag::IcHeight:
-      aSystemFont->sizeAdjust =
-          StyleFontSizeAdjust::IcHeight(fontStyle.sizeAdjust);
+      aSystemFont->sizeAdjust = StyleFontSizeAdjust::IcHeight(
+          StyleFontSizeAdjustFactor::Number(fontStyle.sizeAdjust));
       break;
   }
 
@@ -9908,8 +10036,9 @@ bool nsLayoutUtils::FrameIsMostlyScrolledOutOfViewInCrossProcess(
 
   auto scale =
       browserChild->GetChildToParentConversionMatrix().As2D().ScaleFactors();
-  ScreenSize margin(scale.xScale * CSSPixel::FromAppUnits(aMargin),
-                    scale.yScale * CSSPixel::FromAppUnits(aMargin));
+  const CSSCoord cssMargin = CSSPixel::FromAppUnits(aMargin);
+  ScreenSize margin =
+      CSSSize(cssMargin, cssMargin) * ViewAs<CSSToScreenScale2D>(scale);
 
   return visibleRect->width < margin.width ||
          visibleRect->height < margin.height;

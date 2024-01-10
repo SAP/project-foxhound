@@ -214,7 +214,7 @@ ARCHIVE_FILES = {
         {
             "source": buildconfig.topobjdir,
             "base": "dist/bin/components",
-            "patterns": ["httpd.js"],
+            "patterns": ["httpd.sys.mjs"],
             "dest": "bin/components",
         },
         {
@@ -315,6 +315,16 @@ ARCHIVE_FILES = {
         },
         {
             "source": buildconfig.topsrcdir,
+            "base": "testing/mozbase/mozlog",
+            "pattern": "mozlog/**",
+        },
+        {
+            "source": buildconfig.topsrcdir,
+            "base": "python/mozterm",
+            "pattern": "mozterm/**",
+        },
+        {
+            "source": buildconfig.topsrcdir,
             "base": "testing/mozbase/mozprocess",
             "pattern": "mozprocess/**",
         },
@@ -325,8 +335,13 @@ ARCHIVE_FILES = {
         },
         {
             "source": buildconfig.topsrcdir,
+            "base": "third_party/python/tomlkit",
+            "pattern": "**",
+        },
+        {
+            "source": buildconfig.topsrcdir,
             "base": "third_party/python/distro",
-            "pattern": "distro.py",
+            "pattern": "distro/**",
         },
         {
             "source": buildconfig.topsrcdir,

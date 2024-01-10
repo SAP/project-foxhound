@@ -2,9 +2,46 @@ use crate::parser::{Parse, Parser, Result};
 use crate::token::{self, Span};
 use crate::{annotation, kw};
 
+/// A custom section within a wasm module.
+#[derive(Debug)]
+pub enum Custom<'a> {
+    /// A raw custom section with the manual placement and bytes specified.
+    Raw(RawCustomSection<'a>),
+    /// A producers custom section.
+    Producers(Producers<'a>),
+}
+
+impl Custom<'_> {
+    /// Where this custom section is placed.
+    pub fn place(&self) -> CustomPlace {
+        match self {
+            Custom::Raw(s) => s.place,
+            Custom::Producers(_) => CustomPlace::AfterLast,
+        }
+    }
+
+    /// The name of this custom section
+    pub fn name(&self) -> &str {
+        match self {
+            Custom::Raw(s) => s.name,
+            Custom::Producers(_) => "producers",
+        }
+    }
+}
+
+impl<'a> Parse<'a> for Custom<'a> {
+    fn parse(parser: Parser<'a>) -> Result<Self> {
+        if parser.peek::<annotation::producers>()? {
+            Ok(Custom::Producers(parser.parse()?))
+        } else {
+            Ok(Custom::Raw(parser.parse()?))
+        }
+    }
+}
+
 /// A wasm custom section within a module.
 #[derive(Debug)]
-pub struct Custom<'a> {
+pub struct RawCustomSection<'a> {
     /// Where this `@custom` was defined.
     pub span: Span,
 
@@ -49,11 +86,11 @@ pub enum CustomPlaceAnchor {
     Tag,
 }
 
-impl<'a> Parse<'a> for Custom<'a> {
+impl<'a> Parse<'a> for RawCustomSection<'a> {
     fn parse(parser: Parser<'a>) -> Result<Self> {
         let span = parser.parse::<annotation::custom>()?.0;
         let name = parser.parse()?;
-        let place = if parser.peek::<token::LParen>() {
+        let place = if parser.peek::<token::LParen>()? {
             parser.parens(|p| p.parse())?
         } else {
             CustomPlace::AfterLast
@@ -62,7 +99,7 @@ impl<'a> Parse<'a> for Custom<'a> {
         while !parser.is_empty() {
             data.push(parser.parse()?);
         }
-        Ok(Custom {
+        Ok(RawCustomSection {
             span,
             name,
             place,
@@ -74,16 +111,16 @@ impl<'a> Parse<'a> for Custom<'a> {
 impl<'a> Parse<'a> for CustomPlace {
     fn parse(parser: Parser<'a>) -> Result<Self> {
         let mut l = parser.lookahead1();
-        let ctor = if l.peek::<kw::before>() {
+        let ctor = if l.peek::<kw::before>()? {
             parser.parse::<kw::before>()?;
-            if l.peek::<kw::first>() {
+            if l.peek::<kw::first>()? {
                 parser.parse::<kw::first>()?;
                 return Ok(CustomPlace::BeforeFirst);
             }
             CustomPlace::Before as fn(CustomPlaceAnchor) -> _
-        } else if l.peek::<kw::after>() {
+        } else if l.peek::<kw::after>()? {
             parser.parse::<kw::after>()?;
-            if l.peek::<kw::last>() {
+            if l.peek::<kw::last>()? {
                 parser.parse::<kw::last>()?;
                 return Ok(CustomPlace::AfterLast);
             }
@@ -97,55 +134,103 @@ impl<'a> Parse<'a> for CustomPlace {
 
 impl<'a> Parse<'a> for CustomPlaceAnchor {
     fn parse(parser: Parser<'a>) -> Result<Self> {
-        if parser.peek::<kw::r#type>() {
+        if parser.peek::<kw::r#type>()? {
             parser.parse::<kw::r#type>()?;
             return Ok(CustomPlaceAnchor::Type);
         }
-        if parser.peek::<kw::import>() {
+        if parser.peek::<kw::import>()? {
             parser.parse::<kw::import>()?;
             return Ok(CustomPlaceAnchor::Import);
         }
-        if parser.peek::<kw::func>() {
+        if parser.peek::<kw::func>()? {
             parser.parse::<kw::func>()?;
             return Ok(CustomPlaceAnchor::Func);
         }
-        if parser.peek::<kw::table>() {
+        if parser.peek::<kw::table>()? {
             parser.parse::<kw::table>()?;
             return Ok(CustomPlaceAnchor::Table);
         }
-        if parser.peek::<kw::memory>() {
+        if parser.peek::<kw::memory>()? {
             parser.parse::<kw::memory>()?;
             return Ok(CustomPlaceAnchor::Memory);
         }
-        if parser.peek::<kw::global>() {
+        if parser.peek::<kw::global>()? {
             parser.parse::<kw::global>()?;
             return Ok(CustomPlaceAnchor::Global);
         }
-        if parser.peek::<kw::export>() {
+        if parser.peek::<kw::export>()? {
             parser.parse::<kw::export>()?;
             return Ok(CustomPlaceAnchor::Export);
         }
-        if parser.peek::<kw::start>() {
+        if parser.peek::<kw::start>()? {
             parser.parse::<kw::start>()?;
             return Ok(CustomPlaceAnchor::Start);
         }
-        if parser.peek::<kw::elem>() {
+        if parser.peek::<kw::elem>()? {
             parser.parse::<kw::elem>()?;
             return Ok(CustomPlaceAnchor::Elem);
         }
-        if parser.peek::<kw::code>() {
+        if parser.peek::<kw::code>()? {
             parser.parse::<kw::code>()?;
             return Ok(CustomPlaceAnchor::Code);
         }
-        if parser.peek::<kw::data>() {
+        if parser.peek::<kw::data>()? {
             parser.parse::<kw::data>()?;
             return Ok(CustomPlaceAnchor::Data);
         }
-        if parser.peek::<kw::tag>() {
+        if parser.peek::<kw::tag>()? {
             parser.parse::<kw::tag>()?;
             return Ok(CustomPlaceAnchor::Tag);
         }
 
         Err(parser.error("expected a valid section name"))
+    }
+}
+
+/// A producers custom section
+#[allow(missing_docs)]
+#[derive(Debug)]
+pub struct Producers<'a> {
+    pub fields: Vec<(&'a str, Vec<(&'a str, &'a str)>)>,
+}
+
+impl<'a> Parse<'a> for Producers<'a> {
+    fn parse(parser: Parser<'a>) -> Result<Self> {
+        parser.parse::<annotation::producers>()?.0;
+        let mut languages = Vec::new();
+        let mut sdks = Vec::new();
+        let mut processed_by = Vec::new();
+        while !parser.is_empty() {
+            parser.parens(|parser| {
+                let mut l = parser.lookahead1();
+                let dst = if l.peek::<kw::language>()? {
+                    parser.parse::<kw::language>()?;
+                    &mut languages
+                } else if l.peek::<kw::sdk>()? {
+                    parser.parse::<kw::sdk>()?;
+                    &mut sdks
+                } else if l.peek::<kw::processed_by>()? {
+                    parser.parse::<kw::processed_by>()?;
+                    &mut processed_by
+                } else {
+                    return Err(l.error());
+                };
+
+                dst.push((parser.parse()?, parser.parse()?));
+                Ok(())
+            })?;
+        }
+
+        let mut fields = Vec::new();
+        if !languages.is_empty() {
+            fields.push(("language", languages));
+        }
+        if !sdks.is_empty() {
+            fields.push(("sdk", sdks));
+        }
+        if !processed_by.is_empty() {
+            fields.push(("processed-by", processed_by));
+        }
+        Ok(Producers { fields })
     }
 }

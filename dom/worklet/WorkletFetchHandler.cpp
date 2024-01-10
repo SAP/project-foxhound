@@ -26,6 +26,7 @@
 #include "nsIThreadRetargetableRequest.h"
 
 using JS::loader::ModuleLoadRequest;
+using JS::loader::ParserMetadata;
 using JS::loader::ScriptFetchOptions;
 using mozilla::dom::loader::WorkletModuleLoader;
 
@@ -87,11 +88,14 @@ NS_IMETHODIMP StartModuleLoadRunnable::RunOnWorkletThread() {
 
   // To fetch a worklet/module worker script graph:
   // https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-worklet/module-worker-script-graph
-  // Step 1. Let options be a script fetch options. And referrer policy is the
-  // empty string.
-  ReferrerPolicy referrerPolicy = ReferrerPolicy::_empty;
+  // Step 1. Let options be a script fetch options whose cryptographic nonce is
+  // the empty string, integrity metadata is the empty string, parser metadata
+  // is "not-parser-inserted", credentials mode is credentials mode, referrer
+  // policy is the empty string, and fetch priority is "auto".
   RefPtr<ScriptFetchOptions> fetchOptions = new ScriptFetchOptions(
-      CORSMode::CORS_NONE, referrerPolicy, /*triggeringPrincipal*/ nullptr);
+      CORSMode::CORS_NONE, ReferrerPolicy::_empty, /* aNonce = */ u""_ns,
+      ParserMetadata::NotParserInserted,
+      /*triggeringPrincipal*/ nullptr);
 
   WorkletModuleLoader* moduleLoader =
       static_cast<WorkletModuleLoader*>(globalScope->GetModuleLoader());

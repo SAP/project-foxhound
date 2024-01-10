@@ -18,10 +18,17 @@ class BrowsingContextModule extends Module {
       name == "browsingContext.domContentLoaded" ||
       name == "browsingContext.load"
     ) {
-      // Resolve browsing context to a TabManager id.
-      payload.context = lazy.TabManager.getIdForBrowsingContext(
-        payload.context
-      );
+      const browsingContext = payload.context;
+      // Resolve browsing context to a Navigable id.
+      payload.context =
+        lazy.TabManager.getIdForBrowsingContext(browsingContext);
+
+      // Resolve navigation id.
+      const navigation =
+        this.messageHandler.navigationManager.getNavigationForBrowsingContext(
+          browsingContext
+        );
+      payload.navigation = navigation ? navigation.navigationId : null;
     }
 
     return payload;

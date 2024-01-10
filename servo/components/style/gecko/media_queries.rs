@@ -26,7 +26,6 @@ use euclid::{Scale, SideOffsets2D};
 use servo_arc::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
 use std::{cmp, fmt};
-use style_traits::viewport::ViewportConstraints;
 use style_traits::{CSSPixel, DevicePixel};
 
 /// The `Device` in Gecko wraps a pres context, has a default values computed,
@@ -133,12 +132,6 @@ impl Device {
             )
         });
         NonNegativeLength::new(au.to_f32_px())
-    }
-
-    /// Tells the device that a new viewport rule has been found, and stores the
-    /// relevant viewport constraints.
-    pub fn account_for_viewport_rule(&mut self, _constraints: &ViewportConstraints) {
-        unreachable!("Gecko doesn't support @viewport");
     }
 
     /// Whether any animation name may be referenced from the style of any
@@ -492,6 +485,11 @@ impl Device {
         color_scheme: &ColorScheme,
     ) -> u32 {
         unsafe { bindings::Gecko_ComputeSystemColor(system_color, self.document(), color_scheme) }
+    }
+
+    /// Returns whether the used color-scheme for `color-scheme` should be dark.
+    pub(crate) fn is_dark_color_scheme(&self, color_scheme: &ColorScheme) -> bool {
+        unsafe { bindings::Gecko_IsDarkColorScheme(self.document(), color_scheme) }
     }
 
     /// Returns the default background color.

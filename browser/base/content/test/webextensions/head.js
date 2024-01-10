@@ -7,7 +7,7 @@ const BASE = getRootDirectory(gTestPath).replace(
   "https://example.com/"
 );
 
-XPCOMUtils.defineLazyGetter(this, "Management", () => {
+ChromeUtils.defineLazyGetter(this, "Management", () => {
   // eslint-disable-next-line no-shadow
   const { Management } = ChromeUtils.importESModule(
     "resource://gre/modules/Extension.sys.mjs"
@@ -516,7 +516,8 @@ async function interactiveUpdateTest(autoUpdate, checkFn) {
   // Click the cancel button, wait to see the cancel event
   let cancelPromise = promiseInstallEvent(addon, "onInstallCancelled");
   panel.secondaryButton.click();
-  await cancelPromise;
+  const cancelledByUser = await cancelPromise;
+  is(cancelledByUser, true, "Install cancelled by user");
 
   addon = await AddonManager.getAddonByID(ID);
   is(addon.version, "1.0", "Should still be running the old version");

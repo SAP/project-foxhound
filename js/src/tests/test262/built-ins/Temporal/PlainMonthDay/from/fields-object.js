@@ -1,4 +1,4 @@
-// |reftest| skip -- Temporal is not supported
+// |reftest| skip-if(!this.hasOwnProperty('Temporal')) -- Temporal is not enabled unconditionally
 // Copyright (C) 2021 Igalia, S.L. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 
@@ -23,7 +23,7 @@ for (const [argument, description = argument] of tests) {
   const plainMonthDay = Temporal.PlainMonthDay.from(argument);
   assert.notSameValue(plainMonthDay, argument, `from ${description} converts`);
   TemporalHelpers.assertPlainMonthDay(plainMonthDay, "M10", 1, `from ${description}`);
-  assert.sameValue(plainMonthDay.calendar.id, "iso8601", `from ${description} calendar`);
+  assert.sameValue(plainMonthDay.calendarId, "iso8601", `from ${description} calendar`);
 }
 
 reportCompare(0, 0);

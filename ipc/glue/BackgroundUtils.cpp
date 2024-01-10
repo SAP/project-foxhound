@@ -399,7 +399,7 @@ nsresult RHEntryToRHEntryInfo(nsIRedirectHistoryEntry* aRHEntry,
 }
 
 nsresult LoadInfoToLoadInfoArgs(nsILoadInfo* aLoadInfo,
-                                Maybe<LoadInfoArgs>* aOptionalLoadInfoArgs) {
+                                LoadInfoArgs* outLoadInfoArgs) {
   nsresult rv = NS_OK;
   Maybe<PrincipalInfo> loadingPrincipalInfo;
   if (nsIPrincipal* loadingPrin = aLoadInfo->GetLoadingPrincipal()) {
@@ -486,6 +486,10 @@ nsresult LoadInfoToLoadInfoArgs(nsILoadInfo* aLoadInfo,
   nsAutoString cspNonce;
   Unused << NS_WARN_IF(NS_FAILED(aLoadInfo->GetCspNonce(cspNonce)));
 
+  nsAutoString integrityMetadata;
+  Unused << NS_WARN_IF(
+      NS_FAILED(aLoadInfo->GetIntegrityMetadata(integrityMetadata)));
+
   nsCOMPtr<nsICookieJarSettings> cookieJarSettings;
   rv = aLoadInfo->GetCookieJarSettings(getter_AddRefs(cookieJarSettings));
   NS_ENSURE_SUCCESS(rv, rv);
@@ -537,11 +541,13 @@ nsresult LoadInfoToLoadInfoArgs(nsILoadInfo* aLoadInfo,
         redirectChain, interceptionInfo->FromThirdParty()));
   }
 
-  *aOptionalLoadInfoArgs = Some(LoadInfoArgs(
+  *outLoadInfoArgs = LoadInfoArgs(
       loadingPrincipalInfo, triggeringPrincipalInfo, principalToInheritInfo,
       topLevelPrincipalInfo, optionalResultPrincipalURI, triggeringRemoteType,
       aLoadInfo->GetSandboxedNullPrincipalID(), aLoadInfo->GetSecurityFlags(),
       aLoadInfo->GetSandboxFlags(), aLoadInfo->GetTriggeringSandboxFlags(),
+      aLoadInfo->GetTriggeringWindowId(),
+      aLoadInfo->GetTriggeringStorageAccess(),
       aLoadInfo->InternalContentPolicyType(),
       static_cast<uint32_t>(aLoadInfo->GetTainting()),
       aLoadInfo->GetBlockAllMixedContent(),
@@ -568,8 +574,9 @@ nsresult LoadInfoToLoadInfoArgs(nsILoadInfo* aLoadInfo,
       aLoadInfo->GetDocumentHasUserInteracted(),
       aLoadInfo->GetAllowListFutureDocumentsCreatedFromThisRedirectChain(),
       aLoadInfo->GetNeedForCheckingAntiTrackingHeuristic(), cspNonce,
-      aLoadInfo->GetSkipContentSniffing(), aLoadInfo->GetHttpsOnlyStatus(),
-      aLoadInfo->GetHstsStatus(), aLoadInfo->GetHasValidUserGestureActivation(),
+      integrityMetadata, aLoadInfo->GetSkipContentSniffing(),
+      aLoadInfo->GetHttpsOnlyStatus(), aLoadInfo->GetHstsStatus(),
+      aLoadInfo->GetHasValidUserGestureActivation(),
       aLoadInfo->GetAllowDeprecatedSystemRequests(),
       aLoadInfo->GetIsInDevToolsContext(), aLoadInfo->GetParserCreatedScript(),
       aLoadInfo->GetIsFromProcessingFrameAttributes(),
@@ -579,23 +586,23 @@ nsresult LoadInfoToLoadInfoArgs(nsILoadInfo* aLoadInfo,
       aLoadInfo->GetStoragePermission(), aLoadInfo->GetIsMetaRefresh(),
       aLoadInfo->GetLoadingEmbedderPolicy(),
       aLoadInfo->GetIsOriginTrialCoepCredentiallessEnabledForTopLevel(),
-      unstrippedURI, interceptionInfoArg));
+      unstrippedURI, interceptionInfoArg);
 
   return NS_OK;
 }
 
-nsresult LoadInfoArgsToLoadInfo(
-    const Maybe<LoadInfoArgs>& aOptionalLoadInfoArgs,
-    const nsACString& aOriginRemoteType, nsILoadInfo** outLoadInfo) {
-  return LoadInfoArgsToLoadInfo(aOptionalLoadInfoArgs, aOriginRemoteType,
-                                nullptr, outLoadInfo);
+nsresult LoadInfoArgsToLoadInfo(const LoadInfoArgs& aLoadInfoArgs,
+                                const nsACString& aOriginRemoteType,
+                                nsILoadInfo** outLoadInfo) {
+  return LoadInfoArgsToLoadInfo(aLoadInfoArgs, aOriginRemoteType, nullptr,
+                                outLoadInfo);
 }
-nsresult LoadInfoArgsToLoadInfo(
-    const Maybe<LoadInfoArgs>& aOptionalLoadInfoArgs,
-    const nsACString& aOriginRemoteType, nsINode* aCspToInheritLoadingContext,
-    nsILoadInfo** outLoadInfo) {
+nsresult LoadInfoArgsToLoadInfo(const LoadInfoArgs& aLoadInfoArgs,
+                                const nsACString& aOriginRemoteType,
+                                nsINode* aCspToInheritLoadingContext,
+                                nsILoadInfo** outLoadInfo) {
   RefPtr<LoadInfo> loadInfo;
-  nsresult rv = LoadInfoArgsToLoadInfo(aOptionalLoadInfoArgs, aOriginRemoteType,
+  nsresult rv = LoadInfoArgsToLoadInfo(aLoadInfoArgs, aOriginRemoteType,
                                        aCspToInheritLoadingContext,
                                        getter_AddRefs(loadInfo));
   NS_ENSURE_SUCCESS(rv, rv);
@@ -604,23 +611,16 @@ nsresult LoadInfoArgsToLoadInfo(
   return NS_OK;
 }
 
-nsresult LoadInfoArgsToLoadInfo(
-    const Maybe<LoadInfoArgs>& aOptionalLoadInfoArgs,
-    const nsACString& aOriginRemoteType, LoadInfo** outLoadInfo) {
-  return LoadInfoArgsToLoadInfo(aOptionalLoadInfoArgs, aOriginRemoteType,
-                                nullptr, outLoadInfo);
+nsresult LoadInfoArgsToLoadInfo(const LoadInfoArgs& aLoadInfoArgs,
+                                const nsACString& aOriginRemoteType,
+                                LoadInfo** outLoadInfo) {
+  return LoadInfoArgsToLoadInfo(aLoadInfoArgs, aOriginRemoteType, nullptr,
+                                outLoadInfo);
 }
-nsresult LoadInfoArgsToLoadInfo(
-    const Maybe<LoadInfoArgs>& aOptionalLoadInfoArgs,
-    const nsACString& aOriginRemoteType, nsINode* aCspToInheritLoadingContext,
-    LoadInfo** outLoadInfo) {
-  if (aOptionalLoadInfoArgs.isNothing()) {
-    *outLoadInfo = nullptr;
-    return NS_OK;
-  }
-
-  const LoadInfoArgs& loadInfoArgs = aOptionalLoadInfoArgs.ref();
-
+nsresult LoadInfoArgsToLoadInfo(const LoadInfoArgs& loadInfoArgs,
+                                const nsACString& aOriginRemoteType,
+                                nsINode* aCspToInheritLoadingContext,
+                                LoadInfo** outLoadInfo) {
   nsCOMPtr<nsIPrincipal> loadingPrincipal;
   if (loadInfoArgs.requestingPrincipalInfo().isSome()) {
     auto loadingPrincipalOrErr =
@@ -831,7 +831,8 @@ nsresult LoadInfoArgsToLoadInfo(
       triggeringRemoteType, loadInfoArgs.sandboxedNullPrincipalID(), clientInfo,
       reservedClientInfo, initialClientInfo, controller,
       loadInfoArgs.securityFlags(), loadInfoArgs.sandboxFlags(),
-      loadInfoArgs.triggeringSandboxFlags(), loadInfoArgs.contentPolicyType(),
+      loadInfoArgs.triggeringSandboxFlags(), loadInfoArgs.triggeringWindowId(),
+      loadInfoArgs.triggeringStorageAccess(), loadInfoArgs.contentPolicyType(),
       static_cast<LoadTainting>(loadInfoArgs.tainting()),
       loadInfoArgs.blockAllMixedContent(),
       loadInfoArgs.upgradeInsecureRequests(),
@@ -857,9 +858,9 @@ nsresult LoadInfoArgsToLoadInfo(
       loadInfoArgs.documentHasUserInteracted(),
       loadInfoArgs.allowListFutureDocumentsCreatedFromThisRedirectChain(),
       loadInfoArgs.needForCheckingAntiTrackingHeuristic(),
-      loadInfoArgs.cspNonce(), loadInfoArgs.skipContentSniffing(),
-      loadInfoArgs.httpsOnlyStatus(), loadInfoArgs.hstsStatus(),
-      loadInfoArgs.hasValidUserGestureActivation(),
+      loadInfoArgs.cspNonce(), loadInfoArgs.integrityMetadata(),
+      loadInfoArgs.skipContentSniffing(), loadInfoArgs.httpsOnlyStatus(),
+      loadInfoArgs.hstsStatus(), loadInfoArgs.hasValidUserGestureActivation(),
       loadInfoArgs.allowDeprecatedSystemRequests(),
       loadInfoArgs.isInDevToolsContext(), loadInfoArgs.parserCreatedScript(),
       loadInfoArgs.storagePermission(), loadInfoArgs.isMetaRefresh(),
@@ -930,6 +931,8 @@ void LoadInfoToParentLoadInfoForwarder(
       aLoadInfo->GetAllowDeprecatedSystemRequests(),
       aLoadInfo->GetIsInDevToolsContext(), aLoadInfo->GetParserCreatedScript(),
       aLoadInfo->GetTriggeringSandboxFlags(),
+      aLoadInfo->GetTriggeringWindowId(),
+      aLoadInfo->GetTriggeringStorageAccess(),
       aLoadInfo->GetServiceWorkerTaintingSynthesized(),
       aLoadInfo->GetDocumentHasUserInteracted(),
       aLoadInfo->GetAllowListFutureDocumentsCreatedFromThisRedirectChain(),
@@ -971,6 +974,13 @@ nsresult MergeParentLoadInfoForwarder(
 
   rv = aLoadInfo->SetTriggeringSandboxFlags(
       aForwarderArgs.triggeringSandboxFlags());
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  rv = aLoadInfo->SetTriggeringWindowId(aForwarderArgs.triggeringWindowId());
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  rv = aLoadInfo->SetTriggeringStorageAccess(
+      aForwarderArgs.triggeringStorageAccess());
   NS_ENSURE_SUCCESS(rv, rv);
 
   rv = aLoadInfo->SetHasValidUserGestureActivation(

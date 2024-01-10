@@ -3,9 +3,6 @@
 
 "use strict";
 
-const { Preferences } = ChromeUtils.importESModule(
-  "resource://gre/modules/Preferences.sys.mjs"
-);
 const { AddonsEngine } = ChromeUtils.importESModule(
   "resource://services-sync/engines/addons.sys.mjs"
 );
@@ -21,20 +18,18 @@ const { SyncedRecordsTelemetry } = ChromeUtils.importESModule(
 
 const HTTP_PORT = 8888;
 
-const prefs = new Preferences();
-
-prefs.set(
+Services.prefs.setStringPref(
   "extensions.getAddons.get.url",
   "http://localhost:8888/search/guid:%IDS%"
 );
 // Note that all compat-override URLs currently 404, but that's OK - the main
 // thing is to avoid us hitting the real AMO.
-prefs.set(
+Services.prefs.setStringPref(
   "extensions.getAddons.compatOverides.url",
   "http://localhost:8888/compat-override/guid:%IDS%"
 );
-prefs.set("extensions.install.requireSecureOrigin", false);
-prefs.set("extensions.checkUpdateSecurity", false);
+Services.prefs.setBoolPref("extensions.install.requireSecureOrigin", false);
+Services.prefs.setBoolPref("extensions.checkUpdateSecurity", false);
 
 AddonTestUtils.init(this);
 AddonTestUtils.createAppInfo(
@@ -51,7 +46,8 @@ Services.prefs.setBoolPref("extensions.experiments.enabled", true);
 
 const SYSTEM_ADDON_ID = "system1@tests.mozilla.org";
 add_task(async function setupSystemAddon() {
-  const distroDir = FileUtils.getDir("ProfD", ["sysfeatures", "app0"], true);
+  const distroDir = FileUtils.getDir("ProfD", ["sysfeatures", "app0"]);
+  distroDir.create(Ci.nsIFile.DIRECTORY_TYPE, FileUtils.PERMS_DIRECTORY);
   AddonTestUtils.registerDirectory("XREAppFeat", distroDir);
 
   let xpi = await AddonTestUtils.createTempWebExtensionFile({
@@ -309,7 +305,7 @@ add_task(async function test_apply_enabled() {
 
   _("Ensure enabled state updates don't apply if the ignore pref is set.");
   records.push(createRecordForThisApp(addon.syncGUID, ID1, false, false));
-  Svc.Prefs.set("addons.ignoreUserEnabledChanges", true);
+  Svc.PrefBranch.setBoolPref("addons.ignoreUserEnabledChanges", true);
   failed = await store.applyIncomingBatch(records, countTelemetry);
   Assert.equal(0, failed.length);
   Assert.equal(0, countTelemetry.incomingCounts.failed);
@@ -318,7 +314,7 @@ add_task(async function test_apply_enabled() {
   records = [];
 
   await uninstallAddon(addon, reconciler);
-  Svc.Prefs.reset("addons.ignoreUserEnabledChanges");
+  Svc.PrefBranch.clearUserPref("addons.ignoreUserEnabledChanges");
 });
 
 add_task(async function test_apply_enabled_appDisabled() {
@@ -416,7 +412,7 @@ add_task(async function test_apply_uninstall() {
 add_task(async function test_addon_syncability() {
   _("Ensure isAddonSyncable functions properly.");
 
-  Svc.Prefs.set(
+  Svc.PrefBranch.setStringPref(
     "addons.trustedSourceHostnames",
     "addons.mozilla.org,other.example.com"
   );
@@ -480,19 +476,22 @@ add_task(async function test_addon_syncability() {
     Assert.ok(!store.isSourceURITrusted(Services.io.newURI(uri)));
   }
 
-  Svc.Prefs.set("addons.trustedSourceHostnames", "");
+  Svc.PrefBranch.setStringPref("addons.trustedSourceHostnames", "");
   for (let uri of trusted) {
     Assert.ok(!store.isSourceURITrusted(Services.io.newURI(uri)));
   }
 
-  Svc.Prefs.set("addons.trustedSourceHostnames", "addons.mozilla.org");
+  Svc.PrefBranch.setStringPref(
+    "addons.trustedSourceHostnames",
+    "addons.mozilla.org"
+  );
   Assert.ok(
     store.isSourceURITrusted(
       Services.io.newURI("https://addons.mozilla.org/foo")
     )
   );
 
-  Svc.Prefs.reset("addons.trustedSourceHostnames");
+  Svc.PrefBranch.clearUserPref("addons.trustedSourceHostnames");
 });
 
 add_task(async function test_get_all_ids() {

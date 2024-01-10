@@ -13,9 +13,12 @@
 #include "jsfriendapi.h"
 
 #include "frontend/FrontendContext.h"  // AutoReportFrontendContext
-#include "js/friend/ErrorMessages.h"   // js::GetErrorMessage, JSMSG_*
-#include "js/Printf.h"                 // JS_vsmprintf
-#include "js/Warnings.h"               // JS::WarningReporter
+#include "js/CharacterEncoding.h"      // JS::ConstUTF8CharsZ
+#include "js/ColumnNumber.h"  // JS::ColumnNumberZeroOrigin, JS::ColumnNumberOneOrigin, JS::TaggedColumnNumberZeroOrigin
+#include "js/ErrorReport.h"   // JSErrorBase
+#include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
+#include "js/Printf.h"                // JS_vsmprintf
+#include "js/Warnings.h"              // JS::WarningReporter
 #include "vm/FrameIter.h"
 #include "vm/GlobalObject.h"
 #include "vm/JSContext.h"
@@ -34,16 +37,16 @@ void js::CallWarningReporter(JSContext* cx, JSErrorReport* reportp) {
   }
 }
 
-void js::CompileError::throwError(JSContext* cx) {
+bool js::CompileError::throwError(JSContext* cx) {
   if (isWarning()) {
     CallWarningReporter(cx, this);
-    return;
+    return true;
   }
 
   // If there's a runtime exception type associated with this error
-  // number, set that as the pending exception.  For errors occuring at
+  // number, set that as the pending exception.  For errors occurring at
   // compile time, this is very likely to be a JSEXN_SYNTAXERR.
-  ErrorToException(cx, this, nullptr, nullptr);
+  return ErrorToException(cx, this, nullptr, nullptr);
 }
 
 bool js::ReportExceptionClosure::operator()(JSContext* cx) {
@@ -63,9 +66,9 @@ bool js::ReportCompileWarning(FrontendContext* fc, ErrorMetadata&& metadata,
   err.isWarning_ = true;
   err.errorNumber = errorNumber;
 
-  err.filename = metadata.filename;
+  err.filename = JS::ConstUTF8CharsZ(metadata.filename);
   err.lineno = metadata.lineNumber;
-  err.column = metadata.columnNumber;
+  err.column = JS::ColumnNumberOneOrigin(metadata.columnNumber);
   err.isMuted = metadata.isMuted;
 
   if (UniqueTwoByteChars lineOfContext = std::move(metadata.lineOfContext)) {
@@ -92,9 +95,9 @@ static void ReportCompileErrorImpl(FrontendContext* fc,
   err.isWarning_ = false;
   err.errorNumber = errorNumber;
 
-  err.filename = metadata.filename;
+  err.filename = JS::ConstUTF8CharsZ(metadata.filename);
   err.lineno = metadata.lineNumber;
-  err.column = metadata.columnNumber;
+  err.column = JS::ColumnNumberOneOrigin(metadata.columnNumber);
   err.isMuted = metadata.isMuted;
 
   if (UniqueTwoByteChars lineOfContext = std::move(metadata.lineOfContext)) {
@@ -112,14 +115,35 @@ static void ReportCompileErrorImpl(FrontendContext* fc,
 
 void js::ReportCompileErrorLatin1(FrontendContext* fc, ErrorMetadata&& metadata,
                                   UniquePtr<JSErrorNotes> notes,
-                                  unsigned errorNumber, va_list* args) {
-  ReportCompileErrorImpl(fc, std::move(metadata), std::move(notes), errorNumber,
-                         args, ArgumentsAreLatin1);
+                                  unsigned errorNumber, ...) {
+  va_list args;
+  va_start(args, errorNumber);
+  ReportCompileErrorLatin1VA(fc, std::move(metadata), std::move(notes),
+                             errorNumber, &args);
+  va_end(args);
 }
 
 void js::ReportCompileErrorUTF8(FrontendContext* fc, ErrorMetadata&& metadata,
                                 UniquePtr<JSErrorNotes> notes,
-                                unsigned errorNumber, va_list* args) {
+                                unsigned errorNumber, ...) {
+  va_list args;
+  va_start(args, errorNumber);
+  ReportCompileErrorUTF8VA(fc, std::move(metadata), std::move(notes),
+                           errorNumber, &args);
+  va_end(args);
+}
+
+void js::ReportCompileErrorLatin1VA(FrontendContext* fc,
+                                    ErrorMetadata&& metadata,
+                                    UniquePtr<JSErrorNotes> notes,
+                                    unsigned errorNumber, va_list* args) {
+  ReportCompileErrorImpl(fc, std::move(metadata), std::move(notes), errorNumber,
+                         args, ArgumentsAreLatin1);
+}
+
+void js::ReportCompileErrorUTF8VA(FrontendContext* fc, ErrorMetadata&& metadata,
+                                  UniquePtr<JSErrorNotes> notes,
+                                  unsigned errorNumber, va_list* args) {
   ReportCompileErrorImpl(fc, std::move(metadata), std::move(notes), errorNumber,
                          args, ArgumentsAreUTF8);
 }
@@ -137,16 +161,16 @@ void js::ReportErrorToGlobal(JSContext* cx, Handle<GlobalObject*> global,
   PrepareScriptEnvironmentAndInvoke(cx, global, report);
 }
 
-static void ReportError(JSContext* cx, JSErrorReport* reportp,
+static bool ReportError(JSContext* cx, JSErrorReport* reportp,
                         JSErrorCallback callback, void* userRef) {
   if (reportp->isWarning()) {
     CallWarningReporter(cx, reportp);
-    return;
+    return true;
   }
 
   // Check the error report, and set a JavaScript-catchable exception
   // if the error is defined to have an associated exception.
-  ErrorToException(cx, reportp, callback, userRef);
+  return ErrorToException(cx, reportp, callback, userRef);
 }
 
 /*
@@ -168,13 +192,13 @@ static void PopulateReportBlame(JSContext* cx, JSErrorReport* report) {
     return;
   }
 
-  report->filename = iter.filename();
+  report->filename = JS::ConstUTF8CharsZ(iter.filename());
   if (iter.hasScript()) {
     report->sourceId = iter.script()->scriptSource()->id();
   }
-  uint32_t column;
+  JS::TaggedColumnNumberZeroOrigin column;
   report->lineno = iter.computeLine(&column);
-  report->column = FixupColumnForDisplay(column);
+  report->column = JS::ColumnNumberOneOrigin(column.oneOriginValue());
   report->isMuted = iter.mutedErrors();
 }
 
@@ -460,7 +484,9 @@ bool js::ReportErrorNumberVA(JSContext* cx, IsWarning isWarning,
     return false;
   }
 
-  ReportError(cx, &report, callback, userRef);
+  if (!ReportError(cx, &report, callback, userRef)) {
+    return false;
+  }
 
   return report.isWarning();
 }
@@ -501,7 +527,9 @@ static bool ReportErrorNumberArray(JSContext* cx, IsWarning isWarning,
     return false;
   }
 
-  ReportError(cx, &report, callback, userRef);
+  if (!ReportError(cx, &report, callback, userRef)) {
+    return false;
+  }
 
   return report.isWarning();
 }
@@ -550,7 +578,9 @@ bool js::ReportErrorVA(JSContext* cx, IsWarning isWarning, const char* format,
   }
   PopulateReportBlame(cx, &report);
 
-  ReportError(cx, &report, nullptr, nullptr);
+  if (!ReportError(cx, &report, nullptr, nullptr)) {
+    return false;
+  }
 
   return report.isWarning();
 }

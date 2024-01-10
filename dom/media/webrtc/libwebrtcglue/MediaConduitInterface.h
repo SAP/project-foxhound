@@ -55,6 +55,7 @@ enum class MediaSessionConduitLocalDirection : int { kSend, kRecv };
 class VideoSessionConduit;
 class AudioSessionConduit;
 class WebrtcCallWrapper;
+class FrameTransformerProxy;
 
 /**
  * 1. Abstract renderer for video data
@@ -133,17 +134,10 @@ class MediaSessionConduit {
   virtual MediaEventSourceExc<MediaPacket>& SenderRtcpSendEvent() = 0;
   virtual MediaEventSourceExc<MediaPacket>& ReceiverRtcpSendEvent() = 0;
 
-  // Receiving packets...
-  // from an rtp-receiving pipeline
+  // Receiving RTP packets
   virtual void ConnectReceiverRtpEvent(
       MediaEventSourceExc<webrtc::RtpPacketReceived, webrtc::RTPHeader>&
           aEvent) = 0;
-  // from an rtp-receiving pipeline
-  virtual void ConnectReceiverRtcpEvent(
-      MediaEventSourceExc<MediaPacket>& aEvent) = 0;
-  // from an rtp-transmitting pipeline
-  virtual void ConnectSenderRtcpEvent(
-      MediaEventSourceExc<MediaPacket>& aEvent) = 0;
 
   // Sts thread only.
   virtual Maybe<uint16_t> RtpSendBaseSeqFor(uint32_t aSsrc) const = 0;
@@ -406,6 +400,16 @@ class VideoSessionConduit : public MediaSessionConduit {
       dom::Sequence<dom::RTCVideoFrameHistoryInternal>* outHistories) const = 0;
 
   virtual Maybe<Ssrc> GetAssociatedLocalRtxSSRC(Ssrc aSsrc) const = 0;
+
+  struct Resolution {
+    size_t width;
+    size_t height;
+  };
+  virtual Maybe<Resolution> GetLastResolution() const = 0;
+
+  virtual void RequestKeyFrame(FrameTransformerProxy* aProxy) = 0;
+  virtual void GenerateKeyFrame(const Maybe<std::string>& aRid,
+                                FrameTransformerProxy* aProxy) = 0;
 
  protected:
   /* RTCP feedback settings, for unit testing purposes */

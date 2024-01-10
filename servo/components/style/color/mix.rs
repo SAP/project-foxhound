@@ -4,8 +4,9 @@
 
 //! Color mixing/interpolation.
 
-use super::{AbsoluteColor, ColorComponents, ColorFlags, ColorSpace};
+use super::{AbsoluteColor, ColorFlags, ColorSpace};
 use crate::parser::{Parse, ParserContext};
+use crate::values::generics::color::ColorMixFlags;
 use cssparser::Parser;
 use std::fmt::{self, Write};
 use style_traits::{CssWriter, ParseError, ToCss};
@@ -86,7 +87,7 @@ impl ColorInterpolationMethod {
         // The preferred color space to use for interpolating colors is Oklab.
         // However, if either of the colors are in legacy rgb(), hsl() or hwb(),
         // then interpolation is done in sRGB.
-        if !left.is_legacy_color() || !right.is_legacy_color() {
+        if !left.is_legacy_syntax() || !right.is_legacy_syntax() {
             Self::oklab()
         } else {
             Self::srgb()
@@ -142,11 +143,11 @@ pub fn mix(
     mut left_weight: f32,
     right_color: &AbsoluteColor,
     mut right_weight: f32,
-    normalize_weights: bool,
+    flags: ColorMixFlags,
 ) -> AbsoluteColor {
     // https://drafts.csswg.org/css-color-5/#color-mix-percent-norm
     let mut alpha_multiplier = 1.0;
-    if normalize_weights {
+    if flags.contains(ColorMixFlags::NORMALIZE_WEIGHTS) {
         let sum = left_weight + right_weight;
         if sum != 1.0 {
             let scale = 1.0 / sum;
@@ -158,7 +159,7 @@ pub fn mix(
         }
     }
 
-    mix_in(
+    let result = mix_in(
         interpolation.space,
         left_color,
         left_weight,
@@ -166,7 +167,24 @@ pub fn mix(
         right_weight,
         interpolation.hue,
         alpha_multiplier,
-    )
+    );
+
+    if flags.contains(ColorMixFlags::RESULT_IN_MODERN_SYNTAX) {
+        // If the result *MUST* be in modern syntax, then make sure it is in a
+        // color space that allows the modern syntax. So hsl and hwb will be
+        // converted to srgb.
+        if result.is_legacy_syntax() {
+            result.to_color_space(ColorSpace::Srgb)
+        } else {
+            result
+        }
+    } else if left_color.is_legacy_syntax() && right_color.is_legacy_syntax() {
+        // If both sides of the mix is legacy then convert the result back into
+        // legacy.
+        result.into_srgb_legacy()
+    } else {
+        result
+    }
 }
 
 /// What the outcome of each component should be in a mix result.
@@ -247,17 +265,9 @@ fn mix_in(
     //        then divide after calculations?
     let alpha = (alpha * 1000.0).round() / 1000.0;
 
-    let mut result = AbsoluteColor::new(
-        color_space,
-        ColorComponents(result[0], result[1], result[2]),
-        alpha,
-    );
+    let mut result = AbsoluteColor::new(color_space, result[0], result[1], result[2], alpha);
 
     result.flags = result_flags;
-    // If both sides are legacy RGB, then the result stays in legacy RGB.
-    if !left_color.is_legacy_color() || !right_color.is_legacy_color() {
-        result.flags.insert(ColorFlags::AS_COLOR_FUNCTION);
-    }
 
     result
 }

@@ -7,6 +7,8 @@
 #ifndef mozilla_dom_IdentityNetworkHelpers_h
 #define mozilla_dom_IdentityNetworkHelpers_h
 
+#include "mozilla/dom/Promise.h"
+#include "mozilla/dom/Promise-inl.h"
 #include "mozilla/dom/Request.h"
 #include "mozilla/dom/Response.h"
 #include "mozilla/dom/WindowGlobalParent.h"
@@ -38,9 +40,14 @@ RefPtr<TPromise> FetchJSONStructure(Request* aRequest) {
     return resultPromise;
   }
 
+  // Working around https://gcc.gnu.org/bugzilla/show_bug.cgi?id=85883
+  RefPtr<PromiseNativeHandler> reject =
+      new MozPromiseRejectOnDestruction{resultPromise, __func__};
+
   // Handle the response
-  RefPtr<DomPromiseListener> listener = new DomPromiseListener(
-      [resultPromise](JSContext* aCx, JS::Handle<JS::Value> aValue) {
+  fetchPromise->AddCallbacksWithCycleCollectedArgs(
+      [resultPromise, reject](JSContext* aCx, JS::Handle<JS::Value> aValue,
+                              ErrorResult&) {
         // Get the Response object from the argument to the callback
         if (NS_WARN_IF(!aValue.isObject())) {
           resultPromise->Reject(NS_ERROR_FAILURE, __func__);
@@ -70,8 +77,9 @@ RefPtr<TPromise> FetchJSONStructure(Request* aRequest) {
         }
 
         // Handle the parsed JSON from the Response body
-        RefPtr<DomPromiseListener> jsonListener = new DomPromiseListener(
-            [resultPromise](JSContext* aCx, JS::Handle<JS::Value> aValue) {
+        jsonPromise->AddCallbacksWithCycleCollectedArgs(
+            [resultPromise](JSContext* aCx, JS::Handle<JS::Value> aValue,
+                            ErrorResult&) {
               // Parse the JSON into the correct type, validating fields and
               // types
               T result;
@@ -83,13 +91,20 @@ RefPtr<TPromise> FetchJSONStructure(Request* aRequest) {
 
               resultPromise->Resolve(result, __func__);
             },
-            [resultPromise](nsresult aRv) {
-              resultPromise->Reject(aRv, __func__);
+            [resultPromise](JSContext*, JS::Handle<JS::Value> aValue,
+                            ErrorResult&) {
+              resultPromise->Reject(
+                  Promise::TryExtractNSResultFromRejectionValue(aValue),
+                  __func__);
             });
-        jsonPromise->AppendNativeHandler(jsonListener);
+        jsonPromise->AppendNativeHandler(reject);
       },
-      [resultPromise](nsresult aRv) { resultPromise->Reject(aRv, __func__); });
-  fetchPromise->AppendNativeHandler(listener);
+      [resultPromise](JSContext*, JS::Handle<JS::Value> aValue, ErrorResult&) {
+        resultPromise->Reject(
+            Promise::TryExtractNSResultFromRejectionValue(aValue), __func__);
+      });
+  fetchPromise->AppendNativeHandler(reject);
+
   return resultPromise;
 }
 

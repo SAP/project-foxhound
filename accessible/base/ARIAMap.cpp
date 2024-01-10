@@ -10,11 +10,10 @@
 #include "AccAttributes.h"
 #include "nsAccUtils.h"
 #include "nsCoreUtils.h"
-#include "Role.h"
+#include "mozilla/a11y/Role.h"
 #include "States.h"
 
 #include "nsAttrName.h"
-#include "nsGenericHTMLElement.h"
 #include "nsWhitespaceTokenizer.h"
 
 #include "mozilla/BinarySearch.h"
@@ -37,6 +36,8 @@ static const uint32_t kGenericAccType = 0;
  *
  *  When no Role enum mapping exists for an ARIA role, the role will be exposed
  *  via the object attribute "xml-roles".
+ *
+ * Note: the list must remain alphabetically ordered to support binary search.
  */
 
 static const nsRoleMapEntry sWAIRoleMaps[] = {
@@ -739,6 +740,16 @@ static const nsRoleMapEntry sWAIRoleMaps[] = {
   { // heading
     nsGkAtoms::heading,
     roles::HEADING,
+    kUseMapRole,
+    eNoValue,
+    eNoAction,
+    eNoLiveAttr,
+    kGenericAccType,
+    kNoReqStates
+  },
+  { // image
+    nsGkAtoms::image,
+    roles::GRAPHIC,
     kUseMapRole,
     eNoValue,
     eNoAction,
@@ -1581,7 +1592,7 @@ nsAtom* AttrIterator::AttrName() const { return mAttrAtom; }
 
 void AttrIterator::AttrValue(nsAString& aAttrValue) const {
   nsAutoString value;
-  if (mAttrs->GetAttr(kNameSpaceID_None, mAttrAtom, value)) {
+  if (mAttrs->GetAttr(mAttrAtom, value)) {
     if (mAttrCharacteristics & ATTR_VALTOKEN) {
       nsAtom* normalizedValue =
           nsAccUtils::NormalizeARIAToken(mAttrs, mAttrAtom);
@@ -1620,7 +1631,7 @@ bool AttrIterator::ExposeAttr(AccAttributes* aTargetAttrs) const {
     return false;  // Invalid value.
   }
   nsAutoString value;
-  if (mAttrs->GetAttr(kNameSpaceID_None, mAttrAtom, value)) {
+  if (mAttrs->GetAttr(mAttrAtom, value)) {
     aTargetAttrs->SetAttribute(mAttrAtom, std::move(value));
     return true;
   }

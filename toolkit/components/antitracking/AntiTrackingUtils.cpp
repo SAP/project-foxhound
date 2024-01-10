@@ -34,6 +34,7 @@
 #include "PartitioningExceptionList.h"
 
 #define ANTITRACKING_PERM_KEY "3rdPartyStorage"
+#define ANTITRACKING_FRAME_PERM_KEY "3rdPartyFrameStorage"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -126,6 +127,34 @@ bool AntiTrackingUtils::CreateStoragePermissionKey(nsIPrincipal* aPrincipal,
 }
 
 // static
+void AntiTrackingUtils::CreateStorageFramePermissionKey(
+    const nsACString& aTrackingSite, nsACString& aPermissionKey) {
+  MOZ_ASSERT(aPermissionKey.IsEmpty());
+
+  static const nsLiteralCString prefix =
+      nsLiteralCString(ANTITRACKING_FRAME_PERM_KEY "^");
+
+  aPermissionKey.SetCapacity(prefix.Length() + aTrackingSite.Length());
+  aPermissionKey.Append(prefix);
+  aPermissionKey.Append(aTrackingSite);
+}
+
+// static
+bool AntiTrackingUtils::CreateStorageFramePermissionKey(
+    nsIPrincipal* aPrincipal, nsACString& aKey) {
+  MOZ_ASSERT(aPrincipal);
+
+  nsAutoCString site;
+  nsresult rv = aPrincipal->GetSiteOriginNoSuffix(site);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return false;
+  }
+
+  CreateStorageFramePermissionKey(site, aKey);
+  return true;
+}
+
+// static
 bool AntiTrackingUtils::CreateStorageRequestPermissionKey(
     nsIURI* aURI, nsACString& aPermissionKey) {
   MOZ_ASSERT(aPermissionKey.IsEmpty());
@@ -188,6 +217,8 @@ Maybe<size_t> AntiTrackingUtils::CountSitesAllowStorageAccess(
 
   nsAutoCString prefix;
   AntiTrackingUtils::CreateStoragePermissionKey(aPrincipal, prefix);
+  nsAutoCString framePrefix;
+  AntiTrackingUtils::CreateStorageFramePermissionKey(aPrincipal, framePrefix);
 
   using Permissions = nsTArray<RefPtr<nsIPermission>>;
   Permissions perms;
@@ -195,10 +226,18 @@ Maybe<size_t> AntiTrackingUtils::CountSitesAllowStorageAccess(
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return Nothing();
   }
+  Permissions framePermissions;
+  rv = permManager->GetAllWithTypePrefix(framePrefix, framePermissions);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return Nothing();
+  }
+  if (!perms.AppendElements(framePermissions, fallible)) {
+    return Nothing();
+  }
 
   // Create a set of unique origins
-  using Origins = nsTArray<nsCString>;
-  Origins origins;
+  using Sites = nsTArray<nsCString>;
+  Sites sites;
 
   // Iterate over all permissions that have a prefix equal to the expected
   // permission we are looking for. This includes two things we need to remove:
@@ -211,10 +250,11 @@ Maybe<size_t> AntiTrackingUtils::CountSitesAllowStorageAccess(
     if (NS_WARN_IF(NS_FAILED(rv))) {
       return Nothing();
     }
+
     // Let's make sure that we're not looking at a permission for
     // https://exampletracker.company when we mean to look for the
     // permission for https://exampletracker.com!
-    if (type != prefix) {
+    if (type != prefix && type != framePrefix) {
       continue;
     }
 
@@ -224,21 +264,21 @@ Maybe<size_t> AntiTrackingUtils::CountSitesAllowStorageAccess(
       return Nothing();
     }
 
-    nsAutoCString origin;
-    rv = principal->GetOrigin(origin);
+    nsAutoCString site;
+    rv = principal->GetSiteOrigin(site);
     if (NS_WARN_IF(NS_FAILED(rv))) {
       return Nothing();
     }
 
-    ToLowerCase(origin);
+    ToLowerCase(site);
 
     // Append if it would not be a duplicate
-    if (origins.IndexOf(origin) == Origins::NoIndex) {
-      origins.AppendElement(origin);
+    if (sites.IndexOf(site) == Sites::NoIndex) {
+      sites.AppendElement(site);
     }
   }
 
-  return Some(origins.Length());
+  return Some(sites.Length());
 }
 
 // static
@@ -345,6 +385,49 @@ bool AntiTrackingUtils::CheckStoragePermission(nsIPrincipal* aPrincipal,
 }
 
 /* static */
+nsresult AntiTrackingUtils::TestStoragePermissionInParent(
+    nsIPrincipal* aTopPrincipal, nsIPrincipal* aPrincipal, bool* aResult) {
+  NS_ENSURE_ARG(aResult);
+  *aResult = false;
+  NS_ENSURE_ARG(aTopPrincipal);
+  NS_ENSURE_ARG(aPrincipal);
+
+  nsCOMPtr<nsIPermissionManager> permMgr =
+      components::PermissionManager::Service();
+  NS_ENSURE_TRUE(permMgr, NS_ERROR_FAILURE);
+
+  // Build the permission keys
+  nsAutoCString requestPermissionKey;
+  bool success = AntiTrackingUtils::CreateStoragePermissionKey(
+      aPrincipal, requestPermissionKey);
+  NS_ENSURE_TRUE(success, NS_ERROR_FAILURE);
+
+  nsAutoCString requestFramePermissionKey;
+  success = AntiTrackingUtils::CreateStorageFramePermissionKey(
+      aPrincipal, requestFramePermissionKey);
+  NS_ENSURE_TRUE(success, NS_ERROR_FAILURE);
+
+  // Test the permission
+  uint32_t access = nsIPermissionManager::UNKNOWN_ACTION;
+  nsresult rv = permMgr->TestPermissionFromPrincipal(
+      aTopPrincipal, requestPermissionKey, &access);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  if (access == nsIPermissionManager::ALLOW_ACTION) {
+    *aResult = true;
+    return NS_OK;
+  }
+
+  uint32_t frameAccess = nsIPermissionManager::UNKNOWN_ACTION;
+  rv = permMgr->TestPermissionFromPrincipal(
+      aTopPrincipal, requestFramePermissionKey, &frameAccess);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  *aResult = frameAccess == nsIPermissionManager::ALLOW_ACTION;
+  return NS_OK;
+}
+
+/* static */
 nsILoadInfo::StoragePermissionState
 AntiTrackingUtils::GetStoragePermissionStateInParent(nsIChannel* aChannel) {
   MOZ_ASSERT(aChannel);
@@ -435,15 +518,15 @@ AntiTrackingUtils::GetStoragePermissionStateInParent(nsIChannel* aChannel) {
     return nsILoadInfo::NoStoragePermission;
   }
 
-  nsAutoCString trackingOrigin;
-  rv = nsContentUtils::GetASCIIOrigin(trackingURI, trackingOrigin);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return nsILoadInfo::NoStoragePermission;
-  }
+  nsCOMPtr<nsIPrincipal> trackingPrincipal =
+      BasePrincipal::CreateContentPrincipal(trackingURI,
+                                            loadInfo->GetOriginAttributes());
 
   if (IsThirdPartyChannel(aChannel)) {
     nsAutoCString targetOrigin;
-    if (NS_FAILED(targetPrincipal->GetAsciiOrigin(targetOrigin))) {
+    nsAutoCString trackingOrigin;
+    if (NS_FAILED(targetPrincipal->GetOriginNoSuffix(targetOrigin)) ||
+        NS_FAILED(trackingPrincipal->GetOriginNoSuffix(trackingOrigin))) {
       return nsILoadInfo::NoStoragePermission;
     }
 
@@ -453,7 +536,7 @@ AntiTrackingUtils::GetStoragePermissionStateInParent(nsIChannel* aChannel) {
   }
 
   nsAutoCString type;
-  AntiTrackingUtils::CreateStoragePermissionKey(trackingOrigin, type);
+  AntiTrackingUtils::CreateStoragePermissionKey(trackingPrincipal, type);
 
   uint32_t unusedReason = 0;
 
@@ -461,6 +544,38 @@ AntiTrackingUtils::GetStoragePermissionStateInParent(nsIChannel* aChannel) {
                                                 NS_UsePrivateBrowsing(aChannel),
                                                 &unusedReason, unusedReason)) {
     return nsILoadInfo::HasStoragePermission;
+  }
+
+  if (policyType == ExtContentPolicy::TYPE_SUBDOCUMENT) {
+    uint64_t targetWindowIdNoTop = bc->GetCurrentInnerWindowId();
+    uint64_t triggeringWindowId;
+    loadInfo->GetTriggeringWindowId(&triggeringWindowId);
+    bool triggeringStorageAccess;
+    loadInfo->GetTriggeringStorageAccess(&triggeringStorageAccess);
+    if (targetWindowIdNoTop == triggeringWindowId && triggeringStorageAccess &&
+        trackingPrincipal->Equals(loadInfo->TriggeringPrincipal())) {
+      return nsILoadInfo::HasStoragePermission;
+    }
+  } else if (!bc->IsTop()) {
+    // Only check the frame only permission if the channel is not in the top
+    // browsing context.
+    RefPtr<nsEffectiveTLDService> etld = nsEffectiveTLDService::GetInstance();
+    if (!etld) {
+      return nsILoadInfo::NoStoragePermission;
+    }
+    nsCString trackingSite;
+    rv = etld->GetSite(trackingURI, trackingSite);
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      return nsILoadInfo::NoStoragePermission;
+    }
+    nsAutoCString type;
+    AntiTrackingUtils::CreateStorageFramePermissionKey(trackingSite, type);
+
+    if (AntiTrackingUtils::CheckStoragePermission(
+            targetPrincipal, type, NS_UsePrivateBrowsing(aChannel),
+            &unusedReason, unusedReason)) {
+      return nsILoadInfo::HasStoragePermission;
+    }
   }
 
   return nsILoadInfo::NoStoragePermission;
@@ -890,8 +1005,7 @@ void AntiTrackingUtils::UpdateAntiTrackingInfoForChannel(nsIChannel* aChannel) {
 
   // Generate the fingerprinting randomization key for top-level loads. The key
   // will automatically be propagated to sub loads.
-  auto RFPRandomKey =
-      nsRFPService::GenerateKey(uri, NS_UsePrivateBrowsing(aChannel));
+  auto RFPRandomKey = nsRFPService::GenerateKey(aChannel);
   if (RFPRandomKey) {
     net::CookieJarSettings::Cast(cookieJarSettings)
         ->SetFingerprintingRandomizationKey(RFPRandomKey.ref());

@@ -16,7 +16,6 @@
 #ifdef MOZ_WIDGET_UIKIT
 #  include <CoreFoundation/CoreFoundation.h>
 #endif
-#include "nsCocoaFeatures.h"
 #include "mozilla/gfx/Logging.h"
 
 #ifdef MOZ_WIDGET_COCOA
@@ -95,8 +94,7 @@ static CTFontRef CreateCTFontFromCGFontWithVariations(CGFontRef aCGFont,
   //    CreateCTFontFromCGFontWithVariations in cairo-quartz-font.c
   //    ctfont_create_exact_copy in SkFontHost_mac.cpp
   CTFontRef ctFont;
-  if (nsCocoaFeatures::OnSierraExactly() ||
-      (aInstalledFont && nsCocoaFeatures::OnHighSierraOrLater())) {
+  if (aInstalledFont) {
     CFDictionaryRef vars = CGFontCopyVariations(aCGFont);
     if (vars) {
       CFDictionaryRef varAttr = CFDictionaryCreate(
@@ -716,16 +714,18 @@ already_AddRefed<ScaledFont> UnscaledFontMac::CreateScaledFont(
     if (aNumVariations > 0) {
       AutoRelease<CFDictionaryRef> varDict(CreateVariationTagDictionaryOrNull(
           font, aNumVariations, aVariations));
-      CFDictionaryRef varAttr = CFDictionaryCreate(
-          nullptr, (const void**)&kCTFontVariationAttribute,
-          (const void**)&varDict, 1, &kCFTypeDictionaryKeyCallBacks,
-          &kCFTypeDictionaryValueCallBacks);
-      AutoRelease<CTFontDescriptorRef> fontDesc(
-          CTFontDescriptorCreateCopyWithAttributes(mFontDesc, varAttr));
-      if (!fontDesc) {
-        return nullptr;
+      if (varDict) {
+        CFDictionaryRef varAttr = CFDictionaryCreate(
+            nullptr, (const void**)&kCTFontVariationAttribute,
+            (const void**)&varDict, 1, &kCFTypeDictionaryKeyCallBacks,
+            &kCFTypeDictionaryValueCallBacks);
+        AutoRelease<CTFontDescriptorRef> fontDesc(
+            CTFontDescriptorCreateCopyWithAttributes(mFontDesc, varAttr));
+        if (!fontDesc) {
+          return nullptr;
+        }
+        font = CTFontCreateWithFontDescriptor(fontDesc, aGlyphSize, nullptr);
       }
-      font = CTFontCreateWithFontDescriptor(fontDesc, aGlyphSize, nullptr);
     }
     scaledFont = new ScaledFontMac(
         font, this, instanceData.mFontSmoothingBackgroundColor,

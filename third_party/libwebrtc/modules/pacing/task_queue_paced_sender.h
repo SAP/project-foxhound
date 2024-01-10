@@ -20,14 +20,13 @@
 #include "absl/types/optional.h"
 #include "api/field_trials_view.h"
 #include "api/sequence_checker.h"
-#include "api/task_queue/task_queue_factory.h"
+#include "api/task_queue/pending_task_safety_flag.h"
 #include "api/units/data_size.h"
 #include "api/units/time_delta.h"
 #include "api/units/timestamp.h"
 #include "modules/pacing/pacing_controller.h"
 #include "modules/pacing/rtp_packet_pacer.h"
 #include "modules/rtp_rtcp/source/rtp_packet_to_send.h"
-#include "modules/utility/maybe_worker_thread.h"
 #include "rtc_base/experiments/field_trial_parser.h"
 #include "rtc_base/numerics/exp_filter.h"
 #include "rtc_base/thread_annotations.h"
@@ -50,11 +49,13 @@ class TaskQueuePacedSender : public RtpPacketPacer, public RtpPacketSender {
   // a packet "debt" that correspond to approximately the send rate during the
   // specified interval. This greatly reduced wake ups by not pacing packets
   // within the allowed burst budget.
+  //
+  // The taskqueue used when constructing a TaskQueuePacedSender will also be
+  // used for pacing.
   TaskQueuePacedSender(
       Clock* clock,
       PacingController::PacketSender* packet_sender,
       const FieldTrialsView& field_trials,
-      TaskQueueFactory* task_queue_factory,
       TimeDelta max_hold_back_window,
       int max_hold_back_window_in_packets,
       absl::optional<TimeDelta> burst_interval = absl::nullopt);
@@ -150,26 +151,7 @@ class TaskQueuePacedSender : public RtpPacketPacer, public RtpPacketSender {
     FieldTrialOptional<TimeDelta> burst;
   };
   const BurstyPacerFlags bursty_pacer_flags_;
-  struct SlackedPacerFlags {
-    // Parses `kSlackedTaskQueuePacedSenderFieldTrial`. Example:
-    // --force-fieldtrials=WebRTC-SlackedTaskQueuePacedSender/Enabled,max_queue_time:75ms/
-    explicit SlackedPacerFlags(const FieldTrialsView& field_trials);
-    // When "Enabled", delayed tasks invoking MaybeProcessPackets() are
-    // scheduled using low precision instead of high precision, resulting in
-    // less idle wake ups and packets being sent in bursts if the `task_queue_`
-    // implementation supports slack. When probing, high precision is used
-    // regardless to ensure good bandwidth estimation.
-    FieldTrialFlag allow_low_precision;
-    // Controlled via the "max_queue_time" experiment argument. If set, uses
-    // high precision scheduling of MaybeProcessPackets() whenever the expected
-    // queue time is greater than or equal to this value.
-    FieldTrialOptional<TimeDelta> max_low_precision_expected_queue_time;
-    // Controlled via "send_burst_interval" experiment argument. If set, the
-    // pacer is allowed to build up a packet "debt" that correspond to
-    // approximately the send rate during the specified interval.
-    FieldTrialOptional<TimeDelta> send_burst_interval;
-  };
-  const SlackedPacerFlags slacked_pacer_flags_;
+
   // The holdback window prevents too frequent delayed MaybeProcessPackets()
   // calls. These are only applicable if `allow_low_precision` is false.
   const TimeDelta max_hold_back_window_;
@@ -197,13 +179,10 @@ class TaskQueuePacedSender : public RtpPacketPacer, public RtpPacketSender {
   rtc::ExpFilter packet_size_ RTC_GUARDED_BY(task_queue_);
   bool include_overhead_ RTC_GUARDED_BY(task_queue_);
 
-  // TODO(webrtc:14502): Remove stats_mutex_ when pacer runs on the worker
-  // thread.
-  mutable Mutex stats_mutex_;
-  Stats current_stats_ RTC_GUARDED_BY(stats_mutex_);
+  Stats current_stats_ RTC_GUARDED_BY(task_queue_);
 
   ScopedTaskSafety safety_;
-  MaybeWorkerThread task_queue_;
+  TaskQueueBase* task_queue_;
 };
 }  // namespace webrtc
 #endif  // MODULES_PACING_TASK_QUEUE_PACED_SENDER_H_

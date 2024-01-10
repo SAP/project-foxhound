@@ -56,6 +56,9 @@ jobs:
     ubuntu1804-test:
         symbol: I(ub18-test)
         parent: ubuntu1804-test-base
+    ubuntu1804-build-python:
+        symbol: I(ub18-build-python)
+        parent: ubuntu1804-base
     # Neither the ubuntu1804-*raw nor the ubuntu1804-*packages images can have
     # packages dependencies.
     ubuntu2004-raw:
@@ -63,10 +66,19 @@ jobs:
         definition: debian-raw
         args:
             BASE_IMAGE: ubuntu:focal
+    ubuntu2204-raw:
+        symbol: I(ub22-raw)
+        definition: debian-raw
+        args:
+            BASE_IMAGE: ubuntu:jammy
     ubuntu2004-packages:
         symbol: I(ub20-pkg)
         definition: debian-packages
         parent: ubuntu2004-raw
+    ubuntu2204-packages:
+        symbol: I(ub22-pkg)
+        definition: debian-packages
+        parent: ubuntu2204-raw
     ubuntu2004-base:
         symbol: I(ub20-base)
         definition: debian-base
@@ -74,6 +86,13 @@ jobs:
         packages:
             - ub20-mercurial
             - ub20-python-zstandard
+    ubuntu2204-base:
+        symbol: I(ub22-base)
+        definition: debian-base
+        parent: ubuntu2204-raw
+        packages:
+            - ub22-mercurial
+            - ub22-python-zstandard
     # Neither the debian8-*raw nor the debian8-*packages images can have
     # packages dependencies.
     debian8-raw:
@@ -98,16 +117,16 @@ jobs:
         parent: debian8-i386-raw
     custom-v8:
         symbol: I(custom-v8)
-        parent: debian11-base
+        parent: debian12-base
     # Chromium-as-Release
     custom-car-linux:
         symbol: I(custom-car-linux)
-        parent: debian11-base
+        parent: debian12-base
     valgrind-build:
         symbol: I(vb)
-        parent: debian11-amd64-build
+        parent: debian12-amd64-build
         packages:
-            - deb11-valgrind
+            - deb12-valgrind
     lint:
         symbol: I(lnt)
         parent: debian11-base
@@ -117,9 +136,9 @@ jobs:
         symbol: I(deb11-raw)
         definition: debian-raw
         args:
-            BASE_IMAGE: debian:bullseye-20221205
+            BASE_IMAGE: debian:bullseye-20230612
             DIST: bullseye
-            SNAPSHOT: '20221204T212138Z'
+            SNAPSHOT: '20230611T210420Z'
     debian11-packages:
         symbol: I(deb11-pkg)
         definition: debian-packages
@@ -135,32 +154,60 @@ jobs:
         symbol: I(deb11)
         parent: debian11-base
         definition: debian-build
-    debian11-repackage:
-        symbol: I(deb11-rpk)
-        parent: debian11-base
-        definition: debian-repackage
-        packages:
-            - deb11-mercurial
     deb11-toolchain-build:
         symbol: I(deb11-toolchain)
         parent: debian11-base
         definition: toolchain-build
         packages:
             - deb11-cmake
+    # Neither the debian12-raw nor the debian12-packages images can have
+    # packages dependencies.
+    debian12-raw:
+        symbol: I(deb12-raw)
+        definition: debian-raw
+        args:
+            BASE_IMAGE: debian:bookworm-20230612
+            DIST: bookworm
+            SNAPSHOT: '20230611T210420Z'
+    debian12-packages:
+        symbol: I(deb12-pkg)
+        definition: debian-packages
+        parent: debian12-raw
+    debian12-base:
+        symbol: I(deb12-base)
+        definition: debian-base
+        parent: debian12-raw
+        packages:
+            - deb12-mercurial
+            - deb12-python-zstandard
+    debian12-amd64-build:
+        symbol: I(deb12)
+        parent: debian12-base
+        definition: debian-build
+    debian12-repackage:
+        symbol: I(deb12-rpk)
+        parent: debian12-base
+        definition: debian-repackage
+        packages:
+            - deb12-mercurial
+    deb12-toolchain-build:
+        symbol: I(deb12-toolchain)
+        parent: debian12-base
+        definition: toolchain-build
     android-build:
         symbol: I(agb)
-        parent: debian11-base
+        parent: debian12-base
     fetch:
         symbol: I(fetch)
-        parent: debian11-raw
+        parent: debian12-raw
         packages:
-            - deb11-python-zstandard
+            - deb12-python-zstandard
     static-analysis-build:
         symbol: I(static-analysis-build)
-        parent: debian11-base
+        parent: debian12-base
     gdb-test:
         symbol: I(gdb)
-        parent: debian11-amd64-build
+        parent: debian12-amd64-build
         definition: gdb-test
     index-task:
         symbol: I(idx)
@@ -171,7 +218,7 @@ jobs:
         parent: ubuntu2004-base
     diffoscope:
         symbol: I(diff)
-        parent: debian11-base
+        parent: debian12-base
     partner-repack:
         symbol: I(PR)
         parent: debian11-base
@@ -200,16 +247,30 @@ jobs:
         parent: debian11-base
     system-symbols-mac:
         symbol: I(system-symbols-mac)
-        parent: debian11-base
+        parent: debian12-base
     system-symbols-win:
         symbol: I(system-symbols-win)
-        parent: debian11-base
+        parent: debian12-base
     system-symbols-linux-scraper:
         symbol: I(system-symbols-linux)
-        parent: debian11-base
+        parent: debian12-base
     push-to-try:
         symbol: I(push-to-try)
         parent: debian11-base
     decision:
         symbol: I(decision)
         parent: ubuntu2004-base
+    snap-build-core20:
+        symbol: I(snap20-build)
+        parent: ubuntu2004-base
+        definition: snap-coreXX-build
+        args:
+            SNAP_BASE: core20
+            SNAP_LIST: "gnome-3-38-2004-sdk"
+    snap-build-core22:
+        symbol: I(snap22-build)
+        parent: ubuntu2204-base
+        definition: snap-coreXX-build
+        args:
+            SNAP_BASE: core22
+            SNAP_LIST: "gnome-42-2204 gtk-common-themes gnome-42-2204-sdk"

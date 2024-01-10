@@ -42,9 +42,20 @@ struct FrontendErrors {
   bool outOfMemory = false;
   bool allocationOverflow = false;
 
+  // Set to true if the compilation is initiated with extra bindings, but
+  // the script has no reference to the bindings, and the script should be
+  // compiled without the extra bindings.
+  //
+  // See frontend::CompileGlobalScriptWithExtraBindings.
+  bool extraBindingsAreNotUsed = false;
+
   bool hadErrors() const {
-    return outOfMemory || overRecursed || allocationOverflow || error;
+    return outOfMemory || overRecursed || allocationOverflow ||
+           extraBindingsAreNotUsed || error;
   }
+
+  void clearErrors();
+  void clearWarnings();
 };
 
 class FrontendAllocator : public MallocProvider<FrontendAllocator> {
@@ -74,7 +85,21 @@ class FrontendContext {
 
   JS::ImportAssertionVector supportedImportAssertions_;
 
+  // Limit pointer for checking native stack consumption.
+  //
+  // The pointer is calculated based on the stack base of the current thread
+  // except for JS::NativeStackLimitMax. Once such value is set, this
+  // FrontendContext can be used only in the thread.
+  //
+  // In order to enforce this thread rule, setNativeStackLimitThread should
+  // be called when setting the value, and assertNativeStackLimitThread should
+  // be called at each entry-point that might make use of this field.
   JS::NativeStackLimit stackLimit_ = JS::NativeStackLimitMax;
+
+#ifdef DEBUG
+  // The thread ID where the native stack limit is set.
+  mozilla::Maybe<size_t> stackLimitThreadId_;
+#endif
 
  protected:
   // (optional) Current JSContext to support main-thread-specific
@@ -135,9 +160,10 @@ class FrontendContext {
 
   enum class Warning { Suppress, Report };
 
-  void convertToRuntimeError(JSContext* cx, Warning warning = Warning::Report);
-
-  void linkWithJSContext(JSContext* cx);
+  // Returns false if the error cannot be converted (such as due to OOM). An
+  // error might still be reported to the given JSContext. Returns true
+  // otherwise.
+  bool convertToRuntimeError(JSContext* cx, Warning warning = Warning::Report);
 
   mozilla::Maybe<CompileError>& maybeError() { return errors_.error; }
   Vector<CompileError, 0, SystemAllocPolicy>& warnings() {
@@ -166,13 +192,31 @@ class FrontendContext {
   bool hadOutOfMemory() const { return errors_.outOfMemory; }
   bool hadOverRecursed() const { return errors_.overRecursed; }
   bool hadAllocationOverflow() const { return errors_.allocationOverflow; }
+  bool extraBindingsAreNotUsed() const {
+    return errors_.extraBindingsAreNotUsed;
+  }
+  void reportExtraBindingsAreNotUsed() {
+    errors_.extraBindingsAreNotUsed = true;
+  }
+  void clearNoExtraBindingReferencesFound() {
+    errors_.extraBindingsAreNotUsed = false;
+  }
   bool hadErrors() const;
+  // Clear errors and warnings.
+  void clearErrors();
+  // Clear warnings only.
+  void clearWarnings();
 
 #ifdef __wasi__
   void incWasiRecursionDepth();
   void decWasiRecursionDepth();
   bool checkWasiRecursionLimit();
 #endif  // __wasi__
+
+#ifdef DEBUG
+  void setNativeStackLimitThread();
+  void assertNativeStackLimitThread();
+#endif
 
  private:
   void ReportOutOfMemory();
@@ -202,9 +246,10 @@ class MOZ_STACK_CLASS AutoReportFrontendContext : public FrontendContext {
 
   void clearAutoReport() { cx_ = nullptr; }
 
-  void convertToRuntimeErrorAndClear() {
-    convertToRuntimeError(cx_, warning_);
+  bool convertToRuntimeErrorAndClear() {
+    bool result = convertToRuntimeError(cx_, warning_);
     cx_ = nullptr;
+    return result;
   }
 };
 

@@ -16,6 +16,7 @@
 #include <type_traits>
 #include <utility>
 
+#include "jit/ProcessExecutableMemory.h"
 #include "js/StreamConsumer.h"
 #include "wasm/WasmCode.h"
 #include "wasm/WasmCodegenTypes.h"
@@ -451,6 +452,27 @@ CoderResult CodePackedTypeCode(Coder<mode>& coder,
 }
 
 template <CoderMode mode>
+CoderResult CodeTypeDefRef(Coder<mode>& coder,
+                           CoderArg<mode, const TypeDef*> item) {
+  static constexpr uint32_t NullTypeIndex = UINT32_MAX;
+  static_assert(NullTypeIndex > MaxTypes, "invariant");
+
+  if constexpr (mode == MODE_DECODE) {
+    uint32_t typeIndex;
+    MOZ_TRY(CodePod(coder, &typeIndex));
+    if (typeIndex != NullTypeIndex) {
+      *item = &coder.types_->type(typeIndex);
+    }
+    return Ok();
+  } else if constexpr (mode == MODE_SIZE) {
+    return coder.writeBytes(nullptr, sizeof(uint32_t));
+  } else {
+    uint32_t typeIndex = !*item ? NullTypeIndex : coder.types_->indexOf(**item);
+    return CodePod(coder, &typeIndex);
+  }
+}
+
+template <CoderMode mode>
 CoderResult CodeValType(Coder<mode>& coder, CoderArg<mode, ValType> item) {
   return CodePackedTypeCode(coder, item->addressOfPacked());
 }
@@ -536,7 +558,10 @@ CoderResult CodeArrayType(Coder<mode>& coder, CoderArg<mode, ArrayType> item) {
 template <CoderMode mode>
 CoderResult CodeTypeDef(Coder<mode>& coder, CoderArg<mode, TypeDef> item) {
   WASM_VERIFY_SERIALIZATION_FOR_SIZE(wasm::TypeDef, 376);
-  // TypeDef is a tagged union that begins with kind = None. This implies that
+  MOZ_TRY(CodeTypeDefRef(coder, &item->superTypeDef_));
+  MOZ_TRY(CodePod(coder, &item->subTypingDepth_));
+  MOZ_TRY(CodePod(coder, &item->isFinal_));
+  // TypeDef is a tagged union containing kind = None. This implies that
   // we must manually initialize the variant that we decode.
   if constexpr (mode == MODE_DECODE) {
     MOZ_RELEASE_ASSERT(item->kind_ == TypeDefKind::None);
@@ -700,7 +725,8 @@ CoderResult CodeElemSegment(Coder<mode>& coder,
 template <CoderMode mode>
 CoderResult CodeDataSegment(Coder<mode>& coder,
                             CoderArg<mode, DataSegment> item) {
-  WASM_VERIFY_SERIALIZATION_FOR_SIZE(wasm::DataSegment, 136);
+  WASM_VERIFY_SERIALIZATION_FOR_SIZE(wasm::DataSegment, 144);
+  MOZ_TRY(CodePod(coder, &item->memoryIndex));
   MOZ_TRY((CodeMaybe<mode, InitExpr, &CodeInitExpr<mode>>(
       coder, &item->offsetIfActive)));
   MOZ_TRY(CodePodVector(coder, &item->bytes));
@@ -858,7 +884,7 @@ CoderResult CodeSymbolicLinkArray(
 template <CoderMode mode>
 CoderResult CodeLinkData(Coder<mode>& coder,
                          CoderArg<mode, wasm::LinkData> item) {
-  WASM_VERIFY_SERIALIZATION_FOR_SIZE(wasm::LinkData, 7608);
+  WASM_VERIFY_SERIALIZATION_FOR_SIZE(wasm::LinkData, 7824);
   if constexpr (mode == MODE_ENCODE) {
     MOZ_ASSERT(item->tier == Tier::Serialized);
   }
@@ -880,7 +906,8 @@ CoderResult CodeModuleSegment(Coder<MODE_DECODE>& coder,
   MOZ_TRY(CodePod(coder, &length));
 
   // Allocate the code bytes
-  UniqueCodeBytes bytes = AllocateCodeBytes(length);
+  Maybe<jit::AutoMarkJitCodeWritableForThread> writable;
+  UniqueCodeBytes bytes = AllocateCodeBytes(writable, length);
   if (!bytes) {
     return Err(OutOfMemory());
   }
@@ -948,7 +975,7 @@ CoderResult CodeMetadataTier(Coder<mode>& coder,
 template <CoderMode mode>
 CoderResult CodeMetadata(Coder<mode>& coder,
                          CoderArg<mode, wasm::Metadata> item) {
-  WASM_VERIFY_SERIALIZATION_FOR_SIZE(wasm::Metadata, 408);
+  WASM_VERIFY_SERIALIZATION_FOR_SIZE(wasm::Metadata, 440);
   if constexpr (mode == MODE_ENCODE) {
     // Serialization doesn't handle asm.js or debug enabled modules
     MOZ_ASSERT(!item->debugEnabled && item->debugFuncTypeIndices.empty());
@@ -959,6 +986,7 @@ CoderResult CodeMetadata(Coder<mode>& coder,
   MOZ_TRY(CodePod(coder, &item->pod()));
   MOZ_TRY((CodeRefPtr<mode, const TypeContext, &CodeTypeContext>(
       coder, &item->types)));
+  MOZ_TRY(CodePodVector(coder, &item->memories));
   MOZ_TRY((CodeVector<mode, GlobalDesc, &CodeGlobalDesc<mode>>(
       coder, &item->globals)));
   MOZ_TRY((

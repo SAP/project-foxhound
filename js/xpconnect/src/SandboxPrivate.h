@@ -15,7 +15,6 @@
 #include "nsIGlobalObject.h"
 #include "nsIScriptObjectPrincipal.h"
 #include "nsIPrincipal.h"
-#include "nsGlobalWindowInner.h"
 #include "nsWeakReference.h"
 #include "nsWrapperCache.h"
 
@@ -97,8 +96,7 @@ class SandboxPrivate : public nsIGlobalObject,
     return 0;
   }
 
-  bool ShouldResistFingerprinting(
-      RFPTarget aTarget = RFPTarget::Unknown) const override {
+  bool ShouldResistFingerprinting(RFPTarget aTarget) const override {
     return nsContentUtils::ShouldResistFingerprinting(
         "Presently we don't have enough context to make an informed decision"
         "on JS Sandboxes. See 1782853",

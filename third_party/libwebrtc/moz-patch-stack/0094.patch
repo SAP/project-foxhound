@@ -1,86 +1,52 @@
 From: Andreas Pehrson <apehrson@mozilla.com>
-Date: Wed, 10 May 2023 07:06:00 +0000
-Subject: Bug 1810949 - cherry-pick upstream libwebrtc commit 7e5d9edfdf.
+Date: Wed, 10 May 2023 08:01:00 +0000
+Subject: Bug 1828065 - cherry-pick upstream libwebrtc commit adf55790b6.
  r=webrtc-reviewers,mjf
-MIME-Version: 1.0
-Content-Type: text/plain; charset=UTF-8
-Content-Transfer-Encoding: 8bit
 
-Upstream commit: https://webrtc.googlesource.com/src/+/7e5d9edfdfe82e06182b790afe848cd0da179a87
-    webrtc_libyuv: Raise warnings for unhandled types at compile time
+Upstream commit: https://webrtc.googlesource.com/src/+/adf55790b6ecf50c4bb2b2cf7d58441303b9d946
+    In DeviceInfoDS free the frame duration list after use
 
-    Bug: webrtc:14830
-    Change-Id: Ib5141e585f673098bbedd2872dbd6e6ed9df4864
-    Reviewed-on: https://webrtc-review.googlesource.com/c/src/+/291528
-    Reviewed-by: Erik Språng <sprang@webrtc.org>
-    Reviewed-by: Stefan Holmer <stefan@webrtc.org>
-    Commit-Queue: Erik Språng <sprang@webrtc.org>
-    Cr-Commit-Position: refs/heads/main@{#39408}
+    Per the docs, the caller is responsible for freeing the memory.
 
-Differential Revision: https://phabricator.services.mozilla.com/D177228
-Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/2bc179dfe25391e4b621ce407239beaebbe09be8
+    Bug: chromium:1441804
+    Change-Id: I9aaae493a1a86d8ab4f03930715a643a3c9fb61b
+    Reviewed-on: https://webrtc-review.googlesource.com/c/src/+/304061
+    Reviewed-by: Per Kjellander <perkj@webrtc.org>
+    Commit-Queue: Ilya Nikolaevskiy <ilnik@webrtc.org>
+    Reviewed-by: Ilya Nikolaevskiy <ilnik@webrtc.org>
+    Cr-Commit-Position: refs/heads/main@{#39983}
+
+Differential Revision: https://phabricator.services.mozilla.com/D177237
+Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/854cc79e99130e6537eebe8433a6a7adf5e1578d
 ---
- common_video/libyuv/webrtc_libyuv.cc | 23 +++++++++--------------
- 1 file changed, 9 insertions(+), 14 deletions(-)
+ modules/video_capture/windows/device_info_ds.cc | 11 +++++++++--
+ 1 file changed, 9 insertions(+), 2 deletions(-)
 
-diff --git a/common_video/libyuv/webrtc_libyuv.cc b/common_video/libyuv/webrtc_libyuv.cc
-index 8998af191d..d07d739119 100644
---- a/common_video/libyuv/webrtc_libyuv.cc
-+++ b/common_video/libyuv/webrtc_libyuv.cc
-@@ -22,7 +22,6 @@ namespace webrtc {
- size_t CalcBufferSize(VideoType type, int width, int height) {
-   RTC_DCHECK_GE(width, 0);
-   RTC_DCHECK_GE(height, 0);
--  size_t buffer_size = 0;
-   switch (type) {
-     case VideoType::kI420:
-     case VideoType::kNV21:
-@@ -31,28 +30,24 @@ size_t CalcBufferSize(VideoType type, int width, int height) {
-     case VideoType::kNV12: {
-       int half_width = (width + 1) >> 1;
-       int half_height = (height + 1) >> 1;
--      buffer_size = width * height + half_width * half_height * 2;
--      break;
-+      return width * height + half_width * half_height * 2;
-     }
-     case VideoType::kARGB4444:
-     case VideoType::kRGB565:
-     case VideoType::kARGB1555:
-     case VideoType::kYUY2:
-     case VideoType::kUYVY:
--      buffer_size = width * height * 2;
--      break;
-+      return width * height * 2;
-     case VideoType::kRGB24:
--      buffer_size = width * height * 3;
--      break;
-+      return width * height * 3;
-     case VideoType::kBGRA:
-     case VideoType::kARGB:
--      buffer_size = width * height * 4;
--      break;
--    default:
--      RTC_DCHECK_NOTREACHED();
--      break;
-+      return width * height * 4;
-+    case VideoType::kMJPEG:
-+    case VideoType::kUnknown:
-   }
--  return buffer_size;
-+  RTC_DCHECK_NOTREACHED() << "Unexpected pixel format " << type;
-+  return 0;
- }
+diff --git a/modules/video_capture/windows/device_info_ds.cc b/modules/video_capture/windows/device_info_ds.cc
+index b5867923d1..f6927281f3 100644
+--- a/modules/video_capture/windows/device_info_ds.cc
++++ b/modules/video_capture/windows/device_info_ds.cc
+@@ -519,11 +519,18 @@ int32_t DeviceInfoDS::CreateCapabilityMap(const char* deviceUniqueIdUTF8)
+         hrVC = videoControlConfig->GetFrameRateList(
+             outputCapturePin, tmp, size, &listSize, &frameDurationList);
  
- int ExtractBuffer(const rtc::scoped_refptr<I420BufferInterface>& input_frame,
-@@ -120,7 +115,7 @@ int ConvertVideoType(VideoType video_type) {
-     case VideoType::kNV12:
-       return libyuv::FOURCC_NV12;
-   }
--  RTC_DCHECK_NOTREACHED();
-+  RTC_DCHECK_NOTREACHED() << "Unexpected pixel format " << video_type;
-   return libyuv::FOURCC_ANY;
- }
- 
++        if (hrVC == S_OK) {
++          maxFPS = GetMaxOfFrameArray(frameDurationList, listSize);
++        }
++
++        CoTaskMemFree(frameDurationList);
++        frameDurationList = NULL;
++        listSize = 0;
++
+         // On some odd cameras, you may get a 0 for duration. Some others may
+         // not update the out vars. GetMaxOfFrameArray returns the lowest
+         // duration (highest FPS), or 0 if there was no list with elements.
+-        if (hrVC == S_OK &&
+-            0 != (maxFPS = GetMaxOfFrameArray(frameDurationList, listSize))) {
++        if (0 != maxFPS) {
+           capability.maxFPS = static_cast<int>(10000000 / maxFPS);
+           capability.supportFrameRateControl = true;
+         } else  // use existing method
 -- 
 2.34.1
 

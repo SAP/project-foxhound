@@ -180,7 +180,7 @@ const char* const ApplicationReputationService::kBinaryFileExtensions[] = {
     //".app", exec  // Executable application
     ".applescript",
     //".application", exec // MS ClickOnce
-    ".appref-ms",  // MS ClickOnce
+    //".appref-ms", exec // MS ClickOnce
     //".arc",
     //".arj",
     ".as",  // Mac archive
@@ -510,11 +510,11 @@ const char* const ApplicationReputationService::kBinaryFileExtensions[] = {
     ".xar",   // MS Excel
     ".xbap",  // XAML Browser Application
     ".xht", ".xhtm", ".xhtml",
-    ".xip",     // Mac archive
-    ".xla",     // MS Excel
-    ".xlam",    // MS Excel
-    ".xldm",    // MS Excel
-    ".xll",     // MS Excel
+    ".xip",   // Mac archive
+    ".xla",   // MS Excel
+    ".xlam",  // MS Excel
+    ".xldm",  // MS Excel
+    //".xll", exec  // MS Excel
     ".xlm",     // MS Excel
     ".xls",     // MS Excel
     ".xlsb",    // MS Excel

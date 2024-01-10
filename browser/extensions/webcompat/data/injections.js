@@ -255,7 +255,10 @@ const AVAILABLE_INJECTIONS = [
     domain: "datastudio.google.com",
     bug: "1631811",
     contentScripts: {
-      matches: ["https://datastudio.google.com/embed/reporting/*"],
+      matches: [
+        "https://datastudio.google.com/embed/reporting/*",
+        "https://lookerstudio.google.com/embed/reporting/*",
+      ],
       js: [
         {
           file: "injections/js/bug1631811-datastudio.google.com-indexedDB.js",
@@ -287,8 +290,11 @@ const AVAILABLE_INJECTIONS = [
       matches: [
         "*://*.live.com/*",
         "*://*.office.com/*",
-        "*://*.sharepoint.com/*",
         "*://*.office365.com/*",
+        "*://*.office365.us/*",
+        "*://*.outlook.cn/*",
+        "*://*.outlook.com/*",
+        "*://*.sharepoint.com/*",
       ],
       js: [
         {
@@ -347,22 +353,6 @@ const AVAILABLE_INJECTIONS = [
         },
       ],
       allFrames: true,
-    },
-  },
-  {
-    id: "bug1724764",
-    platform: "android",
-    domain: "Issues related to missing window.print",
-    bug: "1724764",
-    contentScripts: {
-      matches: [
-        "*://*.edupage.org/*", // 1804477 and 1800118
-      ],
-      js: [
-        {
-          file: "injections/js/bug1724764-window-print.js",
-        },
-      ],
     },
   },
   {
@@ -495,20 +485,6 @@ const AVAILABLE_INJECTIONS = [
     },
   },
   {
-    id: "bug1784302",
-    platform: "android",
-    domain: "open.toutiao.com",
-    bug: "1784302",
-    contentScripts: {
-      matches: ["*://open.toutiao.com/*"],
-      js: [
-        {
-          file: "injections/js/bug1784302-effectiveType-shim.js",
-        },
-      ],
-    },
-  },
-  {
     id: "bug1784141",
     platform: "android",
     domain: "aveeno.com and acuvue.com",
@@ -612,6 +588,7 @@ const AVAILABLE_INJECTIONS = [
         "*://*.securityproperties.com/*",
         "*://*.theloftsorlando.com/*",
         "*://*.vanallenapartments.com/*", // #120056
+        "*://*.waterfordapartmentstulsa.com/*", // #125870
       ],
       css: [
         {
@@ -640,7 +617,7 @@ const AVAILABLE_INJECTIONS = [
     domain: "www.samsung.com",
     bug: "1799968",
     contentScripts: {
-      matches: ["*://www.samsung.com/*/watches/*/*"],
+      matches: ["*://www.samsung.com/*"],
       js: [
         {
           file: "injections/js/bug1799968-www.samsung.com-appVersion-linux-fix.js",
@@ -763,20 +740,6 @@ const AVAILABLE_INJECTIONS = [
       js: [
         {
           file: "injections/js/bug1819450-cmbchina.com-ua-change.js",
-        },
-      ],
-    },
-  },
-  {
-    id: "bug1819678",
-    platform: "android",
-    domain: "cnki.net",
-    bug: "1819678",
-    contentScripts: {
-      matches: ["*://*.cnki.net/*"],
-      js: [
-        {
-          file: "injections/js/bug1819678-cnki.net-undisable-search-field.js",
         },
       ],
     },
@@ -987,7 +950,7 @@ const AVAILABLE_INJECTIONS = [
     domain: "thai-masszazs.net",
     bug: "1836157",
     contentScripts: {
-      matches: ["*://www.thai-masszazs.net/en/*"],
+      matches: ["*://*.thai-masszazs.net/*"],
       js: [
         {
           file: "injections/js/bug1836157-thai-masszazs-niceScroll-disable.js",
@@ -1024,20 +987,129 @@ const AVAILABLE_INJECTIONS = [
     },
   },
   {
-    id: "bug1836177",
+    id: "bug1842437",
     platform: "desktop",
-    domain: "clalit.co.il",
-    bug: "1836177",
+    domain: "www.youtube.com",
+    bug: "1842437",
     contentScripts: {
-      matches: [
-        "*://e-services.clalit.co.il/OnlineWeb/General/InfoFullLogin.aspx*",
-      ],
-      css: [
+      matches: ["*://www.youtube.com/*"],
+      js: [
         {
-          file: "injections/css/bug1836177-clalit.co.il-hide-number-input-spinners.css",
+          file: "injections/js/bug1842437-www.youtube.com-performance-now-precision.js",
         },
       ],
-      allFrames: true,
+    },
+  },
+  {
+    id: "bug1841991",
+    platform: "all",
+    domain: "wilton.com",
+    bug: "1841991",
+    contentScripts: {
+      matches: ["*://*.wilton.com/*"],
+      css: [
+        {
+          file: "injections/css/bug1841991-wilton.com-flexbox-painting-order.css",
+        },
+      ],
+    },
+  },
+  {
+    id: "bug1848711",
+    platform: "android",
+    domain: "vio.com",
+    bug: "1848711",
+    contentScripts: {
+      matches: ["*://*.vio.com/*"],
+      css: [
+        {
+          file: "injections/css/bug1848711-vio.com-page-height.css",
+        },
+      ],
+    },
+  },
+  {
+    id: "bug1848713",
+    platform: "all",
+    domain: "cleanrider.com",
+    bug: "1848713",
+    contentScripts: {
+      matches: ["*://*.cleanrider.com/*"],
+      css: [
+        {
+          file: "injections/css/bug1848713-cleanrider.com-slider.css",
+        },
+      ],
+    },
+  },
+  {
+    id: "bug1848716",
+    platform: "desktop",
+    domain: "elal.com",
+    bug: "1848716",
+    contentScripts: {
+      matches: ["*://*.elal.com/*"],
+      css: [
+        {
+          file: "injections/css/bug1848716-elal.com-unsupported-banner.css",
+        },
+      ],
+    },
+  },
+  {
+    id: "bug1848849",
+    platform: "all",
+    domain: "theaa.com",
+    bug: "1848849",
+    contentScripts: {
+      matches: ["*://*.theaa.com/route-planner/*"],
+      css: [
+        {
+          file: "injections/css/bug1848849-theaa.com-printing-mode-fix.css",
+        },
+      ],
+    },
+  },
+  {
+    id: "bug1849019",
+    platform: "android",
+    domain: "axa-assistance.pl",
+    bug: "1849019",
+    contentScripts: {
+      matches: ["*://*.axa-assistance.pl/*"],
+      css: [
+        {
+          file: "injections/css/bug1849019-axa-assistance.pl-datepicker-fix.css",
+        },
+      ],
+    },
+  },
+  {
+    id: "bug1849058",
+    platform: "all",
+    domain: "nicochannel.jp",
+    bug: "1849058",
+    contentScripts: {
+      matches: ["*://nicochannel.jp/*", "*://gs-ch.com/*"],
+      js: [
+        {
+          file: "injections/js/bug1849058-nicochannel.jp-picture-in-picture-shim.js",
+        },
+      ],
+    },
+  },
+  {
+    id: "bug1849388",
+    platform: "android",
+    domain: "kucharkaprodceru.cz",
+    bug: "1849388",
+    contentScripts: {
+      matches: ["*://*.kucharkaprodceru.cz/*"],
+      css: [
+        {
+          file: "injections/css/bug1849388-kucharkaprodceru.cz-scroll-fix.css",
+        },
+      ],
     },
   },
 ];

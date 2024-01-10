@@ -2,21 +2,23 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const { COMMAND_SENDTAB, COMMAND_SENDTAB_TAIL, SCOPE_OLD_SYNC, log } =
-  ChromeUtils.import("resource://gre/modules/FxAccountsCommon.js");
-const lazy = {};
-ChromeUtils.defineModuleGetter(
-  lazy,
-  "PushCrypto",
-  "resource://gre/modules/PushCrypto.jsm"
-);
+import {
+  COMMAND_SENDTAB,
+  COMMAND_SENDTAB_TAIL,
+  SCOPE_OLD_SYNC,
+  log,
+} from "resource://gre/modules/FxAccountsCommon.sys.mjs";
+
 import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 
 import { Observers } from "resource://services-common/observers.sys.mjs";
 
+const lazy = {};
+
 ChromeUtils.defineESModuleGetters(lazy, {
   BulkKeyBundle: "resource://services-sync/keys.sys.mjs",
   CryptoWrapper: "resource://services-sync/record.sys.mjs",
+  PushCrypto: "resource://gre/modules/PushCrypto.sys.mjs",
 });
 
 XPCOMUtils.defineLazyPreferenceGetter(
@@ -38,11 +40,6 @@ export class FxAccountsCommands {
   }
 
   async availableCommands() {
-    if (
-      !Services.prefs.getBoolPref("identity.fxaccounts.commands.enabled", true)
-    ) {
-      return {};
-    }
     const encryptedSendTabKeys = await this.sendTab.getEncryptedSendTabKeys();
     if (!encryptedSendTabKeys) {
       // This will happen if the account is not verified yet.
@@ -100,11 +97,6 @@ export class FxAccountsCommands {
     // Whether the call to `pollDeviceCommands` was initiated by a Push message from the FxA
     // servers in response to a message being received or simply scheduled in order
     // to fetch missed messages.
-    if (
-      !Services.prefs.getBoolPref("identity.fxaccounts.commands.enabled", true)
-    ) {
-      return false;
-    }
     log.info(`Polling device commands.`);
     await this._fxai.withCurrentAccountState(async state => {
       const { device } = await state.getUserAccountData(["device"]);
@@ -290,12 +282,7 @@ export class SendTab {
   // Returns true if the target device is compatible with FxA Commands Send tab.
   isDeviceCompatible(device) {
     return (
-      Services.prefs.getBoolPref(
-        "identity.fxaccounts.commands.enabled",
-        true
-      ) &&
-      device.availableCommands &&
-      device.availableCommands[COMMAND_SENDTAB]
+      device.availableCommands && device.availableCommands[COMMAND_SENDTAB]
     );
   }
 
@@ -432,7 +419,7 @@ export class SendTab {
     const keyBundle = lazy.BulkKeyBundle.fromJWK(oldsyncKey);
     await wrapper.encrypt(keyBundle);
     const encryptedSendTabKeys = JSON.stringify({
-      // Older clients expect this to be hex, due to pre-JWK sync key ids :-(
+      // This is expected in hex, due to pre-JWK sync key ids :-(
       kid: this._fxai.keys.kidAsHex(oldsyncKey),
       IV: wrapper.IV,
       hmac: wrapper.hmac,

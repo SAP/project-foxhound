@@ -7,6 +7,7 @@
 external_dirs = []
 
 DIRS += [
+    "gkcodecs",
     "lgpllibs",
     "rlbox",
     "sqlite",
@@ -26,9 +27,6 @@ DIRS += [
     "/third_party/sipcc",
 ]
 
-if CONFIG["MOZ_ICU4X"]:
-    DIRS += ["icu4x"]
-
 # There's no "native" brotli or woff2 yet, but probably in the future...
 external_dirs += ["modules/brotli"]
 external_dirs += ["modules/woff2"]
@@ -37,9 +35,6 @@ external_dirs += ["modules/xz-embedded"]
 
 if CONFIG["MOZ_VORBIS"]:
     external_dirs += ["media/libvorbis"]
-
-if CONFIG["MOZ_TREMOR"]:
-    external_dirs += ["media/libtremor"]
 
 if not CONFIG["MOZ_SYSTEM_LIBVPX"]:
     external_dirs += ["media/libvpx"]

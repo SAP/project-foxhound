@@ -262,7 +262,7 @@ class DesktopUnittest(TestingMixin, MercurialScript, MozbaseMixin, CodeCoverageM
                     "action": "store_true",
                     "default": False,
                     "dest": "a11y_checks",
-                    "help": "Run tests with accessibility checks disabled.",
+                    "help": "Run tests with accessibility checks enabled.",
                 },
             ],
             [
@@ -329,6 +329,15 @@ class DesktopUnittest(TestingMixin, MercurialScript, MozbaseMixin, CodeCoverageM
                     "default": False,
                     "dest": "useHttp3Server",
                     "help": "Whether to use the Http3 server",
+                },
+            ],
+            [
+                ["--use-http2-server"],
+                {
+                    "action": "store_true",
+                    "default": False,
+                    "dest": "useHttp2Server",
+                    "help": "Whether to use the Http2 server",
                 },
             ],
         ]
@@ -632,6 +641,8 @@ class DesktopUnittest(TestingMixin, MercurialScript, MozbaseMixin, CodeCoverageM
 
             if c["useHttp3Server"]:
                 base_cmd.append("--use-http3-server")
+            elif c["useHttp2Server"]:
+                base_cmd.append("--use-http2-server")
 
             # Ignore chunking if we have user specified test paths
             if not (self.verify_enabled or self.per_test_coverage):

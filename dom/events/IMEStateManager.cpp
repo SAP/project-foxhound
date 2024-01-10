@@ -306,7 +306,7 @@ void IMEStateManager::MaybeStartOffsetUpdatedInChild(nsIWidget* aWidget,
     return;
   }
 
-  RefPtr<TextComposition> composition = GetTextCompositionFor(aWidget);
+  TextComposition* const composition = GetTextCompositionFor(aWidget);
   if (NS_WARN_IF(!composition)) {
     MOZ_LOG(sISMLog, LogLevel::Warning,
             ("MaybeStartOffsetUpdatedInChild(aWidget=0x%p, aStartOffset=%u), "
@@ -1572,7 +1572,7 @@ MOZ_CAN_RUN_SCRIPT static void GetActionHint(const IMEState& aState,
                                              nsAString& aActionHint) {
   MOZ_ASSERT(aContent.IsHTMLElement());
 
-  if (aState.IsEditable() && StaticPrefs::dom_forms_enterkeyhint()) {
+  if (aState.IsEditable()) {
     nsGenericHTMLElement::FromNode(&aContent)->GetEnterKeyHint(aActionHint);
 
     // If enterkeyhint is set, we don't infer action hint.
@@ -1586,8 +1586,7 @@ MOZ_CAN_RUN_SCRIPT static void GetActionHint(const IMEState& aState,
   }
 
   // XXX This is old compatibility, but we might be able to remove this.
-  aContent.AsElement()->GetAttr(kNameSpaceID_None, nsGkAtoms::moz_action_hint,
-                                aActionHint);
+  aContent.AsElement()->GetAttr(nsGkAtoms::moz_action_hint, aActionHint);
 
   if (!aActionHint.IsEmpty()) {
     ToLowerCase(aActionHint);
@@ -1655,8 +1654,7 @@ static void GetInputMode(const IMEState& aState, const nsIContent& aContent,
   if (aState.IsEditable() &&
       (StaticPrefs::dom_forms_inputmode() ||
        nsContentUtils::IsChromeDoc(aContent.OwnerDoc()))) {
-    aContent.AsElement()->GetAttr(kNameSpaceID_None, nsGkAtoms::inputmode,
-                                  aInputMode);
+    aContent.AsElement()->GetAttr(nsGkAtoms::inputmode, aInputMode);
     if (aContent.IsHTMLElement(nsGkAtoms::input) &&
         aInputMode.EqualsLiteral("mozAwesomebar")) {
       if (!nsContentUtils::IsChromeDoc(aContent.OwnerDoc())) {
@@ -2328,36 +2326,24 @@ nsresult IMEStateManager::GetFocusSelectionAndRootElement(
 }
 
 // static
-already_AddRefed<TextComposition> IMEStateManager::GetTextCompositionFor(
-    nsIWidget* aWidget) {
-  if (!sTextCompositions) {
-    return nullptr;
-  }
-  RefPtr<TextComposition> textComposition =
-      sTextCompositions->GetCompositionFor(aWidget);
-  return textComposition.forget();
+TextComposition* IMEStateManager::GetTextCompositionFor(nsIWidget* aWidget) {
+  return sTextCompositions ? sTextCompositions->GetCompositionFor(aWidget)
+                           : nullptr;
 }
 
 // static
-already_AddRefed<TextComposition> IMEStateManager::GetTextCompositionFor(
+TextComposition* IMEStateManager::GetTextCompositionFor(
     const WidgetCompositionEvent* aCompositionEvent) {
-  if (!sTextCompositions) {
-    return nullptr;
-  }
-  RefPtr<TextComposition> textComposition =
-      sTextCompositions->GetCompositionFor(aCompositionEvent);
-  return textComposition.forget();
+  return sTextCompositions
+             ? sTextCompositions->GetCompositionFor(aCompositionEvent)
+             : nullptr;
 }
 
 // static
-already_AddRefed<TextComposition> IMEStateManager::GetTextCompositionFor(
+TextComposition* IMEStateManager::GetTextCompositionFor(
     nsPresContext* aPresContext) {
-  if (!sTextCompositions) {
-    return nullptr;
-  }
-  RefPtr<TextComposition> textComposition =
-      sTextCompositions->GetCompositionFor(aPresContext);
-  return textComposition.forget();
+  return sTextCompositions ? sTextCompositions->GetCompositionFor(aPresContext)
+                           : nullptr;
 }
 
 }  // namespace mozilla

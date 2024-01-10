@@ -22,6 +22,7 @@
 #include "mozilla/dom/WorkerPrivate.h"
 #include "mozilla/dom/WorkerRef.h"
 #include "mozilla/dom/WorkerRunnable.h"
+#include "mozilla/dom/VideoFrame.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/gfx/Logging.h"
 #include "mozilla/gfx/Scale.h"
@@ -51,58 +52,78 @@ NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(ImageBitmap)
   NS_INTERFACE_MAP_ENTRY(nsISupports)
 NS_INTERFACE_MAP_END
 
+class ImageBitmapShutdownObserver;
+
+static StaticMutex sShutdownMutex;
+static ImageBitmapShutdownObserver* sShutdownObserver = nullptr;
+
+class SendShutdownToWorkerThread : public MainThreadWorkerControlRunnable {
+ public:
+  explicit SendShutdownToWorkerThread(ImageBitmap* aImageBitmap)
+      : MainThreadWorkerControlRunnable(GetCurrentThreadWorkerPrivate()),
+        mImageBitmap(aImageBitmap) {
+    MOZ_ASSERT(GetCurrentThreadWorkerPrivate());
+  }
+
+  bool WorkerRun(JSContext* aCx, WorkerPrivate* aWorkerPrivate) override {
+    if (mImageBitmap) {
+      mImageBitmap->OnShutdown();
+      mImageBitmap = nullptr;
+    }
+    return true;
+  }
+
+  ImageBitmap* mImageBitmap;
+};
+
 /* This class observes shutdown notifications and sends that notification
  * to the worker thread if the image bitmap is on a worker thread.
  */
 class ImageBitmapShutdownObserver final : public nsIObserver {
  public:
-  explicit ImageBitmapShutdownObserver(ImageBitmap* aImageBitmap)
-      : mImageBitmap(nullptr) {
+  explicit ImageBitmapShutdownObserver() {
+    sShutdownMutex.AssertCurrentThreadOwns();
     if (NS_IsMainThread()) {
-      mImageBitmap = aImageBitmap;
-    } else {
-      WorkerPrivate* workerPrivate = GetCurrentThreadWorkerPrivate();
-      MOZ_ASSERT(workerPrivate);
-      mMainThreadEventTarget = workerPrivate->MainThreadEventTarget();
-      mSendToWorkerTask = new SendShutdownToWorkerThread(aImageBitmap);
-    }
-  }
-
-  void RegisterObserver() {
-    if (NS_IsMainThread()) {
-      nsContentUtils::RegisterShutdownObserver(this);
+      RegisterObserver();
       return;
     }
 
-    MOZ_ASSERT(mMainThreadEventTarget);
+    WorkerPrivate* workerPrivate = GetCurrentThreadWorkerPrivate();
+    MOZ_ASSERT(workerPrivate);
+    auto* mainThreadEventTarget = workerPrivate->MainThreadEventTarget();
+    MOZ_ASSERT(mainThreadEventTarget);
     RefPtr<ImageBitmapShutdownObserver> self = this;
     nsCOMPtr<nsIRunnable> r =
         NS_NewRunnableFunction("ImageBitmapShutdownObserver::RegisterObserver",
                                [self]() { self->RegisterObserver(); });
-
-    mMainThreadEventTarget->Dispatch(r.forget());
+    mainThreadEventTarget->Dispatch(r.forget());
   }
 
-  void UnregisterObserver() {
-    if (NS_IsMainThread()) {
-      nsContentUtils::UnregisterShutdownObserver(this);
-      return;
-    }
-
-    MOZ_ASSERT(mMainThreadEventTarget);
-    RefPtr<ImageBitmapShutdownObserver> self = this;
-    nsCOMPtr<nsIRunnable> r =
-        NS_NewRunnableFunction("ImageBitmapShutdownObserver::RegisterObserver",
-                               [self]() { self->UnregisterObserver(); });
-
-    mMainThreadEventTarget->Dispatch(r.forget());
+  void RegisterObserver() {
+    MOZ_ASSERT(NS_IsMainThread());
+    nsContentUtils::RegisterShutdownObserver(this);
   }
 
-  void Clear() {
-    mImageBitmap = nullptr;
-    if (mSendToWorkerTask) {
-      mSendToWorkerTask->mImageBitmap = nullptr;
+  already_AddRefed<SendShutdownToWorkerThread> Track(
+      ImageBitmap* aImageBitmap) {
+    sShutdownMutex.AssertCurrentThreadOwns();
+    MOZ_ASSERT(!mBitmaps.Contains(aImageBitmap));
+
+    RefPtr<SendShutdownToWorkerThread> runnable = nullptr;
+    if (!NS_IsMainThread()) {
+      runnable = new SendShutdownToWorkerThread(aImageBitmap);
     }
+
+    RefPtr<SendShutdownToWorkerThread> retval = runnable;
+    mBitmaps.Insert(aImageBitmap);
+    return retval.forget();
+  }
+
+  void Untrack(ImageBitmap* aImageBitmap) {
+    sShutdownMutex.AssertCurrentThreadOwns();
+    MOZ_ASSERT(mBitmaps.Contains(aImageBitmap));
+
+    mBitmaps.Remove(aImageBitmap);
   }
 
   NS_DECL_THREADSAFE_ISUPPORTS
@@ -110,26 +131,7 @@ class ImageBitmapShutdownObserver final : public nsIObserver {
  private:
   ~ImageBitmapShutdownObserver() = default;
 
-  class SendShutdownToWorkerThread : public MainThreadWorkerControlRunnable {
-   public:
-    explicit SendShutdownToWorkerThread(ImageBitmap* aImageBitmap)
-        : MainThreadWorkerControlRunnable(GetCurrentThreadWorkerPrivate()),
-          mImageBitmap(aImageBitmap) {}
-
-    bool WorkerRun(JSContext* aCx, WorkerPrivate* aWorkerPrivate) override {
-      if (mImageBitmap) {
-        mImageBitmap->OnShutdown();
-        mImageBitmap = nullptr;
-      }
-      return true;
-    }
-
-    ImageBitmap* mImageBitmap;
-  };
-
-  ImageBitmap* mImageBitmap;
-  nsCOMPtr<nsIEventTarget> mMainThreadEventTarget;
-  RefPtr<SendShutdownToWorkerThread> mSendToWorkerTask;
+  nsTHashSet<ImageBitmap*> mBitmaps;
 };
 
 NS_IMPL_ISUPPORTS(ImageBitmapShutdownObserver, nsIObserver)
@@ -138,15 +140,20 @@ NS_IMETHODIMP
 ImageBitmapShutdownObserver::Observe(nsISupports* aSubject, const char* aTopic,
                                      const char16_t* aData) {
   if (strcmp(aTopic, NS_XPCOM_SHUTDOWN_OBSERVER_ID) == 0) {
-    if (mSendToWorkerTask) {
-      mSendToWorkerTask->Dispatch();
-    } else {
-      if (mImageBitmap) {
-        mImageBitmap->OnShutdown();
-        mImageBitmap = nullptr;
+    StaticMutexAutoLock lock(sShutdownMutex);
+
+    for (const auto& bitmap : mBitmaps) {
+      const auto& runnable = bitmap->mShutdownRunnable;
+      if (runnable) {
+        runnable->Dispatch();
+      } else {
+        bitmap->OnShutdown();
       }
     }
+
     nsContentUtils::UnregisterShutdownObserver(this);
+
+    sShutdownObserver = nullptr;
   }
 
   return NS_OK;
@@ -583,7 +590,8 @@ static already_AddRefed<SourceSurface> GetSurfaceFromElement(
     const ImageBitmapOptions& aOptions, gfxAlphaType* aAlphaType,
     ErrorResult& aRv) {
   uint32_t flags = nsLayoutUtils::SFE_WANT_FIRST_FRAME_IF_IMAGE |
-                   nsLayoutUtils::SFE_ORIENTATION_FROM_IMAGE;
+                   nsLayoutUtils::SFE_ORIENTATION_FROM_IMAGE |
+                   nsLayoutUtils::SFE_EXACT_SIZE_SURFACE;
 
   // by default surfaces have premultiplied alpha
   // attempt to get non premultiplied if required
@@ -637,15 +645,24 @@ ImageBitmap::ImageBitmap(nsIGlobalObject* aGlobal, layers::Image* aData,
       mWriteOnly(aWriteOnly) {
   MOZ_ASSERT(aData, "aData is null in ImageBitmap constructor.");
 
-  mShutdownObserver = new ImageBitmapShutdownObserver(this);
-  mShutdownObserver->RegisterObserver();
+  StaticMutexAutoLock lock(sShutdownMutex);
+  if (!sShutdownObserver &&
+      !AppShutdown::IsInOrBeyond(ShutdownPhase::XPCOMShutdown)) {
+    sShutdownObserver = new ImageBitmapShutdownObserver();
+  }
+  if (sShutdownObserver) {
+    mShutdownRunnable = sShutdownObserver->Track(this);
+  }
 }
 
 ImageBitmap::~ImageBitmap() {
-  if (mShutdownObserver) {
-    mShutdownObserver->Clear();
-    mShutdownObserver->UnregisterObserver();
-    mShutdownObserver = nullptr;
+  StaticMutexAutoLock lock(sShutdownMutex);
+  if (mShutdownRunnable) {
+    mShutdownRunnable->mImageBitmap = nullptr;
+  }
+  mShutdownRunnable = nullptr;
+  if (sShutdownObserver) {
+    sShutdownObserver->Untrack(this);
   }
 }
 
@@ -660,14 +677,80 @@ void ImageBitmap::Close() {
   mPictureRect.SetEmpty();
 }
 
-void ImageBitmap::OnShutdown() {
-  mShutdownObserver = nullptr;
-
-  Close();
-}
+void ImageBitmap::OnShutdown() { Close(); }
 
 void ImageBitmap::SetPictureRect(const IntRect& aRect, ErrorResult& aRv) {
   mPictureRect = FixUpNegativeDimension(aRect, aRv);
+}
+
+SurfaceFromElementResult ImageBitmap::SurfaceFrom(uint32_t aSurfaceFlags) {
+  SurfaceFromElementResult sfer;
+
+  if (!mData) {
+    return sfer;
+  }
+
+  // An ImageBitmap, not being a DOM element, only has `origin-clean`
+  // (via our `IsWriteOnly`), and does not participate in CORS.
+  // Right now we mark this by setting mCORSUsed to true.
+  sfer.mCORSUsed = true;
+  sfer.mIsWriteOnly = mWriteOnly;
+
+  if (mParent) {
+    sfer.mPrincipal = mParent->PrincipalOrNull();
+  }
+
+  IntSize imageSize(mData->GetSize());
+  IntRect imageRect(IntPoint(0, 0), imageSize);
+  bool hasCropRect = mPictureRect.IsEqualEdges(imageRect);
+
+  bool wantExactSize =
+      bool(aSurfaceFlags & nsLayoutUtils::SFE_EXACT_SIZE_SURFACE);
+  bool allowNonPremult =
+      bool(aSurfaceFlags & nsLayoutUtils::SFE_ALLOW_NON_PREMULT);
+  bool allowUncropped =
+      bool(aSurfaceFlags & nsLayoutUtils::SFE_ALLOW_UNCROPPED_UNSCALED);
+  bool requiresPremult =
+      !allowNonPremult && mAlphaType == gfxAlphaType::NonPremult;
+  bool requiresCrop = !allowUncropped && hasCropRect;
+  if (wantExactSize || requiresPremult || requiresCrop || mSurface) {
+    RefPtr<DrawTarget> dt = Factory::CreateDrawTarget(
+        BackendType::SKIA, IntSize(1, 1), SurfaceFormat::B8G8R8A8);
+    sfer.mSourceSurface = PrepareForDrawTarget(dt);
+
+    if (!sfer.mSourceSurface) {
+      return sfer;
+    }
+
+    MOZ_ASSERT(mSurface);
+
+    sfer.mSize = sfer.mIntrinsicSize = sfer.mSourceSurface->GetSize();
+    sfer.mHasSize = true;
+    sfer.mAlphaType = IsOpaque(sfer.mSourceSurface->GetFormat())
+                          ? gfxAlphaType::Opaque
+                          : gfxAlphaType::Premult;
+    return sfer;
+  }
+
+  if (hasCropRect) {
+    IntRect imagePortion = imageRect.Intersect(mPictureRect);
+
+    // the crop lies entirely outside the surface area, nothing to draw
+    if (imagePortion.IsEmpty()) {
+      return sfer;
+    }
+
+    sfer.mCropRect = Some(imagePortion);
+    sfer.mIntrinsicSize = imagePortion.Size();
+  } else {
+    sfer.mIntrinsicSize = imageSize;
+  }
+
+  sfer.mSize = imageSize;
+  sfer.mHasSize = true;
+  sfer.mAlphaType = mAlphaType;
+  sfer.mLayersImage = mData;
+  return sfer;
 }
 
 /*
@@ -848,9 +931,11 @@ already_AddRefed<ImageBitmap> ImageBitmap::CreateFromOffscreenCanvas(
     ErrorResult& aRv) {
   // Check write-only mode.
   bool writeOnly = aOffscreenCanvas.IsWriteOnly();
+  uint32_t flags = nsLayoutUtils::SFE_WANT_FIRST_FRAME_IF_IMAGE |
+                   nsLayoutUtils::SFE_EXACT_SIZE_SURFACE;
 
-  SurfaceFromElementResult res = nsLayoutUtils::SurfaceFromOffscreenCanvas(
-      &aOffscreenCanvas, nsLayoutUtils::SFE_WANT_FIRST_FRAME_IF_IMAGE);
+  SurfaceFromElementResult res =
+      nsLayoutUtils::SurfaceFromOffscreenCanvas(&aOffscreenCanvas, flags);
 
   RefPtr<SourceSurface> surface = res.GetSourceSurface();
 
@@ -1156,7 +1241,8 @@ already_AddRefed<ImageBitmap> ImageBitmap::CreateInternal(
     return nullptr;
   }
 
-  uint32_t flags = nsLayoutUtils::SFE_WANT_FIRST_FRAME_IF_IMAGE;
+  uint32_t flags = nsLayoutUtils::SFE_WANT_FIRST_FRAME_IF_IMAGE |
+                   nsLayoutUtils::SFE_EXACT_SIZE_SURFACE;
 
   // by default surfaces have premultiplied alpha
   // attempt to get non premultiplied if required
@@ -1368,6 +1454,48 @@ already_AddRefed<ImageBitmap> ImageBitmap::CreateInternal(
   return CreateImageBitmapInternal(
       aGlobal, surface, Some(cropRect), aOptions, aImageBitmap.mWriteOnly,
       needToReportMemoryAllocation, false, aImageBitmap.mAlphaType, aRv);
+}
+
+/* static */
+already_AddRefed<ImageBitmap> ImageBitmap::CreateInternal(
+    nsIGlobalObject* aGlobal, VideoFrame& aVideoFrame,
+    const Maybe<IntRect>& aCropRect, const ImageBitmapOptions& aOptions,
+    ErrorResult& aRv) {
+  if (aVideoFrame.CodedWidth() == 0) {
+    aRv.ThrowInvalidStateError("Passed-in video frame has width 0");
+    return nullptr;
+  }
+
+  if (aVideoFrame.CodedHeight() == 0) {
+    aRv.ThrowInvalidStateError("Passed-in video frame has height 0");
+    return nullptr;
+  }
+
+  uint32_t flags = nsLayoutUtils::SFE_WANT_FIRST_FRAME_IF_IMAGE;
+
+  // by default surfaces have premultiplied alpha
+  // attempt to get non premultiplied if required
+  if (aOptions.mPremultiplyAlpha == PremultiplyAlpha::None) {
+    flags |= nsLayoutUtils::SFE_ALLOW_NON_PREMULT;
+  }
+
+  SurfaceFromElementResult res =
+      nsLayoutUtils::SurfaceFromVideoFrame(&aVideoFrame, flags);
+
+  RefPtr<SourceSurface> surface = res.GetSourceSurface();
+  if (NS_WARN_IF(!surface)) {
+    aRv.ThrowInvalidStateError("Passed-in video frame has no surface data");
+    return nullptr;
+  }
+
+  gfxAlphaType alphaType = res.mAlphaType;
+  bool writeOnly = res.mIsWriteOnly;
+  bool needToReportMemoryAllocation = false;
+  bool mustCopy = false;
+
+  return CreateImageBitmapInternal(aGlobal, surface, aCropRect, aOptions,
+                                   writeOnly, needToReportMemoryAllocation,
+                                   mustCopy, alphaType, aRv);
 }
 
 class FulfillImageBitmapPromise {
@@ -1656,6 +1784,9 @@ already_AddRefed<Promise> ImageBitmap::Create(
     AsyncCreateImageBitmapFromBlob(promise, aGlobal, aSrc.GetAsBlob(),
                                    aCropRect, aOptions);
     return promise.forget();
+  } else if (aSrc.IsVideoFrame()) {
+    imageBitmap = CreateInternal(aGlobal, aSrc.GetAsVideoFrame(), aCropRect,
+                                 aOptions, aRv);
   } else {
     MOZ_CRASH("Unsupported type!");
     return nullptr;

@@ -9,6 +9,7 @@
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/Casting.h"
 #include "mozilla/CheckedInt.h"
+#include "mozilla/DebugOnly.h"
 
 #include <algorithm>
 
@@ -23,20 +24,14 @@
 #include "vm/JSFunction.h"
 #include "vm/JSObject.h"
 #include "vm/PlainObject.h"  // js::PlainObject
+#include "vm/PropertyResult.h"
 #include "vm/Realm.h"
 #include "vm/SelfHosting.h"
 #include "vm/StringType.h"
 #include "vm/TypedArrayObject.h"
 #include "vm/Uint8Clamped.h"
 
-#include "gc/GCContext-inl.h"
-#include "gc/Marking-inl.h"
-#include "gc/Nursery-inl.h"
-#include "gc/StoreBuffer-inl.h"
-#include "vm/JSAtom-inl.h"
-#include "vm/JSObject-inl.h"
-#include "vm/NativeObject-inl.h"
-#include "vm/Shape-inl.h"
+#include "gc/ObjectKind-inl.h"
 
 using mozilla::AssertedCast;
 using mozilla::CheckedUint32;
@@ -160,17 +155,83 @@ using namespace wasm;
 //=========================================================================
 // WasmGcObject
 
-bool WasmGcObject::lookupProperty(JSContext* cx, Handle<WasmGcObject*> object,
-                                  jsid id, PropOffset* offset,
+const ObjectOps WasmGcObject::objectOps_ = {
+    WasmGcObject::obj_lookupProperty,            // lookupProperty
+    WasmGcObject::obj_defineProperty,            // defineProperty
+    WasmGcObject::obj_hasProperty,               // hasProperty
+    WasmGcObject::obj_getProperty,               // getProperty
+    WasmGcObject::obj_setProperty,               // setProperty
+    WasmGcObject::obj_getOwnPropertyDescriptor,  // getOwnPropertyDescriptor
+    WasmGcObject::obj_deleteProperty,            // deleteProperty
+    nullptr,                                     // getElements
+    nullptr,                                     // funToString
+};
+
+/* static */
+bool WasmGcObject::obj_lookupProperty(JSContext* cx, HandleObject obj,
+                                      HandleId id, MutableHandleObject objp,
+                                      PropertyResult* propp) {
+  objp.set(nullptr);
+  propp->setNotFound();
+  return true;
+}
+
+bool WasmGcObject::obj_defineProperty(JSContext* cx, HandleObject obj,
+                                      HandleId id,
+                                      Handle<PropertyDescriptor> desc,
+                                      ObjectOpResult& result) {
+  result.failReadOnly();
+  return true;
+}
+
+bool WasmGcObject::obj_hasProperty(JSContext* cx, HandleObject obj, HandleId id,
+                                   bool* foundp) {
+  *foundp = false;
+  return true;
+}
+
+bool WasmGcObject::obj_getProperty(JSContext* cx, HandleObject obj,
+                                   HandleValue receiver, HandleId id,
+                                   MutableHandleValue vp) {
+  vp.setUndefined();
+  return true;
+}
+
+bool WasmGcObject::obj_setProperty(JSContext* cx, HandleObject obj, HandleId id,
+                                   HandleValue v, HandleValue receiver,
+                                   ObjectOpResult& result) {
+  JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
+                            JSMSG_WASM_MODIFIED_GC_OBJECT);
+  return false;
+}
+
+bool WasmGcObject::obj_getOwnPropertyDescriptor(
+    JSContext* cx, HandleObject obj, HandleId id,
+    MutableHandle<mozilla::Maybe<PropertyDescriptor>> desc) {
+  desc.reset();
+  return true;
+}
+
+bool WasmGcObject::obj_deleteProperty(JSContext* cx, HandleObject obj,
+                                      HandleId id, ObjectOpResult& result) {
+  JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
+                            JSMSG_WASM_MODIFIED_GC_OBJECT);
+  return false;
+}
+
+bool WasmGcObject::lookUpProperty(JSContext* cx, Handle<WasmGcObject*> obj,
+                                  jsid id, WasmGcObject::PropOffset* offset,
                                   FieldType* type) {
-  switch (kind()) {
+  switch (obj->kind()) {
     case wasm::TypeDefKind::Struct: {
-      const auto& structType = typeDef().structType();
+      const auto& structType = obj->typeDef().structType();
       uint32_t index;
       if (!IdIsIndex(id, &index)) {
         return false;
       }
       if (index >= structType.fields_.length()) {
+        JS_ReportErrorNumberUTF8(cx, GetErrorMessage, nullptr,
+                                 JSMSG_WASM_OUT_OF_BOUNDS);
         return false;
       }
       const StructField& field = structType.fields_[index];
@@ -179,24 +240,13 @@ bool WasmGcObject::lookupProperty(JSContext* cx, Handle<WasmGcObject*> object,
       return true;
     }
     case wasm::TypeDefKind::Array: {
-      const auto& arrayType = typeDef().arrayType();
+      const auto& arrayType = obj->typeDef().arrayType();
 
-      // Special case for property 'length' that loads the length field at the
-      // beginning of the data buffer
-      if (id.isString() &&
-          id.toString() == cx->runtime()->commonNames->length) {
-        STATIC_ASSERT_WASMARRAYELEMENTS_NUMELEMENTS_IS_U32;
-        *type = FieldType::I32;
-        offset->set(UINT32_MAX);
-        return true;
-      }
-
-      // Normal case of indexed properties for loading array elements
       uint32_t index;
       if (!IdIsIndex(id, &index)) {
         return false;
       }
-      uint32_t numElements = object->as<WasmArrayObject>().numElements_;
+      uint32_t numElements = obj->as<WasmArrayObject>().numElements_;
       if (index >= numElements) {
         return false;
       }
@@ -216,168 +266,14 @@ bool WasmGcObject::lookupProperty(JSContext* cx, Handle<WasmGcObject*> object,
   }
 }
 
-const ObjectOps WasmGcObject::objectOps_ = {
-    WasmGcObject::obj_lookupProperty,            // lookupProperty
-    WasmGcObject::obj_defineProperty,            // defineProperty
-    WasmGcObject::obj_hasProperty,               // hasProperty
-    WasmGcObject::obj_getProperty,               // getProperty
-    WasmGcObject::obj_setProperty,               // setProperty
-    WasmGcObject::obj_getOwnPropertyDescriptor,  // getOwnPropertyDescriptor
-    WasmGcObject::obj_deleteProperty,            // deleteProperty
-    nullptr,                                     // getElements
-    nullptr,                                     // funToString
-};
-
-/* static */
-bool WasmGcObject::obj_lookupProperty(JSContext* cx, HandleObject obj,
-                                      HandleId id, MutableHandleObject objp,
-                                      PropertyResult* propp) {
-  Rooted<WasmGcObject*> typedObj(cx, &obj->as<WasmGcObject>());
-  if (typedObj->hasProperty(cx, typedObj, id)) {
-    propp->setWasmGcProperty();
-    objp.set(obj);
-    return true;
-  }
-
-  RootedObject proto(cx, obj->staticPrototype());
-  if (!proto) {
-    objp.set(nullptr);
-    propp->setNotFound();
-    return true;
-  }
-
-  return LookupProperty(cx, proto, id, objp, propp);
-}
-
-bool WasmGcObject::obj_defineProperty(JSContext* cx, HandleObject obj,
-                                      HandleId id,
-                                      Handle<PropertyDescriptor> desc,
-                                      ObjectOpResult& result) {
-  JS_ReportErrorNumberUTF8(cx, GetErrorMessage, nullptr,
-                           JSMSG_OBJECT_NOT_EXTENSIBLE, "WasmGcObject");
-  return false;
-}
-
-bool WasmGcObject::obj_hasProperty(JSContext* cx, HandleObject obj, HandleId id,
-                                   bool* foundp) {
-  Rooted<WasmGcObject*> typedObj(cx, &obj->as<WasmGcObject>());
-  if (typedObj->hasProperty(cx, typedObj, id)) {
-    *foundp = true;
-    return true;
-  }
-
-  RootedObject proto(cx, obj->staticPrototype());
-  if (!proto) {
-    *foundp = false;
-    return true;
-  }
-
-  return HasProperty(cx, proto, id, foundp);
-}
-
-bool WasmGcObject::obj_getProperty(JSContext* cx, HandleObject obj,
-                                   HandleValue receiver, HandleId id,
-                                   MutableHandleValue vp) {
-  Rooted<WasmGcObject*> typedObj(cx, &obj->as<WasmGcObject>());
-
+bool WasmGcObject::loadValue(JSContext* cx, Handle<WasmGcObject*> obj, jsid id,
+                             MutableHandleValue vp) {
   WasmGcObject::PropOffset offset;
   FieldType type;
-  if (typedObj->lookupProperty(cx, typedObj, id, &offset, &type)) {
-    return typedObj->loadValue(cx, offset, type, vp);
-  }
-
-  RootedObject proto(cx, obj->staticPrototype());
-  if (!proto) {
-    vp.setUndefined();
-    return true;
-  }
-
-  return GetProperty(cx, proto, receiver, id, vp);
-}
-
-bool WasmGcObject::obj_setProperty(JSContext* cx, HandleObject obj, HandleId id,
-                                   HandleValue v, HandleValue receiver,
-                                   ObjectOpResult& result) {
-  Rooted<WasmGcObject*> typedObj(cx, &obj->as<WasmGcObject>());
-
-  if (typedObj->hasProperty(cx, typedObj, id)) {
-    if (!receiver.isObject() || obj != &receiver.toObject()) {
-      return SetPropertyByDefining(cx, id, v, receiver, result);
-    }
-
-    JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
-                              JSMSG_TYPEDOBJECT_SETTING_IMMUTABLE);
+  if (!lookUpProperty(cx, obj, id, &offset, &type)) {
     return false;
   }
 
-  return SetPropertyOnProto(cx, obj, id, v, receiver, result);
-}
-
-bool WasmGcObject::obj_getOwnPropertyDescriptor(
-    JSContext* cx, HandleObject obj, HandleId id,
-    MutableHandle<mozilla::Maybe<PropertyDescriptor>> desc) {
-  Rooted<WasmGcObject*> typedObj(cx, &obj->as<WasmGcObject>());
-
-  WasmGcObject::PropOffset offset;
-  FieldType type;
-  if (typedObj->lookupProperty(cx, typedObj, id, &offset, &type)) {
-    RootedValue value(cx);
-    if (!typedObj->loadValue(cx, offset, type, &value)) {
-      return false;
-    }
-    desc.set(mozilla::Some(PropertyDescriptor::Data(
-        value,
-        {JS::PropertyAttribute::Enumerable, JS::PropertyAttribute::Writable})));
-    return true;
-  }
-
-  desc.reset();
-  return true;
-}
-
-bool WasmGcObject::obj_deleteProperty(JSContext* cx, HandleObject obj,
-                                      HandleId id, ObjectOpResult& result) {
-  Rooted<WasmGcObject*> typedObj(cx, &obj->as<WasmGcObject>());
-  if (typedObj->hasProperty(cx, typedObj, id)) {
-    return Throw(cx, id, JSMSG_CANT_DELETE);
-  }
-
-  RootedObject proto(cx, obj->staticPrototype());
-  if (!proto) {
-    return result.succeed();
-  }
-
-  return DeleteProperty(cx, proto, id, result);
-}
-
-/* static */
-WasmGcObject* WasmGcObject::create(JSContext* cx,
-                                   wasm::TypeDefInstanceData* typeDefData,
-                                   js::gc::Heap initialHeap) {
-  MOZ_ASSERT(IsWasmGcObjectClass(typeDefData->clasp));
-  MOZ_ASSERT(!typeDefData->clasp->isNativeObject());
-
-  debugCheckNewObject(typeDefData->shape, typeDefData->allocKind, initialHeap);
-
-  WasmGcObject* obj =
-      cx->newCell<WasmGcObject>(typeDefData->allocKind, initialHeap,
-                                typeDefData->clasp, &typeDefData->allocSite);
-  if (!obj) {
-    return nullptr;
-  }
-
-  obj->initShape(typeDefData->shape);
-  obj->superTypeVector_ = typeDefData->superTypeVector;
-
-  js::gc::gcprobes::CreateObject(obj);
-  probes::CreateObject(cx, obj);
-
-  return obj;
-}
-
-bool WasmGcObject::loadValue(JSContext* cx,
-                             const WasmGcObject::PropOffset& offset,
-                             FieldType type, MutableHandleValue vp) {
   // Temporary hack, (ref T) is not exposable to JS yet but some tests would
   // like to access it so we erase (ref T) with eqref when loading. This is
   // safe as (ref T) <: eqref and we're not in the writing case where we
@@ -392,10 +288,10 @@ bool WasmGcObject::loadValue(JSContext* cx,
     return false;
   }
 
-  if (is<WasmStructObject>()) {
+  if (obj->is<WasmStructObject>()) {
     // `offset` is the field offset, without regard to the in/out-line split.
     // That is handled by the call to `fieldOffsetToAddress`.
-    WasmStructObject& structObj = as<WasmStructObject>();
+    const WasmStructObject& structObj = obj->as<WasmStructObject>();
     // Ensure no out-of-range access possible
     MOZ_RELEASE_ASSERT(structObj.kind() == TypeDefKind::Struct);
     MOZ_RELEASE_ASSERT(offset.get() + type.size() <=
@@ -404,17 +300,8 @@ bool WasmGcObject::loadValue(JSContext* cx,
                      type, vp);
   }
 
-  MOZ_ASSERT(is<WasmArrayObject>());
-  WasmArrayObject& arrayObj = as<WasmArrayObject>();
-  if (offset.get() == UINT32_MAX) {
-    // This denotes "length"
-    uint32_t numElements = arrayObj.numElements_;
-    // We can't use `ToJSValue(.., ValType::I32, ..)` here since it will
-    // treat the integer as signed, which it isn't.  `vp.set(..)` will
-    // coerce correctly to a JS::Value, though.
-    vp.set(NumberValue(numElements));
-    return true;
-  }
+  MOZ_ASSERT(obj->is<WasmArrayObject>());
+  const WasmArrayObject& arrayObj = obj->as<WasmArrayObject>();
   return ToJSValue(cx, arrayObj.data_ + offset.get(), type, vp);
 }
 
@@ -426,38 +313,6 @@ bool WasmGcObject::isRuntimeSubtypeOf(
 bool WasmGcObject::obj_newEnumerate(JSContext* cx, HandleObject obj,
                                     MutableHandleIdVector properties,
                                     bool enumerableOnly) {
-  MOZ_ASSERT(obj->is<WasmGcObject>());
-  Rooted<WasmGcObject*> typedObj(cx, &obj->as<WasmGcObject>());
-
-  size_t indexCount = 0;
-  size_t otherCount = 0;
-  switch (typedObj->kind()) {
-    case wasm::TypeDefKind::Struct: {
-      indexCount = typedObj->typeDef().structType().fields_.length();
-      break;
-    }
-    case wasm::TypeDefKind::Array: {
-      indexCount = typedObj->as<WasmArrayObject>().numElements_;
-      otherCount = 1;
-      break;
-    }
-    default:
-      MOZ_ASSERT_UNREACHABLE();
-  }
-
-  if (!properties.reserve(indexCount + otherCount)) {
-    return false;
-  }
-  RootedId id(cx);
-  for (size_t index = 0; index < indexCount; index++) {
-    id = PropertyKey::Int(int32_t(index));
-    properties.infallibleAppend(id);
-  }
-
-  if (typedObj->kind() == wasm::TypeDefKind::Array) {
-    properties.infallibleAppend(NameToId(cx->runtime()->commonNames->length));
-  }
-
   return true;
 }
 
@@ -500,17 +355,29 @@ gc::AllocKind WasmArrayObject::allocKind() {
 
 /* static */
 template <bool ZeroFields>
-WasmArrayObject* WasmArrayObject::createArray(
+WasmArrayObject* WasmArrayObject::createArrayNonEmpty(
     JSContext* cx, wasm::TypeDefInstanceData* typeDefData,
     js::gc::Heap initialHeap, uint32_t numElements) {
-  const TypeDef* typeDef = typeDefData->typeDef;
   STATIC_ASSERT_WASMARRAYELEMENTS_NUMELEMENTS_IS_U32;
+
+  MOZ_ASSERT(IsWasmGcObjectClass(typeDefData->clasp));
+  MOZ_ASSERT(!typeDefData->clasp->isNativeObject());
+  debugCheckNewObject(typeDefData->shape, typeDefData->allocKind, initialHeap);
+
+  mozilla::DebugOnly<const TypeDef*> typeDef = typeDefData->typeDef;
   MOZ_ASSERT(typeDef->kind() == wasm::TypeDefKind::Array);
+
+  // This routine is for non-empty arrays only.  For empty arrays use
+  // createArrayEmpty.
+  MOZ_ASSERT(numElements > 0);
 
   // Calculate the byte length of the outline storage, being careful to check
   // for overflow.  Note this logic assumes that MaxArrayPayloadBytes is
   // within uint32_t range.
-  CheckedUint32 outlineBytes = typeDef->arrayType().elementType_.size();
+  uint32_t elementTypeSize = typeDefData->arrayElemSize;
+  MOZ_ASSERT(elementTypeSize > 0);
+  MOZ_ASSERT(elementTypeSize == typeDef->arrayType().elementType_.size());
+  CheckedUint32 outlineBytes = elementTypeSize;
   outlineBytes *= numElements;
   if (!outlineBytes.isValid() ||
       outlineBytes.value() > uint32_t(MaxArrayPayloadBytes)) {
@@ -519,26 +386,30 @@ WasmArrayObject* WasmArrayObject::createArray(
     return nullptr;
   }
 
+  // From assertions above we know that both `numElements` and
+  // `elementTypeSize` are nonzero, and their multiplication hasn't
+  // overflowed.  Hence:
+  MOZ_ASSERT(outlineBytes.value() > 0);
+
   // Allocate the outline data before allocating the object so that we can
   // infallibly initialize the pointer on the array object after it is
   // allocated.
   Nursery& nursery = cx->nursery();
   PointerAndUint7 outlineData(nullptr, 0);
-  if (outlineBytes.value() > 0) {
-    outlineData = nursery.mallocedBlockCache().alloc(outlineBytes.value());
-    if (!outlineData.pointer()) {
-      ReportOutOfMemory(cx);
-      return nullptr;
-    }
+  outlineData = nursery.mallocedBlockCache().alloc(outlineBytes.value());
+  if (MOZ_UNLIKELY(!outlineData.pointer())) {
+    ReportOutOfMemory(cx);
+    return nullptr;
   }
 
   // It's unfortunate that `arrayObj` has to be rooted, since this is a hot
   // path and rooting costs around 15 instructions.  It is the call to
   // registerTrailer that makes it necessary.
   Rooted<WasmArrayObject*> arrayObj(cx);
-  arrayObj =
-      (WasmArrayObject*)WasmGcObject::create(cx, typeDefData, initialHeap);
-  if (!arrayObj) {
+  arrayObj = (WasmArrayObject*)cx->newCell<WasmGcObject>(
+      typeDefData->allocKind, initialHeap, typeDefData->clasp,
+      &typeDefData->allocSite);
+  if (MOZ_UNLIKELY(!arrayObj)) {
     ReportOutOfMemory(cx);
     if (outlineData.pointer()) {
       nursery.mallocedBlockCache().free(outlineData);
@@ -546,33 +417,75 @@ WasmArrayObject* WasmArrayObject::createArray(
     return nullptr;
   }
 
+  arrayObj->initShape(typeDefData->shape);
+  arrayObj->superTypeVector_ = typeDefData->superTypeVector;
   arrayObj->numElements_ = numElements;
   arrayObj->data_ = (uint8_t*)outlineData.pointer();
-  if (outlineData.pointer()) {
-    if constexpr (ZeroFields) {
-      memset(outlineData.pointer(), 0, outlineBytes.value());
-    }
-    if (js::gc::IsInsideNursery(arrayObj)) {
-      // We need to register the OOL area with the nursery, so it will be
-      // freed after GCing of the nursery if `arrayObj_` doesn't make it into
-      // the tenured heap.
-      if (!nursery.registerTrailer(outlineData, outlineBytes.value())) {
-        nursery.mallocedBlockCache().free(outlineData);
-        ReportOutOfMemory(cx);
-        return nullptr;
-      }
+  if constexpr (ZeroFields) {
+    memset(outlineData.pointer(), 0, outlineBytes.value());
+  }
+
+  if (MOZ_LIKELY(js::gc::IsInsideNursery(arrayObj))) {
+    // We need to register the OOL area with the nursery, so it will be
+    // freed after GCing of the nursery if `arrayObj_` doesn't make it into
+    // the tenured heap.
+    if (MOZ_UNLIKELY(
+            !nursery.registerTrailer(outlineData, outlineBytes.value()))) {
+      nursery.mallocedBlockCache().free(outlineData);
+      ReportOutOfMemory(cx);
+      return nullptr;
     }
   }
+
+  js::gc::gcprobes::CreateObject(arrayObj);
+  probes::CreateObject(cx, arrayObj);
 
   return arrayObj;
 }
 
-template WasmArrayObject* WasmArrayObject::createArray<true>(
+template WasmArrayObject* WasmArrayObject::createArrayNonEmpty<true>(
     JSContext* cx, wasm::TypeDefInstanceData* typeDefData,
     js::gc::Heap initialHeap, uint32_t numElements);
-template WasmArrayObject* WasmArrayObject::createArray<false>(
+template WasmArrayObject* WasmArrayObject::createArrayNonEmpty<false>(
     JSContext* cx, wasm::TypeDefInstanceData* typeDefData,
     js::gc::Heap initialHeap, uint32_t numElements);
+
+/* static */
+WasmArrayObject* WasmArrayObject::createArrayEmpty(
+    JSContext* cx, wasm::TypeDefInstanceData* typeDefData,
+    js::gc::Heap initialHeap) {
+  STATIC_ASSERT_WASMARRAYELEMENTS_NUMELEMENTS_IS_U32;
+
+  MOZ_ASSERT(IsWasmGcObjectClass(typeDefData->clasp));
+  MOZ_ASSERT(!typeDefData->clasp->isNativeObject());
+  debugCheckNewObject(typeDefData->shape, typeDefData->allocKind, initialHeap);
+
+  mozilla::DebugOnly<const TypeDef*> typeDef = typeDefData->typeDef;
+  MOZ_ASSERT(typeDef->kind() == wasm::TypeDefKind::Array);
+
+  // This routine is for empty arrays only.  For non-empty arrays use
+  // createArrayNonEmpty.
+
+  // There's no need for `arrayObj` to be rooted, since the only thing we're
+  // going to do is fill in some bits of it, then return it.
+  WasmArrayObject* arrayObj = (WasmArrayObject*)cx->newCell<WasmGcObject>(
+      typeDefData->allocKind, initialHeap, typeDefData->clasp,
+      &typeDefData->allocSite);
+  if (MOZ_UNLIKELY(!arrayObj)) {
+    ReportOutOfMemory(cx);
+    return nullptr;
+  }
+
+  arrayObj->initShape(typeDefData->shape);
+  arrayObj->superTypeVector_ = typeDefData->superTypeVector;
+  arrayObj->numElements_ = 0;
+  arrayObj->data_ = nullptr;
+
+  js::gc::gcprobes::CreateObject(arrayObj);
+  probes::CreateObject(cx, arrayObj);
+
+  return arrayObj;
+}
 
 /* static */
 void WasmArrayObject::obj_trace(JSTracer* trc, JSObject* object) {
@@ -593,9 +506,8 @@ void WasmArrayObject::obj_trace(JSTracer* trc, JSObject* object) {
   MOZ_ASSERT(numElements > 0);
   uint32_t elemSize = arrayType.elementType_.size();
   for (uint32_t i = 0; i < numElements; i++) {
-    GCPtr<JSObject*>* objectPtr =
-        reinterpret_cast<GCPtr<JSObject*>*>(data + i * elemSize);
-    TraceNullableEdge(trc, objectPtr, "reference-obj");
+    AnyRef* elementPtr = reinterpret_cast<AnyRef*>(data + i * elemSize);
+    TraceManuallyBarrieredEdge(trc, elementPtr, "wasm-array-element");
   }
 }
 
@@ -701,76 +613,20 @@ js::gc::AllocKind js::WasmStructObject::allocKindForTypeDef(
   return gc::GetGCObjectKindForBytes(nbytes);
 }
 
-/* static MOZ_NEVER_INLINE */
-template <bool ZeroFields>
-WasmStructObject* WasmStructObject::createStructOOL(
-    JSContext* cx, wasm::TypeDefInstanceData* typeDefData,
-    js::gc::Heap initialHeap, uint32_t inlineBytes, uint32_t outlineBytes) {
-  // This method is called as the slow path from the (inlineable)
-  // WasmStructObject::createStruct.  It handles the case where an object
-  // needs OOL storage.  It doesn't handle the non-OOL case at all.
-
-  // Allocate the outline data area before allocating the object so that we can
-  // infallibly initialize the outline data area.
-  Nursery& nursery = cx->nursery();
-  PointerAndUint7 outlineData =
-      nursery.mallocedBlockCache().alloc(outlineBytes);
-  if (MOZ_UNLIKELY(!outlineData.pointer())) {
-    ReportOutOfMemory(cx);
-    return nullptr;
-  }
-
-  // See corresponding comment in WasmArrayObject::createArray.
-  Rooted<WasmStructObject*> structObj(cx);
-  structObj =
-      (WasmStructObject*)WasmGcObject::create(cx, typeDefData, initialHeap);
-  if (MOZ_UNLIKELY(!structObj)) {
-    ReportOutOfMemory(cx);
-    if (outlineData.pointer()) {
-      nursery.mallocedBlockCache().free(outlineData);
-    }
-    return nullptr;
-  }
-
-  // Initialize the outline data fields
-  structObj->outlineData_ = (uint8_t*)outlineData.pointer();
-  if constexpr (ZeroFields) {
-    memset(&(structObj->inlineData_[0]), 0, inlineBytes);
-    memset(outlineData.pointer(), 0, outlineBytes);
-  }
-  if (MOZ_LIKELY(js::gc::IsInsideNursery(structObj))) {
-    // See corresponding comment in WasmArrayObject::createArray.
-    if (!nursery.registerTrailer(outlineData, outlineBytes)) {
-      nursery.mallocedBlockCache().free(outlineData);
-      ReportOutOfMemory(cx);
-      return nullptr;
-    }
-  }
-
-  return structObj;
-}
-
-template WasmStructObject* WasmStructObject::createStruct<true>(
-    JSContext* cx, wasm::TypeDefInstanceData* typeDefData,
-    js::gc::Heap initialHeap);
-template WasmStructObject* WasmStructObject::createStruct<false>(
-    JSContext* cx, wasm::TypeDefInstanceData* typeDefData,
-    js::gc::Heap initialHeap);
-
 /* static */
 void WasmStructObject::obj_trace(JSTracer* trc, JSObject* object) {
   WasmStructObject& structObj = object->as<WasmStructObject>();
 
   const auto& structType = structObj.typeDef().structType();
   for (uint32_t offset : structType.inlineTraceOffsets_) {
-    GCPtr<JSObject*>* objectPtr =
-        reinterpret_cast<GCPtr<JSObject*>*>(&structObj.inlineData_[0] + offset);
-    TraceNullableEdge(trc, objectPtr, "reference-obj");
+    AnyRef* fieldPtr =
+        reinterpret_cast<AnyRef*>(&structObj.inlineData_[0] + offset);
+    TraceManuallyBarrieredEdge(trc, fieldPtr, "wasm-struct-field");
   }
   for (uint32_t offset : structType.outlineTraceOffsets_) {
-    GCPtr<JSObject*>* objectPtr =
-        reinterpret_cast<GCPtr<JSObject*>*>(structObj.outlineData_ + offset);
-    TraceNullableEdge(trc, objectPtr, "reference-obj");
+    AnyRef* fieldPtr =
+        reinterpret_cast<AnyRef*>(structObj.outlineData_ + offset);
+    TraceManuallyBarrieredEdge(trc, fieldPtr, "wasm-struct-field");
   }
 }
 

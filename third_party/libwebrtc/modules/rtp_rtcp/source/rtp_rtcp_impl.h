@@ -60,8 +60,7 @@ class ABSL_DEPRECATED("") ModuleRtpRtcpImpl
   // Receiver part.
 
   // Called when we receive an RTCP packet.
-  void IncomingRtcpPacket(const uint8_t* incoming_packet,
-                          size_t incoming_packet_length) override;
+  void IncomingRtcpPacket(rtc::ArrayView<const uint8_t> packet) override;
 
   void SetRemoteSSRC(uint32_t ssrc) override;
   void SetLocalSsrc(uint32_t ssrc) override;
@@ -167,13 +166,6 @@ class ABSL_DEPRECATED("") ModuleRtpRtcpImpl
 
   // Set RTCP CName.
   int32_t SetCNAME(absl::string_view c_name) override;
-
-  // Get remote NTP.
-  int32_t RemoteNTP(uint32_t* received_ntp_secs,
-                    uint32_t* received_ntp_frac,
-                    uint32_t* rtcp_arrival_time_secs,
-                    uint32_t* rtcp_arrival_time_frac,
-                    uint32_t* rtcp_timestamp) const override;
 
   // Get RoundTripTime.
   int32_t RTT(uint32_t remote_ssrc,

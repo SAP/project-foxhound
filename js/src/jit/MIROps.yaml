@@ -522,6 +522,31 @@
   # The flags are packed with the length in a fixed private slot.
   alias_set: custom
 
+- name: LoadScriptedProxyHandler
+  operands:
+    object: Object
+  result_type: Value
+  congruent_to: if_operands_equal
+  alias_set: none
+
+#ifdef JS_PUNBOX64
+- name: CheckScriptedProxyGetResult
+  operands:
+    target: Value
+    id: Value
+    value: Value
+  guard: true
+  alias_set: custom
+#endif
+
+- name: IdToStringOrSymbol
+  operands:
+    idVal: Value
+  result_type: Value
+  congruent_to: if_operands_equal
+  alias_set: none
+  folds_to: custom
+
 # Given a MIRType::Value A and a MIRType::Object B:
 # If the Value may be safely unboxed to an Object, return Object(A).
 # Otherwise, return B.
@@ -570,12 +595,10 @@
 - name: WasmTruncateToInt32
   gen_boilerplate: false
 
-# Store a JS Value that can't be represented as an AnyRef pointer into an
-# object that holds the value (opaquely) as such a pointer.
-- name: WasmBoxValue
+- name: WasmAnyRefFromJSValue
   operands:
     def: Value
-  result_type: RefOrNull
+  result_type: WasmAnyRef
   congruent_to: if_operands_equal
   alias_set: none
 
@@ -583,7 +606,35 @@
   operands:
     def: Object
   type_policy: none
-  result_type: RefOrNull
+  result_type: WasmAnyRef
+  congruent_to: if_operands_equal
+  alias_set: none
+
+- name: WasmAnyRefFromJSString
+  operands:
+    def: String
+  type_policy: none
+  result_type: WasmAnyRef
+  congruent_to: if_operands_equal
+  alias_set: none
+
+- name: WasmNewI31Ref
+  operands:
+    input: Int32
+  type_policy: none
+  result_type: WasmAnyRef
+  movable: true
+  congruent_to: if_operands_equal
+  alias_set: none
+
+- name: WasmI31RefGet
+  operands:
+    input: WasmAnyRef
+  arguments:
+    wideningOp: wasm::FieldWideningOp
+  type_policy: none
+  result_type: Int32
+  movable: true
   congruent_to: if_operands_equal
   alias_set: none
 
@@ -1028,10 +1079,10 @@
 - name: WasmTrap
   gen_boilerplate: false
 
-# Trap if the given value is null
+# Trap if the given ref is null
 - name: WasmTrapIfNull
   operands:
-    value: RefOrNull
+    ref: WasmAnyRef
   arguments:
     trap: wasm::Trap
     bytecodeOffset: wasm::BytecodeOffset
@@ -1075,6 +1126,8 @@
   possibly_calls: true
   can_recover: true
 
+# Note: this instruction writes to cx->regExpSearcherLastLimit.
+# See also MRegExpSearcherLastLimit.
 - name: RegExpSearcher
   operands:
     regexp: Object
@@ -1082,7 +1135,14 @@
     lastIndex: Int32
   result_type: Int32
   possibly_calls: true
-  can_recover: true
+  can_recover: false
+
+# This instruction loads cx->regExpSearcherLastLimit. We don't have a
+# specialized alias set for this so just use the default alias set similar to
+# the MRegExpSearcher instruction that precedes it.
+- name: RegExpSearcherLastLimit
+  operands:
+  result_type: Int32
 
 - name: RegExpExecMatch
   operands:
@@ -1099,6 +1159,13 @@
   result_type: Boolean
   possibly_calls: true
   can_recover: false
+
+- name: RegExpHasCaptureGroups
+  operands:
+    regexp: Object
+    input: String
+  result_type: Boolean
+  possibly_calls: true
 
 - name: RegExpPrototypeOptimizable
   operands:
@@ -1684,6 +1751,17 @@
 - name: GuardIsTypedArray
   operands:
     object: Object
+  result_type: Object
+  guard: true
+  movable: true
+  congruent_to: if_operands_equal
+  alias_set: none
+
+- name: GuardHasProxyHandler
+  operands:
+    object: Object
+  arguments:
+    handler: const void*
   result_type: Object
   guard: true
   movable: true
@@ -2340,7 +2418,7 @@
   result_type: Object
   guard: true
   folds_to: custom
-  alias_set: none
+  alias_set: custom
 
 - name: CheckObjCoercible
   operands:
@@ -2834,7 +2912,7 @@
 - name: WasmStoreInstance
   gen_boilerplate: false
 
-- name: WasmHeapBase
+- name: WasmHeapReg
   gen_boilerplate: false
 
 - name: WasmBoundsCheck
@@ -2958,6 +3036,9 @@
 - name: WasmCallLandingPrePad
   gen_boilerplate: false
 
+- name: WasmReturnCall
+  gen_boilerplate: false
+
 - name: WasmSelect
   gen_boilerplate: false
 
@@ -3049,10 +3130,10 @@
 - name: WasmStoreFieldRefKA
   gen_boilerplate: false
 
-- name: WasmGcObjectIsSubtypeOfConcrete
+- name: WasmRefIsSubtypeOfConcrete
   gen_boilerplate: false
 
-- name: WasmGcObjectIsSubtypeOfAbstract
+- name: WasmRefIsSubtypeOfAbstract
   gen_boilerplate: false
 
 #ifdef FUZZING_JS_FUZZILLI

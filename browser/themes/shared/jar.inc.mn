@@ -92,6 +92,7 @@
   skin/classic/browser/notification-icons/popup.svg                         (../shared/notification-icons/popup.svg)
   skin/classic/browser/notification-icons/screen-blocked.svg                (../shared/notification-icons/screen-blocked.svg)
   skin/classic/browser/notification-icons/screen.svg                        (../shared/notification-icons/screen.svg)
+  skin/classic/browser/notification-icons/speaker.svg                       (../shared/notification-icons/speaker.svg)
   skin/classic/browser/notification-icons/xr-blocked.svg                    (../shared/notification-icons/xr-blocked.svg)
   skin/classic/browser/notification-icons/xr.svg                            (../shared/notification-icons/xr.svg)
   skin/classic/browser/notification-icons/midi.svg                          (../shared/notification-icons/midi.svg)
@@ -229,6 +230,8 @@
   skin/classic/browser/tabbrowser/tab-loading@2x.png           (../shared/tabbrowser/tab-loading@2x.png)
   skin/classic/browser/tabbrowser/tab-loading-inverted.png     (../shared/tabbrowser/tab-loading-inverted.png)
   skin/classic/browser/tabbrowser/tab-loading-inverted@2x.png  (../shared/tabbrowser/tab-loading-inverted@2x.png)
+
+  skin/classic/browser/translations/beta.svg                   (../shared/translations/beta.svg)
 
   skin/classic/browser/update-badge.svg                        (../shared/update-badge.svg)
   skin/classic/browser/profiler-popup-backdrop.png             (../shared/profiler-popup-backdrop.png)

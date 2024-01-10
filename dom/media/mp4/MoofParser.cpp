@@ -12,27 +12,20 @@
 #include "mozilla/HelperMacros.h"
 #include "mozilla/Logging.h"
 
-#if defined(MOZ_FMP4)
 extern mozilla::LogModule* GetDemuxerLog();
 
-#  define LOG_ERROR(name, arg, ...)                \
-    MOZ_LOG(                                       \
-        GetDemuxerLog(), mozilla::LogLevel::Error, \
-        (MOZ_STRINGIFY(name) "(%p)::%s: " arg, this, __func__, ##__VA_ARGS__))
-#  define LOG_WARN(name, arg, ...)                   \
-    MOZ_LOG(                                         \
-        GetDemuxerLog(), mozilla::LogLevel::Warning, \
-        (MOZ_STRINGIFY(name) "(%p)::%s: " arg, this, __func__, ##__VA_ARGS__))
-#  define LOG_DEBUG(name, arg, ...)                \
-    MOZ_LOG(                                       \
-        GetDemuxerLog(), mozilla::LogLevel::Debug, \
-        (MOZ_STRINGIFY(name) "(%p)::%s: " arg, this, __func__, ##__VA_ARGS__))
-
-#else
-#  define LOG_ERROR(...)
-#  define LOG_WARN(...)
-#  define LOG_DEBUG(...)
-#endif
+#define LOG_ERROR(name, arg, ...)                \
+  MOZ_LOG(                                       \
+      GetDemuxerLog(), mozilla::LogLevel::Error, \
+      (MOZ_STRINGIFY(name) "(%p)::%s: " arg, this, __func__, ##__VA_ARGS__))
+#define LOG_WARN(name, arg, ...)                   \
+  MOZ_LOG(                                         \
+      GetDemuxerLog(), mozilla::LogLevel::Warning, \
+      (MOZ_STRINGIFY(name) "(%p)::%s: " arg, this, __func__, ##__VA_ARGS__))
+#define LOG_DEBUG(name, arg, ...)                \
+  MOZ_LOG(                                       \
+      GetDemuxerLog(), mozilla::LogLevel::Debug, \
+      (MOZ_STRINGIFY(name) "(%p)::%s: " arg, this, __func__, ##__VA_ARGS__))
 
 namespace mozilla {
 
@@ -532,10 +525,15 @@ Moof::Moof(Box& aBox, const TrackParseMode& aTrackParseMode, Trex& aTrex,
               ? decodeOffset.unwrap() + offsetOffset.unwrap()
               : TimeUnit::Zero(aMvhd.mTimescale);
       TimeUnit decodeDuration = endDecodeTime - mIndex[0].mDecodeTime;
-      double adjust = !presentationDuration.IsZero()
-                          ? (double)decodeDuration.ToMicroseconds() /
-                                (double)presentationDuration.ToMicroseconds()
-                          : 0.;
+      double adjust = 0.;
+      if (!presentationDuration.IsZero()) {
+        double num = decodeDuration.ToSeconds();
+        double denom = presentationDuration.ToSeconds();
+        if (denom != 0.) {
+          adjust = num / denom;
+        }
+      }
+
       TimeUnit dtsOffset = mIndex[0].mDecodeTime;
       TimeUnit compositionDuration(0, aMvhd.mTimescale);
       // Adjust the dts, ensuring that the new adjusted dts will never be
@@ -1039,7 +1037,12 @@ Result<Ok, nsresult> Edts::Parse(Box& aBox) {
     if (media_time == -1 && i) {
       LOG_WARN(Edts, "Multiple empty edit, not handled");
     } else if (media_time == -1) {
-      mEmptyOffset = segment_duration;
+      if (segment_duration > std::numeric_limits<int64_t>::max()) {
+        NS_WARNING("Segment duration higher than int64_t max.");
+        mEmptyOffset = std::numeric_limits<int64_t>::max();
+      } else {
+        mEmptyOffset = static_cast<int64_t>(segment_duration);
+      }
       emptyEntry = true;
     } else if (i > 1 || (i > 0 && !emptyEntry)) {
       LOG_WARN(Edts,

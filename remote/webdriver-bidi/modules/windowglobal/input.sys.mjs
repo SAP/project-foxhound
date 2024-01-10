@@ -8,8 +8,7 @@ const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   action: "chrome://remote/content/shared/webdriver/Actions.sys.mjs",
-  deserialize: "chrome://remote/content/webdriver-bidi/RemoteValue.sys.mjs",
-  element: "chrome://remote/content/marionette/element.sys.mjs",
+  dom: "chrome://remote/content/shared/DOM.sys.mjs",
   error: "chrome://remote/content/shared/webdriver/Errors.sys.mjs",
 });
 
@@ -27,13 +26,12 @@ class InputModule extends WindowGlobalBiDiModule {
   async performActions(options) {
     const { actions } = options;
     if (this.#actionState === null) {
-      this.#actionState = new lazy.action.State({
-        specCompatPointerOrigin: true,
-      });
+      this.#actionState = new lazy.action.State();
     }
 
     await this.#deserializeActionOrigins(actions);
     const actionChain = lazy.action.Chain.fromJSON(this.#actionState, actions);
+
     await actionChain.dispatch(this.#actionState, this.messageHandler.window);
   }
 
@@ -87,10 +85,8 @@ class InputModule extends WindowGlobalBiDiModule {
 
     const realm = this.messageHandler.getRealm();
 
-    const element = lazy.deserialize(realm, sharedReference, {
-      nodeCache: this.nodeCache,
-    });
-    if (!lazy.element.isElement(element)) {
+    const element = this.deserialize(realm, sharedReference);
+    if (!lazy.dom.isElement(element)) {
       throw new lazy.error.NoSuchElementError(
         `No element found for shared id: ${sharedReference.sharedId}`
       );

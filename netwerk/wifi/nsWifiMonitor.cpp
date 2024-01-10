@@ -29,7 +29,6 @@
 #endif
 
 #if defined(XP_MACOSX)
-#  include "nsCocoaFeatures.h"
 #  include "MacWifiScanner.h"
 #endif
 
@@ -71,14 +70,17 @@ static uint64_t NextPollingIndex() {
 // We poll when we are on a network where the wifi environment
 // could reasonably be expected to change much -- so, on mobile.
 static bool ShouldPollForNetworkType(const char16_t* aLinkType) {
-  return NS_ConvertUTF16toUTF8(aLinkType) == NS_NETWORK_LINK_TYPE_WIMAX ||
-         NS_ConvertUTF16toUTF8(aLinkType) == NS_NETWORK_LINK_TYPE_MOBILE;
+  auto linkTypeU8 = NS_ConvertUTF16toUTF8(aLinkType);
+  return linkTypeU8 == NS_NETWORK_LINK_TYPE_WIMAX ||
+         linkTypeU8 == NS_NETWORK_LINK_TYPE_MOBILE ||
+         linkTypeU8 == NS_NETWORK_LINK_TYPE_UNKNOWN;
 }
 
 // Enum value version.
 static bool ShouldPollForNetworkType(uint32_t aLinkType) {
   return aLinkType == nsINetworkLinkService::LINK_TYPE_WIMAX ||
-         aLinkType == nsINetworkLinkService::LINK_TYPE_MOBILE;
+         aLinkType == nsINetworkLinkService::LINK_TYPE_MOBILE ||
+         aLinkType == nsINetworkLinkService::LINK_TYPE_UNKNOWN;
 }
 
 nsWifiMonitor::nsWifiMonitor(UniquePtr<mozilla::WifiScanner>&& aScanner)
@@ -245,14 +247,12 @@ nsresult nsWifiMonitor::DispatchScanToBackgroundThread(uint64_t aPollingId,
 #else
     // If this ASSERT fails, we've increased our default stack size and
     // may no longer need to special-case the stack size on macOS.
-    static_assert(kMacOS13MonitorStackSize >
+    static_assert(kMacOSWifiMonitorStackSize >
                   nsIThreadManager::DEFAULT_STACK_SIZE);
 
     // Mac needs a stack size larger than the default for CoreWLAN.
     nsIThreadManager::ThreadCreationOptions options = {
-        .stackSize = nsCocoaFeatures::OnVenturaOrLater()
-                         ? kMacOS13MonitorStackSize
-                         : nsIThreadManager::DEFAULT_STACK_SIZE};
+        .stackSize = kMacOSWifiMonitorStackSize};
 #endif
 
     nsresult rv = NS_NewNamedThread("Wifi Monitor", getter_AddRefs(mThread),
@@ -289,17 +289,10 @@ void nsWifiMonitor::Scan(uint64_t aPollingId) {
        static_cast<uint32_t>(rv)));
 
   if (NS_FAILED(rv)) {
-    auto* mainThread = GetMainThreadSerialEventTarget();
-    if (!mainThread) {
-      LOG(("nsWifiMonitor::Scan cannot find main thread"));
-      return;
-    }
-
-    NS_DispatchAndSpinEventLoopUntilComplete(
-        "WaitForPassErrorToWifiListeners"_ns, mainThread,
-        NewRunnableMethod<nsresult>("PassErrorToWifiListeners", this,
-                                    &nsWifiMonitor::PassErrorToWifiListeners,
-                                    rv));
+    rv = NS_DispatchToMainThread(NewRunnableMethod<nsresult>(
+        "PassErrorToWifiListeners", this,
+        &nsWifiMonitor::PassErrorToWifiListeners, rv));
+    MOZ_ASSERT(NS_SUCCEEDED(rv));
   }
 
   // If we are polling then we re-issue Scan after a delay.
@@ -371,8 +364,7 @@ nsresult nsWifiMonitor::DoScan() {
     return NS_ERROR_UNEXPECTED;
   }
 
-  return NS_DispatchAndSpinEventLoopUntilComplete(
-      "WaitForCallWifiListeners"_ns, mainThread,
+  return NS_DispatchToMainThread(
       NewRunnableMethod<const nsTArray<RefPtr<nsIWifiAccessPoint>>&&, bool>(
           "CallWifiListeners", this, &nsWifiMonitor::CallWifiListeners,
           mLastAccessPoints.Clone(), accessPointsChanged));

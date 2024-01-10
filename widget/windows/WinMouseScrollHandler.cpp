@@ -336,7 +336,7 @@ ModifierKeyState MouseScrollHandler::GetModifierKeyState(UINT aMessage) {
   // MouseScrollHandler::Device::Elantech::HandleKeyMessage().)
   if ((aMessage == MOZ_WM_MOUSEVWHEEL || aMessage == WM_MOUSEWHEEL) &&
       !result.IsControl() && Device::Elantech::IsZooming()) {
-    // XXX Do we need to unset MODIFIER_SHIFT, MODIFIER_ALT, MODIFIER_OS too?
+    // XXX Do we need to unset MODIFIER_SHIFT, MODIFIER_ALT, MODIFIER_META too?
     //     If one of them are true, the default action becomes not zooming.
     result.Unset(MODIFIER_ALTGRAPH);
     result.Set(MODIFIER_CONTROL);
@@ -803,30 +803,6 @@ bool MouseScrollHandler::LastEventInfo::InitWheelEvent(
     // If the scroll delta mode isn't per line scroll, we shouldn't allow to
     // override the system scroll speed setting.
     aWheelEvent.mAllowToOverrideSystemScrollSpeed = false;
-  } else if (!MouseScrollHandler::sInstance->mSystemSettings
-                  .IsOverridingSystemScrollSpeedAllowed()) {
-    // If the system settings are customized by either the user or
-    // the mouse utility, we shouldn't allow to override the system scroll
-    // speed setting.
-    aWheelEvent.mAllowToOverrideSystemScrollSpeed = false;
-  } else {
-    // For suppressing too fast scroll, we should ensure that the maximum
-    // overridden delta value should be less than overridden scroll speed
-    // with default scroll amount.
-    double defaultScrollAmount = mIsVertical
-                                     ? SystemSettings::DefaultScrollLines()
-                                     : SystemSettings::DefaultScrollChars();
-    double maxDelta = WidgetWheelEvent::ComputeOverriddenDelta(
-        defaultScrollAmount, mIsVertical);
-    if (maxDelta != defaultScrollAmount) {
-      double overriddenDelta =
-          WidgetWheelEvent::ComputeOverriddenDelta(Abs(delta), mIsVertical);
-      if (overriddenDelta > maxDelta) {
-        // Suppress to fast scroll since overriding system scroll speed with
-        // current delta value causes too big delta value.
-        aWheelEvent.mAllowToOverrideSystemScrollSpeed = false;
-      }
-    }
   }
 
   MOZ_LOG(
@@ -1000,12 +976,6 @@ void MouseScrollHandler::SystemSettings::TrustedScrollSettingsDriver() {
   }
 
   // XXX We're not sure about other touchpad drivers...
-}
-
-bool MouseScrollHandler::SystemSettings::
-    IsOverridingSystemScrollSpeedAllowed() {
-  return mScrollLines == DefaultScrollLines() &&
-         mScrollChars == DefaultScrollChars();
 }
 
 /******************************************************************************

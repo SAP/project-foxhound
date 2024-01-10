@@ -116,7 +116,8 @@ export var TabManager = {
    * @param {object} options
    * @param {boolean=} options.focus
    *     Set to true if the new tab should be focused (selected). Defaults to
-   *     false.
+   *     false. `false` value is not properly supported on Android, additional
+   *     focus of previously selected tab is required after initial navigation.
    * @param {Tab=} options.referenceTab
    *     The reference tab after which the new tab will be added. If no
    *     reference tab is provided, the new tab will be added after all the
@@ -139,7 +140,7 @@ export var TabManager = {
     if (referenceTab != null) {
       // If a reference tab was specified, the window should be the window
       // owning the reference tab.
-      window = this._getWindowForTab(referenceTab);
+      window = this.getWindowForTab(referenceTab);
     }
 
     const tabBrowser = this.getTabBrowser(window);
@@ -253,6 +254,25 @@ export var TabManager = {
     return browsingContext.id.toString();
   },
 
+  /**
+   * Get the navigable for the given browsing context.
+   *
+   * Because Gecko doesn't support the Navigable concept in content
+   * scope the content browser could be used to uniquely identify
+   * top-level browsing contexts.
+   *
+   * @param {BrowsingContext} browsingContext
+   *
+   * @returns {BrowsingContext|XULBrowser} The navigable
+   */
+  getNavigableForBrowsingContext(browsingContext) {
+    if (browsingContext.isContent && browsingContext.parent === null) {
+      return browsingContext.embedderElement;
+    }
+
+    return browsingContext;
+  },
+
   getTabCount() {
     let count = 0;
     for (const win of this.windows) {
@@ -287,6 +307,27 @@ export var TabManager = {
   },
 
   /**
+   * Retrieve the list of tabs for a given window.
+   *
+   * @param {ChromeWindow} win
+   *     Window whose <code>tabs</code> need to be returned.
+   *
+   * @returns {Array<Tab>}
+   *     The list of tabs. Will return an empty list if tab browser is not available.
+   */
+  getTabsForWindow(win) {
+    const tabBrowser = this.getTabBrowser(win);
+    return tabBrowser ? tabBrowser.tabs : [];
+  },
+
+  getWindowForTab(tab) {
+    // `.linkedBrowser.ownerGlobal` works both with Firefox Desktop and Mobile.
+    // Other accessors (eg `.ownerGlobal` or `.browser.ownerGlobal`) fail on one
+    // of the platforms.
+    return tab.linkedBrowser.ownerGlobal;
+  },
+
+  /**
    * Remove the given tab.
    *
    * @param {Tab} tab
@@ -297,7 +338,7 @@ export var TabManager = {
       return;
     }
 
-    const ownerWindow = this._getWindowForTab(tab);
+    const ownerWindow = this.getWindowForTab(tab);
     const tabBrowser = this.getTabBrowser(ownerWindow);
     await tabBrowser.removeTab(tab);
   },
@@ -316,7 +357,7 @@ export var TabManager = {
       return Promise.resolve();
     }
 
-    const ownerWindow = this._getWindowForTab(tab);
+    const ownerWindow = this.getWindowForTab(tab);
     const tabBrowser = this.getTabBrowser(ownerWindow);
 
     if (tab === tabBrowser.selectedTab) {
@@ -330,12 +371,5 @@ export var TabManager = {
 
   supportsTabs() {
     return lazy.AppInfo.isAndroid || lazy.AppInfo.isFirefox;
-  },
-
-  _getWindowForTab(tab) {
-    // `.linkedBrowser.ownerGlobal` works both with Firefox Desktop and Mobile.
-    // Other accessors (eg `.ownerGlobal` or `.browser.ownerGlobal`) fail on one
-    // of the platforms.
-    return tab.linkedBrowser.ownerGlobal;
   },
 };

@@ -148,18 +148,6 @@ impl Clone for TypeResolution {
     }
 }
 
-impl crate::ConstantInner {
-    pub const fn resolve_type(&self) -> TypeResolution {
-        match *self {
-            Self::Scalar { width, ref value } => TypeResolution::Value(crate::TypeInner::Scalar {
-                kind: value.scalar_kind(),
-                width,
-            }),
-            Self::Composite { ty, components: _ } => TypeResolution::Handle(ty),
-        }
-    }
-}
-
 #[derive(Clone, Debug, Error, PartialEq)]
 pub enum ResolveError {
     #[error("Index {index} is out of bounds for expression {expr:?}")]
@@ -298,6 +286,7 @@ impl<'a> ResolveContext<'a> {
                             width,
                             space,
                         },
+                        Ti::BindingArray { base, .. } => Ti::Pointer { base, space },
                         ref other => {
                             log::error!("Access sub-type {:?}", other);
                             return Err(ResolveError::InvalidSubAccess {
@@ -401,6 +390,7 @@ impl<'a> ResolveContext<'a> {
                                 space,
                             }
                         }
+                        Ti::BindingArray { base, .. } => Ti::Pointer { base, space },
                         ref other => {
                             log::error!("Access index sub-type {:?}", other);
                             return Err(ResolveError::InvalidSubAccess {
@@ -419,15 +409,6 @@ impl<'a> ResolveContext<'a> {
                     }
                 }
             }
-            crate::Expression::Constant(h) => match self.constants[h].inner {
-                crate::ConstantInner::Scalar { width, ref value } => {
-                    TypeResolution::Value(Ti::Scalar {
-                        kind: value.scalar_kind(),
-                        width,
-                    })
-                }
-                crate::ConstantInner::Composite { ty, components: _ } => TypeResolution::Handle(ty),
-            },
             crate::Expression::Splat { size, value } => match *past(value)?.inner_with(types) {
                 Ti::Scalar { kind, width } => {
                     TypeResolution::Value(Ti::Vector { size, kind, width })
@@ -452,6 +433,9 @@ impl<'a> ResolveContext<'a> {
                     return Err(ResolveError::InvalidVector(vector));
                 }
             },
+            crate::Expression::Literal(lit) => TypeResolution::Value(lit.ty_inner()),
+            crate::Expression::Constant(h) => TypeResolution::Handle(self.constants[h].ty),
+            crate::Expression::ZeroValue(ty) => TypeResolution::Handle(ty),
             crate::Expression::Compose { ty, .. } => TypeResolution::Handle(ty),
             crate::Expression::FunctionArgument(index) => {
                 let arg = self
@@ -654,6 +638,7 @@ impl<'a> ResolveContext<'a> {
                 | crate::BinaryOperator::ShiftRight => past(left)?.clone(),
             },
             crate::Expression::AtomicResult { ty, .. } => TypeResolution::Handle(ty),
+            crate::Expression::WorkGroupUniformLoadResult { ty } => TypeResolution::Handle(ty),
             crate::Expression::Select { accept, .. } => past(accept)?.clone(),
             crate::Expression::Derivative { expr, .. } => past(expr)?.clone(),
             crate::Expression::Relational { fun, argument } => match fun {

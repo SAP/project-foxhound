@@ -50,8 +50,6 @@ void GenericPrinter::reportOutOfMemory() {
   hadOOM_ = true;
 }
 
-bool GenericPrinter::hadOutOfMemory() const { return hadOOM_; }
-
 bool GenericPrinter::printf(const char* fmt, ...) {
   va_list va;
   va_start(va, fmt);
@@ -147,11 +145,13 @@ UniqueChars Sprinter::release() {
 }
 
 char* Sprinter::stringAt(ptrdiff_t off) const {
+  MOZ_ASSERT(!hadOutOfMemory());
   MOZ_ASSERT(off >= 0 && (size_t)off < size);
   return base + off;
 }
 
 char& Sprinter::operator[](size_t off) {
+  MOZ_ASSERT(!hadOutOfMemory());
   MOZ_ASSERT(off < size);
   return *(base + off);
 }

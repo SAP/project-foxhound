@@ -752,10 +752,7 @@ template <typename Key>
 struct PointerHasher {
   using Lookup = Key;
 
-  static HashNumber hash(const Lookup& aLookup) {
-    size_t word = reinterpret_cast<size_t>(aLookup);
-    return HashGeneric(word);
-  }
+  static HashNumber hash(const Lookup& aLookup) { return HashGeneric(aLookup); }
 
   static bool match(const Key& aKey, const Lookup& aLookup) {
     return aKey == aLookup;
@@ -2045,6 +2042,7 @@ class HashTable : private AllocPolicy {
     }
 
     if (MOZ_UNLIKELY(aLen > sMaxInit)) {
+      this->reportAllocOverflow();
       return false;
     }
 

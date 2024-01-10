@@ -29,6 +29,7 @@
 #include "js/SourceText.h"
 #include "js/StructuredClone.h"
 #include "js/TypeDecls.h"
+#include "js/Utility.h"  // JS::FreePolicy
 #include "js/Wrapper.h"
 #include "jsapi.h"
 #include "jsfriendapi.h"
@@ -138,14 +139,15 @@ struct FrameMessageMarker {
   static void StreamJSONMarkerData(baseprofiler::SpliceableJSONWriter& aWriter,
                                    const ProfilerString16View& aMessageName,
                                    bool aIsSync) {
-    aWriter.StringProperty("name", NS_ConvertUTF16toUTF8(aMessageName));
+    aWriter.UniqueStringProperty("name", NS_ConvertUTF16toUTF8(aMessageName));
     aWriter.BoolProperty("sync", aIsSync);
   }
   static MarkerSchema MarkerTypeDisplay() {
     using MS = MarkerSchema;
     MS schema{MS::Location::MarkerChart, MS::Location::MarkerTable};
-    schema.AddKeyLabelFormatSearchable(
-        "name", "Message Name", MS::Format::String, MS::Searchable::Searchable);
+    schema.AddKeyLabelFormatSearchable("name", "Message Name",
+                                       MS::Format::UniqueString,
+                                       MS::Searchable::Searchable);
     schema.AddKeyLabelFormat("sync", "Sync", MS::Format::String);
     schema.SetTooltipLabel("FrameMessage - {marker.name}");
     schema.SetTableLabel("{marker.name} - {marker.data.name}");
@@ -1300,7 +1302,7 @@ nsMessageManagerScriptExecutor::TryCacheLoadAndCompileScript(
     rv = channel->Open(getter_AddRefs(input));
     NS_ENSURE_SUCCESS(rv, nullptr);
     nsString dataString;
-    Utf8Unit* dataStringBuf = nullptr;
+    UniquePtr<Utf8Unit[], JS::FreePolicy> dataStringBuf;
     size_t dataStringLength = 0;
     if (input) {
       nsCString buffer;
@@ -1329,8 +1331,7 @@ nsMessageManagerScriptExecutor::TryCacheLoadAndCompileScript(
     }
 
     JS::SourceText<Utf8Unit> srcBuf;
-    if (!srcBuf.init(cx, dataStringBuf, dataStringLength,
-                     JS::SourceOwnership::TakeOwnership)) {
+    if (!srcBuf.init(cx, std::move(dataStringBuf), dataStringLength)) {
       return nullptr;
     }
 

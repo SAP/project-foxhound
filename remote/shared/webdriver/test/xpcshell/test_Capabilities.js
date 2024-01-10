@@ -16,10 +16,13 @@ const { error } = ChromeUtils.importESModule(
 );
 const {
   Capabilities,
+  mergeCapabilities,
   PageLoadStrategy,
+  processCapabilities,
   Proxy,
   Timeouts,
   UnhandledPromptBehavior,
+  validateCapabilities,
 } = ChromeUtils.importESModule(
   "chrome://remote/content/shared/webdriver/Capabilities.sys.mjs"
 );
@@ -396,8 +399,10 @@ add_task(function test_Capabilities_ctor() {
   ok(caps.has("moz:platformVersion"));
   ok(caps.has("moz:processID"));
   ok(caps.has("moz:profile"));
-  equal(false, caps.get("moz:useNonSpecCompliantPointerOrigin"));
   equal(true, caps.get("moz:webdriverClick"));
+
+  // No longer supported capabilities
+  ok(!caps.has("moz:useNonSpecCompliantPointerOrigin"));
 });
 
 add_task(function test_Capabilities_toString() {
@@ -425,10 +430,6 @@ add_task(function test_Capabilities_toJSON() {
   equal(caps.get("moz:platformVersion"), json["moz:platformVersion"]);
   equal(caps.get("moz:processID"), json["moz:processID"]);
   equal(caps.get("moz:profile"), json["moz:profile"]);
-  equal(
-    caps.get("moz:useNonSpecCompliantPointerOrigin"),
-    json["moz:useNonSpecCompliantPointerOrigin"]
-  );
   equal(caps.get("moz:webdriverClick"), json["moz:webdriverClick"]);
 });
 
@@ -439,9 +440,6 @@ add_task(function test_Capabilities_fromJSON() {
   for (let typ of [{}, null, undefined]) {
     ok(fromJSON(typ).has("browserName"));
   }
-  for (let typ of [true, 42, "foo", []]) {
-    Assert.throws(() => fromJSON(typ), /InvalidArgumentError/);
-  }
 
   // matching
   let caps = new Capabilities();
@@ -450,23 +448,11 @@ add_task(function test_Capabilities_fromJSON() {
   equal(true, caps.get("acceptInsecureCerts"));
   caps = fromJSON({ acceptInsecureCerts: false });
   equal(false, caps.get("acceptInsecureCerts"));
-  Assert.throws(
-    () => fromJSON({ acceptInsecureCerts: "foo" }),
-    /InvalidArgumentError/
-  );
 
   for (let strategy of Object.values(PageLoadStrategy)) {
     caps = fromJSON({ pageLoadStrategy: strategy });
     equal(strategy, caps.get("pageLoadStrategy"));
   }
-  Assert.throws(
-    () => fromJSON({ pageLoadStrategy: "foo" }),
-    /InvalidArgumentError/
-  );
-  Assert.throws(
-    () => fromJSON({ pageLoadStrategy: null }),
-    /InvalidArgumentError/
-  );
 
   let proxyConfig = { proxyType: "manual" };
   caps = fromJSON({ proxy: proxyConfig });
@@ -476,20 +462,6 @@ add_task(function test_Capabilities_fromJSON() {
   caps = fromJSON({ timeouts: timeoutsConfig });
   equal(123, caps.get("timeouts").implicit);
 
-  if (!AppInfo.isAndroid) {
-    caps = fromJSON({ setWindowRect: true });
-    equal(true, caps.get("setWindowRect"));
-    Assert.throws(
-      () => fromJSON({ setWindowRect: false }),
-      /InvalidArgumentError/
-    );
-  } else {
-    Assert.throws(
-      () => fromJSON({ setWindowRect: true }),
-      /InvalidArgumentError/
-    );
-  }
-
   caps = fromJSON({ strictFileInteractability: false });
   equal(false, caps.get("strictFileInteractability"));
   caps = fromJSON({ strictFileInteractability: true });
@@ -497,12 +469,49 @@ add_task(function test_Capabilities_fromJSON() {
 
   caps = fromJSON({ webSocketUrl: true });
   equal(true, caps.get("webSocketUrl"));
+
+  caps = fromJSON({ "webauthn:virtualAuthenticators": true });
+  equal(true, caps.get("webauthn:virtualAuthenticators"));
+  caps = fromJSON({ "webauthn:virtualAuthenticators": false });
+  equal(false, caps.get("webauthn:virtualAuthenticators"));
   Assert.throws(
-    () => fromJSON({ webSocketUrl: false }),
+    () => fromJSON({ "webauthn:virtualAuthenticators": "foo" }),
     /InvalidArgumentError/
   );
+
+  caps = fromJSON({ "webauthn:extension:uvm": true });
+  equal(true, caps.get("webauthn:extension:uvm"));
+  caps = fromJSON({ "webauthn:extension:uvm": false });
+  equal(false, caps.get("webauthn:extension:uvm"));
   Assert.throws(
-    () => fromJSON({ webSocketUrl: "foo" }),
+    () => fromJSON({ "webauthn:extension:uvm": "foo" }),
+    /InvalidArgumentError/
+  );
+
+  caps = fromJSON({ "webauthn:extension:prf": true });
+  equal(true, caps.get("webauthn:extension:prf"));
+  caps = fromJSON({ "webauthn:extension:prf": false });
+  equal(false, caps.get("webauthn:extension:prf"));
+  Assert.throws(
+    () => fromJSON({ "webauthn:extension:prf": "foo" }),
+    /InvalidArgumentError/
+  );
+
+  caps = fromJSON({ "webauthn:extension:largeBlob": true });
+  equal(true, caps.get("webauthn:extension:largeBlob"));
+  caps = fromJSON({ "webauthn:extension:largeBlob": false });
+  equal(false, caps.get("webauthn:extension:largeBlob"));
+  Assert.throws(
+    () => fromJSON({ "webauthn:extension:largeBlob": "foo" }),
+    /InvalidArgumentError/
+  );
+
+  caps = fromJSON({ "webauthn:extension:credBlob": true });
+  equal(true, caps.get("webauthn:extension:credBlob"));
+  caps = fromJSON({ "webauthn:extension:credBlob": false });
+  equal(false, caps.get("webauthn:extension:credBlob"));
+  Assert.throws(
+    () => fromJSON({ "webauthn:extension:credBlob": "foo" }),
     /InvalidArgumentError/
   );
 
@@ -510,14 +519,6 @@ add_task(function test_Capabilities_fromJSON() {
   equal(true, caps.get("moz:accessibilityChecks"));
   caps = fromJSON({ "moz:accessibilityChecks": false });
   equal(false, caps.get("moz:accessibilityChecks"));
-  Assert.throws(
-    () => fromJSON({ "moz:accessibilityChecks": "foo" }),
-    /InvalidArgumentError/
-  );
-  Assert.throws(
-    () => fromJSON({ "moz:accessibilityChecks": 1 }),
-    /InvalidArgumentError/
-  );
 
   // capability is always populated with null if remote agent is not listening
   caps = fromJSON({});
@@ -527,30 +528,145 @@ add_task(function test_Capabilities_fromJSON() {
   caps = fromJSON({ "moz:debuggerAddress": true });
   equal(null, caps.get("moz:debuggerAddress"));
 
-  caps = fromJSON({ "moz:useNonSpecCompliantPointerOrigin": false });
-  equal(false, caps.get("moz:useNonSpecCompliantPointerOrigin"));
-  caps = fromJSON({ "moz:useNonSpecCompliantPointerOrigin": true });
-  equal(true, caps.get("moz:useNonSpecCompliantPointerOrigin"));
-  Assert.throws(
-    () => fromJSON({ "moz:useNonSpecCompliantPointerOrigin": "foo" }),
-    /InvalidArgumentError/
-  );
-  Assert.throws(
-    () => fromJSON({ "moz:useNonSpecCompliantPointerOrigin": 1 }),
-    /InvalidArgumentError/
-  );
-
   caps = fromJSON({ "moz:webdriverClick": true });
   equal(true, caps.get("moz:webdriverClick"));
   caps = fromJSON({ "moz:webdriverClick": false });
   equal(false, caps.get("moz:webdriverClick"));
+
+  // No longer supported capabilities
   Assert.throws(
-    () => fromJSON({ "moz:webdriverClick": "foo" }),
+    () => fromJSON({ "moz:useNonSpecCompliantPointerOrigin": false }),
     /InvalidArgumentError/
   );
   Assert.throws(
-    () => fromJSON({ "moz:webdriverClick": 1 }),
+    () => fromJSON({ "moz:useNonSpecCompliantPointerOrigin": true }),
     /InvalidArgumentError/
+  );
+});
+
+add_task(function test_mergeCapabilities() {
+  // Shadowed values.
+  Assert.throws(
+    () =>
+      mergeCapabilities(
+        { acceptInsecureCerts: true },
+        { acceptInsecureCerts: false }
+      ),
+    /InvalidArgumentError/
+  );
+
+  deepEqual(
+    { acceptInsecureCerts: true },
+    mergeCapabilities({ acceptInsecureCerts: true }, undefined)
+  );
+  deepEqual(
+    { acceptInsecureCerts: true, browserName: "Firefox" },
+    mergeCapabilities({ acceptInsecureCerts: true }, { browserName: "Firefox" })
+  );
+});
+
+add_task(function test_validateCapabilities_invalid() {
+  const invalidCapabilities = [
+    true,
+    42,
+    "foo",
+    [],
+    { acceptInsecureCerts: "foo" },
+    { browserName: true },
+    { browserVersion: true },
+    { platformName: true },
+    { pageLoadStrategy: "foo" },
+    { proxy: false },
+    { strictFileInteractability: "foo" },
+    { timeouts: false },
+    { unhandledPromptBehavior: false },
+    { webSocketUrl: false },
+    { webSocketUrl: "foo" },
+    { "moz:firefoxOptions": "foo" },
+    { "moz:accessibilityChecks": "foo" },
+    { "moz:webdriverClick": "foo" },
+    { "moz:webdriverClick": 1 },
+    { "moz:useNonSpecCompliantPointerOrigin": false },
+    { "moz:debuggerAddress": "foo" },
+    { "moz:someRandomString": {} },
+  ];
+  for (const capabilities of invalidCapabilities) {
+    Assert.throws(
+      () => validateCapabilities(capabilities),
+      /InvalidArgumentError/
+    );
+  }
+});
+
+add_task(function test_validateCapabilities_valid() {
+  // Ignore null value.
+  deepEqual({}, validateCapabilities({ test: null }));
+
+  const validCapabilities = [
+    { acceptInsecureCerts: true },
+    { browserName: "firefox" },
+    { browserVersion: "12" },
+    { platformName: "linux" },
+    { pageLoadStrategy: "eager" },
+    { proxy: { proxyType: "manual", httpProxy: "test.com" } },
+    { strictFileInteractability: true },
+    { timeouts: { pageLoad: 500 } },
+    { unhandledPromptBehavior: "accept" },
+    { webSocketUrl: true },
+    { "moz:firefoxOptions": {} },
+    { "moz:accessibilityChecks": true },
+    { "moz:webdriverClick": true },
+    { "moz:debuggerAddress": true },
+    { "test:extension": "foo" },
+  ];
+  for (const validCapability of validCapabilities) {
+    deepEqual(validCapability, validateCapabilities(validCapability));
+  }
+});
+
+add_task(function test_processCapabilities() {
+  for (const invalidValue of [
+    { capabilities: null },
+    { capabilities: undefined },
+    { capabilities: "foo" },
+    { capabilities: true },
+    { capabilities: [] },
+    { capabilities: { alwaysMatch: null } },
+    { capabilities: { alwaysMatch: "foo" } },
+    { capabilities: { alwaysMatch: true } },
+    { capabilities: { alwaysMatch: [] } },
+    { capabilities: { firstMatch: null } },
+    { capabilities: { firstMatch: "foo" } },
+    { capabilities: { firstMatch: true } },
+    { capabilities: { firstMatch: {} } },
+    { capabilities: { firstMatch: [] } },
+  ]) {
+    Assert.throws(
+      () => processCapabilities(invalidValue),
+      /InvalidArgumentError/
+    );
+  }
+
+  deepEqual(
+    { acceptInsecureCerts: true },
+    processCapabilities({
+      capabilities: { alwaysMatch: { acceptInsecureCerts: true } },
+    })
+  );
+  deepEqual(
+    { browserName: "Firefox" },
+    processCapabilities({
+      capabilities: { firstMatch: [{ browserName: "Firefox" }] },
+    })
+  );
+  deepEqual(
+    { acceptInsecureCerts: true, browserName: "Firefox" },
+    processCapabilities({
+      capabilities: {
+        alwaysMatch: { acceptInsecureCerts: true },
+        firstMatch: [{ browserName: "Firefox" }],
+      },
+    })
   );
 });
 

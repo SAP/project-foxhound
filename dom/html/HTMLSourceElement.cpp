@@ -18,11 +18,11 @@
 #include "mozilla/dom/MediaSource.h"
 
 #include "mozilla/dom/BlobURLProtocolHandler.h"
+#include "mozilla/AttributeStyles.h"
+#include "mozilla/MappedDeclarationsBuilder.h"
 #include "mozilla/Preferences.h"
 
 #include "nsGkAtoms.h"
-#include "nsHTMLStyleSheet.h"
-#include "nsMappedAttributes.h"
 
 NS_IMPL_NS_NEW_HTML_ELEMENT(Source)
 
@@ -195,6 +195,12 @@ JSObject* HTMLSourceElement::WrapNode(JSContext* aCx,
   return HTMLSourceElement_Binding::Wrap(aCx, this, aGivenProto);
 }
 
+/**
+ * Helper to map the image source attributes.
+ * Note: This will override the declaration created by the presentation
+ * attributes of HTMLImageElement (i.e. mapped by MapImageSizeAttributeInto).
+ * https://html.spec.whatwg.org/multipage/embedded-content.html#the-source-element
+ */
 void HTMLSourceElement::BuildMappedAttributesForImage() {
   MOZ_ASSERT(NS_IsMainThread());
 
@@ -205,9 +211,7 @@ void HTMLSourceElement::BuildMappedAttributesForImage() {
   mMappedAttributesForImage = nullptr;
 
   Document* document = GetComposedDoc();
-  nsHTMLStyleSheet* sheet =
-      document ? document->GetAttributeStyleSheet() : nullptr;
-  if (!sheet) {
+  if (!document) {
     return;
   }
 
@@ -217,36 +221,33 @@ void HTMLSourceElement::BuildMappedAttributesForImage() {
     return;
   }
 
-  const size_t count = (width ? 1 : 0) + (height ? 1 : 0);
-  RefPtr<nsMappedAttributes> modifiableMapped(new (count) nsMappedAttributes(
-      sheet, nsGenericHTMLElement::MapPictureSourceSizeAttributesInto));
-  MOZ_ASSERT(modifiableMapped);
-
-  auto maybeSetAttr = [&](nsAtom* aName, const nsAttrValue* aValue) {
-    if (!aValue) {
-      return;
-    }
-    nsAttrValue val(*aValue);
-    bool oldValueSet = false;
-    modifiableMapped->SetAndSwapAttr(aName, val, &oldValueSet);
-  };
-  maybeSetAttr(nsGkAtoms::width, width);
-  maybeSetAttr(nsGkAtoms::height, height);
-
-  RefPtr<nsMappedAttributes> newAttrs =
-      sheet->UniqueMappedAttributes(modifiableMapped);
-  NS_ENSURE_TRUE_VOID(newAttrs);
-
-  if (newAttrs != modifiableMapped) {
-    // Reset the stylesheet of modifiableMapped so that it doesn't
-    // spend time trying to remove itself from the hash.  There is no
-    // risk that modifiableMapped is in the hash since we created
-    // it ourselves and it didn't come from the stylesheet (in which
-    // case it would not have been modifiable).
-    modifiableMapped->DropStyleSheetReference();
+  MappedDeclarationsBuilder builder(*this, *document);
+  // We should set the missing property values with auto value to make sure it
+  // overrides the declaration created by the presentation attributes of
+  // HTMLImageElement. This can make sure we compute the ratio-dependent axis
+  // size properly by the natural aspect-ratio of the image.
+  //
+  // Note: The spec doesn't specify this, so we follow the implementation in
+  // other browsers.
+  // Spec issue: https://github.com/whatwg/html/issues/8178.
+  if (width) {
+    MapDimensionAttributeInto(builder, eCSSProperty_width, *width);
+  } else {
+    builder.SetAutoValue(eCSSProperty_width);
   }
 
-  mMappedAttributesForImage = std::move(newAttrs);
+  if (height) {
+    MapDimensionAttributeInto(builder, eCSSProperty_height, *height);
+  } else {
+    builder.SetAutoValue(eCSSProperty_height);
+  }
+
+  if (width && height) {
+    DoMapAspectRatio(*width, *height, builder);
+  } else {
+    builder.SetAutoValue(eCSSProperty_aspect_ratio);
+  }
+  mMappedAttributesForImage = builder.TakeDeclarationBlock();
 }
 
 }  // namespace mozilla::dom

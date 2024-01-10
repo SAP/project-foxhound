@@ -57,6 +57,9 @@ class TestConfigure(unittest.TestCase):
                     NegativeOptionValue(),
                     NegativeOptionValue(),
                     NegativeOptionValue(),
+                    NegativeOptionValue(),
+                    NegativeOptionValue(),
+                    PositiveOptionValue(),
                 ),
                 "SIMPLE": NegativeOptionValue(),
                 "VALUES": NegativeOptionValue(),
@@ -79,21 +82,69 @@ class TestConfigure(unittest.TestCase):
             "  Help options:\n"
             "    --help                    print this message\n"
             "\n"
+            "  Options from python/mozbuild/mozbuild/test/configure/data/moz.configure:\n"
+            "    --enable-simple           Enable simple\n"
+            "    --enable-with-env         Enable with env\n"
+            "    --enable-values           Enable values\n"
+            "    --enable-choices={a,b,c}  Enable choices\n"
+            "    --without-thing           Build without thing\n"
+            "    --with-stuff              Build with stuff\n"
+            "    --option                  Option\n"
+            "    --with-returned-default   Returned default [not-simple]\n"
+            "    --with-other-default      With other default\n"
+            "    --returned-choices        Choices\n"
+            "    --enable-foo={x,y}        Enable Foo\n"
+            "    --disable-foo             Disable Foo\n"
+            "    --enable-include          Include\n"
+            "    --with-imports            Imports\n"
+            "    --indirect-option         Indirectly defined option\n"
+            "\n"
             "  Options from python/mozbuild/mozbuild/test/configure/data/included.configure:\n"
-            "    --enable-imports-in-template\n                              Imports in template\n"
+            "    --enable-imports-in-template\n"
+            "                              Imports in template\n"
+            "\n"
+            "\n"
+            "Environment variables:\n"
+            "  Options from python/mozbuild/mozbuild/test/configure/data/moz.configure:\n"
+            "    CC                        C Compiler\n"
+            "\n",
+            help.replace("\\", "/"),
+        )
+
+        help, config = self.get_config(
+            ["--help", "--enable-simple", "--enable-values=numeric"], prog="configure"
+        )
+
+        self.assertEqual({}, config)
+        self.maxDiff = None
+        self.assertEqual(
+            "Usage: configure [options]\n"
+            "\n"
+            "Options: [defaults in brackets after descriptions]\n"
+            "  Help options:\n"
+            "    --help                    print this message\n"
             "\n"
             "  Options from python/mozbuild/mozbuild/test/configure/data/moz.configure:\n"
-            "    --enable-include          Include\n"
             "    --enable-simple           Enable simple\n"
-            "    --enable-values           Enable values\n"
             "    --enable-with-env         Enable with env\n"
-            "    --indirect-option         Indirectly defined option\n"
-            "    --option                  Option\n"
-            "    --returned-choices        Choices\n"
-            "    --with-imports            Imports\n"
-            "    --with-returned-default   Returned default [not-simple]\n"
-            "    --with-stuff              Build with stuff\n"
+            "    --enable-values           Enable values\n"
+            "    --enable-choices={a,b,c}  Enable choices\n"
             "    --without-thing           Build without thing\n"
+            "    --with-stuff              Build with stuff\n"
+            "    --option                  Option\n"
+            "    --with-returned-default   Returned default [simple]\n"
+            "    --without-other-default   Without other default\n"
+            "    --returned-choices={0,1,2}\n"
+            "                              Choices\n"
+            "    --enable-foo={x,y}        Enable Foo\n"
+            "    --disable-foo             Disable Foo\n"
+            "    --enable-include          Include\n"
+            "    --with-imports            Imports\n"
+            "    --indirect-option         Indirectly defined option\n"
+            "\n"
+            "  Options from python/mozbuild/mozbuild/test/configure/data/included.configure:\n"
+            "    --enable-imports-in-template\n"
+            "                              Imports in template\n"
             "\n"
             "\n"
             "Environment variables:\n"
@@ -312,7 +363,9 @@ class TestConfigure(unittest.TestCase):
             sandbox,
         )
 
-        self.assertIs(sandbox["foo"](), six.moves.builtins)
+        with self.assertRaises(Exception) as e:
+            sandbox["foo"]()
+        self.assertEqual(str(e.exception), "Importing __builtin__ is forbidden")
 
         exec_(
             textwrap.dedent(
@@ -330,7 +383,7 @@ class TestConfigure(unittest.TestCase):
         self.assertEqual(f.name, os.devnull)
         f.close()
 
-        # This unlocks the sandbox
+        # This used to unlock the sandbox
         exec_(
             textwrap.dedent(
                 """
@@ -343,7 +396,9 @@ class TestConfigure(unittest.TestCase):
             sandbox,
         )
 
-        self.assertIs(sandbox["foo"](), sys)
+        with self.assertRaises(Exception) as e:
+            sandbox["foo"]()
+        self.assertEqual(str(e.exception), "Importing __builtin__ is forbidden")
 
         exec_(
             textwrap.dedent(
@@ -1224,8 +1279,6 @@ class TestConfigure(unittest.TestCase):
                   Options from python/mozbuild/mozbuild/test/configure/data/moz.configure:
                     --with-foo                foo
 
-
-                Environment variables:
             """
                 ),
             )
@@ -1245,8 +1298,6 @@ class TestConfigure(unittest.TestCase):
                     --with-foo                foo
                     --with-qux                qux
 
-
-                Environment variables:
             """
                 ),
             )

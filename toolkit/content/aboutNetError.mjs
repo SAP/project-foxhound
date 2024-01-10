@@ -535,7 +535,8 @@ function initPage() {
         descriptionTag = "neterror-dns-not-found-trr-offline";
       } else if (
         skipReason == "TRR_NO_ANSWERS" ||
-        skipReason == "TRR_NXDOMAIN"
+        skipReason == "TRR_NXDOMAIN" ||
+        skipReason == "TRR_RCODE_FAIL"
       ) {
         descriptionTag = "neterror-dns-not-found-trr-unknown-host2";
       } else if (
@@ -543,6 +544,8 @@ function initPage() {
         skipReason == "TRR_SERVER_RESPONSE_ERR"
       ) {
         descriptionTag = "neterror-dns-not-found-trr-server-problem";
+      } else if (skipReason == "TRR_BAD_URL") {
+        descriptionTag = "neterror-dns-not-found-bad-trr-url";
       }
 
       let trrMode = RPMGetIntPref("network.trr.mode").toString();
@@ -633,7 +636,7 @@ function showNativeFallbackWarning() {
     "nativeFallbackIgnoreButton"
   );
   nativeFallbackIgnoreButton.addEventListener("click", () => {
-    RPMSetBoolPref("network.trr.display_fallback_warning", false);
+    RPMSetPref("network.trr.display_fallback_warning", false);
     retryThis(nativeFallbackIgnoreButton);
   });
 
@@ -875,7 +878,7 @@ function setupBlockingReportingUI() {
   checkbox.checked = !!reportingAutomatic;
 
   checkbox.addEventListener("change", function ({ target: { checked } }) {
-    RPMSetBoolPref("security.xfocsp.errorReporting.automatic", checked);
+    RPMSetPref("security.xfocsp.errorReporting.automatic", checked);
 
     // If we're enabling reports, send a report for this failure.
     if (checked) {

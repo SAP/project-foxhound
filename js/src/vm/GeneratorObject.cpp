@@ -96,7 +96,7 @@ JSObject* AbstractGeneratorObject::createModuleGenerator(
 
   // Create a handler function to wrap the module's script. This way
   // we can access it later and restore the state.
-  Handle<PropertyName*> funName = cx->names().empty;
+  Handle<PropertyName*> funName = cx->names().empty_;
   RootedFunction handlerFun(
       cx, NewFunctionWithProto(cx, nullptr, 0,
                                FunctionFlags::INTERPRETED_GENERATOR_OR_ASYNC,
@@ -204,7 +204,7 @@ static AbstractGeneratorObject* GetGeneratorObjectForCall(JSContext* cx,
                                                           CallObject& callObj) {
   // The ".generator" binding is always present and always "aliased".
   mozilla::Maybe<PropertyInfo> prop =
-      callObj.lookup(cx, cx->names().dotGenerator);
+      callObj.lookup(cx, cx->names().dot_generator_);
   if (prop.isNothing()) {
     return nullptr;
   }
@@ -226,7 +226,7 @@ AbstractGeneratorObject* js::GetGeneratorObjectForFrame(
     ModuleEnvironmentObject* moduleEnv =
         frame.script()->module()->environment();
     mozilla::Maybe<PropertyInfo> prop =
-        moduleEnv->lookup(cx, cx->names().dotGenerator);
+        moduleEnv->lookup(cx, cx->names().dot_generator_);
     Value genValue = moduleEnv->getSlot(prop->slot());
     return genValue.isObject()
                ? &genValue.toObject().as<AbstractGeneratorObject>()

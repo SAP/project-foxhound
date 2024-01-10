@@ -83,12 +83,7 @@ void HTMLStyleElement::ContentChanged(nsIContent* aContent) {
 nsresult HTMLStyleElement::BindToTree(BindContext& aContext, nsINode& aParent) {
   nsresult rv = nsGenericHTMLElement::BindToTree(aContext, aParent);
   NS_ENSURE_SUCCESS(rv, rv);
-
-  void (HTMLStyleElement::*update)() =
-      &HTMLStyleElement::UpdateStyleSheetInternal;
-  nsContentUtils::AddScriptRunner(
-      NewRunnableMethod("dom::HTMLStyleElement::BindToTree", this, update));
-
+  LinkStyle::BindToTree();
   return rv;
 }
 
@@ -144,15 +139,14 @@ void HTMLStyleElement::SetTextContentInternal(const nsAString& aTextContent,
     }
   }
 
-  SetEnableUpdates(false);
+  const bool updatesWereEnabled = mUpdatesEnabled;
+  DisableUpdates();
 
   aError = nsContentUtils::SetNodeTextContent(this, aTextContent, true);
-
-  SetEnableUpdates(true);
-
-  mTriggeringPrincipal = aScriptedPrincipal;
-
-  Unused << UpdateStyleSheetInternal(nullptr, nullptr);
+  if (updatesWereEnabled) {
+    mTriggeringPrincipal = aScriptedPrincipal;
+    Unused << EnableUpdatesAndUpdateStyleSheet(nullptr);
+  }
 }
 
 void HTMLStyleElement::SetDevtoolsAsTriggeringPrincipal() {

@@ -16,9 +16,7 @@ import {
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
-  CONTEXTUAL_SERVICES_PING_TYPES:
-    "resource:///modules/PartnerLinkAttribution.sys.mjs",
-  PartnerLinkAttribution: "resource:///modules/PartnerLinkAttribution.sys.mjs",
+  AboutNewTab: "resource:///modules/AboutNewTab.sys.mjs",
   PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
   TOP_SITES_DEFAULT_ROWS: "resource://activity-stream/common/Reducers.sys.mjs",
   TOP_SITES_MAX_SITES_PER_ROW:
@@ -27,10 +25,6 @@ ChromeUtils.defineESModuleGetters(lazy, {
   UrlbarProviderOpenTabs: "resource:///modules/UrlbarProviderOpenTabs.sys.mjs",
   UrlbarResult: "resource:///modules/UrlbarResult.sys.mjs",
   UrlbarSearchUtils: "resource:///modules/UrlbarSearchUtils.sys.mjs",
-});
-
-XPCOMUtils.defineLazyModuleGetters(lazy, {
-  AboutNewTab: "resource:///modules/AboutNewTab.jsm",
 });
 
 // The scalar category of TopSites impression for Contextual Services
@@ -311,23 +305,9 @@ class ProviderTopSites extends UrlbarProvider {
     }
   }
 
-  /**
-   * Called when the user starts and ends an engagement with the urlbar. We send
-   * the impression ping for the sponsored TopSites, the impression scalar is
-   * recorded as well.
-   *
-   * Note:
-   *   No telemetry recording in private browsing mode
-   *   The impression is only recorded for the "engagement" and "abandonment"
-   *     states
-   *
-   * @param {boolean} isPrivate True if the engagement is in a private context.
-   * @param {string} state The state of the engagement, one of: start,
-   *        engagement, abandonment, discard.
-   */
-  onEngagement(isPrivate, state) {
+  onEngagement(state, queryContext, details, controller) {
     if (
-      !isPrivate &&
+      !controller.input.isPrivate &&
       this.sponsoredSites &&
       ["engagement", "abandonment"].includes(state)
     ) {
@@ -336,16 +316,6 @@ class ProviderTopSites extends UrlbarProvider {
           SCALAR_CATEGORY_TOPSITES,
           `urlbar_${site.position}`,
           1
-        );
-        lazy.PartnerLinkAttribution.sendContextualServicesPing(
-          {
-            source: "urlbar",
-            tile_id: site.sponsoredTileId || -1,
-            position: site.position,
-            reporting_url: site.sponsoredImpressionUrl,
-            advertiser: site.title.toLocaleLowerCase(),
-          },
-          lazy.CONTEXTUAL_SERVICES_PING_TYPES.TOPSITES_IMPRESSION
         );
       }
     }

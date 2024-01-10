@@ -75,6 +75,41 @@ const API = class extends ExtensionAPI {
   getAPI(context) {
     let self = this;
     let { namespace } = this.constructor;
+
+    // TODO: split into their own test tasks the expected value to be set on
+    // EventManager resetIdleOnEvent in the following cases:
+    // - an EventManager instance in the parent process
+    //   - for an event page
+    //   - for a persistent background page
+    //   - for an extension context that isn't a background context
+    // - an EventManager instance in the child process
+    //   (for the same 3 kinds of contexts)
+    const EventManagerWithAssertions = class extends EventManager {
+      constructor(...args) {
+        super(...args);
+        this.assertResetOnIdleOnEvent();
+      }
+
+      assertResetOnIdleOnEvent() {
+        const expectResetIdleOnEventFalse =
+          this.context.extension.persistentBackground;
+        if (expectResetIdleOnEventFalse && this.resetIdleOnEvent) {
+          const details = {
+            eventManagerName: this.name,
+            resetIdleOnEvent: this.resetIdleOnEvent,
+            envType: this.context.envType,
+            viewType: this.context.viewType,
+            isBackgroundContext: this.context.isBackgroundContext,
+            persistentBackground: this.context.extension.persistentBackground,
+          };
+          throw new Error(
+            `EventManagerWithAssertions: resetIdleOnEvent should be forcefully set to false - ${JSON.stringify(
+              details
+            )}`
+          );
+        }
+      }
+    };
     return {
       [namespace]: {
         testOptions(options) {
@@ -84,7 +119,7 @@ const API = class extends ExtensionAPI {
           // eslint-disable-next-line no-undef
           self.constructor.testOptions = options;
         },
-        onEvent1: new EventManager({
+        onEvent1: new EventManagerWithAssertions({
           context,
           module: namespace,
           event: "onEvent1",
@@ -97,7 +132,7 @@ const API = class extends ExtensionAPI {
           },
         }).api(),
 
-        onEvent2: new EventManager({
+        onEvent2: new EventManagerWithAssertions({
           context,
           module: namespace,
           event: "onEvent2",
@@ -110,7 +145,7 @@ const API = class extends ExtensionAPI {
           },
         }).api(),
 
-        onEvent3: new EventManager({
+        onEvent3: new EventManagerWithAssertions({
           context,
           module: namespace,
           event: "onEvent3",
@@ -123,7 +158,7 @@ const API = class extends ExtensionAPI {
           },
         }).api(),
 
-        nonBlockingEvent: new EventManager({
+        nonBlockingEvent: new EventManagerWithAssertions({
           context,
           module: namespace,
           event: "nonBlockingEvent",
@@ -659,6 +694,11 @@ add_task(async function test_shutdown_before_background_loaded() {
     /Error: primed listener startupBlocking.onEvent1 not re-registered/,
     "fire.async after background load failure should be rejected"
   );
+
+  info(
+    "Expect fire.wakeup call after load failure to restart the background page"
+  );
+  await extension.awaitMessage("bg_started");
 
   await AddonTestUtils.promiseShutdownManager();
 
@@ -1634,3 +1674,45 @@ add_task(async function test_migrate_startupData_to_new_format() {
     "Expect the listener params key to be found in older Firefox versions"
   );
 });
+
+add_task(
+  { pref_set: [["extensions.eventPages.enabled", true]] },
+  async function test_resetOnIdleOnEvent_false_on_other_extpages() {
+    await AddonTestUtils.promiseStartupManager();
+
+    const extension = ExtensionTestUtils.loadExtension({
+      useAddonManager: "temporary",
+      files: {
+        "extpage.html": `<!DOCTYPE html><script src="extpage.js"></script>`,
+        "extpage.js": function () {
+          // We expect this to throw if the EventManagerWithAssertions constructor
+          // throws when asserting that resetIdleOnEvent was forcefully set to
+          // false for a non-event page context.
+          browser.nonStartupBlocking.onEvent2.addListener(() => {});
+          browser.test.sendMessage("extpage:loaded");
+        },
+      },
+    });
+
+    await extension.startup();
+
+    const awaitRegisteredEventListener = promiseObservable(
+      "register-event-listener",
+      1
+    );
+    const page = await ExtensionTestUtils.loadContentPage(
+      `moz-extension://${extension.uuid}/extpage.html`
+    );
+
+    info("Wait for the extension page script to complete");
+
+    await Promise.all([
+      extension.awaitMessage("extpage:loaded"),
+      awaitRegisteredEventListener,
+    ]);
+    await page.close();
+
+    await extension.unload();
+    await AddonTestUtils.promiseShutdownManager();
+  }
+);

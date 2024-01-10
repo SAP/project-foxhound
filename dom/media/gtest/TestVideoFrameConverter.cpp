@@ -7,9 +7,9 @@
 
 #include "gtest/gtest.h"
 #include "libwebrtcglue/SystemTime.h"
+#include "mozilla/gtest/WaitFor.h"
 #include "MediaEventSource.h"
 #include "VideoFrameConverter.h"
-#include "WaitFor.h"
 #include "YUVBufferGenerator.h"
 
 using namespace mozilla;
@@ -45,7 +45,9 @@ class DebugVideoFrameConverter : public VideoFrameConverter {
   explicit DebugVideoFrameConverter(
       const dom::RTCStatsTimestampMaker& aTimestampMaker)
       : VideoFrameConverter(aTimestampMaker) {}
+
   using VideoFrameConverter::QueueForProcessing;
+  using VideoFrameConverter::RegisterListener;
 };
 
 class VideoFrameConverterTest : public ::testing::Test {
@@ -58,7 +60,9 @@ class VideoFrameConverterTest : public ::testing::Test {
       : mTimestampMaker(dom::RTCStatsTimestampMaker::Create()),
         mConverter(MakeAndAddRef<DebugVideoFrameConverter>(mTimestampMaker)),
         mListener(MakeAndAddRef<FrameListener>(
-            mConverter->VideoFrameConvertedEvent())) {}
+            mConverter->VideoFrameConvertedEvent())) {
+    mConverter->RegisterListener();
+  }
 
   void TearDown() override { mConverter->Shutdown(); }
 

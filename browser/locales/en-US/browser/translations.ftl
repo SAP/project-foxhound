@@ -2,24 +2,39 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-# The button for "Firefox Translations" in the url bar.
-urlbar-translations-button =
-  .tooltiptext = Translate this page
+# The button for "Firefox Translations" in the url bar. Note that here "Beta" should
+# not be translated, as it is a reflection of the un-localized BETA icon that is in the
+# panel.
+urlbar-translations-button2 =
+  .tooltiptext = Translate this page - Beta
+
+# Note that here "Beta" should not be translated, as it is a reflection of the
+# un-localized BETA icon that is in the panel.
+urlbar-translations-button-intro =
+  .tooltiptext = Try private translations in { -brand-shorter-name } - Beta
+
+# If your language requires declining the language name, a possible solution
+# is to adapt the structure of the phrase, or use a support noun, e.g.
+# `Page translated from: { $fromLanguage }. Current target language: { $toLanguage }`
+#
+# Variables:
+#   $fromLanguage (string) - The original language of the document.
+#   $toLanguage (string) - The target language of the translation.
+urlbar-translations-button-translated =
+  .tooltiptext = Page translated from { $fromLanguage } to { $toLanguage }
+
+urlbar-translations-button-loading =
+  .tooltiptext = Translation in progress
 
 translations-panel-settings-button =
   .aria-label = Manage translation settings
-
-# Text displayed on a language dropdown when the language is in beta
-# Variables:
-#   $language (string) - The localized display name of the detected language
-translations-panel-displayname-beta =
-  .label = { $language } BETA
 
 ## Options in the Firefox Translations settings.
 
 translations-panel-settings-manage-languages =
   .label = Manage languages
-translations-panel-settings-about = About translations in { -brand-shorter-name }
+translations-panel-settings-about2 =
+  .label = About translations in { -brand-shorter-name }
 
 # Text displayed for the option to always translate a given language
 # Variables:
@@ -28,6 +43,8 @@ translations-panel-settings-always-translate-language =
   .label = Always translate { $language }
 translations-panel-settings-always-translate-unknown-language =
   .label = Always translate this language
+translations-panel-settings-always-offer-translation =
+  .label = Always offer to translate
 
 # Text displayed for the option to never translate a given language
 # Variables:
@@ -47,8 +64,14 @@ translations-panel-settings-never-translate-site =
 translations-panel-header = Translate this page?
 translations-panel-translate-button =
   .label = Translate
+translations-panel-translate-button-loading =
+  .label = Please wait…
 translations-panel-translate-cancel =
   .label = Cancel
+translations-panel-learn-more-link = Learn more
+
+translations-panel-intro-header = Try private translations in { -brand-shorter-name }
+translations-panel-intro-description = For your privacy, translations never leave your device. New languages and improvements coming soon!
 
 translations-panel-error-translating = There was a problem translating. Please try again.
 translations-panel-error-load-languages = Couldn’t load languages
@@ -100,12 +123,20 @@ translations-manage-header = Translations
 translations-manage-settings-button =
     .label = Settings…
     .accesskey = t
-translations-manage-description = Download languages for offline translation.
-translations-manage-all-language = All languages
-translations-manage-download-button = Download
-translations-manage-delete-button = Delete
-translations-manage-error-download = There was a problem downloading the language files. Please try again.
-translations-manage-error-delete = There was an error deleting the language files. Please try again.
+translations-manage-intro = Set your language and site translation preferences and manage languages installed for offline translation.
+translations-manage-install-description = Install languages for offline translation
+translations-manage-language-install-button =
+    .label = Install
+translations-manage-language-install-all-button =
+    .label = Install all
+    .accesskey = I
+translations-manage-language-remove-button =
+    .label = Remove
+translations-manage-language-remove-all-button =
+    .label = Remove all
+    .accesskey = e
+translations-manage-error-install = There was a problem installing the language files. Please try again.
+translations-manage-error-remove = There was an error removing the language files. Please try again.
 translations-manage-error-list = Failed to get the list of available languages for translation. Refresh the page to try again.
 
 translations-settings-title =

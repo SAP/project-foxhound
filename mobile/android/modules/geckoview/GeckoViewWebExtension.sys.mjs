@@ -19,6 +19,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
   Extension: "resource://gre/modules/Extension.sys.mjs",
   ExtensionData: "resource://gre/modules/Extension.sys.mjs",
   ExtensionPermissions: "resource://gre/modules/ExtensionPermissions.sys.mjs",
+  ExtensionProcessCrashObserver: "resource://gre/modules/Extension.sys.mjs",
   GeckoViewTabBridge: "resource://gre/modules/GeckoViewTab.sys.mjs",
   Management: "resource://gre/modules/Extension.sys.mjs",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
@@ -405,6 +406,7 @@ class ExtensionInstallListener {
   }
 
   onDownloadCancelled(aInstall) {
+    debug`onDownloadCancelled state=${aInstall.state}`;
     // Do not resolve we were told to CancelInstall,
     // to prevent racing with that handler.
     if (!this.cancelling) {
@@ -414,6 +416,7 @@ class ExtensionInstallListener {
   }
 
   onDownloadFailed(aInstall) {
+    debug`onDownloadFailed state=${aInstall.state}`;
     const { error: installError, state } = aInstall;
     this.resolve({ installError, state });
   }
@@ -422,26 +425,32 @@ class ExtensionInstallListener {
     // Nothing to do
   }
 
-  onInstallCancelled(aInstall) {
+  onInstallCancelled(aInstall, aCancelledByUser) {
+    debug`onInstallCancelled state=${aInstall.state} cancelledByUser=${aCancelledByUser}`;
     // Do not resolve we were told to CancelInstall,
     // to prevent racing with that handler.
     if (!this.cancelling) {
       const { error: installError, state } = aInstall;
-      this.resolve({ installError, state });
+      // An install can be cancelled by the user OR something else, e.g. when
+      // the blocklist prevents the install of a blocked add-on.
+      this.resolve({ installError, state, cancelledByUser: aCancelledByUser });
     }
   }
 
   onInstallFailed(aInstall) {
+    debug`onInstallFailed state=${aInstall.state}`;
     const { error: installError, state } = aInstall;
     this.resolve({ installError, state });
   }
 
   onInstallPostponed(aInstall) {
+    debug`onInstallPostponed state=${aInstall.state}`;
     const { error: installError, state } = aInstall;
     this.resolve({ installError, state });
   }
 
   async onInstallEnded(aInstall, aAddon) {
+    debug`onInstallEnded addonId=${aAddon.id}`;
     const addonId = aAddon.id;
     const { sourceURI } = aInstall;
 
@@ -521,7 +530,46 @@ class ExtensionPromptObserver {
   }
 }
 
+class AddonInstallObserver {
+  constructor() {
+    Services.obs.addObserver(this, "addon-install-failed");
+  }
+
+  async onInstallationFailed(aAddon, aAddonName, aError) {
+    // aAddon could be null if we have a network error where we can't download the xpi file.
+    let extension = null;
+    if (aAddon !== null) {
+      extension = await exportExtension(
+        aAddon,
+        aAddon.userPermissions,
+        /* aSourceURI */ null
+      );
+    }
+
+    lazy.EventDispatcher.instance.sendRequest({
+      type: "GeckoView:WebExtension:OnInstallationFailed",
+      extension,
+      addonName: aAddonName,
+      error: aError,
+    });
+  }
+
+  observe(aSubject, aTopic, aData) {
+    debug`observe ${aTopic}`;
+    switch (aTopic) {
+      case "addon-install-failed": {
+        aSubject.wrappedJSObject.installs.forEach(install => {
+          const { addon, error, name: addonName } = install;
+          this.onInstallationFailed(addon, addonName, error);
+        });
+        break;
+      }
+    }
+  }
+}
+
 new ExtensionPromptObserver();
+new AddonInstallObserver();
 
 class AddonManagerListener {
   constructor() {
@@ -642,6 +690,48 @@ class AddonManagerListener {
 }
 
 new AddonManagerListener();
+
+class ExtensionProcessListener {
+  constructor() {
+    this.onExtensionProcessCrash = this.onExtensionProcessCrash.bind(this);
+    lazy.Management.on("extension-process-crash", this.onExtensionProcessCrash);
+
+    lazy.EventDispatcher.instance.registerListener(this, [
+      "GeckoView:WebExtension:EnableProcessSpawning",
+    ]);
+  }
+
+  async onEvent(aEvent, aData, aCallback) {
+    debug`onEvent ${aEvent} ${aData}`;
+
+    switch (aEvent) {
+      case "GeckoView:WebExtension:EnableProcessSpawning": {
+        debug`Extension process crash -> re-enable process spawning`;
+        lazy.ExtensionProcessCrashObserver.enableProcessSpawning();
+        break;
+      }
+    }
+  }
+
+  async onExtensionProcessCrash(name, { childID, processSpawningDisabled }) {
+    debug`Extension process crash -> childID=${childID} processSpawningDisabled=${processSpawningDisabled}`;
+
+    // When an extension process has crashed too many times, Gecko will set
+    // `processSpawningDisabled` and no longer allow the extension process
+    // spawning. We only want to send a request to the embedder when we are
+    // disabling the process spawning.  If process spawning is still enabled
+    // then we short circuit and don't notify the embedder.
+    if (!processSpawningDisabled) {
+      return;
+    }
+
+    lazy.EventDispatcher.instance.sendRequest({
+      type: "GeckoView:WebExtension:OnDisabledProcessSpawning",
+    });
+  }
+}
+
+new ExtensionProcessListener();
 
 class MobileWindowTracker extends EventEmitter {
   constructor() {

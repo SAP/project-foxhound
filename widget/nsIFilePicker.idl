@@ -52,6 +52,7 @@ interface nsIFilePicker : nsISupports
                                                 // *.mpg; *.ogm; *.ogv; *.ogx;
                                                 // *.rm; *.rmvb; *.smil; *.webm;
                                                 // *.wmv; *.xvid
+  const long filterPDF        = 0x400;          // *.pdf;
 
   cenum CaptureTarget: 8 {
     captureNone     = 0,                        // No capture target specified.
@@ -145,7 +146,8 @@ interface nsIFilePicker : nsISupports
 
 
  /**
-  * Get the nsIFile for the file or directory.
+  * Get the nsIFile for the file or directory. A different file object
+  * may be returned by each invocation.
   *
   * @return Returns the file currently selected
   */

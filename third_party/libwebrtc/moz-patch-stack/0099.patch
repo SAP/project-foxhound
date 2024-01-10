@@ -1,28 +1,38 @@
 From: Andreas Pehrson <apehrson@mozilla.com>
-Date: Wed, 10 May 2023 07:47:00 +0000
-Subject: Bug 1810949 - In webrtc_libyuv.cc put a label at end of compound
- statement. CLOSED TREE
+Date: Wed, 17 May 2023 08:25:00 +0000
+Subject: Bug 1830945 - Do not lock in VideoCaptureDS::{Start|Stop}Capture.
+ r=padenot
 
-Differential Revision: https://phabricator.services.mozilla.com/D177600
+Unclear what they are guarding.
 
-Depends on D177599
-Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/6ac8147fee0323be3bf1d7f292a2a408a9901159
+Differential Revision: https://phabricator.services.mozilla.com/D178279
+Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/fcd48e81c9c2cb68ea2cb3d44b3574281be2154e
 ---
- common_video/libyuv/webrtc_libyuv.cc | 1 +
- 1 file changed, 1 insertion(+)
+ modules/video_capture/windows/video_capture_ds.cc | 4 ----
+ 1 file changed, 4 deletions(-)
 
-diff --git a/common_video/libyuv/webrtc_libyuv.cc b/common_video/libyuv/webrtc_libyuv.cc
-index 8c68162624..05a4b184c2 100644
---- a/common_video/libyuv/webrtc_libyuv.cc
-+++ b/common_video/libyuv/webrtc_libyuv.cc
-@@ -47,6 +47,7 @@ size_t CalcBufferSize(VideoType type, int width, int height) {
-       return width * height * 4;
-     case VideoType::kMJPEG:
-     case VideoType::kUnknown:
-+      break;
-   }
-   RTC_DCHECK_NOTREACHED() << "Unexpected pixel format " << type;
-   return 0;
+diff --git a/modules/video_capture/windows/video_capture_ds.cc b/modules/video_capture/windows/video_capture_ds.cc
+index 8695f76245..b13ac074f8 100644
+--- a/modules/video_capture/windows/video_capture_ds.cc
++++ b/modules/video_capture/windows/video_capture_ds.cc
+@@ -122,8 +122,6 @@ int32_t VideoCaptureDS::Init(const char* deviceUniqueIdUTF8) {
+ }
+ 
+ int32_t VideoCaptureDS::StartCapture(const VideoCaptureCapability& capability) {
+-  MutexLock lock(&api_lock_);
+-
+   if (capability != _requestedCapability) {
+     DisconnectGraph();
+ 
+@@ -146,8 +144,6 @@ int32_t VideoCaptureDS::StartCapture(const VideoCaptureCapability& capability) {
+ }
+ 
+ int32_t VideoCaptureDS::StopCapture() {
+-  MutexLock lock(&api_lock_);
+-
+   HRESULT hr = _mediaControl->StopWhenReady();
+   if (FAILED(hr)) {
+     RTC_LOG(LS_INFO) << "Failed to stop the capture graph. " << hr;
 -- 
 2.34.1
 

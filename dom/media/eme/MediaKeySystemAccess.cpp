@@ -11,26 +11,30 @@
 #include "DecoderDoctorDiagnostics.h"
 #include "DecoderTraits.h"
 #include "KeySystemConfig.h"
+#include "MP4Decoder.h"
 #include "MediaContainerType.h"
+#include "WebMDecoder.h"
 #include "mozilla/ClearOnShutdown.h"
-#include "mozilla/dom/KeySystemNames.h"
-#include "mozilla/dom/MediaKeySystemAccessBinding.h"
-#include "mozilla/dom/MediaKeySession.h"
-#include "mozilla/dom/MediaSource.h"
 #include "mozilla/EMEUtils.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/Services.h"
 #include "mozilla/StaticPrefs_media.h"
+#include "mozilla/dom/KeySystemNames.h"
+#include "mozilla/dom/MediaKeySession.h"
+#include "mozilla/dom/MediaKeySystemAccessBinding.h"
+#include "mozilla/dom/MediaSource.h"
 #include "nsDOMString.h"
 #include "nsIObserverService.h"
 #include "nsMimeTypes.h"
 #include "nsReadableUtils.h"
 #include "nsServiceManagerUtils.h"
 #include "nsUnicharUtils.h"
-#include "WebMDecoder.h"
 
 #ifdef XP_WIN
 #  include "WMFDecoderModule.h"
+#endif
+#ifdef MOZ_WIDGET_ANDROID
+#  include "mozilla/java/MediaDrmProxyWrappers.h"
 #endif
 
 namespace mozilla::dom {
@@ -171,42 +175,37 @@ static nsTArray<KeySystemConfig> GetSupportedKeySystems() {
 #endif
   };
   for (const auto& name : keySystemNames) {
-    KeySystemConfig config;
-    if (KeySystemConfig::GetConfig(name, config)) {
-      if (IsClearkeyKeySystem(name) &&
-          StaticPrefs::media_clearkey_test_key_systems_enabled()) {
-        // Add testing key systems. These offer the same capabilities as the
-        // base clearkey system, so just clone clearkey and change the name.
-        KeySystemConfig clearkeyWithProtectionQuery{config};
-        clearkeyWithProtectionQuery.mKeySystem.AssignLiteral(
-            kClearKeyWithProtectionQueryKeySystemName);
-        keySystemConfigs.AppendElement(std::move(clearkeyWithProtectionQuery));
-      }
-      keySystemConfigs.AppendElement(std::move(config));
-    }
+    Unused << KeySystemConfig::CreateKeySystemConfigs(name, keySystemConfigs);
   }
-
   return keySystemConfigs;
 }
 
-static bool GetKeySystemConfig(const nsAString& aKeySystem,
-                               KeySystemConfig& aOutKeySystemConfig) {
-  for (auto&& config : GetSupportedKeySystems()) {
+static bool GetKeySystemConfigs(
+    const nsAString& aKeySystem,
+    nsTArray<KeySystemConfig>& aOutKeySystemConfig) {
+  bool foundConfigs = false;
+  for (auto& config : GetSupportedKeySystems()) {
     if (config.mKeySystem.Equals(aKeySystem)) {
-      aOutKeySystemConfig = std::move(config);
-      return true;
+      aOutKeySystemConfig.AppendElement(std::move(config));
+      foundConfigs = true;
     }
   }
-  // No matching key system found.
-  return false;
+  return foundConfigs;
 }
 
 /* static */
 bool MediaKeySystemAccess::KeySystemSupportsInitDataType(
     const nsAString& aKeySystem, const nsAString& aInitDataType) {
-  KeySystemConfig implementation;
-  return GetKeySystemConfig(aKeySystem, implementation) &&
-         implementation.mInitDataTypes.Contains(aInitDataType);
+  nsTArray<KeySystemConfig> implementations;
+  GetKeySystemConfigs(aKeySystem, implementations);
+  bool containInitType = false;
+  for (const auto& config : implementations) {
+    if (config.mInitDataTypes.Contains(aInitDataType)) {
+      containInitType = true;
+      break;
+    }
+  }
+  return containInitType;
 }
 
 enum CodecType { Audio, Video, Invalid };
@@ -463,9 +462,9 @@ static Sequence<MediaKeySystemMediaCapability> GetSupportedCapabilities(
     // and subtype names are case-insensitive."'. We're using
     // nsContentTypeParser and that is case-insensitive and converts all its
     // parameter outputs to lower case.)
-    const bool isMP4 =
-        DecoderTraits::IsMP4SupportedType(containerType, aDiagnostics);
-    if (isMP4 && !aKeySystem.mMP4.IsSupported()) {
+    const bool supportedInMP4 =
+        MP4Decoder::IsSupportedType(containerType, aDiagnostics);
+    if (supportedInMP4 && !aKeySystem.mMP4.IsSupported()) {
       EME_LOG(
           "MediaKeySystemConfiguration (label='%s') "
           "MediaKeySystemMediaCapability('%s','%s','%s') unsupported; "
@@ -488,7 +487,7 @@ static Sequence<MediaKeySystemMediaCapability> GetSupportedCapabilities(
           NS_ConvertUTF16toUTF8(encryptionScheme).get());
       continue;
     }
-    if (!isMP4 && !isWebM) {
+    if (!supportedInMP4 && !isWebM) {
       EME_LOG(
           "MediaKeySystemConfiguration (label='%s') "
           "MediaKeySystemMediaCapability('%s','%s','%s') unsupported; "
@@ -520,7 +519,7 @@ static Sequence<MediaKeySystemMediaCapability> GetSupportedCapabilities(
       // TODO: Remove this once we're sure it doesn't break the web.
       // If container normatively implies a specific set of codecs and codec
       // constraints: Let parameters be that set.
-      if (isMP4) {
+      if (supportedInMP4) {
         if (aCodecType == Audio) {
           codecs.AppendElement(KeySystemConfig::EME_CODEC_AAC);
         } else if (aCodecType == Video) {
@@ -615,7 +614,8 @@ static Sequence<MediaKeySystemMediaCapability> GetSupportedCapabilities(
     // encrypted media data for the combination of container, media types,
     // robustness and local accumulated configuration in combination with
     // restrictions...
-    const auto& containerSupport = isMP4 ? aKeySystem.mMP4 : aKeySystem.mWebM;
+    const auto& containerSupport =
+        supportedInMP4 ? aKeySystem.mMP4 : aKeySystem.mWebM;
     if (!CanDecryptAndDecode(aKeySystem.mKeySystem, contentTypeString,
                              majorType, containerSupport, codecs,
                              aDiagnostics)) {
@@ -967,18 +967,19 @@ bool MediaKeySystemAccess::GetSupportedConfig(
     MediaKeySystemConfiguration& aOutConfig,
     DecoderDoctorDiagnostics* aDiagnostics, bool aIsPrivateBrowsing,
     const std::function<void(const char*)>& aDeprecationLogFn) {
-  KeySystemConfig implementation;
-  if (!GetKeySystemConfig(aKeySystem, implementation)) {
+  nsTArray<KeySystemConfig> implementations;
+  if (!GetKeySystemConfigs(aKeySystem, implementations)) {
     return false;
   }
-  for (const MediaKeySystemConfiguration& candidate : aConfigs) {
-    if (mozilla::dom::GetSupportedConfig(implementation, candidate, aOutConfig,
-                                         aDiagnostics, aIsPrivateBrowsing,
-                                         aDeprecationLogFn)) {
-      return true;
+  for (const auto& implementation : implementations) {
+    for (const MediaKeySystemConfiguration& candidate : aConfigs) {
+      if (mozilla::dom::GetSupportedConfig(
+              implementation, candidate, aOutConfig, aDiagnostics,
+              aIsPrivateBrowsing, aDeprecationLogFn)) {
+        return true;
+      }
     }
   }
-
   return false;
 }
 

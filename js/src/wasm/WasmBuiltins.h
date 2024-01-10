@@ -105,6 +105,7 @@ enum class SymbolicAddress {
   MemCopySharedM32,
   MemCopyM64,
   MemCopySharedM64,
+  MemCopyAny,
   DataDrop,
   MemFillM32,
   MemFillSharedM32,
@@ -130,10 +131,12 @@ enum class SymbolicAddress {
   PostBarrierPreciseWithOffset,
   ExceptionNew,
   ThrowException,
-  StructNew,
-  StructNewUninit,
-  ArrayNew,
-  ArrayNewUninit,
+  StructNewIL_true,
+  StructNewIL_false,
+  StructNewOOL_true,
+  StructNewOOL_false,
+  ArrayNew_true,
+  ArrayNew_false,
   ArrayNewData,
   ArrayNewElem,
   ArrayCopy,
@@ -236,6 +239,7 @@ extern const SymbolicAddressSignature SASigMemCopyM32;
 extern const SymbolicAddressSignature SASigMemCopySharedM32;
 extern const SymbolicAddressSignature SASigMemCopyM64;
 extern const SymbolicAddressSignature SASigMemCopySharedM64;
+extern const SymbolicAddressSignature SASigMemCopyAny;
 extern const SymbolicAddressSignature SASigDataDrop;
 extern const SymbolicAddressSignature SASigMemFillM32;
 extern const SymbolicAddressSignature SASigMemFillSharedM32;
@@ -261,10 +265,12 @@ extern const SymbolicAddressSignature SASigPostBarrierPrecise;
 extern const SymbolicAddressSignature SASigPostBarrierPreciseWithOffset;
 extern const SymbolicAddressSignature SASigExceptionNew;
 extern const SymbolicAddressSignature SASigThrowException;
-extern const SymbolicAddressSignature SASigStructNew;
-extern const SymbolicAddressSignature SASigStructNewUninit;
-extern const SymbolicAddressSignature SASigArrayNew;
-extern const SymbolicAddressSignature SASigArrayNewUninit;
+extern const SymbolicAddressSignature SASigStructNewIL_true;
+extern const SymbolicAddressSignature SASigStructNewIL_false;
+extern const SymbolicAddressSignature SASigStructNewOOL_true;
+extern const SymbolicAddressSignature SASigStructNewOOL_false;
+extern const SymbolicAddressSignature SASigArrayNew_true;
+extern const SymbolicAddressSignature SASigArrayNew_false;
 extern const SymbolicAddressSignature SASigArrayNewData;
 extern const SymbolicAddressSignature SASigArrayNewElem;
 extern const SymbolicAddressSignature SASigArrayCopy;

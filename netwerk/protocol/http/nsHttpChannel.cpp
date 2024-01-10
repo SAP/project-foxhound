@@ -10,7 +10,6 @@
 #include <inttypes.h>
 
 #include "DocumentChannelParent.h"
-#include "mozilla/MozPromiseInlines.h"  // For MozPromise::FromDomPromise
 #include "mozilla/ScopeExit.h"
 #include "mozilla/Sprintf.h"
 #include "mozilla/dom/nsCSPContext.h"
@@ -1213,7 +1212,8 @@ nsresult nsHttpChannel::SetupTransaction() {
     mCaps |= NS_HTTP_LOAD_ANONYMOUS_CONNECT_ALLOW_CLIENT_CERT;
   }
 
-  if (nsContentUtils::ShouldResistFingerprinting(this)) {
+  if (nsContentUtils::ShouldResistFingerprinting(this,
+                                                 RFPTarget::HttpUserAgent)) {
     mCaps |= NS_HTTP_USE_RFP;
   }
 
@@ -2436,6 +2436,10 @@ nsresult nsHttpChannel::ContinueProcessResponse3(nsresult rv) {
         // CSP Frame Ancestor and X-Frame-Options check has failed
         // Do not prompt http auth - Bug 1629307
         rv = NS_ERROR_FAILURE;
+      } else if (httpStatus == 401 &&
+                 mLoadInfo->GetTainting() == mozilla::LoadTainting::CORS) {
+        // CORS does not allow Authentication headers on 401 (see bug 1554538)
+        rv = NS_ERROR_FAILURE;
       } else {
         rv = mAuthProvider->ProcessAuthentication(
             httpStatus, mConnectionInfo->EndToEndSSL() && mTransaction &&
@@ -2673,8 +2677,6 @@ nsresult nsHttpChannel::ContinueProcessNormal(nsresult rv) {
   // response.  we must clear this flag to prevent BufferPartialContent from
   // being called inside our OnDataAvailable (see bug 136678).
   StoreCachedContentIsPartial(false);
-
-  ClearBogusContentEncodingIfNeeded();
 
   UpdateInhibitPersistentCachingFlag();
 
@@ -3255,9 +3257,6 @@ nsresult nsHttpChannel::ProcessPartialContent(
 
   NS_ENSURE_TRUE(mCachedResponseHead, NS_ERROR_NOT_INITIALIZED);
   NS_ENSURE_TRUE(mCacheEntry, NS_ERROR_NOT_INITIALIZED);
-
-  // Make sure to clear bogus content-encodings before looking at the header
-  ClearBogusContentEncodingIfNeeded();
 
   // Check if the content-encoding we now got is different from the one we
   // got before
@@ -4013,12 +4012,12 @@ nsHttpChannel::OnCacheEntryCheck(nsICacheEntry* entry, uint32_t* aResult) {
     // the request method MUST be either GET or HEAD (see bug 175641) and
     // the cached response code must be < 400
     //
-    // the cached content must not be weakly framed or marked immutable
+    // the cached content must not be weakly framed
     //
     // do not override conditional headers when consumer has defined its own
     if (!mCachedResponseHead->NoStore() &&
         (mRequestHead.IsGet() || mRequestHead.IsHead()) &&
-        !LoadCustomConditionalRequest() && !weaklyFramed && !isImmutable &&
+        !LoadCustomConditionalRequest() && !weaklyFramed &&
         (mCachedResponseHead->Status() < 400)) {
       if (LoadConcurrentCacheAccess()) {
         // In case of concurrent read and also validation request we
@@ -5087,34 +5086,6 @@ nsresult nsHttpChannel::InstallCacheListener(int64_t offset) {
   return NS_OK;
 }
 
-void nsHttpChannel::ClearBogusContentEncodingIfNeeded() {
-  if (!StaticPrefs::network_http_clear_bogus_content_encoding()) {
-    return;
-  }
-
-  // For .gz files, apache sends both a Content-Type: application/x-gzip
-  // as well as Content-Encoding: gzip, which is completely wrong.  In
-  // this case, we choose to ignore the rogue Content-Encoding header. We
-  // must do this early on so as to prevent it from being seen up stream.
-  // The same problem exists for Content-Encoding: compress in default
-  // Apache installs.
-  nsAutoCString contentType;
-  mResponseHead->ContentType(contentType);
-  if (mResponseHead->HasHeaderValue(nsHttp::Content_Encoding, "gzip") &&
-      (contentType.EqualsLiteral(APPLICATION_GZIP) ||
-       contentType.EqualsLiteral(APPLICATION_GZIP2) ||
-       contentType.EqualsLiteral(APPLICATION_GZIP3))) {
-    // clear the Content-Encoding header
-    mResponseHead->ClearHeader(nsHttp::Content_Encoding);
-  } else if (mResponseHead->HasHeaderValue(nsHttp::Content_Encoding,
-                                           "compress") &&
-             (contentType.EqualsLiteral(APPLICATION_COMPRESS) ||
-              contentType.EqualsLiteral(APPLICATION_COMPRESS2))) {
-    // clear the Content-Encoding header
-    mResponseHead->ClearHeader(nsHttp::Content_Encoding);
-  }
-}
-
 //-----------------------------------------------------------------------------
 // nsHttpChannel <redirect>
 //-----------------------------------------------------------------------------
@@ -5170,11 +5141,6 @@ nsresult nsHttpChannel::SetupReplacementChannel(nsIURI* newURI,
 
   rv = CheckRedirectLimit(redirectFlags);
   NS_ENSURE_SUCCESS(rv, rv);
-
-  // clear exempt flag such that a subdomain redirection gets
-  // upgraded even if the initial request was exempted by https-first/ -only
-  nsCOMPtr<nsILoadInfo> newLoadInfo = newChannel->LoadInfo();
-  nsHTTPSOnlyUtils::PotentiallyClearExemptFlag(newLoadInfo);
 
   // pass on the early hint observer to be able to process `103 Early Hints`
   // responses after cross origin redirects
@@ -6920,7 +6886,7 @@ nsHttpChannel::GetTransactionPending(TimeStamp* _retval) {
   if (mTransaction) {
     *_retval = mTransaction->GetPendingTime();
   } else {
-    *_retval = mTransactionPendingTime;
+    *_retval = mTransactionTimings.transactionPending;
   }
   return NS_OK;
 }
@@ -7430,6 +7396,31 @@ static nsLiteralCString ContentTypeToTelemetryLabel(nsHttpChannel* aChannel) {
   return "other"_ns;
 }
 
+nsresult nsHttpChannel::LogConsoleError(const char* aTag) {
+  nsCOMPtr<nsIConsoleService> console(
+      do_GetService(NS_CONSOLESERVICE_CONTRACTID));
+  NS_ENSURE_TRUE(console, NS_ERROR_OUT_OF_MEMORY);
+
+  nsCOMPtr<nsILoadInfo> loadInfo = LoadInfo();
+  NS_ENSURE_TRUE(console, NS_ERROR_OUT_OF_MEMORY);
+  uint64_t innerWindowID = loadInfo->GetInnerWindowID();
+
+  nsAutoString errorText;
+  nsresult rv = nsContentUtils::GetLocalizedString(
+      nsContentUtils::eNECKO_PROPERTIES, aTag, errorText);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  nsCOMPtr<nsIScriptError> error(do_CreateInstance(NS_SCRIPTERROR_CONTRACTID));
+  NS_ENSURE_TRUE(error, NS_ERROR_OUT_OF_MEMORY);
+
+  rv = error->InitWithSourceURI(errorText, mURI, u""_ns, 0, 0,
+                                nsIScriptError::errorFlag,
+                                "Invalid HTTP Status Lines"_ns, innerWindowID);
+  NS_ENSURE_SUCCESS(rv, rv);
+  console->LogMessage(error);
+  return NS_OK;
+}
+
 NS_IMETHODIMP
 nsHttpChannel::OnStopRequest(nsIRequest* request, nsresult status) {
   AUTO_PROFILER_LABEL("nsHttpChannel::OnStopRequest", NETWORK);
@@ -7442,6 +7433,10 @@ nsHttpChannel::OnStopRequest(nsIRequest* request, nsresult status) {
 
   MOZ_ASSERT(NS_IsMainThread(),
              "OnStopRequest should only be called from the main thread");
+
+  if (mStatus == NS_ERROR_PARSING_HTTP_STATUS_LINE) {
+    Unused << LogConsoleError("InvalidHTTPResponseStatusLine");
+  }
 
   if (WRONG_RACING_RESPONSE_SOURCE(request)) {
     return NS_OK;
@@ -7600,7 +7595,6 @@ nsHttpChannel::OnStopRequest(nsIRequest* request, nsresult status) {
 
     // at this point, we're done with the transaction
     mTransactionTimings = mTransaction->Timings();
-    mTransactionPendingTime = mTransaction->GetPendingTime();
     mTransaction = nullptr;
     mTransactionPump = nullptr;
 
@@ -9208,7 +9202,7 @@ void nsHttpChannel::SetOriginHeader() {
     } else if (HasNullRequestOrigin(this, uri, isAddonRequest)) {
       serializedOrigin.AssignLiteral("null");
     } else {
-      nsContentUtils::GetASCIIOrigin(uri, serializedOrigin);
+      nsContentUtils::GetWebExposedOriginSerialization(uri, serializedOrigin);
     }
   }
 
@@ -9235,7 +9229,7 @@ void nsHttpChannel::SetOriginHeader() {
     } else if (StaticPrefs::network_http_sendOriginHeader() == 1) {
       // Non-standard: Restrict Origin to same-origin loads if requested by user
       nsAutoCString currentOrigin;
-      nsContentUtils::GetASCIIOrigin(mURI, currentOrigin);
+      nsContentUtils::GetWebExposedOriginSerialization(mURI, currentOrigin);
       if (!serializedOrigin.EqualsIgnoreCase(currentOrigin.get())) {
         // Origin header suppressed by user setting.
         serializedOrigin.AssignLiteral("null");

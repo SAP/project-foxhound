@@ -5,6 +5,11 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "DMABufSurface.h"
+#include "DMABufLibWrapper.h"
+
+#ifdef MOZ_WAYLAND
+#  include "nsWaylandDisplay.h"
+#endif
 
 #include <fcntl.h>
 #include <getopt.h>
@@ -18,8 +23,13 @@
 #include <sys/time.h>
 #include <dlfcn.h>
 #include <sys/mman.h>
-#include <sys/eventfd.h>
+#ifdef HAVE_EVENTFD
+#  include <sys/eventfd.h>
+#endif
 #include <poll.h>
+#ifdef HAVE_SYSIOCCOM_H
+#  include <sys/ioccom.h>
+#endif
 #include <sys/ioctl.h>
 
 #include "mozilla/widget/gbm.h"
@@ -115,6 +125,7 @@ bool DMABufSurface::IsGlobalRefSet() const {
 }
 
 void DMABufSurface::GlobalRefRelease() {
+#ifdef HAVE_EVENTFD
   if (!mGlobalRefCountFd) {
     return;
   }
@@ -133,9 +144,11 @@ void DMABufSurface::GlobalRefRelease() {
                      .get());
     }
   }
+#endif
 }
 
 void DMABufSurface::GlobalRefAdd() {
+#ifdef HAVE_EVENTFD
   LOGDMABUFREF(("DMABufSurface::GlobalRefAdd UID %d", mUID));
   MOZ_DIAGNOSTIC_ASSERT(mGlobalRefCountFd);
   uint64_t counter = 1;
@@ -144,9 +157,11 @@ void DMABufSurface::GlobalRefAdd() {
                                strerror(errno))
                    .get());
   }
+#endif
 }
 
 void DMABufSurface::GlobalRefCountCreate() {
+#ifdef HAVE_EVENTFD
   LOGDMABUFREF(("DMABufSurface::GlobalRefCountCreate UID %d", mUID));
   MOZ_DIAGNOSTIC_ASSERT(!mGlobalRefCountFd);
   // Create global ref count initialized to 0,
@@ -159,14 +174,17 @@ void DMABufSurface::GlobalRefCountCreate() {
     mGlobalRefCountFd = 0;
     return;
   }
+#endif
 }
 
 void DMABufSurface::GlobalRefCountImport(int aFd) {
+#ifdef HAVE_EVENTFD
   mGlobalRefCountFd = aFd;
   if (mGlobalRefCountFd) {
     LOGDMABUFREF(("DMABufSurface::GlobalRefCountImport UID %d", mUID));
     GlobalRefAdd();
   }
+#endif
 }
 
 int DMABufSurface::GlobalRefCountExport() {
@@ -355,11 +373,12 @@ DMABufSurfaceRGBA::DMABufSurfaceRGBA()
       mGmbFormat(nullptr),
       mEGLImage(LOCAL_EGL_NO_IMAGE),
       mTexture(0),
-      mGbmBufferFlags(0),
-      mWlBuffer(nullptr) {}
+      mGbmBufferFlags(0) {}
 
 DMABufSurfaceRGBA::~DMABufSurfaceRGBA() {
+#ifdef MOZ_WAYLAND
   ReleaseWlBuffer();
+#endif
   ReleaseSurface();
 }
 
@@ -729,6 +748,7 @@ void DMABufSurfaceRGBA::ReleaseSurface() {
   ReleaseDMABuf();
 }
 
+#ifdef MOZ_WAYLAND
 bool DMABufSurfaceRGBA::CreateWlBuffer() {
   MutexAutoLock lockFD(mSurfaceLock);
   if (!OpenFileDescriptors(lockFD)) {
@@ -758,6 +778,7 @@ bool DMABufSurfaceRGBA::CreateWlBuffer() {
 void DMABufSurfaceRGBA::ReleaseWlBuffer() {
   MozClearPointer(mWlBuffer, wl_buffer_destroy);
 }
+#endif
 
 // We should synchronize DMA Buffer object access from CPU to avoid potential
 // cache incoherency and data loss.

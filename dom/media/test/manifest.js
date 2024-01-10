@@ -527,6 +527,17 @@ var gPlayTests = [
   // and report that the stream is not MP3. However, it does not count ID3 tags
   // in that offset. This test case makes sure that ID3 exclusion holds.
   { name: "huge-id3.mp3", type: "audio/mpeg", duration: 1.0 },
+  // Half a second file of a sine with a large ID3v2 tag, followed by an ID3v1
+  // tag. The ID3v1 tags should be at the end of the file, but software usually
+  // play it anyway.
+  { name: "id3v1afterlongid3v2.mp3", type: "audio/mpeg", duration: 0.5 },
+  // An VBR file with a padding value that is greater than an mp3 packet, and
+  // also subsequent packets after the theoretical EOF computed from metadata,
+  // to test padding trimming edge cases.
+  {
+    name: "padding-spanning-multiple-packets.mp3",
+    type: "audio/mpeg",
+  },
   // A truncated VBR MP3 with just enough frames to keep most decoders happy.
   // The Xing header reports the length of the file to be around 10 seconds, but
   // there is really only one second worth of data. We want MP3FrameParser to
@@ -918,19 +929,15 @@ var gErrorTests = [
   { name: "448636.ogv", type: "video/ogg" },
   { name: "bug504843.ogv", type: "video/ogg" },
   { name: "bug501279.ogg", type: "audio/ogg" },
-  { name: "bug603918.webm", type: "video/webm" },
   { name: "bug604067.webm", type: "video/webm" },
   { name: "bug1535980.webm", type: "video/webm" },
   { name: "bug1799787.webm", type: "video/webm" },
   { name: "bogus.duh", type: "bogus/duh" },
 ];
 
-// These files would get error after receiving "loadedmetadata", we would like
-// to check duration in "onerror" and make sure the duration is still available.
-var gDurationTests = [
-  { name: "bug603918.webm", duration: 6.076 },
-  { name: "bug604067.webm", duration: 6.076 },
-];
+// Playing this file errors out after receiving "loadedmetadata", we still want
+// to check the duration in "onerror" and make sure it is still available.
+var gDurationTests = [{ name: "bug604067.webm", duration: 6.076 }];
 
 // These are files that have nontrivial duration and are useful for seeking within.
 var gSeekTests = [
@@ -2286,6 +2293,13 @@ function Log(token, msg) {
 
 // Number of tests to run in parallel.
 var PARALLEL_TESTS = 2;
+
+// Disable parallel test for media engine tests, see more info in bug 1840914.
+if (
+  SpecialPowers.Services.prefs.getIntPref("media.wmf.media-engine.enabled", 0)
+) {
+  PARALLEL_TESTS = 1;
+}
 
 // Prefs to set before running tests.  Use this to improve coverage of
 // conditions that might not otherwise be encountered on the test data.

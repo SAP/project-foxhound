@@ -162,6 +162,8 @@ bool js::jit::CanInlineNativeCrossRealm(InlinableNative native) {
     case InlinableNative::IsPossiblyWrappedRegExpObject:
     case InlinableNative::RegExpMatcher:
     case InlinableNative::RegExpSearcher:
+    case InlinableNative::RegExpSearcherLastLimit:
+    case InlinableNative::RegExpHasCaptureGroups:
     case InlinableNative::RegExpPrototypeOptimizable:
     case InlinableNative::RegExpInstanceOptimizable:
     case InlinableNative::GetFirstDollarIndex:
@@ -269,6 +271,7 @@ bool js::jit::CanInlineNativeCrossRealm(InlinableNative native) {
     case InlinableNative::NumberToString:
     case InlinableNative::ReflectGetPrototypeOf:
     case InlinableNative::SetHas:
+    case InlinableNative::SetSize:
     case InlinableNative::String:
     case InlinableNative::StringToString:
     case InlinableNative::StringValueOf:

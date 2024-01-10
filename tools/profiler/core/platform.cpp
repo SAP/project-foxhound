@@ -38,6 +38,7 @@
 #include "ProfilerChild.h"
 #include "ProfilerCodeAddressService.h"
 #include "ProfilerControl.h"
+#include "ProfilerCPUFreq.h"
 #include "ProfilerIOInterposeObserver.h"
 #include "ProfilerParent.h"
 #include "ProfilerRustBindings.h"
@@ -57,6 +58,7 @@
 #include "mozilla/Preferences.h"
 #include "mozilla/Printf.h"
 #include "mozilla/ProcInfo.h"
+#include "mozilla/ProfilerBufferSize.h"
 #include "mozilla/ProfileBufferChunkManagerSingle.h"
 #include "mozilla/ProfileBufferChunkManagerWithLocalLimit.h"
 #include "mozilla/ProfileChunkedBuffer.h"
@@ -290,7 +292,7 @@ class GeckoJavaSampler
         },
         [result](nsresult aRv) {
           char errorString[9];
-          sprintf(errorString, "%08x", aRv);
+          sprintf(errorString, "%08x", uint32_t(aRv));
           result->CompleteExceptionally(
               mozilla::java::sdk::IllegalStateException::New(errorString)
                   .Cast<jni::Throwable>());
@@ -342,7 +344,7 @@ static uint32_t AvailableFeatures() {
 #endif
 #if defined(MOZ_REPLACE_MALLOC) && defined(MOZ_PROFILER_MEMORY)
   if (getenv("XPCOM_MEM_BLOAT_LOG")) {
-    NS_WARNING("XPCOM_MEM_BLOAT_LOG is set, disabling native allocations.");
+    DEBUG_LOG("XPCOM_MEM_BLOAT_LOG is set, disabling native allocations.");
     // The memory hooks are available, but the bloat log is enabled, which is
     // not compatible with the native allocations tracking. See the comment in
     // enable_native_allocations() (tools/profiler/core/memory_hooks.cpp) for
@@ -356,6 +358,9 @@ static uint32_t AvailableFeatures() {
 
 #if !defined(GP_OS_windows)
   ProfilerFeature::ClearNoTimerResolutionChange(features);
+#endif
+#if !defined(HAVE_CPU_FREQ_SUPPORT)
+  ProfilerFeature::ClearCPUFrequency(features);
 #endif
 
   return features;
@@ -694,10 +699,6 @@ struct LiveProfiledThreadData {
   UniquePtr<ProfiledThreadData> mProfiledThreadData;
 };
 
-// The buffer size is provided as a number of "entries", this is their size in
-// bytes.
-constexpr static uint32_t scBytesPerEntry = 8;
-
 // This class contains the profiler's global state that is valid only when the
 // profiler is active. When not instantiated, the profiler is inactive.
 //
@@ -705,54 +706,6 @@ constexpr static uint32_t scBytesPerEntry = 8;
 // CorePS.
 //
 class ActivePS {
- private:
-  // We need to decide how many chunks of what size we want to fit in the given
-  // total maximum capacity for this process, in the (likely) context of
-  // multiple processes doing the same choice and having an inter-process
-  // mechanism to control the overal memory limit.
-
-  // Minimum chunk size allowed, enough for at least one stack.
-  constexpr static uint32_t scMinimumChunkSize =
-      2 * ProfileBufferChunkManager::scExpectedMaximumStackSize;
-
-  // Ideally we want at least 2 unreleased chunks to work with (1 current and 1
-  // next), and 2 released chunks (so that one can be recycled when old, leaving
-  // one with some data).
-  constexpr static uint32_t scMinimumNumberOfChunks = 4;
-
-  // And we want to limit chunks to a maximum size, which is a compromise
-  // between:
-  // - A big size, which helps with reducing the rate of allocations and IPCs.
-  // - A small size, which helps with equalizing the duration of recorded data
-  //   (as the inter-process controller will discard the oldest chunks in all
-  //   Firefox processes).
-  constexpr static uint32_t scMaximumChunkSize = 1024 * 1024;
-
- public:
-  // We should be able to store at least the minimum number of the smallest-
-  // possible chunks.
-  constexpr static uint32_t scMinimumBufferSize =
-      scMinimumNumberOfChunks * scMinimumChunkSize;
-  // Note: Keep in sync with GeckoThread.maybeStartGeckoProfiler:
-  // https://searchfox.org/mozilla-central/source/mobile/android/geckoview/src/main/java/org/mozilla/gecko/GeckoThread.java
-  constexpr static uint32_t scMinimumBufferEntries =
-      scMinimumBufferSize / scBytesPerEntry;
-
-  // Limit to 2GiB.
-  constexpr static uint32_t scMaximumBufferSize = 2u * 1024u * 1024u * 1024u;
-  constexpr static uint32_t scMaximumBufferEntries =
-      scMaximumBufferSize / scBytesPerEntry;
-
-  constexpr static uint32_t ClampToAllowedEntries(uint32_t aEntries) {
-    if (aEntries <= scMinimumBufferEntries) {
-      return scMinimumBufferEntries;
-    }
-    if (aEntries >= scMaximumBufferEntries) {
-      return scMaximumBufferEntries;
-    }
-    return aEntries;
-  }
-
  private:
   constexpr static uint32_t ChunkSizeForEntries(uint32_t aEntries) {
     return uint32_t(std::min(size_t(ClampToAllowedEntries(aEntries)) *
@@ -813,6 +766,7 @@ class ActivePS {
                                     ? new ProcessCPUCounter(aLock)
                                     : nullptr),
         mMaybePowerCounters(nullptr),
+        mMaybeCPUFreq(nullptr),
         // The new sampler thread doesn't start sampling immediately because the
         // main loop within Run() is blocked until this function's caller
         // unlocks gPSMutex.
@@ -867,6 +821,10 @@ class ActivePS {
         locked_profiler_add_sampled_counter(aLock, powerCounter);
       }
     }
+
+    if (ProfilerFeature::HasCPUFrequency(aFeatures)) {
+      mMaybeCPUFreq = new ProfilerCPUFreq();
+    }
   }
 
   ~ActivePS() {
@@ -876,6 +834,8 @@ class ActivePS {
     MOZ_ASSERT(
         !mMaybePowerCounters,
         "mMaybePowerCounters should have been deleted before ~ActivePS()");
+    MOZ_ASSERT(!mMaybeCPUFreq,
+               "mMaybeCPUFreq should have been deleted before ~ActivePS()");
 
 #if !defined(RELEASE_OR_BETA)
     if (ShouldInterposeIOs()) {
@@ -958,6 +918,11 @@ class ActivePS {
       }
       delete sInstance->mMaybePowerCounters;
       sInstance->mMaybePowerCounters = nullptr;
+    }
+
+    if (sInstance->mMaybeCPUFreq) {
+      delete sInstance->mMaybeCPUFreq;
+      sInstance->mMaybeCPUFreq = nullptr;
     }
 
     auto samplerThread = sInstance->mSamplerThread;
@@ -1266,6 +1231,8 @@ class ActivePS {
 
   PS_GET(PowerCounters*, MaybePowerCounters);
 
+  PS_GET(ProfilerCPUFreq*, MaybeCPUFreq);
+
   PS_GET_AND_SET(bool, IsPaused)
 
   // True if sampling is paused (though generic `SetIsPaused()` or specific
@@ -1497,6 +1464,9 @@ class ActivePS {
 
   // Used to collect power use data, if the power feature is on.
   PowerCounters* mMaybePowerCounters;
+
+  // Used to collect cpu frequency, if the CPU frequency feature is on.
+  ProfilerCPUFreq* mMaybeCPUFreq;
 
   // The current sampler thread. This class is not responsible for destroying
   // the SamplerThread object; the Destroy() method returns it so the caller
@@ -2704,7 +2674,8 @@ struct PreRecordedMetaInformation {
 // This function should be called out of the profiler lock.
 // It gathers non-trivial data that doesn't require the profiler to stop, or for
 // which the request could theoretically deadlock if the profiler is locked.
-static PreRecordedMetaInformation PreRecordMetaInformation() {
+static PreRecordedMetaInformation PreRecordMetaInformation(
+    bool aShutdown = false) {
   MOZ_ASSERT(!PSAutoLock::IsLockedOnCurrentThread());
 
   PreRecordedMetaInformation info = {};  // Aggregate-init all fields.
@@ -2719,7 +2690,8 @@ static PreRecordedMetaInformation PreRecordMetaInformation() {
     return info;
   }
 
-  info.mAsyncStacks = Preferences::GetBool("javascript.options.asyncstack");
+  info.mAsyncStacks =
+      !aShutdown && Preferences::GetBool("javascript.options.asyncstack");
 
   nsresult res;
 
@@ -2808,7 +2780,7 @@ static void StreamMetaJSCustomObject(
     const PreRecordedMetaInformation& aPreRecordedMetaInformation) {
   MOZ_RELEASE_ASSERT(CorePS::Exists() && ActivePS::Exists(aLock));
 
-  aWriter.IntProperty("version", 27);
+  aWriter.IntProperty("version", GECKO_PROFILER_FORMAT_VERSION);
 
   // The "startTime" field holds the number of milliseconds since midnight
   // January 1, 1970 GMT. This grotty code computes (Now - (Now -
@@ -3584,8 +3556,7 @@ static void PrintUsage() {
       "\n"
       "    Features: (x=unavailable, D/d=default/unavailable,\n"
       "               S/s=MOZ_PROFILER_STARTUP extra default/unavailable)\n",
-      unsigned(ActivePS::scMinimumBufferEntries),
-      unsigned(ActivePS::scMaximumBufferEntries),
+      unsigned(scMinimumBufferEntries), unsigned(scMaximumBufferEntries),
       unsigned(PROFILER_DEFAULT_ENTRIES.Value()),
       unsigned(PROFILER_DEFAULT_STARTUP_ENTRIES.Value()),
       unsigned(scBytesPerEntry),
@@ -3962,6 +3933,26 @@ class SamplerThread {
   void operator=(const SamplerThread&) = delete;
 };
 
+namespace geckoprofiler::markers {
+struct CPUSpeedMarker {
+  static constexpr Span<const char> MarkerTypeName() {
+    return MakeStringSpan("CPUSpeed");
+  }
+  static void StreamJSONMarkerData(baseprofiler::SpliceableJSONWriter& aWriter,
+                                   uint32_t aCPUSpeedMHz) {
+    aWriter.DoubleProperty("speed", double(aCPUSpeedMHz) / 1000);
+  }
+  static MarkerSchema MarkerTypeDisplay() {
+    using MS = MarkerSchema;
+    MS schema{MS::Location::MarkerChart, MS::Location::MarkerTable};
+    schema.SetTableLabel("{marker.name} Speed = {marker.data.speed}GHz");
+    schema.AddKeyLabelFormat("speed", "CPU Speed (GHz)", MS::Format::String);
+    schema.AddChartColor("speed", MS::GraphType::Bar, MS::GraphColor::Ink);
+    return schema;
+  }
+};
+}  // namespace geckoprofiler::markers
+
 // [[nodiscard]] static
 bool ActivePS::AppendPostSamplingCallback(PSLockRef aLock,
                                           PostSamplingCallback&& aCallback) {
@@ -4036,6 +4027,35 @@ void SamplerThread::Run() {
   // interval, unless when sampling runs late -- See end of while() loop.
   TimeStamp scheduledSampleStart = TimeStamp::Now();
 
+#if defined(HAVE_CPU_FREQ_SUPPORT)
+  // Used to collect CPU core frequencies, if the cpufreq feature is on.
+  Vector<uint32_t> CPUSpeeds;
+
+  if (XRE_IsParentProcess() && ProfilerFeature::HasCPUFrequency(features) &&
+      CPUSpeeds.resize(GetNumberOfProcessors())) {
+    {
+      PSAutoLock lock;
+      if (ProfilerCPUFreq* cpuFreq = ActivePS::MaybeCPUFreq(lock); cpuFreq) {
+        cpuFreq->Sample();
+        for (size_t i = 0; i < CPUSpeeds.length(); ++i) {
+          CPUSpeeds[i] = cpuFreq->GetCPUSpeedMHz(i);
+        }
+      }
+    }
+    TimeStamp now = TimeStamp::Now();
+    for (size_t i = 0; i < CPUSpeeds.length(); ++i) {
+      nsAutoCString name;
+      name.AssignLiteral("CPU ");
+      name.AppendInt(i);
+
+      PROFILER_MARKER(name, OTHER,
+                      MarkerOptions(MarkerThreadId::MainThread(),
+                                    MarkerTiming::IntervalStart(now)),
+                      CPUSpeedMarker, CPUSpeeds[i]);
+    }
+  }
+#endif
+
   while (true) {
     const TimeStamp sampleStart = TimeStamp::Now();
 
@@ -4088,6 +4108,40 @@ void SamplerThread::Run() {
             processCPUCounter->Add(static_cast<int64_t>(*cpu));
           }
         }
+
+#if defined(HAVE_CPU_FREQ_SUPPORT)
+        if (XRE_IsParentProcess() && CPUSpeeds.length() > 0) {
+          unsigned newSpeed[CPUSpeeds.length()];
+          if (ProfilerCPUFreq* cpuFreq = ActivePS::MaybeCPUFreq(lock);
+              cpuFreq) {
+            cpuFreq->Sample();
+            for (size_t i = 0; i < CPUSpeeds.length(); ++i) {
+              newSpeed[i] = cpuFreq->GetCPUSpeedMHz(i);
+            }
+          }
+          TimeStamp now = TimeStamp::Now();
+          for (size_t i = 0; i < CPUSpeeds.length(); ++i) {
+            if (newSpeed[i] == CPUSpeeds[i]) {
+              continue;
+            }
+
+            nsAutoCString name;
+            name.AssignLiteral("CPU ");
+            name.AppendInt(i);
+
+            PROFILER_MARKER_UNTYPED(
+                name, OTHER,
+                MarkerOptions(MarkerThreadId::MainThread(),
+                              MarkerTiming::IntervalEnd(now)));
+            PROFILER_MARKER(name, OTHER,
+                            MarkerOptions(MarkerThreadId::MainThread(),
+                                          MarkerTiming::IntervalStart(now)),
+                            CPUSpeedMarker, newSpeed[i]);
+
+            CPUSpeeds[i] = newSpeed[i];
+          }
+        }
+#endif
 
         if (PowerCounters* powerCounters = ActivePS::MaybePowerCounters(lock);
             powerCounters) {
@@ -5190,8 +5244,8 @@ void profiler_init(void* aStackTop) {
       if (errno == 0 && capacityLong > 0 &&
           static_cast<uint64_t>(capacityLong) <=
               static_cast<uint64_t>(INT32_MAX)) {
-        capacity = PowerOfTwo32(ActivePS::ClampToAllowedEntries(
-            static_cast<uint32_t>(capacityLong)));
+        capacity = PowerOfTwo32(
+            ClampToAllowedEntries(static_cast<uint32_t>(capacityLong)));
         LOG("- MOZ_PROFILER_STARTUP_ENTRIES = %u", unsigned(capacity.Value()));
       } else {
         LOG("- MOZ_PROFILER_STARTUP_ENTRIES not a valid integer: %s",
@@ -5331,7 +5385,8 @@ void profiler_shutdown(IsFastShutdown aIsFastShutdown) {
   }
   invoke_profiler_state_change_callbacks(ProfilingState::ShuttingDown);
 
-  const auto preRecordedMetaInformation = PreRecordMetaInformation();
+  const auto preRecordedMetaInformation =
+      PreRecordMetaInformation(/* aShutdown = */ true);
 
   ProfilerParent::ProfilerWillStopIfStarted();
 
@@ -6502,7 +6557,7 @@ struct CPUAwakeMarker {
     return MakeStringSpan("Awake");
   }
   static void StreamJSONMarkerData(baseprofiler::SpliceableJSONWriter& aWriter,
-                                   int64_t aCPUId
+                                   int64_t aCPUTimeNs, int64_t aCPUId
 #ifdef GP_OS_darwin
                                    ,
                                    uint32_t aQoS
@@ -6514,6 +6569,14 @@ struct CPUAwakeMarker {
                                    int32_t aCurrentPriority
 #endif
   ) {
+    if (aCPUTimeNs) {
+      constexpr double NS_PER_MS = 1'000'000;
+      aWriter.DoubleProperty("CPU Time", double(aCPUTimeNs) / NS_PER_MS);
+      // CPU Time is only provided for the end marker, the other fields are for
+      // the start marker.
+      return;
+    }
+
 #ifndef GP_PLAT_arm64_darwin
     aWriter.IntProperty("CPU Id", aCPUId);
 #endif
@@ -6576,19 +6639,6 @@ struct CPUAwakeMarker {
   }
 };
 
-struct CPUAwakeMarkerEnd : public CPUAwakeMarker {
-  static constexpr Span<const char> MarkerTypeName() {
-    return MakeStringSpan("AwakeEnd");
-  }
-  static void StreamJSONMarkerData(baseprofiler::SpliceableJSONWriter& aWriter,
-                                   int64_t aCPUTimeNs) {
-    if (aCPUTimeNs) {
-      constexpr double NS_PER_MS = 1'000'000;
-      aWriter.DoubleProperty("CPU Time", double(aCPUTimeNs) / NS_PER_MS);
-    }
-  }
-};
-
 }  // namespace geckoprofiler::markers
 
 void profiler_mark_thread_asleep() {
@@ -6602,8 +6652,18 @@ void profiler_mark_thread_asleep() {
             .GetNewCpuTimeInNs();
       },
       0);
-  PROFILER_MARKER("Awake", OTHER, MarkerTiming::IntervalEnd(),
-                  CPUAwakeMarkerEnd, cpuTimeNs);
+  PROFILER_MARKER("Awake", OTHER, MarkerTiming::IntervalEnd(), CPUAwakeMarker,
+                  cpuTimeNs, 0 /* cpuId */
+#if defined(GP_OS_darwin)
+                  ,
+                  0 /* qos_class */
+#endif
+#if defined(GP_OS_windows)
+                  ,
+                  0 /* priority */, 0 /* thread priority */,
+                  0 /* current priority */
+#endif
+  );
 }
 
 void profiler_thread_sleep() {
@@ -6734,15 +6794,16 @@ void profiler_mark_thread_awake() {
     }
   }
 #endif
-  PROFILER_MARKER(
-      "Awake", OTHER, MarkerTiming::IntervalStart(), CPUAwakeMarker, cpuId
+  PROFILER_MARKER("Awake", OTHER, MarkerTiming::IntervalStart(), CPUAwakeMarker,
+                  0 /* CPU time */, cpuId
 #if defined(GP_OS_darwin)
-      ,
-      qos_class_self()
+                  ,
+                  qos_class_self()
 #endif
 #if defined(GP_OS_windows)
-          ,
-      priority, GetThreadPriority(GetCurrentThread()), currentPriority
+                      ,
+                  priority, GetThreadPriority(GetCurrentThread()),
+                  currentPriority
 #endif
   );
 }

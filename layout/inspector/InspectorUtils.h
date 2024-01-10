@@ -18,7 +18,6 @@ class nsINodeList;
 class nsRange;
 
 namespace mozilla {
-class BindingStyleRule;
 class StyleSheet;
 namespace css {
 class Rule;
@@ -31,8 +30,8 @@ class InspectorFontFace;
 }  // namespace dom
 }  // namespace mozilla
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
+class CSSStyleRule;
 
 /**
  * A collection of utility methods for use by devtools.
@@ -45,7 +44,7 @@ class InspectorUtils {
   static void GetCSSStyleRules(GlobalObject& aGlobal, Element& aElement,
                                const nsAString& aPseudo,
                                bool aIncludeVisitedStyle,
-                               nsTArray<RefPtr<BindingStyleRule>>& aResult);
+                               nsTArray<RefPtr<CSSStyleRule>>& aResult);
 
   /**
    * Get the line number of a rule.
@@ -76,29 +75,9 @@ class InspectorUtils {
   static bool HasRulesModifiedByCSSOM(GlobalObject& aGlobal,
                                       StyleSheet& aSheet);
 
-  // Utilities for working with selectors.  We don't have a JS OM representation
-  // of a single selector or a selector list yet, but given a rule we can index
-  // into the selector list.
-  //
-  // These methods would probably make more sense being [ChromeOnly] APIs on
-  // CSSStyleRule itself (bug 1428245).
-  static uint32_t GetSelectorCount(GlobalObject& aGlobal,
-                                   BindingStyleRule& aRule);
-
-  // For all three functions below, aSelectorIndex is 0-based
-  static void GetSelectorText(GlobalObject& aGlobal, BindingStyleRule& aRule,
-                              uint32_t aSelectorIndex, nsACString& aText,
-                              ErrorResult& aRv);
-  static uint64_t GetSpecificity(GlobalObject& aGlobal, BindingStyleRule& aRule,
-                                 uint32_t aSelectorIndex, ErrorResult& aRv);
-  // Note: This does not handle scoped selectors correctly, because it has no
-  // idea what the right scope is.
-  static bool SelectorMatchesElement(GlobalObject& aGlobal, Element& aElement,
-                                     BindingStyleRule& aRule,
-                                     uint32_t aSelectorIndex,
-                                     const nsAString& aPseudo,
-                                     bool aRelevantLinkVisited,
-                                     ErrorResult& aRv);
+  static void GetAllStyleSheetCSSStyleRules(
+      GlobalObject& aGlobal, StyleSheet& aSheet,
+      nsTArray<RefPtr<css::Rule>>& aResult);
 
   // Utilities for working with CSS properties
   //
@@ -125,7 +104,7 @@ class InspectorUtils {
 
   // Utilities for working with CSS colors
   static void RgbToColorName(GlobalObject& aGlobal, uint8_t aR, uint8_t aG,
-                             uint8_t aB, nsAString& aResult);
+                             uint8_t aB, nsACString& aResult);
 
   // Convert a given CSS color string to rgba. Returns null on failure or an
   // InspectorRGBATuple on success.
@@ -265,9 +244,15 @@ class InspectorUtils {
    */
   static bool IsCustomElementName(GlobalObject&, const nsAString& aName,
                                   const nsAString& aNamespaceURI);
+
+  /**
+   * Get the names of registered Highlights
+   */
+  static void GetRegisteredCssHighlights(GlobalObject& aGlobal,
+                                         Document& aDocument, bool aActiveOnly,
+                                         nsTArray<nsString>& aResult);
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_InspectorUtils_h

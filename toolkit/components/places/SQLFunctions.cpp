@@ -833,9 +833,10 @@ CalculateAltFrecencyFunction::OnFunctionCall(mozIStorageValueArray* aArguments,
       "  SELECT "
       "    v.visit_date / 86400000000, "
       "    (SELECT CASE "
-      "      WHEN IFNULL(s.visit_type, v.visit_type) = 3 "     // is a bookmark
-      "        OR  ( v.source <> 3 "                           // is a search
-      "          AND IFNULL(s.visit_type, v.visit_type) = 2 "  // is typed
+      "      WHEN IFNULL(s.visit_type, v.visit_type) = 3 "  // from a bookmark
+      "        OR v.source = 2 "                            // is a bookmark
+      "        OR  ( IFNULL(s.visit_type, v.visit_type) = 2 "  // is typed
+      "          AND v.source <> 3 "                           // not a search
       "          AND t.id IS NULL AND NOT :isRedirect "        // not a redirect
       "        ) "
       "      THEN :highWeight "
@@ -879,8 +880,7 @@ CalculateAltFrecencyFunction::OnFunctionCall(mozIStorageValueArray* aArguments,
       "ELSE "
       "  reference.days + CAST (( "
       "    ln( "
-      "      (sum(score) / samples_count * MAX(visit_count, samples_count)) * "
-      "        exp(-lambda) "
+      "      sum(score) / samples_count * MAX(visit_count, samples_count) "
       "    ) / lambda "
       "  ) AS INTEGER) "
       "END "

@@ -20,6 +20,10 @@ class NativeObject;
 class Nursery;
 class PlainObject;
 
+namespace wasm {
+class AnyRef;
+}  // namespace wasm
+
 namespace gc {
 
 class RelocationOverlay;
@@ -121,13 +125,14 @@ class TenuringTracer final : public JSTracer {
   size_t getTenuredCells() const;
 
   void traverse(JS::Value* thingp);
+  void traverse(wasm::AnyRef* thingp);
 
   // The store buffers need to be able to call these directly.
-  void traceObject(JSObject* src);
+  void traceObject(JSObject* obj);
   void traceObjectSlots(NativeObject* nobj, uint32_t start, uint32_t end);
   void traceSlots(JS::Value* vp, uint32_t nslots);
-  void traceString(JSString* src);
-  void traceBigInt(JS::BigInt* src);
+  void traceString(JSString* str);
+  void traceBigInt(JS::BigInt* bi);
 
  private:
   // The dependent string chars needs to be relocated if the base which it's

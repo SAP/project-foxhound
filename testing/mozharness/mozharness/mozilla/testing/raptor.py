@@ -388,37 +388,6 @@ class Raptor(
                 },
             ],
             [
-                ["--power-test"],
-                {
-                    "dest": "power_test",
-                    "action": "store_true",
-                    "default": False,
-                    "help": (
-                        "Use Raptor to measure power usage on Android browsers (Geckoview "
-                        "Example, Fenix, Refbrow, and Fennec) as well as on Intel-based MacOS "
-                        "machines that have Intel Power Gadget installed."
-                    ),
-                },
-            ],
-            [
-                ["--memory-test"],
-                {
-                    "dest": "memory_test",
-                    "action": "store_true",
-                    "default": False,
-                    "help": "Use Raptor to measure memory usage.",
-                },
-            ],
-            [
-                ["--cpu-test"],
-                {
-                    "dest": "cpu_test",
-                    "action": "store_true",
-                    "default": False,
-                    "help": "Use Raptor to measure CPU usage.",
-                },
-            ],
-            [
                 ["--disable-perf-tuning"],
                 {
                     "action": "store_true",
@@ -577,18 +546,6 @@ class Raptor(
                 },
             ],
             [
-                ["--webext"],
-                {
-                    "action": "store_true",
-                    "dest": "webext",
-                    "default": False,
-                    "help": (
-                        "Whether to use webextension to execute pageload tests "
-                        "(WebExtension is being deprecated).",
-                    ),
-                },
-            ],
-            [
                 ["--collect-perfstats"],
                 {
                     "action": "store_true",
@@ -610,7 +567,7 @@ class Raptor(
                     "help": (
                         "Alternative methods for summarizing technical and visual"
                         "pageload metrics."
-                        "Options: geomean, mean."
+                        "Options: median."
                     ),
                 },
             ],
@@ -751,9 +708,6 @@ class Raptor(
         self.host = self.config.get("host")
         if self.host == "HOST_IP":
             self.host = os.environ["HOST_IP"]
-        self.power_test = self.config.get("power_test")
-        self.memory_test = self.config.get("memory_test")
-        self.cpu_test = self.config.get("cpu_test")
         self.live_sites = self.config.get("live_sites")
         self.chimera = self.config.get("chimera")
         self.disable_perf_tuning = self.config.get("disable_perf_tuning")
@@ -803,9 +757,8 @@ class Raptor(
                 gecko_results.extend(
                     ["--gecko-profile-threads", self.gecko_profile_threads]
                 )
-        else:
-            if self.extra_profiler_run:
-                gecko_results.append("--extra-profiler-run")
+        elif self.extra_profiler_run:
+            gecko_results.append("--extra-profiler-run")
         return gecko_results
 
     def query_abs_dirs(self):
@@ -880,6 +833,7 @@ class Raptor(
             chromium_release: {
                 linux: ["chromium", "Default", "chrome"],
                 win: ["chromium", "Default", "chrome.exe"],
+                mac: ["chromium", "Chromium.app", "Contents", "MacOS", "chromium"],
             },
         }
 
@@ -985,12 +939,12 @@ class Raptor(
         elif self.app == "safari" and not self.run_local:
             binary_path = "/Applications/Safari.app/Contents/MacOS/Safari"
             kw_options["binary"] = binary_path
-        else:  # Running on Chromium
-            if not self.run_local:
-                # When running locally we already set the Chromium binary above, in init.
-                # In production, we already installed Chromium, so set the binary path
-                # to our install.
-                kw_options["binary"] = self.chromium_dist_path or ""
+        # Running on Chromium
+        elif not self.run_local:
+            # When running locally we already set the Chromium binary above, in init.
+            # In production, we already installed Chromium, so set the binary path
+            # to our install.
+            kw_options["binary"] = self.chromium_dist_path or ""
 
         # Options overwritten from **kw
         if "test" in self.config:
@@ -1042,12 +996,6 @@ class Raptor(
             options.extend(["--code-coverage"])
         if self.config.get("is_release_build", False):
             options.extend(["--is-release-build"])
-        if self.config.get("power_test", False):
-            options.extend(["--power-test"])
-        if self.config.get("memory_test", False):
-            options.extend(["--memory-test"])
-        if self.config.get("cpu_test", False):
-            options.extend(["--cpu-test"])
         if self.config.get("live_sites", False):
             options.extend(["--live-sites"])
         if self.config.get("chimera", False):
@@ -1085,23 +1033,21 @@ class Raptor(
                     for method in self.config.get("extra_summary_methods")
                 ]
             )
-        if self.config.get("webext", False):
-            options.extend(["--webext"])
-        else:
-            for (arg,), details in Raptor.browsertime_options:
-                # Allow overriding defaults on the `./mach raptor-test ...` command-line
-                value = self.config.get(details["dest"])
-                if value is None or value != getattr(self, details["dest"], None):
-                    # Check for modifications done to the instance variables
-                    value = getattr(self, details["dest"], None)
-                if value and arg not in self.config.get("raptor_cmd_line_args", []):
-                    if isinstance(value, string_types):
-                        options.extend([arg, os.path.expandvars(value)])
-                    elif isinstance(value, (tuple, list)):
-                        for val in value:
-                            options.extend([arg, val])
-                    else:
-                        options.extend([arg])
+
+        for (arg,), details in Raptor.browsertime_options:
+            # Allow overriding defaults on the `./mach raptor-test ...` command-line
+            value = self.config.get(details["dest"])
+            if value is None or value != getattr(self, details["dest"], None):
+                # Check for modifications done to the instance variables
+                value = getattr(self, details["dest"], None)
+            if value and arg not in self.config.get("raptor_cmd_line_args", []):
+                if isinstance(value, string_types):
+                    options.extend([arg, os.path.expandvars(value)])
+                elif isinstance(value, (tuple, list)):
+                    for val in value:
+                        options.extend([arg, val])
+                else:
+                    options.extend([arg])
 
         for key, value in kw_options.items():
             options.extend(["--%s" % key, value])

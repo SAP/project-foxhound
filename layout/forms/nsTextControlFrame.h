@@ -79,13 +79,10 @@ class nsTextControlFrame : public nsContainerFrame,
 
   Maybe<nscoord> GetNaturalBaselineBOffset(
       mozilla::WritingMode aWM, BaselineSharingGroup aBaselineGroup,
-      BaselineExportContext) const override {
-    if (!IsSingleLineTextControl()) {
-      return Nothing{};
-    }
-    NS_ASSERTION(!IsSubtreeDirty(), "frame must not be dirty");
-    return GetSingleLineTextControlBaseline(this, mFirstBaseline, aWM,
-                                            aBaselineGroup);
+      BaselineExportContext aExportContext) const override;
+
+  BaselineSharingGroup GetDefaultBaselineSharingGroup() const override {
+    return BaselineSharingGroup::Last;
   }
 
   static Maybe<nscoord> GetSingleLineTextControlBaseline(
@@ -168,15 +165,6 @@ class nsTextControlFrame : public nsContainerFrame,
   /** handler for attribute changes to mContent */
   MOZ_CAN_RUN_SCRIPT_BOUNDARY nsresult AttributeChanged(
       int32_t aNameSpaceID, nsAtom* aAttribute, int32_t aModType) override;
-
-  void GetText(nsString& aText);
-
-  /**
-   * TextEquals() is designed for internal use so that aValue shouldn't
-   * include \r character.  It should be handled before calling this with
-   * nsContentUtils::PlatformToDOMLineBreaks().
-   */
-  bool TextEquals(const nsAString& aText) const;
 
   nsresult PeekOffset(mozilla::PeekOffsetStruct* aPos) override;
 
@@ -275,7 +263,7 @@ class nsTextControlFrame : public nsContainerFrame,
    * @returns false if it does not exist
    */
   bool AttributeExists(nsAtom* aAtt) const {
-    return mContent && mContent->AsElement()->HasAttr(kNameSpaceID_None, aAtt);
+    return mContent && mContent->AsElement()->HasAttr(aAtt);
   }
 
   /**

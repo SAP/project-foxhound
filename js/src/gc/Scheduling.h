@@ -760,7 +760,7 @@ class HeapThreshold {
   size_t startBytes() const { return startBytes_; }
   size_t sliceBytes() const { return sliceBytes_; }
   size_t incrementalLimitBytes() const { return incrementalLimitBytes_; }
-  double eagerAllocTrigger(bool highFrequencyGC) const;
+  size_t eagerAllocTrigger(bool highFrequencyGC) const;
   size_t incrementalBytesRemaining(const HeapSize& heapSize) const;
 
   void setSliceThreshold(ZoneAllocator* zone, const HeapSize& heapSize,
@@ -841,11 +841,11 @@ class MemoryTracker {
   void swapGCMemory(Cell* a, Cell* b, MemoryUse use);
 
   // Track memory by associated non-GC thing pointer.
-  void registerNonGCMemory(void* ptr, MemoryUse use);
-  void unregisterNonGCMemory(void* ptr, MemoryUse use);
+  void registerNonGCMemory(void* mem, MemoryUse use);
+  void unregisterNonGCMemory(void* mem, MemoryUse use);
   void moveNonGCMemory(void* dst, void* src, MemoryUse use);
-  void incNonGCMemory(void* ptr, size_t nbytes, MemoryUse use);
-  void decNonGCMemory(void* ptr, size_t nbytes, MemoryUse use);
+  void incNonGCMemory(void* mem, size_t nbytes, MemoryUse use);
+  void decNonGCMemory(void* mem, size_t nbytes, MemoryUse use);
 
  private:
   template <typename Ptr>

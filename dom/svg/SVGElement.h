@@ -42,7 +42,6 @@ nsresult NS_NewSVGElement(mozilla::dom::Element** aResult,
 class mozAutoDocUpdate;
 
 namespace mozilla {
-class DeclarationBlock;
 
 class SVGAnimatedBoolean;
 class SVGAnimatedEnumeration;
@@ -126,6 +125,7 @@ class SVGElement : public SVGElementBase  // nsIContent
   void NodeInfoChanged(Document* aOldDoc) override;
 
   NS_IMETHOD_(bool) IsAttributeMapped(const nsAtom* aAttribute) const override;
+  void UpdateMappedDeclarationBlock();
 
   NS_IMPL_FROMNODE(SVGElement, kNameSpaceID_SVG)
 
@@ -181,12 +181,11 @@ class SVGElement : public SVGElementBase  // nsIContent
   void SetLength(nsAtom* aName, const SVGAnimatedLength& aLength);
 
   enum class ValToUse { Base, Anim };
-  static bool UpdateDeclarationBlockFromLength(DeclarationBlock& aBlock,
-                                               nsCSSPropertyID aPropId,
-                                               const SVGAnimatedLength& aLength,
-                                               ValToUse aValToUse);
+  static bool UpdateDeclarationBlockFromLength(
+      StyleLockedDeclarationBlock& aBlock, nsCSSPropertyID aPropId,
+      const SVGAnimatedLength& aLength, ValToUse aValToUse);
   static bool UpdateDeclarationBlockFromPath(
-      DeclarationBlock& aBlock, const SVGAnimatedPathSegList& aPath,
+      StyleLockedDeclarationBlock& aBlock, const SVGAnimatedPathSegList& aPath,
       ValToUse aValToUse);
 
   nsAttrValue WillChangeLength(uint8_t aAttrEnum,
@@ -245,21 +244,55 @@ class SVGElement : public SVGElementBase  // nsIContent
                            const mozAutoDocUpdate& aProofOfUpdate);
 
   void DidAnimateLength(uint8_t aAttrEnum);
-  void DidAnimateNumber(uint8_t aAttrEnum);
-  void DidAnimateNumberPair(uint8_t aAttrEnum);
-  void DidAnimateInteger(uint8_t aAttrEnum);
-  void DidAnimateIntegerPair(uint8_t aAttrEnum);
-  void DidAnimateBoolean(uint8_t aAttrEnum);
-  void DidAnimateEnum(uint8_t aAttrEnum);
-  void DidAnimateOrient();
-  void DidAnimateViewBox();
-  void DidAnimatePreserveAspectRatio();
-  void DidAnimateNumberList(uint8_t aAttrEnum);
-  void DidAnimateLengthList(uint8_t aAttrEnum);
+  void DidAnimateNumber(uint8_t aAttrEnum) {
+    auto info = GetNumberInfo();
+    DidAnimateAttribute(kNameSpaceID_None, info.mInfos[aAttrEnum].mName);
+  }
+  void DidAnimateNumberPair(uint8_t aAttrEnum) {
+    auto info = GetNumberPairInfo();
+    DidAnimateAttribute(kNameSpaceID_None, info.mInfos[aAttrEnum].mName);
+  }
+  void DidAnimateInteger(uint8_t aAttrEnum) {
+    auto info = GetIntegerInfo();
+    DidAnimateAttribute(kNameSpaceID_None, info.mInfos[aAttrEnum].mName);
+  }
+  void DidAnimateIntegerPair(uint8_t aAttrEnum) {
+    auto info = GetIntegerPairInfo();
+    DidAnimateAttribute(kNameSpaceID_None, info.mInfos[aAttrEnum].mName);
+  }
+  void DidAnimateBoolean(uint8_t aAttrEnum) {
+    auto info = GetBooleanInfo();
+    DidAnimateAttribute(kNameSpaceID_None, info.mInfos[aAttrEnum].mName);
+  }
+  void DidAnimateEnum(uint8_t aAttrEnum) {
+    auto info = GetEnumInfo();
+    DidAnimateAttribute(kNameSpaceID_None, info.mInfos[aAttrEnum].mName);
+  }
+  void DidAnimateOrient() {
+    DidAnimateAttribute(kNameSpaceID_None, nsGkAtoms::orient);
+  }
+  void DidAnimateViewBox() {
+    DidAnimateAttribute(kNameSpaceID_None, nsGkAtoms::viewBox);
+  }
+  void DidAnimatePreserveAspectRatio() {
+    DidAnimateAttribute(kNameSpaceID_None, nsGkAtoms::preserveAspectRatio);
+  }
+  void DidAnimateNumberList(uint8_t aAttrEnum) {
+    auto info = GetNumberListInfo();
+    DidAnimateAttribute(kNameSpaceID_None, info.mInfos[aAttrEnum].mName);
+  }
+  void DidAnimateLengthList(uint8_t aAttrEnum) {
+    auto info = GetLengthListInfo();
+    DidAnimateAttribute(kNameSpaceID_None, info.mInfos[aAttrEnum].mName);
+  }
   void DidAnimatePointList();
   void DidAnimatePathSegList();
   void DidAnimateTransformList(int32_t aModType);
-  void DidAnimateString(uint8_t aAttrEnum);
+  void DidAnimateString(uint8_t aAttrEnum) {
+    auto info = GetStringInfo();
+    DidAnimateAttribute(info.mInfos[aAttrEnum].mNamespaceID,
+                        info.mInfos[aAttrEnum].mName);
+  }
 
   enum {
     /**
@@ -330,9 +363,6 @@ class SVGElement : public SVGElementBase  // nsIContent
   mozilla::dom::SVGSVGElement* GetOwnerSVGElement();
   SVGElement* GetViewportElement();
   already_AddRefed<mozilla::dom::DOMSVGAnimatedString> ClassName();
-
-  void UpdateContentDeclarationBlock();
-  const mozilla::DeclarationBlock* GetContentDeclarationBlock() const;
 
   bool Autofocus() const { return GetBoolAttr(nsGkAtoms::autofocus); }
   void SetAutofocus(bool aAutofocus, ErrorResult& aRv) {
@@ -509,11 +539,12 @@ class SVGElement : public SVGElementBase  // nsIContent
   static SVGEnumMapping sSVGUnitTypesMap[];
 
  private:
+  void DidAnimateAttribute(int32_t aNameSpaceID, nsAtom* aAttribute);
+
   void UnsetAttrInternal(int32_t aNameSpaceID, nsAtom* aName, bool aNotify);
 
   SVGAnimatedClass mClassAttribute;
   UniquePtr<nsAttrValue> mClassAnimAttr;
-  RefPtr<mozilla::DeclarationBlock> mContentDeclarationBlock;
 };
 
 NS_DEFINE_STATIC_IID_ACCESSOR(SVGElement, MOZILLA_SVGELEMENT_IID)

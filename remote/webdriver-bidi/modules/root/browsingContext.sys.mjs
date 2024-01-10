@@ -2,8 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
-
 import { Module } from "chrome://remote/content/shared/messagehandler/Module.sys.mjs";
 
 const lazy = {};
@@ -17,10 +15,14 @@ ChromeUtils.defineESModuleGetters(lazy, {
   ContextDescriptorType:
     "chrome://remote/content/shared/messagehandler/MessageHandler.sys.mjs",
   error: "chrome://remote/content/shared/webdriver/Errors.sys.mjs",
+  EventPromise: "chrome://remote/content/shared/Sync.sys.mjs",
   Log: "chrome://remote/content/shared/Log.sys.mjs",
+  modal: "chrome://remote/content/shared/Prompt.sys.mjs",
   pprint: "chrome://remote/content/shared/Format.sys.mjs",
   print: "chrome://remote/content/shared/PDF.sys.mjs",
   ProgressListener: "chrome://remote/content/shared/Navigate.sys.mjs",
+  PromptListener:
+    "chrome://remote/content/shared/listeners/PromptListener.sys.mjs",
   TabManager: "chrome://remote/content/shared/TabManager.sys.mjs",
   waitForInitialNavigationCompleted:
     "chrome://remote/content/shared/Navigate.sys.mjs",
@@ -29,9 +31,27 @@ ChromeUtils.defineESModuleGetters(lazy, {
   windowManager: "chrome://remote/content/shared/WindowManager.sys.mjs",
 });
 
-XPCOMUtils.defineLazyGetter(lazy, "logger", () =>
+ChromeUtils.defineLazyGetter(lazy, "logger", () =>
   lazy.Log.get(lazy.Log.TYPES.WEBDRIVER_BIDI)
 );
+
+// Maximal window dimension allowed when emulating a viewport.
+const MAX_WINDOW_SIZE = 10000000;
+
+/**
+ * @typedef {string} ClipRectangleType
+ */
+
+/**
+ * Enum of possible clip rectangle types.
+ *
+ * @readonly
+ * @enum {ClipRectangleType}
+ */
+export const ClipRectangleType = {
+  Element: "element",
+  Viewport: "viewport",
+};
 
 /**
  * @typedef {object} CreateType
@@ -47,6 +67,31 @@ const CreateType = {
   tab: "tab",
   window: "window",
 };
+
+/**
+ * Enum of user prompt types supported by the browsingContext.handleUserPrompt
+ * command, these types can be retrieved from `dialog.args.promptType`.
+ *
+ * @readonly
+ * @enum {UserPromptType}
+ */
+const UserPromptType = {
+  alert: "alert",
+  confirm: "confirm",
+  prompt: "prompt",
+  beforeunload: "beforeunload",
+};
+
+/**
+ * An object that contains details of a viewport.
+ *
+ * @typedef {object} Viewport
+ *
+ * @property {number} height
+ *     The height of the viewport.
+ * @property {number} width
+ *     The width of the viewport.
+ */
 
 /**
  * @typedef {string} WaitCondition
@@ -65,6 +110,7 @@ const WaitCondition = {
 
 class BrowsingContextModule extends Module {
   #contextListener;
+  #promptListener;
   #subscribedEvents;
 
   /**
@@ -76,9 +122,13 @@ class BrowsingContextModule extends Module {
   constructor(messageHandler) {
     super(messageHandler);
 
-    // Create the console-api listener and listen on "message" events.
+    // Create the browsing context listener and listen to "attached" events.
     this.#contextListener = new lazy.BrowsingContextListener();
     this.#contextListener.on("attached", this.#onContextAttached);
+
+    // Create the prompt listener and listen to "opened" events.
+    this.#promptListener = new lazy.PromptListener();
+    this.#promptListener.on("opened", this.#onPromptOpened);
 
     // Set of event names which have active subscriptions.
     this.#subscribedEvents = new Set();
@@ -92,16 +142,18 @@ class BrowsingContextModule extends Module {
   }
 
   /**
-   * Capture a base64-encoded screenshot of the provided browsing context.
+   * Activates and focuses the given top-level browsing context.
    *
    * @param {object=} options
    * @param {string} options.context
-   *     Id of the browsing context to screenshot.
+   *     Id of the browsing context.
    *
+   * @throws {InvalidArgumentError}
+   *     Raised if an argument is of an invalid type or value.
    * @throws {NoSuchFrameError}
    *     If the browsing context cannot be found.
    */
-  async captureScreenshot(options = {}) {
+  async activate(options = {}) {
     const { context: contextId } = options;
 
     lazy.assert.string(
@@ -110,6 +162,121 @@ class BrowsingContextModule extends Module {
     );
     const context = this.#getBrowsingContext(contextId);
 
+    if (context.parent) {
+      throw new lazy.error.InvalidArgumentError(
+        `Browsing Context with id ${contextId} is not top-level`
+      );
+    }
+
+    const tab = lazy.TabManager.getTabForBrowsingContext(context);
+    const window = lazy.TabManager.getWindowForTab(tab);
+
+    await lazy.windowManager.focusWindow(window);
+    await lazy.TabManager.selectTab(tab);
+  }
+
+  /**
+   * Used as an argument for browsingContext.captureScreenshot command, as one of the available variants
+   * {BoxClipRectangle} or {ElementClipRectangle}, to represent a target of the command.
+   *
+   * @typedef ClipRectangle
+   */
+
+  /**
+   * Used as an argument for browsingContext.captureScreenshot command
+   * to represent a viewport which is going to be a target of the command.
+   *
+   * @typedef BoxClipRectangle
+   *
+   * @property {ClipRectangleType} [type=ClipRectangleType.Viewport]
+   * @property {number} x
+   * @property {number} y
+   * @property {number} width
+   * @property {number} height
+   */
+
+  /**
+   * Used as an argument for browsingContext.captureScreenshot command
+   * to represent an element which is going to be a target of the command.
+   *
+   * @typedef ElementClipRectangle
+   *
+   * @property {ClipRectangleType} [type=ClipRectangleType.Element]
+   * @property {SharedReference} element
+   * @property {boolean=} scrollIntoView
+   */
+
+  /**
+   * Capture a base64-encoded screenshot of the provided browsing context.
+   *
+   * @param {object=} options
+   * @param {string} options.context
+   *     Id of the browsing context to screenshot.
+   * @param {ClipRectangle=} options.clip
+   *     An element or a viewport of which a screenshot should be taken.
+   *     If not present, take a screenshot of the whole viewport.
+   *
+   * @throws {NoSuchFrameError}
+   *     If the browsing context cannot be found.
+   */
+  async captureScreenshot(options = {}) {
+    const { clip = null, context: contextId } = options;
+
+    lazy.assert.string(
+      contextId,
+      `Expected "context" to be a string, got ${contextId}`
+    );
+    const context = this.#getBrowsingContext(contextId);
+
+    if (clip !== null) {
+      lazy.assert.object(clip, `Expected "clip" to be a object, got ${clip}`);
+
+      const { type } = clip;
+      switch (type) {
+        case ClipRectangleType.Element: {
+          const { element, scrollIntoView = null } = clip;
+
+          lazy.assert.object(
+            element,
+            `Expected "element" to be an object, got ${element}`
+          );
+
+          if (scrollIntoView !== null) {
+            lazy.assert.boolean(
+              scrollIntoView,
+              `Expected "scrollIntoView" to be a boolean, got ${scrollIntoView}`
+            );
+          }
+
+          break;
+        }
+
+        case ClipRectangleType.Viewport: {
+          const { x, y, width, height } = clip;
+
+          lazy.assert.number(x, `Expected "x" to be a number, got ${x}`);
+          lazy.assert.number(y, `Expected "y" to be a number, got ${y}`);
+          lazy.assert.number(
+            width,
+            `Expected "width" to be a number, got ${width}`
+          );
+          lazy.assert.number(
+            height,
+            `Expected "height" to be a number, got ${height}`
+          );
+
+          break;
+        }
+
+        default:
+          throw new lazy.error.InvalidArgumentError(
+            `Expected "type" to be one of ${Object.values(
+              ClipRectangleType
+            )}, got ${type}`
+          );
+      }
+    }
+
     const rect = await this.messageHandler.handleCommand({
       moduleName: "browsingContext",
       commandName: "_getScreenshotRect",
@@ -117,8 +284,17 @@ class BrowsingContextModule extends Module {
         type: lazy.WindowGlobalMessageHandler.type,
         id: context.id,
       },
+      params: {
+        clip,
+      },
       retryOnAbort: true,
     });
+
+    if (rect.width === 0 || rect.height === 0) {
+      throw new lazy.error.UnableToCaptureScreen(
+        `The dimensions of requested screenshot are incorrect, got width: ${rect.width} and height: ${rect.height}.`
+      );
+    }
 
     const canvas = await lazy.capture.canvas(
       context.topChromeWindow,
@@ -183,6 +359,9 @@ class BrowsingContextModule extends Module {
    * Create a new browsing context using the provided type "tab" or "window".
    *
    * @param {object=} options
+   * @param {boolean=} options.background
+   *     Whether the tab/window should be open in the background. Defaults to false,
+   *     which means that the tab/window will be open in the foreground.
    * @param {string=} options.referenceContext
    *     Id of the top-level browsing context to use as reference.
    *     If options.type is "tab", the new tab will open in the same window as
@@ -197,17 +376,36 @@ class BrowsingContextModule extends Module {
    *     If the browsing context cannot be found.
    */
   async create(options = {}) {
-    const { referenceContext: referenceContextId = null, type } = options;
+    const {
+      background = false,
+      referenceContext: referenceContextId = null,
+      type,
+    } = options;
     if (type !== CreateType.tab && type !== CreateType.window) {
       throw new lazy.error.InvalidArgumentError(
         `Expected "type" to be one of ${Object.values(CreateType)}, got ${type}`
       );
     }
 
+    lazy.assert.boolean(
+      background,
+      lazy.pprint`Expected "background" to be a boolean, got ${background}`
+    );
+
     let browser;
+
+    // Since each tab in GeckoView has its own Gecko instance running,
+    // which means also its own window object, for Android we will need to focus
+    // a previously focused window in case of opening the tab in the background.
+    const previousWindow = Services.wm.getMostRecentBrowserWindow();
+    const previousTab =
+      lazy.TabManager.getTabBrowser(previousWindow).selectedTab;
+
     switch (type) {
       case "window":
-        let newWindow = await lazy.windowManager.openBrowserWindow();
+        const newWindow = await lazy.windowManager.openBrowserWindow({
+          focus: !background,
+        });
         browser = lazy.TabManager.getTabBrowser(newWindow).selectedBrowser;
         break;
 
@@ -245,7 +443,7 @@ class BrowsingContextModule extends Module {
         }
 
         const tab = await lazy.TabManager.addTab({
-          focus: false,
+          focus: !background,
           referenceTab,
         });
         browser = lazy.TabManager.getBrowserForTab(tab);
@@ -257,6 +455,19 @@ class BrowsingContextModule extends Module {
         unloadTimeout: 5000,
       }
     );
+
+    // The tab on Android is always opened in the foreground,
+    // so we need to select the previous tab,
+    // and we have to wait until is fully loaded.
+    // TODO: Bug 1845559. This workaround can be removed,
+    // when the API to create a tab for Android supports the background option.
+    if (lazy.AppInfo.isAndroid && background) {
+      await lazy.windowManager.focusWindow(previousWindow);
+      await lazy.TabManager.selectTab(previousTab);
+    }
+
+    // Force a reflow by accessing `clientHeight` (see Bug 1847044).
+    browser.parentElement.clientHeight;
 
     return {
       context: lazy.TabManager.getIdForBrowser(browser),
@@ -336,6 +547,106 @@ class BrowsingContextModule extends Module {
     });
 
     return { contexts: contextsInfo };
+  }
+
+  /**
+   * Closes an open prompt.
+   *
+   * @param {object=} options
+   * @param {string} options.context
+   *     Id of the browsing context.
+   * @param {boolean=} options.accept
+   *     Whether user prompt should be accepted or dismissed.
+   *     Defaults to true.
+   * @param {string=} options.userText
+   *     Input to the user prompt's value field.
+   *     Defaults to an empty string.
+   *
+   * @throws {InvalidArgumentError}
+   *     Raised if an argument is of an invalid type or value.
+   * @throws {NoSuchAlertError}
+   *     If there is no current user prompt.
+   * @throws {NoSuchFrameError}
+   *     If the browsing context cannot be found.
+   * @throws {UnsupportedOperationError}
+   *     Raised when the command is called for "beforeunload" prompt.
+   */
+  async handleUserPrompt(options = {}) {
+    const { accept = true, context: contextId, userText = "" } = options;
+
+    lazy.assert.string(
+      contextId,
+      `Expected "context" to be a string, got ${contextId}`
+    );
+
+    const context = this.#getBrowsingContext(contextId);
+
+    lazy.assert.boolean(
+      accept,
+      `Expected "accept" to be a boolean, got ${accept}`
+    );
+
+    lazy.assert.string(
+      userText,
+      `Expected "userText" to be a string, got ${userText}`
+    );
+
+    const tab = lazy.TabManager.getTabForBrowsingContext(context);
+    const browser = lazy.TabManager.getBrowserForTab(tab);
+    const window = lazy.TabManager.getWindowForTab(tab);
+    const dialog = lazy.modal.findPrompt({
+      window,
+      contentBrowser: browser,
+    });
+
+    const closePrompt = async callback => {
+      const dialogClosed = new lazy.EventPromise(
+        window,
+        "DOMModalDialogClosed"
+      );
+      callback();
+      await dialogClosed;
+    };
+
+    if (dialog && dialog.isOpen) {
+      switch (dialog.promptType) {
+        case UserPromptType.alert: {
+          await closePrompt(() => dialog.accept());
+          return;
+        }
+        case UserPromptType.confirm: {
+          await closePrompt(() => {
+            if (accept) {
+              dialog.accept();
+            } else {
+              dialog.dismiss();
+            }
+          });
+
+          return;
+        }
+        case UserPromptType.prompt: {
+          await closePrompt(() => {
+            if (accept) {
+              dialog.text = userText;
+              dialog.accept();
+            } else {
+              dialog.dismiss();
+            }
+          });
+
+          return;
+        }
+        case UserPromptType.beforeunload: {
+          // TODO: Bug 1824220. Implement support for "beforeunload" prompts.
+          throw new lazy.error.UnsupportedOperationError(
+            '"beforeunload" prompts are not supported yet.'
+          );
+        }
+      }
+    }
+
+    throw new lazy.error.NoSuchAlertError();
   }
 
   /**
@@ -562,6 +873,95 @@ class BrowsingContextModule extends Module {
   }
 
   /**
+   * Set the top-level browsing context's viewport to a given dimension.
+   *
+   * @param {object=} options
+   * @param {string} options.context
+   *     Id of the browsing context.
+   * @param {Viewport|null} options.viewport
+   *     Dimensions to set the viewport to, or `null` to reset it
+   *     to the original dimensions.
+   *
+   * @throws {InvalidArgumentError}
+   *     Raised if an argument is of an invalid type or value.
+   * @throws UnsupportedOperationError
+   *     Raised when the command is called on Android.
+   */
+  async setViewport(options = {}) {
+    const { context: contextId, viewport } = options;
+
+    if (lazy.AppInfo.isAndroid) {
+      // Bug 1840084: Add Android support for modifying the viewport.
+      throw new lazy.error.UnsupportedOperationError(
+        `Command not yet supported for ${lazy.AppInfo.name}`
+      );
+    }
+
+    lazy.assert.string(
+      contextId,
+      `Expected "context" to be a string, got ${contextId}`
+    );
+
+    const context = this.#getBrowsingContext(contextId);
+    if (context.parent) {
+      throw new lazy.error.InvalidArgumentError(
+        `Browsing Context with id ${contextId} is not top-level`
+      );
+    }
+    const browser = context.embedderElement;
+
+    if (typeof viewport !== "object") {
+      throw new lazy.error.InvalidArgumentError(
+        `Expected "viewport" to be an object or null, got ${viewport}`
+      );
+    }
+
+    let targetHeight, targetWidth;
+    if (viewport !== null) {
+      const { height, width } = viewport;
+
+      targetHeight = lazy.assert.positiveInteger(
+        height,
+        `Expected "height" to be a positive integer, got ${height}`
+      );
+      targetWidth = lazy.assert.positiveInteger(
+        width,
+        `Expected "width" to be a positive integer, got ${width}`
+      );
+
+      if (targetHeight > MAX_WINDOW_SIZE || targetWidth > MAX_WINDOW_SIZE) {
+        throw new lazy.error.UnsupportedOperationError(
+          `"width" or "height" cannot be larger than ${MAX_WINDOW_SIZE} px`
+        );
+      }
+
+      browser.style.setProperty("height", targetHeight + "px");
+      browser.style.setProperty("width", targetWidth + "px");
+    } else {
+      // Reset viewport to the original dimensions
+      targetHeight = browser.parentElement.clientHeight;
+      targetWidth = browser.parentElement.clientWidth;
+
+      browser.style.removeProperty("height");
+      browser.style.removeProperty("width");
+    }
+
+    // Wait until the viewport has been resized
+    await this.messageHandler.forwardCommand({
+      moduleName: "browsingContext",
+      commandName: "_awaitViewportDimensions",
+      destination: {
+        type: lazy.WindowGlobalMessageHandler.type,
+        id: context.id,
+      },
+      params: {
+        height: targetHeight,
+        width: targetWidth,
+      },
+    });
+  }
+
+  /**
    * Start and await a navigation on the provided BrowsingContext. Returns a
    * promise which resolves when the navigation is done according to the provided
    * navigation strategy.
@@ -646,10 +1046,12 @@ class BrowsingContextModule extends Module {
       url = listener.currentURI.spec;
     }
 
+    const navigation =
+      this.messageHandler.navigationManager.getNavigationForBrowsingContext(
+        webProgress.browsingContext
+      );
     return {
-      // TODO: The navigation id should be a real id mapped to the navigation.
-      // See https://bugzilla.mozilla.org/show_bug.cgi?id=1763122
-      navigation: null,
+      navigation: navigation ? navigation.navigationId : null,
       url,
     };
   }
@@ -757,17 +1159,105 @@ class BrowsingContextModule extends Module {
     );
   };
 
+  #onLocationChange = async (eventName, data) => {
+    const { navigationId, navigableId, url } = data;
+    const context = this.#getBrowsingContext(navigableId);
+
+    if (this.#subscribedEvents.has("browsingContext.fragmentNavigated")) {
+      const contextInfo = {
+        contextId: context.id,
+        type: lazy.WindowGlobalMessageHandler.type,
+      };
+      this.emitEvent(
+        "browsingContext.fragmentNavigated",
+        {
+          context: navigableId,
+          navigation: navigationId,
+          timestamp: Date.now(),
+          url,
+        },
+        contextInfo
+      );
+    }
+  };
+
+  #onPromptOpened = async (eventName, data) => {
+    const { contentBrowser, prompt } = data;
+    const contextId = lazy.TabManager.getIdForBrowser(contentBrowser);
+    // This event is emitted from the parent process but for a given browsing
+    // context. Set the event's contextInfo to the message handler corresponding
+    // to this browsing context.
+    const contextInfo = {
+      contextId,
+      type: lazy.WindowGlobalMessageHandler.type,
+    };
+
+    this.emitEvent(
+      "browsingContext.userPromptOpened",
+      {
+        context: contextId,
+        type: prompt.promptType,
+        message: await prompt.getText(),
+      },
+      contextInfo
+    );
+  };
+
+  #startListeningLocationChanged() {
+    if (!this.#subscribedEvents.has("browsingContext.fragmentNavigated")) {
+      this.messageHandler.navigationManager.on(
+        "location-changed",
+        this.#onLocationChange
+      );
+    }
+  }
+
+  #stopListeningLocationChanged() {
+    if (this.#subscribedEvents.has("browsingContext.fragmentNavigated")) {
+      this.messageHandler.navigationManager.off(
+        "location-changed",
+        this.#onLocationChange
+      );
+    }
+  }
+
   #subscribeEvent(event) {
-    if (event === "browsingContext.contextCreated") {
-      this.#contextListener.startListening();
-      this.#subscribedEvents.add(event);
+    switch (event) {
+      case "browsingContext.contextCreated": {
+        this.#contextListener.startListening();
+        this.#subscribedEvents.add(event);
+        break;
+      }
+      case "browsingContext.fragmentNavigated": {
+        this.#startListeningLocationChanged();
+        this.#subscribedEvents.add(event);
+        break;
+      }
+      case "browsingContext.userPromptOpened": {
+        this.#promptListener.startListening();
+        this.#subscribedEvents.add(event);
+        break;
+      }
     }
   }
 
   #unsubscribeEvent(event) {
-    if (event === "browsingContext.contextCreated") {
-      this.#contextListener.stopListening();
-      this.#subscribedEvents.delete(event);
+    switch (event) {
+      case "browsingContext.contextCreated": {
+        this.#contextListener.stopListening();
+        this.#subscribedEvents.delete(event);
+        break;
+      }
+      case "browsingContext.fragmentNavigated": {
+        this.#stopListeningLocationChanged();
+        this.#subscribedEvents.delete(event);
+        break;
+      }
+      case "browsingContext.userPromptOpened": {
+        this.#promptListener.stopListening();
+        this.#subscribedEvents.delete(event);
+        break;
+      }
     }
   }
 
@@ -804,7 +1294,9 @@ class BrowsingContextModule extends Module {
     return [
       "browsingContext.contextCreated",
       "browsingContext.domContentLoaded",
+      "browsingContext.fragmentNavigated",
       "browsingContext.load",
+      "browsingContext.userPromptOpened",
     ];
   }
 }

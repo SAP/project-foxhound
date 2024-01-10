@@ -96,28 +96,6 @@ void WorkerNavigator::SetLanguages(const nsTArray<nsString>& aLanguages) {
   mProperties.mLanguages = aLanguages.Clone();
 }
 
-void WorkerNavigator::GetAppName(nsString& aAppName,
-                                 CallerType aCallerType) const {
-  WorkerPrivate* workerPrivate = GetCurrentThreadWorkerPrivate();
-  MOZ_ASSERT(workerPrivate);
-
-  if (aCallerType != CallerType::System) {
-    if (workerPrivate->GlobalScope()->ShouldResistFingerprinting(
-            RFPTarget::NavigatorAppName)) {
-      // See nsRFPService.h for spoofed value.
-      aAppName.AssignLiteral(SPOOFED_APPNAME);
-      return;
-    }
-
-    if (!mProperties.mAppNameOverridden.IsEmpty()) {
-      aAppName = mProperties.mAppNameOverridden;
-      return;
-    }
-  }
-
-  aAppName = mProperties.mAppName;
-}
-
 void WorkerNavigator::GetAppVersion(nsString& aAppVersion,
                                     CallerType aCallerType,
                                     ErrorResult& aRv) const {
@@ -125,7 +103,7 @@ void WorkerNavigator::GetAppVersion(nsString& aAppVersion,
   MOZ_ASSERT(workerPrivate);
 
   if (aCallerType != CallerType::System) {
-    if (workerPrivate->GlobalScope()->ShouldResistFingerprinting(
+    if (workerPrivate->ShouldResistFingerprinting(
             RFPTarget::NavigatorAppVersion)) {
       // See nsRFPService.h for spoofed value.
       aAppVersion.AssignLiteral(SPOOFED_APPVERSION);
@@ -147,7 +125,7 @@ void WorkerNavigator::GetPlatform(nsString& aPlatform, CallerType aCallerType,
   MOZ_ASSERT(workerPrivate);
 
   if (aCallerType != CallerType::System) {
-    if (workerPrivate->GlobalScope()->ShouldResistFingerprinting(
+    if (workerPrivate->ShouldResistFingerprinting(
             RFPTarget::NavigatorPlatform)) {
       // See nsRFPService.h for spoofed value.
       aPlatform.AssignLiteral(SPOOFED_PLATFORM);
@@ -209,8 +187,7 @@ void WorkerNavigator::GetUserAgent(nsString& aUserAgent, CallerType aCallerType,
 
   RefPtr<GetUserAgentRunnable> runnable = new GetUserAgentRunnable(
       workerPrivate, aUserAgent,
-      workerPrivate->GlobalScope()->ShouldResistFingerprinting(
-          RFPTarget::NavigatorUserAgent));
+      workerPrivate->ShouldResistFingerprinting(RFPTarget::NavigatorUserAgent));
 
   runnable->Dispatch(Canceling, aRv);
 }
@@ -220,7 +197,7 @@ uint64_t WorkerNavigator::HardwareConcurrency() const {
   MOZ_ASSERT(rts);
 
   WorkerPrivate* aWorkerPrivate = GetCurrentThreadWorkerPrivate();
-  bool rfp = aWorkerPrivate->GlobalScope()->ShouldResistFingerprinting(
+  bool rfp = aWorkerPrivate->ShouldResistFingerprinting(
       RFPTarget::NavigatorHWConcurrency);
 
   return rts->ClampedHardwareConcurrency(rfp);
@@ -285,7 +262,7 @@ dom::LockManager* WorkerNavigator::Locks() {
     nsIGlobalObject* global = workerPrivate->GlobalScope();
     MOZ_ASSERT(global);
 
-    mLocks = new dom::LockManager(global);
+    mLocks = dom::LockManager::Create(*global);
   }
   return mLocks;
 }

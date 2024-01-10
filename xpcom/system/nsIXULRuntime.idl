@@ -273,12 +273,6 @@ interface nsIXULRuntime : nsISupports
   readonly attribute AString accessibilityInstantiator;
 
   /**
-   * Temporary, do not use. Indicates if an incompat version of JAWS
-   * screen reader software is loaded in our process space.
-   */
-  readonly attribute boolean shouldBlockIncompatJaws;
-
-  /**
    * Indicates whether the current Firefox build is 64-bit.
    */
   readonly attribute boolean is64Bit;
@@ -347,6 +341,9 @@ interface nsIXULRuntime : nsISupports
 
   /** Returns the desktop environment identifier. Only meaningful on GTK */
   readonly attribute ACString desktopEnvironment;
+
+  /** Whether we use Wayland. Only meaningful on GTK */
+  readonly attribute boolean isWayland;
 
   /**
    * The path of the shortcut used to start the current process, or "" if none.

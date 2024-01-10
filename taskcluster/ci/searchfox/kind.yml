@@ -25,6 +25,9 @@ job-defaults:
     run-on-projects: ['mozilla-central']
     optimization: null
     use-system-python: false
+    # These builds don't use sccache because otherwise we wouldn't index
+    # the files that sccache optimizes away compilation for.
+    use-sccache: false
 
 jobs:
     linux64-searchfox/debug:
@@ -84,7 +87,6 @@ jobs:
             keep-artifacts: false
         fetches:
             toolchain:
-                - linux64-cctools-port
                 - linux64-clang
                 - linux64-hfsplus
                 - linux64-libdmg
@@ -121,7 +123,6 @@ jobs:
                 - builds/taskcluster_sub_win64/searchfox_debug.py
             extra-config:
                 mozconfig_platform: win64
-        use-sccache: true
         fetches:
             toolchain:
                 - linux64-clang
@@ -130,7 +131,6 @@ jobs:
                 - linux64-nasm
                 - linux64-node
                 - linux64-cbindgen
-                - linux64-sccache
                 - linux64-dump_syms
                 - linux64-wine
                 - linux64-winchecksec
@@ -165,7 +165,6 @@ jobs:
             secrets: true
             custom-build-variant-cfg: arm-debug-searchfox
             tooltool-downloads: internal
-        use-sccache: true
         fetches:
             toolchain:
                 - android-gradle-dependencies
@@ -177,7 +176,6 @@ jobs:
                 - linux64-rust-size
                 - linux64-cbindgen
                 - linux64-dump_syms
-                - linux64-sccache
                 - linux64-nasm
                 - linux64-node
                 - sysroot-x86_64-linux-gnu

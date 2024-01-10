@@ -4,7 +4,6 @@ browser/components/pocket/content/panels/js/vendor/
 browser/components/storybook/node_modules/
 browser/extensions/formautofill/content/third-party/
 browser/extensions/formautofill/test/fixtures/third_party/
-browser/extensions/screenshots/build/raven.js
 devtools/client/inspector/markup/test/lib_*
 devtools/client/jsonview/lib/require.js
 devtools/client/shared/build/babel.js
@@ -14,6 +13,7 @@ devtools/client/shared/sourceeditor/test/cm_mode_ruby.js
 devtools/client/shared/sourceeditor/test/codemirror/
 devtools/client/shared/vendor/
 devtools/client/inspector/markup/test/helper_diff.js
+devtools/client/debugger/src/workers/parser/utils/parse-script-tags/
 devtools/shared/acorn/
 devtools/shared/compatibility/dataset/css-properties.json
 devtools/shared/heapsnapshot/CoreDump.pb.cc
@@ -121,7 +121,6 @@ media/libpng/
 media/libsoundtouch/
 media/libspeex_resampler/
 media/libtheora/
-media/libtremor/
 media/libvorbis/
 media/libvpx/
 media/libwebp/
@@ -154,6 +153,8 @@ security/manager/tools/log_list.json
 security/nss/
 security/sandbox/chromium/
 security/sandbox/chromium-shim/
+services/common/kinto-http-client.sys.mjs
+services/common/kinto-offline-client.js
 testing/gtest/gmock/
 testing/gtest/gtest/
 testing/mochitest/MochiKit/

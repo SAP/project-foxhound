@@ -23,18 +23,13 @@ except ImportError:
     build = None
 
 from browsertime import BrowsertimeAndroid, BrowsertimeDesktop
-from cmdline import CHROMIUM_DISTROS, DESKTOP_APPS, parse_args
+from cmdline import DESKTOP_APPS, parse_args
 from logger.logger import RaptorLogger
 from manifest import get_raptor_test_list
 from mozlog import commandline
 from mozprofile.cli import parse_key_value, parse_preferences
 from signal_handler import SignalHandler
 from utils import view_gecko_profile_from_raptor
-from webextension import (
-    WebExtensionAndroid,
-    WebExtensionDesktopChrome,
-    WebExtensionFirefox,
-)
 
 LOG = RaptorLogger(component="raptor-main")
 
@@ -76,28 +71,19 @@ def main(args=sys.argv[1:]):
     for next_test in raptor_test_list:
         LOG.info(next_test["name"])
 
-    if not args.browsertime:
-        if args.app == "firefox":
-            raptor_class = WebExtensionFirefox
-        elif args.app in CHROMIUM_DISTROS:
-            raptor_class = WebExtensionDesktopChrome
+    def raptor_class(*inner_args, **inner_kwargs):
+        outer_kwargs = vars(args)
+        # peel off arguments that are specific to browsertime
+        for key in outer_kwargs.keys():
+            if key.startswith("browsertime_"):
+                inner_kwargs[key] = outer_kwargs.get(key)
+
+        if args.app in DESKTOP_APPS:
+            klass = BrowsertimeDesktop
         else:
-            raptor_class = WebExtensionAndroid
-    else:
+            klass = BrowsertimeAndroid
 
-        def raptor_class(*inner_args, **inner_kwargs):
-            outer_kwargs = vars(args)
-            # peel off arguments that are specific to browsertime
-            for key in outer_kwargs.keys():
-                if key.startswith("browsertime_"):
-                    inner_kwargs[key] = outer_kwargs.get(key)
-
-            if args.app in DESKTOP_APPS:
-                klass = BrowsertimeDesktop
-            else:
-                klass = BrowsertimeAndroid
-
-            return klass(*inner_args, **inner_kwargs)
+        return klass(*inner_args, **inner_kwargs)
 
     try:
         raptor = raptor_class(
@@ -116,9 +102,6 @@ def main(args=sys.argv[1:]):
             extra_profiler_run=args.extra_profiler_run,
             symbols_path=args.symbols_path,
             host=args.host,
-            power_test=args.power_test,
-            cpu_test=args.cpu_test,
-            memory_test=args.memory_test,
             live_sites=args.live_sites,
             cold=args.cold,
             is_release_build=args.is_release_build,

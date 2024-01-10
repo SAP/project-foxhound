@@ -20,7 +20,7 @@ const { CustomizableUI } = ChromeUtils.importESModule(
   "resource:///modules/CustomizableUI.sys.mjs"
 );
 
-XPCOMUtils.defineLazyGetter(this, "ProfilerPopupBackground", function () {
+ChromeUtils.defineLazyGetter(this, "ProfilerPopupBackground", function () {
   return ChromeUtils.import(
     "resource://devtools/client/performance-new/shared/background.jsm.js"
   );
@@ -62,14 +62,54 @@ const gLoggingPresets = {
     },
     profilerPreset: "networking",
   },
+  cookie: {
+    modules: "timestamp,sync,nsHttp:5,cache2:5,cookie:5",
+    l10nIds: {
+      label: "about-logging-preset-networking-cookie-label",
+      description: "about-logging-preset-networking-cookie-description",
+    },
+  },
+  websocket: {
+    modules:
+      "timestamp,sync,nsHttp:5,nsWebSocket:5,nsSocketTransport:5,nsHostResolver:5",
+    l10nIds: {
+      label: "about-logging-preset-networking-websocket-label",
+      description: "about-logging-preset-networking-websocket-description",
+    },
+  },
+  http3: {
+    modules:
+      "timestamp,sync,nsHttp:5,nsSocketTransport:5,nsHostResolver:5,neqo_http3::*:5,neqo_transport::*:5",
+    l10nIds: {
+      label: "about-logging-preset-networking-http3-label",
+      description: "about-logging-preset-networking-http3-description",
+    },
+  },
   "media-playback": {
     modules:
-      "HTMLMediaElement:4,HTMLMediaElementEvents:4,cubeb:5,PlatformDecoderModule:5,AudioSink:5,AudioSinkWrapper:5,MediaDecoderStateMachine:4,MediaDecoder:4,MediaFormatReader:5",
+      "HTMLMediaElement:4,HTMLMediaElementEvents:4,cubeb:5,PlatformDecoderModule:5,AudioSink:5,AudioSinkWrapper:5,MediaDecoderStateMachine:4,MediaDecoder:4,MediaFormatReader:5,GMP:5",
     l10nIds: {
       label: "about-logging-preset-media-playback-label",
       description: "about-logging-preset-media-playback-description",
     },
     profilerPreset: "media",
+  },
+  webrtc: {
+    modules:
+      "jsep:5,sdp:5,signaling:5,mtransport:5,RTCRtpReceiver:5,RTCRtpSender:5,RTCDMTFSender:5,VideoFrameConverter:5,WebrtcTCPSocket:5,CamerasChild:5,CamerasParent:5,VideoEngine:5,ShmemPool:5,TabShare:5,MediaChild:5,MediaParent:5,MediaManager:5,MediaTrackGraph:5,cubeb:5,MediaStream:5,MediaStreamTrack:5,DriftCompensator:5,ForwardInputTrack:5,MediaRecorder:5,MediaEncoder:5,TrackEncoder:5,VP8TrackEncoder:5,Muxer:5,GetUserMedia:5,MediaPipeline:5,PeerConnectionImpl:5,WebAudioAPI:5,webrtc_trace:5,RTCRtpTransceiver:5,ForwardedInputTrack:5,HTMLMediaElement:5,HTMLMediaElementEvents:5",
+    l10nIds: {
+      label: "about-logging-preset-webrtc-label",
+      description: "about-logging-preset-webrtc-description",
+    },
+    profilerPreset: "media",
+  },
+  webgpu: {
+    modules:
+      "wgpu_core::*:5,wgpu_hal::*:5,wgpu_types::*:5,naga::*:5,wgpu_bindings::*:5,WebGPU:5",
+    l10nIds: {
+      label: "about-logging-preset-webgpu-label",
+      description: "about-logging-preset-webgpu-description",
+    },
   },
   custom: {
     modules: "",
@@ -385,8 +425,8 @@ function init() {
   try {
     let running = Services.prefs.getBoolPref("logging.config.running");
     gLoggingSettings.running = running;
-    $("#toggle-logging-button").setAttribute(
-      "data-l10n-id",
+    document.l10n.setAttributes(
+      $("#toggle-logging-button"),
       `about-logging-${gLoggingSettings.running ? "stop" : "start"}-logging`
     );
   } catch {}

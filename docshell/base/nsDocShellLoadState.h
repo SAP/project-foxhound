@@ -113,6 +113,14 @@ class nsDocShellLoadState final {
 
   void SetTriggeringSandboxFlags(uint32_t aTriggeringSandboxFlags);
 
+  uint64_t TriggeringWindowId() const;
+
+  void SetTriggeringWindowId(uint64_t aTriggeringWindowId);
+
+  bool TriggeringStorageAccess() const;
+
+  void SetTriggeringStorageAccess(bool aTriggeringStorageAccess);
+
   nsIContentSecurityPolicy* Csp() const;
 
   void SetCsp(nsIContentSecurityPolicy* aCsp);
@@ -330,6 +338,18 @@ class nsDocShellLoadState final {
 
   void SetTriggeringRemoteType(const nsACString& aTriggeringRemoteType);
 
+  // Diagnostic assert if this is a system-principal triggered load, and it is
+  // trivial to determine that the effective triggering remote type would not be
+  // allowed to perform this load.
+  //
+  // This is called early during the load to crash as close to the cause as
+  // possible. See bug 1838686 for details.
+#ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
+  void AssertProcessCouldTriggerLoadIfSystem();
+#else
+  void AssertProcessCouldTriggerLoadIfSystem() {}
+#endif
+
   // When loading a document through nsDocShell::LoadURI(), a special set of
   // flags needs to be set based on other values in nsDocShellLoadState. This
   // function calculates those flags, before the LoadState is passed to
@@ -400,6 +420,12 @@ class nsDocShellLoadState final {
   // responsible for causing the load to occur. Most likely this are the
   // SandboxFlags of the document that started the load.
   uint32_t mTriggeringSandboxFlags;
+
+  // The window ID and current "has storage access" value of the entity
+  // triggering the load. This allows the identification of self-initiated
+  // same-origin navigations that should propogate unpartitioned storage access.
+  uint64_t mTriggeringWindowId;
+  bool mTriggeringStorageAccess;
 
   // The CSP of the load, that is, the CSP of the entity responsible for causing
   // the load to occur. Most likely this is the CSP of the document that started

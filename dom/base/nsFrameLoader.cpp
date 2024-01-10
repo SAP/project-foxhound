@@ -41,11 +41,11 @@
 #include "nsIAppWindow.h"
 #include "nsIMozBrowserFrame.h"
 #include "nsIScriptError.h"
-#include "nsGlobalWindow.h"
+#include "nsGlobalWindowInner.h"
+#include "nsGlobalWindowOuter.h"
 #include "nsHTMLDocument.h"
 #include "nsPIWindowRoot.h"
 #include "nsLayoutUtils.h"
-#include "nsMappedAttributes.h"
 #include "nsView.h"
 #include "nsBaseWidget.h"
 #include "nsQueryObject.h"
@@ -66,7 +66,6 @@
 
 #include "nsThreadUtils.h"
 
-#include "nsIDOMChromeWindow.h"
 #include "InProcessBrowserChildMessageManager.h"
 
 #include "ContentParent.h"
@@ -218,13 +217,13 @@ static nsAtom* TypeAttrName(Element* aOwnerContent) {
 static void GetFrameName(Element* aOwnerContent, nsAString& aFrameName) {
   int32_t namespaceID = aOwnerContent->GetNameSpaceID();
   if (namespaceID == kNameSpaceID_XHTML && !aOwnerContent->IsInHTMLDocument()) {
-    aOwnerContent->GetAttr(kNameSpaceID_None, nsGkAtoms::id, aFrameName);
+    aOwnerContent->GetAttr(nsGkAtoms::id, aFrameName);
   } else {
-    aOwnerContent->GetAttr(kNameSpaceID_None, nsGkAtoms::name, aFrameName);
+    aOwnerContent->GetAttr(nsGkAtoms::name, aFrameName);
     // XXX if no NAME then use ID, after a transition period this will be
     // changed so that XUL only uses ID too (bug 254284).
     if (aFrameName.IsEmpty() && namespaceID == kNameSpaceID_XUL) {
-      aOwnerContent->GetAttr(kNameSpaceID_None, nsGkAtoms::id, aFrameName);
+      aOwnerContent->GetAttr(nsGkAtoms::id, aFrameName);
     }
   }
 }
@@ -357,11 +356,6 @@ static already_AddRefed<BrowsingContext> CreateBrowsingContext(
 }
 
 static bool InitialLoadIsRemote(Element* aOwner) {
-  if (PR_GetEnv("MOZ_DISABLE_OOP_TABS") ||
-      Preferences::GetBool("dom.ipc.tabs.disabled", false)) {
-    return false;
-  }
-
   // The initial load in an content process iframe should never be made remote.
   // Content process iframes always become remote due to navigation.
   if (XRE_IsContentProcess()) {
@@ -372,8 +366,7 @@ static bool InitialLoadIsRemote(Element* aOwner) {
   // fall back to the default.
   nsCOMPtr<nsIMozBrowserFrame> browserFrame = do_QueryInterface(aOwner);
   bool isMozBrowserFrame = browserFrame && browserFrame->GetReallyIsBrowser();
-  if (isMozBrowserFrame &&
-      !aOwner->HasAttr(kNameSpaceID_None, nsGkAtoms::remote)) {
+  if (isMozBrowserFrame && !aOwner->HasAttr(nsGkAtoms::remote)) {
     return Preferences::GetBool("dom.ipc.browser_frames.oop_by_default", false);
   }
 
@@ -462,7 +455,7 @@ already_AddRefed<nsFrameLoader> nsFrameLoader::Create(
   if (isRemoteFrame) {
     MOZ_ASSERT(XRE_IsParentProcess());
     nsAutoString remoteType;
-    if (aOwner->GetAttr(kNameSpaceID_None, nsGkAtoms::RemoteType, remoteType) &&
+    if (aOwner->GetAttr(nsGkAtoms::RemoteType, remoteType) &&
         !remoteType.IsEmpty()) {
       CopyUTF16toUTF8(remoteType, fl->mRemoteType);
     } else {
@@ -519,7 +512,7 @@ void nsFrameLoader::LoadFrame(bool aOriginalSrc) {
   nsCOMPtr<nsIContentSecurityPolicy> csp;
 
   bool isSrcdoc = mOwnerContent->IsHTMLElement(nsGkAtoms::iframe) &&
-                  mOwnerContent->HasAttr(kNameSpaceID_None, nsGkAtoms::srcdoc);
+                  mOwnerContent->HasAttr(nsGkAtoms::srcdoc);
   if (isSrcdoc) {
     src.AssignLiteral("about:srcdoc");
     principal = mOwnerContent->NodePrincipal();
@@ -690,9 +683,8 @@ nsresult nsFrameLoader::ReallyStartLoadingInternal() {
     }
 
     nsAutoString srcdoc;
-    bool isSrcdoc =
-        mOwnerContent->IsHTMLElement(nsGkAtoms::iframe) &&
-        mOwnerContent->GetAttr(kNameSpaceID_None, nsGkAtoms::srcdoc, srcdoc);
+    bool isSrcdoc = mOwnerContent->IsHTMLElement(nsGkAtoms::iframe) &&
+                    mOwnerContent->GetAttr(nsGkAtoms::srcdoc, srcdoc);
 
     if (isSrcdoc) {
       loadState->SetSrcdocData(srcdoc);
@@ -775,7 +767,8 @@ nsresult nsFrameLoader::ReallyStartLoadingInternal() {
   bool tmpState = mNeedsAsyncDestroy;
   mNeedsAsyncDestroy = true;
 
-  rv = GetDocShell()->LoadURI(loadState, false);
+  RefPtr<nsDocShell> docShell = GetDocShell();
+  rv = docShell->LoadURI(loadState, false);
   mNeedsAsyncDestroy = tmpState;
   mURIToLoad = nullptr;
   NS_ENSURE_SUCCESS(rv, rv);
@@ -1072,19 +1065,10 @@ void nsFrameLoader::MarginsChanged() {
   // that needs to be updated
   if (Document* doc = docShell->GetDocument()) {
     for (nsINode* cur = doc; cur; cur = cur->GetNextNode()) {
-      if (cur->IsHTMLElement(nsGkAtoms::body)) {
-        static_cast<HTMLBodyElement*>(cur)->ClearMappedServoStyle();
+      if (auto* body = HTMLBodyElement::FromNode(cur)) {
+        body->FrameMarginsChanged();
       }
     }
-  }
-
-  // Trigger a restyle if there's a prescontext
-  // FIXME: This could do something much less expensive.
-  if (nsPresContext* presContext = docShell->GetPresContext()) {
-    // rebuild, because now the same nsMappedAttributes* will produce
-    // a different style
-    presContext->RebuildAllStyleData(nsChangeHint(0),
-                                     RestyleHint::RestyleSubtree());
   }
 }
 
@@ -1266,13 +1250,12 @@ nsresult nsFrameLoader::SwapWithOtherRemoteLoader(
     return NS_ERROR_NOT_IMPLEMENTED;
   }
 
-  bool ourHasHistory =
-      mIsTopLevelContent && ourContent->IsXULElement(nsGkAtoms::browser) &&
-      !ourContent->HasAttr(kNameSpaceID_None, nsGkAtoms::disablehistory);
-  bool otherHasHistory =
-      aOther->mIsTopLevelContent &&
-      otherContent->IsXULElement(nsGkAtoms::browser) &&
-      !otherContent->HasAttr(kNameSpaceID_None, nsGkAtoms::disablehistory);
+  bool ourHasHistory = mIsTopLevelContent &&
+                       ourContent->IsXULElement(nsGkAtoms::browser) &&
+                       !ourContent->HasAttr(nsGkAtoms::disablehistory);
+  bool otherHasHistory = aOther->mIsTopLevelContent &&
+                         otherContent->IsXULElement(nsGkAtoms::browser) &&
+                         !otherContent->HasAttr(nsGkAtoms::disablehistory);
   if (ourHasHistory != otherHasHistory) {
     return NS_ERROR_NOT_IMPLEMENTED;
   }
@@ -1510,10 +1493,9 @@ nsresult nsFrameLoader::SwapWithOtherLoader(nsFrameLoader* aOther,
   }
 
   bool ourHasSrcdoc = ourContent->IsHTMLElement(nsGkAtoms::iframe) &&
-                      ourContent->HasAttr(kNameSpaceID_None, nsGkAtoms::srcdoc);
-  bool otherHasSrcdoc =
-      otherContent->IsHTMLElement(nsGkAtoms::iframe) &&
-      otherContent->HasAttr(kNameSpaceID_None, nsGkAtoms::srcdoc);
+                      ourContent->HasAttr(nsGkAtoms::srcdoc);
+  bool otherHasSrcdoc = otherContent->IsHTMLElement(nsGkAtoms::iframe) &&
+                        otherContent->HasAttr(nsGkAtoms::srcdoc);
   if (ourHasSrcdoc || otherHasSrcdoc) {
     // Ignore this case entirely for now, since we support XUL <-> HTML swapping
     return NS_ERROR_NOT_IMPLEMENTED;
@@ -2303,7 +2285,7 @@ nsresult nsFrameLoader::MaybeCreateDocShell() {
 
   // If we are an in-process browser, we want to set up our session history.
   if (mIsTopLevelContent && mOwnerContent->IsXULElement(nsGkAtoms::browser) &&
-      !mOwnerContent->HasAttr(kNameSpaceID_None, nsGkAtoms::disablehistory)) {
+      !mOwnerContent->HasAttr(nsGkAtoms::disablehistory)) {
     // XXX(nika): Set this up more explicitly?
     mPendingBrowsingContext->InitSessionHistory();
   }
@@ -2324,7 +2306,7 @@ nsresult nsFrameLoader::MaybeCreateDocShell() {
   if (OwnerIsMozBrowserFrame()) {
     // For inproc frames, set the docshell properties.
     nsAutoString name;
-    if (mOwnerContent->GetAttr(kNameSpaceID_None, nsGkAtoms::name, name)) {
+    if (mOwnerContent->GetAttr(nsGkAtoms::name, name)) {
       docShell->SetName(name);
     }
   }
@@ -2360,9 +2342,9 @@ void nsFrameLoader::GetURL(nsString& aURI, nsIPrincipal** aTriggeringPrincipal,
   nsCOMPtr<nsIContentSecurityPolicy> csp = mOwnerContent->GetCsp();
 
   if (mOwnerContent->IsHTMLElement(nsGkAtoms::object)) {
-    mOwnerContent->GetAttr(kNameSpaceID_None, nsGkAtoms::data, aURI);
+    mOwnerContent->GetAttr(nsGkAtoms::data, aURI);
   } else {
-    mOwnerContent->GetAttr(kNameSpaceID_None, nsGkAtoms::src, aURI);
+    mOwnerContent->GetAttr(nsGkAtoms::src, aURI);
     if (RefPtr<nsGenericHTMLFrameElement> frame =
             do_QueryObject(mOwnerContent)) {
       nsCOMPtr<nsIPrincipal> srcPrincipal = frame->GetSrcTriggeringPrincipal();
@@ -2776,20 +2758,18 @@ bool nsFrameLoader::TryRemoteBrowserInternal() {
 
   nsCOMPtr<nsIDocShellTreeItem> rootItem;
   parentDocShell->GetInProcessRootTreeItem(getter_AddRefs(rootItem));
-  nsCOMPtr<nsPIDOMWindowOuter> rootWin = rootItem->GetWindow();
-  nsCOMPtr<nsIDOMChromeWindow> rootChromeWin = do_QueryInterface(rootWin);
+  RefPtr<nsGlobalWindowOuter> rootWin =
+      nsGlobalWindowOuter::Cast(rootItem->GetWindow());
 
-  if (rootChromeWin) {
-    nsCOMPtr<nsIBrowserDOMWindow> browserDOMWin;
-    rootChromeWin->GetBrowserDOMWindow(getter_AddRefs(browserDOMWin));
-    browserParent->SetBrowserDOMWindow(browserDOMWin);
+  if (rootWin && rootWin->IsChromeWindow()) {
+    browserParent->SetBrowserDOMWindow(rootWin->GetBrowserDOMWindow());
   }
 
   // For xul:browsers, update some settings based on attributes:
   if (mOwnerContent->IsXULElement()) {
     // Send down the name of the browser through browserParent if it is set.
     nsAutoString frameName;
-    mOwnerContent->GetAttr(kNameSpaceID_None, nsGkAtoms::name, frameName);
+    mOwnerContent->GetAttr(nsGkAtoms::name, frameName);
     if (nsContentUtils::IsOverridingWindowName(frameName)) {
       MOZ_ALWAYS_SUCCEEDS(mPendingBrowsingContext->SetName(frameName));
     }
@@ -3052,8 +3032,7 @@ nsresult nsFrameLoader::EnsureMessageManager() {
   if (window && window->IsChromeWindow()) {
     nsAutoString messagemanagergroup;
     if (mOwnerContent->IsXULElement() &&
-        mOwnerContent->GetAttr(kNameSpaceID_None,
-                               nsGkAtoms::messagemanagergroup,
+        mOwnerContent->GetAttr(nsGkAtoms::messagemanagergroup,
                                messagemanagergroup)) {
       parentManager = window->GetGroupMessageManager(messagemanagergroup);
     }
@@ -3658,8 +3637,7 @@ nsresult nsFrameLoader::PopulateOriginContextIdsFromAttributes(
   nsAutoString attributeValue;
   if (aAttr.mUserContextId ==
           nsIScriptSecurityManager::DEFAULT_USER_CONTEXT_ID &&
-      mOwnerContent->GetAttr(kNameSpaceID_None, nsGkAtoms::usercontextid,
-                             attributeValue) &&
+      mOwnerContent->GetAttr(nsGkAtoms::usercontextid, attributeValue) &&
       !attributeValue.IsEmpty()) {
     nsresult rv;
     aAttr.mUserContextId = attributeValue.ToInteger(&rv);
@@ -3667,8 +3645,7 @@ nsresult nsFrameLoader::PopulateOriginContextIdsFromAttributes(
   }
 
   if (aAttr.mGeckoViewSessionContextId.IsEmpty() &&
-      mOwnerContent->GetAttr(kNameSpaceID_None,
-                             nsGkAtoms::geckoViewSessionContextId,
+      mOwnerContent->GetAttr(nsGkAtoms::geckoViewSessionContextId,
                              attributeValue) &&
       !attributeValue.IsEmpty()) {
     // XXX: Should we check the format from `GeckoViewNavigation.jsm` here?
@@ -3878,8 +3855,7 @@ bool nsFrameLoader::EnsureBrowsingContextAttached() {
     // <iframe mozbrowser> is allowed to set `mozprivatebrowsing` to
     // force-enable private browsing.
     if (OwnerIsMozBrowserFrame()) {
-      if (mOwnerContent->HasAttr(kNameSpaceID_None,
-                                 nsGkAtoms::mozprivatebrowsing)) {
+      if (mOwnerContent->HasAttr(nsGkAtoms::mozprivatebrowsing)) {
         attrs.SyncAttributesWithPrivateBrowsing(true);
         usePrivateBrowsing = true;
       }

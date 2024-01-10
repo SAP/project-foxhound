@@ -42,7 +42,7 @@
 }
 
 .speaker-icon {
-  list-style-image: url(chrome://global/skin/media/audio.svg);
+  list-style-image: url(chrome://browser/skin/notification-icons/speaker.svg);
 }
 
 .desktop-notification-icon {
@@ -256,6 +256,7 @@
 
 .content-blocking-warning-image {
   list-style-image: url("chrome://global/skin/icons/warning.svg");
+  width: 16px;
   margin-inline-end: 6px;
 }
 
@@ -264,7 +265,8 @@
 }
 
 #blockCookiesMenu,
-#trackingProtectionMenu {
+#trackingProtectionMenu,
+#fingerprintingProtectionMenu {
   margin: 0;
 }
 

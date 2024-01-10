@@ -224,10 +224,6 @@ bool RetainedDisplayListBuilder::PreProcessDisplayList(
         aList->mOldItems[i].mItem = nullptr;
       }
 
-      if (item->IsGlassItem() && item == mBuilder.GetGlassDisplayItem()) {
-        mBuilder.ClearGlassDisplayItem();
-      }
-
       item->Destroy(&mBuilder);
       Metrics()->mRemovedItems++;
 
@@ -366,6 +362,9 @@ static Maybe<const ActiveScrolledRoot*> SelectContainerASR(
   const ActiveScrolledRoot* itemClipASR =
       aClipChain ? aClipChain->mASR : nullptr;
 
+  MOZ_DIAGNOSTIC_ASSERT(!aClipChain || aClipChain->mOnStack || !itemClipASR ||
+                        itemClipASR->mScrollableFrame);
+
   const ActiveScrolledRoot* finiteBoundsASR =
       ActiveScrolledRoot::PickDescendant(itemClipASR, aItemASR);
 
@@ -479,20 +478,6 @@ class MergeState {
           oldItem->SetBuildingRect(aNewItem->GetBuildingRect());
         }
 
-        if (destItem == aNewItem) {
-          if (oldItem->IsGlassItem() &&
-              oldItem == mBuilder->Builder()->GetGlassDisplayItem()) {
-            mBuilder->Builder()->ClearGlassDisplayItem();
-          }
-        }  // aNewItem can't be the glass item on the builder yet.
-
-        if (destItem->IsGlassItem()) {
-          if (destItem != oldItem ||
-              destItem != mBuilder->Builder()->GetGlassDisplayItem()) {
-            mBuilder->Builder()->SetGlassDisplayItem(destItem);
-          }
-        }
-
         MergeChildLists(aNewItem, oldItem, destItem);
 
         AutoTArray<MergedListIndex, 2> directPredecessors =
@@ -509,9 +494,6 @@ class MergeState {
       }
     }
     mResultIsModified = true;
-    if (aNewItem->IsGlassItem()) {
-      mBuilder->Builder()->SetGlassDisplayItem(aNewItem);
-    }
     return Some(AddNewNode(aNewItem, Nothing(), Span<MergedListIndex>(),
                            aPreviousItem));
   }
@@ -688,11 +670,6 @@ class MergeState {
                       nsTArray<MergedListIndex>&& aDirectPredecessors) {
     nsDisplayItem* item = mOldItems[aNode.val].mItem;
     if (mOldItems[aNode.val].IsChanged()) {
-      if (item && item->IsGlassItem() &&
-          item == mBuilder->Builder()->GetGlassDisplayItem()) {
-        mBuilder->Builder()->ClearGlassDisplayItem();
-      }
-
       mOldItems[aNode.val].Discard(mBuilder, std::move(aDirectPredecessors));
       mResultIsModified = true;
     } else {
@@ -1342,26 +1319,26 @@ void RetainedDisplayListBuilder::InvalidateCaretFramesIfNeeded() {
   mPreviousCaret = mBuilder.GetCaretFrame();
 }
 
-static void ClearFrameProps(nsTArray<nsIFrame*>& aFrames) {
-  for (nsIFrame* f : aFrames) {
-    DL_LOGV("RDL - Clearing modified flags for frame %p", f);
-    if (f->HasOverrideDirtyRegion()) {
-      f->SetHasOverrideDirtyRegion(false);
-      f->RemoveProperty(nsDisplayListBuilder::DisplayListBuildingRect());
-      f->RemoveProperty(
-          nsDisplayListBuilder::DisplayListBuildingDisplayPortRect());
-    }
-
-    f->SetFrameIsModified(false);
-    f->SetHasModifiedDescendants(false);
-  }
-}
-
 class AutoClearFramePropsArray {
  public:
   explicit AutoClearFramePropsArray(size_t aCapacity) : mFrames(aCapacity) {}
   AutoClearFramePropsArray() = default;
-  ~AutoClearFramePropsArray() { ClearFrameProps(mFrames); }
+  ~AutoClearFramePropsArray() {
+    size_t len = mFrames.Length();
+    nsIFrame** elements = mFrames.Elements();
+    for (size_t i = 0; i < len; ++i) {
+      nsIFrame* f = elements[i];
+      DL_LOGV("RDL - Clearing modified flags for frame %p", f);
+      if (f->HasOverrideDirtyRegion()) {
+        f->SetHasOverrideDirtyRegion(false);
+        f->RemoveProperty(nsDisplayListBuilder::DisplayListBuildingRect());
+        f->RemoveProperty(
+            nsDisplayListBuilder::DisplayListBuildingDisplayPortRect());
+      }
+      f->SetFrameIsModified(false);
+      f->SetHasModifiedDescendants(false);
+    }
+  }
 
   nsTArray<nsIFrame*>& Frames() { return mFrames; }
   bool IsEmpty() const { return mFrames.IsEmpty(); }

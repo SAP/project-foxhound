@@ -124,7 +124,7 @@ void CodeGeneratorX86Shared::emitCompare(MCompare::CompareType type,
 #ifdef JS_CODEGEN_X64
   if (type == MCompare::Compare_Object || type == MCompare::Compare_Symbol ||
       type == MCompare::Compare_UIntPtr ||
-      type == MCompare::Compare_RefOrNull) {
+      type == MCompare::Compare_WasmAnyRef) {
     if (right->isConstant()) {
       MOZ_ASSERT(type == MCompare::Compare_UIntPtr);
       masm.cmpPtr(ToRegister(left), Imm32(ToInt32(right)));
@@ -304,7 +304,7 @@ void CodeGenerator::visitWasmSelect(LWasmSelect* ins) {
 
   masm.test32(cond, cond);
 
-  if (mirType == MIRType::Int32 || mirType == MIRType::RefOrNull) {
+  if (mirType == MIRType::Int32 || mirType == MIRType::WasmAnyRef) {
     Register out = ToRegister(ins->output());
     MOZ_ASSERT(ToRegister(ins->trueExpr()) == out,
                "true expr input is reused for output");
@@ -2250,19 +2250,19 @@ void CodeGenerator::visitWasmTernarySimd128(LWasmTernarySimd128* ins) {
       masm.bitwiseSelectSimd128(control, lhsDest, rhs, lhsDest, temp);
       break;
     }
-    case wasm::SimdOp::F32x4RelaxedFma:
+    case wasm::SimdOp::F32x4RelaxedMadd:
       masm.fmaFloat32x4(ToFloatRegister(ins->v0()), ToFloatRegister(ins->v1()),
                         ToFloatRegister(ins->v2()));
       break;
-    case wasm::SimdOp::F32x4RelaxedFnma:
+    case wasm::SimdOp::F32x4RelaxedNmadd:
       masm.fnmaFloat32x4(ToFloatRegister(ins->v0()), ToFloatRegister(ins->v1()),
                          ToFloatRegister(ins->v2()));
       break;
-    case wasm::SimdOp::F64x2RelaxedFma:
+    case wasm::SimdOp::F64x2RelaxedMadd:
       masm.fmaFloat64x2(ToFloatRegister(ins->v0()), ToFloatRegister(ins->v1()),
                         ToFloatRegister(ins->v2()));
       break;
-    case wasm::SimdOp::F64x2RelaxedFnma:
+    case wasm::SimdOp::F64x2RelaxedNmadd:
       masm.fnmaFloat64x2(ToFloatRegister(ins->v0()), ToFloatRegister(ins->v1()),
                          ToFloatRegister(ins->v2()));
       break;
@@ -3794,8 +3794,8 @@ void CodeGenerator::visitWasmLoadLaneSimd128(LWasmLoadLaneSimd128* ins) {
   const MWasmLoadLaneSimd128* mir = ins->mir();
   const wasm::MemoryAccessDesc& access = mir->access();
 
+  access.assertOffsetInGuardPages();
   uint32_t offset = access.offset();
-  MOZ_ASSERT(offset < masm.wasmMaxOffsetGuardLimit());
 
   const LAllocation* value = ins->src();
   Operand srcAddr = toMemoryAccessOperand(ins, offset);
@@ -3838,8 +3838,8 @@ void CodeGenerator::visitWasmStoreLaneSimd128(LWasmStoreLaneSimd128* ins) {
   const MWasmStoreLaneSimd128* mir = ins->mir();
   const wasm::MemoryAccessDesc& access = mir->access();
 
+  access.assertOffsetInGuardPages();
   uint32_t offset = access.offset();
-  MOZ_ASSERT(offset < masm.wasmMaxOffsetGuardLimit());
 
   const LAllocation* src = ins->src();
   Operand destAddr = toMemoryAccessOperand(ins, offset);

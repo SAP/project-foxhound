@@ -439,14 +439,6 @@ class EditorBase : public nsIEditor,
       WidgetCompositionEvent& aCompositionEndEvent);
 
   /**
-   * Similar to the setter for wrapWidth, but just sets the editor
-   * internal state without actually changing the content being edited
-   * to wrap at that column.  This should only be used by callers who
-   * are sure that their content is already set up correctly.
-   */
-  void SetWrapColumn(int32_t aWrapColumn) { mWrapColumn = aWrapColumn; }
-
-  /**
    * Accessor methods to flags.
    */
   uint32_t Flags() const { return mFlags; }
@@ -479,13 +471,6 @@ class EditorBase : public nsIEditor,
     return SetFlags(kNewFlags);  // virtual call and may be expensive.
   }
 
-  bool IsInPlaintextMode() const {
-    const bool isPlaintextMode =
-        (mFlags & nsIEditor::eEditorPlaintextMask) != 0;
-    MOZ_ASSERT_IF(IsTextEditor(), isPlaintextMode);
-    return isPlaintextMode;
-  }
-
   bool IsSingleLineEditor() const {
     const bool isSingleLineEditor =
         (mFlags & nsIEditor::eEditorSingleLineMask) != 0;
@@ -515,10 +500,6 @@ class EditorBase : public nsIEditor,
 
   bool IsMailEditor() const {
     return (mFlags & nsIEditor::eEditorMailMask) != 0;
-  }
-
-  bool IsWrapHackEnabled() const {
-    return (mFlags & nsIEditor::eEditorEnableWrapHackMask) != 0;
   }
 
   bool IsInteractionAllowed() const {
@@ -1679,8 +1660,10 @@ class EditorBase : public nsIEditor,
   /**
    * Insert aStringToInsert to aPointToInsert or better insertion point around
    * it.  If aPointToInsert isn't in a text node, this method looks for the
-   * nearest point in a text node with FindBetterInsertionPoint().  If there is
-   * no text node, this creates new text node and put aStringToInsert to it.
+   * nearest point in a text node with TextEditor::FindBetterInsertionPoint()
+   * or EditorDOMPoint::GetPointInTextNodeIfPointingAroundTextNode().
+   * If there is no text node, this creates new text node and put
+   * aStringToInsert to it.
    *
    * @param aDocument       The document of this editor.
    * @param aStringToInsert The string to insert.
@@ -1963,18 +1946,6 @@ class EditorBase : public nsIEditor,
    * editor was focused when the DOM window was active.
    */
   virtual bool IsActiveInDOMWindow() const;
-
-  /**
-   * FindBetterInsertionPoint() tries to look for better insertion point which
-   * is typically the nearest text node and offset in it.
-   *
-   * @param aPoint      Insertion point which the callers found.
-   * @return            Better insertion point if there is.  If not returns
-   *                    same point as aPoint.
-   */
-  template <typename EditorDOMPointType>
-  EditorDOMPointType FindBetterInsertionPoint(
-      const EditorDOMPointType& aPoint) const;
 
   /**
    * HideCaret() hides caret with nsCaret::AddForceHide() or may show carent
@@ -2876,7 +2847,7 @@ class EditorBase : public nsIEditor,
   // Nesting count for batching.
   int32_t mPlaceholderBatch;
 
-  int32_t mWrapColumn;
+  int32_t mWrapColumn = 0;
   int32_t mNewlineHandling;
   int32_t mCaretStyle;
 

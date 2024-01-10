@@ -60,7 +60,7 @@ pub mod dx12;
 /// A dummy API implementation.
 pub mod empty;
 /// GLES API internals.
-#[cfg(all(feature = "gles"))]
+#[cfg(feature = "gles")]
 pub mod gles;
 /// Metal API internals.
 #[cfg(all(feature = "metal", any(target_os = "macos", target_os = "ios")))]
@@ -95,6 +95,7 @@ use std::{
 
 use bitflags::bitflags;
 use thiserror::Error;
+use wgt::{WasmNotSend, WasmNotSync};
 
 pub const MAX_ANISOTROPY: u8 = 16;
 pub const MAX_BIND_GROUPS: usize = 8;
@@ -117,6 +118,8 @@ pub enum DeviceError {
     OutOfMemory,
     #[error("Device is lost")]
     Lost,
+    #[error("Creation of a resource failed for a reason other than running out of memory.")]
+    ResourceCreationFailed,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Error)]
@@ -161,25 +164,25 @@ pub trait Api: Clone + Sized {
 
     type Queue: Queue<Self>;
     type CommandEncoder: CommandEncoder<Self>;
-    type CommandBuffer: Send + Sync + fmt::Debug;
+    type CommandBuffer: WasmNotSend + WasmNotSync + fmt::Debug;
 
-    type Buffer: fmt::Debug + Send + Sync + 'static;
-    type Texture: fmt::Debug + Send + Sync + 'static;
-    type SurfaceTexture: fmt::Debug + Send + Sync + Borrow<Self::Texture>;
-    type TextureView: fmt::Debug + Send + Sync;
-    type Sampler: fmt::Debug + Send + Sync;
-    type QuerySet: fmt::Debug + Send + Sync;
-    type Fence: fmt::Debug + Send + Sync;
+    type Buffer: fmt::Debug + WasmNotSend + WasmNotSync + 'static;
+    type Texture: fmt::Debug + WasmNotSend + WasmNotSync + 'static;
+    type SurfaceTexture: fmt::Debug + WasmNotSend + WasmNotSync + Borrow<Self::Texture>;
+    type TextureView: fmt::Debug + WasmNotSend + WasmNotSync;
+    type Sampler: fmt::Debug + WasmNotSend + WasmNotSync;
+    type QuerySet: fmt::Debug + WasmNotSend + WasmNotSync;
+    type Fence: fmt::Debug + WasmNotSend + WasmNotSync;
 
-    type BindGroupLayout: Send + Sync;
-    type BindGroup: fmt::Debug + Send + Sync;
-    type PipelineLayout: Send + Sync;
-    type ShaderModule: fmt::Debug + Send + Sync;
-    type RenderPipeline: Send + Sync;
-    type ComputePipeline: Send + Sync;
+    type BindGroupLayout: WasmNotSend + WasmNotSync;
+    type BindGroup: fmt::Debug + WasmNotSend + WasmNotSync;
+    type PipelineLayout: WasmNotSend + WasmNotSync;
+    type ShaderModule: fmt::Debug + WasmNotSend + WasmNotSync;
+    type RenderPipeline: WasmNotSend + WasmNotSync;
+    type ComputePipeline: WasmNotSend + WasmNotSync;
 }
 
-pub trait Instance<A: Api>: Sized + Send + Sync {
+pub trait Instance<A: Api>: Sized + WasmNotSend + WasmNotSync {
     unsafe fn init(desc: &InstanceDescriptor) -> Result<Self, InstanceError>;
     unsafe fn create_surface(
         &self,
@@ -190,7 +193,7 @@ pub trait Instance<A: Api>: Sized + Send + Sync {
     unsafe fn enumerate_adapters(&self) -> Vec<ExposedAdapter<A>>;
 }
 
-pub trait Surface<A: Api>: Send + Sync {
+pub trait Surface<A: Api>: WasmNotSend + WasmNotSync {
     unsafe fn configure(
         &mut self,
         device: &A::Device,
@@ -216,7 +219,7 @@ pub trait Surface<A: Api>: Send + Sync {
     unsafe fn discard_texture(&mut self, texture: A::SurfaceTexture);
 }
 
-pub trait Adapter<A: Api>: Send + Sync {
+pub trait Adapter<A: Api>: WasmNotSend + WasmNotSync {
     unsafe fn open(
         &self,
         features: wgt::Features,
@@ -240,7 +243,7 @@ pub trait Adapter<A: Api>: Send + Sync {
     unsafe fn get_presentation_timestamp(&self) -> wgt::PresentationTimestamp;
 }
 
-pub trait Device<A: Api>: Send + Sync {
+pub trait Device<A: Api>: WasmNotSend + WasmNotSync {
     /// Exit connection to this logical device.
     unsafe fn exit(self, queue: A::Queue);
     /// Creates a new buffer.
@@ -336,7 +339,7 @@ pub trait Device<A: Api>: Send + Sync {
     unsafe fn stop_capture(&self);
 }
 
-pub trait Queue<A: Api>: Send + Sync {
+pub trait Queue<A: Api>: WasmNotSend + WasmNotSync {
     /// Submits the command buffers for execution on GPU.
     ///
     /// Valid usage:
@@ -360,7 +363,7 @@ pub trait Queue<A: Api>: Send + Sync {
 /// Serves as a parent for all the encoded command buffers.
 /// Works in bursts of action: one or more command buffers are recorded,
 /// then submitted to a queue, and then it needs to be `reset_all()`.
-pub trait CommandEncoder<A: Api>: Send + Sync + fmt::Debug {
+pub trait CommandEncoder<A: Api>: WasmNotSend + WasmNotSync + fmt::Debug {
     /// Begin encoding a new command buffer.
     unsafe fn begin_encoding(&mut self, label: Label) -> Result<(), DeviceError>;
     /// Discard currently recorded list, if any.
@@ -462,7 +465,13 @@ pub trait CommandEncoder<A: Api>: Send + Sync + fmt::Debug {
 
     // queries
 
+    /// # Safety:
+    ///
+    /// - If `set` is an occlusion query set, it must be the same one as used in the [`RenderPassDescriptor::occlusion_query_set`] parameter.
     unsafe fn begin_query(&mut self, set: &A::QuerySet, index: u32);
+    /// # Safety:
+    ///
+    /// - If `set` is an occlusion query set, it must be the same one as used in the [`RenderPassDescriptor::occlusion_query_set`] parameter.
     unsafe fn end_query(&mut self, set: &A::QuerySet, index: u32);
     unsafe fn write_timestamp(&mut self, set: &A::QuerySet, index: u32);
     unsafe fn reset_queries(&mut self, set: &A::QuerySet, range: Range<u32>);
@@ -541,7 +550,7 @@ pub trait CommandEncoder<A: Api>: Send + Sync + fmt::Debug {
     // compute passes
 
     // Begins a compute pass, clears all active bindings.
-    unsafe fn begin_compute_pass(&mut self, desc: &ComputePassDescriptor);
+    unsafe fn begin_compute_pass(&mut self, desc: &ComputePassDescriptor<A>);
     unsafe fn end_compute_pass(&mut self);
 
     unsafe fn set_compute_pipeline(&mut self, pipeline: &A::ComputePipeline);
@@ -717,6 +726,8 @@ bitflags::bitflags! {
         const STORAGE_READ_WRITE = 1 << 8;
         /// The indirect or count buffer in a indirect draw or dispatch.
         const INDIRECT = 1 << 9;
+        /// A buffer used to store query results.
+        const QUERY_RESOLVE = 1 << 10;
         /// The combination of states that a buffer may be in _at the same time_.
         const INCLUSIVE = Self::MAP_READ.bits() | Self::COPY_SRC.bits() |
             Self::INDEX.bits() | Self::VERTEX.bits() | Self::UNIFORM.bits() |
@@ -1261,6 +1272,24 @@ pub struct DepthStencilAttachment<'a, A: Api> {
     pub clear_value: (f32, u32),
 }
 
+#[derive(Debug)]
+pub struct RenderPassTimestampWrites<'a, A: Api> {
+    pub query_set: &'a A::QuerySet,
+    pub beginning_of_pass_write_index: Option<u32>,
+    pub end_of_pass_write_index: Option<u32>,
+}
+
+// Rust gets confused about the impl requirements for `A`
+impl<A: Api> Clone for RenderPassTimestampWrites<'_, A> {
+    fn clone(&self) -> Self {
+        Self {
+            query_set: self.query_set,
+            beginning_of_pass_write_index: self.beginning_of_pass_write_index,
+            end_of_pass_write_index: self.end_of_pass_write_index,
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct RenderPassDescriptor<'a, A: Api> {
     pub label: Label<'a>,
@@ -1269,11 +1298,32 @@ pub struct RenderPassDescriptor<'a, A: Api> {
     pub color_attachments: &'a [Option<ColorAttachment<'a, A>>],
     pub depth_stencil_attachment: Option<DepthStencilAttachment<'a, A>>,
     pub multiview: Option<NonZeroU32>,
+    pub timestamp_writes: Option<RenderPassTimestampWrites<'a, A>>,
+    pub occlusion_query_set: Option<&'a A::QuerySet>,
+}
+
+#[derive(Debug)]
+pub struct ComputePassTimestampWrites<'a, A: Api> {
+    pub query_set: &'a A::QuerySet,
+    pub beginning_of_pass_write_index: Option<u32>,
+    pub end_of_pass_write_index: Option<u32>,
+}
+
+// Rust gets confused about the impl requirements for `A`
+impl<A: Api> Clone for ComputePassTimestampWrites<'_, A> {
+    fn clone(&self) -> Self {
+        Self {
+            query_set: self.query_set,
+            beginning_of_pass_write_index: self.beginning_of_pass_write_index,
+            end_of_pass_write_index: self.end_of_pass_write_index,
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
-pub struct ComputePassDescriptor<'a> {
+pub struct ComputePassDescriptor<'a, A: Api> {
     pub label: Label<'a>,
+    pub timestamp_writes: Option<ComputePassTimestampWrites<'a, A>>,
 }
 
 /// Stores if any API validation error has occurred in this process

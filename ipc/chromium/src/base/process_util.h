@@ -12,15 +12,15 @@
 
 #include "base/basictypes.h"
 
-#if defined(OS_WIN)
+#if defined(XP_WIN)
 #  include "mozilla/ipc/EnvironmentMap.h"
 #  include <windows.h>
 #  include <tlhelp32.h>
-#elif defined(OS_LINUX) || defined(__GLIBC__)
+#elif defined(XP_LINUX) || defined(__GLIBC__)
 #  include <dirent.h>
 #  include <limits.h>
 #  include <sys/types.h>
-#elif defined(OS_MACOSX)
+#elif defined(XP_DARWIN)
 #  include <mach/mach.h>
 #endif
 
@@ -49,7 +49,7 @@ class FileDescriptor;
 }  // namespace mozilla
 #endif
 
-#if defined(OS_MACOSX)
+#if defined(XP_DARWIN)
 struct kinfo_proc;
 #endif
 
@@ -105,7 +105,7 @@ void CloseProcessHandle(ProcessHandle process);
 // Win XP SP1 as well.
 ProcessId GetProcId(ProcessHandle process);
 
-#if defined(OS_POSIX)
+#if defined(XP_UNIX)
 // Close all file descriptors, except for std{in,out,err} and those
 // for which the given function returns true.  Only call this function
 // in a child process where you know that there aren't any other
@@ -128,7 +128,7 @@ struct LaunchOptions {
   // immediately.
   bool wait = false;
 
-#if defined(OS_WIN)
+#if defined(XP_WIN)
   bool start_hidden = false;
 
   // Start as an independent process rather than a process that is closed by the
@@ -141,7 +141,7 @@ struct LaunchOptions {
 
   std::vector<HANDLE> handles_to_inherit;
 #endif
-#if defined(OS_POSIX)
+#if defined(XP_UNIX)
   environment_map env_map;
 
   // If non-null, specifies the entire environment to use for the
@@ -163,7 +163,7 @@ struct LaunchOptions {
   bool use_forkserver = false;
 #endif
 
-#if defined(OS_LINUX)
+#if defined(XP_LINUX)
   struct ForkDelegate {
     virtual ~ForkDelegate() {}
     virtual pid_t Fork() = 0;
@@ -174,7 +174,7 @@ struct LaunchOptions {
   mozilla::UniquePtr<ForkDelegate> fork_delegate = nullptr;
 #endif
 
-#ifdef OS_MACOSX
+#ifdef XP_DARWIN
   // On macOS 10.14+, disclaims responsibility for the child process
   // with respect to privacy/security permission prompts and
   // decisions.  Ignored if not supported by the OS.
@@ -185,10 +185,10 @@ struct LaunchOptions {
   // processes from arm64 parent processes.
   uint32_t arch = PROCESS_ARCH_INVALID;
 #  endif  // __aarch64__
-#endif    // OS_MACOSX
+#endif    // XP_DARWIN
 };
 
-#if defined(OS_WIN)
+#if defined(XP_WIN)
 // Runs the given application name with the given command line. Normally, the
 // first command line argument should be the path to the process, and don't
 // forget to quote it.
@@ -204,7 +204,7 @@ Result<Ok, LaunchError> LaunchApp(const std::wstring& cmdline,
                                   const LaunchOptions& options,
                                   ProcessHandle* process_handle);
 
-#elif defined(OS_POSIX)
+#else
 // Runs the application specified in argv[0] with the command line argv.
 //
 // The pid will be stored in process_handle if that pointer is
@@ -280,7 +280,7 @@ Result<Ok, LaunchError> LaunchApp(const CommandLine& cl, const LaunchOptions&,
 // Returns true if this is successful, false otherwise.
 bool KillProcess(ProcessHandle process, int exit_code);
 
-#ifdef OS_POSIX
+#ifdef XP_UNIX
 // Returns whether the given process has exited.  If it returns true,
 // the process status has been consumed and `IsProcessDead` should not
 // be called again on the same process (like `waitpid`).
@@ -314,7 +314,7 @@ class EnvironmentLog {
  private:
   explicit EnvironmentLog(const char* varname, size_t len);
 
-#if defined(OS_WIN)
+#if defined(XP_WIN)
   std::wstring fname_;
 #else
   std::string fname_;
@@ -330,7 +330,7 @@ typedef std::tuple<mozilla::ipc::FileDescriptor, int> FdMapping;
 
 }  // namespace mozilla
 
-#if defined(OS_WIN)
+#if defined(XP_WIN)
 // Undo the windows.h damage
 #  undef GetMessage
 #  undef CreateEvent

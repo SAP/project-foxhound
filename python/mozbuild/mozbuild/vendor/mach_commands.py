@@ -182,13 +182,9 @@ Please commit or stash these changes before vendoring, or re-run with `--ignore-
     default=False,
 )
 @CommandArgument(
-    "--build-peers-said-large-imports-were-ok",
+    "--force",
     action="store_true",
-    help=(
-        "Permit overly-large files to be added to the repository. "
-        "To get permission to set this, raise a question in the #build "
-        "channel at https://chat.mozilla.org."
-    ),
+    help=("Ignore any kind of error that happens during vendoring"),
     default=False,
 )
 @CommandArgument(
@@ -204,7 +200,11 @@ def vendor_rust(command_context, **kwargs):
     if issues_json:
         with open(issues_json, "w") as fh:
             fh.write(vendor_command.serialize_issues_json())
-    sys.exit(0 if ok else 1)
+    if ok:
+        sys.exit(0)
+    else:
+        print("Errors occured; new rust crates were not vendored.")
+        sys.exit(1)
 
 
 # =====================================================================

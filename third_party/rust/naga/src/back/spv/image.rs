@@ -759,7 +759,7 @@ impl<'w> BlockContext<'w> {
         let sample_id = sample.map(|expr| self.cached[expr]);
 
         // Perform the access, according to the bounds check policy.
-        let access_id = match self.writer.bounds_check_policies.image {
+        let access_id = match self.writer.bounds_check_policies.image_load {
             crate::proc::BoundsCheckPolicy::Restrict => {
                 let (coords, level_id, sample_id) = self.write_restricted_coordinates(
                     image_id,
@@ -823,7 +823,7 @@ impl<'w> BlockContext<'w> {
         gather: Option<crate::SwizzleComponent>,
         coordinate: Handle<crate::Expression>,
         array_index: Option<Handle<crate::Expression>>,
-        offset: Option<Handle<crate::Constant>>,
+        offset: Option<Handle<crate::Expression>>,
         level: crate::SampleLevel,
         depth_ref: Option<Handle<crate::Expression>>,
         block: &mut Block,
@@ -901,9 +901,7 @@ impl<'w> BlockContext<'w> {
                     depth_id,
                 );
 
-                let zero_id = self
-                    .writer
-                    .get_constant_scalar(crate::ScalarValue::Float(0.0), 4);
+                let zero_id = self.writer.get_constant_scalar(crate::Literal::F32(0.0));
 
                 mask |= spirv::ImageOperands::LOD;
                 inst.add_operand(mask.bits());
@@ -1237,7 +1235,7 @@ impl<'w> BlockContext<'w> {
 
         let write = Store { image_id, value_id };
 
-        match self.writer.bounds_check_policies.image {
+        match self.writer.bounds_check_policies.image_store {
             crate::proc::BoundsCheckPolicy::Restrict => {
                 let (coords, _, _) =
                     self.write_restricted_coordinates(image_id, coordinates, None, None, block)?;

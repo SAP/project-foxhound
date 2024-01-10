@@ -47,12 +47,15 @@ Review groups
    * - #cookies
      - `Core: Cookies </mots/index.html#core-cookies>`__
      - `Member list <https://phabricator.services.mozilla.com/project/members/177/>`__
-   * - #dom-workers-and-storage-reviewers
-     - DOM Workers & Storage
-     - `Member list <https://phabricator.services.mozilla.com/project/members/115/>`__
+   * - #desktop-theme-reviewers
+     - User interface CSS
+     - `Member list <https://phabricator.services.mozilla.com/project/members/141/>`__
    * - #devtools-reviewers
      - Firefox DevTools
      - `Member list <https://phabricator.services.mozilla.com/project/members/153/>`__
+   * - #dom-workers-and-storage-reviewers
+     - DOM Workers & Storage
+     - `Member list <https://phabricator.services.mozilla.com/project/members/115/>`__
    * - #fluent-reviewers
      - Changes to Fluent (FTL) files (translation).
      - `Member list <https://phabricator.services.mozilla.com/project/members/105/>`__
@@ -104,6 +107,9 @@ Review groups
    * - #permissions or #permissions-reviewers
      - `Permissions </mots/index.html#core-permissions>`__
      - `Member list <https://phabricator.services.mozilla.com/project/members/158/>`__
+   * - #places-reviewers
+     - `Bookmarks & History (Places) </mots/index.html#bookmarks-history>`__
+     - `Member list <https://phabricator.services.mozilla.com/project/members/186/>`__
    * - #platform-i18n-reviewers
      - Platform Internationalization
      - `Member list <https://phabricator.services.mozilla.com/project/members/150/>`__
@@ -113,6 +119,9 @@ Review groups
    * - #remote-debugging-reviewers
      - Remote Debugging UI & tools
      - `Member list <https://phabricator.services.mozilla.com/project/members/108/>`__
+   * - #search-reviewers
+     - Search Reviewers (search parts of `Search and Address Bar </mots/index.html#search-and-address-bar>`__)
+     - `Member list <https://phabricator.services.mozilla.com/project/members/169/>`__
    * - #spidermonkey-reviewers
      - SpiderMonkey JS/Wasm Engine
      - `Member list <https://phabricator.services.mozilla.com/project/members/173/>`__

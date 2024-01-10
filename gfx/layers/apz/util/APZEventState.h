@@ -135,7 +135,7 @@ class APZEventState final {
 
  private:
   ~APZEventState();
-  bool SendPendingTouchPreventedResponse(bool aPreventDefault);
+  void SendPendingTouchPreventedResponse(bool aPreventDefault);
   MOZ_CAN_RUN_SCRIPT
   PreventDefaultResult FireContextmenuEvents(
       PresShell* aPresShell, const CSSPoint& aPoint,
@@ -156,6 +156,11 @@ class APZEventState final {
   bool mEndTouchIsClick;
   bool mFirstTouchCancelled;
   bool mTouchEndCancelled;
+  // Set to true when we have received any one of
+  // touch-move/touch-end/touch-cancel events in the touch block being
+  // processed.
+  bool mReceivedNonTouchStart;
+  bool mTouchStartPrevented;
 
   // Store pending single tap event dispatch tasks keyed on the
   // tap gesture's input block id. In the case where multiple taps

@@ -2433,8 +2433,7 @@ void gfxPlatform::InitAcceleration() {
       gfxCriticalNote << "Cannot evaluate keyed mutex feature status";
       gfxVars::SetAllowD3D11KeyedMutex(true);
     }
-    if (StaticPrefs::gfx_direct3d11_use_double_buffering() &&
-        IsWin10OrLater()) {
+    if (StaticPrefs::gfx_direct3d11_use_double_buffering()) {
       gfxVars::SetUseDoubleBufferingWithCompositor(true);
     }
 #endif
@@ -2574,8 +2573,7 @@ void gfxPlatform::InitCompositorAccelerationPrefs() {
 
 /*static*/
 bool gfxPlatform::WebRenderPrefEnabled() {
-  return StaticPrefs::gfx_webrender_all_AtStartup() ||
-         StaticPrefs::gfx_webrender_enabled_AtStartup_DoNotUseDirectly();
+  return StaticPrefs::gfx_webrender_all_AtStartup();
 }
 
 /*static*/
@@ -2596,8 +2594,7 @@ void gfxPlatform::InitWebRenderConfig() {
   bool prefEnabled = WebRenderPrefEnabled();
   bool envvarEnabled = WebRenderEnvvarEnabled();
 
-  // WR? WR+   => means WR was enabled via gfx.webrender.all.qualified on
-  //              qualified hardware
+  // WR? WR+   => means WR was enabled on qualified hardware
   // WR! WR+   => means WR was enabled via gfx.webrender.{all,enabled} or
   //              envvar, possibly on unqualified hardware
   // In all cases WR- means WR was not enabled, for one of many possible
@@ -2684,6 +2681,12 @@ void gfxPlatform::InitWebRenderConfig() {
 
   UpdateForceSubpixelAAWherePossible();
 
+#if defined(MOZ_WIDGET_ANDROID) || defined(MOZ_WIDGET_GTK)
+  if (StaticPrefs::gfx_webrender_software_opengl_AtStartup()) {
+    gfxVars::SetAllowSoftwareWebRenderOGL(true);
+  }
+#endif
+
 #ifdef XP_WIN
   if (gfxConfig::IsEnabled(Feature::WEBRENDER_DCOMP_PRESENT)) {
     gfxVars::SetUseWebRenderDCompWin(true);
@@ -2698,55 +2701,97 @@ void gfxPlatform::InitWebRenderConfig() {
   MOZ_ASSERT_IF(overlaySupported,
                 gfxConfig::IsEnabled(Feature::WEBRENDER_DCOMP_PRESENT));
 
-  bool useVideoOverlay = false;
-  if (StaticPrefs::gfx_webrender_dcomp_video_overlay_win_AtStartup()) {
+  bool useVideoHwOverlay = false;
+  if (StaticPrefs::gfx_webrender_dcomp_video_hw_overlay_win_AtStartup()) {
     if (overlaySupported) {
-      useVideoOverlay = true;
+      useVideoHwOverlay = true;
     }
 
-    if (useVideoOverlay &&
+    if (useVideoHwOverlay &&
         !StaticPrefs::
-            gfx_webrender_dcomp_video_overlay_win_force_enabled_AtStartup()) {
+            gfx_webrender_dcomp_video_hw_overlay_win_force_enabled_AtStartup()) {
       nsCString failureId;
       int32_t status;
       const nsCOMPtr<nsIGfxInfo> gfxInfo = components::GfxInfo::Service();
       if (NS_FAILED(gfxInfo->GetFeatureStatus(nsIGfxInfo::FEATURE_VIDEO_OVERLAY,
                                               failureId, &status))) {
-        FeatureState& feature = gfxConfig::GetFeature(Feature::VIDEO_OVERLAY);
+        FeatureState& feature =
+            gfxConfig::GetFeature(Feature::VIDEO_HARDWARE_OVERLAY);
         feature.DisableByDefault(FeatureStatus::BlockedNoGfxInfo,
                                  "gfxInfo is broken",
                                  "FEATURE_FAILURE_WR_NO_GFX_INFO"_ns);
-        useVideoOverlay = false;
+        useVideoHwOverlay = false;
       } else {
         if (status != nsIGfxInfo::FEATURE_ALLOW_ALWAYS) {
-          FeatureState& feature = gfxConfig::GetFeature(Feature::VIDEO_OVERLAY);
+          FeatureState& feature =
+              gfxConfig::GetFeature(Feature::VIDEO_HARDWARE_OVERLAY);
           feature.DisableByDefault(FeatureStatus::Blocked,
                                    "Blocklisted by gfxInfo", failureId);
-          useVideoOverlay = false;
+          useVideoHwOverlay = false;
         }
       }
     }
   } else if (overlaySupported) {
-    FeatureState& feature = gfxConfig::GetFeature(Feature::VIDEO_OVERLAY);
+    FeatureState& feature =
+        gfxConfig::GetFeature(Feature::VIDEO_HARDWARE_OVERLAY);
     feature.DisableByDefault(FeatureStatus::Blocked, "Disabled by pref",
                              "FEATURE_FAILURE_DISABLED_BY_PREF"_ns);
   }
 
-  if (useVideoOverlay) {
-    FeatureState& feature = gfxConfig::GetFeature(Feature::VIDEO_OVERLAY);
+  if (useVideoHwOverlay) {
+    FeatureState& feature =
+        gfxConfig::GetFeature(Feature::VIDEO_HARDWARE_OVERLAY);
     feature.EnableByDefault();
-    gfxVars::SetUseWebRenderDCompVideoOverlayWin(true);
+    gfxVars::SetUseWebRenderDCompVideoHwOverlayWin(true);
   }
 
-  if (useVideoOverlay &&
+  bool useVideoSwOverlay = false;
+  if (overlaySupported &&
       StaticPrefs::gfx_webrender_dcomp_video_sw_overlay_win_AtStartup()) {
-    gfxVars::SetUseWebRenderDCompSwVideoOverlayWin(true);
+    useVideoSwOverlay = true;
+
+    if (useVideoSwOverlay &&
+        !StaticPrefs::
+            gfx_webrender_dcomp_video_sw_overlay_win_force_enabled_AtStartup()) {
+      nsCString failureId;
+      int32_t status;
+      const nsCOMPtr<nsIGfxInfo> gfxInfo = components::GfxInfo::Service();
+      if (NS_FAILED(gfxInfo->GetFeatureStatus(
+              nsIGfxInfo::FEATURE_VIDEO_SOFTWARE_OVERLAY, failureId,
+              &status))) {
+        FeatureState& feature =
+            gfxConfig::GetFeature(Feature::VIDEO_SOFTWARE_OVERLAY);
+        feature.DisableByDefault(FeatureStatus::BlockedNoGfxInfo,
+                                 "gfxInfo is broken",
+                                 "FEATURE_FAILURE_WR_NO_GFX_INFO"_ns);
+        useVideoSwOverlay = false;
+      } else {
+        if (status != nsIGfxInfo::FEATURE_STATUS_OK) {
+          FeatureState& feature =
+              gfxConfig::GetFeature(Feature::VIDEO_SOFTWARE_OVERLAY);
+          feature.DisableByDefault(FeatureStatus::Blocked,
+                                   "Blocklisted by gfxInfo", failureId);
+          useVideoSwOverlay = false;
+        }
+      }
+    }
+  } else if (overlaySupported) {
+    FeatureState& feature =
+        gfxConfig::GetFeature(Feature::VIDEO_SOFTWARE_OVERLAY);
+    feature.DisableByDefault(FeatureStatus::Blocked, "Disabled by pref",
+                             "FEATURE_FAILURE_DISABLED_BY_PREF"_ns);
+  }
+
+  if (useVideoSwOverlay) {
+    FeatureState& feature =
+        gfxConfig::GetFeature(Feature::VIDEO_SOFTWARE_OVERLAY);
+    feature.EnableByDefault();
+    gfxVars::SetUseWebRenderDCompVideoSwOverlayWin(true);
   }
 
   bool useHwVideoZeroCopy = false;
   if (StaticPrefs::media_wmf_zero_copy_nv12_textures_AtStartup()) {
-    // XXX relax limitation to Windows 8.1
-    if (IsWin10OrLater() && hasHardware) {
+    if (hasHardware) {
       useHwVideoZeroCopy = true;
     }
 
@@ -2997,7 +3042,7 @@ void gfxPlatform::InitWebGLConfig() {
     }
   }
 
-  if (kIsWayland || kIsX11) {
+  if (kIsLinux) {
     nsCString discardFailureId;
     int32_t status;
     FeatureState& feature =
@@ -3294,7 +3339,7 @@ bool gfxPlatform::IsInLayoutAsapMode() {
 static int LayoutFrameRateFromPrefs() {
   auto val = StaticPrefs::layout_frame_rate();
   if (nsContentUtils::ShouldResistFingerprinting(
-          "The frame rate is a global property.")) {
+          "The frame rate is a global property.", RFPTarget::FrameRate)) {
     val = 60;
   }
   return val;
@@ -3681,8 +3726,7 @@ bool gfxPlatform::FallbackFromAcceleration(FeatureStatus aStatus,
 #ifdef XP_WIN
   // Before we disable D3D11 and HW_COMPOSITING, we should check if we can
   // fallback from WebRender to Software WebRender + D3D11 compositing.
-  if (StaticPrefs::gfx_webrender_fallback_software_d3d11_AtStartup() &&
-      swglFallbackAllowed && gfxVars::AllowSoftwareWebRenderD3D11() &&
+  if (swglFallbackAllowed && gfxVars::AllowSoftwareWebRenderD3D11() &&
       gfxConfig::IsEnabled(Feature::D3D11_COMPOSITING) &&
       !gfxVars::UseSoftwareWebRender()) {
     // Fallback to Software WebRender + D3D11 compositing.
@@ -3691,8 +3735,7 @@ bool gfxPlatform::FallbackFromAcceleration(FeatureStatus aStatus,
     return true;
   }
 
-  if (StaticPrefs::gfx_webrender_fallback_software_d3d11_AtStartup() &&
-      swglFallbackAllowed && gfxVars::AllowSoftwareWebRenderD3D11() &&
+  if (swglFallbackAllowed && gfxVars::AllowSoftwareWebRenderD3D11() &&
       gfxVars::UseSoftwareWebRender()) {
     // Fallback from Software WebRender + D3D11 to Software WebRender.
     gfxCriticalNote << "Fallback SW-WR + D3D11 to SW-WR";
@@ -3709,6 +3752,29 @@ bool gfxPlatform::FallbackFromAcceleration(FeatureStatus aStatus,
   if (gfxConfig::IsEnabled(Feature::D3D11_COMPOSITING)) {
     gfxConfig::GetFeature(Feature::D3D11_COMPOSITING)
         .ForceDisable(aStatus, aMessage, aFailureId);
+  }
+#endif
+
+#if defined(MOZ_WIDGET_ANDROID) || defined(MOZ_WIDGET_GTK)
+  // Before we disable OpenGL and HW_COMPOSITING, we should check if we can
+  // fallback from WebRender to Software WebRender + OpenGL compositing.
+  if (swglFallbackAllowed && gfxVars::AllowSoftwareWebRenderOGL() &&
+      gfxConfig::IsEnabled(Feature::OPENGL_COMPOSITING) &&
+      !gfxVars::UseSoftwareWebRender()) {
+    // Fallback to Software WebRender + OpenGL compositing.
+    gfxCriticalNote << "Fallback WR to SW-WR + OpenGL";
+    gfxVars::SetUseSoftwareWebRender(true);
+    return true;
+  }
+#endif
+  // Android does not want to fallback to SW-WR.
+#ifdef MOZ_WIDGET_GTK
+  if (swglFallbackAllowed && gfxVars::AllowSoftwareWebRenderOGL() &&
+      gfxVars::UseSoftwareWebRender()) {
+    // Fallback from Software WebRender + OpenGL to Software WebRender.
+    gfxCriticalNote << "Fallback SW-WR + OpenGL to SW-WR";
+    gfxVars::SetAllowSoftwareWebRenderOGL(false);
+    return true;
   }
 #endif
 

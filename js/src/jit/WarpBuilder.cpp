@@ -966,6 +966,9 @@ bool WarpBuilder::build_GetActualArg(BytecodeLocation) {
   MInstruction* arg;
   if (inlineCallInfo()) {
     arg = MGetInlinedArgument::New(alloc(), index, *inlineCallInfo());
+    if (!arg) {
+      return false;
+    }
   } else {
     arg = MGetFrameArgument::New(alloc(), index);
   }
@@ -2726,7 +2729,7 @@ bool WarpBuilder::build_CheckIsObj(BytecodeLocation loc) {
   MCheckIsObj* ins = MCheckIsObj::New(alloc(), val, uint8_t(kind));
   current->add(ins);
   current->push(ins);
-  return true;
+  return resumeAfter(ins, loc);
 }
 
 bool WarpBuilder::build_CheckObjCoercible(BytecodeLocation loc) {

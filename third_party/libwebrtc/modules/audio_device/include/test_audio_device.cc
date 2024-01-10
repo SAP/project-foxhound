@@ -159,7 +159,10 @@ class TestAudioDeviceModuleImpl
             recording_buffer_.data(),
             recording_buffer_.size() / capturer_->NumChannels(),
             2 * capturer_->NumChannels(), capturer_->NumChannels(),
-            capturer_->SamplingFrequency(), 0, 0, 0, false, new_mic_level);
+            capturer_->SamplingFrequency(), /*totalDelayMS=*/0,
+            /*clockDrift=*/0,
+            /*currentMicLevel=*/0, /*keyPressed=*/false, new_mic_level,
+            absl::make_optional(rtc::TimeNanos()));
       }
       if (!keep_capturing) {
         capturing_ = false;
@@ -436,7 +439,7 @@ size_t TestAudioDeviceModule::SamplesPerFrame(int sampling_frequency_in_hz) {
   return rtc::CheckedDivExact(sampling_frequency_in_hz, kFramesPerSecond);
 }
 
-rtc::scoped_refptr<TestAudioDeviceModule> TestAudioDeviceModule::Create(
+rtc::scoped_refptr<AudioDeviceModule> TestAudioDeviceModule::Create(
     TaskQueueFactory* task_queue_factory,
     std::unique_ptr<TestAudioDeviceModule::Capturer> capturer,
     std::unique_ptr<TestAudioDeviceModule::Renderer> renderer,

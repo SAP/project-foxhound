@@ -67,7 +67,7 @@ add_task(async function test_new_login_marked_vulnerable_in_both_windows() {
 
       await ContentTaskUtils.waitForCondition(
         () =>
-          loginList.shadowRoot.querySelectorAll(".login-list-item[data-guid]")
+          loginList.shadowRoot.querySelectorAll("login-list-item[data-guid]")
             .length == 2,
         "waiting for all two initials logins to get added to login-list"
       );
@@ -78,9 +78,9 @@ add_task(async function test_new_login_marked_vulnerable_in_both_windows() {
         "The 'alerts' option should be hidden when there are no breached or vulnerable logins in the list"
       );
 
-      let createButton = loginList.shadowRoot.querySelector(
-        ".create-login-button"
-      );
+      let createButton = loginList.shadowRoot
+        .querySelector(".create-login-button")
+        .shadowRoot.querySelector("button");
       createButton.click();
 
       let loginItem = content.document.querySelector("login-item");
@@ -105,14 +105,14 @@ add_task(async function test_new_login_marked_vulnerable_in_both_windows() {
 
       await ContentTaskUtils.waitForCondition(
         () =>
-          loginList.shadowRoot.querySelectorAll(".login-list-item[data-guid]")
+          loginList.shadowRoot.querySelectorAll("login-list-item[data-guid]")
             .length == 3,
         "waiting for new login to get added to login-list"
       );
 
       let vulnerableLoginGuid = Cu.waiveXrays(loginItem)._login.guid;
       let vulnerableListItem = loginList.shadowRoot.querySelector(
-        `.login-list-item[data-guid="${vulnerableLoginGuid}"]`
+        `login-list-item[data-guid="${vulnerableLoginGuid}"]`
       );
 
       Assert.ok(
@@ -120,7 +120,8 @@ add_task(async function test_new_login_marked_vulnerable_in_both_windows() {
         "vulnerable login list item should be marked as such"
       );
       Assert.ok(
-        !loginItem.shadowRoot.querySelector(".vulnerable-alert").hidden,
+        !loginItem.shadowRoot.querySelector("login-vulnerable-password-alert")
+          .hidden,
         "vulnerable alert on login-item should be visible"
       );
 
@@ -156,7 +157,7 @@ add_task(async function test_new_login_marked_vulnerable_in_both_windows() {
       "The login list should be sorted by Alerts"
     );
     let loginListItems = loginList.shadowRoot.querySelectorAll(
-      ".login-list-item[data-guid]"
+      "login-list-item[data-guid]"
     );
     for (let i = 1; i < loginListItems.length; i++) {
       if (loginListItems[i].matches(".vulnerable, .breached")) {
@@ -209,7 +210,7 @@ add_task(async function test_new_login_marked_vulnerable_in_both_windows() {
       "waiting for sort to get updated to 'alerts'"
     );
     let loginListItems = loginList.shadowRoot.querySelectorAll(
-      ".login-list-item[data-guid]"
+      "login-list-item[data-guid]"
     );
     for (let i = 1; i < loginListItems.length; i++) {
       if (loginListItems[i].matches(".vulnerable, .breached")) {

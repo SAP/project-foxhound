@@ -7,8 +7,6 @@
  * helper functions that are useful to all components of the urlbar.
  */
 
-import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
-
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
@@ -49,13 +47,11 @@ export var UrlbarUtils = {
     HEURISTIC_BOOKMARK_KEYWORD: "heuristicBookmarkKeyword",
     HEURISTIC_HISTORY_URL: "heuristicHistoryUrl",
     HEURISTIC_OMNIBOX: "heuristicOmnibox",
-    HEURISTIC_PRELOADED: "heuristicPreloaded",
     HEURISTIC_SEARCH_TIP: "heuristicSearchTip",
     HEURISTIC_TEST: "heuristicTest",
     HEURISTIC_TOKEN_ALIAS_ENGINE: "heuristicTokenAliasEngine",
     INPUT_HISTORY: "inputHistory",
     OMNIBOX: "extension",
-    PRELOADED: "preloaded",
     REMOTE_SUGGESTION: "remoteSuggestion",
     REMOTE_TAB: "remoteTab",
     SUGGESTED_INDEX: "suggestedIndex",
@@ -66,6 +62,9 @@ export var UrlbarUtils = {
   PROVIDER_TYPE: {
     // Should be executed immediately, because it returns heuristic results
     // that must be handed to the user asap.
+    // WARNING: these providers must be extremely fast, because the urlbar will
+    // await for them before returning results to the user. In particular it is
+    // critical to reply quickly to isActive and startQuery.
     HEURISTIC: 1,
     // Can be delayed, contains results coming from the session or the profile.
     PROFILE: 2,
@@ -303,7 +302,7 @@ export var UrlbarUtils = {
     try {
       entry = await lazy.PlacesUtils.keywords.fetch(keyword);
     } catch (ex) {
-      console.error(`Unable to fetch Places keyword "${keyword}": ${ex}`);
+      console.error(`Unable to fetch Places keyword "${keyword}":`, ex);
     }
     if (!entry || !entry.url) {
       // This is not a Places keyword.
@@ -513,8 +512,6 @@ export var UrlbarUtils = {
           return UrlbarUtils.RESULT_GROUP.HEURISTIC_FALLBACK;
         case "Omnibox":
           return UrlbarUtils.RESULT_GROUP.HEURISTIC_OMNIBOX;
-        case "PreloadedSites":
-          return UrlbarUtils.RESULT_GROUP.HEURISTIC_PRELOADED;
         case "TokenAliasEngines":
           return UrlbarUtils.RESULT_GROUP.HEURISTIC_TOKEN_ALIAS_ENGINE;
         case "UrlbarProviderSearchTips":
@@ -542,8 +539,6 @@ export var UrlbarUtils = {
         return UrlbarUtils.RESULT_GROUP.ABOUT_PAGES;
       case "InputHistory":
         return UrlbarUtils.RESULT_GROUP.INPUT_HISTORY;
-      case "PreloadedSites":
-        return UrlbarUtils.RESULT_GROUP.PRELOADED;
       case "UrlbarProviderQuickSuggest":
         return UrlbarUtils.RESULT_GROUP.GENERAL_PARENT;
       default:
@@ -1187,7 +1182,7 @@ export var UrlbarUtils = {
         }
         if (result.payload.suggestion) {
           let type = result.payload.trending ? "trending" : "searchsuggestion";
-          if (result.payload.isRichSuggestion) {
+          if (result.isRichSuggestion) {
             type += "_rich";
           }
           return type;
@@ -1222,6 +1217,11 @@ export var UrlbarUtils = {
               return "dynamic_wikipedia";
           }
           return "quicksuggest";
+        }
+        if (result.providerName == "InputHistory") {
+          return result.source == UrlbarUtils.RESULT_SOURCE.BOOKMARKS
+            ? "bookmark_adaptive"
+            : "history_adaptive";
         }
         return result.source == UrlbarUtils.RESULT_SOURCE.BOOKMARKS
           ? "bookmark"
@@ -1291,7 +1291,7 @@ export var UrlbarUtils = {
         let group = result.payload.trending
           ? "trending_search"
           : "search_suggest";
-        if (result.payload.isRichSuggestion) {
+        if (result.isRichSuggestion) {
           group += "_rich";
         }
         return group;
@@ -1377,7 +1377,7 @@ export var UrlbarUtils = {
           let type = result.payload.trending
             ? "trending_search"
             : "search_suggest";
-          if (result.payload.isRichSuggestion) {
+          if (result.isRichSuggestion) {
             type += "_rich";
           }
           return type;
@@ -1470,11 +1470,11 @@ export var UrlbarUtils = {
   },
 };
 
-XPCOMUtils.defineLazyGetter(UrlbarUtils.ICON, "DEFAULT", () => {
+ChromeUtils.defineLazyGetter(UrlbarUtils.ICON, "DEFAULT", () => {
   return lazy.PlacesUtils.favicons.defaultFavicon.spec;
 });
 
-XPCOMUtils.defineLazyGetter(UrlbarUtils, "strings", () => {
+ChromeUtils.defineLazyGetter(UrlbarUtils, "strings", () => {
   return Services.strings.createBundle(
     "chrome://global/locale/autocomplete.properties"
   );
@@ -1518,6 +1518,9 @@ UrlbarUtils.RESULT_PAYLOAD_SCHEMA = {
       engine: {
         type: "string",
       },
+      helpUrl: {
+        type: "string",
+      },
       icon: {
         type: "string",
       },
@@ -1531,9 +1534,6 @@ UrlbarUtils.RESULT_PAYLOAD_SCHEMA = {
         type: "boolean",
       },
       isGeneralPurposeEngine: {
-        type: "boolean",
-      },
-      isRichSuggestion: {
         type: "boolean",
       },
       keyword: {
@@ -1587,7 +1587,39 @@ UrlbarUtils.RESULT_PAYLOAD_SCHEMA = {
             type: "string",
           },
           args: {
-            type: "array",
+            type: "object",
+            additionalProperties: true,
+          },
+        },
+      },
+      // l10n { id, args }
+      bottomTextL10n: {
+        type: "object",
+        required: ["id"],
+        properties: {
+          id: {
+            type: "string",
+          },
+          args: {
+            type: "object",
+            additionalProperties: true,
+          },
+        },
+      },
+      description: {
+        type: "string",
+      },
+      // l10n { id, args }
+      descriptionL10n: {
+        type: "object",
+        required: ["id"],
+        properties: {
+          id: {
+            type: "string",
+          },
+          args: {
+            type: "object",
+            additionalProperties: true,
           },
         },
       },
@@ -1609,7 +1641,8 @@ UrlbarUtils.RESULT_PAYLOAD_SCHEMA = {
             type: "string",
           },
           args: {
-            type: "array",
+            type: "object",
+            additionalProperties: true,
           },
         },
       },
@@ -1631,6 +1664,9 @@ UrlbarUtils.RESULT_PAYLOAD_SCHEMA = {
       originalUrl: {
         type: "string",
       },
+      provider: {
+        type: "string",
+      },
       qsSuggestion: {
         type: "string",
       },
@@ -1638,6 +1674,9 @@ UrlbarUtils.RESULT_PAYLOAD_SCHEMA = {
         type: "string",
       },
       sendAttributionRequest: {
+        type: "boolean",
+      },
+      shouldShowUrl: {
         type: "boolean",
       },
       source: {
@@ -1815,7 +1854,8 @@ UrlbarUtils.RESULT_PAYLOAD_SCHEMA = {
             type: "string",
           },
           args: {
-            type: "array",
+            type: "object",
+            additionalProperties: true,
           },
         },
       },
@@ -1839,7 +1879,8 @@ UrlbarUtils.RESULT_PAYLOAD_SCHEMA = {
             type: "string",
           },
           args: {
-            type: "array",
+            type: "object",
+            additionalProperties: true,
           },
         },
       },
@@ -1990,7 +2031,7 @@ export class UrlbarQueryContext {
    * @returns {{ href: string; isSearch: boolean; }?}
    */
   get fixupInfo() {
-    if (this.trimmedSearchString && !this._fixupInfo) {
+    if (!this._fixupError && !this._fixupInfo && this.trimmedSearchString) {
       let flags =
         Ci.nsIURIFixup.FIXUP_FLAG_FIX_SCHEME_TYPOS |
         Ci.nsIURIFixup.FIXUP_FLAG_ALLOW_KEYWORD_LOOKUP;
@@ -2111,7 +2152,7 @@ export class UrlbarMuxer {
  */
 export class UrlbarProvider {
   constructor() {
-    XPCOMUtils.defineLazyGetter(this, "logger", () =>
+    ChromeUtils.defineLazyGetter(this, "logger", () =>
       UrlbarUtils.getLogger({ prefix: `Provider.${this.name}` })
     );
   }
@@ -2212,8 +2253,6 @@ export class UrlbarProvider {
   /**
    * Called when the user starts and ends an engagement with the urlbar.
    *
-   * @param {boolean} isPrivate
-   *   True if the engagement is in a private context.
    * @param {string} state
    *   The state of the engagement, one of the following strings:
    *
@@ -2262,8 +2301,10 @@ export class UrlbarProvider {
    *       The name of the provider that produced the picked result.
    *
    *   For "abandonment", only `searchString` is defined.
+   * @param {UrlbarController} controller
+   *  The associated controller.
    */
-  onEngagement(isPrivate, state, queryContext, details) {}
+  onEngagement(state, queryContext, details, controller) {}
 
   /**
    * Called when a result from the provider is selected. "Selected" refers to
@@ -2409,6 +2450,11 @@ export class UrlbarProvider {
  */
 export class SkippableTimer {
   /**
+   * This can be used to track whether the timer completed.
+   */
+  done = false;
+
+  /**
    * Creates a skippable timer for the given callback and time.
    *
    * @param {object} options An object that configures the timer
@@ -2434,6 +2480,7 @@ export class SkippableTimer {
       this._timer.initWithCallback(
         () => {
           this._log(`Timed out!`, reportErrorOnTimeout);
+          this.done = true;
           this._timer = null;
           resolve();
         },
@@ -2445,6 +2492,7 @@ export class SkippableTimer {
 
     let firePromise = new Promise(resolve => {
       this.fire = async () => {
+        this.done = true;
         if (this._timer) {
           if (!this._canceled) {
             this._log(`Skipped`);

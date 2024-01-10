@@ -11,8 +11,8 @@
 #include "mozilla/AntiTrackingUtils.h"
 #include "mozilla/DebugOnly.h"
 #include "mozilla/LoadInfo.h"
-#include "mozilla/MozPromiseInlines.h"  // For MozPromise::FromDomPromise
 #include "mozilla/NullPrincipal.h"
+#include "mozilla/RefPtr.h"
 #include "mozilla/ResultVariant.h"
 #include "mozilla/ScopeExit.h"
 #include "mozilla/StaticPrefs_extensions.h"
@@ -155,11 +155,13 @@ static auto CreateDocumentLoadInfo(CanonicalBrowsingContext* aBrowsingContext,
 
   if (aLoadState->IsExemptFromHTTPSOnlyMode()) {
     uint32_t httpsOnlyStatus = loadInfo->GetHttpsOnlyStatus();
-    httpsOnlyStatus |= nsILoadInfo::HTTPS_ONLY_EXEMPT;
+    httpsOnlyStatus |= nsILoadInfo::HTTPS_ONLY_EXEMPT_NEXT_LOAD;
     loadInfo->SetHttpsOnlyStatus(httpsOnlyStatus);
   }
 
   loadInfo->SetTriggeringSandboxFlags(aLoadState->TriggeringSandboxFlags());
+  loadInfo->SetTriggeringWindowId(aLoadState->TriggeringWindowId());
+  loadInfo->SetTriggeringStorageAccess(aLoadState->TriggeringStorageAccess());
   loadInfo->SetHasValidUserGestureActivation(
       aLoadState->HasValidUserGestureActivation());
   loadInfo->SetIsMetaRefresh(aLoadState->IsMetaRefresh());
@@ -187,6 +189,8 @@ static auto CreateObjectLoadInfo(nsDocShellLoadState* aLoadState,
   loadInfo->SetHasValidUserGestureActivation(
       aLoadState->HasValidUserGestureActivation());
   loadInfo->SetTriggeringSandboxFlags(aLoadState->TriggeringSandboxFlags());
+  loadInfo->SetTriggeringWindowId(aLoadState->TriggeringWindowId());
+  loadInfo->SetTriggeringStorageAccess(aLoadState->TriggeringStorageAccess());
   loadInfo->SetIsMetaRefresh(aLoadState->IsMetaRefresh());
 
   return loadInfo.forget();
@@ -930,6 +934,27 @@ auto DocumentLoadListener::OpenDocument(
   nsLoadFlags loadFlags = aLoadState->CalculateChannelLoadFlags(
       browsingContext, std::move(aUriModified), std::move(aIsXFOError));
 
+  // Keep track of navigation for the Bounce Tracking Protection.
+  if (browsingContext->IsTopContent()) {
+    RefPtr<BounceTrackingState> bounceTrackingState =
+        browsingContext->GetBounceTrackingState();
+
+    // Not every browsing context has a BounceTrackingState. It's also null when
+    // the feature is disabled.
+    if (bounceTrackingState) {
+      nsCOMPtr<nsIPrincipal> triggeringPrincipal;
+      nsresult rv =
+          loadInfo->GetTriggeringPrincipal(getter_AddRefs(triggeringPrincipal));
+
+      if (!NS_WARN_IF(NS_FAILED(rv))) {
+        DebugOnly<nsresult> rv = bounceTrackingState->OnStartNavigation(
+            triggeringPrincipal, loadInfo->GetHasValidUserGestureActivation());
+        NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
+                             "BounceTrackingState::OnStartNavigation failed");
+      }
+    }
+  }
+
   return Open(aLoadState, loadInfo, loadFlags, aCacheKey, aChannelId,
               aAsyncOpenTime, aTiming, std::move(aInfo), false, aContentParent,
               aRv);
@@ -1465,7 +1490,7 @@ void DocumentLoadListener::RegisterEarlyHintLinksAndGetConnectArgs(
 
 void DocumentLoadListener::SerializeRedirectData(
     RedirectToRealChannelArgs& aArgs, bool aIsCrossProcess,
-    uint32_t aRedirectFlags, uint32_t aLoadFlags, ContentParent* aParent,
+    uint32_t aRedirectFlags, uint32_t aLoadFlags,
     nsTArray<EarlyHintConnectArgs>&& aEarlyHints,
     uint32_t aEarlyHintLinkType) const {
   aArgs.uri() = GetChannelCreationURI();
@@ -1542,7 +1567,7 @@ void DocumentLoadListener::SerializeRedirectData(
                  ->CloneReplacementChannelConfig(
                      true, aRedirectFlags,
                      HttpBaseChannel::ReplacementReason::DocumentChannel)
-                 .Serialize(aParent));
+                 .Serialize());
   }
 
   uint32_t contentDispositionTemp;
@@ -2107,18 +2132,11 @@ DocumentLoadListener::RedirectToRealChannel(
 
     RedirectToRealChannelArgs args;
     SerializeRedirectData(args, /* aIsCrossProcess */ true, aRedirectFlags,
-                          aLoadFlags, cp, std::move(ehArgs),
+                          aLoadFlags, std::move(ehArgs),
                           mEarlyHintsService.LinkType());
     if (mTiming) {
       mTiming->Anonymize(args.uri());
       args.timing() = std::move(mTiming);
-    }
-
-    auto loadInfo = args.loadInfo();
-
-    if (loadInfo.isNothing()) {
-      return PDocumentChannelParent::RedirectToRealChannelPromise::
-          CreateAndReject(ipc::ResponseRejectReason::SendError, __func__);
     }
 
     cp->TransmitBlobDataIfBlobURL(args.uri());
@@ -2319,7 +2337,7 @@ bool DocumentLoadListener::DocShellWillDisplayContent(nsresult aStatus) {
 }
 
 bool DocumentLoadListener::MaybeHandleLoadErrorWithURIFixup(nsresult aStatus) {
-  auto* bc = GetDocumentBrowsingContext();
+  RefPtr<CanonicalBrowsingContext> bc = GetDocumentBrowsingContext();
   if (!bc) {
     return false;
   }
@@ -2516,6 +2534,24 @@ DocumentLoadListener::OnStartRequest(nsIRequest* aRequest) {
     // We can also have multiple calls to OnStartRequest when dealing with
     // multi-part content, but only want to redirect once.
     return NS_OK;
+  }
+
+  // Keep track of server responses resulting in a document for the Bounce
+  // Tracking Protection.
+  if (mIsDocumentLoad && GetParentWindowContext() == nullptr &&
+      loadingContext->IsTopContent()) {
+    RefPtr<BounceTrackingState> bounceTrackingState =
+        loadingContext->GetBounceTrackingState();
+
+    // Not every browsing context has a BounceTrackingState. It's also null when
+    // the feature is disabled.
+    if (bounceTrackingState) {
+      DebugOnly<nsresult> rv =
+          bounceTrackingState->OnDocumentStartRequest(mChannel);
+      NS_WARNING_ASSERTION(
+          NS_SUCCEEDED(rv),
+          "BounceTrackingState::OnDocumentStartRequest failed.");
+    }
   }
 
   mChannel->Suspend();
@@ -2955,7 +2991,7 @@ NS_IMETHODIMP DocumentLoadListener::EarlyHint(const nsACString& aLinkHeader,
                                               const nsACString& aCSPHeader) {
   LOG(("DocumentLoadListener::EarlyHint.\n"));
   mEarlyHintsService.EarlyHint(aLinkHeader, GetChannelCreationURI(), mChannel,
-                               aReferrerPolicy, aCSPHeader);
+                               aReferrerPolicy, aCSPHeader, this);
   return NS_OK;
 }
 

@@ -3328,7 +3328,7 @@ void MacroAssemblerARMCompat::handleFailureWithHandlerTail(
   ma_mov(sp, r0);
 
   // Call the handler.
-  using Fn = void (*)(ResumeFromException * rfe);
+  using Fn = void (*)(ResumeFromException* rfe);
   asMasm().setupUnalignedABICall(r1);
   asMasm().passABIArg(r0);
   asMasm().callWithABI<Fn, HandleException>(
@@ -4304,6 +4304,14 @@ void MacroAssembler::Pop(const ValueOperand& val) {
 void MacroAssembler::PopStackPtr() {
   as_dtr(IsLoad, 32, Offset, sp, DTRAddr(sp, DtrOffImm(0)));
   adjustFrame(-sizeof(intptr_t));
+}
+
+void MacroAssembler::freeStackTo(uint32_t framePushed) {
+  MOZ_ASSERT(framePushed <= framePushed_);
+  ScratchRegisterScope scratch(*this);
+  ma_sub(FramePointer, Imm32(int32_t(framePushed)), sp, scratch, LeaveCC,
+         Always);
+  framePushed_ = framePushed;
 }
 
 // ===============================================================
@@ -6011,6 +6019,22 @@ void MacroAssembler::shiftIndex32AndAdd(Register indexTemp32, int shift,
   addPtr(indexTemp32, pointer);
 }
 
+#ifdef ENABLE_WASM_TAIL_CALLS
+void MacroAssembler::wasmMarkSlowCall() { ma_and(lr, lr, lr); }
+
+const int32_t SlowCallMarker = 0xe00ee00e;
+
+void MacroAssembler::wasmCheckSlowCallsite(Register ra, Label* notSlow,
+                                           Register temp1, Register temp2) {
+  MOZ_ASSERT(temp1 != temp2);
+  // Check if RA has slow marker.
+  load32(Address(ra, 0), temp2);
+  ma_mov(Imm32(SlowCallMarker), temp1, Always);
+  ma_cmp(temp2, temp1);
+  j(Assembler::NotEqual, notSlow);
+}
+#endif  // ENABLE_WASM_TAIL_CALLS
+
 //}}} check_macroassembler_style
 
 void MacroAssemblerARM::wasmTruncateToInt32(FloatRegister input,
@@ -6173,13 +6197,16 @@ void MacroAssemblerARM::wasmLoadImpl(const wasm::MemoryAccessDesc& access,
                                      Register memoryBase, Register ptr,
                                      Register ptrScratch, AnyRegister output,
                                      Register64 out64) {
+  MOZ_ASSERT(memoryBase != ptr);
+  MOZ_ASSERT_IF(out64 != Register64::Invalid(), memoryBase != out64.high);
+  MOZ_ASSERT_IF(out64 != Register64::Invalid(), memoryBase != out64.low);
   MOZ_ASSERT(ptr == ptrScratch);
   MOZ_ASSERT(!access.isZeroExtendSimd128Load());
   MOZ_ASSERT(!access.isSplatSimd128Load());
   MOZ_ASSERT(!access.isWidenSimd128Load());
 
+  access.assertOffsetInGuardPages();
   uint32_t offset = access.offset();
-  MOZ_ASSERT(offset < asMasm().wasmMaxOffsetGuardLimit());
 
   Scalar::Type type = access.type();
 
@@ -6290,9 +6317,8 @@ void MacroAssemblerARM::wasmStoreImpl(const wasm::MemoryAccessDesc& access,
 
   MOZ_ASSERT(ptr == ptrScratch);
 
+  access.assertOffsetInGuardPages();
   uint32_t offset = access.offset();
-  MOZ_ASSERT(offset < asMasm().wasmMaxOffsetGuardLimit());
-
   unsigned byteSize = access.byteSize();
   Scalar::Type type = access.type();
 

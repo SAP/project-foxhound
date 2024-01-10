@@ -5,8 +5,8 @@
  * that is seen when we detect pending crash reports on startup.
  */
 
-const { UnsubmittedCrashHandler } = ChromeUtils.import(
-  "resource:///modules/ContentCrashHandlers.jsm"
+const { UnsubmittedCrashHandler } = ChromeUtils.importESModule(
+  "resource:///modules/ContentCrashHandlers.sys.mjs"
 );
 
 const { makeFakeAppDir } = ChromeUtils.importESModule(
@@ -26,11 +26,7 @@ const SERVER_URL =
 function getPendingCrashReportDir() {
   // The fake UAppData directory that makeFakeAppDir provides
   // is just UAppData under the profile directory.
-  return FileUtils.getDir(
-    "ProfD",
-    ["UAppData", "Crash Reports", "pending"],
-    false
-  );
+  return FileUtils.getDir("ProfD", ["UAppData", "Crash Reports", "pending"]);
 }
 
 /**

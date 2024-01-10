@@ -58,6 +58,7 @@
 #include "nsContentUtils.h"
 #include "nsDebug.h"
 #include "nsEscape.h"
+#include "nsGlobalWindowInner.h"
 #include "nsGlobalWindowOuter.h"
 #include "nsHttpChannel.h"
 #include "nsHTTPCompressConv.h"
@@ -399,7 +400,8 @@ nsresult HttpBaseChannel::Init(nsIURI* aURI, uint32_t aCaps,
 
   rv = gHttpHandler->AddStandardRequestHeaders(
       &mRequestHead, isHTTPS, aContentPolicyType,
-      nsContentUtils::ShouldResistFingerprinting(this));
+      nsContentUtils::ShouldResistFingerprinting(this,
+                                                 RFPTarget::HttpUserAgent));
   if (NS_FAILED(rv)) return rv;
 
   nsAutoCString type;
@@ -2161,7 +2163,14 @@ HttpBaseChannel::GetResponseStatus(uint32_t* aValue) {
 NS_IMETHODIMP
 HttpBaseChannel::GetResponseStatusText(nsACString& aValue) {
   if (!mResponseHead) return NS_ERROR_NOT_AVAILABLE;
-  mResponseHead->StatusText(aValue);
+  nsAutoCString version;
+  // https://fetch.spec.whatwg.org :
+  // Responses over an HTTP/2 connection will always have the empty byte
+  // sequence as status message as HTTP/2 does not support them.
+  if (NS_WARN_IF(NS_FAILED(GetProtocolVersion(version))) ||
+      !version.EqualsLiteral("h2")) {
+    mResponseHead->StatusText(aValue);
+  }
   return NS_OK;
 }
 
@@ -2399,7 +2408,23 @@ void HttpBaseChannel::NotifySetCookie(const nsACString& aCookie) {
 }
 
 bool HttpBaseChannel::IsBrowsingContextDiscarded() const {
-  return mLoadGroup && mLoadGroup->GetIsBrowsingContextDiscarded();
+  // If there is no loadGroup attached to the current channel, we check the
+  // global private browsing state for the private channel instead. For
+  // non-private channel, we will always return false here.
+  //
+  // Note that we can only access the global private browsing state in the
+  // parent process. So, we will fallback to just return false in the content
+  // process.
+  if (!mLoadGroup) {
+    if (!XRE_IsParentProcess()) {
+      return false;
+    }
+
+    return mLoadInfo->GetOriginAttributes().mPrivateBrowsingId != 0 &&
+           !dom::CanonicalBrowsingContext::IsPrivateBrowsingActive();
+  }
+
+  return mLoadGroup->GetIsBrowsingContextDiscarded();
 }
 
 // https://mikewest.github.io/corpp/#process-navigation-response
@@ -4802,8 +4827,7 @@ HttpBaseChannel::ReplacementChannelConfig::ReplacementChannelConfig(
 }
 
 dom::ReplacementChannelConfigInit
-HttpBaseChannel::ReplacementChannelConfig::Serialize(
-    dom::ContentParent* aParent) {
+HttpBaseChannel::ReplacementChannelConfig::Serialize() {
   dom::ReplacementChannelConfigInit config;
   config.redirectFlags() = redirectFlags;
   config.classOfService() = classOfService;
@@ -5521,7 +5545,7 @@ HttpBaseChannel::GetCacheReadEnd(TimeStamp* _retval) {
 
 NS_IMETHODIMP
 HttpBaseChannel::GetTransactionPending(TimeStamp* _retval) {
-  *_retval = mTransactionPendingTime;
+  *_retval = mTransactionTimings.transactionPending;
   return NS_OK;
 }
 
@@ -5625,7 +5649,7 @@ void HttpBaseChannel::MaybeReportTimingData() {
       return;
     }
 
-    Maybe<LoadInfoArgs> loadInfoArgs;
+    LoadInfoArgs loadInfoArgs;
     mozilla::ipc::LoadInfoToLoadInfoArgs(mLoadInfo, &loadInfoArgs);
     child->SendReportFrameTimingData(loadInfoArgs, entryName, initiatorType,
                                      std::move(performanceTimingData));
@@ -5965,9 +5989,15 @@ HttpBaseChannel::CancelByURLClassifier(nsresult aErrorCode) {
   return Cancel(aErrorCode);
 }
 
-void HttpBaseChannel::SetIPv4Disabled() { mCaps |= NS_HTTP_DISABLE_IPV4; }
+NS_IMETHODIMP HttpBaseChannel::SetIPv4Disabled() {
+  mCaps |= NS_HTTP_DISABLE_IPV4;
+  return NS_OK;
+}
 
-void HttpBaseChannel::SetIPv6Disabled() { mCaps |= NS_HTTP_DISABLE_IPV6; }
+NS_IMETHODIMP HttpBaseChannel::SetIPv6Disabled() {
+  mCaps |= NS_HTTP_DISABLE_IPV6;
+  return NS_OK;
+}
 
 NS_IMETHODIMP HttpBaseChannel::GetResponseEmbedderPolicy(
     bool aIsOriginTrialCoepCredentiallessEnabled,
@@ -6212,9 +6242,116 @@ HttpBaseChannel::GetIsProxyUsed(bool* aIsProxyUsed) {
   return NS_OK;
 }
 
+static void CollectORBBlockTelemetry(
+    const OpaqueResponseBlockedTelemetryReason aTelemetryReason,
+    ExtContentPolicy aPolicy) {
+  Telemetry::LABELS_ORB_BLOCK_REASON label{
+      static_cast<uint32_t>(aTelemetryReason)};
+  Telemetry::AccumulateCategorical(label);
+
+  switch (aPolicy) {
+    case ExtContentPolicy::TYPE_INVALID:
+      Telemetry::AccumulateCategorical(
+          Telemetry::LABELS_ORB_BLOCK_INITIATOR::INVALID);
+      break;
+    case ExtContentPolicy::TYPE_OTHER:
+      Telemetry::AccumulateCategorical(
+          Telemetry::LABELS_ORB_BLOCK_INITIATOR::OTHER);
+      break;
+    case ExtContentPolicy::TYPE_FETCH:
+      Telemetry::AccumulateCategorical(
+          Telemetry::LABELS_ORB_BLOCK_INITIATOR::BLOCKED_FETCH);
+      break;
+    case ExtContentPolicy::TYPE_SCRIPT:
+      Telemetry::AccumulateCategorical(
+          Telemetry::LABELS_ORB_BLOCK_INITIATOR::SCRIPT);
+      break;
+    case ExtContentPolicy::TYPE_IMAGE:
+      Telemetry::AccumulateCategorical(
+          Telemetry::LABELS_ORB_BLOCK_INITIATOR::IMAGE);
+      break;
+    case ExtContentPolicy::TYPE_STYLESHEET:
+      Telemetry::AccumulateCategorical(
+          Telemetry::LABELS_ORB_BLOCK_INITIATOR::STYLESHEET);
+      break;
+    case ExtContentPolicy::TYPE_XMLHTTPREQUEST:
+      Telemetry::AccumulateCategorical(
+          Telemetry::LABELS_ORB_BLOCK_INITIATOR::XMLHTTPREQUEST);
+      break;
+    case ExtContentPolicy::TYPE_DTD:
+      Telemetry::AccumulateCategorical(
+          Telemetry::LABELS_ORB_BLOCK_INITIATOR::DTD);
+      break;
+    case ExtContentPolicy::TYPE_FONT:
+      Telemetry::AccumulateCategorical(
+          Telemetry::LABELS_ORB_BLOCK_INITIATOR::FONT);
+      break;
+    case ExtContentPolicy::TYPE_MEDIA:
+      Telemetry::AccumulateCategorical(
+          Telemetry::LABELS_ORB_BLOCK_INITIATOR::MEDIA);
+      break;
+    case ExtContentPolicy::TYPE_CSP_REPORT:
+      Telemetry::AccumulateCategorical(
+          Telemetry::LABELS_ORB_BLOCK_INITIATOR::CSP_REPORT);
+      break;
+    case ExtContentPolicy::TYPE_XSLT:
+      Telemetry::AccumulateCategorical(
+          Telemetry::LABELS_ORB_BLOCK_INITIATOR::XSLT);
+      break;
+    case ExtContentPolicy::TYPE_IMAGESET:
+      Telemetry::AccumulateCategorical(
+          Telemetry::LABELS_ORB_BLOCK_INITIATOR::IMAGESET);
+      break;
+    case ExtContentPolicy::TYPE_WEB_MANIFEST:
+      Telemetry::AccumulateCategorical(
+          Telemetry::LABELS_ORB_BLOCK_INITIATOR::WEB_MANIFEST);
+      break;
+    case ExtContentPolicy::TYPE_SPECULATIVE:
+      Telemetry::AccumulateCategorical(
+          Telemetry::LABELS_ORB_BLOCK_INITIATOR::SPECULATIVE);
+      break;
+    case ExtContentPolicy::TYPE_UA_FONT:
+      Telemetry::AccumulateCategorical(
+          Telemetry::LABELS_ORB_BLOCK_INITIATOR::UA_FONT);
+      break;
+    case ExtContentPolicy::TYPE_PROXIED_WEBRTC_MEDIA:
+      Telemetry::AccumulateCategorical(
+          Telemetry::LABELS_ORB_BLOCK_INITIATOR::PROXIED_WEBRTC_MEDIA);
+      break;
+    case ExtContentPolicy::TYPE_PING:
+      Telemetry::AccumulateCategorical(
+          Telemetry::LABELS_ORB_BLOCK_INITIATOR::PING);
+      break;
+    case ExtContentPolicy::TYPE_BEACON:
+      Telemetry::AccumulateCategorical(
+          Telemetry::LABELS_ORB_BLOCK_INITIATOR::BEACON);
+      break;
+    case ExtContentPolicy::TYPE_WEB_TRANSPORT:
+      Telemetry::AccumulateCategorical(
+          Telemetry::LABELS_ORB_BLOCK_INITIATOR::WEB_TRANSPORT);
+      break;
+    default:
+      MOZ_ASSERT_UNREACHABLE("Shouldn't block this type");
+      // DOCUMENT, SUBDOCUMENT, OBJECT, OBJECT_SUBREQUEST,
+      // WEBSOCKET and SAVEAS_DOWNLOAD are excluded from ORB
+      Telemetry::AccumulateCategorical(
+          Telemetry::LABELS_ORB_BLOCK_INITIATOR::EXCLUDED);
+      break;
+  }
+}
+
 void HttpBaseChannel::LogORBError(
     const nsAString& aReason,
     const OpaqueResponseBlockedTelemetryReason aTelemetryReason) {
+  auto policy = mLoadInfo->GetExternalContentPolicyType();
+  CollectORBBlockTelemetry(aTelemetryReason, policy);
+
+  // Blocking `ExtContentPolicy::TYPE_BEACON` isn't web observable, so keep
+  // quiet in the console about blocking it.
+  if (policy == ExtContentPolicy::TYPE_BEACON) {
+    return;
+  }
+
   RefPtr<dom::Document> doc;
   mLoadInfo->GetLoadingDocument(getter_AddRefs(doc));
 
@@ -6238,33 +6375,6 @@ void HttpBaseChannel::LogORBError(
   nsContentUtils::ReportToConsole(nsIScriptError::warningFlag, "ORB"_ns, doc,
                                   nsContentUtils::eNECKO_PROPERTIES,
                                   "ResourceBlockedORB", params);
-
-  Telemetry::LABELS_ORB_BLOCK_REASON label{
-      static_cast<uint32_t>(aTelemetryReason)};
-  Telemetry::AccumulateCategorical(label);
-
-  switch (mLoadInfo->GetExternalContentPolicyType()) {
-    case ExtContentPolicy::TYPE_FETCH:
-      Telemetry::AccumulateCategorical(
-          Telemetry::LABELS_ORB_BLOCK_INITIATOR::BLOCKED_FETCH);
-      break;
-    case ExtContentPolicy::TYPE_IMAGE:
-      Telemetry::AccumulateCategorical(
-          Telemetry::LABELS_ORB_BLOCK_INITIATOR::IMAGE);
-      break;
-    case ExtContentPolicy::TYPE_SCRIPT:
-      Telemetry::AccumulateCategorical(
-          Telemetry::LABELS_ORB_BLOCK_INITIATOR::SCRIPT);
-      break;
-    case ExtContentPolicy::TYPE_MEDIA:
-      Telemetry::AccumulateCategorical(
-          Telemetry::LABELS_ORB_BLOCK_INITIATOR::MEDIA);
-      break;
-    default:
-      Telemetry::AccumulateCategorical(
-          Telemetry::LABELS_ORB_BLOCK_INITIATOR::OTHER);
-      break;
-  }
 }
 
 NS_IMETHODIMP HttpBaseChannel::SetEarlyHintLinkType(

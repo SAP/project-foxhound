@@ -8,6 +8,7 @@
 
 #include <algorithm>
 
+#include "mozilla/AntiTrackingUtils.h"
 #include "mozilla/AsyncEventDispatcher.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/ContentBlockingAllowList.h"
@@ -41,7 +42,6 @@
 #include "nsError.h"
 #include "nsFrameLoader.h"
 #include "nsFrameLoaderOwner.h"
-#include "nsGlobalWindowInner.h"
 #include "nsQueryObject.h"
 #include "nsNetUtil.h"
 #include "nsSandboxFlags.h"
@@ -54,6 +54,7 @@
 #include "nsITransportSecurityInfo.h"
 #include "nsISharePicker.h"
 #include "nsIURIMutator.h"
+#include "nsIWebProgressListener.h"
 
 #include "mozilla/dom/DOMException.h"
 #include "mozilla/dom/DOMExceptionBinding.h"
@@ -319,7 +320,7 @@ mozilla::ipc::IPCResult WindowGlobalParent::RecvLoadURI(
     return IPC_FAIL(this, "Illegal cross-process javascript: load attempt");
   }
 
-  CanonicalBrowsingContext* targetBC = aTargetBC.get_canonical();
+  RefPtr<CanonicalBrowsingContext> targetBC = aTargetBC.get_canonical();
 
   // FIXME: For cross-process loads, we should double check CanAccess() for the
   // source browsing context in the parent process.
@@ -352,7 +353,7 @@ mozilla::ipc::IPCResult WindowGlobalParent::RecvInternalLoad(
     return IPC_FAIL(this, "Illegal cross-process javascript: load attempt");
   }
 
-  CanonicalBrowsingContext* targetBC =
+  RefPtr<CanonicalBrowsingContext> targetBC =
       aLoadState->TargetBrowsingContext().get_canonical();
 
   // FIXME: For cross-process loads, we should double check CanAccess() for the
@@ -1102,12 +1103,13 @@ void WindowGlobalParent::FinishAccumulatingPageUseCounters() {
 
     Telemetry::Accumulate(Telemetry::TOP_LEVEL_CONTENT_DOCUMENTS_DESTROYED, 1);
 
+    bool any = false;
     for (int32_t c = 0; c < eUseCounter_Count; ++c) {
       auto uc = static_cast<UseCounter>(c);
       if (!mPageUseCounters->mUseCounters[uc]) {
         continue;
       }
-
+      any = true;
       auto id = static_cast<Telemetry::HistogramID>(
           Telemetry::HistogramFirstUseCounter + uc * 2 + 1);
       if (dumpCounters) {
@@ -1115,6 +1117,11 @@ void WindowGlobalParent::FinishAccumulatingPageUseCounters() {
                       Telemetry::GetHistogramName(id), urlForLogging->get());
       }
       Telemetry::Accumulate(id, 1);
+    }
+
+    if (!any) {
+      MOZ_LOG(gUseCountersLog, LogLevel::Debug,
+              (" > page use counter data was received, but was empty"));
     }
   } else {
     MOZ_LOG(gUseCountersLog, LogLevel::Debug,
@@ -1287,6 +1294,10 @@ mozilla::ipc::IPCResult WindowGlobalParent::RecvReloadWithHttpsOnlyException() {
   nsresult rv;
   nsCOMPtr<nsIURI> currentUri = BrowsingContext()->Top()->GetCurrentURI();
 
+  if (!currentUri) {
+    return IPC_FAIL(this, "HTTPS-only mode: Failed to get current URI");
+  }
+
   bool isViewSource = currentUri->SchemeIs("view-source");
 
   nsCOMPtr<nsINestedURI> nestedURI = do_QueryInterface(currentUri);
@@ -1354,7 +1365,8 @@ mozilla::ipc::IPCResult WindowGlobalParent::RecvReloadWithHttpsOnlyException() {
   loadState->SetTriggeringPrincipal(nsContentUtils::GetSystemPrincipal());
   loadState->SetLoadType(LOAD_NORMAL_REPLACE);
 
-  BrowsingContext()->Top()->LoadURI(loadState, /* setNavigating */ true);
+  RefPtr<CanonicalBrowsingContext> topBC = BrowsingContext()->Top();
+  topBC->LoadURI(loadState, /* setNavigating */ true);
 
   return IPC_OK();
 }
@@ -1370,6 +1382,26 @@ IPCResult WindowGlobalParent::RecvDiscoverIdentityCredentialFromExternalSource(
             return aResolver(Some(aResult));
           },
           [aResolver](nsresult aErr) { aResolver(Nothing()); });
+  return IPC_OK();
+}
+
+IPCResult WindowGlobalParent::RecvHasStorageAccessPermission(
+    HasStorageAccessPermissionResolver&& aResolve) {
+  WindowGlobalParent* top = TopWindowContext();
+  if (!top) {
+    return IPC_FAIL_NO_REASON(this);
+  }
+  nsIPrincipal* topPrincipal = top->DocumentPrincipal();
+  nsIPrincipal* principal = DocumentPrincipal();
+  bool result;
+  nsresult rv = AntiTrackingUtils::TestStoragePermissionInParent(
+      topPrincipal, principal, &result);
+  NS_ENSURE_SUCCESS(
+      rv, IPC_FAIL(
+              this,
+              "Storage Access Permission: Failed to test storage permission."));
+
+  aResolve(result);
   return IPC_OK();
 }
 
@@ -1531,7 +1563,8 @@ void WindowGlobalParent::AddSecurityState(uint32_t aStateFlags) {
                nsIWebProgressListener::STATE_BLOCKED_MIXED_DISPLAY_CONTENT |
                nsIWebProgressListener::STATE_BLOCKED_MIXED_ACTIVE_CONTENT |
                nsIWebProgressListener::STATE_HTTPS_ONLY_MODE_UPGRADED |
-               nsIWebProgressListener::STATE_HTTPS_ONLY_MODE_UPGRADE_FAILED)) ==
+               nsIWebProgressListener::STATE_HTTPS_ONLY_MODE_UPGRADE_FAILED |
+               nsIWebProgressListener::STATE_HTTPS_ONLY_MODE_UPGRADED_FIRST)) ==
                  aStateFlags,
              "Invalid flags specified!");
 

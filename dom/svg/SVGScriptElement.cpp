@@ -14,6 +14,8 @@
 
 NS_IMPL_NS_NEW_SVG_ELEMENT_CHECK_PARSER(Script)
 
+using JS::loader::ScriptKind;
+
 namespace mozilla::dom {
 
 JSObject* SVGScriptElement::WrapNode(JSContext* aCx,
@@ -69,7 +71,9 @@ nsresult SVGScriptElement::Clone(dom::NodeInfo* aNodeInfo,
 }
 
 //----------------------------------------------------------------------
-void SVGScriptElement::GetType(nsAString& aType) { GetScriptType(aType); }
+void SVGScriptElement::GetType(nsAString& aType) {
+  GetAttr(nsGkAtoms::type, aType);
+}
 
 void SVGScriptElement::SetType(const nsAString& aType, ErrorResult& rv) {
   rv = SetAttr(kNameSpaceID_None, nsGkAtoms::type, aType, true);
@@ -96,10 +100,6 @@ already_AddRefed<DOMSVGAnimatedString> SVGScriptElement::Href() {
 //----------------------------------------------------------------------
 // nsIScriptElement methods
 
-bool SVGScriptElement::GetScriptType(nsAString& type) {
-  return GetAttr(kNameSpaceID_None, nsGkAtoms::type, type);
-}
-
 void SVGScriptElement::GetScriptText(nsAString& text) const {
   nsContentUtils::GetNodeTextContent(this, false, text);
 }
@@ -108,10 +108,13 @@ void SVGScriptElement::GetScriptCharset(nsAString& charset) {
   charset.Truncate();
 }
 
-void SVGScriptElement::FreezeExecutionAttrs(Document* aOwnerDoc) {
+void SVGScriptElement::FreezeExecutionAttrs(const Document* aOwnerDoc) {
   if (mFrozen) {
     return;
   }
+
+  // Determine whether this is a(n) classic/module/importmap script.
+  DetermineKindFromType(aOwnerDoc);
 
   if (mStringAttributes[HREF].IsExplicitlySet() ||
       mStringAttributes[XLINK_HREF].IsExplicitlySet()) {
@@ -151,6 +154,12 @@ void SVGScriptElement::FreezeExecutionAttrs(Document* aOwnerDoc) {
     // At this point mUri will be null for invalid URLs.
     mExternal = true;
   }
+
+  bool async = (mExternal || mKind == ScriptKind::eModule) && Async();
+  bool defer = mExternal && Defer();
+
+  mDefer = !async && defer;
+  mAsync = async;
 
   mFrozen = true;
 }

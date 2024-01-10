@@ -260,7 +260,7 @@ class TabTracker extends TabTrackerBase {
 
   getBrowserData(browser) {
     const window = browser.ownerGlobal;
-    const { tab } = window;
+    const tab = window?.tab;
     if (!tab) {
       return {
         tabId: -1,
@@ -389,6 +389,12 @@ class Tab extends TabBase {
 
   get hidden() {
     return false;
+  }
+
+  get autoDiscardable() {
+    // This property reflects whether the browser is allowed to auto-discard.
+    // Since extensions cannot do so on Android, we return true here.
+    return true;
   }
 
   get sharingState() {
@@ -590,6 +596,11 @@ extensions.on("startup", (type, extension) => {
 extensions.on("page-shutdown", (type, context) => {
   if (context.viewType == "tab") {
     const window = context.xulBrowser.ownerGlobal;
+    if (!windowTracker.isBrowserWindow(window)) {
+      // Content in non-browser window, e.g. ContentPage in xpcshell uses
+      // chrome://extensions/content/dummy.xhtml as the window.
+      return;
+    }
     GeckoViewTabBridge.closeTab({
       window,
       extensionId: context.extension.id,

@@ -118,6 +118,8 @@
                                                    \
   _(RegExpMatcher)                                 \
   _(RegExpSearcher)                                \
+  _(RegExpSearcherLastLimit)                       \
+  _(RegExpHasCaptureGroups)                        \
   _(IsRegExpObject)                                \
   _(IsPossiblyWrappedRegExpObject)                 \
   _(RegExpPrototypeOptimizable)                    \
@@ -125,6 +127,7 @@
   _(GetFirstDollarIndex)                           \
                                                    \
   _(SetHas)                                        \
+  _(SetSize)                                       \
                                                    \
   _(String)                                        \
   _(StringToString)                                \

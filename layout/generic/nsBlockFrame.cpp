@@ -1217,8 +1217,7 @@ static bool IsLineClampRoot(const nsBlockFrame* aFrame) {
     }
     return aFrame->StyleDisplay()->mOriginalDisplay;
   }();
-  return nsStyleDisplay::DisplayInside(origDisplay) ==
-         StyleDisplayInside::WebkitBox;
+  return origDisplay.Inside() == StyleDisplayInside::WebkitBox;
 }
 
 bool nsBlockFrame::IsInLineClampContext() const {
@@ -3420,8 +3419,12 @@ void nsBlockFrame::ReflowLine(BlockReflowState& aState, LineIterator aLine,
   // don't reflow the line. If this line contains inlines and the first one is
   // hidden by `content-visibility`, all of them are, so avoid reflow in that
   // case as well.
+  // For frames that own anonymous children, even the first child is hidden by
+  // `content-visibility`, there could be some anonymous children need reflow,
+  // so we don't skip reflow this line.
   nsIFrame* firstChild = aLine->mFirstChild;
-  if (firstChild->IsHiddenByContentVisibilityOfInFlowParentForLayout()) {
+  if (firstChild->IsHiddenByContentVisibilityOfInFlowParentForLayout() &&
+      !HasAnyStateBits(NS_FRAME_OWNS_ANON_BOXES)) {
     return;
   }
 
@@ -3756,6 +3759,18 @@ void nsBlockFrame::ReflowBlockFrame(BlockReflowState& aState,
   if (!frame) {
     NS_ASSERTION(false, "program error - unexpected empty line");
     return;
+  }
+
+  // If the previous frame was a page-break-frame, then preemptively push this
+  // frame to the next page.
+  // This is primarily important for the placeholders for abspos frames, which
+  // measure as zero height and then would be placed on this page.
+  if (aState.ContentBSize() != NS_UNCONSTRAINEDSIZE) {
+    const nsIFrame* const prev = frame->GetPrevSibling();
+    if (prev && prev->IsPageBreakFrame()) {
+      PushTruncatedLine(aState, aLine, aKeepReflowGoing);
+      return;
+    }
   }
 
   // Prepare the block reflow engine
@@ -6200,7 +6215,8 @@ void nsBlockFrame::UpdateFirstLetterStyle(ServoRestyleState& aRestyleState) {
   ComputedStyle* parentStyle = styleParent->Style();
   RefPtr<ComputedStyle> firstLetterStyle =
       aRestyleState.StyleSet().ResolvePseudoElementStyle(
-          *mContent->AsElement(), PseudoStyleType::firstLetter, parentStyle);
+          *mContent->AsElement(), PseudoStyleType::firstLetter, nullptr,
+          parentStyle);
   // Note that we don't need to worry about changehints for the continuation
   // styles: those will be handled by the styleParent already.
   RefPtr<ComputedStyle> continuationStyle =
@@ -7726,10 +7742,25 @@ void nsBlockFrame::CheckFloats(BlockReflowState& aState) {
 
   AutoTArray<nsIFrame*, 8> storedFloats;
   bool equal = true;
+  bool hasHiddenFloats = false;
   uint32_t i = 0;
   for (nsIFrame* f : mFloats) {
     if (f->HasAnyStateBits(NS_FRAME_IS_PUSHED_FLOAT)) {
       continue;
+    }
+    // There are chances that the float children won't be added to lines,
+    // because in nsBlockFrame::ReflowLine, it skips reflow line if the first
+    // child of the line is IsHiddenByContentVisibilityOfInFlowParentForLayout.
+    // There are also chances that the floats in line are out of date, for
+    // instance, lines could reflow if
+    // PresShell::IsForcingLayoutForHiddenContent, and after forcingLayout is
+    // off, the reflow of lines could be skipped, but the floats are still in
+    // there. Here we can't know whether the floats hidden by c-v are included
+    // in the lines or not. So we use hasHiddenFloats to skip the float length
+    // checking.
+    if (!hasHiddenFloats &&
+        f->IsHiddenByContentVisibilityOfInFlowParentForLayout()) {
+      hasHiddenFloats = true;
     }
     storedFloats.AppendElement(f);
     if (i < lineFloats.Length() && lineFloats.ElementAt(i) != f) {
@@ -7739,7 +7770,7 @@ void nsBlockFrame::CheckFloats(BlockReflowState& aState) {
   }
 
   if ((!equal || lineFloats.Length() != storedFloats.Length()) &&
-      !anyLineDirty) {
+      !anyLineDirty && !hasHiddenFloats) {
     NS_ERROR(
         "nsBlockFrame::CheckFloats: Explicit float list is out of sync with "
         "float cache");
@@ -8095,7 +8126,8 @@ void nsBlockFrame::UpdatePseudoElementStyles(ServoRestyleState& aRestyleState) {
     ComputedStyle* parentStyle = styleParent->Style();
     RefPtr<ComputedStyle> firstLineStyle =
         aRestyleState.StyleSet().ResolvePseudoElementStyle(
-            *mContent->AsElement(), PseudoStyleType::firstLine, parentStyle);
+            *mContent->AsElement(), PseudoStyleType::firstLine, nullptr,
+            parentStyle);
 
     // FIXME(bz): Can we make first-line continuations be non-inheriting anon
     // boxes?
@@ -8295,6 +8327,6 @@ int32_t nsBlockFrame::GetDepth() const {
 already_AddRefed<ComputedStyle> nsBlockFrame::GetFirstLetterStyle(
     nsPresContext* aPresContext) {
   return aPresContext->StyleSet()->ProbePseudoElementStyle(
-      *mContent->AsElement(), PseudoStyleType::firstLetter, Style());
+      *mContent->AsElement(), PseudoStyleType::firstLetter, nullptr, Style());
 }
 #endif

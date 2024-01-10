@@ -972,7 +972,7 @@ void txMozillaXSLTProcessor::reportError(nsresult aResult,
 void txMozillaXSLTProcessor::notifyError() {
   nsCOMPtr<Document> document;
   {
-    nsresult rv = NS_NewXMLDocument(getter_AddRefs(document));
+    nsresult rv = NS_NewXMLDocument(getter_AddRefs(document), nullptr, nullptr);
     NS_ENSURE_SUCCESS_VOID(rv);
   }
 
@@ -988,7 +988,7 @@ void txMozillaXSLTProcessor::notifyError() {
 
   IgnoredErrorResult rv;
   ElementCreationOptionsOrString options;
-  options.SetAsString();
+  Unused << options.SetAsString();
 
   nsCOMPtr<Element> element =
       document->CreateElementNS(ns, u"parsererror"_ns, options, rv);
@@ -1010,7 +1010,7 @@ void txMozillaXSLTProcessor::notifyError() {
 
   if (!mSourceText.IsEmpty()) {
     ElementCreationOptionsOrString options;
-    options.SetAsString();
+    Unused << options.SetAsString();
 
     nsCOMPtr<Element> sourceElement =
         document->CreateElementNS(ns, u"sourcetext"_ns, options, rv);

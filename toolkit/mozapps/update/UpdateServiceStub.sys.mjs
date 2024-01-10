@@ -3,33 +3,26 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
-
 import { FileUtils } from "resource://gre/modules/FileUtils.sys.mjs";
 import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
 
+const lazy = {};
+
+ChromeUtils.defineESModuleGetters(lazy, {
+  UpdateLog: "resource://gre/modules/UpdateLog.sys.mjs",
+});
+
 const DIR_UPDATES = "updates";
 const FILE_UPDATE_STATUS = "update.status";
-const FILE_UPDATE_MESSAGES = "update_messages.log";
-const FILE_BACKUP_MESSAGES = "update_messages_old.log";
 
 const KEY_UPDROOT = "UpdRootD";
 const KEY_OLD_UPDROOT = "OldUpdRootD";
-const KEY_PROFILE_DIR = "ProfD";
 
 // The pref prefix below should have the hash of the install path appended to
 // ensure that this is a per-installation pref (i.e. to ensure that migration
 // happens for every install rather than once per profile)
 const PREF_PREFIX_UPDATE_DIR_MIGRATED = "app.update.migrated.updateDir3.";
 const PREF_APP_UPDATE_ALTUPDATEDIRPATH = "app.update.altUpdateDirPath";
-const PREF_APP_UPDATE_LOG = "app.update.log";
-const PREF_APP_UPDATE_FILE_LOGGING = "app.update.log.file";
-
-const lazy = {};
-
-XPCOMUtils.defineLazyGetter(lazy, "gLogEnabled", function aus_gLogEnabled() {
-  return Services.prefs.getBoolPref(PREF_APP_UPDATE_LOG, false);
-});
 
 function getUpdateBaseDirNoCreate() {
   if (Cu.isInAutomation) {
@@ -60,10 +53,12 @@ function getUpdateBaseDirNoCreate() {
     }
   }
 
-  return FileUtils.getDir(KEY_UPDROOT, [], false);
+  return FileUtils.getDir(KEY_UPDROOT, []);
 }
 
 export function UpdateServiceStub() {
+  LOG("UpdateServiceStub - Begin.");
+
   let updateDir = getUpdateBaseDirNoCreate();
   let prefUpdateDirMigrated =
     PREF_PREFIX_UPDATE_DIR_MIGRATED + updateDir.leafName;
@@ -95,12 +90,6 @@ export function UpdateServiceStub() {
     }
   }
 
-  // Prevent file logging from persisting for more than a session by disabling
-  // it on startup.
-  if (Services.prefs.getBoolPref(PREF_APP_UPDATE_FILE_LOGGING, false)) {
-    deactivateUpdateLogFile();
-  }
-
   // If the update.status file exists then initiate post update processing.
   if (statusFile.exists()) {
     let aus = Cc["@mozilla.org/updates/update-service;1"]
@@ -116,29 +105,6 @@ UpdateServiceStub.prototype = {
   QueryInterface: ChromeUtils.generateQI(["nsIObserver"]),
 };
 
-function deactivateUpdateLogFile() {
-  LOG("Application update file logging being automatically turned off");
-  Services.prefs.setBoolPref(PREF_APP_UPDATE_FILE_LOGGING, false);
-  let logFile = Services.dirsvc.get(KEY_PROFILE_DIR, Ci.nsIFile);
-  logFile.append(FILE_UPDATE_MESSAGES);
-
-  try {
-    logFile.moveTo(null, FILE_BACKUP_MESSAGES);
-  } catch (e) {
-    LOG(
-      "Failed to backup update messages log (" +
-        e +
-        "). Attempting to " +
-        "remove it."
-    );
-    try {
-      logFile.remove(false);
-    } catch (e) {
-      LOG("Also failed to remove the update messages log: " + e);
-    }
-  }
-}
-
 /**
  * This function should be called when there are files in the old update
  * directory that may need to be migrated to the new update directory.
@@ -146,8 +112,8 @@ function deactivateUpdateLogFile() {
 function migrateUpdateDirectory() {
   LOG("UpdateServiceStub:migrateUpdateDirectory Performing migration");
 
-  let sourceRootDir = FileUtils.getDir(KEY_OLD_UPDROOT, [], false);
-  let destRootDir = FileUtils.getDir(KEY_UPDROOT, [], false);
+  let sourceRootDir = FileUtils.getDir(KEY_OLD_UPDROOT, []);
+  let destRootDir = FileUtils.getDir(KEY_UPDROOT, []);
   let hash = destRootDir.leafName;
 
   if (!sourceRootDir.exists()) {
@@ -418,8 +384,5 @@ function cleanupDir(dir, recurse) {
  *          The string to write to the error console.
  */
 function LOG(string) {
-  if (lazy.gLogEnabled) {
-    dump("*** AUS:SVC " + string + "\n");
-    Services.console.logStringMessage("AUS:SVC " + string);
-  }
+  lazy.UpdateLog.logPrefixedString("AUS:STB", string);
 }

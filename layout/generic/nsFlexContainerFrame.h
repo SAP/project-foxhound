@@ -325,9 +325,23 @@ class nsFlexContainerFrame final : public nsContainerFrame,
     // fragmentation.
     nscoord mContentBoxCrossSize = NS_UNCONSTRAINEDSIZE;
 
-    // The flex container's ascent, derived from any baseline-aligned flex items
-    // in the first flex line, if any such items exist. Otherwise, nscoord_MIN.
+    // The flex container's ascent for the "first baseline" alignment, derived
+    // from any baseline-aligned flex items in the startmost (from the
+    // perspective of the flex container's WM) flex line, if any such items
+    // exist. Otherwise, nscoord_MIN.
+    //
+    // Note: this is a distance from the border-box block-start edge.
     nscoord mAscent = NS_UNCONSTRAINEDSIZE;
+
+    // The flex container's ascent for the "last baseline" alignment, derived
+    // from any baseline-aligned flex items in the endmost (from the perspective
+    // of the flex container's WM) flex line, if any such items exist.
+    // Otherwise, nscoord_MIN.
+    //
+    // Note: this is a distance from the border-box block-end edge. It's
+    // different from the identically-named-member FlexItem::mAscentForLast,
+    // which is a distance from the item frame's border-box block-start edge.
+    nscoord mAscentForLast = NS_UNCONSTRAINEDSIZE;
   };
   FlexLayoutResult DoFlexLayout(
       const ReflowInput& aReflowInput,
@@ -520,10 +534,14 @@ class nsFlexContainerFrame final : public nsContainerFrame,
    * @param aAnyChildIncomplete true if any child being reflowed is incomplete;
    *                            false otherwise (as returned by
    *                            ReflowChildren()).
-   * @param aFlexContainerAscent the flex container's ascent, if one has been
-   *                             determined from its children. (If there are no
-   *                             children, pass nscoord_MIN to synthesize a
-   *                             value from the flex container itself).
+   * @param aFlr the result returned by DoFlexLayout.
+   *             Note: aFlr is mostly an "input" parameter, but we use
+   *             aFlr.mAscent as an "in/out" parameter; it's initially the
+   *             "tentative" flex container ascent computed in DoFlexLayout; or
+   *             nscoord_MIN if the ascent hasn't been established yet. If the
+   *             latter, this will be updated with an ascent derived from the
+   *             (WM-relative) startmost flex item (if there are any flex
+   *             items). Similar for aFlr.mAscentForLast.
    */
   void PopulateReflowOutput(
       ReflowOutput& aReflowOutput, const ReflowInput& aReflowInput,
@@ -531,8 +549,7 @@ class nsFlexContainerFrame final : public nsContainerFrame,
       const mozilla::LogicalMargin& aBorderPadding,
       const nscoord aConsumedBSize, const bool aMayNeedNextInFlow,
       const nscoord aMaxBlockEndEdgeOfChildren, const bool aAnyChildIncomplete,
-      nscoord aFlexContainerAscent, nsTArray<FlexLine>& aLines,
-      const FlexboxAxisTracker& aAxisTracker);
+      const FlexboxAxisTracker& aAxisTracker, FlexLayoutResult& aFlr);
 
   /**
    * Perform a final Reflow for our child frames.
@@ -547,12 +564,6 @@ class nsFlexContainerFrame final : public nsContainerFrame,
    * @param aSumOfPrevInFlowsChildrenBlockSize See the comment for
    *                                           SumOfChildrenBlockSizeProperty.
    * @param aFlr the result returned by DoFlexLayout.
-   *             Note: aFlr is mostly an "input" parameter, but we use
-   *             aFlr.mAscent an "in/out" parameter; it's initially the
-   *             "tentative" flex container ascent computed in DoFlexLayout; or,
-   *             nscoord_MIN if the ascent hasn't been established yet. If the
-   *             latter, this will be updated with an ascent derived from the
-   *             first flex item (if there are any flex items).
    * @param aFragmentData See the comment for PerFragmentFlexData.
    *                      Note: aFragmentData is an "in/out" parameter. It is
    *                      initialized by the data stored in our prev-in-flow's
@@ -647,9 +658,15 @@ class nsFlexContainerFrame final : public nsContainerFrame,
   nscoord mCachedMinISize = NS_INTRINSIC_ISIZE_UNKNOWN;
   nscoord mCachedPrefISize = NS_INTRINSIC_ISIZE_UNKNOWN;
 
-  nscoord mBaselineFromLastReflow = NS_INTRINSIC_ISIZE_UNKNOWN;
-  // Note: the last baseline is a distance from our border-box end edge.
-  nscoord mLastBaselineFromLastReflow = NS_INTRINSIC_ISIZE_UNKNOWN;
+  /**
+   * Cached baselines computed in our last reflow to optimize
+   * GetNaturalBaselineBOffset().
+   */
+  // Note: the first baseline is a distance from our border-box block-start
+  // edge.
+  nscoord mFirstBaseline = NS_INTRINSIC_ISIZE_UNKNOWN;
+  // Note: the last baseline is a distance from our border-box block-end edge.
+  nscoord mLastBaseline = NS_INTRINSIC_ISIZE_UNKNOWN;
 };
 
 #endif /* nsFlexContainerFrame_h___ */

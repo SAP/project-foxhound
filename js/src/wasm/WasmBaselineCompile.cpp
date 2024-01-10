@@ -370,7 +370,7 @@ bool BaseCompiler::beginFunction() {
   for (WasmABIArgIter i(args); !i.done(); i++) {
     ABIArg argLoc = *i;
     if (argLoc.kind() == ABIArg::Stack &&
-        args[i.index()] == MIRType::RefOrNull) {
+        args[i.index()] == MIRType::WasmAnyRef) {
       uint32_t offset = argLoc.offsetFromArgBase();
       MOZ_ASSERT(offset < inboundStackArgBytes);
       MOZ_ASSERT(offset % sizeof(void*) == 0);
@@ -443,7 +443,7 @@ bool BaseCompiler::beginFunction() {
   for (const Local& l : localInfo_) {
     // Locals that are stack arguments were already added to the stackmap
     // before pushing the frame.
-    if (l.type == MIRType::RefOrNull && !l.isStackArgument()) {
+    if (l.type == MIRType::WasmAnyRef && !l.isStackArgument()) {
       uint32_t offs = fr.localOffsetFromSp(l);
       MOZ_ASSERT(0 == (offs % sizeof(void*)));
       stackMapGenerator_.machineStackTracker.setGCPointer(offs / sizeof(void*));
@@ -483,7 +483,7 @@ bool BaseCompiler::beginFunction() {
       case MIRType::Int64:
         fr.storeLocalI64(RegI64(i->gpr64()), l);
         break;
-      case MIRType::RefOrNull: {
+      case MIRType::WasmAnyRef: {
         DebugOnly<uint32_t> offs = fr.localOffsetFromSp(l);
         MOZ_ASSERT(0 == (offs % sizeof(void*)));
         fr.storeLocalRef(RegRef(i->gpr()), l);
@@ -1533,7 +1533,7 @@ void BaseCompiler::passArg(ValType type, const Stk& arg, FunctionCall* call) {
       break;
     }
     case ValType::Ref: {
-      ABIArg argLoc = call->abi.next(MIRType::RefOrNull);
+      ABIArg argLoc = call->abi.next(MIRType::WasmAnyRef);
       if (argLoc.kind() == ABIArg::Stack) {
         ScratchRef scratch(*this);
         loadRef(arg, scratch);
@@ -1575,9 +1575,18 @@ class OutOfLineAbortingTrap : public OutOfLineCode {
   }
 };
 
+#ifdef ENABLE_WASM_TAIL_CALLS
+static ReturnCallAdjustmentInfo BuildReturnCallAdjustmentInfo(
+    const FuncType& callerType, const FuncType& calleeType) {
+  return ReturnCallAdjustmentInfo(
+      StackArgAreaSizeUnaligned(ArgTypeVector(calleeType)),
+      StackArgAreaSizeUnaligned(ArgTypeVector(callerType)));
+}
+#endif
+
 bool BaseCompiler::callIndirect(uint32_t funcTypeIndex, uint32_t tableIndex,
                                 const Stk& indexVal, const FunctionCall& call,
-                                CodeOffset* fastCallOffset,
+                                bool tailCall, CodeOffset* fastCallOffset,
                                 CodeOffset* slowCallOffset) {
   CallIndirectId callIndirectId =
       CallIndirectId::forFuncType(moduleEnv_, funcTypeIndex);
@@ -1604,8 +1613,19 @@ bool BaseCompiler::callIndirect(uint32_t funcTypeIndex, uint32_t tableIndex,
   }
   nullCheckFailed = nullref->entry();
 #endif
-  masm.wasmCallIndirect(desc, callee, oob->entry(), nullCheckFailed,
-                        mozilla::Nothing(), fastCallOffset, slowCallOffset);
+  if (!tailCall) {
+    masm.wasmCallIndirect(desc, callee, oob->entry(), nullCheckFailed,
+                          mozilla::Nothing(), fastCallOffset, slowCallOffset);
+  } else {
+#ifdef ENABLE_WASM_TAIL_CALLS
+    ReturnCallAdjustmentInfo retCallInfo = BuildReturnCallAdjustmentInfo(
+        this->funcType(), (*moduleEnv_.types)[funcTypeIndex].funcType());
+    masm.wasmReturnCallIndirect(desc, callee, oob->entry(), nullCheckFailed,
+                                mozilla::Nothing(), retCallInfo);
+#else
+    MOZ_CRASH("not available");
+#endif
+  }
   return true;
 }
 
@@ -1817,6 +1837,8 @@ void BaseCompiler::popAndAllocateForMulI64(RegI64* r0, RegI64* r1,
   pop2xI64(r0, r1);
 #elif defined(JS_CODEGEN_LOONG64)
   pop2xI64(r0, r1);
+#elif defined(JS_CODEGEN_RISCV64)
+  pop2xI64(r0, r1);
 #else
   MOZ_CRASH("BaseCompiler porting interface: popAndAllocateForMulI64");
 #endif
@@ -1879,6 +1901,12 @@ static void QuotientI64(MacroAssembler& masm, RegI64 rhs, RegI64 srcDest,
   } else {
     masm.as_div_d(srcDest.reg, srcDest.reg, rhs.reg);
   }
+#  elif defined(JS_CODEGEN_RISCV64)
+  if (isUnsigned) {
+    masm.divu(srcDest.reg, srcDest.reg, rhs.reg);
+  } else {
+    masm.div(srcDest.reg, srcDest.reg, rhs.reg);
+  }
 #  else
   MOZ_CRASH("BaseCompiler platform hook: quotientI64");
 #  endif
@@ -1923,6 +1951,12 @@ static void RemainderI64(MacroAssembler& masm, RegI64 rhs, RegI64 srcDest,
     masm.as_mod_du(srcDest.reg, srcDest.reg, rhs.reg);
   } else {
     masm.as_mod_d(srcDest.reg, srcDest.reg, rhs.reg);
+  }
+#  elif defined(JS_CODEGEN_RISCV64)
+  if (isUnsigned) {
+    masm.remu(srcDest.reg, srcDest.reg, rhs.reg);
+  } else {
+    masm.rem(srcDest.reg, srcDest.reg, rhs.reg);
   }
 #  else
   MOZ_CRASH("BaseCompiler platform hook: remainderI64");
@@ -2288,8 +2322,9 @@ static void CtzI32(MacroAssembler& masm, RegI32 rsd) {
 static RegI32 PopcntTemp(BaseCompiler& bc) {
 #if defined(JS_CODEGEN_X86) || defined(JS_CODEGEN_X64)
   return AssemblerX86Shared::HasPOPCNT() ? RegI32::Invalid() : bc.needI32();
-#elif defined(JS_CODEGEN_ARM) || defined(JS_CODEGEN_ARM64) || \
-    defined(JS_CODEGEN_MIPS64) || defined(JS_CODEGEN_LOONG64)
+#elif defined(JS_CODEGEN_ARM) || defined(JS_CODEGEN_ARM64) ||    \
+    defined(JS_CODEGEN_MIPS64) || defined(JS_CODEGEN_LOONG64) || \
+    defined(JS_CODEGEN_RISCV64)
   return bc.needI32();
 #else
   MOZ_CRASH("BaseCompiler platform hook: PopcntTemp");
@@ -3155,11 +3190,12 @@ bool BaseCompiler::jumpConditionalWithResults(BranchState* b, RegRef object,
     }
     if (b->stackHeight != resultsBase) {
       Label notTaken;
-      // Temporarily take the result registers so that branchGcHeapType doesn't
-      // use them.
+      // Temporarily take the result registers so that branchIfRefSubtype
+      // doesn't use them.
       needIntegerResultRegisters(b->resultType);
-      branchGcRefType(object, sourceType, destType, &notTaken,
-                      /*onSuccess=*/b->invertBranch ? !onSuccess : onSuccess);
+      branchIfRefSubtype(
+          object, sourceType, destType, &notTaken,
+          /*onSuccess=*/b->invertBranch ? onSuccess : !onSuccess);
       freeIntegerResultRegisters(b->resultType);
 
       // Shuffle stack args.
@@ -3171,8 +3207,8 @@ bool BaseCompiler::jumpConditionalWithResults(BranchState* b, RegRef object,
     }
   }
 
-  branchGcRefType(object, sourceType, destType, b->label,
-                  /*onSuccess=*/b->invertBranch ? !onSuccess : onSuccess);
+  branchIfRefSubtype(object, sourceType, destType, b->label,
+                     /*onSuccess=*/b->invertBranch ? !onSuccess : onSuccess);
   return true;
 }
 #endif
@@ -3805,15 +3841,15 @@ bool BaseCompiler::emitBrOnNull() {
   if (b.hasBlockResults()) {
     needResultRegisters(b.resultType);
   }
-  RegRef rp = popRef();
+  RegRef ref = popRef();
   if (b.hasBlockResults()) {
     freeResultRegisters(b.resultType);
   }
-  if (!jumpConditionalWithResults(&b, Assembler::Equal, rp,
-                                  ImmWord(NULLREF_VALUE))) {
+  if (!jumpConditionalWithResults(&b, Assembler::Equal, ref,
+                                  ImmWord(AnyRef::NullRefValue))) {
     return false;
   }
-  pushRef(rp);
+  pushRef(ref);
 
   return true;
 }
@@ -3844,22 +3880,22 @@ bool BaseCompiler::emitBrOnNonNull() {
   needIntegerResultRegisters(b.resultType);
 
   // Get the ref from the top of the stack
-  RegRef condition = popRef();
+  RegRef refCondition = popRef();
 
   // Create a copy of the ref for passing to the on_non_null label,
   // the original ref is used in the condition.
-  RegRef rp = needRef();
-  moveRef(condition, rp);
-  pushRef(rp);
+  RegRef ref = needRef();
+  moveRef(refCondition, ref);
+  pushRef(ref);
 
   freeIntegerResultRegisters(b.resultType);
 
-  if (!jumpConditionalWithResults(&b, Assembler::NotEqual, condition,
-                                  ImmWord(NULLREF_VALUE))) {
+  if (!jumpConditionalWithResults(&b, Assembler::NotEqual, refCondition,
+                                  ImmWord(AnyRef::NullRefValue))) {
     return false;
   }
 
-  freeRef(condition);
+  freeRef(refCondition);
 
   // Dropping null reference.
   dropValue();
@@ -4118,9 +4154,6 @@ bool BaseCompiler::emitCatch() {
 #endif
       }
       case ValType::Ref: {
-        // TODO/AnyRef-boxing: With boxed immediates and strings, this may need
-        // to handle other kinds of values.
-        ASSERT_ANYREF_IS_JSOBJECT;
         RegRef reg = needRef();
         masm.loadPtr(Address(data, offset), reg);
         pushRef(reg);
@@ -4546,8 +4579,8 @@ bool BaseCompiler::emitReturn() {
   return true;
 }
 
-bool BaseCompiler::emitCallArgs(const ValTypeVector& argTypes,
-                                const StackResultsLoc& results,
+template <typename T>
+bool BaseCompiler::emitCallArgs(const ValTypeVector& argTypes, T results,
                                 FunctionCall* baselineCall,
                                 CalleeOnStack calleeOnStack) {
   MOZ_ASSERT(!deadCode_);
@@ -4558,7 +4591,7 @@ bool BaseCompiler::emitCallArgs(const ValTypeVector& argTypes,
   startCallArgs(StackArgAreaSizeUnaligned(args), baselineCall);
 
   // Args are deeper on the stack than the stack result area, if any.
-  size_t argsDepth = results.count();
+  size_t argsDepth = results.onStackCount();
   // They're deeper than the callee too, for callIndirect.
   if (calleeOnStack == CalleeOnStack::True) {
     argsDepth++;
@@ -4574,11 +4607,11 @@ bool BaseCompiler::emitCallArgs(const ValTypeVector& argTypes,
       ABIArg argLoc = baselineCall->abi.next(MIRType::Pointer);
       if (argLoc.kind() == ABIArg::Stack) {
         ScratchPtr scratch(*this);
-        fr.computeOutgoingStackResultAreaPtr(results, scratch);
+        results.getStackResultArea(fr, scratch);
         masm.storePtr(scratch, Address(masm.getStackPointer(),
                                        argLoc.offsetFromArgBase()));
       } else {
-        fr.computeOutgoingStackResultAreaPtr(results, RegPtr(argLoc.gpr()));
+        results.getStackResultArea(fr, RegPtr(argLoc.gpr()));
       }
     }
   }
@@ -4619,7 +4652,7 @@ void BaseCompiler::pushReturnValueOfCall(const FunctionCall& call,
       break;
     }
 #endif
-    case MIRType::RefOrNull: {
+    case MIRType::WasmAnyRef: {
       RegRef rv = captureReturnedRef();
       pushRef(rv);
       break;
@@ -4739,7 +4772,7 @@ bool BaseCompiler::emitCall() {
             import ? RestoreRegisterStateAndRealm::True
                    : RestoreRegisterStateAndRealm::False);
 
-  if (!emitCallArgs(funcType.args(), results, &baselineCall,
+  if (!emitCallArgs(funcType.args(), NormalCallResults(results), &baselineCall,
                     CalleeOnStack::False)) {
     return false;
   }
@@ -4765,6 +4798,59 @@ bool BaseCompiler::emitCall() {
   captureCallResultRegisters(resultType);
   return pushCallResults(baselineCall, resultType, results);
 }
+
+#ifdef ENABLE_WASM_TAIL_CALLS
+bool BaseCompiler::emitReturnCall() {
+  uint32_t funcIndex;
+  BaseNothingVector args_{};
+  BaseNothingVector unused_values{};
+  if (!iter_.readReturnCall(&funcIndex, &args_, &unused_values)) {
+    return false;
+  }
+
+  if (deadCode_) {
+    return true;
+  }
+
+  sync();
+
+  const FuncType& funcType = *moduleEnv_.funcs[funcIndex].type;
+  bool import = moduleEnv_.funcIsImport(funcIndex);
+
+  uint32_t numArgs = funcType.args().length();
+
+  FunctionCall baselineCall{};
+  beginCall(baselineCall, UseABI::Wasm,
+            import ? RestoreRegisterStateAndRealm::True
+                   : RestoreRegisterStateAndRealm::False);
+
+  if (!emitCallArgs(funcType.args(), TailCallResults(funcType), &baselineCall,
+                    CalleeOnStack::False)) {
+    return false;
+  }
+
+  ReturnCallAdjustmentInfo retCallInfo =
+      BuildReturnCallAdjustmentInfo(this->funcType(), funcType);
+
+  if (import) {
+    CallSiteDesc desc(bytecodeOffset(), CallSiteDesc::Import);
+    CalleeDesc callee = CalleeDesc::import(
+        moduleEnv_.offsetOfFuncImportInstanceData(funcIndex));
+    masm.wasmReturnCallImport(desc, callee, retCallInfo);
+  } else {
+    CallSiteDesc desc(bytecodeOffset(), CallSiteDesc::ReturnFunc);
+    masm.wasmReturnCall(desc, funcIndex, retCallInfo);
+  }
+
+  MOZ_ASSERT(stackMapGenerator_.framePushedExcludingOutboundCallArgs.isSome());
+  stackMapGenerator_.framePushedExcludingOutboundCallArgs.reset();
+
+  popValueStackBy(numArgs);
+
+  deadCode_ = true;
+  return true;
+}
+#endif
 
 bool BaseCompiler::emitCallIndirect() {
   uint32_t funcTypeIndex;
@@ -4799,7 +4885,7 @@ bool BaseCompiler::emitCallIndirect() {
   // MacroAssembler::wasmCallIndirect).
   beginCall(baselineCall, UseABI::Wasm, RestoreRegisterStateAndRealm::False);
 
-  if (!emitCallArgs(funcType.args(), results, &baselineCall,
+  if (!emitCallArgs(funcType.args(), NormalCallResults(results), &baselineCall,
                     CalleeOnStack::True)) {
     return false;
   }
@@ -4808,7 +4894,7 @@ bool BaseCompiler::emitCallIndirect() {
   CodeOffset fastCallOffset;
   CodeOffset slowCallOffset;
   if (!callIndirect(funcTypeIndex, tableIndex, callee, baselineCall,
-                    &fastCallOffset, &slowCallOffset)) {
+                    /*tailCall*/ false, &fastCallOffset, &slowCallOffset)) {
     return false;
   }
   if (!createStackMap("emitCallIndirect", fastCallOffset)) {
@@ -4827,6 +4913,58 @@ bool BaseCompiler::emitCallIndirect() {
   captureCallResultRegisters(resultType);
   return pushCallResults(baselineCall, resultType, results);
 }
+
+#ifdef ENABLE_WASM_TAIL_CALLS
+bool BaseCompiler::emitReturnCallIndirect() {
+  uint32_t funcTypeIndex;
+  uint32_t tableIndex;
+  Nothing callee_;
+  BaseNothingVector args_{};
+  BaseNothingVector unused_values{};
+  if (!iter_.readReturnCallIndirect(&funcTypeIndex, &tableIndex, &callee_,
+                                    &args_, &unused_values)) {
+    return false;
+  }
+
+  if (deadCode_) {
+    return true;
+  }
+
+  sync();
+
+  const FuncType& funcType = (*moduleEnv_.types)[funcTypeIndex].funcType();
+
+  // Stack: ... arg1 .. argn callee
+
+  uint32_t numArgs = funcType.args().length() + 1;
+
+  FunctionCall baselineCall{};
+  // State and realm are restored as needed by by callIndirect (really by
+  // MacroAssembler::wasmCallIndirect).
+  beginCall(baselineCall, UseABI::Wasm, RestoreRegisterStateAndRealm::False);
+
+  if (!emitCallArgs(funcType.args(), TailCallResults(funcType), &baselineCall,
+                    CalleeOnStack::True)) {
+    return false;
+  }
+
+  const Stk& callee = peek(0);
+  CodeOffset fastCallOffset;
+  CodeOffset slowCallOffset;
+  if (!callIndirect(funcTypeIndex, tableIndex, callee, baselineCall,
+                    /*tailCall*/ true, &fastCallOffset, &slowCallOffset)) {
+    return false;
+  }
+
+  MOZ_ASSERT(stackMapGenerator_.framePushedExcludingOutboundCallArgs.isSome());
+  stackMapGenerator_.framePushedExcludingOutboundCallArgs.reset();
+
+  popValueStackBy(numArgs);
+
+  deadCode_ = true;
+  return true;
+}
+#endif
 
 #ifdef ENABLE_WASM_FUNCTION_REFERENCES
 bool BaseCompiler::emitCallRef() {
@@ -4859,7 +4997,7 @@ bool BaseCompiler::emitCallRef() {
   // MacroAssembler::wasmCallRef).
   beginCall(baselineCall, UseABI::Wasm, RestoreRegisterStateAndRealm::False);
 
-  if (!emitCallArgs(funcType->args(), results, &baselineCall,
+  if (!emitCallArgs(funcType->args(), NormalCallResults(results), &baselineCall,
                     CalleeOnStack::True)) {
     return false;
   }
@@ -4924,12 +5062,11 @@ bool BaseCompiler::emitUnaryMathBuiltinCall(SymbolicAddress callee,
   ValType retType = operandType;
   uint32_t numArgs = signature.length();
   size_t stackSpace = stackConsumed(numArgs);
-  StackResultsLoc noStackResults;
 
   FunctionCall baselineCall{};
   beginCall(baselineCall, UseABI::Builtin, RestoreRegisterStateAndRealm::False);
 
-  if (!emitCallArgs(signature, noStackResults, &baselineCall,
+  if (!emitCallArgs(signature, NoCallResults(), &baselineCall,
                     CalleeOnStack::False)) {
     return false;
   }
@@ -5209,7 +5346,7 @@ bool BaseCompiler::emitSetOrTeeLocal(uint32_t slot) {
     case ValType::Ref: {
       RegRef rv = popRef();
       syncLocal(slot);
-      fr.storeLocalRef(rv, localFromSlot(slot, MIRType::RefOrNull));
+      fr.storeLocalRef(rv, localFromSlot(slot, MIRType::WasmAnyRef));
       if (isSetLocal) {
         freeRef(rv);
       } else {
@@ -5416,7 +5553,9 @@ bool BaseCompiler::emitLoad(ValType type, Scalar::Type viewType) {
   if (deadCode_) {
     return true;
   }
-  MemoryAccessDesc access(viewType, addr.align, addr.offset, bytecodeOffset());
+  MemoryAccessDesc access(addr.memoryIndex, viewType, addr.align, addr.offset,
+                          bytecodeOffset(),
+                          hugeMemoryEnabled(addr.memoryIndex));
   loadCommon(&access, AccessCheck(), type);
   return true;
 }
@@ -5431,7 +5570,9 @@ bool BaseCompiler::emitStore(ValType resultType, Scalar::Type viewType) {
   if (deadCode_) {
     return true;
   }
-  MemoryAccessDesc access(viewType, addr.align, addr.offset, bytecodeOffset());
+  MemoryAccessDesc access(addr.memoryIndex, viewType, addr.align, addr.offset,
+                          bytecodeOffset(),
+                          hugeMemoryEnabled(addr.memoryIndex));
   storeCommon(&access, AccessCheck(), resultType);
   return true;
 }
@@ -5693,7 +5834,7 @@ bool BaseCompiler::emitInstanceCall(const SymbolicAddressSignature& builtin) {
       case MIRType::Float32:
         t = ValType::F32;
         break;
-      case MIRType::RefOrNull:
+      case MIRType::WasmAnyRef:
         t = RefType::extern_();
         break;
       case MIRType::Pointer:
@@ -5754,7 +5895,7 @@ bool BaseCompiler::emitRefNull() {
     return true;
   }
 
-  pushRef(NULLREF_VALUE);
+  pushRef(AnyRef::NullRefValue);
   return true;
 }
 
@@ -5771,7 +5912,7 @@ bool BaseCompiler::emitRefIsNull() {
   RegRef r = popRef();
   RegI32 rd = narrowRef(r);
 
-  masm.cmpPtrSet(Assembler::Equal, r, ImmWord(NULLREF_VALUE), rd);
+  masm.cmpPtrSet(Assembler::Equal, r, ImmWord(AnyRef::NullRefValue), rd);
   pushI32(rd);
   return true;
 }
@@ -5812,7 +5953,8 @@ bool BaseCompiler::emitAtomicCmpXchg(ValType type, Scalar::Type viewType) {
   if (deadCode_) {
     return true;
   }
-  MemoryAccessDesc access(viewType, addr.align, addr.offset, bytecodeOffset(),
+  MemoryAccessDesc access(addr.memoryIndex, viewType, addr.align, addr.offset,
+                          bytecodeOffset(), hugeMemoryEnabled(addr.memoryIndex),
                           Synchronization::Full());
   atomicCmpXchg(&access, type);
   return true;
@@ -5826,7 +5968,8 @@ bool BaseCompiler::emitAtomicLoad(ValType type, Scalar::Type viewType) {
   if (deadCode_) {
     return true;
   }
-  MemoryAccessDesc access(viewType, addr.align, addr.offset, bytecodeOffset(),
+  MemoryAccessDesc access(addr.memoryIndex, viewType, addr.align, addr.offset,
+                          bytecodeOffset(), hugeMemoryEnabled(addr.memoryIndex),
                           Synchronization::Load());
   atomicLoad(&access, type);
   return true;
@@ -5843,7 +5986,8 @@ bool BaseCompiler::emitAtomicRMW(ValType type, Scalar::Type viewType,
   if (deadCode_) {
     return true;
   }
-  MemoryAccessDesc access(viewType, addr.align, addr.offset, bytecodeOffset(),
+  MemoryAccessDesc access(addr.memoryIndex, viewType, addr.align, addr.offset,
+                          bytecodeOffset(), hugeMemoryEnabled(addr.memoryIndex),
                           Synchronization::Full());
   atomicRMW(&access, type, op);
   return true;
@@ -5859,7 +6003,8 @@ bool BaseCompiler::emitAtomicStore(ValType type, Scalar::Type viewType) {
   if (deadCode_) {
     return true;
   }
-  MemoryAccessDesc access(viewType, addr.align, addr.offset, bytecodeOffset(),
+  MemoryAccessDesc access(addr.memoryIndex, viewType, addr.align, addr.offset,
+                          bytecodeOffset(), hugeMemoryEnabled(addr.memoryIndex),
                           Synchronization::Store());
   atomicStore(&access, type);
   return true;
@@ -5875,7 +6020,8 @@ bool BaseCompiler::emitAtomicXchg(ValType type, Scalar::Type viewType) {
   if (deadCode_) {
     return true;
   }
-  MemoryAccessDesc access(viewType, addr.align, addr.offset, bytecodeOffset(),
+  MemoryAccessDesc access(addr.memoryIndex, viewType, addr.align, addr.offset,
+                          bytecodeOffset(), hugeMemoryEnabled(addr.memoryIndex),
                           Synchronization::Full());
   atomicXchg(&access, type);
   return true;
@@ -5891,8 +6037,9 @@ bool BaseCompiler::emitWait(ValType type, uint32_t byteSize) {
     return true;
   }
   MemoryAccessDesc access(
+      addr.memoryIndex,
       type.kind() == ValType::I32 ? Scalar::Int32 : Scalar::Int64, addr.align,
-      addr.offset, bytecodeOffset());
+      addr.offset, bytecodeOffset(), hugeMemoryEnabled(addr.memoryIndex));
   return atomicWait(type, &access);
 }
 
@@ -5905,8 +6052,9 @@ bool BaseCompiler::emitWake() {
   if (deadCode_) {
     return true;
   }
-  MemoryAccessDesc access(Scalar::Int32, addr.align, addr.offset,
-                          bytecodeOffset());
+  MemoryAccessDesc access(addr.memoryIndex, Scalar::Int32, addr.align,
+                          addr.offset, bytecodeOffset(),
+                          hugeMemoryEnabled(addr.memoryIndex));
   return atomicWake(&access);
 }
 
@@ -5926,33 +6074,47 @@ bool BaseCompiler::emitFence() {
 // Bulk memory operations.
 
 bool BaseCompiler::emitMemoryGrow() {
-  return emitInstanceCallOp(
-      !usesMemory() || isMem32() ? SASigMemoryGrowM32 : SASigMemoryGrowM64,
-      [this]() -> bool {
-        Nothing arg;
-        return iter_.readMemoryGrow(&arg);
-      });
-}
-
-bool BaseCompiler::emitMemorySize() {
-  return emitInstanceCallOp(
-      !usesMemory() || isMem32() ? SASigMemorySizeM32 : SASigMemorySizeM64,
-      [this]() -> bool { return iter_.readMemorySize(); });
-}
-
-bool BaseCompiler::emitMemCopy() {
-  uint32_t dstMemOrTableIndex = 0;
-  uint32_t srcMemOrTableIndex = 0;
+  uint32_t memoryIndex;
   Nothing nothing;
-  if (!iter_.readMemOrTableCopy(true, &dstMemOrTableIndex, &nothing,
-                                &srcMemOrTableIndex, &nothing, &nothing)) {
+  if (!iter_.readMemoryGrow(&memoryIndex, &nothing)) {
     return false;
   }
   if (deadCode_) {
     return true;
   }
 
-  if (isMem32()) {
+  pushI32(memoryIndex);
+  return emitInstanceCall(isMem32(memoryIndex) ? SASigMemoryGrowM32
+                                               : SASigMemoryGrowM64);
+}
+
+bool BaseCompiler::emitMemorySize() {
+  uint32_t memoryIndex;
+  if (!iter_.readMemorySize(&memoryIndex)) {
+    return false;
+  }
+  if (deadCode_) {
+    return true;
+  }
+
+  pushI32(memoryIndex);
+  return emitInstanceCall(isMem32(memoryIndex) ? SASigMemorySizeM32
+                                               : SASigMemorySizeM64);
+}
+
+bool BaseCompiler::emitMemCopy() {
+  uint32_t dstMemIndex = 0;
+  uint32_t srcMemIndex = 0;
+  Nothing nothing;
+  if (!iter_.readMemOrTableCopy(true, &dstMemIndex, &nothing, &srcMemIndex,
+                                &nothing, &nothing)) {
+    return false;
+  }
+  if (deadCode_) {
+    return true;
+  }
+
+  if (dstMemIndex == 0 && srcMemIndex == 0 && isMem32(dstMemIndex)) {
     int32_t signedLength;
     if (peekConst(&signedLength) && signedLength != 0 &&
         uint32_t(signedLength) <= MaxInlineMemoryCopyLength) {
@@ -5961,27 +6123,71 @@ bool BaseCompiler::emitMemCopy() {
     }
   }
 
-  return memCopyCall();
+  return memCopyCall(dstMemIndex, srcMemIndex);
 }
 
-bool BaseCompiler::memCopyCall() {
-  pushHeapBase();
-  return emitInstanceCall(
-      usesSharedMemory()
-          ? (isMem32() ? SASigMemCopySharedM32 : SASigMemCopySharedM64)
-          : (isMem32() ? SASigMemCopyM32 : SASigMemCopyM64));
+bool BaseCompiler::memCopyCall(uint32_t dstMemIndex, uint32_t srcMemIndex) {
+  // Common and optimized path for when the src/dest memories are the same
+  if (dstMemIndex == srcMemIndex) {
+    bool mem32 = isMem32(dstMemIndex);
+    pushHeapBase(dstMemIndex);
+    return emitInstanceCall(
+        usesSharedMemory(dstMemIndex)
+            ? (mem32 ? SASigMemCopySharedM32 : SASigMemCopySharedM64)
+            : (mem32 ? SASigMemCopyM32 : SASigMemCopyM64));
+  }
+
+  // Do the general-purpose fallback for copying between any combination of
+  // memories. This works by moving everything to the lowest-common denominator.
+  // i32 indices are promoted to i64, and non-shared memories are treated as
+  // shared.
+  IndexType dstIndexType = moduleEnv_.memories[dstMemIndex].indexType();
+  IndexType srcIndexType = moduleEnv_.memories[srcMemIndex].indexType();
+  IndexType lenIndexType =
+      (dstIndexType == IndexType::I32 || srcIndexType == IndexType::I32)
+          ? IndexType::I32
+          : IndexType::I64;
+
+  // Pop the operands off of the stack and widen them
+  RegI64 len = popIndexToInt64(lenIndexType);
+#ifdef JS_CODEGEN_X86
+  {
+    // Stash the length value to prevent running out of registers
+    ScratchPtr scratch(*this);
+    stashI64(scratch, len);
+    freeI64(len);
+  }
+#endif
+  RegI64 srcIndex = popIndexToInt64(srcIndexType);
+  RegI64 dstIndex = popIndexToInt64(dstIndexType);
+
+  pushI64(dstIndex);
+  pushI64(srcIndex);
+#ifdef JS_CODEGEN_X86
+  {
+    // Unstash the length value and push it back on the stack
+    ScratchPtr scratch(*this);
+    len = needI64();
+    unstashI64(scratch, len);
+  }
+#endif
+  pushI64(len);
+  pushI32(dstMemIndex);
+  pushI32(srcMemIndex);
+  return emitInstanceCall(SASigMemCopyAny);
 }
 
 bool BaseCompiler::emitMemFill() {
+  uint32_t memoryIndex;
   Nothing nothing;
-  if (!iter_.readMemFill(&nothing, &nothing, &nothing)) {
+  if (!iter_.readMemFill(&memoryIndex, &nothing, &nothing, &nothing)) {
     return false;
   }
   if (deadCode_) {
     return true;
   }
 
-  if (isMem32()) {
+  if (memoryIndex == 0 && isMem32(memoryIndex)) {
     int32_t signedLength;
     int32_t signedValue;
     if (peek2xConst(&signedLength, &signedValue) && signedLength != 0 &&
@@ -5990,28 +6196,34 @@ bool BaseCompiler::emitMemFill() {
       return true;
     }
   }
-  return memFillCall();
+  return memFillCall(memoryIndex);
 }
 
-bool BaseCompiler::memFillCall() {
-  pushHeapBase();
+bool BaseCompiler::memFillCall(uint32_t memoryIndex) {
+  pushHeapBase(memoryIndex);
   return emitInstanceCall(
-      usesSharedMemory()
-          ? (isMem32() ? SASigMemFillSharedM32 : SASigMemFillSharedM64)
-          : (isMem32() ? SASigMemFillM32 : SASigMemFillM64));
+      usesSharedMemory(memoryIndex)
+          ? (isMem32(memoryIndex) ? SASigMemFillSharedM32
+                                  : SASigMemFillSharedM64)
+          : (isMem32(memoryIndex) ? SASigMemFillM32 : SASigMemFillM64));
 }
 
 bool BaseCompiler::emitMemInit() {
-  return emitInstanceCallOp<uint32_t>(
-      (!usesMemory() || isMem32() ? SASigMemInitM32 : SASigMemInitM64),
-      [this](uint32_t* segIndex) -> bool {
-        Nothing nothing;
-        if (iter_.readMemOrTableInit(/*isMem*/ true, segIndex, nullptr,
-                                     &nothing, &nothing, &nothing)) {
-          return true;
-        }
-        return false;
-      });
+  uint32_t segIndex;
+  uint32_t memIndex;
+  Nothing nothing;
+  if (!iter_.readMemOrTableInit(/*isMem*/ true, &segIndex, &memIndex, &nothing,
+                                &nothing, &nothing)) {
+    return false;
+  }
+  if (deadCode_) {
+    return true;
+  }
+
+  pushI32(segIndex);
+  pushI32(memIndex);
+  return emitInstanceCall(isMem32(memIndex) ? SASigMemInitM32
+                                            : SASigMemInitM64);
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -6057,19 +6269,21 @@ bool BaseCompiler::emitTableFill() {
 }
 
 bool BaseCompiler::emitMemDiscard() {
+  uint32_t memoryIndex;
   Nothing nothing;
-  if (!iter_.readMemDiscard(&nothing, &nothing)) {
+  if (!iter_.readMemDiscard(&memoryIndex, &nothing, &nothing)) {
     return false;
   }
   if (deadCode_) {
     return true;
   }
 
-  pushHeapBase();
+  pushHeapBase(memoryIndex);
   return emitInstanceCall(
-      usesSharedMemory()
-          ? (isMem32() ? SASigMemDiscardSharedM32 : SASigMemDiscardSharedM64)
-          : (isMem32() ? SASigMemDiscardM32 : SASigMemDiscardM64));
+      usesSharedMemory(memoryIndex)
+          ? (isMem32(memoryIndex) ? SASigMemDiscardSharedM32
+                                  : SASigMemDiscardSharedM64)
+          : (isMem32(memoryIndex) ? SASigMemDiscardM32 : SASigMemDiscardM64));
 }
 
 bool BaseCompiler::emitTableGet() {
@@ -6313,10 +6527,6 @@ bool BaseCompiler::emitBarrieredStore(const Maybe<RegRef>& object,
                                       RegPtr valueAddr, RegRef value,
                                       PreBarrierKind preBarrierKind,
                                       PostBarrierKind postBarrierKind) {
-  // TODO/AnyRef-boxing: With boxed immediates and strings, the write
-  // barrier is going to have to be more complicated.
-  ASSERT_ANYREF_IS_JSOBJECT;
-
   // The pre-barrier preserves all allocated registers.
   if (preBarrierKind == PreBarrierKind::Normal) {
     emitPreBarrier(valueAddr);
@@ -6341,15 +6551,11 @@ bool BaseCompiler::emitBarrieredStore(const Maybe<RegRef>& object,
 }
 
 void BaseCompiler::emitBarrieredClear(RegPtr valueAddr) {
-  // TODO/AnyRef-boxing: With boxed immediates and strings, the write
-  // barrier is going to have to be more complicated.
-  ASSERT_ANYREF_IS_JSOBJECT;
-
   // The pre-barrier preserves all allocated registers.
   emitPreBarrier(valueAddr);
 
   // Store null
-  masm.storePtr(ImmWord(0), Address(valueAddr, 0));
+  masm.storePtr(ImmWord(AnyRef::NullRefValue), Address(valueAddr, 0));
 
   // No post-barrier is needed, as null does not require a store buffer entry
 }
@@ -6660,10 +6866,17 @@ bool BaseCompiler::emitStructNew() {
 
   const StructType& structType = (*moduleEnv_.types)[typeIndex].structType();
 
+  // Figure out whether we need an OOL storage area, and hence which routine
+  // to call.
+  SymbolicAddressSignature calleeSASig =
+      WasmStructObject::requiresOutlineBytes(structType.size_)
+          ? SASigStructNewOOL_false
+          : SASigStructNewIL_false;
+
   // Allocate an uninitialized struct. This requires the type definition
   // for the struct to be pushed on the stack. This will trap on OOM.
   pushPtr(loadTypeDefInstanceData(typeIndex));
-  if (!emitInstanceCall(SASigStructNewUninit)) {
+  if (!emitInstanceCall(calleeSASig)) {
     return false;
   }
 
@@ -6756,10 +6969,19 @@ bool BaseCompiler::emitStructNewDefault() {
     return true;
   }
 
+  const StructType& structType = (*moduleEnv_.types)[typeIndex].structType();
+
+  // Figure out whether we need an OOL storage area, and hence which routine
+  // to call.
+  SymbolicAddressSignature calleeSASig =
+      WasmStructObject::requiresOutlineBytes(structType.size_)
+          ? SASigStructNewOOL_true
+          : SASigStructNewIL_true;
+
   // Allocate a default initialized struct. This requires the type definition
   // for the struct to be pushed on the stack. This will trap on OOM.
   pushPtr(loadTypeDefInstanceData(typeIndex));
-  return emitInstanceCall(SASigStructNew);
+  return emitInstanceCall(calleeSASig);
 }
 
 bool BaseCompiler::emitStructGet(FieldWideningOp wideningOp) {
@@ -6889,7 +7111,7 @@ bool BaseCompiler::emitArrayNew() {
   // Allocate an uninitialized array. This requires the type definition
   // for the array to be pushed on the stack. This will trap on OOM.
   pushPtr(loadTypeDefInstanceData(typeIndex));
-  if (!emitInstanceCall(SASigArrayNewUninit)) {
+  if (!emitInstanceCall(SASigArrayNew_false)) {
     return false;
   }
 
@@ -6958,10 +7180,10 @@ bool BaseCompiler::emitArrayNewFixed() {
   // At this point, the top section of the value stack contains the values to
   // be used to initialise the array, with index 0 as the topmost value.  Push
   // the required number of elements and the required type on, since the call
-  // to SASigArrayNew will use them.
+  // to SASigArrayNew_true will use them.
   pushI32(numElements);
   pushPtr(loadTypeDefInstanceData(typeIndex));
-  if (!emitInstanceCall(SASigArrayNew)) {
+  if (!emitInstanceCall(SASigArrayNew_true)) {
     return false;
   }
 
@@ -6972,7 +7194,7 @@ bool BaseCompiler::emitArrayNewFixed() {
     needPtr(RegPtr(PreBarrierReg));
   }
 
-  // Get hold of the pointer to the array, as created by SASigArrayNew.
+  // Get hold of the pointer to the array, as created by SASigArrayNew_true.
   RegRef rp = popRef();
 
   // Acquire the data pointer from the object
@@ -7032,7 +7254,7 @@ bool BaseCompiler::emitArrayNewDefault() {
   // Allocate a default initialized array. This requires the type definition
   // for the array to be pushed on the stack. This will trap on OOM.
   pushPtr(loadTypeDefInstanceData(typeIndex));
-  return emitInstanceCall(SASigArrayNew);
+  return emitInstanceCall(SASigArrayNew_true);
 }
 
 bool BaseCompiler::emitArrayNewData() {
@@ -7245,13 +7467,48 @@ bool BaseCompiler::emitArrayCopy() {
   return emitInstanceCall(SASigArrayCopy);
 }
 
+bool BaseCompiler::emitI31New() {
+  Nothing value;
+  if (!iter_.readConversion(ValType::I32, ValType(RefType::i31()), &value)) {
+    return false;
+  }
+
+  RegI32 intValue = popI32();
+  RegRef i31Value = needRef();
+  masm.truncate32ToWasmI31Ref(intValue, i31Value);
+  freeI32(intValue);
+  pushRef(i31Value);
+  return true;
+}
+
+bool BaseCompiler::emitI31Get(FieldWideningOp wideningOp) {
+  MOZ_ASSERT(wideningOp != FieldWideningOp::None);
+
+  Nothing value;
+  if (!iter_.readConversion(ValType(RefType::i31()), ValType::I32, &value)) {
+    return false;
+  }
+
+  RegRef i31Value = popRef();
+  RegI32 intValue = needI32();
+  if (wideningOp == FieldWideningOp::Signed) {
+    masm.convertWasmI31RefTo32Signed(i31Value, intValue);
+  } else {
+    masm.convertWasmI31RefTo32Unsigned(i31Value, intValue);
+  }
+  freeRef(i31Value);
+  pushI32(intValue);
+  return true;
+}
+
 void BaseCompiler::emitRefTestCommon(RefType sourceType, RefType destType) {
   Label success;
   Label join;
-  RegRef object = popRef();
+  RegRef ref = popRef();
   RegI32 result = needI32();
 
-  branchGcRefType(object, sourceType, destType, &success, /*onSuccess=*/true);
+  branchIfRefSubtype(ref, sourceType, destType, &success,
+                     /*onSuccess=*/true);
   masm.xor32(result, result);
   masm.jump(&join);
   masm.bind(&success);
@@ -7259,17 +7516,17 @@ void BaseCompiler::emitRefTestCommon(RefType sourceType, RefType destType) {
   masm.bind(&join);
 
   pushI32(result);
-  freeRef(object);
+  freeRef(ref);
 }
 
 void BaseCompiler::emitRefCastCommon(RefType sourceType, RefType destType) {
-  RegRef object = popRef();
+  RegRef ref = popRef();
 
   Label success;
-  branchGcRefType(object, sourceType, destType, &success, /*onSuccess=*/true);
+  branchIfRefSubtype(ref, sourceType, destType, &success, /*onSuccess=*/true);
   masm.wasmTrap(Trap::BadCast, bytecodeOffset());
   masm.bind(&success);
-  pushRef(object);
+  pushRef(ref);
 }
 
 bool BaseCompiler::emitRefTestV5() {
@@ -7291,34 +7548,67 @@ bool BaseCompiler::emitRefTestV5() {
   return true;
 }
 
-void BaseCompiler::branchGcRefType(RegRef object, RefType sourceType,
-                                   RefType destType, Label* label,
-                                   bool onSuccess) {
-  RegPtr superSuperTypeVector;
-  if (MacroAssembler::needSuperSuperTypeVectorForBranchWasmGcRefType(
-          destType)) {
-    uint32_t typeIndex = moduleEnv_.types->indexOf(*destType.typeDef());
-    superSuperTypeVector = loadSuperTypeVector(typeIndex);
-  }
-  RegI32 scratch1 = MacroAssembler::needScratch1ForBranchWasmGcRefType(destType)
-                        ? needI32()
-                        : RegI32::Invalid();
-  RegI32 scratch2 = MacroAssembler::needScratch2ForBranchWasmGcRefType(destType)
-                        ? needI32()
-                        : RegI32::Invalid();
+void BaseCompiler::branchIfRefSubtype(RegRef ref, RefType sourceType,
+                                      RefType destType, Label* label,
+                                      bool onSuccess) {
+  if (destType.isAnyHierarchy()) {
+    RegPtr superSuperTypeVector;
+    if (MacroAssembler::needSuperSTVForBranchWasmRefIsSubtypeAny(destType)) {
+      uint32_t typeIndex = moduleEnv_.types->indexOf(*destType.typeDef());
+      superSuperTypeVector = loadSuperTypeVector(typeIndex);
+    }
+    RegI32 scratch1 =
+        MacroAssembler::needScratch1ForBranchWasmRefIsSubtypeAny(destType)
+            ? needI32()
+            : RegI32::Invalid();
+    RegI32 scratch2 =
+        MacroAssembler::needScratch2ForBranchWasmRefIsSubtypeAny(destType)
+            ? needI32()
+            : RegI32::Invalid();
 
-  masm.branchWasmGcObjectIsRefType(object, sourceType, destType, label,
-                                   onSuccess, superSuperTypeVector, scratch1,
-                                   scratch2);
+    masm.branchWasmRefIsSubtypeAny(ref, sourceType, destType, label, onSuccess,
+                                   superSuperTypeVector, scratch1, scratch2);
 
-  if (scratch2.isValid()) {
-    freeI32(scratch2);
-  }
-  if (scratch1.isValid()) {
-    freeI32(scratch1);
-  }
-  if (superSuperTypeVector.isValid()) {
-    freePtr(superSuperTypeVector);
+    if (scratch2.isValid()) {
+      freeI32(scratch2);
+    }
+    if (scratch1.isValid()) {
+      freeI32(scratch1);
+    }
+    if (superSuperTypeVector.isValid()) {
+      freePtr(superSuperTypeVector);
+    }
+  } else if (destType.isFuncHierarchy()) {
+    RegPtr superSuperTypeVector;
+    RegI32 scratch1;
+    if (MacroAssembler::needSuperSTVAndScratch1ForBranchWasmRefIsSubtypeFunc(
+            destType)) {
+      uint32_t typeIndex = moduleEnv_.types->indexOf(*destType.typeDef());
+      superSuperTypeVector = loadSuperTypeVector(typeIndex);
+      scratch1 = needI32();
+    }
+    RegI32 scratch2 =
+        MacroAssembler::needScratch2ForBranchWasmRefIsSubtypeFunc(destType)
+            ? needI32()
+            : RegI32::Invalid();
+
+    masm.branchWasmRefIsSubtypeFunc(ref, sourceType, destType, label, onSuccess,
+                                    superSuperTypeVector, scratch1, scratch2);
+
+    if (scratch2.isValid()) {
+      freeI32(scratch2);
+    }
+    if (scratch1.isValid()) {
+      freeI32(scratch1);
+    }
+    if (superSuperTypeVector.isValid()) {
+      freePtr(superSuperTypeVector);
+    }
+  } else if (destType.isExternHierarchy()) {
+    masm.branchWasmRefIsSubtypeExtern(ref, sourceType, destType, label,
+                                      onSuccess);
+  } else {
+    MOZ_CRASH("unknown type hierarchy in cast");
   }
 }
 
@@ -7391,36 +7681,37 @@ bool BaseCompiler::emitBrOnCastCommon(bool onSuccess,
     needIntegerResultRegisters(b.resultType);
   }
 
-  // Create a copy of the ref for passing to the br_on_cast label,
-  // the original ref is used for casting in the condition.
-  RegRef object = popRef();
-  RegRef objectCondition = needRef();
-  moveRef(object, objectCondition);
-  pushRef(object);
+  // Get the ref from the top of the stack
+  RegRef refCondition = popRef();
+
+  // Create a copy of the ref for passing to the on_cast label,
+  // the original ref is used in the condition.
+  RegRef ref = needRef();
+  moveRef(refCondition, ref);
+  pushRef(ref);
 
   if (b.hasBlockResults()) {
     freeIntegerResultRegisters(b.resultType);
   }
 
-  if (!jumpConditionalWithResults(&b, objectCondition, sourceType, destType,
+  if (!jumpConditionalWithResults(&b, refCondition, sourceType, destType,
                                   onSuccess)) {
     return false;
   }
-  freeRef(objectCondition);
+  freeRef(refCondition);
 
   return true;
 }
 
-bool BaseCompiler::emitBrOnCast() {
+bool BaseCompiler::emitBrOnCast(bool onSuccess) {
   MOZ_ASSERT(!hasLatentOp());
 
-  bool onSuccess;
   uint32_t labelRelativeDepth;
   RefType sourceType;
   RefType destType;
   ResultType labelType;
   BaseNothingVector unused_values{};
-  if (!iter_.readBrOnCast(&onSuccess, &labelRelativeDepth, &sourceType,
+  if (!iter_.readBrOnCast(onSuccess, &labelRelativeDepth, &sourceType,
                           &destType, &labelType, &unused_values)) {
     return false;
   }
@@ -8489,23 +8780,23 @@ static void BitselectV128(MacroAssembler& masm, RegV128 rhs, RegV128 control,
 #  endif
 
 #  ifdef ENABLE_WASM_RELAXED_SIMD
-static void RelaxedFmaF32x4(MacroAssembler& masm, RegV128 rs1, RegV128 rs2,
-                            RegV128 rsd) {
+static void RelaxedMaddF32x4(MacroAssembler& masm, RegV128 rs1, RegV128 rs2,
+                             RegV128 rsd) {
   masm.fmaFloat32x4(rs1, rs2, rsd);
 }
 
-static void RelaxedFnmaF32x4(MacroAssembler& masm, RegV128 rs1, RegV128 rs2,
-                             RegV128 rsd) {
+static void RelaxedNmaddF32x4(MacroAssembler& masm, RegV128 rs1, RegV128 rs2,
+                              RegV128 rsd) {
   masm.fnmaFloat32x4(rs1, rs2, rsd);
 }
 
-static void RelaxedFmaF64x2(MacroAssembler& masm, RegV128 rs1, RegV128 rs2,
-                            RegV128 rsd) {
+static void RelaxedMaddF64x2(MacroAssembler& masm, RegV128 rs1, RegV128 rs2,
+                             RegV128 rsd) {
   masm.fmaFloat64x2(rs1, rs2, rsd);
 }
 
-static void RelaxedFnmaF64x2(MacroAssembler& masm, RegV128 rs1, RegV128 rs2,
-                             RegV128 rsd) {
+static void RelaxedNmaddF64x2(MacroAssembler& masm, RegV128 rs1, RegV128 rs2,
+                              RegV128 rsd) {
   masm.fnmaFloat64x2(rs1, rs2, rsd);
 }
 
@@ -8592,7 +8883,9 @@ bool BaseCompiler::emitLoadSplat(Scalar::Type viewType) {
   if (deadCode_) {
     return true;
   }
-  MemoryAccessDesc access(viewType, addr.align, addr.offset, bytecodeOffset());
+  MemoryAccessDesc access(addr.memoryIndex, viewType, addr.align, addr.offset,
+                          bytecodeOffset(),
+                          hugeMemoryEnabled(addr.memoryIndex));
   loadSplat(&access);
   return true;
 }
@@ -8606,7 +8899,9 @@ bool BaseCompiler::emitLoadZero(Scalar::Type viewType) {
   if (deadCode_) {
     return true;
   }
-  MemoryAccessDesc access(viewType, addr.align, addr.offset, bytecodeOffset());
+  MemoryAccessDesc access(addr.memoryIndex, viewType, addr.align, addr.offset,
+                          bytecodeOffset(),
+                          hugeMemoryEnabled(addr.memoryIndex));
   loadZero(&access);
   return true;
 }
@@ -8619,8 +8914,9 @@ bool BaseCompiler::emitLoadExtend(Scalar::Type viewType) {
   if (deadCode_) {
     return true;
   }
-  MemoryAccessDesc access(Scalar::Int64, addr.align, addr.offset,
-                          bytecodeOffset());
+  MemoryAccessDesc access(addr.memoryIndex, Scalar::Int64, addr.align,
+                          addr.offset, bytecodeOffset(),
+                          hugeMemoryEnabled(addr.memoryIndex));
   loadExtend(&access, viewType);
   return true;
 }
@@ -8652,7 +8948,9 @@ bool BaseCompiler::emitLoadLane(uint32_t laneSize) {
     default:
       MOZ_CRASH("unsupported laneSize");
   }
-  MemoryAccessDesc access(viewType, addr.align, addr.offset, bytecodeOffset());
+  MemoryAccessDesc access(addr.memoryIndex, viewType, addr.align, addr.offset,
+                          bytecodeOffset(),
+                          hugeMemoryEnabled(addr.memoryIndex));
   loadLane(&access, laneIndex);
   return true;
 }
@@ -8684,7 +8982,9 @@ bool BaseCompiler::emitStoreLane(uint32_t laneSize) {
     default:
       MOZ_CRASH("unsupported laneSize");
   }
-  MemoryAccessDesc access(viewType, addr.align, addr.offset, bytecodeOffset());
+  MemoryAccessDesc access(addr.memoryIndex, viewType, addr.align, addr.offset,
+                          bytecodeOffset(),
+                          hugeMemoryEnabled(addr.memoryIndex));
   storeLane(&access, laneIndex);
   return true;
 }
@@ -8794,7 +9094,7 @@ bool BaseCompiler::emitIntrinsic() {
   }
 
   // The final parameter of an intrinsic is implicitly the heap base
-  pushHeapBase();
+  pushHeapBase(0);
 
   // Call the intrinsic
   return emitInstanceCall(intrinsic->signature);
@@ -9056,6 +9356,18 @@ bool BaseCompiler::emitBody() {
         CHECK_NEXT(emitCall());
       case uint16_t(Op::CallIndirect):
         CHECK_NEXT(emitCallIndirect());
+#ifdef ENABLE_WASM_TAIL_CALLS
+      case uint16_t(Op::ReturnCall):
+        if (!moduleEnv_.tailCallsEnabled()) {
+          return iter_.unrecognizedOpcode(&op);
+        }
+        CHECK_NEXT(emitReturnCall());
+      case uint16_t(Op::ReturnCallIndirect):
+        if (!moduleEnv_.tailCallsEnabled()) {
+          return iter_.unrecognizedOpcode(&op);
+        }
+        CHECK_NEXT(emitReturnCallIndirect());
+#endif
 #ifdef ENABLE_WASM_FUNCTION_REFERENCES
       case uint16_t(Op::CallRef):
         if (!moduleEnv_.functionReferencesEnabled()) {
@@ -9673,6 +9985,12 @@ bool BaseCompiler::emitBody() {
             CHECK_NEXT(emitArrayLen(/*decodeIgnoredTypeIndex=*/false));
           case uint32_t(GcOp::ArrayCopy):
             CHECK_NEXT(emitArrayCopy());
+          case uint32_t(GcOp::I31New):
+            CHECK_NEXT(emitI31New());
+          case uint32_t(GcOp::I31GetS):
+            CHECK_NEXT(emitI31Get(FieldWideningOp::Signed));
+          case uint32_t(GcOp::I31GetU):
+            CHECK_NEXT(emitI31Get(FieldWideningOp::Unsigned));
           case uint32_t(GcOp::RefTestV5):
             CHECK_NEXT(emitRefTestV5());
           case uint32_t(GcOp::RefCastV5):
@@ -9686,7 +10004,9 @@ bool BaseCompiler::emitBody() {
           case uint32_t(GcOp::RefCastNull):
             CHECK_NEXT(emitRefCast(/*nullable=*/true));
           case uint32_t(GcOp::BrOnCast):
-            CHECK_NEXT(emitBrOnCast());
+            CHECK_NEXT(emitBrOnCast(/*onSuccess=*/true));
+          case uint32_t(GcOp::BrOnCastFail):
+            CHECK_NEXT(emitBrOnCast(/*onSuccess=*/false));
           case uint32_t(GcOp::BrOnCastV5):
             CHECK_NEXT(emitBrOnCastV5(/*onSuccess=*/true));
           case uint32_t(GcOp::BrOnCastFailV5):
@@ -10237,26 +10557,26 @@ bool BaseCompiler::emitBody() {
           case uint32_t(SimdOp::V128Store64Lane):
             CHECK_NEXT(emitStoreLane(8));
 #  ifdef ENABLE_WASM_RELAXED_SIMD
-          case uint32_t(SimdOp::F32x4RelaxedFma):
+          case uint32_t(SimdOp::F32x4RelaxedMadd):
             if (!moduleEnv_.v128RelaxedEnabled()) {
               return iter_.unrecognizedOpcode(&op);
             }
-            CHECK_NEXT(dispatchTernary2(RelaxedFmaF32x4, ValType::V128));
-          case uint32_t(SimdOp::F32x4RelaxedFnma):
+            CHECK_NEXT(dispatchTernary2(RelaxedMaddF32x4, ValType::V128));
+          case uint32_t(SimdOp::F32x4RelaxedNmadd):
             if (!moduleEnv_.v128RelaxedEnabled()) {
               return iter_.unrecognizedOpcode(&op);
             }
-            CHECK_NEXT(dispatchTernary2(RelaxedFnmaF32x4, ValType::V128));
-          case uint32_t(SimdOp::F64x2RelaxedFma):
+            CHECK_NEXT(dispatchTernary2(RelaxedNmaddF32x4, ValType::V128));
+          case uint32_t(SimdOp::F64x2RelaxedMadd):
             if (!moduleEnv_.v128RelaxedEnabled()) {
               return iter_.unrecognizedOpcode(&op);
             }
-            CHECK_NEXT(dispatchTernary2(RelaxedFmaF64x2, ValType::V128));
-          case uint32_t(SimdOp::F64x2RelaxedFnma):
+            CHECK_NEXT(dispatchTernary2(RelaxedMaddF64x2, ValType::V128));
+          case uint32_t(SimdOp::F64x2RelaxedNmadd):
             if (!moduleEnv_.v128RelaxedEnabled()) {
               return iter_.unrecognizedOpcode(&op);
             }
-            CHECK_NEXT(dispatchTernary2(RelaxedFnmaF64x2, ValType::V128));
+            CHECK_NEXT(dispatchTernary2(RelaxedNmaddF64x2, ValType::V128));
             break;
           case uint32_t(SimdOp::I8x16RelaxedLaneSelect):
           case uint32_t(SimdOp::I16x8RelaxedLaneSelect):
@@ -10881,7 +11201,11 @@ BaseCompiler::~BaseCompiler() {
 
 bool BaseCompiler::init() {
   // We may lift this restriction in the future.
-  MOZ_ASSERT_IF(usesMemory() && isMem64(), !moduleEnv_.hugeMemoryEnabled());
+  for (uint32_t memoryIndex = 0; memoryIndex < moduleEnv_.memories.length();
+       memoryIndex++) {
+    MOZ_ASSERT_IF(isMem64(memoryIndex),
+                  !moduleEnv_.hugeMemoryEnabled(memoryIndex));
+  }
   // asm.js is not supported in baseline
   MOZ_ASSERT(!moduleEnv_.isAsmJS());
   // Only asm.js modules have call site line numbers
@@ -10926,9 +11250,10 @@ bool js::wasm::BaselinePlatformSupport() {
     return false;
   }
 #endif
-#if defined(JS_CODEGEN_X64) || defined(JS_CODEGEN_X86) ||   \
-    defined(JS_CODEGEN_ARM) || defined(JS_CODEGEN_ARM64) || \
-    defined(JS_CODEGEN_MIPS64) || defined(JS_CODEGEN_LOONG64)
+#if defined(JS_CODEGEN_X64) || defined(JS_CODEGEN_X86) ||        \
+    defined(JS_CODEGEN_ARM) || defined(JS_CODEGEN_ARM64) ||      \
+    defined(JS_CODEGEN_MIPS64) || defined(JS_CODEGEN_LOONG64) || \
+    defined(JS_CODEGEN_RISCV64)
   return true;
 #else
   return false;

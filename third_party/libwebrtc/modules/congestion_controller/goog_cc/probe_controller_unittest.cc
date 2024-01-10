@@ -21,6 +21,7 @@
 #include "test/gmock.h"
 #include "test/gtest.h"
 
+using ::testing::IsEmpty;
 using ::testing::NiceMock;
 
 namespace webrtc {
@@ -426,6 +427,34 @@ TEST(ProbeControllerTest, PeriodicProbingAfterReset) {
   probes = probe_controller->Process(fixture.CurrentTime());
   EXPECT_EQ(probes.size(), 1u);
   EXPECT_EQ(probes[0].target_data_rate, kStartBitrate * 2);
+}
+
+TEST(ProbeControllerTest, NoProbesWhenTransportIsNotWritable) {
+  ProbeControllerFixture fixture;
+  std::unique_ptr<ProbeController> probe_controller =
+      fixture.CreateController();
+  probe_controller->EnablePeriodicAlrProbing(true);
+
+  std::vector<ProbeClusterConfig> probes =
+      probe_controller->OnNetworkAvailability({.network_available = false});
+  EXPECT_THAT(probes, IsEmpty());
+  EXPECT_THAT(probe_controller->SetBitrates(kMinBitrate, kStartBitrate,
+                                            kMaxBitrate, fixture.CurrentTime()),
+              IsEmpty());
+  fixture.AdvanceTime(TimeDelta::Seconds(10));
+  EXPECT_THAT(probe_controller->Process(fixture.CurrentTime()), IsEmpty());
+
+  // Controller is reset after a network route change.
+  // But, a probe should not be sent since the transport is not writable.
+  // Transport is not writable until after DTLS negotiation completes.
+  // However, the bitrate constraints may change.
+  probe_controller->Reset(fixture.CurrentTime());
+  EXPECT_THAT(
+      probe_controller->SetBitrates(2 * kMinBitrate, 2 * kStartBitrate,
+                                    2 * kMaxBitrate, fixture.CurrentTime()),
+      IsEmpty());
+  fixture.AdvanceTime(TimeDelta::Seconds(10));
+  EXPECT_THAT(probe_controller->Process(fixture.CurrentTime()), IsEmpty());
 }
 
 TEST(ProbeControllerTest, TestExponentialProbingOverflow) {
@@ -1120,6 +1149,35 @@ TEST(ProbeControllerTest, DontProbeIfDelayIncreased) {
   probe_controller->SetNetworkStateEstimate(state_estimate);
   probes = probe_controller->SetEstimatedBitrate(
       kStartBitrate, BandwidthLimitedCause::kDelayBasedLimitedDelayIncreased,
+      fixture.CurrentTime());
+  ASSERT_TRUE(probes.empty());
+
+  fixture.AdvanceTime(TimeDelta::Seconds(5));
+  probes = probe_controller->Process(fixture.CurrentTime());
+  EXPECT_TRUE(probes.empty());
+}
+
+TEST(ProbeControllerTest, DontProbeIfHighRtt) {
+  ProbeControllerFixture fixture(
+      "WebRTC-Bwe-ProbingConfiguration/"
+      "network_state_interval:5s,not_probe_if_delay_increased:true/");
+  std::unique_ptr<ProbeController> probe_controller =
+      fixture.CreateController();
+
+  auto probes = probe_controller->SetBitrates(
+      kMinBitrate, kStartBitrate, kMaxBitrate, fixture.CurrentTime());
+  ASSERT_FALSE(probes.empty());
+
+  // Need to wait at least one second before process can trigger a new probe.
+  fixture.AdvanceTime(TimeDelta::Millis(1100));
+  probes = probe_controller->Process(fixture.CurrentTime());
+  ASSERT_TRUE(probes.empty());
+
+  NetworkStateEstimate state_estimate;
+  state_estimate.link_capacity_upper = 3 * kStartBitrate;
+  probe_controller->SetNetworkStateEstimate(state_estimate);
+  probes = probe_controller->SetEstimatedBitrate(
+      kStartBitrate, BandwidthLimitedCause::kRttBasedBackOffHighRtt,
       fixture.CurrentTime());
   ASSERT_TRUE(probes.empty());
 

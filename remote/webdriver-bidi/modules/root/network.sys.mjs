@@ -7,8 +7,15 @@ import { Module } from "chrome://remote/content/shared/messagehandler/Module.sys
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
+  assert: "chrome://remote/content/shared/webdriver/Assert.sys.mjs",
+  error: "chrome://remote/content/shared/webdriver/Errors.sys.mjs",
+  generateUUID: "chrome://remote/content/shared/UUID.sys.mjs",
+  notifyNavigationStarted:
+    "chrome://remote/content/shared/NavigationManager.sys.mjs",
   NetworkListener:
     "chrome://remote/content/shared/listeners/NetworkListener.sys.mjs",
+  parseURLPattern:
+    "chrome://remote/content/shared/webdriver/URLPattern.sys.mjs",
   TabManager: "chrome://remote/content/shared/TabManager.sys.mjs",
   WindowGlobalMessageHandler:
     "chrome://remote/content/shared/messagehandler/WindowGlobalMessageHandler.sys.mjs",
@@ -24,8 +31,24 @@ ChromeUtils.defineESModuleGetters(lazy, {
  */
 
 /**
+ * Enum of possible BytesValue types.
+ *
+ * @readonly
+ * @enum {BytesValueType}
+ */
+const BytesValueType = {
+  Base64: "base64",
+  String: "string",
+};
+
+/**
+ * @typedef {object} BytesValue
+ * @property {BytesValueType} type
+ * @property {string} value
+ */
+
+/**
  * @typedef {object} Cookie
- * @property {Array<number>=} binaryValue
  * @property {string} domain
  * @property {number=} expires
  * @property {boolean} httpOnly
@@ -34,12 +57,12 @@ ChromeUtils.defineESModuleGetters(lazy, {
  * @property {('lax' | 'none' | 'strict')} sameSite
  * @property {boolean} secure
  * @property {number} size
- * @property {string=} value
+ * @property {BytesValue} value
  */
 
 /**
  * @typedef {object} FetchTimingInfo
- * @property {number} originTime
+ * @property {number} timeOrigin
  * @property {number} requestTime
  * @property {number} redirectStart
  * @property {number} redirectEnd
@@ -56,9 +79,8 @@ ChromeUtils.defineESModuleGetters(lazy, {
 
 /**
  * @typedef {object} Header
- * @property {Array<number>=} binaryValue
  * @property {string} name
- * @property {string=} value
+ * @property {BytesValue} value
  */
 
 /**
@@ -77,6 +99,7 @@ const InitiatorType = {
   Preflight: "preflight",
   Script: "script",
 };
+
 /**
  * @typedef {object} Initiator
  * @property {InitiatorType} type
@@ -84,6 +107,24 @@ const InitiatorType = {
  * @property {number=} lineNumber
  * @property {string=} request
  * @property {StackTrace=} stackTrace
+ */
+
+/**
+ * Enum of intercept phases.
+ *
+ * @readonly
+ * @enum {InterceptPhase}
+ */
+const InterceptPhase = {
+  AuthRequired: "authRequired",
+  BeforeRequestSent: "beforeRequestSent",
+  ResponseStarted: "responseStarted",
+};
+
+/**
+ * @typedef {object} InterceptProperties
+ * @property {Array<InterceptPhase>} phases
+ * @property {Array<URLPattern>} urlPatterns
  */
 
 /**
@@ -153,6 +194,26 @@ const InitiatorType = {
  * @property {ResponseData} response
  */
 
+/**
+ * @typedef {object} URLPatternPattern
+ * @property {'pattern'} type
+ * @property {string=} protocol
+ * @property {string=} hostname
+ * @property {string=} port
+ * @property {string=} pathname
+ * @property {string=} search
+ */
+
+/**
+ * @typedef {object} URLPatternString
+ * @property {'string'} type
+ * @property {string} pattern
+ */
+
+/**
+ * @typedef {(URLPatternPattern|URLPatternString)} URLPattern
+ */
+
 /* eslint-disable jsdoc/valid-types */
 /**
  * Parameters for the ResponseCompleted event
@@ -162,11 +223,15 @@ const InitiatorType = {
 /* eslint-enable jsdoc/valid-types */
 
 class NetworkModule extends Module {
+  #interceptMap;
   #networkListener;
   #subscribedEvents;
 
   constructor(messageHandler) {
     super(messageHandler);
+
+    // Map of intercept id to InterceptProperties
+    this.#interceptMap = new Map();
 
     // Set of event names which have active subscriptions
     this.#subscribedEvents = new Set();
@@ -181,8 +246,110 @@ class NetworkModule extends Module {
     this.#networkListener.off("before-request-sent", this.#onBeforeRequestSent);
     this.#networkListener.off("response-completed", this.#onResponseEvent);
     this.#networkListener.off("response-started", this.#onResponseEvent);
+    this.#networkListener.destroy();
 
+    this.#interceptMap = null;
     this.#subscribedEvents = null;
+  }
+
+  /**
+   * Adds a network intercept, which allows to intercept and modify network
+   * requests and responses.
+   *
+   * The network intercept will be created for the provided phases
+   * (InterceptPhase) and for specific url patterns. When a network event
+   * corresponding to an intercept phase has a URL which matches any url pattern
+   * of any intercept, the request will be suspended.
+   *
+   * @param {object=} options
+   * @param {Array<InterceptPhase>} options.phases
+   *     The phases where this intercept should be checked.
+   * @param {Array<URLPattern>=} options.urlPatterns
+   *     The URL patterns for this intercept. Optional, defaults to empty array.
+   *
+   * @returns {object}
+   *     An object with the following property:
+   *     - intercept {string} The unique id of the network intercept.
+   *
+   * @throws {InvalidArgumentError}
+   *     Raised if an argument is of an invalid type or value.
+   */
+  addIntercept(options = {}) {
+    // See https://bugzilla.mozilla.org/show_bug.cgi?id=1845345.
+    this.assertExperimentalCommandsEnabled("network.addIntercept");
+
+    const { phases, urlPatterns = [] } = options;
+
+    lazy.assert.array(
+      phases,
+      `Expected "phases" to be an array, got ${phases}`
+    );
+
+    if (!options.phases.length) {
+      throw new lazy.error.InvalidArgumentError(
+        `Expected "phases" to contain at least one phase, got an empty array`
+      );
+    }
+
+    const supportedInterceptPhases = Object.values(InterceptPhase);
+    for (const phase of phases) {
+      if (!supportedInterceptPhases.includes(phase)) {
+        throw new lazy.error.InvalidArgumentError(
+          `Expected "phases" values to be one of ${supportedInterceptPhases}, got ${phase}`
+        );
+      }
+    }
+
+    lazy.assert.array(
+      urlPatterns,
+      `Expected "urlPatterns" to be an array, got ${urlPatterns}`
+    );
+
+    const parsedPatterns = urlPatterns.map(urlPattern =>
+      lazy.parseURLPattern(urlPattern)
+    );
+
+    const interceptId = lazy.generateUUID();
+    this.#interceptMap.set(interceptId, {
+      phases,
+      urlPatterns: parsedPatterns,
+    });
+
+    return {
+      intercept: interceptId,
+    };
+  }
+
+  /**
+   * Removes an existing network intercept.
+   *
+   * @param {object=} options
+   * @param {string} options.intercept
+   *     The id of the intercept to remove.
+   *
+   * @throws {InvalidArgumentError}
+   *     Raised if an argument is of an invalid type or value.
+   * @throws {NoSuchInterceptError}
+   *     Raised if the intercept id could not be found in the internal intercept
+   *     map.
+   */
+  removeIntercept(options = {}) {
+    // See https://bugzilla.mozilla.org/show_bug.cgi?id=1845345.
+    this.assertExperimentalCommandsEnabled("network.removeIntercept");
+    const { intercept } = options;
+
+    lazy.assert.string(
+      intercept,
+      `Expected "intercept" to be a string, got ${intercept}`
+    );
+
+    if (!this.#interceptMap.has(intercept)) {
+      throw new lazy.error.NoSuchInterceptError(
+        `Network intercept with id ${intercept} not found`
+      );
+    }
+
+    this.#interceptMap.delete(intercept);
   }
 
   #getContextInfo(browsingContext) {
@@ -192,29 +359,59 @@ class NetworkModule extends Module {
     };
   }
 
+  #getOrCreateNavigationId(browsingContext, url) {
+    const navigation =
+      this.messageHandler.navigationManager.getNavigationForBrowsingContext(
+        browsingContext
+      );
+
+    // Check if an ongoing navigation is available for this browsing context.
+    // onBeforeRequestSent might be too early for the NavigationManager.
+    // TODO: Bug 1835704 to detect navigations earlier and avoid this.
+    if (navigation && !navigation.finished) {
+      return navigation.navigationId;
+    }
+
+    // No ongoing navigation for this browsing context, create a new one.
+    return lazy.notifyNavigationStarted({
+      contextDetails: { context: browsingContext },
+      url,
+    }).navigationId;
+  }
+
   #onBeforeRequestSent = (name, data) => {
-    const { contextId, requestData, timestamp, redirectCount } = data;
+    const {
+      contextId,
+      isNavigationRequest,
+      redirectCount,
+      requestData,
+      timestamp,
+    } = data;
+
+    const browsingContext = lazy.TabManager.getBrowsingContextById(contextId);
 
     // Bug 1805479: Handle the initiator, including stacktrace details.
     const initiator = {
       type: InitiatorType.Other,
     };
 
+    const navigationId = isNavigationRequest
+      ? this.#getOrCreateNavigationId(browsingContext, requestData.url)
+      : null;
+
     const baseParameters = {
       context: contextId,
-      // Bug 1805405: Handle the navigation id.
-      navigation: null,
+      navigation: navigationId,
       redirectCount,
       request: requestData,
       timestamp,
     };
 
-    const beforeRequestSentEvent = {
+    const beforeRequestSentEvent = this.#serializeNetworkEvent({
       ...baseParameters,
       initiator,
-    };
+    });
 
-    const browsingContext = lazy.TabManager.getBrowsingContextById(contextId);
     this.emitEvent(
       "network.beforeRequestSent",
       beforeRequestSentEvent,
@@ -223,35 +420,109 @@ class NetworkModule extends Module {
   };
 
   #onResponseEvent = (name, data) => {
-    const { contextId, requestData, responseData, timestamp, redirectCount } =
-      data;
+    const {
+      contextId,
+      isNavigationRequest,
+      redirectCount,
+      requestData,
+      responseData,
+      timestamp,
+    } = data;
+
+    const browsingContext = lazy.TabManager.getBrowsingContextById(contextId);
+
+    const navigation = isNavigationRequest
+      ? this.messageHandler.navigationManager.getNavigationForBrowsingContext(
+          browsingContext
+        )
+      : null;
 
     const baseParameters = {
       context: contextId,
-      // Bug 1805405: Handle the navigation id.
-      navigation: null,
+      navigation: navigation ? navigation.navigationId : null,
       redirectCount,
       request: requestData,
       timestamp,
     };
 
-    const responseEvent = {
+    const responseEvent = this.#serializeNetworkEvent({
       ...baseParameters,
       response: responseData,
-    };
+    });
 
     const protocolEventName =
       name === "response-started"
         ? "network.responseStarted"
         : "network.responseCompleted";
 
-    const browsingContext = lazy.TabManager.getBrowsingContextById(contextId);
     this.emitEvent(
       protocolEventName,
       responseEvent,
       this.#getContextInfo(browsingContext)
     );
   };
+
+  #serializeHeadersOrCookies(headersOrCookies) {
+    return headersOrCookies.map(item => ({
+      name: item.name,
+      value: this.#serializeStringAsBytesValue(item.value),
+    }));
+  }
+
+  /**
+   * Serialize in-place all cookies and headers arrays found in a given network
+   * event payload.
+   *
+   * @param {object} networkEvent
+   *     The network event parameters object to serialize.
+   * @returns {object}
+   *     The serialized network event parameters.
+   */
+  #serializeNetworkEvent(networkEvent) {
+    // Make a shallow copy of networkEvent before serializing the headers and
+    // cookies arrays in request/response.
+    const serialized = { ...networkEvent };
+
+    // Make a shallow copy of the request data.
+    serialized.request = { ...networkEvent.request };
+    serialized.request.cookies = this.#serializeHeadersOrCookies(
+      networkEvent.request.cookies
+    );
+    serialized.request.headers = this.#serializeHeadersOrCookies(
+      networkEvent.request.headers
+    );
+
+    if (networkEvent.response?.headers) {
+      // Make a shallow copy of the response data.
+      serialized.response = { ...networkEvent.response };
+      serialized.response.headers = this.#serializeHeadersOrCookies(
+        networkEvent.response.headers
+      );
+    }
+
+    return serialized;
+  }
+
+  /**
+   * Serialize a string value as BytesValue.
+   *
+   * Note: This does not attempt to fully implement serialize protocol bytes
+   * (https://w3c.github.io/webdriver-bidi/#serialize-protocol-bytes) as the
+   * header values read from the Channel are already serialized as strings at
+   * the moment.
+   *
+   * @param {string} value
+   *     The value to serialize.
+   */
+  #serializeStringAsBytesValue(value) {
+    // TODO: For now, we handle all headers and cookies with the "string" type.
+    // See Bug 1835216 to add support for "base64" type and handle non-utf8
+    // values.
+    return {
+      type: BytesValueType.String,
+      value,
+    };
+  }
 
   #startListening(event) {
     if (this.#subscribedEvents.size == 0) {

@@ -526,7 +526,7 @@ var gSync = {
         ? "syncing-data-l10n-id"
         : "sync-now-data-l10n-id"
     );
-    syncNowBtn.setAttribute("data-l10n-id", l10nId);
+    document.l10n.setAttributes(syncNowBtn, l10nId);
 
     // This needs to exist because if the user is signed in
     // but the user disabled or disconnected sync we should not show the button
@@ -872,12 +872,12 @@ var gSync = {
     } else if (state.status === UIState.STATUS_LOGIN_FAILED) {
       stateValue = "login-failed";
       headerTitleL10nId = "account-disconnected2";
-      headerDescription = state.email;
+      headerDescription = state.displayName || state.email;
       mainWindowEl.style.removeProperty("--avatar-image-url");
     } else if (state.status === UIState.STATUS_NOT_VERIFIED) {
       stateValue = "unverified";
       headerTitleL10nId = "account-finish-account-setup";
-      headerDescription = state.email;
+      headerDescription = state.displayName || state.email;
     } else if (state.status === UIState.STATUS_SIGNED_IN) {
       stateValue = "signedin";
       if (state.avatarURL && !state.avatarIsDefault) {
@@ -907,7 +907,7 @@ var gSync = {
       }
 
       headerTitleL10nId = "appmenuitem-fxa-manage-account";
-      headerDescription = state.email;
+      headerDescription = state.displayName || state.email;
     } else {
       headerDescription = this.fluentStrings.formatValueSync(
         "fxa-menu-turn-on-sync-default"
@@ -972,7 +972,7 @@ var gSync = {
     return false;
   },
 
-  updatePanelPopup({ email, status }) {
+  updatePanelPopup({ email, displayName, status }) {
     const appMenuStatus = PanelMultiView.getViewNode(
       document,
       "appMenu-fxa-status2"
@@ -1016,7 +1016,9 @@ var gSync = {
     appMenuHeaderText.hidden = true;
     appMenuStatus.classList.remove("toolbaritem-combined-buttons");
 
-    // At this point we consider sync to be configured (but still can be in an error state).
+    // While we prefer the display name in most case, in some strings
+    // where the context is something like "Verify %s", the email
+    // is used even when there's a display name.
     if (status == UIState.STATUS_LOGIN_FAILED) {
       const [tooltipDescription, errorLabel] =
         this.fluentStrings.formatValuesSync([
@@ -1028,7 +1030,7 @@ var gSync = {
       appMenuLabel.classList.add("subviewbutton-nav");
       appMenuHeaderTitle.hidden = false;
       appMenuHeaderTitle.value = errorLabel;
-      appMenuHeaderDescription.value = email;
+      appMenuHeaderDescription.value = displayName || email;
 
       appMenuLabel.removeAttribute("label");
       appMenuLabel.setAttribute(
@@ -1057,11 +1059,10 @@ var gSync = {
       return;
     }
 
-    // At this point we consider sync to be logged-in.
     appMenuHeaderTitle.hidden = true;
-    appMenuHeaderDescription.value = email;
+    appMenuHeaderDescription.value = displayName || email;
     appMenuStatus.setAttribute("fxastatus", "signedin");
-    appMenuLabel.setAttribute("label", email);
+    appMenuLabel.setAttribute("label", displayName || email);
     appMenuLabel.classList.add("subviewbutton-nav");
     fxaPanelView.setAttribute(
       "title",
@@ -1614,7 +1615,7 @@ var gSync = {
 
     document.querySelectorAll(".syncnow-label").forEach(el => {
       let l10nId = el.getAttribute("syncing-data-l10n-id");
-      el.setAttribute("data-l10n-id", l10nId);
+      document.l10n.setAttributes(el, l10nId);
     });
 
     document.querySelectorAll(".syncNowBtn").forEach(el => {
@@ -1637,7 +1638,7 @@ var gSync = {
 
     document.querySelectorAll(".syncnow-label").forEach(el => {
       let l10nId = el.getAttribute("sync-now-data-l10n-id");
-      el.setAttribute("data-l10n-id", l10nId);
+      document.l10n.setAttributes(el, l10nId);
     });
 
     document.querySelectorAll(".syncNowBtn").forEach(el => {

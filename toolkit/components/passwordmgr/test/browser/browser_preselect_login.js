@@ -46,13 +46,14 @@ const isExpectedLoginItemSelected = async ({ expectedGuid }) => {
 
   await ContentTaskUtils.waitForCondition(
     () =>
-      loginList.querySelector("li[aria-selected='true']")?.dataset?.guid ===
-      expectedGuid,
+      loginList.querySelector("login-list-item[aria-selected='true']")?.dataset
+        ?.guid === expectedGuid,
     "Wait for login item to be selected"
   );
 
   Assert.equal(
-    loginList.querySelector("li[aria-selected='true']")?.dataset?.guid,
+    loginList.querySelector("login-list-item[aria-selected='true']")?.dataset
+      ?.guid,
     expectedGuid,
     "Expected login is preselected"
   );
@@ -181,3 +182,37 @@ add_task(
     );
   }
 );
+
+add_task(async function test_new_login_url_has_correct_hash() {
+  await BrowserTestUtils.withNewTab(
+    {
+      gBrowser,
+      url: "about:logins",
+    },
+    async function (gBrowser) {
+      await SpecialPowers.spawn(gBrowser, [], async () => {
+        const loginList =
+          content.document.querySelector("login-list").shadowRoot;
+        const createLoginButton = loginList.querySelector(
+          "login-command-button.create-login-button"
+        );
+
+        createLoginButton.click();
+
+        await ContentTaskUtils.waitForCondition(
+          () =>
+            ContentTaskUtils.is_visible(
+              loginList.querySelector("#new-login-list-item")
+            ),
+          "Wait for new login-list-item to become visible"
+        );
+
+        Assert.equal(
+          content.location.hash,
+          "",
+          "Location hash should be empty"
+        );
+      });
+    }
+  );
+});

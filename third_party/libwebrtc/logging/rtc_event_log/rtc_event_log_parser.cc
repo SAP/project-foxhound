@@ -25,6 +25,7 @@
 #include "api/rtc_event_log/rtc_event_log.h"
 #include "api/rtp_headers.h"
 #include "api/rtp_parameters.h"
+#include "logging/rtc_event_log/dependency_descriptor_encoder_decoder.h"
 #include "logging/rtc_event_log/encoder/blob_encoding.h"
 #include "logging/rtc_event_log/encoder/delta_encoding.h"
 #include "logging/rtc_event_log/encoder/rtc_event_log_encoder_common.h"
@@ -35,6 +36,7 @@
 #include "modules/rtp_rtcp/include/rtp_cvo.h"
 #include "modules/rtp_rtcp/include/rtp_rtcp_defines.h"
 #include "modules/rtp_rtcp/source/byte_io.h"
+#include "modules/rtp_rtcp/source/rtp_dependency_descriptor_extension.h"
 #include "modules/rtp_rtcp/source/rtp_header_extensions.h"
 #include "modules/rtp_rtcp/source/rtp_packet_received.h"
 #include "rtc_base/checks.h"
@@ -44,61 +46,6 @@
 #include "rtc_base/numerics/sequence_number_unwrapper.h"
 #include "rtc_base/protobuf_utils.h"
 #include "rtc_base/system/file_wrapper.h"
-
-// These macros were added to convert existing code using RTC_CHECKs
-// to returning a Status object instead. Macros are necessary (over
-// e.g. helper functions) since we want to return from the current
-// function.
-#define RTC_PARSE_CHECK_OR_RETURN(X)                                        \
-  do {                                                                      \
-    if (!(X))                                                               \
-      return ParsedRtcEventLog::ParseStatus::Error(#X, __FILE__, __LINE__); \
-  } while (0)
-
-#define RTC_PARSE_CHECK_OR_RETURN_MESSAGE(X, M)                              \
-  do {                                                                       \
-    if (!(X))                                                                \
-      return ParsedRtcEventLog::ParseStatus::Error((M), __FILE__, __LINE__); \
-  } while (0)
-
-#define RTC_PARSE_CHECK_OR_RETURN_OP(OP, X, Y)                          \
-  do {                                                                  \
-    if (!((X)OP(Y)))                                                    \
-      return ParsedRtcEventLog::ParseStatus::Error(#X #OP #Y, __FILE__, \
-                                                   __LINE__);           \
-  } while (0)
-
-#define RTC_PARSE_CHECK_OR_RETURN_EQ(X, Y) \
-  RTC_PARSE_CHECK_OR_RETURN_OP(==, X, Y)
-
-#define RTC_PARSE_CHECK_OR_RETURN_NE(X, Y) \
-  RTC_PARSE_CHECK_OR_RETURN_OP(!=, X, Y)
-
-#define RTC_PARSE_CHECK_OR_RETURN_LT(X, Y) RTC_PARSE_CHECK_OR_RETURN_OP(<, X, Y)
-
-#define RTC_PARSE_CHECK_OR_RETURN_LE(X, Y) \
-  RTC_PARSE_CHECK_OR_RETURN_OP(<=, X, Y)
-
-#define RTC_PARSE_CHECK_OR_RETURN_GT(X, Y) RTC_PARSE_CHECK_OR_RETURN_OP(>, X, Y)
-
-#define RTC_PARSE_CHECK_OR_RETURN_GE(X, Y) \
-  RTC_PARSE_CHECK_OR_RETURN_OP(>=, X, Y)
-
-#define RTC_PARSE_WARN_AND_RETURN_SUCCESS_IF(X, M)      \
-  do {                                                  \
-    if (X) {                                            \
-      RTC_LOG(LS_WARNING) << (M);                       \
-      return ParsedRtcEventLog::ParseStatus::Success(); \
-    }                                                   \
-  } while (0)
-
-#define RTC_RETURN_IF_ERROR(X)                                 \
-  do {                                                         \
-    const ParsedRtcEventLog::ParseStatus _rtc_parse_status(X); \
-    if (!_rtc_parse_status.ok()) {                             \
-      return _rtc_parse_status;                                \
-    }                                                          \
-  } while (0)
 
 using webrtc_event_logging::ToSigned;
 using webrtc_event_logging::ToUnsigned;
@@ -352,6 +299,22 @@ ParsedRtcEventLog::ParseStatus StoreRtpPackets(
   RTC_PARSE_CHECK_OR_RETURN(proto.has_header_size());
   RTC_PARSE_CHECK_OR_RETURN(proto.has_padding_size());
 
+  const size_t number_of_deltas =
+      proto.has_number_of_deltas() ? proto.number_of_deltas() : 0u;
+  const size_t total_packets = number_of_deltas + 1;
+
+  std::vector<std::vector<uint8_t>> dependency_descriptor_wire_format(
+      total_packets);
+  if (proto.has_dependency_descriptor()) {
+    auto status_or_decoded =
+        RtcEventLogDependencyDescriptorEncoderDecoder::Decode(
+            proto.dependency_descriptor(), total_packets);
+    if (!status_or_decoded.ok()) {
+      return status_or_decoded.status();
+    }
+    dependency_descriptor_wire_format = status_or_decoded.value();
+  }
+
   // Base event
   {
     RTPHeader header;
@@ -397,13 +360,16 @@ ParsedRtcEventLog::ParseStatus StoreRtpPackets(
     } else {
       RTC_PARSE_CHECK_OR_RETURN(!proto.has_voice_activity());
     }
-    (*rtp_packets_map)[header.ssrc].emplace_back(
+    LoggedType logged_packet(
         Timestamp::Millis(proto.timestamp_ms()), header, proto.header_size(),
         proto.payload_size() + header.headerLength + header.paddingLength);
+    if (!dependency_descriptor_wire_format[0].empty()) {
+      logged_packet.rtp.dependency_descriptor_wire_format =
+          dependency_descriptor_wire_format[0];
+    }
+    (*rtp_packets_map)[header.ssrc].push_back(std::move(logged_packet));
   }
 
-  const size_t number_of_deltas =
-      proto.has_number_of_deltas() ? proto.number_of_deltas() : 0u;
   if (number_of_deltas == 0) {
     return ParsedRtcEventLog::ParseStatus::Success();
   }
@@ -599,10 +565,15 @@ ParsedRtcEventLog::ParseStatus StoreRtpPackets(
       RTC_PARSE_CHECK_OR_RETURN(voice_activity_values.size() <= i ||
                                 !voice_activity_values[i].has_value());
     }
-    (*rtp_packets_map)[header.ssrc].emplace_back(
-        Timestamp::Millis(timestamp_ms), header, header.headerLength,
-        payload_size_values[i].value() + header.headerLength +
-            header.paddingLength);
+    LoggedType logged_packet(Timestamp::Millis(timestamp_ms), header,
+                             header.headerLength,
+                             payload_size_values[i].value() +
+                                 header.headerLength + header.paddingLength);
+    if (!dependency_descriptor_wire_format[i + 1].empty()) {
+      logged_packet.rtp.dependency_descriptor_wire_format =
+          dependency_descriptor_wire_format[i + 1];
+    }
+    (*rtp_packets_map)[header.ssrc].push_back(std::move(logged_packet));
   }
   return ParsedRtcEventLog::ParseStatus::Success();
 }
@@ -943,6 +914,11 @@ std::vector<RtpExtension> GetRuntimeRtpHeaderExtensionConfig(
     rtp_extensions.emplace_back(RtpExtension::kVideoRotationUri,
                                 proto_header_extensions.video_rotation_id());
   }
+  if (proto_header_extensions.has_dependency_descriptor_id()) {
+    rtp_extensions.emplace_back(
+        RtpExtension::kDependencyDescriptorUri,
+        proto_header_extensions.dependency_descriptor_id());
+  }
   return rtp_extensions;
 }
 // End of conversion functions.
@@ -1027,8 +1003,9 @@ ParsedRtcEventLog::GetDefaultHeaderExtensionMap() {
   constexpr int kPlayoutDelayDefaultId = 6;
   constexpr int kVideoContentTypeDefaultId = 7;
   constexpr int kVideoTimingDefaultId = 8;
+  constexpr int kDependencyDescriptorDefaultId = 9;
 
-  webrtc::RtpHeaderExtensionMap default_map;
+  webrtc::RtpHeaderExtensionMap default_map(/*extmap_allow_mixed=*/true);
   default_map.Register<AudioLevel>(kAudioLevelDefaultId);
   default_map.Register<TransmissionOffset>(kTimestampOffsetDefaultId);
   default_map.Register<AbsoluteSendTime>(kAbsSendTimeDefaultId);
@@ -1038,6 +1015,8 @@ ParsedRtcEventLog::GetDefaultHeaderExtensionMap() {
   default_map.Register<PlayoutDelayLimits>(kPlayoutDelayDefaultId);
   default_map.Register<VideoContentTypeExtension>(kVideoContentTypeDefaultId);
   default_map.Register<VideoTimingExtension>(kVideoTimingDefaultId);
+  default_map.Register<RtpDependencyDescriptorExtension>(
+      kDependencyDescriptorDefaultId);
   return default_map;
 }
 

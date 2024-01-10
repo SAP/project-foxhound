@@ -17,7 +17,6 @@
 #include "nsGkAtoms.h"
 #include "nsStyleConsts.h"
 #include "nsPresContext.h"
-#include "nsMappedAttributes.h"
 #include "nsSize.h"
 #include "mozilla/dom/Document.h"
 #include "nsImageFrame.h"
@@ -46,7 +45,7 @@
 #include "mozilla/CycleCollectedJSContext.h"
 
 #include "mozilla/EventDispatcher.h"
-#include "mozilla/MappedDeclarations.h"
+#include "mozilla/MappedDeclarationsBuilder.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/RestyleManager.h"
 
@@ -125,10 +124,7 @@ class ImageLoadTask final : public MicroTaskRunnable {
 
 HTMLImageElement::HTMLImageElement(
     already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
-    : nsGenericHTMLElement(std::move(aNodeInfo)),
-      mForm(nullptr),
-      mInDocResponsiveContent(false),
-      mCurrentDensity(1.0) {
+    : nsGenericHTMLElement(std::move(aNodeInfo)) {
   // We start out broken
   AddStatesSilently(ElementState::BROKEN);
 }
@@ -146,7 +142,7 @@ NS_IMPL_ISUPPORTS_CYCLE_COLLECTION_INHERITED(HTMLImageElement,
 NS_IMPL_ELEMENT_CLONE(HTMLImageElement)
 
 bool HTMLImageElement::IsInteractiveHTMLContent() const {
-  return HasAttr(kNameSpaceID_None, nsGkAtoms::usemap) ||
+  return HasAttr(nsGkAtoms::usemap) ||
          nsGenericHTMLElement::IsInteractiveHTMLContent();
 }
 
@@ -261,12 +257,12 @@ bool HTMLImageElement::ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
 }
 
 void HTMLImageElement::MapAttributesIntoRule(
-    const nsMappedAttributes* aAttributes, MappedDeclarations& aDecls) {
-  MapImageAlignAttributeInto(aAttributes, aDecls);
-  MapImageBorderAttributeInto(aAttributes, aDecls);
-  MapImageMarginAttributeInto(aAttributes, aDecls);
-  MapImageSizeAttributesInto(aAttributes, aDecls, MapAspectRatio::Yes);
-  MapCommonAttributesInto(aAttributes, aDecls);
+    MappedDeclarationsBuilder& aBuilder) {
+  MapImageAlignAttributeInto(aBuilder);
+  MapImageBorderAttributeInto(aBuilder);
+  MapImageMarginAttributeInto(aBuilder);
+  MapImageSizeAttributesInto(aBuilder, MapAspectRatio::Yes);
+  MapCommonAttributesInto(aBuilder);
 }
 
 nsChangeHint HTMLImageElement::GetAttributeChangeHint(const nsAtom* aAttribute,
@@ -317,7 +313,7 @@ void HTMLImageElement::BeforeSetAttr(int32_t aNameSpaceID, nsAtom* aName,
   if (aNameSpaceID == kNameSpaceID_None && mForm &&
       (aName == nsGkAtoms::name || aName == nsGkAtoms::id)) {
     // remove the image from the hashtable as needed
-    if (auto* old = GetParsedAttr(aName); old && !old->IsEmptyString()) {
+    if (const auto* old = GetParsedAttr(aName); old && !old->IsEmptyString()) {
       mForm->RemoveImageElementFromTable(
           this, nsDependentAtomString(old->GetAtomValue()));
     }
@@ -339,6 +335,12 @@ void HTMLImageElement::AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
   }
 
   nsAttrValueOrString attrVal(aValue);
+  if (aName == nsGkAtoms::src) {
+    mSrcURI = nullptr;
+    if (aValue && !aValue->IsEmptyString()) {
+      StringToURI(attrVal.String(), OwnerDoc(), getter_AddRefs(mSrcURI));
+    }
+  }
 
   if (aValue) {
     AfterMaybeChangeAttr(aNameSpaceID, aName, attrVal, aOldValue,
@@ -476,8 +478,7 @@ void HTMLImageElement::AfterMaybeChangeAttr(
 
   if (InResponsiveMode()) {
     if (mResponsiveSelector && mResponsiveSelector->Content() == this) {
-      mResponsiveSelector->SetDefaultSource(aValue.String(),
-                                            mSrcTriggeringPrincipal);
+      mResponsiveSelector->SetDefaultSource(mSrcURI, mSrcTriggeringPrincipal);
     }
     UpdateSourceSyncAndQueueImageTask(true);
   } else if (aNotify && ShouldLoadImage()) {
@@ -634,8 +635,8 @@ void HTMLImageElement::UpdateFormOwner() {
   if (mForm && !HasFlag(ADDED_TO_FORM)) {
     // Now we need to add ourselves to the form
     nsAutoString nameVal, idVal;
-    GetAttr(kNameSpaceID_None, nsGkAtoms::name, nameVal);
-    GetAttr(kNameSpaceID_None, nsGkAtoms::id, idVal);
+    GetAttr(nsGkAtoms::name, nameVal);
+    GetAttr(nsGkAtoms::id, idVal);
 
     SetFlags(ADDED_TO_FORM);
 
@@ -673,6 +674,15 @@ ElementState HTMLImageElement::IntrinsicState() const {
 
 void HTMLImageElement::NodeInfoChanged(Document* aOldDoc) {
   nsGenericHTMLElement::NodeInfoChanged(aOldDoc);
+
+  // Reparse the URI if needed. Note that we can't check whether we already have
+  // a parsed URI, because it might be null even if we have a valid src
+  // attribute, if we tried to parse with a different base.
+  mSrcURI = nullptr;
+  nsAutoString src;
+  if (GetAttr(nsGkAtoms::src, src) && !src.IsEmpty()) {
+    StringToURI(src, OwnerDoc(), getter_AddRefs(mSrcURI));
+  }
 
   // Unlike the LazyLoadImageObserver, the intersection observer
   // for the viewport could contain the element even if
@@ -929,12 +939,10 @@ nsresult HTMLImageElement::LoadSelectedImage(bool aForce, bool aNotify,
     triggeringPrincipal =
         mResponsiveSelector->GetSelectedImageTriggeringPrincipal();
     type = eImageLoadType_Imageset;
-  } else {
-    nsAutoString src;
-    hasSrc = GetAttr(nsGkAtoms::src, src);
-    if (hasSrc && !src.IsEmpty()) {
-      Document* doc = OwnerDoc();
-      StringToURI(src, doc, getter_AddRefs(selectedSource));
+  } else if (mSrcURI || HasAttr(nsGkAtoms::src)) {
+    hasSrc = true;
+    if (mSrcURI) {
+      selectedSource = mSrcURI;
       if (HaveSrcsetOrInPicture()) {
         // If we have a srcset attribute or are in a <picture> element, we
         // always use the Imageset load type, even if we parsed no valid
@@ -1172,12 +1180,8 @@ bool HTMLImageElement::SourceElementMatches(Element* aSourceElement) {
   }
 
   nsAutoString type;
-  if (src->GetAttr(kNameSpaceID_None, nsGkAtoms::type, type) &&
-      !SupportedPictureSourceType(type)) {
-    return false;
-  }
-
-  return true;
+  return !src->GetAttr(nsGkAtoms::type, type) ||
+         SupportedPictureSourceType(type);
 }
 
 already_AddRefed<ResponsiveImageSelector>
@@ -1223,9 +1227,8 @@ HTMLImageElement::TryCreateResponsiveSelector(Element* aSourceElement) {
   // If this is the <img> tag, also pull in src as the default source
   if (!isSourceTag) {
     MOZ_ASSERT(aSourceElement == this);
-    nsAutoString src;
-    if (GetAttr(nsGkAtoms::src, src) && !src.IsEmpty()) {
-      sel->SetDefaultSource(src, mSrcTriggeringPrincipal);
+    if (mSrcURI) {
+      sel->SetDefaultSource(mSrcURI, mSrcTriggeringPrincipal);
     }
   }
 
@@ -1310,10 +1313,6 @@ void HTMLImageElement::SetLazyLoading() {
     return;
   }
 
-  if (!StaticPrefs::dom_image_lazy_loading_enabled()) {
-    return;
-  }
-
   // If scripting is disabled don't do lazy load.
   // https://whatpr.org/html/3752/images.html#updating-the-image-data
   //
@@ -1360,15 +1359,14 @@ void HTMLImageElement::StopLazyLoading(StartLoading aStartLoading) {
   }
 }
 
-const nsMappedAttributes* HTMLImageElement::GetMappedAttributesFromSource()
-    const {
-  if (!IsInPicture() || !mResponsiveSelector ||
-      !mResponsiveSelector->Content()) {
+const StyleLockedDeclarationBlock*
+HTMLImageElement::GetMappedAttributesFromSource() const {
+  if (!IsInPicture() || !mResponsiveSelector) {
     return nullptr;
   }
 
   const auto* source =
-      HTMLSourceElement::FromNode(mResponsiveSelector->Content());
+      HTMLSourceElement::FromNodeOrNull(mResponsiveSelector->Content());
   if (!source) {
     return nullptr;
   }

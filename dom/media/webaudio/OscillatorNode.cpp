@@ -149,7 +149,7 @@ class OscillatorNodeEngine final : public AudioNodeEngine {
   // Returns true if the final frequency (and thus the phase increment) changed,
   // false otherwise. This allow some optimizations at callsite.
   bool UpdateParametersIfNeeded(TrackTime ticks, size_t count) {
-    double frequency, detune;
+    float frequency, detune;
 
     // Shortcut if frequency-related AudioParam are not automated, and we
     // already have computed the frequency information and related parameters.
@@ -171,17 +171,23 @@ class OscillatorNodeEngine final : public AudioNodeEngine {
       detune = mDetune.GetValueAtTime(ticks, count);
     }
 
-    float finalFrequency = frequency * exp2(detune / 1200.);
-    float signalPeriod = mSource->mSampleRate / finalFrequency;
+    if (detune != mLastDetune) {
+      mLastDetune = detune;
+      // Single-precision fdlibm_exp2f() would sometimes amplify rounding
+      // error in the division for large detune.
+      // https://bugzilla.mozilla.org/show_bug.cgi?id=1849806#c4
+      mDetuneRatio = fdlibm_exp2(detune / 1200.);
+    }
+    float finalFrequency = frequency * mDetuneRatio;
     mRecomputeParameters = false;
 
-    mPhaseIncrement = 2 * M_PI / signalPeriod;
-
-    if (finalFrequency != mFinalFrequency) {
-      mFinalFrequency = finalFrequency;
-      return true;
+    if (finalFrequency == mFinalFrequency) {
+      return false;
     }
-    return false;
+
+    mFinalFrequency = finalFrequency;
+    mPhaseIncrement = 2 * M_PI * finalFrequency / mSource->mSampleRate;
+    return true;
   }
 
   void FillBounds(float* output, TrackTime ticks, uint32_t& start,
@@ -212,7 +218,7 @@ class OscillatorNodeEngine final : public AudioNodeEngine {
       // performances here.
       UpdateParametersIfNeeded(ticks, i);
 
-      aOutput[i] = sin(mPhase);
+      aOutput[i] = fdlibm_sinf(mPhase);
 
       IncrementPhase();
     }
@@ -362,6 +368,8 @@ class OscillatorNodeEngine final : public AudioNodeEngine {
   float mPhase;
   float mFinalFrequency;
   float mPhaseIncrement;
+  float mLastDetune = 0.f;
+  float mDetuneRatio = 1.f;  // 2^(mLastDetune/1200)
   bool mRecomputeParameters;
   RefPtr<BasicWaveFormCache> mBasicWaveFormCache;
   bool mCustomDisableNormalization;

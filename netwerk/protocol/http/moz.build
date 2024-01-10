@@ -206,6 +206,11 @@ if CONFIG["MOZ_AUTH_EXTENSION"]:
         "/extensions/auth",
     ]
 
+if CONFIG["NIGHTLY_BUILD"]:
+    EXTRA_JS_MODULES += [
+        "OHTTPConfigManager.sys.mjs",
+    ]
+
 EXTRA_JS_MODULES += [
     "WellKnownOpportunisticUtils.sys.mjs",
 ]

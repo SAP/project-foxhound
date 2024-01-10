@@ -46,7 +46,7 @@ class AudioConfig {
     // The maximum number of channels a channel map can represent.
     static constexpr uint32_t MAX_CHANNELS = 32;
 
-    typedef uint32_t ChannelMap;
+    using ChannelMap = uint32_t;
 
     ChannelLayout() : mChannelMap(UNKNOWN_MAP), mValid(false) {}
     explicit ChannelLayout(uint32_t aChannels)
@@ -210,13 +210,7 @@ class AudioConfig {
     FORMAT_S24,
     FORMAT_S32,
     FORMAT_FLT,
-#  if defined(MOZ_SAMPLE_TYPE_FLOAT32)
     FORMAT_DEFAULT = FORMAT_FLT
-#  elif defined(MOZ_SAMPLE_TYPE_S16)
-    FORMAT_DEFAULT = FORMAT_S16
-#  else
-#    error "Not supported audio type"
-#  endif
   };
 
   AudioConfig(const ChannelLayout& aChannelLayout, uint32_t aRate,

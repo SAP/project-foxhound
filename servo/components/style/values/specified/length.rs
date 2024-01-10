@@ -7,7 +7,9 @@
 //! [length]: https://drafts.csswg.org/css-values/#lengths
 
 use super::{AllowQuirks, Number, Percentage, ToComputedValue};
+use crate::computed_value_flags::ComputedValueFlags;
 use crate::font_metrics::{FontMetrics, FontMetricsOrientation};
+use crate::gecko_bindings::structs::GeckoFontMetrics;
 use crate::parser::{Parse, ParserContext};
 use crate::values::computed::{self, CSSPixelLength, Context};
 use crate::values::generics::length as generics;
@@ -156,6 +158,23 @@ impl FontRelativeLength {
         (reference_size * length).finite()
     }
 
+    /// Computes the length, given a GeckoFontMetrics getter to resolve font-relative units.
+    pub fn to_computed_pixel_length_with_font_metrics(
+        &self,
+        get_font_metrics: impl Fn() -> GeckoFontMetrics,
+    ) -> Result<CSSFloat, ()> {
+        let metrics = get_font_metrics();
+        Ok(match *self {
+            Self::Em(v) => v * metrics.mComputedEmSize.px(),
+            Self::Ex(v) => v * metrics.mXSize.px(),
+            Self::Ch(v) => v * metrics.mChSize.px(),
+            Self::Cap(v) => v * metrics.mCapHeight.px(),
+            Self::Ic(v) => v * metrics.mIcWidth.px(),
+            // 'rem' unsupported as we have no context for it
+            Self::Rem(_) => return Err(()),
+        })
+    }
+
     /// Return reference font size.
     ///
     /// We use the base_size flag to pass a different size for computing
@@ -180,13 +199,11 @@ impl FontRelativeLength {
         let reference_font_size = base_size.resolve(context);
         match *self {
             Self::Em(length) => {
-                if context.for_non_inherited_property.is_some() {
-                    if base_size == FontBaseSize::CurrentStyle {
-                        context
-                            .rule_cache_conditions
-                            .borrow_mut()
-                            .set_font_size_dependency(reference_font_size.computed_size);
-                    }
+                if context.for_non_inherited_property && base_size == FontBaseSize::CurrentStyle {
+                    context
+                        .rule_cache_conditions
+                        .borrow_mut()
+                        .set_font_size_dependency(reference_font_size.computed_size);
                 }
 
                 (reference_font_size.computed_size(), length)
@@ -786,9 +803,13 @@ impl ContainerRelativeLength {
 
     /// Computes the given container-relative length.
     pub fn to_computed_value(&self, context: &Context) -> CSSPixelLength {
-        if context.for_non_inherited_property.is_some() {
+        if context.for_non_inherited_property {
             context.rule_cache_conditions.borrow_mut().set_uncacheable();
         }
+        context
+            .builder
+            .add_flags(ComputedValueFlags::USES_CONTAINER_UNITS);
+
         let size = context.get_container_size_query();
         let (factor, container_length) = match *self {
             Self::Cqw(v) => (v, size.get_container_width(context)),
@@ -923,12 +944,12 @@ impl NoCalcLength {
             "pt" => Self::Absolute(AbsoluteLength::Pt(value)),
             "pc" => Self::Absolute(AbsoluteLength::Pc(value)),
             // font-relative
-            "em" => Self::FontRelative(FontRelativeLength::Em(value)),
-            "ex" => Self::FontRelative(FontRelativeLength::Ex(value)),
-            "ch" => Self::FontRelative(FontRelativeLength::Ch(value)),
-            "cap" => Self::FontRelative(FontRelativeLength::Cap(value)),
-            "ic" => Self::FontRelative(FontRelativeLength::Ic(value)),
-            "rem" => Self::FontRelative(FontRelativeLength::Rem(value)),
+            "em" if context.parsing_mode.allows_font_relative_lengths() => Self::FontRelative(FontRelativeLength::Em(value)),
+            "ex" if context.parsing_mode.allows_font_relative_lengths() => Self::FontRelative(FontRelativeLength::Ex(value)),
+            "ch" if context.parsing_mode.allows_font_relative_lengths() => Self::FontRelative(FontRelativeLength::Ch(value)),
+            "cap" if context.parsing_mode.allows_font_relative_lengths() => Self::FontRelative(FontRelativeLength::Cap(value)),
+            "ic" if context.parsing_mode.allows_font_relative_lengths() => Self::FontRelative(FontRelativeLength::Ic(value)),
+            "rem" if context.parsing_mode.allows_font_relative_lengths() => Self::FontRelative(FontRelativeLength::Rem(value)),
             // viewport percentages
             "vw" if !context.in_page_rule() => {
                 Self::ViewportPercentage(ViewportPercentageLength::Vw(value))
@@ -1079,11 +1100,31 @@ impl NoCalcLength {
         }
     }
 
-    /// Get a px value without context.
+    /// Get a px value without context (so only absolute units can be handled).
     #[inline]
     pub fn to_computed_pixel_length_without_context(&self) -> Result<CSSFloat, ()> {
         match *self {
             Self::Absolute(len) => Ok(CSSPixelLength::new(len.to_px()).finite().px()),
+            _ => Err(()),
+        }
+    }
+
+    /// Get a px value without a full style context; this can handle either
+    /// absolute or (if a font metrics getter is provided) font-relative units.
+    #[inline]
+    pub fn to_computed_pixel_length_with_font_metrics(
+        &self,
+        get_font_metrics: Option<impl Fn() -> GeckoFontMetrics>,
+    ) -> Result<CSSFloat, ()> {
+        match *self {
+            Self::Absolute(len) => Ok(CSSPixelLength::new(len.to_px()).finite().px()),
+            Self::FontRelative(fr) => {
+                if let Some(getter) = get_font_metrics {
+                    fr.to_computed_pixel_length_with_font_metrics(getter)
+                } else {
+                    Err(())
+                }
+            },
             _ => Err(()),
         }
     }
@@ -1353,6 +1394,17 @@ impl Length {
         match *self {
             Self::NoCalc(ref l) => l.to_computed_pixel_length_without_context(),
             Self::Calc(ref l) => l.to_computed_pixel_length_without_context(),
+        }
+    }
+
+    /// Get a px value, with an optional GeckoFontMetrics getter to resolve font-relative units.
+    pub fn to_computed_pixel_length_with_font_metrics(
+        &self,
+        get_font_metrics: Option<impl Fn() -> GeckoFontMetrics>,
+    ) -> Result<CSSFloat, ()> {
+        match *self {
+            Self::NoCalc(ref l) => l.to_computed_pixel_length_with_font_metrics(get_font_metrics),
+            Self::Calc(ref l) => l.to_computed_pixel_length_with_font_metrics(get_font_metrics),
         }
     }
 }

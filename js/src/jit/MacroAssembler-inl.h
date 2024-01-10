@@ -63,20 +63,24 @@ DynFn DynamicFunction(Sig fun) {
 inline DynFn JitPreWriteBarrier(MIRType type) {
   switch (type) {
     case MIRType::Value: {
-      using Fn = void (*)(JSRuntime * rt, Value * vp);
+      using Fn = void (*)(JSRuntime* rt, Value* vp);
       return DynamicFunction<Fn>(JitValuePreWriteBarrier);
     }
     case MIRType::String: {
-      using Fn = void (*)(JSRuntime * rt, JSString * *stringp);
+      using Fn = void (*)(JSRuntime* rt, JSString** stringp);
       return DynamicFunction<Fn>(JitStringPreWriteBarrier);
     }
     case MIRType::Object: {
-      using Fn = void (*)(JSRuntime * rt, JSObject * *objp);
+      using Fn = void (*)(JSRuntime* rt, JSObject** objp);
       return DynamicFunction<Fn>(JitObjectPreWriteBarrier);
     }
     case MIRType::Shape: {
-      using Fn = void (*)(JSRuntime * rt, Shape * *shapep);
+      using Fn = void (*)(JSRuntime* rt, Shape** shapep);
       return DynamicFunction<Fn>(JitShapePreWriteBarrier);
+    }
+    case MIRType::WasmAnyRef: {
+      using Fn = void (*)(JSRuntime* rt, wasm::AnyRef* refp);
+      return DynamicFunction<Fn>(JitWasmAnyRefPreWriteBarrier);
     }
     default:
       MOZ_CRASH();
@@ -384,6 +388,24 @@ void MacroAssembler::moveValue(const ConstantOrRegister& src,
   }
 
   moveValue(src.reg(), dest);
+}
+
+// ===============================================================
+// Copy instructions
+
+void MacroAssembler::copy64(const Address& src, const Address& dest,
+                            Register scratch) {
+#if JS_BITS_PER_WORD == 32
+  MOZ_RELEASE_ASSERT(src.base != scratch && dest.base != scratch);
+  load32(LowWord(src), scratch);
+  store32(scratch, LowWord(dest));
+  load32(HighWord(src), scratch);
+  store32(scratch, HighWord(dest));
+#else
+  Register64 scratch64(scratch);
+  load64(src, scratch64);
+  store64(scratch64, dest);
+#endif
 }
 
 // ===============================================================
@@ -733,22 +755,6 @@ void MacroAssembler::branchTestObjectIsProxy(bool proxy, Register object,
   branchTest32(proxy ? Assembler::Zero : Assembler::NonZero,
                Address(scratch, Shape::offsetOfImmutableFlags()),
                Imm32(ShiftedMask), label);
-}
-
-void MacroAssembler::branchTestObjectIsWasmGcObject(bool isGcObject,
-                                                    Register object,
-                                                    Register scratch,
-                                                    Label* label) {
-  constexpr uint32_t ShiftedMask = (Shape::kindMask() << Shape::kindShift());
-  constexpr uint32_t ShiftedKind =
-      (uint32_t(Shape::Kind::WasmGC) << Shape::kindShift());
-  MOZ_ASSERT(object != scratch);
-
-  loadPtr(Address(object, JSObject::offsetOfShape()), scratch);
-  load32(Address(scratch, Shape::offsetOfImmutableFlags()), scratch);
-  and32(Imm32(ShiftedMask), scratch);
-  branch32(isGcObject ? Assembler::Equal : Assembler::NotEqual, scratch,
-           Imm32(ShiftedKind), label);
 }
 
 void MacroAssembler::branchTestProxyHandlerFamily(Condition cond,

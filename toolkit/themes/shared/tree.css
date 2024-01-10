@@ -35,7 +35,7 @@ treechildren::-moz-tree-row(multicol, odd) {
   background-color: -moz-oddtreerow;
 }
 
-@media (-moz-windows-default-theme) {
+@media not (prefers-contrast) {
   treechildren::-moz-tree-row(hover) {
     background-color: hsla(0,0%,50%,.15);
   }
@@ -269,27 +269,6 @@ html|input.tree-input {
     .tree-columnpicker-button:where(:hover:active) {
       background-color: -moz-ButtonActiveFace;
       color: -moz-ButtonActiveText;
-    }
-  }
-
-  @media (-moz-windows-classic) {
-    treecol,
-    .tree-columnpicker-button {
-      border: 1px solid;
-      border-top-color: ThreeDHighlight;
-      border-inline-end-color: ThreeDShadow;
-      border-bottom-color: ThreeDShadow;
-      border-inline-start-color: ThreeDHighlight;
-      box-shadow: none;
-      background-color: -moz-Dialog;
-    }
-
-    treecol:where(:hover:active),
-    .tree-columnpicker-button:where(:hover:active) {
-      border-top-color: ThreeDShadow;
-      border-inline-end-color: ThreeDHighlight;
-      border-bottom-color: ThreeDHighlight;
-      border-inline-start-color: ThreeDShadow;
     }
   }
 }

@@ -405,18 +405,6 @@ void ObliviousHttpChannel::DoDiagnosticAssertWhenOnStopNotCalledOnDestroy() {
   }
 }
 
-void ObliviousHttpChannel::SetIPv6Disabled() {
-  if (mInnerChannelInternal) {
-    mInnerChannelInternal->SetIPv6Disabled();
-  }
-}
-
-void ObliviousHttpChannel::SetIPv4Disabled() {
-  if (mInnerChannelInternal) {
-    mInnerChannelInternal->SetIPv4Disabled();
-  }
-}
-
 void ObliviousHttpChannel::DisableAltDataCache() {
   if (mInnerChannelInternal) {
     mInnerChannelInternal->DisableAltDataCache();
@@ -671,9 +659,7 @@ ObliviousHttpChannel::OnDataAvailable(nsIRequest* aRequest,
       ("ObliviousHttpChannel::OnDataAvailable [this=%p, request=%p, stream=%p, "
        "offset=%" PRIu64 ", count=%u]",
        this, aRequest, aStream, aOffset, aCount));
-  if (aOffset != 0) {
-    return NS_ERROR_INVALID_ARG;
-  }
+  MOZ_ASSERT(aOffset == mRawResponse.Length());
   size_t oldLength = mRawResponse.Length();
   size_t newLength = oldLength + aCount;
   if (newLength < oldLength) {  // i.e., overflow

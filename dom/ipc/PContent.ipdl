@@ -279,6 +279,7 @@ struct BlobURLRegistrationData
   IPCBlob blob;
   nullable nsIPrincipal principal;
   nsID? agentClusterId;
+  nsCString partitionKey;
   bool revoked;
 };
 
@@ -609,8 +610,6 @@ child:
                               FileDescriptor? DMDFile)
         returns (uint32_t aGeneration);
 
-    async RequestPerformanceMetrics(nsID aID);
-
 #if defined(XP_WIN)
     /**
      * Used by third-party modules telemetry (aka "untrusted modules" telemetry)
@@ -870,7 +869,7 @@ child:
 
     async BlobURLRegistration(nsCString aURI, IPCBlob aBlob,
                               nullable nsIPrincipal aPrincipal,
-                              nsID? aAgentClusterId);
+                              nsID? aAgentClusterId, nsCString aPartitionKey);
 
     async BlobURLUnregistration(nsCString aURI);
 
@@ -1187,7 +1186,7 @@ parent:
     // Pass true for aShouldCloseWindow to specify that aContext was opened specifically
     // for this load, and should be closed once we've handled it.
     async PExternalHelperApp(nullable nsIURI uri,
-                             LoadInfoArgs? loadInfoArgs,
+                             LoadInfoArgs loadInfoArgs,
                              nsCString aMimeContentType,
                              nsCString aContentDisposition,
                              uint32_t aContentDispositionHint,
@@ -1258,8 +1257,6 @@ parent:
 
     // Tell the parent that the child has gone idle for the first time.
     async FirstIdle();
-
-    async DeviceReset();
 
     async CopyFavicon(nullable nsIURI oldURI, nullable nsIURI newURI, bool isPrivate);
 
@@ -1585,8 +1582,6 @@ parent:
       nullable nsIReferrerInfo aReferrerInfo,
       OriginAttributes aOriginAttributes);
 
-    sync RemovePermission(nullable nsIPrincipal principal, nsCString permissionType) returns (nsresult rv);
-
     /**
      * Tell the parent that a decoder's' benchmark has been completed.
      * The result can then be stored in permanent storage.
@@ -1616,7 +1611,7 @@ parent:
 
      async StoreAndBroadcastBlobURLRegistration(nsCString url, IPCBlob blob,
                                                 nullable nsIPrincipal principal,
-                                                nsID? aAgentClusterId);
+                                                nsID? aAgentClusterId, nsCString aPartitionKey);
 
      async UnstoreAndBroadcastBlobURLUnregistration(nsCString url, nullable nsIPrincipal principal);
 
@@ -1638,8 +1633,6 @@ parent:
     async AddMemoryReport(MemoryReport aReport);
 
     async BHRThreadHang(HangDetails aHangDetails);
-
-    async AddPerformanceMetrics(nsID aID, PerformanceInfo[] aMetrics);
 
     /*
      * Adds a certificate exception for the given hostname and port.
@@ -1665,7 +1658,8 @@ parent:
                                                   nullable nsIPrincipal aTrackingPrincipal,
                                                   nsCString aTrackingOrigin,
                                                   int aAllowMode,
-                                                  StorageAccessPermissionGrantedReason? aReason)
+                                                  StorageAccessPermissionGrantedReason? aReason,
+                                                  bool aFrameOnly)
           returns (bool unused);
 
     async CompleteAllowAccessFor(MaybeDiscardedBrowsingContext aParentContext,
@@ -1821,7 +1815,8 @@ parent:
                              nullable nsIPrincipal aLoadingPrincipal,
                              OriginAttributes aOriginAttributes,
                              uint64_t aInnerWindowId,
-                             nsID? aAgentClusterId)
+                             nsID? aAgentClusterId,
+                             nsCString aPartitionKey)
       returns (BlobURLDataRequestResult aResult);
 
     async SetActiveSessionHistoryEntry(MaybeDiscardedBrowsingContext context,
@@ -1856,7 +1851,7 @@ both:
      * loadInfo is passed in order to enforce same-origin security checks
      * aData must be non-null.
      */
-    async ReportFrameTimingData(LoadInfoArgs? loadInfo, nsString entryName,
+    async ReportFrameTimingData(LoadInfoArgs loadInfo, nsString entryName,
                                 nsString initiatorType,
                                 UniquePtr<PerformanceTimingData> aData);
 

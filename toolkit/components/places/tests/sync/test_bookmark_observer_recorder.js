@@ -392,7 +392,7 @@ add_task(async function test_apply_then_revert() {
     dateAdded: new Date(localTimeSeconds * 1000),
     lastModified: new Date(localTimeSeconds * 1000),
   });
-  let localIdForD = await PlacesUtils.promiseItemId("bookmarkDDDD");
+  let localIdForD = await PlacesTestUtils.promiseItemId("bookmarkDDDD");
 
   info("Apply remote changes, second time");
   await buf.db.execute(
@@ -419,7 +419,7 @@ add_task(async function test_apply_then_revert() {
     "Should stage identical records to upload, first and second time"
   );
 
-  let localItemIds = await PlacesUtils.promiseManyItemIds([
+  let localItemIds = await PlacesTestUtils.promiseManyItemIds([
     "bookmarkFFFF",
     "bookmarkEEEE",
     "folderAAAAAA",
@@ -466,6 +466,10 @@ add_task(async function test_apply_then_revert() {
         guid: "bookmarkFFFF",
         parentGuid: PlacesUtils.bookmarks.menuGuid,
         source: PlacesUtils.bookmarks.SOURCES.SYNC,
+        tags: "",
+        frecency: 1,
+        hidden: false,
+        visitCount: 0,
       },
     },
     {
@@ -481,6 +485,12 @@ add_task(async function test_apply_then_revert() {
         source: PlacesUtils.bookmarks.SOURCES.SYNC,
         urlHref: "http://example.com/e",
         isTagging: false,
+        title: "E",
+        tags: "",
+        frecency: 0,
+        hidden: false,
+        visitCount: 0,
+        lastVisitDate: null,
       },
     },
     {
@@ -496,6 +506,12 @@ add_task(async function test_apply_then_revert() {
         source: PlacesUtils.bookmarks.SOURCES.SYNC,
         urlHref: "",
         isTagging: false,
+        title: "A (remote)",
+        tags: "",
+        frecency: 0,
+        hidden: false,
+        visitCount: 0,
+        lastVisitDate: null,
       },
     },
     {
@@ -511,6 +527,12 @@ add_task(async function test_apply_then_revert() {
         source: PlacesUtils.bookmarks.SOURCES.SYNC,
         urlHref: "http://example.com/c",
         isTagging: false,
+        title: "C",
+        tags: "",
+        frecency: 1,
+        hidden: false,
+        visitCount: 0,
+        lastVisitDate: null,
       },
     },
     {
@@ -526,6 +548,12 @@ add_task(async function test_apply_then_revert() {
         source: PlacesUtils.bookmarks.SOURCES.SYNC,
         urlHref: "http://example.com/b-remote",
         isTagging: false,
+        title: "B",
+        tags: "",
+        frecency: -1,
+        hidden: false,
+        visitCount: 0,
+        lastVisitDate: null,
       },
     },
     {

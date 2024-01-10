@@ -8,6 +8,7 @@
 #include "cairo.h"
 #include "cairo-quartz.h"
 #include "mozilla/gfx/HelpersCairo.h"
+#include "mozilla/StaticPrefs_layout.h"
 #include "nsObjCExceptions.h"
 #include "nsString.h"
 #include "nsIOutputStream.h"
@@ -210,7 +211,7 @@ nsresult PrintTargetCG::AbortPrinting() {
   return EndPrinting();
 }
 
-nsresult PrintTargetCG::BeginPage() {
+nsresult PrintTargetCG::BeginPage(const IntSize& aSizeInPoints) {
   NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
 
   CGContextRef context;
@@ -218,7 +219,15 @@ nsresult PrintTargetCG::BeginPage() {
     CGContextBeginPage(mPrintToStreamContext, nullptr);
     context = mPrintToStreamContext;
   } else {
+    // XXX Why are we calling this if we don't check the return value?
     PMSessionError(mPrintSession);
+
+    if (StaticPrefs::layout_css_page_orientation_enabled()) {
+      ::PMOrientation pageOrientation =
+          aSizeInPoints.width < aSizeInPoints.height ? kPMPortrait : kPMLandscape;
+      ::PMSetOrientation(mPageFormat, pageOrientation, kPMUnlocked);
+      // We don't need to reset the orientation, since we set it for every page.
+    }
     OSStatus status = ::PMSessionBeginPageNoDialog(mPrintSession, mPageFormat, nullptr);
     if (status != noErr) {
       return NS_ERROR_ABORT;
@@ -233,8 +242,15 @@ nsresult PrintTargetCG::BeginPage() {
     }
   }
 
-  unsigned int width = static_cast<unsigned int>(mSize.width);
-  unsigned int height = static_cast<unsigned int>(mSize.height);
+  unsigned int width;
+  unsigned int height;
+  if (StaticPrefs::layout_css_page_orientation_enabled()) {
+    width = static_cast<unsigned int>(aSizeInPoints.width);
+    height = static_cast<unsigned int>(aSizeInPoints.height);
+  } else {
+    width = static_cast<unsigned int>(mSize.width);
+    height = static_cast<unsigned int>(mSize.height);
+  }
 
   // Initially, origin is at bottom-left corner of the paper.
   // Here, we translate it to top-left corner of the paper.
@@ -249,7 +265,7 @@ nsresult PrintTargetCG::BeginPage() {
 
   mCairoSurface = surface;
 
-  return PrintTarget::BeginPage();
+  return PrintTarget::BeginPage(aSizeInPoints);
 
   NS_OBJC_END_TRY_BLOCK_RETURN(NS_ERROR_FAILURE);
 }

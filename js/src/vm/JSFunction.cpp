@@ -27,8 +27,7 @@
 #include "builtin/BigInt.h"
 #include "builtin/Object.h"
 #include "builtin/Symbol.h"
-#include "frontend/BytecodeCompilation.h"
-#include "frontend/BytecodeCompiler.h"
+#include "frontend/BytecodeCompiler.h"  // frontend::{CompileStandaloneFunction, CompileStandaloneGenerator, CompileStandaloneAsyncFunction, CompileStandaloneAsyncGenerator, DelazifyCanonicalScriptedFunction}
 #include "frontend/FrontendContext.h"  // AutoReportFrontendContext, ManualReportFrontendContext
 #include "jit/InlinableNatives.h"
 #include "jit/Ion.h"
@@ -51,7 +50,7 @@
 #include "vm/GeneratorAndAsyncKind.h"  // js::GeneratorKind, js::FunctionAsyncKind
 #include "vm/GlobalObject.h"
 #include "vm/Interpreter.h"
-#include "vm/JSAtom.h"
+#include "vm/JSAtomUtils.h"  // ToAtom
 #include "vm/JSContext.h"
 #include "vm/JSObject.h"
 #include "vm/JSScript.h"
@@ -60,7 +59,6 @@
 #include "vm/SelfHosting.h"
 #include "vm/Shape.h"
 #include "vm/StringObject.h"
-#include "vm/WellKnownAtom.h"  // js_*_str
 #include "wasm/AsmJS.h"
 #ifdef ENABLE_RECORD_TUPLE
 #  include "vm/RecordType.h"
@@ -693,7 +691,7 @@ static JSObject* CreateFunctionPrototype(JSContext* cx, JSProtoKey key) {
 
   return NewFunctionWithProto(
       cx, FunctionPrototype, 0, FunctionFlags::NATIVE_FUN, nullptr,
-      Handle<PropertyName*>(cx->names().empty), objectProto,
+      Handle<PropertyName*>(cx->names().empty_), objectProto,
       gc::AllocKind::FUNCTION, TenuredObject);
 }
 
@@ -873,8 +871,8 @@ JSString* fun_toStringHelper(JSContext* cx, HandleObject obj, bool isToSource) {
     }
 
     JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
-                              JSMSG_INCOMPATIBLE_PROTO, js_Function_str,
-                              js_toString_str, "object");
+                              JSMSG_INCOMPATIBLE_PROTO, "Function", "toString",
+                              "object");
     return nullptr;
   }
 
@@ -982,7 +980,7 @@ bool js::fun_apply(JSContext* cx, unsigned argc, Value* vp) {
   // Step 3.
   if (!args[1].isObject()) {
     JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
-                              JSMSG_BAD_APPLY_ARGS, js_apply_str);
+                              JSMSG_BAD_APPLY_ARGS, "apply");
     return false;
   }
 
@@ -1012,10 +1010,10 @@ bool js::fun_apply(JSContext* cx, unsigned argc, Value* vp) {
 }
 
 static const JSFunctionSpec function_methods[] = {
-    JS_FN(js_toSource_str, fun_toSource, 0, 0),
-    JS_FN(js_toString_str, fun_toString, 0, 0),
-    JS_FN(js_apply_str, fun_apply, 2, 0),
-    JS_FN(js_call_str, fun_call, 1, 0),
+    JS_FN("toSource", fun_toSource, 0, 0),
+    JS_FN("toString", fun_toString, 0, 0),
+    JS_FN("apply", fun_apply, 2, 0),
+    JS_FN("call", fun_call, 1, 0),
     JS_INLINABLE_FN("bind", BoundFunctionObject::functionBind, 1, 0,
                     FunctionBind),
     JS_SYM_FN(hasInstance, fun_symbolHasInstance, 1,
@@ -1040,13 +1038,13 @@ static const ClassSpec JSFunctionClassSpec = {
     function_methods,          function_properties};
 
 const JSClass js::FunctionClass = {
-    js_Function_str,
+    "Function",
     JSCLASS_HAS_CACHED_PROTO(JSProto_Function) |
         JSCLASS_HAS_RESERVED_SLOTS(JSFunction::SlotCount),
     &JSFunctionClassOps, &JSFunctionClassSpec};
 
 const JSClass js::ExtendedFunctionClass = {
-    js_Function_str,
+    "Function",
     JSCLASS_HAS_CACHED_PROTO(JSProto_Function) |
         JSCLASS_HAS_RESERVED_SLOTS(FunctionExtended::SlotCount),
     &JSFunctionClassOps, &JSFunctionClassSpec};
@@ -1197,7 +1195,7 @@ static bool CreateDynamicFunction(JSContext* cx, const CallArgs& args,
 
   RootedScript maybeScript(cx);
   const char* filename;
-  unsigned lineno;
+  uint32_t lineno;
   bool mutedErrors;
   uint32_t pcOffset;
   DescribeScriptedCallerForCompilation(cx, &maybeScript, &filename, &lineno,
@@ -1761,7 +1759,7 @@ static JSAtom* SymbolToFunctionName(JSContext* cx, JS::Symbol* symbol,
 
   // Step 4.b, no prefix fastpath.
   if (!desc && prefixKind == FunctionPrefixKind::None) {
-    return cx->names().empty;
+    return cx->names().empty_;
   }
 
   // Step 5 (reordered).

@@ -18,8 +18,7 @@ use std::{ops, ptr};
 use std::fmt::{self, Write};
 use std::mem;
 
-use cssparser::{Parser, TokenSerializationType};
-use cssparser::ParserInput;
+use cssparser::{Parser, ParserInput, TokenSerializationType};
 #[cfg(feature = "servo")] use euclid::SideOffsets2D;
 use crate::context::QuirksMode;
 #[cfg(feature = "gecko")] use crate::gecko_bindings::structs::{self, nsCSSPropertyID};
@@ -32,6 +31,7 @@ use fxhash::FxHashMap;
 use crate::media_queries::Device;
 use crate::parser::ParserContext;
 use crate::selector_parser::PseudoElement;
+use crate::stylist::Stylist;
 #[cfg(feature = "servo")] use servo_config::prefs;
 use style_traits::{CssWriter, KeywordsCollectFn, ParseError, ParsingMode};
 use style_traits::{SpecifiedValueInfo, StyleParseErrorKind, ToCss};
@@ -105,32 +105,6 @@ pub mod shorthands {
     use crate::parser::{Parse, ParserContext};
     use style_traits::{ParseError, StyleParseErrorKind};
     use crate::values::specified;
-
-    use style_traits::{CssWriter, ToCss};
-    use crate::values::specified::{BorderStyle, Color};
-    use std::fmt::{self, Write};
-
-    fn serialize_directional_border<W, I,>(
-        dest: &mut CssWriter<W>,
-        width: &I,
-        style: &BorderStyle,
-        color: &Color,
-    ) -> fmt::Result
-    where
-        W: Write,
-        I: ToCss,
-    {
-        width.to_css(dest)?;
-        // FIXME(emilio): Should we really serialize the border style if it's
-        // `solid`?
-        dest.write_char(' ')?;
-        style.to_css(dest)?;
-        if *color != Color::CurrentColor {
-            dest.write_char(' ')?;
-            color.to_css(dest)?;
-        }
-        Ok(())
-    }
 
     % for style_struct in data.style_structs:
     include!("${repr(os.path.join(OUT_DIR, 'shorthands/{}.rs'.format(style_struct.name_lower)))[1:-1]}");
@@ -1182,7 +1156,8 @@ impl CSSWideKeyword {
         })
     }
 
-    fn parse(input: &mut Parser) -> Result<Self, ()> {
+    /// Parses a CSS wide keyword completely.
+    pub fn parse(input: &mut Parser) -> Result<Self, ()> {
         let keyword = {
             let ident = input.expect_ident().map_err(|_| ())?;
             Self::from_ident(ident)?
@@ -1214,10 +1189,17 @@ bitflags! {
         /* The following flags are currently not used in Rust code, they
          * only need to be listed in corresponding properties so that
          * they can be checked in the C++ side via ServoCSSPropList.h. */
+
         /// This property can be animated on the compositor.
         const CAN_ANIMATE_ON_COMPOSITOR = 0;
         /// This shorthand property is accessible from getComputedStyle.
         const SHORTHAND_IN_GETCS = 0;
+        /// See data.py's documentation about the affects_flags.
+        const AFFECTS_LAYOUT = 0;
+        #[allow(missing_docs)]
+        const AFFECTS_OVERFLOW = 0;
+        #[allow(missing_docs)]
+        const AFFECTS_PAINT = 0;
     }
 }
 
@@ -1943,13 +1925,13 @@ impl CountedUnknownProperty {
     /// Parse the counted unknown property, for testing purposes only.
     pub fn parse_for_testing(property_name: &str) -> Option<Self> {
         ascii_case_insensitive_phf_map! {
-            unknown_id -> CountedUnknownProperty = {
+            unknown_ids -> CountedUnknownProperty = {
                 % for property in data.counted_unknown_properties:
                 "${property.name}" => CountedUnknownProperty::${property.camel_case},
                 % endfor
             }
         }
-        unknown_id(property_name).cloned()
+        unknown_ids::get(property_name).cloned()
     }
 
     /// Returns the underlying index, used for use counter.
@@ -1996,7 +1978,7 @@ impl PropertyId {
             CountedUnknown(CountedUnknownProperty),
         }
         ascii_case_insensitive_phf_map! {
-            static_id -> StaticId = {
+            static_ids -> StaticId = {
                 % for (kind, properties) in [("Longhand", data.longhands), ("Shorthand", data.shorthands)]:
                 % for property in properties:
                 "${property.name}" => StaticId::${kind}(${kind}Id::${property.camel_case}),
@@ -2018,22 +2000,10 @@ impl PropertyId {
             }
         }
 
-        if let Some(id) = static_id(property_name) {
+        if let Some(id) = static_ids::get(property_name) {
             return Ok(match *id {
                 StaticId::Longhand(id) => PropertyId::Longhand(id),
-                StaticId::Shorthand(id) => {
-                    #[cfg(feature = "gecko")]
-                    {
-                        // We want to count `zoom` even if disabled.
-                        if matches!(id, ShorthandId::Zoom) {
-                            if let Some(counters) = use_counters {
-                                counters.non_custom_properties.record(id.into());
-                            }
-                        }
-                    }
-
-                    PropertyId::Shorthand(id)
-                },
+                StaticId::Shorthand(id) => PropertyId::Shorthand(id),
                 StaticId::LonghandAlias(id, alias) => PropertyId::LonghandAlias(id, alias),
                 StaticId::ShorthandAlias(id, alias) => PropertyId::ShorthandAlias(id, alias),
                 StaticId::CountedUnknown(unknown_prop) => {
@@ -2426,22 +2396,6 @@ impl PropertyDeclaration {
             PropertyDeclaration::Custom(..) =>
                 unreachable!("Serializing a custom property as part of shorthand?"),
             _ => true,
-        }
-    }
-
-    /// Return whether the value is stored as it was in the CSS source,
-    /// preserving whitespace (as opposed to being parsed into a more abstract
-    /// data structure).
-    ///
-    /// This is the case of custom properties and values that contain
-    /// unsubstituted variables.
-    pub fn value_is_unparsed(&self) -> bool {
-        match *self {
-            PropertyDeclaration::WithVariables(..) => true,
-            PropertyDeclaration::Custom(ref declaration) => {
-                matches!(declaration.value, CustomDeclarationValue::Value(..))
-            }
-            _ => false,
         }
     }
 
@@ -3022,6 +2976,7 @@ pub struct ComputedValuesInner {
         ${style_struct.ident}: Arc<style_structs::${style_struct.name}>,
     % endfor
     custom_properties: Option<Arc<crate::custom_properties::CustomPropertiesMap>>,
+
     /// The writing mode of this computed values struct.
     pub writing_mode: WritingMode,
 
@@ -3641,16 +3596,15 @@ pub struct StyleBuilder<'a> {
     /// This provides access to viewport unit ratios, etc.
     pub device: &'a Device,
 
+    /// The stylist we're using to compute style except for media queries.
+    /// device is used in media queries instead.
+    pub stylist: Option<<&'a Stylist>,
+
     /// The style we're inheriting from.
     ///
     /// This is effectively
     /// `parent_style.unwrap_or(device.default_computed_values())`.
     inherited_style: &'a ComputedValues,
-
-    /// The style we're inheriting from for properties that don't inherit from
-    /// ::first-line.  This is the same as inherited_style, unless
-    /// inherited_style is a ::first-line style.
-    inherited_style_ignoring_first_line: &'a ComputedValues,
 
     /// The style we're getting reset structs from.
     reset_style: &'a ComputedValues,
@@ -3693,29 +3647,22 @@ impl<'a> StyleBuilder<'a> {
     /// Trivially construct a `StyleBuilder`.
     pub(super) fn new(
         device: &'a Device,
+        stylist: Option<<&'a Stylist>,
         parent_style: Option<<&'a ComputedValues>,
-        parent_style_ignoring_first_line: Option<<&'a ComputedValues>,
         pseudo: Option<<&'a PseudoElement>,
         rules: Option<StrongRuleNode>,
         custom_properties: Option<Arc<crate::custom_properties::CustomPropertiesMap>>,
         is_root_element: bool,
     ) -> Self {
-        debug_assert_eq!(parent_style.is_some(), parent_style_ignoring_first_line.is_some());
-        #[cfg(feature = "gecko")]
-        debug_assert!(parent_style.is_none() ||
-                      std::ptr::eq(parent_style.unwrap(),
-                                     parent_style_ignoring_first_line.unwrap()) ||
-                      parent_style.unwrap().is_first_line_style());
         let reset_style = device.default_computed_values();
         let inherited_style = parent_style.unwrap_or(reset_style);
-        let inherited_style_ignoring_first_line = parent_style_ignoring_first_line.unwrap_or(reset_style);
 
         let flags = inherited_style.flags.inherited();
 
         StyleBuilder {
             device,
+            stylist,
             inherited_style,
-            inherited_style_ignoring_first_line,
             reset_style,
             pseudo,
             rules,
@@ -3743,19 +3690,16 @@ impl<'a> StyleBuilder<'a> {
     /// used for animations.
     pub fn for_animation(
         device: &'a Device,
+        stylist: Option<<&'a Stylist>,
         style_to_derive_from: &'a ComputedValues,
         parent_style: Option<<&'a ComputedValues>,
     ) -> Self {
         let reset_style = device.default_computed_values();
         let inherited_style = parent_style.unwrap_or(reset_style);
-        #[cfg(feature = "gecko")]
-        debug_assert!(parent_style.is_none() ||
-                      !parent_style.unwrap().is_first_line_style());
         StyleBuilder {
             device,
+            stylist,
             inherited_style,
-            // None of our callers pass in ::first-line parent styles.
-            inherited_style_ignoring_first_line: inherited_style,
             reset_style,
             pseudo: None,
             modified_reset: false,
@@ -3789,8 +3733,7 @@ impl<'a> StyleBuilder<'a> {
     #[allow(non_snake_case)]
     pub fn inherit_${property.ident}(&mut self) {
         let inherited_struct =
-            self.inherited_style_ignoring_first_line
-                .get_${property.style_struct.name_lower}();
+            self.inherited_style.get_${property.style_struct.name_lower}();
 
         self.modified_reset = true;
         self.add_flags(ComputedValueFlags::INHERITS_RESET_STYLE);
@@ -3863,6 +3806,7 @@ impl<'a> StyleBuilder<'a> {
     /// computed values that need to be provided as well.
     pub fn for_inheritance(
         device: &'a Device,
+        stylist: Option<<&'a Stylist>,
         parent: Option<<&'a ComputedValues>,
         pseudo: Option<<&'a PseudoElement>,
     ) -> Self {
@@ -3875,6 +3819,7 @@ impl<'a> StyleBuilder<'a> {
             parent.visited_style().map(|style| {
                 Self::for_inheritance(
                     device,
+                    stylist,
                     Some(style),
                     pseudo,
                 ).build()
@@ -3882,7 +3827,7 @@ impl<'a> StyleBuilder<'a> {
         });
         let mut ret = Self::new(
             device,
-            parent,
+            stylist,
             parent,
             pseudo,
             /* rules = */ None,
@@ -4050,11 +3995,7 @@ impl<'a> StyleBuilder<'a> {
         /// next-best thing and call them `parent_${style_struct.name_lower}`
         /// instead.
         pub fn get_parent_${style_struct.name_lower}(&self) -> &style_structs::${style_struct.name} {
-            % if style_struct.inherited:
             self.inherited_style.get_${style_struct.name_lower}()
-            % else:
-            self.inherited_style_ignoring_first_line.get_${style_struct.name_lower}()
-            % endif
         }
     % endfor
 }

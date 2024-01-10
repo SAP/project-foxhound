@@ -426,7 +426,7 @@ const PasswordsCleaner = {
 
   async _deleteInternal(aCb) {
     try {
-      let logins = Services.logins.getAllLogins();
+      let logins = await Services.logins.getAllLogins();
       for (let login of logins) {
         if (aCb(login)) {
           Services.logins.removeLogin(login);
@@ -1064,7 +1064,11 @@ const PermissionsCleaner = {
         }
       }
 
-      if (!toBeRemoved && perm.type.startsWith("3rdPartyStorage^")) {
+      if (
+        !toBeRemoved &&
+        (perm.type.startsWith("3rdPartyStorage^") ||
+          perm.type.startsWith("3rdPartyFrameStorage^"))
+      ) {
         let parts = perm.type.split("^");
         let uri;
         try {
@@ -1227,6 +1231,19 @@ const HSTSCleaner = {
     );
   },
 
+  /**
+   * Adds brackets to a site if it's an IPv6 address.
+   * @param {string} aSite - (schemeless) site which may be an IPv6.
+   * @returns {string} bracketed IPv6 or site if site is not an IPv6.
+   */
+  _maybeFixIpv6Site(aSite) {
+    // Not an IPv6 or already has brackets.
+    if (!aSite.includes(":") || aSite[0] == "[") {
+      return aSite;
+    }
+    return `[${aSite}]`;
+  },
+
   deleteByPrincipal(aPrincipal) {
     return this.deleteByHost(aPrincipal.host, aPrincipal.originAttributes);
   },
@@ -1235,7 +1252,9 @@ const HSTSCleaner = {
     let sss = Cc["@mozilla.org/ssservice;1"].getService(
       Ci.nsISiteSecurityService
     );
-    let uri = Services.io.newURI("https://" + aDomain);
+
+    // Add brackets to IPv6 sites to ensure URI creation succeeds.
+    let uri = Services.io.newURI("https://" + this._maybeFixIpv6Site(aDomain));
     sss.resetState(uri, {}, Ci.nsISiteSecurityService.BaseDomain);
   },
 
@@ -1659,12 +1678,48 @@ ClearDataService.prototype = Object.freeze({
     });
   },
 
+  /**
+   * Compute the base domain from a given host. This is a wrapper around
+   * Services.eTLD.getBaseDomainFromHost which also supports IP addresses and
+   * hosts such as "localhost" which are considered valid base domains for
+   * principals and data storage.
+   * @param {string} aDomainOrHost - Domain or host to be converted. May already
+   * be a valid base domain.
+   * @returns {string} Base domain of the given host. Returns aDomainOrHost if
+   * already a base domain.
+   */
+  _getBaseDomainWithFallback(aDomainOrHost) {
+    let result = aDomainOrHost;
+    try {
+      result = Services.eTLD.getBaseDomainFromHost(aDomainOrHost);
+    } catch (e) {
+      if (
+        e.result == Cr.NS_ERROR_HOST_IS_IP_ADDRESS ||
+        e.result == Cr.NS_ERROR_INSUFFICIENT_DOMAIN_LEVELS
+      ) {
+        // For these 2 expected errors, just take the host as the result.
+        // - NS_ERROR_HOST_IS_IP_ADDRESS: the host is in ipv4/ipv6.
+        // - NS_ERROR_INSUFFICIENT_DOMAIN_LEVELS: not enough domain parts to extract.
+        result = aDomainOrHost;
+      } else {
+        throw e;
+      }
+    }
+    return result;
+  },
+
   deleteDataFromBaseDomain(aDomainOrHost, aIsUserRequest, aFlags, aCallback) {
     if (!aDomainOrHost || !aCallback) {
       return Cr.NS_ERROR_INVALID_ARG;
     }
     // We may throw here if aDomainOrHost can't be converted to a base domain.
-    let baseDomain = Services.eTLD.getBaseDomainFromHost(aDomainOrHost);
+    let baseDomain;
+
+    try {
+      baseDomain = this._getBaseDomainWithFallback(aDomainOrHost);
+    } catch (e) {
+      return Cr.NS_ERROR_FAILURE;
+    }
 
     return this._deleteInternal(aFlags, aCallback, aCleaner =>
       aCleaner.deleteByBaseDomain(baseDomain, aIsUserRequest)

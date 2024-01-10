@@ -17,8 +17,9 @@ use crate::invalidation::media_queries::{
 };
 use crate::invalidation::stylesheets::RuleChangeKind;
 use crate::media_queries::Device;
-use crate::properties::{self, CascadeMode, ComputedValues};
+use crate::properties::{self, CascadeMode, ComputedValues, FirstLineReparenting};
 use crate::properties::{AnimationDeclarations, PropertyDeclarationBlock};
+use crate::properties_and_values::registry::{ScriptRegistry as CustomPropertyScriptRegistry, PropertyRegistration};
 use crate::rule_cache::{RuleCache, RuleCacheConditions};
 use crate::rule_collector::{containing_shadow_ignoring_svg_use, RuleCollector};
 use crate::rule_tree::{CascadeLevel, RuleTree, StrongRuleNode, StyleSource};
@@ -31,13 +32,13 @@ use crate::stylesheets::container_rule::ContainerCondition;
 use crate::stylesheets::import_rule::ImportLayer;
 use crate::stylesheets::keyframes_rule::KeyframesAnimation;
 use crate::stylesheets::layer_rule::{LayerName, LayerOrder};
-use crate::stylesheets::viewport_rule::{self, MaybeNew, ViewportRule};
 #[cfg(feature = "gecko")]
 use crate::stylesheets::{
-    CounterStyleRule, FontFaceRule, FontFeatureValuesRule, FontPaletteValuesRule, PageRule,
+    CounterStyleRule, FontFaceRule, FontFeatureValuesRule, FontPaletteValuesRule,
 };
 use crate::stylesheets::{
     CssRule, EffectiveRulesIterator, Origin, OriginSet, PerOrigin, PerOriginIter,
+    PagePseudoClassFlags, PageRule,
 };
 use crate::stylesheets::{StyleRule, StylesheetContents, StylesheetInDocument};
 use crate::AllocErr;
@@ -49,13 +50,14 @@ use malloc_size_of::MallocSizeOf;
 use malloc_size_of::{MallocShallowSizeOf, MallocSizeOfOps, MallocUnconditionalShallowSizeOf};
 use selectors::attr::{CaseSensitivity, NamespaceConstraint};
 use selectors::bloom::BloomFilter;
-use selectors::matching::VisitedHandlingMode;
-use selectors::matching::{matches_selector, MatchingContext, MatchingMode, NeedsSelectorFlags};
+use selectors::matching::{
+    matches_selector, MatchingContext, MatchingMode, NeedsSelectorFlags, SelectorCaches,
+};
+use selectors::matching::{MatchingForInvalidation, VisitedHandlingMode};
 use selectors::parser::{
-    AncestorHashes, Combinator, Component, Selector, SelectorIter, SelectorList,
+    ArcSelectorList, AncestorHashes, Combinator, Component, Selector, SelectorIter, SelectorList,
 };
 use selectors::visitor::{SelectorListKind, SelectorVisitor};
-use selectors::NthIndexCache;
 use servo_arc::{Arc, ArcBorrow};
 use smallbitvec::SmallBitVec;
 use smallvec::SmallVec;
@@ -64,7 +66,6 @@ use std::cmp::Ordering;
 use std::hash::{Hash, Hasher};
 use std::sync::Mutex;
 use std::{mem, ops};
-use style_traits::viewport::ViewportConstraints;
 
 /// The type of the stylesheets that the stylist contains.
 #[cfg(feature = "servo")]
@@ -324,19 +325,35 @@ struct UserAgentCascadeData {
     precomputed_pseudo_element_decls: PrecomputedPseudoElementDeclarations,
 }
 
+lazy_static! {
+    /// The empty UA cascade data for un-filled stylists.
+    static ref EMPTY_UA_CASCADE_DATA: Arc<UserAgentCascadeData> = {
+        let arc = Arc::new(UserAgentCascadeData::default());
+        arc.mark_as_intentionally_leaked();
+        arc
+    };
+}
+
 /// All the computed information for all the stylesheets that apply to the
 /// document.
-#[derive(Default)]
-#[cfg_attr(feature = "servo", derive(MallocSizeOf))]
+#[derive(MallocSizeOf)]
 pub struct DocumentCascadeData {
-    #[cfg_attr(
-        feature = "servo",
-        ignore_malloc_size_of = "Arc, owned by UserAgentCascadeDataCache"
-    )]
+    #[ignore_malloc_size_of = "Arc, owned by UserAgentCascadeDataCache or empty"]
     user_agent: Arc<UserAgentCascadeData>,
     user: CascadeData,
     author: CascadeData,
     per_origin: PerOrigin<()>,
+}
+
+impl Default for DocumentCascadeData {
+    fn default() -> Self {
+        Self {
+            user_agent: EMPTY_UA_CASCADE_DATA.clone(),
+            user: Default::default(),
+            author: Default::default(),
+            per_origin: Default::default(),
+        }
+    }
 }
 
 /// An iterator over the cascade data of a given document.
@@ -503,9 +520,6 @@ pub struct Stylist {
     /// `set_device`.
     device: Device,
 
-    /// Viewport constraints based on the current device.
-    viewport_constraints: Option<ViewportConstraints>,
-
     /// The list of stylesheets.
     stylesheets: StylistStylesheetSet,
 
@@ -526,6 +540,10 @@ pub struct Stylist {
 
     /// The rule tree, that stores the results of selector matching.
     rule_tree: RuleTree,
+
+    /// The set of registered custom properties from script.
+    /// <https://drafts.css-houdini.org/css-properties-values-api-1/#dom-window-registeredpropertyset-slot>
+    script_custom_properties: CustomPropertyScriptRegistry,
 
     /// The total number of times the stylist has been rebuilt.
     num_rebuilds: usize,
@@ -552,7 +570,23 @@ impl From<StyleRuleInclusion> for RuleInclusion {
     }
 }
 
-type AncestorSelectorList<'a> = Cow<'a, SelectorList<SelectorImpl>>;
+enum AncestorSelectorList<'a> {
+    Borrowed(&'a SelectorList<SelectorImpl>),
+    Shared(ArcSelectorList<SelectorImpl>),
+}
+
+impl<'a> AncestorSelectorList<'a> {
+    fn into_shared(&mut self) -> &ArcSelectorList<SelectorImpl> {
+        if let Self::Borrowed(ref b) = *self {
+            let shared = b.to_shared();
+            *self = Self::Shared(shared);
+        }
+        match *self {
+            Self::Shared(ref shared) => return shared,
+            Self::Borrowed(..) => unsafe { debug_unreachable!() },
+        }
+    }
+}
 
 /// A struct containing state from ancestor rules like @layer / @import /
 /// @container / nesting.
@@ -609,7 +643,6 @@ impl Stylist {
     #[inline]
     pub fn new(device: Device, quirks_mode: QuirksMode) -> Self {
         Self {
-            viewport_constraints: None,
             device,
             quirks_mode,
             stylesheets: StylistStylesheetSet::new(),
@@ -617,6 +650,7 @@ impl Stylist {
             cascade_data: Default::default(),
             author_styles_enabled: AuthorStylesEnabled::Yes,
             rule_tree: RuleTree::new(),
+            script_custom_properties: Default::default(),
             num_rebuilds: 0,
         }
     }
@@ -732,37 +766,6 @@ impl Stylist {
         }
 
         self.num_rebuilds += 1;
-
-        // Update viewport_constraints regardless of which origins'
-        // `CascadeData` we're updating.
-        self.viewport_constraints = None;
-        if viewport_rule::enabled() {
-            // TODO(emilio): This doesn't look so efficient.
-            //
-            // Presumably when we properly implement this we can at least have a
-            // bit on the stylesheet that says whether it contains viewport
-            // rules to skip it entirely?
-            //
-            // Processing it with the rest of rules seems tricky since it
-            // overrides the viewport size which may change the evaluation of
-            // media queries (or may not? how are viewport units in media
-            // queries defined?)
-            let cascaded_rule = ViewportRule {
-                declarations: viewport_rule::Cascade::from_stylesheets(
-                    self.stylesheets.iter(),
-                    guards,
-                    &self.device,
-                )
-                .finish(),
-            };
-
-            self.viewport_constraints =
-                ViewportConstraints::maybe_new(&self.device, &cascaded_rule, self.quirks_mode);
-
-            if let Some(ref constraints) = self.viewport_constraints {
-                self.device.account_for_viewport_rule(constraints);
-            }
-        }
 
         let flusher = self.stylesheets.flush(document_element, snapshots);
 
@@ -1044,7 +1047,7 @@ impl Stylist {
             originating_element_style,
             parent_style,
             parent_style,
-            parent_style,
+            FirstLineReparenting::No,
             /* rule_cache = */ None,
             &mut RuleCacheConditions::default(),
         )
@@ -1070,8 +1073,8 @@ impl Stylist {
         guards: &StylesheetGuards,
         originating_element_style: Option<&ComputedValues>,
         parent_style: Option<&ComputedValues>,
-        parent_style_ignoring_first_line: Option<&ComputedValues>,
         layout_parent_style: Option<&ComputedValues>,
+        first_line_reparenting: FirstLineReparenting,
         rule_cache: Option<&RuleCache>,
         rule_cache_conditions: &mut RuleCacheConditions,
     ) -> Arc<ComputedValues>
@@ -1100,17 +1103,16 @@ impl Stylist {
         //
         // FIXME(emilio): We should assert that it holds if pseudo.is_none()!
         properties::cascade::<E>(
-            &self.device,
+            &self,
             pseudo,
             inputs.rules.as_ref().unwrap_or(self.rule_tree.root()),
             guards,
             originating_element_style,
             parent_style,
-            parent_style_ignoring_first_line,
             layout_parent_style,
+            first_line_reparenting,
             visited_rules,
             inputs.flags,
-            self.quirks_mode,
             rule_cache,
             rule_cache_conditions,
             element,
@@ -1137,7 +1139,7 @@ impl Stylist {
     {
         debug_assert!(pseudo.is_lazy());
 
-        let mut nth_index_cache = Default::default();
+        let mut selector_caches = SelectorCaches::default();
         // No need to bother setting the selector flags when we're computing
         // default styles.
         let needs_selector_flags = if rule_inclusion == RuleInclusion::DefaultOnly {
@@ -1150,9 +1152,10 @@ impl Stylist {
         let mut matching_context = MatchingContext::<'_, E::Impl>::new(
             MatchingMode::ForStatelessPseudoElement,
             None,
-            &mut nth_index_cache,
+            &mut selector_caches,
             self.quirks_mode,
             needs_selector_flags,
+            MatchingForInvalidation::No,
         );
 
         matching_context.pseudo_element_matching_fn = matching_fn;
@@ -1178,15 +1181,16 @@ impl Stylist {
         let mut visited_rules = None;
         if parent_style.visited_style().is_some() {
             let mut declarations = ApplicableDeclarationList::new();
-            let mut nth_index_cache = Default::default();
+            let mut selector_caches = SelectorCaches::default();
 
             let mut matching_context = MatchingContext::<'_, E::Impl>::new_for_visited(
                 MatchingMode::ForStatelessPseudoElement,
                 None,
-                &mut nth_index_cache,
+                &mut selector_caches,
                 VisitedHandlingMode::RelevantLinkVisited,
                 self.quirks_mode,
                 needs_selector_flags,
+                MatchingForInvalidation::No,
             );
             matching_context.pseudo_element_matching_fn = matching_fn;
             matching_context.extra_data.originating_element_style = Some(originating_element_style);
@@ -1229,29 +1233,7 @@ impl Stylist {
     ///
     /// Also, the device that arrives here may need to take the viewport rules
     /// into account.
-    pub fn set_device(&mut self, mut device: Device, guards: &StylesheetGuards) -> OriginSet {
-        if viewport_rule::enabled() {
-            let cascaded_rule = {
-                let stylesheets = self.stylesheets.iter();
-
-                ViewportRule {
-                    declarations: viewport_rule::Cascade::from_stylesheets(
-                        stylesheets,
-                        guards,
-                        &device,
-                    )
-                    .finish(),
-                }
-            };
-
-            self.viewport_constraints =
-                ViewportConstraints::maybe_new(&device, &cascaded_rule, self.quirks_mode);
-
-            if let Some(ref constraints) = self.viewport_constraints {
-                device.account_for_viewport_rule(constraints);
-            }
-        }
-
+    pub fn set_device(&mut self, device: Device, guards: &StylesheetGuards) -> OriginSet {
         self.device = device;
         self.media_features_change_changed_style(guards, &self.device)
     }
@@ -1290,12 +1272,6 @@ impl Stylist {
         }
 
         origins
-    }
-
-    /// Returns the viewport constraints that apply to this document because of
-    /// a @viewport rule.
-    pub fn viewport_constraints(&self) -> Option<&ViewportConstraints> {
-        self.viewport_constraints.as_ref()
     }
 
     /// Returns the Quirks Mode of the document.
@@ -1419,7 +1395,7 @@ impl Stylist {
         &self,
         element: E,
         bloom: Option<&BloomFilter>,
-        nth_index_cache: &mut NthIndexCache,
+        selector_caches: &mut SelectorCaches,
         needs_selector_flags: NeedsSelectorFlags,
     ) -> SmallBitVec
     where
@@ -1430,9 +1406,10 @@ impl Stylist {
         let mut matching_context = MatchingContext::new(
             MatchingMode::Normal,
             bloom,
-            nth_index_cache,
+            selector_caches,
             self.quirks_mode,
             needs_selector_flags,
+            MatchingForInvalidation::No,
         );
 
         // Note that, by the time we're revalidating, we're guaranteed that the
@@ -1511,7 +1488,7 @@ impl Stylist {
         // reversing this as it shouldn't be slow anymore, and should avoid
         // generating two instantiations of apply_declarations.
         properties::apply_declarations::<E, _>(
-            &self.device,
+            &self,
             /* pseudo = */ None,
             self.rule_tree.root(),
             guards,
@@ -1527,12 +1504,11 @@ impl Stylist {
             /* originating_element_style */ None,
             Some(parent_style),
             Some(parent_style),
-            Some(parent_style),
+            FirstLineReparenting::No,
             CascadeMode::Unvisited {
                 visited_rules: None,
             },
             Default::default(),
-            self.quirks_mode,
             /* rule_cache = */ None,
             &mut Default::default(),
             /* element = */ None,
@@ -1555,6 +1531,18 @@ impl Stylist {
     #[inline]
     pub fn rule_tree(&self) -> &RuleTree {
         &self.rule_tree
+    }
+
+    /// Returns the script-registered custom property registry.
+    #[inline]
+    pub fn custom_property_script_registry(&self) -> &CustomPropertyScriptRegistry {
+        &self.script_custom_properties
+    }
+
+    /// Returns the script-registered custom property registry, as a mutable ref.
+    #[inline]
+    pub fn custom_property_script_registry_mut(&mut self) -> &mut CustomPropertyScriptRegistry {
+        &mut self.script_custom_properties
     }
 
     /// Measures heap usage.
@@ -1605,6 +1593,9 @@ impl<T: 'static> LayerOrderedVec<T> {
 }
 
 impl<T: 'static> LayerOrderedMap<T> {
+    fn shrink_if_needed(&mut self) {
+        self.0.shrink_if_needed();
+    }
     fn clear(&mut self) {
         self.0.clear();
     }
@@ -1662,36 +1653,85 @@ pub struct PageRuleData {
     pub rule: Arc<Locked<PageRule>>,
 }
 
-/// Wrapper to allow better tracking of memory usage by page rule lists.
-///
-/// This is meant to be used by the global page rule list which are already
-/// sorted by layer ID, since all global page rules are less specific than all
-/// named page rules that match a certain page.
-#[derive(Clone, Debug, Deref, MallocSizeOf)]
-pub struct PageRuleDataNoLayer(
-    #[ignore_malloc_size_of = "Arc, stylesheet measures as primary ref"] pub Arc<Locked<PageRule>>,
-);
-
 /// Stores page rules indexed by page names.
 #[derive(Clone, Debug, Default, MallocSizeOf)]
 pub struct PageRuleMap {
-    /// Global, unnamed page rules.
-    pub global: LayerOrderedVec<PageRuleDataNoLayer>,
-    /// Named page rules
-    pub named: PrecomputedHashMap<Atom, SmallVec<[PageRuleData; 1]>>,
+    /// Page rules, indexed by page name. An empty atom indicates no page name.
+    pub rules: PrecomputedHashMap<Atom, SmallVec<[PageRuleData; 1]>>,
 }
 
 impl PageRuleMap {
     #[inline]
     fn clear(&mut self) {
-        self.global.clear();
-        self.named.clear();
+        self.rules.clear();
+    }
+
+    /// Uses page-name and pseudo-classes to match all applicable
+    /// page-rules and append them to the matched_rules vec.
+    /// This will ensure correct rule order for cascading.
+    pub fn match_and_append_rules(
+        &self,
+        matched_rules: &mut Vec<ApplicableDeclarationBlock>,
+        origin: Origin,
+        guards: &StylesheetGuards,
+        cascade_data: &DocumentCascadeData,
+        name: &Option<Atom>,
+        pseudos: PagePseudoClassFlags,
+    ) {
+        let level = match origin {
+            Origin::UserAgent => CascadeLevel::UANormal,
+            Origin::User => CascadeLevel::UserNormal,
+            Origin::Author => CascadeLevel::same_tree_author_normal(),
+        };
+        let cascade_data = cascade_data.borrow_for_origin(origin);
+        let start = matched_rules.len();
+
+        self.match_and_add_rules(matched_rules, level, guards, cascade_data, &atom!(""), pseudos);
+        if let Some(name) = name {
+            self.match_and_add_rules(matched_rules, level, guards, cascade_data, name, pseudos);
+        }
+
+        // Because page-rules do not have source location information stored,
+        // use stable sort to ensure source locations are preserved.
+        matched_rules[start..].sort_by_key(|block| {
+            (block.layer_order(), block.specificity, block.source_order())
+        });
+    }
+
+    fn match_and_add_rules(
+        &self,
+        extra_declarations: &mut Vec<ApplicableDeclarationBlock>,
+        level: CascadeLevel,
+        guards: &StylesheetGuards,
+        cascade_data: &CascadeData,
+        name: &Atom,
+        pseudos: PagePseudoClassFlags,
+    ) {
+        let rules = match self.rules.get(name) {
+            Some(rules) => rules,
+            None => return,
+        };
+        for data in rules.iter() {
+            let rule = data.rule.read_with(level.guard(&guards));
+            let specificity = match rule.match_specificity(pseudos) {
+                Some(specificity) => specificity,
+                None => continue,
+            };
+            let block = rule.block.clone();
+            extra_declarations.push(ApplicableDeclarationBlock::new(
+                StyleSource::from_declarations(block),
+                0,
+                level,
+                specificity,
+                cascade_data.layer_order_for(data.layer),
+            ));
+        }
     }
 }
 
 impl MallocShallowSizeOf for PageRuleMap {
     fn shallow_size_of(&self, ops: &mut MallocSizeOfOps) -> usize {
-        self.global.size_of(ops) + self.named.shallow_size_of(ops)
+        self.rules.shallow_size_of(ops)
     }
 }
 
@@ -1757,20 +1797,15 @@ impl ExtraStyleData {
         layer: LayerId,
     ) -> Result<(), AllocErr> {
         let page_rule = rule.read_with(guard);
+        let mut add_rule = |name| {
+            let vec = self.pages.rules.entry(name).or_default();
+            vec.push(PageRuleData{layer, rule: rule.clone()});
+        };
         if page_rule.selectors.0.is_empty() {
-            self.pages
-                .global
-                .push(PageRuleDataNoLayer(rule.clone()), layer);
+            add_rule(atom!(""));
         } else {
-            // TODO: Handle pseudo-classes
-            self.pages.named.try_reserve(page_rule.selectors.0.len())?;
-            for name in page_rule.selectors.as_slice() {
-                let vec = self.pages.named.entry(name.0 .0.clone()).or_default();
-                vec.try_reserve(1)?;
-                vec.push(PageRuleData {
-                    layer,
-                    rule: rule.clone(),
-                });
+            for selector in page_rule.selectors.as_slice() {
+                add_rule(selector.name.0.clone());
             }
         }
         Ok(())
@@ -1781,7 +1816,6 @@ impl ExtraStyleData {
         self.font_feature_values.sort(layers);
         self.font_palette_values.sort(layers);
         self.counter_styles.sort(layers);
-        self.pages.global.sort(layers);
     }
 
     fn clear(&mut self) {
@@ -2284,6 +2318,10 @@ pub struct CascadeData {
     /// by name.
     animations: LayerOrderedMap<KeyframesAnimation>,
 
+    /// A map with all the layer-ordered registrations from style at this `CascadeData`'s origin,
+    /// indexed by name.
+    custom_property_registrations: LayerOrderedMap<PropertyRegistration>,
+
     /// A map from cascade layer name to layer order.
     layer_id: FxHashMap<LayerName, LayerId>,
 
@@ -2337,6 +2375,7 @@ impl CascadeData {
             // somewhat gnarly.
             selectors_for_cache_revalidation: SelectorMap::new_without_attribute_bucketing(),
             animations: Default::default(),
+            custom_property_registrations: Default::default(),
             layer_id: Default::default(),
             layers: smallvec::smallvec![CascadeLayer::root()],
             container_conditions: smallvec::smallvec![ContainerConditionReference::none()],
@@ -2500,7 +2539,7 @@ impl CascadeData {
             };
             let matches = condition
                 .matches(
-                    stylist.device(),
+                    stylist,
                     element,
                     context.extra_data.originating_element_style,
                     &mut context.extra_data.cascade_input_flags,
@@ -2526,6 +2565,8 @@ impl CascadeData {
         if let Some(ref mut slotted_rules) = self.slotted_rules {
             slotted_rules.shrink_if_needed();
         }
+        self.animations.shrink_if_needed();
+        self.custom_property_registrations.shrink_if_needed();
         self.invalidation_map.shrink_if_needed();
         self.attribute_dependencies.shrink_if_needed();
         self.nth_of_attribute_dependencies.shrink_if_needed();
@@ -2576,6 +2617,7 @@ impl CascadeData {
         self.extra_data.sort_by_layer(&self.layers);
         self.animations
             .sort_with(&self.layers, compare_keyframes_in_same_layer);
+        self.custom_property_registrations.sort(&self.layers)
     }
 
     /// Collects all the applicable media query results into `results`.
@@ -2649,7 +2691,7 @@ impl CascadeData {
                     self.num_declarations += style_rule.block.read_with(&guard).len();
 
                     let has_nested_rules = style_rule.rules.is_some();
-                    let ancestor_selectors = containing_rule_state.ancestor_selector_lists.last();
+                    let mut ancestor_selectors = containing_rule_state.ancestor_selector_lists.last_mut();
                     if has_nested_rules {
                         selectors_for_nested_rules = Some(if ancestor_selectors.is_some() {
                             Cow::Owned(SelectorList(Default::default()))
@@ -2689,7 +2731,7 @@ impl CascadeData {
                         }
 
                         let selector = match ancestor_selectors {
-                            Some(s) => selector.replace_parent_selector(&s.0),
+                            Some(ref mut s) => selector.replace_parent_selector(&s.into_shared()),
                             None => selector.clone(),
                         };
 
@@ -2798,6 +2840,16 @@ impl CascadeData {
                         compare_keyframes_in_same_layer,
                     )?;
                 },
+                CssRule::Property(ref rule) => {
+                    let url_data = stylesheet.contents().url_data.read();
+                    if let Ok(registration) = rule.to_valid_registration(&url_data) {
+                        self.custom_property_registrations.try_insert(
+                            rule.name.0.clone(),
+                            registration,
+                            containing_rule_state.layer_id,
+                        )?;
+                    }
+                },
                 #[cfg(feature = "gecko")]
                 CssRule::FontFace(ref rule) => {
                     // NOTE(emilio): We don't care about container_condition_id
@@ -2836,8 +2888,6 @@ impl CascadeData {
                     self.extra_data
                         .add_page(guard, rule, containing_rule_state.layer_id)?;
                 },
-                // TODO: Handle CssRule::Property
-                CssRule::Viewport(..) => {},
                 _ => {
                     handled = false;
                 },
@@ -2960,8 +3010,11 @@ impl CascadeData {
                     }
                 },
                 CssRule::Style(..) => {
-                    if let Some(s) = selectors_for_nested_rules {
-                        containing_rule_state.ancestor_selector_lists.push(s);
+                    if let Some(ref mut s) = selectors_for_nested_rules {
+                        containing_rule_state.ancestor_selector_lists.push(match s {
+                            Cow::Owned(ref mut list) => AncestorSelectorList::Shared(list.into_shared()),
+                            Cow::Borrowed(ref b) => AncestorSelectorList::Borrowed(b),
+                        });
                     }
                 },
                 CssRule::Container(ref rule) => {
@@ -3080,7 +3133,6 @@ impl CascadeData {
                 CssRule::Keyframes(..) |
                 CssRule::Page(..) |
                 CssRule::Property(..) |
-                CssRule::Viewport(..) |
                 CssRule::Document(..) |
                 CssRule::LayerBlock(..) |
                 CssRule::LayerStatement(..) |
@@ -3150,6 +3202,7 @@ impl CascadeData {
             host_rules.clear();
         }
         self.animations.clear();
+        self.custom_property_registrations.clear();
         self.layer_id.clear();
         self.layers.clear();
         self.layers.push(CascadeLayer::root());

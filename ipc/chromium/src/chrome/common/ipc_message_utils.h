@@ -21,12 +21,11 @@
 #include "base/logging.h"
 #include "base/pickle.h"
 #include "base/string_util.h"
-#include "build/build_config.h"
 #include "chrome/common/ipc_message.h"
 #include "mozilla/CheckedInt.h"
 #include "mozilla/IntegerRange.h"
 
-#if defined(OS_WIN)
+#if defined(XP_WIN)
 #  include <windows.h>
 #endif
 
@@ -107,7 +106,7 @@ class MOZ_STACK_CLASS MessageWriter final {
     message_.WritePort(std::move(port));
   }
 
-#if defined(OS_MACOSX) || defined(OS_IOS)
+#if defined(XP_DARWIN)
   bool WriteMachSendRight(mozilla::UniqueMachSendRight port) {
     return message_.WriteMachSendRight(std::move(port));
   }
@@ -192,7 +191,7 @@ class MOZ_STACK_CLASS MessageReader final {
     return message_.ConsumePort(&iter_, port);
   }
 
-#if defined(OS_MACOSX) || defined(OS_IOS)
+#if defined(XP_DARWIN)
   [[nodiscard]] bool ConsumeMachSendRight(mozilla::UniqueMachSendRight* port) {
     return message_.ConsumeMachSendRight(&iter_, port);
   }
@@ -891,7 +890,7 @@ struct ParamTraitsStd<std::map<K, V>> {
 template <class P>
 struct ParamTraitsWindows : ParamTraitsStd<P> {};
 
-#if defined(OS_WIN)
+#if defined(XP_WIN)
 template <>
 struct ParamTraitsWindows<HANDLE> {
   static_assert(sizeof(HANDLE) == sizeof(intptr_t), "Wrong size for HANDLE?");
@@ -915,7 +914,7 @@ struct ParamTraitsWindows<HWND> {
     return reader->ReadIntPtr(reinterpret_cast<intptr_t*>(r));
   }
 };
-#endif  // defined(OS_WIN)
+#endif  // defined(XP_WIN)
 
 // Various ipc/chromium types.
 
@@ -965,7 +964,7 @@ struct ParamTraitsIPC<mozilla::UniqueFileHandle> {
   }
 };
 
-#if defined(OS_MACOSX) || defined(OS_IOS)
+#if defined(XP_DARWIN)
 // `UniqueMachSendRight` may be serialized over IPC channels. On the receiving
 // side, the UniqueMachSendRight is the local name of the right which was
 // transmitted.

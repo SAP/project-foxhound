@@ -27,25 +27,24 @@
 
 // We expose a singleton from this module. Some tests may import the
 // constructor via a backstage pass.
+import { FirefoxRelayTelemetry } from "resource://gre/modules/FirefoxRelayTelemetry.mjs";
 import { FormAutofill } from "resource://autofill/FormAutofill.sys.mjs";
 import { FormAutofillUtils } from "resource://gre/modules/shared/FormAutofillUtils.sys.mjs";
-import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   AddressComponent: "resource://gre/modules/shared/AddressComponent.sys.mjs",
+  BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.sys.mjs",
   FormAutofillPreferences:
     "resource://autofill/FormAutofillPreferences.sys.mjs",
   FormAutofillPrompter: "resource://autofill/FormAutofillPrompter.sys.mjs",
+  FirefoxRelay: "resource://gre/modules/FirefoxRelay.sys.mjs",
+  LoginHelper: "resource://gre/modules/LoginHelper.sys.mjs",
   OSKeyStore: "resource://gre/modules/OSKeyStore.sys.mjs",
 });
 
-XPCOMUtils.defineLazyModuleGetters(lazy, {
-  BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.jsm",
-});
-
-XPCOMUtils.defineLazyGetter(lazy, "log", () =>
+ChromeUtils.defineLazyGetter(lazy, "log", () =>
   FormAutofill.defineLogGetter(lazy, "FormAutofillParent")
 );
 
@@ -265,7 +264,7 @@ export let FormAutofillStatus = {
 
 // Lazily load the storage JSM to avoid disk I/O until absolutely needed.
 // Once storage is loaded we need to update saved field names and inform content processes.
-XPCOMUtils.defineLazyGetter(lazy, "gFormAutofillStorage", () => {
+ChromeUtils.defineLazyGetter(lazy, "gFormAutofillStorage", () => {
   let { formAutofillStorage } = ChromeUtils.importESModule(
     "resource://autofill/FormAutofillStorage.sys.mjs"
   );
@@ -308,7 +307,17 @@ export class FormAutofillParent extends JSWindowActorParent {
         break;
       }
       case "FormAutofill:GetRecords": {
-        return FormAutofillParent._getRecords(data);
+        const relayPromise = lazy.FirefoxRelay.autocompleteItemsAsync({
+          formOrigin: this.formOrigin,
+          scenarioName: data.scenarioName,
+          hasInput: !!data.searchString?.length,
+        });
+        const recordsPromise = FormAutofillParent._getRecords(data);
+        const [records, externalEntries] = await Promise.all([
+          recordsPromise,
+          relayPromise,
+        ]);
+        return { records, externalEntries };
       }
       case "FormAutofill:OnFormSubmit": {
         this.notifyMessageObservers("onFormSubmitted", data);
@@ -377,9 +386,44 @@ export class FormAutofillParent extends JSWindowActorParent {
         );
         break;
       }
+      case "PasswordManager:offerRelayIntegration": {
+        FirefoxRelayTelemetry.recordRelayOfferedEvent(
+          "clicked",
+          data.telemetry.flowId,
+          data.telemetry.scenarioName
+        );
+        return this.#offerRelayIntegration();
+      }
+      case "PasswordManager:generateRelayUsername": {
+        FirefoxRelayTelemetry.recordRelayUsernameFilledEvent(
+          "clicked",
+          data.telemetry.flowId
+        );
+        return this.#generateRelayUsername();
+      }
     }
 
     return undefined;
+  }
+
+  get formOrigin() {
+    return lazy.LoginHelper.getLoginOrigin(
+      this.manager.documentPrincipal?.originNoSuffix
+    );
+  }
+
+  getRootBrowser() {
+    return this.browsingContext.topFrameElement;
+  }
+
+  async #offerRelayIntegration() {
+    const browser = this.getRootBrowser();
+    return lazy.FirefoxRelay.offerRelayIntegration(browser, this.formOrigin);
+  }
+
+  async #generateRelayUsername() {
+    const browser = this.getRootBrowser();
+    return lazy.FirefoxRelay.generateUsername(browser, this.formOrigin);
   }
 
   notifyMessageObservers(callbackName, data) {
@@ -468,7 +512,11 @@ export class FormAutofillParent extends JSWindowActorParent {
     const storage = lazy.gFormAutofillStorage.addresses;
 
     // Make sure record is normalized before comparing with records in the storage
-    storage._normalizeRecord(address.record);
+    try {
+      storage._normalizeRecord(address.record);
+    } catch (_e) {
+      return false;
+    }
 
     const newAddress = new lazy.AddressComponent(
       address.record,
@@ -485,16 +533,16 @@ export class FormAutofillParent extends JSWindowActorParent {
       // filter invalid field
       const result = newAddress.compare(savedAddress);
 
-      // If any of the fields in the new address are different from the corresponding fields
-      // in the saved address, the two addresses are considered different. For example, if
-      // the name, email, country are the same but the street address is different, the two
-      // addresses are not considered the same.
       if (Object.values(result).includes("different")) {
+        // If any of the fields in the new address are different from the corresponding fields
+        // in the saved address, the two addresses are considered different. For example, if
+        // the name, email, country are the same but the street address is different, the two
+        // addresses are not considered the same.
         continue;
+      } else if (
         // If every field of the new address is either the same or is subset of the corresponding
         // field in the saved address, the new address is duplicated. We don't need capture
         // the new address.
-      } else if (
         Object.values(result).every(r => ["same", "subset"].includes(r))
       ) {
         lazy.log.debug(
@@ -502,9 +550,9 @@ export class FormAutofillParent extends JSWindowActorParent {
         );
         storage.notifyUsed(record.guid);
         return false;
+      } else {
         // If the new address is neither a duplicate of the saved address nor a different address.
         // There must be at least one field we can merge, show the update doorhanger
-      } else {
         lazy.log.debug(
           "A mergeable address record is found, show the update prompt"
         );
@@ -531,7 +579,7 @@ export class FormAutofillParent extends JSWindowActorParent {
       await lazy.FormAutofillPrompter.promptToSaveAddress(
         browser,
         storage,
-        address.record,
+        newAddress.record,
         address.flowId,
         { mergeableRecord, mergeableFields }
       );
@@ -539,13 +587,14 @@ export class FormAutofillParent extends JSWindowActorParent {
   }
 
   async _onCreditCardSubmit(creditCard, browser) {
-    // Let's reset the credit card to empty, and then network auto-detect will
-    // pick it up.
-    delete creditCard.record["cc-type"];
-
     const storage = lazy.gFormAutofillStorage.creditCards;
+
     // Make sure record is normalized before comparing with records in the storage
-    storage._normalizeRecord(creditCard.record);
+    try {
+      storage._normalizeRecord(creditCard.record);
+    } catch (_e) {
+      return false;
+    }
 
     // If the record alreay exists in the storage, don't bother showing the prompt
     const matchRecord = (

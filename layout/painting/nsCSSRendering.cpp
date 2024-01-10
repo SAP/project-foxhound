@@ -962,9 +962,10 @@ nsCSSRendering::CreateBorderRendererForNonThemedOutline(
     return Nothing();
   }
 
-  const nscoord offset = ourOutline->mOutlineOffset.ToAppUnits();
   nsRect innerRect = aInnerRect;
-  innerRect.Inflate(offset);
+
+  const nsSize effectiveOffset = ourOutline->EffectiveOffsetFor(innerRect);
+  innerRect.Inflate(effectiveOffset);
 
   // If the dirty rect is completely inside the border area (e.g., only the
   // content is being painted), then we can skip out now
@@ -975,7 +976,7 @@ nsCSSRendering::CreateBorderRendererForNonThemedOutline(
     return Nothing();
   }
 
-  nscoord width = ourOutline->GetOutlineWidth();
+  const nscoord width = ourOutline->GetOutlineWidth();
 
   StyleBorderStyle outlineStyle;
   // Themed outlines are handled by our callers, if supported.
@@ -1009,10 +1010,13 @@ nsCSSRendering::CreateBorderRendererForNonThemedOutline(
     RectCornerRadii innerRadii;
     ComputePixelRadii(twipsRadii, oneDevPixel, &innerRadii);
 
-    Float devPixelOffset = aPresContext->AppUnitsToFloatDevPixels(offset);
-    const Float widths[4] = {
-        outlineWidths[0] + devPixelOffset, outlineWidths[1] + devPixelOffset,
-        outlineWidths[2] + devPixelOffset, outlineWidths[3] + devPixelOffset};
+    const auto devPxOffset = LayoutDeviceSize::FromAppUnits(
+        effectiveOffset, aPresContext->AppUnitsPerDevPixel());
+
+    const Float widths[4] = {outlineWidths[0] + devPxOffset.Height(),
+                             outlineWidths[1] + devPxOffset.Width(),
+                             outlineWidths[2] + devPxOffset.Height(),
+                             outlineWidths[3] + devPxOffset.Width()};
     nsCSSBorderRenderer::ComputeOuterRadii(innerRadii, widths, &outlineRadii);
   }
 
@@ -1135,11 +1139,11 @@ void nsImageRenderer::ComputeObjectAnchorPoint(const Position& aPos,
 static nsIFrame* GetPageSequenceForCanvas(const nsIFrame* aCanvasFrame) {
   MOZ_ASSERT(aCanvasFrame->IsCanvasFrame(), "not a canvas frame");
   nsPresContext* pc = aCanvasFrame->PresContext();
-  if (!pc->IsPrintingOrPrintPreview()) {
+  if (!pc->IsRootPaginatedDocument()) {
     return nullptr;
   }
   auto* ps = pc->PresShell()->GetPageSequenceFrame();
-  if (!ps) {
+  if (NS_WARN_IF(!ps)) {
     return nullptr;
   }
   if (ps->GetParent() != aCanvasFrame) {

@@ -8,8 +8,6 @@ import PropTypes from "prop-types";
 import { getDocument, toEditorLine } from "../../utils/editor";
 import { getSelectedLocation } from "../../utils/selected-location";
 import { features } from "../../utils/prefs";
-import { showMenu } from "../../context-menu/menu";
-import { breakpointItems } from "./menus/breakpoints";
 const classnames = require("devtools/client/shared/classnames.js");
 
 const breakpointSvg = document.createElement("div");
@@ -19,14 +17,9 @@ breakpointSvg.innerHTML =
 class Breakpoint extends PureComponent {
   static get propTypes() {
     return {
-      cx: PropTypes.object.isRequired,
       breakpoint: PropTypes.object.isRequired,
-      breakpointActions: PropTypes.object.isRequired,
       editor: PropTypes.object.isRequired,
-      editorActions: PropTypes.object.isRequired,
       selectedSource: PropTypes.object,
-      blackboxedRangesForSelectedSource: PropTypes.array,
-      isSelectedSourceOnIgnoreList: PropTypes.bool.isRequired,
     };
   }
 
@@ -58,8 +51,13 @@ class Breakpoint extends PureComponent {
   }
 
   onClick = event => {
-    const { cx, breakpointActions, editorActions, breakpoint, selectedSource } =
-      this.props;
+    const {
+      continueToHere,
+      toggleBreakpointsAtLine,
+      removeBreakpointsAtLine,
+      breakpoint,
+      selectedSource,
+    } = this.props;
 
     // ignore right clicks
     if ((event.ctrlKey && event.button === 0) || event.button === 2) {
@@ -71,49 +69,25 @@ class Breakpoint extends PureComponent {
 
     const selectedLocation = getSelectedLocation(breakpoint, selectedSource);
     if (event.metaKey) {
-      editorActions.continueToHere(cx, selectedLocation);
+      continueToHere(selectedLocation);
       return;
     }
 
     if (event.shiftKey) {
-      breakpointActions.toggleBreakpointsAtLine(
-        cx,
-        !breakpoint.disabled,
-        selectedLocation.line
-      );
+      toggleBreakpointsAtLine(!breakpoint.disabled, selectedLocation.line);
       return;
     }
 
-    breakpointActions.removeBreakpointsAtLine(
-      cx,
-      selectedLocation.sourceId,
-      selectedLocation.line
-    );
+    removeBreakpointsAtLine(selectedLocation.source, selectedLocation.line);
   };
 
   onContextMenu = event => {
-    const {
-      cx,
-      breakpoint,
-      selectedSource,
-      breakpointActions,
-      blackboxedRangesForSelectedSource,
-      isSelectedSourceOnIgnoreList,
-    } = this.props;
     event.stopPropagation();
     event.preventDefault();
-    const selectedLocation = getSelectedLocation(breakpoint, selectedSource);
 
-    showMenu(
+    this.props.showEditorEditBreakpointContextMenu(
       event,
-      breakpointItems(
-        cx,
-        breakpoint,
-        selectedLocation,
-        breakpointActions,
-        blackboxedRangesForSelectedSource,
-        isSelectedSourceOnIgnoreList
-      )
+      this.props.breakpoint
     );
   };
 

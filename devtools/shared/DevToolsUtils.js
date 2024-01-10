@@ -20,13 +20,8 @@ ChromeUtils.defineESModuleGetters(lazy, {
   FileUtils: "resource://gre/modules/FileUtils.sys.mjs",
   NetworkHelper:
     "resource://devtools/shared/network-observer/NetworkHelper.sys.mjs",
+  ObjectUtils: "resource://gre/modules/ObjectUtils.sys.mjs",
 });
-
-ChromeUtils.defineModuleGetter(
-  lazy,
-  "ObjectUtils",
-  "resource://gre/modules/ObjectUtils.jsm"
-);
 
 // Native getters which are considered to be side effect free.
 ChromeUtils.defineLazyGetter(lazy, "sideEffectFreeGetters", () => {
@@ -513,7 +508,8 @@ Object.defineProperty(exports, "assert", {
 });
 
 DevToolsUtils.defineLazyGetter(this, "NetUtil", () => {
-  return ChromeUtils.import("resource://gre/modules/NetUtil.jsm").NetUtil;
+  return ChromeUtils.importESModule("resource://gre/modules/NetUtil.sys.mjs")
+    .NetUtil;
 });
 
 /**
@@ -618,7 +614,7 @@ function mainThreadFetch(
             // If there was a real stream error, we would have already rejected above.
             resolve({
               content: "",
-              contentType: "text/plan",
+              contentType: "text/plain",
             });
             return;
           }

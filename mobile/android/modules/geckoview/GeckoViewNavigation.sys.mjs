@@ -3,7 +3,7 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 import { GeckoViewModule } from "resource://gre/modules/GeckoViewModule.sys.mjs";
-import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
+import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
 
 const lazy = {};
 
@@ -11,9 +11,10 @@ ChromeUtils.defineESModuleGetters(lazy, {
   GeckoViewUtils: "resource://gre/modules/GeckoViewUtils.sys.mjs",
   E10SUtils: "resource://gre/modules/E10SUtils.sys.mjs",
   LoadURIDelegate: "resource://gre/modules/LoadURIDelegate.sys.mjs",
+  isProductURL: "chrome://global/content/shopping/ShoppingProduct.mjs",
 });
 
-XPCOMUtils.defineLazyGetter(lazy, "ReferrerInfo", () =>
+ChromeUtils.defineLazyGetter(lazy, "ReferrerInfo", () =>
   Components.Constructor(
     "@mozilla.org/referrer-info;1",
     "nsIReferrerInfo",
@@ -629,6 +630,14 @@ export class GeckoViewNavigation extends GeckoViewModule {
             principal: contentPrincipal,
           })
         );
+      }
+    }
+
+    if (AppConstants.NIGHTLY_BUILD) {
+      if (lazy.isProductURL(aLocationURI)) {
+        this.eventDispatcher.sendRequest({
+          type: "GeckoView:OnProductUrl",
+        });
       }
     }
 

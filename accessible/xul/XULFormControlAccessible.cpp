@@ -10,7 +10,7 @@
 #include "nsAccUtils.h"
 #include "DocAccessible.h"
 #include "Relation.h"
-#include "Role.h"
+#include "mozilla/a11y/Role.h"
 #include "States.h"
 #include "TreeWalker.h"
 #include "XULMenuAccessible.h"
@@ -91,7 +91,7 @@ uint64_t XULButtonAccessible::NativeState() const {
 
   if (ContainsMenu()) state |= states::HASPOPUP;
 
-  if (mContent->AsElement()->HasAttr(kNameSpaceID_None, nsGkAtoms::_default)) {
+  if (mContent->AsElement()->HasAttr(nsGkAtoms::_default)) {
     state |= states::DEFAULT;
   }
 
@@ -413,7 +413,7 @@ bool XULToolbarButtonAccessible::IsAcceptableChild(nsIContent* aEl) const {
   return aEl->IsXULElement(nsGkAtoms::menupopup) ||
          aEl->IsXULElement(nsGkAtoms::popup) ||
          (aEl->IsXULElement(nsGkAtoms::label) &&
-          !mContent->AsElement()->HasAttr(kNameSpaceID_None, nsGkAtoms::label));
+          !mContent->AsElement()->HasAttr(nsGkAtoms::label));
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -427,8 +427,7 @@ XULToolbarAccessible::XULToolbarAccessible(nsIContent* aContent,
 role XULToolbarAccessible::NativeRole() const { return roles::TOOLBAR; }
 
 ENameValueFlag XULToolbarAccessible::NativeName(nsString& aName) const {
-  if (mContent->AsElement()->GetAttr(kNameSpaceID_None, nsGkAtoms::toolbarname,
-                                     aName)) {
+  if (mContent->AsElement()->GetAttr(nsGkAtoms::toolbarname, aName)) {
     aName.CompressWhitespace();
   }
 

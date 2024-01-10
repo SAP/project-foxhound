@@ -275,15 +275,12 @@ class nsWindow final : public nsBaseWidget {
   TextEventDispatcherListener* GetNativeTextEventDispatcherListener() override;
   void SetTransparencyMode(TransparencyMode aMode) override;
   TransparencyMode GetTransparencyMode() override;
-  void UpdateOpaqueRegion(const LayoutDeviceIntRegion& aOpaqueRegion) override;
   nsresult SetNonClientMargins(const LayoutDeviceIntMargin&) override;
   void SetResizeMargin(mozilla::LayoutDeviceIntCoord aResizeMargin) override;
   void SetDrawsInTitlebar(bool aState) override;
   void UpdateWindowDraggingRegion(
       const LayoutDeviceIntRegion& aRegion) override;
 
-  void UpdateThemeGeometries(
-      const nsTArray<ThemeGeometry>& aThemeGeometries) override;
   uint32_t GetMaxTouchPoints() const override;
   void SetWindowClass(const nsAString& xulWinType, const nsAString& xulWinClass,
                       const nsAString& xulWinName) override;
@@ -515,8 +512,6 @@ class nsWindow final : public nsBaseWidget {
   static LRESULT CALLBACK WindowProcInternal(HWND hWnd, UINT msg, WPARAM wParam,
                                              LPARAM lParam);
 
-  static BOOL CALLBACK BroadcastMsgToChildren(HWND aWnd, LPARAM aMsg);
-  static BOOL CALLBACK BroadcastMsg(HWND aTopWindow, LPARAM aMsg);
   static BOOL CALLBACK DispatchStarvedPaints(HWND aTopWindow, LPARAM aMsg);
   static BOOL CALLBACK RegisterTouchForDescendants(HWND aTopWindow,
                                                    LPARAM aMsg);
@@ -547,16 +542,13 @@ class nsWindow final : public nsBaseWidget {
   void UpdateGetWindowInfoCaptionStatus(bool aActiveCaption);
   void ResetLayout();
   void InvalidateNonClientRegion();
-  HRGN ExcludeNonClientFromPaintRegion(HRGN aRegion);
   static const wchar_t* GetMainWindowClass();
-  bool HasGlass() const {
-    return mTransparencyMode == TransparencyMode::BorderlessGlass;
-  }
   HWND GetOwnerWnd() const { return ::GetWindow(mWnd, GW_OWNER); }
   bool IsOwnerForegroundWindow() const {
     HWND owner = GetOwnerWnd();
     return owner && owner == ::GetForegroundWindow();
   }
+  bool IsForegroundWindow() const { return mWnd == ::GetForegroundWindow(); }
   bool IsPopup() const { return mWindowType == WindowType::Popup; }
   bool IsCloaked() const { return mIsCloaked; }
 
@@ -651,7 +643,6 @@ class nsWindow final : public nsBaseWidget {
   TransparencyMode GetWindowTranslucencyInner() const {
     return mTransparencyMode;
   }
-  void UpdateGlass();
   bool IsSimulatedClientArea(int32_t clientX, int32_t clientY);
   bool IsWindowButton(int32_t hitTestResult);
 
@@ -671,11 +662,6 @@ class nsWindow final : public nsBaseWidget {
   LayoutDeviceIntRegion GetRegionToPaint(bool aForceFullRepaint, PAINTSTRUCT ps,
                                          HDC aDC);
   nsIWidgetListener* GetPaintListener();
-
-  void AddWindowOverlayWebRenderCommands(
-      mozilla::layers::WebRenderBridgeChild* aWrBridge,
-      mozilla::wr::DisplayListBuilder& aBuilder,
-      mozilla::wr::IpcResourceUpdateQueue& aResourceUpdates) override;
 
   void CreateCompositor() override;
   void DestroyCompositor() override;
@@ -727,6 +713,17 @@ class nsWindow final : public nsBaseWidget {
   static bool sJustGotActivate;
   static bool sIsInMouseCapture;
   static bool sIsRestoringSession;
+
+  // Message postponement hack. See the definition-site of
+  // WndProcUrgentInvocation::sDepth for details.
+  struct MOZ_STACK_CLASS WndProcUrgentInvocation {
+    struct Marker {
+      Marker() { ++sDepth; }
+      ~Marker() { --sDepth; }
+    };
+    inline static bool IsActive() { return sDepth > 0; }
+    static size_t sDepth;
+  };
 
   // Hook Data Members for Dropdowns. sProcessHook Tells the
   // hook methods whether they should be processing the hook
@@ -813,11 +810,11 @@ class nsWindow final : public nsBaseWidget {
   // Indicates custom resize margins are in effect
   bool mUseResizeMarginOverrides = false;
   // Width of the left and right portions of the resize region
-  int32_t mHorResizeMargin;
+  mozilla::LayoutDeviceIntCoord mHorResizeMargin;
   // Height of the top and bottom portions of the resize region
-  int32_t mVertResizeMargin;
+  mozilla::LayoutDeviceIntCoord mVertResizeMargin;
   // Height of the caption plus border
-  int32_t mCaptionHeight;
+  mozilla::LayoutDeviceIntCoord mCaptionHeight;
 
   // not yet set, will be calculated on first use
   double mDefaultScale = -1.0;
@@ -840,7 +837,6 @@ class nsWindow final : public nsBaseWidget {
   // Transparency
   TransparencyMode mTransparencyMode = TransparencyMode::Opaque;
   nsIntRegion mPossiblyTransparentRegion;
-  MARGINS mGlassMargins = {0, 0, 0, 0};
 
   // Win7 Gesture processing and management
   nsWinGesture mGesture;
@@ -868,9 +864,6 @@ class nsWindow final : public nsBaseWidget {
   // The point in time at which the last paint completed. We use this to avoid
   //  painting too rapidly in response to frequent input events.
   TimeStamp mLastPaintEndTime;
-
-  // The location of the window buttons in the window.
-  mozilla::Maybe<LayoutDeviceIntRect> mWindowButtonsRect;
 
   // Caching for hit test results (in client coordinates)
   LayoutDeviceIntPoint mCachedHitTestPoint;

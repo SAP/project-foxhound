@@ -216,6 +216,7 @@ bitflags::bitflags! {
     /// Configuration flags for the [`Writer`].
     #[cfg_attr(feature = "serialize", derive(serde::Serialize))]
     #[cfg_attr(feature = "deserialize", derive(serde::Deserialize))]
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
     pub struct WriterFlags: u32 {
         /// Flip output Y and extend Z from (0, 1) to (-1, 1).
         const ADJUST_COORDINATE_SPACE = 0x1;
@@ -484,7 +485,14 @@ impl<'a, W: Write> Writer<'a, W> {
         // Generate a map with names required to write the module
         let mut names = crate::FastHashMap::default();
         let mut namer = proc::Namer::default();
-        namer.reset(module, keywords::RESERVED_KEYWORDS, &["gl_"], &mut names);
+        namer.reset(
+            module,
+            keywords::RESERVED_KEYWORDS,
+            &[],
+            &[],
+            &["gl_"],
+            &mut names,
+        );
 
         // Build the instance
         let mut this = Self {
@@ -596,8 +604,6 @@ impl<'a, W: Write> Writer<'a, W> {
             }
         }
 
-        let ep_info = self.info.get_entry_point(self.entry_point_idx as usize);
-
         // Write struct types.
         //
         // This are always ordered because the IR is structured in a way that
@@ -618,6 +624,23 @@ impl<'a, W: Write> Writer<'a, W> {
                 }
             }
         }
+
+        // Write all named constants
+        let mut constants = self
+            .module
+            .constants
+            .iter()
+            .filter(|&(_, c)| c.name.is_some())
+            .peekable();
+        while let Some((handle, _)) = constants.next() {
+            self.write_global_constant(handle)?;
+            // Add extra newline for readability on last iteration
+            if constants.peek().is_none() {
+                writeln!(self.out)?;
+            }
+        }
+
+        let ep_info = self.info.get_entry_point(self.entry_point_idx as usize);
 
         // Write the globals
         //
@@ -714,31 +737,6 @@ impl<'a, W: Write> Writer<'a, W> {
             }
         }
 
-        if include_unused {
-            // write named constants
-            for (handle, constant) in self.module.constants.iter() {
-                if let Some(name) = constant.name.as_ref() {
-                    write!(self.out, "const ")?;
-                    match constant.inner {
-                        crate::ConstantInner::Scalar { width, value } => {
-                            // create a TypeInner to write
-                            let inner = TypeInner::Scalar {
-                                width,
-                                kind: value.scalar_kind(),
-                            };
-                            self.write_value_type(&inner)?;
-                        }
-                        crate::ConstantInner::Composite { ty, .. } => {
-                            self.write_type(ty)?;
-                        }
-                    };
-                    write!(self.out, " {name} = ")?;
-                    self.write_constant(handle)?;
-                    writeln!(self.out, ";")?;
-                }
-            }
-        }
-
         for arg in self.entry_point.function.arguments.iter() {
             self.write_varying(arg.binding.as_ref(), arg.ty, false)?;
         }
@@ -785,20 +783,9 @@ impl<'a, W: Write> Writer<'a, W> {
 
         // Write the array size
         // Writes nothing if `ArraySize::Dynamic`
-        // Panics if `ArraySize::Constant` has a constant that isn't an sint or uint
         match size {
-            crate::ArraySize::Constant(const_handle) => {
-                match self.module.constants[const_handle].inner {
-                    crate::ConstantInner::Scalar {
-                        width: _,
-                        value: crate::ScalarValue::Uint(size),
-                    } => write!(self.out, "{size}")?,
-                    crate::ConstantInner::Scalar {
-                        width: _,
-                        value: crate::ScalarValue::Sint(size),
-                    } => write!(self.out, "{size}")?,
-                    _ => unreachable!(),
-                }
+            crate::ArraySize::Constant(size) => {
+                write!(self.out, "{size}")?;
             }
             crate::ArraySize::Dynamic => (),
         }
@@ -821,12 +808,6 @@ impl<'a, W: Write> Writer<'a, W> {
     ///
     /// # Notes
     /// Adds no trailing or leading whitespace
-    ///
-    /// # Panics
-    /// - If type is either a image, a sampler, a pointer, or a struct
-    /// - If it's an Array with a [`ArraySize::Constant`](crate::ArraySize::Constant) with a
-    /// constant that isn't a [`Scalar`](crate::ConstantInner::Scalar) or if the
-    /// scalar value isn't an [`Sint`](crate::ScalarValue::Sint) or [`Uint`](crate::ScalarValue::Uint)
     fn write_value_type(&mut self, inner: &TypeInner) -> BackendResult {
         match *inner {
             // Scalars are simple we just get the full name from `glsl_scalar`
@@ -868,11 +849,9 @@ impl<'a, W: Write> Writer<'a, W> {
                 rows as u8
             )?,
             // GLSL arrays are written as `type name[size]`
-            // Current code is written arrays only as `[size]`
+            // Here we only write the size of the array i.e. `[size]`
             // Base `type` and `name` should be written outside
             TypeInner::Array { base, size, .. } => self.write_array_size(base, size)?,
-            // Panic if either Image, Sampler, Pointer, or a Struct is being written
-            //
             // Write all variants instead of `_` so that if new variants are added a
             // no exhaustiveness error is thrown
             TypeInner::Pointer { .. }
@@ -893,12 +872,6 @@ impl<'a, W: Write> Writer<'a, W> {
     ///
     /// # Notes
     /// Adds no trailing or leading whitespace
-    ///
-    /// # Panics
-    /// - If type is either a image or sampler
-    /// - If it's an Array with a [`ArraySize::Constant`](crate::ArraySize::Constant) with a
-    /// constant that isn't a [`Scalar`](crate::ConstantInner::Scalar) or if the
-    /// scalar value isn't an [`Sint`](crate::ScalarValue::Sint) or [`Uint`](crate::ScalarValue::Uint)
     fn write_type(&mut self, ty: Handle<crate::Type>) -> BackendResult {
         match self.module.types[ty].inner {
             // glsl has no pointer types so just write types as normal and loads are skipped
@@ -1053,7 +1026,7 @@ impl<'a, W: Write> Writer<'a, W> {
         if global.space.initializable() && is_value_init_supported(self.module, global.ty) {
             write!(self.out, " = ")?;
             if let Some(init) = global.init {
-                self.write_constant(init)?;
+                self.write_const_expr(init)?;
             } else {
                 self.write_zero_init_value(global.ty)?;
             }
@@ -1393,6 +1366,9 @@ impl<'a, W: Write> Writer<'a, W> {
             write!(self.out, "void")?;
         } else if let Some(ref result) = func.result {
             self.write_type(result.ty)?;
+            if let TypeInner::Array { base, size, .. } = self.module.types[result.ty].inner {
+                self.write_array_size(base, size)?
+            }
         } else {
             write!(self.out, "void")?;
         }
@@ -1550,7 +1526,7 @@ impl<'a, W: Write> Writer<'a, W> {
 
                 // Write the constant
                 // `write_constant` adds no trailing or leading space/newline
-                self.write_constant(init)?;
+                self.write_const_expr(init)?;
             } else if is_value_init_supported(self.module, local.ty) {
                 write!(self.out, " = ")?;
                 self.write_zero_init_value(local.ty)?;
@@ -1605,7 +1581,7 @@ impl<'a, W: Write> Writer<'a, W> {
         Ok(())
     }
 
-    /// Helper method that writes a list of comma separated `T` with a writer function `F`
+    /// Write a list of comma separated `T` values using a writer function `F`.
     ///
     /// The writer function `F` receives a mutable reference to `self` that if needed won't cause
     /// borrow checker issues (using for example a closure with `self` will cause issues), the
@@ -1620,61 +1596,30 @@ impl<'a, W: Write> Writer<'a, W> {
         data: &[T],
         mut f: F,
     ) -> BackendResult {
-        // Loop trough `data` invoking `f` for each element
-        for (i, item) in data.iter().enumerate() {
-            f(self, i as u32, item)?;
-
-            // Only write a comma if isn't the last element
-            if i != data.len().saturating_sub(1) {
-                // The leading space is for readability only
+        // Loop through `data` invoking `f` for each element
+        for (index, item) in data.iter().enumerate() {
+            if index != 0 {
                 write!(self.out, ", ")?;
             }
+            f(self, index as u32, item)?;
         }
 
         Ok(())
     }
 
-    /// Helper method used to write constants
-    ///
-    /// # Notes
-    /// Adds no newlines or leading/trailing whitespace
-    fn write_constant(&mut self, handle: Handle<crate::Constant>) -> BackendResult {
-        use crate::ScalarValue as Sv;
-
-        match self.module.constants[handle].inner {
-            crate::ConstantInner::Scalar {
-                width: _,
-                ref value,
-            } => match *value {
-                // Signed integers don't need anything special
-                Sv::Sint(int) => write!(self.out, "{int}")?,
-                // Unsigned integers need a `u` at the end
-                //
-                // While `core` doesn't necessarily need it, it's allowed and since `es` needs it we
-                // always write it as the extra branch wouldn't have any benefit in readability
-                Sv::Uint(int) => write!(self.out, "{int}u")?,
-                // Floats are written using `Debug` instead of `Display` because it always appends the
-                // decimal part even it's zero which is needed for a valid glsl float constant
-                Sv::Float(float) => write!(self.out, "{float:?}")?,
-                // Booleans are either `true` or `false` so nothing special needs to be done
-                Sv::Bool(boolean) => write!(self.out, "{boolean}")?,
-            },
-            // Composite constant are created using the same syntax as compose
-            // `type(components)` where `components` is a comma separated list of constants
-            crate::ConstantInner::Composite { ty, ref components } => {
-                self.write_type(ty)?;
-                if let TypeInner::Array { base, size, .. } = self.module.types[ty].inner {
-                    self.write_array_size(base, size)?;
-                }
-                write!(self.out, "(")?;
-
-                // Write the comma separated constants
-                self.write_slice(components, |this, _, arg| this.write_constant(*arg))?;
-
-                write!(self.out, ")")?
-            }
+    /// Helper method used to write global constants
+    fn write_global_constant(&mut self, handle: Handle<crate::Constant>) -> BackendResult {
+        write!(self.out, "const ")?;
+        let constant = &self.module.constants[handle];
+        self.write_type(constant.ty)?;
+        let name = &self.names[&NameKey::Constant(handle)];
+        write!(self.out, " {name}")?;
+        if let TypeInner::Array { base, size, .. } = self.module.types[constant.ty].inner {
+            self.write_array_size(base, size)?;
         }
-
+        write!(self.out, " = ")?;
+        self.write_const_expr(constant.init)?;
+        writeln!(self.out, ";")?;
         Ok(())
     }
 
@@ -1806,8 +1751,6 @@ impl<'a, W: Write> Writer<'a, W> {
                         Some(self.namer.call(name))
                     } else if self.need_bake_expressions.contains(&handle) {
                         Some(format!("{}{}", back::BAKE_PREFIX, handle.index()))
-                    } else if info.ref_count == 0 {
-                        Some(self.namer.call(""))
                     } else {
                         None
                     };
@@ -1826,7 +1769,7 @@ impl<'a, W: Write> Writer<'a, W> {
                             ..
                         } = *ctx.info[image].ty.inner_with(&self.module.types)
                         {
-                            if let proc::BoundsCheckPolicy::Restrict = self.policies.image {
+                            if let proc::BoundsCheckPolicy::Restrict = self.policies.image_load {
                                 write!(self.out, "{level}")?;
                                 self.write_clamped_lod(ctx, handle, image, level_expr)?
                             }
@@ -1835,7 +1778,7 @@ impl<'a, W: Write> Writer<'a, W> {
 
                     if let Some(name) = expr_name {
                         write!(self.out, "{level}")?;
-                        self.write_named_expr(handle, name, ctx)?;
+                        self.write_named_expr(handle, name, handle, ctx)?;
                     }
                 }
             }
@@ -2125,6 +2068,19 @@ impl<'a, W: Write> Writer<'a, W> {
                 self.write_expr(value, ctx)?;
                 writeln!(self.out, ";")?
             }
+            Statement::WorkGroupUniformLoad { pointer, result } => {
+                // GLSL doesn't have pointers, which means that this backend needs to ensure that
+                // the actual "loading" is happening between the two barriers.
+                // This is done in `Emit` by never emitting a variable name for pointer variables
+                self.write_barrier(crate::Barrier::WORK_GROUP, level)?;
+
+                let result_name = format!("{}{}", back::BAKE_PREFIX, result.index());
+                write!(self.out, "{level}")?;
+                // Expressions cannot have side effects, so just writing the expression here is fine.
+                self.write_named_expr(pointer, result_name, result, ctx)?;
+
+                self.write_barrier(crate::Barrier::WORK_GROUP, level)?;
+            }
             // Stores a value into an image.
             Statement::ImageStore {
                 image,
@@ -2146,7 +2102,12 @@ impl<'a, W: Write> Writer<'a, W> {
                     let name = format!("{}{}", back::BAKE_PREFIX, expr.index());
                     let result = self.module.functions[function].result.as_ref().unwrap();
                     self.write_type(result.ty)?;
-                    write!(self.out, " {name} = ")?;
+                    write!(self.out, " {name}")?;
+                    if let TypeInner::Array { base, size, .. } = self.module.types[result.ty].inner
+                    {
+                        self.write_array_size(base, size)?
+                    }
+                    write!(self.out, " = ")?;
                     self.named_expressions.insert(expr, name);
                 }
                 write!(self.out, "{}(", &self.names[&NameKey::Function(function)])?;
@@ -2203,6 +2164,100 @@ impl<'a, W: Write> Writer<'a, W> {
         Ok(())
     }
 
+    /// Write a const expression.
+    ///
+    /// Write `expr`, a handle to an [`Expression`] in the current [`Module`]'s
+    /// constant expression arena, as GLSL expression.
+    ///
+    /// # Notes
+    /// Adds no newlines or leading/trailing whitespace
+    ///
+    /// [`Expression`]: crate::Expression
+    /// [`Module`]: crate::Module
+    fn write_const_expr(&mut self, expr: Handle<crate::Expression>) -> BackendResult {
+        self.write_possibly_const_expr(expr, &self.module.const_expressions, |writer, expr| {
+            writer.write_const_expr(expr)
+        })
+    }
+
+    /// Write [`Expression`] variants that can occur in both runtime and const expressions.
+    ///
+    /// Write `expr`, a handle to an [`Expression`] in the arena `expressions`,
+    /// as as GLSL expression. This must be one of the [`Expression`] variants
+    /// that is allowed to occur in constant expressions.
+    ///
+    /// Use `write_expression` to write subexpressions.
+    ///
+    /// This is the common code for `write_expr`, which handles arbitrary
+    /// runtime expressions, and `write_const_expr`, which only handles
+    /// const-expressions. Each of those callers passes itself (essentially) as
+    /// the `write_expression` callback, so that subexpressions are restricted
+    /// to the appropriate variants.
+    ///
+    /// # Notes
+    /// Adds no newlines or leading/trailing whitespace
+    ///
+    /// [`Expression`]: crate::Expression
+    fn write_possibly_const_expr<E>(
+        &mut self,
+        expr: Handle<crate::Expression>,
+        expressions: &crate::Arena<crate::Expression>,
+        write_expression: E,
+    ) -> BackendResult
+    where
+        E: Fn(&mut Self, Handle<crate::Expression>) -> BackendResult,
+    {
+        use crate::Expression;
+
+        match expressions[expr] {
+            Expression::Literal(literal) => {
+                match literal {
+                    // Floats are written using `Debug` instead of `Display` because it always appends the
+                    // decimal part even it's zero which is needed for a valid glsl float constant
+                    crate::Literal::F64(value) => write!(self.out, "{:?}LF", value)?,
+                    crate::Literal::F32(value) => write!(self.out, "{:?}", value)?,
+                    // Unsigned integers need a `u` at the end
+                    //
+                    // While `core` doesn't necessarily need it, it's allowed and since `es` needs it we
+                    // always write it as the extra branch wouldn't have any benefit in readability
+                    crate::Literal::U32(value) => write!(self.out, "{}u", value)?,
+                    crate::Literal::I32(value) => write!(self.out, "{}", value)?,
+                    crate::Literal::Bool(value) => write!(self.out, "{}", value)?,
+                }
+            }
+            Expression::Constant(handle) => {
+                let constant = &self.module.constants[handle];
+                if constant.name.is_some() {
+                    write!(self.out, "{}", self.names[&NameKey::Constant(handle)])?;
+                } else {
+                    self.write_const_expr(constant.init)?;
+                }
+            }
+            Expression::ZeroValue(ty) => {
+                self.write_zero_init_value(ty)?;
+            }
+            Expression::Compose { ty, ref components } => {
+                self.write_type(ty)?;
+
+                if let TypeInner::Array { base, size, .. } = self.module.types[ty].inner {
+                    self.write_array_size(base, size)?;
+                }
+
+                write!(self.out, "(")?;
+                for (index, component) in components.iter().enumerate() {
+                    if index != 0 {
+                        write!(self.out, ", ")?;
+                    }
+                    write_expression(self, *component)?;
+                }
+                write!(self.out, ")")?
+            }
+            _ => unreachable!(),
+        }
+
+        Ok(())
+    }
+
     /// Helper method to write expressions
     ///
     /// # Notes
@@ -2220,6 +2275,14 @@ impl<'a, W: Write> Writer<'a, W> {
         }
 
         match ctx.expressions[expr] {
+            Expression::Literal(_)
+            | Expression::Constant(_)
+            | Expression::ZeroValue(_)
+            | Expression::Compose { .. } => {
+                self.write_possibly_const_expr(expr, ctx.expressions, |writer, expr| {
+                    writer.write_expr(expr, ctx)
+                })?;
+            }
             // `Access` is applied to arrays, vectors and matrices and is written as indexing
             Expression::Access { base, index } => {
                 self.write_expr(base, ctx)?;
@@ -2265,8 +2328,6 @@ impl<'a, W: Write> Writer<'a, W> {
                     ref other => return Err(Error::Custom(format!("Cannot index {other:?}"))),
                 }
             }
-            // Constants are delegated to `write_constant`
-            Expression::Constant(constant) => self.write_constant(constant)?,
             // `Splat` needs to actually write down a vector, it's not always inferred in GLSL.
             Expression::Splat { size: _, value } => {
                 let resolved = ctx.info[expr].ty.inner_with(&self.module.types);
@@ -2286,20 +2347,6 @@ impl<'a, W: Write> Writer<'a, W> {
                 for &sc in pattern[..size as usize].iter() {
                     self.out.write_char(back::COMPONENTS[sc as usize])?;
                 }
-            }
-            // `Compose` is pretty simple we just write `type(components)` where `components` is a
-            // comma separated list of expressions
-            Expression::Compose { ty, ref components } => {
-                self.write_type(ty)?;
-
-                let resolved = ctx.info[expr].ty.inner_with(&self.module.types);
-                if let TypeInner::Array { base, size, .. } = *resolved {
-                    self.write_array_size(base, size)?;
-                }
-
-                write!(self.out, "(")?;
-                self.write_slice(components, |this, _, arg| this.write_expr(*arg, ctx))?;
-                write!(self.out, ")")?
             }
             // Function arguments are written as the argument name
             Expression::FunctionArgument(pos) => {
@@ -2490,7 +2537,7 @@ impl<'a, W: Write> Writer<'a, W> {
                     if tex_1d_hack {
                         write!(self.out, "ivec2(")?;
                     }
-                    self.write_constant(constant)?;
+                    self.write_const_expr(constant)?;
                     if tex_1d_hack {
                         write!(self.out, ", 0)")?;
                     }
@@ -2555,8 +2602,25 @@ impl<'a, W: Write> Writer<'a, W> {
                                 write!(self.out, "textureSize(")?;
                                 self.write_expr(image, ctx)?;
                                 if let Some(expr) = level {
+                                    let cast_to_int = matches!(
+                                        *ctx.info[expr].ty.inner_with(&self.module.types),
+                                        crate::TypeInner::Scalar {
+                                            kind: crate::ScalarKind::Uint,
+                                            ..
+                                        }
+                                    );
+
                                     write!(self.out, ", ")?;
+
+                                    if cast_to_int {
+                                        write!(self.out, "int(")?;
+                                    }
+
                                     self.write_expr(expr, ctx)?;
+
+                                    if cast_to_int {
+                                        write!(self.out, ")")?;
+                                    }
                                 } else if !multi {
                                     // All textureSize calls requires an lod argument
                                     // except for multisampled samplers
@@ -3282,7 +3346,8 @@ impl<'a, W: Write> Writer<'a, W> {
             // These expressions never show up in `Emit`.
             Expression::CallResult(_)
             | Expression::AtomicResult { .. }
-            | Expression::RayQueryProceedResult => unreachable!(),
+            | Expression::RayQueryProceedResult
+            | Expression::WorkGroupUniformLoadResult { .. } => unreachable!(),
             // `ArrayLength` is written as `expr.length()` and we convert it to a uint
             Expression::ArrayLength(expr) => {
                 write!(self.out, "uint(")?;
@@ -3497,11 +3562,22 @@ impl<'a, W: Write> Writer<'a, W> {
         // and the policy to be used with it.
         let (fun_name, policy) = match class {
             // Sampled images inherit the policy from the user passed policies
-            crate::ImageClass::Sampled { .. } => ("texelFetch", self.policies.image),
+            crate::ImageClass::Sampled { .. } => ("texelFetch", self.policies.image_load),
             crate::ImageClass::Storage { .. } => {
-                // OpenGL 4.2 Core §3.9.20 defines that out of bounds texels in `imageLoad`s
-                // always return zero values so we don't need to generate bounds checks
-                ("imageLoad", proc::BoundsCheckPolicy::Unchecked)
+                // OpenGL ES 3.1 mentiones in Chapter "8.22 Texture Image Loads and Stores" that:
+                // "Invalid image loads will return a vector where the value of R, G, and B components
+                // is 0 and the value of the A component is undefined."
+                //
+                // OpenGL 4.2 Core mentiones in Chapter "3.9.20 Texture Image Loads and Stores" that:
+                // "Invalid image loads will return zero."
+                //
+                // So, we only inject bounds checks for ES
+                let policy = if self.options.version.is_es() {
+                    self.policies.image_load
+                } else {
+                    proc::BoundsCheckPolicy::Unchecked
+                };
+                ("imageLoad", policy)
             }
             // TODO: Is there even a function for this?
             crate::ImageClass::Depth { multi: _ } => {
@@ -3718,9 +3794,12 @@ impl<'a, W: Write> Writer<'a, W> {
         &mut self,
         handle: Handle<crate::Expression>,
         name: String,
+        // The expression which is being named.
+        // Generally, this is the same as handle, except in WorkGroupUniformLoad
+        named: Handle<crate::Expression>,
         ctx: &back::FunctionCtx,
     ) -> BackendResult {
-        match ctx.info[handle].ty {
+        match ctx.info[named].ty {
             proc::TypeResolution::Handle(ty_handle) => match self.module.types[ty_handle].inner {
                 TypeInner::Struct { .. } => {
                     let ty_name = &self.names[&NameKey::Type(ty_handle)];
@@ -3735,7 +3814,7 @@ impl<'a, W: Write> Writer<'a, W> {
             }
         }
 
-        let base_ty_res = &ctx.info[handle].ty;
+        let base_ty_res = &ctx.info[named].ty;
         let resolved = base_ty_res.inner_with(&self.module.types);
 
         write!(self.out, " {name}")?;
@@ -3745,7 +3824,7 @@ impl<'a, W: Write> Writer<'a, W> {
         write!(self.out, " = ")?;
         self.write_expr(handle, ctx)?;
         writeln!(self.out, ";")?;
-        self.named_expressions.insert(handle, name);
+        self.named_expressions.insert(named, name);
 
         Ok(())
     }
@@ -3791,11 +3870,11 @@ impl<'a, W: Write> Writer<'a, W> {
             TypeInner::Struct { ref members, .. } => {
                 let name = &self.names[&NameKey::Type(ty)];
                 write!(self.out, "{name}(")?;
-                for (i, member) in members.iter().enumerate() {
-                    self.write_zero_init_value(member.ty)?;
-                    if i != members.len().saturating_sub(1) {
+                for (index, member) in members.iter().enumerate() {
+                    if index != 0 {
                         write!(self.out, ", ")?;
                     }
+                    self.write_zero_init_value(member.ty)?;
                 }
                 write!(self.out, ")")?;
             }

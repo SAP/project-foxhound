@@ -403,20 +403,6 @@ option(
 set_define("JS_GC_ZEAL", depends_if("--enable-gczeal")(lambda _: True))
 
 
-# Use a smaller chunk size for GC chunks
-# ========================================================
-# Use large (1MB) chunks by default.  This option can be used to give
-# smaller (currently 256K) chunks.
-option(
-    "--enable-small-chunk-size",
-    help="Allocate memory for JS GC things in smaller chunks",
-)
-
-set_define(
-    "JS_GC_SMALL_CHUNK_SIZE", depends(when="--enable-small-chunk-size")(lambda: True)
-)
-
-
 # Enable breakpoint for artificial OOMs
 # =======================================================
 option(
@@ -431,7 +417,7 @@ option("--enable-perf", env="JS_ION_PERF", help="Enable Linux perf integration")
 
 @depends("--enable-perf", target)
 def ion_perf(value, target):
-    is_linux = target.kernel == "Linux" and target.os == "GNU"
+    is_linux = target.kernel == "Linux"
     is_mac = target.kernel == "Darwin" and target.os == "OSX"
 
     if value and (is_linux or is_mac):
@@ -553,6 +539,16 @@ def aarch64_jscvt(fjcvtzs, target, simulator):
 
 set_define("MOZ_AARCH64_JSCVT", aarch64_jscvt)
 
+
+@depends(target)
+def has_pthread_jit_write_protect_np(target):
+    return target.os == "OSX" and target.cpu == "aarch64"
+
+
+# On Apple Silicon we use MAP_JIT with pthread_jit_write_protect_np to implement
+# JIT code write protection.
+set_define("JS_USE_APPLE_FAST_WX", True, when=has_pthread_jit_write_protect_np)
+
 # CTypes
 # =======================================================
 @depends(js_standalone)
@@ -656,20 +652,14 @@ option(
 # ===========================
 
 
-@depends(milestone.is_nightly)
-def default_wasm_function_references(is_nightly):
-    if is_nightly:
-        return True
-
-
 option(
-    "--enable-wasm-function-references",
-    default=default_wasm_function_references,
+    "--disable-wasm-function-references",
+    default=True,
     help="{Enable|Disable} WebAssembly function-references",
 )
 
 
-@depends("--enable-wasm-function-references", "--wasm-no-experimental")
+@depends("--disable-wasm-function-references", "--wasm-no-experimental")
 def wasm_function_references(value, no_experimental):
     if no_experimental:
         return
@@ -681,23 +671,52 @@ def wasm_function_references(value, no_experimental):
 set_config("ENABLE_WASM_FUNCTION_REFERENCES", wasm_function_references)
 set_define("ENABLE_WASM_FUNCTION_REFERENCES", wasm_function_references)
 
-# Support for WebAssembly GC.
+# Support for WebAssembly tail-calls.
 # ===========================
 
 
-@depends(milestone.is_nightly, "--enable-wasm-function-references")
-def default_wasm_gc(is_nightly, function_references):
-    if is_nightly and function_references:
+@depends(milestone.is_nightly)
+def default_wasm_tail_calls(is_nightly):
+    if is_nightly:
         return True
 
 
 option(
-    "--enable-wasm-gc", default=default_wasm_gc, help="{Enable|Disable} WebAssembly GC"
+    "--enable-wasm-tail-calls",
+    default=default_wasm_tail_calls,
+    help="{Enable|Disable} WebAssembly tail-calls",
+)
+
+
+@depends("--enable-wasm-tail-calls", target)
+def wasm_tail_calls(value, target):
+    if not value:
+        return
+
+    if target.cpu in ("x86", "x86_64", "arm", "aarch64", "loongarch64", "mips64"):
+        return True
+
+
+set_config("ENABLE_WASM_TAIL_CALLS", wasm_tail_calls)
+set_define("ENABLE_WASM_TAIL_CALLS", wasm_tail_calls)
+
+# Support for WebAssembly GC.
+# ===========================
+
+
+@depends("--disable-wasm-function-references")
+def default_wasm_gc(function_references):
+    if function_references:
+        return True
+
+
+option(
+    "--disable-wasm-gc", default=default_wasm_gc, help="{Enable|Disable} WebAssembly GC"
 )
 
 
 @depends(
-    "--enable-wasm-gc", "--enable-wasm-function-references", "--wasm-no-experimental"
+    "--disable-wasm-gc", "--disable-wasm-function-references", "--wasm-no-experimental"
 )
 def wasm_gc(value, function_references, no_experimental):
     if no_experimental or not value:
@@ -706,7 +725,7 @@ def wasm_gc(value, function_references, no_experimental):
     if function_references:
         return True
 
-    die("--enable-wasm-gc only possible with --enable-wasm-function-references")
+    die("--disable-wasm-gc only possible with --disable-wasm-function-references")
 
 
 set_config("ENABLE_WASM_GC", wasm_gc)
@@ -1018,6 +1037,34 @@ set_config("ENABLE_WASM_MEMORY_CONTROL", wasm_memory_control)
 set_define("ENABLE_WASM_MEMORY_CONTROL", wasm_memory_control)
 
 
+# Support for WebAssembly Multi Memory.
+# =====================================
+
+
+@depends(milestone.is_nightly)
+def default_wasm_multi_memory(is_nightly):
+    if is_nightly:
+        return True
+
+
+option(
+    "--enable-wasm-multi-memory",
+    default=default_wasm_multi_memory,
+    help="{Enable|Disable} WebAssembly multi-memory",
+)
+
+
+@depends("--enable-wasm-multi-memory", "--wasm-no-experimental")
+def wasm_multi_memory(value, no_experimental):
+    if no_experimental or not value:
+        return
+
+    return True
+
+
+set_config("ENABLE_WASM_MULTI_MEMORY", wasm_multi_memory)
+set_define("ENABLE_WASM_MULTI_MEMORY", wasm_multi_memory)
+
 # Options for generating the shell as a script
 # ============================================
 option("--with-qemu-exe", nargs=1, help="Use path as an arm emulator on host platforms")
@@ -1161,6 +1208,21 @@ set_define("U_USING_ICU_NAMESPACE", "0", when="--with-intl-api")
 set_define("U_STATIC_IMPLEMENTATION", True, when=depends(system_icu)(lambda x: not x))
 
 
+# ECMAScript Temporal API Support (uses ICU)
+# ======================================================
+
+option("--with-temporal-api", default=False, help="Enable ECMAScript Temporal API")
+
+set_config("JS_HAS_TEMPORAL_API", True, when="--with-temporal-api")
+set_define("JS_HAS_TEMPORAL_API", True, when="--with-temporal-api")
+
+
+@depends("--with-temporal-api", "--with-intl-api")
+def check_temporal_api(temporal_enabled, intl_enabled):
+    if temporal_enabled and not intl_enabled:
+        die("Can't use both --with-temporal-api and --without-intl-api")
+
+
 # Initial support for WebAssembly JS-API Type Reflections
 # =======================================================
 
@@ -1196,28 +1258,6 @@ def is_wasi_target(os):
 
 set_define("_WASI_EMULATED_PROCESS_CLOCKS", True, when=is_wasi_target)
 set_define("_WASI_EMULATED_GETPID", True, when=is_wasi_target)
-
-# Enable New Set methods
-# ===================================================
-def use_new_set_methods():
-    return False
-
-
-option(
-    "--enable-new-set-methods",
-    default=use_new_set_methods(),
-    help="{Enable|Disable} New Set methods pref/command-line option (disabled by default)",
-)
-
-
-@depends("--enable-new-set-methods")
-def enable_new_set_methods(value):
-    if value:
-        return True
-
-
-set_config("ENABLE_NEW_SET_METHODS", enable_new_set_methods)
-set_define("ENABLE_NEW_SET_METHODS", enable_new_set_methods)
 
 
 @depends(milestone.version)

@@ -14,6 +14,7 @@
   --fxview-text-primary-color: var(--newtab-text-primary-color, var(--in-content-page-color));
   --fxview-text-color-hover: var(--newtab-text-primary-color);
   --fxview-primary-action-background: var(--newtab-primary-action-background, #0061e0);
+  --fxview-border: var(--fc-border-light, #CFCFD8);
 
   /* ensure utility button hover states match those of the rest of the page */
   --in-content-button-background-hover: var(--fxview-element-background-hover);
@@ -28,6 +29,7 @@
   :root {
     --fxview-element-background-hover: color-mix(in srgb, var(--fxview-background-color) 80%, white);
     --fxview-element-background-active: color-mix(in srgb, var(--fxview-background-color) 60%, white);
+    --fxview-border: #8F8F9D;
     --newtab-background-color-secondary: #42414d;
     --newtab-primary-action-background: #00ddff;
   }
@@ -38,39 +40,10 @@
     --fxview-element-background-hover: ButtonText;
     --fxview-element-background-active: ButtonText;
     --fxview-text-color-hover: ButtonFace;
+    --fxview-border: var(--fc-border-hcm, -moz-dialogtext);
     --newtab-primary-action-background: LinkText;
     --newtab-background-color-secondary: Canvas;
   }
-}
-
-body {
-  display: grid;
-  grid-template-columns: var(--fxview-sidebar-width) 1fr;
-  background-color: var(--fxview-background-color);
-  color: var(--fxview-text-primary-color);
-  margin-block-start: var(--fxview-margin-top);
-}
-
-#pages {
-  width: 90%;
-  margin: 0 auto;
-  max-width: 1136px;
-}
-
-fxview-category-button[name="overview"]::part(icon) {
-  background-image: url("chrome://mozapps/skin/extensions/category-discover.svg");
-}
-fxview-category-button[name="opentabs"]::part(icon) {
-  background-image: url("chrome://mozapps/skin/extensions/category-discover.svg");
-}
-fxview-category-button[name="recently-closed"]::part(icon) {
-  background-image: url("chrome://mozapps/skin/extensions/category-discover.svg");
-}
-fxview-category-button[name="synced-tabs"]::part(icon) {
-  background-image: url("chrome://mozapps/skin/extensions/category-discover.svg");
-}
-fxview-category-button[name="history"]::part(icon) {
-  background-image: url("chrome://mozapps/skin/extensions/category-discover.svg");
 }
 
 @media (max-width: 52rem) {
@@ -79,8 +52,106 @@ fxview-category-button[name="history"]::part(icon) {
   }
 }
 
+body {
+  display: grid;
+  grid-template-columns: var(--fxview-sidebar-width) 1fr;
+  background-color: var(--fxview-background-color);
+  color: var(--fxview-text-primary-color);
+}
+
+#pages {
+  overflow-y: auto;
+  max-height: 100vh;
+  max-width: 100%;
+}
+
+.main-container {
+  width: 90%;
+  margin: 0 auto;
+  min-width: 43rem;
+  max-width: 71rem;
+}
+
 @media (min-width: 120rem) {
-  #pages {
+  .main-container {
     margin-inline-start: 148px;
   }
+}
+
+.page-header {
+  margin: 0;
+  font-weight: 400;
+}
+
+fxview-category-button[name="recentbrowsing"]::part(icon) {
+  background-image: url("chrome://browser/content/firefoxview/category-recentbrowsing.svg");
+}
+fxview-category-button[name="opentabs"]::part(icon) {
+  background-image: url("chrome://browser/content/firefoxview/category-opentabs.svg");
+}
+fxview-category-button[name="recentlyclosed"]::part(icon) {
+  background-image: url("chrome://browser/content/firefoxview/category-recentlyclosed.svg");
+}
+fxview-category-button[name="syncedtabs"]::part(icon) {
+  background-image: url("chrome://browser/content/firefoxview/category-syncedtabs.svg");
+}
+fxview-category-button[name="history"]::part(icon) {
+  background-image: url("chrome://browser/content/firefoxview/category-history.svg");
+}
+
+fxview-tab-list.with-dismiss-button::part(secondary-button) {
+  background-image: url("chrome://global/skin/icons/close.svg");
+}
+
+fxview-tab-list.with-context-menu::part(secondary-button) {
+  background-image: url("chrome://global/skin/icons/more.svg");
+}
+
+.sticky-container {
+  position: sticky;
+  top: 0;
+  padding-block: var(--fxview-margin-top) 42px;
+  z-index: 1;
+}
+
+.sticky-container.bottom-fade {
+  background:
+  linear-gradient(
+    to bottom,
+    var(--fxview-background-color) 0%,
+    var(--fxview-background-color) 95%,
+    transparent 100%
+  );
+  /* When you use HCM or set custom colors, you can't use a gradient. */
+  @media (forced-colors) {
+    background: var(--fxview-background-color);
+  }
+}
+
+.cards-container {
+  padding-inline: 4px;
+}
+
+/* This should be supported within panel-{item,list} rather than modifying it */
+panel-item::part(button) {
+  padding-inline-start: 12px;
+  cursor: pointer;
+}
+
+panel-item::part(button):hover {
+  background-color: var(--fxview-element-background-hover);
+  color: var(--fxview-text-color-hover);
+}
+
+panel-item::part(button):hover:active {
+  background-color: var(--fxview-element-background-active);
+}
+
+fxview-category-navigation {
+  overflow-y: auto;
+}
+
+fxview-category-navigation h1 {
+  font-size: 1.6em;
+  font-weight: 700;
 }

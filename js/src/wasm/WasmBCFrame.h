@@ -469,17 +469,15 @@ class BaseStackFrameAllocator {
   // consumed by the call.
 
   void freeArgAreaAndPopBytes(size_t argSize, size_t dropSize) {
+    // The method is called to re-initialize SP after the call. Note that
+    // this operation shall not be optimized for argSize + dropSize == 0.
 #ifdef RABALDR_CHUNKY_STACK
     // Freeing the outgoing arguments and freeing the consumed values have
     // different semantics here, which is why the operation is split.
-    if (argSize) {
-      masm.freeStack(argSize);
-    }
+    masm.freeStackTo(masm.framePushed() - argSize);
     popChunkyBytes(dropSize);
 #else
-    if (argSize + dropSize) {
-      masm.freeStack(argSize + dropSize);
-    }
+    masm.freeStackTo(masm.framePushed() - (argSize + dropSize));
 #endif
   }
 };
@@ -727,7 +725,9 @@ class BaseStackFrame final : public BaseStackFrameAllocator {
   }
 
   void loadInstancePtr(Register dst) {
-    masm.loadPtr(Address(sp_, stackOffset(instancePointerOffset_)), dst);
+    // Sometimes loadInstancePtr is used in context when SP is not sync is FP,
+    // e.g. just after tail calls returns.
+    masm.loadPtr(Address(FramePointer, -instancePointerOffset_), dst);
   }
 
   void storeInstancePtr(Register instance) {
@@ -943,21 +943,24 @@ class BaseStackFrame final : public BaseStackFrameAllocator {
                                    uint32_t bytes, Register temp) {
     MOZ_ASSERT(destHeight < srcHeight);
     MOZ_ASSERT(bytes % sizeof(uint32_t) == 0);
-    uint32_t destOffset = stackOffset(destHeight) + bytes;
-    uint32_t srcOffset = stackOffset(srcHeight) + bytes;
+    // The shuffleStackResultsTowardFP is used when SP/framePushed is not
+    // tracked by the compiler, e.g. after possible return call -- use
+    // FramePointer instead of sp_.
+    int32_t destOffset = int32_t(-destHeight + bytes);
+    int32_t srcOffset = int32_t(-srcHeight + bytes);
     while (bytes >= sizeof(intptr_t)) {
       destOffset -= sizeof(intptr_t);
       srcOffset -= sizeof(intptr_t);
       bytes -= sizeof(intptr_t);
-      masm.loadPtr(Address(sp_, srcOffset), temp);
-      masm.storePtr(temp, Address(sp_, destOffset));
+      masm.loadPtr(Address(FramePointer, srcOffset), temp);
+      masm.storePtr(temp, Address(FramePointer, destOffset));
     }
     if (bytes) {
       MOZ_ASSERT(bytes == sizeof(uint32_t));
       destOffset -= sizeof(uint32_t);
       srcOffset -= sizeof(uint32_t);
-      masm.load32(Address(sp_, srcOffset), temp);
-      masm.store32(temp, Address(sp_, destOffset));
+      masm.load32(Address(FramePointer, srcOffset), temp);
+      masm.store32(temp, Address(FramePointer, destOffset));
     }
   }
 

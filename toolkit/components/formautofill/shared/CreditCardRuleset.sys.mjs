@@ -60,6 +60,7 @@ function queriedOrClickedElements(selector) {
 /**
  * START OF CODE PASTED FROM TRAINING REPOSITORY
  */
+
 var FathomHeuristicsRegExp = {
   RULES: {
     "cc-name": undefined,
@@ -87,6 +88,10 @@ var FathomHeuristicsRegExp = {
         "|titolare.*carta" +
         // pl-PL
         "|posiadacz.*karty" +
+        // es-ES
+        "|nombre.*(titular|tarjeta)" +
+        // nl-NL
+        "|naam.*op.*kaart" +
         // Rules from Bitwarden
         "|cc-?name" +
         "|card-?name" +
@@ -96,7 +101,6 @@ var FathomHeuristicsRegExp = {
         "|card.?(?:holder|owner)|name.*(\\b)?on(\\b)?.*card" +
         "|(?:card|cc).?name|cc.?full.?name" +
         "|(?:card|cc).?owner" +
-        "|nombre.*tarjeta" + // es
         "|nom.*carte" + // fr-FR
         "|nome.*cart" + // it-IT
         "|名前" + // ja-JP
@@ -115,6 +119,10 @@ var FathomHeuristicsRegExp = {
         "|(numero|número|numéro).*(carte)" +
         // pl-PL
         "|numer.*karty" +
+        // es-ES
+        "|(número|numero).*tarjeta" +
+        // nl-NL
+        "|kaartnummer" +
         // Rules from Bitwarden
         "|cc-?number" +
         "|cc-?num" +

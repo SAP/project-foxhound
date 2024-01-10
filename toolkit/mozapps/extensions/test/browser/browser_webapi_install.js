@@ -509,7 +509,7 @@ add_task(
       },
       { event: "onDownloadProgress" },
       { event: "onDownloadEnded" },
-      { event: "onDownloadCancelled" },
+      { event: "onDownloadCancelled", error: "ERROR_INCOMPATIBLE" },
     ];
 
     await testInstall(
@@ -521,6 +521,53 @@ add_task(
 
     let addons = await promiseAddonsByIDs([id]);
     is(addons[0], null, "The addon was not installed");
+  })
+);
+
+add_task(
+  makeInstallTest(async function (browser) {
+    let id = "amosigned-xpi@tests.mozilla.org";
+    let version = "2.1";
+
+    await AddonTestUtils.loadBlocklistRawData({
+      extensionsMLBF: [
+        {
+          stash: { blocked: [`${id}:${version}`], unblocked: [] },
+          stash_time: 0,
+        },
+      ],
+    });
+
+    let steps = [
+      { action: "install", expectError: true },
+      { event: "onDownloadStarted" },
+      { event: "onDownloadProgress" },
+      { event: "onDownloadEnded" },
+      {
+        event: "onDownloadCancelled",
+        props: { state: "STATE_CANCELLED", error: "ERROR_BLOCKLISTED" },
+      },
+    ];
+
+    await testInstall(
+      browser,
+      { url: XPI_URL },
+      steps,
+      "install of a blocked XPI fails"
+    );
+
+    let addons = await promiseAddonsByIDs([id]);
+    is(addons[0], null, "The addon was not installed");
+
+    // Clear the blocklist.
+    await AddonTestUtils.loadBlocklistRawData({
+      extensionsMLBF: [
+        {
+          stash: { blocked: [], unblocked: [] },
+          stash_time: 0,
+        },
+      ],
+    });
   })
 );
 

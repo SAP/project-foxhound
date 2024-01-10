@@ -7,7 +7,8 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/DebugOnly.h"
 #include "mozilla/SpinEventLoopUntil.h"
-
+#include "nsIFile.h"
+#include "nsIFileURL.h"
 #include "mozStorageService.h"
 #include "mozStorageConnection.h"
 #include "nsComponentManagerUtils.h"
@@ -35,8 +36,7 @@
 
 using mozilla::intl::Collator;
 
-namespace mozilla {
-namespace storage {
+namespace mozilla::storage {
 
 ////////////////////////////////////////////////////////////////////////////////
 //// Memory Reporting
@@ -147,7 +147,7 @@ Service::CollectReports(nsIHandleReportCallback* aHandleReport,
 #endif
   }
 
-  int64_t other = ::sqlite3_memory_used() - totalConnSize;
+  int64_t other = static_cast<int64_t>(::sqlite3_memory_used() - totalConnSize);
 
   MOZ_COLLECT_REPORT("explicit/storage/sqlite/other", KIND_HEAP, UNITS_BYTES,
                      other, "All unclassified sqlite memory.");
@@ -202,7 +202,8 @@ Service::AutoVFSRegistration::~AutoVFSRegistration() {
 Service::Service()
     : mMutex("Service::mMutex"),
       mRegistrationMutex("Service::mRegistrationMutex"),
-      mConnections() {}
+      mConnections(),
+      mLastSensitivity(mozilla::intl::Collator::Sensitivity::Base) {}
 
 Service::~Service() {
   mozilla::UnregisterWeakMemoryReporter(this);
@@ -375,8 +376,8 @@ nsresult Service::initialize() {
   nsCOMPtr<nsIObserverService> os = mozilla::services::GetObserverService();
   NS_ENSURE_TRUE(os, NS_ERROR_FAILURE);
 
-  for (size_t i = 0; i < ArrayLength(sObserverTopics); ++i) {
-    nsresult rv = os->AddObserver(this, sObserverTopics[i], false);
+  for (auto& sObserverTopic : sObserverTopics) {
+    nsresult rv = os->AddObserver(this, sObserverTopic, false);
     if (NS_WARN_IF(NS_FAILED(rv))) {
       return rv;
     }
@@ -468,8 +469,8 @@ Service::OpenSpecialDatabase(const nsACString& aStorageKey,
   }
 
   RefPtr<Connection> msc =
-      new Connection(this, flags, Connection::SYNCHRONOUS, interruptible);
-
+      new Connection(this, flags, Connection::SYNCHRONOUS,
+                     kMozStorageMemoryStorageKey, interruptible);
   const nsresult rv = msc->initialize(aStorageKey, aName);
   NS_ENSURE_SUCCESS(rv, rv);
 
@@ -588,8 +589,15 @@ Service::OpenAsyncDatabase(nsIVariant* aDatabaseStore, uint32_t aOpenFlags,
   }
 
   // Create connection on this thread, but initialize it on its helper thread.
+  nsAutoCString telemetryFilename;
+  if (!storageFile) {
+    telemetryFilename.Assign(kMozStorageMemoryStorageKey);
+  } else {
+    rv = storageFile->GetNativeLeafName(telemetryFilename);
+    NS_ENSURE_SUCCESS(rv, rv);
+  }
   RefPtr<Connection> msc =
-      new Connection(this, flags, Connection::ASYNCHRONOUS,
+      new Connection(this, flags, Connection::ASYNCHRONOUS, telemetryFilename,
                      /* interruptible */ true, ignoreLockingMode);
   nsCOMPtr<nsIEventTarget> target = msc->getAsyncExecutionTarget();
   MOZ_ASSERT(target,
@@ -612,10 +620,12 @@ Service::OpenDatabase(nsIFile* aDatabaseFile, uint32_t aConnectionFlags,
   // reasons.
   const int flags =
       SQLITE_OPEN_READWRITE | SQLITE_OPEN_SHAREDCACHE | SQLITE_OPEN_CREATE;
-  RefPtr<Connection> msc =
-      new Connection(this, flags, Connection::SYNCHRONOUS, interruptible);
-
-  const nsresult rv = msc->initialize(aDatabaseFile);
+  nsAutoCString telemetryFilename;
+  nsresult rv = aDatabaseFile->GetNativeLeafName(telemetryFilename);
+  NS_ENSURE_SUCCESS(rv, rv);
+  RefPtr<Connection> msc = new Connection(this, flags, Connection::SYNCHRONOUS,
+                                          telemetryFilename, interruptible);
+  rv = msc->initialize(aDatabaseFile);
   NS_ENSURE_SUCCESS(rv, rv);
 
   msc.forget(_connection);
@@ -634,10 +644,12 @@ Service::OpenUnsharedDatabase(nsIFile* aDatabaseFile, uint32_t aConnectionFlags,
   // reasons.
   const int flags =
       SQLITE_OPEN_READWRITE | SQLITE_OPEN_PRIVATECACHE | SQLITE_OPEN_CREATE;
-  RefPtr<Connection> msc =
-      new Connection(this, flags, Connection::SYNCHRONOUS, interruptible);
-
-  const nsresult rv = msc->initialize(aDatabaseFile);
+  nsAutoCString telemetryFilename;
+  nsresult rv = aDatabaseFile->GetNativeLeafName(telemetryFilename);
+  NS_ENSURE_SUCCESS(rv, rv);
+  RefPtr<Connection> msc = new Connection(this, flags, Connection::SYNCHRONOUS,
+                                          telemetryFilename, interruptible);
+  rv = msc->initialize(aDatabaseFile);
   NS_ENSURE_SUCCESS(rv, rv);
 
   msc.forget(_connection);
@@ -658,10 +670,20 @@ Service::OpenDatabaseWithFileURL(nsIFileURL* aFileURL,
   // reasons.
   const int flags = SQLITE_OPEN_READWRITE | SQLITE_OPEN_SHAREDCACHE |
                     SQLITE_OPEN_CREATE | SQLITE_OPEN_URI;
-  RefPtr<Connection> msc =
-      new Connection(this, flags, Connection::SYNCHRONOUS, interruptible);
-
-  const nsresult rv = msc->initialize(aFileURL, aTelemetryFilename);
+  nsresult rv;
+  nsAutoCString telemetryFilename;
+  if (!aTelemetryFilename.IsEmpty()) {
+    telemetryFilename = aTelemetryFilename;
+  } else {
+    nsCOMPtr<nsIFile> databaseFile;
+    rv = aFileURL->GetFile(getter_AddRefs(databaseFile));
+    NS_ENSURE_SUCCESS(rv, rv);
+    rv = databaseFile->GetNativeLeafName(telemetryFilename);
+    NS_ENSURE_SUCCESS(rv, rv);
+  }
+  RefPtr<Connection> msc = new Connection(this, flags, Connection::SYNCHRONOUS,
+                                          telemetryFilename, interruptible);
+  rv = msc->initialize(aFileURL);
   NS_ENSURE_SUCCESS(rv, rv);
 
   msc.forget(_connection);
@@ -719,8 +741,8 @@ Service::Observe(nsISupports*, const char* aTopic, const char16_t*) {
 
     nsCOMPtr<nsIObserverService> os = mozilla::services::GetObserverService();
 
-    for (size_t i = 0; i < ArrayLength(sObserverTopics); ++i) {
-      (void)os->RemoveObserver(this, sObserverTopics[i]);
+    for (auto& sObserverTopic : sObserverTopics) {
+      (void)os->RemoveObserver(this, sObserverTopic);
     }
 
     SpinEventLoopUntil("storage::Service::Observe(xpcom-shutdown-threads)"_ns,
@@ -758,5 +780,4 @@ Service::Observe(nsISupports*, const char* aTopic, const char16_t*) {
   return NS_OK;
 }
 
-}  // namespace storage
-}  // namespace mozilla
+}  // namespace mozilla::storage

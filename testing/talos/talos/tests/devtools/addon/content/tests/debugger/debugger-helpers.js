@@ -17,7 +17,7 @@ const {
  * have been simplified. We may want to consider unifying them in the future
  */
 
-const DEBUGGER_POLLING_INTERVAL = 50;
+const DEBUGGER_POLLING_INTERVAL = 25;
 
 function waitForState(dbg, predicate, msg) {
   return new Promise(resolve => {
@@ -44,15 +44,21 @@ function waitForState(dbg, predicate, msg) {
   });
 }
 
-function waitForDispatch(dbg, type) {
+function waitForDispatch(dbg, type, count = 1) {
   return new Promise(resolve => {
     dbg.store.dispatch({
       type: "@@service/waitUntil",
       predicate: action => {
-        if (action.type === type) {
-          return action.status
-            ? action.status === "done" || action.status === "error"
-            : true;
+        if (
+          action.type === type &&
+          (!action.status ||
+            action.status === "done" ||
+            action.status === "error")
+        ) {
+          --count;
+          if (count === 0) {
+            return true;
+          }
         }
         return false;
       },
@@ -66,6 +72,13 @@ function waitForDispatch(dbg, type) {
 async function waitUntil(predicate, msg) {
   if (msg) {
     dump(`Waiting until: ${msg}\n`);
+  }
+  const earlyPredicateResult = predicate();
+  if (earlyPredicateResult) {
+    if (msg) {
+      dump(`Finished Waiting until: ${msg} (was immediately true)\n`);
+    }
+    return earlyPredicateResult;
   }
   return new Promise(resolve => {
     const timer = setInterval(() => {
@@ -133,6 +146,16 @@ function waitForSource(dbg, sourceURL) {
 }
 exports.waitForSource = waitForSource;
 
+function waitForThreadCount(dbg, count) {
+  const { selectors } = dbg;
+  function threadCount(state) {
+    // getThreads doesn't count the main thread
+    // and don't use getAllThreads as it does useless expensive computations.
+    return selectors.getThreads(state).length + 1 == count;
+  }
+  return waitForState(dbg, threadCount, `has source ${count} threads`);
+}
+
 async function waitForPaused(dbg) {
   const onLoadedScope = waitForLoadedScopes(dbg);
   const {
@@ -178,12 +201,15 @@ function createContext(panel) {
 }
 exports.createContext = createContext;
 
-function selectSource(dbg, url) {
+async function selectSource(dbg, url) {
   dump(`Selecting source: ${url}\n`);
   const line = 1;
   const source = findSource(dbg, url);
-  const cx = dbg.selectors.getContext(dbg.getState());
-  dbg.actions.selectLocation(cx, createLocation({ source, line }));
+  // keepContext set to false allows to force selecting original/generated source
+  // regardless if we were currently selecting the opposite type of source.
+  await dbg.actions.selectLocation(createLocation({ source, line }), {
+    keepContext: false,
+  });
   return waitForState(
     dbg,
     state => {
@@ -206,7 +232,7 @@ function selectSource(dbg, url) {
 }
 exports.selectSource = selectSource;
 
-function evalInContent(tab, testFunction) {
+function evalInFrame(tab, testFunction) {
   dump(`Run function in content process: ${testFunction}\n`);
   // Load a frame script using a data URI so we can run a script
   // inside of the content process and trigger debugger functionality
@@ -218,16 +244,18 @@ function evalInContent(tab, testFunction) {
         function () {
           const iframe = content.document.querySelector("iframe");
           const win = iframe.contentWindow;
-          win.eval("${testFunction}");
+          win.eval(\`${testFunction}\`);
         }`) +
       ")()",
     true
   );
 }
+exports.evalInFrame = evalInFrame;
 
 async function openDebuggerAndLog(label, expected) {
   const onLoad = async (toolbox, panel) => {
     const dbg = await createContext(panel);
+    await waitForThreadCount(dbg, expected.threadsCount);
     await waitForSource(dbg, expected.sourceURL);
     await selectSource(dbg, expected.file);
     await waitForText(dbg, expected.text);
@@ -247,8 +275,15 @@ async function reloadDebuggerAndLog(label, toolbox, expected) {
   const onReload = async () => {
     const panel = await toolbox.getPanelWhenReady("jsdebugger");
     const dbg = await createContext(panel);
-    await waitForDispatch(dbg, "NAVIGATE");
+
+    // First wait for all previous page threads to be removed
+    await waitForDispatch(dbg, "REMOVE_THREAD", expected.threadsCount);
+    // Only after that wait for all new threads to be registered before doing more assertions
+    // Otherwise we may resolve too soon on previous page sources.
+    await waitForThreadCount(dbg, expected.threadsCount);
+
     await waitForSources(dbg, expected.sources);
+    await waitForSource(dbg, expected.sourceURL);
     await waitForText(dbg, expected.text);
     await waitForSymbols(dbg);
   };
@@ -266,8 +301,7 @@ async function addBreakpoint(dbg, line, url) {
 
   await selectSource(dbg, url);
 
-  const cx = dbg.selectors.getContext(dbg.getState());
-  await dbg.actions.addBreakpoint(cx, location);
+  await dbg.actions.addBreakpoint(location);
 }
 exports.addBreakpoint = addBreakpoint;
 
@@ -279,8 +313,7 @@ async function removeBreakpoints(dbg, line, url) {
     dbg,
     state => dbg.selectors.getBreakpointCount(state) === 0
   );
-  const cx = dbg.selectors.getContext(dbg.getState());
-  await dbg.actions.removeBreakpoints(cx, breakpoints);
+  await dbg.actions.removeBreakpoints(breakpoints);
   return onBreakpointsCleared;
 }
 exports.removeBreakpoints = removeBreakpoints;
@@ -288,37 +321,31 @@ exports.removeBreakpoints = removeBreakpoints;
 async function pauseDebugger(dbg, tab, testFunction, { line, file }) {
   await addBreakpoint(dbg, line, file);
   const onPaused = waitForPaused(dbg);
-  await evalInContent(tab, testFunction);
+  await evalInFrame(tab, testFunction);
   return onPaused;
 }
 exports.pauseDebugger = pauseDebugger;
 
 async function resume(dbg) {
   const onResumed = waitForResumed(dbg);
-  const cx = dbg.selectors.getThreadContext(dbg.getState());
-  dbg.actions.resume(cx);
+  dbg.actions.resume();
   return onResumed;
 }
 exports.resume = resume;
 
 async function step(dbg, stepType) {
   const resumed = waitForResumed(dbg);
-  const cx = dbg.selectors.getThreadContext(dbg.getState());
-  dbg.actions[stepType](cx);
+  dbg.actions[stepType]();
   await resumed;
   return waitForPaused(dbg);
 }
 exports.step = step;
 
-async function hoverOnToken(dbg, cx, textToWaitFor, textToHover) {
+async function hoverOnToken(dbg, textToWaitFor, textToHover) {
   await waitForText(dbg, textToWaitFor);
   const tokenElement = [
     ...dbg.win.document.querySelectorAll(".CodeMirror span"),
-  ].find(el => el.textContent === "window");
-
-  // Set the :hover state on the token Element, otherwise the preview popup
-  // will not be displayed.
-  InspectorUtils.addPseudoClassLock(tokenElement, ":hover", true);
+  ].find(el => el.textContent === textToHover);
 
   const mouseOverEvent = new dbg.win.MouseEvent("mouseover", {
     bubbles: true,
@@ -326,13 +353,46 @@ async function hoverOnToken(dbg, cx, textToWaitFor, textToHover) {
     view: dbg.win,
   });
   tokenElement.dispatchEvent(mouseOverEvent);
+  const mouseMoveEvent = new dbg.win.MouseEvent("mousemove", {
+    bubbles: true,
+    cancelable: true,
+    view: dbg.win,
+  });
+  tokenElement.dispatchEvent(mouseMoveEvent);
 
-  const setPreviewDispatch = waitForDispatch(dbg, "SET_PREVIEW");
-  const tokenPosition = { line: 21, column: 3 };
-  dbg.actions.updatePreview(cx, tokenElement, tokenPosition, getCM(dbg));
-  await setPreviewDispatch;
+  // Unfortunately, dispatching mouseover/mousemove manually via MouseEvent
+  // isn't enough to toggle the :hover, so manually toggle it.
+  // (For some reason, the EventUtils helpers used by mochitests help)
+  InspectorUtils.addPseudoClassLock(tokenElement, ":hover", true);
 
-  // Remove the :hover state.
+  dump("Waiting for the preview popup to show\n");
+  await waitUntil(() =>
+    tokenElement.ownerDocument.querySelector(".preview-popup")
+  );
+
+  const mouseOutEvent = new dbg.win.MouseEvent("mouseout", {
+    bubbles: true,
+    cancelable: true,
+    view: dbg.win,
+  });
+  tokenElement.dispatchEvent(mouseOutEvent);
+
+  const mouseMoveOutEvent = new dbg.win.MouseEvent("mousemove", {
+    bubbles: true,
+    cancelable: true,
+    view: dbg.win,
+  });
+  // See shared-head file, for why picking this element
+  const element = tokenElement.ownerDocument.querySelector(
+    ".debugger-settings-menu-button"
+  );
+  element.dispatchEvent(mouseMoveOutEvent);
+
   InspectorUtils.removePseudoClassLock(tokenElement, ":hover");
+
+  dump("Waiting for the preview popup to hide\n");
+  await waitUntil(
+    () => !tokenElement.ownerDocument.querySelector(".preview-popup")
+  );
 }
 exports.hoverOnToken = hoverOnToken;

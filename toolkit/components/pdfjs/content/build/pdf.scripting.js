@@ -22,13 +22,13 @@
 
 (function webpackUniversalModuleDefinition(root, factory) {
 	if(typeof exports === 'object' && typeof module === 'object')
-		module.exports = factory();
+		module.exports = root.pdfjsScripting = factory();
 	else if(typeof define === 'function' && define.amd)
-		define("pdfjs-dist/build/pdf.scripting", [], factory);
+		define("pdfjs-dist/build/pdf.scripting", [], () => { return (root.pdfjsScripting = factory()); });
 	else if(typeof exports === 'object')
-		exports["pdfjs-dist/build/pdf.scripting"] = factory();
+		exports["pdfjs-dist/build/pdf.scripting"] = root.pdfjsScripting = factory();
 	else
-		root.pdfjsScripting = factory();
+		root["pdfjs-dist/build/pdf.scripting"] = root.pdfjsScripting = factory();
 })(globalThis, () => {
 return /******/ (() => { // webpackBootstrap
 /******/ 	"use strict";
@@ -48,10 +48,11 @@ var _field = __w_pdfjs_require__(3);
 var _aform = __w_pdfjs_require__(8);
 var _app = __w_pdfjs_require__(9);
 var _color = __w_pdfjs_require__(5);
-var _console = __w_pdfjs_require__(15);
-var _doc = __w_pdfjs_require__(11);
-var _proxy = __w_pdfjs_require__(16);
-var _util = __w_pdfjs_require__(17);
+var _console = __w_pdfjs_require__(14);
+var _doc = __w_pdfjs_require__(15);
+var _proxy = __w_pdfjs_require__(17);
+var _app_utils = __w_pdfjs_require__(10);
+var _util = __w_pdfjs_require__(18);
 function initSandbox(params) {
   delete globalThis.pdfjsScripting;
   const externalCall = globalThis.callExternalFunction;
@@ -216,11 +217,7 @@ function initSandbox(params) {
     try {
       functions[name](args);
     } catch (error) {
-      const value = `${error.toString()}\n${error.stack}`;
-      send({
-        command: "error",
-        value
-      });
+      send((0, _app_utils.serializeError)(error));
     }
   };
 }
@@ -477,12 +474,10 @@ class Field extends _pdf_object.PDFObject {
       indices.forEach(i => {
         this._value.push(this._items[i].displayValue);
       });
-    } else {
-      if (indices.length > 0) {
-        indices = indices.splice(1, indices.length - 1);
-        this._currentValueIndices = indices[0];
-        this._value = this._items[this._currentValueIndices];
-      }
+    } else if (indices.length > 0) {
+      indices = indices.splice(1, indices.length - 1);
+      this._currentValueIndices = indices[0];
+      this._value = this._items[this._currentValueIndices];
     }
     this._send({
       id: this._id,
@@ -691,12 +686,10 @@ class Field extends _pdf_object.PDFObject {
           --this._currentValueIndices[index];
         }
       }
-    } else {
-      if (this._currentValueIndices === nIdx) {
-        this._currentValueIndices = this.numItems > 0 ? 0 : -1;
-      } else if (this._currentValueIndices > nIdx) {
-        --this._currentValueIndices;
-      }
+    } else if (this._currentValueIndices === nIdx) {
+      this._currentValueIndices = this.numItems > 0 ? 0 : -1;
+    } else if (this._currentValueIndices > nIdx) {
+      --this._currentValueIndices;
     }
     this._send({
       id: this._id,
@@ -1128,6 +1121,9 @@ exports.ColorConverters = void 0;
 function makeColorComp(n) {
   return Math.floor(Math.max(0, Math.min(1, n)) * 255).toString(16).padStart(2, "0");
 }
+function scaleAndClamp(x) {
+  return Math.max(0, Math.min(255, 255 * x));
+}
 class ColorConverters {
   static CMYK_G([c, y, m, k]) {
     return ["G", 1 - Math.min(1, 0.3 * c + 0.59 * m + 0.11 * y + k)];
@@ -1138,6 +1134,10 @@ class ColorConverters {
   static G_RGB([g]) {
     return ["RGB", g, g, g];
   }
+  static G_rgb([g]) {
+    g = scaleAndClamp(g);
+    return [g, g, g];
+  }
   static G_HTML([g]) {
     const G = makeColorComp(g);
     return `#${G}${G}${G}`;
@@ -1145,17 +1145,23 @@ class ColorConverters {
   static RGB_G([r, g, b]) {
     return ["G", 0.3 * r + 0.59 * g + 0.11 * b];
   }
-  static RGB_HTML([r, g, b]) {
-    const R = makeColorComp(r);
-    const G = makeColorComp(g);
-    const B = makeColorComp(b);
-    return `#${R}${G}${B}`;
+  static RGB_rgb(color) {
+    return color.map(scaleAndClamp);
+  }
+  static RGB_HTML(color) {
+    return `#${color.map(makeColorComp).join("")}`;
   }
   static T_HTML() {
     return "#00000000";
   }
+  static T_rgb() {
+    return [null];
+  }
   static CMYK_RGB([c, y, m, k]) {
     return ["RGB", 1 - Math.min(1, c + k), 1 - Math.min(1, m + k), 1 - Math.min(1, y + k)];
+  }
+  static CMYK_rgb([c, y, m, k]) {
+    return [scaleAndClamp(1 - Math.min(1, c + k)), scaleAndClamp(1 - Math.min(1, m + k)), scaleAndClamp(1 - Math.min(1, y + k))];
   }
   static CMYK_HTML(components) {
     const rgb = this.CMYK_RGB(components).slice(1);
@@ -1297,14 +1303,10 @@ class AForm {
     let date = null;
     try {
       date = this._util.scand(cFormat, cDate);
-    } catch (error) {}
+    } catch {}
     if (!date) {
       date = Date.parse(cDate);
-      if (isNaN(date)) {
-        date = this._tryToGuessDate(cFormat, cDate);
-      } else {
-        date = new Date(date);
-      }
+      date = isNaN(date) ? this._tryToGuessDate(cFormat, cDate) : new Date(date);
     }
     return date;
   }
@@ -1442,11 +1444,7 @@ class AForm {
     }
     const formatStr = `%,${sepStyle}.${nDec}f`;
     value = this._util.printf(formatStr, value * 100);
-    if (percentPrepend) {
-      event.value = `%${value}`;
-    } else {
-      event.value = `${value}%`;
-    }
+    event.value = percentPrepend ? `%${value}` : `${value}%`;
   }
   AFPercent_Keystroke(nDec, sepStyle) {
     this.AFNumber_Keystroke(nDec, sepStyle, 0, 0, "", true);
@@ -1600,11 +1598,7 @@ class AForm {
         formatStr = "99999-9999";
         break;
       case 2:
-        if (this._util.printx("9999999999", event.value).length >= 10) {
-          formatStr = "(999) 999-9999";
-        } else {
-          formatStr = "999-9999";
-        }
+        formatStr = this._util.printx("9999999999", event.value).length >= 10 ? "(999) 999-9999" : "999-9999";
         break;
       case 3:
         formatStr = "999-99-9999";
@@ -1680,11 +1674,7 @@ class AForm {
         break;
       case 2:
         const value = this.AFMergeChange(event);
-        if (value.length > 8 || value.startsWith("(")) {
-          formatStr = "(999) 999-9999";
-        } else {
-          formatStr = "999-9999";
-        }
+        formatStr = value.length > 8 || value.startsWith("(") ? "(999) 999-9999" : "999-9999";
         break;
       case 3:
         formatStr = "999-99-9999";
@@ -1731,18 +1721,13 @@ exports.AForm = AForm;
 Object.defineProperty(exports, "__esModule", ({
   value: true
 }));
-exports.USERACTIVATION_CALLBACKID = exports.App = void 0;
+exports.App = void 0;
+var _app_utils = __w_pdfjs_require__(10);
 var _color = __w_pdfjs_require__(5);
-var _event = __w_pdfjs_require__(10);
-var _fullscreen = __w_pdfjs_require__(13);
+var _event = __w_pdfjs_require__(11);
+var _fullscreen = __w_pdfjs_require__(12);
 var _pdf_object = __w_pdfjs_require__(7);
-var _thermometer = __w_pdfjs_require__(14);
-const VIEWER_TYPE = "PDF.js";
-const VIEWER_VARIATION = "Full";
-const VIEWER_VERSION = 21.00720099;
-const FORMS_VERSION = 21.00720099;
-const USERACTIVATION_CALLBACKID = 0;
-exports.USERACTIVATION_CALLBACKID = USERACTIVATION_CALLBACKID;
+var _thermometer = __w_pdfjs_require__(13);
 class App extends _pdf_object.PDFObject {
   constructor(data) {
     super(data);
@@ -1767,7 +1752,7 @@ class App extends _pdf_object.PDFObject {
       this._timeoutIdsRegistry = null;
     }
     this._timeoutCallbackIds = new Map();
-    this._timeoutCallbackId = USERACTIVATION_CALLBACKID + 1;
+    this._timeoutCallbackId = _app_utils.USERACTIVATION_CALLBACKID + 1;
     this._globalEval = data.globalEval;
     this._externalCall = data.externalCall;
   }
@@ -1786,7 +1771,7 @@ class App extends _pdf_object.PDFObject {
     callbackId,
     interval
   }) {
-    if (callbackId === USERACTIVATION_CALLBACKID) {
+    if (callbackId === _app_utils.USERACTIVATION_CALLBACKID) {
       this._document.obj._userActivation = false;
       return;
     }
@@ -1914,7 +1899,7 @@ class App extends _pdf_object.PDFObject {
     this._focusRect = val;
   }
   get formsVersion() {
-    return FORMS_VERSION;
+    return _app_utils.FORMS_VERSION;
   }
   set formsVersion(_) {
     throw new Error("app.formsVersion is read-only");
@@ -2034,19 +2019,19 @@ class App extends _pdf_object.PDFObject {
     this.toolbar = value;
   }
   get viewerType() {
-    return VIEWER_TYPE;
+    return _app_utils.VIEWER_TYPE;
   }
   set viewerType(_) {
     throw new Error("app.viewerType is read-only");
   }
   get viewerVariation() {
-    return VIEWER_VARIATION;
+    return _app_utils.VIEWER_VARIATION;
   }
   set viewerVariation(_) {
     throw new Error("app.viewerVariation is read-only");
   }
   get viewerVersion() {
-    return VIEWER_VERSION;
+    return _app_utils.VIEWER_VERSION;
   }
   set viewerVersion(_) {
     throw new Error("app.viewerVersion is read-only");
@@ -2188,6 +2173,37 @@ exports.App = App;
 
 /***/ }),
 /* 10 */
+/***/ ((__unused_webpack_module, exports) => {
+
+
+
+Object.defineProperty(exports, "__esModule", ({
+  value: true
+}));
+exports.VIEWER_VERSION = exports.VIEWER_VARIATION = exports.VIEWER_TYPE = exports.USERACTIVATION_MAXTIME_VALIDITY = exports.USERACTIVATION_CALLBACKID = exports.FORMS_VERSION = void 0;
+exports.serializeError = serializeError;
+const VIEWER_TYPE = "PDF.js";
+exports.VIEWER_TYPE = VIEWER_TYPE;
+const VIEWER_VARIATION = "Full";
+exports.VIEWER_VARIATION = VIEWER_VARIATION;
+const VIEWER_VERSION = 21.00720099;
+exports.VIEWER_VERSION = VIEWER_VERSION;
+const FORMS_VERSION = 21.00720099;
+exports.FORMS_VERSION = FORMS_VERSION;
+const USERACTIVATION_CALLBACKID = 0;
+exports.USERACTIVATION_CALLBACKID = USERACTIVATION_CALLBACKID;
+const USERACTIVATION_MAXTIME_VALIDITY = 5000;
+exports.USERACTIVATION_MAXTIME_VALIDITY = USERACTIVATION_MAXTIME_VALIDITY;
+function serializeError(error) {
+  const value = `${error.toString()}\n${error.stack}`;
+  return {
+    command: "error",
+    value
+  };
+}
+
+/***/ }),
+/* 11 */
 /***/ ((__unused_webpack_module, exports, __w_pdfjs_require__) => {
 
 
@@ -2196,8 +2212,7 @@ Object.defineProperty(exports, "__esModule", ({
   value: true
 }));
 exports.EventDispatcher = exports.Event = void 0;
-var _doc = __w_pdfjs_require__(11);
-const USERACTIVATION_MAXTIME_VALIDITY = 5000;
+var _app_utils = __w_pdfjs_require__(10);
 class Event {
   constructor(data) {
     this.change = data.change || "";
@@ -2246,7 +2261,7 @@ class EventDispatcher {
   }
   userActivation() {
     this._document.obj._userActivation = true;
-    this._externalCall("setTimeout", [_doc.USERACTIVATION_CALLBACKID, USERACTIVATION_MAXTIME_VALIDITY]);
+    this._externalCall("setTimeout", [_app_utils.USERACTIVATION_CALLBACKID, _app_utils.USERACTIVATION_MAXTIME_VALIDITY]);
   }
   dispatch(baseEvent) {
     const id = baseEvent.id;
@@ -2474,7 +2489,160 @@ class EventDispatcher {
 exports.EventDispatcher = EventDispatcher;
 
 /***/ }),
-/* 11 */
+/* 12 */
+/***/ ((__unused_webpack_module, exports, __w_pdfjs_require__) => {
+
+
+
+Object.defineProperty(exports, "__esModule", ({
+  value: true
+}));
+exports.FullScreen = void 0;
+var _constants = __w_pdfjs_require__(2);
+var _pdf_object = __w_pdfjs_require__(7);
+class FullScreen extends _pdf_object.PDFObject {
+  constructor(data) {
+    super(data);
+    this._backgroundColor = [];
+    this._clickAdvances = true;
+    this._cursor = _constants.Cursor.hidden;
+    this._defaultTransition = "";
+    this._escapeExits = true;
+    this._isFullScreen = true;
+    this._loop = false;
+    this._timeDelay = 3600;
+    this._usePageTiming = false;
+    this._useTimer = false;
+  }
+  get backgroundColor() {
+    return this._backgroundColor;
+  }
+  set backgroundColor(_) {}
+  get clickAdvances() {
+    return this._clickAdvances;
+  }
+  set clickAdvances(_) {}
+  get cursor() {
+    return this._cursor;
+  }
+  set cursor(_) {}
+  get defaultTransition() {
+    return this._defaultTransition;
+  }
+  set defaultTransition(_) {}
+  get escapeExits() {
+    return this._escapeExits;
+  }
+  set escapeExits(_) {}
+  get isFullScreen() {
+    return this._isFullScreen;
+  }
+  set isFullScreen(_) {}
+  get loop() {
+    return this._loop;
+  }
+  set loop(_) {}
+  get timeDelay() {
+    return this._timeDelay;
+  }
+  set timeDelay(_) {}
+  get transitions() {
+    return ["Replace", "WipeRight", "WipeLeft", "WipeDown", "WipeUp", "SplitHorizontalIn", "SplitHorizontalOut", "SplitVerticalIn", "SplitVerticalOut", "BlindsHorizontal", "BlindsVertical", "BoxIn", "BoxOut", "GlitterRight", "GlitterDown", "GlitterRightDown", "Dissolve", "Random"];
+  }
+  set transitions(_) {
+    throw new Error("fullscreen.transitions is read-only");
+  }
+  get usePageTiming() {
+    return this._usePageTiming;
+  }
+  set usePageTiming(_) {}
+  get useTimer() {
+    return this._useTimer;
+  }
+  set useTimer(_) {}
+}
+exports.FullScreen = FullScreen;
+
+/***/ }),
+/* 13 */
+/***/ ((__unused_webpack_module, exports, __w_pdfjs_require__) => {
+
+
+
+Object.defineProperty(exports, "__esModule", ({
+  value: true
+}));
+exports.Thermometer = void 0;
+var _pdf_object = __w_pdfjs_require__(7);
+class Thermometer extends _pdf_object.PDFObject {
+  constructor(data) {
+    super(data);
+    this._cancelled = false;
+    this._duration = 100;
+    this._text = "";
+    this._value = 0;
+  }
+  get cancelled() {
+    return this._cancelled;
+  }
+  set cancelled(_) {
+    throw new Error("thermometer.cancelled is read-only");
+  }
+  get duration() {
+    return this._duration;
+  }
+  set duration(val) {
+    this._duration = val;
+  }
+  get text() {
+    return this._text;
+  }
+  set text(val) {
+    this._text = val;
+  }
+  get value() {
+    return this._value;
+  }
+  set value(val) {
+    this._value = val;
+  }
+  begin() {}
+  end() {}
+}
+exports.Thermometer = Thermometer;
+
+/***/ }),
+/* 14 */
+/***/ ((__unused_webpack_module, exports, __w_pdfjs_require__) => {
+
+
+
+Object.defineProperty(exports, "__esModule", ({
+  value: true
+}));
+exports.Console = void 0;
+var _pdf_object = __w_pdfjs_require__(7);
+class Console extends _pdf_object.PDFObject {
+  clear() {
+    this._send({
+      id: "clear"
+    });
+  }
+  hide() {}
+  println(msg) {
+    if (typeof msg === "string") {
+      this._send({
+        command: "println",
+        value: "PDF.js Console:: " + msg
+      });
+    }
+  }
+  show() {}
+}
+exports.Console = Console;
+
+/***/ }),
+/* 15 */
 /***/ ((__unused_webpack_module, exports, __w_pdfjs_require__) => {
 
 
@@ -2485,7 +2653,8 @@ Object.defineProperty(exports, "__esModule", ({
 exports.Doc = void 0;
 var _common = __w_pdfjs_require__(4);
 var _pdf_object = __w_pdfjs_require__(7);
-var _print_params = __w_pdfjs_require__(12);
+var _print_params = __w_pdfjs_require__(16);
+var _app_utils = __w_pdfjs_require__(10);
 var _constants = __w_pdfjs_require__(2);
 const DOC_EXTERNAL = false;
 class InfoProxyHandler {
@@ -2565,20 +2734,31 @@ class Doc extends _pdf_object.PDFObject {
     this._disableSaving = false;
   }
   _dispatchDocEvent(name) {
-    if (name === "Open") {
-      this._disableSaving = true;
-      this._runActions("OpenAction");
-      this._disableSaving = false;
-    } else if (name === "WillPrint") {
-      this._disablePrinting = true;
-      this._runActions(name);
-      this._disablePrinting = false;
-    } else if (name === "WillSave") {
-      this._disableSaving = true;
-      this._runActions(name);
-      this._disableSaving = false;
-    } else {
-      this._runActions(name);
+    switch (name) {
+      case "Open":
+        this._disableSaving = true;
+        this._runActions("OpenAction");
+        this._disableSaving = false;
+        break;
+      case "WillPrint":
+        this._disablePrinting = true;
+        try {
+          this._runActions(name);
+        } catch (error) {
+          this._send((0, _app_utils.serializeError)(error));
+        }
+        this._send({
+          command: "WillPrintFinished"
+        });
+        this._disablePrinting = false;
+        break;
+      case "WillSave":
+        this._disableSaving = true;
+        this._runActions(name);
+        this._disableSaving = false;
+        break;
+      default:
+        this._runActions(name);
     }
   }
   _dispatchPageEvent(name, actions, pageNumber) {
@@ -3218,16 +3398,8 @@ class Doc extends _pdf_object.PDFObject {
       nStart = printParams.firstPage;
       nEnd = printParams.lastPage;
     }
-    if (typeof nStart === "number") {
-      nStart = Math.max(0, Math.trunc(nStart));
-    } else {
-      nStart = 0;
-    }
-    if (typeof nEnd === "number") {
-      nEnd = Math.max(0, Math.trunc(nEnd));
-    } else {
-      nEnd = -1;
-    }
+    nStart = typeof nStart === "number" ? Math.max(0, Math.trunc(nStart)) : 0;
+    nEnd = typeof nEnd === "number" ? Math.max(0, Math.trunc(nEnd)) : -1;
     this._send({
       command: "print",
       start: nStart,
@@ -3308,7 +3480,7 @@ class Doc extends _pdf_object.PDFObject {
 exports.Doc = Doc;
 
 /***/ }),
-/* 12 */
+/* 16 */
 /***/ ((__unused_webpack_module, exports) => {
 
 
@@ -3449,160 +3621,7 @@ class PrintParams {
 exports.PrintParams = PrintParams;
 
 /***/ }),
-/* 13 */
-/***/ ((__unused_webpack_module, exports, __w_pdfjs_require__) => {
-
-
-
-Object.defineProperty(exports, "__esModule", ({
-  value: true
-}));
-exports.FullScreen = void 0;
-var _constants = __w_pdfjs_require__(2);
-var _pdf_object = __w_pdfjs_require__(7);
-class FullScreen extends _pdf_object.PDFObject {
-  constructor(data) {
-    super(data);
-    this._backgroundColor = [];
-    this._clickAdvances = true;
-    this._cursor = _constants.Cursor.hidden;
-    this._defaultTransition = "";
-    this._escapeExits = true;
-    this._isFullScreen = true;
-    this._loop = false;
-    this._timeDelay = 3600;
-    this._usePageTiming = false;
-    this._useTimer = false;
-  }
-  get backgroundColor() {
-    return this._backgroundColor;
-  }
-  set backgroundColor(_) {}
-  get clickAdvances() {
-    return this._clickAdvances;
-  }
-  set clickAdvances(_) {}
-  get cursor() {
-    return this._cursor;
-  }
-  set cursor(_) {}
-  get defaultTransition() {
-    return this._defaultTransition;
-  }
-  set defaultTransition(_) {}
-  get escapeExits() {
-    return this._escapeExits;
-  }
-  set escapeExits(_) {}
-  get isFullScreen() {
-    return this._isFullScreen;
-  }
-  set isFullScreen(_) {}
-  get loop() {
-    return this._loop;
-  }
-  set loop(_) {}
-  get timeDelay() {
-    return this._timeDelay;
-  }
-  set timeDelay(_) {}
-  get transitions() {
-    return ["Replace", "WipeRight", "WipeLeft", "WipeDown", "WipeUp", "SplitHorizontalIn", "SplitHorizontalOut", "SplitVerticalIn", "SplitVerticalOut", "BlindsHorizontal", "BlindsVertical", "BoxIn", "BoxOut", "GlitterRight", "GlitterDown", "GlitterRightDown", "Dissolve", "Random"];
-  }
-  set transitions(_) {
-    throw new Error("fullscreen.transitions is read-only");
-  }
-  get usePageTiming() {
-    return this._usePageTiming;
-  }
-  set usePageTiming(_) {}
-  get useTimer() {
-    return this._useTimer;
-  }
-  set useTimer(_) {}
-}
-exports.FullScreen = FullScreen;
-
-/***/ }),
-/* 14 */
-/***/ ((__unused_webpack_module, exports, __w_pdfjs_require__) => {
-
-
-
-Object.defineProperty(exports, "__esModule", ({
-  value: true
-}));
-exports.Thermometer = void 0;
-var _pdf_object = __w_pdfjs_require__(7);
-class Thermometer extends _pdf_object.PDFObject {
-  constructor(data) {
-    super(data);
-    this._cancelled = false;
-    this._duration = 100;
-    this._text = "";
-    this._value = 0;
-  }
-  get cancelled() {
-    return this._cancelled;
-  }
-  set cancelled(_) {
-    throw new Error("thermometer.cancelled is read-only");
-  }
-  get duration() {
-    return this._duration;
-  }
-  set duration(val) {
-    this._duration = val;
-  }
-  get text() {
-    return this._text;
-  }
-  set text(val) {
-    this._text = val;
-  }
-  get value() {
-    return this._value;
-  }
-  set value(val) {
-    this._value = val;
-  }
-  begin() {}
-  end() {}
-}
-exports.Thermometer = Thermometer;
-
-/***/ }),
-/* 15 */
-/***/ ((__unused_webpack_module, exports, __w_pdfjs_require__) => {
-
-
-
-Object.defineProperty(exports, "__esModule", ({
-  value: true
-}));
-exports.Console = void 0;
-var _pdf_object = __w_pdfjs_require__(7);
-class Console extends _pdf_object.PDFObject {
-  clear() {
-    this._send({
-      id: "clear"
-    });
-  }
-  hide() {}
-  println(msg) {
-    if (typeof msg === "string") {
-      this._send({
-        command: "println",
-        value: "PDF.js Console:: " + msg
-      });
-    }
-  }
-  show() {}
-}
-exports.Console = Console;
-
-/***/ }),
-/* 16 */
+/* 17 */
 /***/ ((__unused_webpack_module, exports) => {
 
 
@@ -3708,7 +3727,7 @@ class ProxyHandler {
 exports.ProxyHandler = ProxyHandler;
 
 /***/ }),
-/* 17 */
+/* 18 */
 /***/ ((__unused_webpack_module, exports, __w_pdfjs_require__) => {
 
 
@@ -3807,11 +3826,7 @@ class Util extends _pdf_object.PDFObject {
       const [thousandSep, decimalSep] = separators[nDecSep];
       let decPart = "";
       if (cConvChar === "f") {
-        if (nPrecision !== undefined) {
-          decPart = Math.abs(arg - intPart).toFixed(nPrecision);
-        } else {
-          decPart = Math.abs(arg - intPart).toString();
-        }
+        decPart = nPrecision !== undefined ? Math.abs(arg - intPart).toFixed(nPrecision) : Math.abs(arg - intPart).toString();
         if (decPart.length > 2) {
           decPart = `${decimalSep}${decPart.substring(2)}`;
         } else {
@@ -4235,8 +4250,8 @@ Object.defineProperty(exports, "initSandbox", ({
   }
 }));
 var _initialization = __w_pdfjs_require__(1);
-const pdfjsVersion = '3.7.96';
-const pdfjsBuild = '23958ffc5';
+const pdfjsVersion = '3.10.86';
+const pdfjsBuild = 'c72cb5436';
 })();
 
 /******/ 	return __webpack_exports__;

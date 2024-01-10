@@ -121,15 +121,6 @@ function getSuggestionsTemplate({ addonType, reason, supportURL }) {
 
 // Map of the learnmore links metadata, keyed by link element class.
 const LEARNMORE_LINKS = {
-  ".abuse-report-learnmore": {
-    path: "reporting-extensions-and-themes-abuse",
-  },
-  ".abuse-settings-search-learnmore": {
-    path: "prefs-search",
-  },
-  ".abuse-settings-homepage-learnmore": {
-    path: "prefs-homepage",
-  },
   ".abuse-policy-learnmore": {
     baseURL: "https://www.mozilla.org/%LOCALE%/",
     path: "about/legal/report-infringement/",
@@ -141,9 +132,7 @@ const LEARNMORE_LINKS = {
 function formatLearnMoreURLs(containerEl) {
   for (const [linkClass, linkInfo] of Object.entries(LEARNMORE_LINKS)) {
     for (const element of containerEl.querySelectorAll(linkClass)) {
-      const baseURL = linkInfo.baseURL
-        ? Services.urlFormatter.formatURL(linkInfo.baseURL)
-        : Services.urlFormatter.formatURLPref("app.support.baseURL");
+      const baseURL = Services.urlFormatter.formatURL(linkInfo.baseURL);
 
       element.href = baseURL + linkInfo.path;
     }
@@ -368,10 +357,6 @@ class AbuseReasonSuggestions extends HTMLElement {
     } else {
       this.hidden = true;
     }
-  }
-
-  get LEARNMORE_LINKS() {
-    return Object.keys(LEARNMORE_LINKS);
   }
 }
 
@@ -867,17 +852,19 @@ if (IS_DIALOG_WINDOW) {
     async () => {
       const form = document.querySelector("form");
       await document.l10n.translateFragment(form);
-      const { clientWidth, clientHeight } = await window.promiseDocumentFlushed(
+      const { scrollWidth, scrollHeight } = await window.promiseDocumentFlushed(
         () => form
       );
       // Resolve promiseReportPanel once the panel completed the initial render
       // (used in tests).
       deferredReportPanel.resolve(el);
       if (
-        window.innerWidth !== clientWidth ||
-        window.innerheight !== clientHeight
+        window.innerWidth !== scrollWidth ||
+        window.innerHeight !== scrollHeight
       ) {
-        window.resizeTo(clientWidth, clientHeight);
+        const width = window.outerWidth - window.innerWidth + scrollWidth;
+        const height = window.outerHeight - window.innerHeight + scrollHeight;
+        window.resizeTo(width, height);
       }
     },
     { once: true }

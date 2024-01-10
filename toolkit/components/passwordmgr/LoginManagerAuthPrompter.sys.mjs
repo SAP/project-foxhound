@@ -231,7 +231,7 @@ LoginManagerAuthPromptFactory.prototype = {
         // Prompts throw NS_ERROR_NOT_AVAILABLE if they're aborted.
         promptAborted = true;
       } else {
-        console.error("LoginManagerAuthPrompter: _doAsyncPrompt " + e + "\n");
+        console.error("LoginManagerAuthPrompter: _doAsyncPrompt", e);
       }
     }
 
@@ -259,7 +259,7 @@ LoginManagerAuthPromptFactory.prototype = {
   },
 }; // end of LoginManagerAuthPromptFactory implementation
 
-XPCOMUtils.defineLazyGetter(
+ChromeUtils.defineLazyGetter(
   LoginManagerAuthPromptFactory.prototype,
   "log",
   () => {
@@ -274,6 +274,11 @@ XPCOMUtils.defineLazyGetter(
  * Implements interfaces for prompting the user to enter/save/change auth info.
  *
  * nsIAuthPrompt: Used by SeaMonkey, Thunderbird, but not Firefox.
+ *
+ * Note this implementation no longer provides `nsIAuthPrompt.promptPassword()`
+ * and `nsIAuthPrompt.promptUsernameAndPassword()`. Use their async
+ * counterparts `asyncPromptPassword` and `asyncPromptUsernameAndPassword`
+ * instead.
  *
  * nsIAuthPrompt2: Is invoked by a channel for protocol-based authentication
  * (eg HTTP Authenticate, FTP login).
@@ -658,9 +663,7 @@ LoginManagerAuthPrompter.prototype = {
     } catch (e) {
       // Ignore any errors and display the prompt anyway.
       epicfail = true;
-      console.error(
-        "LoginManagerAuthPrompter: Epic fail in promptAuth: " + e + "\n"
-      );
+      console.error("LoginManagerAuthPrompter: Epic fail in promptAuth:", e);
     }
 
     var ok = canAutologin;
@@ -760,7 +763,7 @@ LoginManagerAuthPrompter.prototype = {
         );
       }
     } catch (e) {
-      console.error("LoginManagerAuthPrompter: Fail2 in promptAuth: " + e);
+      console.error("LoginManagerAuthPrompter: Fail2 in promptAuth:", e);
     }
 
     return ok;
@@ -825,12 +828,8 @@ LoginManagerAuthPrompter.prototype = {
 
       this._factory._doAsyncPrompt(asyncPrompt, hashKey);
     } catch (e) {
-      console.error(
-        "LoginManagerAuthPrompter: " +
-          "asyncPromptAuth: " +
-          e +
-          "\nFalling back to promptAuth\n"
-      );
+      console.error("LoginManagerAuthPrompter: asyncPromptAuth:", e);
+      console.error("Falling back to promptAuth");
       // Fail the prompt operation to let the consumer fall back
       // to synchronous promptAuth method
       throw e;
@@ -1102,7 +1101,7 @@ LoginManagerAuthPrompter.prototype = {
   },
 }; // end of LoginManagerAuthPrompter implementation
 
-XPCOMUtils.defineLazyGetter(LoginManagerAuthPrompter.prototype, "log", () => {
+ChromeUtils.defineLazyGetter(LoginManagerAuthPrompter.prototype, "log", () => {
   let logger = lazy.LoginHelper.createLogger("LoginManagerAuthPrompter");
   return logger.log.bind(logger);
 });

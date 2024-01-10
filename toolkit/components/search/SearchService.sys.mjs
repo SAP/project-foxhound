@@ -26,7 +26,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
   UserSearchEngine: "resource://gre/modules/UserSearchEngine.sys.mjs",
 });
 
-XPCOMUtils.defineLazyGetter(lazy, "logConsole", () => {
+ChromeUtils.defineLazyGetter(lazy, "logConsole", () => {
   return console.createInstance({
     prefix: "SearchService",
     maxLogLevel: lazy.SearchUtils.loggingEnabled ? "Debug" : "Warn",
@@ -462,6 +462,14 @@ export class SearchService {
   forceInitializationStatusForTests(status) {
     this.#initializationStatus = status;
   }
+
+  /**
+   * Test only variable to indicate an error should occur during
+   * search service initialization.
+   *
+   * @type {boolean}
+   */
+  willThrowErrorDuringInitInTest = false;
 
   // Test-only function to reset just the engine selector so that it can
   // load a different configuration.
@@ -1230,13 +1238,12 @@ export class SearchService {
 
     let engineId = this._settings.getMetaDataAttribute(attributeName);
     let engine = this._engines.get(engineId) || null;
-    // If the selected engine is an application provided one, we can relax the
-    // verification hash check to reduce the annoyance for users who
-    // backup/sync their profile in custom ways.
     if (
       engine &&
-      (engine.isAppProvided ||
-        this._settings.getVerifiedMetaDataAttribute(attributeName))
+      this._settings.getVerifiedMetaDataAttribute(
+        attributeName,
+        engine.isAppProvided
+      )
     ) {
       if (privateMode) {
         this.#currentPrivateEngine = engine;
@@ -1327,6 +1334,13 @@ export class SearchService {
 
     let result = Cr.NS_OK;
     try {
+      if (
+        Services.env.exists("XPCSHELL_TEST_PROFILE_DIR") &&
+        this.willThrowErrorDuringInitInTest
+      ) {
+        throw new Error("Fake error during search service initialization.");
+      }
+
       // Create the search engine selector.
       this.#engineSelector = new lazy.SearchEngineSelector(
         this.#handleConfigurationUpdated.bind(this)
@@ -1596,7 +1610,9 @@ export class SearchService {
 
     lazy.logConsole.debug("#loadEngines: done");
 
-    let newCurrentEngineId = this._getEngineDefault(false)?.id;
+    let newCurrentEngine = this._getEngineDefault(false);
+    let newCurrentEngineId = newCurrentEngine?.id;
+
     this._settings.setMetaDataAttribute(
       "appDefaultEngineId",
       this.appDefaultEngine?.id
@@ -1611,9 +1627,16 @@ export class SearchService {
         prevAppDefaultEngineId
       )
     ) {
+      let newCurrentEngineName = newCurrentEngine?.name;
+
+      let [prevCurrentEngineName, prevAppDefaultEngineName] = [
+        settings.engines.find(e => e.id == prevCurrentEngineId)?._name,
+        settings.engines.find(e => e.id == prevAppDefaultEngineId)?._name,
+      ];
+
       this._showRemovalOfSearchEngineNotificationBox(
-        prevCurrentEngineId || prevAppDefaultEngineId,
-        newCurrentEngineId
+        prevCurrentEngineName || prevAppDefaultEngineName,
+        newCurrentEngineName
       );
     }
   }
@@ -3510,20 +3533,20 @@ export class SearchService {
    * This method is prefixed with _ rather than # because it is
    * called in a test.
    *
-   * @param {string} prevCurrentEngine
-   *   The engine that was previously the default engine and is to be replaced.
-   * @param {string} newCurrentEngine
-   *   The engine that will be the new the default engine.
+   * @param {string} prevCurrentEngineName
+   *   The name of the previous default engine that will be replaced.
+   * @param {string} newCurrentEngineName
+   *   The name of the engine that will be the new default engine.
    *
    */
   _showRemovalOfSearchEngineNotificationBox(
-    prevCurrentEngine,
-    newCurrentEngine
+    prevCurrentEngineName,
+    newCurrentEngineName
   ) {
     let win = Services.wm.getMostRecentBrowserWindow();
     win.BrowserSearch.removalOfSearchEngineNotificationBox(
-      prevCurrentEngine,
-      newCurrentEngine
+      prevCurrentEngineName,
+      newCurrentEngineName
     );
   }
 

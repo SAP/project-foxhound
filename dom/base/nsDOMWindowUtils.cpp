@@ -14,7 +14,7 @@
 #include "nsContentList.h"
 #include "nsError.h"
 #include "nsQueryContentEventResult.h"
-#include "nsGlobalWindow.h"
+#include "nsGlobalWindowOuter.h"
 #include "nsFocusManager.h"
 #include "nsFrameManager.h"
 #include "nsRefreshDriver.h"
@@ -2202,7 +2202,7 @@ nsDOMWindowUtils::GetCanvasBackgroundColor(nsAString& aColor) {
   }
   nscolor color = NS_RGB(255, 255, 255);
   if (PresShell* presShell = GetPresShell()) {
-    color = presShell->ComputeCanvasBackground().mColor;
+    color = presShell->ComputeCanvasBackground().mViewportColor;
   }
   nsStyleUtil::GetSerializedColorValue(color, aColor);
   return NS_OK;
@@ -2575,12 +2575,11 @@ nsDOMWindowUtils::GetVisitedDependentComputedStyle(
   nsAutoCString result;
 
   static_cast<nsComputedDOMStyle*>(decl.get())->SetExposeVisitedStyle(true);
-  nsresult rv =
-      decl->GetPropertyValue(NS_ConvertUTF16toUTF8(aPropertyName), result);
+  decl->GetPropertyValue(NS_ConvertUTF16toUTF8(aPropertyName), result);
   static_cast<nsComputedDOMStyle*>(decl.get())->SetExposeVisitedStyle(false);
 
   CopyUTF8toUTF16(result, aResult);
-  return rv;
+  return NS_OK;
 }
 
 NS_IMETHODIMP
@@ -2684,9 +2683,9 @@ NS_IMETHODIMP
 nsDOMWindowUtils::GetCurrentPreferredSampleRate(uint32_t* aRate) {
   nsCOMPtr<Document> doc = GetDocument();
   *aRate = CubebUtils::PreferredSampleRate(
-      doc ? doc->ShouldResistFingerprinting(RFPTarget::Unknown)
-          : nsContentUtils::ShouldResistFingerprinting("Fallback",
-                                                       RFPTarget::Unknown));
+      doc ? doc->ShouldResistFingerprinting(RFPTarget::AudioSampleRate)
+          : nsContentUtils::ShouldResistFingerprinting(
+                "Fallback", RFPTarget::AudioSampleRate));
   return NS_OK;
 }
 
@@ -3975,7 +3974,8 @@ nsDOMWindowUtils::GetOMTAStyle(Element* aElement, const nsAString& aProperty,
                aProperty.EqualsLiteral("offset-path") ||
                aProperty.EqualsLiteral("offset-distance") ||
                aProperty.EqualsLiteral("offset-rotate") ||
-               aProperty.EqualsLiteral("offset-anchor")) {
+               aProperty.EqualsLiteral("offset-anchor") ||
+               aProperty.EqualsLiteral("offset-position")) {
       OMTAValue value = GetOMTAValue(frame, DisplayItemType::TYPE_TRANSFORM,
                                      GetWebRenderBridge());
       if (value.type() == OMTAValue::TMatrix4x4) {
@@ -3992,11 +3992,8 @@ nsDOMWindowUtils::GetOMTAStyle(Element* aElement, const nsAString& aProperty,
   }
 
   if (cssValue) {
-    nsString text;
-    ErrorResult rv;
-    cssValue->GetCssText(text, rv);
-    aResult.Assign(text);
-    return rv.StealNSResult();
+    cssValue->GetCssText(aResult);
+    return NS_OK;
   }
   aResult.Truncate();
   return NS_OK;
@@ -4263,6 +4260,17 @@ nsDOMWindowUtils::GetFramesReflowed(uint64_t* aResult) {
 }
 
 NS_IMETHODIMP
+nsDOMWindowUtils::GetAnimationTriggeredRestyles(uint64_t* aResult) {
+  nsPresContext* presContext = GetPresContext();
+  if (!presContext) {
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+
+  *aResult = presContext->AnimationTriggeredRestylesCount();
+  return NS_OK;
+}
+
+NS_IMETHODIMP
 nsDOMWindowUtils::GetRefreshDriverHasPendingTick(bool* aResult) {
   nsPresContext* presContext = GetPresContext();
   if (!presContext) {
@@ -4287,10 +4295,8 @@ nsDOMWindowUtils::LeaveChaosMode() {
 
 NS_IMETHODIMP
 nsDOMWindowUtils::TriggerDeviceReset() {
-  ContentChild* cc = ContentChild::GetSingleton();
-  if (cc) {
-    cc->SendDeviceReset();
-    return NS_OK;
+  if (!XRE_IsParentProcess()) {
+    return NS_ERROR_NOT_AVAILABLE;
   }
 
   GPUProcessManager* pm = GPUProcessManager::Get();

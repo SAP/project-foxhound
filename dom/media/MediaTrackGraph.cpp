@@ -3352,7 +3352,8 @@ MediaTrackGraph* MediaTrackGraph::GetInstanceIfExists(
     CubebUtils::AudioDeviceID aOutputDeviceID) {
   return MediaTrackGraphImpl::GetInstanceIfExists(
       aWindow->WindowID(),
-      aWindow->AsGlobal()->ShouldResistFingerprinting(RFPTarget::Unknown),
+      aWindow->AsGlobal()->ShouldResistFingerprinting(
+          RFPTarget::AudioSampleRate),
       aSampleRate, aOutputDeviceID);
 }
 
@@ -3374,8 +3375,7 @@ MediaTrackGraphImpl* MediaTrackGraphImpl::GetInstance(
   if (!graph) {
     GraphRunType runType = DIRECT_DRIVER;
     if (aGraphDriverRequested != OFFLINE_THREAD_DRIVER &&
-        (StaticPrefs::dom_audioworklet_enabled() ||
-         Preferences::GetBool("media.audiograph.single_thread.enabled",
+        (Preferences::GetBool("media.audiograph.single_thread.enabled",
                               false))) {
       runType = SINGLE_THREAD;
     }
@@ -3404,7 +3404,8 @@ MediaTrackGraph* MediaTrackGraph::GetInstance(
     TrackRate aSampleRate, CubebUtils::AudioDeviceID aOutputDeviceID) {
   return MediaTrackGraphImpl::GetInstance(
       aGraphDriverRequested, aWindow->WindowID(),
-      aWindow->AsGlobal()->ShouldResistFingerprinting(RFPTarget::Unknown),
+      aWindow->AsGlobal()->ShouldResistFingerprinting(
+          RFPTarget::AudioSampleRate),
       aSampleRate, aOutputDeviceID,
       aWindow->EventTargetFor(TaskCategory::Other));
 }

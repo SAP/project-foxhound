@@ -2,21 +2,16 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
-
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
-  getResponseCacheObject:
-    "resource://devtools/shared/platform/CacheEntry.sys.mjs",
+  NetUtil: "resource://gre/modules/NetUtil.sys.mjs",
   NetworkHelper:
     "resource://devtools/shared/network-observer/NetworkHelper.sys.mjs",
   NetworkUtils:
     "resource://devtools/shared/network-observer/NetworkUtils.sys.mjs",
-});
-
-XPCOMUtils.defineLazyModuleGetters(lazy, {
-  NetUtil: "resource://gre/modules/NetUtil.jsm",
+  getResponseCacheObject:
+    "resource://devtools/shared/platform/CacheEntry.sys.mjs",
 });
 
 // Network logging
@@ -537,7 +532,10 @@ export class NetworkResponseListener {
     // Check any errors or blocking scenarios which happen late in the cycle
     // e.g If a host is not found (NS_ERROR_UNKNOWN_HOST) or CORS blocking.
     const { blockingExtension, blockedReason } =
-      lazy.NetworkUtils.getBlockedReason(this.#httpActivity.channel);
+      lazy.NetworkUtils.getBlockedReason(
+        this.#httpActivity.channel,
+        this.#httpActivity.fromCache
+      );
 
     this.#httpActivity.owner.addResponseContent(response, {
       discardResponseBody: this.#httpActivity.discardResponseBody,

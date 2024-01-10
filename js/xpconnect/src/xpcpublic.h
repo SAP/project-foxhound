@@ -58,6 +58,7 @@ struct nsXPTInterfaceInfo;
 namespace JS {
 class Compartment;
 class ContextOptions;
+class PrefableCompileOptions;
 class Realm;
 class RealmOptions;
 class Value;
@@ -575,11 +576,22 @@ nsGlobalWindowInner* WindowOrNull(JSObject* aObj);
 nsGlobalWindowInner* WindowGlobalOrNull(JSObject* aObj);
 
 /**
+ * If |aObj| is a Sandbox object and it has a sandboxPrototype, then return
+ * that prototype.
+ * |aCx| is used for checked unwrapping of the prototype.
+ */
+JSObject* SandboxPrototypeOrNull(JSContext* aCx, JSObject* aObj);
+
+/**
  * If |aObj| is a Sandbox object associated with a DOMWindow via a
  * sandboxPrototype, then return that DOMWindow.
  * |aCx| is used for checked unwrapping of the Window.
  */
-nsGlobalWindowInner* SandboxWindowOrNull(JSObject* aObj, JSContext* aCx);
+inline nsGlobalWindowInner* SandboxWindowOrNull(JSObject* aObj,
+                                                JSContext* aCx) {
+  JSObject* proto = SandboxPrototypeOrNull(aCx, aObj);
+  return proto ? WindowOrNull(proto) : nullptr;
+}
 
 /**
  * If |cx| is in a realm whose global is a window, returns the associated
@@ -603,12 +615,17 @@ bool ShouldDiscardSystemSource();
 void SetPrefableRealmOptions(JS::RealmOptions& options);
 void SetPrefableContextOptions(JS::ContextOptions& options);
 
+// This function may be used off-main-thread.
+void SetPrefableCompileOptions(JS::PrefableCompileOptions& options);
+
 class ErrorBase {
  public:
   nsString mErrorMsg;
   nsString mFileName;
   uint32_t mSourceId;
+  // Line number (1-origin).
   uint32_t mLineNumber;
+  // Column number in UTF-16 code units (1-origin).
   uint32_t mColumn;
 
   ErrorBase() : mSourceId(0), mLineNumber(0), mColumn(0) {}
@@ -725,7 +742,7 @@ void AddGCCallback(xpcGCCallback cb);
 void RemoveGCCallback(xpcGCCallback cb);
 
 // We need an exact page size only if we run the binary in automation.
-#if defined(XP_DARWIN) && defined(__aarch64__)
+#if (defined(XP_DARWIN) && defined(__aarch64__)) || defined(__loongarch__)
 const size_t kAutomationPageSize = 16384;
 #else
 const size_t kAutomationPageSize = 4096;

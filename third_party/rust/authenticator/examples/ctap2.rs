@@ -7,12 +7,13 @@ use authenticator::{
         AuthenticatorService, GetAssertionExtensions, HmacSecretExtension,
         MakeCredentialsExtensions, RegisterArgs, SignArgs,
     },
+    crypto::COSEAlgorithm,
     ctap2::server::{
         PublicKeyCredentialDescriptor, PublicKeyCredentialParameters, RelyingParty,
         ResidentKeyRequirement, Transport, User, UserVerificationRequirement,
     },
     statecallback::StateCallback,
-    COSEAlgorithm, Pin, RegisterResult, SignResult, StatusPinUv, StatusUpdate,
+    Pin, StatusPinUv, StatusUpdate,
 };
 use getopts::Options;
 use sha2::{Digest, Sha256};
@@ -87,20 +88,8 @@ fn main() {
             Ok(StatusUpdate::InteractiveManagement(..)) => {
                 panic!("STATUS: This can't happen when doing non-interactive usage");
             }
-            Ok(StatusUpdate::DeviceAvailable { dev_info }) => {
-                println!("STATUS: device available: {dev_info}")
-            }
-            Ok(StatusUpdate::DeviceUnavailable { dev_info }) => {
-                println!("STATUS: device unavailable: {dev_info}")
-            }
-            Ok(StatusUpdate::Success { dev_info }) => {
-                println!("STATUS: success using device: {dev_info}");
-            }
             Ok(StatusUpdate::SelectDeviceNotice) => {
                 println!("STATUS: Please select a device by touching one of them.");
-            }
-            Ok(StatusUpdate::DeviceSelected(dev_info)) => {
-                println!("STATUS: Continuing with device: {dev_info}");
             }
             Ok(StatusUpdate::PresenceRequired) => {
                 println!("STATUS: waiting for user presence");
@@ -213,8 +202,7 @@ fn main() {
             .recv()
             .expect("Problem receiving, unable to continue");
         match register_result {
-            Ok(RegisterResult::CTAP1(_, _)) => panic!("Requested CTAP2, but got CTAP1 results!"),
-            Ok(RegisterResult::CTAP2(a)) => {
+            Ok(a) => {
                 println!("Ok!");
                 attestation_object = a;
                 break;
@@ -231,7 +219,7 @@ fn main() {
     println!("*********************************************************************");
 
     let allow_list;
-    if let Some(cred_data) = attestation_object.auth_data.credential_data {
+    if let Some(cred_data) = attestation_object.att_obj.auth_data.credential_data {
         allow_list = vec![PublicKeyCredentialDescriptor {
             id: cred_data.credential_id,
             transports: vec![Transport::USB],
@@ -282,8 +270,7 @@ fn main() {
             .expect("Problem receiving, unable to continue");
 
         match sign_result {
-            Ok(SignResult::CTAP1(..)) => panic!("Requested CTAP2, but got CTAP1 sign results!"),
-            Ok(SignResult::CTAP2(assertion_object)) => {
+            Ok(assertion_object) => {
                 println!("Assertion Object: {assertion_object:?}");
                 println!("Done.");
                 break;

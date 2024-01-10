@@ -17,7 +17,6 @@
 #include "debugger/DebugAPI.h"
 #include "debugger/Debugger.h"
 #include "gc/GC.h"
-#include "jit/JitRealm.h"
 #include "jit/JitRuntime.h"
 #include "js/CallAndConstruct.h"      // JS::IsCallable
 #include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
@@ -65,6 +64,10 @@ Realm::~Realm() {
   // Write the code coverage information in a file.
   if (lcovRealm_) {
     runtime_->lcovOutput().writeLCovResult(*lcovRealm_);
+  }
+
+  if (allocationMetadataBuilder_) {
+    forgetAllocationMetadataBuilder();
   }
 
   MOZ_ASSERT(runtime_->numRealms > 0);
@@ -116,28 +119,6 @@ bool JSRuntime::createJitRuntime(JSContext* cx) {
     return false;
   }
 
-  return true;
-}
-
-bool Realm::ensureJitRealmExists(JSContext* cx) {
-  using namespace js::jit;
-
-  if (jitRealm_) {
-    return true;
-  }
-
-  if (!zone()->getJitZone(cx)) {
-    return false;
-  }
-
-  UniquePtr<JitRealm> jitRealm = cx->make_unique<JitRealm>();
-  if (!jitRealm) {
-    return false;
-  }
-
-  jitRealm->initialize(zone()->allocNurseryStrings());
-
-  jitRealm_ = std::move(jitRealm);
   return true;
 }
 
@@ -319,21 +300,6 @@ void Realm::traceWeakGlobalEdge(JSTracer* trc) {
   }
 }
 
-void Realm::traceWeakEdgesInJitRealm(JSTracer* trc) {
-  if (jitRealm_) {
-    jitRealm_->traceWeak(trc, this);
-  }
-}
-
-void Realm::traceWeakRegExps(JSTracer* trc) {
-  /*
-   * JIT code increments activeWarmUpCounter for any RegExpShared used by jit
-   * code for the lifetime of the JIT script. Thus, we must perform
-   * sweeping after clearing jit code.
-   */
-  regExps.traceWeak(trc);
-}
-
 void Realm::traceWeakDebugEnvironmentEdges(JSTracer* trc) {
   if (debugEnvs_) {
     debugEnvs_->traceWeak(trc);
@@ -376,18 +342,31 @@ void Realm::setAllocationMetadataBuilder(
     const js::AllocationMetadataBuilder* builder) {
   // Clear any jitcode in the runtime, which behaves differently depending on
   // whether there is a creation callback.
-  ReleaseAllJITCode(runtime_->gcContext());
+  if (bool(allocationMetadataBuilder_) != bool(builder)) {
+    ReleaseAllJITCode(runtime_->gcContext());
+    if (builder) {
+      zone()->incNumRealmsWithAllocMetadataBuilder();
+    } else {
+      zone()->decNumRealmsWithAllocMetadataBuilder();
+    }
+  }
 
   allocationMetadataBuilder_ = builder;
 }
 
 void Realm::forgetAllocationMetadataBuilder() {
+  if (!allocationMetadataBuilder_) {
+    return;
+  }
+
   // Unlike setAllocationMetadataBuilder, we don't have to discard all JIT
   // code here (code is still valid, just a bit slower because it doesn't do
   // inline GC allocations when a metadata builder is present), but we do want
-  // to cancel off-thread Ion compilations to avoid races when Ion calls
-  // hasAllocationMetadataBuilder off-thread.
-  CancelOffThreadIonCompile(this);
+  // to cancel off-thread Ion compilations to avoid races when Ion accesses
+  // numRealmsWithAllocMetadataBuilder_ off-thread.
+  CancelOffThreadIonCompile(zone());
+
+  zone()->decNumRealmsWithAllocMetadataBuilder();
 
   allocationMetadataBuilder_ = nullptr;
 }
@@ -531,8 +510,7 @@ void Realm::addSizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf,
                                    size_t* innerViewsArg,
                                    size_t* objectMetadataTablesArg,
                                    size_t* savedStacksSet,
-                                   size_t* nonSyntacticLexicalEnvironmentsArg,
-                                   size_t* jitRealm) {
+                                   size_t* nonSyntacticLexicalEnvironmentsArg) {
   *realmObject += mallocSizeOf(this);
   wasm.addSizeOfExcludingThis(mallocSizeOf, realmTables);
 
@@ -541,10 +519,6 @@ void Realm::addSizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf,
                                   nonSyntacticLexicalEnvironmentsArg);
 
   *savedStacksSet += savedStacks_.sizeOfExcludingThis(mallocSizeOf);
-
-  if (jitRealm_) {
-    *jitRealm += jitRealm_->sizeOfIncludingThis(mallocSizeOf);
-  }
 }
 
 bool Realm::shouldCaptureStackForThrow() {

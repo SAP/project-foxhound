@@ -159,13 +159,13 @@ class Export {
   Export() = default;
   explicit Export(CacheableName&& fieldName, uint32_t index,
                   DefinitionKind kind);
-  explicit Export(CacheableName&& fieldName, DefinitionKind kind);
 
   const CacheableName& fieldName() const { return fieldName_; }
 
   DefinitionKind kind() const { return pod.kind_; }
   uint32_t funcIndex() const;
   uint32_t tagIndex() const;
+  uint32_t memoryIndex() const;
   uint32_t globalIndex() const;
   uint32_t tableIndex() const;
 
@@ -427,7 +427,11 @@ using ElemSegmentVector = Vector<SharedElemSegment, 0, SystemAllocPolicy>;
 // Instance mem.drops it and the Module is destroyed, each DataSegment is
 // individually atomically ref-counted.
 
+constexpr uint32_t InvalidMemoryIndex = UINT32_MAX;
+static_assert(InvalidMemoryIndex > MaxMemories, "Invariant");
+
 struct DataSegmentEnv {
+  uint32_t memoryIndex;
   Maybe<InitExpr> offsetIfActive;
   uint32_t bytecodeOffset;
   uint32_t length;
@@ -436,6 +440,7 @@ struct DataSegmentEnv {
 using DataSegmentEnvVector = Vector<DataSegmentEnv, 0, SystemAllocPolicy>;
 
 struct DataSegment : AtomicRefCounted<DataSegment> {
+  uint32_t memoryIndex;
   Maybe<InitExpr> offsetIfActive;
   Bytes bytes;
 
@@ -447,6 +452,7 @@ struct DataSegment : AtomicRefCounted<DataSegment> {
 
   [[nodiscard]] bool init(const ShareableBytes& bytecode,
                           const DataSegmentEnv& src) {
+    memoryIndex = src.memoryIndex;
     if (src.offsetIfActive) {
       offsetIfActive.emplace();
       if (!offsetIfActive->clone(*src.offsetIfActive)) {
@@ -582,11 +588,13 @@ struct MemoryDesc {
     return limits.initial * PageSize;
   }
 
-  MemoryDesc() = default;
+  MemoryDesc() {}
   explicit MemoryDesc(Limits limits) : limits(limits) {}
 };
 
 WASM_DECLARE_CACHEABLE_POD(MemoryDesc);
+
+using MemoryDescVector = Vector<MemoryDesc, 1, SystemAllocPolicy>;
 
 // We don't need to worry about overflow with a Memory32 field when
 // using a uint64_t.

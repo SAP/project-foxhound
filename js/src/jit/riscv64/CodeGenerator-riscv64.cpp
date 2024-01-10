@@ -486,7 +486,7 @@ void CodeGenerator::visitCompare(LCompare* comp) {
   if (mir->compareType() == MCompare::Compare_Object ||
       mir->compareType() == MCompare::Compare_Symbol ||
       mir->compareType() == MCompare::Compare_UIntPtr ||
-      mir->compareType() == MCompare::Compare_RefOrNull) {
+      mir->compareType() == MCompare::Compare_WasmAnyRef) {
     if (right->isConstant()) {
       MOZ_ASSERT(mir->compareType() == MCompare::Compare_UIntPtr);
       masm.cmpPtrSet(cond, ToRegister(left), Imm32(ToInt32(right)),
@@ -522,7 +522,7 @@ void CodeGenerator::visitCompareAndBranch(LCompareAndBranch* comp) {
 
   if (type == MCompare::Compare_Object || type == MCompare::Compare_Symbol ||
       type == MCompare::Compare_UIntPtr ||
-      type == MCompare::Compare_RefOrNull) {
+      type == MCompare::Compare_WasmAnyRef) {
     if (rhs->isConstant()) {
       emitBranch(ToRegister(lhs), Imm32(ToInt32(rhs)), cond, ifTrue, ifFalse);
     } else if (rhs->isGeneralReg()) {
@@ -538,7 +538,7 @@ void CodeGenerator::visitCompareAndBranch(LCompareAndBranch* comp) {
   } else if (comp->right()->isGeneralReg()) {
     emitBranch(lhsReg, ToRegister(rhs), cond, ifTrue, ifFalse);
   } else {
-    // TODO(loong64): emitBranch with 32-bit comparision
+    // TODO(riscv): emitBranch with 32-bit comparision
     ScratchRegisterScope scratch(masm);
     masm.load32(ToAddress(rhs), scratch);
     emitBranch(lhsReg, Register(scratch), cond, ifTrue, ifFalse);
@@ -637,7 +637,13 @@ void CodeGenerator::visitWasmLoadI64(LWasmLoadI64* lir) {
     ptrScratch = ToRegister(lir->ptrCopy());
   }
 
-  masm.wasmLoadI64(mir->access(), HeapReg, ToRegister(lir->ptr()), ptrScratch,
+  Register ptrReg = ToRegister(lir->ptr());
+  if (mir->base()->type() == MIRType::Int32) {
+    // See comment in visitWasmLoad re the type of 'base'.
+    masm.move32ZeroExtendToPtr(ptrReg, ptrReg);
+  }
+
+  masm.wasmLoadI64(mir->access(), HeapReg, ptrReg, ptrScratch,
                    ToOutRegister64(lir));
 }
 
@@ -649,8 +655,14 @@ void CodeGenerator::visitWasmStoreI64(LWasmStoreI64* lir) {
     ptrScratch = ToRegister(lir->ptrCopy());
   }
 
-  masm.wasmStoreI64(mir->access(), ToRegister64(lir->value()), HeapReg,
-                    ToRegister(lir->ptr()), ptrScratch);
+  Register ptrReg = ToRegister(lir->ptr());
+  if (mir->base()->type() == MIRType::Int32) {
+    // See comment in visitWasmLoad re the type of 'base'.
+    masm.move32ZeroExtendToPtr(ptrReg, ptrReg);
+  }
+
+  masm.wasmStoreI64(mir->access(), ToRegister64(lir->value()), HeapReg, ptrReg,
+                    ptrScratch);
 }
 
 void CodeGenerator::visitWasmSelectI64(LWasmSelectI64* lir) {
@@ -2300,7 +2312,7 @@ void CodeGenerator::visitWasmSelect(LWasmSelect* ins) {
   Register cond = ToRegister(ins->condExpr());
   const LAllocation* falseExpr = ins->falseExpr();
 
-  if (mirType == MIRType::Int32 || mirType == MIRType::RefOrNull) {
+  if (mirType == MIRType::Int32 || mirType == MIRType::WasmAnyRef) {
     Register out = ToRegister(ins->output());
     MOZ_ASSERT(ToRegister(ins->trueExpr()) == out,
                "true expr input is reused for output");

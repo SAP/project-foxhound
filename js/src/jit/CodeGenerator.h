@@ -65,6 +65,7 @@ class OutOfLineUpdateCache;
 class OutOfLineICFallback;
 class OutOfLineCallPostWriteBarrier;
 class OutOfLineCallPostWriteElementBarrier;
+class OutOfLineElementPostWriteBarrier;
 class OutOfLineIsCallable;
 class OutOfLineIsConstructor;
 class OutOfLineRegExpMatcher;
@@ -171,6 +172,9 @@ class CodeGenerator final : public CodeGeneratorSpecific {
   void visitOutOfLineCallPostWriteElementBarrier(
       OutOfLineCallPostWriteElementBarrier* ool);
 
+  void visitOutOfLineElementPostWriteBarrier(
+      OutOfLineElementPostWriteBarrier* ool);
+
   void visitOutOfLineNewArray(OutOfLineNewArray* ool);
   void visitOutOfLineNewObject(OutOfLineNewObject* ool);
 
@@ -186,7 +190,13 @@ class CodeGenerator final : public CodeGeneratorSpecific {
   void emitPostWriteBarrier(const LAllocation* obj);
   void emitPostWriteBarrier(Register objreg);
   void emitPostWriteBarrierS(Address address, Register prev, Register next);
-  void emitPostWriteBarrierElement(Register objreg, Register index);
+
+  void emitElementPostWriteBarrier(MInstruction* mir,
+                                   const LiveRegisterSet& liveVolatileRegs,
+                                   Register obj, const LAllocation* index,
+                                   Register scratch,
+                                   const ConstantOrRegister& val,
+                                   int32_t indexDiff = 0);
 
   template <class LPostBarrierType, MIRType nurseryType>
   void visitPostWriteBarrierCommon(LPostBarrierType* lir, OutOfLineCode* ool);
@@ -376,8 +386,8 @@ class CodeGenerator final : public CodeGeneratorSpecific {
 
   IonPerfSpewer perfSpewer_;
 
-  // Bit mask of JitRealm stubs that are to be read-barriered.
-  uint32_t realmStubsToReadBarrier_;
+  // Bit mask of JitZone stubs that are to be read-barriered.
+  uint32_t zoneStubsToReadBarrier_;
 
 #ifdef FUZZING_JS_FUZZILLI
   void emitFuzzilliHashDouble(FloatRegister floatDouble, Register scratch,

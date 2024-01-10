@@ -40,6 +40,8 @@ class LossBasedBweV2 {
   struct Result {
     ~Result() = default;
     DataRate bandwidth_estimate = DataRate::Zero();
+    // State is used by goog_cc, which later sends probe requests to probe
+    // controller if state is kIncreasing.
     LossBasedState state = LossBasedState::kDelayBasedEstimate;
   };
   // Creates a disabled `LossBasedBweV2` if the
@@ -67,7 +69,8 @@ class LossBasedBweV2 {
       DataRate delay_based_estimate,
       BandwidthUsage delay_detector_state,
       absl::optional<DataRate> probe_bitrate,
-      DataRate upper_link_capacity);
+      DataRate upper_link_capacity,
+      bool in_alr);
 
  private:
   struct ChannelParameters {
@@ -111,7 +114,9 @@ class LossBasedBweV2 {
     DataRate bandwidth_cap_at_high_loss_rate = DataRate::MinusInfinity();
     double slope_of_bwe_high_loss_func = 1000.0;
     bool probe_integration_enabled = false;
+    TimeDelta probe_expiration = TimeDelta::Zero();
     bool bound_by_upper_link_capacity_when_loss_limited = false;
+    bool not_use_acked_rate_in_alr = false;
   };
 
   struct Derivatives {
@@ -141,7 +146,7 @@ class LossBasedBweV2 {
 
   // Returns `0.0` if not enough loss statistics have been received.
   double GetAverageReportedLossRatio() const;
-  std::vector<ChannelParameters> GetCandidates() const;
+  std::vector<ChannelParameters> GetCandidates(bool in_alr) const;
   DataRate GetCandidateBandwidthUpperBound() const;
   Derivatives GetDerivatives(const ChannelParameters& channel_parameters) const;
   double GetFeasibleInherentLoss(
@@ -175,6 +180,7 @@ class LossBasedBweV2 {
       const ChannelParameters& best_candidate);
   bool IsBandwidthLimitedDueToLoss() const;
   void SetProbeBitrate(absl::optional<DataRate> probe_bitrate);
+  bool IsRequestingProbe() const;
 
   absl::optional<DataRate> acknowledged_bitrate_;
   absl::optional<Config> config_;
@@ -196,6 +202,7 @@ class LossBasedBweV2 {
   DataRate probe_bitrate_ = DataRate::PlusInfinity();
   DataRate delay_based_estimate_ = DataRate::PlusInfinity();
   DataRate upper_link_capacity_ = DataRate::PlusInfinity();
+  Timestamp last_probe_timestamp_ = Timestamp::MinusInfinity();
 };
 
 }  // namespace webrtc

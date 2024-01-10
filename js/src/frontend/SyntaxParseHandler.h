@@ -303,18 +303,18 @@ class SyntaxParseHandler {
   void addArrayElement(ListNodeType literal, Node element) {}
 
   ListNodeType newArguments(const TokenPos& pos) { return NodeGeneric; }
-  CallNodeType newCall(Node callee, Node args, JSOp callOp) {
+  CallNodeType newCall(Node callee, ListNodeType args, JSOp callOp) {
     return NodeFunctionCall;
   }
 
-  CallNodeType newOptionalCall(Node callee, Node args, JSOp callOp) {
+  CallNodeType newOptionalCall(Node callee, ListNodeType args, JSOp callOp) {
     return NodeOptionalFunctionCall;
   }
 
-  CallNodeType newSuperCall(Node callee, Node args, bool isSpread) {
+  CallNodeType newSuperCall(Node callee, ListNodeType args, bool isSpread) {
     return NodeGeneric;
   }
-  CallNodeType newTaggedTemplate(Node tag, Node args, JSOp callOp) {
+  CallNodeType newTaggedTemplate(Node tag, ListNodeType args, JSOp callOp) {
     return NodeGeneric;
   }
 
@@ -403,7 +403,8 @@ class SyntaxParseHandler {
 #ifdef ENABLE_DECORATORS
                                              ,
                                              ListNodeType decorators,
-                                             bool hasAccessor
+                                             ClassMethodType accessorGetterNode,
+                                             ClassMethodType accessorSetterNode
 #endif
   ) {
     return NodeGeneric;
@@ -686,7 +687,7 @@ class SyntaxParseHandler {
                list == NodeFunctionCall);
   }
 
-  CallNodeType newNewExpression(uint32_t begin, Node ctor, Node args,
+  CallNodeType newNewExpression(uint32_t begin, Node ctor, ListNodeType args,
                                 bool isSpread) {
     return NodeGeneric;
   }

@@ -19,6 +19,7 @@ class StyleSheetWatcher {
     this._onApplicableStylesheetAdded =
       this._onApplicableStylesheetAdded.bind(this);
     this._onStylesheetUpdated = this._onStylesheetUpdated.bind(this);
+    this._onStylesheetRemoved = this._onStylesheetRemoved.bind(this);
   }
 
   /**
@@ -31,10 +32,11 @@ class StyleSheetWatcher {
    *        - onAvailable: mandatory function
    *          This will be called for each resource.
    */
-  async watch(targetActor, { onAvailable, onUpdated }) {
+  async watch(targetActor, { onAvailable, onUpdated, onDestroyed }) {
     this._targetActor = targetActor;
     this._onAvailable = onAvailable;
     this._onUpdated = onUpdated;
+    this._onDestroyed = onDestroyed;
 
     this._styleSheetsManager = targetActor.getStyleSheetsManager();
 
@@ -46,6 +48,10 @@ class StyleSheetWatcher {
     this._styleSheetsManager.on(
       "stylesheet-updated",
       this._onStylesheetUpdated
+    );
+    this._styleSheetsManager.on(
+      "applicable-stylesheet-removed",
+      this._onStylesheetRemoved
     );
 
     // startWatching will emit applicable-stylesheet-added for already existing stylesheet
@@ -60,10 +66,17 @@ class StyleSheetWatcher {
     this._notifyResourceUpdated(resourceId, updateKind, updates);
   }
 
+  _onStylesheetRemoved({ resourceId }) {
+    return this._notifyResourcesDestroyed(resourceId);
+  }
+
   async _toResource(
     styleSheet,
     { isCreatedByDevTools = false, fileName = null, resourceId } = {}
   ) {
+    const { atRules, ruleCount } =
+      this._styleSheetsManager.getStyleSheetRuleCountAndAtRules(styleSheet);
+
     const resource = {
       resourceId,
       resourceType: STYLESHEET,
@@ -72,9 +85,9 @@ class StyleSheetWatcher {
       fileName,
       href: styleSheet.href,
       isNew: isCreatedByDevTools,
-      atRules: await this._styleSheetsManager.getAtRules(styleSheet),
+      atRules,
       nodeHref: this._styleSheetsManager._getNodeHref(styleSheet),
-      ruleCount: styleSheet.cssRules.length,
+      ruleCount,
       sourceMapBaseURL:
         this._styleSheetsManager._getSourcemapBaseURL(styleSheet),
       sourceMapURL: styleSheet.sourceMapURL,
@@ -121,6 +134,15 @@ class StyleSheetWatcher {
     ]);
   }
 
+  _notifyResourcesDestroyed(resourceId) {
+    this._onDestroyed([
+      {
+        resourceType: STYLESHEET,
+        resourceId,
+      },
+    ]);
+  }
+
   destroy() {
     this._styleSheetsManager.off(
       "applicable-stylesheet-added",
@@ -129,6 +151,10 @@ class StyleSheetWatcher {
     this._styleSheetsManager.off(
       "stylesheet-updated",
       this._onStylesheetUpdated
+    );
+    this._styleSheetsManager.off(
+      "applicable-stylesheet-removed",
+      this._onStylesheetRemoved
     );
   }
 }

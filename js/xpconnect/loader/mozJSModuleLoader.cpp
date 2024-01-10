@@ -1805,7 +1805,8 @@ nsresult mozJSModuleLoader::ImportESModule(
   MOZ_ASSERT(principal);
 
   RefPtr<ScriptFetchOptions> options = new ScriptFetchOptions(
-      CORS_NONE, dom::ReferrerPolicy::No_referrer, principal);
+      CORS_NONE, dom::ReferrerPolicy::No_referrer,
+      /* aNonce = */ u""_ns, ParserMetadata::NotParserInserted, principal);
 
   RefPtr<ComponentLoadContext> context = new ComponentLoadContext();
   context->mSkipCheck = aSkipCheck;
@@ -1831,7 +1832,7 @@ nsresult mozJSModuleLoader::ImportESModule(
     return rv;
   }
 
-  MOZ_ASSERT(request->IsReadyToRun());
+  MOZ_ASSERT(request->IsFinished());
   if (!request->mModuleScript) {
     mModuleLoader->MaybeReportLoadError(aCx);
     return NS_ERROR_FAILURE;

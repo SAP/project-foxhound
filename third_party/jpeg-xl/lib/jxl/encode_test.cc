@@ -10,7 +10,7 @@
 
 #include "lib/extras/codec.h"
 #include "lib/extras/dec/jxl.h"
-#include "lib/jxl/enc_butteraugli_pnorm.h"
+#include "lib/extras/metrics.h"
 #include "lib/jxl/enc_color_management.h"
 #include "lib/jxl/encode_internal.h"
 #include "lib/jxl/jpeg/dec_jpeg_data.h"
@@ -321,7 +321,7 @@ TEST(EncodeTest, frame_settingsTest) {
         JxlEncoderFrameSettingsCreate(enc.get(), NULL);
     EXPECT_EQ(JXL_ENC_SUCCESS,
               JxlEncoderSetFrameLossless(frame_settings, JXL_TRUE));
-    VerifyFrameEncoding(63, 129, enc.get(), frame_settings, 3600, false);
+    VerifyFrameEncoding(63, 129, enc.get(), frame_settings, 3000, false);
     EXPECT_EQ(true, enc->last_used_cparams.IsLossless());
   }
 
@@ -523,7 +523,7 @@ TEST(EncodeTest, LossyEncoderUseOriginalProfileTest) {
     ASSERT_EQ(JXL_ENC_SUCCESS,
               JxlEncoderFrameSettingsSetOption(
                   frame_settings, JXL_ENC_FRAME_SETTING_EFFORT, 8));
-    VerifyFrameEncoding(63, 129, enc.get(), frame_settings, 7173, true);
+    VerifyFrameEncoding(63, 129, enc.get(), frame_settings, 7228, true);
   }
 }
 
@@ -842,6 +842,7 @@ TEST(EncodeTest, JXL_TRANSCODE_JPEG_TEST(JPEGReconstructionTest)) {
   EXPECT_EQ(JXL_ENC_SUCCESS, process_result);
 
   jxl::extras::JXLDecompressParams dparams;
+  jxl::test::DefaultAcceptedFormats(dparams);
   std::vector<uint8_t> decoded_jpeg_bytes;
   jxl::extras::PackedPixelFile ppf;
   EXPECT_TRUE(DecodeImageJXL(compressed.data(), compressed.size(), dparams,
@@ -883,6 +884,7 @@ TEST(EncodeTest, JXL_TRANSCODE_JPEG_TEST(ProgressiveJPEGReconstructionTest)) {
   EXPECT_EQ(JXL_ENC_SUCCESS, process_result);
 
   jxl::extras::JXLDecompressParams dparams;
+  jxl::test::DefaultAcceptedFormats(dparams);
   std::vector<uint8_t> decoded_jpeg_bytes;
   jxl::extras::PackedPixelFile ppf;
   EXPECT_TRUE(DecodeImageJXL(compressed.data(), compressed.size(), dparams,
@@ -1337,8 +1339,8 @@ TEST(EncodeTest, JXL_BOXES_TEST(BoxTest)) {
   }
 }
 
-#if JPEGXL_ENABLE_JPEG  // Loading .jpg files requires libjpeg support.
 TEST(EncodeTest, JXL_TRANSCODE_JPEG_TEST(JPEGFrameTest)) {
+  TEST_LIBJPEG_SUPPORT();
   for (int skip_basic_info = 0; skip_basic_info < 2; skip_basic_info++) {
     for (int skip_color_encoding = 0; skip_color_encoding < 2;
          skip_color_encoding++) {
@@ -1402,4 +1404,3 @@ TEST(EncodeTest, JXL_TRANSCODE_JPEG_TEST(JPEGFrameTest)) {
     }
   }
 }
-#endif  // JPEGXL_ENABLE_JPEG

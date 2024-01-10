@@ -20,7 +20,7 @@ pub use self::names::*;
 pub use self::start::*;
 pub use self::types::*;
 
-use crate::{CustomSection, Encode, ProducersSection};
+use crate::{CustomSection, Encode, ProducersSection, RawCustomSection};
 
 // Core sorts extended by the component model
 const CORE_TYPE_SORT: u8 = 0x10;
@@ -113,7 +113,7 @@ impl Component {
         // Magic
         0x00, 0x61, 0x73, 0x6D,
         // Version
-        0x0c, 0x00, 0x01, 0x00,
+        0x0d, 0x00, 0x01, 0x00,
     ];
 
     /// Begin writing a new `Component`.
@@ -148,6 +148,12 @@ impl Default for Component {
 }
 
 impl ComponentSection for CustomSection<'_> {
+    fn id(&self) -> u8 {
+        ComponentSectionId::CoreCustom.into()
+    }
+}
+
+impl ComponentSection for RawCustomSection<'_> {
     fn id(&self) -> u8 {
         ComponentSectionId::CoreCustom.into()
     }

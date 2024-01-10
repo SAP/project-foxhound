@@ -258,13 +258,6 @@ JxlEncoderStatus CheckValidBitdepth(uint32_t bits_per_sample,
 
 JxlEncoderStatus VerifyInputBitDepth(JxlBitDepth bit_depth,
                                      JxlPixelFormat format) {
-  if ((format.data_type == JXL_TYPE_FLOAT ||
-       format.data_type == JXL_TYPE_FLOAT16) &&
-      bit_depth.type != JXL_BIT_DEPTH_FROM_PIXEL_FORMAT) {
-    return JXL_API_ERROR_NOSET(
-        "Only JXL_BIT_DEPTH_FROM_PIXEL_FORMAT is "
-        "implemented for float types.");
-  }
   return JXL_ENC_SUCCESS;
 }
 
@@ -382,23 +375,26 @@ JxlEncoderStatus JxlEncoderStruct::RefillOutputByteQueue() {
            level_message)
               .c_str());
     }
-
+    jxl::AuxOut* aux_out =
+        input.frame ? input.frame->option_values.aux_out : nullptr;
     jxl::BitWriter writer;
-    if (!WriteCodestreamHeaders(&metadata, &writer, nullptr)) {
+    if (!WriteCodestreamHeaders(&metadata, &writer, aux_out)) {
       return JXL_API_ERROR(this, JXL_ENC_ERR_GENERIC,
                            "Failed to write codestream header");
     }
     // Only send ICC (at least several hundred bytes) if fields aren't enough.
     if (metadata.m.color_encoding.WantICC()) {
       if (!jxl::WriteICC(metadata.m.color_encoding.ICC(), &writer,
-                         jxl::kLayerHeader, nullptr)) {
+                         jxl::kLayerHeader, aux_out)) {
         return JXL_API_ERROR(this, JXL_ENC_ERR_GENERIC,
                              "Failed to write ICC profile");
       }
     }
     // TODO(lode): preview should be added here if a preview image is added
 
+    jxl::BitWriter::Allotment allotment(&writer, 8);
     writer.ZeroPadToByte();
+    allotment.ReclaimAndCharge(&writer, jxl::kLayerHeader, aux_out);
 
     // Not actually the end of frame, but the end of metadata/ICC, but helps
     // the next frame to start here for indexing purposes.
@@ -571,7 +567,7 @@ JxlEncoderStatus JxlEncoderStruct::RefillOutputByteQueue() {
       if (!jxl::EncodeFrame(input_frame->option_values.cparams, frame_info,
                             &metadata, input_frame->frame, &enc_state, cms,
                             thread_pool.get(), &writer,
-                            /*aux_out=*/nullptr)) {
+                            input_frame->option_values.aux_out)) {
         return JXL_API_ERROR(this, JXL_ENC_ERR_GENERIC,
                              "Failed to encode frame");
       }
@@ -699,7 +695,8 @@ JxlEncoderStatus JxlEncoderSetICCProfile(JxlEncoder* enc,
   }
   jxl::PaddedBytes icc;
   icc.assign(icc_profile, icc_profile + size);
-  if (!enc->metadata.m.color_encoding.SetICC(std::move(icc))) {
+  if (!enc->metadata.m.color_encoding.SetICC(
+          std::move(icc), enc->cms_set ? &enc->cms : nullptr)) {
     return JXL_API_ERROR(enc, JXL_ENC_ERR_BAD_INPUT,
                          "ICC profile could not be set");
   }
@@ -722,8 +719,8 @@ JxlEncoderStatus JxlEncoderSetICCProfile(JxlEncoder* enc,
     jxl::SetIntensityTarget(&enc->metadata.m);
   }
 
-  if (!enc->basic_info.uses_original_profile) {
-    enc->metadata.m.color_encoding.DecideIfWantICC();
+  if (!enc->basic_info.uses_original_profile && enc->cms_set) {
+    enc->metadata.m.color_encoding.DecideIfWantICC(enc->cms);
   }
 
   return JXL_ENC_SUCCESS;
@@ -805,6 +802,7 @@ JxlEncoderStatus JxlEncoderSetBasicInfo(JxlEncoder* enc,
                                             info->exponent_bits_per_sample)) {
     return JXL_API_ERROR(enc, JXL_ENC_ERR_API_USAGE, "Invalid bit depth");
   }
+
   enc->metadata.m.bit_depth.bits_per_sample = info->bits_per_sample;
   enc->metadata.m.bit_depth.exponent_bits_per_sample =
       info->exponent_bits_per_sample;
@@ -922,6 +920,55 @@ void JxlEncoderInitExtraChannelInfo(JxlExtraChannelType type,
   info->cfa_channel = 0;
 }
 
+JXL_EXPORT JxlEncoderStatus JxlEncoderSetUpsamplingMode(JxlEncoder* enc,
+                                                        const int64_t factor,
+                                                        const int64_t mode) {
+  // for convenience, allow calling this with factor 1 and just make it a no-op
+  if (factor == 1) return JXL_ENC_SUCCESS;
+  if (factor != 2 && factor != 4 && factor != 8)
+    return JXL_API_ERROR(enc, JXL_ENC_ERR_API_USAGE,
+                         "Invalid upsampling factor");
+  if (mode < -1)
+    return JXL_API_ERROR(enc, JXL_ENC_ERR_API_USAGE, "Invalid upsampling mode");
+  if (mode > 1)
+    return JXL_API_ERROR(enc, JXL_ENC_ERR_NOT_SUPPORTED,
+                         "Unsupported upsampling mode");
+
+  const size_t count = (factor == 2 ? 15 : (factor == 4 ? 55 : 210));
+  auto& td = enc->metadata.transform_data;
+  float* weights = (factor == 2 ? td.upsampling2_weights
+                                : (factor == 4 ? td.upsampling4_weights
+                                               : td.upsampling8_weights));
+  if (mode == -1) {
+    // Default fancy upsampling: don't signal custom weights
+    enc->metadata.transform_data.custom_weights_mask &= ~(factor >> 1);
+  } else if (mode == 0) {
+    // Nearest neighbor upsampling
+    enc->metadata.transform_data.custom_weights_mask |= (factor >> 1);
+    memset(weights, 0, sizeof(float) * count);
+    if (factor == 2) {
+      weights[9] = 1.f;
+    } else if (factor == 4) {
+      for (int i : {19, 24, 49}) weights[i] = 1.f;
+    } else if (factor == 8) {
+      for (int i : {39, 44, 49, 54, 119, 124, 129, 174, 179, 204}) {
+        weights[i] = 1.f;
+      }
+    }
+  } else if (mode == 1) {
+    // 'Pixel dots' upsampling (nearest-neighbor with cut corners)
+    JxlEncoderSetUpsamplingMode(enc, factor, 0);
+    if (factor == 4) {
+      weights[19] = 0.f;
+      weights[24] = 0.5f;
+    } else if (factor == 8) {
+      for (int i : {39, 44, 49, 119}) weights[i] = 0.f;
+      for (int i : {54, 124}) weights[i] = 0.5f;
+    }
+  }
+  return JXL_ENC_SUCCESS;
+}
+
 JXL_EXPORT JxlEncoderStatus JxlEncoderSetExtraChannelInfo(
     JxlEncoder* enc, size_t index, const JxlExtraChannelInfo* info) {
   if (index >= enc->metadata.m.num_extra_channels) {
@@ -995,12 +1042,6 @@ JxlEncoderFrameSettings* JxlEncoderFrameSettingsCreate(
   return ret;
 }
 
-JxlEncoderFrameSettings* JxlEncoderOptionsCreate(
-    JxlEncoder* enc, const JxlEncoderFrameSettings* source) {
-  // Deprecated function name, call the non-deprecated function
-  return JxlEncoderFrameSettingsCreate(enc, source);
-}
-
 JxlEncoderStatus JxlEncoderSetFrameLossless(
     JxlEncoderFrameSettings* frame_settings, const JXL_BOOL lossless) {
   if (lossless && frame_settings->enc->basic_info_set &&
@@ -1011,18 +1052,6 @@ JxlEncoderStatus JxlEncoderSetFrameLossless(
   }
   frame_settings->values.lossless = lossless;
   return JXL_ENC_SUCCESS;
-}
-
-JxlEncoderStatus JxlEncoderOptionsSetLossless(
-    JxlEncoderFrameSettings* frame_settings, JXL_BOOL lossless) {
-  // Deprecated function name, call the non-deprecated function
-  return JxlEncoderSetFrameLossless(frame_settings, lossless);
-}
-
-JxlEncoderStatus JxlEncoderOptionsSetEffort(
-    JxlEncoderFrameSettings* frame_settings, const int effort) {
-  return JxlEncoderFrameSettingsSetOption(frame_settings,
-                                          JXL_ENC_FRAME_SETTING_EFFORT, effort);
 }
 
 JxlEncoderStatus JxlEncoderSetFrameDistance(
@@ -1064,18 +1093,6 @@ JxlEncoderStatus JxlEncoderSetExtraChannelDistance(
 
   frame_settings->values.cparams.ec_distance[index] = distance;
   return JXL_ENC_SUCCESS;
-}
-
-JxlEncoderStatus JxlEncoderOptionsSetDistance(
-    JxlEncoderFrameSettings* frame_settings, float distance) {
-  // Deprecated function name, call the non-deprecated function
-  return JxlEncoderSetFrameDistance(frame_settings, distance);
-}
-
-JxlEncoderStatus JxlEncoderOptionsSetDecodingSpeed(
-    JxlEncoderFrameSettings* frame_settings, int tier) {
-  return JxlEncoderFrameSettingsSetOption(
-      frame_settings, JXL_ENC_FRAME_SETTING_DECODING_SPEED, tier);
 }
 
 JxlEncoderStatus JxlEncoderFrameSettingsSetOption(
@@ -1269,15 +1286,7 @@ JxlEncoderStatus JxlEncoderFrameSettingsSetOption(
         return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_API_USAGE,
                              "Option value has to be in [-1..3]");
       }
-      // TODO(lode): the default behavior of this parameter for cjxl is
-      // to choose 1 or 2 depending on the situation. This behavior needs to be
-      // implemented either in the C++ library by allowing to set this to -1, or
-      // kept in cjxl and set it to 1 or 2 using this API.
-      if (value == -1) {
-        frame_settings->values.cparams.modular_group_size_shift = 1;
-      } else {
-        frame_settings->values.cparams.modular_group_size_shift = value;
-      }
+      frame_settings->values.cparams.modular_group_size_shift = value;
       return JXL_ENC_SUCCESS;
     case JXL_ENC_FRAME_SETTING_MODULAR_PREDICTOR:
       if (value < -1 || value > 15) {
@@ -1320,6 +1329,22 @@ JxlEncoderStatus JxlEncoderFrameSettingsSetOption(
     case JXL_ENC_FRAME_SETTING_JPEG_COMPRESS_BOXES:
       frame_settings->values.cparams.jpeg_compress_boxes = value;
       return JXL_ENC_SUCCESS;
+    case JXL_ENC_FRAME_SETTING_BUFFERING:
+      if (value < 0 || value > 3) {
+        return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_NOT_SUPPORTED,
+                             "Buffering has to be in [0..3]");
+      }
+      return JXL_ENC_SUCCESS;
+    case JXL_ENC_FRAME_SETTING_JPEG_KEEP_EXIF:
+      frame_settings->values.cparams.jpeg_keep_exif = value;
+      return JXL_ENC_SUCCESS;
+    case JXL_ENC_FRAME_SETTING_JPEG_KEEP_XMP:
+      frame_settings->values.cparams.jpeg_keep_xmp = value;
+      return JXL_ENC_SUCCESS;
+    case JXL_ENC_FRAME_SETTING_JPEG_KEEP_JUMBF:
+      frame_settings->values.cparams.jpeg_keep_jumbf = value;
+      return JXL_ENC_SUCCESS;
+
     default:
       return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_NOT_SUPPORTED,
                            "Unknown option");
@@ -1409,6 +1434,10 @@ JxlEncoderStatus JxlEncoderFrameSettingsSetFloatOption(
     case JXL_ENC_FRAME_SETTING_BROTLI_EFFORT:
     case JXL_ENC_FRAME_SETTING_FILL_ENUM:
     case JXL_ENC_FRAME_SETTING_JPEG_COMPRESS_BOXES:
+    case JXL_ENC_FRAME_SETTING_BUFFERING:
+    case JXL_ENC_FRAME_SETTING_JPEG_KEEP_EXIF:
+    case JXL_ENC_FRAME_SETTING_JPEG_KEEP_XMP:
+    case JXL_ENC_FRAME_SETTING_JPEG_KEEP_JUMBF:
       return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_NOT_SUPPORTED,
                            "Int option, try setting it with "
                            "JxlEncoderFrameSettingsSetOption");
@@ -1430,6 +1459,7 @@ JxlEncoder* JxlEncoderCreate(const JxlMemoryManager* memory_manager) {
   enc->memory_manager = local_memory_manager;
   // TODO(sboukortt): add an API function to set this.
   enc->cms = jxl::GetJxlCms();
+  enc->cms_set = true;
 
   // Initialize all the field values.
   JxlEncoderReset(enc);
@@ -1512,6 +1542,7 @@ int JxlEncoderGetRequiredCodestreamLevel(const JxlEncoder* enc) {
 void JxlEncoderSetCms(JxlEncoder* enc, JxlCmsInterface cms) {
   jxl::msan::MemoryIsInitialized(&cms, sizeof(cms));
   enc->cms = cms;
+  enc->cms_set = true;
 }
 
 JxlEncoderStatus JxlEncoderSetParallelRunner(JxlEncoder* enc,
@@ -1598,7 +1629,8 @@ JxlEncoderStatus JxlEncoderAddJPEGFrame(
         frame_settings->enc->metadata.m.orientation);
     jxl::InterpretExif(io.blobs.exif, &orientation);
     frame_settings->enc->metadata.m.orientation = orientation;
-
+  }
+  if (!io.blobs.exif.empty() && frame_settings->values.cparams.jpeg_keep_exif) {
     size_t exif_size = io.blobs.exif.size();
     // Exif data in JPEG is limited to 64k
     if (exif_size > 0xFFFF) {
@@ -1612,19 +1644,26 @@ JxlEncoderStatus JxlEncoderAddJPEGFrame(
     JxlEncoderAddBox(frame_settings->enc, "Exif", exif.data(), exif_size,
                      frame_settings->values.cparams.jpeg_compress_boxes);
   }
-  if (!io.blobs.xmp.empty()) {
+  if (!io.blobs.xmp.empty() && frame_settings->values.cparams.jpeg_keep_xmp) {
     JxlEncoderUseBoxes(frame_settings->enc);
     JxlEncoderAddBox(frame_settings->enc, "xml ", io.blobs.xmp.data(),
                      io.blobs.xmp.size(),
                      frame_settings->values.cparams.jpeg_compress_boxes);
   }
-  if (!io.blobs.jumbf.empty()) {
+  if (!io.blobs.jumbf.empty() &&
+      frame_settings->values.cparams.jpeg_keep_jumbf) {
     JxlEncoderUseBoxes(frame_settings->enc);
     JxlEncoderAddBox(frame_settings->enc, "jumb", io.blobs.jumbf.data(),
                      io.blobs.jumbf.size(),
                      frame_settings->values.cparams.jpeg_compress_boxes);
   }
   if (frame_settings->enc->store_jpeg_metadata) {
+    if (!frame_settings->values.cparams.jpeg_keep_exif ||
+        !frame_settings->values.cparams.jpeg_keep_xmp) {
+      return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_API_USAGE,
+                           "Need to preserve EXIF and XMP to allow JPEG "
+                           "bitstream reconstruction");
+    }
     jxl::jpeg::JPEGData data_in = *io.Main().jpeg_data;
     jxl::PaddedBytes jpeg_data;
     if (!jxl::jpeg::EncodeJPEGData(data_in, &jpeg_data,
@@ -1955,8 +1994,9 @@ JxlEncoderStatus JxlEncoderAddBox(JxlEncoder* enc, const JxlBoxType type,
 }
 
 JXL_EXPORT JxlEncoderStatus JxlEncoderSetExtraChannelBuffer(
-    const JxlEncoderOptions* frame_settings, const JxlPixelFormat* pixel_format,
-    const void* buffer, size_t size, uint32_t index) {
+    const JxlEncoderFrameSettings* frame_settings,
+    const JxlPixelFormat* pixel_format, const void* buffer, size_t size,
+    uint32_t index) {
   if (index >= frame_settings->enc->metadata.m.num_extra_channels) {
     return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_API_USAGE,
                          "Invalid value for the index of extra channel");
@@ -2045,8 +2085,9 @@ JxlEncoderStatus JxlEncoderProcessOutput(JxlEncoder* enc, uint8_t** next_out,
   return JXL_ENC_SUCCESS;
 }
 
-JxlEncoderStatus JxlEncoderSetFrameHeader(JxlEncoderOptions* frame_settings,
-                                          const JxlFrameHeader* frame_header) {
+JxlEncoderStatus JxlEncoderSetFrameHeader(
+    JxlEncoderFrameSettings* frame_settings,
+    const JxlFrameHeader* frame_header) {
   if (frame_header->layer_info.blend_info.source > 3) {
     return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_API_USAGE,
                          "invalid blending source index");
@@ -2068,7 +2109,7 @@ JxlEncoderStatus JxlEncoderSetFrameHeader(JxlEncoderOptions* frame_settings,
 }
 
 JxlEncoderStatus JxlEncoderSetExtraChannelBlendInfo(
-    JxlEncoderOptions* frame_settings, size_t index,
+    JxlEncoderFrameSettings* frame_settings, size_t index,
     const JxlBlendInfo* blend_info) {
   if (index >= frame_settings->enc->metadata.m.num_extra_channels) {
     return JXL_API_ERROR(frame_settings->enc, JXL_ENC_ERR_API_USAGE,
@@ -2125,4 +2166,93 @@ void JxlColorEncodingSetToLinearSRGB(JxlColorEncoding* color_encoding,
 
 void JxlEncoderAllowExpertOptions(JxlEncoder* enc) {
   enc->allow_expert_options = true;
+}
+
+JXL_EXPORT void JxlEncoderSetDebugImageCallback(
+    JxlEncoderFrameSettings* frame_settings, JxlDebugImageCallback callback,
+    void* opaque) {
+  frame_settings->values.cparams.debug_image = callback;
+  frame_settings->values.cparams.debug_image_opaque = opaque;
+}
+
+JXL_EXPORT JxlEncoderStats* JxlEncoderStatsCreate() {
+  return new JxlEncoderStats();
+}
+
+JXL_EXPORT void JxlEncoderStatsDestroy(JxlEncoderStats* stats) {
+  if (stats) delete stats;
+}
+
+JXL_EXPORT void JxlEncoderCollectStats(JxlEncoderFrameSettings* frame_settings,
+                                       JxlEncoderStats* stats) {
+  if (!stats) return;
+  frame_settings->values.aux_out = &stats->aux_out;
+}
+
+JXL_EXPORT size_t JxlEncoderStatsGet(const JxlEncoderStats* stats,
+                                     JxlEncoderStatsKey key) {
+  if (!stats) return 0;
+  const jxl::AuxOut& aux_out = stats->aux_out;
+  switch (key) {
+    case JXL_ENC_STAT_HEADER_BITS:
+      return aux_out.layers[jxl::kLayerHeader].total_bits;
+    case JXL_ENC_STAT_TOC_BITS:
+      return aux_out.layers[jxl::kLayerTOC].total_bits;
+    case JXL_ENC_STAT_DICTIONARY_BITS:
+      return aux_out.layers[jxl::kLayerDictionary].total_bits;
+    case JXL_ENC_STAT_SPLINES_BITS:
+      return aux_out.layers[jxl::kLayerSplines].total_bits;
+    case JXL_ENC_STAT_NOISE_BITS:
+      return aux_out.layers[jxl::kLayerNoise].total_bits;
+    case JXL_ENC_STAT_QUANT_BITS:
+      return aux_out.layers[jxl::kLayerQuant].total_bits;
+    case JXL_ENC_STAT_MODULAR_TREE_BITS:
+      return aux_out.layers[jxl::kLayerModularTree].total_bits;
+    case JXL_ENC_STAT_MODULAR_GLOBAL_BITS:
+      return aux_out.layers[jxl::kLayerModularGlobal].total_bits;
+    case JXL_ENC_STAT_DC_BITS:
+      return aux_out.layers[jxl::kLayerDC].total_bits;
+    case JXL_ENC_STAT_MODULAR_DC_GROUP_BITS:
+      return aux_out.layers[jxl::kLayerModularDcGroup].total_bits;
+    case JXL_ENC_STAT_CONTROL_FIELDS_BITS:
+      return aux_out.layers[jxl::kLayerControlFields].total_bits;
+    case JXL_ENC_STAT_COEF_ORDER_BITS:
+      return aux_out.layers[jxl::kLayerOrder].total_bits;
+    case JXL_ENC_STAT_AC_HISTOGRAM_BITS:
+      return aux_out.layers[jxl::kLayerAC].total_bits;
+    case JXL_ENC_STAT_AC_BITS:
+      return aux_out.layers[jxl::kLayerACTokens].total_bits;
+    case JXL_ENC_STAT_MODULAR_AC_GROUP_BITS:
+      return aux_out.layers[jxl::kLayerModularAcGroup].total_bits;
+    case JXL_ENC_STAT_NUM_SMALL_BLOCKS:
+      return aux_out.num_small_blocks;
+    case JXL_ENC_STAT_NUM_DCT4X8_BLOCKS:
+      return aux_out.num_dct4x8_blocks;
+    case JXL_ENC_STAT_NUM_AFV_BLOCKS:
+      return aux_out.num_afv_blocks;
+    case JXL_ENC_STAT_NUM_DCT8_BLOCKS:
+      return aux_out.num_dct8_blocks;
+    case JXL_ENC_STAT_NUM_DCT8X32_BLOCKS:
+      return aux_out.num_dct16_blocks;
+    case JXL_ENC_STAT_NUM_DCT16_BLOCKS:
+      return aux_out.num_dct16x32_blocks;
+    case JXL_ENC_STAT_NUM_DCT16X32_BLOCKS:
+      return aux_out.num_dct32_blocks;
+    case JXL_ENC_STAT_NUM_DCT32_BLOCKS:
+      return aux_out.num_dct32x64_blocks;
+    case JXL_ENC_STAT_NUM_DCT32X64_BLOCKS:
+      return aux_out.num_dct32x64_blocks;
+    case JXL_ENC_STAT_NUM_DCT64_BLOCKS:
+      return aux_out.num_dct64_blocks;
+    case JXL_ENC_STAT_NUM_BUTTERAUGLI_ITERS:
+      return aux_out.num_butteraugli_iters;
+    default:
+      return 0;
+  }
+}
+
+JXL_EXPORT void JxlEncoderStatsMerge(JxlEncoderStats* stats,
+                                     const JxlEncoderStats* other) {
+  if (!stats || !other) return;
+  stats->aux_out.Assimilate(other->aux_out);
 }

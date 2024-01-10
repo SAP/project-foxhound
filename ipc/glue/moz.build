@@ -42,7 +42,6 @@ EXPORTS.mozilla.ipc += [
     "IPDLParamTraits.h",
     "IPDLStructMember.h",
     "LaunchError.h",
-    "LibrarySandboxPreload.h",
     "MessageChannel.h",
     "MessageLink.h",
     "MessagePump.h",
@@ -115,15 +114,7 @@ else:
         "CrossProcessSemaphore_unimplemented.cpp",
     ]
 
-# Android has its own,
-# almost-but-not-quite-compatible-with-POSIX-or-/dev/shm shared memory
-# impl.
-if CONFIG["OS_TARGET"] == "Android":
-    EXPORTS.mozilla.ipc += ["SharedMemoryBasic_android.h"]
-    UNIFIED_SOURCES += [
-        "SharedMemoryBasic_android.cpp",
-    ]
-elif CONFIG["OS_ARCH"] == "Darwin":
+if CONFIG["OS_ARCH"] == "Darwin":
     EXPORTS.mozilla.ipc += ["SharedMemoryBasic_mach.h"]
     SOURCES += [
         "SharedMemoryBasic_mach.mm",
@@ -175,7 +166,6 @@ UNIFIED_SOURCES += [
     "IPCMessageUtilsSpecializations.cpp",
     "IPCStreamUtils.cpp",
     "LaunchError.cpp",
-    "LibrarySandboxPreload.cpp",
     "MessageChannel.cpp",
     "MessageLink.cpp",
     "MessagePump.cpp",
@@ -201,6 +191,7 @@ UNIFIED_SOURCES += [
     "UtilityProcessImpl.cpp",
     "UtilityProcessManager.cpp",
     "UtilityProcessParent.cpp",
+    "UtilityProcessSandboxing.cpp",
 ]
 
 SOURCES += [
@@ -286,7 +277,12 @@ FINAL_LIBRARY = "xul"
 if CONFIG["OS_ARCH"] == "Darwin":
     OS_LIBS += ["bsm"]  # for audit_token_to_pid
 
-for var in ("MOZ_CHILD_PROCESS_NAME", "MOZ_CHILD_PROCESS_BUNDLE"):
+for var in (
+    "MOZ_CHILD_PROCESS_NAME",
+    "MOZ_CHILD_PROCESS_BUNDLENAME",
+    "MOZ_EME_PROCESS_NAME_BRANDED",
+    "MOZ_EME_PROCESS_BUNDLENAME",
+):
     DEFINES[var] = '"%s"' % CONFIG[var]
 
 if CONFIG["MOZ_SANDBOX"] and CONFIG["OS_ARCH"] == "WINNT":

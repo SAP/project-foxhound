@@ -25,10 +25,6 @@ const { XPCOMUtils } = ChromeUtils.importESModule(
   "resource://gre/modules/XPCOMUtils.sys.mjs"
 );
 
-const { FileUtils } = ChromeUtils.importESModule(
-  "resource://gre/modules/FileUtils.sys.mjs"
-);
-
 const lazy = {};
 
 XPCOMUtils.defineLazyServiceGetters(lazy, {
@@ -45,6 +41,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
   ExtensionData: "resource://gre/modules/Extension.sys.mjs",
   ExtensionUtils: "resource://gre/modules/ExtensionUtils.sys.mjs",
   PermissionsUtils: "resource://gre/modules/PermissionsUtils.sys.mjs",
+  QuarantinedDomains: "resource://gre/modules/ExtensionPermissions.sys.mjs",
 });
 
 XPCOMUtils.defineLazyModuleGetters(lazy, {
@@ -109,6 +106,20 @@ XPCOMUtils.defineLazyPreferenceGetter(
   false
 );
 
+// A temporary hidden pref just meant to be used as a last resort, in case
+// we need to force-disable the "per-addon quarantined domains user controls"
+// feature during the beta cycle, e.g. if unexpected issues are caught late and
+// it shouldn't  ride the train.
+//
+// TODO(Bug 1839616): remove this pref after the user controls features have been
+// released.
+XPCOMUtils.defineLazyPreferenceGetter(
+  lazy,
+  "isQuarantineUIDisabled",
+  "extensions.quarantinedDomains.uiDisabled",
+  false
+);
+
 const { nsIBlocklistService } = Ci;
 
 const { Log } = ChromeUtils.importESModule(
@@ -126,7 +137,6 @@ const nsIFile = Components.Constructor(
 // (Requires AddonManager.jsm)
 var logger = Log.repository.getLogger(LOGGER_ID);
 
-const KEY_PROFILEDIR = "ProfD";
 const FILE_JSON_DB = "extensions.json";
 
 const PREF_DB_SCHEMA = "extensions.databaseSchema";
@@ -967,6 +977,33 @@ AddonWrapper = class {
     return addonFor(this);
   }
 
+  get quarantineIgnoredByApp() {
+    return this.isPrivileged || !!this.recommendationStates?.length;
+  }
+
+  get quarantineIgnoredByUser() {
+    // NOTE: confirm if this getter could be replaced by a
+    // lazy preference getter and the addon wrapper to not be
+    // kept around longer by the pref observer registered
+    // internally by the lazy getter.
+    return lazy.QuarantinedDomains.isUserAllowedAddonId(this.id);
+  }
+
+  set quarantineIgnoredByUser(val) {
+    lazy.QuarantinedDomains.setUserAllowedAddonIdPref(this.id, !!val);
+  }
+
+  get canChangeQuarantineIgnored() {
+    // Never show the quarantined domains user controls UI if the
+    // quarantined domains feature is disabled.
+    return (
+      WebExtensionPolicy.quarantinedDomainsEnabled &&
+      !lazy.isQuarantineUIDisabled &&
+      this.type === "extension" &&
+      !this.quarantineIgnoredByApp
+    );
+  }
+
   get seen() {
     return addonFor(this).seen;
   }
@@ -1755,7 +1792,7 @@ const XPIDatabase = {
   // true if the database connection has been opened
   initialized: false,
   // The database file
-  jsonFile: FileUtils.getFile(KEY_PROFILEDIR, [FILE_JSON_DB], true),
+  jsonFilePath: PathUtils.join(PathUtils.profileDir, FILE_JSON_DB),
   rebuildingDatabase: false,
   syncLoadingDB: false,
   // Add-ons from the database in locations which are no longer
@@ -1783,8 +1820,9 @@ const XPIDatabase = {
 
   async _saveNow() {
     try {
-      let path = this.jsonFile.path;
-      await IOUtils.writeJSON(path, this, { tmpPath: `${path}.tmp` });
+      await IOUtils.writeJSON(this.jsonFilePath, this, {
+        tmpPath: `${this.jsonFilePath}.tmp`,
+      });
 
       if (!this._schemaVersionSet) {
         // Update the XPIDB schema version preference the first time we
@@ -2023,10 +2061,10 @@ const XPIDatabase = {
       return this._dbPromise;
     }
 
-    logger.debug(`Starting async load of XPI database ${this.jsonFile.path}`);
+    logger.debug(`Starting async load of XPI database ${this.jsonFilePath}`);
     this._dbPromise = (async () => {
       try {
-        let json = await IOUtils.readJSON(this.jsonFile.path);
+        let json = await IOUtils.readJSON(this.jsonFilePath);
 
         logger.debug("Finished async read of XPI database, parsing...");
         await this.maybeIdleDispatch();
@@ -2038,7 +2076,7 @@ const XPIDatabase = {
           }
         } else {
           logger.warn(
-            `Extensions database ${this.jsonFile.path} exists but is not readable; rebuilding`,
+            `Extensions database ${this.jsonFilePath} exists but is not readable; rebuilding`,
             error
           );
           this._loadError = error;

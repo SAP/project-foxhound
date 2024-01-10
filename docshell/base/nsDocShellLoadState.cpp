@@ -7,11 +7,13 @@
 #include "nsDocShellLoadState.h"
 #include "nsIDocShell.h"
 #include "nsDocShell.h"
+#include "nsIProtocolHandler.h"
 #include "nsISHEntry.h"
 #include "nsIURIFixup.h"
 #include "nsIWebNavigation.h"
 #include "nsIChannel.h"
 #include "nsIURLQueryStringStripper.h"
+#include "nsIXULRuntime.h"
 #include "nsNetUtil.h"
 #include "nsQueryObject.h"
 #include "ReferrerInfo.h"
@@ -84,6 +86,8 @@ nsDocShellLoadState::nsDocShellLoadState(
   mPrincipalToInherit = aLoadState.PrincipalToInherit();
   mPartitionedPrincipalToInherit = aLoadState.PartitionedPrincipalToInherit();
   mTriggeringSandboxFlags = aLoadState.TriggeringSandboxFlags();
+  mTriggeringWindowId = aLoadState.TriggeringWindowId();
+  mTriggeringStorageAccess = aLoadState.TriggeringStorageAccess();
   mTriggeringRemoteType = aLoadState.TriggeringRemoteType();
   mCsp = aLoadState.Csp();
   mOriginalURIString = aLoadState.OriginalURIString();
@@ -148,6 +152,8 @@ nsDocShellLoadState::nsDocShellLoadState(const nsDocShellLoadState& aOther)
       mResultPrincipalURIIsSome(aOther.mResultPrincipalURIIsSome),
       mTriggeringPrincipal(aOther.mTriggeringPrincipal),
       mTriggeringSandboxFlags(aOther.mTriggeringSandboxFlags),
+      mTriggeringWindowId(aOther.mTriggeringWindowId),
+      mTriggeringStorageAccess(aOther.mTriggeringStorageAccess),
       mCsp(aOther.mCsp),
       mKeepResultPrincipalURIIfSet(aOther.mKeepResultPrincipalURIIfSet),
       mLoadReplace(aOther.mLoadReplace),
@@ -202,6 +208,8 @@ nsDocShellLoadState::nsDocShellLoadState(nsIURI* aURI, uint64_t aLoadIdentifier)
     : mURI(aURI),
       mResultPrincipalURIIsSome(false),
       mTriggeringSandboxFlags(0),
+      mTriggeringWindowId(0),
+      mTriggeringStorageAccess(false),
       mKeepResultPrincipalURIIfSet(false),
       mLoadReplace(false),
       mInheritPrincipal(false),
@@ -441,6 +449,9 @@ nsresult nsDocShellLoadState::CreateFromLoadURIOptions(
   loadState->SetHasValidUserGestureActivation(
       aLoadURIOptions.mHasValidUserGestureActivation);
   loadState->SetTriggeringSandboxFlags(aLoadURIOptions.mTriggeringSandboxFlags);
+  loadState->SetTriggeringWindowId(aLoadURIOptions.mTriggeringWindowId);
+  loadState->SetTriggeringStorageAccess(
+      aLoadURIOptions.mTriggeringStorageAccess);
   loadState->SetPostDataStream(postData);
   loadState->SetHeadersStream(aLoadURIOptions.mHeaders);
   loadState->SetBaseURI(aLoadURIOptions.mBaseURI);
@@ -558,6 +569,23 @@ void nsDocShellLoadState::SetTriggeringSandboxFlags(uint32_t flags) {
 
 uint32_t nsDocShellLoadState::TriggeringSandboxFlags() const {
   return mTriggeringSandboxFlags;
+}
+
+void nsDocShellLoadState::SetTriggeringWindowId(uint64_t aTriggeringWindowId) {
+  mTriggeringWindowId = aTriggeringWindowId;
+}
+
+uint64_t nsDocShellLoadState::TriggeringWindowId() const {
+  return mTriggeringWindowId;
+}
+
+void nsDocShellLoadState::SetTriggeringStorageAccess(
+    bool aTriggeringStorageAccess) {
+  mTriggeringStorageAccess = aTriggeringStorageAccess;
+}
+
+bool nsDocShellLoadState::TriggeringStorageAccess() const {
+  return mTriggeringStorageAccess;
 }
 
 bool nsDocShellLoadState::InheritPrincipal() const { return mInheritPrincipal; }
@@ -886,6 +914,30 @@ void nsDocShellLoadState::SetTriggeringRemoteType(
   MOZ_DIAGNOSTIC_ASSERT(XRE_IsParentProcess(), "only settable in parent");
   mTriggeringRemoteType = aTriggeringRemoteType;
 }
+
+#ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
+void nsDocShellLoadState::AssertProcessCouldTriggerLoadIfSystem() {
+  // Early check to see if we're trying to start a file URI load with a system
+  // principal within a web content process.
+  // If this assertion fails, the load will fail later during
+  // nsContentSecurityManager checks, however this assertion should happen
+  // closer to whichever caller is triggering the system-principal load.
+  if (mozilla::SessionHistoryInParent() &&
+      TriggeringPrincipal()->IsSystemPrincipal() &&
+      mozilla::dom::IsWebRemoteType(GetEffectiveTriggeringRemoteType())) {
+    bool localFile = false;
+    if (NS_SUCCEEDED(NS_URIChainHasFlags(
+            URI(), nsIProtocolHandler::URI_IS_LOCAL_FILE, &localFile)) &&
+        localFile) {
+      NS_WARNING(nsPrintfCString("Unexpected system load of file URI (%s) from "
+                                 "web content process",
+                                 URI()->GetSpecOrDefault().get())
+                     .get());
+      MOZ_CRASH("Unexpected system load of file URI from web content process");
+    }
+  }
+}
+#endif
 
 nsresult nsDocShellLoadState::SetupInheritingPrincipal(
     BrowsingContext::Type aType,
@@ -1227,6 +1279,8 @@ DocShellLoadStateInit nsDocShellLoadState::Serialize(
   loadState.PrincipalToInherit() = mPrincipalToInherit;
   loadState.PartitionedPrincipalToInherit() = mPartitionedPrincipalToInherit;
   loadState.TriggeringSandboxFlags() = mTriggeringSandboxFlags;
+  loadState.TriggeringWindowId() = mTriggeringWindowId;
+  loadState.TriggeringStorageAccess() = mTriggeringStorageAccess;
   loadState.TriggeringRemoteType() = mTriggeringRemoteType;
   loadState.Csp() = mCsp;
   loadState.OriginalURIString() = mOriginalURIString;

@@ -125,7 +125,6 @@ constexpr inline bool IsAligned(T value, U alignment) {
   return (value & (alignment - 1)) == 0;
 }
 
-using byte = uint8_t;
 using Address = uintptr_t;
 static const Address kNullAddress = 0;
 
@@ -690,11 +689,11 @@ class ByteArray : public HeapObject {
   PseudoHandle<ByteArrayData> takeOwnership(Isolate* isolate);
   PseudoHandle<ByteArrayData> maybeTakeOwnership(Isolate* isolate);
 
-  byte get(uint32_t index) { return inner()->get(index); }
-  void set(uint32_t index, byte val) { inner()->set(index, val); }
+  uint8_t get(uint32_t index) { return inner()->get(index); }
+  void set(uint32_t index, uint8_t val) { inner()->set(index, val); }
 
   uint32_t length() const { return inner()->length; }
-  byte* GetDataStartAddress() { return inner()->data(); }
+  uint8_t* GetDataStartAddress() { return inner()->data(); }
 
   static ByteArray cast(Object object) {
     ByteArray b;
@@ -1038,10 +1037,10 @@ inline bool IsIgnoreCase(RegExpFlags flags) { return flags.ignoreCase(); }
 inline bool IsMultiline(RegExpFlags flags) { return flags.multiline(); }
 inline bool IsDotAll(RegExpFlags flags) { return flags.dotAll(); }
 inline bool IsSticky(RegExpFlags flags) { return flags.sticky(); }
-
-// TODO: Support /v flag (bug 1713657)
-inline bool IsUnicodeSets(RegExpFlags flags) { return false; }
-inline bool IsEitherUnicode(RegExpFlags flags) { return flags.unicode(); }
+inline bool IsUnicodeSets(RegExpFlags flags) { return flags.unicodeSets(); }
+inline bool IsEitherUnicode(RegExpFlags flags) {
+  return flags.unicode() || flags.unicodeSets();
+}
 
 class Histogram {
  public:

@@ -11,7 +11,6 @@
 
 #include "gc/Allocator.h"
 #include "gc/GCProbes.h"
-#include "vm/WellKnownAtom.h"  // js_*_str
 
 #include "gc/ObjectKind-inl.h"
 #include "vm/JSObject-inl.h"
@@ -25,7 +24,7 @@ inline const char* GetFunctionNameBytes(JSContext* cx, JSFunction* fun,
     *bytes = StringToNewUTF8CharsZ(cx, *name);
     return bytes->get();
   }
-  return js_anonymous_str;
+  return "anonymous";
 }
 
 } /* namespace js */
@@ -118,7 +117,7 @@ inline JSAtom* JSFunction::infallibleGetUnresolvedName(JSContext* cx) {
     return name;
   }
 
-  return cx->names().empty;
+  return cx->names().empty_;
 }
 
 /* static */ inline bool JSFunction::getAllocKindForThis(

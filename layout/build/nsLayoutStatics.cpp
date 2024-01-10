@@ -10,10 +10,8 @@
 #include "nscore.h"
 
 #include "mozilla/intl/AppDateTimeFormat.h"
-#include "MediaManager.h"
 #include "mozilla/dom/ServiceWorkerRegistrar.h"
 #include "nsAttrValue.h"
-#include "nsColorNames.h"
 #include "nsComputedDOMStyle.h"
 #include "nsContentDLF.h"
 #include "nsContentUtils.h"
@@ -27,7 +25,8 @@
 #include "mozilla/dom/PopupBlocker.h"
 #include "nsIFrame.h"
 #include "nsFrameState.h"
-#include "nsGlobalWindow.h"
+#include "nsGlobalWindowInner.h"
+#include "nsGlobalWindowOuter.h"
 #include "nsGkAtoms.h"
 #include "nsImageFrame.h"
 #include "mozilla/GlobalStyleSheetCache.h"
@@ -107,7 +106,7 @@
 #include "mozilla/dom/WebIDLGlobalNameHash.h"
 #include "mozilla/dom/U2FTokenManager.h"
 #include "mozilla/dom/WebAuthnController.h"
-#ifdef OS_WIN
+#ifdef XP_WIN
 #  include "mozilla/dom/WinWebAuthnManager.h"
 #endif
 #include "mozilla/dom/PointerEventHandler.h"
@@ -149,8 +148,7 @@ nsresult nsLayoutStatics::Initialize() {
 
   ContentParent::StartUp();
 
-  nsCSSProps::AddRefTable();
-  nsColorNames::AddRefTable();
+  nsCSSProps::Init();
 
 #ifdef DEBUG
   nsCSSPseudoElements::AssertAtoms();
@@ -229,7 +227,6 @@ nsresult nsLayoutStatics::Initialize() {
   }
 
   DecoderDoctorLogger::Init();
-  MediaManager::StartupInit();
   CubebUtils::InitLibrary();
 
   nsHtml5Module::InitializeStatics();
@@ -265,7 +262,7 @@ nsresult nsLayoutStatics::Initialize() {
   mozilla::dom::U2FTokenManager::Initialize();
   mozilla::dom::WebAuthnController::Initialize();
 
-#ifdef OS_WIN
+#ifdef XP_WIN
   mozilla::dom::WinWebAuthnManager::Initialize();
 #endif
 
@@ -279,6 +276,8 @@ nsresult nsLayoutStatics::Initialize() {
 
   // Reporting API.
   ReportingHeader::Initialize();
+
+  InitializeScopedLogExtraInfo();
 
   if (XRE_IsParentProcess()) {
     InitializeQuotaManager();
@@ -340,8 +339,6 @@ void nsLayoutStatics::Shutdown() {
   ActiveLayerTracker::Shutdown();
 
   // Release all of our atoms
-  nsColorNames::ReleaseTable();
-  nsCSSProps::ReleaseTable();
   nsRepeatService::Shutdown();
 
   nsXULContentUtils::Finish();

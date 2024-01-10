@@ -22,6 +22,7 @@ web-platform-tests:
     - web-platform-tests-reftest
     - web-platform-tests-wdspec
     - web-platform-tests-webgpu
+    - web-platform-tests-canvas
 
 web-platform-tests-backlog:
     - web-platform-tests-backlog
@@ -94,6 +95,8 @@ browsertime:
     - browsertime-responsiveness
     - browsertime-regression-tests
     - browsertime-upload
+    - browsertime-speculative
+    - browsertime-throttled
 
 browsertime-clang:
     - browsertime-tp6
@@ -209,14 +212,6 @@ linux2204-wayland-tests:
     - xpcshell
 
 # Windows
-
-windows-7-tests:
-    - cppunit
-    - mochitest-browser-a11y
-    - mochitest-browser-chrome
-    - mochitest-browser-media
-    - xpcshell
-
 windows32-2009-tests:
     - cppunit
     - crashtest
@@ -225,6 +220,9 @@ windows32-2009-tests:
     - jsreftest
     - marionette
     - mochitest-a11y
+    - mochitest-browser-a11y
+    - mochitest-browser-chrome
+    - mochitest-browser-media
     - mochitest-chrome
     - mochitest-chrome-gpu
     - mochitest-media
@@ -237,6 +235,7 @@ windows32-2009-tests:
     - test-verify
     - test-verify-gpu
     - test-verify-wpt
+    - xpcshell
 
 windows10-2009-tests:
     - cppunit
@@ -418,6 +417,9 @@ macosx64-talos:
     # - talos-tabswitch # Bug 1453007 times out
     # - talos-h1 # too long to unpack profile- Bug 1442893
 
+macosx1300-64-qr-tests:
+    - browsertime-benchmark
+
 # Android
 
 android-x86_64-tests:
@@ -467,10 +469,10 @@ android-hw-browsertime:
     - browsertime-tp6m
     - browsertime-tp6m-essential
     - browsertime-tp6m-live
-    - browsertime-speedometer-mobile
-    - browsertime-speedometer3-mobile
+    - browsertime-benchmark-speedometer-mobile
+    - browsertime-benchmark-speedometer3-mobile
     - browsertime-youtube-playback-mobile
-    - browsertime-unity-webgl-mobile
+    - browsertime-benchmark-unity-webgl-mobile
 
 android-hw-browsertime-profiling:
     - browsertime-tp6m-profiling

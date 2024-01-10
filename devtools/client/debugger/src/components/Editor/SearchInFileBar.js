@@ -4,12 +4,12 @@
 
 import PropTypes from "prop-types";
 import React, { Component } from "react";
+import { div } from "react-dom-factories";
 import { connect } from "../../utils/connect";
 import actions from "../../actions";
 import {
   getActiveSearch,
   getSelectedSource,
-  getContext,
   getSelectedSourceTextContent,
   getSearchOptions,
 } from "../../selectors";
@@ -55,7 +55,6 @@ class SearchInFileBar extends Component {
   static get propTypes() {
     return {
       closeFileSearch: PropTypes.func.isRequired,
-      cx: PropTypes.object.isRequired,
       editor: PropTypes.object,
       modifiers: PropTypes.object.isRequired,
       searchInFileEnabled: PropTypes.bool.isRequired,
@@ -118,10 +117,10 @@ class SearchInFileBar extends Component {
   };
 
   closeSearch = e => {
-    const { cx, closeFileSearch, editor, searchInFileEnabled } = this.props;
+    const { closeFileSearch, editor, searchInFileEnabled } = this.props;
     this.clearSearch();
     if (editor && searchInFileEnabled) {
-      closeFileSearch(cx, editor);
+      closeFileSearch();
       e.stopPropagation();
       e.preventDefault();
     }
@@ -315,34 +314,34 @@ class SearchInFileBar extends Component {
     } = this.state;
 
     if (!searchInFileEnabled) {
-      return <div />;
+      return div(null);
     }
-
-    return (
-      <div className="search-bar">
-        <SearchInput
-          query={this.state.query}
-          count={count}
-          placeholder={L10N.getStr("sourceSearch.search.placeholder2")}
-          summaryMsg={this.buildSummaryMsg()}
-          isLoading={false}
-          onChange={this.onChange}
-          onFocus={this.onFocus}
-          onBlur={this.onBlur}
-          showErrorEmoji={this.shouldShowErrorEmoji()}
-          onKeyDown={this.onKeyDown}
-          onHistoryScroll={this.onHistoryScroll}
-          handleNext={e => this.traverseResults(e, false)}
-          handlePrev={e => this.traverseResults(e, true)}
-          shouldFocus={this.state.inputFocused}
-          showClose={true}
-          showExcludePatterns={false}
-          handleClose={this.closeSearch}
-          showSearchModifiers={true}
-          searchKey={searchKeys.FILE_SEARCH}
-          onToggleSearchModifier={() => this.doSearch(this.state.query)}
-        />
-      </div>
+    return div(
+      {
+        className: "search-bar",
+      },
+      React.createElement(SearchInput, {
+        query: this.state.query,
+        count: count,
+        placeholder: L10N.getStr("sourceSearch.search.placeholder2"),
+        summaryMsg: this.buildSummaryMsg(),
+        isLoading: false,
+        onChange: this.onChange,
+        onFocus: this.onFocus,
+        onBlur: this.onBlur,
+        showErrorEmoji: this.shouldShowErrorEmoji(),
+        onKeyDown: this.onKeyDown,
+        onHistoryScroll: this.onHistoryScroll,
+        handleNext: e => this.traverseResults(e, false),
+        handlePrev: e => this.traverseResults(e, true),
+        shouldFocus: this.state.inputFocused,
+        showClose: true,
+        showExcludePatterns: false,
+        handleClose: this.closeSearch,
+        showSearchModifiers: true,
+        searchKey: searchKeys.FILE_SEARCH,
+        onToggleSearchModifier: () => this.doSearch(this.state.query),
+      })
     );
   }
 }
@@ -355,7 +354,6 @@ const mapStateToProps = (state, p) => {
   const selectedSource = getSelectedSource(state);
 
   return {
-    cx: getContext(state),
     searchInFileEnabled: getActiveSearch(state) === "file",
     selectedSource,
     selectedSourceTextContent: getSelectedSourceTextContent(state),

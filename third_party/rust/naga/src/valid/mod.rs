@@ -10,12 +10,9 @@ mod handles;
 mod interface;
 mod r#type;
 
-#[cfg(feature = "validate")]
-use crate::arena::{Arena, UniqueArena};
-
 use crate::{
     arena::Handle,
-    proc::{LayoutError, Layouter},
+    proc::{LayoutError, Layouter, TypeResolution},
     FastHashSet,
 };
 use bit_set::BitSet;
@@ -53,6 +50,7 @@ bitflags::bitflags! {
     /// by default.)
     #[cfg_attr(feature = "serialize", derive(serde::Serialize))]
     #[cfg_attr(feature = "deserialize", derive(serde::Deserialize))]
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
     pub struct ValidationFlags: u8 {
         /// Expressions.
         #[cfg(feature = "validate")]
@@ -86,6 +84,7 @@ bitflags::bitflags! {
     #[must_use]
     #[cfg_attr(feature = "serialize", derive(serde::Serialize))]
     #[cfg_attr(feature = "deserialize", derive(serde::Deserialize))]
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
     pub struct Capabilities: u16 {
         /// Support for [`AddressSpace:PushConstant`].
         const PUSH_CONSTANT = 0x1;
@@ -126,6 +125,7 @@ bitflags::bitflags! {
     /// Validation flags.
     #[cfg_attr(feature = "serialize", derive(serde::Serialize))]
     #[cfg_attr(feature = "deserialize", derive(serde::Deserialize))]
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
     pub struct ShaderStages: u8 {
         const VERTEX = 0x1;
         const FRAGMENT = 0x2;
@@ -140,6 +140,7 @@ pub struct ModuleInfo {
     type_flags: Vec<TypeFlags>,
     functions: Vec<FunctionInfo>,
     entry_points: Vec<FunctionInfo>,
+    const_expression_types: Box<[TypeResolution]>,
 }
 
 impl ops::Index<Handle<crate::Type>> for ModuleInfo {
@@ -153,6 +154,13 @@ impl ops::Index<Handle<crate::Function>> for ModuleInfo {
     type Output = FunctionInfo;
     fn index(&self, handle: Handle<crate::Function>) -> &Self::Output {
         &self.functions[handle.index()]
+    }
+}
+
+impl ops::Index<Handle<crate::Expression>> for ModuleInfo {
+    type Output = TypeResolution;
+    fn index(&self, handle: Handle<crate::Expression>) -> &Self::Output {
+        &self.const_expression_types[handle.index()]
     }
 }
 
@@ -171,15 +179,21 @@ pub struct Validator {
 }
 
 #[derive(Clone, Debug, thiserror::Error)]
+pub enum ConstExpressionError {
+    #[error("The expression is not a constant expression")]
+    NonConst,
+    #[error(transparent)]
+    Compose(#[from] ComposeError),
+    #[error("Type resolution failed")]
+    Type(#[from] crate::proc::ResolveError),
+}
+
+#[derive(Clone, Debug, thiserror::Error)]
 pub enum ConstantError {
     #[error("The type doesn't match the constant")]
     InvalidType,
-    #[error("The component handle {0:?} can not be resolved")]
-    UnresolvedComponent(Handle<crate::Constant>),
-    #[error("The array size handle {0:?} can not be resolved")]
-    UnresolvedSize(Handle<crate::Constant>),
-    #[error(transparent)]
-    Compose(#[from] ComposeError),
+    #[error("The type is not constructible")]
+    NonConstructibleType,
 }
 
 #[derive(Clone, Debug, thiserror::Error)]
@@ -193,6 +207,11 @@ pub enum ValidationError {
         handle: Handle<crate::Type>,
         name: String,
         source: TypeError,
+    },
+    #[error("Constant expression {handle:?} is invalid")]
+    ConstExpression {
+        handle: Handle<crate::Expression>,
+        source: ConstExpressionError,
     },
     #[error("Constant {handle:?} '{name}' is invalid")]
     Constant {
@@ -300,39 +319,22 @@ impl Validator {
     fn validate_constant(
         &self,
         handle: Handle<crate::Constant>,
-        constants: &Arena<crate::Constant>,
-        types: &UniqueArena<crate::Type>,
+        gctx: crate::proc::GlobalCtx,
+        mod_info: &ModuleInfo,
     ) -> Result<(), ConstantError> {
-        let con = &constants[handle];
-        match con.inner {
-            crate::ConstantInner::Scalar { width, ref value } => {
-                if self.check_width(value.scalar_kind(), width).is_err() {
-                    return Err(ConstantError::InvalidType);
-                }
-            }
-            crate::ConstantInner::Composite { ty, ref components } => {
-                match types[ty].inner {
-                    crate::TypeInner::Array {
-                        size: crate::ArraySize::Constant(size_handle),
-                        ..
-                    } if handle <= size_handle => {
-                        return Err(ConstantError::UnresolvedSize(size_handle));
-                    }
-                    _ => {}
-                }
-                if let Some(&comp) = components.iter().find(|&&comp| handle <= comp) {
-                    return Err(ConstantError::UnresolvedComponent(comp));
-                }
-                compose::validate_compose(
-                    ty,
-                    constants,
-                    types,
-                    components
-                        .iter()
-                        .map(|&component| constants[component].inner.resolve_type()),
-                )?;
-            }
+        let con = &gctx.constants[handle];
+
+        let type_info = &self.types[con.ty.index()];
+        if !type_info.flags.contains(TypeFlags::CONSTRUCTIBLE) {
+            return Err(ConstantError::NonConstructibleType);
         }
+
+        let decl_ty = &gctx.types[con.ty].inner;
+        let init_ty = mod_info[con.init].inner_with(gctx.types);
+        if !decl_ty.equivalent(init_ty, gctx.types) {
+            return Err(ConstantError::InvalidType);
+        }
+
         Ok(())
     }
 
@@ -347,37 +349,27 @@ impl Validator {
         #[cfg(feature = "validate")]
         Self::validate_module_handles(module).map_err(|e| e.with_span())?;
 
-        self.layouter
-            .update(&module.types, &module.constants)
-            .map_err(|e| {
-                let handle = e.ty;
-                ValidationError::from(e).with_span_handle(handle, &module.types)
-            })?;
+        self.layouter.update(module.to_ctx()).map_err(|e| {
+            let handle = e.ty;
+            ValidationError::from(e).with_span_handle(handle, &module.types)
+        })?;
 
-        #[cfg(feature = "validate")]
-        if self.flags.contains(ValidationFlags::CONSTANTS) {
-            for (handle, constant) in module.constants.iter() {
-                self.validate_constant(handle, &module.constants, &module.types)
-                    .map_err(|source| {
-                        ValidationError::Constant {
-                            handle,
-                            name: constant.name.clone().unwrap_or_default(),
-                            source,
-                        }
-                        .with_span_handle(handle, &module.constants)
-                    })?
-            }
-        }
+        let placeholder = TypeResolution::Value(crate::TypeInner::Scalar {
+            kind: crate::ScalarKind::Bool,
+            width: 0,
+        });
 
         let mut mod_info = ModuleInfo {
             type_flags: Vec::with_capacity(module.types.len()),
             functions: Vec::with_capacity(module.functions.len()),
             entry_points: Vec::with_capacity(module.entry_points.len()),
+            const_expression_types: vec![placeholder; module.const_expressions.len()]
+                .into_boxed_slice(),
         };
 
         for (handle, ty) in module.types.iter() {
             let ty_info = self
-                .validate_type(handle, &module.types, &module.constants)
+                .validate_type(handle, module.to_ctx())
                 .map_err(|source| {
                     ValidationError::Type {
                         handle,
@@ -390,9 +382,45 @@ impl Validator {
             self.types[handle.index()] = ty_info;
         }
 
+        {
+            let t = crate::Arena::new();
+            let resolve_context = crate::proc::ResolveContext::with_locals(module, &t, &[]);
+            for (handle, _) in module.const_expressions.iter() {
+                mod_info
+                    .process_const_expression(handle, &resolve_context, module.to_ctx())
+                    .map_err(|source| {
+                        ValidationError::ConstExpression { handle, source }
+                            .with_span_handle(handle, &module.const_expressions)
+                    })?
+            }
+        }
+
+        #[cfg(feature = "validate")]
+        if self.flags.contains(ValidationFlags::CONSTANTS) {
+            for (handle, _) in module.const_expressions.iter() {
+                self.validate_const_expression(handle, module.to_ctx(), &mut mod_info)
+                    .map_err(|source| {
+                        ValidationError::ConstExpression { handle, source }
+                            .with_span_handle(handle, &module.const_expressions)
+                    })?
+            }
+
+            for (handle, constant) in module.constants.iter() {
+                self.validate_constant(handle, module.to_ctx(), &mod_info)
+                    .map_err(|source| {
+                        ValidationError::Constant {
+                            handle,
+                            name: constant.name.clone().unwrap_or_default(),
+                            source,
+                        }
+                        .with_span_handle(handle, &module.constants)
+                    })?
+            }
+        }
+
         #[cfg(feature = "validate")]
         for (var_handle, var) in module.global_variables.iter() {
-            self.validate_global_var(var, &module.types)
+            self.validate_global_var(var, module.to_ctx(), &mod_info)
                 .map_err(|source| {
                     ValidationError::GlobalVariable {
                         handle: var_handle,
@@ -451,7 +479,7 @@ impl Validator {
 
 #[cfg(feature = "validate")]
 fn validate_atomic_compare_exchange_struct(
-    types: &UniqueArena<crate::Type>,
+    types: &crate::UniqueArena<crate::Type>,
     members: &[crate::StructMember],
     scalar_predicate: impl FnOnce(&crate::TypeInner) -> bool,
 ) -> bool {

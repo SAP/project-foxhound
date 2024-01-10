@@ -387,11 +387,6 @@ class WinUtils {
   static nsWindow* GetNSWindowPtr(HWND aWnd);
 
   /**
-   * GetMonitorCount() returns count of monitors on the environment.
-   */
-  static int32_t GetMonitorCount();
-
-  /**
    * IsOurProcessWindow() returns TRUE if aWnd belongs our process.
    * Otherwise, FALSE.
    */
@@ -518,6 +513,9 @@ class WinUtils {
   static PointerCapabilities GetPrimaryPointerCapabilities();
   // For any-pointer and any-hover media queries features.
   static PointerCapabilities GetAllPointerCapabilities();
+  // Returns a string containing a comma-separated list of Fluent IDs
+  // representing the currently active pointing devices
+  static void GetPointerExplanation(nsAString* aExplanation);
 
   /**
    * Fully resolves a path to its final path name. So if path contains

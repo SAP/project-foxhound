@@ -4,7 +4,9 @@
 
 "use strict";
 
-const { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
+const { HttpServer } = ChromeUtils.importESModule(
+  "resource://testing-common/httpd.sys.mjs"
+);
 
 /**
  * Waits for an observer notification to fire.
@@ -35,11 +37,11 @@ registerCleanupFunction(() => {
 
 let httpserver = null;
 let httpserverv6 = null;
-XPCOMUtils.defineLazyGetter(this, "URL", function () {
+ChromeUtils.defineLazyGetter(this, "URL", function () {
   return "http://localhost:" + httpserver.identity.primaryPort + "/content";
 });
 
-XPCOMUtils.defineLazyGetter(this, "URLv6", function () {
+ChromeUtils.defineLazyGetter(this, "URLv6", function () {
   return "http://[::1]:" + httpserverv6.identity.primaryPort + "/content";
 });
 

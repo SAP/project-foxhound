@@ -75,7 +75,6 @@ EXPORTS += [
     "nsFrameLoader.h",  # Because binding headers include it.
     "nsFrameLoaderOwner.h",
     "nsFrameMessageManager.h",
-    "nsGlobalWindow.h",  # Because binding headers include it.
     "nsGlobalWindowInner.h",  # Because binding headers include it.
     "nsGlobalWindowOuter.h",  # Because binding headers include it.
     "nsIAnimationObserver.h",
@@ -93,8 +92,6 @@ EXPORTS += [
     "nsJSEnvironment.h",
     "nsJSUtils.h",
     "nsLineBreaker.h",
-    "nsMappedAttributeElement.h",
-    "nsMappedAttributes.h",
     "nsNameSpaceManager.h",
     "nsNodeInfoManager.h",
     "nsPIDOMWindow.h",
@@ -157,7 +154,6 @@ EXPORTS.mozilla.dom += [
     "BarProps.h",
     "BindContext.h",
     "BodyConsumer.h",
-    "BodyStream.h",
     "BodyUtil.h",
     "BorrowedAttrInfo.h",
     "CCGCScheduler.h",
@@ -322,7 +318,6 @@ UNIFIED_SOURCES += [
     "BarProps.cpp",
     "BindContext.cpp",
     "BodyConsumer.cpp",
-    "BodyStream.cpp",
     "BodyUtil.cpp",
     "BorrowedAttrInfo.cpp",
     "CCGCScheduler.cpp",
@@ -413,8 +408,6 @@ UNIFIED_SOURCES += [
     "nsJSEnvironment.cpp",
     "nsJSUtils.cpp",
     "nsLineBreaker.cpp",
-    "nsMappedAttributeElement.cpp",
-    "nsMappedAttributes.cpp",
     "nsMimeTypeArray.cpp",
     "nsNameSpaceManager.cpp",
     "nsNoDataProtocolContentPolicy.cpp",

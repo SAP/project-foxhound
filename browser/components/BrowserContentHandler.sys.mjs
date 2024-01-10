@@ -8,31 +8,31 @@ import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
+  BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.sys.mjs",
   FirstStartup: "resource://gre/modules/FirstStartup.sys.mjs",
   HeadlessShell: "resource:///modules/HeadlessShell.sys.mjs",
+  HomePage: "resource:///modules/HomePage.sys.mjs",
+  LaterRun: "resource:///modules/LaterRun.sys.mjs",
   NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
   SessionStartup: "resource:///modules/sessionstore/SessionStartup.sys.mjs",
   ShellService: "resource:///modules/ShellService.sys.mjs",
+  SpecialMessageActions:
+    "resource://messaging-system/lib/SpecialMessageActions.sys.mjs",
   UpdatePing: "resource://gre/modules/UpdatePing.sys.mjs",
 });
 
-XPCOMUtils.defineLazyModuleGetters(lazy, {
-  BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.jsm",
-  HomePage: "resource:///modules/HomePage.jsm",
-  LaterRun: "resource:///modules/LaterRun.jsm",
-});
 XPCOMUtils.defineLazyServiceGetters(lazy, {
   UpdateManager: ["@mozilla.org/updates/update-manager;1", "nsIUpdateManager"],
   WinTaskbar: ["@mozilla.org/windows-taskbar;1", "nsIWinTaskbar"],
   WindowsUIUtils: ["@mozilla.org/windows-ui-utils;1", "nsIWindowsUIUtils"],
 });
 
-XPCOMUtils.defineLazyGetter(lazy, "gSystemPrincipal", () =>
+ChromeUtils.defineLazyGetter(lazy, "gSystemPrincipal", () =>
   Services.scriptSecurityManager.getSystemPrincipal()
 );
 
-XPCOMUtils.defineLazyGetter(lazy, "gWindowsAlertsService", () => {
+ChromeUtils.defineLazyGetter(lazy, "gWindowsAlertsService", () => {
   // We might not have the Windows alerts service: e.g., on Windows 7 and Windows 8.
   if (!("nsIWindowsAlertsService" in Ci)) {
     return null;
@@ -744,7 +744,7 @@ nsBrowserContentHandler.prototype = {
                 return new URL(val);
               } catch (ex) {
                 // Invalid URL, so filter out below
-                console.error(`Invalid once url: ${ex}`);
+                console.error("Invalid once url:", ex);
                 return null;
               }
             })
@@ -766,7 +766,7 @@ nsBrowserContentHandler.prototype = {
         }
       } catch (ex) {
         // Invalid json pref, so ignore (and clear below)
-        console.error(`Invalid once pref: ${ex}`);
+        console.error("Invalid once pref:", ex);
       } finally {
         prefb.clearUserPref(ONCE_PREF);
       }
@@ -1043,12 +1043,35 @@ nsDefaultCommandLineHandler.prototype = {
   handle: function dch_handle(cmdLine) {
     var urilist = [];
 
+    if (cmdLine && cmdLine.state == Ci.nsICommandLine.STATE_INITIAL_LAUNCH) {
+      // Since the purpose of this is to record early in startup,
+      // only record on launches, not already-running invocations.
+      Services.telemetry.setEventRecordingEnabled("telemetry", true);
+      Glean.fogValidation.validateEarlyEvent.record();
+    }
+
     if (AppConstants.platform == "win") {
       // Windows itself does disk I/O when the notification service is
       // initialized, so make sure that is lazy.
       while (true) {
         let tag = cmdLine.handleFlagWithParam("notification-windowsTag", false);
         if (!tag) {
+          break;
+        }
+
+        // All notifications will invoke Firefox with an action.  Prior to Bug 1805514,
+        // this data was extracted from the Windows toast object directly (keyed by the
+        // notification ID) and not passed over the command line.  This is acceptable
+        // because the data passed is chrome-controlled, but if we implement the `actions`
+        // part of the DOM Web Notifications API, this will no longer be true:
+        // content-controlled data might transit over the command line.  This could lead
+        // to escaping bugs and overflows.  In the future, we intend to avoid any such
+        // issue by once again extracting all such data from the Windows toast object.
+        let notificationData = cmdLine.handleFlagWithParam(
+          "notification-windowsAction",
+          false
+        );
+        if (!notificationData) {
           break;
         }
 
@@ -1059,34 +1082,66 @@ nsDefaultCommandLineHandler.prototype = {
         }
 
         async function handleNotification() {
-          const { launchUrl, privilegedName } =
-            await alertService.handleWindowsTag(tag);
+          let { tagWasHandled } = await alertService.handleWindowsTag(tag);
 
-          // If `launchUrl` or `privilegedName` are provided, then the
-          // notification was from a prior instance of the application and we
-          // need to handled fallback behavior.
-          if (launchUrl || privilegedName) {
+          // If the tag was not handled via callback, then the notification was
+          // from a prior instance of the application and we need to handle
+          // fallback behavior.
+          if (!tagWasHandled) {
             console.info(
               `Completing Windows notification (tag=${JSON.stringify(
                 tag
-              )}, launchUrl=${JSON.stringify(
-                launchUrl
-              )}, privilegedName=${JSON.stringify(privilegedName)}))`
+              )}, notificationData=${notificationData})`
             );
+            try {
+              notificationData = JSON.parse(notificationData);
+            } catch (e) {
+              console.error(
+                `Completing Windows notification (tag=${JSON.stringify(
+                  tag
+                )}, failed to parse (notificationData=${notificationData})`
+              );
+            }
           }
 
-          if (privilegedName) {
+          // This is awkward: the relaunch data set by the caller is _wrapped_
+          // into a compound object that includes additional notification data,
+          // and everything is exchanged as strings.  Unwrap and parse here.
+          let opaqueRelaunchData = null;
+          if (notificationData?.opaqueRelaunchData) {
+            try {
+              opaqueRelaunchData = JSON.parse(
+                notificationData.opaqueRelaunchData
+              );
+            } catch (e) {
+              console.error(
+                `Completing Windows notification (tag=${JSON.stringify(
+                  tag
+                )}, failed to parse (opaqueRelaunchData=${
+                  notificationData.opaqueRelaunchData
+                })`
+              );
+            }
+          }
+
+          if (notificationData?.privilegedName) {
             Services.telemetry.setEventRecordingEnabled(
               "browser.launched_to_handle",
               true
             );
             Glean.browserLaunchedToHandle.systemNotification.record({
-              name: privilegedName,
+              name: notificationData.privilegedName,
             });
           }
 
-          if (launchUrl) {
-            let uri = resolveURIInternal(cmdLine, launchUrl);
+          // If we have an action in the notification data, this will be the
+          // window to perform the action in.
+          let winForAction;
+
+          if (notificationData?.launchUrl && !opaqueRelaunchData) {
+            // Unprivileged Web Notifications contain a launch URL and are handled
+            // slightly differently than privileged notifications with actions.
+            let uri = resolveURIInternal(cmdLine, notificationData.launchUrl);
             if (cmdLine.state != Ci.nsICommandLine.STATE_INITIAL_LAUNCH) {
               // Try to find an existing window and load our URI into the current
               // tab, new tab, or new window as prefs determine.
@@ -1108,7 +1163,35 @@ nsDefaultCommandLineHandler.prototype = {
           } else if (cmdLine.state == Ci.nsICommandLine.STATE_INITIAL_LAUNCH) {
             // No URL provided, but notification was interacted with while the
             // application was closed. Fall back to opening the browser without url.
-            openBrowserWindow(cmdLine, lazy.gSystemPrincipal);
+            winForAction = openBrowserWindow(cmdLine, lazy.gSystemPrincipal);
+            await new Promise(resolve => {
+              Services.obs.addObserver(function observe(subject) {
+                if (subject == winForAction) {
+                  Services.obs.removeObserver(
+                    observe,
+                    "browser-delayed-startup-finished"
+                  );
+                  resolve();
+                }
+              }, "browser-delayed-startup-finished");
+            });
+          } else {
+            // Relaunch in private windows only if we're in perma-private mode.
+            let allowPrivate =
+              lazy.PrivateBrowsingUtils.permanentPrivateBrowsing;
+            winForAction = lazy.BrowserWindowTracker.getTopWindow({
+              private: allowPrivate,
+            });
+          }
+
+          if (opaqueRelaunchData && winForAction) {
+            // Without dispatch, `OPEN_URL` with `where: "tab"` does not work on relaunch.
+            Services.tm.dispatchToMainThread(() => {
+              lazy.SpecialMessageActions.handleAction(
+                opaqueRelaunchData,
+                winForAction.gBrowser
+              );
+            });
           }
         }
 
@@ -1123,7 +1206,8 @@ nsDefaultCommandLineHandler.prototype = {
         handleNotification()
           .catch(e => {
             console.error(
-              `Error handling Windows notification with tag '${tag}': ${e}`
+              `Error handling Windows notification with tag '${tag}':`,
+              e
             );
           })
           .finally(() => {
@@ -1235,9 +1319,7 @@ nsDefaultCommandLineHandler.prototype = {
     for (let i = 0; i < cmdLine.length; ++i) {
       var curarg = cmdLine.getArgument(i);
       if (curarg.match(/^-/)) {
-        console.error(
-          "Warning: unrecognized command line flag " + curarg + "\n"
-        );
+        console.error("Warning: unrecognized command line flag", curarg);
         // To emulate the pre-nsICommandLine behavior, we ignore
         // the argument after an unrecognized flag.
         ++i;
@@ -1246,11 +1328,8 @@ nsDefaultCommandLineHandler.prototype = {
           urilist.push(resolveURIInternal(cmdLine, curarg));
         } catch (e) {
           console.error(
-            "Error opening URI '" +
-              curarg +
-              "' from the command line: " +
-              e +
-              "\n"
+            `Error opening URI ${curarg} from the command line:`,
+            e
           );
         }
       }
@@ -1281,7 +1360,7 @@ nsDefaultCommandLineHandler.prototype = {
       }
     } else if (!cmdLine.preventDefault) {
       if (
-        AppConstants.isPlatformAndVersionAtLeast("win", "10") &&
+        AppConstants.platform == "win" &&
         cmdLine.state != Ci.nsICommandLine.STATE_INITIAL_LAUNCH &&
         lazy.WindowsUIUtils.inTabletMode
       ) {

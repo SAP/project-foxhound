@@ -55,9 +55,11 @@ const {
 
 const {
   isGeneratedId,
-  isOriginalId,
-  originalToGeneratedId,
 } = require("devtools/client/shared/source-map-loader/index");
+
+const DEBUGGER_L10N = new LocalizationHelper(
+  "devtools/client/locales/debugger.properties"
+);
 
 /**
  * Waits for `predicate()` to be true. `state` is the redux app state.
@@ -225,7 +227,8 @@ function waitForSelectedSource(dbg, sourceOrUrl) {
         // Second argument is either a source URL (string)
         // or a Source object.
         if (typeof sourceOrUrl == "string") {
-          if (!location.source.url.includes(encodeURI(sourceOrUrl))) {
+          const url = location.source.url;
+          if (typeof url != "string" || !url.includes(encodeURI(sourceOrUrl))) {
             return false;
           }
         } else if (location.source.id != sourceOrUrl.id) {
@@ -249,7 +252,13 @@ function waitForSelectedSource(dbg, sourceOrUrl) {
         );
         return allSourceActorsProcessed;
       }
-      return getBreakableLines(location.source.id);
+
+      if (!getBreakableLines(location.source.id)) {
+        return false;
+      }
+
+      // Also ensure that CodeMirror updated its content
+      return getCM(dbg).getValue() !== DEBUGGER_L10N.getStr("loadingText");
     },
     "selected source"
   );
@@ -445,20 +454,20 @@ function assertPausedAtSourceAndLine(
   ok(isVisibleInEditor(dbg, getCM(dbg).display.gutters), "gutter is visible");
 
   const frames = dbg.selectors.getCurrentThreadFrames();
-  const source = dbg.selectors.getSelectedSource();
+  const selectedSource = dbg.selectors.getSelectedSource();
 
   // WASM support is limited when we are on the generated binary source
-  if (isWasmBinarySource(source)) {
+  if (isWasmBinarySource(selectedSource)) {
     return;
   }
 
   ok(frames.length >= 1, "Got at least one frame");
 
   // Lets make sure we can assert both original and generated file locations when needed
-  const { sourceId, line, column } = isGeneratedId(expectedSourceId)
+  const { source, line, column } = isGeneratedId(expectedSourceId)
     ? frames[0].generatedLocation
     : frames[0].location;
-  is(sourceId, expectedSourceId, "Frame has correct source");
+  is(source.id, expectedSourceId, "Frame has correct source");
   is(
     line,
     expectedLine,
@@ -594,7 +603,6 @@ function isSelectedFrameSelected(dbg, state) {
 
   // Make sure the source text is completely loaded for the
   // source we are paused in.
-  const sourceId = frame.location.sourceId;
   const source = dbg.selectors.getSelectedSource();
   const sourceTextContent = dbg.selectors.getSelectedSourceTextContent();
 
@@ -602,7 +610,7 @@ function isSelectedFrameSelected(dbg, state) {
     return false;
   }
 
-  return source.id == sourceId;
+  return source.id == frame.location.source.id;
 }
 
 /**
@@ -775,14 +783,6 @@ function waitForLoadedSource(dbg, url) {
   );
 }
 
-function getContext(dbg) {
-  return dbg.selectors.getContext();
-}
-
-function getThreadContext(dbg) {
-  return dbg.selectors.getThreadContext();
-}
-
 /*
  * Selects the source node for a specific source
  * from the source tree.
@@ -844,16 +844,14 @@ async function triggerSourceTreeContextMenu(
 async function selectSource(dbg, url, line, column) {
   const source = findSource(dbg, url);
 
-  await dbg.actions.selectLocation(
-    getContext(dbg),
-    createLocation({ source, line, column }),
-    { keepContext: false }
-  );
+  await dbg.actions.selectLocation(createLocation({ source, line, column }), {
+    keepContext: false,
+  });
   return waitForSelectedSource(dbg, source);
 }
 
 async function closeTab(dbg, url) {
-  await dbg.actions.closeTab(getContext(dbg), findSource(dbg, url));
+  await dbg.actions.closeTab(findSource(dbg, url));
 }
 
 function countTabs(dbg) {
@@ -871,7 +869,7 @@ function countTabs(dbg) {
 async function stepOver(dbg) {
   const pauseLine = getVisibleSelectedFrameLine(dbg);
   info(`Stepping over from ${pauseLine}`);
-  await dbg.actions.stepOver(getThreadContext(dbg));
+  await dbg.actions.stepOver();
   return waitForPaused(dbg);
 }
 
@@ -886,7 +884,7 @@ async function stepOver(dbg) {
 async function stepIn(dbg) {
   const pauseLine = getVisibleSelectedFrameLine(dbg);
   info(`Stepping in from ${pauseLine}`);
-  await dbg.actions.stepIn(getThreadContext(dbg));
+  await dbg.actions.stepIn();
   return waitForPaused(dbg);
 }
 
@@ -901,7 +899,7 @@ async function stepIn(dbg) {
 async function stepOut(dbg) {
   const pauseLine = getVisibleSelectedFrameLine(dbg);
   info(`Stepping out from ${pauseLine}`);
-  await dbg.actions.stepOut(getThreadContext(dbg));
+  await dbg.actions.stepOut();
   return waitForPaused(dbg);
 }
 
@@ -1009,7 +1007,7 @@ function getFirstBreakpointColumn(dbg, source, line) {
 
 function isMatchingLocation(location1, location2) {
   return (
-    location1?.sourceId == location2?.sourceId &&
+    location1?.source.id == location2?.source.id &&
     location1?.line == location2?.line &&
     location1?.column == location2?.column
   );
@@ -1020,7 +1018,7 @@ function getBreakpointForLocation(dbg, location) {
     return undefined;
   }
 
-  const isGeneratedSource = isGeneratedId(location.sourceId);
+  const isGeneratedSource = isGeneratedId(location.source.id);
   return dbg.selectors.getBreakpointsList().find(bp => {
     const loc = isGeneratedSource ? bp.generatedLocation : bp.location;
     return isMatchingLocation(loc, location);
@@ -1043,7 +1041,6 @@ async function addBreakpoint(dbg, source, line, column, options) {
   const bpCount = dbg.selectors.getBreakpointCount();
   const onBreakpoint = waitForDispatch(dbg.store, "SET_BREAKPOINT");
   await dbg.actions.addBreakpoint(
-    getContext(dbg),
     createLocation({ source, line, column }),
     options
   );
@@ -1070,26 +1067,22 @@ function disableBreakpoint(dbg, source, line, column) {
   column = column || getFirstBreakpointColumn(dbg, source, line);
   const location = createLocation({
     source,
-    sourceUrl: source.url,
     line,
     column,
   });
   const bp = getBreakpointForLocation(dbg, location);
-  return dbg.actions.disableBreakpoint(getContext(dbg), bp);
+  return dbg.actions.disableBreakpoint(bp);
 }
 
 function findBreakpoint(dbg, url, line) {
   const source = findSource(dbg, url);
-  return dbg.selectors.getBreakpointsForSource(source.id, line)[0];
+  return dbg.selectors.getBreakpointsForSource(source, line)[0];
 }
 
 // helper for finding column breakpoints.
 function findColumnBreakpoint(dbg, url, line, column) {
   const source = findSource(dbg, url);
-  const lineBreakpoints = dbg.selectors.getBreakpointsForSource(
-    source.id,
-    line
-  );
+  const lineBreakpoints = dbg.selectors.getBreakpointsForSource(source, line);
 
   return lineBreakpoints.find(bp => {
     return source.isOriginal
@@ -1168,7 +1161,7 @@ async function invokeWithBreakpoint(
 
 function prettyPrint(dbg) {
   const sourceId = dbg.selectors.getSelectedSourceId();
-  return dbg.actions.togglePrettyPrint(getContext(dbg), sourceId);
+  return dbg.actions.togglePrettyPrint(sourceId);
 }
 
 async function expandAllScopes(dbg) {
@@ -1267,12 +1260,11 @@ function removeBreakpoint(dbg, sourceId, line, column) {
   column = column || getFirstBreakpointColumn(dbg, source, line);
   const location = createLocation({
     source,
-    sourceUrl: source.url,
     line,
     column,
   });
   const bp = getBreakpointForLocation(dbg, location);
-  return dbg.actions.removeBreakpoint(getContext(dbg), bp);
+  return dbg.actions.removeBreakpoint(bp);
 }
 
 /**
@@ -1766,7 +1758,6 @@ const selectors = {
     `${selectors.resultItems}:nth-child(${i})[title$="${name}"]`,
   fileMatch: ".project-text-search .line-value",
   popup: ".popover",
-  tooltip: ".tooltip",
   previewPopup: ".preview-popup",
   openInspector: "button.open-inspector",
   outlineItem: i =>
@@ -2075,24 +2066,29 @@ function getCoordsFromPosition(cm, { line, ch }) {
   return cm.charCoords({ line: ~~line, ch: ~~ch });
 }
 
-async function getTokenFromPosition(dbg, { line, ch }) {
-  info(`Get token at ${line}, ${ch}`);
+async function getTokenFromPosition(dbg, { line, column = 0 }) {
+  info(`Get token at ${line}:${column}`);
   const cm = getCM(dbg);
-  cm.scrollIntoView({ line: line - 1, ch }, 0);
+
+  // CodeMirror is 0-based while line and column arguments are 1-based.
+  // Pass "ch=-1" when there is no column argument passed.
+  const cmPosition = { line: line - 1, ch: column - 1 };
+
+  const onScrolled = waitForScrolling(cm);
+  cm.scrollIntoView(cmPosition, 0);
 
   // Ensure the line is visible with margin because the bar at the bottom of
   // the editor overlaps into what the editor thinks is its own space, blocking
   // the click event below.
-  await waitForScrolling(cm);
+  await onScrolled;
 
-  const coords = getCoordsFromPosition(cm, { line: line - 1, ch });
-
-  const { left, top } = coords;
+  const { left, top } = getCoordsFromPosition(cm, cmPosition);
 
   // Adds a vertical offset due to increased line height
   // https://github.com/firefox-devtools/debugger/pull/7934
   const lineHeightOffset = 3;
 
+  // Note that we might end up retrieving any popup if one is still shown over the expected token
   return dbg.win.document.elementFromPoint(left, top + lineHeightOffset);
 }
 
@@ -2171,93 +2167,186 @@ async function hoverAtPos(dbg, pos) {
     return;
   }
 
-  info(`Hovering on token ${tokenEl.innerText}`);
-  tokenEl.dispatchEvent(
-    new MouseEvent("mouseover", {
-      bubbles: true,
-      cancelable: true,
-      view: dbg.win,
-    })
-  );
-
-  InspectorUtils.addPseudoClassLock(tokenEl, ":hover");
+  hoverToken(tokenEl);
 }
 
-async function closePreviewAtPos(dbg, line, column) {
-  const pos = { line, ch: column - 1 };
-  const tokenEl = await getTokenFromPosition(dbg, pos);
+function hoverToken(tokenEl) {
+  info(`Hovering on token "${tokenEl.innerText}"`);
 
-  if (!tokenEl) {
-    return;
-  }
+  // This first event helps utils/editor/token-events.js to receive the right mouseover event
+  EventUtils.synthesizeMouseAtCenter(
+    tokenEl,
+    {
+      type: "mouseover",
+    },
+    tokenEl.ownerGlobal
+  );
 
-  InspectorUtils.removePseudoClassLock(tokenEl, ":hover");
+  // This second event helps Popover to have :hover pseudoclass set on the token element
+  EventUtils.synthesizeMouseAtCenter(
+    tokenEl,
+    {
+      type: "mousemove",
+    },
+    tokenEl.ownerGlobal
+  );
+}
 
-  const gutterEl = await getEditorLineGutter(dbg, line);
+/**
+ * Helper to close a variable preview popup.
+ *
+ * @param {Object} dbg
+ * @param {DOM Element} tokenEl
+ *        The DOM element on which we hovered to display the popup.
+ * @param {String} previewType
+ *        Based on the actual JS value being hovered we may have two different kinds
+ *        of popups: popup (for js objects) or previewPopup (for primitives)
+ */
+async function closePreviewForToken(
+  dbg,
+  tokenEl,
+  previewType = "previewPopup"
+) {
+  ok(
+    findElement(dbg, previewType),
+    "A preview was opened before trying to close it"
+  );
 
-  // The popup gets hidden when "mouseleave" is emitted on the tokenEl.
-  // EventUtils can't send "mouseleave" event, and since the mouse could have been moved
-  // since the tooltip was displayed, move it back to the token and then to the gutter,
-  // which should trigger a mouseleave event.
-  EventUtils.synthesizeMouseAtCenter(tokenEl, { type: "mousemove" }, dbg.win);
-  EventUtils.synthesizeMouseAtCenter(gutterEl, { type: "mousemove" }, dbg.win);
-  await waitUntil(() => findElement(dbg, "previewPopup") == null);
+  // Force "mousing out" from all elements.
+  //
+  // This helps utils/editor/token-events.js to receive the right mouseleave event.
+  // This is super important as it will then allow re-emitting a tokenenter event if you try to re-preview the same token!
+  EventUtils.synthesizeMouseAtCenter(
+    tokenEl,
+    {
+      type: "mouseout",
+    },
+    tokenEl.ownerGlobal
+  );
+
+  // This second event helps Popover to have :hover pseudoclass removed on the token element
+  //
+  // For some unexplained reason, the precise element onto which we emit mousemove is actually important.
+  // Emitting it on documentElement, or random other element within CodeMirror would cause
+  // a "mousemove" event to be emitted on preview-popup element instead and wouldn't cause :hover
+  // pseudoclass to be dropped.
+  const element = tokenEl.ownerDocument.querySelector(
+    ".debugger-settings-menu-button"
+  );
+  EventUtils.synthesizeMouseAtCenter(
+    element,
+    {
+      type: "mousemove",
+    },
+    element.ownerGlobal
+  );
+
+  await waitUntil(() => findElement(dbg, previewType) == null);
+  info("Preview closed");
 }
 
 // tryHovering will hover at a position every second until we
 // see a preview element (popup, tooltip) appear. Once it appears,
 // it considers it a success.
-function tryHovering(dbg, line, column, elementName) {
-  return new Promise((resolve, reject) => {
-    const element = waitForElement(dbg, elementName);
-    let count = 0;
+async function tryHovering(dbg, line, column, elementName) {
+  ok(
+    !findElement(dbg, elementName),
+    "The expected preview element on hover should not exist beforehand"
+  );
 
-    element.then(() => {
-      clearInterval(interval);
-      resolve(element);
-    });
+  const tokenEl = await getTokenFromPosition(dbg, { line, column });
+  hoverToken(tokenEl);
 
-    const interval = setInterval(() => {
-      if (count++ == 5) {
-        clearInterval(interval);
-        reject("failed to preview");
-      }
+  // Wait for the preview element to be created
+  const element = await waitForElement(dbg, elementName);
 
-      hoverAtPos(dbg, { line, ch: column - 1 });
-    }, 1000);
-  });
+  return { element, tokenEl };
+}
+/**
+ * Hovers and asserts tooltip previews with simple text expressions (i.e numbers and strings)
+ * @param {*} dbg
+ * @param {Number} line
+ * @param {Number} column
+ * @param {Object} options
+ * @param {String}  options.result - Expected text shown in the preview
+ * @param {String}  options.expression - The expression hovered over
+ * @param {Boolean} options.doNotClose - Set to true to not close the tooltip
+ */
+async function assertPreviewTextValue(
+  dbg,
+  line,
+  column,
+  { result, expression, doNotClose = false }
+) {
+  const { element: previewEl, tokenEl } = await tryHovering(
+    dbg,
+    line,
+    column,
+    "previewPopup"
+  );
+
+  ok(
+    tokenEl.innerText.includes(expression),
+    "Popup preview hovered expression is correct. Got: " +
+      tokenEl.innerText +
+      " Expected: " +
+      expression
+  );
+
+  ok(
+    previewEl.innerText.includes(result),
+    "Popup preview text shown to user. Got: " +
+      previewEl.innerText +
+      " Expected: " +
+      result
+  );
+
+  if (!doNotClose) {
+    await closePreviewForToken(dbg, tokenEl);
+  }
 }
 
-async function assertPreviewTextValue(dbg, line, column, { text, expression }) {
-  const previewEl = await tryHovering(dbg, line, column, "previewPopup");
-
-  ok(previewEl.innerText.includes(text), "Preview text shown to user");
-
-  const preview = dbg.selectors.getPreview();
-  is(preview.expression, expression, "Preview.expression");
-}
-
-async function assertPreviewTooltip(dbg, line, column, { result, expression }) {
-  const previewEl = await tryHovering(dbg, line, column, "tooltip");
-
-  is(previewEl.innerText, result, "Preview text shown to user");
-
-  const preview = dbg.selectors.getPreview();
-  is(`${preview.resultGrip}`, result, "Preview.result");
-  is(preview.expression, expression, "Preview.expression");
-}
-
+/**
+ * Asserts multiple previews
+ * @param {*} dbg
+ * @param {Array} previews
+ */
 async function assertPreviews(dbg, previews) {
-  for (const { line, column, expression, result, fields } of previews) {
-    if (fields && result) {
-      throw new Error("Invalid test fixture");
+  for (const { line, column, expression, result, header, fields } of previews) {
+    info(" # Assert preview on " + line + ":" + column);
+
+    if (result) {
+      await assertPreviewTextValue(dbg, line, column, {
+        expression,
+        result,
+      });
     }
 
     if (fields) {
-      const popupEl = await tryHovering(dbg, line, column, "popup");
+      const { element: popupEl, tokenEl } = await tryHovering(
+        dbg,
+        line,
+        column,
+        "popup"
+      );
+
+      info("Wait for child nodes to load");
+      await waitUntil(
+        () => popupEl.querySelectorAll(".preview-popup .node").length > 1
+      );
+      ok(true, "child nodes loaded");
+
       const oiNodes = Array.from(
         popupEl.querySelectorAll(".preview-popup .node")
       );
+
+      if (header) {
+        is(
+          oiNodes[0].querySelector(".objectBox").textContent,
+          header,
+          "popup has expected value"
+        );
+      }
 
       for (const [field, value] of fields) {
         const node = oiNodes.find(
@@ -2267,23 +2356,85 @@ async function assertPreviews(dbg, previews) {
           ok(false, `The "${field}" property is not displayed in the popup`);
         } else {
           is(
-            node.querySelector(".objectBox").textContent,
-            value,
-            `The "${field}" property has the expected value`
+            node.querySelector(".object-label").textContent,
+            field,
+            `The "${field}" property is displayed in the popup`
           );
+          if (value !== undefined) {
+            is(
+              node.querySelector(".objectBox").textContent,
+              value,
+              `The "${field}" property has the expected value`
+            );
+          }
         }
       }
-    } else {
-      await assertPreviewTextValue(dbg, line, column, {
-        expression,
-        text: result,
-      });
-    }
 
-    const { target } = dbg.selectors.getPreview(getContext(dbg));
-    InspectorUtils.removePseudoClassLock(target, ":hover");
-    dbg.actions.clearPreview(getContext(dbg));
+      await closePreviewForToken(dbg, tokenEl, "popup");
+    }
   }
+}
+
+/**
+ * Asserts the inline expression preview value
+ * @param {*} dbg
+ * @param {Number} line
+ * @param {Number} column
+ * @param {Object} options
+ * @param {String}  options.result - Expected text shown in the preview
+ * @param {String}  options.expression - The expression hovered over
+ * @param {Array}  options.fields - The expected stacktrace information
+ */
+async function assertInlineExceptionPreview(
+  dbg,
+  line,
+  column,
+  { expression, result, fields }
+) {
+  info(" # Assert preview on " + line + ":" + column);
+  const { element: popupEl, tokenEl } = await tryHovering(
+    dbg,
+    line,
+    column,
+    "previewPopup"
+  );
+
+  info("Wait for top level node to expand and child nodes to load");
+  await waitForElementWithSelector(
+    dbg,
+    ".exception-popup .exception-message .arrow.expanded"
+  );
+
+  is(
+    popupEl.querySelector(".preview-popup .exception-message .objectBox")
+      .textContent,
+    result,
+    "The correct result is not displayed in the popup"
+  );
+
+  await waitFor(() =>
+    popupEl.querySelectorAll(".preview-popup .exception-stacktrace .frame")
+  );
+  const stackFrameNodes = Array.from(
+    popupEl.querySelectorAll(".preview-popup .exception-stacktrace .frame")
+  );
+
+  for (const [field, value] of fields) {
+    const node = stackFrameNodes.find(
+      frameNode => frameNode.querySelector(".title")?.textContent === field
+    );
+    if (!node) {
+      ok(false, `The "${field}" property is not displayed in the popup`);
+    } else {
+      is(
+        node.querySelector(".location").textContent,
+        value,
+        `The "${field}" property has the expected value`
+      );
+    }
+  }
+
+  await closePreviewForToken(dbg, tokenEl, "previewPopup");
 }
 
 async function waitForBreakableLine(dbg, source, lineNumber) {
@@ -2678,19 +2829,14 @@ if (protocolHandler.hasSubstitution("testing-common")) {
   const { PromiseTestUtils } = ChromeUtils.importESModule(
     "resource://testing-common/PromiseTestUtils.sys.mjs"
   );
+  PromiseTestUtils.allowMatchingRejectionsGlobally(/Connection closed/);
+  this.PromiseTestUtils = PromiseTestUtils;
 
   // Debugger operations that are canceled because they were rendered obsolete by
   // a navigation or pause/resume end up as uncaught rejections. These never
   // indicate errors and are allowed in all debugger tests.
-  PromiseTestUtils.allowMatchingRejectionsGlobally(/Page has navigated/);
-  PromiseTestUtils.allowMatchingRejectionsGlobally(
-    /Current thread has changed/
-  );
-  PromiseTestUtils.allowMatchingRejectionsGlobally(
-    /Current thread has paused or resumed/
-  );
-  PromiseTestUtils.allowMatchingRejectionsGlobally(/Connection closed/);
-  this.PromiseTestUtils = PromiseTestUtils;
+  // All the following are related to context middleware throwing on obsolete async actions:
+  PromiseTestUtils.allowMatchingRejectionsGlobally(/DebuggerContextError/);
 }
 
 /**

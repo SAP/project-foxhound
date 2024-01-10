@@ -8,6 +8,7 @@
 
 #include "JSOracleParent.h"
 #include "js/CallAndConstruct.h"  // JS::Call
+#include "js/ColumnNumber.h"  // JS::TaggedColumnNumberOneOrigin, JS::ColumnNumberOneOrigin
 #include "js/CharacterEncoding.h"
 #include "js/Object.h"              // JS::GetClass
 #include "js/PropertyAndElement.h"  // JS_DefineProperty, JS_DefinePropertyById, JS_Enumerate, JS_GetProperty, JS_GetPropertyById, JS_SetProperty, JS_SetPropertyById, JS::IdVector
@@ -23,7 +24,6 @@
 #include "mozilla/EventStateManager.h"
 #include "mozilla/FormAutofillNative.h"
 #include "mozilla/IntentionalCrash.h"
-#include "mozilla/PerformanceMetricsCollector.h"
 #include "mozilla/PerfStats.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/ProcInfo.h"
@@ -61,6 +61,18 @@
 #include "mozilla/ProfilerMarkers.h"
 #include "nsIException.h"
 #include "VsyncSource.h"
+
+#ifdef XP_UNIX
+#  include <errno.h>
+#  include <unistd.h>
+#  include <fcntl.h>
+#  include <poll.h>
+#  include <sys/wait.h>
+
+#  ifdef XP_LINUX
+#    include <sys/prctl.h>
+#  endif
+#endif
 
 namespace mozilla::dom {
 
@@ -974,6 +986,41 @@ void ChromeUtils::DefineESModuleGetters(const GlobalObject& global,
   }
 }
 
+#ifdef XP_UNIX
+/* static */
+void ChromeUtils::GetLibcConstants(const GlobalObject&,
+                                   LibcConstants& aConsts) {
+  aConsts.mEINTR.Construct(EINTR);
+  aConsts.mEACCES.Construct(EACCES);
+  aConsts.mEAGAIN.Construct(EAGAIN);
+  aConsts.mEINVAL.Construct(EINVAL);
+  aConsts.mENOSYS.Construct(ENOSYS);
+
+  aConsts.mF_SETFD.Construct(F_SETFD);
+  aConsts.mF_SETFL.Construct(F_SETFL);
+
+  aConsts.mFD_CLOEXEC.Construct(FD_CLOEXEC);
+
+  aConsts.mAT_EACCESS.Construct(AT_EACCESS);
+
+  aConsts.mO_CREAT.Construct(O_CREAT);
+  aConsts.mO_NONBLOCK.Construct(O_NONBLOCK);
+  aConsts.mO_WRONLY.Construct(O_WRONLY);
+
+  aConsts.mPOLLERR.Construct(POLLERR);
+  aConsts.mPOLLHUP.Construct(POLLHUP);
+  aConsts.mPOLLIN.Construct(POLLIN);
+  aConsts.mPOLLNVAL.Construct(POLLNVAL);
+  aConsts.mPOLLOUT.Construct(POLLOUT);
+
+  aConsts.mWNOHANG.Construct(WNOHANG);
+
+#  ifdef XP_LINUX
+  aConsts.mPR_CAPBSET_READ.Construct(PR_CAPBSET_READ);
+#  endif
+}
+#endif
+
 /* static */
 void ChromeUtils::OriginAttributesToSuffix(
     dom::GlobalObject& aGlobal, const dom::OriginAttributesDictionary& aAttrs,
@@ -1475,35 +1522,6 @@ bool ChromeUtils::VsyncEnabled(GlobalObject& aGlobal) {
   return mozilla::gfx::VsyncSource::GetFastestVsyncRate().isSome();
 }
 
-/* static */
-already_AddRefed<Promise> ChromeUtils::RequestPerformanceMetrics(
-    GlobalObject& aGlobal, ErrorResult& aRv) {
-  MOZ_ASSERT(XRE_IsParentProcess());
-
-  // Creating a JS promise
-  nsCOMPtr<nsIGlobalObject> global = do_QueryInterface(aGlobal.GetAsSupports());
-  MOZ_ASSERT(global);
-  RefPtr<Promise> domPromise = Promise::Create(global, aRv);
-  if (NS_WARN_IF(aRv.Failed())) {
-    return nullptr;
-  }
-  MOZ_ASSERT(domPromise);
-  RefPtr<nsISerialEventTarget> target =
-      global->EventTargetFor(TaskCategory::Performance);
-
-  // requesting metrics, that will be returned into the promise
-  PerformanceMetricsCollector::RequestMetrics()->Then(
-      target, __func__,
-      [domPromise,
-       target](nsTArray<dom::PerformanceInfoDictionary>&& aResults) {
-        domPromise->MaybeResolve(std::move(aResults));
-      },
-      [domPromise](const nsresult& aRv) { domPromise->MaybeReject(aRv); });
-
-  // sending back the promise instance
-  return domPromise.forget();
-}
-
 void ChromeUtils::SetPerfStatsCollectionMask(GlobalObject& aGlobal,
                                              uint64_t aMask) {
   PerfStats::SetCollectionMask(static_cast<PerfStats::MetricMask>(aMask));
@@ -1579,7 +1597,7 @@ void ChromeUtils::CreateError(const GlobalObject& aGlobal,
   {
     JS::Rooted<JSString*> fileName(cx, JS_GetEmptyString(cx));
     uint32_t line = 0;
-    uint32_t column = 0;
+    JS::TaggedColumnNumberOneOrigin column;
 
     Maybe<JSAutoRealm> ar;
     JS::Rooted<JSObject*> stack(cx);
@@ -1609,8 +1627,9 @@ void ChromeUtils::CreateError(const GlobalObject& aGlobal,
     }
 
     JS::Rooted<JS::Value> err(cx);
-    if (!JS::CreateError(cx, JSEXN_ERR, stack, fileName, line, column, nullptr,
-                         message, JS::NothingHandleValue, &err)) {
+    if (!JS::CreateError(cx, JSEXN_ERR, stack, fileName, line,
+                         JS::ColumnNumberOneOrigin(column.oneOriginValue()),
+                         nullptr, message, JS::NothingHandleValue, &err)) {
       return;
     }
 
@@ -1867,6 +1886,24 @@ void ChromeUtils::GetAllPossibleUtilityActorNames(GlobalObject& aGlobal,
     auto idlName = static_cast<UtilityActorName>(i);
     aNames.AppendElement(WebIDLUtilityActorNameValues::GetString(idlName));
   }
+}
+
+/* static */
+bool ChromeUtils::ShouldResistFingerprinting(GlobalObject& aGlobal,
+                                             JSRFPTarget aTarget) {
+  RFPTarget target;
+  switch (aTarget) {
+    case JSRFPTarget::RoundWindowSize:
+      target = RFPTarget::RoundWindowSize;
+      break;
+    case JSRFPTarget::SiteSpecificZoom:
+      target = RFPTarget::SiteSpecificZoom;
+      break;
+    default:
+      MOZ_CRASH("Unhandled JSRFPTarget enum value");
+  }
+
+  return nsRFPService::IsRFPEnabledFor(target);
 }
 
 std::atomic<uint32_t> ChromeUtils::sDevToolsOpenedCount = 0;

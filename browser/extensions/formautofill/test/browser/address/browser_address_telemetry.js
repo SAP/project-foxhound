@@ -4,8 +4,8 @@ const { TelemetryTestUtils } = ChromeUtils.importESModule(
   "resource://testing-common/TelemetryTestUtils.sys.mjs"
 );
 
-const { AddressTelemetry } = ChromeUtils.import(
-  "resource://autofill/AutofillTelemetry.jsm"
+const { AddressTelemetry } = ChromeUtils.importESModule(
+  "resource://autofill/AutofillTelemetry.sys.mjs"
 );
 
 // Preference definitions
@@ -380,7 +380,7 @@ add_task(async function test_submit_autofill_profile_new() {
             TelemetryTestUtils.getProcessScalars("parent"),
             SCALAR_AUTOFILL_PROFILE_COUNT,
             expectChanged,
-            "There should be ${expectChanged} profile(s) stored."
+            `There should be ${expectChanged} profile(s) stored.`
           );
         }
       }
@@ -474,7 +474,7 @@ add_task(async function test_submit_autofill_profile_update() {
             TelemetryTestUtils.getProcessScalars("parent"),
             SCALAR_AUTOFILL_PROFILE_COUNT,
             expectChanged,
-            "There should be ${expectChanged} profile(s) stored."
+            `There should be ${expectChanged} profile(s) stored.`
           );
         }
       }

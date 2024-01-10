@@ -237,7 +237,6 @@ nsPresContext::nsPresContext(dom::Document* aDocument, nsPresContextType aType)
       mFullZoom(1.0),
       mLastFontInflationScreenSize(gfxSize(-1.0, -1.0)),
       mCurAppUnitsPerDevPixel(0),
-      mAutoQualityMinFontSizePixelsPref(0),
       mDynamicToolbarMaxHeight(0),
       mDynamicToolbarHeight(0),
       mPageSize(-1, -1),
@@ -247,6 +246,7 @@ nsPresContext::nsPresContext(dom::Document* aDocument, nsPresContextType aType)
       mElementsRestyled(0),
       mFramesConstructed(0),
       mFramesReflowed(0),
+      mAnimationTriggeredRestyles(0),
       mInterruptChecksToSkip(0),
       mNextFrameRateMultiplier(0),
       mViewportScrollStyles(StyleOverflow::Auto, StyleOverflow::Auto),
@@ -423,9 +423,6 @@ void nsPresContext::GetUserPreferences() {
     // get a presshell.
     return;
   }
-
-  mAutoQualityMinFontSizePixelsPref =
-      Preferences::GetInt("browser.display.auto_quality_min_font_size");
 
   PreferenceSheet::EnsureInitialized();
 
@@ -708,8 +705,7 @@ nsresult nsPresContext::Init(nsDeviceContext* aDeviceContext) {
       if (browsingContext && !browsingContext->IsTop()) {
         Element* containingElement = mDocument->GetEmbedderElement();
         if (!containingElement->IsXULElement() ||
-            !containingElement->HasAttr(kNameSpaceID_None,
-                                        nsGkAtoms::forceOwnRefreshDriver)) {
+            !containingElement->HasAttr(nsGkAtoms::forceOwnRefreshDriver)) {
           mRefreshDriver = parent->GetPresContext()->RefreshDriver();
         }
       }
@@ -753,8 +749,22 @@ nsresult nsPresContext::Init(nsDeviceContext* aDeviceContext) {
 bool nsPresContext::UpdateFontVisibility() {
   FontVisibility oldValue = mFontVisibility;
 
-  // Chrome presContext is allowed access to all fonts.
-  if (IsChrome()) {
+  /*
+   * Expected behavior in order of precedence:
+   *  1  Chrome Rules give User Level (3)
+   *  2  RFP gives Highest Level (1 aka Base)
+   *  3  An RFPTarget of Base gives Base Level (1)
+   *  4  An RFPTarget of LangPack gives LangPack Level (2)
+   *  5  The value of the Standard Font Visibility Pref
+   *
+   * If the ETP toggle is disabled (aka
+   * ContentBlockingAllowList::Check is true), it will only override 3-5,
+   * not rules 1 or 2.
+   */
+
+  // Rule 1: Allow all font access for privileged contexts, including
+  // chrome and devtools contexts.
+  if (Document()->ChromeRulesEnabled()) {
     mFontVisibility = FontVisibility::User;
     return mFontVisibility != oldValue;
   }
@@ -765,29 +775,36 @@ bool nsPresContext::UpdateFontVisibility() {
     isPrivate = loadContext->UsePrivateBrowsing();
   }
 
-  // Read the relevant pref depending on RFP/trackingProtection state
-  // to determine the visibility level to use.
   int32_t level;
-  if (mDocument->ShouldResistFingerprinting(RFPTarget::Unknown)) {
-    level = StaticPrefs::layout_css_font_visibility_resistFingerprinting();
-  } else if (StaticPrefs::privacy_trackingprotection_enabled() ||
-             (isPrivate &&
-              StaticPrefs::privacy_trackingprotection_pbmode_enabled())) {
-    level = StaticPrefs::layout_css_font_visibility_trackingprotection();
-  } else {
-    level = StaticPrefs::layout_css_font_visibility_standard();
+  // Rule 3
+  if (mDocument->ShouldResistFingerprinting(
+          RFPTarget::FontVisibilityBaseSystem)) {
+    // Rule 2: Check RFP pref
+    // This is inside Rule 3 in case this document is exempted from RFP.
+    // But if it is not exempted, and RFP is enabled, we return immediately
+    // to prevent the override below from occurring.
+    if (nsRFPService::IsRFPPrefEnabled(isPrivate)) {
+      mFontVisibility = FontVisibility::Base;
+      return mFontVisibility != oldValue;
+    }
+
+    level = int32_t(FontVisibility::Base);
+  }
+  // Rule 4
+  else if (mDocument->ShouldResistFingerprinting(
+               RFPTarget::FontVisibilityLangPack)) {
+    level = int32_t(FontVisibility::LangPack);
+  }
+  // Rule 5
+  else {
+    level = StaticPrefs::layout_css_font_visibility();
   }
 
-  // For private browsing contexts, apply the private-mode limit.
-  if (isPrivate) {
-    int32_t priv = StaticPrefs::layout_css_font_visibility_private();
-    level = std::max(std::min(level, priv), int32_t(FontVisibility::Base));
-  }
-
-  // Determine if the user has exempted the domain from tracking protections,
-  // if so, use the standard value.
-  if (ContentBlockingAllowList::Check(mDocument->CookieJarSettings())) {
-    level = StaticPrefs::layout_css_font_visibility_standard();
+  // Override Rules 3-5 Only: Determine if the user has exempted the
+  // domain from tracking protections, if so, use the default value.
+  if (level != StaticPrefs::layout_css_font_visibility() &&
+      ContentBlockingAllowList::Check(mDocument->CookieJarSettings())) {
+    level = StaticPrefs::layout_css_font_visibility();
   }
 
   // Clamp result to the valid range of levels.
@@ -1537,12 +1554,8 @@ ColorScheme nsPresContext::DefaultBackgroundColorScheme() const {
   dom::Document* doc = Document();
   // Use a dark background for top-level about:blank that is inaccessible to
   // content JS.
-  {
-    BrowsingContext* bc = doc->GetBrowsingContext();
-    if (bc && bc->IsTop() && !bc->HasOpener() && doc->GetDocumentURI() &&
-        NS_IsAboutBlank(doc->GetDocumentURI())) {
-      return doc->PreferredColorScheme(Document::IgnoreRFP::Yes);
-    }
+  if (doc->IsContentInaccessibleAboutBlank()) {
+    return doc->PreferredColorScheme(Document::IgnoreRFP::Yes);
   }
   // Prefer the root color-scheme (since generally the default canvas
   // background comes from the root element's background-color), and fall back
@@ -1927,6 +1940,10 @@ void nsPresContext::MediaFeatureValuesChanged(
     mPresShell->EnsureStyleFlush();
   }
 
+  if (!mDocument->MediaQueryLists().isEmpty()) {
+    RefreshDriver()->ScheduleMediaQueryListenerUpdate();
+  }
+
   if (!mPendingMediaFeatureValuesChange) {
     mPendingMediaFeatureValuesChange = MakeUnique<MediaFeatureChange>(aChange);
   } else {
@@ -1975,46 +1992,8 @@ bool nsPresContext::FlushPendingMediaFeatureValuesChanged() {
     RebuildAllStyleData(change.mChangeHint, change.mRestyleHint);
   }
 
-  if (mDocument->IsBeingUsedAsImage()) {
-    MOZ_ASSERT(mDocument->MediaQueryLists().isEmpty());
-    return changedStyle;
-  }
-
-  // https://drafts.csswg.org/cssom-view/#evaluate-media-queries-and-report-changes
-  //
-  // Media query list listeners should be notified from a queued task
-  // (in HTML5 terms), although we also want to notify them on certain
-  // flushes.  (We're already running off an event.)
-  //
-  // TODO: This should be better integrated into the "update the rendering"
-  // steps: https://html.spec.whatwg.org/#update-the-rendering
-  //
-  // Note that we do this after the new style from media queries in
-  // style sheets has been computed.
-
-  if (mDocument->MediaQueryLists().isEmpty()) {
-    return changedStyle;
-  }
-
-  // We build a list of all the notifications we're going to send
-  // before we send any of them.
-  nsTArray<RefPtr<mozilla::dom::MediaQueryList>> listsToNotify;
-  for (MediaQueryList* mql = mDocument->MediaQueryLists().getFirst(); mql;
-       mql = static_cast<LinkedListElement<MediaQueryList>*>(mql)->getNext()) {
-    if (mql->MediaFeatureValuesChanged()) {
-      listsToNotify.AppendElement(mql);
-    }
-  }
-
-  if (!listsToNotify.IsEmpty()) {
-    nsContentUtils::AddScriptRunner(NS_NewRunnableFunction(
-        "nsPresContext::FlushPendingMediaFeatureValuesChanged",
-        [list = std::move(listsToNotify)] {
-          for (const auto& mql : list) {
-            nsAutoMicroTask mt;
-            mql->FireChangeEvent();
-          }
-        }));
+  for (MediaQueryList* mql : mDocument->MediaQueryLists()) {
+    mql->MediaFeatureValuesChanged();
   }
 
   return changedStyle;

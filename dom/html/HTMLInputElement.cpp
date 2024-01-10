@@ -22,6 +22,7 @@
 #include "mozilla/dom/FileSystemUtils.h"
 #include "mozilla/dom/FormData.h"
 #include "mozilla/dom/GetFilesHelper.h"
+#include "mozilla/dom/NumericInputTypes.h"
 #include "mozilla/dom/WindowContext.h"
 #include "mozilla/dom/InputType.h"
 #include "mozilla/dom/UserActivation.h"
@@ -56,7 +57,6 @@
 #include "nsGkAtoms.h"
 #include "nsStyleConsts.h"
 #include "nsPresContext.h"
-#include "nsMappedAttributes.h"
 #include "nsIFormControl.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/HTMLDataListElement.h"
@@ -78,7 +78,7 @@
 
 #include "mozilla/ContentEvents.h"
 #include "mozilla/EventDispatcher.h"
-#include "mozilla/MappedDeclarations.h"
+#include "mozilla/MappedDeclarationsBuilder.h"
 #include "mozilla/InternalMutationEvent.h"
 #include "mozilla/TextControlState.h"
 #include "mozilla/TextEditor.h"
@@ -100,7 +100,6 @@
 #include "nsIContentPrefService2.h"
 #include "nsIMIMEService.h"
 #include "nsIObserverService.h"
-#include "nsGlobalWindow.h"
 
 // input type=image
 #include "nsImageLoadingContent.h"
@@ -190,16 +189,18 @@ static const nsAttrValue::EnumTable kCaptureTable[] = {
 
 static const nsAttrValue::EnumTable* kCaptureDefault = &kCaptureTable[2];
 
-const Decimal HTMLInputElement::kStepScaleFactorDate = Decimal(86400000);
-const Decimal HTMLInputElement::kStepScaleFactorNumberRange = Decimal(1);
-const Decimal HTMLInputElement::kStepScaleFactorTime = Decimal(1000);
-const Decimal HTMLInputElement::kStepScaleFactorMonth = Decimal(1);
-const Decimal HTMLInputElement::kStepScaleFactorWeek = Decimal(7 * 86400000);
-const Decimal HTMLInputElement::kDefaultStepBase = Decimal(0);
-const Decimal HTMLInputElement::kDefaultStepBaseWeek = Decimal(-259200000);
-const Decimal HTMLInputElement::kDefaultStep = Decimal(1);
-const Decimal HTMLInputElement::kDefaultStepTime = Decimal(60);
-const Decimal HTMLInputElement::kStepAny = Decimal(0);
+using namespace blink;
+
+constexpr Decimal HTMLInputElement::kStepScaleFactorDate(86400000_d);
+constexpr Decimal HTMLInputElement::kStepScaleFactorNumberRange(1_d);
+constexpr Decimal HTMLInputElement::kStepScaleFactorTime(1000_d);
+constexpr Decimal HTMLInputElement::kStepScaleFactorMonth(1_d);
+constexpr Decimal HTMLInputElement::kStepScaleFactorWeek(7 * 86400000_d);
+constexpr Decimal HTMLInputElement::kDefaultStepBase(0_d);
+constexpr Decimal HTMLInputElement::kDefaultStepBaseWeek(-259200000_d);
+constexpr Decimal HTMLInputElement::kDefaultStep(1_d);
+constexpr Decimal HTMLInputElement::kDefaultStepTime(60_d);
+constexpr Decimal HTMLInputElement::kStepAny(0_d);
 
 const double HTMLInputElement::kMinimumYear = 1;
 const double HTMLInputElement::kMaximumYear = 275760;
@@ -457,6 +458,8 @@ HTMLInputElement::nsFilePickerShownCallback::Done(
         u"cancel"_ns, CanBubble::eYes, Cancelable::eNo);
   }
 
+  mInput->OwnerDoc()->NotifyUserGestureActivation();
+
   nsIFilePicker::Mode mode;
   mFilePicker->GetMode(&mode);
 
@@ -564,7 +567,7 @@ HTMLInputElement::nsFilePickerShownCallback::Done(
       new DispatchChangeEventCallback(mInput);
 
   if (StaticPrefs::dom_webkitBlink_dirPicker_enabled() &&
-      mInput->HasAttr(kNameSpaceID_None, nsGkAtoms::webkitdirectory)) {
+      mInput->HasAttr(nsGkAtoms::webkitdirectory)) {
     ErrorResult error;
     GetFilesHelper* helper = mInput->GetOrCreateGetFilesHelper(true, error);
     if (NS_WARN_IF(error.Failed())) {
@@ -613,9 +616,9 @@ class nsColorPickerShownCallback final : public nsIColorPickerShownCallback {
 nsresult nsColorPickerShownCallback::UpdateInternal(const nsAString& aColor,
                                                     bool aTrustedUpdate) {
   bool valueChanged = false;
-
   nsAutoString oldValue;
   if (aTrustedUpdate) {
+    mInput->OwnerDoc()->NotifyUserGestureActivation();
     valueChanged = true;
   } else {
     mInput->GetValue(oldValue, CallerType::System);
@@ -810,7 +813,7 @@ nsresult HTMLInputElement::InitFilePicker(FilePickerType aType) {
 
   if (aType == FILE_PICKER_DIRECTORY) {
     mode = nsIFilePicker::modeGetFolder;
-  } else if (HasAttr(kNameSpaceID_None, nsGkAtoms::multiple)) {
+  } else if (HasAttr(nsGkAtoms::multiple)) {
     mode = nsIFilePicker::modeOpenMultiple;
   } else {
     mode = nsIFilePicker::modeOpen;
@@ -825,14 +828,11 @@ nsresult HTMLInputElement::InitFilePicker(FilePickerType aType) {
 
   // Native directory pickers ignore file type filters, so we don't spend
   // cycles adding them for FILE_PICKER_DIRECTORY.
-  if (HasAttr(kNameSpaceID_None, nsGkAtoms::accept) &&
-      aType != FILE_PICKER_DIRECTORY) {
+  if (HasAttr(nsGkAtoms::accept) && aType != FILE_PICKER_DIRECTORY) {
     SetFilePickerFiltersFromAccept(filePicker);
 
     if (StaticPrefs::dom_capture_enabled()) {
-      const nsAttrValue* captureVal =
-          GetParsedAttr(nsGkAtoms::capture, kNameSpaceID_None);
-      if (captureVal) {
+      if (const nsAttrValue* captureVal = GetParsedAttr(nsGkAtoms::capture)) {
         filePicker->SetCapture(static_cast<nsIFilePicker::CaptureTarget>(
             captureVal->GetEnumValue()));
       }
@@ -1193,7 +1193,16 @@ void HTMLInputElement::SetTaintSourceGetAttr(const nsAString& aName, DOMString& 
 void HTMLInputElement::SetTaintSourceGetAttr(int32_t aNameSpaceID, const nsAtom* aName,
                                    DOMString& aResult) const {
 
-  if ((aNameSpaceID == kNameSpaceID_None) && (aName == nsGkAtoms::value)) {
+  if (aNameSpaceID == kNameSpaceID_None) {
+    SetTaintSourceGetAttr(aName, aResult);
+  }
+  return;
+}
+
+void HTMLInputElement::SetTaintSourceGetAttr(const nsAtom* aName,
+                                   DOMString& aResult) const {
+
+  if (aName == nsGkAtoms::value) {
     // TaintFox: input.value source
     //
     // This will taint *all* input types, including those where the actual values
@@ -1224,7 +1233,7 @@ void HTMLInputElement::BeforeSetAttr(int32_t aNameSpaceID, nsAtom* aName,
         if (container && ((aValue && !HasAttr(aNameSpaceID, aName)) ||
                           (!aValue && HasAttr(aNameSpaceID, aName)))) {
           nsAutoString name;
-          GetAttr(kNameSpaceID_None, nsGkAtoms::name, name);
+          GetAttr(nsGkAtoms::name, name);
           container->RadioRequiredWillChange(name, !!aValue);
         }
       }
@@ -1450,7 +1459,7 @@ void HTMLInputElement::ResultForDialogSubmit(nsAString& aResult) {
     aResult.AppendLiteral(",");
     aResult.AppendInt(y);
   } else {
-    GetAttr(kNameSpaceID_None, nsGkAtoms::value, aResult);
+    GetAttr(nsGkAtoms::value, aResult);
   }
 }
 
@@ -1541,7 +1550,7 @@ void HTMLInputElement::GetValue(nsAString& aValue, CallerType aCallerType) {
   // For the more general case of input elements displaying text that isn't
   // their current value, see bug 805049.
   if (SanitizesOnValueGetter()) {
-    SanitizeValue(aValue, ForValueGetter::Yes);
+    SanitizeValue(aValue, SanitizationKind::ForValueGetter);
   }
 }
 
@@ -1577,7 +1586,7 @@ void HTMLInputElement::GetNonFileValueInternal(nsAString& aValue) const {
   switch (GetValueMode()) {
     case VALUE_MODE_VALUE:
       if (IsSingleLineTextControl(false)) {
-        mInputData.mState->GetValue(aValue, true);
+        mInputData.mState->GetValue(aValue, true, /* aForDisplay = */ false);
       } else if (!aValue.Assign(mInputData.mValue, fallible)) {
         aValue.Truncate();
       }
@@ -1591,12 +1600,12 @@ void HTMLInputElement::GetNonFileValueInternal(nsAString& aValue) const {
 
     case VALUE_MODE_DEFAULT:
       // Treat defaultValue as value.
-      GetAttr(kNameSpaceID_None, nsGkAtoms::value, aValue);
+      GetAttr(nsGkAtoms::value, aValue);
       return;
 
     case VALUE_MODE_DEFAULT_ON:
       // Treat default value as value and returns "on" if no value.
-      if (!GetAttr(kNameSpaceID_None, nsGkAtoms::value, aValue)) {
+      if (!GetAttr(nsGkAtoms::value, aValue)) {
         aValue.AssignLiteral("on");
       }
       return;
@@ -1620,18 +1629,25 @@ Decimal HTMLInputElement::StringToDecimal(const nsAString& aValue) {
   }
   NS_LossyConvertUTF16toASCII asciiString(aValue);
   std::string stdString(asciiString.get(), asciiString.Length());
-  return Decimal::fromString(stdString);
+  auto decimal = Decimal::fromString(stdString);
+  if (!decimal.isFinite()) {
+    return Decimal::nan();
+  }
+  // Numbers are considered finite IEEE 754 Double-precision floating point
+  // values, but decimal supports a bigger range.
+  static const Decimal maxDouble =
+      Decimal::fromDouble(std::numeric_limits<double>::max());
+  if (decimal < -maxDouble || decimal > maxDouble) {
+    return Decimal::nan();
+  }
+  return decimal;
 }
 
 Decimal HTMLInputElement::GetValueAsDecimal() const {
-  Decimal decimalValue;
   nsAutoString stringValue;
-
   GetNonFileValueInternal(stringValue);
-
-  return !mInputType->ConvertStringToNumber(stringValue, decimalValue)
-             ? Decimal::nan()
-             : decimalValue;
+  Decimal result = mInputType->ConvertStringToNumber(stringValue).mResult;
+  return result.isFinite() ? result : Decimal::nan();
 }
 
 void HTMLInputElement::SetValue(const nsAString& aValue, CallerType aCallerType,
@@ -1666,15 +1682,10 @@ void HTMLInputElement::SetValue(const nsAString& aValue, CallerType aCallerType,
       // NOTE: this is currently quite expensive work (too much string
       // manipulation). We should probably optimize that.
       nsAutoString currentValue;
-      GetValue(currentValue, aCallerType);
+      GetNonFileValueInternal(currentValue);
 
-      // Some types sanitize value, so GetValue doesn't return pure
-      // previous value correctly.
-      //
-      // FIXME(emilio): Shouldn't above just use GetNonFileValueInternal() to
-      // get the unsanitized value?
       nsresult rv = SetValueInternal(
-          aValue, SanitizesOnValueGetter() ? nullptr : &currentValue,
+          aValue, &currentValue,
           {ValueSetterOption::ByContentAPI, ValueSetterOption::SetValueChanged,
            ValueSetterOption::MoveCursorToEndIfValueChanged});
       if (NS_FAILED(rv)) {
@@ -1700,7 +1711,7 @@ void HTMLInputElement::SetValue(const nsAString& aValue, CallerType aCallerType,
 
 HTMLDataListElement* HTMLInputElement::GetList() const {
   nsAutoString dataListId;
-  GetAttr(kNameSpaceID_None, nsGkAtoms::list_, dataListId);
+  GetAttr(nsGkAtoms::list_, dataListId);
   if (dataListId.IsEmpty()) {
     return nullptr;
   }
@@ -1899,15 +1910,15 @@ Decimal HTMLInputElement::GetMinimum() const {
   Decimal defaultMinimum =
       mType == FormControlType::InputRange ? Decimal(0) : Decimal::nan();
 
-  if (!HasAttr(kNameSpaceID_None, nsGkAtoms::min)) {
+  if (!HasAttr(nsGkAtoms::min)) {
     return defaultMinimum;
   }
 
   nsAutoString minStr;
-  GetAttr(kNameSpaceID_None, nsGkAtoms::min, minStr);
+  GetAttr(nsGkAtoms::min, minStr);
 
-  Decimal min;
-  return mInputType->ConvertStringToNumber(minStr, min) ? min : defaultMinimum;
+  Decimal min = mInputType->ConvertStringToNumber(minStr).mResult;
+  return min.isFinite() ? min : defaultMinimum;
 }
 
 Decimal HTMLInputElement::GetMaximum() const {
@@ -1919,15 +1930,15 @@ Decimal HTMLInputElement::GetMaximum() const {
   Decimal defaultMaximum =
       mType == FormControlType::InputRange ? Decimal(100) : Decimal::nan();
 
-  if (!HasAttr(kNameSpaceID_None, nsGkAtoms::max)) {
+  if (!HasAttr(nsGkAtoms::max)) {
     return defaultMaximum;
   }
 
   nsAutoString maxStr;
-  GetAttr(kNameSpaceID_None, nsGkAtoms::max, maxStr);
+  GetAttr(nsGkAtoms::max, maxStr);
 
-  Decimal max;
-  return mInputType->ConvertStringToNumber(maxStr, max) ? max : defaultMaximum;
+  Decimal max = mInputType->ConvertStringToNumber(maxStr).mResult;
+  return max.isFinite() ? max : defaultMaximum;
 }
 
 Decimal HTMLInputElement::GetStepBase() const {
@@ -1935,22 +1946,23 @@ Decimal HTMLInputElement::GetStepBase() const {
                  mType == FormControlType::InputNumber ||
                  mType == FormControlType::InputRange,
              "Check that kDefaultStepBase is correct for this new type");
-
-  Decimal stepBase;
-
   // Do NOT use GetMinimum here - the spec says to use "the min content
   // attribute", not "the minimum".
   nsAutoString minStr;
-  if (GetAttr(kNameSpaceID_None, nsGkAtoms::min, minStr) &&
-      mInputType->ConvertStringToNumber(minStr, stepBase)) {
-    return stepBase;
+  if (GetAttr(nsGkAtoms::min, minStr)) {
+    Decimal min = mInputType->ConvertStringToNumber(minStr).mResult;
+    if (min.isFinite()) {
+      return min;
+    }
   }
 
   // If @min is not a double, we should use @value.
   nsAutoString valueStr;
-  if (GetAttr(kNameSpaceID_None, nsGkAtoms::value, valueStr) &&
-      mInputType->ConvertStringToNumber(valueStr, stepBase)) {
-    return stepBase;
+  if (GetAttr(nsGkAtoms::value, valueStr)) {
+    Decimal value = mInputType->ConvertStringToNumber(valueStr).mResult;
+    if (value.isFinite()) {
+      return value;
+    }
   }
 
   if (mType == FormControlType::InputWeek) {
@@ -2443,11 +2455,11 @@ void HTMLInputElement::GetDisplayFileName(nsAString& aValue) const {
 
   if (mFileData->mFilesOrDirectories.IsEmpty()) {
     if (StaticPrefs::dom_webkitBlink_dirPicker_enabled() &&
-        HasAttr(kNameSpaceID_None, nsGkAtoms::webkitdirectory)) {
+        HasAttr(nsGkAtoms::webkitdirectory)) {
       nsContentUtils::GetMaybeLocalizedString(nsContentUtils::eFORMS_PROPERTIES,
                                               "NoDirSelected", OwnerDoc(),
                                               value);
-    } else if (HasAttr(kNameSpaceID_None, nsGkAtoms::multiple)) {
+    } else if (HasAttr(nsGkAtoms::multiple)) {
       nsContentUtils::GetMaybeLocalizedString(nsContentUtils::eFORMS_PROPERTIES,
                                               "NoFilesSelected", OwnerDoc(),
                                               value);
@@ -2535,7 +2547,7 @@ void HTMLInputElement::MozSetDndFilesAndDirectories(
       new DispatchChangeEventCallback(this);
 
   if (StaticPrefs::dom_webkitBlink_dirPicker_enabled() &&
-      HasAttr(kNameSpaceID_None, nsGkAtoms::webkitdirectory)) {
+      HasAttr(nsGkAtoms::webkitdirectory)) {
     ErrorResult rv;
     GetFilesHelper* helper =
         GetOrCreateGetFilesHelper(true /* recursionFlag */, rv);
@@ -2679,7 +2691,14 @@ nsresult HTMLInputElement::SetValueInternal(
       // prevent doing it if it's useless.
       nsAutoString value(aValue);
 
-      if (mDoneCreating) {
+      if (mDoneCreating &&
+          !(mType == FormControlType::InputNumber &&
+            aOptions.contains(ValueSetterOption::BySetUserInputAPI))) {
+        // When the value of a number input is set by a script, we need to make
+        // sure the value is a valid floating-point number.
+        // https://html.spec.whatwg.org/#valid-floating-point-number
+        // When it's set by a user, however, we need to be more permissive, so
+        // we don't sanitize its value here. See bug 1839572.
         SanitizeValue(value);
       }
       // else DoneCreatingElement calls us again once mDoneCreating is true
@@ -2867,7 +2886,7 @@ void HTMLInputElement::DoSetChecked(bool aChecked, bool aNotify,
   nsIRadioGroupContainer* container = GetRadioGroupContainer();
   if (container) {
     nsAutoString name;
-    GetAttr(kNameSpaceID_None, nsGkAtoms::name, name);
+    GetAttr(nsGkAtoms::name, name);
     container->SetCurrentRadioButton(name, nullptr);
   }
   // SetCheckedInternal is going to ask all radios to update their
@@ -2891,7 +2910,7 @@ void HTMLInputElement::RadioSetChecked(bool aNotify) {
   nsIRadioGroupContainer* container = GetRadioGroupContainer();
   if (container) {
     nsAutoString name;
-    GetAttr(kNameSpaceID_None, nsGkAtoms::name, name);
+    GetAttr(nsGkAtoms::name, name);
     container->SetCurrentRadioButton(name, this);
   }
 
@@ -2906,7 +2925,7 @@ nsIRadioGroupContainer* HTMLInputElement::GetRadioGroupContainer() const {
       "GetRadioGroupContainer should only be called when type='radio'");
 
   nsAutoString name;
-  GetAttr(kNameSpaceID_None, nsGkAtoms::name, name);
+  GetAttr(nsGkAtoms::name, name);
 
   if (name.IsEmpty()) {
     return nullptr;
@@ -2937,7 +2956,7 @@ HTMLInputElement* HTMLInputElement::GetSelectedRadioButton() const {
   }
 
   nsAutoString name;
-  GetAttr(kNameSpaceID_None, nsGkAtoms::name, name);
+  GetAttr(nsGkAtoms::name, name);
 
   HTMLInputElement* selected = container->GetCurrentRadioButton(name);
   return selected;
@@ -3542,7 +3561,7 @@ nsresult HTMLInputElement::MaybeInitPickers(EventChainPostVisitor& aVisitor) {
         nsIContent::FromEventTargetOrNull(aVisitor.mEvent->mOriginalTarget);
     if (target && target->FindFirstNonChromeOnlyAccessContent() == this &&
         StaticPrefs::dom_webkitBlink_dirPicker_enabled() &&
-        HasAttr(kNameSpaceID_None, nsGkAtoms::webkitdirectory)) {
+        HasAttr(nsGkAtoms::webkitdirectory)) {
       type = FILE_PICKER_DIRECTORY;
     }
     return InitFilePicker(type);
@@ -3561,8 +3580,16 @@ nsresult HTMLInputElement::MaybeInitPickers(EventChainPostVisitor& aVisitor) {
  */
 static bool IgnoreInputEventWithModifier(const WidgetInputEvent& aEvent,
                                          bool ignoreControl) {
-  return (ignoreControl && aEvent.IsControl()) || aEvent.IsAltGraph() ||
-         aEvent.IsFn() || aEvent.IsOS();
+  return (ignoreControl && aEvent.IsControl()) ||
+         aEvent.IsAltGraph()
+#if defined(XP_WIN) || defined(MOZ_WIDGET_GTK)
+         // Meta key is the Windows Logo key on Windows and Linux which may
+         // assign some special meaning for the events while it's pressed.
+         // On the other hand, it's a normal modifier in macOS and Android.
+         // Therefore, We should ignore it only in Win/Linux.
+         || aEvent.IsMeta()
+#endif
+         || aEvent.IsFn();
 }
 
 bool HTMLInputElement::StepsInputValue(
@@ -3642,6 +3669,7 @@ nsresult HTMLInputElement::PostHandleEvent(EventChainPostVisitor& aVisitor) {
       !IsSingleLineTextControl(true) && mType != FormControlType::InputNumber) {
     WidgetMouseEvent* mouseEvent = aVisitor.mEvent->AsMouseEvent();
     if (mouseEvent && mouseEvent->IsLeftClickEvent() &&
+        OwnerDoc()->MayHaveDOMActivateListeners() &&
         !ShouldPreventDOMActivateDispatch(aVisitor.mEvent->mOriginalTarget)) {
       // DOMActive event should be trusted since the activation is actually
       // occurred even if the cause is an untrusted click event.
@@ -4099,7 +4127,7 @@ nsresult HTMLInputElement::MaybeHandleRadioButtonNavigation(
   RefPtr<HTMLInputElement> selectedRadioButton;
   if (nsIRadioGroupContainer* container = GetRadioGroupContainer()) {
     nsAutoString name;
-    GetAttr(kNameSpaceID_None, nsGkAtoms::name, name);
+    GetAttr(nsGkAtoms::name, name);
     container->GetNextRadioButton(name, move == RadioButtonMove::Back, this,
                                   getter_AddRefs(selectedRadioButton));
   }
@@ -4218,8 +4246,7 @@ void HTMLInputElement::MaybeLoadImage() {
   // Our base URI may have changed; claim that our URI changed, and the
   // nsImageLoadingContent will decide whether a new image load is warranted.
   nsAutoString uri;
-  if (mType == FormControlType::InputImage &&
-      GetAttr(kNameSpaceID_None, nsGkAtoms::src, uri) &&
+  if (mType == FormControlType::InputImage && GetAttr(nsGkAtoms::src, uri) &&
       (NS_FAILED(LoadImage(uri, false, true, eImageLoadType_Normal,
                            mSrcTriggeringPrincipal)) ||
        !LoadingEnabled())) {
@@ -4237,7 +4264,7 @@ nsresult HTMLInputElement::BindToTree(BindContext& aContext, nsINode& aParent) {
   if (mType == FormControlType::InputImage) {
     // Our base URI may have changed; claim that our URI changed, and the
     // nsImageLoadingContent will decide whether a new image load is warranted.
-    if (HasAttr(kNameSpaceID_None, nsGkAtoms::src)) {
+    if (HasAttr(nsGkAtoms::src)) {
       // Mark channel as urgent-start before load image if the image load is
       // initaiated by a user interaction.
       mUseUrgentStartForChannel = UserActivation::IsHandlingUserInput();
@@ -4476,7 +4503,7 @@ void HTMLInputElement::HandleTypeChange(FormControlType aNewType,
   // Update or clear our required states since we may have changed from a
   // required input type to a non-required input type or viceversa.
   if (DoesRequiredApply()) {
-    bool isRequired = HasAttr(kNameSpaceID_None, nsGkAtoms::required);
+    bool isRequired = HasAttr(nsGkAtoms::required);
     UpdateRequiredState(isRequired, aNotify);
   } else if (aNotify) {
     RemoveStates(ElementState::REQUIRED_STATES);
@@ -4502,30 +4529,32 @@ void HTMLInputElement::HandleTypeChange(FormControlType aNewType,
     RecomputeDirectionality(this, aNotify);
   }
 
-  if (oldType == FormControlType::InputImage) {
-    // We're no longer an image input.  Cancel our image requests, if we have
-    // any.
-    CancelImageRequests(aNotify);
-
-    // And we should update our mapped attribute mapping function.
-    mAttrs.UpdateMappedAttrRuleMapper(*this);
-  } else if (mType == FormControlType::InputImage) {
-    if (aNotify) {
-      // We just got switched to be an image input; we should see
-      // whether we have an image to load;
+  if (oldType == FormControlType::InputImage ||
+      mType == FormControlType::InputImage) {
+    if (oldType == FormControlType::InputImage) {
+      // We're no longer an image input.  Cancel our image requests, if we have
+      // any.
+      CancelImageRequests(aNotify);
+    } else if (aNotify) {
+      // We just got switched to be an image input; we should see whether we
+      // have an image to load;
       nsAutoString src;
-      if (GetAttr(kNameSpaceID_None, nsGkAtoms::src, src)) {
+      if (GetAttr(nsGkAtoms::src, src)) {
         // Mark channel as urgent-start before load image if the image load is
-        // initaiated by a user interaction.
+        // initiated by a user interaction.
         mUseUrgentStartForChannel = UserActivation::IsHandlingUserInput();
 
         LoadImage(src, false, aNotify, eImageLoadType_Normal,
                   mSrcTriggeringPrincipal);
       }
     }
-
-    // And we should update our mapped attribute mapping function.
-    mAttrs.UpdateMappedAttrRuleMapper(*this);
+    // We should update our mapped attribute mapping function.
+    if (mAttrs.HasAttrs() && !mAttrs.IsPendingMappedAttributeEvaluation()) {
+      mAttrs.InfallibleMarkAsPendingPresAttributeEvaluation();
+      if (auto* doc = GetComposedDoc()) {
+        doc->ScheduleForPresAttrEvaluation(this);
+      }
+    }
   }
 
   if (mType == FormControlType::InputPassword && IsInComposedDoc()) {
@@ -4585,7 +4614,7 @@ void HTMLInputElement::MaybeSnapToTickMark(Decimal& aValue) {
 }
 
 void HTMLInputElement::SanitizeValue(nsAString& aValue,
-                                     ForValueGetter aForGetter) {
+                                     SanitizationKind aKind) {
   NS_ASSERTION(mDoneCreating, "The element creation should be finished!");
 
   switch (mType) {
@@ -4619,7 +4648,7 @@ void HTMLInputElement::SanitizeValue(nsAString& aValue,
           aValue);
     } break;
     case FormControlType::InputNumber: {
-      if (!aValue.IsEmpty() &&
+      if (aKind == SanitizationKind::Other && !aValue.IsEmpty() &&
           (aValue.First() == '+' || aValue.Last() == '.')) {
         // A value with a leading plus or trailing dot should fail to parse.
         // However, the localized parser accepts this, and when we convert it
@@ -4628,44 +4657,44 @@ void HTMLInputElement::SanitizeValue(nsAString& aValue,
         return;
       }
 
-      Decimal value;
-      bool ok = mInputType->ConvertStringToNumber(aValue, value);
-      if (!ok) {
+      InputType::StringToNumberResult result =
+          mInputType->ConvertStringToNumber(aValue);
+      if (!result.mResult.isFinite()) {
         aValue.Truncate();
         return;
       }
 
-      nsAutoString sanitizedValue;
-      if (aForGetter == ForValueGetter::Yes) {
+      if (aKind == SanitizationKind::ForValueGetter) {
         // If the default non-localized algorithm parses the value, then we're
         // done, don't un-localize it, to avoid precision loss, and to preserve
         // scientific notation as well for example.
-        //
-        // FIXME(emilio, bug 1622808): Localization should ideally be more
-        // input-preserving.
-        if (StringToDecimal(aValue).isFinite()) {
+        if (!result.mLocalized) {
           return;
         }
         // For the <input type=number> value getter, we return the unlocalized
         // value if it doesn't parse as StringToDecimal, for compat with other
         // browsers.
         char buf[32];
-        DebugOnly<bool> ok = value.toString(buf, ArrayLength(buf));
-        sanitizedValue.AssignASCII(buf);
+        DebugOnly<bool> ok = result.mResult.toString(buf, ArrayLength(buf));
+        aValue.AssignASCII(buf);
         MOZ_ASSERT(ok, "buf not big enough");
-      } else {
-        mInputType->ConvertNumberToString(value, sanitizedValue);
-        // Otherwise we localize as needed, but if both the localized and
-        // unlocalized version parse, we just use the unlocalized one, to
-        // preserve the input as much as possible.
+      } else if (aKind == SanitizationKind::ForDisplay) {
+        // If this SanitizeValue call is for display, we localize as needed, but
+        // if both the localized and unlocalized version parse with the generic
+        // parser, we just use the unlocalized one, to preserve the input as
+        // much as possible.
         //
         // FIXME(emilio, bug 1622808): Localization should ideally be more
         // input-preserving.
-        if (StringToDecimal(sanitizedValue).isFinite()) {
+        nsString localizedValue;
+        mInputType->ConvertNumberToString(result.mResult, localizedValue);
+        if (StringToDecimal(localizedValue).isFinite()) {
           return;
         }
+        aValue = std::move(localizedValue);
+      } else {
+        // Leave aValue untouched.
       }
-      aValue.Assign(sanitizedValue);
     } break;
     case FormControlType::InputRange: {
       Decimal minimum = GetMinimum();
@@ -4678,9 +4707,8 @@ void HTMLInputElement::SanitizeValue(nsAString& aValue,
       // parse out from aValue needs to be sanitized.
       bool needSanitization = false;
 
-      Decimal value;
-      bool ok = mInputType->ConvertStringToNumber(aValue, value);
-      if (!ok) {
+      Decimal value = mInputType->ConvertStringToNumber(aValue).mResult;
+      if (!value.isFinite()) {
         needSanitization = true;
         // Set value to midway between minimum and maximum.
         value = maximum <= minimum ? minimum
@@ -4813,6 +4841,9 @@ bool HTMLInputElement::IsLeapYear(uint32_t aYear) const {
 
 uint32_t HTMLInputElement::DayOfWeek(uint32_t aYear, uint32_t aMonth,
                                      uint32_t aDay, bool isoWeek) const {
+  MOZ_ASSERT(1 <= aMonth && aMonth <= 12, "month is in 1..12");
+  MOZ_ASSERT(1 <= aDay && aDay <= 31, "day is in 1..31");
+
   // Tomohiko Sakamoto algorithm.
   int monthTable[] = {0, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4};
   aYear -= aMonth < 3;
@@ -5250,10 +5281,6 @@ bool HTMLInputElement::ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
       return ParseAlignValue(aValue, aResult);
     }
     if (aAttribute == nsGkAtoms::formmethod) {
-      if (StaticPrefs::dom_dialog_element_enabled() || IsInChromeDocument()) {
-        return aResult.ParseEnumValue(aValue, kFormMethodTableDialogEnabled,
-                                      false);
-      }
       return aResult.ParseEnumValue(aValue, kFormMethodTable, false);
     }
     if (aAttribute == nsGkAtoms::formenctype) {
@@ -5281,19 +5308,17 @@ bool HTMLInputElement::ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
 }
 
 void HTMLInputElement::ImageInputMapAttributesIntoRule(
-    const nsMappedAttributes* aAttributes, MappedDeclarations& aDecls) {
+    MappedDeclarationsBuilder& aBuilder) {
   nsGenericHTMLFormControlElementWithState::MapImageBorderAttributeInto(
-      aAttributes, aDecls);
+      aBuilder);
   nsGenericHTMLFormControlElementWithState::MapImageMarginAttributeInto(
-      aAttributes, aDecls);
+      aBuilder);
   nsGenericHTMLFormControlElementWithState::MapImageSizeAttributesInto(
-      aAttributes, aDecls, MapAspectRatio::Yes);
+      aBuilder, MapAspectRatio::Yes);
   // Images treat align as "float"
   nsGenericHTMLFormControlElementWithState::MapImageAlignAttributeInto(
-      aAttributes, aDecls);
-
-  nsGenericHTMLFormControlElementWithState::MapCommonAttributesInto(aAttributes,
-                                                                    aDecls);
+      aBuilder);
+  nsGenericHTMLFormControlElementWithState::MapCommonAttributesInto(aBuilder);
 }
 
 nsChangeHint HTMLInputElement::GetAttributeChangeHint(const nsAtom* aAttribute,
@@ -5797,7 +5822,7 @@ HTMLInputElement::SubmitNamesValues(FormData* aFormData) {
 
   // Get the name
   nsAutoString name;
-  GetAttr(kNameSpaceID_None, nsGkAtoms::name, name);
+  GetAttr(nsGkAtoms::name, name);
 
   // Submit .x, .y for input type=image
   if (mType == FormControlType::InputImage) {
@@ -5886,7 +5911,7 @@ HTMLInputElement::SubmitNamesValues(FormData* aFormData) {
   GetValue(value, CallerType::System);
 
   if (mType == FormControlType::InputSubmit && value.IsEmpty() &&
-      !HasAttr(kNameSpaceID_None, nsGkAtoms::value)) {
+      !HasAttr(nsGkAtoms::value)) {
     // Get our default value, which is the same as our default label
     nsAutoString defaultValue;
     nsContentUtils::GetMaybeLocalizedString(nsContentUtils::eFORMS_PROPERTIES,
@@ -5894,7 +5919,17 @@ HTMLInputElement::SubmitNamesValues(FormData* aFormData) {
     value = defaultValue;
   }
 
-  return aFormData->AddNameValuePair(name, value);
+  const nsresult rv = aFormData->AddNameValuePair(name, value);
+  if (NS_FAILED(rv)) {
+    return rv;
+  }
+
+  // Submit dirname=dir
+  if (DoesDirnameApply()) {
+    return SubmitDirnameDir(aFormData);
+  }
+
+  return NS_OK;
 }
 
 static nsTArray<FileContentData> SaveFileContentData(
@@ -5980,7 +6015,7 @@ void HTMLInputElement::SaveState() {
     if (state) {
       // We do not want to save the real disabled state but the disabled
       // attribute.
-      state->disabled() = HasAttr(kNameSpaceID_None, nsGkAtoms::disabled);
+      state->disabled() = HasAttr(nsGkAtoms::disabled);
       state->disabledSet() = true;
     }
   }
@@ -6196,12 +6231,6 @@ bool HTMLInputElement::RestoreState(PresState* aState) {
   return restoredCheckedState;
 }
 
-bool HTMLInputElement::AllowDrop() {
-  // Allow drop on anything other than file inputs.
-
-  return mType != FormControlType::InputFile;
-}
-
 /*
  * Radio group stuff
  */
@@ -6250,7 +6279,7 @@ void HTMLInputElement::AddedToRadioGroup() {
   nsCOMPtr<nsIRadioGroupContainer> container = GetRadioGroupContainer();
   if (container) {
     nsAutoString name;
-    GetAttr(kNameSpaceID_None, nsGkAtoms::name, name);
+    GetAttr(nsGkAtoms::name, name);
     container->AddToRadioGroup(name, this);
 
     // We initialize the validity of the element to the validity of the group
@@ -6267,7 +6296,7 @@ void HTMLInputElement::WillRemoveFromRadioGroup() {
   }
 
   nsAutoString name;
-  GetAttr(kNameSpaceID_None, nsGkAtoms::name, name);
+  GetAttr(nsGkAtoms::name, name);
 
   // If this button was checked, we need to notify the group that there is no
   // longer a selected radio button
@@ -6346,7 +6375,7 @@ bool HTMLInputElement::IsHTMLFocusable(bool aWithMouse, bool* aIsFocusable,
   }
 
   nsAutoString name;
-  GetAttr(kNameSpaceID_None, nsGkAtoms::name, name);
+  GetAttr(nsGkAtoms::name, name);
 
   if (container->GetCurrentRadioButton(name)) {
     *aTabIndex = -1;
@@ -6359,7 +6388,7 @@ nsresult HTMLInputElement::VisitGroup(nsIRadioVisitor* aVisitor) {
   nsIRadioGroupContainer* container = GetRadioGroupContainer();
   if (container) {
     nsAutoString name;
-    GetAttr(kNameSpaceID_None, nsGkAtoms::name, name);
+    GetAttr(nsGkAtoms::name, name);
     return container->WalkRadioGroup(name, aVisitor);
   }
 
@@ -6407,8 +6436,8 @@ HTMLInputElement::ValueModeType HTMLInputElement::GetValueMode() const {
 }
 
 bool HTMLInputElement::IsMutable() const {
-  return !IsDisabled() && !(DoesReadOnlyApply() &&
-                            HasAttr(kNameSpaceID_None, nsGkAtoms::readonly));
+  return !IsDisabled() &&
+         !(DoesReadOnlyApply() && HasAttr(nsGkAtoms::readonly));
 }
 
 bool HTMLInputElement::DoesRequiredApply() const {
@@ -6533,12 +6562,12 @@ bool HTMLInputElement::DoesAutocompleteApply() const {
 Decimal HTMLInputElement::GetStep() const {
   MOZ_ASSERT(DoesStepApply(), "GetStep() can only be called if @step applies");
 
-  if (!HasAttr(kNameSpaceID_None, nsGkAtoms::step)) {
+  if (!HasAttr(nsGkAtoms::step)) {
     return GetDefaultStep() * GetStepScaleFactor();
   }
 
   nsAutoString stepStr;
-  GetAttr(kNameSpaceID_None, nsGkAtoms::step, stepStr);
+  GetAttr(nsGkAtoms::step, stepStr);
 
   if (stepStr.LowerCaseEqualsLiteral("any")) {
     // The element can't suffer from step mismatch if there is no step.
@@ -6652,7 +6681,7 @@ void HTMLInputElement::UpdateValueMissingValidityStateForRadio(
   nsCOMPtr<nsIRadioGroupContainer> container = GetRadioGroupContainer();
 
   nsAutoString name;
-  GetAttr(kNameSpaceID_None, nsGkAtoms::name, name);
+  GetAttr(nsGkAtoms::name, name);
 
   if (!container) {
     // As per the spec, a radio button not within a radio button group cannot
@@ -6748,8 +6777,7 @@ void HTMLInputElement::UpdateBarredFromConstraintValidation() {
   SetBarredFromConstraintValidation(
       mType == FormControlType::InputHidden ||
       mType == FormControlType::InputButton ||
-      mType == FormControlType::InputReset ||
-      HasAttr(kNameSpaceID_None, nsGkAtoms::readonly) ||
+      mType == FormControlType::InputReset || HasAttr(nsGkAtoms::readonly) ||
       HasFlag(ELEMENT_IS_DATALIST_OR_HAS_DATALIST_ANCESTOR) || IsDisabled());
 }
 
@@ -6787,31 +6815,27 @@ int32_t HTMLInputElement::GetWrapCols() {
 
 int32_t HTMLInputElement::GetRows() { return DEFAULT_ROWS; }
 
-void HTMLInputElement::GetDefaultValueFromContent(nsAString& aValue) {
-  if (GetEditorState()) {
-    GetDefaultValue(aValue);
-
-    // This is called by the frame to show the value.
-    // We have to sanitize it when needed.
-    if (mDoneCreating) {
-      SanitizeValue(aValue);
-    }
+void HTMLInputElement::GetDefaultValueFromContent(nsAString& aValue,
+                                                  bool aForDisplay) {
+  if (!GetEditorState()) {
+    return;
+  }
+  GetDefaultValue(aValue);
+  // This is called by the frame to show the value.
+  // We have to sanitize it when needed.
+  // FIXME: Do we want to sanitize even when aForDisplay is false?
+  if (mDoneCreating) {
+    SanitizeValue(aValue, aForDisplay ? SanitizationKind::ForDisplay
+                                      : SanitizationKind::Other);
   }
 }
 
 bool HTMLInputElement::ValueChanged() const { return mValueChanged; }
 
-void HTMLInputElement::GetTextEditorValue(nsAString& aValue,
-                                          bool aIgnoreWrap) const {
-  TextControlState* state = GetEditorState();
-  if (state) {
-    state->GetValue(aValue, aIgnoreWrap);
+void HTMLInputElement::GetTextEditorValue(nsAString& aValue) const {
+  if (TextControlState* state = GetEditorState()) {
+    state->GetValue(aValue, /* aIgnoreWrap = */ true, /* aForDisplay = */ true);
   }
-}
-
-bool HTMLInputElement::TextEditorValueEquals(const nsAString& aValue) const {
-  TextControlState* state = GetEditorState();
-  return state ? state->ValueEquals(aValue) : aValue.IsEmpty();
 }
 
 void HTMLInputElement::InitializeKeyboardEventListeners() {
@@ -6903,7 +6927,7 @@ void HTMLInputElement::SetFilePickerFiltersFromAccept(
   // We always add |filterAll|
   filePicker->AppendFilters(nsIFilePicker::filterAll);
 
-  NS_ASSERTION(HasAttr(kNameSpaceID_None, nsGkAtoms::accept),
+  NS_ASSERTION(HasAttr(nsGkAtoms::accept),
                "You should not call SetFilePickerFiltersFromAccept if the"
                " element has no accept attribute!");
 
@@ -6927,7 +6951,7 @@ void HTMLInputElement::SetFilePickerFiltersFromAccept(
   }
 
   nsAutoString accept;
-  GetAttr(kNameSpaceID_None, nsGkAtoms::accept, accept);
+  GetAttr(nsGkAtoms::accept, accept);
 
   HTMLSplitOnSpacesTokenizer tokenizer(accept, ',');
 

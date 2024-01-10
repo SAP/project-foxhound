@@ -84,6 +84,9 @@ enum class TypeCode {
   // Type constructor for non-nullable reference types.
   Ref = 0x6b,  // SLEB128(-0x15)
 
+  // A reference to an unboxed 31-bit integer.
+  I31Ref = 0x6a,  // SLEB128(-0x16)
+
   // A null reference in the extern hierarchy.
   NullExternRef = 0x69,  // SLEB128(-0x17)
 
@@ -115,13 +118,16 @@ enum class TypeCode {
   BlockVoid = 0x40,  // SLEB128(-0x40)
 
   // Type constructor for recursion groups - gc proposal
-  RecGroup = 0x4f,
+  RecGroup = 0x4f,  // SLEB128(-0x31)
 
   // TODO: update wasm-tools to use the correct prefix
   RecGroupOld = 0x45,
 
   // Type prefix for parent types - gc proposal
-  SubType = 0x50,
+  SubNoFinalType = 0x50,  // SLEB128(-0x30)
+
+  // Type prefix for final types - gc proposal
+  SubFinalType = 0x4e,  // SLEB128(-0x32)
 
   Limit = 0x80
 };
@@ -184,10 +190,6 @@ enum class Trap {
 
   Limit
 };
-
-// The representation of a null reference value throughout the compiler.
-
-static const intptr_t NULLREF_VALUE = intptr_t((void*)nullptr);
 
 enum class DefinitionKind {
   Function = 0x00,
@@ -259,6 +261,8 @@ enum class Op {
   // Call operators
   Call = 0x10,
   CallIndirect = 0x11,
+  ReturnCall = 0x12,
+  ReturnCallIndirect = 0x13,
   CallRef = 0x14,
 
   // Additional exception operators
@@ -504,6 +508,11 @@ enum class GcOp {
   ArrayCopy = 0x18,
   ArrayLen = 0x19,
 
+  // I31 operations
+  I31New = 0x20,
+  I31GetS = 0x21,
+  I31GetU = 0x22,
+
   // Ref operations
   RefTestV5 = 0x44,
   RefCastV5 = 0x45,
@@ -517,7 +526,8 @@ enum class GcOp {
   RefCast = 0x41,
   RefTestNull = 0x48,
   RefCastNull = 0x49,
-  BrOnCast = 0x4f,
+  BrOnCast = 0x4e,
+  BrOnCastFail = 0x4f,
 
   // Dart compatibility instruction
   RefAsStructV5 = 0x59,
@@ -798,10 +808,10 @@ enum class SimdOp {
   I32x4RelaxedTruncF32x4U = 0x102,
   I32x4RelaxedTruncF64x2SZero = 0x103,
   I32x4RelaxedTruncF64x2UZero = 0x104,
-  F32x4RelaxedFma = 0x105,
-  F32x4RelaxedFnma = 0x106,
-  F64x2RelaxedFma = 0x107,
-  F64x2RelaxedFnma = 0x108,
+  F32x4RelaxedMadd = 0x105,
+  F32x4RelaxedNmadd = 0x106,
+  F64x2RelaxedMadd = 0x107,
+  F64x2RelaxedNmadd = 0x108,
   I8x16RelaxedLaneSelect = 0x109,
   I16x8RelaxedLaneSelect = 0x10a,
   I32x4RelaxedLaneSelect = 0x10b,
@@ -1074,6 +1084,7 @@ static const unsigned PageMask = ((1u << PageBits) - 1);
 static const unsigned MaxTypes = 1000000;
 static const unsigned MaxFuncs = 1000000;
 static const unsigned MaxTables = 100000;
+static const unsigned MaxMemories = 100000;
 static const unsigned MaxImports = 100000;
 static const unsigned MaxExports = 100000;
 static const unsigned MaxGlobals = 1000000;

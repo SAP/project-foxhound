@@ -13,7 +13,6 @@
 #include "ia2AccessibleValue.h"
 #include "IUnknownImpl.h"
 #include "mozilla/a11y/MsaaIdGenerator.h"
-#include "mozilla/dom/ipc/IdType.h"
 #include "nsXULAppAPI.h"
 
 namespace mozilla {
@@ -58,6 +57,8 @@ class MsaaAccessible : public ia2Accessible,
    * Creates ITypeInfo for LIBID_Accessibility if it's needed and returns it.
    */
   static ITypeInfo* GetTI(LCID lcid);
+
+  static Accessible* GetAccessibleFrom(IUnknown* aUnknown);
 
   DECL_IUNKNOWN
 

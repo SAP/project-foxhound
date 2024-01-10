@@ -5,7 +5,6 @@
 /* eslint no-shadow: error, mozilla/no-aArgs: error */
 
 import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
-import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 
 const lazy = {};
 
@@ -20,7 +19,7 @@ const BinaryInputStream = Components.Constructor(
   "setInputStream"
 );
 
-XPCOMUtils.defineLazyGetter(lazy, "logConsole", () => {
+ChromeUtils.defineLazyGetter(lazy, "logConsole", () => {
   return console.createInstance({
     prefix: "SearchEngine",
     maxLogLevel: lazy.SearchUtils.loggingEnabled ? "Debug" : "Warn",
@@ -149,8 +148,15 @@ const ParamPreferenceCache = {
   onNimbusUpdate() {
     let extraParams =
       lazy.NimbusFeatures.search.getVariable("extraParams") || [];
-    for (const { key, value } of extraParams) {
-      this.nimbusCache.set(key, value);
+    this.nimbusCache.clear();
+    // The try catch ensures that if the params were incorrect for some reason,
+    // the search service can still startup properly.
+    try {
+      for (const { key, value } of extraParams) {
+        this.nimbusCache.set(key, value);
+      }
+    } catch (ex) {
+      console.error("Failed to load nimbus variables for extraParams:", ex);
     }
   },
 
@@ -1264,6 +1270,20 @@ export class SearchEngine {
     var value = !!val;
     if (value != this.hidden) {
       this.setAttr("hidden", value);
+      lazy.SearchUtils.notifyAction(
+        this,
+        lazy.SearchUtils.MODIFIED_TYPE.CHANGED
+      );
+    }
+  }
+
+  get hideOneOffButton() {
+    return this.getAttr("hideOneOffButton") || false;
+  }
+  set hideOneOffButton(val) {
+    const value = !!val;
+    if (value != this.hideOneOffButton) {
+      this.setAttr("hideOneOffButton", value);
       lazy.SearchUtils.notifyAction(
         this,
         lazy.SearchUtils.MODIFIED_TYPE.CHANGED

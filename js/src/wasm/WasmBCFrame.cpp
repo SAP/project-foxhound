@@ -76,7 +76,7 @@ void BaseLocalIter::settle() {
       case MIRType::Int64:
       case MIRType::Double:
       case MIRType::Float32:
-      case MIRType::RefOrNull:
+      case MIRType::WasmAnyRef:
 #ifdef ENABLE_WASM_SIMD
       case MIRType::Simd128:
 #endif
@@ -111,9 +111,6 @@ void BaseLocalIter::settle() {
       case ValType::V128:
 #endif
       case ValType::Ref:
-        // TODO/AnyRef-boxing: With boxed immediates and strings, the
-        // debugger must be made aware that AnyRef != Pointer.
-        ASSERT_ANYREF_IS_JSOBJECT;
         mirType_ = locals_[index_].toMIRType();
         frameOffset_ = pushLocal(MIRTypeToSize(mirType_));
         break;

@@ -50,11 +50,11 @@ class CharMapHashKey : public PLDHashEntryHdr {
   }
   MOZ_COUNTED_DTOR(CharMapHashKey)
 
-  gfxCharacterMap* GetKey() const { return mCharMap; }
+  gfxCharacterMap* GetKey() const { return mCharMap.get(); }
 
   bool KeyEquals(const gfxCharacterMap* aCharMap) const {
-    NS_ASSERTION(!aCharMap->mBuildOnTheFly && !mCharMap->mBuildOnTheFly,
-                 "custom cmap used in shared cmap hashtable");
+    MOZ_ASSERT(!aCharMap->mBuildOnTheFly && !mCharMap->mBuildOnTheFly,
+               "custom cmap used in shared cmap hashtable");
     // cmaps built on the fly never match
     if (aCharMap->mHash != mCharMap->mHash) {
       return false;
@@ -72,9 +72,13 @@ class CharMapHashKey : public PLDHashEntryHdr {
   enum { ALLOW_MEMMOVE = true };
 
  protected:
-  // charMaps are not owned by the shared cmap cache, but it will be notified
-  // by gfxCharacterMap::Release() when an entry is about to be deleted
-  gfxCharacterMap* MOZ_NON_OWNING_REF mCharMap;
+  friend class gfxPlatformFontList;
+
+  // gfxCharacterMap::Release() will notify us when the refcount of a
+  // charmap drops to 1; at that point, we'll lock the cache, check if
+  // the charmap is owned by the cache and this is still the only ref,
+  // and if so, delete it.
+  RefPtr<gfxCharacterMap> mCharMap;
 };
 
 /**
@@ -112,8 +116,7 @@ class ShmemCharMapHashEntry final : public PLDHashEntryHdr {
       return false;
     }
 
-    return static_cast<const SharedBitSet*>(mCharMap.ToPtr(mList))
-        ->Equals(aCharMap);
+    return mCharMap.ToPtr<const SharedBitSet>(mList)->Equals(aCharMap);
   }
 
   static KeyTypePointer KeyToPointer(KeyType aCharMap) { return aCharMap; }
@@ -412,9 +415,9 @@ class gfxPlatformFontList : public gfxFontInfoLoader {
    * Read PSName and FullName of the given face, for src:local lookup,
    * returning true if actually implemented and succeeded.
    */
-  virtual bool ReadFaceNames(mozilla::fontlist::Family* aFamily,
-                             mozilla::fontlist::Face* aFace, nsCString& aPSName,
-                             nsCString& aFullName) {
+  virtual bool ReadFaceNames(const mozilla::fontlist::Family* aFamily,
+                             const mozilla::fontlist::Face* aFace,
+                             nsCString& aPSName, nsCString& aFullName) {
     return false;
   }
 
@@ -500,8 +503,9 @@ class gfxPlatformFontList : public gfxFontInfoLoader {
   // match is found.
   already_AddRefed<gfxCharacterMap> FindCharMap(gfxCharacterMap* aCmap);
 
-  // Remove the cmap from the shared cmap set.
-  void RemoveCmap(const gfxCharacterMap* aCharMap);
+  // Remove the cmap from the shared cmap set if it holds the only remaining
+  // reference to the object.
+  void MaybeRemoveCmap(gfxCharacterMap* aCharMap);
 
   // Keep track of userfont sets to notify when global fontlist changes occur.
   void AddUserFontSet(gfxUserFontSet* aUserFontSet) {
@@ -1043,7 +1047,7 @@ class gfxPlatformFontList : public gfxFontInfoLoader {
   nsTHashMap<nsCStringHashKey, mozilla::fontlist::LocalFaceRec::InitData>
       mLocalNameTable;
 
-  nsRefPtrHashtable<nsPtrHashKey<mozilla::fontlist::Face>, gfxFontEntry>
+  nsRefPtrHashtable<nsPtrHashKey<const mozilla::fontlist::Face>, gfxFontEntry>
       mFontEntries MOZ_GUARDED_BY(mLock);
 
   mozilla::UniquePtr<FontPrefs> mFontPrefs;

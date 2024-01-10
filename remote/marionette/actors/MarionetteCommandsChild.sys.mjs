@@ -4,26 +4,23 @@
 
 /* eslint-disable no-restricted-globals */
 
-import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
-
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   accessibility: "chrome://remote/content/marionette/accessibility.sys.mjs",
   action: "chrome://remote/content/shared/webdriver/Actions.sys.mjs",
   atom: "chrome://remote/content/marionette/atom.sys.mjs",
-  element: "chrome://remote/content/marionette/element.sys.mjs",
+  dom: "chrome://remote/content/shared/DOM.sys.mjs",
   error: "chrome://remote/content/shared/webdriver/Errors.sys.mjs",
   evaluate: "chrome://remote/content/marionette/evaluate.sys.mjs",
   interaction: "chrome://remote/content/marionette/interaction.sys.mjs",
   json: "chrome://remote/content/marionette/json.sys.mjs",
-  legacyaction: "chrome://remote/content/marionette/legacyaction.sys.mjs",
   Log: "chrome://remote/content/shared/Log.sys.mjs",
   sandbox: "chrome://remote/content/marionette/evaluate.sys.mjs",
   Sandboxes: "chrome://remote/content/marionette/evaluate.sys.mjs",
 });
 
-XPCOMUtils.defineLazyGetter(lazy, "logger", () =>
+ChromeUtils.defineLazyGetter(lazy, "logger", () =>
   lazy.Log.get(lazy.Log.TYPES.MARIONETTE)
 );
 
@@ -45,17 +42,6 @@ export class MarionetteCommandsChild extends JSWindowActorChild {
 
   get innerWindowId() {
     return this.manager.innerWindowId;
-  }
-
-  /**
-   * Lazy getter to create a legacyaction Chain instance for touch events.
-   */
-  get legacyactions() {
-    if (!this._legacyactions) {
-      this._legacyactions = new lazy.legacyaction.Chain();
-    }
-
-    return this._legacyactions;
   }
 
   actorCreated() {
@@ -82,10 +68,11 @@ export class MarionetteCommandsChild extends JSWindowActorChild {
       let waitForNextTick = false;
 
       const { name, data: serializedData } = msg;
+
       const data = lazy.json.deserialize(
         serializedData,
         this.#processActor.getNodeCache(),
-        this.contentWindow
+        this.contentWindow.browsingContext
       );
 
       switch (name) {
@@ -163,10 +150,6 @@ export class MarionetteCommandsChild extends JSWindowActorChild {
           result = await this.sendKeysToElement(data);
           waitForNextTick = true;
           break;
-        case "MarionetteCommandsParent:singleTap":
-          result = await this.singleTap(data);
-          waitForNextTick = true;
-          break;
         case "MarionetteCommandsParent:switchToFrame":
           result = await this.switchToFrame(data);
           waitForNextTick = true;
@@ -183,9 +166,14 @@ export class MarionetteCommandsChild extends JSWindowActorChild {
         await new Promise(resolve => Services.tm.dispatchToMainThread(resolve));
       }
 
-      return {
-        data: lazy.json.clone(result, this.#processActor.getNodeCache()),
-      };
+      const { seenNodeIds, serializedValue } = lazy.json.clone(
+        result,
+        this.#processActor.getNodeCache()
+      );
+
+      // Because in WebDriver classic nodes can only be returned from the same
+      // browsing context, we only need the seen unique ids as flat array.
+      return { seenNodeIds: [...seenNodeIds.values()].flat(), serializedValue };
     } catch (e) {
       // Always wrap errors as WebDriverError
       return { error: lazy.error.wrap(e).toJSON() };
@@ -251,7 +239,7 @@ export class MarionetteCommandsChild extends JSWindowActorChild {
     opts.all = false;
 
     const container = { frame: this.document.defaultView };
-    return lazy.element.find(container, strategy, selector, opts);
+    return lazy.dom.find(container, strategy, selector, opts);
   }
 
   /**
@@ -271,7 +259,7 @@ export class MarionetteCommandsChild extends JSWindowActorChild {
     opts.all = true;
 
     const container = { frame: this.document.defaultView };
-    return lazy.element.find(container, strategy, selector, opts);
+    return lazy.dom.find(container, strategy, selector, opts);
   }
 
   /**
@@ -321,7 +309,7 @@ export class MarionetteCommandsChild extends JSWindowActorChild {
   async getElementAttribute(options = {}) {
     const { name, elem } = options;
 
-    if (lazy.element.isBooleanAttribute(elem, name)) {
+    if (lazy.dom.isBooleanAttribute(elem, name)) {
       if (elem.hasAttribute(name)) {
         return "true";
       }
@@ -430,7 +418,7 @@ export class MarionetteCommandsChild extends JSWindowActorChild {
 
     if (elem) {
       if (scroll) {
-        lazy.element.scrollIntoView(elem);
+        lazy.dom.scrollIntoView(elem);
       }
       rect = this.getElementRect({ elem });
     } else if (full) {
@@ -455,7 +443,7 @@ export class MarionetteCommandsChild extends JSWindowActorChild {
   async getShadowRoot(options = {}) {
     const { elem } = options;
 
-    return lazy.element.getShadowRoot(elem);
+    return lazy.dom.getShadowRoot(elem);
   }
 
   /**
@@ -504,12 +492,9 @@ export class MarionetteCommandsChild extends JSWindowActorChild {
    *     Object with a list of WebDriver session capabilities.
    */
   async performActions(options = {}) {
-    const { actions, capabilities } = options;
+    const { actions } = options;
     if (this.actionState === null) {
-      this.actionState = new lazy.action.State({
-        specCompatPointerOrigin:
-          !capabilities["moz:useNonSpecCompliantPointerOrigin"],
-      });
+      this.actionState = new lazy.action.State();
     }
     let actionChain = lazy.action.Chain.fromJSON(this.actionState, actions);
 
@@ -546,14 +531,6 @@ export class MarionetteCommandsChild extends JSWindowActorChild {
     };
 
     return lazy.interaction.sendKeysToElement(elem, text, opts);
-  }
-
-  /**
-   * Perform a single tap.
-   */
-  async singleTap(options = {}) {
-    const { capabilities, elem, x, y } = options;
-    return this.legacyactions.singleTap(elem, x, y, capabilities);
   }
 
   /**

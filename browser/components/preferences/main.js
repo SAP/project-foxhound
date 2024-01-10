@@ -11,6 +11,7 @@
 ChromeUtils.defineESModuleGetters(this, {
   BackgroundUpdate: "resource://gre/modules/BackgroundUpdate.sys.mjs",
   MigrationUtils: "resource:///modules/MigrationUtils.sys.mjs",
+  TranslationsParent: "resource://gre/actors/TranslationsParent.sys.mjs",
 });
 
 // Constants & Enumeration Values
@@ -98,7 +99,6 @@ Preferences.addAll([
   { id: "font.language.group", type: "wstring" },
 
   // Languages
-  { id: "browser.translation.detectLanguage", type: "bool" },
   { id: "intl.regional_prefs.use_os_locales", type: "bool" },
 
   // General tab
@@ -129,6 +129,7 @@ Preferences.addAll([
   { id: "general.smoothScroll", type: "bool" },
   { id: "widget.gtk.overlay-scrollbars.enabled", type: "bool", inverted: true },
   { id: "layout.spellcheckDefault", type: "int" },
+  { id: "accessibility.tabfocus", type: "int" },
 
   {
     id: "browser.preferences.defaultPerformanceSettings.enabled",
@@ -192,7 +193,7 @@ if (AppConstants.MOZ_UPDATER) {
   }
 }
 
-XPCOMUtils.defineLazyGetter(this, "gIsPackagedApp", () => {
+ChromeUtils.defineLazyGetter(this, "gIsPackagedApp", () => {
   return Services.sysinfo.getProperty("isPackagedApp");
 });
 
@@ -439,17 +440,6 @@ var gMainPane = {
       makeDisableControllingExtension(PREF_SETTING_TYPE, CONTAINERS_KEY)
     );
     setEventListener("chooseLanguage", "command", gMainPane.showLanguages);
-    setEventListener(
-      "translationAttributionImage",
-      "click",
-      gMainPane.openTranslationProviderAttribution
-    );
-    // TODO (Bug 1817084) Remove this code when we disable the extension
-    setEventListener(
-      "translateButton",
-      "command",
-      gMainPane.showTranslationExceptions
-    );
     // TODO (Bug 1817084) Remove this code when we disable the extension
     setEventListener(
       "fxtranslateButton",
@@ -510,22 +500,6 @@ var gMainPane = {
 
     // Initializes the fonts dropdowns displayed in this pane.
     this._rebuildFonts();
-
-    this.updateOnScreenKeyboardVisibility();
-
-    // Show translation preferences if we may:
-    const translationsPrefName = "browser.translation.ui.show";
-    if (Services.prefs.getBoolPref(translationsPrefName)) {
-      let row = document.getElementById("translationBox");
-      row.removeAttribute("hidden");
-      // Showing attribution only for Bing Translator.
-      var { Translation } = ChromeUtils.import(
-        "resource:///modules/translation/TranslationParent.jsm"
-      );
-      if (Translation.translationEngine == "Bing") {
-        document.getElementById("bingAttribution").removeAttribute("hidden");
-      }
-    }
 
     // Firefox Translations settings panel
     // TODO (Bug 1817084) Remove this code when we disable the extension
@@ -750,14 +724,18 @@ var gMainPane = {
       document.getElementById("defaultFont"),
       element => FontBuilder.readFontSelection(element)
     );
-    Preferences.addSyncFromPrefListener(
-      document.getElementById("translate"),
-      () =>
-        this.updateButtons(
-          "translateButton",
-          "browser.translation.detectLanguage"
-        )
-    );
+    if (AppConstants.platform == "macosx") {
+      // We only expose this control on macOS, so don't try
+      // to add listeners if it doesn't exist.
+      Preferences.addSyncFromPrefListener(
+        document.getElementById("useFullKeyboardNavigation"),
+        () => this.readUseFullKeyboardNavigation()
+      );
+      Preferences.addSyncToPrefListener(
+        document.getElementById("useFullKeyboardNavigation"),
+        () => this.writeUseFullKeyboardNavigation()
+      );
+    }
     Preferences.addSyncFromPrefListener(
       document.getElementById("checkSpelling"),
       () => this.readCheckSpelling()
@@ -1015,18 +993,11 @@ var gMainPane = {
       /**
        * The fully initialized state.
        *
-       * @param {TranslationsActor} translationsActor
        * @param {Object} supportedLanguages
        * @param {Array<{ langTag: string, displayName: string}} languageList
        * @param {Map<string, DownloadPhase>} downloadPhases
        */
-      constructor(
-        translationsActor,
-        supportedLanguages,
-        languageList,
-        downloadPhases
-      ) {
-        this.translationsActor = translationsActor;
+      constructor(supportedLanguages, languageList, downloadPhases) {
         this.supportedLanguages = supportedLanguages;
         this.languageList = languageList;
         this.downloadPhases = downloadPhases;
@@ -1036,14 +1007,11 @@ var gMainPane = {
        * Handles all of the async initialization logic.
        */
       static async create() {
-        const translationsActor =
-          window.windowGlobalChild.getActor("Translations");
         const supportedLanguages =
-          await translationsActor.getSupportedLanguages();
+          await TranslationsParent.getSupportedLanguages();
         const languageList =
           TranslationsState.getLanguageList(supportedLanguages);
         const downloadPhases = await TranslationsState.createDownloadPhases(
-          translationsActor,
           languageList
         );
 
@@ -1054,7 +1022,6 @@ var gMainPane = {
         }
 
         return new TranslationsState(
-          translationsActor,
           supportedLanguages,
           languageList,
           downloadPhases
@@ -1096,16 +1063,15 @@ var gMainPane = {
       /**
        * Determine the download phase of each language file.
        *
-       * @param {TranslationsChild} translationsActor
        * @param {Array<{ langTag: string, displayName: string}} languageList.
        * @returns {Map<string, DownloadPhase>} Map the language tag to whether it is downloaded.
        */
-      static async createDownloadPhases(translationsActor, languageList) {
+      static async createDownloadPhases(languageList) {
         const downloadPhases = new Map();
         for (const { langTag } of languageList) {
           downloadPhases.set(
             langTag,
-            (await translationsActor.hasAllFilesForLanguage(langTag))
+            (await TranslationsParent.hasAllFilesForLanguage(langTag))
               ? "downloaded"
               : "uninstalled"
           );
@@ -1162,11 +1128,11 @@ var gMainPane = {
         this.hideError();
         this.disableButtons(true);
         try {
-          await this.state.translationsActor.downloadAllFiles();
+          await TranslationsParent.downloadAllFiles();
           this.markAllDownloadPhases("downloaded");
         } catch (error) {
           TranslationsView.showError(
-            "translations-manage-error-download",
+            "translations-manage-error-install",
             error
           );
           await this.reloadDownloadPhases();
@@ -1179,10 +1145,10 @@ var gMainPane = {
         this.hideError();
         this.disableButtons(true);
         try {
-          await this.state.translationsActor.deleteAllLanguageFiles();
+          await TranslationsParent.deleteAllLanguageFiles();
           this.markAllDownloadPhases("uninstalled");
         } catch (error) {
-          TranslationsView.showError("translations-manage-error-delete", error);
+          TranslationsView.showError("translations-manage-error-remove", error);
           // The download phases are invalidated with the error and must be reloaded.
           await this.reloadDownloadPhases();
           console.error(error);
@@ -1199,11 +1165,11 @@ var gMainPane = {
           this.hideError();
           this.updateDownloadPhase(langTag, "loading");
           try {
-            await this.state.translationsActor.downloadLanguageFiles(langTag);
+            await TranslationsParent.downloadLanguageFiles(langTag);
             this.updateDownloadPhase(langTag, "downloaded");
           } catch (error) {
             TranslationsView.showError(
-              "translations-manage-error-download",
+              "translations-manage-error-install",
               error
             );
             this.updateDownloadPhase(langTag, "uninstalled");
@@ -1220,11 +1186,11 @@ var gMainPane = {
           this.hideError();
           this.updateDownloadPhase(langTag, "loading");
           try {
-            await this.state.translationsActor.deleteLanguageFiles(langTag);
+            await TranslationsParent.deleteLanguageFiles(langTag);
             this.updateDownloadPhase(langTag, "uninstalled");
           } catch (error) {
             TranslationsView.showError(
-              "translations-manage-error-delete",
+              "translations-manage-error-remove",
               error
             );
             // The download phases are invalidated with the error and must be reloaded.
@@ -1257,11 +1223,11 @@ var gMainPane = {
 
           document.l10n.setAttributes(
             downloadButton,
-            "translations-manage-download-button"
+            "translations-manage-language-install-button"
           );
           document.l10n.setAttributes(
             deleteButton,
-            "translations-manage-delete-button"
+            "translations-manage-language-remove-button"
           );
 
           downloadButton.hidden = true;
@@ -1296,10 +1262,7 @@ var gMainPane = {
        */
       async reloadDownloadPhases() {
         this.state.downloadPhases =
-          await TranslationsState.createDownloadPhases(
-            this.state.translationsActor,
-            this.state.languageList
-          );
+          await TranslationsState.createDownloadPhases(this.state.languageList);
         this.updateAllButtons();
       }
 
@@ -1932,13 +1895,6 @@ var gMainPane = {
     );
   },
 
-  openTranslationProviderAttribution() {
-    var { Translation } = ChromeUtils.import(
-      "resource:///modules/translation/TranslationParent.jsm"
-    );
-    Translation.openProviderAttribution();
-  },
-
   /**
    * Displays the fonts dialog, where web page font names and sizes can be
    * configured.
@@ -2045,28 +2001,6 @@ var gMainPane = {
    */
   showContainerSettings() {
     gotoPref("containers");
-  },
-
-  /**
-   * ui.osk.enabled
-   * - when set to true, subject to other conditions, we may sometimes invoke
-   *   an on-screen keyboard when a text input is focused.
-   *   (Currently Windows-only, and depending on prefs, may be Windows-8-only)
-   */
-  updateOnScreenKeyboardVisibility() {
-    if (AppConstants.platform == "win") {
-      let minVersion = Services.prefs.getBoolPref("ui.osk.require_win10")
-        ? 10
-        : 6.2;
-      if (
-        Services.vc.compare(
-          Services.sysinfo.getProperty("version"),
-          minVersion
-        ) >= 0
-      ) {
-        document.getElementById("useOnScreenKeyboard").hidden = false;
-      }
-    }
   },
 
   updateHardwareAcceleration() {
@@ -2212,12 +2146,6 @@ var gMainPane = {
     if (!migrationWizardDialog.firstElementChild) {
       let wizard = document.createElement("migration-wizard");
       wizard.toggleAttribute("dialog-mode", true);
-
-      let panelList = document.createElement("panel-list");
-      let panel = document.createXULElement("panel");
-      panel.appendChild(panelList);
-      wizard.appendChild(panel);
-
       migrationWizardDialog.appendChild(wizard);
     }
     migrationWizardDialog.firstElementChild.requestState();
@@ -2240,6 +2168,50 @@ var gMainPane = {
     );
 
     migrationWizardDialog.showModal();
+  },
+
+  /**
+   * Stores the original value of the tabfocus preference to enable proper
+   * restoration if unchanged (since we're mapping an int pref onto a checkbox).
+   */
+  _storedFullKeyboardNavigation: Preferences.get("accessibility.tabfocus"),
+
+  /**
+   * Returns true if any full keyboard nav is enabled and false otherwise, caching
+   * the current value to enable proper pref restoration if the checkbox is
+   * never changed.
+   *
+   * accessibility.tabfocus
+   * - an integer controlling the focusability of:
+   *     1  text controls
+   *     2  form elements
+   *     4  links
+   *     7  all of the above
+   */
+  readUseFullKeyboardNavigation() {
+    var pref = Preferences.get("accessibility.tabfocus");
+    this._storedFullKeyboardNavigation = pref.value;
+
+    return pref.value == 7;
+  },
+
+  /**
+   * Returns the value of the full keyboard nav preference represented by UI,
+   * preserving the preference's "hidden" value if the preference is
+   * unchanged and represents a value not strictly allowed in UI.
+   */
+  writeUseFullKeyboardNavigation() {
+    var checkbox = document.getElementById("useFullKeyboardNavigation");
+    if (checkbox.checked) {
+      return 7;
+    }
+    if (this._storedFullKeyboardNavigation != 7) {
+      // 1/2/4 values set via about:config should persist
+      return this._storedFullKeyboardNavigation;
+    }
+    // When the checkbox is unchecked, this pref shouldn't exist
+    // at all.
+    return undefined;
   },
 
   /**

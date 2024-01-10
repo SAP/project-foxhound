@@ -36,7 +36,7 @@
 #include "nsCOMPtr.h"
 #include "nsDeviceContext.h"
 #include "nsError.h"
-#include "nsGlobalWindow.h"
+#include "nsGlobalWindowInner.h"
 #include "nsIFrame.h"
 #include "nsIContent.h"
 #include "nsIContentInlines.h"
@@ -105,8 +105,9 @@ void Event::InitPresContextData(nsPresContext* aPresContext) {
   // Get the explicit original target (if it's anonymous make it null)
   {
     nsCOMPtr<nsIContent> content = GetTargetFromFrame();
-    mExplicitOriginalTarget = content;
-    if (content && content->IsInNativeAnonymousSubtree()) {
+    if (content && !content->IsInNativeAnonymousSubtree()) {
+      mExplicitOriginalTarget = std::move(content);
+    } else {
       mExplicitOriginalTarget = nullptr;
     }
   }
@@ -371,10 +372,8 @@ already_AddRefed<Event> Event::Constructor(EventTarget* aEventTarget,
 }
 
 uint16_t Event::EventPhase() const {
-  // Note, remember to check that this works also
-  // if or when Bug 235441 is fixed.
   if ((mEvent->mCurrentTarget && mEvent->mCurrentTarget == mEvent->mTarget) ||
-      mEvent->mFlags.InTargetPhase()) {
+      mEvent->mFlags.mInTargetPhase) {
     return Event_Binding::AT_TARGET;
   }
   if (mEvent->mFlags.mInCapturePhase) {
@@ -438,19 +437,32 @@ void Event::PreventDefaultInternal(bool aCalledByDefaultHandler,
     return;
   }
 
+  if (mEvent->mClass == eDragEventClass) {
+    UpdateDefaultPreventedOnContentForDragEvent();
+  }
+}
+
+void Event::UpdateDefaultPreventedOnContentForDragEvent() {
   WidgetDragEvent* dragEvent = mEvent->AsDragEvent();
   if (!dragEvent) {
     return;
   }
 
   nsIPrincipal* principal = nullptr;
-  nsCOMPtr<nsINode> node =
-      nsINode::FromEventTargetOrNull(mEvent->mCurrentTarget);
+  // Since we now have HTMLEditorEventListener registered on nsWindowRoot,
+  // mCurrentTarget could be nsWindowRoot, so we need to use
+  // mTarget if that's the case.
+  MOZ_ASSERT_IF(dragEvent->mInHTMLEditorEventListener,
+                mEvent->mCurrentTarget->IsRootWindow());
+  EventTarget* target = dragEvent->mInHTMLEditorEventListener
+                            ? mEvent->mTarget
+                            : mEvent->mCurrentTarget;
+
+  nsINode* node = nsINode::FromEventTargetOrNull(target);
   if (node) {
     principal = node->NodePrincipal();
   } else {
-    nsCOMPtr<nsIScriptObjectPrincipal> sop =
-        do_QueryInterface(mEvent->mCurrentTarget);
+    nsCOMPtr<nsIScriptObjectPrincipal> sop = do_QueryInterface(target);
     if (sop) {
       principal = sop->GetPrincipal();
     }
@@ -825,15 +837,13 @@ void Event::SetOwner(EventTarget* aOwner) {
     return;
   }
 
-  nsCOMPtr<nsINode> n = do_QueryInterface(aOwner);
-  if (n) {
+  if (nsINode* n = aOwner->GetAsNode()) {
     mOwner = n->OwnerDoc()->GetScopeObject();
     return;
   }
 
-  nsCOMPtr<nsPIDOMWindowInner> w = do_QueryInterface(aOwner);
-  if (w) {
-    mOwner = do_QueryInterface(w);
+  if (nsPIDOMWindowInner* w = aOwner->GetAsWindowInner()) {
+    mOwner = w->AsGlobal();
     return;
   }
 

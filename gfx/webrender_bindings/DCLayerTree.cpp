@@ -148,7 +148,8 @@ bool DCLayerTree::Initialize(HWND aHwnd, nsACString& aError) {
     return false;
   }
 
-  if (gfx::gfxVars::UseWebRenderDCompVideoOverlayWin()) {
+  if (gfx::gfxVars::UseWebRenderDCompVideoHwOverlayWin() ||
+      gfx::gfxVars::UseWebRenderDCompVideoSwOverlayWin()) {
     if (!InitializeVideoOverlaySupport()) {
       RenderThread::Get()->HandleWebRenderError(WebRenderError::VIDEO_OVERLAY);
     }
@@ -1247,8 +1248,15 @@ void DCSurfaceVideo::PresentVideo() {
   }
 
   if (mSlowPresentCount > maxSlowPresentCount) {
-    gfxCriticalNoteOnce << "Video swapchain present is slow";
-    RenderThread::Get()->HandleWebRenderError(WebRenderError::VIDEO_OVERLAY);
+    if (mRenderTextureHost->IsSoftwareDecodedVideo()) {
+      gfxCriticalNoteOnce << "Sw video swapchain present is slow";
+      RenderThread::Get()->NotifyWebRenderError(
+          wr::WebRenderError::VIDEO_SW_OVERLAY);
+    } else {
+      gfxCriticalNoteOnce << "Hw video swapchain present is slow";
+      RenderThread::Get()->NotifyWebRenderError(
+          wr::WebRenderError::VIDEO_HW_OVERLAY);
+    }
   }
 }
 
@@ -1282,6 +1290,8 @@ bool DCSurfaceVideo::CreateVideoSwapChain() {
   }
 
   auto swapChainFormat = GetSwapChainFormat();
+  bool useTripleBuffering =
+      StaticPrefs::gfx_webrender_dcomp_video_force_triple_buffering();
 
   DXGI_SWAP_CHAIN_DESC1 desc = {};
   desc.Width = mSwapChainSize.width;
@@ -1289,7 +1299,7 @@ bool DCSurfaceVideo::CreateVideoSwapChain() {
   desc.Format = swapChainFormat;
   desc.Stereo = FALSE;
   desc.SampleDesc.Count = 1;
-  desc.BufferCount = 2;
+  desc.BufferCount = useTripleBuffering ? 3 : 2;
   desc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
   desc.Scaling = DXGI_SCALING_STRETCH;
   desc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;
@@ -1367,7 +1377,7 @@ static void SetNvidiaVideoSuperRes(ID3D11VideoContext* videoContext,
     UINT method;
     UINT enable;
   } streamExtensionInfo = {nvExtensionVersion, nvExtensionMethodSuperResolution,
-                           enabled ? 0 : 1u};
+                           enabled ? 1u : 0};
 
   HRESULT hr;
   hr = videoContext->VideoProcessorSetStreamExtension(

@@ -44,6 +44,14 @@ export class AdmWikipedia extends BaseFeature {
     ];
   }
 
+  get merinoProvider() {
+    return "adm";
+  }
+
+  getSuggestionTelemetryType(suggestion) {
+    return suggestion.is_sponsored ? "adm_sponsored" : "adm_nonsponsored";
+  }
+
   enable(enabled) {
     if (enabled) {
       lazy.QuickSuggestRemoteSettings.register(this);
@@ -91,7 +99,7 @@ export class AdmWikipedia extends BaseFeature {
           Promise.all(icons.map(i => rs.attachments.downloadToDisk(i)))
         ),
     ]);
-    if (rs != lazy.QuickSuggestRemoteSettings.rs) {
+    if (!this.isEnabled) {
       return;
     }
 
@@ -100,14 +108,14 @@ export class AdmWikipedia extends BaseFeature {
     this.logger.debug(`Got data with ${data.length} records`);
     for (let record of data) {
       let { buffer } = await rs.attachments.download(record);
-      if (rs != lazy.QuickSuggestRemoteSettings.rs) {
+      if (!this.isEnabled) {
         return;
       }
 
       let results = JSON.parse(new TextDecoder("utf-8").decode(buffer));
       this.logger.debug(`Adding ${results.length} results`);
       await suggestionsMap.add(results);
-      if (rs != lazy.QuickSuggestRemoteSettings.rs) {
+      if (!this.isEnabled) {
         return;
       }
     }
@@ -126,10 +134,6 @@ export class AdmWikipedia extends BaseFeature {
       url: suggestion.url,
       icon: suggestion.icon,
       isSponsored: suggestion.is_sponsored,
-      source: suggestion.source,
-      telemetryType: suggestion.is_sponsored
-        ? "adm_sponsored"
-        : "adm_nonsponsored",
       requestId: suggestion.request_id,
       urlTimestampIndex: suggestion.urlTimestampIndex,
       sponsoredImpressionUrl: suggestion.impression_url,
@@ -173,6 +177,11 @@ export class AdmWikipedia extends BaseFeature {
         lazy.UrlbarUtils.HIGHLIGHT.SUGGESTED,
       ];
     }
+
+    // Set `is_top_pick` on the suggestion to tell the provider to set
+    // best-match related properties on the result.
+    suggestion.is_top_pick = isResultBestMatch;
+
     payload.isBlockable = lazy.UrlbarPrefs.get(
       isResultBestMatch
         ? "bestMatchBlockingEnabled"
@@ -188,9 +197,10 @@ export class AdmWikipedia extends BaseFeature {
       )
     );
 
-    if (isResultBestMatch) {
-      result.isBestMatch = true;
-      result.suggestedIndex = 1;
+    if (suggestion.is_sponsored) {
+      result.isRichSuggestion = true;
+      result.richSuggestionIconSize = 16;
+      result.payload.descriptionL10n = { id: "urlbar-result-action-sponsored" };
     }
 
     return result;

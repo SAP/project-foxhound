@@ -3,11 +3,12 @@
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
 import React, { Component } from "react";
+import { div } from "react-dom-factories";
 import PropTypes from "prop-types";
 import { connect } from "../../utils/connect";
 
 import actions from "../../actions";
-import { getCurrentThread, getIsPaused, getContext } from "../../selectors";
+import { getCurrentThread, getIsPaused } from "../../selectors";
 import AccessibleImage from "../shared/AccessibleImage";
 
 const classnames = require("devtools/client/shared/classnames.js");
@@ -16,7 +17,6 @@ export class Thread extends Component {
   static get propTypes() {
     return {
       currentThread: PropTypes.string.isRequired,
-      cx: PropTypes.object.isRequired,
       isPaused: PropTypes.bool.isRequired,
       selectThread: PropTypes.func.isRequired,
       thread: PropTypes.object.isRequired,
@@ -24,8 +24,7 @@ export class Thread extends Component {
   }
 
   onSelectThread = () => {
-    const { thread } = this.props;
-    this.props.selectThread(this.props.cx, thread.actor);
+    this.props.selectThread(this.props.thread.actor);
   };
 
   render() {
@@ -36,31 +35,43 @@ export class Thread extends Component {
     if (thread.serviceWorkerStatus) {
       label += ` (${thread.serviceWorkerStatus})`;
     }
-
-    return (
-      <div
-        className={classnames("thread", {
+    return div(
+      {
+        className: classnames("thread", {
           selected: thread.actor == currentThread,
-        })}
-        key={thread.actor}
-        onClick={this.onSelectThread}
-      >
-        <div className="icon">
-          <AccessibleImage className={isWorker ? "worker" : "window"} />
-        </div>
-        <div className="label">{label}</div>
-        {isPaused ? (
-          <div className="pause-badge">
-            <AccessibleImage className="pause" />
-          </div>
-        ) : null}
-      </div>
+        }),
+        key: thread.actor,
+        onClick: this.onSelectThread,
+      },
+      div(
+        {
+          className: "icon",
+        },
+        React.createElement(AccessibleImage, {
+          className: isWorker ? "worker" : "window",
+        })
+      ),
+      div(
+        {
+          className: "label",
+        },
+        label
+      ),
+      isPaused
+        ? div(
+            {
+              className: "pause-badge",
+            },
+            React.createElement(AccessibleImage, {
+              className: "pause",
+            })
+          )
+        : null
     );
   }
 }
 
 const mapStateToProps = (state, props) => ({
-  cx: getContext(state),
   currentThread: getCurrentThread(state),
   isPaused: getIsPaused(state, props.thread.actor),
 });

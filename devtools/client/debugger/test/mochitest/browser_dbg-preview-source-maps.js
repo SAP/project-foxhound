@@ -26,7 +26,7 @@ add_task(async function () {
   ]);
 
   info("Test previewing in the generated location");
-  await dbg.actions.jumpToMappedSelectedLocation(getContext(dbg));
+  await dbg.actions.jumpToMappedSelectedLocation();
   await waitForSelectedSource(dbg, "bundle.js");
   await assertPreviews(dbg, [
     { line: 70, column: 11, result: 4, expression: "x" },
@@ -34,12 +34,12 @@ add_task(async function () {
 
   info("Test that you can not preview in another original file");
   await selectSource(dbg, "output.js");
-  await hoverAtPos(dbg, { line: 2, ch: 16 });
+  await hoverAtPos(dbg, { line: 2, column: 17 });
   await assertNoTooltip(dbg);
 });
 
 async function assertNoTooltip(dbg) {
   await wait(200);
-  const el = findElement(dbg, "tooltip");
+  const el = findElement(dbg, "previewPopup");
   is(el, null, "Tooltip should not exist");
 }

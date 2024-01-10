@@ -25,9 +25,12 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=963835
 
 SimpleTest.waitForExplicitFinish();
 
-const {FxAccounts} = ChromeUtils.import("resource://gre/modules/FxAccounts.jsm");
-const {FxAccountsClient} = ChromeUtils.import("resource://gre/modules/FxAccountsClient.jsm");
-ChromeUtils.import("resource://services-common/hawkclient.js");
+const {FxAccounts} = ChromeUtils.importESModule(
+  "resource://gre/modules/FxAccounts.sys.mjs"
+);
+const {FxAccountsClient} = ChromeUtils.importESModule(
+  "resource://gre/modules/FxAccountsClient.sys.mjs"
+);
 
 const TEST_SERVER =
   "http://mochi.test:8888/chrome/services/fxaccounts/tests/mochitest/file_invalidEmailCase.sjs?path=";

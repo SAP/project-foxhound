@@ -55,13 +55,14 @@ struct VideoFrameCopyToOptions;
 namespace mozilla::dom {
 
 struct VideoFrameData {
-  VideoFrameData(layers::Image* aImage, const VideoPixelFormat& aFormat,
+  VideoFrameData(layers::Image* aImage, const Maybe<VideoPixelFormat>& aFormat,
                  gfx::IntRect aVisibleRect, gfx::IntSize aDisplaySize,
                  Maybe<uint64_t> aDuration, int64_t aTimestamp,
                  const VideoColorSpaceInit& aColorSpace);
+  VideoFrameData(const VideoFrameData& aData) = default;
 
   const RefPtr<layers::Image> mImage;
-  const VideoPixelFormat mFormat;
+  const Maybe<VideoPixelFormat> mFormat;
   const gfx::IntRect mVisibleRect;
   const gfx::IntSize mDisplaySize;
   const Maybe<uint64_t> mDuration;
@@ -70,16 +71,10 @@ struct VideoFrameData {
 };
 
 struct VideoFrameSerializedData : VideoFrameData {
-  VideoFrameSerializedData(layers::Image* aImage,
-                           const VideoPixelFormat& aFormat,
-                           gfx::IntSize aCodedSize, gfx::IntRect aVisibleRect,
-                           gfx::IntSize aDisplaySize, Maybe<uint64_t> aDuration,
-                           int64_t aTimestamp,
-                           const VideoColorSpaceInit& aColorSpace,
-                           already_AddRefed<nsIURI> aPrincipalURI);
+  VideoFrameSerializedData(const VideoFrameData& aData,
+                           gfx::IntSize aCodedSize);
 
   const gfx::IntSize mCodedSize;
-  const nsCOMPtr<nsIURI> mPrincipalURI;
 };
 
 class VideoFrame final : public nsISupports, public nsWrapperCache {
@@ -89,11 +84,11 @@ class VideoFrame final : public nsISupports, public nsWrapperCache {
 
  public:
   VideoFrame(nsIGlobalObject* aParent, const RefPtr<layers::Image>& aImage,
-             const VideoPixelFormat& aFormat, gfx::IntSize aCodedSize,
+             const Maybe<VideoPixelFormat>& aFormat, gfx::IntSize aCodedSize,
              gfx::IntRect aVisibleRect, gfx::IntSize aDisplaySize,
              const Maybe<uint64_t>& aDuration, int64_t aTimestamp,
              const VideoColorSpaceInit& aColorSpace);
-
+  VideoFrame(nsIGlobalObject* aParent, const VideoFrameSerializedData& aData);
   VideoFrame(const VideoFrame& aOther);
 
  protected:
@@ -182,6 +177,12 @@ class VideoFrame final : public nsISupports, public nsWrapperCache {
   static already_AddRefed<VideoFrame> FromTransferred(nsIGlobalObject* aGlobal,
                                                       TransferredData* aData);
 
+  // Native only methods.
+  const gfx::IntSize& NativeCodedSize() const { return mCodedSize; }
+  const gfx::IntSize& NativeDisplaySize() const { return mDisplaySize; }
+  const gfx::IntRect& NativeVisibleRect() const { return mVisibleRect; }
+  already_AddRefed<layers::Image> GetImage() const;
+
  public:
   // A VideoPixelFormat wrapper providing utilities for VideoFrame.
   class Format final {
@@ -211,20 +212,22 @@ class VideoFrame final : public nsISupports, public nsWrapperCache {
   // VideoFrame can run on either main thread or worker thread.
   void AssertIsOnOwningThread() const { NS_ASSERT_OWNINGTHREAD(VideoFrame); }
 
-  already_AddRefed<nsIURI> GetPrincipalURI() const;
+  VideoFrameData GetVideoFrameData() const;
 
   // A class representing the VideoFrame's data.
   class Resource final {
    public:
-    Resource(const RefPtr<layers::Image>& aImage, const Format& aFormat);
+    Resource(const RefPtr<layers::Image>& aImage, Maybe<Format>&& aFormat);
     Resource(const Resource& aOther);
     ~Resource() = default;
+    Maybe<VideoPixelFormat> TryPixelFormat() const;
     uint32_t Stride(const Format::Plane& aPlane) const;
     bool CopyTo(const Format::Plane& aPlane, const gfx::IntRect& aRect,
                 Span<uint8_t>&& aPlaneDest, size_t aDestinationStride) const;
 
     const RefPtr<layers::Image> mImage;
-    const Format mFormat;
+    // Nothing() if mImage is not in VideoPixelFormat
+    const Maybe<Format> mFormat;
   };
 
   nsCOMPtr<nsIGlobalObject> mParent;
@@ -238,7 +241,7 @@ class VideoFrame final : public nsISupports, public nsWrapperCache {
   gfx::IntRect mVisibleRect;
   gfx::IntSize mDisplaySize;
 
-  Maybe<uint64_t> mDuration;  // Nothing() after `Close()`d
+  Maybe<uint64_t> mDuration;
   int64_t mTimestamp;
   VideoColorSpaceInit mColorSpace;
 };

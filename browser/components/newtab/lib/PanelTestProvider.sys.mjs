@@ -238,9 +238,6 @@ const MESSAGES = () => [
             hero_text: {
               string_id: "fx100-thank-you-hero-text",
             },
-            help_text: {
-              text: "Some sample help text",
-            },
             primary_button: {
               label: {
                 string_id: "mr2022-onboarding-pin-primary-button-label",
@@ -577,6 +574,44 @@ const MESSAGES = () => [
     frequency: { lifetime: 3 },
   },
   {
+    id: "TEST_TOAST_NOTIFICATION2",
+    weight: 100,
+    template: "toast_notification",
+    content: {
+      title: "Launch action on toast click and on action button click",
+      body: "Body",
+      image_url:
+        "https://firefox-settings-attachments.cdn.mozilla.net/main-workspace/ms-images/a3c640c8-7594-4bb2-bc18-8b4744f3aaf2.gif",
+      launch_action: {
+        type: "OPEN_URL",
+        data: { args: "https://mozilla.org", where: "window" },
+      },
+      requireInteraction: true,
+      actions: [
+        {
+          action: "dismiss",
+          title: "Dismiss",
+          windowsSystemActivationType: true,
+        },
+        {
+          action: "snooze",
+          title: "Snooze",
+          windowsSystemActivationType: true,
+        },
+        {
+          action: "private",
+          title: "Private Window",
+          launch_action: { type: "OPEN_PRIVATE_BROWSER_WINDOW" },
+        },
+      ],
+      tag: "test_toast_notification",
+    },
+    groups: ["panel-test-provider"],
+    targeting: "!hasActiveEnterprisePolicies",
+    trigger: { id: "backgroundTaskMessage" },
+    frequency: { lifetime: 3 },
+  },
+  {
     id: "MR2022_BACKGROUND_UPDATE_TOAST_NOTIFICATION",
     weight: 100,
     template: "toast_notification",
@@ -611,6 +646,42 @@ const MESSAGES = () => [
     targeting: "!hasActiveEnterprisePolicies",
     trigger: { id: "backgroundTaskMessage" },
     frequency: { lifetime: 3 },
+  },
+  {
+    id: "IMPORT_SETTINGS_EMBEDDED",
+    groups: ["panel-test-provider"],
+    template: "spotlight",
+    content: {
+      template: "multistage",
+      backdrop: "transparent",
+      screens: [
+        {
+          id: "IMPORT_SETTINGS_EMBEDDED",
+          content: {
+            logo: {},
+            tiles: { type: "migration-wizard" },
+            progress_bar: true,
+            migrate_start: {
+              action: {},
+            },
+            migrate_close: {
+              action: {
+                navigate: true,
+              },
+            },
+            secondary_button: {
+              label: {
+                string_id: "mr2022-onboarding-secondary-skip-button-label",
+              },
+              action: {
+                navigate: true,
+              },
+              has_arrow_icon: true,
+            },
+          },
+        },
+      ],
+    },
   },
 ];
 

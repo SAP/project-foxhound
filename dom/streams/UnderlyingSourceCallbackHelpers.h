@@ -58,8 +58,8 @@ class UnderlyingSourceAlgorithmsBase : public nsISupports {
   // from closed(canceled)/errored streams, without waiting for GC.
   virtual void ReleaseObjects() {}
 
-  // Fetch wants to special-case BodyStream-based streams
-  virtual BodyStreamHolder* GetBodyStreamHolder() { return nullptr; }
+  // Fetch wants to special-case nsIInputStream-based streams
+  virtual nsIInputStream* MaybeGetInputStreamIfUnread() { return nullptr; }
 
   // https://streams.spec.whatwg.org/#other-specs-rs-create
   // By "native" we mean "instances initialized via the above set up or set up
@@ -153,7 +153,7 @@ class UnderlyingSourceAlgorithmsWrapper
     return nullptr;
   }
 
-  virtual already_AddRefed<Promise> CancelCallbackImpl(
+  MOZ_CAN_RUN_SCRIPT virtual already_AddRefed<Promise> CancelCallbackImpl(
       JSContext* aCx, const Optional<JS::Handle<JS::Value>>& aReason,
       ErrorResult& aRv) {
     // cancelAlgorithm is optional, return null by default
@@ -174,8 +174,10 @@ class InputStreamHolder final : public nsIInputStreamCallback {
   NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSIINPUTSTREAMCALLBACK
 
-  InputStreamHolder(JSContext* aCx, InputToReadableStreamAlgorithms* aCallback,
+  InputStreamHolder(InputToReadableStreamAlgorithms* aCallback,
                     nsIAsyncInputStream* aInput);
+
+  void Init(JSContext* aCx);
 
   // Used by Worker shutdown
   void Shutdown();
@@ -214,8 +216,10 @@ class InputToReadableStreamAlgorithms final
   InputToReadableStreamAlgorithms(JSContext* aCx, nsIAsyncInputStream* aInput,
                                   ReadableStream* aStream)
       : mOwningEventTarget(GetCurrentSerialEventTarget()),
-        mInput(new InputStreamHolder(aCx, this, aInput)),
-        mStream(aStream) {}
+        mInput(new InputStreamHolder(this, aInput)),
+        mStream(aStream) {
+    mInput->Init(aCx);
+  }
 
   // Streams algorithms
 
@@ -237,11 +241,15 @@ class InputToReadableStreamAlgorithms final
 
   void WriteIntoReadRequestBuffer(JSContext* aCx, ReadableStream* aStream,
                                   JS::Handle<JSObject*> aBuffer,
-                                  uint32_t aLength, uint32_t* aByteWritten);
+                                  uint32_t aLength, uint32_t* aByteWritten,
+                                  ErrorResult& aRv);
 
-  MOZ_CAN_RUN_SCRIPT_BOUNDARY void EnqueueChunkWithSizeIntoStream(
-      JSContext* aCx, ReadableStream* aStream, uint64_t aAvailableData,
-      ErrorResult& aRv);
+  // https://streams.spec.whatwg.org/#readablestream-pull-from-bytes
+  // (Uses InputStreamHolder for the "byte sequence" in the spec)
+  MOZ_CAN_RUN_SCRIPT void PullFromInputStream(JSContext* aCx,
+                                              uint64_t aAvailable,
+                                              ErrorResult& aRv);
+
   void ErrorPropagation(JSContext* aCx, ReadableStream* aStream,
                         nsresult aError);
 
@@ -257,7 +265,46 @@ class InputToReadableStreamAlgorithms final
   RefPtr<Promise> mPullPromise;
 
   RefPtr<InputStreamHolder> mInput;
-  RefPtr<ReadableStream> mStream;
+
+  // mStream never changes after construction and before CC
+  MOZ_KNOWN_LIVE RefPtr<ReadableStream> mStream;
+};
+
+class NonAsyncInputToReadableStreamAlgorithms
+    : public UnderlyingSourceAlgorithmsWrapper {
+ public:
+  NS_DECL_ISUPPORTS_INHERITED
+  NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(
+      NonAsyncInputToReadableStreamAlgorithms,
+      UnderlyingSourceAlgorithmsWrapper)
+
+  explicit NonAsyncInputToReadableStreamAlgorithms(nsIInputStream& aInput)
+      : mInput(&aInput) {}
+
+  already_AddRefed<Promise> PullCallbackImpl(
+      JSContext* aCx, ReadableStreamController& aController,
+      ErrorResult& aRv) override;
+
+  void ReleaseObjects() override {
+    if (RefPtr<InputToReadableStreamAlgorithms> algorithms =
+            mAsyncAlgorithms.forget()) {
+      algorithms->ReleaseObjects();
+    }
+    if (nsCOMPtr<nsIInputStream> input = mInput.forget()) {
+      input->Close();
+    }
+  }
+
+  nsIInputStream* MaybeGetInputStreamIfUnread() override {
+    MOZ_ASSERT(mInput, "Should be only called on non-disturbed streams");
+    return mInput;
+  }
+
+ private:
+  ~NonAsyncInputToReadableStreamAlgorithms() = default;
+
+  nsCOMPtr<nsIInputStream> mInput;
+  RefPtr<InputToReadableStreamAlgorithms> mAsyncAlgorithms;
 };
 
 }  // namespace mozilla::dom

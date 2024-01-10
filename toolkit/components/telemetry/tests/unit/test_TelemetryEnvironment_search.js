@@ -33,7 +33,8 @@ add_task(async function setup() {
   Services.fog.initializeFOG();
 
   // The system add-on must be installed before AddonManager is started.
-  const distroDir = FileUtils.getDir("ProfD", ["sysfeatures", "app0"], true);
+  const distroDir = FileUtils.getDir("ProfD", ["sysfeatures", "app0"]);
+  distroDir.create(Ci.nsIFile.DIRECTORY_TYPE, FileUtils.PERMS_DIRECTORY);
   do_get_file("system.xpi").copyTo(
     distroDir,
     "tel-system-xpi@tests.mozilla.org.xpi"
@@ -98,11 +99,14 @@ add_task(async function setup() {
 
 async function checkDefaultSearch(privateOn, reInitSearchService) {
   // Start off with separate default engine for private browsing turned off.
-  Preferences.set(
+  Services.prefs.setBoolPref(
     "browser.search.separatePrivateDefault.ui.enabled",
     privateOn
   );
-  Preferences.set("browser.search.separatePrivateDefault", privateOn);
+  Services.prefs.setBoolPref(
+    "browser.search.separatePrivateDefault",
+    privateOn
+  );
 
   let data;
   if (privateOn) {
@@ -325,7 +329,7 @@ add_task(async function test_defaultSearchEngine() {
   const PREFS_TO_WATCH = new Map([
     [PREF_TEST, { what: TelemetryEnvironment.RECORD_PREF_STATE }],
   ]);
-  Preferences.reset(PREF_TEST);
+  Services.prefs.clearUserPref(PREF_TEST);
 
   // Watch the test preference.
   await TelemetryEnvironment.testWatchPreferences(PREFS_TO_WATCH);
@@ -335,7 +339,7 @@ add_task(async function test_defaultSearchEngine() {
     deferred.resolve
   );
   // Trigger an environment change.
-  Preferences.set(PREF_TEST, 1);
+  Services.prefs.setIntPref(PREF_TEST, 1);
   await deferred.promise;
   TelemetryEnvironment.unregisterChangeListener("testSearchEngine_pref");
 

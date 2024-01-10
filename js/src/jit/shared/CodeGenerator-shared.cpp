@@ -62,6 +62,7 @@ CodeGeneratorShared::CodeGeneratorShared(MIRGenerator* gen, LIRGraph* graph,
       safepoints_(graph->localSlotsSize(),
                   (gen->outerInfo().nargs() + 1) * sizeof(Value)),
       returnLabel_(),
+      inboundStackArgBytes_(0),
       nativeToBytecodeMap_(nullptr),
       nativeToBytecodeMapSize_(0),
       nativeToBytecodeTableOffset_(0),
@@ -305,7 +306,7 @@ void CodeGeneratorShared::dumpNativeToBytecodeEntries() {
   InlineScriptTree* topTree = gen->outerInfo().inlineScriptTree();
   JitSpewStart(JitSpew_Profiling, "Native To Bytecode Entries for %s:%u:%u\n",
                topTree->script()->filename(), topTree->script()->lineno(),
-               topTree->script()->column());
+               topTree->script()->column().zeroOriginValue());
   for (unsigned i = 0; i < nativeToBytecodeList_.length(); i++) {
     dumpNativeToBytecodeEntry(i);
   }
@@ -331,11 +332,12 @@ void CodeGeneratorShared::dumpNativeToBytecodeEntry(uint32_t idx) {
       JitSpew_Profiling, "    %08zx [+%-6u] => %-6ld [%-4u] {%-10s} (%s:%u:%u",
       ref.nativeOffset.offset(), nativeDelta, (long)(ref.pc - script->code()),
       pcDelta, CodeName(JSOp(*ref.pc)), script->filename(), script->lineno(),
-      script->column());
+      script->column().zeroOriginValue());
 
   for (tree = tree->caller(); tree; tree = tree->caller()) {
     JitSpewCont(JitSpew_Profiling, " <= %s:%u:%u", tree->script()->filename(),
-                tree->script()->lineno(), tree->script()->column());
+                tree->script()->lineno(),
+                tree->script()->column().zeroOriginValue());
   }
   JitSpewCont(JitSpew_Profiling, ")");
   JitSpewFin(JitSpew_Profiling);
@@ -353,7 +355,8 @@ static inline int32_t ToStackIndex(LAllocation* a) {
 
 void CodeGeneratorShared::encodeAllocation(LSnapshot* snapshot,
                                            MDefinition* mir,
-                                           uint32_t* allocIndex) {
+                                           uint32_t* allocIndex,
+                                           bool hasSideEffects) {
   if (mir->isBox()) {
     mir = mir->toBox()->getOperand(0);
   }
@@ -518,7 +521,12 @@ void CodeGeneratorShared::encodeAllocation(LSnapshot* snapshot,
   // This set an extra bit as part of the RValueAllocation, such that we know
   // that recover instruction have to be executed without wrapping the
   // instruction in a no-op recover instruction.
-  if (mir->isIncompleteObject()) {
+  //
+  // If the instruction claims to have side-effect but none are registered in
+  // the list of recover instructions, then omit the annotation of the
+  // RValueAllocation as requiring the execution of these side effects before
+  // being readable.
+  if (mir->isIncompleteObject() && hasSideEffects) {
     alloc.setNeedSideEffect();
   }
 
@@ -586,10 +594,11 @@ void CodeGeneratorShared::encode(LSnapshot* snapshot) {
   snapshots_.trackSnapshot(pcOpcode, mirOpcode, mirId, lirOpcode, lirId);
 #endif
 
+  bool hasSideEffects = recoverInfo->hasSideEffects();
   uint32_t allocIndex = 0;
   for (LRecoverInfo::OperandIter it(recoverInfo); !it; ++it) {
     DebugOnly<uint32_t> allocWritten = snapshots_.allocWritten();
-    encodeAllocation(snapshot, *it, &allocIndex);
+    encodeAllocation(snapshot, *it, &allocIndex, hasSideEffects);
     MOZ_ASSERT_IF(!snapshots_.oom(),
                   allocWritten + 1 == snapshots_.allocWritten());
   }

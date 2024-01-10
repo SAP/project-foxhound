@@ -7,37 +7,18 @@
 #include "mozilla/dom/HTMLDialogElement.h"
 #include "mozilla/dom/ElementBinding.h"
 #include "mozilla/dom/HTMLDialogElementBinding.h"
-#include "mozilla/dom/HTMLUnknownElement.h"
-#include "mozilla/StaticPrefs_dom.h"
 
 #include "nsContentUtils.h"
 #include "nsFocusManager.h"
 #include "nsIFrame.h"
 
-// Expand NS_IMPL_NS_NEW_HTML_ELEMENT(Dialog) with pref check
-nsGenericHTMLElement* NS_NewHTMLDialogElement(
-    already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo,
-    mozilla::dom::FromParser aFromParser) {
-  RefPtr<mozilla::dom::NodeInfo> nodeInfo(aNodeInfo);
-  auto* nim = nodeInfo->NodeInfoManager();
-  bool isChromeDocument = nsContentUtils::IsChromeDoc(nodeInfo->GetDocument());
-  if (mozilla::StaticPrefs::dom_dialog_element_enabled() || isChromeDocument) {
-    return new (nim) mozilla::dom::HTMLDialogElement(nodeInfo.forget());
-  }
-  return new (nim) mozilla::dom::HTMLUnknownElement(nodeInfo.forget());
-}
+NS_IMPL_NS_NEW_HTML_ELEMENT(Dialog)
 
 namespace mozilla::dom {
 
 HTMLDialogElement::~HTMLDialogElement() = default;
 
 NS_IMPL_ELEMENT_CLONE(HTMLDialogElement)
-
-bool HTMLDialogElement::IsDialogEnabled(JSContext* aCx,
-                                        JS::Handle<JSObject*> aObj) {
-  return StaticPrefs::dom_dialog_element_enabled() ||
-         nsContentUtils::IsSystemCaller(aCx);
-}
 
 void HTMLDialogElement::Close(
     const mozilla::dom::Optional<nsAString>& aReturnValue) {
@@ -76,11 +57,6 @@ void HTMLDialogElement::Show(ErrorResult& aError) {
     }
     return aError.ThrowInvalidStateError(
         "Cannot call show() on an open modal dialog.");
-  }
-
-  if (IsPopoverOpen()) {
-    return aError.ThrowInvalidStateError(
-        "Dialog element is already an open popover.");
   }
 
   SetOpen(true, IgnoreErrors());
@@ -164,7 +140,9 @@ void HTMLDialogElement::FocusDialog() {
     doc->FlushPendingNotifications(FlushType::Frames);
   }
 
-  RefPtr<Element> control = GetFocusDelegate(false /* aWithMouse */);
+  RefPtr<Element> control = HasAttr(nsGkAtoms::autofocus)
+                                ? this
+                                : GetFocusDelegate(false /* aWithMouse */);
 
   // If there isn't one of those either, then let control be subject.
   if (!control) {
@@ -173,6 +151,8 @@ void HTMLDialogElement::FocusDialog() {
 
   FocusCandidate(*control, IsInTopLayer());
 }
+
+int32_t HTMLDialogElement::TabIndexDefault() { return 0; }
 
 void HTMLDialogElement::QueueCancelDialog() {
   // queues an element task on the user interaction task source

@@ -5,10 +5,8 @@
 
 #include "HyperTextAccessibleBase.h"
 
-#include "AccAttributes.h"
 #include "mozilla/a11y/Accessible.h"
 #include "nsAccUtils.h"
-#include "mozilla/a11y/RemoteAccessible.h"
 #include "TextLeafRange.h"
 #include "TextRange.h"
 
@@ -292,6 +290,19 @@ int32_t HyperTextAccessibleBase::OffsetAtPoint(int32_t aX, int32_t aY,
       nsAccUtils::ConvertToScreenCoords(aX, aY, aCoordType, thisAcc);
   if (!thisAcc->Bounds().Contains(coords.x, coords.y)) {
     // The requested point does not exist in this accessible.
+    // Check if we used fuzzy hittesting to get here and, if
+    // so, return 0 to indicate this text leaf is a valid match.
+    LayoutDeviceIntPoint p(aX, aY);
+    if (aCoordType != nsIAccessibleCoordinateType::COORDTYPE_SCREEN_RELATIVE) {
+      p = nsAccUtils::ConvertToScreenCoords(aX, aY, aCoordType, thisAcc);
+    }
+    if (Accessible* doc = nsAccUtils::DocumentFor(thisAcc)) {
+      Accessible* hittestMatch = doc->ChildAtPoint(
+          p.x, p.y, Accessible::EWhichChildAtPoint::DeepestChild);
+      if (hittestMatch && thisAcc == hittestMatch->Parent()) {
+        return 0;
+      }
+    }
     return -1;
   }
 

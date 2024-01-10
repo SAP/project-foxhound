@@ -250,8 +250,12 @@ OpKind wasm::Classify(OpBytes op) {
       return OpKind::TableSet;
     case Op::Call:
       return OpKind::Call;
+    case Op::ReturnCall:
+      return OpKind::ReturnCall;
     case Op::CallIndirect:
       return OpKind::CallIndirect;
+    case Op::ReturnCallIndirect:
+      return OpKind::ReturnCallIndirect;
     case Op::CallRef:
       WASM_FUNCTION_REFERENCES_OP(OpKind::CallRef);
     case Op::Return:
@@ -330,6 +334,10 @@ OpKind wasm::Classify(OpBytes op) {
           WASM_GC_OP(OpKind::ArrayLen);
         case GcOp::ArrayCopy:
           WASM_GC_OP(OpKind::ArrayCopy);
+        case GcOp::I31New:
+        case GcOp::I31GetS:
+        case GcOp::I31GetU:
+          WASM_GC_OP(OpKind::Conversion);
         case GcOp::RefTestV5:
           WASM_GC_OP(OpKind::RefTestV5);
         case GcOp::RefCastV5:
@@ -341,6 +349,7 @@ OpKind wasm::Classify(OpBytes op) {
         case GcOp::RefCastNull:
           WASM_GC_OP(OpKind::RefCast);
         case GcOp::BrOnCast:
+        case GcOp::BrOnCastFail:
           WASM_GC_OP(OpKind::BrOnCast);
         case GcOp::BrOnCastV5:
         case GcOp::BrOnCastHeapV5:
@@ -627,10 +636,10 @@ OpKind wasm::Classify(OpBytes op) {
         case SimdOp::V128Store32Lane:
         case SimdOp::V128Store64Lane:
           WASM_SIMD_OP(OpKind::StoreLane);
-        case SimdOp::F32x4RelaxedFma:
-        case SimdOp::F32x4RelaxedFnma:
-        case SimdOp::F64x2RelaxedFma:
-        case SimdOp::F64x2RelaxedFnma:
+        case SimdOp::F32x4RelaxedMadd:
+        case SimdOp::F32x4RelaxedNmadd:
+        case SimdOp::F64x2RelaxedMadd:
+        case SimdOp::F64x2RelaxedNmadd:
         case SimdOp::I8x16RelaxedLaneSelect:
         case SimdOp::I16x8RelaxedLaneSelect:
         case SimdOp::I32x4RelaxedLaneSelect:

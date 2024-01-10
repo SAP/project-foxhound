@@ -20,9 +20,9 @@ use crate::{Atom, WeakAtom};
 use dom::ElementState;
 use selectors::attr::CaseSensitivity;
 use selectors::matching::{
-    matches_selector, MatchingContext, MatchingMode, NeedsSelectorFlags, VisitedHandlingMode,
+    matches_selector, MatchingForInvalidation, MatchingContext, MatchingMode,
+    NeedsSelectorFlags, SelectorCaches, VisitedHandlingMode,
 };
-use selectors::NthIndexCache;
 use smallvec::SmallVec;
 
 /// The collector implementation.
@@ -60,15 +60,16 @@ impl<'a, 'b: 'a, E: TElement + 'b> StateAndAttrInvalidationProcessor<'a, 'b, E> 
         shared_context: &'a SharedStyleContext<'b>,
         element: E,
         data: &'a mut ElementData,
-        nth_index_cache: &'a mut NthIndexCache,
+        selector_caches: &'a mut SelectorCaches,
     ) -> Self {
         let matching_context = MatchingContext::new_for_visited(
             MatchingMode::Normal,
             None,
-            nth_index_cache,
+            selector_caches,
             VisitedHandlingMode::AllLinksVisitedAndUnvisited,
             shared_context.quirks_mode(),
             NeedsSelectorFlags::No,
+            MatchingForInvalidation::Yes,
         );
 
         Self {

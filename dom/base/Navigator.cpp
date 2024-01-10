@@ -64,7 +64,7 @@
 #include "mozilla/StaticPtr.h"
 #include "Connection.h"
 #include "mozilla/dom/Event.h"  // for Event
-#include "nsGlobalWindow.h"
+#include "nsGlobalWindowInner.h"
 #include "nsIPermissionManager.h"
 #include "nsMimeTypes.h"
 #include "nsNetUtil.h"
@@ -307,11 +307,8 @@ void Navigator::GetAppVersion(nsAString& aAppVersion, CallerType aCallerType,
   }
 }
 
-void Navigator::GetAppName(nsAString& aAppName, CallerType aCallerType) const {
-  nsCOMPtr<Document> doc = mWindow->GetExtantDoc();
-
-  AppName(aAppName, doc,
-          /* aUsePrefOverriddenValue = */ aCallerType != CallerType::System);
+void Navigator::GetAppName(nsAString& aAppName) const {
+  aAppName.AssignLiteral("Netscape");
 }
 
 /**
@@ -493,13 +490,7 @@ nsPluginArray* Navigator::GetPlugins(ErrorResult& aRv) {
   return mPlugins;
 }
 
-bool Navigator::PdfViewerEnabled() {
-  // We ignore pdfjs.disabled when resisting fingerprinting.
-  // See bug 1756280 for an explanation.
-  return !StaticPrefs::pdfjs_disabled() ||
-         nsContentUtils::ShouldResistFingerprinting(GetDocShell(),
-                                                    RFPTarget::Unknown);
-}
+bool Navigator::PdfViewerEnabled() { return !StaticPrefs::pdfjs_disabled(); }
 
 Permissions* Navigator::GetPermissions(ErrorResult& aRv) {
   if (!mWindow) {
@@ -869,7 +860,7 @@ uint32_t Navigator::MaxTouchPoints(CallerType aCallerType) {
   // we will spoof it into 0 if fingerprinting resistance is on.
   if (aCallerType != CallerType::System &&
       nsContentUtils::ShouldResistFingerprinting(GetDocShell(),
-                                                 RFPTarget::Unknown)) {
+                                                 RFPTarget::PointerEvents)) {
     return 0;
   }
 
@@ -1745,7 +1736,7 @@ void Navigator::GetActiveVRDisplays(
    * GetActiveVRDisplays should only enumerate displays that
    * are already active without causing any other hardware to be
    * activated.
-   * We must not call nsGlobalWindow::NotifyHasXRSession here,
+   * We must not call nsGlobalWindowInner::NotifyHasXRSession here,
    * as that would cause enumeration and activation of other VR hardware.
    * Activating VR hardware is intrusive to the end user, as it may
    * involve physically powering on devices that the user did not
@@ -1847,8 +1838,8 @@ network::Connection* Navigator::GetConnection(ErrorResult& aRv) {
       return nullptr;
     }
     mConnection = network::Connection::CreateForWindow(
-        mWindow,
-        nsGlobalWindowInner::Cast(mWindow)->ShouldResistFingerprinting());
+        mWindow, nsGlobalWindowInner::Cast(mWindow)->ShouldResistFingerprinting(
+                     RFPTarget::NavigatorConnection));
   }
 
   return mConnection;
@@ -2034,32 +2025,6 @@ nsresult Navigator::GetAppVersion(nsAString& aAppVersion, Document* aCallerDoc,
   aAppVersion.Append(char16_t(')'));
 
   return rv;
-}
-
-/* static */
-void Navigator::AppName(nsAString& aAppName, Document* aCallerDoc,
-                        bool aUsePrefOverriddenValue) {
-  MOZ_ASSERT(NS_IsMainThread());
-
-  if (aUsePrefOverriddenValue) {
-    // If fingerprinting resistance is on, we will spoof this value. See
-    // nsRFPService.h for details about spoofed values.
-    if (ShouldResistFingerprinting(aCallerDoc, RFPTarget::NavigatorAppName)) {
-      aAppName.AssignLiteral(SPOOFED_APPNAME);
-      return;
-    }
-
-    nsAutoString override;
-    nsresult rv =
-        mozilla::Preferences::GetString("general.appname.override", override);
-
-    if (NS_SUCCEEDED(rv)) {
-      aAppName = override;
-      return;
-    }
-  }
-
-  aAppName.AssignLiteral("Netscape");
 }
 
 void Navigator::ClearUserAgentCache() {
@@ -2266,7 +2231,7 @@ webgpu::Instance* Navigator::Gpu() {
 
 dom::LockManager* Navigator::Locks() {
   if (!mLocks) {
-    mLocks = new dom::LockManager(GetWindow()->AsGlobal());
+    mLocks = dom::LockManager::Create(*GetWindow()->AsGlobal());
   }
   return mLocks;
 }

@@ -78,11 +78,12 @@ class MOZ_NON_TEMPORARY_CLASS ExternalStringCache {
   static const size_t NumEntries = 4;
   mozilla::Array<JSString*, NumEntries> entries_;
 
+ public:
+  ExternalStringCache() { purge(); }
+
   ExternalStringCache(const ExternalStringCache&) = delete;
   void operator=(const ExternalStringCache&) = delete;
 
- public:
-  ExternalStringCache() { purge(); }
   void purge() { mozilla::PodArrayZero(entries_); }
 
   MOZ_ALWAYS_INLINE JSString* lookup(const char16_t* chars, size_t len) const;
@@ -102,11 +103,12 @@ class MOZ_NON_TEMPORARY_CLASS FunctionToStringCache {
   static const size_t NumEntries = 2;
   mozilla::Array<Entry, NumEntries> entries_;
 
+ public:
+  FunctionToStringCache() { purge(); }
+
   FunctionToStringCache(const FunctionToStringCache&) = delete;
   void operator=(const FunctionToStringCache&) = delete;
 
- public:
-  FunctionToStringCache() { purge(); }
   void purge() { mozilla::PodArrayZero(entries_); }
 
   MOZ_ALWAYS_INLINE JSString* lookup(BaseScript* script) const;
@@ -283,7 +285,11 @@ class Zone : public js::ZoneAllocator, public js::gc::GraphNodeBase<JS::Zone> {
   js::MainThreadOrGCTaskData<js::UniquePtr<js::gc::FinalizationObservers>>
       finalizationObservers_;
 
-  js::MainThreadOrGCTaskData<js::jit::JitZone*> jitZone_;
+  js::MainThreadOrGCTaskOrIonCompileData<js::jit::JitZone*> jitZone_;
+
+  // Number of realms in this zone that have a non-null object allocation
+  // metadata builder.
+  js::MainThreadOrIonCompileData<size_t> numRealmsWithAllocMetadataBuilder_{0};
 
   // Last time at which JIT code was discarded for this zone. This is only set
   // when JitScripts and Baseline code are discarded as well.
@@ -307,6 +313,13 @@ class Zone : public js::ZoneAllocator, public js::gc::GraphNodeBase<JS::Zone> {
   friend class js::WeakRefObject;
   js::MainThreadOrGCTaskData<KeptAliveSet> keptObjects;
 
+  // To support weak pointers in some special cases we keep a list of objects
+  // that need to be traced weakly on GC. This is currently only used for the
+  // JIT's ShapeListObject. It's assumed that there will not be many of these
+  // objects.
+  using ObjectVector = js::GCVector<JSObject*, 0, js::SystemAllocPolicy>;
+  js::MainThreadOrGCTaskData<ObjectVector> objectsWithWeakPointers;
+
  public:
   static JS::Zone* from(ZoneAllocator* zoneAlloc) {
     return static_cast<Zone*>(zoneAlloc);
@@ -327,6 +340,7 @@ class Zone : public js::ZoneAllocator, public js::gc::GraphNodeBase<JS::Zone> {
     bool discardJitScripts = false;
     bool resetNurseryAllocSites = false;
     bool resetPretenuredAllocSites = false;
+    JSTracer* traceWeakJitScripts = nullptr;
   };
 
   void discardJitCode(JS::GCContext* gcx,
@@ -338,6 +352,11 @@ class Zone : public js::ZoneAllocator, public js::gc::GraphNodeBase<JS::Zone> {
 
   void resetAllocSitesAndInvalidate(bool resetNurserySites,
                                     bool resetPretenuredSites);
+
+  void traceWeakJitScripts(JSTracer* trc);
+
+  bool registerObjectWithWeakPointers(JSObject* obj);
+  void sweepObjectsWithWeakPointers(JSTracer* trc);
 
   void addSizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf,
                               JS::CodeSizes* code, size_t* regexpZone,
@@ -417,11 +436,25 @@ class Zone : public js::ZoneAllocator, public js::gc::GraphNodeBase<JS::Zone> {
   static constexpr size_t offsetOfNeedsIncrementalBarrier() {
     return offsetof(Zone, needsIncrementalBarrier_);
   }
+  static constexpr size_t offsetOfJitZone() { return offsetof(Zone, jitZone_); }
 
   js::jit::JitZone* getJitZone(JSContext* cx) {
     return jitZone_ ? jitZone_ : createJitZone(cx);
   }
   js::jit::JitZone* jitZone() { return jitZone_; }
+
+  bool ensureJitZoneExists(JSContext* cx) { return !!getJitZone(cx); }
+
+  void incNumRealmsWithAllocMetadataBuilder() {
+    numRealmsWithAllocMetadataBuilder_++;
+  }
+  void decNumRealmsWithAllocMetadataBuilder() {
+    MOZ_ASSERT(numRealmsWithAllocMetadataBuilder_ > 0);
+    numRealmsWithAllocMetadataBuilder_--;
+  }
+  bool hasRealmWithAllocMetadataBuilder() const {
+    return numRealmsWithAllocMetadataBuilder_ > 0;
+  }
 
   void prepareForCompacting();
 
@@ -429,7 +462,8 @@ class Zone : public js::ZoneAllocator, public js::gc::GraphNodeBase<JS::Zone> {
 
   void sweepAfterMinorGC(JSTracer* trc);
   void sweepUniqueIds();
-  void sweepCompartments(JS::GCContext* gcx, bool keepAtleastOne, bool lastGC);
+  void sweepCompartments(JS::GCContext* gcx, bool keepAtleastOne,
+                         bool destroyingRuntime);
 
   // Remove dead weak maps from gcWeakMapList_ and remove entries from the
   // remaining weak maps whose keys are dead.
@@ -644,10 +678,8 @@ class Zone : public js::ZoneAllocator, public js::gc::GraphNodeBase<JS::Zone> {
 
 }  // namespace JS
 
-namespace js {
-namespace gc {
+namespace js::gc {
 const char* StateName(JS::Zone::GCState state);
-}  // namespace gc
-}  // namespace js
+}  // namespace js::gc
 
 #endif  // gc_Zone_h

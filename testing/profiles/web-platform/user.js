@@ -27,8 +27,6 @@ user_pref("focusmanager.testmode", true);
 user_pref("media.navigator.streams.fake", true);
 // Disable permission prompt for getUserMedia
 user_pref("media.navigator.permission.disabled", true);
-// Enable pre-fetching of resources
-user_pref("network.preload", true);
 // Enable direct connection
 user_pref("network.proxy.type", 0);
 // Web-platform-tests load a lot of URLs very quickly. This puts avoidable and
@@ -55,9 +53,9 @@ user_pref("dom.disable_beforeunload", true);
 // function assumes this is available.
 user_pref("dom.animations-api.implicit-keyframes.enabled", true);
 // Disable high DPI
-user_pref("layout.css.devPixelsPerPx", "1.0")
+user_pref("layout.css.devPixelsPerPx", "1.0");
 // Enable the parallel styling code.
-user_pref("layout.css.stylo-threads", 4)
+user_pref("layout.css.stylo-threads", 4);
 // sometime wpt runs test even before the document becomes visible, which would
 // delay video.play() and cause play() running in wrong order.
 user_pref("media.block-autoplay-until-in-foreground", false);

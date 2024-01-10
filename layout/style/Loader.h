@@ -272,10 +272,9 @@ class Loader final {
    * @param aObserver the observer to notify when the load completes.
    *        May be null.
    * @param aBuffer the stylesheet data
-   * @param aLineNumber the line number at which the stylesheet data started.
    */
   Result<LoadSheetResult, nsresult> LoadInlineStyle(
-      const SheetInfo&, const nsAString& aBuffer, uint32_t aLineNumber,
+      const SheetInfo&, const nsAString& aBuffer,
       nsICSSLoaderObserver* aObserver);
 
   /**
@@ -373,8 +372,8 @@ class Loader final {
   Result<RefPtr<StyleSheet>, nsresult> LoadSheet(
       nsIURI* aURI, StylePreloadKind, const Encoding* aPreloadEncoding,
       nsIReferrerInfo* aReferrerInfo, nsICSSLoaderObserver* aObserver,
-      uint64_t aEarlyHintPreloaderId, CORSMode = CORS_NONE,
-      const nsAString& aIntegrity = u""_ns);
+      uint64_t aEarlyHintPreloaderId, CORSMode aCORSMode,
+      const nsAString& aNonce, const nsAString& aIntegrity);
 
   /**
    * As above, but without caring for a couple things.
@@ -448,8 +447,6 @@ class Loader final {
   // IsAlternateSheet can change our currently selected style set if none is
   // selected and aHasAlternateRel is false.
   IsAlternate IsAlternateSheet(const nsAString& aTitle, bool aHasAlternateRel);
-
-  typedef nsTArray<RefPtr<SheetLoadData>> LoadDataArray;
 
   // Measure our size.
   size_t SizeOfIncludingThis(MallocSizeOf aMallocSizeOf) const;
@@ -541,21 +538,16 @@ class Loader final {
       nsIURI* aURL, StylePreloadKind, SheetParsingMode aParsingMode,
       UseSystemPrincipal, const Encoding* aPreloadEncoding,
       nsIReferrerInfo* aReferrerInfo, nsICSSLoaderObserver* aObserver,
-      CORSMode aCORSMode, const nsAString& aIntegrity,
+      CORSMode aCORSMode, const nsAString& aNonce, const nsAString& aIntegrity,
       uint64_t aEarlyHintPreloaderId);
 
-  RefPtr<StyleSheet> LookupInlineSheetInCache(const nsAString&);
+  RefPtr<StyleSheet> LookupInlineSheetInCache(const nsAString&, nsIPrincipal*);
 
-  // Post a load event for aObserver to be notified about aSheet.  The
-  // notification will be sent with status NS_OK unless the load event is
-  // canceled at some point (in which case it will be sent with
-  // NS_BINDING_ABORTED).
-  nsresult PostLoadEvent(RefPtr<SheetLoadData>);
+  // Synchronously notify of a cached load data.
+  void NotifyOfCachedLoad(RefPtr<SheetLoadData>);
 
   // Start the loads of all the sheets in mPendingDatas
   void StartDeferredLoads();
-
-  void HandleLoadEvent(SheetLoadData&);
 
   // Note: LoadSheet is responsible for setting the sheet to complete on
   // failure.
@@ -606,10 +598,6 @@ class Loader final {
   nsTHashtable<const SheetLoadDataHashKey> mLoadsPerformed;
 
   RefPtr<SharedStyleSheetCache> mSheets;
-
-  // The array of posted stylesheet loaded events (SheetLoadDatas) we have.
-  // Note that these are rare.
-  LoadDataArray mPostedEvents;
 
   // Our array of "global" observers
   nsTObserverArray<nsCOMPtr<nsICSSLoaderObserver>> mObservers;

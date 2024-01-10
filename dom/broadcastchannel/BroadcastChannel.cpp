@@ -241,7 +241,8 @@ already_AddRefed<BroadcastChannel> BroadcastChannel::Constructor(
   }
 
   nsString originForEvents;
-  aRv = nsContentUtils::GetUTFOrigin(storagePrincipal, originForEvents);
+  aRv = nsContentUtils::GetWebExposedOriginSerialization(storagePrincipal,
+                                                         originForEvents);
   if (NS_WARN_IF(aRv.Failed())) {
     return nullptr;
   }
@@ -277,6 +278,10 @@ void BroadcastChannel::PostMessage(JSContext* aCx,
   MOZ_ASSERT(global);
   if (global) {
     agentClusterId = global->GetAgentClusterId();
+  }
+
+  if (!global->IsEligibleForMessaging()) {
+    return;
   }
 
   RefPtr<SharedMessageBody> data = new SharedMessageBody(

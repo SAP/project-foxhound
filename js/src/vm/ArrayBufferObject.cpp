@@ -337,17 +337,33 @@ static const JSClassOps ArrayBufferObjectClassOps = {
 };
 
 static const JSFunctionSpec arraybuffer_functions[] = {
-    JS_FN("isView", ArrayBufferObject::fun_isView, 1, 0), JS_FS_END};
+    JS_FN("isView", ArrayBufferObject::fun_isView, 1, 0),
+    JS_FS_END,
+};
 
 static const JSPropertySpec arraybuffer_properties[] = {
-    JS_SELF_HOSTED_SYM_GET(species, "$ArrayBufferSpecies", 0), JS_PS_END};
+    JS_SELF_HOSTED_SYM_GET(species, "$ArrayBufferSpecies", 0),
+    JS_PS_END,
+};
 
 static const JSFunctionSpec arraybuffer_proto_functions[] = {
-    JS_SELF_HOSTED_FN("slice", "ArrayBufferSlice", 2, 0), JS_FS_END};
+    JS_SELF_HOSTED_FN("slice", "ArrayBufferSlice", 2, 0),
+#ifdef NIGHTLY_BUILD
+    JS_FN("transfer", ArrayBufferObject::transfer, 0, 0),
+    JS_FN("transferToFixedLength", ArrayBufferObject::transferToFixedLength, 0,
+          0),
+#endif
+    JS_FS_END,
+};
 
 static const JSPropertySpec arraybuffer_proto_properties[] = {
     JS_PSG("byteLength", ArrayBufferObject::byteLengthGetter, 0),
-    JS_STRING_SYM_PS(toStringTag, "ArrayBuffer", JSPROP_READONLY), JS_PS_END};
+#ifdef NIGHTLY_BUILD
+    JS_PSG("detached", ArrayBufferObject::detachedGetter, 0),
+#endif
+    JS_STRING_SYM_PS(toStringTag, "ArrayBuffer", JSPROP_READONLY),
+    JS_PS_END,
+};
 
 static const ClassSpec ArrayBufferObjectClassSpec = {
     GenericCreateConstructor<ArrayBufferObject::class_constructor, 1,
@@ -356,7 +372,8 @@ static const ClassSpec ArrayBufferObjectClassSpec = {
     arraybuffer_functions,
     arraybuffer_properties,
     arraybuffer_proto_functions,
-    arraybuffer_proto_properties};
+    arraybuffer_proto_properties,
+};
 
 static const ClassExtension ArrayBufferObjectClassExtension = {
     ArrayBufferObject::objectMoved,  // objectMovedOp
@@ -368,12 +385,17 @@ const JSClass ArrayBufferObject::class_ = {
         JSCLASS_HAS_RESERVED_SLOTS(RESERVED_SLOTS) |
         JSCLASS_HAS_CACHED_PROTO(JSProto_ArrayBuffer) |
         JSCLASS_BACKGROUND_FINALIZE,
-    &ArrayBufferObjectClassOps, &ArrayBufferObjectClassSpec,
-    &ArrayBufferObjectClassExtension};
+    &ArrayBufferObjectClassOps,
+    &ArrayBufferObjectClassSpec,
+    &ArrayBufferObjectClassExtension,
+};
 
 const JSClass ArrayBufferObject::protoClass_ = {
-    "ArrayBuffer.prototype", JSCLASS_HAS_CACHED_PROTO(JSProto_ArrayBuffer),
-    JS_NULL_CLASS_OPS, &ArrayBufferObjectClassSpec};
+    "ArrayBuffer.prototype",
+    JSCLASS_HAS_CACHED_PROTO(JSProto_ArrayBuffer),
+    JS_NULL_CLASS_OPS,
+    &ArrayBufferObjectClassSpec,
+};
 
 static bool IsArrayBuffer(HandleValue v) {
   return v.isObject() && v.toObject().is<ArrayBufferObject>();
@@ -392,6 +414,148 @@ bool ArrayBufferObject::byteLengthGetter(JSContext* cx, unsigned argc,
   CallArgs args = CallArgsFromVp(argc, vp);
   return CallNonGenericMethod<IsArrayBuffer, byteLengthGetterImpl>(cx, args);
 }
+
+#ifdef NIGHTLY_BUILD
+/**
+ * ArrayBufferCopyAndDetach ( arrayBuffer, newLength, preserveResizability )
+ *
+ * https://tc39.es/proposal-arraybuffer-transfer/#sec-arraybuffercopyanddetach
+ */
+static ArrayBufferObject* ArrayBufferCopyAndDetach(
+    JSContext* cx, Handle<ArrayBufferObject*> arrayBuffer,
+    Handle<Value> newLength) {
+  // Steps 1-2. (Not applicable in our implementation.)
+
+  // Steps 3-4.
+  uint64_t newByteLength;
+  if (newLength.isUndefined()) {
+    // Step 3.a.
+    newByteLength = arrayBuffer->byteLength();
+  } else {
+    // Step 4.a.
+    if (!ToIndex(cx, newLength, &newByteLength)) {
+      return nullptr;
+    }
+  }
+
+  // Step 5.
+  if (arrayBuffer->isDetached()) {
+    JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
+                              JSMSG_TYPED_ARRAY_DETACHED);
+    return nullptr;
+  }
+
+  // Steps 6-7. (Not applicable in our implementation.)
+  // We don't yet support resizable ArrayBuffers (bug 1670026).
+
+  // Step 8.
+  if (arrayBuffer->hasDefinedDetachKey()) {
+    JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
+                              JSMSG_WASM_NO_TRANSFER);
+    return nullptr;
+  }
+
+  // Steps 9-16.
+  //
+  // 25.1.2.1 AllocateArrayBuffer, step 2.
+  // 6.2.9.1 CreateByteDataBlock, step 2.
+  if (!CheckArrayBufferTooLarge(cx, newByteLength)) {
+    return nullptr;
+  }
+  return ArrayBufferObject::copyAndDetach(cx, size_t(newByteLength),
+                                          arrayBuffer);
+}
+
+/**
+ * get ArrayBuffer.prototype.detached
+ *
+ * https://tc39.es/proposal-arraybuffer-transfer/#sec-get-arraybuffer.prototype.detached
+ */
+bool ArrayBufferObject::detachedGetterImpl(JSContext* cx,
+                                           const CallArgs& args) {
+  MOZ_ASSERT(IsArrayBuffer(args.thisv()));
+
+  // Step 4.
+  auto* buffer = &args.thisv().toObject().as<ArrayBufferObject>();
+  args.rval().setBoolean(buffer->isDetached());
+  return true;
+}
+
+/**
+ * get ArrayBuffer.prototype.detached
+ *
+ * https://tc39.es/proposal-arraybuffer-transfer/#sec-get-arraybuffer.prototype.detached
+ */
+bool ArrayBufferObject::detachedGetter(JSContext* cx, unsigned argc,
+                                       Value* vp) {
+  // Steps 1-3.
+  CallArgs args = CallArgsFromVp(argc, vp);
+  return CallNonGenericMethod<IsArrayBuffer, detachedGetterImpl>(cx, args);
+}
+
+/**
+ * ArrayBuffer.prototype.transfer ( [ newLength ] )
+ *
+ * https://tc39.es/proposal-arraybuffer-transfer/#sec-arraybuffer.prototype.transfer
+ */
+bool ArrayBufferObject::transferImpl(JSContext* cx, const CallArgs& args) {
+  MOZ_ASSERT(IsArrayBuffer(args.thisv()));
+
+  // Steps 1-2.
+  Rooted<ArrayBufferObject*> buffer(
+      cx, &args.thisv().toObject().as<ArrayBufferObject>());
+  auto* newBuffer = ArrayBufferCopyAndDetach(cx, buffer, args.get(0));
+  if (!newBuffer) {
+    return false;
+  }
+
+  args.rval().setObject(*newBuffer);
+  return true;
+}
+
+/**
+ * ArrayBuffer.prototype.transfer ( [ newLength ] )
+ *
+ * https://tc39.es/proposal-arraybuffer-transfer/#sec-arraybuffer.prototype.transfer
+ */
+bool ArrayBufferObject::transfer(JSContext* cx, unsigned argc, Value* vp) {
+  CallArgs args = CallArgsFromVp(argc, vp);
+  return CallNonGenericMethod<IsArrayBuffer, transferImpl>(cx, args);
+}
+
+/**
+ * ArrayBuffer.prototype.transferToFixedLength ( [ newLength ] )
+ *
+ * https://tc39.es/proposal-arraybuffer-transfer/#sec-arraybuffer.prototype.transfertofixedlength
+ */
+bool ArrayBufferObject::transferToFixedLengthImpl(JSContext* cx,
+                                                  const CallArgs& args) {
+  MOZ_ASSERT(IsArrayBuffer(args.thisv()));
+
+  // Steps 1-2.
+  Rooted<ArrayBufferObject*> buffer(
+      cx, &args.thisv().toObject().as<ArrayBufferObject>());
+  auto* newBuffer = ArrayBufferCopyAndDetach(cx, buffer, args.get(0));
+  if (!newBuffer) {
+    return false;
+  }
+
+  args.rval().setObject(*newBuffer);
+  return true;
+}
+
+/**
+ * ArrayBuffer.prototype.transferToFixedLength ( [ newLength ] )
+ *
+ * https://tc39.es/proposal-arraybuffer-transfer/#sec-arraybuffer.prototype.transfertofixedlength
+ */
+bool ArrayBufferObject::transferToFixedLength(JSContext* cx, unsigned argc,
+                                              Value* vp) {
+  CallArgs args = CallArgsFromVp(argc, vp);
+  return CallNonGenericMethod<IsArrayBuffer, transferToFixedLengthImpl>(cx,
+                                                                        args);
+}
+#endif
 
 /*
  * ArrayBuffer.isView(obj); ES6 (Dec 2013 draft) 24.1.3.1
@@ -471,6 +635,27 @@ static ArrayBufferContents AllocateArrayBufferContents(JSContext* cx,
     // large-allocation-failure callback if necessary.
     p = static_cast<uint8_t*>(cx->runtime()->onOutOfMemoryCanGC(
         js::AllocFunction::Calloc, js::ArrayBufferContentsArena, nbytes));
+    if (!p) {
+      ReportOutOfMemory(cx);
+    }
+  }
+
+  return ArrayBufferContents(p);
+}
+
+static ArrayBufferContents ReallocateArrayBufferContents(JSContext* cx,
+                                                         uint8_t* old,
+                                                         size_t oldSize,
+                                                         size_t newSize) {
+  // First attempt a normal reallocation.
+  uint8_t* p = cx->maybe_pod_arena_realloc<uint8_t>(
+      js::ArrayBufferContentsArena, old, oldSize, newSize);
+  if (MOZ_UNLIKELY(!p)) {
+    // Otherwise attempt a large allocation, calling the
+    // large-allocation-failure callback if necessary.
+    p = static_cast<uint8_t*>(cx->runtime()->onOutOfMemoryCanGC(
+        js::AllocFunction::Realloc, js::ArrayBufferContentsArena, newSize,
+        old));
     if (!p) {
       ReportOutOfMemory(cx);
     }
@@ -790,9 +975,8 @@ WasmArrayRawBuffer* ArrayBufferObject::BufferContents::wasmBuffer() const {
 }
 
 template <typename ObjT, typename RawbufT>
-static bool CreateSpecificWasmBuffer(
-    JSContext* cx, const wasm::MemoryDesc& memory,
-    MutableHandleArrayBufferObjectMaybeShared maybeSharedObject) {
+static ArrayBufferObjectMaybeShared* CreateSpecificWasmBuffer(
+    JSContext* cx, const wasm::MemoryDesc& memory) {
   bool useHugeMemory = wasm::IsHugeMemoryEnabled(memory.indexType());
   Pages initialPages = memory.initialPages();
   Maybe<Pages> sourceMaxPages = memory.maximumPages();
@@ -819,7 +1003,7 @@ static bool CreateSpecificWasmBuffer(
       }
 
       ReportOutOfMemory(cx);
-      return false;
+      return nullptr;
     }
 
     // If we fail, and have a sourceMaxPages, try to reserve the biggest
@@ -828,7 +1012,7 @@ static bool CreateSpecificWasmBuffer(
       wasm::Log(cx, "new Memory({initial=%" PRIu64 " pages}) failed",
                 initialPages.value());
       ReportOutOfMemory(cx);
-      return false;
+      return nullptr;
     }
 
     uint64_t cur = clampedMaxPages.value() / 2;
@@ -844,7 +1028,7 @@ static bool CreateSpecificWasmBuffer(
       wasm::Log(cx, "new Memory({initial=%" PRIu64 " pages}) failed",
                 initialPages.value());
       ReportOutOfMemory(cx);
-      return false;
+      return nullptr;
     }
 
     // Try to grow our chunk as much as possible.
@@ -855,13 +1039,11 @@ static bool CreateSpecificWasmBuffer(
 
   // ObjT::createFromNewRawBuffer assumes ownership of |buffer| even in case
   // of failure.
-  RootedArrayBufferObjectMaybeShared object(
+  Rooted<ArrayBufferObjectMaybeShared*> object(
       cx, ObjT::createFromNewRawBuffer(cx, buffer, initialPages.byteLength()));
   if (!object) {
-    return false;
+    return nullptr;
   }
-
-  maybeSharedObject.set(object);
 
   // See MaximumLiveMappedBuffers comment above.
   if (wasmReservedBytes > WasmReservedBytesStartSyncFullGC) {
@@ -899,11 +1081,11 @@ static bool CreateSpecificWasmBuffer(
               initialPages.value());
   }
 
-  return true;
+  return object;
 }
 
-bool js::CreateWasmBuffer(JSContext* cx, const wasm::MemoryDesc& memory,
-                          MutableHandleArrayBufferObjectMaybeShared buffer) {
+ArrayBufferObjectMaybeShared* js::CreateWasmBuffer(
+    JSContext* cx, const wasm::MemoryDesc& memory) {
   MOZ_RELEASE_ASSERT(memory.initialPages() <=
                      wasm::MaxMemoryPages(memory.indexType()));
   MOZ_RELEASE_ASSERT(cx->wasm().haveSignalHandlers);
@@ -912,14 +1094,13 @@ bool js::CreateWasmBuffer(JSContext* cx, const wasm::MemoryDesc& memory,
     if (!cx->realm()->creationOptions().getSharedMemoryAndAtomicsEnabled()) {
       JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
                                 JSMSG_WASM_NO_SHMEM_LINK);
-      return false;
+      return nullptr;
     }
     return CreateSpecificWasmBuffer<SharedArrayBufferObject,
-                                    WasmSharedArrayRawBuffer>(cx, memory,
-                                                              buffer);
+                                    WasmSharedArrayRawBuffer>(cx, memory);
   }
   return CreateSpecificWasmBuffer<ArrayBufferObject, WasmArrayRawBuffer>(
-      cx, memory, buffer);
+      cx, memory);
 }
 
 bool ArrayBufferObject::prepareForAsmJS() {
@@ -1018,7 +1199,8 @@ void ArrayBufferObject::releaseData(JS::GCContext* gcx) {
       gcx->removeCellMemory(this, byteLength(), MemoryUse::ArrayBufferContents);
       break;
     case EXTERNAL:
-      if (freeInfo()->freeFunc) {
+      MOZ_ASSERT(freeInfo()->freeFunc);
+      {
         // The analyzer can't know for sure whether the embedder-supplied
         // free function will GC. We give the analyzer a hint here.
         // (Doing a GC in the free function is considered a programmer
@@ -1147,9 +1329,9 @@ static void CheckStealPreconditions(Handle<ArrayBufferObject*> buffer,
 }
 
 /* static */
-bool ArrayBufferObject::wasmGrowToPagesInPlace(
-    wasm::IndexType t, Pages newPages, HandleArrayBufferObject oldBuf,
-    MutableHandleArrayBufferObject newBuf, JSContext* cx) {
+ArrayBufferObject* ArrayBufferObject::wasmGrowToPagesInPlace(
+    wasm::IndexType t, Pages newPages, Handle<ArrayBufferObject*> oldBuf,
+    JSContext* cx) {
   CheckStealPreconditions(oldBuf, cx);
 
   MOZ_ASSERT(oldBuf->isWasm());
@@ -1158,7 +1340,7 @@ bool ArrayBufferObject::wasmGrowToPagesInPlace(
   // simultaneously check against the maximum specified in source and our
   // implementation limits.
   if (newPages > oldBuf->wasmClampedMaxPages()) {
-    return false;
+    return nullptr;
   }
   MOZ_ASSERT(newPages <= wasm::MaxMemoryPages(t) &&
              newPages.byteLength() <= ArrayBufferObject::MaxByteLength);
@@ -1172,16 +1354,16 @@ bool ArrayBufferObject::wasmGrowToPagesInPlace(
   // wasm-visible length of the buffer has been increased so it must be the
   // last fallible operation.
 
-  newBuf.set(ArrayBufferObject::createEmpty(cx));
+  auto* newBuf = ArrayBufferObject::createEmpty(cx);
   if (!newBuf) {
     cx->clearPendingException();
-    return false;
+    return nullptr;
   }
 
   MOZ_ASSERT(newBuf->isNoData());
 
   if (!oldBuf->contents().wasmBuffer()->growToPagesInPlace(newPages)) {
-    return false;
+    return nullptr;
   }
 
   // Extract the grown contents from |oldBuf|.
@@ -1199,13 +1381,13 @@ bool ArrayBufferObject::wasmGrowToPagesInPlace(
   newBuf->initialize(newSize, oldContents);
   AddCellMemory(newBuf, newSize, MemoryUse::ArrayBufferContents);
 
-  return true;
+  return newBuf;
 }
 
 /* static */
-bool ArrayBufferObject::wasmMovingGrowToPages(
-    IndexType t, Pages newPages, HandleArrayBufferObject oldBuf,
-    MutableHandleArrayBufferObject newBuf, JSContext* cx) {
+ArrayBufferObject* ArrayBufferObject::wasmMovingGrowToPages(
+    IndexType t, Pages newPages, Handle<ArrayBufferObject*> oldBuf,
+    JSContext* cx) {
   // On failure, do not throw and ensure that the original buffer is
   // unmodified and valid.
 
@@ -1213,7 +1395,7 @@ bool ArrayBufferObject::wasmMovingGrowToPages(
   // simultaneously check against the maximum specified in source and our
   // implementation limits.
   if (newPages > oldBuf->wasmClampedMaxPages()) {
-    return false;
+    return nullptr;
   }
   MOZ_ASSERT(newPages <= wasm::MaxMemoryPages(t) &&
              newPages.byteLength() < ArrayBufferObject::MaxByteLength);
@@ -1224,13 +1406,13 @@ bool ArrayBufferObject::wasmMovingGrowToPages(
 
   if (wasm::ComputeMappedSize(newPages) <= oldBuf->wasmMappedSize() ||
       oldBuf->contents().wasmBuffer()->extendMappedSize(newPages)) {
-    return wasmGrowToPagesInPlace(t, newPages, oldBuf, newBuf, cx);
+    return wasmGrowToPagesInPlace(t, newPages, oldBuf, cx);
   }
 
-  newBuf.set(ArrayBufferObject::createEmpty(cx));
+  Rooted<ArrayBufferObject*> newBuf(cx, ArrayBufferObject::createEmpty(cx));
   if (!newBuf) {
     cx->clearPendingException();
-    return false;
+    return nullptr;
   }
 
   Pages clampedMaxPages =
@@ -1238,7 +1420,7 @@ bool ArrayBufferObject::wasmMovingGrowToPages(
   WasmArrayRawBuffer* newRawBuf = WasmArrayRawBuffer::AllocateWasm(
       oldBuf->wasmIndexType(), newPages, clampedMaxPages, Nothing(), Nothing());
   if (!newRawBuf) {
-    return false;
+    return nullptr;
   }
 
   AddCellMemory(newBuf, newSize, MemoryUse::ArrayBufferContents);
@@ -1249,11 +1431,12 @@ bool ArrayBufferObject::wasmMovingGrowToPages(
 
   memcpy(newBuf->dataPointer(), oldBuf->dataPointer(), oldBuf->byteLength());
   ArrayBufferObject::detach(cx, oldBuf);
-  return true;
+
+  return newBuf;
 }
 
 /* static */
-void ArrayBufferObject::wasmDiscard(HandleArrayBufferObject buf,
+void ArrayBufferObject::wasmDiscard(Handle<ArrayBufferObject*> buf,
                                     uint64_t byteOffset, uint64_t byteLen) {
   MOZ_ASSERT(buf->isWasm());
   buf->contents().wasmBuffer()->discard(byteOffset, byteLen);
@@ -1356,9 +1539,10 @@ ArrayBufferObject* ArrayBufferObject::createForContents(
   } else if (contents.kind() == EXTERNAL) {
     // Store the FreeInfo in the inline data slots so that we
     // don't use up slots for it in non-refcounted array buffers.
-    size_t freeInfoSlots = HowMany(sizeof(FreeInfo), sizeof(Value));
-    MOZ_ASSERT(reservedSlots + freeInfoSlots <= NativeObject::MAX_FIXED_SLOTS,
-               "FreeInfo must fit in inline slots");
+    constexpr size_t freeInfoSlots = HowMany(sizeof(FreeInfo), sizeof(Value));
+    static_assert(
+        reservedSlots + freeInfoSlots <= NativeObject::MAX_FIXED_SLOTS,
+        "FreeInfo must fit in inline slots");
     nslots += freeInfoSlots;
   } else {
     // The ABO is taking ownership, so account the bytes against the zone.
@@ -1437,7 +1621,10 @@ ArrayBufferObject::createBufferAndData(
     buffer->initialize(nbytes, BufferContents::createMalloced(toFill));
     AddCellMemory(buffer, nbytes, MemoryUse::ArrayBufferContents);
   } else {
-    toFill = static_cast<uint8_t*>(buffer->initializeToInlineData(nbytes));
+    auto contents =
+        BufferContents::createInlineData(buffer->inlineDataPointer());
+    buffer->initialize(nbytes, contents);
+    toFill = contents.data();
     if constexpr (FillType == FillContents::Zero) {
       memset(toFill, 0, nbytes);
     }
@@ -1447,25 +1634,149 @@ ArrayBufferObject::createBufferAndData(
 }
 
 /* static */ ArrayBufferObject* ArrayBufferObject::copy(
-    JSContext* cx, JS::Handle<ArrayBufferObject*> unwrappedArrayBuffer) {
-  if (unwrappedArrayBuffer->isDetached()) {
-    JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
-                              JSMSG_TYPED_ARRAY_DETACHED);
-    return nullptr;
+    JSContext* cx, size_t newByteLength,
+    JS::Handle<ArrayBufferObject*> source) {
+  MOZ_ASSERT(!source->isDetached());
+  MOZ_ASSERT(newByteLength <= ArrayBufferObject::MaxByteLength,
+             "caller must validate the byte count it passes");
+
+  size_t sourceByteLength = source->byteLength();
+
+  if (newByteLength > sourceByteLength) {
+    // Copy into a larger buffer.
+    AutoSetNewObjectMetadata metadata(cx);
+    auto [buffer, toFill] = createBufferAndData<FillContents::Zero>(
+        cx, newByteLength, metadata, nullptr);
+    if (!buffer) {
+      return nullptr;
+    }
+
+    std::copy_n(source->dataPointer(), sourceByteLength, toFill);
+
+    return buffer;
   }
 
-  size_t nbytes = unwrappedArrayBuffer->byteLength();
-
+  // Copy into a smaller or same size buffer.
   AutoSetNewObjectMetadata metadata(cx);
   auto [buffer, toFill] = createBufferAndData<FillContents::Uninitialized>(
-      cx, nbytes, metadata, nullptr);
+      cx, newByteLength, metadata, nullptr);
   if (!buffer) {
     return nullptr;
   }
 
-  std::uninitialized_copy_n(unwrappedArrayBuffer->dataPointer(), nbytes,
-                            toFill);
+  std::uninitialized_copy_n(source->dataPointer(), newByteLength, toFill);
+
   return buffer;
+}
+
+/* static */ ArrayBufferObject* ArrayBufferObject::copyAndDetach(
+    JSContext* cx, size_t newByteLength,
+    JS::Handle<ArrayBufferObject*> source) {
+  MOZ_ASSERT(!source->isDetached());
+  MOZ_ASSERT(newByteLength <= ArrayBufferObject::MaxByteLength,
+             "caller must validate the byte count it passes");
+
+  if (newByteLength > ArrayBufferObject::MaxInlineBytes &&
+      source->bufferKind() == ArrayBufferObject::MALLOCED) {
+    if (newByteLength == source->byteLength()) {
+      return copyAndDetachSteal(cx, source);
+    }
+    return copyAndDetachRealloc(cx, newByteLength, source);
+  }
+
+  auto* newBuffer = ArrayBufferObject::copy(cx, newByteLength, source);
+  if (!newBuffer) {
+    return nullptr;
+  }
+  ArrayBufferObject::detach(cx, source);
+
+  return newBuffer;
+}
+
+/* static */ ArrayBufferObject* ArrayBufferObject::copyAndDetachSteal(
+    JSContext* cx, JS::Handle<ArrayBufferObject*> source) {
+  MOZ_ASSERT(!source->isDetached());
+  MOZ_ASSERT(source->bufferKind() == MALLOCED);
+
+  size_t byteLength = source->byteLength();
+  MOZ_ASSERT(byteLength > ArrayBufferObject::MaxInlineBytes,
+             "prefer copying small buffers");
+
+  auto* newBuffer = ArrayBufferObject::createEmpty(cx);
+  if (!newBuffer) {
+    return nullptr;
+  }
+
+  // Extract the contents from |source|.
+  BufferContents contents = source->contents();
+  MOZ_ASSERT(contents);
+  MOZ_ASSERT(contents.kind() == MALLOCED);
+
+  // Overwrite |source|'s data pointer *without* releasing the data.
+  source->setDataPointer(BufferContents::createNoData());
+
+  // Detach |source| now that doing so won't release |contents|.
+  RemoveCellMemory(source, byteLength, MemoryUse::ArrayBufferContents);
+  ArrayBufferObject::detach(cx, source);
+
+  // Set |newBuffer|'s contents to |source|'s original contents.
+  newBuffer->initialize(byteLength, contents);
+  AddCellMemory(newBuffer, byteLength, MemoryUse::ArrayBufferContents);
+
+  return newBuffer;
+}
+
+/* static */ ArrayBufferObject* ArrayBufferObject::copyAndDetachRealloc(
+    JSContext* cx, size_t newByteLength,
+    JS::Handle<ArrayBufferObject*> source) {
+  MOZ_ASSERT(!source->isDetached());
+  MOZ_ASSERT(source->bufferKind() == MALLOCED);
+  MOZ_ASSERT(newByteLength > ArrayBufferObject::MaxInlineBytes,
+             "prefer copying small buffers");
+  MOZ_ASSERT(newByteLength <= ArrayBufferObject::MaxByteLength,
+             "caller must validate the byte count it passes");
+
+  size_t oldByteLength = source->byteLength();
+  MOZ_ASSERT(oldByteLength != newByteLength,
+             "steal instead of realloc same size buffers");
+
+  Rooted<ArrayBufferObject*> newBuffer(cx, ArrayBufferObject::createEmpty(cx));
+  if (!newBuffer) {
+    return nullptr;
+  }
+
+  // Extract the contents from |source|.
+  BufferContents contents = source->contents();
+  MOZ_ASSERT(contents);
+  MOZ_ASSERT(contents.kind() == MALLOCED);
+
+  // Reallocate the data pointer.
+  auto newData = ReallocateArrayBufferContents(cx, contents.data(),
+                                               oldByteLength, newByteLength);
+  if (!newData) {
+    // If reallocation failed, the old pointer is still valid, so just return.
+    return nullptr;
+  }
+  auto newContents = BufferContents::createMalloced(newData.release());
+
+  // Overwrite |source|'s data pointer *without* releasing the data.
+  source->setDataPointer(BufferContents::createNoData());
+
+  // Detach |source| now that doing so won't release |contents|.
+  RemoveCellMemory(source, oldByteLength, MemoryUse::ArrayBufferContents);
+  ArrayBufferObject::detach(cx, source);
+
+  // Set |newBuffer|'s contents to |newContents|.
+  newBuffer->initialize(newByteLength, newContents);
+  AddCellMemory(newBuffer, newByteLength, MemoryUse::ArrayBufferContents);
+
+  // Zero initialize the newly allocated memory, if necessary.
+  if (newByteLength > oldByteLength) {
+    size_t count = newByteLength - oldByteLength;
+    std::uninitialized_fill_n(newContents.data() + oldByteLength, count, 0);
+  }
+
+  return newBuffer;
 }
 
 ArrayBufferObject* ArrayBufferObject::createZeroed(
@@ -1504,12 +1815,8 @@ ArrayBufferObject* ArrayBufferObject::createFromNewRawBuffer(
 
   MOZ_ASSERT(initialSize == rawBuffer->byteLength());
 
-  buffer->setByteLength(initialSize);
-  buffer->setFlags(0);
-  buffer->setFirstView(nullptr);
-
   auto contents = BufferContents::createWasm(rawBuffer->dataPointer());
-  buffer->setDataPointer(contents);
+  buffer->initialize(initialSize, contents);
 
   AddCellMemory(buffer, initialSize, MemoryUse::ArrayBufferContents);
 
@@ -1679,12 +1986,13 @@ void ArrayBufferObject::finalize(JS::GCContext* gcx, JSObject* obj) {
 }
 
 /* static */
-void ArrayBufferObject::copyData(Handle<ArrayBufferObject*> toBuffer,
-                                 size_t toIndex,
-                                 Handle<ArrayBufferObject*> fromBuffer,
+void ArrayBufferObject::copyData(ArrayBufferObject* toBuffer, size_t toIndex,
+                                 ArrayBufferObject* fromBuffer,
                                  size_t fromIndex, size_t count) {
+  MOZ_ASSERT(!toBuffer->isDetached());
   MOZ_ASSERT(toBuffer->byteLength() >= count);
   MOZ_ASSERT(toBuffer->byteLength() >= toIndex + count);
+  MOZ_ASSERT(!fromBuffer->isDetached());
   MOZ_ASSERT(fromBuffer->byteLength() >= fromIndex);
   MOZ_ASSERT(fromBuffer->byteLength() >= fromIndex + count);
 
@@ -1879,7 +2187,7 @@ JS_PUBLIC_API bool JS::DetachArrayBuffer(JSContext* cx, HandleObject obj) {
     return false;
   }
 
-  if (unwrappedBuffer->isWasm() || unwrappedBuffer->isPreparedForAsmJS()) {
+  if (unwrappedBuffer->hasDefinedDetachKey()) {
     JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
                               JSMSG_WASM_NO_TRANSFER);
     return false;
@@ -1899,10 +2207,7 @@ JS_PUBLIC_API bool JS::HasDefinedArrayBufferDetachKey(JSContext* cx,
     return false;
   }
 
-  if (unwrappedBuffer->isWasm() || unwrappedBuffer->isPreparedForAsmJS()) {
-    *isDefined = true;
-  }
-
+  *isDefined = unwrappedBuffer->hasDefinedDetachKey();
   return true;
 }
 
@@ -1922,9 +2227,22 @@ JS_PUBLIC_API JSObject* JS::NewArrayBuffer(JSContext* cx, size_t nbytes) {
   return ArrayBufferObject::createZeroed(cx, nbytes);
 }
 
-JS_PUBLIC_API JSObject* JS::NewArrayBufferWithContents(JSContext* cx,
-                                                       size_t nbytes,
-                                                       void* data) {
+JS_PUBLIC_API JSObject* JS::NewArrayBufferWithContents(
+    JSContext* cx, size_t nbytes,
+    mozilla::UniquePtr<void, JS::FreePolicy> contents) {
+  auto* result = NewArrayBufferWithContents(
+      cx, nbytes, contents.get(),
+      JS::NewArrayBufferOutOfMemory::CallerMustFreeMemory);
+  if (result) {
+    // If and only if an ArrayBuffer is successfully created, ownership of
+    // |contents| is transferred to the new ArrayBuffer.
+    (void)contents.release();
+  }
+  return result;
+}
+
+JS_PUBLIC_API JSObject* JS::NewArrayBufferWithContents(
+    JSContext* cx, size_t nbytes, void* data, NewArrayBufferOutOfMemory) {
   AssertHeapIsIdle();
   CHECK_THREAD(cx);
   MOZ_ASSERT_IF(!data, nbytes == 0);
@@ -1953,22 +2271,37 @@ JS_PUBLIC_API JSObject* JS::CopyArrayBuffer(JSContext* cx,
     return nullptr;
   }
 
-  return ArrayBufferObject::copy(cx, unwrappedSource);
+  if (unwrappedSource->isDetached()) {
+    JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
+                              JSMSG_TYPED_ARRAY_DETACHED);
+    return nullptr;
+  }
+
+  return ArrayBufferObject::copy(cx, unwrappedSource->byteLength(),
+                                 unwrappedSource);
 }
 
 JS_PUBLIC_API JSObject* JS::NewExternalArrayBuffer(
-    JSContext* cx, size_t nbytes, void* data,
-    JS::BufferContentsFreeFunc freeFunc, void* freeUserData) {
+    JSContext* cx, size_t nbytes,
+    mozilla::UniquePtr<void, JS::BufferContentsDeleter> contents) {
   AssertHeapIsIdle();
   CHECK_THREAD(cx);
 
-  MOZ_ASSERT(data);
+  MOZ_ASSERT(contents);
 
   using BufferContents = ArrayBufferObject::BufferContents;
 
-  BufferContents contents =
-      BufferContents::createExternal(data, freeFunc, freeUserData);
-  return ArrayBufferObject::createForContents(cx, nbytes, contents);
+  BufferContents bufferContents = BufferContents::createExternal(
+      contents.get(), contents.get_deleter().freeFunc(),
+      contents.get_deleter().userData());
+  auto* result =
+      ArrayBufferObject::createForContents(cx, nbytes, bufferContents);
+  if (result) {
+    // If and only if an ArrayBuffer is successfully created, ownership of
+    // |contents| is transferred to the new ArrayBuffer.
+    (void)contents.release();
+  }
+  return result;
 }
 
 JS_PUBLIC_API JSObject* JS::NewArrayBufferWithUserOwnedContents(JSContext* cx,
@@ -2019,7 +2352,7 @@ JS_PUBLIC_API void* JS::StealArrayBufferContents(JSContext* cx,
     return nullptr;
   }
 
-  if (unwrappedBuffer->isWasm() || unwrappedBuffer->isPreparedForAsmJS()) {
+  if (unwrappedBuffer->hasDefinedDetachKey()) {
     JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
                               JSMSG_WASM_NO_TRANSFER);
     return nullptr;

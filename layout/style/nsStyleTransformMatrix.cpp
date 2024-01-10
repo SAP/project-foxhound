@@ -13,6 +13,7 @@
 #include "nsPresContext.h"
 #include "mozilla/MotionPathUtils.h"
 #include "mozilla/ServoBindings.h"
+#include "mozilla/StaticPrefs_layout.h"
 #include "mozilla/StyleAnimationValue.h"
 #include "mozilla/SVGUtils.h"
 #include "gfxMatrix.h"
@@ -38,6 +39,68 @@ namespace nsStyleTransformMatrix {
 // and consequently get the wrong value.
 // #define UNIFIED_CONTINUATIONS
 
+static nsRect GetSVGBox(const nsIFrame* aFrame) {
+  auto computeViewBox = [&]() {
+    // Percentages in transforms resolve against the width/height of the
+    // nearest viewport (or its viewBox if one is applied), and the
+    // transform is relative to {0,0} in current user space.
+    CSSSize size = CSSSize::FromUnknownSize(SVGUtils::GetContextSize(aFrame));
+    return nsRect(-aFrame->GetPosition(), CSSPixel::ToAppUnits(size));
+  };
+
+  // For SVG elements without associated CSS layout box, the used value for
+  // content-box is fill-box and for border-box is stroke-box.
+  // https://drafts.csswg.org/css-transforms-1/#transform-box
+  switch (aFrame->StyleDisplay()->mTransformBox) {
+    case StyleTransformBox::ContentBox:
+    case StyleTransformBox::FillBox: {
+      // Percentages in transforms resolve against the SVG bbox, and the
+      // transform is relative to the top-left of the SVG bbox.
+      nsRect bboxInAppUnits = nsLayoutUtils::ComputeGeometryBox(
+          const_cast<nsIFrame*>(aFrame), StyleGeometryBox::FillBox);
+      // The mRect of an SVG nsIFrame is its user space bounds *including*
+      // stroke and markers, whereas bboxInAppUnits is its user space bounds
+      // including fill only.  We need to note the offset of the reference box
+      // from the frame's mRect in mX/mY.
+      return {bboxInAppUnits.x - aFrame->GetPosition().x,
+              bboxInAppUnits.y - aFrame->GetPosition().y, bboxInAppUnits.width,
+              bboxInAppUnits.height};
+    }
+    case StyleTransformBox::BorderBox:
+      if (!StaticPrefs::layout_css_transform_box_content_stroke_enabled()) {
+        // If stroke-box is disabled, we shouldn't use it and fall back to
+        // view-box.
+        return computeViewBox();
+      }
+      [[fallthrough]];
+    case StyleTransformBox::StrokeBox: {
+      // We are using SVGUtils::PathExtentsToMaxStrokeExtents() to compute the
+      // bbox contribution for stroke box (if it doesn't have simple bounds),
+      // so the |strokeBox| here may be larger than the author's expectation.
+      // Using Moz2D to compute the tighter bounding box is another way but it
+      // has some potential issues (see SVGGeometryFrame::GetBBoxContribution()
+      // for more details), and its result depends on the drawing backend. So
+      // for now we still rely on our default calcuclation for SVG geometry
+      // frame reflow code. At least this works for the shape elements which
+      // have simple bounds.
+      // FIXME: Bug 1849054. We may have to update
+      // SVGGeometryFrame::GetBBoxContribution() to get tighter stroke bounds.
+      nsRect strokeBox = nsLayoutUtils::ComputeGeometryBox(
+          const_cast<nsIFrame*>(aFrame), StyleGeometryBox::StrokeBox);
+      // The |nsIFrame::mRect| includes markers, so we have to compute the
+      // offsets without markers.
+      return nsRect{strokeBox.x - aFrame->GetPosition().x,
+                    strokeBox.y - aFrame->GetPosition().y, strokeBox.width,
+                    strokeBox.height};
+    }
+    case StyleTransformBox::ViewBox:
+      return computeViewBox();
+  }
+
+  MOZ_ASSERT_UNREACHABLE("All transform box should be handled.");
+  return {};
+}
+
 void TransformReferenceBox::EnsureDimensionsAreCached() {
   if (mIsCached) {
     return;
@@ -48,74 +111,50 @@ void TransformReferenceBox::EnsureDimensionsAreCached() {
   mIsCached = true;
 
   if (mFrame->HasAnyStateBits(NS_FRAME_SVG_LAYOUT)) {
-    if (mFrame->StyleDisplay()->mTransformBox == StyleGeometryBox::FillBox) {
-      // Percentages in transforms resolve against the SVG bbox, and the
-      // transform is relative to the top-left of the SVG bbox.
-      nsRect bboxInAppUnits = nsLayoutUtils::ComputeGeometryBox(
-          const_cast<nsIFrame*>(mFrame), StyleGeometryBox::FillBox);
-      // The mRect of an SVG nsIFrame is its user space bounds *including*
-      // stroke and markers, whereas bboxInAppUnits is its user space bounds
-      // including fill only.  We need to note the offset of the reference box
-      // from the frame's mRect in mX/mY.
-      mX = bboxInAppUnits.x - mFrame->GetPosition().x;
-      mY = bboxInAppUnits.y - mFrame->GetPosition().y;
-      mWidth = bboxInAppUnits.width;
-      mHeight = bboxInAppUnits.height;
-    } else {
-      // The value 'border-box' is treated as 'view-box' for SVG content.
-      MOZ_ASSERT(
-          mFrame->StyleDisplay()->mTransformBox == StyleGeometryBox::ViewBox ||
-              mFrame->StyleDisplay()->mTransformBox ==
-                  StyleGeometryBox::BorderBox,
-          "Unexpected value for 'transform-box'");
-      // Percentages in transforms resolve against the width/height of the
-      // nearest viewport (or its viewBox if one is applied), and the
-      // transform is relative to {0,0} in current user space.
-      mX = -mFrame->GetPosition().x;
-      mY = -mFrame->GetPosition().y;
-      Size contextSize = SVGUtils::GetContextSize(mFrame);
-      mWidth = nsPresContext::CSSPixelsToAppUnits(contextSize.width);
-      mHeight = nsPresContext::CSSPixelsToAppUnits(contextSize.height);
-    }
+    mBox = GetSVGBox(mFrame);
     return;
   }
 
-  // If UNIFIED_CONTINUATIONS is not defined, this is simply the frame's
-  // bounding rectangle, translated to the origin.  Otherwise, it is the
-  // smallest rectangle containing a frame and all of its continuations.  For
-  // example, if there is a <span> element with several continuations split
-  // over several lines, this function will return the rectangle containing all
-  // of those continuations.
+  // For elements with associated CSS layout box, the used value for fill-box is
+  // content-box and for stroke-box and view-box is border-box.
+  // https://drafts.csswg.org/css-transforms-1/#transform-box
+  switch (mFrame->StyleDisplay()->mTransformBox) {
+    case StyleTransformBox::FillBox:
+    case StyleTransformBox::ContentBox: {
+      mBox = mFrame->GetContentRectRelativeToSelf();
+      return;
+    }
+    case StyleTransformBox::StrokeBox:
+      // TODO: Implement this in the following patches.
+      return;
+    case StyleTransformBox::ViewBox:
+    case StyleTransformBox::BorderBox: {
+      // If UNIFIED_CONTINUATIONS is not defined, this is simply the frame's
+      // bounding rectangle, translated to the origin.  Otherwise, it is the
+      // smallest rectangle containing a frame and all of its continuations. For
+      // example, if there is a <span> element with several continuations split
+      // over several lines, this function will return the rectangle containing
+      // all of those continuations.
 
-  nsRect rect;
+      nsRect rect;
 
 #ifndef UNIFIED_CONTINUATIONS
-  rect = mFrame->GetRect();
+      rect = mFrame->GetRect();
 #else
-  // Iterate the continuation list, unioning together the bounding rects:
-  for (const nsIFrame* currFrame = mFrame->FirstContinuation();
-       currFrame != nullptr; currFrame = currFrame->GetNextContinuation()) {
-    // Get the frame rect in local coordinates, then translate back to the
-    // original coordinates:
-    rect.UnionRect(
-        result, nsRect(currFrame->GetOffsetTo(mFrame), currFrame->GetSize()));
-  }
+      // Iterate the continuation list, unioning together the bounding rects:
+      for (const nsIFrame* currFrame = mFrame->FirstContinuation();
+           currFrame != nullptr; currFrame = currFrame->GetNextContinuation()) {
+        // Get the frame rect in local coordinates, then translate back to the
+        // original coordinates:
+        rect.UnionRect(result, nsRect(currFrame->GetOffsetTo(mFrame),
+                                      currFrame->GetSize()));
+      }
 #endif
 
-  mX = 0;
-  mY = 0;
-  mWidth = rect.Width();
-  mHeight = rect.Height();
-}
-
-void TransformReferenceBox::Init(const nsRect& aDimensions) {
-  MOZ_ASSERT(!mFrame && !mIsCached);
-
-  mX = aDimensions.x;
-  mY = aDimensions.y;
-  mWidth = aDimensions.width;
-  mHeight = aDimensions.height;
-  mIsCached = true;
+      mBox = {0, 0, rect.Width(), rect.Height()};
+      return;
+    }
+  }
 }
 
 float ProcessTranslatePart(
@@ -530,7 +569,7 @@ static void ProcessScale(Matrix4x4& aMatrix, const StyleScale& aScale) {
 
 Matrix4x4 ReadTransforms(const StyleTranslate& aTranslate,
                          const StyleRotate& aRotate, const StyleScale& aScale,
-                         const Maybe<ResolvedMotionPathData>& aMotion,
+                         const ResolvedMotionPathData* aMotion,
                          const StyleTransform& aTransform,
                          TransformReferenceBox& aRefBox,
                          float aAppUnitsPerMatrixUnit) {
@@ -540,7 +579,7 @@ Matrix4x4 ReadTransforms(const StyleTranslate& aTranslate,
   ProcessRotate(result, aRotate);
   ProcessScale(result, aScale);
 
-  if (aMotion.isSome()) {
+  if (aMotion) {
     // Create the equivalent translate and rotate function, according to the
     // order in spec. We combine the translate and then the rotate.
     // https://drafts.fxtf.org/motion-1/#calculating-path-transform

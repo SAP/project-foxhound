@@ -149,10 +149,19 @@ pub enum FunctionError {
     PipelineInputRegularFunction { name: String },
     #[error("Functions that are not entry points cannot have `@location` or `@builtin` attributes on their return value types")]
     PipelineOutputRegularFunction,
+    #[error("Required uniformity for WorkGroupUniformLoad is not fulfilled because of {0:?}")]
+    // The actual load statement will be "pointed to" by the span
+    NonUniformWorkgroupUniformLoad(UniformityDisruptor),
+    // This is only possible with a misbehaving frontend
+    #[error("The expression {0:?} for a WorkGroupUniformLoad isn't a WorkgroupUniformLoadResult")]
+    WorkgroupUniformLoadExpressionMismatch(Handle<crate::Expression>),
+    #[error("The expression {0:?} is not valid as a WorkGroupUniformLoad argument. It should be a Pointer in Workgroup address space")]
+    WorkgroupUniformLoadInvalidPointer(Handle<crate::Expression>),
 }
 
 bitflags::bitflags! {
     #[repr(transparent)]
+    #[derive(Clone, Copy)]
     struct ControlFlowAbility: u8 {
         /// The control can return out of this block.
         const RETURN = 0x1;
@@ -409,7 +418,7 @@ impl super::Validator {
         statements: &crate::Block,
         context: &BlockContext,
     ) -> Result<BlockInfo, WithSpan<FunctionError>> {
-        use crate::{Statement as S, TypeInner as Ti};
+        use crate::{AddressSpace, Statement as S, TypeInner as Ti};
         let mut finished = false;
         let mut stages = super::ShaderStages::all();
         for (statement, &span) in statements.span_iter() {
@@ -821,6 +830,43 @@ impl super::Validator {
                 } => {
                     self.validate_atomic(pointer, fun, value, result, context)?;
                 }
+                S::WorkGroupUniformLoad { pointer, result } => {
+                    stages &= super::ShaderStages::COMPUTE;
+                    let pointer_inner =
+                        context.resolve_type(pointer, &self.valid_expression_set)?;
+                    match *pointer_inner {
+                        Ti::Pointer {
+                            space: AddressSpace::WorkGroup,
+                            ..
+                        } => {}
+                        Ti::ValuePointer {
+                            space: AddressSpace::WorkGroup,
+                            ..
+                        } => {}
+                        _ => {
+                            return Err(FunctionError::WorkgroupUniformLoadInvalidPointer(pointer)
+                                .with_span_static(span, "WorkGroupUniformLoad"))
+                        }
+                    }
+                    self.emit_expression(result, context)?;
+                    let ty = match &context.expressions[result] {
+                        &crate::Expression::WorkGroupUniformLoadResult { ty } => ty,
+                        _ => {
+                            return Err(FunctionError::WorkgroupUniformLoadExpressionMismatch(
+                                result,
+                            )
+                            .with_span_static(span, "WorkGroupUniformLoad"));
+                        }
+                    };
+                    let expected_pointer_inner = Ti::Pointer {
+                        base: ty,
+                        space: AddressSpace::WorkGroup,
+                    };
+                    if !expected_pointer_inner.equivalent(pointer_inner, context.types) {
+                        return Err(FunctionError::WorkgroupUniformLoadInvalidPointer(pointer)
+                            .with_span_static(span, "WorkGroupUniformLoad"));
+                    }
+                }
                 S::RayQuery { query, ref fun } => {
                     let query_var = match *context.get_expression(query) {
                         crate::Expression::LocalVariable(var) => &context.local_vars[var],
@@ -894,8 +940,8 @@ impl super::Validator {
     fn validate_local_var(
         &self,
         var: &crate::LocalVariable,
-        types: &UniqueArena<crate::Type>,
-        constants: &Arena<crate::Constant>,
+        gctx: crate::proc::GlobalCtx,
+        mod_info: &ModuleInfo,
     ) -> Result<(), LocalVariableError> {
         log::debug!("var {:?}", var);
         let type_info = self
@@ -909,24 +955,14 @@ impl super::Validator {
             return Err(LocalVariableError::InvalidType(var.ty));
         }
 
-        if let Some(const_handle) = var.init {
-            match constants[const_handle].inner {
-                crate::ConstantInner::Scalar { width, ref value } => {
-                    let ty_inner = crate::TypeInner::Scalar {
-                        width,
-                        kind: value.scalar_kind(),
-                    };
-                    if types[var.ty].inner != ty_inner {
-                        return Err(LocalVariableError::InitializerType);
-                    }
-                }
-                crate::ConstantInner::Composite { ty, components: _ } => {
-                    if ty != var.ty {
-                        return Err(LocalVariableError::InitializerType);
-                    }
-                }
+        if let Some(init) = var.init {
+            let decl_ty = &gctx.types[var.ty].inner;
+            let init_ty = mod_info[init].inner_with(gctx.types);
+            if !decl_ty.equivalent(init_ty, gctx.types) {
+                return Err(LocalVariableError::InitializerType);
             }
         }
+
         Ok(())
     }
 
@@ -942,7 +978,7 @@ impl super::Validator {
 
         #[cfg(feature = "validate")]
         for (var_handle, var) in fun.local_variables.iter() {
-            self.validate_local_var(var, &module.types, &module.constants)
+            self.validate_local_var(var, module.to_ctx(), mod_info)
                 .map_err(|source| {
                     FunctionError::LocalVariable {
                         handle: var_handle,
@@ -1016,14 +1052,7 @@ impl super::Validator {
             }
             #[cfg(feature = "validate")]
             if self.flags.contains(super::ValidationFlags::EXPRESSIONS) {
-                match self.validate_expression(
-                    handle,
-                    expr,
-                    fun,
-                    module,
-                    &info,
-                    &mod_info.functions,
-                ) {
+                match self.validate_expression(handle, expr, fun, module, &info, mod_info) {
                     Ok(stages) => info.available_stages &= stages,
                     Err(source) => {
                         return Err(FunctionError::Expression { handle, source }

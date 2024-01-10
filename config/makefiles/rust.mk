@@ -259,12 +259,7 @@ target_rust_nonltoable := force-cargo-test-run force-cargo-program-build
 
 ifdef MOZ_PGO_RUST
 ifdef MOZ_PROFILE_GENERATE
-# Our top-level Cargo.toml sets panic to abort, so we technically don't need -C panic=abort,
-# but the autocfg crate takes RUSTFLAGS verbatim and runs its compiler tests without
-# -C panic=abort (because it doesn't know it's what cargo uses), which fail on Windows
-# because -C panic=unwind (the compiler default) is not compatible with -C profile-generate
-# (https://github.com/rust-lang/rust/issues/61002).
-rust_pgo_flags := -C panic=abort -C profile-generate=$(topobjdir)
+rust_pgo_flags := -C profile-generate=$(topobjdir)
 ifeq (1,$(words $(filter 5.% 6.% 7.% 8.% 9.% 10.% 11.%,$(CC_VERSION) $(RUSTC_LLVM_VERSION))))
 # Disable value profiling when:
 # (RUSTC_LLVM_VERSION < 12 and CC_VERSION >= 12) or (RUSTC_LLVM_VERSION >= 12 and CC_VERSION < 12)
@@ -277,6 +272,14 @@ endif
 rust_pgo_flags += $(patsubst -mllvm:%,-C llvm-args=%,$(filter -mllvm:%,$(subst -mllvm ,-mllvm:,$(PROFILE_GEN_CFLAGS))))
 else # MOZ_PROFILE_USE
 rust_pgo_flags := -C profile-use=$(PGO_PROFILE_PATH)
+endif
+endif
+
+# Work around https://github.com/rust-lang/rust/issues/112480
+ifdef MOZ_DEBUG_RUST
+ifneq (,$(filter i686-pc-windows-%,$(RUST_TARGET)))
+RUSTFLAGS += -Zmir-enable-passes=-CheckAlignment
+RUSTC_BOOTSTRAP := 1
 endif
 endif
 
@@ -420,9 +423,7 @@ endif
 
 ifdef RUST_LIBRARY_FILE
 
-ifdef RUST_LIBRARY_FEATURES
-rust_features_flag := --features '$(RUST_LIBRARY_FEATURES)'
-endif
+rust_features_flag := --features '$(if $(RUST_LIBRARY_FEATURES),$(RUST_LIBRARY_FEATURES) )mozilla-central-workspace-hack'
 
 ifeq (WASI,$(OS_ARCH))
 # The rust wasi target defaults to statically link the wasi crt, but when we
@@ -454,7 +455,7 @@ ifeq ($(OS_ARCH), Linux)
 ifeq (,$(rustflags_sancov)$(MOZ_ASAN)$(MOZ_TSAN)$(MOZ_UBSAN))
 ifndef MOZ_LTO_RUST_CROSS
 ifneq (,$(filter -Clto,$(cargo_rustc_flags)))
-	$(call py_action,check_binary,--target --networking $@)
+	$(call py_action,check_binary,--networking $@)
 endif
 endif
 endif
@@ -488,9 +489,7 @@ ifdef RUST_TESTS
 
 rust_test_options := $(foreach test,$(RUST_TESTS),-p $(test))
 
-ifdef RUST_TEST_FEATURES
-rust_test_features_flag := --features '$(RUST_TEST_FEATURES)'
-endif
+rust_test_features_flag := --features '$(if $(RUST_TEST_FEATURES),$(RUST_TEST_FEATURES) )mozilla-central-workspace-hack'
 
 # Don't stop at the first failure. We want to list all failures together.
 rust_test_flag := --no-fail-fast
@@ -502,9 +501,7 @@ endif # RUST_TESTS
 
 ifdef HOST_RUST_LIBRARY_FILE
 
-ifdef HOST_RUST_LIBRARY_FEATURES
-host_rust_features_flag := --features '$(HOST_RUST_LIBRARY_FEATURES)'
-endif
+host_rust_features_flag := --features '$(if $(HOST_RUST_LIBRARY_FEATURES),$(HOST_RUST_LIBRARY_FEATURES) )mozilla-central-workspace-hack'
 
 force-cargo-host-library-build:
 	$(REPORT_BUILD)
@@ -527,9 +524,11 @@ endif # HOST_RUST_LIBRARY_FILE
 
 ifdef RUST_PROGRAMS
 
+program_features_flag := --features mozilla-central-workspace-hack
+
 force-cargo-program-build: $(call resfile,module)
 	$(REPORT_BUILD)
-	$(call CARGO_BUILD) $(addprefix --bin ,$(RUST_CARGO_PROGRAMS)) $(cargo_target_flag) -- $(addprefix -C link-arg=$(CURDIR)/,$(call resfile,module)) $(CARGO_RUSTCFLAGS)
+	$(call CARGO_BUILD) $(addprefix --bin ,$(RUST_CARGO_PROGRAMS)) $(cargo_target_flag) $(program_features_flag) -- $(addprefix -C link-arg=$(CURDIR)/,$(call resfile,module)) $(CARGO_RUSTCFLAGS)
 
 # RUST_PROGRAM_DEPENDENCIES(RUST_PROGRAM)
 # Generates a rule suitable to rebuild RUST_PROGRAM only if its dependencies are
@@ -556,7 +555,7 @@ $(foreach RUST_PROGRAM,$(RUST_PROGRAMS), $(eval $(call RUST_PROGRAM_DEPENDENCIES
 
 ifndef CARGO_NO_AUTO_ARG
 force-cargo-program-%:
-	$(call RUN_CARGO,$*) $(addprefix --bin ,$(RUST_CARGO_PROGRAMS)) $(cargo_target_flag)
+	$(call RUN_CARGO,$*) $(addprefix --bin ,$(RUST_CARGO_PROGRAMS)) $(cargo_target_flag) $(program_features_flag)
 else
 force-cargo-program-%:
 	$(call RUN_CARGO,$*)
@@ -568,16 +567,18 @@ force-cargo-program-%:
 endif # RUST_PROGRAMS
 ifdef HOST_RUST_PROGRAMS
 
+host_program_features_flag := --features mozilla-central-workspace-hack
+
 force-cargo-host-program-build:
 	$(REPORT_BUILD)
-	$(call CARGO_BUILD) $(addprefix --bin ,$(HOST_RUST_CARGO_PROGRAMS)) $(cargo_host_flag)
+	$(call CARGO_BUILD) $(addprefix --bin ,$(HOST_RUST_CARGO_PROGRAMS)) $(cargo_host_flag) $(host_program_features_flag)
 
 $(HOST_RUST_PROGRAMS): force-cargo-host-program-build ;
 
 ifndef CARGO_NO_AUTO_ARG
 force-cargo-host-program-%:
 	$(REPORT_BUILD)
-	$(call RUN_CARGO,$*) $(addprefix --bin ,$(HOST_RUST_CARGO_PROGRAMS)) $(cargo_host_flag)
+	$(call RUN_CARGO,$*) $(addprefix --bin ,$(HOST_RUST_CARGO_PROGRAMS)) $(cargo_host_flag) $(host_program_features_flag)
 else
 force-cargo-host-program-%:
 	$(call RUN_CARGO,$*) $(addprefix --bin ,$(HOST_RUST_CARGO_PROGRAMS)) $(filter-out --release $(cargo_target_flag))

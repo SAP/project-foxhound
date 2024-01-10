@@ -28,10 +28,11 @@
 #include "js/friend/WindowProxy.h"    // js::IsWindow
 #include "js/Printf.h"
 #include "js/TraceKind.h"
+#include "proxy/ScriptedProxyHandler.h"
 #include "vm/ArrayObject.h"
 #include "vm/Compartment.h"
 #include "vm/Interpreter.h"
-#include "vm/JSAtom.h"
+#include "vm/JSAtomUtils.h"  // AtomizeString
 #include "vm/PlainObject.h"  // js::PlainObject
 #include "vm/SelfHosting.h"
 #include "vm/StaticStrings.h"
@@ -43,6 +44,7 @@
 #include "jit/BaselineFrame-inl.h"
 #include "jit/VMFunctionList-inl.h"
 #include "vm/Interpreter-inl.h"
+#include "vm/JSAtomUtils-inl.h"  // TypeName
 #include "vm/JSScript-inl.h"
 #include "vm/NativeObject-inl.h"
 #include "vm/PlainObject-inl.h"  // js::CreateThis
@@ -64,8 +66,7 @@ struct IonOsrTempData;
 
 struct PopValues {
   uint8_t numValues;
-
-  explicit constexpr PopValues(uint8_t numValues) : numValues(numValues) {}
+  explicit constexpr PopValues(uint8_t numValues = 0) : numValues(numValues) {}
 };
 
 template <class>
@@ -342,14 +343,13 @@ struct VMFunctionDataHelper<R (*)(JSContext*, Args...)>
       : VMFunctionData(name, explicitArgs(), argumentProperties(),
                        argumentPassedInFloatRegs(), argumentRootTypes(),
                        outParam(), outParamRootType(), returnType(),
-                       /* extraValuesToPop = */ 0, NonTailCall) {}
+                       /* extraValuesToPop = */ 0) {}
   constexpr explicit VMFunctionDataHelper(const char* name,
-                                          MaybeTailCall expectTailCall,
                                           PopValues extraValuesToPop)
       : VMFunctionData(name, explicitArgs(), argumentProperties(),
                        argumentPassedInFloatRegs(), argumentRootTypes(),
                        outParam(), outParamRootType(), returnType(),
-                       extraValuesToPop.numValues, expectTailCall) {}
+                       extraValuesToPop.numValues) {}
 };
 
 // GCC warns when the signature does not have matching attributes (for example
@@ -361,15 +361,9 @@ struct VMFunctionDataHelper<R (*)(JSContext*, Args...)>
 
 // Generate VMFunctionData array.
 static constexpr VMFunctionData vmFunctions[] = {
-#define DEF_VMFUNCTION(name, fp) VMFunctionDataHelper<decltype(&(::fp))>(#name),
+#define DEF_VMFUNCTION(name, fp, valuesToPop...) \
+  VMFunctionDataHelper<decltype(&(::fp))>(#name, PopValues(valuesToPop)),
     VMFUNCTION_LIST(DEF_VMFUNCTION)
-#undef DEF_VMFUNCTION
-};
-static constexpr VMFunctionData tailCallVMFunctions[] = {
-#define DEF_VMFUNCTION(name, fp, valuesToPop)              \
-  VMFunctionDataHelper<decltype(&(::fp))>(#name, TailCall, \
-                                          PopValues(valuesToPop)),
-    TAIL_CALL_VMFUNCTION_LIST(DEF_VMFUNCTION)
 #undef DEF_VMFUNCTION
 };
 
@@ -383,33 +377,23 @@ static constexpr VMFunctionData tailCallVMFunctions[] = {
 // constexpr.
 #define DEF_VMFUNCTION(name, fp, ...) (void*)(::fp),
 static void* const vmFunctionTargets[] = {VMFUNCTION_LIST(DEF_VMFUNCTION)};
-static void* const tailCallVMFunctionTargets[] = {
-    TAIL_CALL_VMFUNCTION_LIST(DEF_VMFUNCTION)};
 #undef DEF_VMFUNCTION
 
 const VMFunctionData& GetVMFunction(VMFunctionId id) {
   return vmFunctions[size_t(id)];
-}
-const VMFunctionData& GetVMFunction(TailCallVMFunctionId id) {
-  return tailCallVMFunctions[size_t(id)];
 }
 
 static DynFn GetVMFunctionTarget(VMFunctionId id) {
   return DynFn{vmFunctionTargets[size_t(id)]};
 }
 
-static DynFn GetVMFunctionTarget(TailCallVMFunctionId id) {
-  return DynFn{tailCallVMFunctionTargets[size_t(id)]};
-}
-
-template <typename IdT>
 bool JitRuntime::generateVMWrappers(JSContext* cx, MacroAssembler& masm,
-                                    VMWrapperOffsets& offsets) {
+                                    PerfSpewerRangeRecorder& rangeRecorder) {
   // Generate all VM function wrappers.
 
-  static constexpr size_t NumVMFunctions = size_t(IdT::Count);
+  static constexpr size_t NumVMFunctions = size_t(VMFunctionId::Count);
 
-  if (!offsets.reserve(NumVMFunctions)) {
+  if (!functionWrapperOffsets_.reserve(NumVMFunctions)) {
     return false;
   }
 
@@ -418,7 +402,7 @@ bool JitRuntime::generateVMWrappers(JSContext* cx, MacroAssembler& masm,
 #endif
 
   for (size_t i = 0; i < NumVMFunctions; i++) {
-    IdT id = IdT(i);
+    VMFunctionId id = VMFunctionId(i);
     const VMFunctionData& fun = GetVMFunction(id);
 
 #ifdef DEBUG
@@ -436,26 +420,18 @@ bool JitRuntime::generateVMWrappers(JSContext* cx, MacroAssembler& masm,
     if (!generateVMWrapper(cx, masm, fun, GetVMFunctionTarget(id), &offset)) {
       return false;
     }
+#if defined(JS_ION_PERF)
+    rangeRecorder.recordVMWrapperOffset(fun.name());
+#else
+    rangeRecorder.recordOffset("Trampoline: VMWrapper");
+#endif
 
-    MOZ_ASSERT(offsets.length() == size_t(id));
-    offsets.infallibleAppend(offset);
+    MOZ_ASSERT(functionWrapperOffsets_.length() == size_t(id));
+    functionWrapperOffsets_.infallibleAppend(offset);
   }
 
   return true;
 };
-
-bool JitRuntime::generateVMWrappers(JSContext* cx, MacroAssembler& masm) {
-  if (!generateVMWrappers<VMFunctionId>(cx, masm, functionWrapperOffsets_)) {
-    return false;
-  }
-
-  if (!generateVMWrappers<TailCallVMFunctionId>(
-          cx, masm, tailCallFunctionWrapperOffsets_)) {
-    return false;
-  }
-
-  return true;
-}
 
 bool InvokeFunction(JSContext* cx, HandleObject obj, bool constructing,
                     bool ignoresReturnValue, uint32_t argc, Value* argv,
@@ -641,27 +617,6 @@ template bool StringsCompare<ComparisonKind::LessThan>(JSContext* cx,
                                                        bool* res);
 template bool StringsCompare<ComparisonKind::GreaterThanOrEqual>(
     JSContext* cx, HandleString lhs, HandleString rhs, bool* res);
-
-bool ArrayPushDensePure(JSContext* cx, ArrayObject* arr, Value* v) {
-  AutoUnsafeCallWithABI unsafe;
-
-  // Shape guards guarantee that the input is an extensible ArrayObject, which
-  // has a writable "length" property and has no other indexed properties.
-  MOZ_ASSERT(arr->isExtensible());
-  MOZ_ASSERT(arr->lengthIsWritable());
-  MOZ_ASSERT(!arr->isIndexed());
-
-  // Length must fit in an int32 because we guard against overflow before
-  // calling this VM function.
-  uint32_t index = arr->length();
-  MOZ_ASSERT(index < uint32_t(INT32_MAX));
-
-  DenseElementResult result = arr->setOrExtendDenseElements(cx, index, v, 1);
-  if (result == DenseElementResult::Failure) {
-    cx->recoverFromOutOfMemory();
-  }
-  return result == DenseElementResult::Success;
-}
 
 JSString* ArrayJoin(JSContext* cx, HandleObject array, HandleString sep) {
   JS::RootedValueArray<3> argv(cx);
@@ -879,25 +834,16 @@ void PostWriteBarrier(JSRuntime* rt, js::gc::Cell* cell) {
 
 static const size_t MAX_WHOLE_CELL_BUFFER_SIZE = 4096;
 
-template <IndexInBounds InBounds>
 void PostWriteElementBarrier(JSRuntime* rt, JSObject* obj, int32_t index) {
   AutoUnsafeCallWithABI unsafe;
 
   MOZ_ASSERT(!IsInsideNursery(obj));
 
-  if (InBounds == IndexInBounds::Yes) {
-    MOZ_ASSERT(uint32_t(index) <
-               obj->as<NativeObject>().getDenseInitializedLength());
-  } else {
-    if (MOZ_UNLIKELY(!obj->is<NativeObject>() || index < 0 ||
-                     uint32_t(index) >=
-                         NativeObject::MAX_DENSE_ELEMENTS_COUNT)) {
-      rt->gc.storeBuffer().putWholeCell(obj);
-      return;
-    }
-  }
-
   NativeObject* nobj = &obj->as<NativeObject>();
+
+  MOZ_ASSERT(index >= 0);
+  MOZ_ASSERT(uint32_t(index) < nobj->getDenseInitializedLength());
+
   if (nobj->isInWholeCellBuffer()) {
     return;
   }
@@ -914,14 +860,6 @@ void PostWriteElementBarrier(JSRuntime* rt, JSObject* obj, int32_t index) {
 
   rt->gc.storeBuffer().putWholeCell(obj);
 }
-
-template void PostWriteElementBarrier<IndexInBounds::Yes>(JSRuntime* rt,
-                                                          JSObject* obj,
-                                                          int32_t index);
-
-template void PostWriteElementBarrier<IndexInBounds::Maybe>(JSRuntime* rt,
-                                                            JSObject* obj,
-                                                            int32_t index);
 
 void PostGlobalWriteBarrier(JSRuntime* rt, GlobalObject* obj) {
   MOZ_ASSERT(obj->JSObject::is<GlobalObject>());
@@ -1442,6 +1380,13 @@ void JitShapePreWriteBarrier(JSRuntime* rt, Shape** shapep) {
   gc::PreWriteBarrier(*shapep);
 }
 
+void JitWasmAnyRefPreWriteBarrier(JSRuntime* rt, wasm::AnyRef* refp) {
+  AutoUnsafeCallWithABI unsafe;
+  MOZ_ASSERT(refp->isGCThing());
+  MOZ_ASSERT(!(*refp).toGCThing()->isMarkedBlack());
+  gc::WasmAnyRefPreWriteBarrier(*refp);
+}
+
 bool ThrowRuntimeLexicalError(JSContext* cx, unsigned errorNumber) {
   ScriptFrameIter iter(cx);
   RootedScript script(cx, iter.script());
@@ -1695,6 +1640,26 @@ bool GetNativeDataPropertyPureWithCacheLookup(JSContext* cx, JSObject* obj,
   }
 
   return GetNativeDataPropertyPureImpl(cx, obj, id, entry, vp);
+}
+
+bool CheckProxyGetByValueResult(JSContext* cx, HandleObject obj,
+                                HandleValue idVal, HandleValue value,
+                                MutableHandleValue result) {
+  MOZ_ASSERT(idVal.isString() || idVal.isSymbol());
+  RootedId rootedId(cx);
+  if (!PrimitiveValueToId<CanGC>(cx, idVal, &rootedId)) {
+    return false;
+  }
+
+  auto validation =
+      ScriptedProxyHandler::checkGetTrapResult(cx, obj, rootedId, value);
+  if (validation != ScriptedProxyHandler::GetTrapValidationResult::OK) {
+    ScriptedProxyHandler::reportGetTrapValidationError(cx, rootedId,
+                                                       validation);
+    return false;
+  }
+  result.set(value);
+  return true;
 }
 
 bool GetNativeDataPropertyPure(JSContext* cx, JSObject* obj, PropertyKey id,
@@ -2029,7 +1994,7 @@ static bool TryAddOrSetPlainObjectProperty(JSContext* cx,
 
   // Don't support "__proto__". This lets us take advantage of the
   // hasNonWritableOrAccessorPropExclProto optimization below.
-  if (MOZ_UNLIKELY(!obj->isExtensible() || key.isAtom(cx->names().proto))) {
+  if (MOZ_UNLIKELY(!obj->isExtensible() || key.isAtom(cx->names().proto_))) {
     return true;
   }
 
@@ -2275,7 +2240,7 @@ void* AllocateFatInlineString(JSContext* cx) {
 void* AllocateBigIntNoGC(JSContext* cx, bool requestMinorGC) {
   AutoUnsafeCallWithABI unsafe;
 
-  if (requestMinorGC) {
+  if (requestMinorGC && cx->nursery().isEnabled()) {
     cx->nursery().requestMinorGC(JS::GCReason::OUT_OF_NURSERY);
   }
 
@@ -2311,20 +2276,6 @@ void AllocateAndInitTypedArrayBuffer(JSContext* cx, TypedArrayObject* obj,
     InitReservedSlot(obj, TypedArrayObject::DATA_SLOT, buf, nbytes,
                      MemoryUse::TypedArrayElements);
   }
-}
-
-void* CreateMatchResultFallbackFunc(JSContext* cx, gc::AllocKind kind,
-                                    size_t nDynamicSlots) {
-  MOZ_ASSERT(nDynamicSlots);
-
-  AutoUnsafeCallWithABI unsafe;
-  ArrayObject* array = cx->newCell<ArrayObject, NoGC>(kind, gc::Heap::Default,
-                                                      &ArrayObject::class_);
-  if (!array || !array->allocateInitialSlots(cx, nDynamicSlots)) {
-    return nullptr;
-  }
-
-  return array;
 }
 
 #ifdef JS_GC_PROBES

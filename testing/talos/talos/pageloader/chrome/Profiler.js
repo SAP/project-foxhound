@@ -128,8 +128,8 @@ var Profiler;
           profile => {
             let profileFile = profiler_dir + "/" + currentTest + ".profile";
 
-            const { NetUtil } = ChromeUtils.import(
-              "resource://gre/modules/NetUtil.jsm"
+            const { NetUtil } = ChromeUtils.importESModule(
+              "resource://gre/modules/NetUtil.sys.mjs"
             );
             const { FileUtils } = ChromeUtils.importESModule(
               "resource://gre/modules/FileUtils.sys.mjs"
@@ -161,7 +161,7 @@ var Profiler;
             });
           },
           error => {
-            console.error("Failed to gather profile: " + error);
+            console.error("Failed to gather profile:", error);
             reject();
           }
         );

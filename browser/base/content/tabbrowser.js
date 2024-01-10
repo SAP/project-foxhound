@@ -7,7 +7,7 @@
   // start private scope for gBrowser
   /**
    * A set of known icons to use for internal pages. These are hardcoded so we can
-   * start loading them faster than ContentLinkHandler would normally find them.
+   * start loading them faster than FaviconLoader would normally find them.
    */
   const FAVICON_DEFAULTS = {
     "about:newtab": "chrome://branding/content/icon32.png",
@@ -80,15 +80,11 @@
 
   window._gBrowser = {
     init() {
-      ChromeUtils.defineModuleGetter(
-        this,
-        "AsyncTabSwitcher",
-        "resource:///modules/AsyncTabSwitcher.jsm"
-      );
       ChromeUtils.defineESModuleGetters(this, {
+        AsyncTabSwitcher: "resource:///modules/AsyncTabSwitcher.sys.mjs",
+        PictureInPicture: "resource://gre/modules/PictureInPicture.sys.mjs",
         UrlbarProviderOpenTabs:
           "resource:///modules/UrlbarProviderOpenTabs.sys.mjs",
-        PictureInPicture: "resource://gre/modules/PictureInPicture.sys.mjs",
       });
       XPCOMUtils.defineLazyServiceGetters(this, {
         MacSharingService: [
@@ -96,7 +92,7 @@
           "nsIMacSharingService",
         ],
       });
-      XPCOMUtils.defineLazyGetter(this, "tabLocalization", () => {
+      ChromeUtils.defineLazyGetter(this, "tabLocalization", () => {
         return new Localization(
           ["browser/tabbrowser.ftl", "branding/brand.ftl"],
           true
@@ -104,11 +100,9 @@
       });
 
       if (AppConstants.MOZ_CRASHREPORTER) {
-        ChromeUtils.defineModuleGetter(
-          this,
-          "TabCrashHandler",
-          "resource:///modules/ContentCrashHandlers.jsm"
-        );
+        ChromeUtils.defineESModuleGetters(this, {
+          TabCrashHandler: "resource:///modules/ContentCrashHandlers.sys.mjs",
+        });
       }
 
       Services.obs.addObserver(this, "contextual-identity-updated");
@@ -305,10 +299,6 @@
 
     _hoverTabTimer: null,
 
-    _featureCallout: null,
-
-    _featureCalloutPanelId: null,
-
     get tabContainer() {
       delete this.tabContainer;
       return (this.tabContainer = document.getElementById("tabbrowser-tabs"));
@@ -373,37 +363,6 @@
       return this._selectedBrowser;
     },
 
-    get featureCallout() {
-      return this._featureCallout;
-    },
-
-    set featureCallout(val) {
-      this._featureCallout = val;
-    },
-
-    get instantiateFeatureCalloutTour() {
-      return this._instantiateFeatureCalloutTour;
-    },
-
-    get featureCalloutPanelId() {
-      return this._featureCalloutPanelId;
-    },
-
-    _instantiateFeatureCalloutTour(browser, panelId) {
-      this._featureCalloutPanelId = panelId;
-      const { FeatureCallout } = ChromeUtils.importESModule(
-        "resource:///modules/FeatureCallout.sys.mjs"
-      );
-      // Note - once we have additional browser chrome messages,
-      // only use PDF.js pref value when navigating to PDF viewer
-      this._featureCallout = new FeatureCallout({
-        win: window,
-        browser,
-        prefName: "browser.pdfjs.feature-tour",
-        page: "chrome",
-        theme: { preset: "pdfjs", simulateContent: true },
-      });
-    },
     _setupInitialBrowserAndTab() {
       // See browser.js for the meaning of window.arguments.
       // Bug 1485961 covers making this more sane.
@@ -621,10 +580,6 @@
       return this.selectedBrowser.sessionHistory;
     },
 
-    get markupDocumentViewer() {
-      return this.selectedBrowser.markupDocumentViewer;
-    },
-
     get contentDocument() {
       return this.selectedBrowser.contentDocument;
     },
@@ -754,7 +709,6 @@
     _updateTabBarForPinnedTabs() {
       this.tabContainer._unlockTabSizing();
       this.tabContainer._positionPinnedTabs();
-      this.tabContainer._setPositionalAttributes();
       this.tabContainer._updateCloseButtons();
     },
 
@@ -1137,25 +1091,6 @@
 
       let newTab = this.getTabForBrowser(newBrowser);
 
-      if (
-        this._featureCallout &&
-        this._featureCalloutPanelId !== newTab.linkedPanel
-      ) {
-        this._featureCallout.endTour(true);
-        this._featureCallout = null;
-      }
-
-      // For now, only check for Feature Callout messages
-      // when viewing PDFs. Later, we can expand this to check
-      // for callout messages on every change of tab location.
-      if (
-        !this._featureCallout &&
-        newBrowser.contentPrincipal.originNoSuffix === "resource://pdf.js"
-      ) {
-        this._instantiateFeatureCalloutTour(newBrowser, newTab.linkedPanel);
-        window.gBrowser.featureCallout.showFeatureCallout();
-      }
-
       if (!aForceUpdate) {
         TelemetryStopwatch.start("FX_TAB_SWITCH_UPDATE_MS");
 
@@ -1381,6 +1316,14 @@
         if (!gMultiProcessBrowser) {
           this._adjustFocusBeforeTabSwitch(oldTab, newTab);
           this._adjustFocusAfterTabSwitch(newTab);
+        }
+
+        // Bug 1781806 - A forced update can indicate the tab was already
+        // selected. To ensure the internal state of the Urlbar is kept in
+        // sync, notify it as if focus changed. Alternatively, if there is no
+        // force update but the load context is not using remote tabs, there
+        // can be a focus change due to the _adjustFocus above.
+        if (aForceUpdate || !gMultiProcessBrowser) {
           gURLBar.afterTabSwitchFocusChange();
         }
       }
@@ -1395,8 +1338,6 @@
       newTab.setAttribute("touchdownstartsdrag", "true");
 
       if (!gMultiProcessBrowser) {
-        this.tabContainer._setPositionalAttributes();
-
         document.commandDispatcher.unlock();
 
         let event = new CustomEvent("TabSwitchDone", {
@@ -3036,6 +2977,10 @@
         usingPreloadedContent,
       };
 
+      if (BookmarkingUI.isOnNewTabPage(uri)) {
+        this.getPanel(b).classList.add("newTabBrowserPanel");
+      }
+
       // Hack to ensure that the about:newtab, and about:welcome favicon is loaded
       // instantaneously, to avoid flickering and improve perceived performance.
       this.setDefaultIcon(tab, uri);
@@ -3277,7 +3222,6 @@
 
       if (tabs.length > 1 || !tabs[0].selected) {
         this._updateTabsAfterInsert();
-        this.tabContainer._setPositionalAttributes();
         TabBarVisibility.update();
 
         for (let tab of tabs) {
@@ -3503,7 +3447,6 @@
       if (pinned) {
         this._updateTabBarForPinnedTabs();
       }
-      this.tabContainer._setPositionalAttributes();
 
       TabBarVisibility.update();
     },
@@ -3975,7 +3918,7 @@
         !aTab.pinned &&
         !aTab.hidden &&
         aTab._fullyOpen &&
-        triggeringEvent?.mozInputSource == MouseEvent.MOZ_SOURCE_MOUSE &&
+        triggeringEvent?.inputSource == MouseEvent.MOZ_SOURCE_MOUSE &&
         triggeringEvent?.target.closest(".tabbrowser-tab");
       if (lockTabSizing) {
         this.tabContainer._lockTabSizing(aTab, tabWidth);
@@ -4235,14 +4178,6 @@
       // We are no longer the primary content area.
       browser.removeAttribute("primary");
 
-      // Remove this tab as the owner of any other tabs, since it's going away.
-      for (let tab of this.tabs) {
-        if ("owner" in tab && tab.owner == aTab) {
-          // |tab| is a child of the tab we're removing, make it an orphan
-          tab.owner = null;
-        }
-      }
-
       return true;
     },
 
@@ -4336,7 +4271,6 @@
 
       // update tab positional properties and attributes
       this.selectedTab._selected = true;
-      this.tabContainer._setPositionalAttributes();
 
       // Removing the panel requires fixing up selectedPanel immediately
       // (see below), which would be hindered by the potentially expensive
@@ -4566,6 +4500,10 @@
           ourBrowser.mute();
         }
         modifiedAttrs.push("muted");
+      }
+      if (aOtherTab.hasAttribute("undiscardable")) {
+        aOurTab.setAttribute("undiscardable", "true");
+        modifiedAttrs.push("undiscardable");
       }
       if (aOtherTab.hasAttribute("soundplaying")) {
         aOurTab.setAttribute("soundplaying", "true");
@@ -4851,8 +4789,6 @@
       this.tabContainer._updateCloseButtons();
       this.tabContainer._updateHiddenTabsStatus();
 
-      this.tabContainer._setPositionalAttributes();
-
       let event = document.createEvent("Events");
       event.initEvent("TabShow", true, false);
       aTab.dispatchEvent(event);
@@ -4875,8 +4811,6 @@
 
       this.tabContainer._updateCloseButtons();
       this.tabContainer._updateHiddenTabsStatus();
-
-      this.tabContainer._setPositionalAttributes();
 
       // Splice this tab out of any lines of succession before any events are
       // dispatched.
@@ -4934,7 +4868,6 @@
 
       // Play the tab closing animation to give immediate feedback while
       // waiting for the new window to appear.
-      // content area when the docshells are swapped.
       if (!gReduceMotion) {
         aTab.style.maxWidth = ""; // ensure that fade-out transition happens
         aTab.removeAttribute("fadein");
@@ -5081,8 +5014,6 @@
       if (aTab.pinned) {
         this.tabContainer._positionPinnedTabs();
       }
-
-      this.tabContainer._setPositionalAttributes();
 
       var evt = document.createEvent("UIEvents");
       evt.initUIEvent("TabMove", true, false, window, oldPosition);
@@ -5444,9 +5375,6 @@
         this._multiSelectChangeSelected = false;
         this._multiSelectChangeAdditions.clear();
         this._multiSelectChangeRemovals.clear();
-        if (noticeable) {
-          this.tabContainer._setPositionalAttributes();
-        }
         this.dispatchEvent(
           new CustomEvent("TabMultiSelect", { bubbles: true })
         );
@@ -6921,6 +6849,13 @@
             this.mTab.linkedBrowser.mute();
           }
 
+          gBrowser
+            .getPanel(this.mBrowser)
+            .classList.toggle(
+              "newTabBrowserPanel",
+              BookmarkingUI.isOnNewTabPage(aLocation)
+            );
+
           if (gBrowser.isFindBarInitialized(this.mTab)) {
             let findBar = gBrowser.getCachedFindBar(this.mTab);
 
@@ -7001,30 +6936,6 @@
           if (tabCacheIndex != -1) {
             gBrowser._tabLayerCache.splice(tabCacheIndex, 1);
             gBrowser._getSwitcher().cleanUpTabAfterEviction(this.mTab);
-          }
-        } else {
-          if (
-            gBrowser.featureCallout &&
-            (gBrowser.featureCalloutPanelId !==
-              gBrowser.selectedTab.linkedPanel ||
-              gBrowser.contentPrincipal.originNoSuffix !== "resource://pdf.js")
-          ) {
-            gBrowser.featureCallout.endTour(true);
-            gBrowser.featureCallout = null;
-          }
-
-          // For now, only check for Feature Callout messages
-          // when viewing PDFs. Later, we can expand this to check
-          // for callout messages on every change of tab location.
-          if (
-            !gBrowser.featureCallout &&
-            gBrowser.contentPrincipal.originNoSuffix === "resource://pdf.js"
-          ) {
-            gBrowser.instantiateFeatureCalloutTour(
-              gBrowser.selectedBrowser,
-              gBrowser.selectedTab.linkedPanel
-            );
-            gBrowser.featureCallout.showFeatureCallout();
           }
         }
       }
@@ -7524,7 +7435,7 @@ var TabContextMenu = {
 
     // Session store
     document.getElementById("context_undoCloseTab").disabled =
-      SessionStore.getClosedTabCountForWindow(window) == 0;
+      SessionStore.getClosedTabCount() == 0;
 
     // Show/hide fullscreen context menu items and set the
     // autohide item's checked state to mirror the autohide pref.

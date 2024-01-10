@@ -24,9 +24,8 @@
 #include "gc/StableCellHasher-inl.h"
 
 namespace js {
-namespace gc {
 
-namespace detail {
+namespace gc::detail {
 
 // Return the effective cell color given the current marking state.
 // This must be kept in sync with ShouldMark in Marking.cpp.
@@ -66,8 +65,7 @@ static inline JSObject* GetDelegate(const T& key) {
 template <>
 inline JSObject* GetDelegate(gc::Cell* const&) = delete;
 
-} /* namespace detail */
-} /* namespace gc */
+}  // namespace gc::detail
 
 // Weakmap entry -> value edges are only visible if the map is traced, which
 // only happens if the map zone is being collected. If the map and the value
@@ -196,7 +194,7 @@ void WeakMap<K, V>::trace(JSTracer* trc) {
 
   if (trc->isMarkingTracer()) {
     MOZ_ASSERT(trc->weakMapAction() == JS::WeakMapTraceAction::Expand);
-    auto marker = GCMarker::fromTracer(trc);
+    auto* marker = GCMarker::fromTracer(trc);
 
     // Lock if we are marking in parallel to synchronize updates to:
     //  - the weak map's color
@@ -275,11 +273,11 @@ bool WeakMapBase::addImplicitEdges(gc::Cell* key, gc::Cell* delegate,
   gc::EphemeronEdge valueEdge{mapColor, value};
   if (p) {
     return p->value.append(valueEdge);
-  } else {
-    gc::EphemeronEdgeVector edges;
-    MOZ_ALWAYS_TRUE(edges.append(valueEdge));
-    return edgeTable.put(key, std::move(edges));
   }
+
+  gc::EphemeronEdgeVector edges;
+  MOZ_ALWAYS_TRUE(edges.append(valueEdge));
+  return edgeTable.put(key, std::move(edges));
 }
 
 template <class K, class V>
@@ -408,6 +406,6 @@ bool WeakMap<K, V>::checkMarking() const {
 }
 #endif
 
-} /* namespace js */
+}  // namespace js
 
 #endif /* gc_WeakMap_inl_h */

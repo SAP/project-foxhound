@@ -10,7 +10,6 @@ const AUTH_TYPE = {
   SCHEME_DIGEST: 2,
 };
 
-import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
 import { MigrationUtils } from "resource:///modules/MigrationUtils.sys.mjs";
 import { MigratorBase } from "resource:///modules/MigratorBase.sys.mjs";
@@ -20,12 +19,11 @@ const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   ChromeMigrationUtils: "resource:///modules/ChromeMigrationUtils.sys.mjs",
   FormHistory: "resource://gre/modules/FormHistory.sys.mjs",
+  NetUtil: "resource://gre/modules/NetUtil.sys.mjs",
   PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
   Qihoo360seMigrationUtils: "resource:///modules/360seMigrationUtils.sys.mjs",
-});
-
-XPCOMUtils.defineLazyModuleGetters(lazy, {
-  NetUtil: "resource://gre/modules/NetUtil.jsm",
+  MigrationWizardConstants:
+    "chrome://browser/content/migration/migration-wizard-constants.mjs",
 });
 
 /**
@@ -128,6 +126,7 @@ export class ChromeProfileMigrator extends MigratorBase {
           GetBookmarksResource(profileFolder, this.constructor.key),
           GetHistoryResource(profileFolder),
           GetFormdataResource(profileFolder),
+          GetExtensionsResource(aProfile.id, this.constructor.key),
         ];
         if (lazy.ChromeMigrationUtils.supportsLoginsForPlatform) {
           possibleResourcePromises.push(
@@ -135,8 +134,19 @@ export class ChromeProfileMigrator extends MigratorBase {
             this._GetPaymentMethodsResource(profileFolder)
           );
         }
-        let possibleResources = await Promise.all(possibleResourcePromises);
-        return possibleResources.filter(r => r != null);
+
+        // Some of these Promises might reject due to things like database
+        // corruptions. We absorb those rejections here and filter them
+        // out so that we only try to import the resources that don't appear
+        // corrupted.
+        let possibleResources = await Promise.allSettled(
+          possibleResourcePromises
+        );
+        return possibleResources
+          .filter(promise => {
+            return promise.status == "fulfilled" && promise.value !== null;
+          })
+          .map(promise => promise.value);
       }
     }
     return [];
@@ -522,8 +532,8 @@ async function GetBookmarksResource(aProfileFolder, aBrowserKey) {
           faviconRows = await MigrationUtils.getRowsFromDBWithoutLocks(
             faviconsPath,
             "Chrome Bookmark Favicons",
-            `select fav.id, fav.url, map.page_url, bit.image_data FROM favicons as fav 
-              INNER JOIN favicon_bitmaps bit ON (fav.id = bit.icon_id) 
+            `select fav.id, fav.url, map.page_url, bit.image_data FROM favicons as fav
+              INNER JOIN favicon_bitmaps bit ON (fav.id = bit.icon_id)
               INNER JOIN icon_mapping map ON (map.icon_id = bit.icon_id)`
           );
         } catch (ex) {
@@ -762,6 +772,43 @@ async function GetFormdataResource(aProfileFolder) {
       }
 
       aCallback(true);
+    },
+  };
+}
+
+async function GetExtensionsResource(aProfileId, aBrowserKey = "chrome") {
+  if (
+    !Services.prefs.getBoolPref(
+      "browser.migrate.chrome.extensions.enabled",
+      false
+    )
+  ) {
+    return null;
+  }
+  let extensions = await lazy.ChromeMigrationUtils.getExtensionList(aProfileId);
+  if (!extensions.length || aBrowserKey !== "chrome") {
+    return null;
+  }
+
+  return {
+    type: MigrationUtils.resourceTypes.EXTENSIONS,
+    async migrate(callback) {
+      let ids = extensions.map(extension => extension.id);
+      let [progressValue, importedExtensions] =
+        await MigrationUtils.installExtensionsWrapper(aBrowserKey, ids);
+      let details = {
+        progressValue,
+        totalExtensions: extensions,
+        importedExtensions,
+      };
+      if (
+        progressValue == lazy.MigrationWizardConstants.PROGRESS_VALUE.INFO ||
+        progressValue == lazy.MigrationWizardConstants.PROGRESS_VALUE.SUCCESS
+      ) {
+        callback(true, details);
+      } else {
+        callback(false);
+      }
     },
   };
 }

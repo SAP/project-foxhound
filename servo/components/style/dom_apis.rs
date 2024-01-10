@@ -13,7 +13,11 @@ use crate::invalidation::element::invalidator::{InvalidationProcessor, Invalidat
 use crate::selector_parser::SelectorImpl;
 use crate::values::AtomIdent;
 use selectors::attr::CaseSensitivity;
-use selectors::matching::{self, MatchingContext, MatchingMode, NeedsSelectorFlags};
+use selectors::matching::{
+    self, MatchingForInvalidation, MatchingContext, MatchingMode, NeedsSelectorFlags,
+    SelectorCaches,
+};
+use selectors::attr::{AttrSelectorOperation, NamespaceConstraint};
 use selectors::parser::{Combinator, Component, LocalName};
 use selectors::{Element, SelectorList};
 use smallvec::SmallVec;
@@ -27,14 +31,15 @@ pub fn element_matches<E>(
 where
     E: Element,
 {
-    let mut nth_index_cache = Default::default();
+    let mut selector_caches = SelectorCaches::default();
 
     let mut context = MatchingContext::new(
         MatchingMode::Normal,
         None,
-        &mut nth_index_cache,
+        &mut selector_caches,
         quirks_mode,
         NeedsSelectorFlags::No,
+        MatchingForInvalidation::No,
     );
     context.scope_element = Some(element.opaque());
     context.current_host = element.containing_shadow_host().map(|e| e.opaque());
@@ -50,14 +55,15 @@ pub fn element_closest<E>(
 where
     E: Element,
 {
-    let mut nth_index_cache = Default::default();
+    let mut selector_caches = SelectorCaches::default();
 
     let mut context = MatchingContext::new(
         MatchingMode::Normal,
         None,
-        &mut nth_index_cache,
+        &mut selector_caches,
         quirks_mode,
         NeedsSelectorFlags::No,
+        MatchingForInvalidation::No,
     );
     context.scope_element = Some(element.opaque());
     context.current_host = element.containing_shadow_host().map(|e| e.opaque());
@@ -290,12 +296,11 @@ where
 fn fast_connected_elements_with_id<'a, N>(
     root: N,
     id: &AtomIdent,
-    quirks_mode: QuirksMode,
+    case_sensitivity: CaseSensitivity,
 ) -> Result<&'a [N::ConcreteElement], ()>
 where
     N: TNode + 'a,
 {
-    let case_sensitivity = quirks_mode.classes_and_ids_case_sensitivity();
     if case_sensitivity != CaseSensitivity::CaseSensitive {
         return Err(());
     }
@@ -320,20 +325,18 @@ fn collect_elements_with_id<E, Q, F>(
     root: E::ConcreteNode,
     id: &AtomIdent,
     results: &mut Q::Output,
-    quirks_mode: QuirksMode,
+    class_and_id_case_sensitivity: CaseSensitivity,
     mut filter: F,
 ) where
     E: TElement,
     Q: SelectorQuery<E>,
     F: FnMut(E) -> bool,
 {
-    let elements = match fast_connected_elements_with_id(root, id, quirks_mode) {
+    let elements = match fast_connected_elements_with_id(root, id, class_and_id_case_sensitivity) {
         Ok(elements) => elements,
         Err(()) => {
-            let case_sensitivity = quirks_mode.classes_and_ids_case_sensitivity();
-
             collect_all_elements::<E, Q, _>(root, results, |e| {
-                e.has_id(id, case_sensitivity) && filter(e)
+                e.has_id(id, class_and_id_case_sensitivity) && filter(e)
             });
 
             return;
@@ -358,6 +361,15 @@ fn collect_elements_with_id<E, Q, F>(
     }
 }
 
+fn has_attr<E>(element: E, local_name: &AtomIdent) -> bool
+where
+    E: TElement,
+{
+    let mut found = false;
+    element.each_attr_name(|name| found |= name == local_name);
+    found
+}
+
 #[inline(always)]
 fn local_name_matches<E>(element: E, local_name: &LocalName<E::Impl>) -> bool
 where
@@ -375,6 +387,23 @@ where
     };
 
     element.local_name() == &**chosen_name
+}
+
+fn get_attr_name(component: &Component<SelectorImpl>) -> Option<&AtomIdent> {
+    let (name, name_lower) = match component {
+        Component::AttributeInNoNamespace { ref local_name, .. } => return Some(local_name),
+        Component::AttributeInNoNamespaceExists {
+            ref local_name,
+            ref local_name_lower,
+            ..
+        } => (local_name, local_name_lower),
+        Component::AttributeOther(ref attr) => (&attr.local_name, &attr.local_name_lower),
+        _ => return None,
+    };
+    if name != name_lower {
+        return None; // TODO: Maybe optimize this?
+    }
+    Some(name)
 }
 
 fn get_id(component: &Component<SelectorImpl>) -> Option<&AtomIdent> {
@@ -404,26 +433,50 @@ fn query_selector_single_query<E, Q>(
     root: E::ConcreteNode,
     component: &Component<E::Impl>,
     results: &mut Q::Output,
-    quirks_mode: QuirksMode,
+    class_and_id_case_sensitivity: CaseSensitivity,
 ) -> Result<(), ()>
 where
     E: TElement,
     Q: SelectorQuery<E>,
 {
-    // TODO: Maybe we could implement a fast path for [name=""]?
     match *component {
         Component::ExplicitUniversalType => {
             collect_all_elements::<E, Q, _>(root, results, |_| true)
         },
-        Component::Class(ref class) => {
-            let case_sensitivity = quirks_mode.classes_and_ids_case_sensitivity();
-            collect_all_elements::<E, Q, _>(root, results, |element| {
-                element.has_class(class, case_sensitivity)
-            })
-        },
+        Component::Class(ref class) => collect_all_elements::<E, Q, _>(root, results, |element| {
+            element.has_class(class, class_and_id_case_sensitivity)
+        }),
         Component::LocalName(ref local_name) => {
             collect_all_elements::<E, Q, _>(root, results, |element| {
                 local_name_matches(element, local_name)
+            })
+        },
+        Component::AttributeInNoNamespaceExists {
+            ref local_name,
+            ref local_name_lower,
+        } => {
+            collect_all_elements::<E, Q, _>(root, results, |element| {
+                element.has_attr_in_no_namespace(matching::select_name(&element, local_name, local_name_lower))
+            })
+        },
+        Component::AttributeInNoNamespace {
+            ref local_name,
+            ref value,
+            operator,
+            case_sensitivity,
+        } => {
+            let empty_namespace = selectors::parser::namespace_empty_string::<E::Impl>();
+            let namespace_constraint = NamespaceConstraint::Specific(&empty_namespace);
+            collect_all_elements::<E, Q, _>(root, results, |element| {
+                element.attr_matches(
+                    &namespace_constraint,
+                    local_name,
+                    &AttrSelectorOperation::WithValue {
+                        operator,
+                        case_sensitivity: matching::to_unconditional_case_sensitivity(case_sensitivity, &element),
+                        value,
+                    },
+                )
             })
         },
         ref other => {
@@ -432,7 +485,13 @@ where
                 // TODO(emilio): More fast paths?
                 None => return Err(()),
             };
-            collect_elements_with_id::<E, Q, _>(root, id, results, quirks_mode, |_| true);
+            collect_elements_with_id::<E, Q, _>(
+                root,
+                id,
+                results,
+                class_and_id_case_sensitivity,
+                |_| true,
+            );
         },
     }
 
@@ -441,6 +500,7 @@ where
 
 enum SimpleFilter<'a> {
     Class(&'a AtomIdent),
+    Attr(&'a AtomIdent),
     LocalName(&'a LocalName<SelectorImpl>),
 }
 
@@ -470,16 +530,19 @@ where
     }
 
     let selector = &selector_list.0[0];
-    let quirks_mode = matching_context.quirks_mode();
-
+    let class_and_id_case_sensitivity = matching_context.classes_and_ids_case_sensitivity();
     // Let's just care about the easy cases for now.
     if selector.len() == 1 {
-        return query_selector_single_query::<E, Q>(
+        if query_selector_single_query::<E, Q>(
             root,
             selector.iter().next().unwrap(),
             results,
-            quirks_mode,
-        );
+            class_and_id_case_sensitivity,
+        )
+        .is_ok()
+        {
+            return Ok(());
+        }
     }
 
     let mut iter = selector.iter();
@@ -519,7 +582,7 @@ where
                                 root,
                                 id,
                                 results,
-                                quirks_mode,
+                                class_and_id_case_sensitivity,
                                 |e| {
                                     matching::matches_selector_list(
                                         selector_list,
@@ -531,7 +594,11 @@ where
                             return Ok(());
                         }
 
-                        let elements = fast_connected_elements_with_id(root, id, quirks_mode)?;
+                        let elements = fast_connected_elements_with_id(
+                            root,
+                            id,
+                            class_and_id_case_sensitivity,
+                        )?;
                         if elements.is_empty() {
                             return Ok(());
                         }
@@ -574,6 +641,11 @@ where
 
                         return Ok(());
                     }
+                    if combinator.is_none() && simple_filter.is_none() {
+                        if let Some(attr_name) = get_attr_name(other) {
+                            simple_filter = Some(SimpleFilter::Attr(attr_name));
+                        }
+                    }
                 },
             }
         }
@@ -607,15 +679,20 @@ where
 
     match simple_filter {
         SimpleFilter::Class(ref class) => {
-            let case_sensitivity = quirks_mode.classes_and_ids_case_sensitivity();
             collect_all_elements::<E, Q, _>(root, results, |element| {
-                element.has_class(class, case_sensitivity) &&
+                element.has_class(class, class_and_id_case_sensitivity) &&
                     matching::matches_selector_list(selector_list, &element, matching_context)
             });
         },
         SimpleFilter::LocalName(ref local_name) => {
             collect_all_elements::<E, Q, _>(root, results, |element| {
                 local_name_matches(element, local_name) &&
+                    matching::matches_selector_list(selector_list, &element, matching_context)
+            });
+        },
+        SimpleFilter::Attr(ref local_name) => {
+            collect_all_elements::<E, Q, _>(root, results, |element| {
+                has_attr(element, local_name) &&
                     matching::matches_selector_list(selector_list, &element, matching_context)
             });
         },
@@ -660,15 +737,16 @@ pub fn query_selector<E, Q>(
 {
     use crate::invalidation::element::invalidator::TreeStyleInvalidator;
 
-    let mut nth_index_cache = Default::default();
+    let mut selector_caches = SelectorCaches::default();
     let quirks_mode = root.owner_doc().quirks_mode();
 
     let mut matching_context = MatchingContext::new(
         MatchingMode::Normal,
         None,
-        &mut nth_index_cache,
+        &mut selector_caches,
         quirks_mode,
         NeedsSelectorFlags::No,
+        MatchingForInvalidation::No,
     );
     let root_element = root.as_element();
     matching_context.scope_element = root_element.map(|e| e.opaque());

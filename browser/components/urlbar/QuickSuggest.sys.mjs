@@ -2,18 +2,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
-
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
+  BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.sys.mjs",
   NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
   UrlbarPrefs: "resource:///modules/UrlbarPrefs.sys.mjs",
   UrlbarUtils: "resource:///modules/UrlbarUtils.sys.mjs",
-});
-
-XPCOMUtils.defineLazyModuleGetters(lazy, {
-  BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.jsm",
 });
 
 // Quick suggest features. On init, QuickSuggest creates an instance of each and
@@ -25,6 +20,9 @@ const FEATURES = {
   BlockedSuggestions:
     "resource:///modules/urlbar/private/BlockedSuggestions.sys.mjs",
   ImpressionCaps: "resource:///modules/urlbar/private/ImpressionCaps.sys.mjs",
+  MDNSuggestions: "resource:///modules/urlbar/private/MDNSuggestions.sys.mjs",
+  PocketSuggestions:
+    "resource:///modules/urlbar/private/PocketSuggestions.sys.mjs",
   Weather: "resource:///modules/urlbar/private/Weather.sys.mjs",
 };
 
@@ -144,6 +142,9 @@ class _QuickSuggest {
       let { [name]: ctor } = ChromeUtils.importESModule(uri);
       let feature = new ctor();
       this.#features[name] = feature;
+      if (feature.merinoProvider) {
+        this.#featuresByMerinoProvider.set(feature.merinoProvider, feature);
+      }
 
       // Update the map from enabling preferences to features.
       let prefs = feature.enablingPreferences;
@@ -174,6 +175,21 @@ class _QuickSuggest {
    */
   getFeature(name) {
     return this.#features[name];
+  }
+
+  /**
+   * Returns a quick suggest feature by the name of the Merino provider that
+   * serves its suggestions (as defined by `feature.merinoProvider`). Not all
+   * features correspond to a Merino provider.
+   *
+   * @param {string} provider
+   *   The name of a Merino provider.
+   * @returns {BaseFeature}
+   *   The feature object, an instance of a subclass of `BaseFeature`, or null
+   *   if no feature corresponds to the Merino provider.
+   */
+  getFeatureByMerinoProvider(provider) {
+    return this.#featuresByMerinoProvider.get(provider);
   }
 
   /**
@@ -473,6 +489,9 @@ class _QuickSuggest {
 
   // Maps from quick suggest feature class names to feature instances.
   #features = {};
+
+  // Maps from Merino provider names to quick suggest feature class names.
+  #featuresByMerinoProvider = new Map();
 
   // Maps from preference names to the `Set` of feature instances they enable.
   #featuresByEnablingPrefs = new Map();

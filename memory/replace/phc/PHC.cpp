@@ -298,6 +298,15 @@ static const size_t kPageSize =
 #endif
     ;
 
+// We align the PHC area to a multiple of the jemalloc and JS GC chunk size
+// (both use 1MB aligned chunks) so that their address computations don't lead
+// from non-PHC memory into PHC memory causing misleading PHC stacks to be
+// attached to a crash report.
+static const size_t kPhcAlign = 1024 * 1024;
+
+static_assert(IsPowerOfTwo(kPhcAlign));
+static_assert((kPhcAlign % kPageSize) == 0);
+
 // There are two kinds of page.
 // - Allocation pages, from which allocations are made.
 // - Guard pages, which are never touched by PHC.
@@ -309,6 +318,10 @@ static const size_t kNumAllPages = kNumAllocPages * 2 + 1;
 
 // The total size of the allocation pages and guard pages.
 static const size_t kAllPagesSize = kNumAllPages * kPageSize;
+
+// jemalloc adds a guard page to the end of our allocation, see the comment in
+// AllocAllPages() for more information.
+static const size_t kAllPagesJemallocSize = kAllPagesSize - kPageSize;
 
 // The junk value used to fill new allocation in debug builds. It's same value
 // as the one used by mozjemalloc. PHC applies it unconditionally in debug
@@ -424,6 +437,12 @@ class GAtomic {
 
   static void SetAllocDelay(Delay aAllocDelay) { sAllocDelay = aAllocDelay; }
 
+  static bool AllocDelayHasWrapped() {
+    // Delay is unsigned so we can't test for less that zero.  Instead test if
+    // it has wrapped around by comparing with the maximum value we ever use.
+    return sAllocDelay > 2 * std::max(kAvgAllocDelay, kAvgFirstAllocDelay);
+  }
+
  private:
   // The current time. Relaxed semantics because it's primarily used for
   // determining if an allocation can be recycled yet and therefore it doesn't
@@ -431,8 +450,8 @@ class GAtomic {
   static Atomic<Time, Relaxed> sNow;
 
   // Delay until the next attempt at a page allocation. See the comment in
-  // MaybePageAlloc() for an explanation of why it is a signed integer, and why
-  // it uses ReleaseAcquire semantics.
+  // MaybePageAlloc() for an explanation of why it uses ReleaseAcquire
+  // semantics.
   static Atomic<Delay, ReleaseAcquire> sAllocDelay;
 };
 
@@ -450,19 +469,31 @@ class GConst {
 
   // Allocates the allocation pages and the guard pages, contiguously.
   uint8_t* AllocAllPages() {
-    // Allocate the pages so that they are inaccessible. They are never freed,
-    // because it would happen at process termination when it would be of little
-    // use.
-    void* pages =
-#ifdef XP_WIN
-        VirtualAlloc(nullptr, kAllPagesSize, MEM_RESERVE, PAGE_NOACCESS);
-#else
-        mmap(nullptr, kAllPagesSize, PROT_NONE, MAP_ANONYMOUS | MAP_PRIVATE, -1,
-             0);
-#endif
+    // The memory allocated here is never freed, because it would happen at
+    // process termination when it would be of little use.
+
+    // We can rely on jemalloc's behaviour that when it allocates memory aligned
+    // with its own chunk size it will over-allocate and guarantee that the
+    // memory after the end of our allocation, but before the next chunk, is
+    // decommitted and inaccessible. Elsewhere in PHC we assume that we own
+    // that page (so that memory errors in it get caught by PHC) but here we
+    // use kAllPagesJemallocSize which subtracts jemalloc's guard page.
+    void* pages = sMallocTable.memalign(kPhcAlign, kAllPagesJemallocSize);
     if (!pages) {
       MOZ_CRASH();
     }
+
+    // Make the pages inaccessible.
+#ifdef XP_WIN
+    if (!VirtualFree(pages, kAllPagesJemallocSize, MEM_DECOMMIT)) {
+      MOZ_CRASH("VirtualFree failed");
+    }
+#else
+    if (mmap(pages, kAllPagesJemallocSize, PROT_NONE,
+             MAP_FIXED | MAP_PRIVATE | MAP_ANON, -1, 0) == MAP_FAILED) {
+      MOZ_CRASH("mmap failed");
+    }
+#endif
 
     return static_cast<uint8_t*>(pages);
   }
@@ -493,105 +524,6 @@ class GConst {
 };
 
 static GConst* gConst;
-
-// On MacOS, the first __thread/thread_local access calls malloc, which leads
-// to an infinite loop. So we use pthread-based TLS instead, which somehow
-// doesn't have this problem.
-#if !defined(XP_DARWIN)
-#  define PHC_THREAD_LOCAL(T) MOZ_THREAD_LOCAL(T)
-#else
-#  define PHC_THREAD_LOCAL(T) \
-    detail::ThreadLocal<T, detail::ThreadLocalKeyStorage>
-#endif
-
-// Thread-local state.
-class GTls {
-  GTls(const GTls&) = delete;
-
-  const GTls& operator=(const GTls&) = delete;
-
-  // When true, PHC does as little as possible.
-  //
-  // (a) It does not allocate any new page allocations.
-  //
-  // (b) It avoids doing any operations that might call malloc/free/etc., which
-  //     would cause re-entry into PHC. (In practice, MozStackWalk() is the
-  //     only such operation.) Note that calls to the functions in sMallocTable
-  //     are ok.
-  //
-  // For example, replace_malloc() will just fall back to mozjemalloc. However,
-  // operations involving existing allocations are more complex, because those
-  // existing allocations may be page allocations. For example, if
-  // replace_free() is passed a page allocation on a PHC-disabled thread, it
-  // will free the page allocation in the usual way, but it will get a dummy
-  // freeStack in order to avoid calling MozStackWalk(), as per (b) above.
-  //
-  // This single disabling mechanism has two distinct uses.
-  //
-  // - It's used to prevent re-entry into PHC, which can cause correctness
-  //   problems. For example, consider this sequence.
-  //
-  //   1. enter replace_free()
-  //   2. which calls PageFree()
-  //   3. which calls MozStackWalk()
-  //   4. which locks a mutex M, and then calls malloc
-  //   5. enter replace_malloc()
-  //   6. which calls MaybePageAlloc()
-  //   7. which calls MozStackWalk()
-  //   8. which (re)locks a mutex M --> deadlock
-  //
-  //   We avoid this sequence by "disabling" the thread in PageFree() (at step
-  //   2), which causes MaybePageAlloc() to fail, avoiding the call to
-  //   MozStackWalk() (at step 7).
-  //
-  //   In practice, realloc or free of a PHC allocation is unlikely on a thread
-  //   that is disabled because of this use: MozStackWalk() will probably only
-  //   realloc/free allocations that it allocated itself, but those won't be
-  //   page allocations because PHC is disabled before calling MozStackWalk().
-  //
-  //   (Note that MaybePageAlloc() could safely do a page allocation so long as
-  //   it avoided calling MozStackWalk() by getting a dummy allocStack. But it
-  //   wouldn't be useful, and it would prevent the second use below.)
-  //
-  // - It's used to prevent PHC allocations in some tests that rely on
-  //   mozjemalloc's exact allocation behaviour, which PHC does not replicate
-  //   exactly. (Note that (b) isn't necessary for this use -- MozStackWalk()
-  //   could be safely called -- but it is necessary for the first use above.)
-  //
-  static PHC_THREAD_LOCAL(bool) tlsIsDisabled;
-
- public:
-  static void Init() {
-    if (!tlsIsDisabled.init()) {
-      MOZ_CRASH();
-    }
-  }
-
-  static void DisableOnCurrentThread() {
-    MOZ_ASSERT(!GTls::tlsIsDisabled.get());
-    tlsIsDisabled.set(true);
-  }
-
-  static void EnableOnCurrentThread() {
-    MOZ_ASSERT(GTls::tlsIsDisabled.get());
-    tlsIsDisabled.set(false);
-  }
-
-  static bool IsDisabledOnCurrentThread() { return tlsIsDisabled.get(); }
-};
-
-PHC_THREAD_LOCAL(bool) GTls::tlsIsDisabled;
-
-class AutoDisableOnCurrentThread {
-  AutoDisableOnCurrentThread(const AutoDisableOnCurrentThread&) = delete;
-
-  const AutoDisableOnCurrentThread& operator=(
-      const AutoDisableOnCurrentThread&) = delete;
-
- public:
-  explicit AutoDisableOnCurrentThread() { GTls::DisableOnCurrentThread(); }
-  ~AutoDisableOnCurrentThread() { GTls::EnableOnCurrentThread(); }
-};
 
 // This type is used as a proof-of-lock token, to make it clear which functions
 // require sMutex to be locked.
@@ -797,7 +729,7 @@ class GMut {
 
   static void CrashOnGuardPage(void* aPtr) {
     // An operation on a guard page? This is a bounds violation. Deliberately
-    // touch the page in question, to cause a crash that triggers the usual PHC
+    // touch the page in question to cause a crash that triggers the usual PHC
     // machinery.
     LOG("CrashOnGuardPage(%p), bounds violation\n", aPtr);
     *static_cast<uint8_t*>(aPtr) = 0;
@@ -825,8 +757,10 @@ class GMut {
     }
   }
 
-  void FillAddrInfo(GMutLock, uintptr_t aIndex, const void* aBaseAddr,
-                    bool isGuardPage, phc::AddrInfo& aOut) {
+  // This expects GMUt::sMutex to be locked but can't check it with a parameter
+  // since we try-lock it.
+  void FillAddrInfo(uintptr_t aIndex, const void* aBaseAddr, bool isGuardPage,
+                    phc::AddrInfo& aOut) {
     const AllocPageInfo& page = mAllocPages[aIndex];
     if (isGuardPage) {
       aOut.mKind = phc::AddrInfo::Kind::GuardPage;
@@ -1005,6 +939,125 @@ Mutex GMut::sMutex;
 
 static GMut* gMut;
 
+// When PHC wants to crash we first have to unlock so that the crash reporter
+// can call into PHC to lockup its pointer. That also means that before calling
+// PHCCrash please ensure that state is consistent.  Because this can report an
+// arbitrary string, use of it must be reviewed by Firefox data stewards.
+static void PHCCrash(GMutLock, const char* aMessage)
+    MOZ_REQUIRES(GMut::sMutex) {
+  GMut::sMutex.Unlock();
+  MOZ_CRASH_UNSAFE(aMessage);
+}
+
+// On MacOS, the first __thread/thread_local access calls malloc, which leads
+// to an infinite loop. So we use pthread-based TLS instead, which somehow
+// doesn't have this problem.
+#if !defined(XP_DARWIN)
+#  define PHC_THREAD_LOCAL(T) MOZ_THREAD_LOCAL(T)
+#else
+#  define PHC_THREAD_LOCAL(T) \
+    detail::ThreadLocal<T, detail::ThreadLocalKeyStorage>
+#endif
+
+// Thread-local state.
+class GTls {
+ public:
+  GTls(const GTls&) = delete;
+
+  const GTls& operator=(const GTls&) = delete;
+
+  // When true, PHC does as little as possible.
+  //
+  // (a) It does not allocate any new page allocations.
+  //
+  // (b) It avoids doing any operations that might call malloc/free/etc., which
+  //     would cause re-entry into PHC. (In practice, MozStackWalk() is the
+  //     only such operation.) Note that calls to the functions in sMallocTable
+  //     are ok.
+  //
+  // For example, replace_malloc() will just fall back to mozjemalloc. However,
+  // operations involving existing allocations are more complex, because those
+  // existing allocations may be page allocations. For example, if
+  // replace_free() is passed a page allocation on a PHC-disabled thread, it
+  // will free the page allocation in the usual way, but it will get a dummy
+  // freeStack in order to avoid calling MozStackWalk(), as per (b) above.
+  //
+  // This single disabling mechanism has two distinct uses.
+  //
+  // - It's used to prevent re-entry into PHC, which can cause correctness
+  //   problems. For example, consider this sequence.
+  //
+  //   1. enter replace_free()
+  //   2. which calls PageFree()
+  //   3. which calls MozStackWalk()
+  //   4. which locks a mutex M, and then calls malloc
+  //   5. enter replace_malloc()
+  //   6. which calls MaybePageAlloc()
+  //   7. which calls MozStackWalk()
+  //   8. which (re)locks a mutex M --> deadlock
+  //
+  //   We avoid this sequence by "disabling" the thread in PageFree() (at step
+  //   2), which causes MaybePageAlloc() to fail, avoiding the call to
+  //   MozStackWalk() (at step 7).
+  //
+  //   In practice, realloc or free of a PHC allocation is unlikely on a thread
+  //   that is disabled because of this use: MozStackWalk() will probably only
+  //   realloc/free allocations that it allocated itself, but those won't be
+  //   page allocations because PHC is disabled before calling MozStackWalk().
+  //
+  //   (Note that MaybePageAlloc() could safely do a page allocation so long as
+  //   it avoided calling MozStackWalk() by getting a dummy allocStack. But it
+  //   wouldn't be useful, and it would prevent the second use below.)
+  //
+  // - It's used to prevent PHC allocations in some tests that rely on
+  //   mozjemalloc's exact allocation behaviour, which PHC does not replicate
+  //   exactly. (Note that (b) isn't necessary for this use -- MozStackWalk()
+  //   could be safely called -- but it is necessary for the first use above.)
+  //
+
+  static void Init() {
+    if (!tlsIsDisabled.init()) {
+      MOZ_CRASH();
+    }
+  }
+
+  static void DisableOnCurrentThread() {
+    MOZ_ASSERT(!GTls::tlsIsDisabled.get());
+    tlsIsDisabled.set(true);
+  }
+
+  static void EnableOnCurrentThread() {
+    MOZ_ASSERT(GTls::tlsIsDisabled.get());
+    uint64_t rand;
+    if (GAtomic::AllocDelayHasWrapped()) {
+      {
+        MutexAutoLock lock(GMut::sMutex);
+        rand = gMut->Random64(lock);
+      }
+      GAtomic::SetAllocDelay(Rnd64ToDelay<kAvgAllocDelay>(rand));
+    }
+    tlsIsDisabled.set(false);
+  }
+
+  static bool IsDisabledOnCurrentThread() { return tlsIsDisabled.get(); }
+
+ private:
+  static PHC_THREAD_LOCAL(bool) tlsIsDisabled;
+};
+
+PHC_THREAD_LOCAL(bool) GTls::tlsIsDisabled;
+
+class AutoDisableOnCurrentThread {
+ public:
+  AutoDisableOnCurrentThread(const AutoDisableOnCurrentThread&) = delete;
+
+  const AutoDisableOnCurrentThread& operator=(
+      const AutoDisableOnCurrentThread&) = delete;
+
+  explicit AutoDisableOnCurrentThread() { GTls::DisableOnCurrentThread(); }
+  ~AutoDisableOnCurrentThread() { GTls::EnableOnCurrentThread(); }
+};
+
 //---------------------------------------------------------------------------
 // Page allocation operations
 //---------------------------------------------------------------------------
@@ -1039,9 +1092,9 @@ static void* MaybePageAlloc(const Maybe<arena_id_t>& aArenaId, size_t aReqSize,
   // guarantees that exactly one thread will see sAllocDelay have the value 0.
   // (Relaxed semantics wouldn't guarantee that.)
   //
-  // It's also nice that sAllocDelay is signed, given that we can decrement to
-  // below zero. (Strictly speaking, an unsigned integer would also work due
-  // to wrapping, but a signed integer is conceptually cleaner.)
+  // Note that sAllocDelay is unsigned and we expect that it will wrap after
+  // being decremented "below" zero. It must be unsigned so that IsPowerOfTwo()
+  // can work on some Delay values.
   //
   // Finally, note that the decrements that occur between (a) and (e) above are
   // effectively ignored, because (e) clobbers them. This shouldn't be a
@@ -1165,17 +1218,18 @@ static void* MaybePageAlloc(const Maybe<arena_id_t>& aArenaId, size_t aReqSize,
 
 static void FreePage(GMutLock aLock, uintptr_t aIndex,
                      const Maybe<arena_id_t>& aArenaId,
-                     const StackTrace& aFreeStack, Delay aReuseDelay) {
+                     const StackTrace& aFreeStack, Delay aReuseDelay)
+    MOZ_REQUIRES(GMut::sMutex) {
   void* pagePtr = gConst->AllocPagePtr(aIndex);
 
 #ifdef XP_WIN
   if (!VirtualFree(pagePtr, kPageSize, MEM_DECOMMIT)) {
-    MOZ_CRASH("VirtualFree failed");
+    PHCCrash(aLock, "VirtualFree failed");
   }
 #else
   if (mmap(pagePtr, kPageSize, PROT_NONE, MAP_FIXED | MAP_PRIVATE | MAP_ANON,
            -1, 0) == MAP_FAILED) {
-    MOZ_CRASH("mmap failed");
+    PHCCrash(aLock, "mmap failed");
   }
 #endif
 
@@ -1452,9 +1506,12 @@ void replace_jemalloc_stats(jemalloc_stats_t* aStats,
                             jemalloc_bin_stats_t* aBinStats) {
   sMallocTable.jemalloc_stats_internal(aStats, aBinStats);
 
-  // Add all the pages to `mapped`.
-  size_t mapped = kAllPagesSize;
-  aStats->mapped += mapped;
+  // We allocate our memory from jemalloc so it has already counted our memory
+  // usage within "mapped" and "allocated", we must subtract the memory we
+  // allocated from jemalloc from allocated before adding in only the parts that
+  // we have allocated out to Firefox.
+
+  aStats->allocated -= kAllPagesJemallocSize;
 
   size_t allocated = 0;
   {
@@ -1589,12 +1646,17 @@ class PHCBridge : public ReplaceMallocBridge {
     uintptr_t index = pk.AllocPageIndex();
 
     if (aOut) {
-      MutexAutoLock lock(GMut::sMutex);
-      gMut->FillAddrInfo(lock, index, aPtr, isGuardPage, *aOut);
-      LOG("IsPHCAllocation: %zu, %p, %zu, %zu, %zu\n", size_t(aOut->mKind),
-          aOut->mBaseAddr, aOut->mUsableSize,
-          aOut->mAllocStack.isSome() ? aOut->mAllocStack->mLength : 0,
-          aOut->mFreeStack.isSome() ? aOut->mFreeStack->mLength : 0);
+      if (GMut::sMutex.TryLock()) {
+        gMut->FillAddrInfo(index, aPtr, isGuardPage, *aOut);
+        LOG("IsPHCAllocation: %zu, %p, %zu, %zu, %zu\n", size_t(aOut->mKind),
+            aOut->mBaseAddr, aOut->mUsableSize,
+            aOut->mAllocStack.isSome() ? aOut->mAllocStack->mLength : 0,
+            aOut->mFreeStack.isSome() ? aOut->mFreeStack->mLength : 0);
+        GMut::sMutex.Unlock();
+      } else {
+        LOG("IsPHCAllocation: PHC is locked\n");
+        aOut->mPhcWasLocked = true;
+      }
     }
     return true;
   }

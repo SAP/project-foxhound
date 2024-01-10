@@ -23,9 +23,12 @@ const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   AddonManager: "resource://gre/modules/AddonManager.sys.mjs",
+  AboutNewTab: "resource:///modules/AboutNewTab.sys.mjs",
   AttributionCode: "resource:///modules/AttributionCode.sys.mjs",
+  BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.sys.mjs",
   ClientEnvironment: "resource://normandy/lib/ClientEnvironment.sys.mjs",
   CustomizableUI: "resource:///modules/CustomizableUI.sys.mjs",
+  HomePage: "resource:///modules/HomePage.sys.mjs",
   NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
   ProfileAge: "resource://gre/modules/ProfileAge.sys.mjs",
   Region: "resource://gre/modules/Region.sys.mjs",
@@ -36,9 +39,6 @@ ChromeUtils.defineESModuleGetters(lazy, {
 
 XPCOMUtils.defineLazyModuleGetters(lazy, {
   ASRouterPreferences: "resource://activity-stream/lib/ASRouterPreferences.jsm",
-  HomePage: "resource:///modules/HomePage.jsm",
-  AboutNewTab: "resource:///modules/AboutNewTab.jsm",
-  BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.jsm",
 });
 
 XPCOMUtils.defineLazyGetter(lazy, "fxAccounts", () => {
@@ -117,6 +117,12 @@ XPCOMUtils.defineLazyPreferenceGetter(
   lazy,
   "hasMigratedBookmarks",
   "browser.migrate.interactions.bookmarks",
+  false
+);
+XPCOMUtils.defineLazyPreferenceGetter(
+  lazy,
+  "hasMigratedCSVPasswords",
+  "browser.migrate.interactions.csvpasswords",
   false
 );
 XPCOMUtils.defineLazyPreferenceGetter(
@@ -254,7 +260,11 @@ function CheckBrowserNeedsUpdate(
       );
       let result = await check.result;
       if (!result.succeeded) {
-        throw result.request;
+        lazy.ASRouterPreferences.console.error(
+          "CheckBrowserNeedsUpdate failed :>> ",
+          result.request
+        );
+        return false;
       }
       checker._value = !!result.updates.length;
       return checker._value;
@@ -486,7 +496,7 @@ async function getAutofillRecords(data) {
     name: "FormAutofill:GetRecords",
     data,
   });
-  return records?.length ?? 0;
+  return records?.records?.length ?? 0;
 }
 
 // Attribution data can be encoded multiple times so we need this function to
@@ -919,6 +929,16 @@ const TargetingGetters = {
    */
   get hasMigratedBookmarks() {
     return lazy.hasMigratedBookmarks;
+  },
+
+  /**
+   * Has the user ever used the Migration Wizard to migrate passwords from
+   * a CSV file?
+   * @return {boolean} `true` if CSV passwords have been imported via the
+   *   migration wizard.
+   */
+  get hasMigratedCSVPasswords() {
+    return lazy.hasMigratedCSVPasswords;
   },
 
   /**

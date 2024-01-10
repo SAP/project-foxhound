@@ -5,7 +5,7 @@
 // Imported for side-effects.
 import { html } from "lit.all.mjs";
 // eslint-disable-next-line import/no-unassigned-import
-import "toolkit-widgets/panel-list.js";
+import "chrome://global/content/elements/panel-list.js";
 // eslint-disable-next-line import/no-unassigned-import
 import "browser/components/migration/content/migration-wizard.mjs";
 import { MigrationWizardConstants } from "chrome://browser/content/migration/migration-wizard-constants.mjs";
@@ -30,6 +30,7 @@ const FAKE_MIGRATOR_LIST = [
       "PASSWORDS",
       "BOOKMARKS",
       "PAYMENT_METHODS",
+      "EXTENSIONS",
     ],
     profile: { id: "Default", name: "Default" },
     brandImage: "chrome://browser/content/migration/brands/chrome.png",
@@ -44,6 +45,7 @@ const FAKE_MIGRATOR_LIST = [
       "PASSWORDS",
       "BOOKMARKS",
       "PAYMENT_METHODS",
+      "EXTENSIONS",
     ],
     profile: { id: "person-2", name: "Person 2" },
     brandImage: "chrome://browser/content/migration/brands/chrome.png",
@@ -54,7 +56,7 @@ const FAKE_MIGRATOR_LIST = [
     displayName: "Microsoft Internet Explorer",
     resourceTypes: ["HISTORY", "BOOKMARKS"],
     profile: null,
-    brandImage: "chrome://browser/content/migration/brands/ie.png",
+    brandImage: "chrome://global/skin/icons/defaultFavicon.svg",
   },
   {
     type: MigrationWizardConstants.MIGRATOR_TYPES.BROWSER,
@@ -62,6 +64,7 @@ const FAKE_MIGRATOR_LIST = [
     displayName: "Microsoft Edge Legacy",
     resourceTypes: ["HISTORY", "FORMDATA", "PASSWORDS", "BOOKMARKS"],
     profile: null,
+    brandImage: "chrome://global/skin/icons/defaultFavicon.svg",
   },
   {
     type: MigrationWizardConstants.MIGRATOR_TYPES.BROWSER,
@@ -97,6 +100,7 @@ const FAKE_MIGRATOR_LIST = [
     displayName: "Internal Testing Migrator",
     resourceTypes: ["HISTORY", "PASSWORDS", "BOOKMARKS"],
     profile: null,
+    brandImage: "chrome://global/skin/icons/defaultFavicon.svg",
   },
   {
     type: MigrationWizardConstants.MIGRATOR_TYPES.BROWSER,
@@ -136,6 +140,7 @@ const FAKE_MIGRATOR_LIST = [
     displayName: "Browser with no resources",
     resourceTypes: [],
     profile: { id: "Default", name: "Default" },
+    brandImage: "chrome://global/skin/icons/defaultFavicon.svg",
   },
   {
     type: MigrationWizardConstants.MIGRATOR_TYPES.FILE,
@@ -163,9 +168,10 @@ const Template = ({ state, dialogMode }) => html`
   </style>
 
   <div class="card card-no-hover" style="width: fit-content">
-    <migration-wizard ?dialog-mode=${dialogMode} .state=${state}>
-      <panel-list></panel-list>
-    </migration-wizard>
+    <migration-wizard
+      ?dialog-mode=${dialogMode}
+      .state=${state}
+    ></migration-wizard>
   </div>
 `;
 
@@ -205,19 +211,22 @@ Progress.args = {
     key: "chrome",
     progress: {
       [MigrationWizardConstants.DISPLAYED_RESOURCE_TYPES.BOOKMARKS]: {
-        inProgress: true,
+        value: MigrationWizardConstants.PROGRESS_VALUE.LOADING,
       },
       [MigrationWizardConstants.DISPLAYED_RESOURCE_TYPES.PASSWORDS]: {
-        inProgress: true,
+        value: MigrationWizardConstants.PROGRESS_VALUE.LOADING,
       },
       [MigrationWizardConstants.DISPLAYED_RESOURCE_TYPES.HISTORY]: {
-        inProgress: true,
+        value: MigrationWizardConstants.PROGRESS_VALUE.LOADING,
+      },
+      [MigrationWizardConstants.DISPLAYED_RESOURCE_TYPES.EXTENSIONS]: {
+        value: MigrationWizardConstants.PROGRESS_VALUE.LOADING,
       },
       [MigrationWizardConstants.DISPLAYED_RESOURCE_TYPES.FORMDATA]: {
-        inProgress: true,
+        value: MigrationWizardConstants.PROGRESS_VALUE.LOADING,
       },
       [MigrationWizardConstants.DISPLAYED_RESOURCE_TYPES.PAYMENT_METHODS]: {
-        inProgress: true,
+        value: MigrationWizardConstants.PROGRESS_VALUE.LOADING,
       },
     },
   },
@@ -231,21 +240,25 @@ PartialProgress.args = {
     key: "chrome",
     progress: {
       [MigrationWizardConstants.DISPLAYED_RESOURCE_TYPES.BOOKMARKS]: {
-        inProgress: true,
+        value: MigrationWizardConstants.PROGRESS_VALUE.LOADING,
       },
       [MigrationWizardConstants.DISPLAYED_RESOURCE_TYPES.PASSWORDS]: {
-        inProgress: false,
+        value: MigrationWizardConstants.PROGRESS_VALUE.SUCCESS,
         message: "14 logins and passwords",
       },
       [MigrationWizardConstants.DISPLAYED_RESOURCE_TYPES.HISTORY]: {
-        inProgress: true,
+        value: MigrationWizardConstants.PROGRESS_VALUE.LOADING,
+      },
+      [MigrationWizardConstants.DISPLAYED_RESOURCE_TYPES.EXTENSIONS]: {
+        value: MigrationWizardConstants.PROGRESS_VALUE.SUCCESS,
+        message: "10 extensions",
       },
       [MigrationWizardConstants.DISPLAYED_RESOURCE_TYPES.FORMDATA]: {
-        inProgress: false,
+        value: MigrationWizardConstants.PROGRESS_VALUE.SUCCESS,
         message: "Addresses, credit cards, form history",
       },
       [MigrationWizardConstants.DISPLAYED_RESOURCE_TYPES.PAYMENT_METHODS]: {
-        inProgress: false,
+        value: MigrationWizardConstants.PROGRESS_VALUE.SUCCESS,
         message: "6 payment methods",
       },
     },
@@ -260,23 +273,137 @@ Success.args = {
     key: "chrome",
     progress: {
       [MigrationWizardConstants.DISPLAYED_RESOURCE_TYPES.BOOKMARKS]: {
-        inProgress: false,
+        value: MigrationWizardConstants.PROGRESS_VALUE.SUCCESS,
         message: "14 bookmarks",
       },
       [MigrationWizardConstants.DISPLAYED_RESOURCE_TYPES.PASSWORDS]: {
-        inProgress: false,
+        value: MigrationWizardConstants.PROGRESS_VALUE.SUCCESS,
         message: "14 logins and passwords",
       },
       [MigrationWizardConstants.DISPLAYED_RESOURCE_TYPES.HISTORY]: {
-        inProgress: false,
+        value: MigrationWizardConstants.PROGRESS_VALUE.SUCCESS,
         message: "From the last 180 days",
       },
+      [MigrationWizardConstants.DISPLAYED_RESOURCE_TYPES.EXTENSIONS]: {
+        value: MigrationWizardConstants.PROGRESS_VALUE.SUCCESS,
+        message: "1 extension",
+      },
       [MigrationWizardConstants.DISPLAYED_RESOURCE_TYPES.FORMDATA]: {
-        inProgress: false,
+        value: MigrationWizardConstants.PROGRESS_VALUE.SUCCESS,
         message: "Addresses, credit cards, form history",
       },
       [MigrationWizardConstants.DISPLAYED_RESOURCE_TYPES.PAYMENT_METHODS]: {
-        inProgress: false,
+        value: MigrationWizardConstants.PROGRESS_VALUE.SUCCESS,
+        message: "6 payment methods",
+      },
+    },
+  },
+};
+
+export const SuccessWithWarnings = Template.bind({});
+SuccessWithWarnings.args = {
+  dialogMode: true,
+  state: {
+    page: MigrationWizardConstants.PAGES.PROGRESS,
+    key: "chrome",
+    progress: {
+      [MigrationWizardConstants.DISPLAYED_RESOURCE_TYPES.BOOKMARKS]: {
+        value: MigrationWizardConstants.PROGRESS_VALUE.SUCCESS,
+        message: "14 bookmarks",
+      },
+      [MigrationWizardConstants.DISPLAYED_RESOURCE_TYPES.PASSWORDS]: {
+        value: MigrationWizardConstants.PROGRESS_VALUE.WARNING,
+        message: "Something didn't work correctly.",
+      },
+      [MigrationWizardConstants.DISPLAYED_RESOURCE_TYPES.HISTORY]: {
+        value: MigrationWizardConstants.PROGRESS_VALUE.SUCCESS,
+        message: "From the last 180 days",
+      },
+      [MigrationWizardConstants.DISPLAYED_RESOURCE_TYPES.EXTENSIONS]: {
+        value: MigrationWizardConstants.PROGRESS_VALUE.SUCCESS,
+        message: "1 extension",
+      },
+      [MigrationWizardConstants.DISPLAYED_RESOURCE_TYPES.FORMDATA]: {
+        value: MigrationWizardConstants.PROGRESS_VALUE.SUCCESS,
+        message: "Addresses, credit cards, form history",
+      },
+      [MigrationWizardConstants.DISPLAYED_RESOURCE_TYPES.PAYMENT_METHODS]: {
+        value: MigrationWizardConstants.PROGRESS_VALUE.SUCCESS,
+        message: "6 payment methods",
+      },
+    },
+  },
+};
+
+export const ExtensionsPartialSuccess = Template.bind({});
+ExtensionsPartialSuccess.args = {
+  dialogMode: true,
+  state: {
+    page: MigrationWizardConstants.PAGES.PROGRESS,
+    key: "chrome",
+    progress: {
+      [MigrationWizardConstants.DISPLAYED_RESOURCE_TYPES.BOOKMARKS]: {
+        value: MigrationWizardConstants.PROGRESS_VALUE.SUCCESS,
+        message: "14 bookmarks",
+      },
+      [MigrationWizardConstants.DISPLAYED_RESOURCE_TYPES.PASSWORDS]: {
+        value: MigrationWizardConstants.PROGRESS_VALUE.SUCCESS,
+        message: "14 logins and passwords",
+      },
+      [MigrationWizardConstants.DISPLAYED_RESOURCE_TYPES.HISTORY]: {
+        value: MigrationWizardConstants.PROGRESS_VALUE.SUCCESS,
+        message: "From the last 180 days",
+      },
+      [MigrationWizardConstants.DISPLAYED_RESOURCE_TYPES.EXTENSIONS]: {
+        value: MigrationWizardConstants.PROGRESS_VALUE.INFO,
+        message: "5 of 10 extensions",
+        linkText: "Learn how Firefox matches extensions",
+        linkURL:
+          "https://support.mozilla.org/kb/import-data-another-browser#w_import-extensions-from-chrome/",
+      },
+      [MigrationWizardConstants.DISPLAYED_RESOURCE_TYPES.FORMDATA]: {
+        value: MigrationWizardConstants.PROGRESS_VALUE.SUCCESS,
+        message: "Addresses, credit cards, form history",
+      },
+      [MigrationWizardConstants.DISPLAYED_RESOURCE_TYPES.PAYMENT_METHODS]: {
+        value: MigrationWizardConstants.PROGRESS_VALUE.SUCCESS,
+        message: "6 payment methods",
+      },
+    },
+  },
+};
+
+export const ExtensionsImportFailure = Template.bind({});
+ExtensionsImportFailure.args = {
+  dialogMode: true,
+  state: {
+    page: MigrationWizardConstants.PAGES.PROGRESS,
+    key: "chrome",
+    progress: {
+      [MigrationWizardConstants.DISPLAYED_RESOURCE_TYPES.BOOKMARKS]: {
+        value: MigrationWizardConstants.PROGRESS_VALUE.SUCCESS,
+        message: "14 bookmarks",
+      },
+      [MigrationWizardConstants.DISPLAYED_RESOURCE_TYPES.PASSWORDS]: {
+        value: MigrationWizardConstants.PROGRESS_VALUE.SUCCESS,
+        message: "14 logins and passwords",
+      },
+      [MigrationWizardConstants.DISPLAYED_RESOURCE_TYPES.HISTORY]: {
+        value: MigrationWizardConstants.PROGRESS_VALUE.SUCCESS,
+        message: "From the last 180 days",
+      },
+      [MigrationWizardConstants.DISPLAYED_RESOURCE_TYPES.EXTENSIONS]: {
+        value: MigrationWizardConstants.PROGRESS_VALUE.WARNING,
+        message: "No matching extensions",
+        linkText: "Browse extensions for Firefox",
+        linkURL: "https://addons.mozilla.org/",
+      },
+      [MigrationWizardConstants.DISPLAYED_RESOURCE_TYPES.FORMDATA]: {
+        value: MigrationWizardConstants.PROGRESS_VALUE.SUCCESS,
+        message: "Addresses, credit cards, form history",
+      },
+      [MigrationWizardConstants.DISPLAYED_RESOURCE_TYPES.PAYMENT_METHODS]: {
+        value: MigrationWizardConstants.PROGRESS_VALUE.SUCCESS,
         message: "6 payment methods",
       },
     },
@@ -292,7 +419,7 @@ FileImportProgress.args = {
     progress: {
       [MigrationWizardConstants.DISPLAYED_FILE_RESOURCE_TYPES
         .PASSWORDS_FROM_FILE]: {
-        inProgress: true,
+        value: MigrationWizardConstants.PROGRESS_VALUE.LOADING,
       },
     },
   },
@@ -306,12 +433,12 @@ FileImportSuccess.args = {
     title: "Passwords Imported Successfully",
     progress: {
       [MigrationWizardConstants.DISPLAYED_FILE_RESOURCE_TYPES.PASSWORDS_NEW]: {
-        inProgress: false,
+        value: MigrationWizardConstants.PROGRESS_VALUE.SUCCESS,
         message: "2 added",
       },
       [MigrationWizardConstants.DISPLAYED_FILE_RESOURCE_TYPES
         .PASSWORDS_UPDATED]: {
-        inProgress: false,
+        value: MigrationWizardConstants.PROGRESS_VALUE.SUCCESS,
         message: "14 updated",
       },
     },
@@ -340,5 +467,17 @@ NoBrowsersFound.args = {
   state: {
     page: MigrationWizardConstants.PAGES.NO_BROWSERS_FOUND,
     hasFileMigrators: true,
+  },
+};
+
+export const FileImportError = Template.bind({});
+FileImportError.args = {
+  dialogMode: true,
+  state: {
+    page: MigrationWizardConstants.PAGES.SELECTION,
+    migrators: FAKE_MIGRATOR_LIST,
+    showImportAll: false,
+    migratorKey: "file-password-csv",
+    fileImportErrorMessage: "Some file import error message",
   },
 };

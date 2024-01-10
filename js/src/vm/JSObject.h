@@ -266,6 +266,8 @@ class JSObject
    */
   MOZ_ALWAYS_INLINE bool maybeHasInterestingSymbolProperty() const;
 
+  inline bool needsProxyGetSetResultValidation() const;
+
   /* GC support. */
 
   void traceChildren(JSTracer* trc);
@@ -273,6 +275,8 @@ class JSObject
   void fixupAfterMovingGC() {}
 
   static const JS::TraceKind TraceKind = JS::TraceKind::Object;
+
+  static constexpr size_t thingSize(js::gc::AllocKind kind);
 
   MOZ_ALWAYS_INLINE JS::Zone* zone() const {
     MOZ_ASSERT_IF(!isTenured(), nurseryZone() == shape()->zone());
@@ -702,11 +706,11 @@ struct JSObject_Slots4 : JSObject {
   void* data[2];
   js::Value fslots[4];
 };
-struct JSObject_Slots6 : JSObject {
-  // Only used for extended functions which are required to have exactly six
+struct JSObject_Slots7 : JSObject {
+  // Only used for extended functions which are required to have exactly seven
   // fixed slots due to JIT assumptions.
   void* data[2];
-  js::Value fslots[6];
+  js::Value fslots[7];
 };
 struct JSObject_Slots8 : JSObject {
   void* data[2];
@@ -720,6 +724,15 @@ struct JSObject_Slots16 : JSObject {
   void* data[2];
   js::Value fslots[16];
 };
+
+/* static */
+constexpr size_t JSObject::thingSize(js::gc::AllocKind kind) {
+  MOZ_ASSERT(IsObjectAllocKind(kind));
+  constexpr uint8_t objectSizes[] = {
+#define EXPAND_OJBECT_SIZE(_1, _2, _3, sizedType, _4, _5, _6) sizeof(sizedType),
+      FOR_EACH_OBJECT_ALLOCKIND(EXPAND_OJBECT_SIZE)};
+  return objectSizes[size_t(kind)];
+}
 
 namespace js {
 
@@ -878,6 +891,14 @@ extern bool LookupNameUnqualified(JSContext* cx, Handle<PropertyName*> name,
 }  // namespace js
 
 namespace js {
+
+/*
+ * Family of Pure property lookup functions. The bool return does NOT have the
+ * standard SpiderMonkey semantics. The return value means "can this operation
+ * be performed and produce a valid result without any side effects?". If any of
+ * these return true, then the outparam can be inspected to determine the
+ * result.
+ */
 
 bool LookupPropertyPure(JSContext* cx, JSObject* obj, jsid id,
                         NativeObject** objp, PropertyResult* propp);

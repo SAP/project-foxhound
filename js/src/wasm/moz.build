@@ -14,6 +14,7 @@ include("../js-cxxflags.mozbuild")
 
 UNIFIED_SOURCES += [
     "AsmJS.cpp",
+    "WasmAnyRef.cpp",
     "WasmBaselineCompile.cpp",
     "WasmBCFrame.cpp",
     "WasmBCMemory.cpp",
@@ -24,6 +25,7 @@ UNIFIED_SOURCES += [
     "WasmCompile.cpp",
     "WasmDebug.cpp",
     "WasmDebugFrame.cpp",
+    "WasmFeatures.cpp",
     "WasmFrameIter.cpp",
     "WasmGC.cpp",
     "WasmGcObject.cpp",
@@ -41,6 +43,7 @@ UNIFIED_SOURCES += [
     "WasmProcess.cpp",
     "WasmRealm.cpp",
     "WasmSerialize.cpp",
+    "WasmSignalHandlers.cpp",
     "WasmStubs.cpp",
     "WasmTable.cpp",
     "WasmTypeDef.cpp",
@@ -55,10 +58,6 @@ GeneratedFile(
     script="GenerateIntrinsics.py",
     inputs=["WasmIntrinsic.yaml"],
 )
-
-# We don't support signals for wasi yet.
-if CONFIG["OS_ARCH"] != "WASI":
-    UNIFIED_SOURCES += ["WasmSignalHandlers.cpp"]
 
 # Make sure all WebAssembly code is built with libfuzzer
 # coverage instrumentation in FUZZING mode.

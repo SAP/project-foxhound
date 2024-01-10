@@ -226,15 +226,7 @@ class MediaDecoderStateMachine
 
   void SetVideoDecodeModeInternal(VideoDecodeMode aMode);
 
-  // Set new sink device and restart MediaSink if playback is started.
-  // Returned promise will be resolved with true if the playback is
-  // started and false if playback is stopped after setting the new sink.
-  // Returned promise will be rejected with value NS_ERROR_ABORT
-  // if the action fails or it is not supported.
-  // If there are multiple pending requests only the last one will be
-  // executed, for all previous requests the promise will be resolved
-  // with true or false similar to above.
-  RefPtr<GenericPromise> SetSink(const RefPtr<AudioDeviceInfo>& aDevice);
+  RefPtr<GenericPromise> SetSink(RefPtr<AudioDeviceInfo> aDevice);
 
   // Shutdown MediaSink on suspend to clean up resources.
   void SuspendMediaSink();
@@ -279,7 +271,6 @@ class MediaDecoderStateMachine
 
   void StreamNameChanged();
   void UpdateOutputCaptured();
-  void OutputTracksChanged();
   void OutputPrincipalChanged();
 
   MediaQueue<AudioData>& AudioQueue() { return mAudioQueue; }
@@ -369,11 +360,9 @@ class MediaDecoderStateMachine
 
   void WaitForData(MediaData::Type aType);
 
-  // Returns the "media time". This is the absolute time which the media
-  // playback has reached. i.e. this returns values in the range
-  // [mStartTime, mEndTime], and mStartTime will not be 0 if the media does
-  // not start at 0. Note this is different than the "current playback
-  // position", which is in the range [0,duration].
+  // Returns the "current playback position" in HTML5, which is in the range
+  // [0,duration].  The first frame of the media resource corresponds to 0
+  // regardless of any codec-specific internal time code.
   media::TimeUnit GetMediaTime() const {
     MOZ_ASSERT(OnTaskQueue());
     return mCurrentPosition;
@@ -563,7 +552,6 @@ class MediaDecoderStateMachine
   // PrincipalHandle to feed with data captured into mOutputTracks.
   Mirror<PrincipalHandle> mOutputPrincipal;
 
-  Canonical<CopyableTArray<RefPtr<ProcessedMediaTrack>>> mCanonicalOutputTracks;
   Canonical<PrincipalHandle> mCanonicalOutputPrincipal;
 
   // Track when MediaSink is supsended. When that happens some actions are
@@ -572,10 +560,6 @@ class MediaDecoderStateMachine
   bool mIsMediaSinkSuspended = false;
 
  public:
-  AbstractCanonical<CopyableTArray<RefPtr<ProcessedMediaTrack>>>*
-  CanonicalOutputTracks() {
-    return &mCanonicalOutputTracks;
-  }
   AbstractCanonical<PrincipalHandle>* CanonicalOutputPrincipal() {
     return &mCanonicalOutputPrincipal;
   }

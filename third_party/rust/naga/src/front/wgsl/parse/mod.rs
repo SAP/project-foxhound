@@ -11,7 +11,10 @@ pub mod number;
 
 /// State for constructing an AST expression.
 ///
-/// Not to be confused with `lower::ExpressionContext`.
+/// Not to be confused with [`lower::ExpressionContext`], which is for producing
+/// Naga IR from the AST we produce here.
+///
+/// [`lower::ExpressionContext`]: super::lower::ExpressionContext
 struct ExpressionContext<'input, 'temp, 'out> {
     /// The [`TranslationUnit::expressions`] arena to which we should contribute
     /// expressions.
@@ -83,6 +86,18 @@ impl<'a> ExpressionContext<'a, '_, '_> {
             );
         }
         Ok(accumulator)
+    }
+
+    fn declare_local(&mut self, name: ast::Ident<'a>) -> Result<Handle<ast::Local>, Error<'a>> {
+        let handle = self.locals.append(ast::Local, name.span);
+        if let Some(old) = self.local_table.add(name.name, handle) {
+            Err(Error::Redefinition {
+                previous: self.locals.get_span(old),
+                current: name.span,
+            })
+        } else {
+            Ok(handle)
+        }
     }
 }
 
@@ -1612,14 +1627,7 @@ impl Parser {
                         let expr_id = self.general_expression(lexer, ctx.reborrow())?;
                         lexer.expect(Token::Separator(';'))?;
 
-                        let handle = ctx.locals.append(ast::Local, name.span);
-                        if let Some(old) = ctx.local_table.add(name.name, handle) {
-                            return Err(Error::Redefinition {
-                                previous: ctx.locals.get_span(old),
-                                current: name.span,
-                            });
-                        }
-
+                        let handle = ctx.declare_local(name)?;
                         ast::StatementKind::LocalDecl(ast::LocalDecl::Let(ast::Let {
                             name,
                             ty: given_ty,
@@ -1647,14 +1655,7 @@ impl Parser {
 
                         lexer.expect(Token::Separator(';'))?;
 
-                        let handle = ctx.locals.append(ast::Local, name.span);
-                        if let Some(old) = ctx.local_table.add(name.name, handle) {
-                            return Err(Error::Redefinition {
-                                previous: ctx.locals.get_span(old),
-                                current: name.span,
-                            });
-                        }
-
+                        let handle = ctx.declare_local(name)?;
                         ast::StatementKind::LocalDecl(ast::LocalDecl::Var(ast::LocalVariable {
                             name,
                             ty,
@@ -2013,15 +2014,15 @@ impl Parser {
         ctx.local_table.push_scope();
 
         lexer.expect(Token::Paren('{'))?;
-        let mut statements = ast::Block::default();
+        let mut block = ast::Block::default();
         while !lexer.skip(Token::Paren('}')) {
-            self.statement(lexer, ctx.reborrow(), &mut statements)?;
+            self.statement(lexer, ctx.reborrow(), &mut block)?;
         }
 
         ctx.local_table.pop_scope();
 
         let span = self.pop_rule_span(lexer);
-        Ok((statements, span))
+        Ok((block, span))
     }
 
     fn varying_binding<'a>(
@@ -2060,6 +2061,9 @@ impl Parser {
             unresolved: dependencies,
         };
 
+        // start a scope that contains arguments as well as the function body
+        ctx.local_table.push_scope();
+
         // read parameter list
         let mut arguments = Vec::new();
         lexer.expect(Token::Paren('('))?;
@@ -2078,8 +2082,7 @@ impl Parser {
             lexer.expect(Token::Separator(':'))?;
             let param_type = self.type_decl(lexer, ctx.reborrow())?;
 
-            let handle = ctx.locals.append(ast::Local, param_name.span);
-            ctx.local_table.add(param_name.name, handle);
+            let handle = ctx.declare_local(param_name)?;
             arguments.push(ast::FunctionArgument {
                 name: param_name,
                 ty: param_type,
@@ -2097,8 +2100,14 @@ impl Parser {
             None
         };
 
-        // read body
-        let body = self.block(lexer, ctx)?.0;
+        // do not use `self.block` here, since we must not push a new scope
+        lexer.expect(Token::Paren('{'))?;
+        let mut body = ast::Block::default();
+        while !lexer.skip(Token::Paren('}')) {
+            self.statement(lexer, ctx.reborrow(), &mut body)?;
+        }
+
+        ctx.local_table.pop_scope();
 
         let fun = ast::Function {
             entry_point: None,

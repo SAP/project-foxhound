@@ -7,12 +7,11 @@
 
 #include "nsTextEquivUtils.h"
 
-#include "LocalAccessible.h"
 #include "LocalAccessible-inl.h"
 #include "AccIterator.h"
 #include "nsCoreUtils.h"
+#include "mozilla/dom/ChildIterator.h"
 #include "mozilla/dom/Text.h"
-#include "nsIContentInlines.h"
 
 using namespace mozilla;
 using namespace mozilla::a11y;
@@ -62,6 +61,7 @@ nsresult nsTextEquivUtils::GetTextEquivFromIDRefs(
   while ((refContent = iter.NextElem())) {
     if (!aTextEquiv.IsEmpty()) aTextEquiv += ' ';
 
+    if (refContent->IsHTMLElement(nsGkAtoms::slot)) printf("jtd idref slot\n");
     nsresult rv =
         AppendTextEquivFromContent(aAccessible, refContent, &aTextEquiv);
     NS_ENSURE_SUCCESS(rv, rv);
@@ -78,25 +78,15 @@ nsresult nsTextEquivUtils::AppendTextEquivFromContent(
 
   sInitiatorAcc = aInitiatorAcc;
 
-  // If the given content is not visible or isn't accessible then go down
-  // through the DOM subtree otherwise go down through accessible subtree and
-  // calculate the flat string.
-  nsIFrame* frame = aContent->GetPrimaryFrame();
-  bool isVisible = frame && frame->StyleVisibility()->IsVisible();
-
   nsresult rv = NS_ERROR_FAILURE;
-  bool goThroughDOMSubtree = true;
-
-  if (isVisible) {
-    LocalAccessible* accessible =
-        aInitiatorAcc->Document()->GetAccessible(aContent);
-    if (accessible) {
-      rv = AppendFromAccessible(accessible, aString);
-      goThroughDOMSubtree = false;
-    }
+  if (LocalAccessible* accessible =
+          aInitiatorAcc->Document()->GetAccessible(aContent)) {
+    rv = AppendFromAccessible(accessible, aString);
+  } else {
+    // The given content is invisible or otherwise inaccessible, so use the DOM
+    // subtree.
+    rv = AppendFromDOMNode(aContent, aString);
   }
-
-  if (goThroughDOMSubtree) rv = AppendFromDOMNode(aContent, aString);
 
   sInitiatorAcc = nullptr;
   return rv;
@@ -132,8 +122,9 @@ nsresult nsTextEquivUtils::AppendTextEquivFromTextContent(nsIContent* aContent,
 
 nsresult nsTextEquivUtils::AppendFromDOMChildren(nsIContent* aContent,
                                                  nsAString* aString) {
-  for (nsIContent* childContent = aContent->GetFirstChild(); childContent;
-       childContent = childContent->GetNextSibling()) {
+  auto iter =
+      dom::AllChildrenIterator(aContent, nsIContent::eAllChildren, true);
+  while (nsIContent* childContent = iter.GetNextChild()) {
     nsresult rv = AppendFromDOMNode(childContent, aString);
     NS_ENSURE_SUCCESS(rv, rv);
   }
@@ -272,19 +263,21 @@ nsresult nsTextEquivUtils::AppendFromDOMNode(nsIContent* aContent,
 
   if (rv != NS_OK_NO_NAME_CLAUSE_HANDLED) return NS_OK;
 
+  if (aContent->IsAnyOfHTMLElements(nsGkAtoms::script, nsGkAtoms::style)) {
+    // The text within these elements is never meant for users.
+    return NS_OK;
+  }
+
   if (aContent->IsXULElement()) {
     nsAutoString textEquivalent;
     if (aContent->NodeInfo()->Equals(nsGkAtoms::label, kNameSpaceID_XUL)) {
-      aContent->AsElement()->GetAttr(kNameSpaceID_None, nsGkAtoms::value,
-                                     textEquivalent);
+      aContent->AsElement()->GetAttr(nsGkAtoms::value, textEquivalent);
     } else {
-      aContent->AsElement()->GetAttr(kNameSpaceID_None, nsGkAtoms::label,
-                                     textEquivalent);
+      aContent->AsElement()->GetAttr(nsGkAtoms::label, textEquivalent);
     }
 
     if (textEquivalent.IsEmpty()) {
-      aContent->AsElement()->GetAttr(kNameSpaceID_None, nsGkAtoms::tooltiptext,
-                                     textEquivalent);
+      aContent->AsElement()->GetAttr(nsGkAtoms::tooltiptext, textEquivalent);
     }
 
     AppendString(aString, textEquivalent);

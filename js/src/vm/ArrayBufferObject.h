@@ -64,7 +64,6 @@ uint64_t WasmReservedBytes();
 //
 //
 // - JSObject
-//   - TypedObject (declared in wasm/TypedObject.h)
 //   - NativeObject
 //     - ArrayBufferObjectMaybeShared
 //       - ArrayBufferObject
@@ -100,14 +99,13 @@ uint64_t WasmReservedBytes();
 // (1) malloc'ed or mmap'ed data owned by an ArrayBufferObject.
 // (2) Data allocated inline with an ArrayBufferObject.
 // (3) Data allocated inline with a TypedArrayObject.
-// (4) Data allocated inline with an InlineTypedObject.
 //
 // An ArrayBufferObject may point to any of these sources of data, except (3).
 // All array buffer views may point to any of these sources of data, except
 // that (3) may only be pointed to by the typed array the data is inline with.
 //
-// During a minor GC, (3) and (4) may move. During a compacting GC, (2), (3),
-// and (4) may move.
+// During a minor GC, (3) may move. During a compacting GC, (2) and (3) may
+// move.
 
 class ArrayBufferObjectMaybeShared;
 
@@ -146,27 +144,22 @@ class ArrayBufferObjectMaybeShared : public NativeObject {
   inline bool isWasm() const;
 };
 
-using RootedArrayBufferObjectMaybeShared =
-    Rooted<ArrayBufferObjectMaybeShared*>;
-using HandleArrayBufferObjectMaybeShared =
-    Handle<ArrayBufferObjectMaybeShared*>;
-using MutableHandleArrayBufferObjectMaybeShared =
-    MutableHandle<ArrayBufferObjectMaybeShared*>;
-
 /*
  * ArrayBufferObject
  *
  * This class holds the underlying raw buffer that the various ArrayBufferViews
- * (eg DataViewObject, the TypedArrays, TypedObjects) access. It can be created
- * explicitly and used to construct an ArrayBufferView, or can be created
- * lazily when it is first accessed for a TypedArrayObject or TypedObject that
- * doesn't have an explicit buffer.
+ * (DataViewObject and the TypedArrays) access. It can be created explicitly and
+ * used to construct an ArrayBufferView, or can be created lazily when it is
+ * first accessed for a TypedArrayObject that doesn't have an explicit buffer.
  *
  * ArrayBufferObject (or really the underlying memory) /is not racy/: the
  * memory is private to a single worker.
  */
 class ArrayBufferObject : public ArrayBufferObjectMaybeShared {
   static bool byteLengthGetterImpl(JSContext* cx, const CallArgs& args);
+  static bool detachedGetterImpl(JSContext* cx, const CallArgs& args);
+  static bool transferImpl(JSContext* cx, const CallArgs& args);
+  static bool transferToFixedLengthImpl(JSContext* cx, const CallArgs& args);
 
  public:
   static const uint8_t DATA_SLOT = 0;
@@ -308,6 +301,7 @@ class ArrayBufferObject : public ArrayBufferObjectMaybeShared {
     static BufferContents createExternal(void* data,
                                          JS::BufferContentsFreeFunc freeFunc,
                                          void* freeUserData = nullptr) {
+      MOZ_ASSERT(freeFunc);
       return BufferContents(static_cast<uint8_t*>(data), EXTERNAL, freeFunc,
                             freeUserData);
     }
@@ -333,7 +327,13 @@ class ArrayBufferObject : public ArrayBufferObjectMaybeShared {
 
   static bool byteLengthGetter(JSContext* cx, unsigned argc, Value* vp);
 
+  static bool detachedGetter(JSContext* cx, unsigned argc, Value* vp);
+
   static bool fun_isView(JSContext* cx, unsigned argc, Value* vp);
+
+  static bool transfer(JSContext* cx, unsigned argc, Value* vp);
+
+  static bool transferToFixedLength(JSContext* cx, unsigned argc, Value* vp);
 
   static bool class_constructor(JSContext* cx, unsigned argc, Value* vp);
 
@@ -344,9 +344,22 @@ class ArrayBufferObject : public ArrayBufferObjectMaybeShared {
   static ArrayBufferObject* createForContents(JSContext* cx, size_t nbytes,
                                               BufferContents contents);
 
-  static ArrayBufferObject* copy(
-      JSContext* cx, JS::Handle<ArrayBufferObject*> unwrappedArrayBuffer);
+  static ArrayBufferObject* copy(JSContext* cx, size_t newByteLength,
+                                 JS::Handle<ArrayBufferObject*> source);
 
+  static ArrayBufferObject* copyAndDetach(
+      JSContext* cx, size_t newByteLength,
+      JS::Handle<ArrayBufferObject*> source);
+
+ private:
+  static ArrayBufferObject* copyAndDetachSteal(
+      JSContext* cx, JS::Handle<ArrayBufferObject*> source);
+
+  static ArrayBufferObject* copyAndDetachRealloc(
+      JSContext* cx, size_t newByteLength,
+      JS::Handle<ArrayBufferObject*> source);
+
+ public:
   static ArrayBufferObject* createZeroed(JSContext* cx, size_t nbytes,
                                          HandleObject proto = nullptr);
 
@@ -361,8 +374,8 @@ class ArrayBufferObject : public ArrayBufferObjectMaybeShared {
                                                    WasmArrayRawBuffer* buffer,
                                                    size_t initialSize);
 
-  static void copyData(Handle<ArrayBufferObject*> toBuffer, size_t toIndex,
-                       Handle<ArrayBufferObject*> fromBuffer, size_t fromIndex,
+  static void copyData(ArrayBufferObject* toBuffer, size_t toIndex,
+                       ArrayBufferObject* fromBuffer, size_t fromIndex,
                        size_t count);
 
   static size_t objectMoved(JSObject* obj, JSObject* old);
@@ -441,6 +454,11 @@ class ArrayBufferObject : public ArrayBufferObjectMaybeShared {
   bool isDetached() const { return flags() & DETACHED; }
   bool isPreparedForAsmJS() const { return flags() & FOR_ASMJS; }
 
+  // Only WASM and asm.js buffers have a non-undefined [[ArrayBufferDetachKey]].
+  //
+  // https://tc39.es/ecma262/#sec-properties-of-the-arraybuffer-instances
+  bool hasDefinedDetachKey() const { return isWasm() || isPreparedForAsmJS(); }
+
   // WebAssembly support:
 
   /**
@@ -456,14 +474,12 @@ class ArrayBufferObject : public ArrayBufferObjectMaybeShared {
   wasm::Pages wasmClampedMaxPages() const;
   mozilla::Maybe<wasm::Pages> wasmSourceMaxPages() const;
 
-  [[nodiscard]] static bool wasmGrowToPagesInPlace(
+  [[nodiscard]] static ArrayBufferObject* wasmGrowToPagesInPlace(
       wasm::IndexType t, wasm::Pages newPages,
-      Handle<ArrayBufferObject*> oldBuf,
-      MutableHandle<ArrayBufferObject*> newBuf, JSContext* cx);
-  [[nodiscard]] static bool wasmMovingGrowToPages(
+      Handle<ArrayBufferObject*> oldBuf, JSContext* cx);
+  [[nodiscard]] static ArrayBufferObject* wasmMovingGrowToPages(
       wasm::IndexType t, wasm::Pages newPages,
-      Handle<ArrayBufferObject*> oldBuf,
-      MutableHandle<ArrayBufferObject*> newBuf, JSContext* cx);
+      Handle<ArrayBufferObject*> oldBuf, JSContext* cx);
   static void wasmDiscard(Handle<ArrayBufferObject*> buf, uint64_t byteOffset,
                           uint64_t byteLength);
 
@@ -496,22 +512,12 @@ class ArrayBufferObject : public ArrayBufferObjectMaybeShared {
     setFirstView(nullptr);
     setDataPointer(contents);
   }
-
-  void* initializeToInlineData(size_t byteLength) {
-    void* data = inlineDataPointer();
-    initialize(byteLength, BufferContents::createInlineData(data));
-    return data;
-  }
 };
-
-using RootedArrayBufferObject = Rooted<ArrayBufferObject*>;
-using HandleArrayBufferObject = Handle<ArrayBufferObject*>;
-using MutableHandleArrayBufferObject = MutableHandle<ArrayBufferObject*>;
 
 // Create a buffer for a wasm memory, whose type is determined by
 // memory.indexType().
-bool CreateWasmBuffer(JSContext* cx, const wasm::MemoryDesc& memory,
-                      MutableHandleArrayBufferObjectMaybeShared buffer);
+ArrayBufferObjectMaybeShared* CreateWasmBuffer(JSContext* cx,
+                                               const wasm::MemoryDesc& memory);
 
 // Per-compartment table that manages the relationship between array buffers
 // and the views that use their storage.

@@ -7,6 +7,10 @@ import { WindowGlobalBiDiModule } from "chrome://remote/content/webdriver-bidi/m
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
+  AnimationFramePromise: "chrome://remote/content/shared/Sync.sys.mjs",
+  ClipRectangleType:
+    "chrome://remote/content/webdriver-bidi/modules/root/browsingContext.sys.mjs",
+  dom: "chrome://remote/content/shared/DOM.sys.mjs",
   LoadListener: "chrome://remote/content/shared/listeners/LoadListener.sys.mjs",
 });
 
@@ -32,11 +36,10 @@ class BrowsingContextModule extends WindowGlobalBiDiModule {
   }
 
   #getNavigationInfo(data) {
+    // Note: the navigation id is collected in the parent-process and will be
+    // added via event interception by the windowglobal-in-root module.
     return {
       context: this.messageHandler.context,
-      // TODO: The navigation id should be a real id mapped to the navigation.
-      // See https://bugzilla.mozilla.org/show_bug.cgi?id=1763122
-      navigation: null,
       timestamp: Date.now(),
       url: data.target.URL,
     };
@@ -113,6 +116,62 @@ class BrowsingContextModule extends WindowGlobalBiDiModule {
   };
 
   /**
+   * Normalize rectangle. This ensures that the resulting rect has
+   * positive width and height dimensions.
+   *
+   * @see https://w3c.github.io/webdriver-bidi/#normalise-rect
+   *
+   * @param {DOMRect} rect
+   *     An object which describes the size and position of a rectangle.
+   *
+   * @returns {DOMRect} Normalized rectangle.
+   */
+  #normalizeRect(rect) {
+    let { x, y, width, height } = rect;
+
+    if (width < 0) {
+      x += width;
+      width = -width;
+    }
+
+    if (height < 0) {
+      y += height;
+      height = -height;
+    }
+
+    return new DOMRect(x, y, width, height);
+  }
+
+  /**
+   * Create a new rectangle which will be an intersection of
+   * rectangles specified as arguments.
+   *
+   * @see https://w3c.github.io/webdriver-bidi/#rectangle-intersection
+   *
+   * @param {DOMRect} rect1
+   *     An object which describes the size and position of a rectangle.
+   * @param {DOMRect} rect2
+   *     An object which describes the size and position of a rectangle.
+   *
+   * @returns {DOMRect} Rectangle, representing an intersection of <var>rect1</var> and <var>rect2</var>.
+   */
+  #rectangleIntersection(rect1, rect2) {
+    rect1 = this.#normalizeRect(rect1);
+    rect2 = this.#normalizeRect(rect2);
+
+    const x_min = Math.max(rect1.x, rect2.x);
+    const x_max = Math.min(rect1.x + rect1.width, rect2.x + rect2.width);
+
+    const y_min = Math.max(rect1.y, rect2.y);
+    const y_max = Math.min(rect1.y + rect1.height, rect2.y + rect2.height);
+
+    const width = Math.max(x_max - x_min, 0);
+    const height = Math.max(y_max - y_min, 0);
+
+    return new DOMRect(x_min, y_min, width, height);
+  }
+
+  /**
    * Internal commands
    */
 
@@ -141,18 +200,86 @@ class BrowsingContextModule extends WindowGlobalBiDiModule {
     }
   }
 
+  /**
+   * Waits until the viewport has reached the new dimensions.
+   *
+   * @param {object} options
+   * @param {number} options.height
+   *     Expected height the viewport will resize to.
+   * @param {number} options.width
+   *     Expected width the viewport will resize to.
+   *
+   * @returns {Promise}
+   *     Promise that resolves when the viewport has been resized.
+   */
+  async _awaitViewportDimensions(options) {
+    const { height, width } = options;
+
+    const win = this.messageHandler.window;
+    let resized;
+
+    // Updates for background tabs are throttled, and we also have to make
+    // sure that the new browser dimensions have been received by the content
+    // process. As such wait for the next animation frame.
+    await lazy.AnimationFramePromise(win);
+
+    const checkBrowserSize = () => {
+      if (win.innerWidth === width && win.innerHeight === height) {
+        resized();
+      }
+    };
+
+    return new Promise(resolve => {
+      resized = resolve;
+
+      win.addEventListener("resize", checkBrowserSize);
+
+      // Trigger a layout flush in case none happened yet.
+      checkBrowserSize();
+    }).finally(() => {
+      win.removeEventListener("resize", checkBrowserSize);
+    });
+  }
+
   _getBaseURL() {
     return this.messageHandler.window.document.baseURI;
   }
 
-  _getScreenshotRect() {
+  _getScreenshotRect(params = {}) {
+    const { clip } = params;
+
     const win = this.messageHandler.window;
-    return new DOMRect(
-      win.pageXOffset,
-      win.pageYOffset,
-      win.innerWidth,
-      win.innerHeight
-    );
+    const viewportRect = new DOMRect(0, 0, win.innerWidth, win.innerHeight);
+
+    let clipRect = viewportRect;
+
+    if (clip !== null) {
+      switch (clip.type) {
+        case lazy.ClipRectangleType.Element: {
+          const realm = this.messageHandler.getRealm();
+          const element = this.deserialize(realm, clip.element);
+
+          if (clip.scrollIntoView && !lazy.dom.isInView(element)) {
+            lazy.dom.scrollIntoView(element);
+          }
+
+          clipRect = element.getBoundingClientRect();
+          break;
+        }
+        case lazy.ClipRectangleType.Viewport: {
+          clipRect = new DOMRect(clip.x, clip.y, clip.width, clip.height);
+          break;
+        }
+      }
+    }
+
+    const intersection = this.#rectangleIntersection(viewportRect, clipRect);
+
+    // Change coordinate system from viewport-based to document-based.
+    intersection.x += win.pageXOffset;
+    intersection.y += win.pageYOffset;
+
+    return intersection;
   }
 }
 

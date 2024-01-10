@@ -129,7 +129,7 @@ class StyleSheet final : public nsICSSLoaderObserver, public nsWrapperCache {
   // The load data may be null sometimes.
   void ParseSheetSync(
       css::Loader* aLoader, const nsACString& aBytes,
-      css::SheetLoadData* aLoadData, uint32_t aLineNumber,
+      css::SheetLoadData* aLoadData,
       css::LoaderReusableStyleSheets* aReusableSheets = nullptr);
 
   void ReparseSheet(const nsACString& aInput, ErrorResult& aRv);
@@ -411,6 +411,10 @@ class StyleSheet final : public nsICSSLoaderObserver, public nsWrapperCache {
   void RemoveAdopter(dom::DocumentOrShadowRoot& aAdopter) {
     // Cannot assert IsConstructed() because this can run after unlink.
     mAdopters.RemoveElement(&aAdopter);
+  }
+
+  const nsTArray<dom::DocumentOrShadowRoot*>& SelfOrAncestorAdopters() const {
+    return OutermostSheet().mAdopters;
   }
 
   // WebIDL miscellaneous bits

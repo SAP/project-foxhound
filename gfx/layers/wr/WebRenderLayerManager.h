@@ -125,7 +125,8 @@ class WebRenderLayerManager final : public WindowRenderer {
   void SetFocusTarget(const FocusTarget& aFocusTarget);
 
   already_AddRefed<PersistentBufferProvider> CreatePersistentBufferProvider(
-      const gfx::IntSize& aSize, gfx::SurfaceFormat aFormat) override;
+      const gfx::IntSize& aSize, gfx::SurfaceFormat aFormat,
+      bool aWillReadFrequently) override;
 
   bool AsyncPanZoomEnabled() const;
 
@@ -211,6 +212,10 @@ class WebRenderLayerManager final : public WindowRenderer {
 
   std::unordered_set<ScrollableLayerGuid::ViewID>
   ClearPendingScrollInfoUpdate();
+
+#ifdef DEBUG
+  gfxContext* GetTarget() const { return mTarget; }
+#endif
 
  private:
   /**

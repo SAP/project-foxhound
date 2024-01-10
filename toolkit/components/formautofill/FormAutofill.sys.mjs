@@ -44,9 +44,16 @@ export const FormAutofill = {
   AUTOFILL_CREDITCARDS_AUTOCOMPLETE_OFF_PREF,
   AUTOFILL_ADDRESSES_AUTOCOMPLETE_OFF_PREF,
 
+  _region: null,
+
   get DEFAULT_REGION() {
-    return Region.home || "US";
+    return this._region || Region.home || "US";
   },
+
+  set DEFAULT_REGION(region) {
+    this._region = region;
+  },
+
   /**
    * Determines if an autofill feature should be enabled based on the "available"
    * and "supportedCountries" parameters.
@@ -254,7 +261,7 @@ XPCOMUtils.defineLazyPreferenceGetter(
 );
 
 // XXX: This should be invalidated on intl:app-locales-changed.
-XPCOMUtils.defineLazyGetter(FormAutofill, "countries", () => {
+ChromeUtils.defineLazyGetter(FormAutofill, "countries", () => {
   let availableRegionCodes =
     Services.intl.getAvailableLocaleDisplayNames("region");
   let displayNames = Services.intl.getRegionDisplayNames(

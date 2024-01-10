@@ -46,6 +46,7 @@
 #include "mozilla/Likely.h"
 #include "mozilla/LinkedList.h"
 #include "mozilla/LookAndFeel.h"
+#include "mozilla/MappedDeclarationsBuilder.h"
 #include "mozilla/MouseEvents.h"
 #include "mozilla/NotNull.h"
 #include "mozilla/PointerLockManager.h"
@@ -237,7 +238,7 @@ ASSERT_NODE_SIZE(HTMLTableCellElement, 128, 80);
 // Original: ASSERT_NODE_SIZE(Text, 120, 64);
 // Text is now a taintable string, so contains an
 // additional pointer (ie 120 + 8 or 64 + 4 bytes)
-ASSERT_NODE_SIZE(Text, 128, 68);
+ASSERT_NODE_SIZE(Text, 128, 80);
 
 #undef ASSERT_NODE_SIZE
 #undef EXTRA_DOM_NODE_BYTES
@@ -287,7 +288,7 @@ nsDOMAttributeMap* Element::Attributes() {
 }
 
 void Element::SetPointerCapture(int32_t aPointerId, ErrorResult& aError) {
-  if (OwnerDoc()->ShouldResistFingerprinting(RFPTarget::Unknown) &&
+  if (OwnerDoc()->ShouldResistFingerprinting(RFPTarget::PointerEvents) &&
       aPointerId != PointerEventHandler::GetSpoofedPointerIdForRFP()) {
     aError.ThrowNotFoundError("Invalid pointer id");
     return;
@@ -316,7 +317,7 @@ void Element::SetPointerCapture(int32_t aPointerId, ErrorResult& aError) {
 }
 
 void Element::ReleasePointerCapture(int32_t aPointerId, ErrorResult& aError) {
-  if (OwnerDoc()->ShouldResistFingerprinting(RFPTarget::Unknown) &&
+  if (OwnerDoc()->ShouldResistFingerprinting(RFPTarget::PointerEvents) &&
       aPointerId != PointerEventHandler::GetSpoofedPointerIdForRFP()) {
     aError.ThrowNotFoundError("Invalid pointer id");
     return;
@@ -839,10 +840,12 @@ void Element::Scroll(const ScrollToOptions& aOptions) {
   if (sf) {
     CSSIntPoint scrollPos = sf->GetScrollPositionCSSPixels();
     if (aOptions.mLeft.WasPassed()) {
-      scrollPos.x = mozilla::ToZeroIfNonfinite(aOptions.mLeft.Value());
+      scrollPos.x = static_cast<int32_t>(
+          mozilla::ToZeroIfNonfinite(aOptions.mLeft.Value()));
     }
     if (aOptions.mTop.WasPassed()) {
-      scrollPos.y = mozilla::ToZeroIfNonfinite(aOptions.mTop.Value());
+      scrollPos.y = static_cast<int32_t>(
+          mozilla::ToZeroIfNonfinite(aOptions.mTop.Value()));
     }
     Scroll(scrollPos, aOptions);
   }
@@ -869,10 +872,12 @@ void Element::ScrollBy(const ScrollToOptions& aOptions) {
   if (sf) {
     CSSIntPoint scrollDelta;
     if (aOptions.mLeft.WasPassed()) {
-      scrollDelta.x = mozilla::ToZeroIfNonfinite(aOptions.mLeft.Value());
+      scrollDelta.x = static_cast<int32_t>(
+          mozilla::ToZeroIfNonfinite(aOptions.mLeft.Value()));
     }
     if (aOptions.mTop.WasPassed()) {
-      scrollDelta.y = mozilla::ToZeroIfNonfinite(aOptions.mTop.Value());
+      scrollDelta.y = static_cast<int32_t>(
+          mozilla::ToZeroIfNonfinite(aOptions.mTop.Value()));
     }
 
     ScrollMode scrollMode = sf->IsSmoothScroll(aOptions.mBehavior)
@@ -1166,9 +1171,7 @@ void Element::SetSlot(const nsAString& aName, ErrorResult& aError) {
   aError = SetAttr(kNameSpaceID_None, nsGkAtoms::slot, aName, true);
 }
 
-void Element::GetSlot(nsAString& aName) {
-  GetAttr(kNameSpaceID_None, nsGkAtoms::slot, aName);
-}
+void Element::GetSlot(nsAString& aName) { GetAttr(nsGkAtoms::slot, aName); }
 
 // https://dom.spec.whatwg.org/#dom-element-shadowroot
 ShadowRoot* Element::GetShadowRootByMode() const {
@@ -1205,7 +1208,7 @@ bool Element::CanAttachShadowDOM() const {
    * If context object's local name is not
    *    a valid custom element name, "article", "aside", "blockquote",
    *    "body", "div", "footer", "h1", "h2", "h3", "h4", "h5", "h6",
-   *    "header", "main" "nav", "p", "section", or "span",
+   *    "header", "main" "nav", "p", "section", "search", or "span",
    *  return false.
    */
   nsAtom* nameAtom = NodeInfo()->NameAtom();
@@ -1219,7 +1222,8 @@ bool Element::CanAttachShadowDOM() const {
         nameAtom == nsGkAtoms::h5 || nameAtom == nsGkAtoms::h6 ||
         nameAtom == nsGkAtoms::header || nameAtom == nsGkAtoms::main ||
         nameAtom == nsGkAtoms::nav || nameAtom == nsGkAtoms::p ||
-        nameAtom == nsGkAtoms::section || nameAtom == nsGkAtoms::span)) {
+        nameAtom == nsGkAtoms::section || nameAtom == nsGkAtoms::search ||
+        nameAtom == nsGkAtoms::span)) {
     return false;
   }
 
@@ -1871,6 +1875,9 @@ nsresult Element::BindToTree(BindContext& aContext, nsINode& aParent) {
   }
 
   if (IsInComposedDoc()) {
+    if (IsPendingMappedAttributeEvaluation()) {
+      aContext.OwnerDoc().ScheduleForPresAttrEvaluation(this);
+    }
     // Connected callback must be enqueued whenever a custom element becomes
     // connected.
     if (CustomElementData* data = GetCustomElementData()) {
@@ -2074,8 +2081,7 @@ void Element::UnbindFromTree(bool aNullParent) {
   if (document) {
     // Disconnected must be enqueued whenever a connected custom element becomes
     // disconnected.
-    CustomElementData* data = GetCustomElementData();
-    if (data) {
+    if (CustomElementData* data = GetCustomElementData()) {
       if (data->mState == CustomElementData::State::eCustom) {
         nsContentUtils::EnqueueLifecycleCallback(
             ElementCallbackType::eDisconnected, this, {});
@@ -2084,6 +2090,10 @@ void Element::UnbindFromTree(bool aNullParent) {
         // when a custom element is disconnected.
         nsContentUtils::UnregisterUnresolvedElement(this);
       }
+    }
+
+    if (IsPendingMappedAttributeEvaluation()) {
+      document->UnscheduleForPresAttrEvaluation(this);
     }
 
     if (HasLastRememberedBSize() || HasLastRememberedISize()) {
@@ -2163,16 +2173,10 @@ DeclarationBlock* Element::GetInlineStyleDeclaration() const {
     return nullptr;
   }
   const nsAttrValue* attrVal = mAttrs.GetAttr(nsGkAtoms::style);
-
-  if (attrVal && attrVal->Type() == nsAttrValue::eCSSDeclaration) {
-    return attrVal->GetCSSDeclarationValue();
+  if (!attrVal || attrVal->Type() != nsAttrValue::eCSSDeclaration) {
+    return nullptr;
   }
-
-  return nullptr;
-}
-
-const nsMappedAttributes* Element::GetMappedAttributes() const {
-  return mAttrs.GetMapped();
+  return attrVal->GetCSSDeclarationValue();
 }
 
 void Element::InlineStyleDeclarationWillChange(MutationClosureData& aData) {
@@ -2188,9 +2192,22 @@ nsresult Element::SetInlineStyleDeclaration(DeclarationBlock& aDeclaration,
 NS_IMETHODIMP_(bool)
 Element::IsAttributeMapped(const nsAtom* aAttribute) const { return false; }
 
+nsMapRuleToAttributesFunc Element::GetAttributeMappingFunction() const {
+  return &MapNoAttributesInto;
+}
+
+void Element::MapNoAttributesInto(mozilla::MappedDeclarationsBuilder&) {}
+
 nsChangeHint Element::GetAttributeChangeHint(const nsAtom* aAttribute,
                                              int32_t aModType) const {
   return nsChangeHint(0);
+}
+
+void Element::SetMappedDeclarationBlock(
+    already_AddRefed<StyleLockedDeclarationBlock> aDeclarations) {
+  MOZ_ASSERT(IsPendingMappedAttributeEvaluation());
+  mAttrs.SetMappedDeclarationBlock(std::move(aDeclarations));
+  MOZ_ASSERT(!IsPendingMappedAttributeEvaluation());
 }
 
 bool Element::FindAttributeDependence(const nsAtom* aAttribute,
@@ -2453,10 +2470,11 @@ bool Element::OnlyNotifySameValueSet(int32_t aNamespaceID, nsAtom* aName,
   return true;
 }
 
-nsresult Element::SetSingleClassFromParser(nsAtom* aSingleClassName) {
+nsresult Element::SetClassAttrFromParser(nsAtom* aValue) {
   // Keep this in sync with SetAttr and SetParsedAttr below.
 
-  nsAttrValue value(aSingleClassName);
+  nsAttrValue value;
+  value.ParseAtomArray(aValue);
 
   Document* document = GetComposedDoc();
   mozAutoDocUpdate updateBatch(document, false);
@@ -2579,11 +2597,10 @@ nsresult Element::SetAttrAndNotify(
     nsIPrincipal* aSubjectPrincipal, uint8_t aModType, bool aFireMutation,
     bool aNotify, bool aCallAfterSetAttr, Document* aComposedDocument,
     const mozAutoDocUpdate& aGuard) {
-  nsresult rv;
   nsMutationGuard::DidMutate();
 
   // Copy aParsedValue for later use since it will be lost when we call
-  // SetAndSwapMappedAttr below
+  // SetAndSwapAttr below
   nsAttrValue valueForAfterSetAttr;
   if (aCallAfterSetAttr || GetCustomElementData()) {
     valueForAfterSetAttr.SetTo(aParsedValue);
@@ -2599,20 +2616,19 @@ nsresult Element::SetAttrAndNotify(
       hadDirAuto = HasDirAuto();  // already takes bdi into account
     }
 
-    // XXXbz Perhaps we should push up the attribute mapping function
-    // stuff to Element?
-    if (!IsAttributeMapped(aName) ||
-        !SetAndSwapMappedAttribute(aName, aParsedValue, &oldValueSet, &rv)) {
-      rv = mAttrs.SetAndSwapAttr(aName, aParsedValue, &oldValueSet);
+    MOZ_TRY(mAttrs.SetAndSwapAttr(aName, aParsedValue, &oldValueSet));
+    if (IsAttributeMapped(aName) && !IsPendingMappedAttributeEvaluation()) {
+      mAttrs.InfallibleMarkAsPendingPresAttributeEvaluation();
+      if (Document* doc = GetComposedDoc()) {
+        doc->ScheduleForPresAttrEvaluation(this);
+      }
     }
   } else {
-    RefPtr<mozilla::dom::NodeInfo> ni;
-    ni = mNodeInfo->NodeInfoManager()->GetNodeInfo(aName, aPrefix, aNamespaceID,
-                                                   ATTRIBUTE_NODE);
-
-    rv = mAttrs.SetAndSwapAttr(ni, aParsedValue, &oldValueSet);
+    RefPtr<mozilla::dom::NodeInfo> ni =
+        mNodeInfo->NodeInfoManager()->GetNodeInfo(aName, aPrefix, aNamespaceID,
+                                                  ATTRIBUTE_NODE);
+    MOZ_TRY(mAttrs.SetAndSwapAttr(ni, aParsedValue, &oldValueSet));
   }
-  NS_ENSURE_SUCCESS(rv, rv);
 
   PostIdMaybeChange(aNamespaceID, aName, &valueForAfterSetAttr);
 
@@ -2646,25 +2662,24 @@ nsresult Element::SetAttrAndNotify(
     MOZ_ASSERT(definition, "Should have a valid CustomElementDefinition");
 
     if (definition->IsInObservedAttributeList(aName)) {
-      RefPtr<nsAtom> oldValueAtom;
-      if (oldValue) {
-        oldValueAtom = oldValue->GetAsAtom();
-      } else {
-        // If there is no old value, get the value of the uninitialized
-        // attribute that was swapped with aParsedValue.
-        oldValueAtom = aParsedValue.GetAsAtom();
-      }
-      RefPtr<nsAtom> newValueAtom = valueForAfterSetAttr.GetAsAtom();
       nsAutoString ns;
       nsNameSpaceManager::GetInstance()->GetNameSpaceURI(aNamespaceID, ns);
 
       LifecycleCallbackArgs args;
-      args.mName = nsDependentAtomString(aName);
-      args.mOldValue = (aModType == MutationEvent_Binding::ADDITION
-                            ? VoidString()
-                            : nsDependentAtomString(oldValueAtom));
-      args.mNewValue = nsDependentAtomString(newValueAtom);
-      args.mNamespaceURI = (ns.IsEmpty() ? VoidString() : ns);
+      aName->ToString(args.mName);
+      if (aModType == MutationEvent_Binding::ADDITION) {
+        args.mOldValue = VoidString();
+      } else {
+        if (oldValue) {
+          oldValue->ToString(args.mOldValue);
+        } else {
+          // If there is no old value, get the value of the uninitialized
+          // attribute that was swapped with aParsedValue.
+          aParsedValue.ToString(args.mOldValue);
+        }
+      }
+      valueForAfterSetAttr.ToString(args.mNewValue);
+      args.mNamespaceURI = ns.IsEmpty() ? VoidString() : ns;
 
       nsContentUtils::EnqueueLifecycleCallback(
           ElementCallbackType::eAttributeChanged, this, args, definition);
@@ -2753,18 +2768,17 @@ bool Element::ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
   return false;
 }
 
-bool Element::SetAndSwapMappedAttribute(nsAtom* aName, nsAttrValue& aValue,
-                                        bool* aValueWasSet, nsresult* aRetval) {
-  *aRetval = NS_OK;
-  return false;
+void Element::SetTaintSourceGetAttr(const nsAString& aName, DOMString& aResult) const {
+  return;
 }
 
-void Element::SetTaintSourceGetAttr(const nsAString& aName, DOMString& aResult) const {
+void Element::SetTaintSourceGetAttr(const nsAtom* aName, DOMString& aResult) const {
   return;
 }
 
 void Element::SetTaintSourceGetAttr(int32_t aNameSpaceID, const nsAtom* aName,
                                             DOMString& aResult) const {
+  SetTaintSourceGetAttr(aName, aResult);
   return;
 }
 
@@ -2855,10 +2869,10 @@ void Element::OnAttrSetButNotChanged(int32_t aNamespaceID, nsAtom* aName,
 
       nsAutoString value(aValue.String());
       LifecycleCallbackArgs args;
-      args.mName = nsDependentAtomString(aName);
+      aName->ToString(args.mName);
       args.mOldValue = value;
       args.mNewValue = value;
-      args.mNamespaceURI = (ns.IsEmpty() ? VoidString() : ns);
+      args.mNamespaceURI = ns.IsEmpty() ? VoidString() : ns;
 
       nsContentUtils::EnqueueLifecycleCallback(
           ElementCallbackType::eAttributeChanged, this, args, definition);
@@ -2872,12 +2886,25 @@ EventListenerManager* Element::GetEventListenerManagerForAttr(nsAtom* aAttrName,
   return GetOrCreateListenerManager();
 }
 
+bool Element::GetAttr(const nsAtom* aName, nsAString& aResult) const {
+  const nsAttrValue* val = mAttrs.GetAttr(aName);
+  if (!val) {
+    aResult.Truncate();
+    return false;
+  }
+  val->ToString(aResult);
+  return true;
+}
+
 bool Element::GetAttr(int32_t aNameSpaceID, const nsAtom* aName,
                       nsAString& aResult) const {
-  DOMString str;
-  bool haveAttr = GetAttr(aNameSpaceID, aName, str);
-  str.ToString(aResult);
-  return haveAttr;
+  const nsAttrValue* val = mAttrs.GetAttr(aName, aNameSpaceID);
+  if (!val) {
+    aResult.Truncate();
+    return false;
+  }
+  val->ToString(aResult);
+  return true;
 }
 
 int32_t Element::FindAttrValueIn(int32_t aNameSpaceID, const nsAtom* aName,
@@ -2931,14 +2958,21 @@ nsresult Element::UnsetAttr(int32_t aNameSpaceID, nsAtom* aName, bool aNotify) {
   bool hadValidDir = false;
   bool hadDirAuto = false;
 
-  if (aNameSpaceID == kNameSpaceID_None && aName == nsGkAtoms::dir) {
-    hadValidDir = HasValidDir() || IsHTMLElement(nsGkAtoms::bdi);
-    hadDirAuto = HasDirAuto();  // already takes bdi into account
+  if (aNameSpaceID == kNameSpaceID_None) {
+    if (aName == nsGkAtoms::dir) {
+      hadValidDir = HasValidDir() || IsHTMLElement(nsGkAtoms::bdi);
+      hadDirAuto = HasDirAuto();  // already takes bdi into account
+    }
+    if (IsAttributeMapped(aName) && !IsPendingMappedAttributeEvaluation()) {
+      mAttrs.InfallibleMarkAsPendingPresAttributeEvaluation();
+      if (Document* doc = GetComposedDoc()) {
+        doc->ScheduleForPresAttrEvaluation(this);
+      }
+    }
   }
 
   nsAttrValue oldValue;
-  nsresult rv = mAttrs.RemoveAttrAt(index, oldValue);
-  NS_ENSURE_SUCCESS(rv, rv);
+  MOZ_TRY(mAttrs.RemoveAttrAt(index, oldValue));
 
   PostIdMaybeChange(aNameSpaceID, aName, nullptr);
 
@@ -2946,18 +2980,14 @@ nsresult Element::UnsetAttr(int32_t aNameSpaceID, nsAtom* aName, bool aNotify) {
   if (data && data->mState == CustomElementData::State::eCustom) {
     CustomElementDefinition* definition = data->GetCustomElementDefinition();
     MOZ_ASSERT(definition, "Should have a valid CustomElementDefinition");
-
     if (definition->IsInObservedAttributeList(aName)) {
       nsAutoString ns;
       nsNameSpaceManager::GetInstance()->GetNameSpaceURI(aNameSpaceID, ns);
-
-      RefPtr<nsAtom> oldValueAtom = oldValue.GetAsAtom();
       LifecycleCallbackArgs args;
-      args.mName = nsDependentAtomString(aName);
-      args.mOldValue = nsDependentAtomString(oldValueAtom);
+      aName->ToString(args.mName);
+      oldValue.ToString(args.mOldValue);
       args.mNewValue = VoidString();
-      args.mNamespaceURI = (ns.IsEmpty() ? VoidString() : ns);
-
+      args.mNamespaceURI = ns.IsEmpty() ? VoidString() : ns;
       nsContentUtils::EnqueueLifecycleCallback(
           ElementCallbackType::eAttributeChanged, this, args, definition);
     }
@@ -3039,6 +3069,8 @@ void Element::List(FILE* out, int32_t aIndent, const nsCString& aPrefix) const {
   fprintf(out, " state=[%llx]",
           static_cast<unsigned long long>(State().GetInternalValue()));
   fprintf(out, " flags=[%08x]", static_cast<unsigned int>(GetFlags()));
+  fprintf(out, " selectorflags=[%08x]",
+          static_cast<unsigned int>(GetSelectorFlags()));
   if (IsClosestCommonInclusiveAncestorForRangeInSelection()) {
     const LinkedList<AbstractRange>* ranges =
         GetExistingClosestCommonInclusiveAncestorRanges();
@@ -3223,7 +3255,7 @@ void Element::DispatchChromeOnlyLinkClickEvent(
       /* Cancelable */ true, nsGlobalWindowInner::Cast(doc->GetInnerWindow()),
       0, mouseEvent->CtrlKey(), mouseEvent->AltKey(), mouseEvent->ShiftKey(),
       mouseEvent->MetaKey(), mouseEvent->Button(), mouseDOMEvent,
-      mouseEvent->MozInputSource(), IgnoreErrors());
+      mouseEvent->InputSource(), IgnoreErrors());
   // Note: we're always trusted, but the event we pass as the `sourceEvent`
   // might not be. Frontend code will check that event's trusted property to
   // make that determination; doing it this way means we don't also start
@@ -3310,16 +3342,32 @@ nsresult Element::PostHandleEventForLinks(EventChainPostVisitor& aVisitor) {
       if (mouseEvent->IsLeftClickEvent()) {
         if (!mouseEvent->IsControl() && !mouseEvent->IsMeta() &&
             !mouseEvent->IsAlt() && !mouseEvent->IsShift()) {
-          // The default action is simply to dispatch DOMActivate
-          nsEventStatus status = nsEventStatus_eIgnore;
-          // DOMActivate event should be trusted since the activation is
-          // actually occurred even if the cause is an untrusted click event.
-          InternalUIEvent actEvent(true, eLegacyDOMActivate, mouseEvent);
-          actEvent.mDetail = 1;
-
-          rv = EventDispatcher::Dispatch(this, aVisitor.mPresContext, &actEvent,
-                                         nullptr, &status);
-          if (NS_SUCCEEDED(rv)) {
+          if (OwnerDoc()->MayHaveDOMActivateListeners()) {
+            // The default action is simply to dispatch DOMActivate.
+            // But dispatch that only if needed.
+            nsEventStatus status = nsEventStatus_eIgnore;
+            // DOMActivate event should be trusted since the activation is
+            // actually occurred even if the cause is an untrusted click event.
+            InternalUIEvent actEvent(true, eLegacyDOMActivate, mouseEvent);
+            actEvent.mDetail = 1;
+            rv = EventDispatcher::Dispatch(this, aVisitor.mPresContext,
+                                           &actEvent, nullptr, &status);
+            if (NS_SUCCEEDED(rv)) {
+              aVisitor.mEventStatus = nsEventStatus_eConsumeNoDefault;
+            }
+          } else {
+            if (nsCOMPtr<nsIURI> absURI = GetHrefURI()) {
+              // If you modify this code, tweak also the code handling
+              // eLegacyDOMActivate.
+              nsAutoString target;
+              GetLinkTarget(target);
+              nsContentUtils::TriggerLink(this, absURI, target,
+                                          /* click */ true,
+                                          mouseEvent->IsTrusted());
+            }
+            // Since we didn't dispatch DOMActivate because there were no
+            // listeners, do still set mEventStatus as if it was dispatched
+            // successfully.
             aVisitor.mEventStatus = nsEventStatus_eConsumeNoDefault;
           }
         }
@@ -3333,6 +3381,8 @@ nsresult Element::PostHandleEventForLinks(EventChainPostVisitor& aVisitor) {
       break;
     }
     case eLegacyDOMActivate: {
+      // If you modify this code, tweak also the code handling
+      // eMouseClick.
       if (aVisitor.mEvent->mOriginalTarget == this) {
         if (nsCOMPtr<nsIURI> absURI = GetHrefURI()) {
           nsAutoString target;
@@ -4316,7 +4366,7 @@ bool Element::IsPopoverOpen() const {
   return htmlElement && htmlElement->PopoverOpen();
 }
 
-Element* Element::GetTopmostPopoverAncestor() const {
+Element* Element::GetTopmostPopoverAncestor(const Element* aInvoker) const {
   const Element* newPopover = this;
 
   nsTHashMap<nsPtrHashKey<const Element>, size_t> popoverPositions;
@@ -4348,10 +4398,7 @@ Element* Element::GetTopmostPopoverAncestor() const {
   };
 
   checkAncestor(newPopover->GetFlattenedTreeParentElement());
-
-  // https://github.com/whatwg/html/issues/9160
-  RefPtr<Element> invoker = newPopover->GetPopoverData()->GetInvoker();
-  checkAncestor(invoker);
+  checkAncestor(aInvoker);
 
   return topmostPopoverAncestor;
 }
@@ -4840,7 +4887,7 @@ nsAtom* Element::GetEventNameForAttr(nsAtom* aAttr) {
 void Element::RegUnRegAccessKey(bool aDoReg) {
   // first check to see if we have an access key
   nsAutoString accessKey;
-  GetAttr(kNameSpaceID_None, nsGkAtoms::accesskey, accessKey);
+  GetAttr(nsGkAtoms::accesskey, accessKey);
   if (accessKey.IsEmpty()) {
     return;
   }

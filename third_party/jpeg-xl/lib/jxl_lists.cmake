@@ -15,7 +15,6 @@ set(JPEGXL_INTERNAL_BASE_SOURCES
   jxl/base/compiler_specific.h
   jxl/base/data_parallel.cc
   jxl/base/data_parallel.h
-  jxl/base/file_io.h
   jxl/base/float.h
   jxl/base/iaca.h
   jxl/base/os_macros.h
@@ -23,15 +22,12 @@ set(JPEGXL_INTERNAL_BASE_SOURCES
   jxl/base/padded_bytes.cc
   jxl/base/padded_bytes.h
   jxl/base/printf_macros.h
-  jxl/base/profiler.cc
-  jxl/base/profiler.h
   jxl/base/random.cc
   jxl/base/random.h
   jxl/base/sanitizer_definitions.h
   jxl/base/scope_guard.h
   jxl/base/span.h
   jxl/base/status.h
-  jxl/base/tsc_timer.h
 )
 
 set(JPEGXL_INTERNAL_CODEC_APNG_SOURCES
@@ -214,7 +210,6 @@ set(JPEGXL_INTERNAL_DEC_SOURCES
   jxl/image_metadata.h
   jxl/image_ops.h
   jxl/inverse_mtf-inl.h
-  jxl/jxl_inspection.h
   jxl/lehmer_code.h
   jxl/loop_filter.cc
   jxl/loop_filter.h
@@ -303,7 +298,6 @@ set(JPEGXL_INTERNAL_DEC_SOURCES
 set(JPEGXL_INTERNAL_ENC_SOURCES
   jxl/butteraugli/butteraugli.cc
   jxl/butteraugli/butteraugli.h
-  jxl/butteraugli_wrapper.cc
   jxl/enc_ac_strategy.cc
   jxl/enc_ac_strategy.h
   jxl/enc_adaptive_quantization.cc
@@ -319,8 +313,6 @@ set(JPEGXL_INTERNAL_ENC_SOURCES
   jxl/enc_bit_writer.h
   jxl/enc_butteraugli_comparator.cc
   jxl/enc_butteraugli_comparator.h
-  jxl/enc_butteraugli_pnorm.cc
-  jxl/enc_butteraugli_pnorm.h
   jxl/enc_cache.cc
   jxl/enc_cache.h
   jxl/enc_chroma_from_luma.cc
@@ -335,6 +327,8 @@ set(JPEGXL_INTERNAL_ENC_SOURCES
   jxl/enc_comparator.h
   jxl/enc_context_map.cc
   jxl/enc_context_map.h
+  jxl/enc_debug_image.cc
+  jxl/enc_debug_image.h
   jxl/enc_detect_dots.cc
   jxl/enc_detect_dots.h
   jxl/enc_dot_dictionary.cc
@@ -422,6 +416,8 @@ set(JPEGXL_INTERNAL_EXTRAS_FOR_TOOLS_SOURCES
   extras/codec.h
   extras/hlg.cc
   extras/hlg.h
+  extras/metrics.cc
+  extras/metrics.h
   extras/packed_image_convert.cc
   extras/packed_image_convert.h
   extras/tone_mapping.cc
@@ -454,6 +450,11 @@ set(JPEGXL_INTERNAL_GBENCH_SOURCES
   jxl/tf_gbench.cc
 )
 
+set(JPEGXL_INTERNAL_JPEGLI_LIBJPEG_HELPER_FILES
+  jpegli/libjpeg_test_util.cc
+  jpegli/libjpeg_test_util.h
+)
+
 set(JPEGXL_INTERNAL_JPEGLI_SOURCES
   jpegli/adaptive_quantization.cc
   jpegli/adaptive_quantization.h
@@ -469,8 +470,6 @@ set(JPEGXL_INTERNAL_JPEGLI_SOURCES
   jpegli/common.h
   jpegli/common_internal.h
   jpegli/dct-inl.h
-  jpegli/dct.cc
-  jpegli/dct.h
   jpegli/decode.cc
   jpegli/decode.h
   jpegli/decode_internal.h
@@ -483,7 +482,12 @@ set(JPEGXL_INTERNAL_JPEGLI_SOURCES
   jpegli/downsample.h
   jpegli/encode.cc
   jpegli/encode.h
+  jpegli/encode_finish.cc
+  jpegli/encode_finish.h
   jpegli/encode_internal.h
+  jpegli/encode_streaming.cc
+  jpegli/encode_streaming.h
+  jpegli/entropy_coding-inl.h
   jpegli/entropy_coding.cc
   jpegli/entropy_coding.h
   jpegli/error.cc
@@ -504,11 +508,14 @@ set(JPEGXL_INTERNAL_JPEGLI_SOURCES
   jpegli/simd.h
   jpegli/source_manager.cc
   jpegli/transpose-inl.h
+  jpegli/types.h
   jpegli/upsample.cc
   jpegli/upsample.h
 )
 
 set(JPEGXL_INTERNAL_JPEGLI_TESTLIB_FILES
+  jpegli/test_params.h
+  jpegli/test_utils-inl.h
   jpegli/test_utils.cc
   jpegli/test_utils.h
 )
@@ -529,8 +536,6 @@ set(JPEGXL_INTERNAL_JPEGLI_WRAPPER_SOURCES
 )
 
 set(JPEGXL_INTERNAL_PUBLIC_HEADERS
-  include/jxl/butteraugli.h
-  include/jxl/butteraugli_cxx.h
   include/jxl/cms_interface.h
   include/jxl/codestream_header.h
   include/jxl/color_encoding.h
@@ -540,6 +545,7 @@ set(JPEGXL_INTERNAL_PUBLIC_HEADERS
   include/jxl/encode_cxx.h
   include/jxl/memory_manager.h
   include/jxl/parallel_runner.h
+  include/jxl/stats.h
   include/jxl/types.h
 )
 
@@ -568,7 +574,6 @@ set(JPEGXL_INTERNAL_TESTS
   jxl/bit_reader_test.cc
   jxl/bits_test.cc
   jxl/blending_test.cc
-  jxl/butteraugli_test.cc
   jxl/byte_order_test.cc
   jxl/coeff_order_test.cc
   jxl/color_encoding_internal_test.cc

@@ -89,7 +89,7 @@ nsCString MapInternalContentPolicyTypeToDest(nsContentPolicyType aType) {
     case nsIContentPolicy::TYPE_INTERNAL_TRACK:
       return "track"_ns;
     case nsIContentPolicy::TYPE_WEBSOCKET:
-      return "websocket"_ns;
+      return "empty"_ns;
     case nsIContentPolicy::TYPE_CSP_REPORT:
       return "report"_ns;
     case nsIContentPolicy::TYPE_XSLT:
@@ -391,6 +391,17 @@ void mozilla::dom::SecFetch::AddSecFetchHeader(nsIHttpChannel* aHTTPChannel) {
   // there is nothing to do here
   if (!nsMixedContentBlocker::IsPotentiallyTrustworthyOrigin(uri)) {
     return;
+  }
+
+  // If we're dealing with a system XMLHttpRequest or fetch, don't add
+  // Sec- headers.
+  nsCOMPtr<nsILoadInfo> loadInfo = aHTTPChannel->LoadInfo();
+  if (loadInfo->TriggeringPrincipal()->IsSystemPrincipal()) {
+    ExtContentPolicy extType = loadInfo->GetExternalContentPolicyType();
+    if (extType == ExtContentPolicy::TYPE_FETCH ||
+        extType == ExtContentPolicy::TYPE_XMLHTTPREQUEST) {
+      return;
+    }
   }
 
   AddSecFetchDest(aHTTPChannel);

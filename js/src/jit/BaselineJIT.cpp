@@ -309,13 +309,13 @@ static MethodStatus CanEnterBaselineJIT(JSContext* cx, HandleScript script,
     }
   }
 
-  // Check this before calling ensureJitRealmExists, so we're less
+  // Check this before calling ensureJitZoneExists, so we're less
   // likely to report OOM in JSRuntime::createJitRuntime.
   if (!CanLikelyAllocateMoreExecutableMemory()) {
     return Method_Skipped;
   }
 
-  if (!cx->realm()->ensureJitRealmExists(cx)) {
+  if (!cx->zone()->ensureJitZoneExists(cx)) {
     return Method_Error;
   }
 
@@ -400,7 +400,7 @@ static MethodStatus CanEnterBaselineInterpreter(JSContext* cx,
     return Method_Skipped;
   }
 
-  if (!cx->realm()->ensureJitRealmExists(cx)) {
+  if (!cx->zone()->ensureJitZoneExists(cx)) {
     return Method_Error;
   }
 
@@ -945,20 +945,19 @@ void jit::ToggleBaselineProfiling(JSContext* cx, bool enable) {
   jrt->baselineInterpreter().toggleProfilerInstrumentation(enable);
 
   for (ZonesIter zone(cx->runtime(), SkipAtoms); !zone.done(); zone.next()) {
-    for (auto base = zone->cellIter<BaseScript>(); !base.done(); base.next()) {
-      if (!base->hasJitScript()) {
-        continue;
-      }
-      JSScript* script = base->asJSScript();
-      if (enable) {
-        script->jitScript()->ensureProfileString(cx, script);
-      }
-      if (!script->hasBaselineScript()) {
-        continue;
-      }
-      AutoWritableJitCode awjc(script->baselineScript()->method());
-      script->baselineScript()->toggleProfilerInstrumentation(enable);
+    if (!zone->jitZone()) {
+      continue;
     }
+    zone->jitZone()->forEachJitScript([&](jit::JitScript* jitScript) {
+      JSScript* script = jitScript->owningScript();
+      if (enable) {
+        jitScript->ensureProfileString(cx, script);
+      }
+      if (script->hasBaselineScript()) {
+        AutoWritableJitCode awjc(script->baselineScript()->method());
+        script->baselineScript()->toggleProfilerInstrumentation(enable);
+      }
+    });
   }
 }
 

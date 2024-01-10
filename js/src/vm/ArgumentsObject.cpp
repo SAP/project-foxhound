@@ -17,7 +17,6 @@
 #include "util/BitArray.h"
 #include "vm/GlobalObject.h"
 #include "vm/Stack.h"
-#include "vm/WellKnownAtom.h"  // js_*_str
 
 #include "gc/Nursery-inl.h"
 #include "vm/FrameIter-inl.h"  // js::FrameIter::unaliasedForEachActual
@@ -592,7 +591,7 @@ bool js::MappedArgSetter(JSContext* cx, HandleObject obj, HandleId id,
 /* static */
 bool ArgumentsObject::getArgumentsIterator(JSContext* cx,
                                            MutableHandleValue val) {
-  Handle<PropertyName*> shName = cx->names().ArrayValues;
+  Handle<PropertyName*> shName = cx->names().dollar_ArrayValues_;
   Rooted<JSAtom*> name(cx, cx->names().values);
   return GlobalObject::getSelfHostedFunction(cx, cx->global(), shName, name, 0,
                                              val);
@@ -1045,7 +1044,7 @@ void ArgumentsObject::trace(JSTracer* trc, JSObject* obj) {
   ArgumentsObject& argsobj = obj->as<ArgumentsObject>();
   if (ArgumentsData* data =
           argsobj.data()) {  // Template objects have no ArgumentsData.
-    TraceRange(trc, data->numArgs, data->begin(), js_arguments_str);
+    TraceRange(trc, data->numArgs, data->begin(), "arguments");
   }
 }
 

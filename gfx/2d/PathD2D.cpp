@@ -9,6 +9,7 @@
 #include <math.h>
 #include "DrawTargetD2D1.h"
 #include "Logging.h"
+#include "PathHelpers.h"
 
 namespace mozilla {
 namespace gfx {
@@ -170,15 +171,18 @@ void PathBuilderD2D::Arc(const Point& aOrigin, Float aRadius, Float aStartAngle,
                          Float aEndAngle, bool aAntiClockwise) {
   MOZ_ASSERT(aRadius >= 0);
 
-  if (aAntiClockwise && aStartAngle < aEndAngle) {
-    // D2D does things a little differently, and draws the arc by specifying an
-    // beginning and an end point. This means the circle will be the wrong way
-    // around if the start angle is smaller than the end angle. It might seem
-    // tempting to invert aAntiClockwise but that would change the sweeping
-    // direction of the arc so instead we exchange start/begin.
-    Float oldStart = aStartAngle;
-    aStartAngle = aEndAngle;
-    aEndAngle = oldStart;
+  // We want aEndAngle to come numerically after aStartAngle when taking into
+  // account the sweep direction so that our calculation of the arcSize below
+  // (large or small) works.
+  Float sweepDirection = aAntiClockwise ? -1.0f : 1.0f;
+
+  Float arcSweepLeft = (aEndAngle - aStartAngle) * sweepDirection;
+  if (arcSweepLeft < 0) {
+    // This calculation moves aStartAngle by a multiple of 2*Pi so that it is
+    // the closest it can be to aEndAngle and still be numerically before
+    // aEndAngle when taking into account sweepDirection.
+    arcSweepLeft = Float(2.0f * M_PI) + fmodf(arcSweepLeft, Float(2.0f * M_PI));
+    aStartAngle = aEndAngle - arcSweepLeft * sweepDirection;
   }
 
   // XXX - Workaround for now, D2D does not appear to do the desired thing when

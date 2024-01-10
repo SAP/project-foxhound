@@ -34,6 +34,7 @@ class nsNativeThemeWin : public Theme {
   // to avoid subtle sizing changes. The non-native theme can basically draw at
   // any size, so we prefer to have consistent sizing information.
   enum class NonNative { No, Always, BecauseColorMismatch };
+  static bool IsWidgetAlwaysNonNative(nsIFrame*, StyleAppearance);
   NonNative IsWidgetNonNative(nsIFrame*, StyleAppearance);
 
   // The nsITheme interface.
@@ -77,8 +78,6 @@ class nsNativeThemeWin : public Theme {
   bool ThemeSupportsWidget(nsPresContext* aPresContext, nsIFrame* aFrame,
                            StyleAppearance aAppearance) override;
 
-  bool WidgetIsContainer(StyleAppearance aAppearance) override;
-
   bool ThemeDrawsFocusForWidget(nsIFrame*, StyleAppearance) override;
 
   bool ThemeWantsButtonInnerFocusRing(nsIFrame*, StyleAppearance) override {
@@ -86,12 +85,6 @@ class nsNativeThemeWin : public Theme {
   }
 
   bool ThemeNeedsComboboxDropmarker() override;
-
-  bool WidgetAppearanceDependsOnWindowFocus(StyleAppearance) override;
-
-  enum { eThemeGeometryTypeWindowButtons = eThemeGeometryTypeUnknown + 1 };
-  ThemeGeometryType ThemeGeometryTypeForWidget(nsIFrame*,
-                                               StyleAppearance) override;
 
   nsNativeThemeWin();
 

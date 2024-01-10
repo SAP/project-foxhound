@@ -213,7 +213,6 @@ async function runTest(enabled) {
   let RFPOverrides = enabled ? "+CanvasRandomization" : "-CanvasRandomization";
   await SpecialPowers.pushPrefEnv({
     set: [
-      ["privacy.resistFingerprinting.randomization.enabled", true],
       ["privacy.fingerprintingProtection", true],
       ["privacy.fingerprintingProtection.pbmode", true],
       ["privacy.fingerprintingProtection.overrides", RFPOverrides],
@@ -236,6 +235,10 @@ async function runTest(enabled) {
 
   for (let test of TEST_CASES) {
     info(`Testing ${test.name} in the worker`);
+
+    // Clear telemetry before starting test.
+    Services.fog.testResetFOG();
+
     let data = await await runFunctionInWorker(
       tab.linkedBrowser,
       test.extractCanvasData
@@ -283,6 +286,17 @@ async function runTest(enabled) {
     );
   }
 
+  // Verify the telemetry is recorded if canvas randomization is enabled.
+  if (enabled) {
+    await Services.fog.testFlushAllChildren();
+
+    ok(
+      Glean.fingerprintingProtection.canvasNoiseCalculateTime.testGetValue()
+        .sum > 0,
+      "The telemetry of canvas randomization is recorded."
+    );
+  }
+
   BrowserTestUtils.removeTab(tab);
   BrowserTestUtils.removeTab(privateTab);
   await BrowserTestUtils.closeWindow(privateWindow);
@@ -292,7 +306,6 @@ add_setup(async function () {
   // Disable the fingerprinting randomization.
   await SpecialPowers.pushPrefEnv({
     set: [
-      ["privacy.resistFingerprinting.randomization.enabled", false],
       ["privacy.fingerprintingProtection", false],
       ["privacy.fingerprintingProtection.pbmode", false],
       ["privacy.resistFingerprinting", false],

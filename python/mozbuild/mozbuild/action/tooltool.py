@@ -44,7 +44,7 @@ import time
 import zipfile
 from contextlib import closing, contextmanager
 from functools import wraps
-from io import BytesIO, open
+from io import open
 from random import random
 from subprocess import PIPE, Popen
 
@@ -1005,20 +1005,6 @@ def unpack_file(filename):
         log.info('untarring "%s"' % filename)
         with tarfile.open(filename) as tar:
             safe_extract(tar)
-    elif os.path.isfile(filename) and filename.endswith(".tar.xz"):
-        base_file = filename.replace(".tar.xz", "")
-        clean_path(base_file)
-        log.info('untarring "%s"' % filename)
-        # Not using tar -Jxf because it fails on Windows for some reason.
-        process = Popen(["xz", "-d", "-c", filename], stdout=PIPE)
-        stdout, stderr = process.communicate()
-        if process.returncode != 0:
-            return False
-        fileobj = BytesIO()
-        fileobj.write(stdout)
-        fileobj.seek(0)
-        with tarfile.open(fileobj=fileobj, mode="r|") as tar:
-            safe_extract(tar)
     elif os.path.isfile(filename) and filename.endswith(".tar.zst"):
         import zstandard
 
@@ -1193,7 +1179,7 @@ def fetch_files(
                     log.warning(
                         "Impossible to add file %s to cache folder %s"
                         % (localfile.filename, cache_folder),
-                        exc_info=True,
+                        exc_info=False,
                     )
         else:
             failed_files.append(localfile.filename)

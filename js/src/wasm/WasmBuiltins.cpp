@@ -28,6 +28,7 @@
 #include "jit/AtomicOperations.h"
 #include "jit/InlinableNatives.h"
 #include "jit/MacroAssembler.h"
+#include "jit/ProcessExecutableMemory.h"
 #include "jit/Simulator.h"
 #include "js/experimental/JitInfo.h"  // JSJitInfo
 #include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
@@ -68,7 +69,7 @@ static const unsigned BUILTIN_THUNK_LIFO_SIZE = 64 * 1024;
 #define _I32 MIRType::Int32
 #define _I64 MIRType::Int64
 #define _PTR MIRType::Pointer
-#define _RoN MIRType::RefOrNull
+#define _RoN MIRType::WasmAnyRef
 #define _VOID MIRType::None
 #define _END MIRType::None
 #define _Infallible FailureMode::Infallible
@@ -122,41 +123,55 @@ const SymbolicAddressSignature SASigPowD = {
 const SymbolicAddressSignature SASigATan2D = {
     SymbolicAddress::ATan2D, _F64, _Infallible, 2, {_F64, _F64, _END}};
 const SymbolicAddressSignature SASigMemoryGrowM32 = {
-    SymbolicAddress::MemoryGrowM32, _I32, _Infallible, 2, {_PTR, _I32, _END}};
+    SymbolicAddress::MemoryGrowM32,
+    _I32,
+    _Infallible,
+    3,
+    {_PTR, _I32, _I32, _END}};
 const SymbolicAddressSignature SASigMemoryGrowM64 = {
-    SymbolicAddress::MemoryGrowM64, _I64, _Infallible, 2, {_PTR, _I64, _END}};
+    SymbolicAddress::MemoryGrowM64,
+    _I64,
+    _Infallible,
+    3,
+    {_PTR, _I64, _I32, _END}};
 const SymbolicAddressSignature SASigMemorySizeM32 = {
-    SymbolicAddress::MemorySizeM32, _I32, _Infallible, 1, {_PTR, _END}};
+    SymbolicAddress::MemorySizeM32, _I32, _Infallible, 2, {_PTR, _I32, _END}};
 const SymbolicAddressSignature SASigMemorySizeM64 = {
-    SymbolicAddress::MemorySizeM64, _I64, _Infallible, 1, {_PTR, _END}};
+    SymbolicAddress::MemorySizeM64, _I64, _Infallible, 2, {_PTR, _I32, _END}};
 const SymbolicAddressSignature SASigWaitI32M32 = {
     SymbolicAddress::WaitI32M32,
     _I32,
     _FailOnNegI32,
-    4,
-    {_PTR, _I32, _I32, _I64, _END}};
+    5,
+    {_PTR, _I32, _I32, _I64, _I32, _END}};
 const SymbolicAddressSignature SASigWaitI32M64 = {
     SymbolicAddress::WaitI32M64,
     _I32,
     _FailOnNegI32,
-    4,
-    {_PTR, _I64, _I32, _I64, _END}};
+    5,
+    {_PTR, _I64, _I32, _I64, _I32, _END}};
 const SymbolicAddressSignature SASigWaitI64M32 = {
     SymbolicAddress::WaitI64M32,
     _I32,
     _FailOnNegI32,
-    4,
-    {_PTR, _I32, _I64, _I64, _END}};
+    5,
+    {_PTR, _I32, _I64, _I64, _I32, _END}};
 const SymbolicAddressSignature SASigWaitI64M64 = {
     SymbolicAddress::WaitI64M64,
     _I32,
     _FailOnNegI32,
-    4,
-    {_PTR, _I64, _I64, _I64, _END}};
-const SymbolicAddressSignature SASigWakeM32 = {
-    SymbolicAddress::WakeM32, _I32, _FailOnNegI32, 3, {_PTR, _I32, _I32, _END}};
-const SymbolicAddressSignature SASigWakeM64 = {
-    SymbolicAddress::WakeM64, _I32, _FailOnNegI32, 3, {_PTR, _I64, _I32, _END}};
+    5,
+    {_PTR, _I64, _I64, _I64, _I32, _END}};
+const SymbolicAddressSignature SASigWakeM32 = {SymbolicAddress::WakeM32,
+                                               _I32,
+                                               _FailOnNegI32,
+                                               4,
+                                               {_PTR, _I32, _I32, _I32, _END}};
+const SymbolicAddressSignature SASigWakeM64 = {SymbolicAddress::WakeM64,
+                                               _I32,
+                                               _FailOnNegI32,
+                                               4,
+                                               {_PTR, _I64, _I32, _I32, _END}};
 const SymbolicAddressSignature SASigMemCopyM32 = {
     SymbolicAddress::MemCopyM32,
     _VOID,
@@ -181,6 +196,12 @@ const SymbolicAddressSignature SASigMemCopySharedM64 = {
     _FailOnNegI32,
     5,
     {_PTR, _I64, _I64, _I64, _PTR, _END}};
+const SymbolicAddressSignature SASigMemCopyAny = {
+    SymbolicAddress::MemCopyAny,
+    _VOID,
+    _FailOnNegI32,
+    6,
+    {_PTR, _I64, _I64, _I64, _PTR, _PTR, _END}};
 const SymbolicAddressSignature SASigDataDrop = {
     SymbolicAddress::DataDrop, _VOID, _FailOnNegI32, 2, {_PTR, _I32, _END}};
 const SymbolicAddressSignature SASigMemFillM32 = {
@@ -235,14 +256,14 @@ const SymbolicAddressSignature SASigMemInitM32 = {
     SymbolicAddress::MemInitM32,
     _VOID,
     _FailOnNegI32,
-    5,
-    {_PTR, _I32, _I32, _I32, _I32, _END}};
+    6,
+    {_PTR, _I32, _I32, _I32, _I32, _I32, _END}};
 const SymbolicAddressSignature SASigMemInitM64 = {
     SymbolicAddress::MemInitM64,
     _VOID,
     _FailOnNegI32,
-    5,
-    {_PTR, _I64, _I32, _I32, _I32, _END}};
+    6,
+    {_PTR, _I64, _I32, _I32, _I32, _I32, _END}};
 const SymbolicAddressSignature SASigTableCopy = {
     SymbolicAddress::TableCopy,
     _VOID,
@@ -305,21 +326,38 @@ const SymbolicAddressSignature SASigThrowException = {
     _FailOnNegI32,
     2,
     {_PTR, _RoN, _END}};
-const SymbolicAddressSignature SASigStructNew = {
-    SymbolicAddress::StructNew, _RoN, _FailOnNullPtr, 2, {_PTR, _PTR, _END}};
-const SymbolicAddressSignature SASigStructNewUninit = {
-    SymbolicAddress::StructNewUninit,
+const SymbolicAddressSignature SASigStructNewIL_true = {
+    SymbolicAddress::StructNewIL_true,
     _RoN,
     _FailOnNullPtr,
     2,
     {_PTR, _PTR, _END}};
-const SymbolicAddressSignature SASigArrayNew = {SymbolicAddress::ArrayNew,
-                                                _RoN,
-                                                _FailOnNullPtr,
-                                                3,
-                                                {_PTR, _I32, _PTR, _END}};
-const SymbolicAddressSignature SASigArrayNewUninit = {
-    SymbolicAddress::ArrayNewUninit,
+const SymbolicAddressSignature SASigStructNewIL_false = {
+    SymbolicAddress::StructNewIL_false,
+    _RoN,
+    _FailOnNullPtr,
+    2,
+    {_PTR, _PTR, _END}};
+const SymbolicAddressSignature SASigStructNewOOL_true = {
+    SymbolicAddress::StructNewOOL_true,
+    _RoN,
+    _FailOnNullPtr,
+    2,
+    {_PTR, _PTR, _END}};
+const SymbolicAddressSignature SASigStructNewOOL_false = {
+    SymbolicAddress::StructNewOOL_false,
+    _RoN,
+    _FailOnNullPtr,
+    2,
+    {_PTR, _PTR, _END}};
+const SymbolicAddressSignature SASigArrayNew_true = {
+    SymbolicAddress::ArrayNew_true,
+    _RoN,
+    _FailOnNullPtr,
+    3,
+    {_PTR, _I32, _PTR, _END}};
+const SymbolicAddressSignature SASigArrayNew_false = {
+    SymbolicAddress::ArrayNew_false,
     _RoN,
     _FailOnNullPtr,
     3,
@@ -387,7 +425,7 @@ ABIArgType ToABIType(MIRType type) {
     case MIRType::Int64:
       return ArgType_Int64;
     case MIRType::Pointer:
-    case MIRType::RefOrNull:
+    case MIRType::WasmAnyRef:
       return ArgType_General;
     case MIRType::Float32:
       return ArgType_Float32;
@@ -590,9 +628,18 @@ bool wasm::HandleThrow(JSContext* cx, WasmFrameIter& iter,
       const wasm::TryNote* tryNote = code.lookupTryNote((void*)pc, &tier);
 
       if (tryNote) {
+#ifdef ENABLE_WASM_TAIL_CALLS
+        // Skip tryNote if pc is at return stub generated by
+        // wasmCollapseFrameSlow.
+        const CallSite* site = code.lookupCallSite((void*)pc);
+        if (site && site->kind() == CallSite::ReturnStub) {
+          continue;
+        }
+#endif
+
         cx->clearPendingException();
         RootedAnyRef ref(cx, AnyRef::null());
-        if (!BoxAnyRef(cx, exn, &ref)) {
+        if (!AnyRef::fromJSValue(cx, exn, &ref)) {
           MOZ_ASSERT(cx->isThrowingOutOfMemory());
           hasCatchableException = false;
           continue;
@@ -818,7 +865,7 @@ static void* BoxValue_Anyref(Value* rawVal) {
   JSContext* cx = TlsContext.get();  // Cold code
   RootedValue val(cx, *rawVal);
   RootedAnyRef result(cx, AnyRef::null());
-  if (!BoxAnyRef(cx, val, &result)) {
+  if (!AnyRef::fromJSValue(cx, val, &result)) {
     return nullptr;
   }
   return result.get().forCompiledCode();
@@ -869,14 +916,14 @@ static int32_t CoerceInPlace_JitEntry(int funcExportIndex, Instance* instance,
       case ValType::Ref: {
         // Guarded against by temporarilyUnsupportedReftypeForEntry()
         MOZ_RELEASE_ASSERT(funcType.args()[i].refType().isExtern());
-        // Leave Object and Null alone, we will unbox inline.  All we need
-        // to do is convert other values to an Object representation.
-        if (!arg.isObjectOrNull()) {
-          RootedAnyRef result(cx, AnyRef::null());
-          if (!BoxAnyRef(cx, arg, &result)) {
+        // Perform any fallible boxing that may need to happen so that the JIT
+        // code does not need to.
+        if (AnyRef::valueNeedsBoxing(arg)) {
+          JSObject* boxedValue = AnyRef::boxValue(cx, arg);
+          if (!boxedValue) {
             return false;
           }
-          argv[i].setObject(*result.get().asJSObject());
+          argv[i] = ObjectOrNullValue(boxedValue);
         }
         break;
       }
@@ -1115,58 +1162,58 @@ void* wasm::AddressOf(SymbolicAddress imm, ABIFunctionType* abiType) {
       return FuncCast<double(double)>(sin, *abiType);
     case SymbolicAddress::SinFdlibmD:
       *abiType = Args_Double_Double;
-      return FuncCast<double(double)>(fdlibm::sin, *abiType);
+      return FuncCast<double(double)>(fdlibm_sin, *abiType);
     case SymbolicAddress::CosNativeD:
       *abiType = Args_Double_Double;
       return FuncCast<double(double)>(cos, *abiType);
     case SymbolicAddress::CosFdlibmD:
       *abiType = Args_Double_Double;
-      return FuncCast<double(double)>(fdlibm::cos, *abiType);
+      return FuncCast<double(double)>(fdlibm_cos, *abiType);
     case SymbolicAddress::TanNativeD:
       *abiType = Args_Double_Double;
       return FuncCast<double(double)>(tan, *abiType);
     case SymbolicAddress::TanFdlibmD:
       *abiType = Args_Double_Double;
-      return FuncCast<double(double)>(fdlibm::tan, *abiType);
+      return FuncCast<double(double)>(fdlibm_tan, *abiType);
     case SymbolicAddress::ASinD:
       *abiType = Args_Double_Double;
-      return FuncCast<double(double)>(fdlibm::asin, *abiType);
+      return FuncCast<double(double)>(fdlibm_asin, *abiType);
     case SymbolicAddress::ACosD:
       *abiType = Args_Double_Double;
-      return FuncCast<double(double)>(fdlibm::acos, *abiType);
+      return FuncCast<double(double)>(fdlibm_acos, *abiType);
     case SymbolicAddress::ATanD:
       *abiType = Args_Double_Double;
-      return FuncCast<double(double)>(fdlibm::atan, *abiType);
+      return FuncCast<double(double)>(fdlibm_atan, *abiType);
     case SymbolicAddress::CeilD:
       *abiType = Args_Double_Double;
-      return FuncCast<double(double)>(fdlibm::ceil, *abiType);
+      return FuncCast<double(double)>(fdlibm_ceil, *abiType);
     case SymbolicAddress::CeilF:
       *abiType = Args_Float32_Float32;
-      return FuncCast<float(float)>(fdlibm::ceilf, *abiType);
+      return FuncCast<float(float)>(fdlibm_ceilf, *abiType);
     case SymbolicAddress::FloorD:
       *abiType = Args_Double_Double;
-      return FuncCast<double(double)>(fdlibm::floor, *abiType);
+      return FuncCast<double(double)>(fdlibm_floor, *abiType);
     case SymbolicAddress::FloorF:
       *abiType = Args_Float32_Float32;
-      return FuncCast<float(float)>(fdlibm::floorf, *abiType);
+      return FuncCast<float(float)>(fdlibm_floorf, *abiType);
     case SymbolicAddress::TruncD:
       *abiType = Args_Double_Double;
-      return FuncCast<double(double)>(fdlibm::trunc, *abiType);
+      return FuncCast<double(double)>(fdlibm_trunc, *abiType);
     case SymbolicAddress::TruncF:
       *abiType = Args_Float32_Float32;
-      return FuncCast<float(float)>(fdlibm::truncf, *abiType);
+      return FuncCast<float(float)>(fdlibm_truncf, *abiType);
     case SymbolicAddress::NearbyIntD:
       *abiType = Args_Double_Double;
-      return FuncCast<double(double)>(fdlibm::nearbyint, *abiType);
+      return FuncCast<double(double)>(fdlibm_nearbyint, *abiType);
     case SymbolicAddress::NearbyIntF:
       *abiType = Args_Float32_Float32;
-      return FuncCast<float(float)>(fdlibm::nearbyintf, *abiType);
+      return FuncCast<float(float)>(fdlibm_nearbyintf, *abiType);
     case SymbolicAddress::ExpD:
       *abiType = Args_Double_Double;
-      return FuncCast<double(double)>(fdlibm::exp, *abiType);
+      return FuncCast<double(double)>(fdlibm_exp, *abiType);
     case SymbolicAddress::LogD:
       *abiType = Args_Double_Double;
-      return FuncCast<double(double)>(fdlibm::log, *abiType);
+      return FuncCast<double(double)>(fdlibm_log, *abiType);
     case SymbolicAddress::PowD:
       *abiType = Args_Double_DoubleDouble;
       return FuncCast(ecmaPow, *abiType);
@@ -1175,43 +1222,43 @@ void* wasm::AddressOf(SymbolicAddress imm, ABIFunctionType* abiType) {
       return FuncCast(ecmaAtan2, *abiType);
 
     case SymbolicAddress::MemoryGrowM32:
-      *abiType = Args_Int32_GeneralInt32;
+      *abiType = Args_Int32_GeneralInt32Int32;
       MOZ_ASSERT(*abiType == ToABIType(SASigMemoryGrowM32));
       return FuncCast(Instance::memoryGrow_m32, *abiType);
     case SymbolicAddress::MemoryGrowM64:
-      *abiType = Args_Int64_GeneralInt64;
+      *abiType = Args_Int64_GeneralInt64Int32;
       MOZ_ASSERT(*abiType == ToABIType(SASigMemoryGrowM64));
       return FuncCast(Instance::memoryGrow_m64, *abiType);
     case SymbolicAddress::MemorySizeM32:
-      *abiType = Args_Int32_General;
+      *abiType = Args_Int32_GeneralInt32;
       MOZ_ASSERT(*abiType == ToABIType(SASigMemorySizeM32));
       return FuncCast(Instance::memorySize_m32, *abiType);
     case SymbolicAddress::MemorySizeM64:
-      *abiType = Args_Int64_General;
+      *abiType = Args_Int64_GeneralInt32;
       MOZ_ASSERT(*abiType == ToABIType(SASigMemorySizeM64));
       return FuncCast(Instance::memorySize_m64, *abiType);
     case SymbolicAddress::WaitI32M32:
-      *abiType = Args_Int32_GeneralInt32Int32Int64;
+      *abiType = Args_Int32_GeneralInt32Int32Int64Int32;
       MOZ_ASSERT(*abiType == ToABIType(SASigWaitI32M32));
       return FuncCast(Instance::wait_i32_m32, *abiType);
     case SymbolicAddress::WaitI32M64:
-      *abiType = Args_Int32_GeneralInt64Int32Int64;
+      *abiType = Args_Int32_GeneralInt64Int32Int64Int32;
       MOZ_ASSERT(*abiType == ToABIType(SASigWaitI32M64));
       return FuncCast(Instance::wait_i32_m64, *abiType);
     case SymbolicAddress::WaitI64M32:
-      *abiType = Args_Int32_GeneralInt32Int64Int64;
+      *abiType = Args_Int32_GeneralInt32Int64Int64Int32;
       MOZ_ASSERT(*abiType == ToABIType(SASigWaitI64M32));
       return FuncCast(Instance::wait_i64_m32, *abiType);
     case SymbolicAddress::WaitI64M64:
-      *abiType = Args_Int32_GeneralInt64Int64Int64;
+      *abiType = Args_Int32_GeneralInt64Int64Int64Int32;
       MOZ_ASSERT(*abiType == ToABIType(SASigWaitI64M64));
       return FuncCast(Instance::wait_i64_m64, *abiType);
     case SymbolicAddress::WakeM32:
-      *abiType = Args_Int32_GeneralInt32Int32;
+      *abiType = Args_Int32_GeneralInt32Int32Int32;
       MOZ_ASSERT(*abiType == ToABIType(SASigWakeM32));
       return FuncCast(Instance::wake_m32, *abiType);
     case SymbolicAddress::WakeM64:
-      *abiType = Args_Int32_GeneralInt64Int32;
+      *abiType = Args_Int32_GeneralInt64Int32Int32;
       MOZ_ASSERT(*abiType == ToABIType(SASigWakeM64));
       return FuncCast(Instance::wake_m64, *abiType);
     case SymbolicAddress::MemCopyM32:
@@ -1230,6 +1277,10 @@ void* wasm::AddressOf(SymbolicAddress imm, ABIFunctionType* abiType) {
       *abiType = Args_Int32_GeneralInt64Int64Int64General;
       MOZ_ASSERT(*abiType == ToABIType(SASigMemCopySharedM64));
       return FuncCast(Instance::memCopyShared_m64, *abiType);
+    case SymbolicAddress::MemCopyAny:
+      *abiType = Args_Int32_GeneralInt64Int64Int64GeneralGeneral;
+      MOZ_ASSERT(*abiType == ToABIType(SASigMemCopyAny));
+      return FuncCast(Instance::memCopy_any, *abiType);
     case SymbolicAddress::DataDrop:
       *abiType = Args_Int32_GeneralInt32;
       MOZ_ASSERT(*abiType == ToABIType(SASigDataDrop));
@@ -1267,11 +1318,11 @@ void* wasm::AddressOf(SymbolicAddress imm, ABIFunctionType* abiType) {
       MOZ_ASSERT(*abiType == ToABIType(SASigMemDiscardSharedM64));
       return FuncCast(Instance::memDiscardShared_m64, *abiType);
     case SymbolicAddress::MemInitM32:
-      *abiType = Args_Int32_GeneralInt32Int32Int32Int32;
+      *abiType = Args_Int32_GeneralInt32Int32Int32Int32Int32;
       MOZ_ASSERT(*abiType == ToABIType(SASigMemInitM32));
       return FuncCast(Instance::memInit_m32, *abiType);
     case SymbolicAddress::MemInitM64:
-      *abiType = Args_Int32_GeneralInt64Int32Int32Int32;
+      *abiType = Args_Int32_GeneralInt64Int32Int32Int32Int32;
       MOZ_ASSERT(*abiType == ToABIType(SASigMemInitM64));
       return FuncCast(Instance::memInit_m64, *abiType);
     case SymbolicAddress::TableCopy:
@@ -1322,22 +1373,30 @@ void* wasm::AddressOf(SymbolicAddress imm, ABIFunctionType* abiType) {
       *abiType = Args_Int32_GeneralGeneralInt32General;
       MOZ_ASSERT(*abiType == ToABIType(SASigPostBarrierPreciseWithOffset));
       return FuncCast(Instance::postBarrierPreciseWithOffset, *abiType);
-    case SymbolicAddress::StructNew:
+    case SymbolicAddress::StructNewIL_true:
       *abiType = Args_General2;
-      MOZ_ASSERT(*abiType == ToABIType(SASigStructNew));
-      return FuncCast(Instance::structNew, *abiType);
-    case SymbolicAddress::StructNewUninit:
+      MOZ_ASSERT(*abiType == ToABIType(SASigStructNewIL_true));
+      return FuncCast(Instance::structNewIL<true>, *abiType);
+    case SymbolicAddress::StructNewIL_false:
       *abiType = Args_General2;
-      MOZ_ASSERT(*abiType == ToABIType(SASigStructNewUninit));
-      return FuncCast(Instance::structNewUninit, *abiType);
-    case SymbolicAddress::ArrayNew:
+      MOZ_ASSERT(*abiType == ToABIType(SASigStructNewIL_false));
+      return FuncCast(Instance::structNewIL<false>, *abiType);
+    case SymbolicAddress::StructNewOOL_true:
+      *abiType = Args_General2;
+      MOZ_ASSERT(*abiType == ToABIType(SASigStructNewOOL_true));
+      return FuncCast(Instance::structNewOOL<true>, *abiType);
+    case SymbolicAddress::StructNewOOL_false:
+      *abiType = Args_General2;
+      MOZ_ASSERT(*abiType == ToABIType(SASigStructNewOOL_false));
+      return FuncCast(Instance::structNewOOL<false>, *abiType);
+    case SymbolicAddress::ArrayNew_true:
       *abiType = Args_General_GeneralInt32General;
-      MOZ_ASSERT(*abiType == ToABIType(SASigArrayNew));
-      return FuncCast(Instance::arrayNew, *abiType);
-    case SymbolicAddress::ArrayNewUninit:
+      MOZ_ASSERT(*abiType == ToABIType(SASigArrayNew_true));
+      return FuncCast(Instance::arrayNew<true>, *abiType);
+    case SymbolicAddress::ArrayNew_false:
       *abiType = Args_General_GeneralInt32General;
-      MOZ_ASSERT(*abiType == ToABIType(SASigArrayNewUninit));
-      return FuncCast(Instance::arrayNewUninit, *abiType);
+      MOZ_ASSERT(*abiType == ToABIType(SASigArrayNew_false));
+      return FuncCast(Instance::arrayNew<false>, *abiType);
     case SymbolicAddress::ArrayNewData:
       *abiType = Args_General_GeneralInt32Int32GeneralInt32;
       MOZ_ASSERT(*abiType == ToABIType(SASigArrayNewData));
@@ -1502,6 +1561,7 @@ bool wasm::NeedsBuiltinThunk(SymbolicAddress sym) {
     case SymbolicAddress::MemCopySharedM32:
     case SymbolicAddress::MemCopyM64:
     case SymbolicAddress::MemCopySharedM64:
+    case SymbolicAddress::MemCopyAny:
     case SymbolicAddress::DataDrop:
     case SymbolicAddress::MemFillM32:
     case SymbolicAddress::MemFillSharedM32:
@@ -1527,10 +1587,12 @@ bool wasm::NeedsBuiltinThunk(SymbolicAddress sym) {
     case SymbolicAddress::PostBarrierPreciseWithOffset:
     case SymbolicAddress::ExceptionNew:
     case SymbolicAddress::ThrowException:
-    case SymbolicAddress::StructNew:
-    case SymbolicAddress::StructNewUninit:
-    case SymbolicAddress::ArrayNew:
-    case SymbolicAddress::ArrayNewUninit:
+    case SymbolicAddress::StructNewIL_true:
+    case SymbolicAddress::StructNewIL_false:
+    case SymbolicAddress::StructNewOOL_true:
+    case SymbolicAddress::StructNewOOL_false:
+    case SymbolicAddress::ArrayNew_true:
+    case SymbolicAddress::ArrayNew_false:
     case SymbolicAddress::ArrayNewData:
     case SymbolicAddress::ArrayNewElem:
     case SymbolicAddress::ArrayCopy:
@@ -1829,6 +1891,8 @@ bool wasm::EnsureBuiltinThunksInitialized() {
     return false;
   }
 
+  AutoMarkJitCodeWritableForThread writable;
+
   masm.executableCopy(thunks->codeBase);
   memset(thunks->codeBase + masm.bytesNeeded(), 0,
          allocSize - masm.bytesNeeded());
@@ -1936,11 +2000,11 @@ void* wasm::MaybeGetBuiltinThunk(JSFunction* f, const FuncType& funcType) {
 
   const BuiltinThunks& thunks = *builtinThunks;
 
-  // If this function should resist fingerprinting first try to lookup
+  // If this function must use the fdlibm implementation first try to lookup
   // the fdlibm version. If that version doesn't exist we still fallback to
   // the normal native.
   if (math_use_fdlibm_for_sin_cos_tan() ||
-      f->realm()->behaviors().shouldResistFingerprinting()) {
+      f->realm()->creationOptions().alwaysUseFdlibm()) {
     TypedNative typedNative(f->jitInfo()->inlinableNative, *abiType,
                             TypedNative::FdlibmImpl::Yes);
     auto p =

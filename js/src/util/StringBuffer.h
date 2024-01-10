@@ -183,7 +183,7 @@ class StringBuffer : public TaintableString {
   [[nodiscard]] bool inflateChars();
 
   template <typename CharT>
-  JSLinearString* finishStringInternal(JSContext* cx);
+  JSLinearString* finishStringInternal(JSContext* cx, gc::Heap heap);
 
  public:
   explicit StringBuffer(JSContext* cx,
@@ -396,7 +396,7 @@ class JSStringBuilder : public StringBuffer {
    *
    * Returns nullptr if string creation failed.
    */
-  JSLinearString* finishString();
+  JSLinearString* finishString(gc::Heap heap = gc::Heap::Default);
 };
 
 inline bool StringBuffer::append(const char16_t* begin, const char16_t* end) {

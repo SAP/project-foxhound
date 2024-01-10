@@ -464,6 +464,7 @@ void EventTargetChainItem::HandleEventTargetChain(
   // Capture
   aVisitor.mEvent->mFlags.mInCapturePhase = true;
   aVisitor.mEvent->mFlags.mInBubblingPhase = false;
+  aVisitor.mEvent->mFlags.mInTargetPhase = false;
   for (uint32_t i = chainLength - 1; i > firstCanHandleEventTargetIdx; --i) {
     EventTargetChainItem& item = chain[i];
     if (item.PreHandleEventOnly()) {
@@ -532,7 +533,12 @@ void EventTargetChainItem::HandleEventTargetChain(
   }
 
   // Target
-  aVisitor.mEvent->mFlags.mInBubblingPhase = true;
+  const bool prefCorrectOrder =
+      StaticPrefs::dom_events_phases_correctOrderOnTarget();
+  aVisitor.mEvent->mFlags.mInTargetPhase = true;
+  if (!prefCorrectOrder) {
+    aVisitor.mEvent->mFlags.mInBubblingPhase = true;
+  }
   EventTargetChainItem& targetItem = chain[firstCanHandleEventTargetIdx];
   // Need to explicitly retarget touch targets so that initial targets get set
   // properly in case nothing else retargeted touches.
@@ -544,12 +550,25 @@ void EventTargetChainItem::HandleEventTargetChain(
        targetItem.ForceContentDispatch())) {
     targetItem.HandleEvent(aVisitor, aCd);
   }
+  if (prefCorrectOrder) {
+    aVisitor.mEvent->mFlags.mInCapturePhase = false;
+    aVisitor.mEvent->mFlags.mInBubblingPhase = true;
+    if (!aVisitor.mEvent->PropagationStopped() &&
+        (!aVisitor.mEvent->mFlags.mNoContentDispatch ||
+         targetItem.ForceContentDispatch())) {
+      targetItem.HandleEvent(aVisitor, aCd);
+    }
+  }
+
   if (aVisitor.mEvent->mFlags.mInSystemGroup) {
     targetItem.PostHandleEvent(aVisitor);
   }
+  aVisitor.mEvent->mFlags.mInTargetPhase = false;
+  if (!prefCorrectOrder) {
+    aVisitor.mEvent->mFlags.mInCapturePhase = false;
+  }
 
   // Bubble
-  aVisitor.mEvent->mFlags.mInCapturePhase = false;
   for (uint32_t i = firstCanHandleEventTargetIdx + 1; i < chainLength; ++i) {
     EventTargetChainItem& item = chain[i];
     if (item.PreHandleEventOnly()) {
@@ -1534,6 +1553,35 @@ void EventDispatcher::GetComposedPathFor(WidgetEvent* aEvent,
       }
     }
   }
+}
+
+void EventChainPreVisitor::IgnoreCurrentTargetBecauseOfShadowDOMRetargeting() {
+  mCanHandle = false;
+  mIgnoreBecauseOfShadowDOM = true;
+
+  EventTarget* target = nullptr;
+
+  auto getWindow = [this]() -> nsPIDOMWindowOuter* {
+    nsINode* node = nsINode::FromEventTargetOrNull(this->mParentTarget);
+    if (!node) {
+      return nullptr;
+    }
+    Document* doc = node->GetComposedDoc();
+    if (!doc) {
+      return nullptr;
+    }
+
+    return doc->GetWindow();
+  };
+
+  // The HTMLEditor is registered to nsWindowRoot, so we
+  // want to dispatch events to it.
+  if (nsCOMPtr<nsPIDOMWindowOuter> win = getWindow()) {
+    target = win->GetParentTarget();
+  }
+  SetParentTarget(target, false);
+
+  mEventTargetAtParent = nullptr;
 }
 
 }  // namespace mozilla

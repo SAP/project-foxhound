@@ -49,9 +49,9 @@ if [ "x$MOZ_ADVANCE_ONE_COMMIT" = "x" ]; then
   MOZ_ADVANCE_ONE_COMMIT=""
 fi
 
-if [ "x$SKIP_NEXT_REVERT_CHK" = "x" ]; then
-  SKIP_NEXT_REVERT_CHK="0"
-fi
+# if [ "x$SKIP_NEXT_REVERT_CHK" = "x" ]; then
+#   SKIP_NEXT_REVERT_CHK="0"
+# fi
 
 MOZ_CHANGED=0
 GIT_CHANGED=0
@@ -71,9 +71,17 @@ rm -f $LOOP_OUTPUT_LOG
 hg revert -C third_party/libwebrtc/README.moz-ff-commit &> /dev/null
 
 # check for a resume situation from fast-forward-libwebrtc.sh
+RESUME_FILE=$STATE_DIR/fast_forward.resume
 RESUME=""
-if [ -f $STATE_DIR/resume_state ]; then
-  RESUME=`tail -1 $STATE_DIR/resume_state`
+if [ -f $RESUME_FILE ]; then
+  RESUME=`tail -1 $RESUME_FILE`
+fi
+
+# check for the situation where we've encountered an error when running
+# detect_upstream_revert.sh and should skip running it a second time.
+SKIP_NEXT_REVERT_CHK=""
+if [ -f $STATE_DIR/loop.skip-revert-detect ]; then
+  SKIP_NEXT_REVERT_CHK=`tail -1 $STATE_DIR/loop.skip-revert-detect`
 fi
 
 ERROR_HELP=$"
@@ -118,14 +126,15 @@ echo_log "Commits remaining: $COMMITS_REMAINING"
 ERROR_HELP=$"Some portion of the detection and/or fixing of upstream revert commits
 has failed.  Please fix the state of the git hub repo at: $MOZ_LIBWEBRTC_SRC.
 When fixed, please resume this script with the following command:
-    SKIP_NEXT_REVERT_CHK=1 bash $SCRIPT_DIR/loop-ff.sh
+    bash $SCRIPT_DIR/loop-ff.sh
 "
-if [ "x$SKIP_NEXT_REVERT_CHK" == "x0" ]; then
+if [ "x$SKIP_NEXT_REVERT_CHK" == "x" ] && [ "x$RESUME" == "x" ]; then
   echo_log "Check for upcoming revert commit"
+  echo "true" > $STATE_DIR/loop.skip-revert-detect
   AUTO_FIX_REVERT_AS_NOOP=1 bash $SCRIPT_DIR/detect_upstream_revert.sh \
       2>&1| tee -a $LOOP_OUTPUT_LOG
 fi
-SKIP_NEXT_REVERT_CHK="0"
+echo "" > $STATE_DIR/loop.skip-revert-detect
 ERROR_HELP=""
 
 echo_log "Looking for $STATE_DIR/$MOZ_LIBWEBRTC_NEXT_BASE.no-op-cherry-pick-msg"
@@ -206,9 +215,11 @@ if [ "x$MODIFIED_BUILD_RELATED_FILE_CNT" != "x0" ]; then
       --include 'third_party/libwebrtc/**moz.build' | wc -l | tr -d " "`
   if [ "x$MOZ_BUILD_CHANGE_CNT" != "x0" ]; then
     echo_log "Detected modified moz.build files, commiting"
+    bash $SCRIPT_DIR/commit-build-file-changes.sh 2>&1| tee -a $LOOP_OUTPUT_LOG
+    TRY_FUZZY_QUERY_STRING="^build-"
+    echo_log "Starting try builds with '$TRY_FUZZY_QUERY_STRING'"
+    ./mach try fuzzy --full -q $TRY_FUZZY_QUERY_STRING 2>&1| tee -a $LOOP_OUTPUT_LOG
   fi
-
-  bash $SCRIPT_DIR/commit-build-file-changes.sh 2>&1| tee -a $LOOP_OUTPUT_LOG
 fi
 ERROR_HELP=""
 

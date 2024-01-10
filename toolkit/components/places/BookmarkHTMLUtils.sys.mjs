@@ -56,7 +56,8 @@
  * both require the content (= title) before actually creating it.
  */
 
-const { NetUtil } = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+import { NetUtil } from "resource://gre/modules/NetUtil.sys.mjs";
+
 import { FileUtils } from "resource://gre/modules/FileUtils.sys.mjs";
 import { PlacesUtils } from "resource://gre/modules/PlacesUtils.sys.mjs";
 
@@ -156,7 +157,7 @@ export var BookmarkHTMLUtils = Object.freeze({
         aInitialImport
       );
     } catch (ex) {
-      console.error("Failed to import bookmarks from " + aSpec + ": " + ex);
+      console.error(`Failed to import bookmarks from ${aSpec}:`, ex);
       notifyObservers(
         PlacesUtils.TOPIC_BOOKMARKS_RESTORE_FAILED,
         aInitialImport
@@ -211,7 +212,7 @@ export var BookmarkHTMLUtils = Object.freeze({
         aInitialImport
       );
     } catch (ex) {
-      console.error("Failed to import bookmarks from " + aFilePath + ": " + ex);
+      console.error(`Failed to import bookmarks from ${aFilePath}:`, ex);
       notifyObservers(
         PlacesUtils.TOPIC_BOOKMARKS_RESTORE_FAILED,
         aInitialImport
@@ -1098,7 +1099,7 @@ function insertFaviconForNode(node) {
         Services.scriptSecurityManager.getSystemPrincipal()
       );
     } catch (ex) {
-      console.error("Failed to import favicon data:" + ex);
+      console.error("Failed to import favicon data:", ex);
     }
   }
 

@@ -435,7 +435,19 @@ class nsTArray_base {
   // @return False if insufficient memory is available; true otherwise.
   template <typename ActualAlloc>
   typename ActualAlloc::ResultTypeProxy EnsureCapacity(size_type aCapacity,
-                                                       size_type aElemSize);
+                                                       size_type aElemSize) {
+    // Do this check here so that our callers can inline it.
+    if (aCapacity <= mHdr->mCapacity) {
+      return ActualAlloc::SuccessResult();
+    }
+    return EnsureCapacityImpl<ActualAlloc>(aCapacity, aElemSize);
+  }
+
+  // The rest of EnsureCapacity. Should only be called if aCapacity >
+  // mHdr->mCapacity.
+  template <typename ActualAlloc>
+  typename ActualAlloc::ResultTypeProxy EnsureCapacityImpl(size_type aCapacity,
+                                                           size_type aElemSize);
 
   // Extend the storage to accommodate aCount extra elements.
   // @param aLength The current size of the array.
@@ -1836,14 +1848,17 @@ class nsTArray_Impl
   // @param aCount The number of elements to remove.
   void RemoveElementsAt(index_type aStart, size_type aCount);
 
- private:
   // Remove a range of elements from this array, but do not check that
   // the range is in bounds.
   // @param aStart The starting index of the elements to remove.
   // @param aCount The number of elements to remove.
   void RemoveElementsAtUnsafe(index_type aStart, size_type aCount);
 
- public:
+  // Same as above, but remove just one element.
+  void RemoveElementAtUnsafe(index_type aIndex) {
+    RemoveElementsAtUnsafe(aIndex, 1);
+  }
+
   // A variation on the RemoveElementsAt method defined above.
   void RemoveElementAt(index_type aIndex) { RemoveElementsAt(aIndex, 1); }
 
@@ -2385,6 +2400,12 @@ class nsTArray_Impl
                      });
   }
 
+  // A variation on the StableSort method defined above that assumes that
+  // 'operator<' is defined for value_type.
+  void StableSort() {
+    StableSort(nsDefaultComparator<value_type, value_type>());
+  }
+
   // This method reverses the array in place.
   void Reverse() {
     value_type* elements = Elements();
@@ -2708,8 +2729,9 @@ inline void ImplCycleCollectionTraverse(
     nsTArray_Impl<E, Alloc>& aField, const char* aName, uint32_t aFlags = 0) {
   ::detail::SetCycleCollectionArrayFlag(aFlags);
   size_t length = aField.Length();
+  E* elements = aField.Elements();
   for (size_t i = 0; i < length; ++i) {
-    ImplCycleCollectionTraverse(aCallback, aField[i], aName, aFlags);
+    ImplCycleCollectionTraverse(aCallback, elements[i], aName, aFlags);
   }
 }
 

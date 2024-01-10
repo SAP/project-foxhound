@@ -699,7 +699,9 @@ class TextInputDelegateTest : BaseSessionTest() {
         )
         ic.sendKeyEvent(shiftKey)
         pressKey(ic, KeyEvent.KEYCODE_DPAD_LEFT)
+        processChildEvents()
         pressKey(ic, KeyEvent.KEYCODE_DPAD_LEFT)
+        processChildEvents()
         pressKey(ic, KeyEvent.KEYCODE_DPAD_LEFT)
         ic.sendKeyEvent(KeyEvent.changeAction(shiftKey, KeyEvent.ACTION_UP))
         // No way to get notification for selection on Java side. So sync shadow text
@@ -722,7 +724,9 @@ class TextInputDelegateTest : BaseSessionTest() {
         )
         ic.sendKeyEvent(shiftKey)
         pressKey(ic, KeyEvent.KEYCODE_DPAD_RIGHT)
+        processChildEvents()
         pressKey(ic, KeyEvent.KEYCODE_DPAD_RIGHT)
+        processChildEvents()
         pressKey(ic, KeyEvent.KEYCODE_DPAD_RIGHT)
         ic.sendKeyEvent(KeyEvent.changeAction(shiftKey, KeyEvent.ACTION_UP))
         // No way to get notification for selection on Java side. So sync shadow text
@@ -1169,9 +1173,6 @@ class TextInputDelegateTest : BaseSessionTest() {
     fun editorInfo_enterKeyHint() {
         // no way to set enterkeyhint on designmode.
         assumeThat("Not in designmode", id, not(equalTo("#designmode")))
-
-        sessionRule.setPrefsUntilTestEnd(mapOf("dom.forms.enterkeyhint" to true))
-
         mainSession.textInput.view = View(InstrumentationRegistry.getInstrumentation().targetContext)
 
         mainSession.loadTestPath(INPUTS_PATH)

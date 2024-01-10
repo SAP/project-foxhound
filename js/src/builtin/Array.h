@@ -70,15 +70,21 @@ extern ArrayObject* NewDenseCopiedArray(JSContext* cx, uint32_t length,
                                         const Value* values,
                                         NewObjectKind newKind = GenericObject);
 
+// Create a dense array from the given (linear)string values, which must be
+// rooted
+extern ArrayObject* NewDenseCopiedArray(JSContext* cx, uint32_t length,
+                                        JSLinearString** values,
+                                        NewObjectKind newKind = GenericObject);
+
 // Like NewDenseCopiedArray, but the array will have |proto| as prototype (or
 // Array.prototype if |proto| is nullptr).
 extern ArrayObject* NewDenseCopiedArrayWithProto(JSContext* cx, uint32_t length,
                                                  const Value* values,
                                                  HandleObject proto);
 
-// Create a dense array based on templateObject with the given length.
-extern ArrayObject* NewDenseFullyAllocatedArrayWithTemplate(
-    JSContext* cx, uint32_t length, ArrayObject* templateObject);
+// Create a dense array with the given shape and length.
+extern ArrayObject* NewDenseFullyAllocatedArrayWithShape(
+    JSContext* cx, uint32_t length, Handle<SharedShape*> shape);
 
 extern ArrayObject* NewArrayWithShape(JSContext* cx, uint32_t length,
                                       Handle<Shape*> shape);
@@ -150,6 +156,10 @@ extern JSString* ArrayToSource(JSContext* cx, HandleObject obj);
 
 extern bool IsCrossRealmArrayConstructor(JSContext* cx, JSObject* obj,
                                          bool* result);
+
+extern bool ObjectMayHaveExtraIndexedOwnProperties(JSObject* obj);
+
+extern bool ObjectMayHaveExtraIndexedProperties(JSObject* obj);
 
 extern bool PrototypeMayHaveIndexedProperties(NativeObject* obj);
 

@@ -49,6 +49,7 @@
 #include "jit/JitOptions.h"
 #include "jit/JitRuntime.h"
 #include "js/CharacterEncoding.h"  // JS_EncodeStringToUTF8
+#include "js/ColumnNumber.h"  // JS::LimitedColumnNumberZeroOrigin, JS::ColumnNumberOffset
 #include "js/CompileOptions.h"
 #include "js/experimental/SourceHook.h"
 #include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
@@ -416,14 +417,8 @@ void js::FillImmutableFlagsFromCompileOptionsForFunction(
 
 // Check if flags matches to compile options for flags set by
 // FillImmutableFlagsFromCompileOptionsForTopLevel above.
-//
-// If isMultiDecode is true, this check minimal set of CompileOptions that is
-// shared across multiple scripts in JS::DecodeMultiStencilsOffThread.
-// Other options should be checked when getting the decoded script from the
-// cache.
 bool js::CheckCompileOptionsMatch(const ReadOnlyCompileOptions& options,
-                                  ImmutableScriptFlags flags,
-                                  bool isMultiDecode) {
+                                  ImmutableScriptFlags flags) {
   using ImmutableFlags = ImmutableScriptFlagsEnum;
 
   bool selfHosted = !!(flags & uint32_t(ImmutableFlags::SelfHosted));
@@ -436,13 +431,13 @@ bool js::CheckCompileOptionsMatch(const ReadOnlyCompileOptions& options,
   return options.selfHostingMode == selfHosted &&
          options.noScriptRval == noScriptRval &&
          options.isRunOnce == treatAsRunOnce &&
-         (isMultiDecode || (options.forceStrictMode() == forceStrict &&
-                            options.nonSyntacticScope == hasNonSyntacticScope));
+         options.forceStrictMode() == forceStrict &&
+         options.nonSyntacticScope == hasNonSyntacticScope;
 }
 
 JS_PUBLIC_API bool JS::CheckCompileOptionsMatch(
     const ReadOnlyCompileOptions& options, JSScript* script) {
-  return js::CheckCompileOptionsMatch(options, script->immutableFlags(), false);
+  return js::CheckCompileOptionsMatch(options, script->immutableFlags());
 }
 
 bool JSScript::initScriptCounts(JSContext* cx) {
@@ -747,11 +742,6 @@ ScriptSourceObject* ScriptSourceObject::create(JSContext* cx,
 [[nodiscard]] static bool MaybeValidateFilename(
     JSContext* cx, Handle<ScriptSourceObject*> sso,
     const JS::InstantiateOptions& options) {
-  // When parsing off-thread we want to do filename validation on the main
-  // thread. This makes off-thread parsing more pure and is simpler because we
-  // can't easily throw exceptions off-thread.
-  MOZ_ASSERT(!cx->isHelperThreadContext());
-
   if (!gFilenameValidationCallback) {
     return true;
   }
@@ -1100,16 +1090,33 @@ void ScriptSource::performDelayedConvertToCompressedSource(
   g->pendingCompressed.destroy();
 }
 
+void ScriptSource::PinnedUnitsBase::addReader() {
+  auto guard = source_->readers_.lock();
+  guard->count++;
+}
+
+template <typename Unit>
+void ScriptSource::PinnedUnitsBase::removeReader() {
+  // Note: We use a Mutex with Exclusive access, such that no PinnedUnits
+  // instance is live while we are compressing the source.
+  auto guard = source_->readers_.lock();
+  MOZ_ASSERT(guard->count > 0);
+  if (--guard->count) {
+    source_->performDelayedConvertToCompressedSource<Unit>(guard);
+  }
+}
+
 template <typename Unit>
 ScriptSource::PinnedUnits<Unit>::~PinnedUnits() {
   if (units_) {
-    // Note: We use a Mutex with Exclusive access, such that no PinnedUnits
-    // instance is live while we are compressing the source.
-    auto guard = source_->readers_.lock();
-    MOZ_ASSERT(guard->count > 0);
-    if (--guard->count) {
-      source_->performDelayedConvertToCompressedSource<Unit>(guard);
-    }
+    removeReader<Unit>();
+  }
+}
+
+template <typename Unit>
+ScriptSource::PinnedUnitsIfUncompressed<Unit>::~PinnedUnitsIfUncompressed() {
+  if (units_) {
+    removeReader<Unit>();
   }
 }
 
@@ -1239,6 +1246,22 @@ TaintMd5 ScriptSource::md5Checksum(JSContext* cx)
 }
 
 template <typename Unit>
+const Unit* ScriptSource::uncompressedUnits(size_t begin, size_t len) {
+  MOZ_ASSERT(begin <= length());
+  MOZ_ASSERT(begin + len <= length());
+
+  if (!isUncompressed<Unit>()) {
+    return nullptr;
+  }
+
+  const Unit* units = uncompressedData<Unit>()->units();
+  if (!units) {
+    return nullptr;
+  }
+  return units + begin;
+}
+
+template <typename Unit>
 ScriptSource::PinnedUnits<Unit>::PinnedUnits(
     JSContext* cx, ScriptSource* source,
     UncompressedSourceCache::AutoHoldEntry& holder, size_t begin, size_t len)
@@ -1247,13 +1270,27 @@ ScriptSource::PinnedUnits<Unit>::PinnedUnits(
 
   units_ = source->units<Unit>(cx, holder, begin, len);
   if (units_) {
-    auto guard = source->readers_.lock();
-    guard->count++;
+    addReader();
   }
 }
 
 template class ScriptSource::PinnedUnits<Utf8Unit>;
 template class ScriptSource::PinnedUnits<char16_t>;
+
+template <typename Unit>
+ScriptSource::PinnedUnitsIfUncompressed<Unit>::PinnedUnitsIfUncompressed(
+    ScriptSource* source, size_t begin, size_t len)
+    : PinnedUnitsBase(source) {
+  MOZ_ASSERT(source->hasSourceType<Unit>(), "must pin units of source's type");
+
+  units_ = source->uncompressedUnits<Unit>(begin, len);
+  if (units_) {
+    addReader();
+  }
+}
+
+template class ScriptSource::PinnedUnitsIfUncompressed<Utf8Unit>;
+template class ScriptSource::PinnedUnitsIfUncompressed<char16_t>;
 
 JSLinearString* ScriptSource::substring(JSContext* cx, size_t start,
                                         size_t stop) {
@@ -1408,9 +1445,7 @@ bool ScriptSource::tryCompressOffThread(JSContext* cx) {
   // occur, that function may require changes.
 
   // The SourceCompressionTask needs to record the major GC number for
-  // scheduling. This cannot be accessed off-thread and must be handle in
-  // ParseTask::finish instead.
-  MOZ_ASSERT(!cx->isHelperThreadContext());
+  // scheduling.
   MOZ_ASSERT(CurrentThreadCanAccessRuntime(cx->runtime()));
 
   // If source compression was already attempted, do not queue a new task.
@@ -1700,9 +1735,6 @@ void SourceCompressionTask::complete() {
 
 bool js::SynchronouslyCompressSource(JSContext* cx,
                                      JS::Handle<BaseScript*> script) {
-  MOZ_ASSERT(!cx->isHelperThreadContext(),
-             "should only sync-compress on the main thread");
-
   // Finish all pending source compressions, including the single compression
   // task that may have been created (by |ScriptSource::tryCompressOffThread|)
   // just after the script was compiled.  Because we have flushed this queue,
@@ -1862,7 +1894,7 @@ template bool ScriptSource::initializeUnretrievableUncompressedSource(
 // For example:
 //   foo.js line 7 > eval
 // indicating code compiled by the call to 'eval' on line 7 of foo.js.
-UniqueChars js::FormatIntroducedFilename(const char* filename, unsigned lineno,
+UniqueChars js::FormatIntroducedFilename(const char* filename, uint32_t lineno,
                                          const char* introducer) {
   // Compute the length of the string in advance, so we can allocate a
   // buffer of the right size on the first shot.
@@ -1897,7 +1929,8 @@ bool ScriptSource::initFromOptions(FrontendContext* fc,
   delazificationMode_ = options.eagerDelazificationStrategy();
 
   startLine_ = options.lineno;
-  startColumn_ = options.column;
+  startColumn_ =
+      JS::LimitedColumnNumberZeroOrigin::fromUnlimited(options.column);
   introductionType_ = options.introductionType;
   setIntroductionOffset(options.introductionOffset);
   // The parameterListEnd_ is initialized later by setParameterListEnd, before
@@ -1906,7 +1939,7 @@ bool ScriptSource::initFromOptions(FrontendContext* fc,
   if (options.hasIntroductionInfo) {
     MOZ_ASSERT(options.introductionType != nullptr);
     const char* filename =
-        options.filename() ? options.filename() : "<unknown>";
+        options.filename() ? options.filename().c_str() : "<unknown>";
     UniqueChars formatted = FormatIntroducedFilename(
         filename, options.introductionLineno, options.introductionType);
     if (!formatted) {
@@ -1917,13 +1950,13 @@ bool ScriptSource::initFromOptions(FrontendContext* fc,
       return false;
     }
   } else if (options.filename()) {
-    if (!setFilename(fc, options.filename())) {
+    if (!setFilename(fc, options.filename().c_str())) {
       return false;
     }
   }
 
   if (options.introducerFilename()) {
-    if (!setIntroducerFilename(fc, options.introducerFilename())) {
+    if (!setIntroducerFilename(fc, options.introducerFilename().c_str())) {
       return false;
     }
   }
@@ -2679,11 +2712,12 @@ const js::SrcNote* js::GetSrcNote(JSContext* cx, JSScript* script,
   return GetSrcNote(cx->caches().gsnCache, script, pc);
 }
 
-unsigned js::PCToLineNumber(unsigned startLine, unsigned startCol,
+unsigned js::PCToLineNumber(unsigned startLine,
+                            JS::LimitedColumnNumberZeroOrigin startCol,
                             SrcNote* notes, jsbytecode* code, jsbytecode* pc,
-                            unsigned* columnp) {
+                            JS::LimitedColumnNumberZeroOrigin* columnp) {
   unsigned lineno = startLine;
-  unsigned column = startCol;
+  JS::LimitedColumnNumberZeroOrigin column = startCol;
 
   /*
    * Walk through source notes accumulating their deltas, keeping track of
@@ -2702,14 +2736,12 @@ unsigned js::PCToLineNumber(unsigned startLine, unsigned startCol,
     SrcNoteType type = sn->type();
     if (type == SrcNoteType::SetLine) {
       lineno = SrcNote::SetLine::getLine(sn, startLine);
-      column = 0;
+      column = JS::LimitedColumnNumberZeroOrigin::zero();
     } else if (type == SrcNoteType::NewLine) {
       lineno++;
-      column = 0;
+      column = JS::LimitedColumnNumberZeroOrigin::zero();
     } else if (type == SrcNoteType::ColSpan) {
-      ptrdiff_t colspan = SrcNote::ColSpan::getSpan(sn);
-      MOZ_ASSERT(ptrdiff_t(column) + colspan >= 0);
-      column += colspan;
+      column += SrcNote::ColSpan::getSpan(sn);
     }
   }
 
@@ -2721,7 +2753,7 @@ unsigned js::PCToLineNumber(unsigned startLine, unsigned startCol,
 }
 
 unsigned js::PCToLineNumber(JSScript* script, jsbytecode* pc,
-                            unsigned* columnp) {
+                            JS::LimitedColumnNumberZeroOrigin* columnp) {
   /* Cope with InterpreterFrame.pc value prior to entering Interpret. */
   if (!pc) {
     return 0;
@@ -2834,7 +2866,7 @@ void js::maybeSpewScriptFinalWarmUpCount(JSScript* script) {
 
 void js::DescribeScriptedCallerForDirectEval(JSContext* cx, HandleScript script,
                                              jsbytecode* pc, const char** file,
-                                             unsigned* linenop,
+                                             uint32_t* linenop,
                                              uint32_t* pcOffset,
                                              bool* mutedErrors) {
   MOZ_ASSERT(script->containsPC(pc));
@@ -2862,7 +2894,7 @@ void js::DescribeScriptedCallerForDirectEval(JSContext* cx, HandleScript script,
 
 void js::DescribeScriptedCallerForCompilation(
     JSContext* cx, MutableHandleScript maybeScript, const char** file,
-    unsigned* linenop, uint32_t* pcOffset, bool* mutedErrors) {
+    uint32_t* linenop, uint32_t* pcOffset, bool* mutedErrors) {
   NonBuiltinFrameIter iter(cx, cx->realm()->principals());
 
   if (iter.done()) {
@@ -3394,7 +3426,7 @@ bool JSScript::dump(JSContext* cx, JS::Handle<JSScript*> script,
     }
 
     json.property("lineno", script->lineno());
-    json.property("column", script->column());
+    json.property("column", script->column().zeroOriginValue());
 
     json.beginListProperty("immutableFlags");
     DumpImmutableScriptFlags(json, script->immutableFlags());
@@ -3498,7 +3530,7 @@ bool JSScript::dumpSrcNotes(JSContext* cx, JS::Handle<JSScript*> script,
 
   unsigned offset = 0;
   unsigned lineno = script->lineno();
-  unsigned column = script->column();
+  JS::LimitedColumnNumberZeroOrigin column = script->column();
   SrcNote* notes = script->notes();
   for (SrcNoteIterator iter(notes); !iter.atEnd(); ++iter) {
     const auto* sn = *iter;
@@ -3508,7 +3540,7 @@ bool JSScript::dumpSrcNotes(JSContext* cx, JS::Handle<JSScript*> script,
     SrcNoteType type = sn->type();
     const char* name = sn->name();
     if (!sp->jsprintf("%3u: %4u %6u %5u [%4u] %-10s", unsigned(sn - notes),
-                      lineno, column, offset, delta, name)) {
+                      lineno, column.zeroOriginValue(), offset, delta, name)) {
       return false;
     }
 
@@ -3521,8 +3553,8 @@ bool JSScript::dumpSrcNotes(JSContext* cx, JS::Handle<JSScript*> script,
         break;
 
       case SrcNoteType::ColSpan: {
-        uint32_t colspan = SrcNote::ColSpan::getSpan(sn);
-        if (!sp->jsprintf(" colspan %u", colspan)) {
+        JS::ColumnNumberOffset colspan = SrcNote::ColSpan::getSpan(sn);
+        if (!sp->jsprintf(" colspan %u", colspan.value())) {
           return false;
         }
         column += colspan;
@@ -3534,12 +3566,12 @@ bool JSScript::dumpSrcNotes(JSContext* cx, JS::Handle<JSScript*> script,
         if (!sp->jsprintf(" lineno %u", lineno)) {
           return false;
         }
-        column = 0;
+        column = JS::LimitedColumnNumberZeroOrigin::zero();
         break;
 
       case SrcNoteType::NewLine:
         ++lineno;
-        column = 0;
+        column = JS::LimitedColumnNumberZeroOrigin::zero();
         break;
 
       default:
@@ -3680,7 +3712,8 @@ bool JSScript::dumpGCThings(JSContext* cx, JS::Handle<JSScript*> script,
 
         if (fun->hasBaseScript()) {
           BaseScript* script = fun->baseScript();
-          if (!sp->jsprintf(" @ %u:%u\n", script->lineno(), script->column())) {
+          if (!sp->jsprintf(" @ %u:%u\n", script->lineno(),
+                            script->column().zeroOriginValue())) {
             return false;
           }
         } else {

@@ -86,11 +86,11 @@ var gWeakIntersectingVideosForTesting = new WeakSet();
 // content process, so we set this as a lazy process global.
 // See PictureInPictureToggleChild.getSiteOverrides for a
 // sense of what the return types are.
-XPCOMUtils.defineLazyGetter(lazy, "gSiteOverrides", () => {
+ChromeUtils.defineLazyGetter(lazy, "gSiteOverrides", () => {
   return PictureInPictureToggleChild.getSiteOverrides();
 });
 
-XPCOMUtils.defineLazyGetter(lazy, "logConsole", () => {
+ChromeUtils.defineLazyGetter(lazy, "logConsole", () => {
   return console.createInstance({
     prefix: "PictureInPictureChild",
     maxLogLevel: Services.prefs.getBoolPref(
@@ -224,6 +224,7 @@ export class PictureInPictureLauncherChild extends JSWindowActorChild {
       webVTTSubtitles: !!video.textTracks?.length,
       scrubberPosition,
       timestamp,
+      volume: PictureInPictureChild.videoWrapper.getVolume(video),
     });
 
     let args = {
@@ -1530,7 +1531,7 @@ export class PictureInPictureToggleChild extends JSWindowActorChild {
       this.sendAsyncMessage("PictureInPicture:OpenToggleContextMenu", {
         screenXDevPx: event.screenX * devicePixelRatio,
         screenYDevPx: event.screenY * devicePixelRatio,
-        mozInputSource: event.mozInputSource,
+        inputSource: event.inputSource,
       });
       event.stopImmediatePropagation();
       event.preventDefault();
@@ -1939,6 +1940,9 @@ export class PictureInPictureChild extends JSWindowActorChild {
         } else {
           this.sendAsyncMessage("PictureInPicture:Unmuting");
         }
+        this.sendAsyncMessage("PictureInPicture:VolumeChange", {
+          volume: this.videoWrapper.getVolume(video),
+        });
         break;
       }
       case "resize": {
@@ -2141,6 +2145,12 @@ export class PictureInPictureChild extends JSWindowActorChild {
       case "PictureInPicture:SetVideoTime": {
         const { scrubberPosition, wasPlaying } = message.data;
         this.setVideoTime(scrubberPosition, wasPlaying);
+        break;
+      }
+      case "PictureInPicture:SetVolume": {
+        const { volume } = message.data;
+        let video = this.getWeakVideo();
+        this.videoWrapper.setVolume(video, volume);
         break;
       }
     }
@@ -2565,12 +2575,16 @@ export class PictureInPictureChild extends JSWindowActorChild {
           this.closePictureInPicture({ reason: "closePlayerShortcut" });
           break;
         case "downArrow" /* Volume decrease */:
-          if (this.isKeyDisabled(lazy.KEYBOARD_CONTROLS.VOLUME)) {
+          if (
+            this.isKeyDisabled(lazy.KEYBOARD_CONTROLS.VOLUME) ||
+            this.videoWrapper.isMuted(video)
+          ) {
             return;
           }
           oldval = this.videoWrapper.getVolume(video);
-          this.videoWrapper.setVolume(video, oldval < 0.1 ? 0 : oldval - 0.1);
-          this.videoWrapper.setMuted(video, false);
+          newval = oldval < 0.1 ? 0 : oldval - 0.1;
+          this.videoWrapper.setVolume(video, newval);
+          this.videoWrapper.setMuted(video, newval === 0);
           break;
         case "upArrow" /* Volume increase */:
           if (this.isKeyDisabled(lazy.KEYBOARD_CONTROLS.VOLUME)) {

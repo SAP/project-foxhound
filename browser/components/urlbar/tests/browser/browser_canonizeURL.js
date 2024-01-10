@@ -61,9 +61,7 @@ add_task(async function checkCtrlWorks() {
       undefined,
       true
     );
-    win.gURLBar.focus();
-    win.gURLBar.inputField.value = inputValue.slice(0, -1);
-    EventUtils.sendString(inputValue.slice(-1), win);
+    await UrlbarTestUtils.inputIntoURLBar(win, inputValue);
     EventUtils.synthesizeKey("KEY_Enter", options, win);
     await Promise.all([promiseLoad, promiseStopped]);
   }
@@ -103,8 +101,8 @@ add_task(async function checkPrefTurnsOffCanonize() {
 
   win.gURLBar.focus();
   win.gURLBar.selectionStart = win.gURLBar.selectionEnd =
-    win.gURLBar.inputField.value.length;
-  win.gURLBar.inputField.value = "exampl";
+    win.gURLBar.value.length;
+  win.gURLBar.value = "exampl";
   EventUtils.sendString("e", win);
   EventUtils.synthesizeKey("KEY_Enter", { ctrlKey: true }, win);
 

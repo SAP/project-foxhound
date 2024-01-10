@@ -6,7 +6,7 @@ import os
 import sys
 import unittest
 
-from marionette_driver.errors import SessionNotCreatedException
+import marionette_driver.errors as errors
 from marionette_harness import MarionetteTestCase
 
 
@@ -98,14 +98,14 @@ class TestCapabilities(MarionetteTestCase):
         self.assertIn("moz:platformVersion", self.caps)
         self.assertEqual(self.caps["moz:platformVersion"], self.os_version)
 
-        self.assertIn("moz:useNonSpecCompliantPointerOrigin", self.caps)
-        self.assertFalse(self.caps["moz:useNonSpecCompliantPointerOrigin"])
-
         self.assertIn("moz:webdriverClick", self.caps)
         self.assertTrue(self.caps["moz:webdriverClick"])
 
         self.assertIn("moz:windowless", self.caps)
         self.assertFalse(self.caps["moz:windowless"])
+
+        # No longer supported capabilities
+        self.assertNotIn("moz:useNonSpecCompliantPointerOrigin", self.caps)
 
     def test_disable_webdriver_click(self):
         self.marionette.delete_session()
@@ -113,11 +113,14 @@ class TestCapabilities(MarionetteTestCase):
         caps = self.marionette.session_capabilities
         self.assertFalse(caps["moz:webdriverClick"])
 
-    def test_use_non_spec_compliant_pointer_origin(self):
+    def test_no_longer_supported_capabilities(self):
         self.marionette.delete_session()
-        self.marionette.start_session({"moz:useNonSpecCompliantPointerOrigin": True})
-        caps = self.marionette.session_capabilities
-        self.assertTrue(caps["moz:useNonSpecCompliantPointerOrigin"])
+        with self.assertRaisesRegexp(
+            errors.SessionNotCreatedException, "InvalidArgumentError"
+        ):
+            self.marionette.start_session(
+                {"moz:useNonSpecCompliantPointerOrigin": True}
+            )
 
     def test_valid_uuid4_when_creating_a_session(self):
         self.assertNotIn(
@@ -153,7 +156,7 @@ class TestCapabilityMatching(MarionetteTestCase):
     def test_accept_insecure_certs(self):
         for value in ["", 42, {}, []]:
             print("  type {}".format(type(value)))
-            with self.assertRaises(SessionNotCreatedException):
+            with self.assertRaises(errors.SessionNotCreatedException):
                 self.marionette.start_session({"acceptInsecureCerts": value})
 
         self.delete_session()
@@ -171,33 +174,23 @@ class TestCapabilityMatching(MarionetteTestCase):
 
         self.delete_session()
 
-        for value in ["", "EAGER", True, 42, {}, [], None]:
+        for value in ["", "EAGER", True, 42, {}, []]:
             print("invalid strategy {}".format(value))
             with self.assertRaisesRegexp(
-                SessionNotCreatedException, "InvalidArgumentError"
+                errors.SessionNotCreatedException, "InvalidArgumentError"
             ):
                 self.marionette.start_session({"pageLoadStrategy": value})
 
     def test_set_window_rect(self):
-        if self.browser_name == "firefox":
-            self.marionette.start_session({"setWindowRect": True})
-            self.delete_session()
-            with self.assertRaisesRegexp(
-                SessionNotCreatedException, "InvalidArgumentError"
-            ):
-                self.marionette.start_session({"setWindowRect": False})
-        else:
+        with self.assertRaisesRegexp(
+            errors.SessionNotCreatedException, "InvalidArgumentError"
+        ):
             self.marionette.start_session({"setWindowRect": False})
-            self.delete_session()
-            with self.assertRaisesRegexp(
-                SessionNotCreatedException, "InvalidArgumentError"
-            ):
-                self.marionette.start_session({"setWindowRect": True})
 
     def test_timeouts(self):
         for value in ["", 2.5, {}, []]:
             print("  type {}".format(type(value)))
-            with self.assertRaises(SessionNotCreatedException):
+            with self.assertRaises(errors.SessionNotCreatedException):
                 self.marionette.start_session({"timeouts": {"pageLoad": value}})
 
         self.delete_session()
@@ -213,7 +206,7 @@ class TestCapabilityMatching(MarionetteTestCase):
     def test_strict_file_interactability(self):
         for value in ["", 2.5, {}, []]:
             print("  type {}".format(type(value)))
-            with self.assertRaises(SessionNotCreatedException):
+            with self.assertRaises(errors.SessionNotCreatedException):
                 self.marionette.start_session({"strictFileInteractability": value})
 
         self.delete_session()
@@ -260,10 +253,10 @@ class TestCapabilityMatching(MarionetteTestCase):
 
         # Invalid values
         self.delete_session()
-        for behavior in [None, "", "ACCEPT", True, 42, {}, []]:
+        for behavior in ["", "ACCEPT", True, 42, {}, []]:
             print("invalid unhandled prompt behavior {}".format(behavior))
             with self.assertRaisesRegexp(
-                SessionNotCreatedException, "InvalidArgumentError"
+                errors.SessionNotCreatedException, "InvalidArgumentError"
             ):
                 self.marionette.start_session({"unhandledPromptBehavior": behavior})
 
@@ -271,3 +264,59 @@ class TestCapabilityMatching(MarionetteTestCase):
         self.marionette.start_session({"webSocketUrl": True})
         # Remote Agent is not active by default
         self.assertNotIn("webSocketUrl", self.marionette.session_capabilities)
+
+    def test_webauthn_extension_cred_blob(self):
+        for value in ["", 42, {}, []]:
+            print("  type {}".format(type(value)))
+            with self.assertRaises(errors.SessionNotCreatedException):
+                self.marionette.start_session({"webauthn:extension:credBlob": value})
+
+        self.delete_session()
+        self.marionette.start_session({"webauthn:extension:credBlob": True})
+        self.assertTrue(
+            self.marionette.session_capabilities["webauthn:extension:credBlob"]
+        )
+
+    def test_webauthn_extension_large_blob(self):
+        for value in ["", 42, {}, []]:
+            print("  type {}".format(type(value)))
+            with self.assertRaises(errors.SessionNotCreatedException):
+                self.marionette.start_session({"webauthn:extension:largeBlob": value})
+
+        self.delete_session()
+        self.marionette.start_session({"webauthn:extension:largeBlob": True})
+        self.assertTrue(
+            self.marionette.session_capabilities["webauthn:extension:largeBlob"]
+        )
+
+    def test_webauthn_extension_prf(self):
+        for value in ["", 42, {}, []]:
+            print("  type {}".format(type(value)))
+            with self.assertRaises(errors.SessionNotCreatedException):
+                self.marionette.start_session({"webauthn:extension:prf": value})
+
+        self.delete_session()
+        self.marionette.start_session({"webauthn:extension:prf": True})
+        self.assertTrue(self.marionette.session_capabilities["webauthn:extension:prf"])
+
+    def test_webauthn_extension_uvm(self):
+        for value in ["", 42, {}, []]:
+            print("  type {}".format(type(value)))
+            with self.assertRaises(errors.SessionNotCreatedException):
+                self.marionette.start_session({"webauthn:extension:uvm": value})
+
+        self.delete_session()
+        self.marionette.start_session({"webauthn:extension:uvm": True})
+        self.assertTrue(self.marionette.session_capabilities["webauthn:extension:uvm"])
+
+    def test_webauthn_virtual_authenticators(self):
+        for value in ["", 42, {}, []]:
+            print("  type {}".format(type(value)))
+            with self.assertRaises(errors.SessionNotCreatedException):
+                self.marionette.start_session({"webauthn:virtualAuthenticators": value})
+
+        self.delete_session()
+        self.marionette.start_session({"webauthn:virtualAuthenticators": True})
+        self.assertTrue(
+            self.marionette.session_capabilities["webauthn:virtualAuthenticators"]
+        )

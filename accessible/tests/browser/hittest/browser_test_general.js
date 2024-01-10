@@ -5,7 +5,6 @@
 "use strict";
 
 async function runTests(browser, accDoc) {
-  await waitForImageMap(browser, accDoc);
   const dpr = await getContentDPR(browser);
 
   await testChildAtPoint(
@@ -60,7 +59,9 @@ async function runTests(browser, accDoc) {
   await testChildAtPoint(dpr, 1, 1, area, area, area);
 
   info("Test image maps. Their children are not in the layout tree.");
+  await waitForImageMap(browser, accDoc);
   const imgmap = findAccessibleChildByID(accDoc, "imgmap");
+  ok(imgmap, "Image map exists");
   const theLetterA = imgmap.firstChild;
   await hitTest(browser, imgmap, theLetterA, theLetterA);
   await hitTest(
@@ -231,4 +232,144 @@ addAccessibleTask(
     // Ensure that all hittest elements are in view.
     iframeAttrs: { style: "width: 600px; height: 600px; padding: 10px;" },
   }
+);
+
+/**
+ * Verify that hit testing returns the proper accessible when one acc content
+ * is partially hidden due to overflow:hidden;
+ */
+addAccessibleTask(
+  `
+  <style>
+    div div {
+      overflow: hidden;
+      font-family: monospace;
+      width: 2ch;
+    }
+  </style>
+  <div id="container" style="display: flex; flex-direction: row-reverse;">
+    <div id="aNode">abcde</div><div id="fNode">fghij</div>
+  </div>`,
+  async function (browser, docAcc) {
+    const container = findAccessibleChildByID(docAcc, "container");
+    const aNode = findAccessibleChildByID(docAcc, "aNode");
+    const fNode = findAccessibleChildByID(docAcc, "fNode");
+    const dpr = await getContentDPR(browser);
+    const [, , containerWidth] = Layout.getBounds(container, dpr);
+    const [, , aNodeWidth] = Layout.getBounds(aNode, dpr);
+
+    await testChildAtPoint(
+      dpr,
+      containerWidth - 1,
+      1,
+      container,
+      aNode,
+      aNode.firstChild
+    );
+    await testChildAtPoint(
+      dpr,
+      containerWidth - aNodeWidth - 1,
+      1,
+      container,
+      fNode,
+      fNode.firstChild
+    );
+  },
+  { chrome: true, iframe: true, remoteIframe: true }
+);
+
+/**
+ * Verify that hit testing is appropriately fuzzy when working with generics.
+ * If we match on a generic which contains additional generics and a single text
+ * leaf, we should return the text leaf as the deepest match instead of the
+ * generic itself.
+ */
+addAccessibleTask(
+  `
+  <a href="example.com" id="link">
+    <span style="overflow:hidden;" id="generic"><span aria-hidden="true" id="visible">I am some visible text</span><span id="invisible" style="overflow:hidden; height: 1px; width: 1px; position:absolute; clip: rect(0 0 0 0); display:block;">I am some invisible text</span></span>
+  </a>`,
+  async function (browser, docAcc) {
+    const link = findAccessibleChildByID(docAcc, "link");
+    const generic = findAccessibleChildByID(docAcc, "generic");
+    const invisible = findAccessibleChildByID(docAcc, "invisible");
+    const dpr = await getContentDPR(browser);
+
+    await testChildAtPoint(
+      dpr,
+      1,
+      1,
+      link,
+      generic, // Direct Child
+      invisible.firstChild // Deepest Child
+    );
+
+    await testOffsetAtPoint(
+      findAccessibleChildByID(docAcc, "invisible", [Ci.nsIAccessibleText]),
+      1,
+      1,
+      COORDTYPE_PARENT_RELATIVE,
+      0
+    );
+  },
+  { chrome: false, iframe: true, remoteIframe: true }
+);
+
+/**
+ * Verify that hit testing is appropriately fuzzy when working with generics with siblings.
+ * We should return the deepest text leaf as the deepest match instead of the generic itself.
+ */
+addAccessibleTask(
+  `
+<div id="generic"><span aria-hidden="true" id="visible">Mozilla</span><span id="invisible" style="display: block !important;border: 0 !important;clip: rect(0 0 0 0) !important;height: 1px !important;margin: -1px !important;overflow: hidden !important;padding: 0 !important;position: absolute !important;white-space: nowrap !important;width: 1px !important;">hello world<br><div id="extraContainer">Mozilla</div></span><br>I am some other text</div>`,
+  async function (browser, docAcc) {
+    const generic = findAccessibleChildByID(docAcc, "generic");
+    const invisible = findAccessibleChildByID(docAcc, "invisible");
+    const dpr = await getContentDPR(browser);
+
+    await testChildAtPoint(
+      dpr,
+      1,
+      1,
+      generic,
+      invisible, // Direct Child
+      invisible.firstChild // Deepest Child
+    );
+  },
+  { chrome: false, iframe: true, remoteIframe: true }
+);
+
+/**
+ * Verify that hit testing correctly ignores
+ * elements with pointer-events: none;
+ */
+addAccessibleTask(
+  `<div id="container" style="position:relative;"><button id="obscured">click me</button><div id="overlay" style="pointer-events:none; top:0; bottom:0; left:0; right:0; position: absolute;"></div></div><button id="clickable">I am clickable</button>`,
+  async function (browser, docAcc) {
+    const container = findAccessibleChildByID(docAcc, "container");
+    const obscured = findAccessibleChildByID(docAcc, "obscured");
+    const clickable = findAccessibleChildByID(docAcc, "clickable");
+    const dpr = await getContentDPR(browser);
+    let [targetX, targetY, targetW, targetH] = Layout.getBounds(obscured, dpr);
+    const [x, y] = Layout.getBounds(docAcc, dpr);
+    await testChildAtPoint(
+      dpr,
+      targetX - x + targetW / 2,
+      targetY - y + targetH / 2,
+      docAcc,
+      container, // Direct Child
+      obscured // Deepest Child
+    );
+
+    [targetX, targetY, targetW, targetH] = Layout.getBounds(clickable, dpr);
+    await testChildAtPoint(
+      dpr,
+      targetX - x + targetW / 2,
+      targetY - y + targetH / 2,
+      docAcc,
+      clickable, // Direct Child
+      clickable // Deepest Child
+    );
+  },
+  { chrome: false, iframe: true, remoteIframe: true }
 );

@@ -186,6 +186,25 @@ class WebPlatformTest(TestingMixin, MercurialScript, CodeCoverageMixin, AndroidM
                     "help": "Add test tag (which includes URL prefix) to include.",
                 },
             ],
+            [
+                ["--exclude-tag"],
+                {
+                    "action": "append",
+                    "dest": "exclude_tag",
+                    "default": [],
+                    "help": "Add test tag (which includes URL prefix) to exclude.",
+                },
+            ],
+            [
+                ["--repeat"],
+                {
+                    "action": "store",
+                    "dest": "repeat",
+                    "default": 0,
+                    "type": int,
+                    "help": "Repeat tests (used for confirm-failures) X times.",
+                },
+            ],
         ]
         + copy.deepcopy(testing_config_options)
         + copy.deepcopy(code_coverage_config_options)
@@ -216,6 +235,7 @@ class WebPlatformTest(TestingMixin, MercurialScript, CodeCoverageMixin, AndroidM
         self.test_packages_url = c.get("test_packages_url")
         self.installer_path = c.get("installer_path")
         self.binary_path = c.get("binary_path")
+        self.repeat = c.get("repeat")
         self.abs_app_dir = None
         self.xre_path = None
         if self.is_emulator:
@@ -345,11 +365,18 @@ class WebPlatformTest(TestingMixin, MercurialScript, CodeCoverageMixin, AndroidM
             % os.path.join(
                 dirs["abs_test_extensions_dir"], "specialpowers@mozilla.org.xpi"
             ),
+            # Ensure that we don't get a Python traceback from handlers that will be
+            # added to the log summary
+            "--suppress-handler-traceback",
         ]
 
         is_windows_7 = (
             mozinfo.info["os"] == "win" and mozinfo.info["os_version"] == "6.1"
         )
+
+        if self.repeat > 0:
+            # repeat should repeat the original test, so +1 for first run
+            cmd.append("--repeat=%s" % (self.repeat + 1))
 
         if (
             self.is_android
@@ -472,6 +499,8 @@ class WebPlatformTest(TestingMixin, MercurialScript, CodeCoverageMixin, AndroidM
             cmd.append(f"--exclude={url_prefix}")
         for tag in c["tag"]:
             cmd.append(f"--tag={tag}")
+        for tag in c["exclude_tag"]:
+            cmd.append(f"--exclude-tag={tag}")
 
         cmd.extend(test_paths)
 

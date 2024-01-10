@@ -132,7 +132,7 @@ bool wasm::CreateStackMapForFunctionEntryTrap(
   for (WasmABIArgIter i(argTypes); !i.done(); i++) {
     ABIArg argLoc = *i;
     if (argLoc.kind() == ABIArg::Stack &&
-        argTypes[i.index()] == MIRType::RefOrNull) {
+        argTypes[i.index()] == MIRType::WasmAnyRef) {
       uint32_t offset = argLoc.offsetFromArgBase();
       MOZ_ASSERT(offset < nInboundStackArgBytes);
       MOZ_ASSERT(offset % sizeof(void*) == 0);
@@ -180,7 +180,7 @@ bool wasm::GenerateStackmapEntriesForTrapExit(
   }
 
   for (WasmABIArgIter i(args); !i.done(); i++) {
-    if (!i->argInRegister() || i.mirType() != MIRType::RefOrNull) {
+    if (!i->argInRegister() || i.mirType() != MIRType::WasmAnyRef) {
       continue;
     }
 
@@ -219,9 +219,9 @@ void wasm::EmitWasmPreBarrierGuard(MacroAssembler& masm, Register instance,
                 wasm::TrapSite(masm.currentOffset(), *trapOffset));
   }
 
-  // If the previous value is null, we don't need the barrier.
+  // If the previous value is not a GC thing, we don't need the barrier.
   masm.loadPtr(Address(valueAddr, valueOffset), scratch);
-  masm.branchTestPtr(Assembler::Zero, scratch, scratch, skipBarrier);
+  masm.branchWasmAnyRefIsGCThing(false, scratch, skipBarrier);
 }
 
 void wasm::EmitWasmPreBarrierCall(MacroAssembler& masm, Register instance,
@@ -258,9 +258,6 @@ void wasm::EmitWasmPostBarrierGuard(MacroAssembler& masm,
                                     const Maybe<Register>& object,
                                     Register otherScratch, Register setValue,
                                     Label* skipBarrier) {
-  // If the pointer being stored is null, no barrier.
-  masm.branchTestPtr(Assembler::Zero, setValue, setValue, skipBarrier);
-
   // If there is a containing object and it is in the nursery, no barrier.
   if (object) {
     masm.branchPtrInNurseryChunk(Assembler::Equal, *object, otherScratch,
@@ -268,8 +265,8 @@ void wasm::EmitWasmPostBarrierGuard(MacroAssembler& masm,
   }
 
   // If the pointer being stored is to a tenured object, no barrier.
-  masm.branchPtrInNurseryChunk(Assembler::NotEqual, setValue, otherScratch,
-                               skipBarrier);
+  masm.branchWasmAnyRefIsNurseryCell(false, setValue, otherScratch,
+                                     skipBarrier);
 }
 
 #ifdef DEBUG
@@ -305,8 +302,11 @@ bool wasm::IsValidStackMapKey(bool debugEnabled, const uint8_t* nextPC) {
 #  elif defined(JS_CODEGEN_RISCV64)
   const uint32_t* insn = (const uint32_t*)nextPC;
   return (((uintptr_t(insn) & 3) == 0) &&
-              (insn[-1] == 0x00006037 && insn[-2] == 0x00100073) ||  // break;
-          ((insn[-1] & kBaseOpcodeMask) == JALR));
+          ((insn[-1] == 0x00006037 && insn[-2] == 0x00100073) ||  // break;
+           ((insn[-1] & kBaseOpcodeMask) == JALR) ||
+           ((insn[-1] & kBaseOpcodeMask) == JAL) ||
+           (insn[-1] == 0x00100073 &&
+            (insn[-2] & kITypeMask) == RO_CSRRWI)));  // wasm trap
 #  else
   MOZ_CRASH("IsValidStackMapKey: requires implementation on this platform");
 #  endif
