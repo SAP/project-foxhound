@@ -4040,6 +4040,9 @@ pref("privacy.query_stripping.listService.logLevel", "Error");
 // Sources and sinks are all active by default, the idea here is to provide a complete
 // list for users to disable to suit their needs.
 
+// Add a single master switch to disable tainting
+pref("tainting.active", true);
+
 // Sources
 pref("tainting.source.MessageEvent", true);
 pref("tainting.source.PushMessageData", true);
@@ -4071,7 +4074,6 @@ pref("tainting.source.window.name", true);
 pref("tainting.sink.EventSource", true);
 pref("tainting.sink.Function.ctor", true);
 pref("tainting.sink.Range.createContextualFragment(fragment)", true);
-pref("tainting.sink.ReportTaintSink", true);
 pref("tainting.sink.WebSocket", true);
 pref("tainting.sink.WebSocket.send", true);
 pref("tainting.sink.XMLHttpRequest.open(password)", true);

@@ -26,13 +26,14 @@ using namespace mozilla;
 using namespace mozilla::dom;
 
 #define PREFERENCES_TAINTING "tainting."
+#define PREFERENCES_TAINTING_ACTIVE PREFERENCES_TAINTING "active"
 #define PREFERENCES_TAINTING_SOURCE PREFERENCES_TAINTING "source."
 #define PREFERENCES_TAINTING_SINK PREFERENCES_TAINTING "sink."
 
 static LazyLogModule gTaintLog("Taint");
 
 inline bool isActive(const char* name) {
-  return Preferences::GetBool(name, true);
+  return Preferences::GetBool(PREFERENCES_TAINTING_ACTIVE, true) && Preferences::GetBool(name, true);
 }
 
 inline bool isSinkActive(const char* name) {
