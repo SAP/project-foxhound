@@ -50,6 +50,7 @@
 #include "mozilla/RestyleManager.h"
 
 #include "nsLayoutUtils.h"
+#include "nsTaintingUtils.h"
 
 using namespace mozilla::net;
 using mozilla::Maybe;

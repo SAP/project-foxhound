@@ -21,6 +21,7 @@
 #include "mozilla/dom/Document.h"
 #include "nsPresContext.h"
 #include "nsIURI.h"
+#include "nsTaintingUtils.h"
 #include "nsWindowSizes.h"
 
 NS_IMPL_NS_NEW_HTML_ELEMENT(Anchor)

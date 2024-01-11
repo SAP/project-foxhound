@@ -129,6 +129,7 @@
 #include "nsQueryObject.h"
 #include "nsRange.h"
 #include "nsSize.h"
+#include "nsTaintingUtils.h"
 #include "nsThreadUtils.h"
 #include "nsURIHashKey.h"
 #include "nsURLHelper.h"

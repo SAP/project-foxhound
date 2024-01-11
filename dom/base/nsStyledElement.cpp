@@ -29,6 +29,7 @@
 #include "nsXULElement.h"
 #include "nsContentUtils.h"
 #include "nsStyleUtil.h"
+#include "nsTaintingUtils.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;

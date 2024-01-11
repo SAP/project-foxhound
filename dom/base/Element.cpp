@@ -181,6 +181,7 @@
 #include "nsStyleStruct.h"
 #include "nsStyledElement.h"
 #include "nsTArray.h"
+#include "nsTaintingUtils.h"
 #include "nsTextNode.h"
 #include "nsThreadUtils.h"
 #include "nsViewManager.h"

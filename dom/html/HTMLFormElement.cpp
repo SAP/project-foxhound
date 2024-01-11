@@ -69,6 +69,7 @@
 #include "RadioNodeList.h"
 
 #include "nsLayoutUtils.h"
+#include "nsTaintingUtils.h"
 
 #include "mozAutoDocUpdate.h"
 #include "nsIHTMLCollection.h"

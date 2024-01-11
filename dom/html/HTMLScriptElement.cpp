@@ -22,6 +22,7 @@
 #include "nsDOMJSUtils.h"
 #include "nsIScriptError.h"
 #include "nsISupportsImpl.h"
+#include "nsTaintingUtils.h"
 #include "mozilla/dom/HTMLScriptElement.h"
 #include "mozilla/dom/HTMLScriptElementBinding.h"
 #include "mozilla/StaticPrefs_dom.h"

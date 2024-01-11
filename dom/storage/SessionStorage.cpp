@@ -17,6 +17,7 @@
 #include "nsContentUtils.h"
 #include "nsIPrincipal.h"
 #include "nsPIDOMWindow.h"
+#include "nsTaintingUtils.h"
 #include "nsThreadUtils.h"
 
 namespace mozilla::dom {

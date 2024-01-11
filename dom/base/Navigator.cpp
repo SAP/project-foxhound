@@ -92,6 +92,7 @@
 #include "MediaManager.h"
 
 #include "nsJSUtils.h"
+#include "nsTaintingUtils.h"
 
 #include "mozilla/dom/Promise.h"
 

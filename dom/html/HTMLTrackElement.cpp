@@ -33,6 +33,7 @@
 #include "nsISupportsPrimitives.h"
 #include "nsNetUtil.h"
 #include "nsStyleConsts.h"
+#include "nsTaintingUtils.h"
 #include "nsThreadUtils.h"
 #include "nsVideoFrame.h"
 

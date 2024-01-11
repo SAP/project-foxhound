@@ -19,6 +19,7 @@
 #include "nsIContentInlines.h"
 #include "nsIWidget.h"
 #include "nsContentUtils.h"
+#include "nsTaintingUtils.h"
 #ifdef XP_MACOSX
 #  include "mozilla/EventDispatcher.h"
 #  include "mozilla/dom/Event.h"

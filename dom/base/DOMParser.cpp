@@ -23,6 +23,7 @@
 #include "nsJSUtils.h"
 #include "nsError.h"
 #include "nsPIDOMWindow.h"
+#include "nsTaintingUtils.h"
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/LoadInfo.h"
 #include "mozilla/NullPrincipal.h"

@@ -47,6 +47,7 @@
 #include "nsSerializationHelper.h"
 #include "nsServiceManagerUtils.h"
 #include "nsStreamUtils.h"
+#include "nsTaintingUtils.h"
 #include "xpcpublic.h"
 
 using namespace mozilla;

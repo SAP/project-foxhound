@@ -27,6 +27,7 @@
 #include "nsDocShell.h"
 #include "nsGlobalWindowOuter.h"
 #include "nsPIDOMWindowInlines.h"
+#include "nsTaintingUtils.h"
 #include "mozilla/Likely.h"
 #include "nsCycleCollectionParticipant.h"
 #include "mozilla/BasePrincipal.h"

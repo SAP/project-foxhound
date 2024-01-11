@@ -97,6 +97,7 @@
 #include "nsRange.h"
 #include "nsString.h"
 #include "nsStyleConsts.h"
+#include "nsTaintingUtils.h"
 #include "nsTextNode.h"
 #include "nsUnicharUtils.h"
 #include "nsWindowSizes.h"

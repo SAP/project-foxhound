@@ -20,6 +20,7 @@
 #include "nsContentUtils.h"
 #include "nsSandboxFlags.h"
 #include "nsNetUtil.h"
+#include "nsTaintingUtils.h"
 
 NS_IMPL_NS_NEW_HTML_ELEMENT_CHECK_PARSER(IFrame)
 

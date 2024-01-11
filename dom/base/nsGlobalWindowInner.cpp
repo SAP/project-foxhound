@@ -300,6 +300,7 @@
 #include "nsTLiteralString.h"
 #include "nsTObserverArray.h"
 #include "nsTStringRepr.h"
+#include "nsTaintingUtils.h"
 #include "nsThreadUtils.h"
 #include "nsWeakReference.h"
 #include "nsWindowMemoryReporter.h"

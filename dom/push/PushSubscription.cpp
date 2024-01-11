@@ -10,6 +10,7 @@
 #include "nsIPushService.h"
 #include "nsIScriptObjectPrincipal.h"
 #include "nsServiceManagerUtils.h"
+#include "nsTaintingUtils.h"
 
 #include "mozilla/Base64.h"
 #include "mozilla/Unused.h"
