@@ -4031,3 +4031,96 @@ pref("dom.sitepermsaddon-provider.separatedBlocklistedDomains", "shopee.co.th,sh
 
 // Log level for logger in URLQueryStrippingListService
 pref("privacy.query_stripping.listService.logLevel", "Error");
+
+
+// Tainting Preferences
+// All preferences related to taint-tracking
+
+
+// Sources and sinks are all active by default, the idea here is to provide a complete
+// list for users to disable to suit their needs.
+
+// Sources
+pref("tainting.source.MessageEvent", true);
+pref("tainting.source.PushMessageData", true);
+pref("tainting.source.PushSubscription.endpoint", true);
+pref("tainting.source.WebSocket.MessageEvent.data", true);
+pref("tainting.source.XMLHttpRequest.response", true);
+pref("tainting.source.document.baseURI", true);
+pref("tainting.source.document.cookie", true);
+pref("tainting.source.document.documentURI", true);
+pref("tainting.source.document.referrer", true);
+pref("tainting.source.element.getAttribute", true);
+pref("tainting.source.element.getAttributeNS", true);
+pref("tainting.source.input.value", true);
+pref("tainting.source.localStorage.getItem", true);
+pref("tainting.source.location.hash", true);
+pref("tainting.source.location.host", true);
+pref("tainting.source.location.hostname", true);
+pref("tainting.source.location.href", true);
+pref("tainting.source.location.origin", true);
+pref("tainting.source.location.pathname", true);
+pref("tainting.source.location.port", true);
+pref("tainting.source.location.protocol", true);
+pref("tainting.source.location.search", true);
+pref("tainting.source.script.innerHTML", true);
+pref("tainting.source.sessionStorage.getItem", true);
+pref("tainting.source.window.name", true);
+
+// Sinks
+pref("tainting.sink.EventSource", true);
+pref("tainting.sink.Function.ctor", true);
+pref("tainting.sink.Range.createContextualFragment(fragment)", true);
+pref("tainting.sink.ReportTaintSink", true);
+pref("tainting.sink.WebSocket", true);
+pref("tainting.sink.WebSocket.send", true);
+pref("tainting.sink.XMLHttpRequest.open(password)", true);
+pref("tainting.sink.XMLHttpRequest.open(url)", true);
+pref("tainting.sink.XMLHttpRequest.open(username)", true);
+pref("tainting.sink.XMLHttpRequest.send", true);
+pref("tainting.sink.XMLHttpRequest.setRequestHeader(name)", true);
+pref("tainting.sink.XMLHttpRequest.setRequestHeader(value)", true);
+pref("tainting.sink.a.href", true);
+pref("tainting.sink.area.href", true);
+pref("tainting.sink.document.cookie", true);
+pref("tainting.sink.document.writeln", true);
+pref("tainting.sink.document.write", true);
+pref("tainting.sink.element.style", true);
+pref("tainting.sink.embed.src", true);
+pref("tainting.sink.eval", true);
+pref("tainting.sink.eventHandler", true);
+pref("tainting.sink.fetch.body", true);
+pref("tainting.sink.fetch.url", true);
+pref("tainting.sink.form.action", true);
+pref("tainting.sink.iframe.src", true);
+pref("tainting.sink.iframe.srcdoc", true);
+pref("tainting.sink.innerHTML", true);
+pref("tainting.sink.insertAdjacentHTML", true);
+pref("tainting.sink.insertAdjacentText", true);
+pref("tainting.sink.localStorage.setItem", true);
+pref("tainting.sink.localStorage.setItem(key)", true);
+pref("tainting.sink.location.assign", true);
+pref("tainting.sink.location.hash", true);
+pref("tainting.sink.location.host", true);
+pref("tainting.sink.location.href", true);
+pref("tainting.sink.location.pathname", true);
+pref("tainting.sink.location.port", true);
+pref("tainting.sink.location.protocol", true);
+pref("tainting.sink.location.replace", true);
+pref("tainting.sink.location.search", true);
+pref("tainting.sink.media.src", true);
+pref("tainting.sink.navigator.sendBeacon(body)", true);
+pref("tainting.sink.navigator.sendBeacon(url)", true);
+pref("tainting.sink.object.data", true);
+pref("tainting.sink.outerHTML", true);
+pref("tainting.sink.script.innerHTML", true);
+pref("tainting.sink.script.src", true);
+pref("tainting.sink.script.text", true);
+pref("tainting.sink.script.textContent", true);
+pref("tainting.sink.sessionStorage.setItem", true);
+pref("tainting.sink.sessionStorage.setItem(key)", true);
+pref("tainting.sink.setInterval", true);
+pref("tainting.sink.setTimeout", true);
+pref("tainting.sink.track.src", true);
+pref("tainting.sink.window.open", true);
+pref("tainting.sink.window.postMessage", true);

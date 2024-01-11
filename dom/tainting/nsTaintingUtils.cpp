@@ -7,21 +7,16 @@
  * Modifications Copyright SAP SE. 2019-2021.  All rights reserved.
  */
 
-/**
- * This is not a generated file. It contains common utility functions
- * invoked from the JavaScript code generated from IDL interfaces.
- * The goal of the utility functions is to cut down on the size of
- * the generated code itself.
- */
-
 #include "nsTaintingUtils.h"
 
+#include <string>
 #include <utility>
 #include "jsfriendapi.h"
 #include "mozilla/dom/ToJSValue.h"
 #include "nsContentUtils.h"
 #include "nsString.h"
 #include "mozilla/Logging.h"
+#include "mozilla/Preferences.h"
 
 #if !defined(DEBUG) && !defined(MOZ_ENABLE_JS_DUMP)
 #  include "mozilla/StaticPrefs_browser.h"
@@ -30,7 +25,28 @@
 using namespace mozilla;
 using namespace mozilla::dom;
 
+#define PREFERENCES_TAINTING "tainting."
+#define PREFERENCES_TAINTING_SOURCE PREFERENCES_TAINTING "source."
+#define PREFERENCES_TAINTING_SINK PREFERENCES_TAINTING "sink."
+
 static LazyLogModule gTaintLog("Taint");
+
+inline bool isActive(const char* name) {
+  return Preferences::GetBool(name, true);
+}
+
+inline bool isSinkActive(const char* name) {
+  std::string s(PREFERENCES_TAINTING_SINK);
+  s.append(name);
+  return isActive(s.c_str());
+}
+
+inline bool isSourceActive(const char* name) {
+  std::string s(PREFERENCES_TAINTING_SOURCE);
+  s.append(name);
+  return isActive(s.c_str());
+}
+
 
 static TaintOperation GetTaintOperation(JSContext *cx, const char* name)
 {
@@ -183,83 +199,119 @@ static nsresult MarkTaintSource(mozilla::dom::DOMString &str, TaintOperation ope
 
 nsresult MarkTaintSource(JSContext* cx, JSString* str, const char* name)
 {
-  TaintOperation op = GetTaintOperation(cx, name);
-  op.setSource();
-  op.set_native();
-  JS_MarkTaintSource(cx, str, op);
+  if (isSourceActive(name)) {
+    TaintOperation op = GetTaintOperation(cx, name);
+    op.setSource();
+    op.set_native();
+    JS_MarkTaintSource(cx, str, op);
+  }
   return NS_OK;
 }
 
 nsresult MarkTaintSource(JSContext* cx, JS::MutableHandle<JS::Value> aValue, const char* name)
 {
-  TaintOperation op = GetTaintOperation(cx, name);
-  op.setSource();
-  op.set_native();
-  JS_MarkTaintSource(cx, aValue, op);
+  if (isSourceActive(name)) {
+    TaintOperation op = GetTaintOperation(cx, name);
+    op.setSource();
+    op.set_native();
+    JS_MarkTaintSource(cx, aValue, op);
+  }
   return NS_OK;
 }
 
 nsresult MarkTaintSource(JSContext* cx, JS::MutableHandle<JS::Value> aValue, const char* name, const nsAString &arg)
 {
-  TaintOperation op = GetTaintOperation(cx, name, arg);
-  op.setSource();
-  op.set_native();
-  JS_MarkTaintSource(cx, aValue, op);
+  if (isSourceActive(name)) {
+    TaintOperation op = GetTaintOperation(cx, name, arg);
+    op.setSource();
+    op.set_native();
+    JS_MarkTaintSource(cx, aValue, op);
+  }
   return NS_OK;
 }
 
 nsresult MarkTaintSource(nsAString &str, const char* name)
 {
-  return MarkTaintSource(str, GetTaintOperation(nsContentUtils::GetCurrentJSContext(), name));
+  if (isSourceActive(name)) {
+    return MarkTaintSource(str, GetTaintOperation(nsContentUtils::GetCurrentJSContext(), name));
+  }
+  return NS_OK;
 }
 
 nsresult MarkTaintSource(nsAString &str, const char* name, const nsAString &arg)
 {
-  return MarkTaintSource(str, GetTaintOperation(nsContentUtils::GetCurrentJSContext(), name, arg));
+  if (isSourceActive(name)) {
+    return MarkTaintSource(str, GetTaintOperation(nsContentUtils::GetCurrentJSContext(), name, arg));
+  }
+  return NS_OK;
 }
 
 nsresult MarkTaintSource(nsAString &str, const char* name, const nsTArray<nsString> &arg)
 {
-  return MarkTaintSource(str, GetTaintOperation(nsContentUtils::GetCurrentJSContext(), name, arg));
+  if (isSourceActive(name)) {
+    return MarkTaintSource(str, GetTaintOperation(nsContentUtils::GetCurrentJSContext(), name, arg));
+  }
+  return NS_OK;
 }
 
 nsresult MarkTaintSourceElement(nsAString &str, const char* name, const mozilla::dom::Element* element)
 {
-  return MarkTaintSource(str, GetTaintOperation(nsContentUtils::GetCurrentJSContext(), name, element));
+  if (isSourceActive(name)) {
+    return MarkTaintSource(str, GetTaintOperation(nsContentUtils::GetCurrentJSContext(), name, element));
+  }
+  return NS_OK;
 }
 
 nsresult MarkTaintSourceAttribute(nsAString &str, const char* name, const mozilla::dom::Element* element,
                                   const nsAString &attr)
 {
-  return MarkTaintSource(str, GetTaintOperation(nsContentUtils::GetCurrentJSContext(), name, element, str, attr));
+  if (isSourceActive(name)) {
+    return MarkTaintSource(str, GetTaintOperation(nsContentUtils::GetCurrentJSContext(), name, element, str, attr));
+  }
+  return NS_OK;
 }
 
 nsresult MarkTaintSource(mozilla::dom::DOMString &str, const char* name)
 {
-  return MarkTaintSource(str, GetTaintOperation(nsContentUtils::GetCurrentJSContext(), name));
+  if (isSourceActive(name)) {
+    return MarkTaintSource(str, GetTaintOperation(nsContentUtils::GetCurrentJSContext(), name));
+  }
+  return NS_OK;
 }
 
 nsresult MarkTaintSource(mozilla::dom::DOMString &str, const char* name, const nsAString &arg)
 {
-  return MarkTaintSource(str, GetTaintOperation(nsContentUtils::GetCurrentJSContext(), name, arg));
+  if (isSourceActive(name)) {
+    return MarkTaintSource(str, GetTaintOperation(nsContentUtils::GetCurrentJSContext(), name, arg));
+  }
+  return NS_OK;
 }
 
 nsresult MarkTaintSource(mozilla::dom::DOMString &str, const char* name, const nsTArray<nsString> &arg)
 {
-  return MarkTaintSource(str, GetTaintOperation(nsContentUtils::GetCurrentJSContext(), name, arg));
+  if (isSourceActive(name)) {
+    return MarkTaintSource(str, GetTaintOperation(nsContentUtils::GetCurrentJSContext(), name, arg));
+  }
+  return NS_OK;
 }
 
 nsresult MarkTaintSourceElement(mozilla::dom::DOMString &str, const char* name, const mozilla::dom::Element* element)
 {
-  return MarkTaintSource(str, GetTaintOperation(nsContentUtils::GetCurrentJSContext(), name, element));
+  if (isSourceActive(name)) {
+    return MarkTaintSource(str, GetTaintOperation(nsContentUtils::GetCurrentJSContext(), name, element));
+  }
+  return NS_OK;
 }
 
 nsresult MarkTaintSourceAttribute(mozilla::dom::DOMString &str, const char* name, const mozilla::dom::Element* element,
                                   const nsAString &attr)
 {
-  nsAutoString nsStr;
-  str.ToString(nsStr);
-  return MarkTaintSource(str, GetTaintOperation(nsContentUtils::GetCurrentJSContext(), name, element, nsStr, attr));
+  if (isSourceActive(name)) {
+    nsAutoString nsStr;
+    str.ToString(nsStr);
+    return MarkTaintSource(str, GetTaintOperation(nsContentUtils::GetCurrentJSContext(), name, element, nsStr, attr));
+  }
+  return NS_OK;
 }
 
 nsresult ReportTaintSink(JSContext *cx, const nsAString &str, const char* name, const nsAString &arg)
@@ -274,6 +326,10 @@ nsresult ReportTaintSink(JSContext *cx, const nsAString &str, const char* name, 
 
   if (!nsContentUtils::IsSafeToRunScript() || !JS::CurrentGlobalOrNull(cx)) {
     return NS_ERROR_FAILURE;
+  }
+
+  if (!isSinkActive(name)) {
+    return NS_OK;
   }
 
   JS::RootedValue argval(cx);
@@ -303,6 +359,10 @@ nsresult ReportTaintSink(JSContext *cx, const nsAString &str, const char* name)
     return NS_ERROR_FAILURE;
   }
 
+  if (!isSinkActive(name)) {
+    return NS_OK;
+  }
+
   JS::RootedValue strval(cx);
   if (!mozilla::dom::ToJSValue(cx, str, &strval)) {
     return NS_ERROR_FAILURE;
@@ -325,6 +385,10 @@ nsresult ReportTaintSink(JSContext *cx, const nsACString &str, const char* name)
 
   if (!nsContentUtils::IsSafeToRunScript() || !JS::CurrentGlobalOrNull(cx)) {
     return NS_ERROR_FAILURE;
+  }
+
+  if (!isSinkActive(name)) {
+    return NS_OK;
   }
 
   JS::RootedValue strval(cx);
@@ -356,6 +420,10 @@ nsresult ReportTaintSink(JSContext* cx, JS::Handle<JS::Value> aValue, const char
 
   if (!nsContentUtils::IsSafeToRunScript() || !JS::CurrentGlobalOrNull(cx)) {
     return NS_ERROR_FAILURE;
+  }
+
+  if (!isSinkActive(name)) {
+    return NS_OK;
   }
 
   JS_ReportTaintSink(cx, aValue, name);
