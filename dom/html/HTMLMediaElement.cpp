@@ -4744,9 +4744,7 @@ int32_t HTMLMediaElement::TabIndexDefault() { return 0; }
 nsresult HTMLMediaElement::CheckTaintSinkSetAttr(int32_t aNamespaceID, nsAtom* aName,
                                                   const nsAString& aValue) {
   if (aNamespaceID == kNameSpaceID_None && aName == nsGkAtoms::src) {
-    nsAutoString id;
-    this->GetId(id);
-    ReportTaintSink(aValue, "media.src", id);
+    ReportTaintSink(aValue, "media.src", this);
   }
 
   return nsGenericHTMLElement::CheckTaintSinkSetAttr(aNamespaceID, aName, aValue);

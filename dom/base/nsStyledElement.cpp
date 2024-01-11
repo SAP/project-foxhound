@@ -59,9 +59,7 @@ bool nsStyledElement::ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
 nsresult nsStyledElement::CheckTaintSinkSetAttr(int32_t aNamespaceID, nsAtom* aName,
                                                   const nsAString& aValue) {
   if (aNamespaceID == kNameSpaceID_None && aName == nsGkAtoms::style) {
-    nsAutoString id;
-    this->GetId(id);
-    ReportTaintSink(aValue, "element.style", id);
+    ReportTaintSink(aValue, "element.style", this);
   }
 
   return nsStyledElementBase::CheckTaintSinkSetAttr(aNamespaceID, aName, aValue);

@@ -407,6 +407,15 @@ nsresult ReportTaintSink(const nsAString &str, const char* name, const nsAString
   return ReportTaintSink(nsContentUtils::GetCurrentJSContext(), str, name, arg);
 }
 
+nsresult ReportTaintSink(const nsAString &str, const char* name, const mozilla::dom::Element* element)
+{
+  nsAutoString elementDesc;
+  if (element) {
+    element->Describe(elementDesc);
+  }
+  return ReportTaintSink(str, name, elementDesc);
+}
+
 nsresult ReportTaintSink(const nsAString &str, const char* name)
 {
   return ReportTaintSink(nsContentUtils::GetCurrentJSContext(), str, name);

@@ -2190,9 +2190,7 @@ void HTMLFormElement::MaybeFireFormRemoved() {
 nsresult HTMLFormElement::CheckTaintSinkSetAttr(int32_t aNamespaceID, nsAtom* aName,
                                                   const nsAString& aValue) {
   if (aNamespaceID == kNameSpaceID_None && aName == nsGkAtoms::action) {
-    nsAutoString id;
-    this->GetId(id);
-    ReportTaintSink(aValue, "form.action", id);
+    ReportTaintSink(aValue, "form.action", this);
   } 
 
   return nsGenericHTMLElement::CheckTaintSinkSetAttr(aNamespaceID, aName, aValue);

@@ -73,6 +73,8 @@ nsresult ReportTaintSink(JSContext *cx, const nsAString &str, const char* name);
 // TaintFox: Report taint flows into DOM related sinks.
 nsresult ReportTaintSink(const nsAString &str, const char* name);
 
+nsresult ReportTaintSink(const nsAString &str, const char* name, const mozilla::dom::Element* element);
+
 nsresult ReportTaintSink(const nsACString &str, const char* name);
 
 nsresult ReportTaintSink(JSContext *cx, const nsAString &str, const char* name, const nsAString &arg);

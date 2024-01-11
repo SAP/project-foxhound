@@ -3920,9 +3920,7 @@ void Element::SetInnerHTML(const nsAString& aInnerHTML,
                            ErrorResult& aError) {
 
   // TaintFox: innerHTML sink.
-  nsAutoString id;
-  this->GetId(id);
-  ReportTaintSink(aInnerHTML, "innerHTML", id);
+  ReportTaintSink(aInnerHTML, "innerHTML", this);
 
   SetInnerHTMLInternal(aInnerHTML, aError);
 }
@@ -3944,9 +3942,7 @@ void Element::SetOuterHTML(const nsAString& aOuterHTML, ErrorResult& aError) {
   }
 
   // TaintFox: outerHTML sink.
-  nsAutoString id;
-  this->GetId(id);
-  ReportTaintSink(aOuterHTML, "outerHTML", id);
+  ReportTaintSink(aOuterHTML, "outerHTML", this);
 
   if (OwnerDoc()->IsHTMLDocument()) {
     nsAtom* localName;
@@ -3996,7 +3992,7 @@ enum nsAdjacentPosition { eBeforeBegin, eAfterBegin, eBeforeEnd, eAfterEnd };
 void Element::InsertAdjacentHTML(const nsAString& aPosition,
                                  const nsAString& aText, ErrorResult& aError) {
   // TaintFox: insertAdjacentHTML sink
-  ReportTaintSink(aText, "insertAdjacentHTML");
+  ReportTaintSink(aText, "insertAdjacentHTML", this);
 
   nsAdjacentPosition position;
   if (aPosition.LowerCaseEqualsLiteral("beforebegin")) {
@@ -4127,7 +4123,7 @@ void Element::InsertAdjacentText(const nsAString& aWhere,
   RefPtr<nsTextNode> textNode = OwnerDoc()->CreateTextNode(aData);
 
   // TaintFox: insertAdjacentHTML sink
-  ReportTaintSink(aData, "insertAdjacentText");
+  ReportTaintSink(aData, "insertAdjacentText", this);
 
   InsertAdjacent(aWhere, textNode, aError);
 }

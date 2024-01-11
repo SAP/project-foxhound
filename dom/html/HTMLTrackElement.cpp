@@ -494,9 +494,7 @@ void HTMLTrackElement::CancelChannelAndListener() {
 nsresult HTMLTrackElement::CheckTaintSinkSetAttr(int32_t aNamespaceID, nsAtom* aName,
                                                   const nsAString& aValue) {
   if (aNamespaceID == kNameSpaceID_None && aName == nsGkAtoms::src) {
-    nsAutoString id;
-    this->GetId(id);
-    ReportTaintSink(aValue, "track.src", id);
+    ReportTaintSink(aValue, "track.src", this);
   }
 
   return nsGenericHTMLElement::CheckTaintSinkSetAttr(aNamespaceID, aName, aValue);
