@@ -79,7 +79,7 @@ enum class PrefType : uint8_t {
 //    all preferences which have changed since it was created.
 //
 // Since the second set will be different for every process, and the first set
-// cannot be modified, it is unfortunately not possible to combine them into aF
+// cannot be modified, it is unfortunately not possible to combine them into a
 // single file descriptor.
 //
 // XXX: bug 1440207 is about improving how fixed fds such as this are used.

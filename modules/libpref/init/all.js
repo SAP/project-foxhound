@@ -4040,7 +4040,7 @@ pref("privacy.query_stripping.listService.logLevel", "Error");
 // Sources and sinks are all active by default, the idea here is to provide a complete
 // list for users to disable to suit their needs.
 
-// Add a single master switch to disable tainting
+// Add a single switch to disable tainting completely
 pref("tainting.active", true);
 
 // Sources
