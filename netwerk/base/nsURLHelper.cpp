@@ -1331,8 +1331,15 @@ namespace {
 void SerializeString(const nsCString& aInput, nsAString& aValue) {
   const unsigned char* p = (const unsigned char*)aInput.get();
   const unsigned char* end = p + aInput.Length();
-
+  size_t oi = 0;
+  // Taintfox: Keeps track of position on where to insert
+  size_t ti = 0;
+  auto in_taint = aInput.Taint();
+  auto current = in_taint.begin();
   while (p != end) {
+    if(current != in_taint.end() && oi == current->begin()) {
+      ti = aValue.Length();
+    }
     // ' ' to '+'
     if (*p == 0x20) {
       aValue.Append(0x2B);
@@ -1344,7 +1351,12 @@ void SerializeString(const nsCString& aInput, nsAString& aValue) {
     } else {
       aValue.AppendPrintf("%%%.2X", *p);
     }
-
+    ++oi;
+    if(current != in_taint.end() && oi == current->end()) {
+      aValue.Taint().append(TaintRange(ti, aValue.Length(), current->flow()));
+      current++;
+    }
+    
     ++p;
   }
 }
@@ -1374,6 +1386,7 @@ void URLParams::Serialize(nsAString& aValue, bool aEncode) const {
       aValue.Append(mParams[i].mValue);
     }
   }
+  MarkTaintOperation(aValue, "URLHelper.Serialize");
 }
 
 void URLParams::Sort() {

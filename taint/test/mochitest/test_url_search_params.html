@@ -34,6 +34,13 @@
       taintedSearchParams.delete("tainted");
       check_untainted(taintedSearchParams.toString());
 
+
+      const paramsToEscape = new URLSearchParams("q=URLUtils." + String.tainted("search<b>") + "f<o>o" + String.tainted("</b> Params") + "&"+ String.tainted("topic") + "=api");
+      const us = paramsToEscape.toString();
+      ok(us.taint.length == 3, "length check");
+      ok(us.substring(us.taint[0].begin, us.taint[0].end) == "search%3Cb%3E", "content check");
+      ok(us.substring(us.taint[1].begin, us.taint[1].end) == '%3C%2Fb%3E+Params', "content check");
+      ok(us.substring(us.taint[2].begin, us.taint[2].end) == "topic", "content check");
     </script>
   </head>
   <body>
