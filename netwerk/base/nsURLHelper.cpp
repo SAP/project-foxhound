@@ -25,6 +25,7 @@
 #include "mozilla/Tokenizer.h"
 #include "nsEscape.h"
 #include "nsDOMString.h"
+#include "nsTaintingUtils.h"
 #include "mozilla/net/rust_helper.h"
 #include "mozilla/net/DNS.h"
 

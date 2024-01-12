@@ -96,6 +96,7 @@ DIRS += [
     "xhr",
     "worklet",
     "script",
+    "tainting",
     "payments",
     "websocket",
     "serializers",

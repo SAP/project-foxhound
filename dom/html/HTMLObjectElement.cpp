@@ -19,6 +19,7 @@
 #include "nsIContentInlines.h"
 #include "nsIWidget.h"
 #include "nsContentUtils.h"
+#include "nsTaintingUtils.h"
 #ifdef XP_MACOSX
 #  include "mozilla/EventDispatcher.h"
 #  include "mozilla/dom/Event.h"
@@ -115,9 +116,7 @@ void HTMLObjectElement::UnbindFromTree(bool aNullParent) {
 nsresult HTMLObjectElement::CheckTaintSinkSetAttr(int32_t aNamespaceID, nsAtom* aName,
                                                   const nsAString& aValue) {
   if (aNamespaceID == kNameSpaceID_None && aName == nsGkAtoms::data) {
-    nsAutoString id;
-    this->GetId(id);
-    ReportTaintSink(aValue, "object.data", id);
+    ReportTaintSink(aValue, "object.data", this);
   }
 
   return nsGenericHTMLElement::CheckTaintSinkSetAttr(aNamespaceID, aName, aValue);

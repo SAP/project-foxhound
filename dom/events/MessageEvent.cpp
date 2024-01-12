@@ -17,6 +17,8 @@
 #include "mozilla/HoldDropJSObjects.h"
 #include "jsapi.h"
 
+#include "nsTaintingUtils.h"
+
 namespace mozilla::dom {
 
 NS_IMPL_CYCLE_COLLECTION_CLASS(MessageEvent)

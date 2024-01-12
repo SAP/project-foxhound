@@ -18,6 +18,7 @@
 #include "nsIParser.h"
 #include "nsGkAtoms.h"
 #include "nsContentSink.h"
+#include "nsTaintingUtils.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;

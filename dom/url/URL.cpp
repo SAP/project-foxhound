@@ -21,6 +21,7 @@
 #include "nsIURIMutator.h"
 #include "nsJSUtils.h"
 #include "nsNetUtil.h"
+#include "nsTaintingUtils.h"
 
 namespace mozilla::dom {
 

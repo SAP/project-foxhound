@@ -80,6 +80,7 @@
 
 // Helper Classes
 #include "nsJSUtils.h"
+#include "nsTaintingUtils.h"
 #include "jsapi.h"
 #include "jsfriendapi.h"
 #include "js/CallAndConstruct.h"    // JS::Call

@@ -27,6 +27,7 @@
 #include "nsStreamUtils.h"
 #include "nsStringStream.h"
 #include "nsProxyRelease.h"
+#include "nsTaintingUtils.h"
 
 #include "mozilla/ErrorResult.h"
 #include "mozilla/dom/BindingDeclarations.h"

@@ -20,6 +20,7 @@
 #include "nsContentUtils.h"
 #include "nsSandboxFlags.h"
 #include "nsNetUtil.h"
+#include "nsTaintingUtils.h"
 
 NS_IMPL_NS_NEW_HTML_ELEMENT_CHECK_PARSER(IFrame)
 
@@ -156,13 +157,9 @@ nsMapRuleToAttributesFunc HTMLIFrameElement::GetAttributeMappingFunction()
 nsresult HTMLIFrameElement::CheckTaintSinkSetAttr(int32_t aNamespaceID, nsAtom* aName,
                                                   const nsAString& aValue) {
   if (aNamespaceID == kNameSpaceID_None && aName == nsGkAtoms::src) {
-    nsAutoString id;
-    this->GetId(id);
-    ReportTaintSink(aValue, "iframe.src", id);
+    ReportTaintSink(aValue, "iframe.src", this);
   } else if (aNamespaceID == kNameSpaceID_None && aName == nsGkAtoms::srcdoc) {
-    nsAutoString id;
-    this->GetId(id);
-    ReportTaintSink(aValue, "iframe.srcdoc", id);
+    ReportTaintSink(aValue, "iframe.srcdoc", this);
   }
 
   return nsGenericHTMLElement::CheckTaintSinkSetAttr(aNamespaceID, aName, aValue);

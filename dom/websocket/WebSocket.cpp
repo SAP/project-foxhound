@@ -51,6 +51,7 @@
 #include "mozilla/dom/CloseEvent.h"
 #include "mozilla/net/WebSocketEventService.h"
 #include "nsJSUtils.h"
+#include "nsTaintingUtils.h"
 #include "nsIScriptError.h"
 #include "nsNetUtil.h"
 #include "nsIAuthPrompt.h"

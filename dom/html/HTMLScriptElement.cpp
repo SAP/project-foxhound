@@ -22,6 +22,7 @@
 #include "nsDOMJSUtils.h"
 #include "nsIScriptError.h"
 #include "nsISupportsImpl.h"
+#include "nsTaintingUtils.h"
 #include "mozilla/dom/HTMLScriptElement.h"
 #include "mozilla/dom/HTMLScriptElementBinding.h"
 #include "mozilla/StaticPrefs_dom.h"
@@ -106,9 +107,7 @@ nsresult HTMLScriptElement::Clone(dom::NodeInfo* aNodeInfo,
 nsresult HTMLScriptElement::CheckTaintSinkSetAttr(int32_t aNamespaceID, nsAtom* aName,
                                                   const nsAString& aValue) {
   if (aNamespaceID == kNameSpaceID_None && aName == nsGkAtoms::src) {
-    nsAutoString id;
-    this->GetId(id);
-    ReportTaintSink(aValue, "script.src", id);
+    ReportTaintSink(aValue, "script.src", this);
   }
 
   return nsGenericHTMLElement::CheckTaintSinkSetAttr(aNamespaceID, aName, aValue);
@@ -145,9 +144,7 @@ void HTMLScriptElement::SetInnerHTML(const nsAString& aInnerHTML,
                                      ErrorResult& aError) {
   aError = nsContentUtils::SetNodeTextContent(this, aInnerHTML, true);
   // Taintfox: script.innerHTML sink
-  nsAutoString id;
-  this->GetId(id);
-  ReportTaintSink(aInnerHTML, "script.innerHTML", id); 
+  ReportTaintSink(aInnerHTML, "script.innerHTML", this); 
 }
 
 void HTMLScriptElement::GetText(nsAString& aValue, ErrorResult& aRv) const {
@@ -159,9 +156,7 @@ void HTMLScriptElement::GetText(nsAString& aValue, ErrorResult& aRv) const {
 void HTMLScriptElement::SetText(const nsAString& aValue, ErrorResult& aRv) {
   aRv = nsContentUtils::SetNodeTextContent(this, aValue, true);
   // Taintfox: script.text sink
-  nsAutoString id;
-  this->GetId(id);
-  ReportTaintSink(aValue, "script.text", id); 
+  ReportTaintSink(aValue, "script.text", this); 
 }
 
 // variation of this code in SVGScriptElement - check if changes
@@ -249,9 +244,7 @@ bool HTMLScriptElement::Supports(const GlobalObject& aGlobal,
 void HTMLScriptElement::SetTextContentInternal(const nsAString& aTextContent,
                                               nsIPrincipal* aScriptedPrincipal,
                                               ErrorResult& aError) {
-  nsAutoString id;
-  this->GetId(id);
-  ReportTaintSink(aTextContent, "script.textContent", id);
+  ReportTaintSink(aTextContent, "script.textContent", this);
   aError = nsContentUtils::SetNodeTextContent(this, aTextContent, true);
 }
 }  // namespace mozilla::dom

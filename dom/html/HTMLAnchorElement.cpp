@@ -21,6 +21,7 @@
 #include "mozilla/dom/Document.h"
 #include "nsPresContext.h"
 #include "nsIURI.h"
+#include "nsTaintingUtils.h"
 #include "nsWindowSizes.h"
 
 NS_IMPL_NS_NEW_HTML_ELEMENT(Anchor)
@@ -192,9 +193,7 @@ already_AddRefed<nsIURI> HTMLAnchorElement::GetHrefURI() const {
 nsresult HTMLAnchorElement::CheckTaintSinkSetAttr(int32_t aNamespaceID, nsAtom* aName,
                                                   const nsAString& aValue) {
   if (aNamespaceID == kNameSpaceID_None && aName == nsGkAtoms::href) {
-    nsAutoString id;
-    this->GetId(id);
-    ReportTaintSink(aValue, "a.href", id);
+    ReportTaintSink(aValue, "a.href", this);
   }
 
   return nsGenericHTMLElement::CheckTaintSinkSetAttr(aNamespaceID, aName, aValue);

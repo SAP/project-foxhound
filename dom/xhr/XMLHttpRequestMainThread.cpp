@@ -55,6 +55,7 @@
 #include "nsLayoutCID.h"
 #include "nsReadableUtils.h"
 #include "nsSandboxFlags.h"
+#include "nsTaintingUtils.h"
 
 #include "nsIURI.h"
 #include "nsIURIMutator.h"

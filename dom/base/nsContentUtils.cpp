@@ -382,6 +382,7 @@
 #include "nsTLiteralString.h"
 #include "nsTPromiseFlatString.h"
 #include "nsTStringRepr.h"
+#include "nsTaintingUtils.h"
 #include "nsTextFragment.h"
 #include "nsTextNode.h"
 #include "nsThreadManager.h"

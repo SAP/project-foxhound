@@ -74,6 +74,7 @@
 #include "nsReadableUtils.h"
 #include "nsUnicharUtils.h"
 #include "nsLayoutUtils.h"
+#include "nsTaintingUtils.h"
 #include "nsVariant.h"
 
 #include "mozilla/ContentEvents.h"

@@ -50,6 +50,7 @@
 #include "nsString.h"
 #include "nsTArray.h"
 #include "nsTStringRepr.h"
+#include "nsTaintingUtils.h"
 #include "nsThread.h"
 #include "nsThreadUtils.h"
 #include "nsXULAppAPI.h"

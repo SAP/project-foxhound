@@ -50,6 +50,7 @@
 #include "mozilla/RestyleManager.h"
 
 #include "nsLayoutUtils.h"
+#include "nsTaintingUtils.h"
 
 using namespace mozilla::net;
 using mozilla::Maybe;
@@ -300,9 +301,7 @@ nsresult HTMLImageElement::CheckTaintSinkSetAttr(int32_t aNamespaceID, nsAtom* a
       (aName == nsGkAtoms::src || aName == nsGkAtoms::srcset)) {
     // Taintfox: img.src / img.srcset sink
     const char* sink = (aName == nsGkAtoms::src) ? "img.src" : "img.srcset";
-    nsAutoString id;
-    this->GetId(id);
-    ReportTaintSink(aValue, sink, id);
+    ReportTaintSink(aValue, sink, this);
   }
 
   return nsGenericHTMLElement::CheckTaintSinkSetAttr(aNamespaceID, aName, aValue);
