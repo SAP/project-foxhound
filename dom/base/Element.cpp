@@ -1440,8 +1440,6 @@ void Element::GetAttribute(const nsAString& aName, DOMString& aReturn) {
       IsHTMLElement() && IsInHTMLDocument() ? eIgnoreCase : eCaseMatters);
   if (val) {
     val->ToString(aReturn);
-    // Taintfox: getAttribute source
-    SetTaintSourceGetAttr(aName, aReturn);
   } else {
     if (IsXULElement()) {
       // XXX should be SetDOMStringToNull(aReturn);
@@ -1570,9 +1568,6 @@ void Element::GetAttributeNS(const nsAString& aNamespaceURI,
   bool hasAttr = GetAttr(nsid, name, aReturn);
   if (!hasAttr) {
     SetDOMStringToNull(aReturn);
-  } else {
-    // Taintfox: getAttributeNS source
-    // MarkTaintSourceAttribute(aReturn, "element.getAttributeNS", this, aLocalName);
   }
 }
 
@@ -2750,10 +2745,12 @@ bool Element::ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
 }
 
 void Element::SetTaintSourceGetAttr(const nsAString& aName, nsAString& aResult) const {
+  MarkTaintSourceAttribute(aResult, "element.attribute", this, aName);
   return;
 }
 
 void Element::SetTaintSourceGetAttr(const nsAString& aName, DOMString& aResult) const {
+  MarkTaintSourceAttribute(aResult, "element.attribute", this, aName);
   return;
 }
 
@@ -2879,6 +2876,8 @@ bool Element::GetAttr(const nsAtom* aName, nsAString& aResult) const {
     return false;
   }
   val->ToString(aResult);
+  // Taintfox: getAttribute source
+  SetTaintSourceGetAttr(aName, aResult);
   return true;
 }
 
@@ -2890,6 +2889,8 @@ bool Element::GetAttr(int32_t aNameSpaceID, const nsAtom* aName,
     return false;
   }
   val->ToString(aResult);
+  // Taintfox: getAttribute source
+  SetTaintSourceGetAttr(aName, aResult);
   return true;
 }
 

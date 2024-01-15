@@ -1870,6 +1870,8 @@ class Element : public FragmentOrElement {
    *  Taintfox: this method can be overriden by child classes to mark
    * certain attributes as taint sources.
    */
+  virtual void SetTaintSourceGetAttr(const nsAtom* aName, nsAString& aResult) const;
+
   virtual void SetTaintSourceGetAttr(const nsAString& aName, DOMString& aResult) const;
 
   virtual void SetTaintSourceGetAttr(const nsAString& aName, nsAString& aResult) const;

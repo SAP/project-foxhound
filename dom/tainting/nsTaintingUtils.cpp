@@ -275,15 +275,6 @@ nsresult MarkTaintSourceElement(nsAString &str, const char* name, const mozilla:
   return NS_OK;
 }
 
-nsresult MarkTaintSourceAttribute(nsAString &str, const char* name, const mozilla::dom::Element* element,
-                                  const nsAString &attr)
-{
-  if (isSourceActive(name)) {
-    return MarkTaintSource(str, GetTaintOperation(nsContentUtils::GetCurrentJSContext(), name, element, str, attr));
-  }
-  return NS_OK;
-}
-
 nsresult MarkTaintSource(mozilla::dom::DOMString &str, const char* name)
 {
   if (isSourceActive(name)) {
@@ -316,15 +307,21 @@ nsresult MarkTaintSourceElement(mozilla::dom::DOMString &str, const char* name, 
   return NS_OK;
 }
 
-nsresult MarkTaintSourceAttribute(mozilla::dom::DOMString &str, const char* name, const mozilla::dom::Element* element,
+nsresult MarkTaintSourceAttribute(nsAString &str, const char* name, const mozilla::dom::Element* element,
                                   const nsAString &attr)
 {
   if (isSourceActive(name)) {
-    nsAutoString nsStr;
-    str.ToString(nsStr);
-    return MarkTaintSource(str, GetTaintOperation(nsContentUtils::GetCurrentJSContext(), name, element, nsStr, attr));
+    return MarkTaintSource(str, GetTaintOperation(nsContentUtils::GetCurrentJSContext(), name, element, str, attr));
   }
   return NS_OK;
+}
+
+nsresult MarkTaintSourceAttribute(mozilla::dom::DOMString &str, const char* name, const mozilla::dom::Element* element,
+                                  const nsAString &attr)
+{
+  nsAutoString nsStr;
+  str.ToString(nsStr);
+  return MarkTaintSourceAttribute(nsStr, name, element, attr);
 }
 
 nsresult ReportTaintSink(JSContext *cx, const nsAString &str, const char* name, const nsAString &arg)
