@@ -13,6 +13,7 @@
 #include <utility>
 #include "jsfriendapi.h"
 #include "mozilla/dom/ToJSValue.h"
+#include "XPathGenerator.h"
 #include "nsContentUtils.h"
 #include "nsString.h"
 #include "mozilla/Logging.h"
@@ -83,13 +84,21 @@ static TaintOperation GetTaintOperation(JSContext *cx, const char* name, const n
   return TaintOperation(name);
 }
 
+static void DescribeElement(const mozilla::dom::Element* element, nsAString& aInput)
+{
+  aInput.Truncate();
+  if (element) {
+    XPathGenerator::Generate(element, aInput);
+  }
+}
+
 static TaintOperation GetTaintOperation(JSContext *cx, const char* name, const mozilla::dom::Element* element)
 {
   if (element) {
     nsTArray<nsString> args;
     nsAutoString elementDesc;
 
-    element->Describe(elementDesc);
+    DescribeElement(element, elementDesc);
     args.AppendElement(elementDesc);
 
     return GetTaintOperation(cx, name, args);
@@ -105,7 +114,7 @@ static TaintOperation GetTaintOperation(JSContext *cx, const char* name, const m
     nsTArray<nsString> args;
 
     nsAutoString elementDesc;
-    element->Describe(elementDesc);
+    DescribeElement(element, elementDesc);
     args.AppendElement(elementDesc);
 
     nsAutoString attributeName;
@@ -411,7 +420,7 @@ nsresult ReportTaintSink(const nsAString &str, const char* name, const mozilla::
 {
   nsAutoString elementDesc;
   if (element) {
-    element->Describe(elementDesc);
+    DescribeElement(element, elementDesc);
   }
   return ReportTaintSink(str, name, elementDesc);
 }
