@@ -176,6 +176,10 @@ class RequestHeaders {
   void ApplyToChannel(nsIHttpChannel* aChannel, bool aStripRequestBodyHeader,
                       bool aStripAuth) const;
   void GetCORSUnsafeHeaders(nsTArray<nsCString>& aArray) const;
+
+  // Tainting Helper Function:
+  void GetAll(nsACString& aValue) const;
+
 };
 
 class nsXHRParseEndListener;
