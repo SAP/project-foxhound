@@ -565,7 +565,24 @@ void XMLHttpRequestMainThread::GetResponseText(DOMString& aResponseText,
   }
 
   // Taintfox: XMLHttpRequest.response source
-  MarkTaintSource(aResponseText, "XMLHttpRequest.response");
+  nsTArray<nsString> args;
+
+  nsAutoString url;
+  if (mRequestURL) {
+    nsCString cUrl = mRequestURL->GetSpecOrDefault();
+    url = NS_ConvertUTF8toUTF16(cUrl);
+  }
+  args.AppendElement(url);
+
+  nsAutoCString requestHeaders;
+  mAuthorRequestHeaders.GetAll(requestHeaders);
+  args.AppendElement(NS_ConvertUTF8toUTF16(requestHeaders));
+
+  nsAutoCString responseHeaders;
+  GetAllResponseHeaders(responseHeaders, aRv);
+  args.AppendElement(NS_ConvertUTF8toUTF16(responseHeaders));
+
+  MarkTaintSource(aResponseText, "XMLHttpRequest.response", args);
 }
 
 void XMLHttpRequestMainThread::GetResponseText(
@@ -4366,6 +4383,16 @@ bool RequestHeaders::CharsetIterator::Next() {
   mCutoff = start;
 
   return true;
+}
+
+void RequestHeaders::GetAll(nsACString& aValue) const {
+  aValue.Truncate();
+  for (const RequestHeaders::RequestHeader& header : mHeaders) {
+    aValue.Append(header.mName);
+    aValue.AppendLiteral(": ");
+    aValue.Append(header.mValue);
+    aValue.AppendLiteral("\r\n");
+  }
 }
 
 }  // namespace mozilla::dom

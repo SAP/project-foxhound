@@ -142,12 +142,12 @@ std::u16string JS::taintarg(JSContext* cx, HandleObject obj)
   return taintarg(cx, str);
 }
 
-std::u16string JS::taintarg(JSContext* cx, HandleValue val)
+std::u16string JS::taintarg(JSContext* cx, HandleValue val, bool fullArgs)
 {
   RootedString str(cx, ToString(cx, val));
   if (!str)
     return std::u16string();
-  return taintarg(cx, str);
+  return fullArgs ? taintarg_full(cx, str) : taintarg(cx, str);
 }
 
 std::u16string JS::taintarg(JSContext* cx, int32_t num)
@@ -156,7 +156,7 @@ std::u16string JS::taintarg(JSContext* cx, int32_t num)
   return taintarg(cx, val);
 }
 
-std::vector<std::u16string> JS::taintargs(JSContext* cx, HandleValue val)
+std::vector<std::u16string> JS::taintargs(JSContext* cx, HandleValue val, bool fullArgs)
 {
   std::vector<std::u16string> args;
   bool isArray;
@@ -176,7 +176,7 @@ std::vector<std::u16string> JS::taintargs(JSContext* cx, HandleValue val)
       if (!JS_GetElement(cx, array, i, &v)) {
         continue;
       }
-      args.push_back(taintarg(cx, v));
+      args.push_back(taintarg(cx, v, fullArgs));
     }
   } else {
     args.push_back(taintarg(cx, val));
@@ -277,8 +277,8 @@ TaintLocation JS::TaintLocationFromContext(JSContext* cx)
   return TaintLocation(ascii2utf16(std::string(filename)), line, pos, scriptStartline, hash, taintarg(cx, function));
 }
 
-TaintOperation JS::TaintOperationFromContext(JSContext* cx, const char* name, bool is_native, JS::HandleValue args) {
-  return TaintOperation(name, is_native, TaintLocationFromContext(cx), taintargs(cx, args));
+TaintOperation JS::TaintOperationFromContext(JSContext* cx, const char* name, bool is_native, JS::HandleValue args, bool fullArgs) {
+  return TaintOperation(name, is_native, TaintLocationFromContext(cx), taintargs(cx, args, fullArgs));
 }
 
 TaintOperation JS::TaintOperationFromContext(JSContext* cx, const char* name, bool is_native, JS::HandleString arg ) {

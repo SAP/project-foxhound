@@ -41,13 +41,13 @@ std::u16string taintarg_jsstring_full(JSContext* cx, JSString* const& str);
 std::u16string taintarg(JSContext* cx, JS::HandleObject obj);
 
 // Converts a JS value into an argument string for a taint operation.
-std::u16string taintarg(JSContext* cx, JS::HandleValue str);
+std::u16string taintarg(JSContext* cx, JS::HandleValue val, bool fullArgs = false);
 
 // Converts an integer to a taint argument string.
 std::u16string taintarg(JSContext* cx, int32_t num);
 
 // Converts a JS Handle to a taint argument string.
-std::vector<std::u16string> taintargs(JSContext* cx, JS::HandleValue str);
+std::vector<std::u16string> taintargs(JSContext* cx, JS::HandleValue str, bool fullArgs);
 
 std::vector<std::u16string> taintargs(JSContext* cx, JS::HandleString str);
 
@@ -62,11 +62,11 @@ std::string convertDigestToHexString(const TaintMd5& digest);
 // Extracts the current filename, linenumber and function from the JSContext
 TaintLocation TaintLocationFromContext(JSContext* cx);
 
-TaintOperation TaintOperationFromContext(JSContext* cx, const char* name, bool is_native, JS::HandleValue args);
+TaintOperation TaintOperationFromContext(JSContext* cx, const char* name, bool is_native, JS::HandleValue args, bool fullArgs = false);
 
 TaintOperation TaintOperationFromContext(JSContext* cx, const char* name, bool is_native, JS::HandleString arg);
 
-  TaintOperation TaintOperationFromContext(JSContext* cx, const char* name, bool is_native, JS::HandleString arg1, JS::HandleString arg2);
+TaintOperation TaintOperationFromContext(JSContext* cx, const char* name, bool is_native, JS::HandleString arg1, JS::HandleString arg2);
 
 TaintOperation TaintOperationFromContextJSString(JSContext* cx, const char* name, bool is_native, JSString* const& str);
 
