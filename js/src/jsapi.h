@@ -986,6 +986,10 @@ JS_SetStringTaint(JSContext* cx, JSString* str, const StringTaint& taint);
 extern JS_PUBLIC_API TaintOperation
 JS_GetTaintOperation(JSContext* cx, const char* name, JS::HandleValue args);
 
+// Taintfox: Get Taint Operation with no argument length restrictions
+extern JS_PUBLIC_API TaintOperation
+JS_GetTaintOperationFullArgs(JSContext* cx, const char* name, JS::HandleValue args);
+
 // Taintfox: Create new String Taint Location from the context
 extern JS_PUBLIC_API TaintOperation
 JS_GetTaintOperation(JSContext* cx, const char* name);
