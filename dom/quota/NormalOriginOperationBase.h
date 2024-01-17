@@ -9,61 +9,38 @@
 
 #include "OriginOperationBase.h"
 #include "mozilla/Atomics.h"
-#include "mozilla/RefPtr.h"
-#include "mozilla/dom/Nullable.h"
 #include "mozilla/dom/quota/CheckedUnsafePtr.h"
-#include "mozilla/dom/quota/Client.h"
-#include "mozilla/dom/quota/DirectoryLock.h"
-#include "mozilla/dom/quota/OriginScope.h"
-#include "mozilla/dom/quota/PersistenceType.h"
 
 namespace mozilla::dom::quota {
 
 class NormalOriginOperationBase
     : public OriginOperationBase,
-      public OpenDirectoryListener,
       public SupportsCheckedUnsafePtr<CheckIf<DiagnosticAssertEnabled>> {
  protected:
-  OriginScope mOriginScope;
-  RefPtr<DirectoryLock> mDirectoryLock;
-  Nullable<PersistenceType> mPersistenceType;
-  Nullable<Client::Type> mClientType;
   mozilla::Atomic<bool> mCanceled;
-  const bool mExclusive;
 
-  NormalOriginOperationBase(const char* aRunnableName,
-                            const Nullable<PersistenceType>& aPersistenceType,
-                            const OriginScope& aOriginScope,
-                            const Nullable<Client::Type> aClientType,
-                            bool aExclusive)
-      : OriginOperationBase(GetCurrentSerialEventTarget(), aRunnableName),
-        mOriginScope(aOriginScope),
-        mPersistenceType(aPersistenceType),
-        mClientType(aClientType),
-        mExclusive(aExclusive) {
-    AssertIsOnOwningThread();
-  }
+  // If we want to only forward declare DirectoryLock which is referenced by
+  // the mDirectoryLock member then the constructor and destructor must be
+  // defined in the cpp where DirectoryLock is fully declared (DirectoryLock.h
+  // is included). The compiler would complain otherwise because it wouldn't
+  // know how to call DirectoryLock::AddRef/Release in the constructor and
+  // destructor
+  NormalOriginOperationBase(MovingNotNull<RefPtr<QuotaManager>> aQuotaManager,
+                            const char* aName);
 
-  ~NormalOriginOperationBase() = default;
+  ~NormalOriginOperationBase();
 
-  virtual RefPtr<DirectoryLock> CreateDirectoryLock();
-
- private:
-  // Need to declare refcounting unconditionally, because
-  // OpenDirectoryListener has pure-virtual refcounting.
-  NS_DECL_ISUPPORTS_INHERITED
-
-  virtual void Open() override;
-
-  virtual void UnblockOpen() override;
-
-  // OpenDirectoryListener overrides.
-  virtual void DirectoryLockAcquired(DirectoryLock* aLock) override;
-
-  virtual void DirectoryLockFailed() override;
+  virtual RefPtr<BoolPromise> OpenDirectory() = 0;
 
   // Used to send results before unblocking open.
   virtual void SendResults() = 0;
+
+  virtual void CloseDirectory() = 0;
+
+ private:
+  virtual RefPtr<BoolPromise> Open() override;
+
+  virtual void UnblockOpen() override;
 };
 
 }  // namespace mozilla::dom::quota

@@ -12,51 +12,28 @@ add_task(async function test_translations_telemetry_open_panel() {
     languagePairs: LANGUAGE_PAIRS,
   });
 
-  await TestTranslationsTelemetry.assertEvent(
-    "OpenPanel",
-    Glean.translationsPanel.open,
-    {
-      expectedEventCount: 0,
-    }
-  );
+  await TestTranslationsTelemetry.assertEvent(Glean.translationsPanel.open, {
+    expectedEventCount: 0,
+  });
 
-  const { button } = await assertTranslationsButton(
-    { button: true },
-    "The button is available."
-  );
+  await assertTranslationsButton({ button: true }, "The button is available.");
 
-  await waitForTranslationsPopupEvent(
-    "popupshown",
-    () => {
-      click(button, "Opening the popup");
-    },
-    assertPanelDefaultView
-  );
+  await openTranslationsPanel({ onOpenPanel: assertPanelDefaultView });
 
-  await waitForTranslationsPopupEvent("popuphidden", () => {
-    click(
-      getByL10nId("translations-panel-translate-cancel"),
-      "Click the cancel button."
-    );
+  await clickCancelButton();
+
+  await TestTranslationsTelemetry.assertEvent(Glean.translationsPanel.open, {
+    expectedEventCount: 1,
+    expectNewFlowId: true,
+    finalValuePredicates: [
+      value => value.extra.auto_show === "false",
+      value => value.extra.view_name === "defaultView",
+      value => value.extra.opened_from === "translationsButton",
+      value => value.extra.document_language === "es",
+    ],
   });
 
   await TestTranslationsTelemetry.assertEvent(
-    "OpenPanel",
-    Glean.translationsPanel.open,
-    {
-      expectedEventCount: 1,
-      expectNewFlowId: true,
-      finalValuePredicates: [
-        value => value.extra.auto_show === "false",
-        value => value.extra.view_name === "defaultView",
-        value => value.extra.opened_from === "translationsButton",
-        value => value.extra.document_language === "es",
-      ],
-    }
-  );
-
-  await TestTranslationsTelemetry.assertEvent(
-    "CancelButton",
     Glean.translationsPanel.cancelButton,
     {
       expectedEventCount: 1,
@@ -64,47 +41,27 @@ add_task(async function test_translations_telemetry_open_panel() {
     }
   );
 
-  await TestTranslationsTelemetry.assertEvent(
-    "ClosePanel",
-    Glean.translationsPanel.close,
-    {
-      expectedEventCount: 1,
-      expectNewFlowId: false,
-    }
-  );
+  await TestTranslationsTelemetry.assertEvent(Glean.translationsPanel.close, {
+    expectedEventCount: 1,
+    expectNewFlowId: false,
+  });
 
-  await waitForTranslationsPopupEvent(
-    "popupshown",
-    () => {
-      click(button, "Opening the popup");
-    },
-    assertPanelDefaultView
-  );
+  await openTranslationsPanel({ onOpenPanel: assertPanelDefaultView });
 
-  await waitForTranslationsPopupEvent("popuphidden", () => {
-    click(
-      getByL10nId("translations-panel-translate-cancel"),
-      "Click the cancel button."
-    );
+  await clickCancelButton();
+
+  await TestTranslationsTelemetry.assertEvent(Glean.translationsPanel.open, {
+    expectedEventCount: 2,
+    expectNewFlowId: true,
+    allValuePredicates: [
+      value => value.extra.auto_show === "false",
+      value => value.extra.view_name === "defaultView",
+      value => value.extra.opened_from === "translationsButton",
+      value => value.extra.document_language === "es",
+    ],
   });
 
   await TestTranslationsTelemetry.assertEvent(
-    "OpenPanel",
-    Glean.translationsPanel.open,
-    {
-      expectedEventCount: 2,
-      expectNewFlowId: true,
-      allValuePredicates: [
-        value => value.extra.auto_show === "false",
-        value => value.extra.view_name === "defaultView",
-        value => value.extra.opened_from === "translationsButton",
-        value => value.extra.document_language === "es",
-      ],
-    }
-  );
-
-  await TestTranslationsTelemetry.assertEvent(
-    "CancelButton",
     Glean.translationsPanel.cancelButton,
     {
       expectedEventCount: 2,
@@ -112,14 +69,10 @@ add_task(async function test_translations_telemetry_open_panel() {
     }
   );
 
-  await TestTranslationsTelemetry.assertEvent(
-    "ClosePanel",
-    Glean.translationsPanel.close,
-    {
-      expectedEventCount: 2,
-      expectNewFlowId: false,
-    }
-  );
+  await TestTranslationsTelemetry.assertEvent(Glean.translationsPanel.close, {
+    expectedEventCount: 2,
+    expectNewFlowId: false,
+  });
 
   await cleanup();
 });

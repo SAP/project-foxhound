@@ -187,10 +187,10 @@ static void ParseSearchTermsFromQuery(const RefPtr<nsNavHistoryQuery>& aQuery,
                                       nsTArray<nsString>* aTerms);
 
 void GetTagsSqlFragment(int64_t aTagsFolder, const nsACString& aRelation,
-                        bool aHasSearchTerms, nsACString& _sqlFragment) {
-  if (!aHasSearchTerms)
+                        const uint16_t aQueryType, nsACString& _sqlFragment) {
+  if (aQueryType != nsINavHistoryQueryOptions::QUERY_TYPE_BOOKMARKS) {
     _sqlFragment.AssignLiteral("null");
-  else {
+  } else {
     // This subquery DOES NOT order tags for performance reasons.
     _sqlFragment.Assign(
         nsLiteralCString("(SELECT GROUP_CONCAT(t_t.title, ',') "
@@ -395,14 +395,6 @@ nsresult nsNavHistory::GetOrCreateIdForPage(nsIURI* aURI, int64_t* _pageId,
     *_pageId = sLastInsertedPlaceId;
   }
 
-  {
-    // Trigger the updates to the moz_origins tables
-    nsCOMPtr<mozIStorageStatement> stmt =
-        mDB->GetStatement("DELETE FROM moz_updateoriginsinsert_temp");
-    NS_ENSURE_STATE(stmt);
-    mozStorageStatementScoper scoper(stmt);
-  }
-
   return NS_OK;
 }
 
@@ -450,33 +442,6 @@ void nsNavHistory::UpdateDaysOfHistory(PRTime visitTime) {
   if (visitTime > mLastCachedEndOfDay || visitTime < mLastCachedStartOfDay) {
     InvalidateDaysOfHistory();
   }
-}
-
-NS_IMETHODIMP
-nsNavHistory::RecalculateOriginFrecencyStats(nsIObserver* aCallback) {
-  RefPtr<nsNavHistory> self(this);
-  nsMainThreadPtrHandle<nsIObserver> callback(
-      !aCallback ? nullptr
-                 : new nsMainThreadPtrHolder<nsIObserver>(
-                       "nsNavHistory::RecalculateOriginFrecencyStats callback",
-                       aCallback));
-
-  nsCOMPtr<nsIEventTarget> target(do_GetInterface(mDB->MainConn()));
-  NS_ENSURE_STATE(target);
-  nsresult rv = target->Dispatch(NS_NewRunnableFunction(
-      "nsNavHistory::RecalculateOriginFrecencyStats", [self, callback] {
-        Unused << self->mDB->RecalculateOriginFrecencyStatsInternal();
-        Unused << NS_DispatchToMainThread(NS_NewRunnableFunction(
-            "nsNavHistory::RecalculateOriginFrecencyStats callback",
-            [callback] {
-              if (callback) {
-                Unused << callback->Observe(nullptr, "", nullptr);
-              }
-            }));
-      }));
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  return NS_OK;
 }
 
 Atomic<int64_t> nsNavHistory::sLastInsertedPlaceId(0);
@@ -790,12 +755,7 @@ static bool IsOptimizableHistoryQuery(
 
   if (!aQuery->SearchTerms().IsEmpty()) return false;
 
-  if (aQuery->OnlyBookmarked()) return false;
-
   if (aQuery->DomainIsHost() || !aQuery->Domain().IsEmpty()) return false;
-
-  if (aQuery->AnnotationIsNot() || !aQuery->Annotation().IsEmpty())
-    return false;
 
   if (aQuery->Parents().Length() > 0) return false;
 
@@ -818,8 +778,7 @@ class PlacesSQLQueryBuilder {
   PlacesSQLQueryBuilder(const nsCString& aConditions,
                         const RefPtr<nsNavHistoryQuery>& aQuery,
                         const RefPtr<nsNavHistoryQueryOptions>& aOptions,
-                        bool aUseLimit, nsNavHistory::StringHash& aAddParams,
-                        bool aHasSearchTerms);
+                        bool aUseLimit, nsNavHistory::StringHash& aAddParams);
 
   nsresult GetQueryString(nsCString& aQueryString);
 
@@ -847,7 +806,6 @@ class PlacesSQLQueryBuilder {
 
   const nsCString& mConditions;
   bool mUseLimit;
-  bool mHasSearchTerms;
 
   uint16_t mResultType;
   uint16_t mQueryType;
@@ -866,10 +824,9 @@ class PlacesSQLQueryBuilder {
 PlacesSQLQueryBuilder::PlacesSQLQueryBuilder(
     const nsCString& aConditions, const RefPtr<nsNavHistoryQuery>& aQuery,
     const RefPtr<nsNavHistoryQueryOptions>& aOptions, bool aUseLimit,
-    nsNavHistory::StringHash& aAddParams, bool aHasSearchTerms)
+    nsNavHistory::StringHash& aAddParams)
     : mConditions(aConditions),
       mUseLimit(aUseLimit),
-      mHasSearchTerms(aHasSearchTerms),
       mResultType(aOptions->ResultType()),
       mQueryType(aOptions->QueryType()),
       mIncludeHidden(aOptions->IncludeHidden()),
@@ -954,10 +911,9 @@ nsresult PlacesSQLQueryBuilder::SelectAsURI() {
   nsAutoCString tagsSqlFragment;
 
   switch (mQueryType) {
-    case nsINavHistoryQueryOptions::QUERY_TYPE_HISTORY:
-      GetTagsSqlFragment(history->GetTagsFolder(), "h.id"_ns, mHasSearchTerms,
+    case nsINavHistoryQueryOptions::QUERY_TYPE_HISTORY: {
+      GetTagsSqlFragment(history->GetTagsFolder(), "h.id"_ns, mQueryType,
                          tagsSqlFragment);
-
       mQueryString = nsLiteralCString(
                          "SELECT h.id, h.url, h.title AS page_title, "
                          "h.rev_host, h.visit_count, "
@@ -973,10 +929,9 @@ nsresult PlacesSQLQueryBuilder::SelectAsURI() {
                          "{QUERY_OPTIONS_VISITS} {QUERY_OPTIONS_PLACES} "
                          "{ADDITIONAL_CONDITIONS} ");
       break;
-
-    case nsINavHistoryQueryOptions::QUERY_TYPE_BOOKMARKS:
-
-      GetTagsSqlFragment(history->GetTagsFolder(), "b.fk"_ns, mHasSearchTerms,
+    }
+    case nsINavHistoryQueryOptions::QUERY_TYPE_BOOKMARKS: {
+      GetTagsSqlFragment(history->GetTagsFolder(), "b.fk"_ns, mQueryType,
                          tagsSqlFragment);
       mQueryString =
           nsLiteralCString(
@@ -999,9 +954,10 @@ nsresult PlacesSQLQueryBuilder::SelectAsURI() {
               "hash('place', 'prefix_hi') "
               "{ADDITIONAL_CONDITIONS}");
       break;
-
-    default:
+    }
+    default: {
       return NS_ERROR_NOT_IMPLEMENTED;
+    }
   }
   return NS_OK;
 }
@@ -1010,7 +966,7 @@ nsresult PlacesSQLQueryBuilder::SelectAsVisit() {
   nsNavHistory* history = nsNavHistory::GetHistoryService();
   NS_ENSURE_TRUE(history, NS_ERROR_OUT_OF_MEMORY);
   nsAutoCString tagsSqlFragment;
-  GetTagsSqlFragment(history->GetTagsFolder(), "h.id"_ns, mHasSearchTerms,
+  GetTagsSqlFragment(history->GetTagsFolder(), "h.id"_ns, mQueryType,
                      tagsSqlFragment);
   mQueryString =
       nsLiteralCString(
@@ -1580,10 +1536,8 @@ nsresult nsNavHistory::ConstructQueryString(
           sortingMode <= nsINavHistoryQueryOptions::SORT_BY_FRECENCY_DESCENDING,
       "Invalid sortingMode found while building query!");
 
-  bool hasSearchTerms = !aQuery->SearchTerms().IsEmpty();
-
   nsAutoCString tagsSqlFragment;
-  GetTagsSqlFragment(GetTagsFolder(), "h.id"_ns, hasSearchTerms,
+  GetTagsSqlFragment(GetTagsFolder(), "h.id"_ns, aOptions->QueryType(),
                      tagsSqlFragment);
 
   if (IsOptimizableHistoryQuery(
@@ -1650,8 +1604,8 @@ nsresult nsNavHistory::ConstructQueryString(
   // using FilterResultSet()
   bool useLimitClause = !NeedToFilterResultSet(aQuery, aOptions);
 
-  PlacesSQLQueryBuilder queryStringBuilder(
-      conditions, aQuery, aOptions, useLimitClause, aAddParams, hasSearchTerms);
+  PlacesSQLQueryBuilder queryStringBuilder(conditions, aQuery, aOptions,
+                                           useLimitClause, aAddParams);
   rv = queryStringBuilder.GetQueryString(queryString);
   NS_ENSURE_SUCCESS(rv, rv);
 
@@ -2073,14 +2027,6 @@ nsresult nsNavHistory::QueryToSelectClause(
   if (aQuery->MaxVisits() >= 0)
     clause.Condition("h.visit_count <=").Param(":max_visits");
 
-  // only bookmarked, has no affect on bookmarks-only queries
-  if (aOptions->QueryType() !=
-          nsINavHistoryQueryOptions::QUERY_TYPE_BOOKMARKS &&
-      aQuery->OnlyBookmarked())
-    clause.Condition("EXISTS (SELECT b.fk FROM moz_bookmarks b WHERE b.type = ")
-        .Str(nsPrintfCString("%d", nsNavBookmarks::TYPE_BOOKMARK).get())
-        .Str("AND b.fk = h.id)");
-
   // domain
   if (!aQuery->Domain().IsVoid()) {
     bool domainIsHost = false;
@@ -2102,25 +2048,6 @@ nsresult nsNavHistory::QueryToSelectClause(
         .Str(")")
         .Condition("h.url =")
         .Param(":uri");
-  }
-
-  // annotation
-  if (!aQuery->Annotation().IsEmpty()) {
-    clause.Condition("");
-    if (aQuery->AnnotationIsNot()) clause.Str("NOT");
-    clause
-        .Str(
-            "EXISTS "
-            "(SELECT h.id "
-            "FROM moz_annos anno "
-            "JOIN moz_anno_attributes annoname "
-            "ON anno.anno_attribute_id = annoname.id "
-            "WHERE anno.place_id = h.id "
-            "AND annoname.name = ")
-        .Param(":anno")
-        .Str(")");
-    // annotation-based queries don't get the common conditions, so you get
-    // all URLs with that annotation
   }
 
   // tags
@@ -2271,12 +2198,6 @@ nsresult nsNavHistory::BindQueryClauseParameters(
   // URI
   if (aQuery->Uri()) {
     rv = URIBinder::Bind(statement, "uri"_ns, aQuery->Uri());
-    NS_ENSURE_SUCCESS(rv, rv);
-  }
-
-  // annotation
-  if (!aQuery->Annotation().IsEmpty()) {
-    rv = statement->BindUTF8StringByName("anno"_ns, aQuery->Annotation());
     NS_ENSURE_SUCCESS(rv, rv);
   }
 
@@ -2583,9 +2504,7 @@ nsresult nsNavHistory::RowToResult(mozIStorageValueArray* aRow,
     nsAutoString tags;
     rv = aRow->GetString(kGetInfoIndex_ItemTags, tags);
     NS_ENSURE_SUCCESS(rv, rv);
-    if (!tags.IsVoid()) {
-      resultNode->mTags.Assign(tags);
-    }
+    resultNode->SetTags(tags);
 
     rv = aRow->GetUTF8String(kGetInfoIndex_Guid, resultNode->mPageGuid);
     NS_ENSURE_SUCCESS(rv, rv);
@@ -2600,8 +2519,7 @@ nsresult nsNavHistory::RowToResult(mozIStorageValueArray* aRow,
 
     nsAutoString tags;
     rv = aRow->GetString(kGetInfoIndex_ItemTags, tags);
-    if (!tags.IsVoid()) resultNode->mTags.Assign(tags);
-
+    resultNode->SetTags(tags);
     rv = aRow->GetUTF8String(kGetInfoIndex_Guid, resultNode->mPageGuid);
     NS_ENSURE_SUCCESS(rv, rv);
 
@@ -2782,9 +2700,6 @@ static nsCString GetSimpleBookmarksQueryParent(
   if (!aQuery->SearchTerms().IsEmpty()) return ""_ns;
   if (aQuery->Tags().Length() > 0) return ""_ns;
   if (aOptions->MaxResults() > 0) return ""_ns;
-
-  // Don't care about onlyBookmarked flag, since specifying a bookmark
-  // folder is inferring onlyBookmarked.
 
   return aQuery->Parents()[0];
 }

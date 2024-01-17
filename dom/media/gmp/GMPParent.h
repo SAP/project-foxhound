@@ -45,7 +45,13 @@ class GMPCapability {
                        const nsACString& aAPI, const nsCString& aTag);
 };
 
-enum class GMPState : uint32_t { NotLoaded, Loaded, Unloading, Closing };
+enum class GMPState : uint32_t {
+  NotLoaded,
+  Loaded,
+  Unloading,
+  Closing,
+  Closed
+};
 
 class GMPContentParent;
 
@@ -171,6 +177,12 @@ class GMPParent final
   mozilla::ipc::IPCResult RecvPGMPContentChildDestroyed();
 
   mozilla::ipc::IPCResult RecvFOGData(ByteBuf&& aBuf);
+
+#if defined(XP_WIN)
+  mozilla::ipc::IPCResult RecvGetModulesTrust(
+      ModulePaths&& aModPaths, bool aRunAtNormalPriority,
+      GetModulesTrustResolver&& aResolver);
+#endif  // defined(XP_WIN)
 
   bool IsUsed() {
     return mGMPContentChildCount > 0 || !mGetContentParentPromises.IsEmpty();

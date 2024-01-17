@@ -1727,6 +1727,24 @@ JS::RealmCreationOptions& JS::RealmCreationOptions::setCoopAndCoepEnabled(
   return *this;
 }
 
+JS::RealmCreationOptions& JS::RealmCreationOptions::setLocaleCopyZ(
+    const char* locale) {
+  const size_t size = strlen(locale) + 1;
+
+  AutoEnterOOMUnsafeRegion oomUnsafe;
+  char* memoryPtr = js_pod_malloc<char>(sizeof(LocaleString) + size);
+  if (!memoryPtr) {
+    oomUnsafe.crash("RealmCreationOptions::setLocaleCopyZ");
+  }
+
+  char* localePtr = memoryPtr + sizeof(LocaleString);
+  memcpy(localePtr, locale, size);
+
+  locale_ = new (memoryPtr) LocaleString(localePtr);
+
+  return *this;
+}
+
 const JS::RealmBehaviors& JS::RealmBehaviorsRef(JS::Realm* realm) {
   return realm->behaviors();
 }
@@ -2047,13 +2065,13 @@ JS_PUBLIC_API bool JS::PropertySpecNameToPermanentId(JSContext* cx,
   return true;
 }
 
-JS_PUBLIC_API bool JS::ObjectToCompletePropertyDescriptor(
-    JSContext* cx, HandleObject obj, HandleValue descObj,
+JS_PUBLIC_API bool JS::ToCompletePropertyDescriptor(
+    JSContext* cx, HandleValue descriptor,
     MutableHandle<PropertyDescriptor> desc) {
-  // |obj| can be in a different compartment here. The caller is responsible
-  // for wrapping it (see JS_WrapPropertyDescriptor).
-  cx->check(descObj);
-  if (!ToPropertyDescriptor(cx, descObj, true, desc)) {
+  AssertHeapIsIdle();
+  CHECK_THREAD(cx);
+  cx->check(descriptor);
+  if (!ToPropertyDescriptor(cx, descriptor, /* checkAccessors */ true, desc)) {
     return false;
   }
   CompletePropertyDescriptor(desc);
@@ -2314,7 +2332,6 @@ void JS::TransitiveCompileOptions::copyPODTransitiveOptions(
   eagerDelazificationStrategy_ = rhs.eagerDelazificationStrategy_;
 
   selfHostingMode = rhs.selfHostingMode;
-  forceAsync = rhs.forceAsync;
   discardSource = rhs.discardSource;
   sourceIsLazy = rhs.sourceIsLazy;
   allowHTMLComments = rhs.allowHTMLComments;
@@ -2324,7 +2341,6 @@ void JS::TransitiveCompileOptions::copyPODTransitiveOptions(
 
   borrowBuffer = rhs.borrowBuffer;
   usePinnedBytecode = rhs.usePinnedBytecode;
-  allocateInstantiationStorage = rhs.allocateInstantiationStorage;
   deoptimizeModuleGlobalVars = rhs.deoptimizeModuleGlobalVars;
 
   prefableOptions_ = rhs.prefableOptions_;

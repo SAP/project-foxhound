@@ -32,7 +32,6 @@ mod manager;
 mod statemachine;
 mod status_update;
 mod transport;
-mod u2fprotocol;
 mod u2ftypes;
 
 pub mod authenticatorservice;
@@ -46,8 +45,8 @@ pub use ctap2::commands::client_pin::{Pin, PinError};
 pub use ctap2::commands::credential_management::CredentialManagementResult;
 pub use ctap2::commands::get_assertion::{Assertion, GetAssertionResult};
 pub use ctap2::commands::get_info::AuthenticatorInfo;
-use serde::Serialize;
 pub use ctap2::commands::make_credentials::MakeCredentialsResult;
+use serde::Serialize;
 pub use statemachine::StateMachine;
 pub use status_update::{
     BioEnrollmentCmd, CredManagementCmd, InteractiveRequest, InteractiveUpdate, StatusPinUv,
@@ -110,7 +109,5 @@ extern crate assert_matches;
 
 #[cfg(fuzzing)]
 pub use consts::*;
-#[cfg(fuzzing)]
-pub use u2fprotocol::*;
 #[cfg(fuzzing)]
 pub use u2ftypes::*;

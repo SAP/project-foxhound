@@ -217,16 +217,6 @@ bool nsNativeThemeGTK::GetGtkWidgetAndState(StyleAppearance aAppearance,
         aState->focused = FALSE;
       }
 
-      // menu item state is determined by the attribute "_moz-menuactive",
-      // and not by the mouse hovering (accessibility).  as a special case,
-      // menus which are children of a menu bar are only marked as prelight
-      // if they are open, not on normal hover.
-
-      if (aAppearance == StyleAppearance::Menuarrow) {
-        aState->inHover = CheckBooleanAttr(aFrame, nsGkAtoms::menuactive);
-        aState->active = FALSE;
-      }
-
       // A button with drop down menu open or an activated toggle button
       // should always appear depressed.
       if (aAppearance == StyleAppearance::Button ||
@@ -446,11 +436,11 @@ bool nsNativeThemeGTK::GetGtkWidgetAndState(StyleAppearance aAppearance,
       else
         aGtkWidgetType = MOZ_GTK_SPLITTER_HORIZONTAL;
       break;
-    case StyleAppearance::Menuarrow:
-      aGtkWidgetType = MOZ_GTK_MENUARROW;
-      break;
     case StyleAppearance::MozWindowTitlebar:
       aGtkWidgetType = MOZ_GTK_HEADER_BAR;
+      break;
+    case StyleAppearance::MozWindowDecorations:
+      aGtkWidgetType = MOZ_GTK_WINDOW_DECORATION;
       break;
     case StyleAppearance::MozWindowTitlebarMaximized:
       aGtkWidgetType = MOZ_GTK_HEADER_BAR_MAXIMIZED;
@@ -1251,7 +1241,8 @@ nsNativeThemeGTK::WidgetStateChanged(nsIFrame* aFrame,
       aAppearance == StyleAppearance::Toolbar ||
       aAppearance == StyleAppearance::Progresschunk ||
       aAppearance == StyleAppearance::ProgressBar ||
-      aAppearance == StyleAppearance::Tooltip) {
+      aAppearance == StyleAppearance::Tooltip ||
+      aAppearance == StyleAppearance::MozWindowDecorations) {
     return NS_OK;
   }
 
@@ -1359,7 +1350,6 @@ nsNativeThemeGTK::ThemeSupportsWidget(nsPresContext* aPresContext,
     case StyleAppearance::Textarea:
     case StyleAppearance::Range:
     case StyleAppearance::RangeThumb:
-    case StyleAppearance::Menuarrow:
     case StyleAppearance::Splitter:
     case StyleAppearance::MozWindowButtonBox:
     case StyleAppearance::MozWindowButtonClose:
@@ -1368,6 +1358,7 @@ nsNativeThemeGTK::ThemeSupportsWidget(nsPresContext* aPresContext,
     case StyleAppearance::MozWindowButtonRestore:
     case StyleAppearance::MozWindowTitlebar:
     case StyleAppearance::MozWindowTitlebarMaximized:
+    case StyleAppearance::MozWindowDecorations:
       return !IsWidgetStyled(aPresContext, aFrame, aAppearance);
 
     case StyleAppearance::MozMenulistArrowButton:

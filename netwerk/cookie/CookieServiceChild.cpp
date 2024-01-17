@@ -8,6 +8,7 @@
 #include "CookieLogging.h"
 #include "CookieService.h"
 #include "mozilla/net/CookieServiceChild.h"
+#include "mozilla/net/HttpChannelChild.h"
 #include "mozilla/net/NeckoChannelParams.h"
 #include "mozilla/LoadInfo.h"
 #include "mozilla/BasePrincipal.h"
@@ -28,11 +29,13 @@
 #include "nsIURI.h"
 #include "nsIPrefBranch.h"
 #include "nsIWebProgressListener.h"
+#include "nsQueryObject.h"
 #include "nsServiceManagerUtils.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/TimeStamp.h"
 #include "ThirdPartyUtil.h"
 #include "nsIConsoleReportCollector.h"
+#include "mozilla/dom/WindowGlobalChild.h"
 
 using namespace mozilla::ipc;
 
@@ -440,7 +443,16 @@ CookieServiceChild::SetCookieStringFromDocument(
     cookiesToSend.AppendElement(cookie->ToIPC());
 
     // Asynchronously call the parent.
-    SendSetCookies(baseDomain, attrs, documentURI, false, cookiesToSend);
+    dom::WindowGlobalChild* windowGlobalChild =
+        aDocument->GetWindowGlobalChild();
+
+    // If there is no WindowGlobalChild fall back to PCookieService SetCookies.
+    if (NS_WARN_IF(!windowGlobalChild)) {
+      SendSetCookies(baseDomain, attrs, documentURI, false, cookiesToSend);
+      return NS_OK;
+    }
+    windowGlobalChild->SendSetCookies(baseDomain, attrs, documentURI, false,
+                                      cookiesToSend);
   }
 
   return NS_OK;
@@ -561,7 +573,10 @@ CookieServiceChild::SetCookieStringFromHttp(nsIURI* aHostURI,
 
   // Asynchronously call the parent.
   if (CanSend() && !cookiesToSend.IsEmpty()) {
-    SendSetCookies(baseDomain, attrs, aHostURI, true, cookiesToSend);
+    RefPtr<HttpChannelChild> httpChannelChild = do_QueryObject(aChannel);
+    MOZ_ASSERT(httpChannelChild);
+    httpChannelChild->SendSetCookies(baseDomain, attrs, aHostURI, true,
+                                     cookiesToSend);
   }
 
   return NS_OK;

@@ -862,6 +862,13 @@ export var UrlbarUtils = {
     return pasteData;
   },
 
+  /**
+   * Add a (url, input) tuple to the input history table that drives adaptive
+   * results.
+   *
+   * @param {string} url The url to add input history for
+   * @param {string} input The associated search term
+   */
   async addToInputHistory(url, input) {
     await lazy.PlacesUtils.withConnectionWrapper("addToInputHistory", db => {
       // use_count will asymptotically approach the max of 10.
@@ -873,6 +880,29 @@ export var UrlbarUtils = {
         LEFT JOIN moz_inputhistory i ON i.place_id = h.id AND i.input = :input
         WHERE url_hash = hash(:url) AND url = :url
       `,
+        { url, input: input.toLowerCase() }
+      );
+    });
+  },
+
+  /**
+   * Remove a (url, input*) tuple from the input history table that drives
+   * adaptive results.
+   * Note the input argument is used as a wildcard so any match starting with
+   * it will also be removed.
+   *
+   * @param {string} url The url to add input history for
+   * @param {string} input The associated search term
+   */
+  async removeInputHistory(url, input) {
+    await lazy.PlacesUtils.withConnectionWrapper("removeInputHistory", db => {
+      return db.executeCached(
+        `
+        DELETE FROM moz_inputhistory
+        WHERE input BETWEEN :input AND :input || X'FFFF'
+          AND place_id =
+            (SELECT id FROM moz_places WHERE url_hash = hash(:url) AND url = :url)
+        `,
         { url, input: input.toLowerCase() }
       );
     });
@@ -1218,6 +1248,9 @@ export var UrlbarUtils = {
           }
           return "quicksuggest";
         }
+        if (result.providerName == "UrlbarProviderClipboard") {
+          return "clipboard";
+        }
         if (result.providerName == "InputHistory") {
           return result.source == UrlbarUtils.RESULT_SOURCE.BOOKMARKS
             ? "bookmark_adaptive"
@@ -1431,6 +1464,9 @@ export var UrlbarUtils = {
         if (result.providerName === "UrlbarProviderTopSites") {
           return "top_site";
         }
+        if (result.providerName === "UrlbarProviderClipboard") {
+          return "clipboard";
+        }
         return result.source === UrlbarUtils.RESULT_SOURCE.BOOKMARKS
           ? "bookmark"
           : "history";
@@ -1453,7 +1489,7 @@ export var UrlbarUtils = {
 
     if (
       result.providerName === "quickactions" &&
-      element?.classList.contains("urlbarView-quickaction-row")
+      element?.classList.contains("urlbarView-quickaction-button")
     ) {
       return element.dataset.key;
     }

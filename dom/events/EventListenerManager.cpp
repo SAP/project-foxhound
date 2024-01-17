@@ -32,6 +32,7 @@
 #include "mozilla/dom/Event.h"
 #include "mozilla/dom/EventTargetBinding.h"
 #include "mozilla/dom/PopupBlocker.h"
+#include "mozilla/dom/RequestBinding.h"
 #include "mozilla/dom/ScriptLoader.h"
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/dom/TouchEvent.h"
@@ -67,14 +68,6 @@ namespace mozilla {
 
 using namespace dom;
 using namespace hal;
-
-static const uint32_t kAllMutationBits =
-    NS_EVENT_BITS_MUTATION_SUBTREEMODIFIED |
-    NS_EVENT_BITS_MUTATION_NODEINSERTED | NS_EVENT_BITS_MUTATION_NODEREMOVED |
-    NS_EVENT_BITS_MUTATION_NODEREMOVEDFROMDOCUMENT |
-    NS_EVENT_BITS_MUTATION_NODEINSERTEDINTODOCUMENT |
-    NS_EVENT_BITS_MUTATION_ATTRMODIFIED |
-    NS_EVENT_BITS_MUTATION_CHARACTERDATAMODIFIED;
 
 static uint32_t MutationBitForEventType(EventMessage aEventType) {
   switch (aEventType) {
@@ -389,7 +382,7 @@ void EventListenerManager::AddEventListenerInternal(
           // on this.
           window->SetMutationListeners(
               (resolvedEventMessage == eLegacySubtreeModified)
-                  ? kAllMutationBits
+                  ? NS_EVENT_BITS_MUTATION_ALL
                   : MutationBitForEventType(resolvedEventMessage));
         }
         break;
@@ -1255,12 +1248,12 @@ nsresult EventListenerManager::CompileEventHandlerInternal(
 
   RefPtr<JS::loader::ScriptFetchOptions> fetchOptions =
       new JS::loader::ScriptFetchOptions(
-          CORS_NONE, aElement->OwnerDoc()->GetReferrerPolicy(),
-          /* aNonce = */ u""_ns, JS::loader::ParserMetadata::NotParserInserted,
+          CORS_NONE, /* aNonce = */ u""_ns, RequestPriority::Auto,
+          JS::loader::ParserMetadata::NotParserInserted,
           aElement->OwnerDoc()->NodePrincipal());
 
-  RefPtr<JS::loader::EventScript> eventScript =
-      new JS::loader::EventScript(fetchOptions, uri);
+  RefPtr<JS::loader::EventScript> eventScript = new JS::loader::EventScript(
+      aElement->OwnerDoc()->GetReferrerPolicy(), fetchOptions, uri);
 
   JS::CompileOptions options(cx);
   // Use line 0 to make the function body starts from line 1.
@@ -1426,7 +1419,7 @@ already_AddRefed<nsPIDOMWindowInner> EventListenerManager::WindowFromListener(
         global = callback->IncumbentGlobalOrNull();
       }
       if (global) {
-        innerWindow = global->AsInnerWindow();  // Can be nullptr
+        innerWindow = global->GetAsInnerWindow();  // Can be nullptr
       }
     } else {
       // This ensures `window.event` can be set properly for
@@ -1818,7 +1811,7 @@ uint32_t EventListenerManager::MutationListenerBits() {
       if (message >= eLegacyMutationEventFirst &&
           message <= eLegacyMutationEventLast) {
         if (message == eLegacySubtreeModified) {
-          return kAllMutationBits;
+          return NS_EVENT_BITS_MUTATION_ALL;
         }
         bits |= MutationBitForEventType(message);
       }

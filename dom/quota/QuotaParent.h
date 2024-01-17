@@ -50,8 +50,17 @@ class Quota final : public PQuotaParent {
 
   virtual bool DeallocPQuotaRequestParent(PQuotaRequestParent* aActor) override;
 
+  virtual mozilla::ipc::IPCResult RecvInitializeStorage(
+      InitializeStorageResolver&& aResolver) override;
+
   virtual mozilla::ipc::IPCResult RecvClearStoragesForPrivateBrowsing(
       ClearStoragesForPrivateBrowsingResolver&& aResolver) override;
+
+  virtual mozilla::ipc::IPCResult RecvClearStorage(
+      ClearStorageResolver&& aResolver) override;
+
+  virtual mozilla::ipc::IPCResult RecvShutdownStorage(
+      ShutdownStorageResolver&& aResolver) override;
 
   virtual mozilla::ipc::IPCResult RecvStartIdleMaintenance() override;
 

@@ -104,6 +104,11 @@ class CompositorBridgeChild final : public PCompositorBridgeChild,
 
   void EndCanvasTransaction();
 
+  /**
+   * Release resources until they are next required.
+   */
+  void ClearCachedResources();
+
   // Beware that these methods don't override their super-class equivalent
   // (which are not virtual), they just overload them. All of these Send*
   // methods just add a sanity check (that it is not too late send a message)
@@ -189,9 +194,8 @@ class CompositorBridgeChild final : public PCompositorBridgeChild,
 
   void ActorDestroy(ActorDestroyReason aWhy) override;
 
-  mozilla::ipc::IPCResult RecvObserveLayersUpdate(
-      const LayersId& aLayersId, const LayersObserverEpoch& aEpoch,
-      const bool& aActive);
+  mozilla::ipc::IPCResult RecvObserveLayersUpdate(const LayersId& aLayersId,
+                                                  const bool& aActive);
 
   mozilla::ipc::IPCResult RecvCompositorOptionsChanged(
       const LayersId& aLayersId, const CompositorOptions& aNewOptions);

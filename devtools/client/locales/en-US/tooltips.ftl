@@ -33,6 +33,10 @@ inactive-css-not-inline-or-tablecell = <strong>{ $property }</strong> has no eff
 
 inactive-css-first-line-pseudo-element-not-supported = <strong>{ $property }</strong> is not supported on ::first-line pseudo-elements.
 
+inactive-css-first-letter-pseudo-element-not-supported = <strong>{ $property }</strong> is not supported on ::first-letter pseudo-elements.
+
+inactive-css-placeholder-pseudo-element-not-supported = <strong>{ $property }</strong> is not supported on ::placeholder pseudo-elements.
+
 inactive-css-property-because-of-display = <strong>{ $property }</strong> has no effect on this element since it has a display of <strong>{ $display }</strong>.
 
 inactive-css-not-display-block-on-floated = The <strong>display</strong> value has been changed by the engine to <strong>block</strong> because the element is <strong>floated</strong>.
@@ -58,6 +62,8 @@ inactive-css-border-image = <strong>{ $property }</strong> has no effect on this
 inactive-css-ruby-element = <strong>{ $property }</strong> has no effect on this element since it is a ruby element. Its size is determined by the font size of the ruby text.
 
 inactive-css-highlight-pseudo-elements-not-supported = <strong>{ $property }</strong> is not supported on highlight pseudo-elements.
+
+inactive-css-cue-pseudo-element-not-supported = <strong>{ $property }</strong> is not supported on ::cue pseudo-elements.
 
 ## In the Rule View when a CSS property cannot be successfully applied we display
 ## an icon. When this icon is hovered this message is displayed to explain how

@@ -365,8 +365,10 @@ bool NS_HandleScriptError(nsIScriptGlobalObject* aScriptGlobal,
           nsGlobalWindowInner::Cast(win), u"error"_ns, aErrorEventInit);
       event->SetTrusted(true);
 
-      EventDispatcher::DispatchDOMEvent(win, nullptr, event, presContext,
-                                        aStatus);
+      // MOZ_KnownLive due to bug 1506441
+      EventDispatcher::DispatchDOMEvent(
+          MOZ_KnownLive(nsGlobalWindowInner::Cast(win)), nullptr, event,
+          presContext, aStatus);
       called = true;
     }
     --errorDepth;
@@ -422,8 +424,10 @@ class ScriptErrorEvent : public Runnable {
           nsGlobalWindowInner::Cast(win), u"error"_ns, init);
       event->SetTrusted(true);
 
-      EventDispatcher::DispatchDOMEvent(win, nullptr, event, presContext,
-                                        &status);
+      // MOZ_KnownLive due to bug 1506441
+      EventDispatcher::DispatchDOMEvent(
+          MOZ_KnownLive(nsGlobalWindowInner::Cast(win)), nullptr, event,
+          presContext, &status);
     }
 
     if (status != nsEventStatus_eConsumeNoDefault) {
@@ -2086,8 +2090,8 @@ void nsJSContext::EnsureStatics() {
 
   Preferences::RegisterCallbackAndCall(
       SetMemoryPrefChangedCallbackInt,
-      "javascript.options.mem.gc_parallel_marking_threshold_kb",
-      (void*)JSGC_PARALLEL_MARKING_THRESHOLD_KB);
+      "javascript.options.mem.gc_parallel_marking_threshold_mb",
+      (void*)JSGC_PARALLEL_MARKING_THRESHOLD_MB);
 
   Preferences::RegisterCallbackAndCall(
       SetMemoryGCSliceTimePrefChangedCallback,

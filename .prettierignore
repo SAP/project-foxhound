@@ -1000,6 +1000,8 @@ uriloader/exthandler/tests/mochitest/save_filenames.html
 # Also ignore reftest - specially crafted to produce expected output.
 **/reftest/
 **/reftests/
+# Don't ignore the reftest harness files.
+!/layout/tools/reftest/
 
 # Exclude expected objdirs.
 obj*/
@@ -1054,7 +1056,6 @@ devtools/client/debugger/webpack.config.js
 devtools/client/preferences/
 
 # Ignore devtools generated code
-devtools/shared/css/generated/properties-db.js
 devtools/client/webconsole/test/node/fixtures/stubs/*.js
 !devtools/client/webconsole/test/node/fixtures/stubs/index.js
 devtools/client/shared/components/test/node/stubs/reps/*.js
@@ -1299,8 +1300,6 @@ dom/tests/mochitest/ajax/
 dom/tests/mochitest/dom-level1-core/
 dom/tests/mochitest/dom-level2-core/
 dom/tests/mochitest/dom-level2-html/
-dom/u2f/tests/pkijs/
-dom/webauthn/cbor-cpp/
 dom/webauthn/tests/pkijs/
 dom/webgpu/tests/cts/checkout/
 editor/libeditor/tests/browserscope/lib/richtext/

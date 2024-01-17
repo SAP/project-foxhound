@@ -1581,15 +1581,7 @@ MOZ_CAN_RUN_SCRIPT static void GetActionHint(const IMEState& aState,
     }
   }
 
-  if (!aContent.IsAnyOfHTMLElements(nsGkAtoms::input, nsGkAtoms::textarea)) {
-    return;
-  }
-
-  // XXX This is old compatibility, but we might be able to remove this.
-  aContent.AsElement()->GetAttr(nsGkAtoms::moz_action_hint, aActionHint);
-
-  if (!aActionHint.IsEmpty()) {
-    ToLowerCase(aActionHint);
+  if (!aContent.IsHTMLElement(nsGkAtoms::input)) {
     return;
   }
 
@@ -1638,6 +1630,7 @@ MOZ_CAN_RUN_SCRIPT static void GetActionHint(const IMEState& aState,
   }
 
   if (!willSubmit) {
+    aActionHint.Truncate();
     return;
   }
 
@@ -1651,9 +1644,7 @@ MOZ_CAN_RUN_SCRIPT static void GetActionHint(const IMEState& aState,
 
 static void GetInputMode(const IMEState& aState, const nsIContent& aContent,
                          nsAString& aInputMode) {
-  if (aState.IsEditable() &&
-      (StaticPrefs::dom_forms_inputmode() ||
-       nsContentUtils::IsChromeDoc(aContent.OwnerDoc()))) {
+  if (aState.IsEditable()) {
     aContent.AsElement()->GetAttr(nsGkAtoms::inputmode, aInputMode);
     if (aContent.IsHTMLElement(nsGkAtoms::input) &&
         aInputMode.EqualsLiteral("mozAwesomebar")) {
@@ -1671,7 +1662,6 @@ static void GetAutocapitalize(const IMEState& aState, const Element& aElement,
                               const InputContext& aInputContext,
                               nsAString& aAutocapitalize) {
   if (aElement.IsHTMLElement() && aState.IsEditable() &&
-      StaticPrefs::dom_forms_autocapitalize() &&
       aInputContext.IsAutocapitalizeSupported()) {
     nsGenericHTMLElement::FromNode(&aElement)->GetAutocapitalize(
         aAutocapitalize);

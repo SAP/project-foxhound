@@ -386,7 +386,7 @@ def artifact_toolchain(
                 "should be determined in the decision task.",
             )
             return 1
-        from gecko_taskgraph.optimize.strategies import IndexSearch
+        from taskgraph.optimize.strategies import IndexSearch
 
         from mozbuild.toolchains import toolchain_task_definitions
 
@@ -513,7 +513,6 @@ def artifact_toolchain(
                 requests.exceptions.ChunkedEncodingError,
                 requests.exceptions.ConnectionError,
             ) as e:
-
                 if isinstance(e, requests.exceptions.HTTPError):
                     # The relengapi proxy likes to return error 400 bad request
                     # which seems improbably to be due to our (simple) GET

@@ -9,10 +9,8 @@
 #include "mozilla/Assertions.h"
 #include "mozilla/CheckedInt.h"
 #include "mozilla/FloatingPoint.h"
-#include "mozilla/Likely.h"
 
 #include <cstdlib>
-#include <initializer_list>
 #include <utility>
 
 #include "jspubtd.h"
@@ -33,6 +31,7 @@
 #include "builtin/temporal/TemporalTypes.h"
 #include "builtin/temporal/TemporalUnit.h"
 #include "builtin/temporal/TimeZone.h"
+#include "builtin/temporal/ToString.h"
 #include "builtin/temporal/Wrapped.h"
 #include "ds/IdValuePair.h"
 #include "gc/AllocKind.h"
@@ -42,7 +41,6 @@
 #include "js/CallNonGenericMethod.h"
 #include "js/Class.h"
 #include "js/ComparisonOperators.h"
-#include "js/Conversions.h"
 #include "js/ErrorReport.h"
 #include "js/friend/ErrorMessages.h"
 #include "js/GCVector.h"
@@ -52,15 +50,14 @@
 #include "js/PropertySpec.h"
 #include "js/RootingAPI.h"
 #include "js/TracingAPI.h"
-#include "js/TypeDecls.h"
-#include "js/Utility.h"
 #include "js/Value.h"
-#include "util/StringBuffer.h"
 #include "vm/BigIntType.h"
-#include "vm/Compartment.h"
+#include "vm/BytecodeUtil.h"
 #include "vm/GlobalObject.h"
 #include "vm/JSAtomState.h"
+#include "vm/JSContext.h"
 #include "vm/JSObject.h"
+#include "vm/ObjectOperations.h"
 #include "vm/PlainObject.h"
 #include "vm/StringType.h"
 
@@ -339,16 +336,18 @@ static Wrapped<ZonedDateTimeObject*> ToTemporalZonedDateTime(
 
     // Step 8.
     if (offsetBehaviour == OffsetBehaviour::Option) {
-      if (!ParseTimeZoneOffsetString(cx, offsetString, &offsetNanoseconds)) {
+      if (!ParseDateTimeUTCOffset(cx, offsetString, &offsetNanoseconds)) {
         return nullptr;
       }
     }
   } else {
     // Step 6.a.
-    Rooted<JSString*> string(cx, JS::ToString(cx, item));
-    if (!string) {
+    if (!item.isString()) {
+      ReportValueError(cx, JSMSG_UNEXPECTED_TYPE, JSDVG_IGNORE_STACK, item,
+                       nullptr, "not a string");
       return nullptr;
     }
+    Rooted<JSString*> string(cx, item.toString());
 
     // Case 1: 19700101Z[+02:00]
     // { [[Z]]: true, [[OffsetString]]: undefined, [[Name]]: "+02:00" }
@@ -372,7 +371,7 @@ static Wrapped<ZonedDateTimeObject*> ToTemporalZonedDateTime(
     bool isUTC;
     bool hasOffset;
     int64_t timeZoneOffset;
-    Rooted<JSString*> timeZoneString(cx);
+    Rooted<ParsedTimeZone> timeZoneString(cx);
     Rooted<JSString*> calendarString(cx);
     if (!ParseTemporalZonedDateTimeString(cx, string, &dateTime, &isUTC,
                                           &hasOffset, &timeZoneOffset,
@@ -553,144 +552,6 @@ ZonedDateTimeObject* js::temporal::CreateTemporalZonedDateTime(
 }
 
 /**
- * ToTemporalTimeZoneIdentifier ( timeZoneSlotValue )
- */
-static JSString* ToTemporalTimeZoneIdentifier(JSContext* cx,
-                                              Handle<TimeZoneValue> timeZone) {
-  // Step 1.
-  if (timeZone.isString()) {
-    // Step 1.a. (Not applicable in our implementation.)
-
-    // Step 1.b.
-    return timeZone.toString()->identifier();
-  }
-
-  // Step 2.
-  Rooted<JSObject*> timeZoneObj(cx, timeZone.toObject());
-  Rooted<Value> identifier(cx);
-  if (!GetProperty(cx, timeZoneObj, timeZoneObj, cx->names().id, &identifier)) {
-    return nullptr;
-  }
-
-  // Step 3.
-  if (!identifier.isString()) {
-    ReportValueError(cx, JSMSG_UNEXPECTED_TYPE, JSDVG_IGNORE_STACK, identifier,
-                     nullptr, "not a string");
-    return nullptr;
-  }
-
-  // Step 4.
-  return identifier.toString();
-}
-
-/**
- * TemporalZonedDateTimeToString ( zonedDateTime, precision, showCalendar,
- * showTimeZone, showOffset [ , increment, unit, roundingMode ] )
- */
-static JSString* TemporalZonedDateTimeToString(
-    JSContext* cx, Handle<ZonedDateTimeObject*> zonedDateTime,
-    Precision precision, CalendarOption showCalendar,
-    TimeZoneNameOption showTimeZone, ShowOffsetOption showOffset,
-    Increment increment = Increment{1},
-    TemporalUnit unit = TemporalUnit::Nanosecond,
-    TemporalRoundingMode roundingMode = TemporalRoundingMode::Trunc) {
-  JSStringBuilder result(cx);
-
-  // Steps 1-3. (Not applicable in our implementation.)
-
-  // Step 4.
-  Instant ns;
-  if (!RoundTemporalInstant(cx, ToInstant(zonedDateTime), increment, unit,
-                            roundingMode, &ns)) {
-    return nullptr;
-  }
-
-  // Step 5.
-  Rooted<TimeZoneValue> timeZone(cx, zonedDateTime->timeZone());
-
-  // Step 6.
-  Rooted<InstantObject*> instant(cx, CreateTemporalInstant(cx, ns));
-  if (!instant) {
-    return nullptr;
-  }
-
-  // Step 7.
-  PlainDateTime temporalDateTime;
-  if (!js::temporal::GetPlainDateTimeFor(cx, timeZone, instant,
-                                         &temporalDateTime)) {
-    return nullptr;
-  }
-
-  // Step 8.
-  Rooted<CalendarValue> isoCalendar(cx, CalendarValue(cx->names().iso8601));
-  JSString* dateTimeString = TemporalDateTimeToString(
-      cx, temporalDateTime, isoCalendar, precision, CalendarOption::Never);
-  if (!dateTimeString) {
-    return nullptr;
-  }
-  if (!result.append(dateTimeString)) {
-    return nullptr;
-  }
-
-  // Steps 9-10.
-  if (showOffset != ShowOffsetOption::Never) {
-    // Step 10.a.
-    int64_t offsetNs;
-    if (!GetOffsetNanosecondsFor(cx, timeZone, instant, &offsetNs)) {
-      return nullptr;
-    }
-    MOZ_ASSERT(std::abs(offsetNs) < ToNanoseconds(TemporalUnit::Day));
-
-    // Step 10.b.
-    JSString* offsetString = FormatISOTimeZoneOffsetString(cx, offsetNs);
-    if (!offsetString) {
-      return nullptr;
-    }
-    if (!result.append(offsetString)) {
-      return nullptr;
-    }
-  }
-
-  // Steps 11-12.
-  if (showTimeZone != TimeZoneNameOption::Never) {
-    // Step 12.c. (Partial)
-    if (!result.append('[')) {
-      return nullptr;
-    }
-
-    // Step 12.b. (Reordered)
-    if (showTimeZone == TimeZoneNameOption::Critical) {
-      if (!result.append('!')) {
-        return nullptr;
-      }
-    }
-
-    // Step 12.a.
-    JSString* timeZoneIdentifier = ToTemporalTimeZoneIdentifier(cx, timeZone);
-    if (!timeZoneIdentifier) {
-      return nullptr;
-    }
-    if (!result.append(timeZoneIdentifier)) {
-      return nullptr;
-    }
-
-    // Step 12.c. (Partial)
-    if (!result.append(']')) {
-      return nullptr;
-    }
-  }
-
-  // Step 13.
-  Rooted<CalendarValue> calendar(cx, zonedDateTime->calendar());
-  if (!MaybeFormatCalendarAnnotation(cx, result, calendar, showCalendar)) {
-    return nullptr;
-  }
-
-  // Step 14.
-  return result.finishString();
-}
-
-/**
  * AddZonedDateTime ( epochNanoseconds, timeZone, calendar, years, months,
  * weeks, days, hours, minutes, seconds, milliseconds, microseconds, nanoseconds
  * [ , options ] )
@@ -771,14 +632,14 @@ bool js::temporal::AddZonedDateTime(JSContext* cx, const Instant& epochInstant,
                             nullptr, result);
 }
 
-double NanosecondsAndDays::daysNumber() const {
+double js::temporal::NanosecondsAndDays::daysNumber() const {
   if (days) {
     return BigInt::numberValue(days);
   }
   return double(daysInt);
 }
 
-void NanosecondsAndDays::trace(JSTracer* trc) {
+void js::temporal::NanosecondsAndDays::trace(JSTracer* trc) {
   if (days) {
     TraceRoot(trc, &days, "NanosecondsAndDays::days");
   }
@@ -795,9 +656,9 @@ bool js::temporal::NanosecondsToDays(
 
   // Step 1.
   if (nanoseconds == InstantSpan{}) {
-    result.initialize(
+    result.set(NanosecondsAndDays::from(
         int64_t(0), InstantSpan{},
-        InstantSpan::fromNanoseconds(ToNanoseconds(TemporalUnit::Day)));
+        InstantSpan::fromNanoseconds(ToNanoseconds(TemporalUnit::Day))));
     return true;
   }
 
@@ -1051,7 +912,8 @@ bool js::temporal::NanosecondsToDays(
   if (mozilla::NumberEqualsInt64(days, &daysInt)) {
     auto daysChecked = mozilla::CheckedInt64(daysInt) + daysToAdd;
     if (daysChecked.isValid()) {
-      result.initialize(daysChecked.value(), ns, dayLengthNs.abs());
+      result.set(
+          NanosecondsAndDays::from(daysChecked.value(), ns, dayLengthNs.abs()));
       return true;
     }
   }
@@ -1073,7 +935,7 @@ bool js::temporal::NanosecondsToDays(
     return false;
   }
 
-  result.initialize(daysBigInt, ns, dayLengthNs.abs());
+  result.set(NanosecondsAndDays::from(daysBigInt, ns, dayLengthNs.abs()));
   return true;
 }
 
@@ -1419,7 +1281,7 @@ static bool DifferenceTemporalZonedDateTime(JSContext* cx,
     }
   }
 
-  // Step 10.
+  // Steps 10-11.
   Duration roundResult;
   if (!RoundDuration(cx, difference, settings.roundingIncrement,
                      settings.smallestUnit, settings.roundingMode,
@@ -1428,7 +1290,7 @@ static bool DifferenceTemporalZonedDateTime(JSContext* cx,
     return false;
   }
 
-  // Step 11.
+  // Step 12.
   Duration result;
   if (!AdjustRoundedDurationDays(cx, roundResult, settings.roundingIncrement,
                                  settings.smallestUnit, settings.roundingMode,
@@ -1436,7 +1298,7 @@ static bool DifferenceTemporalZonedDateTime(JSContext* cx,
     return false;
   }
 
-  // Step 12.
+  // Step 13.
   if (operation == TemporalDifference::Since) {
     result = result.negate();
   }
@@ -2575,10 +2437,6 @@ static bool ZonedDateTime_with(JSContext* cx, const CallArgs& args) {
     return false;
   }
 
-  // FIXME: spec issue - "offset" can already be part of |fieldNames|. Consider
-  // using MergeLists(fieldNames, «"offset"») here.
-  // https://github.com/tc39/proposal-temporal/issues/2532
-
   // Step 8.
   if (!AppendSorted(cx, fieldNames.get(), {TemporalField::Offset})) {
     return false;
@@ -2645,7 +2503,7 @@ static bool ZonedDateTime_with(JSContext* cx, const CallArgs& args) {
   // Steps 19-21.
   Rooted<JSString*> offsetStr(cx, offsetString.toString());
   int64_t offsetNanoseconds;
-  if (!ParseTimeZoneOffsetString(cx, offsetStr, &offsetNanoseconds)) {
+  if (!ParseDateTimeUTCOffset(cx, offsetStr, &offsetNanoseconds)) {
     return false;
   }
 

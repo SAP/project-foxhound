@@ -7,7 +7,7 @@ async function waitForPdfJS(browser, url) {
     null,
     true
   );
-  BrowserTestUtils.loadURIString(browser, url);
+  BrowserTestUtils.startLoadingURIString(browser, url);
   return loadPromise;
 }
 
@@ -19,7 +19,7 @@ async function waitForPdfJSAnnotationLayer(browser, url) {
     null,
     true
   );
-  BrowserTestUtils.loadURIString(browser, url);
+  BrowserTestUtils.startLoadingURIString(browser, url);
   return loadPromise;
 }
 
@@ -46,7 +46,7 @@ async function waitForPdfJSAllLayers(browser, url, layers) {
     true
   );
 
-  BrowserTestUtils.loadURIString(browser, url);
+  BrowserTestUtils.startLoadingURIString(browser, url);
   await Promise.all([loadPromise, annotationPromise, annotationEditorPromise]);
 
   await SpecialPowers.spawn(browser, [layers], async function (layers) {
@@ -80,7 +80,7 @@ async function waitForPdfJSCanvas(browser, url) {
     null,
     true
   );
-  BrowserTestUtils.loadURIString(browser, url);
+  BrowserTestUtils.startLoadingURIString(browser, url);
   return loadPromise;
 }
 
@@ -327,9 +327,9 @@ function changeMimeHandler(preferredAction, alwaysAskBeforeHandling) {
   return oldAction;
 }
 
-function createTemporarySaveDirectory() {
+function createTemporarySaveDirectory(id = "") {
   var saveDir = Services.dirsvc.get("TmpD", Ci.nsIFile);
-  saveDir.append("testsavedir");
+  saveDir.append(`testsavedir${id}`);
   if (!saveDir.exists()) {
     saveDir.create(Ci.nsIFile.DIRECTORY_TYPE, 0o755);
   }

@@ -5,14 +5,22 @@
 import argparse
 import atexit
 import os
+import shutil
+import sys
 
-from run_operations import get_last_line, run_git, update_resume_state
-from save_patch_stack import save_patch_stack
+from filter_git_changes import filter_git_changes
+from run_operations import (
+    get_last_line,
+    run_git,
+    run_hg,
+    run_shell,
+    update_resume_state,
+)
 from vendor_and_commit import vendor_and_commit
 
 # This script cherry-picks an upstream commit with the appropriate
-# commit message, add the no-op commit tracking file for the when we
-# vendor the upstream commit later, and updates our saved patch-stack.
+# commit message, and adds the no-op commit tracking file for the when
+# we vendor the upstream commit later.
 
 error_help = None
 script_name = os.path.basename(__file__)
@@ -84,13 +92,17 @@ def write_noop_tracking_file(
     github_sha,
     bug_number,
 ):
-    noop_filename = os.path.join(
-        args.state_path, "{}.no-op-cherry-pick-msg".format(github_sha)
-    )
+    noop_basename = "{}.no-op-cherry-pick-msg".format(github_sha)
+    noop_filename = os.path.join(args.state_path, noop_basename)
     print("noop_filename: {}".format(noop_filename))
     with open(noop_filename, "w") as ofile:
         ofile.write("We cherry-picked this in bug {}".format(bug_number))
         ofile.write("\n")
+    shutil.copy(noop_filename, args.patch_path)
+    cmd = "hg add {}".format(os.path.join(args.patch_path, noop_basename))
+    run_hg(cmd)
+    cmd = "hg amend {}".format(os.path.join(args.patch_path, noop_basename))
+    run_hg(cmd)
 
 
 if __name__ == "__main__":
@@ -151,11 +163,6 @@ if __name__ == "__main__":
         help="integer Bugzilla number (example: 1800920)",
     )
     parser.add_argument(
-        "--target-branch-head",
-        required=True,
-        help="target branch head for fast-forward, should match MOZ_TARGET_UPSTREAM_BRANCH_HEAD in config_env",
-    )
-    parser.add_argument(
         "--patch-path",
         default=default_patch_dir,
         help="path to save patches (defaults to {})".format(default_patch_dir),
@@ -166,6 +173,24 @@ if __name__ == "__main__":
         help='reviewers for cherry-picked patch (like "ng,mjf")',
     )
     args = parser.parse_args()
+
+    # make sure the mercurial repo is clean before beginning
+    error_help = (
+        "There are modified or untracked files in the mercurial repo.\n"
+        "Please start with a clean repo before running {}"
+    ).format(script_name)
+    stdout_lines = run_hg("hg status")
+    if len(stdout_lines) != 0:
+        sys.exit(1)
+
+    # make sure the github repo exists
+    error_help = (
+        "No moz-libwebrtc github repo found at {}\n"
+        "Please run restore_patch_stack.py before running {}"
+    ).format(args.repo_path, script_name)
+    if not os.path.exists(args.repo_path):
+        sys.exit(1)
+    error_help = None
 
     commit_message_filename = os.path.join(args.tmp_path, "cherry-pick-commit_msg.txt")
 
@@ -228,28 +253,38 @@ if __name__ == "__main__":
             os.path.join(args.tmp_path, "cherry-pick-commit_msg.txt"),
         )
 
+        # get the files changed from the newly vendored cherry-pick
+        # commit in mercurial
+        cmd = "hg status --change tip --exclude '**/README.*'"
+        stdout_lines = run_shell(cmd)  # run_shell to allow file wildcard
+        print("Mercurial changes:\n{}".format(stdout_lines))
+        hg_file_change_cnt = len(stdout_lines)
+
+        # get the files changed from the original cherry-picked patch in
+        # our github repo (moz-libwebrtc)
+        git_paths_changed = filter_git_changes(args.repo_path, args.commit_sha, None)
+        print("github changes:\n{}".format(git_paths_changed))
+        git_file_change_cnt = len(git_paths_changed)
+
+        error_help = (
+            "Vendoring the cherry-pick of commit {} has failed due to mismatched\n"
+            "changed file counts between mercurial ({}) and git ({}).\n"
+            "This may be because the mozilla patch-stack was not verified after\n"
+            "running restore_patch_stack.py.  After reconciling the changes in\n"
+            "the newly committed mercurial patch, please re-run {} to complete\n"
+            "the cherry-pick processing."
+        ).format(args.commit_sha, hg_file_change_cnt, git_file_change_cnt, script_name)
+        if hg_file_change_cnt != git_file_change_cnt:
+            sys.exit(1)
+        error_help = None
+
     if len(resume_state) == 0 or resume_state == "resume4":
         resume_state = ""
-        update_resume_state("resume5", resume_state_filename)
+        update_resume_state("", resume_state_filename)
         print("-------")
         print("------- write the noop tracking file")
         print("-------")
         write_noop_tracking_file(args.commit_sha, args.commit_bug_number)
-
-    if len(resume_state) == 0 or resume_state == "resume5":
-        resume_state = ""
-        update_resume_state("", resume_state_filename)
-        print("-------")
-        print("------- save the patch stack")
-        print("-------")
-        save_patch_stack(
-            args.repo_path,
-            args.branch,
-            os.path.abspath(args.patch_path),
-            args.state_path,
-            args.target_branch_head,
-            None,
-        )
 
     # unregister the exit handler so the normal exit doesn't falsely
     # report as an error.

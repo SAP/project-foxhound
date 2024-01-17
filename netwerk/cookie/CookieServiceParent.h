@@ -51,6 +51,11 @@ class CookieServiceParent : public PCookieServiceParent {
   void UpdateCookieInContentList(nsIURI* aHostURI,
                                  const OriginAttributes& aOriginAttrs);
 
+  mozilla::ipc::IPCResult SetCookies(
+      const nsCString& aBaseDomain, const OriginAttributes& aOriginAttributes,
+      nsIURI* aHost, bool aFromHttp, const nsTArray<CookieStruct>& aCookies,
+      dom::BrowsingContext* aBrowsingContext = nullptr);
+
  protected:
   virtual void ActorDestroy(ActorDestroyReason aWhy) override;
 

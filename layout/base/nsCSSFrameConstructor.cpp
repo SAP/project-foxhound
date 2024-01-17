@@ -1478,6 +1478,10 @@ nsCSSFrameConstructor::nsCSSFrameConstructor(Document* aDocument,
 }
 
 void nsCSSFrameConstructor::NotifyDestroyingFrame(nsIFrame* aFrame) {
+  if (aFrame->StyleDisplay()->IsContainStyle()) {
+    mContainStyleScopeManager.DestroyScopesFor(aFrame);
+  }
+
   if (aFrame->HasAnyStateBits(NS_FRAME_GENERATED_CONTENT) &&
       mContainStyleScopeManager.DestroyQuoteNodesFor(aFrame)) {
     QuotesDirty();
@@ -1489,10 +1493,6 @@ void nsCSSFrameConstructor::NotifyDestroyingFrame(nsIFrame* aFrame) {
     // USE nodes.  However, this is unlikely to happen in the real world
     // since USE nodes generally go along with INCREMENT nodes.
     CountersDirty();
-  }
-
-  if (aFrame->StyleDisplay()->IsContainStyle()) {
-    mContainStyleScopeManager.DestroyScopesFor(aFrame);
   }
 
   RestyleManager()->NotifyDestroyingFrame(aFrame);
@@ -1562,9 +1562,11 @@ void nsCSSFrameConstructor::CreateGeneratedContent(
         ToLowerCaseASCII(attrName);
       }
 
+      RefPtr<nsAtom> fallback = attr.fallback.AsAtom();
+
       nsCOMPtr<nsIContent> content;
       NS_NewAttributeContent(mDocument->NodeInfoManager(), attrNameSpace,
-                             attrName, getter_AddRefs(content));
+                             attrName, fallback, getter_AddRefs(content));
       aAddChild(content);
       return;
     }
@@ -1618,7 +1620,8 @@ void nsCSSFrameConstructor::CreateGeneratedContent(
         // Easy path: just return a regular value attribute content.
         nsCOMPtr<nsIContent> content;
         NS_NewAttributeContent(mDocument->NodeInfoManager(), kNameSpaceID_None,
-                               nsGkAtoms::value, getter_AddRefs(content));
+                               nsGkAtoms::value, nsGkAtoms::_empty,
+                               getter_AddRefs(content));
         aAddChild(content);
         return;
       }
@@ -1708,7 +1711,8 @@ void nsCSSFrameConstructor::CreateGeneratedContent(
       if (aOriginatingElement.HasAttr(nsGkAtoms::alt)) {
         nsCOMPtr<nsIContent> content;
         NS_NewAttributeContent(mDocument->NodeInfoManager(), kNameSpaceID_None,
-                               nsGkAtoms::alt, getter_AddRefs(content));
+                               nsGkAtoms::alt, nsGkAtoms::_empty,
+                               getter_AddRefs(content));
         aAddChild(content);
         return;
       }
@@ -1718,7 +1722,7 @@ void nsCSSFrameConstructor::CreateGeneratedContent(
           nsCOMPtr<nsIContent> content;
           NS_NewAttributeContent(mDocument->NodeInfoManager(),
                                  kNameSpaceID_None, nsGkAtoms::value,
-                                 getter_AddRefs(content));
+                                 nsGkAtoms::_empty, getter_AddRefs(content));
           aAddChild(content);
           return;
         }
@@ -3642,20 +3646,19 @@ static nsIFrame* NS_NewSubDocumentOrImageFrame(mozilla::PresShell* aPresShell,
 const nsCSSFrameConstructor::FrameConstructionData*
 nsCSSFrameConstructor::FindObjectData(const Element& aElement,
                                       ComputedStyle& aStyle) {
-  // GetDisplayedType isn't necessarily nsIObjectLoadingContent::TYPE_NULL for
-  // cases when the object is broken/suppressed/etc (e.g. a broken image), but
-  // we want to treat those cases as TYPE_NULL
   uint32_t type;
-  if (aElement.State().HasState(ElementState::BROKEN)) {
+  nsCOMPtr<nsIObjectLoadingContent> objContent =
+      do_QueryInterface(const_cast<Element*>(&aElement));
+  NS_ASSERTION(objContent,
+               "embed and object must implement "
+               "nsIObjectLoadingContent!");
+  objContent->GetDisplayedType(&type);
+  if (type == nsIObjectLoadingContent::TYPE_IMAGE &&
+      aElement.State().HasState(ElementState::BROKEN)) {
+    // GetDisplayedType isn't necessarily nsIObjectLoadingContent::TYPE_NULL for
+    // cases when the object is broken/suppressed/etc (e.g. a broken image), but
+    // we want to treat those cases as TYPE_NULL
     type = nsIObjectLoadingContent::TYPE_NULL;
-  } else {
-    nsCOMPtr<nsIObjectLoadingContent> objContent =
-        do_QueryInterface(const_cast<Element*>(&aElement));
-    NS_ASSERTION(objContent,
-                 "embed and object must implement "
-                 "nsIObjectLoadingContent!");
-
-    objContent->GetDisplayedType(&type);
   }
 
   if (type == nsIObjectLoadingContent::TYPE_FALLBACK &&
@@ -3702,6 +3705,12 @@ nsCSSFrameConstructor::FindCanvasData(const Element& aElement,
   static constexpr FrameConstructionData sCanvasData(
       NS_NewHTMLCanvasFrame, 0, PseudoStyleType::htmlCanvasContent);
   return &sCanvasData;
+}
+
+static MOZ_NEVER_INLINE void DestroyFramesInList(PresShell* aPs,
+                                                 nsFrameList& aList) {
+  nsIFrame::DestroyContext context(aPs);
+  aList.DestroyFrames(context);
 }
 
 void nsCSSFrameConstructor::ConstructFrameFromItemInternal(
@@ -3913,7 +3922,7 @@ void nsCSSFrameConstructor::ConstructFrameFromItemInternal(
 
         if (childList.NotEmpty()) {
           // an error must have occurred, delete unprocessed frames
-          childList.DestroyFrames();
+          DestroyFramesInList(mPresShell, childList);
         }
 
         childList = std::move(newList);
@@ -7054,7 +7063,9 @@ void nsCSSFrameConstructor::ContentRangeInserted(nsIContent* aStartChild,
     nsIContent* const nextSibling = aStartChild->GetNextSibling();
     MOZ_ASSERT(nextSibling && nextSibling->IsText(),
                "expected a text node after the list-style-image image");
-    RemoveFrame(FrameChildListID::Principal, nextSibling->GetPrimaryFrame());
+    DestroyContext context(mPresShell);
+    RemoveFrame(context, FrameChildListID::Principal,
+                nextSibling->GetPrimaryFrame());
     auto* const container = aStartChild->GetParent()->AsElement();
     nsIContent* firstNewChild = nullptr;
     auto InsertChild = [this, container, nextSibling,
@@ -7532,7 +7543,9 @@ bool nsCSSFrameConstructor::ContentRemoved(nsIContent* aChild,
       parentFrame = childFrame->GetParent();
     }
 
-    RemoveFrame(nsLayoutUtils::GetChildListNameFor(childFrame), childFrame);
+    DestroyContext context(mPresShell);
+    RemoveFrame(context, nsLayoutUtils::GetChildListNameFor(childFrame),
+                childFrame);
 
     // NOTE(emilio): aChild could be dead here already if it is a ::before or
     // ::after pseudo-element (since in that case it was owned by childFrame,
@@ -7694,6 +7707,13 @@ void nsCSSFrameConstructor::CharacterDataChanged(
         aContent, ContentTag(aContent, 0),
         aSubContent, frame));
 #endif
+
+    if (frame->HasAnyStateBits(NS_FRAME_IS_IN_SINGLE_CHAR_MI)) {
+      LAYOUT_PHASE_TEMP_EXIT();
+      RecreateFramesForContent(aContent, InsertionKind::Async);
+      LAYOUT_PHASE_TEMP_REENTER();
+      return;
+    }
 
     // Special check for text content that is a child of a letter frame.  If
     // this happens, we should remove the letter frame, do whatever we're
@@ -10176,20 +10196,22 @@ void nsCSSFrameConstructor::WrapFramesInFirstLetterFrame(
   WrapFramesInFirstLetterFrame(
       aBlockFrame, aBlockFrame, aBlockFrame, aBlockFrames.FirstChild(),
       &parentFrame, &textFrame, &prevFrame, letterFrames, &stopLooking);
-  if (parentFrame) {
-    if (parentFrame == aBlockFrame) {
-      // Take textFrame out of the block's frame list and substitute the
-      // letter frame(s) instead.
-      aBlockFrames.DestroyFrame(textFrame);
-      aBlockFrames.InsertFrames(nullptr, prevFrame, std::move(letterFrames));
-    } else {
-      // Take the old textFrame out of the inline parent's child list
-      RemoveFrame(FrameChildListID::Principal, textFrame);
+  if (!parentFrame) {
+    return;
+  }
+  DestroyContext context(mPresShell);
+  if (parentFrame == aBlockFrame) {
+    // Take textFrame out of the block's frame list and substitute the
+    // letter frame(s) instead.
+    aBlockFrames.DestroyFrame(context, textFrame);
+    aBlockFrames.InsertFrames(nullptr, prevFrame, std::move(letterFrames));
+  } else {
+    // Take the old textFrame out of the inline parent's child list
+    RemoveFrame(context, FrameChildListID::Principal, textFrame);
 
-      // Insert in the letter frame(s)
-      parentFrame->InsertFrames(FrameChildListID::Principal, prevFrame, nullptr,
-                                std::move(letterFrames));
-    }
+    // Insert in the letter frame(s)
+    parentFrame->InsertFrames(FrameChildListID::Principal, prevFrame, nullptr,
+                              std::move(letterFrames));
   }
 }
 
@@ -10329,9 +10351,10 @@ void nsCSSFrameConstructor::RemoveFloatingFirstLetterFrames(
   // Destroy the old text frame's continuations (the old text frame
   // will be destroyed when its letter frame is destroyed).
   nsIFrame* frameToDelete = textFrame->LastContinuation();
+  DestroyContext context(mPresShell);
   while (frameToDelete != textFrame) {
     nsIFrame* nextFrameToDelete = frameToDelete->GetPrevContinuation();
-    RemoveFrame(FrameChildListID::Principal, frameToDelete);
+    RemoveFrame(context, FrameChildListID::Principal, frameToDelete);
     frameToDelete = nextFrameToDelete;
   }
 
@@ -10346,7 +10369,7 @@ void nsCSSFrameConstructor::RemoveFloatingFirstLetterFrames(
 #endif
 
   // Remove placeholder frame and the float
-  RemoveFrame(FrameChildListID::Principal, placeholderFrame);
+  RemoveFrame(context, FrameChildListID::Principal, placeholderFrame);
 
   // Now that the old frames are gone, we can start pointing to our
   // new primary frame.
@@ -10395,8 +10418,10 @@ void nsCSSFrameConstructor::RemoveFirstLetterFrames(
       textFrame = NS_NewTextFrame(aPresShell, newSC);
       textFrame->Init(textContent, aFrame, nullptr);
 
+      DestroyContext context(mPresShell);
+
       // Next rip out the kid and replace it with the text frame
-      RemoveFrame(FrameChildListID::Principal, kid);
+      RemoveFrame(context, FrameChildListID::Principal, kid);
 
       // Now that the old frames are gone, we can start pointing to our
       // new primary frame.
@@ -10421,7 +10446,8 @@ void nsCSSFrameConstructor::RemoveFirstLetterFrames(
                    "should have the first continuation here");
       aBlockFrame->RemoveStateBits(NS_BLOCK_HAS_FIRST_LETTER_CHILD);
       break;
-    } else if (IsInlineFrame(kid)) {
+    }
+    if (IsInlineFrame(kid)) {
       nsContainerFrame* kidAsContainerFrame = do_QueryFrame(kid);
       if (kidAsContainerFrame) {
         // Look inside child inline frame for the letter frame.
@@ -10482,14 +10508,16 @@ void nsCSSFrameConstructor::RecoverLetterFrames(nsContainerFrame* aBlockFrame) {
         static_cast<nsContainerFrame*>(continuation->GetNextContinuation());
   } while (continuation);
 
-  if (parentFrame) {
-    // Take the old textFrame out of the parent's child list
-    RemoveFrame(FrameChildListID::Principal, textFrame);
-
-    // Insert in the letter frame(s)
-    parentFrame->InsertFrames(FrameChildListID::Principal, prevFrame, nullptr,
-                              std::move(letterFrames));
+  if (!parentFrame) {
+    return;
   }
+  // Take the old textFrame out of the parent's child list
+  DestroyContext context(mPresShell);
+  RemoveFrame(context, FrameChildListID::Principal, textFrame);
+
+  // Insert in the letter frame(s)
+  parentFrame->InsertFrames(FrameChildListID::Principal, prevFrame, nullptr,
+                            std::move(letterFrames));
 }
 
 //----------------------------------------------------------------------
@@ -10910,7 +10938,8 @@ bool nsCSSFrameConstructor::MaybeRecreateForColumnSpan(
     // associated out-of-flow frames properly, we need to manually flush all the
     // out-of-flow frames in aState to their container frames.
     aState.ProcessFrameInsertionsForAllLists();
-    aFrameList.DestroyFrames();
+    DestroyContext context(mPresShell);
+    aFrameList.DestroyFrames(context);
     RecreateFramesForContent(
         GetMultiColumnContainingBlockFor(aParentFrame)->GetContent(),
         InsertionKind::Async);

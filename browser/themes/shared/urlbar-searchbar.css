@@ -5,17 +5,16 @@
 @namespace html url("http://www.w3.org/1999/xhtml");
 
 :root {
-  --toolbar-field-border-color: hsla(240,5%,5%,.25);
-  --toolbar-field-focus-border-color: var(--focus-outline-color);
+  --toolbar-field-border-color: transparent;
+  --toolbar-field-focus-border-color: color-mix(in srgb, var(--focus-outline-color) 50%, transparent);
   --urlbar-container-padding: 1px;
   --urlbar-margin-inline: 5px;
   --urlbar-search-button-width: calc(16px + 2 * var(--urlbar-icon-padding));
-}
 
-@media not (prefers-contrast) {
-  :root {
-    --toolbar-field-border-color: transparent;
-    --toolbar-field-focus-border-color: color-mix(in srgb, var(--focus-outline-color) 50%, transparent);
+  @media (prefers-contrast) {
+    /* TODO: Should probably be a system color instead (ThreeDShadow?) */
+    --toolbar-field-border-color: light-dark(hsla(240, 5%, 5%, .25), hsla(240, 95%, 95%, .35));
+    --toolbar-field-focus-border-color: var(--focus-outline-color);
   }
 }
 
@@ -53,11 +52,18 @@
   color-scheme: light;
 }
 
-:root[lwt-toolbar-field-brighttext] #urlbar:not([focused="true"]),
-:root[lwt-toolbar-field-brighttext] #searchbar:not(:focus-within),
-:root[lwt-toolbar-field-focus-brighttext] #urlbar[focused="true"],
-:root[lwt-toolbar-field-focus-brighttext] #searchbar:focus-within {
-  color-scheme: dark;
+:root[lwt-toolbar-field-brighttext] {
+  #urlbar:not([focused="true"]),
+  #searchbar:not(:focus-within) {
+    color-scheme: dark;
+  }
+}
+
+:root[lwt-toolbar-field-focus-brighttext] {
+  #urlbar[focused="true"],
+  #searchbar:focus-within {
+    color-scheme: dark;
+  }
 }
 
 #urlbar-background,
@@ -726,7 +732,7 @@
 /* Shopping Sidebar icon */
 
 #shopping-sidebar-button > .urlbar-icon {
-  list-style-image: url(resource://usercontext-content/cart.svg);
+  list-style-image: url(chrome://browser/content/shopping/assets/shopping.svg);
 }
 
 #shopping-sidebar-button[shoppingsidebaropen="true"] > .urlbar-icon {
@@ -752,18 +758,18 @@
   flex: 1 auto;
 }
 
-#search-container[cui-areatype="panel"] {
+.widget-overflow-list > #search-container {
   margin: var(--arrowpanel-menuitem-margin);
   width: auto;
-}
 
-#search-container[cui-areatype="panel"] > #searchbar:-moz-lwtheme {
-  /* Theme authors usually only consider contrast against the toolbar when
-     picking a border color for the search bar. Since the search bar can be
-     dragged into the overflow panel, we need to show a high-contrast border
-     around the searchbar in case the searchbar and panel background are the
-     same color. */
-  border-color: var(--panel-separator-color);
+  & > #searchbar:-moz-lwtheme {
+    /* Theme authors usually only consider contrast against the toolbar when
+       picking a border color for the search bar. Since the search bar can be
+       dragged into the overflow panel, we need to show a high-contrast border
+       around the searchbar in case the searchbar and panel background are the
+       same color. */
+    border-color: var(--panel-separator-color);
+  }
 }
 
 .search-go-button {
@@ -814,14 +820,7 @@
 
 .searchbar-engine-one-off-add-engine:not([image]),
 moz-input-box > menupopup .context-menu-add-engine:not([image]) {
-  list-style-image: url("chrome://browser/skin/search-engine-placeholder.png");
-}
-
-@media (min-resolution: 1.1dppx) {
-  .searchbar-engine-one-off-add-engine:not([image]),
-  moz-input-box > menupopup .context-menu-add-engine:not([image]) {
-    list-style-image: url("chrome://browser/skin/search-engine-placeholder@2x.png");
-  }
+  list-style-image: image-set(url("chrome://browser/skin/search-engine-placeholder.png"), url("chrome://browser/skin/search-engine-placeholder@2x.png") 2x);
 }
 
 .searchbar-engine-one-off-add-engine > .button-box::after,

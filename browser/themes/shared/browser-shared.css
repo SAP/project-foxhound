@@ -26,6 +26,11 @@
 @namespace html url("http://www.w3.org/1999/xhtml");
 
 :root {
+  --toolbox-non-lwt-bgcolor: -moz-dialog;
+  --toolbox-non-lwt-textcolor: -moz-dialogtext;
+  --toolbox-non-lwt-bgcolor-inactive: -moz-dialog;
+  --toolbox-non-lwt-textcolor-inactive: -moz-dialogtext;
+
   --toolbar-bgcolor: var(--toolbar-non-lwt-bgcolor);
   --toolbar-color: var(--toolbar-non-lwt-textcolor);
   --toolbarbutton-border-radius: 4px;
@@ -77,22 +82,28 @@
   /* This should be used for icons and chiclets inside the input field. It makes
      the gap around them more uniform when they are close to the field edges */
   --urlbar-icon-border-radius: calc(var(--toolbarbutton-border-radius) - 1px);
-  --urlbar-popup-url-color: -moz-nativehyperlinktext;
 
   --pocket-icon-fill: #ef4056;
 
   --lwt-additional-images: none;
   --lwt-background-alignment: right top;
   --lwt-background-tiling: no-repeat;
-  --lwt-brighttext-url-color: #00ddff;
 
   --ext-theme-background-transition: background-color 0.1s cubic-bezier(.17,.67,.83,.67);
 
   user-select: none;
 }
 
+:root[tabsintitlebar] {
+  --toolbox-non-lwt-bgcolor: ActiveCaption;
+  --toolbox-non-lwt-textcolor: CaptionText;
+  --toolbox-non-lwt-bgcolor-inactive: InactiveCaption;
+  --toolbox-non-lwt-textcolor-inactive: InactiveCaptionText;
+}
+
 :root:-moz-lwtheme {
   --checkbox-border-color: color-mix(in srgb, currentColor 41%, transparent);
+  --link-color: light-dark(rgb(0, 97, 224), rgb(0, 221, 255));
 }
 
 @media (prefers-contrast) {
@@ -120,13 +131,7 @@
 
 @media not (prefers-contrast) {
   :root:-moz-lwtheme {
-    --focus-outline-color: #0061E0;
-  }
-
-  @media (prefers-color-scheme: dark) {
-    :root:-moz-lwtheme {
-      --focus-outline-color: #00DDFF;
-    }
+    --focus-outline-color: light-dark(#0061E0, #00DDFF);
   }
 }
 
@@ -152,25 +157,25 @@
   }
 }
 
-/* Set link color with proper contrast for WebExt themes */
-
-:is(toolbar, panel) :is(a, .text-link):-moz-lwtheme {
-  color: #0060df;
-}
-
-toolbar[brighttext] :is(a, .text-link):-moz-lwtheme,
-:root[lwt-popup-brighttext] panel :is(a, .text-link) {
-  color: var(--lwt-brighttext-url-color);
-}
-
-/* Toolbar / content area border */
-
 #navigator-toolbox {
+  appearance: none;
+  /* Toolbar / content area border */
   border-bottom: 1px solid var(--chrome-content-separator-color);
-}
 
-:root[customizing] #navigator-toolbox {
-  border-bottom-style: none;
+  :root[customizing] & {
+    border-bottom-style: none;
+  }
+
+  /* Lwtheme rules live in browser/base/content temporarily, see bug 1855151 */
+  &:not(:-moz-lwtheme) {
+    background-color: var(--toolbox-non-lwt-bgcolor);
+    color: var(--toolbox-non-lwt-textcolor);
+
+    &:-moz-window-inactive {
+      background-color: var(--toolbox-non-lwt-bgcolor-inactive, var(--toolbox-non-lwt-bgcolor));
+      color: var(--toolbox-non-lwt-textcolor-inactive, var(--toolbox-non-lwt-textcolor));
+    }
+  }
 }
 
 /* Add space to beginning of toolbar and make that space click the first <toolbarbutton> */
@@ -225,7 +230,7 @@ toolbar[brighttext] :is(a, .text-link):-moz-lwtheme,
   height: var(--bookmarks-toolbar-overlapping-browser-height);
 }
 
-:root[BookmarksToolbarOverlapsBrowser] #navigator-toolbox-background {
+:root[BookmarksToolbarOverlapsBrowser] #navigator-toolbox {
   /* Overlap the content area by the height of the bookmarks toolbar so that
      temporarily showing the toolbar for new tabs doesn't resize the content
      area for all tabs. */
@@ -360,21 +365,6 @@ menupopup::part(drop-indicator) {
 
 /* Private browsing indicator */
 
-.private-browsing-indicator {
-  background-image: url("chrome://global/skin/icons/indicator-private-browsing.svg");
-  background-repeat: no-repeat;
-  background-size: 100% auto;
-  background-position: center;
-  width: 24px;
-  margin-inline: 7px;
-  position: relative;
-  /* Need to ensure this gets positioned on top of the position:relative #navigator-toolbox
-   * in case the dark/light themes give that item a background. */
-  z-index: 1;
-}
-
-/* New Private Browsing Indicator */
-
 #private-browsing-indicator-with-label {
   align-items: center;
   margin-inline: 7px;
@@ -386,9 +376,6 @@ menupopup::part(drop-indicator) {
   height: 16px;
 }
 
-:root:not([privatebrowsingmode=temporary]) .private-browsing-indicator,
-:root[privatebrowsingnewindicator] .private-browsing-indicator,
-:root:not([privatebrowsingnewindicator]) #private-browsing-indicator-with-label,
 :root:not([privatebrowsingmode=temporary]) #private-browsing-indicator-with-label {
   display: none;
 }
@@ -398,16 +385,9 @@ menupopup::part(drop-indicator) {
 /* Override theme colors since the picker uses extra colors that
    themes cannot set */
 #DateTimePickerPanel {
-  color-scheme: light;
+  color-scheme: env(-moz-content-preferred-color-scheme);
   --arrowpanel-background: Field;
   --arrowpanel-color: FieldText;
-}
-
-/* stylelint-disable-next-line media-feature-name-no-unknown */
-@media (-moz-content-prefers-color-scheme: dark) and (not (prefers-contrast)) {
-  #DateTimePickerPanel {
-    color-scheme: dark;
-  }
 }
 
 #widget-overflow .webextension-popup-browser {
@@ -494,12 +474,12 @@ menupopup::part(drop-indicator) {
   transform: translateY(50%);
 }
 
-#contextual-feature-recommendation-notification[data-notification-bucket="CFR_MILESTONE_MESSAGE"] .popup-notification-button-container,
+#contextual-feature-recommendation-notification[data-notification-bucket="CFR_MILESTONE_MESSAGE"] .panel-footer,
 #contextual-feature-recommendation-notification[data-notification-bucket="CFR_MILESTONE_MESSAGE"] .popup-notification-header-container {
   display: inline-flex;
 }
 
-#contextual-feature-recommendation-notification[data-notification-bucket="CFR_MILESTONE_MESSAGE"] .popup-notification-button-container {
+#contextual-feature-recommendation-notification[data-notification-bucket="CFR_MILESTONE_MESSAGE"] .panel-footer {
   float: inline-end;
   background-color: transparent;
   flex-direction: row-reverse;
@@ -786,20 +766,6 @@ popupnotificationcontent {
   margin-block-start: 8px;
 }
 
-/**
- * Our OS integration code toggles whether system colors should return light or
- * dark values based on the luminosity of the toolbar background. Because themes
- * can style panels to have a different background color than the toolbar, we
- * need specific overrides for system colors used in light or dark themes.
- */
-.popup-notification-body:-moz-lwtheme {
-  color-scheme: light;
-}
-
-:root[lwt-popup-brighttext] .popup-notification-body {
-  color-scheme: dark;
-}
-
 .popup-notification-body menulist {
   margin: 0;
 }
@@ -979,23 +945,17 @@ popupnotificationcontent {
 
 #historySwipeAnimationPreviousArrow,
 #historySwipeAnimationNextArrow {
-  --swipe-nav-icon-primary-color: #0060DF;
-  --swipe-nav-icon-accent-color: #FFFFFF;
+  --swipe-nav-icon-primary-color: SelectedItemText;
+  --swipe-nav-icon-accent-color: SelectedItem;
 }
 
-@media (-moz-content-prefers-color-scheme: dark) {
+@media not (prefers-contrast) {
+  /* TODO: Should this be in browser-custom-colors to respect system theming on
+   * Linux? */
   #historySwipeAnimationPreviousArrow,
   #historySwipeAnimationNextArrow {
-    --swipe-nav-icon-primary-color: #00DDFF;
-    --swipe-nav-icon-accent-color: #000000;
-  }
-}
-
-@media (prefers-contrast) {
-  #historySwipeAnimationPreviousArrow,
-  #historySwipeAnimationNextArrow {
-    --swipe-nav-icon-primary-color: SelectedItemText;
-    --swipe-nav-icon-accent-color: SelectedItem;
+    --swipe-nav-icon-primary-color: light-dark(#0060DF, #00DDFF);
+    --swipe-nav-icon-accent-color: light-dark(#FFFFFF, #000000);
   }
 }
 
@@ -1100,4 +1060,9 @@ panel toolbarseparator {
 
 #PictureInPicturePanelFooter {
   margin: 8px 16px 16px;
+}
+
+/* Shopping sidebar */
+shopping-sidebar {
+  border-inline-start: 1px solid var(--chrome-content-separator-color);
 }

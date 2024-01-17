@@ -13,7 +13,6 @@
 #include "js/experimental/JSStencil.h"  // JS::Stencil, JS::CompileModuleScriptToStencil, JS::InstantiateModuleStencil
 #include "js/MemoryFunctions.h"
 #include "js/Modules.h"  // JS::FinishDynamicModuleImport, JS::{G,S}etModuleResolveHook, JS::Get{ModulePrivate,ModuleScript,RequestedModule{s,Specifier,SourcePos}}, JS::SetModule{DynamicImport,Metadata}Hook
-#include "js/OffThreadScriptCompilation.h"
 #include "js/PropertyAndElement.h"  // JS_DefineProperty
 #include "js/Realm.h"
 #include "js/SourceText.h"
@@ -21,6 +20,9 @@
 #include "js/loader/ScriptLoadRequest.h"
 #include "js/loader/ModuleLoaderBase.h"
 #include "js/loader/ModuleLoadRequest.h"
+#include "mozilla/dom/RequestBinding.h"
+#include "mozilla/Assertions.h"
+#include "nsError.h"
 #include "xpcpublic.h"
 #include "GeckoProfiler.h"
 #include "nsContentSecurityManager.h"
@@ -127,6 +129,15 @@ nsresult ModuleLoader::StartFetch(ModuleLoadRequest* aRequest) {
   return NS_OK;
 }
 
+void ModuleLoader::AsyncExecuteInlineModule(ModuleLoadRequest* aRequest) {
+  MOZ_ASSERT(aRequest->IsFinished());
+  MOZ_ASSERT(aRequest->IsTopLevel());
+  MOZ_ASSERT(aRequest->GetScriptLoadContext()->mIsInline);
+  GetScriptLoader()->MaybeMoveToLoadedList(aRequest);
+  GetScriptLoader()->ProcessPendingRequests();
+  aRequest->GetScriptLoadContext()->MaybeUnblockOnload();
+}
+
 void ModuleLoader::OnModuleLoadComplete(ModuleLoadRequest* aRequest) {
   MOZ_ASSERT(aRequest->IsFinished());
 
@@ -135,6 +146,25 @@ void ModuleLoader::OnModuleLoadComplete(ModuleLoadRequest* aRequest) {
         aRequest->GetScriptLoadContext()->GetParserCreated() ==
             NOT_FROM_PARSER) {
       GetScriptLoader()->RunScriptWhenSafe(aRequest);
+    } else if (aRequest->GetScriptLoadContext()->mIsInline &&
+               aRequest->GetScriptLoadContext()->GetParserCreated() !=
+                   NOT_FROM_PARSER &&
+               !nsContentUtils::IsSafeToRunScript()) {
+      // Avoid giving inline async module scripts that don't have
+      // external dependencies a guaranteed execution time relative
+      // to the HTML parse. That is, deliberately avoid guaranteeing
+      // that the script would always observe a DOM shape where the
+      // parser has not added further elements to the DOM.
+      // (If `nsContentUtils::IsSafeToRunScript()` returns `true`,
+      // we come here synchronously from the parser. If it returns
+      // `false` we come here from an external dependency completing
+      // its fetch, in which case we already are at an unspecific
+      // point relative to the parse.)
+      MOZ_ALWAYS_SUCCEEDS(NS_DispatchToMainThread(
+          mozilla::NewRunnableMethod<RefPtr<ModuleLoadRequest>>(
+              "ModuleLoader::AsyncExecuteInlineModule", this,
+              &ModuleLoader::AsyncExecuteInlineModule, aRequest)));
+      return;
     } else {
       GetScriptLoader()->MaybeMoveToLoadedList(aRequest);
       GetScriptLoader()->ProcessPendingRequestsAsync();
@@ -149,11 +179,8 @@ nsresult ModuleLoader::CompileFetchedModule(
     ModuleLoadRequest* aRequest, JS::MutableHandle<JSObject*> aModuleOut) {
   if (aRequest->GetScriptLoadContext()->mWasCompiledOMT) {
     JS::InstantiationStorage storage;
-    RefPtr<JS::Stencil> stencil = JS::FinishOffThreadStencil(
-        aCx, aRequest->GetScriptLoadContext()->mOffThreadToken, &storage);
-
-    aRequest->GetScriptLoadContext()->mOffThreadToken = nullptr;
-
+    RefPtr<JS::Stencil> stencil =
+        aRequest->GetScriptLoadContext()->StealOffThreadResult(aCx, &storage);
     if (!stencil) {
       return NS_ERROR_FAILURE;
     }
@@ -229,11 +256,12 @@ nsresult ModuleLoader::CompileFetchedModule(
 
 /* static */
 already_AddRefed<ModuleLoadRequest> ModuleLoader::CreateTopLevel(
-    nsIURI* aURI, ScriptFetchOptions* aFetchOptions,
-    const SRIMetadata& aIntegrity, nsIURI* aReferrer, ScriptLoader* aLoader,
-    ScriptLoadContext* aContext) {
+    nsIURI* aURI, ReferrerPolicy aReferrerPolicy,
+    ScriptFetchOptions* aFetchOptions, const SRIMetadata& aIntegrity,
+    nsIURI* aReferrer, ScriptLoader* aLoader, ScriptLoadContext* aContext) {
   RefPtr<ModuleLoadRequest> request = new ModuleLoadRequest(
-      aURI, aFetchOptions, aIntegrity, aReferrer, aContext, true,
+      aURI, aReferrerPolicy, aFetchOptions, aIntegrity, aReferrer, aContext,
+      true,
       /* is top level */ false, /* is dynamic import */
       aLoader->GetModuleLoader(),
       ModuleLoadRequest::NewVisitedSetForTopLevelImport(aURI), nullptr);
@@ -250,9 +278,9 @@ already_AddRefed<ModuleLoadRequest> ModuleLoader::CreateStaticImport(
   newContext->mScriptMode = aParent->GetScriptLoadContext()->mScriptMode;
 
   RefPtr<ModuleLoadRequest> request = new ModuleLoadRequest(
-      aURI, aParent->mFetchOptions, SRIMetadata(), aParent->mURI, newContext,
-      false, /* is top level */
-      false, /* is dynamic import */
+      aURI, aParent->ReferrerPolicy(), aParent->mFetchOptions, SRIMetadata(),
+      aParent->mURI, newContext, false, /* is top level */
+      false,                            /* is dynamic import */
       aParent->mLoader, aParent->mVisitedSet, aParent->GetRootModule());
 
   return request.forget();
@@ -268,12 +296,14 @@ already_AddRefed<ModuleLoadRequest> ModuleLoader::CreateDynamicImport(
   RefPtr<ScriptFetchOptions> options = nullptr;
   nsIURI* baseURL = nullptr;
   RefPtr<ScriptLoadContext> context = new ScriptLoadContext();
+  ReferrerPolicy referrerPolicy;
 
   if (aMaybeActiveScript) {
     // https://html.spec.whatwg.org/multipage/webappapis.html#hostloadimportedmodule
     // Step 6.3. Set fetchOptions to the new descendant script fetch options for
     // referencingScript's fetch options.
     options = aMaybeActiveScript->GetFetchOptions();
+    referrerPolicy = aMaybeActiveScript->ReferrerPolicy();
     baseURL = aMaybeActiveScript->BaseURL();
   } else {
     // We don't have a referencing script so fall back on using
@@ -297,9 +327,9 @@ already_AddRefed<ModuleLoadRequest> ModuleLoader::CreateDynamicImport(
     // "same-origin", referrer policy is the empty string, and fetch priority is
     // "auto".
     options = new ScriptFetchOptions(
-        mozilla::CORS_NONE, document->GetReferrerPolicy(),
-        /* aNonce = */ u""_ns, ParserMetadata::NotParserInserted, principal,
-        nullptr);
+        mozilla::CORS_NONE, /* aNonce = */ u""_ns, RequestPriority::Auto,
+        ParserMetadata::NotParserInserted, principal, nullptr);
+    referrerPolicy = document->GetReferrerPolicy();
     baseURL = document->GetDocBaseURI();
   }
 
@@ -307,7 +337,7 @@ already_AddRefed<ModuleLoadRequest> ModuleLoader::CreateDynamicImport(
   context->mScriptMode = ScriptLoadContext::ScriptMode::eAsync;
 
   RefPtr<ModuleLoadRequest> request = new ModuleLoadRequest(
-      aURI, options, SRIMetadata(), baseURL, context, true,
+      aURI, referrerPolicy, options, SRIMetadata(), baseURL, context, true,
       /* is top level */ true, /* is dynamic import */
       this, ModuleLoadRequest::NewVisitedSetForTopLevelImport(aURI), nullptr);
 

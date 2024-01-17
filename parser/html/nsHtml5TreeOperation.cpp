@@ -141,9 +141,10 @@ nsHtml5TreeOperation::~nsHtml5TreeOperation() {
 
     void operator()(const opMarkAsBroken& aOperation) {}
 
-    void operator()(const opRunScript& aOperation) {}
+    void operator()(const opRunScriptThatMayDocumentWriteOrBlock& aOperation) {}
 
-    void operator()(const opRunScriptAsyncDefer& aOperation) {}
+    void operator()(
+        const opRunScriptThatCannotDocumentWriteOrBlock& aOperation) {}
 
     void operator()(const opPreventScriptExecution& aOperation) {}
 
@@ -416,6 +417,7 @@ nsresult nsHtml5TreeOperation::AddAttributes(nsIContent* aNode,
 void nsHtml5TreeOperation::SetHTMLElementAttributes(
     Element* aElement, nsAtom* aName, nsHtml5HtmlAttributes* aAttributes) {
   int32_t len = aAttributes->getLength();
+  aElement->TryReserveAttributeCount((uint32_t)len);
   for (int32_t i = 0; i < len; i++) {
     nsHtml5String val = aAttributes->getValueNoBoundsCheck(i);
     nsAtom* klass = val.MaybeAsAtom();
@@ -425,18 +427,9 @@ void nsHtml5TreeOperation::SetHTMLElementAttributes(
       nsAtom* localName = aAttributes->getLocalNameNoBoundsCheck(i);
       nsAtom* prefix = aAttributes->getPrefixNoBoundsCheck(i);
       int32_t nsuri = aAttributes->getURINoBoundsCheck(i);
-
       nsString value;  // Not Auto, because using it to hold nsStringBuffer*
       val.ToString(value);
-      if (nsGkAtoms::a == aName && nsGkAtoms::name == localName) {
-        // This is an HTML5-incompliant Geckoism.
-        // Remove when fixing bug 582361
-        NS_ConvertUTF16toUTF8 cname(value);
-        NS_ConvertUTF8toUTF16 uv(nsUnescape(cname.BeginWriting()));
-        aElement->SetAttr(nsuri, localName, prefix, uv, false);
-      } else {
-        aElement->SetAttr(nsuri, localName, prefix, value, false);
-      }
+      aElement->SetAttr(nsuri, localName, prefix, value, false);
     }
   }
 }
@@ -927,7 +920,8 @@ nsresult nsHtml5TreeOperation::Perform(nsHtml5TreeOpExecutor* aBuilder,
       return aOperation.mResult;
     }
 
-    nsresult operator()(const opRunScript& aOperation) {
+    nsresult operator()(
+        const opRunScriptThatMayDocumentWriteOrBlock& aOperation) {
       nsIContent* node = *(aOperation.mElement);
       nsAHtml5TreeBuilderState* snapshot = aOperation.mBuilderState;
       if (snapshot) {
@@ -938,8 +932,9 @@ nsresult nsHtml5TreeOperation::Perform(nsHtml5TreeOpExecutor* aBuilder,
       return NS_OK;
     }
 
-    nsresult operator()(const opRunScriptAsyncDefer& aOperation) {
-      mBuilder->RunScript(*(aOperation.mElement));
+    nsresult operator()(
+        const opRunScriptThatCannotDocumentWriteOrBlock& aOperation) {
+      mBuilder->RunScript(*(aOperation.mElement), false);
       return NS_OK;
     }
 

@@ -67,22 +67,18 @@ nsDOMTokenList* HTMLAreaElement::RelList() {
 }
 
 nsresult HTMLAreaElement::BindToTree(BindContext& aContext, nsINode& aParent) {
-  Link::ResetLinkState(false, Link::ElementHasHref());
   nsresult rv = nsGenericHTMLElement::BindToTree(aContext, aParent);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  if (IsInComposedDoc()) {
-    aContext.OwnerDoc().RegisterPendingLinkUpdate(this);
-  }
+  Link::BindToTree(aContext);
   return rv;
 }
 
 void HTMLAreaElement::UnbindFromTree(bool aNullParent) {
-  // Without removing the link state we risk a dangling pointer
-  // in the mStyledLinks hashtable
-  Link::ResetLinkState(false, Link::ElementHasHref());
-
   nsGenericHTMLElement::UnbindFromTree(aNullParent);
+  // Without removing the link state we risk a dangling pointer in the
+  // mStyledLinks hashtable
+  Link::UnbindFromTree();
 }
 
 nsresult HTMLAreaElement::CheckTaintSinkSetAttr(int32_t aNamespaceID, nsAtom* aName,
@@ -99,14 +95,8 @@ void HTMLAreaElement::AfterSetAttr(int32_t aNamespaceID, nsAtom* aName,
                                    const nsAttrValue* aOldValue,
                                    nsIPrincipal* aSubjectPrincipal,
                                    bool aNotify) {
-  if (aNamespaceID == kNameSpaceID_None) {
-    // This must happen after the attribute is set. We will need the updated
-    // attribute value because notifying the document that content states have
-    // changed will call IntrinsicState, which will try to get updated
-    // information about the visitedness from Link.
-    if (aName == nsGkAtoms::href) {
-      Link::ResetLinkState(aNotify, !!aValue);
-    }
+  if (aNamespaceID == kNameSpaceID_None && aName == nsGkAtoms::href) {
+    Link::ResetLinkState(aNotify, !!aValue);
   }
 
   return nsGenericHTMLElement::AfterSetAttr(
@@ -120,10 +110,6 @@ already_AddRefed<nsIURI> HTMLAreaElement::GetHrefURI() const {
     return uri.forget();
   }
   return GetHrefURIForAnchors();
-}
-
-ElementState HTMLAreaElement::IntrinsicState() const {
-  return Link::LinkState() | nsGenericHTMLElement::IntrinsicState();
 }
 
 void HTMLAreaElement::AddSizeOfExcludingThis(nsWindowSizes& aSizes,

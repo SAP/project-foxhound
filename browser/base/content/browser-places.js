@@ -55,6 +55,7 @@ var StarUI = {
     delete this.panel;
     this._createPanelIfNeeded();
     var element = this._element("editBookmarkPanel");
+    window.ensureCustomElements("moz-button-group");
     // initially the panel is hidden
     // to avoid impacting startup / new window performance
     element.hidden = false;
@@ -592,15 +593,6 @@ class HistoryMenu extends PlacesMenu {
     }
   }
 
-  _getClosedTabCount() {
-    try {
-      return SessionStore.getClosedTabCount();
-    } catch (ex) {
-      // SessionStore doesn't track the hidden window, so just return zero then.
-      return 0;
-    }
-  }
-
   toggleHiddenTabs() {
     const isShown =
       window.gBrowser && gBrowser.visibleTabs.length < gBrowser.tabs.length;
@@ -610,7 +602,7 @@ class HistoryMenu extends PlacesMenu {
   toggleRecentlyClosedTabs() {
     // enable/disable the Recently Closed Tabs sub menu
     // no restorable tabs, so disable menu
-    if (this._getClosedTabCount() == 0) {
+    if (SessionStore.getClosedTabCount() == 0) {
       this.undoTabMenu.setAttribute("disabled", true);
     } else {
       this.undoTabMenu.removeAttribute("disabled");
@@ -629,7 +621,7 @@ class HistoryMenu extends PlacesMenu {
     }
 
     // no restorable tabs, so make sure menu is disabled, and return
-    if (this._getClosedTabCount() == 0) {
+    if (SessionStore.getClosedTabCount() == 0) {
       this.undoTabMenu.setAttribute("disabled", true);
       return;
     }

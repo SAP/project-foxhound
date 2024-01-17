@@ -274,6 +274,8 @@ class EventStateManager : public nsSupportsWeakReference, public nsIObserver {
                      const Maybe<gfx::IntPoint>& aHotspot, nsIWidget* aWidget,
                      bool aLockCursor);
 
+  void StartHidingCursorWhileTyping(nsIWidget*);
+
   /**
    * Checks if the current mouse over element matches the given
    * Element (which has a remote frame), and if so, notifies
@@ -287,7 +289,10 @@ class EventStateManager : public nsSupportsWeakReference, public nsIObserver {
 
   NS_DECL_CYCLE_COLLECTION_CLASS_AMBIGUOUS(EventStateManager, nsIObserver)
 
-  static dom::Document* sMouseOverDocument;
+  // The manager in this process that is setting the cursor. In the parent
+  // process it might be null if a remote process is setting the cursor.
+  static EventStateManager* sCursorSettingManager;
+  static void ClearCursorSettingManager() { sCursorSettingManager = nullptr; }
 
   static EventStateManager* GetActiveEventStateManager() { return sActiveESM; }
 
@@ -389,8 +394,8 @@ class EventStateManager : public nsSupportsWeakReference, public nsIObserver {
    */
   void ClearCachedWidgetCursor(nsIFrame* aTargetFrame);
 
-  void UpdateCursor(nsPresContext* aPresContext, WidgetEvent* aEvent,
-                    nsIFrame* aTargetFrame, nsEventStatus* aStatus);
+  void UpdateCursor(nsPresContext*, WidgetMouseEvent*, nsIFrame* aTargetFrame,
+                    nsEventStatus* aStatus);
   /**
    * Turn a GUI mouse/pointer event into a mouse/pointer event targeted at the
    * specified content.  This returns the primary frame for the content (or null
@@ -1158,8 +1163,10 @@ class EventStateManager : public nsSupportsWeakReference, public nsIObserver {
 
   LastMouseDownInfo& GetLastMouseDownInfo(int16_t aButton);
 
+  // These variables are only relevant if we're the cursor-setting manager.
   StyleCursorKind mLockCursor;
-  bool mLastFrameConsumedSetCursor;
+  bool mLastFrameConsumedSetCursor = false;
+  bool mHidingCursorWhileTyping = false;
 
   // Last mouse event mRefPoint (the offset from the widget's origin in
   // device pixels) when mouse was locked, used to restore mouse position

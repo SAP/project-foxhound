@@ -381,7 +381,7 @@ def fill(template, **args):
 
     t, argModList = compile_fill_template(template)
     # Now apply argModList to args
-    for (name, modified_name, depth) in argModList:
+    for name, modified_name, depth in argModList:
         if not (args[name] == "" or args[name].endswith("\n")):
             raise ValueError(
                 "Argument %s with value %r is missing a newline" % (name, args[name])
@@ -4372,7 +4372,7 @@ def InitUnforgeablePropertiesOnHolder(
         (defineUnforgeableAttrs, properties.unforgeableAttrs),
         (defineUnforgeableMethods, properties.unforgeableMethods),
     ]
-    for (template, array) in unforgeableMembers:
+    for template, array in unforgeableMembers:
         if array.hasNonChromeOnly():
             unforgeables.append(CGGeneric(template % array.variableName(False)))
         if array.hasChromeOnly():
@@ -8960,10 +8960,6 @@ def wrapArgIntoCurrentCompartment(arg, value, isMember=True):
     return wrap
 
 
-def needsContainsHack(m):
-    return m.getExtendedAttribute("ReturnValueNeedsContainsHack")
-
-
 def needsCallerType(m):
     return m.getExtendedAttribute("NeedsCallerType")
 
@@ -9577,23 +9573,6 @@ class CGPerSignatureCall(CGThing):
             # the compartment we do our conversion in but after we've finished
             # the initial conversion into args.rval().
             postConversionSteps = ""
-            if needsContainsHack(self.idlNode):
-                # Define a .contains on the object that has the same value as
-                # .includes; needed for backwards compat in extensions as we
-                # migrate some DOMStringLists to FrozenArray.
-                postConversionSteps += dedent(
-                    """
-                    if (args.rval().isObject() && nsContentUtils::ThreadsafeIsSystemCaller(cx)) {
-                      JS::Rooted<JSObject*> rvalObj(cx, &args.rval().toObject());
-                      JS::Rooted<JS::Value> includesVal(cx);
-                      if (!JS_GetProperty(cx, rvalObj, "includes", &includesVal) ||
-                          !JS_DefineProperty(cx, rvalObj, "contains", includesVal, JSPROP_ENUMERATE)) {
-                        return false;
-                      }
-                    }
-
-                    """
-                )
             if self.idlNode.getExtendedAttribute("Frozen"):
                 assert (
                     self.idlNode.type.isSequence() or self.idlNode.type.isDictionary()
@@ -13021,7 +13000,6 @@ class CGUnionStruct(CGThing):
         return self.type.getDeps()
 
     def getStruct(self):
-
         members = [
             ClassMember("mType", "TypeOrUninit", body="eUninitialized"),
             ClassMember("mValue", "Value"),
@@ -13470,7 +13448,6 @@ class CGUnionStruct(CGThing):
 
         enumValuesNoUninit = [x for x in enumValues if x != "eUninitialized"]
 
-        bases = [ClassBase("AllOwningUnionBase")] if self.ownsMembers else []
         enums = [
             ClassGroup(
                 [
@@ -13485,9 +13462,37 @@ class CGUnionStruct(CGThing):
                 ]
             )
         ]
+
+        bases = [
+            ClassBase("AllOwningUnionBase" if self.ownsMembers else "AllUnionBase")
+        ]
+
+        typeAliases = []
+        bufferSourceTypes = [
+            t.name for t in self.type.flatMemberTypes if t.isBufferSource()
+        ]
+        if len(bufferSourceTypes) > 0:
+            bases.append(ClassBase("UnionWithTypedArraysBase"))
+            memberTypesCount = len(self.type.flatMemberTypes)
+            if self.type.hasNullableType:
+                memberTypesCount += 1
+
+            typeAliases = [
+                ClassUsingDeclaration(
+                    "ApplyToTypedArrays",
+                    "binding_detail::ApplyToTypedArraysHelper<%s, %s, %s>"
+                    % (
+                        selfName,
+                        toStringBool(memberTypesCount > len(bufferSourceTypes)),
+                        ", ".join(bufferSourceTypes),
+                    ),
+                )
+            ]
+
         return CGClass(
             selfName,
             bases=bases,
+            typeAliases=typeAliases,
             members=members,
             constructors=constructors,
             methods=methods,
@@ -13702,6 +13707,29 @@ class ClassMethod(ClassItem):
 
 
 class ClassUsingDeclaration(ClassItem):
+    """
+    Used for declaring an alias for a type in a CGClass
+
+    name is the name of the alias
+
+    type is the type to declare an alias of
+
+    visibility determines the visibility of the alias (public,
+    protected, private), defaults to public.
+    """
+
+    def __init__(self, name, type, visibility="public"):
+        self.type = type
+        ClassItem.__init__(self, name, visibility)
+
+    def declare(self, cgClass):
+        return "using %s = %s;\n\n" % (self.name, self.type)
+
+    def define(self, cgClass):
+        return ""
+
+
+class ClassUsingFromBaseDeclaration(ClassItem):
     """
     Used for importing a name from a base class into a CGClass
 
@@ -14014,6 +14042,7 @@ class CGClass(CGThing):
         self,
         name,
         bases=[],
+        typeAliases=[],
         members=[],
         constructors=[],
         destructor=None,
@@ -14032,6 +14061,7 @@ class CGClass(CGThing):
         CGThing.__init__(self)
         self.name = name
         self.bases = bases
+        self.typeAliases = typeAliases
         self.members = members
         self.constructors = constructors
         # We store our single destructor in a list, since all of our
@@ -14147,6 +14177,7 @@ class CGClass(CGThing):
             disallowedCopyConstructors = []
 
         order = [
+            self.typeAliases,
             self.enums,
             self.unions,
             self.members,
@@ -16490,7 +16521,9 @@ class CGDOMJSProxyHandler(CGClass):
         methods = [
             CGDOMJSProxyHandler_getOwnPropDescriptor(descriptor),
             CGDOMJSProxyHandler_defineProperty(descriptor),
-            ClassUsingDeclaration("mozilla::dom::DOMProxyHandler", "defineProperty"),
+            ClassUsingFromBaseDeclaration(
+                "mozilla::dom::DOMProxyHandler", "defineProperty"
+            ),
             CGDOMJSProxyHandler_ownPropNames(descriptor),
             CGDOMJSProxyHandler_hasOwn(descriptor),
             CGDOMJSProxyHandler_get(descriptor),
@@ -16532,7 +16565,7 @@ class CGDOMJSProxyHandler(CGClass):
                     CGDOMJSProxyHandler_definePropertySameOrigin(descriptor),
                     CGDOMJSProxyHandler_set(descriptor),
                     CGDOMJSProxyHandler_EnsureHolder(descriptor),
-                    ClassUsingDeclaration(
+                    ClassUsingFromBaseDeclaration(
                         "MaybeCrossOriginObjectMixins", "EnsureHolder"
                     ),
                 ]
@@ -17065,7 +17098,6 @@ class CGDescriptor(CGThing):
 
 class CGNamespacedEnum(CGThing):
     def __init__(self, namespace, enumName, names, values, comment=""):
-
         if not values:
             values = []
 
@@ -17799,9 +17831,13 @@ class CGDictionary(CGThing):
         return "m" + name[0].upper() + IDLToCIdentifier(name[1:])
 
     def getMemberType(self, memberInfo):
-        _, conversionInfo = memberInfo
+        member, conversionInfo = memberInfo
         # We can't handle having a holderType here
         assert conversionInfo.holderType is None
+
+        if member.getExtendedAttribute("BinaryType"):
+            return member.getExtendedAttribute("BinaryType")[0]
+
         declType = conversionInfo.declType
         if conversionInfo.dealWithOptional:
             declType = CGTemplatedType("Optional", declType)
@@ -18881,7 +18917,7 @@ class CGBindingRoot(CGThing):
 
             return (
                 any(
-                    isChromeOnly(a) or needsContainsHack(a) or needsCallerType(a)
+                    isChromeOnly(a) or needsCallerType(a)
                     for a in desc.interface.members
                 )
                 or desc.interface.getExtendedAttribute("ChromeOnly") is not None
@@ -20689,7 +20725,7 @@ class CGJSImplClass(CGBindingImplClass):
                 override=True,
                 body=body,
             ),
-            ClassUsingDeclaration(parentClass, methodName),
+            ClassUsingFromBaseDeclaration(parentClass, methodName),
         ]
 
 
@@ -23421,7 +23457,6 @@ class GlobalGenRoots:
 
     @staticmethod
     def PrototypeList(config):
-
         # Prototype ID enum.
         descriptorsWithPrototype = config.getDescriptors(
             hasInterfacePrototypeObject=True
@@ -23609,7 +23644,6 @@ class GlobalGenRoots:
 
     @staticmethod
     def RegisterBindings(config):
-
         curr = CGNamespace.build(
             ["mozilla", "dom"], CGGlobalNames(config.windowGlobalNames)
         )
@@ -23637,7 +23671,6 @@ class GlobalGenRoots:
 
     @staticmethod
     def RegisterWorkerBindings(config):
-
         curr = CGRegisterWorkerBindings(config)
 
         # Wrap all of that in our namespaces.
@@ -23664,7 +23697,6 @@ class GlobalGenRoots:
 
     @staticmethod
     def RegisterWorkerDebuggerBindings(config):
-
         curr = CGRegisterWorkerDebuggerBindings(config)
 
         # Wrap all of that in our namespaces.
@@ -23691,7 +23723,6 @@ class GlobalGenRoots:
 
     @staticmethod
     def RegisterWorkletBindings(config):
-
         curr = CGRegisterWorkletBindings(config)
 
         # Wrap all of that in our namespaces.
@@ -23718,7 +23749,6 @@ class GlobalGenRoots:
 
     @staticmethod
     def RegisterShadowRealmBindings(config):
-
         curr = CGRegisterShadowRealmBindings(config)
 
         # Wrap all of that in our namespaces.

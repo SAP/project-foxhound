@@ -1,5 +1,6 @@
 import pytest
 
+from webdriver.bidi.error import MoveTargetOutOfBoundsException
 from webdriver.bidi.modules.input import Actions, get_element_origin
 from webdriver.bidi.modules.script import ContextTarget
 
@@ -55,6 +56,41 @@ async def test_click_at_coordinates(bidi_session, top_context, load_static_test_
     assert expected == filtered_events[1:]
 
 
+@pytest.mark.parametrize("origin", ["pointer", "viewport"])
+async def test_params_actions_origin_outside_viewport(bidi_session, top_context, origin):
+    actions = Actions()
+    actions.add_pointer().pointer_move(x=-50, y=-50, origin=origin)
+
+    with pytest.raises(MoveTargetOutOfBoundsException):
+        await bidi_session.input.perform_actions(
+            actions=actions, context=top_context["context"]
+        )
+
+
+async def test_params_actions_origin_element_outside_viewport(
+    bidi_session, top_context, get_actions_origin_page, get_element
+):
+    url = get_actions_origin_page(
+        """width: 100px; height: 50px; background: green;
+           position: relative; left: -200px; top: -100px;"""
+    )
+    await bidi_session.browsing_context.navigate(
+        context=top_context["context"],
+        url=url,
+        wait="complete",
+    )
+
+    elem = await get_element("#inner")
+
+    actions = Actions()
+    actions.add_pointer().pointer_move(x=0, y=0, origin=get_element_origin(elem))
+
+    with pytest.raises(MoveTargetOutOfBoundsException):
+        await bidi_session.input.perform_actions(
+            actions=actions, context=top_context["context"]
+        )
+
+
 async def test_context_menu_at_coordinates(
     bidi_session, top_context, load_static_test_page
 ):
@@ -80,14 +116,55 @@ async def test_context_menu_at_coordinates(
     assert len(events) == 4
 
     expected = [
-        {"type": "mousedown", "button": 2},
-        {"type": "contextmenu", "button": 2},
+        {"type": "mousedown", "button": 2, "buttons": 2},
+        {"type": "contextmenu", "button": 2, "buttons": 2},
+    ]
+    # Some browsers in some platforms may dispatch `contextmenu` event as a
+    # a default action of `mouseup`.  In the case, `.buttons` of the event
+    # should be 0.
+    anotherExpected = [
+        {"type": "mousedown", "button": 2, "buttons": 2},
+        {"type": "contextmenu", "button": 2, "buttons": 0},
     ]
     filtered_events = [filter_dict(e, expected[0]) for e in events]
     mousedown_contextmenu_events = [
         x for x in filtered_events if x["type"] in ["mousedown", "contextmenu"]
     ]
-    assert expected == mousedown_contextmenu_events
+    assert mousedown_contextmenu_events in [expected, anotherExpected]
+
+
+async def test_middle_click(bidi_session, top_context, load_static_test_page):
+    await load_static_test_page(page="test_actions.html")
+
+    div_point = {
+        "x": 82,
+        "y": 187,
+    }
+
+    actions = Actions()
+    (
+        actions.add_pointer()
+        .pointer_move(x=div_point["x"], y=div_point["y"])
+        .pointer_down(button=1)
+        .pointer_up(button=1)
+    )
+    await bidi_session.input.perform_actions(
+        actions=actions, context=top_context["context"]
+    )
+
+
+    events = await get_events(bidi_session, top_context["context"])
+    assert len(events) == 3
+
+    expected = [
+      {"type": "mousedown", "button": 1, "buttons": 4},
+      {"type": "mouseup", "button": 1, "buttons": 0},
+    ]
+    filtered_events = [filter_dict(e, expected[0]) for e in events]
+    mousedown_mouseup_events = [
+        x for x in filtered_events if x["type"] in ["mousedown", "mouseup"]
+    ]
+    assert expected == mousedown_mouseup_events
 
 
 async def test_click_element_center(

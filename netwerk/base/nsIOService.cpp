@@ -221,7 +221,6 @@ static const char* gCallbackPrefsForSocketProcess[] = {
     "network.trr.",
     "doh-rollout.",
     "network.dns.disableIPv6",
-    "network.dns.skipTRR-when-parental-control-enabled",
     "network.offline-mirrors-connectivity",
     "network.disable-localhost-when-offline",
     "network.proxy.parse_pac_on_socket_process",
@@ -424,6 +423,13 @@ nsresult nsIOService::InitializeCaptivePortalService() {
 
 nsresult nsIOService::InitializeSocketTransportService() {
   nsresult rv = NS_OK;
+
+  if (AppShutdown::IsInOrBeyond(ShutdownPhase::AppShutdownConfirmed)) {
+    LOG(
+        ("nsIOService aborting InitializeSocketTransportService because of app "
+         "shutdown"));
+    return NS_ERROR_ILLEGAL_DURING_SHUTDOWN;
+  }
 
   if (!mSocketTransportService) {
     mSocketTransportService =

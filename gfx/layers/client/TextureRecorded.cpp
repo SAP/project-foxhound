@@ -41,7 +41,10 @@ void RecordedTextureData::FillInfo(TextureData::Info& aInfo) const {
 }
 
 bool RecordedTextureData::Lock(OpenMode aMode) {
-  mCanvasChild->EnsureBeginTransaction();
+  if (!mCanvasChild->EnsureBeginTransaction()) {
+    return false;
+  }
+
   if (!mDT) {
     mTextureId = sNextRecordedTextureId++;
     mCanvasChild->RecordEvent(RecordedNextTextureId(mTextureId));
@@ -92,7 +95,11 @@ void RecordedTextureData::EndDraw() {
 }
 
 already_AddRefed<gfx::SourceSurface> RecordedTextureData::BorrowSnapshot() {
-  MOZ_ASSERT(mDT);
+  // There are some failure scenarios where we have no DrawTarget and
+  // BorrowSnapshot is called in an attempt to copy to a new texture.
+  if (!mDT) {
+    return nullptr;
+  }
 
   if (mSnapshot) {
     return mCanvasChild->WrapSurface(mSnapshot);

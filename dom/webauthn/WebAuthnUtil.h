@@ -11,8 +11,6 @@
  * Utility functions used by both WebAuthnManager and U2FTokenManager.
  */
 
-#include "ipc/EnumSerializer.h"
-#include "mozilla/dom/CryptoBuffer.h"
 #include "mozilla/dom/WebAuthenticationBinding.h"
 #include "ipc/IPCMessageUtils.h"
 
@@ -21,12 +19,7 @@ namespace mozilla::dom {
 bool EvaluateAppID(nsPIDOMWindowInner* aParent, const nsString& aOrigin,
                    /* in/out */ nsString& aAppId);
 
-nsresult HashCString(const nsACString& aIn, /* out */ CryptoBuffer& aOut);
-
-nsresult BuildTransactionHashes(const nsCString& aRpId,
-                                const nsCString& aClientDataJSON,
-                                /* out */ CryptoBuffer& aRpIdHash,
-                                /* out */ CryptoBuffer& aClientDataHash);
+nsresult HashCString(const nsACString& aIn, /* out */ nsTArray<uint8_t>& aOut);
 
 }  // namespace mozilla::dom
 

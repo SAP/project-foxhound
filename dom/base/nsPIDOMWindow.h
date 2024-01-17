@@ -126,7 +126,7 @@ class nsPIDOMWindowInner : public mozIDOMWindow {
   }
 
   NS_IMPL_FROMEVENTTARGET_HELPER_WITH_GETTER(nsPIDOMWindowInner,
-                                             GetAsWindowInner())
+                                             GetAsInnerWindow())
 
   // Returns true if this object is the currently-active inner window for its
   // BrowsingContext.
@@ -639,6 +639,7 @@ class nsPIDOMWindowInner : public mozIDOMWindow {
       mozilla::TaskCategory aCategory) const = 0;
 
   void SaveStorageAccessPermissionGranted();
+  void SaveStorageAccessPermissionRevoked();
 
   bool UsingStorageAccess();
 
@@ -760,10 +761,6 @@ class nsPIDOMWindowInner : public mozIDOMWindow {
   // the event object alive.
   mozilla::dom::Event* mEvent;
 
-  // A boolean flag indicating whether storage access is granted for the
-  // current window and that it is currently being used by this window.
-  bool mUsingStorageAccess;
-
   // The WindowGlobalChild actor for this window.
   //
   // This will be non-null during the full lifetime of the window, initialized
@@ -800,7 +797,7 @@ class nsPIDOMWindowOuter : public mozIDOMWindowProxy {
   NS_DECLARE_STATIC_IID_ACCESSOR(NS_PIDOMWINDOWOUTER_IID)
 
   NS_IMPL_FROMEVENTTARGET_HELPER_WITH_GETTER(nsPIDOMWindowOuter,
-                                             GetAsWindowOuter())
+                                             GetAsOuterWindow())
 
   static nsPIDOMWindowOuter* From(mozIDOMWindowProxy* aFrom) {
     return static_cast<nsPIDOMWindowOuter*>(aFrom);

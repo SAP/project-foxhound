@@ -604,8 +604,8 @@ bool IsPersistentExpire(uint32_t aExpire, const nsACString& aType) {
 }
 
 nsresult NotifySecondaryKeyPermissionUpdateInContentProcess(
-    const nsACString& aType, const nsACString& aSecondaryKey,
-    nsIPrincipal* aTopPrincipal) {
+    const nsACString& aType, uint32_t aPermission,
+    const nsACString& aSecondaryKey, nsIPrincipal* aTopPrincipal) {
   NS_ENSURE_ARG_POINTER(aTopPrincipal);
   MOZ_ASSERT(XRE_IsParentProcess());
   AutoTArray<RefPtr<BrowsingContextGroup>, 5> bcGroups;
@@ -631,12 +631,12 @@ nsresult NotifySecondaryKeyPermissionUpdateInContentProcess(
           if (!cp) {
             continue;
           }
-          if (cp->NeedsPermissionsUpdate(aSecondaryKey)) {
+          if (cp->NeedsSecondaryKeyPermissionsUpdate(aSecondaryKey)) {
             WindowGlobalParent* wgp = cbc->GetCurrentWindowGlobal();
             if (!wgp) {
               continue;
             }
-            bool success = wgp->SendNotifyPermissionChange(aType);
+            bool success = wgp->SendNotifyPermissionChange(aType, aPermission);
             Unused << NS_WARN_IF(!success);
           }
         }
@@ -1833,8 +1833,8 @@ nsresult PermissionManager::AddInternal(
     nsAutoCString secondaryKey;
     isSecondaryKeyed = GetSecondaryKey(aType, secondaryKey);
     if (isSecondaryKeyed) {
-      NotifySecondaryKeyPermissionUpdateInContentProcess(aType, secondaryKey,
-                                                         aPrincipal);
+      NotifySecondaryKeyPermissionUpdateInContentProcess(
+          aType, aPermission, secondaryKey, aPrincipal);
     }
 
     nsTArray<ContentParent*> cplist;
@@ -3439,6 +3439,7 @@ PermissionManager::GetAllKeysForPrincipal(nsIPrincipal* aPrincipal) {
 
   nsTArray<std::pair<nsCString, nsCString>> pairs;
   nsCOMPtr<nsIPrincipal> prin = aPrincipal;
+
   while (prin) {
     // Add the pair to the list
     std::pair<nsCString, nsCString>* pair =

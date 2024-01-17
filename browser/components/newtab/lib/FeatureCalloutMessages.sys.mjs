@@ -400,7 +400,7 @@ const MESSAGES = () => {
               {
                 selector: "hbox#browser",
                 arrow_position: "top-end",
-                absolute_position: { top: "45px", right: "55px" },
+                absolute_position: { top: "43px", right: "51px" },
               },
             ],
             content: {
@@ -451,7 +451,7 @@ const MESSAGES = () => {
               {
                 selector: "hbox#browser",
                 arrow_position: "top-end",
-                absolute_position: { top: "45px", right: "25px" },
+                absolute_position: { top: "43px", right: "23px" },
               },
             ],
             content: {
@@ -522,7 +522,7 @@ const MESSAGES = () => {
               {
                 selector: "hbox#browser",
                 arrow_position: "top-end",
-                absolute_position: { top: "45px", right: "55px" },
+                absolute_position: { top: "43px", right: "51px" },
               },
             ],
             content: {
@@ -573,7 +573,7 @@ const MESSAGES = () => {
               {
                 selector: "hbox#browser",
                 arrow_position: "top-end",
-                absolute_position: { top: "45px", right: "25px" },
+                absolute_position: { top: "43px", right: "23px" },
               },
             ],
             content: {
@@ -626,6 +626,186 @@ const MESSAGES = () => {
         "FEATURE_CALLOUT_[0-9]_B"
       )} && ${matchIncompleteTargeting(PDFJS_PREF)}`,
       trigger: { id: "pdfJsFeatureCalloutCheck" },
+    },
+    {
+      // "Callout 1" in the Fakespot Figma spec
+      id: "FAKESPOT_CALLOUT_CLOSED_OPTED_IN_DEFAULT",
+      template: "feature_callout",
+      content: {
+        id: "FAKESPOT_CALLOUT_CLOSED_OPTED_IN_DEFAULT",
+        template: "multistage",
+        backdrop: "transparent",
+        transitions: false,
+        disableHistoryUpdates: true,
+        screens: [
+          {
+            id: "FAKESPOT_CALLOUT_CLOSED_OPTED_IN_DEFAULT",
+            anchors: [
+              {
+                selector: "#shopping-sidebar-button",
+                panel_position: {
+                  anchor_attachment: "bottomcenter",
+                  callout_attachment: "topright",
+                },
+                no_open_on_anchor: true,
+              },
+            ],
+            content: {
+              position: "callout",
+              title_logo: {
+                imageURL:
+                  "chrome://browser/content/shopping/assets/shopping.svg",
+                alignment: "top",
+              },
+              title: {
+                string_id: "shopping-callout-closed-opted-in-subtitle",
+                marginInline: "3px 40px",
+                fontWeight: "inherit",
+              },
+              dismiss_button: {
+                action: { dismiss: true },
+                size: "small",
+                marginBlock: "24px 0",
+                marginInline: "0 24px",
+              },
+              page_event_listeners: [
+                {
+                  params: {
+                    type: "click",
+                    selectors: "#shopping-sidebar-button",
+                  },
+                  action: { dismiss: true },
+                },
+              ],
+            },
+          },
+        ],
+      },
+      priority: 1,
+      // User is opted in; First time closing sidebar; Has not seen either on-closed callout before; Has not opted out of CFRs.
+      targeting: `isSidebarClosing && 'browser.shopping.experience2023.optedIn' | preferenceValue == 1 && 'browser.newtabpage.activity-stream.asrouter.userprefs.cfr.features' | preferenceValue != false && !messageImpressions.FAKESPOT_CALLOUT_CLOSED_OPTED_IN_DEFAULT|length && !messageImpressions.FAKESPOT_CALLOUT_CLOSED_NOT_OPTED_IN_DEFAULT|length`,
+      trigger: { id: "shoppingProductPageWithSidebarClosed" },
+      frequency: { lifetime: 1 },
+    },
+    {
+      // "Callout 3" in the Fakespot Figma spec
+      id: "FAKESPOT_CALLOUT_CLOSED_NOT_OPTED_IN_DEFAULT",
+      template: "feature_callout",
+      content: {
+        id: "FAKESPOT_CALLOUT_CLOSED_NOT_OPTED_IN_DEFAULT",
+        template: "multistage",
+        backdrop: "transparent",
+        transitions: false,
+        disableHistoryUpdates: true,
+        screens: [
+          {
+            id: "FAKESPOT_CALLOUT_CLOSED_NOT_OPTED_IN_DEFAULT",
+            anchors: [
+              {
+                selector: "#shopping-sidebar-button",
+                panel_position: {
+                  anchor_attachment: "bottomcenter",
+                  callout_attachment: "topright",
+                },
+                no_open_on_anchor: true,
+              },
+            ],
+            content: {
+              position: "callout",
+              title_logo: {
+                imageURL:
+                  "chrome://browser/content/shopping/assets/shopping.svg",
+              },
+              title: {
+                string_id: "shopping-callout-closed-not-opted-in-title",
+                marginInline: "3px 40px",
+              },
+              subtitle: {
+                string_id: "shopping-callout-closed-not-opted-in-subtitle",
+              },
+              dismiss_button: {
+                action: { dismiss: true },
+                size: "small",
+                marginBlock: "24px 0",
+                marginInline: "0 24px",
+              },
+              page_event_listeners: [
+                {
+                  params: {
+                    type: "click",
+                    selectors: "#shopping-sidebar-button",
+                  },
+                  action: { dismiss: true },
+                },
+              ],
+            },
+          },
+        ],
+      },
+      priority: 1,
+      // User is not opted in; First time closing sidebar; Has not seen either on-closed callout before; Has not opted out of CFRs.
+      targeting: `isSidebarClosing && 'browser.shopping.experience2023.optedIn' | preferenceValue != 1 && 'browser.newtabpage.activity-stream.asrouter.userprefs.cfr.features' | preferenceValue != false && !messageImpressions.FAKESPOT_CALLOUT_CLOSED_OPTED_IN_DEFAULT|length && !messageImpressions.FAKESPOT_CALLOUT_CLOSED_NOT_OPTED_IN_DEFAULT|length`,
+      trigger: { id: "shoppingProductPageWithSidebarClosed" },
+      frequency: { lifetime: 1 },
+    },
+    {
+      // "callout 2" in the Fakespot Figma spec
+      id: "FAKESPOT_CALLOUT_PDP_OPTED_IN_DEFAULT",
+      template: "feature_callout",
+      content: {
+        id: "FAKESPOT_CALLOUT_PDP_OPTED_IN_DEFAULT",
+        template: "multistage",
+        backdrop: "transparent",
+        transitions: false,
+        disableHistoryUpdates: true,
+        screens: [
+          {
+            id: "FAKESPOT_CALLOUT_PDP_OPTED_IN_DEFAULT",
+            anchors: [
+              {
+                selector: "#shopping-sidebar-button",
+                panel_position: {
+                  anchor_attachment: "bottomcenter",
+                  callout_attachment: "topright",
+                },
+                no_open_on_anchor: true,
+              },
+            ],
+            content: {
+              position: "callout",
+              title: { string_id: "shopping-callout-pdp-opted-in-title" },
+              subtitle: { string_id: "shopping-callout-pdp-opted-in-subtitle" },
+              logo: {
+                imageURL:
+                  "chrome://browser/content/shopping/assets/ratingLight.avif",
+                darkModeImageURL:
+                  "chrome://browser/content/shopping/assets/ratingDark.avif",
+                height: "216px",
+              },
+              dismiss_button: {
+                action: { dismiss: true },
+                size: "small",
+                marginBlock: "24px 0",
+                marginInline: "0 24px",
+              },
+              page_event_listeners: [
+                {
+                  params: {
+                    type: "click",
+                    selectors: "#shopping-sidebar-button",
+                  },
+                  action: { dismiss: true },
+                },
+              ],
+            },
+          },
+        ],
+      },
+      priority: 1,
+      // User is opted in; Has not opted out of CFRs; Has seen either on-closed callout before, but not within the last 24hrs or in this session.
+      targeting: `!isSidebarClosing && 'browser.shopping.experience2023.optedIn' | preferenceValue == 1 && 'browser.newtabpage.activity-stream.asrouter.userprefs.cfr.features' | preferenceValue != false && ((currentDate | date - messageImpressions.FAKESPOT_CALLOUT_CLOSED_OPTED_IN_DEFAULT[messageImpressions.FAKESPOT_CALLOUT_CLOSED_OPTED_IN_DEFAULT | length - 1] | date) / 3600000 > 24 || (currentDate | date - messageImpressions.FAKESPOT_CALLOUT_CLOSED_NOT_OPTED_IN_DEFAULT[messageImpressions.FAKESPOT_CALLOUT_CLOSED_NOT_OPTED_IN_DEFAULT | length - 1] | date) / 3600000 > 24)`,
+      trigger: { id: "shoppingProductPageWithSidebarClosed" },
+      frequency: { lifetime: 1 },
     },
   ];
   messages = add24HourImpressionJEXLTargeting(

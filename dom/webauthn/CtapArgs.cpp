@@ -24,13 +24,10 @@ NS_IMETHODIMP
 CtapRegisterArgs::GetClientDataHash(nsTArray<uint8_t>& aClientDataHash) {
   mozilla::ipc::AssertIsOnBackgroundThread();
 
-  CryptoBuffer clientDataHash;
-  nsresult rv = HashCString(mInfo.ClientDataJSON(), clientDataHash);
+  nsresult rv = HashCString(mInfo.ClientDataJSON(), aClientDataHash);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return NS_ERROR_FAILURE;
   }
-  aClientDataHash.Clear();
-  aClientDataHash.AppendElements(clientDataHash);
 
   return NS_OK;
 }
@@ -88,6 +85,21 @@ CtapRegisterArgs::GetExcludeList(nsTArray<nsTArray<uint8_t> >& aExcludeList) {
   for (const WebAuthnScopedCredential& cred : mInfo.ExcludeList()) {
     aExcludeList.AppendElement(cred.id().Clone());
   }
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+CtapRegisterArgs::GetCredProps(bool* aCredProps) {
+  mozilla::ipc::AssertIsOnBackgroundThread();
+
+  *aCredProps = false;
+  for (const WebAuthnExtension& ext : mInfo.Extensions()) {
+    if (ext.type() == WebAuthnExtension::TWebAuthnExtensionCredProps) {
+      *aCredProps = ext.get_WebAuthnExtensionCredProps().credProps();
+      break;
+    }
+  }
+
   return NS_OK;
 }
 
@@ -174,13 +186,10 @@ NS_IMETHODIMP
 CtapSignArgs::GetClientDataHash(nsTArray<uint8_t>& aClientDataHash) {
   mozilla::ipc::AssertIsOnBackgroundThread();
 
-  CryptoBuffer clientDataHash;
-  nsresult rv = HashCString(mInfo.ClientDataJSON(), clientDataHash);
+  nsresult rv = HashCString(mInfo.ClientDataJSON(), aClientDataHash);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return NS_ERROR_FAILURE;
   }
-  aClientDataHash.Clear();
-  aClientDataHash.AppendElements(clientDataHash);
 
   return NS_OK;
 }
@@ -217,21 +226,6 @@ CtapSignArgs::GetAppId(nsAString& aAppId) {
   for (const WebAuthnExtension& ext : mInfo.Extensions()) {
     if (ext.type() == WebAuthnExtension::TWebAuthnExtensionAppId) {
       aAppId = ext.get_WebAuthnExtensionAppId().appIdentifier();
-      return NS_OK;
-    }
-  }
-
-  return NS_ERROR_NOT_AVAILABLE;
-}
-
-NS_IMETHODIMP
-CtapSignArgs::GetAppIdHash(nsTArray<uint8_t>& aAppIdHash) {
-  mozilla::ipc::AssertIsOnBackgroundThread();
-
-  for (const WebAuthnExtension& ext : mInfo.Extensions()) {
-    if (ext.type() == WebAuthnExtension::TWebAuthnExtensionAppId) {
-      aAppIdHash.Clear();
-      aAppIdHash.AppendElements(ext.get_WebAuthnExtensionAppId().AppId());
       return NS_OK;
     }
   }

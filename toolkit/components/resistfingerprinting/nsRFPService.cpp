@@ -191,6 +191,9 @@ bool nsRFPService::IsRFPEnabledFor(RFPTarget aTarget) {
 
   if (StaticPrefs::privacy_resistFingerprinting_DoNotUseDirectly() ||
       StaticPrefs::privacy_resistFingerprinting_pbmode_DoNotUseDirectly()) {
+    if (aTarget == RFPTarget::JSLocale) {
+      return StaticPrefs::privacy_spoof_english() == 2;
+    }
     return true;
   }
 
@@ -461,7 +464,7 @@ nsresult nsRFPService::RandomMidpoint(long long aClampedTimeUSec,
     }
     if (MOZ_UNLIKELY(!sSecretMidpointSeed.compareExchange(nullptr, temp))) {
       // Some other thread initted this first, never mind!
-      delete[] temp;
+      free(temp);
     }
   }
 
@@ -880,6 +883,9 @@ void nsRFPService::GetSpoofedUserAgent(nsACString& userAgent,
 
   MOZ_ASSERT(userAgent.Length() <= preallocatedLength);
 }
+
+/* static */
+nsCString nsRFPService::GetSpoofedJSLocale() { return "en-US"_ns; }
 
 // ============================================================================
 // ============================================================================

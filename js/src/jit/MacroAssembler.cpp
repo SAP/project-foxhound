@@ -5272,7 +5272,9 @@ void MacroAssembler::wasmCallIndirect(const wasm::CallSiteDesc& desc,
   switch (callIndirectId.kind()) {
     case wasm::CallIndirectIdKind::Global:
       loadPtr(Address(InstanceReg, wasm::Instance::offsetInData(
-                                       callIndirectId.instanceDataOffset())),
+                                       callIndirectId.instanceDataOffset() +
+                                       offsetof(wasm::TypeDefInstanceData,
+                                                superTypeVector))),
               WasmTableCallSigReg);
       break;
     case wasm::CallIndirectIdKind::Immediate:
@@ -5414,7 +5416,9 @@ void MacroAssembler::wasmReturnCallIndirect(
   switch (callIndirectId.kind()) {
     case wasm::CallIndirectIdKind::Global:
       loadPtr(Address(InstanceReg, wasm::Instance::offsetInData(
-                                       callIndirectId.instanceDataOffset())),
+                                       callIndirectId.instanceDataOffset() +
+                                       offsetof(wasm::TypeDefInstanceData,
+                                                superTypeVector))),
               WasmTableCallSigReg);
       break;
     case wasm::CallIndirectIdKind::Immediate:
@@ -5552,6 +5556,63 @@ void MacroAssembler::wasmCallRef(const wasm::CallSiteDesc& desc,
   bind(&done);
 }
 
+#ifdef ENABLE_WASM_TAIL_CALLS
+void MacroAssembler::wasmReturnCallRef(
+    const wasm::CallSiteDesc& desc, const wasm::CalleeDesc& callee,
+    const ReturnCallAdjustmentInfo& retCallInfo) {
+  MOZ_ASSERT(callee.which() == wasm::CalleeDesc::FuncRef);
+  const Register calleeScratch = WasmCallRefCallScratchReg0;
+  const Register calleeFnObj = WasmCallRefReg;
+
+  // Load from the function's WASM_INSTANCE_SLOT extended slot, and decide
+  // whether to take the fast path or the slow path. Register this load
+  // instruction to be source of a trap -- null pointer check.
+
+  Label fastCall;
+  Label done;
+  const Register newInstanceTemp = WasmCallRefCallScratchReg1;
+  size_t instanceSlotOffset = FunctionExtended::offsetOfExtendedSlot(
+      FunctionExtended::WASM_INSTANCE_SLOT);
+  static_assert(FunctionExtended::WASM_INSTANCE_SLOT < wasm::NullPtrGuardSize);
+  wasm::BytecodeOffset trapOffset(desc.lineOrBytecode());
+  append(wasm::Trap::NullPointerDereference,
+         wasm::TrapSite(currentOffset(), trapOffset));
+  loadPtr(Address(calleeFnObj, instanceSlotOffset), newInstanceTemp);
+  branchPtr(Assembler::Equal, InstanceReg, newInstanceTemp, &fastCall);
+
+  storePtr(InstanceReg,
+           Address(getStackPointer(), WasmCallerInstanceOffsetBeforeCall));
+  movePtr(newInstanceTemp, InstanceReg);
+  storePtr(InstanceReg,
+           Address(getStackPointer(), WasmCalleeInstanceOffsetBeforeCall));
+
+  loadWasmPinnedRegsFromInstance();
+  switchToWasmInstanceRealm(WasmCallRefCallScratchReg0,
+                            WasmCallRefCallScratchReg1);
+
+  // Get funcUncheckedCallEntry() from the function's
+  // WASM_FUNC_UNCHECKED_ENTRY_SLOT extended slot.
+  size_t uncheckedEntrySlotOffset = FunctionExtended::offsetOfExtendedSlot(
+      FunctionExtended::WASM_FUNC_UNCHECKED_ENTRY_SLOT);
+  loadPtr(Address(calleeFnObj, uncheckedEntrySlotOffset), calleeScratch);
+
+  wasm::CallSiteDesc stubDesc(desc.lineOrBytecode(),
+                              wasm::CallSiteDesc::ReturnStub);
+  wasmCollapseFrameSlow(retCallInfo, stubDesc);
+  jump(calleeScratch);
+
+  // Fast path: just load WASM_FUNC_UNCHECKED_ENTRY_SLOT value and go.
+  // The instance and pinned registers are the same as in the caller.
+
+  bind(&fastCall);
+
+  loadPtr(Address(calleeFnObj, uncheckedEntrySlotOffset), calleeScratch);
+
+  wasmCollapseFrameFast(retCallInfo);
+  jump(calleeScratch);
+}
+#endif
+
 bool MacroAssembler::needScratch1ForBranchWasmRefIsSubtypeAny(
     wasm::RefType type) {
   MOZ_ASSERT(type.isValid());
@@ -5576,8 +5637,8 @@ bool MacroAssembler::needSuperSTVForBranchWasmRefIsSubtypeAny(
 
 void MacroAssembler::branchWasmRefIsSubtypeAny(
     Register ref, wasm::RefType sourceType, wasm::RefType destType,
-    Label* label, bool onSuccess, Register superSuperTypeVector,
-    Register scratch1, Register scratch2) {
+    Label* label, bool onSuccess, Register superSTV, Register scratch1,
+    Register scratch2) {
   MOZ_ASSERT(sourceType.isValid());
   MOZ_ASSERT(destType.isValid());
   MOZ_ASSERT(sourceType.isAnyHierarchy());
@@ -5587,7 +5648,7 @@ void MacroAssembler::branchWasmRefIsSubtypeAny(
   MOZ_ASSERT_IF(needScratch2ForBranchWasmRefIsSubtypeAny(destType),
                 scratch2 != Register::Invalid());
   MOZ_ASSERT_IF(needSuperSTVForBranchWasmRefIsSubtypeAny(destType),
-                superSuperTypeVector != Register::Invalid());
+                superSTV != Register::Invalid());
 
   Label fallthrough;
   Label* successLabel = onSuccess ? label : &fallthrough;
@@ -5614,17 +5675,26 @@ void MacroAssembler::branchWasmRefIsSubtypeAny(
     return;
   }
 
-  if (destType.isI31()) {
+  // 'type' is now 'eq' or lower, which currently will either be a gc object or
+  // an i31.
+
+  // Check first for i31 values, and get them out of the way. i31 values are
+  // valid when casting to i31 or eq, and invalid otherwise.
+  if (destType.isI31() || destType.isEq()) {
     branchWasmAnyRefIsI31(true, ref, successLabel);
-    jump(failLabel);
-    bind(&fallthrough);
-    return;
+
+    if (destType.isI31()) {
+      // No further checks for 'i31'
+      jump(failLabel);
+      bind(&fallthrough);
+      return;
+    }
   }
 
-  // 'type' is now 'eq' or lower, which currently will always be a gc object.
-  // Test for non-gc objects.
+  // Then check for any kind of gc object.
   MOZ_ASSERT(scratch1 != Register::Invalid());
-  if (!wasm::RefType::isSubTypeOf(sourceType, wasm::RefType::eq())) {
+  if (!wasm::RefType::isSubTypeOf(sourceType, wasm::RefType::struct_()) &&
+      !wasm::RefType::isSubTypeOf(sourceType, wasm::RefType::array())) {
     branchWasmAnyRefIsObjectOrNull(false, ref, failLabel);
     branchObjectIsWasmGcObject(false, ref, scratch1, failLabel);
   }
@@ -5636,11 +5706,11 @@ void MacroAssembler::branchWasmRefIsSubtypeAny(
     return;
   }
 
-  // 'type' is now 'struct', 'array', or a concrete type. (Bottom types were
-  // handled above.)
+  // 'type' is now 'struct', 'array', or a concrete type. (Bottom types and i31
+  // were handled above.)
   //
   // Casting to a concrete type only requires a simple check on the
-  // object's superTypeVector. Casting to an abstract type (struct, array)
+  // object's super type vector. Casting to an abstract type (struct, array)
   // requires loading the object's superTypeVector->typeDef->kind, and checking
   // that it is correct.
 
@@ -5648,9 +5718,9 @@ void MacroAssembler::branchWasmRefIsSubtypeAny(
           scratch1);
   if (destType.isTypeRef()) {
     // concrete type, do superTypeVector check
-    branchWasmSuperTypeVectorIsSubtype(scratch1, superSuperTypeVector, scratch2,
-                                       destType.typeDef()->subTypingDepth(),
-                                       successLabel, true);
+    branchWasmSTVIsSubtype(scratch1, superSTV, scratch2,
+                           destType.typeDef()->subTypingDepth(), successLabel,
+                           true);
   } else {
     // abstract type, do kind check
     loadPtr(Address(scratch1,
@@ -5684,15 +5754,15 @@ bool MacroAssembler::needScratch2ForBranchWasmRefIsSubtypeFunc(
 
 void MacroAssembler::branchWasmRefIsSubtypeFunc(
     Register ref, wasm::RefType sourceType, wasm::RefType destType,
-    Label* label, bool onSuccess, Register superSuperTypeVector,
-    Register scratch1, Register scratch2) {
+    Label* label, bool onSuccess, Register superSTV, Register scratch1,
+    Register scratch2) {
   MOZ_ASSERT(sourceType.isValid());
   MOZ_ASSERT(destType.isValid());
   MOZ_ASSERT(sourceType.isFuncHierarchy());
   MOZ_ASSERT(destType.isFuncHierarchy());
-  MOZ_ASSERT_IF(needSuperSTVAndScratch1ForBranchWasmRefIsSubtypeFunc(destType),
-                superSuperTypeVector != Register::Invalid() &&
-                    scratch1 != Register::Invalid());
+  MOZ_ASSERT_IF(
+      needSuperSTVAndScratch1ForBranchWasmRefIsSubtypeFunc(destType),
+      superSTV != Register::Invalid() && scratch1 != Register::Invalid());
   MOZ_ASSERT_IF(needScratch2ForBranchWasmRefIsSubtypeFunc(destType),
                 scratch2 != Register::Invalid());
 
@@ -5725,9 +5795,9 @@ void MacroAssembler::branchWasmRefIsSubtypeFunc(
   // remaining cases.
   loadPrivate(Address(ref, int32_t(FunctionExtended::offsetOfWasmSTV())),
               scratch1);
-  branchWasmSuperTypeVectorIsSubtype(scratch1, superSuperTypeVector, scratch2,
-                                     destType.typeDef()->subTypingDepth(),
-                                     successLabel, true);
+  branchWasmSTVIsSubtype(scratch1, superSTV, scratch2,
+                         destType.typeDef()->subTypingDepth(), successLabel,
+                         true);
 
   // If we didn't branch away, the cast failed.
   jump(failLabel);
@@ -5767,67 +5837,61 @@ void MacroAssembler::branchWasmRefIsSubtypeExtern(Register ref,
   bind(&fallthrough);
 }
 
-void MacroAssembler::branchWasmSuperTypeVectorIsSubtype(
-    Register subSuperTypeVector, Register superSuperTypeVector,
-    Register scratch, uint32_t superTypeDepth, Label* label, bool onSuccess) {
-  MOZ_ASSERT_IF(superTypeDepth >= wasm::MinSuperTypeVectorLength,
+void MacroAssembler::branchWasmSTVIsSubtype(Register subSTV, Register superSTV,
+                                            Register scratch,
+                                            uint32_t superDepth, Label* label,
+                                            bool onSuccess) {
+  MOZ_ASSERT_IF(superDepth >= wasm::MinSuperTypeVectorLength,
                 scratch != Register::Invalid());
+  Label fallthrough;
+  Label* failed = onSuccess ? &fallthrough : label;
 
-  // We generate just different enough code for 'is' subtype vs 'is not'
-  // subtype that we handle them separately.
-  if (onSuccess) {
-    Label failed;
-
-    // At this point, we could generate a fast success check which jumps to
-    // `label` if `subSuperTypeVector == superSuperTypeVector`.  However,
-    // profiling of Barista-3 seems to show this is hardly worth anything,
-    // whereas it is worth us generating smaller code and in particular one
-    // fewer conditional branch.  So it is omitted:
-    //
-    //   branchPtr(Assembler::Equal, subSuperTypeVector, superSuperTypeVector,
-    //   label);
-
-    // Emit a bounds check if the super type depth may be out-of-bounds.
-    if (superTypeDepth >= wasm::MinSuperTypeVectorLength) {
-      // Slowest path for having a bounds check of the super type vector
-      load32(
-          Address(subSuperTypeVector, wasm::SuperTypeVector::offsetOfLength()),
-          scratch);
-      branch32(Assembler::LessThanOrEqual, scratch, Imm32(superTypeDepth),
-               &failed);
-    }
-
-    // Load the `superTypeDepth` entry from subSuperTypeVector. This
-    // will be `superSuperTypeVector` if `subSuperTypeVector` is indeed a
-    // subtype.
-    loadPtr(
-        Address(subSuperTypeVector,
-                wasm::SuperTypeVector::offsetOfTypeDefInVector(superTypeDepth)),
-        subSuperTypeVector);
-    branchPtr(Assembler::Equal, subSuperTypeVector, superSuperTypeVector,
-              label);
-
-    // Fallthrough to the failed case
-    bind(&failed);
-    return;
-  }
+  // At this point, we could generate a fast success check which jumps to
+  // `success` if `subSTV == superSTV`.  However,
+  // profiling of Barista-3 seems to show this is hardly worth anything,
+  // whereas it is worth us generating smaller code and in particular one
+  // fewer conditional branch.
 
   // Emit a bounds check if the super type depth may be out-of-bounds.
-  if (superTypeDepth >= wasm::MinSuperTypeVectorLength) {
-    load32(Address(subSuperTypeVector, wasm::SuperTypeVector::offsetOfLength()),
-           scratch);
-    branch32(Assembler::LessThanOrEqual, scratch, Imm32(superTypeDepth), label);
+  if (superDepth >= wasm::MinSuperTypeVectorLength) {
+    load32(Address(subSTV, wasm::SuperTypeVector::offsetOfLength()), scratch);
+    branch32(Assembler::BelowOrEqual, scratch, Imm32(superDepth), failed);
   }
 
-  // Load the `superTypeDepth` entry from subSuperTypeVector. This will be
-  // `superSuperTypeVector` if `subSuperTypeVector` is indeed a subtype.
+  // Load the `superTypeDepth` entry from subSTV. This will be `superSTV` if
+  // `subSTV` is indeed a subtype.
   loadPtr(
-      Address(subSuperTypeVector,
-              wasm::SuperTypeVector::offsetOfTypeDefInVector(superTypeDepth)),
-      subSuperTypeVector);
-  branchPtr(Assembler::NotEqual, subSuperTypeVector, superSuperTypeVector,
-            label);
-  // Fallthrough to the success case
+      Address(subSTV, wasm::SuperTypeVector::offsetOfSTVInVector(superDepth)),
+      subSTV);
+
+  // We succeed iff the entries are equal
+  branchPtr(onSuccess ? Assembler::Equal : Assembler::NotEqual, subSTV,
+            superSTV, label);
+
+  bind(&fallthrough);
+}
+
+void MacroAssembler::branchWasmSTVIsSubtypeDynamicDepth(
+    Register subSTV, Register superSTV, Register superDepth, Register scratch,
+    Label* label, bool onSuccess) {
+  Label fallthrough;
+  Label* failed = onSuccess ? &fallthrough : label;
+
+  // Bounds check of the super type vector
+  load32(Address(subSTV, wasm::SuperTypeVector::offsetOfLength()), scratch);
+  branch32(Assembler::BelowOrEqual, scratch, superDepth, failed);
+
+  // Load `subSTV[superTypeDepth]`. This will be `superSTV` if `subSTV` is
+  // indeed a subtype.
+  loadPtr(BaseIndex(subSTV, superDepth, ScalePointer,
+                    offsetof(wasm::SuperTypeVector, types_)),
+          subSTV);
+
+  // We succeed iff the entries are equal
+  branchPtr(onSuccess ? Assembler::Equal : Assembler::NotEqual, subSTV,
+            superSTV, label);
+
+  bind(&fallthrough);
 }
 
 void MacroAssembler::branchWasmAnyRefIsNull(bool isNull, Register src,
@@ -6764,8 +6828,8 @@ void MacroAssembler::branchIfHasDetachedArrayBuffer(Register obj, Register temp,
                Address(temp, ObjectElements::offsetOfFlags()),
                Imm32(ObjectElements::SHARED_MEMORY), &done);
 
-  // An ArrayBufferView with a null buffer has never had its buffer exposed to
-  // become detached.
+  // An ArrayBufferView with a null/true buffer has never had its buffer
+  // exposed, so nothing can possibly detach it.
   fallibleUnboxObject(Address(obj, ArrayBufferViewObject::bufferOffset()), temp,
                       &done);
 

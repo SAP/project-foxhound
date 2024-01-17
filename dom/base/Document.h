@@ -1045,6 +1045,13 @@ class Document : public nsINode,
 
   void SetLoadedAsData(bool aLoadedAsData, bool aConsiderForMemoryReporting);
 
+  TimeStamp GetLoadingOrRestoredFromBFCacheTimeStamp() const {
+    return mLoadingOrRestoredFromBFCacheTimeStamp;
+  }
+  void SetLoadingOrRestoredFromBFCacheTimeStampToNow() {
+    mLoadingOrRestoredFromBFCacheTimeStamp = TimeStamp::Now();
+  }
+
   /**
    * Normally we assert if a runnable labeled with one DocGroup touches data
    * from another DocGroup. Calling IgnoreDocGroupMismatches() on a document
@@ -1260,8 +1267,8 @@ class Document : public nsINode,
 
   StorageAccessAPIHelper::PerformPermissionGrant CreatePermissionGrantPromise(
       nsPIDOMWindowInner* aInnerWindow, nsIPrincipal* aPrincipal,
-      bool aHasUserInteraction, const Maybe<nsCString>& aTopLevelBaseDomain,
-      bool aFrameOnly);
+      bool aHasUserInteraction, bool aRequireUserInteraction,
+      const Maybe<nsCString>& aTopLevelBaseDomain, bool aFrameOnly);
 
   already_AddRefed<Promise> RequestStorageAccess(ErrorResult& aRv);
 
@@ -1639,7 +1646,11 @@ class Document : public nsINode,
 
   // Needs to be called any time the applicable style can has changed, in order
   // to schedule a style flush and setup all the relevant state.
-  void ApplicableStylesChanged();
+  //
+  // If we know the stylesheet change applies only to a shadow tree we can avoid
+  // some work (like updating the font-face-set / counter-styles / etc, as those
+  // are global).
+  void ApplicableStylesChanged(bool aKnownInShadowTree = false);
 
   // Whether we filled the style set with any style sheet. Only meant to be used
   // from DocumentOrShadowRoot::Traverse.
@@ -1878,8 +1889,11 @@ class Document : public nsINode,
   // Whether we has pending fullscreen request.
   bool HasPendingFullscreenRequests();
 
-  // Cancel the dialog element if the document is blocked by the dialog
-  void TryCancelDialog();
+  /**
+   * When Esc key is pressed, cancel the dialog element if the document is
+   * blocked by the dialog or hide popover if popover is shown.
+   */
+  MOZ_CAN_RUN_SCRIPT void HandleEscKey();
 
   void AddModalDialog(HTMLDialogElement&);
   void RemoveModalDialog(HTMLDialogElement&);
@@ -2437,12 +2451,9 @@ class Document : public nsINode,
    * (eventually) called on it again.
    */
   void ForgetLink(Link* aLink) {
-    NS_ASSERTION(aLink, "Passing in a null link.  Expect crashes RSN!");
-#ifdef DEBUG
-    bool linkContained = mStyledLinks.Contains(aLink);
-    NS_ASSERTION(linkContained || mStyledLinksCleared,
-                 "Document knows nothing about this Link!");
-#endif
+    MOZ_ASSERT(aLink, "Passing in a null link.  Expect crashes RSN!");
+    MOZ_ASSERT(mStyledLinks.Contains(aLink) || mStyledLinksCleared,
+               "Document knows nothing about this Link!");
     mStyledLinks.Remove(aLink);
   }
 
@@ -2960,7 +2971,7 @@ class Document : public nsINode,
    */
   void MaybePreLoadImage(nsIURI* uri, const nsAString& aCrossOriginAttr,
                          ReferrerPolicyEnum aReferrerPolicy, bool aIsImgSet,
-                         bool aLinkPreload, const TimeStamp& aInitTimestamp);
+                         bool aLinkPreload);
   void PreLoadImage(nsIURI* uri, const nsAString& aCrossOriginAttr,
                     ReferrerPolicyEnum aReferrerPolicy, bool aIsImgSet,
                     bool aLinkPreload, uint64_t aEarlyHintPreloaderId);
@@ -3451,12 +3462,8 @@ class Document : public nsINode,
   mozilla::dom::HTMLAllCollection* All();
 
   static bool DocumentSupportsL10n(JSContext* aCx, JSObject* aObject);
-  static bool IsWebAnimationsEnabled(JSContext* aCx, JSObject* aObject);
-  static bool IsWebAnimationsEnabled(CallerType aCallerType);
   static bool IsWebAnimationsGetAnimationsEnabled(JSContext* aCx,
                                                   JSObject* aObject);
-  static bool AreWebAnimationsImplicitKeyframesEnabled(JSContext* aCx,
-                                                       JSObject* aObject);
   static bool AreWebAnimationsTimelinesEnabled(JSContext* aCx,
                                                JSObject* aObject);
   // Checks that the caller is either chrome or some addon.
@@ -5124,8 +5131,9 @@ class Document : public nsINode,
 
   RefPtr<nsDOMNavigationTiming> mTiming;
 
-  // Recorded time of change to 'loading' state.
-  TimeStamp mLoadingTimeStamp;
+  // Recorded time of change to 'loading' state
+  // or time of the page gets restored from BFCache.
+  TimeStamp mLoadingOrRestoredFromBFCacheTimeStamp;
 
   // Decided to use nsTObserverArray because it allows us to
   // remove candidates while iterating them and this is what

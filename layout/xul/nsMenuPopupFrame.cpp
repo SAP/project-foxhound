@@ -759,6 +759,14 @@ void nsMenuPopupFrame::InitPositionFromAnchorAlign(const nsAString& aAnchor,
     mPopupAlignment = POPUPALIGNMENT_BOTTOMLEFT;
   else if (aAlign.EqualsLiteral("bottomright"))
     mPopupAlignment = POPUPALIGNMENT_BOTTOMRIGHT;
+  else if (aAlign.EqualsLiteral("leftcenter"))
+    mPopupAlignment = POPUPALIGNMENT_LEFTCENTER;
+  else if (aAlign.EqualsLiteral("rightcenter"))
+    mPopupAlignment = POPUPALIGNMENT_RIGHTCENTER;
+  else if (aAlign.EqualsLiteral("topcenter"))
+    mPopupAlignment = POPUPALIGNMENT_TOPCENTER;
+  else if (aAlign.EqualsLiteral("bottomcenter"))
+    mPopupAlignment = POPUPALIGNMENT_BOTTOMCENTER;
   else
     mPopupAlignment = POPUPALIGNMENT_NONE;
 
@@ -1136,6 +1144,18 @@ nsPoint nsMenuPopupFrame::AdjustPositionForAnchorAlign(
   // margins of the popup on the edge on which it is aligned.
   nsMargin margin = GetMargin();
   switch (popupAlign) {
+    case POPUPALIGNMENT_LEFTCENTER:
+      pnt.MoveBy(margin.left, -aPrefSize.height / 2);
+      break;
+    case POPUPALIGNMENT_RIGHTCENTER:
+      pnt.MoveBy(-aPrefSize.width - margin.right, -aPrefSize.height / 2);
+      break;
+    case POPUPALIGNMENT_TOPCENTER:
+      pnt.MoveBy(-aPrefSize.width / 2, margin.top);
+      break;
+    case POPUPALIGNMENT_BOTTOMCENTER:
+      pnt.MoveBy(-aPrefSize.width / 2, -aPrefSize.height - margin.bottom);
+      break;
     case POPUPALIGNMENT_TOPRIGHT:
       pnt.MoveBy(-aPrefSize.width - margin.right, margin.top);
       break;
@@ -1578,6 +1598,20 @@ auto nsMenuPopupFrame::GetRects(const nsSize& aPrefSize) const -> Rects {
                     result.mUsedRect.height, waylandSize.height);
         result.mUsedRect.height = waylandSize.height;
       }
+      if (RefPtr<widget::Screen> s = widget->GetWidgetScreen()) {
+        const nsSize screenSize =
+            LayoutDeviceIntSize::ToAppUnits(s->GetAvailRect().Size(), a2d);
+        if (result.mUsedRect.height > screenSize.height) {
+          LOG_WAYLAND("Wayland constraint height to screen [%p]:  %d to %d",
+                      widget, result.mUsedRect.height, screenSize.height);
+          result.mUsedRect.height = screenSize.height;
+        }
+        if (result.mUsedRect.width > screenSize.width) {
+          LOG_WAYLAND("Wayland constraint widthto screen [%p]:  %d to %d",
+                      widget, result.mUsedRect.width, screenSize.width);
+          result.mUsedRect.width = screenSize.width;
+        }
+      }
     }
 
     // At this point the anchor (anchorRect) is within the available screen
@@ -1607,9 +1641,11 @@ auto nsMenuPopupFrame::GetRects(const nsSize& aPrefSize) const -> Rects {
         const bool endAligned =
             IsDirectionRTL()
                 ? mPopupAlignment == POPUPALIGNMENT_TOPLEFT ||
-                      mPopupAlignment == POPUPALIGNMENT_BOTTOMLEFT
+                      mPopupAlignment == POPUPALIGNMENT_BOTTOMLEFT ||
+                      mPopupAlignment == POPUPALIGNMENT_LEFTCENTER
                 : mPopupAlignment == POPUPALIGNMENT_TOPRIGHT ||
-                      mPopupAlignment == POPUPALIGNMENT_BOTTOMRIGHT;
+                      mPopupAlignment == POPUPALIGNMENT_BOTTOMRIGHT ||
+                      mPopupAlignment == POPUPALIGNMENT_RIGHTCENTER;
         result.mUsedRect.width = FlipOrResize(
             result.mUsedRect.x, result.mUsedRect.width, constraintRect->x,
             constraintRect->XMost(), result.mAnchorRect.x,
@@ -1622,7 +1658,8 @@ auto nsMenuPopupFrame::GetRects(const nsSize& aPrefSize) const -> Rects {
             constraintRect->YMost(), &result.mAlignmentOffset);
       } else {
         bool endAligned = mPopupAlignment == POPUPALIGNMENT_BOTTOMLEFT ||
-                          mPopupAlignment == POPUPALIGNMENT_BOTTOMRIGHT;
+                          mPopupAlignment == POPUPALIGNMENT_BOTTOMRIGHT ||
+                          mPopupAlignment == POPUPALIGNMENT_BOTTOMCENTER;
         result.mUsedRect.height = FlipOrResize(
             result.mUsedRect.y, result.mUsedRect.height, constraintRect->y,
             constraintRect->YMost(), result.mAnchorRect.y,
@@ -2140,8 +2177,7 @@ void nsMenuPopupFrame::MoveToAttributePosition() {
       this, IntrinsicDirty::FrameAncestorsAndDescendants, NS_FRAME_IS_DIRTY);
 }
 
-void nsMenuPopupFrame::DestroyFrom(nsIFrame* aDestructRoot,
-                                   PostDestroyData& aPostDestroyData) {
+void nsMenuPopupFrame::Destroy(DestroyContext& aContext) {
   // XXX: Currently we don't fire popuphidden for these popups, that seems wrong
   // but alas, also pre-existing.
   HidePopup(/* aDeselectMenu = */ false, ePopupClosed,
@@ -2151,7 +2187,7 @@ void nsMenuPopupFrame::DestroyFrom(nsIFrame* aDestructRoot,
     pm->PopupDestroyed(this);
   }
 
-  nsBlockFrame::DestroyFrom(aDestructRoot, aPostDestroyData);
+  nsBlockFrame::Destroy(aContext);
 }
 
 nsMargin nsMenuPopupFrame::GetMargin() const {

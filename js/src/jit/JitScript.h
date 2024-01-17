@@ -513,7 +513,15 @@ class alignas(uintptr_t) JitScript final
   InliningRoot* inliningRoot() const { return inliningRoot_.get(); }
   InliningRoot* getOrCreateInliningRoot(JSContext* cx, JSScript* script);
 
+  inline void notePurgedStubs() {
 #ifdef DEBUG
+    failedICHash_.reset();
+    hasPurgedStubs_ = true;
+#endif
+  }
+
+#ifdef DEBUG
+  bool hasPurgedStubs() const { return hasPurgedStubs_; }
   bool hasFailedICHash() const { return failedICHash_.isSome(); }
   mozilla::HashNumber getFailedICHash() { return failedICHash_.extract(); }
   void setFailedICHash(mozilla::HashNumber hash) {

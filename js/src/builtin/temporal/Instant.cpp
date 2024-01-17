@@ -34,9 +34,9 @@
 #include "builtin/temporal/TemporalTypes.h"
 #include "builtin/temporal/TemporalUnit.h"
 #include "builtin/temporal/TimeZone.h"
+#include "builtin/temporal/ToString.h"
 #include "builtin/temporal/Wrapped.h"
 #include "builtin/temporal/ZonedDateTime.h"
-#include "gc/Allocator.h"
 #include "gc/AllocKind.h"
 #include "gc/Barrier.h"
 #include "js/CallArgs.h"
@@ -51,12 +51,12 @@
 #include "js/TypeDecls.h"
 #include "js/Value.h"
 #include "vm/BigIntType.h"
+#include "vm/BytecodeUtil.h"
 #include "vm/GlobalObject.h"
 #include "vm/JSAtomState.h"
 #include "vm/JSContext.h"
 #include "vm/JSObject.h"
 #include "vm/PlainObject.h"
-#include "vm/StaticStrings.h"
 #include "vm/StringType.h"
 
 #include "vm/JSObject-inl.h"
@@ -577,7 +577,7 @@ static bool ParseTemporalInstant(JSContext* cx, Handle<JSString*> isoString,
 
   // Step 4. (Not applicable in our implementation.)
 
-  // Step 6. (Reordered)
+  // Step 8. (Reordered)
   if (!ISODateTimeWithinLimits(dateTime)) {
     JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
                               JSMSG_TEMPORAL_INSTANT_INVALID);
@@ -586,6 +586,9 @@ static bool ParseTemporalInstant(JSContext* cx, Handle<JSString*> isoString,
 
   // Step 5.
   auto utc = GetUTCEpochNanoseconds(dateTime);
+
+  // FIXME: spec bug - ParseDateTimeUTCOffset is infallible
+  // https://github.com/tc39/proposal-temporal/issues/2637
 
   // Step 6.
   auto offsetNanoseconds = InstantSpan::fromNanoseconds(offset);
@@ -684,6 +687,7 @@ static InstantObject* CreateTemporalInstant(JSContext* cx, const CallArgs& args,
 Wrapped<InstantObject*> js::temporal::ToTemporalInstant(JSContext* cx,
                                                         Handle<Value> item) {
   // Step 1.
+  Rooted<Value> primitiveValue(cx, item);
   if (item.isObject()) {
     JSObject* itemObj = &item.toObject();
 
@@ -697,22 +701,20 @@ Wrapped<InstantObject*> js::temporal::ToTemporalInstant(JSContext* cx,
       auto epochInstant = ToInstant(zonedDateTime);
       return CreateTemporalInstant(cx, epochInstant);
     }
+
+    // Steps 1.c-d.
+    if (!ToPrimitive(cx, JSTYPE_STRING, &primitiveValue)) {
+      return nullptr;
+    }
   }
 
   // Step 2.
-  Rooted<JSString*> string(cx, JS::ToString(cx, item));
-  if (!string) {
+  if (!primitiveValue.isString()) {
+    ReportValueError(cx, JSMSG_UNEXPECTED_TYPE, JSDVG_IGNORE_STACK,
+                     primitiveValue, nullptr, "not a string");
     return nullptr;
   }
-
-  // The string representation of other types can never be parsed as an instant,
-  // so directly throw an error here. But still perform ToString first for
-  // possible side-effects.
-  if (!item.isString() && !item.isObject()) {
-    ReportValueError(cx, JSMSG_TEMPORAL_INSTANT_PARSE_BAD_TYPE,
-                     JSDVG_IGNORE_STACK, item, nullptr);
-    return nullptr;
-  }
+  Rooted<JSString*> string(cx, primitiveValue.toString());
 
   // Step 3.
   Instant epochNanoseconds;
@@ -731,6 +733,7 @@ bool js::temporal::ToTemporalInstantEpochInstant(JSContext* cx,
                                                  Handle<Value> item,
                                                  Instant* result) {
   // Step 1.
+  Rooted<Value> primitiveValue(cx, item);
   if (item.isObject()) {
     JSObject* itemObj = &item.toObject();
 
@@ -745,23 +748,22 @@ bool js::temporal::ToTemporalInstantEpochInstant(JSContext* cx,
       *result = ToInstant(zonedDateTime);
       return true;
     }
+
+    // Steps 1.c-d.
+    if (!ToPrimitive(cx, JSTYPE_STRING, &primitiveValue)) {
+      return false;
+    }
   }
 
   // Step 2.
-  Rooted<JSString*> string(cx, JS::ToString(cx, item));
-  if (!string) {
+  if (!primitiveValue.isString()) {
+    // The value is always on the stack, so JSDVG_SEARCH_STACK can be used for
+    // better error reporting.
+    ReportValueError(cx, JSMSG_UNEXPECTED_TYPE, JSDVG_SEARCH_STACK,
+                     primitiveValue, nullptr, "not a string");
     return false;
   }
-
-  // The string representation of other types can never be parsed as an instant,
-  // so directly throw an error here. The value is always on the stack, so
-  // JSDVG_SEARCH_STACK can be used for even better error reporting. But still
-  // perform ToString first for possible side-effects.
-  if (!item.isString() && !item.isObject()) {
-    ReportValueError(cx, JSMSG_TEMPORAL_INSTANT_PARSE_BAD_TYPE,
-                     JSDVG_SEARCH_STACK, item, nullptr);
-    return false;
-  }
+  Rooted<JSString*> string(cx, primitiveValue.toString());
 
   // Steps 3-4.
   Instant epochNanoseconds;
@@ -903,17 +905,17 @@ bool js::temporal::DifferenceInstant(JSContext* cx, const Instant& ns1,
   };
   MOZ_ASSERT(IsValidDuration(duration));
 
-  // Step 6.
+  // Steps 6-7.
   Duration roundResult;
   if (!temporal::RoundDuration(cx, duration, roundingIncrement, smallestUnit,
                                roundingMode, &roundResult)) {
     return false;
   }
 
-  // Step 7.
+  // Step 8.
   MOZ_ASSERT(roundResult.days == 0);
 
-  // Step 8.
+  // Step 9.
   TimeDuration balanced;
   if (!BalanceTimeDuration(cx, roundResult, largestUnit, &balanced)) {
     return false;
@@ -957,64 +959,6 @@ bool js::temporal::RoundTemporalInstant(JSContext* cx, const Instant& ns,
   // Step 7.
   return RoundNumberToIncrementAsIfPositive(
       cx, ns, increment.value() * toNanoseconds, roundingMode, result);
-}
-
-/**
- * TemporalInstantToString ( instant, timeZone, precision )
- */
-static JSString* TemporalInstantToString(JSContext* cx,
-                                         Handle<InstantObject*> instant,
-                                         Handle<TimeZoneValue> timeZone,
-                                         Precision precision) {
-  // Steps 1-2. (Not applicable in our implementation.)
-
-  // Steps 3-4.
-  Rooted<TimeZoneValue> outputTimeZone(cx, timeZone);
-  if (!timeZone) {
-    auto* utcTimeZone = CreateTemporalTimeZoneUTC(cx);
-    if (!utcTimeZone) {
-      return nullptr;
-    }
-    outputTimeZone.set(TimeZoneValue(utcTimeZone));
-  }
-
-  // Step 5.
-  PlainDateTime dateTime;
-  if (!GetPlainDateTimeFor(cx, outputTimeZone, instant, &dateTime)) {
-    return nullptr;
-  }
-
-  // Step 6.
-  Rooted<CalendarValue> isoCalendar(cx, CalendarValue(cx->names().iso8601));
-  Rooted<JSString*> dateTimeString(
-      cx, TemporalDateTimeToString(cx, dateTime, isoCalendar, precision,
-                                   CalendarOption::Never));
-  if (!dateTimeString) {
-    return nullptr;
-  }
-
-  // Steps 7-8.
-  Rooted<JSString*> timeZoneString(cx);
-  if (!timeZone) {
-    // Step 7.a.
-    timeZoneString = cx->staticStrings().lookup("Z", 1);
-    MOZ_ASSERT(timeZoneString);
-  } else {
-    // Step 8.a.
-    int64_t offsetNs;
-    if (!GetOffsetNanosecondsFor(cx, timeZone, instant, &offsetNs)) {
-      return nullptr;
-    }
-
-    // Step 8.b.
-    timeZoneString = FormatISOTimeZoneOffsetString(cx, offsetNs);
-    if (!timeZoneString) {
-      return nullptr;
-    }
-  }
-
-  // Step 9.
-  return ConcatStrings<CanGC>(cx, dateTimeString, timeZoneString);
 }
 
 /**

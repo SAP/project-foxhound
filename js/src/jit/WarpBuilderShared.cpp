@@ -51,6 +51,30 @@ void WarpBuilderShared::pushConstant(const Value& v) {
   current->push(cst);
 }
 
+MDefinition* WarpBuilderShared::unboxObjectInfallible(MDefinition* def,
+                                                      IsMovable movable) {
+  if (def->type() == MIRType::Object) {
+    return def;
+  }
+
+  if (def->type() != MIRType::Value) {
+    // Corner case: if the MIR node has a type other than Object or Value, this
+    // code isn't actually reachable and we expect an earlier guard to fail.
+    // Just insert a Box to satisfy MIR invariants.
+    MOZ_ASSERT(movable == IsMovable::No);
+    auto* box = MBox::New(alloc(), def);
+    current->add(box);
+    def = box;
+  }
+
+  auto* unbox = MUnbox::New(alloc(), def, MIRType::Object, MUnbox::Infallible);
+  if (movable == IsMovable::No) {
+    unbox->setNotMovable();
+  }
+  current->add(unbox);
+  return unbox;
+}
+
 MCall* WarpBuilderShared::makeCall(CallInfo& callInfo, bool needsThisCheck,
                                    WrappedFunction* target, bool isDOMCall) {
   auto addUndefined = [this]() -> MConstant* {
@@ -73,9 +97,10 @@ MInstruction* WarpBuilderShared::makeSpreadCall(CallInfo& callInfo,
   current->add(elements);
 
   if (callInfo.constructing()) {
+    auto* newTarget = unboxObjectInfallible(callInfo.getNewTarget());
     auto* construct =
         MConstructArray::New(alloc(), target, callInfo.callee(), elements,
-                             callInfo.thisArg(), callInfo.getNewTarget());
+                             callInfo.thisArg(), newTarget);
     if (isSameRealm) {
       construct->setNotCrossRealm();
     }

@@ -64,7 +64,6 @@ mochitest-plain:
         - headless+socketprocess_networking
         - http3
         - http2
-        - editor-legacy-direction
     run-on-projects:
         by-variant:
             conditioned_profile:
@@ -124,10 +123,6 @@ mochitest-plain:
             http2:
                 by-test-platform:
                     linux1804-64-qr/debug: built-projects
-                    default: []
-            editor-legacy-direction:
-                by-test-platform:
-                    linux1804-64-qr/debug: ['mozilla-central']
                     default: []
             default:
                 by-test-platform:
@@ -199,7 +194,6 @@ mochitest-a11y:
         - 1proc
         - socketprocess_networking+1proc
         - webrender-sw+1proc
-        - editor-legacy-direction
     run-on-projects:
         by-variant:
             socketprocess_networking+1proc:
@@ -213,12 +207,8 @@ mochitest-a11y:
                     default: []
             1proc:
                 by-test-platform:
-                    .*wayland.*: []
+                    .*-wayland/debug.*: []
                     default: built-projects
-            editor-legacy-direction:
-                by-test-platform:
-                    linux1804-64-qr/debug: ['mozilla-central']
-                    default: []
     mozharness:
         mochitest-flavor: a11y
 
@@ -234,7 +224,6 @@ mochitest-browser-chrome:
         - webrender-sw+a11y-checks
         - socketprocess_networking
         - msix
-        - editor-legacy-direction
     run-on-projects:
         by-variant:
             webrender-sw:
@@ -260,10 +249,6 @@ mochitest-browser-chrome:
                 by-test-platform:
                     windows11-64-2009-qr/debug: built-projects
                     windows11-64-2009(-shippable)?-qr/opt: built-projects
-                    default: []
-            editor-legacy-direction:
-                by-test-platform:
-                    linux1804-64-qr/debug: ['mozilla-central']
                     default: []
             default:
                 by-test-platform:
@@ -366,7 +351,7 @@ mochitest-browser-media:
             default:
                 by-test-platform:
                     android.*: []
-                    .*wayland.*: []
+                    .*-wayland/debug: []
                     default: built-projects
     tier: default
     max-run-time:
@@ -406,7 +391,6 @@ mochitest-chrome:
         - 1proc
         - socketprocess_networking+1proc
         - webrender-sw+1proc
-        - editor-legacy-direction
     run-on-projects:
         by-variant:
             socketprocess_networking+1proc:
@@ -419,10 +403,6 @@ mochitest-chrome:
                 by-test-platform:
                     android-em-7.0-x86_64-qr/debug: built-projects
                     linux.*64-qr/debug: built-projects
-                    default: []
-            editor-legacy-direction:
-                by-test-platform:
-                    linux1804-64-qr/debug: ['mozilla-central']
                     default: []
             1proc:
                 by-test-platform:
@@ -571,7 +551,7 @@ mochitest-plain-gpu:
             default:
                 by-test-platform:
                     android-em-7.0-x86_64-qr/debug-isolated-process: []
-                    .*wayland.*: []
+                    .*-wayland/debug: []
                     default: built-projects
     virtualization: virtual-with-gpu
     tier:
@@ -615,7 +595,7 @@ mochitest-chrome-gpu:
             1proc:
                 by-test-platform:
                     android.*/.*: []
-                    .*wayland.*: []
+                    .*-wayland/debug.*: []
                     default: built-projects
     tier: default
     mozharness:
@@ -816,7 +796,8 @@ mochitest-webgl1-core:
             default:
                 by-test-platform:
                     android.*: []
-                    .*-(tsan|wayland).*: []
+                    .*-tsan.*: []
+                    .*-wayland/debug.*: []
                     default: built-projects
     # Bug 1296733: llvmpipe with mesa 9.2.1 lacks thread safety
     allow-software-gl-layers: false
@@ -871,7 +852,8 @@ mochitest-webgl1-ext:
             default:
                 by-test-platform:
                     android.*: []
-                    .*-(tsan|wayland).*: []
+                    .*-tsan.*: []
+                    .*-wayland/debug.*: []
                     default: built-projects
     # Bug 1296733: llvmpipe with mesa 9.2.1 lacks thread safety
     allow-software-gl-layers: false
@@ -972,7 +954,8 @@ mochitest-webgl2-ext:
             default:
                 by-test-platform:
                     android.*: []
-                    .*-(tsan|wayland).*: []
+                    .*-tsan.*: []
+                    .*-wayland/debug.*: []
                     default: built-projects
     chunks: 4
     test-manifest-loader: null  # don't load tests in the taskgraph
@@ -1025,8 +1008,8 @@ mochitest-webgpu:
                     default: []
             no-fission:
                 by-test-platform:
-                    linux1804-64-qr/debug: ['trunk']
-                    linux1804-64(-shippable|-asan)?-qr/opt: ['trunk']
+                    linux2204-64-qr/debug: ['trunk']
+                    linux2204-64(-shippable|-asan)?-qr/opt: ['trunk']
                     default: []
             default:
                 by-test-platform:

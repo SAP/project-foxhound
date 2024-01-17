@@ -16,7 +16,6 @@ import traceback
 from abc import ABCMeta, abstractmethod
 
 import mozinfo
-import mozprocess
 import mozproxy.utils as mpu
 import mozversion
 import six
@@ -33,7 +32,7 @@ for path in paths:
     sys.path.insert(0, path)
 
 from chrome_trace import ChromeTrace
-from cmdline import FIREFOX_ANDROID_APPS, TRACE_APPS
+from cmdline import FIREFOX_ANDROID_APPS, GECKO_PROFILER_APPS, TRACE_APPS
 from condprof.client import ProfileNotFoundError, get_profile
 from condprof.util import get_current_platform
 from gecko_profile import GeckoProfile
@@ -505,8 +504,7 @@ class Perftest(object):
         # gecko_profile flag form the command line or when an extra profiler-enabled
         # run is added with extra_profiler_run flag.
         if self.config["gecko_profile"] or self.config.get("extra_profiler_run"):
-            if self.config["app"] == "firefox":
-
+            if self.config["app"] in GECKO_PROFILER_APPS:
                 self.gecko_profiler.symbolicate()
                 # clean up the temp gecko profiling folders
                 LOG.info("cleaning up after gecko profiling")
@@ -839,14 +837,14 @@ class PerftestDesktop(Perftest):
                     browser_version = plist.get("CFBundleShortVersionString")
                 elif "linux" in self.config["platform"]:
                     command = [self.config["binary"], "--version"]
-                    proc = mozprocess.ProcessHandler(command)
-                    proc.run(timeout=10, outputTimeout=10)
-                    proc.wait()
+                    proc = subprocess.run(
+                        command, timeout=10, capture_output=True, text=True
+                    )
 
-                    bmeta = proc.output
+                    bmeta = proc.stdout.split("\n")
                     meta_re = re.compile(r"([A-z\s]+)\s+([\w.]*)")
                     if len(bmeta) != 0:
-                        match = meta_re.match(bmeta[0].decode("utf-8"))
+                        match = meta_re.match(bmeta[0])
                         if match:
                             browser_name = self.config["app"]
                             browser_version = match.group(2)

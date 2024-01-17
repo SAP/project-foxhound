@@ -6,73 +6,34 @@
 
 #include "NormalOriginOperationBase.h"
 
-#include "mozilla/dom/quota/QuotaCommon.h"
 #include "mozilla/dom/quota/QuotaManager.h"
-#include "mozilla/dom/quota/ResultExtensions.h"
 
 namespace mozilla::dom::quota {
 
-NS_IMPL_ISUPPORTS_INHERITED0(NormalOriginOperationBase, Runnable)
-
-RefPtr<DirectoryLock> NormalOriginOperationBase::CreateDirectoryLock() {
+NormalOriginOperationBase::NormalOriginOperationBase(
+    MovingNotNull<RefPtr<QuotaManager>> aQuotaManager, const char* aName)
+    : OriginOperationBase(std::move(aQuotaManager), aName) {
   AssertIsOnOwningThread();
-  MOZ_ASSERT(GetState() == State_DirectoryOpenPending);
-  MOZ_ASSERT(QuotaManager::Get());
-
-  return QuotaManager::Get()->CreateDirectoryLockInternal(
-      mPersistenceType, mOriginScope, mClientType, mExclusive);
 }
 
-void NormalOriginOperationBase::Open() {
+NormalOriginOperationBase::~NormalOriginOperationBase() {
   AssertIsOnOwningThread();
-  MOZ_ASSERT(GetState() == State_Initial);
-  MOZ_ASSERT(QuotaManager::Get());
+}
 
-  AdvanceState();
+RefPtr<BoolPromise> NormalOriginOperationBase::Open() {
+  AssertIsOnOwningThread();
 
-  RefPtr<DirectoryLock> directoryLock = CreateDirectoryLock();
-  if (directoryLock) {
-    directoryLock->Acquire(this);
-  } else {
-    QM_TRY(MOZ_TO_RESULT(DirectoryOpen()), QM_VOID,
-           [this](const nsresult rv) { Finish(rv); });
-  }
+  return OpenDirectory();
 }
 
 void NormalOriginOperationBase::UnblockOpen() {
   AssertIsOnOwningThread();
-  MOZ_ASSERT(QuotaManager::Get());
-  MOZ_ASSERT(GetState() == State_UnblockingOpen);
 
   SendResults();
 
-  if (mDirectoryLock) {
-    mDirectoryLock = nullptr;
-  }
+  CloseDirectory();
 
-  QuotaManager::Get()->UnregisterNormalOriginOp(*this);
-
-  AdvanceState();
-}
-
-void NormalOriginOperationBase::DirectoryLockAcquired(DirectoryLock* aLock) {
-  AssertIsOnOwningThread();
-  MOZ_ASSERT(aLock);
-  MOZ_ASSERT(GetState() == State_DirectoryOpenPending);
-  MOZ_ASSERT(!mDirectoryLock);
-
-  mDirectoryLock = aLock;
-
-  QM_TRY(MOZ_TO_RESULT(DirectoryOpen()), QM_VOID,
-         [this](const nsresult rv) { Finish(rv); });
-}
-
-void NormalOriginOperationBase::DirectoryLockFailed() {
-  AssertIsOnOwningThread();
-  MOZ_ASSERT(GetState() == State_DirectoryOpenPending);
-  MOZ_ASSERT(!mDirectoryLock);
-
-  Finish(NS_ERROR_FAILURE);
+  mQuotaManager->UnregisterNormalOriginOp(*this);
 }
 
 }  // namespace mozilla::dom::quota

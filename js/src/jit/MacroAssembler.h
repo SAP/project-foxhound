@@ -3882,6 +3882,12 @@ class MacroAssembler : public MacroAssemblerSpecific {
                    const wasm::CalleeDesc& callee, CodeOffset* fastCallOffset,
                    CodeOffset* slowCallOffset);
 
+#ifdef ENABLE_WASM_TAIL_CALLS
+  void wasmReturnCallRef(const wasm::CallSiteDesc& desc,
+                         const wasm::CalleeDesc& callee,
+                         const ReturnCallAdjustmentInfo& retCallInfo);
+#endif  // ENABLE_WASM_TAIL_CALLS
+
   // WasmTableCallIndexReg must contain the index of the indirect call.
   // This is for asm.js calls only.
   CodeOffset asmCallIndirect(const wasm::CallSiteDesc& desc,
@@ -3898,16 +3904,16 @@ class MacroAssembler : public MacroAssemblerSpecific {
   // Perform a subtype check that `ref` is a subtype of `type`, branching to
   // `label` depending on `onSuccess`. `type` must be in the `any` hierarchy.
   //
-  // `superSuperTypeVector` is required iff the destination type is a concrete
+  // `superSTV` is required iff the destination type is a concrete
   // type. `scratch1` is required iff the destination type is eq or lower and
   // not none. `scratch2` is required iff the destination type is a concrete
   // type and its `subTypingDepth` is >= wasm::MinSuperTypeVectorLength.
   //
-  // `ref` and `superSuperTypeVector` are preserved. Scratch registers are
+  // `ref` and `superSTV` are preserved. Scratch registers are
   // clobbered.
   void branchWasmRefIsSubtypeAny(Register ref, wasm::RefType sourceType,
                                  wasm::RefType destType, Label* label,
-                                 bool onSuccess, Register superSuperTypeVector,
+                                 bool onSuccess, Register superSTV,
                                  Register scratch1, Register scratch2);
   static bool needScratch1ForBranchWasmRefIsSubtypeAny(wasm::RefType type);
   static bool needScratch2ForBranchWasmRefIsSubtypeAny(wasm::RefType type);
@@ -3916,16 +3922,16 @@ class MacroAssembler : public MacroAssemblerSpecific {
   // Perform a subtype check that `ref` is a subtype of `type`, branching to
   // `label` depending on `onSuccess`. `type` must be in the `func` hierarchy.
   //
-  // `superSuperTypeVector` and `scratch1` are required iff the destination type
+  // `superSTV` and `scratch1` are required iff the destination type
   // is a concrete type (not func and not nofunc). `scratch2` is required iff
   // the destination type is a concrete type and its `subTypingDepth` is >=
   // wasm::MinSuperTypeVectorLength.
   //
-  // `ref` and `superSuperTypeVector` are preserved. Scratch registers are
+  // `ref` and `superSTV` are preserved. Scratch registers are
   // clobbered.
   void branchWasmRefIsSubtypeFunc(Register ref, wasm::RefType sourceType,
                                   wasm::RefType destType, Label* label,
-                                  bool onSuccess, Register superSuperTypeVector,
+                                  bool onSuccess, Register superSTV,
                                   Register scratch1, Register scratch2);
   static bool needSuperSTVAndScratch1ForBranchWasmRefIsSubtypeFunc(
       wasm::RefType type);
@@ -3937,21 +3943,27 @@ class MacroAssembler : public MacroAssemblerSpecific {
                                     wasm::RefType destType, Label* label,
                                     bool onSuccess);
 
-  // Perform a subtype check that `subSuperTypeVector` is a subtype of
-  // `superSuperTypeVector`, branching to `label` depending on `onSuccess`.
-  // This method is a specialization of the general
-  // `wasm::TypeDef::isSubTypeOf` method for the case where the
-  // `superSuperTypeVector` is statically known, which is the case for all
-  // wasm instructions.
+  // Perform a subtype check that `subSTV` is a subtype of `superSTV`, branching
+  // to `label` depending on `onSuccess`. This method is a specialization of the
+  // general `wasm::TypeDef::isSubTypeOf` method for the case where the
+  // `superSTV` is statically known, which is the case for all wasm
+  // instructions.
   //
-  // `scratch` is required iff the `subTypeDepth` is >=
-  // wasm::MinSuperTypeVectorLength. `subSuperTypeVector` is clobbered by this
-  // method.  `superSuperTypeVector` is preserved.
-  void branchWasmSuperTypeVectorIsSubtype(Register subSuperTypeVector,
-                                          Register superSuperTypeVector,
-                                          Register scratch,
-                                          uint32_t superTypeDepth, Label* label,
-                                          bool onSuccess);
+  // `scratch` is required iff the `superDepth` is >=
+  // wasm::MinSuperTypeVectorLength. `subSTV` is clobbered by this method.
+  // `superSTV` is preserved.
+  void branchWasmSTVIsSubtype(Register subSTV, Register superSTV,
+                              Register scratch, uint32_t superDepth,
+                              Label* label, bool onSuccess);
+
+  // Same as branchWasmSTVIsSubtype, but looks up a dynamic position in the
+  // super type vector.
+  //
+  // `scratch` is always required. `subSTV` and `superDepth` are clobbered.
+  // `superSTV` is preserved.
+  void branchWasmSTVIsSubtypeDynamicDepth(Register subSTV, Register superSTV,
+                                          Register superDepth, Register scratch,
+                                          Label* label, bool onSuccess);
 
   // Branch if the wasm anyref `src` is or is not the null value.
   void branchWasmAnyRefIsNull(bool isNull, Register src, Label* label);

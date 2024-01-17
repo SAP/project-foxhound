@@ -28,10 +28,6 @@ struct TemporaryStorageInitializedResponse
   bool initialized;
 };
 
-struct InitResponse
-{
-};
-
 struct InitTemporaryStorageResponse
 {
 };
@@ -63,14 +59,6 @@ struct ClearDataResponse
 {
 };
 
-struct ClearAllResponse
-{
-};
-
-struct ResetAllResponse
-{
-};
-
 struct PersistedResponse
 {
   bool persisted;
@@ -97,7 +85,6 @@ union RequestResponse
   StorageNameResponse;
   StorageInitializedResponse;
   TemporaryStorageInitializedResponse;
-  InitResponse;
   InitTemporaryStorageResponse;
   InitializePersistentOriginResponse;
   InitializeTemporaryOriginResponse;
@@ -105,8 +92,6 @@ union RequestResponse
   ClearOriginResponse;
   ResetOriginResponse;
   ClearDataResponse;
-  ClearAllResponse;
-  ResetAllResponse;
   PersistedResponse;
   PersistResponse;
   EstimateResponse;

@@ -892,7 +892,7 @@ nsresult HTMLCanvasElement::ExtractData(JSContext* aCx,
   bool usePlaceholder = !CanvasUtils::IsImageExtractionAllowed(
       OwnerDoc(), aCx, aSubjectPrincipal);
   return ImageEncoder::ExtractData(aType, aOptions, GetSize(), usePlaceholder,
-                                   mCurrentContext, mCanvasRenderer, aStream);
+                                   mCurrentContext, mOffscreenDisplay, aStream);
 }
 
 nsresult HTMLCanvasElement::ToDataURLImpl(JSContext* aCx,
@@ -940,6 +940,17 @@ nsresult HTMLCanvasElement::ToDataURLImpl(JSContext* aCx,
 
   return Base64EncodeInputStream(stream, aDataURL, (uint32_t)count,
                                  aDataURL.Length());
+}
+
+UniquePtr<uint8_t[]> HTMLCanvasElement::GetImageBuffer(
+    int32_t* aOutFormat, gfx::IntSize* aOutImageSize) {
+  if (mCurrentContext) {
+    return mCurrentContext->GetImageBuffer(aOutFormat, aOutImageSize);
+  }
+  if (mOffscreenDisplay) {
+    return mOffscreenDisplay->GetImageBuffer(aOutFormat, aOutImageSize);
+  }
+  return nullptr;
 }
 
 void HTMLCanvasElement::ToBlob(JSContext* aCx, BlobCallback& aCallback,

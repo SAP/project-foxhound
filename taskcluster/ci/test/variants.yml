@@ -4,6 +4,7 @@
     component: "Testing::General"
     expiration: "never"
     suffix: "1proc"
+    mozinfo: "e10s"
     merge:
         mozharness:
             extra-options:
@@ -15,6 +16,7 @@ headless:
     component: "Firefox::Headless"
     expiration: "never"
     suffix: "headless"
+    mozinfo: "headless"
     replace:
         tier: 2
     merge:
@@ -27,6 +29,7 @@ a11y-checks:
     component: "Core::Disability Access APIs"
     expiration: "2024-03-01"
     suffix: "a11y-checks"
+    mozinfo: "a11y_checks"
     replace:
         tier: 2
     merge:
@@ -37,7 +40,7 @@ a11y-checks:
 aab:
     description: "{description} with aab test_runner"
     component: "GeckoView::General"
-    expiration: "2023-09-01"
+    expiration: "2024-03-01"
     when: &gv_e10s_filter
         $eval: '"android" in task["test-platform"]'
     suffix: "aab"
@@ -57,11 +60,12 @@ aab:
 
 geckoview-no-fission:
     description: "{description} without fission enabled"
-    component: "Core::DOM: Content Processes"
-    expiration: "2023-09-01"
+    component: "GeckoView::Sandboxing"
+    expiration: "2024-03-01"
     when:
         <<: *gv_e10s_filter
     suffix: "nofis"
+    mozinfo: "fission"
     merge:
         mozharness:
             extra-options:
@@ -69,23 +73,26 @@ geckoview-no-fission:
 
 geckoview-fission:
     description: "{description} with fission enabled"
-    component: "Core::DOM: Content Processes"
-    expiration: "2023-09-01"
+    component: "GeckoView::Sandboxing"
+    expiration: "2024-03-01"
     when:
         <<: *gv_e10s_filter
     suffix: "fis"
+    mozinfo: "fission"
 
 fission:
     description: "{description} with fission enabled"
     component: "Core::DOM: Content Processes"
-    expiration: "2023-09-01"
+    expiration: "never"
     suffix: "fis"
+    mozinfo: "fission"
 
 no-fission:
     description: "{description} without fission enabled"
     component: "Core::DOM: Content Processes"
-    expiration: "2023-09-01"
+    expiration: "2024-03-01"
     suffix: "nofis"
+    mozinfo: "fission"
     merge:
         mozharness:
             extra-options:
@@ -94,8 +101,9 @@ no-fission:
 xorigin:
     description: "{description} with cross-origin"
     component: "Core::DOM: Content Processes"
-    expiration: "2023-09-01"
+    expiration: "never"
     suffix: "xorig"
+    mozinfo: "xorigin"
     replace:
         e10s: true
     merge:
@@ -104,23 +112,12 @@ xorigin:
                 - "--enable-xorigin-tests"
                 - "--setpref=privacy.partition.always_partition_third_party_non_cookie_storage=false"
 
-editor-legacy-direction:
-    description: "{description} with compatible join/split node direction of editor disabled"
-    component: "Core::DOM: Editor"
-    expiration: "2023-09-01"
-    suffix: "editor-legacy-dir"
-    replace:
-        tier: 2
-    merge:
-        mozharness:
-            extra-options:
-                - "--setpref=editor.join_split_direction.compatible_with_the_other_browsers=false"
-
 conditioned_profile:
     description: "{description} with conditioned profile"
     component: "Testing::General"
     expiration: "2024-03-01"
     suffix: "condprof"
+    mozinfo: "condprof"
     merge:
         mozharness:
             extra-options:
@@ -133,6 +130,7 @@ socketprocess:
     component: "Core::Networking"
     expiration: "2024-03-01"
     suffix: "spi"
+    mozinfo: "socketprocess_e10s"
     merge:
         mozharness:
             extra-options:
@@ -144,6 +142,7 @@ socketprocess_networking:
     component: "Core::Networking"
     expiration: "2024-03-01"
     suffix: "spi-nw"
+    mozinfo: "socketprocess_networking"
     merge:
         mozharness:
             extra-options:
@@ -224,6 +223,7 @@ webrender-sw:
     component: "Core::Graphics: WebRender"
     expiration: "2024-03-01"
     suffix: "swr"
+    mozinfo: "swgl"
     merge:
         webrender: true
         mozharness:
@@ -233,7 +233,7 @@ webrender-sw:
 webgl-ipc:
     description: "{description} with WebGL IPC process enabled"
     component: "Core::Graphics: CanvasWebGL"
-    expiration: "2023-09-01"
+    expiration: "2024-03-01"
     suffix: "gli"
     merge:
         mozharness:
@@ -244,7 +244,7 @@ webgl-ipc:
 devtools-no-eft:
     description: "{description} with DevTools EFT disabled"
     component: "DevTools::Framework"
-    expiration: "2023-09-01"
+    expiration: "2024-03-01"
     suffix: "dt-no-eft"
     merge:
         mozharness:
@@ -254,10 +254,11 @@ devtools-no-eft:
 wmf-media-engine:
     description: "{description} with Windows Media Foundation media engine enabled"
     component: "Core::Audio/Video: Playback"
-    expiration: "2023-10-10"
+    expiration: "2024-04-10"
     when:
         $eval: '"windows1" in task["test-platform"]'
     suffix: "wmfme"
+    mozinfo: "wmfme"
     replace:
         tier: 2
     merge:
@@ -272,6 +273,7 @@ msix:
     component: "Firefox:Installer"
     expiration: "never"
     suffix: "msix"
+    mozinfo: "msix"
     when:
         $eval: '"windows1" in task["test-platform"] && "-64" in task["test-platform"] && ("opt" in task["test-platform"] || "debug" in task["test-platform"]) && !("asan" in task["test-platform"]) && !("ccov" in task["test-platform"])'
     merge:
@@ -284,6 +286,7 @@ http3:
     component: "Core::Networking"
     expiration: "2024-03-01"
     suffix: "http3"
+    mozinfo: "http3"
     merge:
         mozharness:
             extra-options:
@@ -294,6 +297,7 @@ http2:
     component: "Core::Networking"
     expiration: "2024-03-01"
     suffix: "http2"
+    mozinfo: "http2"
     merge:
         mozharness:
             extra-options:

@@ -198,9 +198,14 @@ export class AdmWikipedia extends BaseFeature {
     );
 
     if (suggestion.is_sponsored) {
+      if (!lazy.UrlbarPrefs.get("quickSuggestSponsoredPriority")) {
+        result.richSuggestionIconSize = 16;
+      }
+
+      result.payload.descriptionL10n = {
+        id: "urlbar-result-action-sponsored",
+      };
       result.isRichSuggestion = true;
-      result.richSuggestionIconSize = 16;
-      result.payload.descriptionL10n = { id: "urlbar-result-action-sponsored" };
     }
 
     return result;

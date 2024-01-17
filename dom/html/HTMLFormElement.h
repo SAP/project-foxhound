@@ -57,6 +57,9 @@ class HTMLFormElement final : public nsGenericHTMLElement,
 
   int32_t IndexOfContent(nsIContent* aContent);
   nsGenericHTMLFormElement* GetDefaultSubmitElement() const;
+  bool IsDefaultSubmitElement(nsGenericHTMLFormElement* aElement) const {
+    return aElement == mDefaultSubmitElement;
+  }
 
   // nsIRadioGroupContainer
   void SetCurrentRadioButton(const nsAString& aName,
@@ -76,8 +79,6 @@ class HTMLFormElement final : public nsGenericHTMLElement,
                                bool aRequiredAdded) override;
   bool GetValueMissingState(const nsAString& aName) const override;
   void SetValueMissingState(const nsAString& aName, bool aValue) override;
-
-  ElementState IntrinsicState() const override;
 
   // EventTarget
   void AsyncEventRunning(AsyncEventDispatcher* aEvent) override;
@@ -207,15 +208,6 @@ class HTMLFormElement final : public nsGenericHTMLElement,
   bool IsLastActiveElement(const nsGenericHTMLFormElement* aElement) const;
 
   /**
-   * Check whether a given nsGenericHTMLFormElement is the default submit
-   * element.  This is different from just comparing to
-   * GetDefaultSubmitElement() in certain situations inside an update
-   * when GetDefaultSubmitElement() might not be up to date. aElement
-   * is expected to not be null.
-   */
-  bool IsDefaultSubmitElement(const nsGenericHTMLFormElement* aElement) const;
-
-  /**
    * Flag the form to know that a button or image triggered scripted form
    * submission. In that case the form will defer the submission until the
    * script handler returns and the return value is known.
@@ -337,7 +329,7 @@ class HTMLFormElement final : public nsGenericHTMLElement,
 
   // it's only out-of-line because the class definition is not available in the
   // header
-  nsIHTMLCollection* Elements();
+  HTMLFormControlsCollection* Elements();
 
   int32_t Length();
 
@@ -620,6 +612,8 @@ class HTMLFormElement final : public nsGenericHTMLElement,
 
  private:
   bool IsSubmitting() const;
+
+  void SetDefaultSubmitElement(nsGenericHTMLFormElement*);
 
   NotNull<const Encoding*> GetSubmitEncoding();
 

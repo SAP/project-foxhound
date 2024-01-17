@@ -44,6 +44,7 @@ VALID_LICENSES = [
     "MIT",
     "MPL-1.1",
     "MPL-2.0",
+    "Public Domain",
     "Unlicense",
     "WTFPL",
     "Zlib",
@@ -56,7 +57,7 @@ VALID_LICENSES = [
     "Unicode",  # http://www.unicode.org/copyright.html
 ]
 
-VALID_SOURCE_HOSTS = ["gitlab", "googlesource", "github", "angle", "codeberg"]
+VALID_SOURCE_HOSTS = ["gitlab", "googlesource", "github", "angle", "codeberg", "git"]
 
 """
 ---

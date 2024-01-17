@@ -9,12 +9,14 @@ use crate::crypto::{
 };
 use crate::ctap2::attestation::{
     AAGuid, AttestationObject, AttestationStatement, AttestationStatementFidoU2F,
-    AttestedCredentialData, AuthenticatorData, AuthenticatorDataFlags,
+    AttestedCredentialData, AuthenticatorData, AuthenticatorDataFlags, HmacSecretResponse,
 };
 use crate::ctap2::client_data::ClientDataHash;
 use crate::ctap2::server::{
-    PublicKeyCredentialDescriptor, PublicKeyCredentialParameters, RelyingParty,
-    RelyingPartyWrapper, RpIdHash, User, UserVerificationRequirement,
+    AuthenticationExtensionsClientInputs, AuthenticationExtensionsClientOutputs,
+    CredentialProtectionPolicy, PublicKeyCredentialDescriptor, PublicKeyCredentialParameters,
+    PublicKeyCredentialUserEntity, RelyingParty, RelyingPartyWrapper, RpIdHash,
+    UserVerificationRequirement,
 };
 use crate::ctap2::utils::{read_byte, serde_parse_err};
 use crate::errors::AuthenticatorError;
@@ -33,6 +35,7 @@ use std::io::{Cursor, Read};
 #[derive(Debug, PartialEq, Eq)]
 pub struct MakeCredentialsResult {
     pub att_obj: AttestationObject,
+    pub extensions: AuthenticationExtensionsClientOutputs,
 }
 
 impl MakeCredentialsResult {
@@ -98,7 +101,10 @@ impl MakeCredentialsResult {
             att_stmt,
         };
 
-        Ok(Self { att_obj })
+        Ok(Self {
+            att_obj,
+            extensions: Default::default(),
+        })
     }
 }
 
@@ -181,6 +187,7 @@ impl<'de> Deserialize<'de> for MakeCredentialsResult {
                         auth_data,
                         att_stmt,
                     },
+                    extensions: Default::default(),
                 })
             }
         }
@@ -220,17 +227,32 @@ impl UserVerification for MakeCredentialsOptions {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Default)]
+#[derive(Debug, Default, Clone, Serialize)]
 pub struct MakeCredentialsExtensions {
-    #[serde(rename = "pinMinLength", skip_serializing_if = "Option::is_none")]
-    pub pin_min_length: Option<bool>,
+    #[serde(skip_serializing)]
+    pub cred_props: Option<bool>,
+    #[serde(rename = "credProtect", skip_serializing_if = "Option::is_none")]
+    pub cred_protect: Option<CredentialProtectionPolicy>,
     #[serde(rename = "hmac-secret", skip_serializing_if = "Option::is_none")]
     pub hmac_secret: Option<bool>,
+    #[serde(rename = "minPinLength", skip_serializing_if = "Option::is_none")]
+    pub min_pin_length: Option<bool>,
 }
 
 impl MakeCredentialsExtensions {
-    fn has_extensions(&self) -> bool {
-        self.pin_min_length.or(self.hmac_secret).is_some()
+    fn has_content(&self) -> bool {
+        self.cred_protect.is_some() || self.hmac_secret.is_some() || self.min_pin_length.is_some()
+    }
+}
+
+impl From<AuthenticationExtensionsClientInputs> for MakeCredentialsExtensions {
+    fn from(input: AuthenticationExtensionsClientInputs) -> Self {
+        Self {
+            cred_props: input.cred_props,
+            cred_protect: input.credential_protection_policy,
+            hmac_secret: input.hmac_create_secret,
+            min_pin_length: input.min_pin_length,
+        }
     }
 }
 
@@ -239,7 +261,7 @@ pub struct MakeCredentials {
     pub client_data_hash: ClientDataHash,
     pub rp: RelyingPartyWrapper,
     // Note(baloo): If none -> ctap1
-    pub user: Option<User>,
+    pub user: Option<PublicKeyCredentialUserEntity>,
     pub pub_cred_params: Vec<PublicKeyCredentialParameters>,
     pub exclude_list: Vec<PublicKeyCredentialDescriptor>,
 
@@ -260,7 +282,7 @@ impl MakeCredentials {
     pub fn new(
         client_data_hash: ClientDataHash,
         rp: RelyingPartyWrapper,
-        user: Option<User>,
+        user: Option<PublicKeyCredentialUserEntity>,
         pub_cred_params: Vec<PublicKeyCredentialParameters>,
         exclude_list: Vec<PublicKeyCredentialDescriptor>,
         options: MakeCredentialsOptions,
@@ -276,6 +298,32 @@ impl MakeCredentials {
             options,
             pin_uv_auth_param: None,
             enterprise_attestation: None,
+        }
+    }
+
+    pub fn finalize_result(&self, result: &mut MakeCredentialsResult) {
+        // Handle extensions whose outputs are not encoded in the authenticator data.
+        // 1. credProps
+        //      "set clientExtensionResults["credProps"]["rk"] to the value of the
+        //      requireResidentKey parameter that was used in the invocation of the
+        //      authenticatorMakeCredential operation."
+        if self.extensions.cred_props == Some(true) {
+            result
+                .extensions
+                .cred_props
+                .get_or_insert(Default::default())
+                .rk = self.options.resident_key.unwrap_or(false);
+        }
+
+        // 2. hmac-secret
+        //      The extension returns a flag in the authenticator data which we need to mirror as a
+        //      client output.
+        if self.extensions.hmac_secret == Some(true) {
+            if let Some(HmacSecretResponse::Confirmed(flag)) =
+                result.att_obj.auth_data.extensions.hmac_secret
+            {
+                result.extensions.hmac_create_secret = Some(flag);
+            }
         }
     }
 }
@@ -354,7 +402,7 @@ impl Serialize for MakeCredentials {
         if !self.exclude_list.is_empty() {
             map_len += 1;
         }
-        if self.extensions.has_extensions() {
+        if self.extensions.has_content() {
             map_len += 1;
         }
         if self.options.has_some() {
@@ -384,7 +432,7 @@ impl Serialize for MakeCredentials {
         if !self.exclude_list.is_empty() {
             map.serialize_entry(&0x05, &self.exclude_list)?;
         }
-        if self.extensions.has_extensions() {
+        if self.extensions.has_content() {
             map.serialize_entry(&0x06, &self.extensions)?;
         }
         if self.options.has_some() {
@@ -430,16 +478,19 @@ impl RequestCtap1 for MakeCredentials {
             return Err(Retryable::Error(HIDError::ApduStatus(err)));
         }
 
-        MakeCredentialsResult::from_ctap1(input, &self.rp.hash())
-            .map_err(HIDError::Command)
-            .map_err(Retryable::Error)
+        let mut output = MakeCredentialsResult::from_ctap1(input, &self.rp.hash())
+            .map_err(|e| Retryable::Error(HIDError::Command(e)))?;
+        self.finalize_result(&mut output);
+        Ok(output)
     }
 
     fn send_to_virtual_device<Dev: VirtualFidoDevice>(
         &self,
         dev: &mut Dev,
     ) -> Result<Self::Output, HIDError> {
-        dev.make_credentials(self)
+        let mut output = dev.make_credentials(self)?;
+        self.finalize_result(&mut output);
+        Ok(output)
     }
 }
 
@@ -465,20 +516,24 @@ impl RequestCtap2 for MakeCredentials {
 
         let status: StatusCode = input[0].into();
         debug!("response status code: {:?}", status);
-        if input.len() > 1 {
+        if input.len() == 1 {
             if status.is_ok() {
-                Ok(from_slice(&input[1..]).map_err(CommandError::Deserializing)?)
-            } else {
-                let data: Value = from_slice(&input[1..]).map_err(CommandError::Deserializing)?;
-                Err(HIDError::Command(CommandError::StatusCode(
-                    status,
-                    Some(data),
-                )))
+                return Err(HIDError::Command(CommandError::InputTooSmall));
             }
-        } else if status.is_ok() {
-            Err(HIDError::Command(CommandError::InputTooSmall))
+            return Err(HIDError::Command(CommandError::StatusCode(status, None)));
+        }
+
+        if status.is_ok() {
+            let mut output: MakeCredentialsResult =
+                from_slice(&input[1..]).map_err(CommandError::Deserializing)?;
+            self.finalize_result(&mut output);
+            Ok(output)
         } else {
-            Err(HIDError::Command(CommandError::StatusCode(status, None)))
+            let data: Value = from_slice(&input[1..]).map_err(CommandError::Deserializing)?;
+            Err(HIDError::Command(CommandError::StatusCode(
+                status,
+                Some(data),
+            )))
         }
     }
 
@@ -486,7 +541,9 @@ impl RequestCtap2 for MakeCredentials {
         &self,
         dev: &mut Dev,
     ) -> Result<Self::Output, HIDError> {
-        dev.make_credentials(self)
+        let mut output = dev.make_credentials(self)?;
+        self.finalize_result(&mut output);
+        Ok(output)
     }
 }
 
@@ -508,7 +565,7 @@ pub(crate) fn dummy_make_credentials_cmd() -> MakeCredentials {
             id: String::from("make.me.blink"),
             ..Default::default()
         }),
-        Some(User {
+        Some(PublicKeyCredentialUserEntity {
             id: vec![0],
             name: Some(String::from("make.me.blink")),
             ..Default::default()
@@ -541,7 +598,8 @@ pub mod test {
     use crate::ctap2::commands::{RequestCtap1, RequestCtap2};
     use crate::ctap2::server::RpIdHash;
     use crate::ctap2::server::{
-        PublicKeyCredentialParameters, RelyingParty, RelyingPartyWrapper, User,
+        PublicKeyCredentialParameters, PublicKeyCredentialUserEntity, RelyingParty,
+        RelyingPartyWrapper,
     };
     use crate::transport::device_selector::Device;
     use crate::transport::hid::HIDDevice;
@@ -563,13 +621,11 @@ pub mod test {
             RelyingPartyWrapper::Data(RelyingParty {
                 id: String::from("example.com"),
                 name: Some(String::from("Acme")),
-                icon: None,
             }),
-            Some(User {
+            Some(PublicKeyCredentialUserEntity {
                 id: base64::engine::general_purpose::URL_SAFE
                     .decode("MIIBkzCCATigAwIBAjCCAZMwggE4oAMCAQIwggGTMII=")
                     .unwrap(),
-                icon: Some("https://pics.example.com/00/p/aBjjjpqPb.png".to_string()),
                 name: Some(String::from("johnpsmith@example.com")),
                 display_name: Some(String::from("John P. Smith")),
             }),
@@ -601,6 +657,7 @@ pub mod test {
 
         let expected = MakeCredentialsResult {
             att_obj: create_attestation_obj(),
+            extensions: Default::default(),
         };
 
         assert_eq!(make_cred_result, expected);
@@ -621,13 +678,11 @@ pub mod test {
             RelyingPartyWrapper::Data(RelyingParty {
                 id: String::from("example.com"),
                 name: Some(String::from("Acme")),
-                icon: None,
             }),
-            Some(User {
+            Some(PublicKeyCredentialUserEntity {
                 id: base64::engine::general_purpose::URL_SAFE
                     .decode("MIIBkzCCATigAwIBAjCCAZMwggE4oAMCAQIwggGTMII=")
                     .unwrap(),
-                icon: Some("https://pics.example.com/00/p/aBjjjpqPb.png".to_string()),
                 name: Some(String::from("johnpsmith@example.com")),
                 display_name: Some(String::from("John P. Smith")),
             }),
@@ -757,7 +812,10 @@ pub mod test {
             }),
         };
 
-        let expected = MakeCredentialsResult { att_obj };
+        let expected = MakeCredentialsResult {
+            att_obj,
+            extensions: Default::default(),
+        };
 
         assert_eq!(make_cred_result, expected);
     }
@@ -837,7 +895,7 @@ pub mod test {
     ];
 
     #[rustfmt::skip]
-    pub const MAKE_CREDENTIALS_SAMPLE_REQUEST_CTAP2: [u8; 260] = [
+    pub const MAKE_CREDENTIALS_SAMPLE_REQUEST_CTAP2: [u8; 210] = [
         // NOTE: This has been taken from CTAP2.0 spec, but the clientDataHash has been replaced
         //       to be able to operate with known values for CollectedClientData (spec doesn't say
         //       what values led to the provided example hash (see client_data.rs))
@@ -858,20 +916,13 @@ pub mod test {
               0x64, // text(4)
                 0x41, 0x63, 0x6d, 0x65, // "Acme"
           0x03, // unsigned(3) - user
-          0xa4, // map(4)
+          0xa3, // map(3)
             0x62, // text(2)
               0x69, 0x64, // "id"
             0x58, 0x20, // bytes(32)
               0x30, 0x82, 0x01, 0x93, 0x30, 0x82, 0x01, 0x38, 0xa0, 0x03, 0x02, 0x01, 0x02, // userid
               0x30, 0x82, 0x01, 0x93, 0x30, 0x82, 0x01, 0x38, 0xa0, 0x03, 0x02, 0x01, 0x02, // ...
               0x30, 0x82, 0x01, 0x93, 0x30, 0x82, // ...
-            0x64, // text(4)
-              0x69, 0x63, 0x6f, 0x6e, // "icon"
-            0x78, 0x2b, // text(43)
-              0x68, 0x74, 0x74, 0x70, 0x73, 0x3a, 0x2f, // "https://pics.example.com/00/p/aBjjjpqPb.png"
-              0x2f, 0x70, 0x69, 0x63, 0x73, 0x2e, 0x65, 0x78, // ..
-              0x61, 0x6d, 0x70, 0x6c, 0x65, 0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x30, 0x30, 0x2f, 0x70, // ..
-              0x2f, 0x61, 0x42, 0x6a, 0x6a, 0x6a, 0x70, 0x71, 0x50, 0x62, 0x2e, 0x70, 0x6e, 0x67, // ..
             0x64, // text(4)
               0x6e, 0x61, 0x6d, 0x65, // "name"
             0x76, // text(22)

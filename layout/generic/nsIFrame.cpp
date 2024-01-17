@@ -220,11 +220,9 @@ static void SetOrUpdateRectValuedProperty(
   }
 }
 
-/* static */
-void nsIFrame::DestroyAnonymousContent(
-    nsPresContext* aPresContext, already_AddRefed<nsIContent>&& aContent) {
-  if (nsCOMPtr<nsIContent> content = aContent) {
-    aPresContext->PresShell()->NativeAnonymousContentRemoved(content);
+FrameDestroyContext::~FrameDestroyContext() {
+  for (auto& content : mozilla::Reversed(mAnonymousContent)) {
+    mPresShell->NativeAnonymousContentRemoved(content);
     content->UnbindFromTree();
   }
 }
@@ -767,13 +765,11 @@ void nsIFrame::InitPrimaryFrame() {
   HandleLastRememberedSize();
 }
 
-void nsIFrame::DestroyFrom(nsIFrame* aDestructRoot,
-                           PostDestroyData& aPostDestroyData) {
+void nsIFrame::Destroy(DestroyContext& aContext) {
   NS_ASSERTION(!nsContentUtils::IsSafeToRunScript(),
                "destroy called on frame while scripts not blocked");
   NS_ASSERTION(!GetNextSibling() && !GetPrevSibling(),
                "Frames should be removed before destruction.");
-  NS_ASSERTION(aDestructRoot, "Must specify destruct root");
   MOZ_ASSERT(!HasAbsolutelyPositionedChildren());
   MOZ_ASSERT(!HasAnyStateBits(NS_FRAME_PART_OF_IBSPLIT),
              "NS_FRAME_PART_OF_IBSPLIT set on non-nsContainerFrame?");
@@ -797,15 +793,7 @@ void nsIFrame::DestroyFrom(nsIFrame* aDestructRoot,
   nsPresContext* presContext = PresContext();
   mozilla::PresShell* presShell = presContext->GetPresShell();
   if (HasAnyStateBits(NS_FRAME_OUT_OF_FLOW)) {
-    nsPlaceholderFrame* placeholder = GetPlaceholderFrame();
-    NS_ASSERTION(
-        !placeholder || (aDestructRoot != this),
-        "Don't call Destroy() on OOFs, call Destroy() on the placeholder.");
-    NS_ASSERTION(!placeholder || nsLayoutUtils::IsProperAncestorFrame(
-                                     aDestructRoot, placeholder),
-                 "Placeholder relationship should have been torn down already; "
-                 "this might mean we have a stray placeholder in the tree.");
-    if (placeholder) {
+    if (nsPlaceholderFrame* placeholder = GetPlaceholderFrame()) {
       placeholder->SetOutOfFlowFrame(nullptr);
     }
   }
@@ -872,7 +860,7 @@ void nsIFrame::DestroyFrom(nsIFrame* aDestructRoot,
     // aPostDestroyData to unbind it after frame destruction is done.
     if (HasAnyStateBits(NS_FRAME_GENERATED_CONTENT) &&
         mContent->IsRootOfNativeAnonymousSubtree()) {
-      aPostDestroyData.AddAnonymousContent(mContent.forget());
+      aContext.AddAnonymousContent(mContent.forget());
     }
   }
 
@@ -1805,11 +1793,15 @@ bool nsIFrame::Extend3DContext(const nsStyleDisplay* aStyleDisplay,
 }
 
 bool nsIFrame::Combines3DTransformWithAncestors() const {
-  nsIFrame* parent = GetClosestFlattenedTreeAncestorPrimaryFrame();
-  if (!parent || !parent->Extend3DContext()) {
+  // Check these first as they are faster then both calls below and are we are
+  // likely to hit the early return (backface hidden is uncommon and
+  // GetReferenceFrame is a hot caller of this which only calls this if
+  // IsCSSTransformed is false).
+  if (!IsCSSTransformed() && !BackfaceIsHidden()) {
     return false;
   }
-  return IsCSSTransformed() || BackfaceIsHidden();
+  nsIFrame* parent = GetClosestFlattenedTreeAncestorPrimaryFrame();
+  return parent && parent->Extend3DContext();
 }
 
 bool nsIFrame::In3DContextAndBackfaceIsHidden() const {
@@ -5843,9 +5835,7 @@ void nsIFrame::MarkIntrinsicISizesDirty() {
     nsFontInflationData::MarkFontInflationDataTextDirty(this);
   }
 
-  if (StaticPrefs::layout_css_grid_item_baxis_measurement_enabled()) {
-    RemoveProperty(nsGridContainerFrame::CachedBAxisMeasurement::Prop());
-  }
+  RemoveProperty(nsGridContainerFrame::CachedBAxisMeasurement::Prop());
 }
 
 void nsIFrame::MarkSubtreeDirty() {

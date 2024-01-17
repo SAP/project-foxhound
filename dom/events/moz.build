@@ -11,8 +11,8 @@ with Files("Event*"):
     BUG_COMPONENT = ("Core", "DOM: Events")
 
 BROWSER_CHROME_MANIFESTS += [
-    "test/browser.ini",
-    "test/clipboard/browser.ini",
+    "test/browser.toml",
+    "test/clipboard/browser.toml",
 ]
 
 MOCHITEST_MANIFESTS += [
@@ -21,9 +21,9 @@ MOCHITEST_MANIFESTS += [
 ]
 
 MOCHITEST_CHROME_MANIFESTS += [
-    "test/chrome.ini",
-    "test/clipboard/chrome.ini",
-    "test/pointerevents/chrome.ini",
+    "test/chrome.toml",
+    "test/clipboard/chrome.toml",
+    "test/pointerevents/chrome.toml",
 ]
 
 TEST_DIRS += ["test/gtest"]

@@ -580,12 +580,6 @@ void WebRenderLayerManager::DiscardLocalImages() {
   mStateManager.DiscardLocalImages();
 }
 
-void WebRenderLayerManager::SetLayersObserverEpoch(LayersObserverEpoch aEpoch) {
-  if (WrBridge()->IPCOpen()) {
-    WrBridge()->SendSetLayersObserverEpoch(aEpoch);
-  }
-}
-
 void WebRenderLayerManager::DidComposite(
     TransactionId aTransactionId, const mozilla::TimeStamp& aCompositeStart,
     const mozilla::TimeStamp& aCompositeEnd) {
@@ -634,6 +628,10 @@ void WebRenderLayerManager::ClearCachedResources() {
   mWebRenderCommandBuilder.ClearCachedResources();
   DiscardImages();
   mStateManager.ClearCachedResources();
+  CompositorBridgeChild* compositorBridge = GetCompositorBridgeChild();
+  if (compositorBridge) {
+    compositorBridge->ClearCachedResources();
+  }
   WrBridge()->EndClearCachedResources();
 }
 

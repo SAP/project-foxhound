@@ -70,6 +70,9 @@ const REPLACED_ELEMENTS_NAMES = new Set([
   "video",
 ]);
 
+const CUE_PSEUDO_ELEMENT_STYLING_SPEC_URL =
+  "https://developer.mozilla.org/docs/Web/CSS/::cue";
+
 const HIGHLIGHT_PSEUDO_ELEMENTS_STYLING_SPEC_URL =
   "https://www.w3.org/TR/css-pseudo-4/#highlight-styling";
 const HIGHLIGHT_PSEUDO_ELEMENTS = [
@@ -86,6 +89,12 @@ const REGEXP_HIGHLIGHT_PSEUDO_ELEMENTS = new RegExp(
 
 const FIRST_LINE_PSEUDO_ELEMENT_STYLING_SPEC_URL =
   "https://www.w3.org/TR/css-pseudo-4/#first-line-styling";
+
+const FIRST_LETTER_PSEUDO_ELEMENT_STYLING_SPEC_URL =
+  "https://www.w3.org/TR/css-pseudo-4/#first-letter-styling";
+
+const PLACEHOLDER_PSEUDO_ELEMENT_STYLING_SPEC_URL =
+  "https://www.w3.org/TR/css-pseudo-4/#placeholder-pseudo";
 
 class InactivePropertyHelper {
   /**
@@ -264,6 +273,38 @@ class InactivePropertyHelper {
         fixId: "learn-more",
         msgId: "inactive-css-first-line-pseudo-element-not-supported",
         learnMoreURL: FIRST_LINE_PSEUDO_ELEMENT_STYLING_SPEC_URL,
+      },
+      // Content modifying properties used on ::first-letter pseudo-element.
+      {
+        invalidProperties: ["content"],
+        when: () => this.isFirstLetter,
+        fixId: "learn-more",
+        msgId: "inactive-css-first-letter-pseudo-element-not-supported",
+        learnMoreURL: FIRST_LETTER_PSEUDO_ELEMENT_STYLING_SPEC_URL,
+      },
+      // Writing mode or inline properties used on ::placeholder pseudo-element.
+      {
+        invalidProperties: [
+          "baseline-source",
+          "direction",
+          "dominant-baseline",
+          "line-height",
+          "text-orientation",
+          "vertical-align",
+          "writing-mode",
+          // Below are properties not yet implemented in Firefox (Bug 1312611)
+          "alignment-baseline",
+          "baseline-shift",
+          "initial-letter",
+          "text-box-trim",
+        ],
+        when: () => {
+          const { selectorText } = this.cssRule;
+          return selectorText && selectorText.includes("::placeholder");
+        },
+        fixId: "learn-more",
+        msgId: "inactive-css-placeholder-pseudo-element-not-supported",
+        learnMoreURL: PLACEHOLDER_PSEUDO_ELEMENT_STYLING_SPEC_URL,
       },
       // (max-|min-)width used on inline elements, table rows, or row groups.
       {
@@ -516,6 +557,73 @@ class InactivePropertyHelper {
       msgId: "inactive-css-highlight-pseudo-elements-not-supported",
       fixId: "learn-more",
       learnMoreURL: HIGHLIGHT_PSEUDO_ELEMENTS_STYLING_SPEC_URL,
+    },
+    // Constrained set of properties on ::cue pseudo-element
+    //
+    // Note that Gecko doesn't yet support the ::cue() pseudo-element
+    // taking a selector as argument. The properties accecpted by that
+    // partly differ from the ones accepted by the ::cue pseudo-element.
+    // See https://w3c.github.io/webvtt/#ref-for-selectordef-cue-selector⑧.
+    // See https://bugzilla.mozilla.org/show_bug.cgi?id=865395 and its
+    // dependencies for the implementation status.
+    {
+      acceptedProperties: new Set([
+        "background",
+        "background-attachment",
+        // The WebVTT spec. currently only allows all properties covered by
+        // the `background` shorthand and `background-blend-mode` is not
+        // part of that, though Gecko does support it, anyway.
+        // Therefore, there's also an issue pending to add it (and others)
+        // to the spec. See https://github.com/w3c/webvtt/issues/518.
+        "background-blend-mode",
+        "background-clip",
+        "background-color",
+        "background-image",
+        "background-origin",
+        "background-position",
+        "background-position-x",
+        "background-position-y",
+        "background-repeat",
+        "background-size",
+        "color",
+        "font",
+        "font-family",
+        "font-size",
+        "font-stretch",
+        "font-style",
+        "font-variant",
+        "font-variant-alternates",
+        "font-variant-caps",
+        "font-variant-east-asian",
+        "font-variant-ligatures",
+        "font-variant-numeric",
+        "font-variant-position",
+        "font-weight",
+        "line-height",
+        "opacity",
+        "outline",
+        "outline-color",
+        "outline-offset",
+        "outline-style",
+        "outline-width",
+        "ruby-position",
+        "text-combine-upright",
+        "text-decoration",
+        "text-decoration-color",
+        "text-decoration-line",
+        "text-decoration-style",
+        "text-decoration-thickness",
+        "text-shadow",
+        "visibility",
+        "white-space",
+      ]),
+      when: () => {
+        const { selectorText } = this.cssRule;
+        return selectorText && selectorText.includes("::cue");
+      },
+      msgId: "inactive-css-cue-pseudo-element-not-supported",
+      fixId: "learn-more",
+      learnMoreURL: CUE_PSEUDO_ELEMENT_STYLING_SPEC_URL,
     },
   ];
 

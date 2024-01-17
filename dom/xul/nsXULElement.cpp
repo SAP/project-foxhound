@@ -24,7 +24,6 @@
 #include "js/CompileOptions.h"  // JS::CompileOptions, JS::OwningCompileOptions, , JS::ReadOnlyCompileOptions, JS::ReadOnlyDecodeOptions, JS::DecodeOptions
 #include "js/experimental/CompileScript.h"  // JS::NewFrontendContext, JS::DestroyFrontendContext, JS::SetNativeStackQuota, JS::CompileGlobalScriptToStencil, JS::CompilationStorage
 #include "js/experimental/JSStencil.h"      // JS::Stencil, JS::FrontendContext
-#include "js/OffThreadScriptCompilation.h"
 #include "js/SourceText.h"
 #include "js/Transcoding.h"
 #include "js/Utility.h"
@@ -590,19 +589,6 @@ void nsXULElement::AddListenerForAttributeIfNeeded(const nsAttrName& aName) {
   }
 }
 
-//----------------------------------------------------------------------
-//
-// nsIContent interface
-//
-void nsXULElement::UpdateEditableState(bool aNotify) {
-  // Don't call through to Element here because the things
-  // it does don't work for cases when we're an editable control.
-  nsIContent* parent = GetParent();
-
-  SetEditableFlag(parent && parent->HasFlag(NODE_IS_EDITABLE));
-  UpdateState(aNotify);
-}
-
 class XULInContentErrorReporter : public Runnable {
  public:
   explicit XULInContentErrorReporter(Document& aDocument)
@@ -1047,18 +1033,15 @@ void nsXULElement::ClickWithInputSource(uint16_t aInputSource,
 
       // send mouse down
       nsEventStatus status = nsEventStatus_eIgnore;
-      EventDispatcher::Dispatch(static_cast<nsIContent*>(this), context,
-                                &eventDown, nullptr, &status);
+      EventDispatcher::Dispatch(this, context, &eventDown, nullptr, &status);
 
       // send mouse up
       status = nsEventStatus_eIgnore;  // reset status
-      EventDispatcher::Dispatch(static_cast<nsIContent*>(this), context,
-                                &eventUp, nullptr, &status);
+      EventDispatcher::Dispatch(this, context, &eventUp, nullptr, &status);
 
       // send mouse click
       status = nsEventStatus_eIgnore;  // reset status
-      EventDispatcher::Dispatch(static_cast<nsIContent*>(this), context,
-                                &eventClick, nullptr, &status);
+      EventDispatcher::Dispatch(this, context, &eventClick, nullptr, &status);
 
       // If the click has been prevented, lets skip the command call
       // this is how a physical click works
@@ -1873,10 +1856,17 @@ class ScriptCompileTask final : public Task {
   }
 
  private:
+  static size_t ThreadStackQuotaForSize(size_t size) {
+    // Set the stack quota to 10% less that the actual size.
+    // NOTE: This follows what JS helper thread does.
+    return size_t(double(size) * 0.9);
+  }
+
   void Compile() {
     // NOTE: The stack limit must be set from the same thread that compiles.
-    const size_t kDefaultStackQuota = 128 * sizeof(size_t) * 1024;
-    JS::SetNativeStackQuota(mFrontendContext, kDefaultStackQuota);
+    size_t stackSize = TaskController::GetThreadStackSize();
+    JS::SetNativeStackQuota(mFrontendContext,
+                            ThreadStackQuotaForSize(stackSize));
 
     JS::SourceText<Utf8Unit> srcBuf;
     if (NS_WARN_IF(!srcBuf.init(mFrontendContext, mText.get(), mTextLength,

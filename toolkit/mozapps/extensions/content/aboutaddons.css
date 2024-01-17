@@ -168,7 +168,7 @@ search-addons > search-textbox {
 
 /* Plugins aren't yet disabled by safemode (bug 342333),
    so don't show that warning when viewing plugins. */
-#page-header[current-param="plugin"] message-bar[warning-type="safe-mode"] {
+#page-header[current-param="plugin"] moz-message-bar[warning-type="safe-mode"] {
   display: none;
 }
 
@@ -192,8 +192,6 @@ message-bar-stack > * {
 /* List sections */
 
 .list-section-heading {
-  font-size: 17px;
-  font-weight: 600;
   margin-bottom: 16px;
 }
 
@@ -258,7 +256,7 @@ addon-card[expanded] .update-postponed-bar + .addon-card-message {
   margin-top: 0px;
 }
 
-.update-postponed-bar + .addon-card-message {
+.update-postponed-bar + .addon-card-message:not([hidden]) {
   /* Prevent the small overlapping between the two message bars
    * when they are both visible at the same time one after the
    * other on the same addon card */
@@ -301,7 +299,7 @@ addon-card[expanded] .update-postponed-bar + .addon-card-message {
 
 .addon-name {
   font-size: 16px;
-  font-weight: 600;
+  font-weight: var(--font-weight-bold);
   line-height: 22px;
   margin: 0;
   margin-inline-end: 8px;
@@ -358,7 +356,7 @@ addon-card[expanded] .update-postponed-bar + .addon-card-message {
 
 .theme-enable-button {
   min-width: auto;
-  font-size: 13px;
+  font-size: var(--font-size-small);
   min-height: auto;
   height: 24px;
   margin: 0;
@@ -446,20 +444,6 @@ recommended-addon-card .addon-description:not(:empty) {
 
 .discopane-notice {
   margin: 24px 0;
-}
-
-.discopane-notice-content {
-  padding-block: 6px;
-}
-
-.discopane-notice-content > span {
-  flex-grow: 1;
-  margin-inline-end: 4px;
-}
-
-.discopane-notice-content > button {
-  flex-grow: 0;
-  flex-shrink: 0;
 }
 
 .view-footer {

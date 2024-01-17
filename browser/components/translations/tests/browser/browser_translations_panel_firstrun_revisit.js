@@ -16,96 +16,34 @@ add_task(async function test_translations_panel_firstrun() {
     prefs: [["browser.translations.panelShown", false]],
   });
 
-  const { button } = await assertTranslationsButton(
+  await assertTranslationsButton(
     { button: true, circleArrows: false, locale: false, icon: true },
     "The button is available."
   );
 
-  await waitForTranslationsPopupEvent(
-    "popupshown",
-    () => {
-      click(button, "Opening the popup");
-    },
-    assertPanelFirstShowView
-  );
+  await openTranslationsPanel({ onOpenPanel: assertPanelFirstShowView });
 
-  ok(
-    getByL10nId("translations-panel-intro-description"),
-    "The intro text is available."
-  );
+  await clickCancelButton();
 
-  await waitForTranslationsPopupEvent("popuphidden", () => {
-    click(
-      getByL10nId("translations-panel-translate-cancel"),
-      "Dismiss the panel"
-    );
+  await openTranslationsPanel({ onOpenPanel: assertPanelFirstShowView });
+
+  await clickCancelButton();
+
+  await navigate("Navigate to a different website", {
+    url: SPANISH_PAGE_URL_DOT_ORG,
   });
 
-  await waitForTranslationsPopupEvent(
-    "popupshown",
-    () => {
-      click(button, "Opening the popup");
-    },
-    assertPanelFirstShowView
-  );
+  await openTranslationsPanel({ onOpenPanel: assertPanelDefaultView });
 
-  ok(
-    getByL10nId("translations-panel-intro-description"),
-    "The intro text is available."
-  );
+  await clickCancelButton();
 
-  await waitForTranslationsPopupEvent("popuphidden", () => {
-    click(
-      getByL10nId("translations-panel-translate-cancel"),
-      "Dismiss the panel"
-    );
+  await navigate("Navigate back to the first website", {
+    url: SPANISH_PAGE_URL,
   });
 
-  await navigate(SPANISH_PAGE_URL_DOT_ORG, "Navigate to a different website");
+  await openTranslationsPanel({ onOpenPanel: assertPanelDefaultView });
 
-  await waitForTranslationsPopupEvent(
-    "popupshown",
-    () => {
-      click(button, "Opening the popup");
-    },
-    assertPanelDefaultView
-  );
-
-  info("Checking for the intro text to be hidden.");
-  await waitForCondition(
-    () => !maybeGetByL10nId("translations-panel-intro-description"),
-    "The intro text is no longer shown."
-  );
-
-  await waitForTranslationsPopupEvent("popuphidden", () => {
-    click(
-      getByL10nId("translations-panel-translate-cancel"),
-      "Dismiss the panel"
-    );
-  });
-
-  await navigate(SPANISH_PAGE_URL, "Navigate back to the first website");
-
-  await waitForTranslationsPopupEvent(
-    "popupshown",
-    () => {
-      click(button, "Opening the popup");
-    },
-    assertPanelDefaultView
-  );
-
-  info("Checking for the intro text to be hidden.");
-  await waitForCondition(
-    () => !maybeGetByL10nId("translations-panel-intro-description"),
-    "The intro text is no longer shown."
-  );
-
-  await waitForTranslationsPopupEvent("popuphidden", () => {
-    click(
-      getByL10nId("translations-panel-translate-cancel"),
-      "Dismiss the panel"
-    );
-  });
+  await clickCancelButton();
 
   await cleanup();
 });

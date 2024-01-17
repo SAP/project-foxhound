@@ -343,10 +343,9 @@ gfxPlatformFontList::gfxPlatformFontList(bool aNeedFullnamePostscriptNames)
 }
 
 gfxPlatformFontList::~gfxPlatformFontList() {
-  // We take the lock here because it's possible the InitFontList thread is
-  // still running, in which case we need to wait for it to finish; this will
-  // block until the lock becomes available, ensuring we don't destroy things
-  // the initialization thread is using.
+  // Note that gfxPlatformFontList::Shutdown() ensures that the init-font-list
+  // thread is finished before we come here.
+
   AutoLock lock(mLock);
 
   // We can't just do mSharedCmaps.Clear() here because removing each item from
@@ -1310,6 +1309,7 @@ class StartCmapLoadingRunnable : public mozilla::Runnable {
 };
 
 void gfxPlatformFontList::StartCmapLoadingFromFamily(uint32_t aStartIndex) {
+  AutoLock lock(mLock);
   if (aStartIndex > mStartedLoadingCmapsFrom) {
     // We already initiated cmap-loading from somewhere earlier in the list;
     // no need to do it again here.

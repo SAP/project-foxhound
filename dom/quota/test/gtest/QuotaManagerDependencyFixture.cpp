@@ -93,6 +93,24 @@ void QuotaManagerDependencyFixture::ShutdownFixture() {
 }
 
 // static
+void QuotaManagerDependencyFixture::InitializeStorage() {
+  PerformOnBackgroundThread([]() {
+    QuotaManager* quotaManager = QuotaManager::Get();
+    ASSERT_TRUE(quotaManager);
+
+    bool done = false;
+
+    quotaManager->InitializeStorage()->Then(
+        GetCurrentSerialEventTarget(), __func__,
+        [&done](const BoolPromise::ResolveOrRejectValue& aValue) {
+          done = true;
+        });
+
+    SpinEventLoopUntil("Promise is fulfilled"_ns, [&done]() { return done; });
+  });
+}
+
+// static
 void QuotaManagerDependencyFixture::StorageInitialized(bool* aResult) {
   AutoJSAPI jsapi;
 
@@ -125,6 +143,50 @@ void QuotaManagerDependencyFixture::StorageInitialized(bool* aResult) {
 }
 
 // static
+void QuotaManagerDependencyFixture::IsStorageInitialized(bool* aResult) {
+  ASSERT_TRUE(aResult);
+
+  PerformOnBackgroundThread([aResult]() {
+    QuotaManager* quotaManager = QuotaManager::Get();
+    ASSERT_TRUE(quotaManager);
+
+    *aResult = quotaManager->IsStorageInitialized();
+  });
+}
+
+// static
+void QuotaManagerDependencyFixture::AssertStorageIsInitialized() {
+  bool result;
+  ASSERT_NO_FATAL_FAILURE(IsStorageInitialized(&result));
+  ASSERT_TRUE(result);
+}
+
+// static
+void QuotaManagerDependencyFixture::AssertStorageIsNotInitialized() {
+  bool result;
+  ASSERT_NO_FATAL_FAILURE(IsStorageInitialized(&result));
+  ASSERT_FALSE(result);
+}
+
+// static
+void QuotaManagerDependencyFixture::ShutdownStorage() {
+  PerformOnBackgroundThread([]() {
+    QuotaManager* quotaManager = QuotaManager::Get();
+    ASSERT_TRUE(quotaManager);
+
+    bool done = false;
+
+    quotaManager->ShutdownStorage()->Then(
+        GetCurrentSerialEventTarget(), __func__,
+        [&done](const BoolPromise::ResolveOrRejectValue& aValue) {
+          done = true;
+        });
+
+    SpinEventLoopUntil("Promise is fulfilled"_ns, [&done]() { return done; });
+  });
+}
+
+// static
 void QuotaManagerDependencyFixture::ClearStoragesForOrigin(
     const OriginMetadata& aOriginMetadata) {
   nsCOMPtr<nsIQuotaManagerService> qms = QuotaManagerService::GetOrCreate();
@@ -153,6 +215,36 @@ void QuotaManagerDependencyFixture::ClearStoragesForOrigin(
 
   SpinEventLoopUntil("Promise is fulfilled"_ns,
                      [&resolver]() { return resolver->Done(); });
+}
+
+// static
+OriginMetadata QuotaManagerDependencyFixture::GetTestOriginMetadata() {
+  return {""_ns,
+          "example.com"_ns,
+          "http://example.com"_ns,
+          "http://example.com"_ns,
+          /* aIsPrivate */ false,
+          PERSISTENCE_TYPE_DEFAULT};
+}
+
+// static
+ClientMetadata QuotaManagerDependencyFixture::GetTestClientMetadata() {
+  return {GetTestOriginMetadata(), Client::SDB};
+}
+
+// static
+OriginMetadata QuotaManagerDependencyFixture::GetOtherTestOriginMetadata() {
+  return {""_ns,
+          "other-example.com"_ns,
+          "http://other-example.com"_ns,
+          "http://other-example.com"_ns,
+          /* aIsPrivate */ false,
+          PERSISTENCE_TYPE_DEFAULT};
+}
+
+// static
+ClientMetadata QuotaManagerDependencyFixture::GetOtherTestClientMetadata() {
+  return {GetOtherTestOriginMetadata(), Client::SDB};
 }
 
 nsCOMPtr<nsISerialEventTarget> QuotaManagerDependencyFixture::sBackgroundTarget;

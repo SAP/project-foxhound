@@ -25,7 +25,7 @@ Result<Ok, nsresult> AnnexB::ConvertSampleToAnnexB(
   }
   MOZ_ASSERT(aSample->Data());
 
-  MOZ_TRY(ConvertSampleTo4BytesAVCC(aSample));
+  MOZ_TRY(ConvertAVCCTo4BytesAVCC(aSample));
 
   if (aSample->Size() < 4) {
     // Nothing to do, it's corrupted anyway.
@@ -298,7 +298,7 @@ static Result<already_AddRefed<MediaByteBuffer>, nsresult> RetrieveExtraData(
 bool AnnexB::ConvertSampleToAVCC(mozilla::MediaRawData* aSample,
                                  const RefPtr<MediaByteBuffer>& aAVCCHeader) {
   if (IsAVCC(aSample)) {
-    return ConvertSampleTo4BytesAVCC(aSample).isOk();
+    return ConvertAVCCTo4BytesAVCC(aSample).isOk();
   }
   if (!IsAnnexB(aSample)) {
     // Not AnnexB, nothing to convert.
@@ -330,10 +330,11 @@ bool AnnexB::ConvertSampleToAVCC(mozilla::MediaRawData* aSample,
     return true;
   }
 
-  if (parsedExtraData) {
-    aSample->mExtraData = parsedExtraData;
-    return true;
-  }
+// Bug 1855636: something is broken in this annexb -> avcc conversion
+//if (parsedExtraData) {
+//  aSample->mExtraData = parsedExtraData;
+//  return true;
+//}
 
   // Create the AVCC header.
   auto extradata = MakeRefPtr<mozilla::MediaByteBuffer>();
@@ -353,21 +354,44 @@ bool AnnexB::ConvertSampleToAVCC(mozilla::MediaRawData* aSample,
   return true;
 }
 
-Result<mozilla::Ok, nsresult> AnnexB::ConvertSampleTo4BytesAVCC(
+Result<mozilla::Ok, nsresult> AnnexB::ConvertAVCCTo4BytesAVCC(
     mozilla::MediaRawData* aSample) {
-  MOZ_ASSERT(IsAVCC(aSample));
+  auto avcc = AVCCConfig::Parse(aSample);
+  MOZ_ASSERT(avcc.isOk());
+  return ConvertNALUTo4BytesNALU(aSample, avcc.unwrap().NALUSize());
+}
 
-  int nalLenSize = ((*aSample->mExtraData)[4] & 3) + 1;
+bool AnnexB::IsAVCC(const mozilla::MediaRawData* aSample) {
+  return AVCCConfig::Parse(aSample).isOk();
+}
 
-  if (nalLenSize == 4) {
-    return Ok();
+bool AnnexB::IsAnnexB(const mozilla::MediaRawData* aSample) {
+  if (aSample->Size() < 4) {
+    return false;
   }
+  uint32_t header = mozilla::BigEndian::readUint32(aSample->Data());
+  return header == 0x00000001 || (header >> 8) == 0x000001;
+}
+
+/*  static */ mozilla::Result<mozilla::Ok, nsresult>
+AnnexB::ConvertNALUTo4BytesNALU(mozilla::MediaRawData* aSample,
+                                uint8_t aNALUSize) {
+  // NALSize should be between 1 to 4.
+  if (aNALUSize == 0 || aNALUSize > 4) {
+    return Err(NS_ERROR_FAILURE);
+  }
+
+  // If the nalLenSize is already 4, we can only check if the data is corrupt
+  // without replacing data in aSample.
+  bool needConversion = aNALUSize != 4;
+
+  MOZ_ASSERT(aSample);
   nsTArray<uint8_t> dest;
   ByteWriter<BigEndian> writer(dest);
   BufferReader reader(aSample->Data(), aSample->Size());
-  while (reader.Remaining() > nalLenSize) {
+  while (reader.Remaining() > aNALUSize) {
     uint32_t nalLen;
-    switch (nalLenSize) {
+    switch (aNALUSize) {
       case 1:
         MOZ_TRY_VAR(nalLen, reader.ReadU8());
         break;
@@ -377,36 +401,35 @@ Result<mozilla::Ok, nsresult> AnnexB::ConvertSampleTo4BytesAVCC(
       case 3:
         MOZ_TRY_VAR(nalLen, reader.ReadU24());
         break;
+      case 4:
+        MOZ_TRY_VAR(nalLen, reader.ReadU32());
+        break;
+      default:
+        MOZ_ASSERT_UNREACHABLE("Bytes of the NAL body length must be in [1,4]");
+        return Err(NS_ERROR_ILLEGAL_VALUE);
     }
-
-    MOZ_ASSERT(nalLenSize != 4);
-
     const uint8_t* p = reader.Read(nalLen);
     if (!p) {
-      return Ok();
+      // The data may be corrupt.
+      return Err(NS_ERROR_UNEXPECTED);
+    }
+    if (!needConversion) {
+      // We only parse aSample to see if it's corrupt.
+      continue;
     }
     if (!writer.WriteU32(nalLen) || !writer.Write(p, nalLen)) {
       return Err(NS_ERROR_OUT_OF_MEMORY);
     }
+  }
+  if (!needConversion) {
+    // We've parsed all the data, and it's all good.
+    return Ok();
   }
   UniquePtr<MediaRawDataWriter> samplewriter(aSample->CreateWriter());
   if (!samplewriter->Replace(dest.Elements(), dest.Length())) {
     return Err(NS_ERROR_OUT_OF_MEMORY);
   }
   return Ok();
-}
-
-bool AnnexB::IsAVCC(const mozilla::MediaRawData* aSample) {
-  return aSample->Size() >= 3 && aSample->mExtraData &&
-         aSample->mExtraData->Length() >= 7 && (*aSample->mExtraData)[0] == 1;
-}
-
-bool AnnexB::IsAnnexB(const mozilla::MediaRawData* aSample) {
-  if (aSample->Size() < 4) {
-    return false;
-  }
-  uint32_t header = mozilla::BigEndian::readUint32(aSample->Data());
-  return header == 0x00000001 || (header >> 8) == 0x000001;
 }
 
 }  // namespace mozilla

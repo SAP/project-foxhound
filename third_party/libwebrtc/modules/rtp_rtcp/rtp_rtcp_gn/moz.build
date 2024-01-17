@@ -32,6 +32,7 @@ LOCAL_INCLUDES += [
 ]
 
 SOURCES += [
+    "/third_party/libwebrtc/modules/rtp_rtcp/source/flexfec_header_reader_writer2.cc",
     "/third_party/libwebrtc/modules/rtp_rtcp/source/flexfec_receiver.cc",
     "/third_party/libwebrtc/modules/rtp_rtcp/source/rtcp_sender.cc",
     "/third_party/libwebrtc/modules/rtp_rtcp/source/rtp_format_vp8.cc",
@@ -163,6 +164,7 @@ if CONFIG["OS_TARGET"] == "WINNT":
     DEFINES["NOMINMAX"] = True
     DEFINES["NTDDI_VERSION"] = "0x0A000000"
     DEFINES["PSAPI_VERSION"] = "2"
+    DEFINES["RTC_ENABLE_WIN_WGC"] = True
     DEFINES["UNICODE"] = True
     DEFINES["USE_AURA"] = "1"
     DEFINES["WEBRTC_WIN"] = True

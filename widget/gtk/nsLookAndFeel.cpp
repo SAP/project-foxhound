@@ -187,6 +187,7 @@ nsLookAndFeel::nsLookAndFeel() {
 }
 
 nsLookAndFeel::~nsLookAndFeel() {
+  ClearRoundedCornerProvider();
   if (mDBusSettingsProxy) {
     g_signal_handlers_disconnect_by_func(
         mDBusSettingsProxy, FuncToGpointer(settings_changed_signal_cb), this);
@@ -283,7 +284,7 @@ static bool GetColorFromImagePattern(const GValue* aValue, nscolor* aColor) {
     return false;
   }
 
-  auto pattern = static_cast<cairo_pattern_t*>(g_value_get_boxed(aValue));
+  auto* pattern = static_cast<cairo_pattern_t*>(g_value_get_boxed(aValue));
   if (!pattern) {
     return false;
   }
@@ -981,10 +982,6 @@ nsresult nsLookAndFeel::NativeGetInt(IntID aID, int32_t& aResult) {
           // Disabled on wayland, see bug 1800442 and bug 1800368.
           return false;
         }
-        if (IsKdeDesktopEnvironment()) {
-          // Disabled on KDE, see bug 1813070.
-          return false;
-        }
         return true;
       }();
       break;
@@ -992,8 +989,12 @@ nsresult nsLookAndFeel::NativeGetInt(IntID aID, int32_t& aResult) {
       aResult = StaticPrefs::widget_gtk_overlay_scrollbars_enabled();
       break;
     }
+    case IntID::HideCursorWhileTyping: {
+      aResult = StaticPrefs::widget_gtk_hide_pointer_while_typing_enabled();
+      break;
+    }
     case IntID::TouchDeviceSupportPresent:
-      aResult = widget::WidgetUtilsGTK::IsTouchDeviceSupportPresent() ? 1 : 0;
+      aResult = widget::WidgetUtilsGTK::IsTouchDeviceSupportPresent();
       break;
     default:
       aResult = 0;
@@ -1210,8 +1211,9 @@ void nsLookAndFeel::RestoreSystemTheme() {
                  "gtk-application-prefer-dark-theme",
                  mSystemTheme.mPreferDarkTheme, nullptr);
   }
-  moz_gtk_refresh();
   mSystemThemeOverridden = false;
+  UpdateRoundedBottomCornerStyles();
+  moz_gtk_refresh();
 }
 
 static bool AnyColorChannelIsDifferent(nscolor aColor) {
@@ -1219,22 +1221,13 @@ static bool AnyColorChannelIsDifferent(nscolor aColor) {
          NS_GET_R(aColor) != NS_GET_B(aColor);
 }
 
-void nsLookAndFeel::ConfigureAndInitializeAltTheme() {
+bool nsLookAndFeel::ConfigureAltTheme() {
   GtkSettings* settings = gtk_settings_get_default();
-
-  bool fellBackToDefaultTheme = false;
-
-  // Try to select the opposite variant of the current theme first...
-  LOGLNF("    toggling gtk-application-prefer-dark-theme\n");
-  g_object_set(settings, "gtk-application-prefer-dark-theme",
-               !mSystemTheme.mIsDark, nullptr);
-  moz_gtk_refresh();
-
   // Toggling gtk-application-prefer-dark-theme is not enough generally to
   // switch from dark to light theme.  If the theme didn't change, and we have
   // a dark theme, try to first remove -Dark{,er,est} from the theme name to
   // find the light variant.
-  if (mSystemTheme.mIsDark && mSystemTheme.mIsDark == GetThemeIsDark()) {
+  if (mSystemTheme.mIsDark) {
     nsCString potentialLightThemeName = mSystemTheme.mName;
     // clang-format off
     constexpr nsLiteralCString kSubstringsToRemove[] = {
@@ -1245,7 +1238,7 @@ void nsLookAndFeel::ConfigureAndInitializeAltTheme() {
     };
     // clang-format on
     bool found = false;
-    for (auto& s : kSubstringsToRemove) {
+    for (const auto& s : kSubstringsToRemove) {
       potentialLightThemeName = mSystemTheme.mName;
       potentialLightThemeName.ReplaceSubstring(s, ""_ns);
       if (potentialLightThemeName.Length() != mSystemTheme.mName.Length()) {
@@ -1254,29 +1247,49 @@ void nsLookAndFeel::ConfigureAndInitializeAltTheme() {
       }
     }
     if (found) {
+      LOGLNF("    found potential light variant of %s: %s",
+             mSystemTheme.mName.get(), potentialLightThemeName.get());
       g_object_set(settings, "gtk-theme-name", potentialLightThemeName.get(),
+                   "gtk-application-prefer-dark-theme", !mSystemTheme.mIsDark,
                    nullptr);
       moz_gtk_refresh();
+
+      if (!GetThemeIsDark()) {
+        return true;  // Success!
+      }
     }
   }
 
-  if (mSystemTheme.mIsDark == GetThemeIsDark()) {
-    // If the theme still didn't change enough, fall back to Adwaita with the
-    // appropriate color preference.
-    g_object_set(settings, "gtk-theme-name", "Adwaita",
-                 "gtk-application-prefer-dark-theme", !mSystemTheme.mIsDark,
-                 nullptr);
+  LOGLNF("    toggling gtk-application-prefer-dark-theme");
+  g_object_set(settings, "gtk-application-prefer-dark-theme",
+               !mSystemTheme.mIsDark, nullptr);
+  moz_gtk_refresh();
+  if (mSystemTheme.mIsDark != GetThemeIsDark()) {
+    return true;  // Success!
+  }
+
+  LOGLNF("    didn't work, falling back to default theme");
+  // If the theme still didn't change enough, fall back to Adwaita with the
+  // appropriate color preference.
+  g_object_set(settings, "gtk-theme-name", "Adwaita",
+               "gtk-application-prefer-dark-theme", !mSystemTheme.mIsDark,
+               nullptr);
+  moz_gtk_refresh();
+
+  // If it _still_ didn't change enough, and we're looking for a dark theme,
+  // try to set Adwaita-dark as a theme name. This might be needed in older GTK
+  // versions.
+  if (!mSystemTheme.mIsDark && !GetThemeIsDark()) {
+    LOGLNF("    last resort Adwaita-dark fallback");
+    g_object_set(settings, "gtk-theme-name", "Adwaita-dark", nullptr);
     moz_gtk_refresh();
-
-    // If it _still_ didn't change enough, and we're dark, try to set
-    // Adwaita-dark as a theme name. This might be needed in older GTK versions.
-    if (!mSystemTheme.mIsDark && !GetThemeIsDark()) {
-      g_object_set(settings, "gtk-theme-name", "Adwaita-dark", nullptr);
-      moz_gtk_refresh();
-    }
-
-    fellBackToDefaultTheme = true;
   }
+
+  return false;
+}
+
+void nsLookAndFeel::ConfigureAndInitializeAltTheme() {
+  const bool fellBackToDefaultTheme = !ConfigureAltTheme();
 
   mAltTheme.Init();
 
@@ -1316,6 +1329,46 @@ void nsLookAndFeel::ConfigureAndInitializeAltTheme() {
   // Right now we're using the opposite color-scheme theme, make sure to record
   // it.
   mSystemThemeOverridden = true;
+  UpdateRoundedBottomCornerStyles();
+}
+
+void nsLookAndFeel::ClearRoundedCornerProvider() {
+  if (mRoundedCornerProvider) {
+    gtk_style_context_remove_provider_for_screen(
+        gdk_screen_get_default(),
+        GTK_STYLE_PROVIDER(mRoundedCornerProvider.get()));
+    mRoundedCornerProvider = nullptr;
+  }
+}
+
+void nsLookAndFeel::UpdateRoundedBottomCornerStyles() {
+  ClearRoundedCornerProvider();
+  if (!StaticPrefs::widget_gtk_rounded_bottom_corners_enabled()) {
+    return;
+  }
+  int32_t radius = EffectiveTheme().mTitlebarRadius;
+  if (!radius) {
+    return;
+  }
+  mRoundedCornerProvider = dont_AddRef(gtk_css_provider_new());
+  nsPrintfCString string(
+      "window.csd decoration {"
+      "border-bottom-right-radius: %dpx;"
+      "border-bottom-left-radius: %dpx;"
+      "}\n",
+      radius, radius);
+  GUniquePtr<GError> error;
+  if (!gtk_css_provider_load_from_data(mRoundedCornerProvider.get(),
+                                       string.get(), string.Length(),
+                                       getter_Transfers(error))) {
+    NS_WARNING(nsPrintfCString("Failed to load provider: %s - %s\n",
+                               string.get(), error ? error->message : nullptr)
+                   .get());
+  }
+  gtk_style_context_add_provider_for_screen(
+      gdk_screen_get_default(),
+      GTK_STYLE_PROVIDER(mRoundedCornerProvider.get()),
+      GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
 }
 
 Maybe<ColorScheme> nsLookAndFeel::ComputeColorSchemeSetting() {
@@ -1535,31 +1588,20 @@ void nsLookAndFeel::ConfigureFinalEffectiveTheme() {
                    "gtk-application-prefer-dark-theme",
                    mAltTheme.mPreferDarkTheme, nullptr);
     }
-    moz_gtk_refresh();
     mSystemThemeOverridden = true;
+    UpdateRoundedBottomCornerStyles();
+    moz_gtk_refresh();
   }
 }
 
-static nscolor GetBackgroundColor(
-    GtkStyleContext* aStyle, nscolor aForForegroundColor,
-    GtkStateFlags aState = GTK_STATE_FLAG_NORMAL,
-    nscolor aOverBackgroundColor = NS_TRANSPARENT) {
-  GdkRGBA gdkColor;
-  gtk_style_context_get_background_color(aStyle, aState, &gdkColor);
-  nscolor color = GDK_RGBA_TO_NS_RGBA(gdkColor);
-  if (NS_GET_A(color)) {
-    if (color != aOverBackgroundColor) {
-      return color;
-    }
-  }
-
-  // Try to synthesize a color from a background-image.
+static bool GetColorFromBackgroundImage(GtkStyleContext* aStyle,
+                                        nscolor aForForegroundColor,
+                                        GtkStateFlags aState, nscolor* aColor) {
   GValue value = G_VALUE_INIT;
   gtk_style_context_get_property(aStyle, "background-image", aState, &value);
   auto cleanup = MakeScopeExit([&] { g_value_unset(&value); });
-
-  if (GetColorFromImagePattern(&value, &color)) {
-    return color;
+  if (GetColorFromImagePattern(&value, aColor)) {
+    return true;
   }
 
   {
@@ -1570,13 +1612,40 @@ static nscolor GetBackgroundColor(
       // Return the one with more contrast.
       // TODO(emilio): This could do interpolation or what not but seems
       // overkill.
-      return NS_LUMINOSITY_DIFFERENCE(l, aForForegroundColor) >
-                     NS_LUMINOSITY_DIFFERENCE(d, aForForegroundColor)
-                 ? l
-                 : d;
+      if (NS_LUMINOSITY_DIFFERENCE(l, aForForegroundColor) >
+          NS_LUMINOSITY_DIFFERENCE(d, aForForegroundColor)) {
+        *aColor = l;
+      } else {
+        *aColor = d;
+      }
+      return true;
     }
   }
 
+  return false;
+}
+
+static nscolor GetBackgroundColor(
+    GtkStyleContext* aStyle, nscolor aForForegroundColor,
+    GtkStateFlags aState = GTK_STATE_FLAG_NORMAL,
+    nscolor aOverBackgroundColor = NS_TRANSPARENT) {
+  // Try to synthesize a color from a background-image.
+  nscolor imageColor = NS_TRANSPARENT;
+  if (GetColorFromBackgroundImage(aStyle, aForForegroundColor, aState,
+                                  &imageColor)) {
+    if (NS_GET_A(imageColor) == 255) {
+      return imageColor;
+    }
+  }
+
+  GdkRGBA gdkColor;
+  gtk_style_context_get_background_color(aStyle, aState, &gdkColor);
+  nscolor bgColor = GDK_RGBA_TO_NS_RGBA(gdkColor);
+  // background-image paints over background-color.
+  const nscolor finalColor = NS_ComposeColors(bgColor, imageColor);
+  if (finalColor != aOverBackgroundColor) {
+    return finalColor;
+  }
   return NS_TRANSPARENT;
 }
 

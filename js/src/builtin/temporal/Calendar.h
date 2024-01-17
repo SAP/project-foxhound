@@ -7,6 +7,8 @@
 #ifndef builtin_temporal_Calendar_h
 #define builtin_temporal_Calendar_h
 
+#include "mozilla/Assertions.h"
+
 #include <initializer_list>
 #include <stdint.h>
 
@@ -21,7 +23,6 @@ class JS_PUBLIC_API JSTracer;
 
 namespace js {
 struct ClassSpec;
-class JSStringBuilder;
 class PlainObject;
 }  // namespace js
 
@@ -59,7 +60,7 @@ class CalendarValue final {
   /**
    * Default initialize this CalendarValue.
    */
-  explicit CalendarValue(const Value& value) : value_(value) {
+  explicit CalendarValue(const JS::Value& value) : value_(value) {
     MOZ_ASSERT(value.isString() || value.isObject());
     MOZ_ASSERT_IF(value.isString(), value.toString()->isLinear());
   }
@@ -475,20 +476,6 @@ bool CalendarEqualsOrThrow(JSContext* cx, JS::Handle<CalendarValue> one,
 bool ConsolidateCalendars(JSContext* cx, JS::Handle<CalendarValue> one,
                           JS::Handle<CalendarValue> two,
                           JS::MutableHandle<CalendarValue> result);
-
-/**
- * MaybeFormatCalendarAnnotation ( calendar, showCalendar )
- */
-bool MaybeFormatCalendarAnnotation(JSContext* cx, JSStringBuilder& result,
-                                   JS::Handle<CalendarValue> calendar,
-                                   CalendarOption showCalendar);
-
-/**
- * FormatCalendarAnnotation ( id, showCalendar )
- */
-bool FormatCalendarAnnotation(JSContext* cx, JSStringBuilder& result,
-                              JS::Handle<JSString*> id,
-                              CalendarOption showCalendar);
 
 /**
  * Return true when accessing the calendar fields |fieldNames| can be optimized.

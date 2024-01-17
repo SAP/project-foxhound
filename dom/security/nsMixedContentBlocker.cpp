@@ -371,12 +371,32 @@ bool nsMixedContentBlocker::IsPotentiallyTrustworthyOrigin(nsIURI* aURI) {
 }
 
 /* static */
-bool nsMixedContentBlocker::IsUpgradableContentType(nsContentPolicyType aType) {
+bool nsMixedContentBlocker::IsUpgradableContentType(nsContentPolicyType aType,
+                                                    bool aConsiderPrefs) {
   MOZ_ASSERT(NS_IsMainThread());
-  return (aType == nsIContentPolicy::TYPE_INTERNAL_IMAGE ||
-          aType == nsIContentPolicy::TYPE_INTERNAL_IMAGE_PRELOAD ||
-          aType == nsIContentPolicy::TYPE_INTERNAL_AUDIO ||
-          aType == nsIContentPolicy::TYPE_INTERNAL_VIDEO);
+
+  if (aConsiderPrefs &&
+      !StaticPrefs::security_mixed_content_upgrade_display_content()) {
+    return false;
+  }
+
+  switch (aType) {
+    case nsIContentPolicy::TYPE_INTERNAL_IMAGE:
+    case nsIContentPolicy::TYPE_INTERNAL_IMAGE_PRELOAD:
+      return !aConsiderPrefs ||
+             StaticPrefs::
+                 security_mixed_content_upgrade_display_content_image();
+    case nsIContentPolicy::TYPE_INTERNAL_AUDIO:
+      return !aConsiderPrefs ||
+             StaticPrefs::
+                 security_mixed_content_upgrade_display_content_audio();
+    case nsIContentPolicy::TYPE_INTERNAL_VIDEO:
+      return !aConsiderPrefs ||
+             StaticPrefs::
+                 security_mixed_content_upgrade_display_content_video();
+    default:
+      return false;
+  }
 }
 
 /*
@@ -385,13 +405,18 @@ bool nsMixedContentBlocker::IsUpgradableContentType(nsContentPolicyType aType) {
  */
 static already_AddRefed<nsIURI> GetPrincipalURIOrPrecursorPrincipalURI(
     nsIPrincipal* aPrincipal) {
-  nsCOMPtr<nsIURI> precursorURI = nullptr;
-  if (aPrincipal->GetIsNullPrincipal()) {
-    nsCOMPtr<nsIPrincipal> precursorPrin = aPrincipal->GetPrecursorPrincipal();
-    precursorURI = precursorPrin ? precursorPrin->GetURI() : nullptr;
-  }
+  nsCOMPtr<nsIPrincipal> precursorPrincipal =
+      aPrincipal->GetPrecursorPrincipal();
 
-  return precursorURI ? precursorURI.forget() : aPrincipal->GetURI();
+#ifdef DEBUG
+  if (precursorPrincipal) {
+    MOZ_ASSERT(aPrincipal->GetIsNullPrincipal(),
+               "Only Null Principals should have a Precursor Principal");
+  }
+#endif
+
+  return precursorPrincipal ? precursorPrincipal->GetURI()
+                            : aPrincipal->GetURI();
 }
 
 /* Static version of ShouldLoad() that contains all the Mixed Content Blocker
@@ -653,18 +678,11 @@ nsresult nsMixedContentBlocker::ShouldLoad(bool aHadInsecureImageRedirect,
   // 2) If aLoadingPrincipal does not provide a requestingLocation, then
   // we fall back to to querying the requestingLocation from
   // aTriggeringPrincipal.
-  nsCOMPtr<nsIURI> requestingLocation;
-  auto* baseLoadingPrincipal = BasePrincipal::Cast(loadingPrincipal);
-  if (baseLoadingPrincipal) {
-    requestingLocation =
-        GetPrincipalURIOrPrecursorPrincipalURI(baseLoadingPrincipal);
-  }
+  nsCOMPtr<nsIURI> requestingLocation =
+      GetPrincipalURIOrPrecursorPrincipalURI(loadingPrincipal);
   if (!requestingLocation) {
-    auto* baseTriggeringPrincipal = BasePrincipal::Cast(triggeringPrincipal);
-    if (baseTriggeringPrincipal) {
-      requestingLocation =
-          GetPrincipalURIOrPrecursorPrincipalURI(baseTriggeringPrincipal);
-    }
+    requestingLocation =
+        GetPrincipalURIOrPrecursorPrincipalURI(triggeringPrincipal);
   }
 
   // 3) Giving up. We still don't have a requesting location, therefore we can't
@@ -766,8 +784,7 @@ nsresult nsMixedContentBlocker::ShouldLoad(bool aHadInsecureImageRedirect,
   // be upgraded to https before fetching any data from the netwerk.
   if (isHttpScheme) {
     bool isUpgradableContentType =
-        IsUpgradableContentType(internalContentType) &&
-        StaticPrefs::security_mixed_content_upgrade_display_content();
+        IsUpgradableContentType(internalContentType, /* aConsiderPrefs */ true);
     if (isUpgradableContentType) {
       *aDecision = ACCEPT;
       return NS_OK;

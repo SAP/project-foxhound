@@ -39,9 +39,6 @@ HTMLObjectElement::HTMLObjectElement(
 
   // <object> is always barred from constraint validation.
   SetBarredFromConstraintValidation(true);
-
-  // By default we're in the loading state
-  AddStatesSilently(ElementState::LOADING);
 }
 
 HTMLObjectElement::~HTMLObjectElement() {
@@ -280,10 +277,6 @@ void HTMLObjectElement::StartObjectLoad(bool aNotify, bool aForce) {
 
   LoadObject(aNotify, aForce);
   SetIsNetworkCreated(false);
-}
-
-ElementState HTMLObjectElement::IntrinsicState() const {
-  return nsGenericHTMLFormControlElement::IntrinsicState() | ObjectState();
 }
 
 uint32_t HTMLObjectElement::GetCapabilities() const {

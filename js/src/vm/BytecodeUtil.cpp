@@ -23,7 +23,6 @@
 #include "jsapi.h"
 #include "jstypes.h"
 
-#include "frontend/SourceNotes.h"  // SrcNote, SrcNoteType, SrcNoteIterator
 #include "gc/PublicIterators.h"
 #include "jit/IonScript.h"  // IonBlockCounts
 #include "js/CharacterEncoding.h"
@@ -1001,8 +1000,7 @@ static unsigned Disassemble1(JSContext* cx, HandleScript script, jsbytecode* pc,
 
 /*
  * If pc != nullptr, include a prefix indicating whether the PC is at the
- * current line. If showAll is true, include the source note type and the
- * entry stack depth.
+ * current line. If showAll is true, include the entry stack depth.
  */
 [[nodiscard]] static bool DisassembleAtPC(
     JSContext* cx, JSScript* scriptArg, bool lines, const jsbytecode* pc,
@@ -1085,29 +1083,6 @@ static unsigned Disassemble1(JSContext* cx, HandleScript script, jsbytecode* pc,
       }
     }
     if (showAll) {
-      const SrcNote* sn = GetSrcNote(cx, script, next);
-      if (sn) {
-        MOZ_ASSERT(!sn->isTerminator());
-        SrcNoteIterator iter(sn);
-        while (true) {
-          ++iter;
-          auto next = *iter;
-          if (!(!next->isTerminator() && next->delta() == 0)) {
-            break;
-          }
-          if (!sp->jsprintf("%s\n    ", sn->name())) {
-            return false;
-          }
-          sn = *iter;
-        }
-        if (!sp->jsprintf("%s ", sn->name())) {
-          return false;
-        }
-      } else {
-        if (!sp->put("   ")) {
-          return false;
-        }
-      }
       if (parser && parser->isReachable(next)) {
         if (!sp->jsprintf("%05u ", parser->stackDepthAtPC(next))) {
           return false;
@@ -1816,9 +1791,15 @@ bool ExpressionDecompiler::decompilePC(jsbytecode* pc, uint8_t defIndex) {
     // Handle simple cases of binary and unary operators.
     switch (CodeSpec(op).nuses) {
       case 2: {
-        const SrcNote* sn = GetSrcNote(cx, script, pc);
-        const char* extra =
-            sn && sn->type() == SrcNoteType::AssignOp ? "=" : "";
+        const char* extra = "";
+
+        MOZ_ASSERT(pc + 1 < script->codeEnd(),
+                   "binary opcode shouldn't be the last opcode in the script");
+        if (CodeSpec(op).length == 1 &&
+            (JSOp)(*(pc + 1)) == JSOp::NopIsAssignOp) {
+          extra = "=";
+        }
+
         return write("(") && decompilePCForStackOperand(pc, -2) && write(" ") &&
                write(token) && write(extra) && write(" ") &&
                decompilePCForStackOperand(pc, -1) && write(")");

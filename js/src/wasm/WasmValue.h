@@ -307,6 +307,11 @@ class MOZ_NON_PARAM Val : public LitVal {
     return cell_.ref_;
   }
 
+  // Updates the type of the Val. Does not check that the type is valid for the
+  // actual value, so make sure the type is definitely correct via validation or
+  // something.
+  void unsafeSetType(ValType type) { type_ = type; }
+
   // Initialize from `loc` which is a rooted location and needs no barriers.
   void initFromRootedLocation(ValType type, const void* loc);
   void initFromHeapLocation(ValType type, const void* loc);
@@ -537,5 +542,10 @@ struct InternalBarrierMethods<wasm::Val> {
 };
 
 }  // namespace js
+
+template <>
+struct JS::SafelyInitialized<js::wasm::AnyRef> {
+  static js::wasm::AnyRef create() { return js::wasm::AnyRef::null(); }
+};
 
 #endif  // wasm_val_h

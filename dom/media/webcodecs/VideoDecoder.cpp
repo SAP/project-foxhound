@@ -9,6 +9,7 @@
 #include "mozilla/dom/VideoDecoderBinding.h"
 
 #include "DecoderTraits.h"
+#include "GPUVideoImage.h"
 #include "H264.h"
 #include "ImageContainer.h"
 #include "MediaContainerType.h"
@@ -164,8 +165,8 @@ static nsTArray<nsCString> GuessMIMETypes(MIMECreateParam aParam) {
   return types;
 }
 
-static bool IsOnLinuxOrMac() {
-#if (defined(XP_LINUX) && !defined(ANDROID)) || defined(XP_MACOSX)
+static bool IsOnAndroid() {
+#if defined(ANDROID)
   return true;
 #else
   return false;
@@ -192,8 +193,8 @@ static bool IsSupportedCodec(const nsAString& aCodec) {
 
 // https://w3c.github.io/webcodecs/#check-configuration-support
 static bool CanDecode(MIMECreateParam aParam) {
-  // TODO: Enable on Windows and Android (Bug 1840508)
-  if (!IsOnLinuxOrMac()) {
+  // TODO: Enable WebCodecs on Android (Bug 1840508)
+  if (IsOnAndroid()) {
     return false;
   }
   if (!IsSupportedCodec(aParam.mParsedCodec)) {
@@ -233,15 +234,9 @@ static nsTArray<UniquePtr<TrackInfo>> GetTracksInfo(MIMECreateParam aParam) {
 
 static Result<RefPtr<MediaByteBuffer>, nsresult> GetExtraData(
     const OwningMaybeSharedArrayBufferViewOrMaybeSharedArrayBuffer& aBuffer) {
-  RefPtr<MediaByteBuffer> data = nullptr;
-  Span<uint8_t> buf;
-  MOZ_TRY_VAR(buf, GetSharedArrayBufferData(aBuffer));
-  if (buf.empty()) {
-    return data;
-  }
-  data = MakeRefPtr<MediaByteBuffer>();
-  data->AppendElements(buf);
-  return data;
+  RefPtr<MediaByteBuffer> data = MakeRefPtr<MediaByteBuffer>();
+  Unused << AppendTypedArrayDataTo(aBuffer, *data);
+  return data->Length() > 0 ? data : nullptr;
 }
 
 static Result<UniquePtr<TrackInfo>, nsresult> CreateVideoInfo(
@@ -451,6 +446,15 @@ static Maybe<VideoPixelFormat> GuessPixelFormat(layers::Image* aImage) {
         return Some(VideoPixelFormat::I420A);
       }
       return f;
+    }
+    if (layers::GPUVideoImage* image = aImage->AsGPUVideoImage()) {
+      RefPtr<layers::ImageBridgeChild> imageBridge =
+          layers::ImageBridgeChild::GetSingleton();
+      layers::TextureClient* texture = image->GetTextureClient(imageBridge);
+      if (NS_WARN_IF(!texture)) {
+        return Nothing();
+      }
+      return SurfaceFormatToVideoPixelFormat(texture->GetFormat());
     }
 #ifdef XP_MACOSX
     if (layers::MacIOSurfaceImage* image = aImage->AsMacIOSurfaceImage()) {
@@ -1068,6 +1072,9 @@ already_AddRefed<Promise> VideoDecoder::IsConfigSupported(
 Result<Ok, nsresult> VideoDecoder::Reset(const nsresult& aResult) {
   AssertIsOnOwningThread();
 
+  LOG("VideoDecoder %p reset with 0x%08" PRIx32, this,
+      static_cast<uint32_t>(aResult));
+
   if (mState == CodecState::Closed) {
     return Err(NS_ERROR_DOM_INVALID_STATE_ERR);
   }
@@ -1093,6 +1100,9 @@ Result<Ok, nsresult> VideoDecoder::Reset(const nsresult& aResult) {
 // https://w3c.github.io/webcodecs/#close-videodecoder
 Result<Ok, nsresult> VideoDecoder::Close(const nsresult& aResult) {
   AssertIsOnOwningThread();
+
+  LOG("VideoDecoder %p close with 0x%08" PRIx32, this,
+      static_cast<uint32_t>(aResult));
 
   MOZ_TRY(Reset(aResult));
   mState = CodecState::Closed;
@@ -1218,6 +1228,9 @@ void VideoDecoder::ScheduleOutputVideoFrames(
 void VideoDecoder::ScheduleClose(const nsresult& aResult) {
   AssertIsOnOwningThread();
   MOZ_ASSERT(mState == CodecState::Configured);
+
+  LOG("VideoDecoder %p has schedule a close with 0x%08" PRIx32, this,
+      static_cast<uint32_t>(aResult));
 
   auto task = [self = RefPtr{this}, result = aResult] {
     if (self->mState == CodecState::Closed) {

@@ -1406,7 +1406,7 @@ static bool FastStr(JSContext* cx, Handle<Value> v, StringifyContext* scx,
 
       MOZ_ASSERT(iter.done());
       if (top.isArray) {
-        MOZ_ASSERT(!top.nobj->isIndexed());
+        MOZ_ASSERT(!top.nobj->isIndexed() || IsPackedArray(top.nobj));
       } else {
         top.advanceToProperties();
       }
@@ -1878,10 +1878,9 @@ static bool Revive(JSContext* cx, HandleValue reviver, MutableHandleValue vp) {
 
 template <typename CharT>
 bool ParseJSON(JSContext* cx, const mozilla::Range<const CharT> chars,
-               const StringTaint& aTaint, MutableHandleValue vp) {
-  Rooted<JSONParser<CharT>> parser(
-      cx,
-      JSONParser<CharT>(cx, chars, aTaint, JSONParser<CharT>::ParseType::JSONParse));
+               MutableHandleValue vp) {
+  Rooted<JSONParser<CharT>> parser(cx, cx, chars, aTaint
+                                   JSONParser<CharT>::ParseType::JSONParse);
   return parser.parse(vp);
 }
 

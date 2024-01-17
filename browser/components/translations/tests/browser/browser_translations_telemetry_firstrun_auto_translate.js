@@ -17,63 +17,30 @@ add_task(async function test_translations_telemetry_firstrun_auto_translate() {
     ],
   });
 
-  const { button } = await assertTranslationsButton(
-    { button: true },
-    "The button is available."
-  );
+  await assertTranslationsButton({ button: true }, "The button is available.");
 
-  await runInPage(async TranslationsTest => {
-    const { getH1 } = TranslationsTest.getSelectors();
-    await TranslationsTest.assertTranslationResult(
-      "The page's H1 is in Spanish.",
-      getH1,
-      "Don Quijote de La Mancha"
-    );
+  await assertPageIsUntranslated(runInPage);
+
+  await openTranslationsPanel({ onOpenPanel: assertPanelFirstShowView });
+  await openTranslationsSettingsMenu();
+  await clickAlwaysTranslateLanguage({
+    downloadHandler: resolveDownloads,
   });
 
-  await openTranslationsSettingsMenuViaTranslationsButton();
-  await clickAlwaysTranslateLanguage();
+  await assertPageIsTranslated("es", "en", runInPage);
 
-  await assertTranslationsButton(
-    { button: true, circleArrows: true, locale: false, icon: true },
-    "The icon presents the loading indicator."
-  );
-
-  await resolveDownloads(1);
-
-  const { locale } = await assertTranslationsButton(
-    { button: true, circleArrows: false, locale: true, icon: true },
-    "The icon presents the locale."
-  );
-
-  is(locale.innerText, "en", "The English language tag is shown.");
-
-  await runInPage(async TranslationsTest => {
-    const { getH1 } = TranslationsTest.getSelectors();
-    await TranslationsTest.assertTranslationResult(
-      "The page's H1 is translated automatically",
-      getH1,
-      "DON QUIJOTE DE LA MANCHA [es to en, html]"
-    );
+  await TestTranslationsTelemetry.assertEvent(Glean.translationsPanel.open, {
+    expectedEventCount: 1,
+    expectNewFlowId: true,
+    expectFirstInteraction: true,
+    finalValuePredicates: [
+      value => value.extra.auto_show === "false",
+      value => value.extra.view_name === "defaultView",
+      value => value.extra.opened_from === "translationsButton",
+      value => value.extra.document_language === "es",
+    ],
   });
-
   await TestTranslationsTelemetry.assertEvent(
-    "OpenPanel",
-    Glean.translationsPanel.open,
-    {
-      expectedEventCount: 1,
-      expectNewFlowId: true,
-      expectFirstInteraction: true,
-      finalValuePredicates: [
-        value => value.extra.auto_show === "false",
-        value => value.extra.view_name === "defaultView",
-        value => value.extra.opened_from === "translationsButton",
-        value => value.extra.document_language === "es",
-      ],
-    }
-  );
-  await TestTranslationsTelemetry.assertEvent(
-    "alwaysTranslateLanguage",
     Glean.translationsPanel.alwaysTranslateLanguage,
     {
       expectedEventCount: 1,
@@ -82,26 +49,17 @@ add_task(async function test_translations_telemetry_firstrun_auto_translate() {
       finalValuePredicates: [value => value.extra.language === "es"],
     }
   );
+  await TestTranslationsTelemetry.assertEvent(Glean.translationsPanel.close, {
+    expectedEventCount: 1,
+    expectNewFlowId: false,
+    expectFirstInteraction: true,
+  });
+  await TestTranslationsTelemetry.assertEvent(Glean.translationsPanel.close, {
+    expectedEventCount: 1,
+    expectNewFlowId: false,
+    expectFirstInteraction: true,
+  });
   await TestTranslationsTelemetry.assertEvent(
-    "ClosePanel",
-    Glean.translationsPanel.close,
-    {
-      expectedEventCount: 1,
-      expectNewFlowId: false,
-      expectFirstInteraction: true,
-    }
-  );
-  await TestTranslationsTelemetry.assertEvent(
-    "ClosePanel",
-    Glean.translationsPanel.close,
-    {
-      expectedEventCount: 1,
-      expectNewFlowId: false,
-      expectFirstInteraction: true,
-    }
-  );
-  await TestTranslationsTelemetry.assertEvent(
-    "TranslationRequest",
     Glean.translations.translationRequest,
     {
       expectedEventCount: 1,
@@ -110,39 +68,23 @@ add_task(async function test_translations_telemetry_firstrun_auto_translate() {
     }
   );
 
-  await waitForTranslationsPopupEvent(
-    "popupshown",
-    () => {
-      click(button, "Opening the popup");
-    },
-    assertPanelRevisitView
-  );
+  await openTranslationsPanel({ onOpenPanel: assertPanelRevisitView });
 
-  await waitForTranslationsPopupEvent("popuphidden", () => {
-    click(
-      getByL10nId("translations-panel-restore-button"),
-      "Click the restore-page button."
-    );
+  await clickRestoreButton();
+
+  await TestTranslationsTelemetry.assertEvent(Glean.translationsPanel.open, {
+    expectedEventCount: 2,
+    expectNewFlowId: true,
+    expectFirstInteraction: false,
+    finalValuePredicates: [
+      value => value.extra.auto_show === "false",
+      value => value.extra.view_name === "revisitView",
+      value => value.extra.opened_from === "translationsButton",
+      value => value.extra.document_language === "es",
+    ],
   });
 
   await TestTranslationsTelemetry.assertEvent(
-    "OpenPanel",
-    Glean.translationsPanel.open,
-    {
-      expectedEventCount: 2,
-      expectNewFlowId: true,
-      expectFirstInteraction: false,
-      finalValuePredicates: [
-        value => value.extra.auto_show === "false",
-        value => value.extra.view_name === "revisitView",
-        value => value.extra.opened_from === "translationsButton",
-        value => value.extra.document_language === "es",
-      ],
-    }
-  );
-
-  await TestTranslationsTelemetry.assertEvent(
-    "RestorePageButton",
     Glean.translationsPanel.restorePageButton,
     {
       expectedEventCount: 1,
@@ -151,26 +93,14 @@ add_task(async function test_translations_telemetry_firstrun_auto_translate() {
     }
   );
 
-  await TestTranslationsTelemetry.assertEvent(
-    "ClosePanel",
-    Glean.translationsPanel.close,
-    {
-      expectedEventCount: 2,
-      expectFirstInteraction: false,
-      expectNewFlowId: false,
-    }
-  );
+  await TestTranslationsTelemetry.assertEvent(Glean.translationsPanel.close, {
+    expectedEventCount: 2,
+    expectFirstInteraction: false,
+    expectNewFlowId: false,
+  });
 
   await assertTranslationsButton({ button: true }, "The button is available.");
-
-  await runInPage(async TranslationsTest => {
-    const { getH1 } = TranslationsTest.getSelectors();
-    await TranslationsTest.assertTranslationResult(
-      "The page's H1 is in Spanish.",
-      getH1,
-      "Don Quijote de La Mancha"
-    );
-  });
+  await assertPageIsUntranslated(runInPage);
 
   await cleanup();
 });

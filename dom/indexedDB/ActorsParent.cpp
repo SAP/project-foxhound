@@ -2943,7 +2943,6 @@ class VersionChangeTransaction final
 
 class FactoryOp
     : public DatabaseOperationBase,
-      public OpenDirectoryListener,
       public PBackgroundIDBFactoryRequestParent,
       public SupportsCheckedUnsafePtr<CheckIf<DiagnosticAssertEnabled>> {
  public:
@@ -3131,18 +3130,13 @@ class FactoryOp
   // Should only be called by Run().
   virtual void SendResults() = 0;
 
-  // We need to declare refcounting unconditionally, because
-  // OpenDirectoryListener has pure-virtual refcounting.
-  NS_DECL_ISUPPORTS_INHERITED
-
   // Common nsIRunnable implementation that subclasses may not override.
   NS_IMETHOD
   Run() final;
 
-  // OpenDirectoryListener overrides.
-  void DirectoryLockAcquired(DirectoryLock* aLock) override;
+  void DirectoryLockAcquired(DirectoryLock* aLock);
 
-  void DirectoryLockFailed() override;
+  void DirectoryLockFailed();
 
   // IPDL methods.
   void ActorDestroy(ActorDestroyReason aWhy) override;
@@ -4830,8 +4824,7 @@ class QuotaClient final : public mozilla::dom::quota::Client {
   void ProcessMaintenanceQueue();
 };
 
-class DeleteFilesRunnable final : public Runnable,
-                                  public OpenDirectoryListener {
+class DeleteFilesRunnable final : public Runnable {
   using DirectoryLock = mozilla::dom::quota::DirectoryLock;
 
   enum State {
@@ -4878,16 +4871,14 @@ class DeleteFilesRunnable final : public Runnable,
 
   void UnblockOpen();
 
-  NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_NSIRUNNABLE
 
-  // OpenDirectoryListener overrides.
-  virtual void DirectoryLockAcquired(DirectoryLock* aLock) override;
+  void DirectoryLockAcquired(DirectoryLock* aLock);
 
-  virtual void DirectoryLockFailed() override;
+  void DirectoryLockFailed();
 };
 
-class Maintenance final : public Runnable, public OpenDirectoryListener {
+class Maintenance final : public Runnable {
   struct DirectoryInfo final {
     InitializedOnce<const OriginMetadata> mOriginMetadata;
     InitializedOnce<const nsTArray<nsString>> mDatabasePaths;
@@ -5033,16 +5024,11 @@ class Maintenance final : public Runnable, public OpenDirectoryListener {
   // if any of above methods fails.
   void Finish();
 
-  // We need to declare refcounting unconditionally, because
-  // OpenDirectoryListener has pure-virtual refcounting.
-  NS_DECL_ISUPPORTS_INHERITED
-
   NS_DECL_NSIRUNNABLE
 
-  // OpenDirectoryListener overrides.
-  void DirectoryLockAcquired(DirectoryLock* aLock) override;
+  void DirectoryLockAcquired(DirectoryLock* aLock);
 
-  void DirectoryLockFailed() override;
+  void DirectoryLockFailed();
 };
 
 Maintenance::DirectoryInfo::DirectoryInfo(PersistenceType aPersistenceType,
@@ -12724,12 +12710,21 @@ void DeleteFilesRunnable::Open() {
     return;
   }
 
-  RefPtr<DirectoryLock> directoryLock = quotaManager->CreateDirectoryLock(
-      mFileManager->Type(), mFileManager->OriginMetadata(), quota::Client::IDB,
-      /* aExclusive */ false);
-
   mState = State_DirectoryOpenPending;
-  directoryLock->Acquire(this);
+
+  quotaManager
+      ->OpenClientDirectory(
+          {mFileManager->OriginMetadata(), quota::Client::IDB})
+      ->Then(
+          GetCurrentSerialEventTarget(), __func__,
+          [self = RefPtr(this)](
+              const ClientDirectoryLockPromise::ResolveOrRejectValue& aValue) {
+            if (aValue.IsResolve()) {
+              self->DirectoryLockAcquired(aValue.ResolveValue());
+            } else {
+              self->DirectoryLockFailed();
+            }
+          });
 }
 
 void DeleteFilesRunnable::DoDatabaseWork() {
@@ -12765,8 +12760,6 @@ void DeleteFilesRunnable::UnblockOpen() {
 
   mState = State_Completed;
 }
-
-NS_IMPL_ISUPPORTS_INHERITED0(DeleteFilesRunnable, Runnable)
 
 NS_IMETHODIMP
 DeleteFilesRunnable::Run() {
@@ -12941,21 +12934,28 @@ nsresult Maintenance::OpenDirectory() {
     return NS_ERROR_ABORT;
   }
 
-  // Get a shared lock for <profile>/storage/*/*/idb
+  QuotaManager* quotaManager = QuotaManager::Get();
+  MOZ_ASSERT(quotaManager);
 
-  mPendingDirectoryLock = QuotaManager::Get()->CreateDirectoryLockInternal(
-      Nullable<PersistenceType>(), OriginScope::FromNull(),
-      Nullable<Client::Type>(Client::IDB),
-      /* aExclusive */ false);
+  // Get a shared lock for <profile>/storage/*/*/idb
 
   mState = State::DirectoryOpenPending;
 
-  {
-    // Pin the directory lock, because Acquire might clear mPendingDirectoryLock
-    // during the Acquire call.
-    RefPtr pinnedDirectoryLock = mPendingDirectoryLock;
-    pinnedDirectoryLock->Acquire(this);
-  }
+  quotaManager
+      ->OpenStorageDirectory(
+          Nullable<PersistenceType>(), OriginScope::FromNull(),
+          Nullable<Client::Type>(Client::IDB), /* aExclusive */ false,
+          SomeRef(mPendingDirectoryLock))
+      ->Then(GetCurrentSerialEventTarget(), __func__,
+             [self = RefPtr(this)](
+                 const UniversalDirectoryLockPromise::ResolveOrRejectValue&
+                     aValue) {
+               if (aValue.IsResolve()) {
+                 self->DirectoryLockAcquired(aValue.ResolveValue());
+               } else {
+                 self->DirectoryLockFailed();
+               }
+             });
 
   return NS_OK;
 }
@@ -13000,8 +13000,6 @@ nsresult Maintenance::DirectoryWork() {
 
   QuotaManager* const quotaManager = QuotaManager::Get();
   MOZ_ASSERT(quotaManager);
-
-  QM_TRY(MOZ_TO_RESULT(quotaManager->EnsureStorageIsInitialized()));
 
   // Since idle maintenance may occur before temporary storage is initialized,
   // make sure it's initialized here (all non-persistent origins need to be
@@ -13353,8 +13351,6 @@ void Maintenance::Finish() {
 
   mState = State::Complete;
 }
-
-NS_IMPL_ISUPPORTS_INHERITED0(Maintenance, Runnable)
 
 NS_IMETHODIMP
 Maintenance::Run() {
@@ -14953,13 +14949,19 @@ nsresult FactoryOp::FinishOpen() {
       }()));
 
   // Open directory
-  RefPtr<DirectoryLock> directoryLock = quotaManager->CreateDirectoryLock(
-      persistenceType, mOriginMetadata, Client::IDB,
-      /* aExclusive */ false);
-
   mState = State::DirectoryOpenPending;
 
-  directoryLock->Acquire(this);
+  quotaManager->OpenClientDirectory({mOriginMetadata, Client::IDB})
+      ->Then(
+          GetCurrentSerialEventTarget(), __func__,
+          [self = RefPtr(this)](
+              const ClientDirectoryLockPromise::ResolveOrRejectValue& aValue) {
+            if (aValue.IsResolve()) {
+              self->DirectoryLockAcquired(aValue.ResolveValue());
+            } else {
+              self->DirectoryLockFailed();
+            }
+          });
 
   return NS_OK;
 }
@@ -14974,8 +14976,6 @@ bool FactoryOp::MustWaitFor(const FactoryOp& aExistingOp) {
          aExistingOp.mOriginMetadata.mOrigin == mOriginMetadata.mOrigin &&
          aExistingOp.mDatabaseId == mDatabaseId;
 }
-
-NS_IMPL_ISUPPORTS_INHERITED0(FactoryOp, DatabaseOperationBase)
 
 // Run() assumes that the caller holds a strong reference to the object that
 // can't be cleared while Run() is being executed.
@@ -15135,8 +15135,6 @@ nsresult OpenDatabaseOp::DoDatabaseWork() {
 
   QuotaManager* const quotaManager = QuotaManager::Get();
   MOZ_ASSERT(quotaManager);
-
-  QM_TRY(MOZ_TO_RESULT(quotaManager->EnsureStorageIsInitialized()));
 
   QM_TRY_INSPECT(
       const auto& dbDirectory,

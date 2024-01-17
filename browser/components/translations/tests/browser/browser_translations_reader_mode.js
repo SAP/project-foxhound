@@ -17,14 +17,7 @@ add_task(async function test_translations_button_hidden_in_reader_mode() {
     "The translations button is visible."
   );
 
-  await runInPage(async TranslationsTest => {
-    const { getH1 } = TranslationsTest.getSelectors();
-    await TranslationsTest.assertTranslationResult(
-      "The page's H1 is in Spanish.",
-      getH1,
-      "Don Quijote de La Mancha"
-    );
-  });
+  await assertPageIsUntranslated(runInPage);
 
   await toggleReaderMode();
 
@@ -58,14 +51,7 @@ add_task(async function test_translations_button_hidden_in_reader_mode() {
     "The translations button is visible again outside of reader mode."
   );
 
-  await runInPage(async TranslationsTest => {
-    const { getH1 } = TranslationsTest.getSelectors();
-    await TranslationsTest.assertTranslationResult(
-      "The page's H1 is in Spanish.",
-      getH1,
-      "Don Quijote de La Mancha"
-    );
-  });
+  await assertPageIsUntranslated(runInPage);
 
   await cleanup();
 });
@@ -79,53 +65,20 @@ add_task(async function test_translations_persist_in_reader_mode() {
     languagePairs: LANGUAGE_PAIRS,
   });
 
-  const { button } = await assertTranslationsButton(
+  await assertTranslationsButton(
     { button: true },
     "The translations button is visible."
   );
 
-  await runInPage(async TranslationsTest => {
-    const { getH1 } = TranslationsTest.getSelectors();
-    await TranslationsTest.assertTranslationResult(
-      "The page's H1 is in Spanish.",
-      getH1,
-      "Don Quijote de La Mancha"
-    );
+  await assertPageIsUntranslated(runInPage);
+
+  await openTranslationsPanel({ onOpenPanel: assertPanelDefaultView });
+
+  await clickTranslateButton({
+    downloadHandler: resolveDownloads,
   });
 
-  await waitForTranslationsPopupEvent("popupshown", () => {
-    click(button, "Opening the popup");
-  });
-
-  await waitForTranslationsPopupEvent("popuphidden", () => {
-    click(
-      getByL10nId("translations-panel-translate-button"),
-      "Start translating by clicking the translate button."
-    );
-  });
-
-  await assertTranslationsButton(
-    { button: true, circleArrows: true, locale: false, icon: true },
-    "The icon presents the loading indicator."
-  );
-
-  await resolveDownloads(1);
-
-  const { locale } = await assertTranslationsButton(
-    { button: true, circleArrows: false, locale: true, icon: true },
-    "The icon presents the locale."
-  );
-
-  is(locale.innerText, "en", "The English language tag is shown.");
-
-  await runInPage(async TranslationsTest => {
-    const { getH1 } = TranslationsTest.getSelectors();
-    await TranslationsTest.assertTranslationResult(
-      "The pages H1 is translated.",
-      getH1,
-      "DON QUIJOTE DE LA MANCHA [es to en, html]"
-    );
-  });
+  await assertPageIsTranslated("es", "en", runInPage);
 
   await toggleReaderMode();
 

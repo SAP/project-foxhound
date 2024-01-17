@@ -1033,6 +1033,7 @@ def sysroot(host_or_target, target_sysroot=None):
         opt = "--with-host-sysroot"
         env = "HOST_SYSROOT"
         when = depends(host)(lambda h: h.kernel == "Linux")
+
         # Only bootstrap a host sysroot when using a bootstrapped target sysroot
         # or when the target doesn't use a bootstrapped sysroot in the first place.
         @depends(when, bootstrap_target_when, target_sysroot.bootstrapped)
@@ -1413,9 +1414,9 @@ def compiler(
 
         # If you want to bump the version check here ensure the version
         # is known for Xcode in get_compiler_info.
-        if info.type == "clang" and info.version < "7.0":
+        if info.type == "clang" and info.version < "8.0":
             raise FatalCheckError(
-                "Only clang/llvm 7.0 or newer is supported (found version %s)."
+                "Only clang/llvm 8.0 or newer is supported (found version %s)."
                 % info.version
             )
 
@@ -1634,7 +1635,7 @@ set_config("CXX_IS_ICECREAM", cxx_is_icecream)
 # The policy is as follows:
 # For Windows:
 # - the linker is picked via the LINKER environment variable per windows.configure,
-#   but ought to be llvm-lld in any case.
+#   but ought to be lld-link in any case.
 # For macOS:
 # - the linker is lld if the clang used is >= 15 (per LLVM version, not Xcode version).
 # - the linker is also lld on local developer builds if the clang used is >= 13 (per LLVM
@@ -1642,8 +1643,8 @@ set_config("CXX_IS_ICECREAM", cxx_is_icecream)
 # - otherwise the linker is ld64, either from XCode on macOS, or from cctools-ports when
 #   cross-compiling.
 # For other OSes:
-# - on local developer builds: lld is used if present. Otherwise gold is used if present
-#   otherwise, BFD ld is used.
+# - on local developer builds: lld is used if present and the compiler is clang. Otherwise
+#   gold is used if present, otherwise, BFD ld is used.
 # - on release/official builds: whatever the compiler uses by default, except on Android
 #   (see enable_linker_default below). Usually what the compiler uses by default is BFD
 #   ld, except with the Android NDK compiler, where the default varies depending on the
@@ -1731,7 +1732,6 @@ def select_linker_tmpl(host_or_target):
     @imports("os")
     @imports("shutil")
     def select_linker(linker, c_compiler, developer_options, toolchain_flags, target):
-
         if linker:
             linker = linker[0]
         else:
@@ -1808,38 +1808,36 @@ def select_linker_tmpl(host_or_target):
                     LINKER_FLAG=linker_flag,
                 )
 
-        result = try_linker(linker)
-        if result is None and linker:
-            die("Could not use {} as linker".format(linker))
+        result = None
+        if linker:
+            result = try_linker(linker)
+            if result is None:
+                die("Could not use {} as linker".format(linker))
 
         if (
-            linker is None
-            and target.kernel == "Darwin"
+            result is None
             and c_compiler.type == "clang"
             and (
-                (developer_options and c_compiler.version >= "13.0")
-                or c_compiler.version >= "15.0"
+                (
+                    target.kernel != "Darwin"
+                    and (developer_options or host_or_target_str == "host")
+                )
+                or (
+                    target.kernel == "Darwin"
+                    and (
+                        (developer_options and c_compiler.version >= "13.0")
+                        or c_compiler.version >= "15.0"
+                    )
+                )
             )
         ):
             result = try_linker("lld")
-        elif (
-            linker is None
-            and (
-                developer_options
-                or (host_or_target_str == "host" and c_compiler.type == "clang")
-            )
-            and (result is None or result.KIND in ("bfd", "gold"))
-        ):
-            # try and use lld if available.
-            tried = try_linker("lld")
-            if (result is None or result.KIND != "gold") and (
-                tried is None or tried.KIND != "lld"
-            ):
-                tried = try_linker("gold")
-                if tried is None or tried.KIND != "gold":
-                    tried = None
-            if tried:
-                result = tried
+
+        if result is None and developer_options:
+            result = try_linker("gold")
+
+        if result is None:
+            result = try_linker(None)
 
         if result is None:
             die("Failed to find an adequate linker")
@@ -1942,7 +1940,8 @@ def linker_ldflags_tmpl(host_or_target):
 linker_ldflags = linker_ldflags_tmpl(target)
 add_old_configure_assignment("LINKER_LDFLAGS", linker_ldflags)
 
-add_old_configure_assignment("HOST_LINKER_LDFLAGS", linker_ldflags_tmpl(host))
+host_linker_ldflags = linker_ldflags_tmpl(host)
+add_old_configure_assignment("HOST_LINKER_LDFLAGS", host_linker_ldflags)
 
 
 # There's a wrinkle with MinGW: linker configuration is not enabled, so
@@ -2413,7 +2412,7 @@ def security_hardening_cflags(
             if (
                 c_compiler.type == "clang"
                 and c_compiler.version >= "11.0.1"
-                and target.os not in ("WINNT", "OSX")
+                and target.os not in ("WINNT", "OSX", "OpenBSD")
                 and target.cpu in ("x86", "x86_64", "ppc64", "s390x")
             ):
                 flags.append("-fstack-clash-protection")
@@ -2501,6 +2500,7 @@ def cet_ldflags(c_compiler, target):
 
 
 set_config("MOZ_CETCOMPAT_LDFLAGS", cet_ldflags)
+
 
 # Frame pointers
 # ==============================================================
@@ -2787,6 +2787,7 @@ add_old_configure_assignment(
     "ENABLE_MOZSEARCH_PLUGIN", depends_if("--enable-mozsearch-plugin")(lambda _: True)
 )
 
+
 # Libstdc++ compatibility hacks
 # ==============================================================
 #
@@ -2967,6 +2968,7 @@ add_old_configure_assignment("LIBFUZZER_FLAGS", libfuzzer_flags.use_flags)
 
 # Shared library building
 # ==============================================================
+
 
 # XXX: The use of makefile constructs in these variables is awful.
 @depends(target, c_compiler)

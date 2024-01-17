@@ -10,9 +10,11 @@ use cssparser::{Parser, ParserInput, SourceLocation, UnicodeRange};
 use dom::{DocumentState, ElementState};
 use malloc_size_of::MallocSizeOfOps;
 use nsstring::{nsCString, nsString};
-use selectors::matching::{MatchingForInvalidation, SelectorCaches};
+use selectors::matching::{ElementSelectorFlags, MatchingForInvalidation, SelectorCaches};
+use selectors::Element;
 use servo_arc::{Arc, ArcBorrow};
 use smallvec::SmallVec;
+use style::invalidation::element::element_wrapper::{ElementWrapper, ElementSnapshot};
 use style::values::generics::color::ColorMixFlags;
 use std::collections::BTreeSet;
 use std::fmt::Write;
@@ -42,7 +44,7 @@ use style::gecko::selector_parser::{NonTSPseudoClass, PseudoElement};
 use style::gecko::snapshot_helpers::classes_changed;
 use style::gecko::traversal::RecalcStyleOnly;
 use style::gecko::url;
-use style::gecko::wrapper::{GeckoElement, GeckoNode};
+use style::gecko::wrapper::{GeckoElement, GeckoNode, slow_selector_flags_from_node_selector_flags};
 use style::gecko_bindings::bindings;
 use style::gecko_bindings::bindings::nsACString;
 use style::gecko_bindings::bindings::nsAString;
@@ -93,6 +95,11 @@ use style::gecko_bindings::sugar::ownership::Strong;
 use style::gecko_bindings::sugar::refptr::RefPtr;
 use style::global_style_data::{
     GlobalStyleData, PlatformThreadHandle, StyleThreadPool, GLOBAL_STYLE_DATA, STYLE_THREAD_POOL,
+};
+use style::invalidation::element::invalidation_map::{RelativeSelectorInvalidationMap, TSStateForInvalidation};
+use style::invalidation::element::invalidator::{InvalidationResult, SiblingTraversalMap};
+use style::invalidation::element::relative_selector::{
+    RelativeSelectorDependencyCollector, RelativeSelectorInvalidator,
 };
 use style::invalidation::element::restyle_hints::RestyleHint;
 use style::invalidation::stylesheets::RuleChangeKind;
@@ -296,7 +303,7 @@ pub extern "C" fn Servo_TraverseSubtree(
     snapshots: *const ServoElementSnapshotTable,
     raw_flags: ServoTraversalFlags,
 ) -> bool {
-    let traversal_flags = TraversalFlags::from_bits_retain(raw_flags);
+    let traversal_flags = TraversalFlags::from_bits_truncate(raw_flags);
     debug_assert!(!snapshots.is_null());
 
     let element = GeckoElement(root);
@@ -1940,22 +1947,22 @@ pub extern "C" fn Servo_StyleSheet_GetOrigin(sheet: &StylesheetContents) -> Orig
 #[no_mangle]
 pub extern "C" fn Servo_StyleSheet_GetSourceMapURL(
     contents: &StylesheetContents,
-    result: &mut nsAString,
+    result: &mut nsACString,
 ) {
     let url_opt = contents.source_map_url.read();
     if let Some(ref url) = *url_opt {
-        write!(result, "{}", url).unwrap();
+        result.assign(url);
     }
 }
 
 #[no_mangle]
 pub extern "C" fn Servo_StyleSheet_GetSourceURL(
     contents: &StylesheetContents,
-    result: &mut nsAString,
+    result: &mut nsACString,
 ) {
     let url_opt = contents.source_url.read();
     if let Some(ref url) = *url_opt {
-        write!(result, "{}", url).unwrap();
+        result.assign(url);
     }
 }
 
@@ -5163,7 +5170,7 @@ pub extern "C" fn Servo_DeclarationBlock_SetKeywordValue(
         Clear => get_from_computed::<Clear>(value),
         VerticalAlign => VerticalAlign::Keyword(VerticalAlignKeyword::from_u32(value).unwrap()),
         TextAlign => get_from_computed::<TextAlign>(value),
-        TextEmphasisPosition => TextEmphasisPosition::from_bits_retain(value as u8),
+        TextEmphasisPosition => TextEmphasisPosition::from_bits_truncate(value as u8),
         FontSize => {
             // We rely on Gecko passing in font-size values (0...7) here.
             longhands::font_size::SpecifiedValue::from_html_size(value as u8)
@@ -5341,7 +5348,7 @@ pub extern "C" fn Servo_DeclarationBlock_SetLengthValue(
     use style::properties::PropertyDeclaration;
     use style::values::generics::length::{LengthPercentageOrAuto, Size};
     use style::values::generics::NonNegative;
-    use style::values::specified::length::{FontRelativeLength, LengthPercentage};
+    use style::values::specified::length::{FontRelativeLength, LengthPercentage, ViewportPercentageLength};
     use style::values::specified::FontSize;
 
     let long = get_longhand_from_id!(property);
@@ -5351,6 +5358,18 @@ pub extern "C" fn Servo_DeclarationBlock_SetLengthValue(
         },
         structs::nsCSSUnit::eCSSUnit_XHeight => {
             NoCalcLength::FontRelative(FontRelativeLength::Ex(value))
+        },
+        structs::nsCSSUnit::eCSSUnit_RootEM => {
+            NoCalcLength::FontRelative(FontRelativeLength::Rem(value))
+        },
+        structs::nsCSSUnit::eCSSUnit_Char => {
+            NoCalcLength::FontRelative(FontRelativeLength::Ch(value))
+        },
+        structs::nsCSSUnit::eCSSUnit_Ideographic => {
+            NoCalcLength::FontRelative(FontRelativeLength::Ic(value))
+        },
+        structs::nsCSSUnit::eCSSUnit_CapHeight => {
+            NoCalcLength::FontRelative(FontRelativeLength::Cap(value))
         },
         structs::nsCSSUnit::eCSSUnit_Pixel => NoCalcLength::Absolute(AbsoluteLength::Px(value)),
         structs::nsCSSUnit::eCSSUnit_Inch => NoCalcLength::Absolute(AbsoluteLength::In(value)),
@@ -5363,6 +5382,18 @@ pub extern "C" fn Servo_DeclarationBlock_SetLengthValue(
         structs::nsCSSUnit::eCSSUnit_Point => NoCalcLength::Absolute(AbsoluteLength::Pt(value)),
         structs::nsCSSUnit::eCSSUnit_Pica => NoCalcLength::Absolute(AbsoluteLength::Pc(value)),
         structs::nsCSSUnit::eCSSUnit_Quarter => NoCalcLength::Absolute(AbsoluteLength::Q(value)),
+        structs::nsCSSUnit::eCSSUnit_VW => {
+            NoCalcLength::ViewportPercentage(ViewportPercentageLength::Vw(value))
+        },
+        structs::nsCSSUnit::eCSSUnit_VH => {
+            NoCalcLength::ViewportPercentage(ViewportPercentageLength::Vh(value))
+        },
+        structs::nsCSSUnit::eCSSUnit_VMin => {
+            NoCalcLength::ViewportPercentage(ViewportPercentageLength::Vmin(value))
+        },
+        structs::nsCSSUnit::eCSSUnit_VMax => {
+            NoCalcLength::ViewportPercentage(ViewportPercentageLength::Vmax(value))
+        },
         _ => unreachable!("Unknown unit passed to SetLengthValue"),
     };
 
@@ -5769,7 +5800,6 @@ pub extern "C" fn Servo_ResolveStyleLazily(
     can_use_cache: bool,
     raw_data: &PerDocumentStyleData,
 ) -> Strong<ComputedValues> {
-    use selectors::Element;
     debug_assert!(!snapshots.is_null());
     let global_style_data = &*GLOBAL_STYLE_DATA;
     let guard = global_style_data.shared_lock.read();
@@ -6716,6 +6746,542 @@ pub extern "C" fn Servo_StyleSet_MightHaveNthOfAttributeDependency(
     }
 }
 
+fn on_siblings_invalidated(element: GeckoElement) {
+    let parent = element
+        .traversal_parent()
+        .expect("How could we invalidate siblings without a common parent?");
+    unsafe {
+        parent.set_dirty_descendants();
+        bindings::Gecko_NoteDirtySubtreeForInvalidation(parent.0);
+    }
+}
+
+fn restyle_for_nth_of(element: GeckoElement, flags: ElementSelectorFlags) {
+    debug_assert!(
+        !flags.is_empty(),
+        "Calling restyle for nth but no relevant flag is set."
+    );
+    fn invalidate_siblings_of(
+        element: GeckoElement,
+        get_sibling: fn(GeckoElement) -> Option<GeckoElement>,
+    ) {
+        let mut sibling = get_sibling(element);
+        while let Some(sib) = sibling {
+            if let Some(mut data) = sib.mutate_data() {
+                data.hint.insert(RestyleHint::restyle_subtree());
+            }
+            sibling = get_sibling(sib);
+        }
+    }
+
+    if flags.intersects(ElementSelectorFlags::HAS_SLOW_SELECTOR) {
+        invalidate_siblings_of(element, |e| e.prev_sibling_element());
+    }
+    if flags.intersects(ElementSelectorFlags::HAS_SLOW_SELECTOR_LATER_SIBLINGS) {
+        invalidate_siblings_of(element, |e| e.next_sibling_element());
+    }
+    on_siblings_invalidated(element);
+}
+
+fn relative_selector_invalidated_at(element: GeckoElement, result: &InvalidationResult) {
+    if result.has_invalidated_siblings() {
+        on_siblings_invalidated(element);
+    } else if result.has_invalidated_descendants() {
+        unsafe { bindings::Gecko_NoteDirtySubtreeForInvalidation(element.0) };
+    } else if result.has_invalidated_self() {
+        unsafe { bindings::Gecko_NoteDirtyElement(element.0) };
+        let flags = element
+            .parent_element()
+            .map_or(ElementSelectorFlags::empty(), |e| e.slow_selector_flags());
+        // We invalidated up to the anchor, and it has a flag for nth-of invalidation.
+        if !flags.is_empty() {
+            restyle_for_nth_of(element, flags);
+        }
+    }
+}
+
+fn add_relative_selector_attribute_dependency<'a>(
+    element: &GeckoElement<'a>,
+    scope: &Option<GeckoElement<'a>>,
+    invalidation_map: &'a RelativeSelectorInvalidationMap,
+    attribute: &AtomIdent,
+    collector: &mut RelativeSelectorDependencyCollector<'a, GeckoElement<'a>>,
+) {
+    match invalidation_map
+        .map
+        .other_attribute_affecting_selectors
+        .get(attribute)
+    {
+        Some(v) => {
+            for dependency in v {
+                collector.add_dependency(dependency, *element, *scope);
+            }
+        },
+        None => (),
+    };
+}
+
+fn inherit_relative_selector_search_direction(
+    element: &GeckoElement,
+    prev_sibling: Option<GeckoElement>,
+) -> ElementSelectorFlags {
+    let mut inherited = ElementSelectorFlags::empty();
+    if let Some(parent) = element.parent_element() {
+        if let Some(direction) = parent.relative_selector_search_direction() {
+            inherited |= direction
+                .intersection(ElementSelectorFlags::RELATIVE_SELECTOR_SEARCH_DIRECTION_ANCESTOR);
+        }
+    }
+    if let Some(sibling) = prev_sibling {
+        if let Some(direction) = sibling.relative_selector_search_direction() {
+            // Inherit both, for e.g. a sibling with `:has(~.sibling .descendant)`
+            inherited |= direction.intersection(
+                ElementSelectorFlags::RELATIVE_SELECTOR_SEARCH_DIRECTION_ANCESTOR_SIBLING,
+            );
+        }
+    }
+    inherited
+}
+
+#[no_mangle]
+pub extern "C" fn Servo_StyleSet_MaybeInvalidateRelativeSelectorIDDependency(
+    raw_data: &PerDocumentStyleData,
+    element: &RawGeckoElement,
+    old_id: *mut nsAtom,
+    new_id: *mut nsAtom,
+) {
+    let data = raw_data.borrow();
+    let element = GeckoElement(element);
+
+    let quirks_mode: QuirksMode = data.stylist.quirks_mode();
+    let invalidator = RelativeSelectorInvalidator {
+        element,
+        quirks_mode,
+        invalidated: relative_selector_invalidated_at,
+        sibling_traversal_map: SiblingTraversalMap::default(),
+        _marker: std::marker::PhantomData,
+    };
+
+    invalidator.invalidate_relative_selectors_for_this(
+        &data.stylist,
+        |element, scope, data, quirks_mode, collector| {
+            let invalidation_map = data.relative_selector_invalidation_map();
+            relative_selector_dependencies_for_id(
+                old_id,
+                new_id,
+                element,
+                scope,
+                quirks_mode,
+                &invalidation_map,
+                collector
+            );
+            add_relative_selector_attribute_dependency(
+                element,
+                &scope,
+                invalidation_map,
+                &AtomIdent(atom!("id")),
+                collector,
+            );
+        },
+    );
+}
+
+#[no_mangle]
+pub extern "C" fn Servo_StyleSet_MaybeInvalidateRelativeSelectorClassDependency(
+    raw_data: &PerDocumentStyleData,
+    element: &RawGeckoElement,
+    snapshots: &ServoElementSnapshotTable,
+) {
+    let data = raw_data.borrow();
+    let element = GeckoElement(element);
+    let quirks_mode: QuirksMode = data.stylist.quirks_mode();
+    let invalidator = RelativeSelectorInvalidator {
+        element,
+        quirks_mode,
+        invalidated: relative_selector_invalidated_at,
+        sibling_traversal_map: SiblingTraversalMap::default(),
+        _marker: std::marker::PhantomData,
+    };
+
+    invalidator.invalidate_relative_selectors_for_this(
+        &data.stylist,
+        |element, scope, data, quirks_mode, mut collector| {
+            let invalidation_map = data.relative_selector_invalidation_map();
+
+            relative_selector_dependencies_for_class(
+                &classes_changed(element, snapshots),
+                &element,
+                scope,
+                quirks_mode,
+                invalidation_map,
+                collector
+            );
+            add_relative_selector_attribute_dependency(
+                element,
+                &scope,
+                invalidation_map,
+                &AtomIdent(atom!("class")),
+                &mut collector,
+            );
+        },
+    );
+}
+
+#[no_mangle]
+pub extern "C" fn Servo_StyleSet_MaybeInvalidateRelativeSelectorAttributeDependency(
+    raw_data: &PerDocumentStyleData,
+    element: &RawGeckoElement,
+    local_name: *mut nsAtom,
+) {
+    let data = raw_data.borrow();
+    let element = GeckoElement(element);
+
+    let quirks_mode: QuirksMode = data.stylist.quirks_mode();
+    unsafe {
+        AtomIdent::with(local_name, |atom| {
+            let invalidator = RelativeSelectorInvalidator {
+                element,
+                quirks_mode,
+                invalidated: relative_selector_invalidated_at,
+                sibling_traversal_map: SiblingTraversalMap::default(),
+                _marker: std::marker::PhantomData,
+            };
+
+            invalidator.invalidate_relative_selectors_for_this(
+                &data.stylist,
+                |element, scope, data, _quirks_mode, mut collector| {
+                    add_relative_selector_attribute_dependency(
+                        element,
+                        &scope,
+                        data.relative_selector_invalidation_map(),
+                        atom,
+                        &mut collector,
+                    );
+                },
+            );
+        })
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn Servo_StyleSet_MaybeInvalidateRelativeSelectorStateDependency(
+    raw_data: &PerDocumentStyleData,
+    element: &RawGeckoElement,
+    state: u64,
+) {
+    let element = GeckoElement(element);
+
+    let state = match ElementState::from_bits(state) {
+        Some(state) => state,
+        None => return,
+    };
+    let data = raw_data.borrow();
+    let quirks_mode: QuirksMode = data.stylist.quirks_mode();
+
+    let invalidator = RelativeSelectorInvalidator {
+        element,
+        quirks_mode,
+        invalidated: relative_selector_invalidated_at,
+        sibling_traversal_map: SiblingTraversalMap::default(),
+        _marker: std::marker::PhantomData,
+    };
+
+    invalidator.invalidate_relative_selectors_for_this(
+        &data.stylist,
+        |element, scope, data, quirks_mode, collector| {
+            let invalidation_map = data.relative_selector_invalidation_map();
+            invalidation_map
+                .map
+                .state_affecting_selectors
+                .lookup_with_additional(*element, quirks_mode, None, &[], state, |dependency| {
+                    if !dependency.state.intersects(state) {
+                        return true;
+                    }
+                    collector.add_dependency(&dependency.dep, *element, *scope);
+                    true
+                });
+        },
+    );
+}
+
+fn invalidate_relative_selector_prev_sibling_side_effect(
+    prev_sibling: GeckoElement,
+    quirks_mode: QuirksMode,
+    sibling_traversal_map: SiblingTraversalMap<GeckoElement>,
+    stylist: &Stylist,
+) {
+    let invalidator = RelativeSelectorInvalidator {
+        element: prev_sibling,
+        quirks_mode,
+        invalidated: relative_selector_invalidated_at,
+        sibling_traversal_map,
+        _marker: std::marker::PhantomData,
+    };
+    invalidator.invalidate_relative_selectors_for_dom_mutation(
+        false,
+        &stylist,
+        ElementSelectorFlags::empty(),
+        |d| d.right_combinator_is_next_sibling(),
+    );
+}
+
+fn invalidate_relative_selector_next_sibling_side_effect(
+    next_sibling: GeckoElement,
+    quirks_mode: QuirksMode,
+    sibling_traversal_map: SiblingTraversalMap<GeckoElement>,
+    stylist: &Stylist,
+) {
+    let invalidator = RelativeSelectorInvalidator {
+        element: next_sibling,
+        quirks_mode,
+        invalidated: relative_selector_invalidated_at,
+        sibling_traversal_map,
+        _marker: std::marker::PhantomData,
+    };
+    invalidator.invalidate_relative_selectors_for_dom_mutation(
+        false,
+        &stylist,
+        ElementSelectorFlags::empty(),
+        |d| d.dependency_is_relative_with_single_next_sibling(),
+    );
+}
+
+fn invalidate_relative_selector_ts_dependency(
+    raw_data: &PerDocumentStyleData,
+    element: GeckoElement,
+    state: TSStateForInvalidation,
+) {
+    let data = raw_data.borrow();
+    let quirks_mode: QuirksMode = data.stylist.quirks_mode();
+
+    let invalidator = RelativeSelectorInvalidator {
+        element,
+        quirks_mode,
+        invalidated: relative_selector_invalidated_at,
+        sibling_traversal_map: SiblingTraversalMap::default(),
+        _marker: std::marker::PhantomData,
+    };
+
+    invalidator.invalidate_relative_selectors_for_this(
+        &data.stylist,
+        |element, scope, data, quirks_mode, collector| {
+            let invalidation_map = data.relative_selector_invalidation_map();
+            invalidation_map
+                .ts_state_to_selector
+                .lookup_with_additional(
+                    *element,
+                    quirks_mode,
+                    None,
+                    &[],
+                    ElementState::empty(),
+                    |dependency| {
+                        if !dependency.state.intersects(state) {
+                            return true;
+                        }
+                        collector.add_dependency(&dependency.dep, *element, *scope);
+                        true
+                    },
+                );
+        },
+    );
+}
+
+#[no_mangle]
+pub extern "C" fn Servo_StyleSet_MaybeInvalidateRelativeSelectorEmptyDependency(
+    raw_data: &PerDocumentStyleData,
+    element: &RawGeckoElement,
+) {
+    invalidate_relative_selector_ts_dependency(
+        raw_data,
+        GeckoElement(element),
+        TSStateForInvalidation::EMPTY,
+    );
+}
+
+#[no_mangle]
+pub extern "C" fn Servo_StyleSet_MaybeInvalidateRelativeSelectorNthEdgeDependency(
+    raw_data: &PerDocumentStyleData,
+    element: &RawGeckoElement,
+) {
+    invalidate_relative_selector_ts_dependency(
+        raw_data,
+        GeckoElement(element),
+        TSStateForInvalidation::NTH,
+    );
+}
+
+#[no_mangle]
+pub extern "C" fn Servo_StyleSet_MaybeInvalidateRelativeSelectorNthDependencyFromSibling(
+    raw_data: &PerDocumentStyleData,
+    element: &RawGeckoElement,
+) {
+    let mut element = Some(GeckoElement(element));
+
+    // Short of doing the actual matching, any of the siblings can match the selector, so we
+    // have to try invalidating against all of them.
+    while let Some(sibling) = element {
+        invalidate_relative_selector_ts_dependency(
+            raw_data,
+            sibling,
+            TSStateForInvalidation::NTH,
+        );
+        element = sibling.next_sibling_element();
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn Servo_StyleSet_MaybeInvalidateRelativeSelectorForInsertion(
+    raw_data: &PerDocumentStyleData,
+    element: &RawGeckoElement,
+) {
+    let element = GeckoElement(element);
+    let data = raw_data.borrow();
+    let quirks_mode: QuirksMode = data.stylist.quirks_mode();
+
+    let inherited =
+        inherit_relative_selector_search_direction(&element, element.prev_sibling_element());
+    if inherited.is_empty() {
+        return;
+    }
+
+    // Ok, we could've been inserted between two sibling elements that were connected
+    // through next sibling. This can happen in two ways:
+    // * `.a:has(+ .b)`
+    // * `:has(.. .a + .b ..)`
+    // Note that the previous sibling may be the anchor, and not part of the invalidation chain.
+    // Either way, there must be siblings to both sides of the element being inserted
+    // to consider it.
+    match (element.prev_sibling_element(), element.next_sibling_element()) {
+        (Some(prev_sibling), Some(next_sibling)) => {
+            invalidate_relative_selector_prev_sibling_side_effect(
+                prev_sibling,
+                quirks_mode,
+                SiblingTraversalMap::new(
+                    prev_sibling,
+                    prev_sibling.prev_sibling_element(),
+                    element.next_sibling_element(),
+                ), // Pretend this inserted element isn't here.
+                &data.stylist,
+            );
+            invalidate_relative_selector_next_sibling_side_effect(
+                next_sibling,
+                quirks_mode,
+                SiblingTraversalMap::new(
+                    next_sibling,
+                    Some(prev_sibling),
+                    next_sibling.next_sibling_element(),
+                ),
+                &data.stylist,
+            );
+        },
+        _ => (),
+    };
+
+
+    let invalidator = RelativeSelectorInvalidator {
+        element,
+        quirks_mode,
+        invalidated: relative_selector_invalidated_at,
+        sibling_traversal_map: SiblingTraversalMap::default(),
+        _marker: std::marker::PhantomData,
+    };
+
+    invalidator.invalidate_relative_selectors_for_dom_mutation(
+        true,
+        &data.stylist,
+        inherited,
+        |_| true,
+    );
+}
+
+#[no_mangle]
+pub extern "C" fn Servo_StyleSet_MaybeInvalidateRelativeSelectorForAppend(
+    raw_data: &PerDocumentStyleData,
+    first_element: &RawGeckoElement,
+) {
+    let first_element = GeckoElement(first_element);
+    let data = raw_data.borrow();
+    let quirks_mode: QuirksMode = data.stylist.quirks_mode();
+
+    let inherited = inherit_relative_selector_search_direction(
+        &first_element,
+        first_element.prev_sibling_element(),
+    );
+    if inherited.is_empty() {
+        return;
+    }
+
+    let mut element = Some(first_element);
+    while let Some(e) = element {
+        let invalidator = RelativeSelectorInvalidator {
+            element: e,
+            quirks_mode,
+            sibling_traversal_map: SiblingTraversalMap::default(),
+            invalidated: relative_selector_invalidated_at,
+            _marker: std::marker::PhantomData,
+        };
+        invalidator.invalidate_relative_selectors_for_dom_mutation(
+            true,
+            &data.stylist,
+            inherited,
+            |_| true,
+        );
+        element = e.next_sibling_element();
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn Servo_StyleSet_MaybeInvalidateRelativeSelectorForRemoval(
+    raw_data: &PerDocumentStyleData,
+    element: &RawGeckoElement,
+    prev_sibling: Option<&RawGeckoElement>,
+    next_sibling: Option<&RawGeckoElement>,
+) {
+    let element = GeckoElement(element);
+
+    let next_sibling = next_sibling.map(|e| GeckoElement(e));
+    let prev_sibling = prev_sibling.map(|e| GeckoElement(e));
+    let data = raw_data.borrow();
+    let quirks_mode: QuirksMode = data.stylist.quirks_mode();
+
+    let inherited = inherit_relative_selector_search_direction(&element, prev_sibling);
+    if inherited.is_empty() {
+        return;
+    }
+
+    // Same comment as insertion applies.
+    match (prev_sibling, next_sibling) {
+        (Some(prev_sibling), Some(next_sibling)) => {
+            invalidate_relative_selector_prev_sibling_side_effect(
+                prev_sibling,
+                quirks_mode,
+                SiblingTraversalMap::default(),
+                &data.stylist
+            );
+            invalidate_relative_selector_next_sibling_side_effect(
+                next_sibling,
+                quirks_mode,
+                SiblingTraversalMap::default(),
+                &data.stylist,
+            );
+        },
+        _ => (),
+    };
+    let invalidator = RelativeSelectorInvalidator {
+        element,
+        quirks_mode,
+        sibling_traversal_map: SiblingTraversalMap::new(element, prev_sibling, next_sibling),
+        invalidated: relative_selector_invalidated_at,
+        _marker: std::marker::PhantomData,
+    };
+    invalidator.invalidate_relative_selectors_for_dom_mutation(
+        true,
+        &data.stylist,
+        inherited,
+        |_| true,
+    );
+}
+
 #[no_mangle]
 pub extern "C" fn Servo_StyleSet_HasStateDependency(
     raw_data: &PerDocumentStyleData,
@@ -6724,7 +7290,7 @@ pub extern "C" fn Servo_StyleSet_HasStateDependency(
 ) -> bool {
     let element = GeckoElement(element);
 
-    let state = ElementState::from_bits_retain(state);
+    let state = ElementState::from_bits_truncate(state);
     let data = raw_data.borrow();
 
     data.stylist
@@ -6739,7 +7305,7 @@ pub extern "C" fn Servo_StyleSet_HasNthOfStateDependency(
 ) -> bool {
     let element = GeckoElement(element);
 
-    let state = ElementState::from_bits_retain(state);
+    let state = ElementState::from_bits_truncate(state);
     let data = raw_data.borrow();
 
     data.stylist
@@ -6747,11 +7313,18 @@ pub extern "C" fn Servo_StyleSet_HasNthOfStateDependency(
 }
 
 #[no_mangle]
+pub extern "C" fn Servo_StyleSet_RestyleSiblingsForNthOf(element: &RawGeckoElement, flags: u32) {
+    let flags = slow_selector_flags_from_node_selector_flags(flags);
+    let element = GeckoElement(element);
+    restyle_for_nth_of(element, flags);
+}
+
+#[no_mangle]
 pub extern "C" fn Servo_StyleSet_HasDocumentStateDependency(
     raw_data: &PerDocumentStyleData,
     state: u64,
 ) -> bool {
-    let state = DocumentState::from_bits_retain(state);
+    let state = DocumentState::from_bits_truncate(state);
     let data = raw_data.borrow();
 
     data.stylist.has_document_state_dependency(state)
@@ -6865,6 +7438,109 @@ pub extern "C" fn Servo_CssUrl_IsLocalRef(url: &url::CssUrl) -> bool {
     url.is_fragment()
 }
 
+fn relative_selector_dependencies_for_id<'a>(
+    old_id: *const nsAtom,
+    new_id: *const nsAtom,
+    element: &GeckoElement<'a>,
+    scope: &Option<GeckoElement<'a>>,
+    quirks_mode: QuirksMode,
+    invalidation_map: &'a RelativeSelectorInvalidationMap,
+    collector: &mut RelativeSelectorDependencyCollector<'a, GeckoElement<'a>>,
+) {
+    [old_id, new_id].iter().filter(|id| !id.is_null()).for_each(|id| {
+        unsafe {
+            AtomIdent::with(*id, |atom| {
+                match invalidation_map.map.id_to_selector.get(atom, quirks_mode) {
+                    Some(v) => {
+                        for dependency in v {
+                            collector.add_dependency(dependency, *element, *scope);
+                        }
+                    },
+                    None => (),
+                };
+            })
+        }
+    });
+}
+
+fn relative_selector_dependencies_for_class<'a>(
+    classes_changed: &SmallVec<[Atom; 8]>,
+    element: &GeckoElement<'a>,
+    scope: &Option<GeckoElement<'a>>,
+    quirks_mode: QuirksMode,
+    invalidation_map: &'a RelativeSelectorInvalidationMap,
+    collector: &mut RelativeSelectorDependencyCollector<'a, GeckoElement<'a>>,
+) {
+    classes_changed.iter().for_each(|atom| {
+        match invalidation_map
+            .map
+            .class_to_selector
+            .get(atom, quirks_mode)
+        {
+            Some(v) => {
+                for dependency in v {
+                    collector.add_dependency(dependency, *element, *scope);
+                }
+            },
+            None => (),
+        };
+    });
+}
+
+fn process_relative_selector_invalidations(
+    element: &GeckoElement,
+    snapshot_table: &ServoElementSnapshotTable,
+    data: &PerDocumentStyleDataImpl,
+) {
+    let snapshot = match snapshot_table.get(element) {
+        None => return,
+        Some(s) => s,
+    };
+    let mut states = None;
+    let mut classes = None;
+
+    let quirks_mode: QuirksMode = data.stylist.quirks_mode();
+    let invalidator = RelativeSelectorInvalidator {
+        element: *element,
+        quirks_mode,
+        invalidated: relative_selector_invalidated_at,
+        sibling_traversal_map: SiblingTraversalMap::default(),
+        _marker: std::marker::PhantomData,
+    };
+
+    invalidator.invalidate_relative_selectors_for_this(
+        &data.stylist,
+        |element, scope, data, quirks_mode, collector| {
+            let invalidation_map = data.relative_selector_invalidation_map();
+            let states = *states.get_or_insert_with(|| ElementWrapper::new(*element, snapshot_table).state_changes());
+            let classes = classes.get_or_insert_with(|| classes_changed(element, snapshot_table));
+            if snapshot.id_changed() {
+                relative_selector_dependencies_for_id(
+                    element.id().map(|id| id.as_ptr().cast_const()).unwrap_or(ptr::null()),
+                    snapshot.id_attr().map(|id| id.as_ptr().cast_const()).unwrap_or(ptr::null()),
+                    element,
+                    scope,
+                    quirks_mode,
+                    invalidation_map,
+                    collector,
+                );
+            }
+            relative_selector_dependencies_for_class(&classes, element, scope, quirks_mode, invalidation_map, collector);
+            snapshot.each_attr_changed(|attr| add_relative_selector_attribute_dependency(element, &scope, invalidation_map, attr, collector));
+            invalidation_map
+                .map
+                .state_affecting_selectors
+                .lookup_with_additional(*element, quirks_mode, None, &[], states, |dependency| {
+                    if !dependency.state.intersects(states) {
+                        return true;
+                    }
+                    collector.add_dependency(&dependency.dep, *element, *scope);
+                    true
+                });
+        },
+    );
+}
+
 #[no_mangle]
 pub extern "C" fn Servo_ProcessInvalidations(
     set: &PerDocumentStyleData,
@@ -6877,8 +7553,16 @@ pub extern "C" fn Servo_ProcessInvalidations(
     debug_assert!(element.has_snapshot());
     debug_assert!(!element.handled_snapshot());
 
+    let snapshot_table = unsafe { &*snapshots };
+    let per_doc_data = set.borrow();
+    process_relative_selector_invalidations(&element, snapshot_table, &per_doc_data);
+
     let mut data = element.mutate_data();
-    debug_assert!(data.is_some());
+    if data.is_none() {
+        // Snapshot for unstyled element is really only meant for relative selector
+        // invalidation, so this is fine.
+        return;
+    }
 
     let global_style_data = &*GLOBAL_STYLE_DATA;
     let guard = global_style_data.shared_lock.read();
@@ -6888,7 +7572,7 @@ pub extern "C" fn Servo_ProcessInvalidations(
         &guard,
         &per_doc_data.stylist,
         TraversalFlags::empty(),
-        unsafe { &*snapshots },
+        snapshot_table,
     );
     let mut data = data.as_mut().map(|d| &mut **d);
 
@@ -7406,7 +8090,7 @@ pub unsafe extern "C" fn Servo_InvalidateStyleForDocStateChanges(
     let root = GeckoElement(root);
     let mut processor = DocumentStateInvalidationProcessor::new(
         iter,
-        DocumentState::from_bits_retain(states_changed),
+        DocumentState::from_bits_truncate(states_changed),
         &mut selector_caches,
         root.as_node().owner_doc().quirks_mode(),
     );
@@ -7790,7 +8474,7 @@ pub extern "C" fn Servo_ParseLengthWithoutStyleContext(
 #[no_mangle]
 pub extern "C" fn Servo_SlowRgbToColorName(r: u8, g: u8, b: u8, result: &mut nsACString) -> bool {
     let mut candidates = SmallVec::<[&'static str; 5]>::new();
-    for (name, color) in cssparser::all_named_colors() {
+    for (name, color) in cssparser::color::all_named_colors() {
         if color == (r, g, b) {
             candidates.push(name);
         }
@@ -7806,9 +8490,9 @@ pub extern "C" fn Servo_SlowRgbToColorName(r: u8, g: u8, b: u8, result: &mut nsA
 
 #[no_mangle]
 pub extern "C" fn Servo_ColorNameToRgb(name: &nsACString, out: &mut structs::nscolor) -> bool {
-    match cssparser::parse_named_color::<specified::Color>(unsafe { name.as_str_unchecked() }) {
-        Ok(specified::Color::Absolute(ref color)) => {
-            *out = style::gecko::values::convert_absolute_color_to_nscolor(&color.color);
+    match cssparser::color::parse_named_color(unsafe { name.as_str_unchecked() }) {
+        Ok((r, g, b)) => {
+            *out = style::gecko::values::convert_absolute_color_to_nscolor(&AbsoluteColor::new(ColorSpace::Srgb, r, g, b, 1.0));
             true
         },
         _ => false,
@@ -7890,11 +8574,18 @@ pub extern "C" fn Servo_RegisterCustomProperty(
         }
     }
 
-    per_doc_data.stylist.custom_property_script_registry_mut().register(name, PropertyRegistration {
-        syntax,
-        inherits,
-        initial_value,
-    });
+    per_doc_data
+        .stylist
+        .custom_property_script_registry_mut()
+        .register(
+            name,
+            PropertyRegistration {
+                syntax,
+                inherits,
+                initial_value,
+                url_data: url_data.clone(),
+            },
+        );
 
     SuccessfullyRegistered
 }

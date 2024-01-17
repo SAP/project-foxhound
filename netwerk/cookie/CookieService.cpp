@@ -583,7 +583,7 @@ CookieService::SetCookieStringFromDocument(Document* aDocument,
   // add the cookie to the list. AddCookie() takes care of logging.
   PickStorage(attrs)->AddCookie(crc, baseDomain, attrs, cookie,
                                 currentTimeInUsec, documentURI, aCookieString,
-                                false);
+                                false, aDocument->GetBrowsingContext());
   return NS_OK;
 }
 
@@ -729,9 +729,11 @@ CookieService::SetCookieStringFromHttp(nsIURI* aHostURI,
     cookie->SetCreationTime(
         Cookie::GenerateUniqueCreationTime(currentTimeInUsec));
 
+    RefPtr<BrowsingContext> bc = loadInfo->GetBrowsingContext();
+
     // add the cookie to the list. AddCookie() takes care of logging.
     storage->AddCookie(crc, baseDomain, attrs, cookie, currentTimeInUsec,
-                       aHostURI, aCookieHeader, true);
+                       aHostURI, aCookieHeader, true, bc);
   }
 
   return NS_OK;
@@ -859,7 +861,7 @@ CookieService::AddNative(const nsACString& aHost, const nsACString& aPath,
 
   CookieStorage* storage = PickStorage(*aOriginAttributes);
   storage->AddCookie(nullptr, baseDomain, *aOriginAttributes, cookie,
-                     currentTimeInUsec, nullptr, VoidCString(), true);
+                     currentTimeInUsec, nullptr, VoidCString(), true, nullptr);
   return NS_OK;
 }
 
@@ -1727,14 +1729,8 @@ CookieStatus CookieService::CheckPrefs(
   if (aIsForeign && aIsThirdPartyTrackingResource &&
       !aStorageAccessPermissionGranted &&
       aCookieJarSettings->GetRejectThirdPartyContexts()) {
-    bool rejectThirdPartyWithExceptions =
-        CookieJarSettings::IsRejectThirdPartyWithExceptions(
-            aCookieJarSettings->GetCookieBehavior());
-
     uint32_t rejectReason =
-        rejectThirdPartyWithExceptions
-            ? nsIWebProgressListener::STATE_COOKIES_BLOCKED_FOREIGN
-            : nsIWebProgressListener::STATE_COOKIES_BLOCKED_TRACKER;
+        nsIWebProgressListener::STATE_COOKIES_BLOCKED_TRACKER;
     if (StoragePartitioningEnabled(rejectReason, aCookieJarSettings)) {
       MOZ_ASSERT(!aOriginAttrs.mPartitionKey.IsEmpty(),
                  "We must have a StoragePrincipal here!");
@@ -1746,8 +1742,6 @@ CookieStatus CookieService::CheckPrefs(
     if (aIsThirdPartySocialTrackingResource) {
       *aRejectedReason =
           nsIWebProgressListener::STATE_COOKIES_BLOCKED_SOCIALTRACKER;
-    } else if (rejectThirdPartyWithExceptions) {
-      *aRejectedReason = nsIWebProgressListener::STATE_COOKIES_BLOCKED_FOREIGN;
     } else {
       *aRejectedReason = nsIWebProgressListener::STATE_COOKIES_BLOCKED_TRACKER;
     }
@@ -2485,7 +2479,8 @@ CookieStorage* CookieService::PickStorage(
 bool CookieService::SetCookiesFromIPC(const nsACString& aBaseDomain,
                                       const OriginAttributes& aAttrs,
                                       nsIURI* aHostURI, bool aFromHttp,
-                                      const nsTArray<CookieStruct>& aCookies) {
+                                      const nsTArray<CookieStruct>& aCookies,
+                                      BrowsingContext* aBrowsingContext) {
   if (!IsInitialized()) {
     // If we are probably shutting down, we can ignore this cookie.
     return true;
@@ -2525,7 +2520,7 @@ bool CookieService::SetCookiesFromIPC(const nsACString& aBaseDomain,
         Cookie::GenerateUniqueCreationTime(currentTimeInUsec));
 
     storage->AddCookie(nullptr, aBaseDomain, aAttrs, cookie, currentTimeInUsec,
-                       aHostURI, ""_ns, aFromHttp);
+                       aHostURI, ""_ns, aFromHttp, aBrowsingContext);
   }
 
   return true;

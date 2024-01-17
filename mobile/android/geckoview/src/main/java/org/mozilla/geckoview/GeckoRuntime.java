@@ -106,6 +106,14 @@ public final class GeckoRuntime implements Parcelable {
   public static final String EXTRA_CRASH_PROCESS_TYPE = "processType";
 
   /**
+   * This is a key for extra data sent with {@link #ACTION_CRASHED}. The value is a String
+   * containing the content process type, which might not be available even for child processes.
+   *
+   * @see GeckoSession.ContentDelegate#onCrash(GeckoSession)
+   */
+  public static final String EXTRA_CRASH_REMOTE_TYPE = "remoteType";
+
+  /**
    * Value for {@link #EXTRA_CRASH_PROCESS_TYPE} indicating the main application process was
    * affected by the crash, which is therefore fatal.
    */
@@ -158,6 +166,12 @@ public final class GeckoRuntime implements Parcelable {
         // Do not trigger the first onResume event because it breaks nsAppShell::sPauseCount counter
         // thresholds.
         GeckoThread.onResume();
+      } else {
+        // Notify Gecko when the application has been moved in the foreground for the first time
+        // after being created and started (used by the ExtensionProcessCrashObserver on the Gecko
+        // side to adjust the appIsForeground property when the application-foreground or
+        // application-background topics are not notified).
+        EventDispatcher.getInstance().dispatch("GeckoView:InitialForeground", null);
       }
       mPaused = false;
       // Can resume location services, checks if was in use before going to background
@@ -334,6 +348,7 @@ public final class GeckoRuntime implements Parcelable {
             i.putExtra(EXTRA_MINIDUMP_PATH, message.getString(EXTRA_MINIDUMP_PATH));
             i.putExtra(EXTRA_EXTRAS_PATH, message.getString(EXTRA_EXTRAS_PATH));
             i.putExtra(EXTRA_CRASH_PROCESS_TYPE, message.getString(EXTRA_CRASH_PROCESS_TYPE));
+            i.putExtra(EXTRA_CRASH_REMOTE_TYPE, message.getString(EXTRA_CRASH_REMOTE_TYPE));
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
               context.startForegroundService(i);

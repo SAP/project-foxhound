@@ -7,7 +7,6 @@
 #ifndef mozilla_dom_AndroidWebAuthnTokenManager_h
 #define mozilla_dom_AndroidWebAuthnTokenManager_h
 
-#include "mozilla/dom/CryptoBuffer.h"
 #include "mozilla/dom/U2FTokenTransport.h"
 #include "mozilla/java/WebAuthnTokenManagerNatives.h"
 
@@ -84,16 +83,17 @@ class AndroidWebAuthnResult {
   AndroidWebAuthnResult(AndroidWebAuthnResult&&) = default;
 
   // Attestation-only
-  CryptoBuffer mAttObj;
+  nsTArray<uint8_t> mAttObj;
+  nsTArray<nsString> mTransports;
 
   // Attestations and assertions
-  CryptoBuffer mKeyHandle;
+  nsTArray<uint8_t> mKeyHandle;
   nsCString mClientDataJSON;
 
   // Assertions-only
-  CryptoBuffer mAuthData;
-  CryptoBuffer mSignature;
-  CryptoBuffer mUserHandle;
+  nsTArray<uint8_t> mAuthData;
+  nsTArray<uint8_t> mSignature;
+  nsTArray<uint8_t> mUserHandle;
 
  private:
   const nsString mErrorCode;
@@ -129,12 +129,19 @@ class AndroidWebAuthnTokenManager final : public U2FTokenTransport {
   void ClearPromises() {
     mRegisterPromise.RejectIfExists(NS_ERROR_DOM_UNKNOWN_ERR, __func__);
     mSignPromise.RejectIfExists(NS_ERROR_DOM_UNKNOWN_ERR, __func__);
+    mRegisterCredPropsRk = Nothing();
   }
 
   void AssertIsOnOwningThread() const;
 
   MozPromiseHolder<U2FRegisterPromise> mRegisterPromise;
   MozPromiseHolder<U2FSignPromise> mSignPromise;
+
+  // The Android FIDO2 API doesn't accept the credProps extension. However, the
+  // appropriate value for CredentialPropertiesOutput.rk can be determined
+  // entirely from the input, so we cache it here until mRegisterPromise
+  // resolves.
+  Maybe<bool> mRegisterCredPropsRk;
 };
 
 }  // namespace dom

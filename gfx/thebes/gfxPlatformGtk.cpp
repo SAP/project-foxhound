@@ -187,10 +187,6 @@ void gfxPlatformGtk::InitDmabufConfig() {
   FeatureState& feature = gfxConfig::GetFeature(Feature::DMABUF);
   feature.EnableByDefault();
 
-  if (StaticPrefs::widget_dmabuf_force_enabled_AtStartup()) {
-    feature.UserForceEnable("Force enabled by pref");
-  }
-
   nsCString failureId;
   int32_t status;
   nsCOMPtr<nsIGfxInfo> gfxInfo = components::GfxInfo::Service();
@@ -201,6 +197,13 @@ void gfxPlatformGtk::InitDmabufConfig() {
   } else if (status != nsIGfxInfo::FEATURE_STATUS_OK) {
     feature.Disable(FeatureStatus::Blocklisted, "Blocklisted by gfxInfo",
                     failureId);
+  }
+
+  if (StaticPrefs::widget_dmabuf_force_enabled_AtStartup()) {
+    feature.UserForceEnable("Force enabled by pref");
+  } else if (!StaticPrefs::widget_dmabuf_enabled_AtStartup()) {
+    feature.UserDisable("Force disable by pref",
+                        "FEATURE_FAILURE_USER_FORCE_DISABLED"_ns);
   }
 
   if (!gfxVars::UseEGL()) {
@@ -1015,3 +1018,9 @@ void gfxPlatformGtk::BuildContentDeviceData(ContentDeviceData* aOut) {
 
   aOut->cmsOutputProfileData() = GetPlatformCMSOutputProfileData();
 }
+
+// Wrapper for third party code (WebRTC for instance) where
+// gfxVars can't be included.
+namespace mozilla::gfx {
+bool IsDMABufEnabled() { return gfxVars::UseDMABuf(); }
+}  // namespace mozilla::gfx

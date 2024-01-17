@@ -6262,9 +6262,8 @@ nsresult HTMLMediaElement::DispatchEvent(const nsAString& aName) {
     return NS_OK;
   }
 
-  return nsContentUtils::DispatchTrustedEvent(
-      OwnerDoc(), static_cast<nsIContent*>(this), aName, CanBubble::eNo,
-      Cancelable::eNo);
+  return nsContentUtils::DispatchTrustedEvent(OwnerDoc(), this, aName,
+                                              CanBubble::eNo, Cancelable::eNo);
 }
 
 void HTMLMediaElement::DispatchAsyncEvent(const nsAString& aName) {

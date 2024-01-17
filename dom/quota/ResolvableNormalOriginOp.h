@@ -25,13 +25,9 @@ class ResolvableNormalOriginOp : public NormalOriginOperationBase {
   }
 
  protected:
-  ResolvableNormalOriginOp(const char* aRunnableName,
-                           const Nullable<PersistenceType>& aPersistenceType,
-                           const OriginScope& aOriginScope,
-                           const Nullable<Client::Type> aClientType,
-                           bool aExclusive)
-      : NormalOriginOperationBase(aRunnableName, aPersistenceType, aOriginScope,
-                                  aClientType, aExclusive) {
+  ResolvableNormalOriginOp(MovingNotNull<RefPtr<QuotaManager>> aQuotaManager,
+                           const char* aName)
+      : NormalOriginOperationBase(std::move(aQuotaManager), aName) {
     AssertIsOnOwningThread();
   }
 

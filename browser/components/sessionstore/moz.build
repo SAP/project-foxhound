@@ -5,7 +5,7 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 XPCSHELL_TESTS_MANIFESTS += ["test/unit/xpcshell.ini"]
-BROWSER_CHROME_MANIFESTS += ["test/browser.ini"]
+BROWSER_CHROME_MANIFESTS += ["test/browser.toml"]
 
 JAR_MANIFESTS += ["jar.mn"]
 
@@ -27,6 +27,10 @@ EXTRA_JS_MODULES.sessionstore = [
     "TabState.sys.mjs",
     "TabStateCache.sys.mjs",
     "TabStateFlusher.sys.mjs",
+]
+
+TESTING_JS_MODULES += [
+    "test/SessionStoreTestUtils.sys.mjs",
 ]
 
 with Files("**"):

@@ -3,7 +3,7 @@ use crate::{errors::AuthenticatorError, AuthenticatorTransports, KeyHandle};
 use base64::Engine;
 use serde::de::MapAccess;
 use serde::{
-    de::{Error as SerdeError, Visitor},
+    de::{Error as SerdeError, Unexpected, Visitor},
     ser::SerializeMap,
     Deserialize, Deserializer, Serialize, Serializer,
 };
@@ -40,17 +40,12 @@ impl RpIdHash {
     }
 }
 
+// NOTE: WebAuthn requires all fields and CTAP2 does not.
 #[derive(Debug, Serialize, Clone, Default, Deserialize, PartialEq, Eq)]
 pub struct RelyingParty {
-    // TODO(baloo): spec is wrong !!!!111
-    //              https://fidoalliance.org/specs/fido-v2.0-ps-20190130/fido-client-to-authenticator-protocol-v2.0-ps-20190130.html#commands
-    //              in the example "A PublicKeyCredentialRpEntity DOM object defined as follows:"
-    //              inconsistent with https://w3c.github.io/webauthn/#sctn-rp-credential-params
     pub id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub icon: Option<String>,
 }
 
 // Note: This enum is provided to make old CTAP1/U2F API work. This should be deprecated at some point
@@ -60,6 +55,15 @@ pub enum RelyingPartyWrapper {
     // CTAP1 hash can be derived from full object, see RelyingParty::hash below,
     // but very old backends might still provide application IDs.
     Hash(RpIdHash),
+}
+
+impl From<&str> for RelyingPartyWrapper {
+    fn from(rp_id: &str) -> Self {
+        Self::Data(RelyingParty {
+            id: rp_id.to_string(),
+            name: None,
+        })
+    }
 }
 
 impl RelyingPartyWrapper {
@@ -87,13 +91,11 @@ impl RelyingPartyWrapper {
     }
 }
 
-// TODO(baloo): should we rename this PublicKeyCredentialUserEntity ?
+// NOTE: WebAuthn requires all fields and CTAP2 does not.
 #[derive(Debug, Serialize, Clone, Eq, PartialEq, Deserialize, Default)]
-pub struct User {
+pub struct PublicKeyCredentialUserEntity {
     #[serde(with = "serde_bytes")]
     pub id: Vec<u8>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub icon: Option<String>, // This has been removed from Webauthn-2
     pub name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none", rename = "displayName")]
     pub display_name: Option<String>,
@@ -297,7 +299,7 @@ impl<'de> Deserialize<'de> for PublicKeyCredentialDescriptor {
             }
         }
 
-        deserializer.deserialize_bytes(PublicKeyCredentialDescriptorVisitor)
+        deserializer.deserialize_any(PublicKeyCredentialDescriptorVisitor)
     }
 }
 
@@ -324,19 +326,104 @@ pub enum UserVerificationRequirement {
     Required,
 }
 
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum CredentialProtectionPolicy {
+    UserVerificationOptional = 1,
+    UserVerificationOptionalWithCredentialIDList = 2,
+    UserVerificationRequired = 3,
+}
+
+impl Serialize for CredentialProtectionPolicy {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_u64(*self as u64)
+    }
+}
+
+impl<'de> Deserialize<'de> for CredentialProtectionPolicy {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct CredentialProtectionPolicyVisitor;
+
+        impl<'de> Visitor<'de> for CredentialProtectionPolicyVisitor {
+            type Value = CredentialProtectionPolicy;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("an integer")
+            }
+
+            fn visit_u64<E>(self, v: u64) -> Result<Self::Value, E>
+            where
+                E: SerdeError,
+            {
+                match v {
+                    1 => Ok(CredentialProtectionPolicy::UserVerificationOptional),
+                    2 => Ok(
+                        CredentialProtectionPolicy::UserVerificationOptionalWithCredentialIDList,
+                    ),
+                    3 => Ok(CredentialProtectionPolicy::UserVerificationRequired),
+                    _ => Err(SerdeError::invalid_value(
+                        Unexpected::Unsigned(v),
+                        &"valid CredentialProtectionPolicy",
+                    )),
+                }
+            }
+        }
+
+        deserializer.deserialize_any(CredentialProtectionPolicyVisitor)
+    }
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct AuthenticationExtensionsClientInputs {
+    pub app_id: Option<String>,
+    pub cred_props: Option<bool>,
+    pub credential_protection_policy: Option<CredentialProtectionPolicy>,
+    pub enforce_credential_protection_policy: Option<bool>,
+    pub hmac_create_secret: Option<bool>,
+    pub min_pin_length: Option<bool>,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct CredentialProperties {
+    pub rk: bool,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct AuthenticationExtensionsClientOutputs {
+    pub app_id: Option<bool>,
+    pub cred_props: Option<CredentialProperties>,
+    pub hmac_create_secret: Option<bool>,
+}
+
 #[cfg(test)]
 mod test {
     use super::{
-        COSEAlgorithm, PublicKeyCredentialDescriptor, PublicKeyCredentialParameters, RelyingParty,
-        Transport, User,
+        COSEAlgorithm, PublicKeyCredentialDescriptor, PublicKeyCredentialParameters,
+        PublicKeyCredentialUserEntity, RelyingParty, Transport,
     };
+    use serde_cbor::from_slice;
 
+    fn create_user() -> PublicKeyCredentialUserEntity {
+        PublicKeyCredentialUserEntity {
+            id: vec![
+                0x30, 0x82, 0x01, 0x93, 0x30, 0x82, 0x01, 0x38, 0xa0, 0x03, 0x02, 0x01, 0x02, 0x30,
+                0x82, 0x01, 0x93, 0x30, 0x82, 0x01, 0x38, 0xa0, 0x03, 0x02, 0x01, 0x02, 0x30, 0x82,
+                0x01, 0x93, 0x30, 0x82,
+            ],
+            name: Some(String::from("johnpsmith@example.com")),
+            display_name: Some(String::from("John P. Smith")),
+        }
+    }
     #[test]
     fn serialize_rp() {
         let rp = RelyingParty {
             id: String::from("Acme"),
             name: None,
-            icon: None,
         };
 
         let payload = ser::to_vec(&rp).unwrap();
@@ -353,24 +440,56 @@ mod test {
     }
 
     #[test]
+    fn test_deserialize_user() {
+        // This includes an obsolete "icon" field to test that deserialization
+        // ignores it.
+        let input = vec![
+            0xa4, // map(4)
+            0x62, // text(2)
+            0x69, 0x64, // "id"
+            0x58, 0x20, // bytes(32)
+            0x30, 0x82, 0x01, 0x93, 0x30, 0x82, 0x01, 0x38, 0xa0, 0x03, // userid
+            0x02, 0x01, 0x02, 0x30, 0x82, 0x01, 0x93, 0x30, 0x82, 0x01, // ...
+            0x38, 0xa0, 0x03, 0x02, 0x01, 0x02, 0x30, 0x82, 0x01, 0x93, // ...
+            0x30, 0x82, // ...
+            0x64, // text(4)
+            0x69, 0x63, 0x6f, 0x6e, // "icon"
+            0x78, 0x2b, // text(43)
+            0x68, 0x74, 0x74, 0x70, 0x73, 0x3a, 0x2f, 0x2f, 0x70,
+            0x69, // "https://pics.example.com/00/p/aBjjjpqPb.png"
+            0x63, 0x73, 0x2e, 0x65, 0x78, 0x61, 0x6d, 0x70, 0x6c, 0x65, // ...
+            0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x30, 0x30, 0x2f, 0x70, 0x2f, // ...
+            0x61, 0x42, 0x6a, 0x6a, 0x6a, 0x70, 0x71, 0x50, 0x62, 0x2e, // ...
+            0x70, 0x6e, 0x67, // ...
+            0x64, // text(4)
+            0x6e, 0x61, 0x6d, 0x65, // "name"
+            0x76, // text(22)
+            0x6a, 0x6f, 0x68, 0x6e, 0x70, 0x73, 0x6d, 0x69, 0x74,
+            0x68, // "johnpsmith@example.com"
+            0x40, 0x65, 0x78, 0x61, 0x6d, 0x70, 0x6c, 0x65, 0x2e, 0x63, // ...
+            0x6f, 0x6d, // ...
+            0x6b, // text(11)
+            0x64, 0x69, 0x73, 0x70, 0x6c, 0x61, 0x79, 0x4e, 0x61, 0x6d, // "displayName"
+            0x65, // ...
+            0x6d, // text(13)
+            0x4a, 0x6f, 0x68, 0x6e, 0x20, 0x50, 0x2e, 0x20, 0x53, 0x6d, // "John P. Smith"
+            0x69, 0x74, 0x68, // ...
+        ];
+        let expected = create_user();
+        let actual: PublicKeyCredentialUserEntity = from_slice(&input).unwrap();
+        assert_eq!(expected, actual);
+    }
+
+    #[test]
     fn serialize_user() {
-        let user = User {
-            id: vec![
-                0x30, 0x82, 0x01, 0x93, 0x30, 0x82, 0x01, 0x38, 0xa0, 0x03, 0x02, 0x01, 0x02, 0x30,
-                0x82, 0x01, 0x93, 0x30, 0x82, 0x01, 0x38, 0xa0, 0x03, 0x02, 0x01, 0x02, 0x30, 0x82,
-                0x01, 0x93, 0x30, 0x82,
-            ],
-            icon: Some(String::from("https://pics.example.com/00/p/aBjjjpqPb.png")),
-            name: Some(String::from("johnpsmith@example.com")),
-            display_name: Some(String::from("John P. Smith")),
-        };
+        let user = create_user();
 
         let payload = ser::to_vec(&user).unwrap();
         println!("payload = {payload:?}");
         assert_eq!(
             payload,
             vec![
-                0xa4, // map(4)
+                0xa3, // map(3)
                 0x62, // text(2)
                 0x69, 0x64, // "id"
                 0x58, 0x20, // bytes(32)
@@ -378,15 +497,6 @@ mod test {
                 0x02, 0x01, 0x02, 0x30, 0x82, 0x01, 0x93, 0x30, 0x82, 0x01, // ...
                 0x38, 0xa0, 0x03, 0x02, 0x01, 0x02, 0x30, 0x82, 0x01, 0x93, // ...
                 0x30, 0x82, // ...
-                0x64, // text(4)
-                0x69, 0x63, 0x6f, 0x6e, // "icon"
-                0x78, 0x2b, // text(43)
-                0x68, 0x74, 0x74, 0x70, 0x73, 0x3a, 0x2f, 0x2f, 0x70,
-                0x69, // "https://pics.example.com/00/p/aBjjjpqPb.png"
-                0x63, 0x73, 0x2e, 0x65, 0x78, 0x61, 0x6d, 0x70, 0x6c, 0x65, // ...
-                0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x30, 0x30, 0x2f, 0x70, 0x2f, // ...
-                0x61, 0x42, 0x6a, 0x6a, 0x6a, 0x70, 0x71, 0x50, 0x62, 0x2e, // ...
-                0x70, 0x6e, 0x67, // ...
                 0x64, // text(4)
                 0x6e, 0x61, 0x6d, 0x65, // "name"
                 0x76, // text(22)
@@ -405,14 +515,13 @@ mod test {
     }
 
     #[test]
-    fn serialize_user_noicon_nodisplayname() {
-        let user = User {
+    fn serialize_user_nodisplayname() {
+        let user = PublicKeyCredentialUserEntity {
             id: vec![
                 0x30, 0x82, 0x01, 0x93, 0x30, 0x82, 0x01, 0x38, 0xa0, 0x03, 0x02, 0x01, 0x02, 0x30,
                 0x82, 0x01, 0x93, 0x30, 0x82, 0x01, 0x38, 0xa0, 0x03, 0x02, 0x01, 0x02, 0x30, 0x82,
                 0x01, 0x93, 0x30, 0x82,
             ],
-            icon: None,
             name: Some(String::from("johnpsmith@example.com")),
             display_name: None,
         };

@@ -446,7 +446,7 @@ bool WarpCacheIRTranspiler::emitGuardMultipleShapes(ObjOperandId objId,
   MInstruction* shapeList = objectStubField(shapesOffset);
 
   auto* ins = MGuardMultipleShapes::New(alloc(), def, shapeList);
-  if (builder_->isMonomorphicInlined()) {
+  if (builder_->info().inlineScriptTree()->hasSharedICScript()) {
     ins->setBailoutKind(BailoutKind::MonomorphicInlinedStubFolding);
   }
   add(ins);
@@ -1202,7 +1202,12 @@ bool WarpCacheIRTranspiler::emitGuardToInt32(ValOperandId inputId) {
 
 bool WarpCacheIRTranspiler::emitGuardBooleanToInt32(ValOperandId inputId,
                                                     Int32OperandId resultId) {
+  if (!emitGuardTo(inputId, MIRType::Boolean)) {
+    return false;
+  }
+
   MDefinition* input = getOperand(inputId);
+  MOZ_ASSERT(input->type() == MIRType::Boolean);
 
   auto* ins = MBooleanToInt32::New(alloc(), input);
   add(ins);
@@ -3848,7 +3853,10 @@ bool WarpCacheIRTranspiler::emitTypedArrayByteLengthDoubleResult(
   auto* size = MTypedArrayElementSize::New(alloc(), obj);
   add(size);
 
-  auto* mul = MMul::New(alloc(), lengthDouble, size, MIRType::Double);
+  auto* sizeDouble = MToDouble::New(alloc(), size);
+  add(sizeDouble);
+
+  auto* mul = MMul::New(alloc(), lengthDouble, sizeDouble, MIRType::Double);
   mul->setCanBeNegativeZero(false);
   add(mul);
 
@@ -4944,7 +4952,7 @@ bool WarpCacheIRTranspiler::maybeCreateThis(MDefinition* callee,
   MOZ_ASSERT(thisArg->type() == MIRType::MagicIsConstructing ||
              thisArg->isPhi());
 
-  MDefinition* newTarget = callInfo_->getNewTarget();
+  auto* newTarget = unboxObjectInfallible(callInfo_->getNewTarget());
   auto* createThis = MCreateThis::New(alloc(), callee, newTarget);
   add(createThis);
 
@@ -5305,7 +5313,8 @@ bool WarpCacheIRTranspiler::emitCallBoundScriptedFunction(
     auto* boundArgs = MLoadFixedSlot::New(
         alloc(), callee, BoundFunctionObject::firstInlineBoundArgSlot());
     add(boundArgs);
-    elements = MElements::New(alloc(), boundArgs);
+    auto* boundArgsObj = unboxObjectInfallible(boundArgs, IsMovable::Yes);
+    elements = MElements::New(alloc(), boundArgsObj);
     add(elements);
   }
 

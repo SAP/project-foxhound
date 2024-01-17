@@ -3,20 +3,19 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 use authenticator::{
-    authenticatorservice::{
-        AuthenticatorService, GetAssertionExtensions, HmacSecretExtension,
-        MakeCredentialsExtensions, RegisterArgs, SignArgs,
-    },
+    authenticatorservice::{AuthenticatorService, RegisterArgs, SignArgs},
     crypto::COSEAlgorithm,
     ctap2::server::{
-        PublicKeyCredentialDescriptor, PublicKeyCredentialParameters, RelyingParty,
-        ResidentKeyRequirement, Transport, User, UserVerificationRequirement,
+        AuthenticationExtensionsClientInputs, CredentialProtectionPolicy,
+        PublicKeyCredentialDescriptor, PublicKeyCredentialParameters,
+        PublicKeyCredentialUserEntity, RelyingParty, ResidentKeyRequirement, Transport,
+        UserVerificationRequirement,
     },
     statecallback::StateCallback,
     Pin, StatusPinUv, StatusUpdate,
 };
 use getopts::Options;
-use sha2::{Digest, Sha256};
+use rand::{thread_rng, RngCore};
 use std::sync::mpsc::{channel, RecvError};
 use std::{env, thread};
 
@@ -31,13 +30,20 @@ fn main() {
     let args: Vec<String> = env::args().collect();
     let program = args[0].clone();
 
+    let rp_id = "example.com".to_string();
+    let app_id = "https://fido.example.com/myApp".to_string();
+
     let mut opts = Options::new();
-    opts.optflag("x", "no-u2f-usb-hid", "do not enable u2f-usb-hid platforms");
     opts.optflag("h", "help", "print this help menu").optopt(
         "t",
         "timeout",
         "timeout in seconds",
         "SEC",
+    );
+    opts.optflag(
+        "a",
+        "app_id",
+        &format!("Using App ID {app_id} from origin 'https://{rp_id}'"),
     );
     opts.optflag("s", "hmac_secret", "With hmac-secret");
     opts.optflag("h", "help", "print this help menu");
@@ -51,12 +57,11 @@ fn main() {
         return;
     }
 
+    let using_app_id = matches.opt_present("app_id");
+
     let mut manager =
         AuthenticatorService::new().expect("The auth service should initialize safely");
-
-    if !matches.opt_present("no-u2f-usb-hid") {
-        manager.add_u2f_usb_hid_platform_transports();
-    }
+    manager.add_u2f_usb_hid_platform_transports();
 
     let fallback = matches.opt_present("fallback");
 
@@ -73,14 +78,8 @@ fn main() {
     };
 
     println!("Asking a security key to register now...");
-    let challenge_str = format!(
-        "{}{}",
-        r#"{"challenge": "1vQ9mxionq0ngCnjD-wTsv1zUSrGRtFqG2xP09SbZ70","#,
-        r#" "version": "U2F_V2", "appId": "http://example.com"}"#
-    );
-    let mut challenge = Sha256::new();
-    challenge.update(challenge_str.as_bytes());
-    let chall_bytes: [u8; 32] = challenge.finalize().into();
+    let mut chall_bytes = [0u8; 32];
+    thread_rng().fill_bytes(&mut chall_bytes);
 
     let (status_tx, status_rx) = channel::<StatusUpdate>();
     thread::spawn(move || loop {
@@ -134,6 +133,9 @@ fn main() {
             Ok(StatusUpdate::PinUvError(e)) => {
                 panic!("Unexpected error: {:?}", e)
             }
+            Ok(StatusUpdate::SelectResultNotice(_, _)) => {
+                panic!("Unexpected select device notice")
+            }
             Err(RecvError) => {
                 println!("STATUS: end");
                 return;
@@ -141,21 +143,24 @@ fn main() {
         }
     });
 
-    let user = User {
+    let user = PublicKeyCredentialUserEntity {
         id: "user_id".as_bytes().to_vec(),
-        icon: None,
         name: Some("A. User".to_string()),
         display_name: None,
     };
-    let origin = "https://example.com".to_string();
+    // If we're testing AppID support, then register with an RP ID that isn't valid for the origin.
+    let relying_party = RelyingParty {
+        id: if using_app_id {
+            app_id.clone()
+        } else {
+            rp_id.clone()
+        },
+        name: None,
+    };
     let ctap_args = RegisterArgs {
         client_data_hash: chall_bytes,
-        relying_party: RelyingParty {
-            id: "example.com".to_string(),
-            name: None,
-            icon: None,
-        },
-        origin: origin.clone(),
+        relying_party,
+        origin: format!("https://{rp_id}"),
         user,
         pub_cred_params: vec![
             PublicKeyCredentialParameters {
@@ -175,12 +180,13 @@ fn main() {
         }],
         user_verification_req: UserVerificationRequirement::Preferred,
         resident_key_req: ResidentKeyRequirement::Discouraged,
-        extensions: MakeCredentialsExtensions {
-            hmac_secret: if matches.opt_present("hmac_secret") {
-                Some(true)
-            } else {
-                None
-            },
+        extensions: AuthenticationExtensionsClientInputs {
+            cred_props: Some(true),
+            hmac_create_secret: Some(matches.opt_present("hmac_secret")),
+            min_pin_length: Some(true),
+            credential_protection_policy: Some(
+                CredentialProtectionPolicy::UserVerificationOptionalWithCredentialIDList,
+            ),
             ..Default::default()
         },
         pin: None,
@@ -230,27 +236,16 @@ fn main() {
 
     let ctap_args = SignArgs {
         client_data_hash: chall_bytes,
-        origin,
-        relying_party_id: "example.com".to_string(),
+        origin: format!("https://{rp_id}"),
+        relying_party_id: rp_id,
         allow_list,
         user_verification_req: UserVerificationRequirement::Preferred,
         user_presence_req: true,
-        extensions: GetAssertionExtensions {
-            hmac_secret: if matches.opt_present("hmac_secret") {
-                Some(HmacSecretExtension::new(
-                    vec![
-                        0x0, 0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7, 0x8, 0x9, 0x10, 0x11, 0x12, 0x13,
-                        0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x20, 0x21, 0x22, 0x23, 0x24, 0x25,
-                        0x26, 0x27, 0x28, 0x29, 0x30, 0x31, 0x32, 0x33, 0x34,
-                    ],
-                    None,
-                ))
-            } else {
-                None
-            },
+        extensions: AuthenticationExtensionsClientInputs {
+            app_id: using_app_id.then(|| app_id.clone()),
+            ..Default::default()
         },
         pin: None,
-        alternate_rp_id: None,
         use_ctap1_fallback: fallback,
     };
 
@@ -272,6 +267,15 @@ fn main() {
         match sign_result {
             Ok(assertion_object) => {
                 println!("Assertion Object: {assertion_object:?}");
+                if using_app_id {
+                    println!(
+                        "Used AppID: {}",
+                        assertion_object
+                            .extensions
+                            .app_id
+                            .expect("app id extension should be set")
+                    );
+                }
                 println!("Done.");
                 break;
             }

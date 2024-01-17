@@ -16,13 +16,13 @@ binutils-2.31.1:
         strip-components: 1
         add-prefix: binutils-source/
 
-binutils-2.36.1:
-    description: binutils 2.36.1 source code
+binutils-2.41:
+    description: binutils 2.41 source code
     fetch:
         type: static-url
-        url: https://ftp.gnu.org/gnu/binutils/binutils-2.36.1.tar.xz
-        sha256: e81d9edf373f193af428a0f256674aea62a9d74dfe93f65192d4eae030b0f3b0
-        size: 22772248
+        url: https://ftp.gnu.org/gnu/binutils/binutils-2.41.tar.xz
+        sha256: ae9a5789e23459e59606e6714723f2d3ffc31c03174191ef0d015bdf06007450
+        size: 26765692
         gpg-signature:
             sig-url: "{url}.sig"
             key-path: build/unix/build-binutils/3A24BC1E8FB409FA9F14371813FCEF89DD9E3C4F.key
@@ -109,7 +109,7 @@ mpc-1.0.3:
     description: mpc 1.0.3 source code
     fetch:
         type: static-url
-        url: http://www.multiprecision.org/downloads/mpc-1.0.3.tar.gz
+        url: https://ftp.gnu.org/gnu/mpc/mpc-1.0.3.tar.gz
         sha256: 617decc6ea09889fb08ede330917a00b16809b8db88c29c31bfbb49cbf88ecc3
         size: 669925
         gpg-signature:
@@ -216,12 +216,12 @@ wine:
         strip-components: 1
         add-prefix: wine-source/
 
-cbindgen-0.24.3:
+cbindgen-0.26.0:
     description: cbindgen source code
     fetch:
         type: git
-        repo: https://github.com/eqrion/cbindgen
-        revision: f43ccfc047a1a160267f32355c5e5e7154a2665a
+        repo: https://github.com/mozilla/cbindgen
+        revision: 703b53c06f9fe2dbc0193d67626558cfa84a0f62
 
 cctools-port:
     description: cctools-port source code
@@ -315,7 +315,7 @@ mingw-w64:
     fetch:
         type: git
         repo: https://git.code.sf.net/p/mingw-w64/mingw-w64
-        revision: f9500e2d85b9400c0982518663660a127e1dc61a
+        revision: 024035cfd9059ebd39d95ab22b009ef3b88b4040
 
 mingw-w64-trunk:
     description: mingw-w64 master branch source code
@@ -340,12 +340,12 @@ android-ndk-rs:
         repo: https://github.com/jamienicol/android-ndk-rs
         revision: 595f4e14a78371e3ab59b12f7bd8131f2ec5b4a1
 
-clang-7.0:
-    description: clang 7.0.0 source code
+clang-8.0:
+    description: clang 8.0.0 source code
     fetch:
         type: git
         repo: https://github.com/llvm/llvm-project
-        revision: 00b161b8971bc6d3cb55f13502288b8fe0dbaa42
+        revision: d2298e74235598f15594fe2c99bbac870a507c59
 
 clang-14:
     description: clang 14.0.5 source code
@@ -362,11 +362,11 @@ clang-16:
         revision: 7cbf1a2591520c2491aa35339f227775f4d3adf6
 
 clang-17:
-    description: clang 17.0.0-rc2 source code
+    description: clang 17.0.1 source code
     fetch:
         type: git
         repo: https://github.com/llvm/llvm-project
-        revision: edc0ee3ccad416ab186202bf928ea64e3a7987b7
+        revision: e19b7dc36bc047b9eb72078d034596be766da350
 
 clang-trunk:
     description: clang main branch source code
@@ -380,13 +380,20 @@ clang-trunk:
 # We build stable rust from source so the resulting compiler acts as a nightly
 # rust compiler, allowing to use unstable features like -Zbuild-std and
 # sanitizers.
-rust-1.71.0:
-    description: Rust 1.71.0 source code
+rust-1.72.1:
+    description: Rust 1.72.1 source code
     fetch:
         type: git
         include-dot-git: true
         repo: https://github.com/rust-lang/rust/
-        revision: 8ede3aae28fe6e4d52b38157d7bfe0d3bceef225
+        revision: d5c2e9c342b358556da91d61ed4133f6f50fc0c3
+
+wasi-sdk-11:
+    description: wasi-sdk-11 source code
+    fetch:
+        type: git
+        repo: https://github.com/WebAssembly/wasi-sdk
+        revision: ceabbfe181599bca83d81e087a229797e472c09c
 
 wasi-sdk:
     description: wasi-sdk-20 source code
@@ -421,7 +428,7 @@ dump-syms:
     fetch:
         type: git
         repo: https://github.com/mozilla/dump_syms/
-        revision: 7cb5f5243f87c562a44259ecb79675ea07842a8f
+        revision: b1951e4ccec48a2e97460a7ec40be35aa79e0037
 
 rust-minidump:
     description: rust-minidump 0.15.2 source code (for minidump-stackwalk)
@@ -620,7 +627,7 @@ symbol-scrapers:
     fetch:
         type: git
         repo: http://github.com/mozilla/symbol-scrapers
-        revision: 1f82450ec821ce4466501b771cc93004968a4f66
+        revision: fc55e98c63fe21b2fc4aa29dd74dcea0869c1bec
 
 cpython-3.8.10:
     description: cpython 3.8.10 source code

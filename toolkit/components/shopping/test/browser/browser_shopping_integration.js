@@ -6,6 +6,7 @@
 const PRODUCT_TEST_URL = "https://example.com/Some-Product/dp/ABCDEFG123";
 const OTHER_PRODUCT_TEST_URL =
   "https://example.com/Another-Product/dp/HIJKLMN456";
+const BAD_PRODUCT_TEST_URL = "https://example.com/Bad-Product/dp/0000000000";
 
 async function verifyProductInfo(sidebar, expectedProductInfo) {
   await SpecialPowers.spawn(
@@ -73,7 +74,7 @@ add_task(async function test_sidebar_navigation() {
       BrowserTestUtils.browserLoaded(browser, false, OTHER_PRODUCT_TEST_URL),
       promiseSidebarUpdated(sidebar, OTHER_PRODUCT_TEST_URL),
     ]);
-    BrowserTestUtils.loadURIString(browser, OTHER_PRODUCT_TEST_URL);
+    BrowserTestUtils.startLoadingURIString(browser, OTHER_PRODUCT_TEST_URL);
     info("Loading another product.");
     await loadedPromise;
     Assert.ok(sidebar, "Sidebar should exist.");
@@ -94,7 +95,7 @@ add_task(async function test_sidebar_navigation() {
       false,
       "https://example.com/1"
     );
-    BrowserTestUtils.loadURIString(browser, "https://example.com/1");
+    BrowserTestUtils.startLoadingURIString(browser, "https://example.com/1");
     info("Go to a non-product.");
     await loadedPromise;
     Assert.ok(BrowserTestUtils.is_hidden(sidebar));
@@ -124,5 +125,202 @@ add_task(async function test_sidebar_navigation() {
       adjustedRating: "4.1",
       letterGrade: "B",
     });
+
+    // Navigate to a product URL with query params:
+    loadedPromise = BrowserTestUtils.browserLoaded(
+      browser,
+      false,
+      PRODUCT_TEST_URL + "?th=1"
+    );
+    // Navigate to the same product, but with a th=1 added.
+    BrowserTestUtils.startLoadingURIString(browser, PRODUCT_TEST_URL + "?th=1");
+    // When just comparing URLs product info would be cleared out,
+    // but when comparing the parsed product ids, we do nothing as the product
+    // has not changed.
+    info("Verifying product has not changed before load.");
+    await verifyProductInfo(sidebar, {
+      productURL: PRODUCT_TEST_URL,
+      adjustedRating: "4.1",
+      letterGrade: "B",
+    });
+    // Wait for the page to load, but don't wait for the sidebar to update so
+    // we can be sure we still have the previous product info.
+    await loadedPromise;
+    info("Verifying product has not changed after load.");
+    await verifyProductInfo(sidebar, {
+      productURL: PRODUCT_TEST_URL,
+      adjustedRating: "4.1",
+      letterGrade: "B",
+    });
+  });
+});
+
+add_task(async function test_button_visible_when_opted_out() {
+  await BrowserTestUtils.withNewTab(
+    {
+      url: PRODUCT_TEST_URL,
+      gBrowser,
+    },
+    async browser => {
+      let shoppingBrowser = gBrowser.ownerDocument.querySelector(
+        "browser.shopping-sidebar"
+      );
+
+      let shoppingButton = document.getElementById("shopping-sidebar-button");
+
+      ok(
+        BrowserTestUtils.is_visible(shoppingButton),
+        "Shopping Button should be visible on a product page"
+      );
+
+      let sidebar = gBrowser
+        .getPanel(browser)
+        .querySelector("shopping-sidebar");
+      Assert.ok(sidebar, "Sidebar should exist");
+      Assert.ok(
+        BrowserTestUtils.is_visible(sidebar),
+        "Sidebar should be visible."
+      );
+      info("Waiting for sidebar to update.");
+      await promiseSidebarUpdated(sidebar, PRODUCT_TEST_URL);
+
+      await SpecialPowers.spawn(shoppingBrowser, [], async () => {
+        let shoppingContainer =
+          content.document.querySelector("shopping-container").wrappedJSObject;
+        await shoppingContainer.updateComplete;
+        let shoppingSettings = shoppingContainer.settingsEl;
+        await shoppingSettings.updateComplete;
+
+        shoppingSettings.shoppingCardEl.detailsEl.open = true;
+        let optOutButton = shoppingSettings.optOutButtonEl;
+        optOutButton.click();
+      });
+
+      await BrowserTestUtils.waitForMutationCondition(
+        shoppingButton,
+        { attributes: false, attributeFilter: ["shoppingsidebaropen"] },
+        () => shoppingButton.getAttribute("shoppingsidebaropen")
+      );
+
+      ok(
+        !Services.prefs.getBoolPref("browser.shopping.experience2023.active"),
+        "Shopping sidebar is no longer active"
+      );
+      is(
+        Services.prefs.getIntPref("browser.shopping.experience2023.optedIn"),
+        2,
+        "Opted out of shopping experience"
+      );
+
+      ok(
+        BrowserTestUtils.is_visible(shoppingButton),
+        "Shopping Button should be visible after opting out"
+      );
+
+      Services.prefs.setBoolPref(
+        "browser.shopping.experience2023.active",
+        true
+      );
+      Services.prefs.setIntPref("browser.shopping.experience2023.optedIn", 1);
+    }
+  );
+});
+
+add_task(async function test_sidebar_button_open_close() {
+  // Disable OHTTP for now to get this landed; we'll re-enable with proper
+  // mocking in the near future.
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["toolkit.shopping.ohttpRelayURL", ""],
+      ["toolkit.shopping.ohttpConfigURL", ""],
+    ],
+  });
+  await BrowserTestUtils.withNewTab(PRODUCT_TEST_URL, async browser => {
+    let sidebar = gBrowser.getPanel(browser).querySelector("shopping-sidebar");
+    Assert.ok(sidebar, "Sidebar should exist");
+    Assert.ok(
+      BrowserTestUtils.is_visible(sidebar),
+      "Sidebar should be visible."
+    );
+    let shoppingButton = document.getElementById("shopping-sidebar-button");
+    ok(
+      BrowserTestUtils.is_visible(shoppingButton),
+      "Shopping Button should be visible on a product page"
+    );
+
+    info("Waiting for sidebar to update.");
+    await promiseSidebarUpdated(sidebar, PRODUCT_TEST_URL);
+
+    info("Verifying product info for initial product.");
+    await verifyProductInfo(sidebar, {
+      productURL: PRODUCT_TEST_URL,
+      adjustedRating: "4.1",
+      letterGrade: "B",
+    });
+
+    // close the sidebar
+    shoppingButton.click();
+    ok(BrowserTestUtils.is_hidden(sidebar), "Sidebar should be hidden");
+
+    // reopen the sidebar
+    shoppingButton.click();
+    Assert.ok(
+      BrowserTestUtils.is_visible(sidebar),
+      "Sidebar should be visible."
+    );
+
+    info("Waiting for sidebar to update.");
+    await promiseSidebarUpdated(sidebar, PRODUCT_TEST_URL);
+
+    info("Verifying product info for has not changed.");
+    await verifyProductInfo(sidebar, {
+      productURL: PRODUCT_TEST_URL,
+      adjustedRating: "4.1",
+      letterGrade: "B",
+    });
+  });
+});
+
+add_task(async function test_sidebar_error() {
+  // Disable OHTTP for now to get this landed; we'll re-enable with proper
+  // mocking in the near future.
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["toolkit.shopping.ohttpRelayURL", ""],
+      ["toolkit.shopping.ohttpConfigURL", ""],
+    ],
+  });
+  await BrowserTestUtils.withNewTab(BAD_PRODUCT_TEST_URL, async browser => {
+    let sidebar = gBrowser.getPanel(browser).querySelector("shopping-sidebar");
+
+    Assert.ok(sidebar, "Sidebar should exist");
+
+    Assert.ok(
+      BrowserTestUtils.is_visible(sidebar),
+      "Sidebar should be visible."
+    );
+    info("Waiting for sidebar to update.");
+    await promiseSidebarUpdated(sidebar, BAD_PRODUCT_TEST_URL);
+
+    info("Verifying a generic error is shown.");
+    await SpecialPowers.spawn(
+      sidebar.querySelector("browser"),
+      [],
+      async prodInfo => {
+        let doc = content.document;
+        let shoppingContainer =
+          doc.querySelector("shopping-container").wrappedJSObject;
+
+        ok(
+          shoppingContainer.shoppingMessageBarEl,
+          "Got shopping-message-bar element"
+        );
+        is(
+          shoppingContainer.shoppingMessageBarEl.getAttribute("type"),
+          "generic-error",
+          "generic-error type should be correct"
+        );
+      }
+    );
   });
 });

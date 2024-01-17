@@ -17,20 +17,26 @@ class UnanalyzedProductCard extends MozLitElement {
 
   static get queries() {
     return {
-      analysisLinkEl: "#unanalyzed-product-analysis-link",
+      analysisButtonEl: "#unanalyzed-product-analysis-button",
     };
   }
 
-  onClickAnalysisLink() {
+  onClickAnalysisButton() {
     this.dispatchEvent(
       new CustomEvent("NewAnalysisRequested", {
         bubbles: true,
         composed: true,
       })
     );
+    this.dispatchEvent(
+      new CustomEvent("ShoppingTelemetryEvent", {
+        bubbles: true,
+        composed: true,
+        detail: "analyzeReviewsNoneAvailableClicked",
+      })
+    );
   }
 
-  // TODO: add link for product analysis once finalized
   render() {
     return html`
       <link
@@ -39,18 +45,19 @@ class UnanalyzedProductCard extends MozLitElement {
       />
       <shopping-card>
         <div id="unanalyzed-product-wrapper" slot="content">
-          <span id="unanalyzed-product-icon"></span>
+          <img id="unanalyzed-product-icon" role="presentation" alt=""></img>
           <div id="unanalyzed-product-message-content">
-            <strong data-l10n-id="shopping-unanalyzed-product-header"></strong>
-            <p data-l10n-id="shopping-unanalyzed-product-message"></p>
+            <strong
+              data-l10n-id="shopping-unanalyzed-product-header-2"
+            ></strong>
+            <p data-l10n-id="shopping-unanalyzed-product-message-2"></p>
           </div>
-          <a
-            id="unanalyzed-product-analysis-link"
-            data-l10n-id="shopping-unanalyzed-product-analyze-link"
-            target="_blank"
-            href="https://fakespot.com/analyze?url=${this.productURL}"
-            @click=${this.onClickAnalysisLink}
-          ></a>
+          <button
+            id="unanalyzed-product-analysis-button"
+            class="primary"
+            data-l10n-id="shopping-unanalyzed-product-analyze-button"
+            @click=${this.onClickAnalysisButton}
+          ></button>
         </div>
       </shopping-card>
     `;

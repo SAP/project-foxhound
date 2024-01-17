@@ -225,7 +225,8 @@ void CameraPortalNotifier::OnCameraRequestResult(
   }
 }
 
-PipeWireSession::PipeWireSession() {}
+PipeWireSession::PipeWireSession()
+    : status_(VideoCaptureOptions::Status::UNINITIALIZED) {}
 
 PipeWireSession::~PipeWireSession() {
   Cleanup();
@@ -358,6 +359,10 @@ void PipeWireSession::OnRegistryGlobal(void* data,
     return;
 
   if (!spa_dict_lookup(props, PW_KEY_NODE_DESCRIPTION))
+    return;
+
+  auto node_role = spa_dict_lookup(props, PW_KEY_MEDIA_ROLE);
+  if (!node_role || strcmp(node_role, "Camera"))
     return;
 
   that->nodes_.emplace_back(that, id, props);

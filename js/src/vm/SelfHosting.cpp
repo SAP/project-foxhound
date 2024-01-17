@@ -1596,7 +1596,7 @@ static bool intrinsic_RuntimeDefaultLocale(JSContext* cx, unsigned argc,
   CallArgs args = CallArgsFromVp(argc, vp);
   MOZ_ASSERT(args.length() == 0);
 
-  const char* locale = cx->runtime()->getDefaultLocale();
+  const char* locale = cx->realm()->getLocale();
   if (!locale) {
     JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
                               JSMSG_DEFAULT_LOCALE_ERROR);
@@ -1625,7 +1625,7 @@ static bool intrinsic_IsRuntimeDefaultLocale(JSContext* cx, unsigned argc,
     return true;
   }
 
-  const char* locale = cx->runtime()->getDefaultLocale();
+  const char* locale = cx->realm()->getLocale();
   if (!locale) {
     JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
                               JSMSG_DEFAULT_LOCALE_ERROR);

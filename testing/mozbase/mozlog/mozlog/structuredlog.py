@@ -244,6 +244,11 @@ class StructuredLogger(object):
         return rv
 
     @property
+    def has_shutdown(self):
+        """Property indicating whether the logger has been shutdown"""
+        return self._state.has_shutdown
+
+    @property
     def handlers(self):
         """A list of handlers that will be called when a
         message is logged from this logger"""
@@ -550,6 +555,10 @@ class StructuredLogger(object):
             data["stackwalk_errors"] = []
 
         self._log_data("crash", data)
+
+    @log_action(Unicode("group", default=None), Unicode("message", default=None))
+    def shutdown_failure(self, data):
+        self._log_data("shutdown_failure", data)
 
     @log_action(
         Unicode("primary", default=None), List(Unicode, "secondary", default=None)

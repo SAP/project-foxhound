@@ -98,6 +98,10 @@ Preferences.addAll([
   { id: "privacy.fingerprintingProtection", type: "bool" },
   { id: "privacy.fingerprintingProtection.pbmode", type: "bool" },
 
+  // Resist Fingerprinting
+  { id: "privacy.resistFingerprinting", type: "bool" },
+  { id: "privacy.resistFingerprinting.pbmode", type: "bool" },
+
   // Social tracking
   { id: "privacy.trackingprotection.socialtracking.enabled", type: "bool" },
   { id: "privacy.socialtracking.block_cookies.enabled", type: "bool" },
@@ -117,6 +121,7 @@ Preferences.addAll([
   // Location Bar
   { id: "browser.urlbar.suggest.bestmatch", type: "bool" },
   { id: "browser.urlbar.suggest.bookmark", type: "bool" },
+  { id: "browser.urlbar.suggest.clipboard", type: "bool" },
   { id: "browser.urlbar.suggest.history", type: "bool" },
   { id: "browser.urlbar.suggest.openpage", type: "bool" },
   { id: "browser.urlbar.suggest.topsites", type: "bool" },
@@ -310,6 +315,10 @@ function dataCollectionCheckboxHandler({
 function setUpContentBlockingWarnings() {
   document.getElementById("fpiIncompatibilityWarning").hidden =
     !gIsFirstPartyIsolated;
+
+  document.getElementById("rfpIncompatibilityWarning").hidden =
+    !Preferences.get("privacy.resistFingerprinting").value &&
+    !Preferences.get("privacy.resistFingerprinting.pbmode").value;
 }
 
 function initTCPStandardSection() {
@@ -913,6 +922,15 @@ var gPrivacyPane = {
       gPrivacyPane.networkCookieBehaviorReadPrefs.bind(gPrivacyPane)
     );
 
+    Preferences.get("privacy.fingerprintingProtection").on(
+      "change",
+      gPrivacyPane.fingerprintingProtectionReadPrefs.bind(gPrivacyPane)
+    );
+    Preferences.get("privacy.fingerprintingProtection.pbmode").on(
+      "change",
+      gPrivacyPane.fingerprintingProtectionReadPrefs.bind(gPrivacyPane)
+    );
+
     setEventListener(
       "trackingProtectionExceptions",
       "command",
@@ -1304,6 +1322,15 @@ var gPrivacyPane = {
         "sitedata-option-block-cross-site-tracking-cookies"
       );
     }
+
+    Preferences.get("privacy.resistFingerprinting").on(
+      "change",
+      setUpContentBlockingWarnings
+    );
+    Preferences.get("privacy.resistFingerprinting.pbmode").on(
+      "change",
+      setUpContentBlockingWarnings
+    );
 
     setUpContentBlockingWarnings();
 
@@ -2567,6 +2594,10 @@ var gPrivacyPane = {
     // Show the best match checkbox container as appropriate.
     document.getElementById("firefoxSuggestBestMatchContainer").hidden =
       !UrlbarPrefs.get("bestMatchEnabled");
+
+    document.getElementById("clipboardSuggestion").hidden = !UrlbarPrefs.get(
+      "clipboard.featureGate"
+    );
 
     let container = document.getElementById("firefoxSuggestContainer");
 

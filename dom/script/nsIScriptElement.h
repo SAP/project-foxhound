@@ -29,6 +29,7 @@ class nsIURI;
 
 namespace mozilla::dom {
 class Document;
+enum class FetchPriority : uint8_t;
 enum class ReferrerPolicy : uint8_t;
 }  // namespace mozilla::dom
 
@@ -237,6 +238,13 @@ class nsIScriptElement : public nsIScriptLoaderObserver {
   }
 
   /**
+   * Get the fetch priority
+   * (https://html.spec.whatwg.org/multipage/scripting.html#attr-script-fetchpriority)
+   * of the script element.
+   */
+  virtual mozilla::dom::FetchPriority GetFetchPriority() const = 0;
+
+  /**
    * Get referrer policy of the script element
    */
   virtual mozilla::dom::ReferrerPolicy GetReferrerPolicy();
@@ -280,6 +288,8 @@ class nsIScriptElement : public nsIScriptLoaderObserver {
    * Determine whether this is a(n) classic/module/importmap script.
    */
   void DetermineKindFromType(const mozilla::dom::Document* aOwnerDoc);
+
+  bool IsClassicNonAsyncDefer();
 
   /**
    * The start line number of the script.

@@ -50,7 +50,6 @@
 #include "js/MapAndSet.h"
 #include "js/MemoryCallbacks.h"
 #include "js/MemoryFunctions.h"
-#include "js/OffThreadScriptCompilation.h"
 #include "js/Principals.h"
 #include "js/PropertyAndElement.h"  // JS_Enumerate
 #include "js/PropertyDescriptor.h"

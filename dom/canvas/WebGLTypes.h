@@ -951,6 +951,7 @@ class Element;
 class ImageBitmap;
 class ImageData;
 class OffscreenCanvas;
+class VideoFrame;
 }  // namespace dom
 
 struct TexImageSource {
@@ -964,6 +965,8 @@ struct TexImageSource {
   const dom::ImageData* mImageData = nullptr;
 
   const dom::OffscreenCanvas* mOffscreenCanvas = nullptr;
+
+  const dom::VideoFrame* mVideoFrame = nullptr;
 
   const dom::Element* mDomElem = nullptr;
   ErrorResult* mOut_error = nullptr;
@@ -1108,14 +1111,6 @@ inline Range<const T> MakeRange(const RawBuffer<T>& from) {
   return from.Data();
 }
 
-// abv = ArrayBufferView
-template <typename T>
-inline auto MakeRangeAbv(const T& abv)
-    -> Range<const typename T::element_type> {
-  abv.ComputeState();
-  return {abv.Data(), abv.Length()};
-}
-
 // -
 
 constexpr auto kUniversalAlignment = alignof(std::max_align_t);
@@ -1133,10 +1128,6 @@ template <typename T>
 inline size_t ByteSize(const Range<T>& range) {
   return range.length() * sizeof(T);
 }
-
-Maybe<Range<const uint8_t>> GetRangeFromView(const dom::ArrayBufferView& view,
-                                             GLuint elemOffset,
-                                             GLuint elemCountOverride);
 
 // -
 
@@ -1232,7 +1223,25 @@ inline constexpr std::optional<E> AsEnumCase(
   return ret;
 }
 
+// -
+
+struct BufferAndIndex final {
+  const WebGLBuffer* buffer = nullptr;
+  uint32_t id = -1;
+};
+
 }  // namespace webgl
+
+struct IndexedBufferBinding final {
+  RefPtr<WebGLBuffer> mBufferBinding;
+  uint64_t mRangeStart = 0;
+  uint64_t mRangeSize = 0;
+
+  IndexedBufferBinding();
+  ~IndexedBufferBinding();
+
+  uint64_t ByteCount() const;
+};
 
 }  // namespace mozilla
 

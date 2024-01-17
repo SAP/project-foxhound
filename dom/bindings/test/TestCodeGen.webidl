@@ -700,7 +700,10 @@ interface TestInterface {
   //undefined passUnionWithInterfaces((TestInterface or TestExternalInterface) arg);
   //undefined passUnionWithInterfacesAndNullable((TestInterface? or TestExternalInterface) arg);
   //undefined passUnionWithSequence((sequence<object> or long) arg);
-  undefined passUnionWithArrayBuffer((ArrayBuffer or long) arg);
+  undefined passUnionWithArrayBuffer((UTF8String or ArrayBuffer) arg);
+  undefined passUnionWithArrayBufferOrNull((UTF8String or ArrayBuffer?) arg);
+  undefined passUnionWithTypedArrays((ArrayBufferView or ArrayBuffer) arg);
+  undefined passUnionWithTypedArraysOrNull((ArrayBufferView or ArrayBuffer?) arg);
   undefined passUnionWithString((DOMString or object) arg);
   // Using an enum in a union.  Note that we use some enum not declared in our
   // binding file, because UnionTypes.h will need to include the binding header
@@ -1272,6 +1275,11 @@ dictionary DictWithAllowSharedMembers {
   AllowSharedArrayBufferViewTypedef f;
 };
 
+dictionary DictWithBinaryType {
+  [BinaryType="nsAutoString"]
+  DOMString otherTypeOfStorageStr = "";
+};
+
 [Exposed=Window]
 interface TestIndexedGetterInterface {
   getter long item(unsigned long idx);
@@ -1497,7 +1505,7 @@ interface TestSCConstructorForInterface {
   [SecureContext] constructor();
 };
 
-[Exposed=Window, Func="Document::IsWebAnimationsEnabled"]
+[Exposed=Window, Func="Document::IsWebAnimationsGetAnimationsEnabled"]
 interface TestConstructorForFuncInterface {
   // Since the interface has a Func attribute, but the constructor does not,
   // the generated constructor should not check for the Func.
@@ -1508,7 +1516,7 @@ interface TestConstructorForFuncInterface {
 interface TestFuncConstructorForInterface {
   // Since the constructor has a Func attribute, but the interface does not,
   // the generated constructor should check for the Func.
-  [Func="Document::IsWebAnimationsEnabled"]
+  [Func="Document::IsWebAnimationsGetAnimationsEnabled"]
   constructor();
 };
 
@@ -1516,13 +1524,13 @@ interface TestFuncConstructorForInterface {
 interface TestFuncConstructorForDifferentFuncInterface {
   // Since the constructor has a different Func attribute from the interface,
   // the generated constructor should still check for its conditional func.
-  [Func="Document::IsWebAnimationsEnabled"]
+  [Func="Document::IsWebAnimationsGetAnimationsEnabled"]
   constructor();
 };
 
 [Exposed=Window]
 interface TestPrefChromeOnlySCFuncConstructorForInterface {
-  [Pref="dom.webidl.test1", ChromeOnly, SecureContext, Func="Document::IsWebAnimationsEnabled"]
+  [Pref="dom.webidl.test1", ChromeOnly, SecureContext, Func="Document::IsWebAnimationsGetAnimationsEnabled"]
   // There should be checks for all Pref/ChromeOnly/SecureContext/Func
   // in the generated constructor.
   constructor();

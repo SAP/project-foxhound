@@ -47,7 +47,6 @@ const TEST_URL = PAGES_BASE_URL + "custom/debugger/app-build/index.html";
 
 module.exports = async function () {
   const tab = await testSetup(TEST_URL, { disableCache: true });
-  Services.prefs.setBoolPref("devtools.debugger.features.map-scopes", false);
 
   const toolbox = await openDebuggerAndLog("custom", EXPECTED);
 
@@ -77,7 +76,6 @@ module.exports = async function () {
 
   await closeToolboxAndLog("custom.jsdebugger", toolbox);
 
-  Services.prefs.clearUserPref("devtools.debugger.features.map-scopes");
   await testTeardown();
 };
 
@@ -95,34 +93,46 @@ async function pauseDebuggerAndLog(dbg, tab, testFunction) {
 }
 
 async function stepDebuggerAndLog(dbg, tab, testFunction) {
-  const stepCount = 2;
-
   /*
-   * Each Step test has a max step count of at least 200;
-   * see https://github.com/codehag/debugger-talos-example/blob/master/src/ and the specific test
-   * file for more information
+   * See testing/talos/talos/tests/devtools/addon/content/pages/custom/debugger/app/src for the details
+   * about the pages used for these tests.
    */
 
   const stepTests = [
+    // This steps only once from the App.js into step-in-test.js.
+    // This `stepInNewSource` should always run first to make sure `step-in-test.js` file
+    // is loaded for the first time.
     {
+      stepCount: 1,
+      location: { line: 22, file: "App.js" },
+      key: "stepInNewSource",
+      stepType: "stepIn",
+    },
+    {
+      stepCount: 2,
       location: { line: 10194, file: "step-in-test.js" },
       key: "stepIn",
+      stepType: "stepIn",
     },
     {
+      stepCount: 2,
       location: { line: 16, file: "step-over-test.js" },
       key: "stepOver",
+      stepType: "stepOver",
     },
     {
+      stepCount: 2,
       location: { line: 998, file: "step-out-test.js" },
       key: "stepOut",
+      stepType: "stepOut",
     },
   ];
 
   for (const stepTest of stepTests) {
     await pauseDebugger(dbg, tab, testFunction, stepTest.location);
     const test = runTest(`custom.jsdebugger.${stepTest.key}.DAMP`);
-    for (let i = 0; i < stepCount; i++) {
-      await step(dbg, stepTest.key);
+    for (let i = 0; i < stepTest.stepCount; i++) {
+      await step(dbg, stepTest.stepType);
     }
     test.done();
     await removeBreakpoints(dbg);

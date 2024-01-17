@@ -2,9 +2,9 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-toolbar-button-firefox-view =
+toolbar-button-firefox-view-2 =
   .label = { -firefoxview-brand-name }
-  .tooltiptext = { -firefoxview-brand-name }
+  .tooltiptext = View recent browsing across windows and devices
 
 menu-tools-firefox-view =
   .label = { -firefoxview-brand-name }
@@ -56,6 +56,9 @@ firefoxview-syncedtabs-synctabs-header = Update your sync settings
 firefoxview-syncedtabs-synctabs-description = To see tabs from other devices, you need to sync your open tabs.
 firefoxview-syncedtabs-synctabs-checkbox = Allow open tabs to sync
 
+firefoxview-syncedtabs-loading-header = Sync in progress
+firefoxview-syncedtabs-loading-description = When it’s done, you’ll see any tabs you have open on other devices. Check back soon.
+
 firefoxview-tabpickup-fxa-admin-disabled-header = Your organization has disabled sync
 firefoxview-tabpickup-fxa-admin-disabled-description = { -brand-short-name } is not able to sync tabs between devices because your administrator has disabled syncing.
 
@@ -78,7 +81,7 @@ firefoxview-tabpickup-password-locked-primarybutton = Enter Primary Password
 firefoxview-syncedtab-password-locked-link = <a data-l10n-name="syncedtab-password-locked-link">Learn more</a>
 
 firefoxview-tabpickup-signed-out-header = Sign in to reconnect
-firefoxview-tabpickup-signed-out-description = To reconnect and grab your tabs, sign in to your { -fxaccount-brand-name }.
+firefoxview-tabpickup-signed-out-description2 = To reconnect and grab your tabs, sign in to your account.
 firefoxview-tabpickup-signed-out-primarybutton = Sign in
 
 firefoxview-tabpickup-syncing = Sit tight while your tabs sync. It’ll be just a moment.
@@ -241,3 +244,5 @@ firefoxview-recentlyclosed-empty-description-two = To find tabs from longer ago,
 ## This message is displayed below the name of another connected device when it doesn't have any open tabs.
 
 firefoxview-syncedtabs-device-notabs = No tabs open on this device
+
+firefoxview-syncedtabs-connect-another-device = Connect another device

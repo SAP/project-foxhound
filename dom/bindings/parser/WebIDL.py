@@ -947,7 +947,6 @@ class IDLInterfaceMixin(IDLInterfaceOrInterfaceMixinOrNamespace):
 
     def validate(self):
         for member in self.members:
-
             if member.isAttr():
                 if member.inherit:
                     raise WebIDLError(
@@ -3165,7 +3164,7 @@ class IDLUnionType(IDLType):
                 return "MaybeShared" + type.name
             return type.name
 
-        for (i, type) in enumerate(self.memberTypes):
+        for i, type in enumerate(self.memberTypes):
             if not type.isComplete():
                 self.memberTypes[i] = type.complete(scope)
 
@@ -3206,7 +3205,7 @@ class IDLUnionType(IDLType):
                 continue
             i += 1
 
-        for (i, t) in enumerate(self.flatMemberTypes[:-1]):
+        for i, t in enumerate(self.flatMemberTypes[:-1]):
             for u in self.flatMemberTypes[i + 1 :]:
                 if not t.isDistinguishableFrom(u):
                     raise WebIDLError(
@@ -3619,7 +3618,6 @@ class IDLPromiseType(IDLParametrizedType):
 
 
 class IDLBuiltinType(IDLType):
-
     Types = enum(
         # The integer types
         "byte",
@@ -4287,7 +4285,7 @@ class IDLValue(IDLObject):
                 )
         elif self.type.isInteger() and type.isFloat():
             # Convert an integer literal into float
-            if -(2 ** 24) <= self.value <= 2 ** 24:
+            if -(2**24) <= self.value <= 2**24:
                 return IDLValue(self.location, type, float(self.value))
             else:
                 raise WebIDLError(
@@ -4468,7 +4466,6 @@ class IDLUndefinedValue(IDLObject):
 
 
 class IDLInterfaceMember(IDLObjectWithIdentifier, IDLExposureMixins):
-
     Tags = enum(
         "Const", "Attr", "Method", "MaplikeOrSetlike", "AsyncIterable", "Iterable"
     )
@@ -5722,7 +5719,6 @@ class IDLAttribute(IDLInterfaceMember):
             or identifier == "SetterNeedsSubjectPrincipal"
             or identifier == "GetterNeedsSubjectPrincipal"
             or identifier == "NeedsCallerType"
-            or identifier == "ReturnValueNeedsContainsHack"
             or identifier == "BinaryName"
             or identifier == "NonEnumerable"
             or identifier == "BindingTemplate"
@@ -5791,7 +5787,7 @@ class IDLAttribute(IDLInterfaceMember):
             "CrossOriginWritable",
             "SetterThrows",
         ]
-        for (key, value) in self._extendedAttrDict.items():
+        for key, value in self._extendedAttrDict.items():
             if key in allowedExtAttrs:
                 if value is not True:
                     raise WebIDLError(
@@ -5864,6 +5860,18 @@ class IDLArgument(IDLObjectWithIdentifier):
                     raise WebIDLError(
                         "[%s] must not be used on a required "
                         "dictionary member" % identifier,
+                        [attribute.location],
+                    )
+            elif self.dictionaryMember and identifier == "BinaryType":
+                if not len(attribute.listValue()) == 1:
+                    raise WebIDLError(
+                        "[%s] BinaryType must take one argument" % identifier,
+                        [attribute.location],
+                    )
+                if not self.defaultValue:
+                    raise WebIDLError(
+                        "[%s] BinaryType can't be used without default value"
+                        % identifier,
                         [attribute.location],
                     )
             else:
@@ -5956,7 +5964,7 @@ class IDLCallback(IDLObjectWithScope):
 
         IDLObjectWithScope.__init__(self, location, parentScope, identifier)
 
-        for (returnType, arguments) in self.signatures():
+        for returnType, arguments in self.signatures():
             for argument in arguments:
                 argument.resolve(self)
 
@@ -6097,7 +6105,6 @@ class IDLMethodOverload:
 
 
 class IDLMethod(IDLInterfaceMember, IDLScope):
-
     Special = enum(
         "Getter", "Setter", "Deleter", "LegacyCaller", base=IDLInterfaceMember.Special
     )
@@ -6280,7 +6287,7 @@ class IDLMethod(IDLInterfaceMember, IDLScope):
         assert isinstance(parentScope, IDLScope)
         IDLObjectWithIdentifier.resolve(self, parentScope)
         IDLScope.__init__(self, self.location, parentScope, self.identifier)
-        for (returnType, arguments) in self.signatures():
+        for returnType, arguments in self.signatures():
             for argument in arguments:
                 argument.resolve(self)
 
@@ -6423,7 +6430,7 @@ class IDLMethod(IDLInterfaceMember, IDLScope):
             variadicArgument = None
 
             arguments = overload.arguments
-            for (idx, argument) in enumerate(arguments):
+            for idx, argument in enumerate(arguments):
                 assert argument.type.isComplete()
 
                 if (
@@ -6556,8 +6563,8 @@ class IDLMethod(IDLInterfaceMember, IDLScope):
 
     def distinguishingIndexForArgCount(self, argc):
         def isValidDistinguishingIndex(idx, signatures):
-            for (firstSigIndex, (firstRetval, firstArgs)) in enumerate(signatures[:-1]):
-                for (secondRetval, secondArgs) in signatures[firstSigIndex + 1 :]:
+            for firstSigIndex, (firstRetval, firstArgs) in enumerate(signatures[:-1]):
+                for secondRetval, secondArgs in signatures[firstSigIndex + 1 :]:
                     if idx < len(firstArgs):
                         firstType = firstArgs[idx].type
                     else:

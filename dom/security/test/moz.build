@@ -28,16 +28,16 @@ MOCHITEST_MANIFESTS += [
 ]
 
 MOCHITEST_CHROME_MANIFESTS += [
-    "general/chrome.ini",
+    "general/chrome.toml",
 ]
 
 BROWSER_CHROME_MANIFESTS += [
-    "cors/browser.ini",
-    "csp/browser.ini",
-    "general/browser.ini",
-    "https-first/browser.ini",
-    "https-only/browser.ini",
-    "mixedcontentblocker/browser.ini",
-    "referrer-policy/browser.ini",
-    "sec-fetch/browser.ini",
+    "cors/browser.toml",
+    "csp/browser.toml",
+    "general/browser.toml",
+    "https-first/browser.toml",
+    "https-only/browser.toml",
+    "mixedcontentblocker/browser.toml",
+    "referrer-policy/browser.toml",
+    "sec-fetch/browser.toml",
 ]

@@ -155,25 +155,17 @@ enum : uint32_t {
   // Set if the node has the accesskey attribute set.
   NODE_HAS_ACCESSKEY = NODE_FLAG_BIT(8),
 
-  // Set if the node has right-to-left directionality
-  NODE_HAS_DIRECTION_RTL = NODE_FLAG_BIT(9),
-
-  // Set if the node has left-to-right directionality
-  NODE_HAS_DIRECTION_LTR = NODE_FLAG_BIT(10),
-
-  NODE_ALL_DIRECTION_FLAGS = NODE_HAS_DIRECTION_LTR | NODE_HAS_DIRECTION_RTL,
-
-  NODE_HAS_BEEN_IN_UA_WIDGET = NODE_FLAG_BIT(11),
+  NODE_HAS_BEEN_IN_UA_WIDGET = NODE_FLAG_BIT(9),
 
   // Set if the node has a nonce value and a header delivered CSP.
-  NODE_HAS_NONCE_AND_HEADER_CSP = NODE_FLAG_BIT(12),
+  NODE_HAS_NONCE_AND_HEADER_CSP = NODE_FLAG_BIT(10),
 
-  NODE_KEEPS_DOMARENA = NODE_FLAG_BIT(13),
+  NODE_KEEPS_DOMARENA = NODE_FLAG_BIT(11),
 
-  NODE_MAY_HAVE_ELEMENT_CHILDREN = NODE_FLAG_BIT(14),
+  NODE_MAY_HAVE_ELEMENT_CHILDREN = NODE_FLAG_BIT(12),
 
   // Remaining bits are node type specific.
-  NODE_TYPE_SPECIFIC_BITS_OFFSET = 15
+  NODE_TYPE_SPECIFIC_BITS_OFFSET = 13
 };
 
 // Flags for selectors that persist to the DOM node.
@@ -215,6 +207,25 @@ enum class NodeSelectorFlags : uint32_t {
   /// DOM mutation.
   AllSimpleRestyleFlags =
       AllSimpleRestyleFlagsForAppend | HasSlowSelectorLaterSiblings,
+
+  // This node was evaluated as an anchor for a relative selector.
+  RelativeSelectorAnchor = 1 << 5,
+
+  // This node was evaluated as an anchor for a relative selector, and that
+  // relative selector was not the subject of the overall selector.
+  RelativeSelectorAnchorNonSubject = 1 << 6,
+
+  // This node's sibling(s) performed a relative selector search to this node.
+  RelativeSelectorSearchDirectionSibling = 1 << 7,
+
+  // This node's ancestor(s) performed a relative selector search to this node.
+  RelativeSelectorSearchDirectionAncestor = 1 << 8,
+
+  // This node's sibling(s) and ancestor(s), and/or this node's ancestor's
+  // sibling(s) performed a relative selector search to this node.
+  RelativeSelectorSearchDirectionAncestorSibling =
+      RelativeSelectorSearchDirectionSibling |
+      RelativeSelectorSearchDirectionAncestor,
 };
 
 MOZ_MAKE_ENUM_CLASS_BITWISE_OPERATORS(NodeSelectorFlags);

@@ -38,9 +38,8 @@
       commonStyles.href = "chrome://global/skin/in-content/common.css";
       const messageBarStyles = document.createElement("link");
       messageBarStyles.rel = "stylesheet";
-      messageBarStyles.href = window.IS_STORYBOOK
-        ? "./message-bar.css"
-        : "chrome://global/content/elements/message-bar.css";
+      messageBarStyles.href =
+        "chrome://global/content/elements/message-bar.css";
       template.content.append(commonStyles, messageBarStyles);
 
       // A container for the entire message bar content,
@@ -48,11 +47,13 @@
       // expected message bar layout is applied on this
       // element.
       const container = document.createElement("div");
+      container.part = "container";
       container.classList.add("container");
       template.content.append(container);
 
       const icon = document.createElement("span");
       icon.classList.add("icon");
+      icon.part = "icon";
       container.append(icon);
 
       const barcontent = document.createElement("span");

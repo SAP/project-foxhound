@@ -47,6 +47,8 @@ const PREF_SYSTEM_TOPSITES = "feeds.system.topsites";
 const PREF_SPOCS_CLEAR_ENDPOINT = "discoverystream.endpointSpocsClear";
 const PREF_SHOW_SPONSORED = "showSponsored";
 const PREF_SHOW_SPONSORED_TOPSITES = "showSponsoredTopSites";
+// Nimbus variable to enable the SOV feature for sponsored tiles.
+const NIMBUS_VARIABLE_CONTILE_SOV_ENABLED = "topSitesContileSovEnabled";
 const PREF_SPOC_IMPRESSIONS = "discoverystream.spoc.impressions";
 const PREF_FLIGHT_BLOCKS = "discoverystream.flight.blocks";
 const PREF_REC_IMPRESSIONS = "discoverystream.rec.impressions";
@@ -657,6 +659,7 @@ class DiscoveryStreamFeed {
         this.store.getState().Prefs.values?.pocketConfig || {};
       const onboardingExperience =
         this.isBff && pocketConfig.onboardingExperience;
+      const { spocTopsitesPlacementEnabled } = pocketConfig;
 
       let items = isBasicLayout ? 3 : 21;
       if (pocketConfig.fourCardLayout || pocketConfig.hybridLayout) {
@@ -715,6 +718,7 @@ class DiscoveryStreamFeed {
         items,
         sponsoredCollectionsEnabled,
         spocPlacementData,
+        spocTopsitesPlacementEnabled,
         spocTopsitesPlacementData,
         spocPositions: this.parseGridPositions(
           pocketConfig.spocPositions?.split(`,`)
@@ -1004,13 +1008,48 @@ class DiscoveryStreamFeed {
 
   async loadSpocs(sendUpdate, isStartup) {
     const cachedData = (await this.cache.get()) || {};
-    let spocsState;
+    let spocsState = cachedData.spocs;
+    let placements = this.getPlacements();
 
-    const placements = this.getPlacements();
+    if (
+      this.showSpocs &&
+      placements?.length &&
+      this.isExpired({ cachedData, key: "spocs", isStartup })
+    ) {
+      // We optimistically set this to true, because if SOV is not ready, we fetch them.
+      let useTopsitesPlacement = true;
 
-    if (this.showSpocs && placements?.length) {
-      spocsState = cachedData.spocs;
-      if (this.isExpired({ cachedData, key: "spocs", isStartup })) {
+      // If SOV is turned off or not available, we optimistically fetch sponsored topsites.
+      if (
+        lazy.NimbusFeatures.pocketNewtab.getVariable(
+          NIMBUS_VARIABLE_CONTILE_SOV_ENABLED
+        )
+      ) {
+        let { positions, ready } = this.store.getState().TopSites.sov;
+        if (ready) {
+          // We don't need to await here, because we don't need it now.
+          this.cache.set("sov", positions);
+        } else {
+          // If SOV is not available, and there is a SOV cache, use it.
+          positions = cachedData.sov;
+        }
+
+        if (positions?.length) {
+          // If SOV is ready and turned on, we can check if we need moz-sales position.
+          useTopsitesPlacement = positions.some(
+            allocation => allocation.assignedPartner === "moz-sales"
+          );
+        }
+      }
+
+      // We can filter out the topsite placement from the fetch.
+      if (!useTopsitesPlacement) {
+        placements = placements.filter(
+          placement => placement.name !== "sponsored-topsites"
+        );
+      }
+
+      if (placements?.length) {
         const endpoint =
           this.store.getState().DiscoveryStream.spocs.spocs_endpoint;
 
@@ -1739,6 +1778,7 @@ class DiscoveryStreamFeed {
     await this.cache.set("layout", {});
     await this.cache.set("feeds", {});
     await this.cache.set("spocs", {});
+    await this.cache.set("sov", {});
   }
 
   async resetAllCache() {
@@ -2191,6 +2231,7 @@ class DiscoveryStreamFeed {
      `spocPositions` Changes the position of spoc cards.
      `spocTopsitesPositions` Changes the position of spoc topsites.
      `spocPlacementData` Used to set the spoc content.
+     `spocTopsitesPlacementEnabled` Tuns on and off the sponsored topsites placement.
      `spocTopsitesPlacementData` Used to set spoc content for topsites.
      `sponsoredCollectionsEnabled` Tuns on and off the sponsored collection section.
      `hybridLayout` Changes cards to smaller more compact cards only for specific breakpoints.
@@ -2209,6 +2250,7 @@ getHardcodedLayout = ({
   spocPositions = [1, 5, 7, 11, 18, 20],
   spocTopsitesPositions = [1],
   spocPlacementData = { ad_types: [3617], zone_ids: [217758, 217995] },
+  spocTopsitesPlacementEnabled = false,
   spocTopsitesPlacementData = { ad_types: [3120], zone_ids: [280143] },
   widgetPositions = [],
   widgetData = [],
@@ -2237,7 +2279,7 @@ getHardcodedLayout = ({
               id: "newtab-section-header-topsites",
             },
           },
-          ...(spocTopsitesPlacementData
+          ...(spocTopsitesPlacementEnabled && spocTopsitesPlacementData
             ? {
                 placement: {
                   name: "sponsored-topsites",

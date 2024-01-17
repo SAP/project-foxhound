@@ -98,6 +98,7 @@ urlbar:
           `autofill_url`,
           `bookmark`,
           `calc`,
+          `clipboard`,
           `history`,
           `intervention_clear`,
           `intervention_refresh`,
@@ -137,9 +138,11 @@ urlbar:
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1800414
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1805717
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1842247
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1800414#c2
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1805717#c4
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1842247#c3
     data_sensitivity:
       - interaction
     notification_emails:
@@ -219,6 +222,7 @@ urlbar:
           `autofill_url`,
           `bookmark`,
           `calc`,
+          `clipboard`,
           `experimental_addon`,
           `history`,
           `input_field`,
@@ -333,6 +337,7 @@ urlbar:
           `autofill_url`,
           `bookmark`,
           `calc`,
+          `clipboard`,
           `history`,
           `intervention_clear`,
           `intervention_refresh`,
@@ -372,9 +377,11 @@ urlbar:
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1797265
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1805717
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1842247
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1797265#c3
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1805717#c4
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1842247#c3
     data_sensitivity:
       - interaction
     notification_emails:
@@ -470,6 +477,7 @@ urlbar:
           `autofill_url`,
           `bookmark`,
           `calc`,
+          `clipboard`,
           `history`,
           `intervention_clear`,
           `intervention_refresh`,
@@ -509,9 +517,11 @@ urlbar:
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1800579
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1805717
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1842247
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1800579#c4
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1805717#c4
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1842247#c3
     data_sensitivity:
       - interaction
     notification_emails:
@@ -664,6 +674,45 @@ quick_suggest:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1836283
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1836283
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - najiang@mozilla.com
+    expires: never
+    send_in_pings:
+      - quick-suggest
+
+  suggested_index:
+    type: string
+    unit: QuickSuggest bi-directional index
+    description: >
+      A stringified integer value that is the intended index of the suggestion
+      being interacted with. If `suggested_index_relative_to_group` is true, the
+      index is relative to the "Firefox Suggest" group; otherwise the index is
+      relative to the entire list of suggestions. Non-negative values (starting
+      at 0) are relative to the start/top of the group/list; negative values are
+      relative to the end/bottom of the group/list.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1854755
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1854755
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - najiang@mozilla.com
+    expires: never
+    send_in_pings:
+      - quick-suggest
+
+  suggested_index_relative_to_group:
+    type: boolean
+    description: >
+      Whether `suggested_index` is relative to the "Firefox Suggest" group. If
+      false, it is relative to the entire list of suggestions.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1854755
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1854755
     data_sensitivity:
       - interaction
     notification_emails:

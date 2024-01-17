@@ -5,14 +5,18 @@
 
 const { promiseShutdownManager, promiseStartupManager } = AddonTestUtils;
 
+let gBaseUrl;
+
 async function getEngineNames() {
   let engines = await Services.search.getEngines();
   return engines.map(engine => engine._name);
 }
 
-add_task(async function setup() {
+add_setup(async function () {
   let server = useHttpServer();
   server.registerContentType("sjs", "sjs");
+  gBaseUrl = `http://localhost:${server.identity.primaryPort}/`;
+
   await SearchTestUtils.useTestEngines("test-extensions");
   await promiseStartupManager();
 
@@ -132,7 +136,7 @@ add_task(async function test_load_favicon_invalid() {
   // User installs a new search engine
   let extension = await SearchTestUtils.installSearchExtension(
     {
-      favicon_url: `${gDataUrl}engine.xml`,
+      favicon_url: `${gBaseUrl}/head_search.js`,
     },
     { skipUnload: true }
   );

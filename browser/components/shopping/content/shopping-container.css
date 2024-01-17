@@ -2,26 +2,10 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-:root,
-body {
-  margin: 0;
-  padding: 0;
-}
-
 #shopping-container {
   display: flex;
   flex-direction: column;
-  box-sizing: border-box;
-  position: fixed;
-  height: 100%;
-  background-color: var(--in-content-box-background-odd);
-}
-
-#shopping-icon {
-  width: 32px;
-  height: 32px;
-  display: block;
-  background-image: url("chrome://branding/content/icon32.png");
+  width: 100%;
 }
 
 #header-wrapper {
@@ -29,22 +13,44 @@ body {
   justify-content: space-between;
   align-items: center;
   gap: 8px;
+  background-color: var(--shopping-header-background);
+  box-sizing: border-box;
   padding-block: 16px 8px;
   padding-inline: 16px 8px;
+  position: sticky;
+  top: 0;
+  width: 100%;
+  z-index: 2;
 }
 
 #shopping-header {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 0.5rem;
 }
 
-#header {
-  font-size: 1.3125em;
+#shopping-header-title {
   font-weight: 600;
+  margin: 0;
+}
+
+.shopping-header-overflow {
+  box-shadow: 0 1px 2px 0 rgba(58, 57, 68, 0.20);
+}
+
+#beta-marker {
+  font-weight: 400;
+  padding: 0.09375rem 0.25rem;
+  margin: 0;
+  line-height: 150%;
+  text-transform: uppercase;
+  color: var(--icon-color);
+  border: 1px solid var(--icon-color);
+  border-radius: 4px;
 }
 
 #close-button {
+  color: var(--icon-color);
   min-width: 32px;
   min-height: 32px;
   -moz-context-properties: fill;
@@ -52,16 +58,20 @@ body {
   background-image: url("chrome://global/skin/icons/close.svg");
   background-repeat: no-repeat;
   background-position: center;
+  margin-inline-end: 0;
 }
 
 #content {
-  overflow-y: auto;
-  overflow-x: hidden;
+  overflow: auto;
   display: flex;
   flex-direction: column;
   align-items: stretch;
   gap: 16px;
   padding: 0 16px 16px;
+}
+
+#content:focus-visible {
+  outline-offset: -2px;
 }
 
 .loading-box {
@@ -92,7 +102,7 @@ body {
 }
 
 @media not (prefers-reduced-motion) {
-  .loading-box {
+  .animate > .loading-box {
     animation-name: fade-in;
     animation-direction: alternate;
     animation-duration: 1s;

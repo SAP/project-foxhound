@@ -211,10 +211,13 @@ export var BackgroundUpdate = {
       }
 
       if (!serviceRegKeyExists) {
-        // The nimbus experiment allows users with unelevated installations
-        // to update in the background.
-        let allowUnelevated = lazy.NimbusFeatures.backgroundUpdate.getVariable(
-          "allowUpdatesForUnelevatedInstallations"
+        // A Nimbus rollout sets this preference and allows users with
+        // unelevated installations to update in the background. For that to
+        // work we use the setPref function to toggle a preference, because the
+        // value for Nimbus is currently not readable in a backgroundtask. The
+        // preference serves in that case as our communication channel.
+        let allowUnelevated = await Services.prefs.getBoolPref(
+          "app.update.background.allowUpdatesForUnelevatedInstallations"
         );
 
         if (!allowUnelevated) {
@@ -902,7 +905,7 @@ export var BackgroundUpdate = {
     for (const [key, value] of Object.entries(this.REASON)) {
       if (reasons.includes(value)) {
         try {
-          // `testGetValue` throws `NS_ERROR_LOSS_OF_SIGNIFICANT_DATA` in case
+          // `testGetValue` throws a `DataError` in case
           // of `InvalidOverflow` and other outstanding errors.
           Glean.backgroundUpdate.reasonsToNotUpdate.testGetValue();
           Glean.backgroundUpdate.reasonsToNotUpdate.add(key);

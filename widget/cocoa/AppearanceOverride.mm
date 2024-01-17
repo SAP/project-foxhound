@@ -12,7 +12,6 @@
 #include "mozilla/StaticPrefs_widget.h"
 
 #include "nsXULAppAPI.h"
-#include "SDKDeclarations.h"
 
 static void ToolbarThemePrefChanged(const char* aPref, void* aUserInfo);
 
@@ -29,7 +28,8 @@ static void ToolbarThemePrefChanged(const char* aPref, void* aUserInfo);
     if (XRE_IsParentProcess()) {
       mozilla::Preferences::RegisterCallbackAndCall(
           &ToolbarThemePrefChanged,
-          nsDependentCString(mozilla::StaticPrefs::GetPrefName_browser_theme_toolbar_theme()));
+          nsDependentCString(
+              mozilla::StaticPrefs::GetPrefName_browser_theme_toolbar_theme()));
     }
   }
   return sInstance;
@@ -60,9 +60,10 @@ static void ToolbarThemePrefChanged(const char* aPref, void* aUserInfo);
 }
 
 + (NSSet*)keyPathsForValuesAffectingEffectiveAppearance {
-  // Automatically notify any key-value observers of our effectiveAppearance property whenever the
-  // pref or the NSApp's effectiveAppearance change.
-  return [NSSet setWithObjects:@"toolbarTheme", @"_app.effectiveAppearance", nil];
+  // Automatically notify any key-value observers of our effectiveAppearance
+  // property whenever the pref or the NSApp's effectiveAppearance change.
+  return
+      [NSSet setWithObjects:@"toolbarTheme", @"_app.effectiveAppearance", nil];
 }
 
 - (NSAppearance*)effectiveAppearance {

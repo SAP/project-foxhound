@@ -298,6 +298,11 @@ impl<'ln> GeckoNode<'ln> {
     }
 
     #[inline]
+    fn selector_flags(&self) -> u32 {
+        self.selector_flags_atomic().load(Ordering::Relaxed)
+    }
+
+    #[inline]
     fn set_selector_flags(&self, flags: u32) {
         self.selector_flags_atomic().fetch_or(flags, Ordering::Relaxed);
     }
@@ -709,7 +714,7 @@ impl<'le> GeckoElement<'le> {
 
     #[inline]
     fn document_state(&self) -> DocumentState {
-        DocumentState::from_bits_retain(self.as_node().owner_doc().0.mDocumentState.bits)
+        DocumentState::from_bits_truncate(self.as_node().owner_doc().0.mDocumentState.bits)
     }
 
     #[inline]
@@ -861,6 +866,24 @@ impl<'le> GeckoElement<'le> {
                 )
                 .is_ok()
     }
+
+    /// Get slow selector flags required for nth-of invalidation.
+    pub fn slow_selector_flags(&self) -> ElementSelectorFlags {
+        slow_selector_flags_from_node_selector_flags(self.as_node().selector_flags())
+    }
+}
+
+/// Convert slow selector flags from the raw `NodeSelectorFlags`.
+pub fn slow_selector_flags_from_node_selector_flags(flags: u32) -> ElementSelectorFlags {
+    use crate::gecko_bindings::structs::NodeSelectorFlags;
+    let mut result = ElementSelectorFlags::empty();
+    if flags & NodeSelectorFlags::HasSlowSelector.0 != 0 {
+        result.insert(ElementSelectorFlags::HAS_SLOW_SELECTOR);
+    }
+    if flags & NodeSelectorFlags::HasSlowSelectorLaterSiblings.0 != 0 {
+        result.insert(ElementSelectorFlags::HAS_SLOW_SELECTOR_LATER_SIBLINGS);
+    }
+    result
 }
 
 /// Converts flags from the layout used by rust-selectors to the layout used
@@ -883,6 +906,18 @@ fn selector_flags_to_node_flags(flags: ElementSelectorFlags) -> u32 {
     }
     if flags.contains(ElementSelectorFlags::HAS_EMPTY_SELECTOR) {
         gecko_flags |= NodeSelectorFlags::HasEmptySelector.0;
+    }
+    if flags.contains(ElementSelectorFlags::ANCHORS_RELATIVE_SELECTOR) {
+        gecko_flags |= NodeSelectorFlags::RelativeSelectorAnchor.0;
+    }
+    if flags.contains(ElementSelectorFlags::ANCHORS_RELATIVE_SELECTOR_NON_SUBJECT) {
+        gecko_flags |= NodeSelectorFlags::RelativeSelectorAnchorNonSubject.0;
+    }
+    if flags.contains(ElementSelectorFlags::RELATIVE_SELECTOR_SEARCH_DIRECTION_ANCESTOR) {
+        gecko_flags |= NodeSelectorFlags::RelativeSelectorSearchDirectionAncestor.0;
+    }
+    if flags.contains(ElementSelectorFlags::RELATIVE_SELECTOR_SEARCH_DIRECTION_SIBLING) {
+        gecko_flags |= NodeSelectorFlags::RelativeSelectorSearchDirectionSibling.0;
     }
 
     gecko_flags
@@ -1170,7 +1205,7 @@ impl<'le> TElement for GeckoElement<'le> {
 
     #[inline]
     fn state(&self) -> ElementState {
-        ElementState::from_bits_retain(self.state_internal())
+        ElementState::from_bits_truncate(self.state_internal())
     }
 
     #[inline]
@@ -1707,6 +1742,25 @@ impl<'le> TElement for GeckoElement<'le> {
             }
         }
     }
+
+    fn has_selector_flags(&self, flags: ElementSelectorFlags) -> bool {
+        let node_flags = selector_flags_to_node_flags(flags);
+        self.as_node().selector_flags() & node_flags == node_flags
+    }
+
+    fn relative_selector_search_direction(&self) -> Option<ElementSelectorFlags> {
+        use crate::gecko_bindings::structs::NodeSelectorFlags;
+        let flags = self.as_node().selector_flags();
+        if (flags & NodeSelectorFlags::RelativeSelectorSearchDirectionAncestorSibling.0) != 0 {
+            Some(ElementSelectorFlags::RELATIVE_SELECTOR_SEARCH_DIRECTION_ANCESTOR_SIBLING)
+        } else if (flags & NodeSelectorFlags::RelativeSelectorSearchDirectionAncestor.0) != 0 {
+            Some(ElementSelectorFlags::RELATIVE_SELECTOR_SEARCH_DIRECTION_ANCESTOR)
+        } else if (flags & NodeSelectorFlags::RelativeSelectorSearchDirectionSibling.0) != 0 {
+            Some(ElementSelectorFlags::RELATIVE_SELECTOR_SEARCH_DIRECTION_SIBLING)
+        } else {
+            None
+        }
+    }
 }
 
 impl<'le> PartialEq for GeckoElement<'le> {
@@ -1915,7 +1969,6 @@ impl<'le> ::selectors::Element for GeckoElement<'le> {
             NonTSPseudoClass::Valid |
             NonTSPseudoClass::Invalid |
             NonTSPseudoClass::MozBroken |
-            NonTSPseudoClass::MozLoading |
             NonTSPseudoClass::Required |
             NonTSPseudoClass::Optional |
             NonTSPseudoClass::ReadOnly |
@@ -1944,8 +1997,9 @@ impl<'le> ::selectors::Element for GeckoElement<'le> {
             NonTSPseudoClass::Hover |
             NonTSPseudoClass::MozAutofillPreview |
             NonTSPseudoClass::MozRevealed |
-            NonTSPseudoClass::MozValueEmpty |
-            NonTSPseudoClass::Dir(..) => self.state().intersects(pseudo_class.state_flag()),
+            NonTSPseudoClass::MozValueEmpty => self.state().intersects(pseudo_class.state_flag()),
+            // TODO: This applying only to HTML elements is weird.
+            NonTSPseudoClass::Dir(ref dir) => self.is_html_element() && self.state().intersects(dir.element_state()),
             NonTSPseudoClass::AnyLink => self.is_link(),
             NonTSPseudoClass::Link => {
                 self.is_link() && context.visited_handling().matches_unvisited()

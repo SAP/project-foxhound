@@ -56,6 +56,7 @@
 #include "mozilla/dom/SVGViewportElement.h"
 #include "mozilla/dom/UIEvent.h"
 #include "mozilla/dom/VideoFrame.h"
+#include "mozilla/dom/VideoFrameBinding.h"
 #include "mozilla/intl/BidiEmbeddingLevel.h"
 #include "mozilla/EffectCompositor.h"
 #include "mozilla/EffectSet.h"
@@ -7264,10 +7265,23 @@ SurfaceFromElementResult nsLayoutUtils::SurfaceFromVideoFrame(
     result.mIntrinsicSize = displaySize;
   }
 
-  // TODO(aosmond): Presumably we can do better than assuming premultiplied.
-  // Depending on how the VideoFrame was created, we may have had more
-  // information about its transpancy status.
   result.mAlphaType = gfxAlphaType::Premult;
+  Nullable<VideoPixelFormat> format = aVideoFrame->GetFormat();
+  if (!format.IsNull()) {
+    switch (format.Value()) {
+      case VideoPixelFormat::I420:
+      case VideoPixelFormat::I422:
+      case VideoPixelFormat::I444:
+      case VideoPixelFormat::NV12:
+      case VideoPixelFormat::RGBX:
+      case VideoPixelFormat::BGRX:
+        result.mAlphaType = gfxAlphaType::Opaque;
+        break;
+      default:
+        break;
+    }
+  }
+
   result.mHasSize = true;
 
   // We shouldn't have a VideoFrame if either of these is true.
@@ -8755,13 +8769,11 @@ void nsLayoutUtils::SetBSizeFromFontMetrics(const nsIFrame* aFrame,
 MOZ_CAN_RUN_SCRIPT_BOUNDARY bool
 nsLayoutUtils::HasDocumentLevelListenersForApzAwareEvents(
     PresShell* aPresShell) {
-  if (Document* doc = aPresShell->GetDocument()) {
+  if (RefPtr<Document> doc = aPresShell->GetDocument()) {
     WidgetEvent event(true, eVoidEvent);
     nsTArray<EventTarget*> targets;
-    // TODO: Bug 1506441
-    nsresult rv =
-        EventDispatcher::Dispatch(MOZ_KnownLive(ToSupports(doc)), nullptr,
-                                  &event, nullptr, nullptr, nullptr, &targets);
+    nsresult rv = EventDispatcher::Dispatch(doc, nullptr, &event, nullptr,
+                                            nullptr, nullptr, &targets);
     NS_ENSURE_SUCCESS(rv, false);
     for (size_t i = 0; i < targets.Length(); i++) {
       if (targets[i]->IsApzAware()) {
@@ -9828,24 +9840,24 @@ void nsLayoutUtils::ComputeSystemFont(nsFont* aSystemFont,
       aSystemFont->sizeAdjust = StyleFontSizeAdjust::None();
       break;
     case StyleFontSizeAdjust::Tag::ExHeight:
-      aSystemFont->sizeAdjust = StyleFontSizeAdjust::ExHeight(
-          StyleFontSizeAdjustFactor::Number(fontStyle.sizeAdjust));
+      aSystemFont->sizeAdjust =
+          StyleFontSizeAdjust::ExHeight(fontStyle.sizeAdjust);
       break;
     case StyleFontSizeAdjust::Tag::CapHeight:
-      aSystemFont->sizeAdjust = StyleFontSizeAdjust::CapHeight(
-          StyleFontSizeAdjustFactor::Number(fontStyle.sizeAdjust));
+      aSystemFont->sizeAdjust =
+          StyleFontSizeAdjust::CapHeight(fontStyle.sizeAdjust);
       break;
     case StyleFontSizeAdjust::Tag::ChWidth:
-      aSystemFont->sizeAdjust = StyleFontSizeAdjust::ChWidth(
-          StyleFontSizeAdjustFactor::Number(fontStyle.sizeAdjust));
+      aSystemFont->sizeAdjust =
+          StyleFontSizeAdjust::ChWidth(fontStyle.sizeAdjust);
       break;
     case StyleFontSizeAdjust::Tag::IcWidth:
-      aSystemFont->sizeAdjust = StyleFontSizeAdjust::IcWidth(
-          StyleFontSizeAdjustFactor::Number(fontStyle.sizeAdjust));
+      aSystemFont->sizeAdjust =
+          StyleFontSizeAdjust::IcWidth(fontStyle.sizeAdjust);
       break;
     case StyleFontSizeAdjust::Tag::IcHeight:
-      aSystemFont->sizeAdjust = StyleFontSizeAdjust::IcHeight(
-          StyleFontSizeAdjustFactor::Number(fontStyle.sizeAdjust));
+      aSystemFont->sizeAdjust =
+          StyleFontSizeAdjust::IcHeight(fontStyle.sizeAdjust);
       break;
   }
 

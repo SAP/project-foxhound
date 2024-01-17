@@ -10,11 +10,11 @@
   --close-icon-url: url("chrome://global/skin/icons/close-12.svg");
   --close-fill-color: var(--in-content-icon-color);
   --icon-size: 16px;
-  --close-icon-size: 24px;
+  --close-icon-size: 28px;
 }
 
 :host([message-bar-type=infobar]) {
-  --close-icon-size: 24px;
+  --close-icon-size: 28px;
 }
 
 :host {
@@ -91,11 +91,16 @@
 }
 
 .icon::after {
+  display: inline-block;
   appearance: none;
   -moz-context-properties: fill, stroke;
   fill: currentColor;
   stroke: currentColor;
-  content: var(--message-bar-icon-url);
+  content: "";
+  background-image: var(--message-bar-icon-url);
+  background-size: var(--icon-size);
+  width: var(--icon-size);
+  height: var(--icon-size);
 }
 
 /* Use a spacer to position the close button at the end, but also support
@@ -140,6 +145,9 @@
   /* Colors from: https://design.firefox.com/photon/components/message-bars.html#type-specific-style */
 
   :host([type=warning]:not([message-bar-type=infobar])) {
+    /* Ensure colors within the bar are adjusted and controls are readable */
+    color-scheme: light;
+
     --message-bar-background-color: var(--yellow-50);
     --message-bar-text-color: var(--yellow-90);
 
@@ -151,6 +159,9 @@
   }
 
   :host([type=success]:not([message-bar-type=infobar])) {
+    /* Ensure colors within the bar are adjusted and controls are readable */
+    color-scheme: light;
+
     --message-bar-background-color: var(--green-50);
     --message-bar-text-color: var(--green-90);
 
@@ -248,10 +259,10 @@
 .notification-content {
   margin: 0;
   margin-inline-start: 8px;
+  padding-block: 3px;
 }
 
 .notification-message {
-  min-height: 16px; /* min-height: 32px with block padding */
   padding-block: 8px;
   margin-inline-end: 20px;
 }
@@ -276,10 +287,8 @@
 }
 
 .notification-button {
-  margin: 4px;
-  /* This is supposed to be 6px but then the buttons are 26px tall by default
-   * on Windows. Drop it down to 4px (with the 1px border) */
-  padding-block: 3px;
+  align-items: center;
+  margin: 0 4px;
 }
 
 .notification-button:first-of-type {
@@ -297,7 +306,7 @@ strong {
 
 .infobar > .icon {
   padding: 0;
-  margin: 8px 0;
+  margin: 10px 0;
 }
 
 .infobar > .icon,
@@ -307,4 +316,9 @@ strong {
 
 :host([type=system]) .icon {
   display: none;
+}
+
+@keyframes spin {
+  from { transform: rotate(0); }
+  to { transform: rotate(360deg); }
 }

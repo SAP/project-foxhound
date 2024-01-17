@@ -206,14 +206,18 @@ addon-sitepermission-host = Site Permissions for { $host }
 
 ## These are global warnings
 
-extensions-warning-safe-mode = All add-ons have been disabled by safe mode.
-extensions-warning-check-compatibility = Add-on compatibility checking is disabled. You may have incompatible add-ons.
+extensions-warning-safe-mode2 =
+    .message = All add-ons have been disabled by safe mode.
+extensions-warning-check-compatibility2 =
+    .message = Add-on compatibility checking is disabled. You may have incompatible add-ons.
 extensions-warning-check-compatibility-button = Enable
     .title = Enable add-on compatibility checking
-extensions-warning-update-security = Add-on update security checking is disabled. You may be compromised by updates.
+extensions-warning-update-security2 =
+    .message = Add-on update security checking is disabled. You may be compromised by updates.
 extensions-warning-update-security-button = Enable
     .title = Enable add-on update security checking
-extensions-warning-imported-addons = Please finalize the installation of extensions that were imported to { -brand-short-name }.
+extensions-warning-imported-addons2 =
+    .message = Please finalize the installation of extensions that were imported to { -brand-short-name }.
 extensions-warning-imported-addons-button = Install Extensions
 
 ## Strings connected to add-on updates
@@ -283,7 +287,8 @@ shortcuts-duplicate = Duplicate shortcut
 # String displayed when a keyboard shortcut is already assigned to more than one add-on
 # Variables:
 #   $shortcut (string) - Shortcut string for the add-on
-shortcuts-duplicate-warning-message = { $shortcut } is being used as a shortcut in more than one case. Duplicate shortcuts may cause unexpected behavior.
+shortcuts-duplicate-warning-message2 =
+    .message = { $shortcut } is being used as a shortcut in more than one case. Duplicate shortcuts may cause unexpected behavior.
 
 # String displayed when a keyboard shortcut is already used by another add-on
 # Variables:
@@ -315,9 +320,10 @@ discopane-intro =
     security, performance, and functionality.
 
 # Notice to make user aware that the recommendations are personalized.
-discopane-notice-recommendations =
-    Some of these recommendations are personalized. They are based on other
-    extensions you’ve installed, profile preferences, and usage statistics.
+discopane-notice-recommendations2 =
+    .message =
+        Some of these recommendations are personalized. They are based on other
+        extensions you’ve installed, profile preferences, and usage statistics.
 discopane-notice-learn-more = Learn more
 
 privacy-policy = Privacy Policy
@@ -392,7 +398,8 @@ addon-detail-homepage-label = Homepage
 addon-detail-rating-label = Rating
 
 # Message for add-ons with a staged pending update.
-install-postponed-message = This extension will be updated when { -brand-short-name } restarts.
+install-postponed-message2 =
+    .message = This extension will be updated when { -brand-short-name } restarts.
 install-postponed-button = Update Now
 
 # This string is used to show that an add-on is disabled.
@@ -518,19 +525,25 @@ addon-page-options-button =
 
 # Variables:
 #   $version (string) - Application version.
-details-notification-incompatible = { $name } is incompatible with { -brand-short-name } { $version }.
+details-notification-incompatible2 =
+    .message = { $name } is incompatible with { -brand-short-name } { $version }.
 details-notification-incompatible-link = More Information
 
-details-notification-unsigned-and-disabled = { $name } could not be verified for use in { -brand-short-name } and has been disabled.
+details-notification-unsigned-and-disabled2 =
+    .message = { $name } could not be verified for use in { -brand-short-name } and has been disabled.
 details-notification-unsigned-and-disabled-link = More Information
 
-details-notification-unsigned = { $name } could not be verified for use in { -brand-short-name }. Proceed with caution.
+details-notification-unsigned2 =
+    .message = { $name } could not be verified for use in { -brand-short-name }. Proceed with caution.
 details-notification-unsigned-link = More Information
 
-details-notification-blocked = { $name } has been disabled due to security or stability issues.
+details-notification-blocked2 =
+    .message = { $name } has been disabled due to security or stability issues.
 details-notification-blocked-link = More Information
 
-details-notification-softblocked = { $name } is known to cause security or stability issues.
+details-notification-softblocked2 =
+    .message = { $name } is known to cause security or stability issues.
 details-notification-softblocked-link = More Information
 
-details-notification-gmp-pending = { $name } will be installed shortly.
+details-notification-gmp-pending2 =
+    .message = { $name } will be installed shortly.

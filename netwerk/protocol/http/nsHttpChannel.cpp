@@ -2436,10 +2436,6 @@ nsresult nsHttpChannel::ContinueProcessResponse3(nsresult rv) {
         // CSP Frame Ancestor and X-Frame-Options check has failed
         // Do not prompt http auth - Bug 1629307
         rv = NS_ERROR_FAILURE;
-      } else if (httpStatus == 401 &&
-                 mLoadInfo->GetTainting() == mozilla::LoadTainting::CORS) {
-        // CORS does not allow Authentication headers on 401 (see bug 1554538)
-        rv = NS_ERROR_FAILURE;
       } else {
         rv = mAuthProvider->ProcessAuthentication(
             httpStatus, mConnectionInfo->EndToEndSSL() && mTransaction &&
@@ -3968,9 +3964,11 @@ nsHttpChannel::OnCacheEntryCheck(nsICacheEntry* entry, uint32_t* aResult) {
     rv = GenerateCacheKey(mPostID, cacheKey);
     MOZ_ASSERT(NS_SUCCEEDED(rv));
 
-    if (!mRedirectedCachekeys) {
-      mRedirectedCachekeys = MakeUnique<nsTArray<nsCString>>();
-    } else if (mRedirectedCachekeys->Contains(cacheKey)) {
+    auto redirectedCachekeys = mRedirectedCachekeys.Lock();
+    auto& ref = redirectedCachekeys.ref();
+    if (!ref) {
+      ref = MakeUnique<nsTArray<nsCString>>();
+    } else if (ref->Contains(cacheKey)) {
       doValidation = true;
     }
 
@@ -3979,7 +3977,7 @@ nsHttpChannel::OnCacheEntryCheck(nsICacheEntry* entry, uint32_t* aResult) {
 
     // Append cacheKey if not in the chain already
     if (!doValidation) {
-      mRedirectedCachekeys->AppendElement(cacheKey);
+      ref->AppendElement(cacheKey);
     } else {
       prefetchStatus =
           Telemetry::LABELS_PREDICTOR_PREFETCH_USE_STATUS::Redirect;
