@@ -78,8 +78,8 @@ class TaintLocation
     TaintLocation& operator=(const TaintLocation& other) = default;
 
     // MSVC doesn't let us = default these :(
-    TaintLocation(TaintLocation&& other);
-    TaintLocation& operator=(TaintLocation&& other);
+    TaintLocation(TaintLocation&& other) noexcept;
+    TaintLocation& operator=(TaintLocation&& other) noexcept;
 
     const std::u16string& filename() const { return filename_; }
     uint32_t line() const { return line_; }
@@ -132,8 +132,8 @@ class TaintOperation
     TaintOperation& operator=(const TaintOperation& other) = default;
 
     // MSVC doesn't let us = default these :(
-    TaintOperation(TaintOperation&& other);
-    TaintOperation& operator=(TaintOperation&& other);
+    TaintOperation(TaintOperation&& other) noexcept;
+    TaintOperation& operator=(TaintOperation&& other) noexcept;
 
     const char* name() const { return name_.c_str(); }
     const std::vector<std::u16string>& arguments() const { return arguments_; }
@@ -191,7 +191,7 @@ class TaintNode
     // Constructs an intermediate node.
     TaintNode(TaintNode* parent, TaintOperation&& operation);
     // Constructs a root node.
-    TaintNode(TaintOperation&& operation);
+    TaintNode(TaintOperation&& operation) noexcept;
     
     // Increments the reference count of this object by one.
     void addref();
@@ -304,7 +304,7 @@ class TaintFlow
     // incrementing the reference count on the head node of the flow.
     TaintFlow(const TaintFlow& other);
     // Moving is even faster..
-    TaintFlow(TaintFlow&& other);
+    TaintFlow(TaintFlow&& other) noexcept;
 
     TaintFlow(const TaintFlow* other);
  
@@ -467,14 +467,14 @@ class StringTaint
     explicit constexpr StringTaint() : ranges_(nullptr) { }
 
     // Constructs a new instance containing a single taint range.
-    explicit StringTaint(TaintRange range);
+    explicit StringTaint(const TaintRange& range);
 
     // As above, but also constructs the taint range.
     // TODO make StringTaint(operaton, length) instead.
     StringTaint(uint32_t begin, uint32_t end, const TaintOperation& operation);
 
     // Construct taint information for a uniformly tainted string.
-    explicit StringTaint(TaintFlow flow, uint32_t length);
+    explicit StringTaint(const TaintFlow& flow, uint32_t length);
 
     // Default destructor needed to allow the StringTaint class to
     // act as a literal and appear in constexpr's, e.g. EmptyTaint
@@ -483,9 +483,9 @@ class StringTaint
     ~StringTaint() = default;
 
     StringTaint(const StringTaint& other);
-    StringTaint(StringTaint&& other);
+    StringTaint(StringTaint&& other) noexcept;
     StringTaint& operator=(const StringTaint& other);
-    StringTaint& operator=(StringTaint&& other);
+    StringTaint& operator=(StringTaint&& other) noexcept;
 
     // Create subtaint
     StringTaint(const StringTaint& other, uint32_t begin, uint32_t end);
@@ -667,18 +667,18 @@ class SafeStringTaint : public StringTaint
     ~SafeStringTaint() { clear(); }
 
     SafeStringTaint(const SafeStringTaint& other) : StringTaint(other) {}
-    SafeStringTaint(SafeStringTaint&& other) : StringTaint(other) {}
+    SafeStringTaint(SafeStringTaint&& other) noexcept : StringTaint(std::move(other)) {}
     SafeStringTaint& operator=(const SafeStringTaint& other) { StringTaint::operator=(other); return *this; }
-    SafeStringTaint& operator=(SafeStringTaint&& other) { StringTaint::operator=(other); return *this; }
+    SafeStringTaint& operator=(SafeStringTaint&& other) noexcept { StringTaint::operator=(other); return *this; }
 
     // Create subtaint
     SafeStringTaint(const StringTaint& other, uint32_t begin, uint32_t end) : StringTaint(other, begin, end) {}
     SafeStringTaint(const StringTaint& other, uint32_t index) : StringTaint(other, index) {}
 
     SafeStringTaint(const StringTaint& other) : StringTaint(other) {}
-    SafeStringTaint(StringTaint&& other) : StringTaint(other) {}
+    SafeStringTaint(StringTaint&& other) noexcept : StringTaint(other) {}
     SafeStringTaint& operator=(const StringTaint& other) { StringTaint::operator=(other); return *this; }
-    SafeStringTaint& operator=(StringTaint&& other) { StringTaint::operator=(other); return *this; }
+    SafeStringTaint& operator=(StringTaint&& other) noexcept { StringTaint::operator=(other); return *this; }
 
 };
 

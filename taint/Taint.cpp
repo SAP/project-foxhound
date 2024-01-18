@@ -32,41 +32,41 @@
 #define DEBUG_LINE() std::cout << __PRETTY_FUNCTION__ << std::endl;
 
 TaintLocation::TaintLocation(std::u16string filename, uint32_t line, uint32_t pos, uint32_t scriptStartLine, TaintMd5 scriptHash, std::u16string function)
-    : filename_(filename), line_(line), pos_(pos), scriptStartLine_(scriptStartLine), scriptHash_(scriptHash), function_(function) {}
+    : filename_(std::move(filename)), line_(line), pos_(pos), scriptStartLine_(scriptStartLine), scriptHash_(scriptHash), function_(std::move(function)) {}
 
 TaintLocation::TaintLocation()
     : filename_(), line_(0), pos_(0), scriptStartLine_(0), scriptHash_({0}), function_() {}
 
-TaintLocation::TaintLocation(TaintLocation&& other)
+TaintLocation::TaintLocation(TaintLocation&& other) noexcept
     : filename_(std::move(other.filename_)),
-      line_(std::move(other.line_)),
-      pos_(std::move(other.pos_)),
-      scriptStartLine_(std::move(other.scriptStartLine_)),
-      scriptHash_(std::move(other.scriptHash_)),
+      line_(other.line_),
+      pos_(other.pos_),
+      scriptStartLine_(other.scriptStartLine_),
+      scriptHash_(other.scriptHash_),
       function_(std::move(other.function_)) {}
 
-TaintLocation& TaintLocation::operator=(TaintLocation&& other)
+TaintLocation& TaintLocation::operator=(TaintLocation&& other) noexcept
 {
     filename_ = std::move(other.filename_);
-    line_ = std::move(other.line_);
-    pos_ = std::move(other.pos_);
-    scriptStartLine_ = std::move(other.scriptStartLine_);
-    scriptHash_ = std::move(other.scriptHash_);
+    line_ = other.line_;
+    pos_ = other.pos_;
+    scriptStartLine_ = other.scriptStartLine_;
+    scriptHash_ = other.scriptHash_;
     function_ = std::move(other.function_);
     return *this;
 }
 
 TaintOperation::TaintOperation(const char* name, TaintLocation location, std::initializer_list<std::u16string> args)
-    : name_(name), arguments_(args), source_(0), is_native_(false), location_(location) {}
+    : name_(name), arguments_(args), source_(0), is_native_(false), location_(std::move(location)) {}
 
 TaintOperation::TaintOperation(const char* name, bool is_native, TaintLocation location, std::initializer_list<std::u16string> args)
-    : name_(name), arguments_(args), source_(0), is_native_(is_native), location_(location) {}
+    : name_(name), arguments_(args), source_(0), is_native_(is_native), location_(std::move(location)) {}
 
 TaintOperation::TaintOperation(const char* name, TaintLocation location, std::vector<std::u16string> args)
-    : name_(name), arguments_(args), source_(0), is_native_(false), location_(location) {}
+    : name_(name), arguments_(std::move(args)), source_(0), is_native_(false), location_(std::move(location)) {}
 
 TaintOperation::TaintOperation(const char* name, bool is_native, TaintLocation location, std::vector<std::u16string> args)
-    : name_(name), arguments_(args), source_(0), is_native_(is_native), location_(location) {}
+    : name_(name), arguments_(std::move(args)), source_(0), is_native_(is_native), location_(std::move(location)) {}
 
 TaintOperation::TaintOperation(const char* name, std::initializer_list<std::u16string> args)
     : name_(name), arguments_(args), source_(0), is_native_(false), location_() {}
@@ -75,10 +75,10 @@ TaintOperation::TaintOperation(const char* name, bool is_native, std::initialize
     : name_(name), arguments_(args), source_(0), is_native_(is_native), location_() {}
 
 TaintOperation::TaintOperation(const char* name, std::vector<std::u16string> args)
-    : name_(name), arguments_(args), source_(0), is_native_(false), location_() {}
+    : name_(name), arguments_(std::move(args)), source_(0), is_native_(false), location_() {}
 
 TaintOperation::TaintOperation(const char* name, bool is_native, std::vector<std::u16string> args)
-    : name_(name), arguments_(args), source_(0), is_native_(is_native), location_() {}
+    : name_(name), arguments_(std::move(args)), source_(0), is_native_(is_native), location_() {}
 
 TaintOperation::TaintOperation(const char* name)
     : name_(name), arguments_(), source_(0), is_native_(false), location_() {}
@@ -87,19 +87,19 @@ TaintOperation::TaintOperation(const char* name, bool is_native)
     : name_(name), arguments_(), source_(0), is_native_(is_native), location_() {}
 
 TaintOperation::TaintOperation(const char* name, TaintLocation location)
-    : name_(name), arguments_(), source_(0), is_native_(false), location_(location) {}
+    : name_(name), arguments_(), source_(0), is_native_(false), location_(std::move(location)) {}
 
 TaintOperation::TaintOperation(const char* name, bool is_native, TaintLocation location)
-    : name_(name), arguments_(), source_(0), is_native_(is_native), location_(location) {}
+    : name_(name), arguments_(), source_(0), is_native_(is_native), location_(std::move(location)) {}
 
-TaintOperation::TaintOperation(TaintOperation&& other)
+TaintOperation::TaintOperation(TaintOperation&& other) noexcept
     : name_(std::move(other.name_)),
       arguments_(std::move(other.arguments_)),
       source_(other.source_),
       is_native_(other.is_native_),
       location_(std::move(other.location_)) {}
 
-TaintOperation& TaintOperation::operator=(TaintOperation&& other)
+TaintOperation& TaintOperation::operator=(TaintOperation&& other) noexcept
 {
     name_ = std::move(other.name_);
     arguments_ = std::move(other.arguments_);
@@ -145,16 +145,18 @@ TaintNode::TaintNode(TaintNode* parent, const TaintOperation& operation)
     : parent_(parent), refcount_(1), operation_(operation)
 {
     MOZ_COUNT_CTOR(TaintNode);
-    if (parent_)
+    if (parent_) {
         parent_->addref();
+    }
 }
 
 TaintNode::TaintNode(TaintNode* parent, TaintOperation&& operation)
     : parent_(parent), refcount_(1), operation_(operation)
 {
     MOZ_COUNT_CTOR(TaintNode);
-    if (parent_)
+    if (parent_) {
         parent_->addref();
+    }
 }
 
 TaintNode::TaintNode(const TaintOperation& operation)
@@ -163,7 +165,7 @@ TaintNode::TaintNode(const TaintOperation& operation)
     MOZ_COUNT_CTOR(TaintNode);
 }
 
-TaintNode::TaintNode(TaintOperation&& operation)
+TaintNode::TaintNode(TaintOperation&& operation) noexcept
     : parent_(nullptr), refcount_(1), operation_(operation)
 {
     MOZ_COUNT_CTOR(TaintNode);
@@ -171,8 +173,9 @@ TaintNode::TaintNode(TaintOperation&& operation)
 
 void TaintNode::addref()
 {
-    if (refcount_ == 0xffffffff)
+    if (refcount_ == 0xffffffff) {
         MOZ_CRASH("TaintNode refcount overflow");
+    }
 
     refcount_++;
 }
@@ -182,15 +185,17 @@ void TaintNode::release()
     MOZ_ASSERT(refcount_ > 0);
 
     refcount_--;
-    if (refcount_ == 0)
+    if (refcount_ == 0) {
         delete this;
+    }
 }
 
 TaintNode::~TaintNode()
 {
     MOZ_COUNT_DTOR(TaintNode);
-    if (parent_)
+    if (parent_) {
         parent_->release();
+    }
 }
 
 
@@ -243,8 +248,9 @@ TaintFlow::TaintFlow(const TaintFlow& other)
     : head_(other.head_)
 {
     MOZ_COUNT_CTOR(TaintFlow);
-    if (head_)
+    if (head_) {
         head_->addref();
+    }
 }
 
 TaintFlow::TaintFlow(const TaintFlow* other)
@@ -253,12 +259,13 @@ TaintFlow::TaintFlow(const TaintFlow* other)
     MOZ_COUNT_CTOR(TaintFlow);
     if (other) {
         head_ = other->head_;
-        if (head_)
+        if (head_) {
             head_->addref();
+        }
     }
 }
 
-TaintFlow::TaintFlow(TaintFlow&& other)
+TaintFlow::TaintFlow(TaintFlow&& other) noexcept
     : head_(other.head_)
 {
     MOZ_COUNT_CTOR(TaintFlow);
@@ -269,18 +276,24 @@ TaintFlow::TaintFlow(TaintFlow&& other)
 TaintFlow::~TaintFlow()
 {
     MOZ_COUNT_DTOR(TaintFlow);
-    if (head_)
+    if (head_) {
         head_->release();
+    }
 }
 
 TaintFlow& TaintFlow::operator=(const TaintFlow& other)
 {
-    if (head_)
+    if (this == &other) {
+        return *this;
+    }
+    if (head_) {
         head_->release();
+    }
 
     head_ = other.head_;
-    if (head_)
+    if (head_) {
         head_->addref();
+    }
 
     return *this;
 }
@@ -294,8 +307,9 @@ const TaintFlow& TaintFlow::getEmptyTaintFlow() {
 const TaintOperation& TaintFlow::source() const
 {
     TaintNode* source = head_;
-    while (source->parent() != nullptr)
+    while (source->parent() != nullptr) {
         source = source->parent();
+    }
 
     return source->operation();
 }
@@ -346,7 +360,7 @@ TaintRange::TaintRange()
 }
 
 TaintRange::TaintRange(uint32_t begin, uint32_t end, TaintFlow flow)
-    : begin_(begin), end_(end), flow_(flow)
+    : begin_(begin), end_(end), flow_(std::move(flow))
 {
     MOZ_COUNT_CTOR(TaintRange);
     MOZ_ASSERT(begin <= end);
@@ -481,7 +495,7 @@ static void check_ranges(const std::vector<TaintRange>* ranges)
 #endif
 
 
-StringTaint::StringTaint(TaintRange range)
+StringTaint::StringTaint(const TaintRange& range)
 {
     MOZ_COUNT_CTOR(StringTaint);
     ranges_ = new std::vector<TaintRange>;
@@ -498,7 +512,7 @@ StringTaint::StringTaint(uint32_t begin, uint32_t end, const TaintOperation& ope
     CHECK_RANGES(ranges_);
 }
 
-StringTaint::StringTaint(TaintFlow flow, uint32_t length) : ranges_(nullptr)
+StringTaint::StringTaint(const TaintFlow& flow, uint32_t length) : ranges_(nullptr)
 {
     // Only create the taint if there are entries in the flow
     if (flow) {
@@ -521,7 +535,7 @@ StringTaint::StringTaint(const StringTaint& other) : ranges_(nullptr)
 void StringTaint::assignFromSubTaint(const StringTaint& other, uint32_t begin, uint32_t end)
 {
     MOZ_COUNT_CTOR(StringTaint);
-    auto ranges = new std::vector<TaintRange>();
+    auto* ranges = new std::vector<TaintRange>();
     if (other.ranges_) {
         // Use binary search to get first range
         auto range = std::lower_bound(other.begin(), other.end(), begin);
@@ -551,8 +565,9 @@ StringTaint::StringTaint(const StringTaint& other, uint32_t index) : ranges_(nul
     assignFromSubTaint(other, index, index + 1);
 }
 
-StringTaint::StringTaint(StringTaint&& other) : ranges_(nullptr)
+StringTaint::StringTaint(StringTaint&& other) noexcept : ranges_(nullptr) 
 {
+
     ranges_ = other.ranges_;
     other.ranges_ = nullptr;
     CHECK_RANGES(ranges_);
@@ -560,8 +575,9 @@ StringTaint::StringTaint(StringTaint&& other) : ranges_(nullptr)
 
 StringTaint& StringTaint::operator=(const StringTaint& other)
 {
-    if (this == &other)
+    if (this == &other) {
         return *this;
+    }
 
     clear();
 
@@ -575,10 +591,11 @@ StringTaint& StringTaint::operator=(const StringTaint& other)
     return *this;
 }
 
-StringTaint& StringTaint::operator=(StringTaint&& other)
+StringTaint& StringTaint::operator=(StringTaint&& other) noexcept
 {
-    if (this == &other)
+    if (this == &other) {
 	return *this;
+    }
 
     clear();
 
@@ -624,15 +641,17 @@ void StringTaint::clearBetween(uint32_t begin, uint32_t end)
     }
 
     MOZ_COUNT_CTOR(StringTaint);
-    auto ranges = new std::vector<TaintRange>();
+    auto* ranges = new std::vector<TaintRange>();
     for (auto& range : *this) {
         if (range.end() <= begin || range.begin() >= end) {
             ranges->emplace_back(range.begin(), range.end(), range.flow());
         } else {
-            if (range.begin() < begin)
+            if (range.begin() < begin) {
                 ranges->emplace_back(range.begin(), begin, range.flow());
-            if (range.end() > end)
+            }
+            if (range.end() > end) {
                 ranges->emplace_back(end, range.end(), range.flow());
+            }
         }
     }
 
@@ -648,7 +667,7 @@ void StringTaint::shift(uint32_t index, int amount)
     }
 
     MOZ_COUNT_CTOR(StringTaint);
-    auto ranges = new std::vector<TaintRange>();
+    auto* ranges = new std::vector<TaintRange>();
     for (auto& range : *this) {
         if (range.begin() >= index) {
             ranges->emplace_back(range.begin() + amount, range.end() + amount, range.flow());
@@ -671,7 +690,7 @@ void StringTaint::insert(uint32_t index, const StringTaint& taint)
     }
 
     MOZ_COUNT_CTOR(StringTaint);
-    auto ranges = new std::vector<TaintRange>();
+    auto* ranges = new std::vector<TaintRange>();
     auto it = begin();
 
     while (it != end() && it->begin() < index) {
@@ -744,16 +763,18 @@ StringTaint& StringTaint::subtaint(uint32_t index)
 
 StringTaint& StringTaint::extend(const TaintOperation& operation)
 {
-    for (auto& range : *this)
+    for (auto& range : *this) {
         range.flow().extend(operation);
+    }
 
     return *this;
 }
 
 StringTaint& StringTaint::extend(TaintOperation&& operation)
 {
-    for (auto& range : *this)
+    for (auto& range : *this) {
         range.flow().extend(operation);
+    }
 
     return *this;
 }
@@ -776,7 +797,7 @@ StringTaint& StringTaint::overlay(uint32_t begin, uint32_t end, const TaintOpera
     }
 
     MOZ_COUNT_CTOR(StringTaint);
-    auto ranges = new std::vector<TaintRange>();
+    auto* ranges = new std::vector<TaintRange>();
 
     auto current = this->begin();
     auto next = this->begin();
@@ -870,8 +891,9 @@ void StringTaint::concat(const StringTaint& other, uint32_t offset)
 {
     MOZ_ASSERT_IF(ranges_ && ranges_->size() > 0, ranges_->back().end() <= offset);
 
-    for (auto& range : other)
+    for (auto& range : other) {
         append(TaintRange(range.begin() + offset, range.end() + offset, range.flow()));
+    }
 }
 
 // Slight hack, see below.
@@ -881,29 +903,33 @@ std::vector<TaintRange>::iterator StringTaint::begin()
 {
     // We still need to return an iterator even if there are no ranges stored in this instance.
     // In that case we don't have a std::vector though. Solution: use a static std::vector.
-    if (!ranges_)
+    if (!ranges_) {
         return empty_taint_range_vector.begin();
+    }
     return ranges_->begin();
 }
 
 std::vector<TaintRange>::iterator StringTaint::end()
 {
-    if (!ranges_)
+    if (!ranges_) {
         return empty_taint_range_vector.end();
+    }
     return ranges_->end();
 }
 
 std::vector<TaintRange>::const_iterator StringTaint::begin() const
 {
-    if (!ranges_)
+    if (!ranges_) {
         return empty_taint_range_vector.begin();
+    }
     return ranges_->begin();
 }
 
 std::vector<TaintRange>::const_iterator StringTaint::end() const
 {
-    if (!ranges_)
+    if (!ranges_) {
         return empty_taint_range_vector.end();
+    }
     return ranges_->end();
 }
 
@@ -1020,19 +1046,24 @@ std::pair<std::string, std::string> ParseKeyValuePair(const std::string& str, si
     while (i < length) {
         char c = str[i];
         if (isalnum(c)) {
-            if (expecting_value)
+            if (expecting_value) {
                 parsing_value = true;
-            if (!parsing_value)
+            }
+            if (!parsing_value) {
                 key.push_back(c);
-            else
+            }
+            else {
                 value.push_back(c);
+            }
         } else if (c == ':') {
-            if (expecting_value == true)
+            if (expecting_value == true) {
                 break;
+            }
             expecting_value = true;
         } else if (c == '\'' || c == '"') {
-            if (!expecting_value)
+            if (!expecting_value) {
                 break;
+            }
             parsing_value = true;
             value = ParseString(str, i, length, valid);
             break;
@@ -1161,8 +1192,9 @@ StringTaint ParseTaint(const std::string& str)
 
 void PrintTaint(const StringTaint& taint)
 {
-    for (auto& range : taint)
+    for (auto& range : taint) {
         std::cout << "    " << range.begin() << " - " << range.end() << " : " << range.flow().source().name() << std::endl;
+    }
 }
 
 void DumpTaint(const StringTaint& taint)
