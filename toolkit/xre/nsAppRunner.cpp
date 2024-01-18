@@ -323,6 +323,9 @@ bool gRestartedByOS = false;
 
 bool gIsGtest = false;
 
+bool gKioskMode = false;
+int gKioskMonitor = -1;
+
 nsString gAbsoluteArgv0Path;
 
 #if defined(XP_WIN)
@@ -2472,7 +2475,9 @@ static void OnDefaultAgentRemoteSettingsPrefChanged(const char* aPref,
 
   nsAutoString prefVal;
   rv = Preferences::GetString(aPref, prefVal);
-  NS_ENSURE_SUCCESS_VOID(rv);
+  if (NS_FAILED(rv)) {
+    return;
+  }
 
   if (prefVal.IsEmpty()) {
     rv = regKey->RemoveValue(valueName);
@@ -3997,6 +4002,13 @@ int XREMain::XRE_mainInit(bool* aExitFlag) {
 #endif
   }
 
+  gKioskMode = CheckArg("kiosk", nullptr, CheckArgFlag::None);
+  const char* kioskMonitorNumber = nullptr;
+  if (CheckArg("kiosk-monitor", &kioskMonitorNumber, CheckArgFlag::None)) {
+    gKioskMode = true;
+    gKioskMonitor = atoi(kioskMonitorNumber);
+  }
+
   nsresult rv;
   ArgResult ar;
 
@@ -5437,8 +5449,6 @@ nsresult XREMain::XRE_mainRun() {
     mozilla::FilePreferences::InitDirectoriesAllowlist();
     mozilla::FilePreferences::InitPrefs();
 
-    OverrideDefaultLocaleIfNeeded();
-
     nsCString userAgentLocale;
     LocaleService::GetInstance()->GetAppLocaleAsBCP47(userAgentLocale);
     CrashReporter::AnnotateCrashReport(
@@ -6111,20 +6121,6 @@ void SetupErrorHandling(const char* progname) {
   setbuf(stdout, 0);
 }
 
-// Note: This function should not be needed anymore. See Bug 818634 for details.
-void OverrideDefaultLocaleIfNeeded() {
-  // Read pref to decide whether to override default locale with US English.
-  if (mozilla::Preferences::GetBool("javascript.use_us_english_locale",
-                                    false)) {
-    // Set the application-wide C-locale. Needed to resist fingerprinting
-    // of Date.toLocaleFormat(). We use the locale to "C.UTF-8" if possible,
-    // to avoid interfering with non-ASCII keyboard input on some Linux
-    // desktops. Otherwise fall back to the "C" locale, which is available on
-    // all platforms.
-    setlocale(LC_ALL, "C.UTF-8") || setlocale(LC_ALL, "C");
-  }
-}
-
 static bool gRunSelfAsContentProc = false;
 
 void XRE_EnableSameExecutableForContentProc() {
@@ -6141,17 +6137,27 @@ mozilla::BinPathType XRE_GetChildProcBinPathType(
     return BinPathType::PluginContainer;
   }
 
+#ifdef XP_WIN
+  // On Windows, plugin-container may or may not be used depending on
+  // the process type (e.g., actual plugins vs. content processes)
   switch (aProcessType) {
-#define GECKO_PROCESS_TYPE(enum_value, enum_name, string_name, proc_typename, \
-                           process_bin_type, procinfo_typename,               \
-                           webidl_typename, allcaps_name)                     \
-  case GeckoProcessType_##enum_name:                                          \
-    return BinPathType::process_bin_type;
-#include "mozilla/GeckoProcessTypes.h"
-#undef GECKO_PROCESS_TYPE
+#  define GECKO_PROCESS_TYPE(enum_value, enum_name, string_name,               \
+                             proc_typename, process_bin_type,                  \
+                             procinfo_typename, webidl_typename, allcaps_name) \
+    case GeckoProcessType_##enum_name:                                         \
+      return BinPathType::process_bin_type;
+#  include "mozilla/GeckoProcessTypes.h"
+#  undef GECKO_PROCESS_TYPE
     default:
       return BinPathType::PluginContainer;
   }
+#else
+  // On (non-macOS) Unix, plugin-container isn't used (except in cases
+  // like xpcshell that are handled by the gRunSelfAsContentProc check
+  // above).  It isn't necessary the way it is on other platforms, and
+  // it interferes with using the fork server.
+  return BinPathType::Self;
+#endif
 }
 
 // From mozglue/static/rust/lib.rs

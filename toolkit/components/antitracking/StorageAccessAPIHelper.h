@@ -111,8 +111,7 @@ class StorageAccessAPIHelper final {
   //   None if it is not clear from settings alone what to do
   static Maybe<bool> CheckBrowserSettingsDecidesStorageAccessAPI(
       nsICookieJarSettings* aCookieJarSettings, bool aThirdParty,
-      bool aOnRejectForeignAllowlist, bool aIsOnThirdPartySkipList,
-      bool aIsThirdPartyTracker);
+      bool aIsOnThirdPartySkipList, bool aIsThirdPartyTracker);
 
   // This function checks if the document's context (like if it is third-party
   // or an iframe) gives an answer of how a the StorageAccessAPI call, that is
@@ -167,7 +166,7 @@ class StorageAccessAPIHelper final {
   RequestStorageAccessAsyncHelper(
       dom::Document* aDocument, nsPIDOMWindowInner* aInnerWindow,
       dom::BrowsingContext* aBrowsingContext, nsIPrincipal* aPrincipal,
-      bool aHasUserInteraction, bool aFrameOnly,
+      bool aHasUserInteraction, bool aRequireUserInteraction, bool aFrameOnly,
       ContentBlockingNotifier::StorageAccessPermissionGrantedReason aNotifier,
       bool aRequireGrant);
 

@@ -9,11 +9,11 @@
 #include "mozilla/Assertions.h"
 #include "mozilla/CheckedInt.h"
 #include "mozilla/FloatingPoint.h"
+#include "mozilla/Maybe.h"
 
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
-#include <stddef.h>
 #include <type_traits>
 #include <utility>
 
@@ -32,6 +32,7 @@
 #include "builtin/temporal/TemporalTypes.h"
 #include "builtin/temporal/TemporalUnit.h"
 #include "builtin/temporal/TimeZone.h"
+#include "builtin/temporal/ToString.h"
 #include "builtin/temporal/Wrapped.h"
 #include "builtin/temporal/ZonedDateTime.h"
 #include "ds/IdValuePair.h"
@@ -41,18 +42,14 @@
 #include "js/CallArgs.h"
 #include "js/CallNonGenericMethod.h"
 #include "js/Class.h"
-#include "js/Conversions.h"
 #include "js/ErrorReport.h"
 #include "js/friend/ErrorMessages.h"
-#include "js/Printer.h"
 #include "js/PropertyDescriptor.h"
 #include "js/PropertySpec.h"
 #include "js/RootingAPI.h"
-#include "js/TypeDecls.h"
-#include "js/Utility.h"
 #include "js/Value.h"
-#include "util/StringBuffer.h"
-#include "vm/Compartment.h"
+#include "vm/BigIntType.h"
+#include "vm/BytecodeUtil.h"
 #include "vm/GlobalObject.h"
 #include "vm/JSAtomState.h"
 #include "vm/JSContext.h"
@@ -647,10 +644,12 @@ static Wrapped<PlainTimeObject*> ToTemporalTime(JSContext* cx,
     // Step 4.
 
     // Step 4.a.
-    Rooted<JSString*> string(cx, JS::ToString(cx, item));
-    if (!string) {
+    if (!item.isString()) {
+      ReportValueError(cx, JSMSG_UNEXPECTED_TYPE, JSDVG_IGNORE_STACK, item,
+                       nullptr, "not a string");
       return nullptr;
     }
+    Rooted<JSString*> string(cx, item.toString());
 
     // Step 4.b.
     if (!ParseTemporalTimeString(cx, string, &result)) {
@@ -677,40 +676,6 @@ bool js::temporal::ToTemporalTime(JSContext* cx, Handle<Value> item,
 
   *result = ToPlainTime(&obj.unwrap());
   return true;
-}
-
-/**
- * TemporalTimeToString ( hour, minute, second, millisecond, microsecond,
- * nanosecond, precision )
- */
-static JSString* TemporalTimeToString(JSContext* cx, const PlainTime& time,
-                                      Precision precision) {
-  JSStringBuilder result(cx);
-
-  // Note: This doesn't reserve too much space, because the string builder
-  // already internally reserves space for 64 characters.
-  constexpr size_t timePart = 2 + 1 + 2 + 1 + 2 + 1 + 9;  // 18
-
-  if (!result.reserve(timePart)) {
-    return nullptr;
-  }
-
-  // Step 1.
-  int32_t hour = time.hour;
-  result.infallibleAppend(char('0' + (hour / 10)));
-  result.infallibleAppend(char('0' + (hour % 10)));
-
-  // Step 2.
-  int32_t minute = time.minute;
-  result.infallibleAppend(':');
-  result.infallibleAppend(char('0' + (minute / 10)));
-  result.infallibleAppend(char('0' + (minute % 10)));
-
-  // Step 3.
-  FormatSecondsStringPart(result, time, precision);
-
-  // Step 4.
-  return result.finishString();
 }
 
 /**
@@ -1753,7 +1718,7 @@ static bool DifferenceTemporalPlainTime(JSContext* cx,
   // Step 5.
   auto diff = DifferenceTime(temporalTime, other);
 
-  // Step 6.
+  // Steps 6-7.
   Duration roundedDuration;
   if (!RoundDuration(cx, diff.toDuration().time(), settings.roundingIncrement,
                      settings.smallestUnit, settings.roundingMode,
@@ -1761,11 +1726,11 @@ static bool DifferenceTemporalPlainTime(JSContext* cx,
     return false;
   }
 
-  // Step 7.
+  // Step 8.
   auto balancedDuration =
       BalanceTimeDuration(roundedDuration, settings.largestUnit);
 
-  // Step 8.
+  // Step 9.
   if (operation == TemporalDifference::Since) {
     balancedDuration = balancedDuration.negate();
   }

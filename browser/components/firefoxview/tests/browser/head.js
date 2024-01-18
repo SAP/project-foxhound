@@ -2,12 +2,14 @@
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
 const {
+  getFirefoxViewURL,
   withFirefoxView,
   assertFirefoxViewTab,
   assertFirefoxViewTabSelected,
   openFirefoxViewTab,
   closeFirefoxViewTab,
   isFirefoxViewTabSelectedInWindow,
+  init: FirefoxViewTestUtilsInit,
 } = ChromeUtils.importESModule(
   "resource://testing-common/FirefoxViewTestUtils.sys.mjs"
 );
@@ -30,6 +32,13 @@ const { TelemetryTestUtils } = ChromeUtils.importESModule(
   "resource://testing-common/TelemetryTestUtils.sys.mjs"
 );
 
+const triggeringPrincipal_base64 = E10SUtils.SERIALIZED_SYSTEMPRINCIPAL;
+const { SessionStoreTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/SessionStoreTestUtils.sys.mjs"
+);
+SessionStoreTestUtils.init(this, window);
+FirefoxViewTestUtilsInit(this, window);
+
 ChromeUtils.defineESModuleGetters(this, {
   BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.sys.mjs",
   SyncedTabs: "resource://services-sync/SyncedTabs.sys.mjs",
@@ -47,7 +56,7 @@ const RECENTLY_CLOSED_STATE_PREF =
 const TAB_PICKUP_STATE_PREF =
   "browser.tabs.firefox-view.ui-state.tab-pickup.open";
 
-const calloutId = "multi-stage-message-root";
+const calloutId = "feature-callout";
 const calloutSelector = `#${calloutId}.featureCallout`;
 const CTASelector = `#${calloutId} :is(.primary, .secondary)`;
 
@@ -537,18 +546,7 @@ class TelemetrySpy {
  * has been updated after closing the tab.
  */
 async function open_then_close(url, win = window) {
-  let { updatePromise } = await BrowserTestUtils.withNewTab(
-    { url, gBrowser: win.gBrowser },
-    async browser => {
-      return {
-        updatePromise: BrowserTestUtils.waitForSessionStoreUpdate({
-          linkedBrowser: browser,
-        }),
-      };
-    }
-  );
-  await updatePromise;
-  return TestUtils.topicObserved("sessionstore-closed-objects-changed");
+  return SessionStoreTestUtils.openAndCloseTab(win, url);
 }
 
 /**
@@ -597,4 +595,64 @@ function navigateToCategory(document, category) {
     }
   )[0];
   navButton.buttonEl.click();
+}
+
+/**
+ * Switch to the Firefox View tab.
+ *
+ * @param {Window} [win]
+ *   The window to use, if specified. Defaults to the global window instance.
+ * @return {Promise<MozTabbrowserTab>}
+ *   The tab switched to.
+ */
+async function switchToFxViewTab(win = window) {
+  return BrowserTestUtils.switchTab(win.gBrowser, win.FirefoxViewHandler.tab);
+}
+
+function isElInViewport(element) {
+  const boundingRect = element.getBoundingClientRect();
+  return (
+    boundingRect.top >= 0 &&
+    boundingRect.left >= 0 &&
+    boundingRect.bottom <=
+      (window.innerHeight || document.documentElement.clientHeight) &&
+    boundingRect.right <=
+      (window.innerWidth || document.documentElement.clientWidth)
+  );
+}
+
+// TODO once we port over old tests, helpers and cleanup old firefox view
+// we should decide whether to keep this or openFirefoxViewTab.
+async function clickFirefoxViewButton(win) {
+  await BrowserTestUtils.synthesizeMouseAtCenter(
+    "#firefox-view-button",
+    { type: "mousedown" },
+    win.browsingContext
+  );
+}
+
+/**
+ * Wait for and assert telemetry events.
+ *
+ * @param {Array} Nested array of event details
+ */
+async function telemetryEvent(eventDetails) {
+  await TestUtils.waitForCondition(
+    () => {
+      let events = Services.telemetry.snapshotEvents(
+        Ci.nsITelemetry.DATASET_PRERELEASE_CHANNELS,
+        false
+      ).parent;
+      return events && events.length >= 1;
+    },
+    "Waiting for firefoxview_next telemetry event.",
+    200,
+    100
+  );
+
+  TelemetryTestUtils.assertEvents(
+    eventDetails,
+    { category: "firefoxview_next" },
+    { clear: true, process: "parent" }
+  );
 }

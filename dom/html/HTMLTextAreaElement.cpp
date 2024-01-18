@@ -62,12 +62,13 @@ HTMLTextAreaElement::HTMLTextAreaElement(
   AddMutationObserver(this);
 
   // Set up our default state.  By default we're enabled (since we're
-  // a control type that can be disabled but not actually disabled
-  // right now), optional, and valid.  We are NOT readwrite by default
-  // until someone calls UpdateEditableState on us, apparently!  Also
-  // by default we don't have to show validity UI and so forth.
+  // a control type that can be disabled but not actually disabled right now),
+  // optional, read-write, and valid. Also by default we don't have to show
+  // validity UI and so forth.
   AddStatesSilently(ElementState::ENABLED | ElementState::OPTIONAL_ |
-                    ElementState::VALID | ElementState::VALUE_EMPTY);
+                    ElementState::READWRITE | ElementState::VALID |
+                    ElementState::VALUE_EMPTY);
+  RemoveStatesSilently(ElementState::READONLY);
 }
 
 HTMLTextAreaElement::~HTMLTextAreaElement() {
@@ -301,9 +302,7 @@ void HTMLTextAreaElement::SetValueChanged(bool aValueChanged) {
   }
   UpdateTooLongValidityState();
   UpdateTooShortValidityState();
-  // We need to do this unconditionally because the validity ui bits depend on
-  // this.
-  UpdateState(true);
+  UpdateValidityElementStates(true);
 }
 
 void HTMLTextAreaElement::SetLastValueChangeWasInteractive(
@@ -316,7 +315,7 @@ void HTMLTextAreaElement::SetLastValueChangeWasInteractive(
   UpdateTooLongValidityState();
   UpdateTooShortValidityState();
   if (wasValid != IsValid()) {
-    UpdateState(true);
+    UpdateValidityElementStates(true);
   }
 }
 
@@ -472,9 +471,8 @@ void HTMLTextAreaElement::FireChangeEventIfNeeded() {
 
   // Dispatch the change event.
   mFocusedValue = value;
-  nsContentUtils::DispatchTrustedEvent(
-      OwnerDoc(), static_cast<nsIContent*>(this), u"change"_ns, CanBubble::eYes,
-      Cancelable::eNo);
+  nsContentUtils::DispatchTrustedEvent(OwnerDoc(), this, u"change"_ns,
+                                       CanBubble::eYes, Cancelable::eNo);
 }
 
 nsresult HTMLTextAreaElement::PostHandleEvent(EventChainPostVisitor& aVisitor) {
@@ -497,8 +495,7 @@ nsresult HTMLTextAreaElement::PostHandleEvent(EventChainPostVisitor& aVisitor) {
       mCanShowInvalidUI = true;
       mCanShowValidUI = true;
     }
-
-    UpdateState(true);
+    UpdateValidityElementStates(true);
   }
 
   return NS_OK;
@@ -745,42 +742,38 @@ bool HTMLTextAreaElement::RestoreState(PresState* aState) {
   return false;
 }
 
-ElementState HTMLTextAreaElement::IntrinsicState() const {
-  ElementState state =
-      nsGenericHTMLFormControlElementWithState::IntrinsicState();
-
-  if (IsCandidateForConstraintValidation()) {
-    if (IsValid()) {
-      state |= ElementState::VALID;
-    } else {
-      state |= ElementState::INVALID;
-      // :-moz-ui-invalid always apply if the element suffers from a custom
-      // error.
-      if (GetValidityState(VALIDITY_STATE_CUSTOM_ERROR) ||
-          (mCanShowInvalidUI && ShouldShowValidityUI())) {
-        state |= ElementState::USER_INVALID;
-      }
-    }
-
-    // :-moz-ui-valid applies if all the following are true:
-    // 1. The element is not focused, or had either :-moz-ui-valid or
-    //    :-moz-ui-invalid applying before it was focused ;
-    // 2. The element is either valid or isn't allowed to have
-    //    :-moz-ui-invalid applying ;
-    // 3. The element has already been modified or the user tried to submit the
-    //    form owner while invalid.
-    if (mCanShowValidUI && ShouldShowValidityUI() &&
-        (IsValid() ||
-         (state.HasState(ElementState::USER_INVALID) && !mCanShowInvalidUI))) {
-      state |= ElementState::USER_VALID;
+void HTMLTextAreaElement::UpdateValidityElementStates(bool aNotify) {
+  AutoStateChangeNotifier notifier(*this, aNotify);
+  RemoveStatesSilently(ElementState::VALIDITY_STATES);
+  if (!IsCandidateForConstraintValidation()) {
+    return;
+  }
+  ElementState state;
+  if (IsValid()) {
+    state |= ElementState::VALID;
+  } else {
+    state |= ElementState::INVALID;
+    // :-moz-ui-invalid always apply if the element suffers from a custom
+    // error.
+    if (GetValidityState(VALIDITY_STATE_CUSTOM_ERROR) ||
+        (mCanShowInvalidUI && ShouldShowValidityUI())) {
+      state |= ElementState::USER_INVALID;
     }
   }
 
-  if (IsValueEmpty() && HasAttr(nsGkAtoms::placeholder)) {
-    state |= ElementState::PLACEHOLDER_SHOWN;
+  // :-moz-ui-valid applies if all the following are true:
+  // 1. The element is not focused, or had either :-moz-ui-valid or
+  //    :-moz-ui-invalid applying before it was focused ;
+  // 2. The element is either valid or isn't allowed to have
+  //    :-moz-ui-invalid applying ;
+  // 3. The element has already been modified or the user tried to submit the
+  //    form owner while invalid.
+  if (mCanShowValidUI && ShouldShowValidityUI() &&
+      (IsValid() ||
+       (state.HasState(ElementState::USER_INVALID) && !mCanShowInvalidUI))) {
+    state |= ElementState::USER_VALID;
   }
-
-  return state;
+  AddStatesSilently(state);
 }
 
 nsresult HTMLTextAreaElement::BindToTree(BindContext& aContext,
@@ -800,7 +793,7 @@ nsresult HTMLTextAreaElement::BindToTree(BindContext& aContext,
   UpdateBarredFromConstraintValidation();
 
   // And now make sure our state is up to date
-  UpdateState(false);
+  UpdateValidityElementStates(false);
 
   return rv;
 }
@@ -813,7 +806,7 @@ void HTMLTextAreaElement::UnbindFromTree(bool aNullParent) {
   UpdateBarredFromConstraintValidation();
 
   // And now make sure our state is up to date
-  UpdateState(false);
+  UpdateValidityElementStates(false);
 }
 
 void HTMLTextAreaElement::BeforeSetAttr(int32_t aNameSpaceID, nsAtom* aName,
@@ -903,23 +896,31 @@ void HTMLTextAreaElement::AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
         UpdateRequiredState(!!aValue, aNotify);
       }
 
+      if (aName == nsGkAtoms::readonly && !!aValue != !!aOldValue) {
+        UpdateReadOnlyState(aNotify);
+      }
+
       UpdateValueMissingValidityState();
 
       // This *has* to be called *after* validity has changed.
       if (aName == nsGkAtoms::readonly || aName == nsGkAtoms::disabled) {
         UpdateBarredFromConstraintValidation();
       }
+      UpdateValidityElementStates(aNotify);
     } else if (aName == nsGkAtoms::autocomplete) {
       // Clear the cached @autocomplete attribute state.
       mAutocompleteAttrState = nsContentUtils::eAutocompleteAttrState_Unknown;
     } else if (aName == nsGkAtoms::maxlength) {
       UpdateTooLongValidityState();
+      UpdateValidityElementStates(aNotify);
     } else if (aName == nsGkAtoms::minlength) {
       UpdateTooShortValidityState();
+      UpdateValidityElementStates(aNotify);
     } else if (aName == nsGkAtoms::placeholder) {
       if (nsTextControlFrame* f = do_QueryFrame(GetPrimaryFrame())) {
         f->PlaceholderChanged(aOldValue, aValue);
       }
+      UpdatePlaceholderShownState();
     } else if (aName == nsGkAtoms::dir && aValue &&
                aValue->Equals(nsGkAtoms::_auto, eIgnoreCase)) {
       SetDirectionFromValue(aNotify);
@@ -953,14 +954,11 @@ nsresult HTMLTextAreaElement::CopyInnerTo(Element* aDest) {
   return NS_OK;
 }
 
-bool HTMLTextAreaElement::IsMutable() const {
-  return !HasAttr(nsGkAtoms::readonly) && !IsDisabled();
-}
+bool HTMLTextAreaElement::IsMutable() const { return !IsDisabledOrReadOnly(); }
 
 void HTMLTextAreaElement::SetCustomValidity(const nsAString& aError) {
   ConstraintValidation::SetCustomValidity(aError);
-
-  UpdateState(true);
+  UpdateValidityElementStates(true);
 }
 
 bool HTMLTextAreaElement::IsTooLong() {
@@ -1121,6 +1119,11 @@ void HTMLTextAreaElement::InitializeKeyboardEventListeners() {
   mState->InitializeKeyboardEventListeners();
 }
 
+void HTMLTextAreaElement::UpdatePlaceholderShownState() {
+  SetStates(ElementState::PLACEHOLDER_SHOWN,
+            IsValueEmpty() && HasAttr(nsGkAtoms::placeholder));
+}
+
 void HTMLTextAreaElement::OnValueChanged(ValueChangeKind aKind,
                                          bool aNewValueEmpty,
                                          const nsAString* aKnownNewValue) {
@@ -1128,11 +1131,9 @@ void HTMLTextAreaElement::OnValueChanged(ValueChangeKind aKind,
     mLastValueChangeWasInteractive = aKind == ValueChangeKind::UserInteraction;
   }
 
-  const bool emptyBefore = IsValueEmpty();
-  if (aNewValueEmpty) {
-    AddStates(ElementState::VALUE_EMPTY);
-  } else {
-    RemoveStates(ElementState::VALUE_EMPTY);
+  if (aNewValueEmpty != IsValueEmpty()) {
+    SetStates(ElementState::VALUE_EMPTY, aNewValueEmpty);
+    UpdatePlaceholderShownState();
   }
 
   // Update the validity state
@@ -1145,9 +1146,8 @@ void HTMLTextAreaElement::OnValueChanged(ValueChangeKind aKind,
     SetDirectionFromValue(true, aKnownNewValue);
   }
 
-  if (validBefore != IsValid() ||
-      (emptyBefore != IsValueEmpty() && HasAttr(nsGkAtoms::placeholder))) {
-    UpdateState(true);
+  if (validBefore != IsValid()) {
+    UpdateValidityElementStates(true);
   }
 }
 
@@ -1164,7 +1164,7 @@ void HTMLTextAreaElement::FieldSetDisabledChanged(bool aNotify) {
 
   UpdateValueMissingValidityState();
   UpdateBarredFromConstraintValidation();
-  UpdateState(aNotify);
+  UpdateValidityElementStates(true);
 }
 
 JSObject* HTMLTextAreaElement::WrapNode(JSContext* aCx,

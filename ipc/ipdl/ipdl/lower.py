@@ -64,9 +64,9 @@ class LowerToCxx:
 
 
 def hashfunc(value):
-    h = hash_str(value) % 2 ** 32
+    h = hash_str(value) % 2**32
     if h < 0:
-        h += 2 ** 32
+        h += 2**32
     return h
 
 
@@ -355,24 +355,20 @@ def _cxxLifecycleProxyType(ptr=False):
     return Type("mozilla::ipc::ActorLifecycleProxy", ptr=ptr)
 
 
+def _cxxSide(side):
+    if side == "child":
+        return ExprVar("mozilla::ipc::ChildSide")
+    if side == "parent":
+        return ExprVar("mozilla::ipc::ParentSide")
+    assert 0
+
+
 def _otherSide(side):
     if side == "child":
         return "parent"
     if side == "parent":
         return "child"
     assert 0
-
-
-def _ifLogging(topLevelProtocol, stmts):
-    return StmtCode(
-        """
-        if (mozilla::ipc::LoggingEnabledFor(${proto})) {
-            $*{stmts}
-        }
-        """,
-        proto=topLevelProtocol,
-        stmts=stmts,
-    )
 
 
 # XXX we need to remove these and install proper error handling
@@ -1927,13 +1923,9 @@ class _ParamTraits:
 
     @classmethod
     def ifsideis(cls, rdrwtr, side, then, els=None):
-        cxxside = ExprVar("mozilla::ipc::ChildSide")
-        if side == "parent":
-            cxxside = ExprVar("mozilla::ipc::ParentSide")
-
         ifstmt = StmtIf(
             ExprBinary(
-                cxxside,
+                _cxxSide(side),
                 "==",
                 ExprCode("${rdrwtr}->GetActor()->GetSide()", rdrwtr=rdrwtr),
             )
@@ -2283,7 +2275,7 @@ class _ParamTraits:
         # After non-pod data, bulk read/write pod data in member order. This has
         # to be done after the result has been constructed, so that we have
         # somewhere to read into.
-        for (size, fields) in itertools.groupby(
+        for size, fields in itertools.groupby(
             sd.fields_member_order(), lambda f: pod_size(f.ipdltype)
         ):
             if size != pod_size_sentinel:
@@ -2525,7 +2517,7 @@ class _ComputeTypeDeps(TypeVisitor):
 
 def _fieldStaticAssertions(sd):
     staticasserts = []
-    for (size, fields) in itertools.groupby(
+    for size, fields in itertools.groupby(
         sd.fields_member_order(), lambda f: pod_size(f.ipdltype)
     ):
         if size == pod_size_sentinel:
@@ -5584,7 +5576,7 @@ class _GenerateProtocolActorCode(ipdl.ast.Visitor):
         actorname = _actorName(self.protocol.name, self.side)
         return StmtCode(
             """
-            if (mozilla::ipc::LoggingEnabledFor(${actorname})) {
+            if (mozilla::ipc::LoggingEnabledFor(${protocolname}, ${side})) {
                 mozilla::ipc::LogMessageForProtocol(
                     ${actorname},
                     ${actor}->ToplevelProtocol()->OtherPidMaybeInvalid(),
@@ -5593,6 +5585,8 @@ class _GenerateProtocolActorCode(ipdl.ast.Visitor):
                     mozilla::ipc::MessageDirection::${direction});
             }
             """,
+            protocolname=ExprLiteral.String(self.protocol.name),
+            side=_cxxSide(self.side),
             actorname=ExprLiteral.String(actorname),
             actor=actor or ExprVar.THIS,
             pfx=ExprLiteral.String(pfx),

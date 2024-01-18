@@ -45,12 +45,13 @@ const V128Code         = 0x7b;
 const AnyFuncCode      = 0x70;
 const ExternRefCode    = 0x6f;
 const EqRefCode        = 0x6d;
-const OptRefCode       = 0x6c; // (ref null $t), needs heap type immediate
-const RefCode          = 0x6b; // (ref $t), needs heap type immediate
+const OptRefCode       = 0x63; // (ref null $t), needs heap type immediate
+const RefCode          = 0x64; // (ref $t), needs heap type immediate
 const FuncCode         = 0x60;
 const StructCode       = 0x5f;
 const ArrayCode        = 0x5e;
 const VoidCode         = 0x40;
+const BadType          = 0x79; // reserved for testing
 
 // Opcodes
 const UnreachableCode  = 0x00
@@ -65,6 +66,7 @@ const CallCode         = 0x10;
 const CallIndirectCode = 0x11;
 const ReturnCallCode   = 0x12;
 const ReturnCallIndirectCode = 0x13;
+const ReturnCallRefCode      = 0x15;
 const DelegateCode     = 0x18;
 const DropCode         = 0x1a;
 const SelectCode       = 0x1b;

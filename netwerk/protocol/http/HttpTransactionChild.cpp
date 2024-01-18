@@ -10,7 +10,6 @@
 #include "HttpTransactionChild.h"
 
 #include "mozilla/ipc/IPCStreamUtils.h"
-#include "mozilla/ipc/BackgroundParent.h"
 #include "mozilla/net/BackgroundDataBridgeParent.h"
 #include "mozilla/net/ChannelEventQueue.h"
 #include "mozilla/net/InputChannelThrottleQueueChild.h"
@@ -26,8 +25,6 @@
 #include "nsQueryObject.h"
 #include "nsSerializationHelper.h"
 #include "OpaqueResponseUtils.h"
-
-using mozilla::ipc::BackgroundParent;
 
 namespace mozilla::net {
 
@@ -288,7 +285,6 @@ HttpTransactionChild::OnDataAvailable(nsIRequest* aRequest,
     return NS_OK;
   }
 
-  ipc::AssertIsOnBackgroundThread();
   MOZ_ASSERT(mDataBridgeParent);
 
   if (!mDataBridgeParent->CanSend()) {
@@ -450,7 +446,7 @@ HttpTransactionChild::OnStartRequest(nsIRequest* aRequest) {
     if (dataBridgeParent) {
       mDataBridgeParent = std::move(dataBridgeParent.ref());
 
-      nsCOMPtr<nsIThread> backgroundThread =
+      nsCOMPtr<nsISerialEventTarget> backgroundThread =
           mDataBridgeParent->GetBackgroundThread();
       nsCOMPtr<nsIThreadRetargetableRequest> retargetableTransactionPump;
       retargetableTransactionPump = do_QueryObject(mTransactionPump);
@@ -489,7 +485,7 @@ HttpTransactionChild::OnStartRequest(nsIRequest* aRequest) {
       ToTimingStructArgs(mTransaction->Timings()), proxyConnectResponseCode,
       dataForSniffer, optionalAltSvcUsed, !!mDataBridgeParent,
       mTransaction->TakeRestartedState(), mTransaction->HTTPSSVCReceivedStage(),
-      mTransaction->GetSupportsHTTP3(), mode, reason);
+      mTransaction->GetSupportsHTTP3(), mode, reason, mTransaction->Caps());
   return NS_OK;
 }
 
@@ -569,7 +565,7 @@ HttpTransactionChild::OnStopRequest(nsIRequest* aRequest, nsresult aStatus) {
                               mTransaction->GetTransferSize(),
                               ToTimingStructArgs(mTransaction->Timings()),
                               responseTrailers, mTransactionObserverResult,
-                              lastActTabOpt, mTransaction->Caps(), infoArgs);
+                              lastActTabOpt, infoArgs);
 
   return NS_OK;
 }

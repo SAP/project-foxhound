@@ -107,7 +107,10 @@ async function openAboutTranslations({
   });
 
   // Now load the about:translations page, since the actor could be mocked.
-  BrowserTestUtils.loadURIString(tab.linkedBrowser, "about:translations");
+  BrowserTestUtils.startLoadingURIString(
+    tab.linkedBrowser,
+    "about:translations"
+  );
   await BrowserTestUtils.browserLoaded(tab.linkedBrowser);
 
   // Resolve the files.
@@ -448,6 +451,7 @@ async function loadTestPage({
   autoOffer,
   permissionsUrls = [],
 }) {
+  info(`Loading test page starting at url: ${page}`);
   Services.fog.testResetFOG();
   await SpecialPowers.pushPrefEnv({
     set: [
@@ -485,7 +489,7 @@ async function loadTestPage({
     autoDownloadFromRemoteSettings,
   });
 
-  BrowserTestUtils.loadURIString(tab.linkedBrowser, page);
+  BrowserTestUtils.startLoadingURIString(tab.linkedBrowser, page);
   await BrowserTestUtils.browserLoaded(tab.linkedBrowser);
 
   if (autoOffer && TranslationsParent.shouldAlwaysOfferTranslations()) {
@@ -550,7 +554,7 @@ async function loadTestPage({
      * @param {(TranslationsTest: import("./translations-test.mjs")) => any} callback
      * @returns {Promise<void>}
      */
-    runInPage(callback) {
+    runInPage(callback, data = {}) {
       // ContentTask.spawn runs the `Function.prototype.toString` on this function in
       // order to send it into the content process. The following function is doing its
       // own string manipulation in order to load in the TranslationsTest module.
@@ -562,7 +566,9 @@ async function loadTestPage({
         // Pass in the values that get injected by the task runner.
         TranslationsTest.setup({Assert, ContentTaskUtils, content});
 
-        return (${callback.toString()})(TranslationsTest);
+        const data = ${JSON.stringify(data)};
+
+        return (${callback.toString()})(TranslationsTest, data);
       `);
 
       return ContentTask.spawn(
@@ -974,7 +980,10 @@ async function setupAboutPreferences(languagePairs) {
     languagePairs,
   });
 
-  BrowserTestUtils.loadURIString(tab.linkedBrowser, "about:preferences");
+  BrowserTestUtils.startLoadingURIString(
+    tab.linkedBrowser,
+    "about:preferences"
+  );
   await BrowserTestUtils.browserLoaded(tab.linkedBrowser);
 
   const elements = await selectAboutPreferencesElements();
@@ -1079,7 +1088,6 @@ class TestTranslationsTelemetry {
    * - An array of function predicates to assert for only the final event value.
    */
   static async assertEvent(
-    name,
     event,
     {
       expectedEventCount,
@@ -1094,6 +1102,8 @@ class TestTranslationsTelemetry {
     await Services.fog.testFlushAllChildren();
     const events = event.testGetValue() ?? [];
     const eventCount = events.length;
+    const name =
+      eventCount > 0 ? `${events[0].category}.${events[0].name}` : null;
 
     if (eventCount > 0 && expectFirstInteraction !== null) {
       is(

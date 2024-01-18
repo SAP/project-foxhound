@@ -17,11 +17,11 @@ MOCHITEST_MANIFESTS += [
 ]
 
 MOCHITEST_CHROME_MANIFESTS += [
-    "test/chrome.ini",
-    "test/forms/chrome.ini",
+    "test/chrome.toml",
+    "test/forms/chrome.toml",
 ]
 
-BROWSER_CHROME_MANIFESTS += ["test/browser.ini"]
+BROWSER_CHROME_MANIFESTS += ["test/browser.toml"]
 
 EXPORTS += [
     "nsGenericHTMLElement.h",
@@ -43,6 +43,7 @@ EXPORTS.mozilla += [
 EXPORTS.mozilla.dom += [
     "ConstraintValidation.h",
     "ElementInternals.h",
+    "FetchPriority.h",
     "HTMLAllCollection.h",
     "HTMLAnchorElement.h",
     "HTMLAreaElement.h",
@@ -127,6 +128,7 @@ EXPORTS.mozilla.dom += [
 UNIFIED_SOURCES += [
     "ConstraintValidation.cpp",
     "ElementInternals.cpp",
+    "FetchPriority.cpp",
     "HTMLAllCollection.cpp",
     "HTMLAnchorElement.cpp",
     "HTMLAreaElement.cpp",

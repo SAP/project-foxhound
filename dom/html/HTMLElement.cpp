@@ -327,25 +327,29 @@ void HTMLElement::AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
       // UpdateBarredFromConstraintValidation depend on our disabled state.
       UpdateDisabledState(aNotify);
     }
+    if (aName == nsGkAtoms::readonly && !!aValue != !!aOldValue) {
+      UpdateReadOnlyState(aNotify);
+    }
     UpdateBarredFromConstraintValidation();
+    UpdateValidityElementStates(aNotify);
   }
 
   return nsGenericHTMLFormElement::AfterSetAttr(
       aNameSpaceID, aName, aValue, aOldValue, aMaybeScriptedPrincipal, aNotify);
 }
 
-ElementState HTMLElement::IntrinsicState() const {
-  ElementState state = nsGenericHTMLFormElement::IntrinsicState();
-  if (ElementInternals* internals = GetElementInternals()) {
-    if (internals->IsCandidateForConstraintValidation()) {
-      if (internals->IsValid()) {
-        state |= ElementState::VALID | ElementState::USER_VALID;
-      } else {
-        state |= ElementState::INVALID | ElementState::USER_INVALID;
-      }
-    }
+void HTMLElement::UpdateValidityElementStates(bool aNotify) {
+  AutoStateChangeNotifier notifier(*this, aNotify);
+  RemoveStatesSilently(ElementState::VALIDITY_STATES);
+  ElementInternals* internals = GetElementInternals();
+  if (!internals || !internals->IsCandidateForConstraintValidation()) {
+    return;
   }
-  return state;
+  if (internals->IsValid()) {
+    AddStatesSilently(ElementState::VALID | ElementState::USER_VALID);
+  } else {
+    AddStatesSilently(ElementState::INVALID | ElementState::USER_INVALID);
+  }
 }
 
 void HTMLElement::SetFormInternal(HTMLFormElement* aForm, bool aBindToTree) {

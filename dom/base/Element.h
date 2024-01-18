@@ -77,6 +77,7 @@ class nsFocusManager;
 class nsGenericHTMLFormControlElementWithState;
 class nsGlobalWindowInner;
 class nsGlobalWindowOuter;
+class nsImageLoadingContent;
 class nsIAutoCompletePopup;
 class nsIBrowser;
 class nsIDOMXULButtonElement;
@@ -96,6 +97,7 @@ class nsIPrincipal;
 class nsIScreen;
 class nsIScrollableFrame;
 class nsIURI;
+class nsObjectLoadingContent;
 class nsPresContext;
 class nsWindowSizes;
 struct JSContext;
@@ -129,6 +131,7 @@ struct ScrollOptions;
 class Attr;
 class BooleanOrScrollIntoViewOptions;
 class Document;
+class HTMLFormElement;
 class DOMIntersectionObserver;
 class DOMMatrixReadOnly;
 class Element;
@@ -217,12 +220,17 @@ class Grid;
     }                                                \
   }
 
-#define REFLECT_DOMSTRING_ATTR(method, attr)                    \
-  void Get##method(nsAString& aValue) const {                   \
-    GetAttr(nsGkAtoms::attr, aValue);                           \
-  }                                                             \
-  void Set##method(const nsAString& aValue, ErrorResult& aRv) { \
-    SetAttr(nsGkAtoms::attr, aValue, aRv);                      \
+#define REFLECT_NULLABLE_DOMSTRING_ATTR(method, attr)            \
+  void Get##method(nsAString& aValue) const {                    \
+    const nsAttrValue* val = mAttrs.GetAttr(nsGkAtoms::attr);    \
+    if (!val) {                                                  \
+      SetDOMStringToNull(aValue);                                \
+      return;                                                    \
+    }                                                            \
+    val->ToString(aValue);                                       \
+  }                                                              \
+  void Set##method(const nsAString& aValue, ErrorResult& aRv) {  \
+    SetOrRemoveNullableStringAttr(nsGkAtoms::attr, aValue, aRv); \
   }
 
 class Element : public FragmentOrElement {
@@ -254,33 +262,17 @@ class Element : public FragmentOrElement {
    * Method to get the full state of this element. See dom/base/rust/lib.rs for
    * the possible bits that could be set here.
    */
-  ElementState State() const {
-    // mState is maintained by having whoever might have changed it
-    // call UpdateState() or one of the other mState mutators.
-    return mState;
-  }
-
-  /**
-   * Ask this element to update its state.  If aNotify is false, then
-   * state change notifications will not be dispatched; in that
-   * situation it is the caller's responsibility to dispatch them.
-   *
-   * In general, aNotify should only be false if we're guaranteed that
-   * the element can't have a frame no matter what its style is
-   * (e.g. if we're in the middle of adding it to the document or
-   * removing it from the document).
-   */
-  void UpdateState(bool aNotify);
-
-  /**
-   * Method to update mState with link state information.  This does not notify.
-   */
-  void UpdateLinkState(ElementState aState);
+  ElementState State() const { return mState; }
 
   /**
    * Returns the current disabled state of the element.
    */
   bool IsDisabled() const { return State().HasState(ElementState::DISABLED); }
+  bool IsReadOnly() const { return State().HasState(ElementState::READONLY); }
+  bool IsDisabledOrReadOnly() const {
+    return State().HasAtLeastOneOfStates(ElementState::DISABLED |
+                                         ElementState::READONLY);
+  }
 
   virtual int32_t TabIndexDefault() { return -1; }
 
@@ -486,49 +478,28 @@ class Element : public FragmentOrElement {
                                               int32_t aModType) const;
 
   inline Directionality GetDirectionality() const {
-    if (HasFlag(NODE_HAS_DIRECTION_RTL)) {
+    ElementState state = State();
+    if (state.HasState(ElementState::RTL)) {
       return eDir_RTL;
     }
-
-    if (HasFlag(NODE_HAS_DIRECTION_LTR)) {
+    if (state.HasState(ElementState::LTR)) {
       return eDir_LTR;
     }
-
     return eDir_NotSet;
   }
 
   inline void SetDirectionality(Directionality aDir, bool aNotify) {
-    UnsetFlags(NODE_ALL_DIRECTION_FLAGS);
-    if (!aNotify) {
-      RemoveStatesSilently(ElementState::DIR_STATES);
-    }
-
+    AutoStateChangeNotifier notifier(*this, aNotify);
+    RemoveStatesSilently(ElementState::DIR_STATES);
     switch (aDir) {
-      case (eDir_RTL):
-        SetFlags(NODE_HAS_DIRECTION_RTL);
-        if (!aNotify) {
-          AddStatesSilently(ElementState::RTL);
-        }
+      case eDir_RTL:
+        AddStatesSilently(ElementState::RTL);
         break;
-
-      case (eDir_LTR):
-        SetFlags(NODE_HAS_DIRECTION_LTR);
-        if (!aNotify) {
-          AddStatesSilently(ElementState::LTR);
-        }
+      case eDir_LTR:
+        AddStatesSilently(ElementState::LTR);
         break;
-
       default:
         break;
-    }
-
-    /*
-     * Only call UpdateState if we need to notify, because we call
-     * SetDirectionality for every element, and UpdateState is very very slow
-     * for some elements.
-     */
-    if (aNotify) {
-      UpdateState(true);
     }
   }
 
@@ -665,84 +636,55 @@ class Element : public FragmentOrElement {
 
   const AttrArray& GetAttrs() const { return mAttrs; }
 
-  void SetDefined(bool aSet) {
-    if (aSet) {
-      AddStates(ElementState::DEFINED);
-    } else {
-      RemoveStates(ElementState::DEFINED);
-    }
-  }
+  void SetDefined(bool aSet) { SetStates(ElementState::DEFINED, aSet); }
 
   // AccessibilityRole
-  REFLECT_DOMSTRING_ATTR(Role, role)
+  REFLECT_NULLABLE_DOMSTRING_ATTR(Role, role)
 
   // AriaAttributes
-  REFLECT_DOMSTRING_ATTR(AriaAtomic, aria_atomic)
-  REFLECT_DOMSTRING_ATTR(AriaAutoComplete, aria_autocomplete)
-  REFLECT_DOMSTRING_ATTR(AriaBusy, aria_busy)
-  REFLECT_DOMSTRING_ATTR(AriaChecked, aria_checked)
-  REFLECT_DOMSTRING_ATTR(AriaColCount, aria_colcount)
-  REFLECT_DOMSTRING_ATTR(AriaColIndex, aria_colindex)
-  REFLECT_DOMSTRING_ATTR(AriaColIndexText, aria_colindextext)
-  REFLECT_DOMSTRING_ATTR(AriaColSpan, aria_colspan)
-  REFLECT_DOMSTRING_ATTR(AriaCurrent, aria_current)
-  REFLECT_DOMSTRING_ATTR(AriaDescription, aria_description)
-  REFLECT_DOMSTRING_ATTR(AriaDisabled, aria_disabled)
-  REFLECT_DOMSTRING_ATTR(AriaExpanded, aria_expanded)
-  REFLECT_DOMSTRING_ATTR(AriaHasPopup, aria_haspopup)
-  REFLECT_DOMSTRING_ATTR(AriaHidden, aria_hidden)
-  REFLECT_DOMSTRING_ATTR(AriaInvalid, aria_invalid)
-  REFLECT_DOMSTRING_ATTR(AriaKeyShortcuts, aria_keyshortcuts)
-  REFLECT_DOMSTRING_ATTR(AriaLabel, aria_label)
-  REFLECT_DOMSTRING_ATTR(AriaLevel, aria_level)
-  REFLECT_DOMSTRING_ATTR(AriaLive, aria_live)
-  REFLECT_DOMSTRING_ATTR(AriaModal, aria_modal)
-  REFLECT_DOMSTRING_ATTR(AriaMultiLine, aria_multiline)
-  REFLECT_DOMSTRING_ATTR(AriaMultiSelectable, aria_multiselectable)
-  REFLECT_DOMSTRING_ATTR(AriaOrientation, aria_orientation)
-  REFLECT_DOMSTRING_ATTR(AriaPlaceholder, aria_placeholder)
-  REFLECT_DOMSTRING_ATTR(AriaPosInSet, aria_posinset)
-  REFLECT_DOMSTRING_ATTR(AriaPressed, aria_pressed)
-  REFLECT_DOMSTRING_ATTR(AriaReadOnly, aria_readonly)
-  REFLECT_DOMSTRING_ATTR(AriaRelevant, aria_relevant)
-  REFLECT_DOMSTRING_ATTR(AriaRequired, aria_required)
-  REFLECT_DOMSTRING_ATTR(AriaRoleDescription, aria_roledescription)
-  REFLECT_DOMSTRING_ATTR(AriaRowCount, aria_rowcount)
-  REFLECT_DOMSTRING_ATTR(AriaRowIndex, aria_rowindex)
-  REFLECT_DOMSTRING_ATTR(AriaRowIndexText, aria_rowindextext)
-  REFLECT_DOMSTRING_ATTR(AriaRowSpan, aria_rowspan)
-  REFLECT_DOMSTRING_ATTR(AriaSelected, aria_selected)
-  REFLECT_DOMSTRING_ATTR(AriaSetSize, aria_setsize)
-  REFLECT_DOMSTRING_ATTR(AriaSort, aria_sort)
-  REFLECT_DOMSTRING_ATTR(AriaValueMax, aria_valuemax)
-  REFLECT_DOMSTRING_ATTR(AriaValueMin, aria_valuemin)
-  REFLECT_DOMSTRING_ATTR(AriaValueNow, aria_valuenow)
-  REFLECT_DOMSTRING_ATTR(AriaValueText, aria_valuetext)
+  REFLECT_NULLABLE_DOMSTRING_ATTR(AriaAtomic, aria_atomic)
+  REFLECT_NULLABLE_DOMSTRING_ATTR(AriaAutoComplete, aria_autocomplete)
+  REFLECT_NULLABLE_DOMSTRING_ATTR(AriaBusy, aria_busy)
+  REFLECT_NULLABLE_DOMSTRING_ATTR(AriaChecked, aria_checked)
+  REFLECT_NULLABLE_DOMSTRING_ATTR(AriaColCount, aria_colcount)
+  REFLECT_NULLABLE_DOMSTRING_ATTR(AriaColIndex, aria_colindex)
+  REFLECT_NULLABLE_DOMSTRING_ATTR(AriaColIndexText, aria_colindextext)
+  REFLECT_NULLABLE_DOMSTRING_ATTR(AriaColSpan, aria_colspan)
+  REFLECT_NULLABLE_DOMSTRING_ATTR(AriaCurrent, aria_current)
+  REFLECT_NULLABLE_DOMSTRING_ATTR(AriaDescription, aria_description)
+  REFLECT_NULLABLE_DOMSTRING_ATTR(AriaDisabled, aria_disabled)
+  REFLECT_NULLABLE_DOMSTRING_ATTR(AriaExpanded, aria_expanded)
+  REFLECT_NULLABLE_DOMSTRING_ATTR(AriaHasPopup, aria_haspopup)
+  REFLECT_NULLABLE_DOMSTRING_ATTR(AriaHidden, aria_hidden)
+  REFLECT_NULLABLE_DOMSTRING_ATTR(AriaInvalid, aria_invalid)
+  REFLECT_NULLABLE_DOMSTRING_ATTR(AriaKeyShortcuts, aria_keyshortcuts)
+  REFLECT_NULLABLE_DOMSTRING_ATTR(AriaLabel, aria_label)
+  REFLECT_NULLABLE_DOMSTRING_ATTR(AriaLevel, aria_level)
+  REFLECT_NULLABLE_DOMSTRING_ATTR(AriaLive, aria_live)
+  REFLECT_NULLABLE_DOMSTRING_ATTR(AriaModal, aria_modal)
+  REFLECT_NULLABLE_DOMSTRING_ATTR(AriaMultiLine, aria_multiline)
+  REFLECT_NULLABLE_DOMSTRING_ATTR(AriaMultiSelectable, aria_multiselectable)
+  REFLECT_NULLABLE_DOMSTRING_ATTR(AriaOrientation, aria_orientation)
+  REFLECT_NULLABLE_DOMSTRING_ATTR(AriaPlaceholder, aria_placeholder)
+  REFLECT_NULLABLE_DOMSTRING_ATTR(AriaPosInSet, aria_posinset)
+  REFLECT_NULLABLE_DOMSTRING_ATTR(AriaPressed, aria_pressed)
+  REFLECT_NULLABLE_DOMSTRING_ATTR(AriaReadOnly, aria_readonly)
+  REFLECT_NULLABLE_DOMSTRING_ATTR(AriaRelevant, aria_relevant)
+  REFLECT_NULLABLE_DOMSTRING_ATTR(AriaRequired, aria_required)
+  REFLECT_NULLABLE_DOMSTRING_ATTR(AriaRoleDescription, aria_roledescription)
+  REFLECT_NULLABLE_DOMSTRING_ATTR(AriaRowCount, aria_rowcount)
+  REFLECT_NULLABLE_DOMSTRING_ATTR(AriaRowIndex, aria_rowindex)
+  REFLECT_NULLABLE_DOMSTRING_ATTR(AriaRowIndexText, aria_rowindextext)
+  REFLECT_NULLABLE_DOMSTRING_ATTR(AriaRowSpan, aria_rowspan)
+  REFLECT_NULLABLE_DOMSTRING_ATTR(AriaSelected, aria_selected)
+  REFLECT_NULLABLE_DOMSTRING_ATTR(AriaSetSize, aria_setsize)
+  REFLECT_NULLABLE_DOMSTRING_ATTR(AriaSort, aria_sort)
+  REFLECT_NULLABLE_DOMSTRING_ATTR(AriaValueMax, aria_valuemax)
+  REFLECT_NULLABLE_DOMSTRING_ATTR(AriaValueMin, aria_valuemin)
+  REFLECT_NULLABLE_DOMSTRING_ATTR(AriaValueNow, aria_valuenow)
+  REFLECT_NULLABLE_DOMSTRING_ATTR(AriaValueText, aria_valuetext)
 
  protected:
-  /**
-   * Method to get the _intrinsic_ content state of this element.  This is the
-   * state that is independent of the element's presentation.  To get the full
-   * the possible bits that could be set here.
-   */
-  virtual ElementState IntrinsicState() const;
-
-  /**
-   * Method to add state bits.  This should be called from subclass
-   * constructors to set up our event state correctly at construction
-   * time and other places where we don't want to notify a state
-   * change.
-   */
-  void AddStatesSilently(ElementState aStates) { mState |= aStates; }
-
-  /**
-   * Method to remove state bits.  This should be called from subclass
-   * constructors to set up our event state correctly at construction
-   * time and other places where we don't want to notify a state
-   * change.
-   */
-  void RemoveStatesSilently(ElementState aStates) { mState &= ~aStates; }
-
   already_AddRefed<ShadowRoot> AttachShadowInternal(ShadowRootMode,
                                                     ErrorResult& aError);
 
@@ -752,70 +694,79 @@ class Element : public FragmentOrElement {
                                      FlushType aFlushType = FlushType::Layout);
 
  private:
-  // Need to allow the ESM, nsGlobalWindow, and the focus manager
-  // and Document to set our state
-  friend class mozilla::EventStateManager;
-  friend class mozilla::dom::Document;
-  friend class ::nsGlobalWindowInner;
-  friend class ::nsGlobalWindowOuter;
-  friend class ::nsFocusManager;
-
-  // Allow CusomtElementRegistry to call AddStates.
-  friend class CustomElementRegistry;
-
-  // Also need to allow Link to call UpdateLinkState.
-  friend class Link;
-
-  void NotifyStateChange(ElementState aStates);
-
-  void NotifyStyleStateChange(ElementState aStates);
-
   // Style state computed from element's state and style locks.
   ElementState StyleStateFromLocks() const;
 
- protected:
-  // Methods for the ESM, nsGlobalWindow, focus manager and Document to
-  // manage state bits.
-  // These will handle setting up script blockers when they notify, so no need
-  // to do it in the callers unless desired.  States passed here must only be
-  // those in EXTERNALLY_MANAGED_STATES.
-  void AddStates(ElementState aStates) {
-    MOZ_ASSERT(!aStates.HasAtLeastOneOfStates(ElementState::INTRINSIC_STATES),
-               "Should only be adding externally-managed states here");
+  void NotifyStateChange(ElementState aStates);
+  void NotifyStyleStateChange(ElementState aStates);
+
+ public:
+  struct AutoStateChangeNotifier {
+    AutoStateChangeNotifier(Element& aElement, bool aNotify)
+        : mElement(aElement), mOldState(aElement.State()), mNotify(aNotify) {}
+    ~AutoStateChangeNotifier() {
+      if (!mNotify) {
+        return;
+      }
+      ElementState newState = mElement.State();
+      if (mOldState != newState) {
+        mElement.NotifyStateChange(mOldState ^ newState);
+      }
+    }
+
+   private:
+    Element& mElement;
+    const ElementState mOldState;
+    const bool mNotify;
+  };
+
+  // Method to add state bits.  This should be called from subclass constructors
+  // to set up our event state correctly at construction time, and other places
+  // where we don't want to notify a state change, or there's an
+  // AutoStateChangeNotifier on the stack.
+  void AddStatesSilently(ElementState aStates) { mState |= aStates; }
+  // Method to remove state bits.  This should be called from subclass
+  // constructors to set up our event state correctly at construction time and
+  // other places where we don't want to notify a state change.
+  void RemoveStatesSilently(ElementState aStates) { mState &= ~aStates; }
+  // Methods to add state bits, potentially notifying. These will handle setting
+  // up script blockers when they notify, so no need to do it in the callers
+  // unless desired. States passed here must only be those in
+  // EXTERNALLY_MANAGED_STATES.
+  void AddStates(ElementState aStates, bool aNotify = true) {
     ElementState old = mState;
     AddStatesSilently(aStates);
-    NotifyStateChange(old ^ mState);
+    if (aNotify && old != mState) {
+      NotifyStateChange(old ^ mState);
+    }
   }
-  void RemoveStates(ElementState aStates) {
-    MOZ_ASSERT(!aStates.HasAtLeastOneOfStates(ElementState::INTRINSIC_STATES),
-               "Should only be removing externally-managed states here");
+  void RemoveStates(ElementState aStates, bool aNotify = true) {
     ElementState old = mState;
     RemoveStatesSilently(aStates);
-    NotifyStateChange(old ^ mState);
+    if (aNotify && old != mState) {
+      NotifyStateChange(old ^ mState);
+    }
+  }
+  void SetStates(ElementState aStates, bool aSet, bool aNotify = true) {
+    if (aSet) {
+      AddStates(aStates, aNotify);
+    } else {
+      RemoveStates(aStates, aNotify);
+    }
   }
   void ToggleStates(ElementState aStates, bool aNotify) {
-    MOZ_ASSERT(!aStates.HasAtLeastOneOfStates(ElementState::INTRINSIC_STATES),
-               "Should only be removing externally-managed states here");
     mState ^= aStates;
     if (aNotify) {
       NotifyStateChange(aStates);
     }
   }
 
- public:
-  // Public methods to manage state bits in MANUALLY_MANAGED_STATES.
-  void AddManuallyManagedStates(ElementState aStates) {
-    MOZ_ASSERT(ElementState::MANUALLY_MANAGED_STATES.HasAllStates(aStates),
-               "Should only be adding manually-managed states here");
-    AddStates(aStates);
-  }
-  void RemoveManuallyManagedStates(ElementState aStates) {
-    MOZ_ASSERT(ElementState::MANUALLY_MANAGED_STATES.HasAllStates(aStates),
-               "Should only be removing manually-managed states here");
-    RemoveStates(aStates);
-  }
-
   void UpdateEditableState(bool aNotify) override;
+  // Makes sure that the READONLY/READWRITE flags are in sync.
+  void UpdateReadOnlyState(bool aNotify);
+  // Form controls and non-form controls should have different :read-only /
+  // :read-write behavior. This is what effectively controls it.
+  virtual bool IsReadOnlyInternal() const;
 
   /**
    * Normalizes an attribute name and returns it as a nodeinfo if an attribute
@@ -1726,6 +1677,12 @@ class Element : public FragmentOrElement {
     aError =
         SetAttr(kNameSpaceID_None, aAttr, aValue, aTriggeringPrincipal, true);
   }
+
+  /**
+   * Preallocate space in this element's attribute array for the given
+   * total number of attributes.
+   */
+  void TryReserveAttributeCount(uint32_t aAttributeCount);
 
   /**
    * Set a content attribute via a reflecting nullable string IDL

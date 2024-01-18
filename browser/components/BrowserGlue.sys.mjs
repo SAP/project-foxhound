@@ -73,6 +73,8 @@ ChromeUtils.defineESModuleGetters(lazy, {
   Sanitizer: "resource:///modules/Sanitizer.sys.mjs",
   SaveToPocket: "chrome://pocket/content/SaveToPocket.sys.mjs",
   ScreenshotsUtils: "resource:///modules/ScreenshotsUtils.sys.mjs",
+  SearchSERPDomainToCategoriesMap:
+    "resource:///modules/SearchSERPTelemetry.sys.mjs",
   SearchSERPTelemetry: "resource:///modules/SearchSERPTelemetry.sys.mjs",
   SessionStartup: "resource:///modules/sessionstore/SessionStartup.sys.mjs",
   SessionStore: "resource:///modules/sessionstore/SessionStore.sys.mjs",
@@ -389,9 +391,7 @@ let JSWINDOWACTORS = {
     child: {
       moduleURI: "resource:///actors/AboutWelcomeChild.jsm",
       events: {
-        // This is added so the actor instantiates immediately and makes
-        // methods available to the page js on load.
-        DOMDocElementInserted: {},
+        Update: {},
       },
     },
     matches: ["about:shoppingsidebar"],
@@ -714,8 +714,9 @@ let JSWINDOWACTORS = {
         "Screenshots:Copy": { wantUntrusted: true },
         "Screenshots:Download": { wantUntrusted: true },
         "Screenshots:HidePanel": { wantUntrusted: true },
-        "Screenshots:ShowPanel": { wantUntrusted: true },
+        "Screenshots:OverlaySelection": { wantUntrusted: true },
         "Screenshots:RecordEvent": { wantUntrusted: true },
+        "Screenshots:ShowPanel": { wantUntrusted: true },
       },
     },
     enablePreference: "screenshots.browser.component.enabled",
@@ -767,6 +768,7 @@ let JSWINDOWACTORS = {
         // methods available to the page js on load.
         DOMDocElementInserted: {},
         ShoppingTelemetryEvent: { wantUntrusted: true },
+        ReportProductAvailable: { wantUntrusted: true },
       },
     },
     matches: ["about:shoppingsidebar"],
@@ -1333,6 +1335,14 @@ BrowserGlue.prototype = {
       this._matchCBCategory
     );
     Services.prefs.removeObserver(
+      "privacy.fingerprintingProtection",
+      this._matchCBCategory
+    );
+    Services.prefs.removeObserver(
+      "privacy.fingerprintingProtection.pbmode",
+      this._matchCBCategory
+    );
+    Services.prefs.removeObserver(
       ContentBlockingCategoriesPrefs.PREF_CB_CATEGORY,
       this._updateCBCategory
     );
@@ -1845,6 +1855,14 @@ BrowserGlue.prototype = {
       this._matchCBCategory
     );
     Services.prefs.addObserver(
+      "privacy.fingerprintingProtection",
+      this._matchCBCategory
+    );
+    Services.prefs.addObserver(
+      "privacy.fingerprintingProtection.pbmode",
+      this._matchCBCategory
+    );
+    Services.prefs.addObserver(
       ContentBlockingCategoriesPrefs.PREF_CB_CATEGORY,
       this._updateCBCategory
     );
@@ -2049,11 +2067,7 @@ BrowserGlue.prototype = {
       () => lazy.NewTabUtils.uninit(),
       () => lazy.Normandy.uninit(),
       () => lazy.RFPHelper.uninit(),
-      () => {
-        if (AppConstants.NIGHTLY_BUILD) {
-          lazy.ShoppingUtils.uninit();
-        }
-      },
+      () => lazy.ShoppingUtils.uninit(),
       () => lazy.ASRouterNewTabHook.destroy(),
       () => {
         if (AppConstants.MOZ_UPDATER) {
@@ -2966,7 +2980,6 @@ BrowserGlue.prototype = {
 
       {
         name: "ShoppingUtils.init",
-        condition: AppConstants.NIGHTLY_BUILD,
         task: () => {
           lazy.ShoppingUtils.init();
         },
@@ -2985,6 +2998,13 @@ BrowserGlue.prototype = {
         condition: lazy.TelemetryUtils.isTelemetryEnabled,
         task: async () => {
           await lazy.ProvenanceData.submitProvenanceTelemetry();
+        },
+      },
+
+      {
+        name: "SearchSERPDomainToCategoriesMap.init",
+        task: () => {
+          lazy.SearchSERPDomainToCategoriesMap.init().catch(console.error);
         },
       },
 
@@ -3469,7 +3489,19 @@ BrowserGlue.prototype = {
         if (bookmarksUrl) {
           // Import from bookmarks.html file.
           try {
-            if (Services.policies.isAllowed("defaultBookmarks")) {
+            if (
+              Services.policies.isAllowed("defaultBookmarks") &&
+              // Default bookmarks are imported after startup, and they may
+              // influence the outcome of tests, thus it's possible to use
+              // this test-only pref to skip the import.
+              !(
+                Cu.isInAutomation &&
+                Services.prefs.getBoolPref(
+                  "browser.bookmarks.testing.skipDefaultBookmarksImport",
+                  false
+                )
+              )
+            ) {
               await lazy.BookmarkHTMLUtils.importFromURL(bookmarksUrl, {
                 replace: true,
                 source: lazy.PlacesUtils.bookmarks.SOURCES.RESTORE_ON_STARTUP,
@@ -3620,7 +3652,7 @@ BrowserGlue.prototype = {
   _migrateUI() {
     // Use an increasing number to keep track of the current migration state.
     // Completely unrelated to the current Firefox release number.
-    const UI_VERSION = 139;
+    const UI_VERSION = 140;
     const BROWSER_DOCURL = AppConstants.BROWSER_CHROME_URL;
 
     if (!Services.prefs.prefHasUserValue("browser.migration.version")) {
@@ -4164,15 +4196,11 @@ BrowserGlue.prototype = {
       // originInfo in the format [origin, type]
       [
         ["https://www.mozilla.org", "uitour"],
-        ["https://monitor.firefox.com", "uitour"],
-        ["https://screenshots.firefox.com", "uitour"],
         ["https://support.mozilla.org", "uitour"],
-        ["https://truecolors.firefox.com", "uitour"],
         ["about:home", "uitour"],
         ["about:newtab", "uitour"],
         ["https://addons.mozilla.org", "install"],
         ["https://support.mozilla.org", "remote-troubleshooting"],
-        ["https://fpn.firefox.com", "install"],
         ["about:welcome", "autoplay-media"],
       ].forEach(originInfo => {
         // Reset permission on the condition that it is set to
@@ -4199,6 +4227,11 @@ BrowserGlue.prototype = {
           );
         }
       });
+    }
+
+    if (currentUIVersion < 140) {
+      // Remove browser.fixup.alternate.enabled pref in Bug 1850902.
+      Services.prefs.clearUserPref("browser.fixup.alternate.enabled");
     }
 
     // Update the migration version.
@@ -4750,6 +4783,8 @@ var ContentBlockingCategoriesPrefs = {
         "privacy.partition.network_state.ocsp_cache": null,
         "privacy.query_stripping.enabled": null,
         "privacy.query_stripping.enabled.pbmode": null,
+        "privacy.fingerprintingProtection": null,
+        "privacy.fingerprintingProtection.pbmode": null,
       },
       standard: {
         "network.cookie.cookieBehavior": null,
@@ -4768,6 +4803,8 @@ var ContentBlockingCategoriesPrefs = {
         "privacy.partition.network_state.ocsp_cache": null,
         "privacy.query_stripping.enabled": null,
         "privacy.query_stripping.enabled.pbmode": null,
+        "privacy.fingerprintingProtection": null,
+        "privacy.fingerprintingProtection.pbmode": null,
       },
     };
     let type = "strict";
@@ -4900,6 +4937,22 @@ var ContentBlockingCategoriesPrefs = {
         case "-qpsPBM":
           this.CATEGORY_PREFS[type][
             "privacy.query_stripping.enabled.pbmode"
+          ] = false;
+          break;
+        case "fpp":
+          this.CATEGORY_PREFS[type]["privacy.fingerprintingProtection"] = true;
+          break;
+        case "-fpp":
+          this.CATEGORY_PREFS[type]["privacy.fingerprintingProtection"] = false;
+          break;
+        case "fppPrivate":
+          this.CATEGORY_PREFS[type][
+            "privacy.fingerprintingProtection.pbmode"
+          ] = true;
+          break;
+        case "-fppPrivate":
+          this.CATEGORY_PREFS[type][
+            "privacy.fingerprintingProtection.pbmode"
           ] = false;
           break;
         case "cookieBehavior0":

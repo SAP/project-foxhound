@@ -12,38 +12,6 @@
 
 /* ::::: menu/menuitem ::::: */
 
-menupopup,
-menubar {
-  font: menu;
-}
-
-menu,
-menuitem,
-menucaption {
-  flex-shrink: 0;
-  align-items: center;
-  list-style-image: none;
-}
-
-menu:where([disabled="true"]),
-menuitem:where([disabled="true"]),
-menu:where([_moz-menuactive="true"][disabled="true"]),
-menuitem:where([_moz-menuactive="true"][disabled="true"]) {
-  color: GrayText;
-  text-shadow: none;
-}
-
-menu:where([_moz-menuactive="true"][disabled="true"]),
-menuitem:where([_moz-menuactive="true"][disabled="true"]) {
-  background-color: -moz-menuhoverdisabled;
-}
-
-menuitem[default="true"],
-menuitem.spell-suggestion,
-menucaption {
-  font-weight: bold;
-}
-
 menubar > menu:-moz-window-inactive {
   color: ThreeDShadow;
 }
@@ -77,27 +45,6 @@ menuitem:is([type="checkbox"], [type="radio"]):not([checked="true"]) > .menu-ico
   display: none;
 }
 
-/* ..... menu arrow box ..... */
-
-/* Override the native menu arrow with a custom one for Win10. */
-.menu-right {
-  list-style-image: url("chrome://global/skin/icons/arrow-right.svg");
-  -moz-context-properties: fill, fill-opacity;
-  fill: currentColor;
-  fill-opacity: var(--menu-icon-opacity);
-  margin-inline-end: 1em;
-}
-
-.menu-right > image {
-  /* Do not make this smaller than the size of the svg, but upscale for
-   * people with large fonts. */
-  width: max(1em, 16px);
-}
-
-.menu-right:-moz-locale-dir(rtl) {
-  list-style-image: url("chrome://global/skin/icons/arrow-left.svg");
-}
-
 /* ::::: menu/menuitems in menubar ::::: */
 
 menubar > menu[_moz-menuactive="true"]:not([disabled="true"]) {
@@ -123,20 +70,6 @@ menubar > menu:-moz-lwtheme[_moz-menuactive="true"]:not([disabled="true"]) {
 
 .menubar-text {
   margin: 1px 6px 2px !important;
-}
-
-/* ::::: menu/menuitems in popups ::::: */
-
-menupopup > menu,
-menupopup > menuitem,
-menupopup > menucaption {
-  max-width: 42em;
-}
-
-menu:where([_moz-menuactive="true"]:not([disabled="true"])),
-menuitem:where([_moz-menuactive="true"]:not([disabled="true"])) {
-  background-color: -moz-menuhover;
-  color: -moz-menuhovertext;
 }
 
 /* ::::: menu/menuitems in menulist popups ::::: */

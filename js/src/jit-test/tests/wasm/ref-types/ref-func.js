@@ -144,9 +144,9 @@ function checkPassiveElemSegment(mangle, err) {
                let body = [];
                body.push(1);           // 1 element segment
                body.push(0x1 | 0x4);   // Flags: Passive and uses element expression
-               body.push(AnyFuncCode + (mangle == "type" ? 1 : 0)); // always anyfunc
+               body.push(mangle == "type" ? BadType : AnyFuncCode); // always anyfunc
                body.push(1);           // Element count
-               body.push(RefFuncCode + (mangle == "ref.func" ? 1 : 0)); // always ref.func
+               body.push(mangle == "ref.func" ? BadType : RefFuncCode); // always ref.func
                body.push(0);           // func index
                body.push(EndCode + (mangle == "end" ? 1 : 0));
                return body;
@@ -167,8 +167,8 @@ function checkPassiveElemSegment(mangle, err) {
 
 checkPassiveElemSegment("");
 checkPassiveElemSegment("type", /bad type/);
-checkPassiveElemSegment("ref.func", /failed to read initializer operation/);
-checkPassiveElemSegment("end", /failed to read end of initializer expression/);
+checkPassiveElemSegment("ref.func", /unrecognized opcode/);
+checkPassiveElemSegment("end", /unrecognized opcode/);
 
 // Passive element segments can contain literal null values.
 

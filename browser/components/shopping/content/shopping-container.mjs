@@ -24,15 +24,23 @@ import "chrome://browser/content/shopping/unanalyzed.mjs";
 // eslint-disable-next-line import/no-unassigned-import
 import "chrome://browser/content/shopping/recommended-ad.mjs";
 
+// The number of pixels that must be scrolled from the
+// top of the sidebar to show the header box shadow.
+const HEADER_SCROLL_PIXEL_OFFSET = 8;
+
 export class ShoppingContainer extends MozLitElement {
   static properties = {
     data: { type: Object },
     showOnboarding: { type: Boolean },
     productUrl: { type: String },
-    recommendationData: { type: Object },
+    recommendationData: { type: Array },
     isOffline: { type: Boolean },
     analysisEvent: { type: Object },
     userReportedAvailable: { type: Boolean },
+    adsEnabled: { type: Boolean },
+    adsEnabledByUser: { type: Boolean },
+    isAnalysisInProgress: { type: Boolean },
+    isOverflow: { type: Boolean },
   };
 
   static get queries() {
@@ -44,6 +52,8 @@ export class ShoppingContainer extends MozLitElement {
       analysisExplainerEl: "analysis-explainer",
       unanalyzedProductEl: "unanalyzed-product-card",
       shoppingMessageBarEl: "shopping-message-bar",
+      recommendedAdEl: "recommended-ad",
+      loadingEl: "#loading-wrapper",
     };
   }
 
@@ -56,8 +66,10 @@ export class ShoppingContainer extends MozLitElement {
 
     window.document.addEventListener("Update", this);
     window.document.addEventListener("NewAnalysisRequested", this);
-    window.document.addEventListener("ReAnalysisRequested", this);
+    window.document.addEventListener("ReanalysisRequested", this);
     window.document.addEventListener("ReportedProductAvailable", this);
+    window.document.addEventListener("adsEnabledByUserChanged", this);
+    window.document.addEventListener("scroll", this);
 
     window.dispatchEvent(
       new CustomEvent("ContentReady", {
@@ -72,17 +84,24 @@ export class ShoppingContainer extends MozLitElement {
     showOnboarding,
     productUrl,
     recommendationData,
-    isPolledRequestDone,
+    adsEnabled,
+    adsEnabledByUser,
+    isAnalysisInProgress,
   }) {
     // If we're not opted in or there's no shopping URL in the main browser,
     // the actor will pass `null`, which means this will clear out any existing
     // content in the sidebar.
+    if (!this.productUrl && productUrl && data) {
+      this.firstAnalysis = true;
+    }
     this.data = data;
     this.showOnboarding = showOnboarding;
     this.productUrl = productUrl;
     this.recommendationData = recommendationData;
     this.isOffline = !navigator.onLine;
-    this.isPolledRequestDone = isPolledRequestDone;
+    this.isAnalysisInProgress = isAnalysisInProgress;
+    this.adsEnabled = adsEnabled;
+    this.adsEnabledByUser = adsEnabledByUser;
   }
 
   handleEvent(event) {
@@ -91,7 +110,9 @@ export class ShoppingContainer extends MozLitElement {
         this._update(event.detail);
         break;
       case "NewAnalysisRequested":
-      case "ReAnalysisRequested":
+      case "ReanalysisRequested":
+        this.isAnalysisInProgress = true;
+        this.firstAnalysis = false;
         this.analysisEvent = {
           type: event.type,
           productUrl: this.productUrl,
@@ -105,6 +126,26 @@ export class ShoppingContainer extends MozLitElement {
         break;
       case "ReportedProductAvailable":
         this.userReportedAvailable = true;
+        window.dispatchEvent(
+          new CustomEvent("ReportProductAvailable", {
+            bubbles: true,
+            composed: true,
+          })
+        );
+        window.dispatchEvent(
+          new CustomEvent("ShoppingTelemetryEvent", {
+            bubbles: true,
+            composed: true,
+            detail: "surfaceReactivatedButtonClicked",
+          })
+        );
+        break;
+      case "adsEnabledByUserChanged":
+        this.adsEnabledByUser = event.detail?.adsEnabledByUser;
+        break;
+      case "scroll":
+        let scrollYPosition = window.scrollY;
+        this.isOverflow = scrollYPosition > HEADER_SCROLL_PIXEL_OFFSET;
         break;
     }
   }
@@ -116,30 +157,33 @@ export class ShoppingContainer extends MozLitElement {
       <review-highlights
         .highlights=${this.data.highlights}
       ></review-highlights>
-      <analysis-explainer></analysis-explainer>
-      ${this.recommendationTemplate()}
     `;
   }
 
   getContentTemplate() {
     // The user requested an analysis which is not done yet.
-    // We only want to show the analysis-in-progress message-bar
-    // for the product currently in view.
     if (
       this.analysisEvent?.productUrl == this.productUrl &&
-      !this.isPolledRequestDone
+      this.isAnalysisInProgress
     ) {
+      const isReanalysis = this.analysisEvent.type === "ReanalysisRequested";
       return html`<shopping-message-bar
-          type="analysis-in-progress"
+          type=${isReanalysis
+            ? "reanalysis-in-progress"
+            : "analysis-in-progress"}
         ></shopping-message-bar>
-        ${this.analysisEvent.type == "ReAnalysisRequested"
-          ? this.getAnalysisDetailsTemplate()
-          : null}`;
+        ${isReanalysis ? this.getAnalysisDetailsTemplate() : null}`;
     }
 
     if (this.data?.error) {
       return html`<shopping-message-bar
         type="generic-error"
+      ></shopping-message-bar>`;
+    }
+
+    if (this.data.page_not_supported) {
+      return html`<shopping-message-bar
+        type="page-not-supported"
       ></shopping-message-bar>`;
     }
 
@@ -160,14 +204,16 @@ export class ShoppingContainer extends MozLitElement {
     }
 
     if (this.data.needs_analysis) {
-      if (!this.data.product_id) {
-        // Product is not yet registered to our db and thus we cannot show any data.
+      let notEnoughReviews = !this.data.grade || !this.data.adjusted_rating;
+      if (!this.data.product_id || (this.firstAnalysis && notEnoughReviews)) {
+        // Product is either new to us or (bug 1848695) it's the initial page load of a product
+        // with not enough reviews.
         return html`<unanalyzed-product-card
           productUrl=${ifDefined(this.productUrl)}
         ></unanalyzed-product-card>`;
       }
 
-      if (!this.data.grade || !this.data.adjusted_rating) {
+      if (notEnoughReviews) {
         // We already saw and tried to analyze this product before, but there are not enough reviews
         // to make a detailed analysis.
         return html`<shopping-message-bar
@@ -177,7 +223,10 @@ export class ShoppingContainer extends MozLitElement {
       // We successfully analyzed the product before, but the current analysis is outdated and can be updated
       // via a re-analysis.
       return html`
-        <shopping-message-bar type="stale"></shopping-message-bar>
+        <shopping-message-bar
+          type="stale"
+          .productUrl=${this.productUrl}
+        ></shopping-message-bar>
         ${this.getAnalysisDetailsTemplate()}
       `;
     }
@@ -186,7 +235,8 @@ export class ShoppingContainer extends MozLitElement {
   }
 
   recommendationTemplate() {
-    if (this.recommendationData?.length) {
+    const canShowAds = this.adsEnabled && this.adsEnabledByUser;
+    if (this.recommendationData?.length && canShowAds) {
       return html`<recommended-ad
         .product=${this.recommendationData[0]}
       ></recommended-ad>`;
@@ -194,12 +244,24 @@ export class ShoppingContainer extends MozLitElement {
     return null;
   }
 
-  getLoadingTemplate() {
+  /**
+   * @param {object?} options
+   * @param {boolean?} options.animate = true
+   *        Whether to animate the loading state. Defaults to true.
+   *        There will be no animation for users who prefer reduced motion,
+   *        irrespective of the value of this option.
+   */
+  getLoadingTemplate({ animate = true } = {}) {
     /* Due to limitations with aria-busy for certain screen readers
      * (see Bug 1682063), mark loading container as a pseudo image and
      * use aria-label as a workaround. */
     return html`
-      <div id="loading-wrapper" data-l10n-id="shopping-a11y-loading" role="img">
+      <div
+        id="loading-wrapper"
+        data-l10n-id="shopping-a11y-loading"
+        role="img"
+        class=${animate ? "animate" : ""}
+      >
         <div class="loading-box medium"></div>
         <div class="loading-box medium"></div>
         <div class="loading-box large"></div>
@@ -210,7 +272,7 @@ export class ShoppingContainer extends MozLitElement {
     `;
   }
 
-  renderContainer(sidebarContent, hideSettings = false) {
+  renderContainer(sidebarContent, hideFooter = false) {
     return html`<link
         rel="stylesheet"
         href="chrome://browser/content/shopping/shopping-container.css"
@@ -219,15 +281,22 @@ export class ShoppingContainer extends MozLitElement {
         rel="stylesheet"
         href="chrome://global/skin/in-content/common.css"
       />
+      <link
+        rel="stylesheet"
+        href="chrome://browser/content/shopping/shopping-page.css"
+      />
       <div id="shopping-container">
-        <div id="header-wrapper">
-          <div id="shopping-header">
-            <span id="shopping-icon"></span>
-            <span
-              id="header"
+        <div
+          id="header-wrapper"
+          class=${this.isOverflow ? "shopping-header-overflow" : ""}
+        >
+          <header id="shopping-header" data-l10n-id="shopping-a11y-header">
+            <h1
+              id="shopping-header-title"
               data-l10n-id="shopping-main-container-title"
-            ></span>
-          </div>
+            ></h1>
+            <p id="beta-marker" data-l10n-id="shopping-beta-marker"></p>
+          </header>
           <button
             id="close-button"
             class="ghost-button"
@@ -236,35 +305,57 @@ export class ShoppingContainer extends MozLitElement {
           ></button>
         </div>
         <div id="content" aria-busy=${!this.data}>
-          ${sidebarContent}
-          ${!hideSettings
-            ? html`<shopping-settings></shopping-settings>`
-            : null}
+          <slot name="multi-stage-message-slot"></slot>
+          ${sidebarContent} ${!hideFooter ? this.getFooterTemplate() : null}
         </div>
       </div>`;
   }
 
+  getFooterTemplate() {
+    return html`
+      <analysis-explainer
+        productUrl=${ifDefined(this.productUrl)}
+      ></analysis-explainer>
+      ${this.recommendationTemplate()}
+      <shopping-settings
+        ?adsEnabledByUser=${this.adsEnabledByUser}
+      ></shopping-settings>
+    `;
+  }
+
   render() {
     let content;
-    let hideSettings;
+    let hideFooter;
     if (this.showOnboarding) {
-      content = html`<slot name="multi-stage-message-slot"></slot>`;
-      hideSettings = true;
+      content = html``;
+      hideFooter = true;
     } else if (this.isOffline) {
-      content = html`<shopping-message-bar
-        type="offline"
-      ></shopping-message-bar>`;
+      content = this.getLoadingTemplate({ animate: false });
+      hideFooter = true;
     } else if (!this.data) {
-      content = this.getLoadingTemplate();
-      hideSettings = true;
+      if (this.isAnalysisInProgress) {
+        content = html`<shopping-message-bar
+          type="analysis-in-progress"
+        ></shopping-message-bar>`;
+      } else {
+        content = this.getLoadingTemplate();
+        hideFooter = true;
+      }
     } else {
       content = this.getContentTemplate();
     }
-    return this.renderContainer(content, hideSettings);
+    return this.renderContainer(content, hideFooter);
   }
 
   handleClick() {
     RPMSetPref("browser.shopping.experience2023.active", false);
+    this.dispatchEvent(
+      new CustomEvent("ShoppingTelemetryEvent", {
+        composed: true,
+        bubbles: true,
+        detail: ["surfaceClosed", "closeButton"],
+      })
+    );
   }
 }
 

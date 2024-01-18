@@ -174,12 +174,6 @@ pref("dom.keyboardevent.keypress.hack.use_legacy_keycode_and_charcode", "*.colla
 // Pref for end-users and policy to add additional values.
 pref("dom.keyboardevent.keypress.hack.use_legacy_keycode_and_charcode.addl", "");
 
-// Blacklist of domains of web apps which listen for non-primary click events
-// on window global or document. The format is exactly same as
-// "dom.keyboardevent.keypress.hack.dispatch_non_printable_keys". So, check its
-// explanation for the detail.
-pref("dom.mouseevent.click.hack.use_legacy_non-primary_dispatch", "");
-
 // Text recognition is a platform dependent feature, so even if this preference is
 // enabled here, the feature may not be visible in all browsers.
 pref("dom.text-recognition.enabled", true);
@@ -212,10 +206,11 @@ pref("pdfjs.enableScripting", true);
 pref("pdfjs.enableXfa", true);
 
 // Enable adding an image in a pdf.
-#if defined(EARLY_BETA_OR_EARLIER)
-  pref("pdfjs.enableStampEditor", true);
-#else
+#ifdef RELEASE_OR_BETA
+  // It'll be enabled through Nimbus.
   pref("pdfjs.enableStampEditor", false);
+#else
+  pref("pdfjs.enableStampEditor", true);
 #endif
 
 // Disable support for MathML
@@ -754,7 +749,6 @@ pref("view_source.editor.args", "");
 pref("nglayout.enable_drag_images", true);
 
 // URI fixup prefs
-pref("browser.fixup.alternate.enabled", false);
 pref("browser.fixup.alternate.prefix", "www.");
 pref("browser.fixup.alternate.protocol", "https");
 pref("browser.fixup.alternate.suffix", ".com");
@@ -968,16 +962,16 @@ pref("javascript.options.mem.gc_compacting", true);
 // This only applies to the main runtime and does not affect workers.
 pref("javascript.options.mem.gc_parallel_marking", false);
 
-// JSGC_PARALLEL_MARKING_THRESHOLD_KB
+// JSGC_PARALLEL_MARKING_THRESHOLD_MB
 // Minimum heap size at which to use parallel marking, if enabled.
 #if defined(XP_WIN)
-pref("javascript.options.mem.gc_parallel_marking_threshold_kb", 20000);
+pref("javascript.options.mem.gc_parallel_marking_threshold_mb", 20);
 #elif defined(XP_MACOSX)
-pref("javascript.options.mem.gc_parallel_marking_threshold_kb", 4000);
+pref("javascript.options.mem.gc_parallel_marking_threshold_mb", 4);
 #elif defined(ANDROID)
-pref("javascript.options.mem.gc_parallel_marking_threshold_kb", 200000);
+pref("javascript.options.mem.gc_parallel_marking_threshold_mb", 200);
 #elif defined(XP_UNIX)
-pref("javascript.options.mem.gc_parallel_marking_threshold_kb", 200000);
+pref("javascript.options.mem.gc_parallel_marking_threshold_mb", 200);
 #endif
 
 // JSGC_HIGH_FREQUENCY_TIME_LIMIT
@@ -4032,6 +4026,10 @@ pref("dom.sitepermsaddon-provider.separatedBlocklistedDomains", "shopee.co.th,sh
 // Log level for logger in URLQueryStrippingListService
 pref("privacy.query_stripping.listService.logLevel", "Error");
 
+// Signal to the webcompat site intervention add-on to use the MV3
+// scripting.registerContentScripts API instead of the older MV2
+// contentScripts.register API.
+pref("extensions.webcompat.useScriptingAPI", true);
 
 // Tainting Preferences
 // All preferences related to taint-tracking

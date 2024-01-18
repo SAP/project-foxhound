@@ -8,6 +8,7 @@
 
 #include "mozilla/Assertions.h"
 #include "mozilla/FloatingPoint.h"
+#include "mozilla/Maybe.h"
 
 #include <algorithm>
 #include <cmath>
@@ -35,6 +36,7 @@
 #include "builtin/temporal/TemporalTypes.h"
 #include "builtin/temporal/TemporalUnit.h"
 #include "builtin/temporal/TimeZone.h"
+#include "builtin/temporal/ToString.h"
 #include "builtin/temporal/Wrapped.h"
 #include "builtin/temporal/ZonedDateTime.h"
 #include "ds/IdValuePair.h"
@@ -44,7 +46,6 @@
 #include "js/CallArgs.h"
 #include "js/CallNonGenericMethod.h"
 #include "js/Class.h"
-#include "js/Conversions.h"
 #include "js/Date.h"
 #include "js/ErrorReport.h"
 #include "js/friend/ErrorMessages.h"
@@ -55,13 +56,15 @@
 #include "js/RootingAPI.h"
 #include "js/TypeDecls.h"
 #include "js/Value.h"
-#include "util/StringBuffer.h"
-#include "vm/Compartment.h"
+#include "vm/BytecodeUtil.h"
 #include "vm/GlobalObject.h"
 #include "vm/JSAtomState.h"
 #include "vm/JSContext.h"
 #include "vm/JSObject.h"
 #include "vm/PlainObject.h"
+#include "vm/PropertyInfo.h"
+#include "vm/Realm.h"
+#include "vm/Shape.h"
 #include "vm/StringType.h"
 
 #include "vm/JSObject-inl.h"
@@ -470,10 +473,12 @@ static Wrapped<PlainDateObject*> ToTemporalDate(
   }
 
   // Step 5.
-  Rooted<JSString*> string(cx, JS::ToString(cx, item));
-  if (!string) {
+  if (!item.isString()) {
+    ReportValueError(cx, JSMSG_UNEXPECTED_TYPE, JSDVG_IGNORE_STACK, item,
+                     nullptr, "not a string");
     return nullptr;
   }
+  Rooted<JSString*> string(cx, item.toString());
 
   // Step 6.
   PlainDate result;
@@ -541,60 +546,6 @@ bool js::temporal::ToTemporalDate(JSContext* cx, Handle<Value> item,
   *result = ToPlainDate(obj);
   calendar.set(obj->calendar());
   return calendar.wrap(cx);
-}
-
-/**
- * TemporalDateToString ( temporalDate, showCalendar )
- */
-static JSString* TemporalDateToString(JSContext* cx,
-                                      Handle<PlainDateObject*> temporalDate,
-                                      CalendarOption showCalendar) {
-  auto [year, month, day] = ToPlainDate(temporalDate);
-
-  // Steps 1-2. (Not applicable in our implementation.)
-
-  JSStringBuilder result(cx);
-
-  if (!result.reserve(1 + 6 + 1 + 2 + 1 + 2)) {
-    return nullptr;
-  }
-
-  // Step 3.
-  if (0 <= year && year <= 9999) {
-    result.infallibleAppend(char('0' + (year / 1000)));
-    result.infallibleAppend(char('0' + (year % 1000) / 100));
-    result.infallibleAppend(char('0' + (year % 100) / 10));
-    result.infallibleAppend(char('0' + (year % 10)));
-  } else {
-    result.infallibleAppend(year < 0 ? '-' : '+');
-
-    year = std::abs(year);
-    result.infallibleAppend(char('0' + (year / 100000)));
-    result.infallibleAppend(char('0' + (year % 100000) / 10000));
-    result.infallibleAppend(char('0' + (year % 10000) / 1000));
-    result.infallibleAppend(char('0' + (year % 1000) / 100));
-    result.infallibleAppend(char('0' + (year % 100) / 10));
-    result.infallibleAppend(char('0' + (year % 10)));
-  }
-
-  // Step 4.
-  result.infallibleAppend('-');
-  result.infallibleAppend(char('0' + (month / 10)));
-  result.infallibleAppend(char('0' + (month % 10)));
-
-  // Step 5.
-  result.infallibleAppend('-');
-  result.infallibleAppend(char('0' + (day / 10)));
-  result.infallibleAppend(char('0' + (day % 10)));
-
-  // Step 6.
-  Rooted<CalendarValue> calendar(cx, temporalDate->calendar());
-  if (!MaybeFormatCalendarAnnotation(cx, result, calendar, showCalendar)) {
-    return nullptr;
-  }
-
-  // Step 7.
-  return result.finishString();
 }
 
 /**
@@ -1247,7 +1198,7 @@ static bool DifferenceTemporalPlainDate(JSContext* cx,
   // Step 8.
   if (settings.smallestUnit != TemporalUnit::Day ||
       settings.roundingIncrement != Increment{1}) {
-    // Step 8.a.
+    // Steps 8.a-b.
     if (!temporal::RoundDuration(cx, duration.date(),
                                  settings.roundingIncrement,
                                  settings.smallestUnit, settings.roundingMode,

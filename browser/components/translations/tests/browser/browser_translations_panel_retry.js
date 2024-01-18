@@ -12,77 +12,28 @@ add_task(async function test_translations_panel_retry() {
     languagePairs: LANGUAGE_PAIRS,
   });
 
-  const { button } = await assertTranslationsButton(
-    { button: true },
-    "The button is available."
-  );
+  await assertTranslationsButton({ button: true }, "The button is available.");
 
-  await runInPage(async TranslationsTest => {
-    const { getH1 } = TranslationsTest.getSelectors();
-    await TranslationsTest.assertTranslationResult(
-      "The page's H1 is in Spanish.",
-      getH1,
-      "Don Quijote de La Mancha"
-    );
+  await assertPageIsUntranslated(runInPage);
+
+  await openTranslationsPanel({ onOpenPanel: assertPanelDefaultView });
+
+  await clickTranslateButton({
+    downloadHandler: resolveDownloads,
   });
 
-  await waitForTranslationsPopupEvent(
-    "popupshown",
-    () => {
-      click(button, "Opening the popup");
-    },
-    assertPanelDefaultView
-  );
+  await assertPageIsTranslated("es", "en", runInPage);
 
-  await waitForTranslationsPopupEvent("popuphidden", () => {
-    click(
-      getByL10nId("translations-panel-translate-button"),
-      "Start translating by clicking the translate button."
-    );
+  await openTranslationsPanel({ onOpenPanel: assertPanelRevisitView });
+
+  switchSelectedToLanguage("fr");
+
+  await clickTranslateButton({
+    downloadHandler: resolveDownloads,
+    pivotTranslation: true,
   });
 
-  await resolveDownloads(1);
-
-  await runInPage(async TranslationsTest => {
-    const { getH1 } = TranslationsTest.getSelectors();
-    await TranslationsTest.assertTranslationResult(
-      "The pages H1 is translated.",
-      getH1,
-      "DON QUIJOTE DE LA MANCHA [es to en, html]"
-    );
-  });
-
-  await waitForTranslationsPopupEvent(
-    "popupshown",
-    () => {
-      click(button, "Re-opening the popup");
-    },
-    assertPanelRevisitView
-  );
-
-  info('Switch to language to "fr"');
-  const toSelect = getById("translations-panel-to");
-  toSelect.value = "fr";
-  toSelect.dispatchEvent(new Event("command"));
-
-  await waitForTranslationsPopupEvent("popuphidden", () => {
-    click(
-      getByL10nId("translations-panel-translate-button"),
-      "Re-translate the page by clicking the translate button."
-    );
-  });
-
-  // This is a pivot language which requires 2 models.
-  await resolveDownloads(2);
-
-  await runInPage(async TranslationsTest => {
-    const { getH1 } = TranslationsTest.getSelectors();
-    await TranslationsTest.assertTranslationResult(
-      "The pages H1 is translated using the changed languages.",
-      getH1,
-      "DON QUIJOTE DE LA MANCHA [es to fr, html]"
-    );
-  });
+  await assertPageIsTranslated("es", "fr", runInPage);
 
   await cleanup();
 });

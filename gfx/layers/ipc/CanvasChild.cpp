@@ -20,6 +20,8 @@
 namespace mozilla {
 namespace layers {
 
+/* static */ bool CanvasChild::mInForeground = true;
+
 class RingBufferWriterServices final
     : public CanvasEventRingBuffer::WriterServices {
  public:
@@ -209,6 +211,9 @@ void CanvasChild::OnTextureForwarded() {
     return;
   }
 
+  // We're forwarding textures, so we must be in the foreground.
+  mInForeground = true;
+
   if (mHasOutstandingWriteLock) {
     mRecorder->RecordEvent(RecordedCanvasFlush());
     if (!mRecorder->WaitForCheckpoint(mLastWriteLockCheckpoint)) {
@@ -226,16 +231,29 @@ void CanvasChild::OnTextureForwarded() {
   mRecorder->TakeExternalSurfaces(mLastTransactionExternalSurfaces);
 }
 
-void CanvasChild::EnsureBeginTransaction() {
+bool CanvasChild::EnsureBeginTransaction() {
   // We drop mRecorder in ActorDestroy to break the reference cycle.
   if (!mRecorder) {
-    return;
+    return false;
   }
 
   if (!mIsInTransaction) {
+    // Ensure we are using a large buffer when in the foreground and small one
+    // in the background.
+    if (mInForeground != mRecorder->UsingLargeStream()) {
+      SharedMemoryBasic::Handle handle;
+      if (!mRecorder->SwitchBuffer(OtherPid(), &handle) ||
+          !SendNewBuffer(std::move(handle))) {
+        mRecorder = nullptr;
+        return false;
+      }
+    }
+
     mRecorder->RecordEvent(RecordedCanvasBeginTransaction());
     mIsInTransaction = true;
   }
+
+  return true;
 }
 
 void CanvasChild::EndTransaction() {
@@ -247,10 +265,15 @@ void CanvasChild::EndTransaction() {
   if (mIsInTransaction) {
     mRecorder->RecordEvent(RecordedCanvasEndTransaction());
     mIsInTransaction = false;
-    mLastNonEmptyTransaction = TimeStamp::NowLoRes();
   }
 
   ++mTransactionsSinceGetDataSurface;
+}
+
+/* static */
+void CanvasChild::ClearCachedResources() {
+  // We use this as a proxy for the tab being in the backgound.
+  mInForeground = false;
 }
 
 bool CanvasChild::ShouldBeCleanedUp() const {
@@ -260,14 +283,7 @@ bool CanvasChild::ShouldBeCleanedUp() const {
   }
 
   // We can only be cleaned up if nothing else references our recorder.
-  if (mRecorder && !mRecorder->hasOneRef()) {
-    return false;
-  }
-
-  static const TimeDuration kCleanUpCanvasThreshold =
-      TimeDuration::FromSeconds(10);
-  return TimeStamp::NowLoRes() - mLastNonEmptyTransaction >
-         kCleanUpCanvasThreshold;
+  return !mRecorder || mRecorder->hasOneRef();
 }
 
 already_AddRefed<gfx::DrawTarget> CanvasChild::CreateDrawTarget(
@@ -310,7 +326,11 @@ already_AddRefed<gfx::DataSourceSurface> CanvasChild::GetDataSurface(
   if (!mIsInTransaction) {
     mTransactionsSinceGetDataSurface = 0;
   }
-  EnsureBeginTransaction();
+
+  if (!EnsureBeginTransaction()) {
+    return nullptr;
+  }
+
   mRecorder->RecordEvent(RecordedPrepareDataForSurface(aSurface));
   uint32_t checkpoint = mRecorder->CreateCheckpoint();
 

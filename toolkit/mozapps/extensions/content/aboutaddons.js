@@ -262,14 +262,16 @@ async function getAddonMessageInfo(addon) {
   if (addon.blocklistState === STATE_BLOCKED) {
     return {
       linkUrl: await addon.getBlocklistURL(),
-      messageId: "details-notification-blocked",
+      linkId: "details-notification-blocked-link",
+      messageId: "details-notification-blocked2",
       messageArgs: { name },
       type: "error",
     };
   } else if (isDisabledUnsigned(addon)) {
     return {
       linkUrl: SUPPORT_URL + "unsigned-addons",
-      messageId: "details-notification-unsigned-and-disabled",
+      linkId: "details-notification-unsigned-and-disabled-link",
+      messageId: "details-notification-unsigned-and-disabled2",
       messageArgs: { name },
       type: "error",
     };
@@ -279,27 +281,29 @@ async function getAddonMessageInfo(addon) {
       addon.blocklistState !== STATE_SOFTBLOCKED)
   ) {
     return {
-      messageId: "details-notification-incompatible",
+      messageId: "details-notification-incompatible2",
       messageArgs: { name, version: Services.appinfo.version },
       type: "warning",
     };
   } else if (!isCorrectlySigned(addon)) {
     return {
       linkUrl: SUPPORT_URL + "unsigned-addons",
-      messageId: "details-notification-unsigned",
+      linkId: "details-notification-unsigned-link",
+      messageId: "details-notification-unsigned2",
       messageArgs: { name },
       type: "warning",
     };
   } else if (addon.blocklistState === STATE_SOFTBLOCKED) {
     return {
       linkUrl: await addon.getBlocklistURL(),
-      messageId: "details-notification-softblocked",
+      linkId: "details-notification-softblocked-link",
+      messageId: "details-notification-softblocked2",
       messageArgs: { name },
       type: "warning",
     };
   } else if (addon.isGMPlugin && !addon.isInstalled && addon.isActive) {
     return {
-      messageId: "details-notification-gmp-pending",
+      messageId: "details-notification-gmp-pending2",
       messageArgs: { name },
       type: "warning",
     };
@@ -767,22 +771,42 @@ class GlobalWarnings extends MessageBarStackElement {
       this.removeWarning();
     }
     if (!this.globalWarning) {
-      this.globalWarning = document.createElement("message-bar");
+      this.globalWarning = document.createElement("moz-message-bar");
       this.globalWarning.setAttribute("warning-type", type);
-      let textContainer = document.createElement("span");
-      document.l10n.setAttributes(textContainer, `extensions-warning-${type}`);
-      this.globalWarning.appendChild(textContainer);
+      let { messageId, buttonId } = this.getGlobalWarningL10nIds(type);
+      document.l10n.setAttributes(this.globalWarning, messageId);
+      this.globalWarning.setAttribute("data-l10n-attrs", "message");
       if (opts && opts.action) {
         let button = document.createElement("button");
-        document.l10n.setAttributes(
-          button,
-          `extensions-warning-${type}-button`
-        );
+        document.l10n.setAttributes(button, buttonId);
         button.setAttribute("action", type);
+        button.setAttribute("slot", "actions");
         this.globalWarning.appendChild(button);
       }
       this.appendChild(this.globalWarning);
     }
+  }
+
+  getGlobalWarningL10nIds(type) {
+    const WARNING_TYPE_TO_L10NID_MAPPING = {
+      "safe-mode": {
+        messageId: "extensions-warning-safe-mode2",
+      },
+      "update-security": {
+        messageId: "extensions-warning-update-security2",
+        buttonId: "extensions-warning-update-security-button",
+      },
+      "check-compatibility": {
+        messageId: "extensions-warning-check-compatibility2",
+        buttonId: "extensions-warning-check-compatibility-button",
+      },
+      "imported-addons": {
+        messageId: "extensions-warning-imported-addons2",
+        buttonId: "extensions-warning-imported-addons-button",
+      },
+    };
+
+    return WARNING_TYPE_TO_L10NID_MAPPING[type];
   }
 
   removeWarning() {
@@ -2802,6 +2826,7 @@ class AddonCard extends HTMLElement {
 
     const {
       linkUrl,
+      linkId,
       messageId,
       messageArgs,
       type = "",
@@ -2809,18 +2834,17 @@ class AddonCard extends HTMLElement {
 
     if (messageId) {
       document.l10n.pauseObserving();
-      document.l10n.setAttributes(
-        messageBar.querySelector("span"),
-        messageId,
-        messageArgs
-      );
+      document.l10n.setAttributes(messageBar, messageId, messageArgs);
+      messageBar.setAttribute("data-l10n-attrs", "message");
 
       const link = messageBar.querySelector("button");
       if (linkUrl) {
-        document.l10n.setAttributes(link, `${messageId}-link`);
+        document.l10n.setAttributes(link, linkId);
         link.setAttribute("url", linkUrl);
+        link.setAttribute("slot", "actions");
         link.hidden = false;
       } else {
+        link.removeAttribute("slot");
         link.hidden = true;
       }
 
@@ -3874,7 +3898,7 @@ class TaarMessageBar extends HTMLElement {
     if (this.childElementCount == 0 && !this.hidden) {
       this.appendChild(importTemplate("taar-notice"));
       this.addEventListener("click", this);
-      this.messageBar = this.querySelector("message-bar");
+      this.messageBar = this.querySelector("moz-message-bar");
       this.messageBar.addEventListener("message-bar:user-dismissed", this);
     }
   }

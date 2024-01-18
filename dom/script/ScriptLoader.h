@@ -79,6 +79,7 @@ class ScriptLoader;
 class ScriptRequestProcessor;
 
 enum class ReferrerPolicy : uint8_t;
+enum class RequestPriority : uint8_t;
 
 class AsyncCompileShutdownObserver final : public nsIObserver {
   ~AsyncCompileShutdownObserver() { Unregister(); }
@@ -131,6 +132,9 @@ class ScriptLoader final : public JS::loader::ScriptLoaderInterface {
   friend class AutoCurrentScriptUpdater;
 
  public:
+  using MaybeSourceText =
+      mozilla::MaybeOneOf<JS::SourceText<char16_t>, JS::SourceText<Utf8Unit>>;
+
   explicit ScriptLoader(Document* aDocument);
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
@@ -373,14 +377,18 @@ class ScriptLoader final : public JS::loader::ScriptLoaderInterface {
    * @param aType The type parameter for the script.
    * @param aCrossOrigin The crossorigin attribute for the script.
    *                     Void if not present.
+   * @param aFetchPriority
+   * <https://html.spec.whatwg.org/#the-script-element:attr-script-fetchpriority>.
    * @param aIntegrity The expect hash url, if avail, of the request
+
    * @param aScriptFromHead Whether or not the script was a child of head
    */
   virtual void PreloadURI(nsIURI* aURI, const nsAString& aCharset,
                           const nsAString& aType, const nsAString& aCrossOrigin,
-                          const nsAString& aNonce, const nsAString& aIntegrity,
-                          bool aScriptFromHead, bool aAsync, bool aDefer,
-                          bool aNoModule, bool aLinkPreload,
+                          const nsAString& aNonce,
+                          const nsAString& aFetchPriority,
+                          const nsAString& aIntegrity, bool aScriptFromHead,
+                          bool aAsync, bool aDefer, bool aLinkPreload,
                           const ReferrerPolicy aReferrerPolicy,
                           uint64_t aEarlyHintPreloaderId);
 
@@ -429,8 +437,8 @@ class ScriptLoader final : public JS::loader::ScriptLoaderInterface {
   already_AddRefed<ScriptLoadRequest> CreateLoadRequest(
       ScriptKind aKind, nsIURI* aURI, nsIScriptElement* aElement,
       nsIPrincipal* aTriggeringPrincipal, mozilla::CORSMode aCORSMode,
-      const nsAString& aNonce, const SRIMetadata& aIntegrity,
-      ReferrerPolicy aReferrerPolicy,
+      const nsAString& aNonce, RequestPriority aRequestPriority,
+      const SRIMetadata& aIntegrity, ReferrerPolicy aReferrerPolicy,
       JS::loader::ParserMetadata aParserMetadata);
 
   /**
@@ -493,8 +501,21 @@ class ScriptLoader final : public JS::loader::ScriptLoaderInterface {
   nsresult StartClassicLoad(ScriptLoadRequest* aRequest,
                             const Maybe<nsAutoString>& aCharsetForPreload);
 
+  static void PrepareCacheInfoChannel(nsIChannel* aChannel,
+                                      ScriptLoadRequest* aRequest);
+
+  static void PrepareRequestPriorityAndRequestDependencies(
+      nsIChannel* aChannel, ScriptLoadRequest* aRequest);
+
+  [[nodiscard]] static nsresult PrepareHttpRequestAndInitiatorType(
+      nsIChannel* aChannel, ScriptLoadRequest* aRequest,
+      const Maybe<nsAutoString>& aCharsetForPreload);
+
+  [[nodiscard]] nsresult PrepareIncrementalStreamLoader(
+      nsIIncrementalStreamLoader** aOutLoader, ScriptLoadRequest* aRequest);
+
   /**
-   * Start a load for a module script URI.
+   * Start a load for a script (module or classic) URI.
    *
    * aCharsetForPreload is only needed when this load is a preload (via
    * ScriptLoader::PreloadURI), because ScriptLoadRequest doesn't
@@ -563,14 +584,9 @@ class ScriptLoader final : public JS::loader::ScriptLoaderInterface {
   nsresult AttemptOffThreadScriptCompile(ScriptLoadRequest* aRequest,
                                          bool* aCouldCompileOut);
 
-  nsresult StartOffThreadCompilation(JSContext* aCx,
-                                     ScriptLoadRequest* aRequest,
-                                     JS::CompileOptions& aOptions,
-                                     Runnable* aRunnable,
-                                     JS::OffThreadToken** aTokenOut);
-
-  static void OffThreadCompilationCompleteCallback(JS::OffThreadToken* aToken,
-                                                   void* aCallbackData);
+  nsresult CreateOffThreadTask(JSContext* aCx, ScriptLoadRequest* aRequest,
+                               JS::CompileOptions& aOptions,
+                               CompileOrDecodeTask** aCompileOrDecodeTask);
 
   nsresult ProcessRequest(ScriptLoadRequest* aRequest);
   nsresult CompileOffThreadOrProcessRequest(ScriptLoadRequest* aRequest);
@@ -671,9 +687,6 @@ class ScriptLoader final : public JS::loader::ScriptLoaderInterface {
   bool ShouldCompileOffThread(ScriptLoadRequest* aRequest);
 
   void MaybeMoveToLoadedList(ScriptLoadRequest* aRequest);
-
-  using MaybeSourceText =
-      mozilla::MaybeOneOf<JS::SourceText<char16_t>, JS::SourceText<Utf8Unit>>;
 
   // Returns wether we should save the bytecode of this script after the
   // execution of the script.

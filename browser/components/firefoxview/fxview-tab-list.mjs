@@ -6,7 +6,6 @@ import {
   html,
   ifDefined,
   styleMap,
-  classMap,
   when,
 } from "chrome://global/content/vendor/lit.all.mjs";
 import { MozLitElement } from "chrome://global/content/lit-utils.mjs";
@@ -51,6 +50,7 @@ export default class FxviewTabList extends MozLitElement {
     this.maxTabsLength = 25;
     this.tabItems = [];
     this.compactRows = false;
+    this.visible = false;
     this.#register();
   }
 
@@ -62,6 +62,7 @@ export default class FxviewTabList extends MozLitElement {
     hasPopup: { type: String },
     maxTabsLength: { type: Number },
     tabItems: { type: Array },
+    visible: { type: Boolean },
   };
 
   static queries = {
@@ -75,14 +76,30 @@ export default class FxviewTabList extends MozLitElement {
     );
 
     if (changes.has("dateTimeFormat")) {
-      if (this.dateTimeFormat == "relative" && !window.IS_STORYBOOK) {
-        this.intervalID = setInterval(
-          () => this.onIntervalUpdate(),
-          this.timeMsPref
-        );
-      } else {
-        clearInterval(this.intervalID);
+      this.clearIntervalTimer();
+      if (
+        this.visible &&
+        this.dateTimeFormat == "relative" &&
+        !window.IS_STORYBOOK
+      ) {
+        this.startIntervalTimer();
+        this.onIntervalUpdate();
       }
+    }
+  }
+
+  startIntervalTimer() {
+    this.clearIntervalTimer();
+    this.intervalID = setInterval(
+      () => this.onIntervalUpdate(),
+      this.timeMsPref
+    );
+  }
+
+  clearIntervalTimer() {
+    if (this.intervalID) {
+      clearInterval(this.intervalID);
+      delete this.intervalID;
     }
   }
 
@@ -94,13 +111,11 @@ export default class FxviewTabList extends MozLitElement {
         "browser.tabs.firefox-view.updateTimeMs",
         NOW_THRESHOLD_MS,
         (prefName, oldVal, newVal) => {
+          this.clearIntervalTimer();
           if (!this.isConnected) {
             return;
           }
-          clearInterval(this.intervalID);
-          this.intervalID = setInterval(() => {
-            this.onIntervalUpdate();
-          }, newVal);
+          this.startIntervalTimer();
           this.requestUpdate();
         }
       );
@@ -109,18 +124,32 @@ export default class FxviewTabList extends MozLitElement {
 
   connectedCallback() {
     super.connectedCallback();
-    if (this.dateTimeFormat === "relative" && !window.IS_STORYBOOK) {
-      this.intervalID = setInterval(
-        () => this.onIntervalUpdate(),
-        this.timeMsPref
-      );
+    this.ownerDocument.addEventListener("visibilitychange", this);
+    this.visible = this.ownerDocument.visibilityState == "visible";
+    if (
+      this.visible &&
+      this.dateTimeFormat === "relative" &&
+      !window.IS_STORYBOOK
+    ) {
+      this.startIntervalTimer();
     }
   }
 
   disconnectedCallback() {
     super.disconnectedCallback();
-    if (this.intervalID) {
-      clearInterval(this.intervalID);
+    this.ownerDocument.removeEventListener("visibilitychange", this);
+    this.clearIntervalTimer();
+  }
+
+  handleEvent(event) {
+    if (event.type == "visibilitychange") {
+      this.visible = this.ownerDocument.visibilityState == "visible";
+      if (this.visible) {
+        this.startIntervalTimer();
+        this.onIntervalUpdate();
+      } else {
+        this.clearIntervalTimer();
+      }
     }
   }
 
@@ -189,10 +218,9 @@ export default class FxviewTabList extends MozLitElement {
     }
   }
 
-  // Use a relative URL in storybook to get faster reloads on style changes.
-  static stylesheetUrl = window.IS_STORYBOOK
-    ? "./fxview-tab-list.css"
-    : "chrome://browser/content/firefoxview/fxview-tab-list.css";
+  shouldUpdate() {
+    return this.visible;
+  }
 
   render() {
     if (this.maxTabsLength > 0) {
@@ -207,7 +235,10 @@ export default class FxviewTabList extends MozLitElement {
       tabItems,
     } = this;
     return html`
-      <link rel="stylesheet" href=${this.constructor.stylesheetUrl} />
+      <link
+        rel="stylesheet"
+        href="chrome://browser/content/firefoxview/fxview-tab-list.css"
+      />
       <div
         id="fxview-tab-list"
         class="fxview-tab-list"
@@ -336,11 +367,6 @@ export class FxviewTabRow extends MozLitElement {
     return this.mainEl.id;
   }
 
-  // Use a relative URL in storybook to get faster reloads on style changes.
-  static stylesheetUrl = window.IS_STORYBOOK
-    ? "./fxview-tab-row.css"
-    : "chrome://browser/content/firefoxview/fxview-tab-row.css";
-
   dateFluentArgs(timestamp, dateTimeFormat) {
     if (dateTimeFormat === "date" || dateTimeFormat === "dateTime") {
       return JSON.stringify({ date: timestamp });
@@ -465,13 +491,13 @@ export class FxviewTabRow extends MozLitElement {
         rel="stylesheet"
         href="chrome://global/skin/in-content/common.css"
       />
-      <link rel="stylesheet" href=${this.constructor.stylesheetUrl} />
+      <link
+        rel="stylesheet"
+        href="chrome://browser/content/firefoxview/fxview-tab-row.css"
+      />
       <a
         .href=${ifDefined(this.url)}
-        class=${classMap({
-          "fxview-tab-row-main": true,
-          "fxview-tab-row-header": !this.url,
-        })}
+        class="fxview-tab-row-main"
         id="fxview-tab-row-main"
         tabindex=${this.active &&
         this.currentActiveElementId === "fxview-tab-row-main"

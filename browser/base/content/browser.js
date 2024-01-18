@@ -71,6 +71,7 @@ ChromeUtils.defineESModuleGetters(this, {
   SessionStartup: "resource:///modules/sessionstore/SessionStartup.sys.mjs",
   SessionStore: "resource:///modules/sessionstore/SessionStore.sys.mjs",
   ShoppingSidebarParent: "resource:///actors/ShoppingSidebarParent.sys.mjs",
+  ShoppingUtils: "resource:///modules/ShoppingUtils.sys.mjs",
   ShortcutUtils: "resource://gre/modules/ShortcutUtils.sys.mjs",
   SiteDataManager: "resource:///modules/SiteDataManager.sys.mjs",
   SitePermissions: "resource:///modules/SitePermissions.sys.mjs",
@@ -2051,9 +2052,7 @@ var gBrowserInit = {
 
     CaptivePortalWatcher.delayedStartup();
 
-    if (AppConstants.NIGHTLY_BUILD) {
-      ShoppingSidebarManager.init();
-    }
+    ShoppingSidebarManager.init();
 
     SessionStore.promiseAllWindowsRestored.then(() => {
       this._schedulePerWindowIdleTasks();
@@ -2474,9 +2473,7 @@ var gBrowserInit = {
 
     FirefoxViewHandler.uninit();
 
-    if (AppConstants.NIGHTLY_BUILD) {
-      ShoppingSidebarManager.uninit();
-    }
+    ShoppingSidebarManager.uninit();
 
     // Now either cancel delayedStartup, or clean up the services initialized from
     // it.
@@ -4984,6 +4981,10 @@ var XULBrowserWindow = {
       return;
     }
 
+    if (!document.hasFocus()) {
+      return;
+    }
+
     let elt = document.getElementById("remoteBrowserTooltip");
     elt.label = tooltip;
     elt.style.direction = direction;
@@ -5884,9 +5885,7 @@ var TabsProgressListener = {
 
     // Some shops use pushState to move between individual products, so
     // the shopping code needs to be told about all of these.
-    if (AppConstants.NIGHTLY_BUILD) {
-      ShoppingSidebarManager.onLocationChange(aBrowser, aLocationURI);
-    }
+    ShoppingSidebarManager.onLocationChange(aBrowser, aLocationURI, aFlags);
 
     // Filter out location changes caused by anchor navigation
     // or history.push/pop/replaceState.
@@ -7501,6 +7500,28 @@ var WebAuthnPromptHelper = {
   },
 
   observe(aSubject, aTopic, aData) {
+    switch (aTopic) {
+      case "fullscreen-nav-toolbox":
+        // Prevent the navigation toolbox from being hidden while a WebAuthn
+        // prompt is visible.
+        if (aData == "hidden" && this._tid != 0) {
+          FullScreen.showNavToolbox();
+        }
+        return;
+      case "fullscreen-painted":
+        // Prevent DOM elements from going fullscreen while a WebAuthn
+        // prompt is shown.
+        if (this._tid != 0) {
+          FullScreen.exitDomFullScreen();
+        }
+        return;
+      case this._topic:
+        break;
+      default:
+        return;
+    }
+    // aTopic is equal to this._topic
+
     let data = JSON.parse(aData);
 
     // If we receive a cancel, it might be a WebAuthn prompt starting in another
@@ -7518,9 +7539,7 @@ var WebAuthnPromptHelper = {
       return;
     }
 
-    let mgr = aSubject.QueryInterface(
-      data.is_ctap2 ? Ci.nsIWebAuthnController : Ci.nsIU2FTokenManager
-    );
+    let mgr = aSubject.QueryInterface(Ci.nsIWebAuthnController);
 
     if (data.action == "presence") {
       this.presence_required(mgr, data);
@@ -7636,7 +7655,7 @@ var WebAuthnPromptHelper = {
     let secondaryActions = [];
     for (let i = 0; i < usernames.length; i++) {
       secondaryActions.push({
-        label: unescape(decodeURIComponent(usernames[i])),
+        label: usernames[i],
         accessKey: i.toString(),
         callback(aState) {
           mgr.signatureSelectionCallback(tid, i);
@@ -7760,6 +7779,24 @@ var WebAuthnPromptHelper = {
     options = {}
   ) {
     this.reset();
+    this._tid = tid;
+
+    // We need to prevent some fullscreen transitions while WebAuthn prompts
+    // are shown. The `fullscreen-painted` topic is notified when DOM elements
+    // go fullscreen.
+    Services.obs.addObserver(this, "fullscreen-painted");
+
+    // The `fullscreen-nav-toolbox` topic is notified when the nav toolbox is
+    // hidden.
+    Services.obs.addObserver(this, "fullscreen-nav-toolbox");
+
+    // Ensure that no DOM elements are already fullscreen.
+    FullScreen.exitDomFullScreen();
+
+    // Ensure that the nav toolbox is being shown.
+    if (window.fullScreen) {
+      FullScreen.showNavToolbox();
+    }
 
     let brandShortName = document
       .getElementById("bundle_brand")
@@ -7774,12 +7811,13 @@ var WebAuthnPromptHelper = {
     options.persistent = true;
     options.eventCallback = event => {
       if (event == "removed") {
+        Services.obs.removeObserver(this, "fullscreen-painted");
+        Services.obs.removeObserver(this, "fullscreen-nav-toolbox");
         this._current = null;
         this._tid = 0;
       }
     };
 
-    this._tid = tid;
     this._current = PopupNotifications.show(
       gBrowser.selectedBrowser,
       `webauthn-prompt-${id}`,
@@ -8334,18 +8372,18 @@ var gPrivateBrowsingUI = {
       "privatebrowsingmode",
       PrivateBrowsingUtils.permanentPrivateBrowsing ? "permanent" : "temporary"
     );
-    // If enabled, show the new private browsing indicator with label.
-    // This will hide the old indicator.
-    docElement.toggleAttribute(
-      "privatebrowsingnewindicator",
-      NimbusFeatures.majorRelease2022.getVariable("feltPrivacyPBMNewIndicator")
-    );
 
     gBrowser.updateTitlebar();
 
     // Bug 1846583 - hide pocket button in PBM
     if (gUseFeltPrivacyUI) {
-      document.getElementById("save-to-pocket-button").remove();
+      const saveToPocketButton = document.getElementById(
+        "save-to-pocket-button"
+      );
+      if (saveToPocketButton) {
+        saveToPocketButton.remove();
+        document.documentElement.setAttribute("pocketdisabled", "true");
+      }
     }
 
     if (PrivateBrowsingUtils.permanentPrivateBrowsing) {
@@ -9815,11 +9853,6 @@ var FirefoxViewHandler = {
     NimbusFeatures.majorRelease2022.onUpdate(this._updateEnabledState);
     NimbusFeatures.firefoxViewNext.onUpdate(this._updateEnabledState);
 
-    if (this._enabled) {
-      this._toggleNotificationDot(
-        FirefoxViewNotificationManager.shouldNotificationDotBeShowing()
-      );
-    }
     ChromeUtils.defineESModuleGetters(this, {
       SyncedTabs: "resource://services-sync/SyncedTabs.sys.mjs",
     });
@@ -9843,6 +9876,10 @@ var FirefoxViewHandler = {
       !this._enabled
     );
     document.getElementById("menu_openFirefoxView").hidden = !this._enabled;
+    document.getElementById("firefox-view-button").style.listStyleImage =
+      NimbusFeatures.firefoxViewNext.getVariable("newIcon")
+        ? ""
+        : 'url("chrome://branding/content/about-logo.png")';
   },
   onWidgetRemoved(aWidgetId) {
     if (aWidgetId == this.BUTTON_ID && this.tab) {
@@ -9965,6 +10002,24 @@ var FirefoxViewHandler = {
       const PREF_NAME = "browser.firefox-view.view-count";
       const MAX_VIEW_COUNT = 10;
       let viewCount = Services.prefs.getIntPref(PREF_NAME, 0);
+      let isFirefoxViewNext = Services.prefs.getBoolPref(
+        "browser.tabs.firefox-view-next",
+        false
+      );
+
+      // Record telemetry
+      Services.telemetry.setEventRecordingEnabled(
+        isFirefoxViewNext ? "firefoxview_next" : "firefoxview",
+        true
+      );
+      Services.telemetry.recordEvent(
+        isFirefoxViewNext ? "firefoxview_next" : "firefoxview",
+        "tab_selected",
+        "toolbarbutton",
+        null,
+        {}
+      );
+
       if (viewCount < MAX_VIEW_COUNT) {
         Services.prefs.setIntPref(PREF_NAME, viewCount + 1);
       }
@@ -9996,22 +10051,31 @@ var ShoppingSidebarManager = {
     this._updateVisibility();
 
     gBrowser.tabContainer.addEventListener("TabSelect", this);
+    window.addEventListener("visibilitychange", this);
   },
 
   uninit() {
     NimbusFeatures.shopping2023.offUpdate(this._updateVisibility);
-    gBrowser.tabContainer.removeEventListener("TabSelect", this);
   },
 
   _updateVisibility() {
     if (window.closed) {
       return;
     }
-    let optedOut = this.optedInPref === 2;
     let isPBM = PrivateBrowsingUtils.isWindowPrivate(window);
 
-    this._enabled =
-      NimbusFeatures.shopping2023.getVariable("enabled") && !isPBM && !optedOut;
+    // We are forced to cache this value because otherwise we access the pref
+    // too many times.
+    this.inEnabledBranch = NimbusFeatures.shopping2023.getVariable("enabled");
+    this._enabled = this.inEnabledBranch && !isPBM;
+
+    if (!this.isActive) {
+      document.querySelectorAll("shopping-sidebar").forEach(sidebar => {
+        sidebar.hidden = true;
+      });
+    }
+
+    this._maybeToggleButton();
 
     if (!this._enabled) {
       document.querySelectorAll("shopping-sidebar").forEach(sidebar => {
@@ -10021,7 +10085,7 @@ var ShoppingSidebarManager = {
     }
 
     let { selectedBrowser, currentURI } = gBrowser;
-    this.onLocationChange(selectedBrowser, currentURI);
+    this._maybeToggleSidebar(selectedBrowser, currentURI, 0);
   },
 
   /**
@@ -10030,7 +10094,18 @@ var ShoppingSidebarManager = {
    * Note that this includes hash changes / pushState navigations, because
    * those can be significant for us.
    */
-  onLocationChange(aBrowser, aLocationURI) {
+  onLocationChange(aBrowser, aLocationURI, aFlags) {
+    ShoppingUtils.maybeRecordExposure(aLocationURI, aFlags);
+
+    this._maybeToggleButton();
+    this._maybeToggleSidebar(aBrowser, aLocationURI, aFlags);
+  },
+
+  // The strange signature is because this function was formerly the
+  // onLocationChange function, but we needed to differentiate between
+  // calls triggered by actual location changes and calls triggered by
+  // TabSelect. We will refactor this code in bug 1845842.
+  _maybeToggleSidebar(aBrowser, aLocationURI, aFlags) {
     if (!this._enabled) {
       return;
     }
@@ -10039,11 +10114,10 @@ var ShoppingSidebarManager = {
     let sidebar = browserPanel.querySelector("shopping-sidebar");
     let actor;
     if (sidebar) {
-      let global =
-        sidebar.querySelector("browser").browsingContext.currentWindowGlobal;
+      let { browsingContext } = sidebar.querySelector("browser");
+      let global = browsingContext.currentWindowGlobal;
       actor = global.getExistingActor("ShoppingSidebar");
     }
-    let button = document.getElementById("shopping-sidebar-button");
     let isProduct = isProductURL(aLocationURI);
     if (isProduct && this.isActive) {
       if (!sidebar) {
@@ -10052,7 +10126,7 @@ var ShoppingSidebarManager = {
         sidebar.hidden = false;
         browserPanel.appendChild(sidebar);
       } else {
-        actor?.updateProductURL(aLocationURI);
+        actor?.updateProductURL(aLocationURI, aFlags);
         sidebar.hidden = false;
       }
     } else if (sidebar && !sidebar.hidden) {
@@ -10060,12 +10134,83 @@ var ShoppingSidebarManager = {
       sidebar.hidden = true;
     }
 
-    button.hidden = !isProduct;
-    button.setAttribute("shoppingsidebaropen", !!this.isActive);
-    document.l10n.setAttributes(
-      button,
-      `shopping-sidebar-${this.isActive ? "close" : "open"}-button`
+    this._updateBCActiveness(aBrowser);
+    this._setShoppingButtonState(aBrowser);
+
+    if (
+      sidebar &&
+      !sidebar.hidden &&
+      ShoppingUtils.isProductPageNavigation(aLocationURI, aFlags)
+    ) {
+      Glean.shopping.surfaceDisplayed.record();
+    }
+
+    if (isProduct) {
+      // This is the auto-enable behavior that toggles the `active` pref. It
+      // must be at the end of this function, or 2 sidebars could be created.
+      ShoppingUtils.handleAutoActivateOnProduct();
+
+      if (!this.isActive) {
+        ShoppingUtils.sendTrigger({
+          browser: aBrowser,
+          id: "shoppingProductPageWithSidebarClosed",
+          context: { isSidebarClosing: !!sidebar },
+        });
+      }
+    }
+  },
+
+  _maybeToggleButton() {
+    let optedOut = this.optedInPref === 2;
+    let isPBM = PrivateBrowsingUtils.isWindowPrivate(window);
+    if (this.inEnabledBranch && !isPBM && optedOut) {
+      this._setShoppingButtonState(gBrowser.selectedBrowser);
+    }
+  },
+
+  _updateBCActiveness(aBrowser) {
+    let browserPanel = gBrowser.getPanel(aBrowser);
+    let sidebar = browserPanel.querySelector("shopping-sidebar");
+    if (!sidebar) {
+      return;
+    }
+    let { browsingContext } = sidebar.querySelector("browser");
+    try {
+      // Tell Gecko when the sidebar visibility changes to avoid background
+      // sidebars taking more CPU / energy than needed.
+      browsingContext.isActive =
+        !document.hidden &&
+        aBrowser == gBrowser.selectedBrowser &&
+        !sidebar.hidden;
+    } catch (ex) {
+      // The setter can throw and we do need to run the rest of this
+      // code in that case.
+      console.error(ex);
+    }
+  },
+
+  _setShoppingButtonState(aBrowser) {
+    if (aBrowser !== gBrowser.selectedBrowser) {
+      return;
+    }
+
+    let button = document.getElementById("shopping-sidebar-button");
+
+    let isCurrentBrowserProduct = isProductURL(
+      gBrowser.selectedBrowser.currentURI
     );
+
+    // Only record if the state of the icon will change from hidden to visible.
+    if (button.hidden && isCurrentBrowserProduct) {
+      Glean.shopping.addressBarIconDisplayed.record();
+    }
+
+    button.hidden = !isCurrentBrowserProduct;
+    button.setAttribute("shoppingsidebaropen", !!this.isActive);
+    let l10nId = this.isActive
+      ? "shopping-sidebar-close-button2"
+      : "shopping-sidebar-open-button2";
+    document.l10n.setAttributes(button, l10nId);
   },
 
   handleEvent(event) {
@@ -10075,7 +10220,16 @@ var ShoppingSidebarManager = {
           return;
         }
         this._updateVisibility();
+        if (event.detail?.previousTab.linkedBrowser) {
+          this._updateBCActiveness(event.detail.previousTab.linkedBrowser);
+        }
         break;
+      }
+      case "visibilitychange": {
+        if (!this._enabled) {
+          return;
+        }
+        this._updateBCActiveness(gBrowser.selectedBrowser);
       }
     }
   },

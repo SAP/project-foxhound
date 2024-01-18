@@ -1256,7 +1256,8 @@ void nsFlexContainerFrame::InsertFrames(
                                  std::move(aFrameList));
 }
 
-void nsFlexContainerFrame::RemoveFrame(ChildListID aListID,
+void nsFlexContainerFrame::RemoveFrame(DestroyContext& aContext,
+                                       ChildListID aListID,
                                        nsIFrame* aOldFrame) {
   MOZ_ASSERT(aListID == FrameChildListID::Principal, "unexpected child list");
 
@@ -1264,7 +1265,7 @@ void nsFlexContainerFrame::RemoveFrame(ChildListID aListID,
   SetDidPushItemsBitIfNeeded(aListID, aOldFrame);
 #endif
 
-  nsContainerFrame::RemoveFrame(aListID, aOldFrame);
+  nsContainerFrame::RemoveFrame(aContext, aListID, aOldFrame);
 }
 
 StyleAlignFlags nsFlexContainerFrame::CSSAlignmentForAbsPosChild(
@@ -5399,8 +5400,8 @@ std::tuple<nscoord, bool> nsFlexContainerFrame::ReflowChildren(
   // flex container's content box (with respect to its border-box), so that
   // we can compute our flex item's final positions.
   WritingMode flexWM = aReflowInput.GetWritingMode();
-  const LogicalPoint containerContentBoxOrigin(
-      flexWM, aBorderPadding.IStart(flexWM), aBorderPadding.BStart(flexWM));
+  const LogicalPoint containerContentBoxOrigin =
+      aBorderPadding.StartOffset(flexWM);
 
   // The block-end of children is relative to the flex container's border-box.
   nscoord maxBlockEndEdgeOfChildren = containerContentBoxOrigin.B(flexWM);

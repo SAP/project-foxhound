@@ -271,7 +271,7 @@ class nsWindow final : public nsBaseWidget {
   void OnDPIChanged();
   void OnCheckResize();
   void OnCompositedChanged();
-  void OnScaleChanged(bool aForce);
+  void OnScaleChanged(bool aNotify);
   void DispatchResized();
 
   static guint32 sLastButtonPressTime;
@@ -366,7 +366,7 @@ class nsWindow final : public nsBaseWidget {
       mozilla::widget::CompositorWidgetInitData* aInitData) override;
 
   nsresult SetNonClientMargins(const LayoutDeviceIntMargin&) override;
-  void SetDrawsInTitlebar(bool aState) override;
+  void SetDrawsInTitlebar(bool aState);
   mozilla::LayoutDeviceIntCoord GetTitlebarRadius();
   LayoutDeviceIntRect GetTitlebarRect();
   void UpdateWindowDraggingRegion(
@@ -420,7 +420,7 @@ class nsWindow final : public nsBaseWidget {
   void FocusWaylandWindow(const char* aTokenID);
 
   bool GetCSDDecorationOffset(int* aDx, int* aDy);
-  void SetEGLNativeWindowSize(const LayoutDeviceIntSize& aEGLWindowSize);
+  bool SetEGLNativeWindowSize(const LayoutDeviceIntSize& aEGLWindowSize);
   void WaylandDragWorkaround(GdkEventButton* aEvent);
 
   void CreateCompositorVsyncDispatcher() override;
@@ -474,7 +474,8 @@ class nsWindow final : public nsBaseWidget {
 
   nsCOMPtr<nsIWidget> mParent;
   PopupType mPopupHint{};
-  int mWindowScaleFactor = 1;
+  mozilla::Atomic<int, mozilla::Relaxed> mCeiledScaleFactor{1};
+  double mFractionalScaleFactor = 0.0;
 
   void UpdateAlpha(mozilla::gfx::SourceSurface* aSourceSurface,
                    nsIntRect aBoundsRect);
@@ -624,8 +625,10 @@ class nsWindow final : public nsBaseWidget {
   // probably make GetTitlebarRect() simpler / properly thread-safe.
   mozilla::Atomic<bool, mozilla::Relaxed> mDrawInTitlebar{false};
 
+  mozilla::Mutex mDestroyMutex;
+
   // Has this widget been destroyed yet?
-  bool mIsDestroyed;
+  bool mIsDestroyed : 1;
   // mIsShown tracks requested visible status from browser perspective, i.e.
   // if the window should be visible or now.
   bool mIsShown : 1;
@@ -646,7 +649,6 @@ class nsWindow final : public nsBaseWidget {
   bool mHandleTouchEvent : 1;
   // true if this is a drag and drop feedback popup
   bool mIsDragPopup : 1;
-  bool mWindowScaleFactorChanged : 1;
   bool mCompositedScreen : 1;
   bool mIsAccelerated : 1;
   bool mWindowShouldStartDragging : 1;
@@ -861,7 +863,7 @@ class nsWindow final : public nsBaseWidget {
                                      GdkPoint* aOffset);
   bool WaylandPopupAnchorAdjustForParentPopup(GdkRectangle* aPopupAnchor,
                                               GdkPoint* aOffset);
-  nsWindow* WaylandPopupGetTopmostWindow();
+  nsWindow* GetTopmostWindow();
   bool IsPopupInLayoutPopupChain(nsTArray<nsIWidget*>* aLayoutWidgetHierarchy,
                                  bool aMustMatchParent);
   void WaylandPopupMarkAsClosed();
@@ -881,6 +883,11 @@ class nsWindow final : public nsBaseWidget {
   void LogPopupAnchorHints(int aHints);
   void LogPopupGravity(GdkGravity aGravity);
 #endif
+
+  bool IsTopLevelWindowType() const {
+    return mWindowType == WindowType::TopLevel ||
+           mWindowType == WindowType::Dialog;
+  }
 
   // mPopupPosition is the original popup position/size from layout, set by
   // nsWindow::Move() or nsWindow::Resize().
@@ -974,6 +981,8 @@ class nsWindow final : public nsBaseWidget {
 
   void SetUserTimeAndStartupTokenForActivatedWindow();
 
+  void KioskLockOnMonitor();
+
 #ifdef MOZ_X11
   typedef enum {GTK_WIDGET_COMPOSIDED_DEFAULT = 0,
                 GTK_WIDGET_COMPOSIDED_DISABLED = 1,
@@ -997,6 +1006,9 @@ class nsWindow final : public nsBaseWidget {
   LayoutDeviceIntRect mLastLoggedBoundSize;
   int mLastLoggedScale = -1;
 #endif
+  // Running in kiosk mode and requested to stay on specified monitor.
+  // If monitor is removed minimize the window.
+  mozilla::Maybe<int> mKioskMonitor;
 };
 
 #endif /* __nsWindow_h__ */

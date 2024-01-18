@@ -6,31 +6,6 @@
 
 @namespace url("http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul");
 
-menu,
-menuitem,
-menucaption {
-  appearance: auto;
-  -moz-default-appearance: menuitem;
-  -moz-font-smoothing-background-color: -moz-mac-menuitem;
-  flex-shrink: 0;
-  align-items: center;
-  list-style-image: none;
-  padding: 2px 21px;
-}
-
-menu[disabled="true"], menuitem[disabled="true"],
-menu[_moz-menuactive="true"][disabled="true"],
-menuitem[_moz-menuactive="true"][disabled="true"] {
-  color: -moz-mac-menutextdisable;
-  -moz-font-smoothing-background-color: -moz-mac-menuitem;
-}
-
-menuitem[default="true"],
-menuitem.spell-suggestion,
-menucaption {
-  font-weight: bold;
-}
-
 /* Internal content */
 
 .menu-text,
@@ -65,20 +40,6 @@ menuitem[image] > .menu-iconic-left > .menu-iconic-icon {
   width: 16px;
 }
 
-/* menu arrow box */
-
-.menu-right,
-.menu-accel-container {
-  margin-inline: 21px -9px;
-  justify-content: flex-end;
-}
-
-.menu-right {
-  list-style-image: none;
-  appearance: auto;
-  -moz-default-appearance: menuarrow;
-}
-
 /* menu/menuitems in menubar */
 
 menubar > menu {
@@ -97,7 +58,7 @@ menubar > menu[_moz-menuactive="true"][open="true"] {
   appearance: auto;
   -moz-default-appearance: menuitem;
   -moz-font-smoothing-background-color: -moz-mac-active-menuitem;
-  color: -moz-mac-menutextselect;
+  color: -moz-menuhovertext;
 }
 
 /* Internal content  */
@@ -112,22 +73,10 @@ menubar > menu[_moz-menuactive="true"][open="true"] {
 
 /* menu/menuitems in popups */
 
-menupopup {
-  /* stylelint-disable-next-line font-family-no-missing-generic-family-keyword */
-  font: -moz-pull-down-menu;
-}
-
 menupopup > menu,
 menupopup > menuitem,
 menupopup > menucaption {
   max-width: 42em;
-}
-
-menu[_moz-menuactive="true"],
-menuitem[_moz-menuactive="true"] {
-  -moz-font-smoothing-background-color: -moz-mac-active-menuitem;
-  color: -moz-mac-menutextselect;
-  background-color: SelectedItem;
 }
 
 menuitem[customoptionstyling="true"] {

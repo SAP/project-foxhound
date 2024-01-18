@@ -33,7 +33,6 @@ pref_groups = [
     "beacon",
     "bidi",
     "browser",
-    "canvas",
     "channelclassifier",
     "clipboard",
     "content",
@@ -62,6 +61,7 @@ pref_groups = [
     "layout",
     "mathml",
     "media",
+    "memory",
     "midi",
     "mousewheel",
     "mozilla",
@@ -172,3 +172,6 @@ else:
     FINAL_TARGET_PP_FILES += [
         "greprefs.js",
     ]
+
+if CONFIG["MOZ_PHC"]:
+    DEFINES["MOZ_PHC"] = True

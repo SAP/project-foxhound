@@ -91,13 +91,13 @@ MOCHITEST_MANIFESTS += [
     "webrtc/tests/mochitests/identity/mochitest.ini",
 ]
 
-MOCHITEST_CHROME_MANIFESTS += ["test/chrome/chrome.ini"]
+MOCHITEST_CHROME_MANIFESTS += ["test/chrome/chrome.toml"]
 
 BROWSER_CHROME_MANIFESTS += [
-    "mediacontrol/tests/browser/browser.ini",
-    "mediasession/test/browser.ini",
-    "test/browser/browser.ini",
-    "test/browser/wmfme/browser.ini",
+    "mediacontrol/tests/browser/browser.toml",
+    "mediasession/test/browser.toml",
+    "test/browser/browser.toml",
+    "test/browser/wmfme/browser.toml",
 ]
 
 if CONFIG["MOZ_WEBRTC"]:
@@ -195,6 +195,8 @@ EXPORTS += [
     "PrincipalHandle.h",
     "QueueObject.h",
     "ReaderProxy.h",
+    "RLBoxSoundTouch.h",
+    "RLBoxSoundTouchTypes.h",
     "SeekJob.h",
     "SeekTarget.h",
     "SelfRef.h",
@@ -308,6 +310,7 @@ UNIFIED_SOURCES += [
     "MemoryBlockCache.cpp",
     "QueueObject.cpp",
     "ReaderProxy.cpp",
+    "RLBoxSoundTouch.cpp",
     "SeekJob.cpp",
     "TimeUnits.cpp",
     "Tracing.cpp",
@@ -355,6 +358,7 @@ EXTRA_JS_MODULES.media += [
 ]
 
 LOCAL_INCLUDES += [
+    "!/security/rlbox",
     "/caps",
     "/docshell/base",
     "/dom/base",

@@ -221,11 +221,7 @@ bool BytecodeEmitter::markStepBreakpoint() {
     return true;
   }
 
-  if (!newSrcNote(SrcNoteType::StepSep)) {
-    return false;
-  }
-
-  if (!newSrcNote(SrcNoteType::Breakpoint)) {
+  if (!newSrcNote(SrcNoteType::BreakpointStepSep)) {
     return false;
   }
 
@@ -601,12 +597,12 @@ bool BytecodeEmitter::updateLineNumberNotes(uint32_t offset) {
 
 /* Updates the line number and column number information in the source notes. */
 bool BytecodeEmitter::updateSourceCoordNotes(uint32_t offset) {
-  if (!updateLineNumberNotes(offset)) {
-    return false;
-  }
-
   if (skipLocationSrcNotes()) {
     return true;
+  }
+
+  if (!updateLineNumberNotes(offset)) {
+    return false;
   }
 
   JS::LimitedColumnNumberZeroOrigin columnIndex =
@@ -621,14 +617,39 @@ bool BytecodeEmitter::updateSourceCoordNotes(uint32_t offset) {
   JS::ColumnNumberOffset colspan = columnIndex - bytecodeSection().lastColumn();
 
   if (colspan != JS::ColumnNumberOffset::zero()) {
-    if (!newSrcNote2(SrcNoteType::ColSpan,
-                     SrcNote::ColSpan::toOperand(colspan))) {
-      return false;
+    if (lastLineOnlySrcNoteIndex != LastSrcNoteIsNotLineOnly) {
+      MOZ_ASSERT(bytecodeSection().lastColumn() ==
+                 JS::LimitedColumnNumberZeroOrigin::zero());
+
+      const SrcNotesVector& notes = bytecodeSection().notes();
+      SrcNoteType type = notes[lastLineOnlySrcNoteIndex].type();
+      if (type == SrcNoteType::NewLine) {
+        if (!convertLastNewLineToNewLineColumn(columnIndex)) {
+          return false;
+        }
+      } else {
+        MOZ_ASSERT(type == SrcNoteType::SetLine);
+        if (!convertLastSetLineToSetLineColumn(columnIndex)) {
+          return false;
+        }
+      }
+    } else {
+      if (!newSrcNote2(SrcNoteType::ColSpan,
+                       SrcNote::ColSpan::toOperand(colspan))) {
+        return false;
+      }
     }
     bytecodeSection().setLastColumn(columnIndex, offset);
     bytecodeSection().updateSeparatorPositionIfPresent();
   }
   return true;
+}
+
+bool BytecodeEmitter::updateSourceCoordNotesIfNonLiteral(ParseNode* node) {
+  if (node->isLiteral()) {
+    return true;
+  }
+  return updateSourceCoordNotes(node->pn_pos.begin);
 }
 
 uint32_t BytecodeEmitter::getOffsetForLoop(ParseNode* nextpn) {
@@ -4325,12 +4346,13 @@ bool BytecodeEmitter::emitAssignmentOrInit(ParseNodeKind kind, ParseNode* lhs,
     }
   }
 
-  /* If += etc., emit the binary operator with a source note. */
+  /* If += etc., emit the binary operator with a hint for the decompiler. */
   if (isCompound) {
-    if (!newSrcNote(SrcNoteType::AssignOp)) {
+    if (!emit1(compoundOp)) {
+      //            [stack] ... VAL
       return false;
     }
-    if (!emit1(compoundOp)) {
+    if (!emit1(JSOp::NopIsAssignOp)) {
       //            [stack] ... VAL
       return false;
     }
@@ -8005,6 +8027,9 @@ bool BytecodeEmitter::emitArguments(ListNode* argsList, bool isCall,
       return false;
     }
     for (ParseNode* arg : argsList->contents()) {
+      if (!updateSourceCoordNotesIfNonLiteral(arg)) {
+        return false;
+      }
       if (!emitTree(arg)) {
         //          [stack] CALLEE THIS ARG*
         return false;
@@ -8012,6 +8037,9 @@ bool BytecodeEmitter::emitArguments(ListNode* argsList, bool isCall,
     }
   } else if (cone.wantSpreadOperand()) {
     auto* spreadNode = &argsList->head()->as<UnaryNode>();
+    if (!updateSourceCoordNotesIfNonLiteral(spreadNode->kid())) {
+      return false;
+    }
     if (!emitTree(spreadNode->kid())) {
       //            [stack] CALLEE THIS ARG0
       return false;
@@ -8308,6 +8336,9 @@ bool BytecodeEmitter::emitRightAssociative(ListNode* node) {
 
   // Right-associative operator chain.
   for (ParseNode* subexpr : node->contents()) {
+    if (!updateSourceCoordNotesIfNonLiteral(subexpr)) {
+      return false;
+    }
     if (!emitTree(subexpr)) {
       return false;
     }
@@ -8328,6 +8359,9 @@ bool BytecodeEmitter::emitLeftAssociative(ListNode* node) {
   JSOp op = BinaryOpParseNodeKindToJSOp(node->getKind());
   ParseNode* nextExpr = node->head()->pn_next;
   do {
+    if (!updateSourceCoordNotesIfNonLiteral(nextExpr)) {
+      return false;
+    }
     if (!emitTree(nextExpr)) {
       return false;
     }
@@ -10888,7 +10922,7 @@ bool BytecodeEmitter::emitArray(ListNode* array) {
         return false;
       }
     } else {
-      if (!updateSourceCoordNotes(elem->pn_pos.begin)) {
+      if (!updateSourceCoordNotesIfNonLiteral(elem)) {
         return false;
       }
       if (elem->isKind(ParseNodeKind::Elision)) {
@@ -11060,14 +11094,14 @@ bool BytecodeEmitter::emitTupleLiteral(ListNode* tuple) {
         return false;
       }
     } else {
-      if (!emitTree(elt)) {
-        //          [stack] TUPLE VALUE
+      // Update location to throw errors about non-primitive elements
+      // in the correct position.
+      if (!updateSourceCoordNotesIfNonLiteral(elt)) {
         return false;
       }
 
-      // Update location to throw errors about non-primitive elements
-      // in the correct position.
-      if (!updateSourceCoordNotes(elt->pn_pos.begin)) {
+      if (!emitTree(elt)) {
+        //          [stack] TUPLE VALUE
         return false;
       }
 
@@ -12380,11 +12414,6 @@ bool BytecodeEmitter::addTryNote(TryNoteKind kind, uint32_t stackDepth,
 }
 
 bool BytecodeEmitter::newSrcNote(SrcNoteType type, unsigned* indexp) {
-  // Non-gettable source notes such as column/lineno and debugger should not be
-  // emitted for prologue / self-hosted.
-  MOZ_ASSERT_IF(skipLocationSrcNotes() || skipBreakpointSrcNotes(),
-                type <= SrcNoteType::LastGettable);
-
   SrcNotesVector& notes = bytecodeSection().notes();
   unsigned index;
 
@@ -12410,6 +12439,13 @@ bool BytecodeEmitter::newSrcNote(SrcNoteType type, unsigned* indexp) {
   if (indexp) {
     *indexp = index;
   }
+
+  if (type == SrcNoteType::NewLine || type == SrcNoteType::SetLine) {
+    lastLineOnlySrcNoteIndex = index;
+  } else {
+    lastLineOnlySrcNoteIndex = LastSrcNoteIsNotLineOnly;
+  }
+
   return true;
 }
 
@@ -12425,6 +12461,40 @@ bool BytecodeEmitter::newSrcNote2(SrcNoteType type, ptrdiff_t offset,
   if (indexp) {
     *indexp = index;
   }
+  return true;
+}
+
+bool BytecodeEmitter::convertLastNewLineToNewLineColumn(
+    JS::LimitedColumnNumberZeroOrigin column) {
+  SrcNotesVector& notes = bytecodeSection().notes();
+  MOZ_ASSERT(lastLineOnlySrcNoteIndex == notes.length() - 1);
+  SrcNote* sn = &notes[lastLineOnlySrcNoteIndex];
+  MOZ_ASSERT(sn->type() == SrcNoteType::NewLine);
+
+  SrcNoteWriter::convertNote(sn, SrcNoteType::NewLineColumn);
+  if (!newSrcNoteOperand(SrcNote::NewLineColumn::toOperand(column))) {
+    return false;
+  }
+
+  lastLineOnlySrcNoteIndex = LastSrcNoteIsNotLineOnly;
+  return true;
+}
+
+bool BytecodeEmitter::convertLastSetLineToSetLineColumn(
+    JS::LimitedColumnNumberZeroOrigin column) {
+  SrcNotesVector& notes = bytecodeSection().notes();
+  // The Line operand is either 1 byte or 4 bytes.
+  MOZ_ASSERT(lastLineOnlySrcNoteIndex == notes.length() - 1 - 1 ||
+             lastLineOnlySrcNoteIndex == notes.length() - 1 - 4);
+  SrcNote* sn = &notes[lastLineOnlySrcNoteIndex];
+  MOZ_ASSERT(sn->type() == SrcNoteType::SetLine);
+
+  SrcNoteWriter::convertNote(sn, SrcNoteType::SetLineColumn);
+  if (!newSrcNoteOperand(SrcNote::SetLineColumn::columnToOperand(column))) {
+    return false;
+  }
+
+  lastLineOnlySrcNoteIndex = LastSrcNoteIsNotLineOnly;
   return true;
 }
 

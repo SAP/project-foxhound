@@ -216,7 +216,8 @@ nsresult SVGElement::CopyInnerTo(mozilla::dom::Element* aDest) {
 
         // We don't map use element width/height currently. We can remove this
         // test when we do.
-        if (propId != eCSSProperty_UNKNOWN) {
+        if (propId != eCSSProperty_UNKNOWN &&
+            lengthInfo.mValues[i].IsAnimated()) {
           dest->SMILOverrideStyle()->SetSMILValue(propId,
                                                   lengthInfo.mValues[i]);
         }
@@ -245,8 +246,10 @@ nsresult SVGElement::CopyInnerTo(mozilla::dom::Element* aDest) {
     }
     if (const auto* pathSegList = GetAnimPathSegList()) {
       *dest->GetAnimPathSegList() = *pathSegList;
-      dest->SMILOverrideStyle()->SetSMILValue(nsCSSPropertyID::eCSSProperty_d,
-                                              *pathSegList);
+      if (pathSegList->IsAnimating()) {
+        dest->SMILOverrideStyle()->SetSMILValue(nsCSSPropertyID::eCSSProperty_d,
+                                                *pathSegList);
+      }
     }
     if (const auto* transformList = GetAnimatedTransformList()) {
       *dest->GetAnimatedTransformList(DO_ALLOCATE) = *transformList;
@@ -1504,8 +1507,13 @@ void SVGElement::DidAnimateLength(uint8_t aAttrEnum) {
     // We don't map use element width/height currently. We can remove this
     // test when we do.
     if (propId != eCSSProperty_UNKNOWN) {
-      SMILOverrideStyle()->SetSMILValue(propId,
-                                        GetLengthInfo().mValues[aAttrEnum]);
+      auto lengthInfo = GetLengthInfo();
+      if (lengthInfo.mValues[aAttrEnum].IsAnimated()) {
+        SMILOverrideStyle()->SetSMILValue(propId,
+                                          lengthInfo.mValues[aAttrEnum]);
+      } else {
+        SMILOverrideStyle()->ClearSMILValue(propId);
+      }
     }
   }
 
@@ -1708,8 +1716,13 @@ void SVGElement::DidAnimatePathSegList() {
 
   // Notify style we have to update the d property because of SMIL animation.
   if (name == nsGkAtoms::d) {
-    SMILOverrideStyle()->SetSMILValue(nsCSSPropertyID::eCSSProperty_d,
-                                      *GetAnimPathSegList());
+    auto* animPathSegList = GetAnimPathSegList();
+    if (animPathSegList->IsAnimating()) {
+      SMILOverrideStyle()->SetSMILValue(nsCSSPropertyID::eCSSProperty_d,
+                                        *animPathSegList);
+    } else {
+      SMILOverrideStyle()->ClearSMILValue(nsCSSPropertyID::eCSSProperty_d);
+    }
   }
 
   DidAnimateAttribute(kNameSpaceID_None, name);

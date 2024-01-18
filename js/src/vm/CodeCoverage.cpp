@@ -141,7 +141,8 @@ void LCovSource::writeScript(JSScript* script, const char* scriptName) {
 
   jsbytecode* snpc = script->code();
   const SrcNote* sn = script->notes();
-  if (!sn->isTerminator()) {
+  const SrcNote* snEnd = script->notesEnd();
+  if (sn < snEnd) {
     snpc += sn->delta();
   }
 
@@ -168,17 +169,22 @@ void LCovSource::writeScript(JSScript* script, const char* scriptName) {
     // current pc.
     if (snpc <= pc || !firstLineHasBeenWritten) {
       size_t oldLine = lineno;
-      SrcNoteIterator iter(sn);
+      SrcNoteIterator iter(sn, snEnd);
       while (!iter.atEnd() && snpc <= pc) {
         sn = *iter;
         SrcNoteType type = sn->type();
         if (type == SrcNoteType::SetLine) {
           lineno = SrcNote::SetLine::getLine(sn, script->lineno());
-        } else if (type == SrcNoteType::NewLine) {
+        } else if (type == SrcNoteType::SetLineColumn) {
+          lineno = SrcNote::SetLineColumn::getLine(sn, script->lineno());
+        } else if (type == SrcNoteType::NewLine ||
+                   type == SrcNoteType::NewLineColumn) {
           lineno++;
         }
         ++iter;
-        snpc += (*iter)->delta();
+        if (!iter.atEnd()) {
+          snpc += (*iter)->delta();
+        }
       }
       sn = *iter;
 

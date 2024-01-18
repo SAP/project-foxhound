@@ -10,9 +10,9 @@ use crate::values::computed::font::{FamilyName, FontFamilyList, SingleFontFamily
 use crate::values::computed::Percentage as ComputedPercentage;
 use crate::values::computed::{font as computed, Length, NonNegativeLength};
 use crate::values::computed::{CSSPixelLength, Context, ToComputedValue};
-use crate::values::generics::font::VariationValue;
-use crate::values::generics::font::{self as generics, FeatureTagValue, FontSettings, FontTag};
-use crate::values::generics::font::{GenericFontSizeAdjust, GenericNumberOrFromFont};
+use crate::values::generics::font::{
+    self as generics, FeatureTagValue, FontSettings, FontTag, VariationValue,
+};
 use crate::values::generics::NonNegative;
 use crate::values::specified::length::{FontBaseSize, PX_PER_PT};
 use crate::values::specified::{AllowQuirks, Angle, Integer, LengthPercentage};
@@ -82,16 +82,16 @@ pub enum SystemFont {
     /// https://drafts.csswg.org/css-fonts/#valdef-font-status-bar
     StatusBar,
     /// Internal system font, used by the `<menupopup>`s on macOS.
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
+    #[parse(condition = "ParserContext::chrome_rules_enabled")]
     MozPullDownMenu,
     /// Internal system font, used for `<button>` elements.
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
+    #[parse(condition = "ParserContext::chrome_rules_enabled")]
     MozButton,
     /// Internal font, used by `<select>` elements.
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
+    #[parse(condition = "ParserContext::chrome_rules_enabled")]
     MozList,
     /// Internal font, used by `<input>` elements.
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
+    #[parse(condition = "ParserContext::chrome_rules_enabled")]
     MozField,
     #[css(skip)]
     End, // Just for indexing purposes.
@@ -701,13 +701,21 @@ impl Parse for FamilyName {
 
 /// A factor for one of the font-size-adjust metrics, which may be either a number
 /// or the `from-font` keyword.
-pub type FontSizeAdjustFactor = GenericNumberOrFromFont<NonNegativeNumber>;
+#[derive(
+    Clone, Copy, Debug, MallocSizeOf, Parse, PartialEq, SpecifiedValueInfo, ToCss, ToShmem,
+)]
+pub enum FontSizeAdjustFactor {
+    /// An explicitly-specified number.
+    Number(NonNegativeNumber),
+    /// The from-font keyword: resolve the number from font metrics.
+    FromFont,
+}
 
 /// Specified value for font-size-adjust, intended to help
 /// preserve the readability of text when font fallback occurs.
 ///
 /// https://drafts.csswg.org/css-fonts-5/#font-size-adjust-prop
-pub type FontSizeAdjust = GenericFontSizeAdjust<FontSizeAdjustFactor>;
+pub type FontSizeAdjust = generics::GenericFontSizeAdjust<FontSizeAdjustFactor>;
 
 impl Parse for FontSizeAdjust {
     fn parse<'i, 't>(
@@ -1012,7 +1020,6 @@ impl Parse for FontSize {
 }
 
 bitflags! {
-    #[derive(Clone, Copy)]
     /// Flags of variant alternates in bit
     struct VariantAlternatesParsingFlags: u8 {
         /// None of variant alternates enabled
@@ -1239,8 +1246,8 @@ macro_rules! impl_variant_east_asian {
         )+
     } => {
         bitflags! {
-            #[derive(Clone, Copy, Eq, MallocSizeOf, PartialEq, ToComputedValue, ToResolvedValue, ToShmem)]
-            /// Vairants for east asian variant
+            #[derive(MallocSizeOf, ToComputedValue, ToResolvedValue, ToShmem)]
+            /// Variants for east asian variant
             pub struct FontVariantEastAsian: u16 {
                 /// None of the features
                 const NORMAL = 0;
@@ -1410,7 +1417,7 @@ macro_rules! impl_variant_ligatures {
         )+
     } => {
         bitflags! {
-            #[derive(Clone, Copy, Eq, MallocSizeOf, PartialEq, ToComputedValue, ToResolvedValue, ToShmem)]
+            #[derive(MallocSizeOf, ToComputedValue, ToResolvedValue, ToShmem)]
             /// Variants of ligatures
             pub struct FontVariantLigatures: u16 {
                 /// Specifies that common default features are enabled
@@ -1588,8 +1595,8 @@ macro_rules! impl_variant_numeric {
         )+
     } => {
         bitflags! {
-            #[derive(Clone, Copy, Eq, MallocSizeOf, PartialEq, ToComputedValue, ToResolvedValue, ToShmem)]
-            /// Variants of numeric values
+            #[derive(MallocSizeOf, ToComputedValue, ToResolvedValue, ToShmem)]
+            /// Vairants of numeric values
             pub struct FontVariantNumeric: u8 {
                 /// None of other variants are enabled.
                 const NORMAL = 0;

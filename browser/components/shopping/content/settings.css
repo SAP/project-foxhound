@@ -6,11 +6,22 @@
 
 #shopping-settings-wrapper {
   display: grid;
-  grid-template-rows: auto auto auto;
-  row-gap: 1em;
+  grid-template-rows: auto;
+  row-gap: 8px;
+  margin-top: 12px;
 }
 
 #shopping-settings-opt-out-button {
   display: flex;
   justify-self: center;
+}
+
+#powered-by-fakespot {
+  font-size: 12px;
+  color: var(--text-color-deemphasized);
+}
+
+#shopping-ads-learn-more {
+  margin-inline-end: 20px;
+  color: var(--text-color-deemphasized);
 }

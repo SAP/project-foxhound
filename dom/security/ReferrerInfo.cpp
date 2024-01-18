@@ -19,6 +19,7 @@
 #include "nsAlgorithm.h"
 #include "nsContentUtils.h"
 #include "nsCharSeparatedTokenizer.h"
+#include "nsScriptSecurityManager.h"
 #include "nsStreamUtils.h"
 #include "ReferrerInfo.h"
 
@@ -535,6 +536,25 @@ bool ReferrerInfo::IsCrossOriginRequest(nsIHttpChannel* aChannel) {
 }
 
 /* static */
+bool ReferrerInfo::IsReferrerCrossOrigin(nsIHttpChannel* aChannel,
+                                         nsIURI* aReferrer) {
+  nsCOMPtr<nsILoadInfo> loadInfo = aChannel->LoadInfo();
+
+  if (!loadInfo->TriggeringPrincipal()->GetIsContentPrincipal()) {
+    LOG(("no triggering URI via loadInfo, assuming load is cross-site"));
+    return true;
+  }
+
+  nsCOMPtr<nsIURI> uri;
+  nsresult rv = aChannel->GetURI(getter_AddRefs(uri));
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return true;
+  }
+
+  return !nsScriptSecurityManager::SecurityCompareURIs(uri, aReferrer);
+}
+
+/* static */
 bool ReferrerInfo::IsCrossSiteRequest(nsIHttpChannel* aChannel) {
   nsCOMPtr<nsILoadInfo> loadInfo = aChannel->LoadInfo();
 
@@ -565,7 +585,7 @@ bool ReferrerInfo::IsCrossSiteRequest(nsIHttpChannel* aChannel) {
 }
 
 ReferrerInfo::TrimmingPolicy ReferrerInfo::ComputeTrimmingPolicy(
-    nsIHttpChannel* aChannel) const {
+    nsIHttpChannel* aChannel, nsIURI* aReferrer) const {
   uint32_t trimmingPolicy = GetUserTrimmingPolicy();
 
   switch (mPolicy) {
@@ -577,7 +597,7 @@ ReferrerInfo::TrimmingPolicy ReferrerInfo::ComputeTrimmingPolicy(
     case ReferrerPolicy::Origin_when_cross_origin:
     case ReferrerPolicy::Strict_origin_when_cross_origin:
       if (trimmingPolicy != TrimmingPolicy::ePolicySchemeHostPort &&
-          IsCrossOriginRequest(aChannel)) {
+          IsReferrerCrossOrigin(aChannel, aReferrer)) {
         // Ignore set trimmingPolicy if it is already the strictest
         // policy.
         trimmingPolicy = TrimmingPolicy::ePolicySchemeHostPort;
@@ -1385,13 +1405,6 @@ nsresult ReferrerInfo::ComputeReferrer(nsIHttpChannel* aChannel) {
     return NS_OK;
   }
 
-  // Don't send referrer when the request is cross-origin and policy is
-  // "same-origin".
-  if (mPolicy == ReferrerPolicy::Same_origin &&
-      IsCrossOriginRequest(aChannel)) {
-    return NS_OK;
-  }
-
   // Strip away any fragment per RFC 2616 section 14.36
   // and Referrer Policy section 6.3.5.
   if (!referrer) {
@@ -1427,7 +1440,14 @@ nsresult ReferrerInfo::ComputeReferrer(nsIHttpChannel* aChannel) {
   nsCOMPtr<nsIURI> exposableURI = nsIOService::CreateExposableURI(referrer);
   referrer = exposableURI;
 
-  TrimmingPolicy trimmingPolicy = ComputeTrimmingPolicy(aChannel);
+  // Don't send referrer when the request is cross-origin and policy is
+  // "same-origin".
+  if (mPolicy == ReferrerPolicy::Same_origin &&
+      IsReferrerCrossOrigin(aChannel, referrer)) {
+    return NS_OK;
+  }
+
+  TrimmingPolicy trimmingPolicy = ComputeTrimmingPolicy(aChannel, referrer);
 
   nsAutoCString trimmedReferrer;
   // We first trim the referrer according to the policy by calling

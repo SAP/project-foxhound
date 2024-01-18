@@ -92,6 +92,28 @@ pub enum DisplayInside {
     WebkitBox,
 }
 
+impl DisplayInside {
+    fn is_valid_for_list_item(self) -> bool {
+        match self {
+            DisplayInside::Flow => true,
+            #[cfg(feature = "gecko")]
+            DisplayInside::FlowRoot => true,
+            _ => false,
+        }
+    }
+
+    /// https://drafts.csswg.org/css-display/#inside-model:
+    ///     If <display-outside> is omitted, the element’s outside display type defaults to block
+    ///     — except for ruby, which defaults to inline.
+    fn default_display_outside(self) -> DisplayOutside {
+        match self {
+            #[cfg(feature = "gecko")]
+            DisplayInside::Ruby => DisplayOutside::Inline,
+            _ => DisplayOutside::Block,
+        }
+    }
+}
+
 #[allow(missing_docs)]
 #[derive(
     Clone,
@@ -300,7 +322,6 @@ impl Display {
 }
 
 /// Shared Display impl for both Gecko and Servo.
-#[allow(non_upper_case_globals)]
 impl Display {
     /// The initial display value.
     #[inline]
@@ -410,6 +431,79 @@ impl Display {
     }
 }
 
+enum DisplayKeyword {
+    Full(Display),
+    Inside(DisplayInside),
+    Outside(DisplayOutside),
+    ListItem,
+}
+
+impl DisplayKeyword {
+    fn parse<'i>(input: &mut Parser<'i, '_>) -> Result<Self, ParseError<'i>> {
+        use self::DisplayKeyword::*;
+        Ok(try_match_ident_ignore_ascii_case! { input,
+            "none" => Full(Display::None),
+            #[cfg(any(feature = "servo-layout-2020", feature = "gecko"))]
+            "contents" => Full(Display::Contents),
+            "inline-block" => Full(Display::InlineBlock),
+            #[cfg(any(feature = "servo-layout-2013", feature = "gecko"))]
+            "inline-table" => Full(Display::InlineTable),
+            "-webkit-flex" if flexbox_enabled() => Full(Display::Flex),
+            "inline-flex" | "-webkit-inline-flex" if flexbox_enabled() => Full(Display::InlineFlex),
+            #[cfg(feature = "gecko")]
+            "inline-grid" => Full(Display::InlineGrid),
+            #[cfg(any(feature = "servo-layout-2013", feature = "gecko"))]
+            "table-caption" => Full(Display::TableCaption),
+            #[cfg(any(feature = "servo-layout-2013", feature = "gecko"))]
+            "table-row-group" => Full(Display::TableRowGroup),
+            #[cfg(any(feature = "servo-layout-2013", feature = "gecko"))]
+            "table-header-group" => Full(Display::TableHeaderGroup),
+            #[cfg(any(feature = "servo-layout-2013", feature = "gecko"))]
+            "table-footer-group" => Full(Display::TableFooterGroup),
+            #[cfg(any(feature = "servo-layout-2013", feature = "gecko"))]
+            "table-column" => Full(Display::TableColumn),
+            #[cfg(any(feature = "servo-layout-2013", feature = "gecko"))]
+            "table-column-group" => Full(Display::TableColumnGroup),
+            #[cfg(any(feature = "servo-layout-2013", feature = "gecko"))]
+            "table-row" => Full(Display::TableRow),
+            #[cfg(any(feature = "servo-layout-2013", feature = "gecko"))]
+            "table-cell" => Full(Display::TableCell),
+            #[cfg(feature = "gecko")]
+            "ruby-base" => Full(Display::RubyBase),
+            #[cfg(feature = "gecko")]
+            "ruby-base-container" => Full(Display::RubyBaseContainer),
+            #[cfg(feature = "gecko")]
+            "ruby-text" => Full(Display::RubyText),
+            #[cfg(feature = "gecko")]
+            "ruby-text-container" => Full(Display::RubyTextContainer),
+            #[cfg(feature = "gecko")]
+            "-webkit-box" => Full(Display::WebkitBox),
+            #[cfg(feature = "gecko")]
+            "-webkit-inline-box" => Full(Display::WebkitInlineBox),
+
+            /// <display-outside> = block | inline | run-in
+            /// https://drafts.csswg.org/css-display/#typedef-display-outside
+            "block" => Outside(DisplayOutside::Block),
+            "inline" => Outside(DisplayOutside::Inline),
+
+            "list-item" => ListItem,
+
+            /// <display-inside> = flow | flow-root | table | flex | grid | ruby
+            /// https://drafts.csswg.org/css-display/#typedef-display-inside
+            "flow" => Inside(DisplayInside::Flow),
+            "flex" if flexbox_enabled() => Inside(DisplayInside::Flex),
+            #[cfg(any(feature = "servo-layout-2020", feature = "gecko"))]
+            "flow-root" => Inside(DisplayInside::FlowRoot),
+            #[cfg(any(feature = "servo-layout-2013", feature = "gecko"))]
+            "table" => Inside(DisplayInside::Table),
+            #[cfg(feature = "gecko")]
+            "grid" => Inside(DisplayInside::Grid),
+            #[cfg(feature = "gecko")]
+            "ruby" => Inside(DisplayInside::Ruby),
+        })
+    }
+}
+
 impl ToCss for Display {
     fn to_css<W>(&self, dest: &mut CssWriter<W>) -> fmt::Result
     where
@@ -452,151 +546,49 @@ impl ToCss for Display {
     }
 }
 
-/// <display-inside> = flow | flow-root | table | flex | grid | ruby
-/// https://drafts.csswg.org/css-display/#typedef-display-inside
-fn parse_display_inside<'i, 't>(
-    input: &mut Parser<'i, 't>,
-) -> Result<DisplayInside, ParseError<'i>> {
-    Ok(try_match_ident_ignore_ascii_case! { input,
-        "flow" => DisplayInside::Flow,
-        "flex" if flexbox_enabled() => DisplayInside::Flex,
-        #[cfg(any(feature = "servo-layout-2020", feature = "gecko"))]
-        "flow-root" => DisplayInside::FlowRoot,
-        #[cfg(any(feature = "servo-layout-2013", feature = "gecko"))]
-        "table" => DisplayInside::Table,
-        #[cfg(feature = "gecko")]
-        "grid" => DisplayInside::Grid,
-        #[cfg(feature = "gecko")]
-        "ruby" => DisplayInside::Ruby,
-    })
-}
-
-/// <display-outside> = block | inline | run-in
-/// https://drafts.csswg.org/css-display/#typedef-display-outside
-fn parse_display_outside<'i, 't>(
-    input: &mut Parser<'i, 't>,
-) -> Result<DisplayOutside, ParseError<'i>> {
-    Ok(try_match_ident_ignore_ascii_case! { input,
-        "block" => DisplayOutside::Block,
-        "inline" => DisplayOutside::Inline,
-        // FIXME(bug 2056): not supported in layout yet:
-        //"run-in" => DisplayOutside::RunIn,
-    })
-}
-
-/// (flow | flow-root)?
-fn parse_display_inside_for_list_item<'i, 't>(
-    input: &mut Parser<'i, 't>,
-) -> Result<DisplayInside, ParseError<'i>> {
-    Ok(try_match_ident_ignore_ascii_case! { input,
-        "flow" => DisplayInside::Flow,
-        #[cfg(feature = "gecko")]
-        "flow-root" => DisplayInside::FlowRoot,
-    })
-}
-/// Test a <display-inside> Result for same values as above.
-fn is_valid_inside_for_list_item<'i>(inside: &Result<DisplayInside, ParseError<'i>>) -> bool {
-    match inside {
-        Ok(DisplayInside::Flow) => true,
-        #[cfg(feature = "gecko")]
-        Ok(DisplayInside::FlowRoot) => true,
-        _ => false,
-    }
-}
-
-/// Parse `list-item`.
-fn parse_list_item<'i, 't>(input: &mut Parser<'i, 't>) -> Result<(), ParseError<'i>> {
-    Ok(input.expect_ident_matching("list-item")?)
-}
-
 impl Parse for Display {
-    #[allow(unused)] // `context` isn't used for servo-2020 for now
     fn parse<'i, 't>(
-        context: &ParserContext,
+        _: &ParserContext,
         input: &mut Parser<'i, 't>,
     ) -> Result<Display, ParseError<'i>> {
-        // Parse all combinations of <display-inside/outside>? and `list-item`? first.
-        let mut got_list_item = input.try_parse(parse_list_item).is_ok();
-        let mut inside = if got_list_item {
-            input.try_parse(parse_display_inside_for_list_item)
-        } else {
-            input.try_parse(parse_display_inside)
+        let mut got_list_item = false;
+        let mut inside = None;
+        let mut outside = None;
+        match DisplayKeyword::parse(input)? {
+            DisplayKeyword::Full(d) => return Ok(d),
+            DisplayKeyword::Outside(o) => {
+                outside = Some(o);
+            }
+            DisplayKeyword::Inside(i) => {
+                inside = Some(i);
+            },
+            DisplayKeyword::ListItem => {
+                got_list_item = true;
+            }
         };
-        // <display-listitem> = <display-outside>? && [ flow | flow-root ]? && list-item
-        // https://drafts.csswg.org/css-display/#typedef-display-listitem
-        if !got_list_item && is_valid_inside_for_list_item(&inside) {
-            got_list_item = input.try_parse(parse_list_item).is_ok();
-        }
-        let outside = input.try_parse(parse_display_outside);
-        if outside.is_ok() {
-            if !got_list_item && (inside.is_err() || is_valid_inside_for_list_item(&inside)) {
-                got_list_item = input.try_parse(parse_list_item).is_ok();
-            }
-            if inside.is_err() {
-                inside = if got_list_item {
-                    input.try_parse(parse_display_inside_for_list_item)
-                } else {
-                    input.try_parse(parse_display_inside)
-                };
-                if !got_list_item && is_valid_inside_for_list_item(&inside) {
-                    got_list_item = input.try_parse(parse_list_item).is_ok();
+
+        while let Ok(kw) = input.try_parse(DisplayKeyword::parse) {
+            match kw {
+                DisplayKeyword::ListItem if !got_list_item => {
+                    got_list_item = true;
                 }
+                DisplayKeyword::Outside(o) if outside.is_none() => {
+                    outside = Some(o);
+                }
+                DisplayKeyword::Inside(i) if inside.is_none() => {
+                    inside = Some(i);
+                }
+                _ => return Err(input.new_custom_error(StyleParseErrorKind::UnspecifiedError)),
             }
-        }
-        if got_list_item || inside.is_ok() || outside.is_ok() {
-            let inside = inside.unwrap_or(DisplayInside::Flow);
-            let outside = outside.unwrap_or(match inside {
-                // "If <display-outside> is omitted, the element’s outside display type
-                // defaults to block — except for ruby, which defaults to inline."
-                // https://drafts.csswg.org/css-display/#inside-model
-                #[cfg(feature = "gecko")]
-                DisplayInside::Ruby => DisplayOutside::Inline,
-                _ => DisplayOutside::Block,
-            });
-            return Ok(Display::from3(outside, inside, got_list_item));
         }
 
-        // Now parse the single-keyword `display` values.
-        Ok(try_match_ident_ignore_ascii_case! { input,
-            "none" => Display::None,
-            #[cfg(any(feature = "servo-layout-2020", feature = "gecko"))]
-            "contents" => Display::Contents,
-            "inline-block" => Display::InlineBlock,
-            #[cfg(any(feature = "servo-layout-2013", feature = "gecko"))]
-            "inline-table" => Display::InlineTable,
-            "-webkit-flex" if flexbox_enabled() => Display::Flex,
-            "inline-flex" | "-webkit-inline-flex" if flexbox_enabled() => Display::InlineFlex,
-            #[cfg(feature = "gecko")]
-            "inline-grid" => Display::InlineGrid,
-            #[cfg(any(feature = "servo-layout-2013", feature = "gecko"))]
-            "table-caption" => Display::TableCaption,
-            #[cfg(any(feature = "servo-layout-2013", feature = "gecko"))]
-            "table-row-group" => Display::TableRowGroup,
-            #[cfg(any(feature = "servo-layout-2013", feature = "gecko"))]
-            "table-header-group" => Display::TableHeaderGroup,
-            #[cfg(any(feature = "servo-layout-2013", feature = "gecko"))]
-            "table-footer-group" => Display::TableFooterGroup,
-            #[cfg(any(feature = "servo-layout-2013", feature = "gecko"))]
-            "table-column" => Display::TableColumn,
-            #[cfg(any(feature = "servo-layout-2013", feature = "gecko"))]
-            "table-column-group" => Display::TableColumnGroup,
-            #[cfg(any(feature = "servo-layout-2013", feature = "gecko"))]
-            "table-row" => Display::TableRow,
-            #[cfg(any(feature = "servo-layout-2013", feature = "gecko"))]
-            "table-cell" => Display::TableCell,
-            #[cfg(feature = "gecko")]
-            "ruby-base" => Display::RubyBase,
-            #[cfg(feature = "gecko")]
-            "ruby-base-container" => Display::RubyBaseContainer,
-            #[cfg(feature = "gecko")]
-            "ruby-text" => Display::RubyText,
-            #[cfg(feature = "gecko")]
-            "ruby-text-container" => Display::RubyTextContainer,
-            #[cfg(feature = "gecko")]
-            "-webkit-box" => Display::WebkitBox,
-            #[cfg(feature = "gecko")]
-            "-webkit-inline-box" => Display::WebkitInlineBox,
-        })
+        let inside = inside.unwrap_or(DisplayInside::Flow);
+        let outside = outside.unwrap_or_else(|| inside.default_display_outside());
+        if got_list_item && !inside.is_valid_for_list_item() {
+            return Err(input.new_custom_error(StyleParseErrorKind::UnspecifiedError));
+        }
+
+        return Ok(Display::from3(outside, inside, got_list_item));
     }
 }
 
@@ -1030,7 +1022,7 @@ impl WillChange {
 
 bitflags! {
     /// The change bits that we care about.
-    #[derive(Clone, Copy, Default, Eq, MallocSizeOf, PartialEq, SpecifiedValueInfo, ToComputedValue, ToResolvedValue, ToShmem)]
+    #[derive(Default, MallocSizeOf, SpecifiedValueInfo, ToComputedValue, ToResolvedValue, ToShmem)]
     #[repr(C)]
     pub struct WillChangeBits: u16 {
         /// Whether a property which can create a stacking context **on any
@@ -1141,7 +1133,7 @@ impl Parse for WillChange {
 
 bitflags! {
     /// Values for the `touch-action` property.
-    #[derive(Clone, Copy, Eq, MallocSizeOf, Parse, PartialEq, SpecifiedValueInfo, ToComputedValue, ToCss, ToResolvedValue, ToShmem)]
+    #[derive(MallocSizeOf, Parse, SpecifiedValueInfo, ToComputedValue, ToCss, ToResolvedValue, ToShmem)]
     #[css(bitflags(single = "none,auto,manipulation", mixed = "pan-x,pan-y,pinch-zoom"))]
     #[repr(C)]
     pub struct TouchAction: u8 {
@@ -1169,7 +1161,7 @@ impl TouchAction {
 }
 
 bitflags! {
-    #[derive(Clone, Copy, Eq, MallocSizeOf, Parse, PartialEq, SpecifiedValueInfo, ToComputedValue, ToCss, ToResolvedValue, ToShmem)]
+    #[derive(MallocSizeOf, Parse, SpecifiedValueInfo, ToComputedValue, ToCss, ToResolvedValue, ToShmem)]
     #[css(bitflags(single = "none,strict,content", mixed="size,layout,style,paint,inline-size", overlapping_bits))]
     #[repr(C)]
     /// Constants for contain: https://drafts.csswg.org/css-contain/#contain-property
@@ -1187,11 +1179,11 @@ bitflags! {
         /// `paint` variant, turns on paint containment
         const PAINT = 1 << 4;
         /// 'size' variant, turns on size containment
-        const SIZE = 1 << 5 | Contain::INLINE_SIZE.bits | Contain::BLOCK_SIZE.bits;
+        const SIZE = 1 << 5 | Contain::INLINE_SIZE.bits() | Contain::BLOCK_SIZE.bits();
         /// `content` variant, turns on layout and paint containment
-        const CONTENT = 1 << 6 | Contain::LAYOUT.bits | Contain::STYLE.bits | Contain::PAINT.bits;
+        const CONTENT = 1 << 6 | Contain::LAYOUT.bits() | Contain::STYLE.bits() | Contain::PAINT.bits();
         /// `strict` variant, turns on all types of containment
-        const STRICT = 1 << 7 | Contain::LAYOUT.bits | Contain::STYLE.bits | Contain::PAINT.bits | Contain::SIZE.bits;
+        const STRICT = 1 << 7 | Contain::LAYOUT.bits() | Contain::STYLE.bits() | Contain::PAINT.bits() | Contain::SIZE.bits();
     }
 }
 
@@ -1474,186 +1466,185 @@ pub enum Appearance {
     /// The dropdown button(s) that open up a dropdown list.
     MenulistButton,
     /// Various arrows that go in buttons
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
+    #[parse(condition = "ParserContext::chrome_rules_enabled")]
     ButtonArrowDown,
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
+    #[parse(condition = "ParserContext::chrome_rules_enabled")]
     ButtonArrowNext,
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
+    #[parse(condition = "ParserContext::chrome_rules_enabled")]
     ButtonArrowPrevious,
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
+    #[parse(condition = "ParserContext::chrome_rules_enabled")]
     ButtonArrowUp,
     /// A dual toolbar button (e.g., a Back button with a dropdown)
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
+    #[parse(condition = "ParserContext::chrome_rules_enabled")]
     Dualbutton,
     /// <menu> and <menuitem> appearances
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
+    #[parse(condition = "ParserContext::chrome_rules_enabled")]
     Menuitem,
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
+    #[parse(condition = "ParserContext::chrome_rules_enabled")]
     Checkmenuitem,
     /// Menu Popup background.
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
+    #[parse(condition = "ParserContext::chrome_rules_enabled")]
     Menupopup,
     /// Menu item arrow.
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
+    #[parse(condition = "ParserContext::chrome_rules_enabled")]
     Menuarrow,
     /// The meter bar's meter indicator.
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
+    #[parse(condition = "ParserContext::chrome_rules_enabled")]
     Meterchunk,
     /// The "arrowed" part of the dropdown button that open up a dropdown list.
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
+    #[parse(condition = "ParserContext::chrome_rules_enabled")]
     MozMenulistArrowButton,
     /// For HTML's <input type=number>
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
+    #[parse(condition = "ParserContext::chrome_rules_enabled")]
     NumberInput,
     /// The progress bar's progress indicator
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
+    #[parse(condition = "ParserContext::chrome_rules_enabled")]
     Progresschunk,
     /// nsRangeFrame and its subparts
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
+    #[parse(condition = "ParserContext::chrome_rules_enabled")]
     Range,
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
+    #[parse(condition = "ParserContext::chrome_rules_enabled")]
     RangeThumb,
     /// The scrollbar slider
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
+    #[parse(condition = "ParserContext::chrome_rules_enabled")]
     ScrollbarHorizontal,
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
+    #[parse(condition = "ParserContext::chrome_rules_enabled")]
     ScrollbarVertical,
     /// A scrollbar button (up/down/left/right).
     /// Keep these in order (some code casts these values to `int` in order to
     /// compare them against each other).
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
+    #[parse(condition = "ParserContext::chrome_rules_enabled")]
     ScrollbarbuttonUp,
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
+    #[parse(condition = "ParserContext::chrome_rules_enabled")]
     ScrollbarbuttonDown,
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
+    #[parse(condition = "ParserContext::chrome_rules_enabled")]
     ScrollbarbuttonLeft,
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
+    #[parse(condition = "ParserContext::chrome_rules_enabled")]
     ScrollbarbuttonRight,
     /// The scrollbar thumb.
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
+    #[parse(condition = "ParserContext::chrome_rules_enabled")]
     ScrollbarthumbHorizontal,
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
+    #[parse(condition = "ParserContext::chrome_rules_enabled")]
     ScrollbarthumbVertical,
     /// The scrollbar track.
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
+    #[parse(condition = "ParserContext::chrome_rules_enabled")]
     ScrollbartrackHorizontal,
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
+    #[parse(condition = "ParserContext::chrome_rules_enabled")]
     ScrollbartrackVertical,
     /// The scroll corner
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
+    #[parse(condition = "ParserContext::chrome_rules_enabled")]
     Scrollcorner,
     /// A separator.  Can be horizontal or vertical.
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
+    #[parse(condition = "ParserContext::chrome_rules_enabled")]
     Separator,
     /// A spin control (up/down control for time/date pickers).
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
+    #[parse(condition = "ParserContext::chrome_rules_enabled")]
     Spinner,
     /// The up button of a spin control.
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
+    #[parse(condition = "ParserContext::chrome_rules_enabled")]
     SpinnerUpbutton,
     /// The down button of a spin control.
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
+    #[parse(condition = "ParserContext::chrome_rules_enabled")]
     SpinnerDownbutton,
     /// The textfield of a spin control
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
+    #[parse(condition = "ParserContext::chrome_rules_enabled")]
     SpinnerTextfield,
     /// A splitter.  Can be horizontal or vertical.
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
+    #[parse(condition = "ParserContext::chrome_rules_enabled")]
     Splitter,
     /// A status bar in a main application window.
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
+    #[parse(condition = "ParserContext::chrome_rules_enabled")]
     Statusbar,
     /// A single tab in a tab widget.
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
+    #[parse(condition = "ParserContext::chrome_rules_enabled")]
     Tab,
     /// A single pane (inside the tabpanels container).
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
+    #[parse(condition = "ParserContext::chrome_rules_enabled")]
     Tabpanel,
     /// The tab panels container.
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
+    #[parse(condition = "ParserContext::chrome_rules_enabled")]
     Tabpanels,
     /// The tabs scroll arrows (left/right).
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
+    #[parse(condition = "ParserContext::chrome_rules_enabled")]
     TabScrollArrowBack,
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
+    #[parse(condition = "ParserContext::chrome_rules_enabled")]
     TabScrollArrowForward,
     /// A toolbar in an application window.
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
+    #[parse(condition = "ParserContext::chrome_rules_enabled")]
     Toolbar,
     /// A single toolbar button (with no associated dropdown).
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
+    #[parse(condition = "ParserContext::chrome_rules_enabled")]
     Toolbarbutton,
     /// The dropdown portion of a toolbar button
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
+    #[parse(condition = "ParserContext::chrome_rules_enabled")]
     ToolbarbuttonDropdown,
     /// The gripper for a toolbar.
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
+    #[parse(condition = "ParserContext::chrome_rules_enabled")]
     Toolbargripper,
     /// The toolbox that contains the toolbars.
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
+    #[parse(condition = "ParserContext::chrome_rules_enabled")]
     Toolbox,
     /// A tooltip.
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
+    #[parse(condition = "ParserContext::chrome_rules_enabled")]
     Tooltip,
     /// A listbox or tree widget header
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
+    #[parse(condition = "ParserContext::chrome_rules_enabled")]
     Treeheader,
     /// An individual header cell
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
+    #[parse(condition = "ParserContext::chrome_rules_enabled")]
     Treeheadercell,
     /// The sort arrow for a header.
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
+    #[parse(condition = "ParserContext::chrome_rules_enabled")]
     Treeheadersortarrow,
     /// A tree item.
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
+    #[parse(condition = "ParserContext::chrome_rules_enabled")]
     Treeitem,
     /// A tree widget branch line
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
+    #[parse(condition = "ParserContext::chrome_rules_enabled")]
     Treeline,
     /// A tree widget twisty.
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
+    #[parse(condition = "ParserContext::chrome_rules_enabled")]
     Treetwisty,
     /// Open tree widget twisty.
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
+    #[parse(condition = "ParserContext::chrome_rules_enabled")]
     Treetwistyopen,
     /// A tree widget.
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
+    #[parse(condition = "ParserContext::chrome_rules_enabled")]
     Treeview,
-    /// Window and dialog backgrounds.
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
-    Window,
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
+    #[parse(condition = "ParserContext::chrome_rules_enabled")]
     Dialog,
 
     /// Mac help button.
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
+    #[parse(condition = "ParserContext::chrome_rules_enabled")]
     MozMacHelpButton,
 
     /// Windows themed window frame elements.
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
+    #[parse(condition = "ParserContext::chrome_rules_enabled")]
     MozWindowButtonBox,
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
+    #[parse(condition = "ParserContext::chrome_rules_enabled")]
     MozWindowButtonClose,
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
+    #[parse(condition = "ParserContext::chrome_rules_enabled")]
     MozWindowButtonMaximize,
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
+    #[parse(condition = "ParserContext::chrome_rules_enabled")]
     MozWindowButtonMinimize,
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
+    #[parse(condition = "ParserContext::chrome_rules_enabled")]
     MozWindowButtonRestore,
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
+    #[parse(condition = "ParserContext::chrome_rules_enabled")]
     MozWindowTitlebar,
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
+    #[parse(condition = "ParserContext::chrome_rules_enabled")]
     MozWindowTitlebarMaximized,
+    #[parse(condition = "ParserContext::chrome_rules_enabled")]
+    MozWindowDecorations,
 
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
+    #[parse(condition = "ParserContext::chrome_rules_enabled")]
     MozMacActiveSourceListSelection,
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
+    #[parse(condition = "ParserContext::chrome_rules_enabled")]
     MozMacDisclosureButtonClosed,
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
+    #[parse(condition = "ParserContext::chrome_rules_enabled")]
     MozMacDisclosureButtonOpen,
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
+    #[parse(condition = "ParserContext::chrome_rules_enabled")]
     MozMacSourceList,
-    #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
+    #[parse(condition = "ParserContext::chrome_rules_enabled")]
     MozMacSourceListSelection,
 
     /// A themed focus outline (for outline:auto).
@@ -1864,7 +1855,7 @@ impl Overflow {
 }
 
 bitflags! {
-    #[derive(Clone, Copy, Eq, MallocSizeOf, Parse, PartialEq, SpecifiedValueInfo, ToComputedValue, ToCss, ToResolvedValue, ToShmem)]
+    #[derive(MallocSizeOf, Parse, SpecifiedValueInfo, ToComputedValue, ToCss, ToResolvedValue, ToShmem)]
     #[repr(C)]
     #[css(bitflags(single = "auto", mixed = "stable,both-edges", validate_mixed="Self::has_stable"))]
     /// Values for scrollbar-gutter:

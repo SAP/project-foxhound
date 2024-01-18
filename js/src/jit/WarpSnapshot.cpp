@@ -46,8 +46,7 @@ WarpScriptSnapshot::WarpScriptSnapshot(JSScript* script,
       environment_(env),
       opSnapshots_(std::move(opSnapshots)),
       moduleObject_(moduleObject),
-      isArrowFunction_(script->isFunction() && script->function()->isArrow()),
-      isMonomorphicInlined_(false) {}
+      isArrowFunction_(script->isFunction() && script->function()->isArrow()) {}
 
 #ifdef JS_JITSPEW
 void WarpSnapshot::dump() const {
@@ -342,7 +341,8 @@ void WarpCacheIR::traceData(JSTracer* trc) {
           TraceWarpStubPtr<Shape>(trc, word, "warp-cacheir-shape");
           break;
         }
-        case StubField::Type::GetterSetter: {
+        case StubField::Type::WeakGetterSetter: {
+          // WeakGetterSetter pointers are traced strongly in this context.
           uintptr_t word = stubInfo_->getStubRawWord(stubData_, offset);
           TraceWarpStubPtr<GetterSetter>(trc, word,
                                          "warp-cacheir-getter-setter");
@@ -368,7 +368,8 @@ void WarpCacheIR::traceData(JSTracer* trc) {
           TraceWarpStubPtr<JSString>(trc, word, "warp-cacheir-string");
           break;
         }
-        case StubField::Type::BaseScript: {
+        case StubField::Type::WeakBaseScript: {
+          // WeakBaseScript pointers are traced strongly in this context.
           uintptr_t word = stubInfo_->getStubRawWord(stubData_, offset);
           TraceWarpStubPtr<BaseScript>(trc, word, "warp-cacheir-script");
           break;

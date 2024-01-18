@@ -74,23 +74,12 @@ PRThread* gfxPlatformMac::sFontRegistrationThread = nullptr;
    our font list. */
 /* static */
 void gfxPlatformMac::RegisterSupplementalFonts() {
+  // On Catalina+, it appears to be sufficient to activate fonts in the parent
+  // process; they are then also usable in child processes.
   if (XRE_IsParentProcess()) {
     sFontRegistrationThread = PR_CreateThread(
         PR_USER_THREAD, FontRegistrationCallback, nullptr, PR_PRIORITY_NORMAL,
         PR_GLOBAL_THREAD, PR_JOINABLE_THREAD, 0);
-  } else if (!nsCocoaFeatures::OnCatalinaOrLater()) {
-    // On Catalina+, it appears to be sufficient to activate fonts in the
-    // parent process; they are then also usable in child processes. But on
-    // pre-Catalina systems we need to explicitly activate them in each child
-    // process (per bug 1704273).
-    //
-    // But at least on 10.14 (Mojave), doing font registration on a separate
-    // thread in the content process seems crashy (bug 1708821), despite the
-    // CTFontManager.h header claiming that it's thread-safe. So we just do it
-    // immediately on the main thread, and accept the startup-time hit (sigh).
-    for (const auto& dir : kLangFontsDirs) {
-      gfxMacPlatformFontList::ActivateFontsFromDir(dir);
-    }
   }
 }
 
@@ -968,10 +957,11 @@ bool gfxPlatformMac::SupportsHDR() {
   if (GetScreenDepth() <= 24) {
     return false;
   }
+
   // Screen is capable. Is the OS capable?
 #ifdef EARLY_BETA_OR_EARLIER
   // More-or-less supported in Catalina.
-  return nsCocoaFeatures::OnCatalinaOrLater();
+  return true;
 #else
   // Definitely supported in Big Sur.
   return nsCocoaFeatures::OnBigSurOrLater();
@@ -1014,13 +1004,7 @@ nsTArray<uint8_t> gfxPlatformMac::GetPlatformCMSOutputProfileData() {
   return result;
 }
 
-bool gfxPlatformMac::CheckVariationFontSupport() {
-  // We don't allow variation fonts to be enabled before 10.13,
-  // as although the Core Text APIs existed, they are known to be
-  // fairly buggy.
-  // (Note that Safari also requires 10.13 for variation-font support.)
-  return nsCocoaFeatures::OnHighSierraOrLater();
-}
+bool gfxPlatformMac::CheckVariationFontSupport() { return true; }
 
 void gfxPlatformMac::InitPlatformGPUProcessPrefs() {
   FeatureState& gpuProc = gfxConfig::GetFeature(Feature::GPU_PROCESS);

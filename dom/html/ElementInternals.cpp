@@ -191,7 +191,7 @@ void ElementInternals::SetValidity(
   SetValidityState(VALIDITY_STATE_STEP_MISMATCH, aFlags.mStepMismatch);
   SetValidityState(VALIDITY_STATE_BAD_INPUT, aFlags.mBadInput);
   SetValidityState(VALIDITY_STATE_CUSTOM_ERROR, aFlags.mCustomError);
-  mTarget->UpdateState(true);
+  mTarget->UpdateValidityElementStates(true);
 
   /**
    * 5. Set element's validation message to the empty string if message is not
@@ -305,8 +305,6 @@ bool ElementInternals::ReportValidity(ErrorResult& aRv) {
     return false;
   }
 
-  mTarget->UpdateState(true);
-
   RefPtr<CustomEvent> event =
       NS_NewDOMCustomEvent(mTarget->OwnerDoc(), nullptr, nullptr);
   event->InitCustomEvent(jsapi.cx(), u"MozInvalidForm"_ns,
@@ -402,9 +400,8 @@ void ElementInternals::UpdateBarredFromConstraintValidation() {
   if (mTarget) {
     MOZ_ASSERT(mTarget->IsFormAssociatedElement());
     SetBarredFromConstraintValidation(
-        mTarget->HasAttr(nsGkAtoms::readonly) ||
-        mTarget->HasFlag(ELEMENT_IS_DATALIST_OR_HAS_DATALIST_ANCESTOR) ||
-        mTarget->IsDisabled());
+        mTarget->IsDisabled() || mTarget->HasAttr(nsGkAtoms::readonly) ||
+        mTarget->HasFlag(ELEMENT_IS_DATALIST_OR_HAS_DATALIST_ANCESTOR));
   }
 }
 
@@ -447,8 +444,6 @@ nsresult ElementInternals::SetAttr(nsAtom* aName, const nsAString& aValue) {
   nsMutationGuard::DidMutate();
 
   MutationObservers::NotifyARIAAttributeDefaultChanged(mTarget, aName, modType);
-
-  mTarget->UpdateState(true);
 
   return rs;
 }

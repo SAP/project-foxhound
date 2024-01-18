@@ -23,6 +23,17 @@ using mozilla::dom::ContentParentId
   from "mozilla/dom/ipc/IdType.h";
 
 namespace mozilla {
+
+namespace ipc {
+
+union BoolResponse
+{
+  nsresult;
+  bool;
+};
+
+} // namespace ipc
+
 namespace dom {
 namespace quota {
 
@@ -35,10 +46,6 @@ struct StorageInitializedParams
 };
 
 struct TemporaryStorageInitializedParams
-{
-};
-
-struct InitParams
 {
 };
 
@@ -105,14 +112,6 @@ struct ClearDataParams
   OriginAttributesPattern pattern;
 };
 
-struct ClearAllParams
-{
-};
-
-struct ResetAllParams
-{
-};
-
 struct PersistedParams
 {
   PrincipalInfo principalInfo;
@@ -137,7 +136,6 @@ union RequestParams
   StorageNameParams;
   StorageInitializedParams;
   TemporaryStorageInitializedParams;
-  InitParams;
   InitTemporaryStorageParams;
   InitializePersistentOriginParams;
   InitializeTemporaryOriginParams;
@@ -145,18 +143,10 @@ union RequestParams
   ClearOriginParams;
   ResetOriginParams;
   ClearDataParams;
-  ClearAllParams;
-  ResetAllParams;
   PersistedParams;
   PersistParams;
   EstimateParams;
   ListOriginsParams;
-};
-
-union BoolResponse
-{
-  nsresult;
-  bool;
 };
 
 [ManualDealloc, ChildImpl=virtual, ParentImpl=virtual]
@@ -174,7 +164,16 @@ parent:
 
   async PQuotaRequest(RequestParams params);
 
+  async InitializeStorage()
+      returns(BoolResponse response);
+
   async ClearStoragesForPrivateBrowsing()
+      returns(BoolResponse response);
+
+  async ClearStorage()
+      returns(BoolResponse response);
+
+  async ShutdownStorage()
       returns(BoolResponse response);
 
   async StartIdleMaintenance();

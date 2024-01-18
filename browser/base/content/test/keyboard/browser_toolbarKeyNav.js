@@ -117,7 +117,7 @@ add_setup(async function () {
   let bookmarks = new Array(BOOKMARKS_COUNT);
   for (let i = 0; i < BOOKMARKS_COUNT; ++i) {
     // eslint-disable-next-line @microsoft/sdl/no-insecure-url
-    bookmarks[i] = { url: `http://test.places.${i}/` };
+    bookmarks[i] = { url: `http://test.places.${i}y/` };
   }
   await PlacesUtils.bookmarks.insertTree({
     guid: PlacesUtils.bookmarks.toolbarGuid,
@@ -315,7 +315,7 @@ add_task(async function testArrowsDisabledButtons() {
         "ArrowLeft on Reload button when prior buttons disabled does nothing"
       );
 
-      BrowserTestUtils.loadURIString(aBrowser, "https://example.com/2");
+      BrowserTestUtils.startLoadingURIString(aBrowser, "https://example.com/2");
       await BrowserTestUtils.browserLoaded(aBrowser);
       await waitUntilReloadEnabled();
       startFromUrlBar();

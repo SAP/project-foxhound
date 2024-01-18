@@ -87,11 +87,13 @@ class BaseNothingVector {
   Nothing unused_;
 
  public:
+  bool reserve(size_t size) { return true; }
   bool resize(size_t length) { return true; }
   Nothing& operator[](size_t) { return unused_; }
   Nothing& back() { return unused_; }
   size_t length() const { return 0; }
   bool append(Nothing& nothing) { return true; }
+  void infallibleAppend(Nothing& nothing) {}
 };
 
 // The baseline compiler tracks values on a stack of its own -- it needs to scan
@@ -961,6 +963,10 @@ struct BaseCompiler final {
 #ifdef ENABLE_WASM_FUNCTION_REFERENCES
   void callRef(const Stk& calleeRef, const FunctionCall& call,
                CodeOffset* fastCallOffset, CodeOffset* slowCallOffset);
+#  ifdef ENABLE_WASM_TAIL_CALLS
+  void returnCallRef(const Stk& calleeRef, const FunctionCall& call,
+                     const FuncType* funcType);
+#  endif
 #endif
   CodeOffset builtinCall(SymbolicAddress builtin, const FunctionCall& call);
   CodeOffset builtinInstanceMethodCall(const SymbolicAddressSignature& builtin,
@@ -1613,6 +1619,7 @@ struct BaseCompiler final {
   [[nodiscard]] bool emitBrOnNull();
   [[nodiscard]] bool emitBrOnNonNull();
   [[nodiscard]] bool emitCallRef();
+  [[nodiscard]] bool emitReturnCallRef();
 #endif
 
   [[nodiscard]] bool emitAtomicCmpXchg(ValType type, Scalar::Type viewType);
@@ -1659,16 +1666,10 @@ struct BaseCompiler final {
   [[nodiscard]] bool emitArrayNewElem();
   [[nodiscard]] bool emitArrayGet(FieldWideningOp wideningOp);
   [[nodiscard]] bool emitArraySet();
-  [[nodiscard]] bool emitArrayLen(bool decodeIgnoredTypeIndex);
+  [[nodiscard]] bool emitArrayLen();
   [[nodiscard]] bool emitArrayCopy();
-  [[nodiscard]] bool emitI31New();
+  [[nodiscard]] bool emitRefI31();
   [[nodiscard]] bool emitI31Get(FieldWideningOp wideningOp);
-  [[nodiscard]] bool emitRefTestV5();
-  [[nodiscard]] bool emitRefCastV5();
-  [[nodiscard]] bool emitBrOnCastV5(bool onSuccess);
-  [[nodiscard]] bool emitBrOnCastHeapV5(bool onSuccess, bool nullable);
-  [[nodiscard]] bool emitRefAsStructV5();
-  [[nodiscard]] bool emitBrOnNonStructV5();
   [[nodiscard]] bool emitRefTest(bool nullable);
   [[nodiscard]] bool emitRefCast(bool nullable);
   [[nodiscard]] bool emitBrOnCastCommon(bool onSuccess,

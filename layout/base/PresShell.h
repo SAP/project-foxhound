@@ -385,6 +385,8 @@ class PresShell final : public nsStubDocumentObserver,
    */
   bool SimpleResizeReflow(nscoord aWidth, nscoord aHeight);
 
+  bool CanHandleUserInputEvents(WidgetGUIEvent* aGUIEvent);
+
  public:
   /**
    * Updates pending layout, assuming reasonable (up-to-date, or mid-update for
@@ -928,9 +930,7 @@ class PresShell final : public nsStubDocumentObserver,
   }
 
   void ActivenessMaybeChanged();
-  // See ComputeActiveness() for details of these two booleans.
   bool IsActive() const { return mIsActive; }
-  bool IsInActiveTab() const { return mIsInActiveTab; }
 
   /**
    * Keep track of how many times this presshell has been rendered to
@@ -1757,12 +1757,8 @@ class PresShell final : public nsStubDocumentObserver,
  private:
   ~PresShell();
 
-  void SetIsActive(bool aIsActive, bool aIsInActiveTab);
-  struct Activeness {
-    bool mShouldBeActive = false;
-    bool mIsInActiveTab = false;
-  };
-  Activeness ComputeActiveness() const;
+  void SetIsActive(bool aIsActive);
+  bool ComputeActiveness() const;
 
   MOZ_CAN_RUN_SCRIPT
   void PaintInternal(nsView* aViewToPaint, PaintInternalFlags aFlags);
@@ -2762,7 +2758,7 @@ class PresShell final : public nsStubDocumentObserver,
      *
      * @param aEvent            The handled event.
      */
-    void FinalizeHandlingEvent(WidgetEvent* aEvent);
+    MOZ_CAN_RUN_SCRIPT void FinalizeHandlingEvent(WidgetEvent* aEvent);
 
     /**
      * AutoCurrentEventInfoSetter() pushes and pops current event info of
@@ -3118,7 +3114,6 @@ class PresShell final : public nsStubDocumentObserver,
   bool mIgnoreFrameDestruction : 1;
 
   bool mIsActive : 1;
-  bool mIsInActiveTab : 1;
   bool mFrozen : 1;
   bool mIsFirstPaint : 1;
   bool mObservesMutationsForPrint : 1;
@@ -3185,11 +3180,6 @@ class PresShell final : public nsStubDocumentObserver,
   // Whether mForceDispatchKeyPressEventsForNonPrintableKeys and
   // mForceUseLegacyKeyCodeAndCharCodeValues are initialized.
   bool mInitializedWithKeyPressEventDispatchingBlacklist : 1;
-
-  // Whether we should dispatch click events for non-primary mouse buttons.
-  bool mForceUseLegacyNonPrimaryDispatch : 1;
-  // Whether mForceUseLegacyNonPrimaryDispatch is initialised.
-  bool mInitializedWithClickEventDispatchingBlacklist : 1;
 
   // Set to true if mMouseLocation is set by a mouse event which is synthesized
   // for tests.

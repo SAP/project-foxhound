@@ -33,8 +33,11 @@ struct WebAuthnScopedCredential {
 };
 
 struct WebAuthnExtensionAppId {
-  uint8_t[] AppId;
   nsString appIdentifier;
+};
+
+struct WebAuthnExtensionCredProps {
+  bool credProps;
 };
 
 struct WebAuthnExtensionHmacSecret {
@@ -43,11 +46,16 @@ struct WebAuthnExtensionHmacSecret {
 
 union WebAuthnExtension {
   WebAuthnExtensionAppId;
+  WebAuthnExtensionCredProps;
   WebAuthnExtensionHmacSecret;
 };
 
 struct WebAuthnExtensionResultAppId {
   bool AppId;
+};
+
+struct WebAuthnExtensionResultCredProps {
+  bool rk;
 };
 
 struct WebAuthnExtensionResultHmacSecret {
@@ -56,18 +64,17 @@ struct WebAuthnExtensionResultHmacSecret {
 
 union WebAuthnExtensionResult {
   WebAuthnExtensionResultAppId;
+  WebAuthnExtensionResultCredProps;
   WebAuthnExtensionResultHmacSecret;
 };
 
 struct WebAuthnMakeCredentialRpInfo {
   nsString Name;
-  nsString Icon;
 };
 
 struct WebAuthnMakeCredentialUserInfo {
   uint8_t[] Id;
   nsString Name;
-  nsString Icon;
   nsString DisplayName;
 };
 
@@ -95,6 +102,7 @@ struct WebAuthnMakeCredentialResult {
   nsCString ClientDataJSON;
   uint8_t[] AttestationObject;
   uint8_t[] KeyHandle;
+  nsString[] Transports;
   WebAuthnExtensionResult[] Extensions;
 };
 

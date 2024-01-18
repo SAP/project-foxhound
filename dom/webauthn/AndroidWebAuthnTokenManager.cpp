@@ -153,6 +153,22 @@ RefPtr<U2FRegisterPromise> AndroidWebAuthnTokenManager::Register(
 
         const WebAuthnAuthenticatorSelection& sel =
             aInfo.AuthenticatorSelection();
+
+        // Get extensions
+        bool requestedCredProps = false;
+        for (const WebAuthnExtension& ext : aInfo.Extensions()) {
+          if (ext.type() == WebAuthnExtension::TWebAuthnExtensionCredProps) {
+            requestedCredProps =
+                ext.get_WebAuthnExtensionCredProps().credProps();
+          }
+          if (ext.type() == WebAuthnExtension::TWebAuthnExtensionAppId) {
+            GECKOBUNDLE_PUT(
+                extensionsBundle, "fidoAppId",
+                jni::StringParam(
+                    ext.get_WebAuthnExtensionAppId().appIdentifier()));
+          }
+        }
+
         // Unfortunately, GMS's FIDO2 API has no option for Passkey. If using
         // residentKey, credential will be synced with Passkey via Google
         // account or credential provider service. So this is experimental.
@@ -160,6 +176,13 @@ RefPtr<U2FRegisterPromise> AndroidWebAuthnTokenManager::Register(
                 security_webauthn_webauthn_enable_android_fido2_residentkey()) {
           GECKOBUNDLE_PUT(authSelBundle, "residentKey",
                           jni::StringParam(sel.residentKey()));
+          if (requestedCredProps) {
+            // In WebAuthnTokenManager.java we set the "requireResidentKey"
+            // parameter to true if and only if "residentKey" here is
+            // "required". This determines the credProps extension output.
+            self->mRegisterCredPropsRk.emplace(sel.residentKey().EqualsLiteral(
+                MOZ_WEBAUTHN_RESIDENT_KEY_REQUIREMENT_REQUIRED));
+          }
         }
 
         if (sel.userVerificationRequirement().EqualsLiteral(
@@ -183,26 +206,12 @@ RefPtr<U2FRegisterPromise> AndroidWebAuthnTokenManager::Register(
           }
         }
 
-        // Get extensions
-        for (const WebAuthnExtension& ext : aInfo.Extensions()) {
-          if (ext.type() == WebAuthnExtension::TWebAuthnExtensionAppId) {
-            GECKOBUNDLE_PUT(
-                extensionsBundle, "fidoAppId",
-                jni::StringParam(
-                    ext.get_WebAuthnExtensionAppId().appIdentifier()));
-          }
-        }
-
         uidBuf.Assign(user.Id());
 
         GECKOBUNDLE_PUT(credentialBundle, "rpName",
                         jni::StringParam(rp.Name()));
-        GECKOBUNDLE_PUT(credentialBundle, "rpIcon",
-                        jni::StringParam(rp.Icon()));
         GECKOBUNDLE_PUT(credentialBundle, "userName",
                         jni::StringParam(user.Name()));
-        GECKOBUNDLE_PUT(credentialBundle, "userIcon",
-                        jni::StringParam(user.Icon()));
         GECKOBUNDLE_PUT(credentialBundle, "userDisplayName",
                         jni::StringParam(user.DisplayName()));
 
@@ -265,9 +274,13 @@ void AndroidWebAuthnTokenManager::HandleRegisterResult(
         [self = RefPtr<AndroidWebAuthnTokenManager>(this),
          aResult = std::move(aResult)]() {
           nsTArray<WebAuthnExtensionResult> extensions;
-          WebAuthnMakeCredentialResult result(aResult.mClientDataJSON,
-                                              aResult.mAttObj,
-                                              aResult.mKeyHandle, extensions);
+          if (self->mRegisterCredPropsRk.isSome()) {
+            extensions.AppendElement(WebAuthnExtensionResultCredProps(
+                self->mRegisterCredPropsRk.value()));
+          }
+          WebAuthnMakeCredentialResult result(
+              aResult.mClientDataJSON, aResult.mAttObj, aResult.mKeyHandle,
+              aResult.mTransports, extensions);
           self->mRegisterPromise.Resolve(std::move(result), __func__);
         }));
   }
@@ -405,12 +418,21 @@ AndroidWebAuthnResult::AndroidWebAuthnResult(
       reinterpret_cast<const char*>(
           aResponse->ClientDataJson()->GetElements().Elements()),
       aResponse->ClientDataJson()->Length());
-  mKeyHandle.Assign(reinterpret_cast<uint8_t*>(
-                        aResponse->KeyHandle()->GetElements().Elements()),
-                    aResponse->KeyHandle()->Length());
-  mAttObj.Assign(reinterpret_cast<uint8_t*>(
-                     aResponse->AttestationObject()->GetElements().Elements()),
-                 aResponse->AttestationObject()->Length());
+  mKeyHandle.Clear();
+  mKeyHandle.AppendElements(
+      reinterpret_cast<uint8_t*>(
+          aResponse->KeyHandle()->GetElements().Elements()),
+      aResponse->KeyHandle()->Length());
+  mAttObj.Clear();
+  mAttObj.AppendElements(
+      reinterpret_cast<uint8_t*>(
+          aResponse->AttestationObject()->GetElements().Elements()),
+      aResponse->AttestationObject()->Length());
+  auto transports = aResponse->Transports();
+  for (size_t i = 0; i < transports->Length(); i++) {
+    mTransports.AppendElement(
+        jni::String::LocalRef(transports->GetElement(i))->ToString());
+  }
 }
 
 AndroidWebAuthnResult::AndroidWebAuthnResult(
@@ -420,18 +442,25 @@ AndroidWebAuthnResult::AndroidWebAuthnResult(
       reinterpret_cast<const char*>(
           aResponse->ClientDataJson()->GetElements().Elements()),
       aResponse->ClientDataJson()->Length());
-  mKeyHandle.Assign(reinterpret_cast<uint8_t*>(
-                        aResponse->KeyHandle()->GetElements().Elements()),
-                    aResponse->KeyHandle()->Length());
-  mAuthData.Assign(reinterpret_cast<uint8_t*>(
-                       aResponse->AuthData()->GetElements().Elements()),
-                   aResponse->AuthData()->Length());
-  mSignature.Assign(reinterpret_cast<uint8_t*>(
-                        aResponse->Signature()->GetElements().Elements()),
-                    aResponse->Signature()->Length());
-  mUserHandle.Assign(reinterpret_cast<uint8_t*>(
-                         aResponse->UserHandle()->GetElements().Elements()),
-                     aResponse->UserHandle()->Length());
+  mKeyHandle.Clear();
+  mKeyHandle.AppendElements(
+      reinterpret_cast<uint8_t*>(
+          aResponse->KeyHandle()->GetElements().Elements()),
+      aResponse->KeyHandle()->Length());
+  mAuthData.Clear();
+  mAuthData.AppendElements(reinterpret_cast<uint8_t*>(
+                               aResponse->AuthData()->GetElements().Elements()),
+                           aResponse->AuthData()->Length());
+  mSignature.Clear();
+  mSignature.AppendElements(
+      reinterpret_cast<uint8_t*>(
+          aResponse->Signature()->GetElements().Elements()),
+      aResponse->Signature()->Length());
+  mUserHandle.Clear();
+  mUserHandle.AppendElements(
+      reinterpret_cast<uint8_t*>(
+          aResponse->UserHandle()->GetElements().Elements()),
+      aResponse->UserHandle()->Length());
 }
 
 }  // namespace dom

@@ -43,6 +43,7 @@ export default class MozMessageBar extends MozLitElement {
   static queries = {
     actionsSlotEl: "slot[name=actions]",
     actionsEl: ".actions",
+    closeButtonEl: "button.close",
   };
 
   static properties = {
@@ -52,16 +53,10 @@ export default class MozMessageBar extends MozLitElement {
     dismissable: { type: Boolean },
   };
 
-  // Use a relative URL in storybook to get faster reloads on style changes.
-  static stylesheetUrl = window.IS_STORYBOOK
-    ? "./moz-message-bar/moz-message-bar.css"
-    : "chrome://global/content/elements/moz-message-bar.css";
-
   constructor() {
     super();
     MozXULElement.insertFTLIfNeeded("toolkit/global/mozMessageBar.ftl");
     this.type = "info";
-    this.role = "status";
     this.dismissable = false;
   }
 
@@ -70,7 +65,13 @@ export default class MozMessageBar extends MozLitElement {
     this.actionsEl.classList.toggle("active", actions.length);
   }
 
+  connectedCallback() {
+    super.connectedCallback();
+    this.setAttribute("role", "status");
+  }
+
   disconnectedCallback() {
+    super.disconnectedCallback();
     this.dispatchEvent(new CustomEvent("message-bar:close"));
   }
 
@@ -114,7 +115,10 @@ export default class MozMessageBar extends MozLitElement {
 
   render() {
     return html`
-      <link rel="stylesheet" href=${this.constructor.stylesheetUrl} />
+      <link
+        rel="stylesheet"
+        href="chrome://global/content/elements/moz-message-bar.css"
+      />
       <div class="container">
         <div class="content">
           <div class="text-container">

@@ -208,6 +208,7 @@ class ExternalRunnableWrapper final : public WorkerRunnable {
   virtual bool WorkerRun(JSContext* aCx,
                          WorkerPrivate* aWorkerPrivate) override {
     nsresult rv = mWrappedRunnable->Run();
+    mWrappedRunnable = nullptr;
     if (NS_FAILED(rv)) {
       if (!JS_IsExceptionPending(aCx)) {
         Throw(aCx, rv);
@@ -223,6 +224,7 @@ class ExternalRunnableWrapper final : public WorkerRunnable {
     if (doomed) {
       doomed->OnDiscard();
     }
+    mWrappedRunnable = nullptr;
     return NS_OK;
   }
 };
@@ -2451,6 +2453,12 @@ WorkerPrivate::WorkerPrivate(
           ShouldResistFingerprinting(RFPTarget::JSMathFdlibm));
       contentCreationOptions.setAlwaysUseFdlibm(
           ShouldResistFingerprinting(RFPTarget::JSMathFdlibm));
+
+      if (ShouldResistFingerprinting(RFPTarget::JSLocale)) {
+        nsCString locale = nsRFPService::GetSpoofedJSLocale();
+        chromeCreationOptions.setLocaleCopyZ(locale.get());
+        contentCreationOptions.setLocaleCopyZ(locale.get());
+      }
 
       // Check if it's a privileged addon executing in order to allow access
       // to SharedArrayBuffer

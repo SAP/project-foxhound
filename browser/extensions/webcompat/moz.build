@@ -16,7 +16,7 @@ FINAL_TARGET_FILES.features["webcompat@mozilla.org"]["about-compat"] += [
     "about-compat/aboutCompat.css",
     "about-compat/aboutCompat.html",
     "about-compat/aboutCompat.js",
-    "about-compat/AboutCompat.jsm",
+    "about-compat/AboutCompat.sys.mjs",
     "about-compat/aboutPage.js",
     "about-compat/aboutPage.json",
     "about-compat/aboutPageProcessScript.js",
@@ -31,6 +31,7 @@ FINAL_TARGET_FILES.features["webcompat@mozilla.org"]["data"] += [
 FINAL_TARGET_FILES.features["webcompat@mozilla.org"]["experiment-apis"] += [
     "experiment-apis/aboutConfigPrefs.js",
     "experiment-apis/aboutConfigPrefs.json",
+    "experiment-apis/aboutConfigPrefsChild.js",
     "experiment-apis/appConstants.js",
     "experiment-apis/appConstants.json",
     "experiment-apis/matchPatterns.js",
@@ -110,6 +111,8 @@ FINAL_TARGET_FILES.features["webcompat@mozilla.org"]["injections"]["js"] += [
     "injections/js/bug1836157-thai-masszazs-niceScroll-disable.js",
     "injections/js/bug1842437-www.youtube.com-performance-now-precision.js",
     "injections/js/bug1849058-nicochannel.jp-picture-in-picture-shim.js",
+    "injections/js/bug1855014-eksiseyler.com.js",
+    "injections/js/bug1855071-www.meteoam.it.js",
 ]
 
 FINAL_TARGET_FILES.features["webcompat@mozilla.org"]["shims"] += [
@@ -191,7 +194,7 @@ XPCOM_MANIFESTS += [
     "components.conf",
 ]
 
-BROWSER_CHROME_MANIFESTS += ["tests/browser/browser.ini"]
+BROWSER_CHROME_MANIFESTS += ["tests/browser/browser.toml"]
 
 with Files("**"):
     BUG_COMPONENT = ("Web Compatibility", "Tooling & Investigations")

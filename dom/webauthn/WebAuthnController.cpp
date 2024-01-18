@@ -44,23 +44,19 @@ static nsIThread* gWebAuthnBackgroundThread;
 
 // Data for WebAuthn UI prompt notifications.
 static const char16_t kPresencePromptNotification[] =
-    u"{\"is_ctap2\":true,\"action\":\"presence\",\"tid\":%llu,"
+    u"{\"action\":\"presence\",\"tid\":%llu,"
     u"\"origin\":\"%s\",\"browsingContextId\":%llu}";
 static const char16_t kRegisterDirectPromptNotification[] =
-    u"{\"is_ctap2\":true,\"action\":\"register-direct\",\"tid\":%llu,"
+    u"{\"action\":\"register-direct\",\"tid\":%llu,"
     u"\"origin\":\"%s\",\"browsingContextId\":%llu}";
 static const char16_t kCancelPromptNotification[] =
-    u"{\"is_ctap2\":true,\"action\":\"cancel\",\"tid\":%llu}";
-static const char16_t kSelectSignResultNotification[] =
-    u"{\"is_ctap2\":true,\"action\":\"select-sign-result\",\"tid\":%llu,"
-    u"\"origin\":\"%s\",\"browsingContextId\":%llu,\"usernames\":[%s]}";
+    u"{\"action\":\"cancel\",\"tid\":%llu}";
 
 /***********************************************************************
  * U2FManager Implementation
  **********************************************************************/
 
-NS_IMPL_ISUPPORTS(WebAuthnController, nsIWebAuthnController,
-                  nsIU2FTokenManager);
+NS_IMPL_ISUPPORTS(WebAuthnController, nsIWebAuthnController);
 
 WebAuthnController::WebAuthnController() : mTransactionParent(nullptr) {
   MOZ_ASSERT(XRE_IsParentProcess());
@@ -124,7 +120,6 @@ void WebAuthnController::ClearTransaction(bool cancel_prompt) {
   // Forget any pending registration.
   mPendingRegisterInfo.reset();
   mPendingSignInfo.reset();
-  mPendingSignResults.Clear();
   mTransaction.reset();
 }
 
@@ -218,21 +213,8 @@ void WebAuthnController::Register(
   AbortOngoingTransaction();
   mTransactionParent = aTransactionParent;
 
-  /* We could refactor to defer the hashing here */
-  CryptoBuffer rpIdHash, clientDataHash;
-  NS_ConvertUTF16toUTF8 rpId(aInfo.RpId());
-  nsresult rv = BuildTransactionHashes(rpId, aInfo.ClientDataJSON(), rpIdHash,
-                                       clientDataHash);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    // We haven't set mTransaction yet, so we can't use AbortTransaction
-    Unused << mTransactionParent->SendAbort(aTransactionId,
-                                            NS_ERROR_DOM_NOT_ALLOWED_ERR);
-    return;
-  }
-
   // Hold on to any state that we need to finish the transaction.
-  mTransaction = Some(
-      Transaction(aTransactionId, rpIdHash, Nothing(), aInfo.ClientDataJSON()));
+  mTransaction = Some(Transaction(aTransactionId, aInfo.ClientDataJSON()));
 
   MOZ_ASSERT(mPendingRegisterInfo.isNothing());
   mPendingRegisterInfo = Some(aInfo);
@@ -409,9 +391,26 @@ void WebAuthnController::RunFinishRegister(
     return;
   }
 
+  nsTArray<nsString> transports;
+  rv = aResult->GetTransports(transports);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    AbortTransaction(aTransactionId, NS_ERROR_DOM_NOT_ALLOWED_ERR, true);
+    return;
+  }
+
   nsTArray<WebAuthnExtensionResult> extensions;
+  bool credPropsRk;
+  rv = aResult->GetCredPropsRk(&credPropsRk);
+  if (rv != NS_ERROR_NOT_AVAILABLE) {
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      AbortTransaction(aTransactionId, NS_ERROR_DOM_NOT_ALLOWED_ERR, true);
+      return;
+    }
+    extensions.AppendElement(WebAuthnExtensionResultCredProps(credPropsRk));
+  }
+
   WebAuthnMakeCredentialResult result(clientDataJson, attObj, credentialId,
-                                      extensions);
+                                      transports, extensions);
 
   Telemetry::ScalarAdd(Telemetry::ScalarID::SECURITY_WEBAUTHN_USED,
                        u"CTAPRegisterFinish"_ns, 1);
@@ -434,28 +433,8 @@ void WebAuthnController::Sign(PWebAuthnTransactionParent* aTransactionParent,
   AbortOngoingTransaction();
   mTransactionParent = aTransactionParent;
 
-  /* We could refactor to defer the hashing here */
-  CryptoBuffer rpIdHash, clientDataHash;
-  NS_ConvertUTF16toUTF8 rpId(aInfo.RpId());
-  nsresult rv = BuildTransactionHashes(rpId, aInfo.ClientDataJSON(), rpIdHash,
-                                       clientDataHash);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    // We haven't set mTransaction yet, so we can't use AbortTransaction
-    Unused << mTransactionParent->SendAbort(aTransactionId,
-                                            NS_ERROR_DOM_UNKNOWN_ERR);
-    return;
-  }
-
-  Maybe<nsTArray<uint8_t>> appIdHash = Nothing();
-  for (const WebAuthnExtension& ext : aInfo.Extensions()) {
-    if (ext.type() == WebAuthnExtension::TWebAuthnExtensionAppId) {
-      appIdHash = Some(ext.get_WebAuthnExtensionAppId().AppId().Clone());
-    }
-  }
-
   // Hold on to any state that we need to finish the transaction.
-  mTransaction = Some(
-      Transaction(aTransactionId, rpIdHash, appIdHash, aInfo.ClientDataJSON()));
+  mTransaction = Some(Transaction(aTransactionId, aInfo.ClientDataJSON()));
 
   mPendingSignInfo = Some(aInfo);
 
@@ -474,8 +453,8 @@ void WebAuthnController::Sign(PWebAuthnTransactionParent* aTransactionParent,
     return;
   }
 
-  rv = mTransportImpl->GetAssertion(mTransaction.ref().mTransactionId,
-                                    aInfo.BrowsingContextId(), args.get());
+  nsresult rv = mTransportImpl->GetAssertion(
+      mTransaction.ref().mTransactionId, aInfo.BrowsingContextId(), args.get());
   if (NS_FAILED(rv)) {
     AbortTransaction(mTransaction.ref().mTransactionId,
                      NS_ERROR_DOM_NOT_ALLOWED_ERR, true);
@@ -484,17 +463,13 @@ void WebAuthnController::Sign(PWebAuthnTransactionParent* aTransactionParent,
 }
 
 NS_IMETHODIMP
-WebAuthnController::FinishSign(
-    uint64_t aTransactionId,
-    const nsTArray<RefPtr<nsICtapSignResult>>& aResult) {
+WebAuthnController::FinishSign(uint64_t aTransactionId,
+                               nsICtapSignResult* aResult) {
   MOZ_ASSERT(XRE_IsParentProcess());
-  nsTArray<RefPtr<nsICtapSignResult>> ownedResult = aResult.Clone();
-
   nsCOMPtr<nsIRunnable> r(
-      NewRunnableMethod<uint64_t, nsTArray<RefPtr<nsICtapSignResult>>>(
+      NewRunnableMethod<uint64_t, RefPtr<nsICtapSignResult>>(
           "WebAuthnController::RunFinishSign", this,
-          &WebAuthnController::RunFinishSign, aTransactionId,
-          std::move(ownedResult)));
+          &WebAuthnController::RunFinishSign, aTransactionId, aResult));
 
   if (!gWebAuthnBackgroundThread) {
     return NS_ERROR_FAILURE;
@@ -506,82 +481,76 @@ WebAuthnController::FinishSign(
 }
 
 void WebAuthnController::RunFinishSign(
-    uint64_t aTransactionId,
-    const nsTArray<RefPtr<nsICtapSignResult>>& aResult) {
+    uint64_t aTransactionId, const RefPtr<nsICtapSignResult>& aResult) {
   mozilla::ipc::AssertIsOnBackgroundThread();
   if (mTransaction.isNothing() ||
       aTransactionId != mTransaction.ref().mTransactionId) {
     return;
   }
 
-  if (aResult.Length() == 0) {
+  nsresult status;
+  nsresult rv = aResult->GetStatus(&status);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    AbortTransaction(aTransactionId, NS_ERROR_DOM_NOT_ALLOWED_ERR, true);
+    return;
+  }
+  if (NS_FAILED(status)) {
+    bool shouldCancelActiveDialog = true;
+    if (status == NS_ERROR_DOM_INVALID_STATE_ERR) {
+      // PIN-related errors, e.g. blocked token. Let the dialog show to inform
+      // the user
+      shouldCancelActiveDialog = false;
+    }
     Telemetry::ScalarAdd(Telemetry::ScalarID::SECURITY_WEBAUTHN_USED,
                          u"CTAPSignAbort"_ns, 1);
+    AbortTransaction(aTransactionId, NS_ERROR_DOM_NOT_ALLOWED_ERR,
+                     shouldCancelActiveDialog);
+    return;
+  }
+
+  nsTArray<uint8_t> credentialId;
+  rv = aResult->GetCredentialId(credentialId);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
     AbortTransaction(aTransactionId, NS_ERROR_DOM_NOT_ALLOWED_ERR, true);
     return;
   }
 
-  if (aResult.Length() == 1) {
-    nsresult status;
-    nsresult rv = aResult[0]->GetStatus(&status);
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-      AbortTransaction(aTransactionId, NS_ERROR_DOM_NOT_ALLOWED_ERR, true);
-      return;
-    }
-    if (NS_FAILED(status)) {
-      bool shouldCancelActiveDialog = true;
-      if (status == NS_ERROR_DOM_INVALID_STATE_ERR) {
-        // PIN-related errors, e.g. blocked token. Let the dialog show to inform
-        // the user
-        shouldCancelActiveDialog = false;
-      }
-      Telemetry::ScalarAdd(Telemetry::ScalarID::SECURITY_WEBAUTHN_USED,
-                           u"CTAPSignAbort"_ns, 1);
-      AbortTransaction(aTransactionId, NS_ERROR_DOM_NOT_ALLOWED_ERR,
-                       shouldCancelActiveDialog);
-      return;
-    }
-    mPendingSignResults = aResult.Clone();
-    RunResumeWithSelectedSignResult(aTransactionId, 0);
+  nsTArray<uint8_t> signature;
+  rv = aResult->GetSignature(signature);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    AbortTransaction(aTransactionId, NS_ERROR_DOM_NOT_ALLOWED_ERR, true);
     return;
   }
 
-  // If we more than one assertion, all of them should have OK status.
-  for (const auto& assertion : aResult) {
-    nsresult status;
-    nsresult rv = assertion->GetStatus(&status);
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-      AbortTransaction(aTransactionId, NS_ERROR_DOM_NOT_ALLOWED_ERR, true);
-      return;
-    }
-    if (NS_WARN_IF(NS_FAILED(status))) {
-      Telemetry::ScalarAdd(Telemetry::ScalarID::SECURITY_WEBAUTHN_USED,
-                           u"CTAPSignAbort"_ns, 1);
-      AbortTransaction(aTransactionId, NS_ERROR_DOM_NOT_ALLOWED_ERR, true);
-      return;
-    }
+  nsTArray<uint8_t> authenticatorData;
+  rv = aResult->GetAuthenticatorData(authenticatorData);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    AbortTransaction(aTransactionId, NS_ERROR_DOM_NOT_ALLOWED_ERR, true);
+    return;
   }
 
-  nsCString usernames;
-  StringJoinAppend(
-      usernames, ","_ns, aResult,
-      [](nsACString& dst, const RefPtr<nsICtapSignResult>& assertion) {
-        nsCString username;
-        nsresult rv = assertion->GetUserName(username);
-        if (NS_FAILED(rv)) {
-          username.Assign("<Unknown username>");
-        }
-        nsCString escaped_username;
-        NS_Escape(username, escaped_username, url_XAlphas);
-        dst.Append("\""_ns + escaped_username + "\""_ns);
-      });
+  nsTArray<uint8_t> userHandle;
+  Unused << aResult->GetUserHandle(userHandle);  // optional
 
-  mPendingSignResults = aResult.Clone();
-  NS_ConvertUTF16toUTF8 origin(mPendingSignInfo.ref().Origin());
-  SendPromptNotification(kSelectSignResultNotification,
-                         mTransaction.ref().mTransactionId, origin.get(),
-                         mPendingSignInfo.ref().BrowsingContextId(),
-                         usernames.get());
+  nsTArray<WebAuthnExtensionResult> extensions;
+  bool usedAppId;
+  rv = aResult->GetUsedAppId(&usedAppId);
+  if (rv != NS_ERROR_NOT_AVAILABLE) {
+    if (NS_FAILED(rv)) {
+      AbortTransaction(aTransactionId, NS_ERROR_DOM_NOT_ALLOWED_ERR, true);
+      return;
+    }
+    extensions.AppendElement(WebAuthnExtensionResultAppId(usedAppId));
+  }
+
+  WebAuthnGetAssertionResult result(mTransaction.ref().mClientDataJSON,
+                                    credentialId, signature, authenticatorData,
+                                    extensions, userHandle);
+
+  Telemetry::ScalarAdd(Telemetry::ScalarID::SECURITY_WEBAUTHN_USED,
+                       u"CTAPSignFinish"_ns, 1);
+  Unused << mTransactionParent->SendConfirmSign(aTransactionId, result);
+  ClearTransaction(true);
 }
 
 NS_IMETHODIMP
@@ -605,64 +574,12 @@ WebAuthnController::SignatureSelectionCallback(uint64_t aTransactionId,
 }
 
 void WebAuthnController::RunResumeWithSelectedSignResult(
-    uint64_t aTransactionId, uint64_t idx) {
+    uint64_t aTransactionId, uint64_t aIndex) {
   mozilla::ipc::AssertIsOnBackgroundThread();
-  if (mTransaction.isNothing() ||
-      mTransaction.ref().mTransactionId != aTransactionId) {
-    return;
+
+  if (mTransportImpl) {
+    mTransportImpl->SelectionCallback(aTransactionId, aIndex);
   }
-
-  if (NS_WARN_IF(mPendingSignResults.Length() <= idx)) {
-    return;
-  }
-
-  RefPtr<nsICtapSignResult>& selected = mPendingSignResults[idx];
-
-  nsTArray<uint8_t> credentialId;
-  nsresult rv = selected->GetCredentialId(credentialId);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    AbortTransaction(aTransactionId, NS_ERROR_DOM_NOT_ALLOWED_ERR, true);
-    return;
-  }
-
-  nsTArray<uint8_t> signature;
-  rv = selected->GetSignature(signature);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    AbortTransaction(aTransactionId, NS_ERROR_DOM_NOT_ALLOWED_ERR, true);
-    return;
-  }
-
-  nsTArray<uint8_t> authenticatorData;
-  rv = selected->GetAuthenticatorData(authenticatorData);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    AbortTransaction(aTransactionId, NS_ERROR_DOM_NOT_ALLOWED_ERR, true);
-    return;
-  }
-
-  nsTArray<uint8_t> rpIdHash;
-  rv = selected->GetRpIdHash(rpIdHash);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    AbortTransaction(aTransactionId, NS_ERROR_DOM_NOT_ALLOWED_ERR, true);
-    return;
-  }
-
-  nsTArray<uint8_t> userHandle;
-  Unused << selected->GetUserHandle(userHandle);  // optional
-
-  nsTArray<WebAuthnExtensionResult> extensions;
-  if (mTransaction.ref().mAppIdHash.isSome()) {
-    bool usedAppId = (rpIdHash == mTransaction.ref().mAppIdHash.ref());
-    extensions.AppendElement(WebAuthnExtensionResultAppId(usedAppId));
-  }
-
-  WebAuthnGetAssertionResult result(mTransaction.ref().mClientDataJSON,
-                                    credentialId, signature, authenticatorData,
-                                    extensions, userHandle);
-
-  Telemetry::ScalarAdd(Telemetry::ScalarID::SECURITY_WEBAUTHN_USED,
-                       u"CTAPSignFinish"_ns, 1);
-  Unused << mTransactionParent->SendConfirmSign(aTransactionId, result);
-  ClearTransaction(true);
 }
 
 NS_IMETHODIMP

@@ -36,12 +36,15 @@
 #include "mozilla/StaticPrefs_network.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/Variant.h"
+#include "mozilla/ipc/ProtocolUtils.h"
 #include "nsContentUtils.h"
 #include "nsDocShell.h"
 #include "nsDocShellLoadState.h"
 #include "nsError.h"
 #include "nsFrameLoader.h"
 #include "nsFrameLoaderOwner.h"
+#include "nsICookieManager.h"
+#include "nsICookieService.h"
 #include "nsQueryObject.h"
 #include "nsNetUtil.h"
 #include "nsSandboxFlags.h"
@@ -63,9 +66,14 @@
 #include "mozilla/dom/JSWindowActorBinding.h"
 #include "mozilla/dom/JSWindowActorParent.h"
 
+#include "mozilla/net/NeckoParent.h"
+#include "mozilla/net/PCookieServiceParent.h"
+#include "mozilla/net/CookieServiceParent.h"
+
 #include "SessionStoreFunctions.h"
 #include "nsIXPConnect.h"
 #include "nsImportModule.h"
+#include "nsIXULRuntime.h"
 
 #include "mozilla/dom/PBackgroundSessionStorageCache.h"
 
@@ -543,9 +551,7 @@ void WindowGlobalParent::NotifyContentBlockingEvent(
   MOZ_ASSERT(NS_IsMainThread());
   DebugOnly<bool> isCookiesBlocked =
       aEvent == nsIWebProgressListener::STATE_COOKIES_BLOCKED_TRACKER ||
-      aEvent == nsIWebProgressListener::STATE_COOKIES_BLOCKED_SOCIALTRACKER ||
-      (aEvent == nsIWebProgressListener::STATE_COOKIES_BLOCKED_FOREIGN &&
-       StaticPrefs::network_cookie_rejectForeignWithExceptions_enabled());
+      aEvent == nsIWebProgressListener::STATE_COOKIES_BLOCKED_SOCIALTRACKER;
   MOZ_ASSERT_IF(aBlocked, aReason.isNothing());
   MOZ_ASSERT_IF(!isCookiesBlocked, aReason.isNothing());
   MOZ_ASSERT_IF(isCookiesBlocked && !aBlocked, aReason.isSome());
@@ -601,6 +607,11 @@ already_AddRefed<JSActor> WindowGlobalParent::InitJSActor(
 }
 
 bool WindowGlobalParent::IsCurrentGlobal() {
+  if (mozilla::SessionHistoryInParent() && BrowsingContext() &&
+      BrowsingContext()->IsInBFCache()) {
+    return false;
+  }
+
   return CanSend() && BrowsingContext()->GetCurrentWindowGlobal() == this;
 }
 
@@ -1612,6 +1623,26 @@ void WindowGlobalParent::SetShouldReportHasBlockedOpaqueResponse(
       mShouldReportHasBlockedOpaqueResponse = true;
     }
   }
+}
+
+IPCResult WindowGlobalParent::RecvSetCookies(
+    const nsCString& aBaseDomain, const OriginAttributes& aOriginAttributes,
+    nsIURI* aHost, bool aFromHttp, const nsTArray<CookieStruct>& aCookies) {
+  // Get CookieServiceParent via
+  // ContentParent->NeckoParent->CookieServiceParent.
+  ContentParent* contentParent = GetContentParent();
+  NS_ENSURE_TRUE(contentParent, IPC_OK());
+
+  net::PNeckoParent* neckoParent =
+      LoneManagedOrNullAsserts(contentParent->ManagedPNeckoParent());
+  NS_ENSURE_TRUE(neckoParent, IPC_OK());
+  net::PCookieServiceParent* csParent =
+      LoneManagedOrNullAsserts(neckoParent->ManagedPCookieServiceParent());
+  NS_ENSURE_TRUE(csParent, IPC_OK());
+  auto* cs = static_cast<net::CookieServiceParent*>(csParent);
+
+  return cs->SetCookies(aBaseDomain, aOriginAttributes, aHost, aFromHttp,
+                        aCookies, GetBrowsingContext());
 }
 
 NS_IMPL_CYCLE_COLLECTION_INHERITED(WindowGlobalParent, WindowContext,

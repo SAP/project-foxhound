@@ -17,12 +17,15 @@ namespace mozilla::dom::quota::test {
 
 class QuotaManagerDependencyFixture : public testing::Test {
  public:
- protected:
   static void InitializeFixture();
-
   static void ShutdownFixture();
 
+  static void InitializeStorage();
   static void StorageInitialized(bool* aResult = nullptr);
+  static void IsStorageInitialized(bool* aResult);
+  static void AssertStorageIsInitialized();
+  static void AssertStorageIsNotInitialized();
+  static void ShutdownStorage();
 
   static void ClearStoragesForOrigin(const OriginMetadata& aOriginMetadata);
 
@@ -77,6 +80,12 @@ class QuotaManagerDependencyFixture : public testing::Test {
   static const nsCOMPtr<nsISerialEventTarget>& BackgroundTargetStrongRef() {
     return sBackgroundTarget;
   }
+
+  static OriginMetadata GetTestOriginMetadata();
+  static ClientMetadata GetTestClientMetadata();
+
+  static OriginMetadata GetOtherTestOriginMetadata();
+  static ClientMetadata GetOtherTestClientMetadata();
 
  private:
   static nsCOMPtr<nsISerialEventTarget> sBackgroundTarget;

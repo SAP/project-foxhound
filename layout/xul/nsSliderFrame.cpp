@@ -111,8 +111,9 @@ void nsSliderFrame::Init(nsIContent* aContent, nsContainerFrame* aParent,
   mCurPos = GetCurrentPosition(aContent);
 }
 
-void nsSliderFrame::RemoveFrame(ChildListID aListID, nsIFrame* aOldFrame) {
-  nsContainerFrame::RemoveFrame(aListID, aOldFrame);
+void nsSliderFrame::RemoveFrame(DestroyContext& aContext, ChildListID aListID,
+                                nsIFrame* aOldFrame) {
+  nsContainerFrame::RemoveFrame(aContext, aListID, aOldFrame);
   if (mFrames.IsEmpty()) {
     RemoveListener();
   }
@@ -1437,8 +1438,7 @@ nsSliderFrame::HandleRelease(nsPresContext* aPresContext,
   return NS_OK;
 }
 
-void nsSliderFrame::DestroyFrom(nsIFrame* aDestructRoot,
-                                PostDestroyData& aPostDestroyData) {
+void nsSliderFrame::Destroy(DestroyContext& aContext) {
   // tell our mediator if we have one we are gone.
   if (mMediator) {
     mMediator->SetSlider(nullptr);
@@ -1447,7 +1447,7 @@ void nsSliderFrame::DestroyFrom(nsIFrame* aDestructRoot,
   StopRepeat();
 
   // call base class Destroy()
-  nsContainerFrame::DestroyFrom(aDestructRoot, aPostDestroyData);
+  nsContainerFrame::Destroy(aContext);
 }
 
 void nsSliderFrame::Notify() {
@@ -1562,8 +1562,10 @@ void nsSliderFrame::PageScroll(bool aClickAndHold) {
 
     mCurrentClickHoldDestination = Some(pos);
     sf->ScrollTo(pos,
-                 StaticPrefs::general_smoothScroll() ? ScrollMode::SmoothMsd
-                                                     : ScrollMode::Instant,
+                 StaticPrefs::general_smoothScroll() &&
+                         StaticPrefs::general_smoothScroll_pages()
+                     ? ScrollMode::Smooth
+                     : ScrollMode::Instant,
                  nullptr, scrollSnapFlags);
 
     return;

@@ -1,0 +1,9 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+:root {
+  --in-content-page-background: light-dark(#f9f9fb, #2b2a33);
+  --shopping-header-background: var(--in-content-page-background);
+  font: menu;
+}

@@ -17,17 +17,9 @@ class RequestResponse;
 class QuotaRequestBase : public NormalOriginOperationBase,
                          public PQuotaRequestParent {
  protected:
-  explicit QuotaRequestBase(const char* aRunnableName, bool aExclusive)
-      : NormalOriginOperationBase(aRunnableName, Nullable<PersistenceType>(),
-                                  OriginScope::FromNull(),
-                                  Nullable<Client::Type>(), aExclusive) {}
-
-  QuotaRequestBase(const char* aRunnableName,
-                   const Nullable<PersistenceType>& aPersistenceType,
-                   const OriginScope& aOriginScope,
-                   const Nullable<Client::Type>& aClientType, bool aExclusive)
-      : NormalOriginOperationBase(aRunnableName, aPersistenceType, aOriginScope,
-                                  aClientType, aExclusive) {}
+  QuotaRequestBase(MovingNotNull<RefPtr<QuotaManager>> aQuotaManager,
+                   const char* aName)
+      : NormalOriginOperationBase(std::move(aQuotaManager), aName) {}
 
   // Subclasses use this override to set the IPDL response value.
   virtual void GetResponse(RequestResponse& aResponse) = 0;

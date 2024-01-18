@@ -124,10 +124,20 @@ impl NeqoHttp3Conn {
         } else {
             vec![quic_version]
         };
+
+        let cc_algorithm = match static_prefs::pref!("network.http.http3.cc_algorithm") {
+            0 => CongestionControlAlgorithm::NewReno,
+            1 => CongestionControlAlgorithm::Cubic,
+            _ => {
+                // Unknown preferences; default to Cubic
+                CongestionControlAlgorithm::Cubic
+            }
+        };
+
         #[allow(unused_mut)]
         let mut params = ConnectionParameters::default()
             .versions(quic_version, version_list)
-            .cc_algorithm(CongestionControlAlgorithm::Cubic)
+            .cc_algorithm(cc_algorithm)
             .max_data(max_data)
             .max_stream_data(StreamType::BiDi, false, max_stream_data)
             .grease(static_prefs::pref!("security.tls.grease_http3_enable"));
@@ -1326,6 +1336,21 @@ pub extern "C" fn neqo_http3conn_webtransport_max_datagram_size(
             *result = size;
             NS_OK
         }
+        Err(_) => NS_ERROR_UNEXPECTED,
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn neqo_http3conn_webtransport_set_sendorder(
+    conn: &mut NeqoHttp3Conn,
+    stream_id: u64,
+    sendorder: i64,
+) -> nsresult {
+    match conn
+        .conn
+        .webtransport_set_sendorder(StreamId::from(stream_id), sendorder)
+    {
+        Ok(()) => NS_OK,
         Err(_) => NS_ERROR_UNEXPECTED,
     }
 }

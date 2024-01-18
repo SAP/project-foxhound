@@ -37,6 +37,7 @@ namespace mozilla::dom {
 class ScriptLoadContext;
 class WorkerLoadContext;
 class WorkletLoadContext;
+enum class RequestPriority : uint8_t;
 
 }  // namespace mozilla::dom
 
@@ -45,8 +46,6 @@ class ComponentLoadContext;
 }  // namespace mozilla::loader
 
 namespace JS {
-class OffThreadToken;
-
 namespace loader {
 
 using Utf8Unit = mozilla::Utf8Unit;
@@ -72,6 +71,12 @@ enum class ParserMetadata {
  *      implemented in ScriptLoadRequest, as it changes for every
  *      ScriptLoadRequest.
  *
+ *   referrerPolicy
+ *     For a module script, its referrerPolicy will be updated if there is a
+ *     HTTP Response 'REFERRER-POLICY' header, given this value may be different
+ *     for every ScriptLoadRequest, so we store it directly in
+ *     ScriptLoadRequest.
+ *
  * In the case of classic scripts without dynamic import, this object is
  * used once. For modules, this object is propogated throughout the module
  * tree. If there is a dynamically imported module in any type of script,
@@ -85,9 +90,8 @@ class ScriptFetchOptions {
   NS_INLINE_DECL_CYCLE_COLLECTING_NATIVE_REFCOUNTING(ScriptFetchOptions)
   NS_DECL_CYCLE_COLLECTION_NATIVE_CLASS(ScriptFetchOptions)
 
-  ScriptFetchOptions(mozilla::CORSMode aCORSMode,
-                     enum mozilla::dom::ReferrerPolicy aReferrerPolicy,
-                     const nsAString& aNonce,
+  ScriptFetchOptions(mozilla::CORSMode aCORSMode, const nsAString& aNonce,
+                     mozilla::dom::RequestPriority aFetchPriority,
                      const ParserMetadata aParserMetadata,
                      nsIPrincipal* aTriggeringPrincipal,
                      mozilla::dom::Element* aElement = nullptr);
@@ -100,16 +104,15 @@ class ScriptFetchOptions {
   const mozilla::CORSMode mCORSMode;
 
   /*
-   *  The referrer policy used for the initial fetch and for fetching any
-   *  imported modules
-   */
-  const enum mozilla::dom::ReferrerPolicy mReferrerPolicy;
-
-  /*
    * The cryptographic nonce metadata used for the initial fetch and for
    * fetching any imported modules.
    */
   const nsString mNonce;
+
+  /*
+   * <https://html.spec.whatwg.org/multipage/webappapis.html#script-fetch-options>.
+   */
+  const mozilla::dom::RequestPriority mFetchPriority;
 
   /*
    * The parser metadata used for the initial fetch and for fetching any
@@ -177,6 +180,7 @@ class ScriptLoadRequest
  public:
   using SRIMetadata = mozilla::dom::SRIMetadata;
   ScriptLoadRequest(ScriptKind aKind, nsIURI* aURI,
+                    mozilla::dom::ReferrerPolicy aReferrerPolicy,
                     ScriptFetchOptions* aFetchOptions,
                     const SRIMetadata& aIntegrity, nsIURI* aReferrer,
                     LoadContextBase* aContext);
@@ -288,8 +292,16 @@ class ScriptLoadRequest
                          : ScriptText<Utf8Unit>().clearAndFree();
   }
 
+  mozilla::dom::RequestPriority FetchPriority() const {
+    return mFetchOptions->mFetchPriority;
+  }
+
   enum mozilla::dom::ReferrerPolicy ReferrerPolicy() const {
-    return mFetchOptions->mReferrerPolicy;
+    return mReferrerPolicy;
+  }
+
+  void UpdateReferrerPolicy(mozilla::dom::ReferrerPolicy aReferrerPolicy) {
+    mReferrerPolicy = aReferrerPolicy;
   }
 
   enum ParserMetadata ParserMetadata() const {
@@ -334,6 +346,10 @@ class ScriptLoadRequest
   State mState;           // Are we still waiting for a load to complete?
   bool mFetchSourceOnly;  // Request source, not cached bytecode.
   DataType mDataType;     // Does this contain Source or Bytecode?
+
+  // The referrer policy used for the initial fetch and for fetching any
+  // imported modules
+  enum mozilla::dom::ReferrerPolicy mReferrerPolicy;
   RefPtr<ScriptFetchOptions> mFetchOptions;
   const SRIMetadata mIntegrity;
   const nsCOMPtr<nsIURI> mReferrer;

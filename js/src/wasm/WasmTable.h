@@ -64,6 +64,7 @@ class Table : public ShareableBase<Table> {
  public:
   static RefPtr<Table> create(JSContext* cx, const TableDesc& desc,
                               Handle<WasmTableObject*> maybeObject);
+  ~Table();
   void trace(JSTracer* trc);
 
   RefType elemType() const { return elemType_; }
@@ -88,12 +89,18 @@ class Table : public ShareableBase<Table> {
   const FunctionTableElem& getFuncRef(uint32_t index) const;
   [[nodiscard]] bool getFuncRef(JSContext* cx, uint32_t index,
                                 MutableHandleFunction fun) const;
+  void setFuncRef(uint32_t index, JSFunction* func);
   void setFuncRef(uint32_t index, void* code, Instance* instance);
   void fillFuncRef(uint32_t index, uint32_t fillCount, FuncRef ref,
                    JSContext* cx);
 
   AnyRef getAnyRef(uint32_t index) const;
+  void setAnyRef(uint32_t index, AnyRef ref);
   void fillAnyRef(uint32_t index, uint32_t fillCount, AnyRef ref);
+
+  // Sets ref automatically using the correct setter depending on the ref and
+  // table type (setNull, setFuncRef, or setAnyRef)
+  void setRef(uint32_t index, AnyRef ref);
 
   // Get the element at index and convert it to a JS value.
   [[nodiscard]] bool getValue(JSContext* cx, uint32_t index,

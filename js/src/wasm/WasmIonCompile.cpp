@@ -925,7 +925,7 @@ class FunctionCompiler {
 #endif  // ENABLE_WASM_FUNCTION_REFERENCES
 
 #ifdef ENABLE_WASM_GC
-  MDefinition* i31New(MDefinition* input) {
+  MDefinition* refI31(MDefinition* input) {
     auto* ins = MWasmNewI31Ref::New(alloc(), input);
     curBlock_->add(ins);
     return ins;
@@ -2403,6 +2403,28 @@ class FunctionCompiler {
     return collectCallResults(resultType, call.stackResultArea_, results);
   }
 
+#  ifdef ENABLE_WASM_TAIL_CALLS
+  [[nodiscard]] bool returnCallRef(const FuncType& funcType, MDefinition* ref,
+                                   uint32_t lineOrBytecode,
+                                   const CallCompileState& call,
+                                   DefVector* results) {
+    CalleeDesc callee = CalleeDesc::wasmFuncRef();
+
+    CallSiteDesc desc(lineOrBytecode, CallSiteDesc::FuncRef);
+    ArgTypeVector args(funcType);
+
+    auto* ins = MWasmReturnCall::New(alloc(), desc, callee, call.regArgs_,
+                                     StackArgAreaSizeUnaligned(args), ref);
+    if (!ins) {
+      return false;
+    }
+    curBlock_->end(ins);
+    curBlock_ = nullptr;
+    return true;
+  }
+
+#  endif  // ENABLE_WASM_TAIL_CALLS
+
 #endif  // ENABLE_WASM_FUNCTION_REFERENCES
 
   /*********************************************** Control flow generation */
@@ -3257,8 +3279,8 @@ class FunctionCompiler {
   [[nodiscard]] bool loadExceptionValues(MDefinition* exception,
                                          uint32_t tagIndex, DefVector* values) {
     SharedTagType tagType = moduleEnv().tags[tagIndex].type;
-    const ValTypeVector& params = tagType->argTypes_;
-    const TagOffsetVector& offsets = tagType->argOffsets_;
+    const ValTypeVector& params = tagType->argTypes();
+    const TagOffsetVector& offsets = tagType->argOffsets();
 
     // Get the data pointer from the exception object
     auto* data = MWasmLoadField::New(
@@ -3391,12 +3413,12 @@ class FunctionCompiler {
 
     // Store the params into the data pointer
     SharedTagType tagType = moduleEnv_.tags[tagIndex].type;
-    for (size_t i = 0; i < tagType->argOffsets_.length(); i++) {
+    for (size_t i = 0; i < tagType->argOffsets().length(); i++) {
       if (!mirGen_.ensureBallast()) {
         return false;
       }
-      ValType type = tagType->argTypes_[i];
-      uint32_t offset = tagType->argOffsets_[i];
+      ValType type = tagType->argTypes()[i];
+      uint32_t offset = tagType->argOffsets()[i];
 
       if (!type.isRefRepr()) {
         auto* store = MWasmStoreFieldKA::New(alloc(), exception, data, offset,
@@ -3817,12 +3839,11 @@ class FunctionCompiler {
 
   // Returns an MDefinition holding the supertype vector for `typeIndex`.
   [[nodiscard]] MDefinition* loadSuperTypeVector(uint32_t typeIndex) {
-    uint32_t superTypeVectorOffset =
-        moduleEnv().offsetOfSuperTypeVector(typeIndex);
+    uint32_t stvOffset = moduleEnv().offsetOfSuperTypeVector(typeIndex);
 
-    auto* load = MWasmLoadInstanceDataField::New(
-        alloc(), MIRType::Pointer, superTypeVectorOffset,
-        /*isConst=*/true, instancePointer_);
+    auto* load =
+        MWasmLoadInstanceDataField::New(alloc(), MIRType::Pointer, stvOffset,
+                                        /*isConst=*/true, instancePointer_);
     if (!load) {
       return nullptr;
     }
@@ -4338,9 +4359,9 @@ class FunctionCompiler {
     MInstruction* isSubTypeOf = nullptr;
     if (destType.isTypeRef()) {
       uint32_t typeIndex = moduleEnv_.types->indexOf(*destType.typeDef());
-      MDefinition* superSuperTypeVector = loadSuperTypeVector(typeIndex);
-      isSubTypeOf = MWasmRefIsSubtypeOfConcrete::New(
-          alloc(), ref, superSuperTypeVector, sourceType, destType);
+      MDefinition* superSTV = loadSuperTypeVector(typeIndex);
+      isSubTypeOf = MWasmRefIsSubtypeOfConcrete::New(alloc(), ref, superSTV,
+                                                     sourceType, destType);
     } else {
       isSubTypeOf =
           MWasmRefIsSubtypeOfAbstract::New(alloc(), ref, sourceType, destType);
@@ -5079,8 +5100,7 @@ static bool EmitReturnCall(FunctionCompiler& f) {
 
   uint32_t funcIndex;
   DefVector args;
-  DefVector unused_values;
-  if (!f.iter().readReturnCall(&funcIndex, &args, &unused_values)) {
+  if (!f.iter().readReturnCall(&funcIndex, &args)) {
     return false;
   }
 
@@ -5120,9 +5140,8 @@ static bool EmitReturnCallIndirect(FunctionCompiler& f) {
   uint32_t tableIndex;
   MDefinition* callee;
   DefVector args;
-  DefVector unused_values;
   if (!f.iter().readReturnCallIndirect(&funcTypeIndex, &tableIndex, &callee,
-                                       &args, &unused_values)) {
+                                       &args)) {
     return false;
   }
 
@@ -5144,6 +5163,33 @@ static bool EmitReturnCallIndirect(FunctionCompiler& f) {
     return false;
   }
   return true;
+}
+#endif
+
+#if defined(ENABLE_WASM_TAIL_CALLS) && defined(ENABLE_WASM_FUNCTION_REFERENCES)
+static bool EmitReturnCallRef(FunctionCompiler& f) {
+  uint32_t lineOrBytecode = f.readCallSiteLineOrBytecode();
+
+  const FuncType* funcType;
+  MDefinition* callee;
+  DefVector args;
+
+  if (!f.iter().readReturnCallRef(&funcType, &callee, &args)) {
+    return false;
+  }
+
+  if (f.inDeadCode()) {
+    return true;
+  }
+
+  CallCompileState call;
+  f.markReturnCall(&call);
+  if (!EmitCallArgs(f, *funcType, args, &call)) {
+    return false;
+  }
+
+  DefVector results;
+  return f.returnCallRef(*funcType, callee, lineOrBytecode, call, &results);
 }
 #endif
 
@@ -7300,9 +7346,9 @@ static bool EmitArrayGet(FunctionCompiler& f, FieldWideningOp wideningOp) {
   return true;
 }
 
-static bool EmitArrayLen(FunctionCompiler& f, bool decodeIgnoredTypeIndex) {
+static bool EmitArrayLen(FunctionCompiler& f) {
   MDefinition* arrayObject;
-  if (!f.iter().readArrayLen(decodeIgnoredTypeIndex, &arrayObject)) {
+  if (!f.iter().readArrayLen(&arrayObject)) {
     return false;
   }
 
@@ -7367,12 +7413,18 @@ static bool EmitArrayCopy(FunctionCompiler& f) {
                              numElements, elemSizeDef);
 }
 
-static bool EmitI31New(FunctionCompiler& f) {
+static bool EmitRefI31(FunctionCompiler& f) {
   MDefinition* input;
-  if (!f.iter().readConversion(ValType::I32, ValType(RefType::i31()), &input)) {
+  if (!f.iter().readConversion(
+          ValType::I32, ValType(RefType::i31().asNonNullable()), &input)) {
     return false;
   }
-  MDefinition* output = f.i31New(input);
+
+  if (f.inDeadCode()) {
+    return true;
+  }
+
+  MDefinition* output = f.refI31(input);
   if (!output) {
     return false;
   }
@@ -7387,56 +7439,19 @@ static bool EmitI31Get(FunctionCompiler& f, FieldWideningOp wideningOp) {
   if (!f.iter().readConversion(ValType(RefType::i31()), ValType::I32, &input)) {
     return false;
   }
+
+  if (f.inDeadCode()) {
+    return true;
+  }
+
+  if (!f.refAsNonNull(input)) {
+    return false;
+  }
   MDefinition* output = f.i31Get(input, wideningOp);
   if (!output) {
     return false;
   }
   f.iter().setResult(output);
-  return true;
-}
-
-static bool EmitRefTestV5(FunctionCompiler& f) {
-  MDefinition* ref;
-  RefType sourceType;
-  uint32_t typeIndex;
-  if (!f.iter().readRefTestV5(&sourceType, &typeIndex, &ref)) {
-    return false;
-  }
-
-  if (f.inDeadCode()) {
-    return true;
-  }
-
-  const TypeDef& typeDef = f.moduleEnv().types->type(typeIndex);
-  RefType destType = RefType::fromTypeDef(&typeDef, false);
-  MDefinition* success = f.refTest(ref, sourceType, destType);
-  if (!success) {
-    return false;
-  }
-
-  f.iter().setResult(success);
-  return true;
-}
-
-static bool EmitRefCastV5(FunctionCompiler& f) {
-  MDefinition* ref;
-  RefType sourceType;
-  uint32_t typeIndex;
-  if (!f.iter().readRefCastV5(&sourceType, &typeIndex, &ref)) {
-    return false;
-  }
-
-  if (f.inDeadCode()) {
-    return true;
-  }
-
-  const TypeDef& typeDef = f.moduleEnv().types->type(typeIndex);
-  RefType destType = RefType::fromTypeDef(&typeDef, /*nullable=*/true);
-  if (!f.refCast(ref, sourceType, destType)) {
-    return false;
-  }
-
-  f.iter().setResult(ref);
   return true;
 }
 
@@ -7494,67 +7509,6 @@ static bool EmitBrOnCast(FunctionCompiler& f, bool onSuccess) {
 
   return f.brOnCastCommon(onSuccess, labelRelativeDepth, sourceType, destType,
                           labelType, values);
-}
-
-static bool EmitBrOnCastCommonV5(FunctionCompiler& f, bool onSuccess) {
-  uint32_t labelRelativeDepth;
-  RefType sourceType;
-  uint32_t castTypeIndex;
-  ResultType labelType;
-  DefVector values;
-  if (onSuccess
-          ? !f.iter().readBrOnCastV5(&labelRelativeDepth, &sourceType,
-                                     &castTypeIndex, &labelType, &values)
-          : !f.iter().readBrOnCastFailV5(&labelRelativeDepth, &sourceType,
-                                         &castTypeIndex, &labelType, &values)) {
-    return false;
-  }
-
-  const TypeDef& typeDef = f.moduleEnv().types->type(castTypeIndex);
-  RefType type = RefType::fromTypeDef(&typeDef, false);
-  return f.brOnCastCommon(onSuccess, labelRelativeDepth, sourceType, type,
-                          labelType, values);
-}
-
-static bool EmitBrOnCastHeapV5(FunctionCompiler& f, bool onSuccess,
-                               bool nullable) {
-  uint32_t labelRelativeDepth;
-  RefType sourceType;
-  RefType destType;
-  ResultType labelType;
-  DefVector values;
-  if (onSuccess ? !f.iter().readBrOnCastHeapV5(nullable, &labelRelativeDepth,
-                                               &sourceType, &destType,
-                                               &labelType, &values)
-                : !f.iter().readBrOnCastFailHeapV5(
-                      nullable, &labelRelativeDepth, &sourceType, &destType,
-                      &labelType, &values)) {
-    return false;
-  }
-
-  return f.brOnCastCommon(onSuccess, labelRelativeDepth, sourceType, destType,
-                          labelType, values);
-}
-
-static bool EmitRefAsStructV5(FunctionCompiler& f) {
-  MDefinition* value;
-  if (!f.iter().readConversion(ValType(RefType::any()),
-                               ValType(RefType::struct_().asNonNullable()),
-                               &value)) {
-    return false;
-  }
-  f.iter().setResult(value);
-  return true;
-}
-
-static bool EmitBrOnNonStructV5(FunctionCompiler& f) {
-  uint32_t labelRelativeDepth;
-  ResultType labelType;
-  DefVector values;
-  if (!f.iter().readBrOnNonStructV5(&labelRelativeDepth, &labelType, &values)) {
-    return false;
-  }
-  return f.brOnNonStruct(values);
 }
 
 static bool EmitExternInternalize(FunctionCompiler& f) {
@@ -8158,6 +8112,16 @@ static bool EmitBodyExprs(FunctionCompiler& f) {
       }
 #endif
 
+#if defined(ENABLE_WASM_TAIL_CALLS) && defined(ENABLE_WASM_FUNCTION_REFERENCES)
+      case uint16_t(Op::ReturnCallRef): {
+        if (!f.moduleEnv().functionReferencesEnabled() ||
+            !f.moduleEnv().tailCallsEnabled()) {
+          return f.iter().unrecognizedOpcode(&op);
+        }
+        CHECK(EmitReturnCallRef(f));
+      }
+#endif
+
       // Gc operations
 #ifdef ENABLE_WASM_GC
       case uint16_t(Op::GcPrefix): {
@@ -8185,7 +8149,6 @@ static bool EmitBodyExprs(FunctionCompiler& f) {
             CHECK(EmitArrayNewFixed(f));
           case uint32_t(GcOp::ArrayNewData):
             CHECK(EmitArrayNewData(f));
-          case uint32_t(GcOp::ArrayInitFromElemStaticV5):
           case uint32_t(GcOp::ArrayNewElem):
             CHECK(EmitArrayNewElem(f));
           case uint32_t(GcOp::ArraySet):
@@ -8196,45 +8159,20 @@ static bool EmitBodyExprs(FunctionCompiler& f) {
             CHECK(EmitArrayGet(f, FieldWideningOp::Signed));
           case uint32_t(GcOp::ArrayGetU):
             CHECK(EmitArrayGet(f, FieldWideningOp::Unsigned));
-          case uint32_t(GcOp::ArrayLenWithTypeIndex):
-            CHECK(EmitArrayLen(f, /*decodeIgnoredTypeIndex=*/true));
           case uint32_t(GcOp::ArrayLen):
-            CHECK(EmitArrayLen(f, /*decodeIgnoredTypeIndex=*/false));
+            CHECK(EmitArrayLen(f));
           case uint32_t(GcOp::ArrayCopy):
             CHECK(EmitArrayCopy(f));
-          case uint32_t(GcOp::I31New):
-            CHECK(EmitI31New(f));
+          case uint32_t(GcOp::RefI31):
+            CHECK(EmitRefI31(f));
           case uint32_t(GcOp::I31GetS):
             CHECK(EmitI31Get(f, FieldWideningOp::Signed));
           case uint32_t(GcOp::I31GetU):
             CHECK(EmitI31Get(f, FieldWideningOp::Unsigned));
-          case uint32_t(GcOp::RefTestV5):
-            CHECK(EmitRefTestV5(f));
-          case uint32_t(GcOp::RefCastV5):
-            CHECK(EmitRefCastV5(f));
           case uint32_t(GcOp::BrOnCast):
             CHECK(EmitBrOnCast(f, /*onSuccess=*/true));
           case uint32_t(GcOp::BrOnCastFail):
             CHECK(EmitBrOnCast(f, /*onSuccess=*/false));
-          case uint32_t(GcOp::BrOnCastV5):
-            CHECK(EmitBrOnCastCommonV5(f, /*onSuccess=*/true));
-          case uint32_t(GcOp::BrOnCastFailV5):
-            CHECK(EmitBrOnCastCommonV5(f, /*onSuccess=*/false));
-          case uint32_t(GcOp::BrOnCastHeapV5):
-            CHECK(
-                EmitBrOnCastHeapV5(f, /*onSuccess=*/true, /*nullable=*/false));
-          case uint32_t(GcOp::BrOnCastHeapNullV5):
-            CHECK(EmitBrOnCastHeapV5(f, /*onSuccess=*/true, /*nullable=*/true));
-          case uint32_t(GcOp::BrOnCastFailHeapV5):
-            CHECK(
-                EmitBrOnCastHeapV5(f, /*onSuccess=*/false, /*nullable=*/false));
-          case uint32_t(GcOp::BrOnCastFailHeapNullV5):
-            CHECK(
-                EmitBrOnCastHeapV5(f, /*onSuccess=*/false, /*nullable=*/true));
-          case uint32_t(GcOp::RefAsStructV5):
-            CHECK(EmitRefAsStructV5(f));
-          case uint32_t(GcOp::BrOnNonStructV5):
-            CHECK(EmitBrOnNonStructV5(f));
           case uint32_t(GcOp::RefTest):
             CHECK(EmitRefTest(f, /*nullable=*/false));
           case uint32_t(GcOp::RefTestNull):

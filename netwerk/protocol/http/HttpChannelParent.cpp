@@ -9,6 +9,7 @@
 #include "HttpLog.h"
 
 #include "mozilla/ConsoleReportCollector.h"
+#include "mozilla/dom/BrowsingContext.h"
 #include "mozilla/ipc/IPCStreamUtils.h"
 #include "mozilla/net/EarlyHintRegistrar.h"
 #include "mozilla/net/HttpChannelParent.h"
@@ -17,11 +18,14 @@
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/ServiceWorkerUtils.h"
 #include "mozilla/dom/BrowserParent.h"
+#include "mozilla/dom/WindowGlobalParent.h"
 #include "mozilla/net/NeckoParent.h"
+#include "mozilla/net/CookieServiceParent.h"
 #include "mozilla/InputStreamLengthHelper.h"
 #include "mozilla/IntegerPrintfMacros.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/ProfilerLabels.h"
+#include "mozilla/ProfilerMarkers.h"
 #include "mozilla/StoragePrincipalHelper.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/Unused.h"
@@ -61,12 +65,41 @@
 #include "nsIMultiPartChannel.h"
 #include "nsIViewSourceChannel.h"
 
+using namespace mozilla;
+
+namespace geckoprofiler::markers {
+
+struct ChannelMarker {
+  static constexpr Span<const char> MarkerTypeName() {
+    return MakeStringSpan("ChannelMarker");
+  }
+  static void StreamJSONMarkerData(
+      mozilla::baseprofiler::SpliceableJSONWriter& aWriter,
+      const mozilla::ProfilerString8View& aURL, uint64_t aChannelId) {
+    if (aURL.Length() != 0) {
+      aWriter.StringProperty("url", aURL);
+    }
+    aWriter.IntProperty("channelId", static_cast<int64_t>(aChannelId));
+  }
+  static MarkerSchema MarkerTypeDisplay() {
+    using MS = MarkerSchema;
+    MS schema(MS::Location::MarkerChart, MS::Location::MarkerTable);
+    schema.SetTableLabel("{marker.name} - {marker.data.url}");
+    schema.AddKeyFormat("url", MS::Format::Url);
+    schema.AddStaticLabelValue(
+        "Description",
+        "Timestamp capturing various phases of a network channel's lifespan.");
+    return schema;
+  }
+};
+
+}  // namespace geckoprofiler::markers
+
 using mozilla::BasePrincipal;
 using namespace mozilla::dom;
 using namespace mozilla::ipc;
 
-namespace mozilla {
-namespace net {
+namespace mozilla::net {
 
 HttpChannelParent::HttpChannelParent(dom::BrowserParent* iframeEmbedding,
                                      nsILoadContext* aLoadContext,
@@ -441,6 +474,9 @@ bool HttpChannelParent::DoAsyncOpen(
   LOG(("HttpChannelParent RecvAsyncOpen [this=%p uri=%s, gid=%" PRIu64
        " browserid=%" PRIx64 "]\n",
        this, aURI->GetSpecOrDefault().get(), aChannelId, aBrowserId));
+
+  PROFILER_MARKER("Receive AsyncOpen in Parent", NETWORK, {}, ChannelMarker,
+                  aURI->GetSpecOrDefault(), aChannelId);
 
   nsresult rv;
 
@@ -947,14 +983,21 @@ HttpChannelParent::ContinueVerification(
 
   // Otherwise, wait for the background channel.
   nsCOMPtr<nsIAsyncVerifyRedirectReadyCallback> callback = aCallback;
-  WaitForBgParent(mChannel->ChannelId())
-      ->Then(
-          GetMainThreadSerialEventTarget(), __func__,
-          [callback]() { callback->ReadyToVerify(NS_OK); },
-          [callback](const nsresult& aResult) {
-            NS_ERROR("failed to establish the background channel");
-            callback->ReadyToVerify(aResult);
-          });
+  if (mChannel) {
+    WaitForBgParent(mChannel->ChannelId())
+        ->Then(
+            GetMainThreadSerialEventTarget(), __func__,
+            [callback]() { callback->ReadyToVerify(NS_OK); },
+            [callback](const nsresult& aResult) {
+              NS_ERROR("failed to establish the background channel");
+              callback->ReadyToVerify(aResult);
+            });
+  } else {
+    // mChannel can be null for several reasons (AsyncOpenFailed, etc)
+    NS_ERROR("No channel for ContinueVerification");
+    GetMainThreadSerialEventTarget()->Dispatch(NS_NewRunnableFunction(
+        __func__, [callback] { callback->ReadyToVerify(NS_ERROR_FAILURE); }));
+  }
   return NS_OK;
 }
 
@@ -1004,6 +1047,24 @@ mozilla::ipc::IPCResult HttpChannelParent::RecvRemoveCorsPreflightCacheEntry(
   nsCORSListenerProxy::RemoveFromCorsPreflightCache(uri, principal,
                                                     originAttributes);
   return IPC_OK();
+}
+
+mozilla::ipc::IPCResult HttpChannelParent::RecvSetCookies(
+    const nsACString& aBaseDomain, const OriginAttributes& aOriginAttributes,
+    nsIURI* aHost, const bool& aFromHttp, nsTArray<CookieStruct>&& aCookies) {
+  net::PCookieServiceParent* csParent =
+      LoneManagedOrNullAsserts(Manager()->ManagedPCookieServiceParent());
+  NS_ENSURE_TRUE(csParent, IPC_OK());
+
+  auto* cs = static_cast<net::CookieServiceParent*>(csParent);
+
+  BrowsingContext* browsingContext = nullptr;
+  if (mBrowserParent) {
+    browsingContext = mBrowserParent->GetBrowsingContext();
+  }
+
+  return cs->SetCookies(nsCString(aBaseDomain), aOriginAttributes, aHost,
+                        aFromHttp, aCookies, browsingContext);
 }
 
 //-----------------------------------------------------------------------------
@@ -2120,5 +2181,4 @@ void HttpChannelParent::SetCookie(nsCString&& aCookie) {
   mCookie = std::move(aCookie);
 }
 
-}  // namespace net
-}  // namespace mozilla
+}  // namespace mozilla::net

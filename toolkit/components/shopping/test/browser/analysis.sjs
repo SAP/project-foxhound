@@ -3,27 +3,16 @@
 
 "use strict";
 
-const BinaryInputStream = Components.Constructor(
-  "@mozilla.org/binaryinputstream;1",
-  "nsIBinaryInputStream",
-  "setInputStream"
-);
-
-Cu.importGlobalProperties(["TextDecoder"]);
-
-function getPostBody(stream) {
-  let binaryStream = new BinaryInputStream(stream);
-  let count = binaryStream.available();
-  let arrayBuffer = new ArrayBuffer(count);
-  while (count > 0) {
-    let actuallyRead = binaryStream.readArrayBuffer(count, arrayBuffer);
-    if (!actuallyRead) {
-      throw new Error("Nothing read from input stream!");
-    }
-    count -= actuallyRead;
-  }
-  return new TextDecoder().decode(arrayBuffer);
+function loadHelperScript(path) {
+  let scriptFile = Cc["@mozilla.org/file/local;1"].createInstance(Ci.nsIFile);
+  scriptFile.initWithPath(getState("__LOCATION__"));
+  scriptFile = scriptFile.parent;
+  scriptFile.append(path);
+  let scriptSpec = Services.io.newFileURI(scriptFile).spec;
+  Services.scriptloader.loadSubScript(scriptSpec, this);
 }
+/* import-globals-from ./server_helper.js */
+loadHelperScript("server_helper.js");
 
 let gResponses = new Map(
   Object.entries({
@@ -37,6 +26,12 @@ function handleRequest(request, response) {
   var body = getPostBody(request.bodyInputStream);
   let requestData = JSON.parse(body);
   let productDetails = gResponses.get(requestData.product_id);
-
+  if (!productDetails) {
+    response.setStatusLine(request.httpVersion, 400, "Bad Request");
+    productDetails = {
+      status: 400,
+      error: "Bad Request",
+    };
+  }
   response.write(JSON.stringify(productDetails));
 }

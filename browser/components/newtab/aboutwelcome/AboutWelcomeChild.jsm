@@ -345,27 +345,55 @@ const OPTIN_DEFAULT = {
   id: "FAKESPOT_OPTIN_DEFAULT",
   template: "multistage",
   backdrop: "transparent",
-  transitions: true,
+  aria_role: "alert",
+  UTMTerm: "opt-in",
   screens: [
     {
       id: "FS_OPT_IN",
       content: {
         position: "split",
         title: { string_id: "shopping-onboarding-headline" },
-        subtitle: `Not all reviews are created equal. To help you find real reviews, from real people, Firefox can use AI technology to analyze this product’s reviews.`,
-        legal_paragraph: {
-          text: {
-            // fluent ids required to render copy
-            string_id:
-              "shopping-onboarding-opt-in-privacy-policy-and-terms-of-use",
+        subtitle: { string_id: "shopping-onboarding-dynamic-subtitle-1" },
+        above_button_content: [
+          {
+            type: "text",
+            text: {
+              string_id: "shopping-onboarding-body",
+            },
+            link_keys: ["learn_more"],
           },
-          link_keys: ["privacy_policy", "terms_of_use"],
+          {
+            type: "image",
+            url: "chrome://browser/content/shopping/assets/optInLight.avif",
+            darkModeImageURL:
+              "chrome://browser/content/shopping/assets/optInDark.avif",
+            height: "172px",
+            marginInline: "24px",
+          },
+          {
+            type: "text",
+            text: {
+              string_id:
+                "shopping-onboarding-opt-in-privacy-policy-and-terms-of-use",
+            },
+            link_keys: ["privacy_policy", "terms_of_use"],
+            font_styles: "legal",
+          },
+        ],
+        learn_more: {
+          action: {
+            type: "OPEN_URL",
+            data: {
+              args: "https://support.mozilla.org/1/firefox/%VERSION%/%OS%/%LOCALE%/review-checker-review-quality?utm_source=review-checker&utm_campaign=learn-more&utm_medium=in-product",
+              where: "tab",
+            },
+          },
         },
         privacy_policy: {
           action: {
             type: "OPEN_URL",
             data: {
-              args: "https://www.mozilla.org/privacy/firefox/",
+              args: "https://www.fakespot.com/privacy-policy?utm_source=review-checker&utm_campaign=privacy-policy&utm_medium=in-product",
               where: "tab",
             },
           },
@@ -374,13 +402,14 @@ const OPTIN_DEFAULT = {
           action: {
             type: "OPEN_URL",
             data: {
-              args: "https://www.mozilla.org/about/legal/terms/firefox/",
+              args: "https://www.fakespot.com/terms?utm_source=review-checker&utm_campaign=terms-of-use&utm_medium=in-product",
               where: "tab",
             },
           },
         },
         primary_button: {
-          label: "Analyze Reviews",
+          should_focus_button: true,
+          label: { string_id: "shopping-onboarding-opt-in-button" },
           action: {
             type: "SET_PREF",
             data: {
@@ -391,8 +420,12 @@ const OPTIN_DEFAULT = {
             },
           },
         },
-        secondary_button: {
-          label: "Not Now",
+        additional_button: {
+          label: {
+            string_id: "shopping-onboarding-not-now-button",
+          },
+          style: "link",
+          flow: "column",
           action: {
             type: "SET_PREF",
             data: {
@@ -403,40 +436,438 @@ const OPTIN_DEFAULT = {
             },
           },
         },
-        inline_image: {
-          url: "chrome://browser/content/shopping/assets/temp-fakespot-rating.svg",
-          height: "auto",
+      },
+    },
+  ],
+};
+
+const SHOPPING_MICROSURVEY = {
+  id: "SHOPPING_MICROSURVEY",
+  template: "multistage",
+  backdrop: "transparent",
+  transitions: true,
+  UTMTerm: "survey",
+  screens: [
+    {
+      id: "SHOPPING_MICROSURVEY_SCREEN_1",
+      above_button_steps_indicator: true,
+      content: {
+        position: "split",
+        layout: "survey",
+        steps_indicator: {
+          string_id: "shopping-onboarding-welcome-steps-indicator-label",
         },
-        info_text: {
-          raw: "Review quality check is available when you shop on Amazon, Best Buy, and Walmart.",
+        title: {
+          string_id: "shopping-survey-headline",
+        },
+        subtitle: {
+          string_id: "shopping-survey-question-one",
+        },
+        primary_button: {
+          label: {
+            string_id: "shopping-survey-next-button-label",
+            paddingBlock: "5px",
+            marginBlock: "0 12px",
+          },
+          action: {
+            type: "MULTI_ACTION",
+            collectSelect: true,
+            data: {
+              actions: [],
+            },
+            navigate: true,
+          },
+          disabled: "hasActiveMultiSelect",
+        },
+        additional_button: {
+          label: {
+            string_id: "shopping-survey-terms-link",
+          },
+          style: "link",
+          flow: "column",
+          action: {
+            type: "OPEN_URL",
+            data: {
+              args: "https://www.mozilla.org/about/legal/terms/mozilla/?utm_source=review-checker&utm_campaign=terms-of-use-screen-1&utm_medium=in-product",
+              where: "tab",
+            },
+          },
+        },
+        dismiss_button: {
+          action: {
+            dismiss: true,
+          },
+          label: {
+            string_id: "shopping-onboarding-dialog-close-button",
+          },
+        },
+        tiles: {
+          type: "multiselect",
+          style: {
+            flexDirection: "column",
+            alignItems: "flex-start",
+          },
+          data: [
+            {
+              id: "radio-1",
+              type: "radio",
+              group: "radios",
+              defaultValue: false,
+              label: { string_id: "shopping-survey-q1-radio-1-label" },
+            },
+            {
+              id: "radio-2",
+              type: "radio",
+              group: "radios",
+              defaultValue: false,
+              label: { string_id: "shopping-survey-q1-radio-2-label" },
+            },
+            {
+              id: "radio-3",
+              type: "radio",
+              group: "radios",
+              defaultValue: false,
+              label: { string_id: "shopping-survey-q1-radio-3-label" },
+            },
+            {
+              id: "radio-4",
+              type: "radio",
+              group: "radios",
+              defaultValue: false,
+              label: { string_id: "shopping-survey-q1-radio-4-label" },
+            },
+            {
+              id: "radio-5",
+              type: "radio",
+              group: "radios",
+              defaultValue: false,
+              label: { string_id: "shopping-survey-q1-radio-5-label" },
+            },
+          ],
+        },
+      },
+    },
+    {
+      id: "SHOPPING_MICROSURVEY_SCREEN_2",
+      above_button_steps_indicator: true,
+      content: {
+        position: "split",
+        layout: "survey",
+        steps_indicator: {
+          string_id: "shopping-onboarding-welcome-steps-indicator-label",
+        },
+        title: {
+          string_id: "shopping-survey-headline",
+        },
+        subtitle: {
+          string_id: "shopping-survey-question-two",
+        },
+        primary_button: {
+          label: {
+            string_id: "shopping-survey-submit-button-label",
+            paddingBlock: "5px",
+            marginBlock: "0 12px",
+          },
+          action: {
+            type: "MULTI_ACTION",
+            collectSelect: true,
+            data: {
+              actions: [],
+            },
+            navigate: true,
+          },
+          disabled: "hasActiveMultiSelect",
+        },
+        additional_button: {
+          label: {
+            string_id: "shopping-survey-terms-link",
+          },
+          style: "link",
+          flow: "column",
+          action: {
+            type: "OPEN_URL",
+            data: {
+              args: "https://www.mozilla.org/about/legal/terms/mozilla/?utm_source=review-checker&utm_campaign=terms-of-use-screen-2&utm_medium=in-product",
+              where: "tab",
+            },
+          },
+        },
+        dismiss_button: {
+          action: {
+            dismiss: true,
+          },
+          label: {
+            string_id: "shopping-onboarding-dialog-close-button",
+          },
+        },
+        tiles: {
+          type: "multiselect",
+          style: {
+            flexDirection: "column",
+            alignItems: "flex-start",
+          },
+          data: [
+            {
+              id: "radio-1",
+              type: "radio",
+              group: "radios",
+              defaultValue: false,
+              label: { string_id: "shopping-survey-q2-radio-1-label" },
+            },
+            {
+              id: "radio-2",
+              type: "radio",
+              group: "radios",
+              defaultValue: false,
+              label: { string_id: "shopping-survey-q2-radio-2-label" },
+            },
+            {
+              id: "radio-3",
+              type: "radio",
+              group: "radios",
+              defaultValue: false,
+              label: { string_id: "shopping-survey-q2-radio-3-label" },
+            },
+          ],
         },
       },
     },
   ],
 };
 
+const OPTED_IN_TIME_PREF = "browser.shopping.experience2023.survey.optedInTime";
+
+XPCOMUtils.defineLazyPreferenceGetter(
+  lazy,
+  "isSurveySeen",
+  "browser.shopping.experience2023.survey.hasSeen",
+  false
+);
+
+XPCOMUtils.defineLazyPreferenceGetter(
+  lazy,
+  "pdpVisits",
+  "browser.shopping.experience2023.survey.pdpVisits",
+  0
+);
+
+XPCOMUtils.defineLazyPreferenceGetter(
+  lazy,
+  "optedInTime",
+  OPTED_IN_TIME_PREF,
+  0
+);
+
+let optInDynamicContent;
+// Limit pref increase to 5 as we don't need to count any higher than that
+const MIN_VISITS_TO_SHOW_SURVEY = 5;
+// Wait 24 hours after opt in to show survey
+const MIN_TIME_AFTER_OPT_IN = 24 * 60 * 60;
+
 class AboutWelcomeShoppingChild extends AboutWelcomeChild {
+  // Static state used to track session in which user opted-in
+  static optedInSession = false;
+
+  // Static used to track PDP visits per session for showing survey
+  static eligiblePDPvisits = [];
+
+  constructor() {
+    super();
+    this.surveyEnabled =
+      lazy.NimbusFeatures.shopping2023.getVariable("surveyEnabled");
+
+    // Used by tests
+    this.resetChildStates = () => {
+      AboutWelcomeShoppingChild.eligiblePDPvisits.length = 0;
+      AboutWelcomeShoppingChild.optedInSession = false;
+    };
+  }
+
+  computeEligiblePDPCount(data) {
+    // Increment our pref if this isn't a page we've already seen this session
+    if (lazy.pdpVisits < MIN_VISITS_TO_SHOW_SURVEY) {
+      this.AWSendToParent("SPECIAL_ACTION", {
+        type: "SET_PREF",
+        data: {
+          pref: {
+            name: "browser.shopping.experience2023.survey.pdpVisits",
+            value: lazy.pdpVisits + 1,
+          },
+        },
+      });
+    }
+
+    // Add this product to our list of unique eligible PDPs visited
+    // to prevent errors caused by multiple events being fired simultaneously
+    AboutWelcomeShoppingChild.eligiblePDPvisits.push(data?.product_id);
+  }
+
+  evaluateAndShowSurvey() {
+    // Re-evaluate if we should show the survey
+    // Render survey if user is opted-in and has met survey seen conditions
+    const now = Date.now() / 1000;
+    const hasBeen24HrsSinceOptin =
+      lazy.optedInTime && now - lazy.optedInTime >= MIN_TIME_AFTER_OPT_IN;
+
+    this.showMicroSurvey =
+      this.surveyEnabled &&
+      !lazy.isSurveySeen &&
+      !AboutWelcomeShoppingChild.optedInSession &&
+      lazy.pdpVisits >= MIN_VISITS_TO_SHOW_SURVEY &&
+      hasBeen24HrsSinceOptin;
+
+    if (this.showMicroSurvey) {
+      this.renderMessage();
+    }
+  }
+
+  setOptInTime() {
+    const now = Date.now() / 1000;
+    this.AWSendToParent("SPECIAL_ACTION", {
+      type: "SET_PREF",
+      data: {
+        pref: {
+          name: OPTED_IN_TIME_PREF,
+          value: now,
+        },
+      },
+    });
+  }
+
+  handleEvent(event) {
+    // Decide when to show/hide onboarding and survey message
+    const { productUrl, showOnboarding, data } = event.detail;
+
+    // Display onboarding if a user hasn't opted-in
+    const optInReady = showOnboarding && productUrl;
+    if (optInReady) {
+      // Render opt-in message
+      AboutWelcomeShoppingChild.optedInSession = true;
+      this.AWSetProductURL(new URL(productUrl).hostname);
+      this.renderMessage();
+      return;
+    }
+
+    //Store timestamp if user opts in
+    if (
+      Object.hasOwn(event.detail, "showOnboarding") &&
+      !event.detail.showOnboarding &&
+      !lazy.optedInTime
+    ) {
+      this.setOptInTime();
+    }
+    // Hide the container until the user is eligible to see the survey
+    // or user has just completed opt-in
+    if (!lazy.isSurveySeen || AboutWelcomeShoppingChild.optedInSession) {
+      this.document.getElementById("multi-stage-message-root").hidden = true;
+    }
+
+    // Early exit if user has seen survey, if we have no data, encountered
+    // an error, or if pdp is ineligible or not unique
+    if (
+      lazy.isSurveySeen ||
+      !data ||
+      data.error ||
+      !productUrl ||
+      (data.needs_analysis &&
+        (!data.product_id || !data.grade || !data.adjusted_rating)) ||
+      AboutWelcomeShoppingChild.eligiblePDPvisits.includes(data.product_id)
+    ) {
+      return;
+    }
+
+    this.computeEligiblePDPCount(data, productUrl);
+    this.evaluateAndShowSurvey();
+  }
+
+  renderMessage() {
+    this.document.getElementById("multi-stage-message-root").hidden = false;
+    this.document.dispatchEvent(
+      new this.contentWindow.CustomEvent("RenderWelcome", {
+        bubbles: true,
+      })
+    );
+  }
+
+  // TODO - Move messages into an ASRouter message provider. See bug 1848251.
+  AWGetFeatureConfig() {
+    let messageContent = optInDynamicContent;
+    if (this.showMicroSurvey) {
+      messageContent = SHOPPING_MICROSURVEY;
+      this.setShoppingSurveySeen();
+    }
+    return Cu.cloneInto(messageContent, this.contentWindow);
+  }
+
+  setShoppingSurveySeen() {
+    this.AWSendToParent("SPECIAL_ACTION", {
+      type: "SET_PREF",
+      data: {
+        pref: {
+          name: "browser.shopping.experience2023.survey.hasSeen",
+          value: true,
+        },
+      },
+    });
+  }
+
   // TODO - Add dismiss: true to the primary CTA so it cleans up the React
   // content, which will stop being rendered on opt-in. See bug 1848429.
   AWFinish() {
     if (this._destroyed) {
       return;
     }
-    let root = this.document.getElementById("multi-stage-message-root");
+    const root = this.document.getElementById("multi-stage-message-root");
     if (root) {
-      let { parentElement } = root;
-      let newRoot = this.document.createElement("div");
-      newRoot.id = "multi-stage-message-root";
-      newRoot.className = "onboardingContainer shopping";
-      newRoot.slot = "multi-stage-message-slot";
-      root.remove();
-      parentElement.appendChild(newRoot);
+      root.innerHTML = "";
+      root
+        .appendChild(this.document.createElement("shopping-message-bar"))
+        .setAttribute("type", "thank-you-for-feedback");
+      this.contentWindow.setTimeout(() => {
+        root.hidden = true;
+      }, 5000);
     }
   }
 
-  // TODO - Move messages into an ASRouter message provider. See bug 1848251.
-  AWGetFeatureConfig() {
-    return Cu.cloneInto(OPTIN_DEFAULT, this.contentWindow);
+  AWSetProductURL(productUrl) {
+    let content = JSON.parse(JSON.stringify(OPTIN_DEFAULT));
+    const [optInScreen] = content.screens;
+
+    if (productUrl) {
+      switch (
+        productUrl // Insert the productUrl into content
+      ) {
+        case "www.amazon.com":
+          optInScreen.content.subtitle.args = {
+            currentSite: "Amazon",
+            secondSite: "Walmart",
+            thirdSite: "Best Buy",
+          };
+          break;
+        case "www.walmart.com":
+          optInScreen.content.subtitle.args = {
+            currentSite: "Walmart",
+            secondSite: "Amazon",
+            thirdSite: "Best Buy",
+          };
+          break;
+        case "www.bestbuy.com":
+          optInScreen.content.subtitle.args = {
+            currentSite: "Best Buy",
+            secondSite: "Amazon",
+            thirdSite: "Walmart",
+          };
+          break;
+        default:
+          optInScreen.content.subtitle.args = {
+            currentSite: "Amazon",
+            secondSite: "Walmart",
+            thirdSite: "Best Buy",
+          };
+      }
+    }
+
+    optInDynamicContent = content;
   }
 
   AWEnsureLangPackInstalled() {}

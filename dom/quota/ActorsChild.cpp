@@ -361,13 +361,10 @@ mozilla::ipc::IPCResult QuotaRequestChild::Recv__delete__(
           aResponse.get_TemporaryStorageInitializedResponse().initialized());
       break;
 
-    case RequestResponse::TInitResponse:
     case RequestResponse::TInitTemporaryStorageResponse:
     case RequestResponse::TClearOriginResponse:
     case RequestResponse::TResetOriginResponse:
     case RequestResponse::TClearDataResponse:
-    case RequestResponse::TClearAllResponse:
-    case RequestResponse::TResetAllResponse:
     case RequestResponse::TPersistResponse:
       HandleResponse();
       break;

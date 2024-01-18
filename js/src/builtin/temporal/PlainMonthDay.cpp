@@ -8,9 +8,6 @@
 
 #include "mozilla/Assertions.h"
 
-#include <cstdlib>
-#include <initializer_list>
-#include <stddef.h>
 #include <utility>
 
 #include "jsnum.h"
@@ -26,6 +23,7 @@
 #include "builtin/temporal/TemporalFields.h"
 #include "builtin/temporal/TemporalParser.h"
 #include "builtin/temporal/TemporalTypes.h"
+#include "builtin/temporal/ToString.h"
 #include "builtin/temporal/Wrapped.h"
 #include "builtin/temporal/ZonedDateTime.h"
 #include "ds/IdValuePair.h"
@@ -35,7 +33,6 @@
 #include "js/CallArgs.h"
 #include "js/CallNonGenericMethod.h"
 #include "js/Class.h"
-#include "js/Conversions.h"
 #include "js/ErrorReport.h"
 #include "js/friend/ErrorMessages.h"
 #include "js/GCVector.h"
@@ -45,8 +42,7 @@
 #include "js/RootingAPI.h"
 #include "js/TypeDecls.h"
 #include "js/Value.h"
-#include "util/StringBuffer.h"
-#include "vm/Compartment.h"
+#include "vm/BytecodeUtil.h"
 #include "vm/GlobalObject.h"
 #include "vm/JSAtomState.h"
 #include "vm/JSContext.h"
@@ -57,7 +53,6 @@
 #include "vm/JSObject-inl.h"
 #include "vm/NativeObject-inl.h"
 #include "vm/ObjectOperations-inl.h"
-#include "vm/Realm-inl.h"
 
 using namespace js;
 using namespace js::temporal;
@@ -282,10 +277,12 @@ static Wrapped<PlainMonthDayObject*> ToTemporalMonthDay(
   }
 
   // Step 6.
-  Rooted<JSString*> string(cx, JS::ToString(cx, item));
-  if (!string) {
+  if (!item.isString()) {
+    ReportValueError(cx, JSMSG_UNEXPECTED_TYPE, JSDVG_IGNORE_STACK, item,
+                     nullptr, "not a string");
     return nullptr;
   }
+  Rooted<JSString*> string(cx, item.toString());
 
   // Step 7.
   PlainDate result;
@@ -336,81 +333,6 @@ static bool ToTemporalMonthDay(JSContext* cx, Handle<Value> item,
   *result = ToPlainDate(obj);
   calendar.set(obj->calendar());
   return calendar.wrap(cx);
-}
-
-/**
- * TemporalMonthDayToString ( monthDay, showCalendar )
- */
-static JSString* TemporalMonthDayToString(JSContext* cx,
-                                          Handle<PlainMonthDayObject*> monthDay,
-                                          CalendarOption showCalendar) {
-  // Steps 1-2. (Not applicable in our implementation.)
-
-  // Note: This doesn't reserve too much space, because the string builder
-  // already internally reserves space for 64 characters.
-  constexpr size_t datePart = 1 + 6 + 1 + 2 + 1 + 2;  // 13
-  constexpr size_t calendarPart = 30;
-
-  JSStringBuilder result(cx);
-
-  if (!result.reserve(datePart + calendarPart)) {
-    return nullptr;
-  }
-
-  // Step 6. (Reordered)
-  Rooted<CalendarValue> calendar(cx, monthDay->calendar());
-  JSString* str = ToTemporalCalendarIdentifier(cx, calendar);
-  if (!str) {
-    return nullptr;
-  }
-
-  Rooted<JSLinearString*> calendarIdentifier(cx, str->ensureLinear(cx));
-  if (!calendarIdentifier) {
-    return nullptr;
-  }
-
-  // Step 7. (Reordered)
-  if (showCalendar == CalendarOption::Always ||
-      showCalendar == CalendarOption::Critical ||
-      !StringEqualsLiteral(calendarIdentifier, "iso8601")) {
-    int32_t year = monthDay->isoYear();
-    if (0 <= year && year <= 9999) {
-      result.infallibleAppend(char('0' + (year / 1000)));
-      result.infallibleAppend(char('0' + (year % 1000) / 100));
-      result.infallibleAppend(char('0' + (year % 100) / 10));
-      result.infallibleAppend(char('0' + (year % 10)));
-    } else {
-      result.infallibleAppend(year < 0 ? '-' : '+');
-
-      year = std::abs(year);
-      result.infallibleAppend(char('0' + (year / 100000)));
-      result.infallibleAppend(char('0' + (year % 100000) / 10000));
-      result.infallibleAppend(char('0' + (year % 10000) / 1000));
-      result.infallibleAppend(char('0' + (year % 1000) / 100));
-      result.infallibleAppend(char('0' + (year % 100) / 10));
-      result.infallibleAppend(char('0' + (year % 10)));
-    }
-    result.infallibleAppend('-');
-  }
-
-  // Step 3.
-  int32_t month = monthDay->isoMonth();
-  result.infallibleAppend(char('0' + (month / 10)));
-  result.infallibleAppend(char('0' + (month % 10)));
-
-  // Steps 4-5.
-  int32_t day = monthDay->isoDay();
-  result.infallibleAppend('-');
-  result.infallibleAppend(char('0' + (day / 10)));
-  result.infallibleAppend(char('0' + (day % 10)));
-
-  // Steps 8-9.
-  if (!FormatCalendarAnnotation(cx, result, calendarIdentifier, showCalendar)) {
-    return nullptr;
-  }
-
-  // Step 10.
-  return result.finishString();
 }
 
 /**
@@ -872,14 +794,15 @@ static bool PlainMonthDay_toPlainDate(JSContext* cx, const CallArgs& args) {
   }
 
   // Step 10.
-  JS::RootedVector<PropertyKey> mergedFieldNames(cx);
-  if (!MergeTemporalFieldNames(receiverFieldNames, inputFieldNames,
-                               mergedFieldNames.get())) {
+  JS::RootedVector<PropertyKey> concatenatedFieldNames(cx);
+  if (!ConcatTemporalFieldNames(receiverFieldNames, inputFieldNames,
+                                concatenatedFieldNames.get())) {
     return false;
   }
 
   // Step 11.
-  mergedFields = PrepareTemporalFields(cx, mergedFields, mergedFieldNames);
+  mergedFields =
+      PrepareTemporalFields(cx, mergedFields, concatenatedFieldNames);
   if (!mergedFields) {
     return false;
   }

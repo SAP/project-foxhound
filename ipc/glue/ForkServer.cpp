@@ -14,6 +14,7 @@
 #include "mozilla/ipc/FileDescriptor.h"
 #include "mozilla/ipc/IPDLParamTraits.h"
 #include "mozilla/ipc/ProtocolMessageUtils.h"
+#include "mozilla/ipc/SetProcessTitle.h"
 #include "nsTraceRefcnt.h"
 
 #include <fcntl.h>
@@ -256,6 +257,8 @@ bool ForkServer::RunForkServer(int* aArgc, char*** aArgv) {
   bool sleep_newproc = !!getenv("MOZ_FORKSERVER_WAIT_GDB_NEWPROC");
 #endif
 
+  SetProcessTitleInit(*aArgv);
+
   // Do this before NS_LogInit() to avoid log files taking lower
   // FDs.
   ForkServer forkserver;
@@ -273,6 +276,7 @@ bool ForkServer::RunForkServer(int* aArgc, char*** aArgv) {
       // The server has stopped.
       MOZ_LOG(gForkServiceLog, LogLevel::Verbose,
               ("Terminate the fork server"));
+      Omnijar::CleanUp();
       NS_LogTerm();
       return true;
     }
@@ -299,8 +303,6 @@ bool ForkServer::RunForkServer(int* aArgc, char*** aArgv) {
   // content process by closing wrong file descriptors.
   forkserver.mAppProcBuilder->InitAppProcess(aArgc, aArgv);
   forkserver.mAppProcBuilder.reset();
-
-  MOZ_ASSERT("tab"_ns == (*aArgv)[*aArgc - 1], "Only |tab| is allowed!");
 
   // Open log files again with right names and the new PID.
   nsTraceRefcnt::ResetLogFiles((*aArgv)[*aArgc - 1]);

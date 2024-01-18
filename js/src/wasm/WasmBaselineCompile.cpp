@@ -1639,6 +1639,20 @@ void BaseCompiler::callRef(const Stk& calleeRef, const FunctionCall& call,
   loadRef(calleeRef, RegRef(WasmCallRefReg));
   masm.wasmCallRef(desc, callee, fastCallOffset, slowCallOffset);
 }
+
+#  ifdef ENABLE_WASM_TAIL_CALLS
+void BaseCompiler::returnCallRef(const Stk& calleeRef, const FunctionCall& call,
+                                 const FuncType* funcType) {
+  CallSiteDesc desc(bytecodeOffset(), CallSiteDesc::FuncRef);
+  CalleeDesc callee = CalleeDesc::wasmFuncRef();
+
+  loadRef(calleeRef, RegRef(WasmCallRefReg));
+  ReturnCallAdjustmentInfo retCallInfo =
+      BuildReturnCallAdjustmentInfo(this->funcType(), *funcType);
+  masm.wasmReturnCallRef(desc, callee, retCallInfo);
+}
+#  endif
+
 #endif
 
 // Precondition: sync()
@@ -4088,8 +4102,8 @@ bool BaseCompiler::emitCatch() {
 
   // Extract the arguments in the exception package and push them.
   const SharedTagType& tagType = moduleEnv_.tags[tagIndex].type;
-  const ValTypeVector& params = tagType->argTypes_;
-  const TagOffsetVector& offsets = tagType->argOffsets_;
+  const ValTypeVector& params = tagType->argTypes();
+  const TagOffsetVector& offsets = tagType->argOffsets();
 
   // The landing pad uses the block return protocol to communicate the
   // exception object pointer to the catch block.
@@ -4428,7 +4442,7 @@ bool BaseCompiler::emitThrow() {
 
   const TagDesc& tagDesc = moduleEnv_.tags[tagIndex];
   const ResultType& params = tagDesc.type->resultType();
-  const TagOffsetVector& offsets = tagDesc.type->argOffsets_;
+  const TagOffsetVector& offsets = tagDesc.type->argOffsets();
 
   // Load the tag object
 #ifdef RABALDR_PIN_INSTANCE
@@ -4803,8 +4817,7 @@ bool BaseCompiler::emitCall() {
 bool BaseCompiler::emitReturnCall() {
   uint32_t funcIndex;
   BaseNothingVector args_{};
-  BaseNothingVector unused_values{};
-  if (!iter_.readReturnCall(&funcIndex, &args_, &unused_values)) {
+  if (!iter_.readReturnCall(&funcIndex, &args_)) {
     return false;
   }
 
@@ -4920,9 +4933,8 @@ bool BaseCompiler::emitReturnCallIndirect() {
   uint32_t tableIndex;
   Nothing callee_;
   BaseNothingVector args_{};
-  BaseNothingVector unused_values{};
   if (!iter_.readReturnCallIndirect(&funcTypeIndex, &tableIndex, &callee_,
-                                    &args_, &unused_values)) {
+                                    &args_)) {
     return false;
   }
 
@@ -5022,6 +5034,55 @@ bool BaseCompiler::emitCallRef() {
   captureCallResultRegisters(resultType);
   return pushCallResults(baselineCall, resultType, results);
 }
+
+#  ifdef ENABLE_WASM_TAIL_CALLS
+bool BaseCompiler::emitReturnCallRef() {
+  const FuncType* funcType;
+  Nothing unused_callee;
+  BaseNothingVector unused_args{};
+  if (!iter_.readReturnCallRef(&funcType, &unused_callee, &unused_args)) {
+    return false;
+  }
+
+  if (deadCode_) {
+    return true;
+  }
+
+  sync();
+
+  // Stack: ... arg1 .. argn callee
+
+  uint32_t numArgs = funcType->args().length() + 1;
+
+  ResultType resultType(ResultType::Vector(funcType->results()));
+  StackResultsLoc results;
+  if (!pushStackResultsForCall(resultType, RegPtr(ABINonArgReg0), &results)) {
+    return false;
+  }
+
+  FunctionCall baselineCall{};
+  // State and realm are restored as needed by by callRef (really by
+  // MacroAssembler::wasmCallRef).
+  beginCall(baselineCall, UseABI::Wasm, RestoreRegisterStateAndRealm::False);
+
+  if (!emitCallArgs(funcType->args(), NormalCallResults(results), &baselineCall,
+                    CalleeOnStack::True)) {
+    return false;
+  }
+
+  const Stk& callee = peek(results.count());
+  returnCallRef(callee, baselineCall, funcType);
+
+  MOZ_ASSERT(stackMapGenerator_.framePushedExcludingOutboundCallArgs.isSome());
+  stackMapGenerator_.framePushedExcludingOutboundCallArgs.reset();
+
+  popValueStackBy(numArgs);
+
+  deadCode_ = true;
+  return true;
+}
+#  endif
+
 #endif
 
 void BaseCompiler::emitRound(RoundingMode roundingMode, ValType operandType) {
@@ -5930,7 +5991,7 @@ bool BaseCompiler::emitRefAsNonNull() {
 
   RegRef rp = popRef();
   Label ok;
-  masm.branchTestPtr(Assembler::NonZero, rp, rp, &ok);
+  masm.branchWasmAnyRefIsNull(false, rp, &ok);
   trap(Trap::NullPointerDereference);
   masm.bind(&ok);
   pushRef(rp);
@@ -7396,9 +7457,9 @@ bool BaseCompiler::emitArraySet() {
   return true;
 }
 
-bool BaseCompiler::emitArrayLen(bool decodeIgnoredTypeIndex) {
+bool BaseCompiler::emitArrayLen() {
   Nothing nothing;
-  if (!iter_.readArrayLen(decodeIgnoredTypeIndex, &nothing)) {
+  if (!iter_.readArrayLen(&nothing)) {
     return false;
   }
 
@@ -7467,10 +7528,15 @@ bool BaseCompiler::emitArrayCopy() {
   return emitInstanceCall(SASigArrayCopy);
 }
 
-bool BaseCompiler::emitI31New() {
+bool BaseCompiler::emitRefI31() {
   Nothing value;
-  if (!iter_.readConversion(ValType::I32, ValType(RefType::i31()), &value)) {
+  if (!iter_.readConversion(ValType::I32,
+                            ValType(RefType::i31().asNonNullable()), &value)) {
     return false;
+  }
+
+  if (deadCode_) {
+    return true;
   }
 
   RegI32 intValue = popI32();
@@ -7489,8 +7555,18 @@ bool BaseCompiler::emitI31Get(FieldWideningOp wideningOp) {
     return false;
   }
 
+  if (deadCode_) {
+    return true;
+  }
+
   RegRef i31Value = popRef();
   RegI32 intValue = needI32();
+
+  Label success;
+  masm.branchWasmAnyRefIsNull(false, i31Value, &success);
+  trap(Trap::NullPointerDereference);
+  masm.bind(&success);
+
   if (wideningOp == FieldWideningOp::Signed) {
     masm.convertWasmI31RefTo32Signed(i31Value, intValue);
   } else {
@@ -7529,33 +7605,14 @@ void BaseCompiler::emitRefCastCommon(RefType sourceType, RefType destType) {
   pushRef(ref);
 }
 
-bool BaseCompiler::emitRefTestV5() {
-  Nothing nothing;
-  RefType sourceType;
-  uint32_t typeIndex;
-  if (!iter_.readRefTestV5(&sourceType, &typeIndex, &nothing)) {
-    return false;
-  }
-
-  if (deadCode_) {
-    return true;
-  }
-
-  const TypeDef& typeDef = moduleEnv_.types->type(typeIndex);
-  RefType destType = RefType::fromTypeDef(&typeDef, /*nullable=*/false);
-  emitRefTestCommon(sourceType, destType);
-
-  return true;
-}
-
 void BaseCompiler::branchIfRefSubtype(RegRef ref, RefType sourceType,
                                       RefType destType, Label* label,
                                       bool onSuccess) {
   if (destType.isAnyHierarchy()) {
-    RegPtr superSuperTypeVector;
+    RegPtr superSTV;
     if (MacroAssembler::needSuperSTVForBranchWasmRefIsSubtypeAny(destType)) {
       uint32_t typeIndex = moduleEnv_.types->indexOf(*destType.typeDef());
-      superSuperTypeVector = loadSuperTypeVector(typeIndex);
+      superSTV = loadSuperTypeVector(typeIndex);
     }
     RegI32 scratch1 =
         MacroAssembler::needScratch1ForBranchWasmRefIsSubtypeAny(destType)
@@ -7567,7 +7624,7 @@ void BaseCompiler::branchIfRefSubtype(RegRef ref, RefType sourceType,
             : RegI32::Invalid();
 
     masm.branchWasmRefIsSubtypeAny(ref, sourceType, destType, label, onSuccess,
-                                   superSuperTypeVector, scratch1, scratch2);
+                                   superSTV, scratch1, scratch2);
 
     if (scratch2.isValid()) {
       freeI32(scratch2);
@@ -7575,16 +7632,16 @@ void BaseCompiler::branchIfRefSubtype(RegRef ref, RefType sourceType,
     if (scratch1.isValid()) {
       freeI32(scratch1);
     }
-    if (superSuperTypeVector.isValid()) {
-      freePtr(superSuperTypeVector);
+    if (superSTV.isValid()) {
+      freePtr(superSTV);
     }
   } else if (destType.isFuncHierarchy()) {
-    RegPtr superSuperTypeVector;
+    RegPtr superSTV;
     RegI32 scratch1;
     if (MacroAssembler::needSuperSTVAndScratch1ForBranchWasmRefIsSubtypeFunc(
             destType)) {
       uint32_t typeIndex = moduleEnv_.types->indexOf(*destType.typeDef());
-      superSuperTypeVector = loadSuperTypeVector(typeIndex);
+      superSTV = loadSuperTypeVector(typeIndex);
       scratch1 = needI32();
     }
     RegI32 scratch2 =
@@ -7593,7 +7650,7 @@ void BaseCompiler::branchIfRefSubtype(RegRef ref, RefType sourceType,
             : RegI32::Invalid();
 
     masm.branchWasmRefIsSubtypeFunc(ref, sourceType, destType, label, onSuccess,
-                                    superSuperTypeVector, scratch1, scratch2);
+                                    superSTV, scratch1, scratch2);
 
     if (scratch2.isValid()) {
       freeI32(scratch2);
@@ -7601,8 +7658,8 @@ void BaseCompiler::branchIfRefSubtype(RegRef ref, RefType sourceType,
     if (scratch1.isValid()) {
       freeI32(scratch1);
     }
-    if (superSuperTypeVector.isValid()) {
-      freePtr(superSuperTypeVector);
+    if (superSTV.isValid()) {
+      freePtr(superSTV);
     }
   } else if (destType.isExternHierarchy()) {
     masm.branchWasmRefIsSubtypeExtern(ref, sourceType, destType, label,
@@ -7610,25 +7667,6 @@ void BaseCompiler::branchIfRefSubtype(RegRef ref, RefType sourceType,
   } else {
     MOZ_CRASH("unknown type hierarchy in cast");
   }
-}
-
-bool BaseCompiler::emitRefCastV5() {
-  Nothing nothing;
-  RefType sourceType;
-  uint32_t typeIndex;
-  if (!iter_.readRefCastV5(&sourceType, &typeIndex, &nothing)) {
-    return false;
-  }
-
-  if (deadCode_) {
-    return true;
-  }
-
-  const TypeDef& typeDef = moduleEnv_.types->type(typeIndex);
-  RefType destType = RefType::fromTypeDef(&typeDef, /*nullable=*/true);
-  emitRefCastCommon(sourceType, destType);
-
-  return true;
 }
 
 bool BaseCompiler::emitRefTest(bool nullable) {
@@ -7722,100 +7760,6 @@ bool BaseCompiler::emitBrOnCast(bool onSuccess) {
 
   return emitBrOnCastCommon(onSuccess, labelRelativeDepth, labelType,
                             sourceType, destType);
-}
-
-bool BaseCompiler::emitBrOnCastV5(bool onSuccess) {
-  MOZ_ASSERT(!hasLatentOp());
-
-  uint32_t labelRelativeDepth;
-  RefType sourceType;
-  uint32_t castTypeIndex;
-  ResultType labelType;
-  BaseNothingVector unused_values{};
-  if (onSuccess
-          ? !iter_.readBrOnCastV5(&labelRelativeDepth, &sourceType,
-                                  &castTypeIndex, &labelType, &unused_values)
-          : !iter_.readBrOnCastFailV5(&labelRelativeDepth, &sourceType,
-                                      &castTypeIndex, &labelType,
-                                      &unused_values)) {
-    return false;
-  }
-
-  if (deadCode_) {
-    return true;
-  }
-
-  const TypeDef& typeDef = moduleEnv_.types->type(castTypeIndex);
-  RefType destType = RefType::fromTypeDef(&typeDef, false);
-  return emitBrOnCastCommon(onSuccess, labelRelativeDepth, labelType,
-                            sourceType, destType);
-}
-
-bool BaseCompiler::emitBrOnCastHeapV5(bool onSuccess, bool nullable) {
-  MOZ_ASSERT(!hasLatentOp());
-
-  uint32_t labelRelativeDepth;
-  RefType sourceType;
-  RefType destType;
-  ResultType labelType;
-  BaseNothingVector unused_values{};
-  if (onSuccess ? !iter_.readBrOnCastHeapV5(nullable, &labelRelativeDepth,
-                                            &sourceType, &destType, &labelType,
-                                            &unused_values)
-                : !iter_.readBrOnCastFailHeapV5(nullable, &labelRelativeDepth,
-                                                &sourceType, &destType,
-                                                &labelType, &unused_values)) {
-    return false;
-  }
-
-  if (deadCode_) {
-    return true;
-  }
-
-  return emitBrOnCastCommon(onSuccess, labelRelativeDepth, labelType,
-                            sourceType, destType);
-}
-
-bool BaseCompiler::emitRefAsStructV5() {
-  Nothing nothing;
-  return iter_.readConversion(ValType(RefType::any()),
-                              ValType(RefType::struct_().asNonNullable()),
-                              &nothing);
-}
-
-bool BaseCompiler::emitBrOnNonStructV5() {
-  MOZ_ASSERT(!hasLatentOp());
-
-  uint32_t labelRelativeDepth;
-  ResultType labelType;
-  BaseNothingVector unused_values{};
-  if (!iter_.readBrOnNonStructV5(&labelRelativeDepth, &labelType,
-                                 &unused_values)) {
-    return false;
-  }
-
-  if (deadCode_) {
-    return true;
-  }
-
-  Control& target = controlItem(labelRelativeDepth);
-  target.bceSafeOnExit &= bceSafe_;
-
-  BranchState b(&target.label, target.stackHeight, InvertBranch(false),
-                labelType);
-  if (b.hasBlockResults()) {
-    needResultRegisters(b.resultType);
-  }
-  RegI32 condition = needI32();
-  masm.move32(Imm32(1), condition);
-  if (b.hasBlockResults()) {
-    freeResultRegisters(b.resultType);
-  }
-  if (!jumpConditionalWithResults(&b, Assembler::Equal, condition, Imm32(0))) {
-    return false;
-  }
-  freeI32(condition);
-  return true;
 }
 
 bool BaseCompiler::emitExternInternalize() {
@@ -9374,6 +9318,14 @@ bool BaseCompiler::emitBody() {
           return iter_.unrecognizedOpcode(&op);
         }
         CHECK_NEXT(emitCallRef());
+#  ifdef ENABLE_WASM_TAIL_CALLS
+      case uint16_t(Op::ReturnCallRef):
+        if (!moduleEnv_.functionReferencesEnabled() ||
+            !moduleEnv_.tailCallsEnabled()) {
+          return iter_.unrecognizedOpcode(&op);
+        }
+        CHECK_NEXT(emitReturnCallRef());
+#  endif
 #endif
 
       // Locals and globals
@@ -9968,7 +9920,6 @@ bool BaseCompiler::emitBody() {
             CHECK_NEXT(emitArrayNewDefault());
           case uint32_t(GcOp::ArrayNewData):
             CHECK_NEXT(emitArrayNewData());
-          case uint32_t(GcOp::ArrayInitFromElemStaticV5):
           case uint32_t(GcOp::ArrayNewElem):
             CHECK_NEXT(emitArrayNewElem());
           case uint32_t(GcOp::ArrayGet):
@@ -9979,22 +9930,16 @@ bool BaseCompiler::emitBody() {
             CHECK_NEXT(emitArrayGet(FieldWideningOp::Unsigned));
           case uint32_t(GcOp::ArraySet):
             CHECK_NEXT(emitArraySet());
-          case uint32_t(GcOp::ArrayLenWithTypeIndex):
-            CHECK_NEXT(emitArrayLen(/*decodeIgnoredTypeIndex=*/true));
           case uint32_t(GcOp::ArrayLen):
-            CHECK_NEXT(emitArrayLen(/*decodeIgnoredTypeIndex=*/false));
+            CHECK_NEXT(emitArrayLen());
           case uint32_t(GcOp::ArrayCopy):
             CHECK_NEXT(emitArrayCopy());
-          case uint32_t(GcOp::I31New):
-            CHECK_NEXT(emitI31New());
+          case uint32_t(GcOp::RefI31):
+            CHECK_NEXT(emitRefI31());
           case uint32_t(GcOp::I31GetS):
             CHECK_NEXT(emitI31Get(FieldWideningOp::Signed));
           case uint32_t(GcOp::I31GetU):
             CHECK_NEXT(emitI31Get(FieldWideningOp::Unsigned));
-          case uint32_t(GcOp::RefTestV5):
-            CHECK_NEXT(emitRefTestV5());
-          case uint32_t(GcOp::RefCastV5):
-            CHECK_NEXT(emitRefCastV5());
           case uint32_t(GcOp::RefTest):
             CHECK_NEXT(emitRefTest(/*nullable=*/false));
           case uint32_t(GcOp::RefTestNull):
@@ -10007,26 +9952,6 @@ bool BaseCompiler::emitBody() {
             CHECK_NEXT(emitBrOnCast(/*onSuccess=*/true));
           case uint32_t(GcOp::BrOnCastFail):
             CHECK_NEXT(emitBrOnCast(/*onSuccess=*/false));
-          case uint32_t(GcOp::BrOnCastV5):
-            CHECK_NEXT(emitBrOnCastV5(/*onSuccess=*/true));
-          case uint32_t(GcOp::BrOnCastFailV5):
-            CHECK_NEXT(emitBrOnCastV5(/*onSuccess=*/false));
-          case uint32_t(GcOp::BrOnCastHeapV5):
-            CHECK_NEXT(
-                emitBrOnCastHeapV5(/*onSuccess=*/true, /*nullable=*/false));
-          case uint32_t(GcOp::BrOnCastHeapNullV5):
-            CHECK_NEXT(
-                emitBrOnCastHeapV5(/*onSuccess=*/true, /*nullable=*/true));
-          case uint32_t(GcOp::BrOnCastFailHeapV5):
-            CHECK_NEXT(
-                emitBrOnCastHeapV5(/*onSuccess=*/false, /*nullable=*/false));
-          case uint32_t(GcOp::BrOnCastFailHeapNullV5):
-            CHECK_NEXT(
-                emitBrOnCastHeapV5(/*onSuccess=*/false, /*nullable=*/true));
-          case uint32_t(GcOp::RefAsStructV5):
-            CHECK_NEXT(emitRefAsStructV5());
-          case uint32_t(GcOp::BrOnNonStructV5):
-            CHECK_NEXT(emitBrOnNonStructV5());
           case uint16_t(GcOp::ExternInternalize):
             CHECK_NEXT(emitExternInternalize());
           case uint16_t(GcOp::ExternExternalize):

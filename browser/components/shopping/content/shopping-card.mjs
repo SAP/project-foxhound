@@ -34,10 +34,11 @@ class ShoppingCard extends MozLitElement {
       if (this.type === "accordion") {
         return html`
           <div id="label-wrapper">
-            <span id="header">${this.label}</span>
+            <h2 id="header">${this.label}</h2>
             <button
               tabindex="-1"
               class="icon chevron-icon ghost-button"
+              aria-labelledby="header"
               @click=${this.handleChevronButtonClick}
             ></button>
           </div>
@@ -45,7 +46,8 @@ class ShoppingCard extends MozLitElement {
       }
       return html`
         <div id="label-wrapper">
-          <span id="header">${this.label}</span><slot name="rating"></slot>
+          <h2 id="header">${this.label}</h2>
+          <slot name="rating"></slot>
         </div>
       `;
     }
@@ -55,7 +57,7 @@ class ShoppingCard extends MozLitElement {
   cardTemplate() {
     if (this.type === "accordion") {
       return html`
-        <details id="shopping-details">
+        <details id="shopping-details" @toggle=${this.onCardToggle}>
           <summary>${this.labelTemplate()}</summary>
           <div id="content"><slot name="content"></slot></div>
         </details>
@@ -74,6 +76,7 @@ class ShoppingCard extends MozLitElement {
           <footer>
             <button
               aria-controls="content"
+              class="small-button"
               data-l10n-id="shopping-show-more-button"
               @click=${this.handleShowMoreButtonClick}
             ></button>
@@ -89,6 +92,14 @@ class ShoppingCard extends MozLitElement {
     `;
   }
 
+  onCardToggle() {
+    const buttonAction = this.detailsEl.open ? "expanded" : "collapsed";
+    this.recordChevronButtonGleanEvent([
+      this.getAttribute("data-l10n-id"),
+      buttonAction,
+    ]);
+  }
+
   handleShowMoreButtonClick(e) {
     this._isExpanded = !this._isExpanded;
     // toggle show more/show less text
@@ -101,17 +112,19 @@ class ShoppingCard extends MozLitElement {
     // toggle content expanded attribute
     e.target.parentElement.parentElement.attributes.expanded.value =
       this._isExpanded;
+
+    let action = this._isExpanded ? "expanded" : "collapsed";
+    this.dispatchEvent(
+      new CustomEvent("ShoppingTelemetryEvent", {
+        composed: true,
+        bubbles: true,
+        detail: ["surfaceShowMoreReviewsButtonClicked", action],
+      })
+    );
   }
 
   handleChevronButtonClick() {
     this.detailsEl.open = !this.detailsEl.open;
-    // here, open represents the state, so we want the inverse for which
-    // action the user is taking.
-    const buttonAction = this.detailsEl.open ? "expand" : "collapse";
-    this.recordChevronButtonGleanEvent([
-      this.getAttribute("data-l10n-id"),
-      buttonAction,
-    ]);
   }
 
   render() {

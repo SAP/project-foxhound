@@ -26,6 +26,7 @@ class RecommendedAd extends MozLitElement {
   }
 
   disconnectedCallback() {
+    super.disconnectedCallback();
     this.clearRecommendationAdTimeout();
     this.revokeImageUrl();
   }
@@ -110,6 +111,7 @@ class RecommendedAd extends MozLitElement {
           </div>
         </a>
       </shopping-card>
+      <p data-l10n-id="ad-by-fakespot"></p>
     `;
   }
 }

@@ -104,7 +104,7 @@ notes = "This is a first-party crate which is also published to crates.io. We ce
 audit-as-crates-io = true
 notes = "This is a pinned version of the upstream code, presumably to get a fix that hadn't been released yet. We should consider switching to the latest official release."
 
-[policy."minidump-common:0.17.0@git:87a29fba5e19cfae5ebf73a57ba31504a3872545"]
+[policy."minidump-common:0.17.0@git:6ae42a7f992e8a88ebee661bc77bcedb95cd671f"]
 audit-as-crates-io = true
 notes = "Unreleased upstream."
 
@@ -155,10 +155,6 @@ audit-as-crates-io = false
 audit-as-crates-io = true
 notes = "wgpu-core pins this crate."
 
-[policy.packed_simd_2]
-audit-as-crates-io = true
-notes = "Based on upstream, see bug 1719674."
-
 [policy.peek-poke]
 audit-as-crates-io = false
 
@@ -176,6 +172,10 @@ notes = "This is a first-party crate which is entirely unrelated to the crates.i
 [policy.qcms]
 audit-as-crates-io = true
 notes = "This is a first-party crate which is also published to crates.io, but we should publish audits for it for the benefit of the ecosystem."
+
+[policy.rayon-core]
+audit-as-crates-io = true
+notes = "Identical to upstream, with a Mozilla-authored PR, see Cargo.toml comment for details"
 
 [policy.rure]
 audit-as-crates-io = true
@@ -651,8 +651,8 @@ criteria = "safe-to-deploy"
 version = "0.4.1"
 criteria = "safe-to-deploy"
 
-[[exemptions.packed_simd_2]]
-version = "0.3.7"
+[[exemptions.packed_simd]]
+version = "0.3.8"
 criteria = "safe-to-deploy"
 
 [[exemptions.phf]]
@@ -709,10 +709,6 @@ criteria = "safe-to-deploy"
 
 [[exemptions.rand]]
 version = "0.8.5"
-criteria = "safe-to-deploy"
-
-[[exemptions.rand_chacha]]
-version = "0.3.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.remove_dir_all]]

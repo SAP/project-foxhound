@@ -1954,7 +1954,6 @@ static bool str_normalize(JSContext* cx, unsigned argc, Value* vp) {
 
 #endif  // JS_HAS_INTL_API
 
-#ifdef NIGHTLY_BUILD
 /**
  * IsStringWellFormedUnicode ( string )
  * https://tc39.es/ecma262/#sec-isstringwellformedunicode
@@ -2084,8 +2083,6 @@ static bool str_toWellFormed(JSContext* cx, unsigned argc, Value* vp) {
 static const JSFunctionSpec wellFormed_functions[] = {
     JS_FN("isWellFormed", str_isWellFormed, 0, 0),
     JS_FN("toWellFormed", str_toWellFormed, 0, 0), JS_FS_END};
-
-#endif  // NIGHTLY_BUILD
 
 static bool str_charAt(JSContext* cx, unsigned argc, Value* vp) {
   AutoJSMethodProfilerEntry pseudoFrame(cx, "String.prototype", "charAt");
@@ -3507,32 +3504,16 @@ JSString* js::StringFlatReplaceString(JSContext* cx, HandleString string,
 JSString* js::str_replace_string_raw(JSContext* cx, HandleString string,
                                      HandleString pattern,
                                      HandleString replacement) {
-  Rooted<JSLinearString*> repl(cx, replacement->ensureLinear(cx));
-  if (!repl) {
-    return nullptr;
-  }
-
   Rooted<JSLinearString*> pat(cx, pattern->ensureLinear(cx));
   if (!pat) {
     return nullptr;
-  }
-
-  size_t patternLength = pat->length();
-  int32_t match;
-  uint32_t dollarIndex;
-
-  {
-    AutoCheckCannotGC nogc;
-    dollarIndex =
-        repl->hasLatin1Chars()
-            ? FindDollarIndex(repl->latin1Chars(nogc), repl->length())
-            : FindDollarIndex(repl->twoByteChars(nogc), repl->length());
   }
 
   /*
    * |string| could be a rope, so we want to avoid flattening it for as
    * long as possible.
    */
+  int32_t match;
   if (string->isRope()) {
     if (!RopeMatch(cx, &string->asRope(), pat, &match)) {
       return nullptr;
@@ -3545,6 +3526,21 @@ JSString* js::str_replace_string_raw(JSContext* cx, HandleString string,
     // TaintFox: copy string to add taint operation later on
     return NewDependentString(cx, string, 0, string->length());
   }
+
+  Rooted<JSLinearString*> repl(cx, replacement->ensureLinear(cx));
+  if (!repl) {
+    return nullptr;
+  }
+  uint32_t dollarIndex;
+  {
+    AutoCheckCannotGC nogc;
+    dollarIndex =
+        repl->hasLatin1Chars()
+            ? FindDollarIndex(repl->latin1Chars(nogc), repl->length())
+            : FindDollarIndex(repl->twoByteChars(nogc), repl->length());
+  }
+
+  size_t patternLength = pat->length();
 
   if (dollarIndex != UINT32_MAX) {
     repl = InterpretDollarReplacement(cx, string, repl, dollarIndex, match,
@@ -4542,13 +4538,11 @@ static bool StringClassFinish(JSContext* cx, HandleObject ctor,
     return false;
   }
 
-#ifdef NIGHTLY_BUILD
   // Define isWellFormed/toWellFormed functions.
   if (cx->realm()->creationOptions().getWellFormedUnicodeStringsEnabled() &&
       !JS_DefineFunctions(cx, nativeProto, wellFormed_functions)) {
     return false;
   }
-#endif
 
   return true;
 }

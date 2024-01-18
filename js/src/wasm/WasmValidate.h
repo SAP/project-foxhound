@@ -66,7 +66,7 @@ struct ModuleEnvironment {
   ImportVector imports;
   ExportVector exports;
   Maybe<uint32_t> startFuncIndex;
-  ElemSegmentVector elemSegments;
+  ModuleElemSegmentVector elemSegments;
   MaybeSectionRange codeSection;
 
   // The start offset of the FuncImportInstanceData[] section of the instance
@@ -194,13 +194,20 @@ struct ModuleEnvironment {
 // enums.
 class ElemSegmentFlags {
   enum class Flags : uint32_t {
+    // 0 means active. 1 means (passive or declared), disambiguated by the next
+    // bit.
     Passive = 0x1,
-    WithIndexOrDeclared = 0x2,
-    ElemExpression = 0x4,
+    // For active segments, 1 means a table index is present. Otherwise, 0 means
+    // passive and 1 means declared.
+    TableIndexOrDeclared = 0x2,
+    // 0 means element kind / index (currently only func indexes). 1 means
+    // element ref type and initializer expressions.
+    ElemExpressions = 0x4,
+
     // Below this line are convenient combinations of flags
-    KindMask = Passive | WithIndexOrDeclared,
-    PayloadMask = ElemExpression,
-    AllFlags = Passive | WithIndexOrDeclared | ElemExpression,
+    KindMask = Passive | TableIndexOrDeclared,
+    PayloadMask = ElemExpressions,
+    AllFlags = Passive | TableIndexOrDeclared | ElemExpressions,
   };
   uint32_t encoded_;
 
@@ -235,11 +242,13 @@ class NothingVector {
   Nothing unused_;
 
  public:
+  bool reserve(size_t size) { return true; }
   bool resize(size_t length) { return true; }
   Nothing& operator[](size_t) { return unused_; }
   Nothing& back() { return unused_; }
   size_t length() const { return 0; }
   bool append(Nothing& nothing) { return true; }
+  void infallibleAppend(Nothing& nothing) {}
 };
 
 struct ValidatingPolicy {

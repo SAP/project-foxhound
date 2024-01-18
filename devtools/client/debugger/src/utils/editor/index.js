@@ -87,7 +87,14 @@ export function toSourceLine(sourceId, line) {
   return isWasm(sourceId) ? lineToWasmOffset(sourceId, line) : line + 1;
 }
 
-export function scrollToColumn(codeMirror, line, column) {
+export function scrollToPosition(codeMirror, line, column) {
+  // For all cases where these are on the first line and column,
+  // avoid the possibly slow computation of cursor location on large bundles.
+  if (!line && !column) {
+    codeMirror.scrollTo(0, 0);
+    return;
+  }
+
   const { top, left } = codeMirror.charCoords({ line, ch: column }, "local");
 
   if (!isVisible(codeMirror, top, left)) {

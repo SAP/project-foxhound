@@ -39,11 +39,6 @@
 #include "WebGLValidateStrings.h"
 #include <algorithm>
 
-// needed to check if current OS is lower than 10.7
-#if defined(MOZ_WIDGET_COCOA)
-#  include "nsCocoaFeatures.h"
-#endif
-
 #include "mozilla/DebugOnly.h"
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/ImageData.h"
@@ -1066,7 +1061,6 @@ static bool ValidateReadPixelsFormatAndType(
 
   ////
 
-  MOZ_ASSERT(gl->IsCurrent());
   const auto implPI = webgl->ValidImplementationColorReadPI(srcUsage);
   if (pi == implPI) return true;
 

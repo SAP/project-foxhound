@@ -317,7 +317,6 @@ BrowserChild::BrowserChild(ContentChild* aManager, const TabId& aTabId,
       mShouldSendWebProgressEventsToParent(false),
       mRenderLayers(true),
       mIsPreservingLayers(false),
-      mLayersObserverEpoch{1},
 #if defined(XP_WIN) && defined(ACCESSIBILITY)
       mNativeWindowHandle(0),
 #endif
@@ -1381,7 +1380,7 @@ mozilla::ipc::IPCResult BrowserChild::RecvNormalPriorityHandleTap(
   return RecvHandleTap(aType, aPoint, aModifiers, aGuid, aInputBlockId);
 }
 
-bool BrowserChild::NotifyAPZStateChange(
+void BrowserChild::NotifyAPZStateChange(
     const ViewID& aViewId,
     const layers::GeckoContentController::APZStateChange& aChange,
     const int& aArg, Maybe<uint64_t> aInputBlockId) {
@@ -1400,7 +1399,6 @@ bool BrowserChild::NotifyAPZStateChange(
     observerService->NotifyObservers(nullptr, "PanZoom:StateChange",
                                      u"PANNING");
   }
-  return true;
 }
 
 void BrowserChild::StartScrollbarDrag(
@@ -2470,17 +2468,7 @@ mozilla::ipc::IPCResult BrowserChild::RecvDestroy() {
   return IPC_OK();
 }
 
-mozilla::ipc::IPCResult BrowserChild::RecvRenderLayers(
-    const bool& aEnabled, const layers::LayersObserverEpoch& aEpoch) {
-  // Since requests to change the rendering state come in from both the hang
-  // monitor channel and the PContent channel, we have an ordering problem. This
-  // code ensures that we respect the order in which the requests were made and
-  // ignore stale requests.
-  if (mLayersObserverEpoch >= aEpoch) {
-    return IPC_OK();
-  }
-  mLayersObserverEpoch = aEpoch;
-
+mozilla::ipc::IPCResult BrowserChild::RecvRenderLayers(const bool& aEnabled) {
   auto clearPaintWhileInterruptingJS = MakeScopeExit([&] {
     // We might force a paint, or we might already have painted and this is a
     // no-op. In either case, once we exit this scope, we need to alert the
@@ -2488,7 +2476,7 @@ mozilla::ipc::IPCResult BrowserChild::RecvRenderLayers(
     // been a request to force paint. This is so that the BackgroundHangMonitor
     // for force painting can be made to wait again.
     if (aEnabled) {
-      ProcessHangMonitor::ClearPaintWhileInterruptingJS(mLayersObserverEpoch);
+      ProcessHangMonitor::ClearPaintWhileInterruptingJS();
     }
   });
 
@@ -2496,36 +2484,14 @@ mozilla::ipc::IPCResult BrowserChild::RecvRenderLayers(
     ProcessHangMonitor::MaybeStartPaintWhileInterruptingJS();
   }
 
-  if (mCompositorOptions) {
-    MOZ_ASSERT(mPuppetWidget);
-    RefPtr<WebRenderLayerManager> lm =
-        mPuppetWidget->GetWindowRenderer()->AsWebRender();
-    if (lm) {
-      // We send the current layer observer epoch to the compositor so that
-      // BrowserParent knows whether a layer update notification corresponds to
-      // the latest RecvRenderLayers request that was made.
-      lm->SetLayersObserverEpoch(mLayersObserverEpoch);
-    }
-  }
-
   mRenderLayers = aEnabled;
+  const bool wasVisible = IsVisible();
 
-  if (aEnabled && IsVisible()) {
-    // This request is a no-op.
-    // In this case, we still want a MozLayerTreeReady notification to fire
-    // in the parent (so that it knows that the child has updated its epoch).
-    // PaintWhileInterruptingJSNoOp does that.
-    if (IPCOpen()) {
-      Unused << SendPaintWhileInterruptingJSNoOp(mLayersObserverEpoch);
-    }
-    return IPC_OK();
-  }
-
-  // FIXME(emilio): Probably / maybe this shouldn't be needed? See the comment
-  // in MakeVisible(), having the two separate states is not great.
   UpdateVisibility();
 
-  if (!aEnabled) {
+  // If we just became visible, try to trigger a paint as soon as possible.
+  const bool becameVisible = !wasVisible && IsVisible();
+  if (!becameVisible) {
     return IPC_OK();
   }
 
@@ -2679,11 +2645,6 @@ void BrowserChild::InitRenderingState(
     ImageBridgeChild::IdentifyCompositorTextureHost(mTextureFactoryIdentifier);
     gfx::VRManagerChild::IdentifyTextureHost(mTextureFactoryIdentifier);
     InitAPZState();
-    RefPtr<WebRenderLayerManager> lm =
-        mPuppetWidget->GetWindowRenderer()->AsWebRender();
-    if (lm) {
-      lm->SetLayersObserverEpoch(mLayersObserverEpoch);
-    }
   } else {
     NS_WARNING("Fallback to FallbackRenderer");
     mLayersConnected = Some(false);
@@ -2774,15 +2735,38 @@ bool BrowserChild::IsVisible() {
 }
 
 void BrowserChild::UpdateVisibility() {
-  bool shouldBeVisible = mIsTopLevel ? mRenderLayers : mEffectsInfo.IsVisible();
-  bool isVisible = IsVisible();
-
-  if (shouldBeVisible != isVisible) {
-    if (shouldBeVisible) {
-      MakeVisible();
-    } else {
-      MakeHidden();
+  const bool shouldBeVisible = [&] {
+    // If we're known to be visibility: hidden / display: none, just return
+    // false here, we're pretty sure we don't want to be considered visible
+    // here.
+    if (mBrowsingContext && mBrowsingContext->IsUnderHiddenEmbedderElement()) {
+      return false;
     }
+    // For OOP iframes, include viewport visibility. For top-level <browser>
+    // elements we don't use this, because the front-end relies on using
+    // `mRenderLayers` when invisible for tab warming purposes.
+    //
+    // An alternative, maybe more consistent approach would be to add an opt-in
+    // into this behavior for top-level tabs managed by the tab-switcher
+    // instead...
+    if (!mIsTopLevel && !mEffectsInfo.IsVisible()) {
+      return false;
+    }
+    // If we're explicitly told not to render layers, we're also invisible.
+    if (!mRenderLayers) {
+      return false;
+    }
+    return true;
+  }();
+
+  const bool isVisible = IsVisible();
+  if (shouldBeVisible == isVisible) {
+    return;
+  }
+  if (shouldBeVisible) {
+    MakeVisible();
+  } else {
+    MakeHidden();
   }
 }
 
@@ -3046,12 +3030,6 @@ void BrowserChild::ReinitRendering() {
   gfx::VRManagerChild::IdentifyTextureHost(mTextureFactoryIdentifier);
 
   InitAPZState();
-  RefPtr<WebRenderLayerManager> lm =
-      mPuppetWidget->GetWindowRenderer()->AsWebRender();
-  if (lm) {
-    lm->SetLayersObserverEpoch(mLayersObserverEpoch);
-  }
-
   if (nsCOMPtr<Document> doc = GetTopLevelDocument()) {
     doc->NotifyLayerManagerRecreated();
   }
@@ -3246,8 +3224,7 @@ ScreenIntRect BrowserChild::GetOuterRect() {
       outerRect, PixelCastJustification::LayoutDeviceIsScreenForTabDims);
 }
 
-void BrowserChild::PaintWhileInterruptingJS(
-    const layers::LayersObserverEpoch& aEpoch) {
+void BrowserChild::PaintWhileInterruptingJS() {
   if (!IPCOpen() || !mPuppetWidget || !mPuppetWidget->HasWindowRenderer()) {
     // Don't bother doing anything now. Better to wait until we receive the
     // message on the PContent channel.
@@ -3256,11 +3233,10 @@ void BrowserChild::PaintWhileInterruptingJS(
 
   MOZ_DIAGNOSTIC_ASSERT(nsContentUtils::IsSafeToRunScript());
   nsAutoScriptBlocker scriptBlocker;
-  RecvRenderLayers(true /* aEnabled */, aEpoch);
+  RecvRenderLayers(/* aEnabled = */ true);
 }
 
-void BrowserChild::UnloadLayersWhileInterruptingJS(
-    const layers::LayersObserverEpoch& aEpoch) {
+void BrowserChild::UnloadLayersWhileInterruptingJS() {
   if (!IPCOpen() || !mPuppetWidget || !mPuppetWidget->HasWindowRenderer()) {
     // Don't bother doing anything now. Better to wait until we receive the
     // message on the PContent channel.
@@ -3269,7 +3245,7 @@ void BrowserChild::UnloadLayersWhileInterruptingJS(
 
   MOZ_DIAGNOSTIC_ASSERT(nsContentUtils::IsSafeToRunScript());
   nsAutoScriptBlocker scriptBlocker;
-  RecvRenderLayers(false /* aEnabled */, aEpoch);
+  RecvRenderLayers(/* aEnabled = */ false);
 }
 
 nsresult BrowserChild::CanCancelContentJS(

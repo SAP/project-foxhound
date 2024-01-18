@@ -260,40 +260,41 @@ void ResolveCallback(FileSystemGetWritableFileStreamResponse&& aResponse,
   auto* const actor = static_cast<FileSystemWritableFileStreamChild*>(
       properties.writableFileStream().AsChild().get());
 
+  auto autoDelete = MakeScopeExit([actor = RefPtr(actor)] {
+    PFileSystemWritableFileStreamChild::Send__delete__(actor);
+  });
+
   mozilla::ipc::RandomAccessStreamParams params =
       std::move(properties.streamParams());
 
   FileSystemEntryMetadata metadata = aMetadata;
 
-  WorkerPrivate* const workerPrivate = GetCurrentThreadWorkerPrivate();
-  RefPtr<StrongWorkerRef> buildWorkerRef =
-      workerPrivate ? StrongWorkerRef::Create(
-                          workerPrivate, "FileSystemWritableFileStream::Create")
-                    : nullptr;
+  QM_TRY_UNWRAP(
+      RefPtr<StrongWorkerRef> buildWorkerRef,
+      ([]() -> Result<RefPtr<StrongWorkerRef>, nsresult> {
+        WorkerPrivate* const workerPrivate = GetCurrentThreadWorkerPrivate();
+        if (!workerPrivate) {
+          return RefPtr<StrongWorkerRef>();
+        }
 
-  FileSystemWritableFileStream::Create(aPromise->GetParentObject(), aManager,
-                                       actor, std::move(params),
-                                       std::move(metadata))
+        RefPtr<StrongWorkerRef> workerRef = StrongWorkerRef::Create(
+            workerPrivate, "FileSystemWritableFileStream::Create");
+        QM_TRY(MOZ_TO_RESULT(workerRef), Err(NS_ERROR_ABORT));
+
+        return workerRef;
+      }()),
+      [aPromise](const nsresult rv) { HandleFailedStatus(rv, aPromise); });
+
+  autoDelete.release();
+
+  FileSystemWritableFileStream::Create(
+      aPromise->GetParentObject(), aManager, actor, std::move(params),
+      std::move(metadata), std::move(buildWorkerRef))
       ->Then(GetCurrentSerialEventTarget(), __func__,
-             [buildWorkerRef,
-              aPromise](CreatePromise::ResolveOrRejectValue&& aValue) {
+             [aPromise](CreatePromise::ResolveOrRejectValue&& aValue) {
                if (aValue.IsResolve()) {
                  RefPtr<FileSystemWritableFileStream> stream =
                      aValue.ResolveValue();
-
-                 if (buildWorkerRef) {
-                   RefPtr<StrongWorkerRef> workerRef = StrongWorkerRef::Create(
-                       buildWorkerRef->Private(),
-                       "FileSystemWritableFileStream", [stream]() {
-                         if (stream->IsOpen()) {
-                           // We don't need the promise, we just begin the
-                           // closing process.
-                           Unused << stream->BeginAbort();
-                         }
-                       });
-
-                   stream->SetWorkerRef(std::move(workerRef));
-                 }
 
                  aPromise->MaybeResolve(stream);
                  return;

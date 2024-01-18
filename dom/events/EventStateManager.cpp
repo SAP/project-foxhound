@@ -14,6 +14,7 @@
 #include "mozilla/Hal.h"
 #include "mozilla/HTMLEditor.h"
 #include "mozilla/IMEStateManager.h"
+#include "mozilla/Likely.h"
 #include "mozilla/MiscEvents.h"
 #include "mozilla/MathAlgorithms.h"
 #include "mozilla/MouseEvents.h"
@@ -303,7 +304,7 @@ static uint32_t sESMInstanceCount = 0;
 bool EventStateManager::sNormalLMouseEventInProcess = false;
 int16_t EventStateManager::sCurrentMouseBtn = MouseButton::eNotPressed;
 EventStateManager* EventStateManager::sActiveESM = nullptr;
-Document* EventStateManager::sMouseOverDocument = nullptr;
+EventStateManager* EventStateManager::sCursorSettingManager = nullptr;
 AutoWeakFrame EventStateManager::sLastDragOverFrame = nullptr;
 LayoutDeviceIntPoint EventStateManager::sPreLockPoint =
     LayoutDeviceIntPoint(0, 0);
@@ -323,7 +324,6 @@ constexpr const StyleCursorKind kInvalidCursorKind =
 
 EventStateManager::EventStateManager()
     : mLockCursor(kInvalidCursorKind),
-      mLastFrameConsumedSetCursor(false),
       mCurrentTarget(nullptr),
       // init d&d gesture state machine variables
       mGestureDownPoint(0, 0),
@@ -396,8 +396,8 @@ EventStateManager::~EventStateManager() {
     KillClickHoldTimer();
   }
 
-  if (mDocument == sMouseOverDocument) {
-    sMouseOverDocument = nullptr;
+  if (sCursorSettingManager == this) {
+    sCursorSettingManager = nullptr;
   }
 
   --sESMInstanceCount;
@@ -835,7 +835,7 @@ nsresult EventStateManager::PreHandleEvent(nsPresContext* aPresContext,
       // that ClearFrameRefs() has been called and it cleared out
       // |mCurrentTarget|. As a result, we should pass |mCurrentTarget|
       // into UpdateCursor().
-      UpdateCursor(aPresContext, aEvent, mCurrentTarget, aStatus);
+      UpdateCursor(aPresContext, mouseEvent, mCurrentTarget, aStatus);
 
       UpdateLastRefPointOfMouseEvent(mouseEvent);
       if (PointerLockManager::IsLocked()) {
@@ -4152,8 +4152,9 @@ static bool ShouldBlockCustomCursor(nsPresContext* aPresContext,
 
   nsSize size(CSSPixel::ToAppUnits(width / zoom),
               CSSPixel::ToAppUnits(height / zoom));
-  nsPoint hotspot(CSSPixel::ToAppUnits(aCursor.mHotspot.x / zoom),
-                  CSSPixel::ToAppUnits(aCursor.mHotspot.y / zoom));
+  nsPoint hotspot(
+      CSSPixel::ToAppUnits(ViewAs<CSSPixel>(aCursor.mHotspot.x / zoom)),
+      CSSPixel::ToAppUnits(ViewAs<CSSPixel>(aCursor.mHotspot.y / zoom)));
 
   const nsRect cursorRect(point - hotspot, size);
   auto output = DOMIntersectionObserver::Intersect(input, cursorRect);
@@ -4235,7 +4236,7 @@ static CursorImage ComputeCustomCursor(nsPresContext* aPresContext,
 }
 
 void EventStateManager::UpdateCursor(nsPresContext* aPresContext,
-                                     WidgetEvent* aEvent,
+                                     WidgetMouseEvent* aEvent,
                                      nsIFrame* aTargetFrame,
                                      nsEventStatus* aStatus) {
   if (aTargetFrame && IsRemoteTarget(aTargetFrame->GetContent())) {
@@ -4247,12 +4248,18 @@ void EventStateManager::UpdateCursor(nsPresContext* aPresContext,
   ImageResolution resolution;
   Maybe<gfx::IntPoint> hotspot;
 
-  // If cursor is locked just use the locked one
-  if (mLockCursor != kInvalidCursorKind) {
-    cursor = mLockCursor;
+  if (mHidingCursorWhileTyping && aEvent->IsReal()) {
+    // Any non-synthetic mouse event makes us show the cursor again.
+    mHidingCursorWhileTyping = false;
   }
-  // If not locked, look for correct cursor
-  else if (aTargetFrame) {
+
+  if (mHidingCursorWhileTyping) {
+    cursor = StyleCursorKind::None;
+  } else if (mLockCursor != kInvalidCursorKind) {
+    // If cursor is locked just use the locked one
+    cursor = mLockCursor;
+  } else if (aTargetFrame) {
+    // If not locked, look for correct cursor
     nsPoint pt = nsLayoutUtils::GetEventCoordinatesRelativeTo(
         aEvent, RelativeTo{aTargetFrame});
     Maybe<nsIFrame::Cursor> framecursor = aTargetFrame->GetCursor(pt);
@@ -4288,22 +4295,6 @@ void EventStateManager::UpdateCursor(nsPresContext* aPresContext,
     hotspot = Some(customCursor.mHotspot);
   }
 
-  if (StaticPrefs::ui_use_activity_cursor()) {
-    // Check whether or not to show the busy cursor
-    nsCOMPtr<nsIDocShell> docShell(aPresContext->GetDocShell());
-    if (!docShell) return;
-    auto busyFlags = docShell->GetBusyFlags();
-
-    // Show busy cursor everywhere before page loads
-    // and just replace the arrow cursor after page starts loading
-    if (busyFlags & nsIDocShell::BUSY_FLAGS_BUSY &&
-        (cursor == StyleCursorKind::Auto ||
-         cursor == StyleCursorKind::Default)) {
-      cursor = StyleCursorKind::Progress;
-      container = nullptr;
-    }
-  }
-
   if (aTargetFrame) {
     if (cursor == StyleCursorKind::Pointer && IsSelectingLink(aTargetFrame)) {
       cursor = aTargetFrame->GetWritingMode().IsVertical()
@@ -4332,6 +4323,14 @@ void EventStateManager::ClearCachedWidgetCursor(nsIFrame* aTargetFrame) {
   aWidget->ClearCachedCursor();
 }
 
+void EventStateManager::StartHidingCursorWhileTyping(nsIWidget* aWidget) {
+  if (mHidingCursorWhileTyping || sCursorSettingManager != this) {
+    return;
+  }
+  mHidingCursorWhileTyping = true;
+  SetCursor(StyleCursorKind::None, nullptr, {}, {}, aWidget, false);
+}
+
 nsresult EventStateManager::SetCursor(StyleCursorKind aCursor,
                                       imgIContainer* aContainer,
                                       const ImageResolution& aResolution,
@@ -4339,7 +4338,7 @@ nsresult EventStateManager::SetCursor(StyleCursorKind aCursor,
                                       nsIWidget* aWidget, bool aLockCursor) {
   EnsureDocument(mPresContext);
   NS_ENSURE_TRUE(mDocument, NS_ERROR_FAILURE);
-  sMouseOverDocument = mDocument.get();
+  sCursorSettingManager = this;
 
   NS_ENSURE_TRUE(aWidget, NS_ERROR_FAILURE);
   if (aLockCursor) {
@@ -5314,8 +5313,7 @@ nsresult EventStateManager::InitAndDispatchClickEvent(
   event.mModifiers = aMouseUpEvent->mModifiers;
   event.mButtons = aMouseUpEvent->mButtons;
   event.mTimeStamp = aMouseUpEvent->mTimeStamp;
-  event.mFlags.mOnlyChromeDispatch =
-      aNoContentDispatch && !aMouseUpEvent->mUseLegacyNonPrimaryDispatch;
+  event.mFlags.mOnlyChromeDispatch = aNoContentDispatch;
   event.mFlags.mNoContentDispatch = aNoContentDispatch;
   event.mButton = aMouseUpEvent->mButton;
   event.pointerId = aMouseUpEvent->pointerId;

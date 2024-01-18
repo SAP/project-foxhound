@@ -114,8 +114,7 @@ uint32_t getUpdateRequirements(const RefPtr<nsNavHistoryQuery>& aQuery,
   bool nonTimeBasedItems = false;
   bool domainBasedItems = false;
 
-  if (aQuery->Parents().Length() > 0 || aQuery->OnlyBookmarked() ||
-      aQuery->Tags().Length() > 0 ||
+  if (aQuery->Parents().Length() > 0 || aQuery->Tags().Length() > 0 ||
       (aOptions->QueryType() ==
            nsINavHistoryQueryOptions::QUERY_TYPE_BOOKMARKS &&
        hasSearchTerms)) {
@@ -324,7 +323,6 @@ nsNavHistoryResultNode::nsNavHistoryResultNode(const nsACString& aURI,
     : mParent(nullptr),
       mURI(aURI),
       mTitle(aTitle),
-      mAreTagsSorted(false),
       mAccessCount(aAccessCount),
       mTime(aTime),
       mBookmarkIndex(-1),
@@ -370,83 +368,36 @@ nsNavHistoryResultNode::GetParentResult(nsINavHistoryResult** aResult) {
   return NS_OK;
 }
 
+void nsNavHistoryResultNode::SetTags(const nsAString& aTags) {
+  mTags.SetIsVoid(true);
+  if (aTags.IsVoid()) {
+    return;
+  }
+
+  // We'd like to sort tags in the query, and completely skip the
+  // deconstructing, sorting and rebuilding here, unfortunately Sqlite's
+  // group_concat() at this time doesn't guarantee the concat order, even using
+  // a sub query. If that should change in the future, we could surely save some
+  // code here.
+  nsTArray<nsCString> tags;
+  ParseString(NS_ConvertUTF16toUTF8(aTags), ',', tags);
+  tags.Sort();
+  for (nsTArray<nsCString>::index_type i = 0; i < tags.Length(); ++i) {
+    AppendUTF8toUTF16(tags[i], mTags);
+    if (i < tags.Length() - 1) {
+      mTags.AppendLiteral(", ");
+    }
+  }
+}
+
 NS_IMETHODIMP
 nsNavHistoryResultNode::GetTags(nsAString& aTags) {
-  // Only URI-nodes may be associated with tags
-  if (!IsURI()) {
-    aTags.Truncate();
+  if (mTags.IsVoid()) {
+    aTags.SetIsVoid(true);
     return NS_OK;
   }
 
-  // Initially, the tags string is set to a void string (see constructor).  We
-  // then build it the first time this method called is called (and by that,
-  // implicitly unset the void flag). Result observers may re-set the void flag
-  // in order to force rebuilding of the tags string.
-  if (!mTags.IsVoid()) {
-    // If mTags is assigned by a history query it is unsorted for performance
-    // reasons, it must be sorted by name on first read access.
-    if (!mAreTagsSorted) {
-      nsTArray<nsCString> tags;
-      ParseString(NS_ConvertUTF16toUTF8(mTags), ',', tags);
-      tags.Sort();
-      mTags.SetIsVoid(true);
-      for (nsTArray<nsCString>::index_type i = 0; i < tags.Length(); ++i) {
-        AppendUTF8toUTF16(tags[i], mTags);
-        if (i < tags.Length() - 1) {
-          mTags.AppendLiteral(", ");
-        }
-      }
-      mAreTagsSorted = true;
-    }
-    aTags.Assign(mTags);
-    return NS_OK;
-  }
-
-  // Fetch the tags
-  RefPtr<Database> DB = Database::GetDatabase();
-  NS_ENSURE_STATE(DB);
-  nsCOMPtr<mozIStorageStatement> stmt = DB->GetStatement(
-      "/* do not warn (bug 487594) */ "
-      "SELECT GROUP_CONCAT(tag_title, ', ') "
-      "FROM ( "
-      "SELECT t.title AS tag_title "
-      "FROM moz_bookmarks b "
-      "JOIN moz_bookmarks t ON t.id = +b.parent "
-      "WHERE b.fk = (SELECT id FROM moz_places WHERE url_hash = "
-      "hash(:page_url) AND url = :page_url) "
-      "AND t.parent = :tags_folder "
-      "ORDER BY t.title COLLATE NOCASE ASC "
-      ") ");
-  NS_ENSURE_STATE(stmt);
-  mozStorageStatementScoper scoper(stmt);
-
-  nsNavHistory* history = nsNavHistory::GetHistoryService();
-  NS_ENSURE_STATE(history);
-  nsresult rv =
-      stmt->BindInt64ByName("tags_folder"_ns, history->GetTagsFolder());
-  NS_ENSURE_SUCCESS(rv, rv);
-  rv = URIBinder::Bind(stmt, "page_url"_ns, mURI);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  bool hasTags = false;
-  if (NS_SUCCEEDED(stmt->ExecuteStep(&hasTags)) && hasTags) {
-    rv = stmt->GetString(0, mTags);
-    NS_ENSURE_SUCCESS(rv, rv);
-    aTags.Assign(mTags);
-    mAreTagsSorted = true;
-  }
-
-  // If this node is a child of a history query, we need to make sure changes
-  // to tags are properly live-updated.
-  if (mParent && mParent->IsQuery() &&
-      mParent->mOptions->QueryType() ==
-          nsINavHistoryQueryOptions::QUERY_TYPE_HISTORY) {
-    nsNavHistoryQueryResultNode* query = mParent->GetAsQuery();
-    nsNavHistoryResult* result = query->GetResult();
-    NS_ENSURE_STATE(result);
-    result->AddAllBookmarksObserver(query);
-  }
-
+  aTags.Assign(mTags);
   return NS_OK;
 }
 
@@ -1979,8 +1930,7 @@ nsresult nsNavHistoryQueryResultNode::FillChildren() {
   // Ensure to add history observer before bookmarks observer, because the
   // latter wants to know if an history observer was added.
 
-  if (mOptions->QueryType() == nsINavHistoryQueryOptions::QUERY_TYPE_HISTORY ||
-      mOptions->QueryType() == nsINavHistoryQueryOptions::QUERY_TYPE_UNIFIED) {
+  if (mOptions->QueryType() == nsINavHistoryQueryOptions::QUERY_TYPE_HISTORY) {
     // Date containers that contain site containers have no reason to observe
     // history, if the inside site container is expanded it will update,
     // otherwise we are going to refresh the parent query.
@@ -1993,7 +1943,6 @@ nsresult nsNavHistoryQueryResultNode::FillChildren() {
 
   if (mOptions->QueryType() ==
           nsINavHistoryQueryOptions::QUERY_TYPE_BOOKMARKS ||
-      mOptions->QueryType() == nsINavHistoryQueryOptions::QUERY_TYPE_UNIFIED ||
       mLiveUpdate == QUERYUPDATE_COMPLEX_WITH_BOOKMARKS || mHasSearchTerms) {
     // register with the result for bookmark updates
     result->AddAllBookmarksObserver(this);
@@ -2511,46 +2460,6 @@ nsresult nsNavHistoryQueryResultNode::OnPageRemovedVisits(
   return NS_OK;
 }
 
-nsresult nsNavHistoryQueryResultNode::NotifyIfTagsChanged(nsIURI* aURI) {
-  nsNavHistoryResult* result = GetResult();
-  NS_ENSURE_STATE(result);
-  nsAutoCString spec;
-  nsresult rv = aURI->GetSpec(spec);
-  NS_ENSURE_SUCCESS(rv, rv);
-  bool onlyOneEntry =
-      mOptions->ResultType() == nsINavHistoryQueryOptions::RESULTS_AS_URI;
-
-  nsCOMArray<nsNavHistoryResultNode> matches;
-  RecursiveFindURIs(onlyOneEntry, this, spec, &matches);
-
-  if (matches.Count() == 0 && mHasSearchTerms) {
-    return isQuerySearchTermsMatching(mQuery, this) ? Refresh() : NS_OK;
-  }
-
-  for (int32_t i = 0; i < matches.Count(); ++i) {
-    nsNavHistoryResultNode* node = matches[i];
-    // Force a tags update before checking the node.
-    node->mTags.SetIsVoid(true);
-    nsAutoString tags;
-    rv = node->GetTags(tags);
-    NS_ENSURE_SUCCESS(rv, rv);
-    // It's possible now this node does not respect anymore the conditions.
-    // In such a case it should be removed.
-    if (mHasSearchTerms && !isQuerySearchTermsMatching(mQuery, node)) {
-      nsNavHistoryContainerResultNode* parent = node->mParent;
-      // URI nodes should always have parents
-      NS_ENSURE_TRUE(parent, NS_ERROR_UNEXPECTED);
-      int32_t childIndex = parent->FindChild(node);
-      NS_ASSERTION(childIndex >= 0, "Child not found in parent");
-      parent->RemoveChildAt(childIndex);
-    } else {
-      NOTIFY_RESULT_OBSERVERS(result, NodeTagsChanged(node));
-    }
-  }
-
-  return NS_OK;
-}
-
 /**
  * These are the bookmark observer functions for query nodes.  They listen
  * for bookmark events and refresh the results if we have any dependence on
@@ -2603,16 +2512,49 @@ nsresult nsNavHistoryQueryResultNode::OnItemMoved(
   return NS_OK;
 }
 
-nsresult nsNavHistoryQueryResultNode::OnItemTagsChanged(int64_t aItemId,
-                                                        const nsAString& aURL) {
-  nsresult rv = nsNavHistoryResultNode::OnItemTagsChanged(aItemId, aURL);
+nsresult nsNavHistoryQueryResultNode::OnItemTagsChanged(
+    int64_t aItemId, const nsAString& aURL, const nsAString& aTags) {
+  nsresult rv = nsNavHistoryResultNode::OnItemTagsChanged(aItemId, aURL, aTags);
   NS_ENSURE_SUCCESS(rv, rv);
 
+  nsNavHistoryResult* result = GetResult();
+  NS_ENSURE_STATE(result);
+
+  // Check whether aURL is actually URI.
   nsCOMPtr<nsIURI> uri;
   rv = NS_NewURI(getter_AddRefs(uri), aURL);
   NS_ENSURE_SUCCESS(rv, rv);
-  rv = NotifyIfTagsChanged(uri);
+  nsAutoCString spec;
+  rv = uri->GetSpec(spec);
   NS_ENSURE_SUCCESS(rv, rv);
+
+  bool onlyOneEntry =
+      mOptions->ResultType() == nsINavHistoryQueryOptions::RESULTS_AS_URI;
+
+  nsCOMArray<nsNavHistoryResultNode> matches;
+  RecursiveFindURIs(onlyOneEntry, this, spec, &matches);
+
+  if (matches.Count() == 0 && mHasSearchTerms) {
+    return isQuerySearchTermsMatching(mQuery, this) ? Refresh() : NS_OK;
+  }
+
+  for (int32_t i = 0; i < matches.Count(); ++i) {
+    nsNavHistoryResultNode* node = matches[i];
+    node->SetTags(aTags);
+    // It's possible now this node does not respect anymore the conditions.
+    // In such a case it should be removed.
+    if (mHasSearchTerms && !isQuerySearchTermsMatching(mQuery, node)) {
+      nsNavHistoryContainerResultNode* parent = node->mParent;
+      // URI nodes should always have parents
+      NS_ENSURE_TRUE(parent, NS_ERROR_UNEXPECTED);
+      int32_t childIndex = parent->FindChild(node);
+      NS_ASSERTION(childIndex >= 0, "Child not found in parent");
+      parent->RemoveChildAt(childIndex);
+    } else {
+      NOTIFY_RESULT_OBSERVERS(result, NodeTagsChanged(node));
+    }
+  }
+
   return NS_OK;
 }
 
@@ -3219,12 +3161,7 @@ nsresult nsNavHistoryFolderResultNode::OnItemAdded(
       node->mBookmarkGuid = aGUID;
     }
 
-    if (aTags.IsVoid()) {
-      node->mTags.SetIsVoid(true);
-    } else {
-      node->mTags.Assign(aTags);
-    }
-
+    node->SetTags(aTags);
     node->mDateAdded = aDateAdded;
     node->mLastModified = aDateAdded;
     node->mFrecency = aFrecency;
@@ -3342,12 +3279,13 @@ nsresult nsNavHistoryResultNode::OnItemKeywordChanged(
 }
 
 nsresult nsNavHistoryResultNode::OnItemTagsChanged(int64_t aItemId,
-                                                   const nsAString& aURL) {
+                                                   const nsAString& aURL,
+                                                   const nsAString& aTags) {
   if (aItemId != mItemId) {
     return NS_OK;
   }
 
-  mTags.SetIsVoid(true);
+  SetTags(aTags);
 
   bool shouldNotify = !mParent || mParent->AreChildrenVisible();
   if (shouldNotify) {
@@ -4431,9 +4369,15 @@ void nsNavHistoryResult::HandlePlacesEvent(const PlacesEventSequence& aEvents) {
         if (NS_WARN_IF(!tagsEvent)) {
           continue;
         }
+
+        nsString tags;
+        tagsEvent->mTags.Length()
+            ? tags.Assign(StringJoin(u","_ns, tagsEvent->mTags))
+            : tags.SetIsVoid(true);
+
         ENUMERATE_BOOKMARK_CHANGED_OBSERVERS(
             tagsEvent->mParentGuid, tagsEvent->mId,
-            OnItemTagsChanged(tagsEvent->mId, tagsEvent->mUrl));
+            OnItemTagsChanged(tagsEvent->mId, tagsEvent->mUrl, tags));
         break;
       }
       case PlacesEventType::Bookmark_time_changed: {

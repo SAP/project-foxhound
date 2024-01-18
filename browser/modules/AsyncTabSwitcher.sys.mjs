@@ -276,7 +276,8 @@ export class AsyncTabSwitcher {
       if (remoteTab) {
         browser.renderLayers = true;
         remoteTab.priorityHint = true;
-      } else {
+      }
+      if (browser.hasLayers) {
         this.onLayersReady(browser);
       }
     } else if (state == this.STATE_UNLOADING) {
@@ -286,7 +287,8 @@ export class AsyncTabSwitcher {
       browser.docShellIsActive = false;
       if (remoteTab) {
         remoteTab.priorityHint = false;
-      } else {
+      }
+      if (!browser.hasLayers) {
         this.onLayersCleared(browser);
       }
     } else if (state == this.STATE_LOADED) {
@@ -294,8 +296,8 @@ export class AsyncTabSwitcher {
     }
 
     if (!tab.linkedBrowser.isRemoteBrowser) {
-      // setTabState is potentially re-entrant in the non-remote case,
-      // so we must re-get the state for this assertion.
+      // setTabState is potentially re-entrant, so we must re-get the state for
+      // this assertion.
       let nonRemoteState = this.getTabState(tab);
       // Non-remote tabs can never stay in the STATE_LOADING
       // or STATE_UNLOADING states. By the time this function
@@ -444,8 +446,8 @@ export class AsyncTabSwitcher {
         this.noteSpinnerDisplayed();
       }
       this.spinnerTab = showTab;
-      this.tabbrowser.tabpanels.setAttribute("pendingpaint", "true");
-      this.spinnerTab.linkedBrowser.setAttribute("pendingpaint", "true");
+      this.tabbrowser.tabpanels.toggleAttribute("pendingpaint", true);
+      this.spinnerTab.linkedBrowser.toggleAttribute("pendingpaint", true);
     }
 
     // Switch to the tab we've decided to make visible.
@@ -770,7 +772,6 @@ export class AsyncTabSwitcher {
     }
 
     this.logState(`onLayersReady(${tab._tPos}, ${browser.isRemoteBrowser})`);
-
     this.assert(
       this.getTabState(tab) == this.STATE_LOADING ||
         this.getTabState(tab) == this.STATE_LOADED
@@ -799,14 +800,15 @@ export class AsyncTabSwitcher {
   // Called when we're done clearing the layers for a tab.
   onLayersCleared(browser) {
     let tab = this.tabbrowser.getTabForBrowser(browser);
-    if (tab) {
-      this.logState(`onLayersCleared(${tab._tPos})`);
-      this.assert(
-        this.getTabState(tab) == this.STATE_UNLOADING ||
-          this.getTabState(tab) == this.STATE_UNLOADED
-      );
-      this.setTabState(tab, this.STATE_UNLOADED);
+    if (!tab) {
+      return;
     }
+    this.logState(`onLayersCleared(${tab._tPos})`);
+    this.assert(
+      this.getTabState(tab) == this.STATE_UNLOADING ||
+        this.getTabState(tab) == this.STATE_UNLOADED
+    );
+    this.setTabState(tab, this.STATE_UNLOADED);
   }
 
   // Called when a tab switches from remote to non-remote. In this case
@@ -1094,15 +1096,31 @@ export class AsyncTabSwitcher {
         case "tabRemoved":
           this.onTabRemovedImpl(event.tab);
           break;
-        case "MozLayerTreeReady":
-          this.onLayersReady(event.originalTarget);
+        case "MozLayerTreeReady": {
+          let browser = event.originalTarget;
+          if (!browser.renderLayers) {
+            // By the time we handle this event, it's possible that something
+            // else has already set renderLayers to false, in which case this
+            // event is stale and we can safely ignore it.
+            return;
+          }
+          this.onLayersReady(browser);
           break;
+        }
         case "MozAfterPaint":
           this.onPaint(event);
           break;
-        case "MozLayerTreeCleared":
-          this.onLayersCleared(event.originalTarget);
+        case "MozLayerTreeCleared": {
+          let browser = event.originalTarget;
+          if (browser.renderLayers) {
+            // By the time we handle this event, it's possible that something
+            // else has already set renderLayers to true, in which case this
+            // event is stale and we can safely ignore it.
+            return;
+          }
+          this.onLayersCleared(browser);
           break;
+        }
         case "TabRemotenessChange":
           this.onRemotenessChange(event.target);
           break;

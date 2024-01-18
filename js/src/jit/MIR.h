@@ -620,14 +620,8 @@ class MDefinition : public MNode {
   MBasicBlock* block() const { return definitionBlock(); }
 
  private:
-#ifdef DEBUG
-  bool trackedSiteMatchesBlock(const BytecodeSite* site) const;
-#endif
-
   void setTrackedSite(const BytecodeSite* site) {
     MOZ_ASSERT(site);
-    MOZ_ASSERT(trackedSiteMatchesBlock(site),
-               "tracked bytecode site should match block bytecode site");
     trackedSite_ = site;
   }
 
@@ -635,8 +629,6 @@ class MDefinition : public MNode {
   const BytecodeSite* trackedSite() const {
     MOZ_ASSERT(trackedSite_,
                "missing tracked bytecode site; node not assigned to a block?");
-    MOZ_ASSERT(trackedSiteMatchesBlock(trackedSite_),
-               "tracked bytecode site should match block bytecode site");
     return trackedSite_;
   }
 
@@ -11467,7 +11459,7 @@ class MWasmRefIsSubtypeOfAbstract : public MUnaryInstruction,
   MDefinition* foldsTo(TempAllocator& alloc) override;
 };
 
-// Tests if the wasm ref `ref` is a subtype of `superSuperTypeVector`.
+// Tests if the wasm ref `ref` is a subtype of `superSTV`.
 // The actual super type definition must be known at compile time, so that the
 // subtyping depth of super type depth can be used.
 class MWasmRefIsSubtypeOfConcrete : public MBinaryInstruction,
@@ -11475,10 +11467,9 @@ class MWasmRefIsSubtypeOfConcrete : public MBinaryInstruction,
   wasm::RefType sourceType_;
   wasm::RefType destType_;
 
-  MWasmRefIsSubtypeOfConcrete(MDefinition* ref,
-                              MDefinition* superSuperTypeVector,
+  MWasmRefIsSubtypeOfConcrete(MDefinition* ref, MDefinition* superSTV,
                               wasm::RefType sourceType, wasm::RefType destType)
-      : MBinaryInstruction(classOpcode, ref, superSuperTypeVector),
+      : MBinaryInstruction(classOpcode, ref, superSTV),
         sourceType_(sourceType),
         destType_(destType) {
     MOZ_ASSERT(destType.isTypeRef());
@@ -11489,7 +11480,7 @@ class MWasmRefIsSubtypeOfConcrete : public MBinaryInstruction,
  public:
   INSTRUCTION_HEADER(WasmRefIsSubtypeOfConcrete)
   TRIVIAL_NEW_WRAPPERS
-  NAMED_OPERANDS((0, ref), (1, superSuperTypeVector))
+  NAMED_OPERANDS((0, ref), (1, superSTV))
 
   wasm::RefType sourceType() const { return sourceType_; };
   wasm::RefType destType() const { return destType_; };

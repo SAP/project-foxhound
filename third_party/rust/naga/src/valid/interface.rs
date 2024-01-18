@@ -33,6 +33,8 @@ pub enum GlobalVariableError {
     ),
     #[error("Initializer doesn't match the variable type")]
     InitializerType,
+    #[error("Storage address space doesn't support write-only access")]
+    StorageAddressSpaceWriteOnlyNotSupported,
 }
 
 #[derive(Clone, Debug, thiserror::Error)]
@@ -59,6 +61,17 @@ pub enum VaryingError {
     DuplicateBuiltIn(crate::BuiltIn),
     #[error("Capability {0:?} is not supported")]
     UnsupportedCapability(Capabilities),
+    #[error("The attribute {0:?} is only valid as an output for stage {1:?}")]
+    InvalidInputAttributeInStage(&'static str, crate::ShaderStage),
+    #[error("The attribute {0:?} is not valid for stage {1:?}")]
+    InvalidAttributeInStage(&'static str, crate::ShaderStage),
+    #[error(
+        "The location index {location} cannot be used together with the attribute {attribute:?}"
+    )]
+    InvalidLocationAttributeCombination {
+        location: u32,
+        attribute: &'static str,
+    },
 }
 
 #[derive(Clone, Debug, thiserror::Error)]
@@ -87,6 +100,10 @@ pub enum EntryPointError {
     InvalidIntegerInterpolation { location: u32 },
     #[error(transparent)]
     Function(#[from] FunctionError),
+    #[error(
+        "Invalid locations {location_mask:?} are set while dual source blending. Only location 0 may be set."
+    )]
+    InvalidLocationsWhileDualSourceBlending { location_mask: BitSet },
 }
 
 #[cfg(feature = "validate")]
@@ -104,6 +121,7 @@ fn storage_usage(access: crate::StorageAccess) -> GlobalUse {
 struct VaryingContext<'a> {
     stage: crate::ShaderStage,
     output: bool,
+    second_blend_source: bool,
     types: &'a UniqueArena<crate::Type>,
     type_info: &'a Vec<super::r#type::TypeInfo>,
     location_mask: &'a mut BitSet,
@@ -291,6 +309,7 @@ impl VaryingContext<'_> {
                 location,
                 interpolation,
                 sampling,
+                second_blend_source,
             } => {
                 // Only IO-shareable types may be stored in locations.
                 if !self.type_info[ty.index()]
@@ -299,7 +318,37 @@ impl VaryingContext<'_> {
                 {
                     return Err(VaryingError::NotIOShareableType(ty));
                 }
-                if !self.location_mask.insert(location as usize) {
+
+                if second_blend_source {
+                    if !self
+                        .capabilities
+                        .contains(Capabilities::DUAL_SOURCE_BLENDING)
+                    {
+                        return Err(VaryingError::UnsupportedCapability(
+                            Capabilities::DUAL_SOURCE_BLENDING,
+                        ));
+                    }
+                    if self.stage != crate::ShaderStage::Fragment {
+                        return Err(VaryingError::InvalidAttributeInStage(
+                            "second_blend_source",
+                            self.stage,
+                        ));
+                    }
+                    if !self.output {
+                        return Err(VaryingError::InvalidInputAttributeInStage(
+                            "second_blend_source",
+                            self.stage,
+                        ));
+                    }
+                    if location != 0 {
+                        return Err(VaryingError::InvalidLocationAttributeCombination {
+                            location,
+                            attribute: "second_blend_source",
+                        });
+                    }
+
+                    self.second_blend_source = true;
+                } else if !self.location_mask.insert(location as usize) {
                     #[cfg(feature = "validate")]
                     if self.flags.contains(super::ValidationFlags::BINDINGS) {
                         return Err(VaryingError::BindingCollision { location });
@@ -407,7 +456,12 @@ impl super::Validator {
             // A binding array is (mostly) supposed to behave the same as a
             // series of individually bound resources, so we can (mostly)
             // validate a `binding_array<T>` as if it were just a plain `T`.
-            crate::TypeInner::BindingArray { base, .. } => base,
+            crate::TypeInner::BindingArray { base, .. } => match var.space {
+                crate::AddressSpace::Storage { .. }
+                | crate::AddressSpace::Uniform
+                | crate::AddressSpace::Handle => base,
+                _ => return Err(GlobalVariableError::InvalidUsage(var.space)),
+            },
             _ => var.ty,
         };
         let type_info = &self.types[inner_ty.index()];
@@ -416,7 +470,7 @@ impl super::Validator {
             crate::AddressSpace::Function => {
                 return Err(GlobalVariableError::InvalidUsage(var.space))
             }
-            crate::AddressSpace::Storage { .. } => {
+            crate::AddressSpace::Storage { access } => {
                 if let Err((ty_handle, disalignment)) = type_info.storage_layout {
                     if self.flags.contains(super::ValidationFlags::STRUCT_LAYOUTS) {
                         return Err(GlobalVariableError::Alignment(
@@ -425,6 +479,9 @@ impl super::Validator {
                             disalignment,
                         ));
                     }
+                }
+                if access == crate::StorageAccess::STORE {
+                    return Err(GlobalVariableError::StorageAddressSpaceWriteOnlyNotSupported);
                 }
                 (TypeFlags::DATA | TypeFlags::HOST_SHAREABLE, true)
             }
@@ -557,7 +614,8 @@ impl super::Validator {
             return Err(EntryPointError::UnexpectedWorkgroupSize.with_span());
         }
 
-        let info = self
+        #[cfg_attr(not(feature = "validate"), allow(unused_mut))]
+        let mut info = self
             .validate_function(&ep.function, module, mod_info, true)
             .map_err(WithSpan::into_other)?;
 
@@ -583,6 +641,7 @@ impl super::Validator {
             let mut ctx = VaryingContext {
                 stage: ep.stage,
                 output: false,
+                second_blend_source: false,
                 types: &module.types,
                 type_info: &self.types,
                 location_mask: &mut self.location_mask,
@@ -602,6 +661,7 @@ impl super::Validator {
             let mut ctx = VaryingContext {
                 stage: ep.stage,
                 output: true,
+                second_blend_source: false,
                 types: &module.types,
                 type_info: &self.types,
                 location_mask: &mut self.location_mask,
@@ -613,6 +673,18 @@ impl super::Validator {
             };
             ctx.validate(fr.ty, fr.binding.as_ref())
                 .map_err_inner(|e| EntryPointError::Result(e).with_span())?;
+            #[cfg(feature = "validate")]
+            if ctx.second_blend_source {
+                // Only the first location may be used whhen dual source blending
+                if ctx.location_mask.len() == 1 && ctx.location_mask.contains(0) {
+                    info.dual_source_blending = true;
+                } else {
+                    return Err(EntryPointError::InvalidLocationsWhileDualSourceBlending {
+                        location_mask: self.location_mask.clone(),
+                    }
+                    .with_span());
+                }
+            }
 
             #[cfg(feature = "validate")]
             if ep.stage == crate::ShaderStage::Vertex

@@ -940,9 +940,9 @@ class TestEmitterBasic(unittest.TestCase):
                 "installs": {"mochitest.ini": False, "test_mochitest.js": True},
                 "external": {"external1", "external2"},
             },
-            "chrome.ini": {
+            "chrome.toml": {
                 "flavor": "chrome",
-                "installs": {"chrome.ini": False, "test_chrome.js": True},
+                "installs": {"chrome.toml": False, "test_chrome.js": True},
             },
             "xpcshell.ini": {
                 "flavor": "xpcshell",
@@ -1454,7 +1454,6 @@ class TestEmitterBasic(unittest.TestCase):
 
             # Unified sources are not required
             if sources.have_unified_mapping:
-
                 for f in dict(sources.unified_source_mapping).keys():
                     self.assertIn(
                         mozpath.join(

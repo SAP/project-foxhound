@@ -35,6 +35,12 @@ ChromeUtils.defineLazyGetter(this, "MerinoTestUtils", () => {
   return module;
 });
 
+ChromeUtils.defineLazyGetter(this, "PlacesFrecencyRecalculator", () => {
+  return Cc["@mozilla.org/places/frecency-recalculator;1"].getService(
+    Ci.nsIObserver
+  ).wrappedJSObject;
+});
+
 registerCleanupFunction(async () => {
   // Ensure the popup is always closed at the end of each test to avoid
   // interfering with the next test.
@@ -613,6 +619,9 @@ function _assertGleanPing(ping) {
   const keymap = {
     match_type: Glean.quickSuggest.matchType,
     position: Glean.quickSuggest.position,
+    suggested_index: Glean.quickSuggest.suggestedIndex,
+    suggested_index_relative_to_group:
+      Glean.quickSuggest.suggestedIndexRelativeToGroup,
     improve_suggest_experience_checked:
       Glean.quickSuggest.improveSuggestExperience,
     is_clicked: Glean.quickSuggest.isClicked,
@@ -622,6 +631,6 @@ function _assertGleanPing(ping) {
   };
   for (const [key, value] of Object.entries(ping.payload)) {
     Assert.ok(key in keymap, `A Glean metric exists for field ${key}`);
-    Assert.equal(value ?? "", keymap[key].testGetValue());
+    Assert.equal(value ?? null, keymap[key].testGetValue());
   }
 }

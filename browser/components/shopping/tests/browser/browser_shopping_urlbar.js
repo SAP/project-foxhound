@@ -34,13 +34,13 @@ add_task(async function test_button_changes_with_location() {
       BrowserTestUtils.is_hidden(shoppingButton),
       "Shopping Button should be hidden on a content page"
     );
-    BrowserTestUtils.loadURIString(browser, PRODUCT_PAGE);
+    BrowserTestUtils.startLoadingURIString(browser, PRODUCT_PAGE);
     await BrowserTestUtils.browserLoaded(browser);
     ok(
       BrowserTestUtils.is_visible(shoppingButton),
       "Shopping Button should be visible on a product page"
     );
-    BrowserTestUtils.loadURIString(browser, CONTENT_PAGE);
+    BrowserTestUtils.startLoadingURIString(browser, CONTENT_PAGE);
     await BrowserTestUtils.browserLoaded(browser);
     ok(
       BrowserTestUtils.is_hidden(shoppingButton),
@@ -54,8 +54,9 @@ add_task(async function test_button_active() {
 
   await BrowserTestUtils.withNewTab(PRODUCT_PAGE, async function (browser) {
     let shoppingButton = document.getElementById("shopping-sidebar-button");
-    ok(
-      shoppingButton.getAttribute("shoppingsidebaropen") == "true",
+    Assert.equal(
+      shoppingButton.getAttribute("shoppingsidebaropen"),
+      "true",
       "Shopping Button should be active when sidebar is open"
     );
   });
@@ -66,8 +67,9 @@ add_task(async function test_button_inactive() {
 
   await BrowserTestUtils.withNewTab(PRODUCT_PAGE, async function (browser) {
     let shoppingButton = document.getElementById("shopping-sidebar-button");
-    ok(
-      shoppingButton.getAttribute("shoppingsidebaropen") == "false",
+    Assert.equal(
+      shoppingButton.getAttribute("shoppingsidebaropen"),
+      "false",
       "Shopping Button should be inactive when sidebar is closed"
     );
   });
@@ -111,7 +113,7 @@ add_task(async function test_button_toggles_sidebars() {
     let shoppingButton = document.getElementById("shopping-sidebar-button");
     let browserPanel = gBrowser.getPanel(browser);
 
-    BrowserTestUtils.loadURIString(browser, PRODUCT_PAGE);
+    BrowserTestUtils.startLoadingURIString(browser, PRODUCT_PAGE);
     await BrowserTestUtils.browserLoaded(browser);
 
     let sidebar = browserPanel.querySelector("shopping-sidebar");
@@ -161,7 +163,7 @@ add_task(async function test_button_toggles_all_windows() {
 
   let newWindow = await BrowserTestUtils.openNewBrowserWindow();
 
-  BrowserTestUtils.loadURIString(
+  BrowserTestUtils.startLoadingURIString(
     newWindow.gBrowser.selectedBrowser,
     PRODUCT_PAGE
   );
@@ -229,7 +231,7 @@ add_task(async function test_button_right_click_doesnt_affect_sidebars() {
     let shoppingButton = document.getElementById("shopping-sidebar-button");
     let browserPanel = gBrowser.getPanel(browser);
 
-    BrowserTestUtils.loadURIString(browser, PRODUCT_PAGE);
+    BrowserTestUtils.startLoadingURIString(browser, PRODUCT_PAGE);
     await BrowserTestUtils.browserLoaded(browser);
 
     let sidebar = browserPanel.querySelector("shopping-sidebar");
@@ -240,5 +242,189 @@ add_task(async function test_button_right_click_doesnt_affect_sidebars() {
     await new Promise(executeSoon);
     sidebar = browserPanel.querySelector("shopping-sidebar");
     is(sidebar, null, "Shopping sidebar should still be closed");
+  });
+});
+
+add_task(async function test_button_deals_with_tabswitches() {
+  Services.prefs.setBoolPref("browser.shopping.experience2023.active", true);
+
+  await BrowserTestUtils.withNewTab(CONTENT_PAGE, async function (browser) {
+    let shoppingButton = document.getElementById("shopping-sidebar-button");
+
+    ok(
+      BrowserTestUtils.is_hidden(shoppingButton),
+      "The shopping button is hidden on a non product page"
+    );
+
+    let newProductTab = BrowserTestUtils.addTab(gBrowser, PRODUCT_PAGE);
+    let newProductBrowser = newProductTab.linkedBrowser;
+    await BrowserTestUtils.browserLoaded(
+      newProductBrowser,
+      false,
+      PRODUCT_PAGE
+    );
+
+    ok(
+      BrowserTestUtils.is_hidden(shoppingButton),
+      "The shopping button is still hidden after opening a background product tab"
+    );
+
+    let shoppingButtonVisiblePromise =
+      BrowserTestUtils.waitForMutationCondition(
+        shoppingButton,
+        { attributes: true, attributeFilter: ["hidden"] },
+        () => !shoppingButton.hidden
+      );
+    await BrowserTestUtils.switchTab(gBrowser, newProductTab);
+    await shoppingButtonVisiblePromise;
+
+    ok(
+      BrowserTestUtils.is_visible(shoppingButton),
+      "The shopping button is now visible"
+    );
+
+    let newProductTab2 = BrowserTestUtils.addTab(gBrowser, PRODUCT_PAGE);
+    let newProductBrowser2 = newProductTab2.linkedBrowser;
+    await BrowserTestUtils.browserLoaded(
+      newProductBrowser2,
+      false,
+      PRODUCT_PAGE
+    );
+
+    ok(
+      BrowserTestUtils.is_visible(shoppingButton),
+      "The shopping button is still visible after opening background product tab"
+    );
+
+    shoppingButtonVisiblePromise = BrowserTestUtils.waitForMutationCondition(
+      shoppingButton,
+      { attributes: true, attributeFilter: ["hidden"] },
+      () => !shoppingButton.hidden
+    );
+    await BrowserTestUtils.switchTab(gBrowser, newProductTab2);
+    await shoppingButtonVisiblePromise;
+
+    ok(
+      BrowserTestUtils.is_visible(shoppingButton),
+      "The shopping button is still visible"
+    );
+
+    BrowserTestUtils.removeTab(newProductTab2);
+
+    BrowserTestUtils.removeTab(newProductTab);
+  });
+});
+
+add_task(async function test_button_deals_with_tabswitches_post_optout() {
+  Services.prefs.setBoolPref("browser.shopping.experience2023.active", true);
+
+  await BrowserTestUtils.withNewTab(CONTENT_PAGE, async function (browser) {
+    let shoppingButton = document.getElementById("shopping-sidebar-button");
+
+    ok(
+      BrowserTestUtils.is_hidden(shoppingButton),
+      "The shopping button is hidden on a non product page"
+    );
+
+    let newProductTab = BrowserTestUtils.addTab(gBrowser, PRODUCT_PAGE);
+    let newProductBrowser = newProductTab.linkedBrowser;
+    await BrowserTestUtils.browserLoaded(
+      newProductBrowser,
+      false,
+      PRODUCT_PAGE
+    );
+
+    ok(
+      BrowserTestUtils.is_hidden(shoppingButton),
+      "The shopping button is still hidden after opening a background product tab"
+    );
+
+    let shoppingButtonVisiblePromise =
+      BrowserTestUtils.waitForMutationCondition(
+        shoppingButton,
+        { attributes: true, attributeFilter: ["hidden"] },
+        () => !shoppingButton.hidden
+      );
+    await BrowserTestUtils.switchTab(gBrowser, newProductTab);
+    await shoppingButtonVisiblePromise;
+
+    ok(
+      BrowserTestUtils.is_visible(shoppingButton),
+      "The shopping button is now visible"
+    );
+
+    let newProductTab2 = BrowserTestUtils.addTab(gBrowser, PRODUCT_PAGE);
+    let newProductBrowser2 = newProductTab2.linkedBrowser;
+    await BrowserTestUtils.browserLoaded(
+      newProductBrowser2,
+      false,
+      PRODUCT_PAGE
+    );
+
+    ok(
+      BrowserTestUtils.is_visible(shoppingButton),
+      "The shopping button is still visible after opening background product tab"
+    );
+
+    shoppingButtonVisiblePromise = BrowserTestUtils.waitForMutationCondition(
+      shoppingButton,
+      { attributes: true, attributeFilter: ["hidden"] },
+      () => !shoppingButton.hidden
+    );
+    await BrowserTestUtils.switchTab(gBrowser, newProductTab2);
+    await shoppingButtonVisiblePromise;
+
+    ok(
+      BrowserTestUtils.is_visible(shoppingButton),
+      "The shopping button is still visible"
+    );
+
+    // Simulate opt-out
+    await SpecialPowers.pushPrefEnv({
+      set: [
+        ["browser.shopping.experience2023.active", false],
+        ["browser.shopping.experience2023.optedIn", 2],
+      ],
+    });
+
+    ok(
+      BrowserTestUtils.is_visible(shoppingButton),
+      "The shopping button is still visible after opting out."
+    );
+    Assert.equal(
+      shoppingButton.getAttribute("shoppingsidebaropen"),
+      "false",
+      "Button not marked as open."
+    );
+
+    // Switch to non-product tab.
+    await BrowserTestUtils.switchTab(
+      gBrowser,
+      gBrowser.getTabForBrowser(browser)
+    );
+    ok(
+      BrowserTestUtils.is_hidden(shoppingButton),
+      "The shopping button is hidden on non-product page."
+    );
+    Assert.equal(
+      shoppingButton.getAttribute("shoppingsidebaropen"),
+      "false",
+      "Button not marked as open."
+    );
+    // Switch to non-product tab.
+    await BrowserTestUtils.switchTab(gBrowser, newProductTab);
+    ok(
+      BrowserTestUtils.is_visible(shoppingButton),
+      "The shopping button is still visible on a different product tab after opting out."
+    );
+    Assert.equal(
+      shoppingButton.getAttribute("shoppingsidebaropen"),
+      "false",
+      "Button not marked as open."
+    );
+
+    BrowserTestUtils.removeTab(newProductTab2);
+
+    BrowserTestUtils.removeTab(newProductTab);
   });
 });

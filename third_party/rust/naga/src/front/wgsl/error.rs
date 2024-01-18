@@ -168,6 +168,7 @@ pub enum Error<'a> {
     InvalidIdentifierUnderscore(Span),
     ReservedIdentifierPrefix(Span),
     UnknownAddressSpace(Span),
+    RepeatedAttribute(Span),
     UnknownAttribute(Span),
     UnknownBuiltin(Span),
     UnknownAccess(Span),
@@ -241,6 +242,7 @@ pub enum Error<'a> {
     Other,
     ExpectedArraySize(Span),
     NonPositiveArrayLength(Span),
+    MissingWorkgroupSize(Span),
 }
 
 impl<'a> Error<'a> {
@@ -428,6 +430,11 @@ impl<'a> Error<'a> {
             Error::UnknownAddressSpace(bad_span) => ParseError {
                 message: format!("unknown address space: '{}'", &source[bad_span]),
                 labels: vec![(bad_span, "unknown address space".into())],
+                notes: vec![],
+            },
+            Error::RepeatedAttribute(bad_span) => ParseError {
+                message: format!("repeated attribute: '{}'", &source[bad_span]),
+                labels: vec![(bad_span, "repeated attribute".into())],
                 notes: vec![],
             },
             Error::UnknownAttribute(bad_span) => ParseError {
@@ -696,6 +703,14 @@ impl<'a> Error<'a> {
             Error::NonPositiveArrayLength(span) => ParseError {
                 message: "array element count must be greater than zero".to_string(),
                 labels: vec![(span, "must be greater than zero".into())],
+                notes: vec![],
+            },
+            Error::MissingWorkgroupSize(span) => ParseError {
+                message: "workgroup size is missing on compute shader entry point".to_string(),
+                labels: vec![(
+                    span,
+                    "must be paired with a @workgroup_size attribute".into(),
+                )],
                 notes: vec![],
             },
         }

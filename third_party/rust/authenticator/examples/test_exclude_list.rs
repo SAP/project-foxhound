@@ -3,12 +3,13 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 use authenticator::{
-    authenticatorservice::{AuthenticatorService, GetAssertionExtensions, RegisterArgs, SignArgs},
+    authenticatorservice::{AuthenticatorService, RegisterArgs, SignArgs},
     crypto::COSEAlgorithm,
     ctap2::commands::StatusCode,
     ctap2::server::{
-        PublicKeyCredentialDescriptor, PublicKeyCredentialParameters, RelyingParty,
-        ResidentKeyRequirement, Transport, User, UserVerificationRequirement,
+        PublicKeyCredentialDescriptor, PublicKeyCredentialParameters,
+        PublicKeyCredentialUserEntity, RelyingParty, ResidentKeyRequirement, Transport,
+        UserVerificationRequirement,
     },
     errors::{AuthenticatorError, CommandError, HIDError, UnsupportedOption},
     statecallback::StateCallback,
@@ -127,6 +128,9 @@ fn main() {
             Ok(StatusUpdate::PinUvError(e)) => {
                 panic!("Unexpected error: {:?}", e)
             }
+            Ok(StatusUpdate::SelectResultNotice(_, _)) => {
+                panic!("Unexpected select device notice")
+            }
             Err(RecvError) => {
                 println!("STATUS: end");
                 return;
@@ -134,9 +138,8 @@ fn main() {
         }
     });
 
-    let user = User {
+    let user = PublicKeyCredentialUserEntity {
         id: "user_id".as_bytes().to_vec(),
-        icon: None,
         name: Some("A. User".to_string()),
         display_name: None,
     };
@@ -146,7 +149,6 @@ fn main() {
         relying_party: RelyingParty {
             id: "example.com".to_string(),
             name: None,
-            icon: None,
         },
         origin: origin.clone(),
         user,
@@ -185,7 +187,13 @@ fn main() {
             Ok(a) => {
                 println!("Ok!");
                 println!("Registering again with the key_handle we just got back. This should result in a 'already registered' error.");
-                let key_handle = a.att_obj.auth_data.credential_data.unwrap().credential_id.clone();
+                let key_handle = a
+                    .att_obj
+                    .auth_data
+                    .credential_data
+                    .unwrap()
+                    .credential_id
+                    .clone();
                 let pub_key = PublicKeyCredentialDescriptor {
                     id: key_handle,
                     transports: vec![Transport::USB],
@@ -222,9 +230,8 @@ fn main() {
         origin,
         relying_party_id: "example.com".to_string(),
         allow_list: vec![],
-        extensions: GetAssertionExtensions::default(),
+        extensions: Default::default(),
         pin: None,
-        alternate_rp_id: None,
         use_ctap1_fallback: false,
         user_verification_req: UserVerificationRequirement::Preferred,
         user_presence_req: true,

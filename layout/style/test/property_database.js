@@ -5351,6 +5351,9 @@ var gCSSProperties = {
       "attr(\\2)",
       "attr(-\\2)",
       "attr(-\\32)",
+      'attr(title, "fallback")',
+      'attr(\\32, "fallback")',
+      'attr(-\\32, "fallback")',
       "counter(\\2)",
       "counters(\\32, '.')",
       "counter(-\\32, upper-roman)",
@@ -13122,19 +13125,17 @@ if (IsCSSPropertyPrefEnabled("layout.css.overscroll-behavior.enabled")) {
 
 gCSSProperties["display"].other_values.push("flow-root");
 
-if (IsCSSPropertyPrefEnabled("layout.css.hyphenate-character.enabled")) {
-  gCSSProperties["hyphenate-character"] = {
-    domProp: "hyphenateCharacter",
-    inherited: true,
-    type: CSS_TYPE_LONGHAND,
-    applies_to_first_letter: true,
-    applies_to_first_line: true,
-    applies_to_placeholder: true,
-    initial_values: ["auto"],
-    other_values: ['"="', '"/-/"', '"\1400"', '""'],
-    invalid_values: ["none", "auto auto", "1400", "U+1400"],
-  };
-}
+gCSSProperties["hyphenate-character"] = {
+  domProp: "hyphenateCharacter",
+  inherited: true,
+  type: CSS_TYPE_LONGHAND,
+  applies_to_first_letter: true,
+  applies_to_first_line: true,
+  applies_to_placeholder: true,
+  initial_values: ["auto"],
+  other_values: ['"="', '"/-/"', '"\1400"', '""'],
+  invalid_values: ["none", "auto auto", "1400", "U+1400"],
+};
 
 if (IsCSSPropertyPrefEnabled("layout.css.content-visibility.enabled")) {
   gCSSProperties["content-visibility"] = {
@@ -13513,141 +13514,137 @@ gCSSProperties["scrollbar-width"] = {
   invalid_values: ["1px"],
 };
 
-if (IsCSSPropertyPrefEnabled("layout.css.motion-path.enabled")) {
-  gCSSProperties["offset"] = {
-    domProp: "offset",
-    inherited: false,
-    type: CSS_TYPE_TRUE_SHORTHAND,
-    subproperties: [
-      "offset-path",
-      "offset-distance",
-      "offset-rotate",
-      "offset-anchor",
-    ],
-    initial_values: ["none"],
-    other_values: [
-      "none 30deg reverse",
-      "none 50px reverse 30deg",
-      "none calc(10px + 20%) auto",
-      "none reverse",
-      "none / left center",
-      "path('M 0 0 H 1') -200% auto",
-      "path('M 0 0 H 1') -200%",
-      "path('M 0 0 H 1') 50px",
-      "path('M 0 0 H 1') auto",
-      "path('M 0 0 H 1') reverse 30deg 50px",
-      "path('M 0 0 H 1')",
-      "path('m 20 0 h 100') -7rad 8px / auto",
-      "path('m 0 30 v 100') -7rad 8px / left top",
-      "path('m 0 0 h 100') -7rad 8px",
-      "path('M 0 0 H 100') 100px 0deg",
-    ],
-    invalid_values: [
-      "100px 0deg path('m 0 0 h 100')",
-      "30deg",
-      "auto 30deg 100px",
-      "auto / none",
-      "none /",
-      "none / 100px 20px 30deg",
-      "path('M 20 30 A 60 70 80') bottom",
-      "path('M 20 30 A 60 70 80') bottom top",
-      "path('M 20 30 A 60 70 80') 100px 200px",
-      "path('M 20 30 A 60 70 80') reverse auto",
-      "path('M 20 30 A 60 70 80') reverse 10px 30deg",
-      "path('M 20 30 A 60 70 80') /",
-    ],
-  };
+gCSSProperties["offset"] = {
+  domProp: "offset",
+  inherited: false,
+  type: CSS_TYPE_TRUE_SHORTHAND,
+  subproperties: [
+    "offset-path",
+    "offset-distance",
+    "offset-rotate",
+    "offset-anchor",
+  ],
+  initial_values: ["none"],
+  other_values: [
+    "none 30deg reverse",
+    "none 50px reverse 30deg",
+    "none calc(10px + 20%) auto",
+    "none reverse",
+    "none / left center",
+    "path('M 0 0 H 1') -200% auto",
+    "path('M 0 0 H 1') -200%",
+    "path('M 0 0 H 1') 50px",
+    "path('M 0 0 H 1') auto",
+    "path('M 0 0 H 1') reverse 30deg 50px",
+    "path('M 0 0 H 1')",
+    "path('m 20 0 h 100') -7rad 8px / auto",
+    "path('m 0 30 v 100') -7rad 8px / left top",
+    "path('m 0 0 h 100') -7rad 8px",
+    "path('M 0 0 H 100') 100px 0deg",
+  ],
+  invalid_values: [
+    "100px 0deg path('m 0 0 h 100')",
+    "30deg",
+    "auto 30deg 100px",
+    "auto / none",
+    "none /",
+    "none / 100px 20px 30deg",
+    "path('M 20 30 A 60 70 80') bottom",
+    "path('M 20 30 A 60 70 80') bottom top",
+    "path('M 20 30 A 60 70 80') 100px 200px",
+    "path('M 20 30 A 60 70 80') reverse auto",
+    "path('M 20 30 A 60 70 80') reverse 10px 30deg",
+    "path('M 20 30 A 60 70 80') /",
+  ],
+};
 
-  gCSSProperties["offset-path"] = {
-    domProp: "offsetPath",
-    inherited: false,
-    type: CSS_TYPE_LONGHAND,
-    initial_values: ["none"],
-    other_values: [...pathValues.other_values],
-    invalid_values: ["path('')"].concat(pathValues.invalid_values),
-  };
+gCSSProperties["offset-path"] = {
+  domProp: "offsetPath",
+  inherited: false,
+  type: CSS_TYPE_LONGHAND,
+  initial_values: ["none"],
+  other_values: [...pathValues.other_values],
+  invalid_values: ["path('')"].concat(pathValues.invalid_values),
+};
 
-  if (IsCSSPropertyPrefEnabled("layout.css.motion-path-ray.enabled")) {
-    gCSSProperties["offset-path"]["other_values"].push(
-      "ray(0deg)",
-      "ray(45deg closest-side)",
-      "ray(0rad farthest-side)",
-      "ray(0.5turn closest-corner contain)",
-      "ray(200grad farthest-corner)",
-      "ray(sides 180deg)",
-      "ray(contain farthest-side 180deg)",
-      "ray(calc(180deg - 45deg) farthest-side)",
-      "ray(0deg at center center)",
-      "ray(at 10% 10% 1rad)"
-    );
+if (IsCSSPropertyPrefEnabled("layout.css.motion-path-ray.enabled")) {
+  gCSSProperties["offset-path"]["other_values"].push(
+    "ray(0deg)",
+    "ray(45deg closest-side)",
+    "ray(0rad farthest-side)",
+    "ray(0.5turn closest-corner contain)",
+    "ray(200grad farthest-corner)",
+    "ray(sides 180deg)",
+    "ray(contain farthest-side 180deg)",
+    "ray(calc(180deg - 45deg) farthest-side)",
+    "ray(0deg at center center)",
+    "ray(at 10% 10% 1rad)"
+  );
 
-    gCSSProperties["offset-path"]["invalid_values"].push(
-      "ray(closest-side)",
-      "ray(0deg, closest-side)",
-      "ray(contain 0deg closest-side contain)"
-    );
-  }
-
-  if (IsCSSPropertyPrefEnabled("layout.css.motion-path-basic-shapes.enabled")) {
-    gCSSProperties["offset-path"]["other_values"].push(
-      ...basicShapeOtherValues,
-      ...basicShapeXywhRectValues
-    );
-  }
-
-  if (IsCSSPropertyPrefEnabled("layout.css.motion-path-url.enabled")) {
-    gCSSProperties["offset-path"]["other_values"].push("url(#svgPath)");
-  }
-
-  gCSSProperties["offset-distance"] = {
-    domProp: "offsetDistance",
-    inherited: false,
-    type: CSS_TYPE_LONGHAND,
-    initial_values: ["0"],
-    other_values: ["10px", "10%", "190%", "-280%", "calc(30px + 40%)"],
-    invalid_values: ["none", "45deg"],
-  };
-
-  gCSSProperties["offset-rotate"] = {
-    domProp: "offsetRotate",
-    inherited: false,
-    type: CSS_TYPE_LONGHAND,
-    initial_values: ["auto"],
-    other_values: ["reverse", "0deg", "0rad reverse", "-45deg", "5turn auto"],
-    invalid_values: ["none", "10px", "reverse 0deg reverse", "reverse auto"],
-  };
-
-  gCSSProperties["offset-anchor"] = {
-    domProp: "offsetAnchor",
-    inherited: false,
-    type: CSS_TYPE_LONGHAND,
-    initial_values: ["auto"],
-    other_values: [
-      "left bottom",
-      "center center",
-      "calc(20% + 10px) center",
-      "right 30em",
-      "10px 20%",
-      "left -10px top -20%",
-      "right 10% bottom 20em",
-    ],
-    invalid_values: ["none", "10deg", "left 10% top"],
-  };
+  gCSSProperties["offset-path"]["invalid_values"].push(
+    "ray(closest-side)",
+    "ray(0deg, closest-side)",
+    "ray(contain 0deg closest-side contain)"
+  );
 }
+
+if (IsCSSPropertyPrefEnabled("layout.css.motion-path-basic-shapes.enabled")) {
+  gCSSProperties["offset-path"]["other_values"].push(
+    ...basicShapeOtherValues,
+    ...basicShapeXywhRectValues
+  );
+}
+
+if (IsCSSPropertyPrefEnabled("layout.css.motion-path-url.enabled")) {
+  gCSSProperties["offset-path"]["other_values"].push("url(#svgPath)");
+}
+
+gCSSProperties["offset-distance"] = {
+  domProp: "offsetDistance",
+  inherited: false,
+  type: CSS_TYPE_LONGHAND,
+  initial_values: ["0"],
+  other_values: ["10px", "10%", "190%", "-280%", "calc(30px + 40%)"],
+  invalid_values: ["none", "45deg"],
+};
+
+gCSSProperties["offset-rotate"] = {
+  domProp: "offsetRotate",
+  inherited: false,
+  type: CSS_TYPE_LONGHAND,
+  initial_values: ["auto"],
+  other_values: ["reverse", "0deg", "0rad reverse", "-45deg", "5turn auto"],
+  invalid_values: ["none", "10px", "reverse 0deg reverse", "reverse auto"],
+};
+
+gCSSProperties["offset-anchor"] = {
+  domProp: "offsetAnchor",
+  inherited: false,
+  type: CSS_TYPE_LONGHAND,
+  initial_values: ["auto"],
+  other_values: [
+    "left bottom",
+    "center center",
+    "calc(20% + 10px) center",
+    "right 30em",
+    "10px 20%",
+    "left -10px top -20%",
+    "right 10% bottom 20em",
+  ],
+  invalid_values: ["none", "10deg", "left 10% top"],
+};
 
 if (
   IsCSSPropertyPrefEnabled("layout.css.motion-path-offset-position.enabled")
 ) {
-  if (IsCSSPropertyPrefEnabled("layout.css.motion-path.enabled")) {
-    gCSSProperties["offset"]["subproperties"].push("offset-position");
-    gCSSProperties["offset"]["other_values"].push("top right / top left");
+  gCSSProperties["offset"]["subproperties"].push("offset-position");
+  gCSSProperties["offset"]["other_values"].push("top right / top left");
 
-    if (IsCSSPropertyPrefEnabled("layout.css.motion-path-ray.enabled")) {
-      gCSSProperties["offset"]["other_values"].push(
-        "top right ray(45deg closest-side)",
-        "50% 50% ray(0rad farthest-side)"
-      );
-    }
+  if (IsCSSPropertyPrefEnabled("layout.css.motion-path-ray.enabled")) {
+    gCSSProperties["offset"]["other_values"].push(
+      "top right ray(45deg closest-side)",
+      "50% 50% ray(0rad farthest-side)"
+    );
   }
 
   gCSSProperties["offset-position"] = {
@@ -13669,7 +13666,7 @@ if (
   };
 }
 
-if (IsCSSPropertyPrefEnabled("layout.css.linear-easing-function.enabled")) {
+{
   let linear_function_other_values = [
     "linear(0, 1)",
     "linear(0 0% 50%, 1 50% 100%)",
@@ -13977,29 +13974,27 @@ if (IsCSSPropertyPrefEnabled("layout.css.scroll-driven-animations.enabled")) {
   };
 }
 
-if (IsCSSPropertyPrefEnabled("layout.css.scrollbar-gutter.enabled")) {
-  gCSSProperties["scrollbar-gutter"] = {
-    domProp: "scrollbarGutter",
-    inherited: false,
-    type: CSS_TYPE_LONGHAND,
-    initial_values: ["auto"],
-    other_values: ["stable", "stable both-edges", "both-edges stable"],
-    invalid_values: [
-      "auto stable",
-      "auto both-edges",
-      "both-edges",
-      "stable mirror",
-      // The following values are from scrollbar-gutter extension in CSS
-      // Overflow 4 https://drafts.csswg.org/css-overflow-4/#sbg-ext.
-      "always",
-      "always both-edges",
-      "always force",
-      "always both-edges force",
-      "stable both-edges force",
-      "match-parent",
-    ],
-  };
-}
+gCSSProperties["scrollbar-gutter"] = {
+  domProp: "scrollbarGutter",
+  inherited: false,
+  type: CSS_TYPE_LONGHAND,
+  initial_values: ["auto"],
+  other_values: ["stable", "stable both-edges", "both-edges stable"],
+  invalid_values: [
+    "auto stable",
+    "auto both-edges",
+    "both-edges",
+    "stable mirror",
+    // The following values are from scrollbar-gutter extension in CSS
+    // Overflow 4 https://drafts.csswg.org/css-overflow-4/#sbg-ext.
+    "always",
+    "always both-edges",
+    "always force",
+    "always both-edges force",
+    "stable both-edges force",
+    "match-parent",
+  ],
+};
 
 // Copy aliased properties' fields from their alias targets. Keep this logic
 // at the bottom of this file to ensure all the aliased properties are

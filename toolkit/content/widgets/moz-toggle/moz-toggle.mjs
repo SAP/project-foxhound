@@ -44,11 +44,6 @@ export default class MozToggle extends MozLitElement {
     };
   }
 
-  // Use a relative URL in storybook to get faster reloads on style changes.
-  static stylesheetUrl = window.IS_STORYBOOK
-    ? "./moz-toggle/moz-toggle.css"
-    : "chrome://global/content/elements/moz-toggle.css";
-
   constructor() {
     super();
     this.pressed = false;
@@ -95,7 +90,7 @@ export default class MozToggle extends MozLitElement {
       return html`
         <p
           id="moz-toggle-description"
-          class="description-wrapper"
+          class="description-wrapper text-deemphasized"
           part="description"
         >
           ${this.description} ${this.supportLinkTemplate()}
@@ -112,7 +107,10 @@ export default class MozToggle extends MozLitElement {
   render() {
     const { pressed, disabled, description, ariaLabel, handleClick } = this;
     return html`
-      <link rel="stylesheet" href=${this.constructor.stylesheetUrl} />
+      <link
+        rel="stylesheet"
+        href="chrome://global/content/elements/moz-toggle.css"
+      />
       ${this.labelTemplate()}
       <button
         id="moz-toggle-button"

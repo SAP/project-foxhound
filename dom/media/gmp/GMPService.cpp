@@ -29,6 +29,7 @@
 #include "nsComponentManagerUtils.h"
 #include "nsDirectoryServiceDefs.h"
 #include "nsDirectoryServiceUtils.h"
+#include "nsGlobalWindowInner.h"
 #include "nsHashKeys.h"
 #include "nsIObserverService.h"
 #include "nsIXULAppInfo.h"
@@ -110,7 +111,9 @@ class GMPServiceCreateHelper final : public mozilla::Runnable {
       if (XRE_IsParentProcess()) {
         RefPtr<GeckoMediaPluginServiceParent> service =
             new GeckoMediaPluginServiceParent();
-        service->Init();
+        if (NS_WARN_IF(NS_FAILED(service->Init()))) {
+          return nullptr;
+        }
         sSingletonService = service;
 #if defined(XP_MACOSX) && defined(MOZ_SANDBOX)
         // GMPProcessParent should only be instantiated in the parent
@@ -120,7 +123,9 @@ class GMPServiceCreateHelper final : public mozilla::Runnable {
       } else {
         RefPtr<GeckoMediaPluginServiceChild> service =
             new GeckoMediaPluginServiceChild();
-        service->Init();
+        if (NS_WARN_IF(NS_FAILED(service->Init()))) {
+          return nullptr;
+        }
         sSingletonService = service;
       }
       ClearOnShutdown(&sSingletonService);
@@ -211,7 +216,10 @@ GeckoMediaPluginService::RunPluginCrashCallbacks(
     event->SetTrusted(true);
     event->WidgetEventPtr()->mFlags.mOnlyChromeDispatch = true;
 
-    EventDispatcher::DispatchDOMEvent(window, nullptr, event, nullptr, nullptr);
+    // MOZ_KnownLive due to bug 1506441
+    EventDispatcher::DispatchDOMEvent(
+        MOZ_KnownLive(nsGlobalWindowInner::Cast(window)), nullptr, event,
+        nullptr, nullptr);
   }
 
   return NS_OK;
@@ -365,12 +373,18 @@ void GeckoMediaPluginService::ShutdownGMPThread() {
 /* static */
 nsCOMPtr<nsIAsyncShutdownClient> GeckoMediaPluginService::GetShutdownBarrier() {
   nsCOMPtr<nsIAsyncShutdownService> svc = services::GetAsyncShutdownService();
-  MOZ_RELEASE_ASSERT(svc);
+  if (NS_WARN_IF(!svc)) {
+    MOZ_ASSERT_UNREACHABLE("No async shutdown service!");
+    return nullptr;
+  }
 
   nsCOMPtr<nsIAsyncShutdownClient> barrier;
   nsresult rv = svc->GetXpcomWillShutdown(getter_AddRefs(barrier));
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    MOZ_ASSERT_UNREACHABLE("Could not create shutdown barrier!");
+    return nullptr;
+  }
 
-  MOZ_RELEASE_ASSERT(NS_SUCCEEDED(rv));
   MOZ_RELEASE_ASSERT(barrier);
   return barrier;
 }

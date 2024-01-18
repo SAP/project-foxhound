@@ -8,41 +8,23 @@
 @namespace html url("http://www.w3.org/1999/xhtml");
 
 :root {
+  appearance: none;
+
   --toolbar-non-lwt-bgcolor: -moz-dialog;
   --toolbar-non-lwt-textcolor: -moz-dialogtext;
-
-  --arrowpanel-field-background: rgba(249,249,250,.3);
-
+  --arrowpanel-field-background: light-dark(rgba(249, 249, 250, .3), rgba(12, 12, 13, .3));
   --chrome-content-separator-color: #e1e1e2;
+
+  &:-moz-lwtheme {
+    --chrome-content-separator-color: rgba(0,0,0,.3);
+  }
 }
 
-:root:-moz-lwtheme {
-  --chrome-content-separator-color: rgba(0,0,0,.3);
-}
-
-:root[lwt-popup-brighttext] {
-  --arrowpanel-field-background: rgba(12,12,13,.3);
-}
-
-#browser {
+#browser,
+#navigator-toolbox {
   /* #browser and #navigator-toolbox must have relative positions so that the
      latter can slide over the former in fullscreen mode. */
   position: relative;
-}
-
-#navigator-toolbox {
-  appearance: none;
-  position: relative;
-}
-
-#navigator-toolbox:not(:-moz-lwtheme) {
-  background-color: window;
-}
-
-@media not (prefers-contrast) {
-  #navigator-toolbox:not(:-moz-lwtheme) {
-    background-color: #f0f0f4;
-  }
 }
 
 /*
@@ -175,15 +157,6 @@
 
 /* Address bar */
 
-@media not (prefers-contrast) {
-  :root:not(:-moz-lwtheme) #urlbar {
-    --urlbar-box-bgcolor: white;
-  }
-  :root[lwt-default-theme-in-dark-mode] #urlbar {
-    --urlbar-box-bgcolor: var(--toolbar-field-focus-background-color);
-  }
-}
-
 @media (prefers-contrast) {
   /* The "increase contrast" preference on macOS draws a 1px black line around
      panels, including the separate search bar. Since the Urlbar is not
@@ -299,7 +272,7 @@ moz-input-box > menupopup .context-menu-add-engine > .menu-iconic-left {
   margin-block: 1px 0;
 }
 
-.tabbrowser-tab:not(:hover) > .tab-stack > .tab-content > .tab-icon-image:not([selected="true"], [multiselected]) {
+.tabbrowser-tab:not(:hover) > .tab-stack > .tab-content > .tab-icon-image:not([selected], [multiselected]) {
   opacity: .9;
 }
 
@@ -311,24 +284,26 @@ moz-input-box > menupopup .context-menu-add-engine > .menu-iconic-left {
   opacity: 0.9999;
 }
 
-.tab-label-container:not([selected="true"], [multiselected]) {
+.tab-label-container:not([selected], [multiselected]) {
   opacity: .7;
 }
 
 .tabbrowser-tab {
   font: message-box;
   border: none;
-}
-.tabbrowser-tab[multiselected]:not(:-moz-lwtheme),
-.tabbrowser-tab[visuallyselected=true]:not(:-moz-lwtheme) {
-  /* overriding tabbox.css */
-  color: hsl(240, 5%, 5%);
-}
 
-.tabbrowser-tab[multiselected],
-.tabbrowser-tab[visuallyselected=true] {
-  /* overriding tabbox.css */
-  text-shadow: inherit;
+  /* FIXME: Are these styles really needed nowadays? */
+  &:is([visuallyselected], [multiselected]) {
+    /* overriding tabbox.css */
+    text-shadow: inherit;
+
+    @media (prefers-color-scheme: light) {
+      &:not(:-moz-lwtheme) {
+        /* overriding tabbox.css */
+        color: hsl(240, 5%, 5%);
+      }
+    }
+  }
 }
 
 #tabbrowser-tabs {
@@ -356,10 +331,8 @@ moz-input-box > menupopup .context-menu-add-engine > .menu-iconic-left {
   border-top-style: solid;
   color: #444;
   text-shadow: none;
-}
 
-@media (-moz-content-prefers-color-scheme: dark) {
-  #statuspanel-label {
+  @media (-moz-content-prefers-color-scheme: dark) {
     background-color: hsl(240, 1%, 20%);
     border-color: hsl(240, 1%, 40%);
     color: rgb(249, 249, 250);

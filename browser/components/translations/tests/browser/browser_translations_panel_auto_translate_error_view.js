@@ -39,99 +39,38 @@ add_task(
       "The translations button is visible."
     );
 
-    info(
-      "Simulate clicking always-translate-language in the settings menu, " +
-        "adding the document language to the alwaysTranslateLanguages pref"
-    );
-    await openTranslationsSettingsMenuViaTranslationsButton();
+    await openTranslationsPanel({ onOpenPanel: assertPanelDefaultView });
+    await openTranslationsSettingsMenu();
 
     await assertIsAlwaysTranslateLanguage("es", { checked: false });
-    await clickAlwaysTranslateLanguage();
+    await clickAlwaysTranslateLanguage({
+      downloadHandler: resolveDownloads,
+    });
     await assertIsAlwaysTranslateLanguage("es", { checked: true });
 
-    await assertTranslationsButton(
-      { button: true, circleArrows: true, locale: false, icon: true },
-      "The icon presents the loading indicator."
-    );
+    await assertPageIsTranslated("es", "en", runInPage);
 
-    await resolveDownloads(1);
-
-    const { locale } = await assertTranslationsButton(
-      { button: true, circleArrows: false, locale: true, icon: true },
-      "The icon presents the locale."
-    );
-
-    is(locale.innerText, "en", "The English language tag is shown.");
-
-    await runInPage(async TranslationsTest => {
-      const { getH1 } = TranslationsTest.getSelectors();
-      await TranslationsTest.assertTranslationResult(
-        "The page's H1 is translated automatically",
-        getH1,
-        "DON QUIJOTE DE LA MANCHA [es to en, html]"
-      );
+    await navigate("Navigate to a page in an unsupported language", {
+      url: FRENCH_PAGE_URL,
     });
-
-    info("Navigate to a page in an unsupported language");
-    await navigate(FRENCH_PAGE_URL);
 
     await assertTranslationsButton(
       { button: false },
       "The translations button should be unavailable."
     );
 
-    info(
-      "Open the translations panel to show the default unsupported language view."
-    );
-    await openTranslationsPanelViaAppMenu();
-
-    ok(
-      getByL10nId("translations-panel-error-unsupported"),
-      "The unsupported title is shown."
-    );
-    ok(
-      getByL10nId("translations-panel-error-unsupported-hint-known"),
-      "The unsupported language message is shown."
-    );
-    ok(
-      getByL10nId("translations-panel-learn-more-link"),
-      "The learn more link is available"
-    );
-
-    info("Navigate back to the spanish page.");
-    await navigate(SPANISH_PAGE_URL_DOT_ORG);
-
-    await assertTranslationsButton(
-      { button: true, circleArrows: true, locale: false, icon: true },
-      "The icon presents the loading indicator."
-    );
-
-    await rejectDownloads(1);
-
-    await runInPage(async TranslationsTest => {
-      const { getH1 } = TranslationsTest.getSelectors();
-      await TranslationsTest.assertTranslationResult(
-        "The page's H1 is in Spanish.",
-        getH1,
-        "Don Quijote de La Mancha"
-      );
+    await openTranslationsPanel({
+      openFromAppMenu: true,
+      onOpenPanel: assertPanelUnsupportedLanguageView,
     });
 
-    assertPanelErrorView();
-    info("Waiting to find the translations panel default header.");
-    const header = await waitForCondition(() =>
-      maybeGetByL10nId("translations-panel-header")
-    );
-    ok(header, "The default panel header is there.");
+    await navigate("Navigate back to a Spanish page.", {
+      url: SPANISH_PAGE_URL_DOT_ORG,
+      downloadHandler: rejectDownloads,
+      onOpenPanel: assertPanelErrorView,
+    });
 
-    const errorMessage = await waitForCondition(() =>
-      maybeGetByL10nId("translations-panel-error-translating")
-    );
-    ok(errorMessage, "The translation error message is there.");
-    ok(
-      !maybeGetByL10nId("translations-panel-error-unsupported"),
-      "The unsupported header is hidden."
-    );
+    await assertPageIsUntranslated(runInPage);
 
     await cleanup();
   }

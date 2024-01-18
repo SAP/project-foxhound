@@ -12,6 +12,7 @@ from taskgraph.util.taskcluster import get_artifact, get_task_definition, list_a
 from gecko_taskgraph.util.copy_task import copy_task
 
 from .registry import register_callback_action
+from .retrigger import retrigger_action
 from .util import add_args_to_command, create_task_from_def, fetch_graph_and_labels
 
 logger = logging.getLogger(__name__)
@@ -40,6 +41,18 @@ def get_failures(task_id, task_definition):
     # collect dirs that don't have a specific manifest
     dirs = set()
     tests = set()
+
+    # android reftest harness doesn't confirm failure (yet)
+    if (
+        (
+            "reftest" in task_definition["extra"]["suite"]
+            or "crashtest" in task_definition["extra"]["suite"]
+        )
+        and "web-platform" not in task_definition["extra"]["suite"]
+        and "android" in task_definition["extra"]["treeherder"]["machine"]["platform"]
+    ):
+        return {"dirs": sorted(dirs), "tests": sorted(tests)}
+
     artifacts = list_artifacts(task_id)
     for artifact in artifacts:
         if "name" not in artifact or not artifact["name"].endswith("errorsummary.log"):
@@ -64,29 +77,32 @@ def get_failures(task_id, task_definition):
                 if not l["test"]:
                     print("Warning: no testname in errorsummary line: %s" % l)
                     continue
+
+                test_path = l["test"].split(" ")[0]
+
+                # tests with url params (wpt), will get confused here
+                if "?" not in test_path:
+                    test_path = test_path.split(":")[-1]
+
+                # edge case where a crash on shutdown has a "test" name == group name
+                if (
+                    test_path.endswith(".toml")
+                    or test_path.endswith(".ini")
+                    or test_path.endswith(".list")
+                ):
+                    # TODO: consider running just the manifest
+                    continue
+
+                # edge cases with missing test names
+                if (
+                    test_path is None
+                    or test_path == "None"
+                    or "SimpleTest" in test_path
+                ):
+                    continue
+
                 if "signature" in l.keys():
                     # dealing with a crash
-                    test_path = l["test"].split(" ")[0]
-
-                    # tests with url params (wpt), will get confused here
-                    if "?" not in test_path:
-                        test_path = test_path.split(":")[-1]
-
-                    # edge case where a crash on shutdown has a "test" name == group name
-                    if (
-                        test_path.endswith(".toml")
-                        or test_path.endswith(".ini")
-                        or test_path.endswith(".list")
-                    ):
-                        continue
-
-                    # edge cases with missing test names
-                    if (
-                        test_path is None
-                        or test_path == "None"
-                        or "SimpleTest" in test_path
-                    ):
-                        continue
 
                     if "web-platform" in task_definition["extra"]["suite"]:
                         test_path = fix_wpt_name(test_path)
@@ -96,29 +112,6 @@ def get_failures(task_id, task_definition):
                     if test_path:
                         tests.update(test_path)
                 else:
-                    test_path = l["test"].split(" ")[0]
-
-                    # tests with url params (wpt), will get confused here
-                    if "?" not in test_path:
-                        test_path = test_path.split(":")[-1]
-
-                    # edge case where a crash on shutdown has a "test" name == group name
-                    if (
-                        test_path.endswith(".toml")
-                        or test_path.endswith(".ini")
-                        or test_path.endswith(".list")
-                    ):
-                        # TODO: consider running just the manifest
-                        continue
-
-                    # edge cases with missing test names
-                    if (
-                        test_path is None
-                        or test_path == "None"
-                        or "SimpleTest" in test_path
-                    ):
-                        continue
-
                     if "status" not in l and "expected" not in l:
                         continue
 
@@ -186,6 +179,8 @@ def create_confirm_failure_tasks(task_definition, failures, level):
 
     th_dict["groupSymbol"] = th_dict["groupSymbol"] + "-cf"
     th_dict["tier"] = 3
+    th_dict["groupName"] += " (confirm failures)"
+    task_definition["metadata"]["name"] += "-cf"
 
     if repeatable_task:
         task_definition["payload"]["maxRunTime"] = 3600 * 3
@@ -232,6 +227,7 @@ def create_confirm_failure_tasks(task_definition, failures, level):
             task_definition["payload"]["env"]["MOZHARNESS_TEST_PATHS"] = json.dumps(
                 {suite: [fpath]}, sort_keys=True
             )
+            task_definition["payload"]["env"]["MOZLOG_DUMP_ALL_TESTS"] = "1"
 
             logger.info(
                 "Creating task for path {} with command {}".format(
@@ -274,5 +270,9 @@ def confirm_failures(parameters, graph_config, input, task_group_id, task_id):
     task_definition.setdefault("dependencies", []).extend(dependencies.values())
 
     failures = get_failures(task_id, task_definition)
-    logger.info("confirm_failures: %s" % failures)
-    create_confirm_failure_tasks(task_definition, failures, parameters["level"])
+    if failures["dirs"] == [] and failures["tests"] == []:
+        logger.info("need to retrigger task as no failures found")
+        retrigger_action(parameters, graph_config, input, decision_task_id, task_id)
+    else:
+        logger.info("confirm_failures: %s" % failures)
+        create_confirm_failure_tasks(task_definition, failures, parameters["level"])

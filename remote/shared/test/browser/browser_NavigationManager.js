@@ -18,7 +18,7 @@ const FIRST_COOP_URL =
 const SECOND_COOP_URL =
   "https://example.net/document-builder.sjs?headers=Cross-Origin-Opener-Policy:same-origin&html=second_coop";
 
-add_task(async function testSimpleNavigation() {
+add_task(async function test_simpleNavigation() {
   const events = [];
   const onEvent = (name, data) => events.push({ name, data });
 
@@ -244,7 +244,7 @@ add_task(async function test_loadPageWithCoop() {
   navigationManager.stopMonitoring();
 });
 
-add_task(async function testSameDocumentNavigation() {
+add_task(async function test_sameDocumentNavigation() {
   const events = [];
   const onEvent = (name, data) => events.push({ name, data });
 
@@ -264,14 +264,14 @@ add_task(async function testSameDocumentNavigation() {
   is(events.length, 0, "No event recorded");
 
   info("Perform a same-document navigation");
-  let onNavigationStopped = navigationManager.once("navigation-stopped");
-  BrowserTestUtils.loadURIString(browser, url + "#hash");
-  await onNavigationStopped;
+  let onLocationChanged = navigationManager.once("location-changed");
+  BrowserTestUtils.startLoadingURIString(browser, url + "#hash");
+  await onLocationChanged;
 
   const hashNavigation = navigationManager.getNavigationForBrowsingContext(
     browser.browsingContext
   );
-  is(events.length, 3, "Recorded 3 navigation events");
+  is(events.length, 1, "Recorded 1 navigation event");
   assertNavigationEvents(
     events,
     url + "#hash",
@@ -280,13 +280,16 @@ add_task(async function testSameDocumentNavigation() {
     true
   );
 
+  // Navigate from `url + "#hash"` to `url`, this will trigger a regular
+  // navigation and we can use `loadURL` to properly wait for the navigation to
+  // complete.
   info("Perform a regular navigation");
   await loadURL(browser, url);
 
   const regularNavigation = navigationManager.getNavigationForBrowsingContext(
     browser.browsingContext
   );
-  is(events.length, 5, "Recorded 2 additional navigation events");
+  is(events.length, 3, "Recorded 2 additional navigation events");
   assertNavigationEvents(
     events,
     url,
@@ -295,26 +298,26 @@ add_task(async function testSameDocumentNavigation() {
   );
 
   info("Perform another same-document navigation");
-  onNavigationStopped = navigationManager.once("navigation-stopped");
-  BrowserTestUtils.loadURIString(browser, url + "#foo");
-  await onNavigationStopped;
+  onLocationChanged = navigationManager.once("location-changed");
+  BrowserTestUtils.startLoadingURIString(browser, url + "#foo");
+  await onLocationChanged;
 
   const otherHashNavigation = navigationManager.getNavigationForBrowsingContext(
     browser.browsingContext
   );
 
-  is(events.length, 8, "Recorded 3 additional navigation events");
+  is(events.length, 4, "Recorded 1 additional navigation event");
 
   info("Perform a same-hash navigation");
-  onNavigationStopped = navigationManager.once("navigation-stopped");
-  BrowserTestUtils.loadURIString(browser, url + "#foo");
-  await onNavigationStopped;
+  onLocationChanged = navigationManager.once("location-changed");
+  BrowserTestUtils.startLoadingURIString(browser, url + "#foo");
+  await onLocationChanged;
 
   const sameHashNavigation = navigationManager.getNavigationForBrowsingContext(
     browser.browsingContext
   );
 
-  is(events.length, 11, "Recorded 3 additional navigation events");
+  is(events.length, 5, "Recorded 1 additional navigation event");
   assertNavigationEvents(
     events,
     url + "#foo",
@@ -335,4 +338,35 @@ add_task(async function testSameDocumentNavigation() {
   navigationManager.off("navigation-stopped", onEvent);
 
   navigationManager.stopMonitoring();
+});
+
+add_task(async function test_startNavigationAndCloseTab() {
+  const events = [];
+  const onEvent = (name, data) => events.push({ name, data });
+
+  const navigationManager = new NavigationManager();
+  navigationManager.on("navigation-started", onEvent);
+  navigationManager.on("navigation-stopped", onEvent);
+
+  const tab = addTab(gBrowser, FIRST_URL);
+  const browser = tab.linkedBrowser;
+  await BrowserTestUtils.browserLoaded(browser);
+
+  navigationManager.startMonitoring();
+  loadURL(browser, SECOND_URL);
+  gBrowser.removeTab(tab);
+
+  // On top of the assertions below, the test also validates that there is no
+  // unhandled promise rejection related to handling the navigation-started event
+  // for the destroyed browsing context.
+  is(events.length, 0, "No event was received");
+  is(
+    navigationManager.getNavigationForBrowsingContext(browser.browsingContext),
+    null,
+    "No navigation was recorded for the destroyed tab"
+  );
+  navigationManager.stopMonitoring();
+
+  navigationManager.off("navigation-started", onEvent);
+  navigationManager.off("navigation-stopped", onEvent);
 });

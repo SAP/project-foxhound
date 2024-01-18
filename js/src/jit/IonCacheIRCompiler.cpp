@@ -54,7 +54,8 @@ IonCacheIRCompiler::IonCacheIRCompiler(JSContext* cx, TempAllocator& alloc,
       ic_(ic),
       ionScript_(ionScript),
       savedLiveRegs_(false),
-      localTracingSlots_(0) {
+      localTracingSlots_(0),
+      perfSpewer_(ic->pc()) {
   MOZ_ASSERT(ic_);
   MOZ_ASSERT(ionScript_);
 }
@@ -2094,7 +2095,7 @@ bool IonCacheIRCompiler::emitGuardFunctionScript(ObjOperandId funId,
 
   Register fun = allocator.useRegister(masm, funId);
   AutoScratchRegister scratch(allocator, masm);
-  BaseScript* expected = baseScriptStubField(expectedOffset);
+  BaseScript* expected = weakBaseScriptStubField(expectedOffset);
 
   FailurePath* failure;
   if (!addFailurePath(&failure)) {

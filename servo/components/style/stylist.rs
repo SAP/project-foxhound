@@ -8,10 +8,12 @@ use crate::applicable_declarations::{
     ApplicableDeclarationBlock, ApplicableDeclarationList, CascadePriority,
 };
 use crate::context::{CascadeInputs, QuirksMode};
-use crate::dom::{TElement, TShadowRoot};
+use crate::dom::TElement;
 #[cfg(feature = "gecko")]
 use crate::gecko_bindings::structs::{ServoStyleSetSizes, StyleRuleInclusion};
-use crate::invalidation::element::invalidation_map::InvalidationMap;
+use crate::invalidation::element::invalidation_map::{
+    note_selector_for_invalidation, InvalidationMap, RelativeSelectorInvalidationMap,
+};
 use crate::invalidation::media_queries::{
     EffectiveMediaQueryResults, MediaListKey, ToMediaListKey,
 };
@@ -21,7 +23,7 @@ use crate::properties::{self, CascadeMode, ComputedValues, FirstLineReparenting}
 use crate::properties::{AnimationDeclarations, PropertyDeclarationBlock};
 use crate::properties_and_values::registry::{ScriptRegistry as CustomPropertyScriptRegistry, PropertyRegistration};
 use crate::rule_cache::{RuleCache, RuleCacheConditions};
-use crate::rule_collector::{containing_shadow_ignoring_svg_use, RuleCollector};
+use crate::rule_collector::RuleCollector;
 use crate::rule_tree::{CascadeLevel, RuleTree, StrongRuleNode, StyleSource};
 use crate::selector_map::{PrecomputedHashMap, PrecomputedHashSet, SelectorMap, SelectorMapEntry};
 use crate::selector_parser::{PerPseudoElementMap, PseudoElement, SelectorImpl, SnapshotMap};
@@ -679,6 +681,21 @@ impl Stylist {
         self.author_data_cache.take_unused();
     }
 
+    /// Returns the custom property registration for this property's name.
+    /// https://drafts.css-houdini.org/css-properties-values-api-1/#determining-registration
+    pub fn get_custom_property_registration(&self, name: &Atom) -> Option<&PropertyRegistration> {
+        if let Some(registration) = self.custom_property_script_registry().get(name) {
+            return Some(registration);
+        }
+        for (data, _) in self.iter_origins() {
+            if let Some(registration) = data.custom_property_registrations.get(name) {
+                return Some(registration);
+            }
+        }
+        None
+    }
+
+
     /// Rebuilds (if needed) the CascadeData given a sheet collection.
     pub fn rebuild_author_data<S>(
         &mut self,
@@ -738,7 +755,9 @@ impl Stylist {
     pub fn num_invalidations(&self) -> usize {
         self.cascade_data
             .iter_origins()
-            .map(|(data, _)| data.invalidation_map.len())
+            .map(|(data, _)| {
+                data.invalidation_map.len() + data.relative_selector_invalidation_map.len()
+            })
             .sum()
     }
 
@@ -867,6 +886,20 @@ impl Stylist {
         }
 
         doc_author_rules_apply && f(&self.cascade_data.author)
+    }
+
+    /// Execute callback for all applicable style rule data.
+    pub fn for_each_cascade_data_with_scope<'a, E, F>(&'a self, element: E, mut f: F)
+    where
+        E: TElement + 'a,
+        F: FnMut(&'a CascadeData, Option<E>),
+    {
+        f(&self.cascade_data.user_agent.cascade_data, None);
+        element.each_applicable_non_document_style_rule_data(|data, scope| {
+            f(data, Some(scope));
+        });
+        f(&self.cascade_data.user, None);
+        f(&self.cascade_data.author, None);
     }
 
     /// Computes the style for a given "precomputed" pseudo-element, taking the
@@ -1347,42 +1380,25 @@ impl Stylist {
             };
         }
 
-        // NOTE(emilio): We implement basically what Blink does for this case,
-        // which is [1] as of this writing.
+        // NOTE(emilio): This is a best-effort thing, the right fix is a bit TBD because it
+        // involves "recording" which tree the name came from, see [1][2].
         //
-        // See [2] for the spec discussion about what to do about this. WebKit's
-        // behavior makes a bit more sense off-hand, but it's way more complex
-        // to implement, and it makes value computation having to thread around
-        // the cascade level, which is not great. Also, it breaks if you inherit
-        // animation-name from an element in a different tree.
-        //
-        // See [3] for the bug to implement whatever gets resolved, and related
-        // bugs for a bit more context.
-        //
-        // FIXME(emilio): This should probably work for pseudo-elements (i.e.,
-        // use rule_hash_target().shadow_root() instead of
-        // element.shadow_root()).
-        //
-        // [1]: https://cs.chromium.org/chromium/src/third_party/blink/renderer/
-        //        core/css/resolver/style_resolver.cc?l=1267&rcl=90f9f8680ebb4a87d177f3b0833372ae4e0c88d8
-        // [2]: https://github.com/w3c/csswg-drafts/issues/1995
-        // [3]: https://bugzil.la/1458189
-        if let Some(shadow) = element.shadow_root() {
-            if let Some(data) = shadow.style_data() {
-                try_find_in!(data);
+        // [1]: https://github.com/w3c/csswg-drafts/issues/1995
+        // [2]: https://bugzil.la/1458189
+        let mut animation = None;
+        let doc_rules_apply = element.each_applicable_non_document_style_rule_data(|data, _host| {
+            if animation.is_none() {
+                animation = data.animations.get(name);
             }
+        });
+
+        if animation.is_some() {
+            return animation;
         }
 
-        // Use the same rules to look for the containing host as we do for rule
-        // collection.
-        if let Some(shadow) = containing_shadow_ignoring_svg_use(element) {
-            if let Some(data) = shadow.style_data() {
-                try_find_in!(data);
-            }
-        } else {
+        if doc_rules_apply {
             try_find_in!(self.cascade_data.author);
         }
-
         try_find_in!(self.cascade_data.user);
         try_find_in!(self.cascade_data.user_agent.cascade_data);
 
@@ -1986,6 +2002,25 @@ fn component_needs_revalidation(
     }
 }
 
+impl<'a> StylistSelectorVisitor<'a> {
+    fn visit_nested_selector(
+        &mut self,
+        in_selector_list_of: SelectorListKind,
+        selector: &Selector<SelectorImpl>
+    ) {
+        let old_passed_rightmost_selector = self.passed_rightmost_selector;
+        let old_in_selector_list_of = self.in_selector_list_of;
+
+        self.passed_rightmost_selector = false;
+        self.in_selector_list_of = in_selector_list_of;
+        let _ret = selector.visit(self);
+        debug_assert!(_ret, "We never return false");
+
+        self.passed_rightmost_selector = old_passed_rightmost_selector;
+        self.in_selector_list_of = old_in_selector_list_of;
+    }
+}
+
 impl<'a> SelectorVisitor for StylistSelectorVisitor<'a> {
     type Impl = SelectorImpl;
 
@@ -2009,21 +2044,18 @@ impl<'a> SelectorVisitor for StylistSelectorVisitor<'a> {
     ) -> bool {
         let in_selector_list_of = self.in_selector_list_of | list_kind;
         for selector in list {
-            let mut nested = StylistSelectorVisitor {
-                passed_rightmost_selector: false,
-                needs_revalidation: &mut *self.needs_revalidation,
-                in_selector_list_of,
-                mapped_ids: &mut *self.mapped_ids,
-                nth_of_mapped_ids: &mut *self.nth_of_mapped_ids,
-                attribute_dependencies: &mut *self.attribute_dependencies,
-                nth_of_class_dependencies: &mut *self.nth_of_class_dependencies,
-                nth_of_attribute_dependencies: &mut *self.nth_of_attribute_dependencies,
-                state_dependencies: &mut *self.state_dependencies,
-                nth_of_state_dependencies: &mut *self.nth_of_state_dependencies,
-                document_state_dependencies: &mut *self.document_state_dependencies,
-            };
-            let _ret = selector.visit(&mut nested);
-            debug_assert!(_ret, "We never return false");
+            self.visit_nested_selector(in_selector_list_of, selector);
+        }
+        true
+    }
+
+    fn visit_relative_selector_list(
+        &mut self,
+        list: &[selectors::parser::RelativeSelector<Self::Impl>],
+    ) -> bool {
+        let in_selector_list_of = self.in_selector_list_of | SelectorListKind::HAS;
+        for selector in list {
+            self.visit_nested_selector(in_selector_list_of, &selector.selector);
         }
         true
     }
@@ -2034,7 +2066,7 @@ impl<'a> SelectorVisitor for StylistSelectorVisitor<'a> {
         name: &LocalName,
         lower_name: &LocalName,
     ) -> bool {
-        if self.in_selector_list_of.in_nth_of() {
+        if self.in_selector_list_of.relevant_to_nth_of_dependencies() {
             self.nth_of_attribute_dependencies.insert(name.clone());
             if name != lower_name {
                 self.nth_of_attribute_dependencies
@@ -2060,7 +2092,7 @@ impl<'a> SelectorVisitor for StylistSelectorVisitor<'a> {
                 self.document_state_dependencies
                     .insert(p.document_state_flag());
 
-                if self.in_selector_list_of.in_nth_of() {
+                if self.in_selector_list_of.relevant_to_nth_of_dependencies() {
                     self.nth_of_state_dependencies.insert(p.state_flag());
                 }
             },
@@ -2080,11 +2112,13 @@ impl<'a> SelectorVisitor for StylistSelectorVisitor<'a> {
                     self.mapped_ids.insert(id.0.clone());
                 }
 
-                if self.in_selector_list_of.in_nth_of() {
+                if self.in_selector_list_of.relevant_to_nth_of_dependencies() {
                     self.nth_of_mapped_ids.insert(id.0.clone());
                 }
             },
-            Component::Class(ref class) if self.in_selector_list_of.in_nth_of() => {
+            Component::Class(ref class)
+                if self.in_selector_list_of.relevant_to_nth_of_dependencies() =>
+            {
                 self.nth_of_class_dependencies.insert(class.0.clone());
             },
             _ => {},
@@ -2267,6 +2301,9 @@ pub struct CascadeData {
     /// The invalidation map for these rules.
     invalidation_map: InvalidationMap,
 
+    /// The relative selector equivalent of the invalidation map.
+    relative_selector_invalidation_map: RelativeSelectorInvalidationMap,
+
     /// The attribute local names that appear in attribute selectors.  Used
     /// to avoid taking element snapshots when an irrelevant attribute changes.
     /// (We don't bother storing the namespace, since namespaced attributes are
@@ -2357,6 +2394,7 @@ impl CascadeData {
             slotted_rules: None,
             part_rules: None,
             invalidation_map: InvalidationMap::new(),
+            relative_selector_invalidation_map: RelativeSelectorInvalidationMap::new(),
             nth_of_mapped_ids: PrecomputedHashSet::default(),
             nth_of_class_dependencies: PrecomputedHashSet::default(),
             nth_of_attribute_dependencies: PrecomputedHashSet::default(),
@@ -2433,6 +2471,11 @@ impl CascadeData {
     /// Returns the invalidation map.
     pub fn invalidation_map(&self) -> &InvalidationMap {
         &self.invalidation_map
+    }
+
+    /// Returns the relative selector invalidation map.
+    pub fn relative_selector_invalidation_map(&self) -> &RelativeSelectorInvalidationMap {
+        &self.relative_selector_invalidation_map
     }
 
     /// Returns whether the given ElementState bit is relied upon by a selector
@@ -2568,6 +2611,7 @@ impl CascadeData {
         self.animations.shrink_if_needed();
         self.custom_property_registrations.shrink_if_needed();
         self.invalidation_map.shrink_if_needed();
+        self.relative_selector_invalidation_map.shrink_if_needed();
         self.attribute_dependencies.shrink_if_needed();
         self.nth_of_attribute_dependencies.shrink_if_needed();
         self.nth_of_class_dependencies.shrink_if_needed();
@@ -2753,8 +2797,12 @@ impl CascadeData {
                         }
 
                         if rebuild_kind.should_rebuild_invalidation() {
-                            self.invalidation_map
-                                .note_selector(&rule.selector, quirks_mode)?;
+                            note_selector_for_invalidation(
+                                &rule.selector,
+                                quirks_mode,
+                                &mut self.invalidation_map,
+                                &mut self.relative_selector_invalidation_map,
+                            )?;
                             let mut needs_revalidation = false;
                             let mut visitor = StylistSelectorVisitor {
                                 needs_revalidation: &mut needs_revalidation,
@@ -3218,6 +3266,7 @@ impl CascadeData {
     fn clear(&mut self) {
         self.clear_cascade_data();
         self.invalidation_map.clear();
+        self.relative_selector_invalidation_map.clear();
         self.attribute_dependencies.clear();
         self.nth_of_attribute_dependencies.clear();
         self.nth_of_class_dependencies.clear();

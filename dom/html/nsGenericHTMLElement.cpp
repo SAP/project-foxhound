@@ -421,27 +421,11 @@ void nsGenericHTMLElement::UpdateEditableState(bool aNotify) {
   // XXX Should we do this only when in a document?
   ContentEditableTristate value = GetContentEditableValue();
   if (value != eInherit) {
-    DoSetEditableFlag(!!value, aNotify);
+    SetEditableFlag(!!value);
+    UpdateReadOnlyState(aNotify);
     return;
   }
-
   nsStyledElement::UpdateEditableState(aNotify);
-}
-
-ElementState nsGenericHTMLElement::IntrinsicState() const {
-  ElementState state = nsGenericHTMLElementBase::IntrinsicState();
-
-  if (GetDirectionality() == eDir_RTL) {
-    state |= ElementState::RTL;
-    state &= ~ElementState::LTR;
-  } else {  // at least for HTML, directionality is exclusively LTR or RTL
-    NS_ASSERTION(GetDirectionality() == eDir_LTR,
-                 "HTML element's directionality must be either RTL or LTR");
-    state |= ElementState::LTR;
-    state &= ~ElementState::RTL;
-  }
-
-  return state;
 }
 
 nsresult nsGenericHTMLElement::BindToTree(BindContext& aContext,
@@ -505,8 +489,7 @@ void nsGenericHTMLElement::UnbindFromTree(bool aNullParent) {
   RemoveFromNameTable();
 
   if (GetContentEditableValue() == eTrue) {
-    Document* doc = GetComposedDoc();
-    if (doc) {
+    if (Document* doc = GetComposedDoc()) {
       doc->ChangeContentEditableCount(this, -1);
     }
   }
@@ -743,9 +726,6 @@ void nsGenericHTMLElement::AfterSetAttr(int32_t aNamespaceID, nsAtom* aName,
       // This needs to happen after we update our internal "dir" attribute
       // state but before we call SetDirectionalityOnDescendants.
       bool recomputeDirectionality = false;
-      // We don't want to have to keep getting the "dir" attribute in
-      // IntrinsicState, so we manually recompute our dir-related event states
-      // here and send the relevant update notifications.
       ElementState dirStates;
       if (aValue && aValue->Type() == nsAttrValue::eEnum) {
         SetHasValidDir();
@@ -778,7 +758,9 @@ void nsGenericHTMLElement::AfterSetAttr(int32_t aNamespaceID, nsAtom* aName,
       // Now figure out what's changed about our dir states.
       ElementState oldDirStates = State() & ElementState::DIR_ATTR_STATES;
       ElementState changedStates = dirStates ^ oldDirStates;
-      ToggleStates(changedStates, aNotify);
+      if (!changedStates.IsEmpty()) {
+        ToggleStates(changedStates, aNotify);
+      }
       if (recomputeDirectionality) {
         dir = RecomputeDirectionality(this, aNotify);
       }
@@ -799,8 +781,7 @@ void nsGenericHTMLElement::AfterSetAttr(int32_t aNamespaceID, nsAtom* aName,
         SetFlags(NODE_HAS_ACCESSKEY);
         RegUnRegAccessKey(true);
       }
-    } else if (aName == nsGkAtoms::inert &&
-               StaticPrefs::html5_inert_enabled()) {
+    } else if (aName == nsGkAtoms::inert) {
       if (aValue) {
         AddStates(ElementState::INERT);
       } else {
@@ -818,8 +799,7 @@ void nsGenericHTMLElement::AfterSetAttr(int32_t aNamespaceID, nsAtom* aName,
           AddToNameTable(aValue->GetAtomValue());
         }
       }
-    } else if ((aName == nsGkAtoms::inputmode &&
-                StaticPrefs::dom_forms_inputmode()) ||
+    } else if (aName == nsGkAtoms::inputmode ||
                aName == nsGkAtoms::enterkeyhint) {
       nsPIDOMWindowOuter* window = OwnerDoc()->GetWindow();
       if (window && window->GetFocusedElement() == this) {
@@ -1733,9 +1713,9 @@ bool nsGenericHTMLElement::IsFormControlDefaultFocusable(
 nsGenericHTMLFormElement::nsGenericHTMLFormElement(
     already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
     : nsGenericHTMLElement(std::move(aNodeInfo)) {
-  // We should add the ElementState::ENABLED bit here as needed, but
-  // that depends on our type, which is not initialized yet.  So we
-  // have to do this in subclasses.
+  // We should add the ElementState::ENABLED bit here as needed, but that
+  // depends on our type, which is not initialized yet.  So we have to do this
+  // in subclasses. Same for a couple other bits.
 }
 
 void nsGenericHTMLFormElement::ClearForm(bool aRemoveFromForm,
@@ -1769,7 +1749,7 @@ void nsGenericHTMLFormElement::ClearForm(bool aRemoveFromForm,
   UnsetFlags(ADDED_TO_FORM);
   SetFormInternal(nullptr, false);
   AfterClearForm(aUnbindOrDelete);
-  UpdateState(true);
+  UpdateValidityElementStates(true);
 }
 
 nsresult nsGenericHTMLFormElement::BindToTree(BindContext& aContext,
@@ -1790,7 +1770,6 @@ nsresult nsGenericHTMLFormElement::BindToTree(BindContext& aContext,
 
   // Set parent fieldset which should be used for the disabled state.
   UpdateFieldSet(false);
-
   return NS_OK;
 }
 
@@ -1811,11 +1790,6 @@ void nsGenericHTMLFormElement::UnbindFromTree(bool aNullParent) {
         } else {
           UnsetFlags(MAYBE_ORPHAN_FORM_ELEMENT);
         }
-      }
-
-      if (!GetFormInternal()) {
-        // Our novalidate state might have changed
-        UpdateState(false);
       }
     }
 
@@ -2070,10 +2044,8 @@ void nsGenericHTMLFormElement::UpdateFormOwner(bool aBindToTree,
   MOZ_ASSERT(!aBindToTree || !aFormIdElement,
              "aFormIdElement shouldn't be set if aBindToTree is true!");
 
-  bool needStateUpdate = false;
   HTMLFormElement* form = GetFormInternal();
   if (!aBindToTree) {
-    needStateUpdate = form && form->IsDefaultSubmitElement(this);
     ClearForm(true, false);
     form = nullptr;
   }
@@ -2136,8 +2108,9 @@ void nsGenericHTMLFormElement::UpdateFormOwner(bool aBindToTree,
     }
   }
 
-  if (form != oldForm || needStateUpdate) {
-    UpdateState(true);
+  if (form != oldForm) {
+    // ui-valid / invalid depends on the form for some elements
+    UpdateValidityElementStates(true);
   }
 }
 
@@ -2200,9 +2173,16 @@ void nsGenericHTMLFormElement::UpdateDisabledState(bool aNotify) {
     ToggleStates(changedStates, aNotify);
     if (DoesReadOnlyApply()) {
       // :disabled influences :read-only / :read-write.
-      UpdateState(aNotify);
+      UpdateReadOnlyState(aNotify);
     }
   }
+}
+
+bool nsGenericHTMLFormElement::IsReadOnlyInternal() const {
+  if (DoesReadOnlyApply()) {
+    return IsDisabled() || GetBoolAttr(nsGkAtoms::readonly);
+  }
+  return nsGenericHTMLElement::IsReadOnlyInternal();
 }
 
 void nsGenericHTMLFormElement::FieldSetDisabledChanged(bool aNotify) {
@@ -2266,7 +2246,7 @@ void nsGenericHTMLElement::Click(CallerType aCallerType) {
   event.mFlags.mIsPositionless = true;
   event.mInputSource = MouseEvent_Binding::MOZ_SOURCE_UNKNOWN;
 
-  EventDispatcher::Dispatch(static_cast<nsIContent*>(this), context, &event);
+  EventDispatcher::Dispatch(this, context, &event);
 
   ClearHandlingClick();
 }
@@ -2429,9 +2409,7 @@ nsresult nsGenericHTMLElement::DispatchSimulatedClick(
                          WidgetMouseEvent::eReal);
   event.mInputSource = MouseEvent_Binding::MOZ_SOURCE_KEYBOARD;
   event.mFlags.mIsPositionless = true;
-  // TODO: Bug 1506441
-  return EventDispatcher::Dispatch(MOZ_KnownLive(ToSupports(aElement)),
-                                   aPresContext, &event);
+  return EventDispatcher::Dispatch(aElement, aPresContext, &event);
 }
 
 already_AddRefed<EditorBase> nsGenericHTMLElement::GetAssociatedEditor() {
@@ -2653,30 +2631,6 @@ void nsGenericHTMLFormControlElement::SetForm(HTMLFormElement* aForm) {
 void nsGenericHTMLFormControlElement::ClearForm(bool aRemoveFromForm,
                                                 bool aUnbindOrDelete) {
   nsGenericHTMLFormElement::ClearForm(aRemoveFromForm, aUnbindOrDelete);
-}
-
-ElementState nsGenericHTMLFormControlElement::IntrinsicState() const {
-  // If you add attribute-dependent states here, you need to add them to
-  // AfterSetAttr too.  And add them to AfterSetAttr for all subclasses that
-  // implement IntrinsicState() and are affected by that attribute.
-  ElementState state = nsGenericHTMLFormElement::IntrinsicState();
-
-  if (mForm && mForm->IsDefaultSubmitElement(this)) {
-    NS_ASSERTION(IsSubmitControl(),
-                 "Default submit element that isn't a submit control.");
-    // We are the default submit element (:default)
-    state |= ElementState::DEFAULT;
-  }
-
-  // Make the text controls read-write
-  if (!state.HasState(ElementState::READWRITE) && DoesReadOnlyApply()) {
-    if (!GetBoolAttr(nsGkAtoms::readonly) && !IsDisabled()) {
-      state |= ElementState::READWRITE;
-      state &= ~ElementState::READONLY;
-    }
-  }
-
-  return state;
 }
 
 bool nsGenericHTMLFormControlElement::IsLabelable() const {
@@ -3279,14 +3233,7 @@ PopoverAttributeState nsGenericHTMLElement::GetPopoverAttributeState() const {
 }
 
 void nsGenericHTMLElement::PopoverPseudoStateUpdate(bool aOpen, bool aNotify) {
-  ElementState newPopoverState;
-  if (aOpen) {
-    newPopoverState = ElementState::POPOVER_OPEN;
-  }
-
-  ElementState oldPopoverState = State() & ElementState::POPOVER_OPEN;
-  ElementState changedState = newPopoverState ^ oldPopoverState;
-  ToggleStates(changedState, aNotify);
+  SetStates(ElementState::POPOVER_OPEN, aOpen, aNotify);
 }
 
 bool nsGenericHTMLElement::FireToggleEvent(PopoverVisibilityState aOldState,
@@ -3310,8 +3257,7 @@ bool nsGenericHTMLElement::FireToggleEvent(PopoverVisibilityState aOldState,
   event->SetTrusted(true);
   event->SetTarget(this);
 
-  EventDispatcher::DispatchDOMEvent(MOZ_KnownLive(ToSupports(this)), nullptr,
-                                    event, nullptr, nullptr);
+  EventDispatcher::DispatchDOMEvent(this, nullptr, event, nullptr, nullptr);
   return event->DefaultPrevented();
 }
 
@@ -3470,13 +3416,10 @@ void nsGenericHTMLElement::FocusPreviousElementAfterHidingPopover() {
     return;
   }
 
-  // Run the focusing steps for previouslyFocusedElement if focus is within the
-  // popover hierarchy.
-  if (IsShadowIncludingInclusiveDescendantOf(control)) {
-    FocusOptions options;
-    options.mPreventScroll = true;
-    control->Focus(options, CallerType::NonSystem, IgnoreErrors());
-  }
+  // Run the focusing steps for previouslyFocusedElement.
+  FocusOptions options;
+  options.mPreventScroll = true;
+  control->Focus(options, CallerType::NonSystem, IgnoreErrors());
 }
 
 // https://html.spec.whatwg.org/multipage/popover.html#dom-togglepopover

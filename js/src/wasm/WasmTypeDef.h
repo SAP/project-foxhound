@@ -19,6 +19,7 @@
 #ifndef wasm_type_def_h
 #define wasm_type_def_h
 
+#include "mozilla/Assertions.h"
 #include "mozilla/CheckedInt.h"
 #include "mozilla/HashTable.h"
 
@@ -58,7 +59,10 @@ class FuncType {
   // A packed structural type identifier for use in the call_indirect type
   // check in the prologue of functions. If this function type cannot fit in
   // this immediate, it will be NO_IMMEDIATE_TYPE_ID.
-  uint32_t immediateTypeId_;
+  //
+  // This is initialized in DecodeTypeSection once we have the full recursion
+  // group around.
+  uint32_t immediateTypeId_ = NO_IMMEDIATE_TYPE_ID;
 
   // This function type cannot be packed into an immediate for call_indirect
   // signature checks.
@@ -106,15 +110,10 @@ class FuncType {
     return false;
   }
 
-  void initImmediateTypeId();
-
  public:
-  FuncType() : args_(), results_() { initImmediateTypeId(); }
-
+  FuncType() : args_(), results_() {}
   FuncType(ValTypeVector&& args, ValTypeVector&& results)
-      : args_(std::move(args)), results_(std::move(results)) {
-    initImmediateTypeId();
-  }
+      : args_(std::move(args)), results_(std::move(results)) {}
 
   FuncType(FuncType&&) = default;
   FuncType& operator=(FuncType&&) = default;
@@ -131,6 +130,9 @@ class FuncType {
   ValType result(unsigned i) const { return results_[i]; }
   const ValTypeVector& results() const { return results_; }
 
+  void initImmediateTypeId(bool gcEnabled, bool isFinal,
+                           const TypeDef* superTypeDef,
+                           uint32_t recGroupLength);
   bool hasImmediateTypeId() const {
     return immediateTypeId_ != NO_IMMEDIATE_TYPE_ID;
   }
@@ -480,9 +482,11 @@ using ArrayTypeVector = Vector<ArrayType, 0, SystemAllocPolicy>;
 // [SMDOC] Super type vector
 //
 // A super type vector is a vector representation of the linked list of super
-// types that a type definition has. Every element is a raw pointer to a type
-// definition. It's possible to form a vector here because type definitions
-// are trees, not DAGs, with every type having at most one super type.
+// types that a type definition has. Every element is a raw pointer to another
+// super type vector - they are one-to-one with type definitions, so they are
+// functionally equivalent. It is possible to form a vector here because
+// subtypes in wasm form trees, not DAGs, with every type having at most one
+// super type.
 //
 // The first element in the vector is the 'root' type definition without a
 // super type. The last element is to the type definition itself.
@@ -541,6 +545,9 @@ class SuperTypeVector {
   // point back to this SuperTypeVector.
   const TypeDef* typeDef_;
 
+  // A cached copy of subTypingDepth from TypeDef.
+  uint32_t subTypingDepth_;
+
   // The length of types stored inline below.
   uint32_t length_;
 
@@ -556,18 +563,12 @@ class SuperTypeVector {
       RecGroup* recGroup);
 
   const TypeDef* typeDef() const { return typeDef_; }
-  void setTypeDef(const TypeDef* typeDef) { typeDef_ = typeDef; }
 
   uint32_t length() const { return length_; }
-  void setLength(uint32_t length) { length_ = length; }
 
   const SuperTypeVector* type(size_t index) const {
     MOZ_ASSERT(index < length_);
     return types_[index];
-  }
-  void setType(size_t index, const SuperTypeVector* type) {
-    MOZ_ASSERT(index < length_);
-    types_[index] = type;
   }
 
   // The length of a super type vector for a specific type def.
@@ -575,11 +576,14 @@ class SuperTypeVector {
   // The byte size of a super type vector for a specific type def.
   static size_t byteSizeForTypeDef(const TypeDef& typeDef);
 
+  static size_t offsetOfSubTypingDepth() {
+    return offsetof(SuperTypeVector, subTypingDepth_);
+  }
   static size_t offsetOfLength() { return offsetof(SuperTypeVector, length_); }
   static size_t offsetOfSelfTypeDef() {
     return offsetof(SuperTypeVector, typeDef_);
   };
-  static size_t offsetOfTypeDefInVector(uint32_t typeDefDepth);
+  static size_t offsetOfSTVInVector(uint32_t subTypingDepth);
 };
 
 // Ensure it is safe to use `sizeof(SuperTypeVector)` to find the offset of
@@ -684,6 +688,10 @@ class TypeDef {
     return offsetof(TypeDef, superTypeVector_);
   }
 
+  static size_t offsetOfSubTypingDepth() {
+    return offsetof(TypeDef, subTypingDepth_);
+  }
+
   const TypeDef* superTypeDef() const { return superTypeDef_; }
 
   bool isFinal() const { return isFinal_; }
@@ -785,7 +793,7 @@ class TypeDef {
         return ArrayType::matches(&lhs.recGroup(), lhs.arrayType_,
                                   &rhs.recGroup(), rhs.arrayType_);
       case TypeDefKind::None:
-        return true;
+        MOZ_CRASH("can't match TypeDefKind::None");
     }
     return false;
   }
@@ -832,12 +840,12 @@ class TypeDef {
     if (MOZ_LIKELY(subTypeDef == superTypeDef)) {
       return true;
     }
-    const SuperTypeVector* subSuperTypeVector = subTypeDef->superTypeVector();
+    const SuperTypeVector* subSTV = subTypeDef->superTypeVector();
 
     // During construction of a recursion group, the super type vector may not
     // have been computed yet, in which case we need to fall back to a linear
     // search.
-    if (!subSuperTypeVector) {
+    if (!subSTV) {
       while (subTypeDef) {
         if (subTypeDef == superTypeDef) {
           return true;
@@ -848,23 +856,22 @@ class TypeDef {
     }
 
     // The supertype vector does exist.  So check it points back here.
-    MOZ_ASSERT(subSuperTypeVector->typeDef() == subTypeDef);
+    MOZ_ASSERT(subSTV->typeDef() == subTypeDef);
 
     // We need to check if `superTypeDef` is one of `subTypeDef`s super types
     // by checking in `subTypeDef`s super type vector. We can use the static
     // information of the depth of `superTypeDef` to index directly into the
     // vector.
     uint32_t subTypingDepth = superTypeDef->subTypingDepth();
-    if (subTypingDepth >= subSuperTypeVector->length()) {
+    if (subTypingDepth >= subSTV->length()) {
       return false;
     }
 
-    const SuperTypeVector* superSuperTypeVector =
-        superTypeDef->superTypeVector();
-    MOZ_ASSERT(superSuperTypeVector);
-    MOZ_ASSERT(superSuperTypeVector->typeDef() == superTypeDef);
+    const SuperTypeVector* superSTV = superTypeDef->superTypeVector();
+    MOZ_ASSERT(superSTV);
+    MOZ_ASSERT(superSTV->typeDef() == superTypeDef);
 
-    return subSuperTypeVector->type(subTypingDepth) == superSuperTypeVector;
+    return subSTV->type(subTypingDepth) == superSTV;
   }
 
   size_t sizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf) const;
@@ -948,12 +955,10 @@ class RecGroup : public AtomicRefCounted<RecGroup> {
     // Super type vectors are only needed for GC and have a size/time impact
     // that we don't want to encur until we're ready for it. Only use them when
     // GC is built into the binary.
-#ifdef ENABLE_WASM_GC
     vectors_ = SuperTypeVector::createMultipleForRecGroup(this);
     if (!vectors_) {
       return false;
     }
-#endif
     visitReferencedGroups([](const RecGroup* recGroup) { recGroup->AddRef(); });
     finalizedTypes_ = true;
     return true;
@@ -1132,24 +1137,14 @@ class TypeContext : public AtomicRefCounted<TypeContext> {
     MOZ_ASSERT(!pendingRecGroup_);
 
     // Create the group and add it to the list of groups
-    pendingRecGroup_ = RecGroup::allocate(numTypes);
-    if (!pendingRecGroup_ || !recGroups_.append(pendingRecGroup_)) {
+    MutableRecGroup recGroup = RecGroup::allocate(numTypes);
+    if (!recGroup || !addRecGroup(recGroup)) {
       return nullptr;
     }
 
-    // Store the types of the group into our index space maps. These may get
-    // overwritten when we finish this group and canonicalize it. We need to do
-    // this before finishing, because these entries will be used by decoding
-    // and error printing.
-    for (uint32_t groupTypeIndex = 0; groupTypeIndex < numTypes;
-         groupTypeIndex++) {
-      const TypeDef* typeDef = &pendingRecGroup_->type(groupTypeIndex);
-      uint32_t typeIndex = types_.length();
-      if (!types_.append(typeDef) || !moduleIndices_.put(typeDef, typeIndex)) {
-        return nullptr;
-      }
-    }
-    return pendingRecGroup_;
+    // Store this group for later use in endRecGroup
+    pendingRecGroup_ = recGroup;
+    return recGroup;
   }
 
   // Finish creation of a recursion group after type definitions have been
@@ -1203,6 +1198,33 @@ class TypeContext : public AtomicRefCounted<TypeContext> {
       }
     }
 
+    return true;
+  }
+
+  // Finish creation of a recursion group after type definitions have been
+  // initialized. This must be paired with `startGroup`.
+  [[nodiscard]] bool addRecGroup(SharedRecGroup recGroup) {
+    // We must not have a pending group
+    MOZ_ASSERT(!pendingRecGroup_);
+
+    // Add it to the list of groups
+    if (!recGroups_.append(recGroup)) {
+      return false;
+    }
+
+    // Store the types of the group into our index space maps. These may get
+    // overwritten if this group is being added by `startRecGroup` and we
+    // overwrite it with a canonical group in `endRecGroup`. We need to do
+    // this before finishing though, because these entries will be used by
+    // decoding and error printing.
+    for (uint32_t groupTypeIndex = 0; groupTypeIndex < recGroup->numTypes();
+         groupTypeIndex++) {
+      const TypeDef* typeDef = &recGroup->type(groupTypeIndex);
+      uint32_t typeIndex = types_.length();
+      if (!types_.append(typeDef) || !moduleIndices_.put(typeDef, typeIndex)) {
+        return false;
+      }
+    }
     return true;
   }
 
@@ -1290,6 +1312,34 @@ inline MatchTypeCode MatchTypeCode::forMatch(PackedTypeCode ptc,
   mtc.typeRef = TypeDef::forMatch(ptc.typeDef(), recGroup);
   mtc.nullable = ptc.isNullable();
   return mtc;
+}
+
+template <class T>
+void PackedType<T>::AddRef() const {
+  if (!isRefType()) {
+    return;
+  }
+  refType().AddRef();
+}
+template <class T>
+void PackedType<T>::Release() const {
+  if (!isRefType()) {
+    return;
+  }
+  refType().Release();
+}
+
+void RefType::AddRef() const {
+  if (!isTypeRef()) {
+    return;
+  }
+  typeDef()->recGroup().AddRef();
+}
+void RefType::Release() const {
+  if (!isTypeRef()) {
+    return;
+  }
+  typeDef()->recGroup().Release();
 }
 
 inline RefTypeHierarchy RefType::hierarchy() const {

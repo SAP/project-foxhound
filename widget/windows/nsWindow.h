@@ -83,25 +83,6 @@ const CLSID CLSID_ImmersiveShell = {
     0x47FA,
     {0xB4, 0xBB, 0x15, 0x63, 0x62, 0xA2, 0xF2, 0x39}};
 
-// Virtual Desktop.
-
-EXTERN_C const IID IID_IVirtualDesktopManager;
-MIDL_INTERFACE("a5cd92ff-29be-454c-8d04-d82879fb3f1b")
-IVirtualDesktopManager : public IUnknown {
- public:
-  virtual HRESULT STDMETHODCALLTYPE IsWindowOnCurrentVirtualDesktop(
-      __RPC__in HWND topLevelWindow, __RPC__out BOOL * onCurrentDesktop) = 0;
-  virtual HRESULT STDMETHODCALLTYPE GetWindowDesktopId(
-      __RPC__in HWND topLevelWindow, __RPC__out GUID * desktopId) = 0;
-  virtual HRESULT STDMETHODCALLTYPE MoveWindowToDesktop(
-      __RPC__in HWND topLevelWindow, __RPC__in REFGUID desktopId) = 0;
-};
-
-#ifdef __MINGW32__
-__CRT_UUID_DECL(IVirtualDesktopManager, 0xa5cd92ff, 0x29be, 0x454c, 0x8d, 0x04,
-                0xd8, 0x28, 0x79, 0xfb, 0x3f, 0x1b)
-#endif
-
 /**
  * Native WIN32 window wrapper.
  */
@@ -277,7 +258,6 @@ class nsWindow final : public nsBaseWidget {
   TransparencyMode GetTransparencyMode() override;
   nsresult SetNonClientMargins(const LayoutDeviceIntMargin&) override;
   void SetResizeMargin(mozilla::LayoutDeviceIntCoord aResizeMargin) override;
-  void SetDrawsInTitlebar(bool aState) override;
   void UpdateWindowDraggingRegion(
       const LayoutDeviceIntRegion& aRegion) override;
 
@@ -595,7 +575,7 @@ class nsWindow final : public nsBaseWidget {
   bool OnGesture(WPARAM wParam, LPARAM lParam);
   bool OnTouch(WPARAM wParam, LPARAM lParam);
   bool OnHotKey(WPARAM wParam, LPARAM lParam);
-  bool OnPaint(HDC aDC, uint32_t aNestingLevel);
+  bool OnPaint(uint32_t aNestingLevel);
   void OnWindowPosChanging(WINDOWPOS* info);
   void OnWindowPosChanged(WINDOWPOS* wp);
   void OnSysColorChanged();
@@ -828,8 +808,6 @@ class nsWindow final : public nsBaseWidget {
   LayoutDeviceIntRegion mDraggableRegion;
 
   // Graphics
-  HDC mPaintDC = nullptr;  // only set during painting
-
   LayoutDeviceIntRect mLastPaintBounds;
 
   ResizeState mResizeState = NOT_RESIZING;

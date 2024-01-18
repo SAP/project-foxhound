@@ -61,7 +61,6 @@ class HTMLObjectElement final : public nsGenericHTMLFormControlElement,
                       nsAttrValue& aResult) override;
   nsMapRuleToAttributesFunc GetAttributeMappingFunction() const override;
   NS_IMETHOD_(bool) IsAttributeMapped(const nsAtom* aAttribute) const override;
-  ElementState IntrinsicState() const override;
   void DestroyContent() override;
 
   // nsObjectLoadingContent

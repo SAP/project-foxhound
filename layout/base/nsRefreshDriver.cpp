@@ -1322,24 +1322,6 @@ TimeDuration nsRefreshDriver::GetMinRecomputeVisibilityInterval() {
       StaticPrefs::layout_visibility_min_recompute_interval_ms());
 }
 
-bool nsRefreshDriver::ComputeShouldBeThrottled() const {
-  if (mIsActive) {
-    // If we're active we should definitely be unthrottled.
-    return false;
-  }
-  if (!mIsInActiveTab) {
-    // If we're not in the active tab we should definitely be throttled.
-    return true;
-  }
-  if (mIsGrantingActivityGracePeriod) {
-    // If we're granting the activity grace period, then we should be
-    // unthrottled.
-    return false;
-  }
-  // Otherwise we should be throttled.
-  return true;
-}
-
 RefreshDriverTimer* nsRefreshDriver::ChooseTimer() {
   if (mThrottled) {
     if (!sThrottledRateTimer) {
@@ -1384,10 +1366,6 @@ nsRefreshDriver::nsRefreshDriver(nsPresContext* aPresContext)
           TimeDuration::FromMilliseconds(GetThrottledTimerInterval())),
       mMinRecomputeVisibilityInterval(GetMinRecomputeVisibilityInterval()),
       mThrottled(false),
-      mIsActive(true),
-      mIsInActiveTab(true),
-      mIsGrantingActivityGracePeriod(false),
-      mHasGrantedActivityGracePeriod(false),
       mNeedToRecomputeVisibility(false),
       mTestControllingRefreshes(false),
       mViewManagerFlushIsPending(false),
@@ -2041,6 +2019,10 @@ auto nsRefreshDriver::GetReasonsToTick() const -> TickReasons {
   if (!mVisualViewportScrollEvents.IsEmpty()) {
     reasons |= TickReasons::eHasVisualViewportScrollEvents;
   }
+  if (mPresContext && mPresContext->IsRoot() &&
+      mPresContext->NeedsMoreTicksForUserInput()) {
+    reasons |= TickReasons::eRootNeedsMoreTicksForUserInput;
+  }
   return reasons;
 }
 
@@ -2076,6 +2058,9 @@ void nsRefreshDriver::AppendTickReasonsToString(TickReasons aReasons,
   }
   if (aReasons & TickReasons::eHasVisualViewportScrollEvents) {
     aStr.AppendLiteral(" HasVisualViewportScrollEvents");
+  }
+  if (aReasons & TickReasons::eRootNeedsMoreTicksForUserInput) {
+    aStr.AppendLiteral(" RootNeedsMoreTicksForUserInput");
   }
 }
 
@@ -2245,6 +2230,12 @@ void nsRefreshDriver::FlushAutoFocusDocuments() {
 
   for (const auto& doc : docs) {
     MOZ_KnownLive(doc)->FlushAutoFocusCandidates();
+  }
+}
+
+void nsRefreshDriver::MaybeIncreaseMeasuredTicksSinceLoading() {
+  if (mPresContext && mPresContext->IsRoot()) {
+    mPresContext->MaybeIncreaseMeasuredTicksSinceLoading();
   }
 }
 
@@ -2466,13 +2457,6 @@ static CallState ReduceAnimations(Document& aDocument) {
   return CallState::Continue;
 }
 
-bool nsRefreshDriver::ShouldStopActivityGracePeriod() const {
-  MOZ_ASSERT(mIsGrantingActivityGracePeriod);
-  return TimeStamp::Now() - mActivityGracePeriodStart >=
-         TimeDuration::FromMilliseconds(
-             StaticPrefs::layout_oopif_activity_grace_period_ms());
-}
-
 void nsRefreshDriver::Tick(VsyncId aId, TimeStamp aNowTime,
                            IsExtraTick aIsExtraTick /* = No */) {
   MOZ_ASSERT(!nsContentUtils::GetCurrentJSContext(),
@@ -2573,13 +2557,6 @@ void nsRefreshDriver::Tick(VsyncId aId, TimeStamp aNowTime,
     if (win && win->IsSuspended() && doc->IsInSyncOperation()) {
       return;
     }
-  }
-
-  // Potentially go back to throttled after the grace period is done.
-  if (MOZ_UNLIKELY(mIsGrantingActivityGracePeriod) &&
-      ShouldStopActivityGracePeriod()) {
-    mIsGrantingActivityGracePeriod = false;
-    UpdateThrottledState();
   }
 
   AUTO_PROFILER_LABEL_RELEVANT_FOR_JS("RefreshDriver tick", LAYOUT);
@@ -2693,6 +2670,7 @@ void nsRefreshDriver::Tick(VsyncId aId, TimeStamp aNowTime,
       DispatchAnimationEvents();
       RunFullscreenSteps();
       RunFrameRequestCallbacks(aNowTime);
+      MaybeIncreaseMeasuredTicksSinceLoading();
 
       if (mPresContext && mPresContext->GetPresShell()) {
         AutoTArray<PresShell*, 16> observers;
@@ -3154,30 +3132,8 @@ bool nsRefreshDriver::IsWaitingForPaint(mozilla::TimeStamp aTime) {
   return false;
 }
 
-void nsRefreshDriver::SetActivity(bool aIsActive, bool aIsInActiveTab) {
-  if (mIsActive == aIsActive && mIsInActiveTab == aIsInActiveTab) {
-    return;
-  }
-  mIsActive = aIsActive;
-  mIsInActiveTab = aIsInActiveTab;
-
-  // For iframes which are in the active tab but hidden, grant them a grace
-  // period of 1s of activity so that they can get set up.
-  if (!mHasGrantedActivityGracePeriod && !mIsActive && mIsInActiveTab &&
-      mPresContext && !mPresContext->IsRootContentDocumentCrossProcess()) {
-    mHasGrantedActivityGracePeriod = true;
-    mIsGrantingActivityGracePeriod =
-        StaticPrefs::layout_oopif_activity_grace_period_ms() > 0;
-    if (mIsGrantingActivityGracePeriod) {
-      mActivityGracePeriodStart = TimeStamp::Now();
-    }
-  }
-
-  UpdateThrottledState();
-}
-
-void nsRefreshDriver::UpdateThrottledState() {
-  const bool shouldThrottle = ComputeShouldBeThrottled();
+void nsRefreshDriver::SetActivity(bool aIsActive) {
+  const bool shouldThrottle = !aIsActive;
   if (mThrottled == shouldThrottle) {
     return;
   }

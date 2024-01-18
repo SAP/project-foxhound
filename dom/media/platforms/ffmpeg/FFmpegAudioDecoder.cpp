@@ -252,7 +252,12 @@ MediaResult FFmpegAudioDecoder<LIBAV_VER>::PostProcessOutput(
 
   uint32_t numChannels = mCodecContext->channels;
   uint32_t samplingRate = mCodecContext->sample_rate;
-
+  if (!numChannels) {
+    numChannels = mAudioInfo.mChannels;
+  }
+  if (!samplingRate) {
+    samplingRate = mAudioInfo.mRate;
+  }
   AlignedAudioBuffer audio =
       CopyAndPackAudio(mFrame, numChannels, mFrame->nb_samples);
   if (!audio) {
@@ -485,7 +490,7 @@ AVCodecID FFmpegAudioDecoder<LIBAV_VER>::GetCodecId(const nsACString& aMimeType,
     }
     // A-law
     if (aMimeType.EqualsLiteral("audio/wave; codecs=6")) {
-      return AV_CODEC_ID_PCM_MULAW;
+      return AV_CODEC_ID_PCM_ALAW;
     }
     // Mu-law
     if (aMimeType.EqualsLiteral("audio/wave; codecs=7")) {

@@ -1263,6 +1263,102 @@ ${RemoveDefaultBrowserAgentShortcut}
 !macroend
 !define MigrateTaskBarShortcut "!insertmacro MigrateTaskBarShortcut"
 
+!define GetPinningSupportedByWindowsVersionWithoutSystemPopup "!insertmacro GetPinningSupportedByWindowsVersionWithoutSystemPopup "
+
+; Starting with a version of Windows 11 (10.0.22621), the OS will show a system popup
+; when trying to pin to the taskbar.
+;
+; Pass in the variable to put the output into. A '1' means pinning is supported on this
+; OS without generating a popup, a '0' means pinning will generate a system popup.
+;
+;
+; More info: a version of Windows was released that introduced a system popup when
+; an exe (such as setup.exe) attempts to pin an app to the taskbar.
+; We already handle pinning in the onboarding process once Firefox
+; launches so we don't want to also attempt to pin it in the installer
+; and have the OS ask the user for confirmation without the full context.
+;
+; The number for that version of windows is still unclear (it might be 22H2 or 23H2)
+; and it's not supported by the version of WinVer.nsh we have anyways,
+; so instead we are confirming that it's a build of Windows that is less
+; than 10.0 BuildNumber: 22621 to do pinning in the installer.
+!macro GetPinningSupportedByWindowsVersionWithoutSystemPopup outvar
+  !define pin_lbl lbl_GPSBWVWSP_${__COUNTER__}
+
+  Push $0
+  Push $1
+  Push $2
+  Push $3
+
+  ${WinVerGetMajor} $0
+  ${WinVerGetMinor} $1
+  ${WinVerGetBuild} $2
+
+  ; Get the UBR; only documented way I could figure out how to get this reliably
+  ClearErrors
+  ReadRegDWORD $3 HKLM \
+    "Software\Microsoft\Windows NT\CurrentVersion" \
+    "UBR"
+
+  ; It's not obvious how to use LogicLib itself within a LogicLib custom
+  ; operator, so we do everything by hand with `IntCmp`.  The below lines
+  ; translate to:
+  ; StrCpy ${outvar} '0'  ; default to false
+  ; ${If} $0 <= 10
+  ;   ${If} $1 <= 0
+  ;     ${If} $2 < 22621
+  ;       StrCpy ${outvar} '1'
+  ;     ${ElseIf} $2 == 22621
+  ;       ${If} $3 < 2361
+  ;         StrCpy ${outvar} '1'
+  ;       ${Endif}
+  ;     ${EndIf}
+  ;  ${Endif}
+  ; ${EndIf}
+
+  StrCpy ${outvar} '0' ; default to false on pinning
+
+  ; If the major version is greater than 10, no pinning in setup
+  IntCmp $0 10 "" "" ${pin_lbl}_bad
+
+  ; If the minor version is greater than 0, no pinning in setup
+  IntCmp $1 0 "" "" ${pin_lbl}_bad
+
+  ; If the build number is less than 22621, jump to pinning; if greater than, no pinning
+  IntCmp $2 22621 "" ${pin_lbl}_good ${pin_lbl}_bad
+
+  ; Only if the version is 10.0.22621 do we fall through to here
+  ; If the UBR is greater than or equal to 2361, jump to no pinning
+  IntCmp $3 2361 ${pin_lbl}_bad "" ${pin_lbl}_bad
+
+  ${pin_lbl}_good:
+
+  StrCpy ${outvar} '1'
+
+  ${pin_lbl}_bad:
+  !undef pin_lbl
+
+  Pop $3
+  Pop $2
+  Pop $1
+  Pop $0
+!macroend
+
+!macro _PinningSupportedByWindowsVersionWithoutSystemPopup _ignore _ignore2 _t _f
+  !insertmacro _LOGICLIB_TEMP
+  ${GetPinningSupportedByWindowsVersionWithoutSystemPopup} $_LOGICLIB_TEMP
+  !insertmacro _= $_LOGICLIB_TEMP "1" `${_t}` `${_f}`
+!macroend
+
+; The following is to make if statements for the functionality easier. When using an if statement,
+; Use IsPinningSupportedByWindowsVersionWithoutSystemPopup like so, instead of GetPinningSupportedByWindowsVersionWithoutSystemPopup:
+;
+; ${If} ${IsPinningSupportedByWindowsVersionWithoutSystemPopup}
+;    ; do something
+; ${EndIf}
+;
+!define IsPinningSupportedByWindowsVersionWithoutSystemPopup `"" PinningSupportedByWindowsVersionWithoutSystemPopup "" `
+
 ; Adds a pinned Task Bar shortcut on Windows 7 if there isn't one for the main
 ; application executable already. Existing pinned shortcuts for the same
 ; application model ID must be removed first to prevent breaking the pinned
@@ -1331,10 +1427,12 @@ ${RemoveDefaultBrowserAgentShortcut}
             InvokeShellVerb::DoIt "$SMPROGRAMS" "$1" "${AppRegName}-$AppUserModelID"
             DeleteRegKey HKCU "Software\Classes\*\shell\${AppRegName}-$AppUserModelID"
           ${Else}
-            ; In the Windows 10 1903 and up (and Windows 11) the above no
+            ; In Windows 10 1903 and up, and Windows 11 prior to 22H2, the above no
             ; longer works. We have yet another method for these versions
             ; which is detailed in the PinToTaskbar plugin code.
-            PinToTaskbar::Pin "$SMPROGRAMS\$1"
+            ${If} ${IsPinningSupportedByWindowsVersionWithoutSystemPopup}
+              PinToTaskbar::Pin "$SMPROGRAMS\$1"
+            ${EndIf}
           ${EndIf}
 
           ; Delete the shortcut if it was created

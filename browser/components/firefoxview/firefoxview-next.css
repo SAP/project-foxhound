@@ -12,6 +12,7 @@
   --fxview-element-background-hover: color-mix(in srgb, var(--fxview-background-color) 90%, currentColor);
   --fxview-element-background-active: color-mix(in srgb, var(--fxview-background-color) 80%, currentColor);
   --fxview-text-primary-color: var(--newtab-text-primary-color, var(--in-content-page-color));
+  --fxview-text-secondary-color: color-mix(in srgb, currentColor 70%, transparent);
   --fxview-text-color-hover: var(--newtab-text-primary-color);
   --fxview-primary-action-background: var(--newtab-primary-action-background, #0061e0);
   --fxview-border: var(--fc-border-light, #CFCFD8);
@@ -21,8 +22,12 @@
   --in-content-button-background-active: var(--fxview-element-background-active);
   --in-content-button-text-color-hover: var(--fxview-text-color-hover);
 
-  --fxview-sidebar-width: 286px;
+  --fxview-sidebar-width: 288px;
   --fxview-margin-top: 72px;
+  --fxview-card-padding-inline: 4px;
+
+  /* copy over newtab background color from activity-stream-[os].css files */
+  --newtab-background-color: #F9F9FB;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -30,6 +35,9 @@
     --fxview-element-background-hover: color-mix(in srgb, var(--fxview-background-color) 80%, white);
     --fxview-element-background-active: color-mix(in srgb, var(--fxview-background-color) 60%, white);
     --fxview-border: #8F8F9D;
+
+    /* copy over newtab colors from activity-stream-[os].css files */
+    --newtab-background-color: #2B2A33;
     --newtab-background-color-secondary: #42414d;
     --newtab-primary-action-background: #00ddff;
   }
@@ -42,6 +50,7 @@
     --fxview-text-color-hover: ButtonFace;
     --fxview-border: var(--fc-border-hcm, -moz-dialogtext);
     --newtab-primary-action-background: LinkText;
+    --newtab-background-color: Canvas;
     --newtab-background-color-secondary: Canvas;
   }
 }
@@ -54,6 +63,7 @@
 
 body {
   display: grid;
+  gap: 12px;
   grid-template-columns: var(--fxview-sidebar-width) 1fr;
   background-color: var(--fxview-background-color);
   color: var(--fxview-text-primary-color);
@@ -80,7 +90,6 @@ body {
 
 .page-header {
   margin: 0;
-  font-weight: 400;
 }
 
 fxview-category-button[name="recentbrowsing"]::part(icon) {
@@ -110,11 +119,18 @@ fxview-tab-list.with-context-menu::part(secondary-button) {
 .sticky-container {
   position: sticky;
   top: 0;
-  padding-block: var(--fxview-margin-top) 42px;
+  padding-block: var(--fxview-margin-top) 33px;
   z-index: 1;
 }
 
 .sticky-container.bottom-fade {
+  /*
+   * padding-inline is doubled to allow for the negative margin below to offset the
+   * container so that the box-shadows on the cards are hidden as they pass underneath.
+   */
+  padding-inline: calc(var(--fxview-card-padding-inline) * 2);
+  margin: 0 calc(var(--fxview-card-padding-inline) * -1);
+
   background:
   linear-gradient(
     to bottom,
@@ -129,7 +145,7 @@ fxview-tab-list.with-context-menu::part(secondary-button) {
 }
 
 .cards-container {
-  padding-inline: 4px;
+  padding-inline: var(--fxview-card-padding-inline);
 }
 
 /* This should be supported within panel-{item,list} rather than modifying it */
@@ -147,6 +163,10 @@ panel-item::part(button):hover:active {
   background-color: var(--fxview-element-background-active);
 }
 
+panel-list {
+  overflow-y: visible;
+}
+
 fxview-category-navigation {
   overflow-y: auto;
 }
@@ -154,4 +174,9 @@ fxview-category-navigation {
 fxview-category-navigation h1 {
   font-size: 1.6em;
   font-weight: 700;
+  margin-block: 0;
+}
+
+fxview-empty-state:not([isSelectedTab]) button[slot="primary-action"] {
+  margin-inline-start: 0;
 }

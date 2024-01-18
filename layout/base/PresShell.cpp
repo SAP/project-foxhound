@@ -765,7 +765,6 @@ PresShell::PresShell(Document* aDocument)
       mShouldUnsuppressPainting(false),
       mIgnoreFrameDestruction(false),
       mIsActive(true),
-      mIsInActiveTab(true),
       mFrozen(false),
       mIsFirstPaint(true),
       mObservesMutationsForPrint(false),
@@ -791,8 +790,6 @@ PresShell::PresShell(Document* aDocument)
       mForceDispatchKeyPressEventsForNonPrintableKeys(false),
       mForceUseLegacyKeyCodeAndCharCodeValues(false),
       mInitializedWithKeyPressEventDispatchingBlacklist(false),
-      mForceUseLegacyNonPrimaryDispatch(false),
-      mInitializedWithClickEventDispatchingBlacklist(false),
       mMouseLocationWasSetBySynthesizedMouseEventForTests(false),
       mHasTriedFastUnsuppress(false),
       mProcessingReflowCommands(false),
@@ -1528,9 +1525,6 @@ void PresShell::AddAuthorSheet(StyleSheet* aSheet) {
 }
 
 bool PresShell::FixUpFocus() {
-  if (!StaticPrefs::dom_focus_fixup()) {
-    return false;
-  }
   if (NS_WARN_IF(!mDocument)) {
     return false;
   }
@@ -1986,6 +1980,27 @@ bool PresShell::SimpleResizeReflow(nscoord aWidth, nscoord aHeight) {
   return true;
 }
 
+bool PresShell::CanHandleUserInputEvents(WidgetGUIEvent* aGUIEvent) {
+  if (XRE_IsParentProcess()) {
+    return true;
+  }
+
+  if (aGUIEvent->mFlags.mIsSynthesizedForTests &&
+      !StaticPrefs::dom_input_events_security_isUserInputHandlingDelayTest()) {
+    return true;
+  }
+
+  if (!aGUIEvent->IsUserAction()) {
+    return true;
+  }
+
+  if (nsPresContext* rootPresContext = mPresContext->GetRootPresContext()) {
+    return rootPresContext->UserInputEventsAllowed();
+  }
+
+  return true;
+}
+
 void PresShell::AddResizeEventFlushObserverIfNeeded() {
   if (!mIsDestroying && !mResizeEventPending &&
       MOZ_LIKELY(!mDocument->GetBFCacheEntry())) {
@@ -2137,7 +2152,9 @@ void PresShell::FireResizeEventSync() {
   nsEventStatus status = nsEventStatus_eIgnore;
 
   if (RefPtr<nsPIDOMWindowOuter> window = mDocument->GetWindow()) {
-    EventDispatcher::Dispatch(window, mPresContext, &event, nullptr, &status);
+    // MOZ_KnownLive due to bug 1506441
+    EventDispatcher::Dispatch(MOZ_KnownLive(nsGlobalWindowOuter::Cast(window)),
+                              mPresContext, &event, nullptr, &status);
   }
 }
 
@@ -6883,6 +6900,17 @@ nsresult PresShell::HandleEvent(nsIFrame* aFrameForPresShell,
       aGUIEvent->AsMouseEvent()->mReason == WidgetMouseEvent::eSynthesized) {
     return NS_OK;
   }
+
+  // Here we are granting some delays to ensure that user input events are
+  // created while the page content may not be visible to the user are not
+  // processed.
+  // The main purpose of this is to avoid user inputs are handled in the
+  // new document where as the user inputs were originally targeting some
+  // content in the old document.
+  if (!CanHandleUserInputEvents(aGUIEvent)) {
+    return NS_OK;
+  }
+
   EventHandler eventHandler(*this);
   return eventHandler.HandleEvent(aFrameForPresShell, aGUIEvent,
                                   aDontRetargetEvents, aEventStatus);
@@ -8374,8 +8402,8 @@ void PresShell::EventHandler::FinalizeHandlingEvent(WidgetEvent* aEvent) {
           }
           if (aEvent->mMessage == eKeyDown &&
               !aEvent->mFlags.mDefaultPrevented) {
-            if (Document* doc = GetDocument()) {
-              doc->TryCancelDialog();
+            if (RefPtr<Document> doc = GetDocument()) {
+              doc->HandleEscKey();
             }
           }
         }
@@ -8659,29 +8687,6 @@ nsresult PresShell::EventHandler::DispatchEventToDOM(
       }
       if (mPresShell->mForceUseLegacyKeyCodeAndCharCodeValues) {
         aEvent->AsKeyboardEvent()->mUseLegacyKeyCodeAndCharCodeValues = true;
-      }
-    } else if (aEvent->mMessage == eMouseUp) {
-      // Historically Firefox has dispatched click events for non-primary
-      // buttons, but only on window and document (and inside input/textarea),
-      // not on elements in general. The UI events spec forbids click (and
-      // dblclick) for non-primary mouse buttons, and specifies auxclick
-      // instead. In case of some websites that rely on non-primary click to
-      // prevent new tab etc. and don't have auxclick code to do the same, we
-      // need to revert to the historial non-standard behaviour
-      if (!mPresShell->mInitializedWithClickEventDispatchingBlacklist) {
-        mPresShell->mInitializedWithClickEventDispatchingBlacklist = true;
-
-        nsCOMPtr<nsIPrincipal> principal =
-            GetDocumentPrincipalToCompareWithBlacklist(*mPresShell);
-
-        if (principal) {
-          mPresShell->mForceUseLegacyNonPrimaryDispatch =
-              principal->IsURIInPrefList(
-                  "dom.mouseevent.click.hack.use_legacy_non-primary_dispatch");
-        }
-      }
-      if (mPresShell->mForceUseLegacyNonPrimaryDispatch) {
-        aEvent->AsMouseEvent()->mUseLegacyNonPrimaryDispatch = true;
       }
     }
 
@@ -9305,6 +9310,10 @@ void PresShell::Freeze(bool aIncludeSubDocuments) {
     if (presContext->RefreshDriver()->GetPresContext() == presContext) {
       presContext->RefreshDriver()->Freeze();
     }
+
+    if (nsPresContext* rootPresContext = presContext->GetRootPresContext()) {
+      rootPresContext->ResetUserInputEventsAllowed();
+    }
   }
 
   mFrozen = true;
@@ -9363,6 +9372,16 @@ void PresShell::Thaw(bool aIncludeSubDocuments) {
   UpdateImageLockingState();
 
   UnsuppressPainting();
+
+  // In case the above UnsuppressPainting call didn't start the
+  // refresh driver, we manually start the refresh driver to
+  // ensure nsPresContext::MaybeIncreaseMeasuredTicksSinceLoading
+  // can be called for user input events handling.
+  if (presContext && presContext->IsRoot()) {
+    if (!presContext->RefreshDriver()->HasPendingTick()) {
+      presContext->RefreshDriver()->InitializeTimer();
+    }
+  }
 }
 
 //--------------------------------------------------------
@@ -10845,30 +10864,23 @@ void PresShell::ActivenessMaybeChanged() {
   if (!mDocument) {
     return;
   }
-  auto activeness = ComputeActiveness();
-  SetIsActive(activeness.mShouldBeActive, activeness.mIsInActiveTab);
+  SetIsActive(ComputeActiveness());
 }
 
 // A PresShell being active means that it is visible (or close to be visible, if
 // the front-end is warming it). That means that when it is active we always
 // tick its refresh driver at full speed if needed.
 //
-// However we also want to track whether we're in the active tab (represented by
-// the browsing context activeness) for the refresh driver to be able to treat
-// invisible-but-in-the-active-tab frames slightly differently in some
-// circumstances (give them a throttled or unthrottled refresh driver after a
-// while). mIsInActiveTab should ~always be GetBrowsingContext()->IsActive().
-//
 // Image documents behave specially in the sense that they are always "active"
 // and never "in the active tab". However these documents tick manually so
 // there's not much to worry about there.
-auto PresShell::ComputeActiveness() const -> Activeness {
+bool PresShell::ComputeActiveness() const {
   MOZ_LOG(gLog, LogLevel::Debug,
-          ("PresShell::ShouldBeActive(%s, %d, %d)\n",
+          ("PresShell::ComputeActiveness(%s, %d)\n",
            mDocument->GetDocumentURI()
                ? mDocument->GetDocumentURI()->GetSpecOrDefault().get()
                : "(no uri)",
-           mIsActive, mIsInActiveTab));
+           mIsActive));
 
   Document* doc = mDocument;
 
@@ -10879,7 +10891,7 @@ auto PresShell::ComputeActiveness() const -> Activeness {
     //
     // Image docs can be displayed in multiple docs at the same time so the "in
     // active tab" bool doesn't make much sense for them.
-    return {true, false};
+    return true;
   }
 
   if (Document* displayDoc = doc->GetDisplayDocument()) {
@@ -10916,7 +10928,7 @@ auto PresShell::ComputeActiveness() const -> Activeness {
     if (!browserChild->IsVisible()) {
       MOZ_LOG(gLog, LogLevel::Debug,
               (" > BrowserChild %p is not visible", browserChild));
-      return {false, inActiveTab};
+      return false;
     }
 
     // If the browser is visible but just due to be preserving layers
@@ -10926,40 +10938,38 @@ auto PresShell::ComputeActiveness() const -> Activeness {
       MOZ_LOG(gLog, LogLevel::Debug,
               (" > BrowserChild %p is visible and not preserving layers",
                browserChild));
-      return {true, inActiveTab};
+      return true;
     }
     MOZ_LOG(
         gLog, LogLevel::Debug,
         (" > BrowserChild %p is visible and preserving layers", browserChild));
   }
-  return {inActiveTab, inActiveTab};
+  return inActiveTab;
 }
 
-void PresShell::SetIsActive(bool aIsActive, bool aIsInActiveTab) {
+void PresShell::SetIsActive(bool aIsActive) {
   MOZ_ASSERT(mDocument, "should only be called with a document");
 
   const bool activityChanged = mIsActive != aIsActive;
-  const bool inActiveTabChanged = mIsInActiveTab != aIsInActiveTab;
 
   mIsActive = aIsActive;
-  mIsInActiveTab = aIsInActiveTab;
 
   nsPresContext* presContext = GetPresContext();
   if (presContext &&
       presContext->RefreshDriver()->GetPresContext() == presContext) {
-    presContext->RefreshDriver()->SetActivity(aIsActive, aIsInActiveTab);
+    presContext->RefreshDriver()->SetActivity(aIsActive);
   }
 
-  if (activityChanged || inActiveTabChanged) {
+  if (activityChanged) {
     // Propagate state-change to my resource documents' PresShells and other
     // subdocuments.
     //
     // Note that it is fine to not propagate to fission iframes. Those will
     // become active / inactive as needed as a result of they getting painted /
     // not painted eventually.
-    auto recurse = [aIsActive, aIsInActiveTab](Document& aSubDoc) {
+    auto recurse = [aIsActive](Document& aSubDoc) {
       if (PresShell* presShell = aSubDoc.GetPresShell()) {
-        presShell->SetIsActive(aIsActive, aIsInActiveTab);
+        presShell->SetIsActive(aIsActive);
       }
       return CallState::Continue;
     };

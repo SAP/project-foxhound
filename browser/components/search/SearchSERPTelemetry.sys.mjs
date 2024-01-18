@@ -12,6 +12,10 @@ ChromeUtils.defineESModuleGetters(lazy, {
   SearchUtils: "resource://gre/modules/SearchUtils.sys.mjs",
 });
 
+ChromeUtils.defineLazyGetter(lazy, "gCryptoHash", () => {
+  return Cc["@mozilla.org/security/hash;1"].createInstance(Ci.nsICryptoHash);
+});
+
 // The various histograms and scalars that we report to.
 const SEARCH_CONTENT_SCALAR_BASE = "browser.search.content.";
 const SEARCH_WITH_ADS_SCALAR_BASE = "browser.search.withads.";
@@ -21,6 +25,7 @@ const SEARCH_TELEMETRY_PRIVATE_BROWSING_KEY_SUFFIX = "pb";
 
 // Exported for tests.
 export const TELEMETRY_SETTINGS_KEY = "search-telemetry-v2";
+export const TELEMETRY_CATEGORIZATION_KEY = "search-categorization";
 
 const impressionIdsWithoutEngagementsSet = new Set();
 
@@ -35,6 +40,13 @@ XPCOMUtils.defineLazyPreferenceGetter(
   lazy,
   "serpEventsEnabled",
   "browser.search.serpEventTelemetry.enabled",
+  true
+);
+
+XPCOMUtils.defineLazyPreferenceGetter(
+  lazy,
+  "serpEventTelemetryCategorization",
+  "browser.search.serpEventTelemetryCategorization.enabled",
   false
 );
 
@@ -63,6 +75,9 @@ export var SearchSERPTelemetryUtils = {
     OPENED_IN_NEW_TAB: "opened_in_new_tab",
     REFINE_ON_SERP: "follow_on_from_refine_on_SERP",
     SEARCHBOX: "follow_on_from_refine_on_incontent_search",
+  },
+  CATEGORIZATION: {
+    INCONCLUSIVE: 0,
   },
 };
 
@@ -322,6 +337,10 @@ class TelemetryHandler {
     this._contentHandler._reportPageWithAdImpressions(info, browser);
   }
 
+  reportPageDomains(info, browser) {
+    this._contentHandler._reportPageDomains(info, browser);
+  }
+
   reportPageImpression(info, browser) {
     this._contentHandler._reportPageImpression(info, browser);
   }
@@ -416,7 +435,7 @@ class TelemetryHandler {
         adsReported: false,
         adImpressionsReported: false,
         impressionId,
-        hrefToComponentMap: null,
+        urlToComponentMap: null,
         impressionInfo,
         searchBoxSubmitted: false,
       });
@@ -429,7 +448,7 @@ class TelemetryHandler {
           adsReported: false,
           adImpressionsReported: false,
           impressionId,
-          hrefToComponentMap: null,
+          urlToComponentMap: null,
           impressionInfo,
           searchBoxSubmitted: false,
         }),
@@ -472,6 +491,71 @@ class TelemetryHandler {
   }
 
   /**
+   * Calculate how close two urls are in equality.
+   *
+   * The scoring system:
+   * - If the URLs look exactly the same, including the ordering of query
+   *   parameters, the score is Infinity.
+   * - If the origin is the same, the score is increased by 1. Otherwise the
+   *   score is 0.
+   * - If the path is the same, the score is increased by 1.
+   * - For each query parameter, if the key exists the score is increased by 1.
+   *   Likewise if the query parameter values match.
+   * - If the hash is the same, the score is increased by 1. This includes if
+   *   the hash is missing in both URLs.
+   *
+   * @param {URL} url1
+   *   Url to compare.
+   * @param {URL} url2
+   *   Other url to compare. Ordering shouldn't matter.
+   * @param {object} [matchOptions]
+   *   Options for checking equality.
+   * @param {boolean} [matchOptions.path]
+   *   Whether the path must match. Default to false.
+   * @param {boolean} [matchOptions.paramValues]
+   *   Whether the values of the query parameters must match if the query
+   *   parameter key exists in the other. Defaults to false.
+   * @returns {number}
+   *   A score of how closely the two URLs match. Returns 0 if there is no
+   *   match or the equality check failed for an enabled match option.
+   */
+  compareUrls(url1, url2, matchOptions = {}) {
+    // In case of an exact match, well, that's an obvious winner.
+    if (url1.href == url2.href) {
+      return Infinity;
+    }
+
+    // Each step we get closer to the two URLs being the same, we increase the
+    // score. The consumer of this method will use these scores to see which
+    // of the URLs is the best match.
+    let score = 0;
+    if (url1.origin == url2.origin) {
+      ++score;
+      if (url1.pathname == url2.pathname) {
+        ++score;
+        for (let [key1, value1] of url1.searchParams) {
+          // Let's not fuss about the ordering of search params, since the
+          // score effect will solve that.
+          if (url2.searchParams.has(key1)) {
+            ++score;
+            if (url2.searchParams.get(key1) == value1) {
+              ++score;
+            } else if (matchOptions.paramValues) {
+              return 0;
+            }
+          }
+        }
+        if (url1.hash == url2.hash) {
+          ++score;
+        }
+      } else if (matchOptions.path) {
+        return 0;
+      }
+    }
+    return score;
+  }
+
+  /**
    * Parts of the URL, like search params and hashes, may be mutated by scripts
    * on a page we're tracking. Since we don't want to keep track of that
    * ourselves in order to keep the list of browser objects a weak-referenced
@@ -495,38 +579,6 @@ class TelemetryHandler {
       return null;
     }
 
-    const compareURLs = (url1, url2) => {
-      // In case of an exact match, well, that's an obvious winner.
-      if (url1.href == url2.href) {
-        return Infinity;
-      }
-
-      // Each step we get closer to the two URLs being the same, we increase the
-      // score. The consumer of this method will use these scores to see which
-      // of the URLs is the best match.
-      let score = 0;
-      if (url1.hostname == url2.hostname) {
-        ++score;
-        if (url1.pathname == url2.pathname) {
-          ++score;
-          for (let [key1, value1] of url1.searchParams) {
-            // Let's not fuss about the ordering of search params, since the
-            // score effect will solve that.
-            if (url2.searchParams.has(key1)) {
-              ++score;
-              if (url2.searchParams.get(key1) == value1) {
-                ++score;
-              }
-            }
-          }
-          if (url1.hash == url2.hash) {
-            ++score;
-          }
-        }
-      }
-      return score;
-    };
-
     let item;
     let currentBestMatch = 0;
     for (let [trackingURL, candidateItem] of this._browserInfoByURL) {
@@ -542,7 +594,7 @@ class TelemetryHandler {
       } catch (ex) {
         continue;
       }
-      let score = compareURLs(url, trackingURL);
+      let score = this.compareUrls(url, trackingURL);
       if (score > currentBestMatch) {
         item = candidateItem;
         currentBestMatch = score;
@@ -938,7 +990,7 @@ class ContentHandler {
         return;
       }
 
-      let URL = wrappedChannel.finalURL;
+      let url = wrappedChannel.finalURL;
 
       let providerInfo = item.info.provider;
       let info = this._searchProviderInfo.find(provider => {
@@ -973,7 +1025,7 @@ class ContentHandler {
         lazy.serpEventsEnabled &&
         channel.isDocument &&
         (channel.loadInfo.isTopLevelLoad ||
-          info.nonAdsLinkRegexps.some(r => r.test(URL)))
+          info.nonAdsLinkRegexps.some(r => r.test(url)))
       ) {
         let browser = wrappedChannel.browserElement;
         // If the load is from history, don't record an event.
@@ -1022,22 +1074,34 @@ class ContentHandler {
             isSerp = true;
           }
 
-          // Determine the "type" of the link.
-          let type = telemetryState.hrefToComponentMap?.get(URL);
-          // The SERP provider may have modified the url with different query
-          // parameters, so try checking all the recorded hrefs to see if any
-          // look similar.
-          if (!type) {
-            for (let [
-              href,
-              componentType,
-            ] of telemetryState.hrefToComponentMap.entries()) {
-              if (URL.startsWith(href)) {
-                type = componentType;
-                break;
-              }
+          let startFindComponent = Cu.now();
+          let parsedUrl = new URL(url);
+          // Determine the component type of the link.
+          let type;
+          for (let [
+            storedUrl,
+            componentType,
+          ] of telemetryState.urlToComponentMap.entries()) {
+            // The URL we're navigating to may have more query parameters if
+            // the provider adds query parameters when the user clicks on a link.
+            // On the other hand, the URL we are navigating to may have have
+            // fewer query parameters because of query param stripping.
+            // Thus, if a query parameter is missing, a match can still be made
+            // provided keys that exist in both URLs contain equal values.
+            let score = SearchSERPTelemetry.compareUrls(storedUrl, parsedUrl, {
+              paramValues: true,
+              path: true,
+            });
+            if (score) {
+              type = componentType;
+              break;
             }
           }
+          ChromeUtils.addProfilerMarker(
+            "SearchSERPTelemetry._observeActivity",
+            startFindComponent,
+            "Find component for URL"
+          );
 
           // Default value for URLs that don't match any components categorized
           // on the page.
@@ -1071,7 +1135,7 @@ class ContentHandler {
           lazy.logConsole.debug("Counting click:", {
             impressionId: telemetryState.impressionId,
             type,
-            URL,
+            URL: url,
           });
           // Prevent re-directed channels from being examined more than once.
           wrappedChannel._recordedClick = true;
@@ -1083,7 +1147,7 @@ class ContentHandler {
         );
       }
 
-      if (!info.extraAdServersRegexps?.some(regex => regex.test(URL))) {
+      if (!info.extraAdServersRegexps?.some(regex => regex.test(url))) {
         return;
       }
 
@@ -1107,7 +1171,7 @@ class ContentHandler {
         lazy.logConsole.debug("Counting ad click in page for:", {
           source: item.source,
           originURL,
-          URL,
+          URL: url,
         });
       } catch (e) {
         console.error(e);
@@ -1215,7 +1279,13 @@ class ContentHandler {
           ads_hidden: data.adsHidden,
         });
       }
-      telemetryState.hrefToComponentMap = info.hrefToComponentMap;
+      // Convert hrefToComponentMap to a urlToComponentMap in order to cache
+      // the query parameters of the href.
+      let urlToComponentMap = new Map();
+      for (let [href, adType] of info.hrefToComponentMap) {
+        urlToComponentMap.set(new URL(href), adType);
+      }
+      telemetryState.urlToComponentMap = urlToComponentMap;
       telemetryState.adImpressionsReported = true;
       Services.obs.notifyObservers(null, "reported-page-with-ad-impressions");
     }
@@ -1307,6 +1377,488 @@ class ContentHandler {
       lazy.logConsole.debug("Could not find an impression id.");
     }
   }
+
+  /**
+   * Initiates the categorization and reporting of domains extracted from
+   * SERPs.
+   *
+   * @param {object} info
+   *   The search provider infomation for the page.
+   * @param {Set} info.nonAdDomains
+       The non-ad domains extracted from the page. 
+   * @param {Set} info.adDomains
+       The ad domains extracted from the page. 
+   * @param {object} browser
+   *   The browser associated with the page.
+   */
+  _reportPageDomains(info, browser) {
+    let item = this._findBrowserItemForURL(info.url);
+    let telemetryState = item.browserTelemetryStateMap.get(browser);
+    if (lazy.serpEventTelemetryCategorization && telemetryState) {
+      let provider = item?.info.provider;
+      if (provider) {
+        SearchSERPCategorization.categorizeDomainsFromProvider(
+          info.nonAdDomains,
+          info.adDomains,
+          provider
+        );
+        Services.obs.notifyObservers(
+          null,
+          "reported-page-with-categorized-domains"
+        );
+      }
+    }
+  }
 }
 
+/**
+ * Categorizes SERPs.
+ */
+class DomainCategorizer {
+  /**
+   * Categorizes domains extracted from SERPs.
+   *
+   * @param {Set} nonAdDomains
+   *   The non-ad domains extracted from the page.
+   * @param {Set} adDomains
+   *   The ad domains extracted from the page.
+   * @param {string} provider
+   *   The provider associated with the page.
+   */
+  categorizeDomainsFromProvider(nonAdDomains, adDomains, provider) {
+    for (let domains of [nonAdDomains, adDomains]) {
+      domains = this.processDomains(domains, provider);
+      let resultsToReport = this.applyCategorizationLogic(domains);
+      this.dummyLogger(domains, resultsToReport);
+    }
+  }
+
+  // TODO: check with DS to get the final aggregation logic.
+  /**
+   * Applies the logic for reducing extracted domains to a single category for
+   * the SERP.
+   *
+   * @param {Set} domains
+   *   The domains extracted from the page.
+   * @returns {object} resultsToReport
+   *   The final categorization results. Keys are: "category", "num_domains",
+   *   "num_unknown" and "num_inconclusive".
+   */
+  applyCategorizationLogic(domains) {
+    let totalScoresPerCategory = {};
+    let domainsCount = 0;
+    let unknownsCount = 0;
+    let inconclusivesCount = 0;
+
+    for (let domain of domains) {
+      domainsCount++;
+
+      let categoryCandidates = SearchSERPDomainToCategoriesMap.get(domain);
+      if (!categoryCandidates.length) {
+        unknownsCount++;
+        continue;
+      }
+
+      for (let candidate of categoryCandidates) {
+        if (
+          candidate.category ==
+          SearchSERPTelemetryUtils.CATEGORIZATION.INCONCLUSIVE
+        ) {
+          inconclusivesCount++;
+          continue;
+        }
+
+        if (totalScoresPerCategory[candidate.category]) {
+          totalScoresPerCategory[candidate.category] += candidate.score;
+        } else {
+          totalScoresPerCategory[candidate.category] = candidate.score;
+        }
+      }
+    }
+
+    let finalCategory;
+    // Determine if all domains were unknown or inconclusive.
+    if (unknownsCount + inconclusivesCount == domainsCount) {
+      finalCategory = "inconclusive";
+    } else {
+      let maxScore = Math.max(...Object.values(totalScoresPerCategory));
+      // Handles ties by randomly returning one of the categories with the
+      // maximum score.
+      let topCategories = [];
+      for (let category in totalScoresPerCategory) {
+        if (totalScoresPerCategory[category] == maxScore) {
+          topCategories.push(category);
+        }
+      }
+      finalCategory =
+        topCategories.length > 1
+          ? this.#chooseRandomlyFrom(topCategories)
+          : topCategories[0];
+    }
+
+    return {
+      category: finalCategory,
+      num_domains: domainsCount,
+      num_unknown: unknownsCount,
+      num_inconclusive: inconclusivesCount,
+    };
+  }
+
+  // TODO: replace this method once we know where to send the categorized
+  // domains and overall SERP category.
+  dummyLogger(domains, resultsToReport) {
+    lazy.logConsole.debug("Domains extracted from SERP:", [...domains]);
+    lazy.logConsole.debug(
+      "Categorization results to report to Glean:",
+      resultsToReport
+    );
+  }
+
+  /**
+   * Processes raw domains extracted from the SERP into their final form before
+   * categorization.
+   *
+   * @param {Set} domains
+   *   The domains extracted from the page.
+   * @param {string} provider
+   *   The provider associated with the page.
+   * @returns {Set} processedDomains
+   *   The final set of processed domains for a page.
+   */
+  processDomains(domains, provider) {
+    let processedDomains = new Set();
+
+    for (let domain of domains) {
+      // Don't include domains associated with the search provider.
+      if (
+        domain.startsWith(`${provider}.`) ||
+        domain.includes(`.${provider}.`)
+      ) {
+        continue;
+      }
+      let domainWithoutSubdomains = this.#stripDomainOfSubdomains(domain);
+      // We may have come across the same domain twice, once with www. prefixed
+      // and another time without.
+      if (
+        domainWithoutSubdomains &&
+        !processedDomains.has(domainWithoutSubdomains)
+      ) {
+        processedDomains.add(domainWithoutSubdomains);
+      }
+    }
+
+    return processedDomains;
+  }
+
+  /**
+   * Helper to strip domains of any subdomains.
+   *
+   * @param {string} domain
+   *   The domain to strip of any subdomains.
+   * @returns {object} browser
+   *   The given domain with any subdomains removed.
+   */
+  #stripDomainOfSubdomains(domain) {
+    let tld;
+    // Can throw an exception if the input has too few domain levels.
+    try {
+      tld = Services.eTLD.getKnownPublicSuffixFromHost(domain);
+    } catch (ex) {
+      return "";
+    }
+
+    let domainWithoutTLD = domain.substring(0, domain.length - tld.length);
+    let secondLevelDomain = domainWithoutTLD.split(".").at(-2);
+
+    return secondLevelDomain ? `${secondLevelDomain}.${tld}` : "";
+  }
+
+  #chooseRandomlyFrom(categories) {
+    let randIdx = Math.floor(Math.random() * categories.length);
+    return categories[randIdx];
+  }
+}
+
+/**
+ * @typedef {object} DomainToCategoriesRecord
+ * @property {number} version
+ *  The version of the record.
+ */
+
+/**
+ * @typedef {object} DomainCategoryScore
+ * @property {number} category
+ *  The index of the category.
+ * @property {number} score
+ *  The score associated with the category.
+ */
+
+/**
+ * Maps domain to categories, with data synced with Remote Settings.
+ */
+class DomainToCategoriesMap {
+  /**
+   * Contains the domain to category scores.
+   *
+   * @type {Object<string, Array<DomainCategoryScore>> | null}
+   */
+  #map = null;
+
+  /**
+   * Latest version number of the attachments.
+   *
+   * @type {number | null}
+   */
+  #version = null;
+
+  /**
+   * The Remote Settings client.
+   *
+   * @type {object | null}
+   */
+  #client = null;
+
+  /**
+   * Whether this is synced with Remote Settings.
+   *
+   * @type {boolean}
+   */
+  #init = false;
+
+  /**
+   * Callback when Remote Settings syncs.
+   *
+   * @type {Function | null}
+   */
+  #onSettingsSync = null;
+
+  /**
+   * Initializes the map with local attachments and creates a listener for
+   * updates to Remote Settings in case the mappings are updated while the
+   * client is on.
+   */
+  async init() {
+    if (!lazy.serpEventTelemetryCategorization || this.#init) {
+      return;
+    }
+
+    this.#init = true;
+
+    lazy.logConsole.debug("Domain-to-categories map is initializing.");
+    this.#client = lazy.RemoteSettings(TELEMETRY_CATEGORIZATION_KEY);
+
+    this.#onSettingsSync = event => this.#sync(event.data);
+    this.#client.on("sync", this.#onSettingsSync);
+
+    let records = await this.#client.get();
+    await this.#clearAndPopulateMap(records);
+  }
+
+  uninit() {
+    lazy.logConsole.debug("Uninitializing domain-to-categories map.");
+    if (this.#init) {
+      this.#map = null;
+      this.#version = null;
+
+      this.#client.off("sync", this.#onSettingsSync);
+      this.#client = null;
+      this.#onSettingsSync = null;
+
+      this.#init = false;
+    }
+  }
+
+  /**
+   * Given a domain, find categories and relevant scores.
+   *
+   * @param {string} domain Domain to lookup.
+   * @returns {Array<DomainCategoryScore>}
+   *  An array containing categories and their respective score. If no record
+   *  for the domain is available, return an empty array.
+   */
+  get(domain) {
+    if (this.empty) {
+      return [];
+    }
+    lazy.gCryptoHash.init(lazy.gCryptoHash.MD5);
+    let bytes = new TextEncoder().encode(domain);
+    lazy.gCryptoHash.update(bytes, domain.length);
+    let hash = lazy.gCryptoHash.finish(true);
+    let rawValues = this.#map[hash] ?? [];
+    if (rawValues.length) {
+      let output = [];
+      // Transform data into a more readable format.
+      // [x, y] => { category: x, score: y }
+      for (let i = 0; i < rawValues.length; i += 2) {
+        output.push({ category: rawValues[i], score: rawValues[i + 1] });
+      }
+      return output;
+    }
+    return [];
+  }
+
+  /**
+   * If the map was initialized, returns the version number for the data.
+   * The version number is determined by the record with the highest version
+   * number. Even if the records have different versions, only records from the
+   * latest version should be available. Returns null if the map was not
+   * initialized.
+   *
+   * @returns {null | number} The version number.
+   */
+  get version() {
+    return this.#version;
+  }
+
+  /**
+   * Whether the map is empty of data.
+   *
+   * @returns {boolean}
+   */
+  get empty() {
+    return !this.#map;
+  }
+
+  /**
+   * Test-only function, used to override the domainToCategoriesMap so that
+   * unit tests can set it to easy to test values.
+   *
+   * @param {object} domainToCategoriesMap
+   *   An object where the key is a hashed domain and the value is an array
+   *   containing an arbitrary number of DomainCategoryScores.
+   */
+  overrideMapForTests(domainToCategoriesMap) {
+    this.#map = domainToCategoriesMap;
+  }
+
+  /**
+   * Inspects a list of records from the categorization domain bucket and finds
+   * the maximum version score from the set of records. Each record should have
+   * the same version number but if for any reason one entry has a lower
+   * version number, the latest version can be used to filter it out.
+   *
+   * @param {Array<DomainToCategoriesRecord>} records
+   *   An array containing the records from a Remote Settings collection.
+   * @returns {number}
+   */
+  #retrieveLatestVersion(records) {
+    return records.reduce((version, record) => {
+      if (record.version > version) {
+        return record.version;
+      }
+      return version;
+    }, 0);
+  }
+
+  /**
+   * Callback when Remote Settings has indicated the collection has been
+   * synced. Since the records in the collection will be updated all at once,
+   * use the array of current records which at this point in time would have
+   * the latest records from Remote Settings. Additionally, delete any
+   * attachment for records that no longer exist.
+   *
+   * @param {object} data
+   *  Object containing records that are current, deleted, created, or updated.
+   *
+   */
+  async #sync(data) {
+    lazy.logConsole.debug("Syncing domain-to-categories with Remote Settings.");
+
+    // Remove local files of deleted records.
+    let toDelete = data?.deleted.filter(d => d.attachment);
+    await Promise.all(
+      toDelete.map(record => this.#client.attachments.deleteDownloaded(record))
+    );
+
+    this.#clearAndPopulateMap(data?.current);
+  }
+
+  /**
+   * Clear the existing map and populate it with attachments found in the
+   * records. If no attachments are found, or no record containing an
+   * attachment contained the latest version, then nothing will change.
+   *
+   * @param {Array<DomainToCategoriesRecord>} records
+   *  The records containing attachments.
+   *
+   */
+  async #clearAndPopulateMap(records) {
+    // Set map to null so that if there are errors in the downloads, consumers
+    // will be able to know whether the map has information. Once we've
+    // successfully downloaded attachments and are parsing them, a non-null
+    // object will be created.
+    this.#map = null;
+    this.#version = null;
+
+    if (!records?.length) {
+      lazy.logConsole.debug("No records found for domain-to-categories map.");
+      return;
+    }
+
+    if (!records.length) {
+      lazy.logConsole.error(
+        "No valid attachments available for domain-to-categories map."
+      );
+      return;
+    }
+
+    let fileContents = [];
+    for (let record of records) {
+      let result;
+      // Downloading attachments can fail.
+      try {
+        result = await this.#client.attachments.download(record);
+      } catch (ex) {
+        lazy.logConsole.error("Could not download file:", ex);
+        return;
+      }
+      fileContents.push(result.buffer);
+    }
+
+    // All attachments should have the same version number. If for whatever
+    // reason they don't, we should only use the attachments with the latest
+    // version.
+    this.#version = this.#retrieveLatestVersion(records);
+
+    if (!this.#version) {
+      lazy.logConsole.debug("Could not find a version number for any record.");
+      return;
+    }
+
+    // Queue the series of assignments.
+    for (let i = 0; i < fileContents.length; ++i) {
+      let buffer = fileContents[i];
+      Services.tm.idleDispatchToMainThread(() => {
+        let start = Cu.now();
+        let json;
+        try {
+          json = JSON.parse(new TextDecoder().decode(buffer));
+        } catch (ex) {
+          // TODO: If there was an error decoding the buffer, we may want to
+          // dispatch an error in telemetry or try again.
+          return;
+        }
+        ChromeUtils.addProfilerMarker(
+          "SearchSERPTelemetry.#clearAndPopulateMap",
+          start,
+          "Convert buffer to JSON."
+        );
+        if (!this.#map) {
+          this.#map = {};
+        }
+        Object.assign(this.#map, json);
+        lazy.logConsole.debug("Updated domain-to-categories map.");
+        if (i == fileContents.length - 1) {
+          Services.obs.notifyObservers(
+            null,
+            "domain-to-categories-map-update-complete"
+          );
+        }
+      });
+    }
+  }
+}
+
+export var SearchSERPDomainToCategoriesMap = new DomainToCategoriesMap();
 export var SearchSERPTelemetry = new TelemetryHandler();
+export var SearchSERPCategorization = new DomainCategorizer();

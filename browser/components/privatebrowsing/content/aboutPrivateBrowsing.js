@@ -45,8 +45,20 @@ function renderInfo({
   const bodyEl = document.getElementById("info-body");
   const linkEl = document.getElementById("private-browsing-myths");
 
-  if (infoIcon) {
+  let feltPrivacyEnabled = RPMGetBoolPref(
+    "browser.privatebrowsing.felt-privacy-v1",
+    false
+  );
+
+  if (infoIcon && !feltPrivacyEnabled) {
     container.style.backgroundImage = `url(${infoIcon})`;
+  }
+
+  if (feltPrivacyEnabled) {
+    infoTitleEnabled = true;
+    infoTitle = "fluent:about-private-browsing-felt-privacy-v1-info-header";
+    infoBody = "fluent:about-private-browsing-felt-privacy-v1-info-body";
+    infoLinkText = "fluent:about-private-browsing-felt-privacy-v1-info-link";
   }
 
   titleEl.hidden = !infoTitleEnabled;
@@ -277,11 +289,6 @@ document.addEventListener("DOMContentLoaded", function () {
       });
     return;
   }
-
-  let newLogoEnabled = window.PrivateBrowsingEnableNewLogo();
-  document
-    .getElementById("about-private-browsing-logo")
-    .toggleAttribute("legacy", !newLogoEnabled);
 
   // The default info content is already in the markup, but we need to use JS to
   // set up the learn more link, since it's dynamically generated.

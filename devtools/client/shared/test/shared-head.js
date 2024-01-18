@@ -580,7 +580,7 @@ async function navigateTo(
   if (uri === browser.currentURI.spec) {
     gBrowser.reloadTab(gBrowser.getTabForBrowser(browser));
   } else {
-    BrowserTestUtils.loadURIString(browser, uri);
+    BrowserTestUtils.startLoadingURIString(browser, uri);
   }
 
   if (waitForLoad) {
@@ -2206,4 +2206,25 @@ function logCssCompatDataPropertiesWithoutMDNUrl() {
     }
   }
   walk(cssPropertiesCompatData);
+}
+
+/**
+ * Craft a CssProperties instance without involving RDP for tests
+ * manually spawning OutputParser, CssCompleter, Editor...
+ *
+ * Otherwise this should instead be fetched from CssPropertiesFront.
+ *
+ * @return {CssProperties}
+ */
+function getClientCssProperties() {
+  const {
+    generateCssProperties,
+  } = require("resource://devtools/server/actors/css-properties.js");
+  const {
+    CssProperties,
+    normalizeCssData,
+  } = require("resource://devtools/client/fronts/css-properties.js");
+  return new CssProperties(
+    normalizeCssData({ properties: generateCssProperties() })
+  );
 }

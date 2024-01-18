@@ -784,7 +784,7 @@ urlbar:
           "searchsuggestion_rich", "switchtab", "remotetab", "extension",
           "oneoff", "keywordoffer", "canonized", "tip", "tiphelp",
           "formhistory", "tabtosearch", "quicksuggest", "weather",
-          "dynamic-wikipedia", "navigational", "none"
+          "clipboard", "dynamic-wikipedia", "navigational", "none"
       provider: The name of the provider that presented the result.
   abandonment:
     objects: ["blur"]
@@ -1390,8 +1390,8 @@ pwmgr:
       updates to the doorhanger may change whether a login is actually saved or updated, but will
       not impact the sent object.
     objects: ["save", "update"]
-    bug_numbers: [1650929, 1650941, 1678200, 1714252, 1754637]
-    expiry_version: "120"
+    bug_numbers: [1650929, 1650941, 1678200, 1714252, 1754637, 1850872]
+    expiry_version: "142"
     release_channel_collection: opt-out
     products: ["firefox"]
     record_in_processes: [main]
@@ -1614,12 +1614,12 @@ messaging_experiments:
 telemetry:
   early_event:
     objects: ["startup"]
-    bug_numbers: [1837230]
+    bug_numbers: [1837230, 1850873]
     notification_emails: ["chutten@mozilla.com"]
     products: ["firefox"]
     record_in_processes: ["main"]
     description: This is a mirrored-to verification event.
-    expiry_version: "120"
+    expiry_version: "125"
 
 # This category contains event entries used for Telemetry tests.
 # They will not be sent out with any pings.
@@ -3873,7 +3873,8 @@ firefoxview:
       - main
     bug_numbers:
       - 1809661
-    expiry_version: "120"
+      - 1850885
+    expiry_version: "132"
     release_channel_collection: opt-out
   closed_tabs_open:
     objects: ["tabs"]
@@ -3952,6 +3953,20 @@ firefoxview:
       - 1779642
     expiry_version: "never"
     release_channel_collection: opt-out
+  tab_selected:
+    objects: ["toolbarbutton"]
+    description: >
+      Recorded when the Firefox View tab is clicked
+    notification_emails:
+      - firefoxview@mozilla.com
+    products:
+      - "firefox"
+    record_in_processes:
+      - main
+    bug_numbers:
+      - 1852989
+    expiry_version: "never"
+    release_channel_collection: opt-out
 
 firefoxview_next:
   recently_closed:
@@ -3993,9 +4008,25 @@ firefoxview_next:
   card_collapsed:
     objects: ["card_container"]
     description: >
-      Recorded when a card-container is collapsed
+      Recorded when a card-container is collapsed on the 'Recent browsing' page
     extra_keys:
       data_type: The type of data being collapsed in a card on the 'Recent browsing' page
+    notification_emails:
+      - firefoxview@mozilla.com
+    products:
+      - "firefox"
+    record_in_processes:
+      - main
+    bug_numbers:
+      - 1842616
+    expiry_version: "never"
+    release_channel_collection: opt-out
+  card_expanded:
+    objects: ["card_container"]
+    description: >
+      Recorded when a card-container is expanded on the 'Recent browsing' page
+    extra_keys:
+      data_type: The type of data being expanded in a card on the 'Recent browsing' page
     notification_emails:
       - firefoxview@mozilla.com
     products:
@@ -4012,6 +4043,7 @@ firefoxview_next:
       Recorded when the page/view is changed in Firefox View
     extra_keys:
       page: The short page name that the user is navigating to
+      source: Whether the page was changed via the side navigation vs the 'View all' link on cards on the Recent browsing page
     notification_emails:
       - firefoxview@mozilla.com
     products:
@@ -4020,6 +4052,159 @@ firefoxview_next:
       - main
     bug_numbers:
       - 1842616
+    expiry_version: "never"
+    release_channel_collection: opt-out
+  context_menu:
+    objects: ["tabs"]
+    description: >
+      Recorded when a context menu selection is made in Firefox View
+    extra_keys:
+      menu_action: The menu action the user has selected for a given tab
+      data_type: The type of data the user has used the context menu for
+    notification_emails:
+      - firefoxview@mozilla.com
+    products:
+      - "firefox"
+    record_in_processes:
+      - main
+    bug_numbers:
+      - 1842616
+    expiry_version: "never"
+    release_channel_collection: opt-out
+  entered:
+    objects: ["firefoxview"]
+    description: >
+      Recorded when the Firefox View tab is selected
+    extra_keys:
+      page: The short page name used as the location hash when selecting the Firefox View tab
+    notification_emails:
+      - firefoxview@mozilla.com
+    products:
+      - "firefox"
+    record_in_processes:
+      - main
+    bug_numbers:
+      - 1852036
+    expiry_version: "never"
+    release_channel_collection: opt-out
+  fxa_continue:
+    objects: ["sync"]
+    description: >
+      Recorded when button to sign in or sign up is clicked
+    notification_emails:
+      - firefoxview@mozilla.com
+    products:
+      - "firefox"
+    record_in_processes:
+      - main
+    bug_numbers:
+      - 1833671
+    expiry_version: "never"
+    release_channel_collection: opt-out
+  fxa_mobile:
+    objects: ["sync"]
+    description: >
+      Recorded when the 'Try Firefox for mobile' button is clicked
+    extra_keys:
+      has_devices: True if user has other devices signed into sync
+    notification_emails:
+      - firefoxview@mozilla.com
+    products:
+      - "firefox"
+    record_in_processes:
+      - main
+    bug_numbers:
+      - 1833671
+    expiry_version: "never"
+    release_channel_collection: opt-out
+  synced_tabs:
+    objects: ["tabs"]
+    description: >
+      Recorded when a synced tab is clicked
+    extra_keys:
+      page: The short page name where the synced tab was clicked
+    notification_emails:
+      - firefoxview@mozilla.com
+    products:
+      - "firefox"
+    record_in_processes:
+      - main
+    bug_numbers:
+      - 1833671
+    expiry_version: "never"
+    release_channel_collection: opt-out
+  history:
+    objects: ["visits"]
+    description: >
+      Recorded when a history tab is clicked
+    notification_emails:
+      - firefoxview@mozilla.com
+    products:
+      - "firefox"
+    record_in_processes:
+      - main
+    bug_numbers:
+      - 1842616
+    expiry_version: "never"
+    release_channel_collection: opt-out
+  sort_history:
+    objects: ["tabs"]
+    description: >
+      Recorded when the sort option is changed for History in Firefox View
+    extra_keys:
+      sort_type: The type of sort the user has switched to
+    notification_emails:
+      - firefoxview@mozilla.com
+    products:
+      - "firefox"
+    record_in_processes:
+      - main
+    bug_numbers:
+      - 1833674
+    expiry_version: "never"
+    release_channel_collection: opt-out
+  show_all_history:
+    objects: ["tabs"]
+    description: >
+      Recorded when the 'Show all history' button is clicked on the History page in Firefox View
+    notification_emails:
+      - firefoxview@mozilla.com
+    products:
+      - "firefox"
+    record_in_processes:
+      - main
+    bug_numbers:
+      - 1833674
+    expiry_version: "never"
+    release_channel_collection: opt-out
+  open_tab:
+    objects: ["tabs"]
+    description: Recorded when an open tab is clicked
+    extra_keys:
+      page: The short page name where the open tab was clicked
+      window: The window the open tab belongs to
+    notification_emails:
+      - firefoxview@mozilla.com
+    products:
+      - "firefox"
+    record_in_processes:
+      - main
+    bug_numbers:
+      - 1833669
+    expiry_version: "never"
+    release_channel_collection: opt-out
+  tab_selected:
+    objects: ["toolbarbutton"]
+    description: >
+      Recorded when the Firefox View tab is clicked
+    notification_emails:
+      - firefoxview@mozilla.com
+    products:
+      - "firefox"
+    record_in_processes:
+      - main
+    bug_numbers:
+      - 1852989
     expiry_version: "never"
     release_channel_collection: opt-out
 

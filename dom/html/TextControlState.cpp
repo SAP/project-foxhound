@@ -1175,9 +1175,10 @@ class MOZ_STACK_CLASS AutoTextControlHandlingState {
     if (!mParent && mTextControlStateDestroyed) {
       mTextControlState.DeleteOrCacheForReuse();
     }
-    if (!mTextControlStateDestroyed && mPreareEditorLater) {
+    if (!mTextControlStateDestroyed && mPrepareEditorLater) {
       MOZ_ASSERT(nsContentUtils::IsSafeToRunScript());
-      mTextControlState.PrepareEditor();
+      MOZ_ASSERT(Is(TextControlAction::SetValue));
+      mTextControlState.PrepareEditor(&mSettingValue);
     }
   }
 
@@ -1204,7 +1205,7 @@ class MOZ_STACK_CLASS AutoTextControlHandlingState {
         settingValue = handlingSomething;
       }
     }
-    settingValue->mPreareEditorLater = true;
+    settingValue->mPrepareEditorLater = true;
   }
 
   /**
@@ -1321,7 +1322,7 @@ class MOZ_STACK_CLASS AutoTextControlHandlingState {
     if (mTextControlAction == aTextControlAction) {
       return true;
     }
-    return mParent ? mParent->IsHandling(aTextControlAction) : false;
+    return mParent && mParent->IsHandling(aTextControlAction);
   }
   TextControlElement* GetTextControlElement() const { return mTextCtrlElement; }
   TextInputListener* GetTextInputListener() const { return mTextInputListener; }
@@ -1371,13 +1372,13 @@ class MOZ_STACK_CLASS AutoTextControlHandlingState {
   // mTextInputListener grabs TextControlState::mTextListener because if
   // TextControlState is unbind from the frame, it's released.
   RefPtr<TextInputListener> const mTextInputListener;
-  nsString mSettingValue;
+  nsAutoString mSettingValue;
   const nsAString* mOldValue = nullptr;
   ValueSetterOptions mValueSetterOptions;
   TextControlAction const mTextControlAction;
   bool mTextControlStateDestroyed = false;
   bool mEditActionHandled = false;
-  bool mPreareEditorLater = false;
+  bool mPrepareEditorLater = false;
   bool mBeforeInputEventHasBeenDispatched = false;
 };
 
@@ -1885,11 +1886,8 @@ nsresult TextControlState::PrepareEditor(const nsAString* aValue) {
 
   editorFlags = newTextEditor->Flags();
 
-  // Check if the readonly attribute is set.
-  //
-  // TODO: Should probably call IsDisabled(), as it is cheaper.
-  if (mTextCtrlElement->HasAttr(nsGkAtoms::readonly) ||
-      mTextCtrlElement->HasAttr(nsGkAtoms::disabled)) {
+  // Check if the readonly/disabled attributes are set.
+  if (mTextCtrlElement->IsDisabledOrReadOnly()) {
     editorFlags |= nsIEditor::eEditorReadonlyMask;
   }
 
@@ -2548,9 +2546,7 @@ void TextControlState::GetValue(nsAString& aValue, bool aIgnoreWrap,
 }
 
 bool TextControlState::ValueEquals(const nsAString& aValue) const {
-  // We can avoid copying string buffer in many cases.  Therefore, we should
-  // use nsString rather than nsAutoString here.
-  nsString value;
+  nsAutoString value;
   GetValue(value, true, /* aForDisplay = */ true);
   return aValue.Equals(value);
 }

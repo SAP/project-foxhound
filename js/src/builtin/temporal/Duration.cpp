@@ -37,9 +37,9 @@
 #include "builtin/temporal/TimeZone.h"
 #include "builtin/temporal/Wrapped.h"
 #include "builtin/temporal/ZonedDateTime.h"
-#include "gc/Allocator.h"
 #include "gc/AllocKind.h"
 #include "gc/Barrier.h"
+#include "gc/GCEnum.h"
 #include "js/CallArgs.h"
 #include "js/CallNonGenericMethod.h"
 #include "js/Class.h"
@@ -52,13 +52,11 @@
 #include "js/PropertyDescriptor.h"
 #include "js/PropertySpec.h"
 #include "js/RootingAPI.h"
-#include "js/TypeDecls.h"
-#include "js/Utility.h"
 #include "js/Value.h"
 #include "proxy/DeadObjectProxy.h"
 #include "util/StringBuffer.h"
 #include "vm/BigIntType.h"
-#include "vm/Compartment.h"
+#include "vm/BytecodeUtil.h"
 #include "vm/GlobalObject.h"
 #include "vm/JSAtomState.h"
 #include "vm/JSContext.h"
@@ -541,10 +539,12 @@ bool js::temporal::ToTemporalDurationRecord(JSContext* cx,
   // Step 1.
   if (!temporalDurationLike.isObject()) {
     // Step 1.a.
-    Rooted<JSString*> string(cx, JS::ToString(cx, temporalDurationLike));
-    if (!string) {
+    if (!temporalDurationLike.isString()) {
+      ReportValueError(cx, JSMSG_UNEXPECTED_TYPE, JSDVG_IGNORE_STACK,
+                       temporalDurationLike, nullptr, "not a string");
       return false;
     }
+    Rooted<JSString*> string(cx, temporalDurationLike.toString());
 
     // Step 1.b.
     return ParseTemporalDurationString(cx, string, result);
@@ -945,8 +945,8 @@ static bool NanosecondsToDaysSlow(
     return false;
   }
 
-  result.initialize(days, ToInstantSpan(nanos),
-                    InstantSpan::fromNanoseconds(dayLengthNs));
+  result.set(temporal::NanosecondsAndDays::from(
+      days, ToInstantSpan(nanos), InstantSpan::fromNanoseconds(dayLengthNs)));
   return true;
 }
 
@@ -959,10 +959,10 @@ static bool NanosecondsToDays(
   if (auto total = TotalDurationNanoseconds(duration.time(), 0)) {
     auto nanosAndDays = ::NanosecondsToDays(*total);
 
-    result.initialize(
+    result.set(temporal::NanosecondsAndDays::from(
         nanosAndDays.days,
         InstantSpan::fromNanoseconds(nanosAndDays.nanoseconds),
-        InstantSpan::fromNanoseconds(ToNanoseconds(TemporalUnit::Day)));
+        InstantSpan::fromNanoseconds(ToNanoseconds(TemporalUnit::Day))));
     return true;
   }
 
@@ -3581,6 +3581,62 @@ static Duration AbsoluteDuration(const Duration& duration) {
 }
 
 /**
+ * FormatFractionalSeconds ( subSecondNanoseconds, precision )
+ */
+[[nodiscard]] static bool FormatFractionalSeconds(JSStringBuilder& result,
+                                                  int32_t subSecondNanoseconds,
+                                                  Precision precision) {
+  MOZ_ASSERT(0 <= subSecondNanoseconds && subSecondNanoseconds < 1'000'000'000);
+  MOZ_ASSERT(precision != Precision::Minute());
+
+  // Steps 1-2.
+  if (precision == Precision::Auto()) {
+    // Step 1.a.
+    if (subSecondNanoseconds == 0) {
+      return true;
+    }
+
+    // Step 3. (Reordered)
+    if (!result.append('.')) {
+      return false;
+    }
+
+    // Steps 1.b-c.
+    uint32_t k = 100'000'000;
+    do {
+      if (!result.append(char('0' + (subSecondNanoseconds / k)))) {
+        return false;
+      }
+      subSecondNanoseconds %= k;
+      k /= 10;
+    } while (subSecondNanoseconds);
+  } else {
+    // Step 2.a.
+    uint8_t p = precision.value();
+    if (p == 0) {
+      return true;
+    }
+
+    // Step 3. (Reordered)
+    if (!result.append('.')) {
+      return false;
+    }
+
+    // Steps 2.b-c.
+    uint32_t k = 100'000'000;
+    for (uint8_t i = 0; i < precision.value(); i++) {
+      if (!result.append(char('0' + (subSecondNanoseconds / k)))) {
+        return false;
+      }
+      subSecondNanoseconds %= k;
+      k /= 10;
+    }
+  }
+
+  return true;
+}
+
+/**
  * TemporalDurationToString ( years, months, weeks, days, hours, minutes,
  * seconds, milliseconds, microseconds, nanoseconds, precision )
  */
@@ -3588,7 +3644,7 @@ static JSString* TemporalDurationToString(JSContext* cx,
                                           const Duration& duration,
                                           Precision precision) {
   MOZ_ASSERT(IsValidDuration(duration));
-  MOZ_ASSERT(!precision.isMinute());
+  MOZ_ASSERT(precision != Precision::Minute());
 
   // Convert to absolute values up front. This is okay to do, because when the
   // duration is valid, all components have the same sign.
@@ -3599,7 +3655,8 @@ static JSString* TemporalDurationToString(JSContext* cx,
   // Fast path for zero durations.
   if (years == 0 && months == 0 && weeks == 0 && days == 0 && hours == 0 &&
       minutes == 0 && seconds == 0 && milliseconds == 0 && microseconds == 0 &&
-      nanoseconds == 0 && (precision.isAuto() || precision.value() == 0)) {
+      nanoseconds == 0 &&
+      (precision == Precision::Auto() || precision.value() == 0)) {
     return NewStringCopyZ<CanGC>(cx, "PT0S");
   }
 
@@ -3673,7 +3730,7 @@ static JSString* TemporalDurationToString(JSContext* cx,
       MOZ_ASSERT(0 <= micro && micro <= 999);
       MOZ_ASSERT(0 <= nano && nano <= 999);
 
-      // Step 16.a. (Reordered)
+      // Step 20.b. (Reordered)
       fraction = milli * 1'000'000 + micro * 1'000 + nano;
       MOZ_ASSERT(0 <= fraction && fraction < 1'000'000'000);
     } while (false);
@@ -3745,7 +3802,7 @@ static JSString* TemporalDurationToString(JSContext* cx,
       MOZ_ASSERT(0 <= micro && micro <= 999);
       MOZ_ASSERT(0 <= nano && nano <= 999);
 
-      // Step 16.a. (Reordered)
+      // Step 20.b. (Reordered)
       fraction = milli * 1'000'000 + micro * 1'000 + nano;
       MOZ_ASSERT(0 <= fraction && fraction < 1'000'000'000);
     }
@@ -3757,14 +3814,14 @@ static JSString* TemporalDurationToString(JSContext* cx,
   // Step 1. (Reordered)
   int32_t sign = DurationSign(duration);
 
-  // Steps 17-18. (Reordered)
+  // Step 21. (Reordered)
   if (sign < 0) {
     if (!result.append('-')) {
       return nullptr;
     }
   }
 
-  // Step 18. (Reordered)
+  // Step 22. (Reordered)
   if (!result.append('P')) {
     return nullptr;
   }
@@ -3809,16 +3866,24 @@ static JSString* TemporalDurationToString(JSContext* cx,
     }
   }
 
-  // Step 16. (if-condition)
-  bool hasSecondsPart = totalSeconds != 0 ||
-                        (totalSecondsBigInt && !totalSecondsBigInt->isZero()) ||
-                        fraction != 0 ||
-                        (years == 0 && months == 0 && weeks == 0 && days == 0 &&
-                         hours == 0 && minutes == 0) ||
-                        !precision.isAuto();
+  // Steps 16-17.
+  bool nonzeroSecondsAndLower = seconds != 0 || milliseconds != 0 ||
+                                microseconds != 0 || nanoseconds != 0;
+  MOZ_ASSERT(nonzeroSecondsAndLower ==
+             (totalSeconds != 0 ||
+              (totalSecondsBigInt && !totalSecondsBigInt->isZero()) ||
+              fraction != 0));
+
+  // Steps 18-19.
+  bool zeroMinutesAndHigher = years == 0 && months == 0 && weeks == 0 &&
+                              days == 0 && hours == 0 && minutes == 0;
+
+  // Step 20. (if-condition)
+  bool hasSecondsPart = nonzeroSecondsAndLower || zeroMinutesAndHigher ||
+                        precision != Precision::Auto();
 
   if (hours != 0 || minutes != 0 || hasSecondsPart) {
-    // Step 19. (Reordered)
+    // Step 23. (Reordered)
     if (!result.append('T')) {
       return nullptr;
     }
@@ -3843,11 +3908,9 @@ static JSString* TemporalDurationToString(JSContext* cx,
       }
     }
 
-    // Step 16.
+    // Step 20.
     if (hasSecondsPart) {
-      // Step 16.a. (Moved above)
-
-      // Step 16.f.
+      // Step 20.a.
       if (totalSecondsBigInt) {
         if (!BigIntToStringBuilder(cx, totalSecondsBigInt, result)) {
           return nullptr;
@@ -3858,47 +3921,21 @@ static JSString* TemporalDurationToString(JSContext* cx,
         }
       }
 
-      // Steps 16.b-e and 16.g.
-      if (precision.isAuto()) {
-        if (fraction != 0) {
-          // Steps 16.g.
-          if (!result.append('.')) {
-            return nullptr;
-          }
+      // Step 20.b. (Moved above)
 
-          uint32_t k = 100'000'000;
-          do {
-            if (!result.append(char('0' + (fraction / k)))) {
-              return nullptr;
-            }
-            fraction %= k;
-            k /= 10;
-          } while (fraction);
-        }
-      } else if (precision.value() != 0) {
-        // Steps 16.g.
-        if (!result.append('.')) {
-          return nullptr;
-        }
-
-        uint32_t k = 100'000'000;
-        for (uint8_t i = 0; i < precision.value(); i++) {
-          if (!result.append(char('0' + (fraction / k)))) {
-            return nullptr;
-          }
-          fraction %= k;
-          k /= 10;
-        }
+      // Step 20.c.
+      if (!FormatFractionalSeconds(result, fraction, precision)) {
+        return nullptr;
       }
 
-      // Step 16.h.
+      // Step 20.d.
       if (!result.append('S')) {
         return nullptr;
       }
     }
   }
 
-  // Step 20.
+  // Step 24.
   return result.finishString();
 }
 
@@ -3907,27 +3944,25 @@ static JSString* TemporalDurationToString(JSContext* cx,
  */
 static bool ToRelativeTemporalObject(JSContext* cx, Handle<JSObject*> options,
                                      MutableHandle<JSObject*> result) {
-  // Step 1. (Not applicable in our implementation.)
-
-  // Step 2.
+  // Step 1.
   Rooted<Value> value(cx);
   if (!GetProperty(cx, options, options, cx->names().relativeTo, &value)) {
     return false;
   }
 
-  // Step 3.
+  // Step 2.
   if (value.isUndefined()) {
     result.set(nullptr);
     return true;
   }
 
-  // Step 4.
+  // Step 3.
   auto offsetBehaviour = OffsetBehaviour::Option;
 
-  // Step 5.
+  // Step 4.
   auto matchBehaviour = MatchBehaviour::MatchExactly;
 
-  // Steps 6-7.
+  // Steps 5-6.
   PlainDateTime dateTime;
   Rooted<CalendarValue> calendar(cx);
   Rooted<TimeZoneValue> timeZone(cx);
@@ -3935,7 +3970,7 @@ static bool ToRelativeTemporalObject(JSContext* cx, Handle<JSObject*> options,
   if (value.isObject()) {
     Rooted<JSObject*> obj(cx, &value.toObject());
 
-    // Step 6.a.
+    // Step 5.a.
     if (obj->canUnwrapAs<PlainDateObject>()) {
       result.set(obj);
       return true;
@@ -3945,7 +3980,7 @@ static bool ToRelativeTemporalObject(JSContext* cx, Handle<JSObject*> options,
       return true;
     }
 
-    // Step 6.b.
+    // Step 5.b.
     if (auto* dateTime = obj->maybeUnwrapIf<PlainDateTimeObject>()) {
       auto plainDateTime = ToPlainDate(dateTime);
 
@@ -3963,12 +3998,12 @@ static bool ToRelativeTemporalObject(JSContext* cx, Handle<JSObject*> options,
       return true;
     }
 
-    // Step 6.c.
+    // Step 5.c.
     if (!GetTemporalCalendarWithISODefault(cx, obj, &calendar)) {
       return false;
     }
 
-    // Step 6.d.
+    // Step 5.d.
     JS::RootedVector<PropertyKey> fieldNames(cx);
     if (!CalendarFields(cx, calendar,
                         {CalendarField::Day, CalendarField::Hour,
@@ -3980,94 +4015,96 @@ static bool ToRelativeTemporalObject(JSContext* cx, Handle<JSObject*> options,
       return false;
     }
 
-    // Steps 6.e-f.
+    // Steps 5.e-f.
     if (!AppendSorted(cx, fieldNames.get(),
                       {TemporalField::Offset, TemporalField::TimeZone})) {
       return false;
     }
 
-    // Step 6.g.
+    // Step 5.g.
     Rooted<PlainObject*> fields(cx, PrepareTemporalFields(cx, obj, fieldNames));
     if (!fields) {
       return false;
     }
 
-    // Step 6.h.
+    // Step 5.h.
     Rooted<JSObject*> dateOptions(cx, NewPlainObjectWithProto(cx, nullptr));
     if (!dateOptions) {
       return false;
     }
 
-    // Step 6.i.
+    // Step 5.i.
     Rooted<Value> overflow(cx, StringValue(cx->names().constrain));
     if (!DefineDataProperty(cx, dateOptions, cx->names().overflow, overflow)) {
       return false;
     }
 
-    // Step 6.j.
+    // Step 5.j.
     if (!InterpretTemporalDateTimeFields(cx, calendar, fields, dateOptions,
                                          &dateTime)) {
       return false;
     }
 
-    // Step 6.k.
+    // Step 5.k.
     Rooted<Value> offset(cx);
     if (!GetProperty(cx, fields, fields, cx->names().offset, &offset)) {
       return false;
     }
 
-    // Step 6.l.
+    // Step 5.l.
     Rooted<Value> timeZoneValue(cx);
     if (!GetProperty(cx, fields, fields, cx->names().timeZone,
                      &timeZoneValue)) {
       return false;
     }
 
-    // Step 6.m.
+    // Step 5.m.
     if (!timeZoneValue.isUndefined()) {
       if (!ToTemporalTimeZone(cx, timeZoneValue, &timeZone)) {
         return false;
       }
     }
 
-    // Step 6.n.
+    // Step 5.n.
     if (offset.isUndefined()) {
       offsetBehaviour = OffsetBehaviour::Wall;
     }
 
-    // Steps 9-10.
+    // Steps 8-9.
     if (timeZone) {
       if (offsetBehaviour == OffsetBehaviour::Option) {
         MOZ_ASSERT(!offset.isUndefined());
         MOZ_ASSERT(offset.isString());
 
-        // Step 9.a.
+        // Step 8.a.
         Rooted<JSString*> offsetString(cx, offset.toString());
         if (!offsetString) {
           return false;
         }
 
-        // Step 9.b.
-        if (!ParseTimeZoneOffsetString(cx, offsetString, &offsetNs)) {
+        // Step 8.b.
+        if (!ParseDateTimeUTCOffset(cx, offsetString, &offsetNs)) {
           return false;
         }
       } else {
-        // Step 10.
+        // Step 9.
         offsetNs = 0;
       }
     }
   } else {
-    // Step 7.a.
-    Rooted<JSString*> string(cx, JS::ToString(cx, value));
-    if (!string) {
+    // Step 6.a.
+    if (!value.isString()) {
+      ReportValueError(cx, JSMSG_UNEXPECTED_TYPE, JSDVG_IGNORE_STACK, value,
+                       nullptr, "not a string");
       return false;
     }
+    Rooted<JSString*> string(cx, value.toString());
 
-    // Step 7.b.
+    // Step 6.b.
     bool isUTC;
     bool hasOffset;
     int64_t timeZoneOffset;
-    Rooted<JSString*> timeZoneName(cx);
+    Rooted<ParsedTimeZone> timeZoneName(cx);
     Rooted<JSString*> calendarString(cx);
     if (!ParseTemporalRelativeToString(cx, string, &dateTime, &isUTC,
                                        &hasOffset, &timeZoneOffset,
@@ -4075,29 +4112,29 @@ static bool ToRelativeTemporalObject(JSContext* cx, Handle<JSObject*> options,
       return false;
     }
 
-    // Step 7.c. (Not applicable in our implementation.)
+    // Step 6.c. (Not applicable in our implementation.)
 
-    // Steps 7.e-f.
+    // Steps 6.e-f.
     if (timeZoneName) {
-      // Step 7.f.i.
+      // Step 6.f.i.
       if (!ToTemporalTimeZone(cx, timeZoneName, &timeZone)) {
         return false;
       }
 
-      // Steps 7.f.ii-iii.
+      // Steps 6.f.ii-iii.
       if (isUTC) {
         offsetBehaviour = OffsetBehaviour::Exact;
       } else if (!hasOffset) {
         offsetBehaviour = OffsetBehaviour::Wall;
       }
 
-      // Step 7.f.iv.
+      // Step 6.f.iv.
       matchBehaviour = MatchBehaviour::MatchMinutes;
     } else {
       MOZ_ASSERT(!timeZone);
     }
 
-    // Steps 7.g-j.
+    // Steps 6.g-j.
     if (calendarString) {
       if (!ToBuiltinCalendar(cx, calendarString, &calendar)) {
         return false;
@@ -4106,21 +4143,21 @@ static bool ToRelativeTemporalObject(JSContext* cx, Handle<JSObject*> options,
       calendar.set(CalendarValue(cx->names().iso8601));
     }
 
-    // Steps 9-10.
+    // Steps 8-9.
     if (timeZone) {
       if (offsetBehaviour == OffsetBehaviour::Option) {
         MOZ_ASSERT(hasOffset);
 
-        // Steps 9.a-b.
+        // Step 8.a.
         offsetNs = timeZoneOffset;
       } else {
-        // Step 10.
+        // Step 9.
         offsetNs = 0;
       }
     }
   }
 
-  // Step 8.
+  // Step 7.
   if (!timeZone) {
     auto* obj = CreateTemporalDate(cx, dateTime.date, calendar);
     if (!obj) {
@@ -4131,9 +4168,9 @@ static bool ToRelativeTemporalObject(JSContext* cx, Handle<JSObject*> options,
     return true;
   }
 
-  // Steps 9-10. (Moved above)
+  // Steps 8-9. (Moved above)
 
-  // Step 11.
+  // Step 10.
   Instant epochNanoseconds;
   if (!InterpretISODateTimeOffset(cx, dateTime, offsetBehaviour, offsetNs,
                                   timeZone, TemporalDisambiguation::Compatible,
@@ -4143,7 +4180,7 @@ static bool ToRelativeTemporalObject(JSContext* cx, Handle<JSObject*> options,
   }
   MOZ_ASSERT(IsValidEpochInstant(epochNanoseconds));
 
-  // Step 12.
+  // Step 11.
   auto* obj =
       CreateTemporalZonedDateTime(cx, epochNanoseconds, timeZone, calendar);
   if (!obj) {
@@ -4164,44 +4201,24 @@ static constexpr bool IsSafeInteger(int64_t x) {
  * RoundNumberToIncrement ( x, increment, roundingMode )
  */
 static void TruncateNumber(int64_t numerator, int64_t denominator,
-                           double* quotient, double* rounded) {
-  // Computes the quotient and rounded value of the rational number
+                           double* quotient, double* total) {
+  // Computes the quotient and real number value of the rational number
   // |numerator / denominator|.
-  //
-  // The numerator can be represented as |numerator = a * denominator + b|.
-  //
-  // So we have:
-  //
-  //   numerator / denominator
-  // = (a * denominator + b) / denominator
-  // = ((a * denominator) / denominator) + (b / denominator)
-  // = a + (b / denominator)
-  //
-  // where |quotient = a| and |remainder = b / denominator|. |a| and |b| can be
-  // computed through normal int64 division.
 
   // Int64 division truncates.
   int64_t q = numerator / denominator;
   int64_t r = numerator % denominator;
 
-  // The remainder is stored as a mathematical number in the draft proposal, so
-  // we can't convert it to a double without loss of precision. The remainder is
-  // eventually added to the quotient and if we directly perform this addition,
-  // we can reduce the possible loss of precision. We still need to choose which
-  // approach to take based on the input range.
+  // The total value is stored as a mathematical number in the draft proposal,
+  // so we can't convert it to a double without loss of precision. We use two
+  // different approaches to compute the total value based on the input range.
   //
   // For example:
   //
-  // When |numerator = 1000001| and |denominator = 60 * 1000|, then
-  // |quotient = 16| and |remainder = 40001 / (60 * 1000)|. The exact result is
-  // |16.66668333...|.
-  //
-  // When storing the remainder as a double and later adding it to the quotient,
-  // we get |𝔽(16) + 𝔽(40001 / (60 * 1000)) = 16.666683333333331518...𝔽|. This
-  // is wrong by 1 ULP, a better approximation is |16.666683333333335070...𝔽|.
-  //
-  // We can get the better approximation when casting the numerator and
-  // denominator to doubles and then performing a double division.
+  // When |numerator = 1000001| and |denominator = 60 * 1000|, the exact result
+  // is |16.66668333...| and the best possible approximation is
+  // |16.666683333333335070...𝔽|. We can this approximation when casting both
+  // numerator and denominator to doubles and then performing a double division.
   //
   // When |numerator = 14400000000000001| and |denominator = 3600000000000|, we
   // can't use double division, because |14400000000000001| can't be represented
@@ -4211,10 +4228,10 @@ static void TruncateNumber(int64_t numerator, int64_t denominator,
   // be computed through |q + r / denominator|.
   if (::IsSafeInteger(numerator) && ::IsSafeInteger(denominator)) {
     *quotient = double(q);
-    *rounded = double(numerator) / double(denominator);
+    *total = double(numerator) / double(denominator);
   } else {
     *quotient = double(q);
-    *rounded = double(q) + double(r) / double(denominator);
+    *total = double(q) + double(r) / double(denominator);
   }
 }
 
@@ -4223,21 +4240,21 @@ static void TruncateNumber(int64_t numerator, int64_t denominator,
  */
 static bool TruncateNumber(JSContext* cx, Handle<BigInt*> numerator,
                            Handle<BigInt*> denominator, double* quotient,
-                           double* rounded) {
+                           double* total) {
   MOZ_ASSERT(!denominator->isNegative());
   MOZ_ASSERT(!denominator->isZero());
 
   // Dividing zero is always zero.
   if (numerator->isZero()) {
     *quotient = 0;
-    *rounded = 0;
+    *total = 0;
     return true;
   }
 
   int64_t num, denom;
   if (BigInt::isInt64(numerator, &num) &&
       BigInt::isInt64(denominator, &denom)) {
-    TruncateNumber(num, denom, quotient, rounded);
+    TruncateNumber(num, denom, quotient, total);
     return true;
   }
 
@@ -4250,7 +4267,7 @@ static bool TruncateNumber(JSContext* cx, Handle<BigInt*> numerator,
 
   double q = BigInt::numberValue(quot);
   *quotient = q;
-  *rounded = q + BigInt::numberValue(rem) / BigInt::numberValue(denominator);
+  *total = q + BigInt::numberValue(rem) / BigInt::numberValue(denominator);
   return true;
 }
 
@@ -4258,8 +4275,7 @@ static bool TruncateNumber(JSContext* cx, Handle<BigInt*> numerator,
  * RoundNumberToIncrement ( x, increment, roundingMode )
  */
 static bool TruncateNumber(JSContext* cx, const Duration& toRound,
-                           TemporalUnit unit, double* quotient,
-                           double* rounded) {
+                           TemporalUnit unit, double* quotient, double* total) {
   MOZ_ASSERT(unit >= TemporalUnit::Day);
 
   int64_t denominator = ToNanoseconds(unit);
@@ -4268,7 +4284,7 @@ static bool TruncateNumber(JSContext* cx, const Duration& toRound,
 
   // Fast-path when we can perform the whole computation with int64 values.
   if (auto numerator = TotalDurationNanoseconds(toRound, 0)) {
-    TruncateNumber(*numerator, denominator, quotient, rounded);
+    TruncateNumber(*numerator, denominator, quotient, total);
     return true;
   }
 
@@ -4281,7 +4297,7 @@ static bool TruncateNumber(JSContext* cx, const Duration& toRound,
   if (denominator == 1) {
     double q = BigInt::numberValue(numerator);
     *quotient = q;
-    *rounded = q;
+    *total = q;
     return true;
   }
 
@@ -4299,7 +4315,7 @@ static bool TruncateNumber(JSContext* cx, const Duration& toRound,
 
   double q = BigInt::numberValue(quot);
   *quotient = q;
-  *rounded = q + BigInt::numberValue(rem) / double(denominator);
+  *total = q + BigInt::numberValue(rem) / double(denominator);
   return true;
 }
 
@@ -4329,7 +4345,7 @@ static bool RoundNumberToIncrement(JSContext* cx, const Duration& toRound,
 
 struct RoundedDuration final {
   Duration duration;
-  double rounded = 0;
+  double total = 0;
 };
 
 enum class ComputeRemainder : bool { No, Yes };
@@ -4583,7 +4599,7 @@ static bool RoundDuration(JSContext* cx, const Duration& duration,
   //
   // clang-format on
 
-  double rounded = 0;
+  double total = 0;
   if (computeRemainder == ComputeRemainder::No) {
     if (!RoundNumberToIncrement(cx, toRound, unit, increment, roundingMode,
                                 roundedTime)) {
@@ -4629,7 +4645,7 @@ static bool RoundDuration(JSContext* cx, const Duration& duration,
     MOZ_ASSERT(increment == Increment{1});
     MOZ_ASSERT(roundingMode == TemporalRoundingMode::Trunc);
 
-    if (!TruncateNumber(cx, toRound, unit, roundedTime, &rounded)) {
+    if (!TruncateNumber(cx, toRound, unit, roundedTime, &total)) {
       return false;
     }
   }
@@ -4650,7 +4666,7 @@ static bool RoundDuration(JSContext* cx, const Duration& duration,
   }
 
   // Step 21.
-  *result = {resultDuration, rounded};
+  *result = {resultDuration, total};
   return true;
 }
 
@@ -4675,7 +4691,7 @@ static bool RoundDuration(JSContext* cx, const Duration& duration,
     return false;
   }
 
-  *result = rounded.rounded;
+  *result = rounded.total;
   return true;
 }
 
@@ -4773,7 +4789,7 @@ static bool RoundDurationYearSlow(
   }
 
   double numYears;
-  double rounded = 0;
+  double total = 0;
   if (computeRemainder == ComputeRemainder::No) {
     if (!temporal::RoundNumberToIncrement(cx, totalNanoseconds, denominator,
                                           increment, roundingMode, &numYears)) {
@@ -4781,7 +4797,7 @@ static bool RoundDurationYearSlow(
     }
   } else {
     if (!::TruncateNumber(cx, totalNanoseconds, denominator, &numYears,
-                          &rounded)) {
+                          &total)) {
       return false;
     }
   }
@@ -4797,7 +4813,7 @@ static bool RoundDurationYearSlow(
   }
 
   // Step 20.
-  *result = {resultDuration, rounded};
+  *result = {resultDuration, total};
   return true;
 }
 
@@ -5271,7 +5287,7 @@ static bool RoundDurationYear(JSContext* cx, const Duration& duration,
     }
 
     double numYears;
-    double rounded = 0;
+    double total = 0;
     if (computeRemainder == ComputeRemainder::No) {
       if (!temporal::RoundNumberToIncrement(cx, totalNanoseconds.value(),
                                             denominator.value(), increment,
@@ -5280,7 +5296,7 @@ static bool RoundDurationYear(JSContext* cx, const Duration& duration,
       }
     } else {
       TruncateNumber(totalNanoseconds.value(), denominator.value(), &numYears,
-                     &rounded);
+                     &total);
     }
 
     // Step 9.ac.
@@ -5294,7 +5310,7 @@ static bool RoundDurationYear(JSContext* cx, const Duration& duration,
     }
 
     // Step 20.
-    *result = {resultDuration, rounded};
+    *result = {resultDuration, total};
     return true;
   } while (false);
 
@@ -5364,7 +5380,7 @@ static bool RoundDurationMonthSlow(
   }
 
   double numMonths;
-  double rounded = 0;
+  double total = 0;
   if (computeRemainder == ComputeRemainder::No) {
     if (!temporal::RoundNumberToIncrement(cx, totalNanoseconds, denominator,
                                           increment, roundingMode,
@@ -5373,7 +5389,7 @@ static bool RoundDurationMonthSlow(
     }
   } else {
     if (!::TruncateNumber(cx, totalNanoseconds, denominator, &numMonths,
-                          &rounded)) {
+                          &total)) {
       return false;
     }
   }
@@ -5391,7 +5407,7 @@ static bool RoundDurationMonthSlow(
   }
 
   // Step 21.
-  *result = {resultDuration, rounded};
+  *result = {resultDuration, total};
   return true;
 }
 
@@ -5782,7 +5798,7 @@ static bool RoundDurationMonth(
     }
 
     double numMonths;
-    double rounded = 0;
+    double total = 0;
     if (computeRemainder == ComputeRemainder::No) {
       if (!temporal::RoundNumberToIncrement(cx, totalNanoseconds.value(),
                                             denominator.value(), increment,
@@ -5791,7 +5807,7 @@ static bool RoundDurationMonth(
       }
     } else {
       TruncateNumber(totalNanoseconds.value(), denominator.value(), &numMonths,
-                     &rounded);
+                     &total);
     }
 
     // Step 10.r.
@@ -5807,7 +5823,7 @@ static bool RoundDurationMonth(
     }
 
     // Step 21.
-    *result = {resultDuration, rounded};
+    *result = {resultDuration, total};
     return true;
   } while (false);
 
@@ -5883,7 +5899,7 @@ static bool RoundDurationWeekSlow(
   }
 
   double numWeeks;
-  double rounded = 0;
+  double total = 0;
   if (computeRemainder == ComputeRemainder::No) {
     if (!temporal::RoundNumberToIncrement(cx, totalNanoseconds, denominator,
                                           increment, roundingMode, &numWeeks)) {
@@ -5891,7 +5907,7 @@ static bool RoundDurationWeekSlow(
     }
   } else {
     if (!::TruncateNumber(cx, totalNanoseconds, denominator, &numWeeks,
-                          &rounded)) {
+                          &total)) {
       return false;
     }
   }
@@ -5909,7 +5925,7 @@ static bool RoundDurationWeekSlow(
   }
 
   // Step 21.
-  *result = {resultDuration, rounded};
+  *result = {resultDuration, total};
   return true;
 }
 
@@ -6279,7 +6295,7 @@ static bool RoundDurationWeek(JSContext* cx, const Duration& duration,
     }
 
     double numWeeks;
-    double rounded = 0;
+    double total = 0;
     if (computeRemainder == ComputeRemainder::No) {
       if (!temporal::RoundNumberToIncrement(cx, totalNanoseconds.value(),
                                             denominator.value(), increment,
@@ -6288,7 +6304,7 @@ static bool RoundDurationWeek(JSContext* cx, const Duration& duration,
       }
     } else {
       TruncateNumber(totalNanoseconds.value(), denominator.value(), &numWeeks,
-                     &rounded);
+                     &total);
     }
 
     // Step 11.k.
@@ -6304,7 +6320,7 @@ static bool RoundDurationWeek(JSContext* cx, const Duration& duration,
     }
 
     // Step 21.
-    *result = {resultDuration, rounded};
+    *result = {resultDuration, total};
     return true;
   } while (false);
 
@@ -6378,14 +6394,14 @@ static bool RoundDurationDaySlow(
 
   // Steps 12.a-c.
   double days;
-  double rounded = 0;
+  double total = 0;
   if (computeRemainder == ComputeRemainder::No) {
     if (!temporal::RoundNumberToIncrement(cx, totalNanoseconds, dayLength,
                                           increment, roundingMode, &days)) {
       return false;
     }
   } else {
-    if (!::TruncateNumber(cx, totalNanoseconds, dayLength, &days, &rounded)) {
+    if (!::TruncateNumber(cx, totalNanoseconds, dayLength, &days, &total)) {
       return false;
     }
   }
@@ -6401,7 +6417,7 @@ static bool RoundDurationDaySlow(
   }
 
   // Step 21.
-  *result = {resultDuration, rounded};
+  *result = {resultDuration, total};
   return true;
 }
 
@@ -6437,7 +6453,7 @@ static bool RoundDurationDay(JSContext* cx, const Duration& duration,
 
     // Steps 12.a-c.
     double days;
-    double rounded = 0;
+    double total = 0;
     if (computeRemainder == ComputeRemainder::No) {
       if (!temporal::RoundNumberToIncrement(cx, totalNanoseconds.value(),
                                             dayLength.value(), increment,
@@ -6446,7 +6462,7 @@ static bool RoundDurationDay(JSContext* cx, const Duration& duration,
       }
     } else {
       ::TruncateNumber(totalNanoseconds.value(), dayLength.value(), &days,
-                       &rounded);
+                       &total);
     }
 
     // Step 19.
@@ -6460,7 +6476,7 @@ static bool RoundDurationDay(JSContext* cx, const Duration& duration,
     }
 
     // Step 21.
-    *result = {resultDuration, rounded};
+    *result = {resultDuration, total};
     return true;
   } while (false);
 
@@ -6600,7 +6616,7 @@ static bool RoundDuration(JSContext* cx, const Duration& duration,
   // Steps 7 and 13-18. (Not applicable)
 
   // Step 8.
-  // FIXME: spec issue - `remainder` doesn't need be initialised.
+  // FIXME: spec issue - `total` doesn't need be initialised.
 
   // Steps 9-21.
   switch (unit) {
@@ -6661,7 +6677,7 @@ static bool RoundDuration(JSContext* cx, const Duration& duration,
     return false;
   }
 
-  *result = rounded.rounded;
+  *result = rounded.total;
   return true;
 }
 
@@ -7613,7 +7629,7 @@ static bool Duration_round(JSContext* cx, const CallArgs& args) {
     MOZ_ASSERT(duration.date() == unbalanceResult.toDuration());
   }
 
-  // Step 24.
+  // Steps 24-25.
   Duration roundInput = {
       unbalanceResult.years, unbalanceResult.months, unbalanceResult.weeks,
       unbalanceResult.days,  duration.hours,         duration.minutes,
@@ -7641,10 +7657,10 @@ static bool Duration_round(JSContext* cx, const CallArgs& args) {
   // FIXME: spec issue - `relativeTo` can be undefined, in which case it's not
   // valid to test for the presence of internal slots.
 
-  // Steps 25-26.
+  // Steps 26-27.
   TimeDuration balanceResult;
   if (zonedRelativeTo) {
-    // Step 25.a.
+    // Step 26.a.
     Duration adjustResult;
     if (!AdjustRoundedDurationDays(cx, roundResult, roundingIncrement,
                                    smallestUnit, roundingMode, zonedRelativeTo,
@@ -7653,19 +7669,19 @@ static bool Duration_round(JSContext* cx, const CallArgs& args) {
     }
     roundResult = adjustResult;
 
-    // Step 25.b.
+    // Step 26.b.
     if (!BalanceTimeDurationRelative(cx, roundResult, largestUnit,
                                      zonedRelativeTo, &balanceResult)) {
       return false;
     }
   } else {
-    // Step 26.a.
+    // Step 27.a.
     if (!BalanceTimeDuration(cx, roundResult, largestUnit, &balanceResult)) {
       return false;
     }
   }
 
-  // Step 27.
+  // Step 28.
   Duration balanceInput = {
       roundResult.years,
       roundResult.months,
@@ -7678,7 +7694,7 @@ static bool Duration_round(JSContext* cx, const CallArgs& args) {
     return false;
   }
 
-  // Step 28.
+  // Step 29.
   auto* obj = CreateTemporalDuration(cx, {
                                              result.years,
                                              result.months,
@@ -7850,28 +7866,27 @@ static bool Duration_total(JSContext* cx, const CallArgs& args) {
       balanceResult.seconds,      balanceResult.milliseconds,
       balanceResult.microseconds, balanceResult.nanoseconds,
   };
-  double roundResult;
+  double total;
   if (zonedRelativeTo) {
     if (!::RoundDuration(cx, roundInput, Increment{1}, unit,
                          TemporalRoundingMode::Trunc, zonedRelativeTo,
-                         &roundResult)) {
+                         &total)) {
       return false;
     }
   } else if (dateRelativeTo) {
     if (!::RoundDuration(cx, roundInput, Increment{1}, unit,
-                         TemporalRoundingMode::Trunc, dateRelativeTo,
-                         &roundResult)) {
+                         TemporalRoundingMode::Trunc, dateRelativeTo, &total)) {
       return false;
     }
   } else {
     if (!::RoundDuration(cx, roundInput, Increment{1}, unit,
-                         TemporalRoundingMode::Trunc, &roundResult)) {
+                         TemporalRoundingMode::Trunc, &total)) {
       return false;
     }
   }
 
-  // Steps 16-27.
-  args.rval().setNumber(roundResult);
+  // Step 16.
+  args.rval().setNumber(total);
   return true;
 }
 
@@ -7933,7 +7948,7 @@ static bool Duration_toString(JSContext* cx, const CallArgs& args) {
     precision = ToSecondsStringPrecision(smallestUnit, digits);
   }
 
-  // Step 10.
+  // Steps 10-11.
   auto* duration = &args.thisv().toObject().as<DurationObject>();
   Duration rounded;
   if (!temporal::RoundDuration(cx, ToDuration(duration), precision.increment,
@@ -7941,7 +7956,7 @@ static bool Duration_toString(JSContext* cx, const CallArgs& args) {
     return false;
   }
 
-  // Step 11.
+  // Step 12.
   JSString* str = TemporalDurationToString(cx, rounded, precision.precision);
   if (!str) {
     return false;

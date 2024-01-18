@@ -4,6 +4,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "ScriptLoadRequest.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/ArrayUtils.h"  // mozilla::ArrayLength
 #include "mozilla/Utf8.h"        // mozilla::Utf8Unit
@@ -11,6 +12,7 @@
 #include <cstdarg>
 
 #include "mozilla/Logging.h"
+#include "mozilla/dom/RequestBinding.h"
 #ifdef ANDROID
 #  include <android/log.h>
 #endif
@@ -1805,8 +1807,8 @@ nsresult mozJSModuleLoader::ImportESModule(
   MOZ_ASSERT(principal);
 
   RefPtr<ScriptFetchOptions> options = new ScriptFetchOptions(
-      CORS_NONE, dom::ReferrerPolicy::No_referrer,
-      /* aNonce = */ u""_ns, ParserMetadata::NotParserInserted, principal);
+      CORS_NONE, /* aNonce = */ u""_ns, dom::RequestPriority::Auto,
+      ParserMetadata::NotParserInserted, principal);
 
   RefPtr<ComponentLoadContext> context = new ComponentLoadContext();
   context->mSkipCheck = aSkipCheck;
@@ -1815,7 +1817,7 @@ nsresult mozJSModuleLoader::ImportESModule(
       ModuleLoadRequest::NewVisitedSetForTopLevelImport(uri);
 
   RefPtr<ModuleLoadRequest> request = new ModuleLoadRequest(
-      uri, options, dom::SRIMetadata(),
+      uri, dom::ReferrerPolicy::No_referrer, options, dom::SRIMetadata(),
       /* aReferrer = */ nullptr, context,
       /* aIsTopLevel = */ true,
       /* aIsDynamicImport = */ false, mModuleLoader, visitedSet, nullptr);

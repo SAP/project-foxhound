@@ -13,47 +13,73 @@
 #include <stddef.h>   // ptrdiff_t, size_t
 #include <stdint.h>   // int8_t, uint8_t, uint32_t
 
-#include "jstypes.h"          // js::{Bit, BitMask}
-#include "js/ColumnNumber.h"  // JS::ColumnNumberOffset
+#include "jstypes.h"  // js::{Bit, BitMask}
+#include "js/ColumnNumber.h"  // JS::ColumnNumberOffset, JS::LimitedColumnNumberZeroOrigin
 
 namespace js {
 
-/*
- * Source notes generated along with bytecode for decompiling and debugging.
- * A source note is a uint8_t with 4 bits of type and 4 of offset from the pc
- * of the previous note. If 4 bits of offset aren't enough, extended delta
- * notes (XDelta) consisting of 1 set high order bit followed by 7 offset
- * bits are emitted before the next note. Some notes have operand offsets
- * encoded immediately after them, in note bytes or byte-triples.
+/**
+ * [SMDOC] Source Notes
+ *
+ * Source notes are generated along with bytecode for associating line/column
+ * to opcode, and annotating opcode as breakpoint for debugging.
+ *
+ * A source note is a uint8_t with 4 bits of type and 4 bits of offset from
+ * the pc of the previous note. If 4 bits of offset aren't enough, extended
+ * delta notes (XDelta) consisting of 1 set high order bit followed by 7 offset
+ * bits are emitted before the next note.
  *
  *                 Source Note               Extended Delta
  *              +7-6-5-4+3-2-1-0+           +7+6-5-4-3-2-1-0+
  *              | type  | delta |           |1| ext-delta   |
  *              +-------+-------+           +-+-------------+
  *
- * At most one "gettable" note (i.e., a note of type other than NewLine,
- * ColSpan, SetLine, and XDelta) applies to a given bytecode.
+ * Extended Delta with `ext-delta == 0` is used as terminator, which is
+ * padded between the end of source notes and the next notes in the
+ * ImmutableScriptData.
+ *
+ *                 Terminator
+ *              +7+6-5-4-3-2-1-0+
+ *              |1|0 0 0 0 0 0 0|
+ *              +-+-------------+
+ *
+ * Some notes have operand offsets encoded immediately after them. Each operand
+ * is encoded either in single-byte or 4-bytes, depending on the range.
+ *
+ *   Single-byte Operand (0 <= operand <= 127)
+ *
+ *   +7+6-5-4-3-2-1-0+
+ *   |0|   operand   |
+ *   +-+-------------+
+ *
+ *   4-bytes Operand (128 <= operand)
+ *
+ *     (operand_3 << 24) | (operand_2 << 16) | (operand_1 << 8) | operand_0
+ *
+ *   +7-6-5-4-3-2-1-0+ +7-6-5-4-3-2-1-0+ +7-6-5-4-3-2-1-0+ +7-6-5-4-3-2-1-0+
+ *   |1|  operand_3  | |   operand_2   | |   operand_1   | |   operand_0   |
+ *   +---------------+ +---------------+ +---------------+ +---------------+
  *
  * NB: the js::SrcNote::specs_ array is indexed by this enum, so its
  * initializers need to match the order here.
  */
 
-#define FOR_EACH_SRC_NOTE_TYPE(M)                                            \
-  /* Terminates a note vector. */                                            \
-  M(Null, "null", 0)                                                         \
-  /* += or another assign-op follows. */                                     \
-  M(AssignOp, "assignop", 0)                                                 \
-  /* All notes above here are "gettable".  See SrcNote::isGettable below. */ \
-  M(ColSpan, "colspan", int8_t(SrcNote::ColSpan::Operands::Count))           \
-  /* Bytecode follows a source newline. */                                   \
-  M(NewLine, "newline", 0)                                                   \
-  M(SetLine, "setline", int8_t(SrcNote::SetLine::Operands::Count))           \
-  /* Bytecode is a recommended breakpoint. */                                \
-  M(Breakpoint, "breakpoint", 0)                                             \
-  /* Bytecode is the first in a new steppable area. */                       \
-  M(StepSep, "step-sep", 0)                                                  \
-  M(Unused7, "unused", 0)                                                    \
-  /* 8-15 (0b1xxx) are for extended delta notes. */                          \
+#define FOR_EACH_SRC_NOTE_TYPE(M)                                  \
+  M(ColSpan, "colspan", int8_t(SrcNote::ColSpan::Operands::Count)) \
+  /* Bytecode follows a source newline. */                         \
+  M(NewLine, "newline", 0)                                         \
+  M(NewLineColumn, "newlinecolumn",                                \
+    int8_t(SrcNote::NewLineColumn::Operands::Count))               \
+  M(SetLine, "setline", int8_t(SrcNote::SetLine::Operands::Count)) \
+  M(SetLineColumn, "setlinecolumn",                                \
+    int8_t(SrcNote::SetLineColumn::Operands::Count))               \
+  /* Bytecode is a recommended breakpoint. */                      \
+  M(Breakpoint, "breakpoint", 0)                                   \
+  /* Bytecode is a recommended breakpoint, and the first in a */   \
+  /* new steppable area. */                                        \
+  M(BreakpointStepSep, "breakpoint-step-sep", 0)                   \
+  M(Unused7, "unused", 0)                                          \
+  /* 8-15 (0b1xxx) are for extended delta notes. */                \
   M(XDelta, "xdelta", 0)
 
 // Note: need to add a new source note? If there's no Unused* note left,
@@ -66,7 +92,6 @@ enum class SrcNoteType : uint8_t {
 #undef DEFINE_SRC_NOTE_TYPE
 
       Last,
-  LastGettable = AssignOp
 };
 
 static_assert(uint8_t(SrcNoteType::XDelta) == 8, "XDelta should be 8");
@@ -113,7 +138,8 @@ class SrcNote {
   constexpr explicit SrcNote(uint8_t value) : value_(value) {}
 
  public:
-  constexpr SrcNote() : value_(noteValueUnchecked(SrcNoteType::Null, 0)){};
+  // A default value for padding.
+  constexpr SrcNote() : value_(noteValueUnchecked(SrcNoteType::XDelta, 0)) {}
 
   SrcNote(const SrcNote& other) = default;
   SrcNote& operator=(const SrcNote& other) = default;
@@ -121,7 +147,7 @@ class SrcNote {
   SrcNote(SrcNote&& other) = default;
   SrcNote& operator=(SrcNote&& other) = default;
 
-  static constexpr SrcNote terminator() { return SrcNote(); }
+  static constexpr SrcNote padding() { return SrcNote(); }
 
  private:
   inline uint8_t typeBits() const { return (value_ >> DeltaBits); }
@@ -154,12 +180,8 @@ class SrcNote {
     return specs_[uint8_t(type())].name_;
   }
 
-  inline bool isGettable() const {
-    return uint8_t(type()) <= uint8_t(SrcNoteType::LastGettable);
-  }
-
   inline bool isTerminator() const {
-    return value_ == uint8_t(SrcNoteType::Null);
+    return value_ == noteValueUnchecked(SrcNoteType::XDelta, 0);
   }
 
   inline ptrdiff_t delta() const {
@@ -237,6 +259,26 @@ class SrcNote {
     static inline JS::ColumnNumberOffset getSpan(const SrcNote* sn);
   };
 
+  class NewLineColumn {
+   public:
+    enum class Operands { Column, Count };
+
+   private:
+    static inline JS::LimitedColumnNumberZeroOrigin fromOperand(
+        ptrdiff_t operand) {
+      return JS::LimitedColumnNumberZeroOrigin(operand);
+    }
+
+   public:
+    static inline ptrdiff_t toOperand(
+        JS::LimitedColumnNumberZeroOrigin column) {
+      return column.zeroOriginValue();
+    }
+
+    static inline JS::LimitedColumnNumberZeroOrigin getColumn(
+        const SrcNote* sn);
+  };
+
   class SetLine {
    public:
     enum class Operands {
@@ -265,6 +307,31 @@ class SrcNote {
     }
 
     static inline size_t getLine(const SrcNote* sn, size_t initialLine);
+  };
+
+  class SetLineColumn {
+   public:
+    enum class Operands { Line, Column, Count };
+
+   private:
+    static inline size_t lineFromOperand(ptrdiff_t operand) {
+      return size_t(operand);
+    }
+
+    static inline JS::LimitedColumnNumberZeroOrigin columnFromOperand(
+        ptrdiff_t operand) {
+      return JS::LimitedColumnNumberZeroOrigin(operand);
+    }
+
+   public:
+    static inline ptrdiff_t columnToOperand(
+        JS::LimitedColumnNumberZeroOrigin column) {
+      return column.zeroOriginValue();
+    }
+
+    static inline size_t getLine(const SrcNote* sn, size_t initialLine);
+    static inline JS::LimitedColumnNumberZeroOrigin getColumn(
+        const SrcNote* sn);
   };
 
   friend class SrcNoteWriter;
@@ -302,6 +369,11 @@ class SrcNoteWriter {
     }
     sn->value_ = SrcNote::noteValue(type, delta);
     return true;
+  }
+
+  static void convertNote(SrcNote* sn, SrcNoteType newType) {
+    ptrdiff_t delta = sn->delta();
+    sn->value_ = SrcNote::noteValue(newType, delta);
   }
 
   // Write source note operand.
@@ -372,9 +444,29 @@ inline JS::ColumnNumberOffset SrcNote::ColSpan::getSpan(const SrcNote* sn) {
 }
 
 /* static */
+inline JS::LimitedColumnNumberZeroOrigin SrcNote::NewLineColumn::getColumn(
+    const SrcNote* sn) {
+  return fromOperand(SrcNoteReader::getOperand(sn, unsigned(Operands::Column)));
+}
+
+/* static */
 inline size_t SrcNote::SetLine::getLine(const SrcNote* sn, size_t initialLine) {
   return initialLine +
          fromOperand(SrcNoteReader::getOperand(sn, unsigned(Operands::Line)));
+}
+
+/* static */
+inline size_t SrcNote::SetLineColumn::getLine(const SrcNote* sn,
+                                              size_t initialLine) {
+  return initialLine + lineFromOperand(SrcNoteReader::getOperand(
+                           sn, unsigned(Operands::Line)));
+}
+
+/* static */
+inline JS::LimitedColumnNumberZeroOrigin SrcNote::SetLineColumn::getColumn(
+    const SrcNote* sn) {
+  return columnFromOperand(
+      SrcNoteReader::getOperand(sn, unsigned(Operands::Column)));
 }
 
 // Iterate over SrcNote array, until it hits terminator.
@@ -386,6 +478,7 @@ inline size_t SrcNote::SetLine::getLine(const SrcNote* sn, size_t initialLine) {
 //   }
 class SrcNoteIterator {
   const SrcNote* current_;
+  const SrcNote* end_;
 
   void next() {
     unsigned arity = current_->arity();
@@ -409,9 +502,13 @@ class SrcNoteIterator {
   SrcNoteIterator(SrcNoteIterator&& other) = default;
   SrcNoteIterator& operator=(SrcNoteIterator&& other) = default;
 
-  explicit SrcNoteIterator(const SrcNote* sn) : current_(sn) {}
+  SrcNoteIterator(const SrcNote* sn, const SrcNote* end)
+      : current_(sn), end_(end) {}
 
-  bool atEnd() const { return current_->isTerminator(); }
+  bool atEnd() const {
+    MOZ_ASSERT(current_ <= end_);
+    return current_ == end_ || current_->isTerminator();
+  }
 
   const SrcNote* operator*() const { return current_; }
 

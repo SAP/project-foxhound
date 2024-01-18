@@ -65,7 +65,7 @@ class RecordedDrawTargetCreation
   BackendType mBackendType;
   IntRect mRect;
   SurfaceFormat mFormat;
-  bool mHasExistingData;
+  bool mHasExistingData = false;
   RefPtr<SourceSurface> mExistingData;
 
  private:
@@ -2132,6 +2132,9 @@ inline bool RecordedCreateDrawTargetForFilter::PlayEvent(
 
   RefPtr<DrawTarget> newDT =
       dt->CreateSimilarDrawTarget(transformedRect.Size(), mFormat);
+  if (!newDT) {
+    return false;
+  }
   newDT =
       gfx::Factory::CreateOffsetDrawTarget(newDT, transformedRect.TopLeft());
 

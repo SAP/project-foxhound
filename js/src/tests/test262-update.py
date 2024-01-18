@@ -37,10 +37,7 @@ FEATURE_CHECK_NEEDED = {
     "SharedArrayBuffer": "!this.hasOwnProperty('SharedArrayBuffer')",
     "Temporal": "!this.hasOwnProperty('Temporal')",
     "WeakRef": "!this.hasOwnProperty('WeakRef')",
-    "array-grouping": "!Object.groupBy",  # Bug 1792650
     "decorators": "!(this.hasOwnProperty('getBuildConfiguration')&&getBuildConfiguration()['decorators'])",  # Bug 1435869
-    "String.prototype.isWellFormed": "!String.prototype.isWellFormed",
-    "String.prototype.toWellFormed": "!String.prototype.toWellFormed",
     "iterator-helpers": "!this.hasOwnProperty('Iterator')",  # Bug 1568906
     "arraybuffer-transfer": "!ArrayBuffer.prototype.transfer",  # Bug 1519163
 }
@@ -48,9 +45,6 @@ RELEASE_OR_BETA = set([])
 SHELL_OPTIONS = {
     "import-assertions": "--enable-import-assertions",
     "ShadowRealm": "--enable-shadow-realms",
-    "array-grouping": "--enable-array-grouping",
-    "String.prototype.isWellFormed": "--enable-well-formed-unicode-strings",
-    "String.prototype.toWellFormed": "--enable-well-formed-unicode-strings",
     "iterator-helpers": "--enable-iterator-helpers",
     "arraybuffer-transfer": "--enable-arraybuffer-transfer",
 }
@@ -511,7 +505,7 @@ def process_test262(test262Dir, test262OutDir, strictTests, externManifests):
     explicitIncludes[os.path.join("built-ins", "Temporal")] = ["temporalHelpers.js"]
 
     # Process all test directories recursively.
-    for (dirPath, dirNames, fileNames) in os.walk(testDir):
+    for dirPath, dirNames, fileNames in os.walk(testDir):
         relPath = os.path.relpath(dirPath, testDir)
         if relPath == ".":
             continue
@@ -554,7 +548,7 @@ def process_test262(test262Dir, test262OutDir, strictTests, externManifests):
                     test262parser, testSource, testName, includeSet, strictTests
                 )
 
-            for (newFileName, newSource, externRefTest) in convert:
+            for newFileName, newSource, externRefTest in convert:
                 writeTestFile(test262OutDir, newFileName, newSource)
 
                 if externRefTest is not None:

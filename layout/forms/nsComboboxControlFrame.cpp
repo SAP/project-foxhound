@@ -846,17 +846,16 @@ nsIFrame* nsComboboxControlFrame::CreateFrameForDisplayNode() {
   return mDisplayFrame;
 }
 
-void nsComboboxControlFrame::DestroyFrom(nsIFrame* aDestructRoot,
-                                         PostDestroyData& aPostDestroyData) {
+void nsComboboxControlFrame::Destroy(DestroyContext& aContext) {
   // Revoke any pending RedisplayTextEvent
   mRedisplayTextEvent.Revoke();
 
   mEventListener->Detach();
 
   // Cleanup frames in popup child list
-  aPostDestroyData.AddAnonymousContent(mDisplayContent.forget());
-  aPostDestroyData.AddAnonymousContent(mButtonContent.forget());
-  nsBlockFrame::DestroyFrom(aDestructRoot, aPostDestroyData);
+  aContext.AddAnonymousContent(mDisplayContent.forget());
+  aContext.AddAnonymousContent(mButtonContent.forget());
+  nsBlockFrame::Destroy(aContext);
 }
 
 const nsFrameList& nsComboboxControlFrame::GetChildList(
@@ -918,15 +917,9 @@ void nsComboboxControlFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
   }
 
   // draw a focus indicator only when focus rings should be drawn
-  if (mContent->AsElement()->State().HasState(dom::ElementState::FOCUSRING)) {
-    nsPresContext* pc = PresContext();
-    const nsStyleDisplay* disp = StyleDisplay();
-    if (IsThemed(disp) &&
-        pc->Theme()->ThemeWantsButtonInnerFocusRing(
-            this, disp->EffectiveAppearance()) &&
-        mDisplayFrame && IsVisibleForPainting()) {
-      aLists.Content()->AppendNewToTop<nsDisplayComboboxFocus>(aBuilder, this);
-    }
+  if (Select().State().HasState(dom::ElementState::FOCUSRING) && IsThemed() &&
+      PresContext()->Theme()->ThemeWantsButtonInnerFocusRing()) {
+    aLists.Content()->AppendNewToTop<nsDisplayComboboxFocus>(aBuilder, this);
   }
 
   DisplaySelectionOverlay(aBuilder, aLists.Content());

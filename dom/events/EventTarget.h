@@ -134,16 +134,16 @@ class EventTarget : public nsISupports, public nsWrapperCache {
   virtual bool IsInnerWindow() const { return false; }
   virtual bool IsOuterWindow() const { return false; }
   virtual bool IsRootWindow() const { return false; }
-  nsPIDOMWindowInner* GetAsWindowInner();
-  const nsPIDOMWindowInner* GetAsWindowInner() const;
-  nsPIDOMWindowOuter* GetAsWindowOuter();
-  const nsPIDOMWindowOuter* GetAsWindowOuter() const;
+  nsPIDOMWindowInner* GetAsInnerWindow();
+  const nsPIDOMWindowInner* GetAsInnerWindow() const;
+  nsPIDOMWindowOuter* GetAsOuterWindow();
+  const nsPIDOMWindowOuter* GetAsOuterWindow() const;
   inline nsPIWindowRoot* GetAsWindowRoot();
   inline const nsPIWindowRoot* GetAsWindowRoot() const;
-  nsPIDOMWindowInner* AsWindowInner();
-  const nsPIDOMWindowInner* AsWindowInner() const;
-  nsPIDOMWindowOuter* AsWindowOuter();
-  const nsPIDOMWindowOuter* AsWindowOuter() const;
+  nsPIDOMWindowInner* AsInnerWindow();
+  const nsPIDOMWindowInner* AsInnerWindow() const;
+  nsPIDOMWindowOuter* AsOuterWindow();
+  const nsPIDOMWindowOuter* AsOuterWindow() const;
   inline nsPIWindowRoot* AsWindowRoot();
   inline const nsPIWindowRoot* AsWindowRoot() const;
 
@@ -260,6 +260,26 @@ class EventTarget : public nsISupports, public nsWrapperCache {
    * @note Only EventDispatcher should call this method.
    */
   virtual void GetEventTargetParent(EventChainPreVisitor& aVisitor) = 0;
+
+  /**
+   * Called on the activation target during dispatch of activation events.
+   * https://dom.spec.whatwg.org/#eventtarget-legacy-pre-activation-behavior
+   */
+  virtual void LegacyPreActivationBehavior(EventChainVisitor& aVisitor) {}
+
+  /**
+   * Called on the activation target during dispatch of activation events.
+   * https://dom.spec.whatwg.org/#eventtarget-activation-behavior
+   */
+  MOZ_CAN_RUN_SCRIPT
+  virtual void ActivationBehavior(EventChainPostVisitor& aVisitor) {}
+
+  /**
+   * Called on the activation target during dispatch of activation events.
+   * https://dom.spec.whatwg.org/#eventtarget-legacy-canceled-activation-behavior
+   */
+  virtual void LegacyCanceledActivationBehavior(
+      EventChainPostVisitor& aVisitor) {}
 
   /**
    * Called before the capture phase of the event flow and after event target

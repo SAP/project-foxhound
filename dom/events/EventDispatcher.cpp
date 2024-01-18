@@ -4,6 +4,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "mozilla/Assertions.h"
 #include "nsPresContext.h"
 #include "nsContentUtils.h"
 #include "nsDocShell.h"
@@ -306,6 +307,26 @@ class EventTargetChainItem {
   void GetEventTargetParent(EventChainPreVisitor& aVisitor);
 
   /**
+   * Copies mItemFlags, mItemData to aVisitor,
+   * calls LegacyPreActivationBehavior and copies both members back
+   * to this EventTargetChainitem.
+   */
+  void LegacyPreActivationBehavior(EventChainVisitor& aVisitor);
+
+  /**
+   * Copies mItemFlags and mItemData to aVisitor and calls ActivationBehavior.
+   */
+  MOZ_CAN_RUN_SCRIPT
+  void ActivationBehavior(EventChainPostVisitor& aVisitor);
+
+  /**
+   * Copies mItemFlags and mItemData to aVisitor and
+   * calls LegacyCanceledActivationBehavior.
+   */
+  void LegacyCanceledActivationBehavior(EventChainPostVisitor& aVisitor);
+
+  /**
+   * Copies mItemFlags and mItemData to aVisitor.
    * Calls PreHandleEvent for those items which called SetWantsPreHandleEvent.
    */
   void PreHandleEvent(EventChainVisitor& aVisitor);
@@ -421,6 +442,15 @@ void EventTargetChainItem::GetEventTargetParent(
   mItemData = aVisitor.mItemData;
 }
 
+void EventTargetChainItem::LegacyPreActivationBehavior(
+    EventChainVisitor& aVisitor) {
+  aVisitor.mItemFlags = mItemFlags;
+  aVisitor.mItemData = mItemData;
+  mTarget->LegacyPreActivationBehavior(aVisitor);
+  mItemFlags = aVisitor.mItemFlags;
+  mItemData = aVisitor.mItemData;
+}
+
 void EventTargetChainItem::PreHandleEvent(EventChainVisitor& aVisitor) {
   if (!WantsPreHandleEvent()) {
     return;
@@ -428,12 +458,33 @@ void EventTargetChainItem::PreHandleEvent(EventChainVisitor& aVisitor) {
   aVisitor.mItemFlags = mItemFlags;
   aVisitor.mItemData = mItemData;
   Unused << mTarget->PreHandleEvent(aVisitor);
+  MOZ_ASSERT(mItemFlags == aVisitor.mItemFlags);
+  MOZ_ASSERT(mItemData == aVisitor.mItemData);
+}
+
+void EventTargetChainItem::ActivationBehavior(EventChainPostVisitor& aVisitor) {
+  aVisitor.mItemFlags = mItemFlags;
+  aVisitor.mItemData = mItemData;
+  mTarget->ActivationBehavior(aVisitor);
+  MOZ_ASSERT(mItemFlags == aVisitor.mItemFlags);
+  MOZ_ASSERT(mItemData == aVisitor.mItemData);
+}
+
+void EventTargetChainItem::LegacyCanceledActivationBehavior(
+    EventChainPostVisitor& aVisitor) {
+  aVisitor.mItemFlags = mItemFlags;
+  aVisitor.mItemData = mItemData;
+  mTarget->LegacyCanceledActivationBehavior(aVisitor);
+  MOZ_ASSERT(mItemFlags == aVisitor.mItemFlags);
+  MOZ_ASSERT(mItemData == aVisitor.mItemData);
 }
 
 void EventTargetChainItem::PostHandleEvent(EventChainPostVisitor& aVisitor) {
   aVisitor.mItemFlags = mItemFlags;
   aVisitor.mItemData = mItemData;
   mTarget->PostHandleEvent(aVisitor);
+  MOZ_ASSERT(mItemFlags == aVisitor.mItemFlags);
+  MOZ_ASSERT(mItemData == aVisitor.mItemData);
 }
 
 void EventTargetChainItem::HandleEventTargetChain(
@@ -754,7 +805,7 @@ static void DescribeEventTargetForProfilerMarker(const EventTarget* aTarget,
 }
 
 /* static */
-nsresult EventDispatcher::Dispatch(nsISupports* aTarget,
+nsresult EventDispatcher::Dispatch(EventTarget* aTarget,
                                    nsPresContext* aPresContext,
                                    WidgetEvent* aEvent, Event* aDOMEvent,
                                    nsEventStatus* aEventStatus,
@@ -779,7 +830,7 @@ nsresult EventDispatcher::Dispatch(nsISupports* aTarget,
   NS_ENSURE_TRUE(!nsContentUtils::IsInStableOrMetaStableState(),
                  NS_ERROR_DOM_INVALID_STATE_ERR);
 
-  nsCOMPtr<EventTarget> target = do_QueryInterface(aTarget);
+  nsCOMPtr<EventTarget> target(aTarget);
 
   RefPtr<PerformanceEventTiming> eventTimingEntry;
   // Similar to PerformancePaintTiming, we don't need to
@@ -928,6 +979,8 @@ nsresult EventDispatcher::Dispatch(nsISupports* aTarget,
 
   aEvent->mFlags.mIsBeingDispatched = true;
 
+  Maybe<uint32_t> activationTargetItemIndex;
+
   // Create visitor object and start event dispatching.
   // GetEventTargetParent for the original target.
   nsEventStatus status = aDOMEvent && aDOMEvent->DefaultPrevented()
@@ -938,6 +991,12 @@ nsresult EventDispatcher::Dispatch(nsISupports* aTarget,
   EventChainPreVisitor preVisitor(aPresContext, aEvent, aDOMEvent, status,
                                   isInAnon, targetForPreVisitor);
   targetEtci->GetEventTargetParent(preVisitor);
+
+  if (preVisitor.mWantsActivationBehavior) {
+    MOZ_ASSERT(&chain[0] == targetEtci);
+    activationTargetItemIndex.emplace(0);
+    preVisitor.mEvent->mFlags.mMultiplePreActionsPrevented = true;
+  }
 
   if (!preVisitor.mCanHandle) {
     targetEtci = MayRetargetToChromeIfCanNotHandleEvent(
@@ -1001,6 +1060,14 @@ nsresult EventDispatcher::Dispatch(nsISupports* aTarget,
       }
 
       parentEtci->GetEventTargetParent(preVisitor);
+
+      if (preVisitor.mWantsActivationBehavior &&
+          activationTargetItemIndex.isNothing() && aEvent->mFlags.mBubbles) {
+        MOZ_ASSERT(&chain.LastElement() == parentEtci);
+        activationTargetItemIndex.emplace(chain.Length() - 1);
+        preVisitor.mEvent->mFlags.mMultiplePreActionsPrevented = true;
+      }
+
       if (preVisitor.mCanHandle) {
         preVisitor.mTargetInKnownToBeHandledScope = preVisitor.mEvent->mTarget;
         topEtci = parentEtci;
@@ -1026,6 +1093,12 @@ nsresult EventDispatcher::Dispatch(nsISupports* aTarget,
         break;
       }
     }
+
+    if (activationTargetItemIndex) {
+      chain[activationTargetItemIndex.value()].LegacyPreActivationBehavior(
+          preVisitor);
+    }
+
     if (NS_SUCCEEDED(rv)) {
       if (aTargets) {
         aTargets->Clear();
@@ -1215,6 +1288,21 @@ nsresult EventDispatcher::Dispatch(nsISupports* aTarget,
     // XXXsmaug Check also all the touch objects.
   }
 
+  if (activationTargetItemIndex) {
+    EventChainPostVisitor postVisitor(preVisitor);
+    if (preVisitor.mEventStatus == nsEventStatus_eConsumeNoDefault) {
+      chain[activationTargetItemIndex.value()].LegacyCanceledActivationBehavior(
+          postVisitor);
+    } else {
+      chain[activationTargetItemIndex.value()].ActivationBehavior(postVisitor);
+    }
+    preVisitor.mEventStatus = postVisitor.mEventStatus;
+    // If the DOM event was created during event flow.
+    if (!preVisitor.mDOMEvent && postVisitor.mDOMEvent) {
+      preVisitor.mDOMEvent = postVisitor.mDOMEvent;
+    }
+  }
+
   if (!externalDOMEvent && preVisitor.mDOMEvent) {
     // A dom::Event was created while dispatching the event.
     // Duplicate private data if someone holds a pointer to it.
@@ -1246,7 +1334,7 @@ nsresult EventDispatcher::Dispatch(nsISupports* aTarget,
 }
 
 /* static */
-nsresult EventDispatcher::DispatchDOMEvent(nsISupports* aTarget,
+nsresult EventDispatcher::DispatchDOMEvent(EventTarget* aTarget,
                                            WidgetEvent* aEvent,
                                            Event* aDOMEvent,
                                            nsPresContext* aPresContext,

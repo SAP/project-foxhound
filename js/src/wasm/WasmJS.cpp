@@ -248,7 +248,11 @@ bool js::wasm::GetImports(JSContext* cx, const Module& module,
                                      JSMSG_WASM_BAD_GLOB_MUT_LINK);
             return false;
           }
-          if (obj->type() != global.type()) {
+
+          bool matches = global.isMutable()
+                             ? obj->type() == global.type()
+                             : ValType::isSubTypeOf(obj->type(), global.type());
+          if (!matches) {
             JS_ReportErrorNumberUTF8(cx, GetErrorMessage, nullptr,
                                      JSMSG_WASM_BAD_GLOB_TYPE_LINK);
             return false;
@@ -1139,7 +1143,7 @@ bool WasmModuleObject::imports(JSContext* cx, unsigned argc, Value* vp) {
       case DefinitionKind::Tag: {
         size_t tagIndex = numTagImport++;
         const TagDesc& tag = metadata.tags[tagIndex];
-        typeObj = TagTypeToObject(cx, tag.type->argTypes_);
+        typeObj = TagTypeToObject(cx, tag.type->argTypes());
         break;
       }
     }
@@ -1243,7 +1247,7 @@ bool WasmModuleObject::exports(JSContext* cx, unsigned argc, Value* vp) {
       }
       case DefinitionKind::Tag: {
         const TagDesc& tag = metadata.tags[exp.tagIndex()];
-        typeObj = TagTypeToObject(cx, tag.type->argTypes_);
+        typeObj = TagTypeToObject(cx, tag.type->argTypes());
         break;
       }
     }
@@ -1610,7 +1614,7 @@ void WasmInstanceObject::trace(JSTracer* trc, JSObject* obj) {
 WasmInstanceObject* WasmInstanceObject::create(
     JSContext* cx, const SharedCode& code,
     const DataSegmentVector& dataSegments,
-    const ElemSegmentVector& elemSegments, uint32_t instanceDataLength,
+    const ModuleElemSegmentVector& elemSegments, uint32_t instanceDataLength,
     Handle<WasmMemoryObjectVector> memories, SharedTableVector&& tables,
     const JSObjectVector& funcImports, const GlobalDescVector& globals,
     const ValVector& globalImportValues,
@@ -1832,19 +1836,20 @@ static bool WasmCall(JSContext* cx, unsigned argc, Value* vp) {
  * actually exposed to JS the first time.  The creation is performed by
  * getExportedFunction(), below, as follows:
  *
- *  - a function exported via the export section (or from asm.js) is created
+ *  - A function exported via the export section (or from asm.js) is created
  *    when the export object is created, which happens at instantiation time.
  *
- *  - a function implicitly exported via a table is created when the table
+ *  - A function implicitly exported via a table is created when the table
  *    element is read (by JS or wasm) and a function value is needed to
  *    represent that value.  Functions stored in tables by initializers have a
  *    special representation that does not require the function object to be
- *    created.
+ *    created, as long as the initializing element segment uses the more
+ *    efficient index encoding instead of the more general expression encoding.
  *
- *  - a function implicitly exported via a global initializer is created when
+ *  - A function implicitly exported via a global initializer is created when
  *    the global is initialized.
  *
- *  - a function referenced from a ref.func instruction in code is created when
+ *  - A function referenced from a ref.func instruction in code is created when
  *    that instruction is executed the first time.
  *
  * The JSFunction representing a wasm function never changes: every reference to
@@ -3185,6 +3190,9 @@ void WasmGlobalObject::trace(JSTracer* trc, JSObject* obj) {
 void WasmGlobalObject::finalize(JS::GCContext* gcx, JSObject* obj) {
   WasmGlobalObject* global = reinterpret_cast<WasmGlobalObject*>(obj);
   if (!global->isNewborn()) {
+    // Release the strong reference to the type definitions this global could
+    // be referencing.
+    global->type().Release();
     gcx->delete_(obj, &global->val(), MemoryUse::WasmGlobalCell);
   }
 }
@@ -3212,6 +3220,9 @@ WasmGlobalObject* WasmGlobalObject::create(JSContext* cx, HandleVal value,
   // It's simpler to initialize the cell after the object has been created,
   // to avoid needing to root the cell before the object creation.
   obj->val() = value.get();
+  // Acquire a strong reference to a type definition this global could
+  // be referencing.
+  obj->type().AddRef();
 
   MOZ_ASSERT(!obj->isNewborn());
 
@@ -3543,7 +3554,7 @@ const TagType* WasmTagObject::tagType() const {
 };
 
 const wasm::ValTypeVector& WasmTagObject::valueTypes() const {
-  return tagType()->argTypes_;
+  return tagType()->argTypes();
 };
 
 wasm::ResultType WasmTagObject::resultType() const {
@@ -3592,7 +3603,7 @@ void WasmExceptionObject::finalize(JS::GCContext* gcx, JSObject* obj) {
   if (exnObj.isNewborn()) {
     return;
   }
-  gcx->free_(obj, exnObj.typedMem(), exnObj.tagType()->size_,
+  gcx->free_(obj, exnObj.typedMem(), exnObj.tagType()->tagSize(),
              MemoryUse::WasmExceptionData);
   exnObj.tagType()->Release();
 }
@@ -3605,8 +3616,8 @@ void WasmExceptionObject::trace(JSTracer* trc, JSObject* obj) {
   }
 
   wasm::SharedTagType tag = exnObj.tagType();
-  const wasm::ValTypeVector& params = tag->argTypes_;
-  const wasm::TagOffsetVector& offsets = tag->argOffsets_;
+  const wasm::ValTypeVector& params = tag->argTypes();
+  const wasm::TagOffsetVector& offsets = tag->argOffsets();
   uint8_t* typedMem = exnObj.typedMem();
   for (size_t i = 0; i < params.length(); i++) {
     ValType paramType = params[i];
@@ -3707,8 +3718,8 @@ bool WasmExceptionObject::construct(JSContext* cx, unsigned argc, Value* vp) {
   }
 
   wasm::SharedTagType tagType = exnObj->tagType();
-  const wasm::ValTypeVector& params = tagType->argTypes_;
-  const wasm::TagOffsetVector& offsets = tagType->argOffsets_;
+  const wasm::ValTypeVector& params = tagType->argTypes();
+  const wasm::TagOffsetVector& offsets = tagType->argOffsets();
 
   RootedValue nextArg(cx);
   for (size_t i = 0; i < params.length(); i++) {
@@ -3753,7 +3764,7 @@ WasmExceptionObject* WasmExceptionObject::create(JSContext* cx,
 
   // Allocate the data buffer before initializing the object so that an OOM
   // does not result in a partially constructed object.
-  uint8_t* data = (uint8_t*)js_calloc(tagType->size_);
+  uint8_t* data = (uint8_t*)js_calloc(tagType->tagSize());
   if (!data) {
     ReportOutOfMemory(cx);
     return nullptr;
@@ -3763,7 +3774,7 @@ WasmExceptionObject* WasmExceptionObject::create(JSContext* cx,
   obj->initFixedSlot(TAG_SLOT, ObjectValue(*tag));
   tagType->AddRef();
   obj->initFixedSlot(TYPE_SLOT, PrivateValue((void*)tagType));
-  InitReservedSlot(obj, DATA_SLOT, data, tagType->size_,
+  InitReservedSlot(obj, DATA_SLOT, data, tagType->tagSize(),
                    MemoryUse::WasmExceptionData);
   obj->initFixedSlot(STACK_SLOT, ObjectOrNullValue(stack));
 
@@ -3845,7 +3856,7 @@ bool WasmExceptionObject::getArgImpl(JSContext* cx, const CallArgs& args) {
     return false;
   }
 
-  uint32_t offset = exnTag->tagType()->argOffsets_[index];
+  uint32_t offset = exnTag->tagType()->argOffsets()[index];
   RootedValue result(cx);
   if (!exnObj->loadValue(cx, offset, params[index], &result)) {
     return false;

@@ -16,6 +16,7 @@
 #define GTEST_HAS_RTTI 0
 #include "gtest/gtest.h"
 
+#include "CodecConfig.h"
 #include "PeerConnectionImpl.h"
 #include "sdp/SdpMediaSection.h"
 #include "sdp/SipccSdpParser.h"
@@ -3288,7 +3289,7 @@ TEST_F(JsepSessionTest, ValidateOfferedVideoCodecParams) {
   const auto& video_attrs = video_section.GetAttributeList();
   ASSERT_EQ(SdpDirectionAttribute::kSendrecv, video_attrs.GetDirection());
 
-  ASSERT_EQ(10U, video_section.GetFormats().size());
+  ASSERT_EQ(11U, video_section.GetFormats().size());
   ASSERT_EQ("120", video_section.GetFormats()[0]);
   ASSERT_EQ("124", video_section.GetFormats()[1]);
   ASSERT_EQ("121", video_section.GetFormats()[2]);
@@ -3299,6 +3300,7 @@ TEST_F(JsepSessionTest, ValidateOfferedVideoCodecParams) {
   ASSERT_EQ("98", video_section.GetFormats()[7]);
   ASSERT_EQ("123", video_section.GetFormats()[8]);
   ASSERT_EQ("122", video_section.GetFormats()[9]);
+  ASSERT_EQ("119", video_section.GetFormats()[10]);
 
   // Validate rtpmap
   ASSERT_TRUE(video_attrs.HasAttribute(SdpAttribute::kRtpmapAttribute));
@@ -3313,6 +3315,7 @@ TEST_F(JsepSessionTest, ValidateOfferedVideoCodecParams) {
   ASSERT_TRUE(rtpmaps.HasEntry("98"));
   ASSERT_TRUE(rtpmaps.HasEntry("123"));
   ASSERT_TRUE(rtpmaps.HasEntry("122"));
+  ASSERT_TRUE(rtpmaps.HasEntry("119"));
 
   const auto& vp8_entry = rtpmaps.GetEntry("120");
   const auto& vp8_rtx_entry = rtpmaps.GetEntry("124");
@@ -3324,6 +3327,7 @@ TEST_F(JsepSessionTest, ValidateOfferedVideoCodecParams) {
   const auto& h264_0_rtx_entry = rtpmaps.GetEntry("98");
   const auto& ulpfec_0_entry = rtpmaps.GetEntry("123");
   const auto& red_0_entry = rtpmaps.GetEntry("122");
+  const auto& red_0_rtx_entry = rtpmaps.GetEntry("119");
 
   ASSERT_EQ("VP8", vp8_entry.name);
   ASSERT_EQ("rtx", vp8_rtx_entry.name);
@@ -3335,6 +3339,7 @@ TEST_F(JsepSessionTest, ValidateOfferedVideoCodecParams) {
   ASSERT_EQ("rtx", h264_0_rtx_entry.name);
   ASSERT_EQ("red", red_0_entry.name);
   ASSERT_EQ("ulpfec", ulpfec_0_entry.name);
+  ASSERT_EQ("rtx", red_0_rtx_entry.name);
 
   // Validate fmtps
   ASSERT_TRUE(video_attrs.HasAttribute(SdpAttribute::kFmtpAttribute));
@@ -3437,20 +3442,16 @@ TEST_F(JsepSessionTest, ValidateOfferedVideoCodecParams) {
 
   ASSERT_EQ((uint32_t)97, parsed_h264_0_rtx_params.apt);
 
-  // red
-  const SdpFmtpAttributeList::Parameters* red_params =
-      video_section.FindFmtp("122");
-  ASSERT_TRUE(red_params);
-  ASSERT_EQ(SdpRtpmapAttributeList::kRed, red_params->codec_type);
+  // red RTX
+  const SdpFmtpAttributeList::Parameters* red_rtx_params =
+      video_section.FindFmtp("119");
+  ASSERT_TRUE(red_rtx_params);
+  ASSERT_EQ(SdpRtpmapAttributeList::kRtx, red_rtx_params->codec_type);
 
-  const auto& parsed_red_params =
-      *static_cast<const SdpFmtpAttributeList::RedParameters*>(red_params);
-  ASSERT_EQ(5U, parsed_red_params.encodings.size());
-  ASSERT_EQ(120, parsed_red_params.encodings[0]);
-  ASSERT_EQ(121, parsed_red_params.encodings[1]);
-  ASSERT_EQ(126, parsed_red_params.encodings[2]);
-  ASSERT_EQ(97, parsed_red_params.encodings[3]);
-  ASSERT_EQ(123, parsed_red_params.encodings[4]);
+  const auto& parsed_red_rtx_params =
+      *static_cast<const SdpFmtpAttributeList::RtxParameters*>(red_rtx_params);
+
+  ASSERT_EQ((uint32_t)122, parsed_red_rtx_params.apt);
 }
 
 TEST_F(JsepSessionTest, ValidateOfferedAudioCodecParams) {
@@ -3551,11 +3552,6 @@ TEST_F(JsepSessionTest, ValidateNoFmtpLineForRedInOfferAndAnswer) {
 
   std::string offer = CreateOffer();
 
-  // look for line with fmtp:122 and remove it
-  size_t start = offer.find("a=fmtp:122");
-  size_t end = offer.find("\r\n", start);
-  offer.replace(start, end + 2 - start, "");
-
   SetLocalOffer(offer);
   SetRemoteOffer(offer);
 
@@ -3575,7 +3571,7 @@ TEST_F(JsepSessionTest, ValidateNoFmtpLineForRedInOfferAndAnswer) {
   auto& video_attrs = video_section.GetAttributeList();
   ASSERT_EQ(SdpDirectionAttribute::kSendrecv, video_attrs.GetDirection());
 
-  ASSERT_EQ(10U, video_section.GetFormats().size());
+  ASSERT_EQ(11U, video_section.GetFormats().size());
   ASSERT_EQ("120", video_section.GetFormats()[0]);
   ASSERT_EQ("124", video_section.GetFormats()[1]);
   ASSERT_EQ("121", video_section.GetFormats()[2]);
@@ -3586,6 +3582,7 @@ TEST_F(JsepSessionTest, ValidateNoFmtpLineForRedInOfferAndAnswer) {
   ASSERT_EQ("98", video_section.GetFormats()[7]);
   ASSERT_EQ("123", video_section.GetFormats()[8]);
   ASSERT_EQ("122", video_section.GetFormats()[9]);
+  ASSERT_EQ("119", video_section.GetFormats()[10]);
 
   // Validate rtpmap
   ASSERT_TRUE(video_attrs.HasAttribute(SdpAttribute::kRtpmapAttribute));
@@ -3600,12 +3597,13 @@ TEST_F(JsepSessionTest, ValidateNoFmtpLineForRedInOfferAndAnswer) {
   ASSERT_TRUE(rtpmaps.HasEntry("98"));
   ASSERT_TRUE(rtpmaps.HasEntry("123"));
   ASSERT_TRUE(rtpmaps.HasEntry("122"));
+  ASSERT_TRUE(rtpmaps.HasEntry("119"));
 
   // Validate fmtps
   ASSERT_TRUE(video_attrs.HasAttribute(SdpAttribute::kFmtpAttribute));
   auto& fmtps = video_attrs.GetFmtp().mFmtps;
 
-  ASSERT_EQ(8U, fmtps.size());
+  ASSERT_EQ(9U, fmtps.size());
   ASSERT_EQ("126", fmtps[0].format);
   ASSERT_EQ("97", fmtps[1].format);
   ASSERT_EQ("120", fmtps[2].format);
@@ -3614,6 +3612,7 @@ TEST_F(JsepSessionTest, ValidateNoFmtpLineForRedInOfferAndAnswer) {
   ASSERT_EQ("125", fmtps[5].format);
   ASSERT_EQ("127", fmtps[6].format);
   ASSERT_EQ("98", fmtps[7].format);
+  ASSERT_EQ("119", fmtps[8].format);
 
   SetLocalAnswer(answer);
   SetRemoteAnswer(answer);
@@ -7422,13 +7421,142 @@ TEST_F(JsepSessionTest, TestOfferRtxNoMsid) {
   ASSERT_NE(std::string::npos, offer.find("FID")) << offer;
 }
 
+TEST_F(JsepSessionTest, TestRedRtxAddedToVideoCodec) {
+  types.push_back(SdpMediaSection::kVideo);
+  AddTracks(*mSessionOff, "video");
+  AddTracks(*mSessionAns, "video");
+
+  OfferAnswer();
+
+  std::vector<sdp::Direction> directions = {sdp::kSend, sdp::kRecv};
+
+  for (auto direction : directions) {
+    UniquePtr<JsepCodecDescription> codec;
+    std::set<std::string> payloadTypes;
+    std::string redPt, ulpfecPt, redRtxPt;
+    for (size_t i = 0; i < 4; ++i) {
+      GetCodec(*mSessionOff, 0, direction, 0, i, &codec);
+      ASSERT_TRUE(codec);
+      JsepVideoCodecDescription* videoCodec =
+          static_cast<JsepVideoCodecDescription*>(codec.get());
+
+      // Ensure RED, ULPFEC, and RTX RED are not empty which validates that
+      // EnableFEC worked.
+      ASSERT_FALSE(videoCodec->mREDPayloadType.empty());
+      ASSERT_FALSE(videoCodec->mULPFECPayloadType.empty());
+      ASSERT_FALSE(videoCodec->mREDRTXPayloadType.empty());
+      ASSERT_TRUE(payloadTypes.insert(videoCodec->mDefaultPt).second);
+      ASSERT_TRUE(payloadTypes.insert(videoCodec->mRtxPayloadType).second);
+      // ULPFEC, RED, and RED RTX payload types are the same for each codec, so
+      // we only check them for the first one.
+      if (i == 0) {
+        ASSERT_TRUE(payloadTypes.insert(videoCodec->mREDPayloadType).second)
+        << "RED is using a duplicate payload type.";
+        ASSERT_TRUE(payloadTypes.insert(videoCodec->mULPFECPayloadType).second)
+        << "ULPFEC is using a duplicate payload type.";
+        ASSERT_TRUE(payloadTypes.insert(videoCodec->mREDRTXPayloadType).second)
+        << "RED RTX is using a duplicate payload type.";
+        redPt = videoCodec->mREDPayloadType;
+        ulpfecPt = videoCodec->mULPFECPayloadType;
+        redRtxPt = videoCodec->mREDRTXPayloadType;
+      } else {
+        ASSERT_TRUE(redPt == videoCodec->mREDPayloadType);
+        ASSERT_TRUE(ulpfecPt == videoCodec->mULPFECPayloadType);
+        ASSERT_TRUE(redRtxPt == videoCodec->mREDRTXPayloadType);
+      }
+    }
+  }
+}
+
+TEST_P(JsepSessionTest, TestNegotiatedDetailsToVideoCodecConfigs) {
+  AddTracks(*mSessionOff);
+  AddTracks(*mSessionAns);
+  OfferAnswer();
+
+  // Check all the video tracks to ensure negotiated details is added to
+  // VideoCodecConfig. Especially information related to FEC, RED, and RED RTX.
+  std::vector<JsepTrack> tracks;
+  for (const auto& transceiver : GetTransceivers(*mSessionOff)) {
+    tracks.push_back(transceiver.mSendTrack);
+    tracks.push_back(transceiver.mRecvTrack);
+  }
+
+  for (const JsepTrack& track : tracks) {
+    if (track.GetMediaType() != SdpMediaSection::kVideo) {
+      continue;
+    }
+
+    const auto& details(*track.GetNegotiatedDetails());
+    std::vector<VideoCodecConfig> videoConfigs;
+    dom::RTCRtpTransceiver::NegotiatedDetailsToVideoCodecConfigs(details,
+                                                                 &videoConfigs);
+    ASSERT_FALSE(videoConfigs.empty());
+    ASSERT_EQ(1U, details.GetEncodingCount());
+
+    const JsepTrackEncoding& encoding = details.GetEncoding(0);
+
+    ASSERT_EQ(encoding.GetCodecs().size(), videoConfigs.size());
+    // Since encodings and videoConfigs is the same size and order we can loop
+    // through them both at the same time and validate that videoConfigs
+    // contains the expected encoding data from negotiated details.
+    for (unsigned int i = 0; i < videoConfigs.size(); i++) {
+      const JsepVideoCodecDescription& codec =
+          static_cast<const JsepVideoCodecDescription&>(
+              *encoding.GetCodecs().at(i));
+      const auto& config = videoConfigs.at(i);
+
+      uint16_t payloadType;
+      ASSERT_TRUE(codec.GetPtAsInt(&payloadType));
+      ASSERT_EQ(payloadType, config.mType);
+      ASSERT_EQ(codec.mName, config.mName);
+      ASSERT_EQ(codec.RtcpFbRembIsSet(), config.mRembFbSet);
+      ASSERT_EQ(codec.mFECEnabled, config.mFECFbSet);
+      ASSERT_EQ(codec.RtcpFbTransportCCIsSet(), config.mTransportCCFbSet);
+      ASSERT_EQ(details.GetTias(), config.mTias);
+      ASSERT_EQ(codec.mConstraints, config.mEncodingConstraints);
+
+      if (codec.mName == "H264") {
+        ASSERT_EQ((codec.mProfileLevelId & 0x00FF0000) >> 16, config.mProfile);
+        ASSERT_EQ((codec.mProfileLevelId & 0x0000FF00) >> 8,
+                  config.mConstraints);
+        ASSERT_EQ(codec.mProfileLevelId & 0x000000FF, config.mLevel);
+        ASSERT_EQ(codec.mPacketizationMode, config.mPacketizationMode);
+        ASSERT_EQ(codec.mSpropParameterSets, config.mSpropParameterSets);
+      }
+
+      if (codec.mFECEnabled) {
+        uint16_t redPayloadType, ulpFecPayloadType, redRtxPayloadType;
+
+        ASSERT_TRUE(
+            SdpHelper::GetPtAsInt(codec.mREDPayloadType, &redPayloadType));
+        ASSERT_TRUE(SdpHelper::GetPtAsInt(codec.mULPFECPayloadType,
+                                          &ulpFecPayloadType));
+        ASSERT_TRUE(SdpHelper::GetPtAsInt(codec.mREDRTXPayloadType,
+                                          &redRtxPayloadType));
+
+        ASSERT_EQ(redPayloadType, config.mREDPayloadType);
+        ASSERT_EQ(ulpFecPayloadType, config.mULPFECPayloadType);
+        ASSERT_EQ(redRtxPayloadType, config.mREDRTXPayloadType);
+      }
+
+      if (codec.mRtxEnabled) {
+        uint16_t rtxPayloadType;
+
+        ASSERT_TRUE(
+            SdpHelper::GetPtAsInt(codec.mRtxPayloadType, &rtxPayloadType));
+        ASSERT_EQ(rtxPayloadType, config.mRTXPayloadType);
+      }
+    }
+  }
+}
+
 TEST_F(JsepSessionTest, TestDuplicatePayloadTypes) {
   for (auto& codec : mSessionOff->Codecs()) {
     if (codec->Type() == SdpMediaSection::kVideo) {
       JsepVideoCodecDescription* videoCodec =
           static_cast<JsepVideoCodecDescription*>(codec.get());
       videoCodec->mRtxPayloadType = "97";
-      videoCodec->EnableFec("97", "97");
+      videoCodec->EnableFec("97", "97", "97");
     }
   }
 
@@ -7442,7 +7570,7 @@ TEST_F(JsepSessionTest, TestDuplicatePayloadTypes) {
   for (auto direction : directions) {
     UniquePtr<JsepCodecDescription> codec;
     std::set<std::string> payloadTypes;
-    std::string redPt, ulpfecPt;
+    std::string redPt, ulpfecPt, redRtxPt;
     for (size_t i = 0; i < 4; ++i) {
       GetCodec(*mSessionOff, 0, direction, 0, i, &codec);
       ASSERT_TRUE(codec);
@@ -7455,11 +7583,14 @@ TEST_F(JsepSessionTest, TestDuplicatePayloadTypes) {
       if (i == 0) {
         ASSERT_TRUE(payloadTypes.insert(videoCodec->mREDPayloadType).second);
         ASSERT_TRUE(payloadTypes.insert(videoCodec->mULPFECPayloadType).second);
+        ASSERT_TRUE(payloadTypes.insert(videoCodec->mREDRTXPayloadType).second);
         redPt = videoCodec->mREDPayloadType;
         ulpfecPt = videoCodec->mULPFECPayloadType;
+        redRtxPt = videoCodec->mREDRTXPayloadType;
       } else {
         ASSERT_TRUE(redPt == videoCodec->mREDPayloadType);
         ASSERT_TRUE(ulpfecPt == videoCodec->mULPFECPayloadType);
+        ASSERT_TRUE(redRtxPt == videoCodec->mREDRTXPayloadType);
       }
     }
   }

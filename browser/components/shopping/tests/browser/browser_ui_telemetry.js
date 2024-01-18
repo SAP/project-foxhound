@@ -3,6 +3,19 @@
 
 "use strict";
 
+const CONTENT_PAGE = "https://example.com";
+const PRODUCT_PAGE = "https://example.com/product/B09TJGHL5F";
+
+function assertEventMatches(gleanEvent, requiredValues) {
+  let limitedEvent = Object.assign({}, gleanEvent);
+  for (let k of Object.keys(limitedEvent)) {
+    if (!requiredValues.hasOwnProperty(k)) {
+      delete limitedEvent[k];
+    }
+  }
+  return Assert.deepEqual(limitedEvent, requiredValues);
+}
+
 add_task(async function test_shopping_reanalysis_event() {
   // testFlushAllChildren() is necessary to deal with the event being
   // recorded in content, but calling testGetValue() in parent.
@@ -20,11 +33,21 @@ add_task(async function test_shopping_reanalysis_event() {
   );
 
   await Services.fog.testFlushAllChildren();
-  var events = Glean.shopping.surfaceReanalyzeClicked.testGetValue();
+  var staleAnalysisEvents =
+    Glean.shopping.surfaceStaleAnalysisShown.testGetValue();
 
-  Assert.greater(events.length, 0);
-  Assert.equal(events[0].category, "shopping");
-  Assert.equal(events[0].name, "surface_reanalyze_clicked");
+  assertEventMatches(staleAnalysisEvents[0], {
+    category: "shopping",
+    name: "surface_stale_analysis_shown",
+  });
+
+  var reanalysisRequestedEvents =
+    Glean.shopping.surfaceReanalyzeClicked.testGetValue();
+
+  assertEventMatches(reanalysisRequestedEvents[0], {
+    category: "shopping",
+    name: "surface_reanalyze_clicked",
+  });
 });
 
 add_task(async function test_shopping_UI_chevron_clicks() {
@@ -42,11 +65,32 @@ add_task(async function test_shopping_UI_chevron_clicks() {
   );
 
   await Services.fog.testFlushAllChildren();
-  var events = Glean.shopping.surfaceExpandSettings.testGetValue();
+  var events = Glean.shopping.surfaceSettingsExpandClicked.testGetValue();
 
   Assert.greater(events.length, 0);
   Assert.equal(events[0].category, "shopping");
-  Assert.equal(events[0].name, "surface_expand_settings");
+  Assert.equal(events[0].name, "surface_settings_expand_clicked");
+});
+
+add_task(async function test_shopping_sidebar_displayed() {
+  Services.fog.testResetFOG();
+
+  await BrowserTestUtils.withNewTab(PRODUCT_PAGE, async function (browser) {
+    let sidebar = gBrowser.getPanel(browser).querySelector("shopping-sidebar");
+    await sidebar.complete;
+
+    Assert.ok(
+      BrowserTestUtils.is_visible(sidebar),
+      "Sidebar should be visible."
+    );
+  });
+
+  Services.fog.testFlushAllChildren();
+  var events = Glean.shopping.surfaceDisplayed.testGetValue();
+
+  Assert.greater(events.length, 0);
+  Assert.equal(events[0].category, "shopping");
+  Assert.equal(events[0].name, "surface_displayed");
 });
 
 function clickReAnalyzeLink(browser, data) {
@@ -59,7 +103,7 @@ function clickReAnalyzeLink(browser, data) {
     let shoppingMessageBar = shoppingContainer.shoppingMessageBarEl;
     await shoppingMessageBar.updateComplete;
 
-    await shoppingMessageBar.onClickAnalysisLink();
+    await shoppingMessageBar.onClickAnalysisButton();
 
     return "clicked";
   });

@@ -78,6 +78,7 @@ class RecentlyClosedTabsList extends MozLitElement {
   }
 
   disconnectedCallback() {
+    super.disconnectedCallback();
     clearInterval(this.intervalID);
   }
 
@@ -466,14 +467,6 @@ class RecentlyClosedTabsContainer extends HTMLDetailsElement {
   toggleContainerStyleForEmptyMsg(visible) {
     this.collapsibleContainer.classList.toggle("empty-container", visible);
   }
-
-  getClosedTabCount = () => {
-    try {
-      return lazy.SessionStore.getClosedTabCountForWindow(getWindow());
-    } catch (ex) {
-      return 0;
-    }
-  };
 }
 customElements.define(
   "recently-closed-tabs-container",

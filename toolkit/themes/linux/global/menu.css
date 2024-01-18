@@ -12,34 +12,6 @@
 
 /* ::::: menu/menuitem ::::: */
 
-menupopup,
-menubar {
-  font: menu;
-}
-
-menu,
-menuitem,
-menucaption {
-  border-radius: calc(var(--panel-border-radius) / 2);
-  align-items: center;
-  flex-shrink: 0;
-  padding: 4px 6px;
-  max-width: 42em;
-  list-style-image: none;
-}
-
-menu:where([_moz-menuactive]:not([disabled="true"])),
-menuitem:where([_moz-menuactive]:not([disabled="true"])) {
-  color: -moz-menuhovertext;
-  background-color: -moz-menuhover;
-}
-
-menu:where([disabled="true"]),
-menuitem:where([disabled="true"]),
-menucaption:where([disabled="true"]) {
-  color: GrayText;
-}
-
 menubar > menu {
   color: inherit;
   background-color: transparent;
@@ -104,19 +76,6 @@ menulist > menupopup > :is(menuitem, menucaption, menu) {
 .menu-iconic-icon {
   width: 16px;
   height: 16px;
-}
-
-.menu-right {
-  margin-top: 0;
-  margin-bottom: 0;
-  margin-inline-start: 6px;
-  margin-inline-end: 0;
-  width: 1ex;
-  height: 1ex;
-  /* These next two rules are needed to prevent inheritance and thus ugliness */
-  list-style-image: none;
-  appearance: auto;
-  -moz-default-appearance: menuarrow;
 }
 
 .menubar-left {

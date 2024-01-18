@@ -561,17 +561,6 @@ int MessageChannel::DispatchingSyncMessageNestedLevel() const {
              : 0;
 }
 
-static const char* StringFromIPCSide(Side side) {
-  switch (side) {
-    case ChildSide:
-      return "Child";
-    case ParentSide:
-      return "Parent";
-    default:
-      return "Unknown";
-  }
-}
-
 static void PrintErrorMessage(Side side, const char* channelName,
                               const char* msg) {
   printf_stderr("\n###!!! [%s][%s] Error: %s\n\n", StringFromIPCSide(side),
@@ -941,13 +930,13 @@ bool MessageChannel::MaybeInterceptSpecialIOMessage(const Message& aMsg) {
       // ourselves as "Closing".
       mLink->Close();
       mChannelState = ChannelClosing;
-      if (LoggingEnabled()) {
+      if (LoggingEnabledFor(mListener->GetProtocolName(), mSide)) {
         printf(
-            "[%s %u] NOTE: %s actor received `Goodbye' message.  Closing "
+            "[%s %u] NOTE: %s%s actor received `Goodbye' message.  Closing "
             "channel.\n",
             XRE_GeckoProcessTypeToString(XRE_GetProcessType()),
             static_cast<uint32_t>(base::GetCurrentProcId()),
-            (mSide == ChildSide) ? "child" : "parent");
+            mListener->GetProtocolName(), StringFromIPCSide(mSide));
       }
 
       // Notify the worker thread that the connection has been closed, as we
@@ -2216,8 +2205,7 @@ void MessageChannel::DebugAbort(const char* file, int line, const char* cond,
   printf_stderr(
       "###!!! [MessageChannel][%s][%s:%d] "
       "Assertion (%s) failed.  %s %s\n",
-      mSide == ChildSide ? "Child" : "Parent", file, line, cond, why,
-      reply ? "(reply)" : "");
+      StringFromIPCSide(mSide), file, line, cond, why, reply ? "(reply)" : "");
 
   MessageQueue pending = std::move(mPending);
   while (!pending.isEmpty()) {

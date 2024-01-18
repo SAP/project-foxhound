@@ -888,7 +888,7 @@ impl PropertyDeclarationBlock {
                         computed_values.writing_mode,
                         custom_properties.as_ref(),
                         QuirksMode::NoQuirks,
-                        stylist.device(),
+                        stylist,
                         &mut Default::default(),
                     )
                     .to_css(dest)
@@ -946,7 +946,7 @@ impl PropertyDeclarationBlock {
         inherited_custom_properties: Option<&Arc<crate::custom_properties::CustomPropertiesMap>>,
         stylist: &Stylist,
     ) -> Option<Arc<crate::custom_properties::CustomPropertiesMap>> {
-        let mut builder = CustomPropertiesBuilder::new(inherited_custom_properties, stylist.device());
+        let mut builder = CustomPropertiesBuilder::new(inherited_custom_properties, stylist);
 
         for declaration in self.normal_declaration_iter() {
             if let PropertyDeclaration::Custom(ref declaration) = *declaration {

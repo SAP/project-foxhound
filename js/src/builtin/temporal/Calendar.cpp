@@ -7,12 +7,12 @@
 #include "builtin/temporal/Calendar.h"
 
 #include "mozilla/Assertions.h"
+#include "mozilla/Attributes.h"
 #include "mozilla/EnumSet.h"
 #include "mozilla/FloatingPoint.h"
 #include "mozilla/Likely.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/Range.h"
-#include "mozilla/RangedPtr.h"
 #include "mozilla/TextUtils.h"
 
 #include <algorithm>
@@ -43,17 +43,15 @@
 #include "builtin/temporal/TemporalParser.h"
 #include "builtin/temporal/TemporalTypes.h"
 #include "builtin/temporal/TemporalUnit.h"
-#include "builtin/temporal/TimeZone.h"
 #include "builtin/temporal/Wrapped.h"
 #include "builtin/temporal/ZonedDateTime.h"
-#include "gc/Allocator.h"
 #include "gc/AllocKind.h"
 #include "gc/Barrier.h"
+#include "gc/GCEnum.h"
 #include "js/AllocPolicy.h"
 #include "js/CallArgs.h"
 #include "js/CallNonGenericMethod.h"
 #include "js/Class.h"
-#include "js/ComparisonOperators.h"
 #include "js/Conversions.h"
 #include "js/ErrorReport.h"
 #include "js/ForOfIterator.h"
@@ -61,17 +59,14 @@
 #include "js/GCAPI.h"
 #include "js/GCHashTable.h"
 #include "js/GCVector.h"
-#include "js/HashTable.h"
 #include "js/Id.h"
 #include "js/Printer.h"
 #include "js/PropertyDescriptor.h"
 #include "js/PropertySpec.h"
 #include "js/RootingAPI.h"
 #include "js/TracingAPI.h"
-#include "js/TypeDecls.h"
-#include "js/Utility.h"
 #include "js/Value.h"
-#include "util/StringBuffer.h"
+#include "js/ValueArray.h"
 #include "util/Text.h"
 #include "vm/ArrayObject.h"
 #include "vm/BytecodeUtil.h"
@@ -85,15 +80,16 @@
 #include "vm/PlainObject.h"
 #include "vm/PropertyInfo.h"
 #include "vm/PropertyKey.h"
+#include "vm/Realm.h"
 #include "vm/Shape.h"
 #include "vm/Stack.h"
 #include "vm/StringType.h"
 
-#include "vm/JSAtomUtils-inl.h"  // PrimitiveValueToId
+#include "vm/Compartment-inl.h"
+#include "vm/JSAtomUtils-inl.h"
 #include "vm/JSObject-inl.h"
 #include "vm/NativeObject-inl.h"
 #include "vm/ObjectOperations-inl.h"
-#include "vm/Realm-inl.h"
 
 using namespace js;
 using namespace js::temporal;
@@ -504,9 +500,11 @@ static bool IsISO8601Calendar(JSLinearString* id) {
   return StringEqualsLiteral(id, "iso8601");
 }
 
+#ifdef DEBUG
 static bool IsISO8601Calendar(CalendarObject* calendar) {
-  return StringEqualsLiteral(calendar->identifier(), "iso8601");
+  return IsISO8601Calendar(calendar->identifier());
 }
+#endif
 
 static bool IsISO8601Calendar(JSContext* cx, JSString* id, bool* result) {
   JSLinearString* linear = id->ensureLinear(cx);
@@ -728,10 +726,12 @@ bool js::temporal::ToTemporalCalendar(JSContext* cx,
   }
 
   // Step 3.
-  Rooted<JSString*> str(cx, JS::ToString(cx, calendarLike));
-  if (!str) {
+  if (!calendarLike.isString()) {
+    ReportValueError(cx, JSMSG_UNEXPECTED_TYPE, JSDVG_IGNORE_STACK,
+                     calendarLike, nullptr, "not a string");
     return false;
   }
+  Rooted<JSString*> str(cx, calendarLike.toString());
 
   // Step 4.
   Rooted<JSLinearString*> identifier(cx, ParseTemporalCalendarString(cx, str));
@@ -1092,12 +1092,6 @@ bool js::temporal::CalendarFields(
     }
   }
 
-  // FIXME: spec issue - provide default implementation similar to
-  // DefaultMergeFields? Otherwise the input field names are returned as-is,
-  // including any duplicate field names. (Duplicate names are still possible
-  // through user-defined calendars, though.)
-  // https://github.com/tc39/proposal-temporal/issues/2532
-
   auto* array = NewDenseFullyAllocatedArray(cx, fieldNames.size());
   if (!array) {
     return false;
@@ -1113,11 +1107,6 @@ bool js::temporal::CalendarFields(
   if (!Call(cx, fields, calendarObj, fieldsArray, &fieldsArray)) {
     return false;
   }
-
-  // FIXME: spec issue - sort the result array here instead of in
-  // PrepareTemporalFields.
-  // FIXME: spec issue - maybe also check for duplicates here?
-  // https://github.com/tc39/proposal-temporal/issues/2532
 
   // Steps 3-4.
   if (!IterableToListOfStrings(cx, fieldsArray, result)) {
@@ -3628,75 +3617,6 @@ bool js::temporal::ConsolidateCalendars(JSContext* cx,
 }
 
 /**
- * MaybeFormatCalendarAnnotation ( calendar, showCalendar )
- */
-bool js::temporal::MaybeFormatCalendarAnnotation(JSContext* cx,
-                                                 JSStringBuilder& result,
-                                                 Handle<CalendarValue> calendar,
-                                                 CalendarOption showCalendar) {
-  // Step 1.
-  if (showCalendar == CalendarOption::Never) {
-    return true;
-  }
-
-  // Step 2.
-  Rooted<JSString*> calendarIdentifier(
-      cx, ToTemporalCalendarIdentifier(cx, calendar));
-  if (!calendarIdentifier) {
-    return false;
-  }
-
-  // Step 3.
-  return FormatCalendarAnnotation(cx, result, calendarIdentifier, showCalendar);
-}
-
-/**
- * FormatCalendarAnnotation ( id, showCalendar )
- */
-bool js::temporal::FormatCalendarAnnotation(JSContext* cx,
-                                            JSStringBuilder& result,
-                                            Handle<JSString*> id,
-                                            CalendarOption showCalendar) {
-  switch (showCalendar) {
-    case CalendarOption::Never:
-      return true;
-
-    case CalendarOption::Auto: {
-      JSLinearString* linear = id->ensureLinear(cx);
-      if (!linear) {
-        return false;
-      }
-      if (StringEqualsLiteral(linear, "iso8601")) {
-        return true;
-      }
-      [[fallthrough]];
-    }
-
-    case CalendarOption::Always: {
-      if (!result.append("[u-ca=")) {
-        return false;
-      }
-      break;
-    }
-
-    case CalendarOption::Critical: {
-      if (!result.append("[!u-ca=")) {
-        return false;
-      }
-      break;
-    }
-  }
-
-  if (!result.append(id)) {
-    return false;
-  }
-  if (!result.append(']')) {
-    return false;
-  }
-  return true;
-}
-
-/**
  * Temporal.Calendar ( id )
  */
 static bool CalendarConstructor(JSContext* cx, unsigned argc, Value* vp) {
@@ -3708,24 +3628,29 @@ static bool CalendarConstructor(JSContext* cx, unsigned argc, Value* vp) {
   }
 
   // Step 2.
-  JSString* id = JS::ToString(cx, args.get(0));
-  if (!id) {
+  if (!args.requireAtLeast(cx, "Temporal.Calendar", 1)) {
     return false;
   }
 
-  Rooted<JSLinearString*> linear(cx, id->ensureLinear(cx));
-  if (!linear) {
+  if (!args[0].isString()) {
+    ReportValueError(cx, JSMSG_UNEXPECTED_TYPE, JSDVG_SEARCH_STACK, args[0],
+                     nullptr, "not a string");
+    return false;
+  }
+
+  Rooted<JSLinearString*> identifier(cx, args[0].toString()->ensureLinear(cx));
+  if (!identifier) {
     return false;
   }
 
   // Step 3.
-  linear = ThrowIfNotBuiltinCalendar(cx, linear);
-  if (!linear) {
+  identifier = ThrowIfNotBuiltinCalendar(cx, identifier);
+  if (!identifier) {
     return false;
   }
 
   // Step 4.
-  auto* calendar = CreateTemporalCalendar(cx, args, linear);
+  auto* calendar = CreateTemporalCalendar(cx, args, identifier);
   if (!calendar) {
     return false;
   }

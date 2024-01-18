@@ -47,7 +47,6 @@ crashtest:
         - no-fission
         - webrender-sw+no-fission
         - webrender-sw
-        - editor-legacy-direction
     run-on-projects:
         by-variant:
             webrender-sw+no-fission:
@@ -70,10 +69,6 @@ crashtest:
                     linux1804-64-qr/debug: ['trunk']
                     linux1804-64(-shippable|-asan)?-qr/opt: ['trunk']
                     android.*: built-projects
-                    default: []
-            editor-legacy-direction:
-                by-test-platform:
-                    linux1804-64-qr/debug: ['mozilla-central']
                     default: []
             default:
                 by-test-platform:
@@ -116,8 +111,7 @@ jsreftest:
             windows.*\/opt: 2
             linux.*64-ccov.*/.*: 5
             linux1804-64-qr/opt: 4
-            linux1804-64-qr/debug: 5
-            linux1804-64/debug: 5
+            linux.*/debug: 5
             .*-tsan-qr/opt: 8
             macosx.*-64-ccov.*/.*: 5
             macosx.*-64(-shippable)?/opt: 2
@@ -125,6 +119,7 @@ jsreftest:
     max-run-time:
         by-test-platform:
             .*ccov.*: 7200
+            .*-wayland/debug.*: 5400
             default: 3600
     variants:
         - no-fission
@@ -141,7 +136,6 @@ jsreftest:
             default:
                 by-test-platform:
                     android.*/.*: []
-                    .*wayland.*: []
                     default: built-projects
     virtualization: virtual
 
@@ -172,7 +166,6 @@ reftest:
         - webrender-dcomp-compositing  # Should match default
         - webrender-sw+no-fission
         - webrender-sw
-        - editor-legacy-direction
     run-on-projects:
         by-variant:
             webrender-sw+no-fission:
@@ -194,10 +187,6 @@ reftest:
                     linux1804-64-qr/debug: ['trunk']
                     linux1804-64(-shippable|-asan)?-qr/opt: ['trunk']
                     android.*: built-projects
-                    default: []
-            editor-legacy-direction:
-                by-test-platform:
-                    linux1804-64-qr/debug: ['mozilla-central']
                     default: []
             default:
                 by-test-platform:

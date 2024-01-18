@@ -77,7 +77,6 @@ fn to_ascii_lowercase(s: &str) -> Cow<str> {
 
 bitflags! {
     /// Flags that indicate at which point of parsing a selector are we.
-    #[derive(Copy, Clone)]
     struct SelectorParsingState: u8 {
         /// Whether we should avoid adding default namespaces to selectors that
         /// aren't type or universal selectors.
@@ -107,7 +106,7 @@ bitflags! {
         const AFTER_NON_STATEFUL_PSEUDO_ELEMENT = 1 << 4;
 
         /// Whether we are after any of the pseudo-like things.
-        const AFTER_PSEUDO = Self::AFTER_PART.bits | Self::AFTER_SLOTTED.bits | Self::AFTER_PSEUDO_ELEMENT.bits;
+        const AFTER_PSEUDO = Self::AFTER_PART.bits() | Self::AFTER_SLOTTED.bits() | Self::AFTER_PSEUDO_ELEMENT.bits();
 
         /// Whether we explicitly disallow combinators.
         const DISALLOW_COMBINATORS = 1 << 5;
@@ -1544,6 +1543,51 @@ pub enum RelativeSelectorMatchHint {
 }
 
 impl RelativeSelectorMatchHint {
+    /// Create a new relative selector match hint based on its composition.
+    pub fn new(
+        relative_combinator: Combinator,
+        has_child_or_descendants: bool,
+        has_adjacent_or_next_siblings: bool,
+    ) -> Self {
+        match relative_combinator {
+            Combinator::Descendant => RelativeSelectorMatchHint::InSubtree,
+            Combinator::Child => {
+                if !has_child_or_descendants {
+                    RelativeSelectorMatchHint::InChild
+                } else {
+                    // Technically, for any composition that consists of child combinators only,
+                    // the search space is depth-constrained, but it's probably not worth optimizing for.
+                    RelativeSelectorMatchHint::InSubtree
+                }
+            },
+            Combinator::NextSibling => {
+                if !has_child_or_descendants && !has_adjacent_or_next_siblings {
+                    RelativeSelectorMatchHint::InNextSibling
+                } else if !has_child_or_descendants && has_adjacent_or_next_siblings {
+                    RelativeSelectorMatchHint::InSibling
+                } else if has_child_or_descendants && !has_adjacent_or_next_siblings {
+                    // Match won't cross multiple siblings.
+                    RelativeSelectorMatchHint::InNextSiblingSubtree
+                } else {
+                    RelativeSelectorMatchHint::InSiblingSubtree
+                }
+            },
+            Combinator::LaterSibling => {
+                if !has_child_or_descendants {
+                    RelativeSelectorMatchHint::InSibling
+                } else {
+                    // Even if the match may not cross multiple siblings, we have to look until
+                    // we find a match anyway.
+                    RelativeSelectorMatchHint::InSiblingSubtree
+                }
+            },
+            Combinator::Part | Combinator::PseudoElement | Combinator::SlotAssignment => {
+                debug_assert!(false, "Unexpected relative combinator");
+                RelativeSelectorMatchHint::InSubtree
+            },
+        }
+    }
+
     /// Is the match traversal direction towards the descendant of this element (As opposed to siblings)?
     pub fn is_descendant_direction(&self) -> bool {
         matches!(*self, Self::InChild | Self::InSubtree)
@@ -1563,6 +1607,53 @@ impl RelativeSelectorMatchHint {
     }
 }
 
+/// Count of combinators in a given relative selector, not traversing selectors of pseudoclasses.
+#[derive(Clone, Copy)]
+pub struct RelativeSelectorCombinatorCount {
+    relative_combinator: Combinator,
+    pub child_or_descendants: usize,
+    pub adjacent_or_next_siblings: usize,
+}
+
+impl RelativeSelectorCombinatorCount {
+    /// Create a new relative selector combinator count from a given relative selector.
+    pub fn new<Impl: SelectorImpl>(relative_selector: &RelativeSelector<Impl>) -> Self {
+        let mut result = RelativeSelectorCombinatorCount {
+            relative_combinator: relative_selector.selector.combinator_at_parse_order(1),
+            child_or_descendants: 0,
+            adjacent_or_next_siblings: 0,
+        };
+
+        for combinator in CombinatorIter::new(
+            relative_selector
+                .selector
+                .iter_skip_relative_selector_anchor(),
+        ) {
+            match combinator {
+                Combinator::Descendant | Combinator::Child => {
+                    result.child_or_descendants += 1;
+                },
+                Combinator::NextSibling | Combinator::LaterSibling => {
+                    result.adjacent_or_next_siblings += 1;
+                },
+                Combinator::Part | Combinator::PseudoElement | Combinator::SlotAssignment => {
+                    continue
+                },
+            };
+        }
+        result
+    }
+
+    /// Get the match hint based on the current combinator count.
+    pub fn get_match_hint(&self) -> RelativeSelectorMatchHint {
+        RelativeSelectorMatchHint::new(
+            self.relative_combinator,
+            self.child_or_descendants != 0,
+            self.adjacent_or_next_siblings != 0,
+        )
+    }
+}
+
 /// Storage for a relative selector.
 #[derive(Clone, Eq, PartialEq, ToShmem)]
 #[shmem(no_bounds)]
@@ -1576,7 +1667,6 @@ pub struct RelativeSelector<Impl: SelectorImpl> {
 
 bitflags! {
     /// Composition of combinators in a given selector, not traversing selectors of pseudoclasses.
-    #[derive(Clone, Debug, Eq, PartialEq)]
     struct CombinatorComposition: u8 {
         const DESCENDANTS = 1 << 0;
         const SIBLINGS = 1 << 1;
@@ -1629,48 +1719,12 @@ impl<Impl: SelectorImpl> RelativeSelector<Impl> {
                     );
                 }
                 // Leave a hint for narrowing down the search space when we're matching.
-                let match_hint = match selector.combinator_at_parse_order(1) {
-                    Combinator::Descendant => RelativeSelectorMatchHint::InSubtree,
-                    Combinator::Child => {
-                        let composition = CombinatorComposition::for_relative_selector(&selector);
-                        if composition.is_empty() || composition == CombinatorComposition::SIBLINGS
-                        {
-                            RelativeSelectorMatchHint::InChild
-                        } else {
-                            // Technically, for any composition that consists of child combinators only,
-                            // the search space is depth-constrained, but it's probably not worth optimizing for.
-                            RelativeSelectorMatchHint::InSubtree
-                        }
-                    },
-                    Combinator::NextSibling => {
-                        let composition = CombinatorComposition::for_relative_selector(&selector);
-                        if composition.is_empty() {
-                            RelativeSelectorMatchHint::InNextSibling
-                        } else if composition == CombinatorComposition::SIBLINGS {
-                            RelativeSelectorMatchHint::InSibling
-                        } else if composition == CombinatorComposition::DESCENDANTS {
-                            // Match won't cross multiple siblings.
-                            RelativeSelectorMatchHint::InNextSiblingSubtree
-                        } else {
-                            RelativeSelectorMatchHint::InSiblingSubtree
-                        }
-                    },
-                    Combinator::LaterSibling => {
-                        let composition = CombinatorComposition::for_relative_selector(&selector);
-                        if composition.is_empty() || composition == CombinatorComposition::SIBLINGS
-                        {
-                            RelativeSelectorMatchHint::InSibling
-                        } else {
-                            // Even if the match may not cross multiple siblings, we have to look until
-                            // we find a match anyway.
-                            RelativeSelectorMatchHint::InSiblingSubtree
-                        }
-                    },
-                    Combinator::Part | Combinator::PseudoElement | Combinator::SlotAssignment => {
-                        debug_assert!(false, "Unexpected relative combinator");
-                        RelativeSelectorMatchHint::InSubtree
-                    },
-                };
+                let composition = CombinatorComposition::for_relative_selector(&selector);
+                let match_hint = RelativeSelectorMatchHint::new(
+                    selector.combinator_at_parse_order(1),
+                    composition.intersects(CombinatorComposition::DESCENDANTS),
+                    composition.intersects(CombinatorComposition::SIBLINGS),
+                );
                 RelativeSelector {
                     match_hint,
                     selector,
@@ -1926,6 +1980,11 @@ impl<Impl: SelectorImpl> Component<Impl> {
             },
             NthOf(ref nth_of_data) => {
                 if !visitor.visit_selector_list(SelectorListKind::NTH_OF, nth_of_data.selectors()) {
+                    return false;
+                }
+            },
+            Has(ref list) => {
+                if !visitor.visit_relative_selector_list(list) {
                     return false;
                 }
             },

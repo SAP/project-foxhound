@@ -35,7 +35,8 @@
       <vbox class="translations-panel-content">
         <html:div id="translations-panel-intro">
           <html:span data-l10n-id="translations-panel-intro-description"></html:span>
-          <html:a is="moz-support-link"
+          <html:a id="translations-panel-intro-learn-more-link"
+                  is="moz-support-link"
                   data-l10n-id="translations-panel-learn-more-link"
                   support-page="website-translation"
                   onclick="TranslationsPanel.onLearnMoreLink()" />
@@ -82,24 +83,24 @@
         </vbox>
       </vbox>
 
-      <hbox class="panel-footer translations-panel-footer">
+      <html:moz-button-group class="panel-footer translations-panel-footer">
         <button id="translations-panel-restore-button"
-                class="subviewbutton panel-subview-footer-button"
+                class="panel-footer-button"
                 oncommand="TranslationsPanel.onRestore(event);"
                 data-l10n-id="translations-panel-restore-button">
         </button>
         <button id="translations-panel-cancel"
-                class="subviewbutton panel-subview-footer-button"
+                class="panel-footer-button"
                 oncommand="TranslationsPanel.onCancel(event);"
                 data-l10n-id="translations-panel-translate-cancel">
         </button>
         <button id="translations-panel-translate"
-                class="subviewbutton panel-subview-footer-button"
+                class="panel-footer-button"
                 oncommand="TranslationsPanel.onTranslate(event);"
                 data-l10n-id="translations-panel-translate-button"
                 default="true">
         </button>
-      </hbox>
+      </html:moz-button-group>
     </panelview>
 
     <panelview id="translations-panel-view-unsupported-language"
@@ -108,7 +109,7 @@
                showheader="true">
       <hbox class="panel-header translations-panel-header">
         <image class="translations-panel-error-icon" />
-        <html:h1>
+        <html:h1 id="translations-panel-unsupported-language-header">
           <html:span data-l10n-id="translations-panel-error-unsupported"></html:span>
         </html:h1>
       </hbox>
@@ -116,26 +117,27 @@
       <vbox class="translations-panel-content">
         <html:div>
           <html:span id="translations-panel-error-unsupported-hint"></html:span>
-          <html:a is="moz-support-link"
+          <html:a id="translations-panel-unsupported-learn-more-link"
+                  is="moz-support-link"
                   data-l10n-id="translations-panel-learn-more-link"
                   support-page="website-translation"
                   onclick="TranslationsPanel.onLearnMoreLink()" />
         </html:div>
       </vbox>
 
-      <hbox class="panel-footer translations-panel-footer">
+      <html:moz-button-group class="panel-footer translations-panel-footer">
         <button id="translations-panel-change-source-language"
-                class="subviewbutton panel-subview-footer-button"
+                class="panel-footer-button"
                 oncommand="TranslationsPanel.onChangeSourceLanguage(event);"
                 data-l10n-id="translations-panel-error-change-button">
         </button>
         <button id="translations-panel-dismiss-error"
-                class="subviewbutton panel-subview-footer-button"
+                class="panel-footer-button"
                 oncommand="TranslationsPanel.onCancel(event);"
                 data-l10n-id="translations-panel-error-dismiss-button"
                 default="true">
         </button>
-      </hbox>
+      </html:moz-button-group>
     </panelview>
   </panelmultiview>
 </panel>

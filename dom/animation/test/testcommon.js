@@ -247,9 +247,6 @@ function waitForFrame() {
 
 /**
  * Waits for a requestAnimationFrame callback in the next refresh driver tick.
- * Note that the 'dom.animations-api.core.enabled' and
- * 'dom.animations-api.timelines.enabled' prefs should be true to use this
- * function.
  */
 function waitForNextFrame(aWindow = window) {
   const timeAtStart = aWindow.document.timeline.currentTime;
@@ -511,17 +508,25 @@ function observeStyling(frameCount, onFrame) {
 function observeStylingInTargetWindow(aWindow, aFrameCount, aOnFrame) {
   const docShell = getDocShellForObservingRestylesForWindow(aWindow);
 
+  let priorAnimationTriggeredRestyles =
+    SpecialPowers.wrap(aWindow).windowUtils.animationTriggeredRestyles;
+
   return new Promise(resolve => {
     return waitForAnimationFrames(aFrameCount, aOnFrame, aWindow).then(() => {
+      let restyleCount =
+        SpecialPowers.wrap(aWindow).windowUtils.animationTriggeredRestyles -
+        priorAnimationTriggeredRestyles;
+
       const markers = docShell.popProfileTimelineMarkers();
       docShell.recordProfileTimelineMarkers = false;
+
       const stylingMarkers = Array.prototype.filter.call(
         markers,
         (marker, index) => {
           return marker.name == "Styles" && marker.isAnimationOnly;
         }
       );
-      resolve(stylingMarkers);
+      resolve([stylingMarkers, restyleCount]);
     });
   });
 }

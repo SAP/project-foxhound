@@ -83,7 +83,6 @@ treeherder:
         'M-f': 'Mochitest failures'
         'M-dt-no-eft-nofis': 'DevTools Mochitests with EFT without fission enabled'
         'M-msix': 'Mochitests from MSIX builds'
-        'M-editor-legacy-dir': 'Mochitests within the legacy join/split node direction mode of the editor'
         'MSI': 'Repack installers into MSIs'
         'MSIs': 'Signing of Repacked installers of MSIs'
         'MSIX': 'Repack into MSIX package'
@@ -99,7 +98,6 @@ treeherder:
         'R-wr-dc1-p': 'Reftests with dcomp present but not overlays'
         'R-wr-dc2-o': 'Reftests with dcomp overlays but not compositing'
         'R-wr-dc3-c': 'Reftests with dcomp compositing'
-        'R-editor-legacy-dir': 'Reftests within the legacy join/split node direction mode of the editor'
         'Rap': 'Raptor performance tests on Firefox'
         'Rap-live': 'Raptor performance tests on Firefox with live sites'
         'Rap-fis': 'Raptor performance tests on Firefox with fission enabled'
@@ -132,7 +130,6 @@ treeherder:
         'W-swr': 'Web platform tests with software webrender enabled'
         'W-b': 'Web platform tests (backlog)'
         'W-b-nofis': 'Web platform tests (backlog) without fission enabled'
-        'W-editor-legacy-dir': 'Web platform tests within the legacy join/split node direction mode of the editor'
         'X': 'Xpcshell tests'
         'X-condprof': 'Xpcshell tests with a conditioned profile'
         'X-nofis': 'Xpcshell tests without fission enabled'
@@ -733,13 +730,96 @@ mac-notarization:
         by-platform:
             macosx64.*:
                 by-release-level:
-                    production: security/mac/hardenedruntime/production.entitlements.xml
-                    default: security/mac/hardenedruntime/developer.entitlements.xml
+                    production: security/mac/hardenedruntime/v1/production/browser.xml
+                    default: security/mac/hardenedruntime/v1/developer/browser.xml
             default: ''
     mac-requirements:
         by-platform:
             macosx64.*: build/package/mac_osx/requirements.plist
             default: ''
+
+mac-signing:
+    hardened-sign-config:
+        by-release-level:
+            production:
+                - deep: false
+                  runtime: true
+                  force: true
+                  entitlements: security/mac/hardenedruntime/v2/production/plugin-container.xml
+                  globs:
+                      - "/Contents/MacOS/plugin-container.app"
+
+                - deep: false
+                  runtime: true
+                  force: true
+                  entitlements: security/mac/hardenedruntime/v2/production/media-plugin-helper.xml
+                  globs:
+                      - "/Contents/MacOS/media-plugin-helper.app"
+
+                - deep: false
+                  runtime: true
+                  force: true
+                  # These files are signed wihtout entitlements
+                  globs:
+                      - "/Contents/MacOS/crashreporter.app"
+                      - "/Contents/MacOS/updater.app"
+                      - "/Contents/Library/LaunchServices/org.mozilla.updater"
+                      - "/Contents/MacOS/XUL"
+                      - "/Contents/MacOS/pingsender"
+                      - "/Contents/MacOS/minidump-analyzer"
+                      - "/Contents/MacOS/*.dylib"
+                      - "/Contents/Resources/gmp-clearkey/*/*.dylib"
+
+                - deep: false
+                  runtime: true
+                  force: true
+                  entitlements: security/mac/hardenedruntime/v2/production/browser.xml
+                  globs:
+                      - "/Contents/MacOS/firefox-bin"
+                      - "/"  # The .app
+
+            default:
+                - deep: false
+                  runtime: true
+                  force: true
+                  entitlements: security/mac/hardenedruntime/v2/developer/plugin-container.xml
+                  globs:
+                      - "/Contents/MacOS/plugin-container.app"
+
+                - deep: false
+                  runtime: true
+                  force: true
+                  entitlements: security/mac/hardenedruntime/v2/developer/media-plugin-helper.xml
+                  globs:
+                      - "/Contents/MacOS/media-plugin-helper.app"
+
+                - deep: false
+                  runtime: true
+                  force: true
+                  entitlements: security/mac/hardenedruntime/v2/developer/utility.xml
+                  globs:
+                      - "/Contents/MacOS/crashreporter.app"
+                      - "/Contents/MacOS/updater.app"
+                      - "/Contents/Library/LaunchServices/org.mozilla.updater"
+                      - "/Contents/MacOS/pingsender"
+                      - "/Contents/MacOS/minidump-analyzer"
+
+                - deep: false
+                  runtime: true
+                  force: true
+                  # These files are signed without entitlements
+                  globs:
+                      - "/Contents/MacOS/XUL"
+                      - "/Contents/MacOS/*.dylib"
+                      - "/Contents/Resources/gmp-clearkey/*/*.dylib"
+
+                - deep: false
+                  runtime: true
+                  force: true
+                  entitlements: security/mac/hardenedruntime/v2/developer/browser.xml
+                  globs:
+                      - "/Contents/MacOS/firefox-bin"
+                      - "/"  # The .app
 
 expiration-policy:
     by-project:

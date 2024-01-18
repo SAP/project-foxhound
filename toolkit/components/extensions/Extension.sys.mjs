@@ -61,6 +61,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
   Schemas: "resource://gre/modules/Schemas.sys.mjs",
   ServiceWorkerCleanUp: "resource://gre/modules/ServiceWorkerCleanUp.sys.mjs",
   extensionStorageSync: "resource://gre/modules/ExtensionStorageSync.sys.mjs",
+  PERMISSION_L10N: "resource://gre/modules/ExtensionPermissionMessages.sys.mjs",
   permissionToL10nId:
     "resource://gre/modules/ExtensionPermissionMessages.sys.mjs",
   QuarantinedDomains: "resource://gre/modules/ExtensionPermissions.sys.mjs",
@@ -70,20 +71,6 @@ ChromeUtils.defineLazyGetter(lazy, "resourceProtocol", () =>
   Services.io
     .getProtocolHandler("resource")
     .QueryInterface(Ci.nsIResProtocolHandler)
-);
-
-ChromeUtils.defineLazyGetter(
-  lazy,
-  "l10n",
-  () =>
-    new Localization(
-      [
-        "toolkit/global/extensions.ftl",
-        "toolkit/global/extensionPermissions.ftl",
-        "branding/brand.ftl",
-      ],
-      true
-    )
 );
 
 XPCOMUtils.defineLazyServiceGetters(lazy, {
@@ -676,7 +663,14 @@ ExtensionAddonObserver.init();
 export var ExtensionProcessCrashObserver = {
   initialized: false,
 
-  _appInForeground: true,
+  // For Android apps we initially consider the app as always starting
+  // in the background, then we expect to be setting it to foreground
+  // when GeckoView LifecycleListener onResume method is called on the
+  // Android app first startup. After the application has got on the
+  // foreground for the first time then onPause/onResumed LifecycleListener
+  // are called, the application-foreground/-background topics will be
+  // notified to Gecko and this flag will be updated accordingly.
+  _appInForeground: AppConstants.platform !== "android",
   _isAndroid: AppConstants.platform === "android",
   _processSpawningDisabled: false,
 
@@ -700,6 +694,7 @@ export var ExtensionProcessCrashObserver = {
         "addons.process-crash-observer"
       );
       if (this._isAndroid) {
+        Services.obs.addObserver(this, "geckoview-initial-foreground");
         Services.obs.addObserver(this, "application-foreground");
         Services.obs.addObserver(this, "application-background");
       }
@@ -714,6 +709,7 @@ export var ExtensionProcessCrashObserver = {
         Services.obs.removeObserver(this, "process-type-set");
         Services.obs.removeObserver(this, "ipc:content-shutdown");
         if (this._isAndroid) {
+          Services.obs.removeObserver(this, "geckoview-initial-foreground");
           Services.obs.removeObserver(this, "application-foreground");
           Services.obs.removeObserver(this, "application-background");
         }
@@ -730,10 +726,21 @@ export var ExtensionProcessCrashObserver = {
   observe(subject, topic, data) {
     let childID = data;
     switch (topic) {
+      case "geckoview-initial-foreground":
+        this._appInForeground = true;
+        this.logger.debug(
+          `Detected Android application moved in the foreground (geckoview-initial-foreground)`
+        );
+        break;
       case "application-foreground":
       // Intentional fall-through
       case "application-background":
         this._appInForeground = topic === "application-foreground";
+        this.logger.debug(
+          `Detected Android application moved in the ${
+            this._appInForeground ? "foreground" : "background"
+          }`
+        );
         if (this._appInForeground) {
           Management.emit("application-foreground", {
             appInForeground: this._appInForeground,
@@ -2362,7 +2369,7 @@ export class ExtensionData {
     },
     { collapseOrigins = false, buildOptionalOrigins = false, localization } = {}
   ) {
-    const l10n = localization ?? lazy.l10n;
+    const l10n = localization ?? lazy.PERMISSION_L10N;
 
     const msgIds = [];
     const headerArgs = { extension: "<>" };

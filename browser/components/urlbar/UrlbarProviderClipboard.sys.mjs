@@ -41,6 +41,10 @@ class ProviderClipboard extends UrlbarProvider {
     return UrlbarUtils.PROVIDER_TYPE.PROFILE;
   }
 
+  setPreviousClipboardValue(newValue) {
+    this.#previousClipboard.value = newValue;
+  }
+
   isActive(queryContext, controller) {
     // Return clipboard results only for empty searches.
     if (
@@ -163,4 +167,5 @@ class ProviderClipboard extends UrlbarProvider {
   }
 }
 
-export var UrlbarProviderClipboard = new ProviderClipboard();
+const UrlbarProviderClipboard = new ProviderClipboard();
+export { UrlbarProviderClipboard, CLIPBOARD_IMPRESSION_LIMIT };

@@ -7,8 +7,9 @@ requestLongerTimeout(2);
 
 const defaultPrefValue = getPrefValueByScreen(1);
 
-const arrowWidth = 12;
-const arrowHeight = Math.hypot(arrowWidth, arrowWidth);
+const squareWidth = 24;
+const arrowWidth = Math.hypot(squareWidth, squareWidth);
+const arrowHeight = arrowWidth / 2;
 let overlap = 5 - arrowHeight;
 
 add_task(
@@ -242,9 +243,10 @@ add_task(async function feature_callout_top_end_positioning() {
       let parentLeft = parent.getBoundingClientRect().left;
       let containerLeft = container.getBoundingClientRect().left;
 
-      ok(
-        container.classList.contains("arrow-top-end"),
-        "Feature Callout container has the expected arrow-top-end class"
+      is(
+        container.getAttribute("arrow-position"),
+        "top-end",
+        "Feature Callout container has the expected top-end arrow-position attribute"
       );
       isfuzzy(
         containerLeft - parent.clientWidth + container.offsetWidth,
@@ -285,9 +287,10 @@ add_task(async function feature_callout_top_start_positioning() {
       let parentLeft = parent.getBoundingClientRect().left;
       let containerLeft = container.getBoundingClientRect().left;
 
-      ok(
-        container.classList.contains("arrow-top-start"),
-        "Feature Callout container has the expected arrow-top-start class"
+      is(
+        container.getAttribute("arrow-position"),
+        "top-start",
+        "Feature Callout container has the expected top-start arrow-position attribute"
       );
       isfuzzy(
         containerLeft,
@@ -334,9 +337,10 @@ add_task(
         let parentLeft = parent.getBoundingClientRect().left;
         let containerLeft = container.getBoundingClientRect().left;
 
-        ok(
-          container.classList.contains("arrow-top-start"),
-          "In RTL mode, the feature Callout container has the expected arrow-top-start class"
+        is(
+          container.getAttribute("arrow-position"),
+          "top-start",
+          "In RTL mode, the feature callout container has the expected top-start arrow-position attribute"
         );
         is(
           containerLeft,
@@ -365,7 +369,9 @@ add_task(async function feature_callout_is_larger_than_its_parent() {
         screens: [
           {
             id: "FEATURE_CALLOUT_1",
-            anchors: [{ selector: ".brand-icon", arrow_position: "end" }],
+            anchors: [
+              { selector: ".brand-feature-name", arrow_position: "end" },
+            ],
             content: {
               position: "callout",
               title: "callout-firefox-view-tab-pickup-title",
@@ -376,7 +382,7 @@ add_task(async function feature_callout_is_larger_than_its_parent() {
                 imageURL: "chrome://browser/content/callout-tab-pickup.svg",
                 darkModeImageURL:
                   "chrome://browser/content/callout-tab-pickup-dark.svg",
-                height: "128px", // .brand-icon has a height of 32px
+                height: "128px", // .brand-feature-name has a height of 32px
               },
               dismiss_button: {
                 action: {
@@ -407,7 +413,7 @@ add_task(async function feature_callout_is_larger_than_its_parent() {
       launchFeatureTourIn(browser.contentWindow);
 
       await waitForCalloutScreen(document, "FEATURE_CALLOUT_1");
-      let parent = document.querySelector(".brand-icon");
+      let parent = document.querySelector(".brand-feature-name");
       let container = document.querySelector(calloutSelector);
       let parentHeight = parent.offsetHeight;
       let containerHeight = container.offsetHeight;

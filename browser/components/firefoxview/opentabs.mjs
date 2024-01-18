@@ -15,7 +15,19 @@ const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   EveryWindow: "resource:///modules/EveryWindow.sys.mjs",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
+  UIState: "resource://services-sync/UIState.sys.mjs",
+  TabsSetupFlowManager:
+    "resource:///modules/firefox-view-tabs-setup-manager.sys.mjs",
 });
+
+ChromeUtils.defineLazyGetter(lazy, "fxAccounts", () => {
+  return ChromeUtils.importESModule(
+    "resource://gre/modules/FxAccounts.sys.mjs"
+  ).getFxAccountsSingleton();
+});
+
+const TOPIC_DEVICELIST_UPDATED = "fxaccounts:devicelist_updated";
+const TOPIC_CURRENT_BROWSER_CHANGED = "net:current-browser-id";
 
 /**
  * A collection of open tabs grouped by window.
@@ -33,6 +45,12 @@ class OpenTabsInView extends ViewPage {
     super();
     this.everyWindowCallbackId = `firefoxview-${Services.uuid.generateUUID()}`;
     this.windows = new Map();
+    this.currentWindow = this.getWindow();
+    this.isPrivateWindow = lazy.PrivateBrowsingUtils.isWindowPrivate(
+      this.currentWindow
+    );
+    this.boundObserve = (...args) => this.observe(...args);
+    this.devices = [];
   }
 
   connectedCallback() {
@@ -40,11 +58,7 @@ class OpenTabsInView extends ViewPage {
     lazy.EveryWindow.registerCallback(
       this.everyWindowCallbackId,
       win => {
-        if (
-          win.gBrowser &&
-          !lazy.PrivateBrowsingUtils.isWindowPrivate(win) &&
-          !win.closed
-        ) {
+        if (win.gBrowser && this._shouldShowOpenTabs(win) && !win.closed) {
           const { tabContainer } = win.gBrowser;
           tabContainer.addEventListener("TabAttrModified", this);
           tabContainer.addEventListener("TabClose", this);
@@ -52,11 +66,14 @@ class OpenTabsInView extends ViewPage {
           tabContainer.addEventListener("TabOpen", this);
           tabContainer.addEventListener("TabPinned", this);
           tabContainer.addEventListener("TabUnpinned", this);
+          // BrowserWindowWatcher doesnt always notify "net:current-browser-id" when
+          // restoring a window, so we need to listen for "activate" events here as well.
+          win.addEventListener("activate", this);
           this._updateOpenTabsList();
         }
       },
       win => {
-        if (win.gBrowser && !lazy.PrivateBrowsingUtils.isWindowPrivate(win)) {
+        if (win.gBrowser && this._shouldShowOpenTabs(win)) {
           const { tabContainer } = win.gBrowser;
           tabContainer.removeEventListener("TabAttrModified", this);
           tabContainer.removeEventListener("TabClose", this);
@@ -64,15 +81,66 @@ class OpenTabsInView extends ViewPage {
           tabContainer.removeEventListener("TabOpen", this);
           tabContainer.removeEventListener("TabPinned", this);
           tabContainer.removeEventListener("TabUnpinned", this);
+          win.removeEventListener("activate", this);
           this._updateOpenTabsList();
         }
       }
     );
     this._updateOpenTabsList();
+    this.addObserversIfNeeded();
+
+    if (this.currentWindow.gSync) {
+      this.devices = this.currentWindow.gSync.getSendTabTargets();
+    }
   }
 
   disconnectedCallback() {
     lazy.EveryWindow.unregisterCallback(this.everyWindowCallbackId);
+    this.removeObserversIfNeeded();
+  }
+
+  addObserversIfNeeded() {
+    if (!this.observerAdded) {
+      Services.obs.addObserver(this.boundObserve, lazy.UIState.ON_UPDATE);
+      Services.obs.addObserver(this.boundObserve, TOPIC_DEVICELIST_UPDATED);
+      Services.obs.addObserver(
+        this.boundObserve,
+        TOPIC_CURRENT_BROWSER_CHANGED
+      );
+      this.observerAdded = true;
+    }
+  }
+
+  removeObserversIfNeeded() {
+    if (this.observerAdded) {
+      Services.obs.removeObserver(this.boundObserve, lazy.UIState.ON_UPDATE);
+      Services.obs.removeObserver(this.boundObserve, TOPIC_DEVICELIST_UPDATED);
+      Services.obs.removeObserver(
+        this.boundObserve,
+        TOPIC_CURRENT_BROWSER_CHANGED
+      );
+      this.observerAdded = false;
+    }
+  }
+
+  async observe(subject, topic, data) {
+    switch (topic) {
+      case lazy.UIState.ON_UPDATE:
+        if (!this.devices.length && lazy.TabsSetupFlowManager.fxaSignedIn) {
+          this.devices = this.currentWindow.gSync.getSendTabTargets();
+        }
+        break;
+      case TOPIC_DEVICELIST_UPDATED:
+        const deviceListUpdated =
+          await lazy.fxAccounts.device.refreshDeviceList();
+        if (deviceListUpdated) {
+          this.devices = this.currentWindow.gSync.getSendTabTargets();
+        }
+        break;
+      case TOPIC_CURRENT_BROWSER_CHANGED:
+        this.requestUpdate();
+        break;
+    }
   }
 
   render() {
@@ -82,23 +150,30 @@ class OpenTabsInView extends ViewPage {
     if (this.recentBrowsing) {
       return this.getRecentBrowsingTemplate();
     }
-    const { window: currentWindow } =
-      window.browsingContext.embedderWindowGlobal.browsingContext;
     let currentWindowIndex, currentWindowTabs;
     let index = 1;
     const otherWindows = [];
     this.windows.forEach((tabs, win) => {
-      if (win === currentWindow) {
+      if (win === this.currentWindow) {
         currentWindowIndex = index++;
         currentWindowTabs = tabs;
       } else {
         otherWindows.push([index++, tabs, win]);
       }
     });
+
     const cardClasses = classMap({
       "height-limited": this.windows.size > 3,
       "width-limited": this.windows.size > 1,
     });
+    let cardCount;
+    if (this.windows.size <= 1) {
+      cardCount = "one";
+    } else if (this.windows.size === 2) {
+      cardCount = "two";
+    } else {
+      cardCount = "three-or-more";
+    }
     return html`
       <link
         rel="stylesheet"
@@ -109,15 +184,14 @@ class OpenTabsInView extends ViewPage {
         href="chrome://browser/content/firefoxview/firefoxview-next.css"
       />
       <div class="sticky-container bottom-fade">
-        <h2 class="page-header" data-l10n-id="firefoxview-opentabs-header"></h2>
+        <h2
+          class="page-header heading-large"
+          data-l10n-id="firefoxview-opentabs-header"
+        ></h2>
       </div>
       <div
-        class="${classMap({
-          "view-opentabs-card-container": true,
-          "one-column": this.windows.size <= 1,
-          "two-columns": this.windows.size === 2,
-          "three-columns": this.windows.size >= 3,
-        })} cards-container"
+        card-count=${cardCount}
+        class="view-opentabs-card-container cards-container"
       >
         ${when(
           currentWindowIndex && currentWindowTabs,
@@ -126,11 +200,13 @@ class OpenTabsInView extends ViewPage {
               <view-opentabs-card
                 class=${cardClasses}
                 .tabs=${currentWindowTabs}
-                data-inner-id="${currentWindow.windowGlobalChild.innerWindowId}"
+                data-inner-id="${this.currentWindow.windowGlobalChild
+                  .innerWindowId}"
                 data-l10n-id="firefoxview-opentabs-current-window-header"
                 data-l10n-args="${JSON.stringify({
                   winID: currentWindowIndex,
                 })}"
+                .devices=${this.devices}
               ></view-opentabs-card>
             `
         )}
@@ -143,6 +219,7 @@ class OpenTabsInView extends ViewPage {
               data-inner-id="${win.windowGlobalChild.innerWindowId}"
               data-l10n-id="firefoxview-opentabs-window-header"
               data-l10n-args="${JSON.stringify({ winID })}"
+              .devices=${this.devices}
             ></view-opentabs-card>
           `
         )}
@@ -151,8 +228,8 @@ class OpenTabsInView extends ViewPage {
   }
 
   /**
-   * Render a template for the 'Recent browsing' page, which shows a single list of
-   * recently accessed tabs, rather than a list of tabs per window.
+   * Render a template for the 'Recent browsing' page, which shows a shorter list of
+   * open tabs in the current window.
    *
    * @returns {TemplateResult}
    *   The recent browsing template.
@@ -160,10 +237,21 @@ class OpenTabsInView extends ViewPage {
   getRecentBrowsingTemplate() {
     const tabs = Array.from(this.windows.values())
       .flat()
-      .sort((a, b) => b.lastAccessed - a.lastAccessed);
+      .sort((a, b) => {
+        let dt = b.lastSeenActive - a.lastSeenActive;
+        if (dt) {
+          return dt;
+        }
+        // try to break a deadlock by sorting the selected tab higher
+        if (!(a.selected || b.selected)) {
+          return 0;
+        }
+        return a.selected ? -1 : 1;
+      });
     return html`<view-opentabs-card
       .tabs=${tabs}
       .recentBrowsing=${true}
+      .devices=${this.devices}
     ></view-opentabs-card>`;
   }
 
@@ -215,12 +303,16 @@ class OpenTabsInView extends ViewPage {
     return new Map(
       Array.from(Services.wm.getEnumerator("navigator:browser"))
         .filter(
-          win =>
-            win.gBrowser &&
-            !lazy.PrivateBrowsingUtils.isWindowPrivate(win) &&
-            !win.closed
+          win => win.gBrowser && this._shouldShowOpenTabs(win) && !win.closed
         )
         .map(win => [win, [...win.gBrowser.tabs]])
+    );
+  }
+
+  _shouldShowOpenTabs(win) {
+    return (
+      win == this.currentWindow ||
+      (!this.isPrivateWindow && !lazy.PrivateBrowsingUtils.isWindowPrivate(win))
     );
   }
 }
@@ -242,6 +334,8 @@ class OpenTabsInViewCard extends ViewPage {
     tabs: { type: Array },
     title: { type: String },
     recentBrowsing: { type: Boolean },
+    devices: { type: Array },
+    triggerNode: { type: Object },
   };
   static MAX_TABS_FOR_COMPACT_HEIGHT = 7;
 
@@ -251,31 +345,126 @@ class OpenTabsInViewCard extends ViewPage {
     this.tabs = [];
     this.title = "";
     this.recentBrowsing = false;
+    this.devices = [];
   }
 
   static queries = {
+    cardEl: "card-container",
     panelList: "panel-list",
+    tabList: "fxview-tab-list",
   };
 
-  closeTab() {
+  closeTab(e) {
     const tab = this.triggerNode.tabElement;
-    const browserWindow = tab.ownerGlobal;
-    browserWindow.gBrowser.removeTab(tab, { animate: true });
+    tab?.ownerGlobal.gBrowser.removeTab(tab);
+    this.recordContextMenuTelemetry("close-tab", e);
+  }
+
+  moveTabsToStart(e) {
+    const tab = this.triggerNode.tabElement;
+    tab?.ownerGlobal.gBrowser.moveTabsToStart(tab);
+    this.recordContextMenuTelemetry("move-tab-start", e);
+  }
+
+  moveTabsToEnd(e) {
+    const tab = this.triggerNode.tabElement;
+    tab?.ownerGlobal.gBrowser.moveTabsToEnd(tab);
+    this.recordContextMenuTelemetry("move-tab-end", e);
+  }
+
+  moveTabsToWindow(e) {
+    const tab = this.triggerNode.tabElement;
+    tab?.ownerGlobal.gBrowser.replaceTabsWithWindow(tab);
+    this.recordContextMenuTelemetry("move-tab-window", e);
+  }
+
+  moveMenuTemplate() {
+    const tab = this.triggerNode?.tabElement;
+    const browserWindow = tab?.ownerGlobal;
+    const position = tab?._tPos;
+    const tabs = browserWindow?.gBrowser.tabs || [];
+
+    return html`
+      <panel-list slot="submenu" id="move-tab-menu">
+        ${position > 0
+          ? html`<panel-item
+              @click=${this.moveTabsToStart}
+              data-l10n-id="fxviewtabrow-move-tab-start"
+              data-l10n-attrs="accesskey"
+            ></panel-item>`
+          : null}
+        ${position < tabs.length - 1
+          ? html`<panel-item
+              @click=${this.moveTabsToEnd}
+              data-l10n-id="fxviewtabrow-move-tab-end"
+              data-l10n-attrs="accesskey"
+            ></panel-item>`
+          : null}
+        <panel-item
+          @click=${this.moveTabsToWindow}
+          data-l10n-id="fxviewtabrow-move-tab-window"
+          data-l10n-attrs="accesskey"
+        ></panel-item>
+      </panel-list>
+    `;
+  }
+
+  async sendTabToDevice(e) {
+    let deviceId = e.target.getAttribute("device-id");
+    let device = this.devices.find(dev => dev.id == deviceId);
+
+    this.recordContextMenuTelemetry("send-tab-device", e);
+
+    if (device && this.triggerNode) {
+      await this.getWindow().gSync.sendTabToDevice(
+        this.triggerNode.url,
+        [device],
+        this.triggerNode.title
+      );
+    }
+  }
+
+  sendTabTemplate() {
+    return html` <panel-list slot="submenu" id="send-tab-menu">
+      ${this.devices.map(device => {
+        return html`
+          <panel-item @click=${this.sendTabToDevice} device-id=${device.id}
+            >${device.name}</panel-item
+          >
+        `;
+      })}
+    </panel-list>`;
   }
 
   panelListTemplate() {
     return html`
-      <panel-list slot="menu">
+      <panel-list slot="menu" data-tab-type="opentabs">
         <panel-item
           data-l10n-id="fxviewtabrow-close-tab"
           data-l10n-attrs="accesskey"
           @click=${this.closeTab}
         ></panel-item>
         <panel-item
+          data-l10n-id="fxviewtabrow-move-tab"
+          data-l10n-attrs="accesskey"
+          submenu="move-tab-menu"
+        >
+          ${this.moveMenuTemplate()}
+        </panel-item>
+        <hr />
+        <panel-item
           data-l10n-id="fxviewtabrow-copy-link"
           data-l10n-attrs="accesskey"
           @click=${this.copyLink}
         ></panel-item>
+        ${this.devices.length >= 1
+          ? html`<panel-item
+              data-l10n-id="fxviewtabrow-send-tab"
+              data-l10n-attrs="accesskey"
+              submenu="send-tab-menu"
+              >${this.sendTabTemplate()}</panel-item
+            >`
+          : null}
       </panel-list>
     `;
   }
@@ -292,6 +481,35 @@ class OpenTabsInViewCard extends ViewPage {
       return OpenTabsInViewCard.MAX_TABS_FOR_COMPACT_HEIGHT;
     }
     return -1;
+  }
+
+  toggleShowMore(event) {
+    if (
+      event.type == "click" ||
+      (event.type == "keydown" && event.code == "Enter") ||
+      (event.type == "keydown" && event.code == "Space")
+    ) {
+      event.preventDefault();
+      this.showMore = !this.showMore;
+    }
+  }
+
+  onTabListRowClick(event) {
+    const tab = event.originalTarget.tabElement;
+    const browserWindow = tab.ownerGlobal;
+    browserWindow.focus();
+    browserWindow.gBrowser.selectedTab = tab;
+
+    Services.telemetry.recordEvent(
+      "firefoxview_next",
+      "open_tab",
+      "tabs",
+      null,
+      {
+        page: this.recentBrowsing ? "recentbrowsing" : "opentabs",
+        window: this.title || "Window 1 (Current)",
+      }
+    );
   }
 
   render() {
@@ -316,7 +534,7 @@ class OpenTabsInViewCard extends ViewPage {
             class="with-context-menu"
             .hasPopup=${"menu"}
             ?compactRows=${this.classList.contains("width-limited")}
-            @fxview-tab-list-primary-action=${onTabListRowClick}
+            @fxview-tab-list-primary-action=${this.onTabListRowClick}
             @fxview-tab-list-secondary-action=${this.openContextMenu}
             .maxTabsLength=${this.getMaxTabsLength()}
             .tabItems=${getTabListItems(this.tabs)}
@@ -325,7 +543,8 @@ class OpenTabsInViewCard extends ViewPage {
         </div>
         ${!this.recentBrowsing
           ? html` <div
-              @click=${() => (this.showMore = !this.showMore)}
+              @click=${this.toggleShowMore}
+              @keydown=${this.toggleShowMore}
               data-l10n-id="${this.showMore
                 ? "firefoxview-show-less"
                 : "firefoxview-show-more"}"
@@ -333,6 +552,7 @@ class OpenTabsInViewCard extends ViewPage {
               this.tabs.length <=
                 OpenTabsInViewCard.MAX_TABS_FOR_COMPACT_HEIGHT}
               slot="footer"
+              tabindex="0"
             ></div>`
           : null}
       </card-container>
@@ -366,11 +586,4 @@ function getTabListItems(tabs) {
       title: tab.label,
       url: tab.linkedBrowser?.currentURI?.spec,
     }));
-}
-
-function onTabListRowClick(event) {
-  const tab = event.originalTarget.tabElement;
-  const browserWindow = tab.ownerGlobal;
-  browserWindow.focus();
-  browserWindow.gBrowser.selectedTab = tab;
 }

@@ -11,6 +11,7 @@
 #ifndef gc_GC_h
 #define gc_GC_h
 
+#include "gc/AllocKind.h"
 #include "gc/GCEnum.h"
 #include "js/GCAPI.h"
 #include "js/HeapAPI.h"
@@ -66,7 +67,7 @@ class TenuredChunk;
   _("maxEmptyChunkCount", JSGC_MAX_EMPTY_CHUNK_COUNT, true)                 \
   _("compactingEnabled", JSGC_COMPACTING_ENABLED, true)                     \
   _("parallelMarkingEnabled", JSGC_PARALLEL_MARKING_ENABLED, true)          \
-  _("parallelMarkingThresholdKB", JSGC_PARALLEL_MARKING_THRESHOLD_KB, true) \
+  _("parallelMarkingThresholdKB", JSGC_PARALLEL_MARKING_THRESHOLD_MB, true) \
   _("minLastDitchGCPeriod", JSGC_MIN_LAST_DITCH_GC_PERIOD, true)            \
   _("nurseryFreeThresholdForIdleCollection",                                \
     JSGC_NURSERY_FREE_THRESHOLD_FOR_IDLE_COLLECTION, true)                  \
@@ -236,6 +237,34 @@ struct MOZ_RAII AutoDisableCompactingGC {
 
  private:
   JSContext* cx;
+};
+
+/*
+ * Dynamically select the GC heap to allocate into for a graph of GC things.
+ *
+ * Initially |heap()| will return Heap::Default to select nursery allocation,
+ * but when a specified number of nursery collections have been triggered it
+ * switches to returning Heap::Tenured.
+ */
+class MOZ_RAII AutoSelectGCHeap {
+ public:
+  explicit AutoSelectGCHeap(JSContext* cx,
+                            size_t allowedNurseryCollections = 0);
+  ~AutoSelectGCHeap();
+
+  gc::Heap heap() const { return heap_; }
+  operator gc::Heap() const { return heap_; }
+
+  void onNurseryCollectionEnd();
+
+ private:
+  static void NurseryCollectionCallback(JSContext* cx,
+                                        JS::GCNurseryProgress progress,
+                                        JS::GCReason reason, void* data);
+
+  JSContext* cx_;
+  size_t allowedNurseryCollections_;
+  gc::Heap heap_ = gc::Heap::Default;
 };
 
 } /* namespace js */

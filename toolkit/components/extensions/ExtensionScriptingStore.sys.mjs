@@ -8,6 +8,8 @@ import { ExtensionUtils } from "resource://gre/modules/ExtensionUtils.sys.mjs";
 
 import { ExtensionParent } from "resource://gre/modules/ExtensionParent.sys.mjs";
 
+import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
+
 const { StartupCache } = ExtensionParent;
 
 const lazy = {};
@@ -16,6 +18,13 @@ ChromeUtils.defineESModuleGetters(lazy, {
   FileUtils: "resource://gre/modules/FileUtils.sys.mjs",
   KeyValueService: "resource://gre/modules/kvstore.sys.mjs",
 });
+
+XPCOMUtils.defineLazyPreferenceGetter(
+  lazy,
+  "matchAboutBlankDefaultFalse",
+  "extensions.scripting.matchAboutBlankDefaultFalse",
+  false
+);
 
 class Store {
   async _init() {
@@ -179,7 +188,11 @@ export const makeInternalContentScript = (
       cssPaths,
       excludeMatches: options.excludeMatches,
       jsPaths,
-      matchAboutBlank: true,
+      // TODO(Bug 1853411): revert the short-term workaround special casing
+      // webcompat extension id once it is not necessary anymore.
+      matchAboutBlank: lazy.matchAboutBlankDefaultFalse
+        ? false // If the hidden pref is set, then forcefully set matchAboutBlank to false
+        : extension.id !== "webcompat@mozilla.org",
       matches: options.matches,
       originAttributesPatterns: null,
       persistAcrossSessions: options.persistAcrossSessions,
@@ -287,10 +300,15 @@ export const ExtensionScriptingStore = {
     // so the return value always matches the initial result from
     // `initExtension`.
     return new Map(
-      Array.from(
-        extension.registeredContentScripts.entries(),
-        ([scriptId, options]) => [options.id, scriptId]
-      )
+      Array.from(extension.registeredContentScripts.entries())
+        .filter(
+          // Filter out entries without an options.id property, which are the
+          // ones registered through the contentScripts API namespace where the
+          // id attribute is not allowed, while it is mandatory for the
+          // scripting API namespace.
+          ([_id, options]) => options.id?.length
+        )
+        .map(([scriptId, options]) => [options.id, scriptId])
     );
   },
 

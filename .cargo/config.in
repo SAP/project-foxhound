@@ -25,14 +25,14 @@ git = "https://github.com/franziskuskiefer/cose-rust"
 rev = "43c22248d136c8b38fe42ea709d08da6355cf04b"
 replace-with = "vendored-sources"
 
-[source."git+https://github.com/gfx-rs/naga?rev=bac2d82a430fbfcf100ee22b7c3bc12f3d593079"]
+[source."git+https://github.com/gfx-rs/naga?rev=cc87b8f9eb30bb55d0735b89d3df3e099e1a6e7c"]
 git = "https://github.com/gfx-rs/naga"
-rev = "bac2d82a430fbfcf100ee22b7c3bc12f3d593079"
+rev = "cc87b8f9eb30bb55d0735b89d3df3e099e1a6e7c"
 replace-with = "vendored-sources"
 
-[source."git+https://github.com/gfx-rs/wgpu?rev=7c6b85756237f77bfe8d6231dfc7a1412ff662b6"]
+[source."git+https://github.com/gfx-rs/wgpu?rev=7fea9e934efd8d5dc03b9aa3e06b775c1ac4a23e"]
 git = "https://github.com/gfx-rs/wgpu"
-rev = "7c6b85756237f77bfe8d6231dfc7a1412ff662b6"
+rev = "7fea9e934efd8d5dc03b9aa3e06b775c1ac4a23e"
 replace-with = "vendored-sources"
 
 [source."git+https://github.com/glandium/prost?rev=95964e9d33df3c2a9c3f14285e262867cab6f96b"]
@@ -55,11 +55,6 @@ git = "https://github.com/hsivonen/chardetng_c"
 rev = "ed8a4c6f900a90d4dbc1d64b856e61490a1c3570"
 replace-with = "vendored-sources"
 
-[source."git+https://github.com/hsivonen/packed_simd?rev=412f9a0aa556611de021bde89dee8fefe6e0fbbd"]
-git = "https://github.com/hsivonen/packed_simd"
-rev = "412f9a0aa556611de021bde89dee8fefe6e0fbbd"
-replace-with = "vendored-sources"
-
 [source."git+https://github.com/jfkthame/mapped_hyph.git?rev=c7651a0cffff41996ad13c44f689bd9cd2192c01"]
 git = "https://github.com/jfkthame/mapped_hyph.git"
 rev = "c7651a0cffff41996ad13c44f689bd9cd2192c01"
@@ -70,9 +65,9 @@ git = "https://github.com/mozilla-spidermonkey/jsparagus"
 rev = "64ba08e24749616de2344112f226d1ef4ba893ae"
 replace-with = "vendored-sources"
 
-[source."git+https://github.com/mozilla/application-services?rev=25972c388a4cf3a6d8256504f3a09b711db2fc6a"]
+[source."git+https://github.com/mozilla/application-services?rev=1a59041d0c7d36ef1abc713a48304c5333e45a1a"]
 git = "https://github.com/mozilla/application-services"
-rev = "25972c388a4cf3a6d8256504f3a09b711db2fc6a"
+rev = "1a59041d0c7d36ef1abc713a48304c5333e45a1a"
 replace-with = "vendored-sources"
 
 [source."git+https://github.com/mozilla/audioipc?rev=0b51291d2483a17dce3e300c7784b369e02bee73"]
@@ -115,14 +110,14 @@ git = "https://github.com/rust-diplomat/diplomat"
 rev = "8d125999893fedfdf30595e97334c21ec4b18da9"
 replace-with = "vendored-sources"
 
-[source."git+https://github.com/rust-minidump/minidump-writer.git?rev=a15bd5cab6a3de251c0c23264be14b977c0af09c"]
+[source."git+https://github.com/rust-minidump/minidump-writer.git?rev=491eb330e78e310c32927e5cc3bd2350af1e93f8"]
 git = "https://github.com/rust-minidump/minidump-writer.git"
-rev = "a15bd5cab6a3de251c0c23264be14b977c0af09c"
+rev = "491eb330e78e310c32927e5cc3bd2350af1e93f8"
 replace-with = "vendored-sources"
 
-[source."git+https://github.com/rust-minidump/rust-minidump?rev=87a29fba5e19cfae5ebf73a57ba31504a3872545"]
+[source."git+https://github.com/rust-minidump/rust-minidump?rev=6ae42a7f992e8a88ebee661bc77bcedb95cd671f"]
 git = "https://github.com/rust-minidump/rust-minidump"
-rev = "87a29fba5e19cfae5ebf73a57ba31504a3872545"
+rev = "6ae42a7f992e8a88ebee661bc77bcedb95cd671f"
 replace-with = "vendored-sources"
 
 [source."git+https://github.com/unicode-org/icu4x?rev=14e9a3a9857be74582abe2dfa7ab799c5eaac873"]

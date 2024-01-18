@@ -26,13 +26,12 @@ pub use crate::gecko::snapshot::SnapshotMap;
 
 bitflags! {
     // See NonTSPseudoClass::is_enabled_in()
-    #[derive(Copy, Clone)]
     struct NonTSPseudoClassFlag: u8 {
         const PSEUDO_CLASS_ENABLED_IN_UA_SHEETS = 1 << 0;
         const PSEUDO_CLASS_ENABLED_IN_CHROME = 1 << 1;
         const PSEUDO_CLASS_ENABLED_IN_UA_SHEETS_AND_CHROME =
-            NonTSPseudoClassFlag::PSEUDO_CLASS_ENABLED_IN_UA_SHEETS.bits |
-            NonTSPseudoClassFlag::PSEUDO_CLASS_ENABLED_IN_CHROME.bits;
+            NonTSPseudoClassFlag::PSEUDO_CLASS_ENABLED_IN_UA_SHEETS.bits() |
+            NonTSPseudoClassFlag::PSEUDO_CLASS_ENABLED_IN_CHROME.bits();
     }
 }
 
@@ -281,6 +280,10 @@ impl<'a> SelectorParser<'a> {
             pseudo_class.has_any_flag(NonTSPseudoClassFlag::PSEUDO_CLASS_ENABLED_IN_CHROME)
         {
             return true;
+        }
+
+        if matches!(*pseudo_class, NonTSPseudoClass::MozBroken) {
+            return static_prefs::pref!("layout.css.moz-broken.content.enabled")
         }
 
         return false;

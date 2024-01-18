@@ -718,11 +718,10 @@ pref("browser.search.separatePrivateDefault.ui.enabled", false);
 pref("browser.search.separatePrivateDefault.ui.banner.max", 0);
 
 // Enables search SERP telemetry (impressions, engagements and abandonment)
-#ifdef NIGHTLY_BUILD
 pref("browser.search.serpEventTelemetry.enabled", true);
-#else
-pref("browser.search.serpEventTelemetry.enabled", false);
-#endif
+
+// Enables search SERP telemetry page categorization.
+pref("browser.search.serpEventTelemetryCategorization.enabled", false);
 
 // Enable new experimental shopping features. This is solely intended as a
 // rollout/"emergency stop" button - it will go away once the feature has
@@ -737,21 +736,32 @@ pref("browser.shopping.experience2023.enabled", false);
 pref("browser.shopping.experience2023.optedIn", 0);
 
 // Activates the new experimental shopping sidebar.
-// True by default, will be set to false on opt out.
+// True by default. This is handled by ShoppingUtils.handleAutoActivateOnProduct
+// to auto-activate the sidebar for non-opted-in users up to 2 times.
 pref("browser.shopping.experience2023.active", true);
 
+// Enables the ad / recommended product feature for the shopping sidebar.
+// If enabled, users can disable the ad card using the separate pref
+// `browser.shopping.experience2023.ads.userEnabled` and visible toggle
+// (this is just the feature flag).
+pref("browser.shopping.experience2023.ads.enabled", false);
+
 // Activates the ad card in the shopping sidebar.
-// True by default, will be set to false on opt out.
-pref("browser.shopping.experience2023.ads.enabled", true);
+// Unlike `browser.shopping.experience2023.ads.enabled`, this pref is controlled by users
+// using the visible toggle.
+pref("browser.shopping.experience2023.ads.userEnabled", false);
+
+// Saves if shopping survey is enabled.
+pref("browser.shopping.experience2023.survey.enabled", true);
+
+// Saves if shopping survey is seen.
+pref("browser.shopping.experience2023.survey.hasSeen", false);
+
+// Number of PDP visits used to display shopping survey
+pref("browser.shopping.experience2023.survey.pdpVisits", 0);
 
 // Enables the display of the Mozilla VPN banner in private browsing windows
 pref("browser.privatebrowsing.vpnpromourl", "https://vpn.mozilla.org/?utm_source=firefox-browser&utm_medium=firefox-%CHANNEL%-browser&utm_campaign=private-browsing-vpn-link");
-
-// Enables the new private browsing indicator.
-pref("browser.privatebrowsing.enable-new-indicator", true);
-
-// Enables the new about:privatebrowsing logo.
-pref("browser.privatebrowsing.enable-new-logo", true);
 
 // Whether the user has opted-in to recommended settings for data features.
 pref("browser.dataFeatureRecommendations.enabled", false);
@@ -877,7 +887,8 @@ pref("browser.tabs.tooltipsShowPidAndActiveness", false);
 #endif
 
 pref("browser.tabs.firefox-view", true);
-pref("browser.tabs.firefox-view-next", false);
+pref("browser.tabs.firefox-view-next", true);
+pref("browser.tabs.firefox-view-newIcon", true);
 pref("browser.tabs.firefox-view.logLevel", "Warn");
 pref("browser.tabs.firefox-view.notify-for-tabs", false);
 
@@ -1171,13 +1182,8 @@ pref("browser.sessionstore.resuming_after_os_restart", false);
 
 // Toggle for the behavior to include closed tabs from all windows in
 // recently-closed tab lists & counts, and re-open tabs into the current window
-#ifdef NIGHTLY_BUILD
-  pref("browser.sessionstore.closedTabsFromAllWindows", true);
-  pref("browser.sessionstore.closedTabsFromClosedWindows", true);
-#else
-  pref("browser.sessionstore.closedTabsFromAllWindows", false);
-  pref("browser.sessionstore.closedTabsFromClosedWindows", false);
-#endif
+pref("browser.sessionstore.closedTabsFromAllWindows", true);
+pref("browser.sessionstore.closedTabsFromClosedWindows", true);
 
 // Minimal interval between two save operations in milliseconds (while the user is idle).
 pref("browser.sessionstore.interval.idle", 3600000); // 1h
@@ -1225,11 +1231,7 @@ pref("browser.sessionstore.cleanup.forget_closed_after", 1209600000);
 pref("browser.sessionstore.collect_session_storage", true);
 
 // temporary pref that will be removed in a future release, see bug 1836952
-#ifdef NIGHTLY_BUILD
-  pref("browser.sessionstore.persist_closed_tabs_between_sessions", true);
-#else
-  pref("browser.sessionstore.persist_closed_tabs_between_sessions", false);
-#endif
+pref("browser.sessionstore.persist_closed_tabs_between_sessions", true);
 
 // Don't quit the browser when Ctrl + Q is pressed.
 pref("browser.quitShortcut.disabled", false);
@@ -1677,6 +1679,7 @@ pref("browser.newtabpage.activity-stream.discoverystream.spocAdTypes", "");
 pref("browser.newtabpage.activity-stream.discoverystream.spocZoneIds", "");
 pref("browser.newtabpage.activity-stream.discoverystream.spocTopsitesAdTypes", "");
 pref("browser.newtabpage.activity-stream.discoverystream.spocTopsitesZoneIds", "");
+pref("browser.newtabpage.activity-stream.discoverystream.spocTopsitesPlacement.enabled", true);
 pref("browser.newtabpage.activity-stream.discoverystream.spocSiteId", "");
 
 pref("browser.newtabpage.activity-stream.discoverystream.sendToPocket.enabled", true);
@@ -1777,11 +1780,6 @@ pref("security.app_menu.recordEventTelemetry", false);
 
 // Block insecure active content on https pages
 pref("security.mixed_content.block_active_content", true);
-
-// Show degraded UI for http pages.
-pref("security.insecure_connection_icon.enabled", true);
-// Show degraded UI for http pages in private mode.
-pref("security.insecure_connection_icon.pbmode.enabled", true);
 
 // Show "Not Secure" text for http pages; disabled for now
 pref("security.insecure_connection_text.enabled", false);
@@ -1976,6 +1974,12 @@ pref("browser.contentblocking.reject-and-isolate-cookies.preferences.ui.enabled"
 //   Query parameter stripping for private windows:
 //     "qpsPBM": Query parameter stripping enabled in private windows
 //     "-qpsPBM": Query parameter stripping disabled in private windows
+//   Fingerprinting Protection:
+//     "fpp": Fingerprinting Protection enabled
+//     "-fpp": Fingerprinting Protection disabled
+//   Fingerprinting Protection for private windows:
+//     "fppPrivate": Fingerprinting Protection enabled in private windows
+//     "-fppPrivate": Fingerprinting Protection disabled in private windows
 //   Cookie behavior:
 //     "cookieBehavior0": cookie behaviour BEHAVIOR_ACCEPT
 //     "cookieBehavior1": cookie behaviour BEHAVIOR_REJECT_FOREIGN
@@ -1991,7 +1995,7 @@ pref("browser.contentblocking.reject-and-isolate-cookies.preferences.ui.enabled"
 //     "cookieBehaviorPBM4": cookie behaviour BEHAVIOR_REJECT_TRACKER
 //     "cookieBehaviorPBM5": cookie behaviour BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN
 // One value from each section must be included in the browser.contentblocking.features.strict pref.
-pref("browser.contentblocking.features.strict", "tp,tpPrivate,cookieBehavior5,cookieBehaviorPBM5,cm,fp,stp,emailTP,emailTPPrivate,lvl2,rp,rpTop,ocsp,qps,qpsPBM");
+pref("browser.contentblocking.features.strict", "tp,tpPrivate,cookieBehavior5,cookieBehaviorPBM5,cm,fp,stp,emailTP,emailTPPrivate,lvl2,rp,rpTop,ocsp,qps,qpsPBM,fpp,fppPrivate");
 
 // Hide the "Change Block List" link for trackers/tracking content in the custom
 // Content Blocking/ETP panel. By default, it will not be visible. There is also
@@ -2167,9 +2171,6 @@ pref("view_source.tab", true);
 pref("toolkit.pageThumbs.minWidth", 280);
 pref("toolkit.pageThumbs.minHeight", 190);
 
-// Enable speech synthesis
-pref("media.webspeech.synth.enabled", true);
-
 pref("browser.esedbreader.loglevel", "Error");
 
 pref("browser.laterrun.enabled", false);
@@ -2188,7 +2189,7 @@ pref("browser.migrate.chrome.enabled", true);
 // See comments in bug 1340115 on how we got to this number.
 pref("browser.migrate.chrome.history.limit", 2000);
 pref("browser.migrate.chrome.payment_methods.enabled", true);
-pref("browser.migrate.chrome.extensions.enabled", false);
+pref("browser.migrate.chrome.extensions.enabled", true);
 
 pref("browser.migrate.chrome-beta.enabled", true);
 pref("browser.migrate.chrome-dev.enabled", true);
@@ -2470,8 +2471,6 @@ pref("devtools.inspector.imagePreviewTooltipSize", 300);
 pref("devtools.inspector.showUserAgentStyles", false);
 // Show native anonymous content and user agent shadow roots
 pref("devtools.inspector.showAllAnonymousContent", false);
-// Enable the inline CSS compatiblity warning in inspector rule view
-pref("devtools.inspector.ruleview.inline-compatibility-warning.enabled", true);
 // Enable the compatibility tool in the inspector.
 pref("devtools.inspector.compatibility.enabled", true);
 // Enable overflow debugging in the inspector.
@@ -2813,10 +2812,8 @@ pref("svg.context-properties.content.allowed-domains", "profile.accounts.firefox
   pref("extensions.translations.disabled", true);
 #endif
 
-// Turn on interaction measurements in Nightly only
-#ifdef NIGHTLY_BUILD
-  pref("browser.places.interactions.enabled", true);
-#endif
+// Turn on interaction measurements
+pref("browser.places.interactions.enabled", true);
 
 // If the user has seen the Firefox View feature tour this value reflects
 // the id of the last screen they saw and whether they completed the tour
@@ -2824,7 +2821,7 @@ pref("browser.firefox-view.feature-tour", "{\"screen\":\"FIREFOX_VIEW_SPOTLIGHT\
 // Number of times the user visited about:firefoxview
 pref("browser.firefox-view.view-count", 0);
 // Maximum number of rows to show on the "History" page.
-pref("browser.firefox-view.max-history-rows", 500);
+pref("browser.firefox-view.max-history-rows", 300);
 
 // If the user has seen the pdf.js feature tour this value reflects the tour
 // message id, the id of the last screen they saw, and whether they completed the tour
@@ -2834,6 +2831,7 @@ pref("browser.pdfjs.feature-tour", "{\"screen\":\"\",\"complete\":false}");
 // StaticPrefList.yaml for a description of the prefs.
 #ifdef NIGHTLY_BUILD
   pref("cookiebanners.service.mode.privateBrowsing", 1);
+  pref("cookiebanners.service.enableGlobalRules", true);
 #endif
 
 #if defined(EARLY_BETA_OR_EARLIER)

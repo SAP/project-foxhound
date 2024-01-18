@@ -86,10 +86,17 @@ class NavigationRegistry extends EventEmitter {
    *     The last known navigation data, or null.
    */
   getNavigationForBrowsingContext(context) {
+    if (!lazy.TabManager.isValidCanonicalBrowsingContext(context)) {
+      // Bail out if the provided context is not a valid CanonicalBrowsingContext
+      // instance.
+      return null;
+    }
+
     const navigable = lazy.TabManager.getNavigableForBrowsingContext(context);
     if (!this.#navigations.has(navigable)) {
       return null;
     }
+
     return this.#navigations.get(navigable);
   }
 
@@ -150,11 +157,8 @@ class NavigationRegistry extends EventEmitter {
     const navigation = { finished: true, navigationId, url };
     this.#navigations.set(navigable, navigation);
 
-    // Same document navigations are immediately done, fire both started and
-    // stopped events immediately, on top of a dedicated event.
-    this.emit("navigation-started", { navigationId, navigableId, url });
+    // Same document navigations are immediately done, fire a single event.
     this.emit("location-changed", { navigationId, navigableId, url });
-    this.emit("navigation-stopped", { navigationId, navigableId, url });
 
     return navigation;
   }

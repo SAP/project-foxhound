@@ -9,10 +9,10 @@ import tarfile
 from io import BytesIO
 
 from taskgraph.generator import load_tasks_for_kind
+from taskgraph.optimize.strategies import IndexSearch
 from taskgraph.parameters import Parameters
 from taskgraph.util.taskcluster import get_artifact_url, get_session
 
-from gecko_taskgraph.optimize.strategies import IndexSearch
 from gecko_taskgraph.util import docker
 
 from . import GECKO
@@ -134,7 +134,6 @@ def load_image(url, imageName=None, imageTag=None):
         req.raise_for_status()
 
         with zstd.ZstdDecompressor().stream_reader(req.raw) as ifh:
-
             tarin = tarfile.open(
                 mode="r|",
                 fileobj=ifh,

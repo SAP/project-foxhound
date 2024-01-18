@@ -19,8 +19,10 @@ import {
   getLastExpandedScopes,
   getIsCurrentThreadPaused,
 } from "../../selectors";
-import { getScopes } from "../../utils/pause/scopes";
-import { getScopeItemPath } from "../../utils/pause/scopes/utils";
+import {
+  getScopesItemsForSelectedFrame,
+  getScopeItemPath,
+} from "../../utils/pause/scopes";
 import { clientCommands } from "../../client/firefox";
 
 import { objectInspector } from "devtools/client/shared/components/reps/index";
@@ -37,8 +39,16 @@ class Scopes extends PureComponent {
     super(props);
 
     this.state = {
-      originalScopes: getScopes(why, selectedFrame, originalFrameScopes),
-      generatedScopes: getScopes(why, selectedFrame, generatedFrameScopes),
+      originalScopes: getScopesItemsForSelectedFrame(
+        why,
+        selectedFrame,
+        originalFrameScopes
+      ),
+      generatedScopes: getScopesItemsForSelectedFrame(
+        why,
+        selectedFrame,
+        generatedFrameScopes
+      ),
       showOriginal: true,
     };
   }
@@ -57,7 +67,6 @@ class Scopes extends PureComponent {
       originalFrameScopes: PropTypes.object,
       removeWatchpoint: PropTypes.func.isRequired,
       setExpandedScope: PropTypes.func.isRequired,
-      toggleMapScopes: PropTypes.func.isRequired,
       unHighlightDomElement: PropTypes.func.isRequired,
       why: PropTypes.object.isRequired,
       selectedFrame: PropTypes.object,
@@ -86,12 +95,12 @@ class Scopes extends PureComponent {
       generatedFrameScopesChanged
     ) {
       this.setState({
-        originalScopes: getScopes(
+        originalScopes: getScopesItemsForSelectedFrame(
           nextProps.why,
           nextProps.selectedFrame,
           nextProps.originalFrameScopes
         ),
-        generatedScopes: getScopes(
+        generatedScopes: getScopesItemsForSelectedFrame(
           nextProps.why,
           nextProps.selectedFrame,
           nextProps.generatedFrameScopes
@@ -99,10 +108,6 @@ class Scopes extends PureComponent {
       });
     }
   }
-
-  onToggleMapScopes = () => {
-    this.props.toggleMapScopes();
-  };
 
   onContextMenu = (event, item) => {
     const { addWatchpoint, removeWatchpoint } = this.props;
@@ -311,7 +316,6 @@ export default connect(mapStateToProps, {
   openElementInInspector: actions.openElementInInspectorCommand,
   highlightDomElement: actions.highlightDomElement,
   unHighlightDomElement: actions.unHighlightDomElement,
-  toggleMapScopes: actions.toggleMapScopes,
   setExpandedScope: actions.setExpandedScope,
   addWatchpoint: actions.addWatchpoint,
   removeWatchpoint: actions.removeWatchpoint,

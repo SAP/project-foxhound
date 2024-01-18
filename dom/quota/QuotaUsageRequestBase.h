@@ -8,6 +8,7 @@
 #define DOM_QUOTA_QUOTAUSAGEREQUESTBASE_H_
 
 #include "NormalOriginOperationBase.h"
+#include "mozilla/dom/quota/PersistenceType.h"
 #include "mozilla/dom/quota/PQuotaUsageRequestParent.h"
 
 class nsIFile;
@@ -26,11 +27,9 @@ class UsageRequestResponse;
 class QuotaUsageRequestBase : public NormalOriginOperationBase,
                               public PQuotaUsageRequestParent {
  protected:
-  QuotaUsageRequestBase(const char* aRunnableName)
-      : NormalOriginOperationBase(aRunnableName, Nullable<PersistenceType>(),
-                                  OriginScope::FromNull(),
-                                  Nullable<Client::Type>(),
-                                  /* aExclusive */ false) {}
+  QuotaUsageRequestBase(MovingNotNull<RefPtr<QuotaManager>> aQuotaManager,
+                        const char* aName)
+      : NormalOriginOperationBase(std::move(aQuotaManager), aName) {}
 
   mozilla::Result<UsageInfo, nsresult> GetUsageForOrigin(
       QuotaManager& aQuotaManager, PersistenceType aPersistenceType,

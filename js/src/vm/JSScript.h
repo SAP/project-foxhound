@@ -2022,6 +2022,10 @@ class JSScript : public js::BaseScript {
     MOZ_ASSERT(sharedData_);
     return immutableScriptData()->notes();
   }
+  js::SrcNote* notesEnd() const {
+    MOZ_ASSERT(sharedData_);
+    return immutableScriptData()->notes() + numNotes();
+  }
 
   JSString* getString(js::GCThingIndex index) const {
     return &gcthings()[index].as<JSString>();
@@ -2220,14 +2224,6 @@ extern JS::UniqueChars FormatIntroducedFilename(const char* filename,
                                                 uint32_t lineno,
                                                 const char* introducer);
 
-struct GSNCache;
-
-const js::SrcNote* GetSrcNote(GSNCache& cache, JSScript* script,
-                              jsbytecode* pc);
-
-extern const js::SrcNote* GetSrcNote(JSContext* cx, JSScript* script,
-                                     jsbytecode* pc);
-
 extern jsbytecode* LineNumberToPC(JSScript* script, unsigned lineno);
 
 extern JS_PUBLIC_API unsigned GetScriptLineExtent(JSScript* script);
@@ -2247,7 +2243,7 @@ extern unsigned PCToLineNumber(
 
 extern unsigned PCToLineNumber(
     unsigned startLine, JS::LimitedColumnNumberZeroOrigin startCol,
-    SrcNote* notes, jsbytecode* code, jsbytecode* pc,
+    SrcNote* notes, SrcNote* notesEnd, jsbytecode* code, jsbytecode* pc,
     JS::LimitedColumnNumberZeroOrigin* columnp = nullptr);
 
 /*

@@ -5,7 +5,6 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/WebAuthnUtil.h"
-#include "mozilla/dom/WebAuthnCBORUtil.h"
 #include "nsComponentManagerUtils.h"
 #include "nsICryptoHash.h"
 #include "nsIEffectiveTLDService.h"
@@ -108,31 +107,8 @@ bool EvaluateAppID(nsPIDOMWindowInner* aParent, const nsString& aOrigin,
   return false;
 }
 
-nsresult ReadToCryptoBuffer(pkix::Reader& aSrc, /* out */ CryptoBuffer& aDest,
-                            uint32_t aLen) {
-  if (aSrc.EnsureLength(aLen) != pkix::Success) {
-    return NS_ERROR_DOM_UNKNOWN_ERR;
-  }
-
-  if (!aDest.SetCapacity(aLen, mozilla::fallible)) {
-    return NS_ERROR_OUT_OF_MEMORY;
-  }
-
-  for (uint32_t offset = 0; offset < aLen; ++offset) {
-    uint8_t b;
-    if (aSrc.Read(b) != pkix::Success) {
-      return NS_ERROR_DOM_UNKNOWN_ERR;
-    }
-    if (!aDest.AppendElement(b, mozilla::fallible)) {
-      return NS_ERROR_OUT_OF_MEMORY;
-    }
-  }
-
-  return NS_OK;
-}
-
 static nsresult HashCString(nsICryptoHash* aHashService, const nsACString& aIn,
-                            /* out */ CryptoBuffer& aOut) {
+                            /* out */ nsTArray<uint8_t>& aOut) {
   MOZ_ASSERT(aHashService);
 
   nsresult rv = aHashService->Init(nsICryptoHash::SHA256);
@@ -154,14 +130,14 @@ static nsresult HashCString(nsICryptoHash* aHashService, const nsACString& aIn,
     return rv;
   }
 
-  if (NS_WARN_IF(!aOut.Assign(fullHash))) {
-    return NS_ERROR_OUT_OF_MEMORY;
-  }
+  aOut.Clear();
+  aOut.AppendElements(reinterpret_cast<uint8_t const*>(fullHash.BeginReading()),
+                      fullHash.Length());
 
   return NS_OK;
 }
 
-nsresult HashCString(const nsACString& aIn, /* out */ CryptoBuffer& aOut) {
+nsresult HashCString(const nsACString& aIn, /* out */ nsTArray<uint8_t>& aOut) {
   nsresult srv;
   nsCOMPtr<nsICryptoHash> hashService =
       do_CreateInstance(NS_CRYPTO_HASH_CONTRACTID, &srv);
@@ -170,36 +146,6 @@ nsresult HashCString(const nsACString& aIn, /* out */ CryptoBuffer& aOut) {
   }
 
   srv = HashCString(hashService, aIn, aOut);
-  if (NS_WARN_IF(NS_FAILED(srv))) {
-    return NS_ERROR_FAILURE;
-  }
-
-  return NS_OK;
-}
-
-nsresult BuildTransactionHashes(const nsCString& aRpId,
-                                const nsCString& aClientDataJSON,
-                                /* out */ CryptoBuffer& aRpIdHash,
-                                /* out */ CryptoBuffer& aClientDataHash) {
-  nsresult srv;
-  nsCOMPtr<nsICryptoHash> hashService =
-      do_CreateInstance(NS_CRYPTO_HASH_CONTRACTID, &srv);
-  if (NS_FAILED(srv)) {
-    return srv;
-  }
-
-  if (!aRpIdHash.SetLength(SHA256_LENGTH, fallible)) {
-    return NS_ERROR_OUT_OF_MEMORY;
-  }
-  srv = HashCString(hashService, aRpId, aRpIdHash);
-  if (NS_WARN_IF(NS_FAILED(srv))) {
-    return NS_ERROR_FAILURE;
-  }
-
-  if (!aClientDataHash.SetLength(SHA256_LENGTH, fallible)) {
-    return NS_ERROR_OUT_OF_MEMORY;
-  }
-  srv = HashCString(hashService, aClientDataJSON, aClientDataHash);
   if (NS_WARN_IF(NS_FAILED(srv))) {
     return NS_ERROR_FAILURE;
   }

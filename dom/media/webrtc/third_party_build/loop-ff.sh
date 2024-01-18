@@ -85,23 +85,39 @@ if [ -f $STATE_DIR/loop.skip-revert-detect ]; then
 fi
 
 ERROR_HELP=$"
-It appears that initial vendoring verification has failed.
-- If you have never run the fast-forward process before, you may need to
-  prepare the github repository by running prep_repo.sh.
+It appears that verification of initial vendoring from our local copy
+of the moz-libwebrtc git repo containing our patch-stack has failed.
+- If you have never previously run the fast-forward (loop-ff.sh) script,
+  you may need to prepare the github repository by running prep_repo.sh.
 - If you have previously run loop-ff.sh successfully, there may be a new
-  change to third_party/libwebrtc that should be extracted and added to
-  the patch stack in github.  It may be as easy as running:
+  change to third_party/libwebrtc that should be extracted from mercurial
+  and added to the patch stack in github.  It may be as easy as running:
       ./mach python $SCRIPT_DIR/extract-for-git.py tip::tip
       mv mailbox.patch $MOZ_LIBWEBRTC_SRC
       (cd $MOZ_LIBWEBRTC_SRC && \\
        git am mailbox.patch)
+
+To verify vendoring, run:
+    bash $SCRIPT_DIR/verify_vendoring.sh
+
+When verify_vendoring.sh is successful, please run the following command
+in bash:
+    (source $SCRIPT_DIR/use_config_env.sh ;
+     ./mach python $SCRIPT_DIR/save_patch_stack.py \
+      --repo-path $MOZ_LIBWEBRTC_SRC \
+      --target-branch-head $MOZ_TARGET_UPSTREAM_BRANCH_HEAD )
+
+You may resume running this script with the following command:
+    bash $SCRIPT_DIR/loop-ff.sh
 "
 # if we're not in the resume situation from fast-forward-libwebrtc.sh
 if [ "x$RESUME" = "x" ]; then
   # start off by verifying the vendoring process to make sure no changes have
   # been added to elm to fix bugs.
   echo_log "Verifying vendoring..."
-  bash $SCRIPT_DIR/verify_vendoring.sh
+  # The script outputs its own error message when verifying fails, so
+  # capture that output of verify_vendoring.sh quietly.
+  bash $SCRIPT_DIR/verify_vendoring.sh &> $LOG_DIR/log-verify.txt
   echo_log "Done verifying vendoring."
 fi
 ERROR_HELP=""
@@ -206,6 +222,7 @@ Then complete these steps:
 After a successful build, you may resume this script.
 "
 echo_log "Modified BUILD.gn (or webrtc.gni) files: $MODIFIED_BUILD_RELATED_FILE_CNT"
+MOZ_BUILD_CHANGE_CNT=0
 if [ "x$MODIFIED_BUILD_RELATED_FILE_CNT" != "x0" ]; then
   echo_log "Regenerate build files"
   ./mach python python/mozbuild/mozbuild/gn_processor.py \
@@ -216,20 +233,33 @@ if [ "x$MODIFIED_BUILD_RELATED_FILE_CNT" != "x0" ]; then
   if [ "x$MOZ_BUILD_CHANGE_CNT" != "x0" ]; then
     echo_log "Detected modified moz.build files, commiting"
     bash $SCRIPT_DIR/commit-build-file-changes.sh 2>&1| tee -a $LOOP_OUTPUT_LOG
-    TRY_FUZZY_QUERY_STRING="^build-"
-    echo_log "Starting try builds with '$TRY_FUZZY_QUERY_STRING'"
-    ./mach try fuzzy --full -q $TRY_FUZZY_QUERY_STRING 2>&1| tee -a $LOOP_OUTPUT_LOG
   fi
 fi
 ERROR_HELP=""
 
 ERROR_HELP=$"
-The test build has failed.  Most likely this is due to an upstream api change that
-must be reflected in Mozilla code outside of the third_party/libwebrtc directory.
+The test build has failed.  Most likely this is due to an upstream api
+change that must be reflected in Mozilla code outside of the
+third_party/libwebrtc directory. After fixing the build, you may resume
+running this script with the following command:
+    bash $SCRIPT_DIR/loop-ff.sh
 "
 echo_log "Test build"
 ./mach build 2>&1| tee -a $LOOP_OUTPUT_LOG
 ERROR_HELP=""
+
+# If we've committed moz.build changes, spin up try builds.
+if [ "x$MOZ_BUILD_CHANGE_CNT" != "x0" ]; then
+  TRY_FUZZY_QUERY_STRING="^build-"
+  CURRENT_TIME=`date`
+  echo_log "Starting try builds with '$TRY_FUZZY_QUERY_STRING' at $CURRENT_TIME"
+  echo_log "Note - this step can take a long time (occasionally in the 10min range)"
+  echo_log "       with little or no feedback."
+  # Show the time used for this command, and don't let it fail if the
+  # command times out so the script continues running.  This command
+  # can take quite long, occasionally 10min.
+  (time ./mach try fuzzy --full -q $TRY_FUZZY_QUERY_STRING) 2>&1| tee -a $LOOP_OUTPUT_LOG || true
+fi
 
 if [ ! "x$MOZ_STOP_AFTER_COMMIT" = "x" ]; then
 if [ $MOZ_LIBWEBRTC_NEXT_BASE = $MOZ_STOP_AFTER_COMMIT ]; then
