@@ -64,7 +64,7 @@ static TaintOperation GetTaintOperation(JSContext *cx, const char* name, const n
   if (cx && JS::CurrentGlobalOrNull(cx)) {
     JS::RootedValue argval(cx);
     if (mozilla::dom::ToJSValue(cx, arg, &argval)) {
-      return JS_GetTaintOperation(cx, name, argval);
+      return JS_GetTaintOperationFullArgs(cx, name, argval);
     }
   }
 
@@ -72,19 +72,6 @@ static TaintOperation GetTaintOperation(JSContext *cx, const char* name, const n
 }
 
 static TaintOperation GetTaintOperation(JSContext *cx, const char* name, const nsTArray<nsString> &args)
-{
-  if (cx && JS::CurrentGlobalOrNull(cx)) {
-    JS::RootedValue argval(cx);
-
-    if (mozilla::dom::ToJSValue(cx, args, &argval)) {
-      return JS_GetTaintOperation(cx, name, argval);
-    }
-  }
-
-  return TaintOperation(name);
-}
-
-static TaintOperation GetTaintOperationFullArgs(JSContext *cx, const char* name, const nsTArray<nsString> &args)
 {
   if (cx && JS::CurrentGlobalOrNull(cx)) {
     JS::RootedValue argval(cx);
@@ -117,7 +104,7 @@ static TaintOperation GetTaintOperation(JSContext *cx, const char* name, const m
     DescribeElement(element, elementDesc);
     args.AppendElement(elementDesc);
 
-    return GetTaintOperationFullArgs(cx, name, args);
+    return GetTaintOperation(cx, name, args);
   }
 
   return TaintOperation(name);
