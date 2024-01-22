@@ -2869,7 +2869,7 @@ EventListenerManager* Element::GetEventListenerManagerForAttr(nsAtom* aAttrName,
   return GetOrCreateListenerManager();
 }
 
-bool Element::GetAttr(const nsAtom* aName, nsAString& aResult) const {
+bool Element::GetAttr(const nsAtom* aName, nsAString& aResult, bool doTainting) const {
   const nsAttrValue* val = mAttrs.GetAttr(aName);
   if (!val) {
     aResult.Truncate();
@@ -2877,12 +2877,14 @@ bool Element::GetAttr(const nsAtom* aName, nsAString& aResult) const {
   }
   val->ToString(aResult);
   // Taintfox: getAttribute source
-  SetTaintSourceGetAttr(aName, aResult);
+  if (doTainting && aResult.Length() > 0) {
+    SetTaintSourceGetAttr(aName, aResult);
+  }
   return true;
 }
 
 bool Element::GetAttr(int32_t aNameSpaceID, const nsAtom* aName,
-                      nsAString& aResult) const {
+                      nsAString& aResult, bool doTainting) const {
   const nsAttrValue* val = mAttrs.GetAttr(aName, aNameSpaceID);
   if (!val) {
     aResult.Truncate();
@@ -2890,7 +2892,9 @@ bool Element::GetAttr(int32_t aNameSpaceID, const nsAtom* aName,
   }
   val->ToString(aResult);
   // Taintfox: getAttribute source
-  SetTaintSourceGetAttr(aName, aResult);
+  if (doTainting && aResult.Length() > 0) {
+    SetTaintSourceGetAttr(aName, aResult);
+  }
   return true;
 }
 

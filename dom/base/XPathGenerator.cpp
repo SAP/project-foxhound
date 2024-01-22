@@ -52,10 +52,10 @@ void GetPrefix(const nsINode* aNode, nsAString& aResult) {
   }
 }
 
-void GetNameAttribute(const nsINode* aNode, nsAString& aResult) {
+void GetNameAttribute(const nsINode* aNode, nsAString& aResult, bool doTainting = true) {
   if (aNode->HasName()) {
     const mozilla::dom::Element* elem = aNode->AsElement();
-    elem->GetAttr(nsGkAtoms::name, aResult);
+    elem->GetAttr(nsGkAtoms::name, aResult, doTainting);
   }
 }
 
@@ -126,7 +126,7 @@ void XPathGenerator::EscapeName(const nsAString& aName, nsAString& aResult) {
   }
 }
 
-void XPathGenerator::Generate(const nsINode* aNode, nsAString& aResult) {
+void XPathGenerator::Generate(const nsINode* aNode, nsAString& aResult, bool doTainting) {
   if (!aNode->GetParentNode()) {
     aResult.Truncate();
     return;
@@ -152,7 +152,11 @@ void XPathGenerator::Generate(const nsINode* aNode, nsAString& aResult) {
     const mozilla::dom::Element* elem = aNode->AsElement();
     nsAutoString elemId;
     nsAutoString quotedArgument;
-    elem->GetId(elemId);
+    if (doTainting) {
+      elem->GetId(elemId);
+    } else {
+      elem->GetIdNoTainting(elemId);
+    }
     QuoteArgument(elemId, quotedArgument);
     aResult.Assign(u"//"_ns + tag + u"[@id="_ns + quotedArgument + u"]"_ns);
     return;
@@ -160,13 +164,13 @@ void XPathGenerator::Generate(const nsINode* aNode, nsAString& aResult) {
 
   int32_t count = 1;
   nsAutoString nodeNameAttribute;
-  GetNameAttribute(aNode, nodeNameAttribute);
+  GetNameAttribute(aNode, nodeNameAttribute, doTainting);
   for (const mozilla::dom::Element* e = aNode->GetPreviousElementSibling(); e;
        e = e->GetPreviousElementSibling()) {
     nsAutoString elementNamespaceURI;
     e->GetNamespaceURI(elementNamespaceURI);
     nsAutoString elementNameAttribute;
-    GetNameAttribute(e, elementNameAttribute);
+    GetNameAttribute(e, elementNameAttribute, doTainting);
     if (e->LocalName().Equals(nodeLocalName) &&
         elementNamespaceURI.Equals(nodeNamespaceURI) &&
         (nodeNameAttribute.IsEmpty() ||

@@ -88,7 +88,8 @@ static void DescribeElement(const mozilla::dom::Element* element, nsAString& aIn
 {
   aInput.Truncate();
   if (element) {
-    XPathGenerator::Generate(element, aInput);
+    // Disable any taint sources for elements to prevent recursion
+    XPathGenerator::Generate(element, aInput, false);
     if (aInput.IsEmpty()) {
       element->Describe(aInput);
     }
@@ -418,10 +419,15 @@ nsresult ReportTaintSink(const nsAString &str, const char* name, const nsAString
 
 nsresult ReportTaintSink(const nsAString &str, const char* name, const mozilla::dom::Element* element)
 {
+  if (!str.isTainted()) {
+    return NS_OK;
+  }
+
   nsAutoString elementDesc;
   if (element) {
     DescribeElement(element, elementDesc);
   }
+
   return ReportTaintSink(str, name, elementDesc);
 }
 
@@ -435,8 +441,8 @@ nsresult ReportTaintSink(const nsACString &str, const char* name)
   return ReportTaintSink(nsContentUtils::GetCurrentJSContext(), str, name);
 }
 
-nsresult ReportTaintSink(JSContext* cx, JS::Handle<JS::Value> aValue, const char* name) {
-
+nsresult ReportTaintSink(JSContext* cx, JS::Handle<JS::Value> aValue, const char* name)
+{
   if (!nsContentUtils::IsSafeToRunScript() || !JS::CurrentGlobalOrNull(cx)) {
     return NS_ERROR_FAILURE;
   }
