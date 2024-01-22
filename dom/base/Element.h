@@ -856,8 +856,8 @@ class Element : public FragmentOrElement {
    * inlined nsAttrValue bits for C++ callers.
    */
   bool GetAttr(int32_t aNameSpaceID, const nsAtom* aName,
-               nsAString& aResult) const;
-  bool GetAttr(const nsAtom* aName, nsAString& aResult) const;
+               nsAString& aResult, bool doTainting = true) const;
+  bool GetAttr(const nsAtom* aName, nsAString& aResult, bool doTainting = true) const;
 
   /**
    * Determine if an attribute has been set (empty string or otherwise).
@@ -1101,7 +1101,8 @@ class Element : public FragmentOrElement {
                                       uint32_t aMapCount);
 
  protected:
-  inline bool GetAttr(const nsAtom* aName, DOMString& aResult) const {
+  inline bool GetAttr(const nsAtom* aName, DOMString& aResult,
+                      bool doTainting = true) const {
     MOZ_ASSERT(aResult.IsEmpty(), "Should have empty string coming in");
     const nsAttrValue* val = mAttrs.GetAttr(aName);
     if (!val) {
@@ -1109,14 +1110,14 @@ class Element : public FragmentOrElement {
     }
     val->ToString(aResult);
     // Taintfox element.getAttr source
-    if (aResult.Length() > 0) {
+    if (doTainting && aResult.Length() > 0) {
       SetTaintSourceGetAttr(aName, aResult);
     }
     return true;
   }
 
   inline bool GetAttr(int32_t aNameSpaceID, const nsAtom* aName,
-                      DOMString& aResult) const {
+                      DOMString& aResult, bool doTainting = true) const {
     MOZ_ASSERT(aResult.IsEmpty(), "Should have empty string coming in");
     const nsAttrValue* val = mAttrs.GetAttr(aName, aNameSpaceID);
     if (!val) {
@@ -1124,7 +1125,7 @@ class Element : public FragmentOrElement {
     }
     val->ToString(aResult);
     // Taintfox element.getAttr source
-    if (aResult.Length() > 0) {
+    if (doTainting && aResult.Length() > 0) {
       SetTaintSourceGetAttr(aNameSpaceID, aName, aResult);
     }
     return true;
@@ -1133,13 +1134,14 @@ class Element : public FragmentOrElement {
  public:
   bool HasAttrs() const { return mAttrs.HasAttrs(); }
 
-  inline bool GetAttr(const nsAString& aName, DOMString& aResult) const {
+  inline bool GetAttr(const nsAString& aName, DOMString& aResult,
+                      bool doTainting = true) const {
     MOZ_ASSERT(aResult.IsEmpty(), "Should have empty string coming in");
     const nsAttrValue* val = mAttrs.GetAttr(aName);
     if (val) {
       val->ToString(aResult);
       // Taintfox element.getAttr source
-      if (aResult.Length() > 0) {
+      if (doTainting && aResult.Length() > 0) {
         SetTaintSourceGetAttr(aName, aResult);
       }
       return true;
@@ -1151,6 +1153,8 @@ class Element : public FragmentOrElement {
   void GetTagName(nsAString& aTagName) const { aTagName = NodeName(); }
   void GetId(nsAString& aId) const { GetAttr(nsGkAtoms::id, aId); }
   void GetId(DOMString& aId) const { GetAttr(nsGkAtoms::id, aId); }
+  void GetIdNoTainting(nsAString& aId) const { GetAttr(nsGkAtoms::id, aId, false); }
+  void GetIdNoTainting(DOMString& aId) const { GetAttr(nsGkAtoms::id, aId, false); }
   void SetId(const nsAString& aId) {
     SetAttr(kNameSpaceID_None, nsGkAtoms::id, aId, true);
   }
