@@ -15,19 +15,14 @@
           ok(str.taint.length == 0, "Check untainted");
         }
 
-        SimpleTest.waitForExplicitFinish();
-
-        function startTests() {
-            const div = document.getElementById("tainted");
-
-            check_tainted(div.getAttribute("id"));
-
-            SimpleTest.finish();
-        }
+        add_task(async function test_element() {
+          const div = document.getElementById("tainted");
+          check_tainted(div.getAttribute("id"));
+        });
 
     </script>
   </head>
-  <body onload="startTests()">
+  <body>
     <div id="tainted" style="display: none"></div>
   </body>
 </html>
