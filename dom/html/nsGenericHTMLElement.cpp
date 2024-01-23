@@ -1655,7 +1655,8 @@ bool nsGenericHTMLElement::GetURIAttr(nsAtom* aAttr, nsAtom* aBaseAttr,
   }
   nsAutoString spec(attr->GetStringValue());
   // Foxhound: need to add explicit source here
-  MarkTaintSourceAttribute(spec, "element.attribute", this, nsAtomString(aAttr));
+  SetTaintSourceGetAttr(aAttr, spec);
+
   // Don't care about return value.  If it fails, we still want to
   // return true, and *aURI will be null.
   nsContentUtils::NewURIWithDocumentCharset(aURI, spec,
