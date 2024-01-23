@@ -1,0 +1,39 @@
+<!DOCTYPE HTML>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>Check DOM Element Sources</title>
+    <script src="/tests/SimpleTest/SimpleTest.js"></script>
+    <link rel="stylesheet" href="/tests/SimpleTest/test.css"/>
+    <script>
+
+      function check_tainted(str) {
+          ok(str.taint.length > 0, "Check tainted");
+      }
+
+      function check_untainted(str) {
+          ok(str.taint.length == 0, "Check untainted");
+      }
+
+      add_task(async function test_untainted() {
+          check_untainted("hello");
+      });
+
+      add_task(async function test_tainted() {
+          check_tainted(String.tainted("hello"));
+      });
+
+//      add_task(async function test_anchor_href() {
+//          check_tainted(document.getElementsByTagName("a")[0].href);
+//          check_tainted(document.getElementsByTagName("a")[0].getAttribute("href"));
+//      });
+
+    </script>
+  </head>
+  <body>
+    <p id="display"></p>
+    <div id="content" style="display: none"></div>
+    <pre id="test"></pre>
+    <a href="https://example.com">Visit Example Website</a>
+  </body>
+</html>
