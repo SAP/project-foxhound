@@ -9,18 +9,18 @@
 
       let string_content = "hello";
       let sink_names = [
-	  "document.write",
-	  "document.writeln",
-	  "innerHTML",
-	  "outerHTML",
-	  "insertAdjacentHTML",
-      "insertAdjacentText",
-      "embed.src",
-      "media.src",
-      "track.src",
-      "Range.createContextualFragment(fragment)",
-      "EventSource",
-      "eventHandler",
+        "document.write",
+        "document.writeln",
+        "innerHTML",
+        "outerHTML",
+        "insertAdjacentHTML",
+        "insertAdjacentText",
+        "embed.src",
+        "media.src",
+        "track.src",
+        "Range.createContextualFragment(fragment)",
+        "EventSource",
+        "eventHandler",
       ];
 
       let i = 0;
@@ -32,10 +32,10 @@
           let flow = report.detail.str.taint[0].flow;
           is(flow[2].operation, sink_names[i]);
 
-	  i += 1;
-	  if (i >= sink_names.length) {
-              SimpleTest.finish();
-	  }
+          i += 1;
+          if (i >= sink_names.length) {
+            SimpleTest.finish();
+          }
       }, false);
 
       let taint_string = String.tainted(string_content);

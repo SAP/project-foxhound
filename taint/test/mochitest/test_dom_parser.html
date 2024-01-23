@@ -42,7 +42,12 @@
 
             const doc1 = parser.parseFromString(tainted_dom_str, "text/html");
 
+            check_tainted(doc1.body.firstChild.outerHTML);
             check_tainted(doc1.body.firstChild.textContent);
+
+            check_tainted(doc1.body.innerHTML);
+            check_tainted(doc1.body.outerHTML);
+            check_tainted(doc1.body.textContent);
 
             const tainted_xml_str = "<warning>" + tainted_str + "</warning>";
             const doc2 = parser.parseFromString(tainted_xml_str, "application/xml");
