@@ -1440,6 +1440,9 @@ void Element::GetAttribute(const nsAString& aName, DOMString& aReturn) {
       IsHTMLElement() && IsInHTMLDocument() ? eIgnoreCase : eCaseMatters);
   if (val) {
     val->ToString(aReturn);
+    if (aReturn.Length() > 0) {
+      SetTaintSourceGetAttr(aName, aReturn);
+    }
   } else {
     if (IsXULElement()) {
       // XXX should be SetDOMStringToNull(aReturn);

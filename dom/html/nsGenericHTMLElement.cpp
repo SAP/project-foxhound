@@ -43,6 +43,7 @@
 #include "nsIPrincipal.h"
 #include "nsContainerFrame.h"
 #include "nsStyleUtil.h"
+#include "nsTaintingUtils.h"
 #include "ReferrerInfo.h"
 
 #include "mozilla/PresState.h"
@@ -1653,7 +1654,8 @@ bool nsGenericHTMLElement::GetURIAttr(nsAtom* aAttr, nsAtom* aBaseAttr,
     }
   }
   nsAutoString spec(attr->GetStringValue());
-  // MarkTaintSourceAttribute(spec, "element.getAttribute", this, nsAtomString(aAttr));
+  // Foxhound: need to add explicit source here
+  MarkTaintSourceAttribute(spec, "element.attribute", this, nsAtomString(aAttr));
   // Don't care about return value.  If it fails, we still want to
   // return true, and *aURI will be null.
   nsContentUtils::NewURIWithDocumentCharset(aURI, spec,
