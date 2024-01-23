@@ -1199,6 +1199,7 @@ void PrintTaint(const StringTaint& taint)
 
 void DumpTaint(const StringTaint& taint)
 {
+    std::cout << "Taint Information:" << std::endl;
     for (auto& range : taint) {
         std::cout << "    " << range.begin() << " - " << range.end() << " : " << range.flow().source().name() << ":\n";
         auto& flow = range.flow();
