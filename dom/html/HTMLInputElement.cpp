@@ -1178,8 +1178,8 @@ nsresult HTMLInputElement::Clone(dom::NodeInfo* aNodeInfo,
   return NS_OK;
 }
 
-void HTMLInputElement::SetTaintSourceGetAttr(const nsAString& aName, DOMString& aResult) const {
-
+void HTMLInputElement::SetTaintSourceGetAttr(const nsAString& aName, nsAString& aResult) const {
+  Element::SetTaintSourceGetAttr(aName, aResult);
   if (nsGkAtoms::value->Equals(aName)) {
     // TaintFox: input.value source
     //
@@ -1192,19 +1192,9 @@ void HTMLInputElement::SetTaintSourceGetAttr(const nsAString& aName, DOMString& 
   return;
 }
 
-void HTMLInputElement::SetTaintSourceGetAttr(int32_t aNameSpaceID, const nsAtom* aName,
-                                   DOMString& aResult) const {
-
-  if (aNameSpaceID == kNameSpaceID_None) {
-    SetTaintSourceGetAttr(aName, aResult);
-  }
-  return;
-}
-
-void HTMLInputElement::SetTaintSourceGetAttr(const nsAtom* aName,
-                                   DOMString& aResult) const {
-
-  if (aName == nsGkAtoms::value) {
+void HTMLInputElement::SetTaintSourceGetAttr(const nsAString& aName, DOMString& aResult) const {
+  Element::SetTaintSourceGetAttr(aName, aResult);
+  if (nsGkAtoms::value->Equals(aName)) {
     // TaintFox: input.value source
     //
     // This will taint *all* input types, including those where the actual values
@@ -1215,6 +1205,7 @@ void HTMLInputElement::SetTaintSourceGetAttr(const nsAtom* aName,
 
   return;
 }
+
 
 void HTMLInputElement::BeforeSetAttr(int32_t aNameSpaceID, nsAtom* aName,
                                      const nsAttrValue* aValue, bool aNotify) {
@@ -1619,6 +1610,7 @@ void HTMLInputElement::GetNonFileValueInternal(nsAString& aValue) const {
     case VALUE_MODE_VALUE:
       if (IsSingleLineTextControl(false)) {
         mInputData.mState->GetValue(aValue, true, /* aForDisplay = */ false);
+        SetTaintSourceGetAttr(u"value"_ns, aValue);
       } else if (!aValue.Assign(mInputData.mValue, fallible)) {
         aValue.Truncate();
       }

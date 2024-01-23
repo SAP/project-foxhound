@@ -2749,11 +2749,16 @@ bool Element::ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
   return false;
 }
 
+void Element::SetTaintSourceGetAttr(const nsAString& aName, nsAString& aResult) const {
+  return;
+}
+
 void Element::SetTaintSourceGetAttr(const nsAString& aName, DOMString& aResult) const {
   return;
 }
 
 void Element::SetTaintSourceGetAttr(const nsAtom* aName, DOMString& aResult) const {
+  SetTaintSourceGetAttr(nsAtomString(aName), aResult);
   return;
 }
 

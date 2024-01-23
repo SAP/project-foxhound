@@ -349,6 +349,12 @@ class HTMLTextAreaElement final : public TextControlElement,
   void SetDirectionFromValue(bool aNotify,
                              const nsAString* aKnownValue = nullptr);
 
+  // To Taint the "value" text input
+  void SetTaintSourceGetAttr(const nsAString& aName, nsAString& aResult) const override;
+
+  void SetTaintSourceGetAttr(const nsAString& aName, DOMString& aResult) const override;
+
+
   /**
    * Return if an element should have a specific validity UI
    * (with :-moz-ui-invalid and :-moz-ui-valid pseudo-classes).

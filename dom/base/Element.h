@@ -1872,6 +1872,8 @@ class Element : public FragmentOrElement {
    */
   virtual void SetTaintSourceGetAttr(const nsAString& aName, DOMString& aResult) const;
 
+  virtual void SetTaintSourceGetAttr(const nsAString& aName, nsAString& aResult) const;
+
   virtual void SetTaintSourceGetAttr(const nsAtom* aName, DOMString& aResult) const;
 
   virtual void SetTaintSourceGetAttr(int32_t aNameSpaceID, const nsAtom* aName,

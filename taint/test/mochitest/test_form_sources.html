@@ -23,6 +23,21 @@
           check_tainted(document.getElementById("fname").value);
       });
 
+      add_task(async function test_form_getattribute_tainted() {
+          check_tainted(document.getElementById("fname").getAttribute("value"));
+      });
+
+      add_task(async function test_dynamic_form_getattribute_tainted() {
+          var e = document.createElement("input");
+          e.type = "text";
+          e.value = "Hello";
+          check_tainted(e.value);
+      });
+
+      add_task(async function test_textarea_tainted() {
+          check_tainted(document.getElementById("review").value);
+      });
+
     </script>
   </head>
   <body>
@@ -34,6 +49,10 @@
       <input type="text" id="fname" name="fname" value="John"><br>
       <label for="lname">Last name:</label><br>
       <input type="text" id="lname" name="lname" value="Doe">
+      <label for="review">Review:</label>
+      <textarea id="review" name="review" rows="4" cols="50">
+         This test is awesome!
+      </textarea>
     </form>
   </body>
 </html>

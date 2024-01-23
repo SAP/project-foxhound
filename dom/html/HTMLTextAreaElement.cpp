@@ -35,6 +35,7 @@
 #include "nsPresContext.h"
 #include "nsReadableUtils.h"
 #include "nsStyleConsts.h"
+#include "nsTaintingUtils.h"
 #include "nsTextControlFrame.h"
 #include "nsThreadUtils.h"
 #include "nsXULControllers.h"
@@ -161,6 +162,7 @@ void HTMLTextAreaElement::GetType(nsAString& aType) {
 
 void HTMLTextAreaElement::GetValue(nsAString& aValue) {
   GetValueInternal(aValue, true);
+  SetTaintSourceGetAttr(u"value"_ns, aValue);
   MOZ_ASSERT(aValue.FindChar(static_cast<char16_t>('\r')) == -1);
 }
 
@@ -168,6 +170,34 @@ void HTMLTextAreaElement::GetValueInternal(nsAString& aValue,
                                            bool aIgnoreWrap) const {
   MOZ_ASSERT(mState);
   mState->GetValue(aValue, aIgnoreWrap, /* aForDisplay = */ true);
+}
+
+void HTMLTextAreaElement::SetTaintSourceGetAttr(const nsAString& aName, nsAString& aResult) const {
+  Element::SetTaintSourceGetAttr(aName, aResult);
+  if (nsGkAtoms::value->Equals(aName)) {
+    // TaintFox: input.value source
+    //
+    // This will taint *all* input types, including those where the actual values
+    // could be limited. Still, these inputs should still not change the syntax
+    // of any sink calls
+    MarkTaintSourceElement(aResult, "textarea.value", this);
+  }
+
+  return;
+}
+
+void HTMLTextAreaElement::SetTaintSourceGetAttr(const nsAString& aName, DOMString& aResult) const {
+  Element::SetTaintSourceGetAttr(aName, aResult);
+  if (nsGkAtoms::value->Equals(aName)) {
+    // TaintFox: input.value source
+    //
+    // This will taint *all* input types, including those where the actual values
+    // could be limited. Still, these inputs should still not change the syntax
+    // of any sink calls
+    MarkTaintSourceElement(aResult, "textarea.value", this);
+  }
+
+  return;
 }
 
 nsIEditor* HTMLTextAreaElement::GetEditorForBindings() {

@@ -956,9 +956,7 @@ class HTMLInputElement final : public TextControlElement,
    */
   virtual void SetTaintSourceGetAttr(const nsAString& aName, DOMString& aResult) const override;
 
-  virtual void SetTaintSourceGetAttr(int32_t aNameSpaceID, const nsAtom* aName,
-                                     DOMString& aResult) const override;
-  virtual void SetTaintSourceGetAttr(const nsAtom* aName, DOMString& aResult) const override;
+  virtual void SetTaintSourceGetAttr(const nsAString& aName, nsAString& aResult) const override;
 
   /**
    * Called when an attribute is about to be changed
