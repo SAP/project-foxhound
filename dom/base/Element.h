@@ -1870,20 +1870,19 @@ class Element : public FragmentOrElement {
                               nsIPrincipal* aMaybeScriptedPrincipal,
                               nsAttrValue& aResult);
 
+  void SetTaintSourceGetAttr(const nsAtom* aName, nsAString& aResult) const;
+
+  void SetTaintSourceGetAttr(const nsAtom* aName, DOMString& aResult) const;
+
+  void SetTaintSourceGetAttr(int32_t aNameSpaceID, const nsAtom* aName,
+                                     DOMString& aResult) const;
   /**
    *  Taintfox: this method can be overriden by child classes to mark
    * certain attributes as taint sources.
    */
-  virtual void SetTaintSourceGetAttr(const nsAtom* aName, nsAString& aResult) const;
-
   virtual void SetTaintSourceGetAttr(const nsAString& aName, DOMString& aResult) const;
 
   virtual void SetTaintSourceGetAttr(const nsAString& aName, nsAString& aResult) const;
-
-  virtual void SetTaintSourceGetAttr(const nsAtom* aName, DOMString& aResult) const;
-
-  virtual void SetTaintSourceGetAttr(int32_t aNameSpaceID, const nsAtom* aName,
-                                     DOMString& aResult) const;
 
   /**
    * Hook that is called by Element::SetAttr to allow subclasses to check

@@ -2757,16 +2757,18 @@ void Element::SetTaintSourceGetAttr(const nsAString& aName, DOMString& aResult) 
   return;
 }
 
+void Element::SetTaintSourceGetAttr(const nsAtom* aName, nsAString& aResult) const {
+  SetTaintSourceGetAttr(nsAtomString(aName), aResult);
+};
+
 void Element::SetTaintSourceGetAttr(const nsAtom* aName, DOMString& aResult) const {
   SetTaintSourceGetAttr(nsAtomString(aName), aResult);
-  return;
-}
+};
 
 void Element::SetTaintSourceGetAttr(int32_t aNameSpaceID, const nsAtom* aName,
-                                            DOMString& aResult) const {
+                                     DOMString& aResult) const {
   SetTaintSourceGetAttr(aName, aResult);
-  return;
-}
+};
 
 nsresult Element::CheckTaintSinkSetAttr(int32_t aNamespaceID, nsAtom* aName,
                                         const nsAString& aValue) {

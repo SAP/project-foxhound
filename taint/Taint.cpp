@@ -1197,9 +1197,9 @@ void PrintTaint(const StringTaint& taint)
     }
 }
 
-void DumpTaint(const StringTaint& taint)
+void DumpTaint(const StringTaint& taint, std::experimental::source_location location)
 {
-    std::cout << "Taint Information:" << std::endl;
+    TaintDebug("Taint Information", location);
     for (auto& range : taint) {
         std::cout << "    " << range.begin() << " - " << range.end() << " : " << range.flow().source().name() << ":\n";
         auto& flow = range.flow();
@@ -1220,4 +1220,14 @@ void DumpTaintOperation(const TaintOperation& operation) {
     }
     std::cout << "]\n";
 
+}
+
+void TaintDebug(std::string_view message,
+                std::experimental::source_location location)
+{
+    std::cout << "Tainting Debug Info:"
+              << location.file_name() << ":"
+              << location.line() << ":"
+              << location.function_name() << " "
+              << message << std::endl;
 }

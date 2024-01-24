@@ -8,11 +8,11 @@
     <script>
 
       function check_tainted(str) {
-          ok(str.taint.length > 0, "Check tainted");
+          ok(str.taint.length > 0, "Check tainted " + str);
       }
 
       function check_untainted(str) {
-          ok(str.taint.length == 0, "Check untainted");
+          ok(str.taint.length == 0, "Check untainted " + str);
       }
 
       add_task(async function test_untainted() {
@@ -23,17 +23,45 @@
           check_tainted(String.tainted("hello"));
       });
 
-//      add_task(async function test_anchor_href() {
-//          check_tainted(document.getElementsByTagName("a")[0].href);
-//          check_tainted(document.getElementsByTagName("a")[0].getAttribute("href"));
-//      });
+      add_task(async function test_div() {
+          check_tainted(document.getElementById("content").getAttribute("test"));
+          check_tainted(document.getElementById("content").getAttribute("long"));
+      });
+
+      add_task(async function test_div_dynamic() {
+          var d = document.createElement("div");
+          d.setAttribute("test", "hello");
+          check_tainted(d.getAttribute("test"));
+      });
+
+      add_task(async function test_anchor_href() {
+          check_tainted(document.getElementsByTagName("a")[0].href);
+          check_tainted(document.getElementsByTagName("a")[0].getAttribute("href"));
+      });
+
+      add_task(async function test_img_src() {
+          check_tainted(document.getElementsByTagName("img")[0].src);
+          check_tainted(document.getElementsByTagName("img")[0].getAttribute("src"));
+      });
+
+      add_task(async function test_img_alt() {
+          check_tainted(document.getElementsByTagName("img")[0].alt);
+          check_tainted(document.getElementsByTagName("img")[0].getAttribute("alt"));
+      });
+
+      add_task(async function test_script_src() {
+          check_tainted(document.getElementById("s1").src);
+          check_tainted(document.getElementById("s1").getAttribute("src"));
+      });
 
     </script>
   </head>
   <body>
     <p id="display"></p>
-    <div id="content" style="display: none"></div>
+    <div id="content" style="display: none" test="hello" long="This should be so long that it does not get atomized!"></div>
     <pre id="test"></pre>
     <a href="https://example.com">Visit Example Website</a>
+    <img src="default16.png" alt="A test file">
+    <script id="s1" src="xx"></script>
   </body>
 </html>

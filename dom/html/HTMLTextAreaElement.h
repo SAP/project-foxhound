@@ -350,9 +350,9 @@ class HTMLTextAreaElement final : public TextControlElement,
                              const nsAString* aKnownValue = nullptr);
 
   // To Taint the "value" text input
-  void SetTaintSourceGetAttr(const nsAString& aName, nsAString& aResult) const override;
+  virtual void SetTaintSourceGetAttr(const nsAString& aName, nsAString& aResult) const override;
 
-  void SetTaintSourceGetAttr(const nsAString& aName, DOMString& aResult) const override;
+  virtual void SetTaintSourceGetAttr(const nsAString& aName, DOMString& aResult) const override;
 
 
   /**

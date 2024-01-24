@@ -320,9 +320,12 @@ nsresult MarkTaintSourceAttribute(nsAString &str, const char* name, const mozill
 nsresult MarkTaintSourceAttribute(mozilla::dom::DOMString &str, const char* name, const mozilla::dom::Element* element,
                                   const nsAString &attr)
 {
-  nsAutoString nsStr;
-  str.ToString(nsStr);
-  return MarkTaintSourceAttribute(nsStr, name, element, attr);
+  if (isSourceActive(name)) {
+    nsAutoString nsStr;
+    str.ToString(nsStr);
+    return MarkTaintSource(str, GetTaintOperation(nsContentUtils::GetCurrentJSContext(), name, element, nsStr, attr));
+  }
+  return NS_OK;
 }
 
 nsresult ReportTaintSink(JSContext *cx, const nsAString &str, const char* name, const nsAString &arg)
