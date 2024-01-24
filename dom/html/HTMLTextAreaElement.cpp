@@ -162,7 +162,7 @@ void HTMLTextAreaElement::GetType(nsAString& aType) {
 
 void HTMLTextAreaElement::GetValue(nsAString& aValue) {
   GetValueInternal(aValue, true);
-  SetTaintSourceGetAttr(u"value"_ns, aValue);
+  Element::SetTaintSourceGetAttr(nsGkAtoms::value, aValue);
   MOZ_ASSERT(aValue.FindChar(static_cast<char16_t>('\r')) == -1);
 }
 

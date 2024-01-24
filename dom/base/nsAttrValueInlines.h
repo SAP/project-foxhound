@@ -251,6 +251,8 @@ inline void nsAttrValue::ToString(mozilla::dom::DOMString& aResult) const {
       if (str) {
         aResult.SetKnownLiveStringBuffer(
             str, str->StorageSize() / sizeof(char16_t) - 1);
+        // Propagate Taint Information
+        str->AssignTaint(aResult.Taint());
       }
       // else aResult is already empty
       return;

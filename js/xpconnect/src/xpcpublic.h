@@ -249,9 +249,17 @@ class XPCStringConvert {
                               nsStringBuffer** sharedBuffer,
                               JS::MutableHandle<JS::Value> vp);
 
+  static MOZ_ALWAYS_INLINE bool StringBufferToJSVal(
+      JSContext* cx, nsStringBuffer* buf, uint32_t length,
+      JS::MutableHandle<JS::Value> rval, bool* sharedBuffer) {
+    const StringTaint& taint = buf ? buf->Taint() : EmptyTaint;
+    return StringBufferToJSVal(cx, buf, length, taint, rval, sharedBuffer);
+  }
+
   // Convert the given stringbuffer/length pair to a jsval
   static MOZ_ALWAYS_INLINE bool StringBufferToJSVal(
       JSContext* cx, nsStringBuffer* buf, uint32_t length,
+      const StringTaint& taint,
       JS::MutableHandle<JS::Value> rval, bool* sharedBuffer) {
     JSString* str = JS_NewMaybeExternalString(
         cx, static_cast<char16_t*>(buf->Data()), length,
@@ -261,7 +269,7 @@ class XPCStringConvert {
     }
 
     // TaintFox: Transfer taint information to newly created JS string.
-    JS_SetStringTaint(cx, str, buf->taint());
+    JS_SetStringTaint(cx, str, taint);
 
     rval.setString(str);
     return true;
@@ -294,6 +302,7 @@ class XPCStringConvert {
   }
 
   static inline bool DynamicAtomToJSVal(JSContext* cx, nsDynamicAtom* atom,
+                                        const StringTaint& taint,
                                         JS::MutableHandle<JS::Value> rval) {
     bool sharedAtom;
     JSString* str =
@@ -309,8 +318,17 @@ class XPCStringConvert {
       // nsAtom::AddRef to call it.
       static_cast<nsAtom*>(atom)->AddRef();
     }
+
+    // TaintFox: propagate taint
+    JS_SetStringTaint(cx, str, taint);
+
     rval.setString(str);
     return true;
+  }
+
+  static inline bool DynamicAtomToJSVal(JSContext* cx, nsDynamicAtom* atom,
+                                        JS::MutableHandle<JS::Value> rval) {
+    return DynamicAtomToJSVal(cx, atom, EmptyTaint, rval);
   }
 
   static MOZ_ALWAYS_INLINE bool MaybeGetExternalStringChars(
@@ -415,8 +433,8 @@ inline bool NonVoidStringToJsval(JSContext* cx, mozilla::dom::DOMString& str,
     uint32_t length = str.StringBufferLength();
     nsStringBuffer* buf = str.StringBuffer();
     bool shared;
-    // Taint propagated in StringBufferToJSVal
-    if (!XPCStringConvert::StringBufferToJSVal(cx, buf, length, rval,
+    // Need to pass Taint explicitly here:
+    if (!XPCStringConvert::StringBufferToJSVal(cx, buf, length, str.Taint(), rval,
                                                &shared)) {
       return false;
     }
@@ -434,7 +452,7 @@ inline bool NonVoidStringToJsval(JSContext* cx, mozilla::dom::DOMString& str,
   }
 
   if (str.HasAtom()) {
-    return XPCStringConvert::DynamicAtomToJSVal(cx, str.Atom(), rval);
+    return XPCStringConvert::DynamicAtomToJSVal(cx, str.Atom(), str.Taint(), rval);
   }
 
   // It's an actual XPCOM string

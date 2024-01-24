@@ -16,6 +16,8 @@
 #include <string>
 #include <vector>
 #include <array>
+#include <string_view>
+#include <experimental/source_location>
 
 /*
  * How to taint:
@@ -792,7 +794,11 @@ StringTaint ParseTaint(const std::string& str);
  */
 void PrintTaint(const StringTaint& taint);
 
-void DumpTaint(const StringTaint& taint);
+void DumpTaint(const StringTaint& taint, std::experimental::source_location location = std::experimental::source_location::current());
+
 void DumpTaintOperation(const TaintOperation& operation);
+
+void TaintDebug(std::string_view message,
+                std::experimental::source_location location = std::experimental::source_location::current());
 
 #endif

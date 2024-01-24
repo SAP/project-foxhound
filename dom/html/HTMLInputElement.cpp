@@ -1610,7 +1610,7 @@ void HTMLInputElement::GetNonFileValueInternal(nsAString& aValue) const {
     case VALUE_MODE_VALUE:
       if (IsSingleLineTextControl(false)) {
         mInputData.mState->GetValue(aValue, true, /* aForDisplay = */ false);
-        SetTaintSourceGetAttr(u"value"_ns, aValue);
+        Element::SetTaintSourceGetAttr(nsGkAtoms::value, aValue);
       } else if (!aValue.Assign(mInputData.mValue, fallible)) {
         aValue.Truncate();
       }
