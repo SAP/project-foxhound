@@ -609,9 +609,10 @@ StringTaint& StringTaint::operator=(StringTaint&& other) noexcept
 void StringTaint::clear()
 {
     if (ranges_ != nullptr) {
-        MOZ_COUNT_DTOR(StringTaint);
+        ranges_->clear();
         delete ranges_;
         ranges_ = nullptr;
+        MOZ_COUNT_DTOR(StringTaint);
     }
 }
 
@@ -865,7 +866,7 @@ StringTaint& StringTaint::append(TaintRange range)
     MOZ_ASSERT_IF(ranges_, ranges_->back().end() <= range.begin());
 
     // If the appending taint range has an empty flow, don't add it
-    if (!range.flow().isEmpty()) {
+    if (!range.flow()) {
         return *this;
     }
 
@@ -1001,6 +1002,71 @@ StringTaint& StringTaint::fromBase64()
 
     return *this;
 }
+
+
+TaintList& TaintList::append(TaintFlow flow)
+{
+    // If the appending taint range has an empty flow, don't add it
+    if (!flow) {
+        return *this;
+    }
+
+    if (!flows_) {
+        MOZ_COUNT_CTOR(TaintList);
+        flows_ = new std::vector<TaintFlow>;
+    }
+
+    flows_->push_back(flow);
+    return *this;
+}
+
+void TaintList::clear()
+{
+    if (flows_ != nullptr) {
+        flows_->clear();
+        MOZ_COUNT_DTOR(TaintList);
+        delete flows_;
+        flows_ = nullptr;
+    }
+}
+
+// Slight hack, see below.
+static std::vector<TaintFlow> empty_taint_flow_vector;
+
+std::vector<TaintFlow>::iterator TaintList::begin()
+{
+    // We still need to return an iterator even if there are no ranges stored in this instance.
+    // In that case we don't have a std::vector though. Solution: use a static std::vector.
+    if (!flows_) {
+        return empty_taint_flow_vector.begin();
+    }
+    return flows_->begin();
+}
+
+std::vector<TaintFlow>::iterator TaintList::end()
+{
+    if (!flows_) {
+        return empty_taint_flow_vector.end();
+    }
+    return flows_->end();
+}
+
+std::vector<TaintFlow>::const_iterator TaintList::begin() const
+{
+    if (!flows_) {
+        return empty_taint_flow_vector.begin();
+    }
+    return flows_->begin();
+}
+
+std::vector<TaintFlow>::const_iterator TaintList::end() const
+{
+    if (!flows_) {
+        return empty_taint_flow_vector.end();
+    }
+    return flows_->end();
+}
+
 
 // Simple parser for a JSON like representation of taint information.
 //
