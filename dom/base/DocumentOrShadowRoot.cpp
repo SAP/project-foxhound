@@ -234,7 +234,9 @@ Element* DocumentOrShadowRoot::GetElementById(
   }
 
   if (IdentifierMapEntry* entry = mIdentifierMap.GetEntry(aElementId)) {
-    return entry->GetIdElement();
+    Element* element = entry->GetIdElement();
+    element->TaintSelectorOperation("document.getElementById", aElementId);
+    return element;
   }
 
   return nullptr;

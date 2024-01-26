@@ -14,6 +14,7 @@
  */
 
 #include "mozilla/dom/Element.h"
+#include "Document.h"
 #include "mozilla/dom/ElementInlines.h"
 
 #include <inttypes.h>
@@ -229,13 +230,15 @@ namespace mozilla::dom {
 
 // Note that mozjemalloc uses a 16 byte quantum, so 64, 80 and 128 are
 // bucket sizes.
-ASSERT_NODE_SIZE(Element, 128, 80);
-ASSERT_NODE_SIZE(HTMLDivElement, 128, 80);
-ASSERT_NODE_SIZE(HTMLElement, 128, 80);
-ASSERT_NODE_SIZE(HTMLParagraphElement, 128, 80);
-ASSERT_NODE_SIZE(HTMLPreElement, 128, 80);
-ASSERT_NODE_SIZE(HTMLSpanElement, 128, 80);
-ASSERT_NODE_SIZE(HTMLTableCellElement, 128, 80);
+// Taintfox - originally ASSERT_NODE_SIZE(Element, 128, 80);
+// We needed to add additional 8 bytes for taint operations
+ASSERT_NODE_SIZE(Element, 136, 80);
+ASSERT_NODE_SIZE(HTMLDivElement, 136, 80);
+ASSERT_NODE_SIZE(HTMLElement, 136, 80);
+ASSERT_NODE_SIZE(HTMLParagraphElement, 136, 80);
+ASSERT_NODE_SIZE(HTMLPreElement, 136, 80);
+ASSERT_NODE_SIZE(HTMLSpanElement, 136, 80);
+ASSERT_NODE_SIZE(HTMLTableCellElement, 136, 80);
 // TaintFox:
 // Original: ASSERT_NODE_SIZE(Text, 120, 64);
 // Text is now a taintable string, so contains an
@@ -5037,6 +5040,25 @@ bool Element::Translate() const {
     return parent->Translate();
   }
   return true;
+}
+
+void Element::TaintSelectorOperation(const char* operation, const nsAString& aElementId) {
+  // Here we want to save a list of all selector operations performed on the element
+
+  // Check if there is a direct flow
+  const StringTaint aTaint = aElementId.Taint();
+  TaintFlow flow;
+  if (aTaint.hasTaint()) {
+    // Take the first range
+    TaintRange range = *aTaint.begin();
+    flow = range.flow();
+  }
+  // Mark this operation as a source, so even if there is not a direct flow,
+  // we might still be able to find an indirect one.
+  MarkTaintSource(flow, operation, aElementId);
+
+  // Add it to the list
+  mTaintList.append(flow);
 }
 
 }  // namespace mozilla::dom

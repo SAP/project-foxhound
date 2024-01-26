@@ -2147,6 +2147,14 @@ class Element : public FragmentOrElement {
  protected:
   // Array containing all attributes for this element
   AttrArray mAttrs;
+
+  // Foxhound: keep a record of all selector operations
+  TaintList mTaintList;
+
+ public:
+  void TaintSelectorOperation(const char* operation, const nsAString& aElementId);
+
+  const TaintList& GetSelectorTaintFlowList() const { return mTaintList; }
 };
 
 NS_DEFINE_STATIC_IID_ACCESSOR(Element, NS_ELEMENT_IID)
