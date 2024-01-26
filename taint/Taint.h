@@ -350,10 +350,10 @@ class TaintFlow
     bool operator==(const TaintFlow& other) const { return head_ == other.head_; }
     bool operator!=(const TaintFlow& other) const { return head_ != other.head_; }
 
-    bool isEmpty() const { return !!head_; }
+    bool isNotEmpty() const { return !!head_; }
 
     // Boolean operator, indicates whether this taint flow is empty or not.
-    operator bool() const { return isEmpty(); }
+    operator bool() const { return isNotEmpty(); }
 
     static const TaintFlow& getEmptyTaintFlow();
 
@@ -778,6 +778,44 @@ class TaintableString {
 
 // Make sure the TaintableString class is no larger than its StringTaint member.
 static_assert(sizeof(TaintableString) == sizeof(StringTaint), "Class TaintableString must be binary compatible with a StringTaint instance.");
+
+/*
+ * An iterable list of TaintFlows
+ *
+ * Simpler than the StringTaint, for cases where a vector of TaintFlows is sufficient
+ *
+ */
+class TaintList
+{
+  public:
+
+    // Constructs an empty instance without any taint flows.
+    explicit constexpr TaintList() : flows_(nullptr) { }
+
+    ~TaintList() { clear(); }
+
+    // Returns true if any characters are tainted.
+    bool hasTaint() const {
+        return !!flows_;
+    }
+
+    // Removes all taint information.
+    void clear();
+
+    // Appends a taint flow
+    TaintList& append(TaintFlow range);
+
+    // Iterate over the taint ranges.
+    std::vector<TaintFlow>::iterator begin();
+    std::vector<TaintFlow>::iterator end();
+    std::vector<TaintFlow>::const_iterator begin() const;
+    std::vector<TaintFlow>::const_iterator end() const;
+
+  private:
+    // As with StringTaint, just keep a pointer to a vector to save overhead
+    std::vector<TaintFlow>* flows_;
+};
+
 
 // Set to true to enable various debug outputs regarding end2end tainting
 // throughout the engine.
