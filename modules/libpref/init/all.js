@@ -4041,7 +4041,8 @@ pref("extensions.webcompat.useScriptingAPI", true);
 // Add a single switch to disable tainting completely
 pref("tainting.active", true);
 
-pref("tainting.source.element.attribute", true);
+pref("tainting.source.document.getElementById", true);
+pref("tainting.source.element.attribute", false);
 
 // Sources
 pref("tainting.source.MessageEvent", false);

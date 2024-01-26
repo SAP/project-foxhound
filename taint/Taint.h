@@ -346,6 +346,9 @@ class TaintFlow
     // returns a new taint flow starting at that node.
     static TaintFlow extend(const TaintFlow& flow, const TaintOperation& operation);
 
+    // Append two taint flows together
+    static TaintFlow append(const TaintFlow& first, const TaintFlow& second);
+
     // Two TaintFlows are equal if they point to the same taint node.
     bool operator==(const TaintFlow& other) const { return head_ == other.head_; }
     bool operator!=(const TaintFlow& other) const { return head_ != other.head_; }
@@ -581,6 +584,9 @@ class StringTaint
 
     // Adds a taint operation to the taint flows of all ranges in this instance.
     StringTaint& overlay(uint32_t begin, uint32_t end, const TaintOperation& operation);
+
+    // Adds a taint operation to the taint flows of all ranges in this instance.
+    StringTaint& overlay(uint32_t begin, uint32_t end, const TaintFlow& flow);
 
     // Appends a taint range.
     //

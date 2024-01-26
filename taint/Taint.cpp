@@ -12,6 +12,7 @@
 #include <locale>   // wstring_convert
 #include <codecvt>  // codecvt_utf8
 #include <iostream> // cout
+#include <stack>
 #include <string>   // stoi and u32string
 #include <algorithm>
 
@@ -317,7 +318,9 @@ const TaintOperation& TaintFlow::source() const
 TaintFlow& TaintFlow::extend(const TaintOperation& operation)
 {
     TaintNode* newhead = new TaintNode(head_, operation);
-    head_->release();
+    if (head_) {
+        head_->release();
+    }
     head_ = newhead;
     return *this;
 }
@@ -332,6 +335,9 @@ TaintFlow& TaintFlow::extend(const TaintOperation& operation) const
 TaintFlow& TaintFlow::extend(TaintOperation&& operation)
 {
     TaintNode* newhead = new TaintNode(head_, std::move(operation));
+    if (head_) {
+        head_->release();
+    }
     head_->release();
     head_ = newhead;
     return *this;
@@ -352,6 +358,19 @@ TaintFlow TaintFlow::extend(const TaintFlow& flow, const TaintOperation& operati
     return TaintFlow(new TaintNode(flow.head_, operation));
 }
 
+TaintFlow TaintFlow::append(const TaintFlow& first, const TaintFlow& second)
+{
+    TaintFlow outFlow(first);
+    std::stack<const TaintNode*> q;
+    for (const TaintNode& node : second) {
+        q.push(&node);
+    }
+     for (; !q.empty(); q.pop()) {
+        const TaintNode* node = q.top();
+        outFlow.extend(node->operation());
+    }
+    return outFlow;
+}
 
 TaintRange::TaintRange()
     : begin_(0), end_(0), flow_()
@@ -782,6 +801,11 @@ StringTaint& StringTaint::extend(TaintOperation&& operation)
 
 StringTaint& StringTaint::overlay(uint32_t begin, uint32_t end, const TaintOperation& operation)
 {
+    return overlay(begin, end, TaintFlow(operation));
+}
+
+StringTaint& StringTaint::overlay(uint32_t begin, uint32_t end, const TaintFlow& flow)
+{
     MOZ_ASSERT(begin <= end);
     CHECK_RANGES(ranges_);
 
@@ -789,11 +813,16 @@ StringTaint& StringTaint::overlay(uint32_t begin, uint32_t end, const TaintOpera
         return *this;
     }
 
+    // Check if the flow is empty
+    if (!flow) {
+        return *this;
+    }
+
     // If there are no ranges, get out quick
     if (!ranges_) {
         MOZ_COUNT_CTOR(StringTaint);
         ranges_ = new std::vector<TaintRange>();
-        ranges_->emplace_back(begin, end, TaintFlow(operation));
+        ranges_->emplace_back(begin, end, flow);
         return *this;
     }
 
@@ -808,7 +837,7 @@ StringTaint& StringTaint::overlay(uint32_t begin, uint32_t end, const TaintOpera
 
     // Add overlap of overlay with space before first range
     if (begin < current->begin()) {
-        ranges->emplace_back(begin, std::min(current->begin(), end), TaintFlow(operation));
+        ranges->emplace_back(begin, std::min(current->begin(), end), flow);
     }
 
     while (current != this->end()) {
@@ -819,17 +848,17 @@ StringTaint& StringTaint::overlay(uint32_t begin, uint32_t end, const TaintOpera
         if ((end <= current->begin()) || (begin >= current->end())) {
             ranges->emplace_back(current->begin(), current->end(), current->flow());
         } else {
-	    // Non-overlap at the start of the range
+	        // Non-overlap at the start of the range
             if (begin > current->begin()) {
-		ranges->emplace_back(current->begin(), begin, current->flow());
+		        ranges->emplace_back(current->begin(), begin, current->flow());
             }
             // Overlap inside the range
             if ((current->begin() < end) && (current->end() > begin)) {
                 ranges->emplace_back(std::max(current->begin(), begin),
                                      std::min(current->end(), end),
-                                     TaintFlow::extend(current->flow(), operation));
-	    }
-	    // Non-overlap at the end of the range
+                                     TaintFlow::append(current->flow(), flow));
+	        }
+	        // Non-overlap at the end of the range
             if (end < current->end()) {
                 ranges->emplace_back(current->end(), end, current->flow());
             }
@@ -844,7 +873,7 @@ StringTaint& StringTaint::overlay(uint32_t begin, uint32_t end, const TaintOpera
             if ((current->end() < end) && (next->begin() > begin) && (next->begin() > current->end())) {
                 ranges->emplace_back(std::max(current->end(), begin),
                                      std::min(next->begin(), end),
-                                     TaintFlow(operation));
+                                     flow);
             }
             next++;
         }
@@ -853,7 +882,7 @@ StringTaint& StringTaint::overlay(uint32_t begin, uint32_t end, const TaintOpera
 
     // Add overlap of overlay with space after last range
     if (end > ranges_->back().end()) {
-        ranges->emplace_back(std::max(ranges_->back().end(), begin), end, TaintFlow(operation));
+        ranges->emplace_back(std::max(ranges_->back().end(), begin), end, flow);
     }
 
     // Finally assign the ranges

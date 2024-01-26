@@ -260,6 +260,21 @@ nsresult MarkTaintSource(nsAString &str, const char* name, const nsAString &arg)
   return NS_OK;
 }
 
+static nsresult MarkTaintSource(TaintFlow &flow, TaintOperation operation) {
+  operation.setSource();
+  operation.set_native();
+  flow.extend(operation);
+  return NS_OK;
+}
+
+nsresult MarkTaintSource(TaintFlow &flow, const char* name, const nsAString &arg)
+{
+  if (isSourceActive(name)) {
+    flow.extend(GetTaintOperation(nsContentUtils::GetCurrentJSContext(), name, arg));
+  }
+  return NS_OK;
+}
+
 nsresult MarkTaintSource(nsAString &str, const char* name, const nsTArray<nsString> &arg)
 {
   if (isSourceActive(name)) {
@@ -312,6 +327,13 @@ nsresult MarkTaintSourceAttribute(nsAString &str, const char* name, const mozill
                                   const nsAString &attr)
 {
   if (isSourceActive(name)) {
+    if (element) {
+      // Check if the element has incoming taint flows
+      const TaintList& taintList = element->GetSelectorTaintFlowList();
+      if (taintList.hasTaint()) {
+        str.Taint().overlay(0, str.Length(),*taintList.begin());
+      }
+    }
     return MarkTaintSource(str, GetTaintOperation(nsContentUtils::GetCurrentJSContext(), name, element, str, attr));
   }
   return NS_OK;
