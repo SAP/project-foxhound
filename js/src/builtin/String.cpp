@@ -518,8 +518,10 @@ static bool str_escape(JSContext* cx, unsigned argc, Value* vp) {
   }
 
   // Taintfox: set new taint
-  newtaint.extend(TaintOperationFromContext(cx, "escape", true, str));
-  res->setTaint(cx, newtaint);
+  if(newtaint.hasTaint()) {
+    newtaint.extend(TaintOperationFromContext(cx, "escape", true, str));
+    res->setTaint(cx, newtaint);
+  }
 
   args.rval().setString(res);
   return true;
@@ -689,8 +691,10 @@ static bool str_unescape(JSContext* cx, unsigned argc, Value* vp) {
   }
 
   // TaintFox: add taint operation.
-  newtaint.extend(op);
-  result->setTaint(cx, newtaint);
+  if(newtaint.hasTaint()) {
+    newtaint.extend(op);
+    result->setTaint(cx, newtaint);
+  }
 
   args.rval().setString(result);
   return true;
@@ -1352,7 +1356,9 @@ static bool str_toLocaleLowerCase(JSContext* cx, unsigned argc, Value* vp) {
 
     // TaintFox: propagate taint and add operation
     MOZ_ASSERT(result.isString());
-    result.toString()->setTaint(cx, str->taint().safeCopy().extend(TaintOperationFromContext(cx, "toLocaleLowerCase", true, str)));
+    if(str->isTainted()) {
+      result.toString()->setTaint(cx, str->taint().safeCopy().extend(TaintOperationFromContext(cx, "toLocaleLowerCase", true, str)));
+    }
 
     args.rval().set(result);
     return true;
@@ -1595,7 +1601,7 @@ static JSString* ToUpperCase(JSContext* cx, JSLinearString* str) {
     // TaintFox: disabled. We need to return a new string here (so we can correctly
     // set the taint). However, we are in an AutoCheckCannotGC block, so cannot
     // allocate a new string here.
-    if (i == length) {
+    if (i == length && taint.hasTaint()) {
       str->setTaint(cx, taint);
       return str;
     }
@@ -1656,7 +1662,9 @@ static JSString* ToUpperCase(JSContext* cx, JSLinearString* str) {
 
   JSString* res = newChars.mapNonEmpty(toString);
     // TaintFox: Add taint operation to all taint ranges of the input string.
-  res->setTaint(cx, taint);
+  if(taint.hasTaint()) {
+    res->setTaint(cx, taint);
+  }
 
   return res;
 }
@@ -1778,7 +1786,9 @@ static bool str_toLocaleUpperCase(JSContext* cx, unsigned argc, Value* vp) {
 
     // TaintFox: propagate taint and add operation
     MOZ_ASSERT(result.isString());
-    result.toString()->setTaint(cx, str->taint().safeCopy().extend(TaintOperationFromContext(cx, "toLocaleUpperCase", true, str)));
+    if(str->isTainted()) {
+      result.toString()->setTaint(cx, str->taint().safeCopy().extend(TaintOperationFromContext(cx, "toLocaleUpperCase", true, str)));
+    }
 
     args.rval().set(result);
     return true;
@@ -1898,7 +1908,7 @@ static bool str_normalize(JSContext* cx, unsigned argc, Value* vp) {
 
   // Latin-1 strings are already in Normalization Form C.
   if (form == NormalizationForm::NFC && str->hasLatin1Chars()) {
-    if (str->taint().hasTaint()) {
+    if (str->isTainted()) {
       str->taint().extend(TaintOperationFromContext(cx, "normalize", true, str));
     }
     // Step 7.
@@ -1929,7 +1939,7 @@ static bool str_normalize(JSContext* cx, unsigned argc, Value* vp) {
 
   // Return if the input string is already normalized.
   if (alreadyNormalized.unwrap() == AlreadyNormalized::Yes) {
-    if (str->taint().hasTaint()) {
+    if (str->isTainted()) {
       str->taint().extend(TaintOperationFromContext(cx, "normalize", true, str));
     }
     // Step 7.
@@ -1943,7 +1953,7 @@ static bool str_normalize(JSContext* cx, unsigned argc, Value* vp) {
   }
 
   // TaintFox: Add taint operation.
-  if (str->taint().hasTaint()) {
+  if (str->isTainted()) {
     ns->setTaint(cx, str->taint().safeCopy().extend(TaintOperationFromContext(cx, "normalize", true, str)));
   }
 
@@ -3064,7 +3074,7 @@ static bool TrimString(JSContext* cx, const CallArgs& args, const char* funName,
   // TaintFox: Add trim operation to current taint flow.
   // the acutal trimming of taint ranges has been done in
   // NewDependentString (StringType-inl.h, JSDependentString::init)
-  if (result->taint().hasTaint()) {
+  if (result->isTainted()) {
     AutoCheckCannotGC nogc;
     if (trimStart && trimEnd) {
       result->taint().extend(TaintOperationFromContext(cx, "trim", true));
@@ -3685,8 +3695,10 @@ static JSString* ReplaceAll(JSContext* cx, JSLinearString* string,
   }
   
   // Taintfox: extend the taint flow
-  result.taint().extend(
-    TaintOperationFromContextJSString(cx, "replaceAll", true, searchString, replaceString));
+  if(result.taint().hasTaint()) {
+    result.taint().extend(
+      TaintOperationFromContextJSString(cx, "replaceAll", true, searchString, replaceString));
+  }
 
   return resultString;
 }
@@ -3948,9 +3960,11 @@ static ArrayObject* SplitHelper(JSContext* cx, Handle<JSLinearString*> str,
       return nullptr;
     }
 
-    // TaintFox: extend taint flow
-    sub->taint().extend(TaintOperation("split", true, TaintLocationFromContext(cx),
-                                       { taintarg(cx, sep), taintarg(cx, count++) }));
+    if(sub->isTainted()) {
+      // TaintFox: extend taint flow
+      sub->taint().extend(TaintOperation("split", true, TaintLocationFromContext(cx),
+                                        { taintarg(cx, sep), taintarg(cx, count++) }));
+    }
 
     // Step 14.c.ii.5.
     if (splits.length() == limit) {
@@ -3974,7 +3988,9 @@ static ArrayObject* SplitHelper(JSContext* cx, Handle<JSLinearString*> str,
   }
 
   // TaintFox: extend taint flow
-  sub->taint().extend(TaintOperation("split", true, TaintLocationFromContext(cx), { taintarg(cx, sep), taintarg(cx, count++) }));
+  if(sub->isTainted()) {
+    sub->taint().extend(TaintOperation("split", true, TaintLocationFromContext(cx), { taintarg(cx, sep), taintarg(cx, count++) }));
+  }
 
   // Step 18.
   return NewDenseCopiedArray(cx, splits.length(), splits.begin());
@@ -4014,7 +4030,9 @@ static ArrayObject* CharSplitHelper(JSContext* cx, Handle<JSLinearString*> str,
       return nullptr;
     }
     // TaintFox: extend taint flow
-    sub->taint().extend(TaintOperation("split", true, TaintLocationFromContext(cx), { taintarg(cx, u""), taintarg(cx, count++) }));
+    if(sub->isTainted()) {
+      sub->taint().extend(TaintOperation("split", true, TaintLocationFromContext(cx), { taintarg(cx, u""), taintarg(cx, count++) }));
+    }
 
     splits->initDenseElement(i, StringValue(sub));
   }
@@ -4059,7 +4077,9 @@ static MOZ_ALWAYS_INLINE ArrayObject* SplitSingleCharHelper(
         return nullptr;
       }
       // TaintFox: extend taint flow
-      sub->taint().extend(op);
+      if(sub->isTainted()) {
+        sub->taint().extend(op);
+      }
 
       splits->initDenseElement(splitsIndex++, StringValue(sub));
 
@@ -4074,7 +4094,9 @@ static MOZ_ALWAYS_INLINE ArrayObject* SplitSingleCharHelper(
     return nullptr;
   }
   // TaintFox: extend taint flow
-  sub->taint().extend(op);
+  if(sub->isTainted()) {
+    sub->taint().extend(op);
+  }
 
   splits->initDenseElement(splitsIndex++, StringValue(sub));
 
@@ -4791,10 +4813,12 @@ static MOZ_ALWAYS_INLINE bool Encode(JSContext* cx, Handle<JSLinearString*> str,
 
   // TaintFox: Add encode operation to output taint.
   SafeStringTaint taint = sb.empty() ? str->taint() : sb.taint();
-  if (unescapedSet == js_isUriReservedPlusPound) {
-    taint.extend(TaintOperationFromContext(cx, "encodeURI", true, str));
-  } else {
-    taint.extend(TaintOperationFromContext(cx, "encodeURIComponent", true, str));
+  if(taint.hasTaint()) {
+    if (unescapedSet == js_isUriReservedPlusPound) {
+      taint.extend(TaintOperationFromContext(cx, "encodeURI", true, str));
+    } else {
+      taint.extend(TaintOperationFromContext(cx, "encodeURIComponent", true, str));
+    }
   }
 
   MOZ_ASSERT(res == Encode_Success);
@@ -4955,10 +4979,12 @@ static bool Decode(JSContext* cx, Handle<JSLinearString*> str,
 
   // TaintFox: Add decode operation to output taint.
   SafeStringTaint taint = sb.empty() ? str->taint() : sb.taint();
-  if(reservedSet == js_isUriReservedPlusPound) {
-    taint.extend(TaintOperationFromContext(cx, "decodeURI", true, str));
-  } else {
-    taint.extend(TaintOperationFromContext(cx, "decodeURIComponent", true, str));
+  if(taint.hasTaint()) {
+    if(reservedSet == js_isUriReservedPlusPound) {
+      taint.extend(TaintOperationFromContext(cx, "decodeURI", true, str));
+    } else {
+      taint.extend(TaintOperationFromContext(cx, "decodeURIComponent", true, str));
+    }
   }
 
   MOZ_ASSERT(res == Decode_Success);

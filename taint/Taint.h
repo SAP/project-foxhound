@@ -189,7 +189,7 @@ class TaintNode
 
     // Constructing a taint node sets the initial reference count to 1.
     // Constructs an intermediate node.
-    TaintNode(TaintNode* parent, TaintOperation&& operation);
+    TaintNode(TaintNode* parent, TaintOperation&& operation) noexcept;
     // Constructs a root node.
     TaintNode(TaintOperation&& operation) noexcept;
     

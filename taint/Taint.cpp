@@ -150,8 +150,8 @@ TaintNode::TaintNode(TaintNode* parent, const TaintOperation& operation)
     }
 }
 
-TaintNode::TaintNode(TaintNode* parent, TaintOperation&& operation)
-    : parent_(parent), refcount_(1), operation_(operation)
+TaintNode::TaintNode(TaintNode* parent, TaintOperation&& operation) noexcept
+    : parent_(parent), refcount_(1), operation_(std::move(operation))
 {
     MOZ_COUNT_CTOR(TaintNode);
     if (parent_) {
@@ -166,7 +166,7 @@ TaintNode::TaintNode(const TaintOperation& operation)
 }
 
 TaintNode::TaintNode(TaintOperation&& operation) noexcept
-    : parent_(nullptr), refcount_(1), operation_(operation)
+    : parent_(nullptr), refcount_(1), operation_(std::move(operation))
 {
     MOZ_COUNT_CTOR(TaintNode);
 }
@@ -331,7 +331,7 @@ TaintFlow& TaintFlow::extend(const TaintOperation& operation) const
 
 TaintFlow& TaintFlow::extend(TaintOperation&& operation)
 {
-    TaintNode* newhead = new TaintNode(head_, operation);
+    TaintNode* newhead = new TaintNode(head_, std::move(operation));
     head_->release();
     head_ = newhead;
     return *this;
