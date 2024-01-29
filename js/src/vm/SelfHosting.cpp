@@ -1723,8 +1723,13 @@ taint_addTaintOperation(JSContext* cx, unsigned argc, Value* vp)
     MOZ_ASSERT(args.length() >= 2 && args[0].isString() && args[1].isString());
 
     RootedString str(cx, args[0].toString());
-    if (!str)
+    if (!str) {
         return false;
+    }
+
+    if(!str->isTainted()) {
+      return true;
+    }
 
     RootedString opName(cx, args[1].toString());
     if (!opName)
@@ -1751,9 +1756,7 @@ taint_addTaintOperation(JSContext* cx, unsigned argc, Value* vp)
         }
     }
 
-    if(str->isTainted()) {
-      str->taint().extend(TaintOperation(op_chars.get(), TaintLocationFromContext(cx), taint_args));
-    }
+    str->taint().extend(TaintOperation(op_chars.get(), TaintLocationFromContext(cx), taint_args));
 
     return true;
 }
@@ -1768,8 +1771,13 @@ taint_addTaintOperation_native_full(JSContext* cx, unsigned argc, Value* vp)
     MOZ_ASSERT(args.length() >= 2 && args[0].isString() && args[1].isString());
 
     RootedString str(cx, args[0].toString());
-    if (!str)
+    if (!str) {
         return false;
+    }
+
+    if(!str->isTainted()) {
+      return true;
+    }
 
     RootedString opName(cx, args[1].toString());
     if (!opName)
@@ -1796,12 +1804,11 @@ taint_addTaintOperation_native_full(JSContext* cx, unsigned argc, Value* vp)
         }
     }
 
-    if(str->isTainted()) {
-      str->taint().extend(TaintOperation(op_chars.get(), true, TaintLocationFromContext(cx), taint_args));
-    }
+    str->taint().extend(TaintOperation(op_chars.get(), true, TaintLocationFromContext(cx), taint_args));
 
     return true;
 }
+
 static bool
 taint_addTaintOperation_native(JSContext* cx, unsigned argc, Value* vp)
 {
@@ -1812,8 +1819,13 @@ taint_addTaintOperation_native(JSContext* cx, unsigned argc, Value* vp)
     MOZ_ASSERT(args.length() >= 2 && args[0].isString() && args[1].isString());
 
     RootedString str(cx, args[0].toString());
-    if (!str)
+    if (!str) {
         return false;
+    }
+
+    if(!str->isTainted()) {
+      return true;
+    }
 
     RootedString opName(cx, args[1].toString());
     if (!opName)
@@ -1840,9 +1852,7 @@ taint_addTaintOperation_native(JSContext* cx, unsigned argc, Value* vp)
         }
     }
 
-    if(str->isTainted()) {
-      str->taint().extend(TaintOperation(op_chars.get(), true, TaintLocationFromContext(cx), taint_args));
-    }
+    str->taint().extend(TaintOperation(op_chars.get(), true, TaintLocationFromContext(cx), taint_args));
 
     return true;
 }
