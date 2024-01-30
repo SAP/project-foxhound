@@ -3916,10 +3916,15 @@ void Element::SetInnerHTML(const nsAString& aInnerHTML,
                            nsIPrincipal* aSubjectPrincipal,
                            ErrorResult& aError) {
 
-  // TaintFox: innerHTML sink.
-  ReportTaintSink(aInnerHTML, "innerHTML", this);
+  // TaintFox: innerHTML sink - don't set for template elements
+  if (!IsTemplateElement()) {
+    ReportTaintSink(aInnerHTML, "innerHTML", this);
+  }
 
-  SetInnerHTMLInternal(aInnerHTML, aError);
+  // Copy in order to mark the taint operation
+  nsAutoString strCpy(aInnerHTML);
+  MarkTaintOperation(strCpy, "innerHTML", this);
+  SetInnerHTMLInternal(strCpy, aError);
 }
 
 void Element::GetOuterHTML(nsAString& aOuterHTML) {
