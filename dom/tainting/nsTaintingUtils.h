@@ -23,6 +23,7 @@ TaintOperation GetTaintOperation(const char* name);
 
 // Extend the taintflow
 nsresult MarkTaintOperation(nsAString &str, const char* name);
+nsresult MarkTaintOperation(nsAString &str, const char* name, const nsINode* node);
 nsresult MarkTaintOperation(nsACString &str, const char* name);
 nsresult MarkTaintOperation(nsAString &str, const char* name, const nsTArray<nsString> &arg);
 nsresult MarkTaintOperation(StringTaint& aTaint, const char* name);

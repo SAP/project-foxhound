@@ -179,6 +179,16 @@ static nsresult MarkTaintOperation(JSContext *cx, nsAString &str, const char* na
   return NS_OK;
 }
 
+nsresult MarkTaintOperation(nsAString &str, const char* name, const nsINode* node)
+{
+  if (str.isTainted()) {
+    TaintOperation op = GetTaintOperation(nsContentUtils::GetCurrentJSContext(), name, node);
+    op.set_native();
+    str.Taint().extend(op);
+  }
+  return NS_OK;
+}
+
 nsresult MarkTaintOperation(nsAString &str, const char* name)
 {
   return MarkTaintOperation(nsContentUtils::GetCurrentJSContext(), str, name);
