@@ -1297,13 +1297,14 @@ void DumpTaint(const StringTaint& taint, std::experimental::source_location loca
     TaintDebug("Taint Information", location);
     for (auto& range : taint) {
         std::cout << "    " << range.begin() << " - " << range.end() << " : " << range.flow().source().name() << ":\n";
-        auto& flow = range.flow();
+        DumpTaintFlow(range.flow());
+    }
+}
 
-        for(auto& node : flow) {
-            auto& op = node.operation();
-            DumpTaintOperation(op);
-
-        }
+void DumpTaintFlow(const TaintFlow& flow)
+{
+    for (auto& node : flow) {
+        DumpTaintOperation(node.operation());
     }
 }
 

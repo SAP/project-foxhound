@@ -840,6 +840,8 @@ void PrintTaint(const StringTaint& taint);
 
 void DumpTaint(const StringTaint& taint, std::experimental::source_location location = std::experimental::source_location::current());
 
+void DumpTaintFlow(const TaintFlow& flow);
+
 void DumpTaintOperation(const TaintOperation& operation);
 
 void TaintDebug(std::string_view message,
