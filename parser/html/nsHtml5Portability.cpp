@@ -25,16 +25,16 @@ nsAtom* nsHtml5Portability::newLocalNameFromBuffer(char16_t* buf,
 }
 
 nsHtml5String nsHtml5Portability::newStringFromBuffer(
-    char16_t* buf, int32_t offset, int32_t length,
+    char16_t* buf, int32_t offset, int32_t length, const StringTaint& taint,
     nsHtml5TreeBuilder* treeBuilder, bool maybeAtomize) {
   if (!length) {
     return nsHtml5String::EmptyString();
   }
-  if (maybeAtomize) {
+  if (maybeAtomize && !taint.hasTaint()) {
     return nsHtml5String::FromAtom(
         NS_AtomizeMainThread(nsDependentSubstring(buf + offset, length)));
   }
-  return nsHtml5String::FromBuffer(buf + offset, length, treeBuilder);
+  return nsHtml5String::FromBuffer(buf + offset, length, taint, treeBuilder);
 }
 
 nsHtml5String nsHtml5Portability::newEmptyString() {

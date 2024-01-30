@@ -602,6 +602,9 @@ class StringTaint
     // TODO rename to append
     void concat(const StringTaint& other, uint32_t offset);
 
+    // Creates a new taint range for a single character and appends it at offset
+    void concat(const TaintFlow& other, uint32_t offset);
+
     // Re-sizes all taint ranges to convert from ASCII to base64
     StringTaint& toBase64();
     // Re-sizes all taint ranges to convert from base64 to ASCII

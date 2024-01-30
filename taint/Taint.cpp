@@ -926,6 +926,12 @@ void StringTaint::concat(const StringTaint& other, uint32_t offset)
     }
 }
 
+void StringTaint::concat(const TaintFlow& flow, uint32_t offset)
+{
+    TaintRange range(offset, offset + 1, flow);
+    append(range);
+}
+
 // Slight hack, see below.
 static std::vector<TaintRange> empty_taint_range_vector;
 

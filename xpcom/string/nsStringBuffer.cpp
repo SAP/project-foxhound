@@ -146,8 +146,8 @@ void nsStringBuffer::ToString(uint32_t aLen, nsAString& aStr,
     AddRef();
   }
   aStr.Finalize();
-  aStr.SetTaint(Taint().safeCopy());
   aStr.SetData(data, aLen, flags);
+  aStr.SetTaint(Taint().safeCopy());
 }
 
 void nsStringBuffer::ToString(uint32_t aLen, nsACString& aStr,
@@ -164,8 +164,8 @@ void nsStringBuffer::ToString(uint32_t aLen, nsACString& aStr,
     AddRef();
   }
   aStr.Finalize();
-  aStr.SetTaint(Taint().safeCopy());
   aStr.SetData(data, aLen, flags);
+  aStr.SetTaint(Taint().safeCopy());
 }
 
 size_t nsStringBuffer::SizeOfIncludingThisIfUnshared(
