@@ -43,6 +43,8 @@
 #include "nsNetUtil.h"
 #include "nsTextNode.h"
 
+#include "Taint.h"
+
 using namespace mozilla;
 using namespace mozilla::dom;
 

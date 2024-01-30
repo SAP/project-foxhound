@@ -15,6 +15,12 @@
           ok(str.taint.length == 0, "Check untainted " + str);
       }
 
+      function check_taint_source(str, src) {
+          var flow = str.taint[0].flow;
+          var op = flow[flow.length-1];
+          ok(op.operation == src, "Source operation check: '" + op.operation + "' =? '" + src + "'");
+      }
+
       add_task(async function test_untainted() {
           check_untainted("hello");
       });
@@ -54,6 +60,51 @@
           check_tainted(document.getElementById("s1").getAttribute("src"));
       });
 
+      add_task(async function test_element_no_selector() {
+          var d = document.createElement("div");
+          d.setAttribute("test", "hello");
+          var tainted = d.getAttribute("test");
+
+          check_tainted(tainted);
+          check_taint_source(tainted, "element.attribute");
+      });
+
+      add_task(async function test_element_no_selector_tainted() {
+          var d = document.createElement("div");
+          d.setAttribute("test", String.tainted("hello"));
+          var tainted = d.getAttribute("test");
+
+          check_tainted(tainted);
+          check_taint_source(tainted, "manual taint source");
+      });
+
+      add_task(async function test_div_innerhtml_tainted() {
+          var d = document.createElement("div");
+          d.innerHTML = String.tainted("<div test='helllo'>Content Here</div>");
+          var tainted = d.children[0].getAttribute("test");
+
+          check_tainted(tainted);
+          check_taint_source(tainted, "manual taint source");
+      });
+
+      add_task(async function test_div_by_id() {
+          var element = document.getElementById("content_by_id");
+          var tainted = element.getAttribute("test");
+
+          check_tainted(tainted);
+          check_taint_source(tainted, "document.getElementById");
+      });
+
+
+      add_task(async function test_div_by_id_already_tainted() {
+          var selector = String.tainted("content_by_id_already_tainted")
+          var element = document.getElementById(selector);
+          var tainted = element.getAttribute("test");
+
+          check_tainted(tainted);
+          check_taint_source(tainted, "manual taint source");
+      });
+
     </script>
   </head>
   <body>
@@ -63,5 +114,9 @@
     <a href="https://example.com">Visit Example Website</a>
     <img src="default16.png" alt="A test file">
     <script id="s1" src="xx"></script>
+
+    <div id="content_by_id" style="display: none" test="hello" long="This should be so long that it does not get atomized!"></div>
+    <div id="content_by_id_already_tainted" style="display: none" test="hello" long="This should be so long that it does not get atomized!"></div>
+
   </body>
 </html>

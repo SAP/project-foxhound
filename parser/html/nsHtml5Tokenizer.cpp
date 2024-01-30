@@ -245,7 +245,7 @@ void nsHtml5Tokenizer::emitOrAppendCharRefBuf(int32_t returnState) {
 
 nsHtml5String nsHtml5Tokenizer::strBufToString() {
   nsHtml5String str = nsHtml5Portability::newStringFromBuffer(
-      strBuf, 0, strBufLen, tokenHandler,
+      strBuf, 0, strBufLen, strBufTaint, tokenHandler,
       !newAttributesEachTime &&
           attributeName == nsHtml5AttributeName::ATTR_CLASS);
   clearStrBufAfterUse();
@@ -260,14 +260,13 @@ void nsHtml5Tokenizer::strBufToDoctypeName() {
 
 void nsHtml5Tokenizer::emitStrBuf() {
   if (strBufLen > 0) {
-    // TODO(samuel)
-    tokenHandler->characters(strBuf, EmptyTaint, 0, strBufLen);
+    tokenHandler->characters(strBuf, strBufTaint, 0, strBufLen);
     clearStrBufAfterUse();
   }
 }
 
 void nsHtml5Tokenizer::appendStrBuf(char16_t* buffer, int32_t offset,
-                                    int32_t length) {
+                                    int32_t length, const StringTaint& taint) {
   int32_t newLen = nsHtml5Portability::checkedAdd(strBufLen, length);
   MOZ_ASSERT(newLen <= strBuf.length, "Previous buffer length insufficient.");
   if (MOZ_UNLIKELY(strBuf.length < newLen)) {
@@ -276,6 +275,8 @@ void nsHtml5Tokenizer::appendStrBuf(char16_t* buffer, int32_t offset,
     }
   }
   nsHtml5ArrayCopy::arraycopy(buffer, offset, strBuf, strBufLen, length);
+  // Foxhound: Need to copy and shift the ranges
+  strBufTaint.concat(taint.safeSubTaint(offset, offset + length), strBufLen);
   strBufLen = newLen;
 }
 
@@ -491,7 +492,7 @@ stateloop:
               NS_HTML5_CONTINUE(stateloop);
             }
             case '<': {
-	      flushChars(buf, taint, pos);
+	            flushChars(buf, taint, pos);
               state = P::transition(mViewSource.get(),
                                     nsHtml5Tokenizer::TAG_OPEN, reconsume, pos);
               NS_HTML5_BREAK(dataloop);
@@ -525,7 +526,7 @@ stateloop:
           if (c >= 'A' && c <= 'Z') {
             endTag = false;
             clearStrBufBeforeUse();
-            appendStrBuf((char16_t)(c + 0x20));
+            appendStrBuf((char16_t)(c + 0x20), taint.at(pos));
             containsHyphen = false;
             state = P::transition(mViewSource.get(), nsHtml5Tokenizer::TAG_NAME,
                                   reconsume, pos);
@@ -533,7 +534,7 @@ stateloop:
           } else if (c >= 'a' && c <= 'z') {
             endTag = false;
             clearStrBufBeforeUse();
-            appendStrBuf(c);
+            appendStrBuf(c, taint.at(pos));
             containsHyphen = false;
             state = P::transition(mViewSource.get(), nsHtml5Tokenizer::TAG_NAME,
                                   reconsume, pos);
@@ -563,7 +564,7 @@ stateloop:
                 errProcessingInstruction();
               }
               clearStrBufBeforeUse();
-              appendStrBuf(c);
+              appendStrBuf(c, taint.at(pos));
               state = P::transition(mViewSource.get(),
                                     nsHtml5Tokenizer::BOGUS_COMMENT, reconsume,
                                     pos);
@@ -650,7 +651,7 @@ stateloop:
               } else if (c == '-') {
                 containsHyphen = true;
               }
-              appendStrBuf(c);
+              appendStrBuf(c, taint.at(pos));
               continue;
             }
           }
@@ -716,7 +717,7 @@ stateloop:
               }
               attributeLine = line;
               clearStrBufBeforeUse();
-              appendStrBuf(c);
+              appendStrBuf(c, taint.at(pos));
               state = P::transition(mViewSource.get(),
                                     nsHtml5Tokenizer::ATTRIBUTE_NAME, reconsume,
                                     pos);
@@ -797,7 +798,7 @@ stateloop:
               if (c >= 'A' && c <= 'Z') {
                 c += 0x20;
               }
-              appendStrBuf(c);
+              appendStrBuf(c, taint.at(pos));
               continue;
             }
           }
@@ -881,7 +882,7 @@ stateloop:
             default: {
               attributeLine = line;
               clearStrBufBeforeUse();
-              appendStrBuf(c);
+              appendStrBuf(c, taint.at(pos));
               state = P::transition(mViewSource.get(),
                                     nsHtml5Tokenizer::ATTRIBUTE_VALUE_UNQUOTED,
                                     reconsume, pos);
@@ -936,7 +937,7 @@ stateloop:
               [[fallthrough]];
             }
             default: {
-              appendStrBuf(c);
+              appendStrBuf(c, taint.at(pos));
               continue;
             }
           }
@@ -1095,7 +1096,7 @@ stateloop:
               [[fallthrough]];
             }
             default: {
-              appendStrBuf(c);
+              appendStrBuf(c, taint.at(pos));
               continue;
             }
           }
@@ -1162,7 +1163,7 @@ stateloop:
                 c += 0x20;
               }
               clearStrBufBeforeUse();
-              appendStrBuf(c);
+              appendStrBuf(c, taint.at(pos));
               state = P::transition(mViewSource.get(),
                                     nsHtml5Tokenizer::ATTRIBUTE_NAME, reconsume,
                                     pos);
@@ -1180,7 +1181,7 @@ stateloop:
           switch (c) {
             case '-': {
               clearStrBufBeforeUse();
-              appendStrBuf(c);
+              appendStrBuf(c, taint.at(pos));
               state = P::transition(mViewSource.get(),
                                     nsHtml5Tokenizer::MARKUP_DECLARATION_HYPHEN,
                                     reconsume, pos);
@@ -1189,7 +1190,7 @@ stateloop:
             case 'd':
             case 'D': {
               clearStrBufBeforeUse();
-              appendStrBuf(c);
+              appendStrBuf(c, taint.at(pos));
               index = 0;
               state = P::transition(mViewSource.get(),
                                     nsHtml5Tokenizer::MARKUP_DECLARATION_OCTYPE,
@@ -1199,7 +1200,7 @@ stateloop:
             case '[': {
               if (tokenHandler->cdataSectionAllowed()) {
                 clearStrBufBeforeUse();
-                appendStrBuf(c);
+                appendStrBuf(c, taint.at(pos));
                 index = 0;
                 state = P::transition(mViewSource.get(),
                                       nsHtml5Tokenizer::CDATA_START, reconsume,
@@ -1262,7 +1263,7 @@ stateloop:
           c = checkChar(buf, pos);
           switch (c) {
             case '-': {
-              appendStrBuf(c);
+              appendStrBuf(c, taint.at(pos));
               state = P::transition(mViewSource.get(),
                                     nsHtml5Tokenizer::COMMENT_START_DASH,
                                     reconsume, pos);
@@ -1281,7 +1282,7 @@ stateloop:
               NS_HTML5_CONTINUE(stateloop);
             }
             case '<': {
-              appendStrBuf(c);
+              appendStrBuf(c, taint.at(pos));
               state = P::transition(mViewSource.get(),
                                     nsHtml5Tokenizer::COMMENT_LESSTHAN,
                                     reconsume, pos);
@@ -1304,7 +1305,7 @@ stateloop:
               [[fallthrough]];
             }
             default: {
-              appendStrBuf(c);
+              appendStrBuf(c, taint.at(pos));
               state = P::transition(mViewSource.get(),
                                     nsHtml5Tokenizer::COMMENT, reconsume, pos);
               NS_HTML5_BREAK(commentstartloop);
@@ -1322,14 +1323,14 @@ stateloop:
           c = checkChar(buf, pos);
           switch (c) {
             case '-': {
-              appendStrBuf(c);
+              appendStrBuf(c, taint.at(pos));
               state = P::transition(mViewSource.get(),
                                     nsHtml5Tokenizer::COMMENT_END_DASH,
                                     reconsume, pos);
               NS_HTML5_BREAK(commentloop);
             }
             case '<': {
-              appendStrBuf(c);
+              appendStrBuf(c, taint.at(pos));
               state = P::transition(mViewSource.get(),
                                     nsHtml5Tokenizer::COMMENT_LESSTHAN,
                                     reconsume, pos);
@@ -1348,7 +1349,7 @@ stateloop:
               [[fallthrough]];
             }
             default: {
-              appendStrBuf(c);
+              appendStrBuf(c, taint.at(pos));
               continue;
             }
           }
@@ -1364,14 +1365,14 @@ stateloop:
           c = checkChar(buf, pos);
           switch (c) {
             case '-': {
-              appendStrBuf(c);
+              appendStrBuf(c, taint.at(pos));
               state =
                   P::transition(mViewSource.get(),
                                 nsHtml5Tokenizer::COMMENT_END, reconsume, pos);
               NS_HTML5_BREAK(commentenddashloop);
             }
             case '<': {
-              appendStrBuf(c);
+              appendStrBuf(c, taint.at(pos));
               state = P::transition(mViewSource.get(),
                                     nsHtml5Tokenizer::COMMENT_LESSTHAN,
                                     reconsume, pos);
@@ -1394,7 +1395,7 @@ stateloop:
               [[fallthrough]];
             }
             default: {
-              appendStrBuf(c);
+              appendStrBuf(c, taint.at(pos));
               state = P::transition(mViewSource.get(),
                                     nsHtml5Tokenizer::COMMENT, reconsume, pos);
               NS_HTML5_CONTINUE(stateloop);
@@ -1427,7 +1428,7 @@ stateloop:
               continue;
             }
             case '<': {
-              appendStrBuf(c);
+              appendStrBuf(c, taint.at(pos));
               state = P::transition(mViewSource.get(),
                                     nsHtml5Tokenizer::COMMENT_LESSTHAN,
                                     reconsume, pos);
@@ -1446,7 +1447,7 @@ stateloop:
               NS_HTML5_CONTINUE(stateloop);
             }
             case '!': {
-              appendStrBuf(c);
+              appendStrBuf(c, taint.at(pos));
               state = P::transition(mViewSource.get(),
                                     nsHtml5Tokenizer::COMMENT_END_BANG,
                                     reconsume, pos);
@@ -1486,7 +1487,7 @@ stateloop:
               NS_HTML5_CONTINUE(stateloop);
             }
             case '-': {
-              appendStrBuf(c);
+              appendStrBuf(c, taint.at(pos));
               state = P::transition(mViewSource.get(),
                                     nsHtml5Tokenizer::COMMENT_END_DASH,
                                     reconsume, pos);
@@ -1509,7 +1510,7 @@ stateloop:
               [[fallthrough]];
             }
             default: {
-              appendStrBuf(c);
+              appendStrBuf(c, taint.at(pos));
               state = P::transition(mViewSource.get(),
                                     nsHtml5Tokenizer::COMMENT, reconsume, pos);
               NS_HTML5_CONTINUE(stateloop);
@@ -1525,18 +1526,18 @@ stateloop:
           c = checkChar(buf, pos);
           switch (c) {
             case '!': {
-              appendStrBuf(c);
+              appendStrBuf(c, taint.at(pos));
               state = P::transition(mViewSource.get(),
                                     nsHtml5Tokenizer::COMMENT_LESSTHAN_BANG,
                                     reconsume, pos);
               NS_HTML5_BREAK(commentlessthanloop);
             }
             case '<': {
-              appendStrBuf(c);
+              appendStrBuf(c, taint.at(pos));
               continue;
             }
             case '-': {
-              appendStrBuf(c);
+              appendStrBuf(c, taint.at(pos));
               state = P::transition(mViewSource.get(),
                                     nsHtml5Tokenizer::COMMENT_END_DASH,
                                     reconsume, pos);
@@ -1559,7 +1560,7 @@ stateloop:
               [[fallthrough]];
             }
             default: {
-              appendStrBuf(c);
+              appendStrBuf(c, taint.at(pos));
               state = P::transition(mViewSource.get(),
                                     nsHtml5Tokenizer::COMMENT, reconsume, pos);
               NS_HTML5_CONTINUE(stateloop);
@@ -1577,14 +1578,14 @@ stateloop:
           c = checkChar(buf, pos);
           switch (c) {
             case '-': {
-              appendStrBuf(c);
+              appendStrBuf(c, taint.at(pos));
               state = P::transition(
                   mViewSource.get(),
                   nsHtml5Tokenizer::COMMENT_LESSTHAN_BANG_DASH, reconsume, pos);
               NS_HTML5_BREAK(commentlessthanbangloop);
             }
             case '<': {
-              appendStrBuf(c);
+              appendStrBuf(c, taint.at(pos));
               state = P::transition(mViewSource.get(),
                                     nsHtml5Tokenizer::COMMENT_LESSTHAN,
                                     reconsume, pos);
@@ -1607,7 +1608,7 @@ stateloop:
               [[fallthrough]];
             }
             default: {
-              appendStrBuf(c);
+              appendStrBuf(c, taint.at(pos));
               state = P::transition(mViewSource.get(),
                                     nsHtml5Tokenizer::COMMENT, reconsume, pos);
               NS_HTML5_CONTINUE(stateloop);
@@ -1624,7 +1625,7 @@ stateloop:
         c = checkChar(buf, pos);
         switch (c) {
           case '-': {
-            appendStrBuf(c);
+            appendStrBuf(c, taint.at(pos));
             state =
                 P::transition(mViewSource.get(),
                               nsHtml5Tokenizer::COMMENT_LESSTHAN_BANG_DASH_DASH,
@@ -1632,7 +1633,7 @@ stateloop:
             break;
           }
           case '<': {
-            appendStrBuf(c);
+            appendStrBuf(c, taint.at(pos));
             state = P::transition(mViewSource.get(),
                                   nsHtml5Tokenizer::COMMENT_LESSTHAN, reconsume,
                                   pos);
@@ -1655,7 +1656,7 @@ stateloop:
             [[fallthrough]];
           }
           default: {
-            appendStrBuf(c);
+            appendStrBuf(c, taint.at(pos));
             state = P::transition(mViewSource.get(), nsHtml5Tokenizer::COMMENT,
                                   reconsume, pos);
             NS_HTML5_CONTINUE(stateloop);
@@ -1670,7 +1671,7 @@ stateloop:
         c = checkChar(buf, pos);
         switch (c) {
           case '>': {
-            appendStrBuf(c);
+            appendStrBuf(c, taint.at(pos));
             emitComment(3, pos);
             state = P::transition(mViewSource.get(), nsHtml5Tokenizer::DATA,
                                   reconsume, pos);
@@ -1752,7 +1753,7 @@ stateloop:
         c = checkChar(buf, pos);
         switch (c) {
           case '-': {
-            appendStrBuf(c);
+            appendStrBuf(c, taint.at(pos));
             state =
                 P::transition(mViewSource.get(), nsHtml5Tokenizer::COMMENT_END,
                               reconsume, pos);
@@ -1771,7 +1772,7 @@ stateloop:
             NS_HTML5_CONTINUE(stateloop);
           }
           case '<': {
-            appendStrBuf(c);
+            appendStrBuf(c, taint.at(pos));
             state = P::transition(mViewSource.get(),
                                   nsHtml5Tokenizer::COMMENT_LESSTHAN, reconsume,
                                   pos);
@@ -1794,7 +1795,7 @@ stateloop:
             [[fallthrough]];
           }
           default: {
-            appendStrBuf(c);
+            appendStrBuf(c, taint.at(pos));
             state = P::transition(mViewSource.get(), nsHtml5Tokenizer::COMMENT,
                                   reconsume, pos);
             NS_HTML5_CONTINUE(stateloop);
@@ -1809,7 +1810,7 @@ stateloop:
           c = checkChar(buf, pos);
           if (index < 6) {
             if (c == nsHtml5Tokenizer::CDATA_LSQB[index]) {
-              appendStrBuf(c);
+              appendStrBuf(c, taint.at(pos));
             } else {
               if (P::reportErrors) {
                 errBogusComment();
@@ -1972,7 +1973,7 @@ stateloop:
               [[fallthrough]];
             }
             default: {
-              appendStrBuf(c);
+              appendStrBuf(c, taint.at(pos));
               continue;
             }
           }
@@ -2204,10 +2205,10 @@ stateloop:
           if (charRefBufMark < charRefBufLen) {
             if ((returnState & DATA_AND_RCDATA_MASK)) {
               appendStrBuf(charRefBuf, charRefBufMark,
-                           charRefBufLen - charRefBufMark);
+                           charRefBufLen - charRefBufMark,
+                           charRefTaint);
             } else {
-                // TODO(samuel)
-              tokenHandler->characters(charRefBuf, EmptyTaint, charRefBufMark, charRefBufLen - charRefBufMark);
+              tokenHandler->characters(charRefBuf, charRefTaint, charRefBufMark, charRefBufLen - charRefBufMark);
             }
           }
           bool earlyBreak = (c == ';' && charRefBufMark == charRefBufLen);
@@ -2452,7 +2453,7 @@ stateloop:
               errGarbageAfterLtSlash();
             }
             clearStrBufBeforeUse();
-            appendStrBuf('\n');
+            appendStrBuf('\n', taint.at(pos));
             state =
                 P::transition(mViewSource.get(),
                               nsHtml5Tokenizer::BOGUS_COMMENT, reconsume, pos);
@@ -2464,7 +2465,7 @@ stateloop:
               errGarbageAfterLtSlash();
             }
             clearStrBufBeforeUse();
-            appendStrBuf(c);
+            appendStrBuf(c, taint.at(pos));
             state =
                 P::transition(mViewSource.get(),
                               nsHtml5Tokenizer::BOGUS_COMMENT, reconsume, pos);
@@ -2481,7 +2482,7 @@ stateloop:
             if (c >= 'a' && c <= 'z') {
               endTag = true;
               clearStrBufBeforeUse();
-              appendStrBuf(c);
+              appendStrBuf(c, taint.at(pos));
               containsHyphen = false;
               state = P::transition(mViewSource.get(),
                                     nsHtml5Tokenizer::TAG_NAME, reconsume, pos);
@@ -2491,7 +2492,7 @@ stateloop:
                 errGarbageAfterLtSlash();
               }
               clearStrBufBeforeUse();
-              appendStrBuf(c);
+              appendStrBuf(c, taint.at(pos));
               state = P::transition(mViewSource.get(),
                                     nsHtml5Tokenizer::BOGUS_COMMENT, reconsume,
                                     pos);
@@ -2646,7 +2647,7 @@ stateloop:
                   P::transition(mViewSource.get(), returnState, reconsume, pos);
               NS_HTML5_CONTINUE(stateloop);
             }
-            appendStrBuf(c);
+            appendStrBuf(c, taint.at(pos));
             index++;
             continue;
           } else {
@@ -2725,7 +2726,7 @@ stateloop:
               NS_HTML5_CONTINUE(stateloop);
             }
             case '-': {
-              appendStrBuf(c);
+              appendStrBuf(c, taint.at(pos));
               state = P::transition(mViewSource.get(),
                                     nsHtml5Tokenizer::BOGUS_COMMENT_HYPHEN,
                                     reconsume, pos);
@@ -2744,7 +2745,7 @@ stateloop:
               [[fallthrough]];
             }
             default: {
-              appendStrBuf(c);
+              appendStrBuf(c, taint.at(pos));
               continue;
             }
           }
@@ -2792,7 +2793,7 @@ stateloop:
               [[fallthrough]];
             }
             default: {
-              appendStrBuf(c);
+              appendStrBuf(c, taint.at(pos));
               state = P::transition(mViewSource.get(),
                                     nsHtml5Tokenizer::BOGUS_COMMENT, reconsume,
                                     pos);
@@ -3414,7 +3415,7 @@ stateloop:
               folded += 0x20;
             }
             if (folded == nsHtml5Tokenizer::OCTYPE[index]) {
-              appendStrBuf(c);
+              appendStrBuf(c, taint.at(pos));
             } else {
               if (P::reportErrors) {
                 errBogusComment();
@@ -3529,7 +3530,7 @@ stateloop:
                 c += 0x20;
               }
               clearStrBufBeforeUse();
-              appendStrBuf(c);
+              appendStrBuf(c, taint.at(pos));
               state =
                   P::transition(mViewSource.get(),
                                 nsHtml5Tokenizer::DOCTYPE_NAME, reconsume, pos);
@@ -3586,7 +3587,7 @@ stateloop:
               if (c >= 'A' && c <= 'Z') {
                 c += 0x0020;
               }
-              appendStrBuf(c);
+              appendStrBuf(c, taint.at(pos));
               continue;
             }
           }
@@ -3865,7 +3866,7 @@ stateloop:
               [[fallthrough]];
             }
             default: {
-              appendStrBuf(c);
+              appendStrBuf(c, taint.at(pos));
               continue;
             }
           }
@@ -4045,7 +4046,7 @@ stateloop:
               [[fallthrough]];
             }
             default: {
-              appendStrBuf(c);
+              appendStrBuf(c, taint.at(pos));
               continue;
             }
           }
@@ -4342,7 +4343,7 @@ stateloop:
               [[fallthrough]];
             }
             default: {
-              appendStrBuf(c);
+              appendStrBuf(c, taint.at(pos));
               continue;
             }
           }
@@ -4390,7 +4391,7 @@ stateloop:
               [[fallthrough]];
             }
             default: {
-              appendStrBuf(c);
+              appendStrBuf(c, taint.at(pos));
               continue;
             }
           }
@@ -4805,10 +4806,11 @@ void nsHtml5Tokenizer::eof() {
           if (charRefBufMark < charRefBufLen) {
             if ((returnState & DATA_AND_RCDATA_MASK)) {
               appendStrBuf(charRefBuf, charRefBufMark,
-                           charRefBufLen - charRefBufMark);
+                           charRefBufLen - charRefBufMark,
+                           charRefTaint);
             } else {
                 // TODO(samuel)
-              tokenHandler->characters(charRefBuf, EmptyTaint, charRefBufMark, charRefBufLen - charRefBufMark);
+              tokenHandler->characters(charRefBuf, charRefTaint, charRefBufMark, charRefBufLen - charRefBufMark);
             }
           }
           charRefBufLen = 0;
@@ -4985,9 +4987,8 @@ void
 nsHtml5Tokenizer::emitOrAppendTwo(const char16_t* val, const StringTaint& taint, int32_t returnState)
 {
   if ((returnState & nsHtml5Tokenizer::DATA_AND_RCDATA_MASK)) {
-    // TODO(samuel)
-    appendStrBuf(val[0]);
-    appendStrBuf(val[1]);
+    appendStrBuf(val[0], taint.at(0));
+    appendStrBuf(val[1], taint.at(1));
   } else {
     tokenHandler->characters(val, taint, 0, 2);
   }
@@ -4997,8 +4998,7 @@ void
 nsHtml5Tokenizer::emitOrAppendOne(const char16_t* val, const StringTaint& taint, int32_t returnState)
 {
   if ((returnState & nsHtml5Tokenizer::DATA_AND_RCDATA_MASK)) {
-    // TODO(samuel)
-    appendStrBuf(val[0]);
+    appendStrBuf(val[0], taint.at(0));
   } else {
     tokenHandler->characters(val, taint, 0, 1);
   }

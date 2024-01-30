@@ -9,6 +9,8 @@
 #include "nsString.h"
 #include "nsStringBuffer.h"
 
+#include "Taint.h"
+
 class nsHtml5TreeBuilder;
 
 /**
@@ -95,6 +97,15 @@ class nsHtml5String final {
     return nullptr;
   }
 
+  inline const StringTaint& Taint() {
+    switch (GetKind()) {
+      case eStringBuffer:
+        return AsStringBuffer()->Taint();
+      default:
+        return mTaint;
+    }
+  }
+
   void ToString(nsAString& aString);
 
   void CopyToBuffer(char16_t* aBuffer) const;
@@ -112,6 +123,7 @@ class nsHtml5String final {
   void Release();
 
   static nsHtml5String FromBuffer(char16_t* aBuffer, int32_t aLength,
+                                  const StringTaint& aTaint,
                                   nsHtml5TreeBuilder* aTreeBuilder);
 
   static nsHtml5String FromLiteral(const char* aLiteral);
@@ -126,7 +138,9 @@ class nsHtml5String final {
   /**
    * Constructor from raw bits.
    */
-  explicit nsHtml5String(uintptr_t aBits) : mBits(aBits){};
+  explicit nsHtml5String(uintptr_t aBits) : mBits(aBits) {};
+
+  explicit nsHtml5String(uintptr_t aBits, const StringTaint& aTaint) : mBits(aBits), mTaint(aTaint) {};
 
   /**
    * Zero if null, one if empty, otherwise tagged pointer
@@ -134,6 +148,11 @@ class nsHtml5String final {
    * bits are tag bits.
    */
   uintptr_t mBits;
+
+  /**
+   * Taint Information
+   */
+  StringTaint mTaint;
 };
 
 #endif  // nsHtml5String_h
