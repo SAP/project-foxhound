@@ -49,7 +49,6 @@ inline bool isSourceActive(const char* name) {
   return isActive(s.c_str());
 }
 
-
 static TaintOperation GetTaintOperation(JSContext *cx, const char* name)
 {
   if (cx) {
@@ -84,25 +83,28 @@ static TaintOperation GetTaintOperation(JSContext *cx, const char* name, const n
   return TaintOperation(name);
 }
 
-static void DescribeElement(const mozilla::dom::Element* element, nsAString& aInput)
+static void DescribeElement(const nsINode* node, nsAString& aInput)
 {
   aInput.Truncate();
-  if (element) {
+  if (node) {
     // Disable any taint sources for elements to prevent recursion
-    XPathGenerator::Generate(element, aInput, false);
+    XPathGenerator::Generate(node, aInput, false);
     if (aInput.IsEmpty()) {
-      element->Describe(aInput);
+      if (node->IsElement()) {
+        const mozilla::dom::Element* element = node->AsElement();
+        element->Describe(aInput);
+      }
     }
   }
 }
 
-static TaintOperation GetTaintOperation(JSContext *cx, const char* name, const mozilla::dom::Element* element)
+static TaintOperation GetTaintOperation(JSContext *cx, const char* name, const nsINode* node)
 {
-  if (element) {
+  if (node) {
     nsTArray<nsString> args;
     nsAutoString elementDesc;
 
-    DescribeElement(element, elementDesc);
+    DescribeElement(node, elementDesc);
     args.AppendElement(elementDesc);
 
     return GetTaintOperation(cx, name, args);
@@ -111,14 +113,14 @@ static TaintOperation GetTaintOperation(JSContext *cx, const char* name, const m
   return TaintOperation(name);
 }
 
-static TaintOperation GetTaintOperation(JSContext *cx, const char* name, const mozilla::dom::Element* element,
+static TaintOperation GetTaintOperation(JSContext *cx, const char* name, const nsINode* node,
                                         const nsAString &str, const nsAString &attr)
 {
-  if (element) {
+  if (node) {
     nsTArray<nsString> args;
 
     nsAutoString elementDesc;
-    DescribeElement(element, elementDesc);
+    DescribeElement(node, elementDesc);
     args.AppendElement(elementDesc);
 
     nsAutoString attributeName;
@@ -283,10 +285,10 @@ nsresult MarkTaintSource(nsAString &str, const char* name, const nsTArray<nsStri
   return NS_OK;
 }
 
-nsresult MarkTaintSourceElement(nsAString &str, const char* name, const mozilla::dom::Element* element)
+nsresult MarkTaintSourceElement(nsAString &str, const char* name, const nsINode* node)
 {
   if (isSourceActive(name)) {
-    return MarkTaintSource(str, GetTaintOperation(nsContentUtils::GetCurrentJSContext(), name, element));
+    return MarkTaintSource(str, GetTaintOperation(nsContentUtils::GetCurrentJSContext(), name, node));
   }
   return NS_OK;
 }
@@ -315,10 +317,10 @@ nsresult MarkTaintSource(mozilla::dom::DOMString &str, const char* name, const n
   return NS_OK;
 }
 
-nsresult MarkTaintSourceElement(mozilla::dom::DOMString &str, const char* name, const mozilla::dom::Element* element)
+nsresult MarkTaintSourceElement(mozilla::dom::DOMString &str, const char* name, const nsINode* node)
 {
   if (isSourceActive(name)) {
-    return MarkTaintSource(str, GetTaintOperation(nsContentUtils::GetCurrentJSContext(), name, element));
+    return MarkTaintSource(str, GetTaintOperation(nsContentUtils::GetCurrentJSContext(), name, node));
   }
   return NS_OK;
 }
@@ -339,7 +341,7 @@ nsresult MarkTaintSourceAttribute(nsAString &str, const char* name, const mozill
   return NS_OK;
 }
 
-nsresult MarkTaintSourceAttribute(mozilla::dom::DOMString &str, const char* name, const mozilla::dom::Element* element,
+nsresult MarkTaintSourceAttribute(mozilla::dom::DOMString &str, const char* name,  const mozilla::dom::Element* element,
                                   const nsAString &attr)
 {
   // Check if the element has incoming taint flows
@@ -449,15 +451,15 @@ nsresult ReportTaintSink(const nsAString &str, const char* name, const nsAString
   return ReportTaintSink(nsContentUtils::GetCurrentJSContext(), str, name, arg);
 }
 
-nsresult ReportTaintSink(const nsAString &str, const char* name, const mozilla::dom::Element* element)
+nsresult ReportTaintSink(const nsAString &str, const char* name, const nsINode* node)
 {
   if (!str.isTainted()) {
     return NS_OK;
   }
 
   nsAutoString elementDesc;
-  if (element) {
-    DescribeElement(element, elementDesc);
+  if (node) {
+    DescribeElement(node, elementDesc);
   }
 
   return ReportTaintSink(str, name, elementDesc);

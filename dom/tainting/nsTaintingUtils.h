@@ -10,19 +10,12 @@
 #ifndef nsTaintingUtils_h__
 #define nsTaintingUtils_h__
 
-/**
- * This is not a generated file. It contains common utility functions
- * invoked from the JavaScript code generated from IDL interfaces.
- * The goal of the utility functions is to cut down on the size of
- * the generated code itself.
- */
-
 #include "mozilla/dom/DOMString.h"
-#include "jsapi.h"
-
 #include "mozilla/dom/Element.h"
-
+#include "nsINode.h"
 #include "nsString.h"
+
+#include "jsapi.h"
 
 
 // Get a taint operation
@@ -42,7 +35,7 @@ nsresult MarkTaintSource(nsAString &str, const char* name, const nsAString &arg)
 
 nsresult MarkTaintSource(nsAString &str, const char* name, const nsTArray<nsString> &arg);
 
-nsresult MarkTaintSourceElement(nsAString &str, const char* name, const mozilla::dom::Element* element);
+nsresult MarkTaintSourceElement(nsAString &str, const char* name, const nsINode* node);
 
 // TaintFox: Add taint source information to a string
 nsresult MarkTaintSource(mozilla::dom::DOMString &str, const char* name);
@@ -52,13 +45,13 @@ nsresult MarkTaintSource(mozilla::dom::DOMString &str, const char* name, const n
 
 nsresult MarkTaintSource(mozilla::dom::DOMString &str, const char* name, const nsTArray<nsString> &arg);
 
-nsresult MarkTaintSourceElement(mozilla::dom::DOMString &str, const char* name, const mozilla::dom::Element* element);
+nsresult MarkTaintSourceElement(mozilla::dom::DOMString &str, const char* name, const nsINode* node);
 
 // TaintFox: Add taint source information to a string
-nsresult MarkTaintSourceAttribute(nsAString &str, const char* name, const mozilla::dom::Element* element,
+nsresult MarkTaintSourceAttribute(nsAString &str, const char* name, const mozilla::dom::Element* node,
                                   const nsAString &attr);
 
-nsresult MarkTaintSourceAttribute(mozilla::dom::DOMString &str, const char* name, const mozilla::dom::Element* element,
+nsresult MarkTaintSourceAttribute(mozilla::dom::DOMString &str, const char* name, const mozilla::dom::Element* node,
                                   const nsAString &attr);
 
 nsresult MarkTaintSource(JSContext* aCx, JS::MutableHandle<JS::Value> aValue, const char* name);
@@ -75,7 +68,7 @@ nsresult ReportTaintSink(JSContext *cx, const nsAString &str, const char* name);
 // TaintFox: Report taint flows into DOM related sinks.
 nsresult ReportTaintSink(const nsAString &str, const char* name);
 
-nsresult ReportTaintSink(const nsAString &str, const char* name, const mozilla::dom::Element* element);
+nsresult ReportTaintSink(const nsAString &str, const char* name, const nsINode* node);
 
 nsresult ReportTaintSink(const nsACString &str, const char* name);
 
