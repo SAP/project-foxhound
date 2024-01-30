@@ -23,8 +23,7 @@ replaceValue.toString = () => {
 
 let newString = "".replace("a", replaceValue);
 assert.sameValue(newString, "");
-// Taintfox: We change the semantics by calling toString/valueOf internally, so changed to 2
-assert.sameValue(calls, 2);
+assert.sameValue(calls, 1);
 assert.sameValue("dollar".replace("dollar", /$/), "/$/");
 
 reportCompare(0, 0);
