@@ -117,6 +117,8 @@ class CharacterData : public nsIContent {
   const nsTextFragment& TextFragment() const { return mText; }
   uint32_t TextDataLength() const { return mText.GetLength(); }
 
+  void GetTextForTaintCheck(nsAString& aStr) override { GetData(aStr); }
+
   /**
    * Set the text to the given value. If aNotify is true then
    * the document is notified of the content change.

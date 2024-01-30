@@ -1990,7 +1990,16 @@ void nsINode::Before(const Sequence<OwningNodeOrString>& aNodes,
                               ? viablePreviousSibling->GetNextSibling()
                               : parent->GetFirstChild();
 
+  // Foxhound: check whether we are adding a tainted element to the DOM tree
+  nsAutoString tStr;
+  nsCOMPtr<nsINode> nodeForTainting = node->IsDocumentFragment() ? node->GetFirstChild() : node;
+  if (node->IsContent())  {
+    node->AsContent()->GetTextForTaintCheck(tStr);
+  }
+
   parent->InsertBefore(*node, viablePreviousSibling, aRv);
+
+  ReportTaintSink(tStr, "element.before", nodeForTainting);
 }
 
 void nsINode::After(const Sequence<OwningNodeOrString>& aNodes,
@@ -2008,7 +2017,16 @@ void nsINode::After(const Sequence<OwningNodeOrString>& aNodes,
     return;
   }
 
+  // Foxhound: check whether we are adding a tainted element to the DOM tree
+  nsAutoString tStr;
+  nsCOMPtr<nsINode> nodeForTainting = node->IsDocumentFragment() ? node->GetFirstChild() : node;
+  if (node->IsContent())  {
+    node->AsContent()->GetTextForTaintCheck(tStr);
+  }
+
   parent->InsertBefore(*node, viableNextSibling, aRv);
+
+  ReportTaintSink(tStr, "element.after", nodeForTainting);
 }
 
 void nsINode::ReplaceWith(const Sequence<OwningNodeOrString>& aNodes,

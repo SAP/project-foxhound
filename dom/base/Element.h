@@ -1487,6 +1487,9 @@ class Element : public FragmentOrElement {
   void SetHTML(const nsAString& aInnerHTML, const SetHTMLOptions& aOptions,
                ErrorResult& aError);
 
+  void GetTextForTaintCheck(nsAString& aStr) override { GetOuterHTML(aStr); };
+
+
   //----------------------------------------
 
   /**

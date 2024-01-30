@@ -244,6 +244,8 @@ class nsIContent : public nsINode {
    */
   virtual uint32_t TextLength() const = 0;
 
+  virtual void GetTextForTaintCheck(nsAString& aStr) = 0;
+
   /**
    * Determines if an event attribute name (such as onclick) is valid for
    * a given element type.

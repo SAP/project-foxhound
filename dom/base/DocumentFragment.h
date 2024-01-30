@@ -81,6 +81,8 @@ class DocumentFragment : public FragmentOrElement {
     SetInnerHTMLInternal(aInnerHTML, aError);
   }
 
+  void GetTextForTaintCheck(nsAString& aStr) override { GetInnerHTML(aStr); };
+
   static already_AddRefed<DocumentFragment> Constructor(
       const GlobalObject& aGlobal, ErrorResult& aRv);
 
