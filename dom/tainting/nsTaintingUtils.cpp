@@ -326,14 +326,14 @@ nsresult MarkTaintSourceElement(mozilla::dom::DOMString &str, const char* name, 
 nsresult MarkTaintSourceAttribute(nsAString &str, const char* name, const mozilla::dom::Element* element,
                                   const nsAString &attr)
 {
-  if (isSourceActive(name)) {
-    if (element) {
-      // Check if the element has incoming taint flows
-      const TaintList& taintList = element->GetSelectorTaintFlowList();
-      if (taintList.hasTaint()) {
-        str.Taint().overlay(0, str.Length(),*taintList.begin());
-      }
+  // Check if the element has incoming taint flows
+  if (element) {
+    const TaintList& taintList = element->GetSelectorTaintFlowList();
+    if (taintList.hasTaint()) {
+      str.Taint().overlay(0, str.Length(),*taintList.begin());
     }
+  }
+  if (isSourceActive(name)) {
     return MarkTaintSource(str, GetTaintOperation(nsContentUtils::GetCurrentJSContext(), name, element, str, attr));
   }
   return NS_OK;
@@ -342,6 +342,13 @@ nsresult MarkTaintSourceAttribute(nsAString &str, const char* name, const mozill
 nsresult MarkTaintSourceAttribute(mozilla::dom::DOMString &str, const char* name, const mozilla::dom::Element* element,
                                   const nsAString &attr)
 {
+  // Check if the element has incoming taint flows
+  if (element) {
+    const TaintList& taintList = element->GetSelectorTaintFlowList();
+    if (taintList.hasTaint()) {
+      str.Taint().overlay(0, str.Length(),*taintList.begin());
+    }
+  }
   if (isSourceActive(name)) {
     nsAutoString nsStr;
     str.ToString(nsStr);
