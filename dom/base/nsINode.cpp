@@ -3153,8 +3153,13 @@ Element* nsINode::QuerySelector(const nsACString& aSelector,
     return nullptr;
   }
   const bool useInvalidation = false;
-  return const_cast<Element*>(
+
+  Element* element = const_cast<Element*>(
       Servo_SelectorList_QueryFirst(this, list, useInvalidation));
+  if (element) {
+    element->TaintSelectorOperation("document.querySelector", NS_ConvertUTF8toUTF16(aSelector));
+  }
+  return element;
 }
 
 already_AddRefed<nsINodeList> nsINode::QuerySelectorAll(
@@ -3170,6 +3175,16 @@ already_AddRefed<nsINodeList> nsINode::QuerySelectorAll(
 
   const bool useInvalidation = false;
   Servo_SelectorList_QueryAll(this, list, contentList.get(), useInvalidation);
+
+  // Loop through the nodes to add Taint labels
+  uint32_t length = contentList->Length();
+  for (uint32_t i = 0; i < length; i++) {
+    nsIContent* node = contentList->Item(i);
+    if (node && node->IsElement()) {
+      node->AsElement()->TaintSelectorOperation("document.querySelectorAll", NS_ConvertUTF8toUTF16(aSelector));
+    }
+  }
+
   return contentList.forget();
 }
 

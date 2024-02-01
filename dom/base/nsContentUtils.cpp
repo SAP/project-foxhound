@@ -6757,6 +6757,7 @@ void nsContentUtils::StripNullChars(const nsAString& aInStr,
 struct ClassMatchingInfo {
   AtomArray mClasses;
   nsCaseTreatment mCaseTreatment;
+  nsAttrValue mAttrValue;
 };
 
 // static
@@ -6781,6 +6782,10 @@ bool nsContentUtils::MatchClassNames(Element* aElement, int32_t aNamespaceID,
       return false;
     }
   }
+
+  nsAutoString str;
+  info->mAttrValue.ToString(str);
+  aElement->TaintSelectorOperation("document.getElementsByClassName", str);
 
   return true;
 }
@@ -6808,6 +6813,9 @@ void* nsContentUtils::AllocClassMatchingInfo(nsINode* aRootNode,
       aRootNode->OwnerDoc()->GetCompatibilityMode() == eCompatibility_NavQuirks
           ? eIgnoreCase
           : eCaseMatters;
+
+  info->mAttrValue = attrValue;
+
   return info;
 }
 
