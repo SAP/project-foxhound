@@ -44,7 +44,7 @@ class XMLHttpRequestStringBuffer final {
     mData.Append(aString);
   }
 
-  void UnsafeAppendTaintAt(size_t aIndex, const StringTaint& aTaint)
+  void UnsafeAppendTaintAt(size_t aIndex, const StringTaint& aTaint) MOZ_NO_THREAD_SAFETY_ANALYSIS
   {
     // Caller must hold the lock
     mData.Taint().concat(aTaint, aIndex);
