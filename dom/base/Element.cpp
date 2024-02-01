@@ -3496,7 +3496,11 @@ Element* Element::Closest(const nsACString& aSelector, ErrorResult& aResult) {
     return nullptr;
   }
 
-  return const_cast<Element*>(Servo_SelectorList_Closest(this, list));
+  Element* element = const_cast<Element*>(Servo_SelectorList_Closest(this, list));
+  if (element) {
+    element->TaintSelectorOperation("element.closest",  NS_ConvertUTF8toUTF16(aSelector));
+  }
+  return element;
 }
 
 bool Element::Matches(const nsACString& aSelector, ErrorResult& aResult) {

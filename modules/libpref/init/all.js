@@ -4041,23 +4041,10 @@ pref("extensions.webcompat.useScriptingAPI", true);
 // Add a single switch to disable tainting completely
 pref("tainting.active", true);
 
-pref("tainting.source.document.getElementById", true);
-pref("tainting.source.element.attribute", true);
 
 // Sources
-pref("tainting.source.MessageEvent", true);
-pref("tainting.source.PushMessageData", true);
-pref("tainting.source.PushSubscription.endpoint", true);
-pref("tainting.source.WebSocket.MessageEvent.data", true);
-pref("tainting.source.XMLHttpRequest.response", true);
-pref("tainting.source.document.baseURI", true);
-pref("tainting.source.document.cookie", true);
-pref("tainting.source.document.documentURI", true);
-pref("tainting.source.document.referrer", true);
-pref("tainting.source.element.getAttribute", true);
-pref("tainting.source.element.getAttributeNS", true);
-pref("tainting.source.input.value", true);
-pref("tainting.source.localStorage.getItem", true);
+
+// Location Sources
 pref("tainting.source.location.hash", true);
 pref("tainting.source.location.host", true);
 pref("tainting.source.location.hostname", true);
@@ -4067,9 +4054,39 @@ pref("tainting.source.location.pathname", true);
 pref("tainting.source.location.port", true);
 pref("tainting.source.location.protocol", true);
 pref("tainting.source.location.search", true);
-pref("tainting.source.script.innerHTML", true);
-pref("tainting.source.sessionStorage.getItem", true);
 pref("tainting.source.window.name", true);
+pref("tainting.source.document.referrer", true);
+pref("tainting.source.document.baseURI", true);
+pref("tainting.source.document.documentURI", true);
+
+// Storage
+pref("tainting.source.document.cookie", true);
+pref("tainting.source.localStorage.getItem", true);
+pref("tainting.source.sessionStorage.getItem", true);
+
+// Message Based Sources
+pref("tainting.source.MessageEvent", true);
+pref("tainting.source.PushMessageData", true);
+pref("tainting.source.PushSubscription.endpoint", true);
+pref("tainting.source.WebSocket.MessageEvent.data", true);
+pref("tainting.source.XMLHttpRequest.response", true);
+
+// Specific Element Inputs
+pref("tainting.source.input.value", true);
+pref("tainting.source.textarea.value", true);
+pref("tainting.source.script.innerHTML", true);
+
+// DOM elements and attributes
+pref("tainting.source.document.getElementById", true);
+pref("tainting.source.document.getElementsByTagName", true);
+pref("tainting.source.document.getElementsByTagNameNS", true);
+pref("tainting.source.document.getElementsByClassName", true);
+pref("tainting.source.document.querySelector", true);
+pref("tainting.source.document.querySelectorAll", true);
+pref("tainting.source.document.elementFromPoint", true);
+pref("tainting.source.document.elementsFromPoint", true);
+pref("tainting.source.element.attribute", true);
+pref("tainting.source.element.closest", true);
 
 // Sinks
 pref("tainting.sink.element.after", true);

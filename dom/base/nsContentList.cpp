@@ -845,17 +845,32 @@ bool nsContentList::Match(Element* aElement) {
   bool matchHTML =
       mIsHTMLDocument && aElement->GetNameSpaceID() == kNameSpaceID_XHTML;
 
+  // For Taint arguments
+  nsAtomString str(matchHTML ? mHTMLMatchAtom : mXMLMatchAtom);
+
   if (unknown) {
-    return matchHTML ? ni->QualifiedNameEquals(mHTMLMatchAtom)
-                     : ni->QualifiedNameEquals(mXMLMatchAtom);
+    toReturn = matchHTML ? ni->QualifiedNameEquals(mHTMLMatchAtom)
+                         : ni->QualifiedNameEquals(mXMLMatchAtom);
+    if (toReturn) {
+      aElement->TaintSelectorOperation("document.getElementsByTagName", str);
+    }
+    return toReturn;
   }
 
   if (wildcard) {
-    return matchHTML ? ni->Equals(mHTMLMatchAtom) : ni->Equals(mXMLMatchAtom);
+    toReturn = matchHTML ? ni->Equals(mHTMLMatchAtom) : ni->Equals(mXMLMatchAtom);
+    if (toReturn) {
+      aElement->TaintSelectorOperation("document.getElementsByTagName", str);
+    }
+    return toReturn;
   }
 
-  return matchHTML ? ni->Equals(mHTMLMatchAtom, mMatchNameSpaceId)
-                   : ni->Equals(mXMLMatchAtom, mMatchNameSpaceId);
+  toReturn = matchHTML ? ni->Equals(mHTMLMatchAtom, mMatchNameSpaceId)
+                       : ni->Equals(mXMLMatchAtom, mMatchNameSpaceId);
+  if (toReturn) {
+      aElement->TaintSelectorOperation("document.getElementsByTagNameNS", str);
+  }
+  return toReturn;
 }
 
 bool nsContentList::MatchSelf(nsIContent* aContent) {

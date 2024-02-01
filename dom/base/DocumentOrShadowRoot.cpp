@@ -477,13 +477,30 @@ static void QueryNodesFromPoint(DocumentOrShadowRoot& aRoot, float aX, float aY,
 }  // namespace
 
 Element* DocumentOrShadowRoot::ElementFromPoint(float aX, float aY) {
-  return ElementFromPointHelper(aX, aY, false, true, ViewportType::Layout);
+  Element* element = ElementFromPointHelper(aX, aY, false, true, ViewportType::Layout);
+  if (element) {
+    nsAutoString str;
+    str.AppendFloat(aX);
+    str = str + u","_ns;
+    str.AppendFloat(aY);
+    element->TaintSelectorOperation("document.elementFromPoint", str);
+  }
+  return element;
 }
 
 void DocumentOrShadowRoot::ElementsFromPoint(
     float aX, float aY, nsTArray<RefPtr<Element>>& aElements) {
   QueryNodesFromPoint(*this, aX, aY, {}, FlushLayout::Yes, Multiple::Yes,
                       ViewportType::Layout, PerformRetargeting::Yes, aElements);
+  
+  size_t len = aElements.Length();
+  nsAutoString str;
+  str.AppendFloat(aX);
+  str = str + u","_ns;
+  str.AppendFloat(aY);
+  for (size_t i = 0; i < len; ++i) {
+    aElements[i]->TaintSelectorOperation("document.elementsFromPoint", str);
+  }
 }
 
 void DocumentOrShadowRoot::NodesFromPoint(float aX, float aY,

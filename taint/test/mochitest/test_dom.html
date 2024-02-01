@@ -104,6 +104,50 @@
           check_taint_source(tainted, "manual taint source");
       });
 
+      add_task(async function test_div_by_tagname() {
+          var elements = document.getElementsByTagName("var");
+          var tainted = elements[0].getAttribute("test");
+
+          check_tainted(tainted);
+          check_taint_source(tainted, "document.getElementsByTagName");
+      });
+
+      add_task(async function test_div_by_class() {
+          var elements = document.getElementsByClassName("klazz");
+          var tainted = elements[0].getAttribute("test");
+
+          check_tainted(tainted);
+          check_taint_source(tainted, "document.getElementsByClassName");
+      });
+
+      add_task(async function test_div_by_queryselector() {
+          var element = document.querySelector("#foobar");
+          var tainted = element.getAttribute("test");
+
+          check_tainted(tainted);
+          check_taint_source(tainted, "document.querySelector");
+      });
+
+      add_task(async function test_div_by_queryselector() {
+          var elements = document.querySelectorAll("#foobarz");
+          var tainted = elements[0].getAttribute("test");
+
+          check_tainted(tainted);
+          check_taint_source(tainted, "document.querySelectorAll");
+      });
+
+      add_task(async function test_closest() {
+          const el = document.getElementById("div-03");
+
+          // the closest ancestor with the id of "div-02"
+          var closest = el.closest("#div-02"); // <div id="div-02">
+
+          var tainted = closest.getAttribute("test");
+
+          check_tainted(tainted);
+          check_taint_source(tainted, "document.closest");
+      });
+
       add_task(async function test_after() {
         let container = document.createElement("div");
         let p = document.createElement("p");
@@ -142,6 +186,24 @@
 
     <div id="content_by_id" style="display: none" test="hello" long="This should be so long that it does not get atomized!"></div>
     <div id="content_by_id_already_tainted" style="display: none" test="hello" long="This should be so long that it does not get atomized!"></div>
+
+    <var id="image1234" test="hello" src="default16.png">Hello</var>
+
+    <div class="klazz"  test="hello">Div with a class</div>
+
+    <div id="foobar" test="hello"></div>
+
+    <div id="foobarz" test="hello"></div>
+
+    <article>
+        <div id="div-01">
+          Here is div-01
+          <div id="div-02" test="hello">
+            Here is div-02
+            <div id="div-03">Here is div-03</div>
+          </div>
+        </div>
+      </article>
 
   </body>
 </html>
