@@ -1727,8 +1727,9 @@ nsresult nsHtml5StreamParser::CopySegmentsToParserNoTaint(
 
 /* static */ nsresult
 nsHtml5StreamParser::CopySegmentsToParser(
-  nsITaintawareInputStream *aInStream, void *aClosure, const char *aFromSegment,
-  uint32_t aToOffset, uint32_t aCount, const StringTaint& aTaint, uint32_t *aWriteCount) {
+    nsITaintawareInputStream *aInStream, void *aClosure, const char *aFromSegment,
+    uint32_t aToOffset, uint32_t aCount, const StringTaint& aTaint,
+    uint32_t *aWriteCount)  MOZ_NO_THREAD_SAFETY_ANALYSIS {
   nsHtml5StreamParser* parser = static_cast<nsHtml5StreamParser*>(aClosure);
 
   parser->DoDataAvailable(AsBytes(Span(aFromSegment, aCount)), aTaint);
