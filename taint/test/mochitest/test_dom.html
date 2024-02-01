@@ -145,7 +145,7 @@
           var tainted = closest.getAttribute("test");
 
           check_tainted(tainted);
-          check_taint_source(tainted, "document.closest");
+          check_taint_source(tainted, "element.closest");
       });
 
       add_task(async function test_after() {
