@@ -2156,8 +2156,17 @@ void nsINode::Prepend(const Sequence<OwningNodeOrString>& aNodes,
     return;
   }
 
+  // Foxhound: check whether we are adding a tainted element to the DOM tree
+  nsAutoString tStr;
+  nsCOMPtr<nsINode> nodeForTainting = node->IsDocumentFragment() ? node->GetFirstChild() : node;
+  if (node->IsContent())  {
+    node->AsContent()->GetTextForTaintCheck(tStr);
+  }
+
   nsCOMPtr<nsIContent> refNode = mFirstChild;
   InsertBefore(*node, refNode, aRv);
+
+  ReportTaintSink(tStr, "element.prepend", nodeForTainting);
 }
 
 void nsINode::Append(const Sequence<OwningNodeOrString>& aNodes,
@@ -2168,7 +2177,16 @@ void nsINode::Append(const Sequence<OwningNodeOrString>& aNodes,
     return;
   }
 
+  // Foxhound: check whether we are adding a tainted element to the DOM tree
+  nsAutoString tStr;
+  nsCOMPtr<nsINode> nodeForTainting = node->IsDocumentFragment() ? node->GetFirstChild() : node;
+  if (node->IsContent())  {
+    node->AsContent()->GetTextForTaintCheck(tStr);
+  }
+
   AppendChild(*node, aRv);
+
+  ReportTaintSink(tStr, "element.append", nodeForTainting);
 }
 
 // https://dom.spec.whatwg.org/#dom-parentnode-replacechildren
