@@ -249,10 +249,9 @@ inline void nsAttrValue::ToString(mozilla::dom::DOMString& aResult) const {
     case eString: {
       nsStringBuffer* str = static_cast<nsStringBuffer*>(GetPtr());
       if (str) {
+        // Taint information should be propagated here
         aResult.SetKnownLiveStringBuffer(
             str, str->StorageSize() / sizeof(char16_t) - 1);
-        // Propagate Taint Information
-        str->AssignTaint(aResult.Taint());
       }
       // else aResult is already empty
       return;
@@ -260,6 +259,8 @@ inline void nsAttrValue::ToString(mozilla::dom::DOMString& aResult) const {
     case eAtom: {
       nsAtom* atom = static_cast<nsAtom*>(GetPtr());
       aResult.SetKnownLiveAtom(atom, mozilla::dom::DOMString::eNullNotExpected);
+      // Propagate Taint information
+      aResult.AssignTaint(mTaint);
       break;
     }
     default: {
