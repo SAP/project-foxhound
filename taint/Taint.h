@@ -501,6 +501,9 @@ class StringTaint
         return !!ranges_;
     }
 
+    // Boolean operator, indicates whether this taint flow is empty or not.
+    operator bool() const { return hasTaint(); }
+
     // Removes all taint information.
     void clear();
 
