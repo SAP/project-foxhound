@@ -556,6 +556,10 @@ class nsAttrValue {
   bool DoParseHTMLDimension(const nsAString& aInput, bool aEnsureNonzero);
 
   uintptr_t mBits;
+
+  // This is used to track the taint labels of atoms and other types.
+  // For String attributes, the taint information is saved with the StringBuffer directly
+  StringTaint mTaint;
 };
 
 inline const nsAttrValue& nsAttrValue::operator=(const nsAttrValue& aOther) {

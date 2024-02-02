@@ -246,7 +246,7 @@ void MiscContainer::Evict() {
 
 nsTArray<const nsAttrValue::EnumTable*>* nsAttrValue::sEnumTableArray = nullptr;
 
-nsAttrValue::nsAttrValue() : mBits(0) {}
+nsAttrValue::nsAttrValue() : mBits(0), mTaint() {}
 
 nsAttrValue::nsAttrValue(const nsAttrValue& aOther) : mBits(0) {
   SetTo(aOther);
@@ -306,7 +306,6 @@ void nsAttrValue::Reset() {
     case eAtomBase: {
       nsAtom* atom = GetAtomValue();
       NS_RELEASE(atom);
-
       break;
     }
     case eIntegerBase: {
@@ -315,6 +314,7 @@ void nsAttrValue::Reset() {
   }
 
   mBits = 0;
+  mTaint.clear();
 }
 
 void nsAttrValue::SetTo(const nsAttrValue& aOther) {
@@ -340,6 +340,7 @@ void nsAttrValue::SetTo(const nsAttrValue& aOther) {
       nsAtom* atom = aOther.GetAtomValue();
       NS_ADDREF(atom);
       SetPtrValueAndType(atom, eAtomBase);
+      mTaint = aOther.mTaint;
       return;
     }
     case eIntegerBase: {
@@ -570,6 +571,10 @@ void nsAttrValue::SwapValueWith(nsAttrValue& aOther) {
   uintptr_t tmp = aOther.mBits;
   aOther.mBits = mBits;
   mBits = tmp;
+  // Swap Taint
+  SafeStringTaint taint = aOther.mTaint;
+  aOther.mTaint = mTaint;
+  mTaint = taint;
 }
 
 void nsAttrValue::RemoveDuplicatesFromAtomArray() {
@@ -630,6 +635,7 @@ void nsAttrValue::ToString(nsAString& aResult) const {
     case eString: {
       nsStringBuffer* str = static_cast<nsStringBuffer*>(GetPtr());
       if (str) {
+        // Taint information propagated here automatically
         str->ToString(str->StorageSize() / sizeof(char16_t) - 1, aResult);
       } else {
         aResult.Truncate();
@@ -639,7 +645,7 @@ void nsAttrValue::ToString(nsAString& aResult) const {
     case eAtom: {
       nsAtom* atom = static_cast<nsAtom*>(GetPtr());
       atom->ToString(aResult);
-
+      aResult.AssignTaint(mTaint);
       break;
     }
     case eInteger: {
@@ -1341,6 +1347,10 @@ void nsAttrValue::ParseAtom(const nsAString& aValue) {
   RefPtr<nsAtom> atom = NS_Atomize(aValue);
   if (atom) {
     SetPtrValueAndType(atom.forget().take(), eAtomBase);
+    // Set Taint
+    if (aValue.Taint()) {
+      mTaint = aValue.Taint();
+    }
   }
 }
 
@@ -2130,8 +2140,9 @@ already_AddRefed<nsStringBuffer> nsAttrValue::GetStringBuffer(
   data[len] = char16_t(0);
 
   // TaintFox: propagate taint.
-  if (aValue.isTainted())
+  if (aValue.isTainted()) {
     buf->AssignTaint(aValue.Taint());
+  }
 
   return buf.forget();
 }

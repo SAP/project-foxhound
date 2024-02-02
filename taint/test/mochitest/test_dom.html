@@ -78,6 +78,33 @@
           check_taint_source(tainted, "manual taint source");
       });
 
+      add_task(async function test_element_id_no_selector() {
+          var d = document.createElement("div");
+          d.setAttribute("id", "div_31415");
+          var tainted = d.getAttribute("id");
+
+          check_tainted(tainted);
+          check_taint_source(tainted, "element.attribute");
+      });
+
+      add_task(async function test_element_id_no_selector_tainted() {
+          var d = document.createElement("div");
+          d.setAttribute("id", String.tainted("hello_264376"));
+          var tainted = d.getAttribute("id");
+
+          check_tainted(tainted);
+          check_taint_source(tainted, "manual taint source");
+      });
+
+      add_task(async function test_element_id_direct_no_selector_tainted() {
+          var d = document.createElement("div");
+          d.setAttribute("id", String.tainted("hello_264376"));
+          var tainted = d.id;
+
+          check_tainted(tainted);
+          check_taint_source(tainted, "manual taint source");
+      });
+
       add_task(async function test_div_innerhtml_tainted() {
           var d = document.createElement("div");
           d.innerHTML = String.tainted("<div test='helllo'>Content Here</div>");
@@ -87,12 +114,22 @@
           check_taint_source(tainted, "manual taint source");
       });
 
-      add_task(async function test_div_by_id() {
-          var element = document.getElementById("content_by_id");
-          var tainted = element.getAttribute("test");
+      add_task(async function test_div_innerhtml_id_tainted() {
+          var d = document.createElement("div");
+          d.innerHTML = String.tainted("<div id='1337' test='helllo'>Content Here</div>");
+
+          var tainted = d.children[0].getAttribute("id");
 
           check_tainted(tainted);
-          check_taint_source(tainted, "document.getElementById");
+          check_taint_source(tainted, "manual taint source");
+      });
+
+      add_task(async function test_div_by_id() {
+        var element = document.getElementById("content_by_id");
+        var tainted = element.getAttribute("test");
+
+        check_tainted(tainted);
+        check_taint_source(tainted, "document.getElementById");
       });
 
       add_task(async function test_div_by_id_already_tainted() {
@@ -153,8 +190,7 @@
         let p = document.createElement("p");
         container.appendChild(p);
         let span = document.createElement("span");
-        span.innerHTML = String.tainted("<div test='helllo'>Content Here</div>");
-
+        span.innerHTML = String.tainted("<div id='div213' test='helllo'>Content Here</div>");
         p.after(span);
 
         check_tainted(container.outerHTML);
@@ -172,6 +208,8 @@
 
         check_tainted(container.outerHTML);
         check_taint_source(container.outerHTML, "manual taint source");
+
+
       });
 
     </script>
