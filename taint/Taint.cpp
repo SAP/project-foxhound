@@ -338,7 +338,6 @@ TaintFlow& TaintFlow::extend(TaintOperation&& operation)
     if (head_) {
         head_->release();
     }
-    head_->release();
     head_ = newhead;
     return *this;
 }
