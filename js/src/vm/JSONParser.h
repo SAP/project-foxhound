@@ -182,6 +182,16 @@ class MOZ_STACK_CLASS JSONFullParseHandlerAnyChar {
       return *static_cast<PropertyVector*>(vector);
     }
 
+    const ElementVector& elements() const {
+      MOZ_ASSERT(state == JSONParserState::FinishArrayElement);
+      return *static_cast<const ElementVector*>(vector);
+    }
+
+    const PropertyVector& properties() const {
+      MOZ_ASSERT(state == JSONParserState::FinishObjectMember);
+      return *static_cast<const PropertyVector*>(vector);
+    }
+
     explicit StackEntry(ElementVector* elements)
         : state(JSONParserState::FinishArrayElement), vector(elements) {}
 
@@ -276,6 +286,8 @@ class MOZ_STACK_CLASS JSONFullParseHandlerAnyChar {
   inline void freeStackEntry(StackEntry& entry);
 
   void trace(JSTracer* trc);
+
+  JSString* CurrentJsonPath(const Vector<StackEntry, 10>& stack) const;
 };
 
 template <typename CharT>
@@ -305,10 +317,10 @@ class MOZ_STACK_CLASS JSONFullParseHandler
   JSONFullParseHandler(const JSONFullParseHandler& other) = delete;
   void operator=(const JSONFullParseHandler& other) = delete;
 
-  template <JSONStringType ST>
-  inline bool setStringValue(CharPtr start, size_t length, const StringTaint& taint);
-  template <JSONStringType ST>
-  inline bool setStringValue(StringBuilder& builder);
+  template <JSONStringType ST, typename ParserT>
+  inline bool setStringValue(CharPtr start, size_t length, const StringTaint& taint, const ParserT* parser);
+  template <JSONStringType ST, typename ParserT>
+  inline bool setStringValue(StringBuilder& builder, const ParserT* parser);
 
   void reportError(const char* msg, const char* lineString,
                    const char* columnString);
@@ -357,13 +369,13 @@ class MOZ_STACK_CLASS JSONSyntaxParseHandler {
 
   FrontendContext* context() { return fc; }
 
-  template <JSONStringType ST>
-  inline bool setStringValue(CharPtr start, size_t length, const StringTaint& taint) {
+  template <JSONStringType ST, typename ParserT>
+  inline bool setStringValue(CharPtr start, size_t length, const StringTaint& taint, const ParserT* parser) {
     return true;
   }
 
-  template <JSONStringType ST>
-  inline bool setStringValue(StringBuilder& builder) {
+  template <JSONStringType ST, typename ParserT>
+  inline bool setStringValue(StringBuilder& builder, const ParserT* parser) {
     return true;
   }
 
@@ -406,6 +418,8 @@ class MOZ_STACK_CLASS JSONSyntaxParseHandler {
 
   void reportError(const char* msg, const char* lineString,
                    const char* columnString);
+
+  JSString* CurrentJsonPath(const Vector<StackEntry, 10>& stack) const { return nullptr; }
 };
 
 template <typename CharT, typename HandlerT>
@@ -449,6 +463,8 @@ class MOZ_STACK_CLASS JSONPerHandlerParser {
   void outOfMemory();
 
   void error(const char* msg);
+
+  JSString* CurrentJsonPath() const { return handler.CurrentJsonPath(stack); }
 };
 
 template <typename CharT>

@@ -61,7 +61,7 @@ template <typename CharT, typename ParserT, typename StringBuilderT>
 template <JSONStringType ST>
 JSONToken JSONTokenizer<CharT, ParserT, StringBuilderT>::stringToken(
     const CharPtr start, size_t length, const StringTaint& taint) {
-  if (!parser->handler.template setStringValue<ST>(start, length, taint)) {
+  if (!parser->handler.template setStringValue<ST, ParserT>(start, length, taint, parser)) {
     return JSONToken::OOM;
   }
   return JSONToken::String;
@@ -71,7 +71,7 @@ template <typename CharT, typename ParserT, typename StringBuilderT>
 template <JSONStringType ST>
 JSONToken JSONTokenizer<CharT, ParserT, StringBuilderT>::stringToken(
     StringBuilderT& builder) {
-  if (!parser->handler.template setStringValue<ST>(builder)) {
+  if (!parser->handler.template setStringValue<ST, ParserT>(builder, parser)) {
     return JSONToken::OOM;
   }
   return JSONToken::String;
@@ -648,15 +648,61 @@ void JSONParser<CharT>::trace(JSTracer* trc) {
   }
 }
 
+JSString* JSONFullParseHandlerAnyChar::CurrentJsonPath(const Vector<StackEntry, 10>& stack) const {
+  // https://www.ietf.org/archive/id/draft-goessner-dispatch-jsonpath-00.html
+
+  JSStringBuilder builder(cx);
+
+  if (!builder.append(u'$')) {
+    return nullptr;
+  }
+  for (auto& elem : stack) {
+    if (elem.state == JSONParserState::FinishArrayElement) {
+      if (!builder.append(u'[')) {
+        return nullptr;
+      }
+      size_t l = elem.elements().length();  // JS::GCVector<JS::Value, 20>;
+      JSString* str = js::IndexToString(cx, l);
+      if (!builder.append(str)) {
+        return nullptr;
+      }
+      if (!builder.append(u']')) {
+        return nullptr;
+      }
+    } else {
+      if (!builder.append(u'.')) {
+        return nullptr;
+      }
+      jsid id = elem.properties().back().id;
+      if (id.isString()) {
+        JSString* str = id.toString();
+        if (str) {
+          if (!builder.append(str)) {
+            return nullptr;
+          }
+        } else {
+          return nullptr;
+        }
+      } else {
+        if (!builder.append(u'!')) {
+          return nullptr;
+        }
+      }
+    }
+  }
+  return builder.finishString();
+}
+
 inline void JSONFullParseHandlerAnyChar::setNumberValue(double d) {
   v = JS::NumberValue(d);
 }
 
 template <typename CharT>
-template <JSONStringType ST>
+template <JSONStringType ST, typename ParserT>
 inline bool JSONFullParseHandler<CharT>::setStringValue(CharPtr start,
                                                         size_t length,
-                                                        const StringTaint& taint) {
+                                                        const StringTaint& taint,
+                                                        const ParserT* parser) {
   JSString* str;
   if constexpr (ST == JSONStringType::PropertyName) {
     str = AtomizeChars(cx, start.get(), length);
@@ -671,7 +717,10 @@ inline bool JSONFullParseHandler<CharT>::setStringValue(CharPtr start,
   // TaintFox: propagate taint.
   if (ST != JSONStringType::PropertyName && taint.hasTaint()) {
     str->setTaint(cx, taint);
-    str->taint().extend(TaintOperationFromContext(cx, "JSON.parse", true));
+    TaintOperation op = parser ?
+      TaintOperationFromContextJSString(cx, "JSON.parse", true, parser->CurrentJsonPath()) :
+      TaintOperationFromContext(cx, "JSON.parse", true);
+    str->taint().extend(op);
   }
 
   v = JS::StringValue(str);
@@ -679,9 +728,9 @@ inline bool JSONFullParseHandler<CharT>::setStringValue(CharPtr start,
 }
 
 template <typename CharT>
-template <JSONStringType ST>
+template <JSONStringType ST, typename ParserT>
 inline bool JSONFullParseHandler<CharT>::setStringValue(
-    StringBuilder& builder) {
+    StringBuilder& builder, const ParserT* parser) {
   JSString* str;
   if constexpr (ST == JSONStringType::PropertyName) {
     str = builder.buffer.finishAtom();
@@ -695,7 +744,10 @@ inline bool JSONFullParseHandler<CharT>::setStringValue(
 
   // TaintFox: Add taint operation.
   if (str->taint().hasTaint()) {
-    str->taint().extend(TaintOperationFromContext(cx, "JSON.parse", true));
+    TaintOperation op = parser ?
+      TaintOperationFromContextJSString(cx, "JSON.parse", true, parser->CurrentJsonPath()) :
+      TaintOperationFromContext(cx, "JSON.parse", true);
+    str->taint().extend(op);
   }
 
   v = JS::StringValue(str);
