@@ -1290,6 +1290,8 @@ StringTaint ParseTaint(const std::string& str)
     return taint;
 }
 
+#ifdef TAINT_DEBUG
+
 void PrintTaint(const StringTaint& taint)
 {
     for (auto& range : taint) {
@@ -1332,3 +1334,5 @@ void TaintDebug(std::string_view message,
               << location.function_name() << " "
               << message << std::endl;
 }
+
+#endif

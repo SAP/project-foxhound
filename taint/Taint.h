@@ -17,7 +17,12 @@
 #include <vector>
 #include <array>
 #include <string_view>
+
+// It appears that source_location is not supported as standard and
+// breaks windows builds. Keep it behind a debug macro for now.
+#ifdef TAINT_DEBUG
 #include <experimental/source_location>
+#endif
 
 /*
  * How to taint:
@@ -842,6 +847,9 @@ StringTaint ParseTaint(const std::string& str);
 /*
  * Print a string representation of the given StringTaint instance to stdout.
  */
+
+#ifdef TAINT_DEBUG
+
 void PrintTaint(const StringTaint& taint);
 
 void DumpTaint(const StringTaint& taint, std::experimental::source_location location = std::experimental::source_location::current());
@@ -852,5 +860,7 @@ void DumpTaintOperation(const TaintOperation& operation);
 
 void TaintDebug(std::string_view message,
                 std::experimental::source_location location = std::experimental::source_location::current());
+
+#endif
 
 #endif
