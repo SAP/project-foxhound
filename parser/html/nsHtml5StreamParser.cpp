@@ -1642,7 +1642,7 @@ nsresult nsHtml5StreamParser::OnDataAvailable(nsIRequest* aRequest,
       return mExecutor->MarkAsBroken(NS_ERROR_OUT_OF_MEMORY);
     }
     Buffer<uint8_t> data(std::move(*maybe));
-    StringTaint taint;
+    SafeStringTaint taint;
     if (taintInputStream) {
         rv = taintInputStream->TaintedRead(reinterpret_cast<char*>(data.Elements()),
                                            data.Length(), &taint, &totalRead);
@@ -1684,7 +1684,7 @@ nsresult nsHtml5StreamParser::OnDataAvailable(nsIRequest* aRequest,
         return NS_ERROR_OUT_OF_MEMORY;
       }
       Buffer<uint8_t> data(std::move(*maybe));
-      StringTaint taint;
+      SafeStringTaint taint;
 
       if (taintInputStream) {
         rv = taintInputStream->TaintedRead(reinterpret_cast<char*>(data.Elements()),
