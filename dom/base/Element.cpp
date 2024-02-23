@@ -5055,7 +5055,7 @@ void Element::TaintSelectorOperation(const char* operation, const nsAString& aEl
   // Here we want to save a list of all selector operations performed on the element
 
   // Check if there is a direct flow
-  const StringTaint aTaint = aElementId.Taint();
+  const StringTaint& aTaint = aElementId.Taint();
   TaintFlow flow;
   if (aTaint.hasTaint()) {
     // Take the first range

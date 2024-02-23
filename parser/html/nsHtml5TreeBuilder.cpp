@@ -146,6 +146,7 @@ void nsHtml5TreeBuilder::startTokenization(nsHtml5Tokenizer* self) {
   charBufferLen = 0;
   charBuffer = nullptr;
   framesetOk = true;
+  charTaint.clear();
   if (fragment) {
     nsIContentHandle* elt;
     if (contextNode) {
