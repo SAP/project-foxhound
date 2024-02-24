@@ -3688,16 +3688,16 @@ static JSString* ReplaceAll(JSContext* cx, JSLinearString* string,
     return nullptr;
   }
 
-  // Step 16.
-  auto* resultString = result.finishString();
-  if (!resultString) {
-    return nullptr;
-  }
-  
   // Taintfox: extend the taint flow
   if(result.taint().hasTaint()) {
     result.taint().extend(
       TaintOperationFromContextJSString(cx, "replaceAll", true, searchString, replaceString));
+  }
+
+  // Step 16.
+  auto* resultString = result.finishString();
+  if (!resultString) {
+    return nullptr;
   }
 
   return resultString;
