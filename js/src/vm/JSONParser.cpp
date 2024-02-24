@@ -690,7 +690,7 @@ JSString* JSONFullParseHandlerAnyChar::CurrentJsonPath(const Vector<StackEntry, 
       }
     }
   }
-  return builder.finishString(gc::Heap::Tenured);
+  return builder.finishAtom();
 }
 
 inline void JSONFullParseHandlerAnyChar::setNumberValue(double d) {
@@ -717,10 +717,8 @@ inline bool JSONFullParseHandler<CharT>::setStringValue(CharPtr start,
   // TaintFox: propagate taint.
   if (ST != JSONStringType::PropertyName && taint.hasTaint()) {
     str->setTaint(cx, taint);
-    JSString* jsonPath = parser ? parser->CurrentJsonPath() : nullptr;
-    TaintOperation op = jsonPath ?
-      TaintOperationFromContextJSString(cx, "JSON.parse", true, jsonPath) :
-      TaintOperationFromContext(cx, "JSON.parse", true);
+    RootedString jsonPath(cx, parser->CurrentJsonPath());
+    TaintOperation op = TaintOperationFromContextJSString(cx, "JSON.parse", true, jsonPath);
     str->taint().extend(op);
   }
 
@@ -745,10 +743,8 @@ inline bool JSONFullParseHandler<CharT>::setStringValue(
 
   // TaintFox: Add taint operation.
   if (str->taint().hasTaint()) {
-    JSString* jsonPath = parser ? parser->CurrentJsonPath() : nullptr;
-    TaintOperation op = jsonPath ?
-      TaintOperationFromContextJSString(cx, "JSON.parse", true, jsonPath) :
-      TaintOperationFromContext(cx, "JSON.parse", true);
+    RootedString jsonPath(cx, parser->CurrentJsonPath());
+    TaintOperation op = TaintOperationFromContextJSString(cx, "JSON.parse", true, jsonPath);
     str->taint().extend(op);
   }
 
